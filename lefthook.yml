@@ -1,0 +1,15 @@
+# EXAMPLE USAGE:
+#
+#   Refer for explanation to following link:
+#   https://lefthook.dev/configuration/
+#
+
+pre-commit:
+  parallel: false
+  jobs:
+    - name: biome lint
+      run: npm run lint {staged_files}
+      glob: "*.{js,ts,jsx,tsx}"
+
+    - name: doctor
+      run: npm run doctor
