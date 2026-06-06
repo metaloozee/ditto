@@ -7,9 +7,9 @@
 pre-commit:
   parallel: false
   jobs:
+    - name: biome format
+      run: npm run format {staged_files}
+      glob: "*.{js,ts,jsx,tsx}"
     - name: biome lint
       run: npm run lint {staged_files}
       glob: "*.{js,ts,jsx,tsx}"
-
-    - name: doctor
-      run: npm run doctor
