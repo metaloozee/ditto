@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { HomeIcon, Layers2Icon, PlusIcon } from "lucide-react";
 import type * as React from "react";
 import { NavMain } from "#/components/nav-main";
 import { NavUser } from "#/components/nav-user";
+import { NewProjectDialog } from "#/components/new-project-dialog";
 import {
 	Sidebar,
 	SidebarContent,
@@ -60,32 +62,41 @@ function BrandingWithTrigger() {
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 	const { state } = useSidebar();
+	const [dialogOpen, setDialogOpen] = useState(false);
 
 	return (
-		<Sidebar collapsible="icon" variant="floating" {...props}>
-			<SidebarHeader className="border-b">
-				<BrandingWithTrigger />
-			</SidebarHeader>
-			<SidebarContent className="my-2">
-				<SidebarGroup>
-					<SidebarMenu>
-						<SidebarMenuItem>
-							<SidebarMenuButton tooltip="New Project" asChild>
-								<Button className="cursor-pointer" variant="outline">
-									<PlusIcon />
-									{state === "expanded" && <span>New Project</span>}
-								</Button>
-							</SidebarMenuButton>
-						</SidebarMenuItem>
-					</SidebarMenu>
-				</SidebarGroup>
+		<>
+			<Sidebar collapsible="icon" variant="floating" {...props}>
+				<SidebarHeader className="border-b">
+					<BrandingWithTrigger />
+				</SidebarHeader>
+				<SidebarContent className="my-2">
+					<SidebarGroup>
+						<SidebarMenu>
+							<SidebarMenuItem>
+								<SidebarMenuButton tooltip="New Project" asChild>
+									<Button
+										className="cursor-pointer"
+										variant="outline"
+										onClick={() => setDialogOpen(true)}
+									>
+										<PlusIcon />
+										{state === "expanded" && <span>New Project</span>}
+									</Button>
+								</SidebarMenuButton>
+							</SidebarMenuItem>
+						</SidebarMenu>
+					</SidebarGroup>
 
-				<NavMain items={navItems} />
-			</SidebarContent>
-			<SidebarFooter className="border-t">
-				<NavUser />
-			</SidebarFooter>
-			<SidebarRail />
-		</Sidebar>
+					<NavMain items={navItems} />
+				</SidebarContent>
+				<SidebarFooter className="border-t">
+					<NavUser />
+				</SidebarFooter>
+				<SidebarRail />
+			</Sidebar>
+
+			<NewProjectDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+		</>
 	);
 }
