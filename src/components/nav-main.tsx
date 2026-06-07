@@ -5,7 +5,9 @@ import {
 	SidebarMenu,
 	SidebarMenuButton,
 	SidebarMenuItem,
+	useSidebar,
 } from "#/components/ui/sidebar";
+import { cn } from "#/lib/utils";
 
 export function NavMain({
 	items,
@@ -20,9 +22,13 @@ export function NavMain({
 		select: (state) => state.location.pathname,
 	});
 
+	const { state } = useSidebar();
+
 	return (
 		<SidebarGroup>
-			<SidebarGroupLabel>Workspace</SidebarGroupLabel>
+			<SidebarGroupLabel className={cn(state === "collapsed" && "hidden")}>
+				Workspace
+			</SidebarGroupLabel>
 			<SidebarMenu>
 				{items.map((item) => (
 					<SidebarMenuItem key={item.title}>
