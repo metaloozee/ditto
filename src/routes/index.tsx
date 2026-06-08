@@ -1,5 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { GitBranchIcon, MicIcon, SendHorizonalIcon, ShieldAlertIcon } from "lucide-react";
+import {
+	GitBranchIcon,
+	MicIcon,
+	SendHorizonalIcon,
+	ShieldAlertIcon,
+} from "lucide-react";
 import { Button } from "#/components/ui/button";
 import { cn, RADIAL_BG } from "#/lib/utils";
 import { getSession } from "@/lib/auth.functions";
