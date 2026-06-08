@@ -25,6 +25,8 @@
   "dependencies": {
     "@faker-js/faker": "^10.3.0",
     "@fontsource-variable/geist": "^5.2.9",
+    "@pierre/diffs": "^1.2.7",
+    "@pierre/trees": "1.0.0-beta.4",
     "@t3-oss/env-core": "^0.13.10",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/ai": "latest",
@@ -62,6 +64,7 @@
     "radix-ui": "^1.4.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-resizable-panels": "^4.11.2",
     "shadcn": "^4.10.0",
     "streamdown": "^2.3.0",
     "superjson": "^2.2.2",
