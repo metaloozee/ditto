@@ -1,9 +1,18 @@
+import { TanStackDevtools } from "@tanstack/react-devtools";
 import type { QueryClient } from "@tanstack/react-query";
-import { createRootRouteWithContext } from "@tanstack/react-router";
+import {
+	createRootRouteWithContext,
+	HeadContent,
+	Scripts,
+	useRouterState,
+} from "@tanstack/react-router";
+import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import type { TRPCOptionsProxy } from "@trpc/tanstack-react-query";
+import type * as React from "react";
+import { AppShell } from "#/components/app-shell";
 import type { TRPCRouter } from "#/integrations/trpc/router";
+import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
 import appCss from "../styles.css?url";
-import { RootDocument } from "./root-document";
 
 interface MyRouterContext {
 	queryClient: QueryClient;
@@ -38,3 +47,34 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 	}),
 	shellComponent: RootDocument,
 });
+
+function RootDocument({ children }: { children: React.ReactNode }) {
+	const pathname = useRouterState({
+		select: (state) => state.location.pathname,
+	});
+	const isAuthRoute = pathname === "/sign-in";
+
+	return (
+		<html lang="en" className="dark" style={{ colorScheme: "dark" }}>
+			<head>
+				<HeadContent />
+			</head>
+			<body>
+				{isAuthRoute ? children : <AppShell>{children}</AppShell>}
+				<TanStackDevtools
+					config={{
+						position: "bottom-right",
+					}}
+					plugins={[
+						{
+							name: "Tanstack Router",
+							render: <TanStackRouterDevtoolsPanel />,
+						},
+						TanStackQueryDevtools,
+					]}
+				/>
+				<Scripts />
+			</body>
+		</html>
+	);
+}
