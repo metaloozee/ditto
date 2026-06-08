@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { MicIcon, SendHorizonalIcon } from "lucide-react";
+import { GitBranchIcon, MicIcon, SendHorizonalIcon, ShieldAlertIcon } from "lucide-react";
 import { Button } from "#/components/ui/button";
 import { cn, RADIAL_BG } from "#/lib/utils";
 import { getSession } from "@/lib/auth.functions";
@@ -37,9 +37,14 @@ function Home() {
 						</Button>
 					</div>
 					<div className="flex justify-between gap-5 w-full text-xs px-2 py-1 text-muted-foreground">
-						<p>Worktree</p>
-						<p>Full Access</p>
-						<p>Project name</p>
+						<div className="flex items-center gap-1">
+							<GitBranchIcon className="size-3" />
+							<p>master</p>
+						</div>
+						<div className="flex items-center gap-1">
+							<ShieldAlertIcon className="size-3" />
+							<p>Full Access</p>
+						</div>
 					</div>
 				</div>
 			</section>

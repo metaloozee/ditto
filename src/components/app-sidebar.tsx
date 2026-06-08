@@ -162,7 +162,9 @@ function SearchCommandDialog({
 								className="cursor-pointer py-2"
 							>
 								<div className="flex min-w-0 flex-1 flex-col">
-									<span className="truncate text-sm font-medium">{chat.name}</span>
+									<span className="truncate text-sm font-medium">
+										{chat.name}
+									</span>
 									<span className="truncate text-muted-foreground">
 										{chat.description}
 									</span>
