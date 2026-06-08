@@ -42,7 +42,6 @@ import {
 	PromptInputTools,
 } from "#/components/ai-elements/prompt-input";
 import { cn, RADIAL_BG } from "#/lib/utils";
-import { Separator } from "./ui/separator";
 
 const models = [
 	{
