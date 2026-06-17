@@ -88,10 +88,10 @@ const MOCK_REPOS = [
 ] as const;
 
 const LANGUAGE_COLORS: Record<string, string> = {
-	TypeScript: "bg-blue-500",
-	JavaScript: "bg-yellow-400",
-	Go: "bg-cyan-500",
-	MDX: "bg-orange-400",
+	TypeScript: "bg-chart-1",
+	JavaScript: "bg-chart-4",
+	Go: "bg-chart-2",
+	MDX: "bg-chart-5",
 };
 
 type OnboardingPath = "github" | "scratch" | null;

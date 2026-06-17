@@ -41,7 +41,6 @@ import {
 	PromptInputTextarea,
 	PromptInputTools,
 } from "#/components/ai-elements/prompt-input";
-import { cn, RADIAL_BG } from "#/lib/utils";
 
 const models = [
 	{
@@ -384,15 +383,10 @@ export function Composer() {
 	const chefs = [...new Set(models.map((modelOption) => modelOption.chef))];
 
 	return (
-		<section className="mx-auto flex h-full max-w-3xl flex-col justify-end gap-5 rounded-lg p-5">
-			<div
-				className={cn(
-					"flex flex-col items-center justify-center gap-1 rounded-lg p-1 ring-1 ring-accent-foreground/10",
-					RADIAL_BG,
-				)}
-			>
+		<section className="mx-auto flex h-full max-w-3xl flex-col justify-end gap-5 p-5">
+			<div className="flex flex-col items-center justify-center gap-1 rounded-xl border bg-card p-1 shadow-sm">
 				<PromptInput
-					className="w-full bg-sidebar rounded-md"
+					className="w-full rounded-lg bg-background"
 					onSubmit={handleSubmit}
 					globalDrop
 					multiple
@@ -465,11 +459,11 @@ export function Composer() {
 							<PromptInputButton tooltip="Voice input">
 								<MicIcon />
 							</PromptInputButton>
-							<PromptInputSubmit variant={"outline"} disabled={!text.trim()} />
+							<PromptInputSubmit variant="outline" disabled={!text.trim()} />
 						</PromptInputTools>
 					</PromptInputFooter>
 				</PromptInput>
-				<div className="flex w-full justify-between gap-5 px-2 py-1 text-muted-foreground text-xs">
+				<div className="flex w-full justify-between gap-5 px-2 py-1.5 text-muted-foreground text-xs">
 					<div className="flex items-center gap-1">
 						<GitBranchIcon className="size-3" />
 						<p>master</p>

@@ -10,5 +10,6 @@ dist-ssr
 .alchemy
 .output
 .vinxi
+.impeccable
 __unconfig*
 todos.json

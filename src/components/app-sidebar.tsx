@@ -36,6 +36,7 @@ import {
 	SidebarTrigger,
 	useSidebar,
 } from "#/components/ui/sidebar";
+import { cn } from "#/lib/utils";
 import { Button } from "./ui/button";
 
 const navItems = [
@@ -89,10 +90,10 @@ function BrandingWithTrigger() {
 	return (
 		<div className="group/branding flex min-h-12 items-center gap-2 rounded-md px-2 text-sidebar-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
 			<div
-				className={
-					"flex size-8 shrink-0 items-center justify-center rounded-md bg-linear-to-tr from-(--bg-base) to-(--sea-ink) ring-1 ring-sidebar-ring/30 transition-[transform,box-shadow,opacity] duration-150 ease-out group-data-[collapsible=icon]:shadow-sm" +
-					(isCollapsed ? " group-hover/branding:hidden" : "")
-				}
+				className={cn(
+					"flex size-8 shrink-0 items-center justify-center rounded-md border border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground transition-opacity duration-150 ease-out",
+					isCollapsed && "group-hover/branding:hidden",
+				)}
 			>
 				<span className="sr-only">Ditto</span>
 				<span className="text-sm font-semibold leading-none">
@@ -101,7 +102,7 @@ function BrandingWithTrigger() {
 			</div>
 
 			{isCollapsed && (
-				<SidebarTrigger className="cursor-pointer hidden ease-in-out duration-300 size-8 shrink-0 group-hover/branding:flex" />
+				<SidebarTrigger className="hidden size-8 shrink-0 cursor-pointer group-hover/branding:flex" />
 			)}
 
 			<div className="grid min-w-0 flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">

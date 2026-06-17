@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Composer } from "#/components/Composer";
+import { Composer } from "#/components/composer";
 import { getSession } from "@/lib/auth.functions";
 
 export const Route = createFileRoute("/")({
