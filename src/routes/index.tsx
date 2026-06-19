@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Composer } from "#/components/composer";
+import { Chat } from "#/components/ai-chat";
 import { getSession } from "@/lib/auth.functions";
 
 export const Route = createFileRoute("/")({
@@ -17,9 +17,7 @@ export const Route = createFileRoute("/")({
 function Home() {
 	Route.useRouteContext();
 
-	return (
-		<main className="min-h-dvh">
-			<Composer />
-		</main>
-	);
+	const conversationId = crypto.randomUUID();
+
+	return <Chat conversationId={conversationId} />;
 }

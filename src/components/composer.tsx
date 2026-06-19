@@ -383,10 +383,10 @@ export function Composer() {
 	const chefs = [...new Set(models.map((modelOption) => modelOption.chef))];
 
 	return (
-		<section className="mx-auto flex h-full max-w-3xl flex-col justify-end gap-5 p-5">
-			<div className="flex flex-col items-center justify-center gap-1 rounded-xl border bg-card p-1 shadow-sm">
+		<section className="absolute left-0 bottom-0 w-full flex flex-col justify-end gap-5 p-2">
+			<div className="flex flex-col items-center justify-center gap-1 rounded-lg border bg-card p-1 shadow-sm">
 				<PromptInput
-					className="w-full rounded-lg bg-background"
+					className="w-full bg-background rounded-lg"
 					onSubmit={handleSubmit}
 					globalDrop
 					multiple
@@ -395,7 +395,7 @@ export function Composer() {
 						<PromptInputTextarea
 							onChange={(event) => setText(event.currentTarget.value)}
 							value={text}
-							placeholder="Center the div..."
+							placeholder="Your message here..."
 						/>
 					</PromptInputBody>
 					<PromptInputFooter>
