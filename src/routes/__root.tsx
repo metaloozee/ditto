@@ -11,6 +11,7 @@ import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import type { TRPCOptionsProxy } from "@trpc/tanstack-react-query";
 import type * as React from "react";
 import { AppShell } from "#/components/app-shell";
+import { TooltipProvider } from "#/components/ui/tooltip";
 import type { TRPCRouter } from "#/integrations/trpc/router";
 import { flueClient } from "#/lib/flue-client";
 import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
@@ -63,7 +64,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 			</head>
 			<body>
 				<FlueProvider client={flueClient}>
-					{isAuthRoute ? children : <AppShell>{children}</AppShell>}
+					<TooltipProvider>
+						{isAuthRoute ? children : <AppShell>{children}</AppShell>}
+					</TooltipProvider>
 				</FlueProvider>
 				<TanStackDevtools
 					config={{

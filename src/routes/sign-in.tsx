@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { GithubIcon, LoaderCircleIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "#/components/ui/button";
+import { Spinner } from "#/components/ui/spinner";
 import { authClient } from "#/lib/auth-client";
 
 export const Route = createFileRoute("/sign-in")({
@@ -61,21 +62,19 @@ function SignIn() {
 					<Button
 						type="button"
 						size="lg"
-						className="h-11 text-sm"
 						disabled={isPending || isSigningIn}
 						onClick={() => {
 							void handleSignIn();
 						}}
 					>
 						{isSigningIn ? (
-							<LoaderCircleIcon
-								className="animate-spin"
-								data-icon="inline-start"
-							/>
+							<Spinner size="sm" />
 						) : (
-							<GithubIcon data-icon="inline-start" />
+							<>
+								<GithubIcon />
+								Continue with GitHub
+							</>
 						)}
-						Continue with GitHub
 					</Button>
 					{errorMessage ? (
 						<p className="text-center text-sm text-destructive" role="alert">
