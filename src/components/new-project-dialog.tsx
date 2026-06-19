@@ -44,48 +44,11 @@ import { ScrollArea } from "#/components/ui/scroll-area";
 import { Separator } from "#/components/ui/separator";
 import { Textarea } from "#/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "#/components/ui/toggle-group";
+import {
+	type GitHubRepo,
+	loadGitHubRepositories,
+} from "#/lib/github-repositories";
 import { cn } from "#/lib/utils";
-
-const MOCK_REPOS = [
-	{
-		name: "acme/marketing-site",
-		language: "TypeScript",
-		isPrivate: false,
-		stars: 128,
-	},
-	{
-		name: "acme/dashboard-app",
-		language: "TypeScript",
-		isPrivate: true,
-		stars: 42,
-	},
-	{
-		name: "acme/component-library",
-		language: "TypeScript",
-		isPrivate: true,
-		stars: 89,
-	},
-	{ name: "acme/api-gateway", language: "Go", isPrivate: true, stars: 56 },
-	{
-		name: "acme/landing-page",
-		language: "JavaScript",
-		isPrivate: false,
-		stars: 214,
-	},
-	{
-		name: "acme/mobile-app",
-		language: "TypeScript",
-		isPrivate: true,
-		stars: 31,
-	},
-	{ name: "acme/docs-site", language: "MDX", isPrivate: false, stars: 167 },
-	{
-		name: "acme/design-system",
-		language: "TypeScript",
-		isPrivate: false,
-		stars: 345,
-	},
-] as const;
 
 const LANGUAGE_COLORS: Record<string, string> = {
 	TypeScript: "bg-chart-1",
@@ -94,6 +57,8 @@ const LANGUAGE_COLORS: Record<string, string> = {
 	MDX: "bg-chart-5",
 };
 
+const GITHUB_AUTH_TIMEOUT_MS = 2 * 60 * 1000;
+
 type OnboardingPath = "github" | "scratch" | null;
 type Step = "choice" | "github" | "scratch" | "ready";
 
@@ -101,6 +66,41 @@ interface EnvVar {
 	id: string;
 	key: string;
 	value: string;
+}
+
+function waitForGithubLinkComplete(authWindow: Window): Promise<void> {
+	return new Promise((resolve, reject) => {
+		let intervalId: number | undefined;
+		let timeoutId: number | undefined;
+
+		const cleanup = () => {
+			if (intervalId !== undefined) window.clearInterval(intervalId);
+			if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+			window.removeEventListener("message", handleMessage);
+		};
+
+		const finish = () => {
+			cleanup();
+			resolve();
+		};
+
+		const fail = () => {
+			cleanup();
+			reject(new Error("GitHub authorization timed out. Please try again."));
+		};
+
+		const handleMessage = (event: MessageEvent) => {
+			if (event.origin !== window.location.origin) return;
+			if (event.data?.type !== "github-link-complete") return;
+			finish();
+		};
+
+		window.addEventListener("message", handleMessage);
+		intervalId = window.setInterval(() => {
+			if (authWindow.closed) finish();
+		}, 500);
+		timeoutId = window.setTimeout(fail, GITHUB_AUTH_TIMEOUT_MS);
+	});
 }
 
 export function NewProjectDialog({
@@ -114,6 +114,9 @@ export function NewProjectDialog({
 	const [step, setStep] = useState<Step>("choice");
 
 	const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
+	const [githubRepos, setGithubRepos] = useState<GitHubRepo[]>([]);
+	const [githubLoading, setGithubLoading] = useState(false);
+	const [githubError, setGithubError] = useState<string | null>(null);
 	const [envVars, setEnvVars] = useState<EnvVar[]>([]);
 
 	const [projectName, setProjectName] = useState("");
@@ -125,6 +128,9 @@ export function NewProjectDialog({
 		setPath(null);
 		setStep("choice");
 		setSelectedRepo(null);
+		setGithubRepos([]);
+		setGithubLoading(false);
+		setGithubError(null);
 		setEnvVars([]);
 		setProjectName("");
 		setProjectDescription("");
@@ -137,10 +143,39 @@ export function NewProjectDialog({
 		setTimeout(resetState, 200);
 	}, [onOpenChange, resetState]);
 
-	const handleChoosePath = useCallback((chosen: OnboardingPath) => {
-		setPath(chosen);
-		setStep(chosen === "github" ? "github" : "scratch");
+	const loadGithubRepos = useCallback(async () => {
+		setGithubLoading(true);
+		setGithubError(null);
+		setSelectedRepo(null);
+
+		try {
+			const repos = await loadGitHubRepositories({
+				waitForAuthComplete: waitForGithubLinkComplete,
+			});
+			setGithubRepos(repos);
+		} catch (error) {
+			setGithubError(
+				error instanceof Error
+					? error.message
+					: "Unable to load GitHub repositories.",
+			);
+			setGithubRepos([]);
+		} finally {
+			setGithubLoading(false);
+		}
 	}, []);
+
+	const handleChoosePath = useCallback(
+		(chosen: OnboardingPath) => {
+			setPath(chosen);
+			setStep(chosen === "github" ? "github" : "scratch");
+
+			if (chosen === "github") {
+				void loadGithubRepos();
+			}
+		},
+		[loadGithubRepos],
+	);
 
 	const handleBack = useCallback(() => {
 		if (step === "ready") {
@@ -181,7 +216,7 @@ export function NewProjectDialog({
 
 	const canContinue =
 		step === "github"
-			? selectedRepo !== null
+			? selectedRepo !== null && !githubLoading && githubError === null
 			: step === "scratch"
 				? projectName.trim().length > 0 && framework.length > 0
 				: true;
@@ -263,56 +298,65 @@ export function NewProjectDialog({
 					<Command className="rounded-lg border border-border">
 						<CommandInput placeholder="Search repositories…" />
 						<CommandList>
-							<CommandEmpty>No repositories found.</CommandEmpty>
-							<CommandGroup heading="Your repositories">
-								{MOCK_REPOS.map((repo) => (
-									<CommandItem
-										key={repo.name}
-										value={repo.name}
-										onSelect={() => setSelectedRepo(repo.name)}
-										className={cn(
-											"flex items-center gap-3 cursor-pointer",
-											selectedRepo === repo.name && "bg-accent",
-										)}
-									>
-										<BookIcon
-											aria-hidden="true"
-											className="size-4 shrink-0 text-muted-foreground"
-										/>
-										<div className="flex min-w-0 flex-1 items-center gap-2">
-											<span className="truncate text-sm font-medium">
-												{repo.name}
-											</span>
-											{repo.isPrivate ? (
-												<LockIcon
-													aria-hidden="true"
-													className="size-3 shrink-0 text-muted-foreground"
-												/>
-											) : (
-												<GlobeIcon
-													aria-hidden="true"
-													className="size-3 shrink-0 text-muted-foreground"
-												/>
+							{githubLoading ? (
+								<CommandEmpty>Loading repositories...</CommandEmpty>
+							) : githubError ? (
+								<CommandEmpty>{githubError}</CommandEmpty>
+							) : githubRepos.length === 0 ? (
+								<CommandEmpty>No repositories found.</CommandEmpty>
+							) : (
+								<CommandGroup heading="Your repositories">
+									{githubRepos.map((repo) => (
+										<CommandItem
+											key={repo.name}
+											value={repo.name}
+											onSelect={() => setSelectedRepo(repo.name)}
+											className={cn(
+												"flex items-center gap-3 cursor-pointer",
+												selectedRepo === repo.name && "bg-accent",
 											)}
-										</div>
-										<div className="flex items-center gap-2">
-											<div className="flex items-center gap-1.5">
-												<span
-													className={cn(
-														"size-2.5 rounded-full",
-														LANGUAGE_COLORS[repo.language] ??
-															"bg-muted-foreground",
-													)}
-													aria-hidden="true"
-												/>
-												<span className="text-xs text-muted-foreground">
-													{repo.language}
+										>
+											<BookIcon
+												aria-hidden="true"
+												className="size-4 shrink-0 text-muted-foreground"
+											/>
+											<div className="flex min-w-0 flex-1 items-center gap-2">
+												<span className="truncate text-sm font-medium">
+													{repo.name}
 												</span>
+												{repo.isPrivate ? (
+													<LockIcon
+														aria-hidden="true"
+														className="size-3 shrink-0 text-muted-foreground"
+													/>
+												) : (
+													<GlobeIcon
+														aria-hidden="true"
+														className="size-3 shrink-0 text-muted-foreground"
+													/>
+												)}
 											</div>
-										</div>
-									</CommandItem>
-								))}
-							</CommandGroup>
+											<div className="flex items-center gap-2">
+												<div className="flex items-center gap-1.5">
+													<span
+														className={cn(
+															"size-2.5 rounded-full",
+															repo.language
+																? (LANGUAGE_COLORS[repo.language] ??
+																		"bg-muted-foreground")
+																: "bg-muted-foreground",
+														)}
+														aria-hidden="true"
+													/>
+													<span className="text-xs text-muted-foreground">
+														{repo.language ?? "Unknown"}
+													</span>
+												</div>
+											</div>
+										</CommandItem>
+									))}
+								</CommandGroup>
+							)}
 						</CommandList>
 					</Command>
 
@@ -482,7 +526,7 @@ export function NewProjectDialog({
 					<ScrollArea className="max-h-[60vh]">
 						<div className="flex flex-col gap-4 pr-3">
 							{path === "github" ? (
-								<GitHubSummary repo={selectedRepo} />
+								<GitHubSummary repo={selectedRepo} repos={githubRepos} />
 							) : (
 								<ScratchSummary
 									name={projectName}
@@ -635,8 +679,14 @@ export function NewProjectDialog({
 	);
 }
 
-function GitHubSummary({ repo }: { repo: string | null }) {
-	const repoData = MOCK_REPOS.find((r) => r.name === repo);
+function GitHubSummary({
+	repo,
+	repos,
+}: {
+	repo: string | null;
+	repos: GitHubRepo[];
+}) {
+	const repoData = repos.find((r) => r.name === repo);
 	if (!repoData) return null;
 
 	return (
@@ -660,11 +710,13 @@ function GitHubSummary({ repo }: { repo: string | null }) {
 					<span
 						className={cn(
 							"size-2.5 rounded-full",
-							LANGUAGE_COLORS[repoData.language] ?? "bg-muted-foreground",
+							repoData.language
+								? (LANGUAGE_COLORS[repoData.language] ?? "bg-muted-foreground")
+								: "bg-muted-foreground",
 						)}
 						aria-hidden="true"
 					/>
-					{repoData.language}
+					{repoData.language ?? "Unknown"}
 				</div>
 			</div>
 		</div>

@@ -10,6 +10,6 @@ pre-commit:
     - name: biome format
       run: npm run format {staged_files}
       glob: "*.{js,ts,jsx,tsx}"
-    - name: biome lint
-      run: npm run lint {staged_files}
+    - name: biome fix
+      run: npm run fix {staged_files}
       glob: "*.{js,ts,jsx,tsx}"
