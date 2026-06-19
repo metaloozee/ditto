@@ -68,7 +68,7 @@ interface EnvVar {
 	value: string;
 }
 
-function waitForGithubLinkComplete(authWindow: Window): Promise<void> {
+function _waitForGithubLinkComplete(authWindow: Window): Promise<void> {
 	return new Promise((resolve, reject) => {
 		let intervalId: number | undefined;
 		let timeoutId: number | undefined;
@@ -149,9 +149,7 @@ export function NewProjectDialog({
 		setSelectedRepo(null);
 
 		try {
-			const repos = await loadGitHubRepositories({
-				waitForAuthComplete: waitForGithubLinkComplete,
-			});
+			const repos = await loadGitHubRepositories({});
 			setGithubRepos(repos);
 		} catch (error) {
 			setGithubError(
