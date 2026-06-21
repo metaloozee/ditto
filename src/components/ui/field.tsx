@@ -1,5 +1,5 @@
-/** biome-ignore-all lint/suspicious/noArrayIndexKey: false positive */
-/** biome-ignore-all lint/a11y/useSemanticElements: false positive */
+/** biome-ignore-all lint/suspicious/noArrayIndexKey: False Positive */
+/** biome-ignore-all lint/a11y/useSemanticElements: False Positive */
 "use client";
 
 import { cva, type VariantProps } from "class-variance-authority";

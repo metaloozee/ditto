@@ -67,18 +67,18 @@ export function NavUser() {
 			<SidebarMenu>
 				<SidebarMenuItem>
 					<SidebarMenuButton
-						asChild
 						size="lg"
 						className="group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0!"
 						tooltip="Sign in"
-					>
-						<Link to="/sign-in">
-							<LogInIcon />
-							<span className="group-data-[collapsible=icon]:hidden">
-								Sign in
-							</span>
-						</Link>
-					</SidebarMenuButton>
+						render={
+							<Link to="/sign-in">
+								<LogInIcon />
+								<span className="group-data-[collapsible=icon]:hidden">
+									Sign in
+								</span>
+							</Link>
+						}
+					/>
 				</SidebarMenuItem>
 			</SidebarMenu>
 		);
@@ -93,26 +93,28 @@ export function NavUser() {
 		<SidebarMenu>
 			<SidebarMenuItem>
 				<DropdownMenu>
-					<DropdownMenuTrigger asChild>
-						<SidebarMenuButton
-							size="lg"
-							className="group/user data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-						>
-							<Avatar className="size-8 rounded-lg">
-								<AvatarImage src={user.image ?? undefined} alt="" />
-								<AvatarFallback className="rounded-lg">
-									{initials}
-								</AvatarFallback>
-							</Avatar>
-							<div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
-								<span className="truncate font-medium">{displayName}</span>
-								<span className="min-h-4 truncate text-xs text-sidebar-foreground/70">
-									<HiddenEmail email={email} />
-								</span>
-							</div>
-							<ChevronsUpDownIcon className="ml-auto" />
-						</SidebarMenuButton>
-					</DropdownMenuTrigger>
+					<DropdownMenuTrigger
+						render={
+							<SidebarMenuButton
+								size="lg"
+								className="group/user data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+							>
+								<Avatar className="size-8 rounded-lg">
+									<AvatarImage src={user.image ?? undefined} alt="" />
+									<AvatarFallback className="rounded-lg">
+										{initials}
+									</AvatarFallback>
+								</Avatar>
+								<div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
+									<span className="truncate font-medium">{displayName}</span>
+									<span className="min-h-4 truncate text-xs text-sidebar-foreground/70">
+										<HiddenEmail email={email} />
+									</span>
+								</div>
+								<ChevronsUpDownIcon className="ml-auto" />
+							</SidebarMenuButton>
+						}
+					/>
 					<DropdownMenuContent
 						className="min-w-56"
 						side={isMobile ? "bottom" : "right"}

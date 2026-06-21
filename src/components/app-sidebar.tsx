@@ -206,28 +206,34 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 					<SidebarGroup>
 						<SidebarMenu className="gap-2">
 							<SidebarMenuItem>
-								<SidebarMenuButton tooltip="New Project" asChild>
-									<Button
-										className="cursor-pointer"
-										variant="outline"
-										onClick={() => setNewProjectOpen(true)}
-									>
-										<PlusIcon />
-										{state === "expanded" && <span>New Project</span>}
-									</Button>
-								</SidebarMenuButton>
+								<SidebarMenuButton
+									tooltip="New Project"
+									render={
+										<Button
+											className="cursor-pointer"
+											variant="outline"
+											onClick={() => setNewProjectOpen(true)}
+										>
+											<PlusIcon />
+											{state === "expanded" && <span>New Project</span>}
+										</Button>
+									}
+								/>
 							</SidebarMenuItem>
 							<SidebarMenuItem>
-								<SidebarMenuButton tooltip="Search" asChild>
-									<Button
-										className="cursor-pointer"
-										variant="outline"
-										onClick={() => setSearchOpen(true)}
-									>
-										<SearchIcon />
-										{state === "expanded" && <span>Search</span>}
-									</Button>
-								</SidebarMenuButton>
+								<SidebarMenuButton
+									tooltip="Search"
+									render={
+										<Button
+											className="cursor-pointer"
+											variant="outline"
+											onClick={() => setSearchOpen(true)}
+										>
+											<SearchIcon />
+											{state === "expanded" && <span>Search</span>}
+										</Button>
+									}
+								/>
 							</SidebarMenuItem>
 						</SidebarMenu>
 					</SidebarGroup>

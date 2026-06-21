@@ -1,6 +1,5 @@
-/** biome-ignore-all lint/a11y/useSemanticElements: false positive */
-/** biome-ignore-all lint/a11y/useKeyWithClickEvents: false positive */
-"use client";
+/** biome-ignore-all lint/a11y/useSemanticElements: False Positive */
+/** biome-ignore-all lint/a11y/useKeyWithClickEvents: False Positive */
 
 import { cva, type VariantProps } from "class-variance-authority";
 import type * as React from "react";
@@ -89,8 +88,10 @@ function InputGroupButton({
 	variant = "ghost",
 	size = "xs",
 	...props
-}: Omit<React.ComponentProps<typeof Button>, "size"> &
-	VariantProps<typeof inputGroupButtonVariants>) {
+}: Omit<React.ComponentProps<typeof Button>, "size" | "type"> &
+	VariantProps<typeof inputGroupButtonVariants> & {
+		type?: "button" | "submit" | "reset";
+	}) {
 	return (
 		<Button
 			type={type}

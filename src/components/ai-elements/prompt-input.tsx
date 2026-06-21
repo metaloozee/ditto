@@ -1,5 +1,6 @@
 "use client";
 
+import type { BaseUIEvent } from "@base-ui/react";
 import type { ChatStatus, FileUIPart, SourceDocumentUIPart } from "ai";
 import {
 	CornerDownLeftIcon,
@@ -421,7 +422,7 @@ export const PromptInputActionAddAttachments = ({
 	const attachments = usePromptInputAttachments();
 
 	const handleSelect = useCallback(
-		(e: Event) => {
+		(e: BaseUIEvent<React.MouseEvent<HTMLDivElement, MouseEvent>>) => {
 			e.preventDefault();
 			attachments.openFileDialog();
 		},
@@ -429,7 +430,7 @@ export const PromptInputActionAddAttachments = ({
 	);
 
 	return (
-		<DropdownMenuItem {...props} onSelect={handleSelect}>
+		<DropdownMenuItem {...props} onClick={handleSelect}>
 			<ImageIcon className="mr-2 size-4" /> {label}
 		</DropdownMenuItem>
 	);
@@ -449,7 +450,9 @@ export const PromptInputActionAddScreenshot = ({
 	const attachments = usePromptInputAttachments();
 
 	const handleSelect = useCallback(
-		async (event: Event) => {
+		async (
+			event: BaseUIEvent<React.MouseEvent<HTMLDivElement, MouseEvent>>,
+		) => {
 			onSelect?.(event);
 			if (event.defaultPrevented) {
 				return;
@@ -474,7 +477,7 @@ export const PromptInputActionAddScreenshot = ({
 	);
 
 	return (
-		<DropdownMenuItem {...props} onSelect={handleSelect}>
+		<DropdownMenuItem {...props} onClick={handleSelect}>
 			<Monitor className="mr-2 size-4" />
 			{label}
 		</DropdownMenuItem>
@@ -1155,7 +1158,7 @@ export const PromptInputButton = ({
 
 	return (
 		<Tooltip>
-			<TooltipTrigger asChild>{button}</TooltipTrigger>
+			<TooltipTrigger>{button}</TooltipTrigger>
 			<TooltipContent side={side}>
 				{tooltipContent}
 				{shortcut && (
@@ -1178,10 +1181,10 @@ export const PromptInputActionMenuTrigger = ({
 	children,
 	...props
 }: PromptInputActionMenuTriggerProps) => (
-	<DropdownMenuTrigger asChild>
-		<PromptInputButton className={className} {...props}>
-			{children ?? <PlusIcon className="size-4" />}
-		</PromptInputButton>
+	<DropdownMenuTrigger
+		render={<PromptInputButton className={className} {...props} />}
+	>
+		{children ?? <PlusIcon className="size-4" />}
 	</DropdownMenuTrigger>
 );
 
@@ -1236,7 +1239,7 @@ export const PromptInputSubmit = ({
 	}
 
 	const handleClick = useCallback(
-		(e: React.MouseEvent<HTMLButtonElement>) => {
+		(e: BaseUIEvent<React.MouseEvent<HTMLButtonElement>>) => {
 			if (isGenerating && onStop) {
 				e.preventDefault();
 				onStop();
@@ -1318,12 +1321,8 @@ export const PromptInputSelectValue = ({
 export type PromptInputHoverCardProps = ComponentProps<typeof HoverCard>;
 
 export const PromptInputHoverCard = ({
-	openDelay = 0,
-	closeDelay = 0,
 	...props
-}: PromptInputHoverCardProps) => (
-	<HoverCard closeDelay={closeDelay} openDelay={openDelay} {...props} />
-);
+}: PromptInputHoverCardProps) => <HoverCard {...props} />;
 
 export type PromptInputHoverCardTriggerProps = ComponentProps<
 	typeof HoverCardTrigger
@@ -1331,7 +1330,13 @@ export type PromptInputHoverCardTriggerProps = ComponentProps<
 
 export const PromptInputHoverCardTrigger = (
 	props: PromptInputHoverCardTriggerProps,
-) => <HoverCardTrigger {...props} />;
+) => (
+	<HoverCardTrigger
+		delay={props.delay}
+		closeDelay={props.closeDelay}
+		{...props}
+	/>
+);
 
 export type PromptInputHoverCardContentProps = ComponentProps<
 	typeof HoverCardContent

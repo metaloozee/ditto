@@ -403,19 +403,24 @@ export function Composer() {
 							open={modelSelectorOpen}
 							onOpenChange={setModelSelectorOpen}
 						>
-							<ModelSelectorTrigger asChild>
-								<PromptInputButton aria-label="Select model">
-									{selectedModel?.chefSlug ? (
-										<ModelSelectorLogo
-											className="size-3.5"
-											provider={selectedModel.chefSlug}
-										/>
-									) : null}
-									{selectedModel?.name ? (
-										<ModelSelectorName>{selectedModel.name}</ModelSelectorName>
-									) : null}
-								</PromptInputButton>
-							</ModelSelectorTrigger>
+							<ModelSelectorTrigger
+								render={
+									<PromptInputButton aria-label="Select model">
+										{selectedModel?.chefSlug ? (
+											<ModelSelectorLogo
+												className="size-3.5"
+												provider={selectedModel.chefSlug}
+											/>
+										) : null}
+										{selectedModel?.name ? (
+											<ModelSelectorName>
+												{selectedModel.name}
+											</ModelSelectorName>
+										) : null}
+									</PromptInputButton>
+								}
+							/>
+
 							<ModelSelectorContent showCloseButton={false}>
 								<ModelSelectorInput placeholder="Search models..." />
 								<ModelSelectorList>
