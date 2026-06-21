@@ -118,10 +118,12 @@ not enabled.
    BETTER_AUTH_SECRET=
    GITHUB_CLIENT_ID=
    GITHUB_CLIENT_SECRET=
+   VITE_GITHUB_APP_INSTALL_URL=https://github.com/apps/<your-app-slug>/installations/new
    ```
 
 GitHub OAuth must provide email access. If you use a GitHub App instead of an
-OAuth App, grant `Email addresses: Read-only`.
+OAuth App, grant `Email addresses: Read-only` and set the public install URL so
+Import from GitHub can send users to repository selection.
 
 ### Database
 

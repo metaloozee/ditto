@@ -8,7 +8,10 @@ import {
 
 export function Chat({ conversationId }: { conversationId: string }) {
 	return (
-		<div className="max-w-3xl mx-auto p-6 relative size-full">
+		<div
+			className="max-w-3xl mx-auto p-6 relative size-full"
+			data-conversation-id={conversationId}
+		>
 			<div className="flex flex-col h-full">
 				<Conversation>
 					<ConversationContent>

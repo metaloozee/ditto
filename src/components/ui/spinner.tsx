@@ -31,11 +31,7 @@ const SpinnerPrimitive = ({
 					y2="91.793%"
 				>
 					<stop offset="0%" stopColor="currentColor" />
-					<stop
-						offset="100%"
-						stopColor="currentColor"
-						stopOpacity={0.55}
-					/>
+					<stop offset="100%" stopColor="currentColor" stopOpacity={0.55} />
 				</linearGradient>
 				<linearGradient
 					id={`gradient-2-${id}`}
@@ -44,16 +40,8 @@ const SpinnerPrimitive = ({
 					y1="15.24%"
 					y2="87.15%"
 				>
-					<stop
-						offset="0%"
-						stopColor="currentColor"
-						stopOpacity={0}
-					/>
-					<stop
-						offset="100%"
-						stopColor="currentColor"
-						stopOpacity={0.55}
-					/>
+					<stop offset="0%" stopColor="currentColor" stopOpacity={0} />
+					<stop offset="100%" stopColor="currentColor" stopOpacity={0.55} />
 				</linearGradient>
 			</defs>
 			<g fill="none">
@@ -96,7 +84,7 @@ interface SpinnerProps
 
 export const Spinner = ({
 	className,
-	size = "md",
+	size = "sm",
 	speed = "normal",
 	ref,
 	...props
@@ -108,7 +96,7 @@ export const Spinner = ({
 			"inline-block",
 			speedClasses[speed],
 			sizeClasses[size],
-			className
+			className,
 		)}
 		data-spinner
 	>
