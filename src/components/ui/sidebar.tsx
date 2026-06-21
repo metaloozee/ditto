@@ -1,8 +1,9 @@
+"use client";
+
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
-import { SidebarLeftIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import { cva, type VariantProps } from "class-variance-authority";
+import { PanelLeftIcon } from "lucide-react";
 import * as React from "react";
 import { Button } from "#/components/ui/button.tsx";
 import { Input } from "#/components/ui/input.tsx";
@@ -269,7 +270,7 @@ function SidebarTrigger({
 			}}
 			{...props}
 		>
-			<HugeiconsIcon icon={SidebarLeftIcon} strokeWidth={2} />
+			<PanelLeftIcon />
 			<span className="sr-only">Toggle Sidebar</span>
 		</Button>
 	);
@@ -608,11 +609,6 @@ function SidebarMenuSkeleton({
 }: React.ComponentProps<"div"> & {
 	showIcon?: boolean;
 }) {
-	// Random width between 50 to 90%.
-	const [width] = React.useState(() => {
-		return `${Math.floor(Math.random() * 40) + 50}%`;
-	});
-
 	return (
 		<div
 			data-slot="sidebar-menu-skeleton"
@@ -629,11 +625,6 @@ function SidebarMenuSkeleton({
 			<Skeleton
 				className="h-4 max-w-(--skeleton-width) flex-1"
 				data-sidebar="menu-skeleton-text"
-				style={
-					{
-						"--skeleton-width": width,
-					} as React.CSSProperties
-				}
 			/>
 		</div>
 	);

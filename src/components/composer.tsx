@@ -464,7 +464,7 @@ export function Composer() {
 							<PromptInputButton tooltip="Voice input">
 								<MicIcon />
 							</PromptInputButton>
-							<PromptInputSubmit variant="outline" disabled={!text.trim()} />
+							<PromptInputSubmit variant="default" disabled={!text.trim()} />
 						</PromptInputTools>
 					</PromptInputFooter>
 				</PromptInput>

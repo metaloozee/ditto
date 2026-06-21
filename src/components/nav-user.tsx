@@ -108,7 +108,7 @@ export function NavUser() {
 								<div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
 									<span className="truncate font-medium">{displayName}</span>
 									<span className="min-h-4 truncate text-xs text-sidebar-foreground/70">
-										<HiddenEmail email={email} />
+										Account Settings
 									</span>
 								</div>
 								<ChevronsUpDownIcon className="ml-auto" />
@@ -121,34 +121,25 @@ export function NavUser() {
 						align="end"
 						sideOffset={4}
 					>
-						<DropdownMenuLabel className="p-0 font-normal">
-							<div className="group/user flex items-center gap-2 rounded-md px-1 py-1.5 text-left text-sm">
-								<Avatar className="size-8 rounded-lg">
-									<AvatarImage src={user.image ?? undefined} alt="" />
-									<AvatarFallback className="rounded-lg">
-										{initials}
-									</AvatarFallback>
-								</Avatar>
-								<div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
-									<span className="truncate font-medium">{displayName}</span>
-									<span className="min-h-4 truncate text-xs text-muted-foreground">
-										<HiddenEmail email={email} />
-									</span>
-								</div>
-							</div>
-						</DropdownMenuLabel>
-						<DropdownMenuSeparator />
-						<DropdownMenuGroup>
-							<DropdownMenuItem className="group/user">
-								<UserRoundIcon />
-								<span className="grid min-w-0 flex-1">
-									<span>Account</span>
-									<span className="min-h-4 text-muted-foreground">
-										<HiddenEmail email={email} />
-									</span>
+						<DropdownMenuItem className="group/user flex items-center gap-2 rounded-md px-1 py-1.5 text-left text-sm">
+							<Avatar className="size-8 rounded-lg">
+								<AvatarImage src={user.image ?? undefined} alt="" />
+								<AvatarFallback className="rounded-lg">
+									{initials}
+								</AvatarFallback>
+							</Avatar>
+							<div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
+								<span className="truncate font-medium">{displayName}</span>
+								<span className="min-h-4 truncate text-xs text-muted-foreground">
+									<HiddenEmail email={email} />
 								</span>
-							</DropdownMenuItem>
-						</DropdownMenuGroup>
+							</div>
+						</DropdownMenuItem>
+						<DropdownMenuSeparator />
+						<DropdownMenuItem >
+								<UserRoundIcon />
+								Settings
+						</DropdownMenuItem>
 						<DropdownMenuSeparator />
 						<DropdownMenuItem
 							onSelect={() => {

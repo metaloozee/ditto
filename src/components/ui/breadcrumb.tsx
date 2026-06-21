@@ -1,13 +1,9 @@
-/** biome-ignore-all lint/a11y/useSemanticElements: False Positive */
-/** biome-ignore-all lint/a11y/useFocusableInteractive: False Positive */
+/** biome-ignore-all lint/a11y/useSemanticElements: <> */
+/** biome-ignore-all lint/a11y/useFocusableInteractive: <> */
 
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
-import {
-	ArrowRight01Icon,
-	MoreHorizontalCircle01Icon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
+import { ChevronRightIcon, MoreHorizontalIcon } from "lucide-react";
 import type * as React from "react";
 import { cn } from "#/lib/utils.ts";
 
@@ -91,7 +87,7 @@ function BreadcrumbSeparator({
 			className={cn("[&>svg]:size-3.5", className)}
 			{...props}
 		>
-			{children ?? <HugeiconsIcon icon={ArrowRight01Icon} strokeWidth={2} />}
+			{children ?? <ChevronRightIcon />}
 		</li>
 	);
 }
@@ -111,7 +107,7 @@ function BreadcrumbEllipsis({
 			)}
 			{...props}
 		>
-			<HugeiconsIcon icon={MoreHorizontalCircle01Icon} strokeWidth={2} />
+			<MoreHorizontalIcon />
 			<span className="sr-only">More</span>
 		</span>
 	);
