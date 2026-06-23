@@ -375,8 +375,7 @@ export function NewProjectDialog({
 									className="size-4 text-muted-foreground"
 								/>
 								<span className="text-sm">
-									Selected:{" "}
-									<span className="font-medium">{selectedRepo}</span>
+									Selected: <span className="font-medium">{selectedRepo}</span>
 								</span>
 							</div>
 						)}
@@ -633,9 +632,9 @@ function ReadyStep({
 									className="mt-0.5 size-4 shrink-0 text-primary"
 								/>
 								<p className="text-pretty">
-									An AI agent will analyze your requirements and draft a
-									plan for the initial scaffolding. You'll be able to review
-									and adjust before any code is generated.
+									An AI agent will analyze your requirements and draft a plan
+									for the initial scaffolding. You'll be able to review and
+									adjust before any code is generated.
 								</p>
 							</div>
 						)}
@@ -673,10 +672,7 @@ function ReadyStep({
 								{envVars.length > 0 && (
 									<div className="flex flex-col gap-2">
 										{envVars.map((envVar) => (
-											<div
-												key={envVar.id}
-												className="flex items-center gap-2"
-											>
+											<div key={envVar.id} className="flex items-center gap-2">
 												<Input
 													placeholder="KEY"
 													autoComplete="off"
@@ -719,11 +715,7 @@ function ReadyStep({
 			</ScrollArea>
 
 			<DialogFooter className="flex flex-row items-center gap-2 pt-1">
-				<Button
-					variant="ghost"
-					onClick={onBack}
-					className="cursor-pointer"
-				>
+				<Button variant="ghost" onClick={onBack} className="cursor-pointer">
 					<ArrowLeftIcon data-icon="inline-start" />
 					Back
 				</Button>
