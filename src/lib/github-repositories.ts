@@ -1,100 +1,81 @@
-import { authClient } from "#/lib/auth-client";
+import { Octokit } from "octokit";
 
 export type GitHubRepo = {
+	id: number;
 	name: string;
+	owner: string;
+	repoName: string;
 	language: string | null;
 	isPrivate: boolean;
 	stars: number;
+	installationId: number;
 };
 
-type GitHubApiRepo = {
-	full_name: string;
-	language: string | null;
-	private: boolean;
-	stargazers_count: number;
-};
-
-type AccessTokenResult = {
-	accessToken?: string;
-	data?: { accessToken?: string } | null;
-	error?: { message?: string } | null;
-};
-
-type LinkSocialResult = {
-	data?: { url?: string } | null;
-	error?: { message?: string } | null;
-};
-
-type GitHubAuthClient = Pick<
-	typeof authClient,
-	"linkSocial" | "getAccessToken"
->;
-
-type GitHubRepositoryLoaderOptions = {
-	auth?: GitHubAuthClient;
-	fetchRepos?: typeof fetch;
-};
-
-const GITHUB_REPOSITORIES_URL =
-	"https://api.github.com/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member";
-
-export function toGitHubRepo(repo: GitHubApiRepo): GitHubRepo {
-	return {
-		name: repo.full_name,
-		language: repo.language,
-		isPrivate: repo.private,
-		stars: repo.stargazers_count,
+export type GitHubInstallation = {
+	id: number;
+	account: {
+		login: string;
+		avatarUrl: string;
 	};
-}
+};
 
-export async function loadGitHubRepositories({
-	auth = authClient,
-	fetchRepos = fetch,
-}: GitHubRepositoryLoaderOptions): Promise<GitHubRepo[]> {
-	// const linkResult = (await auth.linkSocial({
-	// 	provider: "github",
-	// 	scopes: ["repo"],
-	// 	disableRedirect: true,
-	// 	callbackURL: "/auth/github-link-complete",
-	// })) as LinkSocialResult;
+export type GitHubImportState = {
+	installations: GitHubInstallation[];
+	repositories: GitHubRepo[];
+	installUrl: string;
+};
 
-	// if (linkResult.error) {
-	// 	throw new Error(
-	// 		linkResult.error.message || "Unable to request GitHub access.",
-	// 	);
-	// }
+export async function getGitHubImportState({
+	accessToken,
+	installUrl,
+}: {
+	accessToken: string;
+	installUrl: string;
+}): Promise<GitHubImportState> {
+	const octokit = new Octokit({ auth: accessToken });
 
-	// if (!linkResult.data?.url) {
-	// 	throw new Error("GitHub authorization URL was not returned.");
-	// }
+	const installationsResponse =
+		await octokit.rest.apps.listInstallationsForAuthenticatedUser();
+	const installations = installationsResponse.data.installations;
 
-	const tokenResult = (await auth.getAccessToken({
-		providerId: "github",
-	})) as AccessTokenResult;
+	const repositories: GitHubRepo[] = [];
 
-	if (tokenResult.error) {
-		throw new Error(
-			tokenResult.error.message || "Unable to get GitHub access token.",
-		);
+	for (const inst of installations) {
+		try {
+			const reposResponse =
+				await octokit.rest.apps.listInstallationReposForAuthenticatedUser({
+					installation_id: inst.id,
+				});
+			for (const repo of reposResponse.data.repositories) {
+				repositories.push({
+					id: repo.id,
+					name: repo.full_name,
+					owner: repo.owner.login,
+					repoName: repo.name,
+					language: repo.language || null,
+					isPrivate: repo.private,
+					stars: repo.stargazers_count,
+					installationId: inst.id,
+				});
+			}
+		} catch (err) {
+			console.error(`Failed to list repos for installation ${inst.id}:`, err);
+		}
 	}
 
-	const accessToken = tokenResult.accessToken ?? tokenResult.data?.accessToken;
-	if (!accessToken) {
-		throw new Error("GitHub access token was not returned.");
-	}
-
-	const response = await fetchRepos(GITHUB_REPOSITORIES_URL, {
-		headers: {
-			Accept: "application/vnd.github+json",
-			Authorization: `Bearer ${accessToken}`,
-			"X-GitHub-Api-Version": "2022-11-28",
-		},
-	});
-
-	if (!response.ok) {
-		throw new Error(`GitHub API request failed (${response.status}).`);
-	}
-
-	const repos = (await response.json()) as GitHubApiRepo[];
-	return repos.map(toGitHubRepo);
+	return {
+		installations: installations.map((i) => {
+			const login = i.account && "login" in i.account ? i.account.login : "";
+			const avatarUrl = i.account && "avatar_url" in i.account ? i.account.avatar_url : "";
+			return {
+				id: i.id,
+				account: {
+					login: login || "",
+					avatarUrl: avatarUrl || "",
+				},
+			};
+		}),
+		repositories,
+		installUrl,
+	};
 }

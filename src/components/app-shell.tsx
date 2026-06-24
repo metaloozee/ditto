@@ -4,7 +4,7 @@ import { TooltipProvider } from "#/components/ui/tooltip";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
 	return (
-		<TooltipProvider delayDuration={300}>
+		<TooltipProvider delay={300}>
 			<SidebarProvider>
 				<AppSidebar />
 				<SidebarInset>{children}</SidebarInset>

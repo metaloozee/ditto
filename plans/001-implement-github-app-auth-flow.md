@@ -2,7 +2,7 @@
 
 > **Executor instructions**: Follow this plan step by step. Run every verification command and confirm the expected result before moving to the next step. If anything in the "STOP conditions" section occurs, stop and report — do not improvise. When done, update the status row for this plan in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat bcd434a..HEAD -- src/env.ts src/components/new-project-dialog.tsx alchemy.run.ts`
+> **Drift check (run first)**: `git diff --stat bcd434a..HEAD -- src/env.ts src/components/new-project-dialog.tsx alchemy.run.ts src/lib/github-repositories.ts`
 > If any in-scope file changed since this plan was written, compare the "Current state" excerpts against the live code before proceeding; on a mismatch, treat it as a STOP condition.
 
 ## Status
@@ -12,13 +12,13 @@
 - **Risk**: MED
 - **Depends on**: none
 - **Category**: feature
-- **Planned at**: commit `bcd434a`, 2026-06-23
+- **Planned at**: commit `bcd434a`, 2026-06-24
 
 ## Why this matters
 
 The previous client-side GitHub OAuth flow requested broad `repo` permissions to all user repositories. Moving to a server-side **GitHub App** flow allows users to grant access to specific repositories, satisfying the principle of least privilege. Furthermore, retrieving installation access tokens on the server keeps secrets secure and lets the backend clone repositories directly inside the sandbox containers.
 
-This plan configures the GitHub App authentication secrets, updates the tRPC router, adds branch selection directly inside the repository selection view, and sets bot commit credentials.
+Using the official `octokit` SDK simplifies this architecture dramatically. Rather than writing manual JWT signers (e.g. using `jose`), handling cryptographic key parsing in Cloudflare Workers, and writing custom token exchange endpoints, we can use the `App` class from `octokit` which provides native, Web Crypto-based signing and high-level REST methods for managing installation credentials and querying repositories/branches.
 
 ## Current State
 
@@ -68,6 +68,11 @@ export const website = await TanStackStart("website", {
 )}
 ```
 
+- `src/lib/github-repositories.ts` currently fetches user repositories via raw fetch:
+```ts
+export async function loadGitHubRepositories(...) { ... }
+```
+
 ---
 
 ## Scope
@@ -75,7 +80,8 @@ export const website = await TanStackStart("website", {
 **In scope**:
 - `src/env.ts`
 - `alchemy.run.ts`
-- `src/lib/github-app-auth.ts` (create)
+- `src/lib/github-app.ts` (create)
+- `src/lib/github-repositories.ts`
 - `src/integrations/trpc/router.ts`
 - `src/routes/auth/github-app-install-complete.tsx` (create)
 - `src/components/new-project-dialog.tsx`
@@ -127,44 +133,31 @@ export const website = await TanStackStart("website", {
 
 ---
 
-### Task 2: Server-Side GitHub App Token Helper
+### Task 2: Server-Side GitHub App Helper
 
-- [ ] **Step 1: Create token helper module**
-  Create [src/lib/github-app-auth.ts](file:///d:/dev/ditto/src/lib/github-app-auth.ts) with jose-based JWT generation and token exchange:
+- [ ] **Step 1: Create GitHub App helper module**
+  Create [src/lib/github-app.ts](file:///d:/dev/ditto/src/lib/github-app.ts) using the official `App` class from `octokit`:
   ```ts
-  import { SignJWT, importPKCS8 } from "jose";
+  import { App } from "octokit";
 
-  async function generateGitHubAppJwt(appId: string, privateKeyPem: string): Promise<string> {
+  export function getGitHubApp(env: Env) {
   	// Normalize PEM newlines if passed in one-line format
-  	const pem = privateKeyPem.replace(/\\n/g, "\n");
-  	const privateKey = await importPKCS8(pem, "RS256");
-  	return new SignJWT({})
-  		.setProtectedHeader({ alg: "RS256" })
-  		.setIssuedAt()
-  		.setIssuer(appId)
-  		.setExpirationTime("10m")
-  		.sign(privateKey);
+  	const privateKey = env.GITHUB_APP_PRIVATE_KEY.replace(/\\n/g, "\n");
+  	return new App({
+  		appId: env.GITHUB_APP_ID,
+  		privateKey,
+  	});
   }
 
   export async function getInstallationAccessToken(
-  	appId: string,
-  	privateKeyPem: string,
+  	env: Env,
   	installationId: number
   ): Promise<string> {
-  	const jwt = await generateGitHubAppJwt(appId, privateKeyPem);
-  	const res = await fetch(`https://api.github.com/app/installations/${installationId}/access_tokens`, {
-  		method: "POST",
-  		headers: {
-  			Accept: "application/vnd.github+json",
-  			Authorization: `Bearer ${jwt}`,
-  			"X-GitHub-Api-Version": "2022-11-28",
-  		},
+  	const app = getGitHubApp(env);
+  	const { token } = await app.getInstallationAccessToken({
+  		installationId,
   	});
-  	if (!res.ok) {
-  		throw new Error(`Failed to generate installation access token: ${res.statusText}`);
-  	}
-  	const data = (await res.json()) as { token: string };
-  	return data.token;
+  	return token;
   }
   ```
 
@@ -172,15 +165,81 @@ export const website = await TanStackStart("website", {
 
 ---
 
-### Task 3: Expose tRPC Queries for Installations & Branches
+### Task 3: Expose tRPC Queries for Installations, Repositories, & Branches
 
-- [ ] **Step 1: Add endpoints in tRPC Router**
-  In [src/integrations/trpc/router.ts](file:///d:/dev/ditto/src/integrations/trpc/router.ts), import the helpers and create the `github` sub-router:
+- [ ] **Step 1: Update repository loader to support App-installed repositories**
+  In [src/lib/github-repositories.ts](file:///d:/dev/ditto/src/lib/github-repositories.ts), implement `getGitHubImportState` using the authenticated user's access token:
+  ```ts
+  import { Octokit } from "octokit";
+
+  export async function getGitHubImportState({
+  	accessToken,
+  	installUrl,
+  }: {
+  	accessToken: string;
+  	installUrl: string;
+  }) {
+  	const octokit = new Octokit({ auth: accessToken });
+
+  	// Get all installations the user has access to
+  	const installationsResponse = await octokit.rest.apps.listInstallationsForAuthenticatedUser();
+  	const installations = installationsResponse.data.installations;
+
+  	const repositories: Array<{
+  		id: number;
+  		name: string;
+  		owner: string;
+  		repoName: string;
+  		language: string | null;
+  		isPrivate: boolean;
+  		stars: number;
+  		installationId: number;
+  	}> = [];
+
+  	// Load repositories across all installations
+  	for (const inst of installations) {
+  		try {
+  			const reposResponse = await octokit.rest.apps.listInstallationReposForAuthenticatedUser({
+  				installation_id: inst.id,
+  			});
+  			for (const repo of reposResponse.data.repositories) {
+  				repositories.push({
+  					id: repo.id,
+  					name: repo.full_name,
+  					owner: repo.owner.login,
+  					repoName: repo.name,
+  					language: repo.language || null,
+  					isPrivate: repo.private,
+  					stars: repo.stargazers_count,
+  					installationId: inst.id,
+  				});
+  			}
+  		} catch (err) {
+  			console.error(`Failed to list repos for installation ${inst.id}:`, err);
+  		}
+  	}
+
+  	return {
+  		installations: installations.map((i) => ({
+  			id: i.id,
+  			account: {
+  				login: i.account?.login || "",
+  				avatarUrl: i.account?.avatar_url || "",
+  			},
+  		})),
+  		repositories,
+  		installUrl,
+  	};
+  }
+  ```
+
+- [ ] **Step 2: Add endpoints in tRPC Router**
+  In [src/integrations/trpc/router.ts](file:///d:/dev/ditto/src/integrations/trpc/router.ts), import the helper modules and create the `github` sub-router:
   ```ts
   import { TRPCError, type TRPCRouterRecord } from "@trpc/server";
   import { z } from "zod";
   import { getGitHubImportState } from "#/lib/github-repositories";
-  import { getInstallationAccessToken } from "#/lib/github-app-auth";
+  import { getGitHubApp } from "#/lib/github-app";
 
   const githubRouter = {
   	importState: protectedProcedure.query(async ({ ctx }) => {
@@ -209,24 +268,14 @@ export const website = await TanStackStart("website", {
   		)
   		.query(async ({ ctx, input }) => {
   			try {
-  				const token = await getInstallationAccessToken(
-  					ctx.env.GITHUB_APP_ID,
-  					ctx.env.GITHUB_APP_PRIVATE_KEY,
-  					input.installationId
-  				);
-  				const res = await fetch(
-  					`https://api.github.com/repos/${input.owner}/${input.repo}/branches?per_page=100`,
-  					{
-  						headers: {
-  							Accept: "application/vnd.github+json",
-  							Authorization: `Bearer ${token}`,
-  							"X-GitHub-Api-Version": "2022-11-28",
-  						},
-  					}
-  				);
-  				if (!res.ok) throw new Error(`GitHub API returned status ${res.status}`);
-  				const branches = (await res.json()) as Array<{ name: string }>;
-  				return branches.map((b) => b.name);
+  				const app = getGitHubApp(ctx.env);
+  				const octokit = await app.getInstallationOctokit(input.installationId);
+  				const response = await octokit.rest.repos.listBranches({
+  					owner: input.owner,
+  					repo: input.repo,
+  					per_page: 100,
+  				});
+  				return response.data.map((b) => b.name);
   			} catch (err) {
   				throw new TRPCError({
   					code: "BAD_GATEWAY",
@@ -270,6 +319,8 @@ export const website = await TanStackStart("website", {
 
 - [ ] **Step 2: Add branch state and selection to the dialog**
   In [src/components/new-project-dialog.tsx](file:///d:/dev/ditto/src/components/new-project-dialog.tsx):
+  - Integrate a query or call to `github.importState` to load installations and repositories.
+  - Implement a popup window workflow targeting `VITE_GITHUB_APP_INSTALL_URL` if they choose to install or configure the GitHub App.
   - Add state variables for `selectedBranch` (string | null), `branches` (string[]), and `branchesLoading` (boolean).
   - When `selectedRepo` changes, call the `github.listBranches` query using the repository owner/repo name and `installationId` from the state. Set the default branch once loaded.
   - Render the branch selection dropdown directly inside the repository selection view (below the selected repository banner), allowing the user to select their target branch before proceeding to the final step:
@@ -297,10 +348,9 @@ export const website = await TanStackStart("website", {
   	</div>
   )}
   ```
-  - Define Git author configuration for the sandbox to use bot attribution: `Ditto Agent <agent@ditto.dev>`.
 
 - [ ] **Step 3: Wire the installation complete message listener**
-  Add a message listener to update the import state when the popup resolves with `github-app-install-complete`.
+  Add a message listener to reload/refetch the import state when the popup resolves and sends a message with type `github-app-install-complete`.
 
 **Verify**: Build compiles and routes regenerate.
 
@@ -309,5 +359,5 @@ export const website = await TanStackStart("website", {
 ## STOP Conditions
 
 Stop and report back if:
-- Jose library cannot be imported in the Cloudflare Worker scope.
-- Cloudflare environment lacks Cryptographic APIs needed by `jose`.
+- Cloudflare environment lacks Cryptographic APIs needed by `octokit`.
+- Octokit encounters bundler compatibility issues or polyfill errors when running within the Cloudflare Worker scope.

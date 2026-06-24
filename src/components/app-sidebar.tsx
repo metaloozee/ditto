@@ -36,6 +36,7 @@ import {
 	SidebarTrigger,
 	useSidebar,
 } from "#/components/ui/sidebar";
+import { authClient } from "#/lib/auth-client";
 import { cn } from "#/lib/utils";
 import { Button } from "./ui/button";
 
@@ -195,6 +196,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 	const { state } = useSidebar();
 	const [newProjectOpen, setNewProjectOpen] = useState(false);
 	const [searchOpen, setSearchOpen] = useState(false);
+	const { data: session, isPending } = authClient.useSession();
 
 	return (
 		<>
@@ -212,6 +214,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 										<Button
 											className="cursor-pointer"
 											variant="outline"
+											disabled={isPending || !session}
 											onClick={() => setNewProjectOpen(true)}
 										>
 											<PlusIcon />

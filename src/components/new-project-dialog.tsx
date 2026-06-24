@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import {
 	ArrowLeftIcon,
 	ArrowRightIcon,
@@ -44,10 +45,9 @@ import { ScrollArea } from "#/components/ui/scroll-area";
 import { Separator } from "#/components/ui/separator";
 import { Textarea } from "#/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "#/components/ui/toggle-group";
-import {
-	type GitHubRepo,
-	loadGitHubRepositories,
-} from "#/lib/github-repositories";
+import { useTRPC } from "#/integrations/trpc/react";
+import { authClient } from "#/lib/auth-client";
+import type { GitHubRepo } from "#/lib/github-repositories";
 import { cn } from "#/lib/utils";
 
 const LANGUAGE_COLORS: Record<string, string> = {
@@ -56,8 +56,6 @@ const LANGUAGE_COLORS: Record<string, string> = {
 	Go: "bg-chart-2",
 	MDX: "bg-chart-5",
 };
-
-const GITHUB_AUTH_TIMEOUT_MS = 2 * 60 * 1000;
 
 type OnboardingPath = "github" | "scratch" | null;
 type Step = "choice" | "github" | "scratch" | "ready";
@@ -68,41 +66,6 @@ interface EnvVar {
 	value: string;
 }
 
-function _waitForGithubLinkComplete(authWindow: Window): Promise<void> {
-	return new Promise((resolve, reject) => {
-		let intervalId: number | undefined;
-		let timeoutId: number | undefined;
-
-		const cleanup = () => {
-			if (intervalId !== undefined) window.clearInterval(intervalId);
-			if (timeoutId !== undefined) window.clearTimeout(timeoutId);
-			window.removeEventListener("message", handleMessage);
-		};
-
-		const finish = () => {
-			cleanup();
-			resolve();
-		};
-
-		const fail = () => {
-			cleanup();
-			reject(new Error("GitHub authorization timed out. Please try again."));
-		};
-
-		const handleMessage = (event: MessageEvent) => {
-			if (event.origin !== window.location.origin) return;
-			if (event.data?.type !== "github-link-complete") return;
-			finish();
-		};
-
-		window.addEventListener("message", handleMessage);
-		intervalId = window.setInterval(() => {
-			if (authWindow.closed) finish();
-		}, 500);
-		timeoutId = window.setTimeout(fail, GITHUB_AUTH_TIMEOUT_MS);
-	});
-}
-
 export function NewProjectDialog({
 	open,
 	onOpenChange,
@@ -110,13 +73,11 @@ export function NewProjectDialog({
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 }) {
+	
 	const [path, setPath] = useState<OnboardingPath>(null);
 	const [step, setStep] = useState<Step>("choice");
 
 	const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
-	const [githubRepos, setGithubRepos] = useState<GitHubRepo[]>([]);
-	const [githubLoading, setGithubLoading] = useState(false);
-	const [githubError, setGithubError] = useState<string | null>(null);
 	const [envVars, setEnvVars] = useState<EnvVar[]>([]);
 
 	const [projectName, setProjectName] = useState("");
@@ -124,13 +85,27 @@ export function NewProjectDialog({
 	const [projectOverview, setProjectOverview] = useState("");
 	const [framework, setFramework] = useState("");
 
+	const trpc = useTRPC();
+
+	// Load import state
+	const importStateQuery = useQuery(
+		trpc.github.importState.queryOptions(undefined, {
+			enabled: open && step === "github",
+			refetchOnWindowFocus: false,
+			staleTime: 5 * 60 * 1000,
+		}),
+	);
+
+	const githubLoading = importStateQuery.isLoading || importStateQuery.isFetching;
+	const githubError = importStateQuery.error ? importStateQuery.error.message : null;
+	const githubRepos = importStateQuery.data?.repositories ?? [];
+	const installations = importStateQuery.data?.installations ?? [];
+	const installUrl = importStateQuery.data?.installUrl;
+
 	const resetState = useCallback(() => {
 		setPath(null);
 		setStep("choice");
 		setSelectedRepo(null);
-		setGithubRepos([]);
-		setGithubLoading(false);
-		setGithubError(null);
 		setEnvVars([]);
 		setProjectName("");
 		setProjectDescription("");
@@ -143,36 +118,12 @@ export function NewProjectDialog({
 		setTimeout(resetState, 200);
 	}, [onOpenChange, resetState]);
 
-	const loadGithubRepos = useCallback(async () => {
-		setGithubLoading(true);
-		setGithubError(null);
-		setSelectedRepo(null);
-
-		try {
-			const repos = await loadGitHubRepositories({});
-			setGithubRepos(repos);
-		} catch (error) {
-			setGithubError(
-				error instanceof Error
-					? error.message
-					: "Unable to load GitHub repositories.",
-			);
-			setGithubRepos([]);
-		} finally {
-			setGithubLoading(false);
-		}
-	}, []);
-
 	const handleChoosePath = useCallback(
 		(chosen: OnboardingPath) => {
 			setPath(chosen);
 			setStep(chosen === "github" ? "github" : "scratch");
-
-			if (chosen === "github") {
-				void loadGithubRepos();
-			}
 		},
-		[loadGithubRepos],
+		[],
 	);
 
 	const handleBack = useCallback(() => {
@@ -191,6 +142,44 @@ export function NewProjectDialog({
 			handleClose();
 		}
 	}, [step, handleClose]);
+
+	const handleConfigureGithub = useCallback(() => {
+		if (!installUrl) return;
+
+		const width = 600;
+		const height = 750;
+		const left = window.screen.width / 2 - width / 2;
+		const top = window.screen.height / 2 - height / 2;
+
+		const popup = window.open(
+			installUrl,
+			"github-app-install",
+			`width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`,
+		);
+
+		if (!popup) {
+			alert("Popup blocker enabled. Please allow popups to connect GitHub.");
+			return;
+		}
+
+		const handleMessage = (event: MessageEvent) => {
+			if (event.origin !== window.location.origin) return;
+			if (event.data?.type === "github-app-install-complete") {
+				window.removeEventListener("message", handleMessage);
+				void importStateQuery.refetch();
+			}
+		};
+
+		window.addEventListener("message", handleMessage);
+
+		const interval = window.setInterval(() => {
+			if (popup.closed) {
+				window.clearInterval(interval);
+				window.removeEventListener("message", handleMessage);
+				void importStateQuery.refetch();
+			}
+		}, 1000);
+	}, [installUrl, importStateQuery]);
 
 	const addEnvVar = useCallback(() => {
 		setEnvVars((prev) => [
@@ -303,70 +292,100 @@ export function NewProjectDialog({
 							</DialogDescription>
 						</DialogHeader>
 
-						<Command className="rounded-lg border border-border">
-							<CommandInput placeholder="Search repositories…" />
-							<CommandList>
-								{githubLoading ? (
-									<CommandEmpty>Loading repositories...</CommandEmpty>
-								) : githubError ? (
-									<CommandEmpty>{githubError}</CommandEmpty>
-								) : githubRepos.length === 0 ? (
-									<CommandEmpty>No repositories found.</CommandEmpty>
-								) : (
-									<CommandGroup heading="Your repositories">
-										{githubRepos.map((repo) => (
-											<CommandItem
-												key={repo.name}
-												value={repo.name}
-												onSelect={() => setSelectedRepo(repo.name)}
-												className={cn(
-													"flex items-center gap-3 cursor-pointer",
-													selectedRepo === repo.name && "bg-accent",
-												)}
-											>
-												<BookIcon
-													aria-hidden="true"
-													className="size-4 shrink-0 text-muted-foreground"
-												/>
-												<div className="flex min-w-0 flex-1 items-center gap-2">
-													<span className="truncate text-sm font-medium">
-														{repo.name}
-													</span>
-													{repo.isPrivate ? (
-														<LockIcon
+						{installations.length === 0 && !githubLoading && !githubError ? (
+							<div className="flex flex-col items-center justify-center gap-4 py-8 text-center border border-dashed border-border rounded-lg bg-muted/20">
+								<GithubIcon className="size-10 text-muted-foreground" />
+								<div className="space-y-1 px-4">
+									<h3 className="text-sm font-medium">Install GitHub App</h3>
+									<p className="text-xs text-muted-foreground max-w-xs">
+										To import your repositories, you need to install the Ditto GitHub App on your personal account or organization.
+									</p>
+								</div>
+								<Button onClick={handleConfigureGithub} size="sm" className="cursor-pointer">
+									Install GitHub App
+								</Button>
+							</div>
+						) : (
+							<>
+								<Command className="rounded-lg border border-border">
+									<CommandInput placeholder="Search repositories…" />
+									<CommandList>
+										{githubLoading ? (
+											<CommandEmpty>Loading repositories...</CommandEmpty>
+										) : githubError ? (
+											<CommandEmpty>{githubError}</CommandEmpty>
+										) : githubRepos.length === 0 ? (
+											<CommandEmpty>No repositories found.</CommandEmpty>
+										) : (
+											<CommandGroup heading="Your repositories">
+												{githubRepos.map((repo: GitHubRepo) => (
+													<CommandItem
+														key={repo.name}
+														value={repo.name}
+														onSelect={() => setSelectedRepo(repo.name)}
+														className={cn(
+															"flex items-center gap-3 cursor-pointer",
+															selectedRepo === repo.name && "bg-accent",
+														)}
+													>
+														<BookIcon
 															aria-hidden="true"
-															className="size-3 shrink-0 text-muted-foreground"
+															className="size-4 shrink-0 text-muted-foreground"
 														/>
-													) : (
-														<GlobeIcon
-															aria-hidden="true"
-															className="size-3 shrink-0 text-muted-foreground"
-														/>
-													)}
-												</div>
-												<div className="flex items-center gap-2">
-													<div className="flex items-center gap-1.5">
-														<span
-															className={cn(
-																"size-2.5 rounded-full",
-																repo.language
-																	? (LANGUAGE_COLORS[repo.language] ??
-																			"bg-muted-foreground")
-																	: "bg-muted-foreground",
+														<div className="flex min-w-0 flex-1 items-center gap-2">
+															<span className="truncate text-sm font-medium">
+																{repo.name}
+															</span>
+															{repo.isPrivate ? (
+																<LockIcon
+																	aria-hidden="true"
+																	className="size-3 shrink-0 text-muted-foreground"
+																/>
+															) : (
+																<GlobeIcon
+																	aria-hidden="true"
+																	className="size-3 shrink-0 text-muted-foreground"
+																/>
 															)}
-															aria-hidden="true"
-														/>
-														<span className="text-xs text-muted-foreground">
-															{repo.language ?? "Unknown"}
-														</span>
-													</div>
-												</div>
-											</CommandItem>
-										))}
-									</CommandGroup>
+														</div>
+														<div className="flex items-center gap-2">
+															<div className="flex items-center gap-1.5">
+																<span
+																	className={cn(
+																		"size-2.5 rounded-full",
+																		repo.language
+																			? (LANGUAGE_COLORS[repo.language] ??
+																					"bg-muted-foreground")
+																			: "bg-muted-foreground",
+																	)}
+																	aria-hidden="true"
+																/>
+																<span className="text-xs text-muted-foreground">
+																	{repo.language ?? "Unknown"}
+																</span>
+															</div>
+														</div>
+													</CommandItem>
+												))}
+											</CommandGroup>
+										)}
+									</CommandList>
+								</Command>
+
+								{installations.length > 0 && (
+									<div className="flex items-center justify-between px-1 text-xs text-muted-foreground">
+										<span>Can't find your repository?</span>
+										<button
+											type="button"
+											onClick={handleConfigureGithub}
+											className="text-primary hover:underline font-medium cursor-pointer"
+										>
+											Configure GitHub Access
+										</button>
+									</div>
 								)}
-							</CommandList>
-						</Command>
+							</>
+						)}
 
 						{selectedRepo && (
 							<div className="flex items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-2">
@@ -585,7 +604,10 @@ function ReadyStep({
 			<ScrollArea className="max-h-[60vh]">
 				<div className="flex flex-col gap-4 pr-3">
 					{path === "github" ? (
-						<GitHubSummary repo={selectedRepo} repos={githubRepos} />
+						<GitHubSummary
+							repo={selectedRepo}
+							repos={githubRepos}
+						/>
 					) : (
 						<ScratchSummary
 							name={projectName}

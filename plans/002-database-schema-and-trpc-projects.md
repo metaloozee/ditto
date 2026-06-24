@@ -12,7 +12,7 @@
 - **Risk**: LOW
 - **Depends on**: plans/001-implement-github-app-auth-flow.md
 - **Category**: feature
-- **Planned at**: commit `bcd434a`, 2026-06-23
+- **Planned at**: commit `bcd434a`, 2026-06-24
 
 ## Why this matters
 

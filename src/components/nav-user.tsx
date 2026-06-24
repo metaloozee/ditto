@@ -21,6 +21,7 @@ import {
 	useSidebar,
 } from "#/components/ui/sidebar";
 import { authClient } from "#/lib/auth-client";
+import { Button } from "./ui/button";
 
 function getInitials(name?: string | null, email?: string | null) {
 	const source = name || email || "User";
@@ -140,9 +141,12 @@ export function NavUser() {
 						</DropdownMenuItem>
 						<DropdownMenuSeparator />
 						<DropdownMenuItem
-							onSelect={() => {
+							role="button"
+							onClick={() => {
 								void authClient.signOut();
+								window.location.reload();
 							}}
+							variant="destructive"
 						>
 							<LogOutIcon />
 							Log out

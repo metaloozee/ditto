@@ -11,9 +11,9 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AuthGithubLinkCompleteRouteImport } from './routes/auth/github-link-complete'
+import { Route as AuthCompletedRouteImport } from './routes/auth.completed'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
-import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiAuthSplatRouteImport } from './routes/api.auth.$'
 
 const SignInRoute = SignInRouteImport.update({
   id: '/sign-in',
@@ -25,9 +25,9 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthGithubLinkCompleteRoute = AuthGithubLinkCompleteRouteImport.update({
-  id: '/auth/github-link-complete',
-  path: '/auth/github-link-complete',
+const AuthCompletedRoute = AuthCompletedRouteImport.update({
+  id: '/auth/completed',
+  path: '/auth/completed',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiTrpcSplatRoute = ApiTrpcSplatRouteImport.update({
@@ -44,14 +44,14 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
-  '/auth/github-link-complete': typeof AuthGithubLinkCompleteRoute
+  '/auth/completed': typeof AuthCompletedRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
-  '/auth/github-link-complete': typeof AuthGithubLinkCompleteRoute
+  '/auth/completed': typeof AuthCompletedRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
 }
@@ -59,7 +59,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
-  '/auth/github-link-complete': typeof AuthGithubLinkCompleteRoute
+  '/auth/completed': typeof AuthCompletedRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
 }
@@ -68,21 +68,16 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/sign-in'
-    | '/auth/github-link-complete'
+    | '/auth/completed'
     | '/api/auth/$'
     | '/api/trpc/$'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/sign-in'
-    | '/auth/github-link-complete'
-    | '/api/auth/$'
-    | '/api/trpc/$'
+  to: '/' | '/sign-in' | '/auth/completed' | '/api/auth/$' | '/api/trpc/$'
   id:
     | '__root__'
     | '/'
     | '/sign-in'
-    | '/auth/github-link-complete'
+    | '/auth/completed'
     | '/api/auth/$'
     | '/api/trpc/$'
   fileRoutesById: FileRoutesById
@@ -90,7 +85,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SignInRoute: typeof SignInRoute
-  AuthGithubLinkCompleteRoute: typeof AuthGithubLinkCompleteRoute
+  AuthCompletedRoute: typeof AuthCompletedRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
 }
@@ -111,11 +106,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/auth/github-link-complete': {
-      id: '/auth/github-link-complete'
-      path: '/auth/github-link-complete'
-      fullPath: '/auth/github-link-complete'
-      preLoaderRoute: typeof AuthGithubLinkCompleteRouteImport
+    '/auth/completed': {
+      id: '/auth/completed'
+      path: '/auth/completed'
+      fullPath: '/auth/completed'
+      preLoaderRoute: typeof AuthCompletedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/trpc/$': {
@@ -138,7 +133,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SignInRoute: SignInRoute,
-  AuthGithubLinkCompleteRoute: AuthGithubLinkCompleteRoute,
+  AuthCompletedRoute: AuthCompletedRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
 }

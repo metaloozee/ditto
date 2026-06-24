@@ -12,13 +12,13 @@
 - **Risk**: HIGH
 - **Depends on**: plans/001-implement-github-app-auth-flow.md, plans/002-database-schema-and-trpc-projects.md
 - **Category**: feature
-- **Planned at**: commit `bcd434a`, 2026-06-23
+- **Planned at**: commit `bcd434a`, 2026-06-24
 
 ## Why this matters
 
 To provide an AI coding agent with a workspace, each project must have an isolated, secure execution environment. This plan integrates the **Cloudflare Sandbox SDK**, configures container bindings, and implements the server-side bootstrap flow that clones repositories using scoped installation tokens and installs dependencies.
 
-To prevent dataloss when containers hibernate (auto-stopped after 10 minutes of inactivity), the plan implements an hibernation handler that pushes uncommitted file modifications to a draft branch (`ditto/draft-workspace`) and pulls from it on wake-up.
+Using the official `octokit` integration, the server can inspect the remote repository directly before running container tasks. For example, to prevent dataloss when containers hibernate (auto-stopped after 10 minutes of inactivity), the plan implements an hibernation handler that pushes uncommitted file modifications to a draft branch (`ditto/draft-workspace`) and pulls from it on wake-up. By checking the remote branch with `octokit` instead of executing slow shell commands like `git ls-remote` inside the container, we increase reliability and decrease boot times.
 
 ---
 
@@ -142,7 +142,7 @@ export const website = await TanStackStart("website", {
   Create [src/lib/sandbox-bootstrap.ts](file:///d:/dev/ditto/src/lib/sandbox-bootstrap.ts):
   ```typescript
   import { getSandbox } from "@cloudflare/sandbox";
-  import { getInstallationAccessToken } from "./github-app-auth";
+  import { getGitHubApp, getInstallationAccessToken } from "./github-app";
 
   interface BootstrapOptions {
   	env: Env;
@@ -161,12 +161,10 @@ export const website = await TanStackStart("website", {
   	branch,
   	envVars,
   }: BootstrapOptions): Promise<string> {
-  	// 1. Get installation token
-  	const token = await getInstallationAccessToken(
-  		env.GITHUB_APP_ID,
-  		env.GITHUB_APP_PRIVATE_KEY,
-  		installationId
-  	);
+  	// 1. Get installation token and app client
+  	const token = await getInstallationAccessToken(env, installationId);
+  	const app = getGitHubApp(env);
+  	const octokit = await app.getInstallationOctokit(installationId);
 
   	// 2. Initialize/Get container instance
   	const sandbox = getSandbox(env.Sandbox, projectId);
@@ -179,14 +177,21 @@ export const website = await TanStackStart("website", {
   		await sandbox.exec(`git config --global user.name "Ditto Agent"`);
   		await sandbox.exec(`git config --global user.email "agent@ditto.dev"`);
 
-  		// 3. Clone repository (checking if a draft workspace branch already exists)
-  		const checkDraftRes = await sandbox.exec(
-  			`git ls-remote --heads https://x-access-token:${token}@github.com/${githubRepo}.git ditto/draft-workspace`
-  		);
-  		const targetBranch = checkDraftRes.stdout.includes("ditto/draft-workspace")
-  			? "ditto/draft-workspace"
-  			: branch;
+  		// 3. Check if draft workspace branch exists on remote using Octokit
+  		let targetBranch = branch;
+  		const [owner, repo] = githubRepo.split("/");
+  		try {
+  			await octokit.rest.repos.getBranch({
+  				owner,
+  				repo,
+  				branch: "ditto/draft-workspace",
+  			});
+  			targetBranch = "ditto/draft-workspace";
+  		} catch {
+  			// Branch does not exist, use default/selected branch
+  		}
 
+  		// Clone repository
   		const cloneRes = await sandbox.exec(
   			`git clone --branch ${targetBranch} --depth 1 https://x-access-token:${token}@github.com/${githubRepo}.git /workspace`
   		);
@@ -219,7 +224,7 @@ export const website = await TanStackStart("website", {
   // 6. Hibernation Handler (invoked on container inactivity or shutdown)
   export async function hibernateSandbox(env: Env, projectId: string, githubRepo: string, installationId: number) {
   	const sandbox = getSandbox(env.Sandbox, projectId);
-  	const token = await getInstallationAccessToken(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY, installationId);
+  	const token = await getInstallationAccessToken(env, installationId);
 
   	// Re-inject token to perform git push
   	await sandbox.exec(`git -C /workspace config remote.origin.url "https://x-access-token:${token}@github.com/${githubRepo}.git"`);
@@ -298,5 +303,5 @@ export const website = await TanStackStart("website", {
 ## STOP Conditions
 
 Stop and report back if:
-- Local Docker environment fails to boot container images.
 - Cloudflare Workers limits memory/CPU and causes timeout error during `pnpm install`.
+- Sandbox container fails to authenticate with the provided `x-access-token` token during git push or git clone.
