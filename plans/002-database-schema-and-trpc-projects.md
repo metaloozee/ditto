@@ -1,8 +1,8 @@
 # Plan 002: Database Schema and tRPC Projects
 
-> **Executor instructions**: Follow this plan step by step. Run every verification command and confirm the expected result before moving to the next step. If anything in the "STOP conditions" section occurs, stop and report — do not improvise. When done, update the status row for this plan in `plans/README.md`.
+> **Executor instructions**: Follow this plan step by step. Run every verification command and confirm the expected result before moving to the next step. If anything in the "STOP conditions" section occurs, stop and report - do not improvise. When done, update the status row for this plan in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat bcd434a..HEAD -- src/db/schema.ts src/integrations/trpc/router.ts`
+> **Drift check (run first)**: `git diff --stat 150dc21..HEAD -- src/db/schema.ts src/integrations/trpc/router.ts src/lib/crypto.ts migrations`
 > If any in-scope file changed since this plan was written, compare the "Current state" excerpts against the live code before proceeding; on a mismatch, treat it as a STOP condition.
 
 ## Status
@@ -10,248 +10,381 @@
 - **Priority**: P1
 - **Effort**: S
 - **Risk**: LOW
-- **Depends on**: plans/001-implement-github-app-auth-flow.md
+- **Depends on**: none
 - **Category**: feature
-- **Planned at**: commit `bcd434a`, 2026-06-24
+- **Planned at**: commit `150dc21`, 2026-06-24
 
 ## Why this matters
 
-The onboarding dialog currently collects information (project name, description, git repository, selected branch, and environment variables) but discards it upon dialog closure. This plan adds a D1 SQLite database schema for persisting projects and exposes tRPC procedures to create and manage them, completing the persistence layer of project initialization.
+The onboarding dialog already collects project data for both the GitHub import path and the scratch path, but there is still no server-side persistence layer for projects. This plan adds the missing database table and a `projects` tRPC router so later plans can create records, list them, and attach sandbox lifecycle state to them.
 
-For security, user environment variables (such as API keys) must be encrypted at rest in the database using a symmetric encryption key derived from `BETTER_AUTH_SECRET`.
+Environment variables entered during onboarding are sensitive. They should be encrypted at rest before they are written to D1, using the app secret already present in the Worker environment. This plan only builds the persistence layer; wiring the dialog to call `projects.create` and starting sandbox bootstrapping stay out of scope.
 
-## Current State
+## Current state
 
-- `src/db/schema.ts` (existing user schema):
+- `src/db/schema.ts` currently defines app tables plus Better Auth tables. Custom app tables use `created_at` timestamps, while the Better Auth tables are already established and should not be rewritten:
+
 ```ts
+import { sql } from "drizzle-orm";
+import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+
+export const todos = sqliteTable("todos", {
+	id: integer({ mode: "number" }).primaryKey({
+		autoIncrement: true,
+	}),
+	title: text().notNull(),
+	createdAt: integer("created_at", { mode: "timestamp" }).default(
+		sql`(unixepoch())`,
+	),
+});
+
 export const user = sqliteTable("user", {
 	id: text("id").primaryKey(),
 	name: text("name").notNull(),
 	email: text("email").notNull().unique(),
-	emailVerified: integer("emailVerified", { mode: "boolean" })
-		.notNull()
-		.default(false),
-	image: text("image"),
-	createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
-	updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull(),
-});
 ```
 
-- `src/integrations/trpc/router.ts`:
+- `src/db/index.ts` is the existing database entrypoint. Match this pattern instead of creating a second DB helper:
+
 ```ts
-import type { TRPCRouterRecord } from "@trpc/server";
+import { drizzle } from "drizzle-orm/d1";
+
+import * as schema from "./schema";
+
+export function createDb(env: Pick<Env, "DB">) {
+	return drizzle(env.DB, { schema });
+}
+```
+
+- `src/integrations/trpc/router.ts` already contains both `health` and `github` routers. Extend this file without removing or rewriting the existing GitHub procedures:
+
+```ts
+import { TRPCError, type TRPCRouterRecord } from "@trpc/server";
+import { z } from "zod";
+import { getGitHubApp } from "#/lib/github-app";
+import { getGitHubImportState } from "#/lib/github-repositories";
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "./init";
 
-const healthRouter = {
-	public: publicProcedure.query(() => ({ ok: true, visibility: "public" as const })),
-	protected: protectedProcedure.query(({ ctx }) => ({ ok: true, visibility: "protected" as const, userId: ctx.user.id })),
+const githubRouter = {
+	importState: protectedProcedure.query(async ({ ctx }) => {
+		const installUrl = ctx.env.VITE_GITHUB_APP_INSTALL_URL;
+		// ...
+		return await getGitHubImportState({ accessToken, installUrl });
+	}),
+
+	listBranches: protectedProcedure
+		.input(
+			z.object({
+				owner: z.string(),
+				repo: z.string(),
+				installationId: z.number(),
+			}),
+		)
+		.query(async ({ ctx, input }) => {
+			// ...
+		}),
 } satisfies TRPCRouterRecord;
 
 export const trpcRouter = createTRPCRouter({
 	health: healthRouter,
+	github: githubRouter,
 });
-export type TRPCRouter = typeof trpcRouter;
 ```
 
----
+- `src/lib/github-repositories.ts` already exposes the GitHub installation id on each repository record. The current dialog does not persist that selection yet, but the backend schema should support it because later plans will need it:
+
+```ts
+export type GitHubRepo = {
+	id: number;
+	name: string;
+	owner: string;
+	repoName: string;
+	language: string | null;
+	isPrivate: boolean;
+	stars: number;
+	installationId: number;
+};
+```
+
+- `src/components/new-project-dialog.tsx` no longer captures a branch, and that is intentional. Do not add branch selection back in this plan. The current submit path still only advances or closes the dialog:
+
+```ts
+const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
+const [envVars, setEnvVars] = useState<EnvVar[]>([]);
+
+const handleContinue = useCallback(() => {
+	if (step === "github" || step === "scratch") {
+		setStep("ready");
+	} else if (step === "ready") {
+		handleClose();
+	}
+}, [step, handleClose]);
+```
+
+- `alchemy.run.ts` already configures D1 with Drizzle-compatible migration tracking. In this repo, Drizzle generates SQL into `migrations/`, and Alchemy applies those SQL files on the next deploy/update because `D1Database` is configured with both `migrationsDir` and `migrationsTable`:
+
+```ts
+const database = await D1Database("database", {
+	name: `${app.name}-${app.stage}-db`,
+	migrationsDir: "./migrations",
+	migrationsTable: "drizzle_migrations",
+})
+```
+
+Repo note from docs to follow here:
+
+- Cloudflare D1 documents `wrangler d1 migrations apply` for applying unapplied SQL migrations, but that is Wrangler's explicit apply flow.
+- Alchemy's `D1Database` docs state that when `migrationsDir` is configured, SQL files in that directory are applied automatically on the next resource update, and `migrationsTable` can be set to `drizzle_migrations` for Drizzle compatibility.
+- For this repo, the executor should generate SQL with `pnpm db:generate` and should **not** add `pnpm db:migrate` to the workflow for this plan.
+
+- Repo conventions to match:
+
+```ts
+import { createAuth } from "#/lib/auth";
+import * as schema from "#/db/schema";
+
+export function createAuth(env: Env) {
+	const db = createDb(env);
+
+	return betterAuth({
+		secret: env.BETTER_AUTH_SECRET,
+		database: drizzleAdapter(db, {
+			provider: "sqlite",
+			schema,
+		}),
+	});
+}
+```
+
+Use `#/` imports for app modules, keep router grouping by feature (`health`, `github`, `projects`), and use `protectedProcedure` for user-scoped data.
+
+## Commands you will need
+
+| Purpose | Command | Expected on success |
+|---|---|---|
+| Typecheck | `pnpm exec tsc --noEmit` | exit 0 |
+| Lint | `pnpm lint` | exit 0 |
+| Generate migration SQL | `pnpm db:generate` | new SQL file in `migrations/` and updated `migrations/meta/*` |
+| Build | `pnpm build` | exit 0 |
+
+There is no established automated test harness for this work yet. Do not add one in this plan.
 
 ## Scope
 
 **In scope**:
+- `src/lib/crypto.ts` (create)
 - `src/db/schema.ts`
-- Database migrations generated by Drizzle Kit.
+- Generated files under `migrations/`
 - `src/integrations/trpc/router.ts`
-- `src/lib/crypto.ts` (create): AES-GCM encryption/decryption helpers.
 
 **Out of scope**:
-- Sandbox container creation and workspace bootstrapping (covered in Plan 003).
+- `src/components/new-project-dialog.tsx`
+- Sandbox creation, bootstrap, or hibernation logic (covered by Plan 003)
+- Reintroducing branch selection anywhere in the app
+- Adding a new test framework or test harness
 
----
+## Git workflow
+
+- Stay on the operator's current branch unless they instruct otherwise.
+- Do not commit, push, or open a PR as part of this plan.
+- If the operator later asks for a commit, recent history uses short Conventional Commit subjects such as `fix: dead code` and `refactor: github auth flow`.
 
 ## Steps
 
-### Task 1: Encryption & Decryption Helpers
+### Task 1: Create a production-safe encryption helper for env vars
 
-- [ ] **Step 1: Implement cryptography helper**
-  Create [src/lib/crypto.ts](file:///d:/dev/ditto/src/lib/crypto.ts) to encrypt and decrypt JSON data using AES-GCM:
+- [ ] **Step 1: Add `src/lib/crypto.ts`**
+  Create a small helper module for encrypting and decrypting JSON payloads with the Workers Web Crypto API.
+
+  Required behavior:
+
+  - Derive a non-extractable AES-GCM 256-bit key from `BETTER_AUTH_SECRET` using `crypto.subtle.importKey()` plus PBKDF2 with SHA-256.
+  - Use a **random salt per encrypted payload** and a **random 12-byte IV per encrypted payload**.
+  - Store enough metadata with the ciphertext to decrypt later. Use a versioned string format so the encoding can evolve safely, for example `v1.<salt>.<iv>.<ciphertext>`.
+  - Use ASCII-safe encoding for each binary segment. Do not use `String.fromCharCode(...largeUint8Array)` spreads.
+  - Export helpers that keep the router code simple. One good shape is:
+
   ```ts
-  // Helper to derive AES-GCM key from BETTER_AUTH_SECRET using PBKDF2
-  async function getEncryptionKey(secret: string): Promise<CryptoKey> {
-  	const enc = new TextEncoder();
-  	const keyMaterial = await crypto.subtle.importKey(
-  		"raw",
-  		enc.encode(secret),
-  		"PBKDF2",
-  		false,
-  		["deriveKey"]
-  	);
-  	return crypto.subtle.deriveKey(
-  		{
-  			name: "PBKDF2",
-  			salt: enc.encode("ditto-encryption-salt"),
-  			iterations: 100000,
-  			hash: "SHA-256",
-  		},
-  		keyMaterial,
-  		{ name: "AES-GCM", length: 256 },
-  		false,
-  		["encrypt", "decrypt"]
-  	);
-  }
-
-  export async function encryptText(text: string, secret: string): Promise<string> {
-  	const key = await getEncryptionKey(secret);
-  	const iv = crypto.getRandomValues(new Uint8Array(12));
-  	const encrypted = await crypto.subtle.encrypt(
-  		{ name: "AES-GCM", iv },
-  		key,
-  		new TextEncoder().encode(text)
-  	);
-  	const combined = new Uint8Array(iv.length + encrypted.byteLength);
-  	combined.set(iv, 0);
-  	combined.set(new Uint8Array(encrypted), iv.length);
-  	return btoa(String.fromCharCode(...combined));
-  }
-
-  export async function decryptText(base64: string, secret: string): Promise<string> {
-  	const key = await getEncryptionKey(secret);
-  	const combined = new Uint8Array(
-  		atob(base64).split("").map((char) => char.charCodeAt(0))
-  	);
-  	const iv = combined.slice(0, 12);
-  	const encrypted = combined.slice(12);
-  	const decrypted = await crypto.subtle.decrypt(
-  		{ name: "AES-GCM", iv },
-  		key,
-  		encrypted
-  	);
-  	return new TextDecoder().decode(decrypted);
-  }
+  export async function encryptText(plaintext: string, secret: string): Promise<string>
+  export async function decryptText(payload: string, secret: string): Promise<string>
   ```
 
-**Verify**: Run `pnpm exec tsc --noEmit` -> compiles without errors.
+  Implementation guidance:
+
+  - Keep the file self-contained; no Node-only crypto APIs.
+  - Throw a clear error for malformed payloads or unsupported versions.
+  - The helper is for at-rest encryption in D1, not for client-visible secrets or transport encryption.
+
+  Why this shape:
+
+  - Cloudflare Workers fully supports `crypto.subtle`, including AES-GCM and PBKDF2.
+  - AES-GCM gives authenticated encryption, which is the right default here.
+  - A per-payload salt avoids deriving the same key material for every encrypted row from the same app secret.
+
+**Verify**: `pnpm exec tsc --noEmit` -> exits 0.
 
 ---
 
-### Task 2: Database Migration Setup
+### Task 2: Add the `projects` table and generate a migration
 
-- [ ] **Step 1: Add projects table to database schema**
-  In [src/db/schema.ts](file:///d:/dev/ditto/src/db/schema.ts), define the `projects` schema and reference the `user` table:
+- [ ] **Step 1: Extend `src/db/schema.ts` with a `projects` table**
+  Add a new app-owned table for persisted projects.
+
+  Required columns:
+
   ```ts
-  export const projects = sqliteTable("projects", {
-  	id: text("id").primaryKey(),
-  	name: text("name").notNull(),
-  	description: text("description"),
-  	userId: text("userId")
-  		.notNull()
-  		.references(() => user.id, { onDelete: "cascade" }),
-  	githubRepo: text("githubRepo"),
-  	githubInstallationId: integer("githubInstallationId"),
-  	branch: text("branch").default("main"),
-  	sandboxId: text("sandboxId"),
-  	status: text("status", { enum: ["provisioning", "ready", "failed"] }).default("provisioning"),
-  	envVars: text("envVars"), // Encrypted AES-GCM JSON string representing user env variables. Key is derived from BETTER_AUTH_SECRET.
-  	createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(unixepoch())`),
-  	updatedAt: integer("updated_at", { mode: "timestamp" }).default(sql`(unixepoch())`),
-  });
+  id: text("id").primaryKey()
+  name: text("name").notNull()
+  description: text("description")
+  userId: text("userId").notNull().references(() => user.id, { onDelete: "cascade" })
+  githubRepo: text("githubRepo")
+  githubInstallationId: integer("githubInstallationId")
+  sandboxId: text("sandboxId")
+  status: text("status", { enum: ["provisioning", "ready", "failed"] }).notNull().default("provisioning")
+  envVars: text("envVars")
+  createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(unixepoch())`)
+  updatedAt: integer("updated_at", { mode: "timestamp" }).default(sql`(unixepoch())`)
   ```
 
-- [ ] **Step 2: Generate Drizzle migrations**
+  Required table details:
+
+  - Add an index on `userId`, because `projects.list` will query by owner.
+  - Keep `envVars` as the encrypted string column produced by `src/lib/crypto.ts`.
+  - Do **not** add a `branch` column.
+  - Do not modify the existing Better Auth tables beyond importing whatever Drizzle helpers you need.
+
+- [ ] **Step 2: Generate the migration SQL**
   Run:
+
   ```bash
   pnpm db:generate
   ```
-  Expected: A new SQL migration file is generated under `./migrations`.
 
-- [ ] **Step 3: Run migration locally**
-  Run:
-  ```bash
-  pnpm db:migrate
-  ```
-  Expected: Migration succeeds.
+  Expected:
+
+  - A new migration SQL file is created under `migrations/`.
+  - `migrations/meta/_journal.json` and the snapshot file are updated.
+  - The SQL creates the `projects` table, its foreign key to `user(id)`, and the `userId` index.
+
+- [ ] **Step 3: Do not add a local migrate step**
+  Do not run `pnpm db:migrate` and do not add it back to this plan. For this repo, Alchemy applies the generated SQL from `migrations/` on deploy/update because `alchemy.run.ts` already configures `migrationsDir` and `migrationsTable` on the D1 resource.
+
+**Verify**: `pnpm exec tsc --noEmit` -> exits 0.
 
 ---
 
-### Task 3: Project Management tRPC Procedures
+### Task 3: Add a `projects` router without disturbing the existing GitHub router
 
-- [ ] **Step 1: Implement projects router**
-  In [src/integrations/trpc/router.ts](file:///d:/dev/ditto/src/integrations/trpc/router.ts), import Drizzle dependencies and the `projects` schema, and define the projects router:
+- [ ] **Step 1: Extend `src/integrations/trpc/router.ts`**
+  Import the existing DB helper, the new schema table, Drizzle filters, `nanoid`, and the crypto helper. Keep the existing `health` and `github` routers intact.
+
+  The new router should provide:
+
+  - `create`
+  - `list`
+  - `get`
+
+  Required input shape for `create`:
+
   ```ts
-  import { eq } from "drizzle-orm";
-  import { projects } from "#/db/schema";
-  import { nanoid } from "nanoid";
-  import { encryptText } from "#/lib/crypto";
+  z.object({
+  	name: z.string().min(1),
+  	description: z.string().optional(),
+  	githubRepo: z.string().optional(),
+  	githubInstallationId: z.number().int().positive().optional(),
+  	envVars: z.array(z.object({ key: z.string(), value: z.string() })).optional(),
+  })
+  ```
 
+  Required behavior:
+
+  - Use `createDb(ctx.env)` from `#/db`.
+  - Trim `name` before insert and reject an empty post-trim value.
+  - Treat `githubRepo` and `githubInstallationId` as a pair: if one is present without the other, throw `BAD_REQUEST`.
+  - Sanitize `envVars` before encryption. At minimum, drop rows whose `key.trim()` is empty.
+  - If sanitized env vars remain, `JSON.stringify()` them and encrypt them with `encryptText(..., ctx.env.BETTER_AUTH_SECRET)` before insert.
+  - Insert the project with `status: "provisioning"` and `branch` omitted entirely.
+  - `list` must only return projects owned by `ctx.user.id`.
+  - `get` must only return a project belonging to `ctx.user.id`. Prefer a user-scoped query (for example by combining `id` and `userId`) so the procedure does not leak whether another user's project id exists.
+  - Register the new router as `projects: projectsRouter` on the root router alongside the existing `health` and `github` routers.
+
+  Return-shape guidance:
+
+  - Do **not** send the encrypted `envVars` blob back to the client from `create`, `list`, or `get`.
+  - Return project metadata only. If needed, map the inserted/selected row to an object that omits `envVars`.
+
+  Pseudocode shape:
+
+  ```ts
   const projectsRouter = {
-  	create: protectedProcedure
-  		.input(
-  			z.object({
-  				name: z.string().min(1),
-  				description: z.string().optional(),
-  				githubRepo: z.string().optional(),
-  				githubInstallationId: z.number().optional(),
-  				branch: z.string().optional(),
-  				envVars: z.array(z.object({ key: z.string(), value: z.string() })).optional(),
-  			})
-  		)
-  		.mutation(async ({ ctx, input }) => {
-  			const db = createDb(ctx.env);
-  			const projectId = nanoid();
-  			
-  			let encryptedEnvVars: string | null = null;
-  			if (input.envVars && input.envVars.length > 0) {
-  				encryptedEnvVars = await encryptText(
-  					JSON.stringify(input.envVars),
-  					ctx.env.BETTER_AUTH_SECRET
-  				);
-  			}
-
-  			const [project] = await db
-  				.insert(projects)
-  				.values({
-  					id: projectId,
-  					name: input.name,
-  					description: input.description,
-  					userId: ctx.user.id,
-  					githubRepo: input.githubRepo,
-  					githubInstallationId: input.githubInstallationId,
-  					branch: input.branch ?? "main",
-  					status: "provisioning",
-  					envVars: encryptedEnvVars,
-  				})
-  				.returning();
-
-  			return project;
-  		}),
-
-  	list: protectedProcedure.query(async ({ ctx }) => {
+  	create: protectedProcedure.input(...).mutation(async ({ ctx, input }) => {
   		const db = createDb(ctx.env);
-  		return await db.select().from(projects).where(eq(projects.userId, ctx.user.id));
-  	}),
+  		const id = nanoid();
+  		const encryptedEnvVars = ...;
 
-  	get: protectedProcedure
-  		.input(z.object({ id: z.string() }))
-  		.query(async ({ ctx, input }) => {
-  			const db = createDb(ctx.env);
-  			const [project] = await db
-  				.select()
-  				.from(projects)
-  				.where(eq(projects.id, input.id));
-  			
-  			if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "Project not found" });
-  			if (project.userId !== ctx.user.id) throw new TRPCError({ code: "UNAUTHORIZED" });
-  			return project;
-  		}),
+  		const [project] = await db
+  			.insert(projects)
+  			.values({
+  				id,
+  				name: trimmedName,
+  				description: input.description,
+  				userId: ctx.user.id,
+  				githubRepo: input.githubRepo,
+  				githubInstallationId: input.githubInstallationId,
+  				status: "provisioning",
+  				envVars: encryptedEnvVars,
+  			})
+  			.returning();
+
+  		return toProjectResponse(project);
+  	}),
   } satisfies TRPCRouterRecord;
   ```
-  Register `projects: projectsRouter` on the root router.
 
-**Verify**: Run `pnpm build` -> compiles without errors.
+  Keep the implementation minimal. Add one small local response-mapping helper only if it clearly improves readability.
 
----
+**Verify**: `pnpm build` -> exits 0.
 
-## STOP Conditions
+## Test plan
+
+Do not introduce a new automated test setup in this plan.
+
+Instead, verify the change with the existing repo checks:
+
+- `pnpm exec tsc --noEmit`
+- `pnpm lint`
+- `pnpm build`
+- Inspect the generated migration SQL to confirm the new table, foreign key, and index are present.
+
+## Done criteria
+
+All of the following must hold:
+
+- [ ] `src/lib/crypto.ts` exists and provides working AES-GCM helpers based on `crypto.subtle`
+- [ ] `src/db/schema.ts` exports a `projects` table with no `branch` column
+- [ ] `pnpm db:generate` creates a new migration for the `projects` table
+- [ ] `src/integrations/trpc/router.ts` still exports the existing `health` and `github` routers and now also registers `projects`
+- [ ] `create`, `list`, and `get` are all protected procedures scoped to the authenticated user
+- [ ] No `create`, `list`, or `get` response exposes the encrypted `envVars` blob
+- [ ] `pnpm exec tsc --noEmit` exits 0
+- [ ] `pnpm lint` exits 0
+- [ ] `pnpm build` exits 0
+- [ ] No out-of-scope files are modified, other than generated files under `migrations/`
+- [ ] `plans/README.md` status row updated
+
+## STOP conditions
 
 Stop and report back if:
-- `db:generate` fails because of schema circular dependencies.
-- Local migrations fail to apply to the dev database stage.
+
+- The code in `src/db/schema.ts` or `src/integrations/trpc/router.ts` no longer matches the excerpts in "Current state".
+- `pnpm db:generate` rewrites or invalidates existing migrations instead of creating the expected additive migration.
+- Implementing the router cleanly requires changes to `src/components/new-project-dialog.tsx` or Plan 003 files.
+- The current runtime environment cannot support the required Workers Web Crypto APIs without adding a Node-only fallback.
+- The operator wants encrypted env vars to be readable by the client; that would require a different design and should not be improvised here.
+
+## Maintenance notes
+
+- Plan 003 should build on this schema and router instead of re-defining project persistence.
+- If project statuses grow beyond sandbox lifecycle states, revisit the `status` enum before more callers depend on it.
+- If secret rotation is added later, the versioned ciphertext format from `src/lib/crypto.ts` gives a place to introduce re-encryption or multi-key decrypt logic.
+- Reviewers should pay closest attention to user scoping in `get`/`list` and to whether any response accidentally returns encrypted env-var data.

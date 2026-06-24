@@ -1,5 +1,10 @@
 import { TRPCError, type TRPCRouterRecord } from "@trpc/server";
+import { and, desc, eq } from "drizzle-orm";
+import { nanoid } from "nanoid";
 import { z } from "zod";
+import { createDb } from "#/db";
+import { projects } from "#/db/schema";
+import { encryptText } from "#/lib/crypto";
 import { getGitHubApp } from "#/lib/github-app";
 import { getGitHubImportState } from "#/lib/github-repositories";
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "./init";
@@ -61,8 +66,113 @@ const githubRouter = {
 		}),
 } satisfies TRPCRouterRecord;
 
+const createProjectInput = z.object({
+	name: z.string().min(1),
+	description: z.string().optional(),
+	githubRepo: z.string().optional(),
+	githubInstallationId: z.number().int().positive().optional(),
+	envVars: z
+		.array(
+			z.object({
+				key: z.string(),
+				value: z.string(),
+			}),
+		)
+		.optional(),
+});
+
+function toProjectResponse(project: typeof projects.$inferSelect) {
+	const { envVars: _envVars, ...projectResponse } = project;
+	return projectResponse;
+}
+
+const projectsRouter = {
+	create: protectedProcedure
+		.input(createProjectInput)
+		.mutation(async ({ ctx, input }) => {
+			const trimmedName = input.name.trim();
+			if (!trimmedName) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: "Project name is required.",
+				});
+			}
+
+			const hasGitHubRepo = input.githubRepo !== undefined;
+			const hasGitHubInstallationId = input.githubInstallationId !== undefined;
+			if (hasGitHubRepo !== hasGitHubInstallationId) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message:
+						"githubRepo and githubInstallationId must be provided together.",
+				});
+			}
+
+			const sanitizedEnvVars = input.envVars
+				?.map(({ key, value }) => ({ key: key.trim(), value }))
+				.filter(({ key }) => key.length > 0);
+
+			const encryptedEnvVars =
+				sanitizedEnvVars && sanitizedEnvVars.length > 0
+					? await encryptText(
+							JSON.stringify(sanitizedEnvVars),
+							ctx.env.BETTER_AUTH_SECRET,
+						)
+					: undefined;
+
+			const db = createDb(ctx.env);
+			const [project] = await db
+				.insert(projects)
+				.values({
+					id: nanoid(),
+					name: trimmedName,
+					description: input.description,
+					userId: ctx.user.id,
+					githubRepo: input.githubRepo,
+					githubInstallationId: input.githubInstallationId,
+					status: "provisioning",
+					envVars: encryptedEnvVars,
+				})
+				.returning();
+
+			return toProjectResponse(project);
+		}),
+
+	list: protectedProcedure.query(async ({ ctx }) => {
+		const db = createDb(ctx.env);
+		const userProjects = await db
+			.select()
+			.from(projects)
+			.where(eq(projects.userId, ctx.user.id))
+			.orderBy(desc(projects.createdAt));
+
+		return userProjects.map(toProjectResponse);
+	}),
+
+	get: protectedProcedure
+		.input(z.object({ id: z.string().min(1) }))
+		.query(async ({ ctx, input }) => {
+			const db = createDb(ctx.env);
+			const [project] = await db
+				.select()
+				.from(projects)
+				.where(and(eq(projects.id, input.id), eq(projects.userId, ctx.user.id)))
+				.limit(1);
+
+			if (!project) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Project not found.",
+				});
+			}
+
+			return toProjectResponse(project);
+		}),
+} satisfies TRPCRouterRecord;
+
 export const trpcRouter = createTRPCRouter({
 	health: healthRouter,
 	github: githubRouter,
+	projects: projectsRouter,
 });
 export type TRPCRouter = typeof trpcRouter;

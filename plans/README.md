@@ -6,16 +6,16 @@ Generated on 2026-06-24. Execute in the order below unless dependencies say othe
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 001 | Implement the GitHub App Auth Flow | P1 | M | — | TODO |
-| 002 | Database Schema and tRPC Projects | P1 | S | 001 | TODO |
-| 003 | Sandbox Provisioning and Bootstrap | P1 | M | 001, 002 | TODO |
+| 001 | Implement the GitHub App Auth Flow | P1 | M | — | BLOCKED (stale: partial independent implementation changed plan assumptions) |
+| 002 | Database Schema and tRPC Projects | P1 | S | — | DONE |
+| 003 | Sandbox Provisioning and Bootstrap | P1 | M | 002 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale — finding fixed independently or approach abandoned)
 
 ## Dependency notes
 
-- 002 depends on 001 because it maps the repository and installation data established during App authorization.
-- 003 depends on 001 and 002 because sandbox bootstrapping requires the App token generator (001) and database project metadata records (002) to function.
+- 002 no longer depends on 001. The current codebase already exposes repository import state and installation ids, so this plan can land independently as the persistence layer.
+- 003 depends on 002 because sandbox bootstrap updates `projects` records with `sandboxId` and readiness state.
 
 ## Verification baseline
 

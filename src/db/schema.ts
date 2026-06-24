@@ -23,6 +23,34 @@ export const user = sqliteTable("user", {
 	updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull(),
 });
 
+export const projects = sqliteTable(
+	"projects",
+	{
+		id: text("id").primaryKey(),
+		name: text("name").notNull(),
+		description: text("description"),
+		userId: text("userId")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		githubRepo: text("githubRepo"),
+		githubInstallationId: integer("githubInstallationId"),
+		sandboxId: text("sandboxId"),
+		status: text("status", {
+			enum: ["provisioning", "ready", "failed"],
+		})
+			.notNull()
+			.default("provisioning"),
+		envVars: text("envVars"),
+		createdAt: integer("created_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+		updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+	},
+	(table) => [index("projects_userId_idx").on(table.userId)],
+);
+
 export const session = sqliteTable(
 	"session",
 	{
