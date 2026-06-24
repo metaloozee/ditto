@@ -9,12 +9,12 @@ export function getGitHubApp(env: Env) {
 
 export async function getInstallationAccessToken(
 	env: Env,
-	installationId: number
+	installationId: number,
 ): Promise<string> {
 	const app = getGitHubApp(env);
 	const response = await app.octokit.rest.apps.createInstallationAccessToken({
 		installation_id: installationId,
 	});
-	
+
 	return response.data.token;
 }

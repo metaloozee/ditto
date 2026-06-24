@@ -46,7 +46,6 @@ import { Separator } from "#/components/ui/separator";
 import { Textarea } from "#/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "#/components/ui/toggle-group";
 import { useTRPC } from "#/integrations/trpc/react";
-import { authClient } from "#/lib/auth-client";
 import type { GitHubRepo } from "#/lib/github-repositories";
 import { cn } from "#/lib/utils";
 
@@ -73,7 +72,6 @@ export function NewProjectDialog({
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 }) {
-	
 	const [path, setPath] = useState<OnboardingPath>(null);
 	const [step, setStep] = useState<Step>("choice");
 
@@ -96,8 +94,11 @@ export function NewProjectDialog({
 		}),
 	);
 
-	const githubLoading = importStateQuery.isLoading || importStateQuery.isFetching;
-	const githubError = importStateQuery.error ? importStateQuery.error.message : null;
+	const githubLoading =
+		importStateQuery.isLoading || importStateQuery.isFetching;
+	const githubError = importStateQuery.error
+		? importStateQuery.error.message
+		: null;
 	const githubRepos = importStateQuery.data?.repositories ?? [];
 	const installations = importStateQuery.data?.installations ?? [];
 	const installUrl = importStateQuery.data?.installUrl;
@@ -118,13 +119,10 @@ export function NewProjectDialog({
 		setTimeout(resetState, 200);
 	}, [onOpenChange, resetState]);
 
-	const handleChoosePath = useCallback(
-		(chosen: OnboardingPath) => {
-			setPath(chosen);
-			setStep(chosen === "github" ? "github" : "scratch");
-		},
-		[],
-	);
+	const handleChoosePath = useCallback((chosen: OnboardingPath) => {
+		setPath(chosen);
+		setStep(chosen === "github" ? "github" : "scratch");
+	}, []);
 
 	const handleBack = useCallback(() => {
 		if (step === "ready") {
@@ -298,10 +296,15 @@ export function NewProjectDialog({
 								<div className="space-y-1 px-4">
 									<h3 className="text-sm font-medium">Install GitHub App</h3>
 									<p className="text-xs text-muted-foreground max-w-xs">
-										To import your repositories, you need to install the Ditto GitHub App on your personal account or organization.
+										To import your repositories, you need to install the Ditto
+										GitHub App on your personal account or organization.
 									</p>
 								</div>
-								<Button onClick={handleConfigureGithub} size="sm" className="cursor-pointer">
+								<Button
+									onClick={handleConfigureGithub}
+									size="sm"
+									className="cursor-pointer"
+								>
 									Install GitHub App
 								</Button>
 							</div>
@@ -604,10 +607,7 @@ function ReadyStep({
 			<ScrollArea className="max-h-[60vh]">
 				<div className="flex flex-col gap-4 pr-3">
 					{path === "github" ? (
-						<GitHubSummary
-							repo={selectedRepo}
-							repos={githubRepos}
-						/>
+						<GitHubSummary repo={selectedRepo} repos={githubRepos} />
 					) : (
 						<ScratchSummary
 							name={projectName}

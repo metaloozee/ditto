@@ -1,7 +1,7 @@
 import { TRPCError, type TRPCRouterRecord } from "@trpc/server";
 import { z } from "zod";
-import { getGitHubImportState } from "#/lib/github-repositories";
 import { getGitHubApp } from "#/lib/github-app";
+import { getGitHubImportState } from "#/lib/github-repositories";
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "./init";
 
 const healthRouter = {
@@ -54,7 +54,8 @@ const githubRouter = {
 			} catch (err) {
 				throw new TRPCError({
 					code: "BAD_GATEWAY",
-					message: err instanceof Error ? err.message : "Failed to load branches.",
+					message:
+						err instanceof Error ? err.message : "Failed to load branches.",
 				});
 			}
 		}),

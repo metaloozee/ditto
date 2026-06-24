@@ -66,7 +66,8 @@ export async function getGitHubImportState({
 	return {
 		installations: installations.map((i) => {
 			const login = i.account && "login" in i.account ? i.account.login : "";
-			const avatarUrl = i.account && "avatar_url" in i.account ? i.account.avatar_url : "";
+			const avatarUrl =
+				i.account && "avatar_url" in i.account ? i.account.avatar_url : "";
 			return {
 				id: i.id,
 				account: {
