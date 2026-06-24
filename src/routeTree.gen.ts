@@ -11,7 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AuthCompletedRouteImport } from './routes/auth.completed'
+import { Route as InstallationCompletedRouteImport } from './routes/installation.completed'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api.auth.$'
 
@@ -25,9 +25,9 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthCompletedRoute = AuthCompletedRouteImport.update({
-  id: '/auth/completed',
-  path: '/auth/completed',
+const InstallationCompletedRoute = InstallationCompletedRouteImport.update({
+  id: '/installation/completed',
+  path: '/installation/completed',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiTrpcSplatRoute = ApiTrpcSplatRouteImport.update({
@@ -44,14 +44,14 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
-  '/auth/completed': typeof AuthCompletedRoute
+  '/installation/completed': typeof InstallationCompletedRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
-  '/auth/completed': typeof AuthCompletedRoute
+  '/installation/completed': typeof InstallationCompletedRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
 }
@@ -59,7 +59,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
-  '/auth/completed': typeof AuthCompletedRoute
+  '/installation/completed': typeof InstallationCompletedRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
 }
@@ -68,16 +68,21 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/sign-in'
-    | '/auth/completed'
+    | '/installation/completed'
     | '/api/auth/$'
     | '/api/trpc/$'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/sign-in' | '/auth/completed' | '/api/auth/$' | '/api/trpc/$'
+  to:
+    | '/'
+    | '/sign-in'
+    | '/installation/completed'
+    | '/api/auth/$'
+    | '/api/trpc/$'
   id:
     | '__root__'
     | '/'
     | '/sign-in'
-    | '/auth/completed'
+    | '/installation/completed'
     | '/api/auth/$'
     | '/api/trpc/$'
   fileRoutesById: FileRoutesById
@@ -85,7 +90,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SignInRoute: typeof SignInRoute
-  AuthCompletedRoute: typeof AuthCompletedRoute
+  InstallationCompletedRoute: typeof InstallationCompletedRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
 }
@@ -106,11 +111,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/auth/completed': {
-      id: '/auth/completed'
-      path: '/auth/completed'
-      fullPath: '/auth/completed'
-      preLoaderRoute: typeof AuthCompletedRouteImport
+    '/installation/completed': {
+      id: '/installation/completed'
+      path: '/installation/completed'
+      fullPath: '/installation/completed'
+      preLoaderRoute: typeof InstallationCompletedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/trpc/$': {
@@ -133,7 +138,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SignInRoute: SignInRoute,
-  AuthCompletedRoute: AuthCompletedRoute,
+  InstallationCompletedRoute: InstallationCompletedRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
 }
