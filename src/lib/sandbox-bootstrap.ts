@@ -7,11 +7,11 @@ const INSTALL_TIMEOUT_MS = 300_000;
 
 type SandboxEnvVar = { key: string; value: string };
 
-function quoteShellArg(value: string) {
+function quoteShellArg(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-function formatEnvFile(envVars: SandboxEnvVar[]) {
+function formatEnvFile(envVars: SandboxEnvVar[]): string {
 	return envVars
 		.map(({ key, value }) => {
 			const escapedValue = value
@@ -28,7 +28,7 @@ async function runCommand(
 	sandbox: ReturnType<typeof getSandbox>,
 	command: string,
 	options: { cwd?: string; timeout: number; errorPrefix: string },
-) {
+): Promise<Awaited<ReturnType<typeof sandbox.exec>>> {
 	const result = await sandbox.exec(command, {
 		cwd: options.cwd,
 		timeout: options.timeout,
@@ -48,7 +48,52 @@ async function runCommand(
 	);
 }
 
-async function installDependencies(sandbox: ReturnType<typeof getSandbox>) {
+async function commandExists(
+	sandbox: ReturnType<typeof getSandbox>,
+	command: string,
+): Promise<boolean> {
+	const result = await sandbox.exec(`command -v ${quoteShellArg(command)}`, {
+		cwd: WORKSPACE_PATH,
+		timeout: CLONE_TIMEOUT_MS,
+	});
+	return result.success;
+}
+
+async function installWithNpmFallback(
+	sandbox: ReturnType<typeof getSandbox>,
+	preferredCommand: string,
+	installCommand: string,
+	errorPrefix: string,
+): Promise<void> {
+	if (!(await commandExists(sandbox, preferredCommand))) {
+		if (await commandExists(sandbox, "corepack")) {
+			await runCommand(sandbox, "corepack enable", {
+				cwd: WORKSPACE_PATH,
+				timeout: INSTALL_TIMEOUT_MS,
+				errorPrefix: `Failed to enable Corepack for ${preferredCommand}`,
+			});
+		}
+	}
+
+	if (await commandExists(sandbox, preferredCommand)) {
+		await runCommand(sandbox, installCommand, {
+			cwd: WORKSPACE_PATH,
+			timeout: INSTALL_TIMEOUT_MS,
+			errorPrefix,
+		});
+		return;
+	}
+
+	await runCommand(sandbox, "npm install", {
+		cwd: WORKSPACE_PATH,
+		timeout: INSTALL_TIMEOUT_MS,
+		errorPrefix: `Failed to install dependencies with npm fallback for ${preferredCommand}`,
+	});
+}
+
+export async function installDependencies(
+	sandbox: ReturnType<typeof getSandbox>,
+) {
 	const hasPackageJson = await sandbox.exists(`${WORKSPACE_PATH}/package.json`);
 	if (!hasPackageJson.exists) {
 		return;
@@ -56,31 +101,23 @@ async function installDependencies(sandbox: ReturnType<typeof getSandbox>) {
 
 	const hasPnpmLock = await sandbox.exists(`${WORKSPACE_PATH}/pnpm-lock.yaml`);
 	if (hasPnpmLock.exists) {
-		await runCommand(sandbox, "corepack enable", {
-			cwd: WORKSPACE_PATH,
-			timeout: INSTALL_TIMEOUT_MS,
-			errorPrefix: "Failed to enable Corepack for pnpm",
-		});
-		await runCommand(sandbox, "pnpm install --no-frozen-lockfile", {
-			cwd: WORKSPACE_PATH,
-			timeout: INSTALL_TIMEOUT_MS,
-			errorPrefix: "Failed to install dependencies with pnpm",
-		});
+		await installWithNpmFallback(
+			sandbox,
+			"pnpm",
+			"pnpm install --no-frozen-lockfile",
+			"Failed to install dependencies with pnpm",
+		);
 		return;
 	}
 
 	const hasYarnLock = await sandbox.exists(`${WORKSPACE_PATH}/yarn.lock`);
 	if (hasYarnLock.exists) {
-		await runCommand(sandbox, "corepack enable", {
-			cwd: WORKSPACE_PATH,
-			timeout: INSTALL_TIMEOUT_MS,
-			errorPrefix: "Failed to enable Corepack for yarn",
-		});
-		await runCommand(sandbox, "yarn install", {
-			cwd: WORKSPACE_PATH,
-			timeout: INSTALL_TIMEOUT_MS,
-			errorPrefix: "Failed to install dependencies with yarn",
-		});
+		await installWithNpmFallback(
+			sandbox,
+			"yarn",
+			"yarn install",
+			"Failed to install dependencies with yarn",
+		);
 		return;
 	}
 
