@@ -64,9 +64,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 			</head>
 			<body>
 				<FlueProvider client={flueClient}>
-					<TooltipProvider>
-						{isAuthRoute ? children : <AppShell>{children}</AppShell>}
-					</TooltipProvider>
+					{isAuthRoute ? children : <AppShell>{children}</AppShell>}
 				</FlueProvider>
 				<TanStackDevtools
 					config={{
