@@ -1,17 +1,24 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
 	FileTextIcon,
-	HomeIcon,
+	FolderIcon,
+	FolderOpenIcon,
 	Layers2Icon,
 	PlusIcon,
 	SearchIcon,
 } from "lucide-react";
 import type * as React from "react";
 import { useState } from "react";
-import { NavMain } from "#/components/nav-main";
 import { NavUser } from "#/components/nav-user";
 import { NewProjectDialog } from "#/components/new-project-dialog";
+import {
+	Collapsible,
+	CollapsibleContent,
+	CollapsibleTrigger,
+} from "#/components/ui/collapsible";
 import {
 	Command,
 	CommandDialog,
@@ -32,39 +39,25 @@ import {
 	SidebarMenu,
 	SidebarMenuButton,
 	SidebarMenuItem,
+	SidebarMenuSkeleton,
+	SidebarMenuSub,
+	SidebarMenuSubButton,
+	SidebarMenuSubItem,
 	SidebarRail,
+	SidebarSeparator,
 	SidebarTrigger,
 	useSidebar,
 } from "#/components/ui/sidebar";
+import { useTRPC } from "#/integrations/trpc/react";
 import { authClient } from "#/lib/auth-client";
 import { cn } from "#/lib/utils";
 import { Button } from "./ui/button";
 
-const navItems = [
-	{
-		title: "Home",
-		to: "/" as const,
-		icon: <HomeIcon />,
-	},
-];
-
-const projectResults = [
-	{
-		name: "Marketing Site",
-		description: "Next.js landing pages and analytics",
-		shortcut: "P1",
-	},
-	{
-		name: "Dashboard App",
-		description: "Customer metrics and admin workflows",
-		shortcut: "P2",
-	},
-	{
-		name: "Component Library",
-		description: "Shared React primitives and design tokens",
-		shortcut: "P3",
-	},
-] as const;
+type SidebarProject = {
+	id: string;
+	name: string;
+	description?: string | null;
+};
 
 const chatResults = [
 	{
@@ -90,7 +83,8 @@ function BrandingWithTrigger() {
 
 	return (
 		<div className="group/branding flex min-h-12 items-center gap-2 rounded-md px-2 text-sidebar-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-			<div
+			<Link
+				to="/"
 				className={cn(
 					"flex size-8 shrink-0 items-center justify-center rounded-md border border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground transition-opacity duration-150 ease-out",
 					isCollapsed && "group-hover/branding:hidden",
@@ -100,7 +94,7 @@ function BrandingWithTrigger() {
 				<span className="text-sm font-semibold leading-none">
 					<Layers2Icon className="size-4" />
 				</span>
-			</div>
+			</Link>
 
 			{isCollapsed && (
 				<SidebarTrigger className="hidden size-8 shrink-0 cursor-pointer group-hover/branding:flex" />
@@ -118,9 +112,11 @@ function BrandingWithTrigger() {
 function SearchCommandDialog({
 	open,
 	onOpenChange,
+	projects,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
+	projects: SidebarProject[];
 }) {
 	return (
 		<CommandDialog
@@ -135,10 +131,10 @@ function SearchCommandDialog({
 				<CommandList>
 					<CommandEmpty>No projects or chats found.</CommandEmpty>
 					<CommandGroup heading="Projects">
-						{projectResults.map((project) => (
+						{projects.map((project, index) => (
 							<CommandItem
-								key={project.name}
-								value={`${project.name} ${project.description}`}
+								key={project.id}
+								value={`${project.name} ${project.description ?? ""}`}
 								onSelect={() => onOpenChange(false)}
 								className="cursor-pointer py-2"
 							>
@@ -146,11 +142,13 @@ function SearchCommandDialog({
 									<span className="truncate text-sm font-medium">
 										{project.name}
 									</span>
-									<span className="truncate text-muted-foreground">
-										{project.description}
-									</span>
+									{project.description ? (
+										<span className="truncate text-muted-foreground">
+											{project.description}
+										</span>
+									) : null}
 								</div>
-								<CommandShortcut>{project.shortcut}</CommandShortcut>
+								<CommandShortcut>P{index + 1}</CommandShortcut>
 							</CommandItem>
 						))}
 					</CommandGroup>
@@ -192,11 +190,144 @@ function SearchCommandDialog({
 	);
 }
 
+function ProjectSidebarItem({
+	project,
+	isActive,
+}: {
+	project: SidebarProject;
+	isActive: boolean;
+}) {
+	const [open, setOpen] = useState(isActive);
+
+	return (
+		<Collapsible className="w-full" open={open} onOpenChange={setOpen}>
+			<SidebarMenuItem>
+				<CollapsibleTrigger
+					render={
+						<SidebarMenuButton
+							tooltip={project.name}
+							isActive={isActive}
+							size="sm"
+							className="text-xs"
+						/>
+					}
+				>
+					{open ? (
+						<FolderOpenIcon className="!size-3" />
+					) : (
+						<FolderIcon className="!size-3" />
+					)}
+					<span>{project.name}</span>
+				</CollapsibleTrigger>
+				<CollapsibleContent>
+					<SidebarMenuSub>
+						<SidebarMenuSubItem>
+							<SidebarMenuSubButton
+								aria-disabled="true"
+								className="text-sidebar-foreground/60"
+							>
+								<span>No chats yet</span>
+							</SidebarMenuSubButton>
+						</SidebarMenuSubItem>
+					</SidebarMenuSub>
+				</CollapsibleContent>
+			</SidebarMenuItem>
+		</Collapsible>
+	);
+}
+
+function ProjectsNav({
+	projects,
+	isLoading,
+}: {
+	projects: SidebarProject[];
+	isLoading: boolean;
+}) {
+	const navigate = useNavigate();
+	const pathname = useRouterState({
+		select: (routerState) => routerState.location.pathname,
+	});
+
+	if (isLoading) {
+		const loadingProjectIds = [
+			"loading-project-1",
+			"loading-project-2",
+			"loading-project-3",
+		];
+
+		return (
+			<SidebarGroup>
+				<SidebarMenu className="gap-1">
+					{loadingProjectIds.map((loadingProjectId) => (
+						<SidebarMenuItem key={loadingProjectId}>
+							<SidebarMenuSkeleton showIcon />
+						</SidebarMenuItem>
+					))}
+				</SidebarMenu>
+			</SidebarGroup>
+		);
+	}
+
+	if (projects.length === 0) {
+		return (
+			<SidebarGroup className="group-data-[collapsible=icon]:hidden">
+				<div className="rounded-lg border border-dashed border-sidebar-border p-3 text-sm">
+					<p className="text-pretty text-muted-foreground font-medium">
+						No projects yet
+					</p>
+					<p className="mt-1 text-pretty text-xs text-muted-foreground">
+						Create a project to see it here.
+					</p>
+				</div>
+			</SidebarGroup>
+		);
+	}
+
+	return (
+		<SidebarGroup>
+			<SidebarMenu className="gap-1 mt-2">
+				{projects.map((project) => (
+					<div
+						key={project.id}
+						className="w-full flex items-start justify-between"
+					>
+						<ProjectSidebarItem
+							project={project}
+							isActive={pathname === `/project/${project.id}`}
+						/>
+						<Button
+							aria-label={`Start chat in ${project.name}`}
+							variant="ghost"
+							size="icon"
+							onClick={() =>
+								navigate({
+									to: "/project/$projectId",
+									params: { projectId: project.id },
+								})
+							}
+						>
+							<PlusIcon />
+						</Button>
+					</div>
+				))}
+			</SidebarMenu>
+		</SidebarGroup>
+	);
+}
+
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 	const { state } = useSidebar();
 	const [newProjectOpen, setNewProjectOpen] = useState(false);
 	const [searchOpen, setSearchOpen] = useState(false);
 	const { data: session, isPending } = authClient.useSession();
+
+	const trpc = useTRPC();
+	const projectsQuery = useQuery(
+		trpc.projects.list.queryOptions(undefined, {
+			enabled: Boolean(session),
+		}),
+	);
+	const projects = projectsQuery.data ?? [];
 
 	return (
 		<>
@@ -241,7 +372,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 						</SidebarMenu>
 					</SidebarGroup>
 
-					<NavMain items={navItems} />
+					<ProjectsNav
+						projects={projects}
+						isLoading={
+							isPending || (projectsQuery.isPending && Boolean(session))
+						}
+					/>
 				</SidebarContent>
 				<SidebarFooter className="border-t">
 					<NavUser />
@@ -253,7 +389,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 				open={newProjectOpen}
 				onOpenChange={setNewProjectOpen}
 			/>
-			<SearchCommandDialog open={searchOpen} onOpenChange={setSearchOpen} />
+			<SearchCommandDialog
+				open={searchOpen}
+				onOpenChange={setSearchOpen}
+				projects={projects}
+			/>
 		</>
 	);
 }

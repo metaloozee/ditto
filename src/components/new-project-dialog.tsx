@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
 	ArrowLeftIcon,
@@ -85,12 +85,12 @@ export function NewProjectDialog({
 	const [framework, setFramework] = useState("");
 
 	const trpc = useTRPC();
+	const queryClient = useQueryClient();
 	const navigate = useNavigate();
 	const createProjectMutation = useMutation(
 		trpc.projects.create.mutationOptions(),
 	);
 
-	// Load import state
 	const importStateQuery = useQuery(
 		trpc.github.importState.queryOptions(undefined, {
 			enabled: open && step === "github",
@@ -181,6 +181,7 @@ export function NewProjectDialog({
 			envVars: envVars.map(({ key, value }) => ({ key, value })),
 		});
 
+		await queryClient.invalidateQueries(trpc.projects.list.queryFilter());
 		handleClose();
 		await navigate({
 			to: "/project/$projectId",
@@ -192,7 +193,9 @@ export function NewProjectDialog({
 		githubRepos,
 		handleClose,
 		navigate,
+		queryClient,
 		selectedRepo,
+		trpc,
 	]);
 
 	const handleConfigureGithub = useCallback(() => {

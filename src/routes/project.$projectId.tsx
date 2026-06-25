@@ -10,7 +10,7 @@ export const Route = createFileRoute("/project/$projectId")({
 
 function ProjectDetailRoute(): JSX.Element {
 	const { projectId } = Route.useParams();
-	
+
 	const conversationId = useMemo(() => crypto.randomUUID(), []);
 
 	const trpc = useTRPC();

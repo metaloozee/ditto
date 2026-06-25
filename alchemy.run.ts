@@ -26,6 +26,8 @@ export const website = await TanStackStart("website", {
 		BETTER_AUTH_URL: process.env.BETTER_AUTH_URL ?? "",
 		GITHUB_CLIENT_ID: process.env.GITHUB_CLIENT_ID ?? "",
 		GITHUB_CLIENT_SECRET: alchemy.secret(process.env.GITHUB_CLIENT_SECRET),
+		GITHUB_APP_ID: process.env.GITHUB_APP_ID ?? "",
+		GITHUB_APP_PRIVATE_KEY: alchemy.secret(process.env.GITHUB_APP_PRIVATE_KEY),
 		APP_ENV: app.stage,
 		VITE_GITHUB_APP_INSTALL_URL: process.env.VITE_GITHUB_APP_INSTALL_URL ?? "https://github.com/apps/ditto-web/installations/new/",
 	},
