@@ -37,9 +37,13 @@ function ProjectDetailRoute() {
 		<main className="mx-auto flex min-h-svh w-full max-w-2xl px-6 py-12">
 			<section className="flex w-full flex-col gap-6 rounded-xl border border-border bg-card p-6">
 				<div className="flex flex-col gap-2">
-					<h1 className="text-2xl font-semibold text-foreground">{project.name}</h1>
+					<h1 className="text-2xl font-semibold text-foreground">
+						{project.name}
+					</h1>
 					{project.description ? (
-						<p className="text-sm text-muted-foreground">{project.description}</p>
+						<p className="text-sm text-muted-foreground">
+							{project.description}
+						</p>
 					) : null}
 				</div>
 

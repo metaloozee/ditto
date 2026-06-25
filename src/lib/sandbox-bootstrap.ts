@@ -102,7 +102,7 @@ export async function bootstrapSandbox(options: {
 		options.env.Sandbox as Parameters<typeof getSandbox>[0],
 		options.sandboxId,
 		{
-		enableDefaultSession: false,
+			enableDefaultSession: false,
 		},
 	);
 

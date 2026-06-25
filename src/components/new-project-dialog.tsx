@@ -86,7 +86,9 @@ export function NewProjectDialog({
 
 	const trpc = useTRPC();
 	const navigate = useNavigate();
-	const createProjectMutation = useMutation(trpc.projects.create.mutationOptions());
+	const createProjectMutation = useMutation(
+		trpc.projects.create.mutationOptions(),
+	);
 
 	// Load import state
 	const importStateQuery = useQuery(
@@ -165,7 +167,9 @@ export function NewProjectDialog({
 	}, [handleClose, path, step]);
 
 	const handleInitializeProject = useCallback(async () => {
-		const selectedGitHubRepo = githubRepos.find((repo) => repo.name === selectedRepo);
+		const selectedGitHubRepo = githubRepos.find(
+			(repo) => repo.name === selectedRepo,
+		);
 		if (!selectedGitHubRepo) {
 			return;
 		}
@@ -178,7 +182,10 @@ export function NewProjectDialog({
 		});
 
 		handleClose();
-		await navigate({ to: "/project/$projectId", params: { projectId: project.id } });
+		await navigate({
+			to: "/project/$projectId",
+			params: { projectId: project.id },
+		});
 	}, [
 		createProjectMutation,
 		envVars,
@@ -427,12 +434,12 @@ export function NewProjectDialog({
 								{installations.length > 0 && (
 									<div className="flex items-center justify-between px-1 text-xs text-muted-foreground">
 										<span>Can't find your repository?</span>
-									<button
-										type="button"
-										onClick={handleConfigureGithub}
-										disabled={isProvisioning}
-										className="text-primary hover:underline font-medium cursor-pointer"
-									>
+										<button
+											type="button"
+											onClick={handleConfigureGithub}
+											disabled={isProvisioning}
+											className="text-primary hover:underline font-medium cursor-pointer"
+										>
 											Configure GitHub Access
 										</button>
 									</div>
@@ -611,8 +618,8 @@ export function NewProjectDialog({
 						onSubmit={
 							path === "github"
 								? () => {
-									void handleInitializeProject();
-								}
+										void handleInitializeProject();
+									}
 								: handleContinue
 						}
 					/>
@@ -816,24 +823,28 @@ function ReadyStep({
 			</ScrollArea>
 
 			<DialogFooter className="flex flex-row items-center gap-2 pt-1">
-			<Button
-				variant="ghost"
-				onClick={onBack}
-				disabled={isProvisioning}
-				className="cursor-pointer"
-			>
-				<ArrowLeftIcon data-icon="inline-start" />
-				Back
-			</Button>
-			<div className="flex-1" />
-			<Button onClick={onSubmit} disabled={isProvisioning} className="cursor-pointer">
-				{path === "github"
-					? isProvisioning
-						? "Initializing..."
-						: "Initialize"
-					: "Create Project"}
-				<ArrowRightIcon data-icon="inline-end" />
-			</Button>
+				<Button
+					variant="ghost"
+					onClick={onBack}
+					disabled={isProvisioning}
+					className="cursor-pointer"
+				>
+					<ArrowLeftIcon data-icon="inline-start" />
+					Back
+				</Button>
+				<div className="flex-1" />
+				<Button
+					onClick={onSubmit}
+					disabled={isProvisioning}
+					className="cursor-pointer"
+				>
+					{path === "github"
+						? isProvisioning
+							? "Initializing..."
+							: "Initialize"
+						: "Create Project"}
+					<ArrowRightIcon data-icon="inline-end" />
+				</Button>
 			</DialogFooter>
 		</>
 	);

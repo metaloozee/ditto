@@ -8,7 +8,7 @@ Generated on 2026-06-24. Execute in the order below unless dependencies say othe
 |------|-------|----------|--------|------------|--------|
 | 001 | Implement the GitHub App Auth Flow | P1 | M | — | BLOCKED (stale: partial independent implementation changed plan assumptions) |
 | 002 | Database Schema and tRPC Projects | P1 | S | — | DONE |
-| 003 | Sandbox Provisioning and Bootstrap | P1 | M | 002 | TODO |
+| 003 | Sandbox Provisioning and Bootstrap | P1 | M | 002 | BLOCKED (local `pnpm dev` container support unavailable on Windows; use WSL for final dev verification) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale — finding fixed independently or approach abandoned)
 
