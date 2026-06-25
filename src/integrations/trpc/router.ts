@@ -1,5 +1,5 @@
 import { TRPCError, type TRPCRouterRecord } from "@trpc/server";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { createDb } from "#/db";
@@ -7,6 +7,7 @@ import { projects } from "#/db/schema";
 import { encryptText } from "#/lib/crypto";
 import { getGitHubApp } from "#/lib/github-app";
 import { getGitHubImportState } from "#/lib/github-repositories";
+import { bootstrapSandbox } from "#/lib/sandbox-bootstrap";
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "./init";
 
 const healthRouter = {
@@ -81,9 +82,17 @@ const createProjectInput = z.object({
 		.optional(),
 });
 
+type CreateProjectInput = z.infer<typeof createProjectInput>;
+
 function toProjectResponse(project: typeof projects.$inferSelect) {
 	const { envVars: _envVars, ...projectResponse } = project;
 	return projectResponse;
+}
+
+function sanitizeEnvVars(envVars: CreateProjectInput["envVars"]) {
+	return envVars
+		?.map(({ key, value }) => ({ key: key.trim(), value }))
+		.filter(({ key }) => key.length > 0);
 }
 
 const projectsRouter = {
@@ -108,9 +117,7 @@ const projectsRouter = {
 				});
 			}
 
-			const sanitizedEnvVars = input.envVars
-				?.map(({ key, value }) => ({ key: key.trim(), value }))
-				.filter(({ key }) => key.length > 0);
+			const sanitizedEnvVars = sanitizeEnvVars(input.envVars);
 
 			const encryptedEnvVars =
 				sanitizedEnvVars && sanitizedEnvVars.length > 0
@@ -121,21 +128,74 @@ const projectsRouter = {
 					: undefined;
 
 			const db = createDb(ctx.env);
+			const requiresBootstrap = hasGitHubRepo && hasGitHubInstallationId;
+			const projectId = nanoid();
 			const [project] = await db
 				.insert(projects)
 				.values({
-					id: nanoid(),
+					id: projectId,
 					name: trimmedName,
 					description: input.description,
 					userId: ctx.user.id,
 					githubRepo: input.githubRepo,
 					githubInstallationId: input.githubInstallationId,
-					status: "provisioning",
+					status: requiresBootstrap ? "provisioning" : "ready",
 					envVars: encryptedEnvVars,
 				})
 				.returning();
 
-			return toProjectResponse(project);
+			if (!requiresBootstrap) {
+				return toProjectResponse(project);
+			}
+
+			const sandboxId = crypto.randomUUID().toLowerCase();
+			const githubRepo = input.githubRepo;
+			const githubInstallationId = input.githubInstallationId;
+			if (!githubRepo || !githubInstallationId) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message:
+						"githubRepo and githubInstallationId must be provided together.",
+				});
+			}
+
+			try {
+				await bootstrapSandbox({
+					env: ctx.env,
+					sandboxId,
+					githubRepo,
+					installationId: githubInstallationId,
+					envVars: sanitizedEnvVars ?? [],
+				});
+
+				const [updatedProject] = await db
+					.update(projects)
+					.set({
+						sandboxId,
+						status: "ready",
+						updatedAt: sql`(unixepoch())`,
+					})
+					.where(eq(projects.id, projectId))
+					.returning();
+
+				return toProjectResponse(updatedProject);
+			} catch (error) {
+				await db
+					.update(projects)
+					.set({
+						status: "failed",
+						updatedAt: sql`(unixepoch())`,
+					})
+					.where(eq(projects.id, projectId));
+
+				throw new TRPCError({
+					code: "INTERNAL_SERVER_ERROR",
+					message:
+						error instanceof Error
+							? error.message
+							: "Failed to provision sandbox.",
+				});
+			}
 		}),
 
 	list: protectedProcedure.query(async ({ ctx }) => {

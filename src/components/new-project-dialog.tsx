@@ -1,6 +1,7 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import {
 	ArrowLeftIcon,
 	ArrowRightIcon,
@@ -84,6 +85,8 @@ export function NewProjectDialog({
 	const [framework, setFramework] = useState("");
 
 	const trpc = useTRPC();
+	const navigate = useNavigate();
+	const createProjectMutation = useMutation(trpc.projects.create.mutationOptions());
 
 	// Load import state
 	const importStateQuery = useQuery(
@@ -119,6 +122,24 @@ export function NewProjectDialog({
 		setTimeout(resetState, 200);
 	}, [onOpenChange, resetState]);
 
+	const isProvisioning = createProjectMutation.isPending;
+
+	const handleDialogOpenChange = useCallback(
+		(nextOpen: boolean) => {
+			if (isProvisioning) {
+				return;
+			}
+
+			if (nextOpen) {
+				onOpenChange(true);
+				return;
+			}
+
+			handleClose();
+		},
+		[handleClose, isProvisioning, onOpenChange],
+	);
+
 	const handleChoosePath = useCallback((chosen: OnboardingPath) => {
 		setPath(chosen);
 		setStep(chosen === "github" ? "github" : "scratch");
@@ -137,9 +158,35 @@ export function NewProjectDialog({
 		if (step === "github" || step === "scratch") {
 			setStep("ready");
 		} else if (step === "ready") {
-			handleClose();
+			if (path !== "github") {
+				handleClose();
+			}
 		}
-	}, [step, handleClose]);
+	}, [handleClose, path, step]);
+
+	const handleInitializeProject = useCallback(async () => {
+		const selectedGitHubRepo = githubRepos.find((repo) => repo.name === selectedRepo);
+		if (!selectedGitHubRepo) {
+			return;
+		}
+
+		const project = await createProjectMutation.mutateAsync({
+			name: selectedGitHubRepo.repoName,
+			githubRepo: selectedGitHubRepo.name,
+			githubInstallationId: selectedGitHubRepo.installationId,
+			envVars: envVars.map(({ key, value }) => ({ key, value })),
+		});
+
+		handleClose();
+		await navigate({ to: "/project/$projectId", params: { projectId: project.id } });
+	}, [
+		createProjectMutation,
+		envVars,
+		githubRepos,
+		handleClose,
+		navigate,
+		selectedRepo,
+	]);
 
 	const handleConfigureGithub = useCallback(() => {
 		if (!installUrl) return;
@@ -207,8 +254,9 @@ export function NewProjectDialog({
 				: true;
 
 	return (
-		<Dialog open={open} onOpenChange={handleClose}>
+		<Dialog open={open} onOpenChange={handleDialogOpenChange}>
 			<DialogContent
+				showCloseButton={!isProvisioning}
 				className={cn(
 					"sm:max-w-lg",
 					step === "github" && "flex max-h-[85vh] flex-col",
@@ -303,6 +351,7 @@ export function NewProjectDialog({
 								<Button
 									onClick={handleConfigureGithub}
 									size="sm"
+									disabled={isProvisioning}
 									className="cursor-pointer"
 								>
 									Install GitHub App
@@ -378,11 +427,12 @@ export function NewProjectDialog({
 								{installations.length > 0 && (
 									<div className="flex items-center justify-between px-1 text-xs text-muted-foreground">
 										<span>Can't find your repository?</span>
-										<button
-											type="button"
-											onClick={handleConfigureGithub}
-											className="text-primary hover:underline font-medium cursor-pointer"
-										>
+									<button
+										type="button"
+										onClick={handleConfigureGithub}
+										disabled={isProvisioning}
+										className="text-primary hover:underline font-medium cursor-pointer"
+									>
 											Configure GitHub Access
 										</button>
 									</div>
@@ -406,6 +456,7 @@ export function NewProjectDialog({
 							<Button
 								variant="ghost"
 								onClick={handleBack}
+								disabled={isProvisioning}
 								className="cursor-pointer"
 							>
 								<ArrowLeftIcon data-icon="inline-start" />
@@ -414,7 +465,7 @@ export function NewProjectDialog({
 							<div className="flex-1" />
 							<Button
 								onClick={handleContinue}
-								disabled={!canContinue}
+								disabled={!canContinue || isProvisioning}
 								className="cursor-pointer"
 							>
 								Continue
@@ -522,6 +573,7 @@ export function NewProjectDialog({
 							<Button
 								variant="ghost"
 								onClick={handleBack}
+								disabled={isProvisioning}
 								className="cursor-pointer"
 							>
 								<ArrowLeftIcon data-icon="inline-start" />
@@ -530,7 +582,7 @@ export function NewProjectDialog({
 							<div className="flex-1" />
 							<Button
 								onClick={handleContinue}
-								disabled={!canContinue}
+								disabled={!canContinue || isProvisioning}
 								className="cursor-pointer"
 							>
 								Continue
@@ -553,8 +605,16 @@ export function NewProjectDialog({
 						addEnvVar={addEnvVar}
 						removeEnvVar={removeEnvVar}
 						updateEnvVar={updateEnvVar}
+						isProvisioning={isProvisioning}
+						provisioningError={createProjectMutation.error?.message ?? null}
 						onBack={handleBack}
-						onSubmit={handleContinue}
+						onSubmit={
+							path === "github"
+								? () => {
+									void handleInitializeProject();
+								}
+								: handleContinue
+						}
 					/>
 				)}
 			</DialogContent>
@@ -574,6 +634,8 @@ function ReadyStep({
 	addEnvVar,
 	removeEnvVar,
 	updateEnvVar,
+	isProvisioning,
+	provisioningError,
 	onBack,
 	onSubmit,
 }: {
@@ -588,6 +650,8 @@ function ReadyStep({
 	addEnvVar: () => void;
 	removeEnvVar: (id: string) => void;
 	updateEnvVar: (id: string, field: "key" | "value", val: string) => void;
+	isProvisioning: boolean;
+	provisioningError: string | null;
 	onBack: () => void;
 	onSubmit: () => void;
 }) {
@@ -664,6 +728,17 @@ function ReadyStep({
 
 					{path === "github" && (
 						<>
+							{isProvisioning ? (
+								<p className="text-sm text-muted-foreground">
+									Spinning up sandbox and installing dependencies...
+								</p>
+							) : null}
+							{provisioningError ? (
+								<p className="text-sm text-destructive" role="alert">
+									{provisioningError}
+								</p>
+							) : null}
+
 							<Separator />
 							<div className="flex flex-col gap-3">
 								<div className="flex items-center justify-between">
@@ -683,6 +758,7 @@ function ReadyStep({
 										variant="outline"
 										size="sm"
 										onClick={addEnvVar}
+										disabled={isProvisioning}
 										className="cursor-pointer shrink-0"
 										aria-label="Add environment variable"
 									>
@@ -700,6 +776,7 @@ function ReadyStep({
 													autoComplete="off"
 													spellCheck={false}
 													value={envVar.key}
+													disabled={isProvisioning}
 													onChange={(e) =>
 														updateEnvVar(envVar.id, "key", e.target.value)
 													}
@@ -711,6 +788,7 @@ function ReadyStep({
 													autoComplete="off"
 													spellCheck={false}
 													value={envVar.value}
+													disabled={isProvisioning}
 													onChange={(e) =>
 														updateEnvVar(envVar.id, "value", e.target.value)
 													}
@@ -721,6 +799,7 @@ function ReadyStep({
 													variant="ghost"
 													size="icon-sm"
 													onClick={() => removeEnvVar(envVar.id)}
+													disabled={isProvisioning}
 													className="cursor-pointer shrink-0"
 													aria-label="Remove variable"
 												>
@@ -737,15 +816,24 @@ function ReadyStep({
 			</ScrollArea>
 
 			<DialogFooter className="flex flex-row items-center gap-2 pt-1">
-				<Button variant="ghost" onClick={onBack} className="cursor-pointer">
-					<ArrowLeftIcon data-icon="inline-start" />
-					Back
-				</Button>
-				<div className="flex-1" />
-				<Button onClick={onSubmit} className="cursor-pointer">
-					{path === "github" ? "Initialize" : "Create Project"}
-					<ArrowRightIcon data-icon="inline-end" />
-				</Button>
+			<Button
+				variant="ghost"
+				onClick={onBack}
+				disabled={isProvisioning}
+				className="cursor-pointer"
+			>
+				<ArrowLeftIcon data-icon="inline-start" />
+				Back
+			</Button>
+			<div className="flex-1" />
+			<Button onClick={onSubmit} disabled={isProvisioning} className="cursor-pointer">
+				{path === "github"
+					? isProvisioning
+						? "Initializing..."
+						: "Initialize"
+					: "Create Project"}
+				<ArrowRightIcon data-icon="inline-end" />
+			</Button>
 			</DialogFooter>
 		</>
 	);
