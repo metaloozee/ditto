@@ -1,13 +1,20 @@
 import { TRPCError, type TRPCRouterRecord } from "@trpc/server";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { createDb } from "#/db";
-import { projects } from "#/db/schema";
+import { agentRunEvents, agentRuns, projects, workspaceSessions } from "#/db/schema";
 import { encryptText } from "#/lib/crypto";
 import { getGitHubApp } from "#/lib/github-app";
 import { getGitHubImportState } from "#/lib/github-repositories";
 import { bootstrapSandbox } from "#/lib/sandbox-bootstrap";
+import {
+	PROJECT_MEMORY_PATH,
+	WORKSPACE_PATH,
+	createAgentRunEventPayload,
+	isActiveAgentRunStatus,
+	makeSessionTitleFromMessage,
+} from "#/lib/workspace-policy";
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "./init";
 
 const healthRouter = {
@@ -93,6 +100,19 @@ function sanitizeEnvVars(envVars: CreateProjectInput["envVars"]) {
 	return envVars
 		?.map(({ key, value }) => ({ key: key.trim(), value }))
 		.filter(({ key }) => key.length > 0);
+}
+
+function assertProjectReady(project: typeof projects.$inferSelect) {
+	if (project.status !== "ready" || !project.sandboxId) {
+		throw new TRPCError({
+			code: "PRECONDITION_FAILED",
+			message: "Project sandbox is not ready yet.",
+		});
+	}
+}
+
+function isTerminalAgentRunStatus(status: string) {
+	return status === "completed" || status === "failed" || status === "canceled";
 }
 
 const projectsRouter = {
@@ -230,9 +250,409 @@ const projectsRouter = {
 		}),
 } satisfies TRPCRouterRecord;
 
+const workspaceRouter = {
+	get: protectedProcedure
+		.input(
+			z.object({
+				projectId: z.string().min(1),
+				sessionId: z.string().min(1).optional(),
+			}),
+		)
+		.query(async ({ ctx, input }) => {
+			const db = createDb(ctx.env);
+			const [project] = await db
+				.select()
+				.from(projects)
+				.where(
+					and(eq(projects.id, input.projectId), eq(projects.userId, ctx.user.id)),
+				)
+				.limit(1);
+
+			if (!project) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Project not found.",
+				});
+			}
+
+			assertProjectReady(project);
+
+			const sessions = await db
+				.select()
+				.from(workspaceSessions)
+				.where(
+					and(
+						eq(workspaceSessions.projectId, input.projectId),
+						eq(workspaceSessions.userId, ctx.user.id),
+						eq(workspaceSessions.status, "active"),
+					),
+				)
+				.orderBy(desc(workspaceSessions.updatedAt))
+				.limit(25);
+
+			const selectedSession = input.sessionId
+				? await db
+						.select()
+						.from(workspaceSessions)
+						.where(
+							and(
+								eq(workspaceSessions.id, input.sessionId),
+								eq(workspaceSessions.projectId, input.projectId),
+								eq(workspaceSessions.userId, ctx.user.id),
+							),
+						)
+						.limit(1)
+						.then(([session]) => {
+							if (!session) {
+								throw new TRPCError({
+									code: "NOT_FOUND",
+									message: "Conversation not found.",
+								});
+							}
+
+							return session;
+						})
+				: null;
+
+			const activeRun = project.activeAgentRunId
+				? await db
+						.select()
+						.from(agentRuns)
+						.where(
+							and(
+								eq(agentRuns.id, project.activeAgentRunId),
+								eq(agentRuns.userId, ctx.user.id),
+							),
+						)
+						.limit(1)
+						.then(([run]) =>
+							run?.isMutating && isActiveAgentRunStatus(run.status) ? run : null,
+						)
+				: null;
+
+			const events = await db
+				.select()
+				.from(agentRunEvents)
+				.where(eq(agentRunEvents.projectId, input.projectId))
+				.orderBy(desc(agentRunEvents.createdAt), desc(agentRunEvents.id))
+				.limit(100);
+
+			return {
+				project: toProjectResponse(project),
+				sessions,
+				selectedSession,
+				activeRun,
+				events: events.reverse(),
+			};
+		}),
+
+	startRun: protectedProcedure
+		.input(
+			z.object({
+				projectId: z.string().min(1),
+				sessionId: z.string().min(1).optional(),
+				message: z.string().trim().min(1),
+				isMutating: z.boolean().default(true),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const db = createDb(ctx.env);
+			const runId = nanoid();
+
+			return await db.transaction(async (tx) => {
+				const [project] = await tx
+					.select()
+					.from(projects)
+					.where(
+						and(eq(projects.id, input.projectId), eq(projects.userId, ctx.user.id)),
+					)
+					.limit(1);
+
+				if (!project) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Project not found.",
+					});
+				}
+
+				assertProjectReady(project);
+
+				let selectedSession: typeof workspaceSessions.$inferSelect | null = null;
+				if (input.sessionId) {
+					[selectedSession] = await tx
+						.select()
+						.from(workspaceSessions)
+						.where(
+							and(
+								eq(workspaceSessions.id, input.sessionId),
+								eq(workspaceSessions.projectId, input.projectId),
+								eq(workspaceSessions.userId, ctx.user.id),
+							),
+						)
+						.limit(1);
+
+					if (!selectedSession) {
+						throw new TRPCError({
+							code: "NOT_FOUND",
+							message: "Conversation not found.",
+						});
+					}
+
+					if (selectedSession.status === "archived") {
+						throw new TRPCError({
+							code: "PRECONDITION_FAILED",
+							message: "This conversation is archived.",
+						});
+					}
+				}
+
+				if (input.isMutating && project.activeAgentRunId) {
+					const previousRunId = project.activeAgentRunId;
+					const [existingRun] = await tx
+						.select()
+						.from(agentRuns)
+						.where(eq(agentRuns.id, previousRunId))
+						.limit(1);
+
+					if (
+						!existingRun ||
+						!existingRun.isMutating ||
+						!isActiveAgentRunStatus(existingRun.status)
+					) {
+						await tx
+							.update(projects)
+							.set({
+								activeAgentRunId: null,
+								activeAgentRunStartedAt: null,
+								updatedAt: sql`(unixepoch())`,
+							})
+							.where(
+								and(
+									eq(projects.id, input.projectId),
+									eq(projects.activeAgentRunId, previousRunId),
+								),
+							);
+
+						await tx.insert(agentRunEvents).values({
+							runId: existingRun ? previousRunId : null,
+							projectId: input.projectId,
+							sessionId: existingRun?.sessionId ?? null,
+							type: "error",
+							payload: createAgentRunEventPayload({
+								reason: "stale_lock_cleared",
+								previousRunId,
+							}),
+						});
+					}
+				}
+
+				if (input.isMutating) {
+					const [lockedProject] = await tx
+						.update(projects)
+						.set({
+							activeAgentRunId: runId,
+							activeAgentRunStartedAt: sql`(unixepoch())`,
+							updatedAt: sql`(unixepoch())`,
+						})
+						.where(
+							and(
+								eq(projects.id, input.projectId),
+								eq(projects.userId, ctx.user.id),
+								isNull(projects.activeAgentRunId),
+							),
+						)
+						.returning();
+
+					if (!lockedProject) {
+						await tx.insert(agentRunEvents).values({
+							runId: null,
+							projectId: input.projectId,
+							sessionId: input.sessionId ?? null,
+							type: "lock_rejected",
+							payload: createAgentRunEventPayload({ reason: "active_run_exists" }),
+						});
+
+						throw new TRPCError({
+							code: "CONFLICT",
+							message: "Another agent run is already editing this project.",
+						});
+					}
+				}
+
+				const createdSession = !selectedSession;
+				if (!selectedSession) {
+					const [session] = await tx
+						.insert(workspaceSessions)
+						.values({
+							id: nanoid(),
+							projectId: input.projectId,
+							userId: ctx.user.id,
+							title: makeSessionTitleFromMessage(input.message),
+							workspacePath: WORKSPACE_PATH,
+							memoryPath: PROJECT_MEMORY_PATH,
+							status: "active",
+						})
+						.returning();
+
+					selectedSession = session;
+				}
+
+				const [run] = await tx
+					.insert(agentRuns)
+					.values({
+						id: runId,
+						projectId: input.projectId,
+						sessionId: selectedSession.id,
+						userId: ctx.user.id,
+						status: "running",
+						isMutating: input.isMutating,
+						userMessage: input.message,
+					})
+					.returning();
+
+				await tx
+					.update(workspaceSessions)
+					.set({ updatedAt: sql`(unixepoch())` })
+					.where(eq(workspaceSessions.id, selectedSession.id));
+
+				await tx.insert(agentRunEvents).values([
+					{
+						runId,
+						projectId: input.projectId,
+						sessionId: selectedSession.id,
+						type: "message",
+						payload: createAgentRunEventPayload({
+							role: "user",
+							text: input.message,
+						}),
+					},
+					{
+						runId,
+						projectId: input.projectId,
+						sessionId: selectedSession.id,
+						type: "message",
+						payload: createAgentRunEventPayload({
+							role: "system",
+							text: "Agent execution is queued. The LLM/tool runner will be connected in a later plan.",
+						}),
+					},
+				]);
+
+				return { run, session: selectedSession, createdSession };
+			});
+		}),
+
+	cancelRun: protectedProcedure
+		.input(z.object({ runId: z.string().min(1) }))
+		.mutation(async ({ ctx, input }) => {
+			const db = createDb(ctx.env);
+			const [run] = await db
+				.select()
+				.from(agentRuns)
+				.where(and(eq(agentRuns.id, input.runId), eq(agentRuns.userId, ctx.user.id)))
+				.limit(1);
+
+			if (!run) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Agent run not found.",
+				});
+			}
+
+			if (isTerminalAgentRunStatus(run.status)) {
+				return run;
+			}
+
+			const [updatedRun] = await db
+				.update(agentRuns)
+				.set({
+					status: "canceled",
+					finishedAt: sql`(unixepoch())`,
+					updatedAt: sql`(unixepoch())`,
+				})
+				.where(eq(agentRuns.id, input.runId))
+				.returning();
+
+			await db
+				.update(projects)
+				.set({
+					activeAgentRunId: null,
+					activeAgentRunStartedAt: null,
+					updatedAt: sql`(unixepoch())`,
+				})
+				.where(eq(projects.activeAgentRunId, input.runId));
+
+			await db.insert(agentRunEvents).values({
+				runId: input.runId,
+				projectId: run.projectId,
+				sessionId: run.sessionId,
+				type: "done",
+				payload: createAgentRunEventPayload({ status: "canceled" }),
+			});
+
+			return updatedRun;
+		}),
+
+	answerRunQuestion: protectedProcedure
+		.input(
+			z.object({
+				runId: z.string().min(1),
+				answer: z.string().trim().min(1),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const db = createDb(ctx.env);
+			const [run] = await db
+				.select()
+				.from(agentRuns)
+				.where(and(eq(agentRuns.id, input.runId), eq(agentRuns.userId, ctx.user.id)))
+				.limit(1);
+
+			if (!run) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Agent run not found.",
+				});
+			}
+
+			if (run.status !== "needs_input") {
+				throw new TRPCError({
+					code: "PRECONDITION_FAILED",
+					message: "This agent run is not waiting for input.",
+				});
+			}
+
+			const [updatedRun] = await db
+				.update(agentRuns)
+				.set({
+					status: "running",
+					question: null,
+					recommendedAnswer: null,
+					updatedAt: sql`(unixepoch())`,
+				})
+				.where(eq(agentRuns.id, input.runId))
+				.returning();
+
+			await db.insert(agentRunEvents).values({
+				runId: input.runId,
+				projectId: run.projectId,
+				sessionId: run.sessionId,
+				type: "message",
+				payload: createAgentRunEventPayload({
+					role: "user",
+					text: input.answer,
+					kind: "answer",
+				}),
+			});
+
+			return updatedRun;
+		}),
+} satisfies TRPCRouterRecord;
+
 export const trpcRouter = createTRPCRouter({
 	health: healthRouter,
 	github: githubRouter,
 	projects: projectsRouter,
+	workspace: workspaceRouter,
 });
 export type TRPCRouter = typeof trpcRouter;
