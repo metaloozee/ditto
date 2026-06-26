@@ -13,7 +13,8 @@ Generated on 2026-06-24. Execute in the order below unless dependencies say othe
 | 005 | Remove dead project-route UI code and restore verification | P1 | S | — | TODO |
 | 006 | Restore Yarn lockfile handling in sandbox bootstrap | P1 | S | — | TODO |
 | 007 | Normalize escaped GitHub App private-key newlines | P2 | S | 004 | REJECTED (intentional behavior: do not normalize escaped key newlines) |
-| 008 | Add project-scoped agent run foundation | P1 | L | 003 | TODO |
+| 008 | Add project-scoped agent run foundation | P1 | L | 003 | DONE |
+| 009 | Scope workspace events to the selected session | P1 | S | 008 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale — finding fixed independently or approach abandoned)
 
@@ -24,6 +25,7 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - 004 and 005 should land first because they restore typecheck/lint/whitespace verification for the uncommitted branch.
 - 007 was rejected on 2026-06-25 because the maintainer confirmed no private-key normalization should be added.
 - 008 depends on the project sandbox bootstrap surface from 003: projects must already have `sandboxId` and `status` before the workspace/run lock can be useful. It intentionally chooses one sandbox per project, with logical sessions and one active mutating run lock inside that project sandbox.
+- 009 depends on 008 because it fixes the workspace event API introduced by the agent-run foundation: conversation events must be scoped by selected session, while the mutating-run lock remains project-scoped.
 
 ## Verification baseline
 

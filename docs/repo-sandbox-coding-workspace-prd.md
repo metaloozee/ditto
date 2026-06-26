@@ -155,6 +155,17 @@ Compared with Bolt, v0, and Lovable, this product is narrower and more practical
 - Which repo setup commands should be inferred versus manually configured?
 - What should happen when the repo build fails before the chat loop starts?
 
+## 13.1 Current v1 Decisions
+
+1. v1 uses one Cloudflare Sandbox per project.
+2. Sessions, chats, and branches are logical records inside the project workspace; they do not create new sandboxes in v1.
+3. A project can have multiple logical sessions or conversations. A durable session is created only when the first user message for that conversation is accepted; sidebar plus and new-chat draft actions must not create empty sessions.
+4. Only one mutating agent run may operate on a project at a time. Multiple read-only runs or sessions may exist later, but mutation is serialized by a project-level lock.
+5. The agent has broad permission inside its sandbox. Generic per-tool approvals are not part of v1.
+6. The agent can pause with a `needs_input` event when it needs clarification; that is a question/resume mechanism, not a permission approval mechanism. The eventual answer UX should be a separate focused question-answer UI, not the normal composer starting another run.
+7. Outside-world effects, including GitHub push or PR, production deploy, or sandbox destruction, remain explicit user actions and are out of scope for the foundation work.
+8. Local project memory should live under `/workspace/.ditto/` in the sandbox in a future plan; database run events are the durable product event log for now.
+
 ## 14. Recommended Positioning
 
 One-line positioning:
