@@ -375,9 +375,10 @@ const workspaceRouter = {
 		.mutation(async ({ ctx, input }) => {
 			const db = createDb(ctx.env);
 			const runId = nanoid();
+			let ownsProjectLock = false;
 
-			return await db.transaction(async (tx) => {
-				const [project] = await tx
+			try {
+				const [project] = await db
 					.select()
 					.from(projects)
 					.where(
@@ -400,7 +401,7 @@ const workspaceRouter = {
 				let selectedSession: typeof workspaceSessions.$inferSelect | null =
 					null;
 				if (input.sessionId) {
-					[selectedSession] = await tx
+					[selectedSession] = await db
 						.select()
 						.from(workspaceSessions)
 						.where(
@@ -429,7 +430,7 @@ const workspaceRouter = {
 
 				if (input.isMutating && project.activeAgentRunId) {
 					const previousRunId = project.activeAgentRunId;
-					const [existingRun] = await tx
+					const [existingRun] = await db
 						.select()
 						.from(agentRuns)
 						.where(eq(agentRuns.id, previousRunId))
@@ -440,35 +441,82 @@ const workspaceRouter = {
 						!existingRun.isMutating ||
 						!isActiveAgentRunStatus(existingRun.status)
 					) {
-						await tx
-							.update(projects)
-							.set({
-								activeAgentRunId: null,
-								activeAgentRunStartedAt: null,
-								updatedAt: sql`(unixepoch())`,
-							})
-							.where(
-								and(
-									eq(projects.id, input.projectId),
-									eq(projects.activeAgentRunId, previousRunId),
+						await db.batch([
+							db
+								.update(projects)
+								.set({
+									activeAgentRunId: null,
+									activeAgentRunStartedAt: null,
+									updatedAt: sql`(unixepoch())`,
+								})
+								.where(
+									and(
+										eq(projects.id, input.projectId),
+										eq(projects.userId, ctx.user.id),
+										eq(projects.activeAgentRunId, previousRunId),
+									),
 								),
-							);
-
-						await tx.insert(agentRunEvents).values({
-							runId: existingRun ? previousRunId : null,
-							projectId: input.projectId,
-							sessionId: existingRun?.sessionId ?? null,
-							type: "error",
-							payload: createAgentRunEventPayload({
-								reason: "stale_lock_cleared",
-								previousRunId,
+							db.insert(agentRunEvents).values({
+								runId: existingRun ? previousRunId : null,
+								projectId: input.projectId,
+								sessionId: existingRun?.sessionId ?? null,
+								type: "error",
+								payload: createAgentRunEventPayload({
+									reason: "stale_lock_cleared",
+									previousRunId,
+								}),
 							}),
-						});
+						]);
 					}
 				}
 
+				const createdSession = !selectedSession;
+				const sessionId = selectedSession?.id ?? nanoid();
+				const runValues = {
+					id: runId,
+					projectId: input.projectId,
+					sessionId,
+					userId: ctx.user.id,
+					status: "running" as const,
+					isMutating: input.isMutating,
+					userMessage: input.message,
+				};
+				const eventValues = [
+					{
+						runId,
+						projectId: input.projectId,
+						sessionId,
+						type: "message" as const,
+						payload: createAgentRunEventPayload({
+							role: "user",
+							text: input.message,
+						}),
+					},
+					{
+						runId,
+						projectId: input.projectId,
+						sessionId,
+						type: "message" as const,
+						payload: createAgentRunEventPayload({
+							role: "system",
+							text: "Agent execution is queued. The LLM/tool runner will be connected in a later plan.",
+						}),
+					},
+				];
+				const sessionValues = createdSession
+					? {
+							id: sessionId,
+							projectId: input.projectId,
+							userId: ctx.user.id,
+							title: makeSessionTitleFromMessage(input.message),
+							workspacePath: WORKSPACE_PATH,
+							memoryPath: PROJECT_MEMORY_PATH,
+							status: "active" as const,
+						}
+					: null;
+
 				if (input.isMutating) {
-					const [lockedProject] = await tx
+					const [lockedProject] = await db
 						.update(projects)
 						.set({
 							activeAgentRunId: runId,
@@ -485,7 +533,7 @@ const workspaceRouter = {
 						.returning();
 
 					if (!lockedProject) {
-						await tx.insert(agentRunEvents).values({
+						await db.insert(agentRunEvents).values({
 							runId: null,
 							projectId: input.projectId,
 							sessionId: input.sessionId ?? null,
@@ -500,69 +548,92 @@ const workspaceRouter = {
 							message: "Another agent run is already editing this project.",
 						});
 					}
+
+					ownsProjectLock = true;
 				}
 
-				const createdSession = !selectedSession;
-				if (!selectedSession) {
-					const [session] = await tx
-						.insert(workspaceSessions)
-						.values({
-							id: nanoid(),
-							projectId: input.projectId,
-							userId: ctx.user.id,
-							title: makeSessionTitleFromMessage(input.message),
-							workspacePath: WORKSPACE_PATH,
-							memoryPath: PROJECT_MEMORY_PATH,
-							status: "active",
-						})
-						.returning();
+				async function releaseOwnedProjectLockAfterBatchFailure() {
+					if (!ownsProjectLock) {
+						return;
+					}
 
-					selectedSession = session;
+					try {
+						await db
+							.update(projects)
+							.set({
+								activeAgentRunId: null,
+								activeAgentRunStartedAt: null,
+								updatedAt: sql`(unixepoch())`,
+							})
+							.where(
+								and(
+									eq(projects.id, input.projectId),
+									eq(projects.userId, ctx.user.id),
+									eq(projects.activeAgentRunId, runId),
+								),
+							);
+					} catch {
+						// Keep the original start-run failure as the user-facing error.
+					}
 				}
 
-				const [run] = await tx
-					.insert(agentRuns)
-					.values({
-						id: runId,
-						projectId: input.projectId,
-						sessionId: selectedSession.id,
-						userId: ctx.user.id,
-						status: "running",
-						isMutating: input.isMutating,
-						userMessage: input.message,
-					})
-					.returning();
+				if (createdSession && sessionValues) {
+					try {
+						const [[session], [run]] = await db.batch([
+							db.insert(workspaceSessions).values(sessionValues).returning(),
+							db.insert(agentRuns).values(runValues).returning(),
+							db
+								.update(workspaceSessions)
+								.set({ updatedAt: sql`(unixepoch())` })
+								.where(eq(workspaceSessions.id, sessionId)),
+							db.insert(agentRunEvents).values(eventValues),
+						]);
 
-				await tx
-					.update(workspaceSessions)
-					.set({ updatedAt: sql`(unixepoch())` })
-					.where(eq(workspaceSessions.id, selectedSession.id));
+						if (!session || !run) {
+							throw new Error(
+								"Batched startRun write did not return created rows.",
+							);
+						}
 
-				await tx.insert(agentRunEvents).values([
-					{
-						runId,
-						projectId: input.projectId,
-						sessionId: selectedSession.id,
-						type: "message",
-						payload: createAgentRunEventPayload({
-							role: "user",
-							text: input.message,
-						}),
-					},
-					{
-						runId,
-						projectId: input.projectId,
-						sessionId: selectedSession.id,
-						type: "message",
-						payload: createAgentRunEventPayload({
-							role: "system",
-							text: "Agent execution is queued. The LLM/tool runner will be connected in a later plan.",
-						}),
-					},
-				]);
+						return { run, session, createdSession };
+					} catch (error) {
+						await releaseOwnedProjectLockAfterBatchFailure();
+						throw error;
+					}
+				}
 
-				return { run, session: selectedSession, createdSession };
-			});
+				try {
+					const [[run], [session]] = await db.batch([
+						db.insert(agentRuns).values(runValues).returning(),
+						db
+							.update(workspaceSessions)
+							.set({ updatedAt: sql`(unixepoch())` })
+							.where(eq(workspaceSessions.id, sessionId))
+							.returning(),
+						db.insert(agentRunEvents).values(eventValues),
+					]);
+
+					if (!session || !run) {
+						throw new Error(
+							"Batched startRun write did not return created rows.",
+						);
+					}
+
+					return { run, session, createdSession };
+				} catch (error) {
+					await releaseOwnedProjectLockAfterBatchFailure();
+					throw error;
+				}
+			} catch (error) {
+				if (error instanceof TRPCError) {
+					throw error;
+				}
+
+				throw new TRPCError({
+					code: "INTERNAL_SERVER_ERROR",
+					message: "Failed to start agent run.",
+				});
+			}
 		}),
 
 	cancelRun: protectedProcedure
