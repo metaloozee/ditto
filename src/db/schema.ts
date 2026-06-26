@@ -1,5 +1,12 @@
 import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import {
+	AGENT_RUN_EVENT_TYPES,
+	AGENT_RUN_STATUSES,
+	PROJECT_MEMORY_PATH,
+	WORKSPACE_PATH,
+	WORKSPACE_SESSION_STATUSES,
+} from "#/lib/workspace-policy";
 
 export const todos = sqliteTable("todos", {
 	id: integer({ mode: "number" }).primaryKey({
@@ -35,6 +42,10 @@ export const projects = sqliteTable(
 		githubRepo: text("githubRepo"),
 		githubInstallationId: integer("githubInstallationId"),
 		sandboxId: text("sandboxId"),
+		activeAgentRunId: text("activeAgentRunId"),
+		activeAgentRunStartedAt: integer("activeAgentRunStartedAt", {
+			mode: "timestamp",
+		}),
 		status: text("status", {
 			enum: ["provisioning", "ready", "failed"],
 		})
@@ -49,6 +60,99 @@ export const projects = sqliteTable(
 		),
 	},
 	(table) => [index("projects_userId_idx").on(table.userId)],
+);
+
+export const workspaceSessions = sqliteTable(
+	"workspace_sessions",
+	{
+		id: text("id").primaryKey(),
+		projectId: text("projectId")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		userId: text("userId")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		title: text("title"),
+		branchName: text("branchName"),
+		baseCommitSha: text("baseCommitSha"),
+		workspacePath: text("workspacePath").notNull().default(WORKSPACE_PATH),
+		memoryPath: text("memoryPath").notNull().default(PROJECT_MEMORY_PATH),
+		status: text("status", { enum: [...WORKSPACE_SESSION_STATUSES] })
+			.notNull()
+			.default("active"),
+		createdAt: integer("created_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+		updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+	},
+	(table) => [
+		index("workspace_sessions_projectId_idx").on(table.projectId),
+		index("workspace_sessions_userId_idx").on(table.userId),
+	],
+);
+
+export const agentRuns = sqliteTable(
+	"agent_runs",
+	{
+		id: text("id").primaryKey(),
+		projectId: text("projectId")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		sessionId: text("sessionId")
+			.notNull()
+			.references(() => workspaceSessions.id, { onDelete: "cascade" }),
+		userId: text("userId")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		status: text("status", { enum: [...AGENT_RUN_STATUSES] })
+			.notNull()
+			.default("pending"),
+		isMutating: integer("isMutating", { mode: "boolean" })
+			.notNull()
+			.default(true),
+		userMessage: text("userMessage").notNull(),
+		question: text("question"),
+		recommendedAnswer: text("recommendedAnswer"),
+		createdAt: integer("created_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+		updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+		finishedAt: integer("finishedAt", { mode: "timestamp" }),
+	},
+	(table) => [
+		index("agent_runs_projectId_idx").on(table.projectId),
+		index("agent_runs_sessionId_idx").on(table.sessionId),
+		index("agent_runs_userId_idx").on(table.userId),
+		index("agent_runs_status_idx").on(table.status),
+	],
+);
+
+export const agentRunEvents = sqliteTable(
+	"agent_run_events",
+	{
+		id: integer("id", { mode: "number" }).primaryKey({
+			autoIncrement: true,
+		}),
+		runId: text("runId"),
+		projectId: text("projectId")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		sessionId: text("sessionId"),
+		type: text("type", { enum: [...AGENT_RUN_EVENT_TYPES] }).notNull(),
+		payload: text("payload").notNull(),
+		createdAt: integer("created_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+	},
+	(table) => [
+		index("agent_run_events_runId_idx").on(table.runId),
+		index("agent_run_events_projectId_idx").on(table.projectId),
+		index("agent_run_events_sessionId_idx").on(table.sessionId),
+	],
 );
 
 export const session = sqliteTable(
