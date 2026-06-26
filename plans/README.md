@@ -1,6 +1,6 @@
 # Implementation Plans
 
-Generated on 2026-06-24. Execute in the order below unless dependencies say otherwise. Each executor: read the plan fully before starting, honor its STOP conditions, and update your row when done.
+Generated on 2026-06-24. Updated on 2026-06-26 with plan 010. Execute in the order below unless dependencies say otherwise. Each executor: read the plan fully before starting, honor its STOP conditions, and update your row when done.
 
 ## Execution order & status
 
@@ -15,6 +15,7 @@ Generated on 2026-06-24. Execute in the order below unless dependencies say othe
 | 007 | Normalize escaped GitHub App private-key newlines | P2 | S | 004 | REJECTED (intentional behavior: do not normalize escaped key newlines) |
 | 008 | Add project-scoped agent run foundation | P1 | L | 003 | DONE |
 | 009 | Scope workspace events to the selected session | P1 | S | 008 | DONE |
+| 010 | Replace startRun's D1 transaction with batched writes | P1 | M | 008, 009 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale — finding fixed independently or approach abandoned)
 
@@ -26,13 +27,14 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - 007 was rejected on 2026-06-25 because the maintainer confirmed no private-key normalization should be added.
 - 008 depends on the project sandbox bootstrap surface from 003: projects must already have `sandboxId` and `status` before the workspace/run lock can be useful. It intentionally chooses one sandbox per project, with logical sessions and one active mutating run lock inside that project sandbox.
 - 009 depends on 008 because it fixes the workspace event API introduced by the agent-run foundation: conversation events must be scoped by selected session, while the mutating-run lock remains project-scoped.
+- 010 depends on the workspace/run model from 008 and the current session-scoped workspace behavior from 009. It is a focused reliability fix for `workspace.startRun`: remove unsupported D1 `db.transaction(...)`, preserve the project-level mutating-run lock, and use D1-compatible batched writes for initial session/run/event rows.
 
 ## Verification baseline
 
 Use these commands when executing plans:
 
 - `pnpm exec tsc --noEmit` — passes typechecking.
-- `pnpm lint` — checks linting warnings.
+- `pnpm lint` — exits 0 at plan-writing time with one existing warning in `src/components/ui/sidebar.tsx:85`; new plans should not add warnings in touched files.
 - `pnpm test` — runs unit tests.
 - `git diff --check` — catches whitespace errors before commit.
 
