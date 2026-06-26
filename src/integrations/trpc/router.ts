@@ -3,17 +3,22 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { createDb } from "#/db";
-import { agentRunEvents, agentRuns, projects, workspaceSessions } from "#/db/schema";
+import {
+	agentRunEvents,
+	agentRuns,
+	projects,
+	workspaceSessions,
+} from "#/db/schema";
 import { encryptText } from "#/lib/crypto";
 import { getGitHubApp } from "#/lib/github-app";
 import { getGitHubImportState } from "#/lib/github-repositories";
 import { bootstrapSandbox } from "#/lib/sandbox-bootstrap";
 import {
-	PROJECT_MEMORY_PATH,
-	WORKSPACE_PATH,
 	createAgentRunEventPayload,
 	isActiveAgentRunStatus,
 	makeSessionTitleFromMessage,
+	PROJECT_MEMORY_PATH,
+	WORKSPACE_PATH,
 } from "#/lib/workspace-policy";
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "./init";
 
@@ -264,7 +269,10 @@ const workspaceRouter = {
 				.select()
 				.from(projects)
 				.where(
-					and(eq(projects.id, input.projectId), eq(projects.userId, ctx.user.id)),
+					and(
+						eq(projects.id, input.projectId),
+						eq(projects.userId, ctx.user.id),
+					),
 				)
 				.limit(1);
 
@@ -326,7 +334,9 @@ const workspaceRouter = {
 						)
 						.limit(1)
 						.then(([run]) =>
-							run?.isMutating && isActiveAgentRunStatus(run.status) ? run : null,
+							run?.isMutating && isActiveAgentRunStatus(run.status)
+								? run
+								: null,
 						)
 				: null;
 
@@ -364,7 +374,10 @@ const workspaceRouter = {
 					.select()
 					.from(projects)
 					.where(
-						and(eq(projects.id, input.projectId), eq(projects.userId, ctx.user.id)),
+						and(
+							eq(projects.id, input.projectId),
+							eq(projects.userId, ctx.user.id),
+						),
 					)
 					.limit(1);
 
@@ -377,7 +390,8 @@ const workspaceRouter = {
 
 				assertProjectReady(project);
 
-				let selectedSession: typeof workspaceSessions.$inferSelect | null = null;
+				let selectedSession: typeof workspaceSessions.$inferSelect | null =
+					null;
 				if (input.sessionId) {
 					[selectedSession] = await tx
 						.select()
@@ -469,7 +483,9 @@ const workspaceRouter = {
 							projectId: input.projectId,
 							sessionId: input.sessionId ?? null,
 							type: "lock_rejected",
-							payload: createAgentRunEventPayload({ reason: "active_run_exists" }),
+							payload: createAgentRunEventPayload({
+								reason: "active_run_exists",
+							}),
 						});
 
 						throw new TRPCError({
@@ -549,7 +565,9 @@ const workspaceRouter = {
 			const [run] = await db
 				.select()
 				.from(agentRuns)
-				.where(and(eq(agentRuns.id, input.runId), eq(agentRuns.userId, ctx.user.id)))
+				.where(
+					and(eq(agentRuns.id, input.runId), eq(agentRuns.userId, ctx.user.id)),
+				)
 				.limit(1);
 
 			if (!run) {
@@ -605,7 +623,9 @@ const workspaceRouter = {
 			const [run] = await db
 				.select()
 				.from(agentRuns)
-				.where(and(eq(agentRuns.id, input.runId), eq(agentRuns.userId, ctx.user.id)))
+				.where(
+					and(eq(agentRuns.id, input.runId), eq(agentRuns.userId, ctx.user.id)),
+				)
 				.limit(1);
 
 			if (!run) {

@@ -44,7 +44,6 @@ import {
 	SidebarMenuSubButton,
 	SidebarMenuSubItem,
 	SidebarRail,
-	SidebarSeparator,
 	SidebarTrigger,
 	useSidebar,
 } from "#/components/ui/sidebar";
@@ -57,25 +56,22 @@ type SidebarProject = {
 	id: string;
 	name: string;
 	description?: string | null;
+	status: "provisioning" | "ready" | "failed";
+	createdAt?: Date | string | number | null;
+	updatedAt?: Date | string | number | null;
 };
 
-const chatResults = [
-	{
-		name: "Auth integration notes",
-		description: "Better Auth setup and session handling",
-		shortcut: "C1",
-	},
-	{
-		name: "Sidebar navigation polish",
-		description: "Collapsed states, tooltips, and layout fixes",
-		shortcut: "C2",
-	},
-	{
-		name: "Deploy checklist",
-		description: "Worker bindings, database migrations, and preview URLs",
-		shortcut: "C3",
-	},
-] as const;
+function getProjectStatusMeta(status: SidebarProject["status"]) {
+	if (status === "ready") {
+		return { label: "Ready", className: "bg-emerald-500" };
+	}
+
+	if (status === "failed") {
+		return { label: "Failed", className: "bg-destructive" };
+	}
+
+	return { label: "Working", className: "bg-muted-foreground" };
+}
 
 function BrandingWithTrigger() {
 	const { state } = useSidebar();
@@ -123,13 +119,13 @@ function SearchCommandDialog({
 			open={open}
 			onOpenChange={onOpenChange}
 			title="Search"
-			description="Search for projects and chats."
+			description="Search for projects."
 			className="sm:max-w-xl"
 		>
 			<Command>
-				<CommandInput placeholder="Search projects and chats..." />
+				<CommandInput placeholder="Search projects..." />
 				<CommandList>
-					<CommandEmpty>No projects or chats found.</CommandEmpty>
+					<CommandEmpty>No projects found.</CommandEmpty>
 					<CommandGroup heading="Projects">
 						{projects.map((project, index) => (
 							<CommandItem
@@ -149,27 +145,6 @@ function SearchCommandDialog({
 									) : null}
 								</div>
 								<CommandShortcut>P{index + 1}</CommandShortcut>
-							</CommandItem>
-						))}
-					</CommandGroup>
-					<CommandSeparator />
-					<CommandGroup heading="Chats">
-						{chatResults.map((chat) => (
-							<CommandItem
-								key={chat.name}
-								value={`${chat.name} ${chat.description}`}
-								onSelect={() => onOpenChange(false)}
-								className="cursor-pointer py-2"
-							>
-								<div className="flex min-w-0 flex-1 flex-col">
-									<span className="truncate text-sm font-medium">
-										{chat.name}
-									</span>
-									<span className="truncate text-muted-foreground">
-										{chat.description}
-									</span>
-								</div>
-								<CommandShortcut>{chat.shortcut}</CommandShortcut>
 							</CommandItem>
 						))}
 					</CommandGroup>
@@ -198,6 +173,7 @@ function ProjectSidebarItem({
 	isActive: boolean;
 }) {
 	const [open, setOpen] = useState(isActive);
+	const status = getProjectStatusMeta(project.status);
 
 	return (
 		<Collapsible className="w-full" open={open} onOpenChange={setOpen}>
@@ -217,7 +193,11 @@ function ProjectSidebarItem({
 					) : (
 						<FolderIcon className="!size-3" />
 					)}
-					<span>{project.name}</span>
+					<span className="min-w-0 flex-1 truncate">{project.name}</span>
+					<span className="ml-auto flex items-center gap-1 text-[0.625rem] text-sidebar-foreground/60">
+						<span className={cn("size-1.5 rounded-full", status.className)} />
+						{status.label}
+					</span>
 				</CollapsibleTrigger>
 				<CollapsibleContent>
 					<SidebarMenuSub>
@@ -293,7 +273,7 @@ function ProjectsNav({
 					>
 						<ProjectSidebarItem
 							project={project}
-							isActive={pathname === `/project/${project.id}`}
+							isActive={pathname.startsWith(`/project/${project.id}`)}
 						/>
 						<Button
 							aria-label={`Start chat in ${project.name}`}

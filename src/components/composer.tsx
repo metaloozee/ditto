@@ -1,4 +1,6 @@
 import type { LanguageModelUsage } from "ai";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import {
 	CheckIcon,
 	GitBranchIcon,
@@ -41,6 +43,7 @@ import {
 	PromptInputTextarea,
 	PromptInputTools,
 } from "#/components/ai-elements/prompt-input";
+import { useTRPC } from "#/integrations/trpc/react";
 
 const models = [
 	{
@@ -361,17 +364,104 @@ const contextUsage: LanguageModelUsage = {
 	totalTokens: 12300,
 };
 
-export function Composer() {
+type ComposerProps = {
+	projectId?: string;
+	sessionId?: string | null;
+	activeRunId?: string | null;
+	disabledReason?: string;
+};
+
+export function Composer({
+	projectId,
+	sessionId,
+	activeRunId,
+	disabledReason,
+}: ComposerProps) {
 	const [text, setText] = useState("");
+	const [error, setError] = useState<string | null>(null);
 	const [model, setModel] = useState(models[0].id);
 	const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
+	const trpc = useTRPC();
+	const queryClient = useQueryClient();
+	const navigate = useNavigate();
+	const startRunMutation = useMutation(
+		trpc.workspace.startRun.mutationOptions(),
+	);
+	const cancelRunMutation = useMutation(
+		trpc.workspace.cancelRun.mutationOptions(),
+	);
 
-	function handleSubmit(message: PromptInputMessage) {
+	async function refreshWorkspace() {
+		await Promise.all([
+			queryClient.invalidateQueries(trpc.projects.list.queryFilter()),
+			projectId
+				? queryClient.invalidateQueries(
+						trpc.workspace.get.queryFilter({
+							projectId,
+							sessionId: sessionId ?? undefined,
+						}),
+					)
+				: Promise.resolve(),
+		]);
+	}
+
+	async function handleSubmit(message: PromptInputMessage) {
 		if (!message.text.trim() && message.files.length === 0) {
 			return;
 		}
 
-		setText("");
+		if (!projectId) {
+			setText("");
+			return;
+		}
+
+		if (activeRunId || disabledReason) {
+			return;
+		}
+
+		try {
+			setError(null);
+			const result = await startRunMutation.mutateAsync({
+				projectId,
+				sessionId: sessionId ?? undefined,
+				message: message.text,
+				isMutating: true,
+			});
+
+			setText("");
+			await refreshWorkspace();
+
+			if (result.createdSession) {
+				await navigate({
+					to: "/project/$projectId/session/$sessionId",
+					params: { projectId, sessionId: result.session.id },
+				});
+			}
+		} catch (mutationError) {
+			setError(
+				mutationError instanceof Error
+					? mutationError.message
+					: "Failed to start agent run.",
+			);
+		}
+	}
+
+	async function handleStop() {
+		if (!activeRunId) {
+			return;
+		}
+
+		try {
+			setError(null);
+			await cancelRunMutation.mutateAsync({ runId: activeRunId });
+			await refreshWorkspace();
+		} catch (mutationError) {
+			setError(
+				mutationError instanceof Error
+					? mutationError.message
+					: "Failed to stop agent run.",
+			);
+		}
 	}
 
 	const handleModelSelect = useCallback((id: string) => {
@@ -381,6 +471,12 @@ export function Composer() {
 
 	const selectedModel = models.find((modelOption) => modelOption.id === model);
 	const chefs = [...new Set(models.map((modelOption) => modelOption.chef))];
+	const submitDisabled =
+		!text.trim() ||
+		startRunMutation.isPending ||
+		Boolean(activeRunId) ||
+		Boolean(disabledReason);
+	const alertMessage = disabledReason ?? error;
 
 	return (
 		<section className="absolute left-0 bottom-0 w-full flex flex-col justify-end gap-5 p-2">
@@ -464,18 +560,35 @@ export function Composer() {
 							<PromptInputButton tooltip="Voice input">
 								<MicIcon />
 							</PromptInputButton>
-							<PromptInputSubmit variant="default" disabled={!text.trim()} />
+							<PromptInputSubmit
+								aria-label={activeRunId ? "Stop active run" : "Submit"}
+								variant={activeRunId ? "destructive" : "default"}
+								status={activeRunId ? "streaming" : undefined}
+								onStop={handleStop}
+								disabled={
+									activeRunId ? cancelRunMutation.isPending : submitDisabled
+								}
+							/>
 						</PromptInputTools>
 					</PromptInputFooter>
 				</PromptInput>
+				{alertMessage ? (
+					<p
+						className={`w-full px-2 text-xs ${disabledReason ? "text-muted-foreground" : "text-destructive"}`}
+						role="alert"
+					>
+						{alertMessage}
+					</p>
+				) : null}
 				<div className="flex w-full justify-between gap-5 px-2 py-1.5 text-muted-foreground text-xs">
 					<div className="flex items-center gap-1">
 						<GitBranchIcon className="size-3" />
 						<p>master</p>
 					</div>
+					<p>Build</p>
 					<div className="flex items-center gap-1">
 						<ShieldAlertIcon className="size-3" />
-						<p>Full Access</p>
+						<p>Full access</p>
 					</div>
 				</div>
 			</div>

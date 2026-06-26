@@ -15,6 +15,7 @@ import { Route as ProjectProjectIdRouteImport } from './routes/project.$projectI
 import { Route as InstallationCompletedRouteImport } from './routes/installation.completed'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api.auth.$'
+import { Route as ProjectProjectIdSessionSessionIdRouteImport } from './routes/project.$projectId.session.$sessionId'
 
 const SignInRoute = SignInRouteImport.update({
   id: '/sign-in',
@@ -46,31 +47,40 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjectProjectIdSessionSessionIdRoute =
+  ProjectProjectIdSessionSessionIdRouteImport.update({
+    id: '/session/$sessionId',
+    path: '/session/$sessionId',
+    getParentRoute: () => ProjectProjectIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
   '/installation/completed': typeof InstallationCompletedRoute
-  '/project/$projectId': typeof ProjectProjectIdRoute
+  '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
+  '/project/$projectId/session/$sessionId': typeof ProjectProjectIdSessionSessionIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
   '/installation/completed': typeof InstallationCompletedRoute
-  '/project/$projectId': typeof ProjectProjectIdRoute
+  '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
+  '/project/$projectId/session/$sessionId': typeof ProjectProjectIdSessionSessionIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
   '/installation/completed': typeof InstallationCompletedRoute
-  '/project/$projectId': typeof ProjectProjectIdRoute
+  '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
+  '/project/$projectId/session/$sessionId': typeof ProjectProjectIdSessionSessionIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -81,6 +91,7 @@ export interface FileRouteTypes {
     | '/project/$projectId'
     | '/api/auth/$'
     | '/api/trpc/$'
+    | '/project/$projectId/session/$sessionId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -89,6 +100,7 @@ export interface FileRouteTypes {
     | '/project/$projectId'
     | '/api/auth/$'
     | '/api/trpc/$'
+    | '/project/$projectId/session/$sessionId'
   id:
     | '__root__'
     | '/'
@@ -97,13 +109,14 @@ export interface FileRouteTypes {
     | '/project/$projectId'
     | '/api/auth/$'
     | '/api/trpc/$'
+    | '/project/$projectId/session/$sessionId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SignInRoute: typeof SignInRoute
   InstallationCompletedRoute: typeof InstallationCompletedRoute
-  ProjectProjectIdRoute: typeof ProjectProjectIdRoute
+  ProjectProjectIdRoute: typeof ProjectProjectIdRouteWithChildren
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
 }
@@ -152,14 +165,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/project/$projectId/session/$sessionId': {
+      id: '/project/$projectId/session/$sessionId'
+      path: '/session/$sessionId'
+      fullPath: '/project/$projectId/session/$sessionId'
+      preLoaderRoute: typeof ProjectProjectIdSessionSessionIdRouteImport
+      parentRoute: typeof ProjectProjectIdRoute
+    }
   }
 }
+
+interface ProjectProjectIdRouteChildren {
+  ProjectProjectIdSessionSessionIdRoute: typeof ProjectProjectIdSessionSessionIdRoute
+}
+
+const ProjectProjectIdRouteChildren: ProjectProjectIdRouteChildren = {
+  ProjectProjectIdSessionSessionIdRoute: ProjectProjectIdSessionSessionIdRoute,
+}
+
+const ProjectProjectIdRouteWithChildren =
+  ProjectProjectIdRoute._addFileChildren(ProjectProjectIdRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SignInRoute: SignInRoute,
   InstallationCompletedRoute: InstallationCompletedRoute,
-  ProjectProjectIdRoute: ProjectProjectIdRoute,
+  ProjectProjectIdRoute: ProjectProjectIdRouteWithChildren,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
 }

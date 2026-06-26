@@ -5,19 +5,16 @@ import { getSession } from "@/lib/auth.functions";
 export const Route = createFileRoute("/")({
 	beforeLoad: async () => {
 		const session = await getSession();
-		const conversationId: string = crypto.randomUUID();
 
 		if (!session) {
-			return { user: null, conversationId };
+			return { user: null };
 		}
 
-		return { user: session.user, conversationId };
+		return { user: session.user };
 	},
 	component: Home,
 });
 
 function Home() {
-	const { conversationId } = Route.useRouteContext();
-
-	return <Chat conversationId={conversationId} />;
+	return <Chat />;
 }
