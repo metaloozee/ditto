@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
 	AGENT_RUN_EVENT_TYPES,
-	PROJECT_MEMORY_PATH,
 	createAgentRunEventPayload,
 	isActiveAgentRunStatus,
 	makeSessionTitleFromMessage,
+	PROJECT_MEMORY_PATH,
 } from "./workspace-policy";
 
 describe("workspace policy", () => {

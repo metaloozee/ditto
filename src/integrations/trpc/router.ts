@@ -340,12 +340,19 @@ const workspaceRouter = {
 						)
 				: null;
 
-			const events = await db
-				.select()
-				.from(agentRunEvents)
-				.where(eq(agentRunEvents.projectId, input.projectId))
-				.orderBy(desc(agentRunEvents.createdAt), desc(agentRunEvents.id))
-				.limit(100);
+			const events = selectedSession
+				? await db
+						.select()
+						.from(agentRunEvents)
+						.where(
+							and(
+								eq(agentRunEvents.projectId, input.projectId),
+								eq(agentRunEvents.sessionId, selectedSession.id),
+							),
+						)
+						.orderBy(desc(agentRunEvents.createdAt), desc(agentRunEvents.id))
+						.limit(100)
+				: [];
 
 			return {
 				project: toProjectResponse(project),
