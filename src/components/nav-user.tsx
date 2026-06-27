@@ -20,7 +20,7 @@ import {
 	SidebarMenuSkeleton,
 	useSidebar,
 } from "#/components/ui/sidebar";
-import { authClient } from "#/lib/auth-client";
+import { authClient } from "#/lib/auth.client";
 
 function getInitials(name?: string | null, email?: string | null) {
 	const source = name || email || "User";

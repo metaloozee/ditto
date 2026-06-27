@@ -479,7 +479,7 @@ export function Composer({
 	const alertMessage = disabledReason ?? error;
 
 	return (
-		<section className="absolute left-0 bottom-0 w-full flex flex-col justify-end gap-5 p-2">
+		<section className="w-full max-w-3xl mx-auto flex flex-col justify-end gap-5 pb-2 px-2">
 			<div className="flex flex-col items-center justify-center gap-1 rounded-lg border bg-card p-1 shadow-sm">
 				<PromptInput
 					className="w-full bg-background rounded-lg"
