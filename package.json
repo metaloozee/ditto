@@ -33,6 +33,7 @@
     "@fontsource-variable/inter": "^5.2.8",
     "@pierre/diffs": "^1.2.7",
     "@pierre/trees": "1.0.0-beta.4",
+    "@shadcn/react": "^0.1.0",
     "@t3-oss/env-core": "^0.13.10",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/ai": "latest",

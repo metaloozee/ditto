@@ -9,3 +9,5 @@ allowBuilds:
   protobufjs: true
   sharp: true
   workerd: true
+minimumReleaseAgeExclude:
+  - '@shadcn/react@0.1.0'
