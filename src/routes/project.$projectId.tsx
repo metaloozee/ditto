@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { Chat } from "#/components/ai-chat";
 import { useTRPC } from "#/integrations/trpc/react";
 
@@ -8,20 +8,16 @@ export const Route = createFileRoute("/project/$projectId")({
 });
 
 function ProjectDetailRoute() {
-	const { projectId } = Route.useParams();
-
-	return <ProjectWorkspacePage projectId={projectId} />;
+	return <Outlet />;
 }
-
-type ProjectWorkspacePageProps = {
-	projectId: string;
-	sessionId?: string;
-};
 
 export function ProjectWorkspacePage({
 	projectId,
 	sessionId,
-}: ProjectWorkspacePageProps) {
+}: {
+	projectId: string;
+	sessionId?: string;
+}) {
 	const trpc = useTRPC();
 	const projectQuery = useQuery(
 		trpc.projects.get.queryOptions({ id: projectId }, { retry: false }),
@@ -32,7 +28,12 @@ export function ProjectWorkspacePage({
 	const workspaceQuery = useQuery(
 		trpc.workspace.get.queryOptions(
 			{ projectId, sessionId },
-			{ enabled: isWorkspaceReady, retry: false },
+			{
+				enabled: isWorkspaceReady,
+				refetchInterval: (query) =>
+					query.state.data?.activeRun ? 1000 : false,
+				retry: false,
+			},
 		),
 	);
 
@@ -67,20 +68,25 @@ export function ProjectWorkspacePage({
 	const workspace = workspaceQuery.data;
 	const selectedSession = workspace?.selectedSession ?? null;
 	const activeRun = workspace?.activeRun ?? null;
-	const disabledReason = !isWorkspaceReady
-		? "Project sandbox is not ready yet."
-		: selectedSession?.status === "archived"
-			? "This conversation is archived."
-			: undefined;
+	let disabledReason: string | undefined;
+
+	if (!isWorkspaceReady) {
+		disabledReason = "Project sandbox is not ready yet.";
+	} else if (workspaceQuery.isPending) {
+		disabledReason = "Loading conversation...";
+	} else if (selectedSession?.status === "archived") {
+		disabledReason = "This conversation is archived.";
+	}
 
 	return (
 		<main className="h-dvh overflow-hidden bg-background">
-			<div className="mx-auto h-full max-w-3xl">
+			<div className="mx-auto h-full">
 				<Chat
 					projectId={projectId}
-					sessionId={selectedSession?.id ?? null}
+					sessionId={selectedSession?.id ?? sessionId ?? null}
 					activeRunId={activeRun?.id ?? null}
 					disabledReason={disabledReason}
+					events={workspace?.events ?? []}
 				/>
 			</div>
 		</main>
