@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import {
 	FileTextIcon,
 	FolderIcon,
@@ -48,9 +48,18 @@ import {
 	useSidebar,
 } from "#/components/ui/sidebar";
 import { useTRPC } from "#/integrations/trpc/react";
-import { authClient } from "#/lib/auth-client";
+import { authClient } from "#/lib/auth.client";
 import { cn } from "#/lib/utils";
 import { Button } from "./ui/button";
+
+type SidebarSession = {
+	id: string;
+	projectId: string;
+	title?: string | null;
+	status: "active" | "archived";
+	createdAt?: Date | string | number | null;
+	updatedAt?: Date | string | number | null;
+};
 
 type SidebarProject = {
 	id: string;
@@ -59,19 +68,8 @@ type SidebarProject = {
 	status: "provisioning" | "ready" | "failed";
 	createdAt?: Date | string | number | null;
 	updatedAt?: Date | string | number | null;
+	sessions?: SidebarSession[];
 };
-
-function getProjectStatusMeta(status: SidebarProject["status"]) {
-	if (status === "ready") {
-		return { label: "Ready", className: "bg-emerald-500" };
-	}
-
-	if (status === "failed") {
-		return { label: "Failed", className: "bg-destructive" };
-	}
-
-	return { label: "Working", className: "bg-muted-foreground" };
-}
 
 function BrandingWithTrigger() {
 	const { state } = useSidebar();
@@ -168,15 +166,18 @@ function SearchCommandDialog({
 function ProjectSidebarItem({
 	project,
 	isActive,
+	activeSessionId,
 }: {
 	project: SidebarProject;
 	isActive: boolean;
+	activeSessionId?: string;
 }) {
 	const [open, setOpen] = useState(isActive);
-	const status = getProjectStatusMeta(project.status);
+	const sessions = project.sessions ?? [];
+	const isOpen = open || isActive;
 
 	return (
-		<Collapsible className="w-full" open={open} onOpenChange={setOpen}>
+		<Collapsible className="w-full" open={isOpen} onOpenChange={setOpen}>
 			<SidebarMenuItem>
 				<CollapsibleTrigger
 					render={
@@ -188,27 +189,44 @@ function ProjectSidebarItem({
 						/>
 					}
 				>
-					{open ? (
+					{isOpen ? (
 						<FolderOpenIcon className="!size-3" />
 					) : (
 						<FolderIcon className="!size-3" />
 					)}
 					<span className="min-w-0 flex-1 truncate">{project.name}</span>
-					<span className="ml-auto flex items-center gap-1 text-[0.625rem] text-sidebar-foreground/60">
-						<span className={cn("size-1.5 rounded-full", status.className)} />
-						{status.label}
-					</span>
 				</CollapsibleTrigger>
 				<CollapsibleContent>
-					<SidebarMenuSub>
-						<SidebarMenuSubItem>
-							<SidebarMenuSubButton
-								aria-disabled="true"
-								className="text-sidebar-foreground/60"
-							>
-								<span>No chats yet</span>
-							</SidebarMenuSubButton>
-						</SidebarMenuSubItem>
+					<SidebarMenuSub className="w-full">
+						{sessions.length > 0 ? (
+							sessions.map((session) => (
+								<SidebarMenuSubItem key={session.id}>
+									<SidebarMenuSubButton
+										isActive={activeSessionId === session.id}
+										render={
+											<Link
+												to="/project/$projectId/session/$sessionId"
+												params={{
+													projectId: project.id,
+													sessionId: session.id,
+												}}
+											/>
+										}
+									>
+										<span>{session.title || "Untitled chat"}</span>
+									</SidebarMenuSubButton>
+								</SidebarMenuSubItem>
+							))
+						) : (
+							<SidebarMenuSubItem>
+								<SidebarMenuSubButton
+									aria-disabled="true"
+									className="text-sidebar-foreground/60"
+								>
+									<span>No chats yet</span>
+								</SidebarMenuSubButton>
+							</SidebarMenuSubItem>
+						)}
 					</SidebarMenuSub>
 				</CollapsibleContent>
 			</SidebarMenuItem>
@@ -224,8 +242,8 @@ function ProjectsNav({
 	isLoading: boolean;
 }) {
 	const navigate = useNavigate();
-	const pathname = useRouterState({
-		select: (routerState) => routerState.location.pathname,
+	const { projectId: activeProjectId, sessionId: activeSessionId } = useParams({
+		strict: false,
 	});
 
 	if (isLoading) {
@@ -266,30 +284,37 @@ function ProjectsNav({
 	return (
 		<SidebarGroup>
 			<SidebarMenu className="gap-1 mt-2">
-				{projects.map((project) => (
-					<div
-						key={project.id}
-						className="w-full flex items-start justify-between"
-					>
-						<ProjectSidebarItem
-							project={project}
-							isActive={pathname.startsWith(`/project/${project.id}`)}
-						/>
-						<Button
-							aria-label={`Start chat in ${project.name}`}
-							variant="ghost"
-							size="icon"
-							onClick={() =>
-								navigate({
-									to: "/project/$projectId",
-									params: { projectId: project.id },
-								})
-							}
+				{projects.map((project) => {
+					const isActive = activeProjectId === project.id;
+					const projectSessionId =
+						activeProjectId === project.id ? activeSessionId : undefined;
+
+					return (
+						<div
+							key={project.id}
+							className="w-full flex items-start justify-between"
 						>
-							<PlusIcon />
-						</Button>
-					</div>
-				))}
+							<ProjectSidebarItem
+								project={project}
+								isActive={isActive}
+								activeSessionId={projectSessionId}
+							/>
+							<Button
+								aria-label={`Start chat in ${project.name}`}
+								variant="ghost"
+								size="icon"
+								onClick={() =>
+									navigate({
+										to: "/project/$projectId",
+										params: { projectId: project.id },
+									})
+								}
+							>
+								<PlusIcon />
+							</Button>
+						</div>
+					);
+				})}
 			</SidebarMenu>
 		</SidebarGroup>
 	);
