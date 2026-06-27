@@ -3,7 +3,7 @@ import { GithubIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "#/components/ui/button";
 import { Spinner } from "#/components/ui/spinner";
-import { authClient } from "#/lib/auth-client";
+import { authClient } from "#/lib/auth.client";
 
 export const Route = createFileRoute("/sign-in")({
 	component: SignIn,

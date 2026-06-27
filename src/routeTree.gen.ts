@@ -13,6 +13,7 @@ import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ProjectProjectIdRouteImport } from './routes/project.$projectId'
 import { Route as InstallationCompletedRouteImport } from './routes/installation.completed'
+import { Route as ProjectProjectIdIndexRouteImport } from './routes/project.$projectId.index'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api.auth.$'
 import { Route as ProjectProjectIdSessionSessionIdRouteImport } from './routes/project.$projectId.session.$sessionId'
@@ -36,6 +37,11 @@ const InstallationCompletedRoute = InstallationCompletedRouteImport.update({
   id: '/installation/completed',
   path: '/installation/completed',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectProjectIdIndexRoute = ProjectProjectIdIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ProjectProjectIdRoute,
 } as any)
 const ApiTrpcSplatRoute = ApiTrpcSplatRouteImport.update({
   id: '/api/trpc/$',
@@ -61,15 +67,16 @@ export interface FileRoutesByFullPath {
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
+  '/project/$projectId/': typeof ProjectProjectIdIndexRoute
   '/project/$projectId/session/$sessionId': typeof ProjectProjectIdSessionSessionIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
   '/installation/completed': typeof InstallationCompletedRoute
-  '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
+  '/project/$projectId': typeof ProjectProjectIdIndexRoute
   '/project/$projectId/session/$sessionId': typeof ProjectProjectIdSessionSessionIdRoute
 }
 export interface FileRoutesById {
@@ -80,6 +87,7 @@ export interface FileRoutesById {
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
+  '/project/$projectId/': typeof ProjectProjectIdIndexRoute
   '/project/$projectId/session/$sessionId': typeof ProjectProjectIdSessionSessionIdRoute
 }
 export interface FileRouteTypes {
@@ -91,15 +99,16 @@ export interface FileRouteTypes {
     | '/project/$projectId'
     | '/api/auth/$'
     | '/api/trpc/$'
+    | '/project/$projectId/'
     | '/project/$projectId/session/$sessionId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/sign-in'
     | '/installation/completed'
-    | '/project/$projectId'
     | '/api/auth/$'
     | '/api/trpc/$'
+    | '/project/$projectId'
     | '/project/$projectId/session/$sessionId'
   id:
     | '__root__'
@@ -109,6 +118,7 @@ export interface FileRouteTypes {
     | '/project/$projectId'
     | '/api/auth/$'
     | '/api/trpc/$'
+    | '/project/$projectId/'
     | '/project/$projectId/session/$sessionId'
   fileRoutesById: FileRoutesById
 }
@@ -151,6 +161,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InstallationCompletedRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/project/$projectId/': {
+      id: '/project/$projectId/'
+      path: '/'
+      fullPath: '/project/$projectId/'
+      preLoaderRoute: typeof ProjectProjectIdIndexRouteImport
+      parentRoute: typeof ProjectProjectIdRoute
+    }
     '/api/trpc/$': {
       id: '/api/trpc/$'
       path: '/api/trpc/$'
@@ -176,10 +193,12 @@ declare module '@tanstack/react-router' {
 }
 
 interface ProjectProjectIdRouteChildren {
+  ProjectProjectIdIndexRoute: typeof ProjectProjectIdIndexRoute
   ProjectProjectIdSessionSessionIdRoute: typeof ProjectProjectIdSessionSessionIdRoute
 }
 
 const ProjectProjectIdRouteChildren: ProjectProjectIdRouteChildren = {
+  ProjectProjectIdIndexRoute: ProjectProjectIdIndexRoute,
   ProjectProjectIdSessionSessionIdRoute: ProjectProjectIdSessionSessionIdRoute,
 }
 

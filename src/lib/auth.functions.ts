@@ -12,17 +12,3 @@ export const getSession = createServerFn({ method: "GET" }).handler(
 		return session;
 	},
 );
-
-export const ensureSession = createServerFn({ method: "GET" }).handler(
-	async () => {
-		const auth = await createAuth(env);
-		const headers = getRequestHeaders();
-		const session = await auth.api.getSession({ headers });
-
-		if (!session) {
-			throw new Error("Unauthorized");
-		}
-
-		return session;
-	},
-);
