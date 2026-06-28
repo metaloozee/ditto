@@ -8,6 +8,7 @@ import {
 	ShieldAlertIcon,
 } from "lucide-react";
 import { memo, useCallback, useState } from "react";
+import { toast } from "sonner";
 import {
 	Context,
 	ContextCacheUsage,
@@ -378,7 +379,6 @@ export function Composer({
 	disabledReason,
 }: ComposerProps) {
 	const [text, setText] = useState("");
-	const [error, setError] = useState<string | null>(null);
 	const [model, setModel] = useState(models[0].id);
 	const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
 	const trpc = useTRPC();
@@ -391,21 +391,26 @@ export function Composer({
 		trpc.workspace.cancelRun.mutationOptions(),
 	);
 
-	async function refreshWorkspace() {
-		await Promise.all([
+	async function refreshWorkspace(): Promise<void> {
+		const invalidations = [
 			queryClient.invalidateQueries(trpc.projects.list.queryFilter()),
-			projectId
-				? queryClient.invalidateQueries(
-						trpc.workspace.get.queryFilter({
-							projectId,
-							sessionId: sessionId ?? undefined,
-						}),
-					)
-				: Promise.resolve(),
-		]);
+		];
+
+		if (projectId) {
+			invalidations.push(
+				queryClient.invalidateQueries(
+					trpc.workspace.get.queryFilter({
+						projectId,
+						sessionId: sessionId ?? undefined,
+					}),
+				),
+			);
+		}
+
+		await Promise.all(invalidations);
 	}
 
-	async function handleSubmit(message: PromptInputMessage) {
+	async function handleSubmit(message: PromptInputMessage): Promise<void> {
 		if (!message.text.trim() && message.files.length === 0) {
 			return;
 		}
@@ -420,7 +425,6 @@ export function Composer({
 		}
 
 		try {
-			setError(null);
 			const result = await startRunMutation.mutateAsync({
 				projectId,
 				sessionId: sessionId ?? undefined,
@@ -438,7 +442,7 @@ export function Composer({
 				});
 			}
 		} catch (mutationError) {
-			setError(
+			toast.error(
 				mutationError instanceof Error
 					? mutationError.message
 					: "Failed to start agent run.",
@@ -446,20 +450,19 @@ export function Composer({
 		}
 	}
 
-	async function handleStop() {
+	async function handleStop(): Promise<void> {
 		if (!activeRunId) {
 			return;
 		}
 
 		try {
-			setError(null);
 			await cancelRunMutation.mutateAsync({ runId: activeRunId });
 			await refreshWorkspace();
 		} catch (mutationError) {
-			setError(
+			toast.error(
 				mutationError instanceof Error
 					? mutationError.message
-					: "Failed to stop agent run.",
+					: "Failed to start agent run.",
 			);
 		}
 	}
@@ -476,7 +479,6 @@ export function Composer({
 		startRunMutation.isPending ||
 		Boolean(activeRunId) ||
 		Boolean(disabledReason);
-	const alertMessage = disabledReason ?? error;
 
 	return (
 		<section className="w-full max-w-3xl mx-auto flex flex-col justify-end gap-5 pb-2 px-2">
@@ -572,14 +574,6 @@ export function Composer({
 						</PromptInputTools>
 					</PromptInputFooter>
 				</PromptInput>
-				{alertMessage ? (
-					<p
-						className={`w-full px-2 text-xs ${disabledReason ? "text-muted-foreground" : "text-destructive"}`}
-						role="alert"
-					>
-						{alertMessage}
-					</p>
-				) : null}
 				<div className="flex w-full justify-between gap-5 px-2 py-1.5 text-muted-foreground text-xs">
 					<div className="flex items-center gap-1">
 						<GitBranchIcon className="size-3" />

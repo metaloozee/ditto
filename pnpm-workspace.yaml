@@ -11,3 +11,4 @@ allowBuilds:
   workerd: true
 minimumReleaseAgeExclude:
   - '@shadcn/react@0.1.0'
+  - shadcn@4.12.0
