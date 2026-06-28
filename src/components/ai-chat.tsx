@@ -138,7 +138,7 @@ function getEventMeta(event: ChatEvent, payload: EventPayload): EventMeta {
 	if (event.type === "message" && payload.role === "system") {
 		return {
 			align: "start",
-			variant: "outline",
+			variant: "secondary",
 			isLog: false,
 		};
 	}
@@ -161,7 +161,7 @@ function getEventMeta(event: ChatEvent, payload: EventPayload): EventMeta {
 
 	return {
 		align: "start",
-		variant: "muted",
+		variant: "destructive",
 		isLog: true,
 	};
 }
@@ -204,7 +204,7 @@ function ChatEventMessage({ event }: { event: ChatEvent }) {
 					</BubbleContent>
 				</Bubble>
 				{time ? (
-					<MessageFooter className="opacity-0 group-hover:opacity-100">
+					<MessageFooter className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
 						{time}
 					</MessageFooter>
 				) : null}

@@ -3,7 +3,7 @@ import {
 	ChevronsUpDownIcon,
 	LogInIcon,
 	LogOutIcon,
-	UserRoundIcon,
+	SettingsIcon,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar";
 import {
@@ -135,7 +135,7 @@ export function NavUser() {
 						</DropdownMenuItem>
 						<DropdownMenuSeparator />
 						<DropdownMenuItem>
-							<UserRoundIcon />
+							<SettingsIcon />
 							Settings
 						</DropdownMenuItem>
 						<DropdownMenuSeparator />

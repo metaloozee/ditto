@@ -377,7 +377,7 @@ function AppSidebarClient(
 
 	return (
 		<>
-			<Sidebar collapsible="icon" variant="floating" {...props}>
+			<Sidebar collapsible="offcanvas" variant="floating" {...props}>
 				<SidebarHeader className="border-b">
 					<BrandingWithTrigger />
 				</SidebarHeader>
@@ -450,7 +450,7 @@ function AppSidebarFallback(
 	props: React.ComponentProps<typeof Sidebar>,
 ): React.JSX.Element {
 	return (
-		<Sidebar collapsible="icon" variant="floating" {...props}>
+		<Sidebar collapsible="offcanvas" variant="floating" {...props}>
 			<SidebarHeader className="border-b">
 				<BrandingWithTrigger />
 			</SidebarHeader>

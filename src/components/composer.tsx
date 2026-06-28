@@ -1,12 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import type { LanguageModelUsage } from "ai";
-import {
-	CheckIcon,
-	GitBranchIcon,
-	MicIcon,
-	ShieldAlertIcon,
-} from "lucide-react";
+import { CheckIcon, GitBranchIcon, MicIcon } from "lucide-react";
 import { memo, useCallback, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -541,24 +536,6 @@ export function Composer({
 							</ModelSelectorContent>
 						</ModelSelector>
 						<PromptInputTools>
-							<Context
-								maxTokens={128_000}
-								modelId={selectedModel?.id}
-								usedTokens={14_000}
-								usage={contextUsage}
-							>
-								<ContextTrigger />
-								<ContextContent>
-									<ContextContentHeader />
-									<ContextContentBody className="flex flex-col gap-2 bg-card">
-										<ContextInputUsage />
-										<ContextOutputUsage />
-										<ContextReasoningUsage />
-										<ContextCacheUsage />
-									</ContextContentBody>
-									<ContextContentFooter className="bg-background" />
-								</ContextContent>
-							</Context>
 							<PromptInputButton tooltip="Voice input">
 								<MicIcon />
 							</PromptInputButton>
@@ -574,16 +551,29 @@ export function Composer({
 						</PromptInputTools>
 					</PromptInputFooter>
 				</PromptInput>
-				<div className="flex w-full justify-between gap-5 px-2 py-1.5 text-muted-foreground text-xs">
+				<div className="flex w-full justify-between gap-5 px-2 text-muted-foreground text-xs">
 					<div className="flex items-center gap-1">
 						<GitBranchIcon className="size-3" />
 						<p>master</p>
 					</div>
-					<p>Build</p>
-					<div className="flex items-center gap-1">
-						<ShieldAlertIcon className="size-3" />
-						<p>Full access</p>
-					</div>
+					<Context
+						maxTokens={128_000}
+						modelId={selectedModel?.id}
+						usedTokens={14_000}
+						usage={contextUsage}
+					>
+						<ContextTrigger className="p-0! hover:bg-transparent!" />
+						<ContextContent>
+							<ContextContentHeader />
+							<ContextContentBody className="flex flex-col gap-2 bg-card">
+								<ContextInputUsage />
+								<ContextOutputUsage />
+								<ContextReasoningUsage />
+								<ContextCacheUsage />
+							</ContextContentBody>
+							<ContextContentFooter className="bg-background" />
+						</ContextContent>
+					</Context>
 				</div>
 			</div>
 		</section>
