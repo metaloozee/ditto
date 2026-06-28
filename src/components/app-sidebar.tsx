@@ -1,12 +1,19 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import {
+	ClientOnly,
+	Link,
+	useNavigate,
+	useParams,
+} from "@tanstack/react-router";
+import {
+	AlertCircleIcon,
 	FileTextIcon,
 	FolderIcon,
 	FolderOpenIcon,
 	Layers2Icon,
+	LoaderIcon,
 	PlusIcon,
 	SearchIcon,
 } from "lucide-react";
@@ -14,11 +21,8 @@ import type * as React from "react";
 import { useState } from "react";
 import { NavUser } from "#/components/nav-user";
 import { NewProjectDialog } from "#/components/new-project-dialog";
-import {
-	Collapsible,
-	CollapsibleContent,
-	CollapsibleTrigger,
-} from "#/components/ui/collapsible";
+import { Button } from "#/components/ui/button";
+import { Collapsible, CollapsibleContent } from "#/components/ui/collapsible";
 import {
 	Command,
 	CommandDialog,
@@ -37,6 +41,7 @@ import {
 	SidebarGroup,
 	SidebarHeader,
 	SidebarMenu,
+	SidebarMenuAction,
 	SidebarMenuButton,
 	SidebarMenuItem,
 	SidebarMenuSkeleton,
@@ -50,7 +55,6 @@ import {
 import { useTRPC } from "#/integrations/trpc/react";
 import { authClient } from "#/lib/auth.client";
 import { cn } from "#/lib/utils";
-import { Button } from "./ui/button";
 
 type SidebarSession = {
 	id: string;
@@ -71,7 +75,7 @@ type SidebarProject = {
 	sessions?: SidebarSession[];
 };
 
-function BrandingWithTrigger() {
+function BrandingWithTrigger(): React.JSX.Element {
 	const { state } = useSidebar();
 	const isCollapsed = state === "collapsed";
 
@@ -111,7 +115,7 @@ function SearchCommandDialog({
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	projects: SidebarProject[];
-}) {
+}): React.JSX.Element {
 	return (
 		<CommandDialog
 			open={open}
@@ -163,6 +167,28 @@ function SearchCommandDialog({
 	);
 }
 
+function ProjectStatusIcon({
+	status,
+	isOpen,
+}: {
+	status: SidebarProject["status"];
+	isOpen: boolean;
+}): React.JSX.Element {
+	if (status === "provisioning") {
+		return (
+			<LoaderIcon className="!size-4 animate-spin text-sidebar-foreground/50" />
+		);
+	}
+	if (status === "failed") {
+		return <AlertCircleIcon className="!size-4 text-destructive" />;
+	}
+	return isOpen ? (
+		<FolderOpenIcon className="!size-4" />
+	) : (
+		<FolderIcon className="!size-4" />
+	);
+}
+
 function ProjectSidebarItem({
 	project,
 	isActive,
@@ -171,37 +197,62 @@ function ProjectSidebarItem({
 	project: SidebarProject;
 	isActive: boolean;
 	activeSessionId?: string;
-}) {
+}): React.JSX.Element {
+	const navigate = useNavigate();
+	const { state } = useSidebar();
+	const isCollapsed = state === "collapsed";
 	const [open, setOpen] = useState(isActive);
 	const sessions = project.sessions ?? [];
 	const isOpen = open || isActive;
 
+	function navigateToProject(): void {
+		navigate({
+			to: "/project/$projectId",
+			params: { projectId: project.id },
+		});
+	}
+
+	function handleProjectClick(): void {
+		if (isCollapsed) {
+			navigateToProject();
+			return;
+		}
+
+		setOpen((prev) => !prev);
+	}
+
 	return (
-		<Collapsible className="w-full" open={isOpen} onOpenChange={setOpen}>
+		<Collapsible
+			className="group/collapsible"
+			open={isOpen && !isCollapsed}
+			onOpenChange={setOpen}
+		>
 			<SidebarMenuItem>
-				<CollapsibleTrigger
-					render={
-						<SidebarMenuButton
-							tooltip={project.name}
-							isActive={isActive}
-							size="sm"
-							className="text-xs"
-						/>
-					}
+				<SidebarMenuButton
+					tooltip={project.name}
+					isActive={isActive}
+					size="sm"
+					onClick={handleProjectClick}
+					className="cursor-pointer"
 				>
-					{isOpen ? (
-						<FolderOpenIcon className="!size-3" />
-					) : (
-						<FolderIcon className="!size-3" />
-					)}
+					<ProjectStatusIcon status={project.status} isOpen={isOpen} />
 					<span className="min-w-0 flex-1 truncate">{project.name}</span>
-				</CollapsibleTrigger>
+				</SidebarMenuButton>
+				<SidebarMenuAction
+					showOnHover
+					aria-label={`New chat in ${project.name}`}
+					onClick={navigateToProject}
+					className="cursor-pointer"
+				>
+					<PlusIcon />
+				</SidebarMenuAction>
 				<CollapsibleContent>
-					<SidebarMenuSub className="w-full">
+					<SidebarMenuSub>
 						{sessions.length > 0 ? (
 							sessions.map((session) => (
 								<SidebarMenuSubItem key={session.id}>
 									<SidebarMenuSubButton
+										size="sm"
 										isActive={activeSessionId === session.id}
 										render={
 											<Link
@@ -213,7 +264,9 @@ function ProjectSidebarItem({
 											/>
 										}
 									>
-										<span>{session.title || "Untitled chat"}</span>
+										<span className="truncate">
+											{session.title || "Untitled chat"}
+										</span>
 									</SidebarMenuSubButton>
 								</SidebarMenuSubItem>
 							))
@@ -240,24 +293,17 @@ function ProjectsNav({
 }: {
 	projects: SidebarProject[];
 	isLoading: boolean;
-}) {
-	const navigate = useNavigate();
+}): React.JSX.Element {
 	const { projectId: activeProjectId, sessionId: activeSessionId } = useParams({
 		strict: false,
 	});
 
 	if (isLoading) {
-		const loadingProjectIds = [
-			"loading-project-1",
-			"loading-project-2",
-			"loading-project-3",
-		];
-
 		return (
 			<SidebarGroup>
 				<SidebarMenu className="gap-1">
-					{loadingProjectIds.map((loadingProjectId) => (
-						<SidebarMenuItem key={loadingProjectId}>
+					{["loading-1", "loading-2", "loading-3"].map((id) => (
+						<SidebarMenuItem key={id}>
 							<SidebarMenuSkeleton showIcon />
 						</SidebarMenuItem>
 					))}
@@ -290,29 +336,12 @@ function ProjectsNav({
 						activeProjectId === project.id ? activeSessionId : undefined;
 
 					return (
-						<div
+						<ProjectSidebarItem
 							key={project.id}
-							className="w-full flex items-start justify-between"
-						>
-							<ProjectSidebarItem
-								project={project}
-								isActive={isActive}
-								activeSessionId={projectSessionId}
-							/>
-							<Button
-								aria-label={`Start chat in ${project.name}`}
-								variant="ghost"
-								size="icon"
-								onClick={() =>
-									navigate({
-										to: "/project/$projectId",
-										params: { projectId: project.id },
-									})
-								}
-							>
-								<PlusIcon />
-							</Button>
-						</div>
+							project={project}
+							isActive={isActive}
+							activeSessionId={projectSessionId}
+						/>
 					);
 				})}
 			</SidebarMenu>
@@ -320,7 +349,19 @@ function ProjectsNav({
 	);
 }
 
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+export function AppSidebar(
+	props: React.ComponentProps<typeof Sidebar>,
+): React.JSX.Element {
+	return (
+		<ClientOnly fallback={<AppSidebarFallback {...props} />}>
+			<AppSidebarClient {...props} />
+		</ClientOnly>
+	);
+}
+
+function AppSidebarClient(
+	props: React.ComponentProps<typeof Sidebar>,
+): React.JSX.Element {
 	const { state } = useSidebar();
 	const [newProjectOpen, setNewProjectOpen] = useState(false);
 	const [searchOpen, setSearchOpen] = useState(false);
@@ -352,12 +393,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 											variant="outline"
 											disabled={isPending || !session}
 											onClick={() => setNewProjectOpen(true)}
-										>
-											<PlusIcon />
-											{state === "expanded" && <span>New Project</span>}
-										</Button>
+										/>
 									}
-								/>
+								>
+									<PlusIcon />
+									{state === "expanded" && <span>New Project</span>}
+								</SidebarMenuButton>
 							</SidebarMenuItem>
 							<SidebarMenuItem>
 								<SidebarMenuButton
@@ -367,12 +408,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 											className="cursor-pointer"
 											variant="outline"
 											onClick={() => setSearchOpen(true)}
-										>
-											<SearchIcon />
-											{state === "expanded" && <span>Search</span>}
-										</Button>
+										/>
 									}
-								/>
+								>
+									<SearchIcon />
+									{state === "expanded" && <span>Search</span>}
+								</SidebarMenuButton>
 							</SidebarMenuItem>
 						</SidebarMenu>
 					</SidebarGroup>
@@ -385,7 +426,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 					/>
 				</SidebarContent>
 				<SidebarFooter className="border-t">
-					<NavUser />
+					<ClientOnly fallback={<SidebarMenuSkeleton showIcon />}>
+						<NavUser />
+					</ClientOnly>
 				</SidebarFooter>
 				<SidebarRail />
 			</Sidebar>
@@ -400,5 +443,34 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 				projects={projects}
 			/>
 		</>
+	);
+}
+
+function AppSidebarFallback(
+	props: React.ComponentProps<typeof Sidebar>,
+): React.JSX.Element {
+	return (
+		<Sidebar collapsible="icon" variant="floating" {...props}>
+			<SidebarHeader className="border-b">
+				<BrandingWithTrigger />
+			</SidebarHeader>
+			<SidebarContent className="my-2">
+				<SidebarGroup>
+					<SidebarMenu className="gap-2">
+						<SidebarMenuItem>
+							<SidebarMenuSkeleton showIcon />
+						</SidebarMenuItem>
+						<SidebarMenuItem>
+							<SidebarMenuSkeleton showIcon />
+						</SidebarMenuItem>
+					</SidebarMenu>
+				</SidebarGroup>
+				<ProjectsNav projects={[]} isLoading />
+			</SidebarContent>
+			<SidebarFooter className="border-t">
+				<SidebarMenuSkeleton showIcon />
+			</SidebarFooter>
+			<SidebarRail />
+		</Sidebar>
 	);
 }
