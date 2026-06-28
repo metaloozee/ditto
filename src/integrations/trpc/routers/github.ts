@@ -7,7 +7,7 @@ import { createTRPCRouter, protectedProcedure } from "../init";
 export const githubRouter = createTRPCRouter({
 	importState: protectedProcedure.query(async ({ ctx }) => {
 		const installUrl = ctx.env.VITE_GITHUB_APP_INSTALL_URL;
-		const tokenRes = await ctx.auth.api.getAccessToken({
+		const res = await ctx.auth.api.getAccessToken({
 			body: {
 				providerId: "github",
 				userId: ctx.user.id,
@@ -15,7 +15,7 @@ export const githubRouter = createTRPCRouter({
 			headers: ctx.request.headers,
 		});
 
-		const accessToken = tokenRes.accessToken;
+		const accessToken = res.accessToken;
 		if (!accessToken) {
 			throw new TRPCError({
 				code: "UNAUTHORIZED",

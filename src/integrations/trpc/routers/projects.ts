@@ -126,9 +126,22 @@ export const projectsRouter = createTRPCRouter({
 
 	list: protectedProcedure.query(async ({ ctx }) => {
 		const db = createDb(ctx.env);
-		const [userProjects, activeSessions] = await Promise.all([
+		const [userProjects, activeSessions] = await db.batch([
 			db
-				.select()
+				.select({
+					id: projects.id,
+					name: projects.name,
+					description: projects.description,
+					userId: projects.userId,
+					githubRepo: projects.githubRepo,
+					githubInstallationId: projects.githubInstallationId,
+					sandboxId: projects.sandboxId,
+					activeAgentRunId: projects.activeAgentRunId,
+					activeAgentRunStartedAt: projects.activeAgentRunStartedAt,
+					status: projects.status,
+					createdAt: projects.createdAt,
+					updatedAt: projects.updatedAt,
+				})
 				.from(projects)
 				.where(eq(projects.userId, ctx.user.id))
 				.orderBy(desc(projects.createdAt)),
@@ -157,10 +170,8 @@ export const projectsRouter = createTRPCRouter({
 		}
 
 		return userProjects.map((project) => {
-			const { envVars: _envVars, ...projectResponse } = project;
-
 			return {
-				...projectResponse,
+				...project,
 				sessions: sessionsByProjectId.get(project.id) ?? [],
 			};
 		});
@@ -171,7 +182,20 @@ export const projectsRouter = createTRPCRouter({
 		.query(async ({ ctx, input }) => {
 			const db = createDb(ctx.env);
 			const [project] = await db
-				.select()
+				.select({
+					id: projects.id,
+					name: projects.name,
+					description: projects.description,
+					userId: projects.userId,
+					githubRepo: projects.githubRepo,
+					githubInstallationId: projects.githubInstallationId,
+					sandboxId: projects.sandboxId,
+					activeAgentRunId: projects.activeAgentRunId,
+					activeAgentRunStartedAt: projects.activeAgentRunStartedAt,
+					status: projects.status,
+					createdAt: projects.createdAt,
+					updatedAt: projects.updatedAt,
+				})
 				.from(projects)
 				.where(and(eq(projects.id, input.id), eq(projects.userId, ctx.user.id)))
 				.limit(1);
@@ -183,7 +207,6 @@ export const projectsRouter = createTRPCRouter({
 				});
 			}
 
-			const { envVars: _envVars, ...projectResponse } = project;
-			return projectResponse;
+			return project;
 		}),
 });
