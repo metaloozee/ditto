@@ -14,6 +14,7 @@ export function getRouter() {
 		scrollRestoration: true,
 		defaultPreload: "intent",
 		defaultPreloadStaleTime: 0,
+		defaultViewTransition: true,
 
 		Wrap: (props: { children: ReactNode }) => {
 			return (
