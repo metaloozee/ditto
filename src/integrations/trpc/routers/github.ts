@@ -4,6 +4,37 @@ import { getGitHubApp } from "#/lib/github-app";
 import { getGitHubImportState } from "#/lib/github-repositories";
 import { createTRPCRouter, protectedProcedure } from "../init";
 
+const githubBranchPageSize = 100;
+
+type GitHubBranchPayload = {
+	name: string;
+};
+
+type GitHubBranchClient = {
+	paginate: <T>(method: unknown, parameters?: unknown) => Promise<T[]>;
+	rest: {
+		repos: {
+			listBranches: unknown;
+		};
+	};
+};
+
+export async function listGitHubBranchNames(
+	octokit: GitHubBranchClient,
+	input: { owner: string; repo: string },
+): Promise<string[]> {
+	const branches = await octokit.paginate<GitHubBranchPayload>(
+		octokit.rest.repos.listBranches,
+		{
+			owner: input.owner,
+			repo: input.repo,
+			per_page: githubBranchPageSize,
+		},
+	);
+
+	return branches.map((branch) => branch.name);
+}
+
 export const githubRouter = createTRPCRouter({
 	importState: protectedProcedure.query(async ({ ctx }) => {
 		const installUrl = ctx.env.VITE_GITHUB_APP_INSTALL_URL;
@@ -38,13 +69,8 @@ export const githubRouter = createTRPCRouter({
 			try {
 				const app = getGitHubApp(ctx.env);
 				const octokit = await app.getInstallationOctokit(input.installationId);
-				const res = await octokit.rest.repos.listBranches({
-					owner: input.owner,
-					repo: input.repo,
-					per_page: 100,
-				});
 
-				return res.data.map((b) => b.name);
+				return await listGitHubBranchNames(octokit, input);
 			} catch (err) {
 				throw new TRPCError({
 					code: "BAD_GATEWAY",

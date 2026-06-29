@@ -45,18 +45,29 @@ type GitHubRepositoryPayload = {
 	stargazers_count: number;
 };
 
+type GitHubInstallationsResponse = {
+	data: { installations: GitHubInstallationPayload[] };
+};
+
+type GitHubRepositoriesResponse = {
+	data: { repositories: GitHubRepositoryPayload[] };
+};
+
 type GitHubImportClient = {
+	paginate: <T>(
+		method: unknown,
+		parameters: unknown,
+		mapFn: (response: unknown) => T[],
+	) => Promise<T[]>;
 	rest: {
 		apps: {
-			listInstallationsForAuthenticatedUser: () => Promise<{
-				data: { installations: GitHubInstallationPayload[] };
-			}>;
-			listInstallationReposForAuthenticatedUser: (input: {
-				installation_id: number;
-			}) => Promise<{ data: { repositories: GitHubRepositoryPayload[] } }>;
+			listInstallationsForAuthenticatedUser: unknown;
+			listInstallationReposForAuthenticatedUser: unknown;
 		};
 	};
 };
+
+const githubPageSize = 100;
 
 export async function getGitHubImportState({
 	accessToken,
@@ -70,19 +81,25 @@ export async function getGitHubImportState({
 	const octokit =
 		client ?? (new Octokit({ auth: accessToken }) as GitHubImportClient);
 
-	const installationsResponse =
-		await octokit.rest.apps.listInstallationsForAuthenticatedUser();
-	const installations = installationsResponse.data.installations;
+	const installations = await octokit.paginate<GitHubInstallationPayload>(
+		octokit.rest.apps.listInstallationsForAuthenticatedUser,
+		{ per_page: githubPageSize },
+		(response) => (response as GitHubInstallationsResponse).data.installations,
+	);
 
 	const repositories: GitHubRepo[] = [];
 
 	for (const inst of installations) {
 		try {
-			const reposResponse =
-				await octokit.rest.apps.listInstallationReposForAuthenticatedUser({
-					installation_id: inst.id,
-				});
-			for (const repo of reposResponse.data.repositories) {
+			const installationRepositories =
+				await octokit.paginate<GitHubRepositoryPayload>(
+					octokit.rest.apps.listInstallationReposForAuthenticatedUser,
+					{ installation_id: inst.id, per_page: githubPageSize },
+					(response) =>
+						(response as GitHubRepositoriesResponse).data.repositories,
+				);
+
+			for (const repo of installationRepositories) {
 				repositories.push({
 					id: repo.id,
 					name: repo.full_name,
