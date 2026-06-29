@@ -1,14 +1,13 @@
-import { listGitHubBranchNames } from "#/integrations/trpc/routers/github";
 import { describe, expect, it, vi } from "vitest";
+import { listGitHubBranchNames } from "#/integrations/trpc/routers/github";
 import { getGitHubImportState } from "./github-repositories";
 
 const installUrl = "https://github.com/apps/ditto/installations/new";
 
-type ImportPaginate = <T>(
+type ImportPaginate = (
 	method: unknown,
 	parameters: unknown,
-	mapFn: (response: unknown) => T[],
-) => Promise<T[]>;
+) => Promise<unknown[]>;
 
 function installationPayload(id: number, login = `org-${id}`) {
 	return {
@@ -42,7 +41,10 @@ function importMethods() {
 function importClient(paginate: ImportPaginate, methods = importMethods()) {
 	return {
 		client: {
-			paginate,
+			paginate: paginate as <T>(
+				method: unknown,
+				parameters: unknown,
+			) => Promise<T[]>,
 			rest: { apps: methods },
 		},
 		...methods,
@@ -51,27 +53,28 @@ function importClient(paginate: ImportPaginate, methods = importMethods()) {
 
 describe("getGitHubImportState", () => {
 	it("maps installations and repositories into the import state shape", async () => {
-		const paginate: ImportPaginate = async (_method, _parameters, mapFn) =>
-			mapFn({
-				data: {
-					installations: [installationPayload(101, "acme")],
-					repositories: [
-						{
-							...repoPayload(202),
-							full_name: "acme/rocket",
-							name: "rocket",
-							language: "TypeScript",
-							private: true,
-							stargazers_count: 42,
-						},
-					],
+		const methods = importMethods();
+		const paginate: ImportPaginate = async (method) => {
+			if (method === methods.listInstallationsForAuthenticatedUser) {
+				return [installationPayload(101, "acme")];
+			}
+
+			return [
+				{
+					...repoPayload(202),
+					full_name: "acme/rocket",
+					name: "rocket",
+					language: "TypeScript",
+					private: true,
+					stargazers_count: 42,
 				},
-			});
+			];
+		};
 
 		const state = await getGitHubImportState({
 			accessToken: "test-token",
 			installUrl,
-			client: importClient(paginate).client,
+			client: importClient(paginate, methods).client,
 		});
 
 		expect(state).toEqual({
@@ -105,12 +108,12 @@ describe("getGitHubImportState", () => {
 			installationPayload(index + 1),
 		);
 		const methods = importMethods();
-		const setup = importClient(async (method, _parameters, mapFn) => {
+		const setup = importClient(async (method) => {
 			if (method === methods.listInstallationsForAuthenticatedUser) {
-				return mapFn({ data: { installations } });
+				return installations;
 			}
 
-			return mapFn({ data: { repositories: [] } });
+			return [];
 		}, methods);
 
 		const state = await getGitHubImportState({
@@ -134,14 +137,12 @@ describe("getGitHubImportState", () => {
 			repoPayload(index + 1),
 		);
 		const methods = importMethods();
-		const setup = importClient(async (method, _parameters, mapFn) => {
+		const setup = importClient(async (method) => {
 			if (method === methods.listInstallationsForAuthenticatedUser) {
-				return mapFn({
-					data: { installations: [installationPayload(101, "acme")] },
-				});
+				return [installationPayload(101, "acme")];
 			}
 
-			return mapFn({ data: { repositories } });
+			return repositories;
 		}, methods);
 
 		const state = await getGitHubImportState({
@@ -168,23 +169,19 @@ describe("getGitHubImportState", () => {
 			.spyOn(console, "error")
 			.mockImplementation(() => undefined);
 		const methods = importMethods();
-		const setup = importClient(async (method, parameters, mapFn) => {
+		const setup = importClient(async (method, parameters) => {
 			if (method === methods.listInstallationsForAuthenticatedUser) {
-				return mapFn({
-					data: {
-						installations: [
-							installationPayload(101, "acme"),
-							installationPayload(303, "octo"),
-						],
-					},
-				});
+				return [
+					installationPayload(101, "acme"),
+					installationPayload(303, "octo"),
+				];
 			}
 
 			if ((parameters as { installation_id: number }).installation_id === 303) {
 				throw new Error("GitHub unavailable");
 			}
 
-			return mapFn({ data: { repositories: [repoPayload(202)] } });
+			return [repoPayload(202)];
 		}, methods);
 
 		try {

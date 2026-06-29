@@ -45,20 +45,8 @@ type GitHubRepositoryPayload = {
 	stargazers_count: number;
 };
 
-type GitHubInstallationsResponse = {
-	data: { installations: GitHubInstallationPayload[] };
-};
-
-type GitHubRepositoriesResponse = {
-	data: { repositories: GitHubRepositoryPayload[] };
-};
-
 type GitHubImportClient = {
-	paginate: <T>(
-		method: unknown,
-		parameters: unknown,
-		mapFn: (response: unknown) => T[],
-	) => Promise<T[]>;
+	paginate: <T>(method: unknown, parameters: unknown) => Promise<T[]>;
 	rest: {
 		apps: {
 			listInstallationsForAuthenticatedUser: unknown;
@@ -84,7 +72,6 @@ export async function getGitHubImportState({
 	const installations = await octokit.paginate<GitHubInstallationPayload>(
 		octokit.rest.apps.listInstallationsForAuthenticatedUser,
 		{ per_page: githubPageSize },
-		(response) => (response as GitHubInstallationsResponse).data.installations,
 	);
 
 	const repositories: GitHubRepo[] = [];
@@ -95,8 +82,6 @@ export async function getGitHubImportState({
 				await octokit.paginate<GitHubRepositoryPayload>(
 					octokit.rest.apps.listInstallationReposForAuthenticatedUser,
 					{ installation_id: inst.id, per_page: githubPageSize },
-					(response) =>
-						(response as GitHubRepositoriesResponse).data.repositories,
 				);
 
 			for (const repo of installationRepositories) {
