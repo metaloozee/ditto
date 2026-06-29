@@ -25,14 +25,50 @@ export type GitHubImportState = {
 	installUrl: string;
 };
 
+type GitHubInstallationPayload = {
+	id: number;
+	account?: {
+		login?: string;
+		avatar_url?: string;
+	} | null;
+};
+
+type GitHubRepositoryPayload = {
+	id: number;
+	full_name: string;
+	owner: {
+		login: string;
+	};
+	name: string;
+	language: string | null;
+	private: boolean;
+	stargazers_count: number;
+};
+
+type GitHubImportClient = {
+	rest: {
+		apps: {
+			listInstallationsForAuthenticatedUser: () => Promise<{
+				data: { installations: GitHubInstallationPayload[] };
+			}>;
+			listInstallationReposForAuthenticatedUser: (input: {
+				installation_id: number;
+			}) => Promise<{ data: { repositories: GitHubRepositoryPayload[] } }>;
+		};
+	};
+};
+
 export async function getGitHubImportState({
 	accessToken,
 	installUrl,
+	client,
 }: {
 	accessToken: string;
 	installUrl: string;
+	client?: GitHubImportClient;
 }): Promise<GitHubImportState> {
-	const octokit = new Octokit({ auth: accessToken });
+	const octokit =
+		client ?? (new Octokit({ auth: accessToken }) as GitHubImportClient);
 
 	const installationsResponse =
 		await octokit.rest.apps.listInstallationsForAuthenticatedUser();
