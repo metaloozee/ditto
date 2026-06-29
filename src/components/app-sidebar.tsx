@@ -21,6 +21,7 @@ import type * as React from "react";
 import { useState } from "react";
 import { NavUser } from "#/components/nav-user";
 import { NewProjectDialog } from "#/components/new-project-dialog";
+import { ProjectSettingsDialog } from "#/components/project-settings-dialog";
 import { Button } from "#/components/ui/button";
 import { Collapsible, CollapsibleContent } from "#/components/ui/collapsible";
 import {
@@ -233,11 +234,21 @@ function ProjectSidebarItem({
 					isActive={isActive}
 					size="sm"
 					onClick={handleProjectClick}
-					className="cursor-pointer"
+					className="cursor-pointer pr-14"
 				>
 					<ProjectStatusIcon status={project.status} isOpen={isOpen} />
 					<span className="min-w-0 flex-1 truncate">{project.name}</span>
 				</SidebarMenuButton>
+				<ProjectSettingsDialog
+					project={project}
+					trigger={
+						<SidebarMenuAction
+							showOnHover
+							aria-label={`Settings for ${project.name}`}
+							className="right-7 cursor-pointer"
+						/>
+					}
+				/>
 				<SidebarMenuAction
 					showOnHover
 					aria-label={`New chat in ${project.name}`}

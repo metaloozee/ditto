@@ -1,11 +1,11 @@
 import { getSandbox } from "@cloudflare/sandbox";
 import { getInstallationAccessToken } from "#/lib/github-app";
+import { WORKSPACE_PATH } from "#/lib/workspace-policy";
 
-const WORKSPACE_PATH = "/workspace";
 const CLONE_TIMEOUT_MS = 120_000;
 const INSTALL_TIMEOUT_MS = 300_000;
 
-type SandboxEnvVar = { key: string; value: string };
+export type SandboxEnvVar = { key: string; value: string };
 
 function quoteShellArg(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;
@@ -22,6 +22,40 @@ function formatEnvFile(envVars: SandboxEnvVar[]): string {
 			return `${key}="${escapedValue}"`;
 		})
 		.join("\n");
+}
+
+export async function syncSandboxEnvFile(options: {
+	env: Env;
+	sandboxId: string;
+	envVars: SandboxEnvVar[];
+}): Promise<void> {
+	const sandbox = getSandbox(
+		options.env.Sandbox as Parameters<typeof getSandbox>[0],
+		options.sandboxId,
+		{
+			enableDefaultSession: false,
+		},
+	);
+
+	await sandbox.writeFile(
+		`${WORKSPACE_PATH}/.env`,
+		options.envVars.length > 0 ? `${formatEnvFile(options.envVars)}\n` : "",
+	);
+}
+
+export async function destroySandbox(options: {
+	env: Env;
+	sandboxId: string;
+}): Promise<void> {
+	const sandbox = getSandbox(
+		options.env.Sandbox as Parameters<typeof getSandbox>[0],
+		options.sandboxId,
+		{
+			enableDefaultSession: false,
+		},
+	);
+
+	await sandbox.destroy();
 }
 
 async function runCommand(
@@ -93,7 +127,7 @@ async function installWithNpmFallback(
 
 export async function installDependencies(
 	sandbox: ReturnType<typeof getSandbox>,
-) {
+): Promise<void> {
 	const hasPackageJson = await sandbox.exists(`${WORKSPACE_PATH}/package.json`);
 	if (!hasPackageJson.exists) {
 		return;
