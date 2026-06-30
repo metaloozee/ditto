@@ -873,7 +873,9 @@ function ReadyStep({
 				<div className="flex-1" />
 				<Button
 					onClick={onSubmit}
-					disabled={isProvisioning || (path === "github" && hasInvalidEnvVarKeys)}
+					disabled={
+						isProvisioning || (path === "github" && hasInvalidEnvVarKeys)
+					}
 					className="cursor-pointer"
 				>
 					{path === "github"
