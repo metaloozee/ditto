@@ -6,6 +6,7 @@ import { createDb } from "#/db";
 import { projects, workspaceSessions } from "#/db/schema";
 import { createTRPCRouter, protectedProcedure } from "#/integrations/trpc/init";
 import { decryptText, encryptText } from "#/lib/crypto";
+import { ENV_VAR_KEY_DESCRIPTION, normalizeEnvVarKey } from "#/lib/env-vars";
 import { authorizeGitHubRepositoryAccess } from "#/lib/github-authorization";
 import {
 	bootstrapSandbox,
@@ -31,9 +32,17 @@ function sanitizeEnvVars(
 	const envVarsByKey = new Map<string, string>();
 
 	for (const envVar of envVars ?? []) {
-		const key = envVar.key.trim();
-		if (key.length === 0) {
+		const trimmedKey = envVar.key.trim();
+		if (trimmedKey.length === 0) {
 			continue;
+		}
+		const key = normalizeEnvVarKey(trimmedKey);
+
+		if (!key) {
+			throw new TRPCError({
+				code: "BAD_REQUEST",
+				message: `Invalid environment variable name. ${ENV_VAR_KEY_DESCRIPTION}`,
+			});
 		}
 
 		envVarsByKey.set(key, envVar.value.trim());

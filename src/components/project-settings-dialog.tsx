@@ -33,6 +33,7 @@ import { Separator } from "#/components/ui/separator";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Spinner } from "#/components/ui/spinner";
 import { useTRPC } from "#/integrations/trpc/react";
+import { ENV_VAR_KEY_DESCRIPTION, normalizeEnvVarKey } from "#/lib/env-vars";
 
 type SettingsProject = {
 	id: string;
@@ -135,6 +136,9 @@ export function ProjectSettingsDialog({
 	const hasNameChanges = trimmedName.length > 0 && trimmedName !== project.name;
 	const envVarKeys = envVarsQuery.data ?? [];
 	const trimmedNewEnvVarKey = newEnvVarKey.trim();
+	const normalizedNewEnvVarKey = normalizeEnvVarKey(newEnvVarKey);
+	const hasInvalidNewEnvVarKey =
+		trimmedNewEnvVarKey.length > 0 && normalizedNewEnvVarKey === null;
 	const isSavingName = renameProjectMutation.isPending;
 	const isSavingEnvVar = setEnvVarMutation.isPending;
 	const isDeletingEnvVar = deleteEnvVarMutation.isPending;
@@ -163,13 +167,13 @@ export function ProjectSettingsDialog({
 	}
 
 	async function handleAddEnvVar(): Promise<void> {
-		if (!isAddingEnvVar || trimmedNewEnvVarKey.length === 0) {
+		if (!isAddingEnvVar || !normalizedNewEnvVarKey) {
 			return;
 		}
 
 		await setEnvVarMutation.mutateAsync({
 			id: project.id,
-			key: newEnvVarKey,
+			key: normalizedNewEnvVarKey,
 			value: newEnvVarValue,
 		});
 		resetNewEnvVarForm();
@@ -424,6 +428,12 @@ export function ProjectSettingsDialog({
 												spellCheck={false}
 												className="font-mono text-xs sm:flex-1"
 												aria-label="New variable name"
+												aria-invalid={hasInvalidNewEnvVarKey || undefined}
+												aria-describedby={
+													hasInvalidNewEnvVarKey
+														? `new-env-var-key-error-${project.id}`
+														: undefined
+												}
 											/>
 											<Input
 												placeholder="VALUE"
@@ -446,6 +456,7 @@ export function ProjectSettingsDialog({
 													}}
 													disabled={
 														trimmedNewEnvVarKey.length === 0 ||
+														hasInvalidNewEnvVarKey ||
 														isMutatingEnvVars
 													}
 													className="cursor-pointer"
@@ -464,6 +475,11 @@ export function ProjectSettingsDialog({
 												</Button>
 											</div>
 										</div>
+										{hasInvalidNewEnvVarKey ? (
+											<FieldError id={`new-env-var-key-error-${project.id}`}>
+												{ENV_VAR_KEY_DESCRIPTION}
+											</FieldError>
+										) : null}
 									</Field>
 								</FieldGroup>
 							) : null}

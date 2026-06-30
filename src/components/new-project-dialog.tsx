@@ -38,6 +38,7 @@ import {
 import {
 	Field,
 	FieldDescription,
+	FieldError,
 	FieldGroup,
 	FieldLabel,
 } from "#/components/ui/field";
@@ -47,6 +48,7 @@ import { Separator } from "#/components/ui/separator";
 import { Textarea } from "#/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "#/components/ui/toggle-group";
 import { useTRPC } from "#/integrations/trpc/react";
+import { ENV_VAR_KEY_DESCRIPTION, normalizeEnvVarKey } from "#/lib/env-vars";
 import type { GitHubRepo } from "#/lib/github-repositories";
 import { cn } from "#/lib/utils";
 
@@ -125,6 +127,9 @@ export function NewProjectDialog({
 	}, [onOpenChange, resetState]);
 
 	const isProvisioning = createProjectMutation.isPending;
+	const hasInvalidEnvVarKeys = envVars.some(
+		({ key }) => key.trim().length > 0 && normalizeEnvVarKey(key) === null,
+	);
 
 	const handleDialogOpenChange = useCallback(
 		(nextOpen: boolean) => {
@@ -167,6 +172,10 @@ export function NewProjectDialog({
 	}, [handleClose, path, step]);
 
 	const handleInitializeProject = useCallback(async () => {
+		if (hasInvalidEnvVarKeys) {
+			return;
+		}
+
 		const selectedGitHubRepo = githubRepos.find(
 			(repo) => repo.name === selectedRepo,
 		);
@@ -190,6 +199,7 @@ export function NewProjectDialog({
 	}, [
 		createProjectMutation,
 		envVars,
+		hasInvalidEnvVarKeys,
 		githubRepos,
 		handleClose,
 		navigate,
@@ -612,6 +622,7 @@ export function NewProjectDialog({
 						projectOverview={projectOverview}
 						framework={framework}
 						envVars={envVars}
+						hasInvalidEnvVarKeys={hasInvalidEnvVarKeys}
 						addEnvVar={addEnvVar}
 						removeEnvVar={removeEnvVar}
 						updateEnvVar={updateEnvVar}
@@ -641,6 +652,7 @@ function ReadyStep({
 	projectOverview,
 	framework,
 	envVars,
+	hasInvalidEnvVarKeys,
 	addEnvVar,
 	removeEnvVar,
 	updateEnvVar,
@@ -657,6 +669,7 @@ function ReadyStep({
 	projectOverview: string;
 	framework: string;
 	envVars: EnvVar[];
+	hasInvalidEnvVarKeys: boolean;
 	addEnvVar: () => void;
 	removeEnvVar: (id: string) => void;
 	updateEnvVar: (id: string, field: "key" | "value", val: string) => void;
@@ -665,6 +678,14 @@ function ReadyStep({
 	onBack: () => void;
 	onSubmit: () => void;
 }) {
+	const invalidEnvVarIds = new Set(
+		envVars
+			.filter(
+				({ key }) => key.trim().length > 0 && normalizeEnvVarKey(key) === null,
+			)
+			.map(({ id }) => id),
+	);
+
 	return (
 		<>
 			<DialogHeader>
@@ -779,44 +800,58 @@ function ReadyStep({
 
 								{envVars.length > 0 && (
 									<div className="flex flex-col gap-2">
-										{envVars.map((envVar) => (
-											<div key={envVar.id} className="flex items-center gap-2">
-												<Input
-													placeholder="KEY"
-													autoComplete="off"
-													spellCheck={false}
-													value={envVar.key}
-													disabled={isProvisioning}
-													onChange={(e) =>
-														updateEnvVar(envVar.id, "key", e.target.value)
-													}
-													className="flex-1 font-mono text-xs"
-													aria-label="Variable name"
-												/>
-												<Input
-													placeholder="value"
-													autoComplete="off"
-													spellCheck={false}
-													value={envVar.value}
-													disabled={isProvisioning}
-													onChange={(e) =>
-														updateEnvVar(envVar.id, "value", e.target.value)
-													}
-													className="flex-1 font-mono text-xs"
-													aria-label="Variable value"
-												/>
-												<Button
-													variant="ghost"
-													size="icon-sm"
-													onClick={() => removeEnvVar(envVar.id)}
-													disabled={isProvisioning}
-													className="cursor-pointer shrink-0"
-													aria-label="Remove variable"
-												>
-													<TrashIcon aria-hidden="true" />
-												</Button>
-											</div>
-										))}
+										{envVars.map((envVar) => {
+											const isInvalid = invalidEnvVarIds.has(envVar.id);
+											const errorId = `env-var-${envVar.id}-error`;
+
+											return (
+												<div key={envVar.id} className="flex flex-col gap-1">
+													<div className="flex items-center gap-2">
+														<Input
+															placeholder="KEY"
+															autoComplete="off"
+															spellCheck={false}
+															value={envVar.key}
+															disabled={isProvisioning}
+															onChange={(e) =>
+																updateEnvVar(envVar.id, "key", e.target.value)
+															}
+															className="flex-1 font-mono text-xs"
+															aria-label="Variable name"
+															aria-invalid={isInvalid || undefined}
+															aria-describedby={isInvalid ? errorId : undefined}
+														/>
+														<Input
+															placeholder="value"
+															autoComplete="off"
+															spellCheck={false}
+															value={envVar.value}
+															disabled={isProvisioning}
+															onChange={(e) =>
+																updateEnvVar(envVar.id, "value", e.target.value)
+															}
+															className="flex-1 font-mono text-xs"
+															aria-label="Variable value"
+														/>
+														<Button
+															variant="ghost"
+															size="icon-sm"
+															onClick={() => removeEnvVar(envVar.id)}
+															disabled={isProvisioning}
+															className="cursor-pointer shrink-0"
+															aria-label="Remove variable"
+														>
+															<TrashIcon aria-hidden="true" />
+														</Button>
+													</div>
+													{isInvalid ? (
+														<FieldError id={errorId}>
+															{ENV_VAR_KEY_DESCRIPTION}
+														</FieldError>
+													) : null}
+												</div>
+											);
+										})}
 									</div>
 								)}
 							</div>
@@ -838,7 +873,7 @@ function ReadyStep({
 				<div className="flex-1" />
 				<Button
 					onClick={onSubmit}
-					disabled={isProvisioning}
+					disabled={isProvisioning || (path === "github" && hasInvalidEnvVarKeys)}
 					className="cursor-pointer"
 				>
 					{path === "github"
