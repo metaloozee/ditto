@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { authorizeGitHubRepositoryAccess } from "#/integrations/trpc/github-authorization";
 import { getGitHubApp } from "#/lib/github-app";
 import { getGitHubImportState } from "#/lib/github-repositories";
 import { createTRPCRouter, protectedProcedure } from "../init";
@@ -66,6 +67,12 @@ export const githubRouter = createTRPCRouter({
 			}),
 		)
 		.query(async ({ ctx, input }) => {
+			await authorizeGitHubRepositoryAccess({
+				ctx,
+				repo: `${input.owner}/${input.repo}`,
+				installationId: input.installationId,
+			});
+
 			try {
 				const app = getGitHubApp(ctx.env);
 				const octokit = await app.getInstallationOctokit(input.installationId);

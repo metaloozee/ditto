@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { createDb } from "#/db";
 import { projects, workspaceSessions } from "#/db/schema";
+import { authorizeGitHubRepositoryAccess } from "#/integrations/trpc/github-authorization";
 import { createTRPCRouter, protectedProcedure } from "#/integrations/trpc/init";
 import { decryptText, encryptText } from "#/lib/crypto";
 import {
@@ -108,6 +109,14 @@ export const projectsRouter = createTRPCRouter({
 							installationId: input.githubInstallationId,
 						}
 					: null;
+
+			if (githubImport) {
+				await authorizeGitHubRepositoryAccess({
+					ctx,
+					repo: githubImport.repo,
+					installationId: githubImport.installationId,
+				});
+			}
 
 			const sanitizedEnvVars = sanitizeEnvVars(input.envVars);
 			const encryptedEnvVars = await encryptEnvVars(
