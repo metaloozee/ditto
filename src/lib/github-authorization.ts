@@ -1,9 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import {
-	getGitHubImportState,
-	type GitHubImportState,
-	type GitHubRepo,
-} from "#/lib/github-repositories";
+import { type GitHubRepo, getGitHubImportState } from "./github-repositories";
 
 type GitHubAuthorizationContext = {
 	env: {
@@ -28,21 +24,14 @@ type GitHubAuthorizationContext = {
 	};
 };
 
-type LoadGitHubImportState = (input: {
-	accessToken: string;
-	installUrl: string;
-}) => Promise<GitHubImportState>;
-
 export async function authorizeGitHubRepositoryAccess({
 	ctx,
 	repo,
 	installationId,
-	loadImportState = getGitHubImportState,
 }: {
 	ctx: GitHubAuthorizationContext;
 	repo: string;
 	installationId: number;
-	loadImportState?: LoadGitHubImportState;
 }): Promise<GitHubRepo> {
 	const res = await ctx.auth.api.getAccessToken({
 		body: {
@@ -60,13 +49,14 @@ export async function authorizeGitHubRepositoryAccess({
 		});
 	}
 
-	const importState = await loadImportState({
+	const importState = await getGitHubImportState({
 		accessToken,
 		installUrl: ctx.env.VITE_GITHUB_APP_INSTALL_URL,
 	});
 	const authorizedRepo = importState.repositories.find(
 		(visibleRepo) =>
-			visibleRepo.name === repo && visibleRepo.installationId === installationId,
+			visibleRepo.name === repo &&
+			visibleRepo.installationId === installationId,
 	);
 
 	if (!authorizedRepo) {

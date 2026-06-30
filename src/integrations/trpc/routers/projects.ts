@@ -4,9 +4,9 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { createDb } from "#/db";
 import { projects, workspaceSessions } from "#/db/schema";
-import { authorizeGitHubRepositoryAccess } from "#/integrations/trpc/github-authorization";
 import { createTRPCRouter, protectedProcedure } from "#/integrations/trpc/init";
 import { decryptText, encryptText } from "#/lib/crypto";
+import { authorizeGitHubRepositoryAccess } from "#/lib/github-authorization";
 import {
 	bootstrapSandbox,
 	destroySandbox,

@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { authorizeGitHubRepositoryAccess } from "#/integrations/trpc/github-authorization";
 import { getGitHubApp } from "#/lib/github-app";
+import { authorizeGitHubRepositoryAccess } from "#/lib/github-authorization";
 import { getGitHubImportState } from "#/lib/github-repositories";
 import { createTRPCRouter, protectedProcedure } from "../init";
 

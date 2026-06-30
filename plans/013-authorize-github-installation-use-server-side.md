@@ -7,7 +7,7 @@
 > in `plans/README.md` unless a reviewer dispatched you and told you they
 > maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat 8632f47..HEAD -- src/integrations/trpc/routers/github.ts src/integrations/trpc/routers/projects.ts src/integrations/trpc/github-authorization.ts src/integrations/trpc/github-authorization.test.ts src/lib/github-repositories.ts src/lib/github-repositories.test.ts src/integrations/trpc/routers/github.test.ts`
+> **Drift check (run first)**: `git diff --stat e632ba0..HEAD -- src/integrations/trpc/routers/github.ts src/integrations/trpc/routers/projects.ts src/integrations/trpc/github-authorization.ts src/integrations/trpc/github-authorization.test.ts src/lib/github-repositories.ts src/lib/github-repositories.test.ts src/integrations/trpc/routers/github.test.ts`
 > If any listed file changed since this plan was written, compare the
 > "Current state" excerpts against the live code before proceeding. On a
 > mismatch, treat it as a STOP condition.
@@ -19,7 +19,7 @@
 - **Risk**: MED
 - **Depends on**: plans/011-add-github-import-regression-tests.md and plans/012-paginate-github-import-state-and-branch-discovery.md
 - **Category**: security
-- **Planned at**: commit `8632f47`, 2026-06-29
+- **Planned at**: commit `e632ba0`, 2026-06-30
 
 ## Why this matters
 
@@ -77,11 +77,12 @@ importState: protectedProcedure.query(async ({ ctx }) => {
 }),
 ```
 
-Current vulnerable branch route trusts the submitted `installationId` before it
-asks the GitHub App for an installation-scoped client:
+Current vulnerable branch route now delegates paginated branch discovery to
+`listGitHubBranchNames`, but it still trusts the submitted `installationId`
+before it asks the GitHub App for an installation-scoped client:
 
 ```ts
-// src/integrations/trpc/routers/github.ts:29-57
+// src/integrations/trpc/routers/github.ts:60-83
 listBranches: protectedProcedure
 	.input(
 		z.object({
@@ -94,13 +95,7 @@ listBranches: protectedProcedure
 		try {
 			const app = getGitHubApp(ctx.env);
 			const octokit = await app.getInstallationOctokit(input.installationId);
-			const res = await octokit.rest.repos.listBranches({
-				owner: input.owner,
-				repo: input.repo,
-				per_page: 100,
-			});
-
-			return res.data.map((b) => b.name);
+			return await listGitHubBranchNames(octokit, input);
 		} catch (err) {
 			throw new TRPCError({
 				code: "BAD_GATEWAY",
@@ -118,8 +113,14 @@ server-side visibility check:
 
 ```ts
 // src/integrations/trpc/routers/projects.ts:94-149
-const hasGitHubRepo = input.githubRepo !== undefined;
-const hasGitHubInstallationId = input.githubInstallationId !== undefined;
+const hasGithubRepo = input.githubRepo !== undefined;
+const hasGithubInstallationId = input.githubInstallationId !== undefined;
+if (hasGithubRepo !== hasGithubInstallationId) {
+	throw new TRPCError({
+		code: "BAD_REQUEST",
+		message: "Github Repository and Installation ID is required.",
+	});
+}
 
 const githubImport =
 	input.githubRepo !== undefined &&
@@ -131,25 +132,42 @@ const githubImport =
 		: null;
 
 const sanitizedEnvVars = sanitizeEnvVars(input.envVars);
+const encryptedEnvVars = await encryptEnvVars(
+	sanitizedEnvVars,
+	ctx.env.BETTER_AUTH_SECRET,
+);
+
+const db = createDb(ctx.env);
+const projectId = nanoid();
 
 const [project] = await db
 	.insert(projects)
 	.values({
+		id: projectId,
+		name: projectName,
+		description: input.description,
+		userId: ctx.user.id,
 		githubRepo: githubImport?.repo,
 		githubInstallationId: githubImport?.installationId,
 		status: githubImport ? "provisioning" : "ready",
+		envVars: encryptedEnvVars,
 	})
 	.returning();
 
-if (githubImport) {
-	await bootstrapSandbox({
-		env: ctx.env,
-		sandboxId,
-		githubRepo: githubImport.repo,
-		installationId: githubImport.installationId,
-		envVars: sanitizedEnvVars ?? [],
-	});
+if (!githubImport) {
+	const { envVars: _envVars, ...projectResponse } = project;
+	return projectResponse;
 }
+
+const sandboxId = crypto.randomUUID().toLowerCase();
+
+await bootstrapSandbox({
+	env: ctx.env,
+	sandboxId,
+	githubRepo: githubImport.repo,
+	installationId: githubImport.installationId,
+	envVars: sanitizedEnvVars,
+});
 ```
 
 The browser does send a pair chosen from the import-state response, but that is

@@ -1,6 +1,6 @@
 # Implementation Plans
 
-Generated on 2026-06-24. Updated on 2026-06-30 with plan 016 and reconciled plans 011-014 against commit `8632f47`. Execute in the order below unless dependencies say otherwise. Each executor: read the plan fully before starting, honor its STOP conditions, and update your row when done.
+Generated on 2026-06-24. Updated on 2026-06-30 with plan 016, reconciled plans 011-014 against commit `8632f47`, and executed plan 013. Execute in the order below unless dependencies say otherwise. Each executor: read the plan fully before starting, honor its STOP conditions, and update your row when done.
 
 ## Execution order & status
 
@@ -18,7 +18,7 @@ Generated on 2026-06-24. Updated on 2026-06-30 with plan 016 and reconciled plan
 | 010 | Replace startRun's D1 transaction with batched writes | P1 | M | 008, 009 | DONE |
 | 011 | Create GitHub import regression tests | P1 | M | — | DONE |
 | 012 | Paginate GitHub import state and branch discovery | P1 | S | 011 | DONE |
-| 013 | Authorize GitHub installation use server-side | P1 | M | 011, 012 | TODO |
+| 013 | Authorize GitHub installation use server-side | P1 | M | 011, 012 | DONE |
 | 014 | Validate sandbox env-var keys before saving or provisioning | P2 | S | — | TODO |
 | 015 | Persist and restore project sandboxes | P1 | L | — | TODO |
 | 016 | Add the Flue project-coder foundation | P1 | L | 013, 014 | TODO |
@@ -58,6 +58,7 @@ Use these commands when executing plans:
 - 2026-06-29: plans 012 and 013 now target `src/integrations/trpc/routers/github.ts` and `src/integrations/trpc/routers/projects.ts`; 012 still depends on 011, and 013 still depends on 011 plus 012.
 - 2026-06-29: plan 014 now includes `src/components/project-settings-dialog.tsx` and `projects.setEnvVar`, while explicitly preserving deletion of legacy malformed env-var keys.
 - 2026-06-30: added plan 016 from `docs/flue-agent-harness-prd.md`. It records the maintainer's decisions to use direct Flue client streaming, OpenCode Go selectable models, Zustand user preferences, full sandbox access after same-worker mount proof, lock checks before edits, future commit-only export, and D1 metadata plus R2 artifacts for oversized outputs.
+- 2026-06-30: plan 013 was reconciled to commit `e632ba0`, executed in isolated worktree `/tmp/opencode/ditto-plan-013`, and reviewed as DONE on branch `advisor/013-github-authz`.
 
 ## Findings considered and rejected / deferred
 
