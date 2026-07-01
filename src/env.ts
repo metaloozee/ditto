@@ -3,6 +3,10 @@ import { z } from "zod";
 
 export const env = createEnv({
 	server: {
+		CLOUDFLARE_ACCOUNT_ID: z.string().min(1),
+		R2_ACCESS_KEY_ID: z.string().min(1),
+		R2_SECRET_ACCESS_KEY: z.string().min(1),
+		USE_LOCAL_BUCKET_BACKUPS: z.enum(["true", "false"]).optional(),
 		BETTER_AUTH_SECRET: z.string().min(1),
 		GITHUB_CLIENT_ID: z.string().min(1),
 		GITHUB_CLIENT_SECRET: z.string().min(1),
@@ -18,7 +22,7 @@ export const env = createEnv({
 	clientPrefix: "VITE_",
 
 	client: {
-		VITE_APP_TITLE: z.string().min(1).optional(),
+		VITE_GITHUB_APP_INSTALL_URL: z.url(),
 	},
 
 	/**
