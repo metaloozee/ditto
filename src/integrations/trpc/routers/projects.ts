@@ -5,81 +5,21 @@ import { z } from "zod";
 import { createDb } from "#/db";
 import { projects, workspaceSessions } from "#/db/schema";
 import { createTRPCRouter, protectedProcedure } from "#/integrations/trpc/init";
-import { decryptText, encryptText } from "#/lib/crypto";
-import { ENV_VAR_KEY_DESCRIPTION, normalizeEnvVarKey } from "#/lib/env-vars";
 import { authorizeGitHubRepositoryAccess } from "#/lib/github-authorization";
+import {
+	decryptEnvVars,
+	encryptEnvVars,
+	envVarsSchema,
+	sanitizeEnvVars,
+	toEnvVarKeys,
+} from "#/lib/project-env-vars";
+import { ensureProjectSandbox } from "#/lib/project-sandbox";
+import { serializeSandboxBackup } from "#/lib/sandbox-backup";
 import {
 	bootstrapSandbox,
 	destroySandbox,
-	type SandboxEnvVar,
 	syncSandboxEnvFile,
 } from "#/lib/sandbox-bootstrap";
-
-const envVarSchema = z.object({
-	key: z.string(),
-	value: z.string(),
-});
-
-const envVarsSchema = z.array(envVarSchema);
-
-function toEnvVarKeys(envVars: SandboxEnvVar[]): Array<{ key: string }> {
-	return envVars.map(({ key }) => ({ key }));
-}
-
-function sanitizeEnvVars(
-	envVars: SandboxEnvVar[] | undefined,
-): SandboxEnvVar[] {
-	const envVarsByKey = new Map<string, string>();
-
-	for (const envVar of envVars ?? []) {
-		const trimmedKey = envVar.key.trim();
-		if (trimmedKey.length === 0) {
-			continue;
-		}
-		const key = normalizeEnvVarKey(trimmedKey);
-
-		if (!key) {
-			throw new TRPCError({
-				code: "BAD_REQUEST",
-				message: `Invalid environment variable name. ${ENV_VAR_KEY_DESCRIPTION}`,
-			});
-		}
-
-		envVarsByKey.set(key, envVar.value.trim());
-	}
-
-	return Array.from(envVarsByKey, ([key, value]) => ({ key, value }));
-}
-
-async function encryptEnvVars(
-	envVars: SandboxEnvVar[],
-	secret: string,
-): Promise<string | null> {
-	if (envVars.length === 0) {
-		return null;
-	}
-
-	return await encryptText(JSON.stringify(envVars), secret);
-}
-
-async function decryptEnvVars(
-	encryptedEnvVars: string | null,
-	secret: string,
-): Promise<SandboxEnvVar[]> {
-	if (!encryptedEnvVars) {
-		return [];
-	}
-
-	try {
-		const plaintext = await decryptText(encryptedEnvVars, secret);
-		return envVarsSchema.parse(JSON.parse(plaintext));
-	} catch {
-		throw new TRPCError({
-			code: "INTERNAL_SERVER_ERROR",
-			message: "Failed to read project environment variables.",
-		});
-	}
-}
 
 export const projectsRouter = createTRPCRouter({
 	create: protectedProcedure
@@ -151,15 +91,21 @@ export const projectsRouter = createTRPCRouter({
 				.returning();
 
 			if (!githubImport) {
-				const { envVars: _envVars, ...projectResponse } = project;
+				const {
+					envVars: _envVars,
+					sandboxBackup: _sandboxBackup,
+					sandboxBackupCreatedAt: _sandboxBackupCreatedAt,
+					...projectResponse
+				} = project;
 				return projectResponse;
 			}
 
 			const sandboxId = crypto.randomUUID().toLowerCase();
 
 			try {
-				await bootstrapSandbox({
+				const { backup } = await bootstrapSandbox({
 					env: ctx.env,
+					projectId,
 					sandboxId,
 					githubRepo: githubImport.repo,
 					installationId: githubImport.installationId,
@@ -170,13 +116,20 @@ export const projectsRouter = createTRPCRouter({
 					.update(projects)
 					.set({
 						sandboxId,
+						sandboxBackup: serializeSandboxBackup(backup),
+						sandboxBackupCreatedAt: sql`(unixepoch())`,
 						status: "ready",
 						updatedAt: sql`(unixepoch())`,
 					})
 					.where(eq(projects.id, projectId))
 					.returning();
 
-				const { envVars: _envVars, ...projectResponse } = updatedProject;
+				const {
+					envVars: _envVars,
+					sandboxBackup: _sandboxBackup,
+					sandboxBackupCreatedAt: _sandboxBackupCreatedAt,
+					...projectResponse
+				} = updatedProject;
 				return projectResponse;
 			} catch (err) {
 				await db
@@ -284,10 +237,7 @@ export const projectsRouter = createTRPCRouter({
 
 			const db = createDb(ctx.env);
 			const [project] = await db
-				.select({
-					envVars: projects.envVars,
-					sandboxId: projects.sandboxId,
-				})
+				.select()
 				.from(projects)
 				.where(and(eq(projects.id, input.id), eq(projects.userId, ctx.user.id)))
 				.limit(1);
@@ -310,9 +260,23 @@ export const projectsRouter = createTRPCRouter({
 			);
 
 			if (project.sandboxId) {
+				const ensured = await ensureProjectSandbox({
+					db,
+					env: ctx.env,
+					project,
+					envVars: nextEnvVars,
+				});
+
+				if (!ensured.project.sandboxId) {
+					throw new TRPCError({
+						code: "PRECONDITION_FAILED",
+						message: "Project sandbox is not ready yet.",
+					});
+				}
+
 				await syncSandboxEnvFile({
 					env: ctx.env,
-					sandboxId: project.sandboxId,
+					sandboxId: ensured.project.sandboxId,
 					envVars: nextEnvVars,
 				});
 			}
@@ -349,10 +313,7 @@ export const projectsRouter = createTRPCRouter({
 
 			const db = createDb(ctx.env);
 			const [project] = await db
-				.select({
-					envVars: projects.envVars,
-					sandboxId: projects.sandboxId,
-				})
+				.select()
 				.from(projects)
 				.where(and(eq(projects.id, input.id), eq(projects.userId, ctx.user.id)))
 				.limit(1);
@@ -380,9 +341,23 @@ export const projectsRouter = createTRPCRouter({
 			);
 
 			if (project.sandboxId) {
+				const ensured = await ensureProjectSandbox({
+					db,
+					env: ctx.env,
+					project,
+					envVars: nextEnvVars,
+				});
+
+				if (!ensured.project.sandboxId) {
+					throw new TRPCError({
+						code: "PRECONDITION_FAILED",
+						message: "Project sandbox is not ready yet.",
+					});
+				}
+
 				await syncSandboxEnvFile({
 					env: ctx.env,
-					sandboxId: project.sandboxId,
+					sandboxId: ensured.project.sandboxId,
 					envVars: nextEnvVars,
 				});
 			}

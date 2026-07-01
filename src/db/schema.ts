@@ -42,6 +42,10 @@ export const projects = sqliteTable(
 		githubRepo: text("githubRepo"),
 		githubInstallationId: integer("githubInstallationId"),
 		sandboxId: text("sandboxId"),
+		sandboxBackup: text("sandboxBackup"),
+		sandboxBackupCreatedAt: integer("sandboxBackupCreatedAt", {
+			mode: "timestamp",
+		}),
 		activeAgentRunId: text("activeAgentRunId"),
 		activeAgentRunStartedAt: integer("activeAgentRunStartedAt", {
 			mode: "timestamp",

@@ -9,6 +9,8 @@ import {
 	projects,
 	workspaceSessions,
 } from "#/db/schema";
+import { decryptEnvVars } from "#/lib/project-env-vars";
+import { ensureProjectSandbox } from "#/lib/project-sandbox";
 import {
 	createAgentRunEventPayload,
 	isActiveAgentRunStatus,
@@ -46,10 +48,31 @@ export const workspaceRouter = createTRPCRouter({
 				});
 			}
 
-			if (project.status !== "ready" || !project.sandboxId) {
+			const envVars = await decryptEnvVars(
+				project.envVars,
+				ctx.env.BETTER_AUTH_SECRET,
+			);
+			let ensuredProject = project;
+			let sandboxState:
+				| "connected"
+				| "restored_from_backup"
+				| "recreated_from_github" = "connected";
+			try {
+				const ensured = await ensureProjectSandbox({
+					db,
+					env: ctx.env,
+					project,
+					envVars,
+				});
+				ensuredProject = ensured.project;
+				sandboxState = ensured.state;
+			} catch (error) {
 				throw new TRPCError({
 					code: "PRECONDITION_FAILED",
-					message: "Project sandbox is not ready yet.",
+					message:
+						error instanceof Error
+							? error.message
+							: "Project sandbox is not ready yet.",
 				});
 			}
 
@@ -90,13 +113,13 @@ export const workspaceRouter = createTRPCRouter({
 						})
 				: null;
 
-			const activeRun = project.activeAgentRunId
+			const activeRun = ensuredProject.activeAgentRunId
 				? await db
 						.select()
 						.from(agentRuns)
 						.where(
 							and(
-								eq(agentRuns.id, project.activeAgentRunId),
+								eq(agentRuns.id, ensuredProject.activeAgentRunId),
 								eq(agentRuns.userId, ctx.user.id),
 							),
 						)
@@ -122,9 +145,15 @@ export const workspaceRouter = createTRPCRouter({
 						.limit(100)
 				: [];
 
-			const { envVars: _envVars, ...projectResponse } = project;
+			const {
+				envVars: _envVars,
+				sandboxBackup: _sandboxBackup,
+				sandboxBackupCreatedAt: _sandboxBackupCreatedAt,
+				...projectResponse
+			} = ensuredProject;
 			return {
 				project: projectResponse,
+				sandbox: { state: sandboxState },
 				sessions,
 				selectedSession,
 				activeRun,
@@ -148,7 +177,7 @@ export const workspaceRouter = createTRPCRouter({
 			let ownsProjectLock = false;
 
 			try {
-				const [project] = await db
+				let [project] = await db
 					.select()
 					.from(projects)
 					.where(
@@ -166,10 +195,29 @@ export const workspaceRouter = createTRPCRouter({
 					});
 				}
 
-				if (project.status !== "ready" || !project.sandboxId) {
+				try {
+					const envVars = await decryptEnvVars(
+						project.envVars,
+						ctx.env.BETTER_AUTH_SECRET,
+					);
+					const ensured = await ensureProjectSandbox({
+						db,
+						env: ctx.env,
+						project,
+						envVars,
+					});
+					project = ensured.project;
+				} catch (error) {
 					throw new TRPCError({
-						code: "PRECONDITION_FAILED",
-						message: "Project sandbox is not ready yet.",
+						code:
+							error instanceof Error &&
+							error.message === "Project sandbox is already being restored."
+								? "CONFLICT"
+								: "PRECONDITION_FAILED",
+						message:
+							error instanceof Error
+								? error.message
+								: "Project sandbox is not ready yet.",
 					});
 				}
 
@@ -403,6 +451,10 @@ export const workspaceRouter = createTRPCRouter({
 					throw error;
 				}
 			} catch (error) {
+				if (error instanceof TRPCError) {
+					throw error;
+				}
+
 				throw new TRPCError({
 					code: "INTERNAL_SERVER_ERROR",
 					message:
