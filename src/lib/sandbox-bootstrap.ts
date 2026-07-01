@@ -1,4 +1,4 @@
-import { getSandbox, type DirectoryBackup } from "@cloudflare/sandbox";
+import { type DirectoryBackup, getSandbox } from "@cloudflare/sandbox";
 import { getInstallationAccessToken } from "#/lib/github-app";
 import { getSandboxBackupOptions } from "#/lib/sandbox-backup";
 import { WORKSPACE_PATH } from "#/lib/workspace-policy";
@@ -9,9 +9,13 @@ const INSTALL_TIMEOUT_MS = 300_000;
 export type SandboxEnvVar = { key: string; value: string };
 
 export function getProjectSandbox(env: Env, sandboxId: string) {
-	return getSandbox(env.Sandbox as Parameters<typeof getSandbox>[0], sandboxId, {
-		enableDefaultSession: false,
-	});
+	return getSandbox(
+		env.Sandbox as Parameters<typeof getSandbox>[0],
+		sandboxId,
+		{
+			enableDefaultSession: false,
+		},
+	);
 }
 
 function quoteShellArg(value: string): string {

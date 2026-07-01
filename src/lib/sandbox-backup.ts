@@ -26,7 +26,9 @@ export function serializeSandboxBackup(backup: DirectoryBackup): string {
 	});
 }
 
-export function parseSandboxBackup(value: string | null): DirectoryBackup | null {
+export function parseSandboxBackup(
+	value: string | null,
+): DirectoryBackup | null {
 	if (!value) {
 		return null;
 	}
@@ -56,9 +58,7 @@ export function parseSandboxBackup(value: string | null): DirectoryBackup | null
 		return {
 			id: backup.id,
 			dir: backup.dir,
-			...(localBucket === undefined
-				? {}
-				: { localBucket }),
+			...(localBucket === undefined ? {} : { localBucket }),
 		};
 	} catch {
 		return null;

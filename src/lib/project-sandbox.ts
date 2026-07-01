@@ -2,13 +2,16 @@ import { and, eq, sql } from "drizzle-orm";
 import type { createDb } from "#/db";
 import { projects } from "#/db/schema";
 import {
+	parseSandboxBackup,
+	serializeSandboxBackup,
+} from "#/lib/sandbox-backup";
+import {
 	backupSandboxWorkspace,
 	bootstrapSandbox,
 	isSandboxWorkspaceHydrated,
 	restoreSandboxWorkspace,
 	type SandboxEnvVar,
 } from "#/lib/sandbox-bootstrap";
-import { parseSandboxBackup, serializeSandboxBackup } from "#/lib/sandbox-backup";
 
 export type EnsureProjectSandboxResult = {
 	project: typeof projects.$inferSelect;
@@ -66,7 +69,9 @@ async function recreateSandboxFromGitHub(options: {
 	envVars: SandboxEnvVar[];
 }): Promise<EnsureProjectSandboxResult> {
 	if (!options.project.githubRepo || !options.project.githubInstallationId) {
-		throw new Error("Project sandbox cannot be restored without a GitHub repository.");
+		throw new Error(
+			"Project sandbox cannot be restored without a GitHub repository.",
+		);
 	}
 
 	const { backup } = await bootstrapSandbox({
@@ -107,7 +112,9 @@ export async function ensureProjectSandbox(options: {
 	}
 
 	if (!options.project.githubRepo || !options.project.githubInstallationId) {
-		throw new Error("Project sandbox cannot be restored without a GitHub repository.");
+		throw new Error(
+			"Project sandbox cannot be restored without a GitHub repository.",
+		);
 	}
 
 	const sandboxId = options.project.sandboxId;

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { WORKSPACE_PATH } from "#/lib/workspace-policy";
 import {
-	SANDBOX_BACKUP_EXCLUDES,
-	SANDBOX_BACKUP_TTL_SECONDS,
 	getSandboxBackupOptions,
 	hasPresignedBackupConfig,
 	parseSandboxBackup,
+	SANDBOX_BACKUP_EXCLUDES,
+	SANDBOX_BACKUP_TTL_SECONDS,
 	serializeSandboxBackup,
 } from "./sandbox-backup";
 
@@ -52,7 +52,9 @@ describe("sandbox backup helpers", () => {
 	});
 
 	it("returns null when id is missing", () => {
-		expect(parseSandboxBackup(JSON.stringify({ dir: WORKSPACE_PATH }))).toBeNull();
+		expect(
+			parseSandboxBackup(JSON.stringify({ dir: WORKSPACE_PATH })),
+		).toBeNull();
 	});
 
 	it("returns null when dir is missing", () => {
