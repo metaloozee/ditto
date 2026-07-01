@@ -77,8 +77,9 @@ USE_LOCAL_BUCKET_BACKUPS=
 
 `BACKUP_BUCKET_ENDPOINT` is optional for non-default R2 endpoints. Local
 development can set `USE_LOCAL_BUCKET_BACKUPS=true` to use the local R2 binding
-backup path. Deployed Workers should leave local-bucket mode disabled and set
-the R2 credentials so the Sandbox SDK can use presigned URLs.
+backup path and omit the R2 access key env vars. Deployed Workers should leave
+local-bucket mode disabled and set the R2 credentials so the Sandbox SDK can use
+presigned URLs.
 
 
 ## Shadcn

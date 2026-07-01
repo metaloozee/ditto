@@ -35,8 +35,12 @@ export const website = await TanStackStart("website", {
 		BACKUP_BUCKET: sandboxBackups,
 		BACKUP_BUCKET_NAME: sandboxBackupBucketName,
 		CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID ?? "",
-		R2_ACCESS_KEY_ID: alchemy.secret(process.env.R2_ACCESS_KEY_ID),
-		R2_SECRET_ACCESS_KEY: alchemy.secret(process.env.R2_SECRET_ACCESS_KEY),
+		R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID
+			? alchemy.secret(process.env.R2_ACCESS_KEY_ID)
+			: "",
+		R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY
+			? alchemy.secret(process.env.R2_SECRET_ACCESS_KEY)
+			: "",
 		BACKUP_BUCKET_ENDPOINT: process.env.BACKUP_BUCKET_ENDPOINT ?? "",
 		USE_LOCAL_BUCKET_BACKUPS: process.env.USE_LOCAL_BUCKET_BACKUPS ?? "",
 		BETTER_AUTH_SECRET: alchemy.secret(process.env.BETTER_AUTH_SECRET),
