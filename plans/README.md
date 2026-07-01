@@ -20,7 +20,7 @@ Generated on 2026-06-24. Updated on 2026-07-01 with plans 015-016 reconciled aga
 | 012 | Paginate GitHub import state and branch discovery | P1 | S | 011 | DONE |
 | 013 | Authorize GitHub installation use server-side | P1 | M | 011, 012 | DONE |
 | 014 | Validate sandbox env-var keys before saving or provisioning | P2 | S | — | DONE |
-| 015 | Persist and restore project sandboxes | P1 | L | — | TODO |
+| 015 | Persist and restore project sandboxes | P1 | L | — | DONE |
 | 016 | Add the Flue project-coder foundation | P1 | L | 013, 014, 015 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale — finding fixed independently or approach abandoned)
@@ -62,6 +62,7 @@ Use these commands when executing plans:
 - 2026-06-30: plan 014 was refreshed to commit `de51de1` after plan 013 added GitHub repository authorization in `src/integrations/trpc/routers/projects.ts`; the env-var key validation finding and required behavior are unchanged.
 - 2026-06-30: plan 014 was executed in isolated worktree `/tmp/opencode/ditto-plan-014`, reviewed as DONE on branch `advisor/014-validate-env-var-keys`, with commits `91f46b0` and `7996275`.
 - 2026-07-01: reconciled plans 015 and 016 against commit `9e2fed0`. Plan 015 drifted because plan 014 changed env-var validation in `src/integrations/trpc/routers/projects.ts`, but the weak sandbox readiness and direct `.env` sync findings still exist. Plan 016 drifted only in planning docs/index, but its dependency graph was tightened: Step 1 may run first as a Flue mount spike; the full Flue runner now depends on Plan 015 and must use its ensure/restore and backup-refresh helpers.
+- 2026-07-01: plan 015 was executed in isolated worktree `/tmp/opencode/ditto-plan-015`, reviewed as DONE on branch `advisor/015-durable-sandbox-restore`, with commits `a3563a2`, `9bdab28`, `3dc48bc`, `4269328`, and `fcd6e17`. Reviewer requested the final R2 DX decision: backup credentials are required at app startup, so local omission is not supported.
 
 ## Findings considered and rejected / deferred
 
