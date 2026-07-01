@@ -71,13 +71,22 @@ environment variables are required to run and deploy the app:
 CLOUDFLARE_ACCOUNT_ID=
 R2_ACCESS_KEY_ID=
 R2_SECRET_ACCESS_KEY=
+```
+
+`BACKUP_BUCKET_ENDPOINT` is optional for non-default R2 endpoints:
+
+```env
 BACKUP_BUCKET_ENDPOINT=
+```
+
+Local development can set `USE_LOCAL_BUCKET_BACKUPS=true` to use the local R2
+binding backup path, but R2 backup credentials are still required at app
+startup:
+
+```env
 USE_LOCAL_BUCKET_BACKUPS=
 ```
 
-`BACKUP_BUCKET_ENDPOINT` is optional for non-default R2 endpoints. Local
-development can set `USE_LOCAL_BUCKET_BACKUPS=true` to use the local R2 binding
-backup path, but R2 backup credentials are still required at app startup.
 Deployed Workers should leave local-bucket mode disabled so the Sandbox SDK can
 use presigned URLs. The app fails fast if required secret bindings are missing.
 
