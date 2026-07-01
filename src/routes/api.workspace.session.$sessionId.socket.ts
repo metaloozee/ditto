@@ -6,6 +6,7 @@ import { workspaceSessions } from "#/db/schema";
 import { createAuth } from "#/lib/auth";
 import type { Route as rootRouteImport } from "./__root";
 
+// Keep this API-only route typed without committing generated route-tree output.
 declare module "@tanstack/react-router" {
 	interface FileRoutesByPath {
 		"/api/workspace/session/$sessionId/socket": {

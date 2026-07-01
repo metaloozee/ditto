@@ -341,13 +341,6 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			autoCleanup: false,
 			cwd: WORKSPACE_PATH,
 			env: { OPENCODE_API_KEY: this.env.OPENCODE_API_KEY },
-			onOutput: (stream, data) => {
-				if (stream === "stdout") {
-					this.handlePiOutput(data).catch((error) =>
-						this.handlePiFailure(error),
-					);
-				}
-			},
 			onExit: (code) => {
 				if (code && code !== 0) {
 					this.handlePiFailure(new Error(`Pi exited with code ${code}.`)).catch(
@@ -466,6 +459,10 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 		if (!runId || state.canceledRunIds?.includes(runId)) {
 			return;
 		}
+		if (await this.isRunCanceled(runId)) {
+			await this.clearCanceledRun(state);
+			return;
+		}
 
 		switch (event.type) {
 			case "message_update": {
@@ -574,6 +571,10 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 		) {
 			return;
 		}
+		if (await this.isRunCanceled(state.activeRunId)) {
+			await this.clearCanceledRun(state);
+			return;
+		}
 
 		if (state.isMutating && state.sandboxId && state.projectId) {
 			const backup = await backupSandboxWorkspace({
@@ -595,6 +596,15 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 	}
 
 	private async failRun(reason: string): Promise<void> {
+		const state = await this.getState();
+		if (!state.activeRunId) {
+			return;
+		}
+		if (await this.isRunCanceled(state.activeRunId)) {
+			await this.clearCanceledRun(state);
+			return;
+		}
+
 		await this.insertEvent("error", { reason: trimCompact(reason) });
 		await this.finishRun("failed");
 	}
@@ -609,6 +619,10 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			return;
 		}
 		if (state.canceledRunIds?.includes(state.activeRunId)) {
+			return;
+		}
+		if (await this.isRunCanceled(state.activeRunId)) {
+			await this.clearCanceledRun(state);
 			return;
 		}
 
@@ -648,6 +662,50 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			...state,
 			activeRunId: undefined,
 			pendingUiRequestId: undefined,
+		});
+	}
+
+	private async isRunCanceled(runId: string): Promise<boolean> {
+		const [run] = await createDb(this.env)
+			.select({ status: agentRuns.status })
+			.from(agentRuns)
+			.where(eq(agentRuns.id, runId))
+			.limit(1);
+
+		return run?.status === "canceled";
+	}
+
+	private async clearCanceledRun(state: BrokerState): Promise<void> {
+		if (!state.activeRunId) {
+			return;
+		}
+
+		if (state.projectId) {
+			await createDb(this.env)
+				.update(projects)
+				.set({
+					activeAgentRunId: null,
+					activeAgentRunStartedAt: null,
+					updatedAt: sql`(unixepoch())`,
+				})
+				.where(
+					and(
+						eq(projects.id, state.projectId),
+						eq(projects.activeAgentRunId, state.activeRunId),
+					),
+				);
+		}
+
+		this.broadcast({
+			type: "done",
+			runId: state.activeRunId,
+			status: "canceled",
+		});
+		await this.setState({
+			...state,
+			activeRunId: undefined,
+			pendingUiRequestId: undefined,
+			canceledRunIds: [...(state.canceledRunIds ?? []), state.activeRunId],
 		});
 	}
 
@@ -720,6 +778,12 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			type: "snapshot",
 			state: await this.getState(),
 		});
+		const state = await this.getState();
+		if (state.sessionId && state.piProcessId) {
+			void this.startLogStream(state.sessionId, state.piProcessId).catch((error) =>
+				this.handlePiFailure(error),
+			);
+		}
 
 		return new Response(null, {
 			status: 101,

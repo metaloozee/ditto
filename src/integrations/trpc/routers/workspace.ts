@@ -23,6 +23,12 @@ import { createTRPCRouter, protectedProcedure } from "../init";
 
 type BrokerControlPath = "/start" | "/reply" | "/abort";
 
+function compactBrokerError(error: unknown): string {
+	const message = error instanceof Error ? error.message : "Broker request failed.";
+
+	return message.length > 1000 ? `${message.slice(0, 1000)}...[truncated]` : message;
+}
+
 async function postWorkspaceSessionBroker(options: {
 	env: Env;
 	sessionId: string;
@@ -453,6 +459,51 @@ export const workspaceRouter = createTRPCRouter({
 					});
 				}
 
+				async function markAcceptedRunFailed(error: unknown) {
+					await db.batch([
+						db
+							.update(agentRuns)
+							.set({
+								status: "failed",
+								finishedAt: sql`(unixepoch())`,
+								updatedAt: sql`(unixepoch())`,
+							})
+							.where(eq(agentRuns.id, runId)),
+						db
+							.update(projects)
+							.set({
+								activeAgentRunId: null,
+								activeAgentRunStartedAt: null,
+								updatedAt: sql`(unixepoch())`,
+							})
+							.where(
+								and(
+									eq(projects.id, input.projectId),
+									eq(projects.userId, ctx.user.id),
+									eq(projects.activeAgentRunId, runId),
+								),
+							),
+						db.insert(agentRunEvents).values([
+							{
+								runId,
+								projectId: input.projectId,
+								sessionId,
+								type: "error" as const,
+								payload: createAgentRunEventPayload({
+									reason: compactBrokerError(error),
+								}),
+							},
+							{
+								runId,
+								projectId: input.projectId,
+								sessionId,
+								type: "done" as const,
+								payload: createAgentRunEventPayload({ status: "failed" }),
+							},
+						]),
+					]);
+				}
+
 				if (createdSession && sessionValues) {
 					try {
 						const [[session], [run]] = await db.batch([
@@ -471,7 +522,12 @@ export const workspaceRouter = createTRPCRouter({
 							);
 						}
 
-						await startBroker();
+						try {
+							await startBroker();
+						} catch (error) {
+							await markAcceptedRunFailed(error);
+							throw error;
+						}
 
 						return { run, session, createdSession };
 					} catch (error) {
@@ -497,7 +553,12 @@ export const workspaceRouter = createTRPCRouter({
 						);
 					}
 
-					await startBroker();
+					try {
+						await startBroker();
+					} catch (error) {
+						await markAcceptedRunFailed(error);
+						throw error;
+					}
 
 					return { run, session, createdSession };
 				} catch (error) {
@@ -569,12 +630,16 @@ export const workspaceRouter = createTRPCRouter({
 				payload: createAgentRunEventPayload({ status: "canceled" }),
 			});
 
-			await postWorkspaceSessionBroker({
-				env: ctx.env,
-				sessionId: run.sessionId,
-				path: "/abort",
-				body: { runId: input.runId },
-			});
+			try {
+				await postWorkspaceSessionBroker({
+					env: ctx.env,
+					sessionId: run.sessionId,
+					path: "/abort",
+					body: { runId: input.runId },
+				});
+			} catch {
+				// Durable cancellation is the user-facing boundary; abort is best effort.
+			}
 
 			return updatedRun;
 		}),
@@ -610,6 +675,16 @@ export const workspaceRouter = createTRPCRouter({
 				});
 			}
 
+			await postWorkspaceSessionBroker({
+				env: ctx.env,
+				sessionId: run.sessionId,
+				path: "/reply",
+				body: {
+					runId: input.runId,
+					answer: input.answer,
+				},
+			});
+
 			const [updatedRun] = await db
 				.update(agentRuns)
 				.set({
@@ -631,16 +706,6 @@ export const workspaceRouter = createTRPCRouter({
 					text: input.answer,
 					kind: "answer",
 				}),
-			});
-
-			await postWorkspaceSessionBroker({
-				env: ctx.env,
-				sessionId: run.sessionId,
-				path: "/reply",
-				body: {
-					runId: input.runId,
-					answer: input.answer,
-				},
 			});
 
 			return updatedRun;
