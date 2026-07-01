@@ -16,8 +16,8 @@ import {
 	MessageScrollerProvider,
 	MessageScrollerViewport,
 } from "#/components/ui/message-scroller";
-import { useTRPC } from "#/integrations/trpc/react";
 import type { WorkspaceSessionSocketState } from "#/hooks/use-workspace-session-socket";
+import { useTRPC } from "#/integrations/trpc/react";
 import { cn } from "#/lib/utils";
 import type { AgentRunEventType } from "#/lib/workspace-policy";
 
@@ -200,7 +200,8 @@ function getLatestNeedsInput(
 
 		const payload = parseEventPayload(event.payload);
 		const runId = activeRunId ?? stringifyPayloadValue(payload.runId);
-		const question = stringifyPayloadValue(payload.question) ?? getEventText(event, payload);
+		const question =
+			stringifyPayloadValue(payload.question) ?? getEventText(event, payload);
 
 		return runId ? { runId, question } : null;
 	}
@@ -399,7 +400,9 @@ export function Chat({
 								</MessageScrollerItem>
 							) : null}
 							{needsInput ? (
-								<MessageScrollerItem messageId={`needs-input-${needsInput.runId}`}>
+								<MessageScrollerItem
+									messageId={`needs-input-${needsInput.runId}`}
+								>
 									<NeedsInputCard
 										projectId={projectId}
 										sessionId={sessionId}

@@ -18,7 +18,9 @@ declare module "@tanstack/react-router" {
 	}
 }
 
-export const Route = createFileRoute("/api/workspace/session/$sessionId/socket")({
+export const Route = createFileRoute(
+	"/api/workspace/session/$sessionId/socket",
+)({
 	server: {
 		handlers: {
 			GET: async ({ request, params }) => {
@@ -47,7 +49,8 @@ export const Route = createFileRoute("/api/workspace/session/$sessionId/socket")
 					return new Response("Forbidden", { status: 403 });
 				}
 
-				const brokerNamespace = env.WorkspaceSessionBroker as DurableObjectNamespace;
+				const brokerNamespace =
+					env.WorkspaceSessionBroker as DurableObjectNamespace;
 				const brokerId = brokerNamespace.idFromName(sessionId);
 				const broker = brokerNamespace.get(brokerId) as {
 					fetch(request: Request): Promise<Response>;

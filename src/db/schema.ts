@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { DEFAULT_PROJECT_CODER_MODEL } from "#/lib/agent-models";
 import {
 	AGENT_RUN_EVENT_TYPES,
 	AGENT_RUN_STATUSES,
@@ -7,7 +8,6 @@ import {
 	WORKSPACE_PATH,
 	WORKSPACE_SESSION_STATUSES,
 } from "#/lib/workspace-policy";
-import { DEFAULT_PROJECT_CODER_MODEL } from "#/lib/agent-models";
 
 export const todos = sqliteTable("todos", {
 	id: integer({ mode: "number" }).primaryKey({

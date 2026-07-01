@@ -8,7 +8,7 @@ export type PiRpcCommand =
 			type: "extension_ui_response";
 			requestId: string;
 			value: string;
-		};
+	  };
 
 export type PiRpcResponse = {
 	type: "response";

@@ -215,10 +215,13 @@ export function Composer({
 		}
 	}
 
-	const handleModelSelect = useCallback((id: ProjectCoderModelSpecifier) => {
-		setModel(id);
-		setModelSelectorOpen(false);
-	}, [setModel]);
+	const handleModelSelect = useCallback(
+		(id: ProjectCoderModelSpecifier) => {
+			setModel(id);
+			setModelSelectorOpen(false);
+		},
+		[setModel],
+	);
 
 	const selectedModel = models.find((modelOption) => modelOption.id === model);
 	const chefs = [...new Set(models.map((modelOption) => modelOption.chef))];

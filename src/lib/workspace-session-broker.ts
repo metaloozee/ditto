@@ -3,19 +3,25 @@ import { and, eq, sql } from "drizzle-orm";
 import { createDb } from "#/db";
 import { agentRunEvents, agentRuns, projects } from "#/db/schema";
 import {
-	JsonlBuffer,
 	buildJsonlWriteCommand,
 	getPiModelParts,
 	getTextField,
-	quoteShellArg,
-	trimCompact,
+	JsonlBuffer,
 	type PiRpcCommand,
 	type PiRpcEvent,
 	type PiRpcResponse,
+	quoteShellArg,
+	trimCompact,
 } from "#/lib/pi-rpc";
 import { serializeSandboxBackup } from "#/lib/sandbox-backup";
-import { backupSandboxWorkspace, getProjectSandbox } from "#/lib/sandbox-bootstrap";
-import { WORKSPACE_PATH, createAgentRunEventPayload } from "#/lib/workspace-policy";
+import {
+	backupSandboxWorkspace,
+	getProjectSandbox,
+} from "#/lib/sandbox-bootstrap";
+import {
+	createAgentRunEventPayload,
+	WORKSPACE_PATH,
+} from "#/lib/workspace-policy";
 
 type BrokerSocketAttachment = {
 	connectedAt: number;
@@ -219,7 +225,10 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			}
 		} catch (error) {
 			return Response.json(
-				{ error: error instanceof Error ? error.message : "Broker request failed." },
+				{
+					error:
+						error instanceof Error ? error.message : "Broker request failed.",
+				},
 				{ status: 400 },
 			);
 		}
@@ -334,7 +343,9 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			env: { OPENCODE_API_KEY: this.env.OPENCODE_API_KEY },
 			onOutput: (stream, data) => {
 				if (stream === "stdout") {
-					this.handlePiOutput(data).catch((error) => this.handlePiFailure(error));
+					this.handlePiOutput(data).catch((error) =>
+						this.handlePiFailure(error),
+					);
 				}
 			},
 			onExit: (code) => {
@@ -363,8 +374,14 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 		}
 
 		this.streamStartedForProcessId = processId;
-		const sandbox = getProjectSandbox(this.env, (await this.getState()).sandboxId ?? "");
-		const session = await sandbox.createSession({ id: sessionId, cwd: WORKSPACE_PATH });
+		const sandbox = getProjectSandbox(
+			this.env,
+			(await this.getState()).sandboxId ?? "",
+		);
+		const session = await sandbox.createSession({
+			id: sessionId,
+			cwd: WORKSPACE_PATH,
+		});
 		const stream = await session.streamProcessLogs(processId);
 		const reader = stream.getReader();
 		const decoder = new TextDecoder(PROCESS_STREAM_ENCODING);
@@ -413,7 +430,9 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			);
 
 			if (!result.success) {
-				throw new Error(trimCompact(result.stderr || result.stdout || "Pi write failed."));
+				throw new Error(
+					trimCompact(result.stderr || result.stdout || "Pi write failed."),
+				);
 			}
 		});
 
@@ -474,7 +493,11 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			case "tool_execution_update": {
 				const text = getTextField(event, ["output", "text", "message"]);
 				if (text) {
-					this.broadcast({ type: "tool_progress", runId, text: trimCompact(text) });
+					this.broadcast({
+						type: "tool_progress",
+						runId,
+						text: trimCompact(text),
+					});
 				}
 				return;
 			}
@@ -492,7 +515,9 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 				await this.completeRun();
 				return;
 			case "extension_error":
-				await this.failRun(getTextField(event, ["error", "message"]) ?? "Pi extension error.");
+				await this.failRun(
+					getTextField(event, ["error", "message"]) ?? "Pi extension error.",
+				);
 				return;
 		}
 	}
@@ -505,7 +530,8 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 
 		const requestId =
 			getTextField(event, ["requestId", "id"]) ?? crypto.randomUUID();
-		const question = getTextField(event, ["question", "prompt", "message"]) ??
+		const question =
+			getTextField(event, ["question", "prompt", "message"]) ??
 			"The agent needs input.";
 
 		const db = createDb(this.env);
@@ -532,12 +558,20 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			}),
 		]);
 		await this.setState({ ...state, pendingUiRequestId: requestId });
-		this.broadcast({ type: "needs_input", runId: state.activeRunId, question, requestId });
+		this.broadcast({
+			type: "needs_input",
+			runId: state.activeRunId,
+			question,
+			requestId,
+		});
 	}
 
 	private async completeRun(): Promise<void> {
 		const state = await this.getState();
-		if (!state.activeRunId || state.canceledRunIds?.includes(state.activeRunId)) {
+		if (
+			!state.activeRunId ||
+			state.canceledRunIds?.includes(state.activeRunId)
+		) {
 			return;
 		}
 
@@ -610,7 +644,11 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			}),
 		]);
 		this.broadcast({ type: "done", runId: state.activeRunId, status });
-		await this.setState({ ...state, activeRunId: undefined, pendingUiRequestId: undefined });
+		await this.setState({
+			...state,
+			activeRunId: undefined,
+			pendingUiRequestId: undefined,
+		});
 	}
 
 	private async insertEvent(
@@ -622,13 +660,15 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			return;
 		}
 
-		await createDb(this.env).insert(agentRunEvents).values({
-			runId: state.activeRunId,
-			projectId: state.projectId,
-			sessionId: state.sessionId,
-			type,
-			payload: createAgentRunEventPayload(payload),
-		});
+		await createDb(this.env)
+			.insert(agentRunEvents)
+			.values({
+				runId: state.activeRunId,
+				projectId: state.projectId,
+				sessionId: state.sessionId,
+				type,
+				payload: createAgentRunEventPayload(payload),
+			});
 	}
 
 	private async emitWorkspaceChanges(): Promise<void> {
@@ -638,7 +678,10 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 		}
 
 		const sandbox = getProjectSandbox(this.env, state.sandboxId);
-		const session = await sandbox.createSession({ id: state.sessionId, cwd: WORKSPACE_PATH });
+		const session = await sandbox.createSession({
+			id: state.sessionId,
+			cwd: WORKSPACE_PATH,
+		});
 		const result = await session.exec("git status --short", {
 			cwd: WORKSPACE_PATH,
 			timeout: COMMAND_TIMEOUT_MS,
@@ -660,7 +703,8 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 
 		await this.insertEvent("diff_ready", {
 			changedFiles: paths.length,
-			truncated: result.stdout.split("\n").filter(Boolean).length > paths.length,
+			truncated:
+				result.stdout.split("\n").filter(Boolean).length > paths.length,
 		});
 	}
 
@@ -698,7 +742,10 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 		}
 	}
 
-	private sendFrame(socket: WebSocket, frame: WorkspaceSessionBrokerFrame): void {
+	private sendFrame(
+		socket: WebSocket,
+		frame: WorkspaceSessionBrokerFrame,
+	): void {
 		socket.send(JSON.stringify(frame));
 	}
 }

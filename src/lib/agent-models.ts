@@ -24,7 +24,8 @@ export const PROJECT_CODER_MODEL_IDS = PROJECT_CODER_MODELS.map(
 	(model) => model.id,
 );
 
-export type ProjectCoderModelSpecifier = (typeof PROJECT_CODER_MODELS)[number]["id"];
+export type ProjectCoderModelSpecifier =
+	(typeof PROJECT_CODER_MODELS)[number]["id"];
 
 export function isProjectCoderModelSpecifier(
 	value: string,
