@@ -7,7 +7,7 @@
 > in `plans/README.md` unless a reviewer dispatched you and told you they
 > maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat 8632f47..HEAD -- src/components/new-project-dialog.tsx src/components/project-settings-dialog.tsx src/integrations/trpc/routers/projects.ts src/lib/env-vars.ts src/lib/env-vars.test.ts src/components/new-project-dialog.test.tsx src/components/project-settings-dialog.test.tsx`
+> **Drift check (run first)**: `git diff --stat de51de1..HEAD -- src/components/new-project-dialog.tsx src/components/project-settings-dialog.tsx src/integrations/trpc/routers/projects.ts src/lib/env-vars.ts src/lib/env-vars.test.ts src/components/new-project-dialog.test.tsx src/components/project-settings-dialog.test.tsx`
 > If any listed file changed since this plan was written, compare the
 > "Current state" excerpts against the live code before proceeding. On a
 > mismatch, treat it as a STOP condition.
@@ -19,7 +19,7 @@
 - **Risk**: MED
 - **Depends on**: none
 - **Category**: bug
-- **Planned at**: commit `8632f47`, 2026-06-29
+- **Planned at**: commit `de51de1`, 2026-06-30
 
 ## Why this matters
 
@@ -111,7 +111,7 @@ async function handleAddEnvVar(): Promise<void> {
 The server only trims, deduplicates by key, and drops empty keys:
 
 ```ts
-// src/integrations/trpc/routers/projects.ts:27-42
+// src/integrations/trpc/routers/projects.ts:28-43
 function sanitizeEnvVars(
 	envVars: SandboxEnvVar[] | undefined,
 ): SandboxEnvVar[] {
@@ -133,7 +133,7 @@ function sanitizeEnvVars(
 The same sanitizer is used by both creation and later updates:
 
 ```ts
-// src/integrations/trpc/routers/projects.ts:112-116
+// src/integrations/trpc/routers/projects.ts:121-125
 const sanitizedEnvVars = sanitizeEnvVars(input.envVars);
 const encryptedEnvVars = await encryptEnvVars(
 	sanitizedEnvVars,
@@ -142,7 +142,7 @@ const encryptedEnvVars = await encryptEnvVars(
 ```
 
 ```ts
-// src/integrations/trpc/routers/projects.ts:256-265
+// src/integrations/trpc/routers/projects.ts:256-274
 const [nextEnvVar] = sanitizeEnvVars([
 	{ key: input.key, value: input.value },
 ]);
