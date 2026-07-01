@@ -1,4 +1,6 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { BrushCleaningIcon } from "lucide-react";
+import { useState } from "react";
 import { Composer } from "#/components/composer";
 import { Bubble, BubbleContent } from "#/components/ui/bubble";
 import {
@@ -14,6 +16,8 @@ import {
 	MessageScrollerProvider,
 	MessageScrollerViewport,
 } from "#/components/ui/message-scroller";
+import { useTRPC } from "#/integrations/trpc/react";
+import type { WorkspaceSessionSocketState } from "#/hooks/use-workspace-session-socket";
 import { cn } from "#/lib/utils";
 import type { AgentRunEventType } from "#/lib/workspace-policy";
 
@@ -30,6 +34,7 @@ type ChatProps = {
 	activeRunId?: string | null;
 	disabledReason?: string;
 	events?: ChatEvent[];
+	socketState?: WorkspaceSessionSocketState;
 };
 
 type EventPayload = {
@@ -184,6 +189,25 @@ function isTurnAnchor(event: ChatEvent, payload: EventPayload): boolean {
 	return event.type === "message" && payload.role === "user";
 }
 
+function getLatestNeedsInput(
+	events: ChatEvent[],
+	activeRunId: string | null | undefined,
+): { runId: string; question: string } | null {
+	for (const event of [...events].reverse()) {
+		if (event.type !== "needs_input") {
+			continue;
+		}
+
+		const payload = parseEventPayload(event.payload);
+		const runId = activeRunId ?? stringifyPayloadValue(payload.runId);
+		const question = stringifyPayloadValue(payload.question) ?? getEventText(event, payload);
+
+		return runId ? { runId, question } : null;
+	}
+
+	return null;
+}
+
 function ChatEventMessage({ event }: { event: ChatEvent }) {
 	const payload = parseEventPayload(event.payload);
 	const meta = getEventMeta(event, payload);
@@ -208,6 +232,93 @@ function ChatEventMessage({ event }: { event: ChatEvent }) {
 						{time}
 					</MessageFooter>
 				) : null}
+			</MessageContent>
+		</Message>
+	);
+}
+
+function TransientAssistantMessage({ text }: { text: string }) {
+	return (
+		<Message align="start">
+			<MessageContent>
+				<Bubble align="start" variant="secondary">
+					<BubbleContent className="whitespace-pre-wrap text-pretty">
+						{text}
+					</BubbleContent>
+				</Bubble>
+				<MessageFooter>Streaming live</MessageFooter>
+			</MessageContent>
+		</Message>
+	);
+}
+
+function NeedsInputCard({
+	projectId,
+	sessionId,
+	runId,
+	question,
+}: {
+	projectId?: string;
+	sessionId?: string | null;
+	runId: string;
+	question: string;
+}) {
+	const [answer, setAnswer] = useState("");
+	const trpc = useTRPC();
+	const queryClient = useQueryClient();
+	const answerMutation = useMutation(
+		trpc.workspace.answerRunQuestion.mutationOptions(),
+	);
+
+	async function submitAnswer() {
+		if (!answer.trim()) {
+			return;
+		}
+
+		await answerMutation.mutateAsync({ runId, answer });
+		setAnswer("");
+
+		if (projectId) {
+			await queryClient.invalidateQueries(
+				trpc.workspace.get.queryFilter({
+					projectId,
+					sessionId: sessionId ?? undefined,
+				}),
+			);
+		}
+	}
+
+	return (
+		<Message align="start">
+			<MessageContent>
+				<div className="rounded-xl border border-primary/30 bg-card p-3 text-sm shadow-sm">
+					<p className="font-medium text-foreground">Agent needs input</p>
+					<p className="mt-1 text-muted-foreground text-xs leading-relaxed">
+						{question}
+					</p>
+					<div className="mt-3 flex gap-2">
+						<input
+							className="min-w-0 flex-1 rounded-md border bg-background px-3 py-2 text-xs outline-none focus:border-primary"
+							onChange={(event) => setAnswer(event.currentTarget.value)}
+							onKeyDown={(event) => {
+								if (event.key === "Enter") {
+									event.preventDefault();
+									void submitAnswer();
+								}
+							}}
+							placeholder="Answer and resume the run"
+							value={answer}
+						/>
+						<button
+							className="rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground text-xs disabled:opacity-50"
+							disabled={answerMutation.isPending || !answer.trim()}
+							onClick={() => void submitAnswer()}
+							type="button"
+						>
+							Answer
+						</button>
+					</div>
+				</div>
 			</MessageContent>
 		</Message>
 	);
@@ -240,8 +351,11 @@ export function Chat({
 	activeRunId,
 	disabledReason,
 	events = [],
+	socketState,
 }: ChatProps) {
 	const hasEvents = events.length > 0;
+	const needsInput =
+		socketState?.needsInput ?? getLatestNeedsInput(events, activeRunId);
 
 	return (
 		<div className="relative mx-auto h-full w-full">
@@ -279,6 +393,21 @@ export function Chat({
 									<ChatEmptyState hasProject={Boolean(projectId)} />
 								</MessageScrollerItem>
 							)}
+							{socketState?.assistantText ? (
+								<MessageScrollerItem messageId="live-assistant">
+									<TransientAssistantMessage text={socketState.assistantText} />
+								</MessageScrollerItem>
+							) : null}
+							{needsInput ? (
+								<MessageScrollerItem messageId={`needs-input-${needsInput.runId}`}>
+									<NeedsInputCard
+										projectId={projectId}
+										sessionId={sessionId}
+										runId={needsInput.runId}
+										question={needsInput.question}
+									/>
+								</MessageScrollerItem>
+							) : null}
 						</MessageScrollerContent>
 					</MessageScrollerViewport>
 					<MessageScrollerButton className="mb-40" />

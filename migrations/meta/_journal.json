@@ -29,6 +29,13 @@
       "when": 1782901751769,
       "tag": "0003_material_ghost_rider",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1782930164891,
+      "tag": "0004_same_stellaris",
+      "breakpoints": true
     }
   ]
 }

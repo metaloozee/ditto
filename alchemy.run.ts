@@ -16,6 +16,11 @@ const sandbox = DurableObjectNamespace("sandbox", {
 	sqlite: true,
 });
 
+const workspaceSessionBroker = DurableObjectNamespace("workspace-session-broker", {
+	className: "WorkspaceSessionBroker",
+	sqlite: true,
+});
+
 const database = await D1Database("database", {
 	name: `${app.name}-${app.stage}-db`,
 	migrationsDir: "./migrations",
@@ -32,6 +37,7 @@ export const website = await TanStackStart("website", {
 	bindings: {
 		DB: database,
 		Sandbox: sandbox,
+		WorkspaceSessionBroker: workspaceSessionBroker,
 		BACKUP_BUCKET: sandboxBackups,
 		BACKUP_BUCKET_NAME: sandboxBackupBucketName,
 		CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID ?? "",
@@ -44,6 +50,7 @@ export const website = await TanStackStart("website", {
 		GITHUB_CLIENT_SECRET: alchemy.secret(process.env.GITHUB_CLIENT_SECRET),
 		GITHUB_APP_ID: process.env.GITHUB_APP_ID ?? "",
 		GITHUB_APP_PRIVATE_KEY: alchemy.secret(process.env.GITHUB_APP_PRIVATE_KEY),
+		OPENCODE_API_KEY: alchemy.secret(process.env.OPENCODE_API_KEY),
 		APP_ENV: app.stage,
 		VITE_GITHUB_APP_INSTALL_URL: process.env.VITE_GITHUB_APP_INSTALL_URL ?? "https://github.com/apps/ditto-web/installations/new/",
 	},
@@ -59,17 +66,24 @@ export const website = await TanStackStart("website", {
 					max_instances: 1,
 				},
 			],
-			durable_objects: {
-				...spec.durable_objects,
-				bindings: [
-					{
-						class_name: "Sandbox",
-						name: "Sandbox",
-					},
+				durable_objects: {
+					...spec.durable_objects,
+					bindings: [
+						{
+							class_name: "Sandbox",
+							name: "Sandbox",
+						},
+						{
+							class_name: "WorkspaceSessionBroker",
+							name: "WorkspaceSessionBroker",
+						},
+					],
+				},
+				migrations: [
+					{ new_sqlite_classes: ["Sandbox"], tag: "v1" },
+					{ new_sqlite_classes: ["WorkspaceSessionBroker"], tag: "v2" },
 				],
-			},
-			migrations: [{ new_sqlite_classes: ["Sandbox"], tag: "v1" }],
-		}),
+			}),
 	},
 });
 

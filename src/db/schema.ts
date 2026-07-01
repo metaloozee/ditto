@@ -7,6 +7,7 @@ import {
 	WORKSPACE_PATH,
 	WORKSPACE_SESSION_STATUSES,
 } from "#/lib/workspace-policy";
+import { DEFAULT_PROJECT_CODER_MODEL } from "#/lib/agent-models";
 
 export const todos = sqliteTable("todos", {
 	id: integer({ mode: "number" }).primaryKey({
@@ -116,6 +117,9 @@ export const agentRuns = sqliteTable(
 		isMutating: integer("isMutating", { mode: "boolean" })
 			.notNull()
 			.default(true),
+		modelSpecifier: text("modelSpecifier")
+			.notNull()
+			.default(DEFAULT_PROJECT_CODER_MODEL),
 		userMessage: text("userMessage").notNull(),
 		question: text("question"),
 		recommendedAnswer: text("recommendedAnswer"),

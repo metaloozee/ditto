@@ -1,4 +1,3 @@
-import { FlueProvider } from "@flue/react";
 import { TanStackDevtools } from "@tanstack/react-devtools";
 import type { QueryClient } from "@tanstack/react-query";
 import {
@@ -12,7 +11,6 @@ import type { TRPCOptionsProxy } from "@trpc/tanstack-react-query";
 import type * as React from "react";
 import { AppShell } from "#/components/app-shell";
 import type { TRPCRouter } from "#/integrations/trpc/router";
-import { flueClient } from "#/lib/flue-client";
 import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
 import appCss from "../styles.css?url";
 
@@ -62,9 +60,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 				<HeadContent />
 			</head>
 			<body>
-				<FlueProvider client={flueClient}>
-					{isAuthRoute ? children : <AppShell>{children}</AppShell>}
-				</FlueProvider>
+				{isAuthRoute ? children : <AppShell>{children}</AppShell>}
 				<TanStackDevtools
 					config={{
 						position: "bottom-right",

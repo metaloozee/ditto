@@ -40,281 +40,32 @@ import {
 	PromptInputTools,
 } from "#/components/ai-elements/prompt-input";
 import { useTRPC } from "#/integrations/trpc/react";
+import {
+	PROJECT_CODER_MODELS,
+	type ProjectCoderModelSpecifier,
+} from "#/lib/agent-models";
+import { useUserPreferencesStore } from "#/lib/user-preferences-store";
 
-const models = [
-	{
-		chef: "OpenAI",
-		chefSlug: "openai",
-		id: "gpt-4o",
-		name: "GPT-4o",
-		providers: ["openai", "azure"],
-	},
-	{
-		chef: "OpenAI",
-		chefSlug: "openai",
-		id: "gpt-4o-mini",
-		name: "GPT-4o Mini",
-		providers: ["openai", "azure"],
-	},
-	{
-		chef: "OpenAI",
-		chefSlug: "openai",
-		id: "o1",
-		name: "o1",
-		providers: ["openai", "azure"],
-	},
-	{
-		chef: "OpenAI",
-		chefSlug: "openai",
-		id: "o1-mini",
-		name: "o1 Mini",
-		providers: ["openai", "azure"],
-	},
-	{
-		chef: "Anthropic",
-		chefSlug: "anthropic",
-		id: "claude-opus-4-20250514",
-		name: "Claude 4 Opus",
-		providers: ["anthropic", "azure", "google-vertex", "amazon-bedrock"],
-	},
-	{
-		chef: "Anthropic",
-		chefSlug: "anthropic",
-		id: "claude-sonnet-4-20250514",
-		name: "Claude 4 Sonnet",
-		providers: ["anthropic", "azure", "google-vertex", "amazon-bedrock"],
-	},
-	{
-		chef: "Anthropic",
-		chefSlug: "anthropic",
-		id: "claude-3.5-sonnet",
-		name: "Claude 3.5 Sonnet",
-		providers: ["anthropic", "azure", "google-vertex", "amazon-bedrock"],
-	},
-	{
-		chef: "Anthropic",
-		chefSlug: "anthropic",
-		id: "claude-3.5-haiku",
-		name: "Claude 3.5 Haiku",
-		providers: ["anthropic", "azure", "google-vertex", "amazon-bedrock"],
-	},
-	{
-		chef: "Google",
-		chefSlug: "google",
-		id: "gemini-2.0-flash-exp",
-		name: "Gemini 2.0 Flash",
-		providers: ["google", "google-vertex"],
-	},
-	{
-		chef: "Google",
-		chefSlug: "google",
-		id: "gemini-1.5-pro",
-		name: "Gemini 1.5 Pro",
-		providers: ["google", "google-vertex"],
-	},
-	{
-		chef: "Google",
-		chefSlug: "google",
-		id: "gemini-1.5-flash",
-		name: "Gemini 1.5 Flash",
-		providers: ["google", "google-vertex"],
-	},
-	{
-		chef: "Meta",
-		chefSlug: "llama",
-		id: "llama-3.3-70b",
-		name: "Llama 3.3 70B",
-		providers: ["groq", "togetherai", "amazon-bedrock"],
-	},
-	{
-		chef: "Meta",
-		chefSlug: "llama",
-		id: "llama-3.1-405b",
-		name: "Llama 3.1 405B",
-		providers: ["togetherai", "amazon-bedrock"],
-	},
-	{
-		chef: "Meta",
-		chefSlug: "llama",
-		id: "llama-3.1-70b",
-		name: "Llama 3.1 70B",
-		providers: ["groq", "togetherai", "amazon-bedrock"],
-	},
-	{
-		chef: "Meta",
-		chefSlug: "llama",
-		id: "llama-3.1-8b",
-		name: "Llama 3.1 8B",
-		providers: ["groq", "togetherai"],
-	},
-	{
-		chef: "DeepSeek",
-		chefSlug: "deepseek",
-		id: "deepseek-r1",
-		name: "DeepSeek R1",
-		providers: ["deepseek", "openrouter"],
-	},
-	{
-		chef: "DeepSeek",
-		chefSlug: "deepseek",
-		id: "deepseek-v3",
-		name: "DeepSeek V3",
-		providers: ["deepseek", "openrouter"],
-	},
-	{
-		chef: "DeepSeek",
-		chefSlug: "deepseek",
-		id: "deepseek-coder-v2",
-		name: "DeepSeek Coder V2",
-		providers: ["deepseek", "openrouter"],
-	},
-	{
-		chef: "Mistral AI",
-		chefSlug: "mistral",
-		id: "mistral-large",
-		name: "Mistral Large",
-		providers: ["mistral", "azure"],
-	},
-	{
-		chef: "Mistral AI",
-		chefSlug: "mistral",
-		id: "mistral-small",
-		name: "Mistral Small",
-		providers: ["mistral", "azure"],
-	},
-	{
-		chef: "Mistral AI",
-		chefSlug: "mistral",
-		id: "codestral",
-		name: "Codestral",
-		providers: ["mistral"],
-	},
-	{
-		chef: "Alibaba",
-		chefSlug: "alibaba",
-		id: "qwen-2.5-72b",
-		name: "Qwen 2.5 72B",
-		providers: ["alibaba", "openrouter"],
-	},
-	{
-		chef: "Alibaba",
-		chefSlug: "alibaba",
-		id: "qwen-2.5-coder-32b",
-		name: "Qwen 2.5 Coder 32B",
-		providers: ["alibaba", "openrouter"],
-	},
-	{
-		chef: "Alibaba",
-		chefSlug: "alibaba",
-		id: "qwen-max",
-		name: "Qwen Max",
-		providers: ["alibaba"],
-	},
-	{
-		chef: "Cohere",
-		chefSlug: "cohere",
-		id: "command-r-plus",
-		name: "Command R+",
-		providers: ["cohere", "azure", "amazon-bedrock"],
-	},
-	{
-		chef: "Cohere",
-		chefSlug: "cohere",
-		id: "command-r",
-		name: "Command R",
-		providers: ["cohere", "azure", "amazon-bedrock"],
-	},
-	{
-		chef: "xAI",
-		chefSlug: "xai",
-		id: "grok-3",
-		name: "Grok 3",
-		providers: ["xai"],
-	},
-	{
-		chef: "xAI",
-		chefSlug: "xai",
-		id: "grok-2-1212",
-		name: "Grok 2 1212",
-		providers: ["xai"],
-	},
-	{
-		chef: "xAI",
-		chefSlug: "xai",
-		id: "grok-vision",
-		name: "Grok Vision",
-		providers: ["xai"],
-	},
-	{
-		chef: "Moonshot AI",
-		chefSlug: "moonshotai",
-		id: "moonshot-v1-128k",
-		name: "Moonshot v1 128K",
-		providers: ["moonshotai"],
-	},
-	{
-		chef: "Moonshot AI",
-		chefSlug: "moonshotai",
-		id: "moonshot-v1-32k",
-		name: "Moonshot v1 32K",
-		providers: ["moonshotai"],
-	},
-	{
-		chef: "Perplexity",
-		chefSlug: "perplexity",
-		id: "sonar-pro",
-		name: "Sonar Pro",
-		providers: ["perplexity"],
-	},
-	{
-		chef: "Perplexity",
-		chefSlug: "perplexity",
-		id: "sonar",
-		name: "Sonar",
-		providers: ["perplexity"],
-	},
-	{
-		chef: "Vercel",
-		chefSlug: "v0",
-		id: "v0-chat",
-		name: "v0 Chat",
-		providers: ["vercel"],
-	},
-	{
-		chef: "Amazon",
-		chefSlug: "amazon-bedrock",
-		id: "nova-pro",
-		name: "Nova Pro",
-		providers: ["amazon-bedrock"],
-	},
-	{
-		chef: "Amazon",
-		chefSlug: "amazon-bedrock",
-		id: "nova-lite",
-		name: "Nova Lite",
-		providers: ["amazon-bedrock"],
-	},
-	{
-		chef: "Amazon",
-		chefSlug: "amazon-bedrock",
-		id: "nova-micro",
-		name: "Nova Micro",
-		providers: ["amazon-bedrock"],
-	},
-] satisfies Model[];
+const models = PROJECT_CODER_MODELS.map((model) => ({
+	chef: model.providerName,
+	chefSlug: model.provider,
+	id: model.id,
+	name: model.name,
+	providers: [model.provider],
+})) satisfies Model[];
 
 interface Model {
 	chef: string;
 	chefSlug: string;
-	id: string;
+	id: ProjectCoderModelSpecifier;
 	name: string;
 	providers: string[];
 }
 
 interface ModelItemProps {
 	model: Model;
-	onSelect: (id: string) => void;
-	selectedModel: string;
+	onSelect: (id: ProjectCoderModelSpecifier) => void;
+	selectedModel: ProjectCoderModelSpecifier;
 }
 
 const ModelItem = memo(({ model, onSelect, selectedModel }: ModelItemProps) => {
@@ -374,7 +125,8 @@ export function Composer({
 	disabledReason,
 }: ComposerProps) {
 	const [text, setText] = useState("");
-	const [model, setModel] = useState(models[0].id);
+	const model = useUserPreferencesStore((state) => state.selectedModel);
+	const setModel = useUserPreferencesStore((state) => state.setSelectedModel);
 	const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
 	const trpc = useTRPC();
 	const queryClient = useQueryClient();
@@ -424,6 +176,7 @@ export function Composer({
 				projectId,
 				sessionId: sessionId ?? undefined,
 				message: message.text,
+				modelSpecifier: model,
 				isMutating: true,
 			});
 
@@ -462,10 +215,10 @@ export function Composer({
 		}
 	}
 
-	const handleModelSelect = useCallback((id: string) => {
+	const handleModelSelect = useCallback((id: ProjectCoderModelSpecifier) => {
 		setModel(id);
 		setModelSelectorOpen(false);
-	}, []);
+	}, [setModel]);
 
 	const selectedModel = models.find((modelOption) => modelOption.id === model);
 	const chefs = [...new Set(models.map((modelOption) => modelOption.chef))];

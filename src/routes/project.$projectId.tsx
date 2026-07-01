@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { Chat } from "#/components/ai-chat";
+import { useWorkspaceSessionSocket } from "#/hooks/use-workspace-session-socket";
 import { useTRPC } from "#/integrations/trpc/react";
 
 export const Route = createFileRoute("/project/$projectId")({
@@ -25,13 +26,14 @@ export function ProjectWorkspacePage({
 	const project = projectQuery.data;
 	const isWorkspaceReady =
 		project?.status === "ready" && Boolean(project.sandboxId);
+	const socketState = useWorkspaceSessionSocket(sessionId);
 	const workspaceQuery = useQuery(
 		trpc.workspace.get.queryOptions(
 			{ projectId, sessionId },
 			{
 				enabled: isWorkspaceReady,
 				refetchInterval: (query) =>
-					query.state.data?.activeRun ? 1000 : false,
+					query.state.data?.activeRun && !socketState.connected ? 1000 : false,
 				retry: false,
 			},
 		),
@@ -87,6 +89,7 @@ export function ProjectWorkspacePage({
 					activeRunId={activeRun?.id ?? null}
 					disabledReason={disabledReason}
 					events={workspace?.events ?? []}
+					socketState={socketState}
 				/>
 			</div>
 		</main>

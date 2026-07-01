@@ -9,6 +9,7 @@ import {
 	projects,
 	workspaceSessions,
 } from "#/db/schema";
+import { isProjectCoderModelSpecifier } from "#/lib/agent-models";
 import { decryptEnvVars } from "#/lib/project-env-vars";
 import { ensureProjectSandbox } from "#/lib/project-sandbox";
 import {
@@ -19,6 +20,36 @@ import {
 	WORKSPACE_PATH,
 } from "#/lib/workspace-policy";
 import { createTRPCRouter, protectedProcedure } from "../init";
+
+type BrokerControlPath = "/start" | "/reply" | "/abort";
+
+async function postWorkspaceSessionBroker(options: {
+	env: Env;
+	sessionId: string;
+	path: BrokerControlPath;
+	body: Record<string, unknown>;
+}): Promise<void> {
+	const brokerNamespace = options.env
+		.WorkspaceSessionBroker as DurableObjectNamespace;
+	const brokerId = brokerNamespace.idFromName(options.sessionId);
+	const broker = brokerNamespace.get(brokerId) as {
+		fetch(request: Request): Promise<Response>;
+	};
+	const response = await broker.fetch(
+		new Request(`https://workspace-session-broker${options.path}`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(options.body),
+		}),
+	);
+
+	if (!response.ok) {
+		throw new TRPCError({
+			code: response.status === 409 ? "CONFLICT" : "PRECONDITION_FAILED",
+			message: "Workspace session broker rejected the request.",
+		});
+	}
+}
 
 export const workspaceRouter = createTRPCRouter({
 	get: protectedProcedure
@@ -167,6 +198,9 @@ export const workspaceRouter = createTRPCRouter({
 				projectId: z.string().min(1),
 				sessionId: z.string().min(1).optional(),
 				message: z.string().trim().min(1),
+				modelSpecifier: z.string().refine(isProjectCoderModelSpecifier, {
+					message: "Unknown project coder model.",
+				}),
 				isMutating: z.boolean().default(true),
 			}),
 		)
@@ -303,6 +337,7 @@ export const workspaceRouter = createTRPCRouter({
 					userId: ctx.user.id,
 					status: "running" as const,
 					isMutating: input.isMutating,
+					modelSpecifier: input.modelSpecifier,
 					userMessage: input.message,
 				};
 
@@ -315,16 +350,6 @@ export const workspaceRouter = createTRPCRouter({
 						payload: createAgentRunEventPayload({
 							role: "user",
 							text: input.message,
-						}),
-					},
-					{
-						runId,
-						projectId: input.projectId,
-						sessionId,
-						type: "message" as const,
-						payload: createAgentRunEventPayload({
-							role: "system",
-							text: "Agent execution is queued. The LLM/tool runner will be connected in a later plan.",
 						}),
 					},
 				];
@@ -403,6 +428,31 @@ export const workspaceRouter = createTRPCRouter({
 					}
 				}
 
+				async function startBroker() {
+					if (!project.sandboxId) {
+						throw new TRPCError({
+							code: "PRECONDITION_FAILED",
+							message: "Project sandbox is not ready yet.",
+						});
+					}
+
+					await postWorkspaceSessionBroker({
+						env: ctx.env,
+						sessionId,
+						path: "/start",
+						body: {
+							sessionId,
+							userId: ctx.user.id,
+							projectId: input.projectId,
+							sandboxId: project.sandboxId,
+							runId,
+							message: input.message,
+							modelSpecifier: input.modelSpecifier,
+							isMutating: input.isMutating,
+						},
+					});
+				}
+
 				if (createdSession && sessionValues) {
 					try {
 						const [[session], [run]] = await db.batch([
@@ -420,6 +470,8 @@ export const workspaceRouter = createTRPCRouter({
 								"Batched startRun write did not return created rows.",
 							);
 						}
+
+						await startBroker();
 
 						return { run, session, createdSession };
 					} catch (error) {
@@ -444,6 +496,8 @@ export const workspaceRouter = createTRPCRouter({
 							"Batched startRun write did not return created rows.",
 						);
 					}
+
+					await startBroker();
 
 					return { run, session, createdSession };
 				} catch (error) {
@@ -515,6 +569,13 @@ export const workspaceRouter = createTRPCRouter({
 				payload: createAgentRunEventPayload({ status: "canceled" }),
 			});
 
+			await postWorkspaceSessionBroker({
+				env: ctx.env,
+				sessionId: run.sessionId,
+				path: "/abort",
+				body: { runId: input.runId },
+			});
+
 			return updatedRun;
 		}),
 
@@ -570,6 +631,16 @@ export const workspaceRouter = createTRPCRouter({
 					text: input.answer,
 					kind: "answer",
 				}),
+			});
+
+			await postWorkspaceSessionBroker({
+				env: ctx.env,
+				sessionId: run.sessionId,
+				path: "/reply",
+				body: {
+					runId: input.runId,
+					answer: input.answer,
+				},
 			});
 
 			return updatedRun;
