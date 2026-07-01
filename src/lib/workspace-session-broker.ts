@@ -780,8 +780,8 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 		});
 		const state = await this.getState();
 		if (state.sessionId && state.piProcessId) {
-			void this.startLogStream(state.sessionId, state.piProcessId).catch((error) =>
-				this.handlePiFailure(error),
+			void this.startLogStream(state.sessionId, state.piProcessId).catch(
+				(error) => this.handlePiFailure(error),
 			);
 		}
 

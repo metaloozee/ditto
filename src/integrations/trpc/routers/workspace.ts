@@ -24,9 +24,12 @@ import { createTRPCRouter, protectedProcedure } from "../init";
 type BrokerControlPath = "/start" | "/reply" | "/abort";
 
 function compactBrokerError(error: unknown): string {
-	const message = error instanceof Error ? error.message : "Broker request failed.";
+	const message =
+		error instanceof Error ? error.message : "Broker request failed.";
 
-	return message.length > 1000 ? `${message.slice(0, 1000)}...[truncated]` : message;
+	return message.length > 1000
+		? `${message.slice(0, 1000)}...[truncated]`
+		: message;
 }
 
 async function postWorkspaceSessionBroker(options: {
