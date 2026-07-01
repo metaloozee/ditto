@@ -7,7 +7,7 @@
 > `plans/README.md` unless a reviewer dispatched you and told you they maintain
 > the index.
 >
-> **Drift check (run first)**: `git diff --stat 8632f47..HEAD -- alchemy.run.ts README.md src/db/schema.ts migrations src/lib/sandbox-bootstrap.ts src/lib/sandbox-backup.ts src/lib/sandbox-backup.test.ts src/lib/project-sandbox.ts src/lib/project-env-vars.ts src/integrations/trpc/routers/projects.ts src/integrations/trpc/routers/workspace.ts "src/routes/project.$projectId.tsx" types/env.d.ts plans/README.md`
+> **Drift check (run first)**: `git diff --stat 9e2fed0..HEAD -- alchemy.run.ts README.md src/db/schema.ts migrations src/lib/sandbox-bootstrap.ts src/lib/sandbox-backup.ts src/lib/sandbox-backup.test.ts src/lib/project-sandbox.ts src/lib/project-env-vars.ts src/integrations/trpc/routers/projects.ts src/integrations/trpc/routers/workspace.ts "src/routes/project.$projectId.tsx" types/env.d.ts plans/README.md`
 > If any listed file changed since this plan was written, compare the "Current
 > state" excerpts against the live code before proceeding. On a mismatch, treat
 > it as a STOP condition.
@@ -19,7 +19,7 @@
 - **Risk**: HIGH
 - **Depends on**: none
 - **Category**: bug
-- **Planned at**: commit `8632f47`, 2026-06-29
+- **Planned at**: commit `9e2fed0`, 2026-07-01
 
 ## Why this matters
 
@@ -34,6 +34,12 @@ durability layer: create R2-backed workspace backups, persist the latest backup
 handle on the project, verify workspace hydration when opening or starting work,
 restore from backup when possible, and fall back to recloning from GitHub when no
 usable backup exists.
+
+This plan remains necessary even if Plan 016 changes the runner from a placeholder
+database event to Flue. Flue supplies the project-coder harness and streaming
+runtime; it does not make `/workspace` durable across sandbox container loss. Plan
+016 should use the ensure/restore helpers from this plan instead of inventing a
+second readiness path.
 
 ## Current state
 
@@ -94,7 +100,7 @@ export const website = await TanStackStart("website", {
 Current bootstrap creates and populates a sandbox, but does not back it up:
 
 ```ts
-// src/lib/sandbox-bootstrap.ts:165-216
+// src/lib/sandbox-bootstrap.ts:165-217
 export async function bootstrapSandbox(options: {
 	env: Env;
 	sandboxId: string;
@@ -150,11 +156,12 @@ export async function bootstrapSandbox(options: {
 }
 ```
 
-Current project creation generates a new `sandboxId` and marks the project ready
-after bootstrap succeeds:
+Current project creation authorizes the GitHub installation, sanitizes env-var
+keys, generates a new `sandboxId`, and marks the project ready after bootstrap
+succeeds. It still persists only the sandbox identity:
 
 ```ts
-// src/integrations/trpc/routers/projects.ts:140-159
+// src/integrations/trpc/routers/projects.ts:158-177
 const sandboxId = crypto.randomUUID().toLowerCase();
 
 try {
@@ -177,11 +184,23 @@ try {
 		.returning();
 ```
 
-Current env-var updates write directly into the sandbox if a `sandboxId` exists,
-but do not check whether `/workspace` is hydrated first:
+Current env-var updates now normalize and validate keys before saving, but they
+still write directly into the sandbox if a `sandboxId` exists and do not check
+whether `/workspace` is hydrated first:
 
 ```ts
-// src/integrations/trpc/routers/projects.ts:294-300
+// src/integrations/trpc/routers/projects.ts:312-318 (setEnvVar)
+if (project.sandboxId) {
+	await syncSandboxEnvFile({
+		env: ctx.env,
+		sandboxId: project.sandboxId,
+		envVars: nextEnvVars,
+	});
+}
+```
+
+```ts
+// src/integrations/trpc/routers/projects.ts:382-388 (deleteEnvVar)
 if (project.sandboxId) {
 	await syncSandboxEnvFile({
 		env: ctx.env,
@@ -216,7 +235,7 @@ if (project.status !== "ready" || !project.sandboxId) {
 The route uses the same weak readiness signal before enabling `workspace.get`:
 
 ```tsx
-// src/routes/project.$projectId.tsx:25-36
+// src/routes/project.$projectId.tsx:25-38
 const project = projectQuery.data;
 const isWorkspaceReady =
 	project?.status === "ready" && Boolean(project.sandboxId);
@@ -380,7 +399,9 @@ reported locations or your editor for touched files only.
 - Persisting `.env` contents in R2 backups; encrypted env vars already live in
   D1 and must be re-synced after restore.
 - Solving future agent-run backup timing once a real file-mutating runner exists.
-  Add a maintenance note instead.
+  Plan 016 is responsible for refreshing backups after successful mutating Flue
+  runs if it executes after this plan. Add a maintenance note here instead of
+  wiring runner-specific behavior in this plan.
 - Editing generated `.alchemy/` or `.wrangler/` state by hand.
 - Logging GitHub installation tokens, R2 secrets, private keys, or environment
   variable values. Reference secret types only.
@@ -1082,9 +1103,8 @@ Stop and report back without improvising if:
 
 - Future real file-mutating agent execution must call `backupSandboxWorkspace`
   after successful mutating runs, otherwise the latest agent edits may not be in
-  the durable backup. This plan cannot wire that hook because the current
-  `workspace.startRun` only writes run/session/event records and does not yet run
-  a sandbox editing agent.
+  the durable backup. Plan 016 should wire this hook when it replaces the current
+  placeholder run with the Flue project coder.
 - The backup TTL is intentionally long but not infinite. If product expectations
   become permanent archival storage, revisit R2 lifecycle policy and backup
   retention explicitly.

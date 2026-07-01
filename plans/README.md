@@ -1,6 +1,6 @@
 # Implementation Plans
 
-Generated on 2026-06-24. Updated on 2026-06-30 with plan 016, reconciled plans 011-014 against commit `8632f47`, executed plans 013-014, and refreshed plan 014 against commit `de51de1`. Execute in the order below unless dependencies say otherwise. Each executor: read the plan fully before starting, honor its STOP conditions, and update your row when done.
+Generated on 2026-06-24. Updated on 2026-07-01 with plans 015-016 reconciled against commit `9e2fed0`; plan 016 now depends on plan 015 for the full implementation, with only its Step 1 Flue mount spike allowed before 015 lands. Execute in the order below unless dependencies say otherwise. Each executor: read the plan fully before starting, honor its STOP conditions, and update your row when done.
 
 ## Execution order & status
 
@@ -21,7 +21,7 @@ Generated on 2026-06-24. Updated on 2026-06-30 with plan 016, reconciled plans 0
 | 013 | Authorize GitHub installation use server-side | P1 | M | 011, 012 | DONE |
 | 014 | Validate sandbox env-var keys before saving or provisioning | P2 | S | — | DONE |
 | 015 | Persist and restore project sandboxes | P1 | L | — | TODO |
-| 016 | Add the Flue project-coder foundation | P1 | L | 013, 014 | TODO |
+| 016 | Add the Flue project-coder foundation | P1 | L | 013, 014, 015 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale — finding fixed independently or approach abandoned)
 
@@ -38,8 +38,8 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - 012 depends on 011 because the pagination fix should extend the shared GitHub import tests instead of inventing a second harness.
 - 013 depends on both 011 and 012 because the authorization check must be tested and must validate against the full paginated import-state result, not page 1 only.
 - 014 is independent of 011-013, but it stays later in the queue because malformed env-var keys are lower-severity than the GitHub import authorization and pagination bugs. It now covers both GitHub import env-var entry and later project-settings env-var saves.
-- 015 has no prior plan dependency because the current source already contains the sandbox bootstrap surface it needs. It should still be reviewed as an extension of the v1 one-sandbox-per-project decision from 003 and the workspace/run model from 008-010.
-- 016 depends on 013 and 014 because a real Flue coding agent must not trust client-submitted GitHub repo/install pairs and must not rely on malformed env-var keys being safe to sync into `/workspace/.env`. It can start before 015 only if it keeps sandbox backup/restore and R2 artifacts out of scope; mutating tool hardening should revisit 015 before treating edits as durable across sandbox restarts.
+- 015 has no prior plan dependency because the current source already contains the sandbox bootstrap surface it needs. It should still be reviewed as an extension of the v1 one-sandbox-per-project decision from 003 and the workspace/run model from 008-010. It is the durability layer for ready projects whose sandbox container or `/workspace` contents disappear.
+- 016 depends on 013 and 014 because a real Flue coding agent must not trust client-submitted GitHub repo/install pairs and must not rely on malformed env-var keys being safe to sync into `/workspace/.env`. It also depends on 015 for the full implementation because Flue changes the runner but does not make `/workspace` durable. Allowed exception: execute only 016 Step 1 first as a mount-strategy spike, stop after that step, then execute 015, then resume or re-run 016 for the full implementation. Beyond Step 1, 016 must preserve Plan 015's `ensureProjectSandbox` path and refresh backups after successful mutating Flue runs.
 
 ## Verification baseline
 
@@ -61,6 +61,7 @@ Use these commands when executing plans:
 - 2026-06-30: plan 013 was reconciled to commit `e632ba0`, executed in isolated worktree `/tmp/opencode/ditto-plan-013`, and reviewed as DONE on branch `advisor/013-github-authz`.
 - 2026-06-30: plan 014 was refreshed to commit `de51de1` after plan 013 added GitHub repository authorization in `src/integrations/trpc/routers/projects.ts`; the env-var key validation finding and required behavior are unchanged.
 - 2026-06-30: plan 014 was executed in isolated worktree `/tmp/opencode/ditto-plan-014`, reviewed as DONE on branch `advisor/014-validate-env-var-keys`, with commits `91f46b0` and `7996275`.
+- 2026-07-01: reconciled plans 015 and 016 against commit `9e2fed0`. Plan 015 drifted because plan 014 changed env-var validation in `src/integrations/trpc/routers/projects.ts`, but the weak sandbox readiness and direct `.env` sync findings still exist. Plan 016 drifted only in planning docs/index, but its dependency graph was tightened: Step 1 may run first as a Flue mount spike; the full Flue runner now depends on Plan 015 and must use its ensure/restore and backup-refresh helpers.
 
 ## Findings considered and rejected / deferred
 

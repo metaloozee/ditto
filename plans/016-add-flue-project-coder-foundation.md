@@ -7,7 +7,7 @@
 > `plans/README.md` unless a reviewer dispatched you and told you they maintain
 > the index.
 >
-> **Drift check (run first)**: `git diff --stat c52ca55..HEAD -- package.json pnpm-lock.yaml pnpm-workspace.yaml flue.config.ts tsconfig.json biome.json alchemy.run.ts types/env.d.ts src/server.ts src/routes src/lib/flue-client.ts src/lib/agent-models.ts src/lib/user-preferences-store.ts src/db/schema.ts migrations src/integrations/trpc/routers/workspace.ts src/components/composer.tsx src/components/ai-chat.tsx .flue docs/flue-agent-harness-prd.md plans/README.md`
+> **Drift check (run first)**: `git diff --stat 9e2fed0..HEAD -- package.json pnpm-lock.yaml pnpm-workspace.yaml flue.config.ts tsconfig.json biome.json alchemy.run.ts types/env.d.ts src/server.ts src/routes src/lib/flue-client.ts src/lib/agent-models.ts src/lib/user-preferences-store.ts src/db/schema.ts migrations src/integrations/trpc/routers/workspace.ts src/components/composer.tsx src/components/ai-chat.tsx .flue docs/flue-agent-harness-prd.md plans/README.md`
 > If any listed file changed since this plan was written, compare the "Current
 > state" excerpts against the live code before proceeding. On a mismatch, treat
 > it as a STOP condition.
@@ -17,9 +17,9 @@
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: HIGH
-- **Depends on**: plans/013-authorize-github-installation-use-server-side.md and plans/014-validate-sandbox-env-var-keys-before-provisioning.md
+- **Depends on**: plans/013-authorize-github-installation-use-server-side.md, plans/014-validate-sandbox-env-var-keys-before-provisioning.md, and plans/015-persist-and-restore-project-sandboxes.md for the full implementation. Step 1 may be run first as a Flue mount spike, then stop before broad edits.
 - **Category**: direction
-- **Planned at**: commit `c52ca55`, 2026-06-30
+- **Planned at**: commit `9e2fed0`, 2026-07-01
 
 ## Why this matters
 
@@ -44,6 +44,12 @@ commit-only export later, and store future oversized logs/diffs as D1 references
 to R2 artifacts. The maintainer also does not want regression tests or backward
 compatibility code for existing sessions/runs/events at this early stage.
 
+This plan has been reconciled with Plan 015. Plan 015 owns durable project
+sandbox hydration, restore, GitHub fallback rebootstrap, and backup metadata.
+This plan must call the 015 ensure path before Flue execution and refresh the
+015 backup after successful mutating Flue runs. It must not create a parallel
+sandbox readiness system.
+
 ## Current state
 
 Relevant files:
@@ -66,6 +72,18 @@ Relevant files:
   container configuration through Alchemy.
 - `src/server.ts` - current Worker entrypoint delegates all HTTP to TanStack
   Start.
+
+Plan 015 dependency outputs that must exist before this plan continues past the
+isolated Step 1 mount spike:
+
+- `src/lib/project-sandbox.ts` - exports `ensureProjectSandbox`, which verifies
+  `/workspace/.git`, restores from backup, or reclones through GitHub fallback.
+- `src/lib/sandbox-bootstrap.ts` - exports `backupSandboxWorkspace` and shared
+  sandbox helpers that use the existing project `sandboxId`.
+- `src/lib/sandbox-backup.ts` - exports `serializeSandboxBackup` for storing the
+  latest backup handle on `projects`.
+- `src/lib/project-env-vars.ts` - exports the env-var decrypt helper used by both
+  the workspace router and the Flue agent before calling `ensureProjectSandbox`.
 
 Current dependency state:
 
@@ -428,6 +446,9 @@ command output.
 - A workflow for the basic chat loop. This PRD explicitly wants an addressable project coding agent, not a workflow, for the ordinary conversation path.
 - Broad regression tests. The maintainer explicitly asked for no regression tests in this early-stage plan.
 - Backward compatibility for existing sessions/runs/events. If a migration needs a default value for D1 to accept the schema change, use one, but do not add compatibility branches to preserve historical behavior.
+- Implementing the sandbox backup/restore system itself. That belongs to Plan 015.
+  This plan only consumes the Plan 015 ensure and backup-refresh helpers once they
+  exist.
 - Rewriting unrelated plans or source files.
 
 ## Git workflow
@@ -485,6 +506,12 @@ Acceptable mount outcomes:
 If neither outcome can build and run locally with the existing Alchemy-managed
 bindings, STOP and report the exact blocker. Do not continue with model stores,
 schema changes, or UI streaming until this is resolved.
+
+If this step is being run as the pre-015 Flue mount spike described in the plan
+status block, stop after this step and report the result. Do not continue to
+schema, UI, or agent edits until Plan 015 is DONE. If this plan is being executed
+after Plan 015 is already DONE, continue to Step 2 after the mount strategy is
+proved.
 
 **Verify**: `npx flue docs read guide/routing` -> exits 0 and documents the
 installed route API. Then `npx flue build --target cloudflare` -> exits 0, or you
@@ -700,29 +727,44 @@ module shape is `createAgent(...)`:
 import { getSandbox } from "@cloudflare/sandbox";
 import { createAgent, type AgentRouteHandler } from "@flue/runtime";
 import { cloudflareSandbox } from "@flue/runtime/cloudflare";
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { createDb } from "../../src/db";
 import { agentRuns, projects, workspaceSessions } from "../../src/db/schema";
 import { DEFAULT_PROJECT_CODER_MODEL } from "../../src/lib/agent-models";
+import { decryptEnvVars } from "../../src/lib/project-env-vars";
+import { ensureProjectSandbox } from "../../src/lib/project-sandbox";
 import { WORKSPACE_PATH } from "../../src/lib/workspace-policy";
 import instructions from "./project-coder-instructions.md" with { type: "markdown" };
 
 export const route: AgentRouteHandler = async (_c, next) => next();
 
 export default createAgent(async ({ id, env }) => {
-	const db = createDb(env as Env);
+	const typedEnv = env as Env;
+	const db = createDb(typedEnv);
 	const [session] = await db
-		.select({
-			projectId: workspaceSessions.projectId,
-			sandboxId: projects.sandboxId,
-			projectStatus: projects.status,
-		})
+		.select()
 		.from(workspaceSessions)
 		.innerJoin(projects, eq(projects.id, workspaceSessions.projectId))
 		.where(eq(workspaceSessions.id, id))
 		.limit(1);
 
-	if (!session || session.projectStatus !== "ready" || !session.sandboxId) {
+	if (!session) {
+		throw new Error("Project sandbox is not ready.");
+	}
+
+	const project = session.projects;
+	const envVars = await decryptEnvVars(
+		project.envVars,
+		typedEnv.BETTER_AUTH_SECRET,
+	);
+	const ensured = await ensureProjectSandbox({
+		db,
+		env: typedEnv,
+		project,
+		envVars,
+	});
+
+	if (!ensured.project.sandboxId) {
 		throw new Error("Project sandbox is not ready.");
 	}
 
@@ -736,7 +778,11 @@ export default createAgent(async ({ id, env }) => {
 	return {
 		model: run?.modelSpecifier ?? DEFAULT_PROJECT_CODER_MODEL,
 		instructions,
-		sandbox: cloudflareSandbox(getSandbox(env.Sandbox, session.sandboxId)),
+		sandbox: cloudflareSandbox(
+			getSandbox(typedEnv.Sandbox, ensured.project.sandboxId, {
+				enableDefaultSession: false,
+			}),
+		),
 		cwd: WORKSPACE_PATH,
 	};
 });
@@ -746,6 +792,12 @@ Adjust imports/types to match installed Flue and Drizzle type constraints. Keep
 the behavior, not necessarily the exact formatting. If `createAgent` has become
 `defineAgent` after a deliberate Flue package upgrade, use the installed docs and
 update all Flue package versions together.
+
+Plan 015 must already be DONE before this step, except during the isolated Step 1
+mount spike. If `src/lib/project-sandbox.ts` or `src/lib/project-env-vars.ts` is
+missing, STOP and execute Plan 015 instead of recreating those helpers here. The
+Flue agent must use `ensureProjectSandbox`; do not reintroduce a raw
+`project.status === "ready" && sandboxId` check as the final readiness gate.
 
 Instruction file requirements:
 
@@ -774,8 +826,10 @@ then admits exactly one prompt to Flue after the D1 batch succeeds.
 
 Required behavior:
 
-1. Keep project/session authorization and sandbox readiness checks before run
-   creation.
+1. Keep project/session authorization and the Plan 015 sandbox ensure path before
+   run creation. If Plan 015 is DONE, `workspace.startRun` should already call
+   `ensureProjectSandbox`; preserve that behavior and do not downgrade it to a raw
+   `ready + sandboxId` check.
 2. Keep the conditional mutating lock update exactly as a D1-compatible single
    update; do not reintroduce `db.transaction(...)`.
 3. Remove the placeholder system event.
@@ -806,6 +860,11 @@ If same-origin server-side fetch to `/api/flue` causes recursion, missing auth,
 or runtime failure in the proven mount strategy, STOP and report. Do not fall
 back to browser-only admission that can leave D1 runs stuck in `running` when the
 browser tab closes after `workspace.startRun`.
+
+If the current `workspace.startRun` does not contain the Plan 015 ensure/restore
+logic, STOP and execute Plan 015 first. This plan should not duplicate
+`ensureProjectSandbox` inside the router except to preserve or adapt the existing
+Plan 015 call while adding Flue admission.
 
 **Verify**: `pnpm exec tsc --noEmit --pretty false` -> exits 0. Manual local
 verification should show a failed Flue admission marks the D1 run failed and
@@ -838,7 +897,9 @@ Required mapping for this plan:
 - On Flue prompt success terminal signal, update the active Ditto run for that
   workspace session to `completed`, set `finishedAt`, insert a `done` event with
   `{ status: "completed", schemaVersion: 1 }`, and release the project lock only
-  when `projects.activeAgentRunId` equals that run id.
+  when `projects.activeAgentRunId` equals that run id. For mutating runs, first
+  refresh the Plan 015 sandbox backup after the Flue prompt succeeds and before
+  marking the Ditto run completed.
 - On Flue prompt failure terminal signal, update the active Ditto run to
   `failed`, set `finishedAt`, insert an `error` event with a stable redacted
   message, insert a `done` event with `{ status: "failed", schemaVersion: 1 }`,
@@ -846,6 +907,23 @@ Required mapping for this plan:
 - If a Ditto run was canceled before late Flue events arrive, do not resurrect it
   to `completed` or `failed`. Ignore late assistant/done events for canceled
   runs unless you need a redacted diagnostic `error` event.
+
+Backup refresh requirements after Plan 015:
+
+- Import `backupSandboxWorkspace` from the Plan 015 sandbox bootstrap module and
+  `serializeSandboxBackup` from the Plan 015 backup helper module.
+- On successful terminal Flue completion for a mutating run, resolve the active
+  run and its project, call
+  `backupSandboxWorkspace({ env, sandboxId, projectId })`, and store the
+  serialized backup plus a current `sandboxBackupCreatedAt` timestamp on
+  `projects` before writing the run's completed terminal state.
+- If backup refresh fails after a mutating Flue prompt succeeds, do not mark the
+  Ditto run `completed`. Insert a redacted `error` event, insert a failed `done`
+  event, set `agent_runs.status` to `failed`, set `finishedAt`, and release the
+  project lock only when owned by that run. Use a stable message such as
+  `Agent completed, but sandbox backup refresh failed. Please try again.` Do not
+  include raw R2, shell, provider, GitHub, or `.env` details in the event payload.
+- Non-mutating runs do not need a backup refresh in this plan.
 
 The observer will receive Flue's `instanceId`; this plan uses Ditto
 `workspace_sessions.id` as the Flue instance id. Resolve the current active run
@@ -857,11 +935,14 @@ runs in this plan.
 Keep observer writes lightweight and redacted. If the installed Flue observer API
 does not provide a safe way to access `env.DB` and complete D1 writes reliably in
 Cloudflare, STOP and report. Do not move canonical event persistence to the
-browser.
+browser. If the Plan 015 backup helpers are missing or cannot be called from the
+Flue observer context without exposing secrets or creating a second sandbox
+identity, STOP and report instead of inventing a second backup mechanism.
 
 **Verify**: Submit one local prompt with credentials. Expected D1/session UI
 sequence: user `message`, live Flue streamed assistant text, persisted assistant
-`message`, `done` with `completed`, `agent_runs.status === "completed"`, and
+`message`, `done` with `completed`, `agent_runs.status === "completed"`, a
+refreshed `projects.sandboxBackupCreatedAt` for mutating runs, and
 `projects.activeAgentRunId === null` for mutating runs.
 
 ### Step 10: Wire the composer to the persisted model preference and live stream
@@ -973,7 +1054,7 @@ Verification is therefore command and manual-smoke based:
 - `npx flue build --target cloudflare` proves Flue source discovery and
   Cloudflare build compatibility.
 - Manual local prompt verifies `workspace.startRun` -> Flue admission -> client
-  stream -> D1 assistant/done events -> lock release.
+  stream -> D1 assistant/done events -> mutating backup refresh -> lock release.
 - Manual cancellation verifies canceled runs are not overwritten by late Flue
   events.
 
@@ -997,6 +1078,10 @@ All must hold:
   operator chose a different OpenCode Go model during execution.
 - [ ] The agent uses the existing project `sandboxId`, not a new sandbox per
   session or per run.
+- [ ] The agent and `workspace.startRun` use Plan 015's `ensureProjectSandbox`
+  path before execution instead of trusting `ready + sandboxId` alone.
+- [ ] Successful mutating Flue runs refresh the Plan 015 sandbox backup before
+  the Ditto run is marked `completed`.
 - [ ] Assistant output is streamed through Flue in the UI while D1 remains the
   canonical persisted event log.
 - [ ] Terminal success/failure/cancellation sets `agent_runs.finishedAt` and
@@ -1023,6 +1108,10 @@ Stop and report back without improvising if:
 - The Flue build requires replacing Alchemy-managed D1/Sandbox bindings rather
   than composing with them.
 - The code at the locations in "Current state" does not match the excerpts.
+- Plan 015 is not DONE when executing beyond the isolated Step 1 mount spike.
+- The Plan 015 ensure/restore helpers or backup helpers are missing, renamed, or
+  unusable from the Flue agent/observer context without a small import-only
+  adaptation.
 - `createAgent`/`defineAgent` cannot asynchronously query D1 to resolve the
   workspace session's project sandbox.
 - The Flue observer API cannot reliably persist terminal events to D1 from the
@@ -1050,9 +1139,10 @@ Stop and report back without improvising if:
 - Future large diffs and long command outputs should use D1 metadata references
   plus R2 artifacts. Do not grow `agent_run_events.payload` into an unbounded log
   store.
-- Once Plan 015 lands, successful mutating Flue runs should refresh the project
-  sandbox backup after writes complete and should verify `/workspace/.git` before
-  execution.
+- Plan 015 is now a full implementation dependency for this plan. Future runner
+  changes must preserve the pre-execution `ensureProjectSandbox` call and the
+  post-success mutating-run backup refresh; otherwise reopened projects can lose
+  agent edits after sandbox/container loss.
 - The commit-only GitHub export flow is a separate product action and should not
   be hidden inside the agent loop.
 - Reviewers should scrutinize authentication and lock ownership more than UI
