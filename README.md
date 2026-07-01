@@ -64,8 +64,8 @@ development, deploys, and teardown.
 Alchemy manages the generated local Wrangler config under `.alchemy/`. Do not
 edit or commit generated Alchemy state.
 
-Sandbox workspace backups use an Alchemy-managed R2 bucket. Set these
-environment variables by name in deployment environments:
+Sandbox workspace backups use an Alchemy-managed R2 bucket. These backup
+environment variables are required to run and deploy the app:
 
 ```env
 CLOUDFLARE_ACCOUNT_ID=
@@ -77,9 +77,9 @@ USE_LOCAL_BUCKET_BACKUPS=
 
 `BACKUP_BUCKET_ENDPOINT` is optional for non-default R2 endpoints. Local
 development can set `USE_LOCAL_BUCKET_BACKUPS=true` to use the local R2 binding
-backup path and omit the R2 access key env vars. Deployed Workers should leave
-local-bucket mode disabled and set the R2 credentials so the Sandbox SDK can use
-presigned URLs.
+backup path, but R2 backup credentials are still required at app startup.
+Deployed Workers should leave local-bucket mode disabled so the Sandbox SDK can
+use presigned URLs. The app fails fast if required secret bindings are missing.
 
 
 ## Shadcn

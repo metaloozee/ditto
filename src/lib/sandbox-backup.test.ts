@@ -120,17 +120,6 @@ describe("sandbox backup helpers", () => {
 		);
 	});
 
-	it("throws when local bucket mode is not exactly true", () => {
-		expect(() =>
-			getSandboxBackupOptions({
-				env: { USE_LOCAL_BUCKET_BACKUPS: "false" },
-				projectId: "project-1",
-			}),
-		).toThrow(
-			"Sandbox backups require R2 credentials or USE_LOCAL_BUCKET_BACKUPS=true.",
-		);
-	});
-
 	it("excludes env files and dependency directories", () => {
 		expect(SANDBOX_BACKUP_EXCLUDES).toContain(".env");
 		expect(SANDBOX_BACKUP_EXCLUDES).toContain("node_modules");
