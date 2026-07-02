@@ -9,16 +9,11 @@ import { and, eq, sql } from "drizzle-orm";
 import { createDb } from "#/db";
 import { agentRunEvents, agentRuns, projects } from "#/db/schema";
 import {
-	buildJsonlWriteCommand,
-	getPiModelParts,
-	getTextField,
-	JsonlBuffer,
-	type PiRpcCommand,
-	type PiRpcEvent,
-	type PiRpcResponse,
-	quoteShellArg,
-	trimCompact,
-} from "#/lib/pi-rpc";
+	type RunnerCommand,
+	type RunnerEvent,
+	RunnerEventBuffer,
+	serializeRunnerCommand,
+} from "#/lib/runner-protocol";
 import { serializeSandboxBackup } from "#/lib/sandbox-backup";
 import {
 	backupSandboxWorkspace,
@@ -28,6 +23,24 @@ import {
 	createAgentRunEventPayload,
 	WORKSPACE_PATH,
 } from "#/lib/workspace-policy";
+
+function quoteShellArg(value: string): string {
+	return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+function trimCompact(value: string, maxLength = 2000): string {
+	const compact = value.trim();
+
+	if (compact.length <= maxLength) {
+		return compact;
+	}
+
+	return `${compact.slice(0, maxLength)}\n...[truncated]`;
+}
+
+function buildFifoWriteCommand(fifoPath: string, line: string): string {
+	return `printf %s ${quoteShellArg(`${line}\n`)} > ${quoteShellArg(fifoPath)}`;
+}
 
 type BrokerSocketAttachment = {
 	connectedAt: number;
@@ -40,9 +53,9 @@ type BrokerState = {
 	sandboxId?: string;
 	activeRunId?: string;
 	isMutating?: boolean;
-	piProcessId?: string;
+	runnerProcessId?: string;
 	fifoPath?: string;
-	pendingUiRequestId?: string;
+	pendingInputRequestId?: string;
 	canceledRunIds?: string[];
 };
 
@@ -143,11 +156,11 @@ function parseAbortRequest(value: unknown): AbortRequest {
 }
 
 function makeProcessId(sessionId: string): string {
-	return `ditto-pi-${sessionId.replaceAll(/[^a-zA-Z0-9_-]/g, "-")}`;
+	return `ditto-runner-${sessionId.replaceAll(/[^a-zA-Z0-9_-]/g, "-")}`;
 }
 
 function makeBrokerDir(sessionId: string): string {
-	return `/tmp/ditto/pi/${sessionId.replaceAll(/[^a-zA-Z0-9_-]/g, "-")}`;
+	return `/tmp/ditto/runner/${sessionId.replaceAll(/[^a-zA-Z0-9_-]/g, "-")}`;
 }
 
 function isSessionAlreadyExistsError(error: unknown): boolean {
@@ -179,11 +192,10 @@ async function getSandboxSession(
 	return await sandbox.getSession(sessionId);
 }
 
-function makePiCommand(options: {
+function makeRunnerCommand(options: {
 	brokerDir: string;
 	fifoPath: string;
-	provider: string;
-	model: string;
+	modelSpecifier: string;
 }): string {
 	return [
 		"set -euo pipefail",
@@ -191,97 +203,23 @@ function makePiCommand(options: {
 		`rm -f ${quoteShellArg(options.fifoPath)}`,
 		`mkfifo ${quoteShellArg(options.fifoPath)}`,
 		[
-			"exec env PI_SKIP_VERSION_CHECK=1 PI_TELEMETRY=0 pi --mode rpc",
-			"--no-session",
-			"--no-extensions",
-			"--no-skills",
-			"--no-prompt-templates",
-			"--no-themes",
-			"--no-approve",
-			"-e /opt/ditto/pi/ditto-ask-user.ts",
-			`--provider ${quoteShellArg(options.provider)}`,
-			`--model ${quoteShellArg(options.model)}`,
+			`exec env OPENCODE_API_KEY="$OPENCODE_API_KEY"`,
+			`MODEL_SPECIFIER=${quoteShellArg(options.modelSpecifier)}`,
+			"tsx /opt/ditto/sandbox/runner/index.ts",
 			`< ${quoteShellArg(options.fifoPath)}`,
-			`2> ${quoteShellArg(`${options.brokerDir}/rpc.err`)}`,
+			`2> ${quoteShellArg(`${options.brokerDir}/runner.err`)}`,
 		].join(" "),
 	].join("; ");
-}
-
-function getNestedObject(
-	value: Record<string, unknown>,
-	key: string,
-): Record<string, unknown> | null {
-	const nested = value[key];
-	return nested && typeof nested === "object"
-		? (nested as Record<string, unknown>)
-		: null;
-}
-
-function getContentText(value: unknown): string | null {
-	if (typeof value === "string" && value.trim()) {
-		return value;
-	}
-
-	if (!Array.isArray(value)) {
-		return null;
-	}
-
-	const text = value
-		.map((item) => {
-			if (!item || typeof item !== "object") {
-				return null;
-			}
-
-			const record = item as Record<string, unknown>;
-			return typeof record.text === "string" ? record.text : null;
-		})
-		.filter(Boolean)
-		.join("\n");
-
-	return text.trim() ? text : null;
-}
-
-function getAssistantDelta(event: Record<string, unknown>): string | null {
-	const assistantEvent = getNestedObject(event, "assistantMessageEvent");
-	if (assistantEvent?.type === "text_delta") {
-		return getTextField(assistantEvent, ["delta"]);
-	}
-
-	return getTextField(event, ["delta", "text", "content"]);
-}
-
-function getAssistantMessageText(
-	event: Record<string, unknown>,
-): string | null {
-	const message = getNestedObject(event, "message");
-	if (!message) {
-		return getTextField(event, ["text", "content"]);
-	}
-
-	return getContentText(message.content) ?? getTextField(message, ["text"]);
-}
-
-function getToolProgressText(event: Record<string, unknown>): string | null {
-	const partialResult = getNestedObject(event, "partialResult");
-	if (partialResult) {
-		return getContentText(partialResult.content);
-	}
-
-	return getTextField(event, ["output", "text", "message"]);
 }
 
 export class WorkspaceSessionBroker extends DurableObject<Env> {
 	private sockets = new Map<WebSocket, BrokerSocketAttachment>();
 	private commandQueue: Promise<void> = Promise.resolve();
-	private responseWaiters = new Map<
-		string,
-		{
-			resolve: (response: PiRpcResponse) => void;
-			reject: (error: Error) => void;
-		}
-	>();
 	private streamStartedForProcessId: string | null = null;
-	private jsonlBuffer = new JsonlBuffer();
+	private runnerEventBuffer = new RunnerEventBuffer();
+	private runnerReady = false;
+	private readyPromise: Promise<void> = Promise.resolve();
+	private readyResolve: () => void = () => {};
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -366,39 +304,31 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			sandboxId: input.sandboxId,
 			activeRunId: input.runId,
 			isMutating: input.isMutating,
-			pendingUiRequestId: undefined,
+			pendingInputRequestId: undefined,
 		};
 		await this.setState(state);
-		await this.ensurePiProcess(input);
-
-		const response = await this.sendCommand({
-			id: `prompt-${input.runId}`,
+		await this.ensureRunnerProcess(input);
+		await this.waitForRunnerReady();
+		await this.sendRunnerCommand({
 			type: "prompt",
+			id: input.runId,
 			message: input.message,
 		});
-
-		if (!response.success) {
-			throw new Error(response.error || "Pi rejected the prompt.");
-		}
 	}
 
 	private async reply(input: ReplyRequest): Promise<void> {
 		const state = await this.getState();
-		if (!state.pendingUiRequestId) {
-			throw new Error("No pending Pi UI request for this session.");
+		if (!state.pendingInputRequestId) {
+			throw new Error("No pending input request for this session.");
 		}
 
-		const response = await this.sendCommand({
-			type: "extension_ui_response",
-			id: state.pendingUiRequestId,
-			value: input.answer,
+		await this.sendRunnerCommand({
+			type: "reply",
+			requestId: state.pendingInputRequestId,
+			answer: input.answer,
 		});
 
-		if (!response.success) {
-			throw new Error(response.error || "Pi rejected the UI response.");
-		}
-
-		await this.setState({ ...state, pendingUiRequestId: undefined });
+		await this.setState({ ...state, pendingInputRequestId: undefined });
 	}
 
 	private async abort(input: AbortRequest): Promise<void> {
@@ -408,20 +338,23 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			canceledRunIds: [...(state.canceledRunIds ?? []), input.runId],
 		});
 
-		try {
-			await this.sendCommand({ id: `abort-${input.runId}`, type: "abort" });
-		} catch {
-			// Ditto has already recorded cancellation durably; abort is best effort.
-		}
+		await this.sendRunnerCommand({ type: "abort", id: input.runId }).catch(
+			() => undefined,
+		);
 		this.broadcast({ type: "done", runId: input.runId, status: "canceled" });
 	}
 
-	private async ensurePiProcess(input: StartRequest): Promise<void> {
+	private async ensureRunnerProcess(input: StartRequest): Promise<void> {
 		const state = await this.getState();
-		if (state.piProcessId && state.fifoPath) {
-			await this.startLogStream(state.piProcessId);
+		if (state.runnerProcessId && state.fifoPath) {
+			await this.startLogStream(state.runnerProcessId);
 			return;
 		}
+
+		this.runnerReady = false;
+		this.readyPromise = new Promise<void>((resolve) => {
+			this.readyResolve = resolve;
+		});
 
 		const sandbox = getProjectSandbox(this.env, input.sandboxId);
 		const session = await createOrGetSandboxSession(
@@ -434,11 +367,14 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			},
 		);
 		const brokerDir = makeBrokerDir(input.sessionId);
-		const fifoPath = `${brokerDir}/rpc.in`;
+		const fifoPath = `${brokerDir}/runner.in`;
 		const processId = makeProcessId(input.sessionId);
-		const { provider, model } = getPiModelParts(input.modelSpecifier);
 		const command = `bash -lc ${quoteShellArg(
-			makePiCommand({ brokerDir, fifoPath, provider, model }),
+			makeRunnerCommand({
+				brokerDir,
+				fifoPath,
+				modelSpecifier: input.modelSpecifier,
+			}),
 		)}`;
 
 		await session.startProcess(command, {
@@ -448,19 +384,27 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			env: { OPENCODE_API_KEY: this.env.OPENCODE_API_KEY },
 			onExit: (code) => {
 				if (code && code !== 0) {
-					this.handlePiFailure(new Error(`Pi exited with code ${code}.`)).catch(
-						() => undefined,
-					);
+					this.handleRunnerFailure(
+						new Error(`Runner exited with code ${code}.`),
+					).catch(() => undefined);
 				}
 			},
 		});
 
 		await this.setState({
 			...(await this.getState()),
-			piProcessId: processId,
+			runnerProcessId: processId,
 			fifoPath,
 		});
 		await this.startLogStream(processId);
+	}
+
+	private async waitForRunnerReady(): Promise<void> {
+		// TODO(plan 020): add a bounded timeout so a dead runner that never
+		// emits `ready` cannot hang `start` indefinitely. For now the
+		// `onExit`/stdin-close failure path catches a dead runner.
+		if (this.runnerReady) return;
+		await this.readyPromise;
 	}
 
 	private async startLogStream(processId: string): Promise<void> {
@@ -481,8 +425,10 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 					await this.handleProcessLogEvent(event);
 				}
 			} catch (error) {
-				await this.handlePiFailure(
-					error instanceof Error ? error : new Error("Pi log stream failed."),
+				await this.handleRunnerFailure(
+					error instanceof Error
+						? error
+						: new Error("Runner log stream failed."),
 				);
 			}
 		})();
@@ -491,20 +437,20 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 	private async handleProcessLogEvent(event: LogEvent): Promise<void> {
 		switch (event.type) {
 			case "stdout":
-				await this.handlePiOutput(event.data);
+				await this.handleRunnerOutput(event.data);
 				return;
 			case "stderr":
 				return;
 			case "exit":
 				if (event.exitCode && event.exitCode !== 0) {
-					await this.handlePiFailure(
-						new Error(`Pi exited with code ${event.exitCode}.`),
+					await this.handleRunnerFailure(
+						new Error(`Runner exited with code ${event.exitCode}.`),
 					);
 				}
 				return;
 			case "error":
-				await this.handlePiFailure(
-					new Error(event.data || "Pi log stream reported an error."),
+				await this.handleRunnerFailure(
+					new Error(event.data || "Runner log stream reported an error."),
 				);
 				return;
 			default:
@@ -512,66 +458,46 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 		}
 	}
 
-	private async sendCommand(command: PiRpcCommand): Promise<PiRpcResponse> {
+	private async sendRunnerCommand(command: RunnerCommand): Promise<void> {
 		const state = await this.getState();
 		if (!state.fifoPath || !state.sessionId || !state.sandboxId) {
-			throw new Error("Pi process is not ready.");
-		}
-		if (!command.id) {
-			throw new Error("Pi command id is required.");
+			throw new Error("Runner process is not ready.");
 		}
 
-		const responsePromise = new Promise<PiRpcResponse>((resolve, reject) => {
-			this.responseWaiters.set(command.id ?? "", { resolve, reject });
-		});
-
-		this.commandQueue = this.commandQueue.then(async () => {
+		const writePromise = this.commandQueue.then(async () => {
 			const sandbox = getProjectSandbox(this.env, state.sandboxId ?? "");
 			const session = await getSandboxSession(
 				sandbox as SandboxWithSessions,
 				state.sessionId ?? "",
 			);
 			const result = await session.exec(
-				buildJsonlWriteCommand(state.fifoPath ?? "", command),
+				buildFifoWriteCommand(
+					state.fifoPath ?? "",
+					serializeRunnerCommand(command),
+				),
 				{ cwd: WORKSPACE_PATH, timeout: COMMAND_TIMEOUT_MS },
 			);
 
 			if (!result.success) {
 				throw new Error(
-					trimCompact(result.stderr || result.stdout || "Pi write failed."),
+					trimCompact(result.stderr || result.stdout || "Runner write failed."),
 				);
 			}
 		});
+		this.commandQueue = writePromise.catch(() => undefined);
+		await writePromise;
+	}
 
-		try {
-			await this.commandQueue;
-			return await responsePromise;
-		} catch (error) {
-			this.responseWaiters.delete(command.id);
-			throw error;
+	private async handleRunnerOutput(chunk: string): Promise<void> {
+		for (const event of this.runnerEventBuffer.push(chunk)) {
+			await this.handleRunnerEvent(event);
 		}
 	}
 
-	private rejectResponseWaiters(reason: string): void {
-		for (const waiter of this.responseWaiters.values()) {
-			waiter.reject(new Error(reason));
-		}
-		this.responseWaiters.clear();
-	}
-
-	private async handlePiOutput(chunk: string): Promise<void> {
-		for (const event of this.jsonlBuffer.push(chunk)) {
-			await this.handlePiEvent(event);
-		}
-	}
-
-	private async handlePiEvent(event: PiRpcEvent): Promise<void> {
-		if (event.type === "response") {
-			const waiter = event.id ? this.responseWaiters.get(event.id) : undefined;
-			if (waiter) {
-				this.responseWaiters.delete(event.id ?? "");
-				waiter.resolve(event);
-			}
+	private async handleRunnerEvent(event: RunnerEvent): Promise<void> {
+		if (event.type === "ready") {
+			this.runnerReady = true;
+			this.readyResolve();
 			return;
 		}
 
@@ -586,71 +512,59 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 		}
 
 		switch (event.type) {
-			case "message_update": {
-				const text = getAssistantDelta(event);
-				if (text) {
-					this.broadcast({ type: "assistant_delta", runId, text });
-				}
+			case "assistant_delta":
+				this.broadcast({ type: "assistant_delta", runId, text: event.text });
 				return;
-			}
-			case "message_end": {
-				const text = getAssistantMessageText(event);
-				if (text) {
-					await this.insertEvent("message", {
-						role: "assistant",
-						text: trimCompact(text, 8000),
-					});
-				}
+			case "tool_started":
+				await this.insertEvent("tool_started", { toolName: event.toolName });
 				return;
-			}
-			case "tool_execution_start":
-				await this.insertEvent("tool_started", {
-					toolName: getTextField(event, ["toolName", "name"]) ?? "tool",
+			case "tool_progress":
+				this.broadcast({
+					type: "tool_progress",
+					runId,
+					text: trimCompact(event.text),
 				});
 				return;
-			case "tool_execution_update": {
-				const text = getToolProgressText(event);
-				if (text) {
-					this.broadcast({
-						type: "tool_progress",
-						runId,
-						text: trimCompact(text),
-					});
-				}
-				return;
-			}
-			case "tool_execution_end":
+			case "tool_finished":
 				await this.insertEvent("tool_finished", {
-					toolName: getTextField(event, ["toolName", "name"]) ?? "tool",
-					status: getTextField(event, ["status"]) ?? "completed",
+					toolName: event.toolName,
+					status: event.status,
 				});
 				await this.emitWorkspaceChanges();
 				return;
-			case "extension_ui_request":
-				await this.handleUiRequest(event);
+			case "file_changed":
+				await this.insertEvent("file_changed", { path: event.path });
 				return;
-			case "agent_end":
-				await this.completeRun();
+			case "diff_ready":
+				await this.insertEvent("diff_ready", {
+					changedFiles: event.changedFiles,
+					truncated: event.truncated,
+				});
 				return;
-			case "extension_error":
-				await this.failRun(
-					getTextField(event, ["error", "message"]) ?? "Pi extension error.",
-				);
+			case "input_request":
+				await this.handleInputRequest(event);
+				return;
+			case "done":
+				if (event.status === "completed") {
+					await this.completeRun();
+				} else if (event.status === "failed") {
+					await this.failRun("Runner reported a failure.");
+				}
+				return;
+			case "error":
+				await this.insertEvent("error", {
+					reason: trimCompact(event.message),
+				});
 				return;
 		}
 	}
 
-	private async handleUiRequest(event: Record<string, unknown>): Promise<void> {
+	private async handleInputRequest(event: RunnerEvent): Promise<void> {
+		if (event.type !== "input_request") return;
 		const state = await this.getState();
 		if (!state.activeRunId || !state.projectId || !state.sessionId) {
 			return;
 		}
-
-		const requestId =
-			getTextField(event, ["requestId", "id"]) ?? crypto.randomUUID();
-		const question =
-			getTextField(event, ["question", "prompt", "message"]) ??
-			"The agent needs input.";
 
 		const db = createDb(this.env);
 		await db.batch([
@@ -658,8 +572,8 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 				.update(agentRuns)
 				.set({
 					status: "needs_input",
-					question,
-					recommendedAnswer: getTextField(event, ["placeholder"]),
+					question: event.question,
+					recommendedAnswer: event.placeholder ?? null,
 					updatedAt: sql`(unixepoch())`,
 				})
 				.where(eq(agentRuns.id, state.activeRunId)),
@@ -669,18 +583,18 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 				sessionId: state.sessionId,
 				type: "needs_input",
 				payload: createAgentRunEventPayload({
-					requestId,
-					question,
-					placeholder: getTextField(event, ["placeholder"]),
+					requestId: event.requestId,
+					question: event.question,
+					placeholder: event.placeholder,
 				}),
 			}),
 		]);
-		await this.setState({ ...state, pendingUiRequestId: requestId });
+		await this.setState({ ...state, pendingInputRequestId: event.requestId });
 		this.broadcast({
 			type: "needs_input",
 			runId: state.activeRunId,
-			question,
-			requestId,
+			question: event.question,
+			requestId: event.requestId,
 		});
 	}
 
@@ -721,7 +635,6 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 		if (!state.activeRunId) {
 			return;
 		}
-		this.rejectResponseWaiters(reason);
 		if (await this.isRunCanceled(state.activeRunId)) {
 			await this.clearCanceledRun(state);
 			return;
@@ -731,7 +644,7 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 		await this.finishRun("failed");
 	}
 
-	private async handlePiFailure(error: Error): Promise<void> {
+	private async handleRunnerFailure(error: Error): Promise<void> {
 		await this.failRun(error.message);
 	}
 
@@ -783,7 +696,7 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 		await this.setState({
 			...state,
 			activeRunId: undefined,
-			pendingUiRequestId: undefined,
+			pendingInputRequestId: undefined,
 		});
 	}
 
@@ -802,7 +715,6 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			return;
 		}
 
-		this.rejectResponseWaiters(`Run ${state.activeRunId} was canceled.`);
 		if (state.projectId) {
 			await createDb(this.env)
 				.update(projects)
@@ -827,7 +739,7 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 		await this.setState({
 			...state,
 			activeRunId: undefined,
-			pendingUiRequestId: undefined,
+			pendingInputRequestId: undefined,
 			canceledRunIds: [...(state.canceledRunIds ?? []), state.activeRunId],
 		});
 	}
@@ -902,9 +814,9 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			state: await this.getState(),
 		});
 		const state = await this.getState();
-		if (state.sessionId && state.piProcessId) {
-			void this.startLogStream(state.piProcessId).catch((error) =>
-				this.handlePiFailure(error),
+		if (state.sessionId && state.runnerProcessId) {
+			void this.startLogStream(state.runnerProcessId).catch((error) =>
+				this.handleRunnerFailure(error),
 			);
 		}
 
