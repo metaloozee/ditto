@@ -10,15 +10,15 @@
 > **Drift check (run first)**:
 >
 > ```bash
-> git diff --stat bb00b96..HEAD -- package.json pnpm-lock.yaml pnpm-workspace.yaml alchemy.run.ts tsconfig.json biome.json types/env.d.ts src/server.ts src/db/schema.ts src/integrations/trpc/routers/workspace.ts src/lib/workspace-session-broker.ts src/lib/project-sandbox.ts src/lib/sandbox-bootstrap.ts src/lib/sandbox-backup.ts src/lib/workspace-policy.ts src/routes/api.workspace.session.$sessionId.socket.ts docs/four-layer-flue-workflow-rewrite-prd.md plans/README.md .flue flue.config.ts src/lib/project-coordinator.ts src/lib/project-agent-run-contract.ts docs/decisions
+> git diff --stat a5611fa..HEAD -- package.json pnpm-lock.yaml pnpm-workspace.yaml alchemy.run.ts tsconfig.json biome.json types/env.d.ts src/server.ts src/db/schema.ts src/integrations/trpc/routers/workspace.ts src/lib/workspace-session-broker.ts src/lib/project-sandbox.ts src/lib/sandbox-bootstrap.ts src/lib/sandbox-backup.ts src/lib/workspace-policy.ts src/routes/api.workspace.session.$sessionId.socket.ts docs/four-layer-flue-workflow-rewrite-prd.md plans/README.md .flue flue.config.ts src/lib/project-coordinator.ts src/lib/project-agent-run-contract.ts docs/decisions
 > git diff --stat -- package.json pnpm-lock.yaml pnpm-workspace.yaml alchemy.run.ts tsconfig.json biome.json types/env.d.ts src/server.ts src/db/schema.ts src/integrations/trpc/routers/workspace.ts src/lib/workspace-session-broker.ts src/lib/project-sandbox.ts src/lib/sandbox-bootstrap.ts src/lib/sandbox-backup.ts src/lib/workspace-policy.ts src/routes/api.workspace.session.$sessionId.socket.ts docs/four-layer-flue-workflow-rewrite-prd.md plans/README.md .flue flue.config.ts src/lib/project-coordinator.ts src/lib/project-agent-run-contract.ts docs/decisions
 > ```
 >
-> This plan was written against commit `bb00b96` while the working tree already
-> contained uncommitted source and plan changes from prior runner work. If either
-> command shows changes, compare the "Current state" excerpts below against the
-> live code before proceeding. If an excerpt no longer matches and the
-> difference is not merely formatting, treat it as a STOP condition.
+> This plan was reconciled against commit `a5611fa` after the four-layer PRD and
+> plan index landed. If either command shows changes, compare the "Current state"
+> excerpts below against the live code before proceeding. If an excerpt no longer
+> matches and the difference is not merely formatting, treat it as a STOP
+> condition.
 
 ## Status
 
@@ -27,7 +27,7 @@
 - **Risk**: HIGH
 - **Depends on**: none
 - **Category**: direction / migration / architecture
-- **Planned at**: commit `bb00b96`, 2026-07-02
+- **Planned at**: commit `a5611fa`, 2026-07-02
 
 ## Why this matters
 
@@ -160,7 +160,9 @@ The app currently has no Flue dependency in `package.json`:
   "@tanstack/react-devtools": "latest",
   "@tanstack/react-form": "latest",
   "@tanstack/react-query": "latest",
+  "@tanstack/react-query-devtools": "latest",
   "@tanstack/react-router": "latest",
+  "@tanstack/react-router-devtools": "latest",
   "@tanstack/react-router-ssr-query": "latest",
   "@tanstack/react-start": "latest",
   "@tanstack/react-store": "latest",
@@ -169,6 +171,9 @@ The app currently has no Flue dependency in `package.json`:
   "@tanstack/store": "latest",
   "@trpc/client": "^11.11.0",
   "@trpc/server": "^11.11.0",
+  "@trpc/tanstack-react-query": "^11.11.0",
+  "ai": "^6.0.197",
+  "alchemy": "^0.93.11",
 ```
 
 Alchemy currently declares the Sandbox and session broker namespaces, not a
