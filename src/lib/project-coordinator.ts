@@ -267,9 +267,12 @@ export class ProjectCoordinator extends DurableObject<Env> {
 		await this.setState(decision.state);
 
 		if (!decision.accepted) {
-			return Response.json({ error: decision.message, state: decision.state }, {
-				status: decision.status,
-			});
+			return Response.json(
+				{ error: decision.message, state: decision.state },
+				{
+					status: decision.status,
+				},
+			);
 		}
 
 		return Response.json(

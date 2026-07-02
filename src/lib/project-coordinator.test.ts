@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("cloudflare:workers", () => ({ DurableObject: class DurableObject {} }));
+vi.mock("cloudflare:workers", () => ({
+	DurableObject: class DurableObject {},
+}));
 
 const {
 	admitProjectRun,

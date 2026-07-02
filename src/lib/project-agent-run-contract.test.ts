@@ -18,7 +18,9 @@ const runInput: ProjectAgentRunInput = {
 };
 
 function createAdapters(
-	admission: Awaited<ReturnType<ProjectAgentRunAdapters["coordinator"]["admit"]>>,
+	admission: Awaited<
+		ReturnType<ProjectAgentRunAdapters["coordinator"]["admit"]>
+	>,
 ) {
 	const calls: string[] = [];
 	const adapters: ProjectAgentRunAdapters = {

@@ -45,10 +45,12 @@ export type ProjectAgentRunAdapters = {
 		}): Promise<void>;
 	};
 	flue: {
-		dispatch(input: ProjectAgentRunInput & {
-			capabilities: "mutating" | "read_only";
-			fencingToken?: number;
-		}): Promise<ProjectAgentDispatchReceipt>;
+		dispatch(
+			input: ProjectAgentRunInput & {
+				capabilities: "mutating" | "read_only";
+				fencingToken?: number;
+			},
+		): Promise<ProjectAgentDispatchReceipt>;
 	};
 };
 
