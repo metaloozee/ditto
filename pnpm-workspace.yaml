@@ -1,11 +1,14 @@
 allowBuilds:
   '@google/genai': true
+  '@mongodb-js/zstd': false
   better-sqlite3: true
+  core-js-pure: false
   esbuild: true
   lefthook: true
   lightningcss: true
   msgpackr-extract: true
   msw: true
+  node-liblzma: false
   protobufjs: true
   sharp: true
   workerd: true

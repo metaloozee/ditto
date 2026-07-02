@@ -4,6 +4,7 @@ import {
 	DurableObjectNamespace,
 	R2Bucket,
 	TanStackStart,
+	Worker,
 } from "alchemy/cloudflare";
 import { config } from "dotenv";
 
@@ -21,6 +22,21 @@ const workspaceSessionBroker = DurableObjectNamespace("workspace-session-broker"
 	sqlite: true,
 });
 
+const projectCoordinator = DurableObjectNamespace("project-coordinator", {
+	className: "ProjectCoordinator",
+	sqlite: true,
+});
+
+const flueProjectCoderAgent = DurableObjectNamespace("flue-project-coder-agent", {
+	className: "FlueProjectCoderAgent",
+	sqlite: true,
+});
+
+const flueRegistry = DurableObjectNamespace("flue-registry", {
+	className: "FlueRegistry",
+	sqlite: true,
+});
+
 const database = await D1Database("database", {
 	name: `${app.name}-${app.stage}-db`,
 	migrationsDir: "./migrations",
@@ -32,12 +48,25 @@ const sandboxBackups = await R2Bucket("sandbox-backups", {
 	name: sandboxBackupBucketName,
 });
 
+export const flueWorker = await Worker("flue-worker", {
+	entrypoint: "./dist/ditto_plan_025/index.js",
+	compatibilityFlags: ["nodejs_compat"],
+	bindings: {
+		Sandbox: sandbox,
+		FLUE_PROJECT_CODER_AGENT: flueProjectCoderAgent,
+		FLUE_REGISTRY: flueRegistry,
+		ANTHROPIC_API_KEY: alchemy.secret(process.env.ANTHROPIC_API_KEY),
+	},
+});
+
 export const website = await TanStackStart("website", {
 	url: true,
 	bindings: {
 		DB: database,
 		Sandbox: sandbox,
 		WorkspaceSessionBroker: workspaceSessionBroker,
+		ProjectCoordinator: projectCoordinator,
+		FLUE_WORKER: flueWorker,
 		BACKUP_BUCKET: sandboxBackups,
 		BACKUP_BUCKET_NAME: sandboxBackupBucketName,
 		CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID ?? "",
@@ -51,6 +80,7 @@ export const website = await TanStackStart("website", {
 		GITHUB_APP_ID: process.env.GITHUB_APP_ID ?? "",
 		GITHUB_APP_PRIVATE_KEY: alchemy.secret(process.env.GITHUB_APP_PRIVATE_KEY),
 		OPENCODE_API_KEY: alchemy.secret(process.env.OPENCODE_API_KEY),
+		ANTHROPIC_API_KEY: alchemy.secret(process.env.ANTHROPIC_API_KEY),
 		APP_ENV: app.stage,
 		VITE_GITHUB_APP_INSTALL_URL: process.env.VITE_GITHUB_APP_INSTALL_URL ?? "https://github.com/apps/ditto-web/installations/new/",
 	},
@@ -66,24 +96,29 @@ export const website = await TanStackStart("website", {
 					max_instances: 1,
 				},
 			],
-				durable_objects: {
-					...spec.durable_objects,
-					bindings: [
-						{
-							class_name: "Sandbox",
-							name: "Sandbox",
-						},
-						{
-							class_name: "WorkspaceSessionBroker",
-							name: "WorkspaceSessionBroker",
-						},
-					],
-				},
-				migrations: [
-					{ new_sqlite_classes: ["Sandbox"], tag: "v1" },
-					{ new_sqlite_classes: ["WorkspaceSessionBroker"], tag: "v2" },
+			durable_objects: {
+				...spec.durable_objects,
+				bindings: [
+					{
+						class_name: "Sandbox",
+						name: "Sandbox",
+					},
+					{
+						class_name: "WorkspaceSessionBroker",
+						name: "WorkspaceSessionBroker",
+					},
+					{
+						class_name: "ProjectCoordinator",
+						name: "ProjectCoordinator",
+					},
 				],
-			}),
+			},
+			migrations: [
+				{ new_sqlite_classes: ["Sandbox"], tag: "v1" },
+				{ new_sqlite_classes: ["WorkspaceSessionBroker"], tag: "v2" },
+				{ new_sqlite_classes: ["ProjectCoordinator"], tag: "v3" },
+			],
+		}),
 	},
 });
 

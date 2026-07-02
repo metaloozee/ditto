@@ -9,6 +9,8 @@
 		"ignoreUnknown": false,
 		"includes": [
 			"**/src/**/*",
+			"**/.flue/**/*",
+			"**/flue.config.ts",
 			"**/.vscode/**/*",
 			"**/index.html",
 			"**/vite.config.ts",
