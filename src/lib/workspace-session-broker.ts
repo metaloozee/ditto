@@ -448,10 +448,7 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 		if (this.runnerReady) return;
 		let timeoutId: ReturnType<typeof setTimeout> | undefined;
 		const timeout = new Promise<"timeout">((resolve) => {
-			timeoutId = setTimeout(
-				() => resolve("timeout"),
-				RUNNER_READY_TIMEOUT_MS,
-			);
+			timeoutId = setTimeout(() => resolve("timeout"), RUNNER_READY_TIMEOUT_MS);
 		});
 		const result = await Promise.race([
 			this.readyPromise.then(() => "ready" as const),

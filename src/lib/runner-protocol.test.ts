@@ -3,8 +3,8 @@ import {
 	mapSdkEventToDitto,
 	parseRunnerEvent,
 	planRunnerCommand,
-	redactSecrets,
 	RunnerEventBuffer,
+	redactSecrets,
 	serializeRunnerCommand,
 	serializeRunnerEvent,
 } from "./runner-protocol";
@@ -264,9 +264,7 @@ describe("Runner protocol", () => {
 
 		it("redacts provider API keys by pattern", () => {
 			const key = `sk-test-${"b".repeat(24)}`;
-			expect(redactSecrets(`provider ${key}`, [])).toBe(
-				"provider [REDACTED]",
-			);
+			expect(redactSecrets(`provider ${key}`, [])).toBe("provider [REDACTED]");
 		});
 
 		it("returns non-secret text unchanged", () => {
