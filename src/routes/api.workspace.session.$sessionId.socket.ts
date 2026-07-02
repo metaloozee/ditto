@@ -4,20 +4,6 @@ import { and, eq } from "drizzle-orm";
 import { createDb } from "#/db";
 import { workspaceSessions } from "#/db/schema";
 import { createAuth } from "#/lib/auth";
-import type { Route as rootRouteImport } from "./__root";
-
-// Keep this API-only route typed without committing generated route-tree output.
-declare module "@tanstack/react-router" {
-	interface FileRoutesByPath {
-		"/api/workspace/session/$sessionId/socket": {
-			id: "/api/workspace/session/$sessionId/socket";
-			path: "/api/workspace/session/$sessionId/socket";
-			fullPath: "/api/workspace/session/$sessionId/socket";
-			preLoaderRoute: typeof Route;
-			parentRoute: typeof rootRouteImport;
-		};
-	}
-}
 
 export const Route = createFileRoute(
 	"/api/workspace/session/$sessionId/socket",

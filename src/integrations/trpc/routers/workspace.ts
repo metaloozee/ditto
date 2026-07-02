@@ -32,6 +32,19 @@ function compactBrokerError(error: unknown): string {
 		: message;
 }
 
+async function getBrokerErrorMessage(response: Response): Promise<string> {
+	try {
+		const body = (await response.json()) as { error?: unknown };
+		if (typeof body.error === "string" && body.error.trim()) {
+			return body.error;
+		}
+	} catch {
+		// Fall back to the status-based message below when the broker body is not JSON.
+	}
+
+	return "Workspace session broker rejected the request.";
+}
+
 async function postWorkspaceSessionBroker(options: {
 	env: Env;
 	sessionId: string;
@@ -55,7 +68,7 @@ async function postWorkspaceSessionBroker(options: {
 	if (!response.ok) {
 		throw new TRPCError({
 			code: response.status === 409 ? "CONFLICT" : "PRECONDITION_FAILED",
-			message: "Workspace session broker rejected the request.",
+			message: await getBrokerErrorMessage(response),
 		});
 	}
 }
@@ -529,7 +542,7 @@ export const workspaceRouter = createTRPCRouter({
 							await startBroker();
 						} catch (error) {
 							await markAcceptedRunFailed(error);
-							throw error;
+							return { run, session, createdSession };
 						}
 
 						return { run, session, createdSession };
@@ -560,7 +573,7 @@ export const workspaceRouter = createTRPCRouter({
 						await startBroker();
 					} catch (error) {
 						await markAcceptedRunFailed(error);
-						throw error;
+						return { run, session, createdSession };
 					}
 
 					return { run, session, createdSession };
@@ -712,5 +725,48 @@ export const workspaceRouter = createTRPCRouter({
 			});
 
 			return updatedRun;
+		}),
+
+	deleteSession: protectedProcedure
+		.input(
+			z.object({
+				projectId: z.string().min(1),
+				sessionId: z.string().min(1),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const db = createDb(ctx.env);
+
+			const [session] = await db
+				.select({ id: workspaceSessions.id })
+				.from(workspaceSessions)
+				.where(
+					and(
+						eq(workspaceSessions.id, input.sessionId),
+						eq(workspaceSessions.projectId, input.projectId),
+						eq(workspaceSessions.userId, ctx.user.id),
+					),
+				)
+				.limit(1);
+
+			if (!session) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Session not found.",
+				});
+			}
+
+			await db
+				.update(workspaceSessions)
+				.set({ status: "archived" })
+				.where(
+					and(
+						eq(workspaceSessions.id, input.sessionId),
+						eq(workspaceSessions.projectId, input.projectId),
+						eq(workspaceSessions.userId, ctx.user.id),
+					),
+				);
+
+			return { id: session.id };
 		}),
 });

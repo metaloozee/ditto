@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	ClientOnly,
 	Link,
@@ -14,14 +14,26 @@ import {
 	FolderOpenIcon,
 	Layers2Icon,
 	LoaderIcon,
+	MoreHorizontalIcon,
 	PlusIcon,
 	SearchIcon,
+	TrashIcon,
 } from "lucide-react";
 import type * as React from "react";
 import { useState } from "react";
 import { NavUser } from "#/components/nav-user";
 import { NewProjectDialog } from "#/components/new-project-dialog";
 import { ProjectSettingsDialog } from "#/components/project-settings-dialog";
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from "#/components/ui/alert-dialog";
 import { Button } from "#/components/ui/button";
 import { Collapsible, CollapsibleContent } from "#/components/ui/collapsible";
 import {
@@ -35,6 +47,12 @@ import {
 	CommandSeparator,
 	CommandShortcut,
 } from "#/components/ui/command";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "#/components/ui/dropdown-menu";
 import {
 	Sidebar,
 	SidebarContent,
@@ -190,6 +208,115 @@ function ProjectStatusIcon({
 	);
 }
 
+function SessionSidebarItem({
+	session,
+	project,
+	isActive,
+}: {
+	session: SidebarSession;
+	project: SidebarProject;
+	isActive: boolean;
+}): React.JSX.Element {
+	const trpc = useTRPC();
+	const queryClient = useQueryClient();
+	const navigate = useNavigate();
+	const [confirmOpen, setConfirmOpen] = useState(false);
+
+	const deleteSessionMutation = useMutation(
+		trpc.workspace.deleteSession.mutationOptions(),
+	);
+
+	async function handleDeleteSession(): Promise<void> {
+		await deleteSessionMutation.mutateAsync({
+			projectId: project.id,
+			sessionId: session.id,
+		});
+		await queryClient.invalidateQueries(trpc.projects.list.queryFilter());
+		setConfirmOpen(false);
+
+		if (isActive) {
+			await navigate({
+				to: "/project/$projectId",
+				params: { projectId: project.id },
+			});
+		}
+	}
+
+	return (
+		<SidebarMenuSubItem>
+			<SidebarMenuSubButton
+				size="sm"
+				isActive={isActive}
+				render={
+					<Link
+						to="/project/$projectId/session/$sessionId"
+						params={{
+							projectId: project.id,
+							sessionId: session.id,
+						}}
+					/>
+				}
+				className="pr-7"
+			>
+				<span className="truncate">
+					{session.title || "Untitled chat"}
+				</span>
+			</SidebarMenuSubButton>
+
+			<DropdownMenu>
+				<DropdownMenuTrigger
+					className={cn(
+						"absolute top-0.5 right-0 flex size-6 items-center justify-center rounded-md text-sidebar-foreground/70 outline-hidden transition-opacity hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring cursor-pointer",
+						"opacity-0 group-focus-within/menu-sub-item:opacity-100 group-hover/menu-sub-item:opacity-100 aria-expanded:opacity-100",
+					)}
+					aria-label={`Actions for ${session.title || "Untitled chat"}`}
+				>
+					<MoreHorizontalIcon className="size-3.5" />
+				</DropdownMenuTrigger>
+				<DropdownMenuContent
+					side="right"
+					align="start"
+					sideOffset={4}
+					className="min-w-36"
+				>
+					<DropdownMenuItem
+						variant="destructive"
+						className="cursor-pointer"
+						onClick={() => setConfirmOpen(true)}
+					>
+						<TrashIcon />
+						<span>Delete Session</span>
+					</DropdownMenuItem>
+				</DropdownMenuContent>
+			</DropdownMenu>
+
+			<AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Delete session?</AlertDialogTitle>
+						<AlertDialogDescription>
+							This chat and its history will be permanently lost.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogAction
+							variant="destructive"
+							onClick={() => void handleDeleteSession()}
+							disabled={deleteSessionMutation.isPending}
+							className="cursor-pointer"
+						>
+							{deleteSessionMutation.isPending
+								? "Deleting…"
+								: "Delete"}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+		</SidebarMenuSubItem>
+	);
+}
+
 function ProjectSidebarItem({
 	project,
 	isActive,
@@ -261,26 +388,14 @@ function ProjectSidebarItem({
 					<SidebarMenuSub>
 						{sessions.length > 0 ? (
 							sessions.map((session) => (
-								<SidebarMenuSubItem key={session.id}>
-									<SidebarMenuSubButton
-										size="sm"
-										isActive={activeSessionId === session.id}
-										render={
-											<Link
-												to="/project/$projectId/session/$sessionId"
-												params={{
-													projectId: project.id,
-													sessionId: session.id,
-												}}
-											/>
-										}
-									>
-										<span className="truncate">
-											{session.title || "Untitled chat"}
-										</span>
-									</SidebarMenuSubButton>
-								</SidebarMenuSubItem>
+								<SessionSidebarItem
+									key={session.id}
+									session={session}
+									project={project}
+									isActive={activeSessionId === session.id}
+								/>
 							))
+
 						) : (
 							<SidebarMenuSubItem>
 								<SidebarMenuSubButton

@@ -1,4 +1,10 @@
 import { DurableObject } from "cloudflare:workers";
+import {
+	type ExecutionSession,
+	type LogEvent,
+	parseSSEStream,
+	type SessionOptions,
+} from "@cloudflare/sandbox";
 import { and, eq, sql } from "drizzle-orm";
 import { createDb } from "#/db";
 import { agentRunEvents, agentRuns, projects } from "#/db/schema";
@@ -40,6 +46,11 @@ type BrokerState = {
 	canceledRunIds?: string[];
 };
 
+type SandboxWithSessions = {
+	createSession(options?: SessionOptions): Promise<ExecutionSession>;
+	getSession(sessionId: string): Promise<ExecutionSession>;
+};
+
 type StartRequest = {
 	sessionId: string;
 	userId: string;
@@ -70,7 +81,6 @@ export type WorkspaceSessionBrokerFrame =
 
 const BROKER_STATE_KEY = "broker-state";
 const COMMAND_TIMEOUT_MS = 30_000;
-const PROCESS_STREAM_ENCODING = "utf8";
 
 function isWebSocketUpgrade(request: Request): boolean {
 	return request.headers.get("Upgrade")?.toLowerCase() === "websocket";
@@ -140,6 +150,35 @@ function makeBrokerDir(sessionId: string): string {
 	return `/tmp/ditto/pi/${sessionId.replaceAll(/[^a-zA-Z0-9_-]/g, "-")}`;
 }
 
+function isSessionAlreadyExistsError(error: unknown): boolean {
+	return (
+		error instanceof Error &&
+		/session ['"].+['"] already exists/i.test(error.message)
+	);
+}
+
+async function createOrGetSandboxSession(
+	sandbox: SandboxWithSessions,
+	options: SessionOptions & { id: string },
+): Promise<ExecutionSession> {
+	try {
+		return await sandbox.createSession(options);
+	} catch (error) {
+		if (!isSessionAlreadyExistsError(error)) {
+			throw error;
+		}
+
+		return await sandbox.getSession(options.id);
+	}
+}
+
+async function getSandboxSession(
+	sandbox: SandboxWithSessions,
+	sessionId: string,
+): Promise<ExecutionSession> {
+	return await sandbox.getSession(sessionId);
+}
+
 function makePiCommand(options: {
 	brokerDir: string;
 	fifoPath: string;
@@ -163,8 +202,72 @@ function makePiCommand(options: {
 			`--provider ${quoteShellArg(options.provider)}`,
 			`--model ${quoteShellArg(options.model)}`,
 			`< ${quoteShellArg(options.fifoPath)}`,
+			`2> ${quoteShellArg(`${options.brokerDir}/rpc.err`)}`,
 		].join(" "),
 	].join("; ");
+}
+
+function getNestedObject(
+	value: Record<string, unknown>,
+	key: string,
+): Record<string, unknown> | null {
+	const nested = value[key];
+	return nested && typeof nested === "object"
+		? (nested as Record<string, unknown>)
+		: null;
+}
+
+function getContentText(value: unknown): string | null {
+	if (typeof value === "string" && value.trim()) {
+		return value;
+	}
+
+	if (!Array.isArray(value)) {
+		return null;
+	}
+
+	const text = value
+		.map((item) => {
+			if (!item || typeof item !== "object") {
+				return null;
+			}
+
+			const record = item as Record<string, unknown>;
+			return typeof record.text === "string" ? record.text : null;
+		})
+		.filter(Boolean)
+		.join("\n");
+
+	return text.trim() ? text : null;
+}
+
+function getAssistantDelta(event: Record<string, unknown>): string | null {
+	const assistantEvent = getNestedObject(event, "assistantMessageEvent");
+	if (assistantEvent?.type === "text_delta") {
+		return getTextField(assistantEvent, ["delta"]);
+	}
+
+	return getTextField(event, ["delta", "text", "content"]);
+}
+
+function getAssistantMessageText(
+	event: Record<string, unknown>,
+): string | null {
+	const message = getNestedObject(event, "message");
+	if (!message) {
+		return getTextField(event, ["text", "content"]);
+	}
+
+	return getContentText(message.content) ?? getTextField(message, ["text"]);
+}
+
+function getToolProgressText(event: Record<string, unknown>): string | null {
+	const partialResult = getNestedObject(event, "partialResult");
+	if (partialResult) {
+		return getContentText(partialResult.content);
+	}
+
+	return getTextField(event, ["output", "text", "message"]);
 }
 
 export class WorkspaceSessionBroker extends DurableObject<Env> {
@@ -286,9 +389,8 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 		}
 
 		const response = await this.sendCommand({
-			id: `reply-${input.runId}-${state.pendingUiRequestId}`,
 			type: "extension_ui_response",
-			requestId: state.pendingUiRequestId,
+			id: state.pendingUiRequestId,
 			value: input.answer,
 		});
 
@@ -317,17 +419,20 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 	private async ensurePiProcess(input: StartRequest): Promise<void> {
 		const state = await this.getState();
 		if (state.piProcessId && state.fifoPath) {
-			await this.startLogStream(input.sessionId, state.piProcessId);
+			await this.startLogStream(state.piProcessId);
 			return;
 		}
 
 		const sandbox = getProjectSandbox(this.env, input.sandboxId);
-		const session = await sandbox.createSession({
-			id: input.sessionId,
-			name: `Ditto ${input.sessionId}`,
-			cwd: WORKSPACE_PATH,
-			env: { OPENCODE_API_KEY: this.env.OPENCODE_API_KEY },
-		});
+		const session = await createOrGetSandboxSession(
+			sandbox as SandboxWithSessions,
+			{
+				id: input.sessionId,
+				name: `Ditto ${input.sessionId}`,
+				cwd: WORKSPACE_PATH,
+				env: { OPENCODE_API_KEY: this.env.OPENCODE_API_KEY },
+			},
+		);
 		const brokerDir = makeBrokerDir(input.sessionId);
 		const fifoPath = `${brokerDir}/rpc.in`;
 		const processId = makeProcessId(input.sessionId);
@@ -355,13 +460,10 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			piProcessId: processId,
 			fifoPath,
 		});
-		await this.startLogStream(input.sessionId, processId);
+		await this.startLogStream(processId);
 	}
 
-	private async startLogStream(
-		sessionId: string,
-		processId: string,
-	): Promise<void> {
+	private async startLogStream(processId: string): Promise<void> {
 		if (this.streamStartedForProcessId === processId) {
 			return;
 		}
@@ -371,24 +473,12 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			this.env,
 			(await this.getState()).sandboxId ?? "",
 		);
-		const session = await sandbox.createSession({
-			id: sessionId,
-			cwd: WORKSPACE_PATH,
-		});
-		const stream = await session.streamProcessLogs(processId);
-		const reader = stream.getReader();
-		const decoder = new TextDecoder(PROCESS_STREAM_ENCODING);
+		const stream = await sandbox.streamProcessLogs(processId);
 
 		void (async () => {
 			try {
-				while (true) {
-					const { value, done } = await reader.read();
-					if (done) {
-						break;
-					}
-					if (value) {
-						await this.handlePiOutput(decoder.decode(value, { stream: true }));
-					}
+				for await (const event of parseSSEStream<LogEvent>(stream)) {
+					await this.handleProcessLogEvent(event);
 				}
 			} catch (error) {
 				await this.handlePiFailure(
@@ -396,6 +486,30 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 				);
 			}
 		})();
+	}
+
+	private async handleProcessLogEvent(event: LogEvent): Promise<void> {
+		switch (event.type) {
+			case "stdout":
+				await this.handlePiOutput(event.data);
+				return;
+			case "stderr":
+				return;
+			case "exit":
+				if (event.exitCode && event.exitCode !== 0) {
+					await this.handlePiFailure(
+						new Error(`Pi exited with code ${event.exitCode}.`),
+					);
+				}
+				return;
+			case "error":
+				await this.handlePiFailure(
+					new Error(event.data || "Pi log stream reported an error."),
+				);
+				return;
+			default:
+				return;
+		}
 	}
 
 	private async sendCommand(command: PiRpcCommand): Promise<PiRpcResponse> {
@@ -413,10 +527,10 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 
 		this.commandQueue = this.commandQueue.then(async () => {
 			const sandbox = getProjectSandbox(this.env, state.sandboxId ?? "");
-			const session = await sandbox.createSession({
-				id: state.sessionId,
-				cwd: WORKSPACE_PATH,
-			});
+			const session = await getSandboxSession(
+				sandbox as SandboxWithSessions,
+				state.sessionId ?? "",
+			);
 			const result = await session.exec(
 				buildJsonlWriteCommand(state.fifoPath ?? "", command),
 				{ cwd: WORKSPACE_PATH, timeout: COMMAND_TIMEOUT_MS },
@@ -436,6 +550,13 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			this.responseWaiters.delete(command.id);
 			throw error;
 		}
+	}
+
+	private rejectResponseWaiters(reason: string): void {
+		for (const waiter of this.responseWaiters.values()) {
+			waiter.reject(new Error(reason));
+		}
+		this.responseWaiters.clear();
 	}
 
 	private async handlePiOutput(chunk: string): Promise<void> {
@@ -466,14 +587,14 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 
 		switch (event.type) {
 			case "message_update": {
-				const text = getTextField(event, ["delta", "text", "content"]);
+				const text = getAssistantDelta(event);
 				if (text) {
 					this.broadcast({ type: "assistant_delta", runId, text });
 				}
 				return;
 			}
 			case "message_end": {
-				const text = getTextField(event, ["text", "content"]);
+				const text = getAssistantMessageText(event);
 				if (text) {
 					await this.insertEvent("message", {
 						role: "assistant",
@@ -488,7 +609,7 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 				});
 				return;
 			case "tool_execution_update": {
-				const text = getTextField(event, ["output", "text", "message"]);
+				const text = getToolProgressText(event);
 				if (text) {
 					this.broadcast({
 						type: "tool_progress",
@@ -600,6 +721,7 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 		if (!state.activeRunId) {
 			return;
 		}
+		this.rejectResponseWaiters(reason);
 		if (await this.isRunCanceled(state.activeRunId)) {
 			await this.clearCanceledRun(state);
 			return;
@@ -680,6 +802,7 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			return;
 		}
 
+		this.rejectResponseWaiters(`Run ${state.activeRunId} was canceled.`);
 		if (state.projectId) {
 			await createDb(this.env)
 				.update(projects)
@@ -731,15 +854,15 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 
 	private async emitWorkspaceChanges(): Promise<void> {
 		const state = await this.getState();
-		if (!state.sandboxId) {
+		if (!state.sandboxId || !state.sessionId) {
 			return;
 		}
 
 		const sandbox = getProjectSandbox(this.env, state.sandboxId);
-		const session = await sandbox.createSession({
-			id: state.sessionId,
-			cwd: WORKSPACE_PATH,
-		});
+		const session = await getSandboxSession(
+			sandbox as SandboxWithSessions,
+			state.sessionId,
+		);
 		const result = await session.exec("git status --short", {
 			cwd: WORKSPACE_PATH,
 			timeout: COMMAND_TIMEOUT_MS,
@@ -780,8 +903,8 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 		});
 		const state = await this.getState();
 		if (state.sessionId && state.piProcessId) {
-			void this.startLogStream(state.sessionId, state.piProcessId).catch(
-				(error) => this.handlePiFailure(error),
+			void this.startLogStream(state.piProcessId).catch((error) =>
+				this.handlePiFailure(error),
 			);
 		}
 

@@ -17,6 +17,7 @@ import { Route as ProjectProjectIdIndexRouteImport } from './routes/project.$pro
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api.auth.$'
 import { Route as ProjectProjectIdSessionSessionIdRouteImport } from './routes/project.$projectId.session.$sessionId'
+import { Route as ApiWorkspaceSessionSessionIdSocketRouteImport } from './routes/api.workspace.session.$sessionId.socket'
 
 const SignInRoute = SignInRouteImport.update({
   id: '/sign-in',
@@ -59,6 +60,12 @@ const ProjectProjectIdSessionSessionIdRoute =
     path: '/session/$sessionId',
     getParentRoute: () => ProjectProjectIdRoute,
   } as any)
+const ApiWorkspaceSessionSessionIdSocketRoute =
+  ApiWorkspaceSessionSessionIdSocketRouteImport.update({
+    id: '/api/workspace/session/$sessionId/socket',
+    path: '/api/workspace/session/$sessionId/socket',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -69,6 +76,7 @@ export interface FileRoutesByFullPath {
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/project/$projectId/': typeof ProjectProjectIdIndexRoute
   '/project/$projectId/session/$sessionId': typeof ProjectProjectIdSessionSessionIdRoute
+  '/api/workspace/session/$sessionId/socket': typeof ApiWorkspaceSessionSessionIdSocketRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -78,6 +86,7 @@ export interface FileRoutesByTo {
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/project/$projectId': typeof ProjectProjectIdIndexRoute
   '/project/$projectId/session/$sessionId': typeof ProjectProjectIdSessionSessionIdRoute
+  '/api/workspace/session/$sessionId/socket': typeof ApiWorkspaceSessionSessionIdSocketRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -89,6 +98,7 @@ export interface FileRoutesById {
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/project/$projectId/': typeof ProjectProjectIdIndexRoute
   '/project/$projectId/session/$sessionId': typeof ProjectProjectIdSessionSessionIdRoute
+  '/api/workspace/session/$sessionId/socket': typeof ApiWorkspaceSessionSessionIdSocketRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -101,6 +111,7 @@ export interface FileRouteTypes {
     | '/api/trpc/$'
     | '/project/$projectId/'
     | '/project/$projectId/session/$sessionId'
+    | '/api/workspace/session/$sessionId/socket'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -110,6 +121,7 @@ export interface FileRouteTypes {
     | '/api/trpc/$'
     | '/project/$projectId'
     | '/project/$projectId/session/$sessionId'
+    | '/api/workspace/session/$sessionId/socket'
   id:
     | '__root__'
     | '/'
@@ -120,6 +132,7 @@ export interface FileRouteTypes {
     | '/api/trpc/$'
     | '/project/$projectId/'
     | '/project/$projectId/session/$sessionId'
+    | '/api/workspace/session/$sessionId/socket'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -129,6 +142,7 @@ export interface RootRouteChildren {
   ProjectProjectIdRoute: typeof ProjectProjectIdRouteWithChildren
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
+  ApiWorkspaceSessionSessionIdSocketRoute: typeof ApiWorkspaceSessionSessionIdSocketRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -189,6 +203,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectProjectIdSessionSessionIdRouteImport
       parentRoute: typeof ProjectProjectIdRoute
     }
+    '/api/workspace/session/$sessionId/socket': {
+      id: '/api/workspace/session/$sessionId/socket'
+      path: '/api/workspace/session/$sessionId/socket'
+      fullPath: '/api/workspace/session/$sessionId/socket'
+      preLoaderRoute: typeof ApiWorkspaceSessionSessionIdSocketRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -212,6 +233,8 @@ const rootRouteChildren: RootRouteChildren = {
   ProjectProjectIdRoute: ProjectProjectIdRouteWithChildren,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
+  ApiWorkspaceSessionSessionIdSocketRoute:
+    ApiWorkspaceSessionSessionIdSocketRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

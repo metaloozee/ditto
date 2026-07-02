@@ -1,6 +1,6 @@
 # Implementation Plans
 
-Generated on 2026-06-24. Updated on 2026-07-01 with plans 015-016 reconciled against commit `9e2fed0`; plan 016 now depends on plan 015 for the full implementation, with only its Step 1 Flue mount spike allowed before 015 lands. Execute in the order below unless dependencies say otherwise. Each executor: read the plan fully before starting, honor its STOP conditions, and update your row when done.
+Generated on 2026-06-24. Updated on 2026-07-01 with plans 015-017 reconciled against commit `e3d5209`. The earlier Flue plan 016 is now rejected and retained only as the historical record of the abandoned Flue approach; use plan 017 for the direct Pi Durable Object session-broker path. Execute in the order below unless dependencies say otherwise. Each executor: read the plan fully before starting, honor its STOP conditions, and update your row when done.
 
 ## Execution order & status
 
@@ -21,7 +21,8 @@ Generated on 2026-06-24. Updated on 2026-07-01 with plans 015-016 reconciled aga
 | 013 | Authorize GitHub installation use server-side | P1 | M | 011, 012 | DONE |
 | 014 | Validate sandbox env-var keys before saving or provisioning | P2 | S | — | DONE |
 | 015 | Persist and restore project sandboxes | P1 | L | — | DONE |
-| 016 | Add the Flue project-coder foundation | P1 | L | 013, 014, 015 | TODO |
+| 016 | Add the Flue project-coder foundation | P1 | L | 013, 014, 015 | REJECTED (superseded by direct Pi Durable Object broker plan 017) |
+| 017 | Add the Pi session-broker foundation | P1 | L | 013, 014, 015 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale — finding fixed independently or approach abandoned)
 
@@ -39,7 +40,8 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - 013 depends on both 011 and 012 because the authorization check must be tested and must validate against the full paginated import-state result, not page 1 only.
 - 014 is independent of 011-013, but it stays later in the queue because malformed env-var keys are lower-severity than the GitHub import authorization and pagination bugs. It now covers both GitHub import env-var entry and later project-settings env-var saves.
 - 015 has no prior plan dependency because the current source already contains the sandbox bootstrap surface it needs. It should still be reviewed as an extension of the v1 one-sandbox-per-project decision from 003 and the workspace/run model from 008-010. It is the durability layer for ready projects whose sandbox container or `/workspace` contents disappear.
-- 016 depends on 013 and 014 because a real Flue coding agent must not trust client-submitted GitHub repo/install pairs and must not rely on malformed env-var keys being safe to sync into `/workspace/.env`. It also depends on 015 for the full implementation because Flue changes the runner but does not make `/workspace` durable. Allowed exception: execute only 016 Step 1 first as a mount-strategy spike, stop after that step, then execute 015, then resume or re-run 016 for the full implementation. Beyond Step 1, 016 must preserve Plan 015's `ensureProjectSandbox` path and refresh backups after successful mutating Flue runs.
+- 016 depended on 013/014/015 for the same reasons 017 now does, but it is rejected because the Flue worker composition path was abandoned.
+- 017 depends on 013 and 014 because the real Pi runner still must not trust client-submitted GitHub repo/install pairs and must not rely on malformed env-var keys being safe to sync into `/workspace/.env`. It depends on 015 because the runner still uses the same long-lived project sandbox and must preserve the pre-execution `ensureProjectSandbox` path plus post-success backup refresh.
 
 ## Verification baseline
 
@@ -47,7 +49,7 @@ Use these commands when executing plans:
 
 - `pnpm exec tsc --noEmit` — passes typechecking.
 - `pnpm lint` — exits 0 at plan-writing time with existing warnings in `src/components/ui/grainient.tsx:297` and `src/components/ui/sidebar.tsx:85`; new plans should not add warnings in touched files.
-- `pnpm test` — exits 0 with `src/lib/github-repositories.test.ts` passing; plan 016 should not add regression tests per maintainer instruction.
+- `pnpm test` — exits 0 with `src/lib/github-repositories.test.ts`, `src/lib/env-vars.test.ts`, and `src/lib/sandbox-backup.test.ts` passing; plan 017 should not add broad new regression tests per maintainer instruction.
 - `git diff --check` — catches whitespace errors before commit.
 
 ## Reconciliation notes
@@ -63,8 +65,13 @@ Use these commands when executing plans:
 - 2026-06-30: plan 014 was executed in isolated worktree `/tmp/opencode/ditto-plan-014`, reviewed as DONE on branch `advisor/014-validate-env-var-keys`, with commits `91f46b0` and `7996275`.
 - 2026-07-01: reconciled plans 015 and 016 against commit `9e2fed0`. Plan 015 drifted because plan 014 changed env-var validation in `src/integrations/trpc/routers/projects.ts`, but the weak sandbox readiness and direct `.env` sync findings still exist. Plan 016 drifted only in planning docs/index, but its dependency graph was tightened: Step 1 may run first as a Flue mount spike; the full Flue runner now depends on Plan 015 and must use its ensure/restore and backup-refresh helpers.
 - 2026-07-01: plan 015 was executed in isolated worktree `/tmp/opencode/ditto-plan-015`, reviewed as DONE on branch `advisor/015-durable-sandbox-restore`, with commits `a3563a2`, `9bdab28`, `3dc48bc`, `4269328`, and `fcd6e17`. Reviewer requested the final R2 DX decision: backup credentials are required at app startup, so local omission is not supported.
+- 2026-07-01: plan 016 was refreshed to commit `e3d5209` after plan 015 landed. Its source excerpts now reflect the Plan 015 `ensureProjectSandbox` path, backup helper exports, R2 backup bindings, and expanded baseline tests.
+- 2026-07-01: plan 016 execution stopped in isolated worktree `/tmp/opencode/ditto-plan-016` during Step 1. `npx flue build --target cloudflare` works for the minimal Flue app and generates `FlueProjectCoderAgent`/`FlueRegistry`, but the plan does not yet specify how to compose Flue's generated Cloudflare Worker entrypoint and DO migrations with Alchemy/TanStack's current `src/server.ts` entrypoint and Sandbox binding.
+- 2026-07-01: after research into Flue, Pi, Durable Objects, and the installed Sandbox SDK, the Flue approach was abandoned. New plan 017 replaces it with a same-Worker direct Pi architecture: one authenticated DO per `workspace_sessions.id`, live browser events over a DO WebSocket, Pi RPC mode inside the existing project sandbox, and D1 as the canonical persisted event log.
+- 2026-07-01: plan 017 was executed in isolated worktree `/tmp/opencode/ditto-plan-017`, reviewed as DONE on branch `advisor/017-pi-session-broker-foundation`, with commits `b00ffc7`, `4bf1eb0`, `88d31a1`, and `706cf50`. Reviewer requested two revision rounds for Step 3 type-instantiation failure and run-state hardening. Final command verification passed: `pnpm exec tsc --noEmit --pretty false`, `pnpm lint`, `pnpm test`, and `git diff --check`. Authenticated browser smoke flows were not run in this session; run them before deploying.
 
 ## Findings considered and rejected / deferred
 
 - Lockfile churn from the uncommitted dependency update was intentionally ignored per maintainer instruction on 2026-06-25.
 - Escaped GitHub App private-key normalization: rejected per maintainer instruction on 2026-06-25; current raw-key behavior is intentional.
+- Exact xterm or raw Pi terminal mirroring is intentionally deferred from plan 017. The maintainer chose the structured Pi RPC event stream inside Ditto's existing chat UI for the foundation path.

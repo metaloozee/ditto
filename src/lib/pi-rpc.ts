@@ -4,9 +4,8 @@ export type PiRpcCommand =
 	| { id?: string; type: "follow_up"; message: string }
 	| { id?: string; type: "abort" }
 	| {
-			id?: string;
 			type: "extension_ui_response";
-			requestId: string;
+			id: string;
 			value: string;
 	  };
 
@@ -21,22 +20,40 @@ export type PiRpcResponse = {
 
 export type PiRpcEvent =
 	| PiRpcResponse
+	| ({ type: "agent_start" } & Record<string, unknown>)
+	| ({ type: "turn_start" } & Record<string, unknown>)
+	| ({ type: "turn_end" } & Record<string, unknown>)
+	| ({ type: "message_start" } & Record<string, unknown>)
 	| ({ type: "message_update" } & Record<string, unknown>)
 	| ({ type: "message_end" } & Record<string, unknown>)
 	| ({ type: "tool_execution_start" } & Record<string, unknown>)
 	| ({ type: "tool_execution_update" } & Record<string, unknown>)
 	| ({ type: "tool_execution_end" } & Record<string, unknown>)
+	| ({ type: "queue_update" } & Record<string, unknown>)
+	| ({ type: "compaction_start" } & Record<string, unknown>)
+	| ({ type: "compaction_end" } & Record<string, unknown>)
+	| ({ type: "auto_retry_start" } & Record<string, unknown>)
+	| ({ type: "auto_retry_end" } & Record<string, unknown>)
 	| ({ type: "extension_ui_request" } & Record<string, unknown>)
 	| ({ type: "agent_end" } & Record<string, unknown>)
 	| ({ type: "extension_error" } & Record<string, unknown>);
 
 const PI_EVENT_TYPES = new Set([
 	"response",
+	"agent_start",
+	"turn_start",
+	"turn_end",
+	"message_start",
 	"message_update",
 	"message_end",
 	"tool_execution_start",
 	"tool_execution_update",
 	"tool_execution_end",
+	"queue_update",
+	"compaction_start",
+	"compaction_end",
+	"auto_retry_start",
+	"auto_retry_end",
 	"extension_ui_request",
 	"agent_end",
 	"extension_error",
@@ -66,13 +83,22 @@ export class JsonlBuffer {
 	}
 }
 
+function compactLineForError(line: string): string {
+	const compact = line.trim().replaceAll(/\s+/g, " ");
+	return compact.length > 160
+		? `${compact.slice(0, 160)}...[truncated]`
+		: compact;
+}
+
 export function parsePiRpcEvent(line: string): PiRpcEvent {
 	let parsed: unknown;
 
 	try {
 		parsed = JSON.parse(line);
 	} catch {
-		throw new Error("Pi RPC emitted non-JSON output.");
+		throw new Error(
+			`Pi RPC emitted non-JSON output: ${compactLineForError(line)}`,
+		);
 	}
 
 	if (!parsed || typeof parsed !== "object") {

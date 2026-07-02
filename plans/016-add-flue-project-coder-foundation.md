@@ -7,7 +7,7 @@
 > `plans/README.md` unless a reviewer dispatched you and told you they maintain
 > the index.
 >
-> **Drift check (run first)**: `git diff --stat 9e2fed0..HEAD -- package.json pnpm-lock.yaml pnpm-workspace.yaml flue.config.ts tsconfig.json biome.json alchemy.run.ts types/env.d.ts src/server.ts src/routes src/lib/flue-client.ts src/lib/agent-models.ts src/lib/user-preferences-store.ts src/db/schema.ts migrations src/integrations/trpc/routers/workspace.ts src/components/composer.tsx src/components/ai-chat.tsx .flue docs/flue-agent-harness-prd.md plans/README.md`
+> **Drift check (run first)**: `git diff --stat e3d5209..HEAD -- package.json pnpm-lock.yaml pnpm-workspace.yaml flue.config.ts tsconfig.json biome.json alchemy.run.ts types/env.d.ts src/server.ts src/routes src/lib/flue-client.ts src/lib/agent-models.ts src/lib/user-preferences-store.ts src/db/schema.ts migrations src/integrations/trpc/routers/workspace.ts src/components/composer.tsx src/components/ai-chat.tsx .flue docs/flue-agent-harness-prd.md plans/README.md`
 > If any listed file changed since this plan was written, compare the "Current
 > state" excerpts against the live code before proceeding. On a mismatch, treat
 > it as a STOP condition.
@@ -19,7 +19,100 @@
 - **Risk**: HIGH
 - **Depends on**: plans/013-authorize-github-installation-use-server-side.md, plans/014-validate-sandbox-env-var-keys-before-provisioning.md, and plans/015-persist-and-restore-project-sandboxes.md for the full implementation. Step 1 may be run first as a Flue mount spike, then stop before broad edits.
 - **Category**: direction
-- **Planned at**: commit `9e2fed0`, 2026-07-01
+- **Planned at**: commit `e3d5209`, 2026-07-01
+- **Execution status**: REJECTED on 2026-07-01. The Flue-based approach was
+  abandoned in favor of a direct Pi Durable Object session-broker design in
+  `plans/017-add-pi-session-broker-foundation.md`.
+
+## Blocked execution result
+
+The first execution attempt proved that the installed Flue beta can build a
+minimal `.flue` Cloudflare app:
+
+- `npx flue docs read guide/routing` exited 0 and documented the expected
+  `createAgent(...)` plus `route` API.
+- `npx flue build --target cloudflare` exited 0 for the minimal
+  `project-coder` agent.
+- The generated artifact exports `FlueProjectCoderAgent` and `FlueRegistry` and
+  expects Wrangler Durable Object migrations for both generated classes.
+
+The attempt stopped because the plan does not yet specify the deployment
+composition between Flue's generated Cloudflare Worker entrypoint and Ditto's
+Alchemy/TanStack Worker entrypoint. Current Ditto deployment points Alchemy at
+`src/server.ts`; Flue's generated Cloudflare entrypoint owns `fetch`, generated
+Flue Durable Object classes, and generated Flue bindings. Flue's Cloudflare docs
+also say application-owned Durable Objects such as Ditto's `Sandbox` should be
+exported from `.flue/cloudflare.ts`, but that file is not currently in scope.
+
+The maintainer chose the resolution after this spike: Flue must have its own
+Worker definition in `alchemy.run.ts`, and the TanStack app Worker must bind to
+it so the product app can use Flue through a Cloudflare service binding.
+
+## Architecture decision
+
+Use two Workers:
+
+1. `website`: the existing TanStack Start Worker. It remains the only public app
+   surface for product UI, tRPC, Better Auth cookies, project authorization,
+   `workspace.startRun`, and same-origin browser streaming paths.
+2. `flueWorker`: a new private Cloudflare Worker defined in `alchemy.run.ts`.
+   It owns the Flue-generated Cloudflare runtime, `FlueRegistry`, and
+   `FlueProjectCoderAgent`. It is bound into `website` as `FLUE_WORKER`.
+
+Do not expose `flueWorker` through `workers.dev` or public routes in this plan.
+The browser should keep using same-origin `/api/flue`; a TanStack route adapter
+must authenticate the user, authorize the workspace session/project, add an
+internal service header, and proxy allowed stream requests to
+`ctx.env.FLUE_WORKER.fetch(...)`. `workspace.startRun` must admit prompts to
+Flue through the same service binding after D1 run/session/event/lock creation.
+
+This preserves Ditto's product boundary while using Flue's official Cloudflare
+deployment shape. It also avoids trying to merge two generated `fetch`
+entrypoints into one Worker.
+
+## Superseded
+
+This plan is retained as the historical record of the abandoned Flue approach.
+Do not execute it. Use `plans/017-add-pi-session-broker-foundation.md` instead.
+
+## Open blockers before execution
+
+Do not execute this plan until these items are resolved in the step-by-step
+instructions:
+
+- Step 1 still tells the executor to prove a same-worker TanStack/Flue mount,
+  with outcomes where either a TanStack route directly hosts Flue classes or Flue
+  delegates non-Flue requests to `src/server.ts`. That contradicts the selected
+  two-Worker architecture above.
+- `alchemy.run.ts` must explicitly import `Worker` from `alchemy/cloudflare` and
+  `Exec` from `alchemy/os`, run `npx flue build --target cloudflare` before the
+  Flue Worker resource, create `flueWorker` from the generated Flue entrypoint
+  path, and bind `FLUE_WORKER: flueWorker` into `website`.
+- The plan must specify whether the generated Flue entrypoint path is
+  `.flue-vite/_entry.ts` for the pinned beta or another path read from Flue's
+  generated Wrangler config. Do not rely on an uncommitted generated artifact
+  without an Alchemy build step.
+- The plan must define Alchemy-managed namespaces for Flue-generated Durable
+  Objects, including binding names expected by the generated worker:
+  `FLUE_PROJECT_CODER_AGENT` for `FlueProjectCoderAgent` and `FLUE_REGISTRY` for
+  `FlueRegistry`.
+- The plan must resolve Sandbox ownership. The current `Sandbox` class is
+  exported from `src/server.ts` and currently gets container/DO config through
+  the TanStack `wrangler.transform`. Moving Sandbox ownership to a plain
+  `Worker` may lose that transform unless the plan uses a supported Alchemy
+  container resource. Binding the Flue Worker back to the website-owned Sandbox
+  may create a circular dependency because the website also needs a service
+  binding to `flueWorker`.
+- Step 8 still describes server-side Flue admission as an absolute same-origin
+  fetch back to `/api/flue`; under the selected architecture it should call
+  `ctx.env.FLUE_WORKER.fetch(...)` with an internal service-auth header.
+- Step 6 must describe the TanStack `/api/flue` proxy route as the public
+  same-origin browser surface and `.flue/app.ts` as the private Flue Worker app,
+  not as competing mount strategies.
+- The STOP conditions still refer to proving same-worker composition and Better
+  Auth preservation through same-origin server fetch. They need to be rewritten
+  around private service binding, internal authorization, and proxying browser
+  stream requests.
 
 ## Why this matters
 
@@ -32,8 +125,8 @@ This plan adds the first real Flue-powered project coder while preserving Ditto'
 product boundary: `workspace.startRun` remains the only path that accepts a
 project composer prompt, D1 remains the canonical product event log, and Flue
 provides the durable model/session/streaming harness. The first implementation
-must prove the same-worker composition between TanStack Start, Alchemy, and
-Flue before broad tool work proceeds.
+must prove the separate Flue Worker plus TanStack service-binding composition
+before broad tool work proceeds.
 
 The maintainer explicitly decided these points for this plan: use Flue's
 client-side streaming directly, support selectable models, store selected-model
@@ -61,20 +154,21 @@ Relevant files:
 - `src/lib/flue-client.ts` - creates the browser Flue client with the wrong base
   URL shape.
 - `src/routes/__root.tsx` - already wraps the app in `FlueProvider`.
-- `src/integrations/trpc/routers/workspace.ts` - creates sessions/runs/events
-  and the mutating lock, but only records a placeholder system event.
+- `src/integrations/trpc/routers/workspace.ts` - uses Plan 015's sandbox ensure
+  path, creates sessions/runs/events and the mutating lock, but still records a
+  placeholder system event instead of admitting work to Flue.
 - `src/db/schema.ts` - defines `agent_runs` without a model specifier.
 - `src/components/composer.tsx` - has a local hard-coded model selector and calls
   `workspace.startRun` without a model.
 - `src/components/ai-chat.tsx` - renders D1 `agent_run_events` and can already
   display assistant `message` events.
-- `alchemy.run.ts` - owns the Cloudflare Worker, D1, Sandbox binding, and
-  container configuration through Alchemy.
+- `alchemy.run.ts` - owns the Cloudflare Worker, D1, Sandbox binding, Plan 015
+  R2 backup bindings, and container configuration through Alchemy.
 - `src/server.ts` - current Worker entrypoint delegates all HTTP to TanStack
   Start.
 
-Plan 015 dependency outputs that must exist before this plan continues past the
-isolated Step 1 mount spike:
+Plan 015 dependency outputs now exist at the refreshed `e3d5209` HEAD and must
+remain in place before this plan continues past the isolated Step 1 mount spike:
 
 - `src/lib/project-sandbox.ts` - exports `ensureProjectSandbox`, which verifies
   `/workspace/.git`, restores from backup, or reclones through GitHub fallback.
@@ -84,6 +178,77 @@ isolated Step 1 mount spike:
   latest backup handle on `projects`.
 - `src/lib/project-env-vars.ts` - exports the env-var decrypt helper used by both
   the workspace router and the Flue agent before calling `ensureProjectSandbox`.
+
+Current Plan 015 ensure path in `workspace.startRun`:
+
+```ts
+// src/integrations/trpc/routers/workspace.ts:198-222
+try {
+	const envVars = await decryptEnvVars(
+		project.envVars,
+		ctx.env.BETTER_AUTH_SECRET,
+	);
+	const ensured = await ensureProjectSandbox({
+		db,
+		env: ctx.env,
+		project,
+		envVars,
+	});
+	project = ensured.project;
+} catch (error) {
+	throw new TRPCError({
+		code:
+			error instanceof Error &&
+			error.message === "Project sandbox is already being restored."
+				? "CONFLICT"
+				: "PRECONDITION_FAILED",
+		message:
+			error instanceof Error
+				? error.message
+				: "Project sandbox is not ready yet.",
+	});
+}
+```
+
+Current Plan 015 helper exports to consume instead of recreating readiness or
+backup logic:
+
+```ts
+// src/lib/project-sandbox.ts:104-109
+export async function ensureProjectSandbox(options: {
+	db: ReturnType<typeof createDb>;
+	env: Env;
+	project: typeof projects.$inferSelect;
+	envVars: SandboxEnvVar[];
+}): Promise<EnsureProjectSandboxResult> {
+```
+
+```ts
+// src/lib/sandbox-bootstrap.ts:173-181
+export async function backupSandboxWorkspace(options: {
+	env: Env;
+	sandboxId: string;
+	projectId: string;
+}): Promise<DirectoryBackup> {
+	const sandbox = getProjectSandbox(options.env, options.sandboxId);
+	return await sandbox.createBackup(
+		getSandboxBackupOptions({ env: options.env, projectId: options.projectId }),
+	);
+}
+```
+
+```ts
+// src/lib/sandbox-backup.ts:19-27
+export function serializeSandboxBackup(backup: DirectoryBackup): string {
+	return JSON.stringify({
+		id: backup.id,
+		dir: backup.dir,
+		...(backup.localBucket === undefined
+			? {}
+			: { localBucket: backup.localBucket }),
+	});
+}
+```
 
 Current dependency state:
 
@@ -153,7 +318,7 @@ import { flueClient } from "#/lib/flue-client";
 Current `workspace.startRun` input and placeholder event:
 
 ```ts
-// src/integrations/trpc/routers/workspace.ts:135-142
+// src/integrations/trpc/routers/workspace.ts:164-171
 startRun: protectedProcedure
 	.input(
 		z.object({
@@ -166,23 +331,35 @@ startRun: protectedProcedure
 ```
 
 ```ts
-// src/integrations/trpc/routers/workspace.ts:272-281
-{
-	runId,
-	projectId: input.projectId,
-	sessionId,
-	type: "message" as const,
-	payload: createAgentRunEventPayload({
-		role: "system",
-		text: "Agent execution is queued. The LLM/tool runner will be connected in a later plan.",
-	}),
-}
+// src/integrations/trpc/routers/workspace.ts:309-330
+const eventValues = [
+	{
+		runId,
+		projectId: input.projectId,
+		sessionId,
+		type: "message" as const,
+		payload: createAgentRunEventPayload({
+			role: "user",
+			text: input.message,
+		}),
+	},
+	{
+		runId,
+		projectId: input.projectId,
+		sessionId,
+		type: "message" as const,
+		payload: createAgentRunEventPayload({
+			role: "system",
+			text: "Agent execution is queued. The LLM/tool runner will be connected in a later plan.",
+		}),
+	},
+];
 ```
 
 Current D1-compatible lock and batch behavior must be preserved:
 
 ```ts
-// src/integrations/trpc/routers/workspace.ts:296-331
+// src/integrations/trpc/routers/workspace.ts:344-379
 if (input.isMutating) {
 	const [lockedProject] = await db
 		.update(projects)
@@ -204,7 +381,7 @@ if (input.isMutating) {
 Current run schema lacks model capture:
 
 ```ts
-// src/db/schema.ts:96-125
+// src/db/schema.ts:100-128
 export const agentRuns = sqliteTable(
 	"agent_runs",
 	{
@@ -266,12 +443,18 @@ const result = await startRunMutation.mutateAsync({
 Current Cloudflare/Alchemy entrypoint:
 
 ```ts
-// alchemy.run.ts:20-35
+// alchemy.run.ts:30-49
 export const website = await TanStackStart("website", {
 	url: true,
 	bindings: {
 		DB: database,
 		Sandbox: sandbox,
+		BACKUP_BUCKET: sandboxBackups,
+		BACKUP_BUCKET_NAME: sandboxBackupBucketName,
+		CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID ?? "",
+		R2_ACCESS_KEY_ID: alchemy.secret(process.env.R2_ACCESS_KEY_ID),
+		R2_SECRET_ACCESS_KEY: alchemy.secret(process.env.R2_SECRET_ACCESS_KEY),
+		USE_LOCAL_BUCKET_BACKUPS: process.env.USE_LOCAL_BUCKET_BACKUPS ?? "",
 		BETTER_AUTH_SECRET: alchemy.secret(process.env.BETTER_AUTH_SECRET),
 		BETTER_AUTH_URL: process.env.BETTER_AUTH_URL ?? "",
 		GITHUB_CLIENT_ID: process.env.GITHUB_CLIENT_ID ?? "",
@@ -372,7 +555,9 @@ Repo conventions to match:
 Verification baseline captured at plan-writing time:
 
 - `pnpm exec tsc --noEmit --pretty false` exits 0.
-- `pnpm test` exits 0 with `src/lib/github-repositories.test.ts` passing 5 tests.
+- `pnpm test` exits 0 with 3 files / 23 tests passing, including
+  `src/lib/github-repositories.test.ts`, `src/lib/env-vars.test.ts`, and
+  `src/lib/sandbox-backup.test.ts`.
 - `pnpm lint` exits 0 with existing warnings only in `src/components/ui/grainient.tsx:297` and `src/components/ui/sidebar.tsx:85`.
 - `git diff --check` exits 0.
 
@@ -1050,7 +1235,8 @@ Verification is therefore command and manual-smoke based:
 - `pnpm exec tsc --noEmit --pretty false` covers TypeScript integration.
 - `pnpm lint` covers Biome linting for touched source, with only known existing
   warnings allowed.
-- `pnpm test` ensures the existing GitHub import tests still pass.
+- `pnpm test` ensures the existing GitHub import, env-var, and sandbox-backup
+  tests still pass.
 - `npx flue build --target cloudflare` proves Flue source discovery and
   Cloudflare build compatibility.
 - Manual local prompt verifies `workspace.startRun` -> Flue admission -> client
