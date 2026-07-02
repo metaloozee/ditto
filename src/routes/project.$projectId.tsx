@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
 import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { Chat } from "#/components/ai-chat";
 import { useWorkspaceSessionSocket } from "#/hooks/use-workspace-session-socket";
 import { useTRPC } from "#/integrations/trpc/react";

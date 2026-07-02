@@ -8,8 +8,8 @@ import {
 	FilePenLineIcon,
 	WrenchIcon,
 } from "lucide-react";
-import { Streamdown } from "streamdown";
 import { useState } from "react";
+import { Streamdown } from "streamdown";
 import { Composer } from "#/components/composer";
 import { Bubble, BubbleContent } from "#/components/ui/bubble";
 import {
