@@ -7,34 +7,21 @@ function AlertDialog({ ...props }: AlertDialogPrimitive.Root.Props) {
 	return <AlertDialogPrimitive.Root data-slot="alert-dialog" {...props} />;
 }
 
-function AlertDialogTrigger({
-	...props
-}: AlertDialogPrimitive.Trigger.Props) {
+function AlertDialogTrigger({ ...props }: AlertDialogPrimitive.Trigger.Props) {
 	return (
-		<AlertDialogPrimitive.Trigger
-			data-slot="alert-dialog-trigger"
-			{...props}
-		/>
+		<AlertDialogPrimitive.Trigger data-slot="alert-dialog-trigger" {...props} />
 	);
 }
 
-function AlertDialogPortal({
-	...props
-}: AlertDialogPrimitive.Portal.Props) {
+function AlertDialogPortal({ ...props }: AlertDialogPrimitive.Portal.Props) {
 	return (
-		<AlertDialogPrimitive.Portal
-			data-slot="alert-dialog-portal"
-			{...props}
-		/>
+		<AlertDialogPrimitive.Portal data-slot="alert-dialog-portal" {...props} />
 	);
 }
 
 function AlertDialogClose({ ...props }: AlertDialogPrimitive.Close.Props) {
 	return (
-		<AlertDialogPrimitive.Close
-			data-slot="alert-dialog-close"
-			{...props}
-		/>
+		<AlertDialogPrimitive.Close data-slot="alert-dialog-close" {...props} />
 	);
 }
 
@@ -125,10 +112,7 @@ function AlertDialogDescription({
 	return (
 		<AlertDialogPrimitive.Description
 			data-slot="alert-dialog-description"
-			className={cn(
-				"text-xs/relaxed text-muted-foreground",
-				className,
-			)}
+			className={cn("text-xs/relaxed text-muted-foreground", className)}
 			{...props}
 		/>
 	);

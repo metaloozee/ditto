@@ -258,9 +258,7 @@ function SessionSidebarItem({
 				}
 				className="pr-7"
 			>
-				<span className="truncate">
-					{session.title || "Untitled chat"}
-				</span>
+				<span className="truncate">{session.title || "Untitled chat"}</span>
 			</SidebarMenuSubButton>
 
 			<DropdownMenu>
@@ -306,9 +304,7 @@ function SessionSidebarItem({
 							disabled={deleteSessionMutation.isPending}
 							className="cursor-pointer"
 						>
-							{deleteSessionMutation.isPending
-								? "Deleting…"
-								: "Delete"}
+							{deleteSessionMutation.isPending ? "Deleting…" : "Delete"}
 						</AlertDialogAction>
 					</AlertDialogFooter>
 				</AlertDialogContent>
@@ -395,7 +391,6 @@ function ProjectSidebarItem({
 									isActive={activeSessionId === session.id}
 								/>
 							))
-
 						) : (
 							<SidebarMenuSubItem>
 								<SidebarMenuSubButton
