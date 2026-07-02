@@ -1,5 +1,14 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { BrushCleaningIcon } from "lucide-react";
+import {
+	AlertTriangleIcon,
+	BotIcon,
+	BrushCleaningIcon,
+	CheckCircle2Icon,
+	CircleDotDashedIcon,
+	FilePenLineIcon,
+	WrenchIcon,
+} from "lucide-react";
+import { Streamdown } from "streamdown";
 import { useState } from "react";
 import { Composer } from "#/components/composer";
 import { Bubble, BubbleContent } from "#/components/ui/bubble";
@@ -59,6 +68,7 @@ type BubbleVariant =
 	| "secondary"
 	| "muted"
 	| "outline"
+	| "ghost"
 	| "destructive";
 
 type EventMeta = {
@@ -151,7 +161,7 @@ function getEventMeta(event: ChatEvent, payload: EventPayload): EventMeta {
 	if (event.type === "message") {
 		return {
 			align: "start",
-			variant: "secondary",
+			variant: "ghost",
 			isLog: false,
 		};
 	}
@@ -166,7 +176,7 @@ function getEventMeta(event: ChatEvent, payload: EventPayload): EventMeta {
 
 	return {
 		align: "start",
-		variant: "destructive",
+		variant: "muted",
 		isLog: true,
 	};
 }
@@ -209,11 +219,99 @@ function getLatestNeedsInput(
 	return null;
 }
 
+function ActivityIcon({ type }: { type: ChatEvent["type"] }) {
+	const className = "size-3.5";
+
+	if (type === "error" || type === "lock_rejected") {
+		return <AlertTriangleIcon className={className} />;
+	}
+
+	if (type === "tool_started") {
+		return <CircleDotDashedIcon className={className} />;
+	}
+
+	if (type === "tool_finished") {
+		return <WrenchIcon className={className} />;
+	}
+
+	if (type === "file_changed" || type === "diff_ready") {
+		return <FilePenLineIcon className={className} />;
+	}
+
+	if (type === "done") {
+		return <CheckCircle2Icon className={className} />;
+	}
+
+	return <BotIcon className={className} />;
+}
+
+function AssistantMarkdown({
+	mode,
+	text,
+}: {
+	mode: "static" | "streaming";
+	text: string;
+}) {
+	return (
+		<Streamdown
+			className="prose prose-sm max-w-none dark:prose-invert prose-pre:my-3 prose-pre:bg-card prose-code:text-[0.85em] text-sm/relaxed"
+			controls={{ code: { copy: true, download: false }, mermaid: false }}
+			mode={mode}
+			parseIncompleteMarkdown={mode === "streaming"}
+		>
+			{text}
+		</Streamdown>
+	);
+}
+
+function ActivityEventMessage({
+	event,
+	text,
+	time,
+}: {
+	event: ChatEvent;
+	text: string;
+	time: string | null;
+}) {
+	const isDestructive =
+		event.type === "error" || event.type === "lock_rejected";
+
+	return (
+		<Message align="start">
+			<MessageContent>
+				<div
+					className={cn(
+						"flex w-full items-center justify-between gap-2 pb-2",
+						isDestructive ? "text-destructive" : "text-muted-foreground",
+					)}
+				>
+					<span className="flex items-center gap-1.5 min-w-0 font-mono text-[0.6875rem]">
+						<ActivityIcon type={event.type} />
+						<span className="truncate">{text}</span>
+					</span>
+					{time ? (
+						<span className="tabular-nums opacity-60 shrink-0 font-mono text-[0.6875rem]">
+							{time}
+						</span>
+					) : null}
+				</div>
+				<hr className="m-0 border-t border-border/30" />
+			</MessageContent>
+		</Message>
+	);
+}
+
 function ChatEventMessage({ event }: { event: ChatEvent }) {
 	const payload = parseEventPayload(event.payload);
 	const meta = getEventMeta(event, payload);
 	const text = getEventText(event, payload);
 	const time = formatEventTime(event.createdAt);
+
+	if (meta.isLog) {
+		return <ActivityEventMessage event={event} text={text} time={time} />;
+	}
+
+	const isAssistant = event.type === "message" && payload.role === "assistant";
 
 	return (
 		<Message align={meta.align}>
@@ -221,15 +319,21 @@ function ChatEventMessage({ event }: { event: ChatEvent }) {
 				<Bubble align={meta.align} variant={meta.variant}>
 					<BubbleContent
 						className={cn(
-							"whitespace-pre-wrap text-pretty",
-							meta.isLog && "font-mono text-[0.6875rem]",
+							"text-pretty",
+							isAssistant
+								? "w-full max-w-none px-0 py-0"
+								: "whitespace-pre-wrap",
 						)}
 					>
-						{text}
+						{isAssistant ? (
+							<AssistantMarkdown mode="static" text={text} />
+						) : (
+							text
+						)}
 					</BubbleContent>
 				</Bubble>
 				{time ? (
-					<MessageFooter className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+					<MessageFooter className="opacity-0 transition-opacity duration-200 group-hover:opacity-100">
 						{time}
 					</MessageFooter>
 				) : null}
@@ -242,9 +346,9 @@ function TransientAssistantMessage({ text }: { text: string }) {
 	return (
 		<Message align="start">
 			<MessageContent>
-				<Bubble align="start" variant="secondary">
-					<BubbleContent className="whitespace-pre-wrap text-pretty">
-						{text}
+				<Bubble align="start" variant="ghost">
+					<BubbleContent className="w-full max-w-none px-0 py-0">
+						<AssistantMarkdown mode="streaming" text={text} />
 					</BubbleContent>
 				</Bubble>
 				<MessageFooter>Streaming live</MessageFooter>
@@ -355,6 +459,10 @@ export function Chat({
 	socketState,
 }: ChatProps) {
 	const hasEvents = events.length > 0;
+	const liveAssistantText =
+		activeRunId && socketState?.liveRunId === activeRunId
+			? socketState.assistantText
+			: "";
 	const needsInput =
 		socketState?.needsInput ?? getLatestNeedsInput(events, activeRunId);
 
@@ -394,9 +502,9 @@ export function Chat({
 									<ChatEmptyState hasProject={Boolean(projectId)} />
 								</MessageScrollerItem>
 							)}
-							{socketState?.assistantText ? (
+							{liveAssistantText ? (
 								<MessageScrollerItem messageId="live-assistant">
-									<TransientAssistantMessage text={socketState.assistantText} />
+									<TransientAssistantMessage text={liveAssistantText} />
 								</MessageScrollerItem>
 							) : null}
 							{needsInput ? (

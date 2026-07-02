@@ -1,19 +1,18 @@
 import { DurableObject } from "cloudflare:workers";
-import {
-	type ExecutionSession,
-	type LogEvent,
-	parseSSEStream,
-	type SessionOptions,
-} from "@cloudflare/sandbox";
+import type { ExecutionSession, LogEvent } from "@cloudflare/sandbox";
 import { and, eq, sql } from "drizzle-orm";
 import { createDb } from "#/db";
 import { agentRunEvents, agentRuns, projects } from "#/db/schema";
+import { AssistantStreamDraft } from "#/lib/assistant-stream-draft";
 import {
 	type RunnerCommand,
 	type RunnerEvent,
 	RunnerEventBuffer,
-	serializeRunnerCommand,
 } from "#/lib/runner-protocol";
+import {
+	type RunnerSandboxFactory,
+	RunnerSupervisor,
+} from "#/lib/runner-supervisor";
 import { serializeSandboxBackup } from "#/lib/sandbox-backup";
 import {
 	backupSandboxWorkspace,
@@ -24,9 +23,8 @@ import {
 	WORKSPACE_PATH,
 } from "#/lib/workspace-policy";
 
-function quoteShellArg(value: string): string {
-	return `'${value.replaceAll("'", `'\\''`)}'`;
-}
+const getRunnerSandbox: RunnerSandboxFactory = (env, sandboxId) =>
+	getProjectSandbox(env, sandboxId) as ReturnType<RunnerSandboxFactory>;
 
 function trimCompact(value: string, maxLength = 2000): string {
 	const compact = value.trim();
@@ -36,10 +34,6 @@ function trimCompact(value: string, maxLength = 2000): string {
 	}
 
 	return `${compact.slice(0, maxLength)}\n...[truncated]`;
-}
-
-function buildFifoWriteCommand(fifoPath: string, line: string): string {
-	return `printf %s ${quoteShellArg(`${line}\n`)} > ${quoteShellArg(fifoPath)}`;
 }
 
 type BrokerSocketAttachment = {
@@ -60,7 +54,6 @@ type BrokerState = {
 };
 
 type SandboxWithSessions = {
-	createSession(options?: SessionOptions): Promise<ExecutionSession>;
 	getSession(sessionId: string): Promise<ExecutionSession>;
 };
 
@@ -156,36 +149,6 @@ function parseAbortRequest(value: unknown): AbortRequest {
 	return { runId: requireString(input, "runId") };
 }
 
-function makeProcessId(sessionId: string): string {
-	return `ditto-runner-${sessionId.replaceAll(/[^a-zA-Z0-9_-]/g, "-")}`;
-}
-
-function makeBrokerDir(sessionId: string): string {
-	return `/tmp/ditto/runner/${sessionId.replaceAll(/[^a-zA-Z0-9_-]/g, "-")}`;
-}
-
-function isSessionAlreadyExistsError(error: unknown): boolean {
-	return (
-		error instanceof Error &&
-		/session ['"].+['"] already exists/i.test(error.message)
-	);
-}
-
-async function createOrGetSandboxSession(
-	sandbox: SandboxWithSessions,
-	options: SessionOptions & { id: string },
-): Promise<ExecutionSession> {
-	try {
-		return await sandbox.createSession(options);
-	} catch (error) {
-		if (!isSessionAlreadyExistsError(error)) {
-			throw error;
-		}
-
-		return await sandbox.getSession(options.id);
-	}
-}
-
 async function getSandboxSession(
 	sandbox: SandboxWithSessions,
 	sessionId: string,
@@ -193,37 +156,24 @@ async function getSandboxSession(
 	return await sandbox.getSession(sessionId);
 }
 
-function makeRunnerCommand(options: {
-	brokerDir: string;
-	fifoPath: string;
-	modelSpecifier: string;
-}): string {
-	return [
-		"set -euo pipefail",
-		`mkdir -p ${quoteShellArg(options.brokerDir)}`,
-		`rm -f ${quoteShellArg(options.fifoPath)}`,
-		`mkfifo ${quoteShellArg(options.fifoPath)}`,
-		[
-			`exec env OPENCODE_API_KEY="$OPENCODE_API_KEY"`,
-			`MODEL_SPECIFIER=${quoteShellArg(options.modelSpecifier)}`,
-			"tsx /opt/ditto/sandbox/runner/index.ts",
-			`< ${quoteShellArg(options.fifoPath)}`,
-			`2> ${quoteShellArg(`${options.brokerDir}/runner.err`)}`,
-		].join(" "),
-	].join("; ");
-}
-
 export class WorkspaceSessionBroker extends DurableObject<Env> {
 	private sockets = new Map<WebSocket, BrokerSocketAttachment>();
-	private commandQueue: Promise<void> = Promise.resolve();
-	private streamStartedForProcessId: string | null = null;
+	private runnerSupervisor: RunnerSupervisor;
 	private runnerEventBuffer = new RunnerEventBuffer();
+	private assistantDraft = new AssistantStreamDraft();
 	private runnerReady = false;
 	private readyPromise: Promise<void> = Promise.resolve();
 	private readyResolve: () => void = () => {};
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
+
+		this.runnerSupervisor = new RunnerSupervisor({
+			env,
+			getSandbox: getRunnerSandbox,
+			onLogEvent: (event) => this.handleProcessLogEvent(event),
+			onFailure: (error) => this.handleRunnerFailure(error),
+		});
 
 		this.ctx.setWebSocketAutoResponse(
 			new WebSocketRequestResponsePair("ping", "pong"),
@@ -297,6 +247,7 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 	}
 
 	private async start(input: StartRequest): Promise<void> {
+		this.assistantDraft.clear();
 		const state: BrokerState = {
 			...(await this.getState()),
 			sessionId: input.sessionId,
@@ -339,6 +290,7 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			canceledRunIds: [...(state.canceledRunIds ?? []), input.runId],
 		});
 
+		await this.flushAssistantDraft(input.runId);
 		await this.sendRunnerCommand({ type: "abort", id: input.runId }).catch(
 			() => undefined,
 		);
@@ -348,12 +300,15 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 	private async ensureRunnerProcess(input: StartRequest): Promise<void> {
 		const state = await this.getState();
 		if (state.runnerProcessId && state.fifoPath) {
-			const alive = await this.isRunnerAlive(
+			const alive = await this.runnerSupervisor.isAlive(
 				state.runnerProcessId,
 				state.sandboxId,
 			);
-			if (alive) {
-				await this.startLogStream(state.runnerProcessId);
+			if (alive && state.sandboxId) {
+				await this.runnerSupervisor.startLogStream(
+					state.sandboxId,
+					state.runnerProcessId,
+				);
 				return;
 			}
 
@@ -362,47 +317,17 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 
 		this.resetReadyWaiter();
 
-		const sandbox = getProjectSandbox(this.env, input.sandboxId);
-		const session = await createOrGetSandboxSession(
-			sandbox as SandboxWithSessions,
-			{
-				id: input.sessionId,
-				name: `Ditto ${input.sessionId}`,
-				cwd: WORKSPACE_PATH,
-				env: { OPENCODE_API_KEY: this.env.OPENCODE_API_KEY },
-			},
-		);
-		const brokerDir = makeBrokerDir(input.sessionId);
-		const fifoPath = `${brokerDir}/runner.in`;
-		const processId = makeProcessId(input.sessionId);
-		const command = `bash -lc ${quoteShellArg(
-			makeRunnerCommand({
-				brokerDir,
-				fifoPath,
-				modelSpecifier: input.modelSpecifier,
-			}),
-		)}`;
-
-		await session.startProcess(command, {
-			processId,
-			autoCleanup: false,
-			cwd: WORKSPACE_PATH,
-			env: { OPENCODE_API_KEY: this.env.OPENCODE_API_KEY },
-			onExit: (code) => {
-				if (code && code !== 0) {
-					this.handleRunnerFailure(
-						new Error(`Runner exited with code ${code}.`),
-					).catch(() => undefined);
-				}
-			},
+		const runnerProcess = await this.runnerSupervisor.start({
+			sessionId: input.sessionId,
+			sandboxId: input.sandboxId,
+			modelSpecifier: input.modelSpecifier,
 		});
 
 		await this.setState({
 			...(await this.getState()),
-			runnerProcessId: processId,
-			fifoPath,
+			runnerProcessId: runnerProcess.processId,
+			fifoPath: runnerProcess.fifoPath,
 		});
-		await this.startLogStream(processId);
 	}
 
 	private resetReadyWaiter(): void {
@@ -412,30 +337,15 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 		});
 	}
 
-	private async isRunnerAlive(
-		processId: string,
-		sandboxId?: string,
-	): Promise<boolean> {
-		if (!sandboxId) return false;
-		try {
-			const sandbox = getProjectSandbox(this.env, sandboxId);
-			const processes = await sandbox.listProcesses();
-			return processes.some(
-				(process) => process.id === processId && process.status === "running",
-			);
-		} catch {
-			return false;
-		}
-	}
-
 	private async cleanupStaleRunner(state: BrokerState): Promise<void> {
 		if (state.activeRunId && state.projectId) {
 			await this.failRun("Runner process exited unexpectedly.");
 		}
 
 		const latestState = await this.getState();
-		this.streamStartedForProcessId = null;
+		this.runnerSupervisor.forgetLogStream();
 		this.resetReadyWaiter();
+		this.assistantDraft.clear();
 		await this.setState({
 			...latestState,
 			runnerProcessId: undefined,
@@ -458,35 +368,28 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			clearTimeout(timeoutId);
 		}
 		if (result === "timeout") {
-			throw new Error("Runner did not become ready in time.");
+			throw new Error(await this.getRunnerReadyTimeoutMessage());
 		}
 	}
 
-	private async startLogStream(processId: string): Promise<void> {
-		if (this.streamStartedForProcessId === processId) {
-			return;
+	private async getRunnerReadyTimeoutMessage(): Promise<string> {
+		const fallback = "Runner did not become ready in time.";
+		const state = await this.getState();
+		if (!state.sessionId || !state.sandboxId) {
+			return fallback;
 		}
 
-		this.streamStartedForProcessId = processId;
-		const sandbox = getProjectSandbox(
-			this.env,
-			(await this.getState()).sandboxId ?? "",
-		);
-		const stream = await sandbox.streamProcessLogs(processId);
-
-		void (async () => {
-			try {
-				for await (const event of parseSSEStream<LogEvent>(stream)) {
-					await this.handleProcessLogEvent(event);
-				}
-			} catch (error) {
-				await this.handleRunnerFailure(
-					error instanceof Error
-						? error
-						: new Error("Runner log stream failed."),
-				);
-			}
-		})();
+		try {
+			const diagnostics = await this.runnerSupervisor.readStderrTail({
+				sessionId: state.sessionId,
+				sandboxId: state.sandboxId,
+			});
+			return diagnostics
+				? `${fallback}\n\nRunner stderr:\n${diagnostics}`
+				: fallback;
+		} catch {
+			return fallback;
+		}
 	}
 
 	private async handleProcessLogEvent(event: LogEvent): Promise<void> {
@@ -519,28 +422,12 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			throw new Error("Runner process is not ready.");
 		}
 
-		const writePromise = this.commandQueue.then(async () => {
-			const sandbox = getProjectSandbox(this.env, state.sandboxId ?? "");
-			const session = await getSandboxSession(
-				sandbox as SandboxWithSessions,
-				state.sessionId ?? "",
-			);
-			const result = await session.exec(
-				buildFifoWriteCommand(
-					state.fifoPath ?? "",
-					serializeRunnerCommand(command),
-				),
-				{ cwd: WORKSPACE_PATH, timeout: COMMAND_TIMEOUT_MS },
-			);
-
-			if (!result.success) {
-				throw new Error(
-					trimCompact(result.stderr || result.stdout || "Runner write failed."),
-				);
-			}
+		await this.runnerSupervisor.sendCommand({
+			sessionId: state.sessionId,
+			sandboxId: state.sandboxId,
+			fifoPath: state.fifoPath,
+			command,
 		});
-		this.commandQueue = writePromise.catch(() => undefined);
-		await writePromise;
 	}
 
 	private async handleRunnerOutput(chunk: string): Promise<void> {
@@ -568,6 +455,7 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 
 		switch (event.type) {
 			case "assistant_delta":
+				this.assistantDraft.append(runId, event.text);
 				this.broadcast({ type: "assistant_delta", runId, text: event.text });
 				return;
 			case "tool_started":
@@ -716,6 +604,31 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			return;
 		}
 
+		const assistantText = this.assistantDraft.consume(state.activeRunId);
+		const terminalEvents = [
+			...(assistantText
+				? [
+						{
+							runId: state.activeRunId,
+							projectId: state.projectId,
+							sessionId: state.sessionId,
+							type: "message" as const,
+							payload: createAgentRunEventPayload({
+								role: "assistant",
+								text: assistantText,
+							}),
+						},
+					]
+				: []),
+			{
+				runId: state.activeRunId,
+				projectId: state.projectId,
+				sessionId: state.sessionId,
+				type: "done" as const,
+				payload: createAgentRunEventPayload({ status }),
+			},
+		];
+
 		const db = createDb(this.env);
 		await db.batch([
 			db
@@ -739,19 +652,25 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 						eq(projects.activeAgentRunId, state.activeRunId),
 					),
 				),
-			db.insert(agentRunEvents).values({
-				runId: state.activeRunId,
-				projectId: state.projectId,
-				sessionId: state.sessionId,
-				type: "done",
-				payload: createAgentRunEventPayload({ status }),
-			}),
+			db.insert(agentRunEvents).values(terminalEvents),
 		]);
 		this.broadcast({ type: "done", runId: state.activeRunId, status });
 		await this.setState({
 			...state,
 			activeRunId: undefined,
 			pendingInputRequestId: undefined,
+		});
+	}
+
+	private async flushAssistantDraft(runId: string): Promise<void> {
+		const text = this.assistantDraft.consume(runId);
+		if (!text) {
+			return;
+		}
+
+		await this.insertEvent("message", {
+			role: "assistant",
+			text,
 		});
 	}
 
@@ -869,10 +788,10 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			state: await this.getState(),
 		});
 		const state = await this.getState();
-		if (state.sessionId && state.runnerProcessId) {
-			void this.startLogStream(state.runnerProcessId).catch((error) =>
-				this.handleRunnerFailure(error),
-			);
+		if (state.sandboxId && state.runnerProcessId) {
+			void this.runnerSupervisor
+				.startLogStream(state.sandboxId, state.runnerProcessId)
+				.catch((error: Error) => this.handleRunnerFailure(error));
 		}
 
 		return new Response(null, {

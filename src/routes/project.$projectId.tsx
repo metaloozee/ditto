@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { Chat } from "#/components/ai-chat";
 import { useWorkspaceSessionSocket } from "#/hooks/use-workspace-session-socket";
@@ -20,6 +21,7 @@ export function ProjectWorkspacePage({
 	sessionId?: string;
 }) {
 	const trpc = useTRPC();
+	const queryClient = useQueryClient();
 	const projectQuery = useQuery(
 		trpc.projects.get.queryOptions({ id: projectId }, { retry: false }),
 	);
@@ -38,6 +40,26 @@ export function ProjectWorkspacePage({
 			},
 		),
 	);
+
+	useEffect(() => {
+		if (!socketState.lastDoneRunId || !isWorkspaceReady) {
+			return;
+		}
+
+		void Promise.all([
+			queryClient.invalidateQueries(
+				trpc.workspace.get.queryFilter({ projectId, sessionId }),
+			),
+			queryClient.invalidateQueries(trpc.projects.list.queryFilter()),
+		]);
+	}, [
+		isWorkspaceReady,
+		projectId,
+		queryClient,
+		sessionId,
+		socketState.lastDoneRunId,
+		trpc,
+	]);
 
 	if (projectQuery.isPending) {
 		return (

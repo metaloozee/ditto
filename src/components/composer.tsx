@@ -210,7 +210,7 @@ export function Composer({
 			toast.error(
 				mutationError instanceof Error
 					? mutationError.message
-					: "Failed to start agent run.",
+					: "Failed to stop agent run.",
 			);
 		}
 	}
@@ -244,7 +244,7 @@ export function Composer({
 						<PromptInputTextarea
 							onChange={(event) => setText(event.currentTarget.value)}
 							value={text}
-							placeholder="Your message here..."
+							placeholder="Ask Ditto to inspect, edit, or explain the workspace..."
 						/>
 					</PromptInputBody>
 					<PromptInputFooter>

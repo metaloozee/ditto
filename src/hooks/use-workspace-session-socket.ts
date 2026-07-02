@@ -10,12 +10,16 @@ type LiveNeedsInput = {
 export type WorkspaceSessionSocketState = {
 	connected: boolean;
 	assistantText: string;
+	liveRunId: string | null;
+	lastDoneRunId: string | null;
 	needsInput: LiveNeedsInput | null;
 };
 
 const initialState: WorkspaceSessionSocketState = {
 	connected: false,
 	assistantText: "",
+	liveRunId: null,
+	lastDoneRunId: null,
 	needsInput: null,
 };
 
@@ -67,7 +71,12 @@ export function useWorkspaceSessionSocket(
 					case "assistant_delta":
 						return {
 							...current,
-							assistantText: `${current.assistantText}${frame.text}`,
+							assistantText:
+								current.liveRunId === frame.runId
+									? `${current.assistantText}${frame.text}`
+									: frame.text,
+							liveRunId: frame.runId,
+							lastDoneRunId: null,
 						};
 					case "needs_input":
 						return {
@@ -79,11 +88,32 @@ export function useWorkspaceSessionSocket(
 							},
 						};
 					case "done":
-						return { ...current, assistantText: "", needsInput: null };
+						return {
+							...current,
+							liveRunId: frame.runId,
+							lastDoneRunId: frame.runId,
+							needsInput: null,
+						};
 					case "snapshot":
-						return frame.state.activeRunId
+						if (frame.state.activeRunId) {
+							return frame.state.activeRunId === current.liveRunId
+								? current
+								: {
+										...current,
+										assistantText: "",
+										liveRunId: frame.state.activeRunId,
+										lastDoneRunId: null,
+									};
+						}
+
+						return current.lastDoneRunId
 							? current
-							: { ...current, assistantText: "", needsInput: null };
+							: {
+									...current,
+									assistantText: "",
+									liveRunId: null,
+									needsInput: null,
+								};
 					default:
 						return current;
 				}

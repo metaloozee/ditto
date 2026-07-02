@@ -14,7 +14,6 @@
  * src/lib/runner-protocol.ts.
  */
 
-import { getModel, Type } from "@earendil-works/pi-ai";
 import {
 	AuthStorage,
 	createAgentSession,
@@ -24,6 +23,7 @@ import {
 	type ResourceLoader,
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
 import {
@@ -200,7 +200,7 @@ async function main(): Promise<void> {
 		authStorage.setRuntimeApiKey(provider, OPENCODE_API_KEY);
 	}
 	const modelRegistry = ModelRegistry.create(authStorage);
-	const model = modelRegistry.find(provider, modelId) ?? getModel(provider, modelId);
+	const model = modelRegistry.find(provider, modelId);
 	if (!model) {
 		writeEvent({
 			type: "error",

@@ -638,14 +638,6 @@ export const workspaceRouter = createTRPCRouter({
 				})
 				.where(eq(projects.activeAgentRunId, input.runId));
 
-			await db.insert(agentRunEvents).values({
-				runId: input.runId,
-				projectId: run.projectId,
-				sessionId: run.sessionId,
-				type: "done",
-				payload: createAgentRunEventPayload({ status: "canceled" }),
-			});
-
 			try {
 				await postWorkspaceSessionBroker({
 					env: ctx.env,
@@ -656,6 +648,14 @@ export const workspaceRouter = createTRPCRouter({
 			} catch {
 				// Durable cancellation is the user-facing boundary; abort is best effort.
 			}
+
+			await db.insert(agentRunEvents).values({
+				runId: input.runId,
+				projectId: run.projectId,
+				sessionId: run.sessionId,
+				type: "done",
+				payload: createAgentRunEventPayload({ status: "canceled" }),
+			});
 
 			return updatedRun;
 		}),
