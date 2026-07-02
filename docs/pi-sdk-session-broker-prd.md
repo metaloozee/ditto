@@ -201,7 +201,7 @@ The repo already ships pure unit tests for protocol/policy helpers (env-var pars
 
 ## Further Notes
 
-- **Runner restart continuity is an open question.** When a runner process restarts (container sleep, crash, redeploy), the new runner could either replay D1 history into a fresh `AgentSession` to restore model context (richer, costs tokens) or start a new conversation and rely on D1 as the visible history (simpler, loses in-memory model state). This should be settled during implementation, not in the PRD.
+- **Runner restart continuity is RESOLVED in Plan 020:** on runner restart, start a fresh `AgentSession` and do not replay D1 history; D1 remains the visible canonical history, while in-memory model context is not restored.
 - **Extensibility is a follow-up, not v1.** Once the contract is stable, the runner can gain model cycling, thinking-level control, curated skills/context files, and compaction triggers without Durable Object or UI changes. Read-only concurrent runs (relaxing the one-active-run-per-project lock) can be revisited once the runner is proven.
 - **Implementation should preserve Plan 017's discipline:** explicit drift checks, STOP conditions, in-scope/out-of-scope file lists, and command + manual-smoke verification. The standard repo verification commands (`tsc --noEmit`, `pnpm lint`, `pnpm test`, `git diff --check`) remain the baseline.
 - **Recommended sequencing:** (1) runner spike proving clean NDJSON in/out and resolving the transport decision; (2) Durable Object rewire preserving the browser frame contract and D1 persistence; (3) hardening — redaction, timeouts, runner reuse, stale-lock cleanup.

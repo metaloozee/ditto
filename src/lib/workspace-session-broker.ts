@@ -94,6 +94,7 @@ export type WorkspaceSessionBrokerFrame =
 
 const BROKER_STATE_KEY = "broker-state";
 const COMMAND_TIMEOUT_MS = 30_000;
+const RUNNER_READY_TIMEOUT_MS = 30_000;
 
 function isWebSocketUpgrade(request: Request): boolean {
 	return request.headers.get("Upgrade")?.toLowerCase() === "websocket";
@@ -347,14 +348,19 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 	private async ensureRunnerProcess(input: StartRequest): Promise<void> {
 		const state = await this.getState();
 		if (state.runnerProcessId && state.fifoPath) {
-			await this.startLogStream(state.runnerProcessId);
-			return;
+			const alive = await this.isRunnerAlive(
+				state.runnerProcessId,
+				state.sandboxId,
+			);
+			if (alive) {
+				await this.startLogStream(state.runnerProcessId);
+				return;
+			}
+
+			await this.cleanupStaleRunner(state);
 		}
 
-		this.runnerReady = false;
-		this.readyPromise = new Promise<void>((resolve) => {
-			this.readyResolve = resolve;
-		});
+		this.resetReadyWaiter();
 
 		const sandbox = getProjectSandbox(this.env, input.sandboxId);
 		const session = await createOrGetSandboxSession(
@@ -399,12 +405,64 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 		await this.startLogStream(processId);
 	}
 
+	private resetReadyWaiter(): void {
+		this.runnerReady = false;
+		this.readyPromise = new Promise<void>((resolve) => {
+			this.readyResolve = resolve;
+		});
+	}
+
+	private async isRunnerAlive(
+		processId: string,
+		sandboxId?: string,
+	): Promise<boolean> {
+		if (!sandboxId) return false;
+		try {
+			const sandbox = getProjectSandbox(this.env, sandboxId);
+			const processes = await sandbox.listProcesses();
+			return processes.some(
+				(process) => process.id === processId && process.status === "running",
+			);
+		} catch {
+			return false;
+		}
+	}
+
+	private async cleanupStaleRunner(state: BrokerState): Promise<void> {
+		if (state.activeRunId && state.projectId) {
+			await this.failRun("Runner process exited unexpectedly.");
+		}
+
+		const latestState = await this.getState();
+		this.streamStartedForProcessId = null;
+		this.resetReadyWaiter();
+		await this.setState({
+			...latestState,
+			runnerProcessId: undefined,
+			fifoPath: undefined,
+			pendingInputRequestId: undefined,
+		});
+	}
+
 	private async waitForRunnerReady(): Promise<void> {
-		// TODO(plan 020): add a bounded timeout so a dead runner that never
-		// emits `ready` cannot hang `start` indefinitely. For now the
-		// `onExit`/stdin-close failure path catches a dead runner.
 		if (this.runnerReady) return;
-		await this.readyPromise;
+		let timeoutId: ReturnType<typeof setTimeout> | undefined;
+		const timeout = new Promise<"timeout">((resolve) => {
+			timeoutId = setTimeout(
+				() => resolve("timeout"),
+				RUNNER_READY_TIMEOUT_MS,
+			);
+		});
+		const result = await Promise.race([
+			this.readyPromise.then(() => "ready" as const),
+			timeout,
+		]);
+		if (timeoutId) {
+			clearTimeout(timeoutId);
+		}
+		if (result === "timeout") {
+			throw new Error("Runner did not become ready in time.");
+		}
 	}
 
 	private async startLogStream(processId: string): Promise<void> {

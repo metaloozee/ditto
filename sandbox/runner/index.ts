@@ -29,6 +29,7 @@ import { createInterface } from "node:readline";
 import {
 	mapSdkEventToDitto,
 	planRunnerCommand,
+	redactSecrets,
 	serializeRunnerEvent,
 	type RunnerCommand,
 	type RunnerEvent,
@@ -61,6 +62,28 @@ function trimCompact(value: string, maxLength = 2000): string {
 	return `${compact.slice(0, maxLength)}\n...[truncated]`;
 }
 
+function runnerSecrets(): string[] {
+	const secrets: string[] = [];
+	for (const [key, value] of Object.entries(process.env)) {
+		if (
+			typeof value === "string" &&
+			value.length >= 8 &&
+			/(API_KEY|TOKEN|SECRET|PRIVATE_KEY)$/i.test(key)
+		) {
+			secrets.push(value);
+		}
+	}
+	return secrets;
+}
+
+function redactRunnerText(text: string): string {
+	return redactSecrets(text, runnerSecrets());
+}
+
+function redactRunnerMessage(message: string): string {
+	return trimCompact(redactRunnerText(message));
+}
+
 /** Split a "provider/model" specifier. Re-implemented locally so the runner
  * does not import from `src/` at runtime. */
 function getModelParts(specifier: string): {
@@ -82,7 +105,11 @@ function getModelParts(specifier: string): {
 /** Emit a redacted `error` + `done{failed}` for the active run and exit. */
 function failRun(message: string): void {
 	if (currentRunId && !runDone) {
-		writeEvent({ type: "error", runId: currentRunId, message: trimCompact(message) });
+		writeEvent({
+			type: "error",
+			runId: currentRunId,
+			message: redactRunnerMessage(message),
+		});
 		runDone = true;
 		writeEvent({ type: "done", runId: currentRunId, status: "failed" });
 	}
@@ -108,11 +135,20 @@ function isRunnerCommand(value: unknown): value is RunnerCommand {
 }
 
 async function main(): Promise<void> {
+	// Restart continuity: on process restart the runner starts a fresh
+	// AgentSession (SessionManager.inMemory). D1 is the canonical history; the
+	// in-memory model context is not replayed. A restarted run continues as a
+	// new conversation from the user's perspective. (PRD line 204, settled
+	// 2026-07-02 in plan 020.)
 	const MODEL_SPECIFIER = process.env.MODEL_SPECIFIER;
 	const OPENCODE_API_KEY = process.env.OPENCODE_API_KEY;
 
 	if (!MODEL_SPECIFIER) {
-		writeEvent({ type: "error", runId: "", message: "MODEL_SPECIFIER is not set." });
+		writeEvent({
+			type: "error",
+			runId: "",
+			message: redactRunnerMessage("MODEL_SPECIFIER is not set."),
+		});
 		writeEvent({ type: "done", runId: "", status: "failed" });
 		process.exit(1);
 	}
@@ -127,7 +163,7 @@ async function main(): Promise<void> {
 		writeEvent({
 			type: "error",
 			runId: "",
-			message: `Malformed MODEL_SPECIFIER: ${MODEL_SPECIFIER}`,
+			message: redactRunnerMessage(`Malformed MODEL_SPECIFIER: ${MODEL_SPECIFIER}`),
 		});
 		writeEvent({ type: "done", runId: "", status: "failed" });
 		process.exit(1);
@@ -169,7 +205,7 @@ async function main(): Promise<void> {
 		writeEvent({
 			type: "error",
 			runId: "",
-			message: `Unknown model: ${MODEL_SPECIFIER}`,
+			message: redactRunnerMessage(`Unknown model: ${MODEL_SPECIFIER}`),
 		});
 		writeEvent({ type: "done", runId: "", status: "failed" });
 		process.exit(1);
@@ -232,7 +268,13 @@ async function main(): Promise<void> {
 				}
 				runDone = true;
 			}
-			writeEvent(evt);
+			const eventToWrite =
+				evt.type === "tool_progress"
+					? { ...evt, text: redactRunnerText(evt.text) }
+					: evt.type === "error"
+						? { ...evt, message: redactRunnerMessage(evt.message) }
+						: evt;
+			writeEvent(eventToWrite);
 			if (evt.type === "done" && evt.status === "failed") {
 				process.exit(1);
 			}
@@ -309,7 +351,11 @@ async function main(): Promise<void> {
 
 main().catch((err) => {
 	const message = err instanceof Error ? err.message : String(err);
-	writeEvent({ type: "error", runId: currentRunId ?? "", message: trimCompact(message) });
+	writeEvent({
+		type: "error",
+		runId: currentRunId ?? "",
+		message: redactRunnerMessage(message),
+	});
 	if (currentRunId && !runDone) {
 		writeEvent({ type: "done", runId: currentRunId, status: "failed" });
 	}
