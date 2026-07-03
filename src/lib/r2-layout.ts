@@ -31,9 +31,14 @@ type SnapshotManifestInput = {
 	snapshotId: string;
 	projectId: string;
 	runId: string | null;
+	r2Key: string;
 	baseCommitSha: string | null;
 	digest: string;
 	createdAt: string;
+};
+
+type R2WriteResult = {
+	ok: boolean;
 };
 
 export type SnapshotPointerResult =
@@ -85,7 +90,7 @@ export function buildSnapshotManifest(
 		snapshotId: input.snapshotId,
 		projectId: input.projectId,
 		runId: input.runId,
-		r2Key: snapshotArchiveKey(input.projectId, input.snapshotId),
+		r2Key: input.r2Key,
 		baseCommitSha: input.baseCommitSha,
 		digest: input.digest,
 		createdAt: input.createdAt,
@@ -142,10 +147,10 @@ export function validateSnapshotManifest(
 }
 
 export function resolveSnapshotPointer(
-	r2WriteResult: boolean,
-	manifest: unknown,
+	r2WriteResult: R2WriteResult,
+	manifest: SnapshotManifest,
 ): SnapshotPointerResult {
-	if (!r2WriteResult || !validateSnapshotManifest(manifest)) {
+	if (!r2WriteResult.ok || !validateSnapshotManifest(manifest)) {
 		return { updateD1: false };
 	}
 

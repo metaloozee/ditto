@@ -50,6 +50,7 @@ describe("snapshot manifest", () => {
 			snapshotId,
 			projectId,
 			runId,
+			r2Key: snapshotArchiveKey(projectId, snapshotId),
 			baseCommitSha: "abc123",
 			digest: "sha256:digest-1",
 			createdAt: "2026-07-03T00:00:00.000Z",
@@ -77,6 +78,7 @@ describe("snapshot manifest", () => {
 					snapshotId,
 					projectId,
 					runId,
+					r2Key: snapshotArchiveKey(projectId, snapshotId),
 					baseCommitSha: null,
 					digest: "sha256:digest-1",
 					createdAt: "2026-07-03T00:00:00.000Z",
@@ -90,6 +92,7 @@ describe("snapshot manifest", () => {
 			snapshotId,
 			projectId,
 			runId,
+			r2Key: snapshotArchiveKey(projectId, snapshotId),
 			baseCommitSha: null,
 			digest: "sha256:digest-1",
 			createdAt: "2026-07-03T00:00:00.000Z",
@@ -105,6 +108,7 @@ describe("snapshot manifest", () => {
 			snapshotId,
 			projectId,
 			runId,
+			r2Key: snapshotArchiveKey(projectId, snapshotId),
 			baseCommitSha: null,
 			digest: "sha256:digest-1",
 			createdAt: "2026-07-03T00:00:00.000Z",
@@ -122,6 +126,7 @@ describe("snapshot manifest", () => {
 			snapshotId,
 			projectId,
 			runId,
+			r2Key: snapshotArchiveKey(projectId, snapshotId),
 			baseCommitSha: null,
 			digest: "sha256:digest-1",
 			createdAt: "2026-07-03T00:00:00.000Z",
@@ -140,6 +145,7 @@ describe("snapshot manifest", () => {
 			snapshotId,
 			projectId,
 			runId,
+			r2Key: snapshotArchiveKey(projectId, snapshotId),
 			baseCommitSha: null,
 			digest: "sha256:digest-1",
 			createdAt: "2026-07-03T00:00:00.000Z",
@@ -168,6 +174,7 @@ describe("snapshot manifest", () => {
 					snapshotId,
 					projectId,
 					runId: null,
+					r2Key: snapshotArchiveKey(projectId, snapshotId),
 					baseCommitSha: "abc123",
 					digest: "sha256:digest-1",
 					createdAt: "2026-07-03T00:00:00.000Z",
@@ -183,15 +190,16 @@ describe("snapshot d1 pointer policy", () => {
 			snapshotId,
 			projectId,
 			runId,
+			r2Key: snapshotArchiveKey(projectId, snapshotId),
 			baseCommitSha: null,
 			digest: "sha256:digest-1",
 			createdAt: "2026-07-03T00:00:00.000Z",
 		});
 
-		expect(resolveSnapshotPointer(false, manifest)).toEqual({
+		expect(resolveSnapshotPointer({ ok: false }, manifest)).toEqual({
 			updateD1: false,
 		});
-		expect(resolveSnapshotPointer(true, manifest)).toEqual({
+		expect(resolveSnapshotPointer({ ok: true }, manifest)).toEqual({
 			updateD1: true,
 			pointer: {
 				r2Key: "projects/project-1/snapshots/snap-1/workspace.bin",
@@ -205,13 +213,14 @@ describe("snapshot d1 pointer policy", () => {
 			snapshotId,
 			projectId,
 			runId,
+			r2Key: snapshotArchiveKey(projectId, snapshotId),
 			baseCommitSha: null,
 			digest: "sha256:digest-1",
 			createdAt: "2026-07-03T00:00:00.000Z",
 		});
 
 		expect(
-			resolveSnapshotPointer(true, { ...manifest, r2Key: "outside" }),
+			resolveSnapshotPointer({ ok: true }, { ...manifest, r2Key: "outside" }),
 		).toEqual({ updateD1: false });
 	});
 });
