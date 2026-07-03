@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-	PROJECT_CODER_AGENT_NAME,
 	buildFlueAgentPath,
 	buildFlueStreamPath,
 	createFlueDispatchAdapter,
 	createServiceBindingDispatchFetch,
 	createServiceBindingStreamFetch,
+	PROJECT_CODER_AGENT_NAME,
 } from "./flue-dispatch-adapter";
 
 describe("flue dispatch adapter", () => {
@@ -42,9 +42,12 @@ describe("flue dispatch adapter", () => {
 		let request: Request | null = null;
 		const dispatchFetch = vi.fn(async (nextRequest: Request) => {
 			request = nextRequest;
-			return new Response(JSON.stringify({ streamUrl: "/stream", offset: "10" }), {
-				status: 202,
-			});
+			return new Response(
+				JSON.stringify({ streamUrl: "/stream", offset: "10" }),
+				{
+					status: 202,
+				},
+			);
 		});
 		const adapter = createFlueDispatchAdapter({
 			dispatchFetch,
@@ -63,8 +66,12 @@ describe("flue dispatch adapter", () => {
 		expect(capturedRequest.url).toBe(
 			"https://flue.internal/agents/project-coder/project-1",
 		);
-		expect(capturedRequest.headers.get("Content-Type")).toBe("application/json");
-		expect(await capturedRequest.json()).toEqual({ message: "Inspect the repo" });
+		expect(capturedRequest.headers.get("Content-Type")).toBe(
+			"application/json",
+		);
+		expect(await capturedRequest.json()).toEqual({
+			message: "Inspect the repo",
+		});
 		expect(receipt).toEqual({
 			agentName: PROJECT_CODER_AGENT_NAME,
 			agentInstanceId: "project-1",
@@ -125,13 +132,16 @@ describe("flue dispatch adapter", () => {
 		let request: Request | null = null;
 		const streamFetch = vi.fn(async (nextRequest: Request) => {
 			request = nextRequest;
-			return new Response(JSON.stringify([{ type: "text_delta", text: "Hi" }]), {
-				status: 200,
-				headers: {
-					"Stream-Next-Offset": "11",
-					"Stream-Cursor": "cursor-1",
+			return new Response(
+				JSON.stringify([{ type: "text_delta", text: "Hi" }]),
+				{
+					status: 200,
+					headers: {
+						"Stream-Next-Offset": "11",
+						"Stream-Cursor": "cursor-1",
+					},
 				},
-			});
+			);
 		});
 		const adapter = createFlueDispatchAdapter({
 			dispatchFetch: vi.fn(),
@@ -212,10 +222,14 @@ describe("flue dispatch adapter", () => {
 		const binding = { fetch: vi.fn(async () => response) };
 
 		await expect(
-			createServiceBindingDispatchFetch(binding)(new Request("https://example.com")),
+			createServiceBindingDispatchFetch(binding)(
+				new Request("https://example.com"),
+			),
 		).resolves.toBe(response);
 		await expect(
-			createServiceBindingStreamFetch(binding)(new Request("https://example.com")),
+			createServiceBindingStreamFetch(binding)(
+				new Request("https://example.com"),
+			),
 		).resolves.toBe(response);
 		expect(binding.fetch).toHaveBeenCalledTimes(2);
 	});

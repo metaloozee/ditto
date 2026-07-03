@@ -127,7 +127,9 @@ export function createFlueDispatchAdapter(options: {
 			}
 
 			const events =
-				response.status === 204 ? [] : await parseJsonArray(response, "stream poll");
+				response.status === 204
+					? []
+					: await parseJsonArray(response, "stream poll");
 
 			return {
 				events,
