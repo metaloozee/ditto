@@ -1,6 +1,6 @@
 import {
-	createAgentRunEventPayload,
 	type AgentRunEventType,
+	createAgentRunEventPayload,
 } from "./workspace-policy";
 
 export type FlueEventInput = {
@@ -104,7 +104,8 @@ export function mapFlueEventToDittoEvents(
 				toolName: compactFlueText(event.toolName) ?? "tool",
 				toolCallId: compactFlueText(event.toolCallId),
 				status,
-				durationMs: typeof event.durationMs === "number" ? event.durationMs : null,
+				durationMs:
+					typeof event.durationMs === "number" ? event.durationMs : null,
 			};
 			const result = compactFlueText(event.result);
 
@@ -154,7 +155,9 @@ export function mapFlueEventToDittoEvents(
 			}
 
 			return {
-				events: [projectEvent("error", { message: getFlueErrorMessage(event) })],
+				events: [
+					projectEvent("error", { message: getFlueErrorMessage(event) }),
+				],
 				frames: [],
 				assistantDelta: null,
 				terminalStatus: event.operationKind === "prompt" ? "failed" : null,

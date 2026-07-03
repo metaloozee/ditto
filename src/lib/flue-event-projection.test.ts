@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-	mapFlueEventToDittoEvents,
 	type FlueProjectedEvent,
+	mapFlueEventToDittoEvents,
 } from "./flue-event-projection";
 
 function parsePayload(event: FlueProjectedEvent): Record<string, unknown> {
