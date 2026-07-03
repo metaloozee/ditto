@@ -97,7 +97,9 @@ function isNonEmpty(value: unknown): value is string {
 	return typeof value === "string" && value.trim().length > 0;
 }
 
-export function validateSnapshotManifest(value: unknown): value is SnapshotManifest {
+export function validateSnapshotManifest(
+	value: unknown,
+): value is SnapshotManifest {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		return false;
 	}

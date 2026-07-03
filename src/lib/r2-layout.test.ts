@@ -3,9 +3,9 @@ import {
 	artifactKey,
 	buildSnapshotManifest,
 	resolveSnapshotPointer,
+	SNAPSHOT_SECRET_EXCLUDES,
 	snapshotArchiveKey,
 	snapshotManifestKey,
-	SNAPSHOT_SECRET_EXCLUDES,
 	validateSnapshotManifest,
 } from "./r2-layout";
 
@@ -37,9 +37,7 @@ describe("r2 key layout", () => {
 		expect(() => snapshotManifestKey(projectId, "snap/1")).toThrow(
 			"snapshotId",
 		);
-		expect(() => artifactKey(projectId, " ", "log", "log-1")).toThrow(
-			"runId",
-		);
+		expect(() => artifactKey(projectId, " ", "log", "log-1")).toThrow("runId");
 		expect(() => artifactKey(projectId, runId, "log", "log/1")).toThrow(
 			"artifactId",
 		);
@@ -97,9 +95,9 @@ describe("snapshot manifest", () => {
 			createdAt: "2026-07-03T00:00:00.000Z",
 		});
 
-		expect(
-			validateSnapshotManifest({ ...manifest, schemaVersion: 2 }),
-		).toBe(false);
+		expect(validateSnapshotManifest({ ...manifest, schemaVersion: 2 })).toBe(
+			false,
+		);
 	});
 
 	it("rejects missing required fields", () => {
@@ -113,7 +111,9 @@ describe("snapshot manifest", () => {
 		});
 
 		expect(validateSnapshotManifest({ ...manifest, digest: "" })).toBe(false);
-		expect(validateSnapshotManifest({ ...manifest, createdAt: " " })).toBe(false);
+		expect(validateSnapshotManifest({ ...manifest, createdAt: " " })).toBe(
+			false,
+		);
 		expect(validateSnapshotManifest({ ...manifest, runId: "" })).toBe(false);
 	});
 
@@ -154,7 +154,9 @@ describe("snapshot manifest", () => {
 		expect(
 			validateSnapshotManifest({
 				...manifest,
-				excludedPaths: manifest.excludedPaths.filter((path) => path !== ".env.*"),
+				excludedPaths: manifest.excludedPaths.filter(
+					(path) => path !== ".env.*",
+				),
 			}),
 		).toBe(false);
 	});
