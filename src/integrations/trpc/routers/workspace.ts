@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { createDb } from "#/db";
@@ -22,6 +22,8 @@ import {
 import { createTRPCRouter, protectedProcedure } from "../init";
 
 type BrokerControlPath = "/start" | "/reply" | "/abort";
+type ProjectCoordinatorControlPath = "/admit" | "/terminal";
+type FlueRunBridgeControlPath = "/start" | "/abort";
 
 function compactBrokerError(error: unknown): string {
 	const message =
@@ -69,6 +71,85 @@ async function postWorkspaceSessionBroker(options: {
 		throw new TRPCError({
 			code: response.status === 409 ? "CONFLICT" : "PRECONDITION_FAILED",
 			message: await getBrokerErrorMessage(response),
+		});
+	}
+}
+
+async function postProjectCoordinator(options: {
+	env: Env;
+	projectId: string;
+	path: ProjectCoordinatorControlPath;
+	body: Record<string, unknown>;
+}): Promise<Response> {
+	const coordinatorNamespace = options.env
+		.ProjectCoordinator as DurableObjectNamespace;
+	const coordinatorId = coordinatorNamespace.idFromName(options.projectId);
+	const coordinator = coordinatorNamespace.get(coordinatorId) as {
+		fetch(request: Request): Promise<Response>;
+	};
+
+	return await coordinator.fetch(
+		new Request(`https://project-coordinator${options.path}`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(options.body),
+		}),
+	);
+}
+
+async function getProjectCoordinatorErrorMessage(
+	response: Response,
+): Promise<string> {
+	try {
+		const body = (await response.json()) as { error?: unknown };
+		if (typeof body.error === "string" && body.error.trim()) {
+			return body.error;
+		}
+	} catch {
+		// Fall back to the status-based message below when the coordinator body is not JSON.
+	}
+
+	return "Project coordinator rejected the request.";
+}
+
+async function getFlueRunBridgeErrorMessage(
+	response: Response,
+): Promise<string> {
+	try {
+		const body = (await response.json()) as { error?: unknown };
+		if (typeof body.error === "string" && body.error.trim()) {
+			return body.error;
+		}
+	} catch {
+		// Fall back to the status-based message below when the bridge body is not JSON.
+	}
+
+	return "Flue run bridge rejected the request.";
+}
+
+async function postFlueRunBridge(options: {
+	env: Env;
+	sessionId: string;
+	path: FlueRunBridgeControlPath;
+	body: Record<string, unknown>;
+}): Promise<void> {
+	const bridgeNamespace = options.env.FlueRunBridge as DurableObjectNamespace;
+	const bridgeId = bridgeNamespace.idFromName(options.sessionId);
+	const bridge = bridgeNamespace.get(bridgeId) as {
+		fetch(request: Request): Promise<Response>;
+	};
+	const response = await bridge.fetch(
+		new Request(`https://flue-run-bridge${options.path}`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(options.body),
+		}),
+	);
+
+	if (!response.ok) {
+		throw new TRPCError({
+			code: response.status === 409 ? "CONFLICT" : "PRECONDITION_FAILED",
+			message: await getFlueRunBridgeErrorMessage(response),
 		});
 	}
 }
@@ -166,7 +247,7 @@ export const workspaceRouter = createTRPCRouter({
 						})
 				: null;
 
-			const activeRun = ensuredProject.activeAgentRunId
+			const activeMutatingRun = ensuredProject.activeAgentRunId
 				? await db
 						.select()
 						.from(agentRuns)
@@ -183,6 +264,26 @@ export const workspaceRouter = createTRPCRouter({
 								: null,
 						)
 				: null;
+			const activeReadOnlyFlueRun =
+				activeMutatingRun || !selectedSession
+					? null
+					: await db
+							.select()
+							.from(agentRuns)
+							.where(
+								and(
+									eq(agentRuns.sessionId, selectedSession.id),
+									eq(agentRuns.userId, ctx.user.id),
+									eq(agentRuns.isMutating, false),
+									isNotNull(agentRuns.flueAgentName),
+								),
+							)
+							.orderBy(desc(agentRuns.createdAt))
+							.limit(1)
+							.then(([run]) =>
+								run && isActiveAgentRunStatus(run.status) ? run : null,
+							);
+			const activeRun = activeMutatingRun ?? activeReadOnlyFlueRun;
 
 			const events = selectedSession
 				? await db
@@ -475,6 +576,46 @@ export const workspaceRouter = createTRPCRouter({
 					});
 				}
 
+				async function markCoordinatorAdmissionRejected(
+					response: Response,
+				): Promise<never> {
+					const message = await getProjectCoordinatorErrorMessage(response);
+
+					await db.batch([
+						db
+							.update(agentRuns)
+							.set({
+								status: "failed",
+								finishedAt: sql`(unixepoch())`,
+								updatedAt: sql`(unixepoch())`,
+							})
+							.where(eq(agentRuns.id, runId)),
+						db.insert(agentRunEvents).values([
+							{
+								runId,
+								projectId: input.projectId,
+								sessionId,
+								type: "lock_rejected" as const,
+								payload: createAgentRunEventPayload({
+									reason: message,
+								}),
+							},
+							{
+								runId,
+								projectId: input.projectId,
+								sessionId,
+								type: "done" as const,
+								payload: createAgentRunEventPayload({ status: "failed" }),
+							},
+						]),
+					]);
+
+					throw new TRPCError({
+						code: response.status === 409 ? "CONFLICT" : "PRECONDITION_FAILED",
+						message,
+					});
+				}
+
 				async function markAcceptedRunFailed(error: unknown) {
 					await db.batch([
 						db
@@ -520,6 +661,71 @@ export const workspaceRouter = createTRPCRouter({
 					]);
 				}
 
+				async function notifyReadOnlyTerminalFailed() {
+					await postProjectCoordinator({
+						env: ctx.env,
+						projectId: input.projectId,
+						path: "/terminal",
+						body: { projectId: input.projectId, runId, status: "failed" },
+					});
+				}
+
+				async function startReadOnlyFlueRun() {
+					if (!project.sandboxId) {
+						throw new TRPCError({
+							code: "PRECONDITION_FAILED",
+							message: "Project sandbox is not ready yet.",
+						});
+					}
+
+					const admissionResponse = await postProjectCoordinator({
+						env: ctx.env,
+						projectId: input.projectId,
+						path: "/admit",
+						body: {
+							projectId: input.projectId,
+							runId,
+							sessionId,
+							userId: ctx.user.id,
+							mode: "read_only",
+						},
+					});
+
+					if (!admissionResponse.ok) {
+						await markCoordinatorAdmissionRejected(admissionResponse);
+					}
+
+					try {
+						await postFlueRunBridge({
+							env: ctx.env,
+							sessionId,
+							path: "/start",
+							body: {
+								sessionId,
+								userId: ctx.user.id,
+								projectId: input.projectId,
+								sandboxId: project.sandboxId,
+								runId,
+								message: input.message,
+								modelSpecifier: input.modelSpecifier,
+								isMutating: false,
+							},
+						});
+					} catch (error) {
+						await markAcceptedRunFailed(error);
+						await notifyReadOnlyTerminalFailed();
+					}
+				}
+
+				async function startCreatedRun() {
+					if (input.isMutating) {
+						await startBroker();
+						return;
+					}
+
+					await startReadOnlyFlueRun();
+				}
+
 				if (createdSession && sessionValues) {
 					try {
 						const [[session], [run]] = await db.batch([
@@ -539,8 +745,11 @@ export const workspaceRouter = createTRPCRouter({
 						}
 
 						try {
-							await startBroker();
+							await startCreatedRun();
 						} catch (error) {
+							if (!input.isMutating) {
+								throw error;
+							}
 							await markAcceptedRunFailed(error);
 							return { run, session, createdSession };
 						}
@@ -570,8 +779,11 @@ export const workspaceRouter = createTRPCRouter({
 					}
 
 					try {
-						await startBroker();
+						await startCreatedRun();
 					} catch (error) {
+						if (!input.isMutating) {
+							throw error;
+						}
 						await markAcceptedRunFailed(error);
 						return { run, session, createdSession };
 					}
@@ -639,12 +851,21 @@ export const workspaceRouter = createTRPCRouter({
 				.where(eq(projects.activeAgentRunId, input.runId));
 
 			try {
-				await postWorkspaceSessionBroker({
-					env: ctx.env,
-					sessionId: run.sessionId,
-					path: "/abort",
-					body: { runId: input.runId },
-				});
+				if (run.flueAgentName || !run.isMutating) {
+					await postFlueRunBridge({
+						env: ctx.env,
+						sessionId: run.sessionId,
+						path: "/abort",
+						body: { runId: input.runId },
+					});
+				} else {
+					await postWorkspaceSessionBroker({
+						env: ctx.env,
+						sessionId: run.sessionId,
+						path: "/abort",
+						body: { runId: input.runId },
+					});
+				}
 			} catch {
 				// Durable cancellation is the user-facing boundary; abort is best effort.
 			}

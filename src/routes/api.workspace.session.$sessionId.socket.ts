@@ -1,9 +1,10 @@
 import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { createDb } from "#/db";
-import { workspaceSessions } from "#/db/schema";
+import { agentRuns, workspaceSessions } from "#/db/schema";
 import { createAuth } from "#/lib/auth";
+import { isActiveAgentRunStatus } from "#/lib/workspace-policy";
 
 export const Route = createFileRoute(
 	"/api/workspace/session/$sessionId/socket",
@@ -34,6 +35,36 @@ export const Route = createFileRoute(
 
 				if (!session) {
 					return new Response("Forbidden", { status: 403 });
+				}
+
+				const [latestRun] = await db
+					.select({
+						flueAgentName: agentRuns.flueAgentName,
+						isMutating: agentRuns.isMutating,
+						status: agentRuns.status,
+					})
+					.from(agentRuns)
+					.where(
+						and(
+							eq(agentRuns.sessionId, sessionId),
+							eq(agentRuns.userId, authSession.user.id),
+						),
+					)
+					.orderBy(desc(agentRuns.createdAt))
+					.limit(1);
+
+				if (
+					latestRun &&
+					isActiveAgentRunStatus(latestRun.status) &&
+					(latestRun.flueAgentName || !latestRun.isMutating)
+				) {
+					const bridgeNamespace = env.FlueRunBridge as DurableObjectNamespace;
+					const bridgeId = bridgeNamespace.idFromName(sessionId);
+					const bridge = bridgeNamespace.get(bridgeId) as {
+						fetch(request: Request): Promise<Response>;
+					};
+
+					return await bridge.fetch(request);
 				}
 
 				const brokerNamespace =
