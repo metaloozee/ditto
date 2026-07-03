@@ -55,6 +55,14 @@ The selected topology is split Worker:
 - `flueWorker` receives the existing project `Sandbox` namespace plus Flue's generated Durable Object namespaces.
 - The project coordinator is a separate application-owned Durable Object namespace bound into `website` as `ProjectCoordinator`.
 
+## Phase 1 Build Path Stabilization
+
+- The `pnpm flue:build` script exists and is used by `dev`, `build`, and `deploy` before Alchemy or Vite reads the generated Flue Worker entrypoint.
+- `.flue-vite/` and `.flue-vite.wrangler.jsonc` are generated Flue build intermediates and are ignored.
+- `flueWorker` remains private with no `url: true`; the public `website` Worker reaches it through the `FLUE_WORKER` service binding.
+- Alchemy computes the generated Flue Worker entrypoint from the current checkout root basename, matching Flue's generated `dist/<checkout_basename_with_underscores>/index.js` path instead of committing a root `wrangler.jsonc`.
+- The Flue CLI warning about generated Wrangler migrations remains expected because Alchemy owns the deployable resource declaration.
+
 ## Session And Sandbox Mapping
 
 The safe mapping for the spike is:

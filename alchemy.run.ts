@@ -1,3 +1,4 @@
+import path from "node:path";
 import alchemy from "alchemy";
 import {
 	D1Database,
@@ -12,25 +13,36 @@ config({ path: [".env.local", ".env"] });
 
 const app = await alchemy("ditto");
 
+const FLUE_WORKER_OUTPUT_DIR = path
+	.basename(process.cwd())
+	.replaceAll("-", "_");
+const FLUE_WORKER_ENTRYPOINT = `./dist/${FLUE_WORKER_OUTPUT_DIR}/index.js`;
+
 const sandbox = DurableObjectNamespace("sandbox", {
 	className: "Sandbox",
 	sqlite: true,
 });
 
-const workspaceSessionBroker = DurableObjectNamespace("workspace-session-broker", {
-	className: "WorkspaceSessionBroker",
-	sqlite: true,
-});
+const workspaceSessionBroker = DurableObjectNamespace(
+	"workspace-session-broker",
+	{
+		className: "WorkspaceSessionBroker",
+		sqlite: true,
+	},
+);
 
 const projectCoordinator = DurableObjectNamespace("project-coordinator", {
 	className: "ProjectCoordinator",
 	sqlite: true,
 });
 
-const flueProjectCoderAgent = DurableObjectNamespace("flue-project-coder-agent", {
-	className: "FlueProjectCoderAgent",
-	sqlite: true,
-});
+const flueProjectCoderAgent = DurableObjectNamespace(
+	"flue-project-coder-agent",
+	{
+		className: "FlueProjectCoderAgent",
+		sqlite: true,
+	},
+);
 
 const flueRegistry = DurableObjectNamespace("flue-registry", {
 	className: "FlueRegistry",
@@ -49,7 +61,7 @@ const sandboxBackups = await R2Bucket("sandbox-backups", {
 });
 
 export const flueWorker = await Worker("flue-worker", {
-	entrypoint: "./dist/ditto_plan_025/index.js",
+	entrypoint: FLUE_WORKER_ENTRYPOINT,
 	compatibilityFlags: ["nodejs_compat"],
 	bindings: {
 		Sandbox: sandbox,
@@ -82,7 +94,9 @@ export const website = await TanStackStart("website", {
 		OPENCODE_API_KEY: alchemy.secret(process.env.OPENCODE_API_KEY),
 		ANTHROPIC_API_KEY: alchemy.secret(process.env.ANTHROPIC_API_KEY),
 		APP_ENV: app.stage,
-		VITE_GITHUB_APP_INSTALL_URL: process.env.VITE_GITHUB_APP_INSTALL_URL ?? "https://github.com/apps/ditto-web/installations/new/",
+		VITE_GITHUB_APP_INSTALL_URL:
+			process.env.VITE_GITHUB_APP_INSTALL_URL ??
+			"https://github.com/apps/ditto-web/installations/new/",
 	},
 	wrangler: {
 		main: "src/server.ts",

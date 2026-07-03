@@ -8,6 +8,8 @@ dist-ssr
 .tanstack
 .wrangler
 .alchemy
+.flue-vite
+.flue-vite.wrangler.jsonc
 .output
 .vinxi
 .impeccable

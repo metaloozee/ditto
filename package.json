@@ -6,22 +6,23 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "alchemy dev",
-    "build": "vite build",
+    "dev": "pnpm flue:build && alchemy dev",
+    "build": "pnpm flue:build && vite build",
     "preview": "vite preview",
     "test": "vitest run --passWithNoTests",
     "format": "biome format --write",
     "lint": "biome lint",
     "check": "biome check",
     "fix": "biome check --write",
-    "deploy": "alchemy deploy",
+    "deploy": "pnpm flue:build && alchemy deploy",
     "destroy": "alchemy destroy",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:pull": "drizzle-kit pull",
     "db:studio": "drizzle-kit studio",
-    "doctor": "npx react-doctor@latest"
+    "doctor": "npx react-doctor@latest",
+    "flue:build": "flue build --target cloudflare"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

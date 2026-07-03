@@ -10,6 +10,7 @@
 		"includes": [
 			"**/src/**/*",
 			"**/.flue/**/*",
+			"**/alchemy.run.ts",
 			"**/flue.config.ts",
 			"**/.vscode/**/*",
 			"**/index.html",

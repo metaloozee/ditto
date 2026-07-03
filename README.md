@@ -61,8 +61,20 @@ development, deploys, and teardown.
 4. Deploy: `pnpm deploy`
 5. Tear down Cloudflare resources: `pnpm destroy`
 
-Alchemy manages the generated local Wrangler config under `.alchemy/`. Do not
-edit or commit generated Alchemy state.
+Alchemy remains the Cloudflare deploy source of truth. It manages generated
+local Wrangler config under `.alchemy/`; no root `wrangler.jsonc` is needed or
+added. Do not edit or commit generated Alchemy state.
+
+`pnpm dev`, `pnpm build`, and `pnpm deploy` run `pnpm flue:build` first so the
+private Flue Worker artifact exists before Alchemy or Vite reads it.
+`pnpm flue:build` writes generated artifacts under `dist/` and `.flue-vite*`;
+these are generated files and should not be committed.
+
+The Flue Worker is private and reached by the public TanStack Worker through the
+`FLUE_WORKER` service binding. The Flue CLI migration warning during local build
+is expected because Alchemy declares the generated Flue Durable Object namespaces
+and migrations instead of committing generated Wrangler config or adding a root
+Wrangler config.
 
 Sandbox workspace backups use an Alchemy-managed R2 bucket. These backup
 environment variables are required to run and deploy the app:
