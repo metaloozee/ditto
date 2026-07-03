@@ -3,14 +3,12 @@ export type ProjectRunProjection = {
 	status: string;
 	mode: "mutating" | "read_only";
 	model: string;
-	flue:
-		| {
-				agentName: string;
-				agentInstanceId: string;
-				submissionId: string;
-				streamOffset: string | null;
-			}
-		| null;
+	flue: {
+		agentName: string;
+		agentInstanceId: string;
+		submissionId: string;
+		streamOffset: string | null;
+	} | null;
 	errorCode: string | null;
 	finishedAt: Date | null;
 };
