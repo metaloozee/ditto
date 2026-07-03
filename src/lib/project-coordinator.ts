@@ -1,4 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
+import {
+	coordinatorRowsToState,
+	coordinatorStateToRows,
+	type CoordinatorSqlRows,
+} from "./project-coordinator-sqlite";
 
 export type ProjectCoordinatorMode = "mutating" | "read_only";
 export type ProjectCoordinatorTerminalStatus =
@@ -296,15 +301,126 @@ export class ProjectCoordinator extends DurableObject<Env> {
 		return Response.json({ state }, { status: 202 });
 	}
 
-	private async getState(): Promise<ProjectCoordinatorState> {
-		return (
-			(await this.ctx.storage.get<ProjectCoordinatorState>(
-				PROJECT_COORDINATOR_STATE_KEY,
-			)) ?? createInitialProjectCoordinatorState()
+	private ensureSchema(): void {
+		const sql = this.ctx.storage.sql;
+		sql.exec(
+			"CREATE TABLE IF NOT EXISTS coordinator_meta (id INTEGER PRIMARY KEY, project_id TEXT, next_fencing_token INTEGER NOT NULL DEFAULT 1)",
+		);
+		sql.exec(
+			"CREATE TABLE IF NOT EXISTS mutation_lease (id INTEGER PRIMARY KEY, run_id TEXT, session_id TEXT, user_id TEXT, fencing_token INTEGER, admitted_at TEXT)",
+		);
+		sql.exec(
+			"CREATE TABLE IF NOT EXISTS read_only_runs (run_id TEXT PRIMARY KEY, session_id TEXT, user_id TEXT, admitted_at TEXT)",
+		);
+		sql.exec(
+			"CREATE TABLE IF NOT EXISTS last_terminal (id INTEGER PRIMARY KEY, run_id TEXT, status TEXT, observed_at TEXT)",
 		);
 	}
 
+	private async getState(): Promise<ProjectCoordinatorState> {
+		this.ensureSchema();
+		const sql = this.ctx.storage.sql;
+
+		const meta =
+			sql
+				.exec<{ project_id: string | null; next_fencing_token: number }>(
+					"SELECT project_id, next_fencing_token FROM coordinator_meta WHERE id = 1",
+				)
+				.toArray()[0] ?? null;
+
+		const lease =
+			sql
+				.exec<{
+					run_id: string;
+					session_id: string;
+					user_id: string;
+					fencing_token: number;
+					admitted_at: string;
+				}>(
+					"SELECT run_id, session_id, user_id, fencing_token, admitted_at FROM mutation_lease WHERE id = 1",
+				)
+				.toArray()[0] ?? null;
+
+		const readOnlyRuns = sql
+			.exec<{
+				run_id: string;
+				session_id: string;
+				user_id: string;
+				admitted_at: string;
+			}>(
+				"SELECT run_id, session_id, user_id, admitted_at FROM read_only_runs ORDER BY rowid",
+			)
+			.toArray();
+
+		const lastTerminal =
+			sql
+				.exec<{
+					run_id: string;
+					status: string;
+					observed_at: string;
+				}>(
+					"SELECT run_id, status, observed_at FROM last_terminal WHERE id = 1",
+				)
+				.toArray()[0] ?? null;
+
+		const rows: CoordinatorSqlRows = {
+			meta,
+			lease,
+			readOnlyRuns,
+			lastTerminal,
+		};
+
+		return coordinatorRowsToState(rows);
+	}
+
 	private async setState(state: ProjectCoordinatorState): Promise<void> {
-		await this.ctx.storage.put(PROJECT_COORDINATOR_STATE_KEY, state);
+		this.ensureSchema();
+		const sql = this.ctx.storage.sql;
+		const rows = coordinatorStateToRows(state);
+		const meta = rows.meta;
+		if (!meta) {
+			throw new Error("Coordinator state rows must include metadata.");
+		}
+
+		sql.exec(
+			"INSERT OR REPLACE INTO coordinator_meta (id, project_id, next_fencing_token) VALUES (1, ?, ?)",
+			meta.project_id,
+			meta.next_fencing_token,
+		);
+
+		if (rows.lease) {
+			sql.exec(
+				"INSERT OR REPLACE INTO mutation_lease (id, run_id, session_id, user_id, fencing_token, admitted_at) VALUES (1, ?, ?, ?, ?, ?)",
+				rows.lease.run_id,
+				rows.lease.session_id,
+				rows.lease.user_id,
+				rows.lease.fencing_token,
+				rows.lease.admitted_at,
+			);
+		} else {
+			sql.exec("DELETE FROM mutation_lease WHERE id = 1");
+		}
+
+		sql.exec("DELETE FROM read_only_runs");
+		for (const run of rows.readOnlyRuns) {
+			sql.exec(
+				"INSERT INTO read_only_runs (run_id, session_id, user_id, admitted_at) VALUES (?, ?, ?, ?)",
+				run.run_id,
+				run.session_id,
+				run.user_id,
+				run.admitted_at,
+			);
+		}
+
+		if (rows.lastTerminal) {
+			sql.exec(
+				"INSERT OR REPLACE INTO last_terminal (id, run_id, status, observed_at) VALUES (1, ?, ?, ?)",
+				rows.lastTerminal.run_id,
+				rows.lastTerminal.status,
+				rows.lastTerminal.observed_at,
+			);
+		} else {
+			sql.exec("DELETE FROM last_terminal WHERE id = 1");
+		}
 	}
 }
