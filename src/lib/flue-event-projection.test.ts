@@ -114,9 +114,7 @@ describe("mapFlueEventToDittoEvents", () => {
 	it("keeps truncated text within the requested maximum length", () => {
 		expect(compactFlueText("abcdef", 5)).toBe("\n...[");
 		expect(compactFlueText("abcdef", 0)).toBe("");
-		expect(compactFlueText("a".repeat(100), 20)).toBe(
-			`aaaaa\n...[truncated]`,
-		);
+		expect(compactFlueText("a".repeat(100), 20)).toBe(`aaaaa\n...[truncated]`);
 		expect(compactFlueText("a".repeat(100), 20)).toHaveLength(20);
 	});
 
