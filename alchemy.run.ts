@@ -36,6 +36,11 @@ const projectCoordinator = DurableObjectNamespace("project-coordinator", {
 	sqlite: true,
 });
 
+const flueRunBridge = DurableObjectNamespace("flue-run-bridge", {
+	className: "FlueRunBridge",
+	sqlite: true,
+});
+
 const flueProjectCoderAgent = DurableObjectNamespace(
 	"flue-project-coder-agent",
 	{
@@ -78,6 +83,7 @@ export const website = await TanStackStart("website", {
 		Sandbox: sandbox,
 		WorkspaceSessionBroker: workspaceSessionBroker,
 		ProjectCoordinator: projectCoordinator,
+		FlueRunBridge: flueRunBridge,
 		FLUE_WORKER: flueWorker,
 		BACKUP_BUCKET: sandboxBackups,
 		BACKUP_BUCKET_NAME: sandboxBackupBucketName,
@@ -125,12 +131,17 @@ export const website = await TanStackStart("website", {
 						class_name: "ProjectCoordinator",
 						name: "ProjectCoordinator",
 					},
+					{
+						class_name: "FlueRunBridge",
+						name: "FlueRunBridge",
+					},
 				],
 			},
 			migrations: [
 				{ new_sqlite_classes: ["Sandbox"], tag: "v1" },
 				{ new_sqlite_classes: ["WorkspaceSessionBroker"], tag: "v2" },
 				{ new_sqlite_classes: ["ProjectCoordinator"], tag: "v3" },
+				{ new_sqlite_classes: ["FlueRunBridge"], tag: "v4" },
 			],
 		}),
 	},
