@@ -33,17 +33,23 @@ export function compactFlueText(
 	value: unknown,
 	maxLength = 2000,
 ): string | null {
+	const truncationMarker = "\n...[truncated]";
+	const safeMaxLength = Math.max(0, maxLength);
 	const text = stringifyFlueValue(value)?.trim();
 
 	if (!text) {
 		return null;
 	}
 
-	if (text.length <= maxLength) {
+	if (text.length <= safeMaxLength) {
 		return text;
 	}
 
-	return `${text.slice(0, maxLength)}\n...[truncated]`;
+	if (safeMaxLength <= truncationMarker.length) {
+		return truncationMarker.slice(0, safeMaxLength);
+	}
+
+	return `${text.slice(0, safeMaxLength - truncationMarker.length)}${truncationMarker}`;
 }
 
 export function getToolStatus(event: FlueEventInput): "completed" | "failed" {

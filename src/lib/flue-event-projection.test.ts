@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	compactFlueText,
 	type FlueProjectedEvent,
 	mapFlueEventToDittoEvents,
 } from "./flue-event-projection";
@@ -103,8 +104,20 @@ describe("mapFlueEventToDittoEvents", () => {
 		]);
 		expect(payload.schemaVersion).toBe(1);
 		expect(payload.level).toBe("info");
-		expect(payload.message).toBe(`${"a".repeat(2000)}\n...[truncated]`);
+		expect(payload.message).toBe(
+			`${"a".repeat(2000 - "\n...[truncated]".length)}\n...[truncated]`,
+		);
+		expect(String(payload.message)).toHaveLength(2000);
 		expect(payload.attributes).toBe('{"step":"compile"}');
+	});
+
+	it("keeps truncated text within the requested maximum length", () => {
+		expect(compactFlueText("abcdef", 5)).toBe("\n...[");
+		expect(compactFlueText("abcdef", 0)).toBe("");
+		expect(compactFlueText("a".repeat(100), 20)).toBe(
+			`aaaaa\n...[truncated]`,
+		);
+		expect(compactFlueText("a".repeat(100), 20)).toHaveLength(20);
 	});
 
 	it("projects completed submission_settled as terminal completed", () => {
