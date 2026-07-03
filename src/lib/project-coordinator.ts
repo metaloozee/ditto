@@ -1,8 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
 import {
+	type CoordinatorSqlRows,
 	coordinatorRowsToState,
 	coordinatorStateToRows,
-	type CoordinatorSqlRows,
 } from "./project-coordinator-sqlite";
 
 export type ProjectCoordinatorMode = "mutating" | "read_only";
@@ -358,9 +358,7 @@ export class ProjectCoordinator extends DurableObject<Env> {
 					run_id: string;
 					status: string;
 					observed_at: string;
-				}>(
-					"SELECT run_id, status, observed_at FROM last_terminal WHERE id = 1",
-				)
+				}>("SELECT run_id, status, observed_at FROM last_terminal WHERE id = 1")
 				.toArray()[0] ?? null;
 
 		const rows: CoordinatorSqlRows = {

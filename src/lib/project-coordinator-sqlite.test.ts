@@ -6,9 +6,9 @@ vi.mock("cloudflare:workers", () => ({
 
 import { createInitialProjectCoordinatorState } from "./project-coordinator";
 import {
+	type CoordinatorSqlRows,
 	coordinatorRowsToState,
 	coordinatorStateToRows,
-	type CoordinatorSqlRows,
 } from "./project-coordinator-sqlite";
 
 const emptyRows: CoordinatorSqlRows = {
@@ -42,9 +42,7 @@ describe("coordinator sqlite row transforms", () => {
 			nextFencingToken: 8,
 		};
 
-		const roundTripped = coordinatorRowsToState(
-			coordinatorStateToRows(state),
-		);
+		const roundTripped = coordinatorRowsToState(coordinatorStateToRows(state));
 
 		expect(roundTripped).toEqual(state);
 	});
@@ -76,9 +74,7 @@ describe("coordinator sqlite row transforms", () => {
 			nextFencingToken: 1,
 		};
 
-		const roundTripped = coordinatorRowsToState(
-			coordinatorStateToRows(state),
-		);
+		const roundTripped = coordinatorRowsToState(coordinatorStateToRows(state));
 
 		expect(roundTripped).toEqual(state);
 		expect(roundTripped.activeReadOnlyRuns.map((r) => r.runId)).toEqual([
