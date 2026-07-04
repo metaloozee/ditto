@@ -133,9 +133,12 @@ describe("flue dispatch adapter", () => {
 		const adapter = createFlueDispatchAdapter({
 			dispatchFetch: vi.fn(
 				async () =>
-					new Response(JSON.stringify({ error: { message: `bad ${secret}` } }), {
-						status: 500,
-					}),
+					new Response(
+						JSON.stringify({ error: { message: `bad ${secret}` } }),
+						{
+							status: 500,
+						},
+					),
 			),
 			streamFetch: vi.fn(),
 		});
@@ -162,9 +165,12 @@ describe("flue dispatch adapter", () => {
 			dispatchFetch: vi.fn(),
 			streamFetch: vi.fn(
 				async () =>
-					new Response(JSON.stringify({ error: { message: `bad ${secret}` } }), {
-						status: 502,
-					}),
+					new Response(
+						JSON.stringify({ error: { message: `bad ${secret}` } }),
+						{
+							status: 502,
+						},
+					),
 			),
 		});
 

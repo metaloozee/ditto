@@ -1,8 +1,8 @@
+import { redactSecrets } from "./secret-redaction";
 import {
 	type AgentRunEventType,
 	createAgentRunEventPayload,
 } from "./workspace-policy";
-import { redactSecrets } from "./secret-redaction";
 
 export type FlueEventInput = {
 	type: string;
