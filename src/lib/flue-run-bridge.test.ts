@@ -289,6 +289,8 @@ describe("flue run bridge checkpoint", () => {
 				put: vi.fn(async (_key: string, value: unknown) => {
 					Object.assign(state, value);
 				}),
+				setAlarm: vi.fn().mockResolvedValue(undefined),
+				deleteAlarm: vi.fn().mockResolvedValue(undefined),
 			},
 			...ctxOverrides,
 		};
@@ -388,6 +390,212 @@ describe("flue run bridge checkpoint", () => {
 		expect(where).toHaveBeenCalled();
 	});
 
+	it("periodic mutating checkpoint writes snapshot metadata with periodic event payloads", async () => {
+		const { db, insertValues, batch } = makeDbMock();
+		createDbMock.mockReturnValue(db);
+
+		const execMock = vi.fn();
+		execMock.mockResolvedValueOnce({
+			success: true,
+			stdout: "abc123\n",
+			stderr: "",
+		});
+		execMock.mockResolvedValueOnce({
+			success: true,
+			stdout: " M src/index.ts\n",
+			stderr: "",
+		});
+		execMock.mockResolvedValueOnce({
+			success: true,
+			stdout: " src/index.ts | 5 +++--\n",
+			stderr: "",
+		});
+		getProjectSandboxMock.mockReturnValue({ exec: execMock });
+
+		backupSandboxWorkspaceMock.mockResolvedValue({
+			id: "backup-abc",
+			dir: "/workspace",
+		});
+		serializeSandboxBackupMock.mockReturnValue(
+			JSON.stringify({ id: "backup-abc", dir: "/workspace" }),
+		);
+
+		const putMock = vi.fn().mockResolvedValue(undefined);
+		const { ctx } = makeBridge();
+
+		const bridge = new FlueRunBridge(
+			ctx as unknown as DurableObjectState,
+			{
+				BACKUP_BUCKET: { put: putMock },
+				FLUE_WORKER: { fetch: vi.fn() },
+			} as unknown as Env,
+		);
+
+		await (
+			bridge as unknown as {
+				checkpointPeriodicMutatingRun: (
+					state: Record<string, unknown>,
+					runId: string,
+				) => Promise<void>;
+			}
+		).checkpointPeriodicMutatingRun(
+			{
+				activeRunId: "run-1",
+				isMutating: true,
+				sandboxId: "sandbox-1",
+				projectId: "project-1",
+				sessionId: "session-1",
+			},
+			"run-1",
+		);
+
+		expect(putMock).toHaveBeenCalledTimes(1);
+		expect(batch).toHaveBeenCalledTimes(1);
+
+		const snapshotStartedCall = insertValues.mock.calls.find(
+			(call) => call[0]?.type === "snapshot_started",
+		);
+		expect(JSON.parse(snapshotStartedCall?.[0].payload)).toMatchObject({
+			periodic: true,
+			schemaVersion: 1,
+		});
+
+		const snapshotCompletedCall = insertValues.mock.calls.find(
+			(call) => call[0]?.type === "snapshot_completed",
+		);
+		expect(JSON.parse(snapshotCompletedCall?.[0].payload)).toMatchObject({
+			periodic: true,
+			schemaVersion: 1,
+			snapshotId: expect.any(String),
+			digest: expect.any(String),
+		});
+	});
+
+	it("alarm checkpoints an active mutating run and re-arms while it remains active", async () => {
+		const { db } = makeDbMock();
+		createDbMock.mockReturnValue(db);
+
+		const { ctx, state } = makeBridge();
+		Object.assign(state, {
+			activeRunId: "run-1",
+			isMutating: true,
+			sandboxId: "sandbox-1",
+			projectId: "project-1",
+			sessionId: "session-1",
+		});
+
+		const bridge = new FlueRunBridge(
+			ctx as unknown as DurableObjectState,
+			{
+				FLUE_WORKER: { fetch: vi.fn() },
+			} as unknown as Env,
+		) as unknown as {
+			alarm: () => Promise<void>;
+			checkpointPeriodicMutatingRun: (
+				state: Record<string, unknown>,
+				runId: string,
+			) => Promise<void>;
+		};
+		const checkpointPeriodicMutatingRun = vi.fn().mockResolvedValue(undefined);
+		bridge.checkpointPeriodicMutatingRun = checkpointPeriodicMutatingRun;
+
+		await bridge.alarm();
+
+		expect(checkpointPeriodicMutatingRun).toHaveBeenCalledTimes(1);
+		expect(checkpointPeriodicMutatingRun).toHaveBeenCalledWith(
+			expect.objectContaining({
+				activeRunId: "run-1",
+				isMutating: true,
+			}),
+			"run-1",
+		);
+		expect(ctx.storage.setAlarm).toHaveBeenCalledTimes(1);
+		expect(ctx.storage.setAlarm).toHaveBeenCalledWith(expect.any(Number));
+	});
+
+	it("successful mutating start arms the periodic checkpoint alarm", async () => {
+		const { db } = makeDbMock();
+		createDbMock.mockReturnValue(db);
+
+		const fetchMock = vi.fn().mockResolvedValue(
+			Response.json({
+				streamUrl: "https://flue.internal/runs/run-1/stream",
+				offset: "0",
+				runId: "run-1",
+			}),
+		);
+		const { ctx } = makeBridge();
+		const bridge = new FlueRunBridge(
+			ctx as unknown as DurableObjectState,
+			{
+				FLUE_WORKER: { fetch: fetchMock },
+			} as unknown as Env,
+		) as unknown as {
+			start: (input: {
+				sessionId: string;
+				userId: string;
+				projectId: string;
+				sandboxId: string;
+				runId: string;
+				message: string;
+				modelSpecifier: string;
+				isMutating: true;
+				fencingToken: number;
+			}) => Promise<void>;
+			resumeFlueStreamIfNeeded: (
+				reason: "constructor" | "socket" | "start",
+			) => Promise<void>;
+		};
+		bridge.resumeFlueStreamIfNeeded = vi.fn().mockResolvedValue(undefined);
+
+		await bridge.start({
+			sessionId: "session-1",
+			userId: "user-1",
+			projectId: "project-1",
+			sandboxId: "sandbox-1",
+			runId: "run-1",
+			message: "change code",
+			modelSpecifier: "anthropic/claude-sonnet-4-5",
+			isMutating: true,
+			fencingToken: 12,
+		});
+
+		expect(ctx.storage.setAlarm).toHaveBeenCalledTimes(1);
+		expect(ctx.storage.setAlarm).toHaveBeenCalledWith(expect.any(Number));
+	});
+
+	it("terminal runs clear the periodic checkpoint alarm", async () => {
+		const { db } = makeDbMock();
+		createDbMock.mockReturnValue(db);
+
+		const { ctx, state } = makeBridge();
+		Object.assign(state, {
+			activeRunId: "run-1",
+			isMutating: true,
+			projectId: "project-1",
+			sessionId: "session-1",
+		});
+
+		const bridge = new FlueRunBridge(
+			ctx as unknown as DurableObjectState,
+			{
+				FLUE_WORKER: { fetch: vi.fn() },
+				ProjectCoordinator: {
+					idFromName: vi.fn(() => "project-1"),
+					get: vi.fn(() => ({
+						fetch: vi.fn().mockResolvedValue(new Response()),
+					})),
+				},
+			} as unknown as Env,
+		) as unknown as {
+			finishRun: (runId: string, status: "failed") => Promise<void>;
+		};
+
+		await bridge.finishRun("run-1", "failed");
+
+		expect(ctx.storage.deleteAlarm).toHaveBeenCalledTimes(1);
+	});
+
 	it("R2 put failure inserts snapshot_failed and does not update snapshots or projects.sandboxBackup", async () => {
 		const { db, insertValues, batch } = makeDbMock();
 		createDbMock.mockReturnValue(db);
@@ -461,6 +669,88 @@ describe("flue run bridge checkpoint", () => {
 		);
 		expect(snapshotFailedCalls.length).toBe(1);
 		expect(snapshotFailedCalls[0]?.[0].payload).toContain("R2 write failed");
+	});
+
+	it("periodic checkpoint failure records snapshot_failed and does not throw", async () => {
+		const { db, insertValues, batch } = makeDbMock();
+		createDbMock.mockReturnValue(db);
+
+		backupSandboxWorkspaceMock.mockRejectedValue(new Error("Backup failed"));
+
+		const { ctx } = makeBridge();
+		const bridge = new FlueRunBridge(
+			ctx as unknown as DurableObjectState,
+			{
+				BACKUP_BUCKET: { put: vi.fn() },
+				FLUE_WORKER: { fetch: vi.fn() },
+			} as unknown as Env,
+		);
+
+		await expect(
+			(
+				bridge as unknown as {
+					checkpointPeriodicMutatingRun: (
+						state: Record<string, unknown>,
+						runId: string,
+					) => Promise<void>;
+				}
+			).checkpointPeriodicMutatingRun(
+				{
+					activeRunId: "run-1",
+					isMutating: true,
+					sandboxId: "sandbox-1",
+					projectId: "project-1",
+					sessionId: "session-1",
+				},
+				"run-1",
+			),
+		).resolves.toBeUndefined();
+
+		expect(batch).not.toHaveBeenCalled();
+		const snapshotFailedCall = insertValues.mock.calls.find(
+			(call) => call[0]?.type === "snapshot_failed",
+		);
+		expect(JSON.parse(snapshotFailedCall?.[0].payload)).toMatchObject({
+			periodic: true,
+			reason: "Backup failed",
+			schemaVersion: 1,
+		});
+	});
+
+	it("periodic checkpoint skips inactive runs", async () => {
+		const { db, insertValues, batch } = makeDbMock();
+		createDbMock.mockReturnValue(db);
+
+		const { ctx } = makeBridge();
+		const bridge = new FlueRunBridge(
+			ctx as unknown as DurableObjectState,
+			{
+				BACKUP_BUCKET: { put: vi.fn() },
+				FLUE_WORKER: { fetch: vi.fn() },
+			} as unknown as Env,
+		);
+
+		await (
+			bridge as unknown as {
+				checkpointPeriodicMutatingRun: (
+					state: Record<string, unknown>,
+					runId: string,
+				) => Promise<void>;
+			}
+		).checkpointPeriodicMutatingRun(
+			{
+				activeRunId: "other-run",
+				isMutating: true,
+				sandboxId: "sandbox-1",
+				projectId: "project-1",
+				sessionId: "session-1",
+			},
+			"run-1",
+		);
+
+		expect(insertValues).not.toHaveBeenCalled();
+		expect(batch).not.toHaveBeenCalled();
+		expect(backupSandboxWorkspaceMock).not.toHaveBeenCalled();
 	});
 
 	it("read-only run (isMutating: false) produces no checkpoint", async () => {

@@ -7,6 +7,7 @@ import {
 	agentRunEvents,
 	agentRuns,
 	projects,
+	snapshots,
 	workspaceSessions,
 } from "#/db/schema";
 import { isProjectCoderModelSpecifier } from "#/lib/agent-models";
@@ -223,6 +224,25 @@ async function postFlueRunBridge(options: {
 	}
 }
 
+async function getLatestCheckpointAt(
+	db: ReturnType<typeof createDb>,
+	projectId: string,
+): Promise<Date | null> {
+	const [latestCheckpoint] = await db
+		.select({ completedAt: snapshots.completedAt })
+		.from(snapshots)
+		.where(
+			and(
+				eq(snapshots.projectId, projectId),
+				eq(snapshots.status, "completed"),
+			),
+		)
+		.orderBy(desc(snapshots.completedAt))
+		.limit(1);
+
+	return latestCheckpoint?.completedAt ?? null;
+}
+
 export const workspaceRouter = createTRPCRouter({
 	get: protectedProcedure
 		.input(
@@ -260,26 +280,29 @@ export const workspaceRouter = createTRPCRouter({
 				| "connected"
 				| "restored_from_backup"
 				| "recreated_from_github" = "connected";
-			try {
-				await notifyCoordinatorRestore(ctx.env, input.projectId, "begin");
-				const ensured = await ensureProjectSandbox({
-					db,
-					env: ctx.env,
-					project,
-					envVars,
-				});
-				ensuredProject = ensured.project;
-				sandboxState = ensured.state;
-			} catch (error) {
-				throw new TRPCError({
-					code: "PRECONDITION_FAILED",
-					message:
-						error instanceof Error
-							? error.message
-							: "Project sandbox is not ready yet.",
-				});
-			} finally {
-				await notifyCoordinatorRestore(ctx.env, input.projectId, "end");
+			const restoreFailed = project.status === "failed";
+			if (!restoreFailed) {
+				try {
+					await notifyCoordinatorRestore(ctx.env, input.projectId, "begin");
+					const ensured = await ensureProjectSandbox({
+						db,
+						env: ctx.env,
+						project,
+						envVars,
+					});
+					ensuredProject = ensured.project;
+					sandboxState = ensured.state;
+				} catch (error) {
+					throw new TRPCError({
+						code: "PRECONDITION_FAILED",
+						message:
+							error instanceof Error
+								? error.message
+								: "Project sandbox is not ready yet.",
+					});
+				} finally {
+					await notifyCoordinatorRestore(ctx.env, input.projectId, "end");
+				}
 			}
 
 			const sessions = await db
@@ -384,15 +407,123 @@ export const workspaceRouter = createTRPCRouter({
 			const restoring = coordinatorState?.snapshot.restoring ?? false;
 			const latestSnapshotId =
 				coordinatorState?.snapshot.latestSnapshotId ?? null;
+			const lastCheckpointAt = await getLatestCheckpointAt(db, input.projectId);
 			return {
 				project: projectResponse,
 				sandbox: { state: sandboxState },
 				restoring,
 				latestSnapshotId,
+				lastCheckpointAt,
+				restoreFailed,
 				sessions,
 				selectedSession,
 				activeRun,
 				events: events.reverse(),
+			};
+		}),
+
+	retryRestore: protectedProcedure
+		.input(z.object({ projectId: z.string().min(1) }))
+		.mutation(async ({ ctx, input }) => {
+			const db = createDb(ctx.env);
+			const [project] = await db
+				.select()
+				.from(projects)
+				.where(
+					and(
+						eq(projects.id, input.projectId),
+						eq(projects.userId, ctx.user.id),
+					),
+				)
+				.limit(1);
+
+			if (!project) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Project not found.",
+				});
+			}
+
+			if (project.status !== "failed") {
+				throw new TRPCError({
+					code: "PRECONDITION_FAILED",
+					message: "Project restore can only be retried after a failure.",
+				});
+			}
+
+			const [retryProject] = await db
+				.update(projects)
+				.set({ status: "ready", updatedAt: sql`(unixepoch())` })
+				.where(
+					and(
+						eq(projects.id, input.projectId),
+						eq(projects.userId, ctx.user.id),
+						eq(projects.status, "failed"),
+					),
+				)
+				.returning();
+
+			if (!retryProject) {
+				throw new TRPCError({
+					code: "PRECONDITION_FAILED",
+					message: "Project restore can only be retried after a failure.",
+				});
+			}
+
+			const envVars = await decryptEnvVars(
+				retryProject.envVars,
+				ctx.env.BETTER_AUTH_SECRET,
+			);
+			let ensuredProject = retryProject;
+			let sandboxState:
+				| "connected"
+				| "restored_from_backup"
+				| "recreated_from_github" = "connected";
+
+			try {
+				await notifyCoordinatorRestore(ctx.env, input.projectId, "begin");
+				const ensured = await ensureProjectSandbox({
+					db,
+					env: ctx.env,
+					project: retryProject,
+					envVars,
+				});
+				ensuredProject = ensured.project;
+				sandboxState = ensured.state;
+			} catch (error) {
+				throw new TRPCError({
+					code: "PRECONDITION_FAILED",
+					message:
+						error instanceof Error
+							? error.message
+							: "Project sandbox is not ready yet.",
+				});
+			} finally {
+				await notifyCoordinatorRestore(ctx.env, input.projectId, "end");
+			}
+
+			const {
+				envVars: _envVars,
+				sandboxBackup: _sandboxBackup,
+				sandboxBackupCreatedAt: _sandboxBackupCreatedAt,
+				...projectResponse
+			} = ensuredProject;
+			const coordinatorState = await getProjectCoordinatorStatus(
+				ctx.env,
+				input.projectId,
+			);
+
+			return {
+				project: projectResponse,
+				sandbox: { state: sandboxState },
+				restoring: coordinatorState?.snapshot.restoring ?? false,
+				latestSnapshotId: coordinatorState?.snapshot.latestSnapshotId ?? null,
+				lastCheckpointAt: await getLatestCheckpointAt(db, input.projectId),
+				restoreFailed: false,
+				sessions: [],
+				selectedSession: null,
+				activeRun: null,
+				events: [],
 			};
 		}),
 

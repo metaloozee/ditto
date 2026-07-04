@@ -82,6 +82,7 @@ const FLUE_RUN_BRIDGE_STATE_KEY = "flue-run-bridge-state";
 const FINAL_CHANGE_SUMMARY_TIMEOUT_MS = 15_000;
 const FINAL_CHANGE_SUMMARY_MAX_LENGTH = 4000;
 const FINAL_CHANGE_SUMMARY_TRUNCATION_MARKER = "\n...[truncated]";
+const PERIODIC_CHECKPOINT_INTERVAL_MS = 120_000;
 
 function isWebSocketUpgrade(request: Request): boolean {
 	return request.headers.get("Upgrade")?.toLowerCase() === "websocket";
@@ -341,6 +342,21 @@ export class FlueRunBridge extends DurableObject<Env> {
 		this.sockets.delete(socket);
 	}
 
+	async alarm(): Promise<void> {
+		const state = await this.getState();
+		const runId = state.activeRunId;
+		if (!runId) {
+			return;
+		}
+
+		await this.checkpointPeriodicMutatingRun(state, runId);
+
+		const latestState = await this.getState();
+		if (await this.shouldArmPeriodicCheckpointAlarm(latestState, runId)) {
+			await this.armPeriodicCheckpointAlarm();
+		}
+	}
+
 	private async start(input: StartRequest): Promise<void> {
 		this.assistantDraft.clear(input.runId);
 		const flueAgentInstanceId = createFlueAgentInstanceId(
@@ -405,6 +421,9 @@ export class FlueRunBridge extends DurableObject<Env> {
 					.pathname,
 				streamOffset: receipt.streamOffset,
 			});
+			if (input.isMutating === true) {
+				await this.armPeriodicCheckpointAlarm();
+			}
 			await this.resumeFlueStreamIfNeeded("start");
 		} catch (error) {
 			await this.failRunAfterDispatchError(
@@ -423,6 +442,9 @@ export class FlueRunBridge extends DurableObject<Env> {
 			canceledRunIds: [...(state.canceledRunIds ?? []), input.runId],
 		};
 		await this.setState(nextState);
+		if (state.activeRunId === input.runId) {
+			await this.clearPeriodicCheckpointAlarm();
+		}
 
 		if (state.activeRunId === input.runId && state.projectId) {
 			await this.notifyProjectCoordinator(
@@ -563,6 +585,7 @@ export class FlueRunBridge extends DurableObject<Env> {
 			await this.clearCanceledRun(state, runId);
 			return;
 		}
+		await this.clearPeriodicCheckpointAlarm();
 
 		const assistantText = this.assistantDraft.consume(runId);
 		const finalChangeSummaryEvents = await this.buildFinalChangeSummaryEvents(
@@ -586,6 +609,7 @@ export class FlueRunBridge extends DurableObject<Env> {
 				},
 				runId,
 				status,
+				{ periodic: false },
 			);
 		} catch {
 			// checkpoint failure must not prevent terminal batch
@@ -644,6 +668,7 @@ export class FlueRunBridge extends DurableObject<Env> {
 		input: StartRequest,
 		message: string,
 	): Promise<void> {
+		await this.clearPeriodicCheckpointAlarm();
 		const db = createDb(this.env);
 		await db.batch([
 			db
@@ -742,12 +767,14 @@ export class FlueRunBridge extends DurableObject<Env> {
 		},
 		runId: string,
 		status: TerminalStatus,
+		options: { periodic?: boolean } = {},
 	): Promise<void> {
 		if (state.isMutating !== true || status !== "completed") {
 			return;
 		}
 
 		const db = createDb(this.env);
+		const periodic = options.periodic === true;
 
 		try {
 			await db.insert(agentRunEvents).values({
@@ -755,7 +782,7 @@ export class FlueRunBridge extends DurableObject<Env> {
 				projectId: state.projectId,
 				sessionId: state.sessionId,
 				type: "snapshot_started",
-				payload: createAgentRunEventPayload({}),
+				payload: createAgentRunEventPayload(periodic ? { periodic } : {}),
 			});
 			this.broadcast({
 				type: "tool_progress",
@@ -840,6 +867,7 @@ export class FlueRunBridge extends DurableObject<Env> {
 						payload: createAgentRunEventPayload({
 							snapshotId,
 							digest,
+							...(periodic ? { periodic } : {}),
 						}),
 					}),
 				]);
@@ -859,6 +887,7 @@ export class FlueRunBridge extends DurableObject<Env> {
 				type: "snapshot_failed",
 				payload: createAgentRunEventPayload({
 					reason: redactSecrets(reason),
+					...(periodic ? { periodic } : {}),
 				}),
 			});
 			this.broadcast({
@@ -869,10 +898,61 @@ export class FlueRunBridge extends DurableObject<Env> {
 		}
 	}
 
+	private async checkpointPeriodicMutatingRun(
+		state: FlueRunBridgeState,
+		runId: string,
+	): Promise<void> {
+		if (
+			state.activeRunId !== runId ||
+			state.isMutating !== true ||
+			state.canceledRunIds?.includes(runId) === true ||
+			!state.sandboxId ||
+			!state.projectId ||
+			!state.sessionId ||
+			(await this.isRunCanceled(runId))
+		) {
+			return;
+		}
+
+		await this.checkpointMutatingRun(
+			state as FlueRunBridgeState & {
+				sandboxId: string;
+				projectId: string;
+				sessionId: string;
+			},
+			runId,
+			"completed",
+			{ periodic: true },
+		);
+	}
+
+	private async shouldArmPeriodicCheckpointAlarm(
+		state: FlueRunBridgeState,
+		runId: string,
+	): Promise<boolean> {
+		return (
+			state.activeRunId === runId &&
+			state.isMutating === true &&
+			state.canceledRunIds?.includes(runId) !== true &&
+			(await this.isRunCanceled(runId)) === false
+		);
+	}
+
+	private async armPeriodicCheckpointAlarm(): Promise<void> {
+		await this.ctx.storage.setAlarm(
+			Date.now() + PERIODIC_CHECKPOINT_INTERVAL_MS,
+		);
+	}
+
+	private async clearPeriodicCheckpointAlarm(): Promise<void> {
+		await this.ctx.storage.deleteAlarm();
+	}
+
 	private async clearCanceledRun(
 		state: FlueRunBridgeState,
 		runId: string,
 	): Promise<void> {
+		await this.clearPeriodicCheckpointAlarm();
 		if (state.projectId) {
 			await createDb(this.env)
 				.update(projects)
