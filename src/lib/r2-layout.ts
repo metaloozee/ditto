@@ -21,6 +21,7 @@ export type SnapshotManifest = {
 	projectId: string;
 	runId: string | null;
 	r2Key: string;
+	archiveRef: string | null;
 	baseCommitSha: string | null;
 	digest: string;
 	createdAt: string;
@@ -32,6 +33,7 @@ type SnapshotManifestInput = {
 	projectId: string;
 	runId: string | null;
 	r2Key: string;
+	archiveRef?: string | null;
 	baseCommitSha: string | null;
 	digest: string;
 	createdAt: string;
@@ -91,6 +93,7 @@ export function buildSnapshotManifest(
 		projectId: input.projectId,
 		runId: input.runId,
 		r2Key: input.r2Key,
+		archiveRef: input.archiveRef ?? null,
 		baseCommitSha: input.baseCommitSha,
 		digest: input.digest,
 		createdAt: input.createdAt,
@@ -139,6 +142,15 @@ export function validateSnapshotManifest(
 		!manifest.excludedPaths.every((path) => typeof path === "string") ||
 		!manifest.excludedPaths.includes(".env") ||
 		!manifest.excludedPaths.includes(".env.*")
+	) {
+		return false;
+	}
+
+	if (
+		manifest.archiveRef !== null &&
+		(Array.isArray(manifest.archiveRef) ||
+			typeof manifest.archiveRef === "object" ||
+			(manifest.archiveRef as unknown) === "")
 	) {
 		return false;
 	}

@@ -62,6 +62,7 @@ describe("snapshot manifest", () => {
 			projectId,
 			runId,
 			r2Key: "projects/project-1/snapshots/snap-1/workspace.bin",
+			archiveRef: null,
 			baseCommitSha: "abc123",
 			digest: "sha256:digest-1",
 			createdAt: "2026-07-03T00:00:00.000Z",
@@ -181,6 +182,112 @@ describe("snapshot manifest", () => {
 				}),
 			),
 		).toBe(true);
+	});
+
+	it("accepts a valid archiveRef string", () => {
+		expect(
+			validateSnapshotManifest(
+				buildSnapshotManifest({
+					snapshotId,
+					projectId,
+					runId,
+					r2Key: snapshotArchiveKey(projectId, snapshotId),
+					archiveRef: "abc",
+					baseCommitSha: null,
+					digest: "sha256:digest-1",
+					createdAt: "2026-07-03T00:00:00.000Z",
+				}),
+			),
+		).toBe(true);
+	});
+
+	it("accepts archiveRef: null", () => {
+		expect(
+			validateSnapshotManifest(
+				buildSnapshotManifest({
+					snapshotId,
+					projectId,
+					runId,
+					r2Key: snapshotArchiveKey(projectId, snapshotId),
+					archiveRef: null,
+					baseCommitSha: null,
+					digest: "sha256:digest-1",
+					createdAt: "2026-07-03T00:00:00.000Z",
+				}),
+			),
+		).toBe(true);
+	});
+
+	it("rejects archiveRef: empty string", () => {
+		expect(
+			validateSnapshotManifest(
+				buildSnapshotManifest({
+					snapshotId,
+					projectId,
+					runId,
+					r2Key: snapshotArchiveKey(projectId, snapshotId),
+					archiveRef: "",
+					baseCommitSha: null,
+					digest: "sha256:digest-1",
+					createdAt: "2026-07-03T00:00:00.000Z",
+				}),
+			),
+		).toBe(false);
+	});
+
+	it("rejects archiveRef: array or object", () => {
+		const base = buildSnapshotManifest({
+			snapshotId,
+			projectId,
+			runId,
+			r2Key: snapshotArchiveKey(projectId, snapshotId),
+			archiveRef: "abc",
+			baseCommitSha: null,
+			digest: "sha256:digest-1",
+			createdAt: "2026-07-03T00:00:00.000Z",
+		});
+
+		expect(
+			validateSnapshotManifest({
+				...base,
+				archiveRef: ["not", "a", "string"],
+			}),
+		).toBe(false);
+		expect(
+			validateSnapshotManifest({
+				...base,
+				archiveRef: { id: "nested" },
+			}),
+		).toBe(false);
+	});
+
+	it("builds a manifest with archiveRef when provided", () => {
+		const manifest = buildSnapshotManifest({
+			snapshotId,
+			projectId,
+			runId,
+			r2Key: snapshotArchiveKey(projectId, snapshotId),
+			archiveRef: "backup-id-123",
+			baseCommitSha: "abc123",
+			digest: "sha256:digest-1",
+			createdAt: "2026-07-03T00:00:00.000Z",
+		});
+
+		expect(manifest.archiveRef).toBe("backup-id-123");
+	});
+
+	it("defaults archiveRef to null when not provided", () => {
+		const manifest = buildSnapshotManifest({
+			snapshotId,
+			projectId,
+			runId,
+			r2Key: snapshotArchiveKey(projectId, snapshotId),
+			baseCommitSha: "abc123",
+			digest: "sha256:digest-1",
+			createdAt: "2026-07-03T00:00:00.000Z",
+		});
+
+		expect(manifest.archiveRef).toBeNull();
 	});
 });
 
