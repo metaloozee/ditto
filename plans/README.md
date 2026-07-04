@@ -40,11 +40,11 @@ Generated on 2026-06-24. Updated on 2026-07-02 with plans 018–020 (the three-p
 | 032 | Real Flue Project-Coder Agent with Read-Only Tools | P1 | M | — | DONE |
 | 033 | Flue Run Stream Bridge Durable Object | P1 | L | 030, 031 | DONE |
 | 034 | Wire Read-Only Flue Dispatch into startRun | P1 | M | 031, 032, 033 | DONE |
-| 035 | Expose Flue Project-Coder HTTP Route | P1 | S | 030, 031, 032, 033, 034 | TODO |
-| 036 | Redact Flue and Provisioning Output Before Persistence | P1 | M | 035 | TODO |
-| 037 | Resume Flue Streams and Fix Flue Run Pointers | P1 | M | 035 | TODO |
-| 038 | Make ProjectCoordinator the Mutating Run Authority | P1 | M | 035, 037 | TODO |
-| 039 | Add Lease-Fenced Mutating Flue Tools | P1 | L | 035, 036, 037, 038 | TODO |
+| 035 | Expose Flue Project-Coder HTTP Route | P1 | S | 030, 031, 032, 033, 034 | DONE |
+| 036 | Redact Flue and Provisioning Output Before Persistence | P1 | M | 035 | DONE |
+| 037 | Resume Flue Streams and Fix Flue Run Pointers | P1 | M | 035 | DONE |
+| 038 | Make ProjectCoordinator the Mutating Run Authority | P1 | M | 035, 037 | DONE |
+| 039 | Add Lease-Fenced Mutating Flue Tools | P1 | L | 035, 036, 037, 038 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale — finding fixed independently or approach abandoned)
 
