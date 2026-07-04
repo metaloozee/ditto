@@ -1,10 +1,10 @@
 import { getSandbox } from "@cloudflare/sandbox";
-import { createAgent, defineTool } from "@flue/runtime";
+import { createAgent, defineTool, type AgentRouteHandler } from "@flue/runtime";
 import { cloudflareSandbox } from "@flue/runtime/cloudflare";
 import * as v from "valibot";
 
 type FlueProjectCoderEnv = {
-	Sandbox: DurableObjectNamespace;
+	Sandbox: Parameters<typeof getSandbox>[0];
 };
 
 const WORKSPACE_PATH = "/workspace";
@@ -12,6 +12,8 @@ const MAX_OUTPUT_BYTES = 50 * 1024;
 const DEFAULT_MAX_ENTRIES = 100;
 const HARD_MAX_ENTRIES = 200;
 const COMMAND_TIMEOUT_MS = 30_000;
+
+export const route: AgentRouteHandler = async (_c, next) => next();
 
 const instructions = `You are Ditto's project-coder agent.
 
