@@ -145,6 +145,22 @@ export function applyFlueStreamCursor(
 	};
 }
 
+export function shouldResumeFlueStream(
+	state: FlueRunBridgeState,
+): state is FlueRunBridgeState & {
+	activeRunId: string;
+	flueAgentName: string;
+	flueAgentInstanceId: string;
+} {
+	return Boolean(
+		state.activeRunId &&
+			state.flueAgentName &&
+			state.flueAgentInstanceId &&
+			state.streamClosed !== true &&
+			state.canceledRunIds?.includes(state.activeRunId) !== true,
+	);
+}
+
 export function shouldIgnoreFlueRunEvent(
 	state: FlueRunBridgeState,
 	runId: string,
@@ -192,6 +208,7 @@ export function buildTerminalEvents(input: TerminalEventInput): Array<{
 export class FlueRunBridge extends DurableObject<Env> {
 	private sockets = new Map<WebSocket, FlueRunBridgeSocketAttachment>();
 	private assistantDraft = new AssistantStreamDraft();
+	private consumingRunId: string | null = null;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -209,6 +226,8 @@ export class FlueRunBridge extends DurableObject<Env> {
 					: { connectedAt: Date.now() },
 			);
 		}
+
+		this.ctx.waitUntil(this.resumeFlueStreamIfNeeded("constructor"));
 	}
 
 	async fetch(request: Request): Promise<Response> {
@@ -311,7 +330,7 @@ export class FlueRunBridge extends DurableObject<Env> {
 				...(await this.getState()),
 				streamOffset: receipt.streamOffset,
 			});
-			this.ctx.waitUntil(this.consumeFlueStream(input.runId));
+			await this.resumeFlueStreamIfNeeded("start");
 		} catch (error) {
 			await this.failRunAfterDispatchError(
 				input,
@@ -341,6 +360,28 @@ export class FlueRunBridge extends DurableObject<Env> {
 		this.broadcast({ type: "done", runId: input.runId, status: "canceled" });
 	}
 
+	private async resumeFlueStreamIfNeeded(
+		_reason: "constructor" | "socket" | "start",
+	): Promise<void> {
+		const state = await this.getState();
+		if (!shouldResumeFlueStream(state)) {
+			return;
+		}
+		if (this.consumingRunId === state.activeRunId) {
+			return;
+		}
+
+		const runId = state.activeRunId;
+		this.consumingRunId = runId;
+		this.ctx.waitUntil(
+			this.consumeFlueStream(runId).finally(() => {
+				if (this.consumingRunId === runId) {
+					this.consumingRunId = null;
+				}
+			}),
+		);
+	}
+
 	private async consumeFlueStream(runId: string): Promise<void> {
 		const adapter = this.createAdapter();
 
@@ -364,6 +405,12 @@ export class FlueRunBridge extends DurableObject<Env> {
 				cursor: state.streamCursor,
 			});
 			await this.setState(applyFlueStreamCursor(state, pollResult));
+			await persistFlueStreamOffset(
+				this.env,
+				runId,
+				state.streamOffset,
+				pollResult.nextOffset,
+			);
 
 			for (const event of pollResult.events) {
 				const latestState = await this.getState();
@@ -629,6 +676,7 @@ export class FlueRunBridge extends DurableObject<Env> {
 			type: "snapshot",
 			state: await this.getState(),
 		});
+		await this.resumeFlueStreamIfNeeded("socket");
 
 		return new Response(null, {
 			status: 101,
@@ -661,6 +709,25 @@ export class FlueRunBridge extends DurableObject<Env> {
 	): void {
 		socket.send(JSON.stringify(frame));
 	}
+}
+
+export async function persistFlueStreamOffset(
+	env: Env,
+	runId: string,
+	currentOffset: string | undefined,
+	nextOffset: string,
+): Promise<void> {
+	if (currentOffset === nextOffset) {
+		return;
+	}
+
+	await createDb(env)
+		.update(agentRuns)
+		.set({
+			flueStreamOffset: nextOffset,
+			updatedAt: sql`(unixepoch())`,
+		})
+		.where(eq(agentRuns.id, runId));
 }
 
 function isFlueRunBridgeSocketAttachment(

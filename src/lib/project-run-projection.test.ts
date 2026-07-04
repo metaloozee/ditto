@@ -27,23 +27,48 @@ describe("project run projection", () => {
 	it("reports a Flue pointer when agent instance and submission are present", () => {
 		expect(
 			hasFluePointer({
+				flueAgentName: "project-coder",
 				flueAgentInstanceId: "project-1:sandbox-1",
 				flueSubmissionId: "submission-1",
+				flueStreamOffset: null,
 			}),
 		).toBe(true);
 	});
 
-	it("reports no Flue pointer when either field is missing", () => {
+	it("reports a Flue pointer when stream offset exists without submission id", () => {
 		expect(
 			hasFluePointer({
-				flueAgentInstanceId: null,
+				flueAgentName: "project-coder",
+				flueAgentInstanceId: "project-1:sandbox-1",
+				flueSubmissionId: null,
+				flueStreamOffset: "42",
+			}),
+		).toBe(true);
+	});
+
+	it("reports no Flue pointer when agent identity is missing", () => {
+		expect(
+			hasFluePointer({
+				flueAgentName: null,
+				flueAgentInstanceId: "project-1:sandbox-1",
 				flueSubmissionId: "submission-1",
+				flueStreamOffset: "42",
 			}),
 		).toBe(false);
 		expect(
 			hasFluePointer({
+				flueAgentName: "project-coder",
+				flueAgentInstanceId: null,
+				flueSubmissionId: "submission-1",
+				flueStreamOffset: "42",
+			}),
+		).toBe(false);
+		expect(
+			hasFluePointer({
+				flueAgentName: "project-coder",
 				flueAgentInstanceId: "project-1:sandbox-1",
 				flueSubmissionId: null,
+				flueStreamOffset: null,
 			}),
 		).toBe(false);
 	});
@@ -71,6 +96,24 @@ describe("project run projection", () => {
 			},
 			errorCode: null,
 			finishedAt: null,
+		});
+	});
+
+	it("builds a projection with stream coordinates and a null submission id", () => {
+		const projection = buildRunProjection(
+			runInput({
+				flueAgentName: "project-coder",
+				flueAgentInstanceId: "project-1:sandbox-1",
+				flueSubmissionId: null,
+				flueStreamOffset: "42",
+			}),
+		);
+
+		expect(projection.flue).toEqual({
+			agentName: "project-coder",
+			agentInstanceId: "project-1:sandbox-1",
+			submissionId: null,
+			streamOffset: "42",
 		});
 	});
 

@@ -6,7 +6,7 @@ export type ProjectRunProjection = {
 	flue: {
 		agentName: string;
 		agentInstanceId: string;
-		submissionId: string;
+		submissionId: string | null;
 		streamOffset: string | null;
 	} | null;
 	errorCode: string | null;
@@ -29,10 +29,17 @@ export type ProjectRunProjectionInput = {
 export function hasFluePointer(
 	run: Pick<
 		ProjectRunProjectionInput,
-		"flueAgentInstanceId" | "flueSubmissionId"
+		| "flueAgentName"
+		| "flueAgentInstanceId"
+		| "flueSubmissionId"
+		| "flueStreamOffset"
 	>,
 ): boolean {
-	return Boolean(run.flueAgentInstanceId && run.flueSubmissionId);
+	return Boolean(
+		run.flueAgentName &&
+			run.flueAgentInstanceId &&
+			(run.flueSubmissionId || run.flueStreamOffset),
+	);
 }
 
 export function buildRunProjection(
@@ -45,9 +52,9 @@ export function buildRunProjection(
 		model: run.modelSpecifier,
 		flue: hasFluePointer(run)
 			? {
-					agentName: run.flueAgentName ?? "",
+					agentName: run.flueAgentName as string,
 					agentInstanceId: run.flueAgentInstanceId as string,
-					submissionId: run.flueSubmissionId as string,
+					submissionId: run.flueSubmissionId,
 					streamOffset: run.flueStreamOffset,
 				}
 			: null,
