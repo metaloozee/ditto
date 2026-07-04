@@ -1,5 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { redactSecrets } from "./secret-redaction";
+
+vi.mock("@cloudflare/sandbox", () => ({
+	getSandbox: vi.fn(),
+}));
+
+vi.mock("@flue/runtime/cloudflare", () => ({
+	cloudflareSandbox: vi.fn(),
+}));
 
 describe("redactSecrets", () => {
 	it("redacts concrete secret strings wherever they appear", () => {
@@ -75,5 +83,19 @@ describe("redactSecrets", () => {
 
 		expect(redactSecrets(diff, [])).toContain("+OPENAI_API_KEY=[REDACTED]");
 		expect(redactSecrets(diff, [])).not.toContain(key);
+	});
+
+	it("redacts full Flue read_file content before applying offset and limit", async () => {
+		const { formatReadFileOutput } = await import(
+			"../../.flue/agents/project-coder"
+		);
+		const secret = `sk-test-${"f".repeat(24)}`;
+		const content = `OPENAI_API_KEY=${secret}\n`;
+
+		const output = formatReadFileOutput(content, 0, 24);
+
+		expect(output).toBe("OPENAI_API_KEY=[REDACTED");
+		expect(output).not.toContain("sk-test-");
+		expect(output).not.toContain(secret.slice(0, 24));
 	});
 });

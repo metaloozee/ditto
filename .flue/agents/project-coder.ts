@@ -73,6 +73,22 @@ function capOutput(value: string, maxBytes = MAX_OUTPUT_BYTES): string {
 	return `${truncated}\n\n[Output truncated to ${maxBytes} bytes.]`;
 }
 
+export function formatReadFileOutput(
+	content: string,
+	offset = 0,
+	limit = MAX_OUTPUT_BYTES,
+): string {
+	if (!Number.isFinite(offset) || offset < 0) {
+		throw new Error("offset must be a non-negative number.");
+	}
+	if (!Number.isFinite(limit) || limit < 1) {
+		throw new Error("limit must be a positive number.");
+	}
+
+	const redactedContent = redactSecrets(content);
+	return capOutput(redactedContent.slice(offset, offset + limit));
+}
+
 function normalizeMaxEntries(value: number | undefined): number {
 	if (value === undefined) {
 		return DEFAULT_MAX_ENTRIES;
@@ -136,18 +152,7 @@ export default createAgent<unknown, FlueProjectCoderEnv>(({ id, env }) => {
 					throw new Error("File is binary.");
 				}
 
-				const offset = args.offset ?? 0;
-				const limit = args.limit ?? MAX_OUTPUT_BYTES;
-				if (!Number.isFinite(offset) || offset < 0) {
-					throw new Error("offset must be a non-negative number.");
-				}
-				if (!Number.isFinite(limit) || limit < 1) {
-					throw new Error("limit must be a positive number.");
-				}
-
-				return capOutput(
-					redactSecrets(file.content.slice(offset, offset + limit)),
-				);
+				return formatReadFileOutput(file.content, args.offset, args.limit);
 			},
 		}),
 		defineTool({
