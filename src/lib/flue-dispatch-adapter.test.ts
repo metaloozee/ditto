@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
 	buildFlueAgentPath,
+	buildFluePollPath,
 	buildFlueStreamPath,
 	createFlueDispatchAdapter,
 	createServiceBindingDispatchFetch,
@@ -36,6 +37,15 @@ describe("flue dispatch adapter", () => {
 		).toBe(
 			"/agents/project-coder/project-1?offset=42&live=long-poll&cursor=cursor%2Fone",
 		);
+	});
+
+	it("builds long-poll paths for returned workflow streams", () => {
+		expect(
+			buildFluePollPath("/runs/workflow-run-1", {
+				offset: "0",
+				cursor: "cursor-1",
+			}),
+		).toBe("/runs/workflow-run-1?offset=0&live=long-poll&cursor=cursor-1");
 	});
 
 	it("dispatches prompts to the direct agent route", async () => {
@@ -105,6 +115,54 @@ describe("flue dispatch adapter", () => {
 				message: "Inspect the repo",
 			}),
 		).resolves.toMatchObject({ submissionId: "submission-1" });
+	});
+
+	it("dispatches mutating project runs through the private Ditto ingress", async () => {
+		let request: Request | null = null;
+		const adapter = createFlueDispatchAdapter({
+			dispatchFetch: vi.fn(async (nextRequest: Request) => {
+				request = nextRequest;
+				return new Response(
+					JSON.stringify({
+						runId: "workflow-run-1",
+						streamUrl: "/runs/workflow-run-1",
+						offset: "0",
+					}),
+					{ status: 202 },
+				);
+			}),
+			streamFetch: vi.fn(),
+			now: () => new Date("2026-07-03T00:00:00.000Z"),
+		});
+
+		const receipt = await adapter.dispatchMutatingProjectRun({
+			projectId: "project-1",
+			sessionId: "session-1",
+			runId: "run-1",
+			userId: "user-1",
+			sandboxId: "sandbox-1",
+			message: "Edit a file",
+			modelSpecifier: "anthropic/claude-sonnet-4-6",
+			fencingToken: 7,
+		});
+
+		const capturedRequest = assertCapturedRequest(request);
+		expect(capturedRequest.method).toBe("POST");
+		expect(capturedRequest.url).toBe(
+			"https://flue.internal/ditto/project-runs/start",
+		);
+		expect(await capturedRequest.json()).toMatchObject({
+			runId: "run-1",
+			fencingToken: 7,
+		});
+		expect(receipt).toEqual({
+			agentName: "ditto-project-run",
+			agentInstanceId: "workflow-run-1",
+			streamUrl: "/runs/workflow-run-1",
+			streamOffset: "0",
+			submissionId: "workflow-run-1",
+			acceptedAt: "2026-07-03T00:00:00.000Z",
+		});
 	});
 
 	it("throws compact errors for failed dispatches", async () => {
@@ -227,6 +285,31 @@ describe("flue dispatch adapter", () => {
 			cursor: "cursor-1",
 			closed: false,
 		});
+	});
+
+	it("polls returned workflow stream paths", async () => {
+		let request: Request | null = null;
+		const adapter = createFlueDispatchAdapter({
+			dispatchFetch: vi.fn(),
+			streamFetch: vi.fn(async (nextRequest: Request) => {
+				request = nextRequest;
+				return new Response(JSON.stringify([]), {
+					status: 200,
+					headers: { "Stream-Next-Offset": "1" },
+				});
+			}),
+		});
+
+		await adapter.pollStreamPath({
+			streamPath: "/runs/workflow-run-1",
+			offset: "0",
+		});
+
+		const capturedRequest = assertCapturedRequest(request);
+		expect(capturedRequest.method).toBe("GET");
+		expect(capturedRequest.url).toBe(
+			"https://flue.internal/runs/workflow-run-1?offset=0&live=long-poll",
+		);
 	});
 
 	it("treats 204 stream responses as empty event batches", async () => {

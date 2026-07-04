@@ -9,6 +9,7 @@ const {
 	createInitialProjectCoordinatorState,
 	MUTATION_CONFLICT_MESSAGE,
 	observeProjectRunTerminal,
+	validateProjectCoordinatorLease,
 } = await import("./project-coordinator");
 
 const now = "2026-07-02T00:00:00.000Z";
@@ -136,5 +137,91 @@ describe("project coordinator lease decisions", () => {
 
 		expect(state.mutationLease?.runId).toBe("run-1");
 		expect(state.lastTerminal).toMatchObject({ runId: "run-2" });
+	});
+
+	it("rejects lease validation without a fencing token", () => {
+		const admitted = admitProjectRun(
+			createInitialProjectCoordinatorState(),
+			admissionInput("run-1", "mutating"),
+			now,
+		);
+		if (!admitted.accepted) {
+			throw new Error("expected admission");
+		}
+
+		expect(
+			validateProjectCoordinatorLease(admitted.state, {
+				projectId: "project-1",
+				runId: "run-1",
+			}),
+		).toMatchObject({ valid: false, message: "Missing fencing token." });
+	});
+
+	it("rejects stale fencing tokens", () => {
+		const admitted = admitProjectRun(
+			createInitialProjectCoordinatorState(),
+			admissionInput("run-1", "mutating"),
+			now,
+		);
+		if (!admitted.accepted) {
+			throw new Error("expected admission");
+		}
+
+		expect(
+			validateProjectCoordinatorLease(admitted.state, {
+				projectId: "project-1",
+				runId: "run-1",
+				fencingToken: 2,
+			}),
+		).toMatchObject({
+			valid: false,
+			message: "Mutating lease fencing token mismatch.",
+		});
+	});
+
+	it("rejects stale run ids", () => {
+		const admitted = admitProjectRun(
+			createInitialProjectCoordinatorState(),
+			admissionInput("run-1", "mutating"),
+			now,
+		);
+		if (!admitted.accepted) {
+			throw new Error("expected admission");
+		}
+
+		expect(
+			validateProjectCoordinatorLease(admitted.state, {
+				projectId: "project-1",
+				runId: "run-2",
+				fencingToken: 1,
+			}),
+		).toMatchObject({
+			valid: false,
+			message: "Mutating lease run mismatch.",
+		});
+	});
+
+	it("rejects canceled or terminal runs", () => {
+		const admitted = admitProjectRun(
+			createInitialProjectCoordinatorState(),
+			admissionInput("run-1", "mutating"),
+			now,
+		);
+		if (!admitted.accepted) {
+			throw new Error("expected admission");
+		}
+		const terminal = observeProjectRunTerminal(
+			admitted.state,
+			{ projectId: "project-1", runId: "run-1", status: "canceled" },
+			now,
+		);
+
+		expect(
+			validateProjectCoordinatorLease(terminal, {
+				projectId: "project-1",
+				runId: "run-1",
+				fencingToken: 1,
+			}),
+		).toMatchObject({ valid: false, message: "Mutating run is terminal." });
 	});
 });

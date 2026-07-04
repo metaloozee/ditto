@@ -534,7 +534,7 @@ export const workspaceRouter = createTRPCRouter({
 					}
 				}
 
-				async function startBroker(fencingToken: number) {
+				async function startMutatingFlueRun(fencingToken: number) {
 					if (!project.sandboxId) {
 						throw new TRPCError({
 							code: "PRECONDITION_FAILED",
@@ -542,7 +542,7 @@ export const workspaceRouter = createTRPCRouter({
 						});
 					}
 
-					await postWorkspaceSessionBroker({
+					await postFlueRunBridge({
 						env: ctx.env,
 						sessionId,
 						path: "/start",
@@ -554,7 +554,7 @@ export const workspaceRouter = createTRPCRouter({
 							runId,
 							message: input.message,
 							modelSpecifier: input.modelSpecifier,
-							isMutating: input.isMutating,
+							isMutating: true,
 							fencingToken,
 						},
 					});
@@ -768,7 +768,7 @@ export const workspaceRouter = createTRPCRouter({
 					if (input.isMutating) {
 						const fencingToken = await admitMutatingRun();
 						try {
-							await startBroker(fencingToken);
+							await startMutatingFlueRun(fencingToken);
 						} catch (error) {
 							await notifyMutatingTerminalFailed();
 							throw error;

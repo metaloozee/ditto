@@ -54,6 +54,14 @@ const flueRegistry = DurableObjectNamespace("flue-registry", {
 	sqlite: true,
 });
 
+const flueDittoProjectRunWorkflow = DurableObjectNamespace(
+	"flue-ditto-project-run-workflow",
+	{
+		className: "FlueDittoProjectRunWorkflow",
+		sqlite: true,
+	},
+);
+
 const database = await D1Database("database", {
 	name: `${app.name}-${app.stage}-db`,
 	migrationsDir: "./migrations",
@@ -70,7 +78,9 @@ export const flueWorker = await Worker("flue-worker", {
 	compatibilityFlags: ["nodejs_compat"],
 	bindings: {
 		Sandbox: sandbox,
+		ProjectCoordinator: projectCoordinator,
 		FLUE_PROJECT_CODER_AGENT: flueProjectCoderAgent,
+		FLUE_DITTO_PROJECT_RUN_WORKFLOW: flueDittoProjectRunWorkflow,
 		FLUE_REGISTRY: flueRegistry,
 		ANTHROPIC_API_KEY: alchemy.secret(process.env.ANTHROPIC_API_KEY),
 	},

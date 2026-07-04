@@ -26,10 +26,13 @@ export type FlueRunBridgeState = {
 	activeRunId?: string;
 	flueAgentName?: string;
 	flueAgentInstanceId?: string;
+	flueStreamPath?: string;
 	streamOffset?: string;
 	streamCursor?: string | null;
 	streamClosed?: boolean;
 	canceledRunIds?: string[];
+	isMutating?: boolean;
+	fencingToken?: number;
 };
 
 type FlueRunBridgeSocketAttachment = {
@@ -44,8 +47,10 @@ type StartRequest = {
 	runId: string;
 	message: string;
 	modelSpecifier: string;
-	isMutating: false;
-};
+} & (
+	| { isMutating: false; fencingToken?: never }
+	| { isMutating: true; fencingToken: number }
+);
 
 type AbortRequest = {
 	runId: string;
@@ -86,11 +91,14 @@ function parseStartRequest(value: unknown): StartRequest {
 	}
 
 	const input = value as Record<string, unknown>;
-	if (input.isMutating !== false) {
-		throw new Error("Flue run bridge only accepts read-only runs.");
+	if (input.isMutating !== false && input.isMutating !== true) {
+		throw new Error("Invalid mutating mode.");
+	}
+	if (input.isMutating === true && typeof input.fencingToken !== "number") {
+		throw new Error("Mutating Flue runs require a fencing token.");
 	}
 
-	return {
+	const base = {
 		sessionId: requireString(input, "sessionId"),
 		userId: requireString(input, "userId"),
 		projectId: requireString(input, "projectId"),
@@ -98,8 +106,15 @@ function parseStartRequest(value: unknown): StartRequest {
 		runId: requireString(input, "runId"),
 		message: requireString(input, "message"),
 		modelSpecifier: requireString(input, "modelSpecifier"),
-		isMutating: false,
 	};
+
+	return input.isMutating === true
+		? {
+				...base,
+				isMutating: true,
+				fencingToken: input.fencingToken as number,
+			}
+		: { ...base, isMutating: false };
 }
 
 function parseAbortRequest(value: unknown): AbortRequest {
@@ -300,18 +315,34 @@ export class FlueRunBridge extends DurableObject<Env> {
 			activeRunId: input.runId,
 			flueAgentName: PROJECT_CODER_AGENT_NAME,
 			flueAgentInstanceId,
+			flueStreamPath: undefined,
 			streamCursor: null,
 			streamClosed: false,
+			isMutating: input.isMutating,
+			fencingToken:
+				input.isMutating === true ? input.fencingToken : undefined,
 		};
 		await this.setState(nextState);
 
 		try {
 			const adapter = this.createAdapter();
-			const receipt = await adapter.dispatch({
-				agentName: PROJECT_CODER_AGENT_NAME,
-				agentInstanceId: flueAgentInstanceId,
-				message: input.message,
-			});
+			const receipt =
+				input.isMutating === true
+					? await adapter.dispatchMutatingProjectRun({
+							projectId: input.projectId,
+							sessionId: input.sessionId,
+							runId: input.runId,
+							userId: input.userId,
+							sandboxId: input.sandboxId,
+							message: input.message,
+							modelSpecifier: input.modelSpecifier,
+							fencingToken: input.fencingToken,
+						})
+					: await adapter.dispatch({
+							agentName: PROJECT_CODER_AGENT_NAME,
+							agentInstanceId: flueAgentInstanceId,
+							message: input.message,
+						});
 
 			await createDb(this.env)
 				.update(agentRuns)
@@ -328,6 +359,10 @@ export class FlueRunBridge extends DurableObject<Env> {
 
 			await this.setState({
 				...(await this.getState()),
+				flueAgentName: receipt.agentName,
+				flueAgentInstanceId: receipt.agentInstanceId,
+				flueStreamPath: new URL(receipt.streamUrl, "https://flue.internal")
+					.pathname,
 				streamOffset: receipt.streamOffset,
 			});
 			await this.resumeFlueStreamIfNeeded("start");
@@ -398,12 +433,18 @@ export class FlueRunBridge extends DurableObject<Env> {
 				return;
 			}
 
-			const pollResult = await adapter.poll({
-				agentName: state.flueAgentName,
-				agentInstanceId: state.flueAgentInstanceId,
-				offset: state.streamOffset ?? "0",
-				cursor: state.streamCursor,
-			});
+			const pollResult = state.flueStreamPath
+				? await adapter.pollStreamPath({
+						streamPath: state.flueStreamPath,
+						offset: state.streamOffset ?? "0",
+						cursor: state.streamCursor,
+					})
+				: await adapter.poll({
+						agentName: state.flueAgentName,
+						agentInstanceId: state.flueAgentInstanceId,
+						offset: state.streamOffset ?? "0",
+						cursor: state.streamCursor,
+					});
 			await this.setState(applyFlueStreamCursor(state, pollResult));
 			await persistFlueStreamOffset(
 				this.env,
@@ -523,6 +564,8 @@ export class FlueRunBridge extends DurableObject<Env> {
 		await this.setState({
 			...state,
 			activeRunId: undefined,
+			isMutating: undefined,
+			fencingToken: undefined,
 			streamCursor: undefined,
 			streamClosed: undefined,
 		});
@@ -565,6 +608,8 @@ export class FlueRunBridge extends DurableObject<Env> {
 		await this.setState({
 			...(await this.getState()),
 			activeRunId: undefined,
+			isMutating: undefined,
+			fencingToken: undefined,
 			streamCursor: undefined,
 			streamClosed: undefined,
 		});
@@ -595,6 +640,8 @@ export class FlueRunBridge extends DurableObject<Env> {
 		await this.setState({
 			...state,
 			activeRunId: undefined,
+			isMutating: undefined,
+			fencingToken: undefined,
 			streamCursor: undefined,
 			streamClosed: undefined,
 			canceledRunIds: [...(state.canceledRunIds ?? []), runId],

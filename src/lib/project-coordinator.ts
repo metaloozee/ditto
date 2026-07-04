@@ -73,6 +73,24 @@ export type ProjectCoordinatorAdmissionDecision =
 export const PROJECT_COORDINATOR_STATE_KEY = "project-coordinator-state";
 export const MUTATION_CONFLICT_MESSAGE =
 	"Another mutating run already holds the project lease.";
+export const PROJECT_COORDINATOR_LEASE_VALIDATION_MESSAGES = {
+	missingToken: "Missing fencing token.",
+	noActiveLease: "No active mutating lease.",
+	projectMismatch: "Mutating lease project mismatch.",
+	runMismatch: "Mutating lease run mismatch.",
+	tokenMismatch: "Mutating lease fencing token mismatch.",
+	terminalRun: "Mutating run is terminal.",
+} as const;
+
+export type ProjectCoordinatorLeaseValidationInput = {
+	projectId: string;
+	runId: string;
+	fencingToken?: number;
+};
+
+export type ProjectCoordinatorLeaseValidationResult =
+	| { valid: true; lease: ProjectCoordinatorLease }
+	| { valid: false; message: string };
 
 export function createInitialProjectCoordinatorState(): ProjectCoordinatorState {
 	return {
@@ -167,6 +185,59 @@ export function observeProjectRunTerminal(
 			observedAt: nowIso,
 		},
 	};
+}
+
+export function validateProjectCoordinatorLease(
+	state: ProjectCoordinatorState,
+	input: ProjectCoordinatorLeaseValidationInput,
+): ProjectCoordinatorLeaseValidationResult {
+	if (typeof input.fencingToken !== "number") {
+		return {
+			valid: false,
+			message: PROJECT_COORDINATOR_LEASE_VALIDATION_MESSAGES.missingToken,
+		};
+	}
+
+	if (
+		state.lastTerminal?.runId === input.runId ||
+		state.activeReadOnlyRuns.some((run) => run.runId === input.runId)
+	) {
+		return {
+			valid: false,
+			message: PROJECT_COORDINATOR_LEASE_VALIDATION_MESSAGES.terminalRun,
+		};
+	}
+
+	const lease = state.mutationLease;
+	if (!lease) {
+		return {
+			valid: false,
+			message: PROJECT_COORDINATOR_LEASE_VALIDATION_MESSAGES.noActiveLease,
+		};
+	}
+
+	if (lease.projectId !== input.projectId || state.projectId !== input.projectId) {
+		return {
+			valid: false,
+			message: PROJECT_COORDINATOR_LEASE_VALIDATION_MESSAGES.projectMismatch,
+		};
+	}
+
+	if (lease.runId !== input.runId) {
+		return {
+			valid: false,
+			message: PROJECT_COORDINATOR_LEASE_VALIDATION_MESSAGES.runMismatch,
+		};
+	}
+
+	if (lease.fencingToken !== input.fencingToken) {
+		return {
+			valid: false,
+			message: PROJECT_COORDINATOR_LEASE_VALIDATION_MESSAGES.tokenMismatch,
+		};
+	}
+
+	return { valid: true, lease };
 }
 
 function getString(value: unknown): string | null {

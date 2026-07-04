@@ -11,6 +11,17 @@ export type FlueAgentDispatchInput = {
 	message: string;
 };
 
+export type FlueMutatingProjectRunDispatchInput = {
+	projectId: string;
+	sessionId: string;
+	runId: string;
+	userId: string;
+	sandboxId: string;
+	message: string;
+	modelSpecifier: string;
+	fencingToken: number;
+};
+
 export type FlueAgentDispatchReceipt = {
 	agentName: string;
 	agentInstanceId: string;
@@ -23,6 +34,12 @@ export type FlueAgentDispatchReceipt = {
 export type FlueStreamPollInput = {
 	agentName: string;
 	agentInstanceId: string;
+	offset: string;
+	cursor?: string | null;
+};
+
+export type FlueStreamPathPollInput = {
+	streamPath: string;
 	offset: string;
 	cursor?: string | null;
 };
@@ -47,6 +64,13 @@ export function buildFlueAgentPath(input: {
 }
 
 export function buildFlueStreamPath(input: FlueStreamPollInput): string {
+	return buildFluePollPath(buildFlueAgentPath(input), input);
+}
+
+export function buildFluePollPath(
+	streamPath: string,
+	input: Pick<FlueStreamPollInput, "offset" | "cursor">,
+): string {
 	const searchParams = new URLSearchParams({
 		offset: input.offset,
 		live: "long-poll",
@@ -56,7 +80,7 @@ export function buildFlueStreamPath(input: FlueStreamPollInput): string {
 		searchParams.set("cursor", input.cursor);
 	}
 
-	return `${buildFlueAgentPath(input)}?${searchParams.toString()}`;
+	return `${streamPath}?${searchParams.toString()}`;
 }
 
 export function createServiceBindingDispatchFetch(binding: {
@@ -77,7 +101,11 @@ export function createFlueDispatchAdapter(options: {
 	now?: () => Date;
 }): {
 	dispatch(input: FlueAgentDispatchInput): Promise<FlueAgentDispatchReceipt>;
+	dispatchMutatingProjectRun(
+		input: FlueMutatingProjectRunDispatchInput,
+	): Promise<FlueAgentDispatchReceipt>;
 	poll(input: FlueStreamPollInput): Promise<FlueStreamPollResult>;
+	pollStreamPath(input: FlueStreamPathPollInput): Promise<FlueStreamPollResult>;
 } {
 	return {
 		async dispatch(input) {
@@ -112,9 +140,49 @@ export function createFlueDispatchAdapter(options: {
 			};
 		},
 
+		async dispatchMutatingProjectRun(input) {
+			const response = await options.dispatchFetch(
+				new Request(`${FLUE_INTERNAL_ORIGIN}/ditto/project-runs/start`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(input),
+				}),
+			);
+
+			if (!response.ok) {
+				throw new Error(await formatFlueResponseError("dispatch", response));
+			}
+
+			const body = await parseJsonObject(response, "dispatch");
+			if (typeof body.streamUrl !== "string") {
+				throw new Error("Flue dispatch response missing streamUrl");
+			}
+			if (typeof body.offset !== "string") {
+				throw new Error("Flue dispatch response missing offset");
+			}
+
+			return {
+				agentName: "ditto-project-run",
+				agentInstanceId:
+					typeof body.runId === "string" ? body.runId : input.runId,
+				streamUrl: body.streamUrl,
+				streamOffset: body.offset,
+				submissionId: typeof body.runId === "string" ? body.runId : null,
+				acceptedAt: (options.now?.() ?? new Date()).toISOString(),
+			};
+		},
+
 		async poll(input) {
+			return this.pollStreamPath({
+				streamPath: buildFlueAgentPath(input),
+				offset: input.offset,
+				cursor: input.cursor,
+			});
+		},
+
+		async pollStreamPath(input) {
 			const response = await options.streamFetch(
-				new Request(`${FLUE_INTERNAL_ORIGIN}${buildFlueStreamPath(input)}`, {
+				new Request(`${FLUE_INTERNAL_ORIGIN}${buildFluePollPath(input.streamPath, input)}`, {
 					method: "GET",
 				}),
 			);

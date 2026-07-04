@@ -6,6 +6,7 @@ import { redactSecrets } from "../../src/lib/secret-redaction";
 
 type FlueProjectCoderEnv = {
 	Sandbox: Parameters<typeof getSandbox>[0];
+	ProjectCoordinator?: DurableObjectNamespace;
 };
 
 const WORKSPACE_PATH = "/workspace";
@@ -16,7 +17,7 @@ const COMMAND_TIMEOUT_MS = 30_000;
 
 export const route: AgentRouteHandler = async (_c, next) => next();
 
-const instructions = `You are Ditto's project-coder agent.
+const readOnlyInstructions = `You are Ditto's project-coder agent.
 
 Inspect the repository before answering. You are running in /workspace for the existing project sandbox.
 
@@ -25,6 +26,14 @@ Only read-only tools are enabled in this phase. Do not claim to have edited file
 Cite concrete file paths, git status or diff evidence, or command output when answering.
 
 If a request requires edits or mutation, ask for clarification and explain that mutating Flue tools are not enabled yet.`;
+
+const mutatingInstructions = `You are Ditto's project-coder agent.
+
+You are running in /workspace for the existing project sandbox. Mutating tools may be available for this single operation only.
+
+Before claiming a change happened, cite concrete file paths and tool output such as git status or diff-stat evidence.
+
+Keep changes scoped to the user's request. Do not push to GitHub, open PRs, deploy, or change external systems.`;
 
 function resolveWorkspacePath(inputPath: string): string {
 	if (inputPath.includes("\0")) {
@@ -101,7 +110,16 @@ function normalizeMaxEntries(value: number | undefined): number {
 	return Math.min(Math.floor(value), HARD_MAX_ENTRIES);
 }
 
-export default createAgent<unknown, FlueProjectCoderEnv>(({ id, env }) => {
+function hasMutatingPayload(value: unknown): boolean {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		typeof (value as { runId?: unknown }).runId === "string" &&
+		typeof (value as { fencingToken?: unknown }).fencingToken === "number"
+	);
+}
+
+export default createAgent<unknown, FlueProjectCoderEnv>(({ id, env, payload }) => {
 	const [projectId, sandboxId = id] = id.split(":", 2);
 	const sandbox = getSandbox(env.Sandbox, sandboxId);
 	const isDirectory = async (path: string) => {
@@ -236,7 +254,9 @@ export default createAgent<unknown, FlueProjectCoderEnv>(({ id, env }) => {
 
 	return {
 		model: "anthropic/claude-sonnet-4-6",
-		instructions,
+		instructions: hasMutatingPayload(payload)
+			? mutatingInstructions
+			: readOnlyInstructions,
 		metadata: { projectId },
 		tools,
 		sandbox: cloudflareSandbox(sandbox),
