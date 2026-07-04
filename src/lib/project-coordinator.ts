@@ -395,24 +395,24 @@ export class ProjectCoordinator extends DurableObject<Env> {
 				return new Response("Method not allowed", { status: 405 });
 			}
 
-		switch (url.pathname) {
-			case "/admit":
-				return await this.admit(parseAdmissionInput(await request.json()));
-			case "/terminal":
-				return await this.terminal(parseTerminalInput(await request.json()));
-			case "/begin-restore":
-				return await this.beginRestore();
-			case "/end-restore":
-				return await this.endRestore(
-					parseNullableSnapshotIdInput(await request.json()),
-				);
-			case "/record-snapshot":
-				return await this.recordSnapshot(
-					parseRequiredSnapshotIdInput(await request.json()),
-				);
-			default:
-				return new Response("Not found", { status: 404 });
-		}
+			switch (url.pathname) {
+				case "/admit":
+					return await this.admit(parseAdmissionInput(await request.json()));
+				case "/terminal":
+					return await this.terminal(parseTerminalInput(await request.json()));
+				case "/begin-restore":
+					return await this.beginRestore();
+				case "/end-restore":
+					return await this.endRestore(
+						parseNullableSnapshotIdInput(await request.json()),
+					);
+				case "/record-snapshot":
+					return await this.recordSnapshot(
+						parseRequiredSnapshotIdInput(await request.json()),
+					);
+				default:
+					return new Response("Not found", { status: 404 });
+			}
 		} catch (error) {
 			return Response.json(
 				{
@@ -485,10 +485,7 @@ export class ProjectCoordinator extends DurableObject<Env> {
 	private async recordSnapshot(input: {
 		snapshotId: string;
 	}): Promise<Response> {
-		const state = recordLatestSnapshot(
-			await this.getState(),
-			input.snapshotId,
-		);
+		const state = recordLatestSnapshot(await this.getState(), input.snapshotId);
 		await this.setState(state);
 
 		return Response.json({ state }, { status: 202 });

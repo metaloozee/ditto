@@ -120,10 +120,7 @@ async function notifyCoordinatorRestore(
 			env,
 			projectId,
 			path: phase === "begin" ? "/begin-restore" : "/end-restore",
-			body:
-				phase === "end"
-					? { snapshotId: snapshotId ?? null }
-					: {},
+			body: phase === "end" ? { snapshotId: snapshotId ?? null } : {},
 		});
 	} catch {
 		// Best-effort: a coordinator notify failure must not break the restore.
@@ -135,8 +132,8 @@ async function getProjectCoordinatorStatus(
 	projectId: string,
 ): Promise<ProjectCoordinatorState | null> {
 	try {
-		const coordinatorNamespace = env
-			.ProjectCoordinator as DurableObjectNamespace;
+		const coordinatorNamespace =
+			env.ProjectCoordinator as DurableObjectNamespace;
 		const coordinatorId = coordinatorNamespace.idFromName(projectId);
 		const coordinator = coordinatorNamespace.get(coordinatorId) as {
 			fetch(request: Request): Promise<Response>;
@@ -258,32 +255,32 @@ export const workspaceRouter = createTRPCRouter({
 				project.envVars,
 				ctx.env.BETTER_AUTH_SECRET,
 			);
-		let ensuredProject = project;
-		let sandboxState:
-			| "connected"
-			| "restored_from_backup"
-			| "recreated_from_github" = "connected";
-		try {
-			await notifyCoordinatorRestore(ctx.env, input.projectId, "begin");
-			const ensured = await ensureProjectSandbox({
-				db,
-				env: ctx.env,
-				project,
-				envVars,
-			});
-			ensuredProject = ensured.project;
-			sandboxState = ensured.state;
-		} catch (error) {
-			throw new TRPCError({
-				code: "PRECONDITION_FAILED",
-				message:
-					error instanceof Error
-						? error.message
-						: "Project sandbox is not ready yet.",
-			});
-		} finally {
-			await notifyCoordinatorRestore(ctx.env, input.projectId, "end");
-		}
+			let ensuredProject = project;
+			let sandboxState:
+				| "connected"
+				| "restored_from_backup"
+				| "recreated_from_github" = "connected";
+			try {
+				await notifyCoordinatorRestore(ctx.env, input.projectId, "begin");
+				const ensured = await ensureProjectSandbox({
+					db,
+					env: ctx.env,
+					project,
+					envVars,
+				});
+				ensuredProject = ensured.project;
+				sandboxState = ensured.state;
+			} catch (error) {
+				throw new TRPCError({
+					code: "PRECONDITION_FAILED",
+					message:
+						error instanceof Error
+							? error.message
+							: "Project sandbox is not ready yet.",
+				});
+			} finally {
+				await notifyCoordinatorRestore(ctx.env, input.projectId, "end");
+			}
 
 			const sessions = await db
 				.select()
@@ -374,30 +371,30 @@ export const workspaceRouter = createTRPCRouter({
 						.limit(100)
 				: [];
 
-		const {
-			envVars: _envVars,
-			sandboxBackup: _sandboxBackup,
-			sandboxBackupCreatedAt: _sandboxBackupCreatedAt,
-			...projectResponse
-		} = ensuredProject;
-		const coordinatorState = await getProjectCoordinatorStatus(
-			ctx.env,
-			input.projectId,
-		);
-		const restoring = coordinatorState?.snapshot.restoring ?? false;
-		const latestSnapshotId =
-			coordinatorState?.snapshot.latestSnapshotId ?? null;
-		return {
-			project: projectResponse,
-			sandbox: { state: sandboxState },
-			restoring,
-			latestSnapshotId,
-			sessions,
-			selectedSession,
-			activeRun,
-			events: events.reverse(),
-		};
-	}),
+			const {
+				envVars: _envVars,
+				sandboxBackup: _sandboxBackup,
+				sandboxBackupCreatedAt: _sandboxBackupCreatedAt,
+				...projectResponse
+			} = ensuredProject;
+			const coordinatorState = await getProjectCoordinatorStatus(
+				ctx.env,
+				input.projectId,
+			);
+			const restoring = coordinatorState?.snapshot.restoring ?? false;
+			const latestSnapshotId =
+				coordinatorState?.snapshot.latestSnapshotId ?? null;
+			return {
+				project: projectResponse,
+				sandbox: { state: sandboxState },
+				restoring,
+				latestSnapshotId,
+				sessions,
+				selectedSession,
+				activeRun,
+				events: events.reverse(),
+			};
+		}),
 
 	startRun: protectedProcedure
 		.input(
@@ -436,34 +433,34 @@ export const workspaceRouter = createTRPCRouter({
 					});
 				}
 
-			try {
-				const envVars = await decryptEnvVars(
-					project.envVars,
-					ctx.env.BETTER_AUTH_SECRET,
-				);
-				await notifyCoordinatorRestore(ctx.env, input.projectId, "begin");
-				const ensured = await ensureProjectSandbox({
-					db,
-					env: ctx.env,
-					project,
-					envVars,
-				});
-				project = ensured.project;
-			} catch (error) {
-				throw new TRPCError({
-					code:
-						error instanceof Error &&
-						error.message === "Project sandbox is already being restored."
-							? "CONFLICT"
-							: "PRECONDITION_FAILED",
-					message:
-						error instanceof Error
-							? error.message
-							: "Project sandbox is not ready yet.",
-				});
-			} finally {
-				await notifyCoordinatorRestore(ctx.env, input.projectId, "end");
-			}
+				try {
+					const envVars = await decryptEnvVars(
+						project.envVars,
+						ctx.env.BETTER_AUTH_SECRET,
+					);
+					await notifyCoordinatorRestore(ctx.env, input.projectId, "begin");
+					const ensured = await ensureProjectSandbox({
+						db,
+						env: ctx.env,
+						project,
+						envVars,
+					});
+					project = ensured.project;
+				} catch (error) {
+					throw new TRPCError({
+						code:
+							error instanceof Error &&
+							error.message === "Project sandbox is already being restored."
+								? "CONFLICT"
+								: "PRECONDITION_FAILED",
+						message:
+							error instanceof Error
+								? error.message
+								: "Project sandbox is not ready yet.",
+					});
+				} finally {
+					await notifyCoordinatorRestore(ctx.env, input.projectId, "end");
+				}
 
 				let selectedSession: typeof workspaceSessions.$inferSelect | null =
 					null;
@@ -628,49 +625,49 @@ export const workspaceRouter = createTRPCRouter({
 					});
 				}
 
-			async function markCoordinatorAdmissionRejected(
-				response: Response,
-			): Promise<never> {
-				const reason = await getProjectCoordinatorErrorMessage(response);
-				const userMessage =
-					reason === RESTORE_IN_PROGRESS_MESSAGE
-						? "Workspace is restoring. Try again in a moment."
-						: reason;
+				async function markCoordinatorAdmissionRejected(
+					response: Response,
+				): Promise<never> {
+					const reason = await getProjectCoordinatorErrorMessage(response);
+					const userMessage =
+						reason === RESTORE_IN_PROGRESS_MESSAGE
+							? "Workspace is restoring. Try again in a moment."
+							: reason;
 
-				await db.batch([
-					db
-						.update(agentRuns)
-						.set({
-							status: "failed",
-							finishedAt: sql`(unixepoch())`,
-							updatedAt: sql`(unixepoch())`,
-						})
-						.where(eq(agentRuns.id, runId)),
-					db.insert(agentRunEvents).values([
-						{
-							runId,
-							projectId: input.projectId,
-							sessionId,
-							type: "lock_rejected" as const,
-							payload: createAgentRunEventPayload({
-								reason: userMessage,
-							}),
-						},
-						{
-							runId,
-							projectId: input.projectId,
-							sessionId,
-							type: "done" as const,
-							payload: createAgentRunEventPayload({ status: "failed" }),
-						},
-					]),
-				]);
+					await db.batch([
+						db
+							.update(agentRuns)
+							.set({
+								status: "failed",
+								finishedAt: sql`(unixepoch())`,
+								updatedAt: sql`(unixepoch())`,
+							})
+							.where(eq(agentRuns.id, runId)),
+						db.insert(agentRunEvents).values([
+							{
+								runId,
+								projectId: input.projectId,
+								sessionId,
+								type: "lock_rejected" as const,
+								payload: createAgentRunEventPayload({
+									reason: userMessage,
+								}),
+							},
+							{
+								runId,
+								projectId: input.projectId,
+								sessionId,
+								type: "done" as const,
+								payload: createAgentRunEventPayload({ status: "failed" }),
+							},
+						]),
+					]);
 
-				throw new TRPCError({
-					code: response.status === 409 ? "CONFLICT" : "PRECONDITION_FAILED",
-					message: userMessage,
-				});
-			}
+					throw new TRPCError({
+						code: response.status === 409 ? "CONFLICT" : "PRECONDITION_FAILED",
+						message: userMessage,
+					});
+				}
 
 				async function admitMutatingRun(): Promise<number> {
 					const admissionResponse = await postProjectCoordinator({

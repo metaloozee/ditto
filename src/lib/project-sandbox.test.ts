@@ -86,7 +86,7 @@ function makeFakeBucket(manifestBody: unknown | null) {
 function makeFakeDb(options: {
 	lockedProject: typeof projects.$inferSelect | null;
 	updatedProject?: typeof projects.$inferSelect;
-	snapshotRows?: typeof snapshots.$inferSelect[];
+	snapshotRows?: (typeof snapshots.$inferSelect)[];
 }) {
 	const returningQueue: unknown[][] = [];
 	returningQueue.push(options.lockedProject ? [options.lockedProject] : []);
