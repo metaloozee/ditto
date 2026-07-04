@@ -1,3 +1,5 @@
+import { redactSecrets } from "./secret-redaction";
+
 export const PROJECT_CODER_AGENT_NAME = "project-coder" as const;
 
 const FLUE_INTERNAL_ORIGIN = "https://flue.internal";
@@ -171,7 +173,9 @@ async function formatFlueResponseError(
 ): Promise<string> {
 	const text = await response.text();
 	const message = (extractErrorMessage(text) ?? text) || response.statusText;
-	return `Flue ${operation} failed: ${response.status} ${compactText(message)}`;
+	return `Flue ${operation} failed: ${response.status} ${compactText(
+		redactSecrets(message),
+	)}`;
 }
 
 function extractErrorMessage(text: string): string | null {

@@ -20,6 +20,7 @@ import {
 	destroySandbox,
 	syncSandboxEnvFile,
 } from "#/lib/sandbox-bootstrap";
+import { redactSecrets } from "#/lib/secret-redaction";
 
 export const projectsRouter = createTRPCRouter({
 	create: protectedProcedure
@@ -144,7 +145,10 @@ export const projectsRouter = createTRPCRouter({
 					code: "INTERNAL_SERVER_ERROR",
 					message:
 						err instanceof Error
-							? err.message
+							? redactSecrets(
+									err.message,
+									sanitizedEnvVars.map((envVar) => envVar.value),
+								)
 							: "Failed to provision sandbox. Please try again.",
 				});
 			}

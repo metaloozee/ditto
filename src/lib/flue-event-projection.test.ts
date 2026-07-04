@@ -43,12 +43,13 @@ describe("mapFlueEventToDittoEvents", () => {
 	});
 
 	it("projects a successful tool completion", () => {
+		const secret = `sk-test-${"a".repeat(24)}`;
 		const projection = mapFlueEventToDittoEvents({
 			type: "tool",
 			toolName: "read_file",
 			toolCallId: "call-1",
 			isError: false,
-			result: "ok",
+			result: `ok ${secret}`,
 			durationMs: 42,
 		});
 
@@ -60,9 +61,10 @@ describe("mapFlueEventToDittoEvents", () => {
 			toolName: "read_file",
 			toolCallId: "call-1",
 			status: "completed",
-			result: "ok",
+			result: "ok [REDACTED]",
 			durationMs: 42,
 		});
+		expect(projection.events[0]?.payload).not.toContain(secret);
 	});
 
 	it("projects a failed tool completion with an error event", () => {
@@ -111,11 +113,35 @@ describe("mapFlueEventToDittoEvents", () => {
 		expect(payload.attributes).toBe('{"step":"compile"}');
 	});
 
+	it("redacts log frames and payloads before broadcast or persistence", () => {
+		const secret = `ghp_${"f".repeat(40)}`;
+		const projection = mapFlueEventToDittoEvents({
+			type: "log",
+			level: "error",
+			message: `failed with ${secret}`,
+		});
+		const payload = parsePayload(projection.events[0]);
+
+		expect(payload.message).toBe("failed with [REDACTED]");
+		expect(projection.frames).toEqual([
+			{ type: "error", message: "failed with [REDACTED]" },
+		]);
+		expect(projection.events[0]?.payload).not.toContain(secret);
+	});
+
 	it("keeps truncated text within the requested maximum length", () => {
 		expect(compactFlueText("abcdef", 5)).toBe("\n...[");
 		expect(compactFlueText("abcdef", 0)).toBe("");
 		expect(compactFlueText("a".repeat(100), 20)).toBe(`aaaaa\n...[truncated]`);
 		expect(compactFlueText("a".repeat(100), 20)).toHaveLength(20);
+	});
+
+	it("redacts before truncating compacted text", () => {
+		const secret = `sk-test-${"g".repeat(24)}`;
+		const compacted = compactFlueText(`${secret} ${"x".repeat(100)}`, 20);
+
+		expect(compacted).toBe("[REDA\n...[truncated]");
+		expect(compacted).not.toContain(secret);
 	});
 
 	it("projects completed submission_settled as terminal completed", () => {

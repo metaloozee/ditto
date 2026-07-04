@@ -11,6 +11,8 @@
  * Ditto-owned wire types.
  */
 
+export { redactSecrets } from "./secret-redaction";
+
 /** Commands the DO writes to the runner's stdin (one NDJSON object per line).
  *
  * `prompt.id` is the active run id — the runner tags every emitted event with
@@ -136,37 +138,6 @@ export function serializeRunnerCommand(command: RunnerCommand): string {
 export function serializeRunnerEvent(event: RunnerEvent): string {
 	return JSON.stringify(event);
 }
-
-/**
- * Redact known secret values and common secret patterns from text before it
- * is emitted as a tool_progress excerpt or error message. `secrets` is the
- * set of concrete secret strings to scrub (e.g. live env values); the regex
- * patterns catch unknown secrets that match known credential shapes.
- */
-export function redactSecrets(text: string, secrets: string[]): string {
-	const REDACTION = "[REDACTED]";
-	let out = text;
-	for (const secret of secrets) {
-		if (secret.length >= 8) {
-			out = out.split(secret).join(REDACTION);
-		}
-	}
-	for (const pattern of SECRET_PATTERNS) {
-		out = out.replace(pattern, REDACTION);
-	}
-	return out;
-}
-
-const SECRET_PATTERNS: RegExp[] = [
-	// GitHub tokens: ghp_, gho_, ghs_, ghu_, ghr_
-	/gh[pousr]_[A-Za-z0-9]{36,}/g,
-	// PEM private key blocks (incl. BEGIN/END lines)
-	/-----BEGIN (?:[A-Z ]* )?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z ]* )?PRIVATE KEY-----/g,
-	// AWS access key IDs
-	/AKIA[0-9A-Z]{16}/g,
-	// Generic provider API keys: sk-... (OpenAI-style), sk-ant-... (Anthropic-style)
-	/sk-(?:ant-)?[A-Za-z0-9_-]{20,}/g,
-];
 
 // --- private payload-extraction helpers (copied from pi-rpc.ts / broker) ---
 

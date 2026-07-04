@@ -2,6 +2,7 @@ import { getSandbox } from "@cloudflare/sandbox";
 import { type AgentRouteHandler, createAgent, defineTool } from "@flue/runtime";
 import { cloudflareSandbox } from "@flue/runtime/cloudflare";
 import * as v from "valibot";
+import { redactSecrets } from "../../src/lib/secret-redaction";
 
 type FlueProjectCoderEnv = {
 	Sandbox: Parameters<typeof getSandbox>[0];
@@ -107,7 +108,7 @@ export default createAgent<unknown, FlueProjectCoderEnv>(({ id, env }) => {
 			.filter(Boolean)
 			.join("\n");
 
-		return capOutput(output);
+		return capOutput(redactSecrets(output));
 	};
 	const tools = [
 		defineTool({
@@ -144,7 +145,9 @@ export default createAgent<unknown, FlueProjectCoderEnv>(({ id, env }) => {
 					throw new Error("limit must be a positive number.");
 				}
 
-				return capOutput(file.content.slice(offset, offset + limit));
+				return capOutput(
+					redactSecrets(file.content.slice(offset, offset + limit)),
+				);
 			},
 		}),
 		defineTool({

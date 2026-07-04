@@ -2,6 +2,7 @@ import {
 	type AgentRunEventType,
 	createAgentRunEventPayload,
 } from "./workspace-policy";
+import { redactSecrets } from "./secret-redaction";
 
 export type FlueEventInput = {
 	type: string;
@@ -35,7 +36,7 @@ export function compactFlueText(
 ): string | null {
 	const truncationMarker = "\n...[truncated]";
 	const safeMaxLength = Math.max(0, maxLength);
-	const text = stringifyFlueValue(value)?.trim();
+	const text = redactSecrets(stringifyFlueValue(value) ?? "").trim();
 
 	if (!text) {
 		return null;

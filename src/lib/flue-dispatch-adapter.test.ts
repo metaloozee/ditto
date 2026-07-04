@@ -128,6 +128,62 @@ describe("flue dispatch adapter", () => {
 		).rejects.toThrow(`Flue dispatch failed: 503 ${"x".repeat(1000)}`);
 	});
 
+	it("redacts JSON error body text before throwing dispatch errors", async () => {
+		const secret = `sk-test-${"h".repeat(24)}`;
+		const adapter = createFlueDispatchAdapter({
+			dispatchFetch: vi.fn(
+				async () =>
+					new Response(JSON.stringify({ error: { message: `bad ${secret}` } }), {
+						status: 500,
+					}),
+			),
+			streamFetch: vi.fn(),
+		});
+
+		await expect(
+			adapter.dispatch({
+				agentName: PROJECT_CODER_AGENT_NAME,
+				agentInstanceId: "project-1",
+				message: "Inspect the repo",
+			}),
+		).rejects.toThrow("Flue dispatch failed: 500 bad [REDACTED]");
+		await expect(
+			adapter.dispatch({
+				agentName: PROJECT_CODER_AGENT_NAME,
+				agentInstanceId: "project-1",
+				message: "Inspect the repo",
+			}),
+		).rejects.not.toThrow(secret);
+	});
+
+	it("redacts JSON error body text before throwing stream poll errors", async () => {
+		const secret = `ghs_${"i".repeat(40)}`;
+		const adapter = createFlueDispatchAdapter({
+			dispatchFetch: vi.fn(),
+			streamFetch: vi.fn(
+				async () =>
+					new Response(JSON.stringify({ error: { message: `bad ${secret}` } }), {
+						status: 502,
+					}),
+			),
+		});
+
+		await expect(
+			adapter.poll({
+				agentName: PROJECT_CODER_AGENT_NAME,
+				agentInstanceId: "project-1",
+				offset: "10",
+			}),
+		).rejects.toThrow("Flue stream poll failed: 502 bad [REDACTED]");
+		await expect(
+			adapter.poll({
+				agentName: PROJECT_CODER_AGENT_NAME,
+				agentInstanceId: "project-1",
+				offset: "10",
+			}),
+		).rejects.not.toThrow(secret);
+	});
+
 	it("polls long-poll stream batches", async () => {
 		let request: Request | null = null;
 		const streamFetch = vi.fn(async (nextRequest: Request) => {

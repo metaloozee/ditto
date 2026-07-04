@@ -1,6 +1,7 @@
 import { type DirectoryBackup, getSandbox } from "@cloudflare/sandbox";
 import { getInstallationAccessToken } from "#/lib/github-app";
 import { getSandboxBackupOptions } from "#/lib/sandbox-backup";
+import { redactSecrets } from "#/lib/secret-redaction";
 import { WORKSPACE_PATH } from "#/lib/workspace-policy";
 
 const CLONE_TIMEOUT_MS = 120_000;
@@ -73,7 +74,7 @@ async function runCommand(
 
 	const stderr = result.stderr.trim();
 	const stdout = result.stdout.trim();
-	const output = stderr || stdout;
+	const output = redactSecrets(stderr || stdout);
 	throw new Error(
 		output
 			? `${options.errorPrefix}: ${output}`
