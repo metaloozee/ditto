@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const sandbox = {
 	writeFile: vi.fn(async () => {}),
@@ -75,6 +75,10 @@ function tool(tools: Array<{ name: string }>, name: string) {
 }
 
 describe("mutating Flue project tools", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
 	it("keeps mutating tools out of the read-only agent definition", async () => {
 		const config = await projectCoder.default.initialize({
 			id: "project-1:sandbox-1",
@@ -88,6 +92,26 @@ describe("mutating Flue project tools", () => {
 		expect(config.tools?.map((candidate) => candidate.name)).not.toContain(
 			"run_mutating_command",
 		);
+	});
+
+	it("uses the mutating workflow payload sandbox id instead of the Flue run id", async () => {
+		const binding = {};
+		await projectCoder.default.initialize({
+			id: "flue-workflow-run-id",
+			env: { Sandbox: binding as never },
+			payload: {
+				projectId: "payload-project",
+				sessionId: "session-1",
+				runId: "ditto-run-1",
+				userId: "user-1",
+				sandboxId: "payload-sandbox",
+				message: "make a change",
+				modelSpecifier: "anthropic/claude-sonnet-4-6",
+				fencingToken: 7,
+			},
+		});
+
+		expect(getSandboxMock).toHaveBeenCalledWith(binding, "payload-sandbox");
 	});
 
 	it("rejects path traversal", () => {

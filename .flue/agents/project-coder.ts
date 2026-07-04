@@ -111,17 +111,49 @@ function normalizeMaxEntries(value: number | undefined): number {
 }
 
 function hasMutatingPayload(value: unknown): boolean {
-	return (
+	return parseMutatingPayloadIdentity(value) !== null;
+}
+
+function getString(value: unknown): string | null {
+	return typeof value === "string" && value.trim() ? value : null;
+}
+
+function parseMutatingPayloadIdentity(value: unknown): {
+	projectId: string;
+	sandboxId: string;
+} | null {
+	if (
 		typeof value === "object" &&
 		value !== null &&
-		typeof (value as { runId?: unknown }).runId === "string" &&
 		typeof (value as { fencingToken?: unknown }).fencingToken === "number"
-	);
+	) {
+		const payload = value as Record<string, unknown>;
+		const projectId = getString(payload.projectId);
+		const sandboxId = getString(payload.sandboxId);
+		const runId = getString(payload.runId);
+		if (!projectId || !sandboxId || !runId) {
+			throw new Error("Invalid mutating project-coder payload.");
+		}
+
+		return { projectId, sandboxId };
+	}
+
+	return null;
+}
+
+function parseAddressableAgentIdentity(id: string): {
+	projectId: string;
+	sandboxId: string;
+} {
+	const [projectId, sandboxId = id] = id.split(":", 2);
+	return { projectId, sandboxId };
 }
 
 export default createAgent<unknown, FlueProjectCoderEnv>(
 	({ id, env, payload }) => {
-		const [projectId, sandboxId = id] = id.split(":", 2);
+		const { projectId, sandboxId } =
+			parseMutatingPayloadIdentity(payload) ??
+			parseAddressableAgentIdentity(id);
 		const sandbox = getSandbox(env.Sandbox, sandboxId);
 		const isDirectory = async (path: string) => {
 			const result = await sandbox.exec(`test -d ${quoteShellArg(path)}`, {

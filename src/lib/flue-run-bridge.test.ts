@@ -23,13 +23,19 @@ vi.stubGlobal(
 );
 
 const createDbMock = vi.hoisted(() => vi.fn());
+const getProjectSandboxMock = vi.hoisted(() => vi.fn());
 
 vi.mock("#/db", () => ({
 	createDb: createDbMock,
 }));
 
+vi.mock("#/lib/sandbox-bootstrap", () => ({
+	getProjectSandbox: getProjectSandboxMock,
+}));
+
 const {
 	applyFlueStreamCursor,
+	buildFinalChangeSummaryEvent,
 	buildTerminalEvents,
 	createFlueAgentInstanceId,
 	FlueRunBridge,
@@ -149,6 +155,22 @@ describe("flue run bridge helpers", () => {
 			status: "failed",
 			schemaVersion: 1,
 		});
+	});
+
+	it("builds a redacted bounded final change summary event", () => {
+		const event = buildFinalChangeSummaryEvent({
+			status: "completed",
+			summary: `changed sk-${"x".repeat(24)} ${"a".repeat(4100)}`,
+		});
+		const payload = JSON.parse(event.payload);
+
+		expect(event.type).toBe("tool_finished");
+		expect(payload.toolName).toBe("final_change_summary");
+		expect(payload.status).toBe("completed");
+		expect(payload.result).toContain("[REDACTED]");
+		expect(payload.result).not.toContain(`sk-${"x".repeat(24)}`);
+		expect(payload.result).toContain("...[truncated]");
+		expect(payload.result.length).toBeLessThanOrEqual(4000);
 	});
 
 	it("guards duplicate consumers for the same active run", async () => {

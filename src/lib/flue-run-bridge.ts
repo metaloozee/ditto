@@ -15,6 +15,8 @@ import {
 	type FlueProjectedEvent,
 	mapFlueEventToDittoEvents,
 } from "#/lib/flue-event-projection";
+import { getProjectSandbox } from "#/lib/sandbox-bootstrap";
+import { redactSecrets } from "#/lib/secret-redaction";
 import { createAgentRunEventPayload } from "#/lib/workspace-policy";
 import type { WorkspaceSessionBrokerFrame } from "#/lib/workspace-session-broker";
 
@@ -68,6 +70,9 @@ export type TerminalEventInput = {
 };
 
 const FLUE_RUN_BRIDGE_STATE_KEY = "flue-run-bridge-state";
+const FINAL_CHANGE_SUMMARY_TIMEOUT_MS = 15_000;
+const FINAL_CHANGE_SUMMARY_MAX_LENGTH = 4000;
+const FINAL_CHANGE_SUMMARY_TRUNCATION_MARKER = "\n...[truncated]";
 
 function isWebSocketUpgrade(request: Request): boolean {
 	return request.headers.get("Upgrade")?.toLowerCase() === "websocket";
@@ -218,6 +223,33 @@ export function buildTerminalEvents(input: TerminalEventInput): Array<{
 			payload: createAgentRunEventPayload({ status: input.status }),
 		},
 	];
+}
+
+export function buildFinalChangeSummaryEvent(input: {
+	status: TerminalStatus;
+	summary: string;
+}): FlueProjectedEvent {
+	return {
+		type: "tool_finished",
+		payload: createAgentRunEventPayload({
+			toolName: "final_change_summary",
+			status: input.status,
+			result: compactFinalChangeSummary(input.summary),
+		}),
+	};
+}
+
+function compactFinalChangeSummary(value: string): string {
+	const redacted = redactSecrets(value).trim();
+	if (redacted.length <= FINAL_CHANGE_SUMMARY_MAX_LENGTH) {
+		return redacted;
+	}
+
+	return `${redacted.slice(
+		0,
+		FINAL_CHANGE_SUMMARY_MAX_LENGTH -
+			FINAL_CHANGE_SUMMARY_TRUNCATION_MARKER.length,
+	)}${FINAL_CHANGE_SUMMARY_TRUNCATION_MARKER}`;
 }
 
 export class FlueRunBridge extends DurableObject<Env> {
@@ -524,6 +556,18 @@ export class FlueRunBridge extends DurableObject<Env> {
 		}
 
 		const assistantText = this.assistantDraft.consume(runId);
+		const finalChangeSummaryEvents = await this.buildFinalChangeSummaryEvents(
+			state,
+			status,
+		);
+		const terminalEvents = buildTerminalEvents({
+			runId,
+			projectId: state.projectId,
+			sessionId: state.sessionId,
+			assistantText,
+			status,
+		});
+		const doneEvent = terminalEvents.at(-1);
 		const db = createDb(this.env);
 		await db.batch([
 			db
@@ -548,13 +592,17 @@ export class FlueRunBridge extends DurableObject<Env> {
 					),
 				),
 			db.insert(agentRunEvents).values(
-				buildTerminalEvents({
+				[
+					...terminalEvents.slice(0, -1),
+					...finalChangeSummaryEvents,
+					...(doneEvent ? [doneEvent] : []),
+				].map((event) => ({
 					runId,
-					projectId: state.projectId,
-					sessionId: state.sessionId,
-					assistantText,
-					status,
-				}),
+					projectId: state.projectId as string,
+					sessionId: state.sessionId as string,
+					type: event.type,
+					payload: event.payload,
+				})),
 			),
 		]);
 
@@ -612,6 +660,56 @@ export class FlueRunBridge extends DurableObject<Env> {
 			streamCursor: undefined,
 			streamClosed: undefined,
 		});
+	}
+
+	private async buildFinalChangeSummaryEvents(
+		state: FlueRunBridgeState,
+		status: TerminalStatus,
+	): Promise<FlueProjectedEvent[]> {
+		if (state.isMutating !== true || !state.sandboxId) {
+			return [];
+		}
+
+		try {
+			const sandbox = getProjectSandbox(this.env, state.sandboxId);
+			const [gitStatus, diffStat] = await Promise.all([
+				sandbox.exec("git status --short", {
+					cwd: "/workspace",
+					timeout: FINAL_CHANGE_SUMMARY_TIMEOUT_MS,
+				}),
+				sandbox.exec("git diff --stat", {
+					cwd: "/workspace",
+					timeout: FINAL_CHANGE_SUMMARY_TIMEOUT_MS,
+				}),
+			]);
+
+			return [
+				buildFinalChangeSummaryEvent({
+					status,
+					summary: [
+						"git status --short:",
+						gitStatus.stdout || "[no output]",
+						gitStatus.stderr ? `stderr:\n${gitStatus.stderr}` : "",
+						"",
+						"git diff --stat:",
+						diffStat.stdout || "[no output]",
+						diffStat.stderr ? `stderr:\n${diffStat.stderr}` : "",
+					]
+						.filter((line) => line !== "")
+						.join("\n"),
+				}),
+			];
+		} catch (error) {
+			return [
+				buildFinalChangeSummaryEvent({
+					status: "failed",
+					summary:
+						error instanceof Error
+							? `Final change summary failed: ${error.message}`
+							: "Final change summary failed.",
+				}),
+			];
+		}
 	}
 
 	private async clearCanceledRun(
