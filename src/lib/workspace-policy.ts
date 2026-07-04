@@ -20,6 +20,9 @@ export const AGENT_RUN_EVENT_TYPES = [
 	"lock_rejected",
 	"done",
 	"error",
+	"snapshot_started",
+	"snapshot_completed",
+	"snapshot_failed",
 ] as const;
 
 export const WORKSPACE_PATH = "/workspace";
