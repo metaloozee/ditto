@@ -11,8 +11,8 @@ import {
 } from "#/db/schema";
 import { isProjectCoderModelSpecifier } from "#/lib/agent-models";
 import {
-	RESTORE_IN_PROGRESS_MESSAGE,
 	type ProjectCoordinatorState,
+	RESTORE_IN_PROGRESS_MESSAGE,
 } from "#/lib/project-coordinator";
 import { decryptEnvVars } from "#/lib/project-env-vars";
 import {
