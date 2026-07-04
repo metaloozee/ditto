@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("cloudflare:workers", () => ({
 	DurableObject: class DurableObject {
@@ -24,6 +24,8 @@ vi.stubGlobal(
 
 const createDbMock = vi.hoisted(() => vi.fn());
 const getProjectSandboxMock = vi.hoisted(() => vi.fn());
+const backupSandboxWorkspaceMock = vi.hoisted(() => vi.fn());
+const serializeSandboxBackupMock = vi.hoisted(() => vi.fn());
 
 vi.mock("#/db", () => ({
 	createDb: createDbMock,
@@ -31,6 +33,17 @@ vi.mock("#/db", () => ({
 
 vi.mock("#/lib/sandbox-bootstrap", () => ({
 	getProjectSandbox: getProjectSandboxMock,
+	backupSandboxWorkspace: backupSandboxWorkspaceMock,
+}));
+
+vi.mock("#/lib/sandbox-backup", () => ({
+	serializeSandboxBackup: serializeSandboxBackupMock,
+	SANDBOX_BACKUP_EXCLUDES: [],
+	SANDBOX_BACKUP_TTL_SECONDS: 31536000,
+	parseSandboxBackup: vi.fn(),
+	hasPresignedBackupConfig: vi.fn(),
+	shouldUseLocalBucketBackups: vi.fn(),
+	getSandboxBackupOptions: vi.fn(),
 }));
 
 const {
@@ -240,5 +253,336 @@ describe("flue run bridge helpers", () => {
 		await persistFlueStreamOffset({} as Env, "run-1", "2", "2");
 
 		expect(update).not.toHaveBeenCalled();
+	});
+});
+
+describe("flue run bridge checkpoint", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	function makeDbMock() {
+		const insertValues = vi.fn().mockResolvedValue(undefined);
+		const batch = vi.fn().mockResolvedValue(undefined);
+		const where = vi.fn().mockResolvedValue(undefined);
+		const set = vi.fn(() => ({ where }));
+		const update = vi.fn(() => ({ set }));
+		const insert = vi.fn(() => ({ values: insertValues }));
+		const select = vi.fn(() => ({
+			from: vi.fn(() => ({
+				where: vi.fn(() => ({ limit: vi.fn(() => []) })),
+			})),
+		}));
+
+		const db = { insert, batch, update, select };
+		return { db, insertValues, batch, set, where };
+	}
+
+	function makeBridge(ctxOverrides: Record<string, unknown> = {}) {
+		const state: Record<string, unknown> = {};
+		const ctx = {
+			setWebSocketAutoResponse: vi.fn(),
+			getWebSockets: vi.fn(() => []),
+			waitUntil: vi.fn(),
+			storage: {
+				get: vi.fn(async () => state),
+				put: vi.fn(async (_key: string, value: unknown) => {
+					Object.assign(state, value);
+				}),
+			},
+			...ctxOverrides,
+		};
+		return { ctx, state };
+	}
+
+	it("successful mutating run writes R2 manifest, D1 snapshot row, and updates projects.sandboxBackup", async () => {
+		const { db, insertValues, batch, set, where } = makeDbMock();
+		createDbMock.mockReturnValue(db);
+
+		const execMock = vi.fn();
+		execMock.mockResolvedValueOnce({
+			success: true,
+			stdout: "abc123\n",
+			stderr: "",
+		});
+		execMock.mockResolvedValueOnce({
+			success: true,
+			stdout: " M src/index.ts\n",
+			stderr: "",
+		});
+		execMock.mockResolvedValueOnce({
+			success: true,
+			stdout: " src/index.ts | 5 +++--\n",
+			stderr: "",
+		});
+		getProjectSandboxMock.mockReturnValue({ exec: execMock });
+
+		backupSandboxWorkspaceMock.mockResolvedValue({
+			id: "backup-abc",
+			dir: "/workspace",
+		});
+		serializeSandboxBackupMock.mockReturnValue(
+			JSON.stringify({ id: "backup-abc", dir: "/workspace" }),
+		);
+
+		const putMock = vi.fn().mockResolvedValue(undefined);
+		const { ctx } = makeBridge();
+
+		const bridge = new FlueRunBridge(
+			ctx as unknown as DurableObjectState,
+			{
+				BACKUP_BUCKET: { put: putMock },
+				FLUE_WORKER: { fetch: vi.fn() },
+				ProjectCoordinator: {
+					idFromName: vi.fn(() => ({
+						get: vi.fn(() => ({
+							fetch: vi.fn().mockResolvedValue(new Response()),
+						})),
+					})),
+				},
+			} as unknown as Env,
+		);
+
+		await (
+			bridge as unknown as {
+				checkpointMutatingRun: (
+					state: Record<string, unknown>,
+					runId: string,
+					status: string,
+				) => Promise<void>;
+			}
+		).checkpointMutatingRun(
+			{
+				isMutating: true,
+				sandboxId: "sandbox-1",
+				projectId: "project-1",
+				sessionId: "session-1",
+			},
+			"run-1",
+			"completed",
+		);
+
+		// snapshot_started event inserted
+		expect(insertValues).toHaveBeenCalled();
+		const firstCall = insertValues.mock.calls[0]?.[0];
+		expect(firstCall.type).toBe("snapshot_started");
+
+		// BACKUP_BUCKET.put called with manifest key
+		expect(putMock).toHaveBeenCalledTimes(1);
+		const putKey = putMock.mock.calls[0]?.[0];
+		expect(putKey).toMatch(
+			/^projects\/project-1\/snapshots\/[^/]+\/manifest\.json$/,
+		);
+
+		// snapshot_completed event and snapshots row inserted via batch
+		expect(batch).toHaveBeenCalledTimes(1);
+		const batchCalls = batch.mock.calls[0]?.[0];
+		expect(batchCalls).toHaveLength(3); // snapshots insert, projects update, snapshot_completed event
+
+		// projects updated with sandboxBackup
+		expect(set).toHaveBeenCalledWith(
+			expect.objectContaining({
+				sandboxBackup: expect.any(String),
+			}),
+		);
+		expect(where).toHaveBeenCalled();
+	});
+
+	it("R2 put failure inserts snapshot_failed and does not update snapshots or projects.sandboxBackup", async () => {
+		const { db, insertValues, batch } = makeDbMock();
+		createDbMock.mockReturnValue(db);
+
+		const execMock = vi.fn();
+		execMock.mockResolvedValueOnce({
+			success: true,
+			stdout: "abc123\n",
+			stderr: "",
+		});
+		execMock.mockResolvedValueOnce({
+			success: true,
+			stdout: " M src/index.ts\n",
+			stderr: "",
+		});
+		execMock.mockResolvedValueOnce({
+			success: true,
+			stdout: " src/index.ts | 5 +++--\n",
+			stderr: "",
+		});
+		getProjectSandboxMock.mockReturnValue({ exec: execMock });
+
+		backupSandboxWorkspaceMock.mockResolvedValue({
+			id: "backup-abc",
+			dir: "/workspace",
+		});
+
+		const putMock = vi.fn().mockRejectedValue(new Error("R2 write failed"));
+		const { ctx } = makeBridge();
+
+		const bridge = new FlueRunBridge(
+			ctx as unknown as DurableObjectState,
+			{
+				BACKUP_BUCKET: { put: putMock },
+				FLUE_WORKER: { fetch: vi.fn() },
+				ProjectCoordinator: {
+					idFromName: vi.fn(() => ({
+						get: vi.fn(() => ({
+							fetch: vi.fn().mockResolvedValue(new Response()),
+						})),
+					})),
+				},
+			} as unknown as Env,
+		);
+
+		await (
+			bridge as unknown as {
+				checkpointMutatingRun: (
+					state: Record<string, unknown>,
+					runId: string,
+					status: string,
+				) => Promise<void>;
+			}
+		).checkpointMutatingRun(
+			{
+				isMutating: true,
+				sandboxId: "sandbox-1",
+				projectId: "project-1",
+				sessionId: "session-1",
+			},
+			"run-1",
+			"completed",
+		);
+
+		// batch should NOT be called (the R2 failure skips D1 writes for snapshots/projects)
+		expect(batch).not.toHaveBeenCalled();
+
+		// snapshot_failed event should be inserted
+		const snapshotFailedCalls = insertValues.mock.calls.filter(
+			(call) => call[0]?.type === "snapshot_failed",
+		);
+		expect(snapshotFailedCalls.length).toBe(1);
+		expect(snapshotFailedCalls[0]?.[0].payload).toContain("R2 write failed");
+	});
+
+	it("read-only run (isMutating: false) produces no checkpoint", async () => {
+		const { db, insertValues, batch } = makeDbMock();
+		createDbMock.mockReturnValue(db);
+
+		const { ctx } = makeBridge();
+
+		const bridge = new FlueRunBridge(
+			ctx as unknown as DurableObjectState,
+			{
+				BACKUP_BUCKET: { put: vi.fn() },
+				FLUE_WORKER: { fetch: vi.fn() },
+			} as unknown as Env,
+		);
+
+		await (
+			bridge as unknown as {
+				checkpointMutatingRun: (
+					state: Record<string, unknown>,
+					runId: string,
+					status: string,
+				) => Promise<void>;
+			}
+		).checkpointMutatingRun(
+			{
+				isMutating: false,
+				sandboxId: "sandbox-1",
+				projectId: "project-1",
+				sessionId: "session-1",
+			},
+			"run-1",
+			"completed",
+		);
+
+		// No events, no backup, no D1 writes
+		expect(insertValues).not.toHaveBeenCalled();
+		expect(batch).not.toHaveBeenCalled();
+		expect(backupSandboxWorkspaceMock).not.toHaveBeenCalled();
+	});
+
+	it("mutating run with terminal status failed produces no checkpoint", async () => {
+		const { db, insertValues, batch } = makeDbMock();
+		createDbMock.mockReturnValue(db);
+
+		const { ctx } = makeBridge();
+
+		const bridge = new FlueRunBridge(
+			ctx as unknown as DurableObjectState,
+			{
+				BACKUP_BUCKET: { put: vi.fn() },
+				FLUE_WORKER: { fetch: vi.fn() },
+			} as unknown as Env,
+		);
+
+		await (
+			bridge as unknown as {
+				checkpointMutatingRun: (
+					state: Record<string, unknown>,
+					runId: string,
+					status: string,
+				) => Promise<void>;
+			}
+		).checkpointMutatingRun(
+			{
+				isMutating: true,
+				sandboxId: "sandbox-1",
+				projectId: "project-1",
+				sessionId: "session-1",
+			},
+			"run-1",
+			"failed",
+		);
+
+		expect(insertValues).not.toHaveBeenCalled();
+		expect(batch).not.toHaveBeenCalled();
+		expect(backupSandboxWorkspaceMock).not.toHaveBeenCalled();
+	});
+
+	it("checkpoint failure does not throw — error is caught and recorded", async () => {
+		const { db, insertValues, batch } = makeDbMock();
+		createDbMock.mockReturnValue(db);
+
+		backupSandboxWorkspaceMock.mockRejectedValue(new Error("Backup failed"));
+
+		const { ctx } = makeBridge();
+
+		const bridge = new FlueRunBridge(
+			ctx as unknown as DurableObjectState,
+			{
+				BACKUP_BUCKET: { put: vi.fn() },
+				FLUE_WORKER: { fetch: vi.fn() },
+			} as unknown as Env,
+		);
+
+		await (
+			bridge as unknown as {
+				checkpointMutatingRun: (
+					state: Record<string, unknown>,
+					runId: string,
+					status: string,
+				) => Promise<void>;
+			}
+		).checkpointMutatingRun(
+			{
+				isMutating: true,
+				sandboxId: "sandbox-1",
+				projectId: "project-1",
+				sessionId: "session-1",
+			},
+			"run-1",
+			"completed",
+		);
+
+		// Should NOT throw — the method catches internally
+		expect(batch).not.toHaveBeenCalled();
+
+		// snapshot_failed event should be inserted
+		const snapshotFailedCalls = insertValues.mock.calls.filter(
+			(call) => call[0]?.type === "snapshot_failed",
+		);
+		expect(snapshotFailedCalls.length).toBe(1);
+		expect(snapshotFailedCalls[0]?.[0].payload).toContain("Backup failed");
 	});
 });
