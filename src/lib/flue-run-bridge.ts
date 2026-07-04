@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { and, eq, sql } from "drizzle-orm";
 import { createDb } from "#/db";
-import { agentRunEvents, agentRuns, projects } from "#/db/schema";
+import { agentRunEvents, agentRuns, projects, snapshots } from "#/db/schema";
 import { AssistantStreamDraft } from "#/lib/assistant-stream-draft";
 import {
 	createFlueDispatchAdapter,
@@ -15,7 +15,16 @@ import {
 	type FlueProjectedEvent,
 	mapFlueEventToDittoEvents,
 } from "#/lib/flue-event-projection";
-import { getProjectSandbox } from "#/lib/sandbox-bootstrap";
+import {
+	buildSnapshotCheckpointPlan,
+	checkpointPointerAfterR2Write,
+	computeWorkspaceDigest,
+} from "#/lib/run-snapshot-checkpoint";
+import { serializeSandboxBackup } from "#/lib/sandbox-backup";
+import {
+	backupSandboxWorkspace,
+	getProjectSandbox,
+} from "#/lib/sandbox-bootstrap";
 import { redactSecrets } from "#/lib/secret-redaction";
 import { createAgentRunEventPayload } from "#/lib/workspace-policy";
 import type { WorkspaceSessionBrokerFrame } from "#/lib/workspace-session-broker";
@@ -568,6 +577,19 @@ export class FlueRunBridge extends DurableObject<Env> {
 			status,
 		});
 		const doneEvent = terminalEvents.at(-1);
+		try {
+			await this.checkpointMutatingRun(
+				state as FlueRunBridgeState & {
+					sandboxId: string;
+					projectId: string;
+					sessionId: string;
+				},
+				runId,
+				status,
+			);
+		} catch {
+			// checkpoint failure must not prevent terminal batch
+		}
 		const db = createDb(this.env);
 		await db.batch([
 			db
@@ -709,6 +731,141 @@ export class FlueRunBridge extends DurableObject<Env> {
 							: "Final change summary failed.",
 				}),
 			];
+		}
+	}
+
+	private async checkpointMutatingRun(
+		state: FlueRunBridgeState & {
+			sandboxId: string;
+			projectId: string;
+			sessionId: string;
+		},
+		runId: string,
+		status: TerminalStatus,
+	): Promise<void> {
+		if (state.isMutating !== true || status !== "completed") {
+			return;
+		}
+
+		const db = createDb(this.env);
+
+		try {
+			await db.insert(agentRunEvents).values({
+				runId,
+				projectId: state.projectId,
+				sessionId: state.sessionId,
+				type: "snapshot_started",
+				payload: createAgentRunEventPayload({}),
+			});
+			this.broadcast({
+				type: "tool_progress",
+				runId,
+				text: "snapshot_started",
+			});
+
+			const directoryBackup = await backupSandboxWorkspace({
+				env: this.env,
+				sandboxId: state.sandboxId,
+				projectId: state.projectId,
+			});
+
+			const sandbox = getProjectSandbox(this.env, state.sandboxId);
+			const revParse = await sandbox.exec("git rev-parse HEAD", {
+				cwd: "/workspace",
+				timeout: 10_000,
+			});
+			const baseCommitSha = revParse.success
+				? redactSecrets(revParse.stdout.trim()) || null
+				: null;
+
+			const [gitStatus, diffStat] = await Promise.all([
+				sandbox.exec("git status --short", {
+					cwd: "/workspace",
+					timeout: FINAL_CHANGE_SUMMARY_TIMEOUT_MS,
+				}),
+				sandbox.exec("git diff --stat", {
+					cwd: "/workspace",
+					timeout: FINAL_CHANGE_SUMMARY_TIMEOUT_MS,
+				}),
+			]);
+
+			const digest = await computeWorkspaceDigest({
+				baseCommitSha,
+				gitStatusShort: gitStatus.stdout || "",
+				gitDiffStat: diffStat.stdout || "",
+			});
+
+			const snapshotId = crypto.randomUUID();
+			const plan = buildSnapshotCheckpointPlan({
+				projectId: state.projectId,
+				runId,
+				baseCommitSha,
+				digest,
+				createdAt: new Date().toISOString(),
+				snapshotId,
+				archiveRef: directoryBackup.id,
+			});
+
+			await this.env.BACKUP_BUCKET.put(
+				plan.manifestKey,
+				JSON.stringify(plan.manifest),
+			);
+
+			const pointer = checkpointPointerAfterR2Write({ ok: true }, plan);
+			if (pointer.updateD1) {
+				await db.batch([
+					db.insert(snapshots).values({
+						id: snapshotId,
+						projectId: state.projectId,
+						runId,
+						r2Key: pointer.pointer.r2Key,
+						baseCommitSha,
+						digest: pointer.pointer.digest,
+						status: "completed",
+						completedAt: sql`(unixepoch())`,
+					}),
+					db
+						.update(projects)
+						.set({
+							sandboxBackup: serializeSandboxBackup(directoryBackup),
+							sandboxBackupCreatedAt: sql`(unixepoch())`,
+							updatedAt: sql`(unixepoch())`,
+						})
+						.where(eq(projects.id, state.projectId)),
+					db.insert(agentRunEvents).values({
+						runId,
+						projectId: state.projectId,
+						sessionId: state.sessionId,
+						type: "snapshot_completed",
+						payload: createAgentRunEventPayload({
+							snapshotId,
+							digest,
+						}),
+					}),
+				]);
+				this.broadcast({
+					type: "tool_progress",
+					runId,
+					text: "snapshot_completed",
+				});
+			}
+		} catch (error) {
+			const reason =
+				error instanceof Error ? error.message : "Unknown checkpoint error";
+			await db.insert(agentRunEvents).values({
+				runId,
+				projectId: state.projectId,
+				sessionId: state.sessionId,
+				type: "snapshot_failed",
+				payload: createAgentRunEventPayload({
+					reason: redactSecrets(reason),
+				}),
+			});
+			this.broadcast({
+				type: "tool_progress",
+				runId,
+				text: "snapshot_failed",
+			});
 		}
 	}
 
