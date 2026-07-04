@@ -4,6 +4,8 @@ import { and, eq, sql } from "drizzle-orm";
 import { createDb } from "#/db";
 import { agentRunEvents, agentRuns, projects } from "#/db/schema";
 import { AssistantStreamDraft } from "#/lib/assistant-stream-draft";
+import type { ProjectCoordinatorTerminalStatus } from "#/lib/project-coordinator";
+import { clearProjectLockProjection } from "#/lib/project-lock-projection";
 import {
 	type RunnerCommand,
 	type RunnerEvent,
@@ -47,6 +49,7 @@ type BrokerState = {
 	sandboxId?: string;
 	activeRunId?: string;
 	isMutating?: boolean;
+	fencingToken?: number;
 	runnerProcessId?: string;
 	fifoPath?: string;
 	pendingInputRequestId?: string;
@@ -66,6 +69,7 @@ type StartRequest = {
 	message: string;
 	modelSpecifier: string;
 	isMutating: boolean;
+	fencingToken?: number;
 };
 
 type ReplyRequest = {
@@ -123,6 +127,8 @@ function parseStartRequest(value: unknown): StartRequest {
 		message: requireString(input, "message"),
 		modelSpecifier: requireString(input, "modelSpecifier"),
 		isMutating: input.isMutating === true,
+		fencingToken:
+			typeof input.fencingToken === "number" ? input.fencingToken : undefined,
 	};
 }
 
@@ -256,6 +262,7 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			sandboxId: input.sandboxId,
 			activeRunId: input.runId,
 			isMutating: input.isMutating,
+			fencingToken: input.fencingToken,
 			pendingInputRequestId: undefined,
 		};
 		await this.setState(state);
@@ -642,6 +649,7 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			db
 				.update(projects)
 				.set({
+					...(state.isMutating ? clearProjectLockProjection(new Date()) : {}),
 					activeAgentRunId: null,
 					activeAgentRunStartedAt: null,
 					updatedAt: sql`(unixepoch())`,
@@ -654,6 +662,13 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 				),
 			db.insert(agentRunEvents).values(terminalEvents),
 		]);
+		if (state.isMutating) {
+			await this.notifyProjectCoordinator(
+				state.projectId,
+				state.activeRunId,
+				status,
+			);
+		}
 		this.broadcast({ type: "done", runId: state.activeRunId, status });
 		await this.setState({
 			...state,
@@ -693,6 +708,7 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 			await createDb(this.env)
 				.update(projects)
 				.set({
+					...(state.isMutating ? clearProjectLockProjection(new Date()) : {}),
 					activeAgentRunId: null,
 					activeAgentRunStartedAt: null,
 					updatedAt: sql`(unixepoch())`,
@@ -703,6 +719,13 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 						eq(projects.activeAgentRunId, state.activeRunId),
 					),
 				);
+			if (state.isMutating) {
+				await this.notifyProjectCoordinator(
+					state.projectId,
+					state.activeRunId,
+					"canceled",
+				);
+			}
 		}
 
 		this.broadcast({
@@ -736,6 +759,23 @@ export class WorkspaceSessionBroker extends DurableObject<Env> {
 				type,
 				payload: createAgentRunEventPayload(payload),
 			});
+	}
+
+	private async notifyProjectCoordinator(
+		projectId: string,
+		runId: string,
+		status: ProjectCoordinatorTerminalStatus,
+	): Promise<void> {
+		const coordinator = this.env.ProjectCoordinator as DurableObjectNamespace;
+		const id = coordinator.idFromName(projectId);
+		const stub = coordinator.get(id);
+		await stub.fetch(
+			new Request("https://project-coordinator.internal/terminal", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ projectId, runId, status }),
+			}),
+		);
 	}
 
 	private async emitWorkspaceChanges(): Promise<void> {

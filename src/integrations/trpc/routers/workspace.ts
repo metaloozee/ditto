@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { createDb } from "#/db";
@@ -11,6 +11,10 @@ import {
 } from "#/db/schema";
 import { isProjectCoderModelSpecifier } from "#/lib/agent-models";
 import { decryptEnvVars } from "#/lib/project-env-vars";
+import {
+	acquireMutatingProjectLockProjection,
+	clearProjectLockProjection,
+} from "#/lib/project-lock-projection";
 import { ensureProjectSandbox } from "#/lib/project-sandbox";
 import {
 	createAgentRunEventPayload,
@@ -110,6 +114,21 @@ async function getProjectCoordinatorErrorMessage(
 	}
 
 	return "Project coordinator rejected the request.";
+}
+
+async function getMutatingAdmissionFencingToken(
+	response: Response,
+): Promise<number> {
+	const body = (await response.json()) as {
+		admission?: { fencingToken?: unknown };
+	};
+	const fencingToken = body.admission?.fencingToken;
+
+	if (typeof fencingToken !== "number") {
+		throw new Error("Project coordinator did not return a fencing token.");
+	}
+
+	return fencingToken;
 }
 
 async function getFlueRunBridgeErrorMessage(
@@ -489,43 +508,6 @@ export const workspaceRouter = createTRPCRouter({
 						}
 					: null;
 
-				if (input.isMutating) {
-					const [lockedProject] = await db
-						.update(projects)
-						.set({
-							activeAgentRunId: runId,
-							activeAgentRunStartedAt: sql`(unixepoch())`,
-							updatedAt: sql`(unixepoch())`,
-						})
-						.where(
-							and(
-								eq(projects.id, input.projectId),
-								eq(projects.userId, ctx.user.id),
-								isNull(projects.activeAgentRunId),
-							),
-						)
-						.returning();
-
-					if (!lockedProject) {
-						await db.insert(agentRunEvents).values({
-							runId: null,
-							projectId: input.projectId,
-							sessionId: input.sessionId ?? null,
-							type: "lock_rejected",
-							payload: createAgentRunEventPayload({
-								reason: "active_run_exists",
-							}),
-						});
-
-						throw new TRPCError({
-							code: "CONFLICT",
-							message: "Another agent run is already editing this project.",
-						});
-					}
-
-					ownsProjectLock = true;
-				}
-
 				async function releaseOwnedProjectLockAfterBatchFailure() {
 					if (!ownsProjectLock) {
 						return;
@@ -535,6 +517,7 @@ export const workspaceRouter = createTRPCRouter({
 						await db
 							.update(projects)
 							.set({
+								...clearProjectLockProjection(new Date()),
 								activeAgentRunId: null,
 								activeAgentRunStartedAt: null,
 								updatedAt: sql`(unixepoch())`,
@@ -551,7 +534,7 @@ export const workspaceRouter = createTRPCRouter({
 					}
 				}
 
-				async function startBroker() {
+				async function startBroker(fencingToken: number) {
 					if (!project.sandboxId) {
 						throw new TRPCError({
 							code: "PRECONDITION_FAILED",
@@ -572,6 +555,7 @@ export const workspaceRouter = createTRPCRouter({
 							message: input.message,
 							modelSpecifier: input.modelSpecifier,
 							isMutating: input.isMutating,
+							fencingToken,
 						},
 					});
 				}
@@ -616,6 +600,59 @@ export const workspaceRouter = createTRPCRouter({
 					});
 				}
 
+				async function admitMutatingRun(): Promise<number> {
+					const admissionResponse = await postProjectCoordinator({
+						env: ctx.env,
+						projectId: input.projectId,
+						path: "/admit",
+						body: {
+							projectId: input.projectId,
+							runId,
+							sessionId,
+							userId: ctx.user.id,
+							mode: "mutating",
+						},
+					});
+
+					if (!admissionResponse.ok) {
+						await markCoordinatorAdmissionRejected(admissionResponse);
+					}
+
+					try {
+						const fencingToken =
+							await getMutatingAdmissionFencingToken(admissionResponse);
+						const [lockedProject] = await db
+							.update(projects)
+							.set({
+								...acquireMutatingProjectLockProjection({
+									runId,
+									fencingToken,
+									now: new Date(),
+								}),
+								activeAgentRunId: runId,
+								activeAgentRunStartedAt: sql`(unixepoch())`,
+								updatedAt: sql`(unixepoch())`,
+							})
+							.where(
+								and(
+									eq(projects.id, input.projectId),
+									eq(projects.userId, ctx.user.id),
+								),
+							)
+							.returning();
+
+						if (!lockedProject) {
+							throw new Error("Project lock projection update failed.");
+						}
+
+						ownsProjectLock = true;
+						return fencingToken;
+					} catch (error) {
+						await notifyMutatingTerminalFailed();
+						throw error;
+					}
+				}
+
 				async function markAcceptedRunFailed(error: unknown) {
 					await db.batch([
 						db
@@ -629,6 +666,7 @@ export const workspaceRouter = createTRPCRouter({
 						db
 							.update(projects)
 							.set({
+								...clearProjectLockProjection(new Date()),
 								activeAgentRunId: null,
 								activeAgentRunStartedAt: null,
 								updatedAt: sql`(unixepoch())`,
@@ -659,6 +697,15 @@ export const workspaceRouter = createTRPCRouter({
 							},
 						]),
 					]);
+				}
+
+				async function notifyMutatingTerminalFailed() {
+					await postProjectCoordinator({
+						env: ctx.env,
+						projectId: input.projectId,
+						path: "/terminal",
+						body: { projectId: input.projectId, runId, status: "failed" },
+					});
 				}
 
 				async function notifyReadOnlyTerminalFailed() {
@@ -719,7 +766,13 @@ export const workspaceRouter = createTRPCRouter({
 
 				async function startCreatedRun() {
 					if (input.isMutating) {
-						await startBroker();
+						const fencingToken = await admitMutatingRun();
+						try {
+							await startBroker(fencingToken);
+						} catch (error) {
+							await notifyMutatingTerminalFailed();
+							throw error;
+						}
 						return;
 					}
 
@@ -747,7 +800,7 @@ export const workspaceRouter = createTRPCRouter({
 						try {
 							await startCreatedRun();
 						} catch (error) {
-							if (!input.isMutating) {
+							if (!input.isMutating || error instanceof TRPCError) {
 								throw error;
 							}
 							await markAcceptedRunFailed(error);
@@ -781,7 +834,7 @@ export const workspaceRouter = createTRPCRouter({
 					try {
 						await startCreatedRun();
 					} catch (error) {
-						if (!input.isMutating) {
+						if (!input.isMutating || error instanceof TRPCError) {
 							throw error;
 						}
 						await markAcceptedRunFailed(error);
@@ -844,11 +897,25 @@ export const workspaceRouter = createTRPCRouter({
 			await db
 				.update(projects)
 				.set({
+					...clearProjectLockProjection(new Date()),
 					activeAgentRunId: null,
 					activeAgentRunStartedAt: null,
 					updatedAt: sql`(unixepoch())`,
 				})
 				.where(eq(projects.activeAgentRunId, input.runId));
+
+			if (run.isMutating && !run.flueAgentName) {
+				await postProjectCoordinator({
+					env: ctx.env,
+					projectId: run.projectId,
+					path: "/terminal",
+					body: {
+						projectId: run.projectId,
+						runId: input.runId,
+						status: "canceled",
+					},
+				});
+			}
 
 			try {
 				if (run.flueAgentName || !run.isMutating) {
