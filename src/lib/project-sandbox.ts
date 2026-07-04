@@ -1,4 +1,4 @@
-import { type DirectoryBackup } from "@cloudflare/sandbox";
+import type { DirectoryBackup } from "@cloudflare/sandbox";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { createDb } from "#/db";
 import { projects, snapshots } from "#/db/schema";
@@ -234,11 +234,10 @@ export async function ensureProjectSandbox(options: {
 
 		if (resolved && "snapshotId" in resolved && resolved.manifest.archiveRef) {
 			try {
-				const directoryBackup =
-					reconstructDirectoryBackupFromArchiveRef(
-						resolved.manifest.archiveRef,
-						options.env,
-					);
+				const directoryBackup = reconstructDirectoryBackupFromArchiveRef(
+					resolved.manifest.archiveRef,
+					options.env,
+				);
 
 				await restoreSandboxWorkspaceFromSnapshot({
 					env: options.env,
