@@ -119,146 +119,149 @@ function hasMutatingPayload(value: unknown): boolean {
 	);
 }
 
-export default createAgent<unknown, FlueProjectCoderEnv>(({ id, env, payload }) => {
-	const [projectId, sandboxId = id] = id.split(":", 2);
-	const sandbox = getSandbox(env.Sandbox, sandboxId);
-	const isDirectory = async (path: string) => {
-		const result = await sandbox.exec(`test -d ${quoteShellArg(path)}`, {
-			cwd: WORKSPACE_PATH,
-			timeout: 5_000,
-		});
-		return result.exitCode === 0;
-	};
-	const runCommand = async (command: string) => {
-		const result = await sandbox.exec(command, {
-			cwd: WORKSPACE_PATH,
-			timeout: COMMAND_TIMEOUT_MS,
-		});
-		const output = [
-			`exitCode: ${result.exitCode}`,
-			result.stdout ? `stdout:\n${result.stdout}` : "",
-			result.stderr ? `stderr:\n${result.stderr}` : "",
-		]
-			.filter(Boolean)
-			.join("\n");
+export default createAgent<unknown, FlueProjectCoderEnv>(
+	({ id, env, payload }) => {
+		const [projectId, sandboxId = id] = id.split(":", 2);
+		const sandbox = getSandbox(env.Sandbox, sandboxId);
+		const isDirectory = async (path: string) => {
+			const result = await sandbox.exec(`test -d ${quoteShellArg(path)}`, {
+				cwd: WORKSPACE_PATH,
+				timeout: 5_000,
+			});
+			return result.exitCode === 0;
+		};
+		const runCommand = async (command: string) => {
+			const result = await sandbox.exec(command, {
+				cwd: WORKSPACE_PATH,
+				timeout: COMMAND_TIMEOUT_MS,
+			});
+			const output = [
+				`exitCode: ${result.exitCode}`,
+				result.stdout ? `stdout:\n${result.stdout}` : "",
+				result.stderr ? `stderr:\n${result.stderr}` : "",
+			]
+				.filter(Boolean)
+				.join("\n");
 
-		return capOutput(redactSecrets(output));
-	};
-	const tools = [
-		defineTool({
-			name: "read_file",
-			description:
-				"Read a text file from the project workspace. Paths must be relative to /workspace.",
-			parameters: v.object({
-				path: v.string(),
-				offset: v.optional(v.number()),
-				limit: v.optional(v.number()),
+			return capOutput(redactSecrets(output));
+		};
+		const tools = [
+			defineTool({
+				name: "read_file",
+				description:
+					"Read a text file from the project workspace. Paths must be relative to /workspace.",
+				parameters: v.object({
+					path: v.string(),
+					offset: v.optional(v.number()),
+					limit: v.optional(v.number()),
+				}),
+				async execute(args) {
+					const path = resolveWorkspacePath(args.path);
+					const exists = await sandbox.exists(path);
+					if (!exists.exists) {
+						throw new Error("File does not exist.");
+					}
+
+					if (await isDirectory(path)) {
+						throw new Error("Path is a directory.");
+					}
+
+					const file = await sandbox.readFile(path);
+					if (file.isBinary) {
+						throw new Error("File is binary.");
+					}
+
+					return formatReadFileOutput(file.content, args.offset, args.limit);
+				},
 			}),
-			async execute(args) {
-				const path = resolveWorkspacePath(args.path);
-				const exists = await sandbox.exists(path);
-				if (!exists.exists) {
-					throw new Error("File does not exist.");
-				}
+			defineTool({
+				name: "list_directory",
+				description:
+					"List entries directly inside a workspace directory. Paths must be relative to /workspace.",
+				parameters: v.object({
+					path: v.optional(v.string()),
+					maxEntries: v.optional(v.number()),
+				}),
+				async execute(args) {
+					const path = resolveWorkspacePath(args.path ?? "");
+					const maxEntries = normalizeMaxEntries(args.maxEntries);
+					const exists = await sandbox.exists(path);
+					if (!exists.exists) {
+						throw new Error("Directory does not exist.");
+					}
+					if (!(await isDirectory(path))) {
+						throw new Error("Path is not a directory.");
+					}
 
-				if (await isDirectory(path)) {
-					throw new Error("Path is a directory.");
-				}
+					const listed = await sandbox.listFiles(path, {
+						recursive: false,
+						includeHidden: true,
+					});
+					const entries = listed.files
+						.slice(0, maxEntries)
+						.map((file) => `${file.type}\t${file.relativePath}`)
+						.join("\n");
+					const truncation =
+						listed.files.length > maxEntries
+							? `\n[Directory listing truncated to ${maxEntries} entries.]`
+							: "";
 
-				const file = await sandbox.readFile(path);
-				if (file.isBinary) {
-					throw new Error("File is binary.");
-				}
-
-				return formatReadFileOutput(file.content, args.offset, args.limit);
-			},
-		}),
-		defineTool({
-			name: "list_directory",
-			description:
-				"List entries directly inside a workspace directory. Paths must be relative to /workspace.",
-			parameters: v.object({
-				path: v.optional(v.string()),
-				maxEntries: v.optional(v.number()),
+					return entries ? `${entries}${truncation}` : "[Directory is empty.]";
+				},
 			}),
-			async execute(args) {
-				const path = resolveWorkspacePath(args.path ?? "");
-				const maxEntries = normalizeMaxEntries(args.maxEntries);
-				const exists = await sandbox.exists(path);
-				if (!exists.exists) {
-					throw new Error("Directory does not exist.");
-				}
-				if (!(await isDirectory(path))) {
-					throw new Error("Path is not a directory.");
-				}
-
-				const listed = await sandbox.listFiles(path, {
-					recursive: false,
-					includeHidden: true,
-				});
-				const entries = listed.files
-					.slice(0, maxEntries)
-					.map((file) => `${file.type}\t${file.relativePath}`)
-					.join("\n");
-				const truncation =
-					listed.files.length > maxEntries
-						? `\n[Directory listing truncated to ${maxEntries} entries.]`
-						: "";
-
-				return entries ? `${entries}${truncation}` : "[Directory is empty.]";
-			},
-		}),
-		defineTool({
-			name: "git_status",
-			description: "Show concise git branch and status information.",
-			parameters: v.object({}),
-			async execute() {
-				return runCommand("git status --short --branch");
-			},
-		}),
-		defineTool({
-			name: "git_diff",
-			description:
-				"Show the current git diff, optionally scoped to a relative workspace path.",
-			parameters: v.object({
-				path: v.optional(v.string()),
-				statOnly: v.optional(v.boolean()),
+			defineTool({
+				name: "git_status",
+				description: "Show concise git branch and status information.",
+				parameters: v.object({}),
+				async execute() {
+					return runCommand("git status --short --branch");
+				},
 			}),
-			async execute(args) {
-				const command = args.statOnly ? "git diff --stat" : "git diff";
-				if (!args.path) {
-					return runCommand(command);
-				}
+			defineTool({
+				name: "git_diff",
+				description:
+					"Show the current git diff, optionally scoped to a relative workspace path.",
+				parameters: v.object({
+					path: v.optional(v.string()),
+					statOnly: v.optional(v.boolean()),
+				}),
+				async execute(args) {
+					const command = args.statOnly ? "git diff --stat" : "git diff";
+					if (!args.path) {
+						return runCommand(command);
+					}
 
-				const path = resolveWorkspacePath(args.path);
-				return runCommand(`${command} -- ${quoteShellArg(path)}`);
-			},
-		}),
-		defineTool({
-			name: "run_readonly_command",
-			description: "Run one exact allowlisted read-only command in /workspace.",
-			parameters: v.object({
-				command: v.picklist([
-					"pwd",
-					"git log --oneline -10",
-					"git status --short",
-					"git diff --stat",
-					"ls -la",
-				]),
+					const path = resolveWorkspacePath(args.path);
+					return runCommand(`${command} -- ${quoteShellArg(path)}`);
+				},
 			}),
-			async execute(args) {
-				return runCommand(args.command);
-			},
-		}),
-	];
+			defineTool({
+				name: "run_readonly_command",
+				description:
+					"Run one exact allowlisted read-only command in /workspace.",
+				parameters: v.object({
+					command: v.picklist([
+						"pwd",
+						"git log --oneline -10",
+						"git status --short",
+						"git diff --stat",
+						"ls -la",
+					]),
+				}),
+				async execute(args) {
+					return runCommand(args.command);
+				},
+			}),
+		];
 
-	return {
-		model: "anthropic/claude-sonnet-4-6",
-		instructions: hasMutatingPayload(payload)
-			? mutatingInstructions
-			: readOnlyInstructions,
-		metadata: { projectId },
-		tools,
-		sandbox: cloudflareSandbox(sandbox),
-	};
-});
+		return {
+			model: "anthropic/claude-sonnet-4-6",
+			instructions: hasMutatingPayload(payload)
+				? mutatingInstructions
+				: readOnlyInstructions,
+			metadata: { projectId },
+			tools,
+			sandbox: cloudflareSandbox(sandbox),
+		};
+	},
+);

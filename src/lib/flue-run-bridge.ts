@@ -319,8 +319,7 @@ export class FlueRunBridge extends DurableObject<Env> {
 			streamCursor: null,
 			streamClosed: false,
 			isMutating: input.isMutating,
-			fencingToken:
-				input.isMutating === true ? input.fencingToken : undefined,
+			fencingToken: input.isMutating === true ? input.fencingToken : undefined,
 		};
 		await this.setState(nextState);
 

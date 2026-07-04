@@ -216,7 +216,10 @@ export function validateProjectCoordinatorLease(
 		};
 	}
 
-	if (lease.projectId !== input.projectId || state.projectId !== input.projectId) {
+	if (
+		lease.projectId !== input.projectId ||
+		state.projectId !== input.projectId
+	) {
 		return {
 			valid: false,
 			message: PROJECT_COORDINATOR_LEASE_VALIDATION_MESSAGES.projectMismatch,

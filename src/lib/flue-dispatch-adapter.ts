@@ -182,9 +182,12 @@ export function createFlueDispatchAdapter(options: {
 
 		async pollStreamPath(input) {
 			const response = await options.streamFetch(
-				new Request(`${FLUE_INTERNAL_ORIGIN}${buildFluePollPath(input.streamPath, input)}`, {
-					method: "GET",
-				}),
+				new Request(
+					`${FLUE_INTERNAL_ORIGIN}${buildFluePollPath(input.streamPath, input)}`,
+					{
+						method: "GET",
+					},
+				),
 			);
 
 			if (response.status !== 200 && response.status !== 204) {

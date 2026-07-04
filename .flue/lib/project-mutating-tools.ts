@@ -2,8 +2,8 @@ import { getSandbox } from "@cloudflare/sandbox";
 import { defineTool, type ToolDefinition } from "@flue/runtime";
 import * as v from "valibot";
 import {
-	validateProjectCoordinatorLease,
 	type ProjectCoordinatorState,
+	validateProjectCoordinatorLease,
 } from "../../src/lib/project-coordinator";
 import { redactSecrets } from "../../src/lib/secret-redaction";
 
@@ -206,7 +206,11 @@ export function createMutatingProjectTools(
 			description: "Show concise git status information for the workspace.",
 			parameters: v.object({}),
 			async execute() {
-				return runWorkspaceCommand(sandbox, "git status --short --branch", 15_000);
+				return runWorkspaceCommand(
+					sandbox,
+					"git status --short --branch",
+					15_000,
+				);
 			},
 		}),
 		defineTool({

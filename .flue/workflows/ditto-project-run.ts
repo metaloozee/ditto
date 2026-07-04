@@ -5,9 +5,7 @@ import {
 	type MutatingProjectToolContext,
 } from "../lib/project-mutating-tools";
 
-type DittoProjectRunEnv = Parameters<
-	typeof createMutatingProjectTools
->[0];
+type DittoProjectRunEnv = Parameters<typeof createMutatingProjectTools>[0];
 
 type DittoProjectRunPayload = MutatingProjectToolContext & {
 	userId: string;
