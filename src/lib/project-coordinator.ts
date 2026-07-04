@@ -32,6 +32,11 @@ export type ProjectCoordinatorReadOnlyRun = {
 	admittedAt: string;
 };
 
+export type ProjectCoordinatorSnapshotState = {
+	latestSnapshotId: string | null;
+	restoring: boolean;
+};
+
 export type ProjectCoordinatorState = {
 	projectId?: string;
 	mutationLease: ProjectCoordinatorLease | null;
@@ -42,6 +47,7 @@ export type ProjectCoordinatorState = {
 		observedAt: string;
 	};
 	nextFencingToken: number;
+	snapshot: ProjectCoordinatorSnapshotState;
 };
 
 export type ProjectCoordinatorAdmissionInput = {
@@ -73,6 +79,8 @@ export type ProjectCoordinatorAdmissionDecision =
 export const PROJECT_COORDINATOR_STATE_KEY = "project-coordinator-state";
 export const MUTATION_CONFLICT_MESSAGE =
 	"Another mutating run already holds the project lease.";
+export const RESTORE_IN_PROGRESS_MESSAGE =
+	"Workspace is restoring; mutating runs are paused.";
 export const PROJECT_COORDINATOR_LEASE_VALIDATION_MESSAGES = {
 	missingToken: "Missing fencing token.",
 	noActiveLease: "No active mutating lease.",
@@ -97,6 +105,7 @@ export function createInitialProjectCoordinatorState(): ProjectCoordinatorState 
 		mutationLease: null,
 		activeReadOnlyRuns: [],
 		nextFencingToken: 1,
+		snapshot: { latestSnapshotId: null, restoring: false },
 	};
 }
 
@@ -127,6 +136,15 @@ export function admitProjectRun(
 				...baseState,
 				activeReadOnlyRuns: [...baseState.activeReadOnlyRuns, admission],
 			},
+		};
+	}
+
+	if (input.mode === "mutating" && baseState.snapshot.restoring) {
+		return {
+			accepted: false,
+			status: 409,
+			state: baseState,
+			message: RESTORE_IN_PROGRESS_MESSAGE,
 		};
 	}
 
@@ -184,6 +202,43 @@ export function observeProjectRunTerminal(
 			status: input.status,
 			observedAt: nowIso,
 		},
+	};
+}
+
+export function beginProjectRestore(
+	state: ProjectCoordinatorState,
+): ProjectCoordinatorState {
+	if (state.snapshot.restoring) {
+		return state;
+	}
+
+	return {
+		...state,
+		snapshot: { ...state.snapshot, restoring: true },
+	};
+}
+
+export function endProjectRestore(
+	state: ProjectCoordinatorState,
+	snapshotId: string | null,
+): ProjectCoordinatorState {
+	return {
+		...state,
+		snapshot: {
+			latestSnapshotId:
+				snapshotId === null ? state.snapshot.latestSnapshotId : snapshotId,
+			restoring: false,
+		},
+	};
+}
+
+export function recordLatestSnapshot(
+	state: ProjectCoordinatorState,
+	snapshotId: string,
+): ProjectCoordinatorState {
+	return {
+		...state,
+		snapshot: { ...state.snapshot, latestSnapshotId: snapshotId },
 	};
 }
 
@@ -301,6 +356,32 @@ function parseTerminalInput(value: unknown): {
 	};
 }
 
+function parseNullableSnapshotIdInput(value: unknown): {
+	snapshotId: string | null;
+} {
+	if (!value || typeof value !== "object") {
+		throw new Error("Invalid snapshot request.");
+	}
+
+	const input = value as Record<string, unknown>;
+	const snapshotId = input.snapshotId;
+
+	if (snapshotId === null) {
+		return { snapshotId: null };
+	}
+
+	return { snapshotId: requireString(input, "snapshotId") };
+}
+
+function parseRequiredSnapshotIdInput(value: unknown): { snapshotId: string } {
+	if (!value || typeof value !== "object") {
+		throw new Error("Invalid snapshot request.");
+	}
+
+	const input = value as Record<string, unknown>;
+	return { snapshotId: requireString(input, "snapshotId") };
+}
+
 export class ProjectCoordinator extends DurableObject<Env> {
 	async fetch(request: Request): Promise<Response> {
 		const url = new URL(request.url);
@@ -314,14 +395,24 @@ export class ProjectCoordinator extends DurableObject<Env> {
 				return new Response("Method not allowed", { status: 405 });
 			}
 
-			switch (url.pathname) {
-				case "/admit":
-					return await this.admit(parseAdmissionInput(await request.json()));
-				case "/terminal":
-					return await this.terminal(parseTerminalInput(await request.json()));
-				default:
-					return new Response("Not found", { status: 404 });
-			}
+		switch (url.pathname) {
+			case "/admit":
+				return await this.admit(parseAdmissionInput(await request.json()));
+			case "/terminal":
+				return await this.terminal(parseTerminalInput(await request.json()));
+			case "/begin-restore":
+				return await this.beginRestore();
+			case "/end-restore":
+				return await this.endRestore(
+					parseNullableSnapshotIdInput(await request.json()),
+				);
+			case "/record-snapshot":
+				return await this.recordSnapshot(
+					parseRequiredSnapshotIdInput(await request.json()),
+				);
+			default:
+				return new Response("Not found", { status: 404 });
+		}
 		} catch (error) {
 			return Response.json(
 				{
@@ -375,6 +466,34 @@ export class ProjectCoordinator extends DurableObject<Env> {
 		return Response.json({ state }, { status: 202 });
 	}
 
+	private async beginRestore(): Promise<Response> {
+		const state = beginProjectRestore(await this.getState());
+		await this.setState(state);
+
+		return Response.json({ state }, { status: 202 });
+	}
+
+	private async endRestore(input: {
+		snapshotId: string | null;
+	}): Promise<Response> {
+		const state = endProjectRestore(await this.getState(), input.snapshotId);
+		await this.setState(state);
+
+		return Response.json({ state }, { status: 202 });
+	}
+
+	private async recordSnapshot(input: {
+		snapshotId: string;
+	}): Promise<Response> {
+		const state = recordLatestSnapshot(
+			await this.getState(),
+			input.snapshotId,
+		);
+		await this.setState(state);
+
+		return Response.json({ state }, { status: 202 });
+	}
+
 	private ensureSchema(): void {
 		const sql = this.ctx.storage.sql;
 		sql.exec(
@@ -388,6 +507,9 @@ export class ProjectCoordinator extends DurableObject<Env> {
 		);
 		sql.exec(
 			"CREATE TABLE IF NOT EXISTS last_terminal (id INTEGER PRIMARY KEY, run_id TEXT, status TEXT, observed_at TEXT)",
+		);
+		sql.exec(
+			"CREATE TABLE IF NOT EXISTS snapshot_state (id INTEGER PRIMARY KEY, latest_snapshot_id TEXT, restoring INTEGER NOT NULL DEFAULT 0)",
 		);
 	}
 
@@ -435,11 +557,22 @@ export class ProjectCoordinator extends DurableObject<Env> {
 				}>("SELECT run_id, status, observed_at FROM last_terminal WHERE id = 1")
 				.toArray()[0] ?? null;
 
+		const snapshotState =
+			sql
+				.exec<{
+					latest_snapshot_id: string | null;
+					restoring: number;
+				}>(
+					"SELECT latest_snapshot_id, restoring FROM snapshot_state WHERE id = 1",
+				)
+				.toArray()[0] ?? null;
+
 		const rows: CoordinatorSqlRows = {
 			meta,
 			lease,
 			readOnlyRuns,
 			lastTerminal,
+			snapshotState,
 		};
 
 		return coordinatorRowsToState(rows);
@@ -494,5 +627,15 @@ export class ProjectCoordinator extends DurableObject<Env> {
 		} else {
 			sql.exec("DELETE FROM last_terminal WHERE id = 1");
 		}
+
+		const snapshot = rows.snapshotState ?? {
+			latest_snapshot_id: null as string | null,
+			restoring: 0,
+		};
+		sql.exec(
+			"INSERT OR REPLACE INTO snapshot_state (id, latest_snapshot_id, restoring) VALUES (1, ?, ?)",
+			snapshot.latest_snapshot_id,
+			snapshot.restoring,
+		);
 	}
 }

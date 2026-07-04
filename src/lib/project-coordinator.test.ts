@@ -6,9 +6,13 @@ vi.mock("cloudflare:workers", () => ({
 
 const {
 	admitProjectRun,
+	beginProjectRestore,
 	createInitialProjectCoordinatorState,
+	endProjectRestore,
 	MUTATION_CONFLICT_MESSAGE,
 	observeProjectRunTerminal,
+	recordLatestSnapshot,
+	RESTORE_IN_PROGRESS_MESSAGE,
 	validateProjectCoordinatorLease,
 } = await import("./project-coordinator");
 
@@ -223,5 +227,114 @@ describe("project coordinator lease decisions", () => {
 				fencingToken: 1,
 			}),
 		).toMatchObject({ valid: false, message: "Mutating run is terminal." });
+	});
+});
+
+describe("project coordinator restore decisions", () => {
+	it("rejects mutating admission while a restore is in progress", () => {
+		const restoring = beginProjectRestore(
+			createInitialProjectCoordinatorState(),
+		);
+
+		const decision = admitProjectRun(
+			restoring,
+			admissionInput("run-1", "mutating"),
+			now,
+		);
+
+		expect(decision).toMatchObject({
+			accepted: false,
+			status: 409,
+			message: RESTORE_IN_PROGRESS_MESSAGE,
+		});
+		expect(decision.state.snapshot.restoring).toBe(true);
+		expect(decision.state.mutationLease).toBeNull();
+	});
+
+	it("still admits read-only runs while a restore is in progress", () => {
+		const restoring = beginProjectRestore(
+			createInitialProjectCoordinatorState(),
+		);
+
+		const decision = admitProjectRun(
+			restoring,
+			admissionInput("run-1", "read_only"),
+			now,
+		);
+
+		expect(decision.accepted).toBe(true);
+		if (!decision.accepted) {
+			throw new Error("expected read-only admission");
+		}
+		expect(decision.admission).toMatchObject({
+			runId: "run-1",
+			capabilities: "read_only",
+		});
+		expect(decision.state.snapshot.restoring).toBe(true);
+		expect(decision.state.activeReadOnlyRuns).toHaveLength(1);
+	});
+
+	it("clears restoring and records the snapshot id on end-restore", () => {
+		const restoring = beginProjectRestore(
+			createInitialProjectCoordinatorState(),
+		);
+
+		const restored = endProjectRestore(restoring, "snap-1");
+
+		expect(restored.snapshot.restoring).toBe(false);
+		expect(restored.snapshot.latestSnapshotId).toBe("snap-1");
+	});
+
+	it("end-restore with a null snapshot id keeps the previous latest snapshot id", () => {
+		const withSnapshot = recordLatestSnapshot(
+			createInitialProjectCoordinatorState(),
+			"snap-1",
+		);
+		const restoring = beginProjectRestore(withSnapshot);
+
+		const restored = endProjectRestore(restoring, null);
+
+		expect(restored.snapshot.restoring).toBe(false);
+		expect(restored.snapshot.latestSnapshotId).toBe("snap-1");
+	});
+
+	it("is idempotent when beginning a restore that is already in progress", () => {
+		const restoring = beginProjectRestore(
+			createInitialProjectCoordinatorState(),
+		);
+
+		expect(beginProjectRestore(restoring)).toBe(restoring);
+	});
+
+	it("records the latest snapshot without flipping the restoring flag", () => {
+		const restoring = beginProjectRestore(
+			createInitialProjectCoordinatorState(),
+		);
+
+		const recorded = recordLatestSnapshot(restoring, "snap-2");
+
+		expect(recorded.snapshot.restoring).toBe(true);
+		expect(recorded.snapshot.latestSnapshotId).toBe("snap-2");
+	});
+
+	it("admits a mutating run again once restore ends", () => {
+		const restoring = beginProjectRestore(
+			createInitialProjectCoordinatorState(),
+		);
+		const restored = endProjectRestore(restoring, "snap-1");
+
+		const decision = admitProjectRun(
+			restored,
+			admissionInput("run-1", "mutating"),
+			now,
+		);
+
+		expect(decision.accepted).toBe(true);
+		if (!decision.accepted) {
+			throw new Error("expected admission after restore");
+		}
+		expect(decision.state.mutationLease?.runId).toBe("run-1");
+		expect(decision.state.snapshot.restoring).toBe(false);
+		expect(decision.state.snapshot.latestSnapshotId).toBe("snap-1");
 	});
 });

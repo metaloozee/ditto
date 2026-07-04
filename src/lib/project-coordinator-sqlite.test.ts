@@ -16,6 +16,7 @@ const emptyRows: CoordinatorSqlRows = {
 	lease: null,
 	readOnlyRuns: [],
 	lastTerminal: null,
+	snapshotState: null,
 };
 
 describe("coordinator sqlite row transforms", () => {
@@ -40,6 +41,7 @@ describe("coordinator sqlite row transforms", () => {
 			},
 			activeReadOnlyRuns: [],
 			nextFencingToken: 8,
+			snapshot: { latestSnapshotId: null, restoring: false },
 		};
 
 		const roundTripped = coordinatorRowsToState(coordinatorStateToRows(state));
@@ -72,6 +74,7 @@ describe("coordinator sqlite row transforms", () => {
 				},
 			],
 			nextFencingToken: 1,
+			snapshot: { latestSnapshotId: null, restoring: false },
 		};
 
 		const roundTripped = coordinatorRowsToState(coordinatorStateToRows(state));
@@ -94,6 +97,7 @@ describe("coordinator sqlite row transforms", () => {
 				observedAt: "2026-07-02T00:00:00.000Z",
 			},
 			nextFencingToken: 2,
+			snapshot: { latestSnapshotId: null, restoring: false },
 		};
 
 		expect(coordinatorRowsToState(coordinatorStateToRows(state))).toEqual(
@@ -113,11 +117,45 @@ describe("coordinator sqlite row transforms", () => {
 			},
 			readOnlyRuns: [],
 			lastTerminal: null,
+			snapshotState: null,
 		};
 
 		const state = coordinatorRowsToState(rows);
 
 		expect(state.mutationLease?.runId).toBe("run-1");
 		expect(state.nextFencingToken).toBe(3);
+	});
+
+	it("round-trips a restoring snapshot state with a latest snapshot id", () => {
+		const state = {
+			projectId: "project-1",
+			mutationLease: null,
+			activeReadOnlyRuns: [],
+			nextFencingToken: 1,
+			snapshot: { latestSnapshotId: "snap-1", restoring: true },
+		};
+
+		const roundTripped = coordinatorRowsToState(coordinatorStateToRows(state));
+
+		expect(roundTripped).toEqual(state);
+		expect(roundTripped.snapshot.restoring).toBe(true);
+		expect(roundTripped.snapshot.latestSnapshotId).toBe("snap-1");
+	});
+
+	it("defaults the snapshot to not-restoring when the snapshot_state row is missing", () => {
+		const rows: CoordinatorSqlRows = {
+			meta: { project_id: "project-1", next_fencing_token: 1 },
+			lease: null,
+			readOnlyRuns: [],
+			lastTerminal: null,
+			snapshotState: null,
+		};
+
+		const state = coordinatorRowsToState(rows);
+
+		expect(state.snapshot).toEqual({
+			latestSnapshotId: null,
+			restoring: false,
+		});
 	});
 });

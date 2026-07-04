@@ -1,6 +1,7 @@
 import type {
 	ProjectCoordinatorLease,
 	ProjectCoordinatorReadOnlyRun,
+	ProjectCoordinatorSnapshotState,
 	ProjectCoordinatorState,
 	ProjectCoordinatorTerminalStatus,
 } from "./project-coordinator";
@@ -31,11 +32,17 @@ export type LastTerminalRow = {
 	observed_at: string;
 };
 
+export type SnapshotStateRow = {
+	latest_snapshot_id: string | null;
+	restoring: number;
+};
+
 export type CoordinatorSqlRows = {
 	meta: CoordinatorMetaRow | null;
 	lease: MutationLeaseRow | null;
 	readOnlyRuns: ReadOnlyRunRow[];
 	lastTerminal: LastTerminalRow | null;
+	snapshotState: SnapshotStateRow | null;
 };
 
 function parseTerminalStatus(value: string): ProjectCoordinatorTerminalStatus {
@@ -84,12 +91,20 @@ export function coordinatorRowsToState(
 			}
 		: undefined;
 
+	const snapshot: ProjectCoordinatorSnapshotState = rows.snapshotState
+		? {
+				latestSnapshotId: rows.snapshotState.latest_snapshot_id,
+				restoring: rows.snapshotState.restoring === 1,
+			}
+		: { latestSnapshotId: null, restoring: false };
+
 	return {
 		projectId,
 		mutationLease,
 		activeReadOnlyRuns,
 		lastTerminal,
 		nextFencingToken,
+		snapshot,
 	};
 }
 
@@ -128,5 +143,10 @@ export function coordinatorStateToRows(
 			}
 		: null;
 
-	return { meta, lease, readOnlyRuns, lastTerminal };
+	const snapshotState: SnapshotStateRow = {
+		latest_snapshot_id: state.snapshot.latestSnapshotId,
+		restoring: state.snapshot.restoring ? 1 : 0,
+	};
+
+	return { meta, lease, readOnlyRuns, lastTerminal, snapshotState };
 }
