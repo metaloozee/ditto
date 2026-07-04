@@ -96,6 +96,8 @@ export function ProjectWorkspacePage({
 
 	if (!isWorkspaceReady) {
 		disabledReason = "Project sandbox is not ready yet.";
+	} else if (workspace?.restoring) {
+		disabledReason = "Restoring workspace...";
 	} else if (workspaceQuery.isPending) {
 		disabledReason = "Checking project sandbox...";
 	} else if (selectedSession?.status === "archived") {
