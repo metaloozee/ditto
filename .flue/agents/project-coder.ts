@@ -1,5 +1,5 @@
 import { getSandbox } from "@cloudflare/sandbox";
-import { createAgent, defineTool, type AgentRouteHandler } from "@flue/runtime";
+import { type AgentRouteHandler, createAgent, defineTool } from "@flue/runtime";
 import { cloudflareSandbox } from "@flue/runtime/cloudflare";
 import * as v from "valibot";
 
