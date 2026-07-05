@@ -12,6 +12,17 @@ import {
 	workspaceSessions,
 } from "#/db/schema";
 import { isProjectCoderModelSpecifier } from "#/lib/agent-models";
+import { getGitHubApp, getInstallationAccessToken } from "#/lib/github-app";
+import { authorizeGitHubRepositoryAccess } from "#/lib/github-authorization";
+import {
+	buildExportBranchName,
+	buildExportCommitMessage,
+	buildPullRequestBody,
+	buildPullRequestTitle,
+	countChangedFilesInDiffArtifact,
+	quoteGitHubExportShellArg,
+	redactGitHubExportOutput,
+} from "#/lib/github-export";
 import {
 	type ProjectCoordinatorState,
 	RESTORE_IN_PROGRESS_MESSAGE,
@@ -22,6 +33,7 @@ import {
 	clearProjectLockProjection,
 } from "#/lib/project-lock-projection";
 import { ensureProjectSandbox } from "#/lib/project-sandbox";
+import { getProjectSandbox } from "#/lib/sandbox-bootstrap";
 import {
 	createAgentRunEventPayload,
 	isActiveAgentRunStatus,
@@ -38,6 +50,90 @@ type ProjectCoordinatorControlPath =
 	| "/begin-restore"
 	| "/end-restore";
 type FlueRunBridgeControlPath = "/start" | "/abort";
+
+const GITHUB_EXPORT_COMMAND_TIMEOUT_MS = 120_000;
+
+type GitHubExportClient = {
+	request: <TData>(
+		route: string,
+		parameters: Record<string, unknown>,
+	) => Promise<{ data: TData }>;
+};
+
+function parseGitHubRepoName(repoName: string): {
+	owner: string;
+	repo: string;
+} {
+	const [owner, repo] = repoName.split("/");
+	if (!owner || !repo || repoName.split("/").length !== 2) {
+		throw new TRPCError({
+			code: "PRECONDITION_FAILED",
+			message: "Project GitHub repository is invalid.",
+		});
+	}
+	return { owner, repo };
+}
+
+async function runGitHubExportCommand(
+	sandbox: ReturnType<typeof getProjectSandbox>,
+	command: string,
+	secrets: readonly string[] = [],
+): Promise<Awaited<ReturnType<ReturnType<typeof getProjectSandbox>["exec"]>>> {
+	const result = await sandbox.exec(command, {
+		cwd: WORKSPACE_PATH,
+		timeout: GITHUB_EXPORT_COMMAND_TIMEOUT_MS,
+	});
+
+	if (result.success) {
+		return result;
+	}
+
+	const output = redactGitHubExportOutput(
+		(result.stderr || result.stdout || `exit code ${result.exitCode}`).trim(),
+		secrets,
+	);
+	throw new Error(output || "GitHub export command failed.");
+}
+
+async function resolvePullRequestBaseBranch(options: {
+	octokit: GitHubExportClient;
+	sandbox: ReturnType<typeof getProjectSandbox>;
+	owner: string;
+	repo: string;
+}): Promise<string> {
+	try {
+		const repoResponse = await options.octokit.request<{
+			default_branch?: string | null;
+		}>("GET /repos/{owner}/{repo}", {
+			owner: options.owner,
+			repo: options.repo,
+		});
+		const defaultBranch = repoResponse.data.default_branch;
+		if (defaultBranch) {
+			return defaultBranch;
+		}
+	} catch {
+		// Fall back to the sandbox upstream below; do not guess a branch name.
+	}
+
+	const upstream = await runGitHubExportCommand(
+		options.sandbox,
+		"git rev-parse --abbrev-ref --symbolic-full-name @{u}",
+	);
+	const upstreamName = upstream.stdout.trim();
+	const slashIndex = upstreamName.indexOf("/");
+	const baseBranch =
+		slashIndex === -1 ? "" : upstreamName.slice(slashIndex + 1).trim();
+
+	if (!baseBranch) {
+		throw new TRPCError({
+			code: "PRECONDITION_FAILED",
+			message: "Could not determine the pull request base branch.",
+		});
+	}
+
+	return baseBranch;
+}
 
 function compactBrokerError(error: unknown): string {
 	const message =
@@ -1257,6 +1353,302 @@ export const workspaceRouter = createTRPCRouter({
 				);
 
 			return { id: session.id };
+		}),
+
+	exportRunToGitHubPr: protectedProcedure
+		.input(
+			z.object({
+				projectId: z.string().min(1),
+				runId: z.string().min(1),
+				title: z.string().trim().min(1).max(120).optional(),
+				body: z.string().trim().max(10_000).optional(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const db = createDb(ctx.env);
+			const [project] = await db
+				.select()
+				.from(projects)
+				.where(
+					and(
+						eq(projects.id, input.projectId),
+						eq(projects.userId, ctx.user.id),
+					),
+				)
+				.limit(1);
+
+			if (!project) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Project not found.",
+				});
+			}
+
+			if (!project.githubRepo || !project.githubInstallationId) {
+				throw new TRPCError({
+					code: "PRECONDITION_FAILED",
+					message: "Project is not connected to GitHub.",
+				});
+			}
+
+			await authorizeGitHubRepositoryAccess({
+				ctx,
+				repo: project.githubRepo,
+				installationId: project.githubInstallationId,
+			});
+
+			const [run] = await db
+				.select()
+				.from(agentRuns)
+				.where(
+					and(
+						eq(agentRuns.id, input.runId),
+						eq(agentRuns.projectId, input.projectId),
+						eq(agentRuns.userId, ctx.user.id),
+					),
+				)
+				.limit(1);
+
+			if (!run) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Agent run not found.",
+				});
+			}
+
+			if (run.status !== "completed" || run.isMutating !== true) {
+				throw new TRPCError({
+					code: "PRECONDITION_FAILED",
+					message: "Only completed mutating runs can be exported.",
+				});
+			}
+
+			const [artifact] = await db
+				.select()
+				.from(runArtifacts)
+				.where(
+					and(
+						eq(runArtifacts.runId, input.runId),
+						eq(runArtifacts.projectId, input.projectId),
+						eq(runArtifacts.kind, "diff"),
+					),
+				)
+				.orderBy(desc(runArtifacts.createdAt), desc(runArtifacts.id))
+				.limit(1);
+
+			if (!artifact) {
+				throw new TRPCError({
+					code: "PRECONDITION_FAILED",
+					message: "A diff artifact is required before creating a PR.",
+				});
+			}
+
+			const diffObject = await ctx.env.BACKUP_BUCKET.get(artifact.r2Key);
+			if (!diffObject) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Diff artifact not found.",
+				});
+			}
+
+			const [session] = await db
+				.select()
+				.from(workspaceSessions)
+				.where(
+					and(
+						eq(workspaceSessions.id, run.sessionId),
+						eq(workspaceSessions.projectId, input.projectId),
+						eq(workspaceSessions.userId, ctx.user.id),
+					),
+				)
+				.limit(1);
+
+			if (!session) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Workspace session not found.",
+				});
+			}
+
+			const envVars = await decryptEnvVars(
+				project.envVars,
+				ctx.env.BETTER_AUTH_SECRET,
+			);
+			let ensuredProject = project;
+			try {
+				await notifyCoordinatorRestore(ctx.env, input.projectId, "begin");
+				const ensured = await ensureProjectSandbox({
+					db,
+					env: ctx.env,
+					project,
+					envVars,
+				});
+				ensuredProject = ensured.project;
+			} catch (error) {
+				throw new TRPCError({
+					code:
+						error instanceof Error &&
+						error.message === "Project sandbox is already being restored."
+							? "CONFLICT"
+							: "PRECONDITION_FAILED",
+					message:
+						error instanceof Error
+							? error.message
+							: "Project sandbox is not ready yet.",
+				});
+			} finally {
+				await notifyCoordinatorRestore(ctx.env, input.projectId, "end");
+			}
+
+			if (!ensuredProject.sandboxId) {
+				throw new TRPCError({
+					code: "PRECONDITION_FAILED",
+					message: "Project sandbox is not ready yet.",
+				});
+			}
+
+			const { owner, repo } = parseGitHubRepoName(project.githubRepo);
+			const patch = await diffObject.text();
+			const branchName = buildExportBranchName({
+				runId: input.runId,
+				now: new Date(),
+			});
+			const commitMessage = buildExportCommitMessage({
+				sessionTitle: session.title,
+				runId: input.runId,
+			});
+			const pullRequestTitle =
+				input.title ?? buildPullRequestTitle({ sessionTitle: session.title });
+			const pullRequestBody =
+				input.body ??
+				buildPullRequestBody({
+					projectId: input.projectId,
+					sessionId: run.sessionId,
+					runId: input.runId,
+					changedFileCount: countChangedFilesInDiffArtifact(patch),
+				});
+
+			await db.insert(agentRunEvents).values({
+				runId: input.runId,
+				projectId: input.projectId,
+				sessionId: run.sessionId,
+				type: "export_started",
+				payload: createAgentRunEventPayload({ branchName }),
+			});
+
+			let pushedBranch = false;
+			const sandbox = getProjectSandbox(ctx.env, ensuredProject.sandboxId);
+			try {
+				const app = getGitHubApp(ctx.env);
+				const octokit: GitHubExportClient = await app.getInstallationOctokit(
+					project.githubInstallationId,
+				);
+				const base = await resolvePullRequestBaseBranch({
+					octokit,
+					sandbox,
+					owner,
+					repo,
+				});
+				const token = await getInstallationAccessToken(
+					ctx.env,
+					project.githubInstallationId,
+				);
+				const pushUrl = `https://x-access-token:${token}@github.com/${project.githubRepo}.git`;
+				const pushSecrets = [token, pushUrl];
+
+				const status = await runGitHubExportCommand(
+					sandbox,
+					"git status --short",
+				);
+				if (status.stdout.trim() === "") {
+					throw new TRPCError({
+						code: "PRECONDITION_FAILED",
+						message: "No sandbox changes are available to export.",
+					});
+				}
+
+				await runGitHubExportCommand(
+					sandbox,
+					`git switch -c ${quoteGitHubExportShellArg(branchName)}`,
+				);
+				await runGitHubExportCommand(sandbox, "git add -A");
+				await runGitHubExportCommand(
+					sandbox,
+					[
+						"git",
+						"-c",
+						`user.name=${quoteGitHubExportShellArg("Ditto Export")}`,
+						"-c",
+						`user.email=${quoteGitHubExportShellArg(
+							"ditto-export@users.noreply.github.com",
+						)}`,
+						"commit",
+						"-m",
+						quoteGitHubExportShellArg(commitMessage),
+					].join(" "),
+				);
+				await runGitHubExportCommand(
+					sandbox,
+					`git push ${quoteGitHubExportShellArg(pushUrl)} HEAD:refs/heads/${quoteGitHubExportShellArg(branchName)}`,
+					pushSecrets,
+				);
+				pushedBranch = true;
+
+				const pullRequest = await octokit.request<{
+					html_url: string;
+					number: number;
+				}>("POST /repos/{owner}/{repo}/pulls", {
+					owner,
+					repo,
+					head: branchName,
+					base,
+					title: pullRequestTitle,
+					body: pullRequestBody,
+				});
+
+				const pullRequestUrl = pullRequest.data.html_url;
+				const pullRequestNumber = pullRequest.data.number;
+				await db.insert(agentRunEvents).values({
+					runId: input.runId,
+					projectId: input.projectId,
+					sessionId: run.sessionId,
+					type: "export_completed",
+					payload: createAgentRunEventPayload({
+						branchName,
+						pullRequestUrl,
+						pullRequestNumber,
+					}),
+				});
+
+				return {
+					branchName,
+					pullRequestUrl,
+					pullRequestNumber,
+				};
+			} catch (error) {
+				const reason = redactGitHubExportOutput(
+					error instanceof Error ? error.message : "GitHub export failed.",
+				);
+				await db.insert(agentRunEvents).values({
+					runId: input.runId,
+					projectId: input.projectId,
+					sessionId: run.sessionId,
+					type: "export_failed",
+					payload: createAgentRunEventPayload({
+						branchName,
+						...(pushedBranch ? { recoverableBranchName: branchName } : {}),
+						reason,
+					}),
+				});
+
+				if (error instanceof TRPCError) {
+					throw error;
+				}
+				throw new TRPCError({
+					code: "PRECONDITION_FAILED",
+					message: reason,
+				});
+			}
 		}),
 
 	getRunDiff: protectedProcedure
