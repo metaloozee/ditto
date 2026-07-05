@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MAX_RUN_DIFF_ARTIFACT_BYTES } from "./run-diff-artifact";
 
 vi.mock("cloudflare:workers", () => ({
 	DurableObject: class DurableObject {
@@ -874,5 +875,400 @@ describe("flue run bridge checkpoint", () => {
 		);
 		expect(snapshotFailedCalls.length).toBe(1);
 		expect(snapshotFailedCalls[0]?.[0].payload).toContain("Backup failed");
+	});
+});
+
+describe("flue run bridge diff artifacts", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	function makeDiffBridge(envOverrides: Record<string, unknown> = {}) {
+		const state: Record<string, unknown> = {};
+		const ctx = {
+			setWebSocketAutoResponse: vi.fn(),
+			getWebSockets: vi.fn(() => []),
+			waitUntil: vi.fn(),
+			storage: {
+				get: vi.fn(async () => state),
+				put: vi.fn(async (_key: string, value: unknown) => {
+					Object.assign(state, value);
+				}),
+				setAlarm: vi.fn().mockResolvedValue(undefined),
+				deleteAlarm: vi.fn().mockResolvedValue(undefined),
+			},
+		};
+		const bridge = new FlueRunBridge(
+			ctx as unknown as DurableObjectState,
+			{
+				BACKUP_BUCKET: { put: vi.fn() },
+				FLUE_WORKER: { fetch: vi.fn() },
+				...envOverrides,
+			} as unknown as Env,
+		);
+		return { ctx, state, bridge };
+	}
+
+	function gitExecMock(opts: { status?: string; diff?: string } = {}) {
+		return vi.fn(async (command: string) => {
+			if (command.startsWith("git status")) {
+				return { success: true, stdout: opts.status ?? "", stderr: "" };
+			}
+			if (command.startsWith("git diff --no-ext-diff")) {
+				return { success: true, stdout: opts.diff ?? "", stderr: "" };
+			}
+			return { success: true, stdout: "", stderr: "" };
+		});
+	}
+
+	type DiffBridge = {
+		buildRunDiffArtifactEvents: (
+			state: Record<string, unknown>,
+			runId: string,
+			status: "completed" | "failed",
+		) => Promise<{
+			artifactInsert: {
+				runId: string;
+				projectId: string;
+				kind: string;
+				r2Key: string;
+				contentType: string;
+				byteLength: number;
+			} | null;
+			diffReadyEvent: { type: string; payload: string } | null;
+		}>;
+	};
+
+	const mutatingState = {
+		isMutating: true,
+		sandboxId: "sandbox-1",
+		projectId: "project-1",
+		sessionId: "session-1",
+	};
+
+	it("successful completed mutating run writes R2 diff artifact and returns artifactInsert + diff_ready", async () => {
+		const execMock = gitExecMock({
+			status: " M src/index.ts\n",
+			diff: "diff --git a/src/index.ts b/src/index.ts\n--- a\n+++ b\n",
+		});
+		const putMock = vi.fn().mockResolvedValue(undefined);
+		const { bridge } = makeDiffBridge({ BACKUP_BUCKET: { put: putMock } });
+		getProjectSandboxMock.mockReturnValue({ exec: execMock });
+
+		const result = await (
+			bridge as unknown as DiffBridge
+		).buildRunDiffArtifactEvents(mutatingState, "run-1", "completed");
+
+		expect(putMock).toHaveBeenCalledTimes(1);
+		expect(putMock.mock.calls[0]?.[0]).toMatch(
+			/^projects\/project-1\/runs\/run-1\/artifacts\/diff\/[^/]+$/,
+		);
+		expect(result.artifactInsert).toMatchObject({
+			runId: "run-1",
+			projectId: "project-1",
+			kind: "diff",
+			contentType: "text/x-diff; charset=utf-8",
+		});
+		expect(result.artifactInsert?.r2Key).toBe(putMock.mock.calls[0]?.[0]);
+		expect(result.diffReadyEvent?.type).toBe("diff_ready");
+		const payload = JSON.parse(result.diffReadyEvent?.payload ?? "{}");
+		expect(payload.hasArtifact).toBe(true);
+		expect(payload.changedFiles).toEqual(["src/index.ts"]);
+		expect(payload.truncated).toBe(false);
+		expect(payload.byteLength).toBe(result.artifactInsert?.byteLength);
+		expect(payload.r2Key).toBeUndefined();
+		expect(JSON.stringify(payload)).not.toContain(putMock.mock.calls[0]?.[0]);
+	});
+
+	it("no workspace diff inserts diff_ready without an artifact", async () => {
+		const execMock = gitExecMock({ status: " M src/index.ts\n", diff: "" });
+		const putMock = vi.fn().mockResolvedValue(undefined);
+		const { bridge } = makeDiffBridge({ BACKUP_BUCKET: { put: putMock } });
+		getProjectSandboxMock.mockReturnValue({ exec: execMock });
+
+		const result = await (
+			bridge as unknown as DiffBridge
+		).buildRunDiffArtifactEvents(mutatingState, "run-1", "completed");
+
+		expect(putMock).not.toHaveBeenCalled();
+		expect(result.artifactInsert).toBeNull();
+		expect(result.diffReadyEvent?.type).toBe("diff_ready");
+		const payload = JSON.parse(result.diffReadyEvent?.payload ?? "{}");
+		expect(payload.hasArtifact).toBe(false);
+		expect(payload.changedFiles).toEqual(["src/index.ts"]);
+		expect(payload.truncated).toBe(false);
+	});
+
+	it("redacts secret-looking patch content before R2 write", async () => {
+		const secret = `sk-${"x".repeat(24)}`;
+		const execMock = gitExecMock({
+			status: " M src/index.ts\n",
+			diff: `diff --git a/src/index.ts b/src/index.ts\n+TOKEN=${secret}\n`,
+		});
+		const putMock = vi.fn().mockResolvedValue(undefined);
+		const { bridge } = makeDiffBridge({ BACKUP_BUCKET: { put: putMock } });
+		getProjectSandboxMock.mockReturnValue({ exec: execMock });
+
+		await (bridge as unknown as DiffBridge).buildRunDiffArtifactEvents(
+			mutatingState,
+			"run-1",
+			"completed",
+		);
+
+		expect(putMock).toHaveBeenCalledTimes(1);
+		const written = putMock.mock.calls[0]?.[1];
+		expect(written).toContain("[REDACTED]");
+		expect(written).not.toContain(secret);
+	});
+
+	it("R2 write failure returns a redacted diff_ready with hasArtifact false and no artifactInsert", async () => {
+		const execMock = gitExecMock({
+			status: " M src/index.ts\n",
+			diff: "diff --git a/src/index.ts b/src/index.ts\n",
+		});
+		const putMock = vi.fn().mockRejectedValue(new Error("R2 write failed"));
+		const { bridge } = makeDiffBridge({ BACKUP_BUCKET: { put: putMock } });
+		getProjectSandboxMock.mockReturnValue({ exec: execMock });
+
+		const result = await (
+			bridge as unknown as DiffBridge
+		).buildRunDiffArtifactEvents(mutatingState, "run-1", "completed");
+
+		expect(result.artifactInsert).toBeNull();
+		expect(result.diffReadyEvent?.type).toBe("diff_ready");
+		const payload = JSON.parse(result.diffReadyEvent?.payload ?? "{}");
+		expect(payload.hasArtifact).toBe(false);
+		expect(payload.error).toBe("R2 write failed");
+	});
+
+	it("oversized diff produces a truncated diff_ready without an artifact", async () => {
+		const oversized = `diff --git\n${"+x".repeat(MAX_RUN_DIFF_ARTIFACT_BYTES)}`;
+		const execMock = gitExecMock({
+			status: " M big.ts\n",
+			diff: oversized,
+		});
+		const putMock = vi.fn().mockResolvedValue(undefined);
+		const { bridge } = makeDiffBridge({ BACKUP_BUCKET: { put: putMock } });
+		getProjectSandboxMock.mockReturnValue({ exec: execMock });
+
+		const result = await (
+			bridge as unknown as DiffBridge
+		).buildRunDiffArtifactEvents(mutatingState, "run-1", "completed");
+
+		expect(putMock).not.toHaveBeenCalled();
+		expect(result.artifactInsert).toBeNull();
+		const payload = JSON.parse(result.diffReadyEvent?.payload ?? "{}");
+		expect(payload.truncated).toBe(true);
+		expect(payload.hasArtifact).toBe(false);
+		expect(payload.byteLength).toBeGreaterThan(MAX_RUN_DIFF_ARTIFACT_BYTES);
+		expect(payload.changedFiles).toEqual(["big.ts"]);
+	});
+
+	it("read-only run produces no diff artifact or diff_ready event", async () => {
+		const putMock = vi.fn().mockResolvedValue(undefined);
+		const { bridge } = makeDiffBridge({ BACKUP_BUCKET: { put: putMock } });
+		getProjectSandboxMock.mockReturnValue({ exec: gitExecMock() });
+
+		const result = await (
+			bridge as unknown as DiffBridge
+		).buildRunDiffArtifactEvents(
+			{ ...mutatingState, isMutating: false },
+			"run-1",
+			"completed",
+		);
+
+		expect(result.artifactInsert).toBeNull();
+		expect(result.diffReadyEvent).toBeNull();
+		expect(putMock).not.toHaveBeenCalled();
+	});
+
+	it("failed mutating run produces no diff artifact or diff_ready event", async () => {
+		const putMock = vi.fn().mockResolvedValue(undefined);
+		const { bridge } = makeDiffBridge({ BACKUP_BUCKET: { put: putMock } });
+		getProjectSandboxMock.mockReturnValue({ exec: gitExecMock() });
+
+		const result = await (
+			bridge as unknown as DiffBridge
+		).buildRunDiffArtifactEvents(mutatingState, "run-1", "failed");
+
+		expect(result.artifactInsert).toBeNull();
+		expect(result.diffReadyEvent).toBeNull();
+		expect(putMock).not.toHaveBeenCalled();
+	});
+
+	function makeTerminalDbMock() {
+		const insertValues = vi.fn().mockResolvedValue(undefined);
+		const batch = vi.fn().mockResolvedValue(undefined);
+		const where = vi.fn().mockResolvedValue(undefined);
+		const set = vi.fn(() => ({ where }));
+		const update = vi.fn(() => ({ set }));
+		const insert = vi.fn(() => ({ values: insertValues }));
+		const select = vi.fn(() => ({
+			from: vi.fn(() => ({
+				where: vi.fn(() => ({ limit: vi.fn(() => []) })),
+			})),
+		}));
+		const db = { insert, batch, update, select };
+		return { db, insertValues, batch };
+	}
+
+	it("successful completed mutating run inserts run_artifacts and diff_ready before done", async () => {
+		const { db, insertValues, batch } = makeTerminalDbMock();
+		createDbMock.mockReturnValue(db);
+
+		const execMock = vi.fn(async (command: string) => {
+			if (command.startsWith("git status")) {
+				return { success: true, stdout: " M src/index.ts\n", stderr: "" };
+			}
+			if (command.startsWith("git diff --no-ext-diff")) {
+				return {
+					success: true,
+					stdout: "diff --git a/src/index.ts b/src/index.ts\n",
+					stderr: "",
+				};
+			}
+			if (command.startsWith("git rev-parse")) {
+				return { success: true, stdout: "abc123\n", stderr: "" };
+			}
+			return { success: true, stdout: "", stderr: "" };
+		});
+		getProjectSandboxMock.mockReturnValue({ exec: execMock });
+		backupSandboxWorkspaceMock.mockRejectedValue(new Error("Backup failed"));
+		serializeSandboxBackupMock.mockReturnValue("{}");
+
+		const putMock = vi.fn().mockResolvedValue(undefined);
+		const coordinatorFetch = vi.fn().mockResolvedValue(new Response());
+		const { ctx, state } = makeDiffBridge({
+			BACKUP_BUCKET: { put: putMock },
+		});
+		Object.assign(state, {
+			activeRunId: "run-1",
+			...mutatingState,
+		});
+
+		const bridge = new FlueRunBridge(
+			ctx as unknown as DurableObjectState,
+			{
+				BACKUP_BUCKET: { put: putMock },
+				FLUE_WORKER: { fetch: vi.fn() },
+				ProjectCoordinator: {
+					idFromName: vi.fn(() => "project-1"),
+					get: vi.fn(() => ({ fetch: coordinatorFetch })),
+				},
+			} as unknown as Env,
+		) as unknown as {
+			finishRun: (runId: string, status: "completed") => Promise<void>;
+		};
+
+		await bridge.finishRun("run-1", "completed");
+
+		// terminal batch executed
+		expect(batch).toHaveBeenCalledTimes(1);
+		// diff artifact persisted to R2 before D1
+		expect(putMock).toHaveBeenCalledTimes(1);
+		expect(putMock.mock.calls[0]?.[0]).toMatch(
+			/^projects\/project-1\/runs\/run-1\/artifacts\/diff\//,
+		);
+
+		// terminal event rows include diff_ready before done
+		const terminalCall = insertValues.mock.calls.find((call) =>
+			Array.isArray(call[0]),
+		);
+		expect(terminalCall).toBeTruthy();
+		const types = (terminalCall?.[0] as Array<{ type: string }>).map(
+			(e) => e.type,
+		);
+		expect(types).toContain("diff_ready");
+		expect(types).toContain("done");
+		expect(types.indexOf("diff_ready")).toBeLessThan(types.indexOf("done"));
+
+		// run_artifacts row inserted with kind diff
+		const artifactCall = insertValues.mock.calls.find(
+			(call) => call[0]?.kind === "diff",
+		);
+		expect(artifactCall).toBeTruthy();
+		expect(artifactCall?.[0]).toMatchObject({
+			runId: "run-1",
+			projectId: "project-1",
+			kind: "diff",
+		});
+
+		// raw patch text never stored in agent_run_events payloads
+		for (const call of insertValues.mock.calls) {
+			const rows = Array.isArray(call[0]) ? call[0] : [call[0]];
+			for (const row of rows) {
+				if (row?.type && row.type !== "done") {
+					expect(row.payload).not.toContain(
+						"diff --git a/src/index.ts b/src/index.ts",
+					);
+				}
+			}
+		}
+	});
+
+	it("diff artifact R2 failure does not prevent terminal done", async () => {
+		const { db, batch } = makeTerminalDbMock();
+		createDbMock.mockReturnValue(db);
+
+		const execMock = vi.fn(async (command: string) => {
+			if (command.startsWith("git status")) {
+				return { success: true, stdout: " M src/index.ts\n", stderr: "" };
+			}
+			if (command.startsWith("git diff --no-ext-diff")) {
+				return {
+					success: true,
+					stdout: "diff --git a/src/index.ts b/src/index.ts\n",
+					stderr: "",
+				};
+			}
+			if (command.startsWith("git rev-parse")) {
+				return { success: true, stdout: "abc123\n", stderr: "" };
+			}
+			return { success: true, stdout: "", stderr: "" };
+		});
+		getProjectSandboxMock.mockReturnValue({ exec: execMock });
+		backupSandboxWorkspaceMock.mockRejectedValue(new Error("Backup failed"));
+
+		const putMock = vi
+			.fn()
+			.mockRejectedValue(new Error("R2 diff write failed"));
+		const coordinatorFetch = vi.fn().mockResolvedValue(new Response());
+		const { ctx, state } = makeDiffBridge({});
+		Object.assign(state, { activeRunId: "run-1", ...mutatingState });
+
+		const bridge = new FlueRunBridge(
+			ctx as unknown as DurableObjectState,
+			{
+				BACKUP_BUCKET: { put: putMock },
+				FLUE_WORKER: { fetch: vi.fn() },
+				ProjectCoordinator: {
+					idFromName: vi.fn(() => "project-1"),
+					get: vi.fn(() => ({ fetch: coordinatorFetch })),
+				},
+			} as unknown as Env,
+		) as unknown as {
+			finishRun: (runId: string, status: "completed") => Promise<void>;
+		};
+
+		await bridge.finishRun("run-1", "completed");
+
+		// R2 write was attempted and failed
+		expect(putMock).toHaveBeenCalledTimes(1);
+		// terminal batch still executed despite R2 failure
+		expect(batch).toHaveBeenCalledTimes(1);
+		// coordinator notified of completed status
+		expect(coordinatorFetch).toHaveBeenCalledTimes(1);
+		const request = coordinatorFetch.mock.calls[0]?.[0] as Request;
+		const body = JSON.parse(
+			await (request.clone().body as ReadableStream)
+				.getReader()
+				.read()
+				.then((r) => new TextDecoder().decode(r.value)),
+		);
+		expect(body).toMatchObject({
+			projectId: "project-1",
+			runId: "run-1",
+			status: "completed",
+		});
 	});
 });

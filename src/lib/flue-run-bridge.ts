@@ -1,7 +1,13 @@
 import { DurableObject } from "cloudflare:workers";
 import { and, eq, sql } from "drizzle-orm";
 import { createDb } from "#/db";
-import { agentRunEvents, agentRuns, projects, snapshots } from "#/db/schema";
+import {
+	agentRunEvents,
+	agentRuns,
+	projects,
+	runArtifacts,
+	snapshots,
+} from "#/db/schema";
 import { AssistantStreamDraft } from "#/lib/assistant-stream-draft";
 import {
 	createFlueDispatchAdapter,
@@ -15,6 +21,12 @@ import {
 	type FlueProjectedEvent,
 	mapFlueEventToDittoEvents,
 } from "#/lib/flue-event-projection";
+import {
+	buildDiffReadyPayload,
+	buildRunDiffArtifactPlan,
+	MAX_RUN_DIFF_ARTIFACT_BYTES,
+	parseChangedFilesFromGitStatus,
+} from "#/lib/run-diff-artifact";
 import {
 	buildSnapshotCheckpointPlan,
 	checkpointPointerAfterR2Write,
@@ -78,11 +90,28 @@ export type TerminalEventInput = {
 	status: TerminalStatus;
 };
 
+type RunDiffArtifactInsert = {
+	runId: string;
+	projectId: string;
+	kind: "diff";
+	r2Key: string;
+	contentType: string;
+	byteLength: number;
+};
+
+type RunDiffArtifactResult = {
+	artifactInsert: RunDiffArtifactInsert | null;
+	diffReadyEvent: FlueProjectedEvent | null;
+};
+
 const FLUE_RUN_BRIDGE_STATE_KEY = "flue-run-bridge-state";
 const FINAL_CHANGE_SUMMARY_TIMEOUT_MS = 15_000;
 const FINAL_CHANGE_SUMMARY_MAX_LENGTH = 4000;
 const FINAL_CHANGE_SUMMARY_TRUNCATION_MARKER = "\n...[truncated]";
 const PERIODIC_CHECKPOINT_INTERVAL_MS = 120_000;
+const RUN_DIFF_ARTIFACT_TIMEOUT_MS = 15_000;
+const RUN_DIFF_GIT_DIFF_COMMAND =
+	"git diff --no-ext-diff --find-renames --binary -- . ':(exclude).env' ':(exclude).env.*' ':(exclude)**/.env' ':(exclude)**/.env.*' ':(exclude).npmrc' ':(exclude)**/.npmrc'";
 
 function isWebSocketUpgrade(request: Request): boolean {
 	return request.headers.get("Upgrade")?.toLowerCase() === "websocket";
@@ -592,6 +621,11 @@ export class FlueRunBridge extends DurableObject<Env> {
 			state,
 			status,
 		);
+		const diffArtifact = await this.buildRunDiffArtifactEvents(
+			state,
+			runId,
+			status,
+		);
 		const terminalEvents = buildTerminalEvents({
 			runId,
 			projectId: state.projectId,
@@ -615,42 +649,52 @@ export class FlueRunBridge extends DurableObject<Env> {
 			// checkpoint failure must not prevent terminal batch
 		}
 		const db = createDb(this.env);
-		await db.batch([
-			db
-				.update(agentRuns)
-				.set({
-					status,
-					finishedAt: sql`(unixepoch())`,
-					updatedAt: sql`(unixepoch())`,
-				})
-				.where(eq(agentRuns.id, runId)),
-			db
-				.update(projects)
-				.set({
-					activeAgentRunId: null,
-					activeAgentRunStartedAt: null,
-					updatedAt: sql`(unixepoch())`,
-				})
-				.where(
-					and(
-						eq(projects.id, state.projectId),
-						eq(projects.activeAgentRunId, runId),
-					),
+		const terminalEventRows = [
+			...terminalEvents.slice(0, -1),
+			...finalChangeSummaryEvents,
+			...(diffArtifact.diffReadyEvent ? [diffArtifact.diffReadyEvent] : []),
+			...(doneEvent ? [doneEvent] : []),
+		].map((event) => ({
+			runId,
+			projectId: state.projectId as string,
+			sessionId: state.sessionId as string,
+			type: event.type,
+			payload: event.payload,
+		}));
+		const updateRunStatus = db
+			.update(agentRuns)
+			.set({
+				status,
+				finishedAt: sql`(unixepoch())`,
+				updatedAt: sql`(unixepoch())`,
+			})
+			.where(eq(agentRuns.id, runId));
+		const clearActiveRun = db
+			.update(projects)
+			.set({
+				activeAgentRunId: null,
+				activeAgentRunStartedAt: null,
+				updatedAt: sql`(unixepoch())`,
+			})
+			.where(
+				and(
+					eq(projects.id, state.projectId),
+					eq(projects.activeAgentRunId, runId),
 				),
-			db.insert(agentRunEvents).values(
-				[
-					...terminalEvents.slice(0, -1),
-					...finalChangeSummaryEvents,
-					...(doneEvent ? [doneEvent] : []),
-				].map((event) => ({
-					runId,
-					projectId: state.projectId as string,
-					sessionId: state.sessionId as string,
-					type: event.type,
-					payload: event.payload,
-				})),
-			),
-		]);
+			);
+		const insertTerminalEvents = db
+			.insert(agentRunEvents)
+			.values(terminalEventRows);
+		if (diffArtifact.artifactInsert) {
+			await db.batch([
+				updateRunStatus,
+				clearActiveRun,
+				insertTerminalEvents,
+				db.insert(runArtifacts).values(diffArtifact.artifactInsert),
+			]);
+		} else {
+			await db.batch([updateRunStatus, clearActiveRun, insertTerminalEvents]);
+		}
 
 		await this.notifyProjectCoordinator(state.projectId, runId, status);
 		this.broadcast({ type: "done", runId, status });
@@ -756,6 +800,124 @@ export class FlueRunBridge extends DurableObject<Env> {
 							: "Final change summary failed.",
 				}),
 			];
+		}
+	}
+
+	private async buildRunDiffArtifactEvents(
+		state: FlueRunBridgeState,
+		runId: string,
+		status: TerminalStatus,
+	): Promise<RunDiffArtifactResult> {
+		const empty: RunDiffArtifactResult = {
+			artifactInsert: null,
+			diffReadyEvent: null,
+		};
+		if (
+			state.isMutating !== true ||
+			status !== "completed" ||
+			!state.sandboxId ||
+			!state.projectId ||
+			!state.sessionId
+		) {
+			return empty;
+		}
+
+		try {
+			const sandbox = getProjectSandbox(this.env, state.sandboxId);
+			const [gitStatus, gitDiff] = await Promise.all([
+				sandbox.exec("git status --short", {
+					cwd: "/workspace",
+					timeout: RUN_DIFF_ARTIFACT_TIMEOUT_MS,
+				}),
+				sandbox.exec(RUN_DIFF_GIT_DIFF_COMMAND, {
+					cwd: "/workspace",
+					timeout: RUN_DIFF_ARTIFACT_TIMEOUT_MS,
+				}),
+			]);
+
+			const changedFiles = parseChangedFilesFromGitStatus(
+				gitStatus.stdout || "",
+			);
+			const redactedPatch = redactSecrets(gitDiff.stdout || "");
+			const plan = buildRunDiffArtifactPlan({
+				projectId: state.projectId,
+				runId,
+				artifactId: crypto.randomUUID(),
+				patch: redactedPatch,
+			});
+
+			if (redactedPatch.trim() === "") {
+				return {
+					artifactInsert: null,
+					diffReadyEvent: {
+						type: "diff_ready",
+						payload: createAgentRunEventPayload(
+							buildDiffReadyPayload({
+								changedFiles,
+								hasArtifact: false,
+							}),
+						),
+					},
+				};
+			}
+
+			if (plan.byteLength > MAX_RUN_DIFF_ARTIFACT_BYTES) {
+				return {
+					artifactInsert: null,
+					diffReadyEvent: {
+						type: "diff_ready",
+						payload: createAgentRunEventPayload(
+							buildDiffReadyPayload({
+								changedFiles,
+								byteLength: plan.byteLength,
+								truncated: true,
+								hasArtifact: false,
+							}),
+						),
+					},
+				};
+			}
+
+			await this.env.BACKUP_BUCKET.put(plan.r2Key, redactedPatch);
+
+			return {
+				artifactInsert: {
+					runId,
+					projectId: state.projectId,
+					kind: "diff",
+					r2Key: plan.r2Key,
+					contentType: plan.contentType,
+					byteLength: plan.byteLength,
+				},
+				diffReadyEvent: {
+					type: "diff_ready",
+					payload: createAgentRunEventPayload(
+						buildDiffReadyPayload({
+							artifactId: plan.artifactId,
+							changedFiles,
+							byteLength: plan.byteLength,
+							contentType: plan.contentType,
+							hasArtifact: true,
+						}),
+					),
+				},
+			};
+		} catch (error) {
+			const reason =
+				error instanceof Error ? error.message : "Run diff artifact failed.";
+			return {
+				artifactInsert: null,
+				diffReadyEvent: {
+					type: "diff_ready",
+					payload: createAgentRunEventPayload(
+						buildDiffReadyPayload({
+							changedFiles: [],
+							hasArtifact: false,
+							error: redactSecrets(reason),
+						}),
+					),
+				},
+			};
 		}
 	}
 
