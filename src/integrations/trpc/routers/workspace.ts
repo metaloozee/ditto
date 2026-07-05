@@ -7,6 +7,7 @@ import {
 	agentRunEvents,
 	agentRuns,
 	projects,
+	runArtifacts,
 	snapshots,
 	workspaceSessions,
 } from "#/db/schema";
@@ -1256,5 +1257,79 @@ export const workspaceRouter = createTRPCRouter({
 				);
 
 			return { id: session.id };
+		}),
+
+	getRunDiff: protectedProcedure
+		.input(
+			z.object({
+				projectId: z.string().min(1),
+				runId: z.string().min(1),
+				artifactId: z.number().int().positive().optional(),
+			}),
+		)
+		.query(async ({ ctx, input }) => {
+			const db = createDb(ctx.env);
+			const [run] = await db
+				.select()
+				.from(agentRuns)
+				.where(
+					and(
+						eq(agentRuns.id, input.runId),
+						eq(agentRuns.userId, ctx.user.id),
+						eq(agentRuns.projectId, input.projectId),
+					),
+				)
+				.limit(1);
+
+			if (!run) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Agent run not found.",
+				});
+			}
+
+			const artifactWhere = input.artifactId
+				? and(
+						eq(runArtifacts.id, input.artifactId),
+						eq(runArtifacts.runId, input.runId),
+						eq(runArtifacts.kind, "diff"),
+					)
+				: and(
+						eq(runArtifacts.runId, input.runId),
+						eq(runArtifacts.kind, "diff"),
+					);
+
+			const [artifact] = await db
+				.select()
+				.from(runArtifacts)
+				.where(artifactWhere)
+				.orderBy(desc(runArtifacts.createdAt), desc(runArtifacts.id))
+				.limit(1);
+
+			if (!artifact) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Diff artifact not found.",
+				});
+			}
+
+			const object = await ctx.env.BACKUP_BUCKET.get(artifact.r2Key);
+			if (!object) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Diff artifact not found.",
+				});
+			}
+
+			const patch = await object.text();
+
+			return {
+				runId: artifact.runId,
+				artifactId: artifact.id,
+				patch,
+				byteLength: artifact.byteLength ?? patch.length,
+				contentType: artifact.contentType,
+				createdAt: artifact.createdAt,
+			};
 		}),
 });

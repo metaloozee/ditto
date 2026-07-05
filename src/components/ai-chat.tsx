@@ -5,13 +5,16 @@ import {
 	BrushCleaningIcon,
 	CheckCircle2Icon,
 	CircleDotDashedIcon,
+	EyeIcon,
 	FilePenLineIcon,
 	WrenchIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Streamdown } from "streamdown";
 import { Composer } from "#/components/composer";
+import { DiffReview } from "#/components/diff-review";
 import { Bubble, BubbleContent } from "#/components/ui/bubble";
+import { Button } from "#/components/ui/button";
 import {
 	Message,
 	MessageContent,
@@ -34,6 +37,7 @@ type ChatEvent = {
 	id: number;
 	type: AgentRunEventType;
 	payload: string;
+	runId?: string | null;
 	createdAt?: Date | string | number | null;
 };
 
@@ -60,6 +64,11 @@ type EventPayload = {
 	toolName?: string;
 	error?: string;
 	schemaVersion?: number;
+	artifactId?: string | null;
+	changedFiles?: string[];
+	byteLength?: number;
+	hasArtifact?: boolean;
+	truncated?: boolean;
 	[key: string]: unknown;
 };
 
@@ -123,7 +132,16 @@ function getEventText(event: ChatEvent, payload: EventPayload): string {
 		case "file_changed":
 			return `Changed ${payload.filePath ?? payload.path ?? "a file"}.`;
 		case "diff_ready":
-			return "Diff is ready.";
+			if (payload.hasArtifact === true) {
+				return "Diff is ready.";
+			}
+			if (payload.truncated === true) {
+				return "Diff too large to preview.";
+			}
+			if (typeof payload.error === "string" && payload.error.trim()) {
+				return "Diff unavailable.";
+			}
+			return "No diff produced.";
 		case "needs_input":
 			return "Agent needs input.";
 		case "lock_rejected":
@@ -268,10 +286,12 @@ function ActivityEventMessage({
 	event,
 	text,
 	time,
+	action,
 }: {
 	event: ChatEvent;
 	text: string;
 	time: string | null;
+	action?: ReactNode;
 }) {
 	const isDestructive =
 		event.type === "error" || event.type === "lock_rejected";
@@ -285,15 +305,18 @@ function ActivityEventMessage({
 						isDestructive ? "text-destructive" : "text-muted-foreground",
 					)}
 				>
-					<span className="flex items-center gap-1.5 min-w-0 font-mono text-[0.6875rem]">
+					<span className="flex min-w-0 items-center gap-1.5 font-mono text-[0.6875rem]">
 						<ActivityIcon type={event.type} />
 						<span className="truncate">{text}</span>
 					</span>
-					{time ? (
-						<span className="tabular-nums opacity-60 shrink-0 font-mono text-[0.6875rem]">
-							{time}
-						</span>
-					) : null}
+					<span className="flex shrink-0 items-center gap-2">
+						{action}
+						{time ? (
+							<span className="shrink-0 font-mono text-[0.6875rem] tabular-nums opacity-60">
+								{time}
+							</span>
+						) : null}
+					</span>
 				</div>
 				<hr className="m-0 border-t border-border/30" />
 			</MessageContent>
@@ -301,14 +324,67 @@ function ActivityEventMessage({
 	);
 }
 
-function ChatEventMessage({ event }: { event: ChatEvent }) {
+function DiffReadyReview({
+	projectId,
+	runId,
+}: {
+	projectId: string;
+	runId: string;
+}) {
+	const [open, setOpen] = useState(false);
+
+	return (
+		<>
+			<Button
+				size="xs"
+				variant="outline"
+				type="button"
+				onClick={() => setOpen(true)}
+			>
+				<EyeIcon />
+				Review diff
+			</Button>
+			<DiffReview
+				open={open}
+				onOpenChange={setOpen}
+				projectId={projectId}
+				runId={runId}
+			/>
+		</>
+	);
+}
+
+function ChatEventMessage({
+	event,
+	projectId,
+	activeRunId,
+}: {
+	event: ChatEvent;
+	projectId?: string;
+	activeRunId?: string | null;
+}) {
 	const payload = parseEventPayload(event.payload);
 	const meta = getEventMeta(event, payload);
 	const text = getEventText(event, payload);
 	const time = formatEventTime(event.createdAt);
 
 	if (meta.isLog) {
-		return <ActivityEventMessage event={event} text={text} time={time} />;
+		let action: ReactNode = null;
+		if (event.type === "diff_ready" && payload.hasArtifact === true) {
+			const runId = event.runId ?? activeRunId ?? null;
+			if (projectId && runId) {
+				action = <DiffReadyReview projectId={projectId} runId={runId} />;
+			}
+		}
+
+		return (
+			<ActivityEventMessage
+				event={event}
+				text={text}
+				time={time}
+				action={action}
+			/>
+		);
 	}
 
 	const isAssistant = event.type === "message" && payload.role === "assistant";
@@ -493,7 +569,11 @@ export function Chat({
 											scrollAnchor={isTurnAnchor(event, payload)}
 											className={cn("mt-0", index === 0 && "mt-20")}
 										>
-											<ChatEventMessage event={event} />
+											<ChatEventMessage
+												event={event}
+												projectId={projectId}
+												activeRunId={activeRunId}
+											/>
 										</MessageScrollerItem>
 									);
 								})
