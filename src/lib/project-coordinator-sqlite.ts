@@ -6,6 +6,8 @@ import type {
 	ProjectCoordinatorTerminalStatus,
 } from "./project-coordinator";
 
+const LEGACY_EXPIRED_AT = "1970-01-01T00:00:00.000Z";
+
 export type CoordinatorMetaRow = {
 	project_id: string | null;
 	next_fencing_token: number;
@@ -17,6 +19,7 @@ export type MutationLeaseRow = {
 	user_id: string;
 	fencing_token: number;
 	admitted_at: string;
+	expires_at?: string | null;
 };
 
 export type ReadOnlyRunRow = {
@@ -69,6 +72,7 @@ export function coordinatorRowsToState(
 			capabilities: "mutating",
 			fencingToken: rows.lease.fencing_token,
 			admittedAt: rows.lease.admitted_at,
+			expiresAt: rows.lease.expires_at ?? LEGACY_EXPIRED_AT,
 		};
 	}
 
@@ -123,6 +127,7 @@ export function coordinatorStateToRows(
 				user_id: state.mutationLease.userId,
 				fencing_token: state.mutationLease.fencingToken,
 				admitted_at: state.mutationLease.admittedAt,
+				expires_at: state.mutationLease.expiresAt,
 			}
 		: null;
 

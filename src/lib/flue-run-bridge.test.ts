@@ -1272,3 +1272,223 @@ describe("flue run bridge diff artifacts", () => {
 		});
 	});
 });
+
+describe("flue run bridge lease renewal", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	function makeRenewalBridge(
+		stateOverrides: Record<string, unknown> = {},
+		envOverrides: Record<string, unknown> = {},
+	) {
+		const state: Record<string, unknown> = {
+			activeRunId: "run-1",
+			isMutating: true,
+			projectId: "project-1",
+			sessionId: "session-1",
+			fencingToken: 7,
+			...stateOverrides,
+		};
+		const ctx = {
+			setWebSocketAutoResponse: vi.fn(),
+			getWebSockets: vi.fn(() => []),
+			waitUntil: vi.fn(),
+			storage: {
+				get: vi.fn(async () => state),
+				put: vi.fn(async (_key: string, value: unknown) => {
+					Object.assign(state, value);
+				}),
+				setAlarm: vi.fn().mockResolvedValue(undefined),
+				deleteAlarm: vi.fn().mockResolvedValue(undefined),
+			},
+		};
+		const coordinatorFetch = vi.fn();
+		const bridge = new FlueRunBridge(
+			ctx as unknown as DurableObjectState,
+			{
+				BACKUP_BUCKET: { put: vi.fn() },
+				FLUE_WORKER: { fetch: vi.fn() },
+				ProjectCoordinator: {
+					idFromName: vi.fn(() => "project-1"),
+					get: vi.fn(() => ({ fetch: coordinatorFetch })),
+				},
+				...envOverrides,
+			} as unknown as Env,
+		);
+		return { ctx, state, bridge, coordinatorFetch };
+	}
+
+	it("renews an active mutating lease via coordinator /renew", async () => {
+		const { state, bridge, coordinatorFetch } = makeRenewalBridge();
+		coordinatorFetch.mockResolvedValueOnce(
+			Response.json(
+				{
+					lease: { expiresAt: "2099-01-01T00:00:00.000Z" },
+					state: { mutationLease: { expiresAt: "2099-01-01T00:00:00.000Z" } },
+				},
+				{ status: 202 },
+			),
+		);
+
+		const terminated = await (
+			bridge as unknown as {
+				renewMutatingLeaseIfNeeded: (
+					state: Record<string, unknown>,
+					runId: string,
+				) => Promise<boolean>;
+			}
+		).renewMutatingLeaseIfNeeded(state, "run-1");
+
+		expect(terminated).toBe(false);
+		expect(coordinatorFetch).toHaveBeenCalledTimes(1);
+		const request = coordinatorFetch.mock.calls[0]?.[0] as Request;
+		expect(request.url).toContain("/renew");
+		const body = JSON.parse(
+			await (request.clone().body as ReadableStream)
+				.getReader()
+				.read()
+				.then((r) => new TextDecoder().decode(r.value)),
+		);
+		expect(body).toMatchObject({
+			projectId: "project-1",
+			runId: "run-1",
+			fencingToken: 7,
+		});
+		expect(state.lastLeaseRenewedAt).toBeTruthy();
+		expect(typeof state.lastLeaseRenewedAt).toBe("string");
+	});
+
+	it("skips renewal for read-only runs", async () => {
+		const { state, bridge, coordinatorFetch } = makeRenewalBridge({
+			isMutating: false,
+		});
+
+		const terminated = await (
+			bridge as unknown as {
+				renewMutatingLeaseIfNeeded: (
+					state: Record<string, unknown>,
+					runId: string,
+				) => Promise<boolean>;
+			}
+		).renewMutatingLeaseIfNeeded(state, "run-1");
+
+		expect(terminated).toBe(false);
+		expect(coordinatorFetch).not.toHaveBeenCalled();
+	});
+
+	it("throttles renewal to the threshold window", async () => {
+		const recentRenewal = new Date(Date.now() - 5_000).toISOString();
+		const { state, bridge, coordinatorFetch } = makeRenewalBridge({
+			lastLeaseRenewedAt: recentRenewal,
+		});
+
+		const terminated = await (
+			bridge as unknown as {
+				renewMutatingLeaseIfNeeded: (
+					state: Record<string, unknown>,
+					runId: string,
+				) => Promise<boolean>;
+			}
+		).renewMutatingLeaseIfNeeded(state, "run-1");
+
+		expect(terminated).toBe(false);
+		expect(coordinatorFetch).not.toHaveBeenCalled();
+	});
+
+	it("renews when the last renewal is older than the threshold", async () => {
+		const oldRenewal = new Date(Date.now() - 120_000).toISOString();
+		const { state, bridge, coordinatorFetch } = makeRenewalBridge({
+			lastLeaseRenewedAt: oldRenewal,
+		});
+		coordinatorFetch.mockResolvedValueOnce(
+			Response.json({}, { status: 202 }),
+		);
+
+		const terminated = await (
+			bridge as unknown as {
+				renewMutatingLeaseIfNeeded: (
+					state: Record<string, unknown>,
+					runId: string,
+				) => Promise<boolean>;
+			}
+		).renewMutatingLeaseIfNeeded(state, "run-1");
+
+		expect(terminated).toBe(false);
+		expect(coordinatorFetch).toHaveBeenCalledTimes(1);
+	});
+
+	it("fails the run when renewal returns 409", async () => {
+		const insertValues = vi.fn().mockResolvedValue(undefined);
+		const insert = vi.fn(() => ({ values: insertValues }));
+		const db = { insert };
+		createDbMock.mockReturnValue(db);
+
+		const { state, bridge, coordinatorFetch } = makeRenewalBridge();
+		coordinatorFetch.mockResolvedValueOnce(
+			Response.json(
+				{ error: "Mutating lease has expired." },
+				{ status: 409 },
+			),
+		);
+
+		const finishRunMock = vi.fn().mockResolvedValue(undefined);
+		(
+			bridge as unknown as {
+				finishRun: typeof finishRunMock;
+			}
+		).finishRun = finishRunMock;
+
+		const terminated = await (
+			bridge as unknown as {
+				renewMutatingLeaseIfNeeded: (
+					state: Record<string, unknown>,
+					runId: string,
+				) => Promise<boolean>;
+			}
+		).renewMutatingLeaseIfNeeded(state, "run-1");
+
+		expect(terminated).toBe(true);
+		expect(insertValues).toHaveBeenCalledTimes(1);
+		const inserted = insertValues.mock.calls[0]?.[0];
+		expect(inserted.type).toBe("error");
+		expect(inserted.payload).toContain("Mutating lease has expired.");
+		expect(inserted.runId).toBe("run-1");
+		expect(finishRunMock).toHaveBeenCalledWith("run-1", "failed");
+	});
+
+	it("redacts the renewal error message before inserting the error event", async () => {
+		const insertValues = vi.fn().mockResolvedValue(undefined);
+		const insert = vi.fn(() => ({ values: insertValues }));
+		const db = { insert };
+		createDbMock.mockReturnValue(db);
+
+		const { state, bridge, coordinatorFetch } = makeRenewalBridge();
+		coordinatorFetch.mockResolvedValueOnce(
+			Response.json(
+				{ error: `Lease lost: sk-${"x".repeat(24)}` },
+				{ status: 409 },
+			),
+		);
+
+		const finishRunMock = vi.fn().mockResolvedValue(undefined);
+		(
+			bridge as unknown as {
+				finishRun: typeof finishRunMock;
+			}
+		).finishRun = finishRunMock;
+
+		await (
+			bridge as unknown as {
+				renewMutatingLeaseIfNeeded: (
+					state: Record<string, unknown>,
+					runId: string,
+				) => Promise<boolean>;
+			}
+		).renewMutatingLeaseIfNeeded(state, "run-1");
+
+		const inserted = insertValues.mock.calls[0]?.[0];
+		expect(inserted.payload).toContain("[REDACTED]");
+		expect(inserted.payload).not.toContain(`sk-${"x".repeat(24)}`);
+	});
+});

@@ -32,6 +32,7 @@ import {
 	checkpointPointerAfterR2Write,
 	computeWorkspaceDigest,
 } from "#/lib/run-snapshot-checkpoint";
+import { MUTATION_LEASE_RENEWAL_THRESHOLD_MS } from "#/lib/project-coordinator";
 import { serializeSandboxBackup } from "#/lib/sandbox-backup";
 import {
 	backupSandboxWorkspace,
@@ -56,6 +57,7 @@ export type FlueRunBridgeState = {
 	canceledRunIds?: string[];
 	isMutating?: boolean;
 	fencingToken?: number;
+	lastLeaseRenewedAt?: string;
 };
 
 type FlueRunBridgeSocketAttachment = {
@@ -378,6 +380,11 @@ export class FlueRunBridge extends DurableObject<Env> {
 			return;
 		}
 
+		const terminated = await this.renewMutatingLeaseIfNeeded(state, runId);
+		if (terminated) {
+			return;
+		}
+
 		await this.checkpointPeriodicMutatingRun(state, runId);
 
 		const latestState = await this.getState();
@@ -591,6 +598,11 @@ export class FlueRunBridge extends DurableObject<Env> {
 				}
 			}
 
+			const postEventState = await this.getState();
+			if (await this.renewMutatingLeaseIfNeeded(postEventState, runId)) {
+				return;
+			}
+
 			if (pollResult.closed) {
 				await this.finishRun(runId, "completed");
 				return;
@@ -703,6 +715,7 @@ export class FlueRunBridge extends DurableObject<Env> {
 			activeRunId: undefined,
 			isMutating: undefined,
 			fencingToken: undefined,
+			lastLeaseRenewedAt: undefined,
 			streamCursor: undefined,
 			streamClosed: undefined,
 		});
@@ -748,6 +761,7 @@ export class FlueRunBridge extends DurableObject<Env> {
 			activeRunId: undefined,
 			isMutating: undefined,
 			fencingToken: undefined,
+			lastLeaseRenewedAt: undefined,
 			streamCursor: undefined,
 			streamClosed: undefined,
 		});
@@ -1138,6 +1152,7 @@ export class FlueRunBridge extends DurableObject<Env> {
 			activeRunId: undefined,
 			isMutating: undefined,
 			fencingToken: undefined,
+			lastLeaseRenewedAt: undefined,
 			streamCursor: undefined,
 			streamClosed: undefined,
 			canceledRunIds: [...(state.canceledRunIds ?? []), runId],
@@ -1203,6 +1218,72 @@ export class FlueRunBridge extends DurableObject<Env> {
 				body: JSON.stringify({ projectId, runId, status }),
 			}),
 		);
+	}
+
+	private async renewMutatingLeaseIfNeeded(
+		state: FlueRunBridgeState,
+		runId: string,
+	): Promise<boolean> {
+		if (
+			state.isMutating !== true ||
+			!state.projectId ||
+			state.activeRunId !== runId ||
+			typeof state.fencingToken !== "number" ||
+			!state.sessionId
+		) {
+			return false;
+		}
+
+		const nowMs = Date.now();
+		const lastRenewal = state.lastLeaseRenewedAt
+			? Date.parse(state.lastLeaseRenewedAt)
+			: null;
+		if (
+			lastRenewal !== null &&
+			nowMs - lastRenewal < MUTATION_LEASE_RENEWAL_THRESHOLD_MS
+		) {
+			return false;
+		}
+
+		const coordinator = this.env.ProjectCoordinator as DurableObjectNamespace;
+		const id = coordinator.idFromName(state.projectId);
+		const stub = coordinator.get(id);
+		const response = await stub.fetch(
+			new Request("https://project-coordinator.internal/renew", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					projectId: state.projectId,
+					runId,
+					fencingToken: state.fencingToken,
+				}),
+			}),
+		);
+
+		if (!response.ok) {
+			const body = (await response
+				.json()
+				.catch(() => ({}))) as { error?: string };
+			const reason = redactSecrets(
+				body.error ?? "Mutation lease renewal failed.",
+			);
+			const db = createDb(this.env);
+			await db.insert(agentRunEvents).values({
+				runId,
+				projectId: state.projectId,
+				sessionId: state.sessionId,
+				type: "error",
+				payload: createAgentRunEventPayload({ message: reason }),
+			});
+			await this.finishRun(runId, "failed");
+			return true;
+		}
+
+		await this.setState({
+			...(await this.getState()),
+			lastLeaseRenewedAt: new Date().toISOString(),
+		});
+		return false;
 	}
 
 	private async acceptSocket(): Promise<Response> {

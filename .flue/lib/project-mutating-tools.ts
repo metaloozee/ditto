@@ -88,11 +88,15 @@ export async function assertFreshMutatingLease(
 	context: MutatingProjectToolContext,
 ): Promise<void> {
 	const state = await getCoordinatorState(env, context.projectId);
-	const result = validateProjectCoordinatorLease(state, {
-		projectId: context.projectId,
-		runId: context.runId,
-		fencingToken: context.fencingToken,
-	});
+	const result = validateProjectCoordinatorLease(
+		state,
+		{
+			projectId: context.projectId,
+			runId: context.runId,
+			fencingToken: context.fencingToken,
+		},
+		new Date().toISOString(),
+	);
 
 	if (!result.valid) {
 		throw new Error(result.message);

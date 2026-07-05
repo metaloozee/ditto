@@ -10,13 +10,16 @@ const {
 	createInitialProjectCoordinatorState,
 	endProjectRestore,
 	MUTATION_CONFLICT_MESSAGE,
+	MUTATION_LEASE_TTL_MS,
 	observeProjectRunTerminal,
 	recordLatestSnapshot,
+	renewProjectCoordinatorLease,
 	RESTORE_IN_PROGRESS_MESSAGE,
 	validateProjectCoordinatorLease,
 } = await import("./project-coordinator");
 
 const now = "2026-07-02T00:00:00.000Z";
+const expiryFromNow = "2026-07-02T00:05:00.000Z";
 
 function admissionInput(runId: string, mode: "mutating" | "read_only") {
 	return {
@@ -47,6 +50,75 @@ describe("project coordinator lease decisions", () => {
 		});
 		expect(decision.state.mutationLease?.runId).toBe("run-1");
 		expect(decision.state.nextFencingToken).toBe(2);
+	});
+
+	it("sets an expiresAt on mutating admission based on TTL", () => {
+		const decision = admitProjectRun(
+			createInitialProjectCoordinatorState(),
+			admissionInput("run-1", "mutating"),
+			now,
+		);
+		if (!decision.accepted) {
+			throw new Error("expected admission");
+		}
+
+		expect(decision.admission).toMatchObject({ expiresAt: expiryFromNow });
+		expect(decision.state.mutationLease?.expiresAt).toBe(expiryFromNow);
+		expect(MUTATION_LEASE_TTL_MS).toBe(5 * 60 * 1000);
+	});
+
+	it("clears an expired mutation lease before admitting a new mutating run", () => {
+		const first = admitProjectRun(
+			createInitialProjectCoordinatorState(),
+			admissionInput("run-1", "mutating"),
+			now,
+		);
+		if (!first.accepted) {
+			throw new Error("expected first admission");
+		}
+
+		const expiredNow = "2026-07-02T00:06:00.000Z";
+		const second = admitProjectRun(
+			first.state,
+			admissionInput("run-2", "mutating"),
+			expiredNow,
+		);
+
+		expect(second.accepted).toBe(true);
+		if (!second.accepted) {
+			throw new Error("expected second admission after expiry");
+		}
+		expect(second.admission).toMatchObject({
+			runId: "run-2",
+			fencingToken: 2,
+		});
+		expect(second.state.mutationLease?.runId).toBe("run-2");
+		expect(second.state.nextFencingToken).toBe(3);
+	});
+
+	it("still rejects a second mutating run while a non-expired lease is active", () => {
+		const first = admitProjectRun(
+			createInitialProjectCoordinatorState(),
+			admissionInput("run-1", "mutating"),
+			now,
+		);
+		if (!first.accepted) {
+			throw new Error("expected first admission");
+		}
+
+		const withinTtl = "2026-07-02T00:04:59.000Z";
+		const second = admitProjectRun(
+			first.state,
+			admissionInput("run-2", "mutating"),
+			withinTtl,
+		);
+
+		expect(second).toMatchObject({
+			accepted: false,
+			status: 409,
+			message: MUTATION_CONFLICT_MESSAGE,
+		});
+		expect(second.state.mutationLease?.runId).toBe("run-1");
 	});
 
 	it("rejects a second mutating run while a lease is active", () => {
@@ -154,10 +226,14 @@ describe("project coordinator lease decisions", () => {
 		}
 
 		expect(
-			validateProjectCoordinatorLease(admitted.state, {
-				projectId: "project-1",
-				runId: "run-1",
-			}),
+			validateProjectCoordinatorLease(
+				admitted.state,
+				{
+					projectId: "project-1",
+					runId: "run-1",
+				},
+				now,
+			),
 		).toMatchObject({ valid: false, message: "Missing fencing token." });
 	});
 
@@ -172,11 +248,15 @@ describe("project coordinator lease decisions", () => {
 		}
 
 		expect(
-			validateProjectCoordinatorLease(admitted.state, {
-				projectId: "project-1",
-				runId: "run-1",
-				fencingToken: 2,
-			}),
+			validateProjectCoordinatorLease(
+				admitted.state,
+				{
+					projectId: "project-1",
+					runId: "run-1",
+					fencingToken: 2,
+				},
+				now,
+			),
 		).toMatchObject({
 			valid: false,
 			message: "Mutating lease fencing token mismatch.",
@@ -194,11 +274,15 @@ describe("project coordinator lease decisions", () => {
 		}
 
 		expect(
-			validateProjectCoordinatorLease(admitted.state, {
-				projectId: "project-1",
-				runId: "run-2",
-				fencingToken: 1,
-			}),
+			validateProjectCoordinatorLease(
+				admitted.state,
+				{
+					projectId: "project-1",
+					runId: "run-2",
+					fencingToken: 1,
+				},
+				now,
+			),
 		).toMatchObject({
 			valid: false,
 			message: "Mutating lease run mismatch.",
@@ -221,12 +305,129 @@ describe("project coordinator lease decisions", () => {
 		);
 
 		expect(
-			validateProjectCoordinatorLease(terminal, {
-				projectId: "project-1",
-				runId: "run-1",
-				fencingToken: 1,
-			}),
+			validateProjectCoordinatorLease(
+				terminal,
+				{
+					projectId: "project-1",
+					runId: "run-1",
+					fencingToken: 1,
+				},
+				now,
+			),
 		).toMatchObject({ valid: false, message: "Mutating run is terminal." });
+	});
+
+	it("rejects validation when the lease has expired", () => {
+		const admitted = admitProjectRun(
+			createInitialProjectCoordinatorState(),
+			admissionInput("run-1", "mutating"),
+			now,
+		);
+		if (!admitted.accepted) {
+			throw new Error("expected admission");
+		}
+
+		const expiredNow = "2026-07-02T00:05:01.000Z";
+		expect(
+			validateProjectCoordinatorLease(
+				admitted.state,
+				{
+					projectId: "project-1",
+					runId: "run-1",
+					fencingToken: 1,
+				},
+				expiredNow,
+			),
+		).toMatchObject({
+			valid: false,
+			message: "Mutating lease has expired.",
+		});
+	});
+});
+
+describe("project coordinator lease renewal", () => {
+	function admittedState() {
+		const decision = admitProjectRun(
+			createInitialProjectCoordinatorState(),
+			admissionInput("run-1", "mutating"),
+			now,
+		);
+		if (!decision.accepted) {
+			throw new Error("expected admission");
+		}
+		return decision.state;
+	}
+
+	it("extends expiry for a matching run and fencing token", () => {
+		const state = admittedState();
+		const renewNow = "2026-07-02T00:04:30.000Z";
+		const expectedExpiry = "2026-07-02T00:09:30.000Z";
+
+		const decision = renewProjectCoordinatorLease(
+			state,
+			{ projectId: "project-1", runId: "run-1", fencingToken: 1 },
+			renewNow,
+		);
+
+		expect(decision.accepted).toBe(true);
+		if (!decision.accepted) {
+			throw new Error("expected renewal");
+		}
+		expect(decision.lease.expiresAt).toBe(expectedExpiry);
+		expect(decision.state.mutationLease?.expiresAt).toBe(expectedExpiry);
+		expect(decision.state.mutationLease?.runId).toBe("run-1");
+		expect(decision.state.mutationLease?.fencingToken).toBe(1);
+	});
+
+	it("rejects renewal with a stale fencing token", () => {
+		const state = admittedState();
+
+		const decision = renewProjectCoordinatorLease(
+			state,
+			{ projectId: "project-1", runId: "run-1", fencingToken: 2 },
+			now,
+		);
+
+		expect(decision.accepted).toBe(false);
+		expect(decision).toMatchObject({
+			status: 409,
+			message: "Mutating lease fencing token mismatch.",
+		});
+		expect(decision.state.mutationLease?.expiresAt).toBe(expiryFromNow);
+	});
+
+	it("rejects renewal for the wrong run", () => {
+		const state = admittedState();
+
+		const decision = renewProjectCoordinatorLease(
+			state,
+			{ projectId: "project-1", runId: "run-2", fencingToken: 1 },
+			now,
+		);
+
+		expect(decision.accepted).toBe(false);
+		expect(decision).toMatchObject({
+			status: 409,
+			message: "Mutating lease run mismatch.",
+		});
+	});
+
+	it("rejects renewal when the lease has already expired", () => {
+		const state = admittedState();
+		const expiredNow = "2026-07-02T00:05:01.000Z";
+
+		const decision = renewProjectCoordinatorLease(
+			state,
+			{ projectId: "project-1", runId: "run-1", fencingToken: 1 },
+			expiredNow,
+		);
+
+		expect(decision.accepted).toBe(false);
+		expect(decision).toMatchObject({
+			status: 409,
+			message: "Mutating lease has expired.",
+		});
+		expect(decision.state.mutationLease?.expiresAt).toBe(expiryFromNow);
 	});
 });
 

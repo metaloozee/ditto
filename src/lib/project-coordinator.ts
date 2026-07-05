@@ -20,6 +20,7 @@ export type ProjectCoordinatorLease = {
 	capabilities: "mutating";
 	fencingToken: number;
 	admittedAt: string;
+	expiresAt: string;
 };
 
 export type ProjectCoordinatorReadOnlyRun = {
@@ -81,6 +82,8 @@ export const MUTATION_CONFLICT_MESSAGE =
 	"Another mutating run already holds the project lease.";
 export const RESTORE_IN_PROGRESS_MESSAGE =
 	"Workspace is restoring; mutating runs are paused.";
+export const MUTATION_LEASE_TTL_MS = 5 * 60 * 1000;
+export const MUTATION_LEASE_RENEWAL_THRESHOLD_MS = 60 * 1000;
 export const PROJECT_COORDINATOR_LEASE_VALIDATION_MESSAGES = {
 	missingToken: "Missing fencing token.",
 	noActiveLease: "No active mutating lease.",
@@ -88,6 +91,7 @@ export const PROJECT_COORDINATOR_LEASE_VALIDATION_MESSAGES = {
 	runMismatch: "Mutating lease run mismatch.",
 	tokenMismatch: "Mutating lease fencing token mismatch.",
 	terminalRun: "Mutating run is terminal.",
+	expiredLease: "Mutating lease has expired.",
 } as const;
 
 export type ProjectCoordinatorLeaseValidationInput = {
@@ -100,6 +104,30 @@ export type ProjectCoordinatorLeaseValidationResult =
 	| { valid: true; lease: ProjectCoordinatorLease }
 	| { valid: false; message: string };
 
+export type ProjectCoordinatorLeaseRenewalInput = {
+	projectId: string;
+	runId: string;
+	fencingToken: number;
+};
+
+export type ProjectCoordinatorLeaseRenewalAccepted = {
+	accepted: true;
+	status: 202;
+	state: ProjectCoordinatorState;
+	lease: ProjectCoordinatorLease;
+};
+
+export type ProjectCoordinatorLeaseRenewalRejected = {
+	accepted: false;
+	status: 409;
+	state: ProjectCoordinatorState;
+	message: string;
+};
+
+export type ProjectCoordinatorLeaseRenewalDecision =
+	| ProjectCoordinatorLeaseRenewalAccepted
+	| ProjectCoordinatorLeaseRenewalRejected;
+
 export function createInitialProjectCoordinatorState(): ProjectCoordinatorState {
 	return {
 		mutationLease: null,
@@ -107,6 +135,17 @@ export function createInitialProjectCoordinatorState(): ProjectCoordinatorState 
 		nextFencingToken: 1,
 		snapshot: { latestSnapshotId: null, restoring: false },
 	};
+}
+
+export function computeMutationLeaseExpiry(nowIso: string): string {
+	return new Date(Date.parse(nowIso) + MUTATION_LEASE_TTL_MS).toISOString();
+}
+
+export function isMutationLeaseExpired(
+	lease: ProjectCoordinatorLease,
+	nowIso: string,
+): boolean {
+	return Date.parse(lease.expiresAt) <= Date.parse(nowIso);
 }
 
 export function admitProjectRun(
@@ -148,11 +187,17 @@ export function admitProjectRun(
 		};
 	}
 
-	if (baseState.mutationLease) {
+	const clearedState =
+		baseState.mutationLease &&
+		isMutationLeaseExpired(baseState.mutationLease, nowIso)
+			? { ...baseState, mutationLease: null }
+			: baseState;
+
+	if (clearedState.mutationLease) {
 		return {
 			accepted: false,
 			status: 409,
-			state: baseState,
+			state: clearedState,
 			message: MUTATION_CONFLICT_MESSAGE,
 		};
 	}
@@ -164,8 +209,9 @@ export function admitProjectRun(
 		userId: input.userId,
 		mode: "mutating",
 		capabilities: "mutating",
-		fencingToken: baseState.nextFencingToken,
+		fencingToken: clearedState.nextFencingToken,
 		admittedAt: nowIso,
+		expiresAt: computeMutationLeaseExpiry(nowIso),
 	};
 
 	return {
@@ -173,9 +219,9 @@ export function admitProjectRun(
 		status: 202,
 		admission,
 		state: {
-			...baseState,
+			...clearedState,
 			mutationLease: admission,
-			nextFencingToken: baseState.nextFencingToken + 1,
+			nextFencingToken: clearedState.nextFencingToken + 1,
 		},
 	};
 }
@@ -245,6 +291,7 @@ export function recordLatestSnapshot(
 export function validateProjectCoordinatorLease(
 	state: ProjectCoordinatorState,
 	input: ProjectCoordinatorLeaseValidationInput,
+	nowIso: string,
 ): ProjectCoordinatorLeaseValidationResult {
 	if (typeof input.fencingToken !== "number") {
 		return {
@@ -295,7 +342,45 @@ export function validateProjectCoordinatorLease(
 		};
 	}
 
+	if (isMutationLeaseExpired(lease, nowIso)) {
+		return {
+			valid: false,
+			message: PROJECT_COORDINATOR_LEASE_VALIDATION_MESSAGES.expiredLease,
+		};
+	}
+
 	return { valid: true, lease };
+}
+
+export function renewProjectCoordinatorLease(
+	state: ProjectCoordinatorState,
+	input: ProjectCoordinatorLeaseRenewalInput,
+	nowIso: string,
+): ProjectCoordinatorLeaseRenewalDecision {
+	const validation = validateProjectCoordinatorLease(state, input, nowIso);
+	if (!validation.valid) {
+		return {
+			accepted: false,
+			status: 409,
+			state,
+			message: validation.message,
+		};
+	}
+
+	const renewedLease: ProjectCoordinatorLease = {
+		...validation.lease,
+		expiresAt: computeMutationLeaseExpiry(nowIso),
+	};
+
+	return {
+		accepted: true,
+		status: 202,
+		lease: renewedLease,
+		state: {
+			...state,
+			mutationLease: renewedLease,
+		},
+	};
 }
 
 function getString(value: unknown): string | null {
@@ -356,6 +441,28 @@ function parseTerminalInput(value: unknown): {
 	};
 }
 
+function parseFencingToken(value: unknown): number {
+	if (typeof value !== "number" || !Number.isFinite(value)) {
+		throw new Error("Invalid fencing token.");
+	}
+	return value;
+}
+
+function parseRenewalInput(
+	value: unknown,
+): ProjectCoordinatorLeaseRenewalInput {
+	if (!value || typeof value !== "object") {
+		throw new Error("Invalid renewal request.");
+	}
+
+	const input = value as Record<string, unknown>;
+	return {
+		projectId: requireString(input, "projectId"),
+		runId: requireString(input, "runId"),
+		fencingToken: parseFencingToken(input.fencingToken),
+	};
+}
+
 function parseNullableSnapshotIdInput(value: unknown): {
 	snapshotId: string | null;
 } {
@@ -398,6 +505,8 @@ export class ProjectCoordinator extends DurableObject<Env> {
 			switch (url.pathname) {
 				case "/admit":
 					return await this.admit(parseAdmissionInput(await request.json()));
+				case "/renew":
+					return await this.renew(parseRenewalInput(await request.json()));
 				case "/terminal":
 					return await this.terminal(parseTerminalInput(await request.json()));
 				case "/begin-restore":
@@ -451,6 +560,31 @@ export class ProjectCoordinator extends DurableObject<Env> {
 		);
 	}
 
+	private async renew(
+		input: ProjectCoordinatorLeaseRenewalInput,
+	): Promise<Response> {
+		const decision = renewProjectCoordinatorLease(
+			await this.getState(),
+			input,
+			new Date().toISOString(),
+		);
+		await this.setState(decision.state);
+
+		if (!decision.accepted) {
+			return Response.json(
+				{ error: decision.message, state: decision.state },
+				{
+					status: decision.status,
+				},
+			);
+		}
+
+		return Response.json(
+			{ lease: decision.lease, state: decision.state },
+			{ status: decision.status },
+		);
+	}
+
 	private async terminal(input: {
 		projectId: string;
 		runId: string;
@@ -497,8 +631,11 @@ export class ProjectCoordinator extends DurableObject<Env> {
 			"CREATE TABLE IF NOT EXISTS coordinator_meta (id INTEGER PRIMARY KEY, project_id TEXT, next_fencing_token INTEGER NOT NULL DEFAULT 1)",
 		);
 		sql.exec(
-			"CREATE TABLE IF NOT EXISTS mutation_lease (id INTEGER PRIMARY KEY, run_id TEXT, session_id TEXT, user_id TEXT, fencing_token INTEGER, admitted_at TEXT)",
+			"CREATE TABLE IF NOT EXISTS mutation_lease (id INTEGER PRIMARY KEY, run_id TEXT, session_id TEXT, user_id TEXT, fencing_token INTEGER, admitted_at TEXT, expires_at TEXT)",
 		);
+		try {
+			sql.exec("ALTER TABLE mutation_lease ADD COLUMN expires_at TEXT");
+		} catch {}
 		sql.exec(
 			"CREATE TABLE IF NOT EXISTS read_only_runs (run_id TEXT PRIMARY KEY, session_id TEXT, user_id TEXT, admitted_at TEXT)",
 		);
@@ -529,8 +666,9 @@ export class ProjectCoordinator extends DurableObject<Env> {
 					user_id: string;
 					fencing_token: number;
 					admitted_at: string;
+					expires_at: string | null;
 				}>(
-					"SELECT run_id, session_id, user_id, fencing_token, admitted_at FROM mutation_lease WHERE id = 1",
+					"SELECT run_id, session_id, user_id, fencing_token, admitted_at, expires_at FROM mutation_lease WHERE id = 1",
 				)
 				.toArray()[0] ?? null;
 
@@ -592,12 +730,13 @@ export class ProjectCoordinator extends DurableObject<Env> {
 
 		if (rows.lease) {
 			sql.exec(
-				"INSERT OR REPLACE INTO mutation_lease (id, run_id, session_id, user_id, fencing_token, admitted_at) VALUES (1, ?, ?, ?, ?, ?)",
+				"INSERT OR REPLACE INTO mutation_lease (id, run_id, session_id, user_id, fencing_token, admitted_at, expires_at) VALUES (1, ?, ?, ?, ?, ?, ?)",
 				rows.lease.run_id,
 				rows.lease.session_id,
 				rows.lease.user_id,
 				rows.lease.fencing_token,
 				rows.lease.admitted_at,
+				rows.lease.expires_at,
 			);
 		} else {
 			sql.exec("DELETE FROM mutation_lease WHERE id = 1");

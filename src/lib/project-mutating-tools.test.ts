@@ -46,6 +46,26 @@ function activeLeaseState() {
 			capabilities: "mutating",
 			fencingToken: 7,
 			admittedAt: "2026-07-04T00:00:00.000Z",
+			expiresAt: "2099-01-01T00:00:00.000Z",
+		},
+		activeReadOnlyRuns: [],
+		nextFencingToken: 8,
+	};
+}
+
+function expiredLeaseState() {
+	return {
+		projectId: "project-1",
+		mutationLease: {
+			projectId: "project-1",
+			runId: "run-1",
+			sessionId: "session-1",
+			userId: "user-1",
+			mode: "mutating",
+			capabilities: "mutating",
+			fencingToken: 7,
+			admittedAt: "2026-07-04T00:00:00.000Z",
+			expiresAt: "1970-01-01T00:00:00.000Z",
 		},
 		activeReadOnlyRuns: [],
 		nextFencingToken: 8,
@@ -172,5 +192,27 @@ describe("mutating Flue project tools", () => {
 				content: "after",
 			}),
 		).rejects.toThrow("Mutating lease fencing token mismatch.");
+	});
+
+	it("rejects an expired lease before writing", async () => {
+		const { tools, fetch } = toolsFor(expiredLeaseState());
+		const calls: string[] = [];
+		fetch.mockImplementationOnce(async () => {
+			calls.push("lease");
+			return Response.json(expiredLeaseState());
+		});
+		sandbox.writeFile.mockImplementationOnce(async () => {
+			calls.push("write");
+		});
+
+		await expect(
+			tool(tools, "write_file").execute({
+				path: "src/example.ts",
+				content: "after",
+			}),
+		).rejects.toThrow("Mutating lease has expired.");
+
+		expect(calls).toEqual(["lease"]);
+		expect(sandbox.writeFile).not.toHaveBeenCalled();
 	});
 });

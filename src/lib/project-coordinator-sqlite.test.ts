@@ -38,6 +38,7 @@ describe("coordinator sqlite row transforms", () => {
 				capabilities: "mutating" as const,
 				fencingToken: 7,
 				admittedAt: "2026-07-02T00:00:00.000Z",
+				expiresAt: "2026-07-02T00:05:00.000Z",
 			},
 			activeReadOnlyRuns: [],
 			nextFencingToken: 8,
@@ -114,6 +115,7 @@ describe("coordinator sqlite row transforms", () => {
 				user_id: "user-1",
 				fencing_token: 2,
 				admitted_at: "2026-07-02T00:00:00.000Z",
+				expires_at: "2026-07-02T00:05:00.000Z",
 			},
 			readOnlyRuns: [],
 			lastTerminal: null,
@@ -124,6 +126,47 @@ describe("coordinator sqlite row transforms", () => {
 
 		expect(state.mutationLease?.runId).toBe("run-1");
 		expect(state.nextFencingToken).toBe(3);
+	});
+
+	it("treats a legacy lease row without expires_at as already expired", () => {
+		const rows: CoordinatorSqlRows = {
+			meta: { project_id: "project-1", next_fencing_token: 3 },
+			lease: {
+				run_id: "run-1",
+				session_id: "session-1",
+				user_id: "user-1",
+				fencing_token: 2,
+				admitted_at: "2026-07-02T00:00:00.000Z",
+			},
+			readOnlyRuns: [],
+			lastTerminal: null,
+			snapshotState: null,
+		};
+
+		const state = coordinatorRowsToState(rows);
+
+		expect(state.mutationLease?.expiresAt).toBe("1970-01-01T00:00:00.000Z");
+	});
+
+	it("treats a null expires_at as already expired", () => {
+		const rows: CoordinatorSqlRows = {
+			meta: { project_id: "project-1", next_fencing_token: 3 },
+			lease: {
+				run_id: "run-1",
+				session_id: "session-1",
+				user_id: "user-1",
+				fencing_token: 2,
+				admitted_at: "2026-07-02T00:00:00.000Z",
+				expires_at: null,
+			},
+			readOnlyRuns: [],
+			lastTerminal: null,
+			snapshotState: null,
+		};
+
+		const state = coordinatorRowsToState(rows);
+
+		expect(state.mutationLease?.expiresAt).toBe("1970-01-01T00:00:00.000Z");
 	});
 
 	it("round-trips a restoring snapshot state with a latest snapshot id", () => {
