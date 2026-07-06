@@ -46,9 +46,7 @@ function parsePayload(value: unknown): DittoProjectRunPayload {
 	};
 }
 
-export default async function dittoProjectRun(
-	ctx: FlueContext<unknown, DittoProjectRunEnv>,
-) {
+export async function run(ctx: FlueContext<unknown, DittoProjectRunEnv>) {
 	const payload = parsePayload(ctx.payload);
 	const harness = await ctx.init(projectCoderAgent, {
 		name: "mutating",
