@@ -151,7 +151,7 @@ function parseAddressableAgentIdentity(id: string): {
 
 export default createAgent<unknown, FlueProjectCoderEnv>(
 	({ id, env, payload }) => {
-		const { projectId, sandboxId } =
+		const { sandboxId } =
 			parseMutatingPayloadIdentity(payload) ??
 			parseAddressableAgentIdentity(id);
 		const sandbox = getSandbox(env.Sandbox, sandboxId);
@@ -307,7 +307,6 @@ export default createAgent<unknown, FlueProjectCoderEnv>(
 			instructions: hasMutatingPayload(payload)
 				? mutatingInstructions
 				: readOnlyInstructions,
-			metadata: { projectId },
 			tools,
 			sandbox: cloudflareSandbox(sandbox),
 		};
