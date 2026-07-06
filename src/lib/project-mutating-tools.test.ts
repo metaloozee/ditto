@@ -134,6 +134,34 @@ describe("mutating Flue project tools", () => {
 		expect(getSandboxMock).toHaveBeenCalledWith(binding, "payload-sandbox");
 	});
 
+	it("keeps the merged mutating toolset free of duplicate tool names", async () => {
+		const binding = {};
+		const payload = {
+			projectId: "project-1",
+			sessionId: "session-1",
+			runId: "run-1",
+			userId: "user-1",
+			sandboxId: "sandbox-1",
+			message: "make a change",
+			modelSpecifier: "anthropic/claude-sonnet-4-6",
+			fencingToken: 7,
+		};
+		const config = await projectCoder.default.initialize({
+			id: "flue-workflow-run-id",
+			env: { Sandbox: binding as never },
+			payload,
+		});
+		const { env } = createEnv(activeLeaseState());
+		const mergedNames = [
+			...(config.tools?.map((candidate) => candidate.name) ?? []),
+			...createMutatingProjectTools(env as never, payload).map(
+				(candidate) => candidate.name,
+			),
+		];
+
+		expect(new Set(mergedNames).size).toBe(mergedNames.length);
+	});
+
 	it("rejects path traversal", () => {
 		expect(() => resolveWorkspacePath("../secret.txt")).toThrow(
 			"Path traversal is not allowed.",

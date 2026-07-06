@@ -24,10 +24,6 @@ const WORKSPACE_PATH = "/workspace";
 const MAX_OUTPUT_BYTES = 50 * 1024;
 const COMMAND_TIMEOUT_MS = 120_000;
 
-function quoteShellArg(value: string): string {
-	return `'${value.replaceAll("'", `'\\''`)}'`;
-}
-
 function capOutput(value: string, maxBytes = MAX_OUTPUT_BYTES): string {
 	const bytes = new TextEncoder().encode(value);
 	if (bytes.length <= maxBytes) {
@@ -203,40 +199,6 @@ export function createMutatingProjectTools(
 				const commandOutput = await runWorkspaceCommand(sandbox, args.command);
 				const summary = await workspaceChangeSummary(sandbox);
 				return `${commandOutput}\n\n${summary}`;
-			},
-		}),
-		defineTool({
-			name: "git_status",
-			description: "Show concise git status information for the workspace.",
-			parameters: v.object({}),
-			async execute() {
-				return runWorkspaceCommand(
-					sandbox,
-					"git status --short --branch",
-					15_000,
-				);
-			},
-		}),
-		defineTool({
-			name: "git_diff",
-			description:
-				"Show the current git diff, optionally scoped to a relative workspace path.",
-			parameters: v.object({
-				path: v.optional(v.string()),
-				statOnly: v.optional(v.boolean()),
-			}),
-			async execute(args) {
-				const command = args.statOnly ? "git diff --stat" : "git diff";
-				if (!args.path) {
-					return runWorkspaceCommand(sandbox, command, 15_000);
-				}
-
-				const path = resolveWorkspacePath(args.path);
-				return runWorkspaceCommand(
-					sandbox,
-					`${command} -- ${quoteShellArg(path)}`,
-					15_000,
-				);
 			},
 		}),
 	];
