@@ -96,9 +96,7 @@ function MessageRow({ message }: { message: ChatMessage }) {
 					align={message.role === "user" ? "end" : "start"}
 					variant={message.role === "user" ? "default" : "secondary"}
 				>
-					<BubbleContent
-						className="w-full max-w-none"
-					>
+					<BubbleContent className="w-full max-w-none">
 						{message.role === "assistant" ? (
 							<AssistantMarkdown mode="static" text={message.content} />
 						) : (
