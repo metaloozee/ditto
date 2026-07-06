@@ -1,6 +1,7 @@
 import path from "node:path";
 import alchemy from "alchemy";
 import {
+	Container,
 	D1Database,
 	DurableObjectNamespace,
 	R2Bucket,
@@ -18,9 +19,14 @@ const FLUE_WORKER_OUTPUT_DIR = path
 	.replaceAll("-", "_");
 const FLUE_WORKER_ENTRYPOINT = `./dist/${FLUE_WORKER_OUTPUT_DIR}/index.js`;
 
-const sandbox = DurableObjectNamespace("sandbox", {
+const sandbox = await Container("sandbox", {
 	className: "Sandbox",
-	sqlite: true,
+	build: {
+		context: ".",
+		dockerfile: "Dockerfile",
+	},
+	instanceType: "lite",
+	maxInstances: 1,
 });
 
 const workspaceSessionBroker = DurableObjectNamespace(
