@@ -6,29 +6,27 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "pnpm flue:build && alchemy dev",
-    "build": "pnpm flue:build && vite build",
+    "dev": "alchemy dev",
+    "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run --passWithNoTests",
     "format": "biome format --write",
     "lint": "biome lint",
     "check": "biome check",
     "fix": "biome check --write",
-    "deploy": "pnpm flue:build && alchemy deploy",
+    "deploy": "alchemy deploy",
     "destroy": "alchemy destroy",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:pull": "drizzle-kit pull",
     "db:studio": "drizzle-kit studio",
-    "doctor": "npx react-doctor@latest",
-    "flue:build": "flue build --target cloudflare"
+    "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
     "@cloudflare/sandbox": "^0.12.1",
     "@faker-js/faker": "^10.3.0",
-    "@flue/runtime": "1.0.0-beta.1",
     "@fontsource-variable/geist": "^5.2.9",
     "@fontsource-variable/inter": "^5.2.8",
     "@pierre/diffs": "^1.2.7",
@@ -59,7 +57,6 @@
     "@trpc/client": "^11.11.0",
     "@trpc/server": "^11.11.0",
     "@trpc/tanstack-react-query": "^11.11.0",
-    "agents": "^0.14.5",
     "ai": "^6.0.197",
     "alchemy": "^0.93.11",
     "better-auth": "^1.5.3",
@@ -99,7 +96,6 @@
     "@biomejs/biome": "2.4.5",
     "@cloudflare/vite-plugin": "^1.42.1",
     "@cloudflare/workers-types": "^4.20260605.1",
-    "@flue/cli": "1.0.0-beta.1",
     "@rolldown/plugin-babel": "^0.2.3",
     "@tailwindcss/typography": "^0.5.16",
     "@tanstack/devtools-event-client": "latest",
@@ -121,5 +117,8 @@
     "vitest": "^4.1.5",
     "wrangler": "^4.70.0"
   },
-  "packageManager": "pnpm@11.8.0+sha512.c1f5e7c4cb241c8f174b743851d82f42b802324afc8b0f116b96adb15aa06664948dde36960a3ba1079ba5b4b29dd0140135b94b5b5f5263592249d68e555f26"
+  "packageManager": "pnpm@11.8.0+sha512.c1f5e7c4cb241c8f174b743851d82f42b802324afc8b0f116b96adb15aa06664948dde36960a3ba1079ba5b4b29dd0140135b94b5b5f5263592249d68e555f26",
+  "engines": {
+    "node": ">=22.15"
+  }
 }

@@ -1,363 +1,73 @@
-Welcome to your new TanStack Start app! 
+# Ditto
 
-# Getting Started
+Ditto is a TanStack Start app deployed with Alchemy on Cloudflare Workers. It uses:
 
-To run this application:
+- Cloudflare D1 + Drizzle for persistence
+- better-auth with GitHub OAuth
+- GitHub repo import for projects
+- `@cloudflare/sandbox` for workspace instantiation
+- R2-backed sandbox backup/restore
+- a dummy composer that records messages in D1 and replies `Implementation is remaining`
+
+## Prerequisites
+
+- Node.js 22.15+ (22.17 recommended)
+- pnpm
+- Cloudflare / GitHub credentials for the configured environment
+
+## Install
 
 ```bash
 pnpm install
+```
+
+## Development
+
+```bash
 pnpm dev
 ```
 
-# Building For Production
+## Database
 
-To build this application for production:
-
-```bash
-pnpm build
-```
-
-## Testing
-
-This project uses [Vitest](https://vitest.dev/) for testing. You can run the tests with:
-
-```bash
-pnpm test
-```
-
-## Styling
-
-This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.
-
-### Removing Tailwind CSS
-
-If you prefer not to use Tailwind CSS:
-
-1. Remove the demo pages in `src/routes/demo/`
-2. Replace the Tailwind import in `src/styles.css` with your own styles
-3. Remove `tailwindcss()` from the plugins array in `vite.config.ts`
-4. Uninstall the packages: `pnpm add @tailwindcss/vite tailwindcss --dev`
-
-## Linting & Formatting
-
-This project uses [Biome](https://biomejs.dev/) for linting and formatting. The following scripts are available:
-
-
-```bash
-pnpm lint
-pnpm format
-pnpm check
-```
-
-
-## Deploy to Cloudflare Workers
-
-This project uses Alchemy to manage Cloudflare Workers, D1, bindings, local
-development, deploys, and teardown.
-
-1. Authenticate with Cloudflare: `pnpm alchemy login`
-2. Set local env vars in `.env.local`
-3. Run locally: `pnpm dev`
-4. Deploy: `pnpm deploy`
-5. Tear down Cloudflare resources: `pnpm destroy`
-
-Alchemy remains the Cloudflare deploy source of truth. It manages generated
-local Wrangler config under `.alchemy/`; no root `wrangler.jsonc` is needed or
-added. Do not edit or commit generated Alchemy state.
-
-`pnpm dev`, `pnpm build`, and `pnpm deploy` run `pnpm flue:build` first so the
-private Flue Worker artifact exists before Alchemy or Vite reads it.
-`pnpm flue:build` writes generated artifacts under `dist/` and `.flue-vite*`;
-these are generated files and should not be committed.
-
-The Flue Worker is private and reached by the public TanStack Worker through the
-`FLUE_WORKER` service binding. The Flue CLI migration warning during local build
-is expected because Alchemy declares the generated Flue Durable Object namespaces
-and migrations instead of committing generated Wrangler config or adding a root
-Wrangler config.
-
-Sandbox workspace backups use an Alchemy-managed R2 bucket. These backup
-environment variables are required to run and deploy the app:
-
-```env
-CLOUDFLARE_ACCOUNT_ID=
-R2_ACCESS_KEY_ID=
-R2_SECRET_ACCESS_KEY=
-```
-
-Local development can set `USE_LOCAL_BUCKET_BACKUPS=true` to use the local R2
-binding backup path, but R2 backup credentials are still required at app
-startup:
-
-```env
-USE_LOCAL_BUCKET_BACKUPS=
-```
-
-Deployed Workers should leave local-bucket mode disabled so the Sandbox SDK can
-use presigned URLs. The app fails fast if required secret bindings are missing.
-
-
-## Shadcn
-
-Add components using the latest version of [Shadcn](https://ui.shadcn.com/).
-
-```bash
-pnpm dlx shadcn@latest add button
-```
-
-
-## T3Env
-
-- You can use T3Env to add type safety to your environment variables.
-- Add Environment variables to the `src/env.mjs` file.
-- Use the environment variables in your code.
-
-### Usage
-
-```ts
-import { env } from "#/env";
-
-console.log(env.VITE_APP_TITLE);
-```
-
-
-
-
-
-## Setting up Better Auth
-
-This app uses Better Auth with GitHub social auth only. Email/password auth is
-not enabled.
-
-1. Generate and set the `BETTER_AUTH_SECRET` environment variable in your `.env.local`:
-
-   ```bash
-   pnpm dlx @better-auth/cli secret
-   ```
-
-2. Create a GitHub OAuth app and set these callback URLs:
-
-   ```text
-   http://localhost:3000/api/auth/callback/github
-   https://<worker-url>/api/auth/callback/github
-   ```
-
-3. Set these env vars:
-
-   ```env
-   ALCHEMY_PASSWORD=change-me
-   BETTER_AUTH_URL=http://localhost:3000
-   BETTER_AUTH_SECRET=
-   GITHUB_CLIENT_ID=
-   GITHUB_CLIENT_SECRET=
-   GITHUB_APP_ID=
-   GITHUB_APP_PRIVATE_KEY=
-   VITE_GITHUB_APP_INSTALL_URL=https://github.com/apps/<your-app-slug>/installations/new
-   ```
-
-GitHub OAuth must provide email access. Repository import also requires a GitHub
-App with repository access. Use the OAuth app's client ID/secret for sign-in, and
-use the GitHub App ID plus private key for installation access tokens. If the
-private key is stored on one line, encode line breaks as `\n`.
-
-### Database
-
-The app uses Cloudflare D1 with Drizzle. Update `src/db/schema.ts`, then run:
+Generate migrations after changing `src/db/schema.ts`:
 
 ```bash
 pnpm db:generate
 ```
 
-Alchemy applies generated SQL migrations from `migrations/` during deploy.
+## Scripts
 
+- `pnpm dev` — run the app locally with Alchemy
+- `pnpm build` — production build
+- `pnpm deploy` — deploy with Alchemy
+- `pnpm destroy` — tear down Alchemy resources
+- `pnpm check` — Biome check
+- `pnpm lint` — Biome lint
+- `pnpm format` — Biome format
+- `pnpm test` — Vitest
 
-# TanStack Chat Application
+## Environment variables
 
-Am example chat application built with TanStack Start, TanStack Store, and Claude AI.
-
-## .env Updates
+Set these for local development and deployment:
 
 ```env
-ANTHROPIC_API_KEY=your_anthropic_api_key
+CLOUDFLARE_ACCOUNT_ID=
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+USE_LOCAL_BUCKET_BACKUPS=
+BETTER_AUTH_SECRET=
+BETTER_AUTH_URL=
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+GITHUB_APP_ID=
+GITHUB_APP_PRIVATE_KEY=
+VITE_GITHUB_APP_INSTALL_URL=
 ```
 
-## ✨ Features
+`BETTER_AUTH_URL` defaults to `http://localhost:5173` if omitted.
 
-### AI Capabilities
-- 🤖 Powered by Claude 3.5 Sonnet 
-- 📝 Rich markdown formatting with syntax highlighting
-- 🎯 Customizable system prompts for tailored AI behavior
-- 🔄 Real-time message updates and streaming responses (coming soon)
+## Notes
 
-### User Experience
-- 🎨 Modern UI with Tailwind CSS and Lucide icons
-- 🔍 Conversation management and history
-- 🔐 Secure API key management
-- 📋 Markdown rendering with code highlighting
-
-### Technical Features
-- 📦 Centralized state management with TanStack Store
-- 🔌 Extensible architecture for multiple AI providers
-- 🛠️ TypeScript for type safety
-
-## Architecture
-
-### Tech Stack
-- **Frontend Framework**: TanStack Start
-- **Routing**: TanStack Router
-- **State Management**: TanStack Store
-- **Styling**: Tailwind CSS
-- **AI Integration**: Anthropic's Claude API
-
-
-## Routing
-
-This project uses [TanStack Router](https://tanstack.com/router) with file-based routing. Routes are managed as files in `src/routes`.
-
-### Adding A Route
-
-To add a new route to your application just add a new file in the `./src/routes` directory.
-
-TanStack will automatically generate the content of the route file for you.
-
-Now that you have two routes you can use a `Link` component to navigate between them.
-
-### Adding Links
-
-To use SPA (Single Page Application) navigation you will need to import the `Link` component from `@tanstack/react-router`.
-
-```tsx
-import { Link } from "@tanstack/react-router";
-```
-
-Then anywhere in your JSX you can use it like so:
-
-```tsx
-<Link to="/about">About</Link>
-```
-
-This will create a link that will navigate to the `/about` route.
-
-More information on the `Link` component can be found in the [Link documentation](https://tanstack.com/router/v1/docs/framework/react/api/router/linkComponent).
-
-### Using A Layout
-
-In the File Based Routing setup the layout is located in `src/routes/__root.tsx`. Anything you add to the root route will appear in all the routes. The route content will appear in the JSX where you render `{children}` in the `shellComponent`.
-
-Here is an example layout that includes a header:
-
-```tsx
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
-
-export const Route = createRootRoute({
-  head: () => ({
-    meta: [
-      { charSet: 'utf-8' },
-      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'My App' },
-    ],
-  }),
-  shellComponent: ({ children }) => (
-    <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        <header>
-          <nav>
-            <Link to="/">Home</Link>
-            <Link to="/about">About</Link>
-          </nav>
-        </header>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  ),
-})
-```
-
-More information on layouts can be found in the [Layouts documentation](https://tanstack.com/router/latest/docs/framework/react/guide/routing-concepts#layouts).
-
-## Server Functions
-
-TanStack Start provides server functions that allow you to write server-side code that seamlessly integrates with your client components.
-
-```tsx
-import { createServerFn } from '@tanstack/react-start'
-
-const getServerTime = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  return new Date().toISOString()
-})
-
-// Use in a component
-function MyComponent() {
-  const [time, setTime] = useState('')
-  
-  useEffect(() => {
-    getServerTime().then(setTime)
-  }, [])
-  
-  return <div>Server time: {time}</div>
-}
-```
-
-## API Routes
-
-You can create API routes by using the `server` property in your route definitions:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-import { json } from '@tanstack/react-start'
-
-export const Route = createFileRoute('/api/hello')({
-  server: {
-    handlers: {
-      GET: () => json({ message: 'Hello, World!' }),
-    },
-  },
-})
-```
-
-## Data Fetching
-
-There are multiple ways to fetch data in your application. You can use TanStack Query to fetch data from a server. But you can also use the `loader` functionality built into TanStack Router to load the data for a route before it's rendered.
-
-For example:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-
-export const Route = createFileRoute('/people')({
-  loader: async () => {
-    const response = await fetch('https://swapi.dev/api/people')
-    return response.json()
-  },
-  component: PeopleComponent,
-})
-
-function PeopleComponent() {
-  const data = Route.useLoaderData()
-  return (
-    <ul>
-      {data.results.map((person) => (
-        <li key={person.name}>{person.name}</li>
-      ))}
-    </ul>
-  )
-}
-```
-
-Loaders simplify your data fetching logic dramatically. Check out more information in the [Loader documentation](https://tanstack.com/router/latest/docs/framework/react/guide/data-loading#loader-parameters).
-
-# Demo files
-
-Files prefixed with `demo` can be safely deleted. They are there to provide a starting point for you to play around with the features you've installed.
-
-# Learn More
-
-You can learn more about all of the offerings from TanStack in the [TanStack documentation](https://tanstack.com).
-
-For TanStack Start specific documentation, visit [TanStack Start](https://tanstack.com/start).
+- `pnpm deploy` and `pnpm destroy` are managed through Alchemy.
+- `src/server.ts` exports the Cloudflare Sandbox binding used by the app.
+- The composer is intentionally a placeholder; it only records message metadata.

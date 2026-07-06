@@ -1,21 +1,8 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import type { LanguageModelUsage } from "ai";
 import { CheckIcon, GitBranchIcon, MicIcon } from "lucide-react";
 import { memo, useCallback, useState } from "react";
 import { toast } from "sonner";
-import {
-	Context,
-	ContextCacheUsage,
-	ContextContent,
-	ContextContentBody,
-	ContextContentFooter,
-	ContextContentHeader,
-	ContextInputUsage,
-	ContextOutputUsage,
-	ContextReasoningUsage,
-	ContextTrigger,
-} from "#/components/ai-elements/context";
 import {
 	ModelSelector,
 	ModelSelectorContent,
@@ -94,34 +81,15 @@ const ModelItem = memo(({ model, onSelect, selectedModel }: ModelItemProps) => {
 
 ModelItem.displayName = "ModelItem";
 
-const contextUsage: LanguageModelUsage = {
-	cachedInputTokens: 1600,
-	inputTokens: 9200,
-	inputTokenDetails: {
-		noCacheTokens: 7600,
-		cacheReadTokens: 1600,
-		cacheWriteTokens: 0,
-	},
-	outputTokens: 1100,
-	outputTokenDetails: {
-		textTokens: 1100,
-		reasoningTokens: 2300,
-	},
-	reasoningTokens: 2300,
-	totalTokens: 12300,
-};
-
 type ComposerProps = {
 	projectId?: string;
 	sessionId?: string | null;
-	activeRunId?: string | null;
 	disabledReason?: string;
 };
 
 export function Composer({
 	projectId,
 	sessionId,
-	activeRunId,
 	disabledReason,
 }: ComposerProps) {
 	const [text, setText] = useState("");
@@ -131,11 +99,8 @@ export function Composer({
 	const trpc = useTRPC();
 	const queryClient = useQueryClient();
 	const navigate = useNavigate();
-	const startRunMutation = useMutation(
-		trpc.workspace.startRun.mutationOptions(),
-	);
-	const cancelRunMutation = useMutation(
-		trpc.workspace.cancelRun.mutationOptions(),
+	const sendMessageMutation = useMutation(
+		trpc.workspace.sendMessage.mutationOptions(),
 	);
 
 	async function refreshWorkspace(): Promise<void> {
@@ -157,7 +122,7 @@ export function Composer({
 		await Promise.all(invalidations);
 	}
 
-	async function handleSubmit(message: PromptInputMessage): Promise<void> {
+	async function handleSubmit(message: PromptInputMessage) {
 		if (!message.text.trim() && message.files.length === 0) {
 			return;
 		}
@@ -167,17 +132,16 @@ export function Composer({
 			return;
 		}
 
-		if (activeRunId || disabledReason) {
+		if (disabledReason) {
 			return;
 		}
 
 		try {
-			const result = await startRunMutation.mutateAsync({
+			const result = await sendMessageMutation.mutateAsync({
 				projectId,
 				sessionId: sessionId ?? undefined,
 				message: message.text,
-				modelSpecifier: model,
-				isMutating: true,
+				model,
 			});
 
 			setText("");
@@ -193,24 +157,7 @@ export function Composer({
 			toast.error(
 				mutationError instanceof Error
 					? mutationError.message
-					: "Failed to start agent run.",
-			);
-		}
-	}
-
-	async function handleStop(): Promise<void> {
-		if (!activeRunId) {
-			return;
-		}
-
-		try {
-			await cancelRunMutation.mutateAsync({ runId: activeRunId });
-			await refreshWorkspace();
-		} catch (mutationError) {
-			toast.error(
-				mutationError instanceof Error
-					? mutationError.message
-					: "Failed to stop agent run.",
+					: "Failed to send message.",
 			);
 		}
 	}
@@ -226,16 +173,13 @@ export function Composer({
 	const selectedModel = models.find((modelOption) => modelOption.id === model);
 	const chefs = [...new Set(models.map((modelOption) => modelOption.chef))];
 	const submitDisabled =
-		!text.trim() ||
-		startRunMutation.isPending ||
-		Boolean(activeRunId) ||
-		Boolean(disabledReason);
+		!text.trim() || sendMessageMutation.isPending || Boolean(disabledReason);
 
 	return (
-		<section className="w-full max-w-3xl mx-auto flex flex-col justify-end gap-5 pb-2 px-2">
+		<section className="mx-auto flex w-full max-w-3xl flex-col justify-end gap-5 px-2 pb-2">
 			<div className="flex flex-col items-center justify-center gap-1 rounded-lg border bg-card p-1 shadow-sm">
 				<PromptInput
-					className="w-full bg-background rounded-lg"
+					className="w-full rounded-lg bg-background"
 					onSubmit={handleSubmit}
 					globalDrop
 					multiple
@@ -244,7 +188,7 @@ export function Composer({
 						<PromptInputTextarea
 							onChange={(event) => setText(event.currentTarget.value)}
 							value={text}
-							placeholder="Ask Ditto to inspect, edit, or explain the workspace..."
+							placeholder="Ask Ditto to inspect the workspace..."
 						/>
 					</PromptInputBody>
 					<PromptInputFooter>
@@ -269,7 +213,6 @@ export function Composer({
 									</PromptInputButton>
 								}
 							/>
-
 							<ModelSelectorContent showCloseButton={false}>
 								<ModelSelectorInput placeholder="Search models..." />
 								<ModelSelectorList>
@@ -296,40 +239,17 @@ export function Composer({
 								<MicIcon />
 							</PromptInputButton>
 							<PromptInputSubmit
-								aria-label={activeRunId ? "Stop active run" : "Submit"}
-								variant={activeRunId ? "destructive" : "default"}
-								status={activeRunId ? "streaming" : undefined}
-								onStop={handleStop}
-								disabled={
-									activeRunId ? cancelRunMutation.isPending : submitDisabled
-								}
+								aria-label="Submit"
+								disabled={submitDisabled}
 							/>
 						</PromptInputTools>
 					</PromptInputFooter>
 				</PromptInput>
-				<div className="flex w-full justify-between gap-5 px-2 text-muted-foreground text-xs">
+				<div className="flex w-full justify-between gap-5 px-2 text-xs text-muted-foreground">
 					<div className="flex items-center gap-1">
 						<GitBranchIcon className="size-3" />
 						<p>master</p>
 					</div>
-					<Context
-						maxTokens={128_000}
-						modelId={selectedModel?.id}
-						usedTokens={14_000}
-						usage={contextUsage}
-					>
-						<ContextTrigger className="p-0! hover:bg-transparent!" />
-						<ContextContent>
-							<ContextContentHeader />
-							<ContextContentBody className="flex flex-col gap-2 bg-card">
-								<ContextInputUsage />
-								<ContextOutputUsage />
-								<ContextReasoningUsage />
-								<ContextCacheUsage />
-							</ContextContentBody>
-							<ContextContentFooter className="bg-background" />
-						</ContextContent>
-					</Context>
 				</div>
 			</div>
 		</section>

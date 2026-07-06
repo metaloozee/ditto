@@ -198,50 +198,6 @@ export async function restoreSandboxWorkspace(options: {
 	await installDependencies(sandbox);
 }
 
-export type SnapshotRestoreResult = {
-	hydrated: boolean;
-	commitMatch: boolean;
-};
-
-export async function restoreSandboxWorkspaceFromSnapshot(options: {
-	env: Env;
-	sandboxId: string;
-	directoryBackup: DirectoryBackup;
-	envVars: SandboxEnvVar[];
-	expectedDigest: string;
-	baseCommitSha: string | null;
-}): Promise<SnapshotRestoreResult> {
-	const sandbox = getProjectSandbox(options.env, options.sandboxId);
-	await sandbox.restoreBackup(options.directoryBackup);
-	await syncSandboxEnvFile({
-		env: options.env,
-		sandboxId: options.sandboxId,
-		envVars: options.envVars,
-	});
-	await installDependencies(sandbox);
-
-	const hydrated = await isSandboxWorkspaceHydrated({
-		env: options.env,
-		sandboxId: options.sandboxId,
-	});
-
-	if (!hydrated) {
-		throw new Error("Restored sandbox workspace is not hydrated.");
-	}
-
-	let commitMatch = true;
-	if (options.baseCommitSha !== null) {
-		const result = await runCommand(sandbox, "git rev-parse HEAD", {
-			cwd: WORKSPACE_PATH,
-			timeout: 10_000,
-			errorPrefix: "Failed to read post-restore commit",
-		});
-		commitMatch = result.stdout.trim() === options.baseCommitSha;
-	}
-
-	return { hydrated, commitMatch };
-}
-
 export async function clearSandboxWorkspace(options: {
 	env: Env;
 	sandboxId: string;

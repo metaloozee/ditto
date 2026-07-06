@@ -1,343 +1,160 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { createDb } from "#/db";
-import {
-	agentRunEvents,
-	agentRuns,
-	projects,
-	runArtifacts,
-	snapshots,
-	workspaceSessions,
-} from "#/db/schema";
+import { messages, projects, workspaceSessions } from "#/db/schema";
 import { isProjectCoderModelSpecifier } from "#/lib/agent-models";
-import { getGitHubApp, getInstallationAccessToken } from "#/lib/github-app";
-import { authorizeGitHubRepositoryAccess } from "#/lib/github-authorization";
-import {
-	buildExportBranchName,
-	buildExportCommitMessage,
-	buildPullRequestBody,
-	buildPullRequestTitle,
-	countChangedFilesInDiffArtifact,
-	quoteGitHubExportShellArg,
-	redactGitHubExportOutput,
-} from "#/lib/github-export";
-import {
-	type ProjectCoordinatorState,
-	RESTORE_IN_PROGRESS_MESSAGE,
-} from "#/lib/project-coordinator";
 import { decryptEnvVars } from "#/lib/project-env-vars";
-import {
-	acquireMutatingProjectLockProjection,
-	clearProjectLockProjection,
-} from "#/lib/project-lock-projection";
 import { ensureProjectSandbox } from "#/lib/project-sandbox";
-import { getProjectSandbox } from "#/lib/sandbox-bootstrap";
-import {
-	createAgentRunEventPayload,
-	isActiveAgentRunStatus,
-	makeSessionTitleFromMessage,
-	PROJECT_MEMORY_PATH,
-	WORKSPACE_PATH,
-} from "#/lib/workspace-policy";
+import { makeSessionTitleFromMessage } from "#/lib/workspace-policy";
 import { createTRPCRouter, protectedProcedure } from "../init";
 
-type BrokerControlPath = "/start" | "/reply" | "/abort";
-type ProjectCoordinatorControlPath =
-	| "/admit"
-	| "/terminal"
-	| "/begin-restore"
-	| "/end-restore";
-type FlueRunBridgeControlPath = "/start" | "/abort" | "/reply";
+const sendMessageSchema = z.object({
+	projectId: z.string().min(1),
+	sessionId: z.string().min(1).optional(),
+	message: z.string().trim().min(1),
+	model: z.string().min(1).refine(isProjectCoderModelSpecifier, {
+		message: "Invalid model.",
+	}),
+});
 
-const GITHUB_EXPORT_COMMAND_TIMEOUT_MS = 120_000;
-
-type GitHubExportClient = {
-	request: <TData>(
-		route: string,
-		parameters: Record<string, unknown>,
-	) => Promise<{ data: TData }>;
-};
-
-function parseGitHubRepoName(repoName: string): {
-	owner: string;
-	repo: string;
-} {
-	const [owner, repo] = repoName.split("/");
-	if (!owner || !repo || repoName.split("/").length !== 2) {
-		throw new TRPCError({
-			code: "PRECONDITION_FAILED",
-			message: "Project GitHub repository is invalid.",
-		});
-	}
-	return { owner, repo };
-}
-
-async function runGitHubExportCommand(
-	sandbox: ReturnType<typeof getProjectSandbox>,
-	command: string,
-	secrets: readonly string[] = [],
-): Promise<Awaited<ReturnType<ReturnType<typeof getProjectSandbox>["exec"]>>> {
-	const result = await sandbox.exec(command, {
-		cwd: WORKSPACE_PATH,
-		timeout: GITHUB_EXPORT_COMMAND_TIMEOUT_MS,
-	});
-
-	if (result.success) {
-		return result;
-	}
-
-	const output = redactGitHubExportOutput(
-		(result.stderr || result.stdout || `exit code ${result.exitCode}`).trim(),
-		secrets,
-	);
-	throw new Error(output || "GitHub export command failed.");
-}
-
-async function resolvePullRequestBaseBranch(options: {
-	octokit: GitHubExportClient;
-	sandbox: ReturnType<typeof getProjectSandbox>;
-	owner: string;
-	repo: string;
-}): Promise<string> {
-	try {
-		const repoResponse = await options.octokit.request<{
-			default_branch?: string | null;
-		}>("GET /repos/{owner}/{repo}", {
-			owner: options.owner,
-			repo: options.repo,
-		});
-		const defaultBranch = repoResponse.data.default_branch;
-		if (defaultBranch) {
-			return defaultBranch;
-		}
-	} catch {
-		// Fall back to the sandbox upstream below; do not guess a branch name.
-	}
-
-	const upstream = await runGitHubExportCommand(
-		options.sandbox,
-		"git rev-parse --abbrev-ref --symbolic-full-name @{u}",
-	);
-	const upstreamName = upstream.stdout.trim();
-	const slashIndex = upstreamName.indexOf("/");
-	const baseBranch =
-		slashIndex === -1 ? "" : upstreamName.slice(slashIndex + 1).trim();
-
-	if (!baseBranch) {
-		throw new TRPCError({
-			code: "PRECONDITION_FAILED",
-			message: "Could not determine the pull request base branch.",
-		});
-	}
-
-	return baseBranch;
-}
-
-function compactBrokerError(error: unknown): string {
-	const message =
-		error instanceof Error ? error.message : "Broker request failed.";
-
-	return message.length > 1000
-		? `${message.slice(0, 1000)}...[truncated]`
-		: message;
-}
-
-async function getBrokerErrorMessage(response: Response): Promise<string> {
-	try {
-		const body = (await response.json()) as { error?: unknown };
-		if (typeof body.error === "string" && body.error.trim()) {
-			return body.error;
-		}
-	} catch {
-		// Fall back to the status-based message below when the broker body is not JSON.
-	}
-
-	return "Workspace session broker rejected the request.";
-}
-
-async function postWorkspaceSessionBroker(options: {
-	env: Env;
-	sessionId: string;
-	path: BrokerControlPath;
-	body: Record<string, unknown>;
-}): Promise<void> {
-	const brokerNamespace = options.env
-		.WorkspaceSessionBroker as DurableObjectNamespace;
-	const brokerId = brokerNamespace.idFromName(options.sessionId);
-	const broker = brokerNamespace.get(brokerId) as {
-		fetch(request: Request): Promise<Response>;
-	};
-	const response = await broker.fetch(
-		new Request(`https://workspace-session-broker${options.path}`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(options.body),
-		}),
-	);
-
-	if (!response.ok) {
-		throw new TRPCError({
-			code: response.status === 409 ? "CONFLICT" : "PRECONDITION_FAILED",
-			message: await getBrokerErrorMessage(response),
-		});
-	}
-}
-
-async function postProjectCoordinator(options: {
-	env: Env;
+async function loadProjectOrThrow(options: {
+	db: ReturnType<typeof createDb>;
 	projectId: string;
-	path: ProjectCoordinatorControlPath;
-	body: Record<string, unknown>;
-}): Promise<Response> {
-	const coordinatorNamespace = options.env
-		.ProjectCoordinator as DurableObjectNamespace;
-	const coordinatorId = coordinatorNamespace.idFromName(options.projectId);
-	const coordinator = coordinatorNamespace.get(coordinatorId) as {
-		fetch(request: Request): Promise<Response>;
-	};
-
-	return await coordinator.fetch(
-		new Request(`https://project-coordinator${options.path}`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(options.body),
-		}),
-	);
-}
-
-async function notifyCoordinatorRestore(
-	env: Env,
-	projectId: string,
-	phase: "begin" | "end",
-	snapshotId?: string | null,
-): Promise<void> {
-	try {
-		await postProjectCoordinator({
-			env,
-			projectId,
-			path: phase === "begin" ? "/begin-restore" : "/end-restore",
-			body: phase === "end" ? { snapshotId: snapshotId ?? null } : {},
-		});
-	} catch {
-		// Best-effort: a coordinator notify failure must not break the restore.
-	}
-}
-
-async function getProjectCoordinatorStatus(
-	env: Env,
-	projectId: string,
-): Promise<ProjectCoordinatorState | null> {
-	try {
-		const coordinatorNamespace =
-			env.ProjectCoordinator as DurableObjectNamespace;
-		const coordinatorId = coordinatorNamespace.idFromName(projectId);
-		const coordinator = coordinatorNamespace.get(coordinatorId) as {
-			fetch(request: Request): Promise<Response>;
-		};
-		const response = await coordinator.fetch(
-			new Request("https://project-coordinator/status"),
-		);
-		if (!response.ok) {
-			return null;
-		}
-		return (await response.json()) as ProjectCoordinatorState;
-	} catch {
-		// Degrade gracefully: callers treat null as not-restoring.
-		return null;
-	}
-}
-
-async function getProjectCoordinatorErrorMessage(
-	response: Response,
-): Promise<string> {
-	try {
-		const body = (await response.json()) as { error?: unknown };
-		if (typeof body.error === "string" && body.error.trim()) {
-			return body.error;
-		}
-	} catch {
-		// Fall back to the status-based message below when the coordinator body is not JSON.
-	}
-
-	return "Project coordinator rejected the request.";
-}
-
-async function getMutatingAdmissionFencingToken(
-	response: Response,
-): Promise<number> {
-	const body = (await response.json()) as {
-		admission?: { fencingToken?: unknown };
-	};
-	const fencingToken = body.admission?.fencingToken;
-
-	if (typeof fencingToken !== "number") {
-		throw new Error("Project coordinator did not return a fencing token.");
-	}
-
-	return fencingToken;
-}
-
-async function getFlueRunBridgeErrorMessage(
-	response: Response,
-): Promise<string> {
-	try {
-		const body = (await response.json()) as { error?: unknown };
-		if (typeof body.error === "string" && body.error.trim()) {
-			return body.error;
-		}
-	} catch {
-		// Fall back to the status-based message below when the bridge body is not JSON.
-	}
-
-	return "Flue run bridge rejected the request.";
-}
-
-async function postFlueRunBridge(options: {
-	env: Env;
-	sessionId: string;
-	path: FlueRunBridgeControlPath;
-	body: Record<string, unknown>;
-}): Promise<void> {
-	const bridgeNamespace = options.env.FlueRunBridge as DurableObjectNamespace;
-	const bridgeId = bridgeNamespace.idFromName(options.sessionId);
-	const bridge = bridgeNamespace.get(bridgeId) as {
-		fetch(request: Request): Promise<Response>;
-	};
-	const response = await bridge.fetch(
-		new Request(`https://flue-run-bridge${options.path}`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(options.body),
-		}),
-	);
-
-	if (!response.ok) {
-		throw new TRPCError({
-			code: response.status === 409 ? "CONFLICT" : "PRECONDITION_FAILED",
-			message: await getFlueRunBridgeErrorMessage(response),
-		});
-	}
-}
-
-async function getLatestCheckpointAt(
-	db: ReturnType<typeof createDb>,
-	projectId: string,
-): Promise<Date | null> {
-	const [latestCheckpoint] = await db
-		.select({ completedAt: snapshots.completedAt })
-		.from(snapshots)
+	userId: string;
+}) {
+	const [project] = await options.db
+		.select()
+		.from(projects)
 		.where(
 			and(
-				eq(snapshots.projectId, projectId),
-				eq(snapshots.status, "completed"),
+				eq(projects.id, options.projectId),
+				eq(projects.userId, options.userId),
 			),
 		)
-		.orderBy(desc(snapshots.completedAt))
 		.limit(1);
 
-	return latestCheckpoint?.completedAt ?? null;
+	if (!project) {
+		throw new TRPCError({
+			code: "NOT_FOUND",
+			message: "Project not found.",
+		});
+	}
+
+	return project;
+}
+
+function stripProjectSecrets(project: typeof projects.$inferSelect) {
+	const {
+		envVars: _envVars,
+		sandboxBackup: _sandboxBackup,
+		sandboxBackupCreatedAt: _sandboxBackupCreatedAt,
+		...rest
+	} = project;
+
+	return rest;
+}
+
+async function ensureProjectWorkspace(options: {
+	db: ReturnType<typeof createDb>;
+	env: Env;
+	project: typeof projects.$inferSelect;
+}): Promise<{
+	project: typeof projects.$inferSelect;
+	sandboxState: string;
+	restoreFailed: boolean;
+}> {
+	if (options.project.status !== "ready" || !options.project.sandboxId) {
+		return {
+			project: options.project,
+			sandboxState: options.project.status,
+			restoreFailed: options.project.status === "failed",
+		};
+	}
+
+	try {
+		const envVars = await decryptEnvVars(
+			options.project.envVars,
+			options.env.BETTER_AUTH_SECRET,
+		);
+		const ensured = await ensureProjectSandbox({
+			db: options.db,
+			env: options.env,
+			project: options.project,
+			envVars,
+		});
+
+		return {
+			project: ensured.project,
+			sandboxState: ensured.state,
+			restoreFailed: false,
+		};
+	} catch {
+		return {
+			project: options.project,
+			sandboxState: "failed",
+			restoreFailed: true,
+		};
+	}
+}
+
+async function loadWorkspaceView(options: {
+	db: ReturnType<typeof createDb>;
+	env: Env;
+	projectId: string;
+	userId: string;
+	sessionId?: string | null;
+}) {
+	const project = await loadProjectOrThrow(options);
+	const [sessions, workspace] = await Promise.all([
+		options.db
+			.select()
+			.from(workspaceSessions)
+			.where(
+				and(
+					eq(workspaceSessions.projectId, options.projectId),
+					eq(workspaceSessions.userId, options.userId),
+					eq(workspaceSessions.status, "active"),
+				),
+			)
+			.orderBy(desc(workspaceSessions.updatedAt)),
+		ensureProjectWorkspace({
+			db: options.db,
+			env: options.env,
+			project,
+		}),
+	]);
+
+	const selectedSession =
+		(options.sessionId
+			? sessions.find((session) => session.id === options.sessionId)
+			: null) ??
+		sessions[0] ??
+		null;
+
+	const selectedMessages = selectedSession
+		? await options.db
+				.select()
+				.from(messages)
+				.where(
+					and(
+						eq(messages.sessionId, selectedSession.id),
+						eq(messages.projectId, options.projectId),
+						eq(messages.userId, options.userId),
+					),
+				)
+				.orderBy(asc(messages.createdAt))
+		: [];
+
+	return {
+		project: stripProjectSecrets(workspace.project),
+		sandbox: { state: workspace.sandboxState },
+		sessions,
+		selectedSession,
+		messages: selectedMessages,
+		restoreFailed: workspace.restoreFailed,
+	};
 }
 
 export const workspaceRouter = createTRPCRouter({
@@ -350,978 +167,141 @@ export const workspaceRouter = createTRPCRouter({
 		)
 		.query(async ({ ctx, input }) => {
 			const db = createDb(ctx.env);
-			const [project] = await db
-				.select()
-				.from(projects)
-				.where(
-					and(
-						eq(projects.id, input.projectId),
-						eq(projects.userId, ctx.user.id),
-					),
-				)
-				.limit(1);
+			return await loadWorkspaceView({
+				db,
+				env: ctx.env,
+				projectId: input.projectId,
+				userId: ctx.user.id,
+				sessionId: input.sessionId,
+			});
+		}),
 
-			if (!project) {
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Project not found.",
-				});
-			}
+	retryRestore: protectedProcedure
+		.input(
+			z.object({
+				projectId: z.string().min(1),
+				sessionId: z.string().min(1).optional(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const db = createDb(ctx.env);
+			const project = await loadProjectOrThrow({
+				db,
+				projectId: input.projectId,
+				userId: ctx.user.id,
+			});
+
+			await db
+				.update(projects)
+				.set({
+					status: "ready",
+					updatedAt: sql`(unixepoch())`,
+				})
+				.where(
+					and(eq(projects.id, project.id), eq(projects.userId, ctx.user.id)),
+				);
+
+			return await loadWorkspaceView({
+				db,
+				env: ctx.env,
+				projectId: input.projectId,
+				userId: ctx.user.id,
+				sessionId: input.sessionId,
+			});
+		}),
+
+	sendMessage: protectedProcedure
+		.input(sendMessageSchema)
+		.mutation(async ({ ctx, input }) => {
+			const db = createDb(ctx.env);
+			const project = await loadProjectOrThrow({
+				db,
+				projectId: input.projectId,
+				userId: ctx.user.id,
+			});
 
 			const envVars = await decryptEnvVars(
 				project.envVars,
 				ctx.env.BETTER_AUTH_SECRET,
 			);
-			let ensuredProject = project;
-			let sandboxState:
-				| "connected"
-				| "restored_from_backup"
-				| "recreated_from_github" = "connected";
-			const restoreFailed = project.status === "failed";
-			if (!restoreFailed) {
-				try {
-					await notifyCoordinatorRestore(ctx.env, input.projectId, "begin");
-					const ensured = await ensureProjectSandbox({
-						db,
-						env: ctx.env,
-						project,
-						envVars,
-					});
-					ensuredProject = ensured.project;
-					sandboxState = ensured.state;
-				} catch (error) {
-					throw new TRPCError({
-						code: "PRECONDITION_FAILED",
-						message:
-							error instanceof Error
-								? error.message
-								: "Project sandbox is not ready yet.",
-					});
-				} finally {
-					await notifyCoordinatorRestore(ctx.env, input.projectId, "end");
-				}
-			}
+			const ensured = await ensureProjectSandbox({
+				db,
+				env: ctx.env,
+				project,
+				envVars,
+			});
 
-			const sessions = await db
-				.select()
-				.from(workspaceSessions)
-				.where(
-					and(
-						eq(workspaceSessions.projectId, input.projectId),
-						eq(workspaceSessions.userId, ctx.user.id),
-						eq(workspaceSessions.status, "active"),
-					),
-				)
-				.orderBy(desc(workspaceSessions.updatedAt))
-				.limit(25);
-
-			const selectedSession = input.sessionId
-				? await db
-						.select()
-						.from(workspaceSessions)
-						.where(
-							and(
-								eq(workspaceSessions.id, input.sessionId),
-								eq(workspaceSessions.projectId, input.projectId),
-								eq(workspaceSessions.userId, ctx.user.id),
-							),
-						)
-						.limit(1)
-						.then(([session]) => {
-							if (!session) {
-								throw new TRPCError({
-									code: "NOT_FOUND",
-									message: "Conversation not found.",
-								});
-							}
-
-							return session;
-						})
-				: null;
-
-			const activeMutatingRun = ensuredProject.activeAgentRunId
-				? await db
-						.select()
-						.from(agentRuns)
-						.where(
-							and(
-								eq(agentRuns.id, ensuredProject.activeAgentRunId),
-								eq(agentRuns.userId, ctx.user.id),
-							),
-						)
-						.limit(1)
-						.then(([run]) =>
-							run?.isMutating && isActiveAgentRunStatus(run.status)
-								? run
-								: null,
-						)
-				: null;
-			const activeReadOnlyFlueRun =
-				activeMutatingRun || !selectedSession
-					? null
-					: await db
-							.select()
-							.from(agentRuns)
-							.where(
-								and(
-									eq(agentRuns.sessionId, selectedSession.id),
-									eq(agentRuns.userId, ctx.user.id),
-									eq(agentRuns.isMutating, false),
-									isNotNull(agentRuns.flueAgentName),
-								),
-							)
-							.orderBy(desc(agentRuns.createdAt))
-							.limit(1)
-							.then(([run]) =>
-								run && isActiveAgentRunStatus(run.status) ? run : null,
-							);
-			const activeRun = activeMutatingRun ?? activeReadOnlyFlueRun;
-
-			const events = selectedSession
-				? await db
-						.select()
-						.from(agentRunEvents)
-						.where(
-							and(
-								eq(agentRunEvents.projectId, input.projectId),
-								eq(agentRunEvents.sessionId, selectedSession.id),
-							),
-						)
-						.orderBy(desc(agentRunEvents.createdAt), desc(agentRunEvents.id))
-						.limit(100)
-				: [];
-
-			const {
-				envVars: _envVars,
-				sandboxBackup: _sandboxBackup,
-				sandboxBackupCreatedAt: _sandboxBackupCreatedAt,
-				...projectResponse
-			} = ensuredProject;
-			const coordinatorState = await getProjectCoordinatorStatus(
-				ctx.env,
-				input.projectId,
-			);
-			const restoring = coordinatorState?.snapshot.restoring ?? false;
-			const latestSnapshotId =
-				coordinatorState?.snapshot.latestSnapshotId ?? null;
-			const lastCheckpointAt = await getLatestCheckpointAt(db, input.projectId);
-			return {
-				project: projectResponse,
-				sandbox: { state: sandboxState },
-				restoring,
-				latestSnapshotId,
-				lastCheckpointAt,
-				restoreFailed,
-				sessions,
-				selectedSession,
-				activeRun,
-				events: events.reverse(),
-			};
-		}),
-
-	retryRestore: protectedProcedure
-		.input(z.object({ projectId: z.string().min(1) }))
-		.mutation(async ({ ctx, input }) => {
-			const db = createDb(ctx.env);
-			const [project] = await db
-				.select()
-				.from(projects)
-				.where(
-					and(
-						eq(projects.id, input.projectId),
-						eq(projects.userId, ctx.user.id),
-					),
-				)
-				.limit(1);
-
-			if (!project) {
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Project not found.",
-				});
-			}
-
-			if (project.status !== "failed") {
-				throw new TRPCError({
-					code: "PRECONDITION_FAILED",
-					message: "Project restore can only be retried after a failure.",
-				});
-			}
-
-			const [retryProject] = await db
-				.update(projects)
-				.set({ status: "ready", updatedAt: sql`(unixepoch())` })
-				.where(
-					and(
-						eq(projects.id, input.projectId),
-						eq(projects.userId, ctx.user.id),
-						eq(projects.status, "failed"),
-					),
-				)
-				.returning();
-
-			if (!retryProject) {
-				throw new TRPCError({
-					code: "PRECONDITION_FAILED",
-					message: "Project restore can only be retried after a failure.",
-				});
-			}
-
-			const envVars = await decryptEnvVars(
-				retryProject.envVars,
-				ctx.env.BETTER_AUTH_SECRET,
-			);
-			let ensuredProject = retryProject;
-			let sandboxState:
-				| "connected"
-				| "restored_from_backup"
-				| "recreated_from_github" = "connected";
-
-			try {
-				await notifyCoordinatorRestore(ctx.env, input.projectId, "begin");
-				const ensured = await ensureProjectSandbox({
-					db,
-					env: ctx.env,
-					project: retryProject,
-					envVars,
-				});
-				ensuredProject = ensured.project;
-				sandboxState = ensured.state;
-			} catch (error) {
-				throw new TRPCError({
-					code: "PRECONDITION_FAILED",
-					message:
-						error instanceof Error
-							? error.message
-							: "Project sandbox is not ready yet.",
-				});
-			} finally {
-				await notifyCoordinatorRestore(ctx.env, input.projectId, "end");
-			}
-
-			const {
-				envVars: _envVars,
-				sandboxBackup: _sandboxBackup,
-				sandboxBackupCreatedAt: _sandboxBackupCreatedAt,
-				...projectResponse
-			} = ensuredProject;
-			const coordinatorState = await getProjectCoordinatorStatus(
-				ctx.env,
-				input.projectId,
-			);
-
-			return {
-				project: projectResponse,
-				sandbox: { state: sandboxState },
-				restoring: coordinatorState?.snapshot.restoring ?? false,
-				latestSnapshotId: coordinatorState?.snapshot.latestSnapshotId ?? null,
-				lastCheckpointAt: await getLatestCheckpointAt(db, input.projectId),
-				restoreFailed: false,
-				sessions: [],
-				selectedSession: null,
-				activeRun: null,
-				events: [],
-			};
-		}),
-
-	startRun: protectedProcedure
-		.input(
-			z.object({
-				projectId: z.string().min(1),
-				sessionId: z.string().min(1).optional(),
-				message: z.string().trim().min(1),
-				modelSpecifier: z.string().refine(isProjectCoderModelSpecifier, {
-					message: "Unknown project coder model.",
-				}),
-				isMutating: z.boolean().default(true),
-			}),
-		)
-		.mutation(async ({ ctx, input }) => {
-			const db = createDb(ctx.env);
-			const runId = nanoid();
-
-			let ownsProjectLock = false;
-
-			try {
-				let [project] = await db
-					.select()
-					.from(projects)
-					.where(
-						and(
-							eq(projects.id, input.projectId),
-							eq(projects.userId, ctx.user.id),
-						),
-					)
-					.limit(1);
-
-				if (!project) {
-					throw new TRPCError({
-						code: "NOT_FOUND",
-						message: "Project not found.",
-					});
-				}
-
-				try {
-					const envVars = await decryptEnvVars(
-						project.envVars,
-						ctx.env.BETTER_AUTH_SECRET,
-					);
-					await notifyCoordinatorRestore(ctx.env, input.projectId, "begin");
-					const ensured = await ensureProjectSandbox({
-						db,
-						env: ctx.env,
-						project,
-						envVars,
-					});
-					project = ensured.project;
-				} catch (error) {
-					throw new TRPCError({
-						code:
-							error instanceof Error &&
-							error.message === "Project sandbox is already being restored."
-								? "CONFLICT"
-								: "PRECONDITION_FAILED",
-						message:
-							error instanceof Error
-								? error.message
-								: "Project sandbox is not ready yet.",
-					});
-				} finally {
-					await notifyCoordinatorRestore(ctx.env, input.projectId, "end");
-				}
-
-				let selectedSession: typeof workspaceSessions.$inferSelect | null =
-					null;
-
-				if (input.sessionId) {
-					[selectedSession] = await db
-						.select()
-						.from(workspaceSessions)
-						.where(
-							and(
-								eq(workspaceSessions.id, input.sessionId),
-								eq(workspaceSessions.projectId, input.projectId),
-								eq(workspaceSessions.userId, ctx.user.id),
-							),
-						)
-						.limit(1);
-
-					if (!selectedSession) {
-						throw new TRPCError({
-							code: "NOT_FOUND",
-							message: "Conversation not found.",
-						});
-					}
-
-					if (selectedSession.status === "archived") {
-						throw new TRPCError({
-							code: "PRECONDITION_FAILED",
-							message: "This conversation is archived.",
-						});
-					}
-				}
-
-				if (input.isMutating && project.activeAgentRunId) {
-					const previousRunId = project.activeAgentRunId;
-					const [existingRun] = await db
-						.select()
-						.from(agentRuns)
-						.where(eq(agentRuns.id, previousRunId))
-						.limit(1);
-
-					if (
-						!existingRun ||
-						!existingRun.isMutating ||
-						!isActiveAgentRunStatus(existingRun.status)
-					) {
-						await db.batch([
-							db
-								.update(projects)
-								.set({
-									activeAgentRunId: null,
-									activeAgentRunStartedAt: null,
-									updatedAt: sql`(unixepoch())`,
-								})
-								.where(
-									and(
-										eq(projects.id, input.projectId),
-										eq(projects.userId, ctx.user.id),
-										eq(projects.activeAgentRunId, previousRunId),
-									),
-								),
-							db.insert(agentRunEvents).values({
-								runId: existingRun ? previousRunId : null,
-								projectId: input.projectId,
-								sessionId: existingRun?.sessionId ?? null,
-								type: "error",
-								payload: createAgentRunEventPayload({
-									reason: "stale_lock_cleared",
-									previousRunId,
-								}),
-							}),
-						]);
-					}
-				}
-
-				const createdSession = !selectedSession;
-				const sessionId = selectedSession?.id ?? nanoid();
-				const runValues = {
-					id: runId,
-					projectId: input.projectId,
-					sessionId,
-					userId: ctx.user.id,
-					status: "running" as const,
-					isMutating: input.isMutating,
-					modelSpecifier: input.modelSpecifier,
-					userMessage: input.message,
-				};
-
-				const eventValues = [
-					{
-						runId,
+			let sessionId = input.sessionId ?? null;
+			let createdSession = false;
+			let session = sessionId
+				? await loadSession(db, {
 						projectId: input.projectId,
 						sessionId,
-						type: "message" as const,
-						payload: createAgentRunEventPayload({
-							role: "user",
-							text: input.message,
-						}),
-					},
-				];
+						userId: ctx.user.id,
+					})
+				: null;
 
-				const sessionValues = createdSession
-					? {
+			if (!session) {
+				sessionId = nanoid();
+				const [createdRows] = await db.batch([
+					db
+						.insert(workspaceSessions)
+						.values({
 							id: sessionId,
 							projectId: input.projectId,
 							userId: ctx.user.id,
 							title: makeSessionTitleFromMessage(input.message),
-							workspacePath: WORKSPACE_PATH,
-							memoryPath: PROJECT_MEMORY_PATH,
-							status: "active" as const,
-						}
-					: null;
+							status: "active",
+						})
+						.returning(),
+				]);
 
-				async function releaseOwnedProjectLockAfterBatchFailure() {
-					if (!ownsProjectLock) {
-						return;
-					}
+				session = createdRows?.[0] ?? null;
+				createdSession = true;
+			}
 
-					try {
-						await db
-							.update(projects)
-							.set({
-								...clearProjectLockProjection(new Date()),
-								activeAgentRunId: null,
-								activeAgentRunStartedAt: null,
-								updatedAt: sql`(unixepoch())`,
-							})
-							.where(
-								and(
-									eq(projects.id, input.projectId),
-									eq(projects.userId, ctx.user.id),
-									eq(projects.activeAgentRunId, runId),
-								),
-							);
-					} catch {
-						// Keep the original start-run failure as the user-facing error.
-					}
-				}
-
-				async function startMutatingFlueRun(fencingToken: number) {
-					if (!project.sandboxId) {
-						throw new TRPCError({
-							code: "PRECONDITION_FAILED",
-							message: "Project sandbox is not ready yet.",
-						});
-					}
-
-					await postFlueRunBridge({
-						env: ctx.env,
-						sessionId,
-						path: "/start",
-						body: {
-							sessionId,
-							userId: ctx.user.id,
-							projectId: input.projectId,
-							sandboxId: project.sandboxId,
-							runId,
-							message: input.message,
-							modelSpecifier: input.modelSpecifier,
-							isMutating: true,
-							fencingToken,
-						},
-					});
-				}
-
-				async function markCoordinatorAdmissionRejected(
-					response: Response,
-				): Promise<never> {
-					const reason = await getProjectCoordinatorErrorMessage(response);
-					const userMessage =
-						reason === RESTORE_IN_PROGRESS_MESSAGE
-							? "Workspace is restoring. Try again in a moment."
-							: reason;
-
-					await db.batch([
-						db
-							.update(agentRuns)
-							.set({
-								status: "failed",
-								finishedAt: sql`(unixepoch())`,
-								updatedAt: sql`(unixepoch())`,
-							})
-							.where(eq(agentRuns.id, runId)),
-						db.insert(agentRunEvents).values([
-							{
-								runId,
-								projectId: input.projectId,
-								sessionId,
-								type: "lock_rejected" as const,
-								payload: createAgentRunEventPayload({
-									reason: userMessage,
-								}),
-							},
-							{
-								runId,
-								projectId: input.projectId,
-								sessionId,
-								type: "done" as const,
-								payload: createAgentRunEventPayload({ status: "failed" }),
-							},
-						]),
-					]);
-
-					throw new TRPCError({
-						code: response.status === 409 ? "CONFLICT" : "PRECONDITION_FAILED",
-						message: userMessage,
-					});
-				}
-
-				async function admitMutatingRun(): Promise<number> {
-					const admissionResponse = await postProjectCoordinator({
-						env: ctx.env,
-						projectId: input.projectId,
-						path: "/admit",
-						body: {
-							projectId: input.projectId,
-							runId,
-							sessionId,
-							userId: ctx.user.id,
-							mode: "mutating",
-						},
-					});
-
-					if (!admissionResponse.ok) {
-						await markCoordinatorAdmissionRejected(admissionResponse);
-					}
-
-					try {
-						const fencingToken =
-							await getMutatingAdmissionFencingToken(admissionResponse);
-						const [lockedProject] = await db
-							.update(projects)
-							.set({
-								...acquireMutatingProjectLockProjection({
-									runId,
-									fencingToken,
-									now: new Date(),
-								}),
-								activeAgentRunId: runId,
-								activeAgentRunStartedAt: sql`(unixepoch())`,
-								updatedAt: sql`(unixepoch())`,
-							})
-							.where(
-								and(
-									eq(projects.id, input.projectId),
-									eq(projects.userId, ctx.user.id),
-								),
-							)
-							.returning();
-
-						if (!lockedProject) {
-							throw new Error("Project lock projection update failed.");
-						}
-
-						ownsProjectLock = true;
-						return fencingToken;
-					} catch (error) {
-						await notifyMutatingTerminalFailed();
-						throw error;
-					}
-				}
-
-				async function markAcceptedRunFailed(error: unknown) {
-					await db.batch([
-						db
-							.update(agentRuns)
-							.set({
-								status: "failed",
-								finishedAt: sql`(unixepoch())`,
-								updatedAt: sql`(unixepoch())`,
-							})
-							.where(eq(agentRuns.id, runId)),
-						db
-							.update(projects)
-							.set({
-								...clearProjectLockProjection(new Date()),
-								activeAgentRunId: null,
-								activeAgentRunStartedAt: null,
-								updatedAt: sql`(unixepoch())`,
-							})
-							.where(
-								and(
-									eq(projects.id, input.projectId),
-									eq(projects.userId, ctx.user.id),
-									eq(projects.activeAgentRunId, runId),
-								),
-							),
-						db.insert(agentRunEvents).values([
-							{
-								runId,
-								projectId: input.projectId,
-								sessionId,
-								type: "error" as const,
-								payload: createAgentRunEventPayload({
-									reason: compactBrokerError(error),
-								}),
-							},
-							{
-								runId,
-								projectId: input.projectId,
-								sessionId,
-								type: "done" as const,
-								payload: createAgentRunEventPayload({ status: "failed" }),
-							},
-						]),
-					]);
-				}
-
-				async function notifyMutatingTerminalFailed() {
-					await postProjectCoordinator({
-						env: ctx.env,
-						projectId: input.projectId,
-						path: "/terminal",
-						body: { projectId: input.projectId, runId, status: "failed" },
-					});
-				}
-
-				async function notifyReadOnlyTerminalFailed() {
-					await postProjectCoordinator({
-						env: ctx.env,
-						projectId: input.projectId,
-						path: "/terminal",
-						body: { projectId: input.projectId, runId, status: "failed" },
-					});
-				}
-
-				async function startReadOnlyFlueRun() {
-					if (!project.sandboxId) {
-						throw new TRPCError({
-							code: "PRECONDITION_FAILED",
-							message: "Project sandbox is not ready yet.",
-						});
-					}
-
-					const admissionResponse = await postProjectCoordinator({
-						env: ctx.env,
-						projectId: input.projectId,
-						path: "/admit",
-						body: {
-							projectId: input.projectId,
-							runId,
-							sessionId,
-							userId: ctx.user.id,
-							mode: "read_only",
-						},
-					});
-
-					if (!admissionResponse.ok) {
-						await markCoordinatorAdmissionRejected(admissionResponse);
-					}
-
-					try {
-						await postFlueRunBridge({
-							env: ctx.env,
-							sessionId,
-							path: "/start",
-							body: {
-								sessionId,
-								userId: ctx.user.id,
-								projectId: input.projectId,
-								sandboxId: project.sandboxId,
-								runId,
-								message: input.message,
-								modelSpecifier: input.modelSpecifier,
-								isMutating: false,
-							},
-						});
-					} catch (error) {
-						await markAcceptedRunFailed(error);
-						await notifyReadOnlyTerminalFailed();
-					}
-				}
-
-				async function startCreatedRun() {
-					if (input.isMutating) {
-						const fencingToken = await admitMutatingRun();
-						try {
-							await startMutatingFlueRun(fencingToken);
-						} catch (error) {
-							await notifyMutatingTerminalFailed();
-							throw error;
-						}
-						return;
-					}
-
-					await startReadOnlyFlueRun();
-				}
-
-				if (createdSession && sessionValues) {
-					try {
-						const [[session], [run]] = await db.batch([
-							db.insert(workspaceSessions).values(sessionValues).returning(),
-							db.insert(agentRuns).values(runValues).returning(),
-							db
-								.update(workspaceSessions)
-								.set({ updatedAt: sql`(unixepoch())` })
-								.where(eq(workspaceSessions.id, sessionId)),
-							db.insert(agentRunEvents).values(eventValues),
-						]);
-
-						if (!session || !run) {
-							throw new Error(
-								"Batched startRun write did not return created rows.",
-							);
-						}
-
-						try {
-							await startCreatedRun();
-						} catch (error) {
-							if (!input.isMutating || error instanceof TRPCError) {
-								throw error;
-							}
-							await markAcceptedRunFailed(error);
-							return { run, session, createdSession };
-						}
-
-						return { run, session, createdSession };
-					} catch (error) {
-						await releaseOwnedProjectLockAfterBatchFailure();
-						throw error;
-					}
-				}
-
-				try {
-					const [[run], [session]] = await db.batch([
-						db.insert(agentRuns).values(runValues).returning(),
-						db
-							.update(workspaceSessions)
-							.set({ updatedAt: sql`(unixepoch())` })
-							.where(eq(workspaceSessions.id, sessionId))
-							.returning(),
-						db.insert(agentRunEvents).values(eventValues),
-					]);
-
-					if (!session || !run) {
-						throw new Error(
-							"Batched startRun write did not return created rows.",
-						);
-					}
-
-					try {
-						await startCreatedRun();
-					} catch (error) {
-						if (!input.isMutating || error instanceof TRPCError) {
-							throw error;
-						}
-						await markAcceptedRunFailed(error);
-						return { run, session, createdSession };
-					}
-
-					return { run, session, createdSession };
-				} catch (error) {
-					await releaseOwnedProjectLockAfterBatchFailure();
-					throw error;
-				}
-			} catch (error) {
-				if (error instanceof TRPCError) {
-					throw error;
-				}
-
+			if (!session || !sessionId) {
 				throw new TRPCError({
 					code: "INTERNAL_SERVER_ERROR",
-					message:
-						error instanceof Error
-							? error.message
-							: "Failed to start the agent.",
-				});
-			}
-		}),
-
-	cancelRun: protectedProcedure
-		.input(z.object({ runId: z.string().min(1) }))
-		.mutation(async ({ ctx, input }) => {
-			const db = createDb(ctx.env);
-			const [run] = await db
-				.select()
-				.from(agentRuns)
-				.where(
-					and(eq(agentRuns.id, input.runId), eq(agentRuns.userId, ctx.user.id)),
-				)
-				.limit(1);
-
-			if (!run) {
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Agent run not found.",
+					message: "Failed to create workspace session.",
 				});
 			}
 
-			if (["completed", "failed", "canceled"].includes(run.status)) {
-				return run;
-			}
+			const userMessageId = nanoid();
+			const assistantMessageId = nanoid();
+			const [userMessages, assistantMessages] = await db.batch([
+				db
+					.insert(messages)
+					.values({
+						id: userMessageId,
+						sessionId,
+						projectId: input.projectId,
+						userId: ctx.user.id,
+						role: "user",
+						content: input.message,
+						model: input.model,
+					})
+					.returning(),
+				db
+					.insert(messages)
+					.values({
+						id: assistantMessageId,
+						sessionId,
+						projectId: input.projectId,
+						userId: ctx.user.id,
+						role: "assistant",
+						content: "Implementation is remaining",
+					})
+					.returning(),
+			]);
 
-			const [updatedRun] = await db
-				.update(agentRuns)
-				.set({
-					status: "canceled",
-					finishedAt: sql`(unixepoch())`,
-					updatedAt: sql`(unixepoch())`,
-				})
-				.where(eq(agentRuns.id, input.runId))
-				.returning();
-
-			await db
-				.update(projects)
-				.set({
-					...clearProjectLockProjection(new Date()),
-					activeAgentRunId: null,
-					activeAgentRunStartedAt: null,
-					updatedAt: sql`(unixepoch())`,
-				})
-				.where(eq(projects.activeAgentRunId, input.runId));
-
-			if (run.isMutating && !run.flueAgentName) {
-				await postProjectCoordinator({
-					env: ctx.env,
-					projectId: run.projectId,
-					path: "/terminal",
-					body: {
-						projectId: run.projectId,
-						runId: input.runId,
-						status: "canceled",
-					},
-				});
-			}
-
-			try {
-				if (run.flueAgentName || !run.isMutating) {
-					await postFlueRunBridge({
-						env: ctx.env,
-						sessionId: run.sessionId,
-						path: "/abort",
-						body: { runId: input.runId },
-					});
-				} else {
-					await postWorkspaceSessionBroker({
-						env: ctx.env,
-						sessionId: run.sessionId,
-						path: "/abort",
-						body: { runId: input.runId },
-					});
-				}
-			} catch {
-				// Durable cancellation is the user-facing boundary; abort is best effort.
-			}
-
-			await db.insert(agentRunEvents).values({
-				runId: input.runId,
-				projectId: run.projectId,
-				sessionId: run.sessionId,
-				type: "done",
-				payload: createAgentRunEventPayload({ status: "canceled" }),
-			});
-
-			return updatedRun;
-		}),
-
-	answerRunQuestion: protectedProcedure
-		.input(
-			z.object({
-				runId: z.string().min(1),
-				answer: z.string().trim().min(1),
-			}),
-		)
-		.mutation(async ({ ctx, input }) => {
-			const db = createDb(ctx.env);
-			const [run] = await db
-				.select()
-				.from(agentRuns)
-				.where(
-					and(eq(agentRuns.id, input.runId), eq(agentRuns.userId, ctx.user.id)),
-				)
-				.limit(1);
-
-			if (!run) {
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Agent run not found.",
-				});
-			}
-
-			if (run.status !== "needs_input") {
-				throw new TRPCError({
-					code: "PRECONDITION_FAILED",
-					message: "This agent run is not waiting for input.",
-				});
-			}
-
-			if (run.flueAgentName) {
-				await postFlueRunBridge({
-					env: ctx.env,
-					sessionId: run.sessionId,
-					path: "/reply",
-					body: {
-						runId: input.runId,
-						answer: input.answer,
-					},
-				});
-			} else {
-				await postWorkspaceSessionBroker({
-					env: ctx.env,
-					sessionId: run.sessionId,
-					path: "/reply",
-					body: {
-						runId: input.runId,
-						answer: input.answer,
-					},
-				});
-			}
-
-			const [updatedRun] = await db
-				.update(agentRuns)
-				.set({
-					status: "running",
-					question: null,
-					recommendedAnswer: null,
-					updatedAt: sql`(unixepoch())`,
-				})
-				.where(eq(agentRuns.id, input.runId))
-				.returning();
-
-			await db.insert(agentRunEvents).values({
-				runId: input.runId,
-				projectId: run.projectId,
-				sessionId: run.sessionId,
-				type: "message",
-				payload: createAgentRunEventPayload({
-					role: "user",
-					text: input.answer,
-					kind: "answer",
-				}),
-			});
-
-			return updatedRun;
+			return {
+				session,
+				createdSession,
+				messages: [...userMessages, ...assistantMessages],
+				project: stripProjectSecrets(ensured.project),
+				sandbox: { state: ensured.state },
+			};
 		}),
 
 	deleteSession: protectedProcedure
@@ -1366,374 +346,27 @@ export const workspaceRouter = createTRPCRouter({
 
 			return { id: session.id };
 		}),
-
-	exportRunToGitHubPr: protectedProcedure
-		.input(
-			z.object({
-				projectId: z.string().min(1),
-				runId: z.string().min(1),
-				title: z.string().trim().min(1).max(120).optional(),
-				body: z.string().trim().max(10_000).optional(),
-			}),
-		)
-		.mutation(async ({ ctx, input }) => {
-			const db = createDb(ctx.env);
-			const [project] = await db
-				.select()
-				.from(projects)
-				.where(
-					and(
-						eq(projects.id, input.projectId),
-						eq(projects.userId, ctx.user.id),
-					),
-				)
-				.limit(1);
-
-			if (!project) {
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Project not found.",
-				});
-			}
-
-			if (!project.githubRepo || !project.githubInstallationId) {
-				throw new TRPCError({
-					code: "PRECONDITION_FAILED",
-					message: "Project is not connected to GitHub.",
-				});
-			}
-
-			await authorizeGitHubRepositoryAccess({
-				ctx,
-				repo: project.githubRepo,
-				installationId: project.githubInstallationId,
-			});
-
-			const [run] = await db
-				.select()
-				.from(agentRuns)
-				.where(
-					and(
-						eq(agentRuns.id, input.runId),
-						eq(agentRuns.projectId, input.projectId),
-						eq(agentRuns.userId, ctx.user.id),
-					),
-				)
-				.limit(1);
-
-			if (!run) {
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Agent run not found.",
-				});
-			}
-
-			if (run.status !== "completed" || run.isMutating !== true) {
-				throw new TRPCError({
-					code: "PRECONDITION_FAILED",
-					message: "Only completed mutating runs can be exported.",
-				});
-			}
-
-			const [artifact] = await db
-				.select()
-				.from(runArtifacts)
-				.where(
-					and(
-						eq(runArtifacts.runId, input.runId),
-						eq(runArtifacts.projectId, input.projectId),
-						eq(runArtifacts.kind, "diff"),
-					),
-				)
-				.orderBy(desc(runArtifacts.createdAt), desc(runArtifacts.id))
-				.limit(1);
-
-			if (!artifact) {
-				throw new TRPCError({
-					code: "PRECONDITION_FAILED",
-					message: "A diff artifact is required before creating a PR.",
-				});
-			}
-
-			const diffObject = await ctx.env.BACKUP_BUCKET.get(artifact.r2Key);
-			if (!diffObject) {
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Diff artifact not found.",
-				});
-			}
-
-			const [session] = await db
-				.select()
-				.from(workspaceSessions)
-				.where(
-					and(
-						eq(workspaceSessions.id, run.sessionId),
-						eq(workspaceSessions.projectId, input.projectId),
-						eq(workspaceSessions.userId, ctx.user.id),
-					),
-				)
-				.limit(1);
-
-			if (!session) {
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Workspace session not found.",
-				});
-			}
-
-			const envVars = await decryptEnvVars(
-				project.envVars,
-				ctx.env.BETTER_AUTH_SECRET,
-			);
-			let ensuredProject = project;
-			try {
-				await notifyCoordinatorRestore(ctx.env, input.projectId, "begin");
-				const ensured = await ensureProjectSandbox({
-					db,
-					env: ctx.env,
-					project,
-					envVars,
-				});
-				ensuredProject = ensured.project;
-			} catch (error) {
-				throw new TRPCError({
-					code:
-						error instanceof Error &&
-						error.message === "Project sandbox is already being restored."
-							? "CONFLICT"
-							: "PRECONDITION_FAILED",
-					message:
-						error instanceof Error
-							? error.message
-							: "Project sandbox is not ready yet.",
-				});
-			} finally {
-				await notifyCoordinatorRestore(ctx.env, input.projectId, "end");
-			}
-
-			if (!ensuredProject.sandboxId) {
-				throw new TRPCError({
-					code: "PRECONDITION_FAILED",
-					message: "Project sandbox is not ready yet.",
-				});
-			}
-
-			const { owner, repo } = parseGitHubRepoName(project.githubRepo);
-			const patch = await diffObject.text();
-			const branchName = buildExportBranchName({
-				runId: input.runId,
-				now: new Date(),
-			});
-			const commitMessage = buildExportCommitMessage({
-				sessionTitle: session.title,
-				runId: input.runId,
-			});
-			const pullRequestTitle =
-				input.title ?? buildPullRequestTitle({ sessionTitle: session.title });
-			const pullRequestBody =
-				input.body ??
-				buildPullRequestBody({
-					projectId: input.projectId,
-					sessionId: run.sessionId,
-					runId: input.runId,
-					changedFileCount: countChangedFilesInDiffArtifact(patch),
-				});
-
-			await db.insert(agentRunEvents).values({
-				runId: input.runId,
-				projectId: input.projectId,
-				sessionId: run.sessionId,
-				type: "export_started",
-				payload: createAgentRunEventPayload({ branchName }),
-			});
-
-			let pushedBranch = false;
-			const sandbox = getProjectSandbox(ctx.env, ensuredProject.sandboxId);
-			try {
-				const app = getGitHubApp(ctx.env);
-				const octokit: GitHubExportClient = await app.getInstallationOctokit(
-					project.githubInstallationId,
-				);
-				const base = await resolvePullRequestBaseBranch({
-					octokit,
-					sandbox,
-					owner,
-					repo,
-				});
-				const token = await getInstallationAccessToken(
-					ctx.env,
-					project.githubInstallationId,
-				);
-				const pushUrl = `https://x-access-token:${token}@github.com/${project.githubRepo}.git`;
-				const pushSecrets = [token, pushUrl];
-
-				const status = await runGitHubExportCommand(
-					sandbox,
-					"git status --short",
-				);
-				if (status.stdout.trim() === "") {
-					throw new TRPCError({
-						code: "PRECONDITION_FAILED",
-						message: "No sandbox changes are available to export.",
-					});
-				}
-
-				await runGitHubExportCommand(
-					sandbox,
-					`git switch -c ${quoteGitHubExportShellArg(branchName)}`,
-				);
-				await runGitHubExportCommand(sandbox, "git add -A");
-				await runGitHubExportCommand(
-					sandbox,
-					[
-						"git",
-						"-c",
-						`user.name=${quoteGitHubExportShellArg("Ditto Export")}`,
-						"-c",
-						`user.email=${quoteGitHubExportShellArg(
-							"ditto-export@users.noreply.github.com",
-						)}`,
-						"commit",
-						"-m",
-						quoteGitHubExportShellArg(commitMessage),
-					].join(" "),
-				);
-				await runGitHubExportCommand(
-					sandbox,
-					`git push ${quoteGitHubExportShellArg(pushUrl)} HEAD:refs/heads/${quoteGitHubExportShellArg(branchName)}`,
-					pushSecrets,
-				);
-				pushedBranch = true;
-
-				const pullRequest = await octokit.request<{
-					html_url: string;
-					number: number;
-				}>("POST /repos/{owner}/{repo}/pulls", {
-					owner,
-					repo,
-					head: branchName,
-					base,
-					title: pullRequestTitle,
-					body: pullRequestBody,
-				});
-
-				const pullRequestUrl = pullRequest.data.html_url;
-				const pullRequestNumber = pullRequest.data.number;
-				await db.insert(agentRunEvents).values({
-					runId: input.runId,
-					projectId: input.projectId,
-					sessionId: run.sessionId,
-					type: "export_completed",
-					payload: createAgentRunEventPayload({
-						branchName,
-						pullRequestUrl,
-						pullRequestNumber,
-					}),
-				});
-
-				return {
-					branchName,
-					pullRequestUrl,
-					pullRequestNumber,
-				};
-			} catch (error) {
-				const reason = redactGitHubExportOutput(
-					error instanceof Error ? error.message : "GitHub export failed.",
-				);
-				await db.insert(agentRunEvents).values({
-					runId: input.runId,
-					projectId: input.projectId,
-					sessionId: run.sessionId,
-					type: "export_failed",
-					payload: createAgentRunEventPayload({
-						branchName,
-						...(pushedBranch ? { recoverableBranchName: branchName } : {}),
-						reason,
-					}),
-				});
-
-				if (error instanceof TRPCError) {
-					throw error;
-				}
-				throw new TRPCError({
-					code: "PRECONDITION_FAILED",
-					message: reason,
-				});
-			}
-		}),
-
-	getRunDiff: protectedProcedure
-		.input(
-			z.object({
-				projectId: z.string().min(1),
-				runId: z.string().min(1),
-				artifactId: z.number().int().positive().optional(),
-			}),
-		)
-		.query(async ({ ctx, input }) => {
-			const db = createDb(ctx.env);
-			const [run] = await db
-				.select()
-				.from(agentRuns)
-				.where(
-					and(
-						eq(agentRuns.id, input.runId),
-						eq(agentRuns.userId, ctx.user.id),
-						eq(agentRuns.projectId, input.projectId),
-					),
-				)
-				.limit(1);
-
-			if (!run) {
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Agent run not found.",
-				});
-			}
-
-			const artifactWhere = input.artifactId
-				? and(
-						eq(runArtifacts.id, input.artifactId),
-						eq(runArtifacts.runId, input.runId),
-						eq(runArtifacts.kind, "diff"),
-					)
-				: and(
-						eq(runArtifacts.runId, input.runId),
-						eq(runArtifacts.kind, "diff"),
-					);
-
-			const [artifact] = await db
-				.select()
-				.from(runArtifacts)
-				.where(artifactWhere)
-				.orderBy(desc(runArtifacts.createdAt), desc(runArtifacts.id))
-				.limit(1);
-
-			if (!artifact) {
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Diff artifact not found.",
-				});
-			}
-
-			const object = await ctx.env.BACKUP_BUCKET.get(artifact.r2Key);
-			if (!object) {
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Diff artifact not found.",
-				});
-			}
-
-			const patch = await object.text();
-
-			return {
-				runId: artifact.runId,
-				artifactId: artifact.id,
-				patch,
-				byteLength: artifact.byteLength ?? patch.length,
-				contentType: artifact.contentType,
-				createdAt: artifact.createdAt,
-			};
-		}),
 });
+
+async function loadSession(
+	db: ReturnType<typeof createDb>,
+	input: {
+		projectId: string;
+		sessionId: string;
+		userId: string;
+	},
+) {
+	const [session] = await db
+		.select()
+		.from(workspaceSessions)
+		.where(
+			and(
+				eq(workspaceSessions.id, input.sessionId),
+				eq(workspaceSessions.projectId, input.projectId),
+				eq(workspaceSessions.userId, input.userId),
+			),
+		)
+		.limit(1);
+
+	return session ?? null;
+}
