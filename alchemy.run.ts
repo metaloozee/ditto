@@ -82,7 +82,7 @@ export const flueWorker = await Worker("flue-worker", {
 		FLUE_PROJECT_CODER_AGENT: flueProjectCoderAgent,
 		FLUE_DITTO_PROJECT_RUN_WORKFLOW: flueDittoProjectRunWorkflow,
 		FLUE_REGISTRY: flueRegistry,
-		ANTHROPIC_API_KEY: alchemy.secret(process.env.ANTHROPIC_API_KEY),
+		OPENCODE_API_KEY: alchemy.secret(process.env.OPENCODE_API_KEY),
 	},
 });
 

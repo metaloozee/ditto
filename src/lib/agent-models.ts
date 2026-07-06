@@ -1,5 +1,11 @@
 export const PROJECT_CODER_MODELS = [
 	{
+		id: "opencode-go/deepseek-v4-flash",
+		name: "DeepSeek V4 Flash",
+		provider: "opencode-go",
+		providerName: "OpenCode Go",
+	},
+	{
 		id: "opencode-go/qwen3.7-plus",
 		name: "Qwen3.7 Plus",
 		provider: "opencode-go",

@@ -303,7 +303,7 @@ export default createAgent<unknown, FlueProjectCoderEnv>(
 		];
 
 		return {
-			model: "anthropic/claude-sonnet-4-6",
+			model: "opencode-go/deepseek-v4-flash",
 			instructions: hasMutatingPayload(payload)
 				? mutatingInstructions
 				: readOnlyInstructions,
