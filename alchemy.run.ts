@@ -13,8 +13,6 @@ config({ path: [".env.local", ".env"] });
 
 const app = await alchemy("ditto");
 
-const WEBSITE_WORKER_NAME = `${app.name}-website-${app.stage}`;
-
 const FLUE_WORKER_OUTPUT_DIR = path
 	.basename(process.cwd())
 	.replaceAll("-", "_");
@@ -22,7 +20,6 @@ const FLUE_WORKER_ENTRYPOINT = `./dist/${FLUE_WORKER_OUTPUT_DIR}/index.js`;
 
 const sandbox = DurableObjectNamespace("sandbox", {
 	className: "Sandbox",
-	scriptName: WEBSITE_WORKER_NAME,
 	sqlite: true,
 });
 
@@ -36,7 +33,6 @@ const workspaceSessionBroker = DurableObjectNamespace(
 
 const projectCoordinator = DurableObjectNamespace("project-coordinator", {
 	className: "ProjectCoordinator",
-	scriptName: WEBSITE_WORKER_NAME,
 	sqlite: true,
 });
 
@@ -91,7 +87,6 @@ export const flueWorker = await Worker("flue-worker", {
 });
 
 export const website = await TanStackStart("website", {
-	name: WEBSITE_WORKER_NAME,
 	url: true,
 	bindings: {
 		DB: database,
