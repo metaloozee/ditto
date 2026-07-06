@@ -91,16 +91,13 @@ function MessageRow({ message }: { message: ChatMessage }) {
 
 	return (
 		<Message align={message.role === "user" ? "end" : "start"}>
-			<MessageContent>
+			<MessageContent className="group">
 				<Bubble
 					align={message.role === "user" ? "end" : "start"}
 					variant={message.role === "user" ? "default" : "secondary"}
 				>
 					<BubbleContent
-						className={cn(
-							"w-full max-w-none",
-							message.role === "assistant" ? "px-0 py-0" : undefined,
-						)}
+						className="w-full max-w-none"
 					>
 						{message.role === "assistant" ? (
 							<AssistantMarkdown mode="static" text={message.content} />
@@ -111,7 +108,7 @@ function MessageRow({ message }: { message: ChatMessage }) {
 						)}
 					</BubbleContent>
 				</Bubble>
-				<MessageFooter>
+				<MessageFooter className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
 					{message.role === "assistant" && message.model ? (
 						<span>Model: {message.model}</span>
 					) : null}
