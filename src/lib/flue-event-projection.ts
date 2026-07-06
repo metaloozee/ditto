@@ -18,16 +18,23 @@ export type FlueProjectedEvent = {
 	payload: string;
 };
 
+export type FlueNeedsInputSignal = {
+	question: string;
+	requestId: string;
+};
+
 export type FlueProjectedFrame =
 	| { type: "assistant_delta"; text: string }
 	| { type: "tool_progress"; text: string }
-	| { type: "error"; message: string };
+	| { type: "error"; message: string }
+	| { type: "needs_input"; question: string; requestId: string };
 
 export type FlueEventProjection = {
 	events: FlueProjectedEvent[];
 	frames: FlueProjectedFrame[];
 	assistantDelta: string | null;
 	terminalStatus: "completed" | "failed" | null;
+	needsInput: FlueNeedsInputSignal | null;
 };
 
 export function compactFlueText(
@@ -82,6 +89,7 @@ export function mapFlueEventToDittoEvents(
 				frames: [{ type: "assistant_delta", text }],
 				assistantDelta: text,
 				terminalStatus: null,
+				needsInput: null,
 			};
 		}
 
@@ -102,6 +110,7 @@ export function mapFlueEventToDittoEvents(
 				frames: [{ type: "tool_progress", text: `Started ${toolName}.` }],
 				assistantDelta: null,
 				terminalStatus: null,
+				needsInput: null,
 			};
 		}
 
@@ -121,6 +130,16 @@ export function mapFlueEventToDittoEvents(
 			}
 
 			const events = [projectEvent("tool_finished", payload)];
+			const needsInput = parseNeedsInputSignal(result);
+
+			if (needsInput) {
+				events.push(
+					projectEvent("needs_input", {
+						question: needsInput.question,
+						requestId: needsInput.requestId,
+					}),
+				);
+			}
 
 			if (status === "failed") {
 				events.push(
@@ -130,9 +149,18 @@ export function mapFlueEventToDittoEvents(
 
 			return {
 				events,
-				frames: [],
+				frames: needsInput
+					? [
+							{
+								type: "needs_input",
+								question: needsInput.question,
+								requestId: needsInput.requestId,
+							},
+						]
+					: [],
 				assistantDelta: null,
 				terminalStatus: null,
+				needsInput,
 			};
 		}
 
@@ -153,6 +181,7 @@ export function mapFlueEventToDittoEvents(
 				frames: event.level === "error" ? [{ type: "error", message }] : [],
 				assistantDelta: null,
 				terminalStatus: null,
+				needsInput: null,
 			};
 		}
 
@@ -168,6 +197,7 @@ export function mapFlueEventToDittoEvents(
 				frames: [],
 				assistantDelta: null,
 				terminalStatus: event.operationKind === "prompt" ? "failed" : null,
+				needsInput: null,
 			};
 
 		case "submission_settled": {
@@ -186,6 +216,7 @@ export function mapFlueEventToDittoEvents(
 				frames: [],
 				assistantDelta: null,
 				terminalStatus,
+				needsInput: null,
 			};
 		}
 
@@ -200,6 +231,7 @@ export function mapFlueEventToDittoEvents(
 				frames: [],
 				assistantDelta: null,
 				terminalStatus,
+				needsInput: null,
 			};
 		}
 
@@ -209,7 +241,48 @@ export function mapFlueEventToDittoEvents(
 }
 
 function emptyProjection(): FlueEventProjection {
-	return { events: [], frames: [], assistantDelta: null, terminalStatus: null };
+	return {
+		events: [],
+		frames: [],
+		assistantDelta: null,
+		terminalStatus: null,
+		needsInput: null,
+	};
+}
+
+function parseNeedsInputSignal(
+	result: string | null,
+): FlueNeedsInputSignal | null {
+	if (!result) {
+		return null;
+	}
+
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(result);
+	} catch {
+		return null;
+	}
+
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+		return null;
+	}
+
+	const value = parsed as Record<string, unknown>;
+	if (value.dittoEvent !== "needs_input") {
+		return null;
+	}
+
+	const question =
+		typeof value.question === "string" ? value.question.trim() : "";
+	const requestId =
+		typeof value.requestId === "string" ? value.requestId.trim() : "";
+
+	if (!question || !requestId) {
+		return null;
+	}
+
+	return { question, requestId };
 }
 
 function projectEvent(

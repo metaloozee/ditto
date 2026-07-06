@@ -22,6 +22,11 @@ import {
 	mapFlueEventToDittoEvents,
 } from "#/lib/flue-event-projection";
 import {
+	MUTATION_LEASE_RENEWAL_THRESHOLD_MS,
+	type ProjectCoordinatorState,
+	validateProjectCoordinatorLease,
+} from "#/lib/project-coordinator";
+import {
 	buildDiffReadyPayload,
 	buildRunDiffArtifactPlan,
 	MAX_RUN_DIFF_ARTIFACT_BYTES,
@@ -32,7 +37,6 @@ import {
 	checkpointPointerAfterR2Write,
 	computeWorkspaceDigest,
 } from "#/lib/run-snapshot-checkpoint";
-import { MUTATION_LEASE_RENEWAL_THRESHOLD_MS } from "#/lib/project-coordinator";
 import { serializeSandboxBackup } from "#/lib/sandbox-backup";
 import {
 	backupSandboxWorkspace,
@@ -58,6 +62,9 @@ export type FlueRunBridgeState = {
 	isMutating?: boolean;
 	fencingToken?: number;
 	lastLeaseRenewedAt?: string;
+	modelSpecifier?: string;
+	pendingInputRequestId?: string;
+	pendingInputQuestion?: string;
 };
 
 type FlueRunBridgeSocketAttachment = {
@@ -79,6 +86,11 @@ type StartRequest = {
 
 type AbortRequest = {
 	runId: string;
+};
+
+type ReplyRequest = {
+	runId: string;
+	answer: string;
 };
 
 type TerminalStatus = "completed" | "failed";
@@ -170,6 +182,18 @@ function parseAbortRequest(value: unknown): AbortRequest {
 
 	const input = value as Record<string, unknown>;
 	return { runId: requireString(input, "runId") };
+}
+
+function parseReplyRequest(value: unknown): ReplyRequest {
+	if (!value || typeof value !== "object") {
+		throw new Error("Invalid reply request.");
+	}
+
+	const input = value as Record<string, unknown>;
+	return {
+		runId: requireString(input, "runId"),
+		answer: requireString(input, "answer"),
+	};
 }
 
 function isFlueEventInput(value: unknown): value is FlueEventInput {
@@ -337,6 +361,9 @@ export class FlueRunBridge extends DurableObject<Env> {
 				case "/abort":
 					await this.abort(parseAbortRequest(await request.json()));
 					return new Response(null, { status: 202 });
+				case "/reply":
+					await this.reply(parseReplyRequest(await request.json()));
+					return new Response(null, { status: 202 });
 				default:
 					return new Response("Not found", { status: 404 });
 			}
@@ -413,6 +440,7 @@ export class FlueRunBridge extends DurableObject<Env> {
 			streamClosed: false,
 			isMutating: input.isMutating,
 			fencingToken: input.isMutating === true ? input.fencingToken : undefined,
+			modelSpecifier: input.modelSpecifier,
 		};
 		await this.setState(nextState);
 
@@ -493,8 +521,135 @@ export class FlueRunBridge extends DurableObject<Env> {
 		this.broadcast({ type: "done", runId: input.runId, status: "canceled" });
 	}
 
+	private async reply(input: ReplyRequest): Promise<void> {
+		const state = await this.getState();
+		if (
+			state.activeRunId !== input.runId ||
+			!state.pendingInputRequestId ||
+			!state.flueAgentName ||
+			!state.flueAgentInstanceId ||
+			!state.projectId ||
+			!state.sessionId
+		) {
+			throw new Error("Run is not waiting for input.");
+		}
+
+		if (state.isMutating === true) {
+			await this.verifyMutatingLeaseForReply(state, input.runId);
+		}
+
+		const db = createDb(this.env);
+		await db.insert(agentRunEvents).values({
+			runId: input.runId,
+			projectId: state.projectId,
+			sessionId: state.sessionId,
+			type: "message",
+			payload: createAgentRunEventPayload({
+				role: "user",
+				text: input.answer,
+				kind: "answer",
+			}),
+		});
+		await db
+			.update(agentRuns)
+			.set({
+				status: "running",
+				question: null,
+				recommendedAnswer: null,
+				updatedAt: sql`(unixepoch())`,
+			})
+			.where(eq(agentRuns.id, input.runId));
+
+		await this.setState({
+			...state,
+			pendingInputRequestId: undefined,
+			pendingInputQuestion: undefined,
+		});
+
+		const adapter = this.createAdapter();
+		const receipt =
+			state.isMutating === true
+				? await adapter.dispatchMutatingProjectRun({
+						projectId: state.projectId,
+						sessionId: state.sessionId,
+						runId: input.runId,
+						userId: state.userId ?? "",
+						sandboxId: state.sandboxId ?? "",
+						message: input.answer,
+						modelSpecifier: state.modelSpecifier ?? "",
+						fencingToken: state.fencingToken ?? 0,
+					})
+				: await adapter.dispatch({
+						agentName: state.flueAgentName,
+						agentInstanceId: state.flueAgentInstanceId,
+						message: input.answer,
+					});
+
+		await createDb(this.env)
+			.update(agentRuns)
+			.set({
+				flueAgentName: receipt.agentName,
+				flueAgentInstanceId: receipt.agentInstanceId,
+				...(receipt.submissionId
+					? { flueSubmissionId: receipt.submissionId }
+					: {}),
+				flueStreamOffset: receipt.streamOffset,
+				updatedAt: sql`(unixepoch())`,
+			})
+			.where(eq(agentRuns.id, input.runId));
+
+		await this.setState({
+			...(await this.getState()),
+			flueAgentName: receipt.agentName,
+			flueAgentInstanceId: receipt.agentInstanceId,
+			flueStreamPath: new URL(receipt.streamUrl, "https://flue.internal")
+				.pathname,
+			streamOffset: receipt.streamOffset,
+			streamCursor: null,
+			streamClosed: false,
+		});
+
+		await this.resumeFlueStreamIfNeeded("reply");
+	}
+
+	private async verifyMutatingLeaseForReply(
+		state: FlueRunBridgeState,
+		runId: string,
+	): Promise<void> {
+		if (!state.projectId || typeof state.fencingToken !== "number") {
+			throw new Error("Mutation lease expired.");
+		}
+
+		const coordinator = this.env.ProjectCoordinator as DurableObjectNamespace;
+		const id = coordinator.idFromName(state.projectId);
+		const stub = coordinator.get(id);
+		const statusResponse = await stub.fetch(
+			new Request("https://project-coordinator.internal/status", {
+				method: "GET",
+			}),
+		);
+		if (!statusResponse.ok) {
+			throw new Error("Mutation lease expired.");
+		}
+
+		const coordinatorState =
+			(await statusResponse.json()) as ProjectCoordinatorState;
+		const validation = validateProjectCoordinatorLease(
+			coordinatorState,
+			{
+				projectId: state.projectId,
+				runId,
+				fencingToken: state.fencingToken,
+			},
+			new Date().toISOString(),
+		);
+		if (!validation.valid) {
+			throw new Error("Mutation lease expired.");
+		}
+	}
+
 	private async resumeFlueStreamIfNeeded(
-		_reason: "constructor" | "socket" | "start",
+		_reason: "constructor" | "socket" | "start" | "reply",
 	): Promise<void> {
 		const state = await this.getState();
 		if (!shouldResumeFlueStream(state)) {
@@ -565,6 +720,13 @@ export class FlueRunBridge extends DurableObject<Env> {
 				}
 
 				const projection = mapFlueEventToDittoEvents(event);
+				if (projection.needsInput) {
+					await this.setState({
+						...(await this.getState()),
+						pendingInputRequestId: projection.needsInput.requestId,
+						pendingInputQuestion: projection.needsInput.question,
+					});
+				}
 				if (projection.assistantDelta) {
 					this.assistantDraft.append(runId, projection.assistantDelta);
 					this.broadcast({
@@ -589,10 +751,25 @@ export class FlueRunBridge extends DurableObject<Env> {
 						this.broadcast({ type: "tool_progress", runId, text: frame.text });
 					} else if (frame.type === "error") {
 						this.broadcast({ type: "error", message: frame.message });
+					} else if (frame.type === "needs_input") {
+						this.broadcast({
+							type: "needs_input",
+							runId,
+							question: frame.question,
+							requestId: frame.requestId,
+						});
 					}
 				}
 
 				if (projection.terminalStatus) {
+					const stateForTerminal = await this.getState();
+					if (
+						stateForTerminal.pendingInputRequestId &&
+						projection.terminalStatus === "completed"
+					) {
+						await this.pauseRunForInput(runId);
+						return;
+					}
 					await this.finishRun(runId, projection.terminalStatus);
 					return;
 				}
@@ -608,6 +785,34 @@ export class FlueRunBridge extends DurableObject<Env> {
 				return;
 			}
 		}
+	}
+
+	private async pauseRunForInput(runId: string): Promise<void> {
+		const state = await this.getState();
+		if (
+			shouldIgnoreFlueRunEvent(state, runId, []) ||
+			(await this.isRunCanceled(runId)) ||
+			!state.projectId
+		) {
+			return;
+		}
+
+		await createDb(this.env)
+			.update(agentRuns)
+			.set({
+				status: "needs_input",
+				question: state.pendingInputQuestion ?? null,
+				recommendedAnswer: null,
+				updatedAt: sql`(unixepoch())`,
+			})
+			.where(eq(agentRuns.id, runId));
+
+		this.broadcast({
+			type: "needs_input",
+			runId,
+			question: state.pendingInputQuestion ?? "",
+			requestId: state.pendingInputRequestId ?? "",
+		});
 	}
 
 	private async finishRun(
@@ -1261,9 +1466,9 @@ export class FlueRunBridge extends DurableObject<Env> {
 		);
 
 		if (!response.ok) {
-			const body = (await response
-				.json()
-				.catch(() => ({}))) as { error?: string };
+			const body = (await response.json().catch(() => ({}))) as {
+				error?: string;
+			};
 			const reason = redactSecrets(
 				body.error ?? "Mutation lease renewal failed.",
 			);

@@ -18,6 +18,7 @@ describe("mapFlueEventToDittoEvents", () => {
 			frames: [{ type: "assistant_delta", text: "Hello" }],
 			assistantDelta: "Hello",
 			terminalStatus: null,
+			needsInput: null,
 		});
 	});
 
@@ -176,6 +177,112 @@ describe("mapFlueEventToDittoEvents", () => {
 			frames: [],
 			assistantDelta: null,
 			terminalStatus: null,
+			needsInput: null,
 		});
+	});
+
+	it("projects a needs_input tool result as a needs_input event + frame", () => {
+		const projection = mapFlueEventToDittoEvents({
+			type: "tool",
+			toolName: "request_clarification",
+			toolCallId: "call-9",
+			isError: false,
+			result:
+				'{"dittoEvent":"needs_input","question":"Which branch?","requestId":"r1"}',
+			durationMs: 3,
+		});
+
+		expect(projection.events.map((event) => event.type)).toEqual([
+			"tool_finished",
+			"needs_input",
+		]);
+		expect(parsePayload(projection.events[1])).toMatchObject({
+			schemaVersion: 1,
+			question: "Which branch?",
+			requestId: "r1",
+		});
+		expect(projection.frames).toEqual([
+			{ type: "needs_input", question: "Which branch?", requestId: "r1" },
+		]);
+		expect(projection.needsInput).toEqual({
+			question: "Which branch?",
+			requestId: "r1",
+		});
+		expect(projection.terminalStatus).toBeNull();
+	});
+
+	it("ignores a needs_input signal with missing fields", () => {
+		const projection = mapFlueEventToDittoEvents({
+			type: "tool",
+			toolName: "request_clarification",
+			toolCallId: "call-9",
+			isError: false,
+			result: '{"dittoEvent":"needs_input"}',
+			durationMs: 3,
+		});
+
+		expect(projection.events.map((event) => event.type)).toEqual([
+			"tool_finished",
+		]);
+		expect(projection.frames).toEqual([]);
+		expect(projection.needsInput).toBeNull();
+	});
+
+	it("ignores a needs_input signal when the result is not valid JSON", () => {
+		const projection = mapFlueEventToDittoEvents({
+			type: "tool",
+			toolName: "request_clarification",
+			toolCallId: "call-9",
+			isError: false,
+			result: "not json",
+			durationMs: 3,
+		});
+
+		expect(projection.events.map((event) => event.type)).toEqual([
+			"tool_finished",
+		]);
+		expect(projection.frames).toEqual([]);
+		expect(projection.needsInput).toBeNull();
+	});
+
+	it("ignores a structured tool result with the wrong dittoEvent", () => {
+		const projection = mapFlueEventToDittoEvents({
+			type: "tool",
+			toolName: "request_clarification",
+			toolCallId: "call-9",
+			isError: false,
+			result: '{"dittoEvent":"something_else","question":"x","requestId":"r1"}',
+			durationMs: 3,
+		});
+
+		expect(projection.events.map((event) => event.type)).toEqual([
+			"tool_finished",
+		]);
+		expect(projection.frames).toEqual([]);
+		expect(projection.needsInput).toBeNull();
+	});
+
+	it("redacts secrets in the needs_input question before emitting the frame", () => {
+		const secret = `sk-test-${"a".repeat(24)}`;
+		const projection = mapFlueEventToDittoEvents({
+			type: "tool",
+			toolName: "request_clarification",
+			toolCallId: "call-9",
+			isError: false,
+			result: `{"dittoEvent":"needs_input","question":"use key ${secret}","requestId":"r1"}`,
+			durationMs: 3,
+		});
+
+		expect(projection.events.map((event) => event.type)).toEqual([
+			"tool_finished",
+			"needs_input",
+		]);
+		expect(projection.needsInput?.question).toBe("use key [REDACTED]");
+		expect(projection.needsInput?.question).not.toContain(secret);
+		expect(projection.frames[0]).toMatchObject({
+			type: "needs_input",
+			requestId: "r1",
+		});
+		expect(JSON.stringify(projection.frames[0])).not.toContain(secret);
 	});
 });

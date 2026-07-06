@@ -1401,9 +1401,7 @@ describe("flue run bridge lease renewal", () => {
 		const { state, bridge, coordinatorFetch } = makeRenewalBridge({
 			lastLeaseRenewedAt: oldRenewal,
 		});
-		coordinatorFetch.mockResolvedValueOnce(
-			Response.json({}, { status: 202 }),
-		);
+		coordinatorFetch.mockResolvedValueOnce(Response.json({}, { status: 202 }));
 
 		const terminated = await (
 			bridge as unknown as {
@@ -1426,10 +1424,7 @@ describe("flue run bridge lease renewal", () => {
 
 		const { state, bridge, coordinatorFetch } = makeRenewalBridge();
 		coordinatorFetch.mockResolvedValueOnce(
-			Response.json(
-				{ error: "Mutating lease has expired." },
-				{ status: 409 },
-			),
+			Response.json({ error: "Mutating lease has expired." }, { status: 409 }),
 		);
 
 		const finishRunMock = vi.fn().mockResolvedValue(undefined);
@@ -1490,5 +1485,419 @@ describe("flue run bridge lease renewal", () => {
 		const inserted = insertValues.mock.calls[0]?.[0];
 		expect(inserted.payload).toContain("[REDACTED]");
 		expect(inserted.payload).not.toContain(`sk-${"x".repeat(24)}`);
+	});
+});
+
+describe("flue run bridge needs_input pause", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	function makeConsumeBridge(options: {
+		state?: Record<string, unknown>;
+		events?: unknown[];
+	}) {
+		const state: Record<string, unknown> = {
+			activeRunId: "run-1",
+			flueAgentName: "project-coder",
+			flueAgentInstanceId: "project-1:sandbox-1",
+			flueStreamPath: "/agents/project-coder/project-1:sandbox-1",
+			streamOffset: "0",
+			streamCursor: null,
+			// streamClosed starts true so the constructor's resumeFlueStreamIfNeeded
+			// does not start a background consumer that races the direct call below.
+			streamClosed: true,
+			isMutating: false,
+			projectId: "project-1",
+			sessionId: "session-1",
+			...options.state,
+		};
+		const events = options.events ?? [];
+		const fetchMock = vi.fn(
+			async () =>
+				new Response(JSON.stringify(events), {
+					status: 200,
+					headers: {
+						"Stream-Next-Offset": "10",
+						"Stream-Closed": "true",
+					},
+				}),
+		);
+		const ctx = {
+			setWebSocketAutoResponse: vi.fn(),
+			getWebSockets: vi.fn(() => []),
+			waitUntil: vi.fn(),
+			storage: {
+				get: vi.fn(async () => state),
+				put: vi.fn(async (_key: string, value: unknown) => {
+					Object.assign(state, value);
+				}),
+				setAlarm: vi.fn().mockResolvedValue(undefined),
+				deleteAlarm: vi.fn().mockResolvedValue(undefined),
+			},
+		};
+		const insertValues = vi.fn().mockResolvedValue(undefined);
+		const insert = vi.fn(() => ({ values: insertValues }));
+		const where = vi.fn().mockResolvedValue(undefined);
+		const set = vi.fn(() => ({ where }));
+		const update = vi.fn(() => ({ set }));
+		const select = vi.fn(() => ({
+			from: vi.fn(() => ({
+				where: vi.fn(() => ({ limit: vi.fn(() => []) })),
+			})),
+		}));
+		const db = { insert, update, select };
+		createDbMock.mockReturnValue(db);
+
+		const bridge = new FlueRunBridge(
+			ctx as unknown as DurableObjectState,
+			{ FLUE_WORKER: { fetch: fetchMock } } as unknown as Env,
+		);
+		return { ctx, state, bridge, fetchMock, insertValues, set, where };
+	}
+
+	const needsInputToolEvent = {
+		type: "tool",
+		toolName: "request_clarification",
+		toolCallId: "call-1",
+		isError: false,
+		result:
+			'{"dittoEvent":"needs_input","question":"Which branch?","requestId":"r1"}',
+		durationMs: 4,
+	};
+	const submissionSettledCompleted = {
+		type: "submission_settled",
+		submissionId: "s1",
+		outcome: "completed",
+	};
+	const submissionSettledFailed = {
+		type: "submission_settled",
+		submissionId: "s1",
+		outcome: "failed",
+		error: "model failed",
+	};
+
+	it("pauses the run when a needs_input tool result is followed by submission_settled completed", async () => {
+		const { bridge, state } = makeConsumeBridge({
+			events: [needsInputToolEvent, submissionSettledCompleted],
+		});
+		const finishRunMock = vi.fn().mockResolvedValue(undefined);
+		const pauseRunForInputMock = vi.fn().mockResolvedValue(undefined);
+		(
+			bridge as unknown as {
+				finishRun: typeof finishRunMock;
+				pauseRunForInput: typeof pauseRunForInputMock;
+				consumeFlueStream: (runId: string) => Promise<void>;
+			}
+		).finishRun = finishRunMock;
+		(
+			bridge as unknown as {
+				pauseRunForInput: typeof pauseRunForInputMock;
+			}
+		).pauseRunForInput = pauseRunForInputMock;
+
+		await (
+			bridge as unknown as {
+				consumeFlueStream: (runId: string) => Promise<void>;
+			}
+		).consumeFlueStream("run-1");
+
+		expect(pauseRunForInputMock).toHaveBeenCalledTimes(1);
+		expect(pauseRunForInputMock).toHaveBeenCalledWith("run-1");
+		expect(finishRunMock).not.toHaveBeenCalled();
+		expect(state.pendingInputRequestId).toBe("r1");
+		expect(state.pendingInputQuestion).toBe("Which branch?");
+	});
+
+	it("finishes the run as failed when a needs_input result is followed by submission_settled failed", async () => {
+		const { bridge } = makeConsumeBridge({
+			events: [needsInputToolEvent, submissionSettledFailed],
+		});
+		const finishRunMock = vi.fn().mockResolvedValue(undefined);
+		const pauseRunForInputMock = vi.fn().mockResolvedValue(undefined);
+		(
+			bridge as unknown as {
+				finishRun: typeof finishRunMock;
+				pauseRunForInput: typeof pauseRunForInputMock;
+				consumeFlueStream: (runId: string) => Promise<void>;
+			}
+		).finishRun = finishRunMock;
+		(
+			bridge as unknown as {
+				pauseRunForInput: typeof pauseRunForInputMock;
+			}
+		).pauseRunForInput = pauseRunForInputMock;
+
+		await (
+			bridge as unknown as {
+				consumeFlueStream: (runId: string) => Promise<void>;
+			}
+		).consumeFlueStream("run-1");
+
+		expect(finishRunMock).toHaveBeenCalledTimes(1);
+		expect(finishRunMock).toHaveBeenCalledWith("run-1", "failed");
+		expect(pauseRunForInputMock).not.toHaveBeenCalled();
+	});
+
+	it("finishes the run as completed when submission_settled completed has no prior needs_input", async () => {
+		const { bridge } = makeConsumeBridge({
+			events: [submissionSettledCompleted],
+		});
+		const finishRunMock = vi.fn().mockResolvedValue(undefined);
+		const pauseRunForInputMock = vi.fn().mockResolvedValue(undefined);
+		(
+			bridge as unknown as {
+				finishRun: typeof finishRunMock;
+				pauseRunForInput: typeof pauseRunForInputMock;
+				consumeFlueStream: (runId: string) => Promise<void>;
+			}
+		).finishRun = finishRunMock;
+		(
+			bridge as unknown as {
+				pauseRunForInput: typeof pauseRunForInputMock;
+			}
+		).pauseRunForInput = pauseRunForInputMock;
+
+		await (
+			bridge as unknown as {
+				consumeFlueStream: (runId: string) => Promise<void>;
+			}
+		).consumeFlueStream("run-1");
+
+		expect(finishRunMock).toHaveBeenCalledTimes(1);
+		expect(finishRunMock).toHaveBeenCalledWith("run-1", "completed");
+		expect(pauseRunForInputMock).not.toHaveBeenCalled();
+	});
+
+	it("pauseRunForInput writes needs_input status and broadcasts the frame", async () => {
+		const { bridge, set } = makeConsumeBridge({
+			events: [],
+		});
+		bridge as unknown as {
+			pauseRunForInput: (runId: string) => Promise<void>;
+		};
+		// Manually seed pending input state, then call pauseRunForInput directly.
+		const pauseBridge = bridge as unknown as {
+			pauseRunForInput: (runId: string) => Promise<void>;
+			getState: () => Promise<Record<string, unknown>>;
+			setState: (state: Record<string, unknown>) => Promise<void>;
+		};
+		await pauseBridge.setState({
+			...(await pauseBridge.getState()),
+			pendingInputRequestId: "r1",
+			pendingInputQuestion: "Which branch?",
+		});
+
+		await pauseBridge.pauseRunForInput("run-1");
+
+		expect(set).toHaveBeenCalledWith(
+			expect.objectContaining({
+				status: "needs_input",
+				question: "Which branch?",
+				recommendedAnswer: null,
+			}),
+		);
+	});
+});
+
+describe("flue run bridge reply", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	function makeReplyBridge(options: {
+		state?: Record<string, unknown>;
+		flueFetch?: ReturnType<typeof vi.fn>;
+		coordinatorFetch?: ReturnType<typeof vi.fn>;
+	}) {
+		const state: Record<string, unknown> = {
+			activeRunId: "run-1",
+			flueAgentName: "project-coder",
+			flueAgentInstanceId: "project-1:sandbox-1",
+			flueStreamPath: "/agents/project-coder/project-1:sandbox-1",
+			streamOffset: "0",
+			streamCursor: null,
+			streamClosed: true,
+			isMutating: false,
+			projectId: "project-1",
+			sessionId: "session-1",
+			userId: "user-1",
+			sandboxId: "sandbox-1",
+			modelSpecifier: "anthropic/claude-sonnet-4-6",
+			pendingInputRequestId: "r1",
+			pendingInputQuestion: "Which branch?",
+			...options.state,
+		};
+		const fetchMock =
+			options.flueFetch ??
+			vi.fn(
+				async () =>
+					new Response(
+						JSON.stringify({
+							streamUrl:
+								"https://flue.internal/agents/project-coder/project-1:sandbox-1",
+							offset: "20",
+							submissionId: "s2",
+						}),
+						{ status: 200 },
+					),
+			);
+		const coordinatorFetch =
+			options.coordinatorFetch ??
+			vi.fn(async () => new Response("{}", { status: 200 }));
+		const ctx = {
+			setWebSocketAutoResponse: vi.fn(),
+			getWebSockets: vi.fn(() => []),
+			waitUntil: vi.fn(),
+			storage: {
+				get: vi.fn(async () => state),
+				put: vi.fn(async (_key: string, value: unknown) => {
+					Object.assign(state, value);
+				}),
+				setAlarm: vi.fn().mockResolvedValue(undefined),
+				deleteAlarm: vi.fn().mockResolvedValue(undefined),
+			},
+		};
+		const insertValues = vi.fn().mockResolvedValue(undefined);
+		const where = vi.fn().mockResolvedValue(undefined);
+		const set = vi.fn(() => ({ where }));
+		const update = vi.fn(() => ({ set }));
+		const insert = vi.fn(() => ({ values: insertValues }));
+		const select = vi.fn(() => ({
+			from: vi.fn(() => ({
+				where: vi.fn(() => ({ limit: vi.fn(() => []) })),
+			})),
+		}));
+		const db = { insert, update, select };
+		createDbMock.mockReturnValue(db);
+
+		const bridge = new FlueRunBridge(
+			ctx as unknown as DurableObjectState,
+			{
+				FLUE_WORKER: { fetch: fetchMock },
+				ProjectCoordinator: {
+					idFromName: vi.fn(() => "project-1"),
+					get: vi.fn(() => ({ fetch: coordinatorFetch })),
+				},
+			} as unknown as Env,
+		);
+		return {
+			ctx,
+			state,
+			bridge,
+			fetchMock,
+			coordinatorFetch,
+			insertValues,
+			set,
+			where,
+		};
+	}
+
+	it("re-dispatches a read-only run with the user answer and resumes consumption", async () => {
+		const { bridge, fetchMock, insertValues, set } = makeReplyBridge({});
+
+		const replyBridge = bridge as unknown as {
+			reply: (input: { runId: string; answer: string }) => Promise<void>;
+			resumeFlueStreamIfNeeded: (
+				reason: "constructor" | "socket" | "start" | "reply",
+			) => Promise<void>;
+		};
+		const resumeSpy = vi.fn().mockResolvedValue(undefined);
+		replyBridge.resumeFlueStreamIfNeeded = resumeSpy;
+
+		await replyBridge.reply({ runId: "run-1", answer: "use main" });
+
+		// dispatch POSTs to the agent path with the answer as the message
+		const dispatchRequest = fetchMock.mock.calls[0]?.[0] as Request;
+		expect(dispatchRequest.method).toBe("POST");
+		expect(decodeURIComponent(dispatchRequest.url)).toContain(
+			"/agents/project-coder/project-1:sandbox-1",
+		);
+		const body = await dispatchRequest.clone().json();
+		expect(body).toEqual({ message: "use main" });
+
+		// user answer event inserted
+		const inserted = insertValues.mock.calls[0]?.[0];
+		expect(inserted.type).toBe("message");
+		expect(inserted.payload).toContain("use main");
+		expect(inserted.payload).toContain('"kind":"answer"');
+
+		// run status set to running
+		expect(set).toHaveBeenCalledWith(
+			expect.objectContaining({ status: "running", question: null }),
+		);
+
+		// consumption resumed
+		expect(resumeSpy).toHaveBeenCalledWith("reply");
+	});
+
+	it("returns 400 when there is no pending input", async () => {
+		const { bridge } = makeReplyBridge({
+			state: { pendingInputRequestId: undefined },
+		});
+
+		const response = await (
+			bridge as unknown as { fetch: (request: Request) => Promise<Response> }
+		).fetch(
+			new Request("https://flue-run-bridge/reply", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ runId: "run-1", answer: "x" }),
+			}),
+		);
+
+		expect(response.status).toBe(400);
+	});
+
+	it("returns 400 when the run id does not match the active run", async () => {
+		const { bridge, fetchMock } = makeReplyBridge({});
+
+		const response = await (
+			bridge as unknown as { fetch: (request: Request) => Promise<Response> }
+		).fetch(
+			new Request("https://flue-run-bridge/reply", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ runId: "other-run", answer: "x" }),
+			}),
+		);
+
+		expect(response.status).toBe(400);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("returns 400 on a mutating reply when the lease is expired and does not re-dispatch", async () => {
+		const coordinatorFetch = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						mutationLease: null,
+						activeReadOnlyRuns: [],
+						nextFencingToken: 1,
+						snapshot: { latestSnapshotId: null, restoring: false },
+					}),
+					{ status: 200 },
+				),
+		);
+		const { bridge, fetchMock } = makeReplyBridge({
+			state: {
+				isMutating: true,
+				fencingToken: 7,
+			},
+			coordinatorFetch,
+		});
+
+		const response = await (
+			bridge as unknown as { fetch: (request: Request) => Promise<Response> }
+		).fetch(
+			new Request("https://flue-run-bridge/reply", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ runId: "run-1", answer: "x" }),
+			}),
+		);
+
+		expect(response.status).toBe(400);
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 });

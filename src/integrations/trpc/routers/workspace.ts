@@ -49,7 +49,7 @@ type ProjectCoordinatorControlPath =
 	| "/terminal"
 	| "/begin-restore"
 	| "/end-restore";
-type FlueRunBridgeControlPath = "/start" | "/abort";
+type FlueRunBridgeControlPath = "/start" | "/abort" | "/reply";
 
 const GITHUB_EXPORT_COMMAND_TIMEOUT_MS = 120_000;
 
@@ -1276,15 +1276,27 @@ export const workspaceRouter = createTRPCRouter({
 				});
 			}
 
-			await postWorkspaceSessionBroker({
-				env: ctx.env,
-				sessionId: run.sessionId,
-				path: "/reply",
-				body: {
-					runId: input.runId,
-					answer: input.answer,
-				},
-			});
+			if (run.flueAgentName) {
+				await postFlueRunBridge({
+					env: ctx.env,
+					sessionId: run.sessionId,
+					path: "/reply",
+					body: {
+						runId: input.runId,
+						answer: input.answer,
+					},
+				});
+			} else {
+				await postWorkspaceSessionBroker({
+					env: ctx.env,
+					sessionId: run.sessionId,
+					path: "/reply",
+					body: {
+						runId: input.runId,
+						answer: input.answer,
+					},
+				});
+			}
 
 			const [updatedRun] = await db
 				.update(agentRuns)

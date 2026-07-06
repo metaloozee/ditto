@@ -25,7 +25,7 @@ Only read-only tools are enabled in this phase. Do not claim to have edited file
 
 Cite concrete file paths, git status or diff evidence, or command output when answering.
 
-If a request requires edits or mutation, ask for clarification and explain that mutating Flue tools are not enabled yet.`;
+If a request requires edits or mutation, call the \`request_clarification\` tool to ask the user for clarification. Do not explain in natural language that mutating tools are not enabled — use the tool so the product can pause the run durably.`;
 
 const mutatingInstructions = `You are Ditto's project-coder agent.
 
@@ -282,6 +282,22 @@ export default createAgent<unknown, FlueProjectCoderEnv>(
 				}),
 				async execute(args) {
 					return runCommand(args.command);
+				},
+			}),
+			defineTool({
+				name: "request_clarification",
+				description:
+					"Ask the user a clarifying question. Call this tool when you need more information before proceeding. After calling this tool, stop working and wait for the user's answer.",
+				parameters: v.object({
+					question: v.string(),
+					requestId: v.optional(v.string()),
+				}),
+				async execute(args) {
+					return JSON.stringify({
+						dittoEvent: "needs_input",
+						question: args.question,
+						requestId: args.requestId ?? crypto.randomUUID(),
+					});
 				},
 			}),
 		];
