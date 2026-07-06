@@ -1,8 +1,0 @@
-{
-  "extends": "../../tsconfig.json",
-  "include": ["./**/*.ts", "../../src/lib/runner-protocol.ts"],
-  "compilerOptions": {
-    "noEmit": true,
-    "types": ["node"]
-  }
-}
