@@ -126,12 +126,9 @@ async function loadWorkspaceView(options: {
 		}),
 	]);
 
-	const selectedSession =
-		(options.sessionId
-			? sessions.find((session) => session.id === options.sessionId)
-			: null) ??
-		sessions[0] ??
-		null;
+	const selectedSession = options.sessionId
+		? (sessions.find((session) => session.id === options.sessionId) ?? null)
+		: null;
 
 	const selectedMessages = selectedSession
 		? await options.db
@@ -158,14 +155,14 @@ async function loadWorkspaceView(options: {
 }
 
 export const workspaceRouter = createTRPCRouter({
-	get: protectedProcedure
+	ensureWorkspace: protectedProcedure
 		.input(
 			z.object({
 				projectId: z.string().min(1),
 				sessionId: z.string().min(1).optional(),
 			}),
 		)
-		.query(async ({ ctx, input }) => {
+		.mutation(async ({ ctx, input }) => {
 			const db = createDb(ctx.env);
 			return await loadWorkspaceView({
 				db,

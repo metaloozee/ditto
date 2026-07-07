@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { Chat } from "#/components/ai-chat";
 import { Button } from "#/components/ui/button";
 import { useTRPC } from "#/integrations/trpc/react";
@@ -27,27 +28,64 @@ export function ProjectWorkspacePage({
 	const project = projectQuery.data;
 	const canLoadWorkspace =
 		project?.status === "ready" || project?.status === "failed";
-	const workspaceQuery = useQuery(
-		trpc.workspace.get.queryOptions(
-			{ projectId, sessionId },
-			{
-				enabled: canLoadWorkspace,
-				retry: false,
+
+	const { mutate: ensureWorkspace, ...ensureWorkspaceMutation } = useMutation(
+		trpc.workspace.ensureWorkspace.mutationOptions({
+			onMutate: async () => {
+				await queryClient.cancelQueries(trpc.projects.list.queryFilter());
+				const previousList = queryClient.getQueryData(
+					trpc.projects.list.queryKey(),
+				);
+
+				queryClient.setQueryData(trpc.projects.list.queryKey(), (old) => {
+					if (!old) {
+						return old;
+					}
+
+					return old.map((item) =>
+						item.id === projectId
+							? { ...item, status: "provisioning" as const }
+							: item,
+					);
+				});
+
+				return { previousList };
 			},
-		),
+			onError: (_error, _variables, context) => {
+				if (context?.previousList) {
+					queryClient.setQueryData(
+						trpc.projects.list.queryKey(),
+						context.previousList,
+					);
+				}
+			},
+			onSuccess: () => {
+				void Promise.all([
+					queryClient.invalidateQueries(trpc.projects.list.queryFilter()),
+					queryClient.invalidateQueries(
+						trpc.projects.get.queryFilter({ id: projectId }),
+					),
+				]);
+			},
+		}),
 	);
+
+	useEffect(() => {
+		if (canLoadWorkspace) {
+			ensureWorkspace({ projectId, sessionId });
+		}
+	}, [projectId, sessionId, canLoadWorkspace, ensureWorkspace]);
+
 	const retryRestoreMutation = useMutation(
 		trpc.workspace.retryRestore.mutationOptions({
 			onSuccess: () => {
 				void Promise.all([
-					queryClient.invalidateQueries(
-						trpc.workspace.get.queryFilter({ projectId, sessionId }),
-					),
+					queryClient.invalidateQueries(trpc.projects.list.queryFilter()),
 					queryClient.invalidateQueries(
 						trpc.projects.get.queryFilter({ id: projectId }),
 					),
-					queryClient.invalidateQueries(trpc.projects.list.queryFilter()),
 				]);
+				ensureWorkspace({ projectId, sessionId });
 			},
 		}),
 	);
@@ -70,24 +108,24 @@ export function ProjectWorkspacePage({
 		);
 	}
 
-	if (workspaceQuery.error && canLoadWorkspace) {
+	if (ensureWorkspaceMutation.error && canLoadWorkspace) {
 		return (
 			<main className="flex h-dvh items-center justify-center p-6">
 				<p className="text-sm text-destructive" role="alert">
-					{workspaceQuery.error.message}
+					{ensureWorkspaceMutation.error.message}
 				</p>
 			</main>
 		);
 	}
 
-	const workspace = workspaceQuery.data;
+	const workspace = ensureWorkspaceMutation.data;
 	const selectedSession = workspace?.selectedSession ?? null;
 	const disabledReason =
 		project.status !== "ready"
 			? "Project sandbox is not ready yet."
 			: selectedSession?.status === "archived"
 				? "This conversation is archived."
-				: workspaceQuery.isPending
+				: ensureWorkspaceMutation.isPending
 					? "Checking project sandbox..."
 					: undefined;
 

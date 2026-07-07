@@ -111,10 +111,7 @@ export function Composer({
 		if (projectId) {
 			invalidations.push(
 				queryClient.invalidateQueries(
-					trpc.workspace.get.queryFilter({
-						projectId,
-						sessionId: sessionId ?? undefined,
-					}),
+					trpc.projects.get.queryFilter({ id: projectId }),
 				),
 			);
 		}
