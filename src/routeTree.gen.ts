@@ -16,6 +16,7 @@ import { Route as InstallationCompletedRouteImport } from './routes/installation
 import { Route as ProjectProjectIdIndexRouteImport } from './routes/project.$projectId.index'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api.auth.$'
+import { Route as ApiAgentStreamRouteImport } from './routes/api.agent.stream'
 import { Route as ProjectProjectIdSessionSessionIdRouteImport } from './routes/project.$projectId.session.$sessionId'
 
 const SignInRoute = SignInRouteImport.update({
@@ -53,6 +54,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAgentStreamRoute = ApiAgentStreamRouteImport.update({
+  id: '/api/agent/stream',
+  path: '/api/agent/stream',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjectProjectIdSessionSessionIdRoute =
   ProjectProjectIdSessionSessionIdRouteImport.update({
     id: '/session/$sessionId',
@@ -65,6 +71,7 @@ export interface FileRoutesByFullPath {
   '/sign-in': typeof SignInRoute
   '/installation/completed': typeof InstallationCompletedRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
+  '/api/agent/stream': typeof ApiAgentStreamRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/project/$projectId/': typeof ProjectProjectIdIndexRoute
@@ -74,6 +81,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
   '/installation/completed': typeof InstallationCompletedRoute
+  '/api/agent/stream': typeof ApiAgentStreamRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/project/$projectId': typeof ProjectProjectIdIndexRoute
@@ -85,6 +93,7 @@ export interface FileRoutesById {
   '/sign-in': typeof SignInRoute
   '/installation/completed': typeof InstallationCompletedRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
+  '/api/agent/stream': typeof ApiAgentStreamRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/project/$projectId/': typeof ProjectProjectIdIndexRoute
@@ -97,6 +106,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/installation/completed'
     | '/project/$projectId'
+    | '/api/agent/stream'
     | '/api/auth/$'
     | '/api/trpc/$'
     | '/project/$projectId/'
@@ -106,6 +116,7 @@ export interface FileRouteTypes {
     | '/'
     | '/sign-in'
     | '/installation/completed'
+    | '/api/agent/stream'
     | '/api/auth/$'
     | '/api/trpc/$'
     | '/project/$projectId'
@@ -116,6 +127,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/installation/completed'
     | '/project/$projectId'
+    | '/api/agent/stream'
     | '/api/auth/$'
     | '/api/trpc/$'
     | '/project/$projectId/'
@@ -127,6 +139,7 @@ export interface RootRouteChildren {
   SignInRoute: typeof SignInRoute
   InstallationCompletedRoute: typeof InstallationCompletedRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRouteWithChildren
+  ApiAgentStreamRoute: typeof ApiAgentStreamRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
 }
@@ -182,6 +195,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/agent/stream': {
+      id: '/api/agent/stream'
+      path: '/api/agent/stream'
+      fullPath: '/api/agent/stream'
+      preLoaderRoute: typeof ApiAgentStreamRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/project/$projectId/session/$sessionId': {
       id: '/project/$projectId/session/$sessionId'
       path: '/session/$sessionId'
@@ -210,6 +230,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignInRoute: SignInRoute,
   InstallationCompletedRoute: InstallationCompletedRoute,
   ProjectProjectIdRoute: ProjectProjectIdRouteWithChildren,
+  ApiAgentStreamRoute: ApiAgentStreamRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
 }
