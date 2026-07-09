@@ -1,0 +1,16 @@
+node_modules
+dist
+.alchemy
+.wrangler
+.git
+.env
+.env.*
+src
+migrations
+public
+plans
+.agents
+**/*.md
+!sandbox/runner/**
+sandbox/runner/node_modules
+sandbox/runner/dist
