@@ -31,34 +31,6 @@ export function ProjectWorkspacePage({
 
 	const { mutate: ensureWorkspace, ...ensureWorkspaceMutation } = useMutation(
 		trpc.workspace.ensureWorkspace.mutationOptions({
-			onMutate: async () => {
-				await queryClient.cancelQueries(trpc.projects.list.queryFilter());
-				const previousList = queryClient.getQueryData(
-					trpc.projects.list.queryKey(),
-				);
-
-				queryClient.setQueryData(trpc.projects.list.queryKey(), (old) => {
-					if (!old) {
-						return old;
-					}
-
-					return old.map((item) =>
-						item.id === projectId
-							? { ...item, status: "provisioning" as const }
-							: item,
-					);
-				});
-
-				return { previousList };
-			},
-			onError: (_error, _variables, context) => {
-				if (context?.previousList) {
-					queryClient.setQueryData(
-						trpc.projects.list.queryKey(),
-						context.previousList,
-					);
-				}
-			},
 			onSuccess: () => {
 				void Promise.all([
 					queryClient.invalidateQueries(trpc.projects.list.queryFilter()),
