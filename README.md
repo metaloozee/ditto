@@ -74,5 +74,6 @@ OPENCODE_API_KEY=
 - `src/server.ts` exports the Cloudflare Sandbox binding used by the app.
 - `OPENCODE_API_KEY` is required for sandbox agent runs (passed into the harness
   session environment).
-- Concurrent agent runs per project are not enforced yet; see plan 003 for UI
-  streaming and future concurrency notes.
+- Agent harness architecture: `docs/architecture/agent-harness.md`
+- Concurrent agent runs per project are not enforced yet; see the architecture
+  doc for deferred concurrency notes.

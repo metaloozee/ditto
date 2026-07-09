@@ -1,7 +1,14 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { CheckIcon, GitBranchIcon, MicIcon } from "lucide-react";
-import { memo, useCallback, useState } from "react";
+import {
+	type Dispatch,
+	memo,
+	type SetStateAction,
+	useCallback,
+	useRef,
+	useState,
+} from "react";
 import { toast } from "sonner";
 import {
 	ModelSelector,
@@ -31,6 +38,10 @@ import {
 	PROJECT_CODER_MODELS,
 	type ProjectCoderModelSpecifier,
 } from "#/lib/agent-models";
+import {
+	streamAgentRun,
+	toolNameFromAgentEvent,
+} from "#/lib/agent-stream-client";
 import { useUserPreferencesStore } from "#/lib/user-preferences-store";
 
 const models = PROJECT_CODER_MODELS.map((model) => ({
@@ -81,27 +92,36 @@ const ModelItem = memo(({ model, onSelect, selectedModel }: ModelItemProps) => {
 
 ModelItem.displayName = "ModelItem";
 
+export type ComposerStreamingState = {
+	active: boolean;
+	text: string;
+	toolName?: string | null;
+};
+
 type ComposerProps = {
 	projectId?: string;
 	sessionId?: string | null;
 	disabledReason?: string;
+	onStreamingChange?: Dispatch<SetStateAction<ComposerStreamingState | null>>;
+	onWorkspaceRefresh?: (sessionId: string) => void | Promise<void>;
 };
 
 export function Composer({
 	projectId,
 	sessionId,
 	disabledReason,
+	onStreamingChange,
+	onWorkspaceRefresh,
 }: ComposerProps) {
 	const [text, setText] = useState("");
+	const [isStreaming, setIsStreaming] = useState(false);
+	const activeSessionIdRef = useRef<string | null>(sessionId ?? null);
 	const model = useUserPreferencesStore((state) => state.selectedModel);
 	const setModel = useUserPreferencesStore((state) => state.setSelectedModel);
 	const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
 	const trpc = useTRPC();
 	const queryClient = useQueryClient();
 	const navigate = useNavigate();
-	const sendMessageMutation = useMutation(
-		trpc.workspace.sendMessage.mutationOptions(),
-	);
 
 	async function refreshWorkspace(): Promise<void> {
 		const invalidations = [
@@ -119,6 +139,11 @@ export function Composer({
 		await Promise.all(invalidations);
 	}
 
+	function clearStreamingState(): void {
+		setIsStreaming(false);
+		onStreamingChange?.(null);
+	}
+
 	async function handleSubmit(message: PromptInputMessage) {
 		if (!message.text.trim() && message.files.length === 0) {
 			return;
@@ -129,32 +154,85 @@ export function Composer({
 			return;
 		}
 
-		if (disabledReason) {
+		if (disabledReason || isStreaming) {
 			return;
 		}
 
+		const prompt = message.text;
+		setText("");
+		setIsStreaming(true);
+		onStreamingChange?.({ active: true, text: "", toolName: null });
+
+		let streamSessionId = sessionId ?? undefined;
+
 		try {
-			const result = await sendMessageMutation.mutateAsync({
-				projectId,
-				sessionId: sessionId ?? undefined,
-				message: message.text,
-				model,
-			});
+			await streamAgentRun(
+				{
+					projectId,
+					sessionId: streamSessionId,
+					message: prompt,
+					model,
+				},
+				{
+					onMeta: async (meta) => {
+						streamSessionId = meta.sessionId;
+						activeSessionIdRef.current = meta.sessionId;
 
-			setText("");
-			await refreshWorkspace();
-
-			if (result.createdSession) {
-				await navigate({
-					to: "/project/$projectId/session/$sessionId",
-					params: { projectId, sessionId: result.session.id },
-				});
-			}
-		} catch (mutationError) {
+						if (meta.createdSession) {
+							await navigate({
+								to: "/project/$projectId/session/$sessionId",
+								params: { projectId, sessionId: meta.sessionId },
+							});
+						}
+					},
+					onDelta: (delta) => {
+						onStreamingChange?.((previous) => {
+							const base = previous ?? {
+								active: true,
+								text: "",
+								toolName: null,
+							};
+							return {
+								...base,
+								active: true,
+								text: base.text + delta,
+							};
+						});
+					},
+					onAgent: (event) => {
+						const toolName = toolNameFromAgentEvent(event);
+						if (!toolName) {
+							return;
+						}
+						onStreamingChange?.((previous) => {
+							const base = previous ?? {
+								active: true,
+								text: "",
+								toolName: null,
+							};
+							return { ...base, active: true, toolName };
+						});
+					},
+					onError: (errorMessage) => {
+						toast.error(errorMessage);
+					},
+					onDone: async () => {
+						clearStreamingState();
+						await refreshWorkspace();
+						const resolvedSessionId =
+							activeSessionIdRef.current ?? streamSessionId;
+						if (resolvedSessionId) {
+							await onWorkspaceRefresh?.(resolvedSessionId);
+						}
+					},
+				},
+			);
+		} catch (streamError) {
+			clearStreamingState();
 			toast.error(
-				mutationError instanceof Error
-					? mutationError.message
-					: "Failed to send message.",
+				streamError instanceof Error
+					? streamError.message
+					: "Failed to run agent.",
 			);
 		}
 	}
@@ -169,8 +247,7 @@ export function Composer({
 
 	const selectedModel = models.find((modelOption) => modelOption.id === model);
 	const chefs = [...new Set(models.map((modelOption) => modelOption.chef))];
-	const submitDisabled =
-		!text.trim() || sendMessageMutation.isPending || Boolean(disabledReason);
+	const submitDisabled = !text.trim() || isStreaming || Boolean(disabledReason);
 
 	return (
 		<section className="mx-auto flex w-full max-w-3xl flex-col justify-end gap-5 px-2 pb-2">

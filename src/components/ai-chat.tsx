@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { Streamdown } from "streamdown";
-import { Composer } from "#/components/composer";
+import { Composer, type ComposerStreamingState } from "#/components/composer";
 import { Bubble, BubbleContent } from "#/components/ui/bubble";
 import {
 	Message,
@@ -29,6 +30,7 @@ type ChatProps = {
 	sessionId?: string | null;
 	disabledReason?: string;
 	messages?: ChatMessage[];
+	onWorkspaceRefresh?: (sessionId: string) => void | Promise<void>;
 };
 
 const messageTimeFormatter = new Intl.DateTimeFormat(undefined, {
@@ -78,11 +80,35 @@ function ChatEmptyState({ hasProject }: { hasProject: boolean }) {
 						: "Open a project to start chatting."}
 				</p>
 				<p className="text-balance text-muted-foreground text-xs/relaxed">
-					Sent messages are stored in D1 and replayed here as a simple
-					conversation history.
+					{hasProject
+						? "Messages are stored in D1; new prompts stream live agent output here."
+						: "Sent messages are stored in D1 and replayed here as a simple conversation history."}
 				</p>
 			</div>
 		</div>
+	);
+}
+
+function StreamingAssistantRow({
+	streaming,
+}: {
+	streaming: ComposerStreamingState;
+}) {
+	return (
+		<Message align="start">
+			<MessageContent className="group">
+				{streaming.toolName ? (
+					<p className="mb-1 text-muted-foreground text-xs">
+						Running tool: {streaming.toolName}
+					</p>
+				) : null}
+				<Bubble align="start" variant="secondary">
+					<BubbleContent className="w-full max-w-none">
+						<AssistantMarkdown mode="streaming" text={streaming.text} />
+					</BubbleContent>
+				</Bubble>
+			</MessageContent>
+		</Message>
 	);
 }
 
@@ -126,8 +152,12 @@ export function Chat({
 	sessionId,
 	disabledReason,
 	messages = [],
+	onWorkspaceRefresh,
 }: ChatProps) {
-	const hasMessages = messages.length > 0;
+	const [streaming, setStreaming] = useState<ComposerStreamingState | null>(
+		null,
+	);
+	const hasMessages = messages.length > 0 || Boolean(streaming?.active);
 
 	return (
 		<div className="relative mx-auto h-full w-full">
@@ -145,16 +175,26 @@ export function Chat({
 							)}
 						>
 							{hasMessages ? (
-								messages.map((message, index) => (
-									<MessageScrollerItem
-										key={message.id}
-										messageId={`message-${message.id}`}
-										className={cn("mt-0", index === 0 && "mt-20")}
-										scrollAnchor={message.role === "user"}
-									>
-										<MessageRow message={message} />
-									</MessageScrollerItem>
-								))
+								<>
+									{messages.map((message, index) => (
+										<MessageScrollerItem
+											key={message.id}
+											messageId={`message-${message.id}`}
+											className={cn("mt-0", index === 0 && "mt-20")}
+											scrollAnchor={message.role === "user"}
+										>
+											<MessageRow message={message} />
+										</MessageScrollerItem>
+									))}
+									{streaming?.active ? (
+										<MessageScrollerItem
+											messageId="streaming-assistant"
+											className="mt-0"
+										>
+											<StreamingAssistantRow streaming={streaming} />
+										</MessageScrollerItem>
+									) : null}
+								</>
 							) : (
 								<MessageScrollerItem messageId="empty-conversation">
 									<EmptyConversation
@@ -169,6 +209,8 @@ export function Chat({
 						projectId={projectId}
 						sessionId={sessionId}
 						disabledReason={disabledReason}
+						onStreamingChange={setStreaming}
+						onWorkspaceRefresh={onWorkspaceRefresh}
 					/>
 				</MessageScroller>
 			</MessageScrollerProvider>

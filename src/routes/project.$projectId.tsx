@@ -160,6 +160,9 @@ export function ProjectWorkspacePage({
 					sessionId={selectedSession?.id ?? sessionId ?? null}
 					disabledReason={disabledReason}
 					messages={workspace?.messages ?? []}
+					onWorkspaceRefresh={(activeSessionId) =>
+						ensureWorkspace({ projectId, sessionId: activeSessionId })
+					}
 				/>
 			</div>
 		</main>
