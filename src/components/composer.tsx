@@ -116,6 +116,9 @@ export function Composer({
 	const [text, setText] = useState("");
 	const [isStreaming, setIsStreaming] = useState(false);
 	const activeSessionIdRef = useRef<string | null>(sessionId ?? null);
+	const shouldNavigateToSessionRef = useRef(false);
+	const streamSettledRef = useRef(false);
+	const isStreamingRef = useRef(false);
 	const model = useUserPreferencesStore((state) => state.selectedModel);
 	const setModel = useUserPreferencesStore((state) => state.setSelectedModel);
 	const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
@@ -140,8 +143,33 @@ export function Composer({
 	}
 
 	function clearStreamingState(): void {
+		isStreamingRef.current = false;
 		setIsStreaming(false);
 		onStreamingChange?.(null);
+	}
+
+	async function settleAfterStream(
+		resolvedSessionId: string | undefined,
+	): Promise<void> {
+		if (streamSettledRef.current) {
+			return;
+		}
+		streamSettledRef.current = true;
+
+		clearStreamingState();
+		await refreshWorkspace();
+
+		if (resolvedSessionId) {
+			await onWorkspaceRefresh?.(resolvedSessionId);
+		}
+
+		if (shouldNavigateToSessionRef.current && projectId && resolvedSessionId) {
+			shouldNavigateToSessionRef.current = false;
+			await navigate({
+				to: "/project/$projectId/session/$sessionId",
+				params: { projectId, sessionId: resolvedSessionId },
+			});
+		}
 	}
 
 	async function handleSubmit(message: PromptInputMessage) {
@@ -160,8 +188,12 @@ export function Composer({
 
 		const prompt = message.text;
 		setText("");
+		isStreamingRef.current = true;
 		setIsStreaming(true);
 		onStreamingChange?.({ active: true, text: "", toolName: null });
+		shouldNavigateToSessionRef.current = false;
+		streamSettledRef.current = false;
+		activeSessionIdRef.current = sessionId ?? null;
 
 		let streamSessionId = sessionId ?? undefined;
 
@@ -174,15 +206,11 @@ export function Composer({
 					model,
 				},
 				{
-					onMeta: async (meta) => {
+					onMeta: (meta) => {
 						streamSessionId = meta.sessionId;
 						activeSessionIdRef.current = meta.sessionId;
-
 						if (meta.createdSession) {
-							await navigate({
-								to: "/project/$projectId/session/$sessionId",
-								params: { projectId, sessionId: meta.sessionId },
-							});
+							shouldNavigateToSessionRef.current = true;
 						}
 					},
 					onDelta: (delta) => {
@@ -215,18 +243,22 @@ export function Composer({
 					},
 					onError: (errorMessage) => {
 						toast.error(errorMessage);
+						clearStreamingState();
 					},
 					onDone: async () => {
-						clearStreamingState();
-						await refreshWorkspace();
 						const resolvedSessionId =
 							activeSessionIdRef.current ?? streamSessionId;
-						if (resolvedSessionId) {
-							await onWorkspaceRefresh?.(resolvedSessionId);
-						}
+						await settleAfterStream(resolvedSessionId);
 					},
 				},
 			);
+
+			if (!streamSettledRef.current) {
+				const resolvedSessionId = activeSessionIdRef.current ?? streamSessionId;
+				await settleAfterStream(resolvedSessionId);
+			} else if (isStreamingRef.current) {
+				clearStreamingState();
+			}
 		} catch (streamError) {
 			clearStreamingState();
 			toast.error(
