@@ -1,14 +1,6 @@
-import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { CheckIcon, GitBranchIcon, MicIcon } from "lucide-react";
-import {
-	type Dispatch,
-	memo,
-	type SetStateAction,
-	useCallback,
-	useRef,
-	useState,
-} from "react";
+import { type Dispatch, type SetStateAction, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
 	ModelSelector,
@@ -33,14 +25,20 @@ import {
 	PromptInputTextarea,
 	PromptInputTools,
 } from "#/components/ai-elements/prompt-input";
-import { useTRPC } from "#/integrations/trpc/react";
 import {
 	PROJECT_CODER_MODELS,
 	type ProjectCoderModelSpecifier,
 } from "#/lib/agent-models";
 import {
+	type AssistantMessagePart,
+	appendAssistantTextDelta,
+	applyAgentToolEventToParts,
+	type DonePayload,
+	finalizeAssistantParts,
+	partsToText,
+	partsToTools,
+	type StreamToolCall,
 	streamAgentRun,
-	toolNameFromAgentEvent,
 } from "#/lib/agent-stream-client";
 import { useUserPreferencesStore } from "#/lib/user-preferences-store";
 
@@ -51,6 +49,16 @@ const models = PROJECT_CODER_MODELS.map((model) => ({
 	name: model.name,
 	providers: [model.provider],
 })) satisfies Model[];
+
+const modelsByChef = new Map<string, Model[]>();
+for (const modelOption of models) {
+	const group = modelsByChef.get(modelOption.chef);
+	if (group) {
+		group.push(modelOption);
+	} else {
+		modelsByChef.set(modelOption.chef, [modelOption]);
+	}
+}
 
 interface Model {
 	chef: string;
@@ -66,14 +74,9 @@ interface ModelItemProps {
 	selectedModel: ProjectCoderModelSpecifier;
 }
 
-const ModelItem = memo(({ model, onSelect, selectedModel }: ModelItemProps) => {
-	const handleSelect = useCallback(
-		() => onSelect(model.id),
-		[model.id, onSelect],
-	);
-
+function ModelItem({ model, onSelect, selectedModel }: ModelItemProps) {
 	return (
-		<ModelSelectorItem onSelect={handleSelect} value={model.id}>
+		<ModelSelectorItem onSelect={() => onSelect(model.id)} value={model.id}>
 			<ModelSelectorLogo className="size-5" provider={model.chefSlug} />
 			<ModelSelectorName>{model.name}</ModelSelectorName>
 			<ModelSelectorLogoGroup>
@@ -88,14 +91,35 @@ const ModelItem = memo(({ model, onSelect, selectedModel }: ModelItemProps) => {
 			)}
 		</ModelSelectorItem>
 	);
-});
-
-ModelItem.displayName = "ModelItem";
+}
 
 export type ComposerStreamingState = {
 	active: boolean;
 	text: string;
-	toolName?: string | null;
+	userText: string;
+	userMessageId?: string;
+	assistantMessageId?: string;
+	tools: StreamToolCall[];
+	parts: AssistantMessagePart[];
+	model?: string;
+};
+
+export type StreamCommitPayload = {
+	sessionId: string;
+	createdSession: boolean;
+	user: {
+		id: string;
+		role: "user";
+		content: string;
+	};
+	assistant: {
+		id: string;
+		role: "assistant";
+		content: string;
+		model?: string | null;
+		tools?: StreamToolCall[];
+		parts?: AssistantMessagePart[];
+	};
 };
 
 type ComposerProps = {
@@ -103,7 +127,7 @@ type ComposerProps = {
 	sessionId?: string | null;
 	disabledReason?: string;
 	onStreamingChange?: Dispatch<SetStateAction<ComposerStreamingState | null>>;
-	onWorkspaceRefresh?: (sessionId: string) => void | Promise<void>;
+	onStreamCommit?: (payload: StreamCommitPayload) => void;
 };
 
 export function Composer({
@@ -111,7 +135,7 @@ export function Composer({
 	sessionId,
 	disabledReason,
 	onStreamingChange,
-	onWorkspaceRefresh,
+	onStreamCommit,
 }: ComposerProps) {
 	const [text, setText] = useState("");
 	const [isStreaming, setIsStreaming] = useState(false);
@@ -119,28 +143,15 @@ export function Composer({
 	const shouldNavigateToSessionRef = useRef(false);
 	const streamSettledRef = useRef(false);
 	const isStreamingRef = useRef(false);
+	const userMessageIdRef = useRef<string | null>(null);
+	const assistantMessageIdRef = useRef<string | null>(null);
+	const partsRef = useRef<AssistantMessagePart[]>([]);
+	const promptRef = useRef("");
+	const assistantTextRef = useRef("");
 	const model = useUserPreferencesStore((state) => state.selectedModel);
 	const setModel = useUserPreferencesStore((state) => state.setSelectedModel);
 	const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
-	const trpc = useTRPC();
-	const queryClient = useQueryClient();
 	const navigate = useNavigate();
-
-	async function refreshWorkspace(): Promise<void> {
-		const invalidations = [
-			queryClient.invalidateQueries(trpc.projects.list.queryFilter()),
-		];
-
-		if (projectId) {
-			invalidations.push(
-				queryClient.invalidateQueries(
-					trpc.projects.get.queryFilter({ id: projectId }),
-				),
-			);
-		}
-
-		await Promise.all(invalidations);
-	}
 
 	function clearStreamingState(): void {
 		isStreamingRef.current = false;
@@ -148,26 +159,71 @@ export function Composer({
 		onStreamingChange?.(null);
 	}
 
-	async function settleAfterStream(
+	function emptyStreaming(prompt: string): ComposerStreamingState {
+		return {
+			active: true,
+			text: "",
+			userText: prompt,
+			tools: [],
+			parts: [],
+			model,
+		};
+	}
+
+	function settleAfterStream(
 		resolvedSessionId: string | undefined,
-	): Promise<void> {
+		done?: DonePayload,
+	): void {
 		if (streamSettledRef.current) {
 			return;
 		}
 		streamSettledRef.current = true;
 
-		clearStreamingState();
-		await refreshWorkspace();
+		const session = resolvedSessionId ?? activeSessionIdRef.current;
+		const userMessageId = userMessageIdRef.current;
+		const assistantMessageId =
+			done?.assistantMessageId ?? assistantMessageIdRef.current;
+		const finalParts = finalizeAssistantParts(
+			done?.parts && done.parts.length > 0 ? done.parts : partsRef.current,
+		);
+		const assistantContent =
+			(done?.content && done.content.length > 0
+				? done.content
+				: partsToText(finalParts) || assistantTextRef.current) || "";
 
-		if (resolvedSessionId) {
-			await onWorkspaceRefresh?.(resolvedSessionId);
+		if (session && userMessageId && assistantMessageId) {
+			onStreamCommit?.({
+				sessionId: session,
+				createdSession: shouldNavigateToSessionRef.current,
+				user: {
+					id: userMessageId,
+					role: "user",
+					content: promptRef.current,
+				},
+				assistant: {
+					id: assistantMessageId,
+					role: "assistant",
+					content: assistantContent,
+					model,
+					tools: partsToTools(finalParts),
+					parts: finalParts,
+				},
+			});
 		}
 
-		if (shouldNavigateToSessionRef.current && projectId && resolvedSessionId) {
+		if (done && done.ok === false && !assistantContent.trim()) {
+			// error toast already fired from onError when present
+		} else if (!done && !assistantContent.trim()) {
+			toast.error("Agent stream ended before a response was received.");
+		}
+
+		clearStreamingState();
+
+		if (shouldNavigateToSessionRef.current && projectId && session) {
 			shouldNavigateToSessionRef.current = false;
-			await navigate({
+			void navigate({
 				to: "/project/$projectId/session/$sessionId",
-				params: { projectId, sessionId: resolvedSessionId },
+				params: { projectId, sessionId: session },
 			});
 		}
 	}
@@ -190,7 +246,12 @@ export function Composer({
 		setText("");
 		isStreamingRef.current = true;
 		setIsStreaming(true);
-		onStreamingChange?.({ active: true, text: "", toolName: null });
+		promptRef.current = prompt;
+		assistantTextRef.current = "";
+		partsRef.current = [];
+		userMessageIdRef.current = null;
+		assistantMessageIdRef.current = null;
+		onStreamingChange?.(emptyStreaming(prompt));
 		shouldNavigateToSessionRef.current = false;
 		streamSettledRef.current = false;
 		activeSessionIdRef.current = sessionId ?? null;
@@ -209,53 +270,74 @@ export function Composer({
 					onMeta: (meta) => {
 						streamSessionId = meta.sessionId;
 						activeSessionIdRef.current = meta.sessionId;
+						userMessageIdRef.current = meta.userMessageId;
+						assistantMessageIdRef.current = meta.assistantMessageId;
 						if (meta.createdSession) {
 							shouldNavigateToSessionRef.current = true;
 						}
-					},
-					onDelta: (delta) => {
 						onStreamingChange?.((previous) => {
-							const base = previous ?? {
-								active: true,
-								text: "",
-								toolName: null,
-							};
+							const base = previous ?? emptyStreaming(prompt);
 							return {
 								...base,
 								active: true,
-								text: base.text + delta,
+								userMessageId: meta.userMessageId,
+								assistantMessageId: meta.assistantMessageId,
+								model,
+							};
+						});
+					},
+					onDelta: (delta) => {
+						assistantTextRef.current += delta;
+						partsRef.current = appendAssistantTextDelta(
+							partsRef.current,
+							delta,
+						);
+						const nextParts = partsRef.current;
+						onStreamingChange?.((previous) => {
+							const base = previous ?? emptyStreaming(prompt);
+							return {
+								...base,
+								active: true,
+								text: partsToText(nextParts),
+								parts: nextParts,
+								tools: partsToTools(nextParts),
 							};
 						});
 					},
 					onAgent: (event) => {
-						const toolName = toolNameFromAgentEvent(event);
-						if (!toolName) {
+						const nextParts = applyAgentToolEventToParts(
+							partsRef.current,
+							event,
+						);
+						if (!nextParts) {
 							return;
 						}
+						partsRef.current = nextParts;
 						onStreamingChange?.((previous) => {
-							const base = previous ?? {
+							const base = previous ?? emptyStreaming(prompt);
+							return {
+								...base,
 								active: true,
-								text: "",
-								toolName: null,
+								parts: nextParts,
+								tools: partsToTools(nextParts),
+								text: partsToText(nextParts),
 							};
-							return { ...base, active: true, toolName };
 						});
 					},
 					onError: (errorMessage) => {
 						toast.error(errorMessage);
-						clearStreamingState();
 					},
-					onDone: async () => {
+					onDone: (done) => {
 						const resolvedSessionId =
 							activeSessionIdRef.current ?? streamSessionId;
-						await settleAfterStream(resolvedSessionId);
+						settleAfterStream(resolvedSessionId, done);
 					},
 				},
 			);
 
 			if (!streamSettledRef.current) {
 				const resolvedSessionId = activeSessionIdRef.current ?? streamSessionId;
-				await settleAfterStream(resolvedSessionId);
+				settleAfterStream(resolvedSessionId);
 			} else if (isStreamingRef.current) {
 				clearStreamingState();
 			}
@@ -269,16 +351,12 @@ export function Composer({
 		}
 	}
 
-	const handleModelSelect = useCallback(
-		(id: ProjectCoderModelSpecifier) => {
-			setModel(id);
-			setModelSelectorOpen(false);
-		},
-		[setModel],
-	);
+	function handleModelSelect(id: ProjectCoderModelSpecifier): void {
+		setModel(id);
+		setModelSelectorOpen(false);
+	}
 
 	const selectedModel = models.find((modelOption) => modelOption.id === model);
-	const chefs = [...new Set(models.map((modelOption) => modelOption.chef))];
 	const submitDisabled = !text.trim() || isStreaming || Boolean(disabledReason);
 
 	return (
@@ -323,18 +401,16 @@ export function Composer({
 								<ModelSelectorInput placeholder="Search models..." />
 								<ModelSelectorList>
 									<ModelSelectorEmpty>No model found.</ModelSelectorEmpty>
-									{chefs.map((chef) => (
+									{[...modelsByChef.entries()].map(([chef, chefModels]) => (
 										<ModelSelectorGroup heading={chef} key={chef}>
-											{models
-												.filter((modelOption) => modelOption.chef === chef)
-												.map((modelOption) => (
-													<ModelItem
-														key={modelOption.id}
-														model={modelOption}
-														onSelect={handleModelSelect}
-														selectedModel={model}
-													/>
-												))}
+											{chefModels.map((modelOption) => (
+												<ModelItem
+													key={modelOption.id}
+													model={modelOption}
+													onSelect={handleModelSelect}
+													selectedModel={model}
+												/>
+											))}
 										</ModelSelectorGroup>
 									))}
 								</ModelSelectorList>

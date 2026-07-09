@@ -60,7 +60,6 @@ export async function runAgentInSandbox(options: {
 	model: string;
 	prompt: string;
 	onRunnerMessage: (msg: RunnerOut) => void | Promise<void>;
-	signal?: AbortSignal;
 }): Promise<{
 	ok: boolean;
 	assistantText: string;
@@ -81,10 +80,26 @@ export async function runAgentInSandbox(options: {
 	let ok = true;
 	let assistantText = "";
 	let stdoutBuffer = "";
+	let stderrBuffer = "";
+	let sawRunnerDone = false;
+	let errorEmitted = false;
 
 	const secretValues = [options.env.OPENCODE_API_KEY].filter(
 		(value): value is string => typeof value === "string" && value.length > 0,
 	);
+
+	const emitError = async (message: string) => {
+		if (errorEmitted) {
+			return;
+		}
+		errorEmitted = true;
+		ok = false;
+		await options.onRunnerMessage({
+			v: 1,
+			kind: "error",
+			message: redactSecrets(message, secretValues),
+		});
+	};
 
 	const handleRunnerLine = async (line: string) => {
 		const msg = parseRunnerStdoutLine(line);
@@ -97,8 +112,10 @@ export async function runAgentInSandbox(options: {
 		}
 		if (msg.kind === "error") {
 			ok = false;
+			errorEmitted = true;
 		}
 		if (msg.kind === "done") {
+			sawRunnerDone = true;
 			ok = msg.ok;
 			if (msg.assistantText) {
 				assistantText = msg.assistantText;
@@ -128,18 +145,13 @@ export async function runAgentInSandbox(options: {
 
 		const stream = await shell.execStream(
 			`node ${RUNNER_CLI} --job ${quoteShellArg(jobPath)}`,
-			{ cwd: WORKSPACE_PATH, signal: options.signal },
+			{ cwd: WORKSPACE_PATH },
 		);
 
-		for await (const event of parseSSEStream<ExecEvent>(
-			stream,
-			options.signal,
-		)) {
-			if (options.signal?.aborted) {
-				ok = false;
-				break;
-			}
-
+		// Intentionally not abortable: client navigations/disconnects must not tear
+		// down long agent runs mid-stream (would leave empty assistant rows in D1).
+		// Cost/side effects continue until the sandbox process exits.
+		for await (const event of parseSSEStream<ExecEvent>(stream)) {
 			if (event.type === "stdout" && event.data) {
 				const split = splitStdoutBuffer(stdoutBuffer, event.data);
 				stdoutBuffer = split.rest;
@@ -149,21 +161,11 @@ export async function runAgentInSandbox(options: {
 			}
 
 			if (event.type === "stderr" && event.data) {
-				// stderr is logged only via runner protocol; avoid leaking secrets
-				void redactSecrets(event.data, secretValues);
+				stderrBuffer += event.data;
 			}
 
 			if (event.type === "error") {
-				ok = false;
-				const message = redactSecrets(
-					event.error ?? event.data ?? "Agent run failed.",
-					secretValues,
-				);
-				await options.onRunnerMessage({
-					v: 1,
-					kind: "error",
-					message,
-				});
+				await emitError(event.error ?? event.data ?? "Agent run failed.");
 			}
 
 			if (event.type === "complete") {
@@ -171,8 +173,27 @@ export async function runAgentInSandbox(options: {
 					await handleRunnerLine(stdoutBuffer);
 					stdoutBuffer = "";
 				}
-				if ((event.exitCode ?? 0) !== 0 && !assistantText.trim()) {
-					ok = false;
+				const exitCode = event.exitCode ?? 0;
+				if (exitCode !== 0) {
+					const stderrHint = redactSecrets(
+						stderrBuffer.trim().slice(-400),
+						secretValues,
+					);
+					await emitError(
+						stderrHint.length > 0
+							? `Agent exited with code ${exitCode}: ${stderrHint}`
+							: `Agent exited with code ${exitCode}.`,
+					);
+				} else if (!sawRunnerDone && !assistantText.trim()) {
+					const stderrHint = redactSecrets(
+						stderrBuffer.trim().slice(-400),
+						secretValues,
+					);
+					await emitError(
+						stderrHint.length > 0
+							? `Agent produced no response: ${stderrHint}`
+							: "Agent produced no response.",
+					);
 				}
 			}
 		}

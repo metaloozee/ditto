@@ -7,6 +7,14 @@ import { createDb } from "#/db";
 import { messages, projects, workspaceSessions } from "#/db/schema";
 import { isProjectCoderModelSpecifier } from "#/lib/agent-models";
 import { finalizeAgentRun, runAgentInSandbox } from "#/lib/agent-run";
+import {
+	type AssistantMessagePart,
+	appendAssistantTextDelta,
+	applyAgentToolEventToParts,
+	finalizeAssistantParts,
+	partsToText,
+	partsToTools,
+} from "#/lib/agent-stream-client";
 import { encodeSseEvent } from "#/lib/agent-stream-protocol";
 import { createAuth } from "#/lib/auth";
 import { decryptEnvVars } from "#/lib/project-env-vars";
@@ -232,6 +240,7 @@ export const Route = createFileRoute("/api/agent/stream")({
 							});
 
 							let assistantContent = "";
+							let parts: AssistantMessagePart[] = [];
 
 							const runResult = await runAgentInSandbox({
 								env,
@@ -240,13 +249,20 @@ export const Route = createFileRoute("/api/agent/stream")({
 								conversationId: sessionId,
 								model: input.model,
 								prompt: input.message,
-								signal: request.signal,
 								onRunnerMessage: async (msg) => {
 									if (msg.kind === "agent_event") {
 										enqueue("agent", { event: msg.event });
+										const nextParts = applyAgentToolEventToParts(
+											parts,
+											msg.event,
+										);
+										if (nextParts) {
+											parts = nextParts;
+										}
 									}
 									if (msg.kind === "assistant_delta") {
-										assistantContent += msg.delta;
+										parts = appendAssistantTextDelta(parts, msg.delta);
+										assistantContent = partsToText(parts);
 										enqueue("delta", { delta: msg.delta });
 									}
 									if (msg.kind === "error") {
@@ -257,13 +273,32 @@ export const Route = createFileRoute("/api/agent/stream")({
 								},
 							});
 
-							if (runResult.assistantText) {
+							const textFromParts = partsToText(parts);
+							if (textFromParts.trim().length > 0) {
+								assistantContent = textFromParts;
+							} else if (runResult.assistantText) {
 								assistantContent = runResult.assistantText;
+								parts = appendAssistantTextDelta(
+									parts,
+									runResult.assistantText,
+								);
+							} else {
+								assistantContent = "";
 							}
+
+							const persistedParts = finalizeAssistantParts(parts);
+							const persistedTools = partsToTools(persistedParts);
+							const partsJson =
+								persistedParts.length > 0
+									? JSON.stringify(persistedParts)
+									: null;
 
 							await db
 								.update(messages)
-								.set({ content: assistantContent })
+								.set({
+									content: assistantContent,
+									tools: partsJson,
+								})
 								.where(
 									and(
 										eq(messages.id, assistantMessageId),
@@ -292,6 +327,8 @@ export const Route = createFileRoute("/api/agent/stream")({
 								ok: runResult.ok,
 								assistantMessageId,
 								content: assistantContent,
+								...(persistedTools.length > 0 ? { tools: persistedTools } : {}),
+								...(persistedParts.length > 0 ? { parts: persistedParts } : {}),
 								...(runResult.backupError
 									? { backupError: runResult.backupError }
 									: {}),

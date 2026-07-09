@@ -107,6 +107,8 @@ export const messages = sqliteTable(
 		role: text("role", { enum: ["user", "assistant"] }).notNull(),
 		content: text("content").notNull(),
 		model: text("model"),
+		/** JSON-encoded AssistantMessagePart[] for assistant messages (legacy StreamToolCall[] still parseable) */
+		tools: text("tools"),
 		createdAt: integer("created_at", { mode: "timestamp" }).default(
 			sql`(unixepoch())`,
 		),

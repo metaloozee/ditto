@@ -1,3 +1,22 @@
+export type StreamToolCall = {
+	id: string;
+	name: string;
+	status: "running" | "done" | "error";
+	args?: unknown;
+	result?: unknown;
+};
+
+export type AssistantMessagePart =
+	| { type: "text"; id: string; text: string }
+	| { type: "tool"; id: string; tool: StreamToolCall };
+
+let partIdCounter = 0;
+
+function nextPartId(prefix: string): string {
+	partIdCounter += 1;
+	return `${prefix}-${partIdCounter}`;
+}
+
 export type MetaPayload = {
 	sessionId: string;
 	userMessageId: string;
@@ -10,6 +29,8 @@ export type DonePayload = {
 	ok: boolean;
 	assistantMessageId: string;
 	content: string;
+	tools?: StreamToolCall[];
+	parts?: AssistantMessagePart[];
 	backupError?: string;
 };
 
@@ -165,9 +186,358 @@ export function toolNameFromAgentEvent(event: unknown): string | null {
 	}
 
 	const record = event as Record<string, unknown>;
-	if (record.type !== "tool_execution_start") {
+	if (
+		record.type !== "tool_execution_start" &&
+		record.type !== "tool_execution_update" &&
+		record.type !== "tool_execution_end"
+	) {
 		return null;
 	}
 
 	return typeof record.toolName === "string" ? record.toolName : null;
+}
+
+function formatToolPayload(value: unknown, max = 800): string {
+	if (value == null) {
+		return "";
+	}
+	if (typeof value === "string") {
+		return value.length > max ? `${value.slice(0, max)}…` : value;
+	}
+	try {
+		const json = JSON.stringify(value, null, 2);
+		return json.length > max ? `${json.slice(0, max)}…` : json;
+	} catch {
+		return String(value);
+	}
+}
+
+export function formatToolCallDetail(tool: StreamToolCall): string {
+	const parts: string[] = [];
+	if (tool.args !== undefined) {
+		const args = formatToolPayload(tool.args);
+		if (args) {
+			parts.push(args);
+		}
+	}
+	if (tool.result !== undefined) {
+		const result = formatToolPayload(tool.result);
+		if (result) {
+			parts.push(result);
+		}
+	}
+	return parts.join("\n\n");
+}
+
+export function applyAgentToolEvent(
+	tools: StreamToolCall[],
+	event: unknown,
+): StreamToolCall[] | null {
+	if (!event || typeof event !== "object") {
+		return null;
+	}
+
+	const record = event as Record<string, unknown>;
+	const type = record.type;
+	if (
+		type !== "tool_execution_start" &&
+		type !== "tool_execution_update" &&
+		type !== "tool_execution_end"
+	) {
+		return null;
+	}
+
+	const id =
+		typeof record.toolCallId === "string" && record.toolCallId.length > 0
+			? record.toolCallId
+			: null;
+	const name =
+		typeof record.toolName === "string" && record.toolName.length > 0
+			? record.toolName
+			: "tool";
+
+	if (!id) {
+		return null;
+	}
+
+	const existingIndex = tools.findIndex((tool) => tool.id === id);
+	const existing = existingIndex >= 0 ? tools[existingIndex] : undefined;
+	const next = [...tools];
+
+	if (type === "tool_execution_start") {
+		const entry: StreamToolCall = {
+			id,
+			name,
+			status: "running",
+			args: record.args,
+		};
+		if (existingIndex >= 0) {
+			next[existingIndex] = entry;
+		} else {
+			next.push(entry);
+		}
+		return next;
+	}
+
+	if (type === "tool_execution_update") {
+		const entry: StreamToolCall = {
+			id,
+			name,
+			status: existing?.status ?? "running",
+			args: record.args ?? existing?.args,
+			result: record.partialResult ?? existing?.result,
+		};
+		if (existingIndex >= 0) {
+			next[existingIndex] = entry;
+		} else {
+			next.push(entry);
+		}
+		return next;
+	}
+
+	const isError = record.isError === true;
+	const entry: StreamToolCall = {
+		id,
+		name,
+		status: isError ? "error" : "done",
+		args: record.args ?? existing?.args,
+		result: record.result,
+	};
+	if (existingIndex >= 0) {
+		next[existingIndex] = entry;
+	} else {
+		next.push(entry);
+	}
+	return next;
+}
+
+export function finalizeStreamTools(tools: StreamToolCall[]): StreamToolCall[] {
+	return tools.map((tool) =>
+		tool.status === "running" ? { ...tool, status: "done" as const } : tool,
+	);
+}
+
+export function appendAssistantTextDelta(
+	parts: AssistantMessagePart[],
+	delta: string,
+): AssistantMessagePart[] {
+	if (!delta) {
+		return parts;
+	}
+
+	const next = [...parts];
+	const last = next[next.length - 1];
+	if (last?.type === "text") {
+		next[next.length - 1] = {
+			type: "text",
+			id: last.id,
+			text: last.text + delta,
+		};
+		return next;
+	}
+
+	next.push({ type: "text", id: nextPartId("text"), text: delta });
+	return next;
+}
+
+export function applyAgentToolEventToParts(
+	parts: AssistantMessagePart[],
+	event: unknown,
+): AssistantMessagePart[] | null {
+	const flat = partsToTools(parts);
+	const nextTools = applyAgentToolEvent(flat, event);
+	if (!nextTools) {
+		return null;
+	}
+
+	const record = event as Record<string, unknown>;
+	const id = typeof record.toolCallId === "string" ? record.toolCallId : null;
+	if (!id) {
+		return null;
+	}
+
+	const updatedTool = nextTools.find((tool) => tool.id === id);
+	if (!updatedTool) {
+		return null;
+	}
+
+	const existingIndex = parts.findIndex(
+		(part) => part.type === "tool" && part.tool.id === id,
+	);
+	if (existingIndex >= 0) {
+		const next = [...parts];
+		const existing = next[existingIndex];
+		next[existingIndex] = {
+			type: "tool",
+			id: existing?.type === "tool" ? existing.id : nextPartId("tool"),
+			tool: updatedTool,
+		};
+		return next;
+	}
+
+	return [
+		...parts,
+		{ type: "tool", id: nextPartId("tool"), tool: updatedTool },
+	];
+}
+
+export function partsToText(parts: AssistantMessagePart[]): string {
+	return parts
+		.filter(
+			(part): part is { type: "text"; id: string; text: string } =>
+				part.type === "text",
+		)
+		.map((part) => part.text)
+		.join("\n\n");
+}
+
+export function partsToTools(parts: AssistantMessagePart[]): StreamToolCall[] {
+	return parts
+		.filter(
+			(part): part is { type: "tool"; id: string; tool: StreamToolCall } =>
+				part.type === "tool",
+		)
+		.map((part) => part.tool);
+}
+
+export function finalizeAssistantParts(
+	parts: AssistantMessagePart[],
+): AssistantMessagePart[] {
+	return parts.map((part) => {
+		if (part.type !== "tool" || part.tool.status !== "running") {
+			return part;
+		}
+		return {
+			type: "tool",
+			id: part.id,
+			tool: { ...part.tool, status: "done" as const },
+		};
+	});
+}
+
+function parseToolRecord(
+	record: Record<string, unknown>,
+): StreamToolCall | null {
+	if (typeof record.id !== "string" || typeof record.name !== "string") {
+		return null;
+	}
+	const status =
+		record.status === "running" ||
+		record.status === "done" ||
+		record.status === "error"
+			? record.status
+			: "done";
+	return {
+		id: record.id,
+		name: record.name,
+		status,
+		...(record.args !== undefined ? { args: record.args } : {}),
+		...(record.result !== undefined ? { result: record.result } : {}),
+	};
+}
+
+export function parseStoredTools(value: unknown): StreamToolCall[] | undefined {
+	const parts = parseStoredParts(value);
+	if (!parts) {
+		return undefined;
+	}
+	const tools = partsToTools(parts);
+	return tools.length > 0 ? tools : undefined;
+}
+
+export function parseStoredParts(
+	value: unknown,
+	fallbackContent?: string,
+): AssistantMessagePart[] | undefined {
+	if (value == null || value === "") {
+		if (fallbackContent && fallbackContent.length > 0) {
+			return [{ type: "text", id: nextPartId("text"), text: fallbackContent }];
+		}
+		return undefined;
+	}
+
+	let parsed: unknown = value;
+	if (typeof value === "string") {
+		try {
+			parsed = JSON.parse(value);
+		} catch {
+			return fallbackContent
+				? [{ type: "text", id: nextPartId("text"), text: fallbackContent }]
+				: undefined;
+		}
+	}
+
+	if (!Array.isArray(parsed) || parsed.length === 0) {
+		return fallbackContent
+			? [{ type: "text", id: nextPartId("text"), text: fallbackContent }]
+			: undefined;
+	}
+
+	const first = parsed[0];
+	const isPartsFormat =
+		first &&
+		typeof first === "object" &&
+		"type" in first &&
+		((first as { type?: unknown }).type === "text" ||
+			(first as { type?: unknown }).type === "tool");
+
+	if (isPartsFormat) {
+		const parts: AssistantMessagePart[] = [];
+		for (const item of parsed) {
+			if (!item || typeof item !== "object") {
+				continue;
+			}
+			const record = item as Record<string, unknown>;
+			if (record.type === "text" && typeof record.text === "string") {
+				if (record.text.length > 0) {
+					parts.push({
+						type: "text",
+						id: typeof record.id === "string" ? record.id : nextPartId("text"),
+						text: record.text,
+					});
+				}
+				continue;
+			}
+			if (
+				record.type === "tool" &&
+				record.tool &&
+				typeof record.tool === "object"
+			) {
+				const tool = parseToolRecord(record.tool as Record<string, unknown>);
+				if (tool) {
+					parts.push({
+						type: "tool",
+						id: typeof record.id === "string" ? record.id : nextPartId("tool"),
+						tool,
+					});
+				}
+			}
+		}
+		return parts.length > 0 ? parts : undefined;
+	}
+
+	// Legacy flat tool list
+	const tools: StreamToolCall[] = [];
+	for (const item of parsed) {
+		if (!item || typeof item !== "object") {
+			continue;
+		}
+		const tool = parseToolRecord(item as Record<string, unknown>);
+		if (tool) {
+			tools.push(tool);
+		}
+	}
+
+	const parts: AssistantMessagePart[] = [];
+	if (fallbackContent && fallbackContent.length > 0) {
+		parts.push({
+			type: "text",
+			id: nextPartId("text"),
+			text: fallbackContent,
+		});
+	}
+	for (const tool of tools) {
+		parts.push({ type: "tool", id: nextPartId("tool"), tool });
+	}
+	return parts.length > 0 ? parts : undefined;
 }

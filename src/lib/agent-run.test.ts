@@ -110,4 +110,66 @@ describe("runAgentInSandbox", () => {
 			backupStored: true,
 		});
 	});
+
+	it("does not pass AbortSignal into sandbox execStream or parseSSEStream", async () => {
+		const writeFile = vi.fn().mockResolvedValue(undefined);
+		const mkdir = vi.fn().mockResolvedValue(undefined);
+		const execStream = vi.fn().mockResolvedValue(new ReadableStream());
+		const deleteSession = vi.fn().mockResolvedValue(undefined);
+		const createSession = vi.fn().mockResolvedValue({
+			id: "agent-conv-2",
+			writeFile,
+			mkdir,
+			execStream,
+		});
+
+		getProjectSandboxMock.mockReturnValue({
+			createSession,
+			deleteSession,
+		});
+
+		parseSSEStreamMock.mockImplementation(async function* (
+			_stream: ReadableStream,
+			signal?: AbortSignal,
+		) {
+			expect(signal).toBeUndefined();
+			yield {
+				type: "complete",
+				timestamp: new Date().toISOString(),
+				exitCode: 0,
+			};
+		});
+
+		backupSandboxWorkspaceMock.mockResolvedValue({
+			id: "backup-2",
+			dir: "/workspace",
+		});
+
+		const onRunnerMessage = vi.fn();
+		await runAgentInSandbox({
+			env: makeEnv(),
+			sandboxId: "sandbox-1",
+			projectId: "project-1",
+			conversationId: "conv-2",
+			model: "opencode/gpt-4.1",
+			prompt: "ping",
+			onRunnerMessage,
+		});
+
+		expect(execStream).toHaveBeenCalledTimes(1);
+		const execOptions = execStream.mock.calls[0]?.[1] as Record<
+			string,
+			unknown
+		>;
+		expect(execOptions).toEqual({ cwd: "/workspace" });
+		expect(execOptions).not.toHaveProperty("signal");
+		expect(parseSSEStreamMock).toHaveBeenCalledWith(expect.any(ReadableStream));
+		// complete with no runner protocol output should surface an error
+		expect(onRunnerMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				kind: "error",
+				message: "Agent produced no response.",
+			}),
+		);
+	});
 });

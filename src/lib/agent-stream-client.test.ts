@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
 	type AgentStreamHandlers,
+	appendAssistantTextDelta,
+	applyAgentToolEvent,
+	applyAgentToolEventToParts,
 	parseSseChunk,
+	parseStoredParts,
+	parseStoredTools,
 	streamAgentRun,
 } from "./agent-stream-client";
 
@@ -98,5 +103,114 @@ describe("agent-stream-client", () => {
 
 		expect(deltas).toEqual(["ok"]);
 		vi.unstubAllGlobals();
+	});
+
+	it("applyAgentToolEvent tracks start/update/end lifecycle", () => {
+		const started = applyAgentToolEvent([], {
+			type: "tool_execution_start",
+			toolCallId: "t1",
+			toolName: "bash",
+			args: { command: "ls" },
+		});
+		expect(started).toEqual([
+			{
+				id: "t1",
+				name: "bash",
+				status: "running",
+				args: { command: "ls" },
+			},
+		]);
+
+		const updated = applyAgentToolEvent(started ?? [], {
+			type: "tool_execution_update",
+			toolCallId: "t1",
+			toolName: "bash",
+			args: { command: "ls" },
+			partialResult: "file.ts\n",
+		});
+		expect(updated?.[0]?.result).toBe("file.ts\n");
+		expect(updated?.[0]?.status).toBe("running");
+
+		const ended = applyAgentToolEvent(updated ?? [], {
+			type: "tool_execution_end",
+			toolCallId: "t1",
+			toolName: "bash",
+			result: "file.ts\n",
+			isError: false,
+		});
+		expect(ended).toEqual([
+			{
+				id: "t1",
+				name: "bash",
+				status: "done",
+				args: { command: "ls" },
+				result: "file.ts\n",
+			},
+		]);
+	});
+
+	it("parseStoredTools reads JSON tool history", () => {
+		const tools = parseStoredTools(
+			JSON.stringify([
+				{
+					id: "t1",
+					name: "bash",
+					status: "done",
+					args: { command: "ls" },
+					result: "ok",
+				},
+			]),
+		);
+		expect(tools).toEqual([
+			{
+				id: "t1",
+				name: "bash",
+				status: "done",
+				args: { command: "ls" },
+				result: "ok",
+			},
+		]);
+		expect(parseStoredTools(null)).toBeUndefined();
+		expect(parseStoredTools("not-json")).toBeUndefined();
+	});
+
+	it("keeps text and tools interleaved in parts timeline", () => {
+		let parts = appendAssistantTextDelta([], "I'll edit the file.");
+		parts =
+			applyAgentToolEventToParts(parts, {
+				type: "tool_execution_start",
+				toolCallId: "t1",
+				toolName: "edit",
+				args: { path: "App.tsx" },
+			}) ?? parts;
+		parts =
+			applyAgentToolEventToParts(parts, {
+				type: "tool_execution_end",
+				toolCallId: "t1",
+				toolName: "edit",
+				result: "ok",
+				isError: false,
+			}) ?? parts;
+		parts = appendAssistantTextDelta(parts, "Done.");
+
+		expect(parts).toHaveLength(3);
+		expect(parts[0]).toMatchObject({
+			type: "text",
+			text: "I'll edit the file.",
+		});
+		expect(parts[1]).toMatchObject({
+			type: "tool",
+			tool: {
+				id: "t1",
+				name: "edit",
+				status: "done",
+				args: { path: "App.tsx" },
+				result: "ok",
+			},
+		});
+		expect(parts[2]).toMatchObject({ type: "text", text: "Done." });
+
+		const stored = parseStoredParts(JSON.stringify(parts));
+		expect(stored).toEqual(parts);
 	});
 });
