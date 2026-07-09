@@ -1,0 +1,327 @@
+import { env } from "cloudflare:workers";
+import { createFileRoute } from "@tanstack/react-router";
+import { and, eq } from "drizzle-orm";
+import { nanoid } from "nanoid";
+import { z } from "zod";
+import { createDb } from "#/db";
+import { messages, projects, workspaceSessions } from "#/db/schema";
+import { isProjectCoderModelSpecifier } from "#/lib/agent-models";
+import { finalizeAgentRun, runAgentInSandbox } from "#/lib/agent-run";
+import { encodeSseEvent } from "#/lib/agent-stream-protocol";
+import { createAuth } from "#/lib/auth";
+import { decryptEnvVars } from "#/lib/project-env-vars";
+import { ensureProjectSandbox } from "#/lib/project-sandbox";
+import { redactSecrets } from "#/lib/secret-redaction";
+import { makeSessionTitleFromMessage } from "#/lib/workspace-policy";
+
+const streamBodySchema = z.object({
+	projectId: z.string().min(1),
+	sessionId: z.string().min(1).optional(),
+	message: z.string().trim().min(1),
+	model: z.string().min(1).refine(isProjectCoderModelSpecifier, {
+		message: "Invalid model.",
+	}),
+});
+
+async function loadProjectForUser(options: {
+	db: ReturnType<typeof createDb>;
+	projectId: string;
+	userId: string;
+}) {
+	const [project] = await options.db
+		.select()
+		.from(projects)
+		.where(
+			and(
+				eq(projects.id, options.projectId),
+				eq(projects.userId, options.userId),
+			),
+		)
+		.limit(1);
+
+	return project ?? null;
+}
+
+async function loadWorkspaceSession(options: {
+	db: ReturnType<typeof createDb>;
+	projectId: string;
+	sessionId: string;
+	userId: string;
+}) {
+	const [session] = await options.db
+		.select()
+		.from(workspaceSessions)
+		.where(
+			and(
+				eq(workspaceSessions.id, options.sessionId),
+				eq(workspaceSessions.projectId, options.projectId),
+				eq(workspaceSessions.userId, options.userId),
+			),
+		)
+		.limit(1);
+
+	return session ?? null;
+}
+
+function jsonResponse(body: unknown, status: number): Response {
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: { "Content-Type": "application/json" },
+	});
+}
+
+export const Route = createFileRoute("/api/agent/stream")({
+	server: {
+		handlers: {
+			POST: async ({ request }) => {
+				const auth = createAuth(env);
+				const session = await auth.api.getSession({
+					headers: request.headers,
+				});
+
+				if (!session?.user) {
+					return jsonResponse({ error: "Unauthorized" }, 401);
+				}
+
+				let body: unknown;
+				try {
+					body = await request.json();
+				} catch {
+					return jsonResponse({ error: "Invalid JSON body." }, 400);
+				}
+
+				const parsed = streamBodySchema.safeParse(body);
+				if (!parsed.success) {
+					return jsonResponse(
+						{ error: "Invalid request.", issues: parsed.error.issues },
+						400,
+					);
+				}
+
+				const input = parsed.data;
+				const db = createDb(env);
+				const project = await loadProjectForUser({
+					db,
+					projectId: input.projectId,
+					userId: session.user.id,
+				});
+
+				if (!project) {
+					return jsonResponse({ error: "Project not found." }, 404);
+				}
+
+				if (project.status !== "ready" || !project.sandboxId) {
+					return jsonResponse({ error: "Project sandbox is not ready." }, 409);
+				}
+
+				const envVars = await decryptEnvVars(
+					project.envVars,
+					env.BETTER_AUTH_SECRET,
+				);
+
+				let ensuredProject = project;
+				let sandboxState: string;
+				try {
+					const ensured = await ensureProjectSandbox({
+						db,
+						env,
+						project,
+						envVars,
+					});
+					ensuredProject = ensured.project;
+					sandboxState = ensured.state;
+				} catch (error) {
+					return jsonResponse(
+						{
+							error:
+								error instanceof Error
+									? error.message
+									: "Failed to prepare sandbox.",
+						},
+						409,
+					);
+				}
+
+				let sessionId = input.sessionId ?? null;
+				let createdSession = false;
+				let workspaceSession = sessionId
+					? await loadWorkspaceSession({
+							db,
+							projectId: input.projectId,
+							sessionId,
+							userId: session.user.id,
+						})
+					: null;
+
+				if (!workspaceSession) {
+					sessionId = nanoid();
+					const [createdRows] = await db.batch([
+						db
+							.insert(workspaceSessions)
+							.values({
+								id: sessionId,
+								projectId: input.projectId,
+								userId: session.user.id,
+								title: makeSessionTitleFromMessage(input.message),
+								status: "active",
+							})
+							.returning(),
+					]);
+					workspaceSession = createdRows?.[0] ?? null;
+					createdSession = true;
+				}
+
+				if (!workspaceSession || !sessionId) {
+					return jsonResponse(
+						{ error: "Failed to create workspace session." },
+						500,
+					);
+				}
+
+				const userMessageId = nanoid();
+				const assistantMessageId = nanoid();
+				const [userRows, assistantRows] = await db.batch([
+					db
+						.insert(messages)
+						.values({
+							id: userMessageId,
+							sessionId,
+							projectId: input.projectId,
+							userId: session.user.id,
+							role: "user",
+							content: input.message,
+							model: input.model,
+						})
+						.returning(),
+					db
+						.insert(messages)
+						.values({
+							id: assistantMessageId,
+							sessionId,
+							projectId: input.projectId,
+							userId: session.user.id,
+							role: "assistant",
+							content: "",
+						})
+						.returning(),
+				]);
+
+				if (!userRows?.[0] || !assistantRows?.[0]) {
+					return jsonResponse({ error: "Failed to persist messages." }, 500);
+				}
+
+				const secretValues = [env.OPENCODE_API_KEY].filter(
+					(value): value is string =>
+						typeof value === "string" && value.length > 0,
+				);
+
+				const encoder = new TextEncoder();
+				const readable = new ReadableStream<Uint8Array>({
+					async start(controller) {
+						const enqueue = (event: string, data: unknown) => {
+							controller.enqueue(encoder.encode(encodeSseEvent(event, data)));
+						};
+
+						try {
+							enqueue("meta", {
+								sessionId,
+								userMessageId,
+								assistantMessageId,
+								createdSession,
+								sandboxState,
+							});
+
+							let assistantContent = "";
+
+							const runResult = await runAgentInSandbox({
+								env,
+								sandboxId: ensuredProject.sandboxId as string,
+								projectId: input.projectId,
+								conversationId: sessionId,
+								model: input.model,
+								prompt: input.message,
+								signal: request.signal,
+								onRunnerMessage: async (msg) => {
+									if (msg.kind === "agent_event") {
+										enqueue("agent", { event: msg.event });
+									}
+									if (msg.kind === "assistant_delta") {
+										assistantContent += msg.delta;
+										enqueue("delta", { delta: msg.delta });
+									}
+									if (msg.kind === "error") {
+										enqueue("error", {
+											message: redactSecrets(msg.message, secretValues),
+										});
+									}
+								},
+							});
+
+							if (runResult.assistantText) {
+								assistantContent = runResult.assistantText;
+							}
+
+							await db
+								.update(messages)
+								.set({ content: assistantContent })
+								.where(
+									and(
+										eq(messages.id, assistantMessageId),
+										eq(messages.userId, session.user.id),
+									),
+								);
+
+							if (runResult.backupStored && runResult.backup) {
+								try {
+									ensuredProject = await finalizeAgentRun({
+										db,
+										project: ensuredProject,
+										backup: runResult.backup,
+									});
+								} catch (error) {
+									runResult.backupError = redactSecrets(
+										error instanceof Error
+											? error.message
+											: "Failed to persist backup metadata.",
+										secretValues,
+									);
+								}
+							}
+
+							enqueue("done", {
+								ok: runResult.ok,
+								assistantMessageId,
+								content: assistantContent,
+								...(runResult.backupError
+									? { backupError: runResult.backupError }
+									: {}),
+							});
+						} catch (error) {
+							const message = redactSecrets(
+								error instanceof Error ? error.message : "Agent stream failed.",
+								secretValues,
+							);
+							enqueue("error", { message });
+							enqueue("done", {
+								ok: false,
+								assistantMessageId,
+								content: "",
+								...(message ? { backupError: message } : {}),
+							});
+						} finally {
+							controller.close();
+						}
+					},
+				});
+
+				return new Response(readable, {
+					headers: {
+						"Content-Type": "text/event-stream; charset=utf-8",
+						"Cache-Control": "no-cache, no-transform",
+						Connection: "keep-alive",
+					},
+				});
+			},
+		},
+	},
+});

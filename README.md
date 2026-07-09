@@ -7,7 +7,8 @@ Ditto is a TanStack Start app deployed with Alchemy on Cloudflare Workers. It us
 - GitHub repo import for projects
 - `@cloudflare/sandbox` for workspace instantiation
 - R2-backed sandbox backup/restore
-- a dummy composer that records messages in D1 and replies `Implementation is remaining`
+- agent runs in the Cloudflare sandbox via the PI harness; the client streams
+  `POST /api/agent/stream` (SSE)
 
 ## Prerequisites
 
@@ -62,6 +63,7 @@ GITHUB_CLIENT_SECRET=
 GITHUB_APP_ID=
 GITHUB_APP_PRIVATE_KEY=
 VITE_GITHUB_APP_INSTALL_URL=
+OPENCODE_API_KEY=
 ```
 
 `BETTER_AUTH_URL` defaults to `http://localhost:5173` if omitted.
@@ -70,4 +72,7 @@ VITE_GITHUB_APP_INSTALL_URL=
 
 - `pnpm deploy` and `pnpm destroy` are managed through Alchemy.
 - `src/server.ts` exports the Cloudflare Sandbox binding used by the app.
-- The composer is intentionally a placeholder; it only records message metadata.
+- `OPENCODE_API_KEY` is required for sandbox agent runs (passed into the harness
+  session environment).
+- Concurrent agent runs per project are not enforced yet; see plan 003 for UI
+  streaming and future concurrency notes.

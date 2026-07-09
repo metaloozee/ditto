@@ -15,6 +15,7 @@ export function getProjectSandbox(env: Env, sandboxId: string) {
 		sandboxId,
 		{
 			enableDefaultSession: false,
+			transport: "rpc",
 		},
 	);
 }

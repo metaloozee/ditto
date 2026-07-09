@@ -265,8 +265,7 @@ export const workspaceRouter = createTRPCRouter({
 			}
 
 			const userMessageId = nanoid();
-			const assistantMessageId = nanoid();
-			const [userMessages, assistantMessages] = await db.batch([
+			const [userMessages] = await db.batch([
 				db
 					.insert(messages)
 					.values({
@@ -279,23 +278,20 @@ export const workspaceRouter = createTRPCRouter({
 						model: input.model,
 					})
 					.returning(),
-				db
-					.insert(messages)
-					.values({
-						id: assistantMessageId,
-						sessionId,
-						projectId: input.projectId,
-						userId: ctx.user.id,
-						role: "assistant",
-						content: "Implementation is remaining",
-					})
-					.returning(),
 			]);
+
+			const userMessage = userMessages?.[0];
+			if (!userMessage) {
+				throw new TRPCError({
+					code: "INTERNAL_SERVER_ERROR",
+					message: "Failed to create user message.",
+				});
+			}
 
 			return {
 				session,
 				createdSession,
-				messages: [...userMessages, ...assistantMessages],
+				userMessage,
 				project: stripProjectSecrets(ensured.project),
 				sandbox: { state: ensured.state },
 			};
