@@ -13,7 +13,9 @@ vi.mock("#/lib/sandbox-bootstrap", () => ({
 	bootstrapSandbox: bootstrapSandboxMock,
 }));
 
-const { ensureProjectSandbox } = await import("./project-sandbox");
+const { ensureProjectSandbox, persistProjectSandboxBackup } = await import(
+	"./project-sandbox"
+);
 const { projects } = await import("#/db/schema");
 
 const projectId = "project-1";
@@ -68,6 +70,78 @@ function makeEnv() {
 		USE_LOCAL_BUCKET_BACKUPS: "true",
 	} as unknown as Env;
 }
+
+describe("persistProjectSandboxBackup", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("creates a backup and stores the handle on the project", async () => {
+		const updatedProject = {
+			...baseProject,
+			sandboxBackup: serializeSandboxBackup({
+				id: "bak-1",
+				dir: "/workspace",
+			}),
+		};
+		const { db, setCalls } = makeFakeDb({
+			lockedProject: updatedProject,
+		});
+
+		backupSandboxWorkspaceMock.mockResolvedValue({
+			id: "bak-1",
+			dir: "/workspace",
+		});
+
+		const result = await persistProjectSandboxBackup({
+			db: db as unknown as Parameters<
+				typeof persistProjectSandboxBackup
+			>[0]["db"],
+			env: makeEnv(),
+			project: {
+				id: projectId,
+				userId: "user-1",
+				sandboxId,
+				status: "ready",
+			},
+		});
+
+		expect(backupSandboxWorkspaceMock).toHaveBeenCalledWith({
+			env: makeEnv(),
+			sandboxId,
+			projectId,
+		});
+		expect(result.sandboxBackup).toContain("bak-1");
+		expect(setCalls[0]).toMatchObject({
+			status: "ready",
+			sandboxBackup: serializeSandboxBackup({
+				id: "bak-1",
+				dir: "/workspace",
+			}),
+		});
+	});
+
+	it("throws when sandbox is not ready", async () => {
+		const { db } = makeFakeDb({ lockedProject: null });
+
+		await expect(
+			persistProjectSandboxBackup({
+				db: db as unknown as Parameters<
+					typeof persistProjectSandboxBackup
+				>[0]["db"],
+				env: makeEnv(),
+				project: {
+					id: projectId,
+					userId: "user-1",
+					sandboxId: null,
+					status: "ready",
+				},
+			}),
+		).rejects.toThrow(/not ready/i);
+
+		expect(backupSandboxWorkspaceMock).not.toHaveBeenCalled();
+	});
+});
 
 describe("ensureProjectSandbox", () => {
 	beforeEach(() => {

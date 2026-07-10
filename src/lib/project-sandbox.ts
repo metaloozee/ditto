@@ -1,3 +1,4 @@
+import type { DirectoryBackup } from "@cloudflare/sandbox";
 import { and, eq, sql } from "drizzle-orm";
 import type { createDb } from "#/db";
 import { projects } from "#/db/schema";
@@ -17,6 +18,48 @@ export type EnsureProjectSandboxResult = {
 	project: typeof projects.$inferSelect;
 	state: "connected" | "restored_from_backup" | "recreated_from_github";
 };
+
+export type PersistProjectSandboxBackupProject = Pick<
+	typeof projects.$inferSelect,
+	"id" | "userId" | "sandboxId" | "status"
+>;
+
+/**
+ * Snapshot /workspace (incl. worktrees) and store the backup handle on the
+ * project row. Same durability path as post-agent-run and post-restore.
+ */
+export async function persistProjectSandboxBackup(options: {
+	db: ReturnType<typeof createDb>;
+	env: Env;
+	project: PersistProjectSandboxBackupProject;
+}): Promise<typeof projects.$inferSelect> {
+	if (options.project.status !== "ready" || !options.project.sandboxId) {
+		throw new Error("Project sandbox is not ready.");
+	}
+	const backup = await backupSandboxWorkspace({
+		env: options.env,
+		sandboxId: options.project.sandboxId,
+		projectId: options.project.id,
+	});
+	return storeReadyProjectBackup({
+		db: options.db,
+		project: options.project as typeof projects.$inferSelect,
+		backup,
+	});
+}
+
+/** Persist a backup handle produced elsewhere (e.g. end of agent run). */
+export async function finalizeAgentRun(options: {
+	db: ReturnType<typeof createDb>;
+	project: typeof projects.$inferSelect;
+	backup: DirectoryBackup;
+}): Promise<typeof projects.$inferSelect> {
+	return storeReadyProjectBackup({
+		db: options.db,
+		project: options.project,
+		backup: options.backup,
+	});
+}
 
 async function markProjectRestoreFailed(options: {
 	db: ReturnType<typeof createDb>;

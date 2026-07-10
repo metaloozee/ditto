@@ -1,20 +1,20 @@
 import type { DirectoryBackup, ExecEvent } from "@cloudflare/sandbox";
 import { parseSSEStream } from "@cloudflare/sandbox";
-import { and, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import type { createDb } from "#/db";
-import { projects } from "#/db/schema";
 import { agentGitCallbackUrl, mintAgentGitJwt } from "#/lib/agent-git-jwt";
 import {
 	parseRunnerStdoutLine,
 	type RunnerOut,
 	splitStdoutBuffer,
 } from "#/lib/agent-stream-protocol";
-import { serializeSandboxBackup } from "#/lib/sandbox-backup";
+import { dittoGitAuthorEnv } from "#/lib/ditto-git-identity";
 import {
 	backupSandboxWorkspace,
 	getProjectSandbox,
 } from "#/lib/sandbox-bootstrap";
+
+export { finalizeAgentRun } from "#/lib/project-sandbox";
+
 import { redactSecrets } from "#/lib/secret-redaction";
 import { WORKSPACE_PATH } from "#/lib/workspace-policy";
 
@@ -23,34 +23,6 @@ const AGENT_COMMAND_TIMEOUT_MS = 600_000;
 
 function quoteShellArg(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;
-}
-
-export async function finalizeAgentRun(options: {
-	db: ReturnType<typeof createDb>;
-	project: typeof projects.$inferSelect;
-	backup: DirectoryBackup;
-}): Promise<typeof projects.$inferSelect> {
-	const [updatedProject] = await options.db
-		.update(projects)
-		.set({
-			status: "ready",
-			sandboxBackup: serializeSandboxBackup(options.backup),
-			sandboxBackupCreatedAt: sql`(unixepoch())`,
-			updatedAt: sql`(unixepoch())`,
-		})
-		.where(
-			and(
-				eq(projects.id, options.project.id),
-				eq(projects.userId, options.project.userId),
-			),
-		)
-		.returning();
-
-	if (!updatedProject) {
-		throw new Error("Failed to update project sandbox state after agent run.");
-	}
-
-	return updatedProject;
 }
 
 export async function runAgentInSandbox(options: {
@@ -85,6 +57,7 @@ export async function runAgentInSandbox(options: {
 			OPENCODE_API_KEY: options.env.OPENCODE_API_KEY,
 			DITTO_GIT_CALLBACK_URL: agentGitCallbackUrl(options.env),
 			DITTO_GIT_CALLBACK_TOKEN: gitCallbackToken,
+			...dittoGitAuthorEnv(),
 		},
 		commandTimeoutMs: AGENT_COMMAND_TIMEOUT_MS,
 	});
