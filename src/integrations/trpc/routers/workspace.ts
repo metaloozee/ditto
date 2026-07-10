@@ -5,7 +5,6 @@ import { z } from "zod";
 import { createDb } from "#/db";
 import { messages, projects, workspaceSessions } from "#/db/schema";
 import { isProjectCoderModelSpecifier } from "#/lib/agent-models";
-import { decryptEnvVars } from "#/lib/project-env-vars";
 import { ensureProjectSandbox } from "#/lib/project-sandbox";
 import { makeSessionTitleFromMessage } from "#/lib/workspace-policy";
 import { createTRPCRouter, protectedProcedure } from "../init";
@@ -74,15 +73,10 @@ async function ensureProjectWorkspace(options: {
 	}
 
 	try {
-		const envVars = await decryptEnvVars(
-			options.project.envVars,
-			options.env.BETTER_AUTH_SECRET,
-		);
 		const ensured = await ensureProjectSandbox({
 			db: options.db,
 			env: options.env,
 			project: options.project,
-			envVars,
 		});
 
 		return {
@@ -217,15 +211,10 @@ export const workspaceRouter = createTRPCRouter({
 				userId: ctx.user.id,
 			});
 
-			const envVars = await decryptEnvVars(
-				project.envVars,
-				ctx.env.BETTER_AUTH_SECRET,
-			);
 			const ensured = await ensureProjectSandbox({
 				db,
 				env: ctx.env,
 				project,
-				envVars,
 			});
 
 			let sessionId = input.sessionId ?? null;

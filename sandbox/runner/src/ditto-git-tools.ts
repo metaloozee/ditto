@@ -4,12 +4,20 @@ import {
 	postAgentGitAction,
 	readDittoGitCallbackEnv,
 } from "./ditto-git-callback.js";
+import {
+	DITTO_GIT_PROMPT_GUIDELINES,
+	DITTO_OPEN_PULL_REQUEST_DESCRIPTION,
+	DITTO_PUSH_BRANCH_DESCRIPTION,
+} from "./ditto-git-guidance.js";
+
+export { DITTO_GIT_PROMPT_GUIDELINES } from "./ditto-git-guidance.js";
 
 export const dittoPushBranchTool = defineTool({
 	name: "ditto_push_branch",
 	label: "Push branch",
-	description:
-		"Push this session's branch to GitHub via Ditto. Use after local commits exist (use bash/git for status and commit; commit author is Ditto). Use Conventional Commits for git commit -m messages (feat:, fix:, chore:, etc.). Does not create a pull request.",
+	description: DITTO_PUSH_BRANCH_DESCRIPTION,
+	promptSnippet: "Push session branch to GitHub (after local commits)",
+	promptGuidelines: [...DITTO_GIT_PROMPT_GUIDELINES],
 	parameters: Type.Object({}),
 	async execute() {
 		const result = await postAgentGitAction({
@@ -26,11 +34,22 @@ export const dittoPushBranchTool = defineTool({
 export const dittoOpenPullRequestTool = defineTool({
 	name: "ditto_open_pull_request",
 	label: "Open pull request",
-	description:
-		"Open a GitHub pull request for this session's branch via Ditto. Commit local changes first (bash/git; author is Ditto). Use Conventional Commits for git commit -m messages (feat:, fix:, chore:, etc.). Optionally set title, body, and baseBranch.",
+	description: DITTO_OPEN_PULL_REQUEST_DESCRIPTION,
+	promptSnippet: "Open GitHub PR with humanized title/body from commits + diff",
+	promptGuidelines: [...DITTO_GIT_PROMPT_GUIDELINES],
 	parameters: Type.Object({
-		title: Type.Optional(Type.String({ description: "Pull request title" })),
-		body: Type.Optional(Type.String({ description: "Pull request body" })),
+		title: Type.Optional(
+			Type.String({
+				description:
+					'Humanized PR title for reviewers (e.g. "Add billing page"). Prefer always setting this after reviewing commits and the diff.',
+			}),
+		),
+		body: Type.Optional(
+			Type.String({
+				description:
+					"Brief PR description of what changed and why, based on commits and the diff. Prefer always setting this. Multi-commit: short summary plus optional bullet list of subjects.",
+			}),
+		),
 		baseBranch: Type.Optional(
 			Type.String({ description: "Base branch name (default: repo default)" }),
 		),

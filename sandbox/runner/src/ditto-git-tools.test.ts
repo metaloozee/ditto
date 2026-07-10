@@ -3,6 +3,24 @@ import {
 	postAgentGitAction,
 	readDittoGitCallbackEnv,
 } from "./ditto-git-callback.js";
+import {
+	DITTO_GIT_PROMPT_GUIDELINES,
+	DITTO_OPEN_PULL_REQUEST_DESCRIPTION,
+	DITTO_PUSH_BRANCH_DESCRIPTION,
+} from "./ditto-git-guidance.js";
+
+describe("ditto-git-guidance", () => {
+	it("requires conventional commits and humanized PR copy from commits + diff", () => {
+		const guidelines = DITTO_GIT_PROMPT_GUIDELINES.join("\n");
+		expect(guidelines).toMatch(/Conventional Commits/);
+		expect(guidelines).toMatch(/humanized PR title/);
+		expect(guidelines).toMatch(/git log/);
+		expect(guidelines).toMatch(/git diff/);
+		expect(DITTO_PUSH_BRANCH_DESCRIPTION).toMatch(/Conventional Commits/);
+		expect(DITTO_OPEN_PULL_REQUEST_DESCRIPTION).toMatch(/humanized title/);
+		expect(DITTO_OPEN_PULL_REQUEST_DESCRIPTION).toMatch(/commits and the diff/);
+	});
+});
 
 describe("ditto-git-callback", () => {
 	afterEach(() => {

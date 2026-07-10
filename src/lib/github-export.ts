@@ -33,6 +33,7 @@ const CONVENTIONAL_COMMIT_RE =
 
 const SUBJECT_MAX_LEN = 72;
 const PR_TITLE_MAX_LEN = 100;
+const PR_CHANGED_FILES_LIST_MAX = 20;
 
 const MERGE_COMMIT_SUBJECT_RE = /^merge /i;
 
@@ -308,10 +309,21 @@ function multiCommitSummarySentence(humanizedPrimary: string): string {
 	return `This pull request covers: ${trimmed}.`;
 }
 
+function resolveChangedFileCount(options: {
+	changedFileCount?: number;
+	changedFiles?: readonly string[];
+}): number {
+	if (options.changedFiles !== undefined) {
+		return options.changedFiles.length;
+	}
+	return options.changedFileCount ?? 0;
+}
+
 function buildPullRequestSummaryParagraph(options: {
 	sessionTitle?: string | null;
 	commitSubjects: readonly string[];
 	changedFileCount?: number;
+	changedFiles?: readonly string[];
 	fallbackSingleCommitLead?: string;
 }): string {
 	const sentences: string[] = [];
@@ -343,15 +355,34 @@ function buildPullRequestSummaryParagraph(options: {
 		}
 	}
 
-	const changedFileCount = options.changedFileCount ?? 0;
-	if (changedFileCount > 0) {
-		const fileWord = changedFileCount === 1 ? "file" : "files";
-		sentences.push(
-			`It includes ${changedFileCount} changed ${fileWord} from the latest status.`,
-		);
+	// When paths are listed separately, skip the count sentence to avoid redundancy.
+	if (!options.changedFiles?.length) {
+		const changedFileCount = resolveChangedFileCount(options);
+		if (changedFileCount > 0) {
+			const fileWord = changedFileCount === 1 ? "file" : "files";
+			sentences.push(`It includes ${changedFileCount} changed ${fileWord}.`);
+		}
 	}
 
 	return sentences.join(" ");
+}
+
+function buildChangedFilesSection(
+	changedFiles: readonly string[] | undefined,
+): string[] {
+	if (!changedFiles?.length) {
+		return [];
+	}
+	const lines: string[] = ["", "Files changed:"];
+	const listed = changedFiles.slice(0, PR_CHANGED_FILES_LIST_MAX);
+	for (const path of listed) {
+		lines.push(`- ${path}`);
+	}
+	const remaining = changedFiles.length - listed.length;
+	if (remaining > 0) {
+		lines.push(`- +${remaining} more`);
+	}
+	return lines;
 }
 
 // commitSubjects may be newest-first (git log default); we normalize to oldest-first
@@ -382,21 +413,26 @@ export function buildPullRequestBody({
 	sessionId,
 	runId,
 	changedFileCount,
+	changedFiles,
 	commitSubjects,
 }: {
 	sessionId: string;
 	runId: string;
-	changedFileCount: number;
+	changedFileCount?: number;
+	changedFiles?: readonly string[];
 	commitSubjects?: readonly string[];
 }): string {
 	const lines: string[] = [
 		buildPullRequestSummaryParagraph({
 			commitSubjects: commitSubjects ?? [],
 			changedFileCount,
+			changedFiles,
 			fallbackSingleCommitLead:
 				"This pull request applies changes from a sandbox run after you reviewed the diff.",
 		}),
 	];
+
+	lines.push(...buildChangedFilesSection(changedFiles));
 
 	const chronological = meaningfulCommitSubjectsOldestFirst(commitSubjects);
 	if (chronological.length > 1) {
@@ -422,19 +458,24 @@ export function buildSessionPullRequestBody({
 	sessionTitle,
 	commitSubjects,
 	changedFileCount,
+	changedFiles,
 }: {
 	sessionId: string;
 	sessionTitle?: string | null;
 	commitSubjects?: readonly string[];
 	changedFileCount?: number;
+	changedFiles?: readonly string[];
 }): string {
 	const lines: string[] = [
 		buildPullRequestSummaryParagraph({
 			sessionTitle,
 			commitSubjects: commitSubjects ?? [],
 			changedFileCount,
+			changedFiles,
 		}),
 	];
+
+	lines.push(...buildChangedFilesSection(changedFiles));
 
 	const chronological = meaningfulCommitSubjectsOldestFirst(commitSubjects);
 	if (chronological.length > 1) {

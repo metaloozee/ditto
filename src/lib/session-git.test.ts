@@ -316,6 +316,14 @@ describe("session git", () => {
 			if (command === "git add -A") {
 				return { success: true, stdout: "", stderr: "", exitCode: 0 };
 			}
+			if (command === "git diff --cached --name-only") {
+				return {
+					success: true,
+					stdout: "src/a.ts\n",
+					stderr: "",
+					exitCode: 0,
+				};
+			}
 			if (command.startsWith("git -c user.name=")) {
 				return { success: true, stdout: "", stderr: "", exitCode: 0 };
 			}
@@ -338,6 +346,89 @@ describe("session git", () => {
 		});
 
 		expect(result).toEqual({ commitSha: "deadbeef", committed: true });
+	});
+
+	it("does not commit when only secret-like paths changed", async () => {
+		const sandbox = makeSandbox(async (command) => {
+			if (command === "git status --porcelain") {
+				return {
+					success: true,
+					stdout: "?? .env\n?? .env.local\n",
+					stderr: "",
+					exitCode: 0,
+				};
+			}
+			throw new Error(`unexpected command: ${command}`);
+		});
+		getProjectSandboxMock.mockReturnValue(sandbox);
+
+		const result = await commitSessionChanges({
+			env: makeEnv(),
+			sandboxId: "sandbox-1",
+			installationId: 1,
+			githubRepo: "acme/repo",
+			session: makeSession(),
+			message: "feat: secrets",
+			authorName: "Ada",
+			authorEmail: "ada@users.noreply.github.com",
+		});
+
+		expect(result).toEqual({ commitSha: null, committed: false });
+		expect(sandbox.exec).toHaveBeenCalledTimes(1);
+	});
+
+	it("unstages secret-like paths before commit", async () => {
+		const commands: string[] = [];
+		const sandbox = makeSandbox(async (command) => {
+			commands.push(command);
+			if (command === "git status --porcelain") {
+				return {
+					success: true,
+					stdout: " M src/a.ts\n?? .env\n",
+					stderr: "",
+					exitCode: 0,
+				};
+			}
+			if (command === "git add -A") {
+				return { success: true, stdout: "", stderr: "", exitCode: 0 };
+			}
+			if (command.startsWith("git reset HEAD --")) {
+				return { success: true, stdout: "", stderr: "", exitCode: 0 };
+			}
+			if (command === "git diff --cached --name-only") {
+				return {
+					success: true,
+					stdout: "src/a.ts\n",
+					stderr: "",
+					exitCode: 0,
+				};
+			}
+			if (command.startsWith("git -c user.name=")) {
+				return { success: true, stdout: "", stderr: "", exitCode: 0 };
+			}
+			if (command === "git rev-parse HEAD") {
+				return { success: true, stdout: "cafebabe\n", stderr: "", exitCode: 0 };
+			}
+			throw new Error(`unexpected command: ${command}`);
+		});
+		getProjectSandboxMock.mockReturnValue(sandbox);
+
+		const result = await commitSessionChanges({
+			env: makeEnv(),
+			sandboxId: "sandbox-1",
+			installationId: 1,
+			githubRepo: "acme/repo",
+			session: makeSession(),
+			message: "feat: without secrets",
+			authorName: "Ada",
+			authorEmail: "ada@users.noreply.github.com",
+		});
+
+		expect(result).toEqual({ commitSha: "cafebabe", committed: true });
+		expect(commands.some((c) => c.startsWith("git reset HEAD --"))).toBe(true);
+		expect(commands.find((c) => c.startsWith("git reset HEAD --"))).toContain(
+			".env",
+		);
 	});
 
 	it("pushes with installation token and scrubs remotes", async () => {
@@ -532,7 +623,7 @@ describe("session git", () => {
 		expect(scrubGithubRemoteMock).toHaveBeenCalledTimes(2);
 	});
 
-	it("creates a pull request using commit subjects from git log for title and body", async () => {
+	it("creates a pull request using commit subjects and changed files from the branch range", async () => {
 		const sandbox = makeSandbox(async (command) => {
 			if (
 				command.includes("git log --format=%s") &&
@@ -541,6 +632,17 @@ describe("session git", () => {
 				return {
 					success: true,
 					stdout: "feat: add skills readme\n",
+					stderr: "",
+					exitCode: 0,
+				};
+			}
+			if (
+				command.includes("git diff --name-only") &&
+				command.includes("'main'...HEAD")
+			) {
+				return {
+					success: true,
+					stdout: "README.md\nsrc/skills.ts\n",
 					stderr: "",
 					exitCode: 0,
 				};
@@ -573,7 +675,6 @@ describe("session git", () => {
 			installationId: 1,
 			githubRepo: "acme/repo",
 			session: makeSession(),
-			changedFileCount: 0,
 		});
 
 		expect(result).toEqual({
@@ -586,18 +687,26 @@ describe("session git", () => {
 		expect(logCommand).toContain("git log --format=%s -n 20");
 		expect(logCommand).toContain("'main'..HEAD");
 		expect(logCommand).not.toMatch(/git log --format=%s -n 20$/);
+		const diffCommand = sandbox.exec.mock.calls.find((call) =>
+			String(call[0]).includes("git diff --name-only"),
+		)?.[0];
+		expect(diffCommand).toContain("git diff --name-only");
+		expect(diffCommand).toContain("'main'...HEAD");
 		expect(pulls.create).toHaveBeenCalledWith(
 			expect.objectContaining({
 				title: "Add skills readme",
 				body: expect.stringContaining("Add skills readme."),
 			}),
 		);
-		expect(pulls.create.mock.calls[0]?.[0]?.body).toContain(
-			"Session ID: sess-1",
-		);
+		const body = pulls.create.mock.calls[0]?.[0]?.body as string;
+		expect(body).toContain("Session ID: sess-1");
+		expect(body).toContain("Files changed:");
+		expect(body).toContain("- README.md");
+		expect(body).toContain("- src/skills.ts");
+		expect(body).not.toMatch(/from the latest status/i);
 	});
 
-	it("falls back to origin/base..HEAD when the local base ref is missing", async () => {
+	it("falls back to origin/base ranges when the local base ref is missing", async () => {
 		const sandbox = makeSandbox(async (command) => {
 			if (
 				command.includes("git log --format=%s") &&
@@ -612,11 +721,33 @@ describe("session git", () => {
 			}
 			if (
 				command.includes("git log --format=%s") &&
-				command.includes("origin/main..HEAD")
+				command.includes("'origin/main'..HEAD")
 			) {
 				return {
 					success: true,
 					stdout: "feat: session-only change\n",
+					stderr: "",
+					exitCode: 0,
+				};
+			}
+			if (
+				command.includes("git diff --name-only") &&
+				command.includes("'main'...HEAD")
+			) {
+				return {
+					success: false,
+					stdout: "",
+					stderr: "bad revision",
+					exitCode: 128,
+				};
+			}
+			if (
+				command.includes("git diff --name-only") &&
+				command.includes("'origin/main'...HEAD")
+			) {
+				return {
+					success: true,
+					stdout: "src/only.ts\n",
 					stderr: "",
 					exitCode: 0,
 				};
@@ -649,7 +780,6 @@ describe("session git", () => {
 			installationId: 1,
 			githubRepo: "acme/repo",
 			session: makeSession(),
-			changedFileCount: 0,
 		});
 
 		const originRangeCommand = sandbox.exec.mock.calls.find((call) => {
@@ -661,6 +791,17 @@ describe("session git", () => {
 			);
 		})?.[0];
 		expect(originRangeCommand).toContain("'origin/main'..HEAD");
+		const originDiffCommand = sandbox.exec.mock.calls.find((call) => {
+			const command = String(call[0]);
+			return (
+				command.includes("git diff --name-only") &&
+				command.includes("origin/main") &&
+				command.includes("...HEAD")
+			);
+		})?.[0];
+		expect(originDiffCommand).toContain("'origin/main'...HEAD");
+		const body = pulls.create.mock.calls[0]?.[0]?.body as string;
+		expect(body).toContain("- src/only.ts");
 	});
 
 	it("maps findOpenSessionPullRequest list results", async () => {
@@ -762,7 +903,6 @@ describe("session git", () => {
 			installationId: 1,
 			githubRepo: "acme/repo",
 			session: makeSession(),
-			changedFileCount: 2,
 		});
 
 		expect(result).toEqual({

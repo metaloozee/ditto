@@ -168,6 +168,7 @@ describe("github export helpers", () => {
 		expect(body).toContain("Session ID: session-1");
 		expect(body).toContain("Run ID: run-1");
 		expect(body).toContain("2 changed files");
+		expect(body).not.toMatch(/from the latest status/i);
 	});
 
 	it("builds a session PR body with description first and session id in the footer", () => {
@@ -185,6 +186,44 @@ describe("github export helpers", () => {
 		expect(body).toContain("Session ID: session-1");
 		expect(body).not.toContain("0 changed");
 		expect(body).not.toContain("Run ID");
+	});
+
+	it("lists changed file paths in the session PR body", () => {
+		const body = buildSessionPullRequestBody({
+			sessionId: "session-1",
+			commitSubjects: ["feat: add skills readme"],
+			changedFiles: ["README.md", "src/skills.ts", "docs/a.md"],
+		});
+
+		expect(body.startsWith("Add skills readme.")).toBe(true);
+		expect(body).toContain("Files changed:");
+		expect(body).toContain("- README.md");
+		expect(body).toContain("- src/skills.ts");
+		expect(body).toContain("- docs/a.md");
+		expect(body).not.toContain("from the latest status");
+		expect(body).not.toMatch(/It includes \d+ changed files/);
+		const filesSection = body.split("Files changed:")[1]?.split("---")[0] ?? "";
+		expect(filesSection.indexOf("README.md")).toBeLessThan(
+			filesSection.indexOf("src/skills.ts"),
+		);
+	});
+
+	it("caps long changed-file lists with a +N more line", () => {
+		const changedFiles = Array.from(
+			{ length: 22 },
+			(_, i) => `src/file-${String(i).padStart(2, "0")}.ts`,
+		);
+		const body = buildSessionPullRequestBody({
+			sessionId: "session-1",
+			commitSubjects: ["chore: touch many files"],
+			changedFiles,
+		});
+
+		expect(body).toContain("Files changed:");
+		expect(body).toContain("- src/file-00.ts");
+		expect(body).toContain("- src/file-19.ts");
+		expect(body).not.toContain("- src/file-20.ts");
+		expect(body).toContain("- +2 more");
 	});
 
 	it("lists multiple commit subjects in the session PR body", () => {

@@ -8,7 +8,6 @@ import {
 	DITTO_GIT_AUTHOR_NAME,
 } from "#/lib/ditto-git-identity";
 import { authorizeGitHubRepositoryAccess } from "#/lib/github-authorization";
-import { decryptEnvVars } from "#/lib/project-env-vars";
 import { ensureProjectSandbox } from "#/lib/project-sandbox";
 import {
 	commitSessionChanges,
@@ -101,15 +100,10 @@ async function resolveSessionGitContext(options: {
 		installationId: project.githubInstallationId,
 	});
 
-	const envVars = await decryptEnvVars(
-		project.envVars,
-		options.ctx.env.BETTER_AUTH_SECRET,
-	);
 	await ensureProjectSandbox({
 		db,
 		env: options.ctx.env,
 		project,
-		envVars,
 	});
 
 	const ensured = await ensureSessionWorktree({
@@ -334,7 +328,6 @@ export const sessionGitRouter = createTRPCRouter({
 							title: input.title,
 							body: input.body,
 							baseBranch: input.baseBranch,
-							changedFileCount: status.changedFiles.length,
 						}),
 				});
 			} catch (error) {
