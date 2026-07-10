@@ -34,7 +34,7 @@ Planned at commit `6ac3b74` (2026-07-09) after research + product interview.
 |------|-------|----------|--------|------------|--------|
 | 005  | Session worktrees + branch lifecycle | P1 | L | — (post 001–003) | DONE |
 | 006  | Worker commit / push / open PR + UI | P1 | L | 005 | DONE |
-| 007  | Agent chat tools for push/PR via Worker JWT callback | P2 | M | 005, 006 | TODO |
+| 007  | Agent chat tools for push/PR via Worker JWT callback | P2 | M | 005, 006 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 
