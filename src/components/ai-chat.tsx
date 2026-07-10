@@ -339,7 +339,7 @@ export function Chat({
 	const displayMessages = mergeMessages(
 		normalizedServerMessages,
 		overlay,
-		sessionId,
+		cacheSessionId,
 	);
 	const displayIds = new Set(
 		displayMessages.map((message) => String(message.id)),

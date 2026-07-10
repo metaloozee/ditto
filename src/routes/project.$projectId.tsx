@@ -97,7 +97,7 @@ export function ProjectWorkspacePage({
 			? "Project sandbox is not ready yet."
 			: selectedSession?.status === "archived"
 				? "This conversation is archived."
-				: ensureWorkspaceMutation.isPending
+				: ensureWorkspaceMutation.isPending && !workspace
 					? "Checking project sandbox..."
 					: undefined;
 
@@ -136,9 +136,19 @@ export function ProjectWorkspacePage({
 					)}
 					disabledReason={disabledReason}
 					messages={workspace?.messages ?? []}
-					onWorkspaceRefresh={(activeSessionId) =>
-						ensureWorkspace({ projectId, sessionId: activeSessionId })
-					}
+					onWorkspaceRefresh={(activeSessionId) => {
+						void queryClient.invalidateQueries(
+							trpc.projects.list.queryFilter(),
+						);
+						if (activeSessionId) {
+							void queryClient.invalidateQueries(
+								trpc.sessionGit.gitStatus.queryFilter({
+									projectId,
+									sessionId: activeSessionId,
+								}),
+							);
+						}
+					}}
 				/>
 			</div>
 		</main>

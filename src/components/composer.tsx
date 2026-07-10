@@ -456,7 +456,6 @@ export function Composer({
 							projectId={projectId}
 							sessionId={sessionId}
 							disabled={Boolean(disabledReason) || isStreaming}
-							onAfterAction={() => onWorkspaceRefresh?.(sessionId)}
 						/>
 					) : null}
 				</div>
