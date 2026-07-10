@@ -24,6 +24,7 @@ import {
 	openSessionPullRequestWithBackup,
 	runSessionGitMutationWithBackup,
 } from "#/lib/session-git-backup";
+import { rethrowOrMapSessionGitMutationError } from "#/lib/session-git-trpc-errors";
 import { ensureSessionWorktree } from "#/lib/session-worktree";
 import { createTRPCRouter, protectedProcedure } from "../init";
 
@@ -252,14 +253,9 @@ export const sessionGitRouter = createTRPCRouter({
 						}),
 				});
 			} catch (error) {
-				const message =
-					error instanceof Error ? error.message : "Failed to push branch.";
-				throw new TRPCError({
-					code:
-						message === GITHUB_APP_PUSH_PERMISSION_MESSAGE
-							? "FORBIDDEN"
-							: "BAD_GATEWAY",
-					message,
+				rethrowOrMapSessionGitMutationError(error, {
+					fallbackMessage: "Failed to push branch.",
+					forbiddenWhenMessage: GITHUB_APP_PUSH_PERMISSION_MESSAGE,
 				});
 			}
 		}),
@@ -342,16 +338,9 @@ export const sessionGitRouter = createTRPCRouter({
 						}),
 				});
 			} catch (error) {
-				const message =
-					error instanceof Error
-						? error.message
-						: "Failed to open pull request.";
-				throw new TRPCError({
-					code:
-						message === GITHUB_APP_PR_PERMISSION_MESSAGE
-							? "FORBIDDEN"
-							: "BAD_GATEWAY",
-					message,
+				rethrowOrMapSessionGitMutationError(error, {
+					fallbackMessage: "Failed to open pull request.",
+					forbiddenWhenMessage: GITHUB_APP_PR_PERMISSION_MESSAGE,
 				});
 			}
 		}),
