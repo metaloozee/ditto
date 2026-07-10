@@ -92,6 +92,16 @@ agent shell session starts. The Worker verifies the JWT and reuses the same
 Use bash for local `git status` / `git commit`; use Ditto tools for push and
 open PR only.
 
+Agent git guidance (tool `promptGuidelines` + descriptions):
+
+- Local commits use **Conventional Commits**
+  (`feat:`, `fix:`, `chore:`, …; imperative subject).
+- Before `ditto_open_pull_request`, the agent should review commits and the
+  diff, then pass a **humanized title** and **brief body** (not raw commit
+  subjects alone). Worker defaults still apply if title/body are omitted
+  (deterministic helpers in `github-export.ts` from commit subjects and
+  `git diff --name-only` file paths vs base).
+
 Operators must rebuild the sandbox image (restart `pnpm dev` or redeploy) after
 runner changes so custom tools appear in the container.
 
