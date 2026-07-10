@@ -14,6 +14,8 @@ import {
 	finalizeAssistantParts,
 	partsToText,
 	partsToTools,
+	prepareAssistantMessageStorage,
+	serializeAssistantPartsMinimalForStorage,
 } from "#/lib/agent-stream-client";
 import { encodeSseEvent } from "#/lib/agent-stream-protocol";
 import { createAuth } from "#/lib/auth";
@@ -331,25 +333,51 @@ export const Route = createFileRoute("/api/agent/stream")({
 								assistantContent = "";
 							}
 
-							const persistedParts = finalizeAssistantParts(parts);
-							const persistedTools = partsToTools(persistedParts);
-							const partsJson =
-								persistedParts.length > 0
-									? JSON.stringify(persistedParts)
-									: null;
+							const { toolsColumn } = prepareAssistantMessageStorage(parts);
+							const fullParts = finalizeAssistantParts(parts);
+							const fullTools = partsToTools(fullParts);
 
-							await db
-								.update(messages)
-								.set({
-									content: assistantContent,
-									tools: partsJson,
-								})
-								.where(
-									and(
-										eq(messages.id, assistantMessageId),
-										eq(messages.userId, session.user.id),
-									),
+							try {
+								await db
+									.update(messages)
+									.set({
+										content: assistantContent,
+										tools: toolsColumn,
+									})
+									.where(
+										and(
+											eq(messages.id, assistantMessageId),
+											eq(messages.userId, session.user.id),
+										),
+									);
+							} catch (error) {
+								console.error(
+									"Failed to persist assistant message tools; retrying with minimal serialization.",
+									error,
 								);
+								const fallbackTools =
+									serializeAssistantPartsMinimalForStorage(parts);
+								try {
+									await db
+										.update(messages)
+										.set({
+											content: assistantContent,
+											tools: fallbackTools,
+										})
+										.where(
+											and(
+												eq(messages.id, assistantMessageId),
+												eq(messages.userId, session.user.id),
+											),
+										);
+								} catch (fallbackError) {
+									console.error(
+										"Minimal tools serialization also failed.",
+										fallbackError,
+									);
+									throw fallbackError;
+								}
+							}
 
 							if (runResult.backupStored && runResult.backup) {
 								try {
@@ -372,8 +400,8 @@ export const Route = createFileRoute("/api/agent/stream")({
 								ok: runResult.ok,
 								assistantMessageId,
 								content: assistantContent,
-								...(persistedTools.length > 0 ? { tools: persistedTools } : {}),
-								...(persistedParts.length > 0 ? { parts: persistedParts } : {}),
+								...(fullTools.length > 0 ? { tools: fullTools } : {}),
+								...(fullParts.length > 0 ? { parts: fullParts } : {}),
 								...(runResult.backupError
 									? { backupError: runResult.backupError }
 									: {}),

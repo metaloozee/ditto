@@ -1,26 +1,13 @@
-import {
-	CheckCircle2Icon,
-	CircleAlertIcon,
-	FileTextIcon,
-	FolderSearchIcon,
-	LoaderCircleIcon,
-	SearchIcon,
-	TerminalIcon,
-	WrenchIcon,
-} from "lucide-react";
+import { ChevronDownIcon, LoaderCircleIcon } from "lucide-react";
 import { useState } from "react";
-import {
-	Task,
-	TaskContent,
-	TaskItem,
-	TaskTrigger,
-} from "#/components/ai-elements/task";
+import { Task, TaskContent, TaskTrigger } from "#/components/ai-elements/task";
 import { AssistantMarkdown } from "#/components/assistant-markdown";
 import {
 	Composer,
 	type ComposerStreamingState,
 	type StreamCommitPayload,
 } from "#/components/composer";
+import { EditToolPart } from "#/components/edit-tool-diff";
 import { Bubble, BubbleContent } from "#/components/ui/bubble";
 import {
 	Message,
@@ -37,7 +24,8 @@ import {
 } from "#/components/ui/message-scroller";
 import {
 	type AssistantMessagePart,
-	formatToolCallDetail,
+	formatToolCallLabel,
+	groupAssistantParts,
 	parseStoredParts,
 	partsToTools,
 	type StreamToolCall,
@@ -128,83 +116,49 @@ function ChatEmptyState({ hasProject }: { hasProject: boolean }) {
 	);
 }
 
-function ToolGlyph({ name, className }: { name: string; className?: string }) {
-	const lower = name.toLowerCase();
-	if (lower.includes("bash") || lower.includes("shell")) {
-		return <TerminalIcon className={className} />;
-	}
-	if (
-		lower.includes("read") ||
-		lower.includes("write") ||
-		lower.includes("edit")
-	) {
-		return <FileTextIcon className={className} />;
-	}
-	if (
-		lower.includes("grep") ||
-		lower.includes("search") ||
-		lower.includes("find")
-	) {
-		return <SearchIcon className={className} />;
-	}
-	if (lower.includes("ls") || lower.includes("glob")) {
-		return <FolderSearchIcon className={className} />;
-	}
-	return <WrenchIcon className={className} />;
-}
-
-function ToolStatusGlyph({
-	status,
-	className,
-}: {
-	status: StreamToolCall["status"];
-	className?: string;
-}) {
-	if (status === "running") {
-		return <LoaderCircleIcon className={className} />;
-	}
-	if (status === "error") {
-		return <CircleAlertIcon className={className} />;
-	}
-	return <CheckCircle2Icon className={className} />;
-}
-
-function ToolCallPart({
-	tool,
+function ToolGroupPart({
+	tools,
 	streaming = false,
 }: {
-	tool: StreamToolCall;
+	tools: StreamToolCall[];
 	streaming?: boolean;
 }) {
-	const detail = formatToolCallDetail(tool);
-	const title = tool.status === "running" ? `${tool.name}…` : tool.name;
+	const working = tools.some((tool) => tool.status === "running");
+	const title = working ? "Working" : "Worked";
 
 	return (
-		<Task defaultOpen={streaming && tool.status === "running"}>
+		<Task defaultOpen={streaming && working}>
 			<TaskTrigger title={title}>
 				<div className="flex w-full cursor-pointer items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground">
-					<ToolGlyph name={tool.name} className="size-3.5 shrink-0" />
+					{working ? (
+						<LoaderCircleIcon className="size-3.5 shrink-0 animate-spin" />
+					) : null}
 					<span className="min-w-0 flex-1 truncate font-medium">{title}</span>
-					<ToolStatusGlyph
-						status={tool.status}
-						className={cn(
-							"size-3.5 shrink-0",
-							tool.status === "running" && "animate-spin",
-							tool.status === "error" && "text-destructive",
-							tool.status === "done" && "text-muted-foreground",
-						)}
-					/>
+					<ChevronDownIcon className="size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
 				</div>
 			</TaskTrigger>
-			{detail ? (
-				<TaskContent>
-					<TaskItem>
-						<pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed">
-							{detail}
-						</pre>
-					</TaskItem>
-				</TaskContent>
-			) : null}
+			<TaskContent>
+				<div className="max-h-48 overflow-y-auto overscroll-contain pr-1">
+					<ul className="flex flex-col gap-1">
+						{tools.map((tool) => {
+							const label = formatToolCallLabel(tool);
+							const failed = tool.status === "error";
+							return (
+								<li
+									key={tool.id}
+									className={cn(
+										"truncate font-mono text-[12px] leading-relaxed",
+										failed ? "text-destructive" : "text-muted-foreground",
+									)}
+									title={label}
+								>
+									{label}
+								</li>
+							);
+						})}
+					</ul>
+				</div>
+			</TaskContent>
 		</Task>
 	);
 }
@@ -224,29 +178,35 @@ function AssistantParts({
 		);
 	}
 
+	const groups = groupAssistantParts(parts);
+
 	return (
 		<div className="flex w-full min-w-0 flex-col gap-3">
-			{parts.map((part) => {
-				if (part.type === "text") {
+			{groups.map((group) => {
+				if (group.type === "text") {
 					return (
-						<div key={part.id} className="w-full min-w-0">
+						<div key={group.id} className="w-full min-w-0">
 							<AssistantMarkdown
 								mode={streaming ? "streaming" : "static"}
-								text={part.text}
+								text={group.text}
 							/>
 						</div>
 					);
 				}
 
-				if (part.type === "tool") {
+				if (group.type === "edit") {
 					return (
-						<div key={part.id} className="w-full min-w-0">
-							<ToolCallPart tool={part.tool} streaming={streaming} />
+						<div key={group.id} className="w-full min-w-0">
+							<EditToolPart tool={group.tool} />
 						</div>
 					);
 				}
 
-				return null;
+				return (
+					<div key={group.id} className="w-full min-w-0">
+						<ToolGroupPart tools={group.tools} streaming={streaming} />
+					</div>
+				);
 			})}
 		</div>
 	);
