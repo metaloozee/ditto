@@ -1,4 +1,4 @@
-import { ChevronDownIcon, LoaderCircleIcon } from "lucide-react";
+import { ChevronRightIcon, LoaderCircleIcon } from "lucide-react";
 import { useState } from "react";
 import { Task, TaskContent, TaskTrigger } from "#/components/ai-elements/task";
 import { AssistantMarkdown } from "#/components/assistant-markdown";
@@ -134,7 +134,7 @@ function ToolGroupPart({
 						<LoaderCircleIcon className="size-3.5 shrink-0 animate-spin" />
 					) : null}
 					<span className="min-w-0 flex-1 truncate font-medium">{title}</span>
-					<ChevronDownIcon className="size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+					<ChevronRightIcon className="size-3.5 shrink-0 transition-transform group-data-[panel-open]:rotate-90" />
 				</div>
 			</TaskTrigger>
 			<TaskContent>
@@ -258,7 +258,7 @@ function MessageRow({ message }: { message: NormalizedChatMessage }) {
 	return (
 		<Message align="end">
 			<MessageContent className="group">
-				<Bubble align="end" variant="default">
+				<Bubble align="end" variant="secondary">
 					<BubbleContent className="w-full max-w-none">
 						<p className="whitespace-pre-wrap text-sm/relaxed">
 							{message.content}
@@ -354,6 +354,7 @@ export function Chat({
 		Boolean(streaming?.active) &&
 		(!streaming?.assistantMessageId ||
 			!displayIds.has(String(streaming.assistantMessageId)));
+	const hasStreamingTail = showOptimisticUser || showStreamingAssistant;
 	const hasMessages =
 		displayMessages.length > 0 || showOptimisticUser || showStreamingAssistant;
 
@@ -394,7 +395,9 @@ export function Chat({
 											className={cn(
 												"m-0",
 												index === 0 && "mt-20",
-												index === displayMessages.length - 1 && "mb-20",
+												index === displayMessages.length - 1 &&
+													!hasStreamingTail &&
+													"mb-20",
 											)}
 											scrollAnchor={message.role === "user"}
 										>
@@ -407,6 +410,7 @@ export function Chat({
 											className={cn(
 												"mt-0",
 												displayMessages.length === 0 && "mt-20",
+												!showStreamingAssistant && "mb-20",
 											)}
 											scrollAnchor
 										>
@@ -422,7 +426,11 @@ export function Chat({
 									{showStreamingAssistant && streaming ? (
 										<MessageScrollerItem
 											messageId="streaming-assistant"
-											className="mt-0"
+											className={cn(
+												"mt-0",
+												displayMessages.length === 0 && !showOptimisticUser && "mt-20",
+												"mb-20",
+											)}
 										>
 											<StreamingAssistantRow streaming={streaming} />
 										</MessageScrollerItem>
