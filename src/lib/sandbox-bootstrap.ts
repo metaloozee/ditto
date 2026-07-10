@@ -59,7 +59,7 @@ export async function destroySandbox(options: {
 	await sandbox.destroy();
 }
 
-async function runCommand(
+export async function execOrThrow(
 	sandbox: ReturnType<typeof getSandbox>,
 	command: string,
 	options: { cwd?: string; timeout: number; errorPrefix: string },
@@ -102,7 +102,7 @@ async function installWithNpmFallback(
 ): Promise<void> {
 	if (!(await commandExists(sandbox, preferredCommand))) {
 		if (await commandExists(sandbox, "corepack")) {
-			await runCommand(sandbox, "corepack enable", {
+			await execOrThrow(sandbox, "corepack enable", {
 				cwd: WORKSPACE_PATH,
 				timeout: INSTALL_TIMEOUT_MS,
 				errorPrefix: `Failed to enable Corepack for ${preferredCommand}`,
@@ -111,7 +111,7 @@ async function installWithNpmFallback(
 	}
 
 	if (await commandExists(sandbox, preferredCommand)) {
-		await runCommand(sandbox, installCommand, {
+		await execOrThrow(sandbox, installCommand, {
 			cwd: WORKSPACE_PATH,
 			timeout: INSTALL_TIMEOUT_MS,
 			errorPrefix,
@@ -119,7 +119,7 @@ async function installWithNpmFallback(
 		return;
 	}
 
-	await runCommand(sandbox, "npm install", {
+	await execOrThrow(sandbox, "npm install", {
 		cwd: WORKSPACE_PATH,
 		timeout: INSTALL_TIMEOUT_MS,
 		errorPrefix: `Failed to install dependencies with npm fallback for ${preferredCommand}`,
@@ -156,7 +156,7 @@ export async function installDependencies(
 		return;
 	}
 
-	await runCommand(sandbox, "npm install", {
+	await execOrThrow(sandbox, "npm install", {
 		cwd: WORKSPACE_PATH,
 		timeout: INSTALL_TIMEOUT_MS,
 		errorPrefix: "Failed to install dependencies with npm",
@@ -208,7 +208,7 @@ export async function clearSandboxWorkspace(options: {
 	}
 
 	const sandbox = getProjectSandbox(options.env, options.sandboxId);
-	await runCommand(
+	await execOrThrow(
 		sandbox,
 		"find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +",
 		{
@@ -247,7 +247,7 @@ export async function bootstrapSandbox(options: {
 			cloneTimeoutMs: CLONE_TIMEOUT_MS,
 		});
 
-		await runCommand(
+		await execOrThrow(
 			sandbox,
 			`git remote set-url origin ${quoteShellArg(publicRepoUrl)}`,
 			{

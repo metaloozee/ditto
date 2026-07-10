@@ -57,6 +57,7 @@ export async function runAgentInSandbox(options: {
 	sandboxId: string;
 	projectId: string;
 	conversationId: string;
+	cwd: string;
 	model: string;
 	prompt: string;
 	onRunnerMessage: (msg: RunnerOut) => void | Promise<void>;
@@ -70,7 +71,7 @@ export async function runAgentInSandbox(options: {
 	const sandbox = getProjectSandbox(options.env, options.sandboxId);
 	const shell = await sandbox.createSession({
 		id: `agent-${options.conversationId}`,
-		cwd: WORKSPACE_PATH,
+		cwd: options.cwd,
 		env: {
 			OPENCODE_API_KEY: options.env.OPENCODE_API_KEY,
 		},
@@ -139,13 +140,13 @@ export async function runAgentInSandbox(options: {
 				conversationId: options.conversationId,
 				model: options.model,
 				prompt: options.prompt,
-				cwd: WORKSPACE_PATH,
+				cwd: options.cwd,
 			}),
 		);
 
 		const stream = await shell.execStream(
 			`node ${RUNNER_CLI} --job ${quoteShellArg(jobPath)}`,
-			{ cwd: WORKSPACE_PATH },
+			{ cwd: options.cwd },
 		);
 
 		// Intentionally not abortable: client navigations/disconnects must not tear

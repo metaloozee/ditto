@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const SESSION_WORKTREE_CWD = "/workspace/.ditto/worktrees/conv-1";
+
 const getProjectSandboxMock = vi.hoisted(() => vi.fn());
 const backupSandboxWorkspaceMock = vi.hoisted(() => vi.fn());
 const parseSSEStreamMock = vi.hoisted(() => vi.fn());
@@ -67,6 +69,7 @@ describe("runAgentInSandbox", () => {
 			sandboxId: "sandbox-1",
 			projectId: "project-1",
 			conversationId: "conv-1",
+			cwd: SESSION_WORKTREE_CWD,
 			model: "opencode/gpt-4.1",
 			prompt: "do the thing",
 			onRunnerMessage,
@@ -75,7 +78,7 @@ describe("runAgentInSandbox", () => {
 		expect(createSession).toHaveBeenCalledWith(
 			expect.objectContaining({
 				id: "agent-conv-1",
-				cwd: "/workspace",
+				cwd: SESSION_WORKTREE_CWD,
 			}),
 		);
 		expect(writeFile).toHaveBeenCalledWith(
@@ -84,14 +87,14 @@ describe("runAgentInSandbox", () => {
 				conversationId: "conv-1",
 				model: "opencode/gpt-4.1",
 				prompt: "do the thing",
-				cwd: "/workspace",
+				cwd: SESSION_WORKTREE_CWD,
 			}),
 		);
 		expect(execStream).toHaveBeenCalledWith(
 			expect.stringContaining(
 				"node /opt/ditto-runner/dist/cli.js --job '/workspace/.ditto/jobs/",
 			),
-			expect.objectContaining({ cwd: "/workspace" }),
+			expect.objectContaining({ cwd: SESSION_WORKTREE_CWD }),
 		);
 		expect(onRunnerMessage).toHaveBeenCalledWith({
 			v: 1,
@@ -151,6 +154,7 @@ describe("runAgentInSandbox", () => {
 			sandboxId: "sandbox-1",
 			projectId: "project-1",
 			conversationId: "conv-2",
+			cwd: "/workspace/.ditto/worktrees/conv-2",
 			model: "opencode/gpt-4.1",
 			prompt: "ping",
 			onRunnerMessage,
@@ -161,7 +165,7 @@ describe("runAgentInSandbox", () => {
 			string,
 			unknown
 		>;
-		expect(execOptions).toEqual({ cwd: "/workspace" });
+		expect(execOptions).toEqual({ cwd: "/workspace/.ditto/worktrees/conv-2" });
 		expect(execOptions).not.toHaveProperty("signal");
 		expect(parseSSEStreamMock).toHaveBeenCalledWith(expect.any(ReadableStream));
 		// complete with no runner protocol output should surface an error
