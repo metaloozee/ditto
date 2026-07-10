@@ -68,8 +68,11 @@ const EMPTY_MESSAGES: ChatMessage[] = [];
 type ChatProps = {
 	projectId?: string;
 	sessionId?: string | null;
+	branchName?: string | null;
+	gitExportEnabled?: boolean;
 	disabledReason?: string;
 	messages?: ChatMessage[];
+	onWorkspaceRefresh?: (sessionId: string) => void;
 };
 
 function normalizeMessage(message: ChatMessage): NormalizedChatMessage {
@@ -358,8 +361,11 @@ function pendingOverlay(
 export function Chat({
 	projectId,
 	sessionId,
+	branchName,
+	gitExportEnabled = false,
 	disabledReason,
 	messages = EMPTY_MESSAGES,
+	onWorkspaceRefresh,
 }: ChatProps) {
 	const [streaming, setStreaming] = useState<ComposerStreamingState | null>(
 		null,
@@ -475,9 +481,12 @@ export function Chat({
 					<Composer
 						projectId={projectId}
 						sessionId={sessionId}
+						branchName={branchName}
+						gitExportEnabled={gitExportEnabled}
 						disabledReason={disabledReason}
 						onStreamingChange={setStreaming}
 						onStreamCommit={handleStreamCommit}
+						onWorkspaceRefresh={onWorkspaceRefresh}
 					/>
 				</MessageScroller>
 			</MessageScrollerProvider>

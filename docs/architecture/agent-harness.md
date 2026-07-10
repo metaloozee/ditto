@@ -67,6 +67,21 @@ Residual limits: all sessions still share one sandbox container process space
 application-level mutex per `projectId` yet; parallel agents should not run
 competing installs on the primary tree.
 
+## Git export
+
+Users commit, push, and open pull requests from the project UI (tRPC
+`sessionGit.*`). The Worker runs git commands in the session worktree cwd
+(`workspace_sessions.workspacePath`), not in the agent harness.
+
+- Network git uses a short-lived **GitHub App installation access token**
+  minted per operation. Tokens are never stored in D1, job files, or SSE.
+- Push uses a tokenized remote URL argument, then **scrubs** `origin` back to
+  the public HTTPS URL in a `finally` block (primary `/workspace` and worktree).
+- Command output is redacted before errors reach the client.
+- Opening a PR uses installation Octokit auth (not the user's OAuth token).
+- v1 has no merge API or merge button; chat-driven git tools are a separate
+  plan.
+
 ## Security notes
 
 - User prompts travel in job files written with `writeFile`, not via shell

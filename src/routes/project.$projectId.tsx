@@ -130,6 +130,10 @@ export function ProjectWorkspacePage({
 				<Chat
 					projectId={projectId}
 					sessionId={selectedSession?.id ?? sessionId ?? null}
+					branchName={selectedSession?.branchName ?? null}
+					gitExportEnabled={Boolean(
+						project.githubRepo && project.githubInstallationId,
+					)}
 					disabledReason={disabledReason}
 					messages={workspace?.messages ?? []}
 					onWorkspaceRefresh={(activeSessionId) =>
