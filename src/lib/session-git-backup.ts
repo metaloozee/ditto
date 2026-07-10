@@ -50,3 +50,27 @@ export async function runSessionGitMutationWithBackup<T>(options: {
 	});
 	return result;
 }
+
+export async function openSessionPullRequestWithBackup<T>(options: {
+	db: ReturnType<typeof createDb>;
+	env: Env;
+	project: PersistProjectSandboxBackupProject;
+	pushIfNeeded: () => Promise<boolean>;
+	open: () => Promise<T>;
+}): Promise<T> {
+	const didPush = await options.pushIfNeeded();
+	if (didPush) {
+		await bestEffortPersistSessionGitBackup({
+			db: options.db,
+			env: options.env,
+			project: options.project,
+		});
+	}
+	const result = await options.open();
+	await bestEffortPersistSessionGitBackup({
+		db: options.db,
+		env: options.env,
+		project: options.project,
+	});
+	return result;
+}

@@ -21,6 +21,7 @@ import {
 } from "#/lib/session-git";
 import {
 	commitSessionChangesWithBackup,
+	openSessionPullRequestWithBackup,
 	runSessionGitMutationWithBackup,
 } from "#/lib/session-git-backup";
 import { ensureSessionWorktree } from "#/lib/session-worktree";
@@ -288,7 +289,10 @@ export const sessionGitRouter = createTRPCRouter({
 				});
 			}
 
-			if (status.ahead > 0) {
+			const pushIfAhead = async (): Promise<boolean> => {
+				if (status.ahead <= 0) {
+					return false;
+				}
 				try {
 					await pushSessionBranch({
 						env: ctx.env,
@@ -315,14 +319,16 @@ export const sessionGitRouter = createTRPCRouter({
 					githubRepo: resolved.githubRepo,
 					session: resolved.session,
 				});
-			}
+				return true;
+			};
 
 			try {
-				return await runSessionGitMutationWithBackup({
+				return await openSessionPullRequestWithBackup({
 					db: resolved.db,
 					env: ctx.env,
 					project: resolved.project,
-					run: () =>
+					pushIfNeeded: pushIfAhead,
+					open: () =>
 						openSessionPullRequest({
 							env: ctx.env,
 							sandboxId: resolved.sandboxId,

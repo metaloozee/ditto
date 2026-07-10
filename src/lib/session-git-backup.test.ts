@@ -6,8 +6,11 @@ vi.mock("#/lib/project-sandbox", () => ({
 	persistProjectSandboxBackup: persistProjectSandboxBackupMock,
 }));
 
-const { commitSessionChangesWithBackup, runSessionGitMutationWithBackup } =
-	await import("./session-git-backup");
+const {
+	commitSessionChangesWithBackup,
+	openSessionPullRequestWithBackup,
+	runSessionGitMutationWithBackup,
+} = await import("./session-git-backup");
 
 const project = {
 	id: "p1",
@@ -103,6 +106,44 @@ describe("session-git-backup", () => {
 			).resolves.toEqual({ pushed: true });
 
 			consoleError.mockRestore();
+		});
+	});
+
+	describe("openSessionPullRequestWithBackup", () => {
+		it("persists after auto-push even when open pull request fails", async () => {
+			const pushIfNeeded = vi.fn().mockResolvedValue(true);
+			const open = vi.fn().mockRejectedValue(new Error("pr failed"));
+
+			await expect(
+				openSessionPullRequestWithBackup({
+					db,
+					env,
+					project,
+					pushIfNeeded,
+					open,
+				}),
+			).rejects.toThrow("pr failed");
+
+			expect(pushIfNeeded).toHaveBeenCalled();
+			expect(persistProjectSandboxBackupMock).toHaveBeenCalledTimes(1);
+			expect(open).toHaveBeenCalled();
+		});
+
+		it("persists after open when no push was needed", async () => {
+			const pushIfNeeded = vi.fn().mockResolvedValue(false);
+			const open = vi.fn().mockResolvedValue({ url: "https://pr", number: 2 });
+
+			await expect(
+				openSessionPullRequestWithBackup({
+					db,
+					env,
+					project,
+					pushIfNeeded,
+					open,
+				}),
+			).resolves.toEqual({ url: "https://pr", number: 2 });
+
+			expect(persistProjectSandboxBackupMock).toHaveBeenCalledTimes(1);
 		});
 	});
 });

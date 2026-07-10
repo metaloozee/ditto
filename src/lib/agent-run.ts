@@ -12,9 +12,6 @@ import {
 	backupSandboxWorkspace,
 	getProjectSandbox,
 } from "#/lib/sandbox-bootstrap";
-
-export { finalizeAgentRun } from "#/lib/project-sandbox";
-
 import { redactSecrets } from "#/lib/secret-redaction";
 import { WORKSPACE_PATH } from "#/lib/workspace-policy";
 
@@ -216,3 +213,5 @@ export async function runAgentInSandbox(options: {
 		backupError,
 	};
 }
+
+export { finalizeAgentRun } from "#/lib/project-sandbox";
