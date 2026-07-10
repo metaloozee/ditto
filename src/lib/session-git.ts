@@ -230,7 +230,7 @@ export async function pushSessionBranch(
 	try {
 		await execGitOrThrow(
 			sandbox,
-			`git push --set-upstream ${quotedPushUrl} HEAD:refs/heads/${branchName}`,
+			`git push ${quotedPushUrl} HEAD:refs/heads/${branchName}`,
 			{
 				cwd,
 				errorPrefix: "Failed to push branch",

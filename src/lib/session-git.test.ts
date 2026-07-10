@@ -163,8 +163,9 @@ describe("session git", () => {
 
 	it("pushes with installation token and scrubs remotes", async () => {
 		const sandbox = makeSandbox(async (command) => {
-			if (command.startsWith("git push --set-upstream")) {
+			if (command.startsWith("git push ")) {
 				expect(command).toContain(TOKEN);
+				expect(command).not.toContain("--set-upstream");
 				return { success: true, stdout: "", stderr: "", exitCode: 0 };
 			}
 			throw new Error(`unexpected command: ${command}`);
@@ -187,9 +188,10 @@ describe("session git", () => {
 		expect(scrubGithubRemoteMock).toHaveBeenCalledTimes(2);
 	});
 
-	it("redacts installation token from push errors", async () => {
+	it("redacts installation token from push errors and still scrubs remotes", async () => {
 		const sandbox = makeSandbox(async (command) => {
-			if (command.startsWith("git push --set-upstream")) {
+			if (command.startsWith("git push ")) {
+				expect(command).not.toContain("--set-upstream");
 				return {
 					success: false,
 					stdout: "",
@@ -215,6 +217,7 @@ describe("session git", () => {
 		}
 		expect(message).toContain("[REDACTED]");
 		expect(message).not.toContain(TOKEN);
+		expect(scrubGithubRemoteMock).toHaveBeenCalledTimes(2);
 	});
 
 	it("returns an existing pull request when one is already open", async () => {
