@@ -3,7 +3,6 @@ import { z } from "zod";
 import type { createDb } from "#/db";
 import { projects, workspaceSessions } from "#/db/schema";
 import type { AgentGitJwtClaims } from "#/lib/agent-git-jwt";
-import { decryptEnvVars } from "#/lib/project-env-vars";
 import { ensureProjectSandbox } from "#/lib/project-sandbox";
 import {
 	getSessionGitStatus,
@@ -96,15 +95,10 @@ export async function resolveAgentGitContext(options: {
 		throw new AgentGitHttpError(404, "Session not found.");
 	}
 
-	const envVars = await decryptEnvVars(
-		project.envVars,
-		options.env.BETTER_AUTH_SECRET,
-	);
 	await ensureProjectSandbox({
 		db: options.db,
 		env: options.env,
 		project,
-		envVars,
 	});
 
 	const ensured = await ensureSessionWorktree({
@@ -182,10 +176,8 @@ export async function dispatchAgentGitAction(options: {
 		return await pushSessionBranch(gitCtx);
 	}
 
-	let prStatus = status;
-	if (prStatus.ahead > 0) {
+	if (status.ahead > 0) {
 		await pushSessionBranch(gitCtx);
-		prStatus = await getSessionGitStatus(gitCtx);
 	}
 
 	try {
@@ -194,7 +186,6 @@ export async function dispatchAgentGitAction(options: {
 			title: options.body.title,
 			body: options.body.body,
 			baseBranch: options.body.baseBranch,
-			changedFileCount: prStatus.changedFiles.length,
 		});
 	} catch (error) {
 		throw new AgentGitHttpError(

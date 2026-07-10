@@ -31,7 +31,7 @@ describe("ensureSessionWorktree", () => {
 		vi.clearAllMocks();
 	});
 
-	it("creates branch, worktree, and symlinks on first ensure", async () => {
+	it("creates branch, worktree, and node_modules symlink on first ensure", async () => {
 		const sandbox = makeSandbox(async (path) => {
 			if (path === "/workspace/.git") {
 				return { exists: true };
@@ -63,6 +63,8 @@ describe("ensureSessionWorktree", () => {
 		expect(execOrThrowMock.mock.calls[1]?.[1]).toContain("git branch");
 		expect(execOrThrowMock.mock.calls[2]?.[1]).toContain("git worktree add");
 		expect(execOrThrowMock.mock.calls[3]?.[1]).toContain("ln -s");
+		expect(execOrThrowMock.mock.calls[3]?.[1]).toContain("node_modules");
+		expect(execOrThrowMock.mock.calls[3]?.[1]).not.toContain(".env");
 	});
 
 	it("reuses existing metadata when worktree path still exists", async () => {

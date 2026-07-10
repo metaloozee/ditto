@@ -132,6 +132,15 @@ function parsePorcelainPaths(porcelain: string): string[] {
 	return paths;
 }
 
+/** True for `.env` / `.env.*` basenames (incl. nested and rename destinations). */
+export function isSecretLikeGitPath(filePath: string): boolean {
+	const candidate = filePath.includes(" -> ")
+		? (filePath.split(" -> ").pop() ?? filePath).trim()
+		: filePath.trim();
+	const base = candidate.split("/").pop() ?? candidate;
+	return base === ".env" || base.startsWith(".env.");
+}
+
 export type SessionGitPullRequestRef = {
 	url: string;
 	number: number;
@@ -280,7 +289,16 @@ export async function commitSessionChanges(
 		cwd,
 		errorPrefix: "Failed to read git status",
 	});
-	if (!statusResult.stdout.trim()) {
+	const porcelain = statusResult.stdout.trim();
+	if (!porcelain) {
+		return { commitSha: null, committed: false };
+	}
+
+	const changedFiles = parsePorcelainPaths(porcelain);
+	const stageableFiles = changedFiles.filter(
+		(path) => !isSecretLikeGitPath(path),
+	);
+	if (stageableFiles.length === 0) {
 		return { commitSha: null, committed: false };
 	}
 
@@ -288,6 +306,23 @@ export async function commitSessionChanges(
 		cwd,
 		errorPrefix: "Failed to stage changes",
 	});
+
+	const secretPaths = changedFiles.filter(isSecretLikeGitPath);
+	if (secretPaths.length > 0) {
+		const resetArgs = secretPaths.map(quoteGitHubExportShellArg).join(" ");
+		await sandbox.exec(`git reset HEAD -- ${resetArgs}`, {
+			cwd,
+			timeout: GIT_COMMAND_TIMEOUT_MS,
+		});
+	}
+
+	const stagedResult = await sandbox.exec("git diff --cached --name-only", {
+		cwd,
+		timeout: GIT_COMMAND_TIMEOUT_MS,
+	});
+	if (!stagedResult.success || !stagedResult.stdout.trim()) {
+		return { commitSha: null, committed: false };
+	}
 
 	const quotedMessage = quoteGitHubExportShellArg(ctx.message);
 	const quotedName = quoteGitHubExportShellArg(ctx.authorName);
@@ -509,12 +544,72 @@ async function collectSessionCommitSubjects(
 	}
 }
 
+function parseChangedFilePathsFromDiffNameOnly(stdout: string): string[] {
+	const paths: string[] = [];
+	for (const line of stdout.split("\n")) {
+		const path = line.trim();
+		if (path) {
+			paths.push(path);
+		}
+	}
+	return paths;
+}
+
+async function gitDiffNameOnlyForRevRange(
+	sandbox: ReturnType<typeof getProjectSandbox>,
+	cwd: string,
+	revRange: string,
+): Promise<string[] | null> {
+	const result = await sandbox.exec(`git diff --name-only ${revRange}`, {
+		cwd,
+		timeout: GIT_COMMAND_TIMEOUT_MS,
+	});
+	if (!result.success) {
+		return null;
+	}
+	return parseChangedFilePathsFromDiffNameOnly(result.stdout);
+}
+
+/** Changed paths for the PR range (merge-base…HEAD), with base/origin fallbacks. */
+async function collectSessionChangedFiles(
+	ctx: SessionGitContext,
+	base: string,
+): Promise<string[]> {
+	try {
+		const sandbox = getProjectSandbox(ctx.env, ctx.sandboxId);
+		const cwd = ctx.session.workspacePath;
+		const quotedBase = quoteGitHubExportShellArg(base);
+
+		const localRangeFiles = await gitDiffNameOnlyForRevRange(
+			sandbox,
+			cwd,
+			`${quotedBase}...HEAD`,
+		);
+		if (localRangeFiles !== null) {
+			return localRangeFiles;
+		}
+
+		const quotedOriginBase = quoteGitHubExportShellArg(`origin/${base}`);
+		const originRangeFiles = await gitDiffNameOnlyForRevRange(
+			sandbox,
+			cwd,
+			`${quotedOriginBase}...HEAD`,
+		);
+		if (originRangeFiles !== null) {
+			return originRangeFiles;
+		}
+
+		return [];
+	} catch {
+		return [];
+	}
+}
+
 export async function openSessionPullRequest(
 	ctx: SessionGitContext & {
 		title?: string;
 		body?: string;
 		baseBranch?: string;
-		changedFileCount: number;
 	},
 ): Promise<{ url: string; number: number }> {
 	const app = getGitHubApp(ctx.env);
@@ -542,6 +637,9 @@ export async function openSessionPullRequest(
 		needsDefaultTitle || needsDefaultBody
 			? await collectSessionCommitSubjects(ctx, base)
 			: undefined;
+	const changedFiles = needsDefaultBody
+		? await collectSessionChangedFiles(ctx, base)
+		: undefined;
 
 	try {
 		const created = await octokit.rest.pulls.create({
@@ -561,7 +659,7 @@ export async function openSessionPullRequest(
 					sessionId: ctx.session.id,
 					sessionTitle: ctx.session.title,
 					commitSubjects,
-					changedFileCount: ctx.changedFileCount,
+					changedFiles,
 				}),
 		});
 		return {

@@ -157,7 +157,6 @@ describe("ensureProjectSandbox", () => {
 				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
 				env: makeEnv(),
 				project: baseProject,
-				envVars: [],
 			}),
 		).resolves.toMatchObject({ state: "connected", project: baseProject });
 
@@ -197,7 +196,6 @@ describe("ensureProjectSandbox", () => {
 				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
 				env: makeEnv(),
 				project: baseProject,
-				envVars: [{ key: "KEY", value: "value" }],
 			}),
 		).resolves.toMatchObject({
 			state: "restored_from_backup",
@@ -208,7 +206,6 @@ describe("ensureProjectSandbox", () => {
 			env: makeEnv(),
 			sandboxId,
 			backup: { id: "backup-1", dir: "/workspace" },
-			envVars: [{ key: "KEY", value: "value" }],
 		});
 		expect(backupSandboxWorkspaceMock).toHaveBeenCalledWith({
 			env: makeEnv(),
@@ -257,7 +254,6 @@ describe("ensureProjectSandbox", () => {
 				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
 				env: makeEnv(),
 				project: baseProject,
-				envVars: [],
 			}),
 		).resolves.toMatchObject({ state: "recreated_from_github" });
 
@@ -293,7 +289,6 @@ describe("ensureProjectSandbox", () => {
 				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
 				env: makeEnv(),
 				project: baseProject,
-				envVars: [],
 			}),
 		).resolves.toMatchObject({ state: "recreated_from_github" });
 
@@ -317,7 +312,6 @@ describe("ensureProjectSandbox", () => {
 				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
 				env: makeEnv(),
 				project: baseProject,
-				envVars: [],
 			}),
 		).rejects.toThrow("Project sandbox restore failed. Please try again.");
 

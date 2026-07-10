@@ -83,14 +83,12 @@ export async function ensureSessionWorktree(options: {
 	}
 
 	const primaryNodeModules = `${WORKSPACE_PATH}/node_modules`;
-	const primaryEnv = `${WORKSPACE_PATH}/.env`;
 	await execOrThrow(
 		sandbox,
 		[
 			"set -euo pipefail",
 			`WT=${quoteShellArg(worktreePath)}`,
 			`if [ -e ${quoteShellArg(primaryNodeModules)} ] && [ ! -e "$WT/node_modules" ]; then ln -s ${quoteShellArg(primaryNodeModules)} "$WT/node_modules"; fi`,
-			`if [ -f ${quoteShellArg(primaryEnv)} ] && [ ! -e "$WT/.env" ]; then ln -s ${quoteShellArg(primaryEnv)} "$WT/.env"; fi`,
 		].join("; "),
 		{
 			cwd: WORKSPACE_PATH,

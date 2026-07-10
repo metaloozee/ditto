@@ -15,11 +15,7 @@ import {
 } from "#/lib/project-env-vars";
 import { ensureProjectSandbox } from "#/lib/project-sandbox";
 import { serializeSandboxBackup } from "#/lib/sandbox-backup";
-import {
-	bootstrapSandbox,
-	destroySandbox,
-	syncSandboxEnvFile,
-} from "#/lib/sandbox-bootstrap";
+import { bootstrapSandbox, destroySandbox } from "#/lib/sandbox-bootstrap";
 import { redactSecrets } from "#/lib/secret-redaction";
 
 export const projectsRouter = createTRPCRouter({
@@ -110,7 +106,6 @@ export const projectsRouter = createTRPCRouter({
 					sandboxId,
 					githubRepo: githubImport.repo,
 					installationId: githubImport.installationId,
-					envVars: sanitizedEnvVars,
 				});
 
 				const [updatedProject] = await db
@@ -268,7 +263,6 @@ export const projectsRouter = createTRPCRouter({
 					db,
 					env: ctx.env,
 					project,
-					envVars: nextEnvVars,
 				});
 
 				if (!ensured.project.sandboxId) {
@@ -277,12 +271,6 @@ export const projectsRouter = createTRPCRouter({
 						message: "Project sandbox is not ready yet.",
 					});
 				}
-
-				await syncSandboxEnvFile({
-					env: ctx.env,
-					sandboxId: ensured.project.sandboxId,
-					envVars: nextEnvVars,
-				});
 			}
 
 			await db
@@ -349,7 +337,6 @@ export const projectsRouter = createTRPCRouter({
 					db,
 					env: ctx.env,
 					project,
-					envVars: nextEnvVars,
 				});
 
 				if (!ensured.project.sandboxId) {
@@ -358,12 +345,6 @@ export const projectsRouter = createTRPCRouter({
 						message: "Project sandbox is not ready yet.",
 					});
 				}
-
-				await syncSandboxEnvFile({
-					env: ctx.env,
-					sandboxId: ensured.project.sandboxId,
-					envVars: nextEnvVars,
-				});
 			}
 
 			await db

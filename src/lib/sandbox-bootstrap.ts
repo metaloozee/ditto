@@ -31,32 +31,6 @@ function quoteShellArg(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-function formatEnvFile(envVars: SandboxEnvVar[]): string {
-	return envVars
-		.map(({ key, value }) => {
-			const escapedValue = value
-				.replaceAll("\\", "\\\\")
-				.replaceAll('"', '\\"')
-				.replaceAll("\n", "\\n");
-
-			return `${key}="${escapedValue}"`;
-		})
-		.join("\n");
-}
-
-export async function syncSandboxEnvFile(options: {
-	env: Env;
-	sandboxId: string;
-	envVars: SandboxEnvVar[];
-}): Promise<void> {
-	const sandbox = getProjectSandbox(options.env, options.sandboxId);
-
-	await sandbox.writeFile(
-		`${WORKSPACE_PATH}/.env`,
-		options.envVars.length > 0 ? `${formatEnvFile(options.envVars)}\n` : "",
-	);
-}
-
 export async function destroySandbox(options: {
 	env: Env;
 	sandboxId: string;
@@ -235,15 +209,9 @@ export async function restoreSandboxWorkspace(options: {
 	env: Env;
 	sandboxId: string;
 	backup: DirectoryBackup;
-	envVars: SandboxEnvVar[];
 }): Promise<void> {
 	const sandbox = getProjectSandbox(options.env, options.sandboxId);
 	await sandbox.restoreBackup(options.backup);
-	await syncSandboxEnvFile({
-		env: options.env,
-		sandboxId: options.sandboxId,
-		envVars: options.envVars,
-	});
 	await installDependencies(sandbox);
 }
 
@@ -273,7 +241,6 @@ export async function bootstrapSandbox(options: {
 	sandboxId: string;
 	githubRepo: string;
 	installationId: number;
-	envVars: SandboxEnvVar[];
 }): Promise<{ sandboxId: string; backup: DirectoryBackup }> {
 	const sandbox = getProjectSandbox(options.env, options.sandboxId);
 
@@ -299,13 +266,6 @@ export async function bootstrapSandbox(options: {
 
 		await scrubGithubRemote(sandbox, WORKSPACE_PATH, publicRepoUrl);
 		await configureDittoGitIdentity(sandbox, WORKSPACE_PATH);
-
-		if (options.envVars.length > 0) {
-			await sandbox.writeFile(
-				`${WORKSPACE_PATH}/.env`,
-				`${formatEnvFile(options.envVars)}\n`,
-			);
-		}
 
 		await installDependencies(sandbox);
 		const backup = await backupSandboxWorkspace({

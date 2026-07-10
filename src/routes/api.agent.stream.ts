@@ -137,7 +137,6 @@ export const Route = createFileRoute("/api/agent/stream")({
 						db,
 						env,
 						project,
-						envVars,
 					});
 					ensuredProject = ensured.project;
 					sandboxState = ensured.state;
@@ -263,7 +262,10 @@ export const Route = createFileRoute("/api/agent/stream")({
 					);
 				}
 
-				const secretValues = [env.OPENCODE_API_KEY].filter(
+				const secretValues = [
+					env.OPENCODE_API_KEY,
+					...envVars.map((envVar) => envVar.value),
+				].filter(
 					(value): value is string =>
 						typeof value === "string" && value.length > 0,
 				);
@@ -296,6 +298,7 @@ export const Route = createFileRoute("/api/agent/stream")({
 								cwd: sessionWorkspacePath,
 								model: input.model,
 								prompt: input.message,
+								envVars,
 								onRunnerMessage: async (msg) => {
 									if (msg.kind === "agent_event") {
 										enqueue("agent", { event: msg.event });

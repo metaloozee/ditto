@@ -10,9 +10,6 @@ vi.mock("#/lib/project-sandbox", () => ({
 vi.mock("#/lib/session-worktree", () => ({
 	ensureSessionWorktree: vi.fn(),
 }));
-vi.mock("#/lib/project-env-vars", () => ({
-	decryptEnvVars: vi.fn().mockResolvedValue({}),
-}));
 vi.mock("#/lib/session-git", () => ({
 	getSessionGitStatus: getSessionGitStatusMock,
 	pushSessionBranch: pushSessionBranchMock,
@@ -115,8 +112,10 @@ describe("dispatchAgentGitAction", () => {
 		expect(openSessionPullRequestMock).toHaveBeenCalledWith(
 			expect.objectContaining({
 				title: "My PR",
-				changedFileCount: 1,
 			}),
+		);
+		expect(openSessionPullRequestMock.mock.calls[0]?.[0]).not.toHaveProperty(
+			"changedFileCount",
 		);
 		expect(result).toEqual({
 			url: "https://github.com/acme/repo/pull/1",

@@ -75,6 +75,7 @@ describe("runAgentInSandbox", () => {
 			cwd: SESSION_WORKTREE_CWD,
 			model: "opencode/gpt-4.1",
 			prompt: "do the thing",
+			envVars: [{ key: "DATABASE_URL", value: "postgres://secret" }],
 			onRunnerMessage,
 		});
 
@@ -83,6 +84,7 @@ describe("runAgentInSandbox", () => {
 				id: "agent-conv-1",
 				cwd: SESSION_WORKTREE_CWD,
 				env: expect.objectContaining({
+					DATABASE_URL: "postgres://secret",
 					OPENCODE_API_KEY: makeEnv().OPENCODE_API_KEY,
 					DITTO_GIT_CALLBACK_URL: "http://localhost:5173/api/agent/git",
 					DITTO_GIT_CALLBACK_TOKEN: expect.any(String),

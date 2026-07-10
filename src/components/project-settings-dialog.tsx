@@ -280,9 +280,9 @@ export function ProjectSettingsDialog({
 										</Badge>
 									</div>
 									<p className="text-pretty text-xs text-muted-foreground">
-										Stored encrypted and synced to the sandbox .env file when a
-										sandbox exists. Values stay hidden after save and can only
-										be replaced.
+										Stored encrypted and injected into agent sessions as process
+										environment variables. Values stay hidden after save and can
+										only be replaced.
 									</p>
 								</div>
 								<Button

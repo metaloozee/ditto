@@ -11,7 +11,6 @@ import {
 	bootstrapSandbox,
 	isSandboxWorkspaceHydrated,
 	restoreSandboxWorkspace,
-	type SandboxEnvVar,
 } from "#/lib/sandbox-bootstrap";
 
 export type EnsureProjectSandboxResult = {
@@ -109,7 +108,6 @@ async function recreateSandboxFromGitHub(options: {
 	env: Env;
 	project: typeof projects.$inferSelect;
 	sandboxId: string;
-	envVars: SandboxEnvVar[];
 }): Promise<EnsureProjectSandboxResult> {
 	if (!options.project.githubRepo || !options.project.githubInstallationId) {
 		throw new Error(
@@ -123,7 +121,6 @@ async function recreateSandboxFromGitHub(options: {
 		sandboxId: options.sandboxId,
 		githubRepo: options.project.githubRepo,
 		installationId: options.project.githubInstallationId,
-		envVars: options.envVars,
 	});
 
 	if (
@@ -148,7 +145,6 @@ export async function ensureProjectSandbox(options: {
 	db: ReturnType<typeof createDb>;
 	env: Env;
 	project: typeof projects.$inferSelect;
-	envVars: SandboxEnvVar[];
 }): Promise<EnsureProjectSandboxResult> {
 	if (options.project.status !== "ready" || !options.project.sandboxId) {
 		throw new Error("Project sandbox is not ready yet.");
@@ -195,7 +191,6 @@ export async function ensureProjectSandbox(options: {
 					env: options.env,
 					sandboxId,
 					backup: storedBackup,
-					envVars: options.envVars,
 				});
 			} catch {
 				return await recreateSandboxFromGitHub({
@@ -203,7 +198,6 @@ export async function ensureProjectSandbox(options: {
 					env: options.env,
 					project: lockedProject,
 					sandboxId,
-					envVars: options.envVars,
 				});
 			}
 
@@ -236,7 +230,6 @@ export async function ensureProjectSandbox(options: {
 			env: options.env,
 			project: lockedProject,
 			sandboxId,
-			envVars: options.envVars,
 		});
 	} catch {
 		await markProjectRestoreFailed({

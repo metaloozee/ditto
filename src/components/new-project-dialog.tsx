@@ -778,11 +778,8 @@ function ReadyStep({
 											Environment Variables
 										</span>
 										<span className="text-xs text-muted-foreground">
-											Optional. Written to{" "}
-											<code className="rounded bg-muted px-1 py-0.5 text-[0.7rem] font-mono">
-												.env
-											</code>{" "}
-											in the sandbox.
+											Optional. Injected into agent sessions as process
+											environment variables.
 										</span>
 									</div>
 									<Button

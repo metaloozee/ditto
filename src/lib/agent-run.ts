@@ -11,6 +11,7 @@ import { dittoGitAuthorEnv } from "#/lib/ditto-git-identity";
 import {
 	backupSandboxWorkspace,
 	getProjectSandbox,
+	type SandboxEnvVar,
 } from "#/lib/sandbox-bootstrap";
 import { redactSecrets } from "#/lib/secret-redaction";
 import { WORKSPACE_PATH } from "#/lib/workspace-policy";
@@ -22,6 +23,18 @@ function quoteShellArg(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
+function projectEnvRecord(
+	envVars: readonly SandboxEnvVar[] | undefined,
+): Record<string, string> {
+	const record: Record<string, string> = {};
+	for (const { key, value } of envVars ?? []) {
+		if (key) {
+			record[key] = value;
+		}
+	}
+	return record;
+}
+
 export async function runAgentInSandbox(options: {
 	env: Env;
 	sandboxId: string;
@@ -31,6 +44,7 @@ export async function runAgentInSandbox(options: {
 	cwd: string;
 	model: string;
 	prompt: string;
+	envVars?: readonly SandboxEnvVar[];
 	onRunnerMessage: (msg: RunnerOut) => void | Promise<void>;
 }): Promise<{
 	ok: boolean;
@@ -47,10 +61,12 @@ export async function runAgentInSandbox(options: {
 		userId: options.userId,
 		sandboxId: options.sandboxId,
 	});
+	const projectEnv = projectEnvRecord(options.envVars);
 	const shell = await sandbox.createSession({
 		id: `agent-${options.conversationId}`,
 		cwd: options.cwd,
 		env: {
+			...projectEnv,
 			OPENCODE_API_KEY: options.env.OPENCODE_API_KEY,
 			DITTO_GIT_CALLBACK_URL: agentGitCallbackUrl(options.env),
 			DITTO_GIT_CALLBACK_TOKEN: gitCallbackToken,
@@ -66,7 +82,11 @@ export async function runAgentInSandbox(options: {
 	let sawRunnerDone = false;
 	let errorEmitted = false;
 
-	const secretValues = [options.env.OPENCODE_API_KEY, gitCallbackToken].filter(
+	const secretValues = [
+		options.env.OPENCODE_API_KEY,
+		gitCallbackToken,
+		...Object.values(projectEnv),
+	].filter(
 		(value): value is string => typeof value === "string" && value.length > 0,
 	);
 

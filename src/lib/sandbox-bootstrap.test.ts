@@ -91,7 +91,7 @@ describe("sandbox bootstrap helpers", () => {
 		expect(sandbox.exists).toHaveBeenCalledWith("/workspace/.git");
 	});
 
-	it("restores a backup, syncs env vars, and skips install without package.json", async () => {
+	it("restores a backup and skips install without package.json", async () => {
 		const sandbox = makeSandbox({ hasPackageJson: false });
 		getSandboxMock.mockReturnValue(sandbox);
 
@@ -99,17 +99,13 @@ describe("sandbox bootstrap helpers", () => {
 			env: { Sandbox: {} } as unknown as Env,
 			sandboxId: "sandbox-1",
 			backup: { id: "backup-1", dir: "/workspace" },
-			envVars: [{ key: "KEY", value: "value" }],
 		});
 
 		expect(sandbox.restoreBackup).toHaveBeenCalledWith({
 			id: "backup-1",
 			dir: "/workspace",
 		});
-		expect(sandbox.writeFile).toHaveBeenCalledWith(
-			"/workspace/.env",
-			'KEY="value"\n',
-		);
+		expect(sandbox.writeFile).not.toHaveBeenCalled();
 		expect(sandbox.exec).not.toHaveBeenCalled();
 	});
 
@@ -152,7 +148,6 @@ describe("sandbox bootstrap helpers", () => {
 				sandboxId: "sandbox-1",
 				githubRepo: "owner/repo",
 				installationId: 42,
-				envVars: [{ key: "KEY", value: "value" }],
 			}),
 		).resolves.toEqual({
 			sandboxId: "sandbox-1",
@@ -172,10 +167,7 @@ describe("sandbox bootstrap helpers", () => {
 			"https://x-access-token:token-123@github.com/owner/repo.git",
 			expect.objectContaining({ targetDir: "/workspace" }),
 		);
-		expect(sandbox.writeFile).toHaveBeenCalledWith(
-			"/workspace/.env",
-			'KEY="value"\n',
-		);
+		expect(sandbox.writeFile).not.toHaveBeenCalled();
 		expect(sandbox.exec).toHaveBeenCalledWith(
 			"pnpm install --no-frozen-lockfile",
 			expect.objectContaining({ cwd: "/workspace" }),
@@ -198,7 +190,6 @@ describe("sandbox bootstrap helpers", () => {
 				sandboxId: "sandbox-1",
 				githubRepo: "owner/repo",
 				installationId: 42,
-				envVars: [],
 			}),
 		).rejects.toThrow("clone failed");
 
