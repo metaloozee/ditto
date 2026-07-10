@@ -2,10 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getProjectSandboxMock = vi.hoisted(() => vi.fn());
 const execOrThrowMock = vi.hoisted(() => vi.fn());
+const configureDittoGitIdentityMock = vi.hoisted(() =>
+	vi.fn().mockResolvedValue(undefined),
+);
 
 vi.mock("#/lib/sandbox-bootstrap", () => ({
 	getProjectSandbox: getProjectSandboxMock,
 	execOrThrow: execOrThrowMock,
+	configureDittoGitIdentity: configureDittoGitIdentityMock,
 }));
 
 const { ensureSessionWorktree } = await import("./session-worktree");
@@ -51,6 +55,10 @@ describe("ensureSessionWorktree", () => {
 			baseCommitSha: "deadbeef",
 			workspacePath: "/workspace/.ditto/worktrees/sess-1",
 		});
+		expect(configureDittoGitIdentityMock).toHaveBeenCalledWith(
+			sandbox,
+			"/workspace",
+		);
 		expect(execOrThrowMock).toHaveBeenCalledTimes(4);
 		expect(execOrThrowMock.mock.calls[1]?.[1]).toContain("git branch");
 		expect(execOrThrowMock.mock.calls[2]?.[1]).toContain("git worktree add");

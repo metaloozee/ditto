@@ -9,7 +9,7 @@ export const dittoPushBranchTool = defineTool({
 	name: "ditto_push_branch",
 	label: "Push branch",
 	description:
-		"Push this session's branch to GitHub via Ditto. Use after local commits exist (use bash/git for status and commit). Does not create a pull request.",
+		"Push this session's branch to GitHub via Ditto. Use after local commits exist (use bash/git for status and commit; commit author is Ditto). Use Conventional Commits for git commit -m messages (feat:, fix:, chore:, etc.). Does not create a pull request.",
 	parameters: Type.Object({}),
 	async execute() {
 		const result = await postAgentGitAction({
@@ -27,7 +27,7 @@ export const dittoOpenPullRequestTool = defineTool({
 	name: "ditto_open_pull_request",
 	label: "Open pull request",
 	description:
-		"Open a GitHub pull request for this session's branch via Ditto. Commit local changes first (bash/git). Optionally set title, body, and baseBranch.",
+		"Open a GitHub pull request for this session's branch via Ditto. Commit local changes first (bash/git; author is Ditto). Use Conventional Commits for git commit -m messages (feat:, fix:, chore:, etc.). Optionally set title, body, and baseBranch.",
 	parameters: Type.Object({
 		title: Type.Optional(Type.String({ description: "Pull request title" })),
 		body: Type.Optional(Type.String({ description: "Pull request body" })),

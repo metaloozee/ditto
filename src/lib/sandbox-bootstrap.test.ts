@@ -9,6 +9,13 @@ vi.mock("@cloudflare/sandbox", () => ({
 
 vi.mock("#/lib/github-app", () => ({
 	getInstallationAccessToken: getInstallationAccessTokenMock,
+	repositoryNameFromSlug: (githubRepo: string) => {
+		const parts = githubRepo.split("/").filter(Boolean);
+		if (parts.length < 2) {
+			return undefined;
+		}
+		return parts[parts.length - 1];
+	},
 }));
 
 const {
@@ -155,6 +162,7 @@ describe("sandbox bootstrap helpers", () => {
 		expect(getInstallationAccessTokenMock).toHaveBeenCalledWith(
 			expect.objectContaining({ Sandbox: {} }),
 			42,
+			{ repositories: ["repo"] },
 		);
 		expect(sandbox.exec).toHaveBeenCalledWith(
 			"find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +",

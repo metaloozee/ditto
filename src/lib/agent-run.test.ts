@@ -86,6 +86,10 @@ describe("runAgentInSandbox", () => {
 					OPENCODE_API_KEY: makeEnv().OPENCODE_API_KEY,
 					DITTO_GIT_CALLBACK_URL: "http://localhost:5173/api/agent/git",
 					DITTO_GIT_CALLBACK_TOKEN: expect.any(String),
+					GIT_AUTHOR_NAME: "Ditto",
+					GIT_AUTHOR_EMAIL: "ditto@users.noreply.github.com",
+					GIT_COMMITTER_NAME: "Ditto",
+					GIT_COMMITTER_EMAIL: "ditto@users.noreply.github.com",
 				}),
 			}),
 		);

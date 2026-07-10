@@ -1,4 +1,8 @@
-import { execOrThrow, getProjectSandbox } from "#/lib/sandbox-bootstrap";
+import {
+	configureDittoGitIdentity,
+	execOrThrow,
+	getProjectSandbox,
+} from "#/lib/sandbox-bootstrap";
 import {
 	sessionBranchName,
 	sessionWorktreePath,
@@ -26,6 +30,7 @@ export async function ensureSessionWorktree(options: {
 	workspacePath: string;
 }> {
 	const sandbox = getProjectSandbox(options.env, options.sandboxId);
+	await configureDittoGitIdentity(sandbox, WORKSPACE_PATH);
 	const branchName = sessionBranchName(options.sessionId);
 	const worktreePath = sessionWorktreePath(options.sessionId);
 	const existing = options.existing;

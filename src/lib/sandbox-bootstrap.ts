@@ -1,5 +1,12 @@
 import { type DirectoryBackup, getSandbox } from "@cloudflare/sandbox";
-import { getInstallationAccessToken } from "#/lib/github-app";
+import {
+	DITTO_GIT_AUTHOR_EMAIL,
+	DITTO_GIT_AUTHOR_NAME,
+} from "#/lib/ditto-git-identity";
+import {
+	getInstallationAccessToken,
+	repositoryNameFromSlug,
+} from "#/lib/github-app";
 import { getSandboxBackupOptions } from "#/lib/sandbox-backup";
 import { redactSecrets } from "#/lib/secret-redaction";
 import { WORKSPACE_PATH } from "#/lib/workspace-policy";
@@ -57,6 +64,23 @@ export async function destroySandbox(options: {
 	const sandbox = getProjectSandbox(options.env, options.sandboxId);
 
 	await sandbox.destroy();
+}
+
+export async function configureDittoGitIdentity(
+	sandbox: ReturnType<typeof getSandbox>,
+	cwd: string,
+): Promise<void> {
+	const quotedName = quoteShellArg(DITTO_GIT_AUTHOR_NAME);
+	const quotedEmail = quoteShellArg(DITTO_GIT_AUTHOR_EMAIL);
+	await execOrThrow(
+		sandbox,
+		`git config user.name ${quotedName} && git config user.email ${quotedEmail}`,
+		{
+			cwd,
+			timeout: CLONE_TIMEOUT_MS,
+			errorPrefix: "Failed to configure Ditto git identity",
+		},
+	);
 }
 
 export async function scrubGithubRemote(
@@ -254,9 +278,11 @@ export async function bootstrapSandbox(options: {
 	const sandbox = getProjectSandbox(options.env, options.sandboxId);
 
 	try {
+		const repoName = repositoryNameFromSlug(options.githubRepo);
 		const token = await getInstallationAccessToken(
 			options.env,
 			options.installationId,
+			repoName ? { repositories: [repoName] } : undefined,
 		);
 		const repoUrl = `https://x-access-token:${token}@github.com/${options.githubRepo}.git`;
 		const publicRepoUrl = `https://github.com/${options.githubRepo}.git`;
@@ -272,6 +298,7 @@ export async function bootstrapSandbox(options: {
 		});
 
 		await scrubGithubRemote(sandbox, WORKSPACE_PATH, publicRepoUrl);
+		await configureDittoGitIdentity(sandbox, WORKSPACE_PATH);
 
 		if (options.envVars.length > 0) {
 			await sandbox.writeFile(
