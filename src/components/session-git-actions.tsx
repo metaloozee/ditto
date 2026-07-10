@@ -21,7 +21,6 @@ type SessionGitActionsProps = {
 	projectId: string;
 	sessionId: string;
 	disabled?: boolean;
-	onAfterAction?: () => void;
 };
 
 type WorkflowStepId = "commit" | "push" | "pr";
@@ -192,19 +191,20 @@ export function SessionGitActions({
 	projectId,
 	sessionId,
 	disabled = false,
-	onAfterAction,
 }: SessionGitActionsProps) {
 	const trpc = useTRPC();
 	const queryClient = useQueryClient();
-	const canRun = Boolean(projectId && sessionId && !disabled);
+	const hasIds = Boolean(projectId && sessionId);
+	const canRun = hasIds && !disabled;
 
 	const statusQuery = useQuery(
 		trpc.sessionGit.gitStatus.queryOptions(
 			{ projectId, sessionId },
 			{
-				enabled: canRun,
+				enabled: hasIds,
 				retry: false,
 				refetchOnWindowFocus: false,
+				placeholderData: (previous) => previous,
 			},
 		),
 	);
@@ -213,7 +213,6 @@ export function SessionGitActions({
 		void queryClient.invalidateQueries(
 			trpc.sessionGit.gitStatus.queryFilter({ projectId, sessionId }),
 		);
-		onAfterAction?.();
 	};
 
 	const commitMutation = useMutation(
@@ -276,17 +275,17 @@ export function SessionGitActions({
 	);
 
 	const status = statusQuery.data;
+	const statusLoading = statusQuery.isLoading && !status;
 	const busy =
 		commitMutation.isPending ||
 		pushMutation.isPending ||
 		openPrMutation.isPending;
 
-	const commitDisabled =
-		!canRun || busy || !status?.dirty || statusQuery.isLoading;
+	const commitDisabled = !canRun || busy || !status?.dirty || statusLoading;
 	const pushDisabled =
 		!canRun ||
 		busy ||
-		statusQuery.isLoading ||
+		statusLoading ||
 		!status ||
 		status.dirty ||
 		status.ahead <= 0;
@@ -294,16 +293,16 @@ export function SessionGitActions({
 	const openPrDisabled =
 		!canRun ||
 		busy ||
-		statusQuery.isLoading ||
+		statusLoading ||
 		!status ||
 		(!existingPullRequest && status.dirty);
-	const viewPrDisabled = !canRun || busy || statusQuery.isLoading;
+	const viewPrDisabled = !canRun || busy || statusLoading;
 
-	if (!canRun) {
+	if (!hasIds) {
 		return null;
 	}
 
-	if (statusQuery.isError) {
+	if (statusQuery.isError && !status) {
 		return (
 			<span className="text-muted-foreground text-[11px]">Git unavailable</span>
 		);
@@ -313,7 +312,7 @@ export function SessionGitActions({
 	const aheadCount = status?.ahead ?? 0;
 	const dirty = status?.dirty ?? false;
 	const nextStep = resolveNextStep({
-		loading: statusQuery.isLoading || !status,
+		loading: statusLoading,
 		dirty,
 		ahead: aheadCount,
 		hasPullRequest: Boolean(existingPullRequest),
