@@ -1,4 +1,8 @@
-import { getGitHubApp, getInstallationAccessToken } from "#/lib/github-app";
+import {
+	getGitHubApp,
+	getInstallationAccessToken,
+	repositoryNameFromSlug,
+} from "#/lib/github-app";
 import {
 	buildExportCommitMessage,
 	buildPullRequestTitle,
@@ -10,6 +14,41 @@ import { getProjectSandbox, scrubGithubRemote } from "#/lib/sandbox-bootstrap";
 import { WORKSPACE_PATH } from "#/lib/workspace-policy";
 
 const GIT_COMMAND_TIMEOUT_MS = 120_000;
+
+/** Actionable message when the GitHub App lacks write access (push). */
+export const GITHUB_APP_PUSH_PERMISSION_MESSAGE =
+	"GitHub App cannot push to this repository. Update the app permissions to include Contents (read & write) and Pull requests (read & write), then reinstall the app on the repository (or grant access if using selected repos).";
+
+/** Actionable message when the GitHub App lacks write access (open PR). */
+export const GITHUB_APP_PR_PERMISSION_MESSAGE =
+	"GitHub App cannot open pull requests. Update the app permissions to include Contents (read & write) and Pull requests (read & write), then reinstall the app on the repository (or grant access if using selected repos).";
+
+/**
+ * Detect GitHub permission failures from git remote / Octokit errors without
+ * matching unrelated failures (non-fast-forward, network, auth token shape).
+ */
+export function isGitHubAppPermissionDenied(message: string): boolean {
+	if (/permission to .+ denied/i.test(message)) {
+		return true;
+	}
+	if (/resource not accessible by integration/i.test(message)) {
+		return true;
+	}
+	if (
+		/HTTP 403|status code 403/i.test(message) &&
+		/denied|permission|integration|accessible/i.test(message)
+	) {
+		return true;
+	}
+	return false;
+}
+
+function installationTokenOptions(
+	githubRepo: string,
+): { repositories: string[] } | undefined {
+	const repoName = repositoryNameFromSlug(githubRepo);
+	return repoName ? { repositories: [repoName] } : undefined;
+}
 
 export type SessionGitSession = {
 	id: string;
@@ -93,6 +132,63 @@ function parsePorcelainPaths(porcelain: string): string[] {
 	return paths;
 }
 
+export type SessionGitPullRequestRef = {
+	url: string;
+	number: number;
+};
+
+async function countAheadWithoutUpstream(
+	sandbox: ReturnType<typeof getProjectSandbox>,
+	cwd: string,
+	branch: string,
+): Promise<number> {
+	const quotedOriginBranch = quoteGitHubExportShellArg(`origin/${branch}`);
+	const aheadResult = await sandbox.exec(
+		`git rev-list --count ${quotedOriginBranch}..HEAD`,
+		{ cwd, timeout: GIT_COMMAND_TIMEOUT_MS },
+	);
+	if (aheadResult.success) {
+		return Number.parseInt(aheadResult.stdout.trim(), 10) || 0;
+	}
+
+	const unpushedResult = await sandbox.exec(
+		"git rev-list --count HEAD --not --remotes=origin",
+		{ cwd, timeout: GIT_COMMAND_TIMEOUT_MS },
+	);
+	if (unpushedResult.success) {
+		return Number.parseInt(unpushedResult.stdout.trim(), 10) || 0;
+	}
+
+	const hasCommits = await sandbox.exec("git rev-parse HEAD", {
+		cwd,
+		timeout: GIT_COMMAND_TIMEOUT_MS,
+	});
+	if (hasCommits.success) {
+		return 1;
+	}
+	return 0;
+}
+
+async function syncBranchTrackingAfterPush(
+	sandbox: ReturnType<typeof getProjectSandbox>,
+	cwd: string,
+	branchName: string,
+): Promise<void> {
+	const quotedRemoteRef = quoteGitHubExportShellArg(
+		`refs/remotes/origin/${branchName}`,
+	);
+	const quotedUpstream = quoteGitHubExportShellArg(`origin/${branchName}`);
+
+	await sandbox.exec(`git update-ref ${quotedRemoteRef} HEAD`, {
+		cwd,
+		timeout: GIT_COMMAND_TIMEOUT_MS,
+	});
+	await sandbox.exec(`git branch --set-upstream-to=${quotedUpstream}`, {
+		cwd,
+		timeout: GIT_COMMAND_TIMEOUT_MS,
+	});
+}
+
 function buildStatusSummary(options: {
 	branch: string;
 	dirty: boolean;
@@ -116,6 +212,7 @@ export async function getSessionGitStatus(ctx: SessionGitContext): Promise<{
 	ahead: number;
 	changedFiles: string[];
 	summary: string;
+	pullRequest: SessionGitPullRequestRef | null;
 }> {
 	const sandbox = getProjectSandbox(ctx.env, ctx.sandboxId);
 	const cwd = ctx.session.workspacePath;
@@ -149,14 +246,10 @@ export async function getSessionGitStatus(ctx: SessionGitContext): Promise<{
 			ahead = Number.parseInt(aheadResult.stdout.trim(), 10) || 0;
 		}
 	} else {
-		const hasCommits = await sandbox.exec("git rev-parse HEAD", {
-			cwd,
-			timeout: GIT_COMMAND_TIMEOUT_MS,
-		});
-		if (hasCommits.success) {
-			ahead = 1;
-		}
+		ahead = await countAheadWithoutUpstream(sandbox, cwd, branch);
 	}
+
+	const pullRequest = await findOpenSessionPullRequest(ctx);
 
 	return {
 		branch,
@@ -169,6 +262,7 @@ export async function getSessionGitStatus(ctx: SessionGitContext): Promise<{
 			changedCount: changedFiles.length,
 			ahead,
 		}),
+		pullRequest,
 	};
 }
 
@@ -223,11 +317,18 @@ export async function pushSessionBranch(
 	const branchName = ctx.session.branchName;
 	const publicUrl = publicRepoUrl(ctx.githubRepo);
 
-	const token = await getInstallationAccessToken(ctx.env, ctx.installationId);
-	const pushUrl = tokenizedRepoUrl(ctx.githubRepo, token);
-	const quotedPushUrl = quoteGitHubExportShellArg(pushUrl);
-
+	// Token mint + push share the same try so scoped-token API 403s map cleanly.
+	// Scrub remotes in finally even if mint fails (no-op if remotes never changed).
+	let token: string | undefined;
 	try {
+		token = await getInstallationAccessToken(
+			ctx.env,
+			ctx.installationId,
+			installationTokenOptions(ctx.githubRepo),
+		);
+		const pushUrl = tokenizedRepoUrl(ctx.githubRepo, token);
+		const quotedPushUrl = quoteGitHubExportShellArg(pushUrl);
+
 		await execGitOrThrow(
 			sandbox,
 			`git push ${quotedPushUrl} HEAD:refs/heads/${branchName}`,
@@ -237,6 +338,26 @@ export async function pushSessionBranch(
 				secrets: [token],
 			},
 		);
+
+		try {
+			await syncBranchTrackingAfterPush(sandbox, cwd, branchName);
+		} catch {
+			// Push already succeeded; tracking sync is best-effort.
+		}
+	} catch (error) {
+		const raw = error instanceof Error ? error.message : String(error);
+		const message =
+			token != null ? redactGitHubExportOutput(raw, [token]) || raw : raw;
+		if (
+			isGitHubAppPermissionDenied(raw) ||
+			isGitHubAppPermissionDenied(message)
+		) {
+			throw new Error(GITHUB_APP_PUSH_PERMISSION_MESSAGE);
+		}
+		if (message !== raw) {
+			throw new Error(message);
+		}
+		throw error;
 	} finally {
 		await scrubGithubRemote(sandbox, cwd, publicUrl);
 		await scrubGithubRemote(sandbox, WORKSPACE_PATH, publicUrl);
@@ -274,13 +395,126 @@ type PullRequestClient = {
 	};
 };
 
+const SESSION_COMMIT_LOG_LIMIT = 20;
+
+function parseCommitSubjectsFromGitLog(stdout: string): string[] {
+	const subjects: string[] = [];
+	for (const line of stdout.split("\n")) {
+		const subject = line.trim();
+		if (!subject) {
+			continue;
+		}
+		if (/^merge /i.test(subject)) {
+			continue;
+		}
+		subjects.push(subject);
+	}
+	return subjects;
+}
+
+async function gitLogCommitSubjectsForRevRange(
+	sandbox: ReturnType<typeof getProjectSandbox>,
+	cwd: string,
+	revRange: string,
+): Promise<string[] | null> {
+	const result = await sandbox.exec(
+		`git log --format=%s -n ${SESSION_COMMIT_LOG_LIMIT} ${revRange}`,
+		{
+			cwd,
+			timeout: GIT_COMMAND_TIMEOUT_MS,
+		},
+	);
+	if (!result.success) {
+		return null;
+	}
+	return parseCommitSubjectsFromGitLog(result.stdout);
+}
+
+export async function findOpenSessionPullRequest(
+	ctx: SessionGitContext,
+	baseBranch?: string,
+): Promise<SessionGitPullRequestRef | null> {
+	try {
+		const app = getGitHubApp(ctx.env);
+		const octokit = (await app.getInstallationOctokit(
+			ctx.installationId,
+		)) as PullRequestClient;
+		const [owner, repo] = ctx.githubRepo.split("/");
+		if (!owner || !repo) {
+			return null;
+		}
+
+		const base =
+			baseBranch ??
+			(await octokit.rest.repos.get({ owner, repo })).data.default_branch;
+		const head = ctx.session.branchName;
+
+		const existing = await octokit.rest.pulls.list({
+			owner,
+			repo,
+			head: `${owner}:${head}`,
+			base,
+			state: "open",
+			per_page: 1,
+		});
+		const pr = existing.data[0];
+		if (!pr) {
+			return null;
+		}
+		return { url: pr.html_url, number: pr.number };
+	} catch (error) {
+		console.error("findOpenSessionPullRequest failed", error);
+		return null;
+	}
+}
+
+async function collectSessionCommitSubjects(
+	ctx: SessionGitContext,
+	base: string,
+): Promise<string[]> {
+	try {
+		const sandbox = getProjectSandbox(ctx.env, ctx.sandboxId);
+		const cwd = ctx.session.workspacePath;
+		const quotedBase = quoteGitHubExportShellArg(base);
+
+		const localRangeSubjects = await gitLogCommitSubjectsForRevRange(
+			sandbox,
+			cwd,
+			`${quotedBase}..HEAD`,
+		);
+		if (localRangeSubjects !== null) {
+			return localRangeSubjects;
+		}
+
+		const quotedOriginBase = quoteGitHubExportShellArg(`origin/${base}`);
+		const originRangeSubjects = await gitLogCommitSubjectsForRevRange(
+			sandbox,
+			cwd,
+			`${quotedOriginBase}..HEAD`,
+		);
+		if (originRangeSubjects !== null) {
+			return originRangeSubjects;
+		}
+
+		const headTip = await sandbox.exec("git log --format=%s -n 1 HEAD", {
+			cwd,
+			timeout: GIT_COMMAND_TIMEOUT_MS,
+		});
+		if (!headTip.success) {
+			return [];
+		}
+		return parseCommitSubjectsFromGitLog(headTip.stdout).slice(0, 1);
+	} catch {
+		return [];
+	}
+}
+
 export async function openSessionPullRequest(
 	ctx: SessionGitContext & {
 		title?: string;
 		body?: string;
 		baseBranch?: string;
 		changedFileCount: number;
-		projectId: string;
 	},
 ): Promise<{ url: string; number: number }> {
 	const app = getGitHubApp(ctx.env);
@@ -292,24 +526,22 @@ export async function openSessionPullRequest(
 		throw new Error("Invalid GitHub repository slug.");
 	}
 
-	const repoInfo = await octokit.rest.repos.get({ owner, repo });
-	const base = ctx.baseBranch ?? repoInfo.data.default_branch;
+	const base =
+		ctx.baseBranch ??
+		(await octokit.rest.repos.get({ owner, repo })).data.default_branch;
 	const head = ctx.session.branchName;
 
-	const existing = await octokit.rest.pulls.list({
-		owner,
-		repo,
-		head: `${owner}:${head}`,
-		base,
-		state: "open",
-		per_page: 1,
-	});
-	if (existing.data[0]) {
-		return {
-			url: existing.data[0].html_url,
-			number: existing.data[0].number,
-		};
+	const existingPr = await findOpenSessionPullRequest(ctx, base);
+	if (existingPr) {
+		return existingPr;
 	}
+
+	const needsDefaultTitle = ctx.title === undefined;
+	const needsDefaultBody = ctx.body === undefined;
+	const commitSubjects =
+		needsDefaultTitle || needsDefaultBody
+			? await collectSessionCommitSubjects(ctx, base)
+			: undefined;
 
 	try {
 		const created = await octokit.rest.pulls.create({
@@ -318,12 +550,17 @@ export async function openSessionPullRequest(
 			head,
 			base,
 			title:
-				ctx.title ?? buildPullRequestTitle({ sessionTitle: ctx.session.title }),
+				ctx.title ??
+				buildPullRequestTitle({
+					sessionTitle: ctx.session.title,
+					commitSubjects,
+				}),
 			body:
 				ctx.body ??
 				buildSessionPullRequestBody({
-					projectId: ctx.projectId,
 					sessionId: ctx.session.id,
+					sessionTitle: ctx.session.title,
+					commitSubjects,
 					changedFileCount: ctx.changedFileCount,
 				}),
 		});
@@ -333,10 +570,8 @@ export async function openSessionPullRequest(
 		};
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		if (message.includes("403")) {
-			throw new Error(
-				"GitHub App cannot open pull requests. Update the app permissions to include Contents (read & write) and Pull requests (read & write), then reinstall the app.",
-			);
+		if (isGitHubAppPermissionDenied(message)) {
+			throw new Error(GITHUB_APP_PR_PERMISSION_MESSAGE);
 		}
 		throw error;
 	}

@@ -5,12 +5,6 @@ type BuildExportBranchNameInput = {
 	now: Date;
 };
 
-type RunContextInput = {
-	projectId: string;
-	sessionId: string;
-	runId: string;
-};
-
 function sanitizeBranchSegment(value: string): string {
 	const sanitized = value.replaceAll(/[^A-Za-z0-9._/-]+/g, "-");
 	return sanitized.replaceAll(/-+/g, "-").replaceAll(/^[-/]+|[-/]+$/g, "");
@@ -34,73 +28,428 @@ export function buildExportBranchName({
 	return `ditto/run-${shortRunId}-${formatTimestamp(now)}`;
 }
 
+const CONVENTIONAL_COMMIT_RE =
+	/^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?:\s*(.+)$/i;
+
+const SUBJECT_MAX_LEN = 72;
+const PR_TITLE_MAX_LEN = 100;
+
+const MERGE_COMMIT_SUBJECT_RE = /^merge /i;
+
+/** Lower number = higher priority when picking the primary commit for PR title/summary. */
+const CONVENTIONAL_COMMIT_TYPE_PRIORITY: Record<string, number> = {
+	feat: 0,
+	fix: 1,
+	perf: 2,
+	refactor: 3,
+	docs: 4,
+	test: 5,
+	build: 6,
+	ci: 7,
+	style: 8,
+	chore: 9,
+	revert: 10,
+};
+
+const NON_CONVENTIONAL_COMMIT_TYPE_PRIORITY = 11;
+
+function normalizeWhitespace(value: string): string {
+	return value.replaceAll(/\s+/g, " ").trim();
+}
+
+function stripTrailingPeriod(value: string): string {
+	return value.replace(/\.+$/, "").trim();
+}
+
+function lowercaseDescriptionStart(value: string): string {
+	if (!value) {
+		return value;
+	}
+	const [first, second] = value;
+	if (
+		first &&
+		second &&
+		first === first.toUpperCase() &&
+		first !== first.toLowerCase() &&
+		second === second.toLowerCase()
+	) {
+		return `${first.toLowerCase()}${value.slice(1)}`;
+	}
+	return value;
+}
+
+function formatCommitSubject(
+	type: string,
+	scope: string | undefined,
+	description: string,
+): string {
+	const normalizedType = type.toLowerCase();
+	const prefix = scope
+		? `${normalizedType}(${scope}): `
+		: `${normalizedType}: `;
+	const maxDescriptionLength = Math.max(1, SUBJECT_MAX_LEN - prefix.length);
+	let body = normalizeWhitespace(description).slice(0, maxDescriptionLength);
+	body = stripTrailingPeriod(body);
+	body = lowercaseDescriptionStart(body);
+	return `${prefix}${body}`;
+}
+
+function inferCommitType(title: string): string {
+	const lower = title.toLowerCase();
+	if (/^(fix|bug)\b/.test(lower) || /\bbug\b/.test(lower)) {
+		return "fix";
+	}
+	if (/^(add|create|implement)\b/.test(lower)) {
+		return "feat";
+	}
+	if (/^(refactor|cleanup)\b/.test(lower)) {
+		return "refactor";
+	}
+	if (/\b(readme|docs?)\b/.test(lower)) {
+		return "docs";
+	}
+	if (/^test\b/.test(lower) || /\btests?\b/.test(lower)) {
+		return "test";
+	}
+	if (/^(remove|delete)\b/.test(lower)) {
+		return "chore";
+	}
+	if (/^(update|change)\b/.test(lower)) {
+		return "chore";
+	}
+	return "chore";
+}
+
+function prepareDescription(title: string, type: string): string {
+	if (type === "feat" && /^(add|create|implement)\b/i.test(title)) {
+		return title.replace(/^(add|create|implement)\b/i, (word) =>
+			word.toLowerCase(),
+		);
+	}
+	if (type === "fix" && /^fix\b/i.test(title)) {
+		const stripped = title.replace(/^fix\s+/i, "").trim();
+		return stripped || title;
+	}
+	if (type === "refactor" && /^(refactor|cleanup)\b/i.test(title)) {
+		const stripped = title.replace(/^(refactor|cleanup)\s+/i, "").trim();
+		return stripped || title;
+	}
+	if (type === "test" && /^test\b/i.test(title)) {
+		const stripped = title.replace(/^test\s+/i, "").trim();
+		return stripped || title;
+	}
+	if (
+		type === "chore" &&
+		/^(update|change|remove|delete)\b/i.test(title) &&
+		!/\breadme\b/i.test(title)
+	) {
+		return title.replace(/^(update|change|remove|delete)\b/i, (word) =>
+			word.toLowerCase(),
+		);
+	}
+	return title;
+}
+
 export function buildExportCommitMessage({
 	sessionTitle,
-	runId,
+	runId: _runId,
 }: {
 	sessionTitle?: string | null;
 	runId: string;
 }): string {
 	const title = sessionTitle?.trim();
 	if (!title) {
-		return "feat: apply ditto run changes";
+		return "chore: apply ditto session changes";
 	}
 
-	const summary = title.replaceAll(/\s+/g, " ").slice(0, 48).trim();
-	return summary
-		? `feat: apply ${summary}`
-		: `feat: apply ditto run ${runId.slice(0, 8)} changes`;
+	const collapsed = normalizeWhitespace(title);
+	const conventional = CONVENTIONAL_COMMIT_RE.exec(collapsed);
+	if (conventional) {
+		const [, rawType, rawScope, rawDescription] = conventional;
+		const scope = rawScope?.slice(1, -1);
+		return formatCommitSubject(
+			rawType,
+			scope,
+			stripTrailingPeriod(rawDescription),
+		);
+	}
+
+	const type = inferCommitType(collapsed);
+	let description = prepareDescription(collapsed, type);
+	if (type === "docs" && /\breadme\b/i.test(collapsed)) {
+		description = collapsed
+			.replace(/^(update|change)\s+/i, (word) => word.toLowerCase())
+			.replace(/\breadme\b/i, "readme");
+	} else {
+		description = lowercaseDescriptionStart(description);
+	}
+	return formatCommitSubject(type, undefined, description);
 }
 
+function capitalizeFirstLetter(value: string): string {
+	if (!value) {
+		return value;
+	}
+	return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+}
+
+function truncatePullRequestTitle(value: string): string {
+	const trimmed = value.trim();
+	if (trimmed.length <= PR_TITLE_MAX_LEN) {
+		return trimmed;
+	}
+	return `${trimmed.slice(0, PR_TITLE_MAX_LEN - 3).trimEnd()}...`;
+}
+
+function cleanSessionTitleForPullRequest(
+	sessionTitle: string | null | undefined,
+): string {
+	if (!sessionTitle?.trim()) {
+		return "";
+	}
+	return normalizeWhitespace(sessionTitle.replace(/\.{3,}$/, "").trim());
+}
+
+export function humanizeCommitSubjectForPullRequestTitle(
+	subject: string,
+): string {
+	const collapsed = normalizeWhitespace(subject);
+	const conventional = CONVENTIONAL_COMMIT_RE.exec(collapsed);
+	if (!conventional) {
+		return truncatePullRequestTitle(stripTrailingPeriod(collapsed));
+	}
+
+	const [, rawType, , rawDescription] = conventional;
+	const type = rawType.toLowerCase();
+	const description = stripTrailingPeriod(normalizeWhitespace(rawDescription));
+	if (!description) {
+		return truncatePullRequestTitle(collapsed);
+	}
+
+	if (type === "fix") {
+		const rest =
+			description.charAt(0) === description.charAt(0).toUpperCase()
+				? `${description.charAt(0).toLowerCase()}${description.slice(1)}`
+				: description;
+		return truncatePullRequestTitle(`Fix ${rest}`);
+	}
+
+	return truncatePullRequestTitle(capitalizeFirstLetter(description));
+}
+
+function filterMeaningfulCommitSubjects(
+	commitSubjects: readonly string[] | undefined,
+): string[] {
+	if (!commitSubjects?.length) {
+		return [];
+	}
+	return commitSubjects
+		.map((subject) => subject.trim())
+		.filter((subject) => subject && !MERGE_COMMIT_SUBJECT_RE.test(subject));
+}
+
+/** Git log returns newest-first; reverse to oldest-first for listing and tie-breaking. */
+export function orderCommitSubjectsOldestFirst(
+	commitSubjects: readonly string[],
+): string[] {
+	return [...commitSubjects].reverse();
+}
+
+function conventionalCommitTypePriority(subject: string): number {
+	const collapsed = normalizeWhitespace(subject);
+	const conventional = CONVENTIONAL_COMMIT_RE.exec(collapsed);
+	if (!conventional) {
+		return NON_CONVENTIONAL_COMMIT_TYPE_PRIORITY;
+	}
+	const type = conventional[1].toLowerCase();
+	return (
+		CONVENTIONAL_COMMIT_TYPE_PRIORITY[type] ??
+		NON_CONVENTIONAL_COMMIT_TYPE_PRIORITY
+	);
+}
+
+/** Among equal type priority, the oldest commit in `orderedOldestFirst` wins. */
+export function selectPrimaryCommitSubject(
+	orderedOldestFirst: readonly string[],
+): string | undefined {
+	if (!orderedOldestFirst.length) {
+		return undefined;
+	}
+	let primary = orderedOldestFirst[0];
+	let bestPriority = conventionalCommitTypePriority(primary);
+	for (const subject of orderedOldestFirst.slice(1)) {
+		const priority = conventionalCommitTypePriority(subject);
+		if (priority < bestPriority) {
+			primary = subject;
+			bestPriority = priority;
+		}
+	}
+	return primary;
+}
+
+function meaningfulCommitSubjectsOldestFirst(
+	commitSubjects: readonly string[] | undefined,
+): string[] {
+	return orderCommitSubjectsOldestFirst(
+		filterMeaningfulCommitSubjects(commitSubjects),
+	);
+}
+
+function multiCommitSummarySentence(humanizedPrimary: string): string {
+	const trimmed = humanizedPrimary.trim();
+	if (/^Fix\s+/i.test(trimmed)) {
+		const rest = trimmed.replace(/^Fix\s+/i, "");
+		return `This pull request fixes ${rest}.`;
+	}
+	if (/^Add\s+/i.test(trimmed)) {
+		const rest = trimmed.replace(/^Add\s+/i, "");
+		return `This pull request adds ${rest}.`;
+	}
+	return `This pull request covers: ${trimmed}.`;
+}
+
+function buildPullRequestSummaryParagraph(options: {
+	sessionTitle?: string | null;
+	commitSubjects: readonly string[];
+	changedFileCount?: number;
+	fallbackSingleCommitLead?: string;
+}): string {
+	const sentences: string[] = [];
+	const chronological = meaningfulCommitSubjectsOldestFirst(
+		options.commitSubjects,
+	);
+
+	if (chronological.length > 0) {
+		const primarySubject =
+			selectPrimaryCommitSubject(chronological) ?? chronological[0];
+		const primary = humanizeCommitSubjectForPullRequestTitle(primarySubject);
+		if (chronological.length === 1) {
+			sentences.push(`${primary}.`);
+		} else {
+			sentences.push(multiCommitSummarySentence(primary));
+		}
+	} else {
+		const cleanedTitle = cleanSessionTitleForPullRequest(options.sessionTitle);
+		if (cleanedTitle) {
+			sentences.push(
+				`This pull request applies the work from the session "${cleanedTitle}".`,
+			);
+		} else if (options.fallbackSingleCommitLead) {
+			sentences.push(options.fallbackSingleCommitLead);
+		} else {
+			sentences.push(
+				"This pull request applies changes from the workspace session.",
+			);
+		}
+	}
+
+	const changedFileCount = options.changedFileCount ?? 0;
+	if (changedFileCount > 0) {
+		const fileWord = changedFileCount === 1 ? "file" : "files";
+		sentences.push(
+			`It includes ${changedFileCount} changed ${fileWord} from the latest status.`,
+		);
+	}
+
+	return sentences.join(" ");
+}
+
+// commitSubjects may be newest-first (git log default); we normalize to oldest-first
+// and select the primary subject by conventional type priority.
 export function buildPullRequestTitle({
 	sessionTitle,
+	commitSubjects,
 }: {
 	sessionTitle?: string | null;
+	commitSubjects?: readonly string[];
 }): string {
-	const title = sessionTitle?.trim();
-	return title ? `Apply Ditto changes: ${title}` : "Apply Ditto run changes";
+	const chronological = meaningfulCommitSubjectsOldestFirst(commitSubjects);
+	if (chronological.length > 0) {
+		const primary =
+			selectPrimaryCommitSubject(chronological) ?? chronological[0];
+		return humanizeCommitSubjectForPullRequestTitle(primary);
+	}
+
+	const cleaned = cleanSessionTitleForPullRequest(sessionTitle);
+	if (cleaned) {
+		return truncatePullRequestTitle(capitalizeFirstLetter(cleaned));
+	}
+
+	return "Workspace session changes";
 }
 
 export function buildPullRequestBody({
-	projectId,
 	sessionId,
 	runId,
 	changedFileCount,
-}: RunContextInput & {
+	commitSubjects,
+}: {
+	sessionId: string;
+	runId: string;
 	changedFileCount: number;
+	commitSubjects?: readonly string[];
 }): string {
-	const fileWord = changedFileCount === 1 ? "file" : "files";
-	return [
-		"This PR applies changes from a Ditto sandbox run.",
-		"",
-		"It was explicitly created by the signed-in user after reviewing the run diff.",
-		"",
-		`- Project ID: ${projectId}`,
-		`- Session ID: ${sessionId}`,
-		`- Run ID: ${runId}`,
-		`- Changed files in diff artifact: ${changedFileCount} ${fileWord}`,
-	].join("\n");
+	const lines: string[] = [
+		buildPullRequestSummaryParagraph({
+			commitSubjects: commitSubjects ?? [],
+			changedFileCount,
+			fallbackSingleCommitLead:
+				"This pull request applies changes from a sandbox run after you reviewed the diff.",
+		}),
+	];
+
+	const chronological = meaningfulCommitSubjectsOldestFirst(commitSubjects);
+	if (chronological.length > 1) {
+		lines.push("");
+		lines.push("Included commits:");
+		for (const subject of chronological.slice(0, 10)) {
+			lines.push(`- ${subject}`);
+		}
+	}
+
+	lines.push("");
+	lines.push("---");
+	lines.push(`Session ID: ${sessionId}`);
+	lines.push(`Run ID: ${runId}`);
+
+	return lines.join("\n");
 }
 
+// commitSubjects may be newest-first (git log default); we normalize to oldest-first
+// and select the primary subject by conventional type priority.
 export function buildSessionPullRequestBody({
-	projectId,
 	sessionId,
+	sessionTitle,
+	commitSubjects,
 	changedFileCount,
 }: {
-	projectId: string;
 	sessionId: string;
-	changedFileCount: number;
+	sessionTitle?: string | null;
+	commitSubjects?: readonly string[];
+	changedFileCount?: number;
 }): string {
-	const fileWord = changedFileCount === 1 ? "file" : "files";
-	return [
-		"This PR applies changes from a Ditto workspace session.",
-		"",
-		"It was explicitly created by the signed-in user from the project workspace.",
-		"",
-		`- Project ID: ${projectId}`,
-		`- Session ID: ${sessionId}`,
-		`- Changed files at open time: ${changedFileCount} ${fileWord}`,
-	].join("\n");
+	const lines: string[] = [
+		buildPullRequestSummaryParagraph({
+			sessionTitle,
+			commitSubjects: commitSubjects ?? [],
+			changedFileCount,
+		}),
+	];
+
+	const chronological = meaningfulCommitSubjectsOldestFirst(commitSubjects);
+	if (chronological.length > 1) {
+		lines.push("");
+		lines.push("Included commits:");
+		for (const subject of chronological.slice(0, 10)) {
+			lines.push(`- ${subject}`);
+		}
+	}
+
+	lines.push("");
+	lines.push("---");
+	lines.push(`Session ID: ${sessionId}`);
+
+	return lines.join("\n");
 }
 
 export function countChangedFilesInDiffArtifact(patch: string): number {

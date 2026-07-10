@@ -30,56 +30,230 @@ describe("github export helpers", () => {
 		).toBe("ditto/run-unknown-20260705131415");
 	});
 
-	it("builds a conventional commit message", () => {
+	it("builds conventional commit messages from session titles", () => {
 		expect(
 			buildExportCommitMessage({
 				sessionTitle: "Add billing page",
 				runId: "run-123",
 			}),
-		).toBe("feat: apply Add billing page");
+		).toBe("feat: add billing page");
 
 		expect(
 			buildExportCommitMessage({
 				sessionTitle: null,
 				runId: "run-123456789",
 			}),
-		).toBe("feat: apply ditto run changes");
+		).toBe("chore: apply ditto session changes");
+
+		expect(
+			buildExportCommitMessage({
+				sessionTitle: "Fix login redirect",
+				runId: "run-1",
+			}),
+		).toBe("fix: login redirect");
+
+		expect(
+			buildExportCommitMessage({
+				sessionTitle: "fix: already conventional",
+				runId: "run-1",
+			}),
+		).toBe("fix: already conventional");
+
+		expect(
+			buildExportCommitMessage({
+				sessionTitle: "feat(api): add endpoint",
+				runId: "run-1",
+			}),
+		).toBe("feat(api): add endpoint");
+
+		expect(
+			buildExportCommitMessage({
+				sessionTitle: "Refactor auth flow",
+				runId: "run-1",
+			}),
+		).toBe("refactor: auth flow");
+
+		expect(
+			buildExportCommitMessage({
+				sessionTitle: "Update README",
+				runId: "run-1",
+			}),
+		).toBe("docs: update readme");
+
+		expect(
+			buildExportCommitMessage({
+				sessionTitle: "Random idea title",
+				runId: "run-1",
+			}),
+		).toBe("chore: random idea title");
 	});
 
-	it("builds a deterministic PR title", () => {
+	it("builds a human PR title from commits or session title", () => {
+		expect(
+			buildPullRequestTitle({
+				sessionTitle: "Is there a...",
+				commitSubjects: ["feat: add skills readme"],
+			}),
+		).toBe("Add skills readme");
+
+		expect(
+			buildPullRequestTitle({
+				commitSubjects: ["fix: login redirect"],
+			}),
+		).toBe("Fix login redirect");
+
+		expect(
+			buildPullRequestTitle({
+				commitSubjects: ["fix(scope): handle edge case"],
+			}),
+		).toBe("Fix handle edge case");
+
 		expect(buildPullRequestTitle({ sessionTitle: "Fix settings" })).toBe(
-			"Apply Ditto changes: Fix settings",
+			"Fix settings",
 		);
+
+		expect(buildPullRequestTitle({ sessionTitle: "Is there a..." })).toBe(
+			"Is there a",
+		);
+
 		expect(buildPullRequestTitle({ sessionTitle: "" })).toBe(
-			"Apply Ditto run changes",
+			"Workspace session changes",
 		);
+
+		const title = buildPullRequestTitle({ sessionTitle: "Fix settings" });
+		expect(title).not.toMatch(/Apply Ditto/i);
+		expect(title).not.toMatch(/Ditto/i);
+
+		// Newest-first (git log): chore tip must not win over feat
+		expect(
+			buildPullRequestTitle({
+				commitSubjects: ["chore: fix typo", "feat: add skills readme"],
+			}),
+		).toBe("Add skills readme");
+
+		expect(
+			buildPullRequestTitle({
+				commitSubjects: [
+					"docs: tweak readme",
+					"fix: login redirect",
+					"feat: add billing",
+				],
+			}),
+		).toBe("Add billing");
 	});
 
-	it("builds a PR body with run context and explicit-user reminder", () => {
+	it("builds a PR body with a human lead and session/run ids at the end", () => {
 		const body = buildPullRequestBody({
-			projectId: "project-1",
 			sessionId: "session-1",
 			runId: "run-1",
 			changedFileCount: 2,
+			commitSubjects: ["feat: add billing page", "fix: typo in footer"],
 		});
 
-		expect(body).toContain("explicitly created by the signed-in user");
-		expect(body).toContain("- Project ID: project-1");
-		expect(body).toContain("- Session ID: session-1");
-		expect(body).toContain("- Run ID: run-1");
-		expect(body).toContain("- Changed files in diff artifact: 2 files");
+		expect(body.startsWith("This pull request adds billing page.")).toBe(true);
+		expect(body).not.toMatch(/led by/i);
+		expect(body).not.toMatch(/This pull request add /i);
+		expect(body).not.toMatch(/This pull request fix /i);
+		expect(body.startsWith("Session ID:")).toBe(false);
+		expect(body).not.toContain("Project ID");
+		expect(body).not.toContain("Ditto");
+		expect(body).toContain("Included commits:");
+		expect(body).toContain("- fix: typo in footer");
+		expect(body).toContain("- feat: add billing page");
+		const commitsSection =
+			body.split("Included commits:")[1]?.split("---")[0] ?? "";
+		expect(commitsSection.indexOf("fix: typo")).toBeLessThan(
+			commitsSection.indexOf("feat: add billing"),
+		);
+		expect(body).toContain("Session ID: session-1");
+		expect(body).toContain("Run ID: run-1");
+		expect(body).toContain("2 changed files");
 	});
 
-	it("builds a session PR body without a run id", () => {
+	it("builds a session PR body with description first and session id in the footer", () => {
 		const body = buildSessionPullRequestBody({
-			projectId: "project-1",
 			sessionId: "session-1",
-			changedFileCount: 1,
+			sessionTitle: "Is there a...",
+			commitSubjects: ["feat: add skills readme"],
+			changedFileCount: 0,
 		});
 
-		expect(body).toContain("Ditto workspace session");
+		expect(body.startsWith("Add skills readme.")).toBe(true);
+		expect(body.startsWith("Session ID:")).toBe(false);
+		expect(body).not.toContain("Project ID");
+		expect(body).not.toContain("Ditto");
+		expect(body).toContain("Session ID: session-1");
+		expect(body).not.toContain("0 changed");
 		expect(body).not.toContain("Run ID");
-		expect(body).toContain("- Changed files at open time: 1 file");
+	});
+
+	it("lists multiple commit subjects in the session PR body", () => {
+		const body = buildSessionPullRequestBody({
+			sessionId: "session-2",
+			commitSubjects: [
+				"Merge branch 'main'",
+				"fix: lint errors",
+				"feat: add skills readme",
+			],
+		});
+
+		expect(body).toContain("Included commits:");
+		expect(body).toContain("- feat: add skills readme");
+		expect(body).toContain("- fix: lint errors");
+		expect(body).not.toContain("Merge branch");
+		const commitsSection =
+			body.split("Included commits:")[1]?.split("---")[0] ?? "";
+		expect(commitsSection.indexOf("feat: add skills")).toBeLessThan(
+			commitsSection.indexOf("fix: lint"),
+		);
+	});
+
+	it("crafts session PR body from newest-first commits without led-by copy", () => {
+		const body = buildSessionPullRequestBody({
+			sessionId: "session-1",
+			commitSubjects: ["chore: fix typo", "feat: add skills readme"],
+		});
+
+		expect(body.startsWith("This pull request adds skills readme.")).toBe(true);
+		expect(body).toMatch(/skills readme/i);
+		expect(body).not.toMatch(/led by/i);
+		expect(body).not.toMatch(/This pull request add /i);
+		expect(body).not.toMatch(/This pull request fix /i);
+		const commitsSection =
+			body.split("Included commits:")[1]?.split("---")[0] ?? "";
+		expect(commitsSection.indexOf("feat: add skills")).toBeLessThan(
+			commitsSection.indexOf("chore: fix typo"),
+		);
+	});
+
+	it("uses grammatical fix/add leads for multi-commit PR summaries", () => {
+		const fixBody = buildSessionPullRequestBody({
+			sessionId: "session-1",
+			commitSubjects: ["chore: tidy", "fix: login redirect"],
+		});
+		expect(fixBody.startsWith("This pull request fixes login redirect.")).toBe(
+			true,
+		);
+		expect(fixBody).not.toMatch(/This pull request fix /i);
+
+		const addBody = buildSessionPullRequestBody({
+			sessionId: "session-1",
+			commitSubjects: ["docs: note", "feat: add billing"],
+		});
+		expect(addBody).toMatch(/This pull request adds billing\./);
+		expect(addBody).not.toMatch(/This pull request add /i);
+	});
+
+	it("uses a safe fallback summary when the primary title is not Add or Fix", () => {
+		const body = buildSessionPullRequestBody({
+			sessionId: "session-1",
+			commitSubjects: ["chore: tidy", "refactor: auth flow"],
+		});
+
+		expect(body.startsWith("This pull request covers: Auth flow.")).toBe(true);
+		expect(body).not.toMatch(/led by/i);
+		expect(body).not.toMatch(/This pull request add /i);
+		expect(body).not.toMatch(/This pull request fix /i);
 	});
 
 	it("redacts secret-shaped GitHub export output", () => {

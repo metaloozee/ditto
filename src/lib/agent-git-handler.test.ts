@@ -114,7 +114,6 @@ describe("dispatchAgentGitAction", () => {
 		expect(pushSessionBranchMock).toHaveBeenCalledTimes(1);
 		expect(openSessionPullRequestMock).toHaveBeenCalledWith(
 			expect.objectContaining({
-				projectId: "proj-1",
 				title: "My PR",
 				changedFileCount: 1,
 			}),

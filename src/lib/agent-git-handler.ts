@@ -191,7 +191,6 @@ export async function dispatchAgentGitAction(options: {
 	try {
 		return await openSessionPullRequest({
 			...gitCtx,
-			projectId: options.resolved.projectId,
 			title: options.body.title,
 			body: options.body.body,
 			baseBranch: options.body.baseBranch,
