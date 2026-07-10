@@ -59,6 +59,30 @@ export async function destroySandbox(options: {
 	await sandbox.destroy();
 }
 
+export async function scrubGithubRemote(
+	sandbox: ReturnType<typeof getSandbox>,
+	cwd: string,
+	publicRepoUrl: string,
+): Promise<void> {
+	const originCheck = await sandbox.exec("git remote get-url origin", {
+		cwd,
+		timeout: CLONE_TIMEOUT_MS,
+	});
+	if (!originCheck.success) {
+		return;
+	}
+
+	await execOrThrow(
+		sandbox,
+		`git remote set-url origin ${quoteShellArg(publicRepoUrl)}`,
+		{
+			cwd,
+			timeout: CLONE_TIMEOUT_MS,
+			errorPrefix: "Failed to scrub Git remote URL",
+		},
+	);
+}
+
 export async function execOrThrow(
 	sandbox: ReturnType<typeof getSandbox>,
 	command: string,
@@ -247,15 +271,7 @@ export async function bootstrapSandbox(options: {
 			cloneTimeoutMs: CLONE_TIMEOUT_MS,
 		});
 
-		await execOrThrow(
-			sandbox,
-			`git remote set-url origin ${quoteShellArg(publicRepoUrl)}`,
-			{
-				cwd: WORKSPACE_PATH,
-				timeout: CLONE_TIMEOUT_MS,
-				errorPrefix: "Failed to scrub Git remote URL",
-			},
-		);
+		await scrubGithubRemote(sandbox, WORKSPACE_PATH, publicRepoUrl);
 
 		if (options.envVars.length > 0) {
 			await sandbox.writeFile(

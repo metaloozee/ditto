@@ -82,6 +82,27 @@ export function buildPullRequestBody({
 	].join("\n");
 }
 
+export function buildSessionPullRequestBody({
+	projectId,
+	sessionId,
+	changedFileCount,
+}: {
+	projectId: string;
+	sessionId: string;
+	changedFileCount: number;
+}): string {
+	const fileWord = changedFileCount === 1 ? "file" : "files";
+	return [
+		"This PR applies changes from a Ditto workspace session.",
+		"",
+		"It was explicitly created by the signed-in user from the project workspace.",
+		"",
+		`- Project ID: ${projectId}`,
+		`- Session ID: ${sessionId}`,
+		`- Changed files at open time: ${changedFileCount} ${fileWord}`,
+	].join("\n");
+}
+
 export function countChangedFilesInDiffArtifact(patch: string): number {
 	const files = new Set<string>();
 	for (const line of patch.split("\n")) {

@@ -4,6 +4,7 @@ import {
 	buildExportCommitMessage,
 	buildPullRequestBody,
 	buildPullRequestTitle,
+	buildSessionPullRequestBody,
 	countChangedFilesInDiffArtifact,
 	quoteGitHubExportShellArg,
 	redactGitHubExportOutput,
@@ -67,6 +68,18 @@ describe("github export helpers", () => {
 		expect(body).toContain("- Session ID: session-1");
 		expect(body).toContain("- Run ID: run-1");
 		expect(body).toContain("- Changed files in diff artifact: 2 files");
+	});
+
+	it("builds a session PR body without a run id", () => {
+		const body = buildSessionPullRequestBody({
+			projectId: "project-1",
+			sessionId: "session-1",
+			changedFileCount: 1,
+		});
+
+		expect(body).toContain("Ditto workspace session");
+		expect(body).not.toContain("Run ID");
+		expect(body).toContain("- Changed files at open time: 1 file");
 	});
 
 	it("redacts secret-shaped GitHub export output", () => {

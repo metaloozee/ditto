@@ -25,6 +25,7 @@ import {
 	PromptInputTextarea,
 	PromptInputTools,
 } from "#/components/ai-elements/prompt-input";
+import { SessionGitActions } from "#/components/session-git-actions";
 import {
 	PROJECT_CODER_MODELS,
 	type ProjectCoderModelSpecifier,
@@ -125,17 +126,23 @@ export type StreamCommitPayload = {
 type ComposerProps = {
 	projectId?: string;
 	sessionId?: string | null;
+	branchName?: string | null;
+	gitExportEnabled?: boolean;
 	disabledReason?: string;
 	onStreamingChange?: Dispatch<SetStateAction<ComposerStreamingState | null>>;
 	onStreamCommit?: (payload: StreamCommitPayload) => void;
+	onWorkspaceRefresh?: (sessionId: string) => void;
 };
 
 export function Composer({
 	projectId,
 	sessionId,
+	branchName,
+	gitExportEnabled = false,
 	disabledReason,
 	onStreamingChange,
 	onStreamCommit,
+	onWorkspaceRefresh,
 }: ComposerProps) {
 	const [text, setText] = useState("");
 	const [isStreaming, setIsStreaming] = useState(false);
@@ -427,11 +434,19 @@ export function Composer({
 						</PromptInputTools>
 					</PromptInputFooter>
 				</PromptInput>
-				<div className="flex w-full justify-between gap-5 px-2 text-xs text-muted-foreground">
+				<div className="flex w-full flex-wrap items-center justify-between gap-3 px-2 text-xs text-muted-foreground">
 					<div className="flex items-center gap-1">
-						<GitBranchIcon className="size-3" />
-						<p>master</p>
+						<GitBranchIcon className="size-3" aria-hidden />
+						<p>{branchName?.trim() || "—"}</p>
 					</div>
+					{gitExportEnabled && projectId && sessionId ? (
+						<SessionGitActions
+							projectId={projectId}
+							sessionId={sessionId}
+							disabled={Boolean(disabledReason) || isStreaming}
+							onAfterAction={() => onWorkspaceRefresh?.(sessionId)}
+						/>
+					) : null}
 				</div>
 			</div>
 		</section>

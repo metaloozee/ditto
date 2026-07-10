@@ -70,6 +70,9 @@ OPENCODE_API_KEY=
 
 ## Notes
 
+- For GitHub-linked projects, the Ditto GitHub App needs **Contents: Read &
+  write** and **Pull requests: Read & write** so the Worker can push session
+  branches and open pull requests (installation token; never stored in the DB).
 - `pnpm deploy` and `pnpm destroy` are managed through Alchemy.
 - `src/server.ts` exports the Cloudflare Sandbox binding used by the app.
 - `OPENCODE_API_KEY` is required for sandbox agent runs (passed into the harness
