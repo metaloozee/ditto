@@ -20,6 +20,8 @@ const { runAgentInSandbox } = await import("./agent-run");
 function makeEnv(): Env {
 	return {
 		OPENCODE_API_KEY: "sk-test-key-12345678901234567890",
+		BETTER_AUTH_SECRET: "test-better-auth-secret-min-length",
+		BETTER_AUTH_URL: "http://localhost:5173",
 	} as Env;
 }
 
@@ -68,6 +70,7 @@ describe("runAgentInSandbox", () => {
 			env: makeEnv(),
 			sandboxId: "sandbox-1",
 			projectId: "project-1",
+			userId: "user-1",
 			conversationId: "conv-1",
 			cwd: SESSION_WORKTREE_CWD,
 			model: "opencode/gpt-4.1",
@@ -79,6 +82,11 @@ describe("runAgentInSandbox", () => {
 			expect.objectContaining({
 				id: "agent-conv-1",
 				cwd: SESSION_WORKTREE_CWD,
+				env: expect.objectContaining({
+					OPENCODE_API_KEY: makeEnv().OPENCODE_API_KEY,
+					DITTO_GIT_CALLBACK_URL: "http://localhost:5173/api/agent/git",
+					DITTO_GIT_CALLBACK_TOKEN: expect.any(String),
+				}),
 			}),
 		);
 		expect(writeFile).toHaveBeenCalledWith(
@@ -153,6 +161,7 @@ describe("runAgentInSandbox", () => {
 			env: makeEnv(),
 			sandboxId: "sandbox-1",
 			projectId: "project-1",
+			userId: "user-1",
 			conversationId: "conv-2",
 			cwd: "/workspace/.ditto/worktrees/conv-2",
 			model: "opencode/gpt-4.1",

@@ -7,6 +7,7 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import { dittoGitCustomTools } from "./ditto-git-tools.js";
 import {
 	extractTextDelta,
 	pickAssistantText,
@@ -99,7 +100,18 @@ export async function runAgent(
 			settingsManager: SettingsManager.inMemory({
 				compaction: { enabled: true },
 			}),
-			tools: ["read", "bash", "edit", "write", "grep", "find", "ls"],
+			tools: [
+				"read",
+				"bash",
+				"edit",
+				"write",
+				"grep",
+				"find",
+				"ls",
+				"ditto_push_branch",
+				"ditto_open_pull_request",
+			],
+			customTools: [...dittoGitCustomTools],
 		});
 		session = agentSession;
 

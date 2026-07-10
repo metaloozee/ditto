@@ -79,8 +79,18 @@ Users commit, push, and open pull requests from the project UI (tRPC
   the public HTTPS URL in a `finally` block (primary `/workspace` and worktree).
 - Command output is redacted before errors reach the client.
 - Opening a PR uses installation Octokit auth (not the user's OAuth token).
-- v1 has no merge API or merge button; chat-driven git tools are a separate
-  plan.
+- v1 has no merge API or merge button.
+
+Chat-driven git uses PI custom tools in the sandbox runner (`ditto_push_branch`,
+`ditto_open_pull_request`). Those tools `POST` to Worker `POST /api/agent/git`
+with a short-lived HS256 JWT (`DITTO_GIT_CALLBACK_TOKEN`) minted when the
+agent shell session starts. The Worker verifies the JWT and reuses the same
+`session-git` helpers as the UI (installation token only inside the Worker).
+Use bash for local `git status` / `git commit`; use Ditto tools for push and
+open PR only.
+
+Operators must rebuild the sandbox image (restart `pnpm dev` or redeploy) after
+runner changes so custom tools appear in the container.
 
 ## Security notes
 
@@ -89,5 +99,9 @@ Users commit, push, and open pull requests from the project UI (tRPC
 - Stderr and client-visible errors pass through `redactSecrets`.
 - Model provider keys are injected only as sandbox session environment variables
   (for example `OPENCODE_API_KEY`).
+- GitHub App installation tokens are never placed in the sandbox. Agent git
+  tools call the Worker callback with `DITTO_GIT_CALLBACK_URL` and
+  `DITTO_GIT_CALLBACK_TOKEN` only (no `GIT_TOKEN` or `x-access-token` in
+  runner env).
 - Never log or expose raw `OPENCODE_API_KEY` values in logs, SSE payloads, or
   UI copy.

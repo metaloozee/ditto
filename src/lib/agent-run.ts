@@ -4,6 +4,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { createDb } from "#/db";
 import { projects } from "#/db/schema";
+import { agentGitCallbackUrl, mintAgentGitJwt } from "#/lib/agent-git-jwt";
 import {
 	parseRunnerStdoutLine,
 	type RunnerOut,
@@ -56,6 +57,7 @@ export async function runAgentInSandbox(options: {
 	env: Env;
 	sandboxId: string;
 	projectId: string;
+	userId: string;
 	conversationId: string;
 	cwd: string;
 	model: string;
@@ -69,11 +71,20 @@ export async function runAgentInSandbox(options: {
 	backupError?: string;
 }> {
 	const sandbox = getProjectSandbox(options.env, options.sandboxId);
+	const gitCallbackToken = await mintAgentGitJwt({
+		secret: options.env.BETTER_AUTH_SECRET,
+		projectId: options.projectId,
+		sessionId: options.conversationId,
+		userId: options.userId,
+		sandboxId: options.sandboxId,
+	});
 	const shell = await sandbox.createSession({
 		id: `agent-${options.conversationId}`,
 		cwd: options.cwd,
 		env: {
 			OPENCODE_API_KEY: options.env.OPENCODE_API_KEY,
+			DITTO_GIT_CALLBACK_URL: agentGitCallbackUrl(options.env),
+			DITTO_GIT_CALLBACK_TOKEN: gitCallbackToken,
 		},
 		commandTimeoutMs: AGENT_COMMAND_TIMEOUT_MS,
 	});

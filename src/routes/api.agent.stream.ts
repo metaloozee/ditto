@@ -289,6 +289,7 @@ export const Route = createFileRoute("/api/agent/stream")({
 								env,
 								sandboxId: ensuredProject.sandboxId as string,
 								projectId: input.projectId,
+								userId: session.user.id,
 								conversationId: sessionId,
 								cwd: sessionWorkspacePath,
 								model: input.model,
