@@ -190,9 +190,13 @@ export function Composer({
 		const userMessageId = userMessageIdRef.current;
 		const assistantMessageId =
 			done?.assistantMessageId ?? assistantMessageIdRef.current;
-		const finalParts = finalizeAssistantParts(
-			done?.parts && done.parts.length > 0 ? done.parts : partsRef.current,
-		);
+		const sourceParts =
+			partsRef.current.length > 0
+				? partsRef.current
+				: done?.parts && done.parts.length > 0
+					? done.parts
+					: [];
+		const finalParts = finalizeAssistantParts(sourceParts);
 		const assistantContent =
 			(done?.content && done.content.length > 0
 				? done.content
@@ -216,6 +220,9 @@ export function Composer({
 					parts: finalParts,
 				},
 			});
+			if (done?.ok !== false) {
+				onWorkspaceRefresh?.(session);
+			}
 		}
 
 		if (done && done.ok === false && !assistantContent.trim()) {
@@ -434,10 +441,15 @@ export function Composer({
 						</PromptInputTools>
 					</PromptInputFooter>
 				</PromptInput>
-				<div className="flex w-full flex-wrap items-center justify-between gap-3 px-2 text-xs text-muted-foreground">
-					<div className="flex items-center gap-1">
-						<GitBranchIcon className="size-3" aria-hidden />
-						<p>{branchName?.trim() || "—"}</p>
+				<div className="flex w-full flex-wrap items-center justify-between gap-2 px-2 py-0.5 text-muted-foreground">
+					<div className="flex min-w-0 items-center gap-1.5 text-[11px]">
+						<GitBranchIcon className="size-3 shrink-0" aria-hidden />
+						<p
+							className="truncate font-medium"
+							title={branchName?.trim() || undefined}
+						>
+							{branchName?.trim() || "—"}
+						</p>
 					</div>
 					{gitExportEnabled && projectId && sessionId ? (
 						<SessionGitActions
