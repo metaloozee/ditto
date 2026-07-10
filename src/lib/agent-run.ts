@@ -96,7 +96,7 @@ export async function runAgentInSandbox(options: {
 	let sawRunnerDone = false;
 	let errorEmitted = false;
 
-	const secretValues = [options.env.OPENCODE_API_KEY].filter(
+	const secretValues = [options.env.OPENCODE_API_KEY, gitCallbackToken].filter(
 		(value): value is string => typeof value === "string" && value.length > 0,
 	);
 

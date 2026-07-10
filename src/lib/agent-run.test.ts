@@ -185,4 +185,62 @@ describe("runAgentInSandbox", () => {
 			}),
 		);
 	});
+
+	it("redacts git callback JWT from stderr error surfaces", async () => {
+		let gitCallbackToken = "";
+		const writeFile = vi.fn().mockResolvedValue(undefined);
+		const mkdir = vi.fn().mockResolvedValue(undefined);
+		const execStream = vi.fn().mockResolvedValue(new ReadableStream());
+		const deleteSession = vi.fn().mockResolvedValue(undefined);
+		const createSession = vi.fn().mockImplementation(async (opts) => {
+			gitCallbackToken = opts.env.DITTO_GIT_CALLBACK_TOKEN;
+			return { id: "agent-conv-3", writeFile, mkdir, execStream };
+		});
+
+		getProjectSandboxMock.mockReturnValue({
+			createSession,
+			deleteSession,
+		});
+
+		parseSSEStreamMock.mockImplementation(async function* () {
+			yield {
+				type: "stderr",
+				timestamp: new Date().toISOString(),
+				data: `fatal: auth failed token=${gitCallbackToken}\n`,
+			};
+			yield {
+				type: "complete",
+				timestamp: new Date().toISOString(),
+				exitCode: 1,
+			};
+		});
+
+		backupSandboxWorkspaceMock.mockResolvedValue({
+			id: "backup-3",
+			dir: "/workspace",
+		});
+
+		const onRunnerMessage = vi.fn();
+		await runAgentInSandbox({
+			env: makeEnv(),
+			sandboxId: "sandbox-1",
+			projectId: "project-1",
+			userId: "user-1",
+			conversationId: "conv-3",
+			cwd: SESSION_WORKTREE_CWD,
+			model: "opencode/gpt-4.1",
+			prompt: "fail",
+			onRunnerMessage,
+		});
+
+		expect(gitCallbackToken.length).toBeGreaterThan(8);
+		const errorCall = onRunnerMessage.mock.calls.find(
+			(call) => call[0]?.kind === "error",
+		);
+		expect(errorCall?.[0]).toMatchObject({
+			kind: "error",
+			message: expect.stringContaining("[REDACTED]"),
+		});
+		expect(errorCall?.[0]?.message).not.toContain(gitCallbackToken);
+	});
 });
