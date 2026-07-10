@@ -368,19 +368,23 @@ Do **not** require Docker for unit tests.
 
 ## Done criteria
 
-- [ ] `pnpm test` exits 0 including new worktree tests
-- [ ] `pnpm check` exits 0
-- [ ] `workspace_sessions.branchName`, `baseCommitSha`, `workspacePath` are
+- [x] `pnpm test` exits 0 including new worktree tests
+- [x] `pnpm check` exits 0
+- [x] `workspace_sessions.branchName`, `baseCommitSha`, `workspacePath` are
       written on first agent stream for a session
-- [ ] Agent job `cwd` is `/workspace/.ditto/worktrees/<sessionId>` not bare
+- [x] Agent job `cwd` is `/workspace/.ditto/worktrees/<sessionId>` not bare
       `/workspace`
-- [ ] Primary tree is never force-checked-out to a session branch as part of
+- [x] Primary tree is never force-checked-out to a session branch as part of
       ensure (worktree add only)
-- [ ] `node_modules` and `.env` symlinked when present on primary
-- [ ] No GitHub installation token appears in new code paths
-- [ ] `docs/architecture/agent-harness.md` documents worktrees
-- [ ] No files outside in-scope list modified (`git status`)
-- [ ] `plans/README.md` status row updated
+- [x] `node_modules` and `.env` symlinked when present on primary
+- [x] No GitHub installation token appears in new code paths
+- [x] `docs/architecture/agent-harness.md` documents worktrees
+- [x] No files outside in-scope list modified (`git status`)
+- [x] `plans/README.md` status row updated
+
+**Execution**: COMPLETE on `advisor/005-session-worktrees` @ `b5d9cad`  
+**Worktree**: `/home/ayan/.grok/worktrees/ayan-ditto/subagent-019f4ad4-629d-7940-bdc6-1d9e681e33f3`  
+**Reviewer verdict**: APPROVE (2026-07-10)
 
 ## STOP conditions
 
