@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { createDb } from "#/db";
@@ -20,6 +20,7 @@ import { createAuth } from "#/lib/auth";
 import { decryptEnvVars } from "#/lib/project-env-vars";
 import { ensureProjectSandbox } from "#/lib/project-sandbox";
 import { redactSecrets } from "#/lib/secret-redaction";
+import { ensureSessionWorktree } from "#/lib/session-worktree";
 import { makeSessionTitleFromMessage } from "#/lib/workspace-policy";
 
 const streamBodySchema = z.object({
@@ -218,6 +219,48 @@ export const Route = createFileRoute("/api/agent/stream")({
 					return jsonResponse({ error: "Failed to persist messages." }, 500);
 				}
 
+				let sessionWorkspacePath: string;
+				try {
+					const ensuredWorktree = await ensureSessionWorktree({
+						env,
+						sandboxId: ensuredProject.sandboxId as string,
+						sessionId,
+						existing: {
+							branchName: workspaceSession.branchName,
+							baseCommitSha: workspaceSession.baseCommitSha,
+							workspacePath: workspaceSession.workspacePath,
+						},
+					});
+
+					if (
+						workspaceSession.branchName !== ensuredWorktree.branchName ||
+						workspaceSession.workspacePath !== ensuredWorktree.workspacePath ||
+						workspaceSession.baseCommitSha !== ensuredWorktree.baseCommitSha
+					) {
+						await db
+							.update(workspaceSessions)
+							.set({
+								branchName: ensuredWorktree.branchName,
+								baseCommitSha: ensuredWorktree.baseCommitSha,
+								workspacePath: ensuredWorktree.workspacePath,
+								updatedAt: sql`(unixepoch())`,
+							})
+							.where(eq(workspaceSessions.id, sessionId));
+					}
+
+					sessionWorkspacePath = ensuredWorktree.workspacePath;
+				} catch (error) {
+					return jsonResponse(
+						{
+							error:
+								error instanceof Error
+									? error.message
+									: "Failed to prepare session worktree.",
+						},
+						409,
+					);
+				}
+
 				const secretValues = [env.OPENCODE_API_KEY].filter(
 					(value): value is string =>
 						typeof value === "string" && value.length > 0,
@@ -247,6 +290,7 @@ export const Route = createFileRoute("/api/agent/stream")({
 								sandboxId: ensuredProject.sandboxId as string,
 								projectId: input.projectId,
 								conversationId: sessionId,
+								cwd: sessionWorkspacePath,
 								model: input.model,
 								prompt: input.message,
 								onRunnerMessage: async (msg) => {
