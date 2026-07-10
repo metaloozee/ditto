@@ -80,6 +80,9 @@ Users commit, push, and open pull requests from the project UI (tRPC
 - Command output is redacted before errors reach the client.
 - Opening a PR uses installation Octokit auth (not the user's OAuth token).
 - v1 has no merge API or merge button.
+- UI and Worker session git mutations (commit / push / open PR) refresh the
+  project sandbox backup after success so cold restore does not resurrect
+  pre-export dirty worktrees.
 
 Chat-driven git uses PI custom tools in the sandbox runner (`ditto_push_branch`,
 `ditto_open_pull_request`). Those tools `POST` to Worker `POST /api/agent/git`

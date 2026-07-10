@@ -3,16 +3,26 @@ import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { createDb } from "#/db";
 import { projects, workspaceSessions } from "#/db/schema";
+import {
+	DITTO_GIT_AUTHOR_EMAIL,
+	DITTO_GIT_AUTHOR_NAME,
+} from "#/lib/ditto-git-identity";
 import { authorizeGitHubRepositoryAccess } from "#/lib/github-authorization";
 import { decryptEnvVars } from "#/lib/project-env-vars";
 import { ensureProjectSandbox } from "#/lib/project-sandbox";
 import {
 	commitSessionChanges,
 	defaultCommitMessageForSession,
+	GITHUB_APP_PR_PERMISSION_MESSAGE,
+	GITHUB_APP_PUSH_PERMISSION_MESSAGE,
 	getSessionGitStatus,
 	openSessionPullRequest,
 	pushSessionBranch,
 } from "#/lib/session-git";
+import {
+	commitSessionChangesWithBackup,
+	runSessionGitMutationWithBackup,
+} from "#/lib/session-git-backup";
 import { ensureSessionWorktree } from "#/lib/session-worktree";
 import { createTRPCRouter, protectedProcedure } from "../init";
 
@@ -135,7 +145,14 @@ async function resolveSessionGitContext(options: {
 	};
 
 	return {
+		db,
 		projectId: project.id,
+		project: {
+			id: project.id,
+			userId: project.userId,
+			sandboxId: project.sandboxId,
+			status: project.status,
+		},
 		githubRepo: project.githubRepo,
 		installationId: project.githubInstallationId,
 		sandboxId: project.sandboxId,
@@ -143,15 +160,10 @@ async function resolveSessionGitContext(options: {
 	};
 }
 
-function sessionAuthor(ctx: {
-	user: { id: string; name: string; email: string };
-}) {
-	const email = ctx.user.email?.trim();
+function sessionAuthor() {
 	return {
-		authorName: ctx.user.name?.trim() || "Ditto user",
-		authorEmail: email?.includes("@")
-			? email
-			: `${ctx.user.id}+ditto@users.noreply.github.com`,
+		authorName: DITTO_GIT_AUTHOR_NAME,
+		authorEmail: DITTO_GIT_AUTHOR_EMAIL,
 	};
 }
 
@@ -177,20 +189,27 @@ export const sessionGitRouter = createTRPCRouter({
 		)
 		.mutation(async ({ ctx, input }) => {
 			const resolved = await resolveSessionGitContext({ ctx, input });
-			const author = sessionAuthor(ctx);
-			return await commitSessionChanges({
+			const author = sessionAuthor();
+			const message =
+				input.message ??
+				defaultCommitMessageForSession({
+					id: resolved.session.id,
+					title: resolved.session.title,
+				});
+			return await commitSessionChangesWithBackup({
+				db: resolved.db,
 				env: ctx.env,
-				sandboxId: resolved.sandboxId,
-				installationId: resolved.installationId,
-				githubRepo: resolved.githubRepo,
-				session: resolved.session,
-				message:
-					input.message ??
-					defaultCommitMessageForSession({
-						id: resolved.session.id,
-						title: resolved.session.title,
+				project: resolved.project,
+				commit: () =>
+					commitSessionChanges({
+						env: ctx.env,
+						sandboxId: resolved.sandboxId,
+						installationId: resolved.installationId,
+						githubRepo: resolved.githubRepo,
+						session: resolved.session,
+						message,
+						...author,
 					}),
-				...author,
 			});
 		}),
 
@@ -217,13 +236,31 @@ export const sessionGitRouter = createTRPCRouter({
 					message: "Nothing to push for this branch.",
 				});
 			}
-			return await pushSessionBranch({
-				env: ctx.env,
-				sandboxId: resolved.sandboxId,
-				installationId: resolved.installationId,
-				githubRepo: resolved.githubRepo,
-				session: resolved.session,
-			});
+			try {
+				return await runSessionGitMutationWithBackup({
+					db: resolved.db,
+					env: ctx.env,
+					project: resolved.project,
+					run: () =>
+						pushSessionBranch({
+							env: ctx.env,
+							sandboxId: resolved.sandboxId,
+							installationId: resolved.installationId,
+							githubRepo: resolved.githubRepo,
+							session: resolved.session,
+						}),
+				});
+			} catch (error) {
+				const message =
+					error instanceof Error ? error.message : "Failed to push branch.";
+				throw new TRPCError({
+					code:
+						message === GITHUB_APP_PUSH_PERMISSION_MESSAGE
+							? "FORBIDDEN"
+							: "BAD_GATEWAY",
+					message,
+				});
+			}
 		}),
 
 	openPullRequest: protectedProcedure
@@ -252,13 +289,25 @@ export const sessionGitRouter = createTRPCRouter({
 			}
 
 			if (status.ahead > 0) {
-				await pushSessionBranch({
-					env: ctx.env,
-					sandboxId: resolved.sandboxId,
-					installationId: resolved.installationId,
-					githubRepo: resolved.githubRepo,
-					session: resolved.session,
-				});
+				try {
+					await pushSessionBranch({
+						env: ctx.env,
+						sandboxId: resolved.sandboxId,
+						installationId: resolved.installationId,
+						githubRepo: resolved.githubRepo,
+						session: resolved.session,
+					});
+				} catch (error) {
+					const message =
+						error instanceof Error ? error.message : "Failed to push branch.";
+					throw new TRPCError({
+						code:
+							message === GITHUB_APP_PUSH_PERMISSION_MESSAGE
+								? "FORBIDDEN"
+								: "BAD_GATEWAY",
+						message,
+					});
+				}
 				status = await getSessionGitStatus({
 					env: ctx.env,
 					sandboxId: resolved.sandboxId,
@@ -269,25 +318,34 @@ export const sessionGitRouter = createTRPCRouter({
 			}
 
 			try {
-				return await openSessionPullRequest({
+				return await runSessionGitMutationWithBackup({
+					db: resolved.db,
 					env: ctx.env,
-					sandboxId: resolved.sandboxId,
-					installationId: resolved.installationId,
-					githubRepo: resolved.githubRepo,
-					session: resolved.session,
-					projectId: resolved.projectId,
-					title: input.title,
-					body: input.body,
-					baseBranch: input.baseBranch,
-					changedFileCount: status.changedFiles.length,
+					project: resolved.project,
+					run: () =>
+						openSessionPullRequest({
+							env: ctx.env,
+							sandboxId: resolved.sandboxId,
+							installationId: resolved.installationId,
+							githubRepo: resolved.githubRepo,
+							session: resolved.session,
+							title: input.title,
+							body: input.body,
+							baseBranch: input.baseBranch,
+							changedFileCount: status.changedFiles.length,
+						}),
 				});
 			} catch (error) {
+				const message =
+					error instanceof Error
+						? error.message
+						: "Failed to open pull request.";
 				throw new TRPCError({
-					code: "BAD_GATEWAY",
-					message:
-						error instanceof Error
-							? error.message
-							: "Failed to open pull request.",
+					code:
+						message === GITHUB_APP_PR_PERMISSION_MESSAGE
+							? "FORBIDDEN"
+							: "BAD_GATEWAY",
+					message,
 				});
 			}
 		}),
