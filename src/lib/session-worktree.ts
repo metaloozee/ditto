@@ -2,6 +2,7 @@ import {
 	configureDittoGitIdentity,
 	execOrThrow,
 	getProjectSandbox,
+	syncPrimaryWorkspaceFromGitHub,
 } from "#/lib/sandbox-bootstrap";
 import {
 	sessionBranchName,
@@ -19,6 +20,8 @@ export async function ensureSessionWorktree(options: {
 	env: Env;
 	sandboxId: string;
 	sessionId: string;
+	githubRepo: string;
+	installationId: number;
 	existing?: {
 		branchName: string | null;
 		baseCommitSha: string | null;
@@ -49,6 +52,15 @@ export async function ensureSessionWorktree(options: {
 	const gitDir = await sandbox.exists(`${WORKSPACE_PATH}/.git`);
 	if (!gitDir.exists) {
 		throw new Error("Primary workspace is not a git repository.");
+	}
+
+	if (!existing?.branchName) {
+		await syncPrimaryWorkspaceFromGitHub({
+			env: options.env,
+			sandboxId: options.sandboxId,
+			githubRepo: options.githubRepo,
+			installationId: options.installationId,
+		});
 	}
 
 	const headResult = await execOrThrow(sandbox, "git rev-parse HEAD", {

@@ -34,9 +34,18 @@ stores a fresh backup handle on the project row so edits survive sandbox sleep.
    assistant placeholder rows.
 5. On the first agent message for a session, the Worker ensures a git worktree
    under `/workspace/.ditto/worktrees/<sessionId>` on branch
-   `ditto/session-<shortId>`, symlinks shared `node_modules` and `.env` from
-   the primary `/workspace` tree, and persists `branchName`, `baseCommitSha`,
-   and `workspacePath` on the session row.
+   `ditto/session-<shortId>`. Before creating that branch for a **new** session
+   (no established `branchName` yet), the Worker fetches and fast-forwards the
+   primary clone's **currently checked-out** branch from GitHub so
+   `baseCommitSha` matches pushed remote state. Existing sessions keep their
+   established branch and worktree; Ditto does not fetch, merge, or reset them
+   automatically. Only changes pushed to the linked GitHub repository are
+   visible; unpushed commits on a developer laptop are outside the sandbox.
+   Symlinks shared `node_modules` and `.env` from the primary `/workspace` tree,
+   and persists `branchName`, `baseCommitSha`, and `workspacePath` on the
+   session row. Dirty tracked primary state, a locally ahead primary clone, or a
+   diverged primary branch block fresh session worktree creation instead of
+   overwriting local commits.
 6. The Worker creates a sandbox shell session with cwd set to the session
    worktree and writes a job file (prompt is not interpolated into shell
    commands).
@@ -74,7 +83,10 @@ Users commit, push, and open pull requests from the project UI (tRPC
 (`workspace_sessions.workspacePath`), not in the agent harness.
 
 - Network git uses a short-lived **GitHub App installation access token**
-  minted per operation. Tokens are never stored in D1, job files, or SSE.
+  minted per operation (including the one-shot primary-branch fetch before the
+  first session worktree). Tokens are never stored in D1, job files, SSE, env
+  vars, or as a persisted `origin` URL; fetch uses a tokenized URL argument and
+  scrubs `origin` back to the public HTTPS URL in `finally`.
 - Push uses a tokenized remote URL argument, then **scrubs** `origin` back to
   the public HTTPS URL in a `finally` block (primary `/workspace` and worktree).
 - Command output is redacted before errors reach the client.

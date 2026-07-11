@@ -105,6 +105,8 @@ export async function resolveAgentGitContext(options: {
 		env: options.env,
 		sandboxId: project.sandboxId,
 		sessionId: session.id,
+		githubRepo: project.githubRepo,
+		installationId: project.githubInstallationId,
 		existing: {
 			branchName: session.branchName,
 			baseCommitSha: session.baseCommitSha,

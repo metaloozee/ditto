@@ -110,6 +110,8 @@ async function resolveSessionGitContext(options: {
 		env: options.ctx.env,
 		sandboxId: project.sandboxId,
 		sessionId: session.id,
+		githubRepo: project.githubRepo,
+		installationId: project.githubInstallationId,
 		existing: {
 			branchName: session.branchName,
 			baseCommitSha: session.baseCommitSha,

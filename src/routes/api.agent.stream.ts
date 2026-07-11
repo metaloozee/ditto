@@ -220,12 +220,23 @@ export const Route = createFileRoute("/api/agent/stream")({
 					return jsonResponse({ error: "Failed to persist messages." }, 500);
 				}
 
+				const linkedGithubRepo = ensuredProject.githubRepo;
+				const linkedInstallationId = ensuredProject.githubInstallationId;
+				if (!linkedGithubRepo || linkedInstallationId == null) {
+					return jsonResponse(
+						{ error: "Project is not linked to a GitHub repository." },
+						409,
+					);
+				}
+
 				let sessionWorkspacePath: string;
 				try {
 					const ensuredWorktree = await ensureSessionWorktree({
 						env,
 						sandboxId: ensuredProject.sandboxId as string,
 						sessionId,
+						githubRepo: linkedGithubRepo,
+						installationId: linkedInstallationId,
 						existing: {
 							branchName: workspaceSession.branchName,
 							baseCommitSha: workspaceSession.baseCommitSha,

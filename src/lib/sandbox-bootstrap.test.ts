@@ -23,7 +23,11 @@ const {
 	bootstrapSandbox,
 	isSandboxWorkspaceHydrated,
 	restoreSandboxWorkspace,
+	syncPrimaryWorkspaceFromGitHub,
 } = await import("./sandbox-bootstrap");
+
+const INSTALL_COMMAND_RE = /pnpm install|npm install|yarn install/;
+const RETRY_SIGNAL_PATH = "/workspace/.ditto/primary-deps-install-retry";
 
 function makeSandbox(
 	options: {
@@ -194,5 +198,465 @@ describe("sandbox bootstrap helpers", () => {
 		).rejects.toThrow("clone failed");
 
 		expect(sandbox.destroy).toHaveBeenCalledTimes(1);
+	});
+});
+
+type SyncSandboxState = {
+	branch?: string;
+	headSha: string;
+	remoteSha: string;
+	trackedStatus?: string;
+	detached?: boolean;
+	remoteAhead?: boolean;
+	headBehind?: boolean;
+	fetchFails?: boolean;
+	fetchError?: string;
+	installFails?: boolean;
+	retrySignal?: boolean;
+};
+
+function makeSyncSandbox(state: SyncSandboxState) {
+	const branch = state.branch ?? "main";
+	let currentHeadSha = state.headSha;
+	const remoteSha = state.remoteSha;
+	const installCalls = { count: 0 };
+
+	const sandbox = {
+		exists: vi.fn(async (path: string) => ({
+			success: true,
+			exists:
+				path === RETRY_SIGNAL_PATH
+					? Boolean(state.retrySignal)
+					: path === "/workspace/package.json" ||
+						path === "/workspace/pnpm-lock.yaml",
+			path,
+			timestamp: "2026-07-04T00:00:00.000Z",
+		})),
+		exec: vi.fn(async (command: string) => {
+			if (command === "git status --porcelain --untracked-files=no") {
+				return {
+					success: true,
+					stdout: state.trackedStatus ?? "",
+					stderr: "",
+					exitCode: 0,
+					command,
+					duration: 1,
+					timestamp: "2026-07-04T00:00:00.000Z",
+				};
+			}
+			if (command === "git symbolic-ref --quiet --short HEAD") {
+				if (state.detached) {
+					return {
+						success: false,
+						stdout: "",
+						stderr: "not a symbolic ref",
+						exitCode: 1,
+						command,
+						duration: 1,
+						timestamp: "2026-07-04T00:00:00.000Z",
+					};
+				}
+				return {
+					success: true,
+					stdout: `${branch}\n`,
+					stderr: "",
+					exitCode: 0,
+					command,
+					duration: 1,
+					timestamp: "2026-07-04T00:00:00.000Z",
+				};
+			}
+			if (command.startsWith("git fetch --no-tags")) {
+				if (state.fetchFails) {
+					return {
+						success: false,
+						stdout: "",
+						stderr: state.fetchError ?? "fetch failed token-abc-12345",
+						exitCode: 1,
+						command,
+						duration: 1,
+						timestamp: "2026-07-04T00:00:00.000Z",
+					};
+				}
+				return {
+					success: true,
+					stdout: "",
+					stderr: "",
+					exitCode: 0,
+					command,
+					duration: 1,
+					timestamp: "2026-07-04T00:00:00.000Z",
+				};
+			}
+			if (command === "git rev-parse HEAD") {
+				return {
+					success: true,
+					stdout: `${currentHeadSha}\n`,
+					stderr: "",
+					exitCode: 0,
+					command,
+					duration: 1,
+					timestamp: "2026-07-04T00:00:00.000Z",
+				};
+			}
+			if (command.startsWith("git rev-parse ")) {
+				return {
+					success: true,
+					stdout: `${remoteSha}\n`,
+					stderr: "",
+					exitCode: 0,
+					command,
+					duration: 1,
+					timestamp: "2026-07-04T00:00:00.000Z",
+				};
+			}
+			if (
+				command.includes("merge-base --is-ancestor") &&
+				command.includes("refs/remotes/origin/") &&
+				command.endsWith("HEAD")
+			) {
+				const remoteIsAncestor = state.remoteAhead ?? false;
+				return {
+					success: remoteIsAncestor,
+					stdout: "",
+					stderr: "",
+					exitCode: remoteIsAncestor ? 0 : 1,
+					command,
+					duration: 1,
+					timestamp: "2026-07-04T00:00:00.000Z",
+				};
+			}
+			if (
+				command.includes("merge-base --is-ancestor HEAD") &&
+				command.includes("refs/remotes/origin/")
+			) {
+				const headIsAncestor = state.headBehind ?? currentHeadSha !== remoteSha;
+				return {
+					success: headIsAncestor,
+					stdout: "",
+					stderr: "",
+					exitCode: headIsAncestor ? 0 : 1,
+					command,
+					duration: 1,
+					timestamp: "2026-07-04T00:00:00.000Z",
+				};
+			}
+			if (command.startsWith("git merge --ff-only")) {
+				currentHeadSha = remoteSha;
+				return {
+					success: true,
+					stdout: "",
+					stderr: "",
+					exitCode: 0,
+					command,
+					duration: 1,
+					timestamp: "2026-07-04T00:00:00.000Z",
+				};
+			}
+			if (INSTALL_COMMAND_RE.test(command)) {
+				installCalls.count += 1;
+				if (state.installFails) {
+					return {
+						success: false,
+						stdout: "",
+						stderr: "install failed",
+						exitCode: 1,
+						command,
+						duration: 1,
+						timestamp: "2026-07-04T00:00:00.000Z",
+					};
+				}
+				return {
+					success: true,
+					stdout: "",
+					stderr: "",
+					exitCode: 0,
+					command,
+					duration: 1,
+					timestamp: "2026-07-04T00:00:00.000Z",
+				};
+			}
+			if (command === "command -v 'pnpm'") {
+				return {
+					success: true,
+					stdout: "/usr/bin/pnpm\n",
+					stderr: "",
+					exitCode: 0,
+					command,
+					duration: 1,
+					timestamp: "2026-07-04T00:00:00.000Z",
+				};
+			}
+			if (command.startsWith("git remote get-url origin")) {
+				return {
+					success: true,
+					stdout:
+						"https://x-access-token:token-abc-12345@github.com/owner/repo.git\n",
+					stderr: "",
+					exitCode: 0,
+					command,
+					duration: 1,
+					timestamp: "2026-07-04T00:00:00.000Z",
+				};
+			}
+			if (command.startsWith("git remote set-url origin")) {
+				return {
+					success: true,
+					stdout: "",
+					stderr: "",
+					exitCode: 0,
+					command,
+					duration: 1,
+					timestamp: "2026-07-04T00:00:00.000Z",
+				};
+			}
+			if (command.includes(RETRY_SIGNAL_PATH)) {
+				return {
+					success: true,
+					stdout: "",
+					stderr: "",
+					exitCode: 0,
+					command,
+					duration: 1,
+					timestamp: "2026-07-04T00:00:00.000Z",
+				};
+			}
+			return {
+				success: true,
+				stdout: "",
+				stderr: "",
+				exitCode: 0,
+				command,
+				duration: 1,
+				timestamp: "2026-07-04T00:00:00.000Z",
+			};
+		}),
+	};
+
+	return { sandbox, installCalls, state };
+}
+
+describe("syncPrimaryWorkspaceFromGitHub", () => {
+	const syncOptions = {
+		env: { Sandbox: {} } as unknown as Env,
+		sandboxId: "sandbox-1",
+		githubRepo: "owner/repo",
+		installationId: 42,
+	};
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		getInstallationAccessTokenMock.mockResolvedValue("token-abc-12345");
+	});
+
+	it("fetches unchanged clean branch, skips install, scrubs origin", async () => {
+		const { sandbox } = makeSyncSandbox({
+			headSha: "same123",
+			remoteSha: "same123",
+		});
+		getSandboxMock.mockReturnValue(sandbox);
+
+		await expect(syncPrimaryWorkspaceFromGitHub(syncOptions)).resolves.toEqual({
+			branchName: "main",
+			headSha: "same123",
+			updated: false,
+		});
+
+		expect(getInstallationAccessTokenMock).toHaveBeenCalledWith(
+			expect.objectContaining({ Sandbox: {} }),
+			42,
+			{ repositories: ["repo"] },
+		);
+		expect(
+			sandbox.exec.mock.calls.some((call) =>
+				String(call[0]).startsWith("git fetch --no-tags"),
+			),
+		).toBe(true);
+		expect(
+			sandbox.exec.mock.calls.some((call) =>
+				INSTALL_COMMAND_RE.test(String(call[0])),
+			),
+		).toBe(false);
+		expect(
+			sandbox.exec.mock.calls.some((call) =>
+				String(call[0]).startsWith("git remote set-url origin"),
+			),
+		).toBe(true);
+	});
+
+	it("fast-forwards behind branch and installs dependencies once", async () => {
+		const { sandbox, installCalls } = makeSyncSandbox({
+			headSha: "oldsha",
+			remoteSha: "newsha",
+			headBehind: true,
+		});
+		getSandboxMock.mockReturnValue(sandbox);
+
+		await expect(syncPrimaryWorkspaceFromGitHub(syncOptions)).resolves.toEqual({
+			branchName: "main",
+			headSha: "newsha",
+			updated: true,
+		});
+
+		expect(
+			sandbox.exec.mock.calls.some((call) =>
+				String(call[0]).startsWith("git merge --ff-only"),
+			),
+		).toBe(true);
+		expect(installCalls.count).toBe(1);
+	});
+
+	it("rejects tracked changes before token mint or fetch", async () => {
+		const { sandbox } = makeSyncSandbox({
+			headSha: "same123",
+			remoteSha: "same123",
+			trackedStatus: " M README.md\n",
+		});
+		getSandboxMock.mockReturnValue(sandbox);
+
+		await expect(syncPrimaryWorkspaceFromGitHub(syncOptions)).rejects.toThrow(
+			/uncommitted changes to tracked files/,
+		);
+		expect(getInstallationAccessTokenMock).not.toHaveBeenCalled();
+		expect(
+			sandbox.exec.mock.calls.some((call) =>
+				String(call[0]).startsWith("git fetch"),
+			),
+		).toBe(false);
+	});
+
+	it("allows untracked .ditto state without rejecting", async () => {
+		const { sandbox } = makeSyncSandbox({
+			headSha: "same123",
+			remoteSha: "same123",
+			trackedStatus: "",
+		});
+		getSandboxMock.mockReturnValue(sandbox);
+
+		await expect(
+			syncPrimaryWorkspaceFromGitHub(syncOptions),
+		).resolves.toMatchObject({ updated: false });
+	});
+
+	it("rejects locally ahead branch without merge or reset", async () => {
+		const { sandbox } = makeSyncSandbox({
+			headSha: "localsha",
+			remoteSha: "remotesha",
+			remoteAhead: true,
+			headBehind: false,
+		});
+		getSandboxMock.mockReturnValue(sandbox);
+
+		await expect(syncPrimaryWorkspaceFromGitHub(syncOptions)).rejects.toThrow(
+			/unpublished local commits/,
+		);
+		expect(
+			sandbox.exec.mock.calls.some((call) =>
+				String(call[0]).startsWith("git merge --ff-only"),
+			),
+		).toBe(false);
+	});
+
+	it("rejects diverged branch without merge, rebase, or reset", async () => {
+		const { sandbox } = makeSyncSandbox({
+			headSha: "localsha",
+			remoteSha: "remotesha",
+			remoteAhead: false,
+			headBehind: false,
+		});
+		getSandboxMock.mockReturnValue(sandbox);
+
+		await expect(syncPrimaryWorkspaceFromGitHub(syncOptions)).rejects.toThrow(
+			/diverged from GitHub/,
+		);
+		expect(
+			sandbox.exec.mock.calls.some((call) =>
+				String(call[0]).startsWith("git merge --ff-only"),
+			),
+		).toBe(false);
+	});
+
+	it("redacts fetch token from errors and still scrubs origin", async () => {
+		const { sandbox } = makeSyncSandbox({
+			headSha: "same123",
+			remoteSha: "same123",
+			fetchFails: true,
+			fetchError: "auth failed for token-abc-12345",
+		});
+		getSandboxMock.mockReturnValue(sandbox);
+
+		let thrownMessage = "";
+		try {
+			await syncPrimaryWorkspaceFromGitHub(syncOptions);
+		} catch (error) {
+			thrownMessage = error instanceof Error ? error.message : String(error);
+		}
+		expect(thrownMessage).toContain("[REDACTED]");
+		expect(thrownMessage).not.toContain("token-abc-12345");
+		expect(
+			sandbox.exec.mock.calls.some((call) =>
+				String(call[0]).startsWith("git remote set-url origin"),
+			),
+		).toBe(true);
+	});
+
+	it("retries dependency install when retry signal exists at equal HEAD", async () => {
+		const { sandbox, installCalls } = makeSyncSandbox({
+			headSha: "same123",
+			remoteSha: "same123",
+			retrySignal: true,
+		});
+		getSandboxMock.mockReturnValue(sandbox);
+
+		await expect(
+			syncPrimaryWorkspaceFromGitHub(syncOptions),
+		).resolves.toMatchObject({ updated: false });
+		expect(installCalls.count).toBe(1);
+		expect(
+			sandbox.exec.mock.calls.some(
+				(call) =>
+					String(call[0]).includes("rm -f") &&
+					String(call[0]).includes(RETRY_SIGNAL_PATH),
+			),
+		).toBe(true);
+	});
+
+	it("leaves retry signal when install fails after fast-forward", async () => {
+		const { sandbox } = makeSyncSandbox({
+			headSha: "oldsha",
+			remoteSha: "newsha",
+			headBehind: true,
+			installFails: true,
+		});
+		getSandboxMock.mockReturnValue(sandbox);
+
+		await expect(syncPrimaryWorkspaceFromGitHub(syncOptions)).rejects.toThrow(
+			/install failed/,
+		);
+		expect(
+			sandbox.exec.mock.calls.some(
+				(call) =>
+					String(call[0]).includes("touch") &&
+					String(call[0]).includes(RETRY_SIGNAL_PATH),
+			),
+		).toBe(true);
+	});
+
+	it("rejects detached HEAD before fetch", async () => {
+		const { sandbox } = makeSyncSandbox({
+			headSha: "detached",
+			remoteSha: "detached",
+			detached: true,
+		});
+		getSandboxMock.mockReturnValue(sandbox);
+
+		await expect(syncPrimaryWorkspaceFromGitHub(syncOptions)).rejects.toThrow(
+			/detached HEAD/,
+		);
+		expect(
+			sandbox.exec.mock.calls.some((call) =>
+				String(call[0]).startsWith("git fetch"),
+			),
+		).toBe(false);
 	});
 });

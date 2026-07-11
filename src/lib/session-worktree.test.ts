@@ -5,14 +5,27 @@ const execOrThrowMock = vi.hoisted(() => vi.fn());
 const configureDittoGitIdentityMock = vi.hoisted(() =>
 	vi.fn().mockResolvedValue(undefined),
 );
+const syncPrimaryWorkspaceFromGitHubMock = vi.hoisted(() =>
+	vi.fn().mockResolvedValue({
+		branchName: "main",
+		headSha: "syncedsha",
+		updated: false,
+	}),
+);
 
 vi.mock("#/lib/sandbox-bootstrap", () => ({
 	getProjectSandbox: getProjectSandboxMock,
 	execOrThrow: execOrThrowMock,
 	configureDittoGitIdentity: configureDittoGitIdentityMock,
+	syncPrimaryWorkspaceFromGitHub: syncPrimaryWorkspaceFromGitHubMock,
 }));
 
 const { ensureSessionWorktree } = await import("./session-worktree");
+
+const worktreeOptions = {
+	githubRepo: "owner/repo",
+	installationId: 42,
+};
 
 function makeEnv(): Env {
 	return {} as Env;
@@ -42,17 +55,29 @@ describe("ensureSessionWorktree", () => {
 			return { exists: false };
 		});
 		getProjectSandboxMock.mockReturnValue(sandbox);
-		execOrThrowMock.mockResolvedValue({ stdout: "deadbeef\n", success: true });
+		execOrThrowMock.mockResolvedValue({ stdout: "syncedsha\n", success: true });
 
 		const result = await ensureSessionWorktree({
 			env: makeEnv(),
 			sandboxId: "sandbox-1",
 			sessionId: "sess-1",
+			...worktreeOptions,
 		});
 
+		expect(
+			syncPrimaryWorkspaceFromGitHubMock.mock.invocationCallOrder[0],
+		).toBeLessThan(
+			execOrThrowMock.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER,
+		);
+		expect(syncPrimaryWorkspaceFromGitHubMock).toHaveBeenCalledWith({
+			env: makeEnv(),
+			sandboxId: "sandbox-1",
+			githubRepo: "owner/repo",
+			installationId: 42,
+		});
 		expect(result).toEqual({
 			branchName: "ditto/session-sess-1",
-			baseCommitSha: "deadbeef",
+			baseCommitSha: "syncedsha",
 			workspacePath: "/workspace/.ditto/worktrees/sess-1",
 		});
 		expect(configureDittoGitIdentityMock).toHaveBeenCalledWith(
@@ -80,6 +105,7 @@ describe("ensureSessionWorktree", () => {
 			env: makeEnv(),
 			sandboxId: "sandbox-1",
 			sessionId: "sess-1",
+			...worktreeOptions,
 			existing: {
 				branchName: "ditto/session-sess-1",
 				baseCommitSha: "abc123",
@@ -92,6 +118,7 @@ describe("ensureSessionWorktree", () => {
 			baseCommitSha: "abc123",
 			workspacePath: "/workspace/.ditto/worktrees/sess-1",
 		});
+		expect(syncPrimaryWorkspaceFromGitHubMock).not.toHaveBeenCalled();
 		expect(execOrThrowMock).not.toHaveBeenCalled();
 	});
 
@@ -112,6 +139,7 @@ describe("ensureSessionWorktree", () => {
 			env: makeEnv(),
 			sandboxId: "sandbox-1",
 			sessionId: "sess-1",
+			...worktreeOptions,
 			existing: {
 				branchName: "ditto/session-sess-1",
 				baseCommitSha: "oldsha",
@@ -119,11 +147,36 @@ describe("ensureSessionWorktree", () => {
 			},
 		});
 
+		expect(syncPrimaryWorkspaceFromGitHubMock).not.toHaveBeenCalled();
 		expect(result.baseCommitSha).toBe("newsha");
 		expect(
 			execOrThrowMock.mock.calls.some((call) =>
 				String(call[1]).includes("git worktree add"),
 			),
 		).toBe(true);
+	});
+
+	it("does not create branch or worktree when sync fails", async () => {
+		const sandbox = makeSandbox(async (path) => {
+			if (path === "/workspace/.git") {
+				return { exists: true };
+			}
+			return { exists: false };
+		});
+		getProjectSandboxMock.mockReturnValue(sandbox);
+		syncPrimaryWorkspaceFromGitHubMock.mockRejectedValueOnce(
+			new Error("sync failed"),
+		);
+
+		await expect(
+			ensureSessionWorktree({
+				env: makeEnv(),
+				sandboxId: "sandbox-1",
+				sessionId: "sess-1",
+				...worktreeOptions,
+			}),
+		).rejects.toThrow("sync failed");
+
+		expect(execOrThrowMock).not.toHaveBeenCalled();
 	});
 });
