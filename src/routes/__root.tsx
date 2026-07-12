@@ -1,4 +1,3 @@
-import { TanStackDevtools } from "@tanstack/react-devtools";
 import type { QueryClient } from "@tanstack/react-query";
 import {
 	createRootRouteWithContext,
@@ -6,12 +5,11 @@ import {
 	Scripts,
 	useRouterState,
 } from "@tanstack/react-router";
-import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import type { TRPCOptionsProxy } from "@trpc/tanstack-react-query";
 import type * as React from "react";
+import { useEffect, useState } from "react";
 import { AppShell } from "#/components/app-shell";
 import type { TRPCRouter } from "#/integrations/trpc/router";
-import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
 import appCss from "../styles.css?url";
 
 interface MyRouterContext {
@@ -48,6 +46,20 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 	shellComponent: RootDocument,
 });
 
+/** Loads TanStack Devtools only in development; production never imports them. */
+function DevTools() {
+	const [tools, setTools] = useState<React.ReactNode>(null);
+
+	useEffect(() => {
+		if (!import.meta.env.DEV) return;
+		void import("#/integrations/tanstack-query/devtools-bundle").then((mod) =>
+			setTools(mod.default()),
+		);
+	}, []);
+
+	return tools;
+}
+
 function RootDocument({ children }: { children: React.ReactNode }) {
 	const pathname = useRouterState({
 		select: (state) => state.location.pathname,
@@ -61,18 +73,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 			</head>
 			<body>
 				{isAuthRoute ? children : <AppShell>{children}</AppShell>}
-				<TanStackDevtools
-					config={{
-						position: "bottom-right",
-					}}
-					plugins={[
-						{
-							name: "Tanstack Router",
-							render: <TanStackRouterDevtoolsPanel />,
-						},
-						TanStackQueryDevtools,
-					]}
-				/>
+				<DevTools />
 				<Scripts />
 			</body>
 		</html>
