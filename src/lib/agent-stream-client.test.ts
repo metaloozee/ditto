@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	type AgentStreamHandlers,
 	appendAssistantTextDelta,
-	applyAgentToolEvent,
 	applyAgentToolEventToParts,
 	extractEditPatch,
 	extractEditReplacements,
@@ -12,16 +11,11 @@ import {
 	isEditTool,
 	parseSseChunk,
 	parseStoredParts,
-	parseStoredTools,
-	prepareAssistantMessageStorage,
-	sanitizeAssistantPartsForStorage,
 	serializeAssistantPartsForStorage,
-	serializeAssistantPartsMinimalForStorage,
 	streamAgentRun,
 } from "./agent-stream-client";
-import { redactStructured } from "./secret-redaction";
 
-describe("agent-stream-client", () => {
+describe("agent-stream-client transport", () => {
 	it("parseSseChunk reassembles partial SSE chunks", () => {
 		const first = parseSseChunk(
 			'event: meta\ndata: {"sessionId":"s1"}\n\nevent: delta\ndata: {"del',
@@ -115,197 +109,9 @@ describe("agent-stream-client", () => {
 		expect(deltas).toEqual(["ok"]);
 		vi.unstubAllGlobals();
 	});
+});
 
-	it("applyAgentToolEvent tracks start/update/end lifecycle", () => {
-		const started = applyAgentToolEvent([], {
-			type: "tool_execution_start",
-			toolCallId: "t1",
-			toolName: "bash",
-			args: { command: "ls" },
-		});
-		expect(started).toEqual([
-			{
-				id: "t1",
-				name: "bash",
-				status: "running",
-				args: { command: "ls" },
-			},
-		]);
-
-		const updated = applyAgentToolEvent(started ?? [], {
-			type: "tool_execution_update",
-			toolCallId: "t1",
-			toolName: "bash",
-			args: { command: "ls" },
-			partialResult: "file.ts\n",
-		});
-		expect(updated?.[0]?.result).toBe("file.ts\n");
-		expect(updated?.[0]?.status).toBe("running");
-
-		const ended = applyAgentToolEvent(updated ?? [], {
-			type: "tool_execution_end",
-			toolCallId: "t1",
-			toolName: "bash",
-			result: "file.ts\n",
-			isError: false,
-		});
-		expect(ended).toEqual([
-			{
-				id: "t1",
-				name: "bash",
-				status: "done",
-				args: { command: "ls" },
-				result: "file.ts\n",
-			},
-		]);
-	});
-
-	it("parseStoredTools reads JSON tool history", () => {
-		const tools = parseStoredTools(
-			JSON.stringify([
-				{
-					id: "t1",
-					name: "bash",
-					status: "done",
-					args: { command: "ls" },
-					result: "ok",
-				},
-			]),
-		);
-		expect(tools).toEqual([
-			{
-				id: "t1",
-				name: "bash",
-				status: "done",
-				args: { command: "ls" },
-				result: "ok",
-			},
-		]);
-		expect(parseStoredTools(null)).toBeUndefined();
-		expect(parseStoredTools("not-json")).toBeUndefined();
-	});
-
-	it("keeps text and tools interleaved in parts timeline", () => {
-		let parts = appendAssistantTextDelta([], "I'll edit the file.");
-		parts =
-			applyAgentToolEventToParts(parts, {
-				type: "tool_execution_start",
-				toolCallId: "t1",
-				toolName: "edit",
-				args: { path: "App.tsx" },
-			}) ?? parts;
-		parts =
-			applyAgentToolEventToParts(parts, {
-				type: "tool_execution_end",
-				toolCallId: "t1",
-				toolName: "edit",
-				result: "ok",
-				isError: false,
-			}) ?? parts;
-		parts = appendAssistantTextDelta(parts, "Done.");
-
-		expect(parts).toHaveLength(3);
-		expect(parts[0]).toMatchObject({
-			type: "text",
-			text: "I'll edit the file.",
-		});
-		expect(parts[1]).toMatchObject({
-			type: "tool",
-			tool: {
-				id: "t1",
-				name: "edit",
-				status: "done",
-				args: { path: "App.tsx" },
-				result: "ok",
-			},
-		});
-		expect(parts[2]).toMatchObject({ type: "text", text: "Done." });
-
-		const json = serializeAssistantPartsForStorage(parts);
-		expect(json).not.toBeNull();
-		const stored = parseStoredParts(json);
-		expect(stored).toHaveLength(3);
-		expect(stored?.[1]).toMatchObject({
-			type: "tool",
-			tool: {
-				id: "t1",
-				name: "edit",
-				status: "done",
-				args: { path: "App.tsx" },
-				result: "ok",
-			},
-		});
-	});
-
-	it("round-trips interleaved parts through storage serialization", () => {
-		let parts = appendAssistantTextDelta([], "before");
-		parts =
-			applyAgentToolEventToParts(parts, {
-				type: "tool_execution_end",
-				toolCallId: "t2",
-				toolName: "read_file",
-				args: { path: "x.ts" },
-				result: "content",
-				isError: false,
-			}) ?? parts;
-		parts = appendAssistantTextDelta(parts, "after");
-
-		const json = serializeAssistantPartsForStorage(parts);
-		const restored = parseStoredParts(json);
-		expect(restored?.filter((p) => p.type === "tool")).toHaveLength(1);
-		expect(restored?.find((p) => p.type === "tool")).toMatchObject({
-			tool: { name: "read_file", status: "done" },
-		});
-	});
-
-	it("serializes large tool results without throwing", () => {
-		const huge = "x".repeat(120_000);
-		const parts =
-			applyAgentToolEventToParts([], {
-				type: "tool_execution_end",
-				toolCallId: "t-big",
-				toolName: "bash",
-				result: huge,
-				isError: false,
-			}) ?? [];
-
-		expect(() => serializeAssistantPartsForStorage(parts)).not.toThrow();
-		const json = serializeAssistantPartsForStorage(parts);
-		expect(json).not.toBeNull();
-		const restored = parseStoredParts(json);
-		const tool = restored?.find((p) => p.type === "tool");
-		expect(tool?.type === "tool" && tool.tool.name).toBe("bash");
-		expect(tool?.type === "tool" && typeof tool.tool.result).toBe("string");
-		expect(
-			tool?.type === "tool" && (tool.tool.result as string).length,
-		).toBeLessThan(huge.length);
-	});
-
-	it("sanitizes BigInt tool args for JSON storage", () => {
-		const parts: ReturnType<typeof appendAssistantTextDelta> = [
-			{
-				type: "tool",
-				id: "tool-1",
-				tool: {
-					id: "t-bigint",
-					name: "custom",
-					status: "done",
-					args: { offset: BigInt(42) },
-				},
-			},
-		];
-		const sanitized = sanitizeAssistantPartsForStorage(parts);
-		expect(sanitized[0]?.type === "tool" && sanitized[0].tool.args).toEqual({
-			offset: "42",
-		});
-		const json = serializeAssistantPartsForStorage(parts);
-		const restored = parseStoredParts(json);
-		expect(restored?.[0]).toMatchObject({
-			type: "tool",
-			tool: { name: "custom", status: "done", args: { offset: "42" } },
-		});
-	});
-
+describe("agent-stream-client re-exports (compatibility)", () => {
 	it("formatToolCallLabel includes primary args and truncates long labels", () => {
 		expect(
 			formatToolCallLabel({
@@ -497,7 +303,6 @@ describe("agent-stream-client", () => {
 			patch,
 		});
 
-		// Multi-edit with usable patch: patch only (no synthetic join)
 		const multiWithPatch = getEditToolDiffData({
 			id: "e2",
 			name: "edit",
@@ -518,7 +323,6 @@ describe("agent-stream-client", () => {
 			patch,
 		});
 
-		// Multi-edit without patch: join is last-resort fallback
 		const multiNoPatch = getEditToolDiffData({
 			id: "e3",
 			name: "edit",
@@ -572,7 +376,6 @@ describe("agent-stream-client", () => {
 		const json = serializeAssistantPartsForStorage(parts);
 		expect(json).not.toBeNull();
 
-		// Simulate load after refresh: DB tools column → parseStoredParts
 		const restored = parseStoredParts(json);
 		expect(restored).toBeDefined();
 		const groups = groupAssistantParts(restored ?? []);
@@ -591,48 +394,5 @@ describe("agent-stream-client", () => {
 		if (groups[2]?.type === "tools") {
 			expect(groups[2].tools.map(formatToolCallLabel)).toEqual(["grep"]);
 		}
-	});
-
-	it("primary and minimal storage serialization never contain fixture secrets from redacted tool events", () => {
-		const fixtureSecret = "live-secret-value-123";
-		// Simulate agent-run boundary: structured-redact events before applying to parts.
-		const rawEvent = {
-			type: "tool_execution_end",
-			toolCallId: "t-secret",
-			toolName: "bash",
-			args: { command: `echo ${fixtureSecret}` },
-			result: {
-				stdout: `export TOKEN=${fixtureSecret}`,
-				nested: [fixtureSecret, { url: `postgres://secret-db-url-xyz` }],
-			},
-			isError: false,
-		};
-		const sanitizedEvent = redactStructured(rawEvent, [
-			fixtureSecret,
-			"postgres://secret-db-url-xyz",
-		]);
-
-		const parts =
-			applyAgentToolEventToParts([], sanitizedEvent) ??
-			appendAssistantTextDelta([], "");
-
-		const { toolsColumn, storageParts } = prepareAssistantMessageStorage(parts);
-		const minimal = serializeAssistantPartsMinimalForStorage(parts);
-		const full = serializeAssistantPartsForStorage(parts);
-
-		for (const serialized of [toolsColumn, minimal, full]) {
-			expect(serialized).not.toBeNull();
-			expect(serialized).not.toContain(fixtureSecret);
-			expect(serialized).not.toContain("postgres://secret-db-url-xyz");
-		}
-		// Full/primary storage keeps redacted payloads; minimal may drop args/result.
-		expect(toolsColumn).toContain("[REDACTED]");
-		expect(full).toContain("[REDACTED]");
-
-		// Structure required by applyAgentToolEventToParts remains after redaction.
-		expect(storageParts.some((p) => p.type === "tool")).toBe(true);
-		const toolPart = storageParts.find((p) => p.type === "tool");
-		expect(toolPart?.type === "tool" && toolPart.tool.name).toBe("bash");
-		expect(toolPart?.type === "tool" && toolPart.tool.id).toBe("t-secret");
 	});
 });

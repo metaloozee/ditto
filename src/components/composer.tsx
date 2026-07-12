@@ -27,20 +27,19 @@ import {
 } from "#/components/ai-elements/prompt-input";
 import { SessionGitActions } from "#/components/session-git-actions";
 import {
-	PROJECT_CODER_MODELS,
-	type ProjectCoderModelSpecifier,
-} from "#/lib/agent-models";
-import {
 	type AssistantMessagePart,
 	appendAssistantTextDelta,
 	applyAgentToolEventToParts,
-	type DonePayload,
 	finalizeAssistantParts,
 	partsToText,
 	partsToTools,
 	type StreamToolCall,
-	streamAgentRun,
-} from "#/lib/agent-stream-client";
+} from "#/lib/agent-message-parts";
+import {
+	PROJECT_CODER_MODELS,
+	type ProjectCoderModelSpecifier,
+} from "#/lib/agent-models";
+import { type DonePayload, streamAgentRun } from "#/lib/agent-stream-client";
 import { useUserPreferencesStore } from "#/lib/user-preferences-store";
 
 const models = PROJECT_CODER_MODELS.map((model) => ({

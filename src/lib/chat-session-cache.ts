@@ -1,7 +1,7 @@
 import type {
 	AssistantMessagePart,
 	StreamToolCall,
-} from "#/lib/agent-stream-client";
+} from "#/lib/agent-message-parts";
 
 export type CachedChatMessage = {
 	id: string | number;

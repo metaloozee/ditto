@@ -22,14 +22,16 @@ import {
 	MessageScrollerProvider,
 	MessageScrollerViewport,
 } from "#/components/ui/message-scroller";
+import type {
+	AssistantMessagePart,
+	StreamToolCall,
+} from "#/lib/agent-message-parts";
+import { partsToTools } from "#/lib/agent-message-parts";
+import { parseStoredParts } from "#/lib/agent-message-storage";
 import {
-	type AssistantMessagePart,
 	formatToolCallLabel,
 	groupAssistantParts,
-	parseStoredParts,
-	partsToTools,
-	type StreamToolCall,
-} from "#/lib/agent-stream-client";
+} from "#/lib/agent-tool-presentation";
 import {
 	acknowledgeSessionMessages,
 	listPendingSessionMessages,
@@ -43,6 +45,8 @@ type ChatMessage = {
 	content: string;
 	createdAt?: Date | string | number | null;
 	model?: string | null;
+	/** pending | complete | failed — failed rows keep partial content/tools. */
+	status?: "pending" | "complete" | "failed" | null;
 	tools?: StreamToolCall[] | string | null;
 	parts?: AssistantMessagePart[] | string | null;
 };
@@ -247,6 +251,11 @@ function MessageRow({ message }: { message: NormalizedChatMessage }) {
 			<Message align="start">
 				<MessageContent className="group w-full max-w-none">
 					<AssistantParts parts={parts} />
+					{message.status === "failed" ? (
+						<p className="mt-1 text-destructive text-xs">
+							Response interrupted — partial output saved.
+						</p>
+					) : null}
 					<MessageFooter className="px-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
 						{message.model ? <span>Model: {message.model}</span> : null}
 						{time ? <span className="tabular-nums">{time}</span> : null}

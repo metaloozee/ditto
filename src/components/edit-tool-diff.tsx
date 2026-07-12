@@ -4,12 +4,12 @@ import { MultiFileDiff, PatchDiff } from "@pierre/diffs/react";
 import { ClientOnly } from "@tanstack/react-router";
 import { ChevronRightIcon, LoaderCircleIcon } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
+import type { StreamToolCall } from "#/lib/agent-message-parts";
 import {
 	type EditToolDiffData,
 	formatToolCallLabel,
 	getEditToolDiffData,
-	type StreamToolCall,
-} from "#/lib/agent-stream-client";
+} from "#/lib/agent-tool-presentation";
 import { cn } from "#/lib/utils";
 
 /**
