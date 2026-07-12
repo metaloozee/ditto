@@ -10,12 +10,15 @@ Ditto already has:
 
 - `@cloudflare/sandbox` Container + R2 `createBackup` / `restoreBackup`
 - Project wake/hydrate via `ensureProjectSandbox`
-- D1 tables: `projects`, `workspace_sessions` (with unused `branchName` /
+- D1 tables: `projects`, `workspace_sessions` (including `branchName` /
   `baseCommitSha` / `workspacePath`), `messages`
 - PI harness in the sandbox image; client streams `POST /api/agent/stream` (SSE)
-- GitHub App installation tokens for **clone only**; remote scrubbed after clone
-- Pure helpers in `src/lib/github-export.ts` (no production callers yet)
-- Composer hardcodes branch label `"master"`
+- GitHub App installation tokens for clone and Worker-owned push/PR operations;
+  tokenized remotes are scrubbed after use
+- Session worktrees and Worker-owned commit/push/PR export
+- Dynamic session branch status in the composer
+- Worktrees symlink shared `node_modules`; project configuration is injected
+  into the agent shell process environment rather than persisted as `.env`
 
 ## Plans 001–004 (agent harness) — DONE
 
@@ -26,7 +29,7 @@ Ditto already has:
 | 003  | Stream agent events in chat UI + architecture docs | P1 | M | 002 | DONE |
 | 004  | Remove Effect anti-patterns + deslop chat UI | P1 | M | — | DONE |
 
-## Plans 005–007 (session git + GitHub export) — TODO
+## Plans 005–007 (session git + GitHub export) — DONE
 
 Planned at commit `6ac3b74` (2026-07-09) after research + product interview.
 
@@ -36,12 +39,102 @@ Planned at commit `6ac3b74` (2026-07-09) after research + product interview.
 | 006  | Worker commit / push / open PR + UI | P1 | L | 005 | DONE |
 | 007  | Agent chat tools for push/PR via Worker JWT callback | P2 | M | 005, 006 | DONE |
 
+## Plans 008–010 (git correctness follow-ups)
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 008  | Generate PR title/body from commits and changed files | P2 | M | 006 | DONE |
+| 009  | Refresh sandbox backup after session git mutations | P0 | M | 005, 006 | DONE |
+| 010  | Sync primary repository before a new session worktree | P1 | M | 005 | DONE |
+
+## Plans 011–021 (deep audit follow-ups)
+
+Planned at commit `5ad5e0c` on 2026-07-11. These plans cover the maintainer's
+selected findings from the deep whole-repository audit; closely coupled
+findings are grouped by implementation boundary.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 011 | Establish one clean repository verification baseline | P0 | M | — | DONE |
+| 012 | Redact agent output before streaming or persistence | P0 | M | 011 | DONE |
+| 013 | Block secret-bearing commits before commit/export | P0 | M | 012 | DONE |
+| 014 | Version workspace backups and snapshot only after mutations | P0 | M | 010, 011 | DONE |
+| 015 | Make session archival consistent across server/client state | P1 | M | 011 | DONE |
+| 016 | Return 401 for every malformed agent callback JWT | P1 | S | 011 | DONE |
+| 017 | Make the agent-run lifecycle transactional and testable | P1 | L | 010, 011, 014, 015 | DONE |
+| 018 | Bound stderr memory and batch streaming updates | P1 | M | 017 | DONE |
+| 019 | Remove unused dependencies and lazy-load diagnostics/diffs | P1 | M | 011 | DONE |
+| 020 | Infinite-scroll conversation history (cursor + virtualize) | P2 | L | 015, 017, 019 (all DONE) | DONE (worktree `advisor/020-virtual-chat-history` @ 6403dd3; Steps 1–5 only, virtualization deferred) |
+| 021 | Document process-injected project environment variables | P1 | S | 010 | DONE (worktree `advisor/021-environment-docs` @ 651735f) |
+
+### Audit finding coverage
+
+| Selected finding | Covered by | Combination rationale |
+|---|---|---|
+| 1, 11 | 013 | Same session-git secret-egress boundary: safe local staging plus shared pre-push scan |
+| 2 | 011 | Root/runner bootstrap, typecheck, aggregate verification, and CI form one green baseline |
+| 3 | 012 | One sanitization boundary for runner events, SSE, and D1 storage |
+| 5, 12 | 014 | Backup ordering and duplicate PR snapshots share the backup persistence abstraction |
+| 7, 13, 15 | 015 | Active/archive policy, recency, and optimistic cache cleanup are one session lifecycle |
+| 10, 25 | 017 | Phantom persistence is fixed while extracting the route/service/storage boundaries needed to test it |
+| 14 | 016 | Narrow callback-auth correctness fix kept separate from broader refactors |
+| 16, 17 | 018 | Bounded runner buffering and bounded delta-driven UI work are the runtime stream hot path |
+| 18 | 020 | Cursor API + infinite query (scroll-up history, not page UI), scroll anchoring, optional virtualization |
+| 19, 21 | 019 | Production code splitting and unused dependency removal share build/lockfile verification |
+| 24 | 021 | Documentation-only alignment, sequenced after plan 010's architecture edits |
+
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
+
+## Reconciliation — 2026-07-12
+
+- **Current HEAD**: `e6be7cd`.
+- **DONE 001–020**: implementation commits are present in current history. A
+  current-HEAD spot-check passed `pnpm check`, `pnpm typecheck`, all 277 root
+  tests, and the client/server production build. The runner portion of
+  `pnpm verify` still stops in runner typecheck because the ignored local
+  `sandbox/runner/node_modules` install is missing declared dependency
+  `@earendil-works/pi-ai@0.80.3`; both `sandbox/runner/package.json` and
+  `package-lock.json` declare it, so run `npm ci --prefix sandbox/runner`
+  before repeating the full gate. This is a checkout bootstrap limitation,
+  not evidence that a completed finding has returned.
+- **DONE 021**: `docs/architecture/agent-harness.md` now documents
+  `node_modules`-only symlinking and process-injected project environment
+  values; the integrated documentation commit is `e6be7cd`.
+- **Plan 020 scope clarification**: cursor-backed infinite history (steps 1–5)
+  is complete. Its virtualization step was intentionally conditional and was
+  deferred; `content-visibility` remains in place, matching the plan's stated
+  escape hatch rather than leaving a mandatory criterion incomplete.
+- **Executable now**: none; plans 001–021 are complete.
 
 ## Dependency notes
 
 - **006 requires 005** — git ops use `workspaceSessions.workspacePath` (worktree).
 - **007 requires 006** — agent tools call the same `session-git` functions as the UI.
+- **010 requires 005** — synchronization establishes the base before the existing
+  session branch/worktree lifecycle runs.
+- **012 requires 011** — security changes must land behind a green root/runner
+  typecheck, test, build, and CI baseline.
+- **013 requires 012** — outbound git scanning reuses the canonical structured
+  secret recognition/redaction boundary instead of duplicating patterns.
+- **014 requires 010 and 011** — plan 010 and backup versioning both touch the
+  stream route/architecture docs; land synchronization first, then verify the
+  migration and refactor through the green gate.
+- **015 requires 011** — active/archive request and component tests need the
+  request/component verification infrastructure to be authoritative.
+- **016 requires 011** — the malformed-JWT fix builds on plan 011's Web Crypto
+  byte normalization and clean TypeScript baseline.
+- **017 requires 010, 011, 014, and 015** — extract the run lifecycle only after
+  worktree synchronization, versioned backup APIs, and active-session policy
+  are stable and tested.
+- **018 requires 017** — batching must target the extracted typed event/service
+  boundary rather than optimizing the current monolithic route in place.
+- **019 requires 011** — dependency removal and production chunk assertions
+  require a reproducible clean build gate.
+- **020 requires 015, 017, and 019** — pagination uses active-session policy and
+  the extracted message boundary; bundle cleanup lands before adding the one
+  exact virtualization dependency.
+- **021 requires 010** — both edit `docs/architecture/agent-harness.md`; align
+  environment wording after synchronization documentation is final.
 - **Merge** is explicitly out of 006/007 (deferred product decision).
 
 ## Product decisions (locked 2026-07-09)
@@ -49,7 +142,8 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
 | Topic | Decision |
 |-------|----------|
 | Concurrency isolation | **Git worktrees** per session under `/workspace/.ditto/worktrees/<sessionId>` |
-| Dependencies cost | **Symlink** `/workspace/node_modules` and `.env` into each worktree (no reinstall) |
+| Dependencies cost | **Symlink** `/workspace/node_modules` into each worktree (no reinstall per session) |
+| Project environment | Decrypt in Worker and inject into the sandbox shell process; do not symlink or persist `.env` in worktrees |
 | Branch lifecycle | Create branch + worktree **on first agent message** (lazy) |
 | Branch naming | `ditto/session-<shortSessionId>` |
 | Who commits | User via UI; agent may **local** `git commit` via bash |
@@ -81,9 +175,31 @@ tree while sharing git objects and (via symlink) `node_modules`.
 - **Merge in v1**: deferred by product choice
 - **Mount R2 over `/workspace`**: still rejected (see 001–003 notes)
 - **App-layer mutex instead of worktrees**: not chosen; worktrees preferred for true concurrent sessions
+- **Composite D1 indexes from the 2026-07-11 audit**: investigate first with
+  `EXPLAIN QUERY PLAN`; no fix plan until representative data proves a scan/sort.
+- **Skipping restore-time dependency install/re-backup**: investigate with
+  timing and restored dependency evidence; current backup semantics are not
+  strong enough for a safe fix plan.
+- **Runner npm lockfile and TS/Vitest version skew**: retained by the explicit
+  isolated-runner decision in plan 001; plan 011 verifies both toolchains rather
+  than merging them.
 
 ## Recommended execution order
 
 1. `005-session-worktrees-and-branches.md`
 2. `006-worker-git-export-and-ui.md`
 3. `007-agent-worker-git-tools.md`
+4. `008-pr-title-body-from-commits.md`
+5. `009-stale-composer-git-status-after-export.md`
+6. `010-sync-primary-before-session-worktree.md`
+7. `011-establish-verification-baseline.md`
+8. `012-redact-agent-output-boundaries.md`
+9. `013-harden-git-secret-egress.md`
+10. `014-version-and-deduplicate-backups.md`
+11. `015-enforce-session-archive-lifecycle.md`
+12. `016-reject-malformed-agent-jwts.md`
+13. `017-extract-agent-run-lifecycle.md`
+14. `018-bound-streaming-work.md`
+15. `019-trim-production-bundle.md`
+16. `020-paginate-and-virtualize-chat-history.md`
+17. `021-align-worktree-environment-docs.md`
