@@ -38,6 +38,7 @@ vi.mock("#/components/ui/message-scroller", () => ({
 		<div>{children}</div>
 	),
 	MessageScrollerButton: () => null,
+	useMessageScrollerScrollable: () => ({ start: true, end: true }),
 }));
 
 const { Chat } = await import("./ai-chat");
@@ -155,5 +156,88 @@ describe("Chat session cache acknowledgement", () => {
 		expect(
 			listPendingSessionMessages("sess-memo", [{ id: "old-1" }]),
 		).toHaveLength(1);
+	});
+
+	it("shows load-earlier control when hasMoreHistory and calls onLoadEarlier", () => {
+		const onLoadEarlier = vi.fn();
+
+		render(
+			<Chat
+				projectId="proj-1"
+				sessionId="sess-1"
+				messages={[{ id: "msg-1", role: "user", content: "newest page" }]}
+				hasMoreHistory
+				onLoadEarlier={onLoadEarlier}
+			/>,
+		);
+
+		const button = screen.getByRole("button", {
+			name: /load earlier messages/i,
+		});
+		expect(button).toBeTruthy();
+		// No page-number UI
+		expect(screen.queryByText(/page\s+\d+/i)).toBeNull();
+
+		button.click();
+		expect(onLoadEarlier).toHaveBeenCalledTimes(1);
+	});
+
+	it("shows loading state on load-earlier control", () => {
+		render(
+			<Chat
+				projectId="proj-1"
+				sessionId="sess-1"
+				messages={[{ id: "msg-1", role: "user", content: "newest page" }]}
+				hasMoreHistory
+				isLoadingMoreHistory
+				onLoadEarlier={() => {}}
+			/>,
+		);
+
+		expect(screen.getByText(/loading earlier messages/i)).toBeTruthy();
+		expect(
+			screen.queryByRole("button", { name: /^load earlier messages$/i }),
+		).toBeNull();
+	});
+
+	it("hides load-earlier control when no more history", () => {
+		render(
+			<Chat
+				projectId="proj-1"
+				sessionId="sess-1"
+				messages={[{ id: "msg-1", role: "user", content: "all loaded" }]}
+				hasMoreHistory={false}
+			/>,
+		);
+
+		expect(
+			screen.queryByRole("button", { name: /load earlier messages/i }),
+		).toBeNull();
+	});
+
+	it("acknowledges against flattened multi-page server ids", async () => {
+		seedSessionMessages("sess-pages", [
+			{ id: "old-1", role: "user", content: "from older page" },
+			{ id: "new-1", role: "user", content: "from newest page" },
+		]);
+
+		// Flattened infinite pages: older + newer server messages.
+		render(
+			<Chat
+				projectId="proj-1"
+				sessionId="sess-pages"
+				messages={[
+					{ id: "old-1", role: "user", content: "older server" },
+					{ id: "new-1", role: "user", content: "newer server" },
+				]}
+				hasMoreHistory
+			/>,
+		);
+
+		expect(screen.getByText("older server")).toBeTruthy();
+		expect(screen.getByText("newer server")).toBeTruthy();
+		await waitFor(() => {
+			expect(readSessionMessages("sess-pages")).toEqual([]);
+		});
 	});
 });

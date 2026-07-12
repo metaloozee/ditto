@@ -1,6 +1,11 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+	useInfiniteQuery,
+	useMutation,
+	useQuery,
+	useQueryClient,
+} from "@tanstack/react-query";
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Chat } from "#/components/ai-chat";
 import { Button } from "#/components/ui/button";
 import { useTRPC } from "#/integrations/trpc/react";
@@ -62,6 +67,40 @@ export function ProjectWorkspacePage({
 		}),
 	);
 
+	const workspace = ensureWorkspaceMutation.data;
+	const selectedSession = workspace?.selectedSession ?? null;
+	const selectedSessionId = selectedSession?.id ?? sessionId ?? null;
+
+	const messagesQuery = useInfiniteQuery(
+		trpc.workspace.messages.infiniteQueryOptions(
+			{
+				projectId,
+				sessionId: selectedSessionId ?? "",
+				limit: 50,
+			},
+			{
+				enabled:
+					Boolean(selectedSessionId) && canLoadWorkspace && Boolean(workspace),
+				// tRPC maps initialCursor → React Query initialPageParam
+				initialCursor: undefined as string | undefined,
+				getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+			},
+		),
+	);
+
+	// Pages arrive newest-first from the infinite query; reverse then flatten
+	// so the timeline is chronological (oldest → newest).
+	const serverMessages = useMemo(
+		() =>
+			[...(messagesQuery.data?.pages ?? [])]
+				.reverse()
+				.flatMap((page) => page.items),
+		[messagesQuery.data?.pages],
+	);
+
+	const hasMoreHistory = Boolean(messagesQuery.hasNextPage);
+	const isLoadingMoreHistory = messagesQuery.isFetchingNextPage;
+
 	if (projectQuery.isPending) {
 		return (
 			<main className="flex h-dvh items-center justify-center p-6">
@@ -90,8 +129,6 @@ export function ProjectWorkspacePage({
 		);
 	}
 
-	const workspace = ensureWorkspaceMutation.data;
-	const selectedSession = workspace?.selectedSession ?? null;
 	const disabledReason =
 		project.status !== "ready"
 			? "Project sandbox is not ready yet."
@@ -129,13 +166,18 @@ export function ProjectWorkspacePage({
 				) : null}
 				<Chat
 					projectId={projectId}
-					sessionId={selectedSession?.id ?? sessionId ?? null}
+					sessionId={selectedSessionId}
 					branchName={selectedSession?.branchName ?? null}
 					gitExportEnabled={Boolean(
 						project.githubRepo && project.githubInstallationId,
 					)}
 					disabledReason={disabledReason}
-					messages={workspace?.messages ?? []}
+					messages={serverMessages}
+					hasMoreHistory={hasMoreHistory}
+					isLoadingMoreHistory={isLoadingMoreHistory}
+					onLoadEarlier={() => {
+						void messagesQuery.fetchNextPage();
+					}}
 					onWorkspaceRefresh={(activeSessionId) => {
 						void queryClient.invalidateQueries(
 							trpc.projects.list.queryFilter(),
@@ -143,6 +185,12 @@ export function ProjectWorkspacePage({
 						if (activeSessionId) {
 							void queryClient.invalidateQueries(
 								trpc.sessionGit.gitStatus.queryFilter({
+									projectId,
+									sessionId: activeSessionId,
+								}),
+							);
+							void queryClient.invalidateQueries(
+								trpc.workspace.messages.infiniteQueryFilter({
 									projectId,
 									sessionId: activeSessionId,
 								}),

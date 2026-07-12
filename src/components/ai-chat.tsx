@@ -1,5 +1,5 @@
 import { ChevronRightIcon, LoaderCircleIcon } from "lucide-react";
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Task, TaskContent, TaskTrigger } from "#/components/ai-elements/task";
 import { AssistantMarkdown } from "#/components/assistant-markdown";
 import {
@@ -8,6 +8,7 @@ import {
 	type StreamCommitPayload,
 } from "#/components/composer";
 import { Bubble, BubbleContent } from "#/components/ui/bubble";
+import { Button } from "#/components/ui/button";
 import {
 	Message,
 	MessageContent,
@@ -20,6 +21,7 @@ import {
 	MessageScrollerItem,
 	MessageScrollerProvider,
 	MessageScrollerViewport,
+	useMessageScrollerScrollable,
 } from "#/components/ui/message-scroller";
 import type {
 	AssistantMessagePart,
@@ -79,8 +81,79 @@ type ChatProps = {
 	gitExportEnabled?: boolean;
 	disabledReason?: string;
 	messages?: ChatMessage[];
+	/** True when older pages remain on the server. */
+	hasMoreHistory?: boolean;
+	isLoadingMoreHistory?: boolean;
+	/** Fetch the next older page (infinite query). */
+	onLoadEarlier?: () => void;
 	onWorkspaceRefresh?: (sessionId: string) => void;
 };
+
+/**
+ * Compact top control + near-top auto-fetch for earlier history.
+ * Must render under MessageScrollerProvider for scrollable state.
+ * Does not force scroll-to-bottom; MessageScroller preserves prepend anchors.
+ */
+function LoadEarlierHistory({
+	hasMoreHistory,
+	isLoadingMoreHistory,
+	onLoadEarlier,
+}: {
+	hasMoreHistory?: boolean;
+	isLoadingMoreHistory?: boolean;
+	onLoadEarlier?: () => void;
+}) {
+	const scrollable = useMessageScrollerScrollable();
+	const requestedRef = useRef(false);
+
+	useEffect(() => {
+		if (!hasMoreHistory || !onLoadEarlier) {
+			requestedRef.current = false;
+			return;
+		}
+		if (isLoadingMoreHistory) {
+			return;
+		}
+		// start === false means the viewport is near the top.
+		if (scrollable.start === false && !requestedRef.current) {
+			requestedRef.current = true;
+			onLoadEarlier();
+			return;
+		}
+		if (scrollable.start !== false) {
+			requestedRef.current = false;
+		}
+	}, [scrollable.start, hasMoreHistory, isLoadingMoreHistory, onLoadEarlier]);
+
+	if (!hasMoreHistory) {
+		return null;
+	}
+
+	return (
+		<div className="flex justify-center pt-4 pb-1">
+			<Button
+				type="button"
+				size="sm"
+				variant="ghost"
+				className="text-muted-foreground"
+				disabled={isLoadingMoreHistory}
+				onClick={() => {
+					requestedRef.current = true;
+					onLoadEarlier?.();
+				}}
+			>
+				{isLoadingMoreHistory ? (
+					<>
+						<LoaderCircleIcon className="size-3.5 animate-spin" />
+						Loading earlier messages…
+					</>
+				) : (
+					"Load earlier messages"
+				)}
+			</Button>
+		</div>
+	);
+}
 
 function normalizeMessage(message: ChatMessage): NormalizedChatMessage {
 	const parts =
@@ -351,6 +424,9 @@ export function Chat({
 	gitExportEnabled = false,
 	disabledReason,
 	messages = EMPTY_MESSAGES,
+	hasMoreHistory = false,
+	isLoadingMoreHistory = false,
+	onLoadEarlier,
 	onWorkspaceRefresh,
 }: ChatProps) {
 	const [streaming, setStreaming] = useState<ComposerStreamingState | null>(
@@ -367,6 +443,7 @@ export function Chat({
 	);
 
 	// After server messages refresh, drop matching optimistic cache entries.
+	// Acknowledgement uses all loaded server IDs (flattened infinite pages).
 	useEffect(() => {
 		if (!cacheSessionId || messages.length === 0) {
 			return;
@@ -437,13 +514,19 @@ export function Chat({
 						>
 							{hasMessages ? (
 								<>
+									<LoadEarlierHistory
+										hasMoreHistory={hasMoreHistory}
+										isLoadingMoreHistory={isLoadingMoreHistory}
+										onLoadEarlier={onLoadEarlier}
+									/>
 									{displayMessages.map((message, index) => (
 										<MessageScrollerItem
 											key={message.id}
 											messageId={`message-${message.id}`}
 											className={cn(
 												"m-0",
-												index === 0 && "mt-20",
+												index === 0 && !hasMoreHistory && "mt-20",
+												index === 0 && hasMoreHistory && "mt-2",
 												index === displayMessages.length - 1 &&
 													!hasStreamingTail &&
 													"mb-20",
