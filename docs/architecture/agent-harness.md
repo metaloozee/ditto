@@ -53,8 +53,8 @@ once (the runner itself does not snapshot).
    state. Existing sessions keep their established branch and worktree; Ditto
    does not fetch, merge, or reset them automatically. Only changes pushed to
    the linked GitHub repository are visible; unpushed commits on a developer
-   laptop are outside the sandbox. Symlinks shared `node_modules` and `.env`
-   from the primary `/workspace` tree, and persists `branchName`,
+   laptop are outside the sandbox. Symlinks shared `node_modules` from the
+   primary `/workspace` tree only (not `.env`), and persists `branchName`,
    `baseCommitSha`, and `workspacePath` on the session row. Dirty tracked
    primary state, a locally ahead primary clone, or a diverged primary branch
    block fresh session worktree creation instead of overwriting local commits.
@@ -64,8 +64,9 @@ once (the runner itself does not snapshot).
    (`status: complete`) and an assistant placeholder (`status: pending`) in
    one D1 batch, then opens the SSE stream and emits `meta`.
 6. The Worker creates a sandbox shell session with cwd set to the session
-   worktree and writes a job file (prompt is not interpolated into shell
-   commands).
+   worktree, decrypts project environment values from D1, and injects them
+   into the session `env` together with provider and callback credentials.
+   It writes a job file (prompt is not interpolated into shell commands).
 7. The Worker runs `ditto-runner` via `execStream` and parses NDJSON stdout.
 8. The harness opens or resumes PI state under
    `/workspace/.ditto/sessions/<conversationId>.jsonl` on the primary tree.
@@ -90,8 +91,11 @@ Concurrent workspace sessions for the same project use separate git worktrees
 under `/workspace/.ditto/worktrees/<sessionId>`, each on its own
 `ditto/session-*` branch. Agent coding runs use the session worktree as `cwd`,
 so file edits do not stomp another session's tree. The primary `/workspace` tree
-stays the package-install root; `node_modules` and `.env` are symlinked into each
-worktree when present so dependencies are not reinstalled per session.
+stays the package-install root; `/workspace/node_modules` is symlinked into each
+worktree when present so dependencies are not reinstalled per session. Project
+environment values are stored encrypted in D1, decrypted by the Worker per run,
+and injected into each agent shell session's process `env`; worktrees never
+receive a `.env` file.
 
 Residual limits: all sessions still share one sandbox container process space
 (dev servers, ports, and long-running processes can collide). There is no
@@ -147,8 +151,14 @@ runner changes so custom tools appear in the container.
 - User prompts travel in job files written with `writeFile`, not via shell
   string interpolation.
 - Stderr and client-visible errors pass through `redactSecrets`.
-- Model provider keys are injected only as sandbox session environment variables
-  (for example `OPENCODE_API_KEY`).
+- Project environment values are decrypted in the Worker and injected only as
+  sandbox shell session process environment variables. Provider and callback
+  credentials (for example `OPENCODE_API_KEY`, `DITTO_GIT_CALLBACK_TOKEN`) follow
+  the same rule: never stored in worktree files, job JSON, SSE payloads, or git
+  remotes.
+- The agent can read its process environment through bash, so output redaction
+  and pre-push scrub policies (plans 012/013) remain necessary; process env is
+  not a hidden vault from the harness.
 - GitHub App installation tokens are never placed in the sandbox. Agent git
   tools call the Worker callback with `DITTO_GIT_CALLBACK_URL` and
   `DITTO_GIT_CALLBACK_TOKEN` only (no `GIT_TOKEN` or `x-access-token` in
