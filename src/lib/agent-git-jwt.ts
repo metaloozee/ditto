@@ -114,68 +114,69 @@ export async function verifyAgentGitJwt(
 		return { ok: false, reason: "malformed" };
 	}
 
-	const signingInput = `${headerPart}.${payloadPart}`;
-	const key = await importHmacKey(secret);
-	const signatureBytes = base64UrlDecode(signaturePart);
-	const valid = await crypto.subtle.verify(
-		"HMAC",
-		key,
-		toArrayBuffer(signatureBytes),
-		textEncoder.encode(signingInput),
-	);
-	if (!valid) {
-		return { ok: false, reason: "bad_signature" };
-	}
-
-	let payload: unknown;
+	// Total over attacker-controlled token text: any decode/crypto throw → malformed.
+	// Valid encoding with wrong HMAC stays bad_signature; claim checks keep their reasons.
 	try {
+		const signingInput = `${headerPart}.${payloadPart}`;
+		const key = await importHmacKey(secret);
+		const signatureBytes = base64UrlDecode(signaturePart);
+		const valid = await crypto.subtle.verify(
+			"HMAC",
+			key,
+			toArrayBuffer(signatureBytes),
+			textEncoder.encode(signingInput),
+		);
+		if (!valid) {
+			return { ok: false, reason: "bad_signature" };
+		}
+
 		const json = new TextDecoder().decode(base64UrlDecode(payloadPart));
-		payload = JSON.parse(json);
+		const payload: unknown = JSON.parse(json);
+
+		if (!payload || typeof payload !== "object") {
+			return { ok: false, reason: "malformed" };
+		}
+
+		const record = payload as Record<string, unknown>;
+		if (record.sub !== AGENT_GIT_JWT_SUB) {
+			return { ok: false, reason: "invalid_sub" };
+		}
+
+		const exp = record.exp;
+		if (typeof exp !== "number" || !Number.isFinite(exp)) {
+			return { ok: false, reason: "malformed" };
+		}
+
+		const now = nowSeconds ?? Math.floor(Date.now() / 1000);
+		if (exp <= now) {
+			return { ok: false, reason: "expired" };
+		}
+
+		for (const field of [
+			"projectId",
+			"sessionId",
+			"userId",
+			"sandboxId",
+		] as const) {
+			if (typeof record[field] !== "string" || record[field].length === 0) {
+				return { ok: false, reason: "malformed" };
+			}
+		}
+
+		return {
+			ok: true,
+			claims: {
+				sub: AGENT_GIT_JWT_SUB,
+				projectId: record.projectId as string,
+				sessionId: record.sessionId as string,
+				userId: record.userId as string,
+				sandboxId: record.sandboxId as string,
+				exp,
+			},
+		};
 	} catch {
 		return { ok: false, reason: "malformed" };
 	}
-
-	if (!payload || typeof payload !== "object") {
-		return { ok: false, reason: "malformed" };
-	}
-
-	const record = payload as Record<string, unknown>;
-	if (record.sub !== AGENT_GIT_JWT_SUB) {
-		return { ok: false, reason: "invalid_sub" };
-	}
-
-	const exp = record.exp;
-	if (typeof exp !== "number" || !Number.isFinite(exp)) {
-		return { ok: false, reason: "malformed" };
-	}
-
-	const now = nowSeconds ?? Math.floor(Date.now() / 1000);
-	if (exp <= now) {
-		return { ok: false, reason: "expired" };
-	}
-
-	for (const field of [
-		"projectId",
-		"sessionId",
-		"userId",
-		"sandboxId",
-	] as const) {
-		if (typeof record[field] !== "string" || record[field].length === 0) {
-			return { ok: false, reason: "malformed" };
-		}
-	}
-
-	return {
-		ok: true,
-		claims: {
-			sub: AGENT_GIT_JWT_SUB,
-			projectId: record.projectId as string,
-			sessionId: record.sessionId as string,
-			userId: record.userId as string,
-			sandboxId: record.sandboxId as string,
-			exp,
-		},
-	};
 }
 
 export function agentGitCallbackUrl(env: Env): string {
