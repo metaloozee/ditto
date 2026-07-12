@@ -13,10 +13,13 @@ import {
 	parseSseChunk,
 	parseStoredParts,
 	parseStoredTools,
+	prepareAssistantMessageStorage,
 	sanitizeAssistantPartsForStorage,
 	serializeAssistantPartsForStorage,
+	serializeAssistantPartsMinimalForStorage,
 	streamAgentRun,
 } from "./agent-stream-client";
+import { redactStructured } from "./secret-redaction";
 
 describe("agent-stream-client", () => {
 	it("parseSseChunk reassembles partial SSE chunks", () => {
@@ -588,5 +591,48 @@ describe("agent-stream-client", () => {
 		if (groups[2]?.type === "tools") {
 			expect(groups[2].tools.map(formatToolCallLabel)).toEqual(["grep"]);
 		}
+	});
+
+	it("primary and minimal storage serialization never contain fixture secrets from redacted tool events", () => {
+		const fixtureSecret = "live-secret-value-123";
+		// Simulate agent-run boundary: structured-redact events before applying to parts.
+		const rawEvent = {
+			type: "tool_execution_end",
+			toolCallId: "t-secret",
+			toolName: "bash",
+			args: { command: `echo ${fixtureSecret}` },
+			result: {
+				stdout: `export TOKEN=${fixtureSecret}`,
+				nested: [fixtureSecret, { url: `postgres://secret-db-url-xyz` }],
+			},
+			isError: false,
+		};
+		const sanitizedEvent = redactStructured(rawEvent, [
+			fixtureSecret,
+			"postgres://secret-db-url-xyz",
+		]);
+
+		const parts =
+			applyAgentToolEventToParts([], sanitizedEvent) ??
+			appendAssistantTextDelta([], "");
+
+		const { toolsColumn, storageParts } = prepareAssistantMessageStorage(parts);
+		const minimal = serializeAssistantPartsMinimalForStorage(parts);
+		const full = serializeAssistantPartsForStorage(parts);
+
+		for (const serialized of [toolsColumn, minimal, full]) {
+			expect(serialized).not.toBeNull();
+			expect(serialized).not.toContain(fixtureSecret);
+			expect(serialized).not.toContain("postgres://secret-db-url-xyz");
+		}
+		// Full/primary storage keeps redacted payloads; minimal may drop args/result.
+		expect(toolsColumn).toContain("[REDACTED]");
+		expect(full).toContain("[REDACTED]");
+
+		// Structure required by applyAgentToolEventToParts remains after redaction.
+		expect(storageParts.some((p) => p.type === "tool")).toBe(true);
+		const toolPart = storageParts.find((p) => p.type === "tool");
+		expect(toolPart?.type === "tool" && toolPart.tool.name).toBe("bash");
+		expect(toolPart?.type === "tool" && toolPart.tool.id).toBe("t-secret");
 	});
 });

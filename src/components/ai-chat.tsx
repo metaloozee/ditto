@@ -428,7 +428,9 @@ export function Chat({
 											messageId="streaming-assistant"
 											className={cn(
 												"mt-0",
-												displayMessages.length === 0 && !showOptimisticUser && "mt-20",
+												displayMessages.length === 0 &&
+													!showOptimisticUser &&
+													"mt-20",
 												"mb-20",
 											)}
 										>

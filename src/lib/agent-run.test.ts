@@ -249,4 +249,257 @@ describe("runAgentInSandbox", () => {
 		});
 		expect(errorCall?.[0]?.message).not.toContain(gitCallbackToken);
 	});
+
+	it("redacts project env secrets from assistant_delta (whole and split)", async () => {
+		const projectSecret = "postgres://secret-db-url-xyz";
+		const writeFile = vi.fn().mockResolvedValue(undefined);
+		const mkdir = vi.fn().mockResolvedValue(undefined);
+		const execStream = vi.fn().mockResolvedValue(new ReadableStream());
+		const deleteSession = vi.fn().mockResolvedValue(undefined);
+		const createSession = vi.fn().mockResolvedValue({
+			id: "agent-conv-redact-delta",
+			writeFile,
+			mkdir,
+			execStream,
+		});
+
+		getProjectSandboxMock.mockReturnValue({
+			createSession,
+			deleteSession,
+		});
+
+		const mid = Math.floor(projectSecret.length / 2);
+		parseSSEStreamMock.mockImplementation(async function* () {
+			yield {
+				type: "stdout",
+				timestamp: new Date().toISOString(),
+				data: `${JSON.stringify({
+					v: 1,
+					kind: "assistant_delta",
+					delta: `url=${projectSecret.slice(0, mid)}`,
+				})}\n`,
+			};
+			yield {
+				type: "stdout",
+				timestamp: new Date().toISOString(),
+				data: `${JSON.stringify({
+					v: 1,
+					kind: "assistant_delta",
+					delta: `${projectSecret.slice(mid)} done`,
+				})}\n`,
+			};
+			yield {
+				type: "stdout",
+				timestamp: new Date().toISOString(),
+				data: `${JSON.stringify({
+					v: 1,
+					kind: "done",
+					sessionId: "sess",
+					assistantText: `url=${projectSecret} done`,
+					ok: true,
+				})}\n`,
+			};
+			yield {
+				type: "complete",
+				timestamp: new Date().toISOString(),
+				exitCode: 0,
+			};
+		});
+
+		backupSandboxWorkspaceMock.mockResolvedValue({
+			id: "backup-redact",
+			dir: "/workspace",
+		});
+
+		const onRunnerMessage = vi.fn();
+		const result = await runAgentInSandbox({
+			env: makeEnv(),
+			sandboxId: "sandbox-1",
+			projectId: "project-1",
+			userId: "user-1",
+			conversationId: "conv-redact-delta",
+			cwd: SESSION_WORKTREE_CWD,
+			model: "opencode/gpt-4.1",
+			prompt: "echo secret",
+			envVars: [{ key: "DATABASE_URL", value: projectSecret }],
+			onRunnerMessage,
+		});
+
+		const allPayload = JSON.stringify(onRunnerMessage.mock.calls);
+		expect(allPayload).not.toContain(projectSecret);
+		expect(allPayload).toContain("[REDACTED]");
+		expect(result.assistantText).not.toContain(projectSecret);
+		expect(result.assistantText).toContain("[REDACTED]");
+
+		const doneCall = onRunnerMessage.mock.calls.find(
+			(call) => call[0]?.kind === "done",
+		);
+		expect(doneCall?.[0]?.assistantText).not.toContain(projectSecret);
+		expect(doneCall?.[0]?.assistantText).toContain("[REDACTED]");
+	});
+
+	it("redacts nested agent_event tool results containing secrets", async () => {
+		const projectSecret = "live-secret-value-123";
+		const writeFile = vi.fn().mockResolvedValue(undefined);
+		const mkdir = vi.fn().mockResolvedValue(undefined);
+		const execStream = vi.fn().mockResolvedValue(new ReadableStream());
+		const deleteSession = vi.fn().mockResolvedValue(undefined);
+		const createSession = vi.fn().mockResolvedValue({
+			id: "agent-conv-redact-event",
+			writeFile,
+			mkdir,
+			execStream,
+		});
+
+		getProjectSandboxMock.mockReturnValue({
+			createSession,
+			deleteSession,
+		});
+
+		parseSSEStreamMock.mockImplementation(async function* () {
+			yield {
+				type: "stdout",
+				timestamp: new Date().toISOString(),
+				data: `${JSON.stringify({
+					v: 1,
+					kind: "agent_event",
+					event: {
+						type: "tool_result",
+						toolCallId: "t1",
+						toolName: "bash",
+						result: {
+							stdout: `export KEY=${projectSecret}`,
+							args: { cmd: `echo ${projectSecret}` },
+						},
+					},
+				})}\n`,
+			};
+			yield {
+				type: "stdout",
+				timestamp: new Date().toISOString(),
+				data: `${JSON.stringify({
+					v: 1,
+					kind: "done",
+					sessionId: "sess",
+					assistantText: "ok",
+					ok: true,
+				})}\n`,
+			};
+			yield {
+				type: "complete",
+				timestamp: new Date().toISOString(),
+				exitCode: 0,
+			};
+		});
+
+		backupSandboxWorkspaceMock.mockResolvedValue({
+			id: "backup-event",
+			dir: "/workspace",
+		});
+
+		const onRunnerMessage = vi.fn();
+		await runAgentInSandbox({
+			env: makeEnv(),
+			sandboxId: "sandbox-1",
+			projectId: "project-1",
+			userId: "user-1",
+			conversationId: "conv-redact-event",
+			cwd: SESSION_WORKTREE_CWD,
+			model: "opencode/gpt-4.1",
+			prompt: "run tool",
+			envVars: [{ key: "API_TOKEN", value: projectSecret }],
+			onRunnerMessage,
+		});
+
+		const eventCall = onRunnerMessage.mock.calls.find(
+			(call) => call[0]?.kind === "agent_event",
+		);
+		expect(eventCall?.[0]?.event).toEqual({
+			type: "tool_result",
+			toolCallId: "t1",
+			toolName: "bash",
+			result: {
+				stdout: "export KEY=[REDACTED]",
+				args: { cmd: "echo [REDACTED]" },
+			},
+		});
+
+		const allPayload = JSON.stringify(onRunnerMessage.mock.calls);
+		expect(allPayload).not.toContain(projectSecret);
+	});
+
+	it("never surfaces OPENCODE_API_KEY or fixture secrets in any onRunnerMessage payload", async () => {
+		const projectSecret = "postgres://secret-db-url-xyz";
+		const apiKey = makeEnv().OPENCODE_API_KEY;
+		let gitCallbackToken = "";
+		const writeFile = vi.fn().mockResolvedValue(undefined);
+		const mkdir = vi.fn().mockResolvedValue(undefined);
+		const execStream = vi.fn().mockResolvedValue(new ReadableStream());
+		const deleteSession = vi.fn().mockResolvedValue(undefined);
+		const createSession = vi.fn().mockImplementation(async (opts) => {
+			gitCallbackToken = opts.env.DITTO_GIT_CALLBACK_TOKEN;
+			return {
+				id: "agent-conv-redact-all",
+				writeFile,
+				mkdir,
+				execStream,
+			};
+		});
+
+		getProjectSandboxMock.mockReturnValue({
+			createSession,
+			deleteSession,
+		});
+
+		parseSSEStreamMock.mockImplementation(async function* () {
+			yield {
+				type: "stdout",
+				timestamp: new Date().toISOString(),
+				data: `${JSON.stringify({
+					v: 1,
+					kind: "assistant_delta",
+					delta: `key=${apiKey} db=${projectSecret} jwt=${gitCallbackToken}`,
+				})}\n`,
+			};
+			yield {
+				type: "stdout",
+				timestamp: new Date().toISOString(),
+				data: `${JSON.stringify({
+					v: 1,
+					kind: "error",
+					message: `failed with ${apiKey} and ${projectSecret}`,
+				})}\n`,
+			};
+			yield {
+				type: "complete",
+				timestamp: new Date().toISOString(),
+				exitCode: 1,
+			};
+		});
+
+		backupSandboxWorkspaceMock.mockResolvedValue({
+			id: "backup-all",
+			dir: "/workspace",
+		});
+
+		const onRunnerMessage = vi.fn();
+		await runAgentInSandbox({
+			env: makeEnv(),
+			sandboxId: "sandbox-1",
+			projectId: "project-1",
+			userId: "user-1",
+			conversationId: "conv-redact-all",
+			cwd: SESSION_WORKTREE_CWD,
+			model: "opencode/gpt-4.1",
+			prompt: "leak",
+			envVars: [{ key: "DATABASE_URL", value: projectSecret }],
+			onRunnerMessage,
+		});
+
+		const allPayload = JSON.stringify(onRunnerMessage.mock.calls);
+		expect(allPayload).not.toContain(apiKey);
+		expect(allPayload).not.toContain(projectSecret);
+		expect(allPayload).not.toContain(gitCallbackToken);
+		expect(allPayload).toContain("[REDACTED]");
+	});
 });

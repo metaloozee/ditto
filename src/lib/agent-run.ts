@@ -13,7 +13,11 @@ import {
 	getProjectSandbox,
 	type SandboxEnvVar,
 } from "#/lib/sandbox-bootstrap";
-import { redactSecrets } from "#/lib/secret-redaction";
+import {
+	redactSecrets,
+	redactStructured,
+	StreamingSecretRedactor,
+} from "#/lib/secret-redaction";
 import { WORKSPACE_PATH } from "#/lib/workspace-policy";
 
 const RUNNER_CLI = "/opt/ditto-runner/dist/cli.js";
@@ -90,12 +94,25 @@ export async function runAgentInSandbox(options: {
 		(value): value is string => typeof value === "string" && value.length > 0,
 	);
 
+	// One streaming redactor per run so secrets split across deltas are held back.
+	const streamRedactor = new StreamingSecretRedactor(secretValues);
+
 	const emitError = async (message: string) => {
 		if (errorEmitted) {
 			return;
 		}
 		errorEmitted = true;
 		ok = false;
+		// Flush any held assistant text before the error so trailing safe text is not lost.
+		const trailing = streamRedactor.flush();
+		if (trailing) {
+			assistantText += trailing;
+			await options.onRunnerMessage({
+				v: 1,
+				kind: "assistant_delta",
+				delta: trailing,
+			});
+		}
 		await options.onRunnerMessage({
 			v: 1,
 			kind: "error",
@@ -108,21 +125,89 @@ export async function runAgentInSandbox(options: {
 		if (!msg) {
 			return;
 		}
-		await options.onRunnerMessage(msg);
+
 		if (msg.kind === "assistant_delta") {
-			assistantText += msg.delta;
+			const sanitized = streamRedactor.push(msg.delta);
+			if (sanitized) {
+				assistantText += sanitized;
+				await options.onRunnerMessage({
+					v: 1,
+					kind: "assistant_delta",
+					delta: sanitized,
+				});
+			}
+			return;
 		}
+
+		if (msg.kind === "agent_event") {
+			await options.onRunnerMessage({
+				v: 1,
+				kind: "agent_event",
+				event: redactStructured(msg.event, secretValues),
+			});
+			return;
+		}
+
 		if (msg.kind === "error") {
 			ok = false;
 			errorEmitted = true;
+			const trailing = streamRedactor.flush();
+			if (trailing) {
+				assistantText += trailing;
+				await options.onRunnerMessage({
+					v: 1,
+					kind: "assistant_delta",
+					delta: trailing,
+				});
+			}
+			await options.onRunnerMessage({
+				v: 1,
+				kind: "error",
+				message: redactSecrets(msg.message, secretValues),
+			});
+			return;
 		}
+
 		if (msg.kind === "done") {
 			sawRunnerDone = true;
 			ok = msg.ok;
-			if (msg.assistantText) {
-				assistantText = msg.assistantText;
+			const trailing = streamRedactor.flush();
+			if (trailing) {
+				assistantText += trailing;
+				await options.onRunnerMessage({
+					v: 1,
+					kind: "assistant_delta",
+					delta: trailing,
+				});
 			}
+			// Prefer sanitized accumulated text; still scrub runner-provided assistantText.
+			const doneText = redactSecrets(
+				msg.assistantText || assistantText,
+				secretValues,
+			);
+			assistantText = doneText;
+			await options.onRunnerMessage({
+				v: 1,
+				kind: "done",
+				sessionId: msg.sessionId,
+				assistantText: doneText,
+				ok: msg.ok,
+			});
+			return;
 		}
+
+		// ready (and any future non-secret kinds): pass through after light string scrub
+		if (msg.kind === "ready") {
+			await options.onRunnerMessage({
+				v: 1,
+				kind: "ready",
+				sessionId: msg.sessionId,
+				model: msg.model,
+			});
+			return;
+		}
+
+		await options.onRunnerMessage(msg);
 	};
 
 	try {
@@ -174,6 +259,17 @@ export async function runAgentInSandbox(options: {
 				if (stdoutBuffer.trim()) {
 					await handleRunnerLine(stdoutBuffer);
 					stdoutBuffer = "";
+				}
+				// Flush any held streaming suffix so trailing safe text is not lost
+				// when the runner omits a done event (done/error paths already flush).
+				const trailing = streamRedactor.flush();
+				if (trailing) {
+					assistantText += trailing;
+					await options.onRunnerMessage({
+						v: 1,
+						kind: "assistant_delta",
+						delta: trailing,
+					});
 				}
 				const exitCode = event.exitCode ?? 0;
 				if (exitCode !== 0) {

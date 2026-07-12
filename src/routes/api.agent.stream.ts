@@ -347,6 +347,10 @@ export const Route = createFileRoute("/api/agent/stream")({
 								assistantContent = "";
 							}
 
+							// Belt-and-suspenders: never persist or emit unsanitized text even
+							// if a future runner path bypasses agent-run redaction.
+							assistantContent = redactSecrets(assistantContent, secretValues);
+
 							const { toolsColumn } = prepareAssistantMessageStorage(parts);
 							const fullParts = finalizeAssistantParts(parts);
 							const fullTools = partsToTools(fullParts);
@@ -365,9 +369,11 @@ export const Route = createFileRoute("/api/agent/stream")({
 										),
 									);
 							} catch (error) {
+								// Do not log raw payloads — tools/parts may historically have
+								// contained secrets; only log the error itself.
 								console.error(
 									"Failed to persist assistant message tools; retrying with minimal serialization.",
-									error,
+									error instanceof Error ? error.message : error,
 								);
 								const fallbackTools =
 									serializeAssistantPartsMinimalForStorage(parts);
@@ -387,7 +393,9 @@ export const Route = createFileRoute("/api/agent/stream")({
 								} catch (fallbackError) {
 									console.error(
 										"Minimal tools serialization also failed.",
-										fallbackError,
+										fallbackError instanceof Error
+											? fallbackError.message
+											: fallbackError,
 									);
 									throw fallbackError;
 								}
