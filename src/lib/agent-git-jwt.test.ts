@@ -69,4 +69,19 @@ describe("agent-git-jwt", () => {
 		const verified = await verifyAgentGitJwt("not-a-jwt", SECRET);
 		expect(verified).toEqual({ ok: false, reason: "malformed" });
 	});
+
+	it("rejects valid-base64 signatures that do not verify (bad_signature)", async () => {
+		const token = await mintAgentGitJwt({
+			secret: SECRET,
+			projectId: "proj-1",
+			sessionId: "sess-1",
+			userId: "user-1",
+			sandboxId: "sandbox-1",
+		});
+		const parts = token.split(".");
+		// Replace signature with different valid base64url bytes (all zeros encoded)
+		const tampered = `${parts[0]}.${parts[1]}.${btoa("\0".repeat(32)).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "")}`;
+		const verified = await verifyAgentGitJwt(tampered, SECRET);
+		expect(verified).toEqual({ ok: false, reason: "bad_signature" });
+	});
 });

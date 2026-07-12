@@ -15,6 +15,13 @@ export type AgentGitJwtClaims = {
 
 const textEncoder = new TextEncoder();
 
+/** Copy into a fresh ArrayBuffer so Web Crypto accepts the BufferSource (TS 6). */
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+	const copy = new Uint8Array(bytes.byteLength);
+	copy.set(bytes);
+	return copy.buffer;
+}
+
 function base64UrlEncode(bytes: Uint8Array): string {
 	let binary = "";
 	for (const byte of bytes) {
@@ -113,7 +120,7 @@ export async function verifyAgentGitJwt(
 	const valid = await crypto.subtle.verify(
 		"HMAC",
 		key,
-		signatureBytes,
+		toArrayBuffer(signatureBytes),
 		textEncoder.encode(signingInput),
 	);
 	if (!valid) {

@@ -12,21 +12,39 @@ Ditto is a TanStack Start app deployed with Alchemy on Cloudflare Workers. It us
 
 ## Prerequisites
 
-- Node.js 22.15+ (22.17 recommended)
-- pnpm
+- Node.js 22.15+ for the app (22.19+ for the sandbox runner; 22.17+ recommended for local dev)
+- pnpm (root app) and npm (sandbox runner only)
 - Cloudflare / GitHub credentials for the configured environment
 
 ## Install
 
+Root app (pnpm workspace):
+
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 ```
+
+Sandbox runner is a **separate npm package** (not a pnpm workspace member). Install it when working on `sandbox/runner` or before full verification:
+
+```bash
+npm ci --prefix sandbox/runner
+```
+
+Or: `pnpm runner:install`.
 
 ## Development
 
 ```bash
 pnpm dev
 ```
+
+Before opening a PR, run the full verification gate (app + runner typecheck/tests/build):
+
+```bash
+pnpm verify
+```
+
+When you change `sandbox/runner` sources, its `package.json` / lockfile, or the root `Dockerfile`, rebuild the sandbox image so the Docker-baked runner matches local code (for example via your usual Alchemy/Wrangler deploy or container build flow that uses the root `Dockerfile`).
 
 ## Database
 
@@ -46,6 +64,10 @@ pnpm db:generate
 - `pnpm lint` — Biome lint
 - `pnpm format` — Biome format
 - `pnpm test` — Vitest
+- `pnpm typecheck` — root TypeScript (`tsc --noEmit`)
+- `pnpm runner:install` — `npm ci` for the sandbox runner
+- `pnpm runner:verify` — typecheck, test, and build the sandbox runner
+- `pnpm verify` — full pre-PR gate (check, typecheck, test, build, runner verify)
 
 ## Environment variables
 
