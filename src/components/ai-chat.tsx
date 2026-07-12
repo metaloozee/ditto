@@ -1,5 +1,5 @@
 import { ChevronRightIcon, LoaderCircleIcon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Task, TaskContent, TaskTrigger } from "#/components/ai-elements/task";
 import { AssistantMarkdown } from "#/components/assistant-markdown";
 import {
@@ -7,7 +7,6 @@ import {
 	type ComposerStreamingState,
 	type StreamCommitPayload,
 } from "#/components/composer";
-import { EditToolPart } from "#/components/edit-tool-diff";
 import { Bubble, BubbleContent } from "#/components/ui/bubble";
 import {
 	Message,
@@ -38,6 +37,21 @@ import {
 	seedSessionMessages,
 } from "#/lib/chat-session-cache";
 import { cn } from "#/lib/utils";
+
+const EditToolPart = lazy(() =>
+	import("#/components/edit-tool-diff").then((m) => ({
+		default: m.EditToolPart,
+	})),
+);
+
+function EditToolSkeleton() {
+	return (
+		<div className="flex h-10 w-full items-center gap-2 rounded-md border bg-card px-3 text-muted-foreground text-sm">
+			<LoaderCircleIcon className="size-3.5 shrink-0 animate-spin" />
+			<span>Loading diff…</span>
+		</div>
+	);
+}
 
 type ChatMessage = {
 	id: string | number;
@@ -202,7 +216,9 @@ function AssistantParts({
 				if (group.type === "edit") {
 					return (
 						<div key={group.id} className="w-full min-w-0">
-							<EditToolPart tool={group.tool} />
+							<Suspense fallback={<EditToolSkeleton />}>
+								<EditToolPart tool={group.tool} />
+							</Suspense>
 						</div>
 					);
 				}
