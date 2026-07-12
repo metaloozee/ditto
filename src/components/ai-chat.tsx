@@ -1,5 +1,5 @@
 import { ChevronRightIcon, LoaderCircleIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Task, TaskContent, TaskTrigger } from "#/components/ai-elements/task";
 import { AssistantMarkdown } from "#/components/assistant-markdown";
 import {
@@ -341,10 +341,14 @@ export function Chat({
 		null,
 	);
 	const [bridgeSessionId, setBridgeSessionId] = useState<string | null>(null);
-	const [, setCacheEpoch] = useState(0);
+	// Bumps when session-cache module state changes so memos re-read overlays.
+	const [cacheEpoch, setCacheEpoch] = useState(0);
 
 	const cacheSessionId = sessionId ?? bridgeSessionId;
-	const normalizedServerMessages = messages.map(normalizeMessage);
+	const normalizedServerMessages = useMemo(
+		() => messages.map(normalizeMessage),
+		[messages],
+	);
 
 	// After server messages refresh, drop matching optimistic cache entries.
 	useEffect(() => {
@@ -360,14 +364,18 @@ export function Chat({
 		}
 	}, [cacheSessionId, messages]);
 
-	const overlay = pendingOverlay(cacheSessionId, messages);
-	const displayMessages = mergeMessages(
-		normalizedServerMessages,
-		overlay,
-		cacheSessionId,
+	// cacheEpoch forces recompute when acknowledge/seed mutates module cache.
+	const overlay = useMemo(() => {
+		void cacheEpoch;
+		return pendingOverlay(cacheSessionId, messages);
+	}, [cacheSessionId, messages, cacheEpoch]);
+	const displayMessages = useMemo(
+		() => mergeMessages(normalizedServerMessages, overlay, cacheSessionId),
+		[normalizedServerMessages, overlay, cacheSessionId],
 	);
-	const displayIds = new Set(
-		displayMessages.map((message) => String(message.id)),
+	const displayIds = useMemo(
+		() => new Set(displayMessages.map((message) => String(message.id))),
+		[displayMessages],
 	);
 
 	const showOptimisticUser =

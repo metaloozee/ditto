@@ -121,4 +121,39 @@ describe("Chat session cache acknowledgement", () => {
 		});
 		expect(readSessionMessages("sess-2")).toHaveLength(1);
 	});
+
+	it("keeps pending overlays after memoized projections re-render", () => {
+		const stableMessages = [
+			{ id: "old-1", role: "user" as const, content: "older" },
+		];
+		seedSessionMessages("sess-memo", [
+			{ id: "pending-1", role: "user", content: "optimistic hello" },
+		]);
+
+		const { rerender } = render(
+			<Chat
+				projectId="proj-1"
+				sessionId="sess-memo"
+				messages={stableMessages}
+			/>,
+		);
+
+		expect(screen.getByText("optimistic hello")).toBeTruthy();
+		expect(screen.getByText("older")).toBeTruthy();
+
+		// Same messages array identity should not drop the pending overlay.
+		rerender(
+			<Chat
+				projectId="proj-1"
+				sessionId="sess-memo"
+				messages={stableMessages}
+			/>,
+		);
+
+		expect(screen.getByText("optimistic hello")).toBeTruthy();
+		expect(screen.getByText("older")).toBeTruthy();
+		expect(
+			listPendingSessionMessages("sess-memo", [{ id: "old-1" }]),
+		).toHaveLength(1);
+	});
 });

@@ -19,6 +19,36 @@ import { WORKSPACE_PATH } from "#/lib/workspace-policy";
 const RUNNER_CLI = "/opt/ditto-runner/dist/cli.js";
 const AGENT_COMMAND_TIMEOUT_MS = 600_000;
 
+/** Max characters retained from stderr for exit/empty-response diagnostics. */
+export const STDERR_TAIL_MAX_CHARS = 4096;
+
+/**
+ * Append a chunk to a rolling diagnostic tail. Storage is capped so a noisy
+ * multi-minute runner cannot grow unbounded memory; the final error surface
+ * still uses only the last 400 characters after trim + redaction.
+ */
+export function appendRollingTail(
+	current: string,
+	chunk: string,
+	maxChars: number = STDERR_TAIL_MAX_CHARS,
+): string {
+	if (!chunk) {
+		return current;
+	}
+	if (maxChars <= 0) {
+		return "";
+	}
+	// Prefer keeping only the new chunk when it alone exceeds the cap.
+	if (chunk.length >= maxChars) {
+		return chunk.slice(-maxChars);
+	}
+	const combined = current + chunk;
+	if (combined.length <= maxChars) {
+		return combined;
+	}
+	return combined.slice(-maxChars);
+}
+
 function quoteShellArg(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;
 }
@@ -75,7 +105,7 @@ export async function runAgentInSandbox(options: {
 	let ok = true;
 	let assistantText = "";
 	let stdoutBuffer = "";
-	let stderrBuffer = "";
+	let stderrTail = "";
 	let sawRunnerDone = false;
 	let errorEmitted = false;
 
@@ -241,7 +271,7 @@ export async function runAgentInSandbox(options: {
 			}
 
 			if (event.type === "stderr" && event.data) {
-				stderrBuffer += event.data;
+				stderrTail = appendRollingTail(stderrTail, event.data);
 			}
 
 			if (event.type === "error") {
@@ -267,7 +297,7 @@ export async function runAgentInSandbox(options: {
 				const exitCode = event.exitCode ?? 0;
 				if (exitCode !== 0) {
 					const stderrHint = redactSecrets(
-						stderrBuffer.trim().slice(-400),
+						stderrTail.trim().slice(-400),
 						secretValues,
 					);
 					await emitError(
@@ -277,7 +307,7 @@ export async function runAgentInSandbox(options: {
 					);
 				} else if (!sawRunnerDone && !assistantText.trim()) {
 					const stderrHint = redactSecrets(
-						stderrBuffer.trim().slice(-400),
+						stderrTail.trim().slice(-400),
 						secretValues,
 					);
 					await emitError(

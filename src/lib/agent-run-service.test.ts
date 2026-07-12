@@ -658,4 +658,161 @@ describe("executeAgentRun", () => {
 			expect(done.data.tools?.some((t) => t.id === "t1")).toBe(true);
 		}
 	});
+
+	it("batches many tiny deltas into fewer delta events with identical content", async () => {
+		const mockDb = createMockDb();
+		const updateSets: Array<Record<string, unknown>> = [];
+		mockDb.updateSet.mockImplementation((values: Record<string, unknown>) => {
+			updateSets.push(values);
+			return { where: mockDb.updateWhere };
+		});
+		const context = makeContext({ db: mockDb.db });
+
+		const tokens = Array.from({ length: 200 }, (_, i) => `w${i} `);
+		const fullText = tokens.join("");
+
+		const { events, run } = collectEvents(context, {
+			runAgentInSandbox: vi.fn().mockImplementation(async (opts) => {
+				for (const token of tokens) {
+					await opts.onRunnerMessage({
+						kind: "assistant_delta",
+						delta: token,
+					});
+				}
+				return { ok: true, assistantText: fullText };
+			}),
+			prepareAssistantMessageStorage: vi.fn().mockReturnValue({
+				storageParts: [],
+				toolsColumn: null,
+			}),
+		});
+
+		await run();
+
+		const deltaEvents = events.filter((e) => e.event === "delta");
+		expect(deltaEvents.length).toBeGreaterThan(0);
+		expect(deltaEvents.length).toBeLessThan(tokens.length);
+		const concatenated = deltaEvents
+			.map((e) => (e.event === "delta" ? e.data.delta : ""))
+			.join("");
+		expect(concatenated).toBe(fullText);
+		expect(events.map((e) => e.event).at(0)).toBe("meta");
+		expect(events.map((e) => e.event).at(-1)).toBe("done");
+		expect(events.at(-1)).toMatchObject({
+			event: "done",
+			data: { ok: true, content: fullText },
+		});
+		expect(updateSets.some((set) => set.content === fullText)).toBe(true);
+	});
+
+	it("flushes pending text before interleaved tool agent_events", async () => {
+		const mockDb = createMockDb();
+		const context = makeContext({ db: mockDb.db });
+
+		const { events, run } = collectEvents(context, {
+			runAgentInSandbox: vi.fn().mockImplementation(async (opts) => {
+				await opts.onRunnerMessage({
+					kind: "assistant_delta",
+					delta: "before ",
+				});
+				await opts.onRunnerMessage({
+					kind: "assistant_delta",
+					delta: "tool",
+				});
+				await opts.onRunnerMessage({
+					kind: "agent_event",
+					event: {
+						type: "tool_execution_start",
+						toolCallId: "t-order",
+						toolName: "bash",
+						args: { command: "echo hi" },
+					},
+				});
+				await opts.onRunnerMessage({
+					kind: "assistant_delta",
+					delta: " after",
+				});
+				return { ok: true, assistantText: "before tool after" };
+			}),
+			prepareAssistantMessageStorage: vi.fn().mockReturnValue({
+				storageParts: [],
+				toolsColumn: null,
+			}),
+		});
+
+		await run();
+
+		const kinds = events.map((e) => e.event);
+		expect(kinds).toEqual(["meta", "delta", "agent", "delta", "done"]);
+		const deltas = events
+			.filter((e) => e.event === "delta")
+			.map((e) => (e.event === "delta" ? e.data.delta : ""));
+		// Raw delta bytes are unchanged; partsToText joins text segments around tools.
+		expect(deltas.join("")).toBe("before tool after");
+		// First delta batch must complete before the tool event.
+		const firstDeltaIdx = kinds.indexOf("delta");
+		const agentIdx = kinds.indexOf("agent");
+		expect(firstDeltaIdx).toBeLessThan(agentIdx);
+		// Unbatched reducer semantics: text parts around tools join with \n\n.
+		const expectedContent = "before tool\n\n after";
+		expect(events.at(-1)).toMatchObject({
+			event: "done",
+			data: {
+				ok: true,
+				content: expectedContent,
+			},
+		});
+		const done = events.at(-1);
+		if (done?.event === "done") {
+			expect(done.data.tools?.some((t) => t.id === "t-order")).toBe(true);
+			expect(done.data.parts).toBeDefined();
+		}
+	});
+
+	it("emits error/done immediately after flushing pending text", async () => {
+		const mockDb = createMockDb();
+		const updateSets: Array<Record<string, unknown>> = [];
+		mockDb.updateSet.mockImplementation((values: Record<string, unknown>) => {
+			updateSets.push(values);
+			return { where: mockDb.updateWhere };
+		});
+		const context = makeContext({ db: mockDb.db });
+
+		const { events, run } = collectEvents(context, {
+			runAgentInSandbox: vi.fn().mockImplementation(async (opts) => {
+				await opts.onRunnerMessage({
+					kind: "assistant_delta",
+					delta: "partial",
+				});
+				await opts.onRunnerMessage({
+					kind: "assistant_delta",
+					delta: " text",
+				});
+				await opts.onRunnerMessage({
+					kind: "error",
+					message: "boom",
+				});
+				return { ok: false, assistantText: "partial text" };
+			}),
+			prepareAssistantMessageStorage: vi.fn().mockReturnValue({
+				storageParts: [],
+				toolsColumn: null,
+			}),
+		});
+
+		await run();
+
+		const kinds = events.map((e) => e.event);
+		expect(kinds).toEqual(["meta", "delta", "error", "done"]);
+		const delta = events.find((e) => e.event === "delta");
+		expect(delta).toMatchObject({
+			event: "delta",
+			data: { delta: "partial text" },
+		});
+		expect(events.at(-1)).toMatchObject({
+			event: "done",
+			data: { ok: false, content: "partial text" },
+		});
+		expect(updateSets.some((set) => set.content === "partial text")).toBe(true);
+	});
 });

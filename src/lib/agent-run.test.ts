@@ -13,7 +13,8 @@ vi.mock("@cloudflare/sandbox", () => ({
 	parseSSEStream: parseSSEStreamMock,
 }));
 
-const { runAgentInSandbox } = await import("./agent-run");
+const { appendRollingTail, runAgentInSandbox, STDERR_TAIL_MAX_CHARS } =
+	await import("./agent-run");
 
 function makeEnv(): Env {
 	return {
@@ -175,6 +176,87 @@ describe("runAgentInSandbox", () => {
 				message: "Agent produced no response.",
 			}),
 		);
+	});
+
+	it("appendRollingTail bounds retained length under a multi-MiB stream", () => {
+		let tail = "";
+		const chunk = "x".repeat(64 * 1024);
+		for (let i = 0; i < 40; i += 1) {
+			// ~2.5 MiB total across chunks
+			tail = appendRollingTail(tail, chunk);
+			expect(tail.length).toBeLessThanOrEqual(STDERR_TAIL_MAX_CHARS);
+		}
+		expect(tail.length).toBe(STDERR_TAIL_MAX_CHARS);
+		expect(tail).toBe("x".repeat(STDERR_TAIL_MAX_CHARS));
+	});
+
+	it("appendRollingTail keeps the true final characters across chunk boundaries", () => {
+		const prefix = "noise-".repeat(2000);
+		const suffix = "UNIQUE_TAIL_MARKER_98765";
+		let tail = appendRollingTail("", prefix);
+		tail = appendRollingTail(tail, suffix);
+		expect(tail.length).toBeLessThanOrEqual(STDERR_TAIL_MAX_CHARS);
+		expect(tail.endsWith(suffix)).toBe(true);
+		expect(tail.slice(-400)).toContain(suffix);
+	});
+
+	it("uses only the last 400 stderr chars in exit errors after a huge stream", async () => {
+		const writeFile = vi.fn().mockResolvedValue(undefined);
+		const mkdir = vi.fn().mockResolvedValue(undefined);
+		const execStream = vi.fn().mockResolvedValue(new ReadableStream());
+		const deleteSession = vi.fn().mockResolvedValue(undefined);
+		const createSession = vi.fn().mockResolvedValue({
+			id: "agent-conv-stderr-bound",
+			writeFile,
+			mkdir,
+			execStream,
+		});
+
+		getProjectSandboxMock.mockReturnValue({
+			createSession,
+			deleteSession,
+		});
+
+		const marker = "END_OF_STDERR_MARKER_xyz";
+		parseSSEStreamMock.mockImplementation(async function* () {
+			// Far above the rolling cap; only the tail should appear in the error.
+			yield {
+				type: "stderr",
+				timestamp: new Date().toISOString(),
+				data: `${"A".repeat(50_000)}${marker}`,
+			};
+			yield {
+				type: "complete",
+				timestamp: new Date().toISOString(),
+				exitCode: 7,
+			};
+		});
+
+		const onRunnerMessage = vi.fn();
+		await runAgentInSandbox({
+			env: makeEnv(),
+			sandboxId: "sandbox-1",
+			projectId: "project-1",
+			userId: "user-1",
+			conversationId: "conv-stderr-bound",
+			cwd: SESSION_WORKTREE_CWD,
+			model: "opencode/gpt-4.1",
+			prompt: "fail big",
+			onRunnerMessage,
+		});
+
+		const errorCall = onRunnerMessage.mock.calls.find(
+			(call) => call[0]?.kind === "error",
+		);
+		const message = errorCall?.[0]?.message as string;
+		expect(message).toMatch(/^Agent exited with code 7: /);
+		expect(message).toContain(marker);
+		// Public surface is still last-400 after trim; not the whole multi-MiB stream.
+		const hint = message.slice("Agent exited with code 7: ".length);
+		expect(hint.length).toBeLessThanOrEqual(400);
+		expect(hint.endsWith(marker)).toBe(true);
+		// Leading bulk must not appear.
+		expect(message).not.toContain("A".repeat(500));
 	});
 
 	it("redacts git callback JWT from stderr error surfaces", async () => {

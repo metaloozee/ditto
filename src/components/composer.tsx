@@ -300,24 +300,38 @@ export function Composer({
 						});
 					},
 					onDelta: (delta) => {
+						if (!delta) {
+							return;
+						}
 						assistantTextRef.current += delta;
 						partsRef.current = appendAssistantTextDelta(
 							partsRef.current,
 							delta,
 						);
+						// Project once per callback from refs (server already batches).
 						const nextParts = partsRef.current;
+						const nextText = partsToText(nextParts);
+						const nextTools = partsToTools(nextParts);
 						onStreamingChange?.((previous) => {
 							const base = previous ?? emptyStreaming(prompt);
+							if (
+								base.text === nextText &&
+								base.parts === nextParts &&
+								base.tools === nextTools
+							) {
+								return previous ?? base;
+							}
 							return {
 								...base,
 								active: true,
-								text: partsToText(nextParts),
+								text: nextText,
 								parts: nextParts,
-								tools: partsToTools(nextParts),
+								tools: nextTools,
 							};
 						});
 					},
 					onAgent: (event) => {
+						// Tool events stay immediate (server flushes text before tools).
 						const nextParts = applyAgentToolEventToParts(
 							partsRef.current,
 							event,
@@ -326,14 +340,16 @@ export function Composer({
 							return;
 						}
 						partsRef.current = nextParts;
+						const nextText = partsToText(nextParts);
+						const nextTools = partsToTools(nextParts);
 						onStreamingChange?.((previous) => {
 							const base = previous ?? emptyStreaming(prompt);
 							return {
 								...base,
 								active: true,
 								parts: nextParts,
-								tools: partsToTools(nextParts),
-								text: partsToText(nextParts),
+								tools: nextTools,
+								text: nextText,
 							};
 						});
 					},

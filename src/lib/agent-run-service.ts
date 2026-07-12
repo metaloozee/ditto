@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import type { createDb } from "#/db";
 import { messages, projects, workspaceSessions } from "#/db/schema";
+import { createDeltaBatcher } from "#/lib/agent-delta-batcher";
 import {
 	type AssistantMessagePart,
 	appendAssistantTextDelta,
@@ -487,6 +488,15 @@ export async function executeAgentRun(options: {
 	let parts: AssistantMessagePart[] = [];
 	let terminalPersisted = false;
 
+	// Batch contiguous assistant text deltas so SSE emit work stays bounded.
+	// Non-text events force a sync flush so text/tool ordering stays exact.
+	const deltaBatcher = createDeltaBatcher({
+		onFlush: (delta) => {
+			parts = appendAssistantTextDelta(parts, delta);
+			emit({ event: "delta", data: { delta } });
+		},
+	});
+
 	try {
 		const runResult = await deps.runAgentInSandbox({
 			env: context.env,
@@ -499,17 +509,18 @@ export async function executeAgentRun(options: {
 			prompt: context.message,
 			envVars: context.envVars,
 			onRunnerMessage: async (msg) => {
+				if (msg.kind === "assistant_delta") {
+					deltaBatcher.push(msg.delta);
+					return;
+				}
+				// Flush pending text before tools/errors so ordering is preserved.
+				deltaBatcher.flush();
 				if (msg.kind === "agent_event") {
 					emit({ event: "agent", data: { event: msg.event } });
 					const nextParts = applyAgentToolEventToParts(parts, msg.event);
 					if (nextParts) {
 						parts = nextParts;
 					}
-				}
-				if (msg.kind === "assistant_delta") {
-					parts = appendAssistantTextDelta(parts, msg.delta);
-					assistantContent = partsToText(parts);
-					emit({ event: "delta", data: { delta: msg.delta } });
 				}
 				if (msg.kind === "error") {
 					emit({
@@ -521,6 +532,9 @@ export async function executeAgentRun(options: {
 				}
 			},
 		});
+
+		// Flush any remaining batched text before terminal persistence / done.
+		deltaBatcher.dispose();
 
 		const textFromParts = partsToText(parts);
 		if (textFromParts.trim().length > 0) {
@@ -602,6 +616,9 @@ export async function executeAgentRun(options: {
 			},
 		});
 	} catch (error) {
+		// Ensure no pending text is lost on the failure path.
+		deltaBatcher.dispose();
+
 		const message = redact(
 			error instanceof Error ? error.message : "Agent stream failed.",
 			context.secretValues,
