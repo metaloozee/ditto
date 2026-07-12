@@ -1,4 +1,4 @@
-import type { DirectoryBackup, ExecEvent } from "@cloudflare/sandbox";
+import type { ExecEvent } from "@cloudflare/sandbox";
 import { parseSSEStream } from "@cloudflare/sandbox";
 import { nanoid } from "nanoid";
 import { agentGitCallbackUrl, mintAgentGitJwt } from "#/lib/agent-git-jwt";
@@ -8,11 +8,7 @@ import {
 	splitStdoutBuffer,
 } from "#/lib/agent-stream-protocol";
 import { dittoGitAuthorEnv } from "#/lib/ditto-git-identity";
-import {
-	backupSandboxWorkspace,
-	getProjectSandbox,
-	type SandboxEnvVar,
-} from "#/lib/sandbox-bootstrap";
+import { getProjectSandbox, type SandboxEnvVar } from "#/lib/sandbox-bootstrap";
 import {
 	redactSecrets,
 	redactStructured,
@@ -53,9 +49,6 @@ export async function runAgentInSandbox(options: {
 }): Promise<{
 	ok: boolean;
 	assistantText: string;
-	backupStored: boolean;
-	backup?: DirectoryBackup;
-	backupError?: string;
 }> {
 	const sandbox = getProjectSandbox(options.env, options.sandboxId);
 	const gitCallbackToken = await mintAgentGitJwt({
@@ -303,31 +296,8 @@ export async function runAgentInSandbox(options: {
 		}
 	}
 
-	let backup: DirectoryBackup | undefined;
-	let backupStored = false;
-	let backupError: string | undefined;
-
-	try {
-		backup = await backupSandboxWorkspace({
-			env: options.env,
-			sandboxId: options.sandboxId,
-			projectId: options.projectId,
-		});
-		backupStored = true;
-	} catch (error) {
-		backupError = redactSecrets(
-			error instanceof Error ? error.message : "Backup failed.",
-			secretValues,
-		);
-	}
-
 	return {
 		ok,
 		assistantText,
-		backupStored,
-		backup,
-		backupError,
 	};
 }
-
-export { finalizeAgentRun } from "#/lib/project-sandbox";

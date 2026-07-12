@@ -13,8 +13,21 @@ Workspace files are durable through R2 directory backups, not by mounting an R2
 bucket on `/workspace`. `backupSandboxWorkspace` calls `createBackup`; cold
 sandboxes hydrate through `restoreBackup` inside `ensureProjectSandbox`. A
 FUSE restore is ephemeral for the life of the container, so waking a sleeping
-project re-runs restore before agent work. After each agent run, the Worker
-stores a fresh backup handle on the project row so edits survive sandbox sleep.
+project re-runs restore before agent work.
+
+Post-run and post-git snapshot writes share `persistProjectSandboxBackup`, which
+**versions** each attempt:
+
+1. Atomically increments `sandboxBackupRequestedGeneration` (candidate).
+2. Creates the R2 backup for the live workspace.
+3. Stores the handle only when
+   `sandboxBackupStoredGeneration < candidateGeneration`.
+
+Out-of-order completions therefore cannot let an older snapshot replace a newer
+stored generation. Superseded candidates are not failures. First-provision and
+restore/recreate paths may still write the backup handle without the generation
+gate. After each completed agent run, the stream route calls the versioned helper
+once (the runner itself does not snapshot).
 
 ## Three session layers
 
@@ -53,8 +66,9 @@ stores a fresh backup handle on the project row so edits survive sandbox sleep.
 8. The harness opens or resumes PI state under
    `/workspace/.ditto/sessions/<conversationId>.jsonl` on the primary tree.
 9. The Worker forwards `meta`, `agent`, `delta`, `error`, and `done` SSE events.
-10. On completion the Worker updates the assistant message in D1 and calls
-   `createBackup` to snapshot `/workspace` (including `.ditto/worktrees`).
+10. On completion the Worker updates the assistant message in D1 and runs
+   `persistProjectSandboxBackup` (versioned `createBackup` of `/workspace`,
+   including `.ditto/worktrees`).
 
 ## Transport
 
@@ -92,9 +106,12 @@ Users commit, push, and open pull requests from the project UI (tRPC
 - Command output is redacted before errors reach the client.
 - Opening a PR uses installation Octokit auth (not the user's OAuth token).
 - v1 has no merge API or merge button.
-- UI and Worker session git mutations (commit / push / open PR) refresh the
-  project sandbox backup after success so cold restore does not resurrect
-  pre-export dirty worktrees.
+- UI and Worker session git mutations refresh the project sandbox backup
+  **only after a sandbox-mutating success** (commit that created a commit,
+  push, or PR open that first pushed). Opening a PR when no push was needed
+  does not snapshot. Backups are best-effort: a failed snapshot does not turn a
+  completed git mutation into a reported failure. Cold restore therefore does
+  not resurrect pre-export dirty worktrees after real mutations.
 
 Chat-driven git uses PI custom tools in the sandbox runner (`ditto_push_branch`,
 `ditto_open_pull_request`). Those tools `POST` to Worker `POST /api/agent/git`

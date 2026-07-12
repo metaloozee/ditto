@@ -1,4 +1,3 @@
-import type { DirectoryBackup } from "@cloudflare/sandbox";
 import { and, eq, sql } from "drizzle-orm";
 import type { createDb } from "#/db";
 import { projects } from "#/db/schema";
@@ -23,41 +22,106 @@ export type PersistProjectSandboxBackupProject = Pick<
 	"id" | "userId" | "sandboxId" | "status"
 >;
 
+export type PersistProjectSandboxBackupResult = {
+	project: typeof projects.$inferSelect;
+	stored: boolean;
+	candidateGeneration: number;
+};
+
 /**
  * Snapshot /workspace (incl. worktrees) and store the backup handle on the
- * project row. Same durability path as post-agent-run and post-restore.
+ * project row only when this candidate is still the newest generation.
+ * Same durability path as post-agent-run and post-git mutation backups.
  */
 export async function persistProjectSandboxBackup(options: {
 	db: ReturnType<typeof createDb>;
 	env: Env;
 	project: PersistProjectSandboxBackupProject;
-}): Promise<typeof projects.$inferSelect> {
+}): Promise<PersistProjectSandboxBackupResult> {
 	if (options.project.status !== "ready" || !options.project.sandboxId) {
 		throw new Error("Project sandbox is not ready.");
 	}
+
+	const [reserved] = await options.db
+		.update(projects)
+		.set({
+			sandboxBackupRequestedGeneration: sql`${projects.sandboxBackupRequestedGeneration} + 1`,
+			updatedAt: sql`(unixepoch())`,
+		})
+		.where(
+			and(
+				eq(projects.id, options.project.id),
+				eq(projects.userId, options.project.userId),
+			),
+		)
+		.returning({
+			generation: projects.sandboxBackupRequestedGeneration,
+			status: projects.status,
+			sandboxId: projects.sandboxId,
+		});
+
+	if (!reserved || reserved.generation == null) {
+		throw new Error("Failed to reserve project sandbox backup generation.");
+	}
+
+	const candidateGeneration = reserved.generation;
+	if (reserved.status !== "ready" || !reserved.sandboxId) {
+		throw new Error("Project sandbox is not ready.");
+	}
+
 	const backup = await backupSandboxWorkspace({
 		env: options.env,
-		sandboxId: options.project.sandboxId,
+		sandboxId: reserved.sandboxId,
 		projectId: options.project.id,
 	});
-	return storeReadyProjectBackup({
-		db: options.db,
-		project: options.project as typeof projects.$inferSelect,
-		backup,
-	});
-}
 
-/** Persist a backup handle produced elsewhere (e.g. end of agent run). */
-export async function finalizeAgentRun(options: {
-	db: ReturnType<typeof createDb>;
-	project: typeof projects.$inferSelect;
-	backup: DirectoryBackup;
-}): Promise<typeof projects.$inferSelect> {
-	return storeReadyProjectBackup({
-		db: options.db,
-		project: options.project,
-		backup: options.backup,
-	});
+	const [storedProject] = await options.db
+		.update(projects)
+		.set({
+			status: "ready",
+			sandboxBackup: serializeSandboxBackup(backup),
+			sandboxBackupCreatedAt: sql`(unixepoch())`,
+			sandboxBackupStoredGeneration: candidateGeneration,
+			updatedAt: sql`(unixepoch())`,
+		})
+		.where(
+			and(
+				eq(projects.id, options.project.id),
+				eq(projects.userId, options.project.userId),
+				sql`${projects.sandboxBackupStoredGeneration} < ${candidateGeneration}`,
+			),
+		)
+		.returning();
+
+	if (storedProject) {
+		return {
+			project: storedProject,
+			stored: true,
+			candidateGeneration,
+		};
+	}
+
+	// Candidate was superseded by a newer completed snapshot — not a failure.
+	const [currentProject] = await options.db
+		.select()
+		.from(projects)
+		.where(
+			and(
+				eq(projects.id, options.project.id),
+				eq(projects.userId, options.project.userId),
+			),
+		)
+		.limit(1);
+
+	if (!currentProject) {
+		throw new Error("Failed to load project sandbox state.");
+	}
+
+	return {
+		project: currentProject,
+		stored: false,
+		candidateGeneration,
+	};
 }
 
 async function markProjectRestoreFailed(options: {
@@ -75,6 +139,7 @@ async function markProjectRestoreFailed(options: {
 		);
 }
 
+/** Unconditional store for provisioning / restore-refresh paths only. */
 async function storeReadyProjectBackup(options: {
 	db: ReturnType<typeof createDb>;
 	project: typeof projects.$inferSelect;

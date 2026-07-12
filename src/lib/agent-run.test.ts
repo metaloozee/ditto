@@ -3,12 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const SESSION_WORKTREE_CWD = "/workspace/.ditto/worktrees/conv-1";
 
 const getProjectSandboxMock = vi.hoisted(() => vi.fn());
-const backupSandboxWorkspaceMock = vi.hoisted(() => vi.fn());
 const parseSSEStreamMock = vi.hoisted(() => vi.fn());
 
 vi.mock("#/lib/sandbox-bootstrap", () => ({
 	getProjectSandbox: getProjectSandboxMock,
-	backupSandboxWorkspace: backupSandboxWorkspaceMock,
 }));
 
 vi.mock("@cloudflare/sandbox", () => ({
@@ -30,7 +28,7 @@ describe("runAgentInSandbox", () => {
 		vi.clearAllMocks();
 	});
 
-	it("writes job JSON, streams runner output, and backs up workspace", async () => {
+	it("writes job JSON, streams runner output, and does not create backups itself", async () => {
 		const writeFile = vi.fn().mockResolvedValue(undefined);
 		const mkdir = vi.fn().mockResolvedValue(undefined);
 		const execStream = vi.fn().mockResolvedValue(new ReadableStream());
@@ -58,11 +56,6 @@ describe("runAgentInSandbox", () => {
 				timestamp: new Date().toISOString(),
 				exitCode: 0,
 			};
-		});
-
-		backupSandboxWorkspaceMock.mockResolvedValue({
-			id: "backup-1",
-			dir: "/workspace",
 		});
 
 		const onRunnerMessage = vi.fn();
@@ -115,17 +108,14 @@ describe("runAgentInSandbox", () => {
 			kind: "assistant_delta",
 			delta: "Hello",
 		});
-		expect(backupSandboxWorkspaceMock).toHaveBeenCalledWith({
-			env: makeEnv(),
-			sandboxId: "sandbox-1",
-			projectId: "project-1",
-		});
 		expect(deleteSession).toHaveBeenCalledWith("agent-conv-1");
-		expect(result).toMatchObject({
+		expect(result).toEqual({
 			ok: true,
 			assistantText: "Hello",
-			backupStored: true,
 		});
+		expect(result).not.toHaveProperty("backupStored");
+		expect(result).not.toHaveProperty("backup");
+		expect(result).not.toHaveProperty("backupError");
 	});
 
 	it("does not pass AbortSignal into sandbox execStream or parseSSEStream", async () => {
@@ -155,11 +145,6 @@ describe("runAgentInSandbox", () => {
 				timestamp: new Date().toISOString(),
 				exitCode: 0,
 			};
-		});
-
-		backupSandboxWorkspaceMock.mockResolvedValue({
-			id: "backup-2",
-			dir: "/workspace",
 		});
 
 		const onRunnerMessage = vi.fn();
@@ -219,11 +204,6 @@ describe("runAgentInSandbox", () => {
 				timestamp: new Date().toISOString(),
 				exitCode: 1,
 			};
-		});
-
-		backupSandboxWorkspaceMock.mockResolvedValue({
-			id: "backup-3",
-			dir: "/workspace",
 		});
 
 		const onRunnerMessage = vi.fn();
@@ -304,11 +284,6 @@ describe("runAgentInSandbox", () => {
 				timestamp: new Date().toISOString(),
 				exitCode: 0,
 			};
-		});
-
-		backupSandboxWorkspaceMock.mockResolvedValue({
-			id: "backup-redact",
-			dir: "/workspace",
 		});
 
 		const onRunnerMessage = vi.fn();
@@ -392,11 +367,6 @@ describe("runAgentInSandbox", () => {
 			};
 		});
 
-		backupSandboxWorkspaceMock.mockResolvedValue({
-			id: "backup-event",
-			dir: "/workspace",
-		});
-
 		const onRunnerMessage = vi.fn();
 		await runAgentInSandbox({
 			env: makeEnv(),
@@ -475,11 +445,6 @@ describe("runAgentInSandbox", () => {
 				timestamp: new Date().toISOString(),
 				exitCode: 1,
 			};
-		});
-
-		backupSandboxWorkspaceMock.mockResolvedValue({
-			id: "backup-all",
-			dir: "/workspace",
 		});
 
 		const onRunnerMessage = vi.fn();

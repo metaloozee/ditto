@@ -44,6 +44,14 @@ export const projects = sqliteTable(
 		sandboxBackupCreatedAt: integer("sandboxBackupCreatedAt", {
 			mode: "timestamp",
 		}),
+		sandboxBackupRequestedGeneration: integer(
+			"sandboxBackupRequestedGeneration",
+		)
+			.notNull()
+			.default(0),
+		sandboxBackupStoredGeneration: integer("sandboxBackupStoredGeneration")
+			.notNull()
+			.default(0),
 		status: text("status", {
 			enum: ["provisioning", "ready", "failed"],
 		})

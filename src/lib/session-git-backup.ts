@@ -66,11 +66,6 @@ export async function openSessionPullRequestWithBackup<T>(options: {
 			project: options.project,
 		});
 	}
-	const result = await options.open();
-	await bestEffortPersistSessionGitBackup({
-		db: options.db,
-		env: options.env,
-		project: options.project,
-	});
-	return result;
+	// Open PR is an external GitHub API call — no sandbox mutation, no backup.
+	return await options.open();
 }

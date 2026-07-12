@@ -6,7 +6,7 @@ import { z } from "zod";
 import { createDb } from "#/db";
 import { messages, projects, workspaceSessions } from "#/db/schema";
 import { isProjectCoderModelSpecifier } from "#/lib/agent-models";
-import { finalizeAgentRun, runAgentInSandbox } from "#/lib/agent-run";
+import { runAgentInSandbox } from "#/lib/agent-run";
 import {
 	type AssistantMessagePart,
 	appendAssistantTextDelta,
@@ -20,7 +20,10 @@ import {
 import { encodeSseEvent } from "#/lib/agent-stream-protocol";
 import { createAuth } from "#/lib/auth";
 import { decryptEnvVars } from "#/lib/project-env-vars";
-import { ensureProjectSandbox } from "#/lib/project-sandbox";
+import {
+	ensureProjectSandbox,
+	persistProjectSandboxBackup,
+} from "#/lib/project-sandbox";
 import { redactSecrets } from "#/lib/secret-redaction";
 import { ensureSessionWorktree } from "#/lib/session-worktree";
 import { makeSessionTitleFromMessage } from "#/lib/workspace-policy";
@@ -401,21 +404,22 @@ export const Route = createFileRoute("/api/agent/stream")({
 								}
 							}
 
-							if (runResult.backupStored && runResult.backup) {
-								try {
-									ensuredProject = await finalizeAgentRun({
-										db,
-										project: ensuredProject,
-										backup: runResult.backup,
-									});
-								} catch (error) {
-									runResult.backupError = redactSecrets(
-										error instanceof Error
-											? error.message
-											: "Failed to persist backup metadata.",
-										secretValues,
-									);
-								}
+							let backupError: string | undefined;
+							try {
+								const backupResult = await persistProjectSandboxBackup({
+									db,
+									env,
+									project: ensuredProject,
+								});
+								ensuredProject = backupResult.project;
+								// Superseded candidates are success (no backupError).
+							} catch (error) {
+								backupError = redactSecrets(
+									error instanceof Error
+										? error.message
+										: "Failed to persist backup metadata.",
+									secretValues,
+								);
 							}
 
 							enqueue("done", {
@@ -424,9 +428,7 @@ export const Route = createFileRoute("/api/agent/stream")({
 								content: assistantContent,
 								...(fullTools.length > 0 ? { tools: fullTools } : {}),
 								...(fullParts.length > 0 ? { parts: fullParts } : {}),
-								...(runResult.backupError
-									? { backupError: runResult.backupError }
-									: {}),
+								...(backupError ? { backupError } : {}),
 							});
 						} catch (error) {
 							const message = redactSecrets(

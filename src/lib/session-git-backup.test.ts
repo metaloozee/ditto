@@ -110,7 +110,7 @@ describe("session-git-backup", () => {
 	});
 
 	describe("openSessionPullRequestWithBackup", () => {
-		it("persists after auto-push even when open pull request fails", async () => {
+		it("persists once when pushIfNeeded is true, even if open fails", async () => {
 			const pushIfNeeded = vi.fn().mockResolvedValue(true);
 			const open = vi.fn().mockRejectedValue(new Error("pr failed"));
 
@@ -129,7 +129,7 @@ describe("session-git-backup", () => {
 			expect(open).toHaveBeenCalled();
 		});
 
-		it("persists after open when no push was needed", async () => {
+		it("does not persist when pushIfNeeded is false (open-only)", async () => {
 			const pushIfNeeded = vi.fn().mockResolvedValue(false);
 			const open = vi.fn().mockResolvedValue({ url: "https://pr", number: 2 });
 
@@ -143,7 +143,7 @@ describe("session-git-backup", () => {
 				}),
 			).resolves.toEqual({ url: "https://pr", number: 2 });
 
-			expect(persistProjectSandboxBackupMock).toHaveBeenCalledTimes(1);
+			expect(persistProjectSandboxBackupMock).not.toHaveBeenCalled();
 		});
 	});
 });
