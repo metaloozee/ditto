@@ -73,6 +73,7 @@ import {
 } from "#/components/ui/sidebar";
 import { useTRPC } from "#/integrations/trpc/react";
 import { authClient } from "#/lib/auth.client";
+import { clearSessionMessages } from "#/lib/chat-session-cache";
 import { cn } from "#/lib/utils";
 
 type SidebarSession = {
@@ -208,7 +209,7 @@ function ProjectStatusIcon({
 	);
 }
 
-function SessionSidebarItem({
+export function SessionSidebarItem({
 	session,
 	project,
 	isActive,
@@ -226,11 +227,12 @@ function SessionSidebarItem({
 		trpc.workspace.deleteSession.mutationOptions(),
 	);
 
-	async function handleDeleteSession(): Promise<void> {
+	async function handleArchiveSession(): Promise<void> {
 		await deleteSessionMutation.mutateAsync({
 			projectId: project.id,
 			sessionId: session.id,
 		});
+		clearSessionMessages(session.id);
 		await queryClient.invalidateQueries(trpc.projects.list.queryFilter());
 		setConfirmOpen(false);
 
@@ -283,7 +285,7 @@ function SessionSidebarItem({
 						onClick={() => setConfirmOpen(true)}
 					>
 						<TrashIcon />
-						<span>Delete Session</span>
+						<span>Archive Session</span>
 					</DropdownMenuItem>
 				</DropdownMenuContent>
 			</DropdownMenu>
@@ -291,20 +293,21 @@ function SessionSidebarItem({
 			<AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
 				<AlertDialogContent>
 					<AlertDialogHeader>
-						<AlertDialogTitle>Delete session?</AlertDialogTitle>
+						<AlertDialogTitle>Archive session?</AlertDialogTitle>
 						<AlertDialogDescription>
-							This chat and its history will be permanently lost.
+							This chat will disappear from the active list and cannot receive
+							new messages.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
 						<AlertDialogCancel>Cancel</AlertDialogCancel>
 						<AlertDialogAction
 							variant="destructive"
-							onClick={() => void handleDeleteSession()}
+							onClick={() => void handleArchiveSession()}
 							disabled={deleteSessionMutation.isPending}
 							className="cursor-pointer"
 						>
-							{deleteSessionMutation.isPending ? "Deleting…" : "Delete"}
+							{deleteSessionMutation.isPending ? "Archiving…" : "Archive"}
 						</AlertDialogAction>
 					</AlertDialogFooter>
 				</AlertDialogContent>

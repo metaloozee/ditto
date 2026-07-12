@@ -27,6 +27,7 @@ import {
 } from "#/lib/session-git-backup";
 import { rethrowOrMapSessionGitMutationError } from "#/lib/session-git-trpc-errors";
 import { ensureSessionWorktree } from "#/lib/session-worktree";
+import { loadOwnedActiveSession } from "#/lib/workspace-session";
 import { createTRPCRouter, protectedProcedure } from "../init";
 
 const sessionInputSchema = z.object({
@@ -76,18 +77,12 @@ async function resolveSessionGitContext(options: {
 		});
 	}
 
-	const [session] = await db
-		.select()
-		.from(workspaceSessions)
-		.where(
-			and(
-				eq(workspaceSessions.id, options.input.sessionId),
-				eq(workspaceSessions.projectId, options.input.projectId),
-				eq(workspaceSessions.userId, options.ctx.user.id),
-				eq(workspaceSessions.status, "active"),
-			),
-		)
-		.limit(1);
+	const session = await loadOwnedActiveSession({
+		db,
+		projectId: options.input.projectId,
+		sessionId: options.input.sessionId,
+		userId: options.ctx.user.id,
+	});
 
 	if (!session) {
 		throw new TRPCError({

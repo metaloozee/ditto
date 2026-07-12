@@ -12,6 +12,7 @@ import {
 	pushSessionBranch,
 } from "#/lib/session-git";
 import { ensureSessionWorktree } from "#/lib/session-worktree";
+import { loadOwnedActiveSession } from "#/lib/workspace-session";
 
 export const agentGitBodySchema = z.object({
 	action: z.enum(["push", "openPullRequest", "status"]),
@@ -85,18 +86,12 @@ export async function resolveAgentGitContext(options: {
 		throw new AgentGitHttpError(403, "Sandbox does not match this agent run.");
 	}
 
-	const [session] = await options.db
-		.select()
-		.from(workspaceSessions)
-		.where(
-			and(
-				eq(workspaceSessions.id, options.claims.sessionId),
-				eq(workspaceSessions.projectId, options.claims.projectId),
-				eq(workspaceSessions.userId, options.claims.userId),
-				eq(workspaceSessions.status, "active"),
-			),
-		)
-		.limit(1);
+	const session = await loadOwnedActiveSession({
+		db: options.db,
+		projectId: options.claims.projectId,
+		sessionId: options.claims.sessionId,
+		userId: options.claims.userId,
+	});
 
 	if (!session) {
 		throw new AgentGitHttpError(404, "Session not found.");

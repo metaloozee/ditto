@@ -27,6 +27,11 @@ import {
 import { redactSecrets } from "#/lib/secret-redaction";
 import { ensureSessionWorktree } from "#/lib/session-worktree";
 import { makeSessionTitleFromMessage } from "#/lib/workspace-policy";
+import {
+	type OwnedActiveSession,
+	resolveSessionForMessageWrite,
+	workspaceSessionRecencyUpdate,
+} from "#/lib/workspace-session";
 
 const streamBodySchema = z.object({
 	projectId: z.string().min(1),
@@ -54,27 +59,6 @@ async function loadProjectForUser(options: {
 		.limit(1);
 
 	return project ?? null;
-}
-
-async function loadWorkspaceSession(options: {
-	db: ReturnType<typeof createDb>;
-	projectId: string;
-	sessionId: string;
-	userId: string;
-}) {
-	const [session] = await options.db
-		.select()
-		.from(workspaceSessions)
-		.where(
-			and(
-				eq(workspaceSessions.id, options.sessionId),
-				eq(workspaceSessions.projectId, options.projectId),
-				eq(workspaceSessions.userId, options.userId),
-			),
-		)
-		.limit(1);
-
-	return session ?? null;
 }
 
 function jsonResponse(body: unknown, status: number): Response {
@@ -155,18 +139,25 @@ export const Route = createFileRoute("/api/agent/stream")({
 					);
 				}
 
-				let sessionId = input.sessionId ?? null;
-				let createdSession = false;
-				let workspaceSession = sessionId
-					? await loadWorkspaceSession({
-							db,
-							projectId: input.projectId,
-							sessionId,
-							userId: session.user.id,
-						})
-					: null;
+				const resolved = await resolveSessionForMessageWrite({
+					db,
+					projectId: input.projectId,
+					userId: session.user.id,
+					sessionId: input.sessionId,
+				});
 
-				if (!workspaceSession) {
+				if (resolved.kind === "not_found") {
+					return jsonResponse({ error: "Session not found." }, 404);
+				}
+
+				let sessionId: string;
+				let createdSession = false;
+				let workspaceSession: OwnedActiveSession | null;
+
+				if (resolved.kind === "existing") {
+					workspaceSession = resolved.session;
+					sessionId = workspaceSession.id;
+				} else {
 					sessionId = nanoid();
 					const [createdRows] = await db.batch([
 						db
@@ -217,6 +208,7 @@ export const Route = createFileRoute("/api/agent/stream")({
 							content: "",
 						})
 						.returning(),
+					workspaceSessionRecencyUpdate(db, sessionId),
 				]);
 
 				if (!userRows?.[0] || !assistantRows?.[0]) {

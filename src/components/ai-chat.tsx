@@ -1,5 +1,5 @@
 import { ChevronRightIcon, LoaderCircleIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Task, TaskContent, TaskTrigger } from "#/components/ai-elements/task";
 import { AssistantMarkdown } from "#/components/assistant-markdown";
 import {
@@ -31,6 +31,7 @@ import {
 	type StreamToolCall,
 } from "#/lib/agent-stream-client";
 import {
+	acknowledgeSessionMessages,
 	listPendingSessionMessages,
 	seedSessionMessages,
 } from "#/lib/chat-session-cache";
@@ -335,6 +336,21 @@ export function Chat({
 
 	const cacheSessionId = sessionId ?? bridgeSessionId;
 	const normalizedServerMessages = messages.map(normalizeMessage);
+
+	// After server messages refresh, drop matching optimistic cache entries.
+	useEffect(() => {
+		if (!cacheSessionId || messages.length === 0) {
+			return;
+		}
+		const removed = acknowledgeSessionMessages(
+			cacheSessionId,
+			messages.map((message) => message.id),
+		);
+		if (removed) {
+			setCacheEpoch((epoch) => epoch + 1);
+		}
+	}, [cacheSessionId, messages]);
+
 	const overlay = pendingOverlay(cacheSessionId, messages);
 	const displayMessages = mergeMessages(
 		normalizedServerMessages,

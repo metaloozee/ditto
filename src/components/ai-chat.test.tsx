@@ -1,0 +1,124 @@
+/** @vitest-environment jsdom */
+
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	clearAllSessionMessages,
+	listPendingSessionMessages,
+	readSessionMessages,
+	seedSessionMessages,
+} from "#/lib/chat-session-cache";
+
+vi.mock("#/components/composer", () => ({
+	Composer: () => <div data-testid="composer-stub" />,
+}));
+
+vi.mock("#/components/assistant-markdown", () => ({
+	AssistantMarkdown: ({ text }: { text: string }) => <div>{text}</div>,
+}));
+
+vi.mock("#/components/edit-tool-diff", () => ({
+	EditToolPart: () => null,
+}));
+
+vi.mock("#/components/ui/message-scroller", () => ({
+	MessageScrollerProvider: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	MessageScroller: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	MessageScrollerViewport: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	MessageScrollerContent: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	MessageScrollerItem: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	MessageScrollerButton: () => null,
+}));
+
+const { Chat } = await import("./ai-chat");
+
+describe("Chat session cache acknowledgement", () => {
+	beforeEach(() => {
+		clearAllSessionMessages();
+	});
+
+	afterEach(() => {
+		cleanup();
+		clearAllSessionMessages();
+	});
+
+	it("shows pending cached content until server messages arrive", () => {
+		seedSessionMessages("sess-1", [
+			{ id: "pending-1", role: "user", content: "optimistic hello" },
+		]);
+
+		render(
+			<Chat
+				projectId="proj-1"
+				sessionId="sess-1"
+				messages={[{ id: "old-1", role: "user", content: "older" }]}
+			/>,
+		);
+
+		expect(screen.getByText("optimistic hello")).toBeTruthy();
+		expect(screen.getByText("older")).toBeTruthy();
+		expect(
+			listPendingSessionMessages("sess-1", [{ id: "old-1" }]),
+		).toHaveLength(1);
+	});
+
+	it("acknowledges cache entries when server messages include those ids", async () => {
+		seedSessionMessages("sess-1", [
+			{ id: "msg-1", role: "user", content: "from cache" },
+			{ id: "msg-2", role: "assistant", content: "assistant cache" },
+		]);
+
+		render(
+			<Chat
+				projectId="proj-1"
+				sessionId="sess-1"
+				messages={[
+					{ id: "msg-1", role: "user", content: "from server" },
+					{ id: "msg-2", role: "assistant", content: "assistant server" },
+				]}
+			/>,
+		);
+
+		expect(screen.getByText("from server")).toBeTruthy();
+		expect(screen.getByText("assistant server")).toBeTruthy();
+
+		await waitFor(() => {
+			expect(readSessionMessages("sess-1")).toEqual([]);
+		});
+		expect(
+			listPendingSessionMessages("sess-1", [{ id: "msg-1" }, { id: "msg-2" }]),
+		).toEqual([]);
+	});
+
+	it("does not clear a different session's cache when acknowledging", async () => {
+		seedSessionMessages("sess-1", [
+			{ id: "msg-1", role: "user", content: "sess1" },
+		]);
+		seedSessionMessages("sess-2", [
+			{ id: "msg-9", role: "user", content: "sess2 keep" },
+		]);
+
+		render(
+			<Chat
+				projectId="proj-1"
+				sessionId="sess-1"
+				messages={[{ id: "msg-1", role: "user", content: "sess1 server" }]}
+			/>,
+		);
+
+		await waitFor(() => {
+			expect(readSessionMessages("sess-1")).toEqual([]);
+		});
+		expect(readSessionMessages("sess-2")).toHaveLength(1);
+	});
+});

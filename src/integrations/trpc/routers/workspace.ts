@@ -7,6 +7,12 @@ import { messages, projects, workspaceSessions } from "#/db/schema";
 import { isProjectCoderModelSpecifier } from "#/lib/agent-models";
 import { ensureProjectSandbox } from "#/lib/project-sandbox";
 import { makeSessionTitleFromMessage } from "#/lib/workspace-policy";
+import {
+	archiveOwnedActiveSession,
+	type OwnedActiveSession,
+	resolveSessionForMessageWrite,
+	workspaceSessionRecencyUpdate,
+} from "#/lib/workspace-session";
 import { createTRPCRouter, protectedProcedure } from "../init";
 
 const sendMessageSchema = z.object({
@@ -217,17 +223,28 @@ export const workspaceRouter = createTRPCRouter({
 				project,
 			});
 
-			let sessionId = input.sessionId ?? null;
-			let createdSession = false;
-			let session = sessionId
-				? await loadSession(db, {
-						projectId: input.projectId,
-						sessionId,
-						userId: ctx.user.id,
-					})
-				: null;
+			const resolved = await resolveSessionForMessageWrite({
+				db,
+				projectId: input.projectId,
+				userId: ctx.user.id,
+				sessionId: input.sessionId,
+			});
 
-			if (!session) {
+			if (resolved.kind === "not_found") {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Session not found.",
+				});
+			}
+
+			let sessionId: string;
+			let createdSession = false;
+			let session: OwnedActiveSession | null;
+
+			if (resolved.kind === "existing") {
+				session = resolved.session;
+				sessionId = session.id;
+			} else {
 				sessionId = nanoid();
 				const [createdRows] = await db.batch([
 					db
@@ -267,6 +284,7 @@ export const workspaceRouter = createTRPCRouter({
 						model: input.model,
 					})
 					.returning(),
+				workspaceSessionRecencyUpdate(db, sessionId),
 			]);
 
 			const userMessage = userMessages?.[0];
@@ -296,59 +314,20 @@ export const workspaceRouter = createTRPCRouter({
 		.mutation(async ({ ctx, input }) => {
 			const db = createDb(ctx.env);
 
-			const [session] = await db
-				.select({ id: workspaceSessions.id })
-				.from(workspaceSessions)
-				.where(
-					and(
-						eq(workspaceSessions.id, input.sessionId),
-						eq(workspaceSessions.projectId, input.projectId),
-						eq(workspaceSessions.userId, ctx.user.id),
-					),
-				)
-				.limit(1);
+			const archived = await archiveOwnedActiveSession({
+				db,
+				projectId: input.projectId,
+				sessionId: input.sessionId,
+				userId: ctx.user.id,
+			});
 
-			if (!session) {
+			if (!archived) {
 				throw new TRPCError({
 					code: "NOT_FOUND",
 					message: "Session not found.",
 				});
 			}
 
-			await db
-				.update(workspaceSessions)
-				.set({ status: "archived" })
-				.where(
-					and(
-						eq(workspaceSessions.id, input.sessionId),
-						eq(workspaceSessions.projectId, input.projectId),
-						eq(workspaceSessions.userId, ctx.user.id),
-					),
-				);
-
-			return { id: session.id };
+			return archived;
 		}),
 });
-
-async function loadSession(
-	db: ReturnType<typeof createDb>,
-	input: {
-		projectId: string;
-		sessionId: string;
-		userId: string;
-	},
-) {
-	const [session] = await db
-		.select()
-		.from(workspaceSessions)
-		.where(
-			and(
-				eq(workspaceSessions.id, input.sessionId),
-				eq(workspaceSessions.projectId, input.projectId),
-				eq(workspaceSessions.userId, input.userId),
-			),
-		)
-		.limit(1);
-
-	return session ?? null;
-}
