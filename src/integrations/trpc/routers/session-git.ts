@@ -7,7 +7,9 @@ import {
 	DITTO_GIT_AUTHOR_EMAIL,
 	DITTO_GIT_AUTHOR_NAME,
 } from "#/lib/ditto-git-identity";
+import { GitSecretPolicyError } from "#/lib/git-secret-policy";
 import { authorizeGitHubRepositoryAccess } from "#/lib/github-authorization";
+import { decryptEnvVars } from "#/lib/project-env-vars";
 import { ensureProjectSandbox } from "#/lib/project-sandbox";
 import {
 	commitSessionChanges,
@@ -142,6 +144,13 @@ async function resolveSessionGitContext(options: {
 		title: session.title,
 	};
 
+	// Server-only secret values for push preflight; never returned to clients.
+	const envVars = await decryptEnvVars(
+		project.envVars,
+		options.ctx.env.BETTER_AUTH_SECRET,
+	);
+	const knownSecrets = envVars.map((envVar) => envVar.value);
+
 	return {
 		db,
 		projectId: project.id,
@@ -155,7 +164,21 @@ async function resolveSessionGitContext(options: {
 		installationId: project.githubInstallationId,
 		sandboxId: project.sandboxId,
 		session: gitSession,
+		knownSecrets,
 	};
+}
+
+function mapSessionGitExportError(error: unknown): never {
+	if (error instanceof GitSecretPolicyError) {
+		throw new TRPCError({
+			code: "PRECONDITION_FAILED",
+			message: error.message,
+		});
+	}
+	if (error instanceof TRPCError) {
+		throw error;
+	}
+	throw error;
 }
 
 function sessionAuthor() {
@@ -246,9 +269,13 @@ export const sessionGitRouter = createTRPCRouter({
 							installationId: resolved.installationId,
 							githubRepo: resolved.githubRepo,
 							session: resolved.session,
+							knownSecrets: resolved.knownSecrets,
 						}),
 				});
 			} catch (error) {
+				if (error instanceof GitSecretPolicyError) {
+					mapSessionGitExportError(error);
+				}
 				rethrowOrMapSessionGitMutationError(error, {
 					fallbackMessage: "Failed to push branch.",
 					forbiddenWhenMessage: GITHUB_APP_PUSH_PERMISSION_MESSAGE,
@@ -292,8 +319,12 @@ export const sessionGitRouter = createTRPCRouter({
 						installationId: resolved.installationId,
 						githubRepo: resolved.githubRepo,
 						session: resolved.session,
+						knownSecrets: resolved.knownSecrets,
 					});
 				} catch (error) {
+					if (error instanceof GitSecretPolicyError) {
+						mapSessionGitExportError(error);
+					}
 					const message =
 						error instanceof Error ? error.message : "Failed to push branch.";
 					throw new TRPCError({

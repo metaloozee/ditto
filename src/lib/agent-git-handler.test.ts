@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { GitSecretPolicyError } from "./git-secret-policy";
 
 const getSessionGitStatusMock = vi.hoisted(() => vi.fn());
 const pushSessionBranchMock = vi.hoisted(() => vi.fn());
@@ -20,6 +21,9 @@ const { AgentGitHttpError, dispatchAgentGitAction } = await import(
 	"./agent-git-handler"
 );
 
+/** Synthetic only — never a live credential. */
+const FIXTURE_SECRET = "proj-fixture-secret-value-01";
+
 const resolved = {
 	projectId: "proj-1",
 	githubRepo: "acme/repo",
@@ -31,6 +35,7 @@ const resolved = {
 		workspacePath: "/workspace/.ditto/worktrees/sess-1",
 		title: "Fix bug",
 	},
+	knownSecrets: [FIXTURE_SECRET] as readonly string[],
 };
 
 const env = {} as Env;
@@ -58,10 +63,17 @@ describe("dispatchAgentGitAction", () => {
 		});
 
 		expect(pushSessionBranchMock).toHaveBeenCalledTimes(1);
+		expect(pushSessionBranchMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				knownSecrets: [FIXTURE_SECRET],
+			}),
+		);
 		expect(result).toEqual({
 			remoteBranch: "ditto/session-abc",
 			pushed: true,
 		});
+		// Client-facing result must not include secret values.
+		expect(JSON.stringify(result)).not.toContain(FIXTURE_SECRET);
 	});
 
 	it("rejects push when dirty", async () => {
@@ -82,6 +94,73 @@ describe("dispatchAgentGitAction", () => {
 			message: "Commit local changes before pushing.",
 		});
 		expect(pushSessionBranchMock).not.toHaveBeenCalled();
+	});
+
+	it("maps secret policy rejection on push to 409 without leaking fixtures", async () => {
+		getSessionGitStatusMock.mockResolvedValue({
+			dirty: false,
+			ahead: 1,
+			changedFiles: [],
+		});
+		pushSessionBranchMock.mockRejectedValue(
+			new GitSecretPolicyError(
+				"secret_path",
+				"Export blocked: secret-like path in outgoing commits (nested/.env).",
+				"nested/.env",
+			),
+		);
+
+		let message = "";
+		let status = 0;
+		try {
+			await dispatchAgentGitAction({
+				env,
+				resolved,
+				body: { action: "push" },
+			});
+		} catch (error) {
+			expect(error).toBeInstanceOf(AgentGitHttpError);
+			message = error instanceof Error ? error.message : String(error);
+			status = error instanceof AgentGitHttpError ? error.status : 0;
+		}
+
+		expect(status).toBe(409);
+		expect(message).toContain("nested/.env");
+		expect(message).not.toContain(FIXTURE_SECRET);
+		expect(pushSessionBranchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("maps secret policy rejection on openPR auto-push to 409", async () => {
+		getSessionGitStatusMock.mockResolvedValue({
+			dirty: false,
+			ahead: 1,
+			changedFiles: [],
+		});
+		pushSessionBranchMock.mockRejectedValue(
+			new GitSecretPolicyError(
+				"secret_content",
+				"Export blocked: recognized secret content in outgoing commits.",
+			),
+		);
+
+		await expect(
+			dispatchAgentGitAction({
+				env,
+				resolved,
+				body: { action: "openPullRequest" },
+			}),
+		).rejects.toMatchObject({
+			status: 409,
+			message: "Export blocked: recognized secret content in outgoing commits.",
+		});
+		expect(openSessionPullRequestMock).not.toHaveBeenCalled();
+		expect(pushSessionBranchMock).toHaveBeenCalledWith(
+			expect.objectContaining({ knownSecrets: [FIXTURE_SECRET] }),
+		);
+		expect(JSON.stringify(pushSessionBranchMock.mock.calls)).not.toContain(
+			// ensure mock rejection path did not embed fixture in unexpected places
+			"ghp_",
+		);
 	});
 
 	it("openPullRequest pushes first when ahead", async () => {
@@ -109,6 +188,9 @@ describe("dispatchAgentGitAction", () => {
 		});
 
 		expect(pushSessionBranchMock).toHaveBeenCalledTimes(1);
+		expect(pushSessionBranchMock).toHaveBeenCalledWith(
+			expect.objectContaining({ knownSecrets: [FIXTURE_SECRET] }),
+		);
 		expect(openSessionPullRequestMock).toHaveBeenCalledWith(
 			expect.objectContaining({
 				title: "My PR",
@@ -116,6 +198,9 @@ describe("dispatchAgentGitAction", () => {
 		);
 		expect(openSessionPullRequestMock.mock.calls[0]?.[0]).not.toHaveProperty(
 			"changedFileCount",
+		);
+		expect(openSessionPullRequestMock.mock.calls[0]?.[0]).not.toHaveProperty(
+			"knownSecrets",
 		);
 		expect(result).toEqual({
 			url: "https://github.com/acme/repo/pull/1",

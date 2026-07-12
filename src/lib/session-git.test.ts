@@ -28,6 +28,7 @@ const {
 	findOpenSessionPullRequest,
 	getSessionGitStatus,
 	openSessionPullRequest,
+	parsePorcelainZ,
 	pushSessionBranch,
 } = await import("./session-git");
 
@@ -46,6 +47,11 @@ function mockNoOpenPullRequest() {
 
 const WORKTREE = "/workspace/.ditto/worktrees/sess-1";
 const TOKEN = `ghs_${"t".repeat(40)}`;
+const STATUS_CMD = "git status --porcelain=v1 -z -uall";
+const PREFLIGHT_BASE = "basebasebasebasebasebasebasebasebasebase";
+const PREFLIGHT_HEAD = "headheadheadheadheadheadheadheadheadhead";
+/** Synthetic only. */
+const FIXTURE_SECRET = `ghp_${"b".repeat(36)}`;
 
 function makeEnv(): Env {
 	return {} as Env;
@@ -74,6 +80,143 @@ function makeSandbox(
 	return { exec: vi.fn(execImpl) };
 }
 
+/** NUL-join porcelain records (each record already includes XY + path). */
+function porcelainZ(records: string[]): string {
+	return `${records.join("\0")}\0`;
+}
+
+/**
+ * Answer preflight git commands for a safe outgoing range.
+ * Returns null when the command is not a preflight command.
+ */
+function answerSafePreflight(command: string): {
+	success: boolean;
+	stdout: string;
+	stderr: string;
+	exitCode: number;
+} | null {
+	if (command === "git rev-parse --verify HEAD") {
+		return {
+			success: true,
+			stdout: `${PREFLIGHT_HEAD}\n`,
+			stderr: "",
+			exitCode: 0,
+		};
+	}
+	if (command === "git rev-parse --verify @{upstream}") {
+		return {
+			success: true,
+			stdout: `${PREFLIGHT_BASE}\n`,
+			stderr: "",
+			exitCode: 0,
+		};
+	}
+	if (command.includes("git diff --name-status -z")) {
+		return {
+			success: true,
+			stdout: "M\0src/a.ts\0",
+			stderr: "",
+			exitCode: 0,
+		};
+	}
+	if (command.includes("git diff -U0")) {
+		return {
+			success: true,
+			stdout: [
+				"diff --git a/src/a.ts b/src/a.ts",
+				"--- a/src/a.ts",
+				"+++ b/src/a.ts",
+				"@@ -0,0 +1 @@",
+				"+export const ok = true;",
+			].join("\n"),
+			stderr: "",
+			exitCode: 0,
+		};
+	}
+	return null;
+}
+
+function answerBlockedPathPreflight(command: string): {
+	success: boolean;
+	stdout: string;
+	stderr: string;
+	exitCode: number;
+} | null {
+	if (command === "git rev-parse --verify HEAD") {
+		return {
+			success: true,
+			stdout: `${PREFLIGHT_HEAD}\n`,
+			stderr: "",
+			exitCode: 0,
+		};
+	}
+	if (command === "git rev-parse --verify @{upstream}") {
+		return {
+			success: true,
+			stdout: `${PREFLIGHT_BASE}\n`,
+			stderr: "",
+			exitCode: 0,
+		};
+	}
+	if (command.includes("git diff --name-status -z")) {
+		return {
+			success: true,
+			stdout: "A\0nested/.env.local\0",
+			stderr: "",
+			exitCode: 0,
+		};
+	}
+	return null;
+}
+
+describe("parsePorcelainZ", () => {
+	it("parses ordinary paths including spaces", () => {
+		const raw = porcelainZ([" M file with spaces.ts", "?? nested/deep/ok.ts"]);
+		expect(parsePorcelainZ(raw)).toEqual([
+			{
+				indexStatus: " ",
+				workTreeStatus: "M",
+				paths: ["file with spaces.ts"],
+			},
+			{
+				indexStatus: "?",
+				workTreeStatus: "?",
+				paths: ["nested/deep/ok.ts"],
+			},
+		]);
+	});
+
+	it("parses rename with destination and source as real paths", () => {
+		// Empirical -z order: destination, source
+		const raw = "R  nested/.env\0src/a.ts\0";
+		const entries = parsePorcelainZ(raw);
+		expect(entries).toEqual([
+			{
+				indexStatus: "R",
+				workTreeStatus: " ",
+				paths: ["nested/.env", "src/a.ts"],
+			},
+		]);
+	});
+
+	it("parses copy records", () => {
+		const raw = "C  dest/copy.ts\0src/orig.ts\0";
+		expect(parsePorcelainZ(raw)).toEqual([
+			{
+				indexStatus: "C",
+				workTreeStatus: " ",
+				paths: ["dest/copy.ts", "src/orig.ts"],
+			},
+		]);
+	});
+
+	it("fails closed on incomplete rename", () => {
+		expect(() => parsePorcelainZ("R  only-dest\0")).toThrow(
+			/incomplete rename/,
+		);
+	});
+});
+
 describe("session git", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -84,7 +227,7 @@ describe("session git", () => {
 
 	it("returns clean status when porcelain is empty", async () => {
 		const sandbox = makeSandbox(async (command) => {
-			if (command === "git status --porcelain") {
+			if (command === STATUS_CMD) {
 				return { success: true, stdout: "", stderr: "", exitCode: 0 };
 			}
 			if (command === "git rev-parse --abbrev-ref HEAD") {
@@ -137,7 +280,7 @@ describe("session git", () => {
 
 	it("reports ahead 0 when origin tracking ref matches HEAD without upstream", async () => {
 		const sandbox = makeSandbox(async (command) => {
-			if (command === "git status --porcelain") {
+			if (command === STATUS_CMD) {
 				return { success: true, stdout: "", stderr: "", exitCode: 0 };
 			}
 			if (command === "git rev-parse --abbrev-ref HEAD") {
@@ -179,7 +322,7 @@ describe("session git", () => {
 
 	it("reports ahead 0 when upstream is configured", async () => {
 		const sandbox = makeSandbox(async (command) => {
-			if (command === "git status --porcelain") {
+			if (command === STATUS_CMD) {
 				return { success: true, stdout: "", stderr: "", exitCode: 0 };
 			}
 			if (command === "git rev-parse --abbrev-ref HEAD") {
@@ -218,7 +361,7 @@ describe("session git", () => {
 
 	it("includes open pull request metadata in git status", async () => {
 		const sandbox = makeSandbox(async (command) => {
-			if (command === "git status --porcelain") {
+			if (command === STATUS_CMD) {
 				return { success: true, stdout: "", stderr: "", exitCode: 0 };
 			}
 			if (command === "git rev-parse --abbrev-ref HEAD") {
@@ -281,7 +424,7 @@ describe("session git", () => {
 
 	it("no-ops commit on a clean tree", async () => {
 		const sandbox = makeSandbox(async (command) => {
-			if (command === "git status --porcelain") {
+			if (command === STATUS_CMD) {
 				return { success: true, stdout: "", stderr: "", exitCode: 0 };
 			}
 			throw new Error(`unexpected command: ${command}`);
@@ -305,21 +448,23 @@ describe("session git", () => {
 
 	it("commits when porcelain has changes", async () => {
 		const sandbox = makeSandbox(async (command) => {
-			if (command === "git status --porcelain") {
+			if (command === STATUS_CMD) {
 				return {
 					success: true,
-					stdout: " M src/a.ts\n",
+					stdout: porcelainZ([" M src/a.ts"]),
 					stderr: "",
 					exitCode: 0,
 				};
 			}
-			if (command === "git add -A") {
+			if (command.startsWith("git add -- ")) {
+				expect(command).toContain("src/a.ts");
+				expect(command).not.toContain("git add -A");
 				return { success: true, stdout: "", stderr: "", exitCode: 0 };
 			}
-			if (command === "git diff --cached --name-only") {
+			if (command === "git diff --cached --name-only -z") {
 				return {
 					success: true,
-					stdout: "src/a.ts\n",
+					stdout: "src/a.ts\0",
 					stderr: "",
 					exitCode: 0,
 				};
@@ -348,12 +493,58 @@ describe("session git", () => {
 		expect(result).toEqual({ commitSha: "deadbeef", committed: true });
 	});
 
-	it("does not commit when only secret-like paths changed", async () => {
+	it("commits paths with spaces via explicit git add", async () => {
 		const sandbox = makeSandbox(async (command) => {
-			if (command === "git status --porcelain") {
+			if (command === STATUS_CMD) {
 				return {
 					success: true,
-					stdout: "?? .env\n?? .env.local\n",
+					stdout: porcelainZ([" M path with spaces/a.ts"]),
+					stderr: "",
+					exitCode: 0,
+				};
+			}
+			if (command.startsWith("git add -- ")) {
+				expect(command).toContain("'path with spaces/a.ts'");
+				return { success: true, stdout: "", stderr: "", exitCode: 0 };
+			}
+			if (command === "git diff --cached --name-only -z") {
+				return {
+					success: true,
+					stdout: "path with spaces/a.ts\0",
+					stderr: "",
+					exitCode: 0,
+				};
+			}
+			if (command.startsWith("git -c user.name=")) {
+				return { success: true, stdout: "", stderr: "", exitCode: 0 };
+			}
+			if (command === "git rev-parse HEAD") {
+				return { success: true, stdout: "abc123\n", stderr: "", exitCode: 0 };
+			}
+			throw new Error(`unexpected command: ${command}`);
+		});
+		getProjectSandboxMock.mockReturnValue(sandbox);
+
+		const result = await commitSessionChanges({
+			env: makeEnv(),
+			sandboxId: "sandbox-1",
+			installationId: 1,
+			githubRepo: "acme/repo",
+			session: makeSession(),
+			message: "feat: spaces",
+			authorName: "Ada",
+			authorEmail: "ada@users.noreply.github.com",
+		});
+
+		expect(result.committed).toBe(true);
+	});
+
+	it("does not commit when only secret-like paths changed", async () => {
+		const sandbox = makeSandbox(async (command) => {
+			if (command === STATUS_CMD) {
+				return {
+					success: true,
+					stdout: porcelainZ(["?? .env", "?? .env.local"]),
 					stderr: "",
 					exitCode: 0,
 				};
@@ -377,28 +568,27 @@ describe("session git", () => {
 		expect(sandbox.exec).toHaveBeenCalledTimes(1);
 	});
 
-	it("unstages secret-like paths before commit", async () => {
+	it("does not stage nested .env.* paths", async () => {
 		const commands: string[] = [];
 		const sandbox = makeSandbox(async (command) => {
 			commands.push(command);
-			if (command === "git status --porcelain") {
+			if (command === STATUS_CMD) {
 				return {
 					success: true,
-					stdout: " M src/a.ts\n?? .env\n",
+					stdout: porcelainZ([" M src/a.ts", "?? nested/deep/.env.local"]),
 					stderr: "",
 					exitCode: 0,
 				};
 			}
-			if (command === "git add -A") {
+			if (command.startsWith("git add -- ")) {
+				expect(command).toContain("src/a.ts");
+				expect(command).not.toContain(".env");
 				return { success: true, stdout: "", stderr: "", exitCode: 0 };
 			}
-			if (command.startsWith("git reset HEAD --")) {
-				return { success: true, stdout: "", stderr: "", exitCode: 0 };
-			}
-			if (command === "git diff --cached --name-only") {
+			if (command === "git diff --cached --name-only -z") {
 				return {
 					success: true,
-					stdout: "src/a.ts\n",
+					stdout: "src/a.ts\0",
 					stderr: "",
 					exitCode: 0,
 				};
@@ -425,14 +615,164 @@ describe("session git", () => {
 		});
 
 		expect(result).toEqual({ commitSha: "cafebabe", committed: true });
-		expect(commands.some((c) => c.startsWith("git reset HEAD --"))).toBe(true);
-		expect(commands.find((c) => c.startsWith("git reset HEAD --"))).toContain(
-			".env",
-		);
+		expect(commands.some((c) => c === "git add -A")).toBe(false);
+		expect(commands.some((c) => c.startsWith("git reset"))).toBe(false);
+	});
+
+	it("does not stage rename-to-secret paths (unstaged delete + untracked dest)", async () => {
+		const commands: string[] = [];
+		const sandbox = makeSandbox(async (command) => {
+			commands.push(command);
+			if (command === STATUS_CMD) {
+				// Unstaged rename appearance before `git add` detects rename.
+				return {
+					success: true,
+					stdout: porcelainZ([" D src/a.ts", "?? nested/.env", " M src/b.ts"]),
+					stderr: "",
+					exitCode: 0,
+				};
+			}
+			if (command.startsWith("git add -- ")) {
+				// Must not use display-form rename strings; never stage .env dest.
+				expect(command).not.toContain(" -> ");
+				expect(command).not.toContain(".env");
+				expect(command).toContain("src/b.ts");
+				// Source delete alone is still a non-secret path; may be staged.
+				return { success: true, stdout: "", stderr: "", exitCode: 0 };
+			}
+			if (command === "git diff --cached --name-only -z") {
+				return {
+					success: true,
+					stdout: "src/b.ts\0",
+					stderr: "",
+					exitCode: 0,
+				};
+			}
+			if (command.startsWith("git -c user.name=")) {
+				return { success: true, stdout: "", stderr: "", exitCode: 0 };
+			}
+			if (command === "git rev-parse HEAD") {
+				return { success: true, stdout: "bead\n", stderr: "", exitCode: 0 };
+			}
+			throw new Error(`unexpected command: ${command}`);
+		});
+		getProjectSandboxMock.mockReturnValue(sandbox);
+
+		const result = await commitSessionChanges({
+			env: makeEnv(),
+			sandboxId: "sandbox-1",
+			installationId: 1,
+			githubRepo: "acme/repo",
+			session: makeSession(),
+			message: "feat: no rename secret",
+			authorName: "Ada",
+			authorEmail: "ada@users.noreply.github.com",
+		});
+
+		expect(result.committed).toBe(true);
+		const addCmd = commands.find((c) => c.startsWith("git add -- "));
+		expect(addCmd).toBeDefined();
+		expect(addCmd).not.toContain("nested/.env");
+		expect(addCmd).not.toContain(" -> ");
+	});
+
+	it("rejects already-staged rename destination matching .env policy", async () => {
+		const sandbox = makeSandbox(async (command) => {
+			if (command === STATUS_CMD) {
+				// -z order: destination, source; index status R = staged rename
+				return {
+					success: true,
+					stdout: "R  nested/.env\0src/a.ts\0",
+					stderr: "",
+					exitCode: 0,
+				};
+			}
+			throw new Error(`unexpected command: ${command}`);
+		});
+		getProjectSandboxMock.mockReturnValue(sandbox);
+
+		await expect(
+			commitSessionChanges({
+				env: makeEnv(),
+				sandboxId: "sandbox-1",
+				installationId: 1,
+				githubRepo: "acme/repo",
+				session: makeSession(),
+				message: "feat: staged rename secret",
+				authorName: "Ada",
+				authorEmail: "ada@users.noreply.github.com",
+			}),
+		).rejects.toThrow(/already staged \(nested\/\.env\)/);
+		expect(
+			sandbox.exec.mock.calls.some((call) =>
+				String(call[0]).startsWith("git add"),
+			),
+		).toBe(false);
+	});
+
+	it("rejects already-staged copy destination matching .env policy", async () => {
+		const sandbox = makeSandbox(async (command) => {
+			if (command === STATUS_CMD) {
+				return {
+					success: true,
+					stdout: "C  .env.local\0src/template\0",
+					stderr: "",
+					exitCode: 0,
+				};
+			}
+			throw new Error(`unexpected command: ${command}`);
+		});
+		getProjectSandboxMock.mockReturnValue(sandbox);
+
+		await expect(
+			commitSessionChanges({
+				env: makeEnv(),
+				sandboxId: "sandbox-1",
+				installationId: 1,
+				githubRepo: "acme/repo",
+				session: makeSession(),
+				message: "feat: staged copy secret",
+				authorName: "Ada",
+				authorEmail: "ada@users.noreply.github.com",
+			}),
+		).rejects.toThrow(/already staged \(\.env\.local\)/);
+	});
+
+	it("rejects when a secret-like path is already staged", async () => {
+		const sandbox = makeSandbox(async (command) => {
+			if (command === STATUS_CMD) {
+				return {
+					success: true,
+					stdout: porcelainZ(["A  .env", " M src/a.ts"]),
+					stderr: "",
+					exitCode: 0,
+				};
+			}
+			throw new Error(`unexpected command: ${command}`);
+		});
+		getProjectSandboxMock.mockReturnValue(sandbox);
+
+		await expect(
+			commitSessionChanges({
+				env: makeEnv(),
+				sandboxId: "sandbox-1",
+				installationId: 1,
+				githubRepo: "acme/repo",
+				session: makeSession(),
+				message: "feat: bad stage",
+				authorName: "Ada",
+				authorEmail: "ada@users.noreply.github.com",
+			}),
+		).rejects.toThrow(/already staged/);
+		expect(sandbox.exec).toHaveBeenCalledTimes(1);
 	});
 
 	it("pushes with installation token and scrubs remotes", async () => {
 		const sandbox = makeSandbox(async (command) => {
+			const preflight = answerSafePreflight(command);
+			if (preflight) {
+				return preflight;
+			}
 			if (command.startsWith("git push ")) {
 				expect(command).toContain(TOKEN);
 				expect(command).not.toContain("--set-upstream");
@@ -474,8 +814,46 @@ describe("session git", () => {
 		expect(scrubGithubRemoteMock).toHaveBeenCalledTimes(2);
 	});
 
+	it("blocks push preflight before minting a token when secret path is present", async () => {
+		const sandbox = makeSandbox(async (command) => {
+			const preflight = answerBlockedPathPreflight(command);
+			if (preflight) {
+				return preflight;
+			}
+			throw new Error(`unexpected command: ${command}`);
+		});
+		getProjectSandboxMock.mockReturnValue(sandbox);
+
+		let message = "";
+		try {
+			await pushSessionBranch({
+				env: makeEnv(),
+				sandboxId: "sandbox-1",
+				installationId: 42,
+				githubRepo: "acme/repo",
+				session: makeSession(),
+				knownSecrets: [FIXTURE_SECRET],
+			});
+		} catch (error) {
+			message = error instanceof Error ? error.message : String(error);
+		}
+
+		expect(message).toContain("nested/.env.local");
+		expect(message).not.toContain(FIXTURE_SECRET);
+		expect(getInstallationAccessTokenMock).not.toHaveBeenCalled();
+		expect(
+			sandbox.exec.mock.calls.some((call) =>
+				String(call[0]).startsWith("git push "),
+			),
+		).toBe(false);
+	});
+
 	it("redacts installation token from push errors and still scrubs remotes", async () => {
 		const sandbox = makeSandbox(async (command) => {
+			const preflight = answerSafePreflight(command);
+			if (preflight) {
+				return preflight;
+			}
 			if (command.startsWith("git push ")) {
 				expect(command).not.toContain("--set-upstream");
 				return {
@@ -508,6 +886,10 @@ describe("session git", () => {
 
 	it("maps git push 403 permission denied to an actionable app permissions message", async () => {
 		const sandbox = makeSandbox(async (command) => {
+			const preflight = answerSafePreflight(command);
+			if (preflight) {
+				return preflight;
+			}
 			if (command.startsWith("git push ")) {
 				return {
 					success: false,
@@ -541,6 +923,10 @@ describe("session git", () => {
 
 	it("does not map non-permission push failures to the app permissions message", async () => {
 		const sandbox = makeSandbox(async (command) => {
+			const preflight = answerSafePreflight(command);
+			if (preflight) {
+				return preflight;
+			}
 			if (command.startsWith("git push ")) {
 				return {
 					success: false,
@@ -573,7 +959,11 @@ describe("session git", () => {
 	});
 
 	it("maps installation token mint permission failures to the app permissions message", async () => {
-		const sandbox = makeSandbox(async () => {
+		const sandbox = makeSandbox(async (command) => {
+			const preflight = answerSafePreflight(command);
+			if (preflight) {
+				return preflight;
+			}
 			throw new Error("unexpected git command during token-mint failure");
 		});
 		getProjectSandboxMock.mockReturnValue(sandbox);
@@ -597,13 +987,16 @@ describe("session git", () => {
 		}
 
 		expect(message).toBe(GITHUB_APP_PUSH_PERMISSION_MESSAGE);
-		expect(sandbox.exec).not.toHaveBeenCalled();
 		// Scrub still runs even though push never executed.
 		expect(scrubGithubRemoteMock).toHaveBeenCalledTimes(2);
 	});
 
 	it("does not map bare status code 403 to the app permissions message", async () => {
-		const sandbox = makeSandbox(async () => {
+		const sandbox = makeSandbox(async (command) => {
+			const preflight = answerSafePreflight(command);
+			if (preflight) {
+				return preflight;
+			}
 			throw new Error("unexpected git command during token-mint failure");
 		});
 		getProjectSandboxMock.mockReturnValue(sandbox);

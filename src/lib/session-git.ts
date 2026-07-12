@@ -1,4 +1,8 @@
 import {
+	assertOutgoingGitRangeSafe,
+	isSecretLikeGitPath,
+} from "#/lib/git-secret-policy";
+import {
 	getGitHubApp,
 	getInstallationAccessToken,
 	repositoryNameFromSlug,
@@ -12,6 +16,8 @@ import {
 } from "#/lib/github-export";
 import { getProjectSandbox, scrubGithubRemote } from "#/lib/sandbox-bootstrap";
 import { WORKSPACE_PATH } from "#/lib/workspace-policy";
+
+export { isSecretLikeGitPath } from "#/lib/git-secret-policy";
 
 const GIT_COMMAND_TIMEOUT_MS = 120_000;
 
@@ -63,6 +69,11 @@ type SessionGitContext = {
 	installationId: number;
 	githubRepo: string;
 	session: SessionGitSession;
+	/**
+	 * Decrypted project env values for secret preflight only.
+	 * Server memory; never return to clients, logs, or job payloads.
+	 */
+	knownSecrets?: readonly string[];
 };
 
 function publicRepoUrl(githubRepo: string): string {
@@ -118,27 +129,98 @@ async function execGitOrThrow(
 	);
 }
 
-function parsePorcelainPaths(porcelain: string): string[] {
-	const paths: string[] = [];
-	for (const line of porcelain.split("\n")) {
-		if (!line.trim()) {
+/**
+ * One porcelain=v1 -z record. For renames/copies, `paths` is
+ * [destination, source] (git -z order); safety checks use both real paths.
+ */
+export type PorcelainZEntry = {
+	indexStatus: string;
+	workTreeStatus: string;
+	paths: string[];
+};
+
+/**
+ * Parse `git status --porcelain=v1 -z` into real path records.
+ * Fails closed on incomplete rename/copy or malformed records.
+ */
+export function parsePorcelainZ(porcelain: string): PorcelainZEntry[] {
+	if (!porcelain) {
+		return [];
+	}
+	const parts = porcelain.split("\0");
+	const entries: PorcelainZEntry[] = [];
+	let i = 0;
+	while (i < parts.length) {
+		const record = parts[i];
+		if (record === undefined || record === "") {
+			i += 1;
 			continue;
 		}
-		const path = line.slice(3).trim();
-		if (path) {
-			paths.push(path);
+		// "XY path…" — two status chars, a space, then the path.
+		if (record.length < 4) {
+			throw new Error(
+				"Failed to parse git status (ambiguous porcelain output).",
+			);
 		}
+		const indexStatus = record[0] ?? "";
+		const workTreeStatus = record[1] ?? "";
+		if (record[2] !== " ") {
+			throw new Error(
+				"Failed to parse git status (ambiguous porcelain output).",
+			);
+		}
+		const firstPath = record.slice(3);
+		if (!firstPath) {
+			throw new Error("Failed to parse git status (missing path).");
+		}
+
+		const isRenameOrCopy =
+			indexStatus === "R" ||
+			indexStatus === "C" ||
+			workTreeStatus === "R" ||
+			workTreeStatus === "C";
+
+		if (isRenameOrCopy) {
+			const secondPath = parts[i + 1];
+			if (!secondPath) {
+				throw new Error("Failed to parse git status (incomplete rename/copy).");
+			}
+			// Empirical git -z order: destination, then source.
+			entries.push({
+				indexStatus,
+				workTreeStatus,
+				paths: [firstPath, secondPath],
+			});
+			i += 2;
+			continue;
+		}
+
+		entries.push({
+			indexStatus,
+			workTreeStatus,
+			paths: [firstPath],
+		});
+		i += 1;
 	}
-	return paths;
+	return entries;
 }
 
-/** True for `.env` / `.env.*` basenames (incl. nested and rename destinations). */
-export function isSecretLikeGitPath(filePath: string): boolean {
-	const candidate = filePath.includes(" -> ")
-		? (filePath.split(" -> ").pop() ?? filePath).trim()
-		: filePath.trim();
-	const base = candidate.split("/").pop() ?? candidate;
-	return base === ".env" || base.startsWith(".env.");
+/** UI-facing path labels; renames shown as `source -> destination`. */
+export function formatPorcelainPathsForDisplay(
+	entries: PorcelainZEntry[],
+): string[] {
+	return entries.map((entry) => {
+		if (entry.paths.length >= 2) {
+			const dest = entry.paths[0] ?? "";
+			const source = entry.paths[1] ?? "";
+			return `${source} -> ${dest}`;
+		}
+		return entry.paths[0] ?? "";
+	});
+}
+
+function isIndexStaged(indexStatus: string): boolean {
+	return indexStatus !== " " && indexStatus !== "?";
 }
 
 export type SessionGitPullRequestRef = {
@@ -226,12 +308,16 @@ export async function getSessionGitStatus(ctx: SessionGitContext): Promise<{
 	const sandbox = getProjectSandbox(ctx.env, ctx.sandboxId);
 	const cwd = ctx.session.workspacePath;
 
-	const statusResult = await execGitOrThrow(sandbox, "git status --porcelain", {
-		cwd,
-		errorPrefix: "Failed to read git status",
-	});
-	const porcelain = statusResult.stdout.trim();
-	const changedFiles = parsePorcelainPaths(porcelain);
+	const statusResult = await execGitOrThrow(
+		sandbox,
+		"git status --porcelain=v1 -z -uall",
+		{
+			cwd,
+			errorPrefix: "Failed to read git status",
+		},
+	);
+	const entries = parsePorcelainZ(statusResult.stdout);
+	const changedFiles = formatPorcelainPathsForDisplay(entries);
 	const dirty = changedFiles.length > 0;
 
 	const branchResult = await execGitOrThrow(
@@ -285,43 +371,79 @@ export async function commitSessionChanges(
 	const sandbox = getProjectSandbox(ctx.env, ctx.sandboxId);
 	const cwd = ctx.session.workspacePath;
 
-	const statusResult = await execGitOrThrow(sandbox, "git status --porcelain", {
-		cwd,
-		errorPrefix: "Failed to read git status",
-	});
-	const porcelain = statusResult.stdout.trim();
-	if (!porcelain) {
+	const statusResult = await execGitOrThrow(
+		sandbox,
+		"git status --porcelain=v1 -z -uall",
+		{
+			cwd,
+			errorPrefix: "Failed to read git status",
+		},
+	);
+	const entries = parsePorcelainZ(statusResult.stdout);
+	if (entries.length === 0) {
 		return { commitSha: null, committed: false };
 	}
 
-	const changedFiles = parsePorcelainPaths(porcelain);
-	const stageableFiles = changedFiles.filter(
-		(path) => !isSecretLikeGitPath(path),
-	);
+	// Fail closed if a secret-like path is already in the index.
+	for (const entry of entries) {
+		if (!isIndexStaged(entry.indexStatus)) {
+			continue;
+		}
+		for (const path of entry.paths) {
+			if (isSecretLikeGitPath(path)) {
+				throw new Error(
+					`Refusing to commit: secret-like path is already staged (${path}).`,
+				);
+			}
+		}
+	}
+
+	// Stage only paths from entries that do not involve any secret-like path
+	// (rename/copy to .env must not stage the source either).
+	const stageableFiles: string[] = [];
+	const seenStageable = new Set<string>();
+	for (const entry of entries) {
+		if (entry.paths.some(isSecretLikeGitPath)) {
+			continue;
+		}
+		for (const path of entry.paths) {
+			if (!seenStageable.has(path)) {
+				seenStageable.add(path);
+				stageableFiles.push(path);
+			}
+		}
+	}
 	if (stageableFiles.length === 0) {
 		return { commitSha: null, committed: false };
 	}
 
-	await execGitOrThrow(sandbox, "git add -A", {
+	// Stage only explicit safe paths — never `git add -A` + best-effort reset.
+	const addArgs = stageableFiles.map(quoteGitHubExportShellArg).join(" ");
+	await execGitOrThrow(sandbox, `git add -- ${addArgs}`, {
 		cwd,
 		errorPrefix: "Failed to stage changes",
 	});
 
-	const secretPaths = changedFiles.filter(isSecretLikeGitPath);
-	if (secretPaths.length > 0) {
-		const resetArgs = secretPaths.map(quoteGitHubExportShellArg).join(" ");
-		await sandbox.exec(`git reset HEAD -- ${resetArgs}`, {
-			cwd,
-			timeout: GIT_COMMAND_TIMEOUT_MS,
-		});
-	}
-
-	const stagedResult = await sandbox.exec("git diff --cached --name-only", {
+	const stagedResult = await sandbox.exec("git diff --cached --name-only -z", {
 		cwd,
 		timeout: GIT_COMMAND_TIMEOUT_MS,
 	});
-	if (!stagedResult.success || !stagedResult.stdout.trim()) {
+	if (!stagedResult.success) {
+		throw new Error("Failed to verify staged changes.");
+	}
+	const stagedPaths = stagedResult.stdout
+		.split("\0")
+		.map((p) => p.trim())
+		.filter(Boolean);
+	if (stagedPaths.length === 0) {
 		return { commitSha: null, committed: false };
+	}
+	for (const path of stagedPaths) {
+		if (isSecretLikeGitPath(path)) {
+			throw new Error(
+				`Refusing to commit: secret-like path is staged (${path}).`,
+			);
+		}
 	}
 
 	const quotedMessage = quoteGitHubExportShellArg(ctx.message);
@@ -351,6 +473,15 @@ export async function pushSessionBranch(
 	const cwd = ctx.session.workspacePath;
 	const branchName = ctx.session.branchName;
 	const publicUrl = publicRepoUrl(ctx.githubRepo);
+
+	// Preflight must run before minting an installation token so UI push, agent
+	// push, and open-PR auto-push share one secret egress gate.
+	await assertOutgoingGitRangeSafe({
+		sandbox,
+		cwd,
+		branchName,
+		knownSecrets: ctx.knownSecrets,
+	});
 
 	// Token mint + push share the same try so scoped-token API 403s map cleanly.
 	// Scrub remotes in finally even if mint fails (no-op if remotes never changed).

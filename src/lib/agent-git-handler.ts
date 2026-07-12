@@ -3,6 +3,8 @@ import { z } from "zod";
 import type { createDb } from "#/db";
 import { projects, workspaceSessions } from "#/db/schema";
 import type { AgentGitJwtClaims } from "#/lib/agent-git-jwt";
+import { GitSecretPolicyError } from "#/lib/git-secret-policy";
+import { decryptEnvVars } from "#/lib/project-env-vars";
 import { ensureProjectSandbox } from "#/lib/project-sandbox";
 import {
 	getSessionGitStatus,
@@ -41,6 +43,11 @@ export type ResolvedAgentGitContext = {
 		workspacePath: string;
 		title?: string | null;
 	};
+	/**
+	 * Decrypted project env values for push preflight only.
+	 * Server memory — never include in client/agent responses.
+	 */
+	knownSecrets: readonly string[];
 };
 
 export async function resolveAgentGitContext(options: {
@@ -130,6 +137,12 @@ export async function resolveAgentGitContext(options: {
 			.where(eq(workspaceSessions.id, session.id));
 	}
 
+	const envVars = await decryptEnvVars(
+		project.envVars,
+		options.env.BETTER_AUTH_SECRET,
+	);
+	const knownSecrets = envVars.map((envVar) => envVar.value);
+
 	return {
 		projectId: project.id,
 		githubRepo: project.githubRepo,
@@ -141,7 +154,18 @@ export async function resolveAgentGitContext(options: {
 			workspacePath: ensured.workspacePath,
 			title: session.title,
 		},
+		knownSecrets,
 	};
+}
+
+function mapPushError(error: unknown): never {
+	if (error instanceof GitSecretPolicyError) {
+		throw new AgentGitHttpError(409, error.message);
+	}
+	if (error instanceof AgentGitHttpError) {
+		throw error;
+	}
+	throw error;
 }
 
 export async function dispatchAgentGitAction(options: {
@@ -149,7 +173,17 @@ export async function dispatchAgentGitAction(options: {
 	resolved: ResolvedAgentGitContext;
 	body: AgentGitBody;
 }): Promise<unknown> {
+	// knownSecrets stay server-side for push preflight; never on status responses.
 	const gitCtx = {
+		env: options.env,
+		sandboxId: options.resolved.sandboxId,
+		installationId: options.resolved.installationId,
+		githubRepo: options.resolved.githubRepo,
+		session: options.resolved.session,
+		knownSecrets: options.resolved.knownSecrets,
+	};
+
+	const statusCtx = {
 		env: options.env,
 		sandboxId: options.resolved.sandboxId,
 		installationId: options.resolved.installationId,
@@ -158,10 +192,10 @@ export async function dispatchAgentGitAction(options: {
 	};
 
 	if (options.body.action === "status") {
-		return await getSessionGitStatus(gitCtx);
+		return await getSessionGitStatus(statusCtx);
 	}
 
-	const status = await getSessionGitStatus(gitCtx);
+	const status = await getSessionGitStatus(statusCtx);
 
 	if (status.dirty) {
 		const message =
@@ -175,21 +209,32 @@ export async function dispatchAgentGitAction(options: {
 		if (status.ahead <= 0) {
 			throw new AgentGitHttpError(409, "Nothing to push for this branch.");
 		}
-		return await pushSessionBranch(gitCtx);
+		try {
+			return await pushSessionBranch(gitCtx);
+		} catch (error) {
+			mapPushError(error);
+		}
 	}
 
 	if (status.ahead > 0) {
-		await pushSessionBranch(gitCtx);
+		try {
+			await pushSessionBranch(gitCtx);
+		} catch (error) {
+			mapPushError(error);
+		}
 	}
 
 	try {
 		return await openSessionPullRequest({
-			...gitCtx,
+			...statusCtx,
 			title: options.body.title,
 			body: options.body.body,
 			baseBranch: options.body.baseBranch,
 		});
 	} catch (error) {
+		if (error instanceof GitSecretPolicyError) {
+			throw new AgentGitHttpError(409, error.message);
+		}
 		throw new AgentGitHttpError(
 			502,
 			error instanceof Error ? error.message : "Failed to open pull request.",
