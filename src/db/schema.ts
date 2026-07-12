@@ -117,6 +117,16 @@ export const messages = sqliteTable(
 		model: text("model"),
 		/** JSON-encoded AssistantMessagePart[] for assistant messages (legacy StreamToolCall[] still parseable) */
 		tools: text("tools"),
+		/**
+		 * Terminal write lifecycle for assistant rows:
+		 * pending while streaming, complete on success, failed on partial/error.
+		 * User rows and historical rows default to complete.
+		 */
+		status: text("status", {
+			enum: ["pending", "complete", "failed"],
+		})
+			.notNull()
+			.default("complete"),
 		createdAt: integer("created_at", { mode: "timestamp" }).default(
 			sql`(unixepoch())`,
 		),

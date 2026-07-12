@@ -1,28 +1,11 @@
 import { TRPCError } from "@trpc/server";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
-import { nanoid } from "nanoid";
 import { z } from "zod";
 import { createDb } from "#/db";
 import { messages, projects, workspaceSessions } from "#/db/schema";
-import { isProjectCoderModelSpecifier } from "#/lib/agent-models";
 import { ensureProjectSandbox } from "#/lib/project-sandbox";
-import { makeSessionTitleFromMessage } from "#/lib/workspace-policy";
-import {
-	archiveOwnedActiveSession,
-	type OwnedActiveSession,
-	resolveSessionForMessageWrite,
-	workspaceSessionRecencyUpdate,
-} from "#/lib/workspace-session";
+import { archiveOwnedActiveSession } from "#/lib/workspace-session";
 import { createTRPCRouter, protectedProcedure } from "../init";
-
-const sendMessageSchema = z.object({
-	projectId: z.string().min(1),
-	sessionId: z.string().min(1).optional(),
-	message: z.string().trim().min(1),
-	model: z.string().min(1).refine(isProjectCoderModelSpecifier, {
-		message: "Invalid model.",
-	}),
-});
 
 async function loadProjectOrThrow(options: {
 	db: ReturnType<typeof createDb>;
@@ -205,103 +188,6 @@ export const workspaceRouter = createTRPCRouter({
 				userId: ctx.user.id,
 				sessionId: input.sessionId,
 			});
-		}),
-
-	sendMessage: protectedProcedure
-		.input(sendMessageSchema)
-		.mutation(async ({ ctx, input }) => {
-			const db = createDb(ctx.env);
-			const project = await loadProjectOrThrow({
-				db,
-				projectId: input.projectId,
-				userId: ctx.user.id,
-			});
-
-			const ensured = await ensureProjectSandbox({
-				db,
-				env: ctx.env,
-				project,
-			});
-
-			const resolved = await resolveSessionForMessageWrite({
-				db,
-				projectId: input.projectId,
-				userId: ctx.user.id,
-				sessionId: input.sessionId,
-			});
-
-			if (resolved.kind === "not_found") {
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Session not found.",
-				});
-			}
-
-			let sessionId: string;
-			let createdSession = false;
-			let session: OwnedActiveSession | null;
-
-			if (resolved.kind === "existing") {
-				session = resolved.session;
-				sessionId = session.id;
-			} else {
-				sessionId = nanoid();
-				const [createdRows] = await db.batch([
-					db
-						.insert(workspaceSessions)
-						.values({
-							id: sessionId,
-							projectId: input.projectId,
-							userId: ctx.user.id,
-							title: makeSessionTitleFromMessage(input.message),
-							status: "active",
-						})
-						.returning(),
-				]);
-
-				session = createdRows?.[0] ?? null;
-				createdSession = true;
-			}
-
-			if (!session || !sessionId) {
-				throw new TRPCError({
-					code: "INTERNAL_SERVER_ERROR",
-					message: "Failed to create workspace session.",
-				});
-			}
-
-			const userMessageId = nanoid();
-			const [userMessages] = await db.batch([
-				db
-					.insert(messages)
-					.values({
-						id: userMessageId,
-						sessionId,
-						projectId: input.projectId,
-						userId: ctx.user.id,
-						role: "user",
-						content: input.message,
-						model: input.model,
-					})
-					.returning(),
-				workspaceSessionRecencyUpdate(db, sessionId),
-			]);
-
-			const userMessage = userMessages?.[0];
-			if (!userMessage) {
-				throw new TRPCError({
-					code: "INTERNAL_SERVER_ERROR",
-					message: "Failed to create user message.",
-				});
-			}
-
-			return {
-				session,
-				createdSession,
-				userMessage,
-				project: stripProjectSecrets(ensured.project),
-				sandbox: { state: ensured.state },
-			};
 		}),
 
 	deleteSession: protectedProcedure

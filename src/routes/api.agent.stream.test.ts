@@ -1,193 +1,221 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 /**
  * Full POST handler import pulls `cloudflare:workers` and TanStack route
- * bootstrap. Session authorization + recency for the stream path live in the
- * shared helper used by the route — covered here with the same contracts.
+ * bootstrap. Mock those modules and capture the handler; lifecycle is
+ * exercised via injectable prepare/execute mocks plus source-shape checks.
  */
 
-const resolveSessionForMessageWriteMock = vi.hoisted(() => vi.fn());
-const workspaceSessionRecencyUpdateMock = vi.hoisted(() => vi.fn());
-const loadOwnedActiveSessionMock = vi.hoisted(() => vi.fn());
+const prepareAgentRunMock = vi.hoisted(() => vi.fn());
+const executeAgentRunMock = vi.hoisted(() => vi.fn());
+const createAuthMock = vi.hoisted(() => vi.fn());
+const createDbMock = vi.hoisted(() => vi.fn());
 
-vi.mock("#/lib/workspace-session", async () => {
-	const actual = await vi.importActual<
-		typeof import("#/lib/workspace-session")
-	>("#/lib/workspace-session");
-	return {
-		...actual,
-		resolveSessionForMessageWrite: resolveSessionForMessageWriteMock,
-		workspaceSessionRecencyUpdate: workspaceSessionRecencyUpdateMock,
-		loadOwnedActiveSession: loadOwnedActiveSessionMock,
-	};
-});
+const routeOptions = vi.hoisted(() => ({
+	current: null as null | {
+		server: {
+			handlers: {
+				POST: (ctx: { request: Request }) => Promise<Response>;
+			};
+		};
+	},
+}));
 
-const { resolveSessionForMessageWrite, workspaceSessionRecencyUpdate } =
-	await import("#/lib/workspace-session");
+vi.mock("cloudflare:workers", () => ({
+	env: {
+		BETTER_AUTH_SECRET: "test-secret",
+		OPENCODE_API_KEY: "sk-test",
+	},
+}));
 
-/** Mirrors api.agent.stream.ts session resolution before message insert. */
-async function resolveStreamSession(options: {
-	db: never;
-	projectId: string;
-	userId: string;
-	sessionId?: string;
-}): Promise<
-	| { ok: true; kind: "create" }
-	| { ok: true; kind: "existing"; sessionId: string }
-	| { ok: false; status: 404; error: string }
-> {
-	const resolved = await resolveSessionForMessageWrite({
-		db: options.db,
-		projectId: options.projectId,
-		userId: options.userId,
-		sessionId: options.sessionId,
+vi.mock("@tanstack/react-router", () => ({
+	createFileRoute:
+		(_path: string) =>
+		(options: {
+			server: {
+				handlers: {
+					POST: (ctx: { request: Request }) => Promise<Response>;
+				};
+			};
+		}) => {
+			routeOptions.current = options;
+			return options;
+		},
+}));
+
+vi.mock("#/db", () => ({
+	createDb: createDbMock,
+}));
+
+vi.mock("#/lib/auth", () => ({
+	createAuth: createAuthMock,
+}));
+
+vi.mock("#/lib/agent-run-service", () => ({
+	agentStreamBodySchema: z.object({
+		projectId: z.string().min(1),
+		sessionId: z.string().min(1).optional(),
+		message: z.string().trim().min(1),
+		model: z.string().min(1),
+	}),
+	prepareAgentRun: prepareAgentRunMock,
+	executeAgentRun: executeAgentRunMock,
+}));
+
+await import("./api.agent.stream");
+
+function getPostHandler() {
+	const handler = routeOptions.current?.server.handlers.POST;
+	if (!handler) {
+		throw new Error("POST handler was not captured from createFileRoute");
+	}
+	return handler;
+}
+
+function authed() {
+	createAuthMock.mockReturnValue({
+		api: {
+			getSession: vi.fn().mockResolvedValue({
+				user: { id: "user-1" },
+			}),
+		},
 	});
-
-	if (resolved.kind === "not_found") {
-		return { ok: false, status: 404, error: "Session not found." };
-	}
-	if (resolved.kind === "existing") {
-		return { ok: true, kind: "existing", sessionId: resolved.session.id };
-	}
-	return { ok: true, kind: "create" };
 }
 
-/** Mirrors the stream message-create batch shape (user + assistant + recency). */
-function buildStreamMessageBatch(options: {
-	db: never;
-	sessionId: string;
-	userInsert: unknown;
-	assistantInsert: unknown;
-}) {
-	return [
-		options.userInsert,
-		options.assistantInsert,
-		workspaceSessionRecencyUpdate(options.db, options.sessionId),
-	];
+async function postJson(body: unknown): Promise<Response> {
+	return getPostHandler()({
+		request: new Request("http://localhost/api/agent/stream", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(body),
+		}),
+	});
 }
 
-describe("api.agent.stream session rules (shared helper)", () => {
+describe("api.agent.stream POST adapter", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		// Use real implementations for assertion paths that need them.
-		resolveSessionForMessageWriteMock.mockImplementation(
-			async (opts: {
-				db: never;
-				projectId: string;
-				userId: string;
-				sessionId?: string | null;
-			}) => {
-				if (!opts.sessionId) {
-					return { kind: "create" };
-				}
-				const session = await loadOwnedActiveSessionMock({
-					db: opts.db,
-					projectId: opts.projectId,
-					sessionId: opts.sessionId,
-					userId: opts.userId,
-				});
-				if (!session) {
-					return { kind: "not_found" };
-				}
-				return { kind: "existing", session };
-			},
-		);
-		workspaceSessionRecencyUpdateMock.mockImplementation(
-			(_db: unknown, sessionId: string) => ({
-				__kind: "recency-update",
-				sessionId,
+		createDbMock.mockReturnValue({});
+		authed();
+	});
+
+	it("returns 401 when unauthenticated", async () => {
+		createAuthMock.mockReturnValue({
+			api: { getSession: vi.fn().mockResolvedValue(null) },
+		});
+
+		const response = await getPostHandler()({
+			request: new Request("http://localhost/api/agent/stream", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					projectId: "p1",
+					message: "hi",
+					model: "opencode-go/deepseek-v4-flash",
+				}),
 			}),
-		);
-	});
-
-	it("allows an owned active session", async () => {
-		loadOwnedActiveSessionMock.mockResolvedValue({
-			id: "sess-1",
-			status: "active",
 		});
 
-		const result = await resolveStreamSession({
-			db: {} as never,
+		expect(response.status).toBe(401);
+		expect(await response.json()).toEqual({ error: "Unauthorized" });
+		expect(prepareAgentRunMock).not.toHaveBeenCalled();
+	});
+
+	it("returns 400 for invalid JSON body", async () => {
+		const response = await getPostHandler()({
+			request: new Request("http://localhost/api/agent/stream", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: "{not-json",
+			}),
+		});
+		expect(response.status).toBe(400);
+		expect(await response.json()).toEqual({ error: "Invalid JSON body." });
+	});
+
+	it("returns 400 for malformed request body", async () => {
+		const response = await postJson({ projectId: "p1" });
+		expect(response.status).toBe(400);
+		const body = (await response.json()) as { error: string };
+		expect(body.error).toBe("Invalid request.");
+		expect(prepareAgentRunMock).not.toHaveBeenCalled();
+	});
+
+	it("maps prepareAgentRun errors to HTTP responses", async () => {
+		prepareAgentRunMock.mockResolvedValue({
+			kind: "error",
+			status: 409,
+			body: { error: "Failed to prepare session worktree." },
+		});
+
+		const response = await postJson({
 			projectId: "proj-1",
-			userId: "user-1",
-			sessionId: "sess-1",
+			message: "hi",
+			model: "opencode-go/deepseek-v4-flash",
 		});
 
-		expect(result).toEqual({
-			ok: true,
-			kind: "existing",
-			sessionId: "sess-1",
+		expect(response.status).toBe(409);
+		expect(await response.json()).toEqual({
+			error: "Failed to prepare session worktree.",
 		});
+		expect(executeAgentRunMock).not.toHaveBeenCalled();
 	});
 
-	it("returns 404 for archived / missing sessions without creating a replacement", async () => {
-		loadOwnedActiveSessionMock.mockResolvedValue(null);
+	it("encodes SSE events from executeAgentRun in order", async () => {
+		prepareAgentRunMock.mockResolvedValue({
+			kind: "ready",
+			context: {
+				sessionId: "sess-1",
+				assistantMessageId: "asst-1",
+			},
+		});
 
-		const result = await resolveStreamSession({
-			db: {} as never,
+		executeAgentRunMock.mockImplementation(async ({ emit }) => {
+			emit({
+				event: "meta",
+				data: {
+					sessionId: "sess-1",
+					userMessageId: "u1",
+					assistantMessageId: "asst-1",
+					createdSession: false,
+					sandboxState: "ready",
+				},
+			});
+			emit({ event: "delta", data: { delta: "Hi" } });
+			emit({
+				event: "done",
+				data: {
+					ok: true,
+					assistantMessageId: "asst-1",
+					content: "Hi",
+				},
+			});
+		});
+
+		const response = await postJson({
 			projectId: "proj-1",
-			userId: "user-1",
-			sessionId: "sess-archived",
+			message: "hi",
+			model: "opencode-go/deepseek-v4-flash",
 		});
 
-		expect(result).toEqual({
-			ok: false,
-			status: 404,
-			error: "Session not found.",
-		});
-		expect(result).not.toMatchObject({ kind: "create" });
-	});
-
-	it("returns 404 for cross-user session ids", async () => {
-		loadOwnedActiveSessionMock.mockResolvedValue(null);
-
-		const result = await resolveStreamSession({
-			db: {} as never,
-			projectId: "proj-1",
-			userId: "user-2",
-			sessionId: "sess-1",
-		});
-
-		expect(result).toEqual({
-			ok: false,
-			status: 404,
-			error: "Session not found.",
-		});
-	});
-
-	it("creates a new session only when no explicit id is supplied", async () => {
-		const result = await resolveStreamSession({
-			db: {} as never,
-			projectId: "proj-1",
-			userId: "user-1",
-		});
-
-		expect(result).toEqual({ ok: true, kind: "create" });
-		expect(loadOwnedActiveSessionMock).not.toHaveBeenCalled();
-	});
-
-	it("includes session recency update in the message batch", () => {
-		const batch = buildStreamMessageBatch({
-			db: {} as never,
-			sessionId: "sess-1",
-			userInsert: { __kind: "user-insert" },
-			assistantInsert: { __kind: "assistant-insert" },
-		});
-
-		expect(batch).toHaveLength(3);
-		expect(batch[2]).toEqual({
-			__kind: "recency-update",
-			sessionId: "sess-1",
-		});
-		expect(workspaceSessionRecencyUpdateMock).toHaveBeenCalledWith(
-			expect.anything(),
-			"sess-1",
-		);
+		expect(response.status).toBe(200);
+		expect(response.headers.get("Content-Type")).toContain("text/event-stream");
+		const text = await response.text();
+		expect(text).toContain("event: meta");
+		expect(text).toContain("event: delta");
+		expect(text).toContain("event: done");
+		const metaAt = text.indexOf("event: meta");
+		const deltaAt = text.indexOf("event: delta");
+		const doneAt = text.indexOf("event: done");
+		expect(metaAt).toBeGreaterThanOrEqual(0);
+		expect(deltaAt).toBeGreaterThan(metaAt);
+		expect(doneAt).toBeGreaterThan(deltaAt);
 	});
 });
 
-describe("api.agent.stream call-site wiring", () => {
-	it("route source uses shared resolve + recency helpers", async () => {
+describe("api.agent.stream source boundaries", () => {
+	it("route is a thin adapter around the run service", async () => {
 		const fs = await import("node:fs/promises");
 		const path = await import("node:path");
 		const source = await fs.readFile(
@@ -195,14 +223,13 @@ describe("api.agent.stream call-site wiring", () => {
 			"utf8",
 		);
 
-		expect(source).toContain("resolveSessionForMessageWrite");
-		expect(source).toContain("workspaceSessionRecencyUpdate");
-		expect(source).toContain(
-			'jsonResponse({ error: "Session not found." }, 404)',
-		);
-		// Explicit invalid id must not fall through to create.
-		expect(source).toContain('resolved.kind === "not_found"');
-		expect(source).toContain('resolved.kind === "existing"');
-		expect(source).toContain('resolved.kind === "existing"');
+		expect(source).toContain("prepareAgentRun");
+		expect(source).toContain("executeAgentRun");
+		expect(source).toContain("encodeSseEvent");
+		expect(source).not.toContain("agent-stream-client");
+		expect(source).not.toContain("agent-tool-presentation");
+		expect(source).not.toContain("runAgentInSandbox");
+		expect(source).not.toContain("ensureSessionWorktree");
+		expect(source).not.toContain("persistProjectSandboxBackup");
 	});
 });

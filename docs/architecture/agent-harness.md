@@ -43,22 +43,26 @@ once (the runner itself does not snapshot).
 1. The user sends a message from the composer.
 2. The client `POST`s `/api/agent/stream` with cookie auth.
 3. The Worker ensures the project sandbox is awake and hydrated.
-4. The Worker creates or loads a D1 workspace session and inserts user plus
-   assistant placeholder rows.
-5. On the first agent message for a session, the Worker ensures a git worktree
-   under `/workspace/.ditto/worktrees/<sessionId>` on branch
-   `ditto/session-<shortId>`. Before creating that branch for a **new** session
-   (no established `branchName` yet), the Worker fetches and fast-forwards the
-   primary clone's **currently checked-out** branch from GitHub so
-   `baseCommitSha` matches pushed remote state. Existing sessions keep their
-   established branch and worktree; Ditto does not fetch, merge, or reset them
-   automatically. Only changes pushed to the linked GitHub repository are
-   visible; unpushed commits on a developer laptop are outside the sandbox.
-   Symlinks shared `node_modules` and `.env` from the primary `/workspace` tree,
-   and persists `branchName`, `baseCommitSha`, and `workspacePath` on the
-   session row. Dirty tracked primary state, a locally ahead primary clone, or a
-   diverged primary branch block fresh session worktree creation instead of
-   overwriting local commits.
+4. The Worker creates or loads a D1 workspace session. On the first agent
+   message for a session, it ensures a git worktree under
+   `/workspace/.ditto/worktrees/<sessionId>` on branch
+   `ditto/session-<shortId>` **before** any chat rows are written. Before
+   creating that branch for a **new** session (no established `branchName`
+   yet), the Worker fetches and fast-forwards the primary clone's **currently
+   checked-out** branch from GitHub so `baseCommitSha` matches pushed remote
+   state. Existing sessions keep their established branch and worktree; Ditto
+   does not fetch, merge, or reset them automatically. Only changes pushed to
+   the linked GitHub repository are visible; unpushed commits on a developer
+   laptop are outside the sandbox. Symlinks shared `node_modules` and `.env`
+   from the primary `/workspace` tree, and persists `branchName`,
+   `baseCommitSha`, and `workspacePath` on the session row. Dirty tracked
+   primary state, a locally ahead primary clone, or a diverged primary branch
+   block fresh session worktree creation instead of overwriting local commits.
+   If worktree preparation fails for a **newly created** empty session, that
+   session row is removed before the 409 response.
+5. After the worktree is ready, the Worker inserts the user message
+   (`status: complete`) and an assistant placeholder (`status: pending`) in
+   one D1 batch, then opens the SSE stream and emits `meta`.
 6. The Worker creates a sandbox shell session with cwd set to the session
    worktree and writes a job file (prompt is not interpolated into shell
    commands).
@@ -66,9 +70,13 @@ once (the runner itself does not snapshot).
 8. The harness opens or resumes PI state under
    `/workspace/.ditto/sessions/<conversationId>.jsonl` on the primary tree.
 9. The Worker forwards `meta`, `agent`, `delta`, `error`, and `done` SSE events.
-10. On completion the Worker updates the assistant message in D1 and runs
-   `persistProjectSandboxBackup` (versioned `createBackup` of `/workspace`,
-   including `.ditto/worktrees`).
+10. On success the Worker persists sanitized content/tools with
+   `status: complete` before emitting successful `done`. On runner/stream/
+   storage failure it persists accumulated partial content with
+   `status: failed`, then emits `error` followed by failed `done`. Backup is
+   best-effort via `persistProjectSandboxBackup` (versioned `createBackup` of
+   `/workspace`, including `.ditto/worktrees`) and does not rewrite message
+   status.
 
 ## Transport
 
