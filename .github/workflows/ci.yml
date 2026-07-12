@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -22,14 +22,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Enable Corepack
+        run: corepack enable
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22.19"
+          node-version: "24"
           cache: pnpm
-
-      - name: Enable Corepack
-        run: corepack enable
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install root dependencies
         run: pnpm install --frozen-lockfile
