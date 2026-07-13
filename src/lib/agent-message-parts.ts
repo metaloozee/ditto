@@ -4,6 +4,10 @@ export type StreamToolCall = {
 	status: "running" | "done" | "error";
 	args?: unknown;
 	result?: unknown;
+	/** Epoch ms when the tool start was received (server-assigned). */
+	startedAt?: number;
+	/** Epoch ms when the tool ended or was finalized (server-assigned). */
+	endedAt?: number;
 };
 
 export type AssistantMessagePart =
@@ -20,6 +24,12 @@ export function nextPartId(prefix: string): string {
 /** @internal test helper — reset part id counter between tests if needed */
 export function resetPartIdCounterForTests(): void {
 	partIdCounter = 0;
+}
+
+function finiteTimestamp(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isFinite(value)
+		? value
+		: undefined;
 }
 
 export function toolNameFromAgentEvent(event: unknown): string | null {
@@ -42,6 +52,7 @@ export function toolNameFromAgentEvent(event: unknown): string | null {
 export function applyAgentToolEvent(
 	tools: StreamToolCall[],
 	event: unknown,
+	occurredAt?: number,
 ): StreamToolCall[] | null {
 	if (!event || typeof event !== "object") {
 		return null;
@@ -70,6 +81,7 @@ export function applyAgentToolEvent(
 		return null;
 	}
 
+	const at = finiteTimestamp(occurredAt);
 	const existingIndex = tools.findIndex((tool) => tool.id === id);
 	const existing = existingIndex >= 0 ? tools[existingIndex] : undefined;
 	const next = [...tools];
@@ -81,6 +93,11 @@ export function applyAgentToolEvent(
 			status: "running",
 			args: record.args,
 		};
+		// Record startedAt once; re-starts keep the original.
+		const startedAt = existing?.startedAt ?? at;
+		if (startedAt !== undefined) {
+			entry.startedAt = startedAt;
+		}
 		if (existingIndex >= 0) {
 			next[existingIndex] = entry;
 		} else {
@@ -97,6 +114,12 @@ export function applyAgentToolEvent(
 			args: record.args ?? existing?.args,
 			result: record.partialResult ?? existing?.result,
 		};
+		if (existing?.startedAt !== undefined) {
+			entry.startedAt = existing.startedAt;
+		}
+		if (existing?.endedAt !== undefined) {
+			entry.endedAt = existing.endedAt;
+		}
 		if (existingIndex >= 0) {
 			next[existingIndex] = entry;
 		} else {
@@ -113,6 +136,15 @@ export function applyAgentToolEvent(
 		args: record.args ?? existing?.args,
 		result: record.result,
 	};
+	// End preserves original start; end-only uses occurrence for both (zero elapsed).
+	const startedAt = existing?.startedAt ?? at;
+	const endedAt = at ?? existing?.endedAt;
+	if (startedAt !== undefined) {
+		entry.startedAt = startedAt;
+	}
+	if (endedAt !== undefined) {
+		entry.endedAt = endedAt;
+	}
 	if (existingIndex >= 0) {
 		next[existingIndex] = entry;
 	} else {
@@ -121,10 +153,21 @@ export function applyAgentToolEvent(
 	return next;
 }
 
-export function finalizeStreamTools(tools: StreamToolCall[]): StreamToolCall[] {
-	return tools.map((tool) =>
-		tool.status === "running" ? { ...tool, status: "done" as const } : tool,
-	);
+export function finalizeStreamTools(
+	tools: StreamToolCall[],
+	settledAt?: number,
+): StreamToolCall[] {
+	const at = finiteTimestamp(settledAt);
+	return tools.map((tool) => {
+		if (tool.status !== "running") {
+			return tool;
+		}
+		const next: StreamToolCall = { ...tool, status: "done" as const };
+		if (at !== undefined && next.endedAt === undefined) {
+			next.endedAt = at;
+		}
+		return next;
+	});
 }
 
 export function appendAssistantTextDelta(
@@ -153,9 +196,10 @@ export function appendAssistantTextDelta(
 export function applyAgentToolEventToParts(
 	parts: AssistantMessagePart[],
 	event: unknown,
+	occurredAt?: number,
 ): AssistantMessagePart[] | null {
 	const flat = partsToTools(parts);
-	const nextTools = applyAgentToolEvent(flat, event);
+	const nextTools = applyAgentToolEvent(flat, event, occurredAt);
 	if (!nextTools) {
 		return null;
 	}
@@ -212,15 +256,21 @@ export function partsToTools(parts: AssistantMessagePart[]): StreamToolCall[] {
 
 export function finalizeAssistantParts(
 	parts: AssistantMessagePart[],
+	settledAt?: number,
 ): AssistantMessagePart[] {
+	const at = finiteTimestamp(settledAt);
 	return parts.map((part) => {
 		if (part.type !== "tool" || part.tool.status !== "running") {
 			return part;
 		}
+		const tool: StreamToolCall = { ...part.tool, status: "done" as const };
+		if (at !== undefined && tool.endedAt === undefined) {
+			tool.endedAt = at;
+		}
 		return {
 			type: "tool",
 			id: part.id,
-			tool: { ...part.tool, status: "done" as const },
+			tool,
 		};
 	});
 }

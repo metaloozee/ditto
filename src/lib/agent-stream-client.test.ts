@@ -76,6 +76,54 @@ describe("agent-stream-client transport", () => {
 		vi.unstubAllGlobals();
 	});
 
+	it("forwards agent event with finite occurredAt and stays backward compatible", async () => {
+		const encoder = new TextEncoder();
+		const body = new ReadableStream<Uint8Array>({
+			start(controller) {
+				controller.enqueue(
+					encoder.encode(
+						[
+							'event: agent\ndata: {"event":{"type":"tool_execution_start","toolCallId":"t1","toolName":"bash"},"occurredAt":1000}\n\n',
+							'event: agent\ndata: {"event":{"type":"tool_execution_end","toolCallId":"t1","toolName":"bash","result":"ok","isError":false}}\n\n',
+							'event: agent\ndata: {"event":{"type":"tool_execution_start","toolCallId":"t2","toolName":"bash"},"occurredAt":"nope"}\n\n',
+						].join(""),
+					),
+				);
+				controller.close();
+			},
+		});
+
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => new Response(body, { status: 200 })),
+		);
+
+		const calls: Array<{ event: unknown; occurredAt?: number }> = [];
+		await streamAgentRun(
+			{
+				projectId: "p1",
+				message: "hi",
+				model: "opencode-go/claude-sonnet-4",
+			},
+			{
+				onAgent: (event, occurredAt) => {
+					calls.push({ event, occurredAt });
+				},
+			},
+		);
+
+		expect(calls).toHaveLength(3);
+		expect(calls[0]?.occurredAt).toBe(1_000);
+		expect(calls[0]?.event).toMatchObject({
+			type: "tool_execution_start",
+			toolCallId: "t1",
+		});
+		expect(calls[1]?.occurredAt).toBeUndefined();
+		expect(calls[2]?.occurredAt).toBeUndefined();
+
+		vi.unstubAllGlobals();
+	});
+
 	it("ignores malformed data lines without throwing", async () => {
 		const encoder = new TextEncoder();
 		const body = new ReadableStream<Uint8Array>({

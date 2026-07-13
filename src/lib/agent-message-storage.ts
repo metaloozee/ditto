@@ -89,6 +89,12 @@ export function sanitizeAssistantPartsForStorage(
 				next.result = result;
 			}
 		}
+		if (typeof tool.startedAt === "number" && Number.isFinite(tool.startedAt)) {
+			next.startedAt = tool.startedAt;
+		}
+		if (typeof tool.endedAt === "number" && Number.isFinite(tool.endedAt)) {
+			next.endedAt = tool.endedAt;
+		}
 		return { type: "tool", id: part.id, tool: next };
 	});
 }
@@ -100,14 +106,27 @@ function minimalAssistantPartsForStorage(
 		if (part.type === "text") {
 			return part;
 		}
+		const tool: StreamToolCall = {
+			id: part.tool.id,
+			name: part.tool.name,
+			status: part.tool.status,
+		};
+		if (
+			typeof part.tool.startedAt === "number" &&
+			Number.isFinite(part.tool.startedAt)
+		) {
+			tool.startedAt = part.tool.startedAt;
+		}
+		if (
+			typeof part.tool.endedAt === "number" &&
+			Number.isFinite(part.tool.endedAt)
+		) {
+			tool.endedAt = part.tool.endedAt;
+		}
 		return {
 			type: "tool",
 			id: part.id,
-			tool: {
-				id: part.tool.id,
-				name: part.tool.name,
-				status: part.tool.status,
-			},
+			tool,
 		};
 	});
 }
@@ -158,6 +177,12 @@ export function prepareAssistantMessageStorage(parts: AssistantMessagePart[]): {
 	return { storageParts, toolsColumn };
 }
 
+function parseFiniteTimestamp(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isFinite(value)
+		? value
+		: undefined;
+}
+
 function parseToolRecord(
 	record: Record<string, unknown>,
 ): StreamToolCall | null {
@@ -170,12 +195,16 @@ function parseToolRecord(
 		record.status === "error"
 			? record.status
 			: "done";
+	const startedAt = parseFiniteTimestamp(record.startedAt);
+	const endedAt = parseFiniteTimestamp(record.endedAt);
 	return {
 		id: record.id,
 		name: record.name,
 		status,
 		...(record.args !== undefined ? { args: record.args } : {}),
 		...(record.result !== undefined ? { result: record.result } : {}),
+		...(startedAt !== undefined ? { startedAt } : {}),
+		...(endedAt !== undefined ? { endedAt } : {}),
 	};
 }
 

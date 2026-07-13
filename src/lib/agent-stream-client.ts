@@ -59,7 +59,8 @@ export type DonePayload = {
 export type AgentStreamHandlers = {
 	onMeta?: (data: MetaPayload) => void;
 	onDelta?: (delta: string) => void;
-	onAgent?: (event: unknown) => void;
+	/** Optional second arg is the server-assigned occurrence time (epoch ms). */
+	onAgent?: (event: unknown, occurredAt?: number) => void;
 	onError?: (message: string) => void;
 	onDone?: (data: DonePayload) => void;
 };
@@ -122,8 +123,13 @@ function dispatchSseFrame(
 			break;
 		}
 		case "agent": {
-			const record = parsed as { event?: unknown };
-			handlers.onAgent?.(record.event);
+			const record = parsed as { event?: unknown; occurredAt?: unknown };
+			const occurredAt =
+				typeof record.occurredAt === "number" &&
+				Number.isFinite(record.occurredAt)
+					? record.occurredAt
+					: undefined;
+			handlers.onAgent?.(record.event, occurredAt);
 			break;
 		}
 		case "error": {

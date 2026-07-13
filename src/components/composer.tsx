@@ -131,6 +131,8 @@ type ComposerProps = {
 	onStreamingChange?: Dispatch<SetStateAction<ComposerStreamingState | null>>;
 	onStreamCommit?: (payload: StreamCommitPayload) => void;
 	onWorkspaceRefresh?: (sessionId: string) => void;
+	inputText?: string;
+	onInputTextChange?: (text: string) => void;
 };
 
 export function Composer({
@@ -142,8 +144,13 @@ export function Composer({
 	onStreamingChange,
 	onStreamCommit,
 	onWorkspaceRefresh,
+	inputText,
+	onInputTextChange,
 }: ComposerProps) {
-	const [text, setText] = useState("");
+	const [localText, setLocalText] = useState("");
+	const text = inputText !== undefined ? inputText : localText;
+	const setText =
+		onInputTextChange !== undefined ? onInputTextChange : setLocalText;
 	const [isStreaming, setIsStreaming] = useState(false);
 	const activeSessionIdRef = useRef<string | null>(sessionId ?? null);
 	const shouldNavigateToSessionRef = useRef(false);
@@ -330,11 +337,14 @@ export function Composer({
 							};
 						});
 					},
-					onAgent: (event) => {
+					onAgent: (event, occurredAt) => {
 						// Tool events stay immediate (server flushes text before tools).
+						// Use the server-assigned occurrence time so optimistic + persisted
+						// records share exact lifecycle timestamps.
 						const nextParts = applyAgentToolEventToParts(
 							partsRef.current,
 							event,
+							occurredAt,
 						);
 						if (!nextParts) {
 							return;
