@@ -1,0 +1,135 @@
+# Security and trust boundaries
+
+## Goal
+
+Ditto executes an AI coding agent against user repositories. The architecture
+therefore assumes prompts, repository contents, tool output, and sandbox process
+environment are untrusted or disclosure-prone. Authorization and secret controls
+are enforced at the Worker and Git export boundaries, not delegated to the
+model.
+
+## Trust zones
+
+| Zone | Trusted for | Not trusted for |
+|---|---|---|
+| Browser | User interaction and cookie transport | Resource ownership, Git policy, durable terminal state |
+| Worker | Authentication, authorization, secret handling, D1 writes, credential minting | Arbitrary text emitted by agent/sandbox commands |
+| D1 | Durable metadata under Worker access | Plaintext project secrets (stored encrypted instead) |
+| Sandbox | Isolated repository execution | Keeping process environment hidden from the agent |
+| PI harness/model | Requested code work | Authorization decisions, secret-safe output, GitHub credentials |
+| GitHub | Repository and PR authority | Ditto application ownership without OAuth/App checks |
+| R2 backup | Encrypted Cloudflare object storage for workspace snapshots | Live filesystem semantics or secret-file filtering beyond configured excludes |
+
+## Authentication and authorization
+
+Browser APIs use better-auth GitHub OAuth and an HTTP-only session cookie. tRPC
+creates the auth session once per request, and protected procedures require a
+user. Direct SSE handling performs the same better-auth session check.
+
+Every project and workspace-session lookup includes the authenticated `userId`.
+GitHub operations also call `authorizeGitHubRepositoryAccess`, which checks the
+user OAuth token's visible repositories and installation ID. The OAuth token
+proves user access; a short-lived GitHub App installation token performs the
+server-side repository mutation.
+
+The sandbox runner cannot call browser-authenticated tRPC. Its two Git tools use
+`/api/agent/git` with a short-lived HS256 bearer JWT containing project, session,
+user, sandbox, subject, issue time, and expiry. The Worker verifies shape,
+signature, subject, and time, then resolves claims against current D1 ownership
+and readiness before dispatch.
+
+## Secret storage and injection
+
+Project environment variables are normalized, deduplicated, encrypted with
+AES-256-GCM, and stored as a versioned payload in `projects.envVars`. The key is
+derived from `BETTER_AUTH_SECRET` with PBKDF2-SHA-256, a random salt, and 310,000
+iterations. The UI can list keys but never reads values back.
+
+At run time the Worker decrypts values and injects them into the isolated shell
+session process environment together with `OPENCODE_API_KEY` and the Git callback
+JWT. Values are not written to a worktree `.env`, agent job JSON, SSE metadata,
+or Git remote.
+
+The process environment is not a vault from the agent: shell tools can read it.
+Controls therefore also exist on output and Git egress.
+
+## Output redaction
+
+`secret-redaction.ts` removes known concrete secrets of at least eight
+characters plus common GitHub, provider-key, AWS-key, and PEM patterns.
+Redaction is applied to:
+
+- runner text deltas, including secrets split across stream chunks;
+- structured PI events and tool payloads;
+- stderr and command failures;
+- assistant content before D1 persistence; and
+- Git/export errors before they reach the client.
+
+The streaming redactor holds a suffix between chunks and holds incomplete PEM
+regions until a complete block arrives or the stream ends. This avoids leaking a
+prefix before the full token becomes recognizable.
+
+## Git credential handling
+
+GitHub installation tokens are minted per operation inside the Worker. Clone,
+fetch, and push pass a tokenized HTTPS URL as a command argument only for that
+operation. A `finally` path resets `origin` to the public HTTPS URL. Tokens are
+provided to command-error redaction and are never persisted in D1, R2 metadata,
+runner environment, job files, or remote configuration.
+
+The runner receives only a Ditto callback URL and scoped JWT. Push and pull
+request operations return through the Worker, which mints the installation token
+and applies the same domain policy as the UI.
+
+## Git egress policy
+
+Before outgoing commits are pushed, `git-secret-policy.ts` fails closed when it
+cannot establish or inspect the outgoing range. It blocks:
+
+- `.env` and `.env.*` paths at any nesting level;
+- binary or unreadable additions that cannot be inspected safely;
+- known project secret values found in added lines;
+- recognized secret-shaped content; and
+- malformed Git output or unresolved commit ranges.
+
+Local agent edits and commits remain possible so work is not destroyed; the
+policy blocks export from the sandbox to GitHub.
+
+## Filesystem and command controls
+
+Prompts are serialized to a job file with the Sandbox file API and never
+interpolated into a shell command. Shell values that must enter commands are
+single-quoted by narrow helpers. Destructive workspace clearing checks that the
+configured root is exactly `/workspace` before running.
+
+Per-session mutations acquire an atomic directory lock under `/tmp`. Locks are
+outside `/workspace`, so backups do not preserve stale lock state. A stale-lock
+recovery window prevents permanent deadlock after an interrupted process.
+
+R2 backups explicitly exclude `.env` and `.env.*`, package stores,
+dependencies, build outputs, and caches. Session worktrees symlink only
+`node_modules`; no environment file is shared from the primary clone.
+
+## Failure posture
+
+- Ownership failures return not found/forbidden rather than continuing.
+- Invalid or expired agent JWTs return 401.
+- Secret preflight and ambiguous outgoing Git ranges fail closed.
+- Sandbox runner health is checked before project state is mutated.
+- Assistant terminal persistence is attempted before successful `done`.
+- Backup failure is reported as non-fatal after a completed run or Git mutation;
+  it does not rewrite the successful operation's result.
+- Client-visible errors are redacted, while server logs avoid raw credentials.
+
+## Security-sensitive files
+
+| Concern | Files |
+|---|---|
+| Auth/session | `src/lib/auth.ts`, `auth.client.ts`, `auth.functions.ts`, `src/integrations/trpc/init.ts` |
+| GitHub authorization | `src/lib/github-authorization.ts`, `github-app.ts`, `github-repositories.ts` |
+| Agent callback JWT | `src/lib/agent-git-jwt.ts`, `agent-git-handler.ts`, `src/routes/api.agent.git.ts` |
+| Encryption/env vars | `src/lib/crypto.ts`, `project-env-vars.ts`, `env-vars.ts` |
+| Redaction | `src/lib/secret-redaction.ts`, `agent-run.ts`, `github-export.ts` |
+| Git egress | `src/lib/git-secret-policy.ts`, `session-git.ts` |
+| Backup exclusions | `src/lib/sandbox-backup.ts` |
+| Workspace locking | `src/lib/session-workspace-lock.ts`, `workspace-policy.ts` |

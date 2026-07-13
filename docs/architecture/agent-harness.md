@@ -15,6 +15,10 @@ sandboxes hydrate through `restoreBackup` inside `ensureProjectSandbox`. A
 FUSE restore is ephemeral for the life of the container, so waking a sleeping
 project re-runs restore before agent work.
 
+Sandbox preparation also validates the baked runner manifest and CLI before it
+mutates project state. An invalid `/opt/ditto-runner` fails with an actionable
+image rebuild error instead of creating a broken agent run.
+
 Post-run and post-git snapshot writes share `persistProjectSandboxBackup`, which
 **versions** each attempt:
 
@@ -100,13 +104,26 @@ receive a `.env` file.
 Residual limits: all sessions still share one sandbox container process space
 (dev servers, ports, and long-running processes can collide). There is no
 application-level mutex per `projectId` yet; parallel agents should not run
-competing installs on the primary tree.
+competing installs on the primary tree. Within one session, agent runs and
+mutating UI Git operations share an atomic lock under sandbox `/tmp`, preventing
+concurrent worktree writers across Worker requests without persisting locks in
+workspace backups.
 
 ## Git export
 
 Users commit, push, and open pull requests from the project UI (tRPC
 `sessionGit.*`). The Worker runs git commands in the session worktree cwd
 (`workspace_sessions.workspacePath`), not in the agent harness.
+
+Existing sessions can explicitly sync the latest GitHub default branch through
+`sessionGit.sync`. Sync requires a clean session worktree, fetches the named
+default branch without switching the primary checkout, and merges the exact
+fetched commit into the session branch without rebasing or rewriting session
+commits. Conflicting merges are aborted before dependency installation. After a
+successful merge, dependencies are installed from the session worktree into the
+shared `node_modules`. A successful sync stores the new default-branch commit as
+`baseCommitSha`, so upstream-only changes are not reported as session-authored
+changes.
 
 - Network git uses a short-lived **GitHub App installation access token**
   minted per operation (including the one-shot primary-branch fetch before the

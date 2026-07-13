@@ -67,6 +67,16 @@ findings are grouped by implementation boundary.
 | 020 | Infinite-scroll conversation history (cursor + virtualize) | P2 | L | 015, 017, 019 (all DONE) | DONE (worktree `advisor/020-virtual-chat-history` @ 6403dd3; Steps 1–5 only, virtualization deferred) |
 | 021 | Document process-injected project environment variables | P1 | S | 010 | DONE (worktree `advisor/021-environment-docs` @ 651735f) |
 
+## Plan 022 (tool activity UX)
+
+Planned at commit `1588d12` on 2026-07-13 against the live dirty working tree.
+The executor must preserve the existing uncommitted chat/composer work called
+out in the plan's drift check.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 022 | Make tool-call groups durable, timed, and polished | P1 | M | 017, 018 (DONE) | DONE (worktree `advisor/022-timed-tool-call-groups` @ 220e5d8) |
+
 ### Audit finding coverage
 
 | Selected finding | Covered by | Combination rationale |
@@ -106,6 +116,16 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
   escape hatch rather than leaving a mandatory criterion incomplete.
 - **Executable now**: none; plans 001–021 are complete.
 
+## Planning update — 2026-07-13
+
+- **Current HEAD**: `1588d12`; plan 022 also records the relevant dirty-tree
+  state that must be preserved during execution.
+- **DONE 022**: executed in worktree branch `advisor/022-timed-tool-call-groups`
+  @ `220e5d8` (commits `eb0b6b0` timing model, `220e5d8` ToolCallGroup extract).
+  Seeded parent dirty empty-chat + controlled-input work is included. Not merged
+  to the user branch — merge/push is the user's decision.
+- **Executable now**: none; plans 001–022 are complete in their worktrees.
+
 ## Dependency notes
 
 - **006 requires 005** — git ops use `workspaceSessions.workspacePath` (worktree).
@@ -135,6 +155,8 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
   exact virtualization dependency.
 - **021 requires 010** — both edit `docs/architecture/agent-harness.md`; align
   environment wording after synchronization documentation is final.
+- **022 requires 017 and 018** — durable timing extends the extracted agent-run
+  lifecycle and ordered/batched stream path; both dependencies are already done.
 - **Merge** is explicitly out of 006/007 (deferred product decision).
 
 ## Product decisions (locked 2026-07-09)
@@ -203,3 +225,4 @@ tree while sharing git objects and (via symlink) `node_modules`.
 15. `019-trim-production-bundle.md`
 16. `020-paginate-and-virtualize-chat-history.md`
 17. `021-align-worktree-environment-docs.md`
+18. `022-timed-tool-call-groups.md`
