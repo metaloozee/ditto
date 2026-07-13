@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { describe, expect, it } from "vitest";
 import { rethrowOrMapSessionGitMutationError } from "#/lib/session-git-trpc-errors";
+import { SessionWorkspaceBusyError } from "#/lib/session-workspace-lock-error";
 
 const PUSH_FORBIDDEN_MESSAGE =
 	"GitHub App cannot push to this repository. Update the app permissions.";
@@ -35,6 +36,19 @@ describe("rethrowOrMapSessionGitMutationError", () => {
 			expect(error).toBeInstanceOf(TRPCError);
 			expect((error as TRPCError).code).toBe("FORBIDDEN");
 			expect((error as TRPCError).message).toBe(PUSH_FORBIDDEN_MESSAGE);
+		}
+	});
+
+	it("maps a busy session to a precondition failure", () => {
+		try {
+			rethrowOrMapSessionGitMutationError(new SessionWorkspaceBusyError(), {
+				fallbackMessage: "Failed to push branch.",
+				forbiddenWhenMessage: PUSH_FORBIDDEN_MESSAGE,
+			});
+			expect.fail("expected throw");
+		} catch (error) {
+			expect(error).toBeInstanceOf(TRPCError);
+			expect((error as TRPCError).code).toBe("PRECONDITION_FAILED");
 		}
 	});
 });

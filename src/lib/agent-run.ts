@@ -14,6 +14,7 @@ import {
 	redactStructured,
 	StreamingSecretRedactor,
 } from "#/lib/secret-redaction";
+import { withSessionWorkspaceLock } from "#/lib/session-workspace-lock";
 import { WORKSPACE_PATH } from "#/lib/workspace-policy";
 
 const RUNNER_CLI = "/opt/ditto-runner/dist/cli.js";
@@ -65,7 +66,7 @@ function projectEnvRecord(
 	return record;
 }
 
-export async function runAgentInSandbox(options: {
+async function runAgentInSandboxLocked(options: {
 	env: Env;
 	sandboxId: string;
 	projectId: string;
@@ -330,4 +331,15 @@ export async function runAgentInSandbox(options: {
 		ok,
 		assistantText,
 	};
+}
+
+export async function runAgentInSandbox(
+	options: Parameters<typeof runAgentInSandboxLocked>[0],
+): ReturnType<typeof runAgentInSandboxLocked> {
+	return await withSessionWorkspaceLock({
+		env: options.env,
+		sandboxId: options.sandboxId,
+		sessionId: options.conversationId,
+		run: () => runAgentInSandboxLocked(options),
+	});
 }

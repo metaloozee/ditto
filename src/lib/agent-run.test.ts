@@ -4,9 +4,16 @@ const SESSION_WORKTREE_CWD = "/workspace/.ditto/worktrees/conv-1";
 
 const getProjectSandboxMock = vi.hoisted(() => vi.fn());
 const parseSSEStreamMock = vi.hoisted(() => vi.fn());
+const withSessionWorkspaceLockMock = vi.hoisted(() =>
+	vi.fn(async ({ run }: { run: () => Promise<unknown> }) => await run()),
+);
 
 vi.mock("#/lib/sandbox-bootstrap", () => ({
 	getProjectSandbox: getProjectSandboxMock,
+}));
+
+vi.mock("#/lib/session-workspace-lock", () => ({
+	withSessionWorkspaceLock: withSessionWorkspaceLockMock,
 }));
 
 vi.mock("@cloudflare/sandbox", () => ({
@@ -72,6 +79,12 @@ describe("runAgentInSandbox", () => {
 			envVars: [{ key: "DATABASE_URL", value: "postgres://secret" }],
 			onRunnerMessage,
 		});
+		expect(withSessionWorkspaceLockMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				sandboxId: "sandbox-1",
+				sessionId: "conv-1",
+			}),
+		);
 
 		expect(createSession).toHaveBeenCalledWith(
 			expect.objectContaining({
