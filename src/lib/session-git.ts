@@ -14,7 +14,13 @@ import {
 	quoteGitHubExportShellArg,
 	redactGitHubExportOutput,
 } from "#/lib/github-export";
-import { getProjectSandbox, scrubGithubRemote } from "#/lib/sandbox-bootstrap";
+import {
+	fetchPrimaryBranchFromGitHub,
+	getProjectSandbox,
+	installDependencies,
+	scrubGithubRemote,
+} from "#/lib/sandbox-bootstrap";
+import { withSessionWorkspaceLock } from "#/lib/session-workspace-lock";
 import { WORKSPACE_PATH } from "#/lib/workspace-policy";
 
 export { isSecretLikeGitPath } from "#/lib/git-secret-policy";
@@ -28,6 +34,13 @@ export const GITHUB_APP_PUSH_PERMISSION_MESSAGE =
 /** Actionable message when the GitHub App lacks write access (open PR). */
 export const GITHUB_APP_PR_PERMISSION_MESSAGE =
 	"GitHub App cannot open pull requests. Update the app permissions to include Contents (read & write) and Pull requests (read & write), then reinstall the app on the repository (or grant access if using selected repos).";
+
+export class SessionGitSyncPreconditionError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "SessionGitSyncPreconditionError";
+	}
+}
 
 /**
  * Detect GitHub permission failures from git remote / Octokit errors without
@@ -59,6 +72,7 @@ function installationTokenOptions(
 export type SessionGitSession = {
 	id: string;
 	branchName: string;
+	baseCommitSha?: string | null;
 	workspacePath: string;
 	title?: string | null;
 };
@@ -74,7 +88,23 @@ type SessionGitContext = {
 	 * Server memory; never return to clients, logs, or job payloads.
 	 */
 	knownSecrets?: readonly string[];
+	bypassWorkspaceLock?: boolean;
 };
+
+async function withGitMutationLock<T>(
+	ctx: SessionGitContext,
+	run: () => Promise<T>,
+): Promise<T> {
+	if (ctx.bypassWorkspaceLock) {
+		return await run();
+	}
+	return await withSessionWorkspaceLock({
+		env: ctx.env,
+		sandboxId: ctx.sandboxId,
+		sessionId: ctx.session.id,
+		run,
+	});
+}
 
 function publicRepoUrl(githubRepo: string): string {
 	return `https://github.com/${githubRepo}.git`;
@@ -226,7 +256,98 @@ function isIndexStaged(indexStatus: string): boolean {
 export type SessionGitPullRequestRef = {
 	url: string;
 	number: number;
+	state: "open" | "closed" | "merged";
 };
+
+export type SessionGitHubState =
+	| {
+			kind: "available";
+			remoteBranchExists: boolean;
+			pullRequest: SessionGitPullRequestRef | null;
+			baseBranch: string;
+			baseBranchHeadSha: string | null;
+			baseBranchBehind: boolean;
+	  }
+	| { kind: "unavailable" };
+
+export type SessionGitWorkflow =
+	| { kind: "commit" }
+	| {
+			kind: "push";
+			reason: "unpushed-commits" | "remote-branch-missing";
+	  }
+	| { kind: "sync"; baseBranch: string }
+	| { kind: "open-pr" }
+	| { kind: "open-pr-existing"; pullRequest: SessionGitPullRequestRef }
+	| { kind: "closed-pr"; pullRequest: SessionGitPullRequestRef }
+	| { kind: "merged-pr"; pullRequest: SessionGitPullRequestRef }
+	| { kind: "idle"; reason: "no-changes" }
+	| { kind: "unavailable"; reason: "github" };
+
+export function resolveSessionGitWorkflow(options: {
+	dirty: boolean;
+	ahead: number;
+	hasBranchChanges: boolean;
+	github: SessionGitHubState;
+}): SessionGitWorkflow {
+	if (options.dirty) {
+		return { kind: "commit" };
+	}
+
+	if (options.github.kind === "available" && options.github.pullRequest) {
+		const pullRequest = options.github.pullRequest;
+		if (pullRequest.state === "merged") {
+			return { kind: "merged-pr", pullRequest };
+		}
+		if (pullRequest.state === "closed") {
+			return { kind: "closed-pr", pullRequest };
+		}
+	}
+
+	if (
+		options.github.kind === "available" &&
+		options.github.baseBranchBehind &&
+		options.github.baseBranch
+	) {
+		return { kind: "sync", baseBranch: options.github.baseBranch };
+	}
+
+	if (
+		options.github.kind === "available" &&
+		options.github.pullRequest?.state === "open" &&
+		options.ahead <= 0
+	) {
+		return {
+			kind: "open-pr-existing",
+			pullRequest: options.github.pullRequest,
+		};
+	}
+
+	if (!options.hasBranchChanges) {
+		return { kind: "idle", reason: "no-changes" };
+	}
+
+	if (options.github.kind === "unavailable") {
+		return { kind: "unavailable", reason: "github" };
+	}
+
+	if (options.ahead > 0) {
+		return { kind: "push", reason: "unpushed-commits" };
+	}
+
+	if (!options.github.remoteBranchExists) {
+		return { kind: "push", reason: "remote-branch-missing" };
+	}
+
+	if (options.github.pullRequest?.state === "open") {
+		return {
+			kind: "open-pr-existing",
+			pullRequest: options.github.pullRequest,
+		};
+	}
+
+	return { kind: "open-pr" };
+}
 
 async function countAheadWithoutUpstream(
 	sandbox: ReturnType<typeof getProjectSandbox>,
@@ -297,14 +418,48 @@ function buildStatusSummary(options: {
 	return `Clean working tree on ${options.branch}`;
 }
 
-export async function getSessionGitStatus(ctx: SessionGitContext): Promise<{
+async function hasSessionBranchChanges(
+	sandbox: ReturnType<typeof getProjectSandbox>,
+	cwd: string,
+	baseCommitSha: string | null | undefined,
+	fallbackAhead: number,
+): Promise<boolean> {
+	if (!baseCommitSha) {
+		return fallbackAhead > 0;
+	}
+
+	const quotedBase = quoteGitHubExportShellArg(baseCommitSha);
+	const result = await sandbox.exec(
+		`git diff --quiet ${quotedBase}...HEAD --`,
+		{
+			cwd,
+			timeout: GIT_COMMAND_TIMEOUT_MS,
+		},
+	);
+	if (result.success) {
+		return false;
+	}
+	if (result.exitCode === 1) {
+		return true;
+	}
+	return fallbackAhead > 0;
+}
+
+export type SessionGitStatus = {
 	branch: string;
 	dirty: boolean;
 	ahead: number;
+	hasBranchChanges: boolean;
+	remoteBranchExists: boolean | null;
 	changedFiles: string[];
 	summary: string;
 	pullRequest: SessionGitPullRequestRef | null;
-}> {
+	workflow: SessionGitWorkflow;
+};
+
+export async function getSessionGitStatus(
+	ctx: SessionGitContext,
+): Promise<SessionGitStatus> {
 	const sandbox = getProjectSandbox(ctx.env, ctx.sandboxId);
 	const cwd = ctx.session.workspacePath;
 
@@ -344,12 +499,28 @@ export async function getSessionGitStatus(ctx: SessionGitContext): Promise<{
 		ahead = await countAheadWithoutUpstream(sandbox, cwd, branch);
 	}
 
-	const pullRequest = await findOpenSessionPullRequest(ctx);
+	const hasBranchChanges = await hasSessionBranchChanges(
+		sandbox,
+		cwd,
+		ctx.session.baseCommitSha,
+		ahead,
+	);
+	const github = await getSessionGitHubState(ctx);
+	const pullRequest = github.kind === "available" ? github.pullRequest : null;
+	const workflow = resolveSessionGitWorkflow({
+		dirty,
+		ahead,
+		hasBranchChanges,
+		github,
+	});
 
 	return {
 		branch,
 		dirty,
 		ahead,
+		hasBranchChanges,
+		remoteBranchExists:
+			github.kind === "available" ? github.remoteBranchExists : null,
 		changedFiles,
 		summary: buildStatusSummary({
 			branch,
@@ -358,10 +529,11 @@ export async function getSessionGitStatus(ctx: SessionGitContext): Promise<{
 			ahead,
 		}),
 		pullRequest,
+		workflow,
 	};
 }
 
-export async function commitSessionChanges(
+async function commitSessionChangesUnlocked(
 	ctx: SessionGitContext & {
 		message: string;
 		authorName: string;
@@ -466,7 +638,100 @@ export async function commitSessionChanges(
 	};
 }
 
-export async function pushSessionBranch(
+export async function commitSessionChanges(
+	ctx: Parameters<typeof commitSessionChangesUnlocked>[0],
+): ReturnType<typeof commitSessionChangesUnlocked> {
+	return await withGitMutationLock(ctx, () =>
+		commitSessionChangesUnlocked(ctx),
+	);
+}
+
+async function syncSessionBranchUnlocked(
+	ctx: SessionGitContext & { baseBranch: string },
+): Promise<{
+	baseBranch: string;
+	baseCommitSha: string;
+	updated: boolean;
+}> {
+	const sandbox = getProjectSandbox(ctx.env, ctx.sandboxId);
+	const cwd = ctx.session.workspacePath;
+	const statusResult = await execGitOrThrow(
+		sandbox,
+		"git status --porcelain=v1 -z -uall",
+		{
+			cwd,
+			errorPrefix: "Failed to read git status before syncing",
+		},
+	);
+	if (statusResult.stdout) {
+		throw new SessionGitSyncPreconditionError(
+			"Commit local changes before syncing with the base branch.",
+		);
+	}
+
+	const primary = await fetchPrimaryBranchFromGitHub({
+		env: ctx.env,
+		sandboxId: ctx.sandboxId,
+		githubRepo: ctx.githubRepo,
+		installationId: ctx.installationId,
+		branchName: ctx.baseBranch,
+	});
+	const quotedBaseHead = quoteGitHubExportShellArg(primary.headSha);
+	const alreadyIntegrated = await sandbox.exec(
+		`git merge-base --is-ancestor ${quotedBaseHead} HEAD`,
+		{ cwd, timeout: GIT_COMMAND_TIMEOUT_MS },
+	);
+	if (alreadyIntegrated.success) {
+		await installDependencies(sandbox, cwd);
+		return {
+			baseBranch: primary.branchName,
+			baseCommitSha: primary.headSha,
+			updated: false,
+		};
+	}
+	if (alreadyIntegrated.exitCode !== 1) {
+		throw new Error(
+			"Failed to compare the session with the latest base branch.",
+		);
+	}
+
+	const mergeResult = await sandbox.exec(
+		`git merge --no-edit ${quotedBaseHead}`,
+		{
+			cwd,
+			timeout: GIT_COMMAND_TIMEOUT_MS,
+		},
+	);
+	if (!mergeResult.success) {
+		const abortResult = await sandbox.exec("git merge --abort", {
+			cwd,
+			timeout: GIT_COMMAND_TIMEOUT_MS,
+		});
+		if (!abortResult.success) {
+			throw new Error(
+				"Sync failed and the conflicting merge could not be aborted. Resolve the session worktree manually.",
+			);
+		}
+		throw new SessionGitSyncPreconditionError(
+			`The latest ${primary.branchName} conflicts with this session. The merge was aborted without changing the session.`,
+		);
+	}
+	await installDependencies(sandbox, cwd);
+
+	return {
+		baseBranch: primary.branchName,
+		baseCommitSha: primary.headSha,
+		updated: true,
+	};
+}
+
+export async function syncSessionBranch(
+	ctx: Parameters<typeof syncSessionBranchUnlocked>[0],
+): ReturnType<typeof syncSessionBranchUnlocked> {
+	return await withGitMutationLock(ctx, () => syncSessionBranchUnlocked(ctx));
+}
+
+async function pushSessionBranchUnlocked(
 	ctx: SessionGitContext,
 ): Promise<{ remoteBranch: string; pushed: boolean }> {
 	const sandbox = getProjectSandbox(ctx.env, ctx.sandboxId);
@@ -532,6 +797,12 @@ export async function pushSessionBranch(
 	return { remoteBranch: branchName, pushed: true };
 }
 
+export async function pushSessionBranch(
+	ctx: Parameters<typeof pushSessionBranchUnlocked>[0],
+): ReturnType<typeof pushSessionBranchUnlocked> {
+	return await withGitMutationLock(ctx, () => pushSessionBranchUnlocked(ctx));
+}
+
 type PullRequestClient = {
 	rest: {
 		pulls: {
@@ -548,18 +819,116 @@ type PullRequestClient = {
 				repo: string;
 				head: string;
 				base: string;
-				state: "open";
+				state: "open" | "all";
 				per_page: number;
-			}) => Promise<{ data: Array<{ html_url: string; number: number }> }>;
+			}) => Promise<{
+				data: Array<{
+					html_url: string;
+					number: number;
+					state?: "open" | "closed";
+					merged_at?: string | null;
+				}>;
+			}>;
 		};
 		repos: {
 			get: (options: {
 				owner: string;
 				repo: string;
 			}) => Promise<{ data: { default_branch: string } }>;
+			getBranch: (options: {
+				owner: string;
+				repo: string;
+				branch: string;
+			}) => Promise<{ data: { commit?: { sha?: string } } }>;
 		};
 	};
 };
+
+function githubErrorStatus(error: unknown): number | null {
+	if (typeof error !== "object" || error === null || !("status" in error)) {
+		return null;
+	}
+	const status = (error as { status?: unknown }).status;
+	return typeof status === "number" ? status : null;
+}
+
+function mapPullRequest(
+	pullRequest: Awaited<
+		ReturnType<PullRequestClient["rest"]["pulls"]["list"]>
+	>["data"][number],
+): SessionGitPullRequestRef {
+	return {
+		url: pullRequest.html_url,
+		number: pullRequest.number,
+		state: pullRequest.merged_at
+			? "merged"
+			: pullRequest.state === "closed"
+				? "closed"
+				: "open",
+	};
+}
+
+async function getSessionGitHubState(
+	ctx: SessionGitContext,
+): Promise<SessionGitHubState> {
+	try {
+		const app = getGitHubApp(ctx.env);
+		const octokit = (await app.getInstallationOctokit(
+			ctx.installationId,
+		)) as PullRequestClient;
+		const [owner, repo] = ctx.githubRepo.split("/");
+		if (!owner || !repo) {
+			return { kind: "unavailable" };
+		}
+
+		const base = (await octokit.rest.repos.get({ owner, repo })).data
+			.default_branch;
+		const baseBranchHeadSha = (
+			await octokit.rest.repos.getBranch({ owner, repo, branch: base })
+		).data.commit?.sha;
+		const pullRequests = await octokit.rest.pulls.list({
+			owner,
+			repo,
+			head: `${owner}:${ctx.session.branchName}`,
+			base,
+			state: "all",
+			per_page: 1,
+		});
+		const pullRequest = pullRequests.data[0]
+			? mapPullRequest(pullRequests.data[0])
+			: null;
+
+		let remoteBranchExists = true;
+		try {
+			await octokit.rest.repos.getBranch({
+				owner,
+				repo,
+				branch: ctx.session.branchName,
+			});
+		} catch (error) {
+			if (githubErrorStatus(error) !== 404) {
+				throw error;
+			}
+			remoteBranchExists = false;
+		}
+
+		return {
+			kind: "available",
+			remoteBranchExists,
+			pullRequest,
+			baseBranch: base,
+			baseBranchHeadSha: baseBranchHeadSha ?? null,
+			baseBranchBehind: Boolean(
+				ctx.session.baseCommitSha &&
+					baseBranchHeadSha &&
+					ctx.session.baseCommitSha !== baseBranchHeadSha,
+			),
+		};
+	} catch (error) {
+		console.error("getSessionGitHubState failed", error);
+		return { kind: "unavailable" };
+	}
+}
 
 const SESSION_COMMIT_LOG_LIMIT = 20;
 
@@ -627,7 +996,7 @@ export async function findOpenSessionPullRequest(
 		if (!pr) {
 			return null;
 		}
-		return { url: pr.html_url, number: pr.number };
+		return { url: pr.html_url, number: pr.number, state: "open" };
 	} catch (error) {
 		console.error("findOpenSessionPullRequest failed", error);
 		return null;
@@ -759,7 +1128,7 @@ export async function openSessionPullRequest(
 
 	const existingPr = await findOpenSessionPullRequest(ctx, base);
 	if (existingPr) {
-		return existingPr;
+		return { url: existingPr.url, number: existingPr.number };
 	}
 
 	const needsDefaultTitle = ctx.title === undefined;

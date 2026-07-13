@@ -39,6 +39,8 @@ type SidebarContextProps = {
 	setOpenMobile: (open: boolean) => void;
 	isMobile: boolean;
 	toggleSidebar: () => void;
+	isHovered: boolean;
+	setIsHovered: (isHovered: boolean) => void;
 };
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null);
@@ -67,6 +69,7 @@ function SidebarProvider({
 }) {
 	const isMobile = useIsMobile();
 	const [openMobile, setOpenMobile] = React.useState(false);
+	const [isHovered, setIsHovered] = React.useState(false);
 
 	// This is the internal state of the sidebar.
 	// We use openProp and setOpenProp for control from outside the component.
@@ -109,9 +112,16 @@ function SidebarProvider({
 		return () => window.removeEventListener("keydown", handleKeyDown);
 	}, [toggleSidebar]);
 
+	// Reset hover state when pinned state collapses.
+	React.useEffect(() => {
+		if (!open) {
+			setIsHovered(false);
+		}
+	}, [open]);
+
 	// We add a state so that we can do data-state="expanded" or "collapsed".
 	// This makes it easier to style the sidebar with Tailwind classes.
-	const state = open ? "expanded" : "collapsed";
+	const state = open || isHovered ? "expanded" : "collapsed";
 
 	const contextValue = React.useMemo<SidebarContextProps>(
 		() => ({
@@ -122,8 +132,10 @@ function SidebarProvider({
 			openMobile,
 			setOpenMobile,
 			toggleSidebar,
+			isHovered,
+			setIsHovered,
 		}),
-		[state, open, setOpen, isMobile, openMobile, toggleSidebar],
+		[state, open, setOpen, isMobile, openMobile, toggleSidebar, isHovered],
 	);
 
 	return (
@@ -162,7 +174,15 @@ function Sidebar({
 	variant?: "sidebar" | "floating" | "inset";
 	collapsible?: "offcanvas" | "icon" | "none";
 }) {
-	const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+	const {
+		isMobile,
+		state,
+		openMobile,
+		setOpenMobile,
+		open,
+		isHovered,
+		setIsHovered,
+	} = useSidebar();
 
 	if (collapsible === "none") {
 		return (
@@ -206,6 +226,7 @@ function Sidebar({
 	}
 
 	return (
+		// biome-ignore lint/a11y/noStaticElementInteractions: Mouse leave only clears transient hover state; sidebar controls remain keyboard accessible.
 		<div
 			className="group peer hidden text-sidebar-foreground md:block"
 			data-state={state}
@@ -213,17 +234,37 @@ function Sidebar({
 			data-variant={variant}
 			data-side={side}
 			data-slot="sidebar"
+			onMouseLeave={() => {
+				if (!open) {
+					setIsHovered(false);
+				}
+			}}
 		>
+			{/* Hover detection zone when collapsed */}
+			{!open && (
+				// biome-ignore lint/a11y/noStaticElementInteractions: This decorative edge sensor only previews the sidebar; it is not a control.
+				<div
+					data-slot="sidebar-hover-zone"
+					className={cn(
+						"fixed inset-y-0 z-20 w-3 bg-transparent",
+						side === "left" ? "left-0" : "right-0",
+						isHovered && "pointer-events-none",
+					)}
+					onMouseEnter={() => setIsHovered(true)}
+				/>
+			)}
 			{/* This is what handles the sidebar gap on desktop */}
 			<div
 				data-slot="sidebar-gap"
 				className={cn(
 					"relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear",
-					"group-data-[collapsible=offcanvas]:w-0",
+					!open && collapsible === "offcanvas" && "w-0!",
+					!open &&
+						collapsible === "icon" &&
+						(variant === "floating" || variant === "inset"
+							? "w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]!"
+							: "w-(--sidebar-width-icon)!"),
 					"group-data-[side=right]:rotate-180",
-					variant === "floating" || variant === "inset"
-						? "group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]"
-						: "group-data-[collapsible=icon]:w-(--sidebar-width-icon)",
 				)}
 			/>
 			<div

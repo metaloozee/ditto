@@ -41,6 +41,7 @@ export type ResolvedAgentGitContext = {
 	session: {
 		id: string;
 		branchName: string;
+		baseCommitSha: string;
 		workspacePath: string;
 		title?: string | null;
 	};
@@ -146,6 +147,7 @@ export async function resolveAgentGitContext(options: {
 		session: {
 			id: session.id,
 			branchName: ensured.branchName,
+			baseCommitSha: ensured.baseCommitSha,
 			workspacePath: ensured.workspacePath,
 			title: session.title,
 		},
@@ -176,6 +178,7 @@ export async function dispatchAgentGitAction(options: {
 		githubRepo: options.resolved.githubRepo,
 		session: options.resolved.session,
 		knownSecrets: options.resolved.knownSecrets,
+		bypassWorkspaceLock: true,
 	};
 
 	const statusCtx = {
@@ -190,7 +193,7 @@ export async function dispatchAgentGitAction(options: {
 		return await getSessionGitStatus(statusCtx);
 	}
 
-	const status = await getSessionGitStatus(statusCtx);
+	let status = await getSessionGitStatus(statusCtx);
 
 	if (status.dirty) {
 		const message =
@@ -201,8 +204,13 @@ export async function dispatchAgentGitAction(options: {
 	}
 
 	if (options.body.action === "push") {
-		if (status.ahead <= 0) {
-			throw new AgentGitHttpError(409, "Nothing to push for this branch.");
+		if (status.workflow.kind !== "push") {
+			throw new AgentGitHttpError(
+				409,
+				status.workflow.kind === "sync"
+					? `Sync the latest ${status.workflow.baseBranch} before pushing.`
+					: "Nothing to push for this branch.",
+			);
 		}
 		try {
 			return await pushSessionBranch(gitCtx);
@@ -211,12 +219,30 @@ export async function dispatchAgentGitAction(options: {
 		}
 	}
 
-	if (status.ahead > 0) {
+	if (status.workflow.kind === "push") {
 		try {
 			await pushSessionBranch(gitCtx);
 		} catch (error) {
 			mapPushError(error);
 		}
+		status = await getSessionGitStatus(statusCtx);
+	}
+
+	if (
+		status.workflow.kind !== "open-pr" &&
+		status.workflow.kind !== "open-pr-existing"
+	) {
+		const message =
+			status.workflow.kind === "merged-pr"
+				? "This session pull request has already been merged."
+				: status.workflow.kind === "closed-pr"
+					? "This session pull request is closed."
+					: status.workflow.kind === "unavailable"
+						? "GitHub status is currently unavailable."
+						: status.workflow.kind === "sync"
+							? `Sync the latest ${status.workflow.baseBranch} before opening a pull request.`
+							: "This session has no changes to open as a pull request.";
+		throw new AgentGitHttpError(409, message);
 	}
 
 	try {

@@ -19,6 +19,8 @@ import {
 	getSessionGitStatus,
 	openSessionPullRequest,
 	pushSessionBranch,
+	SessionGitSyncPreconditionError,
+	syncSessionBranch,
 } from "#/lib/session-git";
 import {
 	commitSessionChangesWithBackup,
@@ -26,6 +28,7 @@ import {
 	runSessionGitMutationWithBackup,
 } from "#/lib/session-git-backup";
 import { rethrowOrMapSessionGitMutationError } from "#/lib/session-git-trpc-errors";
+import { SessionWorkspaceBusyError } from "#/lib/session-workspace-lock-error";
 import { ensureSessionWorktree } from "#/lib/session-worktree";
 import { loadOwnedActiveSession } from "#/lib/workspace-session";
 import { createTRPCRouter, protectedProcedure } from "../init";
@@ -135,6 +138,7 @@ async function resolveSessionGitContext(options: {
 	const gitSession = {
 		id: session.id,
 		branchName: ensured.branchName,
+		baseCommitSha: ensured.baseCommitSha,
 		workspacePath: ensured.workspacePath,
 		title: session.title,
 	};
@@ -212,21 +216,90 @@ export const sessionGitRouter = createTRPCRouter({
 					id: resolved.session.id,
 					title: resolved.session.title,
 				});
-			return await commitSessionChangesWithBackup({
-				db: resolved.db,
+			try {
+				return await commitSessionChangesWithBackup({
+					db: resolved.db,
+					env: ctx.env,
+					project: resolved.project,
+					commit: () =>
+						commitSessionChanges({
+							env: ctx.env,
+							sandboxId: resolved.sandboxId,
+							installationId: resolved.installationId,
+							githubRepo: resolved.githubRepo,
+							session: resolved.session,
+							message,
+							...author,
+						}),
+				});
+			} catch (error) {
+				if (error instanceof SessionWorkspaceBusyError) {
+					throw new TRPCError({
+						code: "PRECONDITION_FAILED",
+						message: error.message,
+					});
+				}
+				throw error;
+			}
+		}),
+
+	sync: protectedProcedure
+		.input(sessionInputSchema)
+		.mutation(async ({ ctx, input }) => {
+			const resolved = await resolveSessionGitContext({ ctx, input });
+			const status = await getSessionGitStatus({
 				env: ctx.env,
-				project: resolved.project,
-				commit: () =>
-					commitSessionChanges({
-						env: ctx.env,
-						sandboxId: resolved.sandboxId,
-						installationId: resolved.installationId,
-						githubRepo: resolved.githubRepo,
-						session: resolved.session,
-						message,
-						...author,
-					}),
+				sandboxId: resolved.sandboxId,
+				installationId: resolved.installationId,
+				githubRepo: resolved.githubRepo,
+				session: resolved.session,
 			});
+			if (status.workflow.kind !== "sync") {
+				throw new TRPCError({
+					code: "PRECONDITION_FAILED",
+					message: "This session is already synchronized with its base branch.",
+				});
+			}
+			const baseBranch = status.workflow.baseBranch;
+			try {
+				const result = await runSessionGitMutationWithBackup({
+					db: resolved.db,
+					env: ctx.env,
+					project: resolved.project,
+					run: () =>
+						syncSessionBranch({
+							env: ctx.env,
+							sandboxId: resolved.sandboxId,
+							installationId: resolved.installationId,
+							githubRepo: resolved.githubRepo,
+							session: resolved.session,
+							baseBranch,
+						}),
+				});
+
+				if (result.baseCommitSha !== resolved.session.baseCommitSha) {
+					await resolved.db
+						.update(workspaceSessions)
+						.set({
+							baseCommitSha: result.baseCommitSha,
+							updatedAt: sql`(unixepoch())`,
+						})
+						.where(eq(workspaceSessions.id, resolved.session.id));
+				}
+
+				return result;
+			} catch (error) {
+				if (error instanceof SessionGitSyncPreconditionError) {
+					throw new TRPCError({
+						code: "PRECONDITION_FAILED",
+						message: error.message,
+					});
+				}
+				rethrowOrMapSessionGitMutationError(error, {
+					fallbackMessage: "Failed to sync session with the base branch.",
+					forbiddenWhenMessage: GITHUB_APP_PUSH_PERMISSION_MESSAGE,
+				});
+			}
 		}),
 
 	push: protectedProcedure
@@ -246,10 +319,13 @@ export const sessionGitRouter = createTRPCRouter({
 					message: "Commit local changes before pushing.",
 				});
 			}
-			if (status.ahead <= 0) {
+			if (status.workflow.kind !== "push") {
 				throw new TRPCError({
 					code: "PRECONDITION_FAILED",
-					message: "Nothing to push for this branch.",
+					message:
+						status.workflow.kind === "sync"
+							? `Sync the latest ${status.workflow.baseBranch} before pushing.`
+							: "Nothing to push for this branch.",
 				});
 			}
 			try {
@@ -304,7 +380,7 @@ export const sessionGitRouter = createTRPCRouter({
 			}
 
 			const pushIfAhead = async (): Promise<boolean> => {
-				if (status.ahead <= 0) {
+				if (status.workflow.kind !== "push") {
 					return false;
 				}
 				try {
@@ -346,8 +422,27 @@ export const sessionGitRouter = createTRPCRouter({
 					env: ctx.env,
 					project: resolved.project,
 					pushIfNeeded: pushIfAhead,
-					open: () =>
-						openSessionPullRequest({
+					open: () => {
+						if (
+							status.workflow.kind !== "open-pr" &&
+							status.workflow.kind !== "open-pr-existing"
+						) {
+							const message =
+								status.workflow.kind === "merged-pr"
+									? "This session pull request has already been merged."
+									: status.workflow.kind === "closed-pr"
+										? "This session pull request is closed."
+										: status.workflow.kind === "unavailable"
+											? "GitHub status is currently unavailable."
+											: status.workflow.kind === "sync"
+												? `Sync the latest ${status.workflow.baseBranch} before opening a pull request.`
+												: "This session has no changes to open as a pull request.";
+							throw new TRPCError({
+								code: "PRECONDITION_FAILED",
+								message,
+							});
+						}
+						return openSessionPullRequest({
 							env: ctx.env,
 							sandboxId: resolved.sandboxId,
 							installationId: resolved.installationId,
@@ -356,7 +451,8 @@ export const sessionGitRouter = createTRPCRouter({
 							title: input.title,
 							body: input.body,
 							baseBranch: input.baseBranch,
-						}),
+						});
+					},
 				});
 			} catch (error) {
 				rethrowOrMapSessionGitMutationError(error, {

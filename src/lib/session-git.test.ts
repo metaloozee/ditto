@@ -4,10 +4,20 @@ const getProjectSandboxMock = vi.hoisted(() => vi.fn());
 const getInstallationAccessTokenMock = vi.hoisted(() => vi.fn());
 const getGitHubAppMock = vi.hoisted(() => vi.fn());
 const scrubGithubRemoteMock = vi.hoisted(() => vi.fn());
+const fetchPrimaryBranchFromGitHubMock = vi.hoisted(() => vi.fn());
+const installDependenciesMock = vi.hoisted(() => vi.fn());
 
 vi.mock("#/lib/sandbox-bootstrap", () => ({
 	getProjectSandbox: getProjectSandboxMock,
 	scrubGithubRemote: scrubGithubRemoteMock,
+	fetchPrimaryBranchFromGitHub: fetchPrimaryBranchFromGitHubMock,
+	installDependencies: installDependenciesMock,
+}));
+
+vi.mock("#/lib/session-workspace-lock", () => ({
+	withSessionWorkspaceLock: vi.fn(
+		async ({ run }: { run: () => Promise<unknown> }) => await run(),
+	),
 }));
 
 vi.mock("#/lib/github-app", () => ({
@@ -30,6 +40,8 @@ const {
 	openSessionPullRequest,
 	parsePorcelainZ,
 	pushSessionBranch,
+	resolveSessionGitWorkflow,
+	syncSessionBranch,
 } = await import("./session-git");
 
 function mockNoOpenPullRequest() {
@@ -39,9 +51,26 @@ function mockNoOpenPullRequest() {
 				pulls: { list: vi.fn().mockResolvedValue({ data: [] }) },
 				repos: {
 					get: vi.fn().mockResolvedValue({ data: { default_branch: "main" } }),
+					getBranch: mockGetBranch(),
 				},
 			},
 		}),
+	});
+}
+
+function mockGetBranch(
+	options: { sessionExists?: boolean; baseHeadSha?: string } = {},
+) {
+	return vi.fn(async ({ branch }: { branch: string }) => {
+		if (branch === "main") {
+			return {
+				data: { commit: { sha: options.baseHeadSha ?? "base-sha" } },
+			};
+		}
+		if (options.sessionExists) {
+			return { data: { commit: { sha: "session-sha" } } };
+		}
+		throw { status: 404 };
 	});
 }
 
@@ -57,12 +86,21 @@ function makeEnv(): Env {
 	return {} as Env;
 }
 
-function makeSession() {
+function makeSession(
+	overrides: Partial<{
+		id: string;
+		branchName: string;
+		baseCommitSha: string;
+		workspacePath: string;
+		title: string;
+	}> = {},
+) {
 	return {
 		id: "sess-1",
 		branchName: "ditto/session-sess-1",
 		workspacePath: WORKTREE,
 		title: "Fix billing",
+		...overrides,
 	};
 }
 
@@ -78,6 +116,41 @@ function makeSandbox(
 	}>,
 ) {
 	return { exec: vi.fn(execImpl) };
+}
+
+function makeWorkflowStatusSandbox(hasBranchChanges: boolean) {
+	return makeSandbox(async (command) => {
+		if (command === STATUS_CMD) {
+			return { success: true, stdout: "", stderr: "", exitCode: 0 };
+		}
+		if (command === "git rev-parse --abbrev-ref HEAD") {
+			return {
+				success: true,
+				stdout: "ditto/session-sess-1\n",
+				stderr: "",
+				exitCode: 0,
+			};
+		}
+		if (
+			command === "git rev-parse --abbrev-ref --symbolic-full-name @{upstream}"
+		) {
+			return {
+				success: true,
+				stdout: "origin/ditto/session-sess-1\n",
+				stderr: "",
+				exitCode: 0,
+			};
+		}
+		if (command === "git rev-list --count @{upstream}..HEAD") {
+			return { success: true, stdout: "0\n", stderr: "", exitCode: 0 };
+		}
+		if (command === "git diff --quiet 'base-sha'...HEAD --") {
+			return hasBranchChanges
+				? { success: false, stdout: "", stderr: "", exitCode: 1 }
+				: { success: true, stdout: "", stderr: "", exitCode: 0 };
+		}
+		throw new Error(`unexpected command: ${command}`);
+	});
 }
 
 /** NUL-join porcelain records (each record already includes XY + path). */
@@ -222,6 +295,11 @@ describe("session git", () => {
 		vi.clearAllMocks();
 		getInstallationAccessTokenMock.mockResolvedValue(TOKEN);
 		scrubGithubRemoteMock.mockResolvedValue(undefined);
+		fetchPrimaryBranchFromGitHubMock.mockResolvedValue({
+			branchName: "main",
+			headSha: "new-main-sha",
+		});
+		installDependenciesMock.mockResolvedValue(undefined);
 		mockNoOpenPullRequest();
 	});
 
@@ -403,6 +481,7 @@ describe("session git", () => {
 						get: vi
 							.fn()
 							.mockResolvedValue({ data: { default_branch: "main" } }),
+						getBranch: mockGetBranch({ sessionExists: true }),
 					},
 				},
 			}),
@@ -419,6 +498,138 @@ describe("session git", () => {
 		expect(status.pullRequest).toEqual({
 			url: "https://github.com/acme/repo/pull/12",
 			number: 12,
+			state: "open",
+		});
+	});
+
+	it("keeps a new untouched session idle when its remote branch is absent", async () => {
+		getProjectSandboxMock.mockReturnValue(makeWorkflowStatusSandbox(false));
+		const pulls = { list: vi.fn().mockResolvedValue({ data: [] }) };
+		const repos = {
+			get: vi.fn().mockResolvedValue({ data: { default_branch: "main" } }),
+			getBranch: mockGetBranch(),
+		};
+		getGitHubAppMock.mockReturnValue({
+			getInstallationOctokit: vi.fn().mockResolvedValue({
+				rest: { pulls, repos },
+			}),
+		});
+
+		const status = await getSessionGitStatus({
+			env: makeEnv(),
+			sandboxId: "sandbox-1",
+			installationId: 1,
+			githubRepo: "acme/repo",
+			session: makeSession({ baseCommitSha: "base-sha" }),
+		});
+
+		expect(status.workflow).toEqual({ kind: "idle", reason: "no-changes" });
+		expect(status.hasBranchChanges).toBe(false);
+		expect(status.remoteBranchExists).toBe(false);
+		expect(pulls.list).toHaveBeenCalledWith(
+			expect.objectContaining({ state: "all" }),
+		);
+	});
+
+	it("recommends syncing when GitHub's base branch advances", async () => {
+		getProjectSandboxMock.mockReturnValue(makeWorkflowStatusSandbox(false));
+		getGitHubAppMock.mockReturnValue({
+			getInstallationOctokit: vi.fn().mockResolvedValue({
+				rest: {
+					pulls: { list: vi.fn().mockResolvedValue({ data: [] }) },
+					repos: {
+						get: vi
+							.fn()
+							.mockResolvedValue({ data: { default_branch: "main" } }),
+						getBranch: mockGetBranch({ baseHeadSha: "new-base-sha" }),
+					},
+				},
+			}),
+		});
+
+		const status = await getSessionGitStatus({
+			env: makeEnv(),
+			sandboxId: "sandbox-1",
+			installationId: 1,
+			githubRepo: "acme/repo",
+			session: makeSession({ baseCommitSha: "base-sha" }),
+		});
+
+		expect(status.workflow).toEqual({ kind: "sync", baseBranch: "main" });
+	});
+
+	it("requires restoring a deleted branch when the session has changes", async () => {
+		getProjectSandboxMock.mockReturnValue(makeWorkflowStatusSandbox(true));
+		getGitHubAppMock.mockReturnValue({
+			getInstallationOctokit: vi.fn().mockResolvedValue({
+				rest: {
+					pulls: { list: vi.fn().mockResolvedValue({ data: [] }) },
+					repos: {
+						get: vi
+							.fn()
+							.mockResolvedValue({ data: { default_branch: "main" } }),
+						getBranch: mockGetBranch(),
+					},
+				},
+			}),
+		});
+
+		const status = await getSessionGitStatus({
+			env: makeEnv(),
+			sandboxId: "sandbox-1",
+			installationId: 1,
+			githubRepo: "acme/repo",
+			session: makeSession({ baseCommitSha: "base-sha" }),
+		});
+
+		expect(status.workflow).toEqual({
+			kind: "push",
+			reason: "remote-branch-missing",
+		});
+	});
+
+	it("preserves a merged PR after GitHub deletes its branch", async () => {
+		getProjectSandboxMock.mockReturnValue(makeWorkflowStatusSandbox(true));
+		getGitHubAppMock.mockReturnValue({
+			getInstallationOctokit: vi.fn().mockResolvedValue({
+				rest: {
+					pulls: {
+						list: vi.fn().mockResolvedValue({
+							data: [
+								{
+									html_url: "https://github.com/acme/repo/pull/12",
+									number: 12,
+									state: "closed",
+									merged_at: "2026-07-12T10:00:00Z",
+								},
+							],
+						}),
+					},
+					repos: {
+						get: vi
+							.fn()
+							.mockResolvedValue({ data: { default_branch: "main" } }),
+						getBranch: mockGetBranch(),
+					},
+				},
+			}),
+		});
+
+		const status = await getSessionGitStatus({
+			env: makeEnv(),
+			sandboxId: "sandbox-1",
+			installationId: 1,
+			githubRepo: "acme/repo",
+			session: makeSession({ baseCommitSha: "base-sha" }),
+		});
+
+		expect(status.workflow).toEqual({
+			kind: "merged-pr",
+			pullRequest: {
+				url: "https://github.com/acme/repo/pull/12",
+				number: 12,
+				state: "merged",
+			},
 		});
 	});
 
@@ -1223,6 +1434,7 @@ describe("session git", () => {
 		expect(result).toEqual({
 			url: "https://github.com/acme/repo/pull/4",
 			number: 4,
+			state: "open",
 		});
 		expect(repos.get).toHaveBeenCalledTimes(1);
 		expect(pulls.list).toHaveBeenCalledWith(
@@ -1263,6 +1475,7 @@ describe("session git", () => {
 		expect(result).toEqual({
 			url: "https://github.com/acme/repo/pull/5",
 			number: 5,
+			state: "open",
 		});
 		expect(repos.get).not.toHaveBeenCalled();
 		expect(pulls.list).toHaveBeenCalledWith(
@@ -1305,5 +1518,241 @@ describe("session git", () => {
 		expect(pulls.create).not.toHaveBeenCalled();
 		// openSessionPullRequest resolves base once; find reuses it (no second get)
 		expect(repos.get).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("resolveSessionGitWorkflow", () => {
+	const pullRequest = {
+		url: "https://github.com/acme/repo/pull/12",
+		number: 12,
+	};
+
+	it("keeps an untouched session idle", () => {
+		expect(
+			resolveSessionGitWorkflow({
+				dirty: false,
+				ahead: 0,
+				hasBranchChanges: false,
+				github: {
+					kind: "available",
+					remoteBranchExists: false,
+					pullRequest: null,
+					baseBranch: "main",
+					baseBranchHeadSha: "base-sha",
+					baseBranchBehind: false,
+				},
+			}),
+		).toEqual({ kind: "idle", reason: "no-changes" });
+	});
+
+	it("opens a PR only for a changed branch that exists remotely", () => {
+		expect(
+			resolveSessionGitWorkflow({
+				dirty: false,
+				ahead: 0,
+				hasBranchChanges: true,
+				github: {
+					kind: "available",
+					remoteBranchExists: true,
+					pullRequest: null,
+					baseBranch: "main",
+					baseBranchHeadSha: "base-sha",
+					baseBranchBehind: false,
+				},
+			}),
+		).toEqual({ kind: "open-pr" });
+	});
+
+	it("restores a deleted remote branch before opening a PR", () => {
+		expect(
+			resolveSessionGitWorkflow({
+				dirty: false,
+				ahead: 0,
+				hasBranchChanges: true,
+				github: {
+					kind: "available",
+					remoteBranchExists: false,
+					pullRequest: null,
+					baseBranch: "main",
+					baseBranchHeadSha: "base-sha",
+					baseBranchBehind: false,
+				},
+			}),
+		).toEqual({ kind: "push", reason: "remote-branch-missing" });
+	});
+
+	it.each([
+		["open", "open-pr-existing"],
+		["closed", "closed-pr"],
+		["merged", "merged-pr"],
+	] as const)("preserves a %s PR as %s", (state, kind) => {
+		expect(
+			resolveSessionGitWorkflow({
+				dirty: false,
+				ahead: 0,
+				hasBranchChanges: true,
+				github: {
+					kind: "available",
+					remoteBranchExists: state === "open",
+					pullRequest: { ...pullRequest, state },
+					baseBranch: "main",
+					baseBranchHeadSha: "base-sha",
+					baseBranchBehind: false,
+				},
+			}),
+		).toEqual({ kind, pullRequest: { ...pullRequest, state } });
+	});
+
+	it("does not turn a GitHub failure into Open PR", () => {
+		expect(
+			resolveSessionGitWorkflow({
+				dirty: false,
+				ahead: 0,
+				hasBranchChanges: true,
+				github: { kind: "unavailable" },
+			}),
+		).toEqual({ kind: "unavailable", reason: "github" });
+	});
+
+	it("syncs a clean session before pushing or opening a PR", () => {
+		expect(
+			resolveSessionGitWorkflow({
+				dirty: false,
+				ahead: 1,
+				hasBranchChanges: true,
+				github: {
+					kind: "available",
+					remoteBranchExists: true,
+					pullRequest: null,
+					baseBranch: "main",
+					baseBranchHeadSha: "new-main-sha",
+					baseBranchBehind: true,
+				},
+			}),
+		).toEqual({ kind: "sync", baseBranch: "main" });
+	});
+});
+
+describe("syncSessionBranch", () => {
+	const context = {
+		env: makeEnv(),
+		sandboxId: "sandbox-1",
+		installationId: 1,
+		githubRepo: "acme/repo",
+		session: makeSession({ baseCommitSha: "old-main-sha" }),
+		baseBranch: "main",
+	};
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		fetchPrimaryBranchFromGitHubMock.mockResolvedValue({
+			branchName: "main",
+			headSha: "new-main-sha",
+		});
+		installDependenciesMock.mockResolvedValue(undefined);
+	});
+
+	it("rejects a dirty session before fetching", async () => {
+		getProjectSandboxMock.mockReturnValue(
+			makeSandbox(async (command) => {
+				if (command === STATUS_CMD) {
+					return {
+						success: true,
+						stdout: " M src/app.ts\0",
+						stderr: "",
+						exitCode: 0,
+					};
+				}
+				throw new Error(`unexpected command: ${command}`);
+			}),
+		);
+
+		await expect(syncSessionBranch(context)).rejects.toThrow(
+			"Commit local changes before syncing",
+		);
+		expect(fetchPrimaryBranchFromGitHubMock).not.toHaveBeenCalled();
+	});
+
+	it("updates the base without merging when main is already integrated", async () => {
+		const sandbox = makeSandbox(async (command) => {
+			if (command === STATUS_CMD) {
+				return { success: true, stdout: "", stderr: "", exitCode: 0 };
+			}
+			if (command === "git merge-base --is-ancestor 'new-main-sha' HEAD") {
+				return { success: true, stdout: "", stderr: "", exitCode: 0 };
+			}
+			throw new Error(`unexpected command: ${command}`);
+		});
+		getProjectSandboxMock.mockReturnValue(sandbox);
+
+		await expect(syncSessionBranch(context)).resolves.toEqual({
+			baseBranch: "main",
+			baseCommitSha: "new-main-sha",
+			updated: false,
+		});
+		expect(fetchPrimaryBranchFromGitHubMock).toHaveBeenCalledWith(
+			expect.objectContaining({ branchName: "main" }),
+		);
+		expect(installDependenciesMock).toHaveBeenCalledWith(sandbox, WORKTREE);
+		expect(sandbox.exec).not.toHaveBeenCalledWith(
+			expect.stringContaining("git merge --no-edit"),
+			expect.anything(),
+		);
+	});
+
+	it("merges the fetched main commit into divergent session work", async () => {
+		const sandbox = makeSandbox(async (command) => {
+			if (command === STATUS_CMD) {
+				return { success: true, stdout: "", stderr: "", exitCode: 0 };
+			}
+			if (command === "git merge-base --is-ancestor 'new-main-sha' HEAD") {
+				return { success: false, stdout: "", stderr: "", exitCode: 1 };
+			}
+			if (command === "git merge --no-edit 'new-main-sha'") {
+				return { success: true, stdout: "Merge made", stderr: "", exitCode: 0 };
+			}
+			throw new Error(`unexpected command: ${command}`);
+		});
+		getProjectSandboxMock.mockReturnValue(sandbox);
+
+		await expect(syncSessionBranch(context)).resolves.toEqual({
+			baseBranch: "main",
+			baseCommitSha: "new-main-sha",
+			updated: true,
+		});
+		expect(installDependenciesMock).toHaveBeenCalledWith(sandbox, WORKTREE);
+	});
+
+	it("aborts a conflicting merge before returning an error", async () => {
+		const sandbox = makeSandbox(async (command) => {
+			if (command === STATUS_CMD) {
+				return { success: true, stdout: "", stderr: "", exitCode: 0 };
+			}
+			if (command === "git merge-base --is-ancestor 'new-main-sha' HEAD") {
+				return { success: false, stdout: "", stderr: "", exitCode: 1 };
+			}
+			if (command === "git merge --no-edit 'new-main-sha'") {
+				return {
+					success: false,
+					stdout: "CONFLICT (content): Merge conflict in src/app.ts",
+					stderr: "Automatic merge failed",
+					exitCode: 1,
+				};
+			}
+			if (command === "git merge --abort") {
+				return { success: true, stdout: "", stderr: "", exitCode: 0 };
+			}
+			throw new Error(`unexpected command: ${command}`);
+		});
+		getProjectSandboxMock.mockReturnValue(sandbox);
+
+		await expect(syncSessionBranch(context)).rejects.toThrow(
+			"latest main conflicts with this session",
+		);
+		expect(sandbox.exec).toHaveBeenCalledWith("git merge --abort", {
+			cwd: WORKTREE,
+			timeout: 120_000,
+		});
+		expect(installDependenciesMock).not.toHaveBeenCalled();
 	});
 });

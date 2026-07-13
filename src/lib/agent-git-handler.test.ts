@@ -32,6 +32,7 @@ const resolved = {
 	session: {
 		id: "sess-1",
 		branchName: "ditto/session-abc",
+		baseCommitSha: "abc123",
 		workspacePath: "/workspace/.ditto/worktrees/sess-1",
 		title: "Fix bug",
 	},
@@ -50,6 +51,7 @@ describe("dispatchAgentGitAction", () => {
 			dirty: false,
 			ahead: 2,
 			changedFiles: [],
+			workflow: { kind: "push", reason: "unpushed-commits" },
 		});
 		pushSessionBranchMock.mockResolvedValue({
 			remoteBranch: "ditto/session-abc",
@@ -66,6 +68,7 @@ describe("dispatchAgentGitAction", () => {
 		expect(pushSessionBranchMock).toHaveBeenCalledWith(
 			expect.objectContaining({
 				knownSecrets: [FIXTURE_SECRET],
+				bypassWorkspaceLock: true,
 			}),
 		);
 		expect(result).toEqual({
@@ -81,6 +84,7 @@ describe("dispatchAgentGitAction", () => {
 			dirty: true,
 			ahead: 1,
 			changedFiles: ["a.ts"],
+			workflow: { kind: "commit" },
 		});
 
 		await expect(
@@ -101,6 +105,7 @@ describe("dispatchAgentGitAction", () => {
 			dirty: false,
 			ahead: 1,
 			changedFiles: [],
+			workflow: { kind: "push", reason: "unpushed-commits" },
 		});
 		pushSessionBranchMock.mockRejectedValue(
 			new GitSecretPolicyError(
@@ -131,10 +136,11 @@ describe("dispatchAgentGitAction", () => {
 	});
 
 	it("maps secret policy rejection on openPR auto-push to 409", async () => {
-		getSessionGitStatusMock.mockResolvedValue({
+		getSessionGitStatusMock.mockResolvedValueOnce({
 			dirty: false,
 			ahead: 1,
 			changedFiles: [],
+			workflow: { kind: "push", reason: "unpushed-commits" },
 		});
 		pushSessionBranchMock.mockRejectedValue(
 			new GitSecretPolicyError(
@@ -169,11 +175,13 @@ describe("dispatchAgentGitAction", () => {
 				dirty: false,
 				ahead: 1,
 				changedFiles: ["b.ts"],
+				workflow: { kind: "push", reason: "unpushed-commits" },
 			})
 			.mockResolvedValueOnce({
 				dirty: false,
 				ahead: 0,
 				changedFiles: ["b.ts"],
+				workflow: { kind: "open-pr" },
 			});
 		pushSessionBranchMock.mockResolvedValue({ pushed: true });
 		openSessionPullRequestMock.mockResolvedValue({

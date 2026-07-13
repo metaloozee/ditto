@@ -4,6 +4,7 @@ import {
 	GitCommitHorizontalIcon,
 	GitPullRequestIcon,
 	LoaderCircleIcon,
+	RefreshCwIcon,
 	UploadIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -15,6 +16,7 @@ import {
 	TooltipTrigger,
 } from "#/components/ui/tooltip";
 import { useTRPC } from "#/integrations/trpc/react";
+import type { SessionGitStatus } from "#/lib/session-git";
 import { cn } from "#/lib/utils";
 
 type SessionGitActionsProps = {
@@ -23,7 +25,7 @@ type SessionGitActionsProps = {
 	disabled?: boolean;
 };
 
-type WorkflowStepId = "commit" | "push" | "pr";
+type WorkflowStepId = "sync" | "commit" | "push" | "pr";
 
 /**
  * Compact git-state capsule: icon + count.
@@ -140,6 +142,7 @@ function WorkflowStep({
 						type="button"
 						disabled={disabled || pending}
 						aria-label={label}
+						title={tooltip}
 						aria-current={active ? "step" : undefined}
 						onClick={onClick}
 						className={cn(
@@ -165,188 +168,108 @@ function WorkflowStep({
 	);
 }
 
-function resolveNextStep(options: {
-	loading: boolean;
-	dirty: boolean;
-	ahead: number;
-	hasPullRequest: boolean;
-}): WorkflowStepId | null {
-	if (options.loading) {
-		return null;
-	}
-	if (options.dirty) {
-		return "commit";
-	}
-	if (options.ahead > 0) {
-		return "push";
-	}
-	if (!options.hasPullRequest) {
-		return "pr";
-	}
-	// Tree clean, nothing ahead, PR already open — no primary CTA.
-	return null;
-}
-
-export function SessionGitActions({
-	projectId,
-	sessionId,
-	disabled = false,
-}: SessionGitActionsProps) {
-	const trpc = useTRPC();
-	const queryClient = useQueryClient();
-	const hasIds = Boolean(projectId && sessionId);
-	const canRun = hasIds && !disabled;
-
-	const statusQuery = useQuery(
-		trpc.sessionGit.gitStatus.queryOptions(
-			{ projectId, sessionId },
-			{
-				enabled: hasIds,
-				retry: false,
-				refetchOnWindowFocus: false,
-				placeholderData: (previous) => previous,
-			},
-		),
-	);
-
-	const invalidateStatus = () => {
-		void queryClient.invalidateQueries(
-			trpc.sessionGit.gitStatus.queryFilter({ projectId, sessionId }),
-		);
-	};
-
-	const commitMutation = useMutation(
-		trpc.sessionGit.commit.mutationOptions({
-			onSuccess: (result) => {
-				if (result.committed) {
-					toast.success("Changes committed.");
-				} else {
-					toast.message("Nothing to commit.");
-				}
-				invalidateStatus();
-			},
-			onError: (error) => {
-				toast.error(error.message);
-			},
-		}),
-	);
-
-	const pushMutation = useMutation(
-		trpc.sessionGit.push.mutationOptions({
-			onSuccess: () => {
-				toast.success("Branch pushed to GitHub.");
-				invalidateStatus();
-			},
-			onError: (error) => {
-				toast.error(error.message);
-			},
-		}),
-	);
-
-	const openPrMutation = useMutation(
-		trpc.sessionGit.openPullRequest.mutationOptions({
-			onSuccess: (result) => {
-				queryClient.setQueryData(
-					trpc.sessionGit.gitStatus.queryOptions({ projectId, sessionId })
-						.queryKey,
-					(previous) =>
-						previous
-							? {
-									...previous,
-									pullRequest: {
-										url: result.url,
-										number: result.number,
-									},
-								}
-							: previous,
-				);
-				toast.success("Pull request opened.", {
-					action: {
-						label: "View",
-						onClick: () => window.open(result.url, "_blank", "noopener"),
-					},
-				});
-				invalidateStatus();
-			},
-			onError: (error) => {
-				toast.error(error.message);
-			},
-		}),
-	);
-
-	const status = statusQuery.data;
-	const statusLoading = statusQuery.isLoading && !status;
-	const busy =
-		commitMutation.isPending ||
-		pushMutation.isPending ||
-		openPrMutation.isPending;
-
-	const commitDisabled = !canRun || busy || !status?.dirty || statusLoading;
+function SessionGitActionsView({
+	status,
+	statusLoading,
+	canRun,
+	busy,
+	pendingStep,
+	onSync,
+	onCommit,
+	onPush,
+	onOpenPullRequest,
+}: {
+	status: SessionGitStatus | undefined;
+	statusLoading: boolean;
+	canRun: boolean;
+	busy: boolean;
+	pendingStep: WorkflowStepId | null;
+	onSync: () => void;
+	onCommit: () => void;
+	onPush: () => void;
+	onOpenPullRequest: () => void;
+}) {
+	const workflow = status?.workflow;
+	const dirty = status?.dirty ?? false;
+	const aheadCount = status?.ahead ?? 0;
+	const changedCount = status?.changedFiles.length ?? 0;
+	const syncDisabled =
+		!canRun || busy || statusLoading || workflow?.kind !== "sync";
+	const commitDisabled = !canRun || busy || !dirty || statusLoading;
 	const pushDisabled =
-		!canRun ||
-		busy ||
-		statusLoading ||
-		!status ||
-		status.dirty ||
-		status.ahead <= 0;
-	const existingPullRequest = status?.pullRequest ?? null;
+		!canRun || busy || statusLoading || !status || workflow?.kind !== "push";
+	const existingPullRequest =
+		workflow?.kind === "open-pr-existing" ||
+		workflow?.kind === "closed-pr" ||
+		workflow?.kind === "merged-pr"
+			? workflow.pullRequest
+			: null;
+	const canOpenPullRequest =
+		workflow?.kind === "open-pr" || workflow?.kind === "push";
 	const openPrDisabled =
 		!canRun ||
 		busy ||
 		statusLoading ||
 		!status ||
-		(!existingPullRequest && status.dirty);
+		(!existingPullRequest && !canOpenPullRequest);
 	const viewPrDisabled = !canRun || busy || statusLoading;
+	const nextStep: WorkflowStepId | null =
+		workflow?.kind === "sync"
+			? "sync"
+			: workflow?.kind === "commit"
+				? "commit"
+				: workflow?.kind === "push"
+					? "push"
+					: workflow?.kind === "open-pr"
+						? "pr"
+						: null;
 
-	if (!hasIds) {
-		return null;
-	}
-
-	if (statusQuery.isError && !status) {
-		return (
-			<span className="text-muted-foreground text-[11px]">Git unavailable</span>
-		);
-	}
-
-	const changedCount = status?.changedFiles.length ?? 0;
-	const aheadCount = status?.ahead ?? 0;
-	const dirty = status?.dirty ?? false;
-	const nextStep = resolveNextStep({
-		loading: statusLoading,
-		dirty,
-		ahead: aheadCount,
-		hasPullRequest: Boolean(existingPullRequest),
-	});
-
+	const syncLabel = "Sync";
+	const syncTooltip =
+		workflow?.kind === "sync"
+			? `Merge the latest ${workflow.baseBranch} into this session`
+			: "Session already includes the latest base branch";
 	const commitTooltip = commitDisabled
 		? dirty
 			? "Working…"
 			: "No uncommitted changes"
 		: "Commit local changes on this session branch";
-
-	const pushTooltip = pushDisabled
-		? dirty
-			? "Commit changes before pushing"
-			: aheadCount <= 0
-				? "Branch is up to date with remote"
-				: "Working…"
-		: `Push ${aheadCount} ${aheadCount === 1 ? "commit" : "commits"} to GitHub`;
-
-	const prLabel = existingPullRequest
-		? existingPullRequest.number
-			? `#${existingPullRequest.number}`
-			: "View PR"
-		: "Open PR";
-
-	const prTooltip = existingPullRequest
-		? "Open pull request on GitHub"
-		: openPrDisabled
-			? dirty
-				? "Commit changes before opening a PR"
-				: "Working…"
-			: aheadCount > 0
-				? "Push branch and open a pull request"
-				: "Open a pull request for this branch";
+	const pushTooltip =
+		workflow?.kind === "push" && workflow.reason === "remote-branch-missing"
+			? "Restore deleted branch on GitHub"
+			: pushDisabled
+				? dirty
+					? "Commit changes before pushing"
+					: aheadCount <= 0
+						? "Branch is up to date with remote"
+						: "Working…"
+				: `Push ${aheadCount} ${aheadCount === 1 ? "commit" : "commits"} to GitHub`;
+	const prLabel =
+		workflow?.kind === "merged-pr"
+			? `Merged #${workflow.pullRequest.number}`
+			: workflow?.kind === "closed-pr"
+				? `Closed #${workflow.pullRequest.number}`
+				: existingPullRequest
+					? `#${existingPullRequest.number}`
+					: "Open PR";
+	const prTooltip =
+		workflow?.kind === "merged-pr"
+			? "View merged pull request on GitHub"
+			: workflow?.kind === "closed-pr"
+				? "View closed pull request on GitHub"
+				: existingPullRequest
+					? "Open pull request on GitHub"
+					: openPrDisabled
+						? workflow?.kind === "idle"
+							? "No session changes to open as a pull request"
+							: workflow?.kind === "unavailable"
+								? "GitHub status is currently unavailable"
+								: dirty
+									? "Commit changes before opening a PR"
+									: "Working…"
+						: workflow?.kind === "push"
+							? "Push branch and open a pull request"
+							: "Open a pull request for this branch";
 
 	return (
 		<TooltipProvider delay={200}>
@@ -379,33 +302,41 @@ export function SessionGitActions({
 					</div>
 				) : null}
 
-				{/* Pipeline cluster: Commit → Push → PR as one control, one primary step */}
 				<fieldset className="m-0 inline-flex h-6 items-stretch overflow-hidden rounded-md border border-border bg-background/60 p-0 shadow-xs">
 					<legend className="sr-only">Session git workflow</legend>
+					<WorkflowStep
+						label={syncLabel}
+						icon={<RefreshCwIcon />}
+						disabled={syncDisabled}
+						active={nextStep === "sync"}
+						pending={pendingStep === "sync"}
+						tooltip={syncTooltip}
+						onClick={onSync}
+					/>
 					<WorkflowStep
 						label="Commit"
 						icon={<GitCommitHorizontalIcon />}
 						disabled={commitDisabled}
 						active={nextStep === "commit"}
-						pending={commitMutation.isPending}
+						pending={pendingStep === "commit"}
 						tooltip={commitTooltip}
-						onClick={() => commitMutation.mutate({ projectId, sessionId })}
+						onClick={onCommit}
 					/>
 					<WorkflowStep
 						label="Push"
 						icon={<UploadIcon />}
 						disabled={pushDisabled}
 						active={nextStep === "push"}
-						pending={pushMutation.isPending}
+						pending={pendingStep === "push"}
 						tooltip={pushTooltip}
-						onClick={() => pushMutation.mutate({ projectId, sessionId })}
+						onClick={onPush}
 					/>
 					<WorkflowStep
 						label={prLabel}
 						icon={<GitPullRequestIcon />}
 						disabled={existingPullRequest ? viewPrDisabled : openPrDisabled}
 						active={nextStep === "pr"}
-						pending={openPrMutation.isPending}
+						pending={pendingStep === "pr"}
 						tooltip={prTooltip}
 						isLast
 						onClick={() => {
@@ -413,11 +344,167 @@ export function SessionGitActions({
 								window.open(existingPullRequest.url, "_blank", "noopener");
 								return;
 							}
-							openPrMutation.mutate({ projectId, sessionId });
+							onOpenPullRequest();
 						}}
 					/>
 				</fieldset>
 			</div>
 		</TooltipProvider>
+	);
+}
+
+export function SessionGitActions({
+	projectId,
+	sessionId,
+	disabled = false,
+}: SessionGitActionsProps) {
+	const trpc = useTRPC();
+	const queryClient = useQueryClient();
+	const hasIds = Boolean(projectId && sessionId);
+	const canRun = hasIds && !disabled;
+
+	const {
+		data: status,
+		isError: statusError,
+		isLoading,
+	} = useQuery(
+		trpc.sessionGit.gitStatus.queryOptions(
+			{ projectId, sessionId },
+			{
+				enabled: hasIds,
+				retry: false,
+				refetchOnWindowFocus: true,
+				placeholderData: (previous) => previous,
+			},
+		),
+	);
+
+	const invalidateStatus = () => {
+		void queryClient.invalidateQueries(
+			trpc.sessionGit.gitStatus.queryFilter({ projectId, sessionId }),
+		);
+	};
+
+	const commitMutation = useMutation(
+		trpc.sessionGit.commit.mutationOptions({
+			onSuccess: (result) => {
+				if (result.committed) {
+					toast.success("Changes committed.");
+				} else {
+					toast.message("Nothing to commit.");
+				}
+				invalidateStatus();
+			},
+			onError: (error) => {
+				toast.error(error.message);
+			},
+		}),
+	);
+
+	const syncMutation = useMutation(
+		trpc.sessionGit.sync.mutationOptions({
+			onSuccess: (result) => {
+				toast.success(`Session synced with ${result.baseBranch}.`);
+				invalidateStatus();
+			},
+			onError: (error) => {
+				toast.error(error.message);
+			},
+		}),
+	);
+
+	const pushMutation = useMutation(
+		trpc.sessionGit.push.mutationOptions({
+			onSuccess: () => {
+				toast.success("Branch pushed to GitHub.");
+				invalidateStatus();
+			},
+			onError: (error) => {
+				toast.error(error.message);
+			},
+		}),
+	);
+
+	const openPrMutation = useMutation(
+		trpc.sessionGit.openPullRequest.mutationOptions({
+			onSuccess: (result) => {
+				queryClient.setQueryData(
+					trpc.sessionGit.gitStatus.queryOptions({ projectId, sessionId })
+						.queryKey,
+					(previous) =>
+						previous
+							? {
+									...previous,
+									ahead: 0,
+									remoteBranchExists: true,
+									pullRequest: {
+										url: result.url,
+										number: result.number,
+										state: "open" as const,
+									},
+									workflow: {
+										kind: "open-pr-existing" as const,
+										pullRequest: {
+											url: result.url,
+											number: result.number,
+											state: "open" as const,
+										},
+									},
+								}
+							: previous,
+				);
+				toast.success("Pull request opened.", {
+					action: {
+						label: "View",
+						onClick: () => window.open(result.url, "_blank", "noopener"),
+					},
+				});
+				invalidateStatus();
+			},
+			onError: (error) => {
+				toast.error(error.message);
+			},
+		}),
+	);
+
+	const statusLoading = isLoading && !status;
+	const busy =
+		syncMutation.isPending ||
+		commitMutation.isPending ||
+		pushMutation.isPending ||
+		openPrMutation.isPending;
+
+	if (!hasIds) {
+		return null;
+	}
+
+	if (statusError && !status) {
+		return (
+			<span className="text-muted-foreground text-[11px]">Git unavailable</span>
+		);
+	}
+
+	return (
+		<SessionGitActionsView
+			status={status}
+			statusLoading={statusLoading}
+			canRun={canRun}
+			busy={busy}
+			pendingStep={
+				syncMutation.isPending
+					? "sync"
+					: commitMutation.isPending
+						? "commit"
+						: pushMutation.isPending
+							? "push"
+							: openPrMutation.isPending
+								? "pr"
+								: null
+			}
+			onSync={() => syncMutation.mutate({ projectId, sessionId })}
+			onCommit={() => commitMutation.mutate({ projectId, sessionId })}
+			onPush={() => pushMutation.mutate({ projectId, sessionId })}
+			onOpenPullRequest={() => openPrMutation.mutate({ projectId, sessionId })}
+		/>
 	);
 }

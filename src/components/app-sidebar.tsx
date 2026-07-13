@@ -259,6 +259,7 @@ export function SessionSidebarItem({
 					/>
 				}
 				className="pr-7"
+				title={session.title || "Untitled chat"}
 			>
 				<span className="truncate">{session.title || "Untitled chat"}</span>
 			</SidebarMenuSubButton>
