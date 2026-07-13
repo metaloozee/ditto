@@ -1,7 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import {
 	BotIcon,
-	ChevronRightIcon,
 	CodeIcon,
 	FolderOpenIcon,
 	LoaderCircleIcon,
@@ -9,13 +8,13 @@ import {
 	TerminalIcon,
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Task, TaskContent, TaskTrigger } from "#/components/ai-elements/task";
 import { AssistantMarkdown } from "#/components/assistant-markdown";
 import {
 	Composer,
 	type ComposerStreamingState,
 	type StreamCommitPayload,
 } from "#/components/composer";
+import { ToolCallGroup } from "#/components/tool-call-group";
 import { Bubble, BubbleContent } from "#/components/ui/bubble";
 import { Button, buttonVariants } from "#/components/ui/button";
 import {
@@ -39,7 +38,7 @@ import type {
 import { partsToTools } from "#/lib/agent-message-parts";
 import { parseStoredParts } from "#/lib/agent-message-storage";
 import {
-	formatToolCallLabel,
+	findActiveToolGroupIndex,
 	groupAssistantParts,
 } from "#/lib/agent-tool-presentation";
 import {
@@ -311,53 +310,6 @@ function ChatEmptyState({
 	);
 }
 
-function ToolGroupPart({
-	tools,
-	streaming = false,
-}: {
-	tools: StreamToolCall[];
-	streaming?: boolean;
-}) {
-	const working = tools.some((tool) => tool.status === "running");
-	const title = working ? "Working" : "Worked";
-
-	return (
-		<Task className="border-b pb-2" defaultOpen={streaming && working}>
-			<TaskTrigger title={title}>
-				<div className="flex w-full cursor-pointer items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground">
-					{working ? (
-						<LoaderCircleIcon className="size-3.5 shrink-0 animate-spin" />
-					) : null}
-					<span className="min-w-0 flex-1 truncate font-medium">{title}</span>
-					<ChevronRightIcon className="size-3.5 shrink-0 transition-transform group-data-[panel-open]:rotate-90" />
-				</div>
-			</TaskTrigger>
-			<TaskContent>
-				<div className="max-h-48 overflow-y-auto overscroll-contain pr-1">
-					<ul className="flex flex-col gap-1">
-						{tools.map((tool) => {
-							const label = formatToolCallLabel(tool);
-							const failed = tool.status === "error";
-							return (
-								<li
-									key={tool.id}
-									className={cn(
-										"truncate font-mono text-[12px] leading-relaxed",
-										failed ? "text-destructive" : "text-muted-foreground",
-									)}
-									title={label}
-								>
-									{label}
-								</li>
-							);
-						})}
-					</ul>
-				</div>
-			</TaskContent>
-		</Task>
-	);
-}
-
 function AssistantParts({
 	parts,
 	streaming = false,
@@ -374,10 +326,11 @@ function AssistantParts({
 	}
 
 	const groups = groupAssistantParts(parts);
+	const activeToolGroupIndex = findActiveToolGroupIndex(groups, streaming);
 
 	return (
 		<div className="flex w-full min-w-0 flex-col gap-3">
-			{groups.map((group) => {
+			{groups.map((group, index) => {
 				if (group.type === "text") {
 					return (
 						<div key={group.id} className="w-full min-w-0">
@@ -401,7 +354,10 @@ function AssistantParts({
 
 				return (
 					<div key={group.id} className="w-full min-w-0">
-						<ToolGroupPart tools={group.tools} streaming={streaming} />
+						<ToolCallGroup
+							tools={group.tools}
+							active={index === activeToolGroupIndex}
+						/>
 					</div>
 				);
 			})}

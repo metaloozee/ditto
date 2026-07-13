@@ -159,5 +159,108 @@ describe("agent-message-storage", () => {
 			type: "tool",
 			tool: { id: "t1", name: "bash" },
 		});
+		expect(
+			parts?.[1]?.type === "tool" ? parts[1].tool.startedAt : undefined,
+		).toBeUndefined();
+	});
+
+	it("round-trips startedAt/endedAt through full and minimal storage", () => {
+		const parts =
+			applyAgentToolEventToParts(
+				[],
+				{
+					type: "tool_execution_start",
+					toolCallId: "t-timed",
+					toolName: "bash",
+					args: { command: "ls" },
+				},
+				1_000,
+			) ?? [];
+		const ended =
+			applyAgentToolEventToParts(
+				parts,
+				{
+					type: "tool_execution_end",
+					toolCallId: "t-timed",
+					toolName: "bash",
+					result: "ok",
+					isError: false,
+				},
+				5_000,
+			) ?? parts;
+
+		const full = serializeAssistantPartsForStorage(ended);
+		const fullRestored = parseStoredParts(full);
+		expect(fullRestored?.[0]).toMatchObject({
+			type: "tool",
+			tool: {
+				id: "t-timed",
+				startedAt: 1_000,
+				endedAt: 5_000,
+			},
+		});
+
+		const minimal = serializeAssistantPartsMinimalForStorage(ended);
+		const minimalRestored = parseStoredParts(minimal);
+		expect(minimalRestored?.[0]).toMatchObject({
+			type: "tool",
+			tool: {
+				id: "t-timed",
+				name: "bash",
+				status: "done",
+				startedAt: 1_000,
+				endedAt: 5_000,
+			},
+		});
+		// Minimal drops args/results but keeps timing.
+		expect(
+			minimalRestored?.[0]?.type === "tool"
+				? minimalRestored[0].tool.args
+				: undefined,
+		).toBeUndefined();
+	});
+
+	it("omits non-finite or malformed stored timing", () => {
+		const parts = parseStoredParts(
+			JSON.stringify([
+				{
+					type: "tool",
+					id: "p1",
+					tool: {
+						id: "t1",
+						name: "bash",
+						status: "done",
+						startedAt: Number.NaN,
+						endedAt: "not-a-number",
+					},
+				},
+				{
+					type: "tool",
+					id: "p2",
+					tool: {
+						id: "t2",
+						name: "bash",
+						status: "done",
+						startedAt: Number.POSITIVE_INFINITY,
+						endedAt: 9_000,
+					},
+				},
+			]),
+		);
+		expect(parts?.[0]).toMatchObject({
+			tool: { id: "t1", name: "bash", status: "done" },
+		});
+		expect(
+			parts?.[0]?.type === "tool" ? parts[0].tool.startedAt : undefined,
+		).toBeUndefined();
+		expect(
+			parts?.[0]?.type === "tool" ? parts[0].tool.endedAt : undefined,
+		).toBeUndefined();
+		expect(parts?.[1]).toMatchObject({
+			tool: { id: "t2", endedAt: 9_000 },
+		});
+		expect(
+			parts?.[1]?.type === "tool" ? parts[1].tool.startedAt : undefined,
+		).toBeUndefined();
 	});
 });

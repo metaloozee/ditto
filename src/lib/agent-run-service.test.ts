@@ -659,6 +659,100 @@ describe("executeAgentRun", () => {
 		}
 	});
 
+	it("stamps one server occurrence time into SSE, persisted parts, and done parts", async () => {
+		const mockDb = createMockDb();
+		const context = makeContext({ db: mockDb.db });
+		const clock = [1_000, 5_000, 9_000];
+		let clockIndex = 0;
+		const now = vi.fn(() => {
+			const value = clock[clockIndex] ?? clock[clock.length - 1] ?? 0;
+			clockIndex += 1;
+			return value;
+		});
+		const prepareStorage = vi.fn().mockImplementation((parts) => ({
+			storageParts: parts,
+			toolsColumn: JSON.stringify(parts),
+		}));
+
+		const { events, run } = collectEvents(context, {
+			now,
+			runAgentInSandbox: vi.fn().mockImplementation(async (opts) => {
+				await opts.onRunnerMessage({
+					kind: "agent_event",
+					event: {
+						type: "tool_execution_start",
+						toolCallId: "t-time",
+						toolName: "bash",
+						args: { command: "ls" },
+					},
+				});
+				await opts.onRunnerMessage({
+					kind: "agent_event",
+					event: {
+						type: "tool_execution_end",
+						toolCallId: "t-time",
+						toolName: "bash",
+						result: "ok",
+						isError: false,
+					},
+				});
+				return { ok: true, assistantText: "" };
+			}),
+			prepareAssistantMessageStorage: prepareStorage,
+		});
+
+		await run();
+
+		const agentEvents = events.filter((e) => e.event === "agent");
+		expect(agentEvents).toHaveLength(2);
+		expect(agentEvents[0]).toMatchObject({
+			event: "agent",
+			data: {
+				occurredAt: 1_000,
+				event: { type: "tool_execution_start", toolCallId: "t-time" },
+			},
+		});
+		expect(agentEvents[1]).toMatchObject({
+			event: "agent",
+			data: {
+				occurredAt: 5_000,
+				event: { type: "tool_execution_end", toolCallId: "t-time" },
+			},
+		});
+
+		expect(prepareStorage).toHaveBeenCalled();
+		const persistedParts = prepareStorage.mock.calls[0]?.[0] as Array<{
+			type: string;
+			tool?: { id: string; startedAt?: number; endedAt?: number };
+		}>;
+		const persistedTool = persistedParts.find(
+			(p) => p.type === "tool" && p.tool?.id === "t-time",
+		);
+		expect(persistedTool?.tool).toMatchObject({
+			startedAt: 1_000,
+			endedAt: 5_000,
+		});
+
+		const done = events.at(-1);
+		expect(done?.event).toBe("done");
+		if (done?.event === "done") {
+			const doneTool = done.data.tools?.find((t) => t.id === "t-time");
+			expect(doneTool).toMatchObject({
+				startedAt: 1_000,
+				endedAt: 5_000,
+			});
+			const donePartTool = done.data.parts?.find(
+				(p) => p.type === "tool" && p.tool.id === "t-time",
+			);
+			expect(
+				donePartTool?.type === "tool" ? donePartTool.tool : undefined,
+			).toMatchObject({
+				startedAt: 1_000,
+				endedAt: 5_000,
+			});
+		}
+	});
+
 	it("batches many tiny deltas into fewer delta events with identical content", async () => {
 		const mockDb = createMockDb();
 		const updateSets: Array<Record<string, unknown>> = [];

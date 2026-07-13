@@ -66,7 +66,7 @@ export type AgentRunDonePayload = {
 export type AgentRunStreamEvent =
 	| { event: "meta"; data: AgentRunMetaPayload }
 	| { event: "delta"; data: { delta: string } }
-	| { event: "agent"; data: { event: unknown } }
+	| { event: "agent"; data: { event: unknown; occurredAt: number } }
 	| { event: "error"; data: { message: string } }
 	| { event: "done"; data: AgentRunDonePayload };
 
@@ -102,6 +102,8 @@ export type AgentRunContext = {
 
 export type AgentRunDeps = {
 	createId?: () => string;
+	/** Injectable clock for deterministic lifecycle timestamps in tests. */
+	now?: () => number;
 	loadProjectForUser?: (options: {
 		db: ReturnType<typeof createDb>;
 		projectId: string;
@@ -120,6 +122,7 @@ export type AgentRunDeps = {
 
 const defaultDeps: Required<AgentRunDeps> = {
 	createId: () => nanoid(),
+	now: () => Date.now(),
 	loadProjectForUser: async ({ db, projectId, userId }) => {
 		const [project] = await db
 			.select()
@@ -516,8 +519,17 @@ export async function executeAgentRun(options: {
 				// Flush pending text before tools/errors so ordering is preserved.
 				deltaBatcher.flush();
 				if (msg.kind === "agent_event") {
-					emit({ event: "agent", data: { event: msg.event } });
-					const nextParts = applyAgentToolEventToParts(parts, msg.event);
+					// One server-assigned occurrence time for SSE + reducer.
+					const occurredAt = deps.now();
+					emit({
+						event: "agent",
+						data: { event: msg.event, occurredAt },
+					});
+					const nextParts = applyAgentToolEventToParts(
+						parts,
+						msg.event,
+						occurredAt,
+					);
 					if (nextParts) {
 						parts = nextParts;
 					}
@@ -548,7 +560,8 @@ export async function executeAgentRun(options: {
 
 		assistantContent = redact(assistantContent, context.secretValues);
 
-		const fullParts = finalizeAssistantParts(parts);
+		const settlementAt = deps.now();
+		const fullParts = finalizeAssistantParts(parts, settlementAt);
 		const fullTools = partsToTools(fullParts);
 
 		const terminalStatus: "complete" | "failed" = runResult.ok
@@ -559,7 +572,7 @@ export async function executeAgentRun(options: {
 			await persistAssistantTerminal({
 				context,
 				content: assistantContent,
-				parts,
+				parts: fullParts,
 				status: terminalStatus,
 				deps,
 			});
@@ -628,7 +641,8 @@ export async function executeAgentRun(options: {
 			partsToText(parts) || assistantContent,
 			context.secretValues,
 		);
-		const fullParts = finalizeAssistantParts(parts);
+		const settlementAt = deps.now();
+		const fullParts = finalizeAssistantParts(parts, settlementAt);
 		const fullTools = partsToTools(fullParts);
 
 		if (!terminalPersisted) {
@@ -636,7 +650,7 @@ export async function executeAgentRun(options: {
 				await persistAssistantTerminal({
 					context,
 					content: assistantContent,
-					parts,
+					parts: fullParts,
 					status: "failed",
 					deps,
 				});

@@ -220,4 +220,76 @@ describe("Composer streaming updates", () => {
 			"partial",
 		);
 	});
+
+	it("preserves server tool lifecycle timestamps through onStreamCommit", async () => {
+		const onStreamCommit = vi.fn();
+		streamAgentRunMock.mockImplementation(async (_input, handlers) => {
+			handlers.onMeta?.({
+				sessionId: "sess-1",
+				userMessageId: "user-1",
+				assistantMessageId: "asst-1",
+				createdSession: false,
+			});
+			handlers.onAgent?.(
+				{
+					type: "tool_execution_start",
+					toolCallId: "tool-timed",
+					toolName: "bash",
+					args: { command: "ls" },
+				},
+				1_000,
+			);
+			handlers.onAgent?.(
+				{
+					type: "tool_execution_end",
+					toolCallId: "tool-timed",
+					toolName: "bash",
+					result: "ok",
+					isError: false,
+				},
+				5_000,
+			);
+			handlers.onDone?.({
+				ok: true,
+				assistantMessageId: "asst-1",
+				content: "",
+			});
+		});
+
+		render(
+			<Composer
+				projectId="proj-1"
+				sessionId="sess-1"
+				onStreamCommit={onStreamCommit}
+			/>,
+		);
+
+		const textarea = screen.getByRole("textbox");
+		fireEvent.change(textarea, { target: { value: "hello" } });
+		const form = textarea.closest("form");
+		fireEvent.submit(form as HTMLFormElement);
+
+		await waitFor(() => {
+			expect(onStreamCommit).toHaveBeenCalledTimes(1);
+		});
+
+		const tools = onStreamCommit.mock.calls[0]?.[0]?.assistant?.tools ?? [];
+		expect(tools).toEqual([
+			expect.objectContaining({
+				id: "tool-timed",
+				status: "done",
+				startedAt: 1_000,
+				endedAt: 5_000,
+			}),
+		]);
+		const parts = onStreamCommit.mock.calls[0]?.[0]?.assistant?.parts ?? [];
+		expect(parts[0]).toMatchObject({
+			type: "tool",
+			tool: {
+				id: "tool-timed",
+				startedAt: 1_000,
+				endedAt: 5_000,
+			},
+		});
+	});
 });
