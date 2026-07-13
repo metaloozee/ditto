@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import type * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	clearAllSessionMessages,
@@ -11,6 +12,16 @@ import {
 
 vi.mock("#/components/composer", () => ({
 	Composer: () => <div data-testid="composer-stub" />,
+}));
+
+vi.mock("@tanstack/react-router", () => ({
+	Link: ({
+		children,
+		...props
+	}: {
+		children: React.ReactNode;
+		[key: string]: unknown;
+	}) => <a {...props}>{children}</a>,
 }));
 
 vi.mock("#/components/assistant-markdown", () => ({

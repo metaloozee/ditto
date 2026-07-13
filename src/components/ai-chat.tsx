@@ -1,14 +1,22 @@
-import { ChevronRightIcon, LoaderCircleIcon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import {
+	BotIcon,
+	CodeIcon,
+	FolderOpenIcon,
+	LoaderCircleIcon,
+	SparklesIcon,
+	TerminalIcon,
+} from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Task, TaskContent, TaskTrigger } from "#/components/ai-elements/task";
 import { AssistantMarkdown } from "#/components/assistant-markdown";
 import {
 	Composer,
 	type ComposerStreamingState,
 	type StreamCommitPayload,
 } from "#/components/composer";
+import { ToolCallGroup } from "#/components/tool-call-group";
 import { Bubble, BubbleContent } from "#/components/ui/bubble";
-import { Button } from "#/components/ui/button";
+import { Button, buttonVariants } from "#/components/ui/button";
 import {
 	Message,
 	MessageContent,
@@ -30,7 +38,7 @@ import type {
 import { partsToTools } from "#/lib/agent-message-parts";
 import { parseStoredParts } from "#/lib/agent-message-storage";
 import {
-	formatToolCallLabel,
+	findActiveToolGroupIndex,
 	groupAssistantParts,
 } from "#/lib/agent-tool-presentation";
 import {
@@ -189,69 +197,116 @@ function formatMessageTime(value: ChatMessage["createdAt"]): string | null {
 	return messageTimeFormatter.format(date);
 }
 
-function ChatEmptyState({ hasProject }: { hasProject: boolean }) {
+const SUGGESTIONS = [
+	{
+		icon: <CodeIcon className="size-4 text-blue-500" />,
+		title: "Analyze codebase",
+		description: "Inspect project files and technologies",
+		prompt:
+			"Please analyze the workspace structure and tell me what technologies are used.",
+	},
+	{
+		icon: <TerminalIcon className="size-4 text-emerald-500" />,
+		title: "Run unit tests",
+		description: "Execute and check test suites",
+		prompt: "Run all unit tests in the workspace and let me know the results.",
+	},
+	{
+		icon: <SparklesIcon className="size-4 text-purple-500" />,
+		title: "Scan syntax & lint",
+		description: "Find lint warnings or type errors",
+		prompt:
+			"Run typecheck and linter, and let me know if there are any issues.",
+	},
+	{
+		icon: <BotIcon className="size-4 text-amber-500" />,
+		title: "Review changes",
+		description: "Summarize the current git diff",
+		prompt:
+			"What are the current uncommitted changes in this branch? Please review them.",
+	},
+];
+
+function ChatEmptyState({
+	hasProject,
+	onSelectSuggestion,
+}: {
+	hasProject: boolean;
+	onSelectSuggestion?: (text: string) => void;
+}) {
+	if (!hasProject) {
+		return (
+			<div className="flex min-h-[45vh] flex-col items-center justify-center px-6 text-center">
+				<div className="flex max-w-sm flex-col items-center gap-4 animate-in fade-in-50 slide-in-from-bottom-2 duration-300">
+					<div className="flex size-14 items-center justify-center rounded-2xl border border-border/60 bg-muted/30 shadow-xs">
+						<FolderOpenIcon className="size-6 text-muted-foreground/80" />
+					</div>
+					<div className="flex flex-col gap-1.5">
+						<h2 className="font-semibold text-base text-foreground tracking-tight text-balance">
+							No Active Project
+						</h2>
+						<p className="text-balance text-muted-foreground text-xs/relaxed">
+							Open or select a project from the sidebar to start building,
+							chatting, and executing commands with Ditto.
+						</p>
+					</div>
+					<Link
+						to="/"
+						className={cn(
+							buttonVariants({ variant: "default", size: "sm" }),
+							"mt-2 cursor-pointer transition-all active:scale-[0.98]",
+						)}
+					>
+						Go to Dashboard
+					</Link>
+				</div>
+			</div>
+		);
+	}
+
 	return (
-		<div className="flex min-h-[40vh] flex-col items-center justify-center px-6 text-center">
-			<div className="max-w-sm flex flex-col gap-3">
-				<p className="font-medium text-sm">
-					{hasProject
-						? "Start the first message for this workspace."
-						: "Open a project to start chatting."}
-				</p>
-				<p className="text-balance text-muted-foreground text-xs/relaxed">
-					{hasProject
-						? "Messages are stored in D1; new prompts stream live agent output here."
-						: "Sent messages are stored in D1 and replayed here as a simple conversation history."}
-				</p>
+		<div className="flex min-h-[45vh] flex-col items-center justify-center px-6 text-center animate-in fade-in-50 slide-in-from-bottom-2 duration-300">
+			<div className="flex max-w-xl flex-col items-center gap-3">
+				<div className="flex size-14 items-center justify-center rounded-2xl border border-primary/10 bg-primary/5 dark:bg-primary/10 shadow-xs">
+					<BotIcon className="size-6 text-primary" />
+				</div>
+				<div className="flex flex-col gap-1.5 mb-6">
+					<h2 className="font-semibold text-xl text-foreground tracking-tight text-balance">
+						How can Ditto help you today?
+					</h2>
+					<p className="text-pretty text-muted-foreground text-xs/relaxed max-w-md">
+						Ask anything about your workspace. Ditto can run terminal commands,
+						execute code, check tests, and inspect codebases.
+					</p>
+				</div>
+
+				<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 w-full max-w-lg">
+					{SUGGESTIONS.map((item, idx) => (
+						<button
+							key={item.title}
+							type="button"
+							onClick={() => onSelectSuggestion?.(item.prompt)}
+							className="flex items-start gap-3 rounded-xl border border-border/80 bg-card/40 p-3.5 text-left transition-all duration-200 hover:-translate-y-[1px] hover:border-foreground/20 hover:bg-card hover:shadow-xs active:scale-[0.97] cursor-pointer"
+							style={{
+								animationDelay: `${idx * 40}ms`,
+							}}
+						>
+							<div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/50">
+								{item.icon}
+							</div>
+							<div className="flex flex-col min-w-0">
+								<span className="block font-medium text-xs text-foreground tracking-tight">
+									{item.title}
+								</span>
+								<span className="block text-[11px] text-muted-foreground mt-0.5 leading-normal text-pretty">
+									{item.description}
+								</span>
+							</div>
+						</button>
+					))}
+				</div>
 			</div>
 		</div>
-	);
-}
-
-function ToolGroupPart({
-	tools,
-	streaming = false,
-}: {
-	tools: StreamToolCall[];
-	streaming?: boolean;
-}) {
-	const working = tools.some((tool) => tool.status === "running");
-	const title = working ? "Working" : "Worked";
-
-	return (
-		<Task className="border-b pb-2" defaultOpen={streaming && working}>
-			<TaskTrigger title={title}>
-				<div className="flex w-full cursor-pointer items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground">
-					{working ? (
-						<LoaderCircleIcon className="size-3.5 shrink-0 animate-spin" />
-					) : null}
-					<span className="min-w-0 flex-1 truncate font-medium">{title}</span>
-					<ChevronRightIcon className="size-3.5 shrink-0 transition-transform group-data-[panel-open]:rotate-90" />
-				</div>
-			</TaskTrigger>
-			<TaskContent>
-				<div className="max-h-48 overflow-y-auto overscroll-contain pr-1">
-					<ul className="flex flex-col gap-1">
-						{tools.map((tool) => {
-							const label = formatToolCallLabel(tool);
-							const failed = tool.status === "error";
-							return (
-								<li
-									key={tool.id}
-									className={cn(
-										"truncate font-mono text-[12px] leading-relaxed",
-										failed ? "text-destructive" : "text-muted-foreground",
-									)}
-									title={label}
-								>
-									{label}
-								</li>
-							);
-						})}
-					</ul>
-				</div>
-			</TaskContent>
-		</Task>
 	);
 }
 
@@ -271,10 +326,11 @@ function AssistantParts({
 	}
 
 	const groups = groupAssistantParts(parts);
+	const activeToolGroupIndex = findActiveToolGroupIndex(groups, streaming);
 
 	return (
 		<div className="flex w-full min-w-0 flex-col gap-3">
-			{groups.map((group) => {
+			{groups.map((group, index) => {
 				if (group.type === "text") {
 					return (
 						<div key={group.id} className="w-full min-w-0">
@@ -298,7 +354,10 @@ function AssistantParts({
 
 				return (
 					<div key={group.id} className="w-full min-w-0">
-						<ToolGroupPart tools={group.tools} streaming={streaming} />
+						<ToolCallGroup
+							tools={group.tools}
+							active={index === activeToolGroupIndex}
+						/>
 					</div>
 				);
 			})}
@@ -432,6 +491,7 @@ export function Chat({
 	const [streaming, setStreaming] = useState<ComposerStreamingState | null>(
 		null,
 	);
+	const [inputText, setInputText] = useState("");
 	const [bridgeSessionId, setBridgeSessionId] = useState<string | null>(null);
 	// Bumps when session-cache module state changes so memos re-read overlays.
 	const [cacheEpoch, setCacheEpoch] = useState(0);
@@ -574,6 +634,15 @@ export function Chat({
 								<MessageScrollerItem messageId="empty-conversation">
 									<ChatEmptyState
 										hasProject={Boolean(projectId || sessionId)}
+										onSelectSuggestion={(prompt) => {
+											setInputText(prompt);
+											setTimeout(() => {
+												const textarea = document.querySelector(
+													'textarea[name="message"]',
+												) as HTMLTextAreaElement | null;
+												textarea?.focus();
+											}, 50);
+										}}
 									/>
 								</MessageScrollerItem>
 							)}
@@ -589,6 +658,8 @@ export function Chat({
 						onStreamingChange={setStreaming}
 						onStreamCommit={handleStreamCommit}
 						onWorkspaceRefresh={onWorkspaceRefresh}
+						inputText={inputText}
+						onInputTextChange={setInputText}
 					/>
 				</MessageScroller>
 			</MessageScrollerProvider>

@@ -326,3 +326,86 @@ export function groupAssistantParts(
 
 	return groups;
 }
+
+/**
+ * Wall-clock elapsed ms for a completed tool group: latest endedAt − earliest
+ * startedAt. Returns null unless every tool has finite start and end times.
+ * Clock anomalies (end before start) clamp to zero.
+ */
+export function getToolGroupElapsedMs(tools: StreamToolCall[]): number | null {
+	if (tools.length === 0) {
+		return null;
+	}
+
+	let earliestStart = Number.POSITIVE_INFINITY;
+	let latestEnd = Number.NEGATIVE_INFINITY;
+
+	for (const tool of tools) {
+		const start = tool.startedAt;
+		const end = tool.endedAt;
+		if (
+			typeof start !== "number" ||
+			!Number.isFinite(start) ||
+			typeof end !== "number" ||
+			!Number.isFinite(end)
+		) {
+			return null;
+		}
+		if (start < earliestStart) {
+			earliestStart = start;
+		}
+		if (end > latestEnd) {
+			latestEnd = end;
+		}
+	}
+
+	return Math.max(0, latestEnd - earliestStart);
+}
+
+/**
+ * Compact whole-second duration label (no zero-valued interior units):
+ * 4_000 → "4s", 60_000 → "1m", 1_023_000 → "17m 3s", 3_723_000 → "1h 2m 3s".
+ * Positive sub-second values round up to "1s".
+ */
+export function formatElapsedDuration(durationMs: number): string {
+	if (!Number.isFinite(durationMs) || durationMs <= 0) {
+		return "0s";
+	}
+
+	const totalSeconds = Math.max(1, Math.round(durationMs / 1000));
+	const hours = Math.floor(totalSeconds / 3600);
+	const minutes = Math.floor((totalSeconds % 3600) / 60);
+	const seconds = totalSeconds % 60;
+
+	const parts: string[] = [];
+	if (hours > 0) {
+		parts.push(`${hours}h`);
+	}
+	if (minutes > 0) {
+		parts.push(`${minutes}m`);
+	}
+	if (seconds > 0 || parts.length === 0) {
+		parts.push(`${seconds}s`);
+	}
+	return parts.join(" ");
+}
+
+/**
+ * Index of the newest tools group that should stay active while the assistant
+ * is still streaming (after its tools finished but text continues).
+ * Returns -1 when not streaming or when no tools group exists.
+ */
+export function findActiveToolGroupIndex(
+	groups: AssistantPartGroup[],
+	streaming: boolean,
+): number {
+	if (!streaming) {
+		return -1;
+	}
+	for (let i = groups.length - 1; i >= 0; i -= 1) {
+		if (groups[i]?.type === "tools") {
+			return i;
+		}
+	}
+	return -1;
+}
