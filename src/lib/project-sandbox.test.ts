@@ -5,12 +5,14 @@ const isSandboxWorkspaceHydratedMock = vi.hoisted(() => vi.fn());
 const restoreSandboxWorkspaceMock = vi.hoisted(() => vi.fn());
 const backupSandboxWorkspaceMock = vi.hoisted(() => vi.fn());
 const bootstrapSandboxMock = vi.hoisted(() => vi.fn());
+const isSandboxRunnerHealthyMock = vi.hoisted(() => vi.fn());
 
 vi.mock("#/lib/sandbox-bootstrap", () => ({
 	isSandboxWorkspaceHydrated: isSandboxWorkspaceHydratedMock,
 	restoreSandboxWorkspace: restoreSandboxWorkspaceMock,
 	backupSandboxWorkspace: backupSandboxWorkspaceMock,
 	bootstrapSandbox: bootstrapSandboxMock,
+	isSandboxRunnerHealthy: isSandboxRunnerHealthyMock,
 }));
 
 const { ensureProjectSandbox, persistProjectSandboxBackup } = await import(
@@ -374,6 +376,7 @@ describe("persistProjectSandboxBackup", () => {
 describe("ensureProjectSandbox", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		isSandboxRunnerHealthyMock.mockResolvedValue(true);
 	});
 
 	it("returns connected when the workspace is already hydrated", async () => {
@@ -448,6 +451,23 @@ describe("ensureProjectSandbox", () => {
 				dir: "/workspace",
 			}),
 		});
+	});
+
+	it("rejects an invalid runner before mutating project state", async () => {
+		const { db, updateMock } = makeFakeDb({ lockedProject: baseProject });
+		isSandboxWorkspaceHydratedMock.mockResolvedValue(true);
+		isSandboxRunnerHealthyMock.mockResolvedValue(false);
+
+		await expect(
+			ensureProjectSandbox({
+				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
+				env: makeEnv(),
+				project: baseProject,
+			}),
+		).rejects.toThrow("Project sandbox runner image is invalid");
+
+		expect(updateMock).not.toHaveBeenCalled();
+		expect(restoreSandboxWorkspaceMock).not.toHaveBeenCalled();
 	});
 
 	it("falls back to GitHub when restore from backup fails", async () => {

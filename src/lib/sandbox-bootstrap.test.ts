@@ -21,6 +21,8 @@ vi.mock("#/lib/github-app", () => ({
 const {
 	backupSandboxWorkspace,
 	bootstrapSandbox,
+	fetchPrimaryBranchFromGitHub,
+	isSandboxRunnerHealthy,
 	isSandboxWorkspaceHydrated,
 	restoreSandboxWorkspace,
 	syncPrimaryWorkspaceFromGitHub,
@@ -93,6 +95,44 @@ describe("sandbox bootstrap helpers", () => {
 		).resolves.toBe(true);
 
 		expect(sandbox.exists).toHaveBeenCalledWith("/workspace/.git");
+	});
+
+	it("validates the baked runner manifest outside its package directory", async () => {
+		const sandbox = makeSandbox();
+		getSandboxMock.mockReturnValue(sandbox);
+
+		await expect(
+			isSandboxRunnerHealthy({
+				env: { Sandbox: {} } as unknown as Env,
+				sandboxId: "sandbox-1",
+			}),
+		).resolves.toBe(true);
+
+		expect(sandbox.exec).toHaveBeenCalledWith(
+			expect.stringContaining("/opt/ditto-runner/package.json"),
+			expect.objectContaining({ cwd: "/" }),
+		);
+	});
+
+	it("rejects an invalid baked runner manifest", async () => {
+		const sandbox = makeSandbox();
+		sandbox.exec.mockResolvedValueOnce({
+			success: false,
+			stdout: "",
+			stderr: "ERR_INVALID_PACKAGE_CONFIG",
+			exitCode: 1,
+			command: "runner health check",
+			duration: 1,
+			timestamp: "2026-07-04T00:00:00.000Z",
+		});
+		getSandboxMock.mockReturnValue(sandbox);
+
+		await expect(
+			isSandboxRunnerHealthy({
+				env: { Sandbox: {} } as unknown as Env,
+				sandboxId: "sandbox-1",
+			}),
+		).resolves.toBe(false);
 	});
 
 	it("restores a backup and skips install without package.json", async () => {
@@ -656,6 +696,40 @@ describe("syncPrimaryWorkspaceFromGitHub", () => {
 		expect(
 			sandbox.exec.mock.calls.some((call) =>
 				String(call[0]).startsWith("git fetch"),
+			),
+		).toBe(false);
+	});
+});
+
+describe("fetchPrimaryBranchFromGitHub", () => {
+	it("fetches the requested branch without changing the primary checkout", async () => {
+		const { sandbox } = makeSyncSandbox({
+			headSha: "old-main",
+			remoteSha: "develop-sha",
+		});
+		getSandboxMock.mockReturnValue(sandbox);
+		getInstallationAccessTokenMock.mockResolvedValue("token-abc-12345");
+
+		await expect(
+			fetchPrimaryBranchFromGitHub({
+				env: { Sandbox: {} } as unknown as Env,
+				sandboxId: "sandbox-1",
+				githubRepo: "owner/repo",
+				installationId: 42,
+				branchName: "develop",
+			}),
+		).resolves.toEqual({ branchName: "develop", headSha: "develop-sha" });
+
+		expect(
+			sandbox.exec.mock.calls.some((call) =>
+				String(call[0]).includes(
+					"+refs/heads/develop:refs/remotes/origin/develop",
+				),
+			),
+		).toBe(true);
+		expect(
+			sandbox.exec.mock.calls.some((call) =>
+				String(call[0]).startsWith("git merge"),
 			),
 		).toBe(false);
 	});

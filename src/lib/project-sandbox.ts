@@ -8,6 +8,7 @@ import {
 import {
 	backupSandboxWorkspace,
 	bootstrapSandbox,
+	isSandboxRunnerHealthy,
 	isSandboxWorkspaceHydrated,
 	restoreSandboxWorkspace,
 } from "#/lib/sandbox-bootstrap";
@@ -192,6 +193,10 @@ async function recreateSandboxFromGitHub(options: {
 		!(await isSandboxWorkspaceHydrated({
 			env: options.env,
 			sandboxId: options.sandboxId,
+		})) ||
+		!(await isSandboxRunnerHealthy({
+			env: options.env,
+			sandboxId: options.sandboxId,
 		}))
 	) {
 		throw new Error("Project sandbox restore failed. Please try again.");
@@ -226,6 +231,15 @@ export async function ensureProjectSandbox(options: {
 		env: options.env,
 		sandboxId,
 	});
+	const runnerHealthy = await isSandboxRunnerHealthy({
+		env: options.env,
+		sandboxId,
+	});
+	if (!runnerHealthy) {
+		throw new Error(
+			"Project sandbox runner image is invalid. Rebuild or redeploy the sandbox image.",
+		);
+	}
 
 	if (hydrated) {
 		return { project: options.project, state: "connected" };
@@ -274,6 +288,10 @@ export async function ensureProjectSandbox(options: {
 
 			if (
 				!(await isSandboxWorkspaceHydrated({
+					env: options.env,
+					sandboxId,
+				})) ||
+				!(await isSandboxRunnerHealthy({
 					env: options.env,
 					sandboxId,
 				}))
