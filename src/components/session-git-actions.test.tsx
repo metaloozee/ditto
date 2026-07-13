@@ -100,11 +100,9 @@ describe("SessionGitActions workflow", () => {
 		render(<SessionGitActions projectId="proj-1" sessionId="sess-1" />);
 
 		expect(
-			screen
-				.getByRole("button", { name: "Sync main" })
-				.getAttribute("aria-current"),
+			screen.getByRole("button", { name: "Sync" }).getAttribute("aria-current"),
 		).toBe("step");
-		expect(screen.getByRole("button", { name: "Sync main" })).toHaveProperty(
+		expect(screen.getByRole("button", { name: "Sync" })).toHaveProperty(
 			"disabled",
 			false,
 		);
