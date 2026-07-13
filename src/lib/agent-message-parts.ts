@@ -21,11 +21,6 @@ export function nextPartId(prefix: string): string {
 	return `${prefix}-${partIdCounter}`;
 }
 
-/** @internal test helper — reset part id counter between tests if needed */
-export function resetPartIdCounterForTests(): void {
-	partIdCounter = 0;
-}
-
 function finiteTimestamp(value: unknown): number | undefined {
 	return typeof value === "number" && Number.isFinite(value)
 		? value

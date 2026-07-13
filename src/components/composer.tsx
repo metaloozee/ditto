@@ -1,6 +1,13 @@
 import { useNavigate } from "@tanstack/react-router";
-import { CheckIcon, GitBranchIcon, MicIcon } from "lucide-react";
-import { type Dispatch, type SetStateAction, useRef, useState } from "react";
+import { CheckIcon, CornerDownLeftIcon, GitBranchIcon } from "lucide-react";
+import {
+	type Dispatch,
+	type FormEvent,
+	type KeyboardEvent,
+	type SetStateAction,
+	useRef,
+	useState,
+} from "react";
 import { toast } from "sonner";
 import {
 	ModelSelector,
@@ -15,17 +22,13 @@ import {
 	ModelSelectorName,
 	ModelSelectorTrigger,
 } from "#/components/ai-elements/model-selector";
-import {
-	PromptInput,
-	PromptInputBody,
-	PromptInputButton,
-	PromptInputFooter,
-	type PromptInputMessage,
-	PromptInputSubmit,
-	PromptInputTextarea,
-	PromptInputTools,
-} from "#/components/ai-elements/prompt-input";
 import { SessionGitActions } from "#/components/session-git-actions";
+import {
+	InputGroup,
+	InputGroupAddon,
+	InputGroupButton,
+	InputGroupTextarea,
+} from "#/components/ui/input-group";
 import {
 	type AssistantMessagePart,
 	appendAssistantTextDelta,
@@ -72,6 +75,17 @@ interface ModelItemProps {
 	model: Model;
 	onSelect: (id: ProjectCoderModelSpecifier) => void;
 	selectedModel: ProjectCoderModelSpecifier;
+}
+
+function handleTextareaKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+	if (
+		event.key === "Enter" &&
+		!event.shiftKey &&
+		!event.nativeEvent.isComposing
+	) {
+		event.preventDefault();
+		event.currentTarget.form?.requestSubmit();
+	}
 }
 
 function ModelItem({ model, onSelect, selectedModel }: ModelItemProps) {
@@ -248,8 +262,10 @@ export function Composer({
 		}
 	}
 
-	async function handleSubmit(message: PromptInputMessage) {
-		if (!message.text.trim() && message.files.length === 0) {
+	async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+		event.preventDefault();
+		const prompt = text;
+		if (!prompt.trim()) {
 			return;
 		}
 
@@ -261,8 +277,6 @@ export function Composer({
 		if (disabledReason || isStreaming) {
 			return;
 		}
-
-		const prompt = message.text;
 		setText("");
 		isStreamingRef.current = true;
 		setIsStreaming(true);
@@ -401,71 +415,74 @@ export function Composer({
 	return (
 		<section className="mx-auto flex w-full max-w-3xl flex-col justify-end gap-5 px-2 pb-2">
 			<div className="flex flex-col items-center justify-center gap-1 rounded-lg border bg-card p-1 shadow-sm">
-				<PromptInput
+				<form
 					className="w-full rounded-lg bg-background"
 					onSubmit={handleSubmit}
-					globalDrop
-					multiple
 				>
-					<PromptInputBody>
-						<PromptInputTextarea
+					<InputGroup className="overflow-hidden">
+						<InputGroupTextarea
+							className="field-sizing-content max-h-48 min-h-16"
 							onChange={(event) => setText(event.currentTarget.value)}
+							onKeyDown={handleTextareaKeyDown}
 							value={text}
 							placeholder="Ask Ditto to inspect the workspace..."
 						/>
-					</PromptInputBody>
-					<PromptInputFooter>
-						<ModelSelector
-							open={modelSelectorOpen}
-							onOpenChange={setModelSelectorOpen}
+						<InputGroupAddon
+							align="block-end"
+							className="justify-between gap-1"
 						>
-							<ModelSelectorTrigger
-								render={
-									<PromptInputButton aria-label="Select model">
-										{selectedModel?.chefSlug ? (
-											<ModelSelectorLogo
-												className="size-3.5"
-												provider={selectedModel.chefSlug}
-											/>
-										) : null}
-										{selectedModel?.name ? (
-											<ModelSelectorName>
-												{selectedModel.name}
-											</ModelSelectorName>
-										) : null}
-									</PromptInputButton>
-								}
-							/>
-							<ModelSelectorContent showCloseButton={false}>
-								<ModelSelectorInput placeholder="Search models..." />
-								<ModelSelectorList>
-									<ModelSelectorEmpty>No model found.</ModelSelectorEmpty>
-									{[...modelsByChef.entries()].map(([chef, chefModels]) => (
-										<ModelSelectorGroup heading={chef} key={chef}>
-											{chefModels.map((modelOption) => (
-												<ModelItem
-													key={modelOption.id}
-													model={modelOption}
-													onSelect={handleModelSelect}
-													selectedModel={model}
+							<ModelSelector
+								open={modelSelectorOpen}
+								onOpenChange={setModelSelectorOpen}
+							>
+								<ModelSelectorTrigger
+									render={
+										<InputGroupButton aria-label="Select model">
+											{selectedModel?.chefSlug ? (
+												<ModelSelectorLogo
+													className="size-3.5"
+													provider={selectedModel.chefSlug}
 												/>
-											))}
-										</ModelSelectorGroup>
-									))}
-								</ModelSelectorList>
-							</ModelSelectorContent>
-						</ModelSelector>
-						<PromptInputTools>
-							<PromptInputButton tooltip="Voice input">
-								<MicIcon />
-							</PromptInputButton>
-							<PromptInputSubmit
+											) : null}
+											{selectedModel?.name ? (
+												<ModelSelectorName>
+													{selectedModel.name}
+												</ModelSelectorName>
+											) : null}
+										</InputGroupButton>
+									}
+								/>
+								<ModelSelectorContent showCloseButton={false}>
+									<ModelSelectorInput placeholder="Search models..." />
+									<ModelSelectorList>
+										<ModelSelectorEmpty>No model found.</ModelSelectorEmpty>
+										{[...modelsByChef.entries()].map(([chef, chefModels]) => (
+											<ModelSelectorGroup heading={chef} key={chef}>
+												{chefModels.map((modelOption) => (
+													<ModelItem
+														key={modelOption.id}
+														model={modelOption}
+														onSelect={handleModelSelect}
+														selectedModel={model}
+													/>
+												))}
+											</ModelSelectorGroup>
+										))}
+									</ModelSelectorList>
+								</ModelSelectorContent>
+							</ModelSelector>
+							<InputGroupButton
 								aria-label="Submit"
 								disabled={submitDisabled}
-							/>
-						</PromptInputTools>
-					</PromptInputFooter>
-				</PromptInput>
+								size="icon-sm"
+								type="submit"
+								variant="default"
+							>
+								<CornerDownLeftIcon />
+							</InputGroupButton>
+						</InputGroupAddon>
+					</InputGroup>
+				</form>
 				<div className="flex w-full flex-wrap items-center justify-between gap-2 px-2 py-0.5 text-muted-foreground">
 					<div className="flex min-w-0 items-center gap-1.5 text-[11px]">
 						<GitBranchIcon className="size-3 shrink-0" aria-hidden />

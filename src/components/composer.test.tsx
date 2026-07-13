@@ -73,6 +73,25 @@ describe("Composer streaming updates", () => {
 		cleanup();
 	});
 
+	it("submits text with Enter", async () => {
+		streamAgentRunMock.mockImplementation(async (_input, handlers) => {
+			handlers.onDone?.({ ok: true, content: "", assistantMessageId: null });
+		});
+
+		render(<Composer projectId="proj-1" sessionId="sess-1" />);
+
+		const textarea = screen.getByRole("textbox");
+		fireEvent.change(textarea, { target: { value: "hello" } });
+		fireEvent.keyDown(textarea, { key: "Enter" });
+
+		await waitFor(() => {
+			expect(streamAgentRunMock).toHaveBeenCalledWith(
+				expect.objectContaining({ message: "hello" }),
+				expect.any(Object),
+			);
+		});
+	});
+
 	it("bounds onStreamingChange calls for many deltas while preserving order", async () => {
 		const tokens = Array.from({ length: 100 }, (_, i) => `t${i}`);
 		const fullText = tokens.join("");
