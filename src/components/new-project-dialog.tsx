@@ -2,21 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import {
-	ArrowLeftIcon,
-	ArrowRightIcon,
-	BookIcon,
-	CodeIcon,
-	GitBranchIcon,
-	GithubIcon,
-	GlobeIcon,
-	LockIcon,
-	PlusIcon,
-	SparklesIcon,
-	TrashIcon,
-	UnlockIcon,
-} from "lucide-react";
-import { useCallback, useState } from "react";
+import { GitBranchIcon, GithubIcon, PlusIcon, TrashIcon } from "lucide-react";
+import { useState } from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import {
@@ -37,30 +24,18 @@ import {
 } from "#/components/ui/dialog";
 import {
 	Field,
-	FieldDescription,
 	FieldError,
 	FieldGroup,
 	FieldLabel,
 } from "#/components/ui/field";
 import { Input } from "#/components/ui/input";
 import { ScrollArea } from "#/components/ui/scroll-area";
-import { Separator } from "#/components/ui/separator";
-import { Textarea } from "#/components/ui/textarea";
-import { ToggleGroup, ToggleGroupItem } from "#/components/ui/toggle-group";
+import { Skeleton } from "#/components/ui/skeleton";
+import { Spinner } from "#/components/ui/spinner";
 import { useTRPC } from "#/integrations/trpc/react";
 import { ENV_VAR_KEY_DESCRIPTION, normalizeEnvVarKey } from "#/lib/env-vars";
 import type { GitHubRepo } from "#/lib/github-repositories";
 import { cn } from "#/lib/utils";
-
-const LANGUAGE_COLORS: Record<string, string> = {
-	TypeScript: "bg-chart-1",
-	JavaScript: "bg-chart-4",
-	Go: "bg-chart-2",
-	MDX: "bg-chart-5",
-};
-
-type OnboardingPath = "github" | "scratch" | null;
-type Step = "choice" | "github" | "scratch" | "ready";
 
 interface EnvVar {
 	id: string;
@@ -75,16 +50,9 @@ export function NewProjectDialog({
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 }) {
-	const [path, setPath] = useState<OnboardingPath>(null);
-	const [step, setStep] = useState<Step>("choice");
-
 	const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
 	const [envVars, setEnvVars] = useState<EnvVar[]>([]);
-
-	const [projectName, setProjectName] = useState("");
-	const [projectDescription, setProjectDescription] = useState("");
-	const [projectOverview, setProjectOverview] = useState("");
-	const [framework, setFramework] = useState("");
+	const [githubSetupError, setGithubSetupError] = useState<string | null>(null);
 
 	const trpc = useTRPC();
 	const queryClient = useQueryClient();
@@ -92,10 +60,9 @@ export function NewProjectDialog({
 	const createProjectMutation = useMutation(
 		trpc.projects.create.mutationOptions(),
 	);
-
 	const importStateQuery = useQuery(
 		trpc.github.importState.queryOptions(undefined, {
-			enabled: open && step === "github",
+			enabled: open,
 			refetchOnWindowFocus: false,
 			staleTime: 5 * 60 * 1000,
 		}),
@@ -103,874 +70,437 @@ export function NewProjectDialog({
 
 	const githubLoading =
 		importStateQuery.isLoading || importStateQuery.isFetching;
-	const githubError = importStateQuery.error
-		? importStateQuery.error.message
-		: null;
 	const githubRepos = importStateQuery.data?.repositories ?? [];
 	const installations = importStateQuery.data?.installations ?? [];
-	const installUrl = importStateQuery.data?.installUrl;
+	const selectedRepository = githubRepos.find(
+		(repo) => repo.name === selectedRepo,
+	);
+	const isProvisioning = createProjectMutation.isPending;
+	const invalidEnvVarIds = new Set<string>();
+	for (const envVar of envVars) {
+		if (
+			envVar.key.trim().length > 0 &&
+			normalizeEnvVarKey(envVar.key) === null
+		) {
+			invalidEnvVarIds.add(envVar.id);
+		}
+	}
 
-	const resetState = useCallback(() => {
-		setPath(null);
-		setStep("choice");
+	function resetState() {
 		setSelectedRepo(null);
 		setEnvVars([]);
-		setProjectName("");
-		setProjectDescription("");
-		setProjectOverview("");
-		setFramework("");
-	}, []);
+		setGithubSetupError(null);
+		createProjectMutation.reset();
+	}
 
-	const handleClose = useCallback(() => {
+	function closeDialog() {
 		onOpenChange(false);
-		setTimeout(resetState, 200);
-	}, [onOpenChange, resetState]);
+		window.setTimeout(resetState, 150);
+	}
 
-	const isProvisioning = createProjectMutation.isPending;
-	const hasInvalidEnvVarKeys = envVars.some(
-		({ key }) => key.trim().length > 0 && normalizeEnvVarKey(key) === null,
-	);
+	function handleOpenChange(nextOpen: boolean) {
+		if (isProvisioning) return;
+		if (nextOpen) onOpenChange(true);
+		else closeDialog();
+	}
 
-	const handleDialogOpenChange = useCallback(
-		(nextOpen: boolean) => {
-			if (isProvisioning) {
-				return;
-			}
+	function addEnvVar() {
+		setEnvVars((current) => [
+			...current,
+			{ id: crypto.randomUUID(), key: "", value: "" },
+		]);
+	}
 
-			if (nextOpen) {
-				onOpenChange(true);
-				return;
-			}
-
-			handleClose();
-		},
-		[handleClose, isProvisioning, onOpenChange],
-	);
-
-	const handleChoosePath = useCallback((chosen: OnboardingPath) => {
-		setPath(chosen);
-		setStep(chosen === "github" ? "github" : "scratch");
-	}, []);
-
-	const handleBack = useCallback(() => {
-		if (step === "ready") {
-			setStep(path === "github" ? "github" : "scratch");
-		} else if (step === "github" || step === "scratch") {
-			setStep("choice");
-			setPath(null);
-		}
-	}, [step, path]);
-
-	const handleContinue = useCallback(() => {
-		if (step === "github" || step === "scratch") {
-			setStep("ready");
-		} else if (step === "ready") {
-			if (path !== "github") {
-				handleClose();
-			}
-		}
-	}, [handleClose, path, step]);
-
-	const handleInitializeProject = useCallback(async () => {
-		if (hasInvalidEnvVarKeys) {
-			return;
-		}
-
-		const selectedGitHubRepo = githubRepos.find(
-			(repo) => repo.name === selectedRepo,
+	function updateEnvVar(id: string, field: "key" | "value", value: string) {
+		setEnvVars((current) =>
+			current.map((envVar) =>
+				envVar.id === id ? { ...envVar, [field]: value } : envVar,
+			),
 		);
-		if (!selectedGitHubRepo) {
-			return;
+	}
+
+	function removeEnvVar(id: string) {
+		setEnvVars((current) => current.filter((envVar) => envVar.id !== id));
+	}
+
+	async function createProject() {
+		if (!selectedRepository || invalidEnvVarIds.size > 0) return;
+
+		try {
+			const project = await createProjectMutation.mutateAsync({
+				name: selectedRepository.repoName,
+				githubRepo: selectedRepository.name,
+				githubInstallationId: selectedRepository.installationId,
+				envVars: envVars.map(({ key, value }) => ({ key, value })),
+			});
+
+			await queryClient.invalidateQueries(trpc.projects.list.queryFilter());
+			closeDialog();
+			await navigate({
+				to: "/project/$projectId",
+				params: { projectId: project.id },
+			});
+		} catch {
+			// React Query exposes the error beside the action.
 		}
+	}
 
-		const project = await createProjectMutation.mutateAsync({
-			name: selectedGitHubRepo.repoName,
-			githubRepo: selectedGitHubRepo.name,
-			githubInstallationId: selectedGitHubRepo.installationId,
-			envVars: envVars.map(({ key, value }) => ({ key, value })),
-		});
-
-		await queryClient.invalidateQueries(trpc.projects.list.queryFilter());
-		handleClose();
-		await navigate({
-			to: "/project/$projectId",
-			params: { projectId: project.id },
-		});
-	}, [
-		createProjectMutation,
-		envVars,
-		hasInvalidEnvVarKeys,
-		githubRepos,
-		handleClose,
-		navigate,
-		queryClient,
-		selectedRepo,
-		trpc,
-	]);
-
-	const handleConfigureGithub = useCallback(() => {
+	function configureGitHub() {
+		const installUrl = importStateQuery.data?.installUrl;
 		if (!installUrl) return;
 
+		setGithubSetupError(null);
 		const width = 600;
 		const height = 750;
-		const left = window.screen.width / 2 - width / 2;
-		const top = window.screen.height / 2 - height / 2;
-
 		const popup = window.open(
 			installUrl,
 			"github-app-install",
-			`width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`,
+			`width=${width},height=${height},left=${window.screen.width / 2 - width / 2},top=${window.screen.height / 2 - height / 2},resizable=yes,scrollbars=yes,status=yes`,
 		);
 
 		if (!popup) {
-			alert("Popup blocker enabled. Please allow popups to connect GitHub.");
+			setGithubSetupError(
+				"Your browser blocked the GitHub window. Allow popups and try again.",
+			);
 			return;
 		}
 
+		const refreshRepositories = () => {
+			window.clearInterval(interval);
+			window.removeEventListener("message", handleMessage);
+			void importStateQuery.refetch();
+		};
 		const handleMessage = (event: MessageEvent) => {
-			if (event.origin !== window.location.origin) return;
-			if (event.data?.type === "github-app-install-complete") {
-				window.removeEventListener("message", handleMessage);
-				void importStateQuery.refetch();
+			if (
+				event.origin === window.location.origin &&
+				event.data?.type === "github-app-install-complete"
+			) {
+				refreshRepositories();
 			}
 		};
-
-		window.addEventListener("message", handleMessage);
-
 		const interval = window.setInterval(() => {
-			if (popup.closed) {
-				window.clearInterval(interval);
-				window.removeEventListener("message", handleMessage);
-				void importStateQuery.refetch();
-			}
+			if (popup.closed) refreshRepositories();
 		}, 1000);
-	}, [installUrl, importStateQuery]);
-
-	const addEnvVar = useCallback(() => {
-		setEnvVars((prev) => [
-			...prev,
-			{ id: crypto.randomUUID(), key: "", value: "" },
-		]);
-	}, []);
-
-	const removeEnvVar = useCallback((id: string) => {
-		setEnvVars((prev) => prev.filter((v) => v.id !== id));
-	}, []);
-
-	const updateEnvVar = useCallback(
-		(id: string, field: "key" | "value", val: string) => {
-			setEnvVars((prev) =>
-				prev.map((v) => (v.id === id ? { ...v, [field]: val } : v)),
-			);
-		},
-		[],
-	);
-
-	const canContinue =
-		step === "github"
-			? selectedRepo !== null && !githubLoading && githubError === null
-			: step === "scratch"
-				? projectName.trim().length > 0 && framework.length > 0
-				: true;
+		window.addEventListener("message", handleMessage);
+	}
 
 	return (
-		<Dialog open={open} onOpenChange={handleDialogOpenChange}>
+		<Dialog open={open} onOpenChange={handleOpenChange}>
 			<DialogContent
 				showCloseButton={!isProvisioning}
-				className={cn(
-					"sm:max-w-lg",
-					step === "github" && "flex max-h-[85vh] flex-col",
-				)}
+				className="flex max-h-[85vh] flex-col sm:max-w-xl"
 			>
-				{step === "choice" && (
-					<>
-						<DialogHeader>
-							<DialogTitle className="text-balance">
-								Create a new project
-							</DialogTitle>
-							<DialogDescription>
-								Choose how you'd like to get started.
-							</DialogDescription>
-						</DialogHeader>
+				<DialogHeader>
+					<DialogTitle className="text-balance">Create project</DialogTitle>
+					<DialogDescription className="text-pretty">
+						Choose a GitHub repository. Ditto will clone it into a secure
+						workspace and install its dependencies.
+					</DialogDescription>
+				</DialogHeader>
 
-						<div className="grid grid-cols-2 gap-3 py-2">
-							<button
-								type="button"
-								onClick={() => handleChoosePath("github")}
-								className={cn(
-									"group flex cursor-pointer flex-col items-center gap-3 rounded-lg border border-border bg-card p-5 text-center transition-colors duration-150 ease-out",
-									"hover:border-ring hover:bg-accent",
-									"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-								)}
-							>
-								<div className="flex size-10 items-center justify-center rounded-md bg-muted">
-									<GithubIcon
-										aria-hidden="true"
-										className="size-5 text-foreground"
-									/>
-								</div>
-								<div className="flex flex-col gap-1">
-									<span className="text-sm font-medium">
-										Import from GitHub
-									</span>
-									<span className="text-xs text-muted-foreground text-pretty">
-										Clone an existing repository
-									</span>
-								</div>
-							</button>
+				<ScrollArea className="min-h-0 flex-1">
+					<div className="flex flex-col gap-4 pr-3">
+						<RepositoryPicker
+							repositories={githubRepos}
+							hasInstallation={installations.length > 0}
+							installUrlAvailable={Boolean(importStateQuery.data?.installUrl)}
+							selectedRepo={selectedRepo}
+							loading={githubLoading}
+							repositoryError={importStateQuery.error?.message ?? null}
+							setupError={githubSetupError}
+							isProvisioning={isProvisioning}
+							onSelect={setSelectedRepo}
+							onConfigure={configureGitHub}
+							onRetry={() => void importStateQuery.refetch()}
+						/>
 
-							<button
-								type="button"
-								onClick={() => handleChoosePath("scratch")}
-								className={cn(
-									"group flex cursor-pointer flex-col items-center gap-3 rounded-lg border border-border bg-card p-5 text-center transition-colors duration-150 ease-out",
-									"hover:border-ring hover:bg-accent",
-									"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-								)}
-							>
-								<div className="flex size-10 items-center justify-center rounded-md bg-muted">
-									<CodeIcon
-										aria-hidden="true"
-										className="size-5 text-foreground"
-									/>
-								</div>
-								<div className="flex flex-col gap-1">
-									<span className="text-sm font-medium">
-										Start from Scratch
-									</span>
-									<span className="text-xs text-muted-foreground text-pretty">
-										Set up a brand new project
-									</span>
-								</div>
-							</button>
-						</div>
-					</>
-				)}
-
-				{step === "github" && (
-					<>
-						<DialogHeader>
-							<DialogTitle className="text-balance">
-								Import from GitHub
-							</DialogTitle>
-							<DialogDescription>
-								Search and select a repository to import.
-							</DialogDescription>
-						</DialogHeader>
-
-						{installations.length === 0 && !githubLoading && !githubError ? (
-							<div className="flex flex-col items-center justify-center gap-4 py-8 text-center border border-dashed border-border rounded-lg bg-muted/20">
-								<GithubIcon className="size-10 text-muted-foreground" />
-								<div className="space-y-1 px-4">
-									<h3 className="text-sm font-medium">Install GitHub App</h3>
-									<p className="text-xs text-muted-foreground max-w-xs">
-										To import your repositories, you need to install the Ditto
-										GitHub App on your personal account or organization.
-									</p>
-								</div>
-								<Button
-									onClick={handleConfigureGithub}
-									size="sm"
-									disabled={isProvisioning}
-									className="cursor-pointer"
-								>
-									Install GitHub App
-								</Button>
-							</div>
-						) : (
-							<>
-								<Command className="rounded-lg border border-border">
-									<CommandInput placeholder="Search repositories…" />
-									<CommandList>
-										{githubLoading ? (
-											<CommandEmpty>Loading repositories...</CommandEmpty>
-										) : githubError ? (
-											<CommandEmpty>{githubError}</CommandEmpty>
-										) : githubRepos.length === 0 ? (
-											<CommandEmpty>No repositories found.</CommandEmpty>
-										) : (
-											<CommandGroup heading="Your repositories">
-												{githubRepos.map((repo: GitHubRepo) => (
-													<CommandItem
-														key={repo.name}
-														value={repo.name}
-														onSelect={() => setSelectedRepo(repo.name)}
-														className={cn(
-															"flex items-center gap-3 cursor-pointer",
-															selectedRepo === repo.name && "bg-accent",
-														)}
-													>
-														<BookIcon
-															aria-hidden="true"
-															className="size-4 shrink-0 text-muted-foreground"
-														/>
-														<div className="flex min-w-0 flex-1 items-center gap-2">
-															<span className="truncate text-sm font-medium">
-																{repo.name}
-															</span>
-															{repo.isPrivate ? (
-																<LockIcon
-																	aria-hidden="true"
-																	className="size-3 shrink-0 text-muted-foreground"
-																/>
-															) : (
-																<GlobeIcon
-																	aria-hidden="true"
-																	className="size-3 shrink-0 text-muted-foreground"
-																/>
-															)}
-														</div>
-														<div className="flex items-center gap-2">
-															<div className="flex items-center gap-1.5">
-																<span
-																	className={cn(
-																		"size-2.5 rounded-full",
-																		repo.language
-																			? (LANGUAGE_COLORS[repo.language] ??
-																					"bg-muted-foreground")
-																			: "bg-muted-foreground",
-																	)}
-																	aria-hidden="true"
-																/>
-																<span className="text-xs text-muted-foreground">
-																	{repo.language ?? "Unknown"}
-																</span>
-															</div>
-														</div>
-													</CommandItem>
-												))}
-											</CommandGroup>
-										)}
-									</CommandList>
-								</Command>
-
-								{installations.length > 0 && (
-									<div className="flex items-center justify-between px-1 text-xs text-muted-foreground">
-										<span>Can't find your repository?</span>
-										<button
-											type="button"
-											onClick={handleConfigureGithub}
-											disabled={isProvisioning}
-											className="text-primary hover:underline font-medium cursor-pointer"
-										>
-											Configure GitHub Access
-										</button>
-									</div>
-								)}
-							</>
-						)}
-
-						{selectedRepo && (
-							<div className="flex items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-2">
-								<GitBranchIcon
-									aria-hidden="true"
-									className="size-4 text-muted-foreground"
-								/>
-								<span className="text-sm">
-									Selected: <span className="font-medium">{selectedRepo}</span>
-								</span>
-							</div>
-						)}
-
-						<DialogFooter className="flex flex-row items-center gap-2 pt-1">
-							<Button
-								variant="ghost"
-								onClick={handleBack}
+						{selectedRepository ? (
+							<EnvironmentVariables
+								envVars={envVars}
+								invalidIds={invalidEnvVarIds}
 								disabled={isProvisioning}
-								className="cursor-pointer"
-							>
-								<ArrowLeftIcon data-icon="inline-start" />
-								Back
-							</Button>
-							<div className="flex-1" />
-							<Button
-								onClick={handleContinue}
-								disabled={!canContinue || isProvisioning}
-								className="cursor-pointer"
-							>
-								Continue
-								<ArrowRightIcon data-icon="inline-end" />
-							</Button>
-						</DialogFooter>
-					</>
-				)}
+								onAdd={addEnvVar}
+								onUpdate={updateEnvVar}
+								onRemove={removeEnvVar}
+							/>
+						) : null}
+					</div>
+				</ScrollArea>
 
-				{step === "scratch" && (
-					<>
-						<DialogHeader>
-							<DialogTitle className="text-balance">
-								Start from Scratch
-							</DialogTitle>
-							<DialogDescription>
-								Tell us about the project you want to build.
-							</DialogDescription>
-						</DialogHeader>
+				{createProjectMutation.error ? (
+					<FieldError>{createProjectMutation.error.message}</FieldError>
+				) : null}
 
-						<ScrollArea className="max-h-[60vh]">
-							<FieldGroup className="gap-4 py-1 pr-3">
-								<Field>
-									<FieldLabel htmlFor="project-name">Project Name</FieldLabel>
-									<Input
-										id="project-name"
-										name="project-name"
-										placeholder="my-awesome-project"
-										autoComplete="off"
-										spellCheck={false}
-										value={projectName}
-										onChange={(e) => setProjectName(e.target.value)}
-									/>
-								</Field>
-
-								<Field>
-									<FieldLabel htmlFor="project-description">
-										Description
-									</FieldLabel>
-									<Input
-										id="project-description"
-										name="project-description"
-										placeholder="A brief description of your project…"
-										autoComplete="off"
-										value={projectDescription}
-										onChange={(e) => setProjectDescription(e.target.value)}
-									/>
-									<FieldDescription>
-										Optional. Helps the AI understand your goals.
-									</FieldDescription>
-								</Field>
-
-								<Field>
-									<FieldLabel htmlFor="project-overview">
-										Brief Overview / Workflow
-									</FieldLabel>
-									<Textarea
-										id="project-overview"
-										name="project-overview"
-										placeholder="Describe the main features, user flows, or architecture…"
-										autoComplete="off"
-										value={projectOverview}
-										onChange={(e) => setProjectOverview(e.target.value)}
-									/>
-									<FieldDescription>
-										Optional. Provide context for the AI scaffolding agent.
-									</FieldDescription>
-								</Field>
-
-								<Field>
-									<FieldLabel id="framework-label">Framework</FieldLabel>
-									<ToggleGroup
-										value={framework ? [framework] : []}
-										onValueChange={(val) => {
-											const next = val.find((v) => v !== framework);
-											if (next) setFramework(next);
-										}}
-										aria-labelledby="framework-label"
-										className="flex w-full"
-									>
-										<ToggleGroupItem
-											value="astro"
-											className="flex-1 cursor-pointer"
-										>
-											Astro
-										</ToggleGroupItem>
-										<ToggleGroupItem
-											value="nextjs"
-											className="flex-1 cursor-pointer"
-										>
-											NextJS
-										</ToggleGroupItem>
-										<ToggleGroupItem
-											value="tanstack-start"
-											className="flex-1 cursor-pointer"
-										>
-											TanStack Start
-										</ToggleGroupItem>
-									</ToggleGroup>
-								</Field>
-							</FieldGroup>
-						</ScrollArea>
-
-						<DialogFooter className="flex flex-row items-center gap-2 pt-1">
-							<Button
-								variant="ghost"
-								onClick={handleBack}
-								disabled={isProvisioning}
-								className="cursor-pointer"
-							>
-								<ArrowLeftIcon data-icon="inline-start" />
-								Back
-							</Button>
-							<div className="flex-1" />
-							<Button
-								onClick={handleContinue}
-								disabled={!canContinue || isProvisioning}
-								className="cursor-pointer"
-							>
-								Continue
-								<ArrowRightIcon data-icon="inline-end" />
-							</Button>
-						</DialogFooter>
-					</>
-				)}
-
-				{step === "ready" && (
-					<ReadyStep
-						path={path}
-						selectedRepo={selectedRepo}
-						githubRepos={githubRepos}
-						projectName={projectName}
-						projectDescription={projectDescription}
-						projectOverview={projectOverview}
-						framework={framework}
-						envVars={envVars}
-						hasInvalidEnvVarKeys={hasInvalidEnvVarKeys}
-						addEnvVar={addEnvVar}
-						removeEnvVar={removeEnvVar}
-						updateEnvVar={updateEnvVar}
-						isProvisioning={isProvisioning}
-						provisioningError={createProjectMutation.error?.message ?? null}
-						onBack={handleBack}
-						onSubmit={
-							path === "github"
-								? () => {
-										void handleInitializeProject();
-									}
-								: handleContinue
+				<DialogFooter className="items-center sm:justify-between">
+					<p className="text-xs text-muted-foreground" aria-live="polite">
+						{selectedRepository
+							? `${selectedRepository.name} selected`
+							: "Select a repository to continue"}
+					</p>
+					<Button
+						type="button"
+						onClick={() => void createProject()}
+						disabled={
+							!selectedRepository || isProvisioning || invalidEnvVarIds.size > 0
 						}
-					/>
-				)}
+					>
+						{isProvisioning ? <Spinner /> : null}
+						{isProvisioning ? "Creating project…" : "Create project"}
+					</Button>
+				</DialogFooter>
 			</DialogContent>
 		</Dialog>
 	);
 }
 
-function ReadyStep({
-	path,
+function RepositoryPicker({
+	repositories,
+	hasInstallation,
+	installUrlAvailable,
 	selectedRepo,
-	githubRepos,
-	projectName,
-	projectDescription,
-	projectOverview,
-	framework,
-	envVars,
-	hasInvalidEnvVarKeys,
-	addEnvVar,
-	removeEnvVar,
-	updateEnvVar,
+	loading,
+	repositoryError,
+	setupError,
 	isProvisioning,
-	provisioningError,
-	onBack,
-	onSubmit,
+	onSelect,
+	onConfigure,
+	onRetry,
 }: {
-	path: OnboardingPath;
+	repositories: GitHubRepo[];
+	hasInstallation: boolean;
+	installUrlAvailable: boolean;
 	selectedRepo: string | null;
-	githubRepos: GitHubRepo[];
-	projectName: string;
-	projectDescription: string;
-	projectOverview: string;
-	framework: string;
-	envVars: EnvVar[];
-	hasInvalidEnvVarKeys: boolean;
-	addEnvVar: () => void;
-	removeEnvVar: (id: string) => void;
-	updateEnvVar: (id: string, field: "key" | "value", val: string) => void;
+	loading: boolean;
+	repositoryError: string | null;
+	setupError: string | null;
 	isProvisioning: boolean;
-	provisioningError: string | null;
-	onBack: () => void;
-	onSubmit: () => void;
+	onSelect: (repo: string) => void;
+	onConfigure: () => void;
+	onRetry: () => void;
 }) {
-	const invalidEnvVarIds = new Set(
-		envVars
-			.filter(
-				({ key }) => key.trim().length > 0 && normalizeEnvVarKey(key) === null,
-			)
-			.map(({ id }) => id),
-	);
+	if (!hasInstallation && !loading && !repositoryError) {
+		return (
+			<div className="flex flex-col items-start gap-3 rounded-lg border border-dashed p-4">
+				<div className="flex items-center gap-2">
+					<GithubIcon aria-hidden="true" />
+					<h3 className="text-sm font-medium">Connect GitHub</h3>
+				</div>
+				<p className="text-pretty text-xs text-muted-foreground">
+					Install the Ditto GitHub App and choose which repositories it can
+					access. You can change access later in GitHub.
+				</p>
+				<Button
+					type="button"
+					onClick={onConfigure}
+					disabled={!installUrlAvailable}
+				>
+					<GithubIcon data-icon="inline-start" />
+					Connect GitHub
+				</Button>
+				{setupError ? (
+					<p className="text-pretty text-xs text-destructive" role="alert">
+						{setupError}
+					</p>
+				) : null}
+			</div>
+		);
+	}
 
 	return (
 		<>
-			<DialogHeader>
-				<DialogTitle className="text-balance">
-					{path === "github" ? "Ready to initialize" : "Review & create"}
-				</DialogTitle>
-				<DialogDescription>
-					{path === "github"
-						? "Review your setup before we spin up the sandbox."
-						: "Review your project details before the AI begins scaffolding."}
-				</DialogDescription>
-			</DialogHeader>
-
-			<ScrollArea className="max-h-[60vh]">
-				<div className="flex flex-col gap-4 pr-3">
-					{path === "github" ? (
-						<GitHubSummary repo={selectedRepo} repos={githubRepos} />
+			<Command className="rounded-lg border">
+				<CommandInput
+					aria-label="Search repositories"
+					placeholder="Search repositories…"
+				/>
+				<CommandList>
+					{loading ? (
+						<div className="flex flex-col gap-2 p-2" aria-busy="true">
+							<span className="sr-only">Loading repositories</span>
+							<Skeleton className="h-8 w-full" />
+							<Skeleton className="h-8 w-full" />
+							<Skeleton className="h-8 w-full" />
+						</div>
+					) : repositoryError ? (
+						<CommandEmpty>
+							<span className="text-destructive" role="alert">
+								{repositoryError}
+							</span>
+						</CommandEmpty>
+					) : repositories.length === 0 ? (
+						<CommandEmpty>No accessible repositories found.</CommandEmpty>
 					) : (
-						<ScratchSummary
-							name={projectName}
-							description={projectDescription}
-							overview={projectOverview}
-							framework={framework}
-						/>
-					)}
-
-					<Separator />
-
-					<div className="flex flex-col gap-2">
-						<span className="text-xs font-medium text-muted-foreground">
-							What happens next
-						</span>
-						{path === "github" ? (
-							<ul className="flex flex-col gap-1.5 text-sm">
-								<li className="flex items-start gap-2">
-									<span
-										className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary"
+						<CommandGroup heading="Repositories">
+							{repositories.map((repo) => (
+								<CommandItem
+									key={repo.id}
+									value={repo.name}
+									data-checked={selectedRepo === repo.name}
+									onSelect={() => onSelect(repo.name)}
+									className={cn(
+										"min-h-9 cursor-pointer gap-3",
+										selectedRepo === repo.name && "bg-muted",
+									)}
+								>
+									<GitBranchIcon
 										aria-hidden="true"
+										className="text-muted-foreground"
 									/>
-									Initialize a secure sandbox environment
-								</li>
-								<li className="flex items-start gap-2">
-									<span
-										className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary"
-										aria-hidden="true"
-									/>
-									Clone the repository into the sandbox
-								</li>
-								<li className="flex items-start gap-2">
-									<span
-										className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary"
-										aria-hidden="true"
-									/>
-									Install dependencies automatically
-								</li>
-							</ul>
-						) : (
-							<div className="flex items-start gap-2 text-sm text-muted-foreground">
-								<SparklesIcon
-									aria-hidden="true"
-									className="mt-0.5 size-4 shrink-0 text-primary"
-								/>
-								<p className="text-pretty">
-									An AI agent will analyze your requirements and draft a plan
-									for the initial scaffolding. You'll be able to review and
-									adjust before any code is generated.
-								</p>
-							</div>
-						)}
-					</div>
-
-					{path === "github" && (
-						<>
-							{isProvisioning ? (
-								<p className="text-sm text-muted-foreground">
-									Spinning up sandbox and installing dependencies...
-								</p>
-							) : null}
-							{provisioningError ? (
-								<p className="text-sm text-destructive" role="alert">
-									{provisioningError}
-								</p>
-							) : null}
-
-							<Separator />
-							<div className="flex flex-col gap-3">
-								<div className="flex items-center justify-between">
-									<div className="flex flex-col gap-0.5">
-										<span className="text-xs font-medium text-muted-foreground">
-											Environment Variables
+									<span className="min-w-0 flex-1 truncate font-medium">
+										{repo.name}
+									</span>
+									{repo.language ? (
+										<span className="hidden text-muted-foreground sm:inline">
+											{repo.language}
 										</span>
-										<span className="text-xs text-muted-foreground">
-											Optional. Injected into agent sessions as process
-											environment variables.
-										</span>
-									</div>
-									<Button
-										variant="outline"
-										size="sm"
-										onClick={addEnvVar}
-										disabled={isProvisioning}
-										className="cursor-pointer shrink-0"
-										aria-label="Add environment variable"
-									>
-										<PlusIcon data-icon="inline-start" />
-										Add
-									</Button>
-								</div>
-
-								{envVars.length > 0 && (
-									<div className="flex flex-col gap-2">
-										{envVars.map((envVar) => {
-											const isInvalid = invalidEnvVarIds.has(envVar.id);
-											const errorId = `env-var-${envVar.id}-error`;
-
-											return (
-												<div key={envVar.id} className="flex flex-col gap-1">
-													<div className="flex items-center gap-2">
-														<Input
-															placeholder="KEY"
-															autoComplete="off"
-															spellCheck={false}
-															value={envVar.key}
-															disabled={isProvisioning}
-															onChange={(e) =>
-																updateEnvVar(envVar.id, "key", e.target.value)
-															}
-															className="flex-1 font-mono text-xs"
-															aria-label="Variable name"
-															aria-invalid={isInvalid || undefined}
-															aria-describedby={isInvalid ? errorId : undefined}
-														/>
-														<Input
-															placeholder="value"
-															autoComplete="off"
-															spellCheck={false}
-															value={envVar.value}
-															disabled={isProvisioning}
-															onChange={(e) =>
-																updateEnvVar(envVar.id, "value", e.target.value)
-															}
-															className="flex-1 font-mono text-xs"
-															aria-label="Variable value"
-														/>
-														<Button
-															variant="ghost"
-															size="icon-sm"
-															onClick={() => removeEnvVar(envVar.id)}
-															disabled={isProvisioning}
-															className="cursor-pointer shrink-0"
-															aria-label="Remove variable"
-														>
-															<TrashIcon aria-hidden="true" />
-														</Button>
-													</div>
-													{isInvalid ? (
-														<FieldError id={errorId}>
-															{ENV_VAR_KEY_DESCRIPTION}
-														</FieldError>
-													) : null}
-												</div>
-											);
-										})}
-									</div>
-								)}
-							</div>
-						</>
+									) : null}
+									{repo.isPrivate ? (
+										<Badge variant="secondary">Private</Badge>
+									) : null}
+								</CommandItem>
+							))}
+						</CommandGroup>
 					)}
+				</CommandList>
+			</Command>
+
+			{hasInstallation && !loading ? (
+				<div className="flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-muted-foreground">
+					<span>Missing a repository?</span>
+					<Button
+						type="button"
+						variant="link"
+						size="sm"
+						onClick={onConfigure}
+						disabled={isProvisioning}
+					>
+						Configure GitHub access
+					</Button>
 				</div>
-			</ScrollArea>
+			) : null}
 
-			<DialogFooter className="flex flex-row items-center gap-2 pt-1">
-				<Button
-					variant="ghost"
-					onClick={onBack}
-					disabled={isProvisioning}
-					className="cursor-pointer"
-				>
-					<ArrowLeftIcon data-icon="inline-start" />
-					Back
+			{repositoryError ? (
+				<Button type="button" variant="outline" size="sm" onClick={onRetry}>
+					Try again
 				</Button>
-				<div className="flex-1" />
-				<Button
-					onClick={onSubmit}
-					disabled={
-						isProvisioning || (path === "github" && hasInvalidEnvVarKeys)
-					}
-					className="cursor-pointer"
-				>
-					{path === "github"
-						? isProvisioning
-							? "Initializing..."
-							: "Initialize"
-						: "Create Project"}
-					<ArrowRightIcon data-icon="inline-end" />
-				</Button>
-			</DialogFooter>
+			) : null}
+
+			{setupError ? (
+				<p className="text-pretty text-xs text-destructive" role="alert">
+					{setupError}
+				</p>
+			) : null}
 		</>
 	);
 }
 
-function GitHubSummary({
-	repo,
-	repos,
+function EnvironmentVariables({
+	envVars,
+	invalidIds,
+	disabled,
+	onAdd,
+	onUpdate,
+	onRemove,
 }: {
-	repo: string | null;
-	repos: GitHubRepo[];
+	envVars: EnvVar[];
+	invalidIds: Set<string>;
+	disabled: boolean;
+	onAdd: () => void;
+	onUpdate: (id: string, field: "key" | "value", value: string) => void;
+	onRemove: (id: string) => void;
 }) {
-	const repoData = repos.find((r) => r.name === repo);
-	if (!repoData) return null;
-
 	return (
-		<div className="flex flex-col gap-2">
-			<div className="flex items-center justify-between gap-4">
-				<div className="flex items-center gap-2">
-					<GithubIcon
-						aria-hidden="true"
-						className="size-4 text-muted-foreground"
-					/>
-					<span className="text-sm font-medium">{repoData.name}</span>
-					<Badge variant="secondary" className="text-xs">
-						{repoData.isPrivate ? (
-							<LockIcon className="size-5" />
-						) : (
-							<UnlockIcon className="size-5" />
-						)}
-					</Badge>
-				</div>
-				<div className="flex items-center gap-1.5">
-					<span
-						className={cn(
-							"size-2.5 rounded-full",
-							repoData.language
-								? (LANGUAGE_COLORS[repoData.language] ?? "bg-muted-foreground")
-								: "bg-muted-foreground",
-						)}
-						aria-hidden="true"
-					/>
-					{repoData.language ?? "Unknown"}
-				</div>
-			</div>
-		</div>
-	);
-}
-
-function ScratchSummary({
-	name,
-	description,
-	overview,
-	framework,
-}: {
-	name: string;
-	description: string;
-	overview: string;
-	framework: string;
-}) {
-	const frameworkLabels: Record<string, string> = {
-		astro: "Astro",
-		nextjs: "NextJS",
-		"tanstack-start": "TanStack Start",
-	};
-
-	return (
-		<div className="flex flex-col gap-2.5">
-			<div className="flex items-center justify-between">
-				<span className="text-sm font-medium">{name}</span>
-				{framework && (
-					<Badge variant="secondary" className="text-xs">
-						{frameworkLabels[framework] ?? framework}
-					</Badge>
-				)}
-			</div>
-			{description && (
-				<p className="text-xs text-muted-foreground text-pretty">
-					{description}
-				</p>
-			)}
-			{overview && (
-				<>
-					<Separator />
-					<p className="text-xs text-muted-foreground text-pretty line-clamp-3">
-						{overview}
+		<details className="rounded-lg border px-3 py-2">
+			<summary className="cursor-pointer rounded-sm text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/30">
+				Environment variables
+				<span className="ml-1 font-normal text-muted-foreground">
+					(optional)
+				</span>
+			</summary>
+			<div className="flex flex-col gap-3 pt-3">
+				<div className="flex items-start justify-between gap-3">
+					<p className="text-pretty text-xs text-muted-foreground">
+						Available while Ditto installs dependencies and in agent sessions.
 					</p>
-				</>
-			)}
-		</div>
+					<Button
+						type="button"
+						variant="outline"
+						size="sm"
+						onClick={onAdd}
+						disabled={disabled}
+					>
+						<PlusIcon data-icon="inline-start" />
+						Add variable
+					</Button>
+				</div>
+
+				{envVars.length > 0 ? (
+					<FieldGroup className="gap-3">
+						{envVars.map((envVar) => {
+							const invalid = invalidIds.has(envVar.id);
+							const nameId = `env-name-${envVar.id}`;
+							const valueId = `env-value-${envVar.id}`;
+							const errorId = `env-error-${envVar.id}`;
+
+							return (
+								<Field key={envVar.id} data-invalid={invalid}>
+									<div className="flex items-center gap-2">
+										<FieldLabel htmlFor={nameId} className="sr-only">
+											Variable name
+										</FieldLabel>
+										<Input
+											id={nameId}
+											placeholder="VARIABLE_NAME"
+											autoComplete="off"
+											autoCapitalize="none"
+											spellCheck={false}
+											value={envVar.key}
+											disabled={disabled}
+											aria-invalid={invalid || undefined}
+											aria-describedby={invalid ? errorId : undefined}
+											className="min-w-0 flex-1 font-mono"
+											onChange={(event) =>
+												onUpdate(envVar.id, "key", event.target.value)
+											}
+										/>
+										<FieldLabel htmlFor={valueId} className="sr-only">
+											Variable value
+										</FieldLabel>
+										<Input
+											id={valueId}
+											type="password"
+											placeholder="Value"
+											autoComplete="new-password"
+											spellCheck={false}
+											value={envVar.value}
+											disabled={disabled}
+											className="min-w-0 flex-1 font-mono"
+											onChange={(event) =>
+												onUpdate(envVar.id, "value", event.target.value)
+											}
+										/>
+										<Button
+											type="button"
+											variant="ghost"
+											size="icon-sm"
+											onClick={() => onRemove(envVar.id)}
+											disabled={disabled}
+											aria-label={`Remove ${envVar.key || "environment variable"}`}
+										>
+											<TrashIcon aria-hidden="true" />
+										</Button>
+									</div>
+									{invalid ? (
+										<FieldError id={errorId}>
+											{ENV_VAR_KEY_DESCRIPTION}
+										</FieldError>
+									) : null}
+								</Field>
+							);
+						})}
+					</FieldGroup>
+				) : null}
+			</div>
+		</details>
 	);
 }
