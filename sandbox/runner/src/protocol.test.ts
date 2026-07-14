@@ -3,6 +3,7 @@ import {
 	encodeLine,
 	extractAssistantTextFromMessages,
 	extractTextDelta,
+	extractUserTextFromMessageStart,
 	pickAssistantText,
 	runnerOutputFromAgentEvent,
 } from "./protocol.js";
@@ -26,6 +27,45 @@ describe("protocol", () => {
 			assistantMessageEvent: { type: "text_delta", delta: "Hello" },
 		};
 		expect(extractTextDelta(event)).toBe("Hello");
+	});
+
+	it("extracts user text from strict message_start shapes", () => {
+		expect(
+			extractUserTextFromMessageStart({
+				type: "message_start",
+				message: {
+					role: "user",
+					content: [
+						{ type: "text", text: "Follow " },
+						{ type: "image", data: "ignored" },
+						{ type: "text", text: "up" },
+					],
+				},
+			}),
+		).toBe("Follow up");
+		expect(
+			extractUserTextFromMessageStart({
+				type: "message_start",
+				message: { role: "assistant", content: "no" },
+			}),
+		).toBeNull();
+	});
+
+	it("encodes additive control events without changing the protocol version", () => {
+		const event = {
+			v: 1 as const,
+			kind: "control_event" as const,
+			event: {
+				type: "follow_up_started" as const,
+				requestId: "req-1",
+				runId: "run-1",
+				sessionId: "session-1",
+				text: "Next",
+				userMessageId: "user-2",
+				assistantMessageId: "assistant-2",
+			},
+		};
+		expect(JSON.parse(encodeLine(event))).toEqual(event);
 	});
 
 	it('extractTextDelta returns null for { type: "agent_start" }', () => {
