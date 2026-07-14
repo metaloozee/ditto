@@ -167,10 +167,9 @@ describe("Composer streaming updates", () => {
 			expect(onStreamCommit).toHaveBeenCalledTimes(1);
 		});
 
-		// done.content is preferred at commit; streaming text uses partsToText
-		// which joins text segments around tools with \n\n.
+		// done.content and streaming text preserve the original delta bytes.
 		const doneContent = `${fullText} after-tool`;
-		const projectedText = `${fullText}\n\n after-tool`;
+		const projectedText = doneContent;
 		expect(onStreamCommit.mock.calls[0]?.[0]).toMatchObject({
 			sessionId: "sess-1",
 			assistant: {

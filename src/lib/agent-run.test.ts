@@ -132,6 +132,89 @@ describe("runAgentInSandbox", () => {
 		expect(result).not.toHaveProperty("backupError");
 	});
 
+	it("flushes held assistant text before tool events", async () => {
+		const writeFile = vi.fn().mockResolvedValue(undefined);
+		const mkdir = vi.fn().mockResolvedValue(undefined);
+		const execStream = vi.fn().mockResolvedValue(new ReadableStream());
+		const deleteSession = vi.fn().mockResolvedValue(undefined);
+		const createSession = vi.fn().mockResolvedValue({
+			id: "agent-conv-order",
+			writeFile,
+			mkdir,
+			execStream,
+		});
+
+		getProjectSandboxMock.mockReturnValue({ createSession, deleteSession });
+		parseSSEStreamMock.mockImplementation(async function* () {
+			const lines = [
+				{ v: 1, kind: "assistant_delta", delta: "BEFORE " },
+				{
+					v: 1,
+					kind: "agent_event",
+					event: {
+						type: "tool_execution_start",
+						toolCallId: "tool-1",
+						toolName: "read",
+					},
+				},
+				{
+					v: 1,
+					kind: "agent_event",
+					event: {
+						type: "tool_execution_end",
+						toolCallId: "tool-1",
+						toolName: "read",
+						isError: false,
+					},
+				},
+				{ v: 1, kind: "assistant_delta", delta: "AFTER" },
+				{
+					v: 1,
+					kind: "done",
+					sessionId: "conv-order",
+					assistantText: "BEFORE AFTER",
+					ok: true,
+				},
+			];
+			yield {
+				type: "stdout",
+				timestamp: new Date().toISOString(),
+				data: `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`,
+			};
+			yield {
+				type: "complete",
+				timestamp: new Date().toISOString(),
+				exitCode: 0,
+			};
+		});
+
+		const onRunnerMessage = vi.fn();
+		await runAgentInSandbox({
+			env: makeEnv(),
+			sandboxId: "sandbox-1",
+			projectId: "project-1",
+			userId: "user-1",
+			conversationId: "conv-order",
+			cwd: SESSION_WORKTREE_CWD,
+			model: "opencode/gpt-4.1",
+			prompt: "check order",
+			onRunnerMessage,
+		});
+
+		const sequence = onRunnerMessage.mock.calls.map(([message]) => {
+			if (message.kind === "assistant_delta") return `text:${message.delta}`;
+			if (message.kind === "agent_event") return `tool:${message.event.type}`;
+			return message.kind;
+		});
+		expect(sequence).toEqual([
+			"text:BEFORE ",
+			"tool:tool_execution_start",
+			"tool:tool_execution_end",
+			"text:AFTER",
+			"done",
+		]);
+	});
+
 	it("does not pass AbortSignal into sandbox execStream or parseSSEStream", async () => {
 		const writeFile = vi.fn().mockResolvedValue(undefined);
 		const mkdir = vi.fn().mockResolvedValue(undefined);

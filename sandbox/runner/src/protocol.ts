@@ -28,6 +28,25 @@ export function extractTextDelta(event: unknown): string | null {
 	return a.delta;
 }
 
+export function runnerOutputFromAgentEvent(event: unknown): RunnerOut | null {
+	const delta = extractTextDelta(event);
+	if (delta !== null) {
+		return { v: 1, kind: "assistant_delta", delta };
+	}
+
+	if (!event || typeof event !== "object") return null;
+	const type = (event as Record<string, unknown>).type;
+	if (
+		type !== "tool_execution_start" &&
+		type !== "tool_execution_update" &&
+		type !== "tool_execution_end"
+	) {
+		return null;
+	}
+
+	return { v: 1, kind: "agent_event", event };
+}
+
 export function extractAssistantTextFromMessages(messages: unknown): string {
 	if (!Array.isArray(messages)) return "";
 

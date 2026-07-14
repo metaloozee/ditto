@@ -841,14 +841,13 @@ describe("executeAgentRun", () => {
 		const deltas = events
 			.filter((e) => e.event === "delta")
 			.map((e) => (e.event === "delta" ? e.data.delta : ""));
-		// Raw delta bytes are unchanged; partsToText joins text segments around tools.
+		// Raw delta bytes stay unchanged across the tool boundary.
 		expect(deltas.join("")).toBe("before tool after");
 		// First delta batch must complete before the tool event.
 		const firstDeltaIdx = kinds.indexOf("delta");
 		const agentIdx = kinds.indexOf("agent");
 		expect(firstDeltaIdx).toBeLessThan(agentIdx);
-		// Unbatched reducer semantics: text parts around tools join with \n\n.
-		const expectedContent = "before tool\n\n after";
+		const expectedContent = "before tool after";
 		expect(events.at(-1)).toMatchObject({
 			event: "done",
 			data: {

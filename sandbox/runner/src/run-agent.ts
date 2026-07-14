@@ -9,9 +9,9 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { dittoGitCustomTools } from "./ditto-git-tools.js";
 import {
-	extractTextDelta,
 	pickAssistantText,
 	type RunnerOut,
+	runnerOutputFromAgentEvent,
 } from "./protocol.js";
 
 export type RunAgentOptions = {
@@ -124,12 +124,12 @@ export async function runAgent(
 
 		let deltas = "";
 		unsubscribe = session.subscribe((event) => {
-			options.onEvent({ v: 1, kind: "agent_event", event });
-			const delta = extractTextDelta(event);
-			if (delta) {
-				deltas += delta;
-				options.onEvent({ v: 1, kind: "assistant_delta", delta });
+			const output = runnerOutputFromAgentEvent(event);
+			if (!output) return;
+			if (output.kind === "assistant_delta") {
+				deltas += output.delta;
 			}
+			options.onEvent(output);
 		});
 
 		try {

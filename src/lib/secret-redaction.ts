@@ -12,6 +12,7 @@ const SECRET_PATTERNS: RegExp[] = [
 ];
 
 const PEM_BEGIN_MARKER = "-----BEGIN";
+const PATTERN_SECRET_HOLDBACK = 64;
 const PEM_BEGIN_FULL = /-----BEGIN (?:[A-Z ]* )?PRIVATE KEY-----/;
 const PEM_END_FULL = /-----END (?:[A-Z ]* )?PRIVATE KEY-----/;
 
@@ -77,16 +78,24 @@ export function redactStructured(
 	return out;
 }
 
-function maxExactSecretHoldback(secrets: readonly string[]): number {
-	let maxLen = 0;
+function exactSecretHoldIndex(
+	text: string,
+	secrets: readonly string[],
+): number {
+	let holdFrom = text.length;
 	for (const secret of secrets) {
-		if (secret.length >= 8 && secret.length > maxLen) {
-			maxLen = secret.length;
+		if (secret.length < 8) {
+			continue;
+		}
+		const maxPrefixLength = Math.min(text.length, secret.length - 1);
+		for (let length = maxPrefixLength; length >= 1; length -= 1) {
+			if (text.endsWith(secret.slice(0, length))) {
+				holdFrom = Math.min(holdFrom, text.length - length);
+				break;
+			}
 		}
 	}
-	// Hold max(len-1) so a secret split across chunks is never partially leaked.
-	// Also retain enough for a partial PEM begin marker at the tail.
-	return Math.max(maxLen > 0 ? maxLen - 1 : 0, PEM_BEGIN_MARKER.length - 1);
+	return holdFrom;
 }
 
 /** Index at which an incomplete PEM-shaped region starts, or -1. */
@@ -149,8 +158,8 @@ function redactIncompletePemRegions(text: string): string {
 /**
  * Stateful redactor for streamed text deltas.
  *
- * Holds back a suffix long enough that any concrete secret (length >= 8) that
- * could still be completing across a chunk boundary is not emitted yet.
+ * Holds only suffixes that could complete a concrete secret (length >= 8)
+ * across a chunk boundary, plus a small window for secret-shaped patterns.
  * Exact secrets shorter than 8 are intentionally not held back / redacted
  * (same as {@link redactSecrets}); secret-shaped patterns still apply to
  * emitted segments and on {@link flush}.
@@ -161,11 +170,9 @@ function redactIncompletePemRegions(text: string): string {
 export class StreamingSecretRedactor {
 	private buffer = "";
 	private readonly secrets: readonly string[];
-	private readonly maxHoldback: number;
 
 	constructor(secrets: readonly string[] = []) {
 		this.secrets = secrets;
-		this.maxHoldback = maxExactSecretHoldback(secrets);
 	}
 
 	/** Append a chunk; return only the safe (already redacted) prefix. */
@@ -174,7 +181,7 @@ export class StreamingSecretRedactor {
 			return "";
 		}
 		this.buffer += chunk;
-		return this.drain(false);
+		return this.drain();
 	}
 
 	/** Emit remaining buffer after a full redaction pass. */
@@ -189,11 +196,12 @@ export class StreamingSecretRedactor {
 		return remaining;
 	}
 
-	private drain(_flushing: boolean): string {
+	private drain(): string {
 		// Redact completed exact secrets and complete secret-shaped patterns first.
 		const redacted = redactSecrets(this.buffer, this.secrets);
 
-		let holdFrom = Math.max(0, redacted.length - this.maxHoldback);
+		let holdFrom = Math.max(0, redacted.length - PATTERN_SECRET_HOLDBACK);
+		holdFrom = Math.min(holdFrom, exactSecretHoldIndex(redacted, this.secrets));
 		const pemHold = incompletePemHoldIndex(redacted);
 		if (pemHold >= 0) {
 			holdFrom = Math.min(holdFrom, pemHold);

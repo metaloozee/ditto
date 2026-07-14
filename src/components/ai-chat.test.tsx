@@ -64,6 +64,54 @@ describe("Chat session cache acknowledgement", () => {
 		clearAllSessionMessages();
 	});
 
+	it("preserves text and tool chronology in assistant responses", () => {
+		render(
+			<Chat
+				projectId="proj-1"
+				sessionId="sess-1"
+				messages={[
+					{
+						id: "assistant-1",
+						role: "assistant",
+						content: "No footer exists. Both files look correct.",
+						parts: [
+							{
+								type: "text",
+								id: "text-1",
+								text: "No footer exists.",
+							},
+							{
+								type: "tool",
+								id: "tool-part-1",
+								tool: {
+									id: "tool-1",
+									name: "bash",
+									status: "done",
+									args: { command: "echo edit" },
+								},
+							},
+							{
+								type: "text",
+								id: "text-2",
+								text: "Both files look correct.",
+							},
+						],
+					},
+				]}
+			/>,
+		);
+
+		const before = screen.getByText("No footer exists.");
+		const tool = screen.getByRole("button", { name: "Worked" });
+		const after = screen.getByText("Both files look correct.");
+		expect(
+			before.compareDocumentPosition(tool) & Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+		expect(
+			tool.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+	});
+
 	it("shows pending cached content until server messages arrive", () => {
 		seedSessionMessages("sess-1", [
 			{ id: "pending-1", role: "user", content: "optimistic hello" },

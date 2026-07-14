@@ -121,6 +121,19 @@ async function runAgentInSandboxLocked(options: {
 	// One streaming redactor per run so secrets split across deltas are held back.
 	const streamRedactor = new StreamingSecretRedactor(secretValues);
 
+	const flushAssistantText = async () => {
+		const delta = streamRedactor.flush();
+		if (!delta) {
+			return;
+		}
+		assistantText += delta;
+		await options.onRunnerMessage({
+			v: 1,
+			kind: "assistant_delta",
+			delta,
+		});
+	};
+
 	const emitError = async (message: string) => {
 		if (errorEmitted) {
 			return;
@@ -128,15 +141,7 @@ async function runAgentInSandboxLocked(options: {
 		errorEmitted = true;
 		ok = false;
 		// Flush any held assistant text before the error so trailing safe text is not lost.
-		const trailing = streamRedactor.flush();
-		if (trailing) {
-			assistantText += trailing;
-			await options.onRunnerMessage({
-				v: 1,
-				kind: "assistant_delta",
-				delta: trailing,
-			});
-		}
+		await flushAssistantText();
 		await options.onRunnerMessage({
 			v: 1,
 			kind: "error",
@@ -164,6 +169,9 @@ async function runAgentInSandboxLocked(options: {
 		}
 
 		if (msg.kind === "agent_event") {
+			// A tool event breaks the assistant text stream, so no secret can span
+			// this boundary. Release held safe text before forwarding the tool.
+			await flushAssistantText();
 			await options.onRunnerMessage({
 				v: 1,
 				kind: "agent_event",
@@ -175,15 +183,7 @@ async function runAgentInSandboxLocked(options: {
 		if (msg.kind === "error") {
 			ok = false;
 			errorEmitted = true;
-			const trailing = streamRedactor.flush();
-			if (trailing) {
-				assistantText += trailing;
-				await options.onRunnerMessage({
-					v: 1,
-					kind: "assistant_delta",
-					delta: trailing,
-				});
-			}
+			await flushAssistantText();
 			await options.onRunnerMessage({
 				v: 1,
 				kind: "error",
@@ -195,15 +195,7 @@ async function runAgentInSandboxLocked(options: {
 		if (msg.kind === "done") {
 			sawRunnerDone = true;
 			ok = msg.ok;
-			const trailing = streamRedactor.flush();
-			if (trailing) {
-				assistantText += trailing;
-				await options.onRunnerMessage({
-					v: 1,
-					kind: "assistant_delta",
-					delta: trailing,
-				});
-			}
+			await flushAssistantText();
 			// Prefer sanitized accumulated text; still scrub runner-provided assistantText.
 			const doneText = redactSecrets(
 				msg.assistantText || assistantText,
@@ -286,15 +278,7 @@ async function runAgentInSandboxLocked(options: {
 				}
 				// Flush any held streaming suffix so trailing safe text is not lost
 				// when the runner omits a done event (done/error paths already flush).
-				const trailing = streamRedactor.flush();
-				if (trailing) {
-					assistantText += trailing;
-					await options.onRunnerMessage({
-						v: 1,
-						kind: "assistant_delta",
-						delta: trailing,
-					});
-				}
+				await flushAssistantText();
 				const exitCode = event.exitCode ?? 0;
 				if (exitCode !== 0) {
 					const stderrHint = redactSecrets(

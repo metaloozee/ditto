@@ -230,6 +230,25 @@ describe("StreamingSecretRedactor", () => {
 		expect(combined).toContain("note");
 	});
 
+	it("does not leak a long exact secret split beyond the pattern window", () => {
+		const secret = `long-secret-${"x".repeat(256)}`;
+		const r = new StreamingSecretRedactor([secret]);
+		const splitAt = 180;
+		const first = r.push(`safe ${secret.slice(0, splitAt)}`);
+		const second = r.push(`${secret.slice(splitAt)} done`);
+		const output = first + second + r.flush();
+		expect(output).toBe("safe [REDACTED] done");
+		expect(output).not.toContain(secret);
+	});
+
+	it("streams safe text even when a configured secret is very long", () => {
+		const r = new StreamingSecretRedactor(["x".repeat(4_096)]);
+		const text = "ordinary assistant output ".repeat(8);
+		const streamed = r.push(text);
+		expect(streamed.length).toBeGreaterThan(0);
+		expect(streamed + r.flush()).toBe(text);
+	});
+
 	it("passes safe text through correctly after flush", () => {
 		const r = new StreamingSecretRedactor([secret]);
 		const text = "read /workspace/src/index.ts and wrote normal log output";

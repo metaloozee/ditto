@@ -171,7 +171,7 @@ describe("agent-message-parts", () => {
 	});
 
 	it("keeps text and tools interleaved in parts timeline", () => {
-		let parts = appendAssistantTextDelta([], "I'll edit the file.");
+		let parts = appendAssistantTextDelta([], "I'll edit the file. ");
 		parts =
 			applyAgentToolEventToParts(
 				parts,
@@ -200,7 +200,7 @@ describe("agent-message-parts", () => {
 		expect(parts).toHaveLength(3);
 		expect(parts[0]).toMatchObject({
 			type: "text",
-			text: "I'll edit the file.",
+			text: "I'll edit the file. ",
 		});
 		expect(parts[1]).toMatchObject({
 			type: "tool",
@@ -215,7 +215,7 @@ describe("agent-message-parts", () => {
 			},
 		});
 		expect(parts[2]).toMatchObject({ type: "text", text: "Done." });
-		expect(partsToText(parts)).toBe("I'll edit the file.\n\nDone.");
+		expect(partsToText(parts)).toBe("I'll edit the file. Done.");
 		expect(partsToTools(parts)).toHaveLength(1);
 	});
 

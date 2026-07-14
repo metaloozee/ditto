@@ -4,6 +4,7 @@ import {
 	extractAssistantTextFromMessages,
 	extractTextDelta,
 	pickAssistantText,
+	runnerOutputFromAgentEvent,
 } from "./protocol.js";
 
 describe("protocol", () => {
@@ -29,6 +30,33 @@ describe("protocol", () => {
 
 	it('extractTextDelta returns null for { type: "agent_start" }', () => {
 		expect(extractTextDelta({ type: "agent_start" })).toBeNull();
+	});
+
+	it("normalizes only text deltas and tool lifecycle events", () => {
+		expect(
+			runnerOutputFromAgentEvent({
+				type: "message_update",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "Hello" }],
+				},
+				assistantMessageEvent: { type: "text_delta", delta: "Hello" },
+			}),
+		).toEqual({ v: 1, kind: "assistant_delta", delta: "Hello" });
+
+		const toolEvent = {
+			type: "tool_execution_start",
+			toolCallId: "tool-1",
+			toolName: "edit",
+			args: { path: "Footer.tsx" },
+		};
+		expect(runnerOutputFromAgentEvent(toolEvent)).toEqual({
+			v: 1,
+			kind: "agent_event",
+			event: toolEvent,
+		});
+		expect(runnerOutputFromAgentEvent({ type: "message_start" })).toBeNull();
+		expect(runnerOutputFromAgentEvent({ type: "message_end" })).toBeNull();
 	});
 
 	it("extractAssistantTextFromMessages joins assistant text blocks", () => {

@@ -237,7 +237,7 @@ export function partsToText(parts: AssistantMessagePart[]): string {
 				part.type === "text",
 		)
 		.map((part) => part.text)
-		.join("\n\n");
+		.join("");
 }
 
 export function partsToTools(parts: AssistantMessagePart[]): StreamToolCall[] {
