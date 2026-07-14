@@ -207,8 +207,8 @@ The current behavior is authoritative in source and schema files. Files under `p
 | `sandbox/runner/src/ditto-git-tools.test.ts` | Regression tests for `sandbox/runner/src/ditto-git-tools.ts` behavior and edge cases. |
 | `sandbox/runner/src/ditto-git-tools.ts` | Defines PI custom tools for pushing and opening pull requests through the Worker. |
 | `sandbox/runner/src/protocol.test.ts` | Regression tests for `sandbox/runner/src/protocol.ts` behavior and edge cases. |
-| `sandbox/runner/src/protocol.ts` | Versioned runner output union and assistant-text extraction helpers. |
-| `sandbox/runner/src/run-agent.ts` | Creates/resumes PI sessions, selects models/tools, streams events, and settles a run. |
+| `sandbox/runner/src/protocol.ts` | Versioned runner output union, PI event normalization, and terminal text fallback helpers. |
+| `sandbox/runner/src/run-agent.ts` | Creates/resumes PI sessions, selects models/tools, emits normalized text/tool events, and settles a run. |
 | `sandbox/runner/tsconfig.json` | Runner TypeScript/build settings. |
 | `sandbox/runner/vitest.config.ts` | Runner Vitest configuration. |
 

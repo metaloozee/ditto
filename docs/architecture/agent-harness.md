@@ -71,10 +71,16 @@ once (the runner itself does not snapshot).
    worktree, decrypts project environment values from D1, and injects them
    into the session `env` together with provider and callback credentials.
    It writes a job file (prompt is not interpolated into shell commands).
-7. The Worker runs `ditto-runner` via `execStream` and parses NDJSON stdout.
+7. The Worker runs `ditto-runner` via `execStream` and parses versioned NDJSON
+   stdout. The runner subscribes to PI SDK events and normalizes only assistant
+   `text_delta` updates and `tool_execution_start|update|end` events onto that
+   protocol; growing partial-message snapshots and unrelated lifecycle events do
+   not cross the process boundary.
 8. The harness opens or resumes PI state under
    `/workspace/.ditto/sessions/<conversationId>.jsonl` on the primary tree.
-9. The Worker forwards `meta`, `agent`, `delta`, `error`, and `done` SSE events.
+9. The Worker redacts runner output, flushes held safe text before each tool
+   event, batches only contiguous text deltas, and forwards `meta`, `agent`,
+   `delta`, `error`, and `done` SSE events in source order.
 10. On success the Worker persists sanitized content/tools with
    `status: complete` before emitting successful `done`. On runner/stream/
    storage failure it persists accumulated partial content with
@@ -88,6 +94,13 @@ once (the runner itself does not snapshot).
 The Sandbox Durable Object talks to the container with RPC transport
 (`transport: "rpc"` in `getProjectSandbox`). Multi-step SDK calls multiplex on
 one connection so long agent runs do not exhaust HTTP subrequest limits.
+
+PI assistant text updates and tool execution events remain separate throughout
+the runner, Worker, SSE, and browser layers. A tool event is an ordering
+boundary: pending redacted text and pending server-side delta batches flush
+before the tool is forwarded. Text parts concatenate the original delta bytes
+without synthetic whitespace, while tool parts retain their chronological
+position in the assistant-parts timeline.
 
 ## Concurrency
 

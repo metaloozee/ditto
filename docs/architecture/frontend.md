@@ -62,7 +62,8 @@ states and history loading, and owns the transient streaming overlay.
 1. take the persisted model preference;
 2. call `streamAgentRun`;
 3. use `meta` to bind server-generated session/message IDs;
-4. append text deltas and reduce PI tool events into ordered assistant parts;
+4. append exact text-delta bytes and reduce PI tool events into ordered
+   assistant parts without moving text across tool boundaries;
 5. commit the terminal optimistic user/assistant pair to `Chat`; and
 6. navigate a newly created conversation to its canonical session URL.
 

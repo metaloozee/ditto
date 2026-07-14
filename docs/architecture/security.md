@@ -65,9 +65,14 @@ Redaction is applied to:
 - assistant content before D1 persistence; and
 - Git/export errors before they reach the client.
 
-The streaming redactor holds a suffix between chunks and holds incomplete PEM
-regions until a complete block arrives or the stream ends. This avoids leaking a
-prefix before the full token becomes recognizable.
+The streaming redactor holds only a suffix that could complete a configured
+exact secret, plus a small bounded window for secret-shaped patterns. Very long
+configured values therefore do not buffer an entire assistant response. A PI
+tool event ends the current assistant-text segment, so the Worker's runner
+bridge safely flushes held text before forwarding the tool event. Incomplete
+PEM regions stay
+held until a complete block arrives or the segment ends, when they fail closed
+to the redaction marker.
 
 ## Git credential handling
 
