@@ -24,7 +24,7 @@ flowchart LR
   R2[(R2 workspace backups)]
   GitHub[GitHub OAuth + App APIs]
 
-  Browser -->|tRPC, auth, SSE| Worker
+  Browser -->|tRPC, auth, SSE, agent control| Worker
   Worker --> D1
   Worker -->|Durable Object RPC| Sandbox
   Sandbox --> Runner
@@ -102,12 +102,19 @@ not have an agent-capable sandbox. The current UI creates GitHub-backed projects
 2. `prepareAgentRun` verifies ownership and readiness, creates or resolves the
    workspace session, ensures its worktree, and atomically inserts user and
    pending assistant rows.
-3. `executeAgentRun` invokes the sandbox runner and emits `meta`, `delta`,
-   `agent`, `error`, and `done` SSE events.
-4. The browser builds an ordered assistant-parts timeline from text and tool
-   events while retaining a bounded optimistic cache until D1 catches up.
-5. Terminal assistant content is redacted and persisted as `complete` or
-   `failed`; a versioned workspace backup follows best-effort.
+3. `executeAgentRun` invokes the sandbox runner and emits `meta`,
+   `control_ready`, ordered turn boundaries, `delta`, `agent`, `error`, and
+   `done` SSE events.
+4. While that stream is live, `/api/agent/control` can queue a PI follow-up or
+   explicitly request Stop. Stop is session control; a browser disconnect is
+   still detached from execution.
+5. A queued follow-up is transient until PI starts it. At `turn_start`, the
+   Worker inserts its complete user row and pending assistant row in D1; no D1
+   rows are created for queued follow-ups dropped by Stop.
+6. The browser builds an ordered assistant-parts timeline for each turn while
+   retaining a bounded optimistic cache until D1 catches up.
+7. Every started assistant is redacted and persisted as `complete` or `failed`;
+   one versioned workspace backup follows the settled outer run best-effort.
 
 ### Export work
 
@@ -133,6 +140,7 @@ not have an agent-capable sandbox. The current UI creates GitHub-backed projects
 | PI conversation state | Sandbox `/workspace/.ditto/sessions/*.jsonl` | Separate from UI chat persistence |
 | User model preference | Browser local storage via Zustand | Convenience only; validated during rehydration |
 | Optimistic streamed messages | Browser module memory | Bounded and removed after server message IDs appear |
+| Accepted follow-ups not yet started | PI agent session queue plus transient browser projection | Not durable; Stop drops queued items before D1 rows exist |
 | Workspace durability | R2 directory backup | Excludes dependencies, builds, caches, and `.env*` |
 
 ## Dependency direction
@@ -166,6 +174,9 @@ GitHub installation token.
   collide outside Git worktrees.
 - Agent runs are intentionally not aborted when the browser disconnects. The
   server finishes persistence rather than leaving a pending assistant row.
+- Explicit Stop is a separate authenticated session-control request. It clears
+  queued PI follow-ups, requests cooperative PI abort, and lets terminal SSE
+  persistence remain authoritative.
 - R2 backups are snapshots, not a mounted filesystem. Cold wake always hydrates
   explicitly.
 - Session deletion is archival. Archived sessions are excluded from active

@@ -24,7 +24,8 @@ model.
 
 Browser APIs use better-auth GitHub OAuth and an HTTP-only session cookie. tRPC
 creates the auth session once per request, and protected procedures require a
-user. Direct SSE handling performs the same better-auth session check.
+user. Direct SSE and `/api/agent/control` handling perform the same better-auth
+session check.
 
 Every project and workspace-session lookup includes the authenticated `userId`.
 GitHub operations also call `authorizeGitHubRepositoryAccess`, which checks the
@@ -37,6 +38,10 @@ The sandbox runner cannot call browser-authenticated tRPC. Its two Git tools use
 user, sandbox, subject, issue time, and expiry. The Worker verifies shape,
 signature, subject, and time, then resolves claims against current D1 ownership
 and readiness before dispatch.
+
+Follow-up and Stop controls prove authenticated project ownership and an active,
+owned workspace session before any sandbox access. Missing, foreign, archived,
+or stale run targets are rejected without creating message rows.
 
 ## Secret storage and injection
 
@@ -107,6 +112,13 @@ interpolated into a shell command. Shell values that must enter commands are
 single-quoted by narrow helpers. Destructive workspace clearing checks that the
 configured root is exactly `/workspace` before running.
 
+Follow-up text likewise travels in a bounded JSON job, never argv. The Worker
+invokes only the baked control CLI with a generated job path; the CLI reaches a
+run-scoped Unix-domain socket under `/tmp`. Control jobs, sockets, and temporary
+sandbox shell sessions are removed on success and failure. Structured control
+events and diagnostics pass through the same bounded redaction boundary as
+runner output.
+
 Per-session mutations acquire an atomic directory lock under `/tmp`. Locks are
 outside `/workspace`, so backups do not preserve stale lock state. A stale-lock
 recovery window prevents permanent deadlock after an interrupted process.
@@ -122,6 +134,9 @@ dependencies, build outputs, and caches. Session worktrees symlink only
 - Secret preflight and ambiguous outgoing Git ranges fail closed.
 - Sandbox runner health is checked before project state is mutated.
 - Assistant terminal persistence is attempted before successful `done`.
+- Browser fetch cancellation and disconnect do not cancel execution. Only an
+  authenticated Stop control calls PI `clearQueue()` and cooperative `abort()`;
+  terminal SSE persistence remains authoritative.
 - Backup failure is reported as non-fatal after a completed run or Git mutation;
   it does not rewrite the successful operation's result.
 - Client-visible errors are redacted, while server logs avoid raw credentials.
@@ -131,6 +146,7 @@ dependencies, build outputs, and caches. Session worktrees symlink only
 | Concern | Files |
 |---|---|
 | Auth/session | `src/lib/auth.ts`, `auth.client.ts`, `auth.functions.ts`, `src/integrations/trpc/init.ts` |
+| Live agent control | `src/lib/agent-control-service.ts`, `src/routes/api.agent.control.ts`, `sandbox/runner/src/control-channel.ts` |
 | GitHub authorization | `src/lib/github-authorization.ts`, `github-app.ts`, `github-repositories.ts` |
 | Agent callback JWT | `src/lib/agent-git-jwt.ts`, `agent-git-handler.ts`, `src/routes/api.agent.git.ts` |
 | Encryption/env vars | `src/lib/crypto.ts`, `project-env-vars.ts`, `env-vars.ts` |
