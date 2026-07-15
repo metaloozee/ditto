@@ -39,12 +39,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.npm
-          key: ${{ runner.os }}-npm-runner-${{ hashFiles('sandbox/runner/package-lock.json') }}
+          key: ${{ runner.os }}-npm-runner-${{ hashFiles('packages/sandbox-runner/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-runner-
 
       - name: Install sandbox runner dependencies
-        run: npm ci --prefix sandbox/runner
+        run: npm ci --prefix packages/sandbox-runner
 
       - name: Verify
         run: pnpm verify

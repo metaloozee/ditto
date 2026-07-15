@@ -1,6 +1,6 @@
 FROM docker.io/cloudflare/sandbox:0.12.1
 
-COPY --chown=0:0 sandbox/runner /opt/ditto-runner
+COPY --chown=0:0 packages/sandbox-runner /opt/ditto-runner
 WORKDIR /opt/ditto-runner
 
 RUN npm ci \

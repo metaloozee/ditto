@@ -1,6 +1,6 @@
 {
-  "include": ["**/*.ts", "**/*.tsx", "alchemy.run.ts", "types/**/*.ts"],
-  "exclude": ["node_modules", "dist", ".alchemy", ".wrangler", "sandbox/runner"],
+  "include": ["**/*.ts", "**/*.tsx", "../../alchemy.run.ts", "types/**/*.ts"],
+  "exclude": ["node_modules", "dist", ".alchemy", ".wrangler"],
   "compilerOptions": {
     "target": "ES2022",
     "jsx": "react-jsx",

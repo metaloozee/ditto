@@ -38,13 +38,13 @@ flowchart LR
 
 | Unit | Primary paths | Responsibility |
 |---|---|---|
-| Product shell | `src/routes`, `src/components`, `src/styles.css` | Dashboard, project/session navigation, chat timeline, settings, and Git workflow UI |
-| Browser data layer | `src/integrations/tanstack-query`, `src/integrations/trpc/react.ts` | Query cache, SSR dehydration, typed tRPC options, and client mutations |
-| Worker APIs | `src/integrations/trpc`, `src/routes/api.*` | Cookie-authenticated CRUD, workspace lifecycle, message history, SSE runs, and agent Git callbacks |
-| Domain services | `src/lib` | Agent lifecycle, sandbox persistence, worktrees, Git export, secrets, message representation, and policy |
-| Durable records | `src/db`, `migrations` | Users, OAuth state, projects, conversations, messages, sandbox handles, and backup generations |
-| Sandbox runtime | `Dockerfile`, `sandbox/runner` | Baked PI harness, isolated shell sessions, NDJSON protocol, and agent-only Git tools |
-| Infrastructure | `alchemy.run.ts`, `src/server.ts`, `types/env.d.ts` | Cloudflare Worker, D1, R2, Sandbox Durable Object, bindings, and deployment |
+| Product shell | `apps/web/src/routes`, `apps/web/src/components`, `apps/web/src/styles.css` | Dashboard, project/session navigation, chat timeline, settings, and Git workflow UI |
+| Browser data layer | `apps/web/src/integrations/tanstack-query`, `apps/web/src/integrations/trpc/react.ts` | Query cache, SSR dehydration, typed tRPC options, and client mutations |
+| Worker APIs | `apps/web/src/integrations/trpc`, `apps/web/src/routes/api.*` | Cookie-authenticated CRUD, workspace lifecycle, message history, SSE runs, and agent Git callbacks |
+| Domain services | `apps/web/src/lib` | Agent lifecycle, sandbox persistence, worktrees, Git export, secrets, message representation, and policy |
+| Durable records | `apps/web/src/db`, `apps/web/migrations` | Users, OAuth state, projects, conversations, messages, sandbox handles, and backup generations |
+| Sandbox runtime | `Dockerfile`, `packages/sandbox-runner` | Baked PI harness, isolated shell sessions, NDJSON protocol, and agent-only Git tools |
+| Infrastructure | `alchemy.run.ts`, `apps/web/src/server.ts`, `apps/web/types/env.d.ts` | Cloudflare Worker, D1, R2, Sandbox Durable Object, bindings, and deployment (Alchemy sole deploy owner) |
 | Engineering support | `plans`, `.agents`, `.claude`, `.cursor`, `.github` | Historical implementation intent, coding-agent guidance, hooks, and CI |
 
 ## Product hierarchy
@@ -150,7 +150,7 @@ The intended dependency flow is:
 ```text
 routes/components
   -> tRPC routers or narrow browser libraries
-  -> domain services in src/lib
+  -> domain services in apps/web/src/lib
   -> DB, Cloudflare Sandbox, GitHub, Web Crypto
 
 sandbox runner CLI
@@ -159,7 +159,7 @@ sandbox runner CLI
   -> Worker orchestration
 ```
 
-Routes should stay thin. Cross-entry-point policy belongs in `src/lib` so the UI
+Routes should stay thin. Cross-entry-point policy belongs in `apps/web/src/lib` so the UI
 tRPC path and agent callback path cannot drift. Sandbox credentials are minted
 by the Worker at the last responsible moment; the runner never receives a
 GitHub installation token.

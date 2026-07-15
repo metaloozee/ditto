@@ -1,3 +1,10 @@
+packages:
+  - apps/*
+packageExtensions:
+  # Streamdown 2.5.0 omits the @types/react peer needed by strict pnpm TypeScript workspaces; remove this extension when upstream declares that peer.
+  streamdown@2.5.0:
+    peerDependencies:
+      '@types/react': '*'
 allowBuilds:
   '@google/genai': true
   '@mongodb-js/zstd': false

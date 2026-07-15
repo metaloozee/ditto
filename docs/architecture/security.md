@@ -145,12 +145,12 @@ dependencies, build outputs, and caches. Session worktrees symlink only
 
 | Concern | Files |
 |---|---|
-| Auth/session | `src/lib/auth.ts`, `auth.client.ts`, `auth.functions.ts`, `src/integrations/trpc/init.ts` |
-| Live agent control | `src/lib/agent-control-service.ts`, `src/routes/api.agent.control.ts`, `sandbox/runner/src/control-channel.ts` |
-| GitHub authorization | `src/lib/github-authorization.ts`, `github-app.ts`, `github-repositories.ts` |
-| Agent callback JWT | `src/lib/agent-git-jwt.ts`, `agent-git-handler.ts`, `src/routes/api.agent.git.ts` |
-| Encryption/env vars | `src/lib/crypto.ts`, `project-env-vars.ts`, `env-vars.ts` |
-| Redaction | `src/lib/secret-redaction.ts`, `agent-run.ts`, `github-export.ts` |
-| Git egress | `src/lib/git-secret-policy.ts`, `session-git.ts` |
-| Backup exclusions | `src/lib/sandbox-backup.ts` |
-| Workspace locking | `src/lib/session-workspace-lock.ts`, `workspace-policy.ts` |
+| Auth/session | `apps/web/src/lib/auth.ts`, `auth.client.ts`, `auth.functions.ts`, `apps/web/src/integrations/trpc/init.ts` |
+| Live agent control | `apps/web/src/lib/agent-control-service.ts`, `apps/web/src/routes/api.agent.control.ts`, `packages/sandbox-runner/src/control-channel.ts` |
+| GitHub authorization | `apps/web/src/lib/github-authorization.ts`, `github-app.ts`, `github-repositories.ts` |
+| Agent callback JWT | `apps/web/src/lib/agent-git-jwt.ts`, `agent-git-handler.ts`, `apps/web/src/routes/api.agent.git.ts` |
+| Encryption/env vars | `apps/web/src/lib/crypto.ts`, `project-env-vars.ts`, `env-vars.ts` |
+| Redaction | `apps/web/src/lib/secret-redaction.ts`, `agent-run.ts`, `github-export.ts` |
+| Git egress | `apps/web/src/lib/git-secret-policy.ts`, `session-git.ts` |
+| Backup exclusions | `apps/web/src/lib/sandbox-backup.ts` |
+| Workspace locking | `apps/web/src/lib/session-workspace-lock.ts`, `workspace-policy.ts` |

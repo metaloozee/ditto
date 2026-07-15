@@ -30,41 +30,41 @@ runtime behavior remain consistent.
 1. [Frontend architecture](architecture/frontend.md)
 2. [Agent harness architecture](architecture/agent-harness.md)
 3. [Security and trust boundaries](architecture/security.md)
-4. Trace new runs through `src/components/composer.tsx` →
-   `src/routes/api.agent.stream.ts` → `src/lib/agent-run-service.ts` →
-   `src/lib/agent-run.ts` → `sandbox/runner`.
-5. Trace follow-up and Stop requests through `src/components/composer.tsx` →
-   `src/routes/api.agent.control.ts` → `src/lib/agent-control-service.ts` →
-   `sandbox/runner/src/control-channel.ts`.
+4. Trace new runs through `apps/web/src/components/composer.tsx` →
+   `apps/web/src/routes/api.agent.stream.ts` → `apps/web/src/lib/agent-run-service.ts` →
+   `apps/web/src/lib/agent-run.ts` → `packages/sandbox-runner`.
+5. Trace follow-up and Stop requests through `apps/web/src/components/composer.tsx` →
+   `apps/web/src/routes/api.agent.control.ts` → `apps/web/src/lib/agent-control-service.ts` →
+   `packages/sandbox-runner/src/control-channel.ts`.
 
 ### Project, sandbox, or persistence change
 
 1. [Server and data architecture](architecture/server-and-data.md)
 2. [Agent harness architecture](architecture/agent-harness.md)
-3. `src/integrations/trpc/routers/projects.ts` →
-   `src/lib/project-sandbox.ts` → `src/lib/sandbox-bootstrap.ts` →
-   `src/lib/sandbox-backup.ts`
+3. `apps/web/src/integrations/trpc/routers/projects.ts` →
+   `apps/web/src/lib/project-sandbox.ts` → `apps/web/src/lib/sandbox-bootstrap.ts` →
+   `apps/web/src/lib/sandbox-backup.ts`
 
 ### Git or GitHub change
 
 1. [Agent harness architecture](architecture/agent-harness.md#git-export)
 2. [Security and trust boundaries](architecture/security.md)
-3. `src/integrations/trpc/routers/session-git.ts` and
-   `src/lib/agent-git-handler.ts` → `src/lib/session-git.ts` → GitHub helpers
+3. `apps/web/src/integrations/trpc/routers/session-git.ts` and
+   `apps/web/src/lib/agent-git-handler.ts` → `apps/web/src/lib/session-git.ts` → GitHub helpers
 
 ### Schema or message-history change
 
 1. [Server and data architecture](architecture/server-and-data.md)
-2. `src/db/schema.ts`
+2. `apps/web/src/db/schema.ts`
 3. The relevant domain service and tRPC router
-4. Generated `migrations/*` and colocated regression tests
+4. Generated `apps/web/migrations/*` and colocated regression tests
 
 ## Sources of truth
 
 When documents and code disagree, use this order while correcting the drift:
 
 1. `PRODUCT.md` for product intent and vocabulary.
-2. Current source code and `src/db/schema.ts` for implemented behavior.
+2. Current source code and `apps/web/src/db/schema.ts` for implemented behavior.
 3. `docs/architecture/*` for the intended cross-file model.
 4. `plans/*` for historical rationale only.
 
@@ -84,7 +84,7 @@ sources.
   time, redacted at output boundaries, and never written to worktree `.env`.
 - An assistant message reaches `complete` or `failed`; it must not remain
   `pending` after a settled server run.
-- Routes and UI should orchestrate; shared policy belongs in `src/lib`.
+- Routes and UI should orchestrate; shared policy belongs in `apps/web/src/lib`.
 
 ## Keeping these documents current
 

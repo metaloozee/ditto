@@ -5,12 +5,10 @@ dist
 .git
 .env
 .env.*
-src
-migrations
-public
+apps/**
 plans
 .agents
 **/*.md
-!sandbox/runner/**
-sandbox/runner/node_modules
-sandbox/runner/dist
+!packages/sandbox-runner/**
+packages/sandbox-runner/node_modules
+packages/sandbox-runner/dist
