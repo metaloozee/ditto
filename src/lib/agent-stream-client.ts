@@ -40,11 +40,35 @@ export {
 } from "#/lib/agent-tool-presentation";
 
 export type MetaPayload = {
+	runId: string;
 	sessionId: string;
 	userMessageId: string;
 	assistantMessageId: string;
 	createdSession: boolean;
 	sandboxState: string;
+};
+
+export type ControlReadyPayload = { runId: string };
+
+export type TurnDonePayload = {
+	userMessageId: string;
+	assistantMessageId: string;
+	content: string;
+	tools?: StreamToolCall[];
+	parts?: AssistantMessagePart[];
+};
+
+export type TurnStartPayload = {
+	requestId: string;
+	userMessageId: string;
+	assistantMessageId: string;
+	text: string;
+};
+
+export type QueueCancelledPayload = {
+	requestId: string;
+	userMessageId: string;
+	assistantMessageId: string;
 };
 
 export type DonePayload = {
@@ -58,12 +82,55 @@ export type DonePayload = {
 
 export type AgentStreamHandlers = {
 	onMeta?: (data: MetaPayload) => void;
+	onControlReady?: (data: ControlReadyPayload) => void;
+	onTurnDone?: (data: TurnDonePayload) => void;
+	onTurnStart?: (data: TurnStartPayload) => void;
+	onQueueCancelled?: (data: QueueCancelledPayload) => void;
 	onDelta?: (delta: string) => void;
 	/** Optional second arg is the server-assigned occurrence time (epoch ms). */
 	onAgent?: (event: unknown, occurredAt?: number) => void;
 	onError?: (message: string) => void;
 	onDone?: (data: DonePayload) => void;
 };
+
+export type AgentControlInput =
+	| {
+			action: "follow_up";
+			projectId: string;
+			sessionId: string;
+			runId: string;
+			model: string;
+			message: string;
+	  }
+	| {
+			action: "stop";
+			projectId: string;
+			sessionId: string;
+			runId: string;
+	  };
+
+export type AgentControlResult =
+	| {
+			accepted: true;
+			action: "follow_up";
+			requestId: string;
+			runId: string;
+			sessionId: string;
+			userMessageId: string;
+			assistantMessageId: string;
+	  }
+	| {
+			accepted: true;
+			action: "stop";
+			requestId: string;
+			runId: string;
+			sessionId: string;
+			removedFollowUpCount: number;
+	  };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 export function parseSseChunk(buffer: string): {
 	frames: { event: string; data: string }[];
@@ -115,6 +182,42 @@ function dispatchSseFrame(
 		case "meta":
 			handlers.onMeta?.(parsed as MetaPayload);
 			break;
+		case "control_ready":
+			if (isRecord(parsed) && typeof parsed.runId === "string") {
+				handlers.onControlReady?.({ runId: parsed.runId });
+			}
+			break;
+		case "turn_done":
+			if (
+				isRecord(parsed) &&
+				typeof parsed.userMessageId === "string" &&
+				typeof parsed.assistantMessageId === "string" &&
+				typeof parsed.content === "string"
+			) {
+				handlers.onTurnDone?.(parsed as TurnDonePayload);
+			}
+			break;
+		case "turn_start":
+			if (
+				isRecord(parsed) &&
+				typeof parsed.requestId === "string" &&
+				typeof parsed.userMessageId === "string" &&
+				typeof parsed.assistantMessageId === "string" &&
+				typeof parsed.text === "string"
+			) {
+				handlers.onTurnStart?.(parsed as TurnStartPayload);
+			}
+			break;
+		case "queue_cancelled":
+			if (
+				isRecord(parsed) &&
+				typeof parsed.requestId === "string" &&
+				typeof parsed.userMessageId === "string" &&
+				typeof parsed.assistantMessageId === "string"
+			) {
+				handlers.onQueueCancelled?.(parsed as QueueCancelledPayload);
+			}
+			break;
 		case "delta": {
 			const record = parsed as { delta?: unknown };
 			if (typeof record.delta === "string") {
@@ -145,6 +248,36 @@ function dispatchSseFrame(
 		default:
 			break;
 	}
+}
+
+export async function sendAgentControl(
+	input: AgentControlInput,
+): Promise<AgentControlResult> {
+	const response = await fetch("/api/agent/control", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(input),
+		credentials: "include",
+	});
+
+	let body: unknown;
+	try {
+		body = await response.json();
+	} catch {
+		throw new Error("Agent control returned an invalid response.");
+	}
+
+	if (!response.ok) {
+		const message =
+			isRecord(body) && typeof body.error === "string"
+				? body.error
+				: `Agent control failed (${response.status}).`;
+		throw new Error(message);
+	}
+	if (!isRecord(body) || body.accepted !== true) {
+		throw new Error("Agent control returned an invalid response.");
+	}
+	return body as AgentControlResult;
 }
 
 export async function streamAgentRun(

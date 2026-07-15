@@ -9,7 +9,7 @@ only process allowed to mint GitHub installation credentials.
 ## Entry points
 
 `src/server.ts` exports the TanStack Start fetch handler and the Cloudflare
-Sandbox Durable Object class. TanStack Start routes provide three server-facing
+Sandbox Durable Object class. TanStack Start routes provide four server-facing
 surfaces:
 
 | Surface | Authentication | Use |
@@ -17,10 +17,12 @@ surfaces:
 | `/api/auth/$` | better-auth protocol | GitHub OAuth and auth sessions |
 | `/api/trpc/$` | Cookie session in tRPC context | Browser queries and mutations |
 | `/api/agent/stream` | Cookie session checked directly | Long-lived SSE agent run |
+| `/api/agent/control` | Cookie session checked directly | Follow-up or Stop for one active PI agent session |
 | `/api/agent/git` | Short-lived scoped HS256 JWT | Push/PR actions invoked by PI tools |
 
-The two agent routes bypass tRPC because one streams SSE and the other is a
-machine callback. Their business logic still delegates to `src/lib` services.
+The agent routes bypass tRPC because they stream SSE, control a live run, or
+serve a machine callback. Their business logic still delegates to `src/lib`
+services.
 
 ## tRPC control plane
 
@@ -45,7 +47,10 @@ the selected repository through the stated App installation.
 The large workflows live in narrow modules rather than route handlers:
 
 - `agent-run-service.ts` is the transaction-like agent lifecycle: prepare,
-  stream, terminal persistence, and backup.
+  multi-turn stream persistence, terminal settlement, and backup.
+- `agent-control-service.ts` authenticates run-scoped follow-up/Stop ownership,
+  writes the bounded control job, invokes the baked control CLI, and maps stale
+  targets without acquiring the active workspace-session lock.
 - `agent-run.ts` owns the Sandbox shell session, job file, runner process,
   protocol parsing, redaction, and cleanup.
 - `project-sandbox.ts` owns project readiness, cold restore/recreate, and
@@ -139,9 +144,11 @@ pending -> complete
 pending -> failed
 ```
 
-The user row and pending assistant row are inserted together only after the
-session worktree is ready. On all terminal run paths, accumulated safe content
-and tools are persisted before `done` is emitted when storage is available.
+The initial user row and pending assistant row are inserted together only after
+the session worktree is ready. A queued follow-up remains transient until PI
+starts it; then its complete user row and pending assistant row are inserted
+together. Every started assistant reaches `complete` or `failed` before its turn
+or the outer run settles. Follow-ups cleared before start never create rows.
 
 ### Git workflow
 

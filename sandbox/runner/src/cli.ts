@@ -5,6 +5,7 @@ import { encodeLine } from "./protocol.js";
 import { runAgent } from "./run-agent.js";
 
 type Job = {
+	runId: string;
 	conversationId: string;
 	model: string;
 	prompt: string;
@@ -56,6 +57,9 @@ function parseJob(raw: string): { job?: Job; error?: string } {
 	}
 
 	const job = parsed as Partial<Job>;
+	if (!isNonEmptyString(job.runId)) {
+		return { error: "runId is required" };
+	}
 	if (!isNonEmptyString(job.conversationId)) {
 		return { error: "conversationId is required" };
 	}
@@ -71,6 +75,7 @@ function parseJob(raw: string): { job?: Job; error?: string } {
 
 	return {
 		job: {
+			runId: job.runId,
 			conversationId: job.conversationId,
 			model: job.model,
 			prompt: job.prompt,
@@ -101,6 +106,7 @@ async function main(): Promise<number> {
 	}
 
 	const result = await runAgent({
+		runId: job.runId,
 		cwd: job.cwd ?? DEFAULT_CWD,
 		conversationId: job.conversationId,
 		modelSpecifier: job.model,

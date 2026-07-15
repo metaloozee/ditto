@@ -36,7 +36,7 @@ The current behavior is authoritative in source and schema files. Files under `p
 | File | Responsibility |
 |---|---|
 | `src/components/ai-chat.test.tsx` | Regression tests for `src/components/ai-chat.tsx` behavior and edge cases. |
-| `src/components/ai-chat.tsx` | Chat timeline, message normalization, history loading, optimistic overlay, and assistant-part rendering. |
+| `src/components/ai-chat.tsx` | Chat timeline, message normalization, history loading, optimistic overlay, queued follow-up projection, and assistant-part rendering. |
 | `src/components/ai-elements/model-selector.tsx` | Composable model selection dialog/command components. |
 | `src/components/ai-elements/task.tsx` | Composable task/progress presentation components. |
 | `src/components/app-shell.tsx` | Composes sidebar, content inset, toasts, and global tooltip provider. |
@@ -44,7 +44,7 @@ The current behavior is authoritative in source and schema files. Files under `p
 | `src/components/app-sidebar.tsx` | Project/session navigation, search, creation/settings launchers, archival, and account footer. |
 | `src/components/assistant-markdown.tsx` | Safe styled Markdown/code rendering for assistant text. |
 | `src/components/composer.test.tsx` | Regression tests for `src/components/composer.tsx` behavior and edge cases. |
-| `src/components/composer.tsx` | Prompt/model input and complete browser-side SSE stream lifecycle. |
+| `src/components/composer.tsx` | Prompt/model input, browser-side SSE lifecycle, multi-turn commits, follow-up queueing, and Stop controls. |
 | `src/components/edit-tool-diff.tsx` | Lazy visual diff renderer for PI edit-tool calls. |
 | `src/components/nav-user.tsx` | Authenticated user menu and sign-out behavior. |
 | `src/components/new-project-dialog.test.tsx` | Regression tests for `src/components/new-project-dialog.tsx` behavior and edge cases. |
@@ -85,6 +85,8 @@ The current behavior is authoritative in source and schema files. Files under `p
 | File | Responsibility |
 |---|---|
 | `src/routes/__root.tsx` | Root document metadata, global shell selection, CSS, scripts, and lazy development tools. |
+| `src/routes/api.agent.control.test.ts` | Regression tests for authenticated follow-up/Stop routing and error mapping. |
+| `src/routes/api.agent.control.ts` | Cookie-authenticated endpoint controlling one active PI agent session. |
 | `src/routes/api.agent.git.test.ts` | Regression tests for `src/routes/api.agent.git.ts` behavior and edge cases. |
 | `src/routes/api.agent.git.ts` | JWT-authenticated callback endpoint for sandbox agent Git tools. |
 | `src/routes/api.agent.stream.test.ts` | Regression tests for `src/routes/api.agent.stream.ts` behavior and edge cases. |
@@ -120,6 +122,8 @@ The current behavior is authoritative in source and schema files. Files under `p
 
 | File | Responsibility |
 |---|---|
+| `src/lib/agent-control-service.test.ts` | Regression tests for ownership, safe control jobs, cleanup, and stale targets. |
+| `src/lib/agent-control-service.ts` | Validates and dispatches run-scoped follow-up/Stop jobs to the sandbox control CLI. |
 | `src/lib/agent-delta-batcher.test.ts` | Regression tests for `src/lib/agent-delta-batcher.ts` behavior and edge cases. |
 | `src/lib/agent-delta-batcher.ts` | Batches contiguous text deltas while preserving text/tool event order. |
 | `src/lib/agent-git-handler.test.ts` | Regression tests for `src/lib/agent-git-handler.ts` behavior and edge cases. |
@@ -132,11 +136,11 @@ The current behavior is authoritative in source and schema files. Files under `p
 | `src/lib/agent-message-storage.ts` | Bounds, serializes, migrates, and parses durable assistant parts. |
 | `src/lib/agent-models.ts` | Allowlisted project-coder models and default model. |
 | `src/lib/agent-run-service.test.ts` | Regression tests for `src/lib/agent-run-service.ts` behavior and edge cases. |
-| `src/lib/agent-run-service.ts` | Agent preparation, streaming lifecycle, terminal D1 persistence, and post-run backup. |
+| `src/lib/agent-run-service.ts` | Agent preparation, multi-turn streaming lifecycle, terminal D1 persistence, and post-run backup. |
 | `src/lib/agent-run.test.ts` | Regression tests for `src/lib/agent-run.ts` behavior and edge cases. |
 | `src/lib/agent-run.ts` | Sandbox shell/job execution, runner protocol bridge, streaming redaction, lock, and cleanup. |
 | `src/lib/agent-stream-client.test.ts` | Regression tests for `src/lib/agent-stream-client.ts` behavior and edge cases. |
-| `src/lib/agent-stream-client.ts` | Browser SSE request/parser and typed event handlers. |
+| `src/lib/agent-stream-client.ts` | Browser SSE request/parser, typed turn handlers, and JSON agent-control client. |
 | `src/lib/agent-stream-protocol.test.ts` | Regression tests for `src/lib/agent-stream-protocol.ts` behavior and edge cases. |
 | `src/lib/agent-stream-protocol.ts` | Worker-side runner NDJSON parsing and SSE encoding helpers. |
 | `src/lib/agent-tool-presentation.test.ts` | Regression tests for `src/lib/agent-tool-presentation.ts` behavior and edge cases. |
@@ -202,13 +206,17 @@ The current behavior is authoritative in source and schema files. Files under `p
 | `sandbox/runner/package-lock.json` | Generated pinned dependency graph for the independent runner package. |
 | `sandbox/runner/package.json` | Independent npm package manifest for the baked PI runner. |
 | `sandbox/runner/src/cli.ts` | Validates job files, invokes the harness, and writes protocol NDJSON to stdout. |
+| `sandbox/runner/src/control-channel.test.ts` | Regression tests for run-scoped Unix control framing, serialization, validation, and cleanup. |
+| `sandbox/runner/src/control-channel.ts` | Run-scoped Unix socket protocol for serialized PI follow-up and Stop commands. |
+| `sandbox/runner/src/control-cli.ts` | Reads one JSON control job, contacts the live runner socket, and prints one response. |
 | `sandbox/runner/src/ditto-git-callback.ts` | Posts signed push/PR tool actions back to the Worker and scrubs callback tokens. |
 | `sandbox/runner/src/ditto-git-guidance.ts` | Prompt guidance and descriptions for Ditto-specific Git tools. |
 | `sandbox/runner/src/ditto-git-tools.test.ts` | Regression tests for `sandbox/runner/src/ditto-git-tools.ts` behavior and edge cases. |
 | `sandbox/runner/src/ditto-git-tools.ts` | Defines PI custom tools for pushing and opening pull requests through the Worker. |
 | `sandbox/runner/src/protocol.test.ts` | Regression tests for `sandbox/runner/src/protocol.ts` behavior and edge cases. |
 | `sandbox/runner/src/protocol.ts` | Versioned runner output union, PI event normalization, and terminal text fallback helpers. |
-| `sandbox/runner/src/run-agent.ts` | Creates/resumes PI sessions, selects models/tools, emits normalized text/tool events, and settles a run. |
+| `sandbox/runner/src/run-agent.test.ts` | Regression tests for PI follow-up FIFO, Stop ordering, expected abort, and socket cleanup. |
+| `sandbox/runner/src/run-agent.ts` | Creates/resumes PI sessions, binds run-scoped controls, emits turn/text/tool events, and settles a run. |
 | `sandbox/runner/tsconfig.json` | Runner TypeScript/build settings. |
 | `sandbox/runner/vitest.config.ts` | Runner Vitest configuration. |
 

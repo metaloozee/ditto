@@ -26,6 +26,7 @@ and toasts.
 | `/api/auth/$` | better-auth request handler |
 | `/api/trpc/$` | tRPC fetch adapter |
 | `/api/agent/stream` | Cookie-authenticated agent SSE endpoint |
+| `/api/agent/control` | Cookie-authenticated follow-up and Stop endpoint for the active PI agent session |
 | `/api/agent/git` | JWT-authenticated callback used by sandbox agent tools |
 
 `src/routeTree.gen.ts` is generated from these files. Do not edit it directly.
@@ -57,18 +58,38 @@ The project workspace route coordinates the main read model:
 module-memory optimistic cache, normalizes stored assistant parts, renders empty
 states and history loading, and owns the transient streaming overlay.
 
-`Composer` owns one stream request:
+`Composer` owns one long-lived stream request:
 
 1. take the persisted model preference;
 2. call `streamAgentRun`;
 3. use `meta` to bind server-generated session/message IDs;
 4. append exact text-delta bytes and reduce PI tool events into ordered
    assistant parts without moving text across tool boundaries;
-5. commit the terminal optimistic user/assistant pair to `Chat`; and
-6. navigate a newly created conversation to its canonical session URL.
+5. after `control_ready`, send follow-ups through the separate JSON control
+   request without starting another stream;
+6. commit each `turn_done` pair, promote the matching queued draft at
+   `turn_start`, and commit the final pair at overall `done`; and
+7. navigate a newly created conversation to its canonical session URL.
+
+The composer action follows this matrix:
+
+| State | Draft | Action |
+|---|---|---|
+| Idle | Empty | Submit disabled |
+| Idle | Non-empty | Submit starts `/api/agent/stream` |
+| Starting, before `control_ready` | Any | Disabled |
+| Streaming/control-ready | Non-empty | Queue message through `/api/agent/control` |
+| Streaming/control-ready | Empty or whitespace | Stop through `/api/agent/control` |
+| Control pending or stopping | Any | Disabled until acknowledgement or terminal SSE |
+
+Accepted follow-ups appear after the active assistant in FIFO order with a
+visible and announced `Queued` status. This projection is transient, not a
+browser scheduler or durable queue. The textarea is cleared only after a
+follow-up acknowledgement and only if the user has not typed newer text.
 
 The browser SSE parser is deliberately small and event-oriented. The server is
-the authority for terminal success and durable message state. A browser abort
+the authority for turn boundaries, terminal success, and durable message state.
+The Stop control does not abort the SSE fetch: a browser abort or disconnect
 stops local consumption but does not cancel the sandbox process.
 
 ## Assistant message model

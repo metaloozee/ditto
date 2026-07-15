@@ -18,6 +18,7 @@ import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api.auth.$'
 import { Route as ApiAgentStreamRouteImport } from './routes/api.agent.stream'
 import { Route as ApiAgentGitRouteImport } from './routes/api.agent.git'
+import { Route as ApiAgentControlRouteImport } from './routes/api.agent.control'
 import { Route as ProjectProjectIdSessionSessionIdRouteImport } from './routes/project.$projectId.session.$sessionId'
 
 const SignInRoute = SignInRouteImport.update({
@@ -65,6 +66,11 @@ const ApiAgentGitRoute = ApiAgentGitRouteImport.update({
   path: '/api/agent/git',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAgentControlRoute = ApiAgentControlRouteImport.update({
+  id: '/api/agent/control',
+  path: '/api/agent/control',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjectProjectIdSessionSessionIdRoute =
   ProjectProjectIdSessionSessionIdRouteImport.update({
     id: '/session/$sessionId',
@@ -77,6 +83,7 @@ export interface FileRoutesByFullPath {
   '/sign-in': typeof SignInRoute
   '/installation/completed': typeof InstallationCompletedRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
+  '/api/agent/control': typeof ApiAgentControlRoute
   '/api/agent/git': typeof ApiAgentGitRoute
   '/api/agent/stream': typeof ApiAgentStreamRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -88,6 +95,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
   '/installation/completed': typeof InstallationCompletedRoute
+  '/api/agent/control': typeof ApiAgentControlRoute
   '/api/agent/git': typeof ApiAgentGitRoute
   '/api/agent/stream': typeof ApiAgentStreamRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -101,6 +109,7 @@ export interface FileRoutesById {
   '/sign-in': typeof SignInRoute
   '/installation/completed': typeof InstallationCompletedRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
+  '/api/agent/control': typeof ApiAgentControlRoute
   '/api/agent/git': typeof ApiAgentGitRoute
   '/api/agent/stream': typeof ApiAgentStreamRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -115,6 +124,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/installation/completed'
     | '/project/$projectId'
+    | '/api/agent/control'
     | '/api/agent/git'
     | '/api/agent/stream'
     | '/api/auth/$'
@@ -126,6 +136,7 @@ export interface FileRouteTypes {
     | '/'
     | '/sign-in'
     | '/installation/completed'
+    | '/api/agent/control'
     | '/api/agent/git'
     | '/api/agent/stream'
     | '/api/auth/$'
@@ -138,6 +149,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/installation/completed'
     | '/project/$projectId'
+    | '/api/agent/control'
     | '/api/agent/git'
     | '/api/agent/stream'
     | '/api/auth/$'
@@ -151,6 +163,7 @@ export interface RootRouteChildren {
   SignInRoute: typeof SignInRoute
   InstallationCompletedRoute: typeof InstallationCompletedRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRouteWithChildren
+  ApiAgentControlRoute: typeof ApiAgentControlRoute
   ApiAgentGitRoute: typeof ApiAgentGitRoute
   ApiAgentStreamRoute: typeof ApiAgentStreamRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -222,6 +235,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAgentGitRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/agent/control': {
+      id: '/api/agent/control'
+      path: '/api/agent/control'
+      fullPath: '/api/agent/control'
+      preLoaderRoute: typeof ApiAgentControlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/project/$projectId/session/$sessionId': {
       id: '/project/$projectId/session/$sessionId'
       path: '/session/$sessionId'
@@ -250,6 +270,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignInRoute: SignInRoute,
   InstallationCompletedRoute: InstallationCompletedRoute,
   ProjectProjectIdRoute: ProjectProjectIdRouteWithChildren,
+  ApiAgentControlRoute: ApiAgentControlRoute,
   ApiAgentGitRoute: ApiAgentGitRoute,
   ApiAgentStreamRoute: ApiAgentStreamRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,

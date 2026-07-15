@@ -33,7 +33,7 @@ restore/recreate paths may still write the backup handle without the generation
 gate. After each completed agent run, the stream route calls the versioned helper
 once (the runner itself does not snapshot).
 
-## Three session layers
+## Qualified session layers
 
 | Layer | Store | ID | Role |
 |-------|-------|----|------|
@@ -72,19 +72,23 @@ once (the runner itself does not snapshot).
    into the session `env` together with provider and callback credentials.
    It writes a job file (prompt is not interpolated into shell commands).
 7. The Worker runs `ditto-runner` via `execStream` and parses versioned NDJSON
-   stdout. The runner subscribes to PI SDK events and normalizes only assistant
-   `text_delta` updates and `tool_execution_start|update|end` events onto that
-   protocol; growing partial-message snapshots and unrelated lifecycle events do
-   not cross the process boundary.
+   stdout. The runner subscribes to PI SDK events and normalizes assistant
+   `text_delta`, `tool_execution_start|update|end`, and run-scoped follow-up
+   boundary events; growing partial-message snapshots do not cross the process
+   boundary.
 8. The harness opens or resumes PI state under
    `/workspace/.ditto/sessions/<conversationId>.jsonl` on the primary tree.
-9. The Worker redacts runner output, flushes held safe text before each tool
-   event, batches only contiguous text deltas, and forwards `meta`, `agent`,
-   `delta`, `error`, and `done` SSE events in source order.
-10. On success the Worker persists sanitized content/tools with
-   `status: complete` before emitting successful `done`. On runner/stream/
-   storage failure it persists accumulated partial content with
-   `status: failed`, then emits `error` followed by failed `done`. Backup is
+9. After the runner socket is listening, the Worker emits `control_ready`. A
+   later PI user-message boundary finalizes the prior assistant, emits
+   `turn_done`, inserts the started follow-up's D1 pair, and emits `turn_start`
+   before that turn's assistant deltas.
+10. The Worker redacts runner output and structured control events, flushes held
+   safe text before ordering boundaries, batches only contiguous text deltas,
+   and forwards SSE events in source order.
+11. On success the Worker persists each started assistant with
+   `status: complete` before its turn settles. On runner/stream/storage failure
+   it persists accumulated partial content with `status: failed`, then emits
+   `error` followed by failed `done`. Backup is
    best-effort via `persistProjectSandboxBackup` (versioned `createBackup` of
    `/workspace`, including `.ditto/worktrees`) and does not rewrite message
    status.
@@ -101,6 +105,28 @@ boundary: pending redacted text and pending server-side delta batches flush
 before the tool is forwarded. Text parts concatenate the original delta bytes
 without synthetic whitespace, while tool parts retain their chronological
 position in the assistant-parts timeline.
+
+### Live PI agent session controls
+
+The browser sends follow-up or Stop as a second cookie-authenticated
+`POST /api/agent/control`; it does not open another SSE stream or runner job.
+The Worker verifies project and active workspace-session ownership, writes a
+bounded JSON control job under `/tmp/ditto-agent-controls`, and runs the static
+baked `control-cli.js --job <generated-path>` command. User text never appears
+in argv or shell interpolation.
+
+The control CLI connects to a short `runId`-derived Unix-domain socket owned by
+the existing runner process. That process alone owns the live PI agent session:
+follow-up calls PI `followUp()` in `one-at-a-time` mode, while Stop calls
+`clearQueue()` before cooperative `abort()`. Socket commands are serialized, so
+follow-up and Stop cannot mutate the PI queue concurrently. Queued metadata is
+transient; D1 rows begin only when PI emits the correlated user turn boundary.
+The socket, control job, and short-lived sandbox shell session are cleaned up
+after use.
+
+Stop acknowledgement means cancellation was requested, not that the provider
+or tool stopped instantly. The original runner completion and SSE `done` remain
+terminal authority. A browser disconnect remains detached from execution.
 
 ## Concurrency
 
@@ -121,6 +147,11 @@ competing installs on the primary tree. Within one session, agent runs and
 mutating UI Git operations share an atomic lock under sandbox `/tmp`, preventing
 concurrent worktree writers across Worker requests without persisting locks in
 workspace backups.
+
+The live control path intentionally bypasses that workspace-session lock: the
+active agent run already holds it, so reacquiring it would deadlock. Controls
+only reach the same run-scoped Unix socket and do not start a second filesystem
+writer.
 
 ## Git export
 

@@ -72,6 +72,7 @@ async function runAgentInSandboxLocked(options: {
 	projectId: string;
 	userId: string;
 	conversationId: string;
+	runId: string;
 	cwd: string;
 	model: string;
 	prompt: string;
@@ -180,6 +181,16 @@ async function runAgentInSandboxLocked(options: {
 			return;
 		}
 
+		if (msg.kind === "control_event") {
+			await flushAssistantText();
+			await options.onRunnerMessage({
+				v: 1,
+				kind: "control_event",
+				event: redactStructured(msg.event, secretValues) as typeof msg.event,
+			});
+			return;
+		}
+
 		if (msg.kind === "error") {
 			ok = false;
 			errorEmitted = true;
@@ -239,6 +250,7 @@ async function runAgentInSandboxLocked(options: {
 		await shell.writeFile(
 			jobPath,
 			JSON.stringify({
+				runId: options.runId,
 				conversationId: options.conversationId,
 				model: options.model,
 				prompt: options.prompt,

@@ -11,6 +11,7 @@ import {
 	isEditTool,
 	parseSseChunk,
 	parseStoredParts,
+	sendAgentControl,
 	serializeAssistantPartsForStorage,
 	streamAgentRun,
 } from "./agent-stream-client";
@@ -73,6 +74,56 @@ describe("agent-stream-client transport", () => {
 			content: "Hello",
 		});
 
+		vi.unstubAllGlobals();
+	});
+
+	it("dispatches control and turn boundary frames", async () => {
+		const encoder = new TextEncoder();
+		const body = new ReadableStream<Uint8Array>({
+			start(controller) {
+				controller.enqueue(
+					encoder.encode(
+						[
+							'event: control_ready\ndata: {"runId":"run-1"}\n\n',
+							'event: turn_done\ndata: {"userMessageId":"user-1","assistantMessageId":"assistant-1","content":"first"}\n\n',
+							'event: turn_start\ndata: {"requestId":"request-1","userMessageId":"user-2","assistantMessageId":"assistant-2","text":"next"}\n\n',
+							'event: queue_cancelled\ndata: {"requestId":"request-2","userMessageId":"user-3","assistantMessageId":"assistant-3"}\n\n',
+						].join(""),
+					),
+				);
+				controller.close();
+			},
+		});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => new Response(body)),
+		);
+		const calls: Array<[string, unknown]> = [];
+
+		await streamAgentRun(
+			{
+				projectId: "p1",
+				message: "hi",
+				model: "opencode-go/claude-sonnet-4",
+			},
+			{
+				onControlReady: (data) => calls.push(["ready", data]),
+				onTurnDone: (data) => calls.push(["done", data]),
+				onTurnStart: (data) => calls.push(["start", data]),
+				onQueueCancelled: (data) => calls.push(["cancelled", data]),
+			},
+		);
+
+		expect(calls.map(([event]) => event)).toEqual([
+			"ready",
+			"done",
+			"start",
+			"cancelled",
+		]);
+		expect(calls[2]?.[1]).toMatchObject({
+			requestId: "request-1",
+			text: "next",
+		});
 		vi.unstubAllGlobals();
 	});
 
@@ -155,6 +206,137 @@ describe("agent-stream-client transport", () => {
 		);
 
 		expect(deltas).toEqual(["ok"]);
+		vi.unstubAllGlobals();
+	});
+});
+
+describe("agent control client", () => {
+	it("returns follow-up and Stop acknowledgements", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(
+				Response.json({
+					accepted: true,
+					action: "follow_up",
+					requestId: "request-1",
+					runId: "run-1",
+					sessionId: "session-1",
+					userMessageId: "user-2",
+					assistantMessageId: "assistant-2",
+				}),
+			)
+			.mockResolvedValueOnce(
+				Response.json({
+					accepted: true,
+					action: "stop",
+					requestId: "request-2",
+					runId: "run-1",
+					sessionId: "session-1",
+					removedFollowUpCount: 1,
+				}),
+			);
+		vi.stubGlobal("fetch", fetchMock);
+
+		await expect(
+			sendAgentControl({
+				action: "follow_up",
+				projectId: "project-1",
+				sessionId: "session-1",
+				runId: "run-1",
+				model: "opencode-go/claude-sonnet-4",
+				message: "next",
+			}),
+		).resolves.toMatchObject({ action: "follow_up", requestId: "request-1" });
+		await expect(
+			sendAgentControl({
+				action: "stop",
+				projectId: "project-1",
+				sessionId: "session-1",
+				runId: "run-1",
+			}),
+		).resolves.toMatchObject({ action: "stop", requestId: "request-2" });
+		expect(fetchMock).toHaveBeenLastCalledWith(
+			"/api/agent/control",
+			expect.not.objectContaining({ signal: expect.anything() }),
+		);
+		vi.unstubAllGlobals();
+	});
+
+	it("surfaces safe 409 messages and rejects malformed JSON", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi
+				.fn()
+				.mockResolvedValueOnce(
+					Response.json(
+						{ error: "The active agent run is no longer available." },
+						{ status: 409 },
+					),
+				),
+		);
+		const input = {
+			action: "stop" as const,
+			projectId: "project-1",
+			sessionId: "session-1",
+			runId: "run-1",
+		};
+		await expect(sendAgentControl(input)).rejects.toThrow(
+			"The active agent run is no longer available.",
+		);
+
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => new Response("not-json", { status: 200 })),
+		);
+		await expect(sendAgentControl(input)).rejects.toThrow(
+			"Agent control returned an invalid response.",
+		);
+		vi.unstubAllGlobals();
+	});
+
+	it("Stop does not abort the original stream signal", async () => {
+		const streamBody = new ReadableStream<Uint8Array>({
+			start(controller) {
+				controller.close();
+			},
+		});
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(new Response(streamBody))
+			.mockResolvedValueOnce(
+				Response.json({
+					accepted: true,
+					action: "stop",
+					requestId: "request-1",
+					runId: "run-1",
+					sessionId: "session-1",
+					removedFollowUpCount: 0,
+				}),
+			);
+		vi.stubGlobal("fetch", fetchMock);
+		const controller = new AbortController();
+
+		await streamAgentRun(
+			{
+				projectId: "project-1",
+				message: "hi",
+				model: "opencode-go/claude-sonnet-4",
+			},
+			{},
+			{ signal: controller.signal },
+		);
+		await sendAgentControl({
+			action: "stop",
+			projectId: "project-1",
+			sessionId: "session-1",
+			runId: "run-1",
+		});
+
+		expect(controller.signal.aborted).toBe(false);
+		expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+			signal: controller.signal,
+		});
+		expect(fetchMock.mock.calls[1]?.[1]).not.toHaveProperty("signal");
 		vi.unstubAllGlobals();
 	});
 });
