@@ -12,6 +12,7 @@ import { AssistantMarkdown } from "#/components/assistant-markdown";
 import {
 	Composer,
 	type ComposerStreamingState,
+	type QueuedFollowUp,
 	type StreamCommitPayload,
 } from "#/components/composer";
 import { ToolCallGroup } from "#/components/tool-call-group";
@@ -379,6 +380,23 @@ function StreamingAssistantRow({
 	);
 }
 
+function QueuedFollowUpRow({ queued }: { queued: QueuedFollowUp }) {
+	return (
+		<Message align="end">
+			<MessageContent className="group">
+				<Bubble align="end" variant="secondary">
+					<BubbleContent className="w-full max-w-none">
+						<p className="whitespace-pre-wrap text-sm/relaxed">{queued.text}</p>
+					</BubbleContent>
+				</Bubble>
+				<MessageFooter>
+					<span className="text-muted-foreground">Queued</span>
+				</MessageFooter>
+			</MessageContent>
+		</Message>
+	);
+}
+
 function MessageRow({ message }: { message: NormalizedChatMessage }) {
 	const time = formatMessageTime(message.createdAt);
 
@@ -540,9 +558,14 @@ export function Chat({
 		Boolean(streaming?.active) &&
 		(!streaming?.assistantMessageId ||
 			!displayIds.has(String(streaming.assistantMessageId)));
-	const hasStreamingTail = showOptimisticUser || showStreamingAssistant;
+	const queuedFollowUps = streaming?.queuedFollowUps ?? [];
+	const hasStreamingTail =
+		showOptimisticUser || showStreamingAssistant || queuedFollowUps.length > 0;
 	const hasMessages =
-		displayMessages.length > 0 || showOptimisticUser || showStreamingAssistant;
+		displayMessages.length > 0 ||
+		showOptimisticUser ||
+		showStreamingAssistant ||
+		queuedFollowUps.length > 0;
 
 	function handleStreamCommit(payload: StreamCommitPayload): void {
 		seedSessionMessages(payload.sessionId, [
@@ -623,11 +646,32 @@ export function Chat({
 												displayMessages.length === 0 &&
 													!showOptimisticUser &&
 													"mt-20",
-												"mb-20",
+												queuedFollowUps.length === 0 && "mb-20",
 											)}
 										>
 											<StreamingAssistantRow streaming={streaming} />
 										</MessageScrollerItem>
+									) : null}
+									{queuedFollowUps.length > 0 ? (
+										<>
+											<output className="sr-only" aria-live="polite">
+												{queuedFollowUps.length} message
+												{queuedFollowUps.length === 1 ? "" : "s"} queued
+											</output>
+											{queuedFollowUps.map((queued, index) => (
+												<MessageScrollerItem
+													key={queued.requestId}
+													messageId={`queued-${queued.requestId}`}
+													className={cn(
+														"mt-0",
+														index === queuedFollowUps.length - 1 && "mb-20",
+													)}
+													scrollAnchor
+												>
+													<QueuedFollowUpRow queued={queued} />
+												</MessageScrollerItem>
+											))}
+										</>
 									) : null}
 								</>
 							) : (

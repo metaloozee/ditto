@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import type * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ComposerStreamingState } from "#/components/composer";
 import {
 	clearAllSessionMessages,
 	listPendingSessionMessages,
@@ -10,8 +11,19 @@ import {
 	seedSessionMessages,
 } from "#/lib/chat-session-cache";
 
+const composerPropsRef = vi.hoisted(() => ({
+	current: undefined as
+		| { onStreamingChange?: (state: ComposerStreamingState | null) => void }
+		| undefined,
+}));
+
 vi.mock("#/components/composer", () => ({
-	Composer: () => <div data-testid="composer-stub" />,
+	Composer: (props: {
+		onStreamingChange?: (state: ComposerStreamingState | null) => void;
+	}) => {
+		composerPropsRef.current = props;
+		return <div data-testid="composer-stub" />;
+	},
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -298,5 +310,45 @@ describe("Chat session cache acknowledgement", () => {
 		await waitFor(() => {
 			expect(readSessionMessages("sess-pages")).toEqual([]);
 		});
+	});
+
+	it("renders queued follow-ups FIFO with visible and announced status", () => {
+		render(<Chat projectId="proj-1" sessionId="sess-1" />);
+
+		act(() => {
+			composerPropsRef.current?.onStreamingChange?.({
+				active: true,
+				text: "working",
+				userText: "initial",
+				userMessageId: "user-1",
+				assistantMessageId: "assistant-1",
+				tools: [],
+				parts: [{ type: "text", id: "text-1", text: "working" }],
+				queuedFollowUps: [
+					{
+						requestId: "request-1",
+						userMessageId: "user-2",
+						assistantMessageId: "assistant-2",
+						text: "first queued",
+					},
+					{
+						requestId: "request-2",
+						userMessageId: "user-3",
+						assistantMessageId: "assistant-3",
+						text: "second queued",
+					},
+				],
+			});
+		});
+
+		const first = screen.getByText("first queued");
+		const second = screen.getByText("second queued");
+		expect(
+			first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+		expect(screen.getAllByText("Queued")).toHaveLength(2);
+		expect(screen.getByRole("status").textContent).toContain(
+			"2 messages queued",
+		);
 	});
 });

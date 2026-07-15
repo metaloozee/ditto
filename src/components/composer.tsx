@@ -1,5 +1,10 @@
 import { useNavigate } from "@tanstack/react-router";
-import { CheckIcon, CornerDownLeftIcon, GitBranchIcon } from "lucide-react";
+import {
+	CheckIcon,
+	CornerDownLeftIcon,
+	GitBranchIcon,
+	SquareIcon,
+} from "lucide-react";
 import {
 	type Dispatch,
 	type FormEvent,
@@ -42,7 +47,11 @@ import {
 	PROJECT_CODER_MODELS,
 	type ProjectCoderModelSpecifier,
 } from "#/lib/agent-models";
-import { type DonePayload, streamAgentRun } from "#/lib/agent-stream-client";
+import {
+	type DonePayload,
+	sendAgentControl,
+	streamAgentRun,
+} from "#/lib/agent-stream-client";
 import { useUserPreferencesStore } from "#/lib/user-preferences-store";
 
 const models = PROJECT_CODER_MODELS.map((model) => ({
@@ -115,7 +124,15 @@ export type ComposerStreamingState = {
 	assistantMessageId?: string;
 	tools: StreamToolCall[];
 	parts: AssistantMessagePart[];
+	queuedFollowUps: QueuedFollowUp[];
 	model?: string;
+};
+
+export type QueuedFollowUp = {
+	requestId: string;
+	userMessageId: string;
+	assistantMessageId: string;
+	text: string;
 };
 
 export type StreamCommitPayload = {
@@ -166,14 +183,25 @@ export function Composer({
 	const setText =
 		onInputTextChange !== undefined ? onInputTextChange : setLocalText;
 	const [isStreaming, setIsStreaming] = useState(false);
+	const [controlReady, setControlReady] = useState(false);
+	const [controlPending, setControlPending] = useState(false);
+	const [stopping, setStopping] = useState(false);
 	const activeSessionIdRef = useRef<string | null>(sessionId ?? null);
 	const shouldNavigateToSessionRef = useRef(false);
 	const streamSettledRef = useRef(false);
 	const isStreamingRef = useRef(false);
+	const controlReadyRef = useRef(false);
+	const controlPendingRef = useRef(false);
+	const stoppingRef = useRef(false);
+	const runIdRef = useRef<string | null>(null);
+	const queuedFollowUpsRef = useRef<QueuedFollowUp[]>([]);
+	const committedAssistantIdsRef = useRef(new Set<string>());
 	const userMessageIdRef = useRef<string | null>(null);
 	const assistantMessageIdRef = useRef<string | null>(null);
 	const partsRef = useRef<AssistantMessagePart[]>([]);
 	const promptRef = useRef("");
+	const textRef = useRef(text);
+	textRef.current = text;
 	const assistantTextRef = useRef("");
 	const model = useUserPreferencesStore((state) => state.selectedModel);
 	const setModel = useUserPreferencesStore((state) => state.setSelectedModel);
@@ -182,7 +210,15 @@ export function Composer({
 
 	function clearStreamingState(): void {
 		isStreamingRef.current = false;
+		controlReadyRef.current = false;
+		controlPendingRef.current = false;
+		stoppingRef.current = false;
+		runIdRef.current = null;
+		queuedFollowUpsRef.current = [];
 		setIsStreaming(false);
+		setControlReady(false);
+		setControlPending(false);
+		setStopping(false);
 		onStreamingChange?.(null);
 	}
 
@@ -193,8 +229,55 @@ export function Composer({
 			userText: prompt,
 			tools: [],
 			parts: [],
+			queuedFollowUps: [],
 			model,
 		};
+	}
+
+	function setControlPendingState(pending: boolean): void {
+		controlPendingRef.current = pending;
+		setControlPending(pending);
+	}
+
+	function projectQueuedFollowUps(next: QueuedFollowUp[]): void {
+		queuedFollowUpsRef.current = next;
+		onStreamingChange?.((previous) => {
+			if (!previous) return previous;
+			return { ...previous, queuedFollowUps: next };
+		});
+	}
+
+	function commitTurn(options: {
+		sessionId: string;
+		userMessageId: string;
+		assistantMessageId: string;
+		userText: string;
+		content: string;
+		parts: AssistantMessagePart[];
+		tools: StreamToolCall[];
+	}): void {
+		if (committedAssistantIdsRef.current.has(options.assistantMessageId))
+			return;
+		committedAssistantIdsRef.current.add(options.assistantMessageId);
+		onStreamCommit?.({
+			sessionId: options.sessionId,
+			createdSession:
+				shouldNavigateToSessionRef.current &&
+				committedAssistantIdsRef.current.size === 1,
+			user: {
+				id: options.userMessageId,
+				role: "user",
+				content: options.userText,
+			},
+			assistant: {
+				id: options.assistantMessageId,
+				role: "assistant",
+				content: options.content,
+				model,
+				tools: options.tools,
+				parts: options.parts,
+			},
+		});
 	}
 
 	function settleAfterStream(
@@ -223,22 +306,14 @@ export function Composer({
 				: partsToText(finalParts) || assistantTextRef.current) || "";
 
 		if (session && userMessageId && assistantMessageId) {
-			onStreamCommit?.({
+			commitTurn({
 				sessionId: session,
-				createdSession: shouldNavigateToSessionRef.current,
-				user: {
-					id: userMessageId,
-					role: "user",
-					content: promptRef.current,
-				},
-				assistant: {
-					id: assistantMessageId,
-					role: "assistant",
-					content: assistantContent,
-					model,
-					tools: partsToTools(finalParts),
-					parts: finalParts,
-				},
+				userMessageId,
+				assistantMessageId,
+				userText: promptRef.current,
+				content: assistantContent,
+				tools: partsToTools(finalParts),
+				parts: finalParts,
 			});
 			if (done?.ok !== false) {
 				onWorkspaceRefresh?.(session);
@@ -262,24 +337,20 @@ export function Composer({
 		}
 	}
 
-	async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-		event.preventDefault();
-		const prompt = text;
-		if (!prompt.trim()) {
-			return;
-		}
-
-		if (!projectId) {
-			setText("");
-			return;
-		}
-
-		if (disabledReason || isStreaming) {
-			return;
-		}
+	async function startInitialPrompt(prompt: string): Promise<void> {
+		if (!projectId) return;
 		setText("");
+		textRef.current = "";
 		isStreamingRef.current = true;
 		setIsStreaming(true);
+		controlReadyRef.current = false;
+		setControlReady(false);
+		setControlPendingState(false);
+		stoppingRef.current = false;
+		setStopping(false);
+		runIdRef.current = null;
+		queuedFollowUpsRef.current = [];
+		committedAssistantIdsRef.current = new Set();
 		promptRef.current = prompt;
 		assistantTextRef.current = "";
 		partsRef.current = [];
@@ -302,6 +373,7 @@ export function Composer({
 				},
 				{
 					onMeta: (meta) => {
+						runIdRef.current = meta.runId;
 						streamSessionId = meta.sessionId;
 						activeSessionIdRef.current = meta.sessionId;
 						userMessageIdRef.current = meta.userMessageId;
@@ -319,6 +391,60 @@ export function Composer({
 								model,
 							};
 						});
+					},
+					onControlReady: ({ runId }) => {
+						if (runId !== runIdRef.current) return;
+						controlReadyRef.current = true;
+						setControlReady(true);
+					},
+					onTurnDone: (turn) => {
+						const resolvedSessionId =
+							activeSessionIdRef.current ?? streamSessionId;
+						if (!resolvedSessionId) return;
+						const turnParts = finalizeAssistantParts(turn.parts ?? []);
+						commitTurn({
+							sessionId: resolvedSessionId,
+							userMessageId: turn.userMessageId,
+							assistantMessageId: turn.assistantMessageId,
+							userText: promptRef.current,
+							content: turn.content,
+							parts: turnParts,
+							tools: turn.tools ?? partsToTools(turnParts),
+						});
+					},
+					onTurnStart: (turn) => {
+						const queued = queuedFollowUpsRef.current.find(
+							(item) => item.requestId === turn.requestId,
+						);
+						projectQueuedFollowUps(
+							queuedFollowUpsRef.current.filter(
+								(item) => item.requestId !== turn.requestId,
+							),
+						);
+						promptRef.current = queued?.text ?? turn.text;
+						userMessageIdRef.current = turn.userMessageId;
+						assistantMessageIdRef.current = turn.assistantMessageId;
+						assistantTextRef.current = "";
+						partsRef.current = [];
+						onStreamingChange?.((previous) => ({
+							...(previous ?? emptyStreaming(promptRef.current)),
+							active: true,
+							text: "",
+							userText: promptRef.current,
+							userMessageId: turn.userMessageId,
+							assistantMessageId: turn.assistantMessageId,
+							tools: [],
+							parts: [],
+							queuedFollowUps: queuedFollowUpsRef.current,
+							model,
+						}));
+					},
+					onQueueCancelled: ({ requestId }) => {
+						projectQueuedFollowUps(
+							queuedFollowUpsRef.current.filter(
+								(item) => item.requestId !== requestId,
+							),
+						);
 					},
 					onDelta: (delta) => {
 						if (!delta) {
@@ -404,13 +530,138 @@ export function Composer({
 		}
 	}
 
+	async function queueFollowUp(snapshot: string): Promise<void> {
+		const runId = runIdRef.current;
+		const activeSessionId = activeSessionIdRef.current;
+		if (
+			!projectId ||
+			!runId ||
+			!activeSessionId ||
+			!controlReadyRef.current ||
+			controlPendingRef.current ||
+			stoppingRef.current
+		) {
+			return;
+		}
+
+		setControlPendingState(true);
+		try {
+			const response = await sendAgentControl({
+				action: "follow_up",
+				projectId,
+				sessionId: activeSessionId,
+				runId,
+				model,
+				message: snapshot,
+			});
+			if (response.action !== "follow_up") {
+				throw new Error("Agent control returned an invalid response.");
+			}
+			projectQueuedFollowUps([
+				...queuedFollowUpsRef.current,
+				{
+					requestId: response.requestId,
+					userMessageId: response.userMessageId,
+					assistantMessageId: response.assistantMessageId,
+					text: snapshot,
+				},
+			]);
+			if (textRef.current === snapshot) {
+				textRef.current = "";
+				setText("");
+			}
+		} catch (error) {
+			toast.error(
+				error instanceof Error ? error.message : "Failed to queue message.",
+			);
+		} finally {
+			setControlPendingState(false);
+		}
+	}
+
+	async function stopActiveRun(): Promise<void> {
+		const runId = runIdRef.current;
+		const activeSessionId = activeSessionIdRef.current;
+		if (
+			!projectId ||
+			!runId ||
+			!activeSessionId ||
+			!controlReadyRef.current ||
+			controlPendingRef.current ||
+			stoppingRef.current
+		) {
+			return;
+		}
+
+		stoppingRef.current = true;
+		setStopping(true);
+		setControlPendingState(true);
+		try {
+			const response = await sendAgentControl({
+				action: "stop",
+				projectId,
+				sessionId: activeSessionId,
+				runId,
+			});
+			if (response.action !== "stop") {
+				throw new Error("Agent control returned an invalid response.");
+			}
+		} catch (error) {
+			stoppingRef.current = false;
+			setStopping(false);
+			toast.error(
+				error instanceof Error ? error.message : "Failed to stop agent.",
+			);
+		} finally {
+			setControlPendingState(false);
+		}
+	}
+
+	async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+		event.preventDefault();
+		if (disabledReason || controlPendingRef.current) return;
+
+		const snapshot = textRef.current;
+		if (isStreamingRef.current) {
+			if (!controlReadyRef.current || stoppingRef.current) return;
+			if (snapshot.trim()) {
+				await queueFollowUp(snapshot);
+			} else {
+				await stopActiveRun();
+			}
+			return;
+		}
+
+		if (!snapshot.trim()) return;
+		if (!projectId) {
+			textRef.current = "";
+			setText("");
+			return;
+		}
+		await startInitialPrompt(snapshot);
+	}
+
 	function handleModelSelect(id: ProjectCoderModelSpecifier): void {
 		setModel(id);
 		setModelSelectorOpen(false);
 	}
 
 	const selectedModel = models.find((modelOption) => modelOption.id === model);
-	const submitDisabled = !text.trim() || isStreaming || Boolean(disabledReason);
+	const hasText = Boolean(text.trim());
+	const actionName = stopping
+		? "Stopping"
+		: isStreaming
+			? !controlReady
+				? "Starting"
+				: hasText
+					? "Queue message"
+					: "Stop"
+			: "Submit";
+	const submitDisabled =
+		Boolean(disabledReason) ||
+		controlPending ||
+		stopping ||
+		(isStreaming ? !controlReady : !hasText);
 
 	return (
 		<section className="mx-auto flex w-full max-w-3xl flex-col justify-end gap-5 px-2 pb-2">
@@ -421,8 +672,13 @@ export function Composer({
 				>
 					<InputGroup className="overflow-hidden">
 						<InputGroupTextarea
+							aria-label="Message"
 							className="field-sizing-content max-h-48 min-h-16"
-							onChange={(event) => setText(event.currentTarget.value)}
+							name="message"
+							onChange={(event) => {
+								textRef.current = event.currentTarget.value;
+								setText(event.currentTarget.value);
+							}}
 							onKeyDown={handleTextareaKeyDown}
 							value={text}
 							placeholder="Ask Ditto to inspect the workspace..."
@@ -437,7 +693,10 @@ export function Composer({
 							>
 								<ModelSelectorTrigger
 									render={
-										<InputGroupButton aria-label="Select model">
+										<InputGroupButton
+											aria-label="Select model"
+											disabled={Boolean(disabledReason) || isStreaming}
+										>
 											{selectedModel?.chefSlug ? (
 												<ModelSelectorLogo
 													className="size-3.5"
@@ -472,13 +731,17 @@ export function Composer({
 								</ModelSelectorContent>
 							</ModelSelector>
 							<InputGroupButton
-								aria-label="Submit"
+								aria-label={actionName}
 								disabled={submitDisabled}
 								size="icon-sm"
 								type="submit"
 								variant="default"
 							>
-								<CornerDownLeftIcon />
+								{isStreaming && controlReady && !hasText ? (
+									<SquareIcon aria-hidden />
+								) : (
+									<CornerDownLeftIcon aria-hidden />
+								)}
 							</InputGroupButton>
 						</InputGroupAddon>
 					</InputGroup>
