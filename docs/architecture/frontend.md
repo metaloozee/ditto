@@ -8,9 +8,9 @@ built with TanStack Start and file-based TanStack Router routes.
 
 ## Application shell and routes
 
-`src/router.tsx` constructs a router and a fresh Query Client context, enables
+`apps/web/src/router.tsx` constructs a router and a fresh Query Client context, enables
 SSR query integration, and wraps the route tree in the tRPC/React Query provider.
-`src/routes/__root.tsx` owns document metadata, global CSS, the development-only
+`apps/web/src/routes/__root.tsx` owns document metadata, global CSS, the development-only
 devtools import, and the application shell. `/sign-in` bypasses the shell; all
 other pages render inside `AppShell` with the project sidebar, tooltip provider,
 and toasts.
@@ -29,7 +29,7 @@ and toasts.
 | `/api/agent/control` | Cookie-authenticated follow-up and Stop endpoint for the active PI agent session |
 | `/api/agent/git` | JWT-authenticated callback used by sandbox agent tools |
 
-`src/routeTree.gen.ts` is generated from these files. Do not edit it directly.
+`apps/web/src/routeTree.gen.ts` is generated from these files. Do not edit it directly.
 
 ## Browser data flow
 
@@ -115,7 +115,7 @@ storage; if serialization fails, a minimal tool representation is retried.
 
 ## Optimistic message cache
 
-`src/lib/chat-session-cache.ts` bridges the interval between stream completion
+`apps/web/src/lib/chat-session-cache.ts` bridges the interval between stream completion
 and the next D1 message query. It is intentionally not a durable store:
 
 - entries are keyed by workspace session;
@@ -145,10 +145,10 @@ archive, and account actions.
 
 | Layer | Paths | Rule |
 |---|---|---|
-| Product components | `src/components/*.tsx` | Know Ditto concepts and perform product orchestration |
-| AI presentation | `src/components/ai-elements` | Reusable model/task presentation pieces |
-| UI primitives | `src/components/ui` | Base UI/shadcn-derived controls without product data access |
-| Styling | `src/styles.css` | Tailwind v4 theme tokens, dark palette, typography, and global behavior |
+| Product components | `apps/web/src/components/*.tsx` | Know Ditto concepts and perform product orchestration |
+| AI presentation | `apps/web/src/components/ai-elements` | Reusable model/task presentation pieces |
+| UI primitives | `apps/web/src/components/ui` | Base UI/shadcn-derived controls without product data access |
+| Styling | `apps/web/src/styles.css` | Tailwind v4 theme tokens, dark palette, typography, and global behavior |
 
 Product components may compose primitives; primitives must not import project,
 agent, database, or Git services. `cn` is the shared Tailwind class merger.

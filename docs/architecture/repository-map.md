@@ -4,7 +4,21 @@
 
 This is the exhaustive map of version-controlled and currently untracked, non-ignored files in the working tree. It gives humans and coding agents a stable starting point before changing a subsystem. Runtime/build directories such as `.git`, `node_modules`, `dist`, `.alchemy`, and `.wrangler`, plus local secret files such as `.env.local`, are intentionally excluded because they are generated, external, or private rather than source architecture.
 
-The current behavior is authoritative in source and schema files. Files under `plans/` describe implementation history and may contain superseded designs. Drizzle snapshots, lockfiles, and `src/routeTree.gen.ts` are generated artifacts and should not be edited by hand.
+The current behavior is authoritative in source and schema files. Files under `plans/` describe implementation history and may contain superseded designs. Drizzle snapshots, lockfiles, and `apps/web/src/routeTree.gen.ts` are generated artifacts and should not be edited by hand.
+
+## Ownership
+
+| Area | Path | Owns |
+|---|---|---|
+| Root orchestration | `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `biome.json`, `lefthook.yml`, root scripts | Workspace install, quality gates, runner proxies, deploy entrypoints |
+| Alchemy deploy graph | `alchemy.run.ts`, root `Dockerfile`, `.dockerignore` | Sole deployment owner: Worker, D1, R2, Sandbox container, bindings, secrets wiring. No SST or Wrangler deploy boundary. |
+| Application (`@ditto/web`) | `apps/web/**` | TanStack Start UI, Worker routes, domain services, D1 schema, migrations, Vite/Drizzle/app package config |
+| Sandbox runner (independent npm) | `packages/sandbox-runner/**` | PI harness CLI baked into the sandbox image; own lockfile, TypeScript, and Vitest. Not a pnpm workspace member. |
+| Documentation | `docs/**`, `PRODUCT.md`, `README.md` | Product intent and architecture maps |
+| Implementation history | `plans/**` | Historical plans only; not current specs |
+| Agent tooling | `.agents/**`, `.claude/**`, `.cursor/**` | Coding-agent skills and hooks |
+
+Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `apps/web/src/routeTree.gen.ts`, `apps/web/dist/`. Root may also hold `.alchemy/` state for the Alchemy app stage.
 
 ## Inventory
 
@@ -20,264 +34,270 @@ The current behavior is authoritative in source and schema files. Files under `p
 | `docs/architecture/security.md` | Authentication, authorization, encryption, redaction, credential, and Git-egress boundaries. |
 | `docs/architecture/server-and-data.md` | Worker APIs, domain services, schema, lifecycles, persistence, and infrastructure. |
 
-### Application foundation
+### Application foundation (`apps/web/src`)
 
 | File | Responsibility |
 |---|---|
-| `src/env.ts` | Validates public/server configuration with t3-env and Zod. |
-| `src/hooks/use-mobile.ts` | Reactive mobile-breakpoint hook used by responsive primitives. |
-| `src/routeTree.gen.ts` | Generated TanStack Router route tree and route type registry; never edit manually. |
-| `src/router.tsx` | Creates the TanStack Router, SSR query integration, and application data-provider wrapper. |
-| `src/server.ts` | Cloudflare Worker entry: TanStack Start fetch handler and Sandbox Durable Object export. |
-| `src/styles.css` | Tailwind v4 imports, theme tokens, dark palette, typography, and global application styles. |
+| `apps/web/src/env.ts` | Validates public/server configuration with t3-env and Zod. |
+| `apps/web/src/hooks/use-mobile.ts` | Reactive mobile-breakpoint hook used by responsive primitives. |
+| `apps/web/src/routeTree.gen.ts` | Generated TanStack Router route tree and route type registry; never edit manually. |
+| `apps/web/src/router.tsx` | Creates the TanStack Router, SSR query integration, and application data-provider wrapper. |
+| `apps/web/src/server.ts` | Cloudflare Worker entry: TanStack Start fetch handler and Sandbox Durable Object export. |
+| `apps/web/src/styles.css` | Tailwind v4 imports, theme tokens, dark palette, typography, and global application styles. |
 
-### Frontend components
-
-| File | Responsibility |
-|---|---|
-| `src/components/ai-chat.test.tsx` | Regression tests for `src/components/ai-chat.tsx` behavior and edge cases. |
-| `src/components/ai-chat.tsx` | Chat timeline, message normalization, history loading, optimistic overlay, queued follow-up projection, and assistant-part rendering. |
-| `src/components/ai-elements/model-selector.tsx` | Composable model selection dialog/command components. |
-| `src/components/ai-elements/task.tsx` | Composable task/progress presentation components. |
-| `src/components/app-shell.tsx` | Composes sidebar, content inset, toasts, and global tooltip provider. |
-| `src/components/app-sidebar.test.tsx` | Regression tests for `src/components/app-sidebar.tsx` behavior and edge cases. |
-| `src/components/app-sidebar.tsx` | Project/session navigation, search, creation/settings launchers, archival, and account footer. |
-| `src/components/assistant-markdown.tsx` | Safe styled Markdown/code rendering for assistant text. |
-| `src/components/composer.test.tsx` | Regression tests for `src/components/composer.tsx` behavior and edge cases. |
-| `src/components/composer.tsx` | Prompt/model input, browser-side SSE lifecycle, multi-turn commits, follow-up queueing, and Stop controls. |
-| `src/components/edit-tool-diff.tsx` | Lazy visual diff renderer for PI edit-tool calls. |
-| `src/components/nav-user.tsx` | Authenticated user menu and sign-out behavior. |
-| `src/components/new-project-dialog.test.tsx` | Regression tests for `src/components/new-project-dialog.tsx` behavior and edge cases. |
-| `src/components/new-project-dialog.tsx` | GitHub repository picker, project env-var editor, and provisioning mutation. |
-| `src/components/project-settings-dialog.tsx` | Project rename/delete and write-only environment-variable management. |
-| `src/components/session-git-actions.test.tsx` | Regression tests for `src/components/session-git-actions.tsx` behavior and edge cases. |
-| `src/components/session-git-actions.tsx` | Renders and executes the server-derived sync/commit/push/PR workflow. |
-| `src/components/tool-call-group.test.tsx` | Regression tests for `src/components/tool-call-group.tsx` behavior and edge cases. |
-| `src/components/tool-call-group.tsx` | Collapsible grouped tool-call activity with elapsed duration. |
-| `src/components/ui/alert-dialog.tsx` | Confirmation modal primitive. |
-| `src/components/ui/avatar.tsx` | User image/fallback primitive. |
-| `src/components/ui/badge.tsx` | Compact status-label primitive. |
-| `src/components/ui/bubble.tsx` | Chat bubble layout primitive. |
-| `src/components/ui/button.tsx` | Button variants and styling primitive. |
-| `src/components/ui/collapsible.tsx` | Base UI collapsible wrapper. |
-| `src/components/ui/command.tsx` | Search/command palette primitives. |
-| `src/components/ui/dialog.tsx` | Base UI dialog wrapper. |
-| `src/components/ui/dropdown-menu.tsx` | Dropdown menu primitives. |
-| `src/components/ui/field.tsx` | Accessible field, label, description, and error composition. |
-| `src/components/ui/grainient.tsx` | WebGL animated gradient background. |
-| `src/components/ui/input-group.tsx` | Compound textarea/input with addons and actions. |
-| `src/components/ui/input.tsx` | Styled input primitive. |
-| `src/components/ui/label.tsx` | Styled Base UI label. |
-| `src/components/ui/message-scroller.tsx` | Chat scroll context, viewport, anchor preservation, and jump button. |
-| `src/components/ui/message.tsx` | Chat message layout primitive. |
-| `src/components/ui/scroll-area.tsx` | Base UI scroll-area wrapper. |
-| `src/components/ui/separator.tsx` | Semantic visual separator. |
-| `src/components/ui/sheet.tsx` | Slide-over sheet primitive. |
-| `src/components/ui/sidebar.tsx` | Responsive/collapsible sidebar state and component system. |
-| `src/components/ui/skeleton.tsx` | Loading placeholder primitive. |
-| `src/components/ui/sonner.tsx` | Theme-aware toast viewport. |
-| `src/components/ui/spinner.tsx` | Accessible SVG loading spinner. |
-| `src/components/ui/textarea.tsx` | Styled textarea primitive. |
-| `src/components/ui/tooltip.tsx` | Base UI tooltip primitives. |
-
-### Routes and API entry points
+### Frontend components (`apps/web`)
 
 | File | Responsibility |
 |---|---|
-| `src/routes/__root.tsx` | Root document metadata, global shell selection, CSS, scripts, and lazy development tools. |
-| `src/routes/api.agent.control.test.ts` | Regression tests for authenticated follow-up/Stop routing and error mapping. |
-| `src/routes/api.agent.control.ts` | Cookie-authenticated endpoint controlling one active PI agent session. |
-| `src/routes/api.agent.git.test.ts` | Regression tests for `src/routes/api.agent.git.ts` behavior and edge cases. |
-| `src/routes/api.agent.git.ts` | JWT-authenticated callback endpoint for sandbox agent Git tools. |
-| `src/routes/api.agent.stream.test.ts` | Regression tests for `src/routes/api.agent.stream.ts` behavior and edge cases. |
-| `src/routes/api.agent.stream.ts` | Cookie-authenticated SSE endpoint that prepares and executes an agent run. |
-| `src/routes/api.auth.$.ts` | Mounts the better-auth HTTP handler. |
-| `src/routes/api.trpc.$.tsx` | Mounts the Worker tRPC fetch adapter. |
-| `src/routes/index.tsx` | Authentication-aware dashboard with project list, status, and creation entry point. |
-| `src/routes/installation.completed.tsx` | GitHub App installation popup completion notifier. |
-| `src/routes/project.$projectId.index.tsx` | New-conversation child route for a project. |
-| `src/routes/project.$projectId.session.$sessionId.tsx` | Existing-conversation child route for a project session. |
-| `src/routes/project.$projectId.tsx` | Project workspace coordinator: project readiness, restore, selected session, history, and chat. |
-| `src/routes/sign-in.tsx` | GitHub OAuth sign-in UI and authenticated redirect. |
+| `apps/web/src/components/ai-chat.test.tsx` | Regression tests for `apps/web/src/components/ai-chat.tsx` behavior and edge cases. |
+| `apps/web/src/components/ai-chat.tsx` | Chat timeline, message normalization, history loading, optimistic overlay, queued follow-up projection, and assistant-part rendering. |
+| `apps/web/src/components/ai-elements/model-selector.tsx` | Composable model selection dialog/command components. |
+| `apps/web/src/components/ai-elements/task.tsx` | Composable task/progress presentation components. |
+| `apps/web/src/components/app-shell.tsx` | Composes sidebar, content inset, toasts, and global tooltip provider. |
+| `apps/web/src/components/app-sidebar.test.tsx` | Regression tests for `apps/web/src/components/app-sidebar.tsx` behavior and edge cases. |
+| `apps/web/src/components/app-sidebar.tsx` | Project/session navigation, search, creation/settings launchers, archival, and account footer. |
+| `apps/web/src/components/assistant-markdown.tsx` | Safe styled Markdown/code rendering for assistant text. |
+| `apps/web/src/components/composer.test.tsx` | Regression tests for `apps/web/src/components/composer.tsx` behavior and edge cases. |
+| `apps/web/src/components/composer.tsx` | Prompt/model input, browser-side SSE lifecycle, multi-turn commits, follow-up queueing, and Stop controls. |
+| `apps/web/src/components/edit-tool-diff.tsx` | Lazy visual diff renderer for PI edit-tool calls. |
+| `apps/web/src/components/nav-user.tsx` | Authenticated user menu and sign-out behavior. |
+| `apps/web/src/components/new-project-dialog.test.tsx` | Regression tests for `apps/web/src/components/new-project-dialog.tsx` behavior and edge cases. |
+| `apps/web/src/components/new-project-dialog.tsx` | GitHub repository picker, project env-var editor, and provisioning mutation. |
+| `apps/web/src/components/project-settings-dialog.tsx` | Project rename/delete and write-only environment-variable management. |
+| `apps/web/src/components/session-git-actions.test.tsx` | Regression tests for `apps/web/src/components/session-git-actions.tsx` behavior and edge cases. |
+| `apps/web/src/components/session-git-actions.tsx` | Renders and executes the server-derived sync/commit/push/PR workflow. |
+| `apps/web/src/components/tool-call-group.test.tsx` | Regression tests for `apps/web/src/components/tool-call-group.tsx` behavior and edge cases. |
+| `apps/web/src/components/tool-call-group.tsx` | Collapsible grouped tool-call activity with elapsed duration. |
+| `apps/web/src/components/ui/alert-dialog.tsx` | Confirmation modal primitive. |
+| `apps/web/src/components/ui/avatar.tsx` | User image/fallback primitive. |
+| `apps/web/src/components/ui/badge.tsx` | Compact status-label primitive. |
+| `apps/web/src/components/ui/bubble.tsx` | Chat bubble layout primitive. |
+| `apps/web/src/components/ui/button.tsx` | Button variants and styling primitive. |
+| `apps/web/src/components/ui/collapsible.tsx` | Base UI collapsible wrapper. |
+| `apps/web/src/components/ui/command.tsx` | Search/command palette primitives. |
+| `apps/web/src/components/ui/dialog.tsx` | Base UI dialog wrapper. |
+| `apps/web/src/components/ui/dropdown-menu.tsx` | Dropdown menu primitives. |
+| `apps/web/src/components/ui/field.tsx` | Accessible field, label, description, and error composition. |
+| `apps/web/src/components/ui/grainient.tsx` | WebGL animated gradient background. |
+| `apps/web/src/components/ui/input-group.tsx` | Compound textarea/input with addons and actions. |
+| `apps/web/src/components/ui/input.tsx` | Styled input primitive. |
+| `apps/web/src/components/ui/label.tsx` | Styled Base UI label. |
+| `apps/web/src/components/ui/message-scroller.tsx` | Chat scroll context, viewport, anchor preservation, and jump button. |
+| `apps/web/src/components/ui/message.tsx` | Chat message layout primitive. |
+| `apps/web/src/components/ui/scroll-area.tsx` | Base UI scroll-area wrapper. |
+| `apps/web/src/components/ui/separator.tsx` | Semantic visual separator. |
+| `apps/web/src/components/ui/sheet.tsx` | Slide-over sheet primitive. |
+| `apps/web/src/components/ui/sidebar.tsx` | Responsive/collapsible sidebar state and component system. |
+| `apps/web/src/components/ui/skeleton.tsx` | Loading placeholder primitive. |
+| `apps/web/src/components/ui/sonner.tsx` | Theme-aware toast viewport. |
+| `apps/web/src/components/ui/spinner.tsx` | Accessible SVG loading spinner. |
+| `apps/web/src/components/ui/textarea.tsx` | Styled textarea primitive. |
+| `apps/web/src/components/ui/tooltip.tsx` | Base UI tooltip primitives. |
 
-### Client/server integrations
-
-| File | Responsibility |
-|---|---|
-| `src/integrations/tanstack-query/devtools-bundle.tsx` | Lazy development-only React Query and Router devtools bundle. |
-| `src/integrations/tanstack-query/devtools.tsx` | Compatibility entry for development query/router devtools. |
-| `src/integrations/tanstack-query/root-context.ts` | Creates Query Client, tRPC client, SuperJSON transport, and typed query options proxy. |
-| `src/integrations/tanstack-query/root-provider.tsx` | Provides tRPC and React Query to the route tree. |
-| `src/integrations/trpc/init.ts` | Builds tRPC context, SuperJSON transformer, and authenticated procedure middleware. |
-| `src/integrations/trpc/react.ts` | Exports the typed React tRPC context/provider hook. |
-| `src/integrations/trpc/router.ts` | Combines all application tRPC routers into the public API type. |
-| `src/integrations/trpc/routers/github.ts` | Authenticated GitHub import-state and branch-listing procedures. |
-| `src/integrations/trpc/routers/health.ts` | Minimal public liveness procedure. |
-| `src/integrations/trpc/routers/projects.ts` | Project CRUD, sandbox provisioning, encrypted environment-variable management, and project listing. |
-| `src/integrations/trpc/routers/session-git.ts` | Authenticated UI API for session Git status, sync, commit, push, and pull requests. |
-| `src/integrations/trpc/routers/workspace.test.ts` | Regression tests for `src/integrations/trpc/routers/workspace.ts` behavior and edge cases. |
-| `src/integrations/trpc/routers/workspace.ts` | Workspace ensure/retry, active-session reads, keyset message pagination, and session archival. |
-
-### Domain libraries
-
-| File | Responsibility |
-|---|---|
-| `src/lib/agent-control-service.test.ts` | Regression tests for ownership, safe control jobs, cleanup, and stale targets. |
-| `src/lib/agent-control-service.ts` | Validates and dispatches run-scoped follow-up/Stop jobs to the sandbox control CLI. |
-| `src/lib/agent-delta-batcher.test.ts` | Regression tests for `src/lib/agent-delta-batcher.ts` behavior and edge cases. |
-| `src/lib/agent-delta-batcher.ts` | Batches contiguous text deltas while preserving text/tool event order. |
-| `src/lib/agent-git-handler.test.ts` | Regression tests for `src/lib/agent-git-handler.ts` behavior and edge cases. |
-| `src/lib/agent-git-handler.ts` | Resolves signed callback claims to current resources and dispatches shared Git operations. |
-| `src/lib/agent-git-jwt.test.ts` | Regression tests for `src/lib/agent-git-jwt.ts` behavior and edge cases. |
-| `src/lib/agent-git-jwt.ts` | Mints and verifies short-lived scoped agent callback JWTs. |
-| `src/lib/agent-message-parts.test.ts` | Regression tests for `src/lib/agent-message-parts.ts` behavior and edge cases. |
-| `src/lib/agent-message-parts.ts` | Canonical ordered assistant text/tool model and PI event reducers. |
-| `src/lib/agent-message-storage.test.ts` | Regression tests for `src/lib/agent-message-storage.ts` behavior and edge cases. |
-| `src/lib/agent-message-storage.ts` | Bounds, serializes, migrates, and parses durable assistant parts. |
-| `src/lib/agent-models.ts` | Allowlisted project-coder models and default model. |
-| `src/lib/agent-run-service.test.ts` | Regression tests for `src/lib/agent-run-service.ts` behavior and edge cases. |
-| `src/lib/agent-run-service.ts` | Agent preparation, multi-turn streaming lifecycle, terminal D1 persistence, and post-run backup. |
-| `src/lib/agent-run.test.ts` | Regression tests for `src/lib/agent-run.ts` behavior and edge cases. |
-| `src/lib/agent-run.ts` | Sandbox shell/job execution, runner protocol bridge, streaming redaction, lock, and cleanup. |
-| `src/lib/agent-stream-client.test.ts` | Regression tests for `src/lib/agent-stream-client.ts` behavior and edge cases. |
-| `src/lib/agent-stream-client.ts` | Browser SSE request/parser, typed turn handlers, and JSON agent-control client. |
-| `src/lib/agent-stream-protocol.test.ts` | Regression tests for `src/lib/agent-stream-protocol.ts` behavior and edge cases. |
-| `src/lib/agent-stream-protocol.ts` | Worker-side runner NDJSON parsing and SSE encoding helpers. |
-| `src/lib/agent-tool-presentation.test.ts` | Regression tests for `src/lib/agent-tool-presentation.ts` behavior and edge cases. |
-| `src/lib/agent-tool-presentation.ts` | Tool labels/details, edit extraction, grouping, and timing presentation rules. |
-| `src/lib/auth.client.ts` | Browser better-auth client. |
-| `src/lib/auth.functions.ts` | Server function that reads the current auth session for routes. |
-| `src/lib/auth.ts` | Configures better-auth, Drizzle adapter, GitHub OAuth, and TanStack cookies. |
-| `src/lib/chat-session-cache.test.ts` | Regression tests for `src/lib/chat-session-cache.ts` behavior and edge cases. |
-| `src/lib/chat-session-cache.ts` | Bounded in-memory optimistic message cache keyed by workspace session. |
-| `src/lib/crypto.ts` | Versioned PBKDF2/AES-GCM text encryption used for project secrets. |
-| `src/lib/ditto-git-identity.ts` | Canonical Git author identity and shell environment. |
-| `src/lib/env-vars.test.ts` | Regression tests for `src/lib/env-vars.ts` behavior and edge cases. |
-| `src/lib/env-vars.ts` | Environment-variable key normalization and validation copy. |
-| `src/lib/git-secret-policy.test.ts` | Regression tests for `src/lib/git-secret-policy.ts` behavior and edge cases. |
-| `src/lib/git-secret-policy.ts` | Fail-closed outgoing Git range/path/content secret scanner. |
-| `src/lib/github-app.ts` | GitHub App construction and short-lived installation-token minting. |
-| `src/lib/github-authorization.ts` | Proves the signed-in user can access a repository through an installation. |
-| `src/lib/github-export.test.ts` | Regression tests for `src/lib/github-export.ts` behavior and edge cases. |
-| `src/lib/github-export.ts` | Branch, commit, PR metadata, shell quoting, diff summary, and redacted export-output helpers. |
-| `src/lib/github-repositories.test.ts` | Regression tests for `src/lib/github-repositories.ts` behavior and edge cases. |
-| `src/lib/github-repositories.ts` | Lists and normalizes user-visible GitHub App installations/repositories. |
-| `src/lib/message-cursor.test.ts` | Regression tests for `src/lib/message-cursor.ts` behavior and edge cases. |
-| `src/lib/message-cursor.ts` | Opaque validated `(createdAt,rowid)` cursor codec and comparison helpers. |
-| `src/lib/project-env-vars.ts` | Sanitizes, encrypts, decrypts, and hides project environment values. |
-| `src/lib/project-sandbox.test.ts` | Regression tests for `src/lib/project-sandbox.ts` behavior and edge cases. |
-| `src/lib/project-sandbox.ts` | Connects/restores/recreates project sandboxes and versions backup writes. |
-| `src/lib/sandbox-backup.test.ts` | Regression tests for `src/lib/sandbox-backup.ts` behavior and edge cases. |
-| `src/lib/sandbox-backup.ts` | Backup handle codec, R2/local options, TTL, and exclusion policy. |
-| `src/lib/sandbox-bootstrap.test.ts` | Regression tests for `src/lib/sandbox-bootstrap.ts` behavior and edge cases. |
-| `src/lib/sandbox-bootstrap.ts` | Low-level Sandbox SDK, Git clone/fetch, dependency install, health, backup, and restore operations. |
-| `src/lib/secret-redaction.test.ts` | Regression tests for `src/lib/secret-redaction.ts` behavior and edge cases. |
-| `src/lib/secret-redaction.ts` | Concrete/pattern/streaming secret redaction for text and structured output. |
-| `src/lib/session-git-backup.test.ts` | Regression tests for `src/lib/session-git-backup.ts` behavior and edge cases. |
-| `src/lib/session-git-backup.ts` | Wraps successful Git mutations with best-effort versioned workspace backup. |
-| `src/lib/session-git-trpc-errors.test.ts` | Regression tests for `src/lib/session-git-trpc-errors.ts` behavior and edge cases. |
-| `src/lib/session-git-trpc-errors.ts` | Maps shared Git mutation errors to stable tRPC errors. |
-| `src/lib/session-git.test.ts` | Regression tests for `src/lib/session-git.ts` behavior and edge cases. |
-| `src/lib/session-git.ts` | Session Git/GitHub state machine and sync/commit/push/pull-request implementation. |
-| `src/lib/session-workspace-lock-error.ts` | Shared typed busy error for concurrent session workspace writes. |
-| `src/lib/session-workspace-lock.test.ts` | Regression tests for `src/lib/session-workspace-lock.ts` behavior and edge cases. |
-| `src/lib/session-workspace-lock.ts` | Atomic per-session sandbox `/tmp` lock with stale-lock recovery. |
-| `src/lib/session-worktree.test.ts` | Regression tests for `src/lib/session-worktree.ts` behavior and edge cases. |
-| `src/lib/session-worktree.ts` | Creates or restores a session branch/worktree and links shared dependencies. |
-| `src/lib/user-preferences-store.ts` | Validated persisted browser preference for selected model. |
-| `src/lib/utils.ts` | Shared Tailwind class merge helper. |
-| `src/lib/workspace-policy.test.ts` | Regression tests for `src/lib/workspace-policy.ts` behavior and edge cases. |
-| `src/lib/workspace-policy.ts` | Canonical workspace paths, session statuses, branch/lock naming, and title policy. |
-| `src/lib/workspace-session.test.ts` | Regression tests for `src/lib/workspace-session.ts` behavior and edge cases. |
-| `src/lib/workspace-session.ts` | Owned active-session loading, creation resolution, archival, and recency update. |
-
-### Database
+### Routes and API entry points (`apps/web`)
 
 | File | Responsibility |
 |---|---|
-| `src/db/index.ts` | Constructs the typed Drizzle D1 client. |
-| `src/db/schema.ts` | Current D1 schema for auth, projects, workspace sessions, messages, and starter todos. |
+| `apps/web/src/routes/__root.tsx` | Root document metadata, global shell selection, CSS, scripts, and lazy development tools. |
+| `apps/web/src/routes/api.agent.control.test.ts` | Regression tests for authenticated follow-up/Stop routing and error mapping. |
+| `apps/web/src/routes/api.agent.control.ts` | Cookie-authenticated endpoint controlling one active PI agent session. |
+| `apps/web/src/routes/api.agent.git.test.ts` | Regression tests for `apps/web/src/routes/api.agent.git.ts` behavior and edge cases. |
+| `apps/web/src/routes/api.agent.git.ts` | JWT-authenticated callback endpoint for sandbox agent Git tools. |
+| `apps/web/src/routes/api.agent.stream.test.ts` | Regression tests for `apps/web/src/routes/api.agent.stream.ts` behavior and edge cases. |
+| `apps/web/src/routes/api.agent.stream.ts` | Cookie-authenticated SSE endpoint that prepares and executes an agent run. |
+| `apps/web/src/routes/api.auth.$.ts` | Mounts the better-auth HTTP handler. |
+| `apps/web/src/routes/api.trpc.$.tsx` | Mounts the Worker tRPC fetch adapter. |
+| `apps/web/src/routes/index.tsx` | Authentication-aware dashboard with project list, status, and creation entry point. |
+| `apps/web/src/routes/installation.completed.tsx` | GitHub App installation popup completion notifier. |
+| `apps/web/src/routes/project.$projectId.index.tsx` | New-conversation child route for a project. |
+| `apps/web/src/routes/project.$projectId.session.$sessionId.tsx` | Existing-conversation child route for a project session. |
+| `apps/web/src/routes/project.$projectId.tsx` | Project workspace coordinator: project readiness, restore, selected session, history, and chat. |
+| `apps/web/src/routes/sign-in.tsx` | GitHub OAuth sign-in UI and authenticated redirect. |
 
-### Sandbox runner
-
-| File | Responsibility |
-|---|---|
-| `sandbox/runner/.gitignore` | Excludes runner build output and dependencies. |
-| `sandbox/runner/package-lock.json` | Generated pinned dependency graph for the independent runner package. |
-| `sandbox/runner/package.json` | Independent npm package manifest for the baked PI runner. |
-| `sandbox/runner/src/cli.ts` | Validates job files, invokes the harness, and writes protocol NDJSON to stdout. |
-| `sandbox/runner/src/control-channel.test.ts` | Regression tests for run-scoped Unix control framing, serialization, validation, and cleanup. |
-| `sandbox/runner/src/control-channel.ts` | Run-scoped Unix socket protocol for serialized PI follow-up and Stop commands. |
-| `sandbox/runner/src/control-cli.ts` | Reads one JSON control job, contacts the live runner socket, and prints one response. |
-| `sandbox/runner/src/ditto-git-callback.ts` | Posts signed push/PR tool actions back to the Worker and scrubs callback tokens. |
-| `sandbox/runner/src/ditto-git-guidance.ts` | Prompt guidance and descriptions for Ditto-specific Git tools. |
-| `sandbox/runner/src/ditto-git-tools.test.ts` | Regression tests for `sandbox/runner/src/ditto-git-tools.ts` behavior and edge cases. |
-| `sandbox/runner/src/ditto-git-tools.ts` | Defines PI custom tools for pushing and opening pull requests through the Worker. |
-| `sandbox/runner/src/protocol.test.ts` | Regression tests for `sandbox/runner/src/protocol.ts` behavior and edge cases. |
-| `sandbox/runner/src/protocol.ts` | Versioned runner output union, PI event normalization, and terminal text fallback helpers. |
-| `sandbox/runner/src/run-agent.test.ts` | Regression tests for PI follow-up FIFO, Stop ordering, expected abort, and socket cleanup. |
-| `sandbox/runner/src/run-agent.ts` | Creates/resumes PI sessions, binds run-scoped controls, emits turn/text/tool events, and settles a run. |
-| `sandbox/runner/tsconfig.json` | Runner TypeScript/build settings. |
-| `sandbox/runner/vitest.config.ts` | Runner Vitest configuration. |
-
-### Migrations
+### Client/server integrations (`apps/web`)
 
 | File | Responsibility |
 |---|---|
-| `migrations/0000_wet_giant_girl.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
-| `migrations/0001_jazzy_firelord.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
-| `migrations/0002_sparkling_agent_zero.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
-| `migrations/0003_material_ghost_rider.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
-| `migrations/0004_same_stellaris.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
-| `migrations/0005_illegal_invisible_woman.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
-| `migrations/0006_late_wonder_man.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
-| `migrations/0007_amused_shinobi_shaw.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
-| `migrations/0008_chunky_sunset_bain.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
-| `migrations/0009_worthless_young_avengers.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
-| `migrations/meta/0000_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
-| `migrations/meta/0001_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
-| `migrations/meta/0002_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
-| `migrations/meta/0003_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
-| `migrations/meta/0004_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
-| `migrations/meta/0005_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
-| `migrations/meta/0006_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
-| `migrations/meta/0007_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
-| `migrations/meta/0008_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
-| `migrations/meta/0009_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
-| `migrations/meta/_journal.json` | Generated Drizzle migration journal and ordering metadata. |
+| `apps/web/src/integrations/tanstack-query/devtools-bundle.tsx` | Lazy development-only React Query and Router devtools bundle. |
+| `apps/web/src/integrations/tanstack-query/devtools.tsx` | Compatibility entry for development query/router devtools. |
+| `apps/web/src/integrations/tanstack-query/root-context.ts` | Creates Query Client, tRPC client, SuperJSON transport, and typed query options proxy. |
+| `apps/web/src/integrations/tanstack-query/root-provider.tsx` | Provides tRPC and React Query to the route tree. |
+| `apps/web/src/integrations/trpc/init.ts` | Builds tRPC context, SuperJSON transformer, and authenticated procedure middleware. |
+| `apps/web/src/integrations/trpc/react.ts` | Exports the typed React tRPC context/provider hook. |
+| `apps/web/src/integrations/trpc/router.ts` | Combines all application tRPC routers into the public API type. |
+| `apps/web/src/integrations/trpc/routers/github.ts` | Authenticated GitHub import-state and branch-listing procedures. |
+| `apps/web/src/integrations/trpc/routers/health.ts` | Minimal public liveness procedure. |
+| `apps/web/src/integrations/trpc/routers/projects.ts` | Project CRUD, sandbox provisioning, encrypted environment-variable management, and project listing. |
+| `apps/web/src/integrations/trpc/routers/session-git.ts` | Authenticated UI API for session Git status, sync, commit, push, and pull requests. |
+| `apps/web/src/integrations/trpc/routers/workspace.test.ts` | Regression tests for `apps/web/src/integrations/trpc/routers/workspace.ts` behavior and edge cases. |
+| `apps/web/src/integrations/trpc/routers/workspace.ts` | Workspace ensure/retry, active-session reads, keyset message pagination, and session archival. |
 
-### Repository configuration
+### Domain libraries (`apps/web`)
 
 | File | Responsibility |
 |---|---|
-| `.cta.json` | Cloudflare/TanStack agent-tooling metadata. |
+| `apps/web/src/lib/agent-control-service.test.ts` | Regression tests for ownership, safe control jobs, cleanup, and stale targets. |
+| `apps/web/src/lib/agent-control-service.ts` | Validates and dispatches run-scoped follow-up/Stop jobs to the sandbox control CLI. |
+| `apps/web/src/lib/agent-delta-batcher.test.ts` | Regression tests for `apps/web/src/lib/agent-delta-batcher.ts` behavior and edge cases. |
+| `apps/web/src/lib/agent-delta-batcher.ts` | Batches contiguous text deltas while preserving text/tool event order. |
+| `apps/web/src/lib/agent-git-handler.test.ts` | Regression tests for `apps/web/src/lib/agent-git-handler.ts` behavior and edge cases. |
+| `apps/web/src/lib/agent-git-handler.ts` | Resolves signed callback claims to current resources and dispatches shared Git operations. |
+| `apps/web/src/lib/agent-git-jwt.test.ts` | Regression tests for `apps/web/src/lib/agent-git-jwt.ts` behavior and edge cases. |
+| `apps/web/src/lib/agent-git-jwt.ts` | Mints and verifies short-lived scoped agent callback JWTs. |
+| `apps/web/src/lib/agent-message-parts.test.ts` | Regression tests for `apps/web/src/lib/agent-message-parts.ts` behavior and edge cases. |
+| `apps/web/src/lib/agent-message-parts.ts` | Canonical ordered assistant text/tool model and PI event reducers. |
+| `apps/web/src/lib/agent-message-storage.test.ts` | Regression tests for `apps/web/src/lib/agent-message-storage.ts` behavior and edge cases. |
+| `apps/web/src/lib/agent-message-storage.ts` | Bounds, serializes, migrates, and parses durable assistant parts. |
+| `apps/web/src/lib/agent-models.ts` | Allowlisted project-coder models and default model. |
+| `apps/web/src/lib/agent-run-service.test.ts` | Regression tests for `apps/web/src/lib/agent-run-service.ts` behavior and edge cases. |
+| `apps/web/src/lib/agent-run-service.ts` | Agent preparation, multi-turn streaming lifecycle, terminal D1 persistence, and post-run backup. |
+| `apps/web/src/lib/agent-run.test.ts` | Regression tests for `apps/web/src/lib/agent-run.ts` behavior and edge cases. |
+| `apps/web/src/lib/agent-run.ts` | Sandbox shell/job execution, runner protocol bridge, streaming redaction, lock, and cleanup. |
+| `apps/web/src/lib/agent-stream-client.test.ts` | Regression tests for `apps/web/src/lib/agent-stream-client.ts` behavior and edge cases. |
+| `apps/web/src/lib/agent-stream-client.ts` | Browser SSE request/parser, typed turn handlers, and JSON agent-control client. |
+| `apps/web/src/lib/agent-stream-protocol.test.ts` | Regression tests for `apps/web/src/lib/agent-stream-protocol.ts` behavior and edge cases. |
+| `apps/web/src/lib/agent-stream-protocol.ts` | Worker-side runner NDJSON parsing and SSE encoding helpers. |
+| `apps/web/src/lib/agent-tool-presentation.test.ts` | Regression tests for `apps/web/src/lib/agent-tool-presentation.ts` behavior and edge cases. |
+| `apps/web/src/lib/agent-tool-presentation.ts` | Tool labels/details, edit extraction, grouping, and timing presentation rules. |
+| `apps/web/src/lib/auth.client.ts` | Browser better-auth client. |
+| `apps/web/src/lib/auth.functions.ts` | Server function that reads the current auth session for routes. |
+| `apps/web/src/lib/auth.ts` | Configures better-auth, Drizzle adapter, GitHub OAuth, and TanStack cookies. |
+| `apps/web/src/lib/chat-session-cache.test.ts` | Regression tests for `apps/web/src/lib/chat-session-cache.ts` behavior and edge cases. |
+| `apps/web/src/lib/chat-session-cache.ts` | Bounded in-memory optimistic message cache keyed by workspace session. |
+| `apps/web/src/lib/crypto.ts` | Versioned PBKDF2/AES-GCM text encryption used for project secrets. |
+| `apps/web/src/lib/ditto-git-identity.ts` | Canonical Git author identity and shell environment. |
+| `apps/web/src/lib/env-vars.test.ts` | Regression tests for `apps/web/src/lib/env-vars.ts` behavior and edge cases. |
+| `apps/web/src/lib/env-vars.ts` | Environment-variable key normalization and validation copy. |
+| `apps/web/src/lib/git-secret-policy.test.ts` | Regression tests for `apps/web/src/lib/git-secret-policy.ts` behavior and edge cases. |
+| `apps/web/src/lib/git-secret-policy.ts` | Fail-closed outgoing Git range/path/content secret scanner. |
+| `apps/web/src/lib/github-app.ts` | GitHub App construction and short-lived installation-token minting. |
+| `apps/web/src/lib/github-authorization.ts` | Proves the signed-in user can access a repository through an installation. |
+| `apps/web/src/lib/github-export.test.ts` | Regression tests for `apps/web/src/lib/github-export.ts` behavior and edge cases. |
+| `apps/web/src/lib/github-export.ts` | Branch, commit, PR metadata, shell quoting, diff summary, and redacted export-output helpers. |
+| `apps/web/src/lib/github-repositories.test.ts` | Regression tests for `apps/web/src/lib/github-repositories.ts` behavior and edge cases. |
+| `apps/web/src/lib/github-repositories.ts` | Lists and normalizes user-visible GitHub App installations/repositories. |
+| `apps/web/src/lib/message-cursor.test.ts` | Regression tests for `apps/web/src/lib/message-cursor.ts` behavior and edge cases. |
+| `apps/web/src/lib/message-cursor.ts` | Opaque validated `(createdAt,rowid)` cursor codec and comparison helpers. |
+| `apps/web/src/lib/project-env-vars.ts` | Sanitizes, encrypts, decrypts, and hides project environment values. |
+| `apps/web/src/lib/project-sandbox.test.ts` | Regression tests for `apps/web/src/lib/project-sandbox.ts` behavior and edge cases. |
+| `apps/web/src/lib/project-sandbox.ts` | Connects/restores/recreates project sandboxes and versions backup writes. |
+| `apps/web/src/lib/sandbox-backup.test.ts` | Regression tests for `apps/web/src/lib/sandbox-backup.ts` behavior and edge cases. |
+| `apps/web/src/lib/sandbox-backup.ts` | Backup handle codec, R2/local options, TTL, and exclusion policy. |
+| `apps/web/src/lib/sandbox-bootstrap.test.ts` | Regression tests for `apps/web/src/lib/sandbox-bootstrap.ts` behavior and edge cases. |
+| `apps/web/src/lib/sandbox-bootstrap.ts` | Low-level Sandbox SDK, Git clone/fetch, dependency install, health, backup, and restore operations. |
+| `apps/web/src/lib/secret-redaction.test.ts` | Regression tests for `apps/web/src/lib/secret-redaction.ts` behavior and edge cases. |
+| `apps/web/src/lib/secret-redaction.ts` | Concrete/pattern/streaming secret redaction for text and structured output. |
+| `apps/web/src/lib/session-git-backup.test.ts` | Regression tests for `apps/web/src/lib/session-git-backup.ts` behavior and edge cases. |
+| `apps/web/src/lib/session-git-backup.ts` | Wraps successful Git mutations with best-effort versioned workspace backup. |
+| `apps/web/src/lib/session-git-trpc-errors.test.ts` | Regression tests for `apps/web/src/lib/session-git-trpc-errors.ts` behavior and edge cases. |
+| `apps/web/src/lib/session-git-trpc-errors.ts` | Maps shared Git mutation errors to stable tRPC errors. |
+| `apps/web/src/lib/session-git.test.ts` | Regression tests for `apps/web/src/lib/session-git.ts` behavior and edge cases. |
+| `apps/web/src/lib/session-git.ts` | Session Git/GitHub state machine and sync/commit/push/pull-request implementation. |
+| `apps/web/src/lib/session-workspace-lock-error.ts` | Shared typed busy error for concurrent session workspace writes. |
+| `apps/web/src/lib/session-workspace-lock.test.ts` | Regression tests for `apps/web/src/lib/session-workspace-lock.ts` behavior and edge cases. |
+| `apps/web/src/lib/session-workspace-lock.ts` | Atomic per-session sandbox `/tmp` lock with stale-lock recovery. |
+| `apps/web/src/lib/session-worktree.test.ts` | Regression tests for `apps/web/src/lib/session-worktree.ts` behavior and edge cases. |
+| `apps/web/src/lib/session-worktree.ts` | Creates or restores a session branch/worktree and links shared dependencies. |
+| `apps/web/src/lib/user-preferences-store.ts` | Validated persisted browser preference for selected model. |
+| `apps/web/src/lib/utils.ts` | Shared Tailwind class merge helper. |
+| `apps/web/src/lib/workspace-policy.test.ts` | Regression tests for `apps/web/src/lib/workspace-policy.ts` behavior and edge cases. |
+| `apps/web/src/lib/workspace-policy.ts` | Canonical workspace paths, session statuses, branch/lock naming, and title policy. |
+| `apps/web/src/lib/workspace-session.test.ts` | Regression tests for `apps/web/src/lib/workspace-session.ts` behavior and edge cases. |
+| `apps/web/src/lib/workspace-session.ts` | Owned active-session loading, creation resolution, archival, and recency update. |
+
+### Database (`apps/web`)
+
+| File | Responsibility |
+|---|---|
+| `apps/web/src/db/index.ts` | Constructs the typed Drizzle D1 client. |
+| `apps/web/src/db/schema.ts` | Current D1 schema for auth, projects, workspace sessions, messages, and starter todos. |
+
+### Sandbox runner (`packages/sandbox-runner`)
+
+| File | Responsibility |
+|---|---|
+| `packages/sandbox-runner/.gitignore` | Excludes runner build output and dependencies. |
+| `packages/sandbox-runner/package-lock.json` | Generated pinned dependency graph for the independent runner package. |
+| `packages/sandbox-runner/package.json` | Independent npm package manifest for the baked PI runner. |
+| `packages/sandbox-runner/src/cli.ts` | Validates job files, invokes the harness, and writes protocol NDJSON to stdout. |
+| `packages/sandbox-runner/src/control-channel.test.ts` | Regression tests for run-scoped Unix control framing, serialization, validation, and cleanup. |
+| `packages/sandbox-runner/src/control-channel.ts` | Run-scoped Unix socket protocol for serialized PI follow-up and Stop commands. |
+| `packages/sandbox-runner/src/control-cli.ts` | Reads one JSON control job, contacts the live runner socket, and prints one response. |
+| `packages/sandbox-runner/src/ditto-git-callback.ts` | Posts signed push/PR tool actions back to the Worker and scrubs callback tokens. |
+| `packages/sandbox-runner/src/ditto-git-guidance.ts` | Prompt guidance and descriptions for Ditto-specific Git tools. |
+| `packages/sandbox-runner/src/ditto-git-tools.test.ts` | Regression tests for `packages/sandbox-runner/src/ditto-git-tools.ts` behavior and edge cases. |
+| `packages/sandbox-runner/src/ditto-git-tools.ts` | Defines PI custom tools for pushing and opening pull requests through the Worker. |
+| `packages/sandbox-runner/src/protocol.test.ts` | Regression tests for `packages/sandbox-runner/src/protocol.ts` behavior and edge cases. |
+| `packages/sandbox-runner/src/protocol.ts` | Versioned runner output union, PI event normalization, and terminal text fallback helpers. |
+| `packages/sandbox-runner/src/run-agent.test.ts` | Regression tests for PI follow-up FIFO, Stop ordering, expected abort, and socket cleanup. |
+| `packages/sandbox-runner/src/run-agent.ts` | Creates/resumes PI sessions, binds run-scoped controls, emits turn/text/tool events, and settles a run. |
+| `packages/sandbox-runner/tsconfig.json` | Runner TypeScript/build settings. |
+| `packages/sandbox-runner/vitest.config.ts` | Runner Vitest configuration. |
+
+### Migrations (`apps/web/migrations`)
+
+| File | Responsibility |
+|---|---|
+| `apps/web/migrations/0000_wet_giant_girl.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
+| `apps/web/migrations/0001_jazzy_firelord.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
+| `apps/web/migrations/0002_sparkling_agent_zero.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
+| `apps/web/migrations/0003_material_ghost_rider.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
+| `apps/web/migrations/0004_same_stellaris.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
+| `apps/web/migrations/0005_illegal_invisible_woman.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
+| `apps/web/migrations/0006_late_wonder_man.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
+| `apps/web/migrations/0007_amused_shinobi_shaw.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
+| `apps/web/migrations/0008_chunky_sunset_bain.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
+| `apps/web/migrations/0009_worthless_young_avengers.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
+| `apps/web/migrations/meta/0000_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
+| `apps/web/migrations/meta/0001_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
+| `apps/web/migrations/meta/0002_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
+| `apps/web/migrations/meta/0003_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
+| `apps/web/migrations/meta/0004_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
+| `apps/web/migrations/meta/0005_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
+| `apps/web/migrations/meta/0006_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
+| `apps/web/migrations/meta/0007_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
+| `apps/web/migrations/meta/0008_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
+| `apps/web/migrations/meta/0009_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
+| `apps/web/migrations/meta/_journal.json` | Generated Drizzle migration journal and ordering metadata. |
+
+### Root orchestration and Alchemy
+
+| File | Responsibility |
+|---|---|
 | `.cursorrules` | Repository guidance loaded by Cursor. |
-| `.dockerignore` | Removes local/generated files from the sandbox image build context. |
+| `.dockerignore` | Removes local/generated files from the sandbox image build context; keeps `packages/sandbox-runner` sources. |
 | `.github/workflows/ci.yml` | CI installation and full root/runner verification workflow. |
 | `.gitignore` | Excludes dependencies, builds, local state, secrets, and generated deployment artifacts. |
 | `.vscode/settings.json` | Workspace editor defaults for TypeScript, Tailwind, and formatting. |
-| `Dockerfile` | Builds the Cloudflare Sandbox image and installs the independent Ditto runner CLI. |
+| `Dockerfile` | Builds the Cloudflare Sandbox image from repo root and installs the independent Ditto runner CLI. |
 | `PRODUCT.md` | Canonical product purpose, users, brand, interaction principles, and accessibility intent. |
-| `README.md` | Root developer quick start, environment, scripts, and operational notes. |
-| `alchemy.run.ts` | Declares the Worker, Sandbox container, D1 database, R2 bucket, bindings, and deployment with Alchemy. |
+| `README.md` | Root developer quick start, monorepo layout, environment, scripts, and operational notes. |
+| `alchemy.run.ts` | Sole deployment owner: Worker (cwd `apps/web`), Sandbox container, D1, R2, bindings, and secrets. |
 | `biome.json` | Biome formatter/linter policy and generated/vendor exclusions. |
-| `components.json` | shadcn component registry, aliases, icon set, and styling configuration. |
-| `drizzle.config.ts` | Points Drizzle Kit at the D1 schema and migration output. |
 | `lefthook.yml` | Runs formatting/lint hooks around Git operations. |
-| `package.json` | Root app scripts, runtime dependencies, and development toolchain. |
-| `pnpm-lock.yaml` | Generated, pinned dependency graph for the root pnpm package. |
-| `pnpm-workspace.yaml` | Defines the root pnpm workspace and build-dependency policy; the runner remains separate. |
+| `package.json` | Root scripts (dev/deploy/verify/db/runner proxies), Alchemy dependency, and shared toolchain. |
+| `pnpm-lock.yaml` | Generated, pinned dependency graph for the root pnpm workspace. |
+| `pnpm-workspace.yaml` | Workspace members (`apps/*`); runner remains an independent npm package under `packages/`. |
 | `skills-lock.json` | Pins installed coding-agent skills and their source revisions. |
-| `tsconfig.json` | Root TypeScript settings and `#/*`/`@/*` source aliases. |
-| `types/env.d.ts` | Cloudflare binding types for D1, Sandbox, R2, GitHub, auth, and provider configuration. |
-| `vite.config.ts` | Composes Vite, TanStack Start, Tailwind, React Compiler, devtools, tests, and conditional Alchemy integration. |
+
+### Application package (`apps/web`)
+
+| File | Responsibility |
+|---|---|
+| `apps/web/.cta.json` | Cloudflare/TanStack agent-tooling metadata. |
+| `apps/web/components.json` | shadcn component registry, aliases, icon set, and styling configuration. |
+| `apps/web/drizzle.config.ts` | Points Drizzle Kit at the D1 schema and `apps/web/migrations` output. |
+| `apps/web/package.json` | `@ditto/web` scripts, app dependencies, and `#/*` import map. |
+| `apps/web/tsconfig.json` | Application TypeScript settings and path aliases. |
+| `apps/web/types/env.d.ts` | Cloudflare binding types for D1, Sandbox, R2, GitHub, auth, and provider configuration. |
+| `apps/web/vite.config.ts` | Composes Vite, TanStack Start, Tailwind, React Compiler, devtools, tests, root `envDir`, and conditional Alchemy integration. |
 
 ### Public assets
 
 | File | Responsibility |
 |---|---|
-| `public/favicon.ico` | Browser favicon binary. |
-| `public/robots.txt` | Crawler policy for the deployed website. |
+| `apps/web/public/favicon.ico` | Browser favicon binary. |
+| `apps/web/public/robots.txt` | Crawler policy for the deployed website. |
 
 ### Implementation history
 
@@ -401,17 +421,19 @@ The current behavior is authoritative in source and schema files. Files under `p
 
 | Path | Meaning |
 |---|---|
-| `node_modules/`, `sandbox/runner/node_modules/` | Installed dependencies; package manifests and lockfiles are authoritative |
-| `dist/`, `sandbox/runner/dist/` | Vite and TypeScript build output |
-| `.alchemy/`, `.wrangler/`, `.flue-vite.wrangler.jsonc` | Local/deployed Cloudflare and Alchemy state |
-| `.env`, `.env.local`, `.env.*` | Local secrets; never architecture documentation or backup inputs |
+| `node_modules/`, `apps/web/node_modules/`, `packages/sandbox-runner/node_modules/` | Installed dependencies; package manifests and lockfiles are authoritative |
+| `dist/`, `apps/web/dist/`, `packages/sandbox-runner/dist/` | Vite and TypeScript build output |
+| `.alchemy/`, `apps/web/.alchemy/`, `.wrangler/`, `.flue-vite.wrangler.jsonc` | Local Alchemy/Cloudflare state (including generated `apps/web/.alchemy/local/wrangler.jsonc`) |
+| `.env`, `.env.local`, `.env.*` | Local secrets at repo root; never architecture documentation or backup inputs |
 | `coverage/` | Generated test coverage |
+| `apps/web/src/routeTree.gen.ts` | Generated TanStack route tree; never hand-edit |
 
 ## Change routing
 
 - Product behavior or terminology: start with `PRODUCT.md` and [System architecture](overview.md).
-- UI/chat behavior: start with [Frontend architecture](frontend.md), then the route and product component.
-- API/data behavior: start with [Server and data architecture](server-and-data.md), then the tRPC router and domain service.
-- Agent/sandbox/Git behavior: start with [Agent harness architecture](agent-harness.md).
+- UI/chat behavior: start with [Frontend architecture](frontend.md), then the route and product component under `apps/web`.
+- API/data behavior: start with [Server and data architecture](server-and-data.md), then the tRPC router and domain service under `apps/web/src`.
+- Agent/sandbox/Git behavior: start with [Agent harness architecture](agent-harness.md); runner sources live under `packages/sandbox-runner`.
 - Credentials, output, environment variables, or export: read [Security and trust boundaries](security.md) before editing.
-- Schema changes: edit `src/db/schema.ts`, generate a migration, and keep generated migration metadata together.
+- Schema changes: edit `apps/web/src/db/schema.ts`, generate a migration under `apps/web/migrations`, and keep generated migration metadata together.
+- Deploy/infra changes: edit root `alchemy.run.ts` (sole deployment owner). Do not add SST or Wrangler deploy scripts.
