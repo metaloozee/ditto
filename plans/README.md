@@ -77,6 +77,16 @@ out in the plan's drift check.
 |------|-------|----------|--------|------------|--------|
 | 022 | Make tool-call groups durable, timed, and polished | P1 | M | 017, 018 (DONE) | DONE (worktree `advisor/022-timed-tool-call-groups` @ 220e5d8) |
 
+## Plan 023 (live PI session controls)
+
+Planned at commit `dfbc217` on 2026-07-14 after PI 0.80.3 SDK/source review and
+end-to-end tracing of the composer, SSE lifecycle, Worker orchestration, sandbox
+runner, D1 message lifecycle, and session workspace lock.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 023 | Queue PI follow-ups and stop the active agent from the composer | P1 | L | 017, 018 (DONE) | DONE (worktree `advisor/023-pi-follow-up-stop-retry` @ `d667b30`; automated gates passed, GitHub-backed manual checks unavailable) |
+
 ### Audit finding coverage
 
 | Selected finding | Covered by | Combination rationale |
@@ -126,6 +136,31 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
   to the user branch — merge/push is the user's decision.
 - **Executable now**: none; plans 001–022 are complete in their worktrees.
 
+## Planning update — 2026-07-14
+
+- **Current HEAD**: `dfbc217`.
+- **BLOCKED 023**: the first isolated execution correctly stopped because the
+  required runner job bridge `sandbox/runner/src/cli.ts` was absent from the
+  exclusive Scope list. The plan now includes that file and its Step 2
+  responsibility; retry from a clean worktree rather than reusing the partial
+  uncommitted attempt. It preserves the current PI SDK runner, adds run-scoped
+  follow-up/Stop control, and explicitly rejects an app-owned queue, PI RPC
+  migration, and browser-fetch cancellation as execution Stop.
+- **Executable now**: none until Plan 023 is retried from a clean worktree.
+
+## Execution update — 2026-07-15
+
+- **DONE 023**: approved after one reviewer revision round in worktree branch
+  `advisor/023-pi-follow-up-stop-retry` at `d667b30`. The revision fixed the
+  HTTP/SSE follow-up acknowledgement race, bounded Stop acknowledgements,
+  strictly correlated Worker control responses, and added missing persistence
+  failure and per-turn chronology coverage.
+- **Verification**: `pnpm verify` passed independently with 383 root tests and
+  21 runner tests, both typechecks, repository checks, and client/SSR/runner
+  builds. React Doctor and rebuilt-image GitHub-backed manual race checks were
+  unavailable; no manual check was reported as failed.
+- **Executable now**: none; plans 001–023 are complete in their worktrees.
+
 ## Dependency notes
 
 - **006 requires 005** — git ops use `workspaceSessions.workspacePath` (worktree).
@@ -157,6 +192,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
   environment wording after synchronization documentation is final.
 - **022 requires 017 and 018** — durable timing extends the extracted agent-run
   lifecycle and ordered/batched stream path; both dependencies are already done.
+- **023 requires 017 and 018** — multi-turn follow-up persistence and Stop must
+  extend the extracted lifecycle and preserve the ordered/redacted stream
+  boundary rather than rebuilding those concerns in the route or runner.
 - **Merge** is explicitly out of 006/007 (deferred product decision).
 
 ## Product decisions (locked 2026-07-09)
@@ -205,6 +243,17 @@ tree while sharing git objects and (via symlink) `node_modules`.
 - **Runner npm lockfile and TS/Vitest version skew**: retained by the explicit
   isolated-runner decision in plan 001; plan 011 verifies both toolchains rather
   than merging them.
+- **Ditto-owned FIFO for streaming submissions**: rejected — PI 0.80.3 already
+  owns follow-up ordering and drain semantics; a second scheduler would duplicate
+  cancellation, retries, recovery, and transcript ordering.
+- **PI RPC-mode migration for composer controls**: rejected — the runner already
+  uses the typed SDK for custom tools and state; changing modes is unnecessary
+  foundation drift.
+- **Browser fetch abort as Stop**: rejected — disconnecting local SSE consumption
+  does not cancel the sandbox execution and violates terminal D1 persistence.
+- **Normal streaming Send as steering**: rejected — steering modifies the active
+  task; the composer draft represents the next independent user turn, so plan
+  023 uses PI follow-up semantics only.
 
 ## Recommended execution order
 
@@ -226,3 +275,4 @@ tree while sharing git objects and (via symlink) `node_modules`.
 16. `020-paginate-and-virtualize-chat-history.md`
 17. `021-align-worktree-environment-docs.md`
 18. `022-timed-tool-call-groups.md`
+19. `023-pi-follow-up-and-stop-controls.md`
