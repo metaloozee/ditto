@@ -4,6 +4,10 @@ vi.mock("#/lib/agent-run", () => ({
 	runAgentInSandbox: vi.fn(),
 }));
 
+vi.mock("#/lib/agent-control-service", () => ({
+	controlAgentRun: vi.fn(),
+}));
+
 vi.mock("#/lib/project-sandbox", () => ({
 	ensureProjectSandbox: vi.fn(),
 	persistProjectSandboxBackup: vi.fn(),
@@ -236,6 +240,7 @@ describe("prepareAgentRun", () => {
 		const deps = baseDeps({
 			createId: vi
 				.fn()
+				.mockReturnValueOnce("run-1")
 				.mockReturnValueOnce("user-msg")
 				.mockReturnValueOnce("asst-msg"),
 			ensureSessionWorktree: vi.fn().mockImplementation(async () => {
@@ -355,6 +360,7 @@ describe("prepareAgentRun", () => {
 			deps: baseDeps({
 				createId: vi
 					.fn()
+					.mockReturnValueOnce("run-1")
 					.mockReturnValueOnce("user-msg")
 					.mockReturnValueOnce("asst-msg"),
 			}),
@@ -393,6 +399,7 @@ describe("executeAgentRun", () => {
 			projectId: "proj-1",
 			message: "hi",
 			model: "opencode-go/deepseek-v4-flash",
+			runId: "run-1",
 			sessionId: "sess-1",
 			createdSession: false,
 			workspaceSession: activeSession,
@@ -464,6 +471,169 @@ describe("executeAgentRun", () => {
 		});
 		expect(updateSets.some((set) => set.status === "complete")).toBe(true);
 		expect(updateSets.some((set) => set.content === "Hello")).toBe(true);
+	});
+
+	it("persists and emits one-at-a-time follow-up turn boundaries in order", async () => {
+		const mockDb = createMockDb();
+		mockDb.batch.mockResolvedValue([[{ id: "user-2" }], [{ id: "asst-2" }]]);
+		const updateSets: Array<Record<string, unknown>> = [];
+		mockDb.updateSet.mockImplementation((values: Record<string, unknown>) => {
+			updateSets.push(values);
+			return { where: mockDb.updateWhere };
+		});
+		const context = makeContext({ db: mockDb.db });
+		const { events, run } = collectEvents(context, {
+			runAgentInSandbox: vi.fn().mockImplementation(async (opts) => {
+				await opts.onRunnerMessage({
+					kind: "ready",
+					sessionId: "sess-1",
+					model: context.model,
+				});
+				await opts.onRunnerMessage({ kind: "assistant_delta", delta: "first" });
+				await opts.onRunnerMessage({
+					kind: "control_event",
+					event: {
+						type: "follow_up_started",
+						requestId: "request-2",
+						runId: "run-1",
+						sessionId: "sess-1",
+						text: "next",
+						userMessageId: "user-2",
+						assistantMessageId: "asst-2",
+					},
+				});
+				await opts.onRunnerMessage({
+					kind: "assistant_delta",
+					delta: "second",
+				});
+				return { ok: true, assistantText: "firstsecond" };
+			}),
+			prepareAssistantMessageStorage: vi.fn().mockReturnValue({
+				storageParts: [],
+				toolsColumn: null,
+			}),
+		});
+
+		await run();
+
+		expect(events.map((event) => event.event)).toEqual([
+			"meta",
+			"control_ready",
+			"delta",
+			"turn_done",
+			"turn_start",
+			"delta",
+			"done",
+		]);
+		expect(events[3]).toMatchObject({
+			event: "turn_done",
+			data: { assistantMessageId: "asst-msg", content: "first" },
+		});
+		expect(events[4]).toMatchObject({
+			event: "turn_start",
+			data: {
+				requestId: "request-2",
+				userMessageId: "user-2",
+				assistantMessageId: "asst-2",
+				text: "next",
+			},
+		});
+		expect(events.at(-1)).toMatchObject({
+			event: "done",
+			data: { assistantMessageId: "asst-2", content: "second", ok: true },
+		});
+		expect(updateSets.filter((set) => set.status === "complete")).toHaveLength(
+			2,
+		);
+		expect(mockDb.insertValues).toHaveBeenCalledWith(
+			expect.objectContaining({ id: "user-2", status: "complete" }),
+		);
+		expect(mockDb.insertValues).toHaveBeenCalledWith(
+			expect.objectContaining({ id: "asst-2", status: "pending" }),
+		);
+	});
+
+	it("creates three D1 pairs for two follow-ups and isolates final content", async () => {
+		const mockDb = createMockDb();
+		mockDb.batch
+			.mockResolvedValueOnce([[{ id: "user-2" }], [{ id: "asst-2" }]])
+			.mockResolvedValueOnce([[{ id: "user-3" }], [{ id: "asst-3" }]]);
+		const context = makeContext({ db: mockDb.db });
+		const { events, run } = collectEvents(context, {
+			runAgentInSandbox: vi.fn().mockImplementation(async (opts) => {
+				for (const [index, text] of ["one", "two", "three"].entries()) {
+					await opts.onRunnerMessage({ kind: "assistant_delta", delta: text });
+					if (index < 2) {
+						const turn = index + 2;
+						await opts.onRunnerMessage({
+							kind: "control_event",
+							event: {
+								type: "follow_up_started",
+								requestId: `request-${turn}`,
+								runId: "run-1",
+								sessionId: "sess-1",
+								text: `follow-up ${turn}`,
+								userMessageId: `user-${turn}`,
+								assistantMessageId: `asst-${turn}`,
+							},
+						});
+					}
+				}
+				return { ok: true, assistantText: "onetwothree" };
+			}),
+		});
+
+		await run();
+		expect(mockDb.batch).toHaveBeenCalledTimes(2);
+		expect(events.filter((event) => event.event === "turn_done")).toHaveLength(
+			2,
+		);
+		expect(events.at(-1)).toMatchObject({
+			event: "done",
+			data: { assistantMessageId: "asst-3", content: "three" },
+		});
+	});
+
+	it("drops cancelled queued follow-ups without creating D1 rows", async () => {
+		const mockDb = createMockDb();
+		const context = makeContext({ db: mockDb.db });
+		const { events, run } = collectEvents(context, {
+			runAgentInSandbox: vi.fn().mockImplementation(async (opts) => {
+				await opts.onRunnerMessage({
+					kind: "assistant_delta",
+					delta: "partial",
+				});
+				await opts.onRunnerMessage({
+					kind: "control_event",
+					event: {
+						type: "follow_up_cancelled",
+						requestId: "request-2",
+						runId: "run-1",
+						sessionId: "sess-1",
+						text: "never starts",
+						userMessageId: "user-2",
+						assistantMessageId: "asst-2",
+					},
+				});
+				return { ok: false, assistantText: "partial" };
+			}),
+		});
+
+		await run();
+		expect(mockDb.batch).not.toHaveBeenCalled();
+		expect(mockDb.insert).not.toHaveBeenCalled();
+		expect(events).toContainEqual({
+			event: "queue_cancelled",
+			data: {
+				requestId: "request-2",
+				userMessageId: "user-2",
+				assistantMessageId: "asst-2",
+			},
+		});
+		expect(events.at(-1)).toMatchObject({
+			event: "done",
+			data: { ok: false, content: "partial" },
+		});
 	});
 
 	it("persists failed partial content when runner throws after deltas", async () => {

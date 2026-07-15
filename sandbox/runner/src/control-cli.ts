@@ -3,14 +3,15 @@
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
+	type ControlRequest,
 	parseControlRequest,
 	sendControlRequest,
-	type ControlRequest,
 } from "./control-channel.js";
 
-export function parseControlCliArgs(
-	argv: string[],
-): { jobPath?: string; error?: string } {
+export function parseControlCliArgs(argv: string[]): {
+	jobPath?: string;
+	error?: string;
+} {
 	if (argv.length !== 2 || argv[0] !== "--job" || !argv[1]) {
 		return { error: "Usage: control-cli --job <path>" };
 	}
@@ -29,7 +30,8 @@ export function parseControlJob(raw: string): ControlRequest {
 
 export async function runControlCli(argv: string[]): Promise<number> {
 	const { jobPath, error } = parseControlCliArgs(argv);
-	if (error || !jobPath) throw new Error(error ?? "Control job path is required");
+	if (error || !jobPath)
+		throw new Error(error ?? "Control job path is required");
 	const request = parseControlJob(fs.readFileSync(jobPath, "utf8"));
 	const response = await sendControlRequest(request);
 	process.stdout.write(`${JSON.stringify(response)}\n`);

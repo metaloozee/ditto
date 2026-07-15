@@ -7,16 +7,16 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { dittoGitCustomTools } from "./ditto-git-tools.js";
 import {
-	startControlServer,
 	type ControlRequest,
 	type ControlResponse,
+	startControlServer,
 } from "./control-channel.js";
+import { dittoGitCustomTools } from "./ditto-git-tools.js";
 import {
 	extractUserTextFromMessageStart,
-	pickAssistantText,
 	type FollowUpCorrelation,
+	pickAssistantText,
 	type RunnerOut,
 	runnerOutputFromAgentEvent,
 } from "./protocol.js";
@@ -131,7 +131,10 @@ export async function runAgent(
 		});
 		session = agentSession;
 
-		const reject = (request: ControlRequest, message: string): ControlResponse => ({
+		const reject = (
+			request: ControlRequest,
+			message: string,
+		): ControlResponse => ({
 			accepted: false,
 			requestId: request.requestId,
 			message,

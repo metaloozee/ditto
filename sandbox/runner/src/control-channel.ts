@@ -250,7 +250,10 @@ export async function startControlServer(options: {
 			if (newline === -1) return;
 			const rawLine = input.slice(0, newline);
 			if (input.slice(newline + 1).trim().length > 0) {
-				respond({ accepted: false, message: "Only one control request is allowed" });
+				respond({
+					accepted: false,
+					message: "Only one control request is allowed",
+				});
 				return;
 			}
 
@@ -351,7 +354,9 @@ export async function sendControlRequest(
 			const newline = input.indexOf("\n");
 			if (newline === -1) return;
 			try {
-				const response = parseControlResponse(JSON.parse(input.slice(0, newline)));
+				const response = parseControlResponse(
+					JSON.parse(input.slice(0, newline)),
+				);
 				finish(() => resolve(response));
 			} catch (error) {
 				finish(() => reject(error));
@@ -362,7 +367,8 @@ export async function sendControlRequest(
 		);
 		socket.on("error", (error) => finish(() => reject(error)));
 		socket.on("end", () => {
-			if (!settled) finish(() => reject(new Error("Control response was incomplete")));
+			if (!settled)
+				finish(() => reject(new Error("Control response was incomplete")));
 		});
 	});
 }

@@ -3,10 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+	type ControlRequest,
 	sendControlRequest,
 	socketPathForRun,
 	startControlServer,
-	type ControlRequest,
 } from "./control-channel.js";
 import { parseControlCliArgs, parseControlJob } from "./control-cli.js";
 
@@ -101,9 +101,7 @@ describe("runner control channel", () => {
 			).resolves.toMatchObject({ accepted: false });
 			expect(() => parseControlJob("not json")).toThrow("valid JSON");
 			expect(() =>
-				parseControlJob(
-					JSON.stringify(followUp({ text: "x".repeat(70_000) })),
-				),
+				parseControlJob(JSON.stringify(followUp({ text: "x".repeat(70_000) }))),
 			).toThrow("Invalid follow-up");
 		} finally {
 			await server.close();
@@ -111,7 +109,10 @@ describe("runner control channel", () => {
 	});
 
 	it("unlinks stale sockets before listen and after close", async () => {
-		const socketPath = path.join(os.tmpdir(), `ditto-stale-${process.pid}.sock`);
+		const socketPath = path.join(
+			os.tmpdir(),
+			`ditto-stale-${process.pid}.sock`,
+		);
 		fs.writeFileSync(socketPath, "stale");
 		const server = await startControlServer({
 			runId: "run-1",
@@ -137,6 +138,8 @@ describe("runner control channel", () => {
 		expect(parseControlCliArgs(["--job", "/tmp/job.json", "secret"])).toEqual({
 			error: "Usage: control-cli --job <path>",
 		});
-		expect(parseControlJob(JSON.stringify(followUp())).action).toBe("follow_up");
+		expect(parseControlJob(JSON.stringify(followUp())).action).toBe(
+			"follow_up",
+		);
 	});
 });

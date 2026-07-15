@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import type { createDb } from "#/db";
 import { messages, projects, workspaceSessions } from "#/db/schema";
+import { controlAgentRun } from "#/lib/agent-control-service";
 import { createDeltaBatcher } from "#/lib/agent-delta-batcher";
 import {
 	type AssistantMessagePart,
@@ -47,6 +48,7 @@ export const agentStreamBodySchema = z.object({
 export type AgentStreamBody = z.infer<typeof agentStreamBodySchema>;
 
 export type AgentRunMetaPayload = {
+	runId: string;
 	sessionId: string;
 	userMessageId: string;
 	assistantMessageId: string;
@@ -65,6 +67,34 @@ export type AgentRunDonePayload = {
 
 export type AgentRunStreamEvent =
 	| { event: "meta"; data: AgentRunMetaPayload }
+	| { event: "control_ready"; data: { runId: string } }
+	| {
+			event: "turn_done";
+			data: {
+				userMessageId: string;
+				assistantMessageId: string;
+				content: string;
+				tools?: ReturnType<typeof partsToTools>;
+				parts?: AssistantMessagePart[];
+			};
+	  }
+	| {
+			event: "turn_start";
+			data: {
+				requestId: string;
+				userMessageId: string;
+				assistantMessageId: string;
+				text: string;
+			};
+	  }
+	| {
+			event: "queue_cancelled";
+			data: {
+				requestId: string;
+				userMessageId: string;
+				assistantMessageId: string;
+			};
+	  }
 	| { event: "delta"; data: { delta: string } }
 	| { event: "agent"; data: { event: unknown; occurredAt: number } }
 	| { event: "error"; data: { message: string } }
@@ -88,6 +118,7 @@ export type AgentRunContext = {
 	projectId: string;
 	message: string;
 	model: string;
+	runId: string;
 	sessionId: string;
 	createdSession: boolean;
 	workspaceSession: OwnedActiveSession;
@@ -114,6 +145,7 @@ export type AgentRunDeps = {
 	resolveSessionForMessageWrite?: typeof resolveSessionForMessageWrite;
 	ensureSessionWorktree?: typeof ensureSessionWorktree;
 	runAgentInSandbox?: typeof runAgentInSandbox;
+	controlAgentRun?: typeof controlAgentRun;
 	persistProjectSandboxBackup?: typeof persistProjectSandboxBackup;
 	redactSecrets?: typeof redactSecrets;
 	prepareAssistantMessageStorage?: typeof prepareAssistantMessageStorage;
@@ -136,6 +168,7 @@ const defaultDeps: Required<AgentRunDeps> = {
 	resolveSessionForMessageWrite,
 	ensureSessionWorktree,
 	runAgentInSandbox,
+	controlAgentRun,
 	persistProjectSandboxBackup,
 	redactSecrets,
 	prepareAssistantMessageStorage,
@@ -338,6 +371,7 @@ export async function prepareAgentRun(options: {
 		};
 	}
 
+	const runId = deps.createId();
 	const userMessageId = deps.createId();
 	const assistantMessageId = deps.createId();
 	const [userRows, assistantRows] = await db.batch([
@@ -393,6 +427,7 @@ export async function prepareAgentRun(options: {
 			projectId: input.projectId,
 			message: input.message,
 			model: input.model,
+			runId,
 			sessionId,
 			createdSession,
 			workspaceSession,
@@ -409,12 +444,13 @@ export async function prepareAgentRun(options: {
 
 async function persistAssistantTerminal(options: {
 	context: AgentRunContext;
+	assistantMessageId: string;
 	content: string;
 	parts: AssistantMessagePart[];
 	status: "complete" | "failed";
 	deps: Required<AgentRunDeps>;
 }): Promise<{ toolsColumn: string | null }> {
-	const { context, content, parts, status, deps } = options;
+	const { context, assistantMessageId, content, parts, status, deps } = options;
 	const { toolsColumn } = deps.prepareAssistantMessageStorage(parts);
 
 	try {
@@ -427,7 +463,7 @@ async function persistAssistantTerminal(options: {
 			})
 			.where(
 				and(
-					eq(messages.id, context.assistantMessageId),
+					eq(messages.id, assistantMessageId),
 					eq(messages.userId, context.userId),
 				),
 			);
@@ -448,7 +484,7 @@ async function persistAssistantTerminal(options: {
 				})
 				.where(
 					and(
-						eq(messages.id, context.assistantMessageId),
+						eq(messages.id, assistantMessageId),
 						eq(messages.userId, context.userId),
 					),
 				);
@@ -479,6 +515,7 @@ export async function executeAgentRun(options: {
 	emit({
 		event: "meta",
 		data: {
+			runId: context.runId,
 			sessionId: context.sessionId,
 			userMessageId: context.userMessageId,
 			assistantMessageId: context.assistantMessageId,
@@ -487,18 +524,91 @@ export async function executeAgentRun(options: {
 		},
 	});
 
-	let assistantContent = "";
-	let parts: AssistantMessagePart[] = [];
-	let terminalPersisted = false;
+	type CurrentTurn = {
+		userMessageId: string;
+		assistantMessageId: string;
+		text: string;
+		parts: AssistantMessagePart[];
+	};
+	let currentTurn: CurrentTurn = {
+		userMessageId: context.userMessageId,
+		assistantMessageId: context.assistantMessageId,
+		text: context.message,
+		parts: [],
+	};
+	const terminalAssistants = new Set<string>();
+	const knownPendingAssistants = new Set<string>([context.assistantMessageId]);
 
 	// Batch contiguous assistant text deltas so SSE emit work stays bounded.
 	// Non-text events force a sync flush so text/tool ordering stays exact.
 	const deltaBatcher = createDeltaBatcher({
 		onFlush: (delta) => {
-			parts = appendAssistantTextDelta(parts, delta);
+			currentTurn.parts = appendAssistantTextDelta(currentTurn.parts, delta);
 			emit({ event: "delta", data: { delta } });
 		},
 	});
+
+	const settleTurn = async (
+		turn: CurrentTurn,
+		status: "complete" | "failed",
+	) => {
+		const content = redact(partsToText(turn.parts), context.secretValues);
+		const parts = finalizeAssistantParts(turn.parts, deps.now());
+		const tools = partsToTools(parts);
+		await persistAssistantTerminal({
+			context,
+			assistantMessageId: turn.assistantMessageId,
+			content,
+			parts,
+			status,
+			deps,
+		});
+		terminalAssistants.add(turn.assistantMessageId);
+		knownPendingAssistants.delete(turn.assistantMessageId);
+		return { content, parts, tools };
+	};
+
+	const requestStop = async () => {
+		await deps.controlAgentRun({
+			db: context.db,
+			env: context.env,
+			userId: context.userId,
+			input: {
+				action: "stop",
+				projectId: context.projectId,
+				sessionId: context.sessionId,
+				runId: context.runId,
+			},
+		});
+	};
+
+	const failKnownPending = async () => {
+		for (const assistantMessageId of knownPendingAssistants) {
+			try {
+				await persistAssistantTerminal({
+					context,
+					assistantMessageId,
+					content:
+						assistantMessageId === currentTurn.assistantMessageId
+							? redact(partsToText(currentTurn.parts), context.secretValues)
+							: "",
+					parts:
+						assistantMessageId === currentTurn.assistantMessageId
+							? finalizeAssistantParts(currentTurn.parts, deps.now())
+							: [],
+					status: "failed",
+					deps,
+				});
+				terminalAssistants.add(assistantMessageId);
+				knownPendingAssistants.delete(assistantMessageId);
+			} catch (error) {
+				console.error(
+					"Failed to terminally persist a known pending assistant.",
+					error instanceof Error ? error.message : error,
+				);
+			}
+		}
+	};
 
 	try {
 		const runResult = await deps.runAgentInSandbox({
@@ -507,6 +617,7 @@ export async function executeAgentRun(options: {
 			projectId: context.projectId,
 			userId: context.userId,
 			conversationId: context.sessionId,
+			runId: context.runId,
 			cwd: context.sessionWorkspacePath,
 			model: context.model,
 			prompt: context.message,
@@ -518,6 +629,91 @@ export async function executeAgentRun(options: {
 				}
 				// Flush pending text before tools/errors so ordering is preserved.
 				deltaBatcher.flush();
+				if (msg.kind === "ready") {
+					emit({ event: "control_ready", data: { runId: context.runId } });
+					return;
+				}
+				if (msg.kind === "control_event") {
+					if (msg.event.type === "follow_up_cancelled") {
+						emit({
+							event: "queue_cancelled",
+							data: {
+								requestId: msg.event.requestId,
+								userMessageId: msg.event.userMessageId,
+								assistantMessageId: msg.event.assistantMessageId,
+							},
+						});
+						return;
+					}
+					if (msg.event.type === "stop_requested") return;
+
+					try {
+						const settled = await settleTurn(currentTurn, "complete");
+						emit({
+							event: "turn_done",
+							data: {
+								userMessageId: currentTurn.userMessageId,
+								assistantMessageId: currentTurn.assistantMessageId,
+								content: settled.content,
+								...(settled.tools.length > 0 ? { tools: settled.tools } : {}),
+								...(settled.parts.length > 0 ? { parts: settled.parts } : {}),
+							},
+						});
+
+						const [userRows, assistantRows] = await context.db.batch([
+							context.db
+								.insert(messages)
+								.values({
+									id: msg.event.userMessageId,
+									sessionId: context.sessionId,
+									projectId: context.projectId,
+									userId: context.userId,
+									role: "user",
+									content: msg.event.text,
+									model: context.model,
+									status: "complete",
+								})
+								.returning(),
+							context.db
+								.insert(messages)
+								.values({
+									id: msg.event.assistantMessageId,
+									sessionId: context.sessionId,
+									projectId: context.projectId,
+									userId: context.userId,
+									role: "assistant",
+									content: "",
+									status: "pending",
+								})
+								.returning(),
+							workspaceSessionRecencyUpdate(context.db, context.sessionId),
+						]);
+						if (!userRows?.[0] || !assistantRows?.[0]) {
+							throw new Error("Failed to persist follow-up messages.");
+						}
+						knownPendingAssistants.add(msg.event.assistantMessageId);
+						currentTurn = {
+							userMessageId: msg.event.userMessageId,
+							assistantMessageId: msg.event.assistantMessageId,
+							text: msg.event.text,
+							parts: [],
+						};
+						emit({
+							event: "turn_start",
+							data: {
+								requestId: msg.event.requestId,
+								userMessageId: msg.event.userMessageId,
+								assistantMessageId: msg.event.assistantMessageId,
+								text: msg.event.text,
+							},
+						});
+					} catch (error) {
+						await requestStop().catch(() => undefined);
+						await failKnownPending();
+						throw error;
+					}
+					return;
+				}
 				if (msg.kind === "agent_event") {
 					// One server-assigned occurrence time for SSE + reducer.
 					const occurredAt = deps.now();
@@ -526,12 +722,12 @@ export async function executeAgentRun(options: {
 						data: { event: msg.event, occurredAt },
 					});
 					const nextParts = applyAgentToolEventToParts(
-						parts,
+						currentTurn.parts,
 						msg.event,
 						occurredAt,
 					);
 					if (nextParts) {
-						parts = nextParts;
+						currentTurn.parts = nextParts;
 					}
 				}
 				if (msg.kind === "error") {
@@ -548,35 +744,23 @@ export async function executeAgentRun(options: {
 		// Flush any remaining batched text before terminal persistence / done.
 		deltaBatcher.dispose();
 
-		const textFromParts = partsToText(parts);
-		if (textFromParts.trim().length > 0) {
-			assistantContent = textFromParts;
-		} else if (runResult.assistantText) {
-			assistantContent = runResult.assistantText;
-			parts = appendAssistantTextDelta(parts, runResult.assistantText);
-		} else {
-			assistantContent = "";
+		if (
+			!partsToText(currentTurn.parts).trim() &&
+			runResult.assistantText &&
+			terminalAssistants.size === 0
+		) {
+			currentTurn.parts = appendAssistantTextDelta(
+				currentTurn.parts,
+				runResult.assistantText,
+			);
 		}
-
-		assistantContent = redact(assistantContent, context.secretValues);
-
-		const settlementAt = deps.now();
-		const fullParts = finalizeAssistantParts(parts, settlementAt);
-		const fullTools = partsToTools(fullParts);
 
 		const terminalStatus: "complete" | "failed" = runResult.ok
 			? "complete"
 			: "failed";
-
+		let settled: Awaited<ReturnType<typeof settleTurn>>;
 		try {
-			await persistAssistantTerminal({
-				context,
-				content: assistantContent,
-				parts: fullParts,
-				status: terminalStatus,
-				deps,
-			});
-			terminalPersisted = true;
+			settled = await settleTurn(currentTurn, terminalStatus);
 		} catch (persistError) {
 			const message = redact(
 				persistError instanceof Error
@@ -589,10 +773,8 @@ export async function executeAgentRun(options: {
 				event: "done",
 				data: {
 					ok: false,
-					assistantMessageId: context.assistantMessageId,
-					content: assistantContent,
-					...(fullTools.length > 0 ? { tools: fullTools } : {}),
-					...(fullParts.length > 0 ? { parts: fullParts } : {}),
+					assistantMessageId: currentTurn.assistantMessageId,
+					content: redact(partsToText(currentTurn.parts), context.secretValues),
 					backupError: message,
 				},
 			});
@@ -620,11 +802,13 @@ export async function executeAgentRun(options: {
 		emit({
 			event: "done",
 			data: {
-				ok: runResult.ok && terminalPersisted,
-				assistantMessageId: context.assistantMessageId,
-				content: assistantContent,
-				...(fullTools.length > 0 ? { tools: fullTools } : {}),
-				...(fullParts.length > 0 ? { parts: fullParts } : {}),
+				ok:
+					runResult.ok &&
+					terminalAssistants.has(currentTurn.assistantMessageId),
+				assistantMessageId: currentTurn.assistantMessageId,
+				content: settled.content,
+				...(settled.tools.length > 0 ? { tools: settled.tools } : {}),
+				...(settled.parts.length > 0 ? { parts: settled.parts } : {}),
 				...(backupError ? { backupError } : {}),
 			},
 		});
@@ -637,24 +821,25 @@ export async function executeAgentRun(options: {
 			context.secretValues,
 		);
 
-		assistantContent = redact(
-			partsToText(parts) || assistantContent,
+		const assistantContent = redact(
+			partsToText(currentTurn.parts),
 			context.secretValues,
 		);
-		const settlementAt = deps.now();
-		const fullParts = finalizeAssistantParts(parts, settlementAt);
+		const fullParts = finalizeAssistantParts(currentTurn.parts, deps.now());
 		const fullTools = partsToTools(fullParts);
 
-		if (!terminalPersisted) {
+		if (!terminalAssistants.has(currentTurn.assistantMessageId)) {
 			try {
 				await persistAssistantTerminal({
 					context,
+					assistantMessageId: currentTurn.assistantMessageId,
 					content: assistantContent,
 					parts: fullParts,
 					status: "failed",
 					deps,
 				});
-				terminalPersisted = true;
+				terminalAssistants.add(currentTurn.assistantMessageId);
+				knownPendingAssistants.delete(currentTurn.assistantMessageId);
 			} catch (persistError) {
 				console.error(
 					"Failed to persist failed assistant message.",
@@ -668,7 +853,7 @@ export async function executeAgentRun(options: {
 			event: "done",
 			data: {
 				ok: false,
-				assistantMessageId: context.assistantMessageId,
+				assistantMessageId: currentTurn.assistantMessageId,
 				content: assistantContent,
 				...(fullTools.length > 0 ? { tools: fullTools } : {}),
 				...(fullParts.length > 0 ? { parts: fullParts } : {}),

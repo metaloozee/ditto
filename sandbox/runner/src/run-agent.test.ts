@@ -92,7 +92,9 @@ async function beginRun(harness: SessionHarness) {
 		onEvent: (event) => events.push(event),
 	});
 	await vi.waitFor(() => expect(mocks.controlHandler).toBeTypeOf("function"));
-	await vi.waitFor(() => expect(harness.session.prompt).toHaveBeenCalledTimes(1));
+	await vi.waitFor(() =>
+		expect(harness.session.prompt).toHaveBeenCalledTimes(1),
+	);
 	return { result, events };
 }
 
