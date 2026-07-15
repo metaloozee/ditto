@@ -277,7 +277,7 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | `lefthook.yml` | Runs formatting/lint hooks around Git operations. |
 | `package.json` | Root scripts (dev/deploy/verify/db/runner proxies), Alchemy dependency, and shared toolchain. |
 | `pnpm-lock.yaml` | Generated, pinned dependency graph for the root pnpm workspace. |
-| `pnpm-workspace.yaml` | Workspace members (`apps/*`); runner remains an independent npm package under `packages/`. |
+| `pnpm-workspace.yaml` | Workspace/install policy, including the scoped Streamdown 2.5.0 type-peer metadata patch; remove it when upstream declares the peer. |
 | `skills-lock.json` | Pins installed coding-agent skills and their source revisions. |
 
 ### Application package (`apps/web`)
