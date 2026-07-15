@@ -1,5 +1,9 @@
 packages:
   - apps/*
+packageExtensions:
+  streamdown:
+    peerDependencies:
+      '@types/react': '*'
 allowBuilds:
   '@google/genai': true
   '@mongodb-js/zstd': false

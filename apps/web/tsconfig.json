@@ -5,17 +5,9 @@
     "target": "ES2022",
     "jsx": "react-jsx",
     "module": "ESNext",
-    "ignoreDeprecations": "6.0",
-    "baseUrl": ".",
     "paths": {
       "#/*": ["./src/*"],
-      "@/*": ["./src/*"],
-      "react": ["./node_modules/@types/react/index.d.ts"],
-      "react/*": ["./node_modules/@types/react/*"],
-      "react-dom": ["./node_modules/@types/react-dom/index.d.ts"],
-      "react-dom/*": ["./node_modules/@types/react-dom/*"],
-      "@cloudflare/workers-types": ["./node_modules/@cloudflare/workers-types/index.d.ts"],
-      "@cloudflare/workers-types/*": ["./node_modules/@cloudflare/workers-types/*"]
+      "@/*": ["./src/*"]
     },
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["vite/client", "@cloudflare/workers-types", "./types/env.d.ts"],
