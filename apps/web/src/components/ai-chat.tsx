@@ -15,6 +15,7 @@ import {
 	type QueuedFollowUp,
 	type StreamCommitPayload,
 } from "#/components/composer";
+import { CopyButton } from "#/components/copy-button";
 import { ToolCallGroup } from "#/components/tool-call-group";
 import { Bubble, BubbleContent } from "#/components/ui/bubble";
 import { Button, buttonVariants } from "#/components/ui/button";
@@ -36,7 +37,7 @@ import type {
 	AssistantMessagePart,
 	StreamToolCall,
 } from "#/lib/agent-message-parts";
-import { partsToTools } from "#/lib/agent-message-parts";
+import { partsToText, partsToTools } from "#/lib/agent-message-parts";
 import { parseStoredParts } from "#/lib/agent-message-storage";
 import {
 	findActiveToolGroupIndex,
@@ -412,6 +413,7 @@ function MessageRow({ message }: { message: NormalizedChatMessage }) {
 						},
 					] as AssistantMessagePart[])
 				: []);
+		const copyText = partsToText(parts) || message.content;
 
 		return (
 			<Message align="start">
@@ -422,7 +424,8 @@ function MessageRow({ message }: { message: NormalizedChatMessage }) {
 							Response interrupted — partial output saved.
 						</p>
 					) : null}
-					<MessageFooter className="px-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+					<MessageFooter className="gap-1.5 px-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100">
+						{copyText ? <CopyButton value={copyText} /> : null}
 						{message.model ? <span>Model: {message.model}</span> : null}
 						{time ? <span className="tabular-nums">{time}</span> : null}
 					</MessageFooter>
@@ -441,7 +444,8 @@ function MessageRow({ message }: { message: NormalizedChatMessage }) {
 						</p>
 					</BubbleContent>
 				</Bubble>
-				<MessageFooter className="opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+				<MessageFooter className="gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100">
+					{message.content ? <CopyButton value={message.content} /> : null}
 					{time ? <span className="tabular-nums">{time}</span> : null}
 				</MessageFooter>
 			</MessageContent>
@@ -612,7 +616,7 @@ export function Chat({
 												index === 0 && hasMoreHistory && "mt-2",
 												index === displayMessages.length - 1 &&
 													!hasStreamingTail &&
-													"mb-20",
+													"mb-4",
 											)}
 											scrollAnchor={message.role === "user"}
 										>
@@ -625,7 +629,7 @@ export function Chat({
 											className={cn(
 												"mt-0",
 												displayMessages.length === 0 && "mt-20",
-												!showStreamingAssistant && "mb-20",
+												!showStreamingAssistant && "mb-4",
 											)}
 											scrollAnchor
 										>
@@ -646,7 +650,7 @@ export function Chat({
 												displayMessages.length === 0 &&
 													!showOptimisticUser &&
 													"mt-20",
-												queuedFollowUps.length === 0 && "mb-20",
+												queuedFollowUps.length === 0 && "mb-4",
 											)}
 										>
 											<StreamingAssistantRow streaming={streaming} />
@@ -664,7 +668,7 @@ export function Chat({
 													messageId={`queued-${queued.requestId}`}
 													className={cn(
 														"mt-0",
-														index === queuedFollowUps.length - 1 && "mb-20",
+														index === queuedFollowUps.length - 1 && "mb-4",
 													)}
 													scrollAnchor
 												>
@@ -692,19 +696,21 @@ export function Chat({
 							)}
 						</MessageScrollerContent>
 					</MessageScrollerViewport>
-					<MessageScrollerButton className="mb-40" />
-					<Composer
-						projectId={projectId}
-						sessionId={sessionId}
-						branchName={branchName}
-						gitExportEnabled={gitExportEnabled}
-						disabledReason={disabledReason}
-						onStreamingChange={setStreaming}
-						onStreamCommit={handleStreamCommit}
-						onWorkspaceRefresh={onWorkspaceRefresh}
-						inputText={inputText}
-						onInputTextChange={setInputText}
-					/>
+					<div className="relative shrink-0">
+						<MessageScrollerButton className="data-[direction=end]:bottom-full data-[direction=end]:mb-2" />
+						<Composer
+							projectId={projectId}
+							sessionId={sessionId}
+							branchName={branchName}
+							gitExportEnabled={gitExportEnabled}
+							disabledReason={disabledReason}
+							onStreamingChange={setStreaming}
+							onStreamCommit={handleStreamCommit}
+							onWorkspaceRefresh={onWorkspaceRefresh}
+							inputText={inputText}
+							onInputTextChange={setInputText}
+						/>
+					</div>
 				</MessageScroller>
 			</MessageScrollerProvider>
 		</div>

@@ -1,6 +1,12 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import {
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const statusQueryMock = vi.hoisted(() => vi.fn());
@@ -42,7 +48,10 @@ vi.mock("sonner", () => ({
 
 const { SessionGitActions } = await import("./session-git-actions");
 
-function setStatus(workflow: Record<string, unknown>) {
+function setStatus(
+	workflow: Record<string, unknown>,
+	extras: { pullRequest?: Record<string, unknown> | null } = {},
+) {
 	statusQueryMock.mockReturnValue({
 		data: {
 			branch: "ditto/session-sess-1",
@@ -52,12 +61,30 @@ function setStatus(workflow: Record<string, unknown>) {
 			remoteBranchExists: workflow.kind !== "push",
 			changedFiles: [],
 			summary: "Clean working tree on ditto/session-sess-1",
-			pullRequest: "pullRequest" in workflow ? workflow.pullRequest : null,
+			pullRequest:
+				extras.pullRequest !== undefined
+					? extras.pullRequest
+					: "pullRequest" in workflow
+						? workflow.pullRequest
+						: null,
 			workflow,
 		},
 		isError: false,
 		isLoading: false,
 	});
+}
+
+function openGitMenu() {
+	fireEvent.click(screen.getByRole("button", { name: "Choose git action" }));
+	return screen.getByRole("menu");
+}
+
+function isMenuItemDisabled(item: HTMLElement): boolean {
+	return (
+		item.getAttribute("aria-disabled") === "true" ||
+		item.hasAttribute("data-disabled") ||
+		(item as HTMLButtonElement).disabled === true
+	);
 }
 
 describe("SessionGitActions workflow", () => {
@@ -74,10 +101,17 @@ describe("SessionGitActions workflow", () => {
 
 		render(<SessionGitActions projectId="proj-1" sessionId="sess-1" />);
 
-		expect(screen.getByRole("button", { name: "Open PR" })).toHaveProperty(
+		expect(screen.getByRole("button", { name: "Up to date" })).toHaveProperty(
 			"disabled",
 			true,
 		);
+
+		const menu = openGitMenu();
+		expect(
+			isMenuItemDisabled(
+				within(menu).getByRole("menuitem", { name: /Open PR/i }),
+			),
+		).toBe(true);
 	});
 
 	it("makes Push the next step when the remote branch is missing", () => {
@@ -88,13 +122,20 @@ describe("SessionGitActions workflow", () => {
 		expect(
 			screen.getByRole("button", { name: "Push" }).getAttribute("aria-current"),
 		).toBe("step");
-		expect(screen.getByRole("button", { name: "Open PR" })).toHaveProperty(
+		expect(screen.getByRole("button", { name: "Push" })).toHaveProperty(
 			"disabled",
 			false,
 		);
+
+		const menu = openGitMenu();
+		expect(
+			isMenuItemDisabled(
+				within(menu).getByRole("menuitem", { name: /Open PR/i }),
+			),
+		).toBe(false);
 	});
 
-	it("makes Sync main the next step when the base branch advances", () => {
+	it("makes Sync the next step when the base branch advances", () => {
 		setStatus({ kind: "sync", baseBranch: "main" });
 
 		render(<SessionGitActions projectId="proj-1" sessionId="sess-1" />);
@@ -135,9 +176,38 @@ describe("SessionGitActions workflow", () => {
 
 		render(<SessionGitActions projectId="proj-1" sessionId="sess-1" />);
 
-		expect(screen.getByRole("button", { name: "Open PR" })).toHaveProperty(
-			"disabled",
-			true,
+		const menu = openGitMenu();
+		expect(
+			isMenuItemDisabled(
+				within(menu).getByRole("menuitem", { name: /Open PR/i }),
+			),
+		).toBe(true);
+	});
+
+	it("keeps Push primary when ahead while View PR stays available", () => {
+		setStatus(
+			{ kind: "push", reason: "unpushed-commits" },
+			{
+				pullRequest: {
+					url: "https://github.com/acme/repo/pull/9",
+					number: 9,
+					state: "open",
+				},
+			},
 		);
+
+		render(<SessionGitActions projectId="proj-1" sessionId="sess-1" />);
+
+		expect(screen.getByRole("button", { name: "Push" })).toHaveProperty(
+			"disabled",
+			false,
+		);
+
+		const menu = openGitMenu();
+		expect(
+			isMenuItemDisabled(
+				within(menu).getByRole("menuitem", { name: /View #9/i }),
+			),
+		).toBe(false);
 	});
 });

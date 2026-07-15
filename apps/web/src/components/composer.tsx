@@ -28,12 +28,13 @@ import {
 	ModelSelectorTrigger,
 } from "#/components/ai-elements/model-selector";
 import { SessionGitActions } from "#/components/session-git-actions";
+import { Button } from "#/components/ui/button";
+import { Textarea } from "#/components/ui/textarea";
 import {
-	InputGroup,
-	InputGroupAddon,
-	InputGroupButton,
-	InputGroupTextarea,
-} from "#/components/ui/input-group";
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "#/components/ui/tooltip";
 import {
 	type AssistantMessagePart,
 	appendAssistantTextDelta,
@@ -53,6 +54,7 @@ import {
 	streamAgentRun,
 } from "#/lib/agent-stream-client";
 import { useUserPreferencesStore } from "#/lib/user-preferences-store";
+import { cn } from "#/lib/utils";
 
 const models = PROJECT_CODER_MODELS.map((model) => ({
 	chef: model.providerName,
@@ -699,113 +701,187 @@ export function Composer({
 					? "Queue message"
 					: "Stop"
 			: "Submit";
+	const isStopAction = stopping || (isStreaming && controlReady && !hasText);
 	const submitDisabled =
 		Boolean(disabledReason) ||
 		controlPending ||
 		stopping ||
 		(isStreaming ? !controlReady : !hasText);
 
+	const modelLabel = selectedModel?.name ?? "Select model";
+	const branchLabel = branchName?.trim() || "—";
+
+	const branchMeta = (
+		<Tooltip>
+			<TooltipTrigger
+				render={
+					<button
+						type="button"
+						className={cn(
+							"inline-flex min-w-0 max-w-full cursor-default items-center gap-1.5 text-xs text-muted-foreground",
+							"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-sm",
+						)}
+						aria-label={`Branch ${branchLabel}`}
+					>
+						<GitBranchIcon className="size-3 shrink-0" aria-hidden />
+						<span className="truncate font-medium font-mono">
+							{branchLabel}
+						</span>
+					</button>
+				}
+			/>
+			<TooltipContent side="top" className="max-w-xs">
+				<span className="font-mono">{branchLabel}</span>
+			</TooltipContent>
+		</Tooltip>
+	);
+
+	const metaRow =
+		gitExportEnabled && projectId && sessionId ? (
+			<SessionGitActions
+				projectId={projectId}
+				sessionId={sessionId}
+				disabled={Boolean(disabledReason) || isStreaming}
+			>
+				{branchMeta}
+			</SessionGitActions>
+		) : (
+			branchMeta
+		);
+
 	return (
-		<section className="mx-auto flex w-full max-w-3xl flex-col justify-end gap-5 px-2 pb-2">
-			<div className="flex flex-col items-center justify-center gap-1 rounded-lg border bg-card p-1 shadow-sm">
-				<form
-					className="w-full rounded-lg bg-background"
-					onSubmit={handleSubmit}
-				>
-					<InputGroup className="overflow-hidden">
-						<InputGroupTextarea
-							aria-label="Message"
-							className="field-sizing-content max-h-48 min-h-16"
-							name="message"
-							onChange={(event) => {
-								textRef.current = event.currentTarget.value;
-								setText(event.currentTarget.value);
-							}}
-							onKeyDown={handleTextareaKeyDown}
-							value={text}
-							placeholder="Ask Ditto to inspect the workspace..."
-						/>
-						<InputGroupAddon
-							align="block-end"
-							className="justify-between gap-1"
+		<section className="mx-auto flex w-full max-w-3xl flex-col justify-end gap-1.5 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+			<form className="w-full" onSubmit={handleSubmit}>
+				<div className="flex items-end gap-2">
+					<div className="flex shrink-0 self-end">
+						<ModelSelector
+							open={modelSelectorOpen}
+							onOpenChange={setModelSelectorOpen}
 						>
-							<ModelSelector
-								open={modelSelectorOpen}
-								onOpenChange={setModelSelectorOpen}
-							>
-								<ModelSelectorTrigger
+							<Tooltip>
+								<TooltipTrigger
 									render={
-										<InputGroupButton
-											aria-label="Select model"
-											disabled={Boolean(disabledReason) || isStreaming}
-										>
-											{selectedModel?.chefSlug ? (
-												<ModelSelectorLogo
-													className="size-3.5"
-													provider={selectedModel.chefSlug}
-												/>
-											) : null}
-											{selectedModel?.name ? (
-												<ModelSelectorName>
-													{selectedModel.name}
-												</ModelSelectorName>
-											) : null}
-										</InputGroupButton>
+										<ModelSelectorTrigger
+											render={
+												<Button
+													type="button"
+													variant="outline"
+													size="icon-lg"
+													aria-label={modelLabel}
+													disabled={Boolean(disabledReason) || isStreaming}
+													className={cn(
+														"size-10 rounded-full bg-card shadow-xs",
+														"transition-transform duration-150 ease-out",
+														"active:scale-[0.97]",
+														"motion-reduce:transition-none motion-reduce:active:scale-100",
+													)}
+												>
+													{selectedModel?.chefSlug ? (
+														<ModelSelectorLogo
+															className="size-5"
+															provider={selectedModel.chefSlug}
+														/>
+													) : (
+														<span
+															className="size-5 rounded-full bg-muted"
+															aria-hidden
+														/>
+													)}
+												</Button>
+											}
+										/>
 									}
 								/>
-								<ModelSelectorContent showCloseButton={false}>
-									<ModelSelectorInput placeholder="Search models..." />
-									<ModelSelectorList>
-										<ModelSelectorEmpty>No model found.</ModelSelectorEmpty>
-										{[...modelsByChef.entries()].map(([chef, chefModels]) => (
-											<ModelSelectorGroup heading={chef} key={chef}>
-												{chefModels.map((modelOption) => (
-													<ModelItem
-														key={modelOption.id}
-														model={modelOption}
-														onSelect={handleModelSelect}
-														selectedModel={model}
-													/>
-												))}
-											</ModelSelectorGroup>
-										))}
-									</ModelSelectorList>
-								</ModelSelectorContent>
-							</ModelSelector>
-							<InputGroupButton
-								aria-label={actionName}
-								disabled={submitDisabled}
-								size="icon-sm"
-								type="submit"
-								variant="default"
-							>
-								{isStreaming && controlReady && !hasText ? (
-									<SquareIcon aria-hidden />
-								) : (
-									<CornerDownLeftIcon aria-hidden />
-								)}
-							</InputGroupButton>
-						</InputGroupAddon>
-					</InputGroup>
-				</form>
-				<div className="flex w-full flex-wrap items-center justify-between gap-2 px-2 py-0.5 text-muted-foreground">
-					<div className="flex min-w-0 items-center gap-1.5 text-[11px]">
-						<GitBranchIcon className="size-3 shrink-0" aria-hidden />
-						<p
-							className="truncate font-medium"
-							title={branchName?.trim() || undefined}
-						>
-							{branchName?.trim() || "—"}
-						</p>
+								<TooltipContent side="top">{modelLabel}</TooltipContent>
+							</Tooltip>
+							<ModelSelectorContent showCloseButton={false}>
+								<ModelSelectorInput placeholder="Search models…" />
+								<ModelSelectorList>
+									<ModelSelectorEmpty>No model found.</ModelSelectorEmpty>
+									{[...modelsByChef.entries()].map(([chef, chefModels]) => (
+										<ModelSelectorGroup heading={chef} key={chef}>
+											{chefModels.map((modelOption) => (
+												<ModelItem
+													key={modelOption.id}
+													model={modelOption}
+													onSelect={handleModelSelect}
+													selectedModel={model}
+												/>
+											))}
+										</ModelSelectorGroup>
+									))}
+								</ModelSelectorList>
+							</ModelSelectorContent>
+						</ModelSelector>
 					</div>
-					{gitExportEnabled && projectId && sessionId ? (
-						<SessionGitActions
-							projectId={projectId}
-							sessionId={sessionId}
-							disabled={Boolean(disabledReason) || isStreaming}
-						/>
-					) : null}
+
+					<Textarea
+						aria-label="Message"
+						name="message"
+						value={text}
+						placeholder="Ask Ditto to inspect the workspace…"
+						onChange={(event) => {
+							textRef.current = event.currentTarget.value;
+							setText(event.currentTarget.value);
+						}}
+						onKeyDown={handleTextareaKeyDown}
+						className={cn(
+							"min-h-10 max-h-48 min-w-0 flex-1 resize-none rounded-3xl border-border bg-card px-4 py-2.5 text-sm shadow-xs md:text-sm",
+							"field-sizing-content text-pretty leading-relaxed",
+							"placeholder:text-muted-foreground/70",
+						)}
+					/>
+
+					<div className="flex shrink-0 self-end">
+						<Tooltip>
+							<TooltipTrigger
+								render={
+									<Button
+										type="submit"
+										variant={isStopAction ? "destructive" : "default"}
+										size="icon-lg"
+										aria-label={actionName}
+										disabled={submitDisabled}
+										className={cn(
+											"size-10 rounded-full shadow-xs",
+											"transition-transform duration-150 ease-out",
+											"active:scale-[0.97]",
+											"motion-reduce:transition-none motion-reduce:active:scale-100",
+										)}
+									>
+										<span className="relative size-4" aria-hidden>
+											<CornerDownLeftIcon
+												className={cn(
+													"absolute inset-0 size-4 transition-[opacity,transform,filter] duration-150 ease-out",
+													"motion-reduce:transition-none",
+													isStopAction
+														? "scale-90 opacity-0 blur-[2px]"
+														: "scale-100 opacity-100 blur-0",
+												)}
+											/>
+											<SquareIcon
+												className={cn(
+													"absolute inset-0 size-4 transition-[opacity,transform,filter] duration-150 ease-out",
+													"motion-reduce:transition-none",
+													isStopAction
+														? "scale-100 opacity-100 blur-0"
+														: "scale-90 opacity-0 blur-[2px]",
+												)}
+											/>
+										</span>
+									</Button>
+								}
+							/>
+							<TooltipContent side="top">{actionName}</TooltipContent>
+						</Tooltip>
+					</div>
 				</div>
+			</form>
+
+			<div className="flex items-center gap-2">
+				<div className="w-10 shrink-0" aria-hidden />
+				<div className="min-w-0 flex-1 px-0.5">{metaRow}</div>
+				<div className="w-10 shrink-0" aria-hidden />
 			</div>
 		</section>
 	);

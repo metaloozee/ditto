@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+	ChevronDownIcon,
 	FileDiffIcon,
 	GitCommitHorizontalIcon,
 	GitPullRequestIcon,
@@ -9,6 +10,12 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "#/components/ui/dropdown-menu";
 import {
 	Tooltip,
 	TooltipContent,
@@ -23,14 +30,11 @@ type SessionGitActionsProps = {
 	projectId: string;
 	sessionId: string;
 	disabled?: boolean;
+	children?: ReactNode;
 };
 
 type WorkflowStepId = "sync" | "commit" | "push" | "pr";
 
-/**
- * Compact git-state capsule: icon + count.
- * Intent: glanceable pending work — not a status sentence.
- */
 function GitCountCapsule({
 	count,
 	icon,
@@ -56,9 +60,8 @@ function GitCountCapsule({
 						type="button"
 						aria-label={ariaLabel}
 						className={cn(
-							"inline-flex h-6 max-w-full cursor-default items-center gap-1 rounded-full border px-2 font-medium text-[11px] tabular-nums transition-colors duration-150",
+							"inline-flex h-6 max-w-full cursor-default items-center gap-1 rounded-full border px-2 font-medium text-xs tabular-nums",
 							"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-							"active:scale-[0.97]",
 							tone === "pending" &&
 								"border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-400",
 							tone === "ready" &&
@@ -70,7 +73,7 @@ function GitCountCapsule({
 						<span className="shrink-0 [&_svg]:size-3" aria-hidden>
 							{icon}
 						</span>
-						<span className="min-w-[0.75rem] text-center">{count}</span>
+						<span className="min-w-3 text-center">{count}</span>
 					</button>
 				}
 			/>
@@ -93,9 +96,9 @@ function StatusTooltipBody({
 
 	return (
 		<div className="flex flex-col gap-1.5 text-left">
-			<p className="font-medium text-[11px] leading-snug">{summary}</p>
+			<p className="text-xs font-medium leading-snug text-pretty">{summary}</p>
 			{preview.length > 0 ? (
-				<ul className="flex flex-col gap-0.5 border-background/15 border-t pt-1.5 font-mono text-[10px] opacity-90">
+				<ul className="flex flex-col gap-0.5 border-background/15 border-t pt-1.5 font-mono text-xs opacity-90">
 					{preview.map((file) => (
 						<li key={file} className="truncate" title={file}>
 							{file}
@@ -110,64 +113,6 @@ function StatusTooltipBody({
 	);
 }
 
-/**
- * One step in the Commit → Push → PR pipeline.
- * Grouped as a single segmented control; only the next step is filled (primary).
- */
-function WorkflowStep({
-	label,
-	icon,
-	disabled,
-	active,
-	pending,
-	tooltip,
-	onClick,
-	isLast = false,
-}: {
-	label: string;
-	icon: ReactNode;
-	disabled: boolean;
-	/** True when this is the recommended next action in the pipeline. */
-	active: boolean;
-	pending: boolean;
-	tooltip: string;
-	onClick: () => void;
-	isLast?: boolean;
-}) {
-	return (
-		<Tooltip>
-			<TooltipTrigger
-				render={
-					<button
-						type="button"
-						disabled={disabled || pending}
-						aria-label={label}
-						title={tooltip}
-						aria-current={active ? "step" : undefined}
-						onClick={onClick}
-						className={cn(
-							"inline-flex h-6 min-w-0 cursor-pointer items-center gap-1 px-2 font-medium text-[11px] transition-[background-color,color,opacity,transform] duration-150 ease-out",
-							"focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-							"disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-40",
-							"active:enabled:scale-[0.97]",
-							!isLast && "border-border/70 border-r",
-							active
-								? "bg-primary text-primary-foreground hover:bg-primary/90"
-								: "bg-transparent text-muted-foreground hover:bg-muted/80 hover:text-foreground",
-						)}
-					>
-						<span className="shrink-0 [&_svg]:size-3" aria-hidden>
-							{pending ? <LoaderCircleIcon className="animate-spin" /> : icon}
-						</span>
-						<span className="truncate">{label}</span>
-					</button>
-				}
-			/>
-			<TooltipContent side="top">{tooltip}</TooltipContent>
-		</Tooltip>
-	);
-}
-
 function SessionGitActionsView({
 	status,
 	statusLoading,
@@ -178,6 +123,7 @@ function SessionGitActionsView({
 	onCommit,
 	onPush,
 	onOpenPullRequest,
+	children,
 }: {
 	status: SessionGitStatus | undefined;
 	statusLoading: boolean;
@@ -188,6 +134,7 @@ function SessionGitActionsView({
 	onCommit: () => void;
 	onPush: () => void;
 	onOpenPullRequest: () => void;
+	children?: ReactNode;
 }) {
 	const workflow = status?.workflow;
 	const dirty = status?.dirty ?? false;
@@ -198,12 +145,13 @@ function SessionGitActionsView({
 	const commitDisabled = !canRun || busy || !dirty || statusLoading;
 	const pushDisabled =
 		!canRun || busy || statusLoading || !status || workflow?.kind !== "push";
-	const existingPullRequest =
+	const pullRequestFromWorkflow =
 		workflow?.kind === "open-pr-existing" ||
 		workflow?.kind === "closed-pr" ||
 		workflow?.kind === "merged-pr"
 			? workflow.pullRequest
 			: null;
+	const pullRequest = pullRequestFromWorkflow ?? status?.pullRequest ?? null;
 	const canOpenPullRequest =
 		workflow?.kind === "open-pr" || workflow?.kind === "push";
 	const openPrDisabled =
@@ -211,8 +159,9 @@ function SessionGitActionsView({
 		busy ||
 		statusLoading ||
 		!status ||
-		(!existingPullRequest && !canOpenPullRequest);
+		(!pullRequest && !canOpenPullRequest);
 	const viewPrDisabled = !canRun || busy || statusLoading;
+	const prDisabled = pullRequest ? viewPrDisabled : openPrDisabled;
 	const nextStep: WorkflowStepId | null =
 		workflow?.kind === "sync"
 			? "sync"
@@ -223,6 +172,8 @@ function SessionGitActionsView({
 					: workflow?.kind === "open-pr"
 						? "pr"
 						: null;
+	const primaryStep: WorkflowStepId | null =
+		nextStep ?? (pullRequest ? "pr" : null);
 
 	const syncLabel = "Sync";
 	const syncTooltip =
@@ -249,15 +200,15 @@ function SessionGitActionsView({
 			? `Merged #${workflow.pullRequest.number}`
 			: workflow?.kind === "closed-pr"
 				? `Closed #${workflow.pullRequest.number}`
-				: existingPullRequest
-					? `#${existingPullRequest.number}`
+				: pullRequest
+					? `View #${pullRequest.number}`
 					: "Open PR";
 	const prTooltip =
 		workflow?.kind === "merged-pr"
 			? "View merged pull request on GitHub"
 			: workflow?.kind === "closed-pr"
 				? "View closed pull request on GitHub"
-				: existingPullRequest
+				: pullRequest
 					? "Open pull request on GitHub"
 					: openPrDisabled
 						? workflow?.kind === "idle"
@@ -271,83 +222,181 @@ function SessionGitActionsView({
 							? "Push branch and open a pull request"
 							: "Open a pull request for this branch";
 
+	function handlePrAction(): void {
+		if (pullRequest) {
+			window.open(pullRequest.url, "_blank", "noopener");
+			return;
+		}
+		onOpenPullRequest();
+	}
+
+	const actions: Array<{
+		id: WorkflowStepId;
+		label: string;
+		icon: ReactNode;
+		disabled: boolean;
+		tooltip: string;
+		onSelect: () => void;
+	}> = [
+		{
+			id: "sync",
+			label: syncLabel,
+			icon: <RefreshCwIcon />,
+			disabled: syncDisabled,
+			tooltip: syncTooltip,
+			onSelect: onSync,
+		},
+		{
+			id: "commit",
+			label: "Commit",
+			icon: <GitCommitHorizontalIcon />,
+			disabled: commitDisabled,
+			tooltip: commitTooltip,
+			onSelect: onCommit,
+		},
+		{
+			id: "push",
+			label: "Push",
+			icon: <UploadIcon />,
+			disabled: pushDisabled,
+			tooltip: pushTooltip,
+			onSelect: onPush,
+		},
+		{
+			id: "pr",
+			label: prLabel,
+			icon: <GitPullRequestIcon />,
+			disabled: prDisabled,
+			tooltip: prTooltip,
+			onSelect: handlePrAction,
+		},
+	];
+
+	const primary = primaryStep
+		? (actions.find((action) => action.id === primaryStep) ?? null)
+		: null;
+	const primaryDisabled = !primary || primary.disabled || busy;
+	const primaryPending = primaryStep !== null && pendingStep === primaryStep;
+	const primaryLabel = primary?.label ?? "Up to date";
+	const hasActivePrimary = Boolean(primary && !primary.disabled);
+
 	return (
 		<TooltipProvider delay={200}>
-			<div className="flex flex-wrap items-center justify-end gap-2">
-				{status ? (
-					<div className="flex items-center gap-1">
-						<GitCountCapsule
-							count={changedCount}
-							icon={<FileDiffIcon />}
-							ariaLabel={`${changedCount} changed ${changedCount === 1 ? "file" : "files"}`}
-							tone="pending"
-							tooltip={
-								<StatusTooltipBody
-									summary={status.summary}
-									files={status.changedFiles}
-								/>
-							}
-						/>
-						{!dirty ? (
+			<div className="flex w-full min-w-0 items-center gap-2">
+				<div className="min-w-0 flex-1">{children}</div>
+
+				<div className="flex shrink-0 items-center gap-1.5">
+					{status ? (
+						<>
 							<GitCountCapsule
-								count={aheadCount}
-								icon={<GitCommitHorizontalIcon />}
-								ariaLabel={`${aheadCount} ${aheadCount === 1 ? "commit" : "commits"} ahead`}
-								tone="ready"
+								count={changedCount}
+								icon={<FileDiffIcon />}
+								ariaLabel={`${changedCount} changed ${changedCount === 1 ? "file" : "files"}`}
+								tone="pending"
 								tooltip={
-									<StatusTooltipBody summary={status.summary} files={[]} />
+									<StatusTooltipBody
+										summary={status.summary}
+										files={status.changedFiles}
+									/>
 								}
 							/>
-						) : null}
-					</div>
-				) : null}
+							{!dirty ? (
+								<GitCountCapsule
+									count={aheadCount}
+									icon={<GitCommitHorizontalIcon />}
+									ariaLabel={`${aheadCount} ${aheadCount === 1 ? "commit" : "commits"} ahead`}
+									tone="ready"
+									tooltip={
+										<StatusTooltipBody summary={status.summary} files={[]} />
+									}
+								/>
+							) : null}
+						</>
+					) : null}
 
-				<fieldset className="m-0 inline-flex h-6 items-stretch overflow-hidden rounded-md border border-border bg-background/60 p-0 shadow-xs">
-					<legend className="sr-only">Session git workflow</legend>
-					<WorkflowStep
-						label={syncLabel}
-						icon={<RefreshCwIcon />}
-						disabled={syncDisabled}
-						active={nextStep === "sync"}
-						pending={pendingStep === "sync"}
-						tooltip={syncTooltip}
-						onClick={onSync}
-					/>
-					<WorkflowStep
-						label="Commit"
-						icon={<GitCommitHorizontalIcon />}
-						disabled={commitDisabled}
-						active={nextStep === "commit"}
-						pending={pendingStep === "commit"}
-						tooltip={commitTooltip}
-						onClick={onCommit}
-					/>
-					<WorkflowStep
-						label="Push"
-						icon={<UploadIcon />}
-						disabled={pushDisabled}
-						active={nextStep === "push"}
-						pending={pendingStep === "push"}
-						tooltip={pushTooltip}
-						onClick={onPush}
-					/>
-					<WorkflowStep
-						label={prLabel}
-						icon={<GitPullRequestIcon />}
-						disabled={existingPullRequest ? viewPrDisabled : openPrDisabled}
-						active={nextStep === "pr"}
-						pending={pendingStep === "pr"}
-						tooltip={prTooltip}
-						isLast
-						onClick={() => {
-							if (existingPullRequest) {
-								window.open(existingPullRequest.url, "_blank", "noopener");
-								return;
-							}
-							onOpenPullRequest();
-						}}
-					/>
-				</fieldset>
+					<fieldset
+						aria-label="Session git workflow"
+						className="m-0 inline-flex h-6 shrink-0 items-stretch divide-x divide-border overflow-hidden rounded-full border border-border bg-secondary p-0 text-secondary-foreground shadow-xs"
+					>
+						<Tooltip>
+							<TooltipTrigger
+								render={
+									<button
+										type="button"
+										disabled={primaryDisabled || primaryPending}
+										aria-label={primaryLabel}
+										aria-current={hasActivePrimary ? "step" : undefined}
+										title={primary?.tooltip ?? "No git action needed"}
+										onClick={() => primary?.onSelect()}
+										className={cn(
+											"inline-flex cursor-pointer items-center gap-1 px-2.5 font-medium text-xs whitespace-nowrap",
+											"focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+											"disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-40",
+											hasActivePrimary
+												? "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+												: "bg-transparent text-muted-foreground hover:bg-muted/80",
+										)}
+									>
+										<span className="shrink-0 [&_svg]:size-3" aria-hidden>
+											{primaryPending ? (
+												<LoaderCircleIcon className="animate-spin" />
+											) : (
+												(primary?.icon ?? <GitCommitHorizontalIcon />)
+											)}
+										</span>
+										<span>{primaryLabel}</span>
+									</button>
+								}
+							/>
+							<TooltipContent side="top">
+								{primary?.tooltip ?? "No git action needed"}
+							</TooltipContent>
+						</Tooltip>
+
+						<DropdownMenu>
+							<DropdownMenuTrigger
+								disabled={busy || statusLoading}
+								aria-label="Choose git action"
+								className={cn(
+									"inline-flex w-6 cursor-pointer items-center justify-center",
+									"focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+									"disabled:pointer-events-none disabled:opacity-40",
+									hasActivePrimary
+										? "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+										: "text-muted-foreground hover:bg-muted hover:text-foreground",
+								)}
+							>
+								<ChevronDownIcon className="size-3" aria-hidden />
+							</DropdownMenuTrigger>
+							<DropdownMenuContent align="end" className="min-w-40">
+								{actions.map((action) => (
+									<DropdownMenuItem
+										key={action.id}
+										disabled={action.disabled || busy || statusLoading}
+										onClick={action.onSelect}
+										className="cursor-pointer"
+									>
+										<span className="shrink-0 [&_svg]:size-3.5" aria-hidden>
+											{pendingStep === action.id ? (
+												<LoaderCircleIcon className="animate-spin" />
+											) : (
+												action.icon
+											)}
+										</span>
+										<span className="min-w-0 flex-1 truncate">
+											{action.label}
+										</span>
+										{action.id === primaryStep ? (
+											<span className="text-muted-foreground text-xs">
+												Next
+											</span>
+										) : null}
+									</DropdownMenuItem>
+								))}
+							</DropdownMenuContent>
+						</DropdownMenu>
+					</fieldset>
+				</div>
 			</div>
 		</TooltipProvider>
 	);
@@ -357,6 +406,7 @@ export function SessionGitActions({
 	projectId,
 	sessionId,
 	disabled = false,
+	children,
 }: SessionGitActionsProps) {
 	const trpc = useTRPC();
 	const queryClient = useQueryClient();
@@ -480,7 +530,12 @@ export function SessionGitActions({
 
 	if (statusError && !status) {
 		return (
-			<span className="text-muted-foreground text-[11px]">Git unavailable</span>
+			<div className="flex w-full min-w-0 items-center justify-between gap-2">
+				<div className="flex min-w-0 items-center gap-1.5">{children}</div>
+				<span className="shrink-0 text-xs text-muted-foreground">
+					Git unavailable
+				</span>
+			</div>
 		);
 	}
 
@@ -505,6 +560,8 @@ export function SessionGitActions({
 			onCommit={() => commitMutation.mutate({ projectId, sessionId })}
 			onPush={() => pushMutation.mutate({ projectId, sessionId })}
 			onOpenPullRequest={() => openPrMutation.mutate({ projectId, sessionId })}
-		/>
+		>
+			{children}
+		</SessionGitActionsView>
 	);
 }
