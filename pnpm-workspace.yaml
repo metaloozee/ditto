@@ -1,3 +1,5 @@
+packages:
+  - apps/*
 allowBuilds:
   '@google/genai': true
   '@mongodb-js/zstd': false

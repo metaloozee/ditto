@@ -23,7 +23,7 @@ const sandbox = await Container("sandbox", {
 
 const database = await D1Database("database", {
 	name: `${app.name}-${app.stage}-db`,
-	migrationsDir: "./migrations",
+	migrationsDir: "./apps/web/migrations",
 	migrationsTable: "drizzle_migrations",
 });
 
@@ -33,6 +33,7 @@ const sandboxBackups = await R2Bucket("sandbox-backups", {
 });
 
 export const website = await TanStackStart("website", {
+	cwd: "apps/web",
 	url: true,
 	bindings: {
 		DB: database,
@@ -59,10 +60,15 @@ export const website = await TanStackStart("website", {
 		main: "src/server.ts",
 		transform: (spec) => ({
 			...spec,
+			d1_databases: spec.d1_databases?.map((database) =>
+				database.binding === "DB"
+					? { ...database, migrations_dir: "../../migrations" }
+					: database,
+			),
 			containers: [
 				{
 					class_name: "Sandbox",
-					image: "../../Dockerfile",
+					image: "../../../../Dockerfile",
 					instance_type: "lite",
 					max_instances: 1,
 				},

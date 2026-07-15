@@ -15,6 +15,7 @@ const config = defineConfig(({ mode }) => {
 			: [alchemy() as PluginOption];
 
 	return {
+		envDir: "../..",
 		resolve: { tsconfigPaths: true },
 		build: {
 			target: "esnext",
