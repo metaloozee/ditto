@@ -8,6 +8,7 @@ import {
 	PlusIcon,
 	UserRound,
 } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
 import { NewProjectDialog } from "#/components/new-project-dialog";
 import { Badge } from "#/components/ui/badge";
@@ -17,6 +18,16 @@ import { Skeleton } from "#/components/ui/skeleton";
 import { useTRPC } from "#/integrations/trpc/react";
 import { cn } from "#/lib/utils";
 import { getSession } from "@/lib/auth.functions";
+
+type ProjectListItem = {
+	id: string;
+	name: string;
+	description?: string | null;
+	status: "provisioning" | "ready" | "failed";
+	githubRepo?: string | null;
+	sessions: Array<{ id: string }>;
+	createdAt?: Date | null;
+};
 
 export const Route = createFileRoute("/")({
 	beforeLoad: async () => {
@@ -67,10 +78,10 @@ function Home() {
 			<div className="mx-auto flex max-w-3xl flex-col gap-8">
 				<div className="mt-20 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
 					<div>
-						<h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+						<h1 className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
 							{greeting}, {displayName}
 						</h1>
-						<p className="mt-1 text-sm text-muted-foreground">
+						<p className="mt-1 text-sm text-pretty text-muted-foreground">
 							{user
 								? "Pick up where you left off, or start something new."
 								: "Sign in to access your projects and continue where you left off."}
@@ -144,6 +155,83 @@ function ProjectCardSkeleton() {
 	);
 }
 
+function ProjectCard({ project }: { project: ProjectListItem }) {
+	const [active, setActive] = useState(false);
+	const reduceMotion = useReducedMotion();
+	const sessionCount = project.sessions.length;
+
+	const shiftSpring = reduceMotion
+		? { duration: 0 }
+		: { type: "spring" as const, duration: 0.4, bounce: 0.12 };
+
+	const arrowSpring = reduceMotion
+		? { duration: 0 }
+		: { type: "spring" as const, duration: 0.35, bounce: 0.24 };
+
+	return (
+		<Link
+			to="/project/$projectId"
+			params={{ projectId: project.id }}
+			onMouseEnter={() => setActive(true)}
+			onMouseLeave={() => setActive(false)}
+			onFocus={() => setActive(true)}
+			onBlur={() => setActive(false)}
+			className={cn(
+				"flex items-center gap-4 rounded-lg bg-card px-4 py-3 ring-1 ring-foreground/10",
+				"transition-colors duration-150 ease-out",
+				"hover:bg-accent",
+				"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+			)}
+		>
+			{project.status === "provisioning" ? (
+				<LoaderIcon className="size-4 shrink-0 animate-spin text-muted-foreground" />
+			) : (
+				<FolderIcon className="size-4 shrink-0 text-muted-foreground" />
+			)}
+
+			<div className="flex min-w-0 flex-1 flex-col">
+				<span className="truncate text-sm font-medium">{project.name}</span>
+				<span className="truncate text-xs text-muted-foreground">
+					{project.description
+						? project.description
+						: `${sessionCount} ${sessionCount === 1 ? "conversation" : "conversations"}`}
+				</span>
+			</div>
+
+			<div className="flex shrink-0 items-center">
+				<Badge
+					variant={project.status === "failed" ? "destructive" : "outline"}
+					className="shrink-0"
+				>
+					{formatStatusLabel(project.status)}
+				</Badge>
+
+				<motion.div
+					aria-hidden
+					initial={false}
+					animate={{ width: active ? 22 : 0 }}
+					transition={shiftSpring}
+					className="overflow-hidden"
+				>
+					<motion.div
+						className="flex w-[22px] items-center justify-end"
+						initial={false}
+						animate={{
+							opacity: active ? 1 : 0,
+							scale: active ? 1 : 0.8,
+							x: active ? 0 : 4,
+							filter: active ? "blur(0px)" : "blur(2px)",
+						}}
+						transition={arrowSpring}
+					>
+						<ArrowRightIcon className="size-3.5 text-muted-foreground" />
+					</motion.div>
+				</motion.div>
+			</div>
+		</Link>
+	);
+}
+
 function ProjectsList({
 	projects,
 	isPending,
@@ -151,15 +239,7 @@ function ProjectsList({
 	error,
 	user,
 }: {
-	projects: Array<{
-		id: string;
-		name: string;
-		description?: string | null;
-		status: "provisioning" | "ready" | "failed";
-		githubRepo?: string | null;
-		sessions: Array<{ id: string }>;
-		createdAt?: Date | null;
-	}>;
+	projects: ProjectListItem[];
 	isPending: boolean;
 	isError: boolean;
 	error: string | undefined;
@@ -227,54 +307,9 @@ function ProjectsList({
 
 	return (
 		<div className="flex flex-col gap-2">
-			{projects.map((project) => {
-				const sessionCount = project.sessions.length;
-
-				return (
-					<Link
-						key={project.id}
-						to="/project/$projectId"
-						params={{ projectId: project.id }}
-						className={cn(
-							"group/row flex items-center gap-4 rounded-lg bg-card px-4 py-3 ring-1 ring-foreground/10",
-							"transition-colors duration-100",
-							"hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-						)}
-					>
-						{project.status === "provisioning" ? (
-							<LoaderIcon className="size-4 shrink-0 animate-spin text-muted-foreground" />
-						) : (
-							<FolderIcon className="size-4 shrink-0 text-muted-foreground" />
-						)}
-
-						<div className="flex min-w-0 flex-1 flex-col">
-							<span className="truncate text-sm font-medium">
-								{project.name}
-							</span>
-							<span className="truncate text-xs text-muted-foreground">
-								{project.description
-									? project.description
-									: `${sessionCount} ${sessionCount === 1 ? "conversation" : "conversations"}`}
-							</span>
-						</div>
-
-						<Badge
-							variant={project.status === "failed" ? "destructive" : "outline"}
-							className="shrink-0"
-						>
-							{formatStatusLabel(project.status)}
-						</Badge>
-
-						<ArrowRightIcon
-							className={cn(
-								"size-3.5 shrink-0 text-muted-foreground",
-								"opacity-0 transition-opacity duration-100",
-								"group-hover/row:opacity-100",
-							)}
-						/>
-					</Link>
-				);
-			})}
+			{projects.map((project) => (
+				<ProjectCard key={project.id} project={project} />
+			))}
 		</div>
 	);
 }
