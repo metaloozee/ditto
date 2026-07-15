@@ -11,7 +11,7 @@ runtime behavior remain consistent.
 | [System architecture](architecture/overview.md) | Product goal, system context, major units, primary flows, state ownership, dependency direction, and limits |
 | [Frontend architecture](architecture/frontend.md) | Routes, React Query/tRPC state, chat streaming, assistant parts, navigation, and UI layers |
 | [Server and data architecture](architecture/server-and-data.md) | Worker entry points, tRPC routers, domain services, D1 schema, lifecycles, pagination, and infrastructure |
-| [Agent harness architecture](architecture/agent-harness.md) | Sandbox wake/restore, PI runner execution, SSE, session worktrees, concurrency, Git export, and backups |
+| [Agent harness architecture](architecture/agent-harness.md) | Sandbox wake/restore, PI runner execution, SSE, live session controls, session worktrees, concurrency, Git export, and backups |
 | [Security and trust boundaries](architecture/security.md) | Authentication, authorization, encrypted env vars, redaction, callback JWTs, Git credentials, and egress policy |
 | [Repository map](architecture/repository-map.md) | Responsibility of every source, test, migration, plan, configuration, and agent-tooling file |
 
@@ -30,8 +30,12 @@ runtime behavior remain consistent.
 1. [Frontend architecture](architecture/frontend.md)
 2. [Agent harness architecture](architecture/agent-harness.md)
 3. [Security and trust boundaries](architecture/security.md)
-4. `src/components/composer.tsx` → `src/routes/api.agent.stream.ts` →
-   `src/lib/agent-run-service.ts` → `src/lib/agent-run.ts` → `sandbox/runner`
+4. Trace new runs through `src/components/composer.tsx` →
+   `src/routes/api.agent.stream.ts` → `src/lib/agent-run-service.ts` →
+   `src/lib/agent-run.ts` → `sandbox/runner`.
+5. Trace follow-up and Stop requests through `src/components/composer.tsx` →
+   `src/routes/api.agent.control.ts` → `src/lib/agent-control-service.ts` →
+   `sandbox/runner/src/control-channel.ts`.
 
 ### Project, sandbox, or persistence change
 

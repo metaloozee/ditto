@@ -75,7 +75,7 @@ out in the plan's drift check.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 022 | Make tool-call groups durable, timed, and polished | P1 | M | 017, 018 (DONE) | DONE (worktree `advisor/022-timed-tool-call-groups` @ 220e5d8) |
+| 022 | Make tool-call groups durable, timed, and polished | P1 | M | 017, 018 (DONE) | DONE (merged at `be0ef75`) |
 
 ## Plan 023 (live PI session controls)
 
@@ -85,7 +85,7 @@ runner, D1 message lifecycle, and session workspace lock.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 023 | Queue PI follow-ups and stop the active agent from the composer | P1 | L | 017, 018 (DONE) | DONE (worktree `advisor/023-pi-follow-up-stop-retry` @ `d667b30`; automated gates passed, GitHub-backed manual checks unavailable) |
+| 023 | Queue PI follow-ups and stop the active agent from the composer | P1 | L | 017, 018 (DONE) | DONE (merged at `6180528`; automated gates passed, GitHub-backed manual checks unavailable) |
 
 ### Audit finding coverage
 
@@ -160,6 +160,26 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
   builds. React Doctor and rebuilt-image GitHub-backed manual race checks were
   unavailable; no manual check was reported as failed.
 - **Executable now**: none; plans 001–023 are complete in their worktrees.
+
+## Reconciliation — 2026-07-15
+
+- **Current HEAD**: `6180528`.
+- **DONE 001–023**: all implementation commits, or their separately integrated
+  equivalents, are present in current history. Plan 022 was merged at
+  `be0ef75`; Plan 023 was merged at `6180528`. Plan 021 remains represented by
+  the separately integrated documentation commit `e6be7cd` rather than its
+  executor SHA.
+- **Current-HEAD verification**: `pnpm check`, `pnpm typecheck`, runner
+  typecheck, all 383 root tests, and all 21 runner tests passed. The four Unix
+  socket tests require execution outside the managed filesystem sandbox; their
+  initial `listen EPERM` result was environmental, and the unrestricted rerun
+  passed.
+- **Build gate**: not repeated because reconciliation uses cheap DONE
+  spot-checks and the production build writes generated artifacts. The full
+  build gate passed during Plan 023 review, and source changes since then are
+  limited to plan records.
+- **Executable now**: none; the backlog contains no TODO, IN PROGRESS, or
+  BLOCKED plans.
 
 ## Dependency notes
 
