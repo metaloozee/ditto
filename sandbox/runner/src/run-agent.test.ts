@@ -148,6 +148,11 @@ describe("runAgent live controls", () => {
 
 	it("clears pending follow-ups before abort and suppresses generic Stop errors", async () => {
 		const harness = makeSession();
+		const largeQueuedText = "x".repeat(32_000);
+		harness.session.clearQueue.mockImplementation(() => {
+			harness.order.push("clearQueue");
+			return { steering: [], followUp: [largeQueuedText, largeQueuedText] };
+		});
 		const { result, events } = await beginRun(harness);
 		await mocks.controlHandler?.(followUp("1", "first"));
 		await mocks.controlHandler?.(followUp("2", "second"));
@@ -161,7 +166,13 @@ describe("runAgent live controls", () => {
 			runId: "run-1",
 			sessionId: "session-1",
 		});
-		expect(stop).toMatchObject({ accepted: true, action: "stop" });
+		expect(stop).toMatchObject({
+			accepted: true,
+			action: "stop",
+			removedFollowUpCount: 2,
+		});
+		expect(JSON.stringify(stop)).not.toContain(largeQueuedText);
+		expect(JSON.stringify(stop).length).toBeLessThan(1_000);
 		expect(harness.order).toEqual(["clearQueue", "abort"]);
 		await expect(
 			mocks.controlHandler?.(followUp("3", "after stop")),

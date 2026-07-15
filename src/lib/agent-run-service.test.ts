@@ -594,6 +594,193 @@ describe("executeAgentRun", () => {
 		});
 	});
 
+	it("requests Stop and fails a partially created follow-up assistant when its boundary batch fails", async () => {
+		const mockDb = createMockDb();
+		mockDb.batch.mockResolvedValue([[{ id: "user-2" }], []]);
+		const updateSets: Array<Record<string, unknown>> = [];
+		mockDb.updateSet.mockImplementation((values: Record<string, unknown>) => {
+			updateSets.push(values);
+			return { where: mockDb.updateWhere };
+		});
+		const controlAgentRun = vi.fn().mockResolvedValue({
+			kind: "accepted",
+			status: 200,
+			body: { accepted: true },
+		});
+		const context = makeContext({ db: mockDb.db });
+		const { events, run } = collectEvents(context, {
+			controlAgentRun: controlAgentRun as never,
+			runAgentInSandbox: vi.fn().mockImplementation(async (opts) => {
+				await opts.onRunnerMessage({ kind: "assistant_delta", delta: "first" });
+				await opts.onRunnerMessage({
+					kind: "control_event",
+					event: {
+						type: "follow_up_started",
+						requestId: "request-2",
+						runId: "run-1",
+						sessionId: "sess-1",
+						text: "next",
+						userMessageId: "user-2",
+						assistantMessageId: "asst-2",
+					},
+				});
+				return { ok: true, assistantText: "first" };
+			}),
+		});
+
+		await run();
+
+		expect(controlAgentRun).toHaveBeenCalledWith(
+			expect.objectContaining({
+				input: expect.objectContaining({
+					action: "stop",
+					runId: "run-1",
+				}),
+			}),
+		);
+		expect(updateSets.filter((set) => set.status === "complete")).toHaveLength(
+			1,
+		);
+		expect(updateSets.filter((set) => set.status === "failed")).toHaveLength(1);
+		expect(events.at(-1)).toMatchObject({
+			event: "done",
+			data: { ok: false },
+		});
+	});
+
+	it("persists the active started follow-up as failed with partial content after Stop", async () => {
+		const mockDb = createMockDb();
+		mockDb.batch.mockResolvedValue([[{ id: "user-2" }], [{ id: "asst-2" }]]);
+		const updateSets: Array<Record<string, unknown>> = [];
+		mockDb.updateSet.mockImplementation((values: Record<string, unknown>) => {
+			updateSets.push(values);
+			return { where: mockDb.updateWhere };
+		});
+		const context = makeContext({ db: mockDb.db });
+		const { events, run } = collectEvents(context, {
+			runAgentInSandbox: vi.fn().mockImplementation(async (opts) => {
+				await opts.onRunnerMessage({ kind: "assistant_delta", delta: "first" });
+				await opts.onRunnerMessage({
+					kind: "control_event",
+					event: {
+						type: "follow_up_started",
+						requestId: "request-2",
+						runId: "run-1",
+						sessionId: "sess-1",
+						text: "next",
+						userMessageId: "user-2",
+						assistantMessageId: "asst-2",
+					},
+				});
+				await opts.onRunnerMessage({
+					kind: "assistant_delta",
+					delta: "partial follow-up",
+				});
+				return { ok: false, assistantText: "partial follow-up" };
+			}),
+		});
+
+		await run();
+
+		expect(updateSets).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ status: "complete", content: "first" }),
+				expect.objectContaining({
+					status: "failed",
+					content: "partial follow-up",
+				}),
+			]),
+		);
+		expect(events.at(-1)).toMatchObject({
+			event: "done",
+			data: {
+				ok: false,
+				assistantMessageId: "asst-2",
+				content: "partial follow-up",
+			},
+		});
+	});
+
+	it("isolates text and tool chronology across follow-up turns", async () => {
+		const mockDb = createMockDb();
+		mockDb.batch.mockResolvedValue([[{ id: "user-2" }], [{ id: "asst-2" }]]);
+		const context = makeContext({ db: mockDb.db });
+		const { events, run } = collectEvents(context, {
+			runAgentInSandbox: vi.fn().mockImplementation(async (opts) => {
+				await opts.onRunnerMessage({
+					kind: "assistant_delta",
+					delta: "before one",
+				});
+				await opts.onRunnerMessage({
+					kind: "agent_event",
+					event: {
+						type: "tool_execution_end",
+						toolCallId: "tool-one",
+						toolName: "bash",
+						result: "one",
+						isError: false,
+					},
+				});
+				await opts.onRunnerMessage({
+					kind: "assistant_delta",
+					delta: "after one",
+				});
+				await opts.onRunnerMessage({
+					kind: "control_event",
+					event: {
+						type: "follow_up_started",
+						requestId: "request-2",
+						runId: "run-1",
+						sessionId: "sess-1",
+						text: "next",
+						userMessageId: "user-2",
+						assistantMessageId: "asst-2",
+					},
+				});
+				await opts.onRunnerMessage({
+					kind: "assistant_delta",
+					delta: "before two",
+				});
+				await opts.onRunnerMessage({
+					kind: "agent_event",
+					event: {
+						type: "tool_execution_end",
+						toolCallId: "tool-two",
+						toolName: "bash",
+						result: "two",
+						isError: false,
+					},
+				});
+				await opts.onRunnerMessage({
+					kind: "assistant_delta",
+					delta: "after two",
+				});
+				return { ok: true, assistantText: "unused" };
+			}),
+		});
+
+		await run();
+
+		const first = events.find((event) => event.event === "turn_done");
+		const final = events.at(-1);
+		expect(first).toMatchObject({
+			event: "turn_done",
+			data: {
+				content: "before oneafter one",
+				tools: [expect.objectContaining({ id: "tool-one" })],
+			},
+		});
+		expect(JSON.stringify(first)).not.toContain("tool-two");
+		expect(final).toMatchObject({
+			event: "done",
+			data: {
+				content: "before twoafter two",
+				tools: [expect.objectContaining({ id: "tool-two" })],
+			},
+		});
+		expect(JSON.stringify(final)).not.toContain("tool-one");
+	});
+
 	it("drops cancelled queued follow-ups without creating D1 rows", async () => {
 		const mockDb = createMockDb();
 		const context = makeContext({ db: mockDb.db });

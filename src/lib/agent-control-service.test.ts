@@ -117,7 +117,7 @@ describe("agent control service", () => {
 			requestId: "request-1",
 			runId: "run-1",
 			sessionId: "session-1",
-			removedFollowUps: [],
+			removedFollowUpCount: 0,
 		});
 		const result = await controlAgentRun({
 			db: {} as never,
@@ -133,6 +133,81 @@ describe("agent control service", () => {
 		});
 		expect(result.kind).toBe("accepted");
 		expect(harness.deleteFile).toHaveBeenCalledTimes(1);
+	});
+
+	it("rejects accepted responses that do not correlate to the generated job", async () => {
+		const mismatches = [
+			{
+				accepted: true,
+				action: "follow_up",
+				requestId: "wrong-request",
+				runId: "run-1",
+				sessionId: "session-1",
+				userMessageId: "user-2",
+				assistantMessageId: "assistant-2",
+			},
+			{
+				accepted: true,
+				action: "follow_up",
+				requestId: "request-1",
+				runId: "wrong-run",
+				sessionId: "session-1",
+				userMessageId: "user-2",
+				assistantMessageId: "assistant-2",
+			},
+			{
+				accepted: true,
+				action: "follow_up",
+				requestId: "request-1",
+				runId: "run-1",
+				sessionId: "wrong-session",
+				userMessageId: "user-2",
+				assistantMessageId: "assistant-2",
+			},
+			{
+				accepted: true,
+				action: "follow_up",
+				requestId: "request-1",
+				runId: "run-1",
+				sessionId: "session-1",
+				userMessageId: "wrong-user",
+				assistantMessageId: "assistant-2",
+			},
+			{
+				accepted: true,
+				action: "stop",
+				requestId: "request-1",
+				runId: "run-1",
+				sessionId: "session-1",
+				removedFollowUpCount: 0,
+			},
+			{
+				accepted: true,
+				action: "follow_up",
+				requestId: "request-1",
+				runId: "run-1",
+				sessionId: "session-1",
+				userMessageId: "user-2",
+				assistantMessageId: "assistant-2",
+				extra: "unexpected",
+			},
+		];
+
+		for (const response of mismatches) {
+			const harness = makeHarness(response);
+			const result = await controlAgentRun({
+				db: {} as never,
+				env: {} as Env,
+				userId: "user-1",
+				input: followUp,
+				deps: harness.deps as never,
+			});
+			expect(result).toEqual({
+				kind: "error",
+				status: 409,
+				body: { error: "The active agent run is no longer available." },
+			});
+		}
 	});
 
 	it("maps stale and malformed controls to bounded redacted 409 responses", async () => {

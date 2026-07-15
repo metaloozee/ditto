@@ -125,7 +125,7 @@ export type AgentControlResult =
 			requestId: string;
 			runId: string;
 			sessionId: string;
-			removedFollowUps: string[];
+			removedFollowUpCount: number;
 	  };
 
 function isRecord(value: unknown): value is Record<string, unknown> {

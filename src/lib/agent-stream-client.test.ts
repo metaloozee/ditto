@@ -232,7 +232,7 @@ describe("agent control client", () => {
 					requestId: "request-2",
 					runId: "run-1",
 					sessionId: "session-1",
-					removedFollowUps: ["queued"],
+					removedFollowUpCount: 1,
 				}),
 			);
 		vi.stubGlobal("fetch", fetchMock);
@@ -310,7 +310,7 @@ describe("agent control client", () => {
 					requestId: "request-1",
 					runId: "run-1",
 					sessionId: "session-1",
-					removedFollowUps: [],
+					removedFollowUpCount: 0,
 				}),
 			);
 		vi.stubGlobal("fetch", fetchMock);

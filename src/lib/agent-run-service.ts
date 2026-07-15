@@ -660,6 +660,7 @@ export async function executeAgentRun(options: {
 							},
 						});
 
+						knownPendingAssistants.add(msg.event.assistantMessageId);
 						const [userRows, assistantRows] = await context.db.batch([
 							context.db
 								.insert(messages)
@@ -691,7 +692,6 @@ export async function executeAgentRun(options: {
 						if (!userRows?.[0] || !assistantRows?.[0]) {
 							throw new Error("Failed to persist follow-up messages.");
 						}
-						knownPendingAssistants.add(msg.event.assistantMessageId);
 						currentTurn = {
 							userMessageId: msg.event.userMessageId,
 							assistantMessageId: msg.event.assistantMessageId,

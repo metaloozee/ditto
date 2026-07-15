@@ -135,6 +135,11 @@ export type QueuedFollowUp = {
 	text: string;
 };
 
+type PendingFollowUpRequest = {
+	runId: string;
+	snapshot: string;
+};
+
 export type StreamCommitPayload = {
 	sessionId: string;
 	createdSession: boolean;
@@ -195,6 +200,8 @@ export function Composer({
 	const stoppingRef = useRef(false);
 	const runIdRef = useRef<string | null>(null);
 	const queuedFollowUpsRef = useRef<QueuedFollowUp[]>([]);
+	const pendingFollowUpRef = useRef<PendingFollowUpRequest | null>(null);
+	const preAckBoundaryIdsRef = useRef(new Set<string>());
 	const committedAssistantIdsRef = useRef(new Set<string>());
 	const userMessageIdRef = useRef<string | null>(null);
 	const assistantMessageIdRef = useRef<string | null>(null);
@@ -215,6 +222,8 @@ export function Composer({
 		stoppingRef.current = false;
 		runIdRef.current = null;
 		queuedFollowUpsRef.current = [];
+		pendingFollowUpRef.current = null;
+		preAckBoundaryIdsRef.current.clear();
 		setIsStreaming(false);
 		setControlReady(false);
 		setControlPending(false);
@@ -245,6 +254,24 @@ export function Composer({
 			if (!previous) return previous;
 			return { ...previous, queuedFollowUps: next };
 		});
+	}
+
+	function consumeQueuedBoundary(
+		requestId: string,
+	): QueuedFollowUp | undefined {
+		const queued = queuedFollowUpsRef.current.find(
+			(item) => item.requestId === requestId,
+		);
+		if (queued) {
+			projectQueuedFollowUps(
+				queuedFollowUpsRef.current.filter(
+					(item) => item.requestId !== requestId,
+				),
+			);
+		} else if (pendingFollowUpRef.current) {
+			preAckBoundaryIdsRef.current.add(requestId);
+		}
+		return queued;
 	}
 
 	function commitTurn(options: {
@@ -350,6 +377,8 @@ export function Composer({
 		setStopping(false);
 		runIdRef.current = null;
 		queuedFollowUpsRef.current = [];
+		pendingFollowUpRef.current = null;
+		preAckBoundaryIdsRef.current.clear();
 		committedAssistantIdsRef.current = new Set();
 		promptRef.current = prompt;
 		assistantTextRef.current = "";
@@ -413,14 +442,7 @@ export function Composer({
 						});
 					},
 					onTurnStart: (turn) => {
-						const queued = queuedFollowUpsRef.current.find(
-							(item) => item.requestId === turn.requestId,
-						);
-						projectQueuedFollowUps(
-							queuedFollowUpsRef.current.filter(
-								(item) => item.requestId !== turn.requestId,
-							),
-						);
+						const queued = consumeQueuedBoundary(turn.requestId);
 						promptRef.current = queued?.text ?? turn.text;
 						userMessageIdRef.current = turn.userMessageId;
 						assistantMessageIdRef.current = turn.assistantMessageId;
@@ -440,11 +462,7 @@ export function Composer({
 						}));
 					},
 					onQueueCancelled: ({ requestId }) => {
-						projectQueuedFollowUps(
-							queuedFollowUpsRef.current.filter(
-								(item) => item.requestId !== requestId,
-							),
-						);
+						consumeQueuedBoundary(requestId);
 					},
 					onDelta: (delta) => {
 						if (!delta) {
@@ -545,6 +563,8 @@ export function Composer({
 		}
 
 		setControlPendingState(true);
+		const pendingRequest = { runId, snapshot };
+		pendingFollowUpRef.current = pendingRequest;
 		try {
 			const response = await sendAgentControl({
 				action: "follow_up",
@@ -557,25 +577,47 @@ export function Composer({
 			if (response.action !== "follow_up") {
 				throw new Error("Agent control returned an invalid response.");
 			}
-			projectQueuedFollowUps([
-				...queuedFollowUpsRef.current,
-				{
-					requestId: response.requestId,
-					userMessageId: response.userMessageId,
-					assistantMessageId: response.assistantMessageId,
-					text: snapshot,
-				},
-			]);
+			if (
+				pendingFollowUpRef.current !== pendingRequest ||
+				runIdRef.current !== runId ||
+				!isStreamingRef.current
+			) {
+				return;
+			}
+			const boundaryArrivedBeforeAck = preAckBoundaryIdsRef.current.delete(
+				response.requestId,
+			);
+			if (!boundaryArrivedBeforeAck) {
+				projectQueuedFollowUps([
+					...queuedFollowUpsRef.current,
+					{
+						requestId: response.requestId,
+						userMessageId: response.userMessageId,
+						assistantMessageId: response.assistantMessageId,
+						text: snapshot,
+					},
+				]);
+			}
 			if (textRef.current === snapshot) {
 				textRef.current = "";
 				setText("");
 			}
 		} catch (error) {
+			if (
+				pendingFollowUpRef.current !== pendingRequest ||
+				runIdRef.current !== runId ||
+				!isStreamingRef.current
+			) {
+				return;
+			}
 			toast.error(
 				error instanceof Error ? error.message : "Failed to queue message.",
 			);
 		} finally {
-			setControlPendingState(false);
+			if (pendingFollowUpRef.current === pendingRequest) {
+				pendingFollowUpRef.current = null;
+				setControlPendingState(false);
+			}
 		}
 	}
 

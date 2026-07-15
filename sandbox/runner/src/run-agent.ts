@@ -202,7 +202,7 @@ export async function runAgent(
 				requestId: request.requestId,
 				runId: request.runId,
 				sessionId: request.sessionId,
-				removedFollowUps: removed.followUp,
+				removedFollowUpCount: removed.followUp.length,
 			};
 		};
 

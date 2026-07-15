@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	type ControlRequest,
+	parseControlResponse,
 	sendControlRequest,
 	socketPathForRun,
 	startControlServer,
@@ -141,5 +142,18 @@ describe("runner control channel", () => {
 		expect(parseControlJob(JSON.stringify(followUp())).action).toBe(
 			"follow_up",
 		);
+	});
+
+	it("keeps Stop acknowledgements bounded", () => {
+		expect(
+			parseControlResponse({
+				accepted: true,
+				action: "stop",
+				requestId: "stop-1",
+				runId: "run-1",
+				sessionId: "session-1",
+				removedFollowUpCount: 2,
+			}),
+		).toMatchObject({ removedFollowUpCount: 2 });
 	});
 });

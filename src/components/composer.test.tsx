@@ -578,6 +578,119 @@ describe("Composer streaming updates", () => {
 		await waitFor(() => expect(onStreamCommit).toHaveBeenCalledTimes(2));
 	});
 
+	it("does not append a phantom queue item when turn_start precedes HTTP acknowledgement", async () => {
+		const stream = createPendingStream();
+		let resolveControl:
+			| ((value: ReturnType<typeof followUpResponse>) => void)
+			| undefined;
+		sendAgentControlMock.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					resolveControl = resolve;
+				}),
+		);
+		const onStreamCommit = vi.fn();
+		let latest: ComposerStreamingState | null = null;
+		render(
+			<Composer
+				projectId="proj-1"
+				sessionId="sess-1"
+				onStreamCommit={onStreamCommit}
+				onStreamingChange={(update) => {
+					latest = typeof update === "function" ? update(latest) : update;
+				}}
+			/>,
+		);
+		const textarea = screen.getByRole("textbox", { name: "Message" });
+		fireEvent.change(textarea, { target: { value: "initial" } });
+		fireEvent.submit(textarea.closest("form") as HTMLFormElement);
+		act(() => stream.handlers?.onControlReady?.({ runId: "run-1" }));
+		fireEvent.change(textarea, { target: { value: "next" } });
+		fireEvent.submit(textarea.closest("form") as HTMLFormElement);
+
+		act(() => {
+			stream.handlers?.onTurnDone?.({
+				userMessageId: "user-1",
+				assistantMessageId: "asst-1",
+				content: "first answer",
+			});
+			stream.handlers?.onTurnStart?.({
+				requestId: "request-1",
+				userMessageId: "user-2",
+				assistantMessageId: "asst-2",
+				text: "next",
+			});
+		});
+		expect(latest).toMatchObject({
+			userMessageId: "user-2",
+			assistantMessageId: "asst-2",
+			queuedFollowUps: [],
+		});
+
+		await act(async () => resolveControl?.(followUpResponse(1)));
+		expect((textarea as HTMLTextAreaElement).value).toBe("");
+		expect((latest as ComposerStreamingState | null)?.queuedFollowUps).toEqual(
+			[],
+		);
+		expect(onStreamCommit).toHaveBeenCalledTimes(1);
+		expect(streamAgentRunMock).toHaveBeenCalledTimes(1);
+
+		act(() => {
+			stream.handlers?.onDone?.({
+				ok: true,
+				assistantMessageId: "asst-2",
+				content: "second answer",
+			});
+			stream.resolve?.();
+		});
+		await waitFor(() => expect(onStreamCommit).toHaveBeenCalledTimes(2));
+	});
+
+	it("ignores a follow-up acknowledgement that resolves after terminal SSE", async () => {
+		const stream = createPendingStream();
+		let resolveControl:
+			| ((value: ReturnType<typeof followUpResponse>) => void)
+			| undefined;
+		sendAgentControlMock.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					resolveControl = resolve;
+				}),
+		);
+		let latest: ComposerStreamingState | null = null;
+		render(
+			<Composer
+				projectId="proj-1"
+				sessionId="sess-1"
+				onStreamingChange={(update) => {
+					latest = typeof update === "function" ? update(latest) : update;
+				}}
+			/>,
+		);
+		const textarea = screen.getByRole("textbox", { name: "Message" });
+		fireEvent.change(textarea, { target: { value: "initial" } });
+		fireEvent.submit(textarea.closest("form") as HTMLFormElement);
+		act(() => stream.handlers?.onControlReady?.({ runId: "run-1" }));
+		fireEvent.change(textarea, { target: { value: "keep after terminal" } });
+		fireEvent.submit(textarea.closest("form") as HTMLFormElement);
+
+		act(() => {
+			stream.handlers?.onDone?.({
+				ok: true,
+				assistantMessageId: "asst-1",
+				content: "done",
+			});
+			stream.resolve?.();
+		});
+		await waitFor(() => expect(latest).toBeNull());
+		await act(async () => resolveControl?.(followUpResponse(1)));
+
+		expect((textarea as HTMLTextAreaElement).value).toBe("keep after terminal");
+		expect(latest).toBeNull();
+		expect(toastErrorMock).not.toHaveBeenCalled();
+		expect(streamAgentRunMock).toHaveBeenCalledTimes(1);
+	});
+
 	it("guards Stop double submission and waits for terminal SSE", async () => {
 		const stream = createPendingStream();
 		let resolveStop: ((value: unknown) => void) | undefined;
@@ -608,7 +721,7 @@ describe("Composer streaming updates", () => {
 				requestId: "stop-1",
 				runId: "run-1",
 				sessionId: "sess-1",
-				removedFollowUps: [],
+				removedFollowUpCount: 0,
 			}),
 		);
 		expect(

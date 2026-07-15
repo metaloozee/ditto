@@ -42,7 +42,7 @@ export type StopControlResponse = {
 	requestId: string;
 	runId: string;
 	sessionId: string;
-	removedFollowUps: string[];
+	removedFollowUpCount: number;
 };
 
 export type RejectedControlResponse = {
@@ -191,13 +191,13 @@ export function parseControlResponse(value: unknown): ControlResponse {
 				"requestId",
 				"runId",
 				"sessionId",
-				"removedFollowUps",
+				"removedFollowUpCount",
 			]) ||
 			!isBoundedString(value.requestId, 128) ||
 			!isBoundedString(value.runId, 128) ||
 			!isBoundedString(value.sessionId, 128) ||
-			!Array.isArray(value.removedFollowUps) ||
-			!value.removedFollowUps.every((item) => typeof item === "string")
+			!Number.isSafeInteger(value.removedFollowUpCount) ||
+			(value.removedFollowUpCount as number) < 0
 		) {
 			throw new Error("Invalid stop control response");
 		}

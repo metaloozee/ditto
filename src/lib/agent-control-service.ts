@@ -11,6 +11,7 @@ const CONTROL_DIRECTORY = "/tmp/ditto-agent-controls";
 const CONTROL_CLI = "/opt/ditto-runner/dist/control-cli.js";
 const CONTROL_TIMEOUT_MS = 5_000;
 const MAX_CONTROL_OUTPUT = 64 * 1024;
+const MAX_CONTROL_ERROR = 500;
 
 const commonSchema = z.object({
 	projectId: z.string().min(1),
@@ -30,6 +31,40 @@ export const agentControlBodySchema = z.discriminatedUnion("action", [
 ]);
 
 export type AgentControlBody = z.infer<typeof agentControlBodySchema>;
+
+const controlIdSchema = z.string().min(1).max(128);
+const controlResponseSchema = z.union([
+	z
+		.object({
+			accepted: z.literal(false),
+			requestId: controlIdSchema.optional(),
+			message: z.string().min(1).max(MAX_CONTROL_ERROR),
+		})
+		.strict(),
+	z
+		.object({
+			accepted: z.literal(true),
+			action: z.literal("follow_up"),
+			requestId: controlIdSchema,
+			runId: controlIdSchema,
+			sessionId: controlIdSchema,
+			userMessageId: controlIdSchema,
+			assistantMessageId: controlIdSchema,
+		})
+		.strict(),
+	z
+		.object({
+			accepted: z.literal(true),
+			action: z.literal("stop"),
+			requestId: controlIdSchema,
+			runId: controlIdSchema,
+			sessionId: controlIdSchema,
+			removedFollowUpCount: z.number().int().nonnegative().safe(),
+		})
+		.strict(),
+]);
+
+type ParsedControlResponse = z.infer<typeof controlResponseSchema>;
 
 export type AgentControlResult =
 	| { kind: "accepted"; status: 200; body: Record<string, unknown> }
@@ -68,7 +103,7 @@ function quoteGeneratedPath(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-function parseControlResponse(stdout: string): Record<string, unknown> {
+function parseControlResponse(stdout: string): ParsedControlResponse {
 	if (stdout.length > MAX_CONTROL_OUTPUT)
 		throw new Error("Control response too large");
 	const lines = stdout.split("\n").filter((line) => line.trim().length > 0);
@@ -79,14 +114,44 @@ function parseControlResponse(stdout: string): Record<string, unknown> {
 	} catch {
 		throw new Error("Invalid control response");
 	}
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		throw new Error("Invalid control response");
+	const parsed = controlResponseSchema.safeParse(value);
+	if (!parsed.success) throw new Error("Invalid control response");
+	return parsed.data;
+}
+
+function responseMatchesJob(
+	response: Extract<ParsedControlResponse, { accepted: true }>,
+	job:
+		| {
+				action: "follow_up";
+				requestId: string;
+				runId: string;
+				sessionId: string;
+				userMessageId: string;
+				assistantMessageId: string;
+		  }
+		| {
+				action: "stop";
+				requestId: string;
+				runId: string;
+				sessionId: string;
+		  },
+): boolean {
+	if (
+		response.action !== job.action ||
+		response.requestId !== job.requestId ||
+		response.runId !== job.runId ||
+		response.sessionId !== job.sessionId
+	) {
+		return false;
 	}
-	const response = value as Record<string, unknown>;
-	if (typeof response.accepted !== "boolean") {
-		throw new Error("Invalid control response");
+	if (response.action === "follow_up" && job.action === "follow_up") {
+		return (
+			response.userMessageId === job.userMessageId &&
+			response.assistantMessageId === job.assistantMessageId
+		);
 	}
-	return response;
+	return response.action === "stop" && job.action === "stop";
 }
 
 export async function controlAgentRun(options: {
@@ -132,13 +197,6 @@ export async function controlAgentRun(options: {
 	}
 
 	const requestId = deps.createId();
-	const correlation =
-		input.action === "follow_up"
-			? {
-					userMessageId: deps.createId(),
-					assistantMessageId: deps.createId(),
-				}
-			: undefined;
 	const job =
 		input.action === "follow_up"
 			? {
@@ -148,7 +206,8 @@ export async function controlAgentRun(options: {
 					sessionId: input.sessionId,
 					model: input.model,
 					text: input.message,
-					...correlation,
+					userMessageId: deps.createId(),
+					assistantMessageId: deps.createId(),
 				}
 			: {
 					action: "stop" as const,
@@ -177,7 +236,7 @@ export async function controlAgentRun(options: {
 				body: { error: "The active agent run is no longer available." },
 			};
 		}
-		let response: Record<string, unknown>;
+		let response: ParsedControlResponse;
 		try {
 			response = parseControlResponse(result.stdout);
 		} catch {
@@ -192,6 +251,13 @@ export async function controlAgentRun(options: {
 				kind: "error",
 				status: 409,
 				body: { error: "The active agent run could not accept that control." },
+			};
+		}
+		if (!responseMatchesJob(response, job)) {
+			return {
+				kind: "error",
+				status: 409,
+				body: { error: "The active agent run is no longer available." },
 			};
 		}
 		return { kind: "accepted", status: 200, body: response };
