@@ -87,6 +87,17 @@ runner, D1 message lifecycle, and session workspace lock.
 |------|-------|----------|--------|------------|--------|
 | 023 | Queue PI follow-ups and stop the active agent from the composer | P1 | L | 017, 018 (DONE) | DONE (merged at `6180528`; automated gates passed, GitHub-backed manual checks unavailable) |
 
+## Plan 024 (Alchemy-owned monorepo organization)
+
+Planned at commit `32f4d1b` on 2026-07-15 and rewritten after comparing SST's
+Durable Object support with Cloudflare Sandbox's additional Container and
+configuration requirements. The selected approach keeps the cohesive Alchemy
+resource graph and changes only repository/package boundaries.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 024 | Reorganize Ditto into an Alchemy-owned monorepo | P1 | M | — (001–023 are DONE) | DONE (merged at `4f2dab4`; implementation tip `674985a`) |
+
 ### Audit finding coverage
 
 | Selected finding | Covered by | Combination rationale |
@@ -180,6 +191,85 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
   limited to plan records.
 - **Executable now**: none; the backlog contains no TODO, IN PROGRESS, or
   BLOCKED plans.
+
+## Planning update — 2026-07-15 (Plan 024)
+
+- **Current HEAD**: `32f4d1b`.
+- **TODO 024**: move the TanStack app to `apps/web`, move the independent npm
+  runner to `packages/sandbox-runner`, define pnpm/root package ownership, and
+  update paths, CI, and documentation.
+- **Infrastructure decision**: Alchemy remains the sole owner of the web Worker,
+  Sandbox Container/Durable Object, D1, R2, bindings, and migrations. The plan
+  changes only `TanStackStart.cwd`, D1's root/generated migration paths, the
+  generated-config-relative Docker image path, and repository paths.
+- **Rejected for this plan**: SST, a separate Wrangler Sandbox deployment,
+  external cross-script DO binding, Turborepo, shared packages, dependency
+  upgrades, and application/schema/protocol changes.
+- **Mandatory STOP gates**: any required change to the Alchemy resource graph,
+  runtime contracts, generated migrations, or resolved dependency versions.
+- **Executable now**: Plan 024; no cloud deployment is required or authorized.
+
+## Execution — 2026-07-15 (Plan 024)
+
+- **DONE 024**: approved on branch `advisor/024-alchemy-monorepo-organization`
+  in worktree `.worktrees/advisor-024-alchemy-monorepo-organization`.
+  - `2cf2878` `refactor(repo): organize app and runner packages`
+  - `b90a4d5` `docs(repo): document monorepo ownership`
+  - `69e9aae` `fix(repo): complete monorepo migration`
+  - `674985a` `fix(repo): scope type metadata patch`
+- **Review verification**: `pnpm install --frozen-lockfile`,
+  `npm ci --prefix packages/sandbox-runner`, and `pnpm verify` all exit 0
+  (362 app tests, 21 runner tests, typecheck, production build). Alchemy local
+  config under `apps/web/.alchemy/local` retains `DB`, `Sandbox`,
+  `BACKUP_BUCKET`, Container/DO, and migration `v1`. Workspace membership is
+  `apps/*` only; runner remains independent npm.
+- **Scope**: Alchemy resource graph unchanged (only `cwd`, migration paths, and
+  Docker image path). No SST/Turborepo/deploy boundary.
+- **Merged**: `4f2dab4` on master (`merge plan 024 implementation`).
+- **Executable now**: none; plans 001–024 are complete and merged.
+
+## Reconciliation — 2026-07-15 (post-024 merge)
+
+- **Current HEAD**: `4f2dab4`.
+- **DONE 001–024**: implementation commits (or their integrated equivalents) are
+  present on master. Plan 024 monorepo layout is live:
+  - `apps/web` owns the TanStack app, migrations, and package scripts
+  - `packages/sandbox-runner` is the independent npm runner (not a pnpm member)
+  - root owns Alchemy (`alchemy.run.ts`), Docker, and workspace orchestration
+  - `pnpm-workspace.yaml` packages: `apps/*` only
+- **Feature spot-checks (still present)**: session worktrees/git export, secret
+  redaction + git secret policy, agent-run lifecycle, control CLI / follow-up +
+  stop services, tool-call groups, cursor message history, process-injected env
+  docs in `docs/architecture/agent-harness.md`.
+- **Cheap verification on HEAD**:
+  | Gate | Result |
+  |---|---|
+  | `pnpm check` | pass |
+  | `pnpm test` | 362 passed (38 files) |
+  | `npm ci` + runner typecheck + runner tests | pass (21 tests) |
+  | `pnpm typecheck` | **FAIL** — see baseline note |
+  | production `pnpm build` | not re-run (writes artifacts; last full pass was Plan 024 review) |
+- **Baseline note (plan 011 regression)**: `pnpm typecheck` fails with a single
+  error at `apps/web/src/components/project-settings-dialog.tsx:674` —
+  `Parameter 'confirmation' implicitly has an 'any' type` on
+  `form.Subscribe` children. The line is pre-monorepo (June 2026); Plan 024
+  review reported typecheck green in the worktree, so this is either a
+  floating `@tanstack/react-form: latest` / TypeScript 6 inference drift after
+  install, or an environment-specific typing failure. It is **not** evidence
+  that Plan 024's package move was undone. It **does** mean the verification
+  baseline from plan 011 is currently red on master until fixed.
+- **Index hygiene**:
+  - `plans/024-conservative-sst-monorepo-migration.md` is still **untracked** on
+    master (implementation merged; plan file never committed). Commit it with
+    the next docs/plans commit if you want the backlog record durable.
+  - No TODO, IN PROGRESS, or BLOCKED rows remain.
+- **Local cruft (not in git)**: leftover untracked `sandbox/runner/{dist,node_modules}`
+  from the pre-move path. Safe to delete locally; not a plan finding.
+- **No worktrees** currently attached for advisor executors.
+- **Executable now**: none. Optional next plan if desired: restore green
+  `pnpm typecheck` (one-line annotation or form typing fix in
+  `project-settings-dialog.tsx`, plus pin or re-verify `@tanstack/react-form`
+  if floating `latest` is the cause).
 
 ## Dependency notes
 
@@ -296,3 +386,4 @@ tree while sharing git objects and (via symlink) `node_modules`.
 17. `021-align-worktree-environment-docs.md`
 18. `022-timed-tool-call-groups.md`
 19. `023-pi-follow-up-and-stop-controls.md`
+20. `024-conservative-sst-monorepo-migration.md`

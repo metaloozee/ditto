@@ -326,6 +326,7 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | `plans/021-align-worktree-environment-docs.md` | Historical implementation plan: Plan 021: Document process-injected project environment variables accurately. |
 | `plans/022-timed-tool-call-groups.md` | Historical implementation plan: Plan 022: Make tool-call groups durable, timed, and polished. |
 | `plans/023-pi-follow-up-and-stop-controls.md` | Historical implementation plan: Plan 023: Queue PI follow-ups and stop the active agent from the composer. |
+| `plans/024-conservative-sst-monorepo-migration.md` | Historical implementation plan: Plan 024: Reorganize Ditto into an Alchemy-owned monorepo (`apps/web` + `packages/sandbox-runner`). |
 | `plans/README.md` | Index, status, and context for the repository implementation-plan history. |
 
 ### Agent tooling
