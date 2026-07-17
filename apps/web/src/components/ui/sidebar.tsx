@@ -3,7 +3,7 @@
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
 import { cva, type VariantProps } from "class-variance-authority";
-import { PanelLeftIcon } from "lucide-react";
+import { PanelLeftCloseIcon, PanelLeftOpenIcon } from "lucide-react";
 import * as React from "react";
 import { Button } from "#/components/ui/button.tsx";
 import { Input } from "#/components/ui/input.tsx";
@@ -39,8 +39,6 @@ type SidebarContextProps = {
 	setOpenMobile: (open: boolean) => void;
 	isMobile: boolean;
 	toggleSidebar: () => void;
-	isHovered: boolean;
-	setIsHovered: (isHovered: boolean) => void;
 };
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null);
@@ -69,7 +67,6 @@ function SidebarProvider({
 }) {
 	const isMobile = useIsMobile();
 	const [openMobile, setOpenMobile] = React.useState(false);
-	const [isHovered, setIsHovered] = React.useState(false);
 
 	// This is the internal state of the sidebar.
 	// We use openProp and setOpenProp for control from outside the component.
@@ -112,16 +109,9 @@ function SidebarProvider({
 		return () => window.removeEventListener("keydown", handleKeyDown);
 	}, [toggleSidebar]);
 
-	// Reset hover state when pinned state collapses.
-	React.useEffect(() => {
-		if (!open) {
-			setIsHovered(false);
-		}
-	}, [open]);
-
 	// We add a state so that we can do data-state="expanded" or "collapsed".
 	// This makes it easier to style the sidebar with Tailwind classes.
-	const state = open || isHovered ? "expanded" : "collapsed";
+	const state = open ? "expanded" : "collapsed";
 
 	const contextValue = React.useMemo<SidebarContextProps>(
 		() => ({
@@ -132,10 +122,8 @@ function SidebarProvider({
 			openMobile,
 			setOpenMobile,
 			toggleSidebar,
-			isHovered,
-			setIsHovered,
 		}),
-		[state, open, setOpen, isMobile, openMobile, toggleSidebar, isHovered],
+		[state, open, setOpen, isMobile, openMobile, toggleSidebar],
 	);
 
 	return (
@@ -174,15 +162,7 @@ function Sidebar({
 	variant?: "sidebar" | "floating" | "inset";
 	collapsible?: "offcanvas" | "icon" | "none";
 }) {
-	const {
-		isMobile,
-		state,
-		openMobile,
-		setOpenMobile,
-		open,
-		isHovered,
-		setIsHovered,
-	} = useSidebar();
+	const { isMobile, state, openMobile, setOpenMobile, open } = useSidebar();
 
 	if (collapsible === "none") {
 		return (
@@ -226,7 +206,6 @@ function Sidebar({
 	}
 
 	return (
-		// biome-ignore lint/a11y/noStaticElementInteractions: Mouse leave only clears transient hover state; sidebar controls remain keyboard accessible.
 		<div
 			className="group peer hidden text-sidebar-foreground md:block"
 			data-state={state}
@@ -234,30 +213,12 @@ function Sidebar({
 			data-variant={variant}
 			data-side={side}
 			data-slot="sidebar"
-			onMouseLeave={() => {
-				if (!open) {
-					setIsHovered(false);
-				}
-			}}
 		>
-			{/* Hover detection zone when collapsed */}
-			{!open && (
-				// biome-ignore lint/a11y/noStaticElementInteractions: This decorative edge sensor only previews the sidebar; it is not a control.
-				<div
-					data-slot="sidebar-hover-zone"
-					className={cn(
-						"fixed inset-y-0 z-20 w-3 bg-transparent",
-						side === "left" ? "left-0" : "right-0",
-						isHovered && "pointer-events-none",
-					)}
-					onMouseEnter={() => setIsHovered(true)}
-				/>
-			)}
 			{/* This is what handles the sidebar gap on desktop */}
 			<div
 				data-slot="sidebar-gap"
 				className={cn(
-					"relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear",
+					"relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none",
 					!open && collapsible === "offcanvas" && "w-0!",
 					!open &&
 						collapsible === "icon" &&
@@ -271,7 +232,7 @@ function Sidebar({
 				data-slot="sidebar-container"
 				data-side={side}
 				className={cn(
-					"fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] md:flex",
+					"fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] md:flex",
 					// Adjust the padding for floating and inset variants.
 					variant === "floating" || variant === "inset"
 						? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
@@ -297,23 +258,51 @@ function SidebarTrigger({
 	onClick,
 	...props
 }: React.ComponentProps<typeof Button>) {
-	const { toggleSidebar } = useSidebar();
+	const { state, toggleSidebar } = useSidebar();
+	const isExpanded = state === "expanded";
 
 	return (
 		<Button
 			data-sidebar="trigger"
 			data-slot="sidebar-trigger"
+			data-state={state}
 			variant="ghost"
 			size="icon-sm"
-			className={cn(className)}
+			className={cn(
+				"transition-transform duration-150 ease-out active:scale-[0.97]",
+				"motion-reduce:transition-none motion-reduce:active:scale-100",
+				className,
+			)}
 			onClick={(event) => {
 				onClick?.(event);
 				toggleSidebar();
 			}}
 			{...props}
 		>
-			<PanelLeftIcon />
-			<span className="sr-only">Toggle Sidebar</span>
+			<span className="relative size-4" aria-hidden>
+				{/* Crossfade open/close glyphs so the affordance tracks state without a hard cut. */}
+				<PanelLeftCloseIcon
+					className={cn(
+						"absolute inset-0 size-4 transition-[opacity,transform,filter] duration-150 ease-out",
+						"motion-reduce:transition-none",
+						isExpanded
+							? "scale-100 opacity-100 blur-0"
+							: "scale-90 opacity-0 blur-[2px]",
+					)}
+				/>
+				<PanelLeftOpenIcon
+					className={cn(
+						"absolute inset-0 size-4 transition-[opacity,transform,filter] duration-150 ease-out",
+						"motion-reduce:transition-none",
+						isExpanded
+							? "scale-90 opacity-0 blur-[2px]"
+							: "scale-100 opacity-100 blur-0",
+					)}
+				/>
+			</span>
+			<span className="sr-only">
+				{isExpanded ? "Hide sidebar" : "Show sidebar"}
+			</span>
 		</Button>
 	);
 }

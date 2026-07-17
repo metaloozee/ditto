@@ -33,10 +33,6 @@ vi.mock("sonner", () => ({
 	},
 }));
 
-vi.mock("#/components/session-git-actions", () => ({
-	SessionGitActions: () => null,
-}));
-
 vi.mock("#/components/ai-elements/model-selector", () => ({
 	ModelSelector: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>

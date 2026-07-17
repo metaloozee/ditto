@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { AssistantMarkdown } from "#/components/assistant-markdown";
+import { ChatNavbar } from "#/components/chat-navbar";
 import {
 	Composer,
 	type ComposerStreamingState,
@@ -140,7 +141,7 @@ function LoadEarlierHistory({
 	}
 
 	return (
-		<div className="flex justify-center pt-4 pb-1">
+		<div className="flex justify-center pt-14 pb-1">
 			<Button
 				type="button"
 				size="sm"
@@ -586,6 +587,13 @@ export function Chat({
 
 	return (
 		<div className="relative mx-auto h-full w-full">
+			<ChatNavbar
+				projectId={projectId}
+				sessionId={sessionId}
+				branchName={branchName}
+				gitExportEnabled={gitExportEnabled}
+				disabled={Boolean(disabledReason) || Boolean(streaming?.active)}
+			/>
 			<MessageScrollerProvider
 				autoScroll
 				defaultScrollPosition="last-anchor"
@@ -701,8 +709,6 @@ export function Chat({
 						<Composer
 							projectId={projectId}
 							sessionId={sessionId}
-							branchName={branchName}
-							gitExportEnabled={gitExportEnabled}
 							disabledReason={disabledReason}
 							onStreamingChange={setStreaming}
 							onStreamCommit={handleStreamCommit}

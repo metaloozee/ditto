@@ -77,7 +77,7 @@ function GitCountCapsule({
 					</button>
 				}
 			/>
-			<TooltipContent side="top" className="max-w-xs">
+			<TooltipContent side="bottom" className="max-w-xs">
 				{tooltip}
 			</TooltipContent>
 		</Tooltip>
@@ -348,7 +348,7 @@ function SessionGitActionsView({
 									</button>
 								}
 							/>
-							<TooltipContent side="top">
+							<TooltipContent side="bottom">
 								{primary?.tooltip ?? "No git action needed"}
 							</TooltipContent>
 						</Tooltip>

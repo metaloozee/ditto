@@ -17,6 +17,11 @@ const composerPropsRef = vi.hoisted(() => ({
 		| undefined,
 }));
 
+vi.mock("#/components/ui/sidebar", () => ({
+	useSidebar: () => ({ state: "expanded" }),
+	SidebarTrigger: () => null,
+}));
+
 vi.mock("#/components/composer", () => ({
 	Composer: (props: {
 		onStreamingChange?: (state: ComposerStreamingState | null) => void;
@@ -74,6 +79,24 @@ describe("Chat session cache acknowledgement", () => {
 	afterEach(() => {
 		cleanup();
 		clearAllSessionMessages();
+	});
+
+	it("keeps session controls in a full-width top navbar", () => {
+		render(
+			<Chat
+				projectId="proj-1"
+				sessionId="sess-1"
+				branchName="ditto/session-sess-1"
+			/>,
+		);
+
+		const navbar = screen.getByRole("navigation", { name: "Chat controls" });
+		expect(
+			screen.getByRole("button", { name: "Branch ditto/session-sess-1" }),
+		).toBeTruthy();
+		expect(navbar.className).toContain("inset-x-0");
+		expect(navbar.className).toContain("bg-transparent");
+		expect(navbar.className).not.toContain("max-w-");
 	});
 
 	it("preserves text and tool chronology in assistant responses", () => {

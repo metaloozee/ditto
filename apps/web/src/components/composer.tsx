@@ -1,10 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import {
-	CheckIcon,
-	CornerDownLeftIcon,
-	GitBranchIcon,
-	SquareIcon,
-} from "lucide-react";
+import { CheckIcon, CornerDownLeftIcon, SquareIcon } from "lucide-react";
 import {
 	type Dispatch,
 	type FormEvent,
@@ -27,7 +22,6 @@ import {
 	ModelSelectorName,
 	ModelSelectorTrigger,
 } from "#/components/ai-elements/model-selector";
-import { SessionGitActions } from "#/components/session-git-actions";
 import { Button } from "#/components/ui/button";
 import { Textarea } from "#/components/ui/textarea";
 import {
@@ -163,8 +157,6 @@ export type StreamCommitPayload = {
 type ComposerProps = {
 	projectId?: string;
 	sessionId?: string | null;
-	branchName?: string | null;
-	gitExportEnabled?: boolean;
 	disabledReason?: string;
 	onStreamingChange?: Dispatch<SetStateAction<ComposerStreamingState | null>>;
 	onStreamCommit?: (payload: StreamCommitPayload) => void;
@@ -176,8 +168,6 @@ type ComposerProps = {
 export function Composer({
 	projectId,
 	sessionId,
-	branchName,
-	gitExportEnabled = false,
 	disabledReason,
 	onStreamingChange,
 	onStreamCommit,
@@ -709,48 +699,9 @@ export function Composer({
 		(isStreaming ? !controlReady : !hasText);
 
 	const modelLabel = selectedModel?.name ?? "Select model";
-	const branchLabel = branchName?.trim() || "—";
-
-	const branchMeta = (
-		<Tooltip>
-			<TooltipTrigger
-				render={
-					<button
-						type="button"
-						className={cn(
-							"inline-flex min-w-0 max-w-full cursor-default items-center gap-1.5 text-xs text-muted-foreground",
-							"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-sm",
-						)}
-						aria-label={`Branch ${branchLabel}`}
-					>
-						<GitBranchIcon className="size-3 shrink-0" aria-hidden />
-						<span className="truncate font-medium font-mono">
-							{branchLabel}
-						</span>
-					</button>
-				}
-			/>
-			<TooltipContent side="top" className="max-w-xs">
-				<span className="font-mono">{branchLabel}</span>
-			</TooltipContent>
-		</Tooltip>
-	);
-
-	const metaRow =
-		gitExportEnabled && projectId && sessionId ? (
-			<SessionGitActions
-				projectId={projectId}
-				sessionId={sessionId}
-				disabled={Boolean(disabledReason) || isStreaming}
-			>
-				{branchMeta}
-			</SessionGitActions>
-		) : (
-			branchMeta
-		);
 
 	return (
-		<section className="mx-auto flex w-full max-w-3xl flex-col justify-end gap-1.5 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+		<section className="mx-auto w-full max-w-3xl px-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
 			<form className="w-full" onSubmit={handleSubmit}>
 				<div className="flex items-end gap-2">
 					<div className="flex shrink-0 self-end">
@@ -877,12 +828,6 @@ export function Composer({
 					</div>
 				</div>
 			</form>
-
-			<div className="flex items-center gap-2">
-				<div className="w-10 shrink-0" aria-hidden />
-				<div className="min-w-0 flex-1 px-0.5">{metaRow}</div>
-				<div className="w-10 shrink-0" aria-hidden />
-			</div>
 		</section>
 	);
 }

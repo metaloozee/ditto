@@ -114,15 +114,15 @@ function BrandingWithTrigger(): React.JSX.Element {
 				</span>
 			</Link>
 
-			{isCollapsed && (
+			{isCollapsed ? (
 				<SidebarTrigger className="hidden size-8 shrink-0 cursor-pointer group-hover/branding:flex" />
-			)}
+			) : null}
 
 			<div className="grid min-w-0 flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
 				<span className="truncate font-semibold">Ditto</span>
 			</div>
 
-			{!isCollapsed && <SidebarTrigger className="cursor-pointer" />}
+			{!isCollapsed ? <SidebarTrigger className="cursor-pointer" /> : null}
 		</div>
 	);
 }
