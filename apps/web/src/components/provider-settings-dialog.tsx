@@ -15,6 +15,7 @@ import { useTRPC } from "#/integrations/trpc/react";
 import {
 	answerProviderAuthPrompt,
 	cancelProviderAuth,
+	isOpenableAuthUrl,
 	streamProviderAuthLogin,
 } from "#/lib/provider-auth-client";
 
@@ -51,6 +52,7 @@ export function ProviderSettingsDialog({ open, onOpenChange }: Props) {
 		authType: "api_key" | "oauth";
 	} | null>(null);
 	const [attemptId, setAttemptId] = useState<string | null>(null);
+	const attemptIdRef = useRef<string | null>(null);
 	const [status, setStatus] = useState("");
 	const [prompt, setPrompt] = useState<{
 		promptId: string;
@@ -70,32 +72,53 @@ export function ProviderSettingsDialog({ open, onOpenChange }: Props) {
 		null,
 	);
 	const abortRef = useRef<AbortController | null>(null);
+	const cancellingRef = useRef(false);
 
-	const resetLocal = () => {
-		abortRef.current?.abort();
-		abortRef.current = null;
-		setConnecting(null);
-		setAttemptId(null);
-		setStatus("");
+	const clearLocalSecrets = () => {
 		setPrompt(null);
 		setAnswer("");
 		setDeviceCode(null);
 		setAuthUrl(null);
 	};
 
-	useEffect(() => {
-		if (!open) {
+	const cancelActiveAttemptRef = useRef(async () => {});
+	cancelActiveAttemptRef.current = async () => {
+		if (cancellingRef.current) return;
+		cancellingRef.current = true;
+		try {
 			abortRef.current?.abort();
 			abortRef.current = null;
-			setConnecting(null);
+			const id = attemptIdRef.current;
+			if (id) {
+				try {
+					await cancelProviderAuth({ attemptId: id });
+				} catch {
+					// ignore
+				}
+			}
+			attemptIdRef.current = null;
 			setAttemptId(null);
+			setConnecting(null);
 			setStatus("");
-			setPrompt(null);
-			setAnswer("");
-			setDeviceCode(null);
-			setAuthUrl(null);
+			clearLocalSecrets();
+		} finally {
+			cancellingRef.current = false;
+		}
+	};
+
+	const cancelActiveAttempt = () => cancelActiveAttemptRef.current();
+
+	useEffect(() => {
+		if (!open) {
+			void cancelActiveAttemptRef.current();
 		}
 	}, [open]);
+
+	useEffect(() => {
+		return () => {
+			void cancelActiveAttemptRef.current();
+		};
+	}, []);
 
 	const connections = new Map(
 		(connectionsQuery.data?.connections ?? []).map((c) => [c.providerId, c]),
@@ -105,7 +128,7 @@ export function ProviderSettingsDialog({ open, onOpenChange }: Props) {
 		providerId: string,
 		authType: "api_key" | "oauth",
 	) => {
-		resetLocal();
+		await cancelActiveAttempt();
 		setConnecting({ providerId, authType });
 		setStatus("Connecting…");
 		const ac = new AbortController();
@@ -117,26 +140,45 @@ export function ProviderSettingsDialog({ open, onOpenChange }: Props) {
 				signal: ac.signal,
 				onEvent: (event) => {
 					if (event.event === "meta") {
+						attemptIdRef.current = event.data.attemptId;
 						setAttemptId(event.data.attemptId);
 					} else if (event.event === "prompt") {
-						setPrompt(event.data);
+						setPrompt({
+							promptId: event.data.promptId,
+							type: event.data.type,
+							message: event.data.message,
+							placeholder: event.data.placeholder,
+							options: event.data.options,
+						});
 						setAnswer("");
 						setStatus(event.data.message);
 					} else if (event.event === "device_code") {
 						setDeviceCode(event.data.userCode);
+						const clickable = isOpenableAuthUrl(
+							event.data.verificationUri,
+							event.data.clickable ?? false,
+						);
 						setAuthUrl({
 							url: event.data.verificationUri,
-							clickable: true,
+							clickable,
 						});
 						setStatus("Enter the device code at the verification URL.");
 					} else if (event.event === "auth_url") {
-						setAuthUrl(event.data);
-						if (event.data.clickable) {
+						const clickable = isOpenableAuthUrl(
+							event.data.url,
+							event.data.clickable,
+						);
+						setAuthUrl({
+							url: event.data.url,
+							clickable,
+							instructions: event.data.instructions,
+						});
+						if (clickable) {
 							window.open(event.data.url, "_blank", "noopener,noreferrer");
 						}
 						setStatus(
 							event.data.instructions ??
-								(event.data.clickable
+								(clickable
 									? "Complete sign-in in the opened window."
 									: "Copy the URL and complete sign-in, then paste the redirect if asked."),
 						);
@@ -155,14 +197,18 @@ export function ProviderSettingsDialog({ open, onOpenChange }: Props) {
 							);
 						}
 						setConnecting(null);
-						setPrompt(null);
-						setAnswer("");
+						attemptIdRef.current = null;
+						setAttemptId(null);
+						clearLocalSecrets();
 					}
 				},
 			});
 		} catch {
-			setStatus("Connection failed.");
+			if (!ac.signal.aborted) {
+				setStatus("Connection failed.");
+			}
 			setConnecting(null);
+			clearLocalSecrets();
 		}
 	};
 
@@ -178,16 +224,18 @@ export function ProviderSettingsDialog({ open, onOpenChange }: Props) {
 		setPrompt(null);
 	};
 
-	const onCancel = async () => {
-		if (attemptId) await cancelProviderAuth({ attemptId });
-		resetLocal();
+	const closeDialog = () => {
+		void cancelActiveAttempt();
+		onOpenChange(false);
 	};
 
 	return (
 		<Dialog
 			open={open}
 			onOpenChange={(next) => {
-				if (!next) void onCancel();
+				if (!next) {
+					void cancelActiveAttempt();
+				}
 				onOpenChange(next);
 			}}
 		>
@@ -344,7 +392,11 @@ export function ProviderSettingsDialog({ open, onOpenChange }: Props) {
 							<Button size="sm" onClick={() => void submitAnswer()}>
 								Submit
 							</Button>
-							<Button size="sm" variant="ghost" onClick={() => void onCancel()}>
+							<Button
+								size="sm"
+								variant="ghost"
+								onClick={() => void cancelActiveAttempt()}
+							>
 								Cancel
 							</Button>
 						</div>
@@ -382,7 +434,7 @@ export function ProviderSettingsDialog({ open, onOpenChange }: Props) {
 				) : null}
 
 				<DialogFooter>
-					<Button variant="secondary" onClick={() => onOpenChange(false)}>
+					<Button variant="secondary" onClick={closeDialog}>
 						Close
 					</Button>
 				</DialogFooter>

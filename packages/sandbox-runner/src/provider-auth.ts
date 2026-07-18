@@ -10,20 +10,75 @@ import {
 	InMemoryCredentialStore,
 } from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import type { AuthControlRequest, ProviderAuthOut } from "./protocol.js";
+import { assertPublicAuthEvent } from "./protocol.js";
 import { startAuthControlServer } from "./provider-auth-control.js";
-import type {
-	AuthControlRequest,
-	ProviderAuthOut,
-} from "./provider-auth-protocol.js";
-import {
-	isAllowedAuthType,
-	MAX_SAFE_MODELS,
-	OAUTH_REFRESH_SENTINEL,
-	PORTABLE_PROVIDER_AUTH,
-	RESULT_DIR,
-	RESULT_HANDSHAKE_POLL_MS,
-	RESULT_HANDSHAKE_TIMEOUT_MS,
-} from "./provider-matrix.js";
+
+/** Portable provider -> allowed auth types. Account-level D1 only. */
+export const PORTABLE_PROVIDER_AUTH = {
+	anthropic: ["api_key", "oauth"],
+	openai: ["api_key"],
+	"openai-codex": ["oauth"],
+	xai: ["api_key", "oauth"],
+	"github-copilot": ["oauth"],
+	opencode: ["api_key"],
+	"opencode-go": ["api_key"],
+	deepseek: ["api_key"],
+	google: ["api_key"],
+	mistral: ["api_key"],
+	groq: ["api_key"],
+	cerebras: ["api_key"],
+	openrouter: ["api_key"],
+	"vercel-ai-gateway": ["api_key"],
+	fireworks: ["api_key"],
+	together: ["api_key"],
+} as const;
+
+export type PortableProviderId = keyof typeof PORTABLE_PROVIDER_AUTH;
+export type PortableAuthType =
+	(typeof PORTABLE_PROVIDER_AUTH)[PortableProviderId][number];
+
+export function isPortableProviderId(
+	value: string,
+): value is PortableProviderId {
+	return Object.hasOwn(PORTABLE_PROVIDER_AUTH, value);
+}
+
+export function isAllowedAuthType(
+	providerId: string,
+	authType: string,
+): authType is PortableAuthType {
+	if (!isPortableProviderId(providerId)) return false;
+	return (PORTABLE_PROVIDER_AUTH[providerId] as readonly string[]).includes(
+		authType,
+	);
+}
+
+export const OAUTH_REFRESH_SENTINEL = "ditto:no-refresh";
+export const RESULT_DIR = "/tmp/ditto-provider-auth-results";
+export const AUTH_CONTROL_DIR = "/tmp/ditto-provider-auth-controls";
+export const MAX_SAFE_MODELS = 500;
+export const MAX_PROMPT_ANSWER_BYTES = 8_192;
+export const RESULT_HANDSHAKE_TIMEOUT_MS = 30_000;
+export const RESULT_HANDSHAKE_POLL_MS = 50;
+
+/** Canonical env var name for API-key runtime projection (allowlisted). */
+export const PROVIDER_API_KEY_ENV: Record<string, string> = {
+	anthropic: "ANTHROPIC_API_KEY",
+	openai: "OPENAI_API_KEY",
+	xai: "XAI_API_KEY",
+	opencode: "OPENCODE_API_KEY",
+	"opencode-go": "OPENCODE_API_KEY",
+	deepseek: "DEEPSEEK_API_KEY",
+	google: "GOOGLE_API_KEY",
+	mistral: "MISTRAL_API_KEY",
+	groq: "GROQ_API_KEY",
+	cerebras: "CEREBRAS_API_KEY",
+	openrouter: "OPENROUTER_API_KEY",
+	"vercel-ai-gateway": "AI_GATEWAY_API_KEY",
+	fireworks: "FIREWORKS_API_KEY",
+	together: "TOGETHER_API_KEY",
+};
 
 export type SafeModelProjection = {
 	providerId: string;
@@ -59,23 +114,19 @@ export type ProviderAuthJob =
 export type ProviderAuthOptions = {
 	job: ProviderAuthJob;
 	onEvent: (msg: ProviderAuthOut) => void;
-	/** Injected for tests. */
 	createRuntime?: (
 		credentials: InMemoryCredentialStore,
 	) => Promise<ModelRuntime>;
-	/** Injected for tests. */
 	loginImpl?: (
 		runtime: ModelRuntime,
 		providerId: string,
 		authType: AuthType,
 		interaction: AuthInteraction,
 	) => Promise<Credential>;
-	/** Injected for tests. */
 	resolveAuthImpl?: (
 		runtime: ModelRuntime,
 		providerId: string,
 	) => Promise<void>;
-	/** Skip handshake wait in unit tests when result already consumed. */
 	handshakeTimeoutMs?: number;
 };
 
@@ -103,6 +154,21 @@ function emitError(
 		code,
 		message: STABLE_ERRORS[code],
 	});
+}
+
+function emitPublic(
+	onEvent: (msg: ProviderAuthOut) => void,
+	msg: ProviderAuthOut,
+	answerSecrets: string[],
+) {
+	// Never let prompt answers reappear in public events.
+	const json = JSON.stringify(msg);
+	for (const secret of answerSecrets) {
+		if (secret.length >= 8 && json.includes(secret)) {
+			throw new Error("secret_in_event");
+		}
+	}
+	onEvent(assertPublicAuthEvent(msg));
 }
 
 export function normalizeResultPath(resultPath: string): string {
@@ -156,11 +222,24 @@ export function projectSafeModels(
 				cacheWrite: model.cost.cacheWrite,
 			};
 		}
-		// Reject if raw model sneaks transport fields into our projection object
-		// by only copying the allowlisted keys above.
 		out.push(projected);
 	}
 	return out;
+}
+
+function projectApiKeyEnv(
+	credential: Credential,
+	providerId: string,
+): Record<string, string> | undefined {
+	const canonical = PROVIDER_API_KEY_ENV[providerId];
+	if (!canonical || !credential.env || typeof credential.env !== "object") {
+		return undefined;
+	}
+	const raw = (credential.env as Record<string, unknown>)[canonical];
+	if (typeof raw !== "string" || raw.length === 0 || raw.length > 16_384) {
+		return undefined;
+	}
+	return { [canonical]: raw };
 }
 
 export function toRuntimeCredential(
@@ -169,52 +248,80 @@ export function toRuntimeCredential(
 ): Credential {
 	if (credential.type === "api_key") {
 		const out: Credential = { type: "api_key" };
-		if (typeof credential.key === "string") out.key = credential.key;
-		if (credential.env && typeof credential.env === "object") {
-			out.env = { ...credential.env };
+		if (typeof credential.key === "string" && credential.key.length > 0) {
+			out.key = credential.key;
 		}
+		const env = projectApiKeyEnv(credential, providerId);
+		if (env) out.env = env;
 		return out;
 	}
 	if (credential.type !== "oauth") {
 		throw new Error("unsupported_credential");
 	}
+	const expires = Number(credential.expires);
+	if (!Number.isFinite(expires)) {
+		throw new Error("unsupported_credential");
+	}
+	const access = String(credential.access ?? "");
+	if (!access) throw new Error("unsupported_credential");
+
 	const base: Credential = {
 		type: "oauth",
 		refresh: OAUTH_REFRESH_SENTINEL,
-		access: String(credential.access),
-		expires: Number(credential.expires),
+		access,
+		expires,
 	};
 	if (providerId === "openai-codex") {
-		if (typeof credential.accountId === "string") {
-			base.accountId = credential.accountId;
+		if (typeof credential.accountId === "string" && credential.accountId) {
+			base.accountId = credential.accountId.slice(0, 256);
 		}
 		return base;
 	}
 	if (providerId === "github-copilot") {
-		if (typeof credential.enterpriseUrl === "string") {
-			base.enterpriseUrl = credential.enterpriseUrl;
+		if (
+			typeof credential.enterpriseUrl === "string" &&
+			credential.enterpriseUrl
+		) {
+			// Bound + require https-looking URL string only.
+			const url = credential.enterpriseUrl.slice(0, 512);
+			if (/^https:\/\/[A-Za-z0-9.-]+(?::\d+)?(?:\/.*)?$/i.test(url)) {
+				base.enterpriseUrl = url;
+			}
 		}
 		if (Array.isArray(credential.availableModelIds)) {
-			base.availableModelIds = credential.availableModelIds;
+			base.availableModelIds = credential.availableModelIds
+				.filter((id): id is string => typeof id === "string" && id.length > 0)
+				.slice(0, 500)
+				.map((id) => id.slice(0, 256));
 		}
 		return base;
 	}
 	if (providerId === "anthropic" || providerId === "xai") {
 		return base;
 	}
-	// Strip unknown OAuth fields for other providers.
-	return base;
+	throw new Error("unsupported_credential");
 }
 
 function writeSecretFile(filePath: string, content: string): void {
 	const dir = path.dirname(filePath);
 	fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+	// Pre-create 0600, then write.
 	const fd = fs.openSync(filePath, "w", 0o600);
 	try {
+		fs.fchmodSync(fd, 0o600);
 		fs.writeFileSync(fd, content, { encoding: "utf8" });
 		fs.fchmodSync(fd, 0o600);
 	} finally {
 		fs.closeSync(fd);
+	}
+	const mode = fs.statSync(filePath).mode & 0o777;
+	if (mode !== 0o600) {
+		try {
+			fs.unlinkSync(filePath);
+		} catch {
+			// ignore
+		}
+		throw new Error("result_mode");
 	}
 }
 
@@ -262,6 +369,29 @@ function mapAuthEvent(event: AuthEvent): ProviderAuthOut | null {
 	return null;
 }
 
+function normalizeEnterpriseHost(raw: string): string | null {
+	const trimmed = raw.trim();
+	if (!trimmed || trimmed.length > 253) return null;
+	try {
+		if (trimmed.includes("://")) {
+			const host = new URL(trimmed).hostname.toLowerCase();
+			return /^[a-z0-9.-]+$/.test(host) ? host : null;
+		}
+	} catch {
+		return null;
+	}
+	const host = trimmed.toLowerCase().split("/")[0]?.split(":")[0] ?? "";
+	return /^[a-z0-9.-]+$/.test(host) ? host : null;
+}
+
+function isCopilotEnterprisePrompt(prompt: AuthPrompt): boolean {
+	return (
+		prompt.type === "text" &&
+		/enterprise/i.test(prompt.message) &&
+		(/domain/i.test(prompt.message) || /host/i.test(prompt.message) || true)
+	);
+}
+
 export async function runProviderAuth(
 	options: ProviderAuthOptions,
 ): Promise<{ ok: boolean }> {
@@ -274,6 +404,8 @@ export async function runProviderAuth(
 	let resultPath: string | undefined;
 	let cancelled = false;
 	const abort = new AbortController();
+	/** Prompt answers kept only in process memory for redaction. */
+	const answerSecrets: string[] = [];
 
 	const finish = (success: boolean) => {
 		ok = success;
@@ -346,6 +478,8 @@ export async function runProviderAuth(
 				}
 				const current = pending;
 				pending = null;
+				// Track only secret-bearing answers for output redaction. Domain/text
+				// answers (e.g. Copilot enterprise host) are non-secret metadata.
 				current.resolve(request.value);
 				return { accepted: true, action: "answer" };
 			},
@@ -355,7 +489,12 @@ export async function runProviderAuth(
 			signal: abort.signal,
 			notify(event) {
 				const mapped = mapAuthEvent(event);
-				if (mapped) onEvent(mapped);
+				if (!mapped) return;
+				try {
+					emitPublic(onEvent, mapped, answerSecrets);
+				} catch {
+					// Drop event rather than leak a secret answer.
+				}
 			},
 			async prompt(prompt: AuthPrompt): Promise<string> {
 				// Auto-select Codex device-code login method.
@@ -390,8 +529,8 @@ export async function runProviderAuth(
 						description: o.description?.slice(0, 200),
 					}));
 				}
-				onEvent(event);
-				return await new Promise<string>((resolve, reject) => {
+				emitPublic(onEvent, event, answerSecrets);
+				const answer = await new Promise<string>((resolve, reject) => {
 					let settled = false;
 					const settleResolve = (value: string) => {
 						if (settled) return;
@@ -420,6 +559,32 @@ export async function runProviderAuth(
 						);
 					}
 				});
+
+				if (
+					(prompt.type === "secret" || prompt.type === "manual_code") &&
+					answer.length > 0
+				) {
+					answerSecrets.push(answer);
+				}
+
+				// Propagate Copilot Enterprise host for server-side URL binding.
+				if (
+					job.mode === "login" &&
+					job.providerId === "github-copilot" &&
+					isCopilotEnterprisePrompt(prompt)
+				) {
+					const host = normalizeEnterpriseHost(answer);
+					if (host) {
+						onEvent(
+							assertPublicAuthEvent({
+								v: 1,
+								kind: "attempt_meta",
+								enterpriseHost: host,
+							}),
+						);
+					}
+				}
+				return answer;
 			},
 		};
 
@@ -478,7 +643,6 @@ export async function runProviderAuth(
 		const resolveAuth =
 			options.resolveAuthImpl ??
 			(async (rt, providerId) => {
-				// Force auth resolution / refresh under PI's store lock.
 				await rt.getAuth(providerId);
 			});
 		try {
@@ -524,6 +688,7 @@ export async function runProviderAuth(
 		return { ok: false };
 	} finally {
 		cancelPending("finished");
+		answerSecrets.length = 0;
 		try {
 			await controlServer?.close();
 		} catch {

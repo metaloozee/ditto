@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import { projectSafeModels } from "./provider-auth.js";
 import {
 	isPortableProviderId,
 	PORTABLE_PROVIDER_AUTH,
 	type PortableProviderId,
-} from "./provider-matrix.js";
+	projectSafeModels,
+} from "./provider-auth.js";
 
 type CatalogProvider = {
 	providerId: string;

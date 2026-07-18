@@ -37,7 +37,12 @@ export function parseModelSpecifier(
 	return { providerId, modelId };
 }
 
-/** Intermediate static list until connected-provider models land. */
+/** Syntax-only validator for request schemas. Not an availability check. */
+export function isProjectCoderModelSpecifier(value: string): boolean {
+	return parseModelSpecifier(value) !== null;
+}
+
+/** Fallback-only static list for zero-connection accounts. */
 export const PROJECT_CODER_MODELS = [
 	{
 		id: DEFAULT_PROJECT_CODER_MODEL,
@@ -51,12 +56,4 @@ export const PROJECT_CODER_MODEL_IDS = PROJECT_CODER_MODELS.map(
 	(model) => model.id,
 );
 
-export type ProjectCoderModelSpecifier =
-	(typeof PROJECT_CODER_MODELS)[number]["id"];
-
-export function isProjectCoderModelSpecifier(
-	value: string,
-): value is ProjectCoderModelSpecifier {
-	// Step 1 keeps compile-time default; Step 5 opens syntax + availability.
-	return parseModelSpecifier(value) !== null;
-}
+export type ProjectCoderModelSpecifier = string;

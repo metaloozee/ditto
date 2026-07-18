@@ -393,6 +393,160 @@ describe("prepareAgentRun", () => {
 			status: "complete",
 		});
 	});
+
+	it("rejects arbitrary same-provider model not in owned catalog", async () => {
+		const { db } = createMockDb();
+		const result = await prepareAgentRun({
+			db,
+			env: makeEnv(),
+			userId: "user-1",
+			input: {
+				projectId: "proj-1",
+				message: "hi",
+				model: "anthropic/claude-opus-not-listed",
+			},
+			deps: baseDeps({
+				loadCredential: vi.fn().mockResolvedValue({
+					id: "c1",
+					authType: "api_key",
+					status: "connected",
+					version: 1,
+					credential: { type: "api_key", key: "sk-user-anthropic-key-xxxx" },
+					models: [
+						{
+							providerId: "anthropic",
+							modelId: "claude-sonnet",
+							name: "Claude Sonnet",
+						},
+					],
+					lastErrorCode: null,
+				}),
+			}),
+		});
+		expect(result).toMatchObject({
+			kind: "error",
+			status: 409,
+			body: {
+				error: expect.stringMatching(/not available/i),
+			},
+		});
+	});
+
+	it("rejects foreign-account style missing credential for non-fallback model", async () => {
+		const { db } = createMockDb();
+		const result = await prepareAgentRun({
+			db,
+			env: makeEnv(),
+			userId: "user-1",
+			input: {
+				projectId: "proj-1",
+				message: "hi",
+				model: "anthropic/claude-sonnet",
+			},
+			deps: baseDeps({
+				loadCredential: vi.fn().mockResolvedValue(null),
+			}),
+		});
+		expect(result).toMatchObject({
+			kind: "error",
+			status: 409,
+			body: {
+				error: expect.stringMatching(/Connect this provider/i),
+			},
+		});
+	});
+
+	it("allows exact fallback only without account credential", async () => {
+		const { db, batch } = createMockDb();
+		batch.mockResolvedValue([[{ id: "user-msg" }], [{ id: "asst-msg" }]]);
+		const result = await prepareAgentRun({
+			db,
+			env: makeEnv(),
+			userId: "user-1",
+			input: {
+				projectId: "proj-1",
+				sessionId: "sess-1",
+				message: "hi",
+				model: "opencode/deepseek-v4-flash-free",
+			},
+			deps: baseDeps({
+				loadCredential: vi.fn().mockResolvedValue(null),
+				createId: vi
+					.fn()
+					.mockReturnValueOnce("run-1")
+					.mockReturnValueOnce("user-msg")
+					.mockReturnValueOnce("asst-msg"),
+			}),
+		});
+		expect(result.kind).toBe("ready");
+	});
+
+	it("rejects other opencode models without account credential", async () => {
+		const { db } = createMockDb();
+		const result = await prepareAgentRun({
+			db,
+			env: makeEnv(),
+			userId: "user-1",
+			input: {
+				projectId: "proj-1",
+				message: "hi",
+				model: "opencode/some-paid-model",
+			},
+			deps: baseDeps({
+				loadCredential: vi.fn().mockResolvedValue(null),
+			}),
+		});
+		expect(result).toMatchObject({
+			kind: "error",
+			status: 409,
+		});
+	});
+
+	it("needs_relogin returns 409 without refresh", async () => {
+		const { db } = createMockDb();
+		const resolveOAuth = vi.mocked(
+			(await import("#/lib/provider-auth-service")).resolveOAuthCredential,
+		);
+		resolveOAuth.mockClear();
+		const result = await prepareAgentRun({
+			db,
+			env: makeEnv(),
+			userId: "user-1",
+			input: {
+				projectId: "proj-1",
+				message: "hi",
+				model: "anthropic/claude-sonnet",
+			},
+			deps: baseDeps({
+				loadCredential: vi.fn().mockResolvedValue({
+					id: "c1",
+					authType: "oauth",
+					status: "needs_relogin",
+					version: 3,
+					credential: {
+						type: "oauth",
+						refresh: "r",
+						access: "a",
+						expires: Date.now() + 999999,
+					},
+					models: [
+						{
+							providerId: "anthropic",
+							modelId: "claude-sonnet",
+							name: "Claude",
+						},
+					],
+					lastErrorCode: "oauth_refresh_failed",
+				}),
+			}),
+		});
+		expect(result).toMatchObject({
+			kind: "error",
+			status: 409,
+			body: { error: expect.stringMatching(/re-login/i) },
+		});
+		expect(resolveOAuth).not.toHaveBeenCalled();
+	});
 });
 
 describe("executeAgentRun", () => {

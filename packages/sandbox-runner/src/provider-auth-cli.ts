@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
+import { encodeAuthLine } from "./protocol.js";
 import { type ProviderAuthJob, runProviderAuth } from "./provider-auth.js";
-import { encodeAuthLine } from "./provider-auth-protocol.js";
 
 function writeError(code: string, message: string): void {
 	process.stdout.write(encodeAuthLine({ v: 1, kind: "error", code, message }));
@@ -73,6 +73,11 @@ async function main(): Promise<number> {
 	}
 	let raw: string;
 	try {
+		const stat = fs.statSync(jobPath);
+		if ((stat.mode & 0o777) !== 0o600) {
+			writeError("invalid_job", "Job file has unsafe mode");
+			return 2;
+		}
 		raw = fs.readFileSync(jobPath, "utf8");
 	} catch {
 		writeError("invalid_job", `Unable to read job file: ${jobPath}`);

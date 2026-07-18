@@ -1,33 +1,92 @@
-export type ProviderAuthClientEvent =
-	| { event: "meta"; data: { attemptId: string; providerId: string } }
-	| {
-			event: "prompt";
-			data: {
-				promptId: string;
-				type: "text" | "secret" | "select" | "manual_code";
-				message: string;
-				placeholder?: string;
-				options?: Array<{ id: string; label: string; description?: string }>;
-			};
-	  }
-	| {
-			event: "auth_url";
-			data: { url: string; clickable: boolean; instructions?: string };
-	  }
-	| {
-			event: "device_code";
-			data: {
-				userCode: string;
-				verificationUri: string;
-				intervalSeconds?: number;
-				expiresInSeconds?: number;
-			};
-	  }
-	| { event: "info"; data: { message: string } }
-	| { event: "progress"; data: { message: string } }
-	| { event: "credential_ready"; data: Record<string, never> }
-	| { event: "done"; data: { ok: boolean } }
-	| { event: "error"; data: { code: string; message: string } };
+import { z } from "zod";
+
+const sseEventSchema = z.discriminatedUnion("event", [
+	z.object({
+		event: z.literal("meta"),
+		data: z.object({
+			attemptId: z.string().min(1).max(128),
+			providerId: z.string().min(1).max(64),
+		}),
+	}),
+	z.object({
+		event: z.literal("prompt"),
+		data: z.object({
+			v: z.literal(1).optional(),
+			kind: z.literal("prompt").optional(),
+			promptId: z.string().min(1).max(128),
+			type: z.enum(["text", "secret", "select", "manual_code"]),
+			message: z.string().min(1).max(500),
+			placeholder: z.string().max(200).optional(),
+			options: z
+				.array(
+					z.object({
+						id: z.string().min(1).max(128),
+						label: z.string().min(1).max(200),
+						description: z.string().max(200).optional(),
+					}),
+				)
+				.max(32)
+				.optional(),
+		}),
+	}),
+	z.object({
+		event: z.literal("auth_url"),
+		data: z.object({
+			url: z.string().min(1).max(2048),
+			clickable: z.boolean(),
+			instructions: z.string().max(500).optional(),
+		}),
+	}),
+	z.object({
+		event: z.literal("device_code"),
+		data: z.object({
+			userCode: z.string().min(1).max(64),
+			verificationUri: z.string().min(1).max(2048),
+			clickable: z.boolean().optional(),
+			intervalSeconds: z.number().positive().optional(),
+			expiresInSeconds: z.number().positive().optional(),
+		}),
+	}),
+	z.object({
+		event: z.literal("info"),
+		data: z.object({ message: z.string().min(1).max(500) }),
+	}),
+	z.object({
+		event: z.literal("progress"),
+		data: z.object({ message: z.string().min(1).max(500) }),
+	}),
+	z.object({
+		event: z.literal("credential_ready"),
+		data: z
+			.object({})
+			.passthrough()
+			.transform(() => ({})),
+	}),
+	z.object({
+		event: z.literal("done"),
+		data: z.object({ ok: z.boolean() }),
+	}),
+	z.object({
+		event: z.literal("error"),
+		data: z.object({
+			code: z.string().min(1).max(64),
+			message: z.string().min(1).max(500),
+		}),
+	}),
+]);
+
+export type ProviderAuthClientEvent = z.infer<typeof sseEventSchema>;
+
+/** Only open HTTPS URLs the server marked clickable. */
+export function isOpenableAuthUrl(url: string, clickable: boolean): boolean {
+	if (!clickable) return false;
+	try {
+		const parsed = new URL(url);
+		return parsed.protocol === "https:";
+	} catch {
+		return false;
+	}
+}
 
 function parseSseChunk(buffer: string): {
 	events: Array<{ event: string; data: string }>;
@@ -46,6 +105,14 @@ function parseSseChunk(buffer: string): {
 		if (dataLines.length) events.push({ event, data: dataLines.join("\n") });
 	}
 	return { events, rest };
+}
+
+export function parseProviderAuthClientEvent(
+	event: string,
+	data: unknown,
+): ProviderAuthClientEvent | null {
+	const parsed = sseEventSchema.safeParse({ event, data });
+	return parsed.success ? parsed.data : null;
 }
 
 export async function streamProviderAuthLogin(options: {
@@ -79,10 +146,8 @@ export async function streamProviderAuthLogin(options: {
 		for (const item of parsed.events) {
 			try {
 				const data = JSON.parse(item.data) as unknown;
-				options.onEvent({
-					event: item.event,
-					data,
-				} as ProviderAuthClientEvent);
+				const event = parseProviderAuthClientEvent(item.event, data);
+				if (event) options.onEvent(event);
 			} catch {
 				// ignore malformed
 			}

@@ -2,11 +2,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { parseAuthControlRequest } from "./protocol.js";
 import {
 	sendAuthControlRequest,
 	startAuthControlServer,
 } from "./provider-auth-control.js";
-import { parseAuthControlRequest } from "./provider-auth-protocol.js";
 
 describe("provider-auth-control", () => {
 	it("rejects malformed/oversized/stale controls", async () => {

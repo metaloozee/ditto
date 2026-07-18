@@ -5,11 +5,8 @@ import {
 	type AuthControlRequest,
 	type AuthControlResponse,
 	parseAuthControlRequest,
-} from "./provider-auth-protocol.js";
-import {
-	AUTH_CONTROL_DIR,
-	MAX_PROMPT_ANSWER_BYTES,
-} from "./provider-matrix.js";
+} from "./protocol.js";
+import { AUTH_CONTROL_DIR, MAX_PROMPT_ANSWER_BYTES } from "./provider-auth.js";
 
 const DEFAULT_TIMEOUT_MS = 5_000;
 const MAX_REQUEST_BYTES = MAX_PROMPT_ANSWER_BYTES + 1024;

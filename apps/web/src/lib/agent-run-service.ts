@@ -266,55 +266,63 @@ export async function prepareAgentRun(options: {
 		};
 	}
 	if (owned?.status === "connected") {
-		const allowed = owned.models.some(
+		const inCatalog = owned.models.some(
 			(m) =>
 				m.providerId === parsedModel.providerId &&
 				m.modelId === parsedModel.modelId,
 		);
-		if (!allowed && input.model !== FALLBACK_MODEL_SPECIFIER) {
-			// Connected credential for provider but model not in catalog — still allow
-			// if the specifier matches provider (catalog snapshot may lag).
-			if (owned.authType) {
-				// ok if provider matches; catalog is advisory for connected runs
-			}
+		// Exact fallback remains the only operator exception when not in catalog.
+		if (!inCatalog && input.model !== FALLBACK_MODEL_SPECIFIER) {
+			return {
+				kind: "error",
+				status: 409,
+				body: {
+					error:
+						"Selected model is not available for this provider connection.",
+				},
+			};
 		}
-		try {
-			runtimeCredential = toRuntimeCredential(
-				owned.credential,
-				parsedModel.providerId,
-			);
-		} catch {
-			if (owned.credential.type !== "oauth") {
-				return {
-					kind: "error",
-					status: 409,
-					body: {
-						error:
-							"Provider session expired. Reconnect it in Account Settings.",
-					},
-				};
+		if (input.model === FALLBACK_MODEL_SPECIFIER && !inCatalog) {
+			runtimeCredential = operatorFallbackCredential(env.OPENCODE_API_KEY);
+		} else {
+			try {
+				runtimeCredential = toRuntimeCredential(
+					owned.credential,
+					parsedModel.providerId,
+				);
+			} catch {
+				if (owned.credential.type !== "oauth") {
+					return {
+						kind: "error",
+						status: 409,
+						body: {
+							error:
+								"Provider session expired. Reconnect it in Account Settings.",
+						},
+					};
+				}
+				const refreshed = await resolveOAuthCredential({
+					db,
+					env,
+					userId,
+					providerId: parsedModel.providerId,
+					stored: owned.credential,
+					version: owned.version,
+				});
+				if (!refreshed.ok) {
+					return {
+						kind: "error",
+						status: 409,
+						body: {
+							error:
+								refreshed.code === "busy"
+									? "Provider credentials are busy. Try again shortly."
+									: "Provider session expired. Reconnect it in Account Settings.",
+						},
+					};
+				}
+				runtimeCredential = refreshed.runtime;
 			}
-			const refreshed = await resolveOAuthCredential({
-				db,
-				env,
-				userId,
-				providerId: parsedModel.providerId,
-				stored: owned.credential,
-				version: owned.version,
-			});
-			if (!refreshed.ok) {
-				return {
-					kind: "error",
-					status: 409,
-					body: {
-						error:
-							refreshed.code === "busy"
-								? "Provider credentials are busy. Try again shortly."
-								: "Provider session expired. Reconnect it in Account Settings.",
-					},
-				};
-			}
-			runtimeCredential = refreshed.runtime;
 		}
 	} else if (input.model === FALLBACK_MODEL_SPECIFIER) {
 		runtimeCredential = operatorFallbackCredential(env.OPENCODE_API_KEY);

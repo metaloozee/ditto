@@ -46,7 +46,11 @@ export const Route = createFileRoute("/api/provider-auth/stream")({
 				const readable = new ReadableStream<Uint8Array>({
 					async start(controller) {
 						const enqueue = (event: string, data: unknown) => {
-							controller.enqueue(encoder.encode(encodeSseEvent(event, data)));
+							try {
+								controller.enqueue(encoder.encode(encodeSseEvent(event, data)));
+							} catch {
+								// client disconnected
+							}
 						};
 						try {
 							await streamProviderAuth({
@@ -54,13 +58,21 @@ export const Route = createFileRoute("/api/provider-auth/stream")({
 								env,
 								userId: session.user.id,
 								input: parsed.data,
+								signal: request.signal,
 								emit: ({ event, data }) => {
 									enqueue(event, data);
 								},
 							});
 						} finally {
-							controller.close();
+							try {
+								controller.close();
+							} catch {
+								// already closed
+							}
 						}
+					},
+					cancel() {
+						// request.signal aborts via fetch cancel; streamProviderAuth cleans up.
 					},
 				});
 

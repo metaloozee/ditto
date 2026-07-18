@@ -2,14 +2,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import type { ProviderAuthOut } from "./protocol.js";
 import {
 	normalizeResultPath,
+	PORTABLE_PROVIDER_AUTH,
+	projectSafeModels,
+	RESULT_DIR,
 	runProviderAuth,
 	toRuntimeCredential,
 } from "./provider-auth.js";
 import { sendAuthControlRequest } from "./provider-auth-control.js";
-import type { ProviderAuthOut } from "./provider-auth-protocol.js";
-import { PORTABLE_PROVIDER_AUTH, RESULT_DIR } from "./provider-matrix.js";
 
 function tmpResult(name: string): string {
 	fs.mkdirSync(RESULT_DIR, { recursive: true, mode: 0o700 });
@@ -385,5 +387,103 @@ describe("runtime credential projection", () => {
 		expect(() =>
 			normalizeResultPath(path.join(os.tmpdir(), "evil.json")),
 		).toThrow();
+	});
+});
+
+describe("xAI device flow and permissions", () => {
+	it("relays xAI device_code fields", async () => {
+		const events: ProviderAuthOut[] = [];
+		const resultPath = tmpResult(`xai-${Date.now()}.json`);
+		const login = vi.fn(async (_rt, _p, _a, interaction) => {
+			interaction.notify({
+				type: "device_code",
+				userCode: "WXYZ-1234",
+				verificationUri: "https://accounts.x.ai/device",
+				intervalSeconds: 5,
+				expiresInSeconds: 900,
+			});
+			return {
+				type: "oauth",
+				refresh: "r",
+				access: "a",
+				expires: Date.now() + 60_000,
+			};
+		});
+		const run = runProviderAuth({
+			job: {
+				mode: "login",
+				attemptId: "xai-1",
+				providerId: "xai",
+				authType: "oauth",
+				resultPath,
+			},
+			onEvent: (e) => events.push(e),
+			loginImpl: login as never,
+			createRuntime: async () =>
+				({
+					getModels: () => [
+						{ provider: "xai", id: "grok", name: "Grok", cost: {} },
+					],
+				}) as never,
+			handshakeTimeoutMs: 200,
+		});
+		// Consume result so handshake completes.
+		const poll = (async () => {
+			for (let i = 0; i < 40; i++) {
+				if (fs.existsSync(resultPath)) {
+					fs.unlinkSync(resultPath);
+					return;
+				}
+				await new Promise((r) => setTimeout(r, 10));
+			}
+		})();
+		const result = await run;
+		await poll;
+		expect(result.ok).toBe(true);
+		expect(
+			events.some(
+				(e) =>
+					e.kind === "device_code" &&
+					e.userCode === "WXYZ-1234" &&
+					e.verificationUri === "https://accounts.x.ai/device",
+			),
+		).toBe(true);
+	});
+
+	it("rejects model projection with headers/baseURL via runtime getModels misuse", () => {
+		// projectSafeModels only copies allowlisted fields — verify no transport leak.
+		const runtime = {
+			getModels: () => [
+				{
+					provider: "openai",
+					id: "gpt",
+					name: "GPT",
+					baseURL: "https://evil.example",
+					headers: { Authorization: "secret" },
+				},
+			],
+		};
+		const models = projectSafeModels(runtime as never, "openai");
+		expect(models[0]).toEqual({
+			providerId: "openai",
+			modelId: "gpt",
+			name: "GPT",
+		});
+		expect(models[0]).not.toHaveProperty("baseURL");
+		expect(models[0]).not.toHaveProperty("headers");
+	});
+
+	it("toRuntimeCredential rejects unsupported oauth provider extras stripping", () => {
+		expect(() =>
+			toRuntimeCredential(
+				{
+					type: "oauth",
+					refresh: "r",
+					access: "a",
+					expires: Date.now() + 99_999,
+				},
+				"not-a-real-oauth-provider",
+			),
+		).toThrow(/unsupported_credential/);
 	});
 });

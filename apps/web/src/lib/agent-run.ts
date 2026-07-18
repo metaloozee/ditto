@@ -1,6 +1,7 @@
 import type { ExecEvent } from "@cloudflare/sandbox";
 import { parseSSEStream } from "@cloudflare/sandbox";
 import { nanoid } from "nanoid";
+import { credentialSecretValues } from "#/lib/account-provider-credentials";
 import { agentGitCallbackUrl, mintAgentGitJwt } from "#/lib/agent-git-jwt";
 import {
 	parseRunnerStdoutLine,
@@ -113,8 +114,17 @@ async function runAgentInSandboxLocked(options: {
 	let sawRunnerDone = false;
 	let errorEmitted = false;
 
+	let credentialLeaves: string[] = [];
+	try {
+		credentialLeaves = credentialSecretValues(
+			JSON.parse(options.runtimeCredentialJson) as unknown,
+		);
+	} catch {
+		credentialLeaves = [];
+	}
 	const secretValues = [
 		options.runtimeCredentialJson,
+		...credentialLeaves,
 		gitCallbackToken,
 		...Object.values(projectEnv),
 	].filter(

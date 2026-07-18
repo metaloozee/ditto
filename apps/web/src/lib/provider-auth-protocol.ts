@@ -61,6 +61,17 @@ export const providerAuthEventSchema = z.discriminatedUnion("kind", [
 	z
 		.object({
 			v: z.literal(1),
+			kind: z.literal("attempt_meta"),
+			enterpriseHost: z
+				.string()
+				.min(1)
+				.max(253)
+				.regex(/^[A-Za-z0-9.-]+$/),
+		})
+		.strict(),
+	z
+		.object({
+			v: z.literal(1),
 			kind: z.literal("done"),
 			ok: z.boolean(),
 		})
