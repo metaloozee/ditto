@@ -98,6 +98,44 @@ resource graph and changes only repository/package boundaries.
 |------|-------|----------|--------|------------|--------|
 | 024 | Reorganize Ditto into an Alchemy-owned monorepo | P1 | M | — (001–023 are DONE) | DONE (merged at `4f2dab4`; implementation tip `674985a`) |
 
+## Plan 025 (account-level PI provider authentication)
+
+Planned at commit `58fa3a7` on 2026-07-17 after tracing Ditto's current
+OpenCode-only Worker→sandbox→PI path and reviewing PI 0.80.10's public
+`ModelRuntime`, provider-owned auth interactions, credential-store refresh
+contract, and built-in provider catalogs.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 025 | Persist account provider credentials and run PI with connected models | P1 | L | — (001–024 are DONE) | DONE (approved worktree `advisor/025-account-provider-auth-and-pi-models` @ `0415798`; external provider matrix NOT RUN) |
+
+Locked outcomes:
+
+- One encrypted D1 credential per account/provider, reusable across every
+  project and sandbox; D1, not a sandbox, is authoritative.
+- PI-owned self-contained API-key flows plus Anthropic, OpenAI Codex, GitHub
+  Copilot, and xAI subscriptions through an auth-only Node runner; Anthropic
+  uses the approved manual final-redirect/code paste limitation.
+- No credential in better-auth account rows, project env vars, PI `auth.json`,
+  `/workspace`, R2 backups, jobs, messages, SSE, or browser storage.
+- Users without their own provider retain the operator-backed OpenCode Zen
+  fallback `opencode/deepseek-v4-flash-free`.
+- PI runner packages move together from 0.80.3 to exact 0.80.10 and use
+  `ModelRuntime` with an in-memory credential store.
+
+**DONE after execution retry**: approved on branch
+`advisor/025-account-provider-auth-and-pi-models` at `0415798` in worktree
+`/home/ayan/ditto-worktrees/advisor-025-account-provider-auth-and-pi-models`.
+Independent review passed `pnpm verify` (426 app tests, 42 runner tests), focused
+provider-auth/process tests, `git diff --check`, source guards, build-artifact
+checks, and the exact scope audit. The local Docker image built successfully;
+all three provider CLIs ran without credentials. The normal Alchemy dev path
+started an auth-only catalog sandbox, returned 16 portable providers, and
+cleanly destroyed it without project lookup or backup. The final retry keeps a
+failed-to-confirm auth process lease until TTL instead of explicitly releasing
+it. External live-provider login/run rows are `NOT RUN` because no replaceable
+credentials were available. No cloud deployment was performed or authorized.
+
 ### Audit finding coverage
 
 | Selected finding | Covered by | Combination rationale |
@@ -306,6 +344,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
   extend the extracted lifecycle and preserve the ordered/redacted stream
   boundary rather than rebuilding those concerns in the route or runner.
 - **Merge** is explicitly out of 006/007 (deferred product decision).
+- **025 is account-scoped, not project-scoped** — it is independent of the
+  completed worktree/Git plans, but it must preserve their Worker→sandbox
+  protocol, redaction, and verification boundaries.
 
 ## Product decisions (locked 2026-07-09)
 
@@ -387,3 +428,4 @@ tree while sharing git objects and (via symlink) `node_modules`.
 18. `022-timed-tool-call-groups.md`
 19. `023-pi-follow-up-and-stop-controls.md`
 20. `024-conservative-sst-monorepo-migration.md`
+21. `025-account-provider-auth-and-pi-models.md`
