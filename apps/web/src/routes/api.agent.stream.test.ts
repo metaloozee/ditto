@@ -26,6 +26,7 @@ vi.mock("cloudflare:workers", () => ({
 	env: {
 		BETTER_AUTH_SECRET: "test-secret",
 		OPENCODE_API_KEY: "sk-test",
+		AI_CREDENTIALS_ENCRYPTION_KEY: "ai-credentials-encryption-key-test-aaaa",
 	},
 }));
 

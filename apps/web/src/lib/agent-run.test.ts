@@ -26,10 +26,16 @@ const { appendRollingTail, runAgentInSandbox, STDERR_TAIL_MAX_CHARS } =
 function makeEnv(): Env {
 	return {
 		OPENCODE_API_KEY: "sk-test-key-12345678901234567890",
+		AI_CREDENTIALS_ENCRYPTION_KEY: "ai-credentials-encryption-key-test-aaaa",
 		BETTER_AUTH_SECRET: "test-better-auth-secret-min-length",
 		BETTER_AUTH_URL: "http://localhost:5173",
 	} as Env;
 }
+
+const RUNTIME_CREDENTIAL_JSON = JSON.stringify({
+	type: "api_key",
+	key: "sk-test-key-12345678901234567890",
+});
 
 describe("runAgentInSandbox", () => {
 	beforeEach(() => {
@@ -76,6 +82,7 @@ describe("runAgentInSandbox", () => {
 			runId: "run-1",
 			cwd: SESSION_WORKTREE_CWD,
 			model: "opencode/gpt-4.1",
+			runtimeCredentialJson: RUNTIME_CREDENTIAL_JSON,
 			prompt: "do the thing",
 			envVars: [{ key: "DATABASE_URL", value: "postgres://secret" }],
 			onRunnerMessage,
@@ -93,7 +100,7 @@ describe("runAgentInSandbox", () => {
 				cwd: SESSION_WORKTREE_CWD,
 				env: expect.objectContaining({
 					DATABASE_URL: "postgres://secret",
-					OPENCODE_API_KEY: makeEnv().OPENCODE_API_KEY,
+					DITTO_PI_CREDENTIAL: RUNTIME_CREDENTIAL_JSON,
 					DITTO_GIT_CALLBACK_URL: "http://localhost:5173/api/agent/git",
 					DITTO_GIT_CALLBACK_TOKEN: expect.any(String),
 					GIT_AUTHOR_NAME: "Ditto",
@@ -200,6 +207,7 @@ describe("runAgentInSandbox", () => {
 			runId: "run-order",
 			cwd: SESSION_WORKTREE_CWD,
 			model: "opencode/gpt-4.1",
+			runtimeCredentialJson: RUNTIME_CREDENTIAL_JSON,
 			prompt: "check order",
 			onRunnerMessage,
 		});
@@ -257,6 +265,7 @@ describe("runAgentInSandbox", () => {
 			runId: "run-2",
 			cwd: "/workspace/.ditto/worktrees/conv-2",
 			model: "opencode/gpt-4.1",
+			runtimeCredentialJson: RUNTIME_CREDENTIAL_JSON,
 			prompt: "ping",
 			onRunnerMessage,
 		});
@@ -342,6 +351,7 @@ describe("runAgentInSandbox", () => {
 			runId: "run-stderr-bound",
 			cwd: SESSION_WORKTREE_CWD,
 			model: "opencode/gpt-4.1",
+			runtimeCredentialJson: RUNTIME_CREDENTIAL_JSON,
 			prompt: "fail big",
 			onRunnerMessage,
 		});
@@ -399,6 +409,7 @@ describe("runAgentInSandbox", () => {
 			runId: "run-3",
 			cwd: SESSION_WORKTREE_CWD,
 			model: "opencode/gpt-4.1",
+			runtimeCredentialJson: RUNTIME_CREDENTIAL_JSON,
 			prompt: "fail",
 			onRunnerMessage,
 		});
@@ -480,6 +491,7 @@ describe("runAgentInSandbox", () => {
 			runId: "run-redact-delta",
 			cwd: SESSION_WORKTREE_CWD,
 			model: "opencode/gpt-4.1",
+			runtimeCredentialJson: RUNTIME_CREDENTIAL_JSON,
 			prompt: "echo secret",
 			envVars: [{ key: "DATABASE_URL", value: projectSecret }],
 			onRunnerMessage,
@@ -562,6 +574,7 @@ describe("runAgentInSandbox", () => {
 			runId: "run-redact-event",
 			cwd: SESSION_WORKTREE_CWD,
 			model: "opencode/gpt-4.1",
+			runtimeCredentialJson: RUNTIME_CREDENTIAL_JSON,
 			prompt: "run tool",
 			envVars: [{ key: "API_TOKEN", value: projectSecret }],
 			onRunnerMessage,
@@ -643,6 +656,7 @@ describe("runAgentInSandbox", () => {
 			runId: "run-redact-all",
 			cwd: SESSION_WORKTREE_CWD,
 			model: "opencode/gpt-4.1",
+			runtimeCredentialJson: RUNTIME_CREDENTIAL_JSON,
 			prompt: "leak",
 			envVars: [{ key: "DATABASE_URL", value: projectSecret }],
 			onRunnerMessage,

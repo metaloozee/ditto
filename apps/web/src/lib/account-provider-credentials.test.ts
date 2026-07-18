@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-	assertCredentialConfig,
 	AUTH_PROCESS_KILL_GRACE_MS,
 	AUTH_RESOLUTION_TIMEOUT_MS,
+	assertCredentialConfig,
 	credentialSecretValues,
 	LEASE_ORDERING_OK,
 	LEASE_TTL_MS,
@@ -12,11 +12,7 @@ import {
 	type StoredCredential,
 	toRuntimeCredential,
 } from "#/lib/account-provider-credentials";
-import {
-	decryptText,
-	encryptText,
-	providerCredentialAad,
-} from "#/lib/crypto";
+import { decryptText, encryptText, providerCredentialAad } from "#/lib/crypto";
 
 type Row = {
 	id: string;

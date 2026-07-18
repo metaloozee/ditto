@@ -76,6 +76,7 @@ const activeSession = {
 function makeEnv(): Env {
 	return {
 		OPENCODE_API_KEY: "sk-test-key-12345678901234567890",
+		AI_CREDENTIALS_ENCRYPTION_KEY: "ai-credentials-encryption-key-test-aaaa",
 		BETTER_AUTH_SECRET: "test-better-auth-secret-min-length",
 		BETTER_AUTH_URL: "http://localhost:5173",
 	} as Env;
@@ -136,6 +137,7 @@ function baseDeps(overrides: Partial<AgentRunDeps> = {}): AgentRunDeps {
 			baseCommitSha: activeSession.baseCommitSha,
 			workspacePath: activeSession.workspacePath,
 		}),
+		loadCredential: vi.fn().mockResolvedValue(null),
 		runAgentInSandbox: vi.fn().mockResolvedValue({
 			ok: true,
 			assistantText: "Hello",
@@ -410,6 +412,10 @@ describe("executeAgentRun", () => {
 			assistantMessageId: "asst-msg",
 			envVars: [],
 			secretValues: [makeEnv().OPENCODE_API_KEY],
+			runtimeCredentialJson: JSON.stringify({
+				type: "api_key",
+				key: makeEnv().OPENCODE_API_KEY,
+			}),
 			...overrides,
 		};
 	}
@@ -884,6 +890,7 @@ describe("executeAgentRun", () => {
 
 		const minimal = vi.fn().mockReturnValue('[{"type":"tool"}]');
 		const { events, run } = collectEvents(context, {
+			loadCredential: vi.fn().mockResolvedValue(null),
 			runAgentInSandbox: vi.fn().mockResolvedValue({
 				ok: true,
 				assistantText: "ok",
@@ -915,6 +922,7 @@ describe("executeAgentRun", () => {
 		const context = makeContext({ db: mockDb.db });
 
 		const { events, run } = collectEvents(context, {
+			loadCredential: vi.fn().mockResolvedValue(null),
 			runAgentInSandbox: vi.fn().mockResolvedValue({
 				ok: true,
 				assistantText: "ok",
@@ -945,6 +953,7 @@ describe("executeAgentRun", () => {
 		const context = makeContext({ db: mockDb.db });
 
 		const { events, run } = collectEvents(context, {
+			loadCredential: vi.fn().mockResolvedValue(null),
 			runAgentInSandbox: vi.fn().mockResolvedValue({
 				ok: true,
 				assistantText: "done",

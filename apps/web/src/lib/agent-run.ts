@@ -76,6 +76,8 @@ async function runAgentInSandboxLocked(options: {
 	cwd: string;
 	model: string;
 	prompt: string;
+	/** Runtime credential JSON for DITTO_PI_CREDENTIAL (no real OAuth refresh). */
+	runtimeCredentialJson: string;
 	envVars?: readonly SandboxEnvVar[];
 	onRunnerMessage: (msg: RunnerOut) => void | Promise<void>;
 }): Promise<{
@@ -96,7 +98,7 @@ async function runAgentInSandboxLocked(options: {
 		cwd: options.cwd,
 		env: {
 			...projectEnv,
-			OPENCODE_API_KEY: options.env.OPENCODE_API_KEY,
+			DITTO_PI_CREDENTIAL: options.runtimeCredentialJson,
 			DITTO_GIT_CALLBACK_URL: agentGitCallbackUrl(options.env),
 			DITTO_GIT_CALLBACK_TOKEN: gitCallbackToken,
 			...dittoGitAuthorEnv(),
@@ -112,7 +114,7 @@ async function runAgentInSandboxLocked(options: {
 	let errorEmitted = false;
 
 	const secretValues = [
-		options.env.OPENCODE_API_KEY,
+		options.runtimeCredentialJson,
 		gitCallbackToken,
 		...Object.values(projectEnv),
 	].filter(

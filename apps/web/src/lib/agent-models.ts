@@ -24,7 +24,11 @@ export function parseModelSpecifier(
 		return null;
 	}
 	const slash = value.indexOf("/");
-	if (slash <= 0 || slash !== value.lastIndexOf("/") || slash === value.length - 1) {
+	if (
+		slash <= 0 ||
+		slash !== value.lastIndexOf("/") ||
+		slash === value.length - 1
+	) {
 		return null;
 	}
 	const providerId = value.slice(0, slash);
