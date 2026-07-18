@@ -21,6 +21,12 @@ vi.mock("#/lib/project-env-vars", () => ({
 	decryptEnvVars: vi.fn().mockResolvedValue([]),
 }));
 
+vi.mock("#/lib/provider-auth-service", () => ({
+	resolveOAuthCredential: vi
+		.fn()
+		.mockResolvedValue({ ok: false, code: "refresh_failed" }),
+}));
+
 vi.mock("#/lib/workspace-session", () => ({
 	resolveSessionForMessageWrite: vi.fn(),
 	workspaceSessionRecencyUpdate: vi.fn((_db: unknown, sessionId: string) => ({

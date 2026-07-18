@@ -4,12 +4,19 @@ import { z } from "zod";
 import type { createDb } from "#/db";
 import { providerAuthAttempts } from "#/db/schema";
 import {
+	AUTH_PROCESS_KILL_GRACE_MS,
+	AUTH_RESOLUTION_TIMEOUT_MS,
+	acquireLease,
 	assertCredentialConfig,
 	FALLBACK_MODEL_SPECIFIER,
+	markNeedsRelogin,
+	toRuntimeCredential as projectRuntimeCredential,
 	projectSafeModels,
+	releaseLease,
 	type SafeModel,
 	type StoredCredential,
 	safeModelCatalogSchema,
+	updateCredentialUnderLease,
 	upsertCredential,
 } from "#/lib/account-provider-credentials";
 import { splitStdoutBuffer } from "#/lib/agent-stream-protocol";
@@ -599,6 +606,160 @@ export async function streamProviderAuth(options: {
 	} finally {
 		try {
 			await deps.destroySandbox({ env: options.env, sandboxId });
+		} catch {
+			// ignore
+		}
+	}
+}
+
+/** Refresh OAuth under D1 lease in an auth-only sandbox; return runtime credential. */
+export async function resolveOAuthCredential(options: {
+	db: Db;
+	env: Env;
+	userId: string;
+	providerId: string;
+	stored: StoredCredential;
+	version: number;
+	nowMs?: () => number;
+	createId?: () => string;
+}): Promise<
+	| { ok: true; runtime: StoredCredential }
+	| { ok: false; code: "busy" | "refresh_failed" | "missing" }
+> {
+	const nowMs = options.nowMs ?? Date.now;
+	const createId = options.createId ?? nanoid;
+	const lease = await acquireLease({
+		db: options.db,
+		userId: options.userId,
+		providerId: options.providerId,
+		nowMs: nowMs(),
+		createId,
+	});
+	if (!lease) return { ok: false, code: "busy" };
+
+	const attemptId = createId();
+	const sandboxId = `auth-resolve-${safeId(attemptId)}`;
+	const resultPath = `${RESULT_DIR}/${safeId(attemptId)}.json`;
+	const jobPath = `/tmp/ditto-provider-auth-job-${safeId(attemptId)}.json`;
+
+	try {
+		const sandbox = getProjectSandbox(options.env, sandboxId);
+		const shell = await sandbox.createSession({
+			id: `auth-resolve-${safeId(attemptId)}`,
+			cwd: "/tmp",
+			env: {
+				DITTO_PI_STORED_CREDENTIAL: JSON.stringify(options.stored),
+			},
+			commandTimeoutMs: AUTH_RESOLUTION_TIMEOUT_MS,
+		});
+		try {
+			await shell.mkdir(RESULT_DIR, { recursive: true });
+			await shell.writeFile(
+				jobPath,
+				JSON.stringify({
+					mode: "resolve",
+					attemptId,
+					providerId: options.providerId,
+					resultPath,
+				}),
+			);
+			await shell.exec(`chmod 600 ${quoteShellArg(jobPath)}`, {
+				timeout: 5_000,
+			});
+			const result = await shell.exec(
+				`node ${AUTH_CLI} --job ${quoteShellArg(jobPath)}`,
+				{ timeout: AUTH_RESOLUTION_TIMEOUT_MS },
+			);
+			void AUTH_PROCESS_KILL_GRACE_MS;
+
+			if (!result.success) {
+				await markNeedsRelogin({
+					db: options.db,
+					userId: options.userId,
+					providerId: options.providerId,
+					errorCode: "oauth_refresh_failed",
+					nowMs: nowMs(),
+				});
+				return { ok: false, code: "refresh_failed" };
+			}
+
+			let raw = "";
+			try {
+				const file = await shell.readFile(resultPath);
+				raw = file.content;
+				await shell.deleteFile(resultPath);
+			} catch {
+				await markNeedsRelogin({
+					db: options.db,
+					userId: options.userId,
+					providerId: options.providerId,
+					errorCode: "oauth_refresh_failed",
+					nowMs: nowMs(),
+				});
+				return { ok: false, code: "refresh_failed" };
+			}
+
+			const payload = JSON.parse(raw) as {
+				storedCredential: StoredCredential;
+				runtimeCredential: StoredCredential;
+			};
+			const write = await updateCredentialUnderLease({
+				db: options.db,
+				userId: options.userId,
+				providerId: options.providerId,
+				leaseId: lease.leaseId,
+				expectedVersion: options.version,
+				credential: payload.storedCredential,
+				encryptionKey: options.env.AI_CREDENTIALS_ENCRYPTION_KEY,
+				nowMs: nowMs(),
+			});
+			if (write === "missing") return { ok: false, code: "missing" };
+			if (write === "stale") return { ok: false, code: "busy" };
+			return {
+				ok: true,
+				runtime:
+					payload.runtimeCredential ??
+					projectRuntimeCredential(
+						payload.storedCredential,
+						options.providerId,
+					),
+			};
+		} finally {
+			try {
+				await shell.deleteFile(jobPath);
+			} catch {
+				// ignore
+			}
+			try {
+				await shell.deleteFile(resultPath);
+			} catch {
+				// ignore
+			}
+			try {
+				await sandbox.deleteSession(shell.id);
+			} catch {
+				// ignore
+			}
+		}
+	} catch {
+		await markNeedsRelogin({
+			db: options.db,
+			userId: options.userId,
+			providerId: options.providerId,
+			errorCode: "oauth_refresh_failed",
+			nowMs: nowMs(),
+		});
+		return { ok: false, code: "refresh_failed" };
+	} finally {
+		await releaseLease({
+			db: options.db,
+			userId: options.userId,
+			providerId: options.providerId,
+			leaseId: lease.leaseId,
+			nowMs: nowMs(),
+		});
+		try {
+			await destroySandbox({ env: options.env, sandboxId });
 		} catch {
 			// ignore
 		}

@@ -37,6 +37,7 @@ import {
 	ensureProjectSandbox,
 	persistProjectSandboxBackup,
 } from "#/lib/project-sandbox";
+import { resolveOAuthCredential } from "#/lib/provider-auth-service";
 import { redactSecrets } from "#/lib/secret-redaction";
 import { ensureSessionWorktree } from "#/lib/session-worktree";
 import { makeSessionTitleFromMessage } from "#/lib/workspace-policy";
@@ -283,15 +284,37 @@ export async function prepareAgentRun(options: {
 				parsedModel.providerId,
 			);
 		} catch {
-			// Near-expiry OAuth needs refresh — deferred resolve path is out of line
-			// for this simplified path: mark needs reconnect.
-			return {
-				kind: "error",
-				status: 409,
-				body: {
-					error: "Provider session expired. Reconnect it in Account Settings.",
-				},
-			};
+			if (owned.credential.type !== "oauth") {
+				return {
+					kind: "error",
+					status: 409,
+					body: {
+						error:
+							"Provider session expired. Reconnect it in Account Settings.",
+					},
+				};
+			}
+			const refreshed = await resolveOAuthCredential({
+				db,
+				env,
+				userId,
+				providerId: parsedModel.providerId,
+				stored: owned.credential,
+				version: owned.version,
+			});
+			if (!refreshed.ok) {
+				return {
+					kind: "error",
+					status: 409,
+					body: {
+						error:
+							refreshed.code === "busy"
+								? "Provider credentials are busy. Try again shortly."
+								: "Provider session expired. Reconnect it in Account Settings.",
+					},
+				};
+			}
+			runtimeCredential = refreshed.runtime;
 		}
 	} else if (input.model === FALLBACK_MODEL_SPECIFIER) {
 		runtimeCredential = operatorFallbackCredential(env.OPENCODE_API_KEY);
