@@ -33,6 +33,38 @@ vi.mock("sonner", () => ({
 	},
 }));
 
+vi.mock("#/integrations/trpc/react", () => ({
+	useTRPC: () => ({
+		providerAuth: {
+			models: {
+				queryOptions: () => ({
+					queryKey: ["providerAuth", "models"],
+				}),
+			},
+		},
+	}),
+}));
+
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@tanstack/react-query")>();
+	return {
+		...actual,
+		useQuery: () => ({
+			data: {
+				models: [
+					{
+						id: "opencode/deepseek-v4-flash-free",
+						name: "DeepSeek V4 Flash Free",
+						provider: "opencode",
+						providerName: "OpenCode Zen",
+					},
+				],
+			},
+			isLoading: false,
+		}),
+	};
+});
+
 vi.mock("#/components/ai-elements/model-selector", () => ({
 	ModelSelector: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>
