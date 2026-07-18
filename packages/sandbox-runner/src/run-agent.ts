@@ -87,13 +87,31 @@ export async function runAgent(
 		}
 
 		const credentials = new InMemoryCredentialStore();
-		// Temporary bridge until Step 5 injects DITTO_PI_CREDENTIAL.
-		const opencodeKey = process.env.OPENCODE_API_KEY;
-		if (opencodeKey) {
-			await credentials.modify(parsed.provider, async () => ({
-				type: "api_key",
-				key: opencodeKey,
-			}));
+		const rawCredential =
+			process.env.DITTO_PI_CREDENTIAL ?? process.env.OPENCODE_API_KEY;
+		// Delete before session/tools so bash children cannot inherit secrets.
+		delete process.env.DITTO_PI_CREDENTIAL;
+		delete process.env.OPENCODE_API_KEY;
+
+		if (rawCredential) {
+			let credential: { type: string; [key: string]: unknown };
+			try {
+				const parsedCred = JSON.parse(rawCredential) as {
+					type?: string;
+				};
+				if (parsedCred && typeof parsedCred === "object" && parsedCred.type) {
+					credential = parsedCred as { type: string; [key: string]: unknown };
+				} else {
+					// Legacy bare API key string (operator bridge).
+					credential = { type: "api_key", key: rawCredential };
+				}
+			} catch {
+				credential = { type: "api_key", key: rawCredential };
+			}
+			await credentials.modify(
+				parsed.provider,
+				async () => credential as never,
+			);
 		}
 
 		const modelRuntime = await ModelRuntime.create({

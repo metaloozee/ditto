@@ -22,7 +22,9 @@ export type PortableProviderId = keyof typeof PORTABLE_PROVIDER_AUTH;
 export type PortableAuthType =
 	(typeof PORTABLE_PROVIDER_AUTH)[PortableProviderId][number];
 
-export function isPortableProviderId(value: string): value is PortableProviderId {
+export function isPortableProviderId(
+	value: string,
+): value is PortableProviderId {
 	return Object.hasOwn(PORTABLE_PROVIDER_AUTH, value);
 }
 

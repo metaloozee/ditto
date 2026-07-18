@@ -6,7 +6,10 @@ import {
 	type AuthControlResponse,
 	parseAuthControlRequest,
 } from "./provider-auth-protocol.js";
-import { AUTH_CONTROL_DIR, MAX_PROMPT_ANSWER_BYTES } from "./provider-matrix.js";
+import {
+	AUTH_CONTROL_DIR,
+	MAX_PROMPT_ANSWER_BYTES,
+} from "./provider-matrix.js";
 
 const DEFAULT_TIMEOUT_MS = 5_000;
 const MAX_REQUEST_BYTES = MAX_PROMPT_ANSWER_BYTES + 1024;
@@ -88,7 +91,10 @@ export async function startAuthControlServer(options: {
 				return;
 			}
 			if (request.attemptId !== options.attemptId) {
-				respond({ accepted: false, message: "Auth attempt is no longer active" });
+				respond({
+					accepted: false,
+					message: "Auth attempt is no longer active",
+				});
 				return;
 			}
 
@@ -167,7 +173,9 @@ export async function sendAuthControlRequest(
 			const newline = input.indexOf("\n");
 			if (newline === -1) return;
 			try {
-				const response = JSON.parse(input.slice(0, newline)) as AuthControlResponse;
+				const response = JSON.parse(
+					input.slice(0, newline),
+				) as AuthControlResponse;
 				finish(() => resolve(response));
 			} catch (error) {
 				finish(() => reject(error));

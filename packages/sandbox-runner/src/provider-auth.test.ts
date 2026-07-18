@@ -2,16 +2,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { ProviderAuthOut } from "./provider-auth-protocol.js";
 import {
 	normalizeResultPath,
 	runProviderAuth,
 	toRuntimeCredential,
 } from "./provider-auth.js";
+import { sendAuthControlRequest } from "./provider-auth-control.js";
+import type { ProviderAuthOut } from "./provider-auth-protocol.js";
 import { PORTABLE_PROVIDER_AUTH, RESULT_DIR } from "./provider-matrix.js";
-import {
-	sendAuthControlRequest,
-} from "./provider-auth-control.js";
 
 function tmpResult(name: string): string {
 	fs.mkdirSync(RESULT_DIR, { recursive: true, mode: 0o700 });
@@ -40,7 +38,11 @@ describe("provider-auth matrix", () => {
 			handshakeTimeoutMs: 10,
 		});
 		expect(missing.ok).toBe(false);
-		expect(events.some((e) => e.kind === "error" && e.code === "unsupported_provider")).toBe(true);
+		expect(
+			events.some(
+				(e) => e.kind === "error" && e.code === "unsupported_provider",
+			),
+		).toBe(true);
 
 		const events2: ProviderAuthOut[] = [];
 		const badAuth = await runProviderAuth({
@@ -380,6 +382,8 @@ describe("runtime credential projection", () => {
 	it("normalizes result paths under the fixed directory", () => {
 		const p = normalizeResultPath(path.join(RESULT_DIR, "x.json"));
 		expect(p.startsWith(RESULT_DIR)).toBe(true);
-		expect(() => normalizeResultPath(path.join(os.tmpdir(), "evil.json"))).toThrow();
+		expect(() =>
+			normalizeResultPath(path.join(os.tmpdir(), "evil.json")),
+		).toThrow();
 	});
 });

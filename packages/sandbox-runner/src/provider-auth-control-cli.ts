@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import fs from "node:fs";
+import { sendAuthControlRequest } from "./provider-auth-control.js";
 import {
 	type AuthControlRequest,
 	parseAuthControlRequest,
 } from "./provider-auth-protocol.js";
-import { sendAuthControlRequest } from "./provider-auth-control.js";
 
 const MAX_OUTPUT = 64 * 1024;
 

@@ -10,11 +10,11 @@ import {
 	InMemoryCredentialStore,
 } from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import {
-	type AuthControlRequest,
-	type ProviderAuthOut,
-} from "./provider-auth-protocol.js";
 import { startAuthControlServer } from "./provider-auth-control.js";
+import type {
+	AuthControlRequest,
+	ProviderAuthOut,
+} from "./provider-auth-protocol.js";
 import {
 	isAllowedAuthType,
 	MAX_SAFE_MODELS,
@@ -60,7 +60,9 @@ export type ProviderAuthOptions = {
 	job: ProviderAuthJob;
 	onEvent: (msg: ProviderAuthOut) => void;
 	/** Injected for tests. */
-	createRuntime?: (credentials: InMemoryCredentialStore) => Promise<ModelRuntime>;
+	createRuntime?: (
+		credentials: InMemoryCredentialStore,
+	) => Promise<ModelRuntime>;
 	/** Injected for tests. */
 	loginImpl?: (
 		runtime: ModelRuntime,
@@ -266,7 +268,9 @@ export async function runProviderAuth(
 	const { job, onEvent } = options;
 	let ok = false;
 	let doneEmitted = false;
-	let controlServer: Awaited<ReturnType<typeof startAuthControlServer>> | undefined;
+	let controlServer:
+		| Awaited<ReturnType<typeof startAuthControlServer>>
+		| undefined;
 	let resultPath: string | undefined;
 	let cancelled = false;
 	const abort = new AbortController();
@@ -300,7 +304,10 @@ export async function runProviderAuth(
 			finish(false);
 			return { ok: false };
 		}
-		if (job.mode === "login" && !isAllowedAuthType(job.providerId, job.authType)) {
+		if (
+			job.mode === "login" &&
+			!isAllowedAuthType(job.providerId, job.authType)
+		) {
 			emitError(onEvent, "unsupported_auth");
 			finish(false);
 			return { ok: false };
@@ -432,10 +439,7 @@ export async function runProviderAuth(
 				return { ok: false };
 			}
 			const models = projectSafeModels(runtime, job.providerId);
-			writeSecretFile(
-				resultPath,
-				JSON.stringify({ credential, models }),
-			);
+			writeSecretFile(resultPath, JSON.stringify({ credential, models }));
 			onEvent({ v: 1, kind: "credential_ready" });
 			const consumed = await waitForResultConsumed(
 				resultPath,

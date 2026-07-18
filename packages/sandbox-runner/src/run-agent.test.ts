@@ -140,16 +140,22 @@ describe("runAgent live controls", () => {
 			return { socketPath: "/tmp/test.sock", close: mocks.close };
 		});
 		delete process.env.OPENCODE_API_KEY;
+		delete process.env.DITTO_PI_CREDENTIAL;
 	});
 
 	it("passes modelRuntime and seeds the selected provider in memory", async () => {
-		process.env.OPENCODE_API_KEY = "test-opencode-key";
+		process.env.DITTO_PI_CREDENTIAL = JSON.stringify({
+			type: "api_key",
+			key: "test-opencode-key",
+		});
 		const harness = makeSession();
 		const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "ditto-agent-"));
 		const { result } = await beginRun(harness, { agentDir });
 		harness.finish();
 		await result;
 
+		expect(process.env.DITTO_PI_CREDENTIAL).toBeUndefined();
+		expect(process.env.OPENCODE_API_KEY).toBeUndefined();
 		expect(mocks.credentialModify).toHaveBeenCalledWith(
 			"provider",
 			expect.any(Function),

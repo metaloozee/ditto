@@ -1,12 +1,10 @@
 #!/usr/bin/env node
 import fs from "node:fs";
+import { type ProviderAuthJob, runProviderAuth } from "./provider-auth.js";
 import { encodeAuthLine } from "./provider-auth-protocol.js";
-import { runProviderAuth, type ProviderAuthJob } from "./provider-auth.js";
 
 function writeError(code: string, message: string): void {
-	process.stdout.write(
-		encodeAuthLine({ v: 1, kind: "error", code, message }),
-	);
+	process.stdout.write(encodeAuthLine({ v: 1, kind: "error", code, message }));
 }
 
 function parseArgs(argv: string[]): { jobPath?: string; error?: string } {

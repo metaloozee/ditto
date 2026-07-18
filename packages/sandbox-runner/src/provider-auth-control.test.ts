@@ -25,10 +25,13 @@ describe("provider-auth-control", () => {
 			handle: async () => ({ accepted: true, action: "answer" }),
 		});
 		try {
-			const stale = await sendAuthControlRequest({
-				attemptId: "other",
-				action: "cancel",
-			}, { socketPath: server.socketPath });
+			const stale = await sendAuthControlRequest(
+				{
+					attemptId: "other",
+					action: "cancel",
+				},
+				{ socketPath: server.socketPath },
+			);
 			expect(stale.accepted).toBe(false);
 		} finally {
 			await server.close();
