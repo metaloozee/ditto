@@ -62,14 +62,14 @@ export const safeModelSchema = z
 		name: z.string().min(1).max(MAX_NAME_FIELD),
 		input: z.array(z.string().max(64)).max(16).optional(),
 		reasoning: z.boolean().optional(),
-		contextWindow: z.number().int().positive().safe().optional(),
-		maxTokens: z.number().int().positive().safe().optional(),
+		contextWindow: z.number().int().positive().finite().safe().optional(),
+		maxTokens: z.number().int().positive().finite().safe().optional(),
 		cost: z
 			.object({
-				input: z.number().nonnegative().optional(),
-				output: z.number().nonnegative().optional(),
-				cacheRead: z.number().nonnegative().optional(),
-				cacheWrite: z.number().nonnegative().optional(),
+				input: z.number().finite().nonnegative().optional(),
+				output: z.number().finite().nonnegative().optional(),
+				cacheRead: z.number().finite().nonnegative().optional(),
+				cacheWrite: z.number().finite().nonnegative().optional(),
 			})
 			.strict()
 			.optional(),
@@ -109,9 +109,7 @@ export type ConnectionStatus = {
 	models: SafeModel[];
 };
 
-type Db = ReturnType<typeof createDb>;
-
-type CredentialRow = {
+export type CredentialRow = {
 	id: string;
 	userId: string;
 	providerId: string;
@@ -127,58 +125,226 @@ type CredentialRow = {
 	updatedAt: Date;
 };
 
-const MEMORY_DB = Symbol.for("ditto.memoryCredentialDb");
-
-export type MemoryCredentialDb = {
-	readonly [MEMORY_DB]: true;
-	rows: Map<string, CredentialRow>;
-	attempts: Map<
-		string,
-		{
-			id: string;
-			userId: string;
-			providerId: string;
-			authType: ProviderAuthType;
-			authSandboxId: string | null;
-			status: "pending" | "complete" | "failed" | "cancelled";
-			expiresAt: Date;
-			createdAt: Date;
-			updatedAt: Date;
-		}
-	>;
-	clock: number;
+export type AuthAttemptRow = {
+	id: string;
+	userId: string;
+	providerId: string;
+	authType: ProviderAuthType;
+	authSandboxId: string | null;
+	status: "pending" | "complete" | "failed" | "cancelled";
+	expiresAt: Date;
+	createdAt: Date;
+	updatedAt: Date;
 };
 
-export function createMemoryCredentialDb(
-	nowMs = 1_000_000,
-): MemoryCredentialDb {
-	return {
-		[MEMORY_DB]: true,
-		rows: new Map(),
-		attempts: new Map(),
-		clock: nowMs,
-	};
-}
+type Db = ReturnType<typeof createDb>;
 
-export function isMemoryCredentialDb(db: unknown): db is MemoryCredentialDb {
-	return (
-		typeof db === "object" &&
-		db !== null &&
-		MEMORY_DB in db &&
-		(db as MemoryCredentialDb)[MEMORY_DB] === true
-	);
-}
-
-function isMemoryDb(db: Db | MemoryCredentialDb): db is MemoryCredentialDb {
-	return isMemoryCredentialDb(db);
-}
-
-function rowKey(userId: string, providerId: string): string {
-	return `${userId}\0${providerId}`;
-}
+/**
+ * Narrow credential authority surface. Production uses D1 via
+ * {@link createCredentialRepository}; tests inject a same-shaped store so every
+ * CAS/version path runs through one control flow.
+ */
+export type CredentialRepository = {
+	getRow(userId: string, providerId: string): Promise<CredentialRow | null>;
+	listRows(userId: string): Promise<CredentialRow[]>;
+	insertRow(row: CredentialRow): Promise<void>;
+	/** Conditional update; returns updated row or null if no match. */
+	updateRow(
+		where: {
+			userId: string;
+			providerId: string;
+			id?: string;
+			leaseId?: string | null;
+			version?: number;
+			/** Match when lease is free or expired at this instant. */
+			leaseOpenAt?: number;
+		},
+		set: Partial<
+			Pick<
+				CredentialRow,
+				| "authType"
+				| "encryptedCredential"
+				| "modelCatalog"
+				| "status"
+				| "lastErrorCode"
+				| "version"
+				| "leaseId"
+				| "leaseExpiresAt"
+				| "updatedAt"
+			>
+		>,
+	): Promise<CredentialRow | null>;
+	deleteRow(where: {
+		userId: string;
+		providerId: string;
+		leaseId: string;
+	}): Promise<boolean>;
+	clearExpiredLeases(nowMs: number): Promise<void>;
+	insertAttempt(row: AuthAttemptRow): Promise<void>;
+	getAttempt(id: string, userId: string): Promise<AuthAttemptRow | null>;
+	updateAttempt(
+		id: string,
+		set: Partial<Pick<AuthAttemptRow, "status" | "updatedAt">>,
+	): Promise<void>;
+	deleteExpiredAttempts(nowMs: number): Promise<void>;
+};
 
 function nowDate(nowMs: number): Date {
 	return new Date(nowMs);
+}
+
+function leaseIsOpen(row: CredentialRow, nowMs: number): boolean {
+	if (!row.leaseId) return true;
+	if (!row.leaseExpiresAt) return true;
+	return row.leaseExpiresAt.getTime() <= nowMs;
+}
+
+function matchesWhere(
+	row: CredentialRow,
+	where: Parameters<CredentialRepository["updateRow"]>[0],
+): boolean {
+	if (row.userId !== where.userId || row.providerId !== where.providerId) {
+		return false;
+	}
+	if (where.id !== undefined && row.id !== where.id) return false;
+	if (where.leaseId !== undefined && row.leaseId !== where.leaseId)
+		return false;
+	if (where.version !== undefined && row.version !== where.version)
+		return false;
+	if (where.leaseOpenAt !== undefined && !leaseIsOpen(row, where.leaseOpenAt)) {
+		return false;
+	}
+	return true;
+}
+
+/** D1-backed production repository. */
+export function createCredentialRepository(db: Db): CredentialRepository {
+	return {
+		async getRow(userId, providerId) {
+			const [row] = await db
+				.select()
+				.from(aiProviderCredentials)
+				.where(
+					and(
+						eq(aiProviderCredentials.userId, userId),
+						eq(aiProviderCredentials.providerId, providerId),
+					),
+				)
+				.limit(1);
+			return (row as CredentialRow | undefined) ?? null;
+		},
+
+		async listRows(userId) {
+			const rows = await db
+				.select()
+				.from(aiProviderCredentials)
+				.where(eq(aiProviderCredentials.userId, userId));
+			return rows as CredentialRow[];
+		},
+
+		async insertRow(row) {
+			await db.insert(aiProviderCredentials).values(row);
+		},
+
+		async updateRow(where, set) {
+			const conditions = [
+				eq(aiProviderCredentials.userId, where.userId),
+				eq(aiProviderCredentials.providerId, where.providerId),
+			];
+			if (where.id !== undefined) {
+				conditions.push(eq(aiProviderCredentials.id, where.id));
+			}
+			if (where.leaseId !== undefined) {
+				if (where.leaseId === null) {
+					conditions.push(sql`${aiProviderCredentials.leaseId} IS NULL`);
+				} else {
+					conditions.push(eq(aiProviderCredentials.leaseId, where.leaseId));
+				}
+			}
+			if (where.version !== undefined) {
+				conditions.push(eq(aiProviderCredentials.version, where.version));
+			}
+			if (where.leaseOpenAt !== undefined) {
+				const now = nowDate(where.leaseOpenAt);
+				conditions.push(
+					or(
+						sql`${aiProviderCredentials.leaseId} IS NULL`,
+						sql`${aiProviderCredentials.leaseExpiresAt} IS NULL`,
+						lt(aiProviderCredentials.leaseExpiresAt, now),
+					)!,
+				);
+			}
+
+			const updated = await db
+				.update(aiProviderCredentials)
+				.set(set)
+				.where(and(...conditions))
+				.returning();
+			return (updated[0] as CredentialRow | undefined) ?? null;
+		},
+
+		async deleteRow(where) {
+			const deleted = await db
+				.delete(aiProviderCredentials)
+				.where(
+					and(
+						eq(aiProviderCredentials.userId, where.userId),
+						eq(aiProviderCredentials.providerId, where.providerId),
+						eq(aiProviderCredentials.leaseId, where.leaseId),
+					),
+				)
+				.returning({ id: aiProviderCredentials.id });
+			return deleted.length > 0;
+		},
+
+		async clearExpiredLeases(nowMs) {
+			const nowTs = nowDate(nowMs);
+			await db
+				.update(aiProviderCredentials)
+				.set({
+					leaseId: null,
+					leaseExpiresAt: null,
+					updatedAt: nowTs,
+				})
+				.where(
+					and(
+						sql`${aiProviderCredentials.leaseExpiresAt} IS NOT NULL`,
+						lt(aiProviderCredentials.leaseExpiresAt, nowTs),
+					),
+				);
+		},
+
+		async insertAttempt(row) {
+			await db.insert(providerAuthAttempts).values(row);
+		},
+
+		async getAttempt(id, userId) {
+			const [row] = await db
+				.select()
+				.from(providerAuthAttempts)
+				.where(
+					and(
+						eq(providerAuthAttempts.id, id),
+						eq(providerAuthAttempts.userId, userId),
+					),
+				)
+				.limit(1);
+			return (row as AuthAttemptRow | undefined) ?? null;
+		},
+
+		async updateAttempt(id, set) {
+			await db
+				.update(providerAuthAttempts)
+				.set(set)
+				.where(eq(providerAuthAttempts.id, id));
+		},
+
+		async deleteExpiredAttempts(nowMs) {
+			await db
+				.delete(providerAuthAttempts)
+				.where(lt(providerAuthAttempts.expiresAt, nowDate(nowMs)));
+		},
+	};
 }
 
 export type CredentialConfig = {
@@ -318,56 +484,11 @@ export function parseStoredCredential(value: unknown): StoredCredential {
 	throw new Error("Unsupported credential type.");
 }
 
-async function selectRow(
-	db: Db | MemoryCredentialDb,
-	userId: string,
-	providerId: string,
-): Promise<CredentialRow | null> {
-	if (isMemoryDb(db)) {
-		return db.rows.get(rowKey(userId, providerId)) ?? null;
-	}
-	const [row] = await db
-		.select()
-		.from(aiProviderCredentials)
-		.where(
-			and(
-				eq(aiProviderCredentials.userId, userId),
-				eq(aiProviderCredentials.providerId, providerId),
-			),
-		)
-		.limit(1);
-	return (row as CredentialRow | undefined) ?? null;
-}
-
 export async function listConnections(
-	db: Db | MemoryCredentialDb,
+	db: CredentialRepository,
 	userId: string,
 ): Promise<ConnectionStatus[]> {
-	if (isMemoryDb(db)) {
-		return [...db.rows.values()]
-			.filter((row) => row.userId === userId)
-			.map((row) => ({
-				providerId: row.providerId,
-				authType: row.authType,
-				status: row.status,
-				lastErrorCode: row.lastErrorCode,
-				models:
-					row.status === "connected"
-						? parseSafeModelCatalog(row.modelCatalog)
-						: [],
-			}));
-	}
-	const rows = await db
-		.select({
-			providerId: aiProviderCredentials.providerId,
-			authType: aiProviderCredentials.authType,
-			status: aiProviderCredentials.status,
-			lastErrorCode: aiProviderCredentials.lastErrorCode,
-			modelCatalog: aiProviderCredentials.modelCatalog,
-		})
-		.from(aiProviderCredentials)
-		.where(eq(aiProviderCredentials.userId, userId));
-
+	const rows = await db.listRows(userId);
 	return rows.map((row) => ({
 		providerId: row.providerId,
 		authType: row.authType,
@@ -379,7 +500,7 @@ export async function listConnections(
 }
 
 export async function loadCredential(options: {
-	db: Db | MemoryCredentialDb;
+	db: CredentialRepository;
 	userId: string;
 	providerId: string;
 	encryptionKey: string;
@@ -392,7 +513,7 @@ export async function loadCredential(options: {
 	models: SafeModel[];
 	lastErrorCode: string | null;
 } | null> {
-	const row = await selectRow(options.db, options.userId, options.providerId);
+	const row = await options.db.getRow(options.userId, options.providerId);
 	if (!row) return null;
 
 	const plaintext = await decryptText(
@@ -418,9 +539,12 @@ export async function loadCredential(options: {
  * Upsert a credential. Existing rows linearize with the provider lease so a
  * reconnect cannot clear another holder's active refresh lease without taking
  * it, and a concurrent refresh cannot race the write.
+ *
+ * Version is always `lease.version + 1` and the write is conditioned on both
+ * lease ID and the acquired version (not a pre-lease snapshot).
  */
 export async function upsertCredential(options: {
-	db: Db | MemoryCredentialDb;
+	db: CredentialRepository;
 	userId: string;
 	providerId: string;
 	authType: ProviderAuthType;
@@ -444,14 +568,10 @@ export async function upsertCredential(options: {
 		},
 	);
 
-	const existing = await selectRow(
-		options.db,
-		options.userId,
-		options.providerId,
-	);
+	const existing = await options.db.getRow(options.userId, options.providerId);
 
 	if (!existing) {
-		const row: CredentialRow = {
+		await options.db.insertRow({
 			id: createId(),
 			userId: options.userId,
 			providerId: options.providerId,
@@ -465,12 +585,7 @@ export async function upsertCredential(options: {
 			leaseExpiresAt: null,
 			createdAt: nowDate(now),
 			updatedAt: nowDate(now),
-		};
-		if (isMemoryDb(options.db)) {
-			options.db.rows.set(rowKey(options.userId, options.providerId), row);
-			return "ok";
-		}
-		await options.db.insert(aiProviderCredentials).values(row);
+		});
 		return "ok";
 	}
 
@@ -493,44 +608,32 @@ export async function upsertCredential(options: {
 	if (!lease) return "busy";
 
 	try {
-		if (isMemoryDb(options.db)) {
-			const row = options.db.rows.get(
-				rowKey(options.userId, options.providerId),
-			);
-			if (!row || row.leaseId !== lease.leaseId) return "busy";
-			row.authType = options.authType;
-			row.encryptedCredential = encrypted;
-			row.modelCatalog = JSON.stringify(safeModels);
-			row.status = "connected";
-			row.lastErrorCode = null;
-			row.version = row.version + 1;
-			row.leaseId = null;
-			row.leaseExpiresAt = null;
-			row.updatedAt = nowDate(now);
-			return "ok";
-		}
+		// Re-read after lease; write against acquired version only.
+		const current = await options.db.getRow(options.userId, options.providerId);
+		if (!current || current.leaseId !== lease.leaseId) return "busy";
+		if (current.version !== lease.version) return "busy";
 
-		const updated = await options.db
-			.update(aiProviderCredentials)
-			.set({
+		const updated = await options.db.updateRow(
+			{
+				userId: options.userId,
+				providerId: options.providerId,
+				id: current.id,
+				leaseId: lease.leaseId,
+				version: lease.version,
+			},
+			{
 				authType: options.authType,
 				encryptedCredential: encrypted,
 				modelCatalog: JSON.stringify(safeModels),
 				status: "connected",
 				lastErrorCode: null,
-				version: existing.version + 1,
+				version: lease.version + 1,
 				leaseId: null,
 				leaseExpiresAt: null,
 				updatedAt: nowDate(now),
-			})
-			.where(
-				and(
-					eq(aiProviderCredentials.id, existing.id),
-					eq(aiProviderCredentials.leaseId, lease.leaseId),
-				),
-			)
-			.returning({ id: aiProviderCredentials.id });
-		return updated[0] ? "ok" : "busy";
+			},
+		);
+		return updated ? "ok" : "busy";
 	} finally {
 		await releaseLease({
 			db: options.db,
@@ -547,7 +650,7 @@ export async function upsertCredential(options: {
  * A stale failed refresh cannot mark a newly reconnected row.
  */
 export async function markNeedsRelogin(options: {
-	db: Db | MemoryCredentialDb;
+	db: CredentialRepository;
 	userId: string;
 	providerId: string;
 	errorCode: string;
@@ -559,43 +662,23 @@ export async function markNeedsRelogin(options: {
 	if (!code) throw new Error("errorCode is required.");
 	const now = options.nowMs ?? Date.now();
 
-	if (isMemoryDb(options.db)) {
-		const row = options.db.rows.get(rowKey(options.userId, options.providerId));
-		if (!row) return "missing";
-		if (
-			row.leaseId !== options.leaseId ||
-			row.version !== options.expectedVersion
-		) {
-			return "stale";
-		}
-		row.status = "needs_relogin";
-		row.lastErrorCode = code;
-		row.leaseId = null;
-		row.leaseExpiresAt = null;
-		row.updatedAt = nowDate(now);
-		return "ok";
-	}
-
-	const updated = await options.db
-		.update(aiProviderCredentials)
-		.set({
+	const updated = await options.db.updateRow(
+		{
+			userId: options.userId,
+			providerId: options.providerId,
+			leaseId: options.leaseId,
+			version: options.expectedVersion,
+		},
+		{
 			status: "needs_relogin",
 			lastErrorCode: code,
 			leaseId: null,
 			leaseExpiresAt: null,
 			updatedAt: nowDate(now),
-		})
-		.where(
-			and(
-				eq(aiProviderCredentials.userId, options.userId),
-				eq(aiProviderCredentials.providerId, options.providerId),
-				eq(aiProviderCredentials.leaseId, options.leaseId),
-				eq(aiProviderCredentials.version, options.expectedVersion),
-			),
-		)
-		.returning({ id: aiProviderCredentials.id });
-	if (updated[0]) return "ok";
-	const still = await selectRow(options.db, options.userId, options.providerId);
+		},
+	);
+	if (updated) return "ok";
+	const still = await options.db.getRow(options.userId, options.providerId);
 	return still ? "stale" : "missing";
 }
 
@@ -604,7 +687,7 @@ export async function markNeedsRelogin(options: {
  * Expired leases are reclaimable.
  */
 export async function acquireLease(options: {
-	db: Db | MemoryCredentialDb;
+	db: CredentialRepository;
 	userId: string;
 	providerId: string;
 	nowMs?: number;
@@ -616,70 +699,25 @@ export async function acquireLease(options: {
 	const ttl = options.ttlMs ?? LEASE_TTL_MS;
 	const expires = nowDate(now + ttl);
 
-	if (isMemoryDb(options.db)) {
-		const row = options.db.rows.get(rowKey(options.userId, options.providerId));
-		if (!row) return null;
-		const held =
-			row.leaseId && row.leaseExpiresAt && row.leaseExpiresAt.getTime() > now;
-		if (held) return null;
-		row.leaseId = leaseId;
-		row.leaseExpiresAt = expires;
-		row.updatedAt = nowDate(now);
-		return { leaseId, version: row.version };
-	}
-
-	const [row] = await options.db
-		.select({
-			id: aiProviderCredentials.id,
-			version: aiProviderCredentials.version,
-			leaseId: aiProviderCredentials.leaseId,
-			leaseExpiresAt: aiProviderCredentials.leaseExpiresAt,
-		})
-		.from(aiProviderCredentials)
-		.where(
-			and(
-				eq(aiProviderCredentials.userId, options.userId),
-				eq(aiProviderCredentials.providerId, options.providerId),
-			),
-		)
-		.limit(1);
-	if (!row) return null;
-
-	const held =
-		row.leaseId && row.leaseExpiresAt && row.leaseExpiresAt.getTime() > now;
-	if (held) return null;
-
-	const result = await options.db
-		.update(aiProviderCredentials)
-		.set({
+	const updated = await options.db.updateRow(
+		{
+			userId: options.userId,
+			providerId: options.providerId,
+			leaseOpenAt: now,
+		},
+		{
 			leaseId,
 			leaseExpiresAt: expires,
 			updatedAt: nowDate(now),
-		})
-		.where(
-			and(
-				eq(aiProviderCredentials.id, row.id),
-				or(
-					sql`${aiProviderCredentials.leaseId} IS NULL`,
-					sql`${aiProviderCredentials.leaseExpiresAt} IS NULL`,
-					lt(aiProviderCredentials.leaseExpiresAt, nowDate(now)),
-					eq(aiProviderCredentials.leaseId, row.leaseId ?? ""),
-				),
-			),
-		)
-		.returning({
-			leaseId: aiProviderCredentials.leaseId,
-			version: aiProviderCredentials.version,
-		});
-
-	const updated = result[0];
+		},
+	);
 	if (!updated || updated.leaseId !== leaseId) return null;
 	return { leaseId, version: updated.version };
 }
 
 /** Bounded wait/retry for an active lease. */
 export async function acquireLeaseWithWait(options: {
-	db: Db | MemoryCredentialDb;
+	db: CredentialRepository;
 	userId: string;
 	providerId: string;
 	nowMs?: number;
@@ -688,7 +726,7 @@ export async function acquireLeaseWithWait(options: {
 	waitMs?: number;
 	pollMs?: number;
 	sleep?: (ms: number) => Promise<void>;
-	/** Injectable clock advance for tests (memory db). */
+	/** Injectable clock advance for tests. */
 	tick?: (ms: number) => void;
 }): Promise<{ leaseId: string; version: number } | null> {
 	const waitMs = options.waitMs ?? LEASE_WAIT_MS;
@@ -712,8 +750,7 @@ export async function acquireLeaseWithWait(options: {
 		if (elapsed >= waitMs) break;
 		const step = Math.min(pollMs, waitMs - elapsed);
 		if (options.tick) options.tick(step);
-		else if (isMemoryDb(options.db)) options.db.clock += step;
-		await sleep(isMemoryDb(options.db) ? 0 : step);
+		await sleep(options.tick ? 0 : step);
 		elapsed += step;
 	}
 	return null;
@@ -721,7 +758,7 @@ export async function acquireLeaseWithWait(options: {
 
 /** Update-only refresh write. Never recreates a deleted row. */
 export async function updateCredentialUnderLease(options: {
-	db: Db | MemoryCredentialDb;
+	db: CredentialRepository;
 	userId: string;
 	providerId: string;
 	leaseId: string;
@@ -741,145 +778,81 @@ export async function updateCredentialUnderLease(options: {
 		},
 	);
 
-	if (isMemoryDb(options.db)) {
-		const row = options.db.rows.get(rowKey(options.userId, options.providerId));
-		if (!row) return "missing";
-		if (
-			row.leaseId !== options.leaseId ||
-			row.version !== options.expectedVersion ||
-			!row.leaseExpiresAt ||
-			row.leaseExpiresAt.getTime() <= now
-		) {
-			return "stale";
-		}
-		row.encryptedCredential = encrypted;
-		row.status = "connected";
-		row.lastErrorCode = null;
-		row.version = row.version + 1;
-		row.updatedAt = nowDate(now);
-		if (options.models) {
-			row.modelCatalog = JSON.stringify(
-				projectSafeModels(options.models, options.providerId),
-			);
-		}
-		return "ok";
-	}
-
-	const [row] = await options.db
-		.select({
-			id: aiProviderCredentials.id,
-			version: aiProviderCredentials.version,
-			leaseId: aiProviderCredentials.leaseId,
-			leaseExpiresAt: aiProviderCredentials.leaseExpiresAt,
-		})
-		.from(aiProviderCredentials)
-		.where(
-			and(
-				eq(aiProviderCredentials.userId, options.userId),
-				eq(aiProviderCredentials.providerId, options.providerId),
-			),
-		)
-		.limit(1);
-	if (!row) return "missing";
+	const current = await options.db.getRow(options.userId, options.providerId);
+	if (!current) return "missing";
 	if (
-		row.leaseId !== options.leaseId ||
-		row.version !== options.expectedVersion ||
-		!row.leaseExpiresAt ||
-		row.leaseExpiresAt.getTime() <= now
+		current.leaseId !== options.leaseId ||
+		current.version !== options.expectedVersion ||
+		!current.leaseExpiresAt ||
+		current.leaseExpiresAt.getTime() <= now
 	) {
 		return "stale";
 	}
 
-	const patch: Record<string, unknown> = {
+	const set: Parameters<CredentialRepository["updateRow"]>[1] = {
 		encryptedCredential: encrypted,
 		status: "connected",
 		lastErrorCode: null,
-		version: row.version + 1,
+		version: options.expectedVersion + 1,
 		updatedAt: nowDate(now),
 	};
 	if (options.models) {
-		patch.modelCatalog = JSON.stringify(
+		set.modelCatalog = JSON.stringify(
 			projectSafeModels(options.models, options.providerId),
 		);
 	}
 
-	const updated = await options.db
-		.update(aiProviderCredentials)
-		.set(patch)
-		.where(
-			and(
-				eq(aiProviderCredentials.id, row.id),
-				eq(aiProviderCredentials.leaseId, options.leaseId),
-				eq(aiProviderCredentials.version, options.expectedVersion),
-			),
-		)
-		.returning({ id: aiProviderCredentials.id });
-
-	return updated[0] ? "ok" : "stale";
+	const updated = await options.db.updateRow(
+		{
+			userId: options.userId,
+			providerId: options.providerId,
+			id: current.id,
+			leaseId: options.leaseId,
+			version: options.expectedVersion,
+		},
+		set,
+	);
+	return updated ? "ok" : "stale";
 }
 
 export async function releaseLease(options: {
-	db: Db | MemoryCredentialDb;
+	db: CredentialRepository;
 	userId: string;
 	providerId: string;
 	leaseId: string;
 	nowMs?: number;
 }): Promise<void> {
 	const now = options.nowMs ?? Date.now();
-	if (isMemoryDb(options.db)) {
-		const row = options.db.rows.get(rowKey(options.userId, options.providerId));
-		if (row && row.leaseId === options.leaseId) {
-			row.leaseId = null;
-			row.leaseExpiresAt = null;
-			row.updatedAt = nowDate(now);
-		}
-		return;
-	}
-	await options.db
-		.update(aiProviderCredentials)
-		.set({
+	await options.db.updateRow(
+		{
+			userId: options.userId,
+			providerId: options.providerId,
+			leaseId: options.leaseId,
+		},
+		{
 			leaseId: null,
 			leaseExpiresAt: null,
 			updatedAt: nowDate(now),
-		})
-		.where(
-			and(
-				eq(aiProviderCredentials.userId, options.userId),
-				eq(aiProviderCredentials.providerId, options.providerId),
-				eq(aiProviderCredentials.leaseId, options.leaseId),
-			),
-		);
+		},
+	);
 }
 
 /** Delete while holding the lease. */
 export async function deleteCredentialUnderLease(options: {
-	db: Db | MemoryCredentialDb;
+	db: CredentialRepository;
 	userId: string;
 	providerId: string;
 	leaseId: string;
 }): Promise<boolean> {
-	if (isMemoryDb(options.db)) {
-		const k = rowKey(options.userId, options.providerId);
-		const row = options.db.rows.get(k);
-		if (!row || row.leaseId !== options.leaseId) return false;
-		options.db.rows.delete(k);
-		return true;
-	}
-	const deleted = await options.db
-		.delete(aiProviderCredentials)
-		.where(
-			and(
-				eq(aiProviderCredentials.userId, options.userId),
-				eq(aiProviderCredentials.providerId, options.providerId),
-				eq(aiProviderCredentials.leaseId, options.leaseId),
-			),
-		)
-		.returning({ id: aiProviderCredentials.id });
-	return deleted.length > 0;
+	return options.db.deleteRow({
+		userId: options.userId,
+		providerId: options.providerId,
+		leaseId: options.leaseId,
+	});
 }
 
 export async function deleteCredentialWithLease(options: {
-	db: Db | MemoryCredentialDb;
+	db: CredentialRepository;
 	userId: string;
 	providerId: string;
 	nowMs?: number;
@@ -906,40 +879,12 @@ export async function deleteCredentialWithLease(options: {
 }
 
 export async function clearExpiredAttemptsAndLeases(options: {
-	db: Db | MemoryCredentialDb;
+	db: CredentialRepository;
 	nowMs?: number;
 }): Promise<void> {
 	const now = options.nowMs ?? Date.now();
-	const nowTs = nowDate(now);
-	if (isMemoryDb(options.db)) {
-		for (const [id, attempt] of options.db.attempts) {
-			if (attempt.expiresAt.getTime() < now) options.db.attempts.delete(id);
-		}
-		for (const row of options.db.rows.values()) {
-			if (row.leaseExpiresAt && row.leaseExpiresAt.getTime() < now) {
-				row.leaseId = null;
-				row.leaseExpiresAt = null;
-				row.updatedAt = nowTs;
-			}
-		}
-		return;
-	}
-	await options.db
-		.delete(providerAuthAttempts)
-		.where(lt(providerAuthAttempts.expiresAt, nowTs));
-	await options.db
-		.update(aiProviderCredentials)
-		.set({
-			leaseId: null,
-			leaseExpiresAt: null,
-			updatedAt: nowTs,
-		})
-		.where(
-			and(
-				sql`${aiProviderCredentials.leaseExpiresAt} IS NOT NULL`,
-				lt(aiProviderCredentials.leaseExpiresAt, nowTs),
-			),
-		);
+	await options.db.deleteExpiredAttempts(now);
+	await options.db.clearExpiredLeases(now);
 }
 
 function projectApiKeyEnv(
@@ -1025,3 +970,11 @@ export function operatorFallbackCredential(apiKey: string): ApiKeyCredential {
 // Compile-time ordering check exported for tests.
 export const LEASE_ORDERING_OK =
 	AUTH_RESOLUTION_TIMEOUT_MS + AUTH_PROCESS_KILL_GRACE_MS < LEASE_TTL_MS;
+
+/** Shared CAS predicate for repository implementations (incl. tests). */
+export function credentialRowMatches(
+	row: CredentialRow,
+	where: Parameters<CredentialRepository["updateRow"]>[0],
+): boolean {
+	return matchesWhere(row, where);
+}

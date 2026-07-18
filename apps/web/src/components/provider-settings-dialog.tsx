@@ -73,6 +73,7 @@ export function ProviderSettingsDialog({ open, onOpenChange }: Props) {
 	);
 	const abortRef = useRef<AbortController | null>(null);
 	const cancellingRef = useRef(false);
+	const mountedRef = useRef(true);
 
 	const clearLocalSecrets = () => {
 		setPrompt(null);
@@ -89,6 +90,7 @@ export function ProviderSettingsDialog({ open, onOpenChange }: Props) {
 			abortRef.current?.abort();
 			abortRef.current = null;
 			const id = attemptIdRef.current;
+			attemptIdRef.current = null;
 			if (id) {
 				try {
 					await cancelProviderAuth({ attemptId: id });
@@ -96,7 +98,7 @@ export function ProviderSettingsDialog({ open, onOpenChange }: Props) {
 					// ignore
 				}
 			}
-			attemptIdRef.current = null;
+			if (!mountedRef.current) return;
 			setAttemptId(null);
 			setConnecting(null);
 			setStatus("");
@@ -115,7 +117,9 @@ export function ProviderSettingsDialog({ open, onOpenChange }: Props) {
 	}, [open]);
 
 	useEffect(() => {
+		mountedRef.current = true;
 		return () => {
+			mountedRef.current = false;
 			void cancelActiveAttemptRef.current();
 		};
 	}, []);
@@ -139,6 +143,7 @@ export function ProviderSettingsDialog({ open, onOpenChange }: Props) {
 				authType,
 				signal: ac.signal,
 				onEvent: (event) => {
+					if (!mountedRef.current || ac.signal.aborted) return;
 					if (event.event === "meta") {
 						attemptIdRef.current = event.data.attemptId;
 						setAttemptId(event.data.attemptId);
@@ -187,6 +192,12 @@ export function ProviderSettingsDialog({ open, onOpenChange }: Props) {
 					} else if (event.event === "error") {
 						setStatus(event.data.message);
 					} else if (event.event === "done") {
+						// Clear all transient prompt/device/auth/controller state on terminal done.
+						abortRef.current = null;
+						attemptIdRef.current = null;
+						setAttemptId(null);
+						setConnecting(null);
+						clearLocalSecrets();
 						if (event.data.ok) {
 							setStatus("Connected.");
 							void queryClient.invalidateQueries(
@@ -196,19 +207,19 @@ export function ProviderSettingsDialog({ open, onOpenChange }: Props) {
 								trpc.providerAuth.models.queryFilter(),
 							);
 						}
-						setConnecting(null);
-						attemptIdRef.current = null;
-						setAttemptId(null);
-						clearLocalSecrets();
 					}
 				},
 			});
 		} catch {
+			if (!mountedRef.current) return;
 			if (!ac.signal.aborted) {
 				setStatus("Connection failed.");
 			}
 			setConnecting(null);
 			clearLocalSecrets();
+			abortRef.current = null;
+			attemptIdRef.current = null;
+			setAttemptId(null);
 		}
 	};
 

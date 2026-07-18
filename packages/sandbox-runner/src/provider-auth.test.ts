@@ -133,6 +133,66 @@ describe("provider-auth login flows", () => {
 		expect(events.some((e) => e.kind === "done" && e.ok)).toBe(true);
 	});
 
+	it("blocks short secret and embedded split answers from public events", async () => {
+		const resultPath = tmpResult(`short-secret-${Date.now()}.json`);
+		const events: ProviderAuthOut[] = [];
+		const shortSecret = "xy";
+
+		const run = runProviderAuth({
+			job: {
+				mode: "login",
+				attemptId: "attempt-short-secret",
+				providerId: "openai",
+				authType: "api_key",
+				resultPath,
+			},
+			onEvent: (e) => events.push(e),
+			createRuntime: async () =>
+				({
+					getModels: () => [
+						{ provider: "openai", id: "gpt-test", name: "GPT Test" },
+					],
+				}) as never,
+			loginImpl: async (_rt, _p, _t, interaction) => {
+				const key = await interaction.prompt({
+					type: "secret",
+					message: "API key",
+				});
+				// Attempt to leak short secret (and split form) into a public event.
+				interaction.notify({
+					type: "info",
+					message: `got ${key} and ${key[0]}${key[1]}`,
+				});
+				return { type: "api_key", key: "sk-fallback-not-used" };
+			},
+			handshakeTimeoutMs: 2_000,
+		});
+
+		await vi.waitFor(() =>
+			expect(events.some((e) => e.kind === "prompt")).toBe(true),
+		);
+		const prompt = events.find((e) => e.kind === "prompt");
+		if (!prompt || prompt.kind !== "prompt") throw new Error("missing prompt");
+
+		await sendAuthControlRequest({
+			attemptId: "attempt-short-secret",
+			promptId: prompt.promptId,
+			action: "answer",
+			value: shortSecret,
+		});
+
+		const result = await run;
+		expect(result.ok).toBe(false);
+		const serialized = JSON.stringify(events);
+		expect(serialized).not.toContain(shortSecret);
+		expect(events.some((e) => e.kind === "error")).toBe(true);
+		try {
+			fs.unlinkSync(resultPath);
+		} catch {
+			// ignore
+		}
+	});
+
 	it("auto-selects Codex device_code and relays device events", async () => {
 		const resultPath = tmpResult(`codex-${Date.now()}.json`);
 		const events: ProviderAuthOut[] = [];
@@ -406,7 +466,7 @@ describe("xAI device flow and permissions", () => {
 				type: "oauth",
 				refresh: "r",
 				access: "a",
-				expires: Date.now() + 60_000,
+				expires: Date.now() + 9_999_999,
 			};
 		});
 		const run = runProviderAuth({
@@ -480,10 +540,68 @@ describe("xAI device flow and permissions", () => {
 					type: "oauth",
 					refresh: "r",
 					access: "a",
-					expires: Date.now() + 99_999,
+					expires: Date.now() + 9_999_999,
 				},
 				"not-a-real-oauth-provider",
 			),
 		).toThrow(/unsupported_credential/);
+	});
+
+	it("toRuntimeCredential rejects near-expiry tokens", () => {
+		expect(() =>
+			toRuntimeCredential(
+				{
+					type: "oauth",
+					refresh: "r",
+					access: "a",
+					expires: Date.now() + 30_000,
+				},
+				"anthropic",
+			),
+		).toThrow(/token_expires_too_soon/);
+	});
+
+	it("projectSafeModels rejects invalid bounds and duplicates", () => {
+		expect(() =>
+			projectSafeModels(
+				{
+					getModels: () => [
+						{
+							provider: "openai",
+							id: "x",
+							name: "X",
+							contextWindow: -1,
+						},
+					],
+				} as never,
+				"openai",
+			),
+		).toThrow();
+		expect(() =>
+			projectSafeModels(
+				{
+					getModels: () => [
+						{ provider: "openai", id: "x", name: "X" },
+						{ provider: "openai", id: "x", name: "X2" },
+					],
+				} as never,
+				"openai",
+			),
+		).toThrow(/duplicate_model/);
+		expect(() =>
+			projectSafeModels(
+				{
+					getModels: () => [
+						{
+							provider: "openai",
+							id: "x",
+							name: "X",
+							cost: { input: Number.NaN },
+						},
+					],
+				} as never,
+				"openai",
+			),
+		).toThrow();
 	});
 });

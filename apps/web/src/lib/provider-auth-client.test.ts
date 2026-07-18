@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	answerProviderAuthPrompt,
 	cancelProviderAuth,
+	parseProviderAuthClientEvent,
 	streamProviderAuthLogin,
 } from "#/lib/provider-auth-client";
 
@@ -52,5 +53,38 @@ describe("provider-auth-client", () => {
 		fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
 		await cancelProviderAuth({ attemptId: "a1" });
 		vi.unstubAllGlobals();
+	});
+
+	it("rejects credential_ready with token/credential extras", () => {
+		expect(
+			parseProviderAuthClientEvent("credential_ready", {
+				accessToken: "secret",
+			}),
+		).toBeNull();
+		expect(
+			parseProviderAuthClientEvent("credential_ready", {
+				credential: { key: "x" },
+			}),
+		).toBeNull();
+		expect(
+			parseProviderAuthClientEvent("credential_ready", { extra: 1 }),
+		).toBeNull();
+		expect(parseProviderAuthClientEvent("credential_ready", {})).toEqual({
+			event: "credential_ready",
+			data: {},
+		});
+	});
+
+	it("rejects extra fields on public client events", () => {
+		expect(
+			parseProviderAuthClientEvent("done", { ok: true, token: "x" }),
+		).toBeNull();
+		expect(
+			parseProviderAuthClientEvent("meta", {
+				attemptId: "a",
+				providerId: "openai",
+				secret: "nope",
+			}),
+		).toBeNull();
 	});
 });

@@ -46,15 +46,48 @@ describe("provider-auth-protocol", () => {
 		expect(classifyAuthUrl("xai", "https://evil.example/login").kind).toBe(
 			"text",
 		);
+		// Subdomain of allowed host is NOT open (exact match only).
+		expect(
+			classifyAuthUrl("openai-codex", "https://evil.auth.openai.com/device")
+				.kind,
+		).toBe("text");
 		expect(
 			classifyAuthUrl("github-copilot", "https://acme.ghe.com/login", {
 				enterpriseHost: "acme.ghe.com",
 			}).kind,
 		).toBe("open");
 		expect(
+			classifyAuthUrl("github-copilot", "https://evil.acme.ghe.com/login", {
+				enterpriseHost: "acme.ghe.com",
+			}).kind,
+		).toBe("text");
+		expect(
 			classifyAuthUrl("github-copilot", "https://other.ghe.com/login", {
 				enterpriseHost: "acme.ghe.com",
 			}).kind,
 		).toBe("text");
+		// Standard github.com still allowed alongside enterprise host.
+		expect(
+			classifyAuthUrl("github-copilot", "https://github.com/login/device", {
+				enterpriseHost: "acme.ghe.com",
+			}).kind,
+		).toBe("open");
+	});
+
+	it("rejects credential extras on credential_ready", () => {
+		expect(() =>
+			parseProviderAuthEvent({
+				v: 1,
+				kind: "credential_ready",
+				accessToken: "secret",
+			}),
+		).toThrow();
+		expect(() =>
+			parseProviderAuthEvent({
+				v: 1,
+				kind: "credential_ready",
+				extra: 1,
+			}),
+		).toThrow();
 	});
 });

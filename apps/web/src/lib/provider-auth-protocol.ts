@@ -15,11 +15,13 @@ export const providerAuthEventSchema = z.discriminatedUnion("kind", [
 			placeholder: z.string().max(200).optional(),
 			options: z
 				.array(
-					z.object({
-						id: z.string().min(1).max(MAX_ID),
-						label: z.string().min(1).max(200),
-						description: z.string().max(200).optional(),
-					}),
+					z
+						.object({
+							id: z.string().min(1).max(MAX_ID),
+							label: z.string().min(1).max(200),
+							description: z.string().max(200).optional(),
+						})
+						.strict(),
 				)
 				.max(32)
 				.optional(),
@@ -39,8 +41,8 @@ export const providerAuthEventSchema = z.discriminatedUnion("kind", [
 			kind: z.literal("device_code"),
 			userCode: z.string().min(1).max(64),
 			verificationUri: z.string().min(1).max(MAX_URL),
-			intervalSeconds: z.number().positive().optional(),
-			expiresInSeconds: z.number().positive().optional(),
+			intervalSeconds: z.number().positive().finite().optional(),
+			expiresInSeconds: z.number().positive().finite().optional(),
 		})
 		.strict(),
 	z
@@ -125,6 +127,16 @@ export type AuthUrlDecision =
 	| { kind: "open"; url: string }
 	| { kind: "text"; url: string; reason: string };
 
+function normalizeHost(raw: string): string {
+	return (
+		raw
+			.toLowerCase()
+			.replace(/^https?:\/\//, "")
+			.split("/")[0]
+			?.replace(/:\d+$/, "") ?? ""
+	);
+}
+
 export function classifyAuthUrl(
 	providerId: string,
 	url: string,
@@ -147,19 +159,25 @@ export function classifyAuthUrl(
 		return { kind: "text", url, reason: "non_https" };
 	}
 	const host = parsed.hostname.toLowerCase();
+
+	// Copilot Enterprise: exact equality for the supplied host only.
+	// Standard github.com device URLs remain allowed for the non-enterprise path.
 	if (providerId === "github-copilot" && options?.enterpriseHost) {
-		const expected =
-			options.enterpriseHost
-				.toLowerCase()
-				.replace(/^https?:\/\//, "")
-				.split("/")[0] ?? "";
-		if (host === expected || host.endsWith(`.${expected}`)) {
+		const expected = normalizeHost(options.enterpriseHost);
+		if (host === expected) {
 			return { kind: "open", url: parsed.toString() };
 		}
-		// Still allow github.com
+		// Explicitly allowed github.com hosts even when enterprise host is set
+		// (PI may still open github.com device flow alongside enterprise).
+		if (host === "github.com" || host === "api.github.com") {
+			return { kind: "open", url: parsed.toString() };
+		}
+		return { kind: "text", url: parsed.toString(), reason: "unknown_host" };
 	}
+
 	const allowed = AUTH_URL_HOSTS[providerId] ?? [];
-	if (allowed.some((h) => host === h || host.endsWith(`.${h}`))) {
+	// Exact host match only (no subdomain suffix).
+	if (allowed.some((h) => host === h)) {
 		return { kind: "open", url: parsed.toString() };
 	}
 	return { kind: "text", url: parsed.toString(), reason: "unknown_host" };

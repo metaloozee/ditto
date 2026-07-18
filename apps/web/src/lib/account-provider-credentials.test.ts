@@ -2,10 +2,13 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
 	AUTH_PROCESS_KILL_GRACE_MS,
 	AUTH_RESOLUTION_TIMEOUT_MS,
+	type AuthAttemptRow,
 	acquireLease,
 	acquireLeaseWithWait,
 	assertCredentialConfig,
-	createMemoryCredentialDb,
+	type CredentialRepository,
+	type CredentialRow,
+	credentialRowMatches,
 	credentialSecretValues,
 	deleteCredentialUnderLease,
 	LEASE_ORDERING_OK,
@@ -13,7 +16,6 @@ import {
 	LEASE_WAIT_MS,
 	listConnections,
 	loadCredential,
-	type MemoryCredentialDb,
 	markNeedsRelogin,
 	projectSafeModels,
 	releaseLease,
@@ -34,17 +36,92 @@ const model: SafeModel = {
 	name: "Claude Sonnet",
 };
 
+/** Test-local store with the same CAS semantics as production D1 repo. */
+function createTestRepo(nowMs = 1_000_000): {
+	db: CredentialRepository;
+	clock: { value: number };
+	rows: Map<string, CredentialRow>;
+} {
+	const rows = new Map<string, CredentialRow>();
+	const attempts = new Map<string, AuthAttemptRow>();
+	const clock = { value: nowMs };
+	const key = (userId: string, providerId: string) =>
+		`${userId}\0${providerId}`;
+	const nowDate = (ms: number) => new Date(ms);
+
+	const db: CredentialRepository = {
+		async getRow(userId, providerId) {
+			const row = rows.get(key(userId, providerId));
+			return row ? { ...row } : null;
+		},
+		async listRows(userId) {
+			return [...rows.values()]
+				.filter((r) => r.userId === userId)
+				.map((r) => ({ ...r }));
+		},
+		async insertRow(row) {
+			rows.set(key(row.userId, row.providerId), { ...row });
+		},
+		async updateRow(where, set) {
+			const k = key(where.userId, where.providerId);
+			const row = rows.get(k);
+			if (!row || !credentialRowMatches(row, where)) return null;
+			Object.assign(row, set);
+			return { ...row };
+		},
+		async deleteRow(where) {
+			const k = key(where.userId, where.providerId);
+			const row = rows.get(k);
+			if (!row || row.leaseId !== where.leaseId) return false;
+			rows.delete(k);
+			return true;
+		},
+		async clearExpiredLeases(now) {
+			for (const row of rows.values()) {
+				if (row.leaseExpiresAt && row.leaseExpiresAt.getTime() < now) {
+					row.leaseId = null;
+					row.leaseExpiresAt = null;
+					row.updatedAt = nowDate(now);
+				}
+			}
+		},
+		async insertAttempt(row) {
+			attempts.set(row.id, { ...row });
+		},
+		async getAttempt(id, userId) {
+			const row = attempts.get(id);
+			if (!row || row.userId !== userId) return null;
+			return { ...row };
+		},
+		async updateAttempt(id, set) {
+			const row = attempts.get(id);
+			if (row) Object.assign(row, set);
+		},
+		async deleteExpiredAttempts(now) {
+			for (const [id, attempt] of attempts) {
+				if (attempt.expiresAt.getTime() < now) attempts.delete(id);
+			}
+		},
+	};
+	return { db, clock, rows };
+}
+
 describe("account-provider-credentials", () => {
-	let db: MemoryCredentialDb;
+	let db: CredentialRepository;
+	let clock: { value: number };
+	let rows: Map<string, CredentialRow>;
 	let ids: number;
 
 	beforeEach(() => {
-		db = createMemoryCredentialDb(1_000_000);
+		const t = createTestRepo(1_000_000);
+		db = t.db;
+		clock = t.clock;
+		rows = t.rows;
 		ids = 0;
 	});
 
 	const createId = () => `id-${++ids}`;
-	const now = () => db.clock;
+	const now = () => clock.value;
 
 	it("enforces lease timing constants", () => {
 		expect(LEASE_ORDERING_OK).toBe(true);
@@ -152,7 +229,7 @@ describe("account-provider-credentials", () => {
 			nowMs: now(),
 			createId,
 		});
-		const row = db.rows.get("user:with:colons\0prov:ider")!;
+		const row = rows.get("user:with:colons\0prov:ider")!;
 		await expect(
 			decryptText(row.encryptedCredential, KEY_A, {
 				additionalData: providerCredentialAad("other", "prov:ider"),
@@ -194,7 +271,7 @@ describe("account-provider-credentials", () => {
 				createId,
 			}),
 		).toBeNull();
-		db.clock += LEASE_TTL_MS + 1;
+		clock.value += LEASE_TTL_MS + 1;
 		expect(
 			await acquireLease({
 				db,
@@ -232,7 +309,6 @@ describe("account-provider-credentials", () => {
 		});
 		expect(held).not.toBeNull();
 
-		// Release after first poll via tick.
 		let polls = 0;
 		const waited = acquireLeaseWithWait({
 			db,
@@ -384,7 +460,6 @@ describe("account-provider-credentials", () => {
 			encryptionKey: KEY_A,
 		});
 
-		// Reconnect takes the lease path and replaces credential.
 		expect(
 			await upsertCredential({
 				db,
@@ -403,7 +478,7 @@ describe("account-provider-credentials", () => {
 				createId,
 				waitForLease: false,
 			}),
-		).toBe("busy"); // stale holder still has lease
+		).toBe("busy");
 
 		await releaseLease({
 			db,
@@ -468,6 +543,145 @@ describe("account-provider-credentials", () => {
 			providerId: "anthropic",
 			encryptionKey: KEY_A,
 		});
+		expect(final?.status).toBe("connected");
+		expect(final?.credential).toMatchObject({ refresh: "refresh-reconnect" });
+	});
+
+	it("reconnect version is lease.version+1 even if refresh bumps during wait", async () => {
+		await upsertCredential({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			authType: "oauth",
+			credential: {
+				type: "oauth",
+				refresh: "refresh-v1",
+				access: "access-v1",
+				expires: now() + 3_600_000,
+			},
+			models: [model],
+			encryptionKey: KEY_A,
+			nowMs: now(),
+			createId,
+		});
+		const before = await loadCredential({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			encryptionKey: KEY_A,
+		});
+		expect(before?.version).toBe(1);
+
+		// Simulate in-flight refresh holding lease and bumping version while reconnect waits.
+		const refreshLease = (await acquireLease({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			nowMs: now(),
+			createId: () => "refresh-holder",
+		}))!;
+
+		// Complete refresh under lease while reconnect would be waiting (v1 -> v2).
+		expect(
+			await updateCredentialUnderLease({
+				db,
+				userId: "user-a",
+				providerId: "anthropic",
+				leaseId: refreshLease.leaseId,
+				expectedVersion: 1,
+				credential: {
+					type: "oauth",
+					refresh: "refresh-from-refresh",
+					access: "access-from-refresh",
+					expires: now() + 3_600_000,
+				},
+				encryptionKey: KEY_A,
+				nowMs: now(),
+			}),
+		).toBe("ok");
+		const mid = await loadCredential({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			encryptionKey: KEY_A,
+		});
+		expect(mid?.version).toBe(2);
+
+		await releaseLease({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			leaseId: refreshLease.leaseId,
+			nowMs: now(),
+		});
+
+		// Reconnect acquires current lease version (2) and writes 3 — never the pre-wait snapshot.
+		expect(
+			await upsertCredential({
+				db,
+				userId: "user-a",
+				providerId: "anthropic",
+				authType: "oauth",
+				credential: {
+					type: "oauth",
+					refresh: "refresh-reconnect",
+					access: "access-reconnect",
+					expires: now() + 3_600_000,
+				},
+				models: [model],
+				encryptionKey: KEY_A,
+				nowMs: now(),
+				createId,
+			}),
+		).toBe("ok");
+
+		const after = await loadCredential({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			encryptionKey: KEY_A,
+		});
+		expect(after?.version).toBe(3);
+		expect(after?.credential).toMatchObject({ refresh: "refresh-reconnect" });
+		expect(after!.version).toBeGreaterThan(before!.version);
+		expect(after!.version).toBeGreaterThan(mid!.version);
+
+		// Stale refresh success/failure at pre-reconnect versions cannot alter reconnect.
+		expect(
+			await updateCredentialUnderLease({
+				db,
+				userId: "user-a",
+				providerId: "anthropic",
+				leaseId: refreshLease.leaseId,
+				expectedVersion: 2,
+				credential: {
+					type: "oauth",
+					refresh: "refresh-stale",
+					access: "access-stale",
+					expires: now() + 3_600_000,
+				},
+				encryptionKey: KEY_A,
+				nowMs: now(),
+			}),
+		).toBe("stale");
+		expect(
+			await markNeedsRelogin({
+				db,
+				userId: "user-a",
+				providerId: "anthropic",
+				errorCode: "oauth_refresh_failed",
+				leaseId: refreshLease.leaseId,
+				expectedVersion: 2,
+				nowMs: now(),
+			}),
+		).toBe("stale");
+		const final = await loadCredential({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			encryptionKey: KEY_A,
+		});
+		expect(final?.version).toBe(3);
 		expect(final?.status).toBe("connected");
 		expect(final?.credential).toMatchObject({ refresh: "refresh-reconnect" });
 	});
@@ -580,6 +794,22 @@ describe("account-provider-credentials", () => {
 		});
 	});
 
+	it("rejects near-expiry oauth runtime credentials", () => {
+		const nowMs = 1_000_000;
+		expect(() =>
+			toRuntimeCredential(
+				{
+					type: "oauth",
+					refresh: "r",
+					access: "a",
+					expires: nowMs + 60_000,
+				},
+				"anthropic",
+				{ nowMs, maxAgentWindowMs: 600_000 },
+			),
+		).toThrow(/expires too soon/);
+	});
+
 	it("rejects unsafe model catalogs", () => {
 		expect(() =>
 			projectSafeModels(
@@ -594,6 +824,28 @@ describe("account-provider-credentials", () => {
 				"anthropic",
 			),
 		).toThrow();
+		expect(() =>
+			projectSafeModels(
+				[
+					{
+						providerId: "anthropic",
+						modelId: "x",
+						name: "X",
+						cost: { input: Number.NaN },
+					},
+				],
+				"anthropic",
+			),
+		).toThrow();
+		expect(() =>
+			projectSafeModels(
+				[
+					{ providerId: "anthropic", modelId: "x", name: "X" },
+					{ providerId: "anthropic", modelId: "x", name: "X2" },
+				],
+				"anthropic",
+			),
+		).toThrow(/Duplicate/);
 	});
 
 	it("migration cascades and has no project ownership columns", async () => {

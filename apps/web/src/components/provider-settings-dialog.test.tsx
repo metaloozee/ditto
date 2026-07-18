@@ -266,4 +266,39 @@ describe("ProviderSettingsDialog", () => {
 			expect(cancelMock).toHaveBeenCalledWith({ attemptId: "att-3" });
 		});
 	});
+
+	it("clears device/auth/prompt remnants after done", async () => {
+		streamMock.mockImplementation(async ({ onEvent }) => {
+			onEvent({
+				event: "meta",
+				data: { attemptId: "att-done", providerId: "openai-codex" },
+			});
+			onEvent({
+				event: "device_code",
+				data: {
+					userCode: "ZZZZ-YYYY",
+					verificationUri: "https://auth.openai.com/device",
+					clickable: true,
+				},
+			});
+			onEvent({
+				event: "prompt",
+				data: {
+					promptId: "p-done",
+					type: "secret",
+					message: "Paste code",
+				},
+			});
+			onEvent({ event: "done", data: { ok: true } });
+		});
+
+		render(<ProviderSettingsDialog open onOpenChange={() => undefined} />);
+		fireEvent.click(screen.getByRole("button", { name: "ChatGPT" }));
+		await waitFor(() => {
+			expect(screen.getByText("Connected.")).toBeTruthy();
+		});
+		expect(screen.queryByText("ZZZZ-YYYY")).toBeNull();
+		expect(screen.queryByLabelText(/Paste code/i)).toBeNull();
+		expect(screen.queryByRole("link")).toBeNull();
+	});
 });

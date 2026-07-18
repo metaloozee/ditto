@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
 import { createDb } from "#/db";
+import { createCredentialRepository } from "#/lib/account-provider-credentials";
 import { createAuth } from "#/lib/auth";
 import {
 	controlProviderAuth,
@@ -40,7 +41,7 @@ export const Route = createFileRoute("/api/provider-auth/control")({
 				}
 
 				const result = await controlProviderAuth({
-					db: createDb(env),
+					db: createCredentialRepository(createDb(env)),
 					env,
 					userId: session.user.id,
 					input: parsed.data,

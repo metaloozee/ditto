@@ -1,12 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	type AuthAttemptRow,
 	acquireLease,
-	createMemoryCredentialDb,
+	type CredentialRepository,
+	type CredentialRow,
+	credentialRowMatches,
 	loadCredential,
-	type MemoryCredentialDb,
 	type SafeModel,
 	upsertCredential,
 } from "#/lib/account-provider-credentials";
+
+const parseSSEStreamMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@cloudflare/sandbox", () => ({
+	parseSSEStream: parseSSEStreamMock,
+}));
 
 vi.mock("#/lib/sandbox-bootstrap", () => ({
 	getProjectSandbox: vi.fn(),
@@ -20,6 +28,7 @@ const {
 	providerAuthStreamBodySchema,
 	resolveOAuthCredential,
 	streamProviderAuth,
+	terminateAuthProcess,
 } = await import("#/lib/provider-auth-service");
 const { FALLBACK_MODEL_SPECIFIER } = await import(
 	"#/lib/account-provider-credentials"
@@ -44,12 +53,122 @@ const model: SafeModel = {
 	name: "Claude",
 };
 
+function createTestRepo(nowMs = 2_000_000): {
+	db: CredentialRepository;
+	clock: { value: number };
+	rows: Map<string, CredentialRow>;
+} {
+	const rows = new Map<string, CredentialRow>();
+	const attempts = new Map<string, AuthAttemptRow>();
+	const clock = { value: nowMs };
+	const key = (userId: string, providerId: string) =>
+		`${userId}\0${providerId}`;
+	const nowDate = (ms: number) => new Date(ms);
+	const db: CredentialRepository = {
+		async getRow(userId, providerId) {
+			const row = rows.get(key(userId, providerId));
+			return row ? { ...row } : null;
+		},
+		async listRows(userId) {
+			return [...rows.values()]
+				.filter((r) => r.userId === userId)
+				.map((r) => ({ ...r }));
+		},
+		async insertRow(row) {
+			rows.set(key(row.userId, row.providerId), { ...row });
+		},
+		async updateRow(where, set) {
+			const k = key(where.userId, where.providerId);
+			const row = rows.get(k);
+			if (!row || !credentialRowMatches(row, where)) return null;
+			Object.assign(row, set);
+			return { ...row };
+		},
+		async deleteRow(where) {
+			const k = key(where.userId, where.providerId);
+			const row = rows.get(k);
+			if (!row || row.leaseId !== where.leaseId) return false;
+			rows.delete(k);
+			return true;
+		},
+		async clearExpiredLeases(now) {
+			for (const row of rows.values()) {
+				if (row.leaseExpiresAt && row.leaseExpiresAt.getTime() < now) {
+					row.leaseId = null;
+					row.leaseExpiresAt = null;
+					row.updatedAt = nowDate(now);
+				}
+			}
+		},
+		async insertAttempt(row) {
+			attempts.set(row.id, { ...row });
+		},
+		async getAttempt(id, userId) {
+			const row = attempts.get(id);
+			if (!row || row.userId !== userId) return null;
+			return { ...row };
+		},
+		async updateAttempt(id, set) {
+			const row = attempts.get(id);
+			if (row) Object.assign(row, set);
+		},
+		async deleteExpiredAttempts(now) {
+			for (const [id, a] of attempts) {
+				if (a.expiresAt.getTime() < now) attempts.delete(id);
+			}
+		},
+	};
+	return { db, clock, rows };
+}
+
+function createFakeProcess(options?: {
+	onKill?: (signal?: string) => void;
+	exitOnTerm?: boolean;
+}) {
+	let alive = true;
+	const order: string[] = [];
+	const waiters: Array<() => void> = [];
+	const proc = {
+		id: "proc-1",
+		kill: async (signal?: string) => {
+			order.push(`kill:${signal ?? "default"}`);
+			options?.onKill?.(signal);
+			if (signal === "SIGKILL" || options?.exitOnTerm !== false) {
+				alive = false;
+				for (const w of waiters.splice(0)) w();
+			}
+		},
+		waitForExit: async (_timeout?: number) => {
+			order.push("waitForExit");
+			if (!alive) return { exitCode: 1 };
+			await new Promise<void>((resolve, reject) => {
+				const t = setTimeout(() => reject(new Error("timeout")), 5);
+				waiters.push(() => {
+					clearTimeout(t);
+					resolve();
+				});
+			});
+			return { exitCode: 1 };
+		},
+		get alive() {
+			return alive;
+		},
+		order,
+	};
+	return proc;
+}
+
 describe("provider-auth-service", () => {
-	let db: MemoryCredentialDb;
+	let db: CredentialRepository;
+	let clock: { value: number };
+	let rows: Map<string, CredentialRow>;
 	let ids: number;
 
 	beforeEach(() => {
-		db = createMemoryCredentialDb(2_000_000);
+		const t = createTestRepo(2_000_000);
+		db = t.db;
+		clock = t.clock;
+		rows = t.rows;
 		ids = 0;
 	});
 
@@ -63,6 +182,13 @@ describe("provider-auth-service", () => {
 			}).success,
 		).toBe(true);
 		expect(
+			providerAuthStreamBodySchema.safeParse({
+				providerId: "openai",
+				authType: "api_key",
+				extra: true,
+			}).success,
+		).toBe(false);
+		expect(
 			providerAuthStreamBodySchema.safeParse({ providerId: "x" }).success,
 		).toBe(false);
 		const cancel = providerAuthControlBodySchema.safeParse({
@@ -70,10 +196,8 @@ describe("provider-auth-service", () => {
 			attemptId: "a",
 			value: "nope",
 		});
-		expect(cancel.success).toBe(true);
-		if (cancel.success) {
-			expect(cancel.data).toEqual({ action: "cancel", attemptId: "a" });
-		}
+		// strict cancel rejects extra value field
+		expect(cancel.success).toBe(false);
 	});
 
 	it("always includes fallback model and hides needs_relogin models", async () => {
@@ -110,14 +234,14 @@ describe("provider-auth-service", () => {
 		});
 
 		await streamProviderAuth({
-			db: db as never,
+			db,
 			env: env(),
 			userId: "user-a",
 			input: { providerId: "anthropic", authType: "api_key" },
 			emit: (e) => {
 				events.push(e);
 			},
-			deps: { createId, nowMs: () => db.clock },
+			deps: { createId, nowMs: () => clock.value },
 			runInSandbox: async ({ onLine, setResult }) => {
 				setResult(result);
 				await onLine(JSON.stringify({ v: 1, kind: "credential_ready" }));
@@ -144,14 +268,14 @@ describe("provider-auth-service", () => {
 	it("streamProviderAuth rejects missing/malformed result even if runner done:true", async () => {
 		const events: Array<{ event: string; data: unknown }> = [];
 		await streamProviderAuth({
-			db: db as never,
+			db,
 			env: env(),
 			userId: "user-a",
 			input: { providerId: "anthropic", authType: "api_key" },
 			emit: (e) => {
 				events.push(e);
 			},
-			deps: { createId, nowMs: () => db.clock },
+			deps: { createId, nowMs: () => clock.value },
 			runInSandbox: async ({ onLine, setResult }) => {
 				setResult("{not-json");
 				await onLine(JSON.stringify({ v: 1, kind: "credential_ready" }));
@@ -174,14 +298,14 @@ describe("provider-auth-service", () => {
 	it("streamProviderAuth rejects missing result file", async () => {
 		const events: Array<{ event: string; data: unknown }> = [];
 		await streamProviderAuth({
-			db: db as never,
+			db,
 			env: env(),
 			userId: "user-a",
 			input: { providerId: "openai", authType: "api_key" },
 			emit: (e) => {
 				events.push(e);
 			},
-			deps: { createId, nowMs: () => db.clock },
+			deps: { createId, nowMs: () => clock.value },
 			runInSandbox: async ({ onLine }) => {
 				await onLine(JSON.stringify({ v: 1, kind: "credential_ready" }));
 				await onLine(JSON.stringify({ v: 1, kind: "done", ok: true }));
@@ -190,17 +314,121 @@ describe("provider-auth-service", () => {
 		expect(events.at(-1)).toMatchObject({ event: "done", data: { ok: false } });
 	});
 
+	it("production path starts process once and streams logs (no execStream)", async () => {
+		const startCalls: string[] = [];
+		const streamCalls: string[] = [];
+		const execStreamCalls: string[] = [];
+		const lines = [
+			JSON.stringify({ v: 1, kind: "progress", message: "working" }),
+			JSON.stringify({ v: 1, kind: "done", ok: false }),
+		];
+		const fakeProc = createFakeProcess({ exitOnTerm: true });
+		parseSSEStreamMock.mockImplementation(async function* () {
+			for (const line of lines) {
+				yield { type: "stdout", data: `${line}\n`, processId: "proc-1" };
+			}
+			yield { type: "exit", data: "", processId: "proc-1", exitCode: 0 };
+		});
+		const shell = {
+			id: "sess-1",
+			mkdir: async () => undefined,
+			writeFile: async () => undefined,
+			readFile: async () => ({ content: "" }),
+			deleteFile: async () => undefined,
+			exec: async (cmd: string) => {
+				if (cmd.includes("stat")) return { success: true, stdout: "600\n" };
+				if (cmd.includes("install") || cmd.includes("chmod")) {
+					return { success: true, stdout: "" };
+				}
+				return { success: true, stdout: "" };
+			},
+			startProcess: async (cmd: string) => {
+				startCalls.push(cmd);
+				return fakeProc;
+			},
+			streamProcessLogs: async (id: string) => {
+				streamCalls.push(id);
+				return new ReadableStream({
+					start(c) {
+						c.close();
+					},
+				});
+			},
+			execStream: async (cmd: string) => {
+				execStreamCalls.push(cmd);
+				return new ReadableStream();
+			},
+		};
+
+		const events: Array<{ event: string }> = [];
+		await streamProviderAuth({
+			db,
+			env: env(),
+			userId: "user-a",
+			input: { providerId: "openai", authType: "api_key" },
+			emit: (e) => {
+				events.push(e);
+			},
+			deps: {
+				createId,
+				nowMs: () => clock.value,
+				getProjectSandbox: () =>
+					({
+						createSession: async () => shell,
+						deleteSession: async () => undefined,
+					}) as never,
+				destroySandbox: async () => undefined,
+			},
+		});
+
+		expect(startCalls).toHaveLength(1);
+		expect(streamCalls).toEqual(["proc-1"]);
+		expect(execStreamCalls).toHaveLength(0);
+		expect(parseSSEStreamMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("terminateAuthProcess does TERM then KILL with await ordering", async () => {
+		const order: string[] = [];
+		let alive = true;
+		const proc = {
+			id: "p",
+			kill: async (signal?: string) => {
+				order.push(`kill:${signal}`);
+				if (signal === "SIGKILL") alive = false;
+			},
+			waitForExit: async () => {
+				order.push("wait");
+				if (alive) throw new Error("still_alive");
+				return { exitCode: 1 };
+			},
+		};
+		await terminateAuthProcess(proc, {
+			graceMs: 10,
+			onStep: (s) => order.push(s),
+		});
+		expect(order).toEqual([
+			"term",
+			"kill:SIGTERM",
+			"await_term",
+			"wait",
+			"kill",
+			"kill:SIGKILL",
+			"await_kill",
+			"wait",
+		]);
+	});
+
 	it("validates device_code verification URLs with host policy", async () => {
 		const events: Array<{ event: string; data: unknown }> = [];
 		await streamProviderAuth({
-			db: db as never,
+			db,
 			env: env(),
 			userId: "user-a",
 			input: { providerId: "openai-codex", authType: "oauth" },
 			emit: (e) => {
 				events.push(e);
 			},
-			deps: { createId, nowMs: () => db.clock },
+			deps: { createId, nowMs: () => clock.value },
 			runInSandbox: async ({ onLine }) => {
 				await onLine(
 					JSON.stringify({
@@ -225,17 +453,17 @@ describe("provider-auth-service", () => {
 		).toBe("open");
 	});
 
-	it("binds Copilot enterprise host from attempt_meta", async () => {
+	it("binds Copilot enterprise host exactly (no subdomain)", async () => {
 		const events: Array<{ event: string; data: unknown }> = [];
 		await streamProviderAuth({
-			db: db as never,
+			db,
 			env: env(),
 			userId: "user-a",
 			input: { providerId: "github-copilot", authType: "oauth" },
 			emit: (e) => {
 				events.push(e);
 			},
-			deps: { createId, nowMs: () => db.clock },
+			deps: { createId, nowMs: () => clock.value },
 			runInSandbox: async ({ onLine }) => {
 				await onLine(
 					JSON.stringify({
@@ -255,7 +483,21 @@ describe("provider-auth-service", () => {
 					JSON.stringify({
 						v: 1,
 						kind: "auth_url",
+						url: "https://evil.acme.ghe.com/login/device",
+					}),
+				);
+				await onLine(
+					JSON.stringify({
+						v: 1,
+						kind: "auth_url",
 						url: "https://other.ghe.com/login/device",
+					}),
+				);
+				await onLine(
+					JSON.stringify({
+						v: 1,
+						kind: "auth_url",
+						url: "https://github.com/login/device",
 					}),
 				);
 				await onLine(JSON.stringify({ v: 1, kind: "done", ok: false }));
@@ -264,9 +506,11 @@ describe("provider-auth-service", () => {
 		const urls = events.filter((e) => e.event === "auth_url");
 		expect(urls[0]).toMatchObject({ data: { clickable: true } });
 		expect(urls[1]).toMatchObject({ data: { clickable: false } });
+		expect(urls[2]).toMatchObject({ data: { clickable: false } });
+		expect(urls[3]).toMatchObject({ data: { clickable: true } });
 	});
 
-	it("resolveOAuthCredential timeout/kill grace before lease release", async () => {
+	it("resolveOAuthCredential timeout kills process before lease release", async () => {
 		await upsertCredential({
 			db,
 			userId: "user-a",
@@ -276,11 +520,11 @@ describe("provider-auth-service", () => {
 				type: "oauth",
 				refresh: "refresh-token-value-xx",
 				access: "access-token-value-xx",
-				expires: db.clock + 1000,
+				expires: clock.value + 1000,
 			},
 			models: [model],
 			encryptionKey: KEY,
-			nowMs: db.clock,
+			nowMs: clock.value,
 			createId,
 		});
 		const loaded = await loadCredential({
@@ -292,34 +536,57 @@ describe("provider-auth-service", () => {
 
 		const order: string[] = [];
 		const outcome = await resolveOAuthCredential({
-			db: db as never,
+			db,
 			env: env(),
 			userId: "user-a",
 			providerId: "anthropic",
 			stored: loaded!.credential,
 			version: loaded!.version,
-			nowMs: () => db.clock,
+			nowMs: () => clock.value,
 			createId,
 			deps: {
-				sleep: async () => {
-					order.push("kill_grace");
-				},
 				destroySandbox: async () => {
 					order.push("destroy");
 				},
 			},
-			runResolve: async () => {
+			runResolve: async ({ terminate, signal }) => {
+				order.push("start");
+				// Simulate hanging process that only dies via terminate.
+				const hanging = createFakeProcess({
+					exitOnTerm: false,
+					onKill: (sig) => order.push(`proc_kill:${sig}`),
+				});
+				// Patch waitForExit to record and only succeed after KILL.
+				const originalWait = hanging.waitForExit.bind(hanging);
+				hanging.waitForExit = async (t?: number) => {
+					order.push("proc_wait");
+					if (hanging.alive) {
+						// First wait (after TERM) fails; after KILL succeeds.
+						if (order.filter((x) => x === "proc_kill:SIGKILL").length > 0) {
+							return originalWait(t);
+						}
+						throw new Error("still_running");
+					}
+					return { exitCode: 1 };
+				};
+				await new Promise((r) => setTimeout(r, 5));
+				expect(signal.aborted || true).toBe(true);
 				order.push("timeout");
+				await terminate(hanging as never);
+				order.push("terminated");
 				return { ok: false, timedOut: true };
 			},
 		});
 		expect(outcome).toEqual({ ok: false, code: "refresh_failed" });
-		expect(order.indexOf("timeout")).toBeLessThan(order.indexOf("kill_grace"));
+		expect(order.indexOf("timeout")).toBeLessThan(order.indexOf("terminated"));
+		expect(order.indexOf("terminated")).toBeLessThan(order.indexOf("destroy"));
+
+		// Lease must be free only after confirmed exit.
 		const lease = await acquireLease({
 			db,
 			userId: "user-a",
 			providerId: "anthropic",
-			nowMs: db.clock,
+			nowMs: clock.value,
 			createId: () => "after",
 		});
 		expect(lease).not.toBeNull();
@@ -342,11 +609,11 @@ describe("provider-auth-service", () => {
 				type: "oauth",
 				refresh: "refresh-old-token-xx",
 				access: "access-old-token-xx",
-				expires: db.clock + 1000,
+				expires: clock.value + 1000,
 			},
 			models: [model],
 			encryptionKey: KEY,
-			nowMs: db.clock,
+			nowMs: clock.value,
 			createId,
 		});
 		const old = await loadCredential({
@@ -357,16 +624,16 @@ describe("provider-auth-service", () => {
 		});
 
 		await resolveOAuthCredential({
-			db: db as never,
+			db,
 			env: env(),
 			userId: "user-a",
 			providerId: "anthropic",
 			stored: old!.credential,
 			version: old!.version,
-			nowMs: () => db.clock,
+			nowMs: () => clock.value,
 			createId,
 			runResolve: async () => {
-				const row = db.rows.get("user-a\0anthropic");
+				const row = rows.get("user-a\0anthropic");
 				if (row) {
 					row.version += 1;
 					row.status = "connected";
@@ -384,7 +651,7 @@ describe("provider-auth-service", () => {
 		expect(final?.status).toBe("connected");
 	});
 
-	it("resolve success validates credential and updates under lease", async () => {
+	it("resolve success projects runtime from stored and enforces expiry", async () => {
 		await upsertCredential({
 			db,
 			userId: "user-a",
@@ -394,11 +661,11 @@ describe("provider-auth-service", () => {
 				type: "oauth",
 				refresh: "refresh-old-token-xx",
 				access: "access-old-token-xx",
-				expires: db.clock + 1000,
+				expires: clock.value + 1000,
 			},
 			models: [model],
 			encryptionKey: KEY,
-			nowMs: db.clock,
+			nowMs: clock.value,
 			createId,
 		});
 		const old = await loadCredential({
@@ -408,13 +675,13 @@ describe("provider-auth-service", () => {
 			encryptionKey: KEY,
 		});
 		const outcome = await resolveOAuthCredential({
-			db: db as never,
+			db,
 			env: env(),
 			userId: "user-a",
 			providerId: "anthropic",
 			stored: old!.credential,
 			version: old!.version,
-			nowMs: () => db.clock,
+			nowMs: () => clock.value,
 			createId,
 			runResolve: async () => ({
 				ok: true,
@@ -423,13 +690,15 @@ describe("provider-auth-service", () => {
 						type: "oauth",
 						refresh: "refresh-new-token-yy",
 						access: "access-new-token-yy",
-						expires: db.clock + 3_600_000,
+						expires: clock.value + 3_600_000,
+						evilExtra: "should-not-reach-runtime",
 					},
+					// Runner-supplied near-expiry runtime must be ignored.
 					runtimeCredential: {
 						type: "oauth",
 						refresh: "ditto:no-refresh",
 						access: "access-new-token-yy",
-						expires: db.clock + 3_600_000,
+						expires: clock.value + 1_000,
 					},
 				}),
 			}),
@@ -440,21 +709,62 @@ describe("provider-auth-service", () => {
 				type: "oauth",
 				refresh: "ditto:no-refresh",
 				access: "access-new-token-yy",
+				expires: clock.value + 3_600_000,
 			});
+			expect(outcome.runtime).not.toHaveProperty("evilExtra");
 		}
+	});
+
+	it("resolve rejects near-expiry stored credentials", async () => {
+		await upsertCredential({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			authType: "oauth",
+			credential: {
+				type: "oauth",
+				refresh: "refresh-old-token-xx",
+				access: "access-old-token-xx",
+				expires: clock.value + 1000,
+			},
+			models: [model],
+			encryptionKey: KEY,
+			nowMs: clock.value,
+			createId,
+		});
+		const old = await loadCredential({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			encryptionKey: KEY,
+		});
+		const outcome = await resolveOAuthCredential({
+			db,
+			env: env(),
+			userId: "user-a",
+			providerId: "anthropic",
+			stored: old!.credential,
+			version: old!.version,
+			nowMs: () => clock.value,
+			createId,
+			runResolve: async () => ({
+				ok: true,
+				resultJson: JSON.stringify({
+					storedCredential: {
+						type: "oauth",
+						refresh: "refresh-new",
+						access: "access-new",
+						expires: clock.value + 30_000,
+					},
+				}),
+			}),
+		});
+		expect(outcome).toEqual({ ok: false, code: "refresh_failed" });
 	});
 
 	it("controlProviderAuth: ownership 404", async () => {
 		const res = await controlProviderAuth({
-			db: {
-				select: () => ({
-					from: () => ({
-						where: () => ({
-							limit: async () => [],
-						}),
-					}),
-				}),
-			} as never,
+			db,
 			env: env(),
 			userId: "user-a",
 			input: { action: "cancel", attemptId: "missing" },
@@ -466,7 +776,7 @@ describe("provider-auth-service", () => {
 		const ac = new AbortController();
 		let cleaned = false;
 		await streamProviderAuth({
-			db: db as never,
+			db,
 			env: env(),
 			userId: "user-a",
 			input: { providerId: "openai", authType: "api_key" },
@@ -474,7 +784,7 @@ describe("provider-auth-service", () => {
 			emit: () => undefined,
 			deps: {
 				createId,
-				nowMs: () => db.clock,
+				nowMs: () => clock.value,
 				destroySandbox: async () => {
 					cleaned = true;
 				},

@@ -1,78 +1,106 @@
 import { z } from "zod";
 
 const sseEventSchema = z.discriminatedUnion("event", [
-	z.object({
-		event: z.literal("meta"),
-		data: z.object({
-			attemptId: z.string().min(1).max(128),
-			providerId: z.string().min(1).max(64),
-		}),
-	}),
-	z.object({
-		event: z.literal("prompt"),
-		data: z.object({
-			v: z.literal(1).optional(),
-			kind: z.literal("prompt").optional(),
-			promptId: z.string().min(1).max(128),
-			type: z.enum(["text", "secret", "select", "manual_code"]),
-			message: z.string().min(1).max(500),
-			placeholder: z.string().max(200).optional(),
-			options: z
-				.array(
-					z.object({
-						id: z.string().min(1).max(128),
-						label: z.string().min(1).max(200),
-						description: z.string().max(200).optional(),
-					}),
-				)
-				.max(32)
-				.optional(),
-		}),
-	}),
-	z.object({
-		event: z.literal("auth_url"),
-		data: z.object({
-			url: z.string().min(1).max(2048),
-			clickable: z.boolean(),
-			instructions: z.string().max(500).optional(),
-		}),
-	}),
-	z.object({
-		event: z.literal("device_code"),
-		data: z.object({
-			userCode: z.string().min(1).max(64),
-			verificationUri: z.string().min(1).max(2048),
-			clickable: z.boolean().optional(),
-			intervalSeconds: z.number().positive().optional(),
-			expiresInSeconds: z.number().positive().optional(),
-		}),
-	}),
-	z.object({
-		event: z.literal("info"),
-		data: z.object({ message: z.string().min(1).max(500) }),
-	}),
-	z.object({
-		event: z.literal("progress"),
-		data: z.object({ message: z.string().min(1).max(500) }),
-	}),
-	z.object({
-		event: z.literal("credential_ready"),
-		data: z
-			.object({})
-			.passthrough()
-			.transform(() => ({})),
-	}),
-	z.object({
-		event: z.literal("done"),
-		data: z.object({ ok: z.boolean() }),
-	}),
-	z.object({
-		event: z.literal("error"),
-		data: z.object({
-			code: z.string().min(1).max(64),
-			message: z.string().min(1).max(500),
-		}),
-	}),
+	z
+		.object({
+			event: z.literal("meta"),
+			data: z
+				.object({
+					attemptId: z.string().min(1).max(128),
+					providerId: z.string().min(1).max(64),
+				})
+				.strict(),
+		})
+		.strict(),
+	z
+		.object({
+			event: z.literal("prompt"),
+			data: z
+				.object({
+					v: z.literal(1).optional(),
+					kind: z.literal("prompt").optional(),
+					promptId: z.string().min(1).max(128),
+					type: z.enum(["text", "secret", "select", "manual_code"]),
+					message: z.string().min(1).max(500),
+					placeholder: z.string().max(200).optional(),
+					options: z
+						.array(
+							z
+								.object({
+									id: z.string().min(1).max(128),
+									label: z.string().min(1).max(200),
+									description: z.string().max(200).optional(),
+								})
+								.strict(),
+						)
+						.max(32)
+						.optional(),
+				})
+				.strict(),
+		})
+		.strict(),
+	z
+		.object({
+			event: z.literal("auth_url"),
+			data: z
+				.object({
+					url: z.string().min(1).max(2048),
+					clickable: z.boolean(),
+					instructions: z.string().max(500).optional(),
+				})
+				.strict(),
+		})
+		.strict(),
+	z
+		.object({
+			event: z.literal("device_code"),
+			data: z
+				.object({
+					userCode: z.string().min(1).max(64),
+					verificationUri: z.string().min(1).max(2048),
+					clickable: z.boolean().optional(),
+					intervalSeconds: z.number().positive().finite().optional(),
+					expiresInSeconds: z.number().positive().finite().optional(),
+				})
+				.strict(),
+		})
+		.strict(),
+	z
+		.object({
+			event: z.literal("info"),
+			data: z.object({ message: z.string().min(1).max(500) }).strict(),
+		})
+		.strict(),
+	z
+		.object({
+			event: z.literal("progress"),
+			data: z.object({ message: z.string().min(1).max(500) }).strict(),
+		})
+		.strict(),
+	// Reject credential-bearing extras; empty object only.
+	z
+		.object({
+			event: z.literal("credential_ready"),
+			data: z.object({}).strict(),
+		})
+		.strict(),
+	z
+		.object({
+			event: z.literal("done"),
+			data: z.object({ ok: z.boolean() }).strict(),
+		})
+		.strict(),
+	z
+		.object({
+			event: z.literal("error"),
+			data: z
+				.object({
+					code: z.string().min(1).max(64),
+					message: z.string().min(1).max(500),
+				})
+				.strict(),
+		})
+		.strict(),
 ]);
 
 export type ProviderAuthClientEvent = z.infer<typeof sseEventSchema>;

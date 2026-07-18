@@ -5,6 +5,7 @@ vi.mock("#/db", () => ({
 }));
 
 vi.mock("#/lib/account-provider-credentials", () => ({
+	createCredentialRepository: vi.fn((db) => db),
 	listConnections: vi.fn(async () => [
 		{
 			providerId: "anthropic",

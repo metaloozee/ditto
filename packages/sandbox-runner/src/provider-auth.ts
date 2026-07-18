@@ -164,7 +164,7 @@ function emitPublic(
 	// Never let prompt answers reappear in public events.
 	const json = JSON.stringify(msg);
 	for (const secret of answerSecrets) {
-		if (secret.length >= 8 && json.includes(secret)) {
+		if (secret.length > 0 && json.includes(secret)) {
 			throw new Error("secret_in_event");
 		}
 	}
@@ -180,10 +180,46 @@ export function normalizeResultPath(resultPath: string): string {
 	return resolved;
 }
 
+const MAX_ID_LEN = 256;
+const MAX_NAME_LEN = 512;
+const MAX_INPUT_VALUES = 16;
+const MAX_INPUT_VALUE_LEN = 64;
+
+function requireBoundedString(
+	value: unknown,
+	max: number,
+	label: string,
+): string {
+	if (typeof value !== "string" || value.length === 0 || value.length > max) {
+		throw new Error(`invalid_${label}`);
+	}
+	return value;
+}
+
+function requirePositiveInt(value: unknown, label: string): number {
+	if (
+		typeof value !== "number" ||
+		!Number.isFinite(value) ||
+		!Number.isInteger(value) ||
+		value <= 0
+	) {
+		throw new Error(`invalid_${label}`);
+	}
+	return value;
+}
+
+function requireNonnegFinite(value: unknown, label: string): number {
+	if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+		throw new Error(`invalid_${label}`);
+	}
+	return value;
+}
+
 export function projectSafeModels(
 	runtime: ModelRuntime,
 	providerId: string,
 ): SafeModelProjection[] {
+	requireBoundedString(providerId, MAX_ID_LEN, "provider");
 	const models = runtime.getModels(providerId);
 	if (models.length > MAX_SAFE_MODELS) {
 		throw new Error("catalog_too_large");
@@ -191,36 +227,63 @@ export function projectSafeModels(
 	const seen = new Set<string>();
 	const out: SafeModelProjection[] = [];
 	for (const model of models) {
-		if (model.provider !== providerId) {
+		const modelProvider = requireBoundedString(
+			model.provider,
+			MAX_ID_LEN,
+			"provider",
+		);
+		if (modelProvider !== providerId) {
 			throw new Error("provider_mismatch");
 		}
-		const key = `${model.provider}/${model.id}`;
+		const modelId = requireBoundedString(model.id, MAX_ID_LEN, "model_id");
+		const name = requireBoundedString(model.name, MAX_NAME_LEN, "name");
+		const key = `${modelProvider}/${modelId}`;
 		if (seen.has(key)) throw new Error("duplicate_model");
 		seen.add(key);
 		const projected: SafeModelProjection = {
-			providerId: model.provider,
-			modelId: model.id,
-			name: model.name,
+			providerId: modelProvider,
+			modelId,
+			name,
 		};
-		if (Array.isArray(model.input)) {
-			projected.input = model.input.map(String);
+		if (model.input !== undefined) {
+			if (
+				!Array.isArray(model.input) ||
+				model.input.length > MAX_INPUT_VALUES
+			) {
+				throw new Error("invalid_input");
+			}
+			projected.input = model.input.map((v) =>
+				requireBoundedString(String(v), MAX_INPUT_VALUE_LEN, "input_value"),
+			);
 		}
-		if (typeof model.reasoning === "boolean") {
+		if (model.reasoning !== undefined) {
+			if (typeof model.reasoning !== "boolean")
+				throw new Error("invalid_reasoning");
 			projected.reasoning = model.reasoning;
 		}
-		if (typeof model.contextWindow === "number") {
-			projected.contextWindow = model.contextWindow;
+		if (model.contextWindow !== undefined) {
+			projected.contextWindow = requirePositiveInt(
+				model.contextWindow,
+				"context_window",
+			);
 		}
-		if (typeof model.maxTokens === "number") {
-			projected.maxTokens = model.maxTokens;
+		if (model.maxTokens !== undefined) {
+			projected.maxTokens = requirePositiveInt(model.maxTokens, "max_tokens");
 		}
-		if (model.cost && typeof model.cost === "object") {
-			projected.cost = {
-				input: model.cost.input,
-				output: model.cost.output,
-				cacheRead: model.cost.cacheRead,
-				cacheWrite: model.cost.cacheWrite,
-			};
+		if (model.cost !== undefined) {
+			if (!model.cost || typeof model.cost !== "object")
+				throw new Error("invalid_cost");
+			const cost: NonNullable<SafeModelProjection["cost"]> = {};
+			const c = model.cost as unknown as Record<string, unknown>;
+			if (c.input !== undefined)
+				cost.input = requireNonnegFinite(c.input, "cost_input");
+			if (c.output !== undefined)
+				cost.output = requireNonnegFinite(c.output, "cost_output");
+			if (c.cacheRead !== undefined)
+				cost.cacheRead = requireNonnegFinite(c.cacheRead, "cost_cache_read");
+			if (c.cacheWrite !== undefined)
+				cost.cacheWrite = requireNonnegFinite(c.cacheWrite, "cost_cache_write");
+			projected.cost = cost;
 		}
 		out.push(projected);
 	}
@@ -242,9 +305,14 @@ function projectApiKeyEnv(
 	return { [canonical]: raw };
 }
 
+/** Max agent run window + safety skew (must match Worker). */
+export const AGENT_COMMAND_TIMEOUT_MS = 600_000;
+export const ACCESS_EXPIRY_SAFETY_MS = 60_000;
+
 export function toRuntimeCredential(
 	credential: Credential,
 	providerId: string,
+	options?: { nowMs?: number; maxAgentWindowMs?: number },
 ): Credential {
 	if (credential.type === "api_key") {
 		const out: Credential = { type: "api_key" };
@@ -261,6 +329,13 @@ export function toRuntimeCredential(
 	const expires = Number(credential.expires);
 	if (!Number.isFinite(expires)) {
 		throw new Error("unsupported_credential");
+	}
+	const now = options?.nowMs ?? Date.now();
+	const windowMs =
+		(options?.maxAgentWindowMs ?? AGENT_COMMAND_TIMEOUT_MS) +
+		ACCESS_EXPIRY_SAFETY_MS;
+	if (expires <= now + windowMs) {
+		throw new Error("token_expires_too_soon");
 	}
 	const access = String(credential.access ?? "");
 	if (!access) throw new Error("unsupported_credential");

@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
 import { createDb } from "#/db";
+import { createCredentialRepository } from "#/lib/account-provider-credentials";
 import { encodeSseEvent } from "#/lib/agent-stream-protocol";
 import { createAuth } from "#/lib/auth";
 import {
@@ -41,8 +42,14 @@ export const Route = createFileRoute("/api/provider-auth/stream")({
 					);
 				}
 
-				const db = createDb(env);
+				const db = createCredentialRepository(createDb(env));
 				const encoder = new TextEncoder();
+				const abort = new AbortController();
+				const onRequestAbort = () => abort.abort();
+				request.signal.addEventListener("abort", onRequestAbort, {
+					once: true,
+				});
+
 				const readable = new ReadableStream<Uint8Array>({
 					async start(controller) {
 						const enqueue = (event: string, data: unknown) => {
@@ -58,12 +65,13 @@ export const Route = createFileRoute("/api/provider-auth/stream")({
 								env,
 								userId: session.user.id,
 								input: parsed.data,
-								signal: request.signal,
+								signal: abort.signal,
 								emit: ({ event, data }) => {
 									enqueue(event, data);
 								},
 							});
 						} finally {
+							request.signal.removeEventListener("abort", onRequestAbort);
 							try {
 								controller.close();
 							} catch {
@@ -72,7 +80,8 @@ export const Route = createFileRoute("/api/provider-auth/stream")({
 						}
 					},
 					cancel() {
-						// request.signal aborts via fetch cancel; streamProviderAuth cleans up.
+						abort.abort();
+						request.signal.removeEventListener("abort", onRequestAbort);
 					},
 				});
 

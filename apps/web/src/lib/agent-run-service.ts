@@ -5,6 +5,7 @@ import type { createDb } from "#/db";
 import { messages, projects, workspaceSessions } from "#/db/schema";
 import {
 	assertCredentialConfig,
+	createCredentialRepository,
 	credentialSecretValues,
 	FALLBACK_MODEL_SPECIFIER,
 	FALLBACK_PROVIDER_ID,
@@ -250,8 +251,9 @@ export async function prepareAgentRun(options: {
 
 	// Resolve account credential / fallback before side effects.
 	let runtimeCredential: StoredCredential | null = null;
+	const credentialDb = createCredentialRepository(db);
 	const owned = await deps.loadCredential({
-		db,
+		db: credentialDb,
 		userId,
 		providerId: parsedModel.providerId,
 		encryptionKey: env.AI_CREDENTIALS_ENCRYPTION_KEY,
@@ -302,7 +304,7 @@ export async function prepareAgentRun(options: {
 					};
 				}
 				const refreshed = await resolveOAuthCredential({
-					db,
+					db: credentialDb,
 					env,
 					userId,
 					providerId: parsedModel.providerId,

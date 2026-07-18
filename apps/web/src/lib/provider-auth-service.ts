@@ -1,16 +1,15 @@
-import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import type { createDb } from "#/db";
-import { providerAuthAttempts } from "#/db/schema";
 import {
 	AUTH_PROCESS_KILL_GRACE_MS,
 	AUTH_RESOLUTION_TIMEOUT_MS,
+	type AuthAttemptRow,
 	acquireLeaseWithWait,
 	assertCredentialConfig,
+	type CredentialRepository,
+	createCredentialRepository,
 	FALLBACK_MODEL_SPECIFIER,
-	isMemoryCredentialDb,
-	type MemoryCredentialDb,
 	markNeedsRelogin,
 	parseStoredCredential,
 	toRuntimeCredential as projectRuntimeCredential,
@@ -44,22 +43,28 @@ const MAX_ANSWER = 8_192;
 const MAX_PROVIDER_NAME = 128;
 const MAX_AUTH_LABEL = 128;
 
-export const providerAuthStreamBodySchema = z.object({
-	providerId: z.string().min(1).max(64),
-	authType: z.enum(["api_key", "oauth"]),
-});
+export const providerAuthStreamBodySchema = z
+	.object({
+		providerId: z.string().min(1).max(64),
+		authType: z.enum(["api_key", "oauth"]),
+	})
+	.strict();
 
 export const providerAuthControlBodySchema = z.discriminatedUnion("action", [
-	z.object({
-		action: z.literal("answer"),
-		attemptId: z.string().min(1).max(128),
-		promptId: z.string().min(1).max(128),
-		value: z.string().max(MAX_ANSWER),
-	}),
-	z.object({
-		action: z.literal("cancel"),
-		attemptId: z.string().min(1).max(128),
-	}),
+	z
+		.object({
+			action: z.literal("answer"),
+			attemptId: z.string().min(1).max(128),
+			promptId: z.string().min(1).max(128),
+			value: z.string().max(MAX_ANSWER),
+		})
+		.strict(),
+	z
+		.object({
+			action: z.literal("cancel"),
+			attemptId: z.string().min(1).max(128),
+		})
+		.strict(),
 ]);
 
 export type ProviderAuthStreamBody = z.infer<
@@ -101,7 +106,15 @@ export type PublicAuthSseEvent =
 
 type Db = ReturnType<typeof createDb>;
 
-type AuthShell = {
+/** Subset of @cloudflare/sandbox 0.12.x ExecutionSession used by auth. */
+export type AuthProcess = {
+	id: string;
+	kill: (signal?: string) => Promise<void>;
+	waitForExit: (timeout?: number) => Promise<{ exitCode?: number }>;
+	getLogs?: () => Promise<{ stdout: string; stderr: string }>;
+};
+
+export type AuthShell = {
 	id: string;
 	mkdir: (path: string, options?: { recursive?: boolean }) => Promise<unknown>;
 	writeFile: (path: string, content: string) => Promise<unknown>;
@@ -111,19 +124,14 @@ type AuthShell = {
 		command: string,
 		options?: { timeout?: number },
 	) => Promise<{ success: boolean; stdout: string; stderr?: string }>;
-	execStream?: (
-		command: string,
-		options?: { cwd?: string },
-	) => Promise<ReadableStream<Uint8Array>>;
-	startProcess?: (
+	startProcess: (
 		command: string,
 		options?: Record<string, unknown>,
-	) => Promise<{
-		id: string;
-		kill: (signal?: string) => Promise<void>;
-		waitForExit: (timeout?: number) => Promise<{ exitCode?: number }>;
-		getLogs?: () => Promise<{ stdout: string; stderr: string }>;
-	}>;
+	) => Promise<AuthProcess>;
+	streamProcessLogs: (
+		processId: string,
+		options?: { signal?: AbortSignal },
+	) => Promise<ReadableStream<Uint8Array>>;
 };
 
 type AuthSandbox = {
@@ -160,6 +168,18 @@ function safeId(value: string): string {
 	return value.replaceAll(/[^A-Za-z0-9_-]/g, "").slice(0, 128) || nanoid();
 }
 
+function asRepo(db: CredentialRepository | Db): CredentialRepository {
+	if (
+		typeof db === "object" &&
+		db !== null &&
+		"getRow" in db &&
+		typeof (db as CredentialRepository).getRow === "function"
+	) {
+		return db as CredentialRepository;
+	}
+	return createCredentialRepository(db as Db);
+}
+
 const fallbackModel: SafeModel = {
 	providerId: "opencode",
 	modelId: "deepseek-v4-flash-free",
@@ -167,19 +187,38 @@ const fallbackModel: SafeModel = {
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 };
 
-const catalogProviderSchema = z.object({
-	providerId: z.string().min(1).max(64),
-	name: z.string().min(1).max(MAX_PROVIDER_NAME),
-	authMethods: z
-		.array(
-			z.object({
-				type: z.enum(["api_key", "oauth"]),
-				label: z.string().min(1).max(MAX_AUTH_LABEL),
-			}),
-		)
-		.max(8),
-	models: z.array(z.unknown()).max(500).optional(),
-});
+const catalogProviderSchema = z
+	.object({
+		providerId: z.string().min(1).max(64),
+		name: z.string().min(1).max(MAX_PROVIDER_NAME),
+		authMethods: z
+			.array(
+				z
+					.object({
+						type: z.enum(["api_key", "oauth"]),
+						label: z.string().min(1).max(MAX_AUTH_LABEL),
+					})
+					.strict(),
+			)
+			.max(8),
+		models: z.array(z.unknown()).max(500).optional(),
+	})
+	.strict();
+
+const loginResultSchema = z
+	.object({
+		credential: z.unknown(),
+		models: z.array(z.unknown()).max(500),
+	})
+	.strict();
+
+const resolveResultSchema = z
+	.object({
+		storedCredential: z.unknown(),
+		runtimeCredential: z.unknown().optional(),
+		models: z.array(z.unknown()).max(500).optional(),
+	})
+	.strict();
 
 /** Pre-create path as 0600, write content, verify mode. */
 async function writeSecretPath(
@@ -206,6 +245,46 @@ async function verifyMode600(
 	});
 	if (mode.stdout.trim() !== "600") {
 		throw new Error("unsafe_file_mode");
+	}
+}
+
+/**
+ * TERM the exact process, await exit, escalate to KILL after grace, await exit.
+ * Returns only after confirmed exit (or both waits exhausted).
+ */
+export async function terminateAuthProcess(
+	proc: AuthProcess,
+	options?: {
+		graceMs?: number;
+		onStep?: (step: "term" | "await_term" | "kill" | "await_kill") => void;
+	},
+): Promise<void> {
+	const grace = options?.graceMs ?? AUTH_PROCESS_KILL_GRACE_MS;
+	const step = options?.onStep;
+	step?.("term");
+	try {
+		await proc.kill("SIGTERM");
+	} catch {
+		// may already be dead
+	}
+	step?.("await_term");
+	try {
+		await proc.waitForExit(grace);
+		return;
+	} catch {
+		// still alive
+	}
+	step?.("kill");
+	try {
+		await proc.kill("SIGKILL");
+	} catch {
+		// ignore
+	}
+	step?.("await_kill");
+	try {
+		await proc.waitForExit(grace);
+	} catch {
+		// best-effort
 	}
 }
 
@@ -238,6 +317,7 @@ export async function getProviderCatalog(options: {
 					v: z.literal(1).optional(),
 					providers: z.array(z.unknown()).max(64),
 				})
+				.strict()
 				.parse(JSON.parse(result.stdout));
 			const providers = [];
 			for (const raw of parsed.providers) {
@@ -282,10 +362,10 @@ export async function getProviderCatalog(options: {
 }
 
 export async function listAccountModels(options: {
-	db: Db;
+	db: CredentialRepository | Db;
 	userId: string;
 	listConnections: (
-		db: Db,
+		db: CredentialRepository,
 		userId: string,
 	) => Promise<
 		Array<{
@@ -295,7 +375,8 @@ export async function listAccountModels(options: {
 		}>
 	>;
 }): Promise<SafeModel[]> {
-	const connections = await options.listConnections(options.db, options.userId);
+	const repo = asRepo(options.db);
+	const connections = await options.listConnections(repo, options.userId);
 	const models: SafeModel[] = [fallbackModel];
 	const seen = new Set<string>([FALLBACK_MODEL_SPECIFIER]);
 	for (const conn of connections) {
@@ -311,7 +392,7 @@ export async function listAccountModels(options: {
 }
 
 export async function controlProviderAuth(options: {
-	db: Db;
+	db: CredentialRepository | Db;
 	env: Env;
 	userId: string;
 	input: ProviderAuthControlBody;
@@ -323,16 +404,11 @@ export async function controlProviderAuth(options: {
 		getProjectSandbox: getProjectSandbox as AuthDeps["getProjectSandbox"],
 		...options.deps,
 	};
-	const [attempt] = await options.db
-		.select()
-		.from(providerAuthAttempts)
-		.where(
-			and(
-				eq(providerAuthAttempts.id, options.input.attemptId),
-				eq(providerAuthAttempts.userId, options.userId),
-			),
-		)
-		.limit(1);
+	const repo = asRepo(options.db);
+	const attempt = await repo.getAttempt(
+		options.input.attemptId,
+		options.userId,
+	);
 	if (!attempt || attempt.status !== "pending") {
 		return { status: 404, body: { error: "Auth attempt not found." } };
 	}
@@ -373,6 +449,7 @@ export async function controlProviderAuth(options: {
 		try {
 			parsed = z
 				.object({ accepted: z.boolean().optional() })
+				.strict()
 				.parse(JSON.parse(result.stdout.trim().split("\n")[0] ?? "{}"));
 		} catch {
 			return { status: 409, body: { error: "Control failed." } };
@@ -400,19 +477,8 @@ export async function controlProviderAuth(options: {
 	}
 }
 
-const loginResultSchema = z.object({
-	credential: z.unknown(),
-	models: z.array(z.unknown()).max(500),
-});
-
-const resolveResultSchema = z.object({
-	storedCredential: z.unknown(),
-	runtimeCredential: z.unknown().optional(),
-	models: z.array(z.unknown()).max(500).optional(),
-});
-
 export async function streamProviderAuth(options: {
-	db: Db | MemoryCredentialDb;
+	db: CredentialRepository | Db;
 	env: Env;
 	userId: string;
 	input: ProviderAuthStreamBody;
@@ -425,7 +491,6 @@ export async function streamProviderAuth(options: {
 		attemptId: string;
 		job: Record<string, unknown>;
 		onLine: (line: string) => void | Promise<void>;
-		/** Provide credential result JSON for the next credential_ready read. */
 		setResult: (raw: string | null) => void;
 		readResult: () => Promise<string | null>;
 		signal?: AbortSignal;
@@ -438,6 +503,7 @@ export async function streamProviderAuth(options: {
 		destroySandbox,
 		...options.deps,
 	};
+	const repo = asRepo(options.db);
 	assertCredentialConfig({
 		AI_CREDENTIALS_ENCRYPTION_KEY: options.env.AI_CREDENTIALS_ENCRYPTION_KEY,
 		BETTER_AUTH_SECRET: options.env.BETTER_AUTH_SECRET,
@@ -463,22 +529,18 @@ export async function streamProviderAuth(options: {
 	const resultPath = `${RESULT_DIR}/${safeId(attemptId)}.json`;
 	const now = deps.nowMs();
 
-	const attemptRow = {
+	const attemptRow: AuthAttemptRow = {
 		id: attemptId,
 		userId: options.userId,
 		providerId: options.input.providerId,
 		authType: options.input.authType,
 		authSandboxId: sandboxId,
-		status: "pending" as const,
+		status: "pending",
 		expiresAt: new Date(now + ATTEMPT_TTL_MS),
 		createdAt: new Date(now),
 		updatedAt: new Date(now),
 	};
-	if (isMemoryCredentialDb(options.db)) {
-		options.db.attempts.set(attemptId, attemptRow);
-	} else {
-		await options.db.insert(providerAuthAttempts).values(attemptRow);
-	}
+	await repo.insertAttempt(attemptRow);
 
 	await options.emit({
 		event: "meta",
@@ -506,7 +568,7 @@ export async function streamProviderAuth(options: {
 				options.input.providerId,
 			);
 			const write = await upsertCredential({
-				db: options.db,
+				db: repo,
 				userId: options.userId,
 				providerId: options.input.providerId,
 				authType: options.input.authType,
@@ -613,7 +675,6 @@ export async function streamProviderAuth(options: {
 				});
 				return;
 			case "done": {
-				// Never accept runner success unless D1 persistence succeeded.
 				const ok = event.ok && persistOk === true;
 				if (event.ok && persistOk !== true) {
 					if (persistOk === null) {
@@ -682,10 +743,8 @@ export async function streamProviderAuth(options: {
 				commandTimeoutMs: AUTH_TIMEOUT_MS,
 			});
 			const jobPath = `/tmp/ditto-provider-auth-job-${safeId(attemptId)}.json`;
-			let processHandle: {
-				kill: (signal?: string) => Promise<void>;
-				waitForExit: (timeout?: number) => Promise<{ exitCode?: number }>;
-			} | null = null;
+			let processHandle: AuthProcess | null = null;
+			let exited = false;
 			try {
 				await shell.mkdir(RESULT_DIR, { recursive: true });
 				await writeSecretPath(shell, jobPath, JSON.stringify(job));
@@ -702,68 +761,39 @@ export async function streamProviderAuth(options: {
 				};
 
 				const cmd = `node ${AUTH_CLI} --job ${quoteShellArg(jobPath)}`;
-				if (shell.startProcess) {
-					processHandle = await shell.startProcess(cmd, { cwd: "/tmp" });
-					// Prefer log stream if available via execStream fallback.
-				}
-
-				if (shell.execStream) {
-					const { parseSSEStream } = await import("@cloudflare/sandbox");
-					type ExecEvent = import("@cloudflare/sandbox").ExecEvent;
-					const stream = await shell.execStream(cmd, { cwd: "/tmp" });
-					let stdoutBuffer = "";
-					for await (const execEvent of parseSSEStream<ExecEvent>(stream)) {
-						if (cancelled || options.signal?.aborted) {
-							if (processHandle) {
-								try {
-									await processHandle.kill("SIGTERM");
-									await processHandle.waitForExit(AUTH_PROCESS_KILL_GRACE_MS);
-								} catch {
-									// ignore
-								}
-							}
-							break;
-						}
-						if (
-							execEvent.type === "stdout" &&
-							typeof execEvent.data === "string"
-						) {
-							const split = splitStdoutBuffer(stdoutBuffer, execEvent.data);
-							stdoutBuffer = split.rest;
-							for (const line of split.lines) {
-								if (!line.trim()) continue;
-								try {
-									await handleEvent(JSON.parse(line), readResult);
-								} catch {
-									// ignore
-								}
-							}
-						}
+				// Exactly one process start; consume its NDJSON via streamProcessLogs.
+				processHandle = await shell.startProcess(cmd, { cwd: "/tmp" });
+				const { parseSSEStream } = await import("@cloudflare/sandbox");
+				type LogEvent = import("@cloudflare/sandbox").LogEvent;
+				const stream = await shell.streamProcessLogs(processHandle.id, {
+					signal: options.signal,
+				});
+				let stdoutBuffer = "";
+				for await (const logEvent of parseSSEStream<LogEvent>(stream)) {
+					if (cancelled || options.signal?.aborted) {
+						break;
 					}
-				} else {
-					const result = await shell.exec(cmd, { timeout: AUTH_TIMEOUT_MS });
-					for (const line of result.stdout.split("\n")) {
-						if (!line.trim()) continue;
-						try {
-							await handleEvent(JSON.parse(line), readResult);
-						} catch {
-							// ignore
+					if (logEvent.type === "exit") {
+						exited = true;
+						break;
+					}
+					if (logEvent.type === "stdout" && typeof logEvent.data === "string") {
+						const split = splitStdoutBuffer(stdoutBuffer, logEvent.data);
+						stdoutBuffer = split.rest;
+						for (const line of split.lines) {
+							if (!line.trim()) continue;
+							try {
+								await handleEvent(JSON.parse(line), readResult);
+							} catch {
+								// ignore
+							}
 						}
 					}
 				}
 			} finally {
-				if (cancelled || options.signal?.aborted) {
-					try {
-						await shell.exec(`pkill -f ${quoteShellArg(AUTH_CLI)} || true`, {
-							timeout: AUTH_PROCESS_KILL_GRACE_MS,
-						});
-					} catch {
-						// ignore
-					}
-					const sleep =
-						deps.sleep ??
-						((ms: number) => new Promise((r) => setTimeout(r, ms)));
-					await sleep(Math.min(AUTH_PROCESS_KILL_GRACE_MS, 100));
+				if (processHandle && !exited) {
+					await terminateAuthProcess(processHandle);
+					exited = true;
 				}
 				try {
 					await shell.deleteFile(jobPath);
@@ -794,21 +824,10 @@ export async function streamProviderAuth(options: {
 				: persistOk === true
 					? ("complete" as const)
 					: ("failed" as const);
-		if (isMemoryCredentialDb(options.db)) {
-			const row = options.db.attempts.get(attemptId);
-			if (row) {
-				row.status = terminalStatus;
-				row.updatedAt = new Date(deps.nowMs());
-			}
-		} else {
-			await options.db
-				.update(providerAuthAttempts)
-				.set({
-					status: terminalStatus,
-					updatedAt: new Date(deps.nowMs()),
-				})
-				.where(eq(providerAuthAttempts.id, attemptId));
-		}
+		await repo.updateAttempt(attemptId, {
+			status: terminalStatus,
+			updatedAt: new Date(deps.nowMs()),
+		});
 	} catch {
 		await options.emit({
 			event: "error",
@@ -818,18 +837,10 @@ export async function streamProviderAuth(options: {
 			},
 		});
 		await emitDone(false);
-		if (isMemoryCredentialDb(options.db)) {
-			const row = options.db.attempts.get(attemptId);
-			if (row) {
-				row.status = "failed";
-				row.updatedAt = new Date(deps.nowMs());
-			}
-		} else {
-			await options.db
-				.update(providerAuthAttempts)
-				.set({ status: "failed", updatedAt: new Date(deps.nowMs()) })
-				.where(eq(providerAuthAttempts.id, attemptId));
-		}
+		await repo.updateAttempt(attemptId, {
+			status: "failed",
+			updatedAt: new Date(deps.nowMs()),
+		});
 	} finally {
 		options.signal?.removeEventListener("abort", onAbort);
 		try {
@@ -842,10 +853,11 @@ export async function streamProviderAuth(options: {
 
 /**
  * Refresh OAuth under D1 lease in an auth-only sandbox; return runtime credential.
- * Ordering: timeout -> terminate -> await exit/kill grace -> then release lease.
+ * Ordering: timeout -> terminate exact process -> await exit -> then release lease.
+ * Runtime credential is always projected from the validated stored credential.
  */
 export async function resolveOAuthCredential(options: {
-	db: Db | MemoryCredentialDb;
+	db: CredentialRepository | Db;
 	env: Env;
 	userId: string;
 	providerId: string;
@@ -854,12 +866,17 @@ export async function resolveOAuthCredential(options: {
 	nowMs?: () => number;
 	createId?: () => string;
 	deps?: AuthDeps;
-	/** Test hook replacing sandbox process. */
+	/**
+	 * Test hook replacing sandbox process. Must honour signal abort and only
+	 * resolve after the process is considered dead.
+	 */
 	runResolve?: (args: {
 		job: Record<string, unknown>;
 		stored: StoredCredential;
 		timeoutMs: number;
 		signal: AbortSignal;
+		/** Kill helper that tests can drive to prove TERM/KILL/await order. */
+		terminate: (proc: AuthProcess) => Promise<void>;
 	}) => Promise<
 		| { ok: true; resultJson: string }
 		| { ok: false; timedOut?: boolean; code?: string }
@@ -870,16 +887,14 @@ export async function resolveOAuthCredential(options: {
 > {
 	const nowMs = options.nowMs ?? Date.now;
 	const createId = options.createId ?? nanoid;
-	const sleep =
-		options.deps?.sleep ??
-		((ms: number) => new Promise((r) => setTimeout(r, ms)));
 	const getSandbox =
 		options.deps?.getProjectSandbox ??
 		(getProjectSandbox as AuthDeps["getProjectSandbox"]);
 	const destroy = options.deps?.destroySandbox ?? destroySandbox;
+	const repo = asRepo(options.db);
 
 	const lease = await acquireLeaseWithWait({
-		db: options.db,
+		db: repo,
 		userId: options.userId,
 		providerId: options.providerId,
 		nowMs: nowMs(),
@@ -892,11 +907,14 @@ export async function resolveOAuthCredential(options: {
 	const resultPath = `${RESULT_DIR}/${safeId(attemptId)}.json`;
 	const jobPath = `/tmp/ditto-provider-auth-job-${safeId(attemptId)}.json`;
 	const abort = new AbortController();
-	let processAlive = false;
+
+	/** Only true after waitForExit confirms death (or terminate finishes). */
+	let processExited = true;
+	let processHandle: AuthProcess | null = null;
 
 	const markFailed = async () => {
 		await markNeedsRelogin({
-			db: options.db,
+			db: repo,
 			userId: options.userId,
 			providerId: options.providerId,
 			errorCode: "oauth_refresh_failed",
@@ -904,6 +922,15 @@ export async function resolveOAuthCredential(options: {
 			expectedVersion: options.version,
 			nowMs: nowMs(),
 		});
+	};
+
+	const ensureProcessDead = async () => {
+		if (processExited) return;
+		if (processHandle) {
+			await terminateAuthProcess(processHandle);
+			processHandle = null;
+		}
+		processExited = true;
 	};
 
 	try {
@@ -917,23 +944,53 @@ export async function resolveOAuthCredential(options: {
 		let resultJson: string | null = null;
 
 		if (options.runResolve) {
-			processAlive = true;
-			const outcome = await options.runResolve({
-				job,
-				stored: options.stored,
-				timeoutMs: AUTH_RESOLUTION_TIMEOUT_MS,
-				signal: abort.signal,
-			});
-			processAlive = false;
-			if (!outcome.ok) {
-				if (outcome.timedOut) {
-					// Simulate terminate + kill grace before release (caller ordering).
-					await sleep(0);
+			// Fake process for the test hook so terminate ordering is real.
+			let alive = true;
+			const fakeProc: AuthProcess = {
+				id: `resolve-${attemptId}`,
+				kill: async () => {
+					alive = false;
+				},
+				waitForExit: async () => {
+					if (alive) throw new Error("still_running");
+					return { exitCode: 1 };
+				},
+			};
+			processHandle = fakeProc;
+			processExited = false;
+
+			const timer = setTimeout(() => abort.abort(), AUTH_RESOLUTION_TIMEOUT_MS);
+			try {
+				const outcome = await options.runResolve({
+					job,
+					stored: options.stored,
+					timeoutMs: AUTH_RESOLUTION_TIMEOUT_MS,
+					signal: abort.signal,
+					terminate: async (proc) => {
+						await terminateAuthProcess(proc);
+						if (proc === processHandle) {
+							processHandle = null;
+							processExited = true;
+						}
+					},
+				});
+				if (!outcome.ok) {
+					if (!processExited) {
+						await ensureProcessDead();
+					}
+					await markFailed();
+					return { ok: false, code: "refresh_failed" };
 				}
-				await markFailed();
-				return { ok: false, code: "refresh_failed" };
+				// Success path: process must already be dead.
+				if (!processExited) {
+					processExited = true;
+					processHandle = null;
+				}
+				resultJson = outcome.resultJson;
+			} finally {
+				clearTimeout(timer);
+				if (!processExited) await ensureProcessDead();
 			}
-			resultJson = outcome.resultJson;
 		} else {
 			const sandbox = (getSandbox ?? getProjectSandbox)(
 				options.env,
@@ -952,77 +1009,48 @@ export async function resolveOAuthCredential(options: {
 				await shell.mkdir(RESULT_DIR, { recursive: true });
 				await writeSecretPath(shell, jobPath, JSON.stringify(job));
 				const cmd = `node ${AUTH_CLI} --job ${quoteShellArg(jobPath)}`;
-				processAlive = true;
 
-				if (shell.startProcess) {
-					const proc = await shell.startProcess(cmd, { cwd: "/tmp" });
-					let timedOut = false;
-					const timer = setTimeout(() => {
-						timedOut = true;
-						abort.abort();
-					}, AUTH_RESOLUTION_TIMEOUT_MS);
-					try {
-						if (timedOut || abort.signal.aborted) {
-							await proc.kill("SIGTERM");
-							try {
-								await proc.waitForExit(AUTH_PROCESS_KILL_GRACE_MS);
-							} catch {
-								try {
-									await proc.kill("SIGKILL");
-									await proc.waitForExit(AUTH_PROCESS_KILL_GRACE_MS);
-								} catch {
-									// ignore
-								}
-							}
-							processAlive = false;
-							await markFailed();
-							return { ok: false, code: "refresh_failed" };
-						}
-						const exit = await Promise.race([
-							proc.waitForExit(AUTH_RESOLUTION_TIMEOUT_MS),
-							new Promise<{ exitCode?: number }>((resolve) => {
-								abort.signal.addEventListener(
-									"abort",
-									() => resolve({ exitCode: 124 }),
-									{ once: true },
-								);
-							}),
-						]);
-						clearTimeout(timer);
-						if (abort.signal.aborted || exit.exitCode === 124) {
-							await proc.kill("SIGTERM");
-							try {
-								await proc.waitForExit(AUTH_PROCESS_KILL_GRACE_MS);
-							} catch {
-								try {
-									await proc.kill("SIGKILL");
-									await proc.waitForExit(AUTH_PROCESS_KILL_GRACE_MS);
-								} catch {
-									// ignore
-								}
-							}
-							processAlive = false;
-							await markFailed();
-							return { ok: false, code: "refresh_failed" };
-						}
-						processAlive = false;
-						if ((exit.exitCode ?? 1) !== 0) {
-							await markFailed();
-							return { ok: false, code: "refresh_failed" };
-						}
-					} finally {
-						clearTimeout(timer);
-						processAlive = false;
-					}
-				} else {
-					const result = await shell.exec(cmd, {
-						timeout: AUTH_RESOLUTION_TIMEOUT_MS,
-					});
-					processAlive = false;
-					if (!result.success) {
+				processHandle = await shell.startProcess(cmd, { cwd: "/tmp" });
+				processExited = false;
+
+				const timer = setTimeout(
+					() => abort.abort(),
+					AUTH_RESOLUTION_TIMEOUT_MS,
+				);
+				try {
+					const exit = await Promise.race([
+						processHandle.waitForExit(AUTH_RESOLUTION_TIMEOUT_MS).then((r) => {
+							processExited = true;
+							return r;
+						}),
+						new Promise<{ exitCode?: number }>((resolve) => {
+							abort.signal.addEventListener(
+								"abort",
+								() => resolve({ exitCode: 124 }),
+								{ once: true },
+							);
+						}),
+					]);
+					clearTimeout(timer);
+
+					if (abort.signal.aborted || exit.exitCode === 124) {
+						await ensureProcessDead();
 						await markFailed();
 						return { ok: false, code: "refresh_failed" };
 					}
+					processExited = true;
+					processHandle = null;
+					if ((exit.exitCode ?? 1) !== 0) {
+						await markFailed();
+						return { ok: false, code: "refresh_failed" };
+					}
+				} catch {
+					await ensureProcessDead();
+					await markFailed();
+					return { ok: false, code: "refresh_failed" };
+				} finally {
+					clearTimeout(timer);
+					if (!processExited) await ensureProcessDead();
 				}
 
 				try {
@@ -1035,17 +1063,7 @@ export async function resolveOAuthCredential(options: {
 					return { ok: false, code: "refresh_failed" };
 				}
 			} finally {
-				if (processAlive) {
-					try {
-						await shell.exec(`pkill -f ${quoteShellArg(AUTH_CLI)} || true`, {
-							timeout: AUTH_PROCESS_KILL_GRACE_MS,
-						});
-					} catch {
-						// ignore
-					}
-					await sleep(Math.min(AUTH_PROCESS_KILL_GRACE_MS, 50));
-					processAlive = false;
-				}
+				if (!processExited) await ensureProcessDead();
 				try {
 					await shell.deleteFile(jobPath);
 				} catch {
@@ -1081,24 +1099,18 @@ export async function resolveOAuthCredential(options: {
 		let runtime: StoredCredential;
 		try {
 			stored = parseStoredCredential(payload.storedCredential);
-			runtime = payload.runtimeCredential
-				? parseStoredCredential(payload.runtimeCredential)
-				: projectRuntimeCredential(stored, options.providerId, {
-						nowMs: nowMs(),
-					});
-			// Ensure runtime has no real refresh token.
-			if (runtime.type === "oauth" && runtime.refresh !== "ditto:no-refresh") {
-				runtime = projectRuntimeCredential(stored, options.providerId, {
-					nowMs: nowMs(),
-				});
-			}
+			// Always project runtime from validated stored credential (ignore runner
+			// runtime payload for security: expiry window + allowlist enforced here).
+			runtime = projectRuntimeCredential(stored, options.providerId, {
+				nowMs: nowMs(),
+			});
 		} catch {
 			await markFailed();
 			return { ok: false, code: "refresh_failed" };
 		}
 
 		const write = await updateCredentialUnderLease({
-			db: options.db,
+			db: repo,
 			userId: options.userId,
 			providerId: options.providerId,
 			leaseId: lease.leaseId,
@@ -1111,12 +1123,14 @@ export async function resolveOAuthCredential(options: {
 		if (write === "stale") return { ok: false, code: "busy" };
 		return { ok: true, runtime };
 	} catch {
+		await ensureProcessDead();
 		await markFailed();
 		return { ok: false, code: "refresh_failed" };
 	} finally {
 		// Lease release only after process is known dead.
+		await ensureProcessDead();
 		await releaseLease({
-			db: options.db,
+			db: repo,
 			userId: options.userId,
 			providerId: options.providerId,
 			leaseId: lease.leaseId,
