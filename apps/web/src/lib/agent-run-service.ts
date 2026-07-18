@@ -3,6 +3,17 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import type { createDb } from "#/db";
 import { messages, projects, workspaceSessions } from "#/db/schema";
+import {
+	assertCredentialConfig,
+	createCredentialRepository,
+	credentialSecretValues,
+	FALLBACK_MODEL_SPECIFIER,
+	FALLBACK_PROVIDER_ID,
+	loadCredential,
+	operatorFallbackCredential,
+	type StoredCredential,
+	toRuntimeCredential,
+} from "#/lib/account-provider-credentials";
 import { controlAgentRun } from "#/lib/agent-control-service";
 import { createDeltaBatcher } from "#/lib/agent-delta-batcher";
 import {
@@ -17,13 +28,17 @@ import {
 	prepareAssistantMessageStorage,
 	serializeAssistantPartsMinimalForStorage,
 } from "#/lib/agent-message-storage";
-import { isProjectCoderModelSpecifier } from "#/lib/agent-models";
+import {
+	isProjectCoderModelSpecifier,
+	parseModelSpecifier,
+} from "#/lib/agent-models";
 import { runAgentInSandbox } from "#/lib/agent-run";
 import { decryptEnvVars } from "#/lib/project-env-vars";
 import {
 	ensureProjectSandbox,
 	persistProjectSandboxBackup,
 } from "#/lib/project-sandbox";
+import { resolveOAuthCredential } from "#/lib/provider-auth-service";
 import { redactSecrets } from "#/lib/secret-redaction";
 import { ensureSessionWorktree } from "#/lib/session-worktree";
 import { makeSessionTitleFromMessage } from "#/lib/workspace-policy";
@@ -129,6 +144,7 @@ export type AgentRunContext = {
 	assistantMessageId: string;
 	envVars: Awaited<ReturnType<typeof decryptEnvVars>>;
 	secretValues: string[];
+	runtimeCredentialJson: string;
 };
 
 export type AgentRunDeps = {
@@ -150,6 +166,7 @@ export type AgentRunDeps = {
 	redactSecrets?: typeof redactSecrets;
 	prepareAssistantMessageStorage?: typeof prepareAssistantMessageStorage;
 	serializeAssistantPartsMinimalForStorage?: typeof serializeAssistantPartsMinimalForStorage;
+	loadCredential?: typeof loadCredential;
 };
 
 const defaultDeps: Required<AgentRunDeps> = {
@@ -173,6 +190,7 @@ const defaultDeps: Required<AgentRunDeps> = {
 	redactSecrets,
 	prepareAssistantMessageStorage,
 	serializeAssistantPartsMinimalForStorage,
+	loadCredential,
 };
 
 function mergeDeps(deps?: AgentRunDeps): Required<AgentRunDeps> {
@@ -207,6 +225,130 @@ export async function prepareAgentRun(options: {
 }): Promise<AgentRunPrepared | AgentRunHttpError> {
 	const deps = mergeDeps(options.deps);
 	const { db, env, userId, input } = options;
+
+	try {
+		assertCredentialConfig({
+			AI_CREDENTIALS_ENCRYPTION_KEY: env.AI_CREDENTIALS_ENCRYPTION_KEY,
+			BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET,
+			OPENCODE_API_KEY: env.OPENCODE_API_KEY,
+		});
+	} catch {
+		return {
+			kind: "error",
+			status: 500,
+			body: { error: "Server credentials are not configured." },
+		};
+	}
+
+	const parsedModel = parseModelSpecifier(input.model);
+	if (!parsedModel) {
+		return {
+			kind: "error",
+			status: 400,
+			body: { error: "Invalid model." },
+		};
+	}
+
+	// Resolve account credential / fallback before side effects.
+	let runtimeCredential: StoredCredential | null = null;
+	const credentialDb = createCredentialRepository(db);
+	const owned = await deps.loadCredential({
+		db: credentialDb,
+		userId,
+		providerId: parsedModel.providerId,
+		encryptionKey: env.AI_CREDENTIALS_ENCRYPTION_KEY,
+	});
+	if (owned?.status === "needs_relogin") {
+		return {
+			kind: "error",
+			status: 409,
+			body: {
+				error: "Provider requires re-login. Reconnect it in Account Settings.",
+			},
+		};
+	}
+	if (owned?.status === "connected") {
+		const inCatalog = owned.models.some(
+			(m) =>
+				m.providerId === parsedModel.providerId &&
+				m.modelId === parsedModel.modelId,
+		);
+		// Exact fallback remains the only operator exception when not in catalog.
+		if (!inCatalog && input.model !== FALLBACK_MODEL_SPECIFIER) {
+			return {
+				kind: "error",
+				status: 409,
+				body: {
+					error:
+						"Selected model is not available for this provider connection.",
+				},
+			};
+		}
+		if (input.model === FALLBACK_MODEL_SPECIFIER && !inCatalog) {
+			runtimeCredential = operatorFallbackCredential(env.OPENCODE_API_KEY);
+		} else {
+			try {
+				runtimeCredential = toRuntimeCredential(
+					owned.credential,
+					parsedModel.providerId,
+				);
+			} catch {
+				if (owned.credential.type !== "oauth") {
+					return {
+						kind: "error",
+						status: 409,
+						body: {
+							error:
+								"Provider session expired. Reconnect it in Account Settings.",
+						},
+					};
+				}
+				const refreshed = await resolveOAuthCredential({
+					db: credentialDb,
+					env,
+					userId,
+					providerId: parsedModel.providerId,
+					stored: owned.credential,
+					version: owned.version,
+				});
+				if (!refreshed.ok) {
+					return {
+						kind: "error",
+						status: 409,
+						body: {
+							error:
+								refreshed.code === "busy"
+									? "Provider credentials are busy. Try again shortly."
+									: "Provider session expired. Reconnect it in Account Settings.",
+						},
+					};
+				}
+				runtimeCredential = refreshed.runtime;
+			}
+		}
+	} else if (input.model === FALLBACK_MODEL_SPECIFIER) {
+		runtimeCredential = operatorFallbackCredential(env.OPENCODE_API_KEY);
+	} else if (
+		parsedModel.providerId === FALLBACK_PROVIDER_ID &&
+		input.model !== FALLBACK_MODEL_SPECIFIER
+	) {
+		return {
+			kind: "error",
+			status: 409,
+			body: {
+				error:
+					"Connect an OpenCode credential in Account Settings to use this model.",
+			},
+		};
+	} else {
+		return {
+			kind: "error",
+			status: 409,
+			body: {
+				error: "Connect this provider in Account Settings to use its models.",
+			},
+		};
+	}
 
 	const project = await deps.loadProjectForUser({
 		db,
@@ -411,7 +553,10 @@ export async function prepareAgentRun(options: {
 		};
 	}
 
+	const runtimeCredentialJson = JSON.stringify(runtimeCredential);
 	const secretValues = [
+		...credentialSecretValues(runtimeCredential),
+		runtimeCredentialJson,
 		env.OPENCODE_API_KEY,
 		...envVars.map((envVar) => envVar.value),
 	].filter(
@@ -438,6 +583,7 @@ export async function prepareAgentRun(options: {
 			assistantMessageId,
 			envVars,
 			secretValues,
+			runtimeCredentialJson,
 		},
 	};
 }
@@ -621,6 +767,7 @@ export async function executeAgentRun(options: {
 			cwd: context.sessionWorkspacePath,
 			model: context.model,
 			prompt: context.message,
+			runtimeCredentialJson: context.runtimeCredentialJson,
 			envVars: context.envVars,
 			onRunnerMessage: async (msg) => {
 				if (msg.kind === "assistant_delta") {

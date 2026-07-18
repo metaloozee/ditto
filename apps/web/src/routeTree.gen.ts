@@ -15,6 +15,8 @@ import { Route as ProjectProjectIdRouteImport } from './routes/project.$projectI
 import { Route as InstallationCompletedRouteImport } from './routes/installation.completed'
 import { Route as ProjectProjectIdIndexRouteImport } from './routes/project.$projectId.index'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
+import { Route as ApiProviderAuthStreamRouteImport } from './routes/api.provider-auth.stream'
+import { Route as ApiProviderAuthControlRouteImport } from './routes/api.provider-auth.control'
 import { Route as ApiAuthSplatRouteImport } from './routes/api.auth.$'
 import { Route as ApiAgentStreamRouteImport } from './routes/api.agent.stream'
 import { Route as ApiAgentGitRouteImport } from './routes/api.agent.git'
@@ -49,6 +51,16 @@ const ProjectProjectIdIndexRoute = ProjectProjectIdIndexRouteImport.update({
 const ApiTrpcSplatRoute = ApiTrpcSplatRouteImport.update({
   id: '/api/trpc/$',
   path: '/api/trpc/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiProviderAuthStreamRoute = ApiProviderAuthStreamRouteImport.update({
+  id: '/api/provider-auth/stream',
+  path: '/api/provider-auth/stream',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiProviderAuthControlRoute = ApiProviderAuthControlRouteImport.update({
+  id: '/api/provider-auth/control',
+  path: '/api/provider-auth/control',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -87,6 +99,8 @@ export interface FileRoutesByFullPath {
   '/api/agent/git': typeof ApiAgentGitRoute
   '/api/agent/stream': typeof ApiAgentStreamRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/provider-auth/control': typeof ApiProviderAuthControlRoute
+  '/api/provider-auth/stream': typeof ApiProviderAuthStreamRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/project/$projectId/': typeof ProjectProjectIdIndexRoute
   '/project/$projectId/session/$sessionId': typeof ProjectProjectIdSessionSessionIdRoute
@@ -99,6 +113,8 @@ export interface FileRoutesByTo {
   '/api/agent/git': typeof ApiAgentGitRoute
   '/api/agent/stream': typeof ApiAgentStreamRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/provider-auth/control': typeof ApiProviderAuthControlRoute
+  '/api/provider-auth/stream': typeof ApiProviderAuthStreamRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/project/$projectId': typeof ProjectProjectIdIndexRoute
   '/project/$projectId/session/$sessionId': typeof ProjectProjectIdSessionSessionIdRoute
@@ -113,6 +129,8 @@ export interface FileRoutesById {
   '/api/agent/git': typeof ApiAgentGitRoute
   '/api/agent/stream': typeof ApiAgentStreamRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/provider-auth/control': typeof ApiProviderAuthControlRoute
+  '/api/provider-auth/stream': typeof ApiProviderAuthStreamRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/project/$projectId/': typeof ProjectProjectIdIndexRoute
   '/project/$projectId/session/$sessionId': typeof ProjectProjectIdSessionSessionIdRoute
@@ -128,6 +146,8 @@ export interface FileRouteTypes {
     | '/api/agent/git'
     | '/api/agent/stream'
     | '/api/auth/$'
+    | '/api/provider-auth/control'
+    | '/api/provider-auth/stream'
     | '/api/trpc/$'
     | '/project/$projectId/'
     | '/project/$projectId/session/$sessionId'
@@ -140,6 +160,8 @@ export interface FileRouteTypes {
     | '/api/agent/git'
     | '/api/agent/stream'
     | '/api/auth/$'
+    | '/api/provider-auth/control'
+    | '/api/provider-auth/stream'
     | '/api/trpc/$'
     | '/project/$projectId'
     | '/project/$projectId/session/$sessionId'
@@ -153,6 +175,8 @@ export interface FileRouteTypes {
     | '/api/agent/git'
     | '/api/agent/stream'
     | '/api/auth/$'
+    | '/api/provider-auth/control'
+    | '/api/provider-auth/stream'
     | '/api/trpc/$'
     | '/project/$projectId/'
     | '/project/$projectId/session/$sessionId'
@@ -167,6 +191,8 @@ export interface RootRouteChildren {
   ApiAgentGitRoute: typeof ApiAgentGitRoute
   ApiAgentStreamRoute: typeof ApiAgentStreamRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiProviderAuthControlRoute: typeof ApiProviderAuthControlRoute
+  ApiProviderAuthStreamRoute: typeof ApiProviderAuthStreamRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
 }
 
@@ -212,6 +238,20 @@ declare module '@tanstack/react-router' {
       path: '/api/trpc/$'
       fullPath: '/api/trpc/$'
       preLoaderRoute: typeof ApiTrpcSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/provider-auth/stream': {
+      id: '/api/provider-auth/stream'
+      path: '/api/provider-auth/stream'
+      fullPath: '/api/provider-auth/stream'
+      preLoaderRoute: typeof ApiProviderAuthStreamRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/provider-auth/control': {
+      id: '/api/provider-auth/control'
+      path: '/api/provider-auth/control'
+      fullPath: '/api/provider-auth/control'
+      preLoaderRoute: typeof ApiProviderAuthControlRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -274,6 +314,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAgentGitRoute: ApiAgentGitRoute,
   ApiAgentStreamRoute: ApiAgentStreamRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiProviderAuthControlRoute: ApiProviderAuthControlRoute,
+  ApiProviderAuthStreamRoute: ApiProviderAuthStreamRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
 }
 export const routeTree = rootRouteImport

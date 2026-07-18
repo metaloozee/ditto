@@ -5,6 +5,8 @@ import {
 	LogOutIcon,
 	SettingsIcon,
 } from "lucide-react";
+import { useState } from "react";
+import { ProviderSettingsDialog } from "#/components/provider-settings-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar";
 import {
 	DropdownMenu,
@@ -48,6 +50,7 @@ function HiddenEmail({ email }: { email: string }) {
 
 export function NavUser() {
 	const { isMobile } = useSidebar();
+	const [settingsOpen, setSettingsOpen] = useState(false);
 	const { data: session, isPending } = authClient.useSession();
 
 	if (isPending) {
@@ -88,15 +91,39 @@ export function NavUser() {
 	const initials = getInitials(user.name, user.email);
 
 	return (
-		<SidebarMenu>
-			<SidebarMenuItem>
-				<DropdownMenu>
-					<DropdownMenuTrigger
-						render={
-							<SidebarMenuButton
-								size="lg"
-								className="group/user data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-							>
+		<>
+			<SidebarMenu>
+				<SidebarMenuItem>
+					<DropdownMenu>
+						<DropdownMenuTrigger
+							render={
+								<SidebarMenuButton
+									size="lg"
+									className="group/user data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+								>
+									<Avatar className="size-8 rounded-lg">
+										<AvatarImage src={user.image ?? undefined} alt="" />
+										<AvatarFallback className="rounded-lg">
+											{initials}
+										</AvatarFallback>
+									</Avatar>
+									<div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
+										<span className="truncate font-medium">{displayName}</span>
+										<span className="min-h-4 truncate text-xs text-sidebar-foreground/70">
+											Account Settings
+										</span>
+									</div>
+									<ChevronsUpDownIcon className="ml-auto" />
+								</SidebarMenuButton>
+							}
+						/>
+						<DropdownMenuContent
+							className="min-w-56"
+							side={isMobile ? "bottom" : "right"}
+							align="end"
+							sideOffset={4}
+						>
+							<DropdownMenuItem className="group/user flex items-center gap-2 rounded-md px-1 py-1.5 text-left text-sm">
 								<Avatar className="size-8 rounded-lg">
 									<AvatarImage src={user.image ?? undefined} alt="" />
 									<AvatarFallback className="rounded-lg">
@@ -105,54 +132,39 @@ export function NavUser() {
 								</Avatar>
 								<div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
 									<span className="truncate font-medium">{displayName}</span>
-									<span className="min-h-4 truncate text-xs text-sidebar-foreground/70">
-										Account Settings
+									<span className="min-h-4 truncate text-xs text-muted-foreground">
+										<HiddenEmail email={email} />
 									</span>
 								</div>
-								<ChevronsUpDownIcon className="ml-auto" />
-							</SidebarMenuButton>
-						}
-					/>
-					<DropdownMenuContent
-						className="min-w-56"
-						side={isMobile ? "bottom" : "right"}
-						align="end"
-						sideOffset={4}
-					>
-						<DropdownMenuItem className="group/user flex items-center gap-2 rounded-md px-1 py-1.5 text-left text-sm">
-							<Avatar className="size-8 rounded-lg">
-								<AvatarImage src={user.image ?? undefined} alt="" />
-								<AvatarFallback className="rounded-lg">
-									{initials}
-								</AvatarFallback>
-							</Avatar>
-							<div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
-								<span className="truncate font-medium">{displayName}</span>
-								<span className="min-h-4 truncate text-xs text-muted-foreground">
-									<HiddenEmail email={email} />
-								</span>
-							</div>
-						</DropdownMenuItem>
-						<DropdownMenuSeparator />
-						<DropdownMenuItem>
-							<SettingsIcon />
-							Settings
-						</DropdownMenuItem>
-						<DropdownMenuSeparator />
-						<DropdownMenuItem
-							role="button"
-							onClick={() => {
-								void authClient.signOut();
-								window.location.reload();
-							}}
-							variant="destructive"
-						>
-							<LogOutIcon />
-							Log out
-						</DropdownMenuItem>
-					</DropdownMenuContent>
-				</DropdownMenu>
-			</SidebarMenuItem>
-		</SidebarMenu>
+							</DropdownMenuItem>
+							<DropdownMenuSeparator />
+							<DropdownMenuItem
+								onClick={() => setSettingsOpen(true)}
+								onSelect={(event) => event.preventDefault()}
+							>
+								<SettingsIcon />
+								Settings
+							</DropdownMenuItem>
+							<DropdownMenuSeparator />
+							<DropdownMenuItem
+								role="button"
+								onClick={() => {
+									void authClient.signOut();
+									window.location.reload();
+								}}
+								variant="destructive"
+							>
+								<LogOutIcon />
+								Log out
+							</DropdownMenuItem>
+						</DropdownMenuContent>
+					</DropdownMenu>
+				</SidebarMenuItem>
+			</SidebarMenu>
+			<ProviderSettingsDialog
+				open={settingsOpen}
+				onOpenChange={setSettingsOpen}
+			/>
+		</>
 	);
 }

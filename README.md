@@ -116,9 +116,15 @@ GITHUB_APP_ID=
 GITHUB_APP_PRIVATE_KEY=
 VITE_GITHUB_APP_INSTALL_URL=
 OPENCODE_API_KEY=
+AI_CREDENTIALS_ENCRYPTION_KEY=
 ```
 
 `BETTER_AUTH_URL` defaults to `http://localhost:5173` if omitted.
+`AI_CREDENTIALS_ENCRYPTION_KEY` must be nonempty and distinct from
+`BETTER_AUTH_SECRET`. It encrypts account-level AI provider credentials.
+`OPENCODE_API_KEY` is the operator credential for the free fallback model
+`opencode/deepseek-v4-flash-free` only. Users connect their own providers in
+Account Settings.
 
 ## Notes
 
@@ -127,8 +133,10 @@ OPENCODE_API_KEY=
   branches and open pull requests (installation token; never stored in the DB).
 - `pnpm deploy` and `pnpm destroy` are managed through Alchemy only.
 - `apps/web/src/server.ts` exports the Cloudflare Sandbox binding used by the app.
-- `OPENCODE_API_KEY` is required for sandbox agent runs (passed into the harness
-  session environment).
+- `OPENCODE_API_KEY` is required as the operator fallback for
+  `opencode/deepseek-v4-flash-free`. Account provider credentials are injected
+  ephemerally via `DITTO_PI_CREDENTIAL` and deleted inside the runner before
+  tools start.
 - Agent harness architecture: `docs/architecture/agent-harness.md`
 - Concurrent agent runs per project are not enforced yet; see the architecture
   doc for deferred concurrency notes.

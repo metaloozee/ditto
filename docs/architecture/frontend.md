@@ -168,3 +168,11 @@ coordination boundaries: streamed chat rendering, composer lifecycle, sidebar
 archival/navigation, project creation, session Git workflow, and tool grouping.
 Primitive UI files generally rely on their upstream behavior and product-level
 coverage rather than one test file per wrapper.
+
+## Account provider credentials (Plan 025)
+
+- Credentials are account-scoped in D1 (`ai_provider_credentials`), encrypted with `AI_CREDENTIALS_ENCRYPTION_KEY` + user/provider AAD.
+- Login/refresh runs in auth-only sandboxes under `/tmp`; no `auth.json`, no project env, no R2 backup of secrets.
+- Project runners receive `DITTO_PI_CREDENTIAL` (runtime projection only; OAuth refresh stripped) and delete it before session/tools.
+- Fallback model is exactly `opencode/deepseek-v4-flash-free` via operator `OPENCODE_API_KEY`.
+- Account Settings UI connects providers; composer lists fallback + connected models.

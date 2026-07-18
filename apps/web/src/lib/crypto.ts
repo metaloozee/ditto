@@ -58,15 +58,28 @@ async function deriveKey(secret: string, salt: Uint8Array): Promise<CryptoKey> {
 	);
 }
 
+export type EncryptTextOptions = {
+	/** AES-GCM additional authenticated data. Bound into the ciphertext. */
+	additionalData?: string;
+};
+
 export async function encryptText(
 	plaintext: string,
 	secret: string,
+	options?: EncryptTextOptions,
 ): Promise<string> {
 	const salt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
 	const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
 	const key = await deriveKey(secret, salt);
+	const additionalData = options?.additionalData
+		? toArrayBuffer(textEncoder.encode(options.additionalData))
+		: undefined;
 	const ciphertext = await crypto.subtle.encrypt(
-		{ name: "AES-GCM", iv: toArrayBuffer(iv) },
+		{
+			name: "AES-GCM",
+			iv: toArrayBuffer(iv),
+			...(additionalData ? { additionalData } : {}),
+		},
 		key,
 		toArrayBuffer(textEncoder.encode(plaintext)),
 	);
@@ -82,6 +95,7 @@ export async function encryptText(
 export async function decryptText(
 	payload: string,
 	secret: string,
+	options?: EncryptTextOptions,
 ): Promise<string> {
 	const [version, saltHex, ivHex, ciphertextHex, ...extra] = payload.split(".");
 
@@ -102,11 +116,29 @@ export async function decryptText(
 	}
 
 	const key = await deriveKey(secret, salt);
-	const plaintext = await crypto.subtle.decrypt(
-		{ name: "AES-GCM", iv: toArrayBuffer(iv) },
-		key,
-		toArrayBuffer(ciphertext),
-	);
+	const additionalData = options?.additionalData
+		? toArrayBuffer(textEncoder.encode(options.additionalData))
+		: undefined;
+	try {
+		const plaintext = await crypto.subtle.decrypt(
+			{
+				name: "AES-GCM",
+				iv: toArrayBuffer(iv),
+				...(additionalData ? { additionalData } : {}),
+			},
+			key,
+			toArrayBuffer(ciphertext),
+		);
+		return textDecoder.decode(plaintext);
+	} catch {
+		throw new Error("Failed to decrypt payload.");
+	}
+}
 
-	return textDecoder.decode(plaintext);
+/** Canonical AAD for account provider credentials. */
+export function providerCredentialAad(
+	userId: string,
+	providerId: string,
+): string {
+	return JSON.stringify(["ditto:provider-credential", userId, providerId]);
 }

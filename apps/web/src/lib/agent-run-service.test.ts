@@ -21,6 +21,12 @@ vi.mock("#/lib/project-env-vars", () => ({
 	decryptEnvVars: vi.fn().mockResolvedValue([]),
 }));
 
+vi.mock("#/lib/provider-auth-service", () => ({
+	resolveOAuthCredential: vi
+		.fn()
+		.mockResolvedValue({ ok: false, code: "refresh_failed" }),
+}));
+
 vi.mock("#/lib/workspace-session", () => ({
 	resolveSessionForMessageWrite: vi.fn(),
 	workspaceSessionRecencyUpdate: vi.fn((_db: unknown, sessionId: string) => ({
@@ -76,6 +82,7 @@ const activeSession = {
 function makeEnv(): Env {
 	return {
 		OPENCODE_API_KEY: "sk-test-key-12345678901234567890",
+		AI_CREDENTIALS_ENCRYPTION_KEY: "ai-credentials-encryption-key-test-aaaa",
 		BETTER_AUTH_SECRET: "test-better-auth-secret-min-length",
 		BETTER_AUTH_URL: "http://localhost:5173",
 	} as Env;
@@ -136,6 +143,7 @@ function baseDeps(overrides: Partial<AgentRunDeps> = {}): AgentRunDeps {
 			baseCommitSha: activeSession.baseCommitSha,
 			workspacePath: activeSession.workspacePath,
 		}),
+		loadCredential: vi.fn().mockResolvedValue(null),
 		runAgentInSandbox: vi.fn().mockResolvedValue({
 			ok: true,
 			assistantText: "Hello",
@@ -167,7 +175,7 @@ describe("prepareAgentRun", () => {
 			input: {
 				projectId: "missing",
 				message: "hi",
-				model: "opencode-go/deepseek-v4-flash",
+				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
 				loadProjectForUser: vi.fn().mockResolvedValue(null),
@@ -189,7 +197,7 @@ describe("prepareAgentRun", () => {
 			input: {
 				projectId: "proj-1",
 				message: "hi",
-				model: "opencode-go/deepseek-v4-flash",
+				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
 				loadProjectForUser: vi.fn().mockResolvedValue({
@@ -216,7 +224,7 @@ describe("prepareAgentRun", () => {
 				projectId: "proj-1",
 				sessionId: "sess-archived",
 				message: "hi",
-				model: "opencode-go/deepseek-v4-flash",
+				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
 				resolveSessionForMessageWrite: vi
@@ -266,7 +274,7 @@ describe("prepareAgentRun", () => {
 				projectId: "proj-1",
 				sessionId: "sess-1",
 				message: "hi",
-				model: "opencode-go/deepseek-v4-flash",
+				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps,
 		});
@@ -290,7 +298,7 @@ describe("prepareAgentRun", () => {
 			input: {
 				projectId: "proj-1",
 				message: "hi",
-				model: "opencode-go/deepseek-v4-flash",
+				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
 				createId: vi.fn().mockReturnValue("sess-new"),
@@ -325,7 +333,7 @@ describe("prepareAgentRun", () => {
 				projectId: "proj-1",
 				sessionId: "sess-1",
 				message: "hi",
-				model: "opencode-go/deepseek-v4-flash",
+				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
 				ensureSessionWorktree: vi
@@ -355,7 +363,7 @@ describe("prepareAgentRun", () => {
 				projectId: "proj-1",
 				sessionId: "sess-1",
 				message: "hi",
-				model: "opencode-go/deepseek-v4-flash",
+				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
 				createId: vi
@@ -385,6 +393,160 @@ describe("prepareAgentRun", () => {
 			status: "complete",
 		});
 	});
+
+	it("rejects arbitrary same-provider model not in owned catalog", async () => {
+		const { db } = createMockDb();
+		const result = await prepareAgentRun({
+			db,
+			env: makeEnv(),
+			userId: "user-1",
+			input: {
+				projectId: "proj-1",
+				message: "hi",
+				model: "anthropic/claude-opus-not-listed",
+			},
+			deps: baseDeps({
+				loadCredential: vi.fn().mockResolvedValue({
+					id: "c1",
+					authType: "api_key",
+					status: "connected",
+					version: 1,
+					credential: { type: "api_key", key: "sk-user-anthropic-key-xxxx" },
+					models: [
+						{
+							providerId: "anthropic",
+							modelId: "claude-sonnet",
+							name: "Claude Sonnet",
+						},
+					],
+					lastErrorCode: null,
+				}),
+			}),
+		});
+		expect(result).toMatchObject({
+			kind: "error",
+			status: 409,
+			body: {
+				error: expect.stringMatching(/not available/i),
+			},
+		});
+	});
+
+	it("rejects foreign-account style missing credential for non-fallback model", async () => {
+		const { db } = createMockDb();
+		const result = await prepareAgentRun({
+			db,
+			env: makeEnv(),
+			userId: "user-1",
+			input: {
+				projectId: "proj-1",
+				message: "hi",
+				model: "anthropic/claude-sonnet",
+			},
+			deps: baseDeps({
+				loadCredential: vi.fn().mockResolvedValue(null),
+			}),
+		});
+		expect(result).toMatchObject({
+			kind: "error",
+			status: 409,
+			body: {
+				error: expect.stringMatching(/Connect this provider/i),
+			},
+		});
+	});
+
+	it("allows exact fallback only without account credential", async () => {
+		const { db, batch } = createMockDb();
+		batch.mockResolvedValue([[{ id: "user-msg" }], [{ id: "asst-msg" }]]);
+		const result = await prepareAgentRun({
+			db,
+			env: makeEnv(),
+			userId: "user-1",
+			input: {
+				projectId: "proj-1",
+				sessionId: "sess-1",
+				message: "hi",
+				model: "opencode/deepseek-v4-flash-free",
+			},
+			deps: baseDeps({
+				loadCredential: vi.fn().mockResolvedValue(null),
+				createId: vi
+					.fn()
+					.mockReturnValueOnce("run-1")
+					.mockReturnValueOnce("user-msg")
+					.mockReturnValueOnce("asst-msg"),
+			}),
+		});
+		expect(result.kind).toBe("ready");
+	});
+
+	it("rejects other opencode models without account credential", async () => {
+		const { db } = createMockDb();
+		const result = await prepareAgentRun({
+			db,
+			env: makeEnv(),
+			userId: "user-1",
+			input: {
+				projectId: "proj-1",
+				message: "hi",
+				model: "opencode/some-paid-model",
+			},
+			deps: baseDeps({
+				loadCredential: vi.fn().mockResolvedValue(null),
+			}),
+		});
+		expect(result).toMatchObject({
+			kind: "error",
+			status: 409,
+		});
+	});
+
+	it("needs_relogin returns 409 without refresh", async () => {
+		const { db } = createMockDb();
+		const resolveOAuth = vi.mocked(
+			(await import("#/lib/provider-auth-service")).resolveOAuthCredential,
+		);
+		resolveOAuth.mockClear();
+		const result = await prepareAgentRun({
+			db,
+			env: makeEnv(),
+			userId: "user-1",
+			input: {
+				projectId: "proj-1",
+				message: "hi",
+				model: "anthropic/claude-sonnet",
+			},
+			deps: baseDeps({
+				loadCredential: vi.fn().mockResolvedValue({
+					id: "c1",
+					authType: "oauth",
+					status: "needs_relogin",
+					version: 3,
+					credential: {
+						type: "oauth",
+						refresh: "r",
+						access: "a",
+						expires: Date.now() + 999999,
+					},
+					models: [
+						{
+							providerId: "anthropic",
+							modelId: "claude-sonnet",
+							name: "Claude",
+						},
+					],
+					lastErrorCode: "oauth_refresh_failed",
+				}),
+			}),
+		});
+		expect(result).toMatchObject({
+			kind: "error",
+			status: 409,
+			body: { error: expect.stringMatching(/re-login/i) },
+		});
+		expect(resolveOAuth).not.toHaveBeenCalled();
+	});
 });
 
 describe("executeAgentRun", () => {
@@ -398,7 +560,7 @@ describe("executeAgentRun", () => {
 			userId: "user-1",
 			projectId: "proj-1",
 			message: "hi",
-			model: "opencode-go/deepseek-v4-flash",
+			model: "opencode/deepseek-v4-flash-free",
 			runId: "run-1",
 			sessionId: "sess-1",
 			createdSession: false,
@@ -410,6 +572,10 @@ describe("executeAgentRun", () => {
 			assistantMessageId: "asst-msg",
 			envVars: [],
 			secretValues: [makeEnv().OPENCODE_API_KEY],
+			runtimeCredentialJson: JSON.stringify({
+				type: "api_key",
+				key: makeEnv().OPENCODE_API_KEY,
+			}),
 			...overrides,
 		};
 	}
@@ -884,6 +1050,7 @@ describe("executeAgentRun", () => {
 
 		const minimal = vi.fn().mockReturnValue('[{"type":"tool"}]');
 		const { events, run } = collectEvents(context, {
+			loadCredential: vi.fn().mockResolvedValue(null),
 			runAgentInSandbox: vi.fn().mockResolvedValue({
 				ok: true,
 				assistantText: "ok",
@@ -915,6 +1082,7 @@ describe("executeAgentRun", () => {
 		const context = makeContext({ db: mockDb.db });
 
 		const { events, run } = collectEvents(context, {
+			loadCredential: vi.fn().mockResolvedValue(null),
 			runAgentInSandbox: vi.fn().mockResolvedValue({
 				ok: true,
 				assistantText: "ok",
@@ -945,6 +1113,7 @@ describe("executeAgentRun", () => {
 		const context = makeContext({ db: mockDb.db });
 
 		const { events, run } = collectEvents(context, {
+			loadCredential: vi.fn().mockResolvedValue(null),
 			runAgentInSandbox: vi.fn().mockResolvedValue({
 				ok: true,
 				assistantText: "done",

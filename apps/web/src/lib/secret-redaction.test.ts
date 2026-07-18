@@ -264,3 +264,33 @@ describe("StreamingSecretRedactor", () => {
 		expect(out).toBe("short abc123 value");
 	});
 });
+
+describe("StreamingSecretRedactor credential leaves", () => {
+	it("redacts api key / access / refresh split across chunks", () => {
+		const apiKey = "sk-live-api-key-value-12345678";
+		const access = "access-token-leaf-abcdefgh";
+		const refresh = "refresh-token-leaf-ijklmnop";
+		const unknown = "unknown-secret-leaf-qrstuvwx";
+		const redactor = new StreamingSecretRedactor([
+			apiKey,
+			access,
+			refresh,
+			unknown,
+		]);
+
+		const out1 = redactor.push(`key=${apiKey.slice(0, 10)}`);
+		const out2 = redactor.push(
+			`${apiKey.slice(10)} access=${access.slice(0, 8)}`,
+		);
+		const out3 = redactor.push(
+			`${access.slice(8)} refresh=${refresh} other=${unknown}`,
+		);
+		const flushed = redactor.flush();
+		const all = `${out1}${out2}${out3}${flushed}`;
+		expect(all).not.toContain(apiKey);
+		expect(all).not.toContain(access);
+		expect(all).not.toContain(refresh);
+		expect(all).not.toContain(unknown);
+		expect(all).toContain("[REDACTED]");
+	});
+});

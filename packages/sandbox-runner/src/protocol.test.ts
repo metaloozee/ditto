@@ -14,7 +14,7 @@ describe("protocol", () => {
 			v: 1 as const,
 			kind: "ready" as const,
 			sessionId: "conv-1",
-			model: "opencode-go/deepseek-v4-flash",
+			model: "opencode/deepseek-v4-flash-free",
 		};
 		const line = encodeLine(msg);
 		expect(line.endsWith("\n")).toBe(true);
@@ -122,5 +122,43 @@ describe("protocol", () => {
 		];
 		expect(pickAssistantText("from deltas", messages)).toBe("from deltas");
 		expect(pickAssistantText("  ", messages)).toBe("from messages");
+	});
+});
+
+import { assertPublicAuthEvent, parseAuthControlRequest } from "./protocol.js";
+
+describe("provider auth protocol", () => {
+	it("assertPublicAuthEvent accepts exact variants and rejects extras", () => {
+		expect(
+			assertPublicAuthEvent({
+				v: 1,
+				kind: "device_code",
+				userCode: "A",
+				verificationUri: "https://example.com",
+			}).kind,
+		).toBe("device_code");
+		expect(() =>
+			assertPublicAuthEvent({
+				v: 1,
+				kind: "done",
+				ok: true,
+				credential: { access: "x" },
+			}),
+		).toThrow();
+		expect(() => assertPublicAuthEvent({ v: 1, kind: "nope" })).toThrow();
+	});
+
+	it("parseAuthControlRequest rejects oversized/stale shapes", () => {
+		expect(() =>
+			parseAuthControlRequest({ action: "cancel", attemptId: "a", extra: 1 }),
+		).toThrow();
+		expect(() =>
+			parseAuthControlRequest({
+				action: "answer",
+				attemptId: "a",
+				promptId: "p",
+				value: "x".repeat(9000),
+			}),
+		).toThrow();
 	});
 });

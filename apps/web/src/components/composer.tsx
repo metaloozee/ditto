@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { CheckIcon, CornerDownLeftIcon, SquareIcon } from "lucide-react";
 import {
@@ -5,6 +6,8 @@ import {
 	type FormEvent,
 	type KeyboardEvent,
 	type SetStateAction,
+	useEffect,
+	useMemo,
 	useRef,
 	useState,
 } from "react";
@@ -29,6 +32,7 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "#/components/ui/tooltip";
+import { useTRPC } from "#/integrations/trpc/react";
 import {
 	type AssistantMessagePart,
 	appendAssistantTextDelta,
@@ -39,8 +43,8 @@ import {
 	type StreamToolCall,
 } from "#/lib/agent-message-parts";
 import {
+	DEFAULT_PROJECT_CODER_MODEL,
 	PROJECT_CODER_MODELS,
-	type ProjectCoderModelSpecifier,
 } from "#/lib/agent-models";
 import {
 	type DonePayload,
@@ -50,36 +54,18 @@ import {
 import { useUserPreferencesStore } from "#/lib/user-preferences-store";
 import { cn } from "#/lib/utils";
 
-const models = PROJECT_CODER_MODELS.map((model) => ({
-	chef: model.providerName,
-	chefSlug: model.provider,
-	id: model.id,
-	name: model.name,
-	providers: [model.provider],
-})) satisfies Model[];
-
-const modelsByChef = new Map<string, Model[]>();
-for (const modelOption of models) {
-	const group = modelsByChef.get(modelOption.chef);
-	if (group) {
-		group.push(modelOption);
-	} else {
-		modelsByChef.set(modelOption.chef, [modelOption]);
-	}
-}
-
 interface Model {
 	chef: string;
 	chefSlug: string;
-	id: ProjectCoderModelSpecifier;
+	id: string;
 	name: string;
 	providers: string[];
 }
 
 interface ModelItemProps {
 	model: Model;
-	onSelect: (id: ProjectCoderModelSpecifier) => void;
-	selectedModel: ProjectCoderModelSpecifier;
+	onSelect: (id: string) => void;
+	selectedModel: string;
 }
 
 function handleTextareaKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -206,6 +192,43 @@ export function Composer({
 	const setModel = useUserPreferencesStore((state) => state.setSelectedModel);
 	const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
 	const navigate = useNavigate();
+	const trpc = useTRPC();
+	const modelsQuery = useQuery(trpc.providerAuth.models.queryOptions());
+	const models = useMemo<Model[]>(() => {
+		const fromServer = modelsQuery.data?.models ?? [];
+		if (fromServer.length > 0) {
+			return fromServer.map((m) => ({
+				id: m.id,
+				name: m.name,
+				chef: m.providerName || m.provider,
+				chefSlug: m.provider,
+				providers: [m.provider],
+			}));
+		}
+		return PROJECT_CODER_MODELS.map((m) => ({
+			id: m.id,
+			name: m.name,
+			chef: m.providerName,
+			chefSlug: m.provider,
+			providers: [m.provider],
+		}));
+	}, [modelsQuery.data?.models]);
+	const modelsByChef = useMemo(() => {
+		const map = new Map<string, Model[]>();
+		for (const modelOption of models) {
+			const group = map.get(modelOption.chef);
+			if (group) group.push(modelOption);
+			else map.set(modelOption.chef, [modelOption]);
+		}
+		return map;
+	}, [models]);
+	useEffect(() => {
+		if (models.length === 0) return;
+		if (!models.some((m) => m.id === model)) {
+			setModel(DEFAULT_PROJECT_CODER_MODEL);
+		}
+	}, [model, models, setModel]);
+	const modelsLoading = modelsQuery.isLoading;
 
 	function clearStreamingState(): void {
 		isStreamingRef.current = false;
@@ -675,7 +698,7 @@ export function Composer({
 		await startInitialPrompt(snapshot);
 	}
 
-	function handleModelSelect(id: ProjectCoderModelSpecifier): void {
+	function handleModelSelect(id: string): void {
 		setModel(id);
 		setModelSelectorOpen(false);
 	}
@@ -694,6 +717,8 @@ export function Composer({
 	const isStopAction = stopping || (isStreaming && controlReady && !hasText);
 	const submitDisabled =
 		Boolean(disabledReason) ||
+		modelsLoading ||
+		!models.some((m) => m.id === model) ||
 		controlPending ||
 		stopping ||
 		(isStreaming ? !controlReady : !hasText);

@@ -1,5 +1,11 @@
 import { sql } from "drizzle-orm";
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import {
+	index,
+	integer,
+	sqliteTable,
+	text,
+	uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 import {
 	PROJECT_MEMORY_PATH,
 	WORKSPACE_PATH,
@@ -191,4 +197,67 @@ export const verification = sqliteTable(
 		updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull(),
 	},
 	(table) => [index("verification_identifier_idx").on(table.identifier)],
+);
+
+/** Account-scoped AI provider credentials. D1 is the sole authority. */
+export const aiProviderCredentials = sqliteTable(
+	"ai_provider_credentials",
+	{
+		id: text("id").primaryKey(),
+		userId: text("userId")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		providerId: text("providerId").notNull(),
+		authType: text("authType", { enum: ["api_key", "oauth"] }).notNull(),
+		encryptedCredential: text("encryptedCredential").notNull(),
+		/** Safe model projection JSON only — never headers/endpoints/auth. */
+		modelCatalog: text("modelCatalog").notNull(),
+		status: text("status", { enum: ["connected", "needs_relogin"] })
+			.notNull()
+			.default("connected"),
+		lastErrorCode: text("lastErrorCode"),
+		version: integer("version").notNull().default(1),
+		leaseId: text("leaseId"),
+		leaseExpiresAt: integer("leaseExpiresAt", { mode: "timestamp" }),
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.default(sql`(unixepoch())`),
+		updatedAt: integer("updated_at", { mode: "timestamp" })
+			.notNull()
+			.default(sql`(unixepoch())`),
+	},
+	(table) => [
+		uniqueIndex("ai_provider_credentials_user_provider_uidx").on(
+			table.userId,
+			table.providerId,
+		),
+		index("ai_provider_credentials_userId_idx").on(table.userId),
+	],
+);
+
+/** Non-secret coordination for in-flight provider login attempts. */
+export const providerAuthAttempts = sqliteTable(
+	"provider_auth_attempts",
+	{
+		id: text("id").primaryKey(),
+		userId: text("userId")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		providerId: text("providerId").notNull(),
+		authType: text("authType", { enum: ["api_key", "oauth"] }).notNull(),
+		authSandboxId: text("authSandboxId"),
+		status: text("status", {
+			enum: ["pending", "complete", "failed", "cancelled"],
+		})
+			.notNull()
+			.default("pending"),
+		expiresAt: integer("expiresAt", { mode: "timestamp" }).notNull(),
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.default(sql`(unixepoch())`),
+		updatedAt: integer("updated_at", { mode: "timestamp" })
+			.notNull()
+			.default(sql`(unixepoch())`),
+	},
+	(table) => [index("provider_auth_attempts_userId_idx").on(table.userId)],
 );

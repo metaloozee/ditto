@@ -1,6 +1,7 @@
 import type { ExecEvent } from "@cloudflare/sandbox";
 import { parseSSEStream } from "@cloudflare/sandbox";
 import { nanoid } from "nanoid";
+import { credentialSecretValues } from "#/lib/account-provider-credentials";
 import { agentGitCallbackUrl, mintAgentGitJwt } from "#/lib/agent-git-jwt";
 import {
 	parseRunnerStdoutLine,
@@ -76,6 +77,8 @@ async function runAgentInSandboxLocked(options: {
 	cwd: string;
 	model: string;
 	prompt: string;
+	/** Runtime credential JSON for DITTO_PI_CREDENTIAL (no real OAuth refresh). */
+	runtimeCredentialJson: string;
 	envVars?: readonly SandboxEnvVar[];
 	onRunnerMessage: (msg: RunnerOut) => void | Promise<void>;
 }): Promise<{
@@ -96,7 +99,7 @@ async function runAgentInSandboxLocked(options: {
 		cwd: options.cwd,
 		env: {
 			...projectEnv,
-			OPENCODE_API_KEY: options.env.OPENCODE_API_KEY,
+			DITTO_PI_CREDENTIAL: options.runtimeCredentialJson,
 			DITTO_GIT_CALLBACK_URL: agentGitCallbackUrl(options.env),
 			DITTO_GIT_CALLBACK_TOKEN: gitCallbackToken,
 			...dittoGitAuthorEnv(),
@@ -111,8 +114,17 @@ async function runAgentInSandboxLocked(options: {
 	let sawRunnerDone = false;
 	let errorEmitted = false;
 
+	let credentialLeaves: string[] = [];
+	try {
+		credentialLeaves = credentialSecretValues(
+			JSON.parse(options.runtimeCredentialJson) as unknown,
+		);
+	} catch {
+		credentialLeaves = [];
+	}
 	const secretValues = [
-		options.env.OPENCODE_API_KEY,
+		options.runtimeCredentialJson,
+		...credentialLeaves,
 		gitCallbackToken,
 		...Object.values(projectEnv),
 	].filter(

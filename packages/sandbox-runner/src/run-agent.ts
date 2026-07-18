@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
+import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import {
-	AuthStorage,
 	createAgentSession,
-	ModelRegistry,
+	ModelRuntime,
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
@@ -32,23 +32,18 @@ export type RunAgentOptions = {
 	onEvent: (msg: RunnerOut) => void;
 };
 
-function resolveModel(
+function parseModelSpecifier(
 	modelSpecifier: string,
-	modelRegistry: ModelRegistry,
-): { model?: ReturnType<ModelRegistry["find"]>; error?: string } {
+): { provider: string; modelId: string } | { error: string } {
 	const slash = modelSpecifier.indexOf("/");
-	if (slash === -1) {
+	if (slash <= 0 || slash === modelSpecifier.length - 1) {
 		return { error: `Unknown model: ${modelSpecifier}` };
 	}
 
-	const provider = modelSpecifier.slice(0, slash);
-	const modelId = modelSpecifier.slice(slash + 1);
-	const model = modelRegistry.find(provider, modelId);
-	if (!model) {
-		return { error: `Unknown model: ${modelSpecifier}` };
-	}
-
-	return { model };
+	return {
+		provider: modelSpecifier.slice(0, slash),
+		modelId: modelSpecifier.slice(slash + 1),
+	};
 }
 
 function shortErrorMessage(err: unknown): string {
@@ -85,16 +80,48 @@ export async function runAgent(
 		fs.mkdirSync(options.agentDir, { recursive: true });
 		fs.mkdirSync(options.sessionsDir, { recursive: true });
 
-		const authPath = path.join(options.agentDir, "auth.json");
-		const authStorage = AuthStorage.create(authPath);
-		if (process.env.OPENCODE_API_KEY) {
-			authStorage.setRuntimeApiKey("opencode-go", process.env.OPENCODE_API_KEY);
+		const parsed = parseModelSpecifier(options.modelSpecifier);
+		if ("error" in parsed) {
+			emitError(parsed.error);
+			return { ok: false, assistantText: "" };
 		}
 
-		const modelRegistry = ModelRegistry.create(authStorage);
-		const resolved = resolveModel(options.modelSpecifier, modelRegistry);
-		if (resolved.error || !resolved.model) {
-			emitError(resolved.error ?? `Unknown model: ${options.modelSpecifier}`);
+		const credentials = new InMemoryCredentialStore();
+		const rawCredential =
+			process.env.DITTO_PI_CREDENTIAL ?? process.env.OPENCODE_API_KEY;
+		// Delete before session/tools so bash children cannot inherit secrets.
+		delete process.env.DITTO_PI_CREDENTIAL;
+		delete process.env.OPENCODE_API_KEY;
+
+		if (rawCredential) {
+			let credential: { type: string; [key: string]: unknown };
+			try {
+				const parsedCred = JSON.parse(rawCredential) as {
+					type?: string;
+				};
+				if (parsedCred && typeof parsedCred === "object" && parsedCred.type) {
+					credential = parsedCred as { type: string; [key: string]: unknown };
+				} else {
+					// Legacy bare API key string (operator bridge).
+					credential = { type: "api_key", key: rawCredential };
+				}
+			} catch {
+				credential = { type: "api_key", key: rawCredential };
+			}
+			await credentials.modify(
+				parsed.provider,
+				async () => credential as never,
+			);
+		}
+
+		const modelRuntime = await ModelRuntime.create({
+			credentials,
+			modelsPath: null,
+			allowModelNetwork: false,
+		});
+		const model = modelRuntime.getModel(parsed.provider, parsed.modelId);
+		if (!model) {
+			emitError(`Unknown model: ${options.modelSpecifier}`);
 			return { ok: false, assistantText: "" };
 		}
 
@@ -111,9 +138,8 @@ export async function runAgent(
 		const { session: agentSession } = await createAgentSession({
 			cwd: options.cwd,
 			agentDir: options.agentDir,
-			model: resolved.model,
-			authStorage,
-			modelRegistry,
+			model,
+			modelRuntime,
 			sessionManager,
 			settingsManager,
 			tools: [
@@ -206,6 +232,7 @@ export async function runAgent(
 			};
 		};
 
+		let deltas = "";
 		unsubscribe = session.subscribe((event) => {
 			const userText = extractUserTextFromMessageStart(event);
 			if (userText !== null) {
@@ -243,7 +270,6 @@ export async function runAgent(
 			model: options.modelSpecifier,
 		});
 
-		let deltas = "";
 		try {
 			promptActive = true;
 			await session.prompt(options.prompt);

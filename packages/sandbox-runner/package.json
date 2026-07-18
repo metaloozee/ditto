@@ -3,7 +3,10 @@
   "private": true,
   "type": "module",
   "bin": {
-    "ditto-runner": "./dist/cli.js"
+    "ditto-runner": "./dist/cli.js",
+    "ditto-provider-auth": "./dist/provider-auth-cli.js",
+    "ditto-provider-auth-control": "./dist/provider-auth-control-cli.js",
+    "ditto-provider-catalog": "./dist/provider-catalog-cli.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -14,8 +17,8 @@
     "node": ">=22.19.0"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "0.80.3",
-    "@earendil-works/pi-coding-agent": "0.80.3"
+    "@earendil-works/pi-ai": "0.80.10",
+    "@earendil-works/pi-coding-agent": "0.80.10"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
