@@ -3,7 +3,10 @@
   "private": true,
   "type": "module",
   "bin": {
-    "ditto-runner": "./dist/cli.js"
+    "ditto-runner": "./dist/cli.js",
+    "ditto-provider-auth": "./dist/provider-auth-cli.js",
+    "ditto-provider-auth-control": "./dist/provider-auth-control-cli.js",
+    "ditto-provider-catalog": "./dist/provider-catalog-cli.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

@@ -167,8 +167,12 @@ describe("runAgent live controls", () => {
 				model: { provider: "provider", id: "model" },
 			}),
 		);
-		expect(mocks.createAgentSession.mock.calls[0][0].authStorage).toBeUndefined();
-		expect(mocks.createAgentSession.mock.calls[0][0].modelRegistry).toBeUndefined();
+		expect(
+			mocks.createAgentSession.mock.calls[0][0].authStorage,
+		).toBeUndefined();
+		expect(
+			mocks.createAgentSession.mock.calls[0][0].modelRegistry,
+		).toBeUndefined();
 		expect(fs.existsSync(path.join(agentDir, "auth.json"))).toBe(false);
 	});
 
