@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,20 +8,35 @@ import type { RunnerOut } from "./protocol.js";
 const mocks = vi.hoisted(() => ({
 	createAgentSession: vi.fn(),
 	startControlServer: vi.fn(),
+	modelRuntimeCreate: vi.fn(),
+	getModel: vi.fn(),
+	credentialModify: vi.fn(),
 	controlHandler: undefined as
 		| ((request: ControlRequest) => Promise<unknown>)
 		| undefined,
 	close: vi.fn(async () => undefined),
 }));
 
+vi.mock("@earendil-works/pi-ai", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@earendil-works/pi-ai")>();
+	return {
+		...actual,
+		InMemoryCredentialStore: class {
+			modify = mocks.credentialModify.mockImplementation(
+				async (
+					_providerId: string,
+					fn: (current: unknown) => Promise<unknown>,
+				) => fn(undefined),
+			);
+		},
+	};
+});
+
 vi.mock("@earendil-works/pi-coding-agent", () => ({
-	AuthStorage: {
-		create: () => ({ setRuntimeApiKey: vi.fn() }),
-	},
 	createAgentSession: mocks.createAgentSession,
 	defineTool: (tool: unknown) => tool,
-	ModelRegistry: {
-		create: () => ({ find: () => ({ provider: "provider", id: "model" }) }),
+	ModelRuntime: {
+		create: mocks.modelRuntimeCreate,
 	},
 	SessionManager: { open: () => ({}) },
 	SettingsManager: { inMemory: (settings: unknown) => settings },
@@ -78,7 +94,10 @@ function makeSession() {
 	};
 }
 
-async function beginRun(harness: SessionHarness) {
+async function beginRun(
+	harness: SessionHarness,
+	overrides: Partial<Parameters<typeof runAgent>[0]> = {},
+) {
 	mocks.createAgentSession.mockResolvedValue({ session: harness.session });
 	const events: RunnerOut[] = [];
 	const result = runAgent({
@@ -90,6 +109,7 @@ async function beginRun(harness: SessionHarness) {
 		agentDir: path.join(os.tmpdir(), "ditto-run-agent-test", "agent"),
 		sessionsDir: path.join(os.tmpdir(), "ditto-run-agent-test", "sessions"),
 		onEvent: (event) => events.push(event),
+		...overrides,
 	});
 	await vi.waitFor(() => expect(mocks.controlHandler).toBeTypeOf("function"));
 	await vi.waitFor(() =>
@@ -113,10 +133,63 @@ describe("runAgent live controls", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mocks.controlHandler = undefined;
+		mocks.getModel.mockReturnValue({ provider: "provider", id: "model" });
+		mocks.modelRuntimeCreate.mockResolvedValue({ getModel: mocks.getModel });
 		mocks.startControlServer.mockImplementation(async (options) => {
 			mocks.controlHandler = options.handle;
 			return { socketPath: "/tmp/test.sock", close: mocks.close };
 		});
+		delete process.env.OPENCODE_API_KEY;
+	});
+
+	it("passes modelRuntime and seeds the selected provider in memory", async () => {
+		process.env.OPENCODE_API_KEY = "test-opencode-key";
+		const harness = makeSession();
+		const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "ditto-agent-"));
+		const { result } = await beginRun(harness, { agentDir });
+		harness.finish();
+		await result;
+
+		expect(mocks.credentialModify).toHaveBeenCalledWith(
+			"provider",
+			expect.any(Function),
+		);
+		const seeded = await mocks.credentialModify.mock.calls[0][1](undefined);
+		expect(seeded).toEqual({ type: "api_key", key: "test-opencode-key" });
+		expect(mocks.modelRuntimeCreate).toHaveBeenCalledWith({
+			credentials: expect.any(Object),
+			modelsPath: null,
+			allowModelNetwork: false,
+		});
+		expect(mocks.createAgentSession).toHaveBeenCalledWith(
+			expect.objectContaining({
+				modelRuntime: expect.objectContaining({ getModel: mocks.getModel }),
+				model: { provider: "provider", id: "model" },
+			}),
+		);
+		expect(mocks.createAgentSession.mock.calls[0][0].authStorage).toBeUndefined();
+		expect(mocks.createAgentSession.mock.calls[0][0].modelRegistry).toBeUndefined();
+		expect(fs.existsSync(path.join(agentDir, "auth.json"))).toBe(false);
+	});
+
+	it("fails cleanly for unknown models without creating auth.json", async () => {
+		mocks.getModel.mockReturnValue(undefined);
+		const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "ditto-agent-"));
+		const events: RunnerOut[] = [];
+		const result = await runAgent({
+			runId: "run-1",
+			cwd: path.join(os.tmpdir(), "ditto-run-agent-test"),
+			conversationId: "session-1",
+			modelSpecifier: "provider/missing",
+			prompt: "initial",
+			agentDir,
+			sessionsDir: path.join(os.tmpdir(), "ditto-run-agent-test", "sessions"),
+			onEvent: (event) => events.push(event),
+		});
+		expect(result.ok).toBe(false);
+		expect(events.some((e) => e.kind === "error")).toBe(true);
+		expect(mocks.createAgentSession).not.toHaveBeenCalled();
+		expect(fs.existsSync(path.join(agentDir, "auth.json"))).toBe(false);
 	});
 
 	it("queues follow-ups through followUp and starts metadata FIFO", async () => {

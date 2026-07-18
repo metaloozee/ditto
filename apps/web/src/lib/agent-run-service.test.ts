@@ -167,7 +167,7 @@ describe("prepareAgentRun", () => {
 			input: {
 				projectId: "missing",
 				message: "hi",
-				model: "opencode-go/deepseek-v4-flash",
+				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
 				loadProjectForUser: vi.fn().mockResolvedValue(null),
@@ -189,7 +189,7 @@ describe("prepareAgentRun", () => {
 			input: {
 				projectId: "proj-1",
 				message: "hi",
-				model: "opencode-go/deepseek-v4-flash",
+				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
 				loadProjectForUser: vi.fn().mockResolvedValue({
@@ -216,7 +216,7 @@ describe("prepareAgentRun", () => {
 				projectId: "proj-1",
 				sessionId: "sess-archived",
 				message: "hi",
-				model: "opencode-go/deepseek-v4-flash",
+				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
 				resolveSessionForMessageWrite: vi
@@ -266,7 +266,7 @@ describe("prepareAgentRun", () => {
 				projectId: "proj-1",
 				sessionId: "sess-1",
 				message: "hi",
-				model: "opencode-go/deepseek-v4-flash",
+				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps,
 		});
@@ -290,7 +290,7 @@ describe("prepareAgentRun", () => {
 			input: {
 				projectId: "proj-1",
 				message: "hi",
-				model: "opencode-go/deepseek-v4-flash",
+				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
 				createId: vi.fn().mockReturnValue("sess-new"),
@@ -325,7 +325,7 @@ describe("prepareAgentRun", () => {
 				projectId: "proj-1",
 				sessionId: "sess-1",
 				message: "hi",
-				model: "opencode-go/deepseek-v4-flash",
+				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
 				ensureSessionWorktree: vi
@@ -355,7 +355,7 @@ describe("prepareAgentRun", () => {
 				projectId: "proj-1",
 				sessionId: "sess-1",
 				message: "hi",
-				model: "opencode-go/deepseek-v4-flash",
+				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
 				createId: vi
@@ -398,7 +398,7 @@ describe("executeAgentRun", () => {
 			userId: "user-1",
 			projectId: "proj-1",
 			message: "hi",
-			model: "opencode-go/deepseek-v4-flash",
+			model: "opencode/deepseek-v4-flash-free",
 			runId: "run-1",
 			sessionId: "sess-1",
 			createdSession: false,

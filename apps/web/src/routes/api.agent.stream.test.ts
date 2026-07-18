@@ -112,7 +112,7 @@ describe("api.agent.stream POST adapter", () => {
 				body: JSON.stringify({
 					projectId: "p1",
 					message: "hi",
-					model: "opencode-go/deepseek-v4-flash",
+					model: "opencode/deepseek-v4-flash-free",
 				}),
 			}),
 		});
@@ -152,7 +152,7 @@ describe("api.agent.stream POST adapter", () => {
 		const response = await postJson({
 			projectId: "proj-1",
 			message: "hi",
-			model: "opencode-go/deepseek-v4-flash",
+			model: "opencode/deepseek-v4-flash-free",
 		});
 
 		expect(response.status).toBe(409);
@@ -196,7 +196,7 @@ describe("api.agent.stream POST adapter", () => {
 		const response = await postJson({
 			projectId: "proj-1",
 			message: "hi",
-			model: "opencode-go/deepseek-v4-flash",
+			model: "opencode/deepseek-v4-flash-free",
 		});
 
 		expect(response.status).toBe(200);

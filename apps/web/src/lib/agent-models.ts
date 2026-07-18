@@ -1,31 +1,48 @@
+export const DEFAULT_PROJECT_CODER_MODEL =
+	"opencode/deepseek-v4-flash-free" as const;
+
+/** Bound total length of a `provider/model` specifier. */
+export const MAX_MODEL_SPECIFIER_LENGTH = 200;
+
+export type ParsedModelSpecifier = {
+	providerId: string;
+	modelId: string;
+};
+
+/**
+ * Syntax-only model specifier parse. Availability is decided by account
+ * credential logic, not this helper.
+ */
+export function parseModelSpecifier(
+	value: string,
+): ParsedModelSpecifier | null {
+	if (
+		typeof value !== "string" ||
+		value.length === 0 ||
+		value.length > MAX_MODEL_SPECIFIER_LENGTH
+	) {
+		return null;
+	}
+	const slash = value.indexOf("/");
+	if (slash <= 0 || slash !== value.lastIndexOf("/") || slash === value.length - 1) {
+		return null;
+	}
+	const providerId = value.slice(0, slash);
+	const modelId = value.slice(slash + 1);
+	if (!providerId || !modelId) return null;
+	return { providerId, modelId };
+}
+
+/** Intermediate static list until connected-provider models land. */
 export const PROJECT_CODER_MODELS = [
 	{
-		id: "opencode-go/deepseek-v4-flash",
-		name: "DeepSeek V4 Flash",
-		provider: "opencode-go",
-		providerName: "OpenCode Go",
-	},
-	{
-		id: "opencode-go/qwen3.7-plus",
-		name: "Qwen3.7 Plus",
-		provider: "opencode-go",
-		providerName: "OpenCode Go",
-	},
-	{
-		id: "opencode-go/deepseek-v4-pro",
-		name: "DeepSeek V4 Pro",
-		provider: "opencode-go",
-		providerName: "OpenCode Go",
-	},
-	{
-		id: "opencode-go/kimi-k2.6",
-		name: "Kimi K2.6",
-		provider: "opencode-go",
-		providerName: "OpenCode Go",
+		id: DEFAULT_PROJECT_CODER_MODEL,
+		name: "DeepSeek V4 Flash Free",
+		provider: "opencode",
+		providerName: "OpenCode Zen",
 	},
 ] as const;
 
-export const DEFAULT_PROJECT_CODER_MODEL = PROJECT_CODER_MODELS[0].id;
 export const PROJECT_CODER_MODEL_IDS = PROJECT_CODER_MODELS.map(
 	(model) => model.id,
 );
@@ -36,5 +53,6 @@ export type ProjectCoderModelSpecifier =
 export function isProjectCoderModelSpecifier(
 	value: string,
 ): value is ProjectCoderModelSpecifier {
-	return PROJECT_CODER_MODEL_IDS.includes(value as ProjectCoderModelSpecifier);
+	// Step 1 keeps compile-time default; Step 5 opens syntax + availability.
+	return parseModelSpecifier(value) !== null;
 }

@@ -14,7 +14,7 @@ describe("protocol", () => {
 			v: 1 as const,
 			kind: "ready" as const,
 			sessionId: "conv-1",
-			model: "opencode-go/deepseek-v4-flash",
+			model: "opencode/deepseek-v4-flash-free",
 		};
 		const line = encodeLine(msg);
 		expect(line.endsWith("\n")).toBe(true);

@@ -61,7 +61,7 @@ const followUp = {
 	projectId: "project-1",
 	sessionId: "session-1",
 	runId: "run-1",
-	model: "opencode-go/deepseek-v4-flash" as const,
+	model: "opencode/deepseek-v4-flash-free" as const,
 	message: "do not put this text in the shell command",
 };
 
