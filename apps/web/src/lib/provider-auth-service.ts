@@ -248,9 +248,18 @@ async function verifyMode600(
 	}
 }
 
+/** Thrown when TERM+KILL both fail to confirm process exit via waitForExit. */
+export class ProcessExitUnconfirmedError extends Error {
+	constructor() {
+		super("process_exit_unconfirmed");
+		this.name = "ProcessExitUnconfirmedError";
+	}
+}
+
 /**
  * TERM the exact process, await exit, escalate to KILL after grace, await exit.
- * Returns only after confirmed exit (or both waits exhausted).
+ * Returns only after confirmed waitForExit success. Throws if final exit is
+ * unconfirmed — callers must not release a D1 refresh lease in that case.
  */
 export async function terminateAuthProcess(
 	proc: AuthProcess,
@@ -278,13 +287,13 @@ export async function terminateAuthProcess(
 	try {
 		await proc.kill("SIGKILL");
 	} catch {
-		// ignore
+		// ignore — wait below is the confirmation
 	}
 	step?.("await_kill");
 	try {
 		await proc.waitForExit(grace);
 	} catch {
-		// best-effort
+		throw new ProcessExitUnconfirmedError();
 	}
 }
 
@@ -792,8 +801,12 @@ export async function streamProviderAuth(options: {
 				}
 			} finally {
 				if (processHandle && !exited) {
-					await terminateAuthProcess(processHandle);
-					exited = true;
+					try {
+						await terminateAuthProcess(processHandle);
+						exited = true;
+					} catch {
+						// Unconfirmed exit — do not claim the process is dead.
+					}
 				}
 				try {
 					await shell.deleteFile(jobPath);
@@ -908,9 +921,11 @@ export async function resolveOAuthCredential(options: {
 	const jobPath = `/tmp/ditto-provider-auth-job-${safeId(attemptId)}.json`;
 	const abort = new AbortController();
 
-	/** Only true after waitForExit confirms death (or terminate finishes). */
+	/** Only true after waitForExit confirms death (never after a failed terminate). */
 	let processExited = true;
 	let processHandle: AuthProcess | null = null;
+	/** When true, leave the D1 lease to TTL — process may still be alive. */
+	let retainLease = false;
 
 	const markFailed = async () => {
 		await markNeedsRelogin({
@@ -924,13 +939,33 @@ export async function resolveOAuthCredential(options: {
 		});
 	};
 
-	const ensureProcessDead = async () => {
-		if (processExited) return;
-		if (processHandle) {
+	/** Confirm process death. Returns false if exit could not be confirmed. */
+	const ensureProcessDead = async (): Promise<boolean> => {
+		if (processExited) return true;
+		if (!processHandle) return false;
+		try {
 			await terminateAuthProcess(processHandle);
 			processHandle = null;
+			processExited = true;
+			return true;
+		} catch {
+			processHandle = null;
+			retainLease = true;
+			return false;
 		}
-		processExited = true;
+	};
+
+	/** Fail refresh only after confirmed exit; never clear lease while alive. */
+	const failAfterProcess = async (): Promise<{
+		ok: false;
+		code: "refresh_failed";
+	}> => {
+		if (!processExited) {
+			const dead = await ensureProcessDead();
+			if (!dead) return { ok: false, code: "refresh_failed" };
+		}
+		await markFailed();
+		return { ok: false, code: "refresh_failed" };
 	};
 
 	try {
@@ -967,19 +1002,20 @@ export async function resolveOAuthCredential(options: {
 					timeoutMs: AUTH_RESOLUTION_TIMEOUT_MS,
 					signal: abort.signal,
 					terminate: async (proc) => {
-						await terminateAuthProcess(proc);
-						if (proc === processHandle) {
+						try {
+							await terminateAuthProcess(proc);
+							// Confirmed exit only — throw path retains the lease.
 							processHandle = null;
 							processExited = true;
+						} catch (err) {
+							processHandle = null;
+							retainLease = true;
+							throw err;
 						}
 					},
 				});
 				if (!outcome.ok) {
-					if (!processExited) {
-						await ensureProcessDead();
-					}
-					await markFailed();
-					return { ok: false, code: "refresh_failed" };
+					return await failAfterProcess();
 				}
 				// Success path: process must already be dead.
 				if (!processExited) {
@@ -989,7 +1025,7 @@ export async function resolveOAuthCredential(options: {
 				resultJson = outcome.resultJson;
 			} finally {
 				clearTimeout(timer);
-				if (!processExited) await ensureProcessDead();
+				if (!processExited && !retainLease) await ensureProcessDead();
 			}
 		} else {
 			const sandbox = (getSandbox ?? getProjectSandbox)(
@@ -1034,9 +1070,7 @@ export async function resolveOAuthCredential(options: {
 					clearTimeout(timer);
 
 					if (abort.signal.aborted || exit.exitCode === 124) {
-						await ensureProcessDead();
-						await markFailed();
-						return { ok: false, code: "refresh_failed" };
+						return await failAfterProcess();
 					}
 					processExited = true;
 					processHandle = null;
@@ -1045,12 +1079,10 @@ export async function resolveOAuthCredential(options: {
 						return { ok: false, code: "refresh_failed" };
 					}
 				} catch {
-					await ensureProcessDead();
-					await markFailed();
-					return { ok: false, code: "refresh_failed" };
+					return await failAfterProcess();
 				} finally {
 					clearTimeout(timer);
-					if (!processExited) await ensureProcessDead();
+					if (!processExited && !retainLease) await ensureProcessDead();
 				}
 
 				try {
@@ -1063,7 +1095,7 @@ export async function resolveOAuthCredential(options: {
 					return { ok: false, code: "refresh_failed" };
 				}
 			} finally {
-				if (!processExited) await ensureProcessDead();
+				if (!processExited && !retainLease) await ensureProcessDead();
 				try {
 					await shell.deleteFile(jobPath);
 				} catch {
@@ -1080,6 +1112,10 @@ export async function resolveOAuthCredential(options: {
 					// ignore
 				}
 			}
+		}
+
+		if (retainLease) {
+			return { ok: false, code: "refresh_failed" };
 		}
 
 		if (!resultJson) {
@@ -1122,20 +1158,34 @@ export async function resolveOAuthCredential(options: {
 		if (write === "missing") return { ok: false, code: "missing" };
 		if (write === "stale") return { ok: false, code: "busy" };
 		return { ok: true, runtime };
-	} catch {
-		await ensureProcessDead();
-		await markFailed();
+	} catch (err) {
+		if (err instanceof ProcessExitUnconfirmedError) {
+			retainLease = true;
+			return { ok: false, code: "refresh_failed" };
+		}
+		if (!retainLease) {
+			const dead = processExited || (await ensureProcessDead());
+			if (dead) await markFailed();
+			else retainLease = true;
+		}
 		return { ok: false, code: "refresh_failed" };
 	} finally {
-		// Lease release only after process is known dead.
-		await ensureProcessDead();
-		await releaseLease({
-			db: repo,
-			userId: options.userId,
-			providerId: options.providerId,
-			leaseId: lease.leaseId,
-			nowMs: nowMs(),
-		});
+		// Release only after confirmed death. Unconfirmed => lease TTL only.
+		if (!retainLease) {
+			if (!processExited) {
+				const dead = await ensureProcessDead();
+				if (!dead) retainLease = true;
+			}
+			if (!retainLease) {
+				await releaseLease({
+					db: repo,
+					userId: options.userId,
+					providerId: options.providerId,
+					leaseId: lease.leaseId,
+					nowMs: nowMs(),
+				});
+			}
+		}
 		try {
 			await destroy({ env: options.env, sandboxId });
 		} catch {

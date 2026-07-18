@@ -6,10 +6,11 @@ import {
 	type AuthControlResponse,
 	parseAuthControlRequest,
 } from "./protocol.js";
-import { AUTH_CONTROL_DIR, MAX_PROMPT_ANSWER_BYTES } from "./provider-auth.js";
+import { AUTH_CONTROL_DIR } from "./provider-auth.js";
 
 const DEFAULT_TIMEOUT_MS = 5_000;
-const MAX_REQUEST_BYTES = MAX_PROMPT_ANSWER_BYTES + 1024;
+// Keep in sync with MAX_PROMPT_ANSWER_BYTES in provider-auth.ts (avoid cycle TDZ).
+const MAX_REQUEST_BYTES = 8_192 + 1024;
 
 export type AuthControlServer = {
 	socketPath: string;

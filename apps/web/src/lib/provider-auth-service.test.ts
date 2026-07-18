@@ -5,6 +5,7 @@ import {
 	type CredentialRepository,
 	type CredentialRow,
 	credentialRowMatches,
+	LEASE_TTL_MS,
 	loadCredential,
 	type SafeModel,
 	upsertCredential,
@@ -24,6 +25,7 @@ vi.mock("#/lib/sandbox-bootstrap", () => ({
 const {
 	controlProviderAuth,
 	listAccountModels,
+	ProcessExitUnconfirmedError,
 	providerAuthControlBodySchema,
 	providerAuthStreamBodySchema,
 	resolveOAuthCredential,
@@ -418,6 +420,55 @@ describe("provider-auth-service", () => {
 		]);
 	});
 
+	it("terminateAuthProcess throws when TERM and KILL waits both fail", async () => {
+		const order: string[] = [];
+		const proc = {
+			id: "immortal",
+			kill: async (signal?: string) => {
+				order.push(`kill:${signal}`);
+			},
+			waitForExit: async () => {
+				order.push("wait");
+				throw new Error("still_alive");
+			},
+		};
+		await expect(
+			terminateAuthProcess(proc, {
+				graceMs: 5,
+				onStep: (s) => order.push(s),
+			}),
+		).rejects.toBeInstanceOf(ProcessExitUnconfirmedError);
+		expect(order).toEqual([
+			"term",
+			"kill:SIGTERM",
+			"await_term",
+			"wait",
+			"kill",
+			"kill:SIGKILL",
+			"await_kill",
+			"wait",
+		]);
+	});
+
+	it("terminateAuthProcess returns on TERM-confirmed exit without KILL", async () => {
+		const order: string[] = [];
+		const proc = {
+			id: "p",
+			kill: async (signal?: string) => {
+				order.push(`kill:${signal}`);
+			},
+			waitForExit: async () => {
+				order.push("wait");
+				return { exitCode: 0 };
+			},
+		};
+		await terminateAuthProcess(proc, {
+			graceMs: 5,
+			onStep: (s) => order.push(s),
+		});
+		expect(order).toEqual(["term", "kill:SIGTERM", "await_term", "wait"]);
+	});
+
 	it("validates device_code verification URLs with host policy", async () => {
 		const events: Array<{ event: string; data: unknown }> = [];
 		await streamProviderAuth({
@@ -597,6 +648,146 @@ describe("provider-auth-service", () => {
 			encryptionKey: KEY,
 		});
 		expect(status?.status).toBe("needs_relogin");
+	});
+
+	it("unconfirmed kill retains lease; second acquire fails until TTL", async () => {
+		await upsertCredential({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			authType: "oauth",
+			credential: {
+				type: "oauth",
+				refresh: "refresh-token-value-xx",
+				access: "access-token-value-xx",
+				expires: clock.value + 1000,
+			},
+			models: [model],
+			encryptionKey: KEY,
+			nowMs: clock.value,
+			createId,
+		});
+		const loaded = await loadCredential({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			encryptionKey: KEY,
+		});
+
+		const immortal = {
+			id: "immortal",
+			kill: async () => undefined,
+			waitForExit: async () => {
+				throw new Error("still_running");
+			},
+		};
+
+		const outcome = await resolveOAuthCredential({
+			db,
+			env: env(),
+			userId: "user-a",
+			providerId: "anthropic",
+			stored: loaded!.credential,
+			version: loaded!.version,
+			nowMs: () => clock.value,
+			createId,
+			runResolve: async ({ terminate }) => {
+				await terminate(immortal as never);
+				return { ok: false, timedOut: true };
+			},
+		});
+		expect(outcome).toEqual({ ok: false, code: "refresh_failed" });
+
+		const status = await loadCredential({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			encryptionKey: KEY,
+		});
+		expect(status?.status).toBe("connected");
+		expect(status?.lastErrorCode).toBeNull();
+		const row = rows.get("user-a\0anthropic");
+		expect(row?.leaseId).toBeTruthy();
+
+		// Second acquirer blocked while first process may still be alive.
+		const blocked = await acquireLease({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			nowMs: clock.value,
+			createId: () => "second",
+		});
+		expect(blocked).toBeNull();
+
+		// After lease TTL, recovery acquisition succeeds.
+		const recovered = await acquireLease({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			nowMs: clock.value + LEASE_TTL_MS + 1,
+			createId: () => "recovered",
+		});
+		expect(recovered).toEqual({
+			leaseId: "recovered",
+			version: loaded!.version,
+		});
+	});
+
+	it("TERM-confirmed resolve failure marks needs_relogin and releases lease", async () => {
+		await upsertCredential({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			authType: "oauth",
+			credential: {
+				type: "oauth",
+				refresh: "refresh-token-value-xx",
+				access: "access-token-value-xx",
+				expires: clock.value + 1000,
+			},
+			models: [model],
+			encryptionKey: KEY,
+			nowMs: clock.value,
+			createId,
+		});
+		const loaded = await loadCredential({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			encryptionKey: KEY,
+		});
+
+		const outcome = await resolveOAuthCredential({
+			db,
+			env: env(),
+			userId: "user-a",
+			providerId: "anthropic",
+			stored: loaded!.credential,
+			version: loaded!.version,
+			nowMs: () => clock.value,
+			createId,
+			runResolve: async ({ terminate }) => {
+				const proc = createFakeProcess({ exitOnTerm: true });
+				await terminate(proc as never);
+				return { ok: false };
+			},
+		});
+		expect(outcome).toEqual({ ok: false, code: "refresh_failed" });
+		const status = await loadCredential({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			encryptionKey: KEY,
+		});
+		expect(status?.status).toBe("needs_relogin");
+		const lease = await acquireLease({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			nowMs: clock.value,
+			createId: () => "after-term",
+		});
+		expect(lease).not.toBeNull();
 	});
 
 	it("stale refresh failure after reconnect does not mark needs_relogin", async () => {
