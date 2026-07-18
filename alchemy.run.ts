@@ -54,6 +54,9 @@ export const website = await TanStackStart("website", {
 			process.env.VITE_GITHUB_APP_INSTALL_URL ??
 			"https://github.com/apps/ditto-web/installations/new/",
 		OPENCODE_API_KEY: alchemy.secret(process.env.OPENCODE_API_KEY),
+		AI_CREDENTIALS_ENCRYPTION_KEY: alchemy.secret(
+			process.env.AI_CREDENTIALS_ENCRYPTION_KEY,
+		),
 		SANDBOX_TRANSPORT: "rpc",
 	},
 	wrangler: {
