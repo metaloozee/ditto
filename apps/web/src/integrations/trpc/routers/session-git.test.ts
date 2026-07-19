@@ -264,10 +264,12 @@ describe("sessionGitRouter commit/openPullRequest metadata wiring", () => {
 			number: 3,
 			title: "Add billing",
 		});
-		const result = (await asMutation(sessionGitRouter.openPullRequest).mutation({
-			ctx,
-			input: { projectId: "proj-1", sessionId: "sess-1" },
-		})) as { title: string };
+		const result = (await asMutation(sessionGitRouter.openPullRequest).mutation(
+			{
+				ctx,
+				input: { projectId: "proj-1", sessionId: "sess-1" },
+			},
+		)) as { title: string };
 		expect(result.title).toBe("Add billing");
 		expect(
 			resolveMocks.openSessionPullRequestWithGeneratedMetadata,

@@ -631,7 +631,9 @@ export async function generateGitMetadata<
 		credential.key,
 		options.env.OPENCODE_API_KEY,
 		...knownSecrets,
-	].filter((value): value is string => typeof value === "string" && value.length > 0);
+	].filter(
+		(value): value is string => typeof value === "string" && value.length > 0,
+	);
 
 	const shell = await sandbox.createSession({
 		id: `git-metadata-${requestId}`.slice(0, 60),
