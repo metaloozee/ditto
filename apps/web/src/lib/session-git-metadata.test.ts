@@ -500,7 +500,9 @@ describe("collectPullRequestMetadataSnapshot", () => {
 		const serialized = JSON.stringify(result.job);
 		expect(serialized).not.toContain(known);
 		expect(serialized).not.toContain(shaped);
-		expect(result.job.snapshot.commitSubjects.join(" ")).toContain("[REDACTED]");
+		expect(result.job.snapshot.commitSubjects.join(" ")).toContain(
+			"[REDACTED]",
+		);
 	});
 
 	it("fails closed when dirty or base missing", async () => {

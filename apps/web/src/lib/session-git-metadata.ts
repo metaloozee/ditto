@@ -66,16 +66,13 @@ const changedPathSchema = z.union([
 
 const snapshotCommonSchema = {
 	branch: z.string().min(1).max(256).refine(nulFree),
-	headSha: z.string().regex(/^[0-9a-f]{7,64}$/i).refine(nulFree),
+	headSha: z
+		.string()
+		.regex(/^[0-9a-f]{7,64}$/i)
+		.refine(nulFree),
 	changedPaths: z.array(changedPathSchema).max(PATHS_MAX),
-	diffStat: z
-		.string()
-		.refine(nulFree)
-		.refine(utf8Max(STAT_MAX_BYTES)),
-	patch: z
-		.string()
-		.refine(nulFree)
-		.refine(utf8Max(PATCH_MAX_BYTES)),
+	diffStat: z.string().refine(nulFree).refine(utf8Max(STAT_MAX_BYTES)),
+	patch: z.string().refine(nulFree).refine(utf8Max(PATCH_MAX_BYTES)),
 	patchTruncated: z.boolean(),
 	patchOriginalBytes: z.number().int().nonnegative(),
 };
@@ -105,7 +102,10 @@ const pullRequestJobSchema = z
 			.object({
 				kind: z.literal("pull_request_snapshot"),
 				...snapshotCommonSchema,
-				baseSha: z.string().regex(/^[0-9a-f]{7,64}$/i).refine(nulFree),
+				baseSha: z
+					.string()
+					.regex(/^[0-9a-f]{7,64}$/i)
+					.refine(nulFree),
 				commitSubjects: z
 					.array(z.string().min(1).max(500).refine(nulFree))
 					.max(20),
@@ -804,10 +804,7 @@ export async function generateGitMetadata<
 		if (error instanceof SessionGitMetadataError) {
 			throw error;
 		}
-		throw new SessionGitMetadataError(
-			"agent_failed",
-			"Metadata agent failed.",
-		);
+		throw new SessionGitMetadataError("agent_failed", "Metadata agent failed.");
 	} finally {
 		try {
 			await shell.deleteFile(jobPath);

@@ -239,9 +239,7 @@ export async function runGitMetadata(
 				if (turnLimitHit) {
 					captureError = "turn limit exceeded";
 					return {
-						content: [
-							{ type: "text" as const, text: "Turn limit exceeded." },
-						],
+						content: [{ type: "text" as const, text: "Turn limit exceeded." }],
 						details: { ok: false },
 					};
 				}
@@ -275,10 +273,7 @@ export async function runGitMetadata(
 				},
 				{ additionalProperties: false },
 			),
-			async execute(
-				_id: string,
-				params: { title: string; body: string },
-			) {
+			async execute(_id: string, params: { title: string; body: string }) {
 				if (captured || duplicateSubmission) {
 					duplicateSubmission = true;
 					captured = undefined;
@@ -313,9 +308,7 @@ export async function runGitMetadata(
 				if (turnLimitHit) {
 					captureError = "turn limit exceeded";
 					return {
-						content: [
-							{ type: "text" as const, text: "Turn limit exceeded." },
-						],
+						content: [{ type: "text" as const, text: "Turn limit exceeded." }],
 						details: { ok: false },
 					};
 				}
