@@ -1,9 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import {
 	createAgentSession,
-	ModelRuntime,
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
@@ -20,6 +18,7 @@ import {
 	type RunnerOut,
 	runnerOutputFromAgentEvent,
 } from "./protocol.js";
+import { resolveRunnerModel } from "./runner-model.js";
 
 export type RunAgentOptions = {
 	runId: string;
@@ -31,20 +30,6 @@ export type RunAgentOptions = {
 	sessionsDir: string;
 	onEvent: (msg: RunnerOut) => void;
 };
-
-function parseModelSpecifier(
-	modelSpecifier: string,
-): { provider: string; modelId: string } | { error: string } {
-	const slash = modelSpecifier.indexOf("/");
-	if (slash <= 0 || slash === modelSpecifier.length - 1) {
-		return { error: `Unknown model: ${modelSpecifier}` };
-	}
-
-	return {
-		provider: modelSpecifier.slice(0, slash),
-		modelId: modelSpecifier.slice(slash + 1),
-	};
-}
 
 function shortErrorMessage(err: unknown): string {
 	if (err instanceof Error && err.message.trim().length > 0) {
@@ -80,50 +65,12 @@ export async function runAgent(
 		fs.mkdirSync(options.agentDir, { recursive: true });
 		fs.mkdirSync(options.sessionsDir, { recursive: true });
 
-		const parsed = parseModelSpecifier(options.modelSpecifier);
-		if ("error" in parsed) {
-			emitError(parsed.error);
+		const resolved = await resolveRunnerModel(options.modelSpecifier);
+		if ("error" in resolved) {
+			emitError(resolved.error);
 			return { ok: false, assistantText: "" };
 		}
-
-		const credentials = new InMemoryCredentialStore();
-		const rawCredential =
-			process.env.DITTO_PI_CREDENTIAL ?? process.env.OPENCODE_API_KEY;
-		// Delete before session/tools so bash children cannot inherit secrets.
-		delete process.env.DITTO_PI_CREDENTIAL;
-		delete process.env.OPENCODE_API_KEY;
-
-		if (rawCredential) {
-			let credential: { type: string; [key: string]: unknown };
-			try {
-				const parsedCred = JSON.parse(rawCredential) as {
-					type?: string;
-				};
-				if (parsedCred && typeof parsedCred === "object" && parsedCred.type) {
-					credential = parsedCred as { type: string; [key: string]: unknown };
-				} else {
-					// Legacy bare API key string (operator bridge).
-					credential = { type: "api_key", key: rawCredential };
-				}
-			} catch {
-				credential = { type: "api_key", key: rawCredential };
-			}
-			await credentials.modify(
-				parsed.provider,
-				async () => credential as never,
-			);
-		}
-
-		const modelRuntime = await ModelRuntime.create({
-			credentials,
-			modelsPath: null,
-			allowModelNetwork: false,
-		});
-		const model = modelRuntime.getModel(parsed.provider, parsed.modelId);
-		if (!model) {
-			emitError(`Unknown model: ${options.modelSpecifier}`);
-			return { ok: false, assistantText: "" };
-		}
+		const { modelRuntime, model } = resolved;
 
 		const sessionFile = path.join(
 			options.sessionsDir,
