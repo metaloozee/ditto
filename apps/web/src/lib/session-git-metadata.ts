@@ -263,17 +263,25 @@ function parseNameStatusZ(stdout: string): SnapshotCommon["changedPaths"] {
 function filterSecretLikePaths(
 	paths: SnapshotCommon["changedPaths"],
 ): SnapshotCommon["changedPaths"] {
-	return paths
-		.filter((entry) => {
-			if ("previousPath" in entry) {
-				return (
-					!isSecretLikeGitPath(entry.path) &&
-					!isSecretLikeGitPath(entry.previousPath)
-				);
-			}
-			return !isSecretLikeGitPath(entry.path);
-		})
-		.slice(0, PATHS_MAX);
+	return paths.filter((entry) => {
+		if ("previousPath" in entry) {
+			return (
+				!isSecretLikeGitPath(entry.path) &&
+				!isSecretLikeGitPath(entry.previousPath)
+			);
+		}
+		return !isSecretLikeGitPath(entry.path);
+	});
+}
+
+/** Fail closed before stat/patch/model when safe paths exceed protocol ceiling. */
+function assertSafePathCount(paths: SnapshotCommon["changedPaths"]): void {
+	if (paths.length > PATHS_MAX) {
+		throw new SessionGitMetadataError(
+			"snapshot_failed",
+			"Git snapshot exceeds the changed-path limit.",
+		);
+	}
 }
 
 /** Pathspecs for git diff, including rename sources so content is not missed. */
@@ -452,6 +460,7 @@ export async function collectCommitMetadataSnapshot(
 		if (changedPaths.length === 0) {
 			return { kind: "no_changes" };
 		}
+		assertSafePathCount(changedPaths);
 
 		// Stat/patch only the safe staged set already in the temp index.
 		const statResult = await execOrThrow(
@@ -601,6 +610,7 @@ export async function collectPullRequestMetadataSnapshot(
 				"No safe changes available for pull request metadata.",
 			);
 		}
+		assertSafePathCount(changedPaths);
 
 		// Build stat/patch from explicit safe pathspecs only (rename sources included).
 		const pathArgs = pathspecsForDiff(changedPaths)

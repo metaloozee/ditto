@@ -350,6 +350,70 @@ describe("collectCommitMetadataSnapshot", () => {
 			return true;
 		});
 	});
+
+	it("fails closed at 201 safe paths before stat/patch and accepts 200", async () => {
+		const { exec } = makeSandbox();
+		const paths201 = Array.from({ length: 201 }, (_, i) => `f${i}.ts`);
+		const porcelain201 = `${paths201.map((p) => ` M ${p}`).join("\0")}\0`;
+		const nameStatus201 = `${paths201.map((p) => `M\0${p}`).join("\0")}\0`;
+
+		exec.mockImplementation(async (command: string) => {
+			if (command === "git status --porcelain=v1 -z -uall")
+				return ok(porcelain201);
+			if (command === "git rev-parse HEAD") return ok("abc1234\n");
+			if (command.includes("read-tree") || command.includes("git add --")) {
+				return ok();
+			}
+			if (command.includes("name-status")) return ok(nameStatus201);
+			if (command.startsWith("rm -f")) return ok();
+			// Must not reach stat/patch collection for oversize path sets.
+			throw new Error(`unexpected command after path ceiling: ${command}`);
+		});
+		await expect(
+			collectCommitMetadataSnapshot({ env, sandboxId: "sbx", session }),
+		).rejects.toMatchObject({
+			code: "snapshot_failed",
+			message: expect.stringContaining("changed-path limit"),
+		});
+		expect(
+			exec.mock.calls.some(
+				([command]) =>
+					typeof command === "string" &&
+					(command.includes("--stat") ||
+						command.includes(">") ||
+						command.startsWith("wc -c") ||
+						command.startsWith("head -c")),
+			),
+		).toBe(false);
+
+		const paths200 = paths201.slice(0, 200);
+		const porcelain200 = `${paths200.map((p) => ` M ${p}`).join("\0")}\0`;
+		const nameStatus200 = `${paths200.map((p) => `M\0${p}`).join("\0")}\0`;
+		exec.mockImplementation(async (command: string) => {
+			if (command === "git status --porcelain=v1 -z -uall")
+				return ok(porcelain200);
+			if (command === "git rev-parse HEAD") return ok("abc1234\n");
+			if (command.includes("read-tree") || command.includes("git add --")) {
+				return ok();
+			}
+			if (command.includes("name-status")) return ok(nameStatus200);
+			if (command.includes("--stat")) return ok("stat\n");
+			if (command.includes(">") || command.startsWith("wc -c")) {
+				return command.startsWith("wc -c") ? ok("5\n") : ok();
+			}
+			if (command.startsWith("head -c")) return ok("patch");
+			if (command.startsWith("rm -f")) return ok();
+			throw new Error(command);
+		});
+		const accepted = await collectCommitMetadataSnapshot({
+			env,
+			sandboxId: "sbx",
+			session,
+		});
+		expect(accepted.kind).toBe("commit");
+		if (accepted.kind !== "commit") return;
+		expect(accepted.job.snapshot.changedPaths).toHaveLength(200);
+	});
 });
 
 describe("collectPullRequestMetadataSnapshot", () => {
@@ -525,6 +589,64 @@ describe("collectPullRequestMetadataSnapshot", () => {
 				session: { ...session, baseCommitSha: null },
 			}),
 		).rejects.toThrow(/base commit is missing/);
+	});
+
+	it("fails closed at 201 safe paths before stat/patch and accepts 200", async () => {
+		const { exec } = makeSandbox();
+		const base = session.baseCommitSha as string;
+		const paths201 = Array.from({ length: 201 }, (_, i) => `f${i}.ts`);
+		const nameStatus201 = `${paths201.map((p) => `M\0${p}`).join("\0")}\0`;
+
+		exec.mockImplementation(async (command: string) => {
+			if (command === "git status --porcelain=v1 -z -uall") return ok("");
+			if (command.includes("rev-parse --verify")) return ok(`${base}\n`);
+			if (command === "git rev-parse HEAD") return ok("abcdef0123456789\n");
+			if (command.includes("git log --format=%s")) return ok("feat: bulk\n");
+			if (command.includes("name-status")) return ok(nameStatus201);
+			if (command.startsWith("rm -f")) return ok();
+			// Must not collect a partial pathspec patch when over the ceiling.
+			throw new Error(`unexpected command after path ceiling: ${command}`);
+		});
+		await expect(
+			collectPullRequestMetadataSnapshot({ env, sandboxId: "sbx", session }),
+		).rejects.toMatchObject({
+			code: "snapshot_failed",
+			message: expect.stringContaining("changed-path limit"),
+		});
+		expect(
+			exec.mock.calls.some(
+				([command]) =>
+					typeof command === "string" &&
+					(command.includes("--stat") ||
+						command.includes(">") ||
+						command.startsWith("wc -c") ||
+						command.startsWith("head -c")),
+			),
+		).toBe(false);
+
+		const paths200 = paths201.slice(0, 200);
+		const nameStatus200 = `${paths200.map((p) => `M\0${p}`).join("\0")}\0`;
+		exec.mockImplementation(async (command: string) => {
+			if (command === "git status --porcelain=v1 -z -uall") return ok("");
+			if (command.includes("rev-parse --verify")) return ok(`${base}\n`);
+			if (command === "git rev-parse HEAD") return ok("abcdef0123456789\n");
+			if (command.includes("git log --format=%s")) return ok("feat: bulk\n");
+			if (command.includes("name-status")) return ok(nameStatus200);
+			if (command.includes("--stat")) return ok("stat\n");
+			if (command.includes(">") || command.startsWith("wc -c")) {
+				return command.startsWith("wc -c") ? ok("5\n") : ok();
+			}
+			if (command.startsWith("head -c")) return ok("patch");
+			if (command.startsWith("rm -f")) return ok();
+			throw new Error(command);
+		});
+		const accepted = await collectPullRequestMetadataSnapshot({
+			env,
+			sandboxId: "sbx",
+			session,
+		});
+		expect(accepted.job.snapshot.changedPaths).toHaveLength(200);
+		expect(accepted.job.snapshot.patchTruncated).toBe(false);
 	});
 });
 
