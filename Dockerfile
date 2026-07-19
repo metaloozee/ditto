@@ -11,14 +11,17 @@ RUN npm ci \
   && test -s dist/provider-auth-cli.js \
   && test -s dist/provider-auth-control-cli.js \
   && test -s dist/provider-catalog-cli.js \
+  && test -s dist/git-metadata-cli.js \
   && node -e 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8"))' \
   && chmod +x dist/cli.js \
     dist/provider-auth-cli.js \
     dist/provider-auth-control-cli.js \
     dist/provider-catalog-cli.js \
+    dist/git-metadata-cli.js \
   && ln -sf /opt/ditto-runner/dist/cli.js /usr/local/bin/ditto-runner \
   && ln -sf /opt/ditto-runner/dist/provider-auth-cli.js /usr/local/bin/ditto-provider-auth \
   && ln -sf /opt/ditto-runner/dist/provider-auth-control-cli.js /usr/local/bin/ditto-provider-auth-control \
-  && ln -sf /opt/ditto-runner/dist/provider-catalog-cli.js /usr/local/bin/ditto-provider-catalog
+  && ln -sf /opt/ditto-runner/dist/provider-catalog-cli.js /usr/local/bin/ditto-provider-catalog \
+  && ln -sf /opt/ditto-runner/dist/git-metadata-cli.js /usr/local/bin/ditto-git-metadata
 
 WORKDIR /workspace
