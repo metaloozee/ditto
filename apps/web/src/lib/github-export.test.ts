@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
 	buildExportBranchName,
-	buildExportCommitMessage,
 	buildPullRequestBody,
 	buildPullRequestTitle,
 	buildSessionPullRequestBody,
@@ -28,64 +27,6 @@ describe("github export helpers", () => {
 				now: new Date("2026-07-05T13:14:15.000Z"),
 			}),
 		).toBe("ditto/run-unknown-20260705131415");
-	});
-
-	it("builds conventional commit messages from session titles", () => {
-		expect(
-			buildExportCommitMessage({
-				sessionTitle: "Add billing page",
-				runId: "run-123",
-			}),
-		).toBe("feat: add billing page");
-
-		expect(
-			buildExportCommitMessage({
-				sessionTitle: null,
-				runId: "run-123456789",
-			}),
-		).toBe("chore: apply ditto session changes");
-
-		expect(
-			buildExportCommitMessage({
-				sessionTitle: "Fix login redirect",
-				runId: "run-1",
-			}),
-		).toBe("fix: login redirect");
-
-		expect(
-			buildExportCommitMessage({
-				sessionTitle: "fix: already conventional",
-				runId: "run-1",
-			}),
-		).toBe("fix: already conventional");
-
-		expect(
-			buildExportCommitMessage({
-				sessionTitle: "feat(api): add endpoint",
-				runId: "run-1",
-			}),
-		).toBe("feat(api): add endpoint");
-
-		expect(
-			buildExportCommitMessage({
-				sessionTitle: "Refactor auth flow",
-				runId: "run-1",
-			}),
-		).toBe("refactor: auth flow");
-
-		expect(
-			buildExportCommitMessage({
-				sessionTitle: "Update README",
-				runId: "run-1",
-			}),
-		).toBe("docs: update readme");
-
-		expect(
-			buildExportCommitMessage({
-				sessionTitle: "Random idea title",
-				runId: "run-1",
-			}),
-		).toBe("chore: random idea title");
 	});
 
 	it("builds a human PR title from commits or session title", () => {

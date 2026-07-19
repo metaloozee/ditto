@@ -31,7 +31,6 @@ export function buildExportBranchName({
 const CONVENTIONAL_COMMIT_RE =
 	/^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?:\s*(.+)$/i;
 
-const SUBJECT_MAX_LEN = 72;
 const PR_TITLE_MAX_LEN = 100;
 const PR_CHANGED_FILES_LIST_MAX = 20;
 
@@ -60,131 +59,6 @@ function normalizeWhitespace(value: string): string {
 
 function stripTrailingPeriod(value: string): string {
 	return value.replace(/\.+$/, "").trim();
-}
-
-function lowercaseDescriptionStart(value: string): string {
-	if (!value) {
-		return value;
-	}
-	const [first, second] = value;
-	if (
-		first &&
-		second &&
-		first === first.toUpperCase() &&
-		first !== first.toLowerCase() &&
-		second === second.toLowerCase()
-	) {
-		return `${first.toLowerCase()}${value.slice(1)}`;
-	}
-	return value;
-}
-
-function formatCommitSubject(
-	type: string,
-	scope: string | undefined,
-	description: string,
-): string {
-	const normalizedType = type.toLowerCase();
-	const prefix = scope
-		? `${normalizedType}(${scope}): `
-		: `${normalizedType}: `;
-	const maxDescriptionLength = Math.max(1, SUBJECT_MAX_LEN - prefix.length);
-	let body = normalizeWhitespace(description).slice(0, maxDescriptionLength);
-	body = stripTrailingPeriod(body);
-	body = lowercaseDescriptionStart(body);
-	return `${prefix}${body}`;
-}
-
-function inferCommitType(title: string): string {
-	const lower = title.toLowerCase();
-	if (/^(fix|bug)\b/.test(lower) || /\bbug\b/.test(lower)) {
-		return "fix";
-	}
-	if (/^(add|create|implement)\b/.test(lower)) {
-		return "feat";
-	}
-	if (/^(refactor|cleanup)\b/.test(lower)) {
-		return "refactor";
-	}
-	if (/\b(readme|docs?)\b/.test(lower)) {
-		return "docs";
-	}
-	if (/^test\b/.test(lower) || /\btests?\b/.test(lower)) {
-		return "test";
-	}
-	if (/^(remove|delete)\b/.test(lower)) {
-		return "chore";
-	}
-	if (/^(update|change)\b/.test(lower)) {
-		return "chore";
-	}
-	return "chore";
-}
-
-function prepareDescription(title: string, type: string): string {
-	if (type === "feat" && /^(add|create|implement)\b/i.test(title)) {
-		return title.replace(/^(add|create|implement)\b/i, (word) =>
-			word.toLowerCase(),
-		);
-	}
-	if (type === "fix" && /^fix\b/i.test(title)) {
-		const stripped = title.replace(/^fix\s+/i, "").trim();
-		return stripped || title;
-	}
-	if (type === "refactor" && /^(refactor|cleanup)\b/i.test(title)) {
-		const stripped = title.replace(/^(refactor|cleanup)\s+/i, "").trim();
-		return stripped || title;
-	}
-	if (type === "test" && /^test\b/i.test(title)) {
-		const stripped = title.replace(/^test\s+/i, "").trim();
-		return stripped || title;
-	}
-	if (
-		type === "chore" &&
-		/^(update|change|remove|delete)\b/i.test(title) &&
-		!/\breadme\b/i.test(title)
-	) {
-		return title.replace(/^(update|change|remove|delete)\b/i, (word) =>
-			word.toLowerCase(),
-		);
-	}
-	return title;
-}
-
-export function buildExportCommitMessage({
-	sessionTitle,
-	runId: _runId,
-}: {
-	sessionTitle?: string | null;
-	runId: string;
-}): string {
-	const title = sessionTitle?.trim();
-	if (!title) {
-		return "chore: apply ditto session changes";
-	}
-
-	const collapsed = normalizeWhitespace(title);
-	const conventional = CONVENTIONAL_COMMIT_RE.exec(collapsed);
-	if (conventional) {
-		const [, rawType, rawScope, rawDescription] = conventional;
-		const scope = rawScope?.slice(1, -1);
-		return formatCommitSubject(
-			rawType,
-			scope,
-			stripTrailingPeriod(rawDescription),
-		);
-	}
-
-	const type = inferCommitType(collapsed);
-	let description = prepareDescription(collapsed, type);
-	if (type === "docs" && /\breadme\b/i.test(collapsed)) {
-		description = collapsed
-			.replace(/^(update|change)\s+/i, (word) => word.toLowerCase())
-			.replace(/\breadme\b/i, "readme");
-	} else {
-		description = lowercaseDescriptionStart(description);
-	}
-	return formatCommitSubject(type, undefined, description);
 }
 
 function capitalizeFirstLetter(value: string): string {

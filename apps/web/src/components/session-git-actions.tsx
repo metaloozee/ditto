@@ -180,11 +180,14 @@ function SessionGitActionsView({
 		workflow?.kind === "sync"
 			? `Merge the latest ${workflow.baseBranch} into this session`
 			: "Session already includes the latest base branch";
-	const commitTooltip = commitDisabled
-		? dirty
-			? "Working…"
-			: "No uncommitted changes"
-		: "Commit local changes on this session branch";
+	const commitTooltip =
+		pendingStep === "commit"
+			? "Drafting and committing…"
+			: commitDisabled
+				? dirty
+					? "Working…"
+					: "No uncommitted changes"
+				: "Commit local changes on this session branch";
 	const pushTooltip =
 		workflow?.kind === "push" && workflow.reason === "remote-branch-missing"
 			? "Restore deleted branch on GitHub"
@@ -204,23 +207,25 @@ function SessionGitActionsView({
 					? "View PR"
 					: "Open PR";
 	const prTooltip =
-		workflow?.kind === "merged-pr"
-			? "View merged pull request on GitHub"
-			: workflow?.kind === "closed-pr"
-				? "View closed pull request on GitHub"
-				: pullRequest
-					? `View pull request #${pullRequest.number} on GitHub`
-					: openPrDisabled
-						? workflow?.kind === "idle"
-							? "No session changes to open as a pull request"
-							: workflow?.kind === "unavailable"
-								? "GitHub status is currently unavailable"
-								: dirty
-									? "Commit changes before opening a PR"
-									: "Working…"
-						: workflow?.kind === "push"
-							? "Push branch and open a pull request"
-							: "Open a pull request for this branch";
+		pendingStep === "pr"
+			? "Drafting and opening pull request…"
+			: workflow?.kind === "merged-pr"
+				? "View merged pull request on GitHub"
+				: workflow?.kind === "closed-pr"
+					? "View closed pull request on GitHub"
+					: pullRequest
+						? `View pull request #${pullRequest.number} on GitHub`
+						: openPrDisabled
+							? workflow?.kind === "idle"
+								? "No session changes to open as a pull request"
+								: workflow?.kind === "unavailable"
+									? "GitHub status is currently unavailable"
+									: dirty
+										? "Commit changes before opening a PR"
+										: "Working…"
+							: workflow?.kind === "push"
+								? "Push branch and open a pull request"
+								: "Open a pull request for this branch";
 
 	function handlePrAction(): void {
 		if (pullRequest) {
@@ -279,10 +284,18 @@ function SessionGitActionsView({
 	const primaryPending = primaryStep !== null && pendingStep === primaryStep;
 	const primaryLabel = statusLoading
 		? "Loading Git status"
-		: (primary?.label ?? "Up to date");
+		: pendingStep === "commit"
+			? "Drafting and committing…"
+			: pendingStep === "pr"
+				? "Drafting and opening pull request…"
+				: (primary?.label ?? "Up to date");
 	const primaryTooltip = statusLoading
 		? "Loading Git status"
-		: (primary?.tooltip ?? "No git action needed");
+		: pendingStep === "commit"
+			? "Drafting and committing…"
+			: pendingStep === "pr"
+				? "Drafting and opening pull request…"
+				: (primary?.tooltip ?? "No git action needed");
 	const hasActivePrimary =
 		!statusLoading && Boolean(primary && !primary.disabled);
 
@@ -442,7 +455,13 @@ export function SessionGitActions({
 		trpc.sessionGit.commit.mutationOptions({
 			onSuccess: (result) => {
 				if (result.committed) {
-					toast.success("Changes committed.");
+					const message =
+						"message" in result && typeof result.message === "string"
+							? result.message
+							: undefined;
+					toast.success(
+						message ? `Changes committed: ${message}` : "Changes committed.",
+					);
 				} else {
 					toast.message("Nothing to commit.");
 				}

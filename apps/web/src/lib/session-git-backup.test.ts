@@ -8,7 +8,6 @@ vi.mock("#/lib/project-sandbox", () => ({
 
 const {
 	commitSessionChangesWithBackup,
-	openSessionPullRequestWithBackup,
 	runSessionGitMutationWithBackup,
 } = await import("./session-git-backup");
 
@@ -109,41 +108,4 @@ describe("session-git-backup", () => {
 		});
 	});
 
-	describe("openSessionPullRequestWithBackup", () => {
-		it("persists once when pushIfNeeded is true, even if open fails", async () => {
-			const pushIfNeeded = vi.fn().mockResolvedValue(true);
-			const open = vi.fn().mockRejectedValue(new Error("pr failed"));
-
-			await expect(
-				openSessionPullRequestWithBackup({
-					db,
-					env,
-					project,
-					pushIfNeeded,
-					open,
-				}),
-			).rejects.toThrow("pr failed");
-
-			expect(pushIfNeeded).toHaveBeenCalled();
-			expect(persistProjectSandboxBackupMock).toHaveBeenCalledTimes(1);
-			expect(open).toHaveBeenCalled();
-		});
-
-		it("does not persist when pushIfNeeded is false (open-only)", async () => {
-			const pushIfNeeded = vi.fn().mockResolvedValue(false);
-			const open = vi.fn().mockResolvedValue({ url: "https://pr", number: 2 });
-
-			await expect(
-				openSessionPullRequestWithBackup({
-					db,
-					env,
-					project,
-					pushIfNeeded,
-					open,
-				}),
-			).resolves.toEqual({ url: "https://pr", number: 2 });
-
-			expect(persistProjectSandboxBackupMock).not.toHaveBeenCalled();
-		});
-	});
 });

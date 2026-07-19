@@ -8,7 +8,6 @@ import {
 	repositoryNameFromSlug,
 } from "#/lib/github-app";
 import {
-	buildExportCommitMessage,
 	buildPullRequestTitle,
 	buildSessionPullRequestBody,
 	quoteGitHubExportShellArg,
@@ -1191,12 +1190,3 @@ export async function openSessionPullRequest(
 	}
 }
 
-export function defaultCommitMessageForSession(session: {
-	id: string;
-	title?: string | null;
-}): string {
-	return buildExportCommitMessage({
-		sessionTitle: session.title,
-		runId: session.id,
-	});
-}

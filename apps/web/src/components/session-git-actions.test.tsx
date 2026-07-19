@@ -11,6 +11,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const statusQueryMock = vi.hoisted(() => vi.fn());
 const mutateMock = vi.hoisted(() => vi.fn());
+const mutationStateMock = vi.hoisted(() => ({
+	commitPending: false,
+	prPending: false,
+	commitOptions: null as null | {
+		onSuccess?: (result: unknown) => void;
+		id?: string;
+	},
+	prOptions: null as null | {
+		onSuccess?: (result: unknown) => void;
+		id?: string;
+	},
+}));
 
 vi.mock("@tanstack/react-query", async () => {
 	const actual = await vi.importActual<typeof import("@tanstack/react-query")>(
@@ -18,7 +30,18 @@ vi.mock("@tanstack/react-query", async () => {
 	);
 	return {
 		...actual,
-		useMutation: () => ({ isPending: false, mutate: mutateMock }),
+		useMutation: (options: Record<string, unknown>) => {
+			const isCommit = options === mutationStateMock.commitOptions;
+			const isPr = options === mutationStateMock.prOptions;
+			return {
+				isPending: isCommit
+					? mutationStateMock.commitPending
+					: isPr
+						? mutationStateMock.prPending
+						: false,
+				mutate: mutateMock,
+			};
+		},
 		useQuery: () => statusQueryMock(),
 		useQueryClient: () => ({
 			invalidateQueries: vi.fn(),
@@ -34,10 +57,28 @@ vi.mock("#/integrations/trpc/react", () => ({
 				queryOptions: () => ({ queryKey: ["session-git-status"] }),
 				queryFilter: () => ({ queryKey: ["session-git-status"] }),
 			},
-			commit: { mutationOptions: () => ({}) },
-			sync: { mutationOptions: () => ({}) },
-			push: { mutationOptions: () => ({}) },
-			openPullRequest: { mutationOptions: () => ({}) },
+			commit: {
+				mutationOptions: (options: Record<string, unknown>) => {
+					mutationStateMock.commitOptions = options as {
+						onSuccess?: (result: unknown) => void;
+					};
+					return mutationStateMock.commitOptions;
+				},
+			},
+			sync: {
+				mutationOptions: () => ({ id: "sync" }),
+			},
+			push: {
+				mutationOptions: () => ({ id: "push" }),
+			},
+			openPullRequest: {
+				mutationOptions: (options: Record<string, unknown>) => {
+					mutationStateMock.prOptions = options as {
+						onSuccess?: (result: unknown) => void;
+					};
+					return mutationStateMock.prOptions;
+				},
+			},
 		},
 	}),
 }));
@@ -47,6 +88,7 @@ vi.mock("sonner", () => ({
 }));
 
 const { SessionGitActions } = await import("./session-git-actions");
+const { toast } = await import("sonner");
 
 function setStatus(
 	workflow: Record<string, unknown>,
@@ -90,6 +132,10 @@ function isMenuItemDisabled(item: HTMLElement): boolean {
 describe("SessionGitActions workflow", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mutationStateMock.commitPending = false;
+		mutationStateMock.prPending = false;
+		mutationStateMock.commitOptions = null;
+		mutationStateMock.prOptions = null;
 	});
 
 	afterEach(() => {
@@ -242,5 +288,62 @@ describe("SessionGitActions workflow", () => {
 				within(menu).getByRole("menuitem", { name: /View PR/i }),
 			),
 		).toBe(false);
+	});
+
+	it("uses drafting accessible labels while commit is pending and disables controls", () => {
+		setStatus({ kind: "commit" });
+		mutationStateMock.commitPending = true;
+
+		render(<SessionGitActions projectId="proj-1" sessionId="sess-1" />);
+
+		const primary = screen.getByRole("button", {
+			name: "Drafting and committing…",
+		});
+		expect(primary).toHaveProperty("disabled", true);
+		expect(primary.getAttribute("title")).toBe("Drafting and committing…");
+		expect(
+			screen.getByRole("button", { name: "Choose git action" }),
+		).toHaveProperty("disabled", true);
+	});
+
+	it("uses drafting accessible labels while open PR is pending", () => {
+		setStatus({ kind: "open-pr" });
+		mutationStateMock.prPending = true;
+
+		render(<SessionGitActions projectId="proj-1" sessionId="sess-1" />);
+
+		const primary = screen.getByRole("button", {
+			name: "Drafting and opening pull request…",
+		});
+		expect(primary).toHaveProperty("disabled", true);
+		expect(primary.getAttribute("title")).toBe(
+			"Drafting and opening pull request…",
+		);
+	});
+
+	it("toasts the generated commit message text on success", () => {
+		setStatus({ kind: "commit" });
+		render(<SessionGitActions projectId="proj-1" sessionId="sess-1" />);
+
+		mutationStateMock.commitOptions?.onSuccess?.({
+			committed: true,
+			commitSha: "abc",
+			message: "feat: add billing",
+		});
+
+		expect(toast.success).toHaveBeenCalledWith(
+			"Changes committed: feat: add billing",
+		);
+	});
+
+	it("fires one-click commit mutate without a message editor", () => {
+		setStatus({ kind: "commit" });
+		render(<SessionGitActions projectId="proj-1" sessionId="sess-1" />);
+
+		fireEvent.click(screen.getByRole("button", { name: "Commit" }));
+		expect(mutateMock).toHaveBeenCalledWith({
+			projectId: "proj-1",
+			sessionId: "sess-1",
+		});
 	});
 });

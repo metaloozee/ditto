@@ -13,7 +13,6 @@ import { decryptEnvVars } from "#/lib/project-env-vars";
 import { ensureProjectSandbox } from "#/lib/project-sandbox";
 import {
 	commitSessionChanges,
-	defaultCommitMessageForSession,
 	GITHUB_APP_PR_PERMISSION_MESSAGE,
 	GITHUB_APP_PUSH_PERMISSION_MESSAGE,
 	getSessionGitStatus,
@@ -23,11 +22,16 @@ import {
 	syncSessionBranch,
 } from "#/lib/session-git";
 import {
+	bestEffortPersistSessionGitBackup,
 	commitSessionChangesWithBackup,
-	openSessionPullRequestWithBackup,
 	runSessionGitMutationWithBackup,
 } from "#/lib/session-git-backup";
+import { SessionGitMetadataError } from "#/lib/session-git-metadata";
 import { rethrowOrMapSessionGitMutationError } from "#/lib/session-git-trpc-errors";
+import {
+	commitSessionChangesWithGeneratedMessage,
+	openSessionPullRequestWithGeneratedMetadata,
+} from "#/lib/session-git-ui-actions";
 import { SessionWorkspaceBusyError } from "#/lib/session-workspace-lock-error";
 import { ensureSessionWorktree } from "#/lib/session-worktree";
 import { loadOwnedActiveSession } from "#/lib/workspace-session";
@@ -210,33 +214,52 @@ export const sessionGitRouter = createTRPCRouter({
 		.mutation(async ({ ctx, input }) => {
 			const resolved = await resolveSessionGitContext({ ctx, input });
 			const author = sessionAuthor();
-			const message =
-				input.message ??
-				defaultCommitMessageForSession({
-					id: resolved.session.id,
-					title: resolved.session.title,
-				});
 			try {
-				return await commitSessionChangesWithBackup({
-					db: resolved.db,
+				// Explicit nonempty message keeps the legacy path (no generation).
+				if (input.message) {
+					return await commitSessionChangesWithBackup({
+						db: resolved.db,
+						env: ctx.env,
+						project: resolved.project,
+						commit: () =>
+							commitSessionChanges({
+								env: ctx.env,
+								sandboxId: resolved.sandboxId,
+								installationId: resolved.installationId,
+								githubRepo: resolved.githubRepo,
+								session: resolved.session,
+								message: input.message,
+								...author,
+							}),
+					});
+				}
+				return await commitSessionChangesWithGeneratedMessage({
 					env: ctx.env,
+					db: resolved.db,
 					project: resolved.project,
-					commit: () =>
-						commitSessionChanges({
-							env: ctx.env,
-							sandboxId: resolved.sandboxId,
-							installationId: resolved.installationId,
-							githubRepo: resolved.githubRepo,
-							session: resolved.session,
-							message,
-							...author,
-						}),
+					sandboxId: resolved.sandboxId,
+					installationId: resolved.installationId,
+					githubRepo: resolved.githubRepo,
+					session: resolved.session,
+					knownSecrets: resolved.knownSecrets,
 				});
 			} catch (error) {
 				if (error instanceof SessionWorkspaceBusyError) {
 					throw new TRPCError({
 						code: "PRECONDITION_FAILED",
 						message: error.message,
+					});
+				}
+				if (error instanceof SessionGitMetadataError) {
+					throw new TRPCError({
+						code:
+							error.code === "snapshot_failed"
+								? "PRECONDITION_FAILED"
+								: "BAD_GATEWAY",
+						message:
+							error.code === "snapshot_failed"
+								? error.message
+								: "Could not draft a commit message from the current changes. No commit was created. Try again, or commit from the agent chat.",
 					});
 				}
 				throw error;
@@ -364,97 +387,137 @@ export const sessionGitRouter = createTRPCRouter({
 		)
 		.mutation(async ({ ctx, input }) => {
 			const resolved = await resolveSessionGitContext({ ctx, input });
-			let status = await getSessionGitStatus({
-				env: ctx.env,
-				sandboxId: resolved.sandboxId,
-				installationId: resolved.installationId,
-				githubRepo: resolved.githubRepo,
-				session: resolved.session,
-			});
+			const hasExplicitMetadata =
+				input.title !== undefined ||
+				input.body !== undefined ||
+				input.baseBranch !== undefined;
 
-			if (status.dirty) {
-				throw new TRPCError({
-					code: "PRECONDITION_FAILED",
-					message: "Commit local changes before opening a pull request.",
-				});
-			}
-
-			const pushIfAhead = async (): Promise<boolean> => {
-				if (status.workflow.kind !== "push") {
-					return false;
-				}
-				try {
-					await pushSessionBranch({
-						env: ctx.env,
-						sandboxId: resolved.sandboxId,
-						installationId: resolved.installationId,
-						githubRepo: resolved.githubRepo,
-						session: resolved.session,
-						knownSecrets: resolved.knownSecrets,
-					});
-				} catch (error) {
-					if (error instanceof GitSecretPolicyError) {
-						mapSessionGitExportError(error);
-					}
-					const message =
-						error instanceof Error ? error.message : "Failed to push branch.";
-					throw new TRPCError({
-						code:
-							message === GITHUB_APP_PUSH_PERMISSION_MESSAGE
-								? "FORBIDDEN"
-								: "BAD_GATEWAY",
-						message,
-					});
-				}
-				status = await getSessionGitStatus({
+			// Any explicit title/body/base keeps the deterministic non-PI path.
+			if (hasExplicitMetadata) {
+				let status = await getSessionGitStatus({
 					env: ctx.env,
 					sandboxId: resolved.sandboxId,
 					installationId: resolved.installationId,
 					githubRepo: resolved.githubRepo,
 					session: resolved.session,
 				});
-				return true;
-			};
 
-			try {
-				return await openSessionPullRequestWithBackup({
-					db: resolved.db,
-					env: ctx.env,
-					project: resolved.project,
-					pushIfNeeded: pushIfAhead,
-					open: () => {
-						if (
-							status.workflow.kind !== "open-pr" &&
-							status.workflow.kind !== "open-pr-existing"
-						) {
-							const message =
-								status.workflow.kind === "merged-pr"
-									? "This session pull request has already been merged."
-									: status.workflow.kind === "closed-pr"
-										? "This session pull request is closed."
-										: status.workflow.kind === "unavailable"
-											? "GitHub status is currently unavailable."
-											: status.workflow.kind === "sync"
-												? `Sync the latest ${status.workflow.baseBranch} before opening a pull request.`
-												: "This session has no changes to open as a pull request.";
-							throw new TRPCError({
-								code: "PRECONDITION_FAILED",
-								message,
-							});
-						}
-						return openSessionPullRequest({
+				if (status.dirty) {
+					throw new TRPCError({
+						code: "PRECONDITION_FAILED",
+						message: "Commit local changes before opening a pull request.",
+					});
+				}
+
+				const pushIfAhead = async (): Promise<boolean> => {
+					if (status.workflow.kind !== "push") {
+						return false;
+					}
+					try {
+						await pushSessionBranch({
 							env: ctx.env,
 							sandboxId: resolved.sandboxId,
 							installationId: resolved.installationId,
 							githubRepo: resolved.githubRepo,
 							session: resolved.session,
-							title: input.title,
-							body: input.body,
-							baseBranch: input.baseBranch,
+							knownSecrets: resolved.knownSecrets,
 						});
-					},
+					} catch (error) {
+						if (error instanceof GitSecretPolicyError) {
+							mapSessionGitExportError(error);
+						}
+						const message =
+							error instanceof Error
+								? error.message
+								: "Failed to push branch.";
+						throw new TRPCError({
+							code:
+								message === GITHUB_APP_PUSH_PERMISSION_MESSAGE
+									? "FORBIDDEN"
+									: "BAD_GATEWAY",
+							message,
+						});
+					}
+					status = await getSessionGitStatus({
+						env: ctx.env,
+						sandboxId: resolved.sandboxId,
+						installationId: resolved.installationId,
+						githubRepo: resolved.githubRepo,
+						session: resolved.session,
+					});
+					return true;
+				};
+
+				try {
+					const didPush = await pushIfAhead();
+					if (didPush) {
+						await bestEffortPersistSessionGitBackup({
+							db: resolved.db,
+							env: ctx.env,
+							project: resolved.project,
+						});
+					}
+					if (
+						status.workflow.kind !== "open-pr" &&
+						status.workflow.kind !== "open-pr-existing"
+					) {
+						const message =
+							status.workflow.kind === "merged-pr"
+								? "This session pull request has already been merged."
+								: status.workflow.kind === "closed-pr"
+									? "This session pull request is closed."
+									: status.workflow.kind === "unavailable"
+										? "GitHub status is currently unavailable."
+										: status.workflow.kind === "sync"
+											? `Sync the latest ${status.workflow.baseBranch} before opening a pull request.`
+											: "This session has no changes to open as a pull request.";
+						throw new TRPCError({
+							code: "PRECONDITION_FAILED",
+							message,
+						});
+					}
+					return await openSessionPullRequest({
+						env: ctx.env,
+						sandboxId: resolved.sandboxId,
+						installationId: resolved.installationId,
+						githubRepo: resolved.githubRepo,
+						session: resolved.session,
+						title: input.title,
+						body: input.body,
+						baseBranch: input.baseBranch,
+					});
+				} catch (error) {
+					rethrowOrMapSessionGitMutationError(error, {
+						fallbackMessage: "Failed to open pull request.",
+						forbiddenWhenMessage: GITHUB_APP_PR_PERMISSION_MESSAGE,
+					});
+				}
+			}
+
+			try {
+				return await openSessionPullRequestWithGeneratedMetadata({
+					env: ctx.env,
+					db: resolved.db,
+					project: resolved.project,
+					sandboxId: resolved.sandboxId,
+					installationId: resolved.installationId,
+					githubRepo: resolved.githubRepo,
+					session: resolved.session,
+					knownSecrets: resolved.knownSecrets,
 				});
 			} catch (error) {
+				if (error instanceof SessionGitMetadataError) {
+					throw new TRPCError({
+						code:
+							error.code === "snapshot_failed"
+								? "PRECONDITION_FAILED"
+								: "BAD_GATEWAY",
+						message:
+							error.code === "snapshot_failed"
+								? error.message
+								: "Could not draft pull request metadata from the current changes. No pull request was opened. Try again, or open a PR from the agent chat.",
+					});
+				}
 				rethrowOrMapSessionGitMutationError(error, {
 					fallbackMessage: "Failed to open pull request.",
 					forbiddenWhenMessage: GITHUB_APP_PR_PERMISSION_MESSAGE,
