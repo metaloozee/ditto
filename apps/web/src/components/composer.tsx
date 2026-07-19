@@ -746,7 +746,7 @@ export function Composer({
 													aria-label={modelLabel}
 													disabled={Boolean(disabledReason) || isStreaming}
 													className={cn(
-														"size-10 rounded-full bg-card shadow-xs",
+														"size-11 rounded-full bg-card shadow-xs",
 														"transition-transform duration-150 ease-out",
 														"active:scale-[0.97]",
 														"motion-reduce:transition-none motion-reduce:active:scale-100",
@@ -802,7 +802,7 @@ export function Composer({
 						}}
 						onKeyDown={handleTextareaKeyDown}
 						className={cn(
-							"min-h-10 max-h-48 min-w-0 flex-1 resize-none rounded-3xl border-border bg-card px-4 py-2.5 text-sm shadow-xs md:text-sm",
+							"min-h-11 max-h-48 min-w-0 flex-1 resize-none rounded-3xl border-border bg-card px-4 py-2 text-sm shadow-xs md:text-sm",
 							"field-sizing-content text-pretty leading-relaxed",
 							"placeholder:text-muted-foreground/70",
 						)}
@@ -819,7 +819,7 @@ export function Composer({
 										aria-label={actionName}
 										disabled={submitDisabled}
 										className={cn(
-											"size-10 rounded-full shadow-xs",
+											"size-11 rounded-full shadow-xs",
 											"transition-transform duration-150 ease-out",
 											"active:scale-[0.97]",
 											"motion-reduce:transition-none motion-reduce:active:scale-100",

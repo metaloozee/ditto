@@ -73,6 +73,7 @@ describe("ToolCallGroup", () => {
 		expect(screen.queryByText(/Worked/)).toBeNull();
 		const shimmer = container.querySelector(".shimmer");
 		expect(shimmer?.textContent).toMatch(/Working/);
+		expect(container.querySelector("[data-spinner]")).toBeNull();
 	});
 
 	it("shows Working when a tool is running even without active", () => {

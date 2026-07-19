@@ -62,8 +62,18 @@ vi.mock("#/components/ui/message-scroller", () => ({
 	MessageScrollerContent: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>
 	),
-	MessageScrollerItem: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
+	MessageScrollerItem: ({
+		children,
+		className,
+		messageId,
+	}: {
+		children: React.ReactNode;
+		className?: string;
+		messageId: string;
+	}) => (
+		<div className={className} data-message-id={messageId}>
+			{children}
+		</div>
 	),
 	MessageScrollerButton: () => null,
 	useMessageScrollerScrollable: () => ({ start: true, end: true }),
@@ -97,6 +107,27 @@ describe("Chat session cache acknowledgement", () => {
 		expect(navbar.className).toContain("inset-x-0");
 		expect(navbar.className).toContain("bg-transparent");
 		expect(navbar.className).not.toContain("max-w-");
+	});
+
+	it("adds extra space only below the last message", () => {
+		const { container } = render(
+			<Chat
+				projectId="proj-1"
+				sessionId="sess-1"
+				messages={[
+					{ id: "user-1", role: "user", content: "First" },
+					{ id: "assistant-1", role: "assistant", content: "Last" },
+				]}
+			/>,
+		);
+
+		expect(
+			container.querySelector('[data-message-id="message-user-1"]')?.className,
+		).not.toContain("mb-20");
+		expect(
+			container.querySelector('[data-message-id="message-assistant-1"]')
+				?.className,
+		).toContain("mb-20");
 	});
 
 	it("preserves text and tool chronology in assistant responses", () => {
@@ -333,6 +364,25 @@ describe("Chat session cache acknowledgement", () => {
 		await waitFor(() => {
 			expect(readSessionMessages("sess-pages")).toEqual([]);
 		});
+	});
+
+	it("shimmers while waiting for the assistant response", () => {
+		render(<Chat projectId="proj-1" sessionId="sess-1" />);
+
+		act(() => {
+			composerPropsRef.current?.onStreamingChange?.({
+				active: true,
+				text: "",
+				userText: "initial",
+				userMessageId: "user-1",
+				assistantMessageId: "assistant-1",
+				tools: [],
+				parts: [],
+				queuedFollowUps: [],
+			});
+		});
+
+		expect(screen.getByText("Thinking…").className).toContain("shimmer");
 	});
 
 	it("renders queued follow-ups FIFO with visible and announced status", () => {

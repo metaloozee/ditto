@@ -322,7 +322,9 @@ function AssistantParts({
 }) {
 	if (parts.length === 0) {
 		return (
-			<p className="text-muted-foreground text-sm">
+			<p
+				className={cn("text-muted-foreground text-sm", streaming && "shimmer")}
+			>
 				{streaming ? "Thinking…" : "No response was generated."}
 			</p>
 		);
@@ -624,7 +626,7 @@ export function Chat({
 												index === 0 && hasMoreHistory && "mt-2",
 												index === displayMessages.length - 1 &&
 													!hasStreamingTail &&
-													"mb-4",
+													"mb-20",
 											)}
 											scrollAnchor={message.role === "user"}
 										>
@@ -637,7 +639,7 @@ export function Chat({
 											className={cn(
 												"mt-0",
 												displayMessages.length === 0 && "mt-20",
-												!showStreamingAssistant && "mb-4",
+												!showStreamingAssistant && "mb-20",
 											)}
 											scrollAnchor
 										>
@@ -658,7 +660,7 @@ export function Chat({
 												displayMessages.length === 0 &&
 													!showOptimisticUser &&
 													"mt-20",
-												queuedFollowUps.length === 0 && "mb-4",
+												queuedFollowUps.length === 0 && "mb-20",
 											)}
 										>
 											<StreamingAssistantRow streaming={streaming} />
@@ -676,7 +678,7 @@ export function Chat({
 													messageId={`queued-${queued.requestId}`}
 													className={cn(
 														"mt-0",
-														index === queuedFollowUps.length - 1 && "mb-4",
+														index === queuedFollowUps.length - 1 && "mb-20",
 													)}
 													scrollAnchor
 												>

@@ -96,6 +96,22 @@ describe("SessionGitActions workflow", () => {
 		cleanup();
 	});
 
+	it("shows a spinner instead of stale git state while loading", () => {
+		statusQueryMock.mockReturnValue({
+			data: undefined,
+			isError: false,
+			isLoading: true,
+		});
+
+		render(<SessionGitActions projectId="proj-1" sessionId="sess-1" />);
+
+		const loadingButton = screen.getByRole("button", {
+			name: "Loading Git status",
+		});
+		expect(loadingButton).toHaveProperty("disabled", true);
+		expect(loadingButton.querySelector(".animate-spin")).not.toBeNull();
+	});
+
 	it("disables Open PR for an untouched session", () => {
 		setStatus({ kind: "idle", reason: "no-changes" });
 
@@ -184,6 +200,23 @@ describe("SessionGitActions workflow", () => {
 		).toBe(true);
 	});
 
+	it("labels an existing pull request clearly and includes its number in the tooltip", () => {
+		setStatus({
+			kind: "open-pr-existing",
+			pullRequest: {
+				url: "https://github.com/acme/repo/pull/7",
+				number: 7,
+				state: "open",
+			},
+		});
+
+		render(<SessionGitActions projectId="proj-1" sessionId="sess-1" />);
+
+		expect(
+			screen.getByRole("button", { name: "View PR" }).getAttribute("title"),
+		).toBe("View pull request #7 on GitHub");
+	});
+
 	it("keeps Push primary when ahead while View PR stays available", () => {
 		setStatus(
 			{ kind: "push", reason: "unpushed-commits" },
@@ -206,7 +239,7 @@ describe("SessionGitActions workflow", () => {
 		const menu = openGitMenu();
 		expect(
 			isMenuItemDisabled(
-				within(menu).getByRole("menuitem", { name: /View #9/i }),
+				within(menu).getByRole("menuitem", { name: /View PR/i }),
 			),
 		).toBe(false);
 	});

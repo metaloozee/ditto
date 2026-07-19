@@ -201,7 +201,7 @@ function SessionGitActionsView({
 			: workflow?.kind === "closed-pr"
 				? `Closed #${workflow.pullRequest.number}`
 				: pullRequest
-					? `View #${pullRequest.number}`
+					? "View PR"
 					: "Open PR";
 	const prTooltip =
 		workflow?.kind === "merged-pr"
@@ -209,7 +209,7 @@ function SessionGitActionsView({
 			: workflow?.kind === "closed-pr"
 				? "View closed pull request on GitHub"
 				: pullRequest
-					? "Open pull request on GitHub"
+					? `View pull request #${pullRequest.number} on GitHub`
 					: openPrDisabled
 						? workflow?.kind === "idle"
 							? "No session changes to open as a pull request"
@@ -275,10 +275,16 @@ function SessionGitActionsView({
 	const primary = primaryStep
 		? (actions.find((action) => action.id === primaryStep) ?? null)
 		: null;
-	const primaryDisabled = !primary || primary.disabled || busy;
+	const primaryDisabled = statusLoading || !primary || primary.disabled || busy;
 	const primaryPending = primaryStep !== null && pendingStep === primaryStep;
-	const primaryLabel = primary?.label ?? "Up to date";
-	const hasActivePrimary = Boolean(primary && !primary.disabled);
+	const primaryLabel = statusLoading
+		? "Loading Git status"
+		: (primary?.label ?? "Up to date");
+	const primaryTooltip = statusLoading
+		? "Loading Git status"
+		: (primary?.tooltip ?? "No git action needed");
+	const hasActivePrimary =
+		!statusLoading && Boolean(primary && !primary.disabled);
 
 	return (
 		<TooltipProvider delay={200}>
@@ -326,7 +332,7 @@ function SessionGitActionsView({
 										disabled={primaryDisabled || primaryPending}
 										aria-label={primaryLabel}
 										aria-current={hasActivePrimary ? "step" : undefined}
-										title={primary?.tooltip ?? "No git action needed"}
+										title={primaryTooltip}
 										onClick={() => primary?.onSelect()}
 										className={cn(
 											"inline-flex cursor-pointer items-center gap-1 px-2.5 font-medium text-xs whitespace-nowrap",
@@ -338,7 +344,7 @@ function SessionGitActionsView({
 										)}
 									>
 										<span className="shrink-0 [&_svg]:size-3" aria-hidden>
-											{primaryPending ? (
+											{statusLoading || primaryPending ? (
 												<LoaderCircleIcon className="animate-spin" />
 											) : (
 												(primary?.icon ?? <GitCommitHorizontalIcon />)
@@ -348,9 +354,7 @@ function SessionGitActionsView({
 									</button>
 								}
 							/>
-							<TooltipContent side="bottom">
-								{primary?.tooltip ?? "No git action needed"}
-							</TooltipContent>
+							<TooltipContent side="bottom">{primaryTooltip}</TooltipContent>
 						</Tooltip>
 
 						<DropdownMenu>
@@ -424,7 +428,6 @@ export function SessionGitActions({
 				enabled: hasIds,
 				retry: false,
 				refetchOnWindowFocus: true,
-				placeholderData: (previous) => previous,
 			},
 		),
 	);

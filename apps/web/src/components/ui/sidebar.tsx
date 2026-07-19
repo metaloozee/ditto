@@ -279,7 +279,7 @@ function SidebarTrigger({
 			}}
 			{...props}
 		>
-			<span className="relative size-4" aria-hidden>
+			<span className="relative size-4 text-muted-foreground" aria-hidden>
 				{/* Crossfade open/close glyphs so the affordance tracks state without a hard cut. */}
 				<PanelLeftCloseIcon
 					className={cn(

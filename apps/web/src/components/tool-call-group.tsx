@@ -1,6 +1,5 @@
 import { ChevronRightIcon } from "lucide-react";
 import { Task, TaskContent, TaskTrigger } from "#/components/ai-elements/task";
-import { Spinner } from "#/components/ui/spinner";
 import type { StreamToolCall } from "#/lib/agent-message-parts";
 import {
 	formatElapsedDuration,
@@ -29,7 +28,6 @@ export function ToolCallGroup({ tools, active = false }: ToolCallGroupProps) {
 		<Task className="border-b pb-2" defaultOpen={working}>
 			<TaskTrigger title={title}>
 				<div className="flex w-full cursor-pointer items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground">
-					{working ? <Spinner size="sm" className="size-3.5 shrink-0" /> : null}
 					<span
 						className={cn(
 							"min-w-0 flex-1 truncate font-medium",
