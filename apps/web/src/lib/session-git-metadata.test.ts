@@ -47,10 +47,6 @@ function ok(stdout = "", stderr = "") {
 	return { success: true, exitCode: 0, stdout, stderr };
 }
 
-function fail(stderr = "boom") {
-	return { success: false, exitCode: 1, stdout: "", stderr };
-}
-
 const env = {
 	OPENCODE_API_KEY: "sk-test-key-12345678901234567890",
 } as Env;
@@ -181,9 +177,7 @@ describe("collectCommitMetadataSnapshot", () => {
 				return ok();
 			}
 			if (command.includes("name-status")) {
-				return ok(
-					"M\0my file.ts\0D\0gone.ts\0R100\0old.ts\0new.ts\0A\0.env\0",
-				);
+				return ok("M\0my file.ts\0D\0gone.ts\0R100\0old.ts\0new.ts\0A\0.env\0");
 			}
 			if (command.includes("--stat")) return ok("stat\n");
 			if (command.includes(">") || command.startsWith("wc -c")) {
