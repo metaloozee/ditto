@@ -3,9 +3,9 @@
 import fs from "node:fs";
 import {
 	encodeGitMetadataOut,
+	type GitMetadataOut,
 	gitMetadataError,
 	parseGitMetadataJobBytes,
-	type GitMetadataOut,
 } from "./git-metadata-job.js";
 import { runGitMetadata } from "./run-git-metadata.js";
 
@@ -26,7 +26,9 @@ function writeOut(out: GitMetadataOut): void {
 }
 
 /** Testable main; does not auto-run on import. */
-export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
+export async function main(
+	argv: string[] = process.argv.slice(2),
+): Promise<number> {
 	const { jobPath, error: argError } = parseArgs(argv);
 	if (argError || !jobPath) {
 		writeOut(gitMetadataError("invalid_job", argError ?? "--job is required"));
@@ -53,7 +55,11 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 		return out.kind === "result" ? 0 : 1;
 	} catch {
 		writeOut(
-			gitMetadataError("agent_failed", "Metadata agent failed", parsed.requestId),
+			gitMetadataError(
+				"agent_failed",
+				"Metadata agent failed",
+				parsed.requestId,
+			),
 		);
 		return 1;
 	}

@@ -216,7 +216,8 @@ export const sessionGitRouter = createTRPCRouter({
 			const author = sessionAuthor();
 			try {
 				// Explicit nonempty message keeps the legacy path (no generation).
-				if (input.message) {
+				const explicitMessage = input.message;
+				if (explicitMessage) {
 					return await commitSessionChangesWithBackup({
 						db: resolved.db,
 						env: ctx.env,
@@ -228,7 +229,7 @@ export const sessionGitRouter = createTRPCRouter({
 								installationId: resolved.installationId,
 								githubRepo: resolved.githubRepo,
 								session: resolved.session,
-								message: input.message,
+								message: explicitMessage,
 								...author,
 							}),
 					});
@@ -427,9 +428,7 @@ export const sessionGitRouter = createTRPCRouter({
 							mapSessionGitExportError(error);
 						}
 						const message =
-							error instanceof Error
-								? error.message
-								: "Failed to push branch.";
+							error instanceof Error ? error.message : "Failed to push branch.";
 						throw new TRPCError({
 							code:
 								message === GITHUB_APP_PUSH_PERMISSION_MESSAGE

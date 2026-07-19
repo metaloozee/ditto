@@ -66,10 +66,7 @@ export async function resolveRunnerModel(
 		} catch {
 			credential = { type: "api_key", key: rawCredential };
 		}
-		await credentials.modify(
-			parsed.provider,
-			async () => credential as never,
-		);
+		await credentials.modify(parsed.provider, async () => credential as never);
 	}
 
 	const modelRuntime = await ModelRuntime.create({

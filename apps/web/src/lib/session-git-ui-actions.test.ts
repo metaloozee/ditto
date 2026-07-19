@@ -41,6 +41,7 @@ const {
 	commitSessionChangesWithGeneratedMessage,
 	openSessionPullRequestWithGeneratedMetadata,
 } = await import("./session-git-ui-actions");
+
 import type {
 	SessionGitUiActionContext,
 	SessionGitUiActionDeps,
@@ -310,7 +311,7 @@ describe("openSessionPullRequestWithGeneratedMetadata", () => {
 		deps.getSessionGitStatus = vi.fn(async () => ({
 			dirty: true,
 			workflow: { kind: "commit" as const },
-		})) as SessionGitUiActionDeps["getSessionGitStatus"];
+		})) as unknown as SessionGitUiActionDeps["getSessionGitStatus"];
 
 		await expect(
 			openSessionPullRequestWithGeneratedMetadata(makeCtx(), deps),

@@ -63,12 +63,12 @@ describe("git-metadata-cli main", () => {
 			output: { kind: "commit", message: "feat: a" },
 		});
 		const writes: string[] = [];
-		const spy = vi
-			.spyOn(process.stdout, "write")
-			.mockImplementation(((chunk: string) => {
-				writes.push(String(chunk));
-				return true;
-			}) as typeof process.stdout.write);
+		const spy = vi.spyOn(process.stdout, "write").mockImplementation(((
+			chunk: string,
+		) => {
+			writes.push(String(chunk));
+			return true;
+		}) as typeof process.stdout.write);
 
 		const code = await main(["--job", jobPath]);
 		spy.mockRestore();
@@ -82,16 +82,19 @@ describe("git-metadata-cli main", () => {
 	});
 
 	it("rejects oversized jobs before JSON.parse and exits nonzero", async () => {
-		const file = path.join(os.tmpdir(), `ditto-git-metadata-huge-${Date.now()}.json`);
+		const file = path.join(
+			os.tmpdir(),
+			`ditto-git-metadata-huge-${Date.now()}.json`,
+		);
 		fs.writeFileSync(file, "x".repeat(128 * 1024 + 1));
 		tempFiles.push(file);
 		const writes: string[] = [];
-		const spy = vi
-			.spyOn(process.stdout, "write")
-			.mockImplementation(((chunk: string) => {
-				writes.push(String(chunk));
-				return true;
-			}) as typeof process.stdout.write);
+		const spy = vi.spyOn(process.stdout, "write").mockImplementation(((
+			chunk: string,
+		) => {
+			writes.push(String(chunk));
+			return true;
+		}) as typeof process.stdout.write);
 		const code = await main(["--job", file]);
 		spy.mockRestore();
 		expect(code).toBe(2);

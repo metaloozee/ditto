@@ -6,10 +6,8 @@ vi.mock("#/lib/project-sandbox", () => ({
 	persistProjectSandboxBackup: persistProjectSandboxBackupMock,
 }));
 
-const {
-	commitSessionChangesWithBackup,
-	runSessionGitMutationWithBackup,
-} = await import("./session-git-backup");
+const { commitSessionChangesWithBackup, runSessionGitMutationWithBackup } =
+	await import("./session-git-backup");
 
 const project = {
 	id: "p1",
@@ -107,5 +105,4 @@ describe("session-git-backup", () => {
 			consoleError.mockRestore();
 		});
 	});
-
 });

@@ -50,4 +50,3 @@ export async function runSessionGitMutationWithBackup<T>(options: {
 	});
 	return result;
 }
-

@@ -6,8 +6,7 @@
     "ditto-runner": "./dist/cli.js",
     "ditto-provider-auth": "./dist/provider-auth-cli.js",
     "ditto-provider-auth-control": "./dist/provider-auth-control-cli.js",
-    "ditto-provider-catalog": "./dist/provider-catalog-cli.js",
-    "ditto-git-metadata": "./dist/git-metadata-cli.js"
+    "ditto-provider-catalog": "./dist/provider-catalog-cli.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

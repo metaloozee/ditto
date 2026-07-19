@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { GIT_METADATA_MODEL } from "./git-metadata-job.js";
 import type { GitMetadataJob } from "./git-metadata-job.js";
+import { GIT_METADATA_MODEL } from "./git-metadata-job.js";
 
 const mocks = vi.hoisted(() => ({
 	createAgentSession: vi.fn(),
@@ -176,7 +176,9 @@ describe("runGitMetadata", () => {
 		expect(args.tools).toEqual(["submit_commit_metadata"]);
 		expect(args.customTools).toHaveLength(1);
 		expect(args.thinkingLevel).toBe("low");
-		expect(args.resourceLoader.getSystemPrompt()).toBe(GIT_METADATA_SYSTEM_PROMPT);
+		expect(args.resourceLoader.getSystemPrompt()).toBe(
+			GIT_METADATA_SYSTEM_PROMPT,
+		);
 		expect(args.resourceLoader.getAppendSystemPrompt()).toEqual([]);
 		expect(args.resourceLoader.getSkills()).toEqual({
 			skills: [],

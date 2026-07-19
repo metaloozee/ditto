@@ -35,8 +35,7 @@ vi.mock("drizzle-orm", () => ({
 }));
 
 vi.mock("#/lib/github-authorization", () => ({
-	authorizeGitHubRepositoryAccess:
-		resolveMocks.authorizeGitHubRepositoryAccess,
+	authorizeGitHubRepositoryAccess: resolveMocks.authorizeGitHubRepositoryAccess,
 }));
 
 vi.mock("#/lib/project-env-vars", () => ({
@@ -70,8 +69,7 @@ vi.mock("#/lib/session-git-backup", () => ({
 	bestEffortPersistSessionGitBackup:
 		resolveMocks.bestEffortPersistSessionGitBackup,
 	commitSessionChangesWithBackup: resolveMocks.commitSessionChangesWithBackup,
-	runSessionGitMutationWithBackup:
-		resolveMocks.runSessionGitMutationWithBackup,
+	runSessionGitMutationWithBackup: resolveMocks.runSessionGitMutationWithBackup,
 }));
 
 vi.mock("#/lib/session-git-ui-actions", () => ({
@@ -171,6 +169,17 @@ const ctx = {
 	request: { headers: new Headers() },
 };
 
+type MockMutation = {
+	mutation: (args: {
+		ctx: typeof ctx;
+		input: Record<string, unknown>;
+	}) => Promise<unknown>;
+};
+
+function asMutation(procedure: unknown): MockMutation {
+	return procedure as MockMutation;
+}
+
 describe("sessionGitRouter commit/openPullRequest metadata wiring", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -183,9 +192,7 @@ describe("sessionGitRouter commit/openPullRequest metadata wiring", () => {
 			committed: true,
 			message: "feat: add billing",
 		});
-		const result = await (
-			sessionGitRouter.commit as { mutation: Function }
-		).mutation({
+		const result = await asMutation(sessionGitRouter.commit).mutation({
 			ctx,
 			input: { projectId: "proj-1", sessionId: "sess-1" },
 		});
@@ -208,7 +215,7 @@ describe("sessionGitRouter commit/openPullRequest metadata wiring", () => {
 			commitSha: "abc",
 			committed: true,
 		});
-		await (sessionGitRouter.commit as { mutation: Function }).mutation({
+		await asMutation(sessionGitRouter.commit).mutation({
 			ctx,
 			input: {
 				projectId: "proj-1",
@@ -229,7 +236,7 @@ describe("sessionGitRouter commit/openPullRequest metadata wiring", () => {
 			new SessionGitMetadataError("missing_result", "no tool"),
 		);
 		await expect(
-			(sessionGitRouter.commit as { mutation: Function }).mutation({
+			asMutation(sessionGitRouter.commit).mutation({
 				ctx,
 				input: { projectId: "proj-1", sessionId: "sess-1" },
 			}),
@@ -244,7 +251,7 @@ describe("sessionGitRouter commit/openPullRequest metadata wiring", () => {
 			new SessionWorkspaceBusyError(),
 		);
 		await expect(
-			(sessionGitRouter.commit as { mutation: Function }).mutation({
+			asMutation(sessionGitRouter.commit).mutation({
 				ctx,
 				input: { projectId: "proj-1", sessionId: "sess-1" },
 			}),
@@ -252,19 +259,15 @@ describe("sessionGitRouter commit/openPullRequest metadata wiring", () => {
 	});
 
 	it("delegates absent PR metadata to generated orchestration", async () => {
-		resolveMocks.openSessionPullRequestWithGeneratedMetadata.mockResolvedValue(
-			{
-				url: "https://example.com/pr/3",
-				number: 3,
-				title: "Add billing",
-			},
-		);
-		const result = await (
-			sessionGitRouter.openPullRequest as { mutation: Function }
-		).mutation({
+		resolveMocks.openSessionPullRequestWithGeneratedMetadata.mockResolvedValue({
+			url: "https://example.com/pr/3",
+			number: 3,
+			title: "Add billing",
+		});
+		const result = (await asMutation(sessionGitRouter.openPullRequest).mutation({
 			ctx,
 			input: { projectId: "proj-1", sessionId: "sess-1" },
-		});
+		})) as { title: string };
 		expect(result.title).toBe("Add billing");
 		expect(
 			resolveMocks.openSessionPullRequestWithGeneratedMetadata,
@@ -281,9 +284,7 @@ describe("sessionGitRouter commit/openPullRequest metadata wiring", () => {
 			url: "https://example.com/pr/4",
 			number: 4,
 		});
-		await (
-			sessionGitRouter.openPullRequest as { mutation: Function }
-		).mutation({
+		await asMutation(sessionGitRouter.openPullRequest).mutation({
 			ctx,
 			input: {
 				projectId: "proj-1",

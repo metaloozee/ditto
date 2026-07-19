@@ -1189,4 +1189,3 @@ export async function openSessionPullRequest(
 		throw error;
 	}
 }
-

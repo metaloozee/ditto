@@ -27,10 +27,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 	},
 }));
 
-import {
-	parseModelSpecifier,
-	resolveRunnerModel,
-} from "./runner-model.js";
+import { parseModelSpecifier, resolveRunnerModel } from "./runner-model.js";
 
 describe("parseModelSpecifier", () => {
 	it("parses provider/model", () => {

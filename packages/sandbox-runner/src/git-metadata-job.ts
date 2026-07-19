@@ -355,7 +355,8 @@ export function parseGitMetadataJobBytes(
 	}
 	const job = parseGitMetadataJob(parsed);
 	if ("error" in job) {
-		const code = job.error === "unknown_model" ? "unknown_model" : "invalid_job";
+		const code =
+			job.error === "unknown_model" ? "unknown_model" : "invalid_job";
 		return { error: job.error, code };
 	}
 	return job;

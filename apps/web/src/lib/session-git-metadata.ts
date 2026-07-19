@@ -21,8 +21,7 @@ const PATHS_MAX = 200;
 const PATH_MAX_CHARS = 1024;
 const MODEL = "opencode/deepseek-v4-flash-free" as const;
 
-const GIT_DIFF_FLAGS =
-	"--no-ext-diff --no-textconv --no-color --binary";
+const GIT_DIFF_FLAGS = "--no-ext-diff --no-textconv --no-color --binary";
 
 export type SessionGitMetadataErrorCode =
 	| "invalid_job"
@@ -249,7 +248,10 @@ function parseNameStatusZ(stdout: string): SnapshotCommon["changedPaths"] {
 		.slice(0, PATHS_MAX);
 }
 
-function capUtf8(text: string, maxBytes: number): {
+function capUtf8(
+	text: string,
+	maxBytes: number,
+): {
 	text: string;
 	truncated: boolean;
 } {
@@ -286,7 +288,11 @@ async function collectBoundedPatch(options: {
 	cwd: string;
 	diffCommand: string;
 	patchPath: string;
-}): Promise<{ patch: string; patchOriginalBytes: number; patchTruncated: boolean }> {
+}): Promise<{
+	patch: string;
+	patchOriginalBytes: number;
+	patchTruncated: boolean;
+}> {
 	await execOrThrow(
 		options.sandbox,
 		`${options.diffCommand} > ${quoteShellArg(options.patchPath)}`,
@@ -374,11 +380,10 @@ export async function collectCommitMetadataSnapshot(
 			{ cwd, errorPrefix: "Failed to prepare temporary git index" },
 		);
 		const addArgs = stageableFiles.map(quoteGitHubExportShellArg).join(" ");
-		await execOrThrow(
-			sandbox,
-			`${indexEnv} git add -- ${addArgs}`,
-			{ cwd, errorPrefix: "Failed to stage paths into temporary index" },
-		);
+		await execOrThrow(sandbox, `${indexEnv} git add -- ${addArgs}`, {
+			cwd,
+			errorPrefix: "Failed to stage paths into temporary index",
+		});
 
 		const nameStatus = await execOrThrow(
 			sandbox,
@@ -483,10 +488,14 @@ export async function collectPullRequestMetadataSnapshot(
 
 		const quotedBase = quoteGitHubExportShellArg(baseSha);
 		// Fail closed: require the stored base to resolve; no origin fallback.
-		await execOrThrow(sandbox, `git rev-parse --verify ${quotedBase}^{commit}`, {
-			cwd,
-			errorPrefix: "Session base commit is not available in the worktree",
-		});
+		await execOrThrow(
+			sandbox,
+			`git rev-parse --verify ${quotedBase}^{commit}`,
+			{
+				cwd,
+				errorPrefix: "Session base commit is not available in the worktree",
+			},
+		);
 
 		const { branch, headSha } = await readBranchHead(
 			sandbox,
@@ -622,7 +631,7 @@ export async function generateGitMetadata<
 		credential.key,
 		options.env.OPENCODE_API_KEY,
 		...knownSecrets,
-	].filter((value) => typeof value === "string" && value.length > 0);
+	].filter((value): value is string => typeof value === "string" && value.length > 0);
 
 	const shell = await sandbox.createSession({
 		id: `git-metadata-${requestId}`.slice(0, 60),

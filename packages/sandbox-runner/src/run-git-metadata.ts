@@ -1,3 +1,4 @@
+import { Type } from "@earendil-works/pi-ai";
 import {
 	createAgentSession,
 	createExtensionRuntime,
@@ -6,14 +7,13 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { Type } from "@earendil-works/pi-ai";
 import {
+	GIT_METADATA_MODEL,
 	type GitMetadataCommitResult,
 	type GitMetadataJob,
 	type GitMetadataOut,
 	type GitMetadataPullRequestResult,
 	gitMetadataError,
-	GIT_METADATA_MODEL,
 } from "./git-metadata-job.js";
 import { resolveRunnerModel } from "./runner-model.js";
 
@@ -83,9 +83,7 @@ export function validateCommitMessage(
 export function validatePullRequestMetadata(
 	title: string,
 	body: string,
-):
-	| { ok: true; title: string; body: string }
-	| { ok: false; reason: string } {
+): { ok: true; title: string; body: string } | { ok: false; reason: string } {
 	if (typeof title !== "string" || title.includes("\0")) {
 		return { ok: false, reason: "title must be a NUL-free string" };
 	}
@@ -145,7 +143,11 @@ export async function runGitMetadata(
 	options?: { cwd?: string; agentDir?: string },
 ): Promise<GitMetadataOut> {
 	if (job.model !== GIT_METADATA_MODEL) {
-		return gitMetadataError("unknown_model", "Unsupported model", job.requestId);
+		return gitMetadataError(
+			"unknown_model",
+			"Unsupported model",
+			job.requestId,
+		);
 	}
 
 	const cwd = options?.cwd ?? process.cwd();
@@ -169,10 +171,9 @@ export async function runGitMetadata(
 	try {
 		const resolved = await resolveRunnerModel(job.model);
 		if ("error" in resolved) {
-			const code =
-				resolved.error.startsWith("Unknown model")
-					? "unknown_model"
-					: "agent_failed";
+			const code = resolved.error.startsWith("Unknown model")
+				? "unknown_model"
+				: "agent_failed";
 			return gitMetadataError(code, resolved.error, job.requestId);
 		}
 
@@ -188,14 +189,17 @@ export async function runGitMetadata(
 				"Submit the final one-line Conventional Commit message for this change.",
 			parameters: Type.Object({
 				message: Type.String({
-					description: "Conventional Commit subject, 1-72 chars, no trailing period",
+					description:
+						"Conventional Commit subject, 1-72 chars, no trailing period",
 				}),
 			}),
 			async execute(_id, params) {
 				if (captured) {
 					captureError = "duplicate metadata submission";
 					return {
-						content: [{ type: "text" as const, text: "Duplicate submission rejected." }],
+						content: [
+							{ type: "text" as const, text: "Duplicate submission rejected." },
+						],
 						details: { ok: false },
 					};
 				}
@@ -210,7 +214,9 @@ export async function runGitMetadata(
 				if (job.kind !== "commit") {
 					captureError = "wrong metadata tool for job kind";
 					return {
-						content: [{ type: "text" as const, text: "Wrong tool for this job." }],
+						content: [
+							{ type: "text" as const, text: "Wrong tool for this job." },
+						],
 						details: { ok: false },
 					};
 				}
@@ -219,7 +225,9 @@ export async function runGitMetadata(
 					message: validated.message,
 				});
 				return {
-					content: [{ type: "text" as const, text: "Commit metadata accepted." }],
+					content: [
+						{ type: "text" as const, text: "Commit metadata accepted." },
+					],
 					details: { ok: true },
 					terminate: true,
 				};
@@ -243,11 +251,16 @@ export async function runGitMetadata(
 				if (captured) {
 					captureError = "duplicate metadata submission";
 					return {
-						content: [{ type: "text" as const, text: "Duplicate submission rejected." }],
+						content: [
+							{ type: "text" as const, text: "Duplicate submission rejected." },
+						],
 						details: { ok: false },
 					};
 				}
-				const validated = validatePullRequestMetadata(params.title, params.body);
+				const validated = validatePullRequestMetadata(
+					params.title,
+					params.body,
+				);
 				if (!validated.ok) {
 					captureError = validated.reason;
 					return {
@@ -258,7 +271,9 @@ export async function runGitMetadata(
 				if (job.kind !== "pull_request") {
 					captureError = "wrong metadata tool for job kind";
 					return {
-						content: [{ type: "text" as const, text: "Wrong tool for this job." }],
+						content: [
+							{ type: "text" as const, text: "Wrong tool for this job." },
+						],
 						details: { ok: false },
 					};
 				}
@@ -268,7 +283,9 @@ export async function runGitMetadata(
 					body: validated.body,
 				});
 				return {
-					content: [{ type: "text" as const, text: "Pull request metadata accepted." }],
+					content: [
+						{ type: "text" as const, text: "Pull request metadata accepted." },
+					],
 					details: { ok: true },
 					terminate: true,
 				};

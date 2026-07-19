@@ -92,13 +92,13 @@ describe("parseGitMetadataJob", () => {
 				snapshot: {
 					kind: "commit_snapshot",
 					...baseCommon,
-					changedPaths: [
-						{ status: "M", path: "a.ts", previousPath: "b.ts" },
-					],
+					changedPaths: [{ status: "M", path: "a.ts", previousPath: "b.ts" }],
 				},
 			}),
 		);
-		expect(parsed).toMatchObject({ error: expect.stringContaining("previousPath") });
+		expect(parsed).toMatchObject({
+			error: expect.stringContaining("previousPath"),
+		});
 	});
 
 	it("rejects unknown keys and discriminants", () => {
