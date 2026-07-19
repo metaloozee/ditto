@@ -60,7 +60,7 @@ function GitCountCapsule({
 						type="button"
 						aria-label={ariaLabel}
 						className={cn(
-							"inline-flex h-6 max-w-full cursor-default items-center gap-1 rounded-full border px-2 font-medium text-xs tabular-nums",
+							"inline-flex h-6 max-w-full cursor-default items-center gap-1 rounded-md border px-2 font-medium text-xs tabular-nums",
 							"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
 							tone === "pending" &&
 								"border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-400",
@@ -335,7 +335,7 @@ function SessionGitActionsView({
 
 					<fieldset
 						aria-label="Session git workflow"
-						className="m-0 inline-flex h-6 shrink-0 items-stretch divide-x divide-border overflow-hidden rounded-full border border-border bg-secondary p-0 text-secondary-foreground shadow-xs"
+						className="m-0 inline-flex h-6 shrink-0 items-stretch divide-x divide-border overflow-hidden rounded-md border border-border bg-secondary p-0 text-secondary-foreground shadow-xs"
 					>
 						<Tooltip>
 							<TooltipTrigger
@@ -385,7 +385,7 @@ function SessionGitActionsView({
 							>
 								<ChevronDownIcon className="size-3" aria-hidden />
 							</DropdownMenuTrigger>
-							<DropdownMenuContent align="end" className="min-w-40">
+							<DropdownMenuContent sideOffset={10} align="end" className="min-w-40">
 								{actions.map((action) => (
 									<DropdownMenuItem
 										key={action.id}
