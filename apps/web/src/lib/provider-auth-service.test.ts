@@ -316,9 +316,9 @@ describe("provider-auth-service", () => {
 		expect(events.at(-1)).toMatchObject({ event: "done", data: { ok: false } });
 	});
 
-	it("production path starts process once and streams logs (no execStream)", async () => {
+	it("production path starts process once and streams logs without an AbortSignal", async () => {
 		const startCalls: string[] = [];
-		const streamCalls: string[] = [];
+		const streamCalls: Array<[string, unknown]> = [];
 		const execStreamCalls: string[] = [];
 		const lines = [
 			JSON.stringify({ v: 1, kind: "progress", message: "working" }),
@@ -348,8 +348,8 @@ describe("provider-auth-service", () => {
 				startCalls.push(cmd);
 				return fakeProc;
 			},
-			streamProcessLogs: async (id: string) => {
-				streamCalls.push(id);
+			streamProcessLogs: async (id: string, options?: unknown) => {
+				streamCalls.push([id, options]);
 				return new ReadableStream({
 					start(c) {
 						c.close();
@@ -384,7 +384,7 @@ describe("provider-auth-service", () => {
 		});
 
 		expect(startCalls).toHaveLength(1);
-		expect(streamCalls).toEqual(["proc-1"]);
+		expect(streamCalls).toEqual([["proc-1", undefined]]);
 		expect(execStreamCalls).toHaveLength(0);
 		expect(parseSSEStreamMock).toHaveBeenCalledTimes(1);
 	});

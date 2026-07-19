@@ -774,9 +774,9 @@ export async function streamProviderAuth(options: {
 				processHandle = await shell.startProcess(cmd, { cwd: "/tmp" });
 				const { parseSSEStream } = await import("@cloudflare/sandbox");
 				type LogEvent = import("@cloudflare/sandbox").LogEvent;
-				const stream = await shell.streamProcessLogs(processHandle.id, {
-					signal: options.signal,
-				});
+				// AbortSignal cannot cross the Workers RPC boundary. Cancellation is
+				// handled by the attempt control path and process cleanup below.
+				const stream = await shell.streamProcessLogs(processHandle.id);
 				let stdoutBuffer = "";
 				for await (const logEvent of parseSSEStream<LogEvent>(stream)) {
 					if (cancelled || options.signal?.aborted) {
