@@ -18,7 +18,8 @@
 - **Category**: perf
 - **Planned at**: commit `5ad5e0c`, 2026-07-11
 - **Reconciled at**: commit `576febe`, 2026-07-12 (post-017: stream sink is `agent-run-service.ts`)
-- **Execution**: DONE — branch `advisor/018-bound-streaming-work`, commit `d3ec01b` (worktree; not merged to master)
+- **Execution**: DONE — branch `advisor/018-bound-streaming-work`, commit
+  `d3ec01b`; integrated into master through merge commit `09a5dac`.
 
 ## Why this matters
 

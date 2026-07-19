@@ -33,10 +33,12 @@
 - **Depends on**: plans/017-extract-agent-run-lifecycle.md, plans/018-bound-streaming-work.md (both DONE)
 - **Category**: direction
 - **Planned at**: commit `dfbc217`, 2026-07-14
-- **Execution note**: First execution attempt BLOCKED on 2026-07-14 because
-  `sandbox/runner/src/cli.ts` was required to carry `runId` from the job file
-  into `runAgent()` but was omitted from the exclusive Scope list. Scope and
-  Step 2 below are refreshed; retry from a clean worktree.
+- **Execution**: DONE — retry commit `d667b30`, reviewed and merged into master
+  at `6180528` on 2026-07-15. Automated gates passed; GitHub-backed manual race
+  checks were unavailable.
+- **First-attempt note**: the initial execution was blocked because
+  `sandbox/runner/src/cli.ts` was omitted from the exclusive Scope list even
+  though it had to carry `runId`. The retry used the corrected scope below.
 
 ## Why this matters
 

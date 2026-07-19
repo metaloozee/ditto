@@ -17,6 +17,8 @@
 - **Planned at**: commit `6403dd3`, 2026-07-12
 - **Reconciled from**: original draft at `5ad5e0c`; plan 010 and plans 011–020
   are now present on the current branch, and the documentation finding remains.
+- **Execution**: DONE — executor commit `651735f`; integrated equivalent
+  `e6be7cd` is present in current master.
 
 ## Why this matters
 

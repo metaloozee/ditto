@@ -35,11 +35,12 @@
 - **Category**: direction / security
 - **Planned at**: commit `58fa3a7`, 2026-07-17
 - **Execution status**: DONE — approved on branch
-  `advisor/025-account-provider-auth-and-pi-models` at `0415798`. Independent
-  `pnpm verify` passed with 426 app tests and 42 runner tests. The Docker image,
-  provider CLI gate, and local Alchemy auth-only catalog sandbox gate passed.
-  External live-provider login/run rows are `NOT RUN` because no replaceable
-  credentials were available; no cloud deployment was performed.
+  `advisor/025-account-provider-auth-and-pi-models` at `0415798` and merged into
+  master at `e2500df`. Independent `pnpm verify` passed with 426 app tests and
+  42 runner tests. The Docker image, provider CLI gate, and local Alchemy
+  auth-only catalog sandbox gate passed. External live-provider login/run rows
+  are `NOT RUN` because no replaceable credentials were available; no cloud
+  deployment was performed.
 
 ## Why this matters
 

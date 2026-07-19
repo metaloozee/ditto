@@ -26,7 +26,8 @@
 - **Planned at**: commit `1588d12`, 2026-07-13, plus the live working-tree
   state described above
 - **Execution**: DONE — worktree branch `advisor/022-timed-tool-call-groups`
-  @ `220e5d8` (reviewed and approved 2026-07-13). Not merged to user branch.
+  @ `220e5d8` (reviewed and approved 2026-07-13); merged into master at
+  `be0ef75`.
 
 ## Why this matters
 

@@ -107,7 +107,7 @@ contract, and built-in provider catalogs.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 025 | Persist account provider credentials and run PI with connected models | P1 | L | — (001–024 are DONE) | DONE (approved worktree `advisor/025-account-provider-auth-and-pi-models` @ `0415798`; external provider matrix NOT RUN) |
+| 025 | Persist account provider credentials and run PI with connected models | P1 | L | — (001–024 are DONE) | DONE (merged at `e2500df`; implementation tip `0415798`; external provider matrix NOT RUN) |
 
 Locked outcomes:
 
@@ -124,9 +124,8 @@ Locked outcomes:
   `ModelRuntime` with an in-memory credential store.
 
 **DONE after execution retry**: approved on branch
-`advisor/025-account-provider-auth-and-pi-models` at `0415798` in worktree
-`/home/ayan/ditto-worktrees/advisor-025-account-provider-auth-and-pi-models`.
-Independent review passed `pnpm verify` (426 app tests, 42 runner tests), focused
+`advisor/025-account-provider-auth-and-pi-models` at `0415798` and merged into
+master at `e2500df`. Independent review passed `pnpm verify` (426 app tests, 42 runner tests), focused
 provider-auth/process tests, `git diff --check`, source guards, build-artifact
 checks, and the exact scope audit. The local Docker image built successfully;
 all three provider CLIs ran without credentials. The normal Alchemy dev path
@@ -144,7 +143,7 @@ session-worktree locking, secret egress, account-model credentials, and PI
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 026 | Draft UI commit and pull-request metadata from the actual Git diff | P1 | L | 013, 014, 025 (DONE) | DONE (approved worktree `advisor/026-agent-drafted-git-metadata` @ `bee4a62`) |
+| 026 | Draft UI commit and pull-request metadata from the actual Git diff | P1 | L | 013, 014, 025 (DONE) | DONE (integrated into local master at `bee4a62`) |
 
 Locked outcomes:
 
@@ -160,9 +159,8 @@ Locked outcomes:
   does not silently fall back to the initial-prompt-derived message.
 - Agent-authored local commits and chat-driven PR metadata remain unchanged.
 
-**DONE after two review revisions**: approved at `bee4a62` in worktree
-`/home/ayan/ditto-worktrees/advisor-026-agent-drafted-git-metadata`.
-Independent review passed `pnpm verify` (469 app tests, 77 runner tests), both
+**DONE after two review revisions**: approved and integrated into local master
+at `bee4a62`. Independent review passed `pnpm verify` (469 app tests, 77 runner tests), both
 builds and typechecks, `git diff --check`, source guards, and the exact scope
 audit. Revisions aligned the strict NDJSON contract, blocked secret-like PR
 patch paths, redacted the full snapshot, enforced job/path bounds, hardened
@@ -341,6 +339,45 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
   `pnpm typecheck` (one-line annotation or form typing fix in
   `project-settings-dialog.tsx`, plus pin or re-verify `@tanstack/react-form`
   if floating `latest` is the cause).
+
+## Reconciliation — 2026-07-19
+
+- **Current HEAD**: `91085ae`; working tree was clean before this reconciliation.
+  Local master is 13 commits ahead of `origin/master`; Plan 026 is integrated
+  locally but has not reached the remote branch.
+- **DONE 001–026**: every recorded implementation commit, or the documented
+  integrated equivalent for Plan 021, is present in current history. Plan 025
+  merged at `e2500df`; Plan 026 is present linearly through `bee4a62`.
+- **Current-HEAD cheap verification**:
+  | Gate | Result |
+  |---|---|
+  | `pnpm check` | pass (29 warnings, no errors) |
+  | `pnpm typecheck` | pass |
+  | `pnpm test` | pass: 469 tests in 50 files |
+  | runner tests | pass: 77 tests in 10 files |
+  | runner typecheck | bootstrap-blocked: ignored local `node_modules` still contains PI 0.80.3 while package + lock require 0.80.10 |
+  | `git diff --check` + Plan 026 source guards | pass |
+- **Runner bootstrap**: CI installs the runner with
+  `npm ci --prefix packages/sandbox-runner` before `pnpm verify`. This
+  reconciliation did not mutate the working tree with an install. Repeat that
+  install locally before re-running runner typecheck/full `pnpm verify`; the
+  last isolated Plan 026 review passed both runner typecheck and build against
+  the locked 0.80.10 install.
+- **Plan 004 regression**: current
+  `apps/web/src/components/ai-chat.tsx` again acknowledges message-cache entries
+  in a message-driven `useEffect` and calls `setCacheEpoch`. The completed plan's
+  no-prop-sync Effect invariant no longer holds after later pagination/cache
+  work. The visible merge remains correct and all tests pass, but any cleanup
+  should be a new plan rather than reopening historical Plan 004.
+- **Historical notes superseded**: the Plan 024-era app typecheck failure and
+  untracked-plan warning are resolved. Plan-local landing metadata for Plans
+  018, 021–023, 025, and 026 was refreshed in this reconciliation.
+- **External checks**: Plan 023's GitHub-backed manual races, Plan 025's live
+  provider matrix, and Plan 026's live provider/UI Git path were not rerun; no
+  replaceable credentials or cloud deployment were used.
+- **Rejected/blocked/TODO**: none. No executor worktree is attached.
+- **Executable now**: none. If desired, create a new plan for the Plan 004 cache
+  acknowledgement Effect regression.
 
 ## Dependency notes
 

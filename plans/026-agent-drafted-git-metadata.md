@@ -44,6 +44,11 @@
 - **Depends on**: Plans 013, 014, and 025 (all DONE)
 - **Category**: bug / product quality
 - **Planned at**: commit `20cb3c8`, 2026-07-19
+- **Execution status**: DONE — approved and integrated into local master at
+  `bee4a62` after two reviewer revision rounds. Independent review passed
+  `pnpm verify` with 469 app tests and 77 runner tests, both builds/typechecks,
+  source guards, `git diff --check`, and the exact scope audit. No push, PR,
+  deployment, or live provider call was performed.
 
 ## Why this matters
 
