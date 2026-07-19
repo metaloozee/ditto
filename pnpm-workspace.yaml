@@ -1,5 +1,7 @@
 packages:
   - apps/*
+overrides:
+  'alchemy>miniflare': 4.20260710.0
 packageExtensions:
   # Streamdown 2.5.0 omits the @types/react peer needed by strict pnpm TypeScript workspaces; remove this extension when upstream declares that peer.
   streamdown@2.5.0:
