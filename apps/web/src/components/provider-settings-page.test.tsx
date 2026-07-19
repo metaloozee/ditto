@@ -6,6 +6,7 @@ import {
 	render,
 	screen,
 	waitFor,
+	within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -105,6 +106,8 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
 				await opts.onSuccess?.();
 			},
 			isPending: false,
+			error: null,
+			reset: vi.fn(),
 		}),
 		useQueryClient: () => ({
 			invalidateQueries: vi.fn(),
@@ -112,29 +115,50 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
 	};
 });
 
-vi.mock("#/components/ui/dialog", () => ({
-	Dialog: ({ open, children }: { open: boolean; children: React.ReactNode }) =>
-		open ? <div>{children}</div> : null,
-	DialogContent: ({ children }: { children: React.ReactNode }) => (
+vi.mock("#/components/ui/alert-dialog", () => ({
+	AlertDialog: ({
+		open,
+		children,
+	}: {
+		open: boolean;
+		children: React.ReactNode;
+	}) => (open ? <div role="alertdialog">{children}</div> : null),
+	AlertDialogContent: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>
 	),
-	DialogHeader: ({ children }: { children: React.ReactNode }) => (
+	AlertDialogHeader: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>
 	),
-	DialogTitle: ({ children }: { children: React.ReactNode }) => (
+	AlertDialogTitle: ({ children }: { children: React.ReactNode }) => (
 		<h2>{children}</h2>
 	),
-	DialogDescription: ({ children }: { children: React.ReactNode }) => (
+	AlertDialogDescription: ({ children }: { children: React.ReactNode }) => (
 		<p>{children}</p>
 	),
-	DialogFooter: ({ children }: { children: React.ReactNode }) => (
+	AlertDialogFooter: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>
+	),
+	AlertDialogAction: ({
+		children,
+		...props
+	}: React.ComponentProps<"button">) => (
+		<button type="button" {...props}>
+			{children}
+		</button>
+	),
+	AlertDialogCancel: ({
+		children,
+		...props
+	}: React.ComponentProps<"button">) => (
+		<button type="button" {...props}>
+			{children}
+		</button>
 	),
 }));
 
-import { ProviderSettingsDialog } from "./provider-settings-dialog";
+import { ProviderSettingsPage } from "./provider-settings-page";
 
-describe("ProviderSettingsDialog", () => {
+describe("ProviderSettingsPage", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		cancelMock.mockResolvedValue(undefined);
@@ -149,24 +173,26 @@ describe("ProviderSettingsDialog", () => {
 		cleanup();
 	});
 
-	it("states account-level scope", () => {
-		render(<ProviderSettingsDialog open onOpenChange={() => undefined} />);
+	it("renders dedicated account settings without dialog chrome", () => {
+		render(<ProviderSettingsPage />);
+		expect(screen.getByRole("heading", { name: "Settings" })).toBeTruthy();
+		expect(screen.queryByRole("dialog")).toBeNull();
 		expect(
-			screen.getByText(/apply to all of your projects and sandboxes/i),
+			screen.getByText(/across all of your projects and sandboxes/i),
 		).toBeTruthy();
 	});
 
 	it("shows Anthropic manual paste and extra-usage caveat", () => {
-		render(<ProviderSettingsDialog open onOpenChange={() => undefined} />);
+		render(<ProviderSettingsPage />);
 		expect(screen.getByText(/extra usage billed/i)).toBeTruthy();
 		expect(screen.getByText(/localhost redirect/i)).toBeTruthy();
 	});
 
-	it("renders API-key secret prompt as password and clears on close", async () => {
+	it("renders API-key secret prompt as password and clears on unmount", async () => {
 		streamMock.mockImplementation(async ({ onEvent }) => {
 			onEvent({
 				event: "meta",
-				data: { attemptId: "att-1", providerId: "openai" },
+				data: { attemptId: "att-1", providerId: "anthropic" },
 			});
 			onEvent({
 				event: "prompt",
@@ -179,12 +205,9 @@ describe("ProviderSettingsDialog", () => {
 			await new Promise(() => undefined);
 		});
 
-		const onOpenChange = vi.fn();
-		const { rerender } = render(
-			<ProviderSettingsDialog open onOpenChange={onOpenChange} />,
-		);
-
-		fireEvent.click(screen.getAllByRole("button", { name: "API key" })[0]!);
+		const { unmount } = render(<ProviderSettingsPage />);
+		// OpenAI is already connected — only unconnected providers show connect actions.
+		fireEvent.click(screen.getByRole("button", { name: "API key" }));
 		await waitFor(() => {
 			expect(screen.getByLabelText(/Enter API key/i)).toBeTruthy();
 		});
@@ -193,15 +216,12 @@ describe("ProviderSettingsDialog", () => {
 		fireEvent.change(input, { target: { value: "sk-secret-value-xxxx" } });
 		expect(input.value).toBe("sk-secret-value-xxxx");
 
-		fireEvent.click(screen.getByRole("button", { name: "Close" }));
+		unmount();
 		await waitFor(() => {
 			expect(cancelMock).toHaveBeenCalledWith({ attemptId: "att-1" });
 		});
 
-		rerender(
-			<ProviderSettingsDialog open={false} onOpenChange={onOpenChange} />,
-		);
-		rerender(<ProviderSettingsDialog open onOpenChange={onOpenChange} />);
+		render(<ProviderSettingsPage />);
 		expect(screen.queryByDisplayValue("sk-secret-value-xxxx")).toBeNull();
 	});
 
@@ -221,22 +241,38 @@ describe("ProviderSettingsDialog", () => {
 			});
 		});
 
-		render(<ProviderSettingsDialog open onOpenChange={() => undefined} />);
+		render(<ProviderSettingsPage />);
 		fireEvent.click(screen.getByRole("button", { name: "ChatGPT" }));
 		await waitFor(() => {
 			expect(screen.getByText("ABCD-EFGH")).toBeTruthy();
 		});
+		expect(
+			screen.getByRole("heading", { name: "Connect ChatGPT" }),
+		).toBeTruthy();
+		expect(screen.getByText("1 · Copy verification code")).toBeTruthy();
 		fireEvent.click(screen.getByRole("button", { name: "Copy code" }));
 		expect(navigator.clipboard.writeText).toHaveBeenCalledWith("ABCD-EFGH");
-		const link = screen.getByRole("link");
+		const link = screen.getByRole("link", { name: /Open sign-in page/i });
 		expect(link.getAttribute("href")).toBe("https://auth.openai.com/device");
 	});
 
+	it("connected providers only show disconnect", () => {
+		render(<ProviderSettingsPage />);
+		expect(screen.getByRole("button", { name: "Disconnect" })).toBeTruthy();
+		// OpenAI is connected — no reconnect/connect actions for it.
+		expect(screen.queryByRole("button", { name: /Reconnect/i })).toBeNull();
+		expect(screen.getAllByRole("button", { name: "API key" })).toHaveLength(1);
+	});
+
 	it("requires disconnect confirmation", async () => {
-		render(<ProviderSettingsDialog open onOpenChange={() => undefined} />);
+		render(<ProviderSettingsPage />);
 		fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
 		expect(screen.getByText(/Upstream token revocation/i)).toBeTruthy();
-		fireEvent.click(screen.getByRole("button", { name: "Confirm disconnect" }));
+		fireEvent.click(
+			within(screen.getByRole("alertdialog")).getByRole("button", {
+				name: "Disconnect",
+			}),
+		);
 		await waitFor(() => {
 			expect(disconnectMutate).toHaveBeenCalledWith({ providerId: "openai" });
 		});
@@ -246,7 +282,7 @@ describe("ProviderSettingsDialog", () => {
 		streamMock.mockImplementation(async ({ onEvent }) => {
 			onEvent({
 				event: "meta",
-				data: { attemptId: "att-3", providerId: "openai" },
+				data: { attemptId: "att-3", providerId: "anthropic" },
 			});
 			onEvent({
 				event: "prompt",
@@ -258,8 +294,8 @@ describe("ProviderSettingsDialog", () => {
 			});
 			await new Promise(() => undefined);
 		});
-		render(<ProviderSettingsDialog open onOpenChange={() => undefined} />);
-		fireEvent.click(screen.getAllByRole("button", { name: "API key" })[0]!);
+		render(<ProviderSettingsPage />);
+		fireEvent.click(screen.getByRole("button", { name: "API key" }));
 		await waitFor(() => screen.getByRole("button", { name: "Cancel" }));
 		fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 		await waitFor(() => {
@@ -292,13 +328,15 @@ describe("ProviderSettingsDialog", () => {
 			onEvent({ event: "done", data: { ok: true } });
 		});
 
-		render(<ProviderSettingsDialog open onOpenChange={() => undefined} />);
+		render(<ProviderSettingsPage />);
 		fireEvent.click(screen.getByRole("button", { name: "ChatGPT" }));
 		await waitFor(() => {
-			expect(screen.getByText("Connected.")).toBeTruthy();
+			expect(screen.queryByText("ZZZZ-YYYY")).toBeNull();
 		});
-		expect(screen.queryByText("ZZZZ-YYYY")).toBeNull();
 		expect(screen.queryByLabelText(/Paste code/i)).toBeNull();
-		expect(screen.queryByRole("link")).toBeNull();
+		expect(
+			screen.queryByRole("link", { name: /auth\.openai\.com/i }),
+		).toBeNull();
+		expect(screen.queryByRole("dialog")).toBeNull();
 	});
 });
