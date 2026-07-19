@@ -253,6 +253,45 @@ function isIndexStaged(indexStatus: string): boolean {
 	return indexStatus !== " " && indexStatus !== "?";
 }
 
+/** Fail closed when a secret-like path is already staged in the real index. */
+export function assertNoStagedSecretPaths(entries: PorcelainZEntry[]): void {
+	for (const entry of entries) {
+		if (!isIndexStaged(entry.indexStatus)) {
+			continue;
+		}
+		for (const path of entry.paths) {
+			if (isSecretLikeGitPath(path)) {
+				throw new Error(
+					`Refusing to commit: secret-like path is already staged (${path}).`,
+				);
+			}
+		}
+	}
+}
+
+/**
+ * Paths safe to include in a commit snapshot/stage set.
+ * Omits any entry that involves a secret-like path (rename/copy included).
+ */
+export function collectSafeStageablePaths(
+	entries: PorcelainZEntry[],
+): string[] {
+	const stageableFiles: string[] = [];
+	const seenStageable = new Set<string>();
+	for (const entry of entries) {
+		if (entry.paths.some(isSecretLikeGitPath)) {
+			continue;
+		}
+		for (const path of entry.paths) {
+			if (!seenStageable.has(path)) {
+				seenStageable.add(path);
+				stageableFiles.push(path);
+			}
+		}
+	}
+	return stageableFiles;
+}
+
 export type SessionGitPullRequestRef = {
 	url: string;
 	number: number;
@@ -557,34 +596,11 @@ async function commitSessionChangesUnlocked(
 	}
 
 	// Fail closed if a secret-like path is already in the index.
-	for (const entry of entries) {
-		if (!isIndexStaged(entry.indexStatus)) {
-			continue;
-		}
-		for (const path of entry.paths) {
-			if (isSecretLikeGitPath(path)) {
-				throw new Error(
-					`Refusing to commit: secret-like path is already staged (${path}).`,
-				);
-			}
-		}
-	}
+	assertNoStagedSecretPaths(entries);
 
 	// Stage only paths from entries that do not involve any secret-like path
 	// (rename/copy to .env must not stage the source either).
-	const stageableFiles: string[] = [];
-	const seenStageable = new Set<string>();
-	for (const entry of entries) {
-		if (entry.paths.some(isSecretLikeGitPath)) {
-			continue;
-		}
-		for (const path of entry.paths) {
-			if (!seenStageable.has(path)) {
-				seenStageable.add(path);
-				stageableFiles.push(path);
-			}
-		}
-	}
+	const stageableFiles = collectSafeStageablePaths(entries);
 	if (stageableFiles.length === 0) {
 		return { commitSha: null, committed: false };
 	}
