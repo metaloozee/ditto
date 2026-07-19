@@ -136,6 +136,39 @@ failed-to-confirm auth process lease until TTL instead of explicitly releasing
 it. External live-provider login/run rows are `NOT RUN` because no replaceable
 credentials were available. No cloud deployment was performed or authorized.
 
+## Plan 026 (diff-aware UI Git metadata)
+
+Planned at commit `20cb3c8` on 2026-07-19 after tracing UI Git mutations,
+session-worktree locking, secret egress, account-model credentials, and PI
+0.80.10's in-memory session and terminating structured-output APIs.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 026 | Draft UI commit and pull-request metadata from the actual Git diff | P1 | L | 013, 014, 025 (DONE) | DONE (approved worktree `advisor/026-agent-drafted-git-metadata` @ `bee4a62`) |
+
+Locked outcomes:
+
+- UI Commit and Open PR preserve one-click behavior but run a separate,
+  in-memory PI Agent Session before mutation.
+- The metadata session sees only a bounded/redacted exact Git snapshot and one
+  typed terminating output tool; it receives no repository tools, project env,
+  callback JWT, chat history, extensions, skills, or persisted JSONL.
+- The implicit utility action uses the exact operator fallback model rather than
+  unexpectedly consuming a connected paid model.
+- Snapshot, inference, and mutation share one session-worktree lock. Invalid or
+  failed model output aborts without commit, push, or PR side effects; the UI
+  does not silently fall back to the initial-prompt-derived message.
+- Agent-authored local commits and chat-driven PR metadata remain unchanged.
+
+**DONE after two review revisions**: approved at `bee4a62` in worktree
+`/home/ayan/ditto-worktrees/advisor-026-agent-drafted-git-metadata`.
+Independent review passed `pnpm verify` (469 app tests, 77 runner tests), both
+builds and typechecks, `git diff --check`, source guards, and the exact scope
+audit. Revisions aligned the strict NDJSON contract, blocked secret-like PR
+patch paths, redacted the full snapshot, enforced job/path bounds, hardened
+turn/error behavior, and removed an out-of-scope runner package-bin change.
+No push, PR, merge, deployment, or live provider call was performed.
+
 ### Audit finding coverage
 
 | Selected finding | Covered by | Combination rationale |
@@ -347,6 +380,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
 - **025 is account-scoped, not project-scoped** — it is independent of the
   completed worktree/Git plans, but it must preserve their Worker→sandbox
   protocol, redaction, and verification boundaries.
+- **026 requires 013, 014, and 025** — diff-aware metadata reuses secret
+  redaction/egress checks, mutation-triggered backup semantics, and PI 0.80.10's
+  in-memory credential/model runtime.
 
 ## Product decisions (locked 2026-07-09)
 
@@ -405,6 +441,16 @@ tree while sharing git objects and (via symlink) `node_modules`.
 - **Normal streaming Send as steering**: rejected — steering modifies the active
   task; the composer draft represents the next independent user turn, so plan
   023 uses PI follow-up semantics only.
+- **Reuse the chat PI session for Git metadata**: rejected — it would contaminate
+  conversation history and carries mutation-capable tools and project runtime
+  context unnecessary for release metadata.
+- **Preview/edit UI for generated Git metadata in plan 026**: deferred — keeping
+  draft and mutation in one locked request avoids stale-diff races and preserves
+  the existing one-click workflow. A later preview feature would require source
+  fingerprints and explicit stale-draft rejection.
+- **Use the selected connected model for implicit Git metadata generation**:
+  rejected for plan 026 — it can incur unexpected user billing and OAuth/lease
+  failures. The existing operator fallback is the bounded utility model.
 
 ## Recommended execution order
 
@@ -429,3 +475,4 @@ tree while sharing git objects and (via symlink) `node_modules`.
 19. `023-pi-follow-up-and-stop-controls.md`
 20. `024-conservative-sst-monorepo-migration.md`
 21. `025-account-provider-auth-and-pi-models.md`
+22. `026-agent-drafted-git-metadata.md`
