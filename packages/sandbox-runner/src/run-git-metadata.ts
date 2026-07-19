@@ -138,16 +138,24 @@ function isAssistantMessageStart(event: unknown): boolean {
 	return (message as Record<string, unknown>).role === "assistant";
 }
 
+/** PI 0.80.10: final AssistantMessage carries stopReason "error" | "aborted". */
+function isErroredAssistantMessageEnd(event: unknown): boolean {
+	if (!event || typeof event !== "object") return false;
+	const e = event as Record<string, unknown>;
+	if (e.type !== "message_end") return false;
+	const message = e.message;
+	if (!message || typeof message !== "object") return false;
+	const m = message as Record<string, unknown>;
+	if (m.role !== "assistant") return false;
+	return m.stopReason === "error" || m.stopReason === "aborted";
+}
+
 export async function runGitMetadata(
 	job: GitMetadataJob,
 	options?: { cwd?: string; agentDir?: string },
 ): Promise<GitMetadataOut> {
 	if (job.model !== GIT_METADATA_MODEL) {
-		return gitMetadataError(
-			"unknown_model",
-			"Unsupported model",
-			job.requestId,
-		);
+		return gitMetadataError("unknown_model", job.requestId);
 	}
 
 	const cwd = options?.cwd ?? process.cwd();
@@ -160,6 +168,8 @@ export async function runGitMetadata(
 	let assistantTurns = 0;
 	let abortPromise: Promise<void> | undefined;
 	let turnLimitHit = false;
+	let assistantErrored = false;
+	let duplicateSubmission = false;
 
 	type Captured =
 		| { kind: "commit"; message: string }
@@ -174,7 +184,7 @@ export async function runGitMetadata(
 			const code = resolved.error.startsWith("Unknown model")
 				? "unknown_model"
 				: "agent_failed";
-			return gitMetadataError(code, resolved.error, job.requestId);
+			return gitMetadataError(code, job.requestId);
 		}
 
 		const toolName =
@@ -187,14 +197,19 @@ export async function runGitMetadata(
 			label: "Submit commit metadata",
 			description:
 				"Submit the final one-line Conventional Commit message for this change.",
-			parameters: Type.Object({
-				message: Type.String({
-					description:
-						"Conventional Commit subject, 1-72 chars, no trailing period",
-				}),
-			}),
-			async execute(_id, params) {
-				if (captured) {
+			parameters: Type.Object(
+				{
+					message: Type.String({
+						description:
+							"Conventional Commit subject, 1-72 chars, no trailing period",
+					}),
+				},
+				{ additionalProperties: false },
+			),
+			async execute(_id, params: { message: string }) {
+				if (captured || duplicateSubmission) {
+					duplicateSubmission = true;
+					captured = undefined;
 					captureError = "duplicate metadata submission";
 					return {
 						content: [
@@ -220,6 +235,16 @@ export async function runGitMetadata(
 						details: { ok: false },
 					};
 				}
+				// Reject tool calls that arrive on/after a third assistant turn.
+				if (turnLimitHit) {
+					captureError = "turn limit exceeded";
+					return {
+						content: [
+							{ type: "text" as const, text: "Turn limit exceeded." },
+						],
+						details: { ok: false },
+					};
+				}
 				captured = structuredClone({
 					kind: "commit" as const,
 					message: validated.message,
@@ -239,16 +264,24 @@ export async function runGitMetadata(
 			label: "Submit pull request metadata",
 			description:
 				"Submit the final pull request title and body for this change.",
-			parameters: Type.Object({
-				title: Type.String({
-					description: "PR title, one line, 1-100 chars, no trailing period",
-				}),
-				body: Type.String({
-					description: "PR body markdown for reviewers, 1-4000 chars",
-				}),
-			}),
-			async execute(_id, params) {
-				if (captured) {
+			parameters: Type.Object(
+				{
+					title: Type.String({
+						description: "PR title, one line, 1-100 chars, no trailing period",
+					}),
+					body: Type.String({
+						description: "PR body markdown for reviewers, 1-4000 chars",
+					}),
+				},
+				{ additionalProperties: false },
+			),
+			async execute(
+				_id: string,
+				params: { title: string; body: string },
+			) {
+				if (captured || duplicateSubmission) {
+					duplicateSubmission = true;
+					captured = undefined;
 					captureError = "duplicate metadata submission";
 					return {
 						content: [
@@ -273,6 +306,15 @@ export async function runGitMetadata(
 					return {
 						content: [
 							{ type: "text" as const, text: "Wrong tool for this job." },
+						],
+						details: { ok: false },
+					};
+				}
+				if (turnLimitHit) {
+					captureError = "turn limit exceeded";
+					return {
+						content: [
+							{ type: "text" as const, text: "Turn limit exceeded." },
 						],
 						details: { ok: false },
 					};
@@ -315,10 +357,15 @@ export async function runGitMetadata(
 		session = created.session;
 
 		unsubscribe = session.subscribe((event) => {
+			if (isErroredAssistantMessageEnd(event)) {
+				assistantErrored = true;
+				captured = undefined;
+			}
 			if (!isAssistantMessageStart(event)) return;
 			assistantTurns += 1;
 			if (assistantTurns > MAX_ASSISTANT_TURNS) {
 				turnLimitHit = true;
+				captured = undefined;
 				abortPromise = session?.abort();
 				abortPromise?.catch(() => undefined);
 			}
@@ -340,63 +387,56 @@ export async function runGitMetadata(
 			}
 		}
 
-		if (turnLimitHit && !captured) {
-			return gitMetadataError(
-				"missing_result",
-				"Metadata agent exceeded turn limit",
-				job.requestId,
-			);
+		// Bound: never yield success after a third assistant turn.
+		if (turnLimitHit) {
+			return gitMetadataError("agent_failed", job.requestId);
+		}
+
+		if (assistantErrored) {
+			return gitMetadataError("agent_failed", job.requestId);
+		}
+
+		if (duplicateSubmission) {
+			return gitMetadataError("agent_failed", job.requestId);
 		}
 
 		if (!captured) {
 			return gitMetadataError(
 				captureError ? "agent_failed" : "missing_result",
-				captureError ?? "Metadata agent did not submit typed output",
 				job.requestId,
 			);
 		}
 
 		if (captured.kind === "commit") {
 			if (job.kind !== "commit") {
-				return gitMetadataError(
-					"agent_failed",
-					"Metadata kind mismatch",
-					job.requestId,
-				);
+				return gitMetadataError("agent_failed", job.requestId);
 			}
 			const result: GitMetadataCommitResult = {
 				v: 1,
 				kind: "result",
 				requestId: job.requestId,
-				output: { kind: "commit", message: captured.message },
+				result: { kind: "commit", message: captured.message },
 			};
 			return result;
 		}
 
 		if (job.kind !== "pull_request") {
-			return gitMetadataError(
-				"agent_failed",
-				"Metadata kind mismatch",
-				job.requestId,
-			);
+			return gitMetadataError("agent_failed", job.requestId);
 		}
 		const result: GitMetadataPullRequestResult = {
 			v: 1,
 			kind: "result",
 			requestId: job.requestId,
-			output: {
+			result: {
 				kind: "pull_request",
 				title: captured.title,
 				body: captured.body,
 			},
 		};
 		return result;
-	} catch (error) {
-		const message =
-			error instanceof Error && error.message.trim()
-				? error.message.slice(0, 200)
-				: "Metadata agent failed";
-		return gitMetadataError("agent_failed", message, job.requestId);
+	} catch {
+		// Never pass provider/tool prose through protocol errors.
+		return gitMetadataError("agent_failed", job.requestId);
 	} finally {
 		unsubscribe?.();
 		try {

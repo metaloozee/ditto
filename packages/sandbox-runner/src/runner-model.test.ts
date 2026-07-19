@@ -48,6 +48,15 @@ describe("parseModelSpecifier", () => {
 			error: "Unknown model: provider/",
 		});
 	});
+
+	it("rejects NUL and oversize specifiers", () => {
+		expect(parseModelSpecifier("a\0b/model")).toEqual({
+			error: "Unknown model: invalid specifier",
+		});
+		expect(parseModelSpecifier(`opencode/${"x".repeat(200)}`)).toEqual({
+			error: "Unknown model: invalid specifier",
+		});
+	});
 });
 
 describe("resolveRunnerModel", () => {

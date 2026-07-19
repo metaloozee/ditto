@@ -100,7 +100,6 @@ export async function commitSessionChangesWithGeneratedMessage(
 				commitSha = null;
 				return;
 			}
-			message = generated.message;
 			const result = await deps.commitSessionChanges({
 				...gitCtx(ctx),
 				message: generated.message,
@@ -110,6 +109,10 @@ export async function commitSessionChangesWithGeneratedMessage(
 			});
 			committed = result.committed;
 			commitSha = result.commitSha;
+			// Only surface the generated message when a commit was actually created.
+			if (result.committed) {
+				message = generated.message;
+			}
 		},
 	});
 

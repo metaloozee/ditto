@@ -13,9 +13,19 @@ export type ResolvedRunnerModel = {
 	modelId: string;
 };
 
+const MODEL_SPECIFIER_MAX = 128;
+
 export function parseModelSpecifier(
 	modelSpecifier: string,
 ): ParsedModelSpecifier | { error: string } {
+	if (
+		typeof modelSpecifier !== "string" ||
+		modelSpecifier.length === 0 ||
+		modelSpecifier.length > MODEL_SPECIFIER_MAX ||
+		modelSpecifier.includes("\0")
+	) {
+		return { error: "Unknown model: invalid specifier" };
+	}
 	const slash = modelSpecifier.indexOf("/");
 	if (slash <= 0 || slash === modelSpecifier.length - 1) {
 		return { error: `Unknown model: ${modelSpecifier}` };

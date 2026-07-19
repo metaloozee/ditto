@@ -153,6 +153,27 @@ describe("commitSessionChangesWithGeneratedMessage", () => {
 		expect(order).toEqual(["lock:enter", "generate", "lock:exit"]);
 	});
 
+	it("returns no message when nested commit reports committed:false", async () => {
+		const { deps } = makeDeps();
+		deps.generateCommitMetadata = vi.fn(async () => ({
+			kind: "commit" as const,
+			message: "feat: raced away",
+			requestId: "r1",
+		}));
+		deps.commitSessionChanges = vi.fn(async () => ({
+			commitSha: null,
+			committed: false,
+		}));
+
+		const result = await commitSessionChangesWithGeneratedMessage(
+			makeCtx(),
+			deps,
+		);
+		expect(result).toEqual({ commitSha: null, committed: false });
+		expect(result).not.toHaveProperty("message");
+		expect(deps.bestEffortPersistSessionGitBackup).not.toHaveBeenCalled();
+	});
+
 	it("does not backup when generation fails before mutation", async () => {
 		const { deps, order } = makeDeps();
 		deps.generateCommitMetadata = vi.fn(async () => {

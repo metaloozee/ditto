@@ -31,7 +31,7 @@ export async function main(
 ): Promise<number> {
 	const { jobPath, error: argError } = parseArgs(argv);
 	if (argError || !jobPath) {
-		writeOut(gitMetadataError("invalid_job", argError ?? "--job is required"));
+		writeOut(gitMetadataError("invalid_job"));
 		return 2;
 	}
 
@@ -39,13 +39,13 @@ export async function main(
 	try {
 		bytes = fs.readFileSync(jobPath);
 	} catch {
-		writeOut(gitMetadataError("invalid_job", "Failed to read job file"));
+		writeOut(gitMetadataError("invalid_job"));
 		return 2;
 	}
 
 	const parsed = parseGitMetadataJobBytes(bytes);
 	if ("error" in parsed) {
-		writeOut(gitMetadataError(parsed.code, parsed.error));
+		writeOut(gitMetadataError(parsed.code));
 		return 2;
 	}
 
@@ -54,13 +54,7 @@ export async function main(
 		writeOut(out);
 		return out.kind === "result" ? 0 : 1;
 	} catch {
-		writeOut(
-			gitMetadataError(
-				"agent_failed",
-				"Metadata agent failed",
-				parsed.requestId,
-			),
-		);
+		writeOut(gitMetadataError("agent_failed", parsed.requestId));
 		return 1;
 	}
 }
@@ -76,7 +70,7 @@ if (isDirectRun) {
 			process.exitCode = code;
 		})
 		.catch(() => {
-			writeOut(gitMetadataError("agent_failed", "Metadata agent failed"));
+			writeOut(gitMetadataError("agent_failed"));
 			process.exitCode = 1;
 		});
 }

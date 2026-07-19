@@ -47,6 +47,10 @@ function ok(stdout = "", stderr = "") {
 	return { success: true, exitCode: 0, stdout, stderr };
 }
 
+function fail(stderr = "raw git boom SECRET_SENTINEL_XYZ") {
+	return { success: false, exitCode: 1, stdout: "", stderr };
+}
+
 const env = {
 	OPENCODE_API_KEY: "sk-test-key-12345678901234567890",
 } as Env;
@@ -56,6 +60,23 @@ const session = {
 	branchName: "ditto/sess-1",
 	baseCommitSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 	workspacePath: WORKTREE,
+};
+
+const baseCommitJob = {
+	v: 1 as const,
+	requestId: "req-1",
+	kind: "commit" as const,
+	model: "opencode/deepseek-v4-flash-free" as const,
+	snapshot: {
+		kind: "commit_snapshot" as const,
+		branch: "ditto/s",
+		headSha: "abc1234",
+		changedPaths: [{ status: "M", path: "a.ts" }],
+		diffStat: "stat",
+		patch: "patch",
+		patchTruncated: false,
+		patchOriginalBytes: 5,
+	},
 };
 
 describe("collectCommitMetadataSnapshot", () => {
@@ -114,7 +135,6 @@ describe("collectCommitMetadataSnapshot", () => {
 			{ status: "M", path: "src/app.ts" },
 		]);
 		expect(result.job.snapshot.patchOriginalBytes).toBe(42);
-		// Real-index git add without GIT_INDEX_FILE must never run.
 		expect(
 			exec.mock.calls.some(
 				([command]) =>
@@ -129,7 +149,6 @@ describe("collectCommitMetadataSnapshot", () => {
 					typeof command === "string" && command.startsWith("rm -f"),
 			),
 		).toBe(true);
-		// Minimal job: no title/prompt/env/callback fields.
 		expect(JSON.stringify(result.job)).not.toContain("OPENCODE");
 		expect(JSON.stringify(result.job)).not.toContain("DITTO_GIT");
 		expect(JSON.stringify(result.job)).not.toContain("sessionTitle");
@@ -204,7 +223,7 @@ describe("collectCommitMetadataSnapshot", () => {
 		expect(result.job.snapshot.patch).toContain("Binary files");
 	});
 
-	it("marks truncation when the raw patch exceeds the bound", async () => {
+	it("marks truncation when the raw patch exceeds the bounded read", async () => {
 		const { exec } = makeSandbox();
 		exec.mockImplementation(async (command: string) => {
 			if (command === "git status --porcelain=v1 -z -uall") {
@@ -235,6 +254,102 @@ describe("collectCommitMetadataSnapshot", () => {
 		expect(result.job.snapshot.patchTruncated).toBe(true);
 		expect(result.job.snapshot.patchOriginalBytes).toBe(200_000);
 	});
+
+	it("does not set patchTruncated when only diffStat is capped", async () => {
+		const { exec } = makeSandbox();
+		const hugeStat = `${"x".repeat(9 * 1024)}\n`;
+		exec.mockImplementation(async (command: string) => {
+			if (command === "git status --porcelain=v1 -z -uall") {
+				return ok(" M a.ts\0");
+			}
+			if (command === "git rev-parse HEAD") return ok("abc1234\n");
+			if (
+				command.includes("read-tree") ||
+				command.includes("git add --") ||
+				command.includes(">")
+			) {
+				return ok();
+			}
+			if (command.includes("name-status")) return ok("M\0a.ts\0");
+			if (command.includes("--stat")) return ok(hugeStat);
+			if (command.startsWith("wc -c")) return ok("20");
+			if (command.startsWith("head -c")) return ok("small-patch");
+			if (command.startsWith("rm -f")) return ok();
+			throw new Error(command);
+		});
+		const result = await collectCommitMetadataSnapshot({
+			env,
+			sandboxId: "sbx",
+			session,
+		});
+		expect(result.kind).toBe("commit");
+		if (result.kind !== "commit") return;
+		expect(result.job.snapshot.diffStat.length).toBeLessThan(hugeStat.length);
+		expect(result.job.snapshot.patchTruncated).toBe(false);
+	});
+
+	it("sets patchTruncated when post-redaction patch requires a second cap", async () => {
+		const { exec } = makeSandbox();
+		// Raw read is 100 KiB; fill under that but with a known secret that expands
+		// via redaction markers? Actually redaction shortens or keeps length with
+		// [REDACTED]. To force post-redaction truncation, feed a patch slightly
+		// under the raw read but over 96 KiB after the read returns it fully.
+		const overFinal = "p".repeat(97 * 1024);
+		exec.mockImplementation(async (command: string) => {
+			if (command === "git status --porcelain=v1 -z -uall") {
+				return ok(" M a.ts\0");
+			}
+			if (command === "git rev-parse HEAD") return ok("abc1234\n");
+			if (
+				command.includes("read-tree") ||
+				command.includes("git add --") ||
+				command.includes(">") ||
+				command.includes("--stat")
+			) {
+				return command.includes("name-status")
+					? ok("M\0a.ts\0")
+					: ok(command.includes("--stat") ? "stat" : "");
+			}
+			if (command.includes("name-status")) return ok("M\0a.ts\0");
+			// Original size under raw-read ceiling so patchTruncated starts false.
+			if (command.startsWith("wc -c")) return ok(String(overFinal.length));
+			if (command.startsWith("head -c")) return ok(overFinal);
+			if (command.startsWith("rm -f")) return ok();
+			throw new Error(command);
+		});
+		const result = await collectCommitMetadataSnapshot({
+			env,
+			sandboxId: "sbx",
+			session,
+		});
+		expect(result.kind).toBe("commit");
+		if (result.kind !== "commit") return;
+		expect(result.job.snapshot.patchTruncated).toBe(true);
+		expect(
+			Buffer.byteLength(result.job.snapshot.patch, "utf8"),
+		).toBeLessThanOrEqual(96 * 1024);
+	});
+
+	it("maps command failures to static safe text without git stderr", async () => {
+		const { exec } = makeSandbox();
+		exec.mockImplementation(async (command: string) => {
+			if (command === "git status --porcelain=v1 -z -uall") {
+				return fail("fatal: not a git repository SECRET_SENTINEL_XYZ");
+			}
+			if (command.startsWith("rm -f")) return ok();
+			throw new Error(command);
+		});
+		await expect(
+			collectCommitMetadataSnapshot({ env, sandboxId: "sbx", session }),
+		).rejects.toSatisfy((error: unknown) => {
+			expect(error).toBeInstanceOf(SessionGitMetadataError);
+			const message = (error as Error).message;
+			expect(message).not.toContain("SECRET_SENTINEL_XYZ");
+			expect(message).not.toContain("fatal:");
+			expect(message).toBe("Failed to read git status.");
+			return true;
+		});
+	});
 });
 
 describe("collectPullRequestMetadataSnapshot", () => {
@@ -262,11 +377,15 @@ describe("collectPullRequestMetadataSnapshot", () => {
 			if (command.includes("--stat")) {
 				expect(command).toContain("...HEAD");
 				expect(command).toContain(base);
+				expect(command).toContain(" -- ");
+				expect(command).toContain("a.ts");
 				return ok("stat");
 			}
 			if (command.includes("git diff") && command.includes(">")) {
 				expect(command).toContain("...HEAD");
 				expect(command).toContain(base);
+				expect(command).toContain(" -- ");
+				expect(command).toContain("a.ts");
 				return ok();
 			}
 			if (command.startsWith("wc -c")) return ok("5\n");
@@ -284,13 +403,104 @@ describe("collectPullRequestMetadataSnapshot", () => {
 			"fix: oldest",
 			"feat: newest",
 		]);
-		// No origin fallback commands.
 		expect(
 			exec.mock.calls.some(
 				([command]) =>
 					typeof command === "string" && command.includes("origin/"),
 			),
 		).toBe(false);
+	});
+
+	it("excludes secret-like paths from pathspecs and never leaks their patch content", async () => {
+		const { exec } = makeSandbox();
+		const base = session.baseCommitSha as string;
+		const SENTINEL = "PATCH_SECRET_SENTINEL_VALUE_999";
+		exec.mockImplementation(async (command: string) => {
+			if (command === "git status --porcelain=v1 -z -uall") return ok("");
+			if (command.includes("rev-parse --verify")) return ok(`${base}\n`);
+			if (command === "git rev-parse HEAD") return ok("abcdef0123456789\n");
+			if (command.includes("git log --format=%s")) return ok("feat: safe\n");
+			if (command.includes("name-status")) {
+				return ok("M\0src/app.ts\0A\0.env.local\0");
+			}
+			if (
+				command.includes("--stat") ||
+				(command.includes("git diff") && command.includes(">"))
+			) {
+				// Must never request the secret path.
+				expect(command).not.toContain(".env");
+				expect(command).toContain("src/app.ts");
+				return command.includes("--stat") ? ok(" 1 file changed\n") : ok();
+			}
+			if (command.startsWith("wc -c")) return ok("20\n");
+			if (command.startsWith("head -c")) {
+				// Safe-path-only read; secret content would only appear if pathspecs leaked.
+				return ok("diff --git a/src/app.ts\n+safe\n");
+			}
+			if (command.startsWith("rm -f")) return ok();
+			throw new Error(command);
+		});
+		const result = await collectPullRequestMetadataSnapshot({
+			env,
+			sandboxId: "sbx",
+			session,
+		});
+		const serialized = JSON.stringify(result.job);
+		expect(serialized).not.toContain(".env");
+		expect(serialized).not.toContain(SENTINEL);
+		expect(result.job.snapshot.changedPaths).toEqual([
+			{ status: "M", path: "src/app.ts" },
+		]);
+
+		// If only secret paths remain, fail without model.
+		exec.mockImplementation(async (command: string) => {
+			if (command === "git status --porcelain=v1 -z -uall") return ok("");
+			if (command.includes("rev-parse --verify")) return ok(`${base}\n`);
+			if (command === "git rev-parse HEAD") return ok("abcdef0123456789\n");
+			if (command.includes("git log --format=%s")) return ok("feat: x\n");
+			if (command.includes("name-status")) return ok("A\0.env\0");
+			if (command.startsWith("rm -f")) return ok();
+			throw new Error(command);
+		});
+		await expect(
+			collectPullRequestMetadataSnapshot({ env, sandboxId: "sbx", session }),
+		).rejects.toMatchObject({
+			code: "snapshot_failed",
+			message: expect.stringContaining("No safe changes"),
+		});
+	});
+
+	it("redacts known and shaped secrets in commit subjects before job write", async () => {
+		const { exec } = makeSandbox();
+		const base = session.baseCommitSha as string;
+		const known = "knownsecretvalue99";
+		const shaped = "sk-ant-abcdefghijklmnopqrstuvwxyz012345";
+		exec.mockImplementation(async (command: string) => {
+			if (command === "git status --porcelain=v1 -z -uall") return ok("");
+			if (command.includes("rev-parse --verify")) return ok(`${base}\n`);
+			if (command === "git rev-parse HEAD") return ok("abcdef0123456789\n");
+			if (command.includes("git log --format=%s")) {
+				return ok(`feat: inject ${known}\nfix: token ${shaped}\n`);
+			}
+			if (command.includes("name-status")) return ok("M\0a.ts\0");
+			if (command.includes("--stat")) return ok("stat");
+			if (command.includes(">") || command.startsWith("wc -c")) {
+				return command.startsWith("wc -c") ? ok("5") : ok();
+			}
+			if (command.startsWith("head -c")) return ok("patch");
+			if (command.startsWith("rm -f")) return ok();
+			throw new Error(command);
+		});
+		const result = await collectPullRequestMetadataSnapshot({
+			env,
+			sandboxId: "sbx",
+			session,
+			knownSecrets: [known],
+		});
+		const serialized = JSON.stringify(result.job);
+		expect(serialized).not.toContain(known);
+		expect(serialized).not.toContain(shaped);
+		expect(result.job.snapshot.commitSubjects.join(" ")).toContain("[REDACTED]");
 	});
 
 	it("fails closed when dirty or base missing", async () => {
@@ -327,7 +537,7 @@ describe("generateGitMetadata", () => {
 			success: true,
 			exitCode: 0,
 			stdout:
-				'{"v":1,"kind":"result","requestId":"req-1","output":{"kind":"commit","message":"feat: add app"}}\n',
+				'{"v":1,"kind":"result","requestId":"req-1","result":{"kind":"commit","message":"feat: add app"}}\n',
 			stderr: "",
 		});
 
@@ -335,25 +545,10 @@ describe("generateGitMetadata", () => {
 			env,
 			sandboxId: "sbx",
 			cwd: WORKTREE,
-			job: {
-				v: 1,
-				requestId: "req-1",
-				kind: "commit",
-				model: "opencode/deepseek-v4-flash-free",
-				snapshot: {
-					kind: "commit_snapshot",
-					branch: "ditto/s",
-					headSha: "abc1234",
-					changedPaths: [{ status: "M", path: "a.ts" }],
-					diffStat: "stat",
-					patch: "patch",
-					patchTruncated: false,
-					patchOriginalBytes: 5,
-				},
-			},
+			job: baseCommitJob,
 		});
 
-		expect(result.output).toEqual({ kind: "commit", message: "feat: add app" });
+		expect(result.result).toEqual({ kind: "commit", message: "feat: add app" });
 		expect(sandbox.createSession).toHaveBeenCalledWith(
 			expect.objectContaining({
 				cwd: WORKTREE,
@@ -376,12 +571,45 @@ describe("generateGitMetadata", () => {
 		expect(sandbox.deleteSession).toHaveBeenCalledWith("shell-1");
 	});
 
+	it("rejects jobs over the 128 KiB raw ceiling before writeFile", async () => {
+		const { shell, writeFile } = makeSandbox();
+		const paths = Array.from({ length: 200 }, (_, i) => ({
+			status: "M",
+			path: `src/${"p".repeat(900)}_${i}.ts`,
+		}));
+		const hugeJob = {
+			...baseCommitJob,
+			snapshot: {
+				...baseCommitJob.snapshot,
+				changedPaths: paths,
+				diffStat: "s".repeat(8 * 1024),
+				patch: "x".repeat(96 * 1024),
+			},
+		};
+		expect(Buffer.byteLength(JSON.stringify(hugeJob), "utf8")).toBeGreaterThan(
+			128 * 1024,
+		);
+		await expect(
+			generateGitMetadata({
+				env,
+				sandboxId: "sbx",
+				cwd: WORKTREE,
+				job: hugeJob as typeof baseCommitJob,
+			}),
+		).rejects.toMatchObject({
+			code: "snapshot_failed",
+			message: expect.stringContaining("size limit"),
+		});
+		expect(writeFile).not.toHaveBeenCalled();
+		expect(shell.exec).not.toHaveBeenCalled();
+	});
+
 	it("rejects secret-bearing output and invalid multi-line stdout", async () => {
 		const { shell } = makeSandbox();
 		shell.exec.mockResolvedValueOnce({
 			success: true,
 			exitCode: 0,
-			stdout: `{"v":1,"kind":"result","requestId":"req-1","output":{"kind":"commit","message":"feat: ${env.OPENCODE_API_KEY}"}}\n`,
+			stdout: `{"v":1,"kind":"result","requestId":"req-1","result":{"kind":"commit","message":"feat: ${env.OPENCODE_API_KEY}"}}\n`,
 			stderr: "",
 		});
 		await expect(
@@ -389,22 +617,7 @@ describe("generateGitMetadata", () => {
 				env,
 				sandboxId: "sbx",
 				cwd: WORKTREE,
-				job: {
-					v: 1,
-					requestId: "req-1",
-					kind: "commit",
-					model: "opencode/deepseek-v4-flash-free",
-					snapshot: {
-						kind: "commit_snapshot",
-						branch: "ditto/s",
-						headSha: "abc1234",
-						changedPaths: [{ status: "M", path: "a.ts" }],
-						diffStat: "stat",
-						patch: "patch",
-						patchTruncated: false,
-						patchOriginalBytes: 5,
-					},
-				},
+				job: baseCommitJob,
 			}),
 		).rejects.toMatchObject({ code: "output_rejected" });
 
@@ -419,33 +632,22 @@ describe("generateGitMetadata", () => {
 				env,
 				sandboxId: "sbx",
 				cwd: WORKTREE,
-				job: {
-					v: 1,
-					requestId: "req-1",
-					kind: "commit",
-					model: "opencode/deepseek-v4-flash-free",
-					snapshot: {
-						kind: "commit_snapshot",
-						branch: "ditto/s",
-						headSha: "abc1234",
-						changedPaths: [{ status: "M", path: "a.ts" }],
-						diffStat: "stat",
-						patch: "patch",
-						patchTruncated: false,
-						patchOriginalBytes: 5,
-					},
-				},
+				job: baseCommitJob,
 			}),
-		).rejects.toBeInstanceOf(SessionGitMetadataError);
+		).rejects.toSatisfy((error: unknown) => {
+			expect(error).toBeInstanceOf(SessionGitMetadataError);
+			expect((error as Error).message).not.toContain("raw secret boom");
+			return true;
+		});
 	});
 
-	it("maps protocol errors to SessionGitMetadataError codes", async () => {
-		const { shell } = makeSandbox();
-		shell.exec.mockResolvedValue({
+	it("rejects malformed JSON, request mismatch, process failure; cleans up", async () => {
+		const { sandbox, shell } = makeSandbox();
+
+		shell.exec.mockResolvedValueOnce({
 			success: true,
-			exitCode: 1,
-			stdout:
-				'{"v":1,"kind":"error","requestId":"req-1","code":"missing_result","message":"no tool call"}\n',
+			exitCode: 0,
+			stdout: "not-json\n",
 			stderr: "",
 		});
 		await expect(
@@ -453,23 +655,98 @@ describe("generateGitMetadata", () => {
 				env,
 				sandboxId: "sbx",
 				cwd: WORKTREE,
-				job: {
-					v: 1,
-					requestId: "req-1",
-					kind: "commit",
-					model: "opencode/deepseek-v4-flash-free",
-					snapshot: {
-						kind: "commit_snapshot",
-						branch: "ditto/s",
-						headSha: "abc1234",
-						changedPaths: [{ status: "M", path: "a.ts" }],
-						diffStat: "stat",
-						patch: "patch",
-						patchTruncated: false,
-						patchOriginalBytes: 5,
-					},
-				},
+				job: baseCommitJob,
 			}),
-		).rejects.toMatchObject({ code: "missing_result" });
+		).rejects.toMatchObject({ code: "agent_failed" });
+		expect(shell.deleteFile).toHaveBeenCalled();
+		expect(sandbox.deleteSession).toHaveBeenCalled();
+
+		shell.exec.mockResolvedValueOnce({
+			success: true,
+			exitCode: 0,
+			stdout:
+				'{"v":1,"kind":"result","requestId":"other","result":{"kind":"commit","message":"feat: x"}}\n',
+			stderr: "",
+		});
+		await expect(
+			generateGitMetadata({
+				env,
+				sandboxId: "sbx",
+				cwd: WORKTREE,
+				job: baseCommitJob,
+			}),
+		).rejects.toMatchObject({ code: "output_rejected" });
+
+		shell.exec.mockRejectedValueOnce(new Error("process died SENTINEL_PROC"));
+		await expect(
+			generateGitMetadata({
+				env,
+				sandboxId: "sbx",
+				cwd: WORKTREE,
+				job: baseCommitJob,
+			}),
+		).rejects.toSatisfy((error: unknown) => {
+			expect((error as Error).message).not.toContain("SENTINEL_PROC");
+			expect((error as Error).message).toBe("Metadata agent failed.");
+			return true;
+		});
+		expect(sandbox.deleteSession).toHaveBeenCalled();
+	});
+
+	it("maps protocol errors to SessionGitMetadataError codes with static text", async () => {
+		const { shell } = makeSandbox();
+		shell.exec.mockResolvedValue({
+			success: true,
+			exitCode: 1,
+			stdout:
+				'{"v":1,"kind":"error","requestId":"req-1","code":"missing_result"}\n',
+			stderr: "",
+		});
+		await expect(
+			generateGitMetadata({
+				env,
+				sandboxId: "sbx",
+				cwd: WORKTREE,
+				job: baseCommitJob,
+			}),
+		).rejects.toMatchObject({
+			code: "missing_result",
+			message: "Metadata agent did not return typed output.",
+		});
+	});
+
+	it("rejects legacy protocol output key and error message field", async () => {
+		const { shell } = makeSandbox();
+		shell.exec.mockResolvedValueOnce({
+			success: true,
+			exitCode: 0,
+			stdout:
+				'{"v":1,"kind":"result","requestId":"req-1","output":{"kind":"commit","message":"feat: x"}}\n',
+			stderr: "",
+		});
+		await expect(
+			generateGitMetadata({
+				env,
+				sandboxId: "sbx",
+				cwd: WORKTREE,
+				job: baseCommitJob,
+			}),
+		).rejects.toMatchObject({ code: "output_rejected" });
+
+		shell.exec.mockResolvedValueOnce({
+			success: true,
+			exitCode: 1,
+			stdout:
+				'{"v":1,"kind":"error","requestId":"req-1","code":"agent_failed","message":"provider secrets"}\n',
+			stderr: "",
+		});
+		await expect(
+			generateGitMetadata({
+				env,
+				sandboxId: "sbx",
+				cwd: WORKTREE,
+				job: baseCommitJob,
+			}),
+		).rejects.toMatchObject({ code: "output_rejected" });
 	});
 });

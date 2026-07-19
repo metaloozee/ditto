@@ -305,4 +305,70 @@ describe("sessionGitRouter commit/openPullRequest metadata wiring", () => {
 			resolveMocks.openSessionPullRequestWithGeneratedMetadata,
 		).not.toHaveBeenCalled();
 	});
+
+	it("keeps title-only, body-only, and explicit-base callers non-generated", async () => {
+		resolveMocks.getSessionGitStatus.mockResolvedValue({
+			dirty: false,
+			workflow: { kind: "open-pr" },
+		});
+		resolveMocks.openSessionPullRequest.mockResolvedValue({
+			url: "https://example.com/pr/5",
+			number: 5,
+		});
+
+		for (const input of [
+			{ projectId: "proj-1", sessionId: "sess-1", title: "Only title" },
+			{ projectId: "proj-1", sessionId: "sess-1", body: "Only body" },
+			{ projectId: "proj-1", sessionId: "sess-1", baseBranch: "develop" },
+		]) {
+			resolveMocks.openSessionPullRequestWithGeneratedMetadata.mockClear();
+			resolveMocks.openSessionPullRequest.mockClear();
+			await asMutation(sessionGitRouter.openPullRequest).mutation({
+				ctx,
+				input,
+			});
+			expect(
+				resolveMocks.openSessionPullRequestWithGeneratedMetadata,
+			).not.toHaveBeenCalled();
+			expect(resolveMocks.openSessionPullRequest).toHaveBeenCalled();
+		}
+	});
+
+	it("maps snapshot_failed with controlled message and never leaks raw stderr sentinels", async () => {
+		const SENTINEL = "RAW_GIT_STDERR_SENTINEL_abc123";
+		resolveMocks.commitSessionChangesWithGeneratedMessage.mockRejectedValue(
+			new SessionGitMetadataError(
+				"snapshot_failed",
+				"Commit local changes before drafting pull request metadata.",
+			),
+		);
+		// Controlled precondition text is preserved.
+		await expect(
+			asMutation(sessionGitRouter.commit).mutation({
+				ctx,
+				input: { projectId: "proj-1", sessionId: "sess-1" },
+			}),
+		).rejects.toMatchObject({
+			code: "PRECONDITION_FAILED",
+			message: "Commit local changes before drafting pull request metadata.",
+		});
+
+		// Even if an internal bug put a sentinel into the error, agent_failed path
+		// uses a static BAD_GATEWAY message (not the raw error text).
+		resolveMocks.commitSessionChangesWithGeneratedMessage.mockRejectedValue(
+			new SessionGitMetadataError("agent_failed", SENTINEL),
+		);
+		await expect(
+			asMutation(sessionGitRouter.commit).mutation({
+				ctx,
+				input: { projectId: "proj-1", sessionId: "sess-1" },
+			}),
+		).rejects.toSatisfy((error: unknown) => {
+			const err = error as { code?: string; message?: string };
+			expect(err.code).toBe("BAD_GATEWAY");
+			expect(err.message).not.toContain(SENTINEL);
+			expect(err.message).toContain("No commit was created");
+			return true;
+		});
+	});
 });

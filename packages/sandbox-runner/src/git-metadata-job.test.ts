@@ -190,13 +190,13 @@ describe("parseGitMetadataOut", () => {
 					v: 1,
 					kind: "result",
 					requestId: "req-1",
-					output: { kind: "commit", message: "feat: add app" },
+					result: { kind: "commit", message: "feat: add app" },
 				},
 				"req-1",
 			),
 		).toMatchObject({
 			kind: "result",
-			output: { kind: "commit", message: "feat: add app" },
+			result: { kind: "commit", message: "feat: add app" },
 		});
 		expect(
 			parseGitMetadataOut(
@@ -204,7 +204,7 @@ describe("parseGitMetadataOut", () => {
 					v: 1,
 					kind: "result",
 					requestId: "req-2",
-					output: {
+					result: {
 						kind: "pull_request",
 						title: "Add app",
 						body: "What changed.\n\n## Testing\nNot run (not shown in diff)",
@@ -212,17 +212,17 @@ describe("parseGitMetadataOut", () => {
 				},
 				"req-2",
 			),
-		).toMatchObject({ kind: "result", output: { kind: "pull_request" } });
+		).toMatchObject({ kind: "result", result: { kind: "pull_request" } });
 	});
 
-	it("rejects request mismatch, extra fields, and unknown codes", () => {
+	it("rejects request mismatch, extra fields, NULs, oversize, wrong kind", () => {
 		expect(
 			parseGitMetadataOut(
 				{
 					v: 1,
 					kind: "result",
 					requestId: "other",
-					output: { kind: "commit", message: "feat: x" },
+					result: { kind: "commit", message: "feat: x" },
 				},
 				"req-1",
 			),
@@ -232,22 +232,61 @@ describe("parseGitMetadataOut", () => {
 				v: 1,
 				kind: "result",
 				requestId: "req-1",
-				output: { kind: "commit", message: "feat: x", extra: 1 },
+				result: { kind: "commit", message: "feat: x", extra: 1 },
 			}),
 		).toMatchObject({ error: expect.any(String) });
 		expect(
 			parseGitMetadataOut({
 				v: 1,
+				kind: "result",
+				requestId: "req-1",
+				output: { kind: "commit", message: "feat: x" },
+			}),
+		).toMatchObject({ error: expect.any(String) });
+		expect(
+			parseGitMetadataOut({
+				v: 1,
+				kind: "result",
+				requestId: "req-1",
+				result: { kind: "commit", message: "feat: x\0y" },
+			}),
+		).toMatchObject({ error: "invalid commit message" });
+		expect(
+			parseGitMetadataOut({
+				v: 1,
+				kind: "result",
+				requestId: "req-1",
+				result: { kind: "commit", message: `feat: ${"x".repeat(80)}` },
+			}),
+		).toMatchObject({ error: "invalid commit message" });
+		expect(
+			parseGitMetadataOut({
+				v: 1,
+				kind: "result",
+				requestId: "req-1",
+				result: { kind: "merge", message: "nope" },
+			}),
+		).toMatchObject({ error: "unknown result kind" });
+		expect(
+			parseGitMetadataOut({
+				v: 1,
 				kind: "error",
 				code: "boom",
-				message: "nope",
 			}),
 		).toMatchObject({ error: "invalid error code" });
+		expect(
+			parseGitMetadataOut({
+				v: 1,
+				kind: "error",
+				code: "agent_failed",
+				message: "provider said secrets",
+			}),
+		).toMatchObject({ error: "error has unknown fields" });
 	});
 
-	it("encodes exactly one NDJSON line and safe errors without raw text dumps", () => {
+	it("encodes exactly one NDJSON line and safe errors without prose", () => {
 		const line = encodeGitMetadataOut(
-			gitMetadataError("agent_failed", "failed", "req-1"),
+			gitMetadataError("agent_failed", "req-1"),
 		);
 		expect(line.endsWith("\n")).toBe(true);
 		expect(line.trim().includes("\n")).toBe(false);
@@ -257,7 +296,7 @@ describe("parseGitMetadataOut", () => {
 			kind: "error",
 			requestId: "req-1",
 			code: "agent_failed",
-			message: "failed",
 		});
+		expect(parsed).not.toHaveProperty("message");
 	});
 });

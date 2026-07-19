@@ -38,6 +38,17 @@ function writeJob(job: unknown): string {
 	return file;
 }
 
+function captureStdout() {
+	const writes: string[] = [];
+	const spy = vi.spyOn(process.stdout, "write").mockImplementation(((
+		chunk: string,
+	) => {
+		writes.push(String(chunk));
+		return true;
+	}) as typeof process.stdout.write);
+	return { writes, spy };
+}
+
 describe("git-metadata-cli main", () => {
 	it("writes exactly one protocol stdout line on success", async () => {
 		const jobPath = writeJob({
@@ -60,16 +71,9 @@ describe("git-metadata-cli main", () => {
 			v: 1,
 			kind: "result",
 			requestId: "req-1",
-			output: { kind: "commit", message: "feat: a" },
+			result: { kind: "commit", message: "feat: a" },
 		});
-		const writes: string[] = [];
-		const spy = vi.spyOn(process.stdout, "write").mockImplementation(((
-			chunk: string,
-		) => {
-			writes.push(String(chunk));
-			return true;
-		}) as typeof process.stdout.write);
-
+		const { writes, spy } = captureStdout();
 		const code = await main(["--job", jobPath]);
 		spy.mockRestore();
 		expect(code).toBe(0);
@@ -77,8 +81,39 @@ describe("git-metadata-cli main", () => {
 		expect(writes[0].endsWith("\n")).toBe(true);
 		expect(JSON.parse(writes[0])).toMatchObject({
 			kind: "result",
-			output: { message: "feat: a" },
+			result: { message: "feat: a" },
 		});
+	});
+
+	it("rejects missing --job", async () => {
+		const { writes, spy } = captureStdout();
+		const code = await main([]);
+		spy.mockRestore();
+		expect(code).toBe(2);
+		expect(JSON.parse(writes[0])).toEqual({
+			v: 1,
+			kind: "error",
+			code: "invalid_job",
+		});
+		expect(mocks.runGitMetadata).not.toHaveBeenCalled();
+	});
+
+	it("rejects malformed JSON", async () => {
+		const file = path.join(
+			os.tmpdir(),
+			`ditto-git-metadata-bad-${Date.now()}.json`,
+		);
+		fs.writeFileSync(file, "{not-json");
+		tempFiles.push(file);
+		const { writes, spy } = captureStdout();
+		const code = await main(["--job", file]);
+		spy.mockRestore();
+		expect(code).toBe(2);
+		expect(JSON.parse(writes[0])).toMatchObject({
+			kind: "error",
+			code: "invalid_job",
+		});
+		expect(mocks.runGitMetadata).not.toHaveBeenCalled();
 	});
 
 	it("rejects oversized jobs before JSON.parse and exits nonzero", async () => {
@@ -88,13 +123,7 @@ describe("git-metadata-cli main", () => {
 		);
 		fs.writeFileSync(file, "x".repeat(128 * 1024 + 1));
 		tempFiles.push(file);
-		const writes: string[] = [];
-		const spy = vi.spyOn(process.stdout, "write").mockImplementation(((
-			chunk: string,
-		) => {
-			writes.push(String(chunk));
-			return true;
-		}) as typeof process.stdout.write);
+		const { writes, spy } = captureStdout();
 		const code = await main(["--job", file]);
 		spy.mockRestore();
 		expect(code).toBe(2);
@@ -127,15 +156,16 @@ describe("git-metadata-cli main", () => {
 			kind: "error",
 			requestId: "req-1",
 			code: "missing_result",
-			message: "no output",
 		});
-		const writes: string[] = [];
-		vi.spyOn(process.stdout, "write").mockImplementation(((chunk: string) => {
-			writes.push(String(chunk));
-			return true;
-		}) as typeof process.stdout.write);
+		const { writes, spy } = captureStdout();
 		const code = await main(["--job", jobPath]);
+		spy.mockRestore();
 		expect(code).toBe(1);
-		expect(JSON.parse(writes[0]).code).toBe("missing_result");
+		expect(JSON.parse(writes[0])).toEqual({
+			v: 1,
+			kind: "error",
+			requestId: "req-1",
+			code: "missing_result",
+		});
 	});
 });

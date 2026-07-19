@@ -9,6 +9,10 @@ export const GIT_METADATA_PATHS_MAX = 200;
 export const GIT_METADATA_PATH_MAX_CHARS = 1024;
 export const GIT_METADATA_STAT_MAX_BYTES = 8 * 1024;
 export const GIT_METADATA_REQUEST_ID_MAX = 128;
+export const GIT_METADATA_MODEL_MAX = 128;
+export const GIT_METADATA_COMMIT_MESSAGE_MAX = 72;
+export const GIT_METADATA_PR_TITLE_MAX = 100;
+export const GIT_METADATA_PR_BODY_MAX = 4000;
 export const GIT_METADATA_SHA_RE = /^[0-9a-f]{7,64}$/i;
 export const GIT_METADATA_BRANCH_MAX = 256;
 export const GIT_METADATA_STATUS_RE = /^(?:\?\?|[AMDTTU!]|[RC][0-9]{3})$/;
@@ -61,14 +65,14 @@ export type GitMetadataCommitResult = {
 	v: 1;
 	kind: "result";
 	requestId: string;
-	output: { kind: "commit"; message: string };
+	result: { kind: "commit"; message: string };
 };
 
 export type GitMetadataPullRequestResult = {
 	v: 1;
 	kind: "result";
 	requestId: string;
-	output: { kind: "pull_request"; title: string; body: string };
+	result: { kind: "pull_request"; title: string; body: string };
 };
 
 export type GitMetadataErrorCode =
@@ -82,7 +86,6 @@ export type GitMetadataErrorResult = {
 	kind: "error";
 	requestId?: string;
 	code: GitMetadataErrorCode;
-	message: string;
 };
 
 export type GitMetadataOut =
@@ -108,10 +111,10 @@ const PR_SNAPSHOT_KEYS = new Set([
 ]);
 const PATH_KEYS_SIMPLE = new Set(["status", "path"]);
 const PATH_KEYS_RENAME = new Set(["status", "path", "previousPath"]);
-const RESULT_KEYS = new Set(["v", "kind", "requestId", "output"]);
-const COMMIT_OUTPUT_KEYS = new Set(["kind", "message"]);
-const PR_OUTPUT_KEYS = new Set(["kind", "title", "body"]);
-const ERROR_KEYS = new Set(["v", "kind", "requestId", "code", "message"]);
+const RESULT_KEYS = new Set(["v", "kind", "requestId", "result"]);
+const COMMIT_RESULT_KEYS = new Set(["kind", "message"]);
+const PR_RESULT_KEYS = new Set(["kind", "title", "body"]);
+const ERROR_KEYS = new Set(["v", "kind", "requestId", "code"]);
 const ERROR_CODES = new Set<GitMetadataErrorCode>([
 	"invalid_job",
 	"unknown_model",
@@ -373,12 +376,12 @@ export function parseGitMetadataOut(
 		return { error: "unsupported output version" };
 	}
 	if (raw.kind === "error") {
-		// requestId is optional on early failures before a job id is known.
+		// requestId is optional; no other fields allowed (no message/prose).
 		const keys = Object.keys(raw);
 		for (const key of keys) {
 			if (!ERROR_KEYS.has(key)) return { error: "error has unknown fields" };
 		}
-		for (const required of ["v", "kind", "code", "message"] as const) {
+		for (const required of ["v", "kind", "code"] as const) {
 			if (!(required in raw)) {
 				return { error: "error missing required fields" };
 			}
@@ -388,13 +391,6 @@ export function parseGitMetadataOut(
 			!ERROR_CODES.has(raw.code as GitMetadataErrorCode)
 		) {
 			return { error: "invalid error code" };
-		}
-		if (
-			typeof raw.message !== "string" ||
-			hasNul(raw.message) ||
-			raw.message.length > 500
-		) {
-			return { error: "invalid error message" };
 		}
 		if (raw.requestId !== undefined) {
 			if (!isNonEmptyString(raw.requestId, GIT_METADATA_REQUEST_ID_MAX)) {
@@ -408,7 +404,6 @@ export function parseGitMetadataOut(
 			v: 1,
 			kind: "error",
 			code: raw.code as GitMetadataErrorCode,
-			message: raw.message,
 		};
 		if (typeof raw.requestId === "string") {
 			out.requestId = raw.requestId;
@@ -428,62 +423,75 @@ export function parseGitMetadataOut(
 	if (expectedRequestId && raw.requestId !== expectedRequestId) {
 		return { error: "requestId mismatch" };
 	}
-	if (!isPlainObject(raw.output)) {
-		return { error: "output payload must be an object" };
+	if (!isPlainObject(raw.result)) {
+		return { error: "result payload must be an object" };
 	}
 
-	if (raw.output.kind === "commit") {
-		if (!exactKeys(raw.output, COMMIT_OUTPUT_KEYS)) {
-			return { error: "commit output has unknown or missing fields" };
+	if (raw.result.kind === "commit") {
+		if (!exactKeys(raw.result, COMMIT_RESULT_KEYS)) {
+			return { error: "commit result has unknown or missing fields" };
 		}
-		if (typeof raw.output.message !== "string" || hasNul(raw.output.message)) {
+		if (
+			typeof raw.result.message !== "string" ||
+			hasNul(raw.result.message) ||
+			raw.result.message.length < 1 ||
+			raw.result.message.length > GIT_METADATA_COMMIT_MESSAGE_MAX
+		) {
 			return { error: "invalid commit message" };
 		}
 		return {
 			v: 1,
 			kind: "result",
 			requestId: raw.requestId,
-			output: { kind: "commit", message: raw.output.message },
+			result: { kind: "commit", message: raw.result.message },
 		};
 	}
 
-	if (raw.output.kind === "pull_request") {
-		if (!exactKeys(raw.output, PR_OUTPUT_KEYS)) {
-			return { error: "pull_request output has unknown or missing fields" };
+	if (raw.result.kind === "pull_request") {
+		if (!exactKeys(raw.result, PR_RESULT_KEYS)) {
+			return { error: "pull_request result has unknown or missing fields" };
 		}
-		if (typeof raw.output.title !== "string" || hasNul(raw.output.title)) {
+		if (
+			typeof raw.result.title !== "string" ||
+			hasNul(raw.result.title) ||
+			raw.result.title.length < 1 ||
+			raw.result.title.length > GIT_METADATA_PR_TITLE_MAX
+		) {
 			return { error: "invalid pull_request title" };
 		}
-		if (typeof raw.output.body !== "string" || hasNul(raw.output.body)) {
+		if (
+			typeof raw.result.body !== "string" ||
+			hasNul(raw.result.body) ||
+			raw.result.body.length < 1 ||
+			raw.result.body.length > GIT_METADATA_PR_BODY_MAX
+		) {
 			return { error: "invalid pull_request body" };
 		}
 		return {
 			v: 1,
 			kind: "result",
 			requestId: raw.requestId,
-			output: {
+			result: {
 				kind: "pull_request",
-				title: raw.output.title,
-				body: raw.output.body,
+				title: raw.result.title,
+				body: raw.result.body,
 			},
 		};
 	}
 
-	return { error: "unknown result output kind" };
+	return { error: "unknown result kind" };
 }
 
 export function encodeGitMetadataOut(out: GitMetadataOut): string {
 	return `${JSON.stringify(out)}\n`;
 }
 
+/** Safe protocol error. Never embed provider/tool/model/diff prose. */
 export function gitMetadataError(
 	code: GitMetadataErrorCode,
-	message: string,
 	requestId?: string,
 ): GitMetadataErrorResult {
-	// Never include raw model/diff text in errors.
-	const safe = message.slice(0, 200).replaceAll("\0", "");
 	return requestId
-		? { v: 1, kind: "error", requestId, code, message: safe }
-		: { v: 1, kind: "error", code, message: safe };
+		? { v: 1, kind: "error", requestId, code }
+		: { v: 1, kind: "error", code };
 }

@@ -15,7 +15,10 @@ const GIT_COMMAND_TIMEOUT_MS = 120_000;
 const METADATA_TIMEOUT_MS = 120_000;
 const METADATA_CLI = "/opt/ditto-runner/dist/git-metadata-cli.js";
 const JOB_DIR = "/tmp/ditto-git-metadata-jobs";
+const RAW_JOB_MAX_BYTES = 128 * 1024;
 const PATCH_MAX_BYTES = 96 * 1024;
+/** Slightly above final 96 KiB so known-secret redaction can run before the final cap. */
+const PATCH_RAW_READ_BYTES = 100 * 1024;
 const STAT_MAX_BYTES = 8 * 1024;
 const PATHS_MAX = 200;
 const PATH_MAX_CHARS = 1024;
@@ -41,28 +44,38 @@ export class SessionGitMetadataError extends Error {
 	}
 }
 
+const nulFree = (value: string) => !value.includes("\0");
+const utf8Max = (maxBytes: number) => (value: string) =>
+	Buffer.byteLength(value, "utf8") <= maxBytes;
+
 const changedPathSchema = z.union([
 	z
 		.object({
 			status: z.string().regex(/^(?:\?\?|[AMDTTU!])$/),
-			path: z.string().min(1).max(PATH_MAX_CHARS),
+			path: z.string().min(1).max(PATH_MAX_CHARS).refine(nulFree),
 		})
 		.strict(),
 	z
 		.object({
 			status: z.string().regex(/^[RC][0-9]{3}$/),
-			path: z.string().min(1).max(PATH_MAX_CHARS),
-			previousPath: z.string().min(1).max(PATH_MAX_CHARS),
+			path: z.string().min(1).max(PATH_MAX_CHARS).refine(nulFree),
+			previousPath: z.string().min(1).max(PATH_MAX_CHARS).refine(nulFree),
 		})
 		.strict(),
 ]);
 
 const snapshotCommonSchema = {
-	branch: z.string().min(1).max(256),
-	headSha: z.string().regex(/^[0-9a-f]{7,64}$/i),
+	branch: z.string().min(1).max(256).refine(nulFree),
+	headSha: z.string().regex(/^[0-9a-f]{7,64}$/i).refine(nulFree),
 	changedPaths: z.array(changedPathSchema).max(PATHS_MAX),
-	diffStat: z.string().max(STAT_MAX_BYTES),
-	patch: z.string(),
+	diffStat: z
+		.string()
+		.refine(nulFree)
+		.refine(utf8Max(STAT_MAX_BYTES)),
+	patch: z
+		.string()
+		.refine(nulFree)
+		.refine(utf8Max(PATCH_MAX_BYTES)),
 	patchTruncated: z.boolean(),
 	patchOriginalBytes: z.number().int().nonnegative(),
 };
@@ -70,7 +83,7 @@ const snapshotCommonSchema = {
 const commitJobSchema = z
 	.object({
 		v: z.literal(1),
-		requestId: z.string().min(1).max(128),
+		requestId: z.string().min(1).max(128).refine(nulFree),
 		kind: z.literal("commit"),
 		model: z.literal(MODEL),
 		snapshot: z
@@ -85,15 +98,17 @@ const commitJobSchema = z
 const pullRequestJobSchema = z
 	.object({
 		v: z.literal(1),
-		requestId: z.string().min(1).max(128),
+		requestId: z.string().min(1).max(128).refine(nulFree),
 		kind: z.literal("pull_request"),
 		model: z.literal(MODEL),
 		snapshot: z
 			.object({
 				kind: z.literal("pull_request_snapshot"),
 				...snapshotCommonSchema,
-				baseSha: z.string().regex(/^[0-9a-f]{7,64}$/i),
-				commitSubjects: z.array(z.string().min(1).max(500)).max(20),
+				baseSha: z.string().regex(/^[0-9a-f]{7,64}$/i).refine(nulFree),
+				commitSubjects: z
+					.array(z.string().min(1).max(500).refine(nulFree))
+					.max(20),
 			})
 			.strict(),
 	})
@@ -103,11 +118,11 @@ const commitResultSchema = z
 	.object({
 		v: z.literal(1),
 		kind: z.literal("result"),
-		requestId: z.string().min(1),
-		output: z
+		requestId: z.string().min(1).max(128).refine(nulFree),
+		result: z
 			.object({
 				kind: z.literal("commit"),
-				message: z.string().min(1).max(72),
+				message: z.string().min(1).max(72).refine(nulFree),
 			})
 			.strict(),
 	})
@@ -117,12 +132,12 @@ const pullRequestResultSchema = z
 	.object({
 		v: z.literal(1),
 		kind: z.literal("result"),
-		requestId: z.string().min(1),
-		output: z
+		requestId: z.string().min(1).max(128).refine(nulFree),
+		result: z
 			.object({
 				kind: z.literal("pull_request"),
-				title: z.string().min(1).max(100),
-				body: z.string().min(1).max(4000),
+				title: z.string().min(1).max(100).refine(nulFree),
+				body: z.string().min(1).max(4000).refine(nulFree),
 			})
 			.strict(),
 	})
@@ -132,14 +147,13 @@ const errorResultSchema = z
 	.object({
 		v: z.literal(1),
 		kind: z.literal("error"),
-		requestId: z.string().min(1).optional(),
+		requestId: z.string().min(1).max(128).refine(nulFree).optional(),
 		code: z.enum([
 			"invalid_job",
 			"unknown_model",
 			"agent_failed",
 			"missing_result",
 		]),
-		message: z.string().min(1).max(500),
 	})
 	.strict();
 
@@ -177,6 +191,19 @@ type MetadataContext = {
 	knownSecrets?: readonly string[];
 };
 
+const PROTOCOL_ERROR_MESSAGES: Record<
+	Exclude<
+		SessionGitMetadataErrorCode,
+		"snapshot_failed" | "output_rejected" | "no_changes"
+	>,
+	string
+> = {
+	invalid_job: "Metadata agent rejected the job.",
+	unknown_model: "Metadata agent model is unavailable.",
+	agent_failed: "Metadata agent failed.",
+	missing_result: "Metadata agent did not return typed output.",
+};
+
 function quoteShellArg(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;
 }
@@ -191,13 +218,8 @@ async function execOrThrow(
 		timeout: GIT_COMMAND_TIMEOUT_MS,
 	});
 	if (!result.success) {
-		const detail = (result.stderr || result.stdout || "").trim().slice(0, 200);
-		throw new SessionGitMetadataError(
-			"snapshot_failed",
-			detail
-				? `${options.errorPrefix}: ${redactSecrets(detail, [])}`
-				: options.errorPrefix,
-		);
+		// Never surface Git stderr/stdout to clients — static controlled text only.
+		throw new SessionGitMetadataError("snapshot_failed", options.errorPrefix);
 	}
 	return result;
 }
@@ -212,7 +234,7 @@ function parseNameStatusZ(stdout: string): SnapshotCommon["changedPaths"] {
 		if (!path) {
 			throw new SessionGitMetadataError(
 				"snapshot_failed",
-				"Failed to parse name-status output.",
+				"Failed to parse changed paths.",
 			);
 		}
 		if (/^[RC][0-9]{3}$/.test(status)) {
@@ -220,7 +242,7 @@ function parseNameStatusZ(stdout: string): SnapshotCommon["changedPaths"] {
 			if (!destination) {
 				throw new SessionGitMetadataError(
 					"snapshot_failed",
-					"Failed to parse rename/copy name-status output.",
+					"Failed to parse rename/copy changed paths.",
 				);
 			}
 			// git name-status -z: status, source (old), destination (new)
@@ -235,6 +257,12 @@ function parseNameStatusZ(stdout: string): SnapshotCommon["changedPaths"] {
 		paths.push({ status, path });
 		i += 2;
 	}
+	return paths;
+}
+
+function filterSecretLikePaths(
+	paths: SnapshotCommon["changedPaths"],
+): SnapshotCommon["changedPaths"] {
 	return paths
 		.filter((entry) => {
 			if ("previousPath" in entry) {
@@ -246,6 +274,19 @@ function parseNameStatusZ(stdout: string): SnapshotCommon["changedPaths"] {
 			return !isSecretLikeGitPath(entry.path);
 		})
 		.slice(0, PATHS_MAX);
+}
+
+/** Pathspecs for git diff, including rename sources so content is not missed. */
+function pathspecsForDiff(paths: SnapshotCommon["changedPaths"]): string[] {
+	const out: string[] = [];
+	for (const entry of paths) {
+		if ("previousPath" in entry) {
+			out.push(entry.previousPath, entry.path);
+		} else {
+			out.push(entry.path);
+		}
+	}
+	return out;
 }
 
 function capUtf8(
@@ -267,20 +308,34 @@ function capUtf8(
 	return { text: buf.subarray(0, end).toString("utf8"), truncated: true };
 }
 
-function applyRedactionAndCaps(
-	snapshot: SnapshotCommon,
+/**
+ * Redact every snapshot field (including commit subjects when present), then
+ * apply final caps. patchTruncated reflects omitted patch source bytes or
+ * post-redaction patch cap only — never stat-only truncation.
+ */
+function applyRedactionAndCaps<T extends SnapshotCommon>(
+	snapshot: T,
 	knownSecrets: readonly string[],
-): SnapshotCommon {
-	const redacted = redactStructured(snapshot, knownSecrets) as SnapshotCommon;
+): T {
+	const redacted = redactStructured(snapshot, knownSecrets) as T;
 	const statCap = capUtf8(redacted.diffStat, STAT_MAX_BYTES);
 	const patchCap = capUtf8(redacted.patch, PATCH_MAX_BYTES);
 	return {
 		...redacted,
 		diffStat: statCap.text,
 		patch: patchCap.text,
-		patchTruncated:
-			redacted.patchTruncated || statCap.truncated || patchCap.truncated,
+		patchTruncated: redacted.patchTruncated || patchCap.truncated,
 	};
+}
+
+function assertJobWithinRawLimit(job: unknown): void {
+	const bytes = Buffer.byteLength(JSON.stringify(job), "utf8");
+	if (bytes > RAW_JOB_MAX_BYTES) {
+		throw new SessionGitMetadataError(
+			"snapshot_failed",
+			"Git snapshot exceeds the metadata size limit.",
+		);
+	}
 }
 
 async function collectBoundedPatch(options: {
@@ -296,12 +351,12 @@ async function collectBoundedPatch(options: {
 	await execOrThrow(
 		options.sandbox,
 		`${options.diffCommand} > ${quoteShellArg(options.patchPath)}`,
-		{ cwd: options.cwd, errorPrefix: "Failed to collect git patch" },
+		{ cwd: options.cwd, errorPrefix: "Failed to collect git patch." },
 	);
 	const sizeResult = await execOrThrow(
 		options.sandbox,
 		`wc -c < ${quoteShellArg(options.patchPath)}`,
-		{ cwd: options.cwd, errorPrefix: "Failed to measure git patch" },
+		{ cwd: options.cwd, errorPrefix: "Failed to measure git patch." },
 	);
 	const patchOriginalBytes = Number.parseInt(sizeResult.stdout.trim(), 10);
 	if (!Number.isFinite(patchOriginalBytes) || patchOriginalBytes < 0) {
@@ -310,15 +365,16 @@ async function collectBoundedPatch(options: {
 			"Failed to measure git patch size.",
 		);
 	}
+	// Read slightly above the final 96 KiB cap so redaction can run first.
 	const headResult = await execOrThrow(
 		options.sandbox,
-		`head -c ${PATCH_MAX_BYTES} ${quoteShellArg(options.patchPath)}`,
-		{ cwd: options.cwd, errorPrefix: "Failed to read git patch" },
+		`head -c ${PATCH_RAW_READ_BYTES} ${quoteShellArg(options.patchPath)}`,
+		{ cwd: options.cwd, errorPrefix: "Failed to read git patch." },
 	);
 	return {
 		patch: headResult.stdout,
 		patchOriginalBytes,
-		patchTruncated: patchOriginalBytes > PATCH_MAX_BYTES,
+		patchTruncated: patchOriginalBytes > PATCH_RAW_READ_BYTES,
 	};
 }
 
@@ -329,7 +385,7 @@ async function readBranchHead(
 ): Promise<{ branch: string; headSha: string }> {
 	const head = await execOrThrow(sandbox, "git rev-parse HEAD", {
 		cwd,
-		errorPrefix: "Failed to resolve HEAD",
+		errorPrefix: "Failed to resolve HEAD.",
 	});
 	return { branch: branchName, headSha: head.stdout.trim() };
 }
@@ -355,7 +411,7 @@ export async function collectCommitMetadataSnapshot(
 		const statusResult = await execOrThrow(
 			sandbox,
 			"git status --porcelain=v1 -z -uall",
-			{ cwd, errorPrefix: "Failed to read git status" },
+			{ cwd, errorPrefix: "Failed to read git status." },
 		);
 		const entries = parsePorcelainZ(statusResult.stdout);
 		if (entries.length === 0) {
@@ -377,28 +433,31 @@ export async function collectCommitMetadataSnapshot(
 		await execOrThrow(
 			sandbox,
 			`rm -f -- ${quoteShellArg(tmpIndex)} && ${indexEnv} git read-tree HEAD`,
-			{ cwd, errorPrefix: "Failed to prepare temporary git index" },
+			{ cwd, errorPrefix: "Failed to prepare temporary git index." },
 		);
 		const addArgs = stageableFiles.map(quoteGitHubExportShellArg).join(" ");
 		await execOrThrow(sandbox, `${indexEnv} git add -- ${addArgs}`, {
 			cwd,
-			errorPrefix: "Failed to stage paths into temporary index",
+			errorPrefix: "Failed to stage paths into temporary index.",
 		});
 
 		const nameStatus = await execOrThrow(
 			sandbox,
 			`${indexEnv} git diff --cached --name-status -z`,
-			{ cwd, errorPrefix: "Failed to read temporary staged paths" },
+			{ cwd, errorPrefix: "Failed to read temporary staged paths." },
 		);
-		const changedPaths = parseNameStatusZ(nameStatus.stdout);
+		const changedPaths = filterSecretLikePaths(
+			parseNameStatusZ(nameStatus.stdout),
+		);
 		if (changedPaths.length === 0) {
 			return { kind: "no_changes" };
 		}
 
+		// Stat/patch only the safe staged set already in the temp index.
 		const statResult = await execOrThrow(
 			sandbox,
 			`${indexEnv} git diff --cached --stat ${GIT_DIFF_FLAGS}`,
-			{ cwd, errorPrefix: "Failed to read temporary staged stat" },
+			{ cwd, errorPrefix: "Failed to read temporary staged stat." },
 		);
 		const patch = await collectBoundedPatch({
 			sandbox,
@@ -427,6 +486,7 @@ export async function collectCommitMetadataSnapshot(
 			model: MODEL,
 			snapshot: { kind: "commit_snapshot", ...snapshot },
 		});
+		assertJobWithinRawLimit(job);
 		return { kind: "commit", requestId, job };
 	} catch (error) {
 		if (error instanceof SessionGitMetadataError) {
@@ -438,9 +498,20 @@ export async function collectCommitMetadataSnapshot(
 				"Commit snapshot failed validation after redaction.",
 			);
 		}
-		const message =
-			error instanceof Error ? error.message.slice(0, 200) : "snapshot failed";
-		throw new SessionGitMetadataError("snapshot_failed", message);
+		// Controlled policy text from assertNoStagedSecretPaths — preserve, no stderr.
+		if (
+			error instanceof Error &&
+			error.message.includes("secret-like path is already staged")
+		) {
+			throw new SessionGitMetadataError(
+				"snapshot_failed",
+				error.message.slice(0, 200),
+			);
+		}
+		throw new SessionGitMetadataError(
+			"snapshot_failed",
+			"Failed to collect commit snapshot.",
+		);
 	} finally {
 		await sandbox.exec(
 			`rm -f -- ${quoteShellArg(tmpIndex)} ${quoteShellArg(patchPath)}`,
@@ -452,6 +523,7 @@ export async function collectCommitMetadataSnapshot(
 /**
  * Build a PR snapshot for exact stored base..HEAD / base...HEAD.
  * Fails closed when the worktree is dirty or base is missing/unresolvable.
+ * Stat/patch are built only from non-secret-like changed paths.
  */
 export async function collectPullRequestMetadataSnapshot(
 	ctx: MetadataContext,
@@ -477,7 +549,7 @@ export async function collectPullRequestMetadataSnapshot(
 		const dirty = await execOrThrow(
 			sandbox,
 			"git status --porcelain=v1 -z -uall",
-			{ cwd, errorPrefix: "Failed to read git status" },
+			{ cwd, errorPrefix: "Failed to read git status." },
 		);
 		if (dirty.stdout) {
 			throw new SessionGitMetadataError(
@@ -493,7 +565,7 @@ export async function collectPullRequestMetadataSnapshot(
 			`git rev-parse --verify ${quotedBase}^{commit}`,
 			{
 				cwd,
-				errorPrefix: "Session base commit is not available in the worktree",
+				errorPrefix: "Session base commit is not available in the worktree.",
 			},
 		);
 
@@ -507,7 +579,7 @@ export async function collectPullRequestMetadataSnapshot(
 		const subjectsResult = await execOrThrow(
 			sandbox,
 			`git log --format=%s -n 20 ${quotedBase}..HEAD`,
-			{ cwd, errorPrefix: "Failed to read commit subjects" },
+			{ cwd, errorPrefix: "Failed to read commit subjects." },
 		);
 		const newestFirst = subjectsResult.stdout
 			.split("\n")
@@ -518,22 +590,35 @@ export async function collectPullRequestMetadataSnapshot(
 		const nameStatus = await execOrThrow(
 			sandbox,
 			`git diff --name-status -z ${quotedBase}...HEAD`,
-			{ cwd, errorPrefix: "Failed to read pull request changed paths" },
+			{ cwd, errorPrefix: "Failed to read pull request changed paths." },
 		);
-		const changedPaths = parseNameStatusZ(nameStatus.stdout);
+		const changedPaths = filterSecretLikePaths(
+			parseNameStatusZ(nameStatus.stdout),
+		);
+		if (changedPaths.length === 0) {
+			throw new SessionGitMetadataError(
+				"snapshot_failed",
+				"No safe changes available for pull request metadata.",
+			);
+		}
 
+		// Build stat/patch from explicit safe pathspecs only (rename sources included).
+		const pathArgs = pathspecsForDiff(changedPaths)
+			.map(quoteGitHubExportShellArg)
+			.join(" ");
 		const statResult = await execOrThrow(
 			sandbox,
-			`git diff --stat ${GIT_DIFF_FLAGS} ${quotedBase}...HEAD`,
-			{ cwd, errorPrefix: "Failed to read pull request diff stat" },
+			`git diff --stat ${GIT_DIFF_FLAGS} ${quotedBase}...HEAD -- ${pathArgs}`,
+			{ cwd, errorPrefix: "Failed to read pull request diff stat." },
 		);
 		const patch = await collectBoundedPatch({
 			sandbox,
 			cwd,
-			diffCommand: `git diff ${GIT_DIFF_FLAGS} ${quotedBase}...HEAD`,
+			diffCommand: `git diff ${GIT_DIFF_FLAGS} ${quotedBase}...HEAD -- ${pathArgs}`,
 			patchPath,
 		});
 
+		// Redact ALL fields, including commitSubjects, before the job is written.
 		const snapshot = applyRedactionAndCaps(
 			{
 				branch,
@@ -543,6 +628,8 @@ export async function collectPullRequestMetadataSnapshot(
 				patch: patch.patch,
 				patchTruncated: patch.patchTruncated,
 				patchOriginalBytes: patch.patchOriginalBytes,
+				baseSha,
+				commitSubjects,
 			},
 			knownSecrets,
 		);
@@ -555,10 +642,9 @@ export async function collectPullRequestMetadataSnapshot(
 			snapshot: {
 				kind: "pull_request_snapshot",
 				...snapshot,
-				baseSha,
-				commitSubjects,
 			},
 		});
+		assertJobWithinRawLimit(job);
 		return { kind: "pull_request", requestId, job };
 	} catch (error) {
 		if (error instanceof SessionGitMetadataError) {
@@ -570,9 +656,10 @@ export async function collectPullRequestMetadataSnapshot(
 				"Pull request snapshot failed validation after redaction.",
 			);
 		}
-		const message =
-			error instanceof Error ? error.message.slice(0, 200) : "snapshot failed";
-		throw new SessionGitMetadataError("snapshot_failed", message);
+		throw new SessionGitMetadataError(
+			"snapshot_failed",
+			"Failed to collect pull request snapshot.",
+		);
 	} finally {
 		await sandbox.exec(`rm -f -- ${quoteShellArg(patchPath)}`, {
 			cwd: "/tmp",
@@ -635,6 +722,10 @@ export async function generateGitMetadata<
 		(value): value is string => typeof value === "string" && value.length > 0,
 	);
 
+	// Enforce complete-job ceiling before any write reaches the runner.
+	assertJobWithinRawLimit(options.job);
+	const jobJson = JSON.stringify(options.job);
+
 	const shell = await sandbox.createSession({
 		id: `git-metadata-${requestId}`.slice(0, 60),
 		cwd: options.cwd,
@@ -646,7 +737,7 @@ export async function generateGitMetadata<
 
 	try {
 		await shell.mkdir(JOB_DIR, { recursive: true });
-		await shell.writeFile(jobPath, JSON.stringify(options.job));
+		await shell.writeFile(jobPath, jobJson);
 		const result = await shell.exec(
 			`node ${METADATA_CLI} --job ${quoteShellArg(jobPath)}`,
 			{ timeout: METADATA_TIMEOUT_MS },
@@ -655,15 +746,9 @@ export async function generateGitMetadata<
 		const stdout = result.stdout.trim();
 		const lines = stdout.split("\n").filter((line) => line.trim().length > 0);
 		if (lines.length !== 1) {
-			const stderrTail = redactSecrets(
-				(result.stderr || "").trim().slice(-400),
-				secretValues,
-			);
 			throw new SessionGitMetadataError(
 				"agent_failed",
-				stderrTail
-					? `Metadata agent returned an invalid response. ${stderrTail}`
-					: "Metadata agent returned an invalid response.",
+				"Metadata agent returned an invalid response.",
 			);
 		}
 
@@ -687,10 +772,7 @@ export async function generateGitMetadata<
 
 		if (parsed.data.kind === "error") {
 			const code = parsed.data.code;
-			throw new SessionGitMetadataError(
-				code,
-				redactSecrets(parsed.data.message, secretValues).slice(0, 200),
-			);
+			throw new SessionGitMetadataError(code, PROTOCOL_ERROR_MESSAGES[code]);
 		}
 
 		if (parsed.data.requestId !== requestId) {
@@ -701,20 +783,20 @@ export async function generateGitMetadata<
 		}
 
 		if (options.job.kind === "commit") {
-			if (parsed.data.output.kind !== "commit") {
+			if (parsed.data.result.kind !== "commit") {
 				throw new SessionGitMetadataError(
 					"output_rejected",
 					"Metadata agent returned the wrong output kind.",
 				);
 			}
-		} else if (parsed.data.output.kind !== "pull_request") {
+		} else if (parsed.data.result.kind !== "pull_request") {
 			throw new SessionGitMetadataError(
 				"output_rejected",
 				"Metadata agent returned the wrong output kind.",
 			);
 		}
 
-		assertOutputSecretFree(parsed.data.output, secretValues);
+		assertOutputSecretFree(parsed.data.result, secretValues);
 		return parsed.data as TJob["kind"] extends "commit"
 			? CommitMetadataResult
 			: PullRequestMetadataResult;
@@ -722,11 +804,10 @@ export async function generateGitMetadata<
 		if (error instanceof SessionGitMetadataError) {
 			throw error;
 		}
-		const message =
-			error instanceof Error
-				? redactSecrets(error.message, secretValues).slice(0, 200)
-				: "Metadata agent failed";
-		throw new SessionGitMetadataError("agent_failed", message);
+		throw new SessionGitMetadataError(
+			"agent_failed",
+			"Metadata agent failed.",
+		);
 	} finally {
 		try {
 			await shell.deleteFile(jobPath);
@@ -768,7 +849,7 @@ export async function generateCommitMetadata(
 	});
 	return {
 		kind: "commit",
-		message: result.output.message,
+		message: result.result.message,
 		requestId: result.requestId,
 	};
 }
@@ -785,8 +866,8 @@ export async function generatePullRequestMetadata(
 		knownSecrets: ctx.knownSecrets,
 	});
 	return {
-		title: result.output.title,
-		body: result.output.body,
+		title: result.result.title,
+		body: result.result.body,
 		requestId: result.requestId,
 	};
 }
