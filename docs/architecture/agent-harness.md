@@ -39,8 +39,9 @@ once (the runner itself does not snapshot).
 |-------|-------|----|------|
 | Workspace conversation | D1 `workspace_sessions` | `sessionId` / `conversationId` | UI chat thread and message history |
 | Session git worktree | Sandbox filesystem | `ditto/session-<shortId>` on `/workspace/.ditto/worktrees/<sessionId>` | Per-session branch and isolated working tree |
-| Sandbox shell session | Cloudflare Sandbox `createSession` | e.g. `agent-<conversationId>` | Isolated cwd and env for one harness run |
-| PI agent session | File `/workspace/.ditto/sessions/<sessionId>.jsonl` | Same as D1 session id | Model history, tools, and harness state |
+| Sandbox shell session | Cloudflare Sandbox `createSession` | e.g. `agent-<conversationId>` or `git-metadata-<id>` | Isolated cwd and env for one harness run |
+| PI agent session (chat) | File `/workspace/.ditto/sessions/<sessionId>.jsonl` | Same as D1 session id | Model history, tools, and harness state |
+| PI agent session (UI git metadata) | In-memory only (`SessionManager.inMemory`) | Ephemeral request id | One-shot commit/PR metadata drafting; no JSONL, D1, or chat history |
 
 ## Runtime path
 
@@ -146,7 +147,8 @@ application-level mutex per `projectId` yet; parallel agents should not run
 competing installs on the primary tree. Within one session, agent runs and
 mutating UI Git operations share an atomic lock under sandbox `/tmp`, preventing
 concurrent worktree writers across Worker requests without persisting locks in
-workspace backups.
+workspace backups. UI Commit and UI Open PR hold that same lock from snapshot
+collection through generation and mutation; nested git helpers bypass re-lock.
 
 The live control path intentionally bypasses that workspace-session lock: the
 active agent run already holds it, so reacquiring it would deadlock. Controls
@@ -157,7 +159,28 @@ writer.
 
 Users commit, push, and open pull requests from the project UI (tRPC
 `sessionGit.*`). The Worker runs git commands in the session worktree cwd
-(`workspace_sessions.workspacePath`), not in the agent harness.
+(`workspace_sessions.workspacePath`), not in the chat agent harness.
+
+One-click UI Commit and UI Open PR draft metadata from the **actual Git diff**,
+not the session title or prompt:
+
+1. Under the session lock, the Worker builds a bounded, redacted snapshot
+   (commit: temporary index of safe paths; PR: exact stored `baseCommitSha` to
+   `HEAD` subjects/paths/stat/patch). Secret-like paths are omitted; staged
+   secrets fail closed. No project env, GitHub tokens, callback JWT, chat text,
+   or session title enter the job.
+2. A short-lived sandbox shell runs `ditto-git-metadata` with only
+   `DITTO_PI_CREDENTIAL` from the fixed operator fallback
+   (`opencode/deepseek-v4-flash-free` via `OPENCODE_API_KEY`). Job files live
+   under `/tmp/ditto-git-metadata-jobs/` and are deleted afterward.
+3. The metadata runner uses an in-memory PI session, empty resource discovery,
+   no repository/mutation tools, and exactly one terminating typed tool
+   (`submit_commit_metadata` or `submit_pull_request_metadata`). At most two
+   assistant turns. No durable PI JSONL or chat history.
+4. The Worker independently Zod-validates the one-line protocol result and
+   rejects secret-bearing output. Generation failure aborts with no Git/GitHub
+   mutation. Explicit commit `message` or PR `title`/`body`/`baseBranch` still
+   use the legacy paths (deterministic PR builders for non-UI/agent callers).
 
 Existing sessions can explicitly sync the latest GitHub default branch through
 `sessionGit.sync`. Sync requires a clean session worktree, fetches the named
@@ -180,11 +203,13 @@ changes.
 - Opening a PR uses installation Octokit auth (not the user's OAuth token).
 - v1 has no merge API or merge button.
 - UI and Worker session git mutations refresh the project sandbox backup
-  **only after a sandbox-mutating success** (commit that created a commit,
-  push, or PR open that first pushed). Opening a PR when no push was needed
-  does not snapshot. Backups are best-effort: a failed snapshot does not turn a
-  completed git mutation into a reported failure. Cold restore therefore does
-  not resurrect pre-export dirty worktrees after real mutations.
+  **only after the session lock releases** following a sandbox-mutating success
+  (commit that created a commit, or PR open that first pushed — including when
+  the subsequent open-PR call fails after a successful push). Opening a PR when
+  no push was needed does not snapshot. Backups are best-effort: a failed
+  snapshot does not turn a completed git mutation into a reported failure. Cold
+  restore therefore does not resurrect pre-export dirty worktrees after real
+  mutations.
 
 Chat-driven git uses PI custom tools in the sandbox runner (`ditto_push_branch`,
 `ditto_open_pull_request`). Those tools `POST` to Worker `POST /api/agent/git`

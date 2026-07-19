@@ -61,12 +61,19 @@ The large workflows live in narrow modules rather than route handlers:
   `session-workspace-lock.ts` own conversation lifecycle and write isolation.
 - `session-git.ts` is the shared Git/GitHub state machine used by browser and
   agent export paths.
+- `session-git-metadata.ts` collects bounded Git snapshots and bridges the
+  one-shot `ditto-git-metadata` runner (operator-fallback credential only).
+- `session-git-ui-actions.ts` orchestrates UI Commit/Open PR under one session
+  lock (snapshot → generate → mutate → release → conditional backup).
 - `agent-git-handler.ts` resolves JWT claims back to current D1 state and
   dispatches to the same Git services.
-- `github-export.ts` owns deterministic branch/commit/PR text helpers and safe
-  command/error formatting.
+- `github-export.ts` owns deterministic branch/PR text helpers and safe
+  command/error formatting for non-UI/agent-callback callers.
 - `git-secret-policy.ts` is a fail-closed preflight over outgoing commit paths
   and added content.
+- Runner boundary: chat uses `ditto-runner` + durable PI JSONL; UI metadata uses
+  `ditto-git-metadata` + in-memory PI with a closed job/result protocol and no
+  chat/D1 persistence.
 
 Dependency injection in complex services exists for deterministic tests, not as
 an alternate runtime plugin system.

@@ -105,6 +105,28 @@ cannot establish or inspect the outgoing range. It blocks:
 Local agent edits and commits remain possible so work is not destroyed; the
 policy blocks export from the sandbox to GitHub.
 
+## UI git-metadata drafting
+
+One-click UI Commit / Open PR spawn an ephemeral metadata agent that is **not**
+the chat harness:
+
+- No project environment variables, GitHub tokens, or git-callback JWT in the
+  shell or job. Only operator-fallback `DITTO_PI_CREDENTIAL` is passed and
+  deleted inside the runner before the PI session starts.
+- Input is a bounded, redacted **Git snapshot** (paths/stat/patch/subjects),
+  never the user prompt or session title. Secret-like paths are omitted;
+  `redactStructured` runs before the job is written; patch size is capped.
+- The agent has no repository tools, no disk resource discovery, and only one
+  typed terminating output tool. Prompt wording treats the diff as untrusted
+  data; isolation is enforced by tool removal, schema validation, and redaction,
+  not prompt text alone.
+- Output is independently Zod-validated in the Worker and rejected if
+  secret redaction would change it. Errors are reason-coded and redacted; raw
+  model/diff/stderr/credentials never reach the browser.
+- `/tmp` job, patch, and temp-index artifacts are removed on every path. The
+  metadata session is in-memory and disposed; nothing is written to D1 or PI
+  JSONL. Generation failure occurs before any Git/GitHub mutation.
+
 ## Filesystem and command controls
 
 Prompts are serialized to a job file with the Sandbox file API and never
@@ -152,6 +174,7 @@ dependencies, build outputs, and caches. Session worktrees symlink only
 | Encryption/env vars | `apps/web/src/lib/crypto.ts`, `project-env-vars.ts`, `env-vars.ts` |
 | Redaction | `apps/web/src/lib/secret-redaction.ts`, `agent-run.ts`, `github-export.ts` |
 | Git egress | `apps/web/src/lib/git-secret-policy.ts`, `session-git.ts` |
+| UI git metadata | `apps/web/src/lib/session-git-metadata.ts`, `session-git-ui-actions.ts`, `packages/sandbox-runner/src/run-git-metadata.ts` |
 | Backup exclusions | `apps/web/src/lib/sandbox-backup.ts` |
 | Workspace locking | `apps/web/src/lib/session-workspace-lock.ts`, `workspace-policy.ts` |
 

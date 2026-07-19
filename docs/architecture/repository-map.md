@@ -128,6 +128,7 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | `apps/web/src/integrations/trpc/routers/github.ts` | Authenticated GitHub import-state and branch-listing procedures. |
 | `apps/web/src/integrations/trpc/routers/health.ts` | Minimal public liveness procedure. |
 | `apps/web/src/integrations/trpc/routers/projects.ts` | Project CRUD, sandbox provisioning, encrypted environment-variable management, and project listing. |
+| `apps/web/src/integrations/trpc/routers/session-git.test.ts` | Router tests for generated vs explicit commit/PR metadata delegation and error mapping. |
 | `apps/web/src/integrations/trpc/routers/session-git.ts` | Authenticated UI API for session Git status, sync, commit, push, and pull requests. |
 | `apps/web/src/integrations/trpc/routers/workspace.test.ts` | Regression tests for `apps/web/src/integrations/trpc/routers/workspace.ts` behavior and edge cases. |
 | `apps/web/src/integrations/trpc/routers/workspace.ts` | Workspace ensure/retry, active-session reads, keyset message pagination, and session archival. |
@@ -189,8 +190,12 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | `apps/web/src/lib/secret-redaction.ts` | Concrete/pattern/streaming secret redaction for text and structured output. |
 | `apps/web/src/lib/session-git-backup.test.ts` | Regression tests for `apps/web/src/lib/session-git-backup.ts` behavior and edge cases. |
 | `apps/web/src/lib/session-git-backup.ts` | Wraps successful Git mutations with best-effort versioned workspace backup. |
+| `apps/web/src/lib/session-git-metadata.test.ts` | Regression tests for bounded snapshot collection and metadata runner bridge. |
+| `apps/web/src/lib/session-git-metadata.ts` | Collects redacted Git snapshots and runs the one-shot metadata CLI bridge. |
 | `apps/web/src/lib/session-git-trpc-errors.test.ts` | Regression tests for `apps/web/src/lib/session-git-trpc-errors.ts` behavior and edge cases. |
 | `apps/web/src/lib/session-git-trpc-errors.ts` | Maps shared Git mutation errors to stable tRPC errors. |
+| `apps/web/src/lib/session-git-ui-actions.test.ts` | Regression tests for lock/generate/mutate/backup ordering of UI git actions. |
+| `apps/web/src/lib/session-git-ui-actions.ts` | UI Commit/Open PR orchestration under one session workspace lock. |
 | `apps/web/src/lib/session-git.test.ts` | Regression tests for `apps/web/src/lib/session-git.ts` behavior and edge cases. |
 | `apps/web/src/lib/session-git.ts` | Session Git/GitHub state machine and sync/commit/push/pull-request implementation. |
 | `apps/web/src/lib/session-workspace-lock-error.ts` | Shared typed busy error for concurrent session workspace writes. |
@@ -227,10 +232,18 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | `packages/sandbox-runner/src/ditto-git-guidance.ts` | Prompt guidance and descriptions for Ditto-specific Git tools. |
 | `packages/sandbox-runner/src/ditto-git-tools.test.ts` | Regression tests for `packages/sandbox-runner/src/ditto-git-tools.ts` behavior and edge cases. |
 | `packages/sandbox-runner/src/ditto-git-tools.ts` | Defines PI custom tools for pushing and opening pull requests through the Worker. |
+| `packages/sandbox-runner/src/git-metadata-cli.test.ts` | Regression tests for the one-shot metadata CLI entrypoint. |
+| `packages/sandbox-runner/src/git-metadata-cli.ts` | Reads a bounded job file, runs metadata drafting, prints one protocol line. |
+| `packages/sandbox-runner/src/git-metadata-job.test.ts` | Regression tests for the closed git-metadata job/result protocol. |
+| `packages/sandbox-runner/src/git-metadata-job.ts` | Versioned job/result unions, size caps, and safe error encoding for metadata drafting. |
 | `packages/sandbox-runner/src/protocol.test.ts` | Regression tests for `packages/sandbox-runner/src/protocol.ts` behavior and edge cases. |
 | `packages/sandbox-runner/src/protocol.ts` | Versioned runner output union, PI event normalization, and terminal text fallback helpers. |
 | `packages/sandbox-runner/src/run-agent.test.ts` | Regression tests for PI follow-up FIFO, Stop ordering, expected abort, and socket cleanup. |
 | `packages/sandbox-runner/src/run-agent.ts` | Creates/resumes PI sessions, binds run-scoped controls, emits turn/text/tool events, and settles a run. |
+| `packages/sandbox-runner/src/run-git-metadata.test.ts` | Regression tests for the isolated one-shot metadata PI session. |
+| `packages/sandbox-runner/src/run-git-metadata.ts` | In-memory PI session with a single terminating typed metadata tool and two-turn cap. |
+| `packages/sandbox-runner/src/runner-model.test.ts` | Regression tests for shared in-memory credential/model bootstrap. |
+| `packages/sandbox-runner/src/runner-model.ts` | Parses model specifiers, seeds `InMemoryCredentialStore`, scrubs credential env vars. |
 | `packages/sandbox-runner/tsconfig.json` | Runner TypeScript/build settings. |
 | `packages/sandbox-runner/vitest.config.ts` | Runner Vitest configuration. |
 
