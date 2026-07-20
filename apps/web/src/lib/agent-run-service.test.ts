@@ -481,6 +481,173 @@ describe("prepareAgentRun", () => {
 		expect(result.kind).toBe("ready");
 	});
 
+	it("rejects invalid thinkingLevel enum at the boundary", async () => {
+		const { agentStreamBodySchema } = await import("./agent-run-service");
+		const parsed = agentStreamBodySchema.safeParse({
+			projectId: "proj-1",
+			message: "hi",
+			model: "opencode/deepseek-v4-flash-free",
+			thinkingLevel: "ultra",
+		});
+		expect(parsed.success).toBe(false);
+	});
+
+	it("rejects unsupported valid level before side effects", async () => {
+		const loadProjectForUser = vi.fn();
+		const { db } = createMockDb();
+		const result = await prepareAgentRun({
+			db,
+			env: makeEnv(),
+			userId: "user-1",
+			input: {
+				projectId: "proj-1",
+				message: "hi",
+				model: "opencode/deepseek-v4-flash-free",
+				thinkingLevel: "medium",
+			},
+			deps: baseDeps({
+				loadCredential: vi.fn().mockResolvedValue(null),
+				loadProjectForUser,
+			}),
+		});
+		expect(result).toMatchObject({
+			kind: "error",
+			status: 400,
+			body: {
+				error: expect.stringMatching(/Unsupported thinking level/i),
+			},
+		});
+		expect(loadProjectForUser).not.toHaveBeenCalled();
+	});
+
+	it("accepts supported thinkingLevel into context", async () => {
+		const { db, batch } = createMockDb();
+		batch.mockResolvedValue([[{ id: "user-msg" }], [{ id: "asst-msg" }]]);
+		const result = await prepareAgentRun({
+			db,
+			env: makeEnv(),
+			userId: "user-1",
+			input: {
+				projectId: "proj-1",
+				sessionId: "sess-1",
+				message: "hi",
+				model: "opencode/deepseek-v4-flash-free",
+				thinkingLevel: "high",
+			},
+			deps: baseDeps({
+				loadCredential: vi.fn().mockResolvedValue(null),
+				createId: vi
+					.fn()
+					.mockReturnValueOnce("run-1")
+					.mockReturnValueOnce("user-msg")
+					.mockReturnValueOnce("asst-msg"),
+			}),
+		});
+		expect(result.kind).toBe("ready");
+		if (result.kind === "ready") {
+			expect(result.context.thinkingLevel).toBe("high");
+		}
+	});
+
+	it("authorizes fallback high when owned catalog row lacks thinkingLevels", async () => {
+		const { db, batch } = createMockDb();
+		batch.mockResolvedValue([[{ id: "user-msg" }], [{ id: "asst-msg" }]]);
+		const ownedFallback = {
+			id: "c1",
+			authType: "api_key" as const,
+			status: "connected" as const,
+			version: 1,
+			credential: {
+				type: "api_key" as const,
+				key: "sk-user-opencode-key-xxxx",
+			},
+			// Legacy catalog: model present, thinkingLevels missing.
+			models: [
+				{
+					providerId: "opencode",
+					modelId: "deepseek-v4-flash-free",
+					name: "DeepSeek V4 Flash Free",
+				},
+			],
+			lastErrorCode: null,
+		};
+
+		const accepted = await prepareAgentRun({
+			db,
+			env: makeEnv(),
+			userId: "user-1",
+			input: {
+				projectId: "proj-1",
+				sessionId: "sess-1",
+				message: "hi",
+				model: "opencode/deepseek-v4-flash-free",
+				thinkingLevel: "high",
+			},
+			deps: baseDeps({
+				loadCredential: vi.fn().mockResolvedValue(ownedFallback),
+				createId: vi
+					.fn()
+					.mockReturnValueOnce("run-1")
+					.mockReturnValueOnce("user-msg")
+					.mockReturnValueOnce("asst-msg"),
+			}),
+		});
+		expect(accepted.kind).toBe("ready");
+		if (accepted.kind === "ready") {
+			expect(accepted.context.thinkingLevel).toBe("high");
+		}
+
+		const rejected = await prepareAgentRun({
+			db,
+			env: makeEnv(),
+			userId: "user-1",
+			input: {
+				projectId: "proj-1",
+				message: "hi",
+				model: "opencode/deepseek-v4-flash-free",
+				thinkingLevel: "medium",
+			},
+			deps: baseDeps({
+				loadCredential: vi.fn().mockResolvedValue(ownedFallback),
+			}),
+		});
+		expect(rejected).toMatchObject({
+			kind: "error",
+			status: 400,
+			body: {
+				error: expect.stringMatching(/Unsupported thinking level/i),
+			},
+		});
+	});
+
+	it("omitting thinkingLevel remains backward compatible", async () => {
+		const { db, batch } = createMockDb();
+		batch.mockResolvedValue([[{ id: "user-msg" }], [{ id: "asst-msg" }]]);
+		const result = await prepareAgentRun({
+			db,
+			env: makeEnv(),
+			userId: "user-1",
+			input: {
+				projectId: "proj-1",
+				sessionId: "sess-1",
+				message: "hi",
+				model: "opencode/deepseek-v4-flash-free",
+			},
+			deps: baseDeps({
+				loadCredential: vi.fn().mockResolvedValue(null),
+				createId: vi
+					.fn()
+					.mockReturnValueOnce("run-1")
+					.mockReturnValueOnce("user-msg")
+					.mockReturnValueOnce("asst-msg"),
+			}),
+		});
+		expect(result.kind).toBe("ready");
+		if (result.kind === "ready") {
+			expect(result.context.thinkingLevel).toBeUndefined();
+		}
+	});
+
 	it("rejects other opencode models without account credential", async () => {
 		const { db } = createMockDb();
 		const result = await prepareAgentRun({

@@ -2,6 +2,7 @@ import type {
 	AssistantMessagePart,
 	StreamToolCall,
 } from "#/lib/agent-message-parts";
+import type { PiThinkingLevel } from "#/lib/agent-models";
 
 export type {
 	AssistantMessagePart,
@@ -286,6 +287,8 @@ export async function streamAgentRun(
 		sessionId?: string;
 		message: string;
 		model: string;
+		/** Abstract Pi level; omit for legacy clients / unknown model capabilities. */
+		thinkingLevel?: PiThinkingLevel;
 	},
 	handlers: AgentStreamHandlers,
 	options?: { signal?: AbortSignal },

@@ -141,6 +141,59 @@ describe("runAgentInSandbox", () => {
 		expect(result).not.toHaveProperty("backupError");
 	});
 
+	it("includes optional thinkingLevel in job JSON", async () => {
+		const writeFile = vi.fn().mockResolvedValue(undefined);
+		const mkdir = vi.fn().mockResolvedValue(undefined);
+		const execStream = vi.fn().mockResolvedValue(new ReadableStream());
+		const deleteSession = vi.fn().mockResolvedValue(undefined);
+		const createSession = vi.fn().mockResolvedValue({
+			id: "agent-conv-1",
+			writeFile,
+			mkdir,
+			execStream,
+		});
+
+		getProjectSandboxMock.mockReturnValue({
+			createSession,
+			deleteSession,
+		});
+
+		parseSSEStreamMock.mockImplementation(async function* () {
+			yield {
+				type: "complete",
+				timestamp: new Date().toISOString(),
+				exitCode: 0,
+			};
+		});
+
+		await runAgentInSandbox({
+			env: makeEnv(),
+			sandboxId: "sandbox-1",
+			projectId: "project-1",
+			userId: "user-1",
+			conversationId: "conv-1",
+			runId: "run-1",
+			cwd: SESSION_WORKTREE_CWD,
+			model: "opencode/gpt-4.1",
+			thinkingLevel: "high",
+			runtimeCredentialJson: RUNTIME_CREDENTIAL_JSON,
+			prompt: "do the thing",
+			onRunnerMessage: vi.fn(),
+		});
+
+		expect(writeFile).toHaveBeenCalledWith(
+			expect.stringMatching(/\/workspace\/\.ditto\/jobs\/.+\.json$/),
+			JSON.stringify({
+				runId: "run-1",
+				conversationId: "conv-1",
+				model: "opencode/gpt-4.1",
+				prompt: "do the thing",
+				cwd: SESSION_WORKTREE_CWD,
+				thinkingLevel: "high",
+			}),
+		);
+	});
+
 	it("flushes held assistant text before tool events", async () => {
 		const writeFile = vi.fn().mockResolvedValue(undefined);
 		const mkdir = vi.fn().mockResolvedValue(undefined);

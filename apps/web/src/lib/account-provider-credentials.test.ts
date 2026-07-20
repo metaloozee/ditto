@@ -20,6 +20,7 @@ import {
 	projectSafeModels,
 	releaseLease,
 	type SafeModel,
+	safeModelSchema,
 	toRuntimeCredential,
 	updateCredentialUnderLease,
 	upsertCredential,
@@ -846,6 +847,43 @@ describe("account-provider-credentials", () => {
 				"anthropic",
 			),
 		).toThrow(/Duplicate/);
+	});
+
+	it("roundtrips canonical thinkingLevels and rejects bad values", () => {
+		const ok = safeModelSchema.parse({
+			providerId: "opencode",
+			modelId: "deepseek-v4-flash-free",
+			name: "DeepSeek",
+			reasoning: true,
+			thinkingLevels: ["off", "high", "max"],
+		});
+		expect(ok.thinkingLevels).toEqual(["off", "high", "max"]);
+
+		expect(
+			safeModelSchema.safeParse({
+				providerId: "opencode",
+				modelId: "x",
+				name: "X",
+				thinkingLevels: ["off", "not-a-level"],
+			}).success,
+		).toBe(false);
+
+		expect(
+			safeModelSchema.safeParse({
+				providerId: "opencode",
+				modelId: "x",
+				name: "X",
+				thinkingLevels: ["off", "off"],
+			}).success,
+		).toBe(false);
+
+		// Legacy catalog without the field remains readable.
+		const legacy = safeModelSchema.parse({
+			providerId: "opencode",
+			modelId: "old",
+			name: "Old",
+		});
+		expect(legacy.thinkingLevels).toBeUndefined();
 	});
 
 	it("migration cascades and has no project ownership columns", async () => {

@@ -46,6 +46,7 @@ export const providerAuthRouter = createTRPCRouter({
 				cost: m.cost,
 				input: m.input,
 				reasoning: m.reasoning,
+				thinkingLevels: m.thinkingLevels,
 				contextWindow: m.contextWindow,
 				maxTokens: m.maxTokens,
 			})),

@@ -26,6 +26,14 @@ import {
 	ModelSelectorTrigger,
 } from "#/components/ai-elements/model-selector";
 import { Button } from "#/components/ui/button";
+import {
+	Select,
+	SelectContent,
+	SelectGroup,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "#/components/ui/select";
 import { Textarea } from "#/components/ui/textarea";
 import {
 	Tooltip,
@@ -44,6 +52,10 @@ import {
 } from "#/lib/agent-message-parts";
 import {
 	DEFAULT_PROJECT_CODER_MODEL,
+	effectiveThinkingLevel,
+	isPiThinkingLevel,
+	PI_THINKING_LEVEL_LABELS,
+	type PiThinkingLevel,
 	PROJECT_CODER_MODELS,
 } from "#/lib/agent-models";
 import {
@@ -60,6 +72,7 @@ interface Model {
 	id: string;
 	name: string;
 	providers: string[];
+	thinkingLevels?: readonly PiThinkingLevel[];
 }
 
 interface ModelItemProps {
@@ -190,6 +203,12 @@ export function Composer({
 	const assistantTextRef = useRef("");
 	const model = useUserPreferencesStore((state) => state.selectedModel);
 	const setModel = useUserPreferencesStore((state) => state.setSelectedModel);
+	const thinkingPreference = useUserPreferencesStore(
+		(state) => state.thinkingLevel,
+	);
+	const setThinkingPreference = useUserPreferencesStore(
+		(state) => state.setThinkingLevel,
+	);
 	const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
 	const navigate = useNavigate();
 	const trpc = useTRPC();
@@ -203,6 +222,7 @@ export function Composer({
 				chef: m.providerName || m.provider,
 				chefSlug: m.provider,
 				providers: [m.provider],
+				thinkingLevels: m.thinkingLevels,
 			}));
 		}
 		return PROJECT_CODER_MODELS.map((m) => ({
@@ -211,6 +231,7 @@ export function Composer({
 			chef: m.providerName,
 			chefSlug: m.provider,
 			providers: [m.provider],
+			thinkingLevels: m.thinkingLevels,
 		}));
 	}, [modelsQuery.data?.models]);
 	const modelsByChef = useMemo(() => {
@@ -408,12 +429,17 @@ export function Composer({
 		let streamSessionId = sessionId ?? undefined;
 
 		try {
+			const thinkingLevel = effectiveThinkingLevel(
+				thinkingPreference,
+				models.find((m) => m.id === model)?.thinkingLevels,
+			);
 			await streamAgentRun(
 				{
 					projectId,
 					sessionId: streamSessionId,
 					message: prompt,
 					model,
+					...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
 				},
 				{
 					onMeta: (meta) => {
@@ -704,6 +730,21 @@ export function Composer({
 	}
 
 	const selectedModel = models.find((modelOption) => modelOption.id === model);
+	const selectedThinkingLevels = selectedModel?.thinkingLevels;
+	const effectiveThinking = effectiveThinkingLevel(
+		thinkingPreference,
+		selectedThinkingLevels,
+	);
+	const thinkingOptions = selectedThinkingLevels ?? [];
+	const thinkingSelectDisabled =
+		Boolean(disabledReason) ||
+		isStreaming ||
+		thinkingOptions.length <= 1 ||
+		effectiveThinking === undefined;
+	const thinkingTriggerLabel =
+		effectiveThinking === undefined
+			? "Auto"
+			: PI_THINKING_LEVEL_LABELS[effectiveThinking];
 	const hasText = Boolean(text.trim());
 	const actionName = stopping
 		? "Stopping"
@@ -791,22 +832,62 @@ export function Composer({
 						</ModelSelector>
 					</div>
 
-					<Textarea
-						aria-label="Message"
-						name="message"
-						value={text}
-						placeholder="Ask Ditto to inspect the workspace…"
-						onChange={(event) => {
-							textRef.current = event.currentTarget.value;
-							setText(event.currentTarget.value);
-						}}
-						onKeyDown={handleTextareaKeyDown}
-						className={cn(
-							"min-h-11 max-h-48 min-w-0 flex-1 resize-none rounded-3xl border-border bg-card px-4 py-2 text-sm shadow-xs md:text-sm",
-							"field-sizing-content text-pretty leading-relaxed",
-							"placeholder:text-muted-foreground/70",
-						)}
-					/>
+					<div className="relative min-w-0 flex-1">
+						<Textarea
+							aria-label="Message"
+							name="message"
+							value={text}
+							placeholder="Ask Ditto to inspect the workspace…"
+							onChange={(event) => {
+								textRef.current = event.currentTarget.value;
+								setText(event.currentTarget.value);
+							}}
+							onKeyDown={handleTextareaKeyDown}
+							className={cn(
+								"min-h-11 max-h-48 w-full resize-none rounded-3xl border-border bg-card px-4 py-2 pr-24 text-sm shadow-xs md:text-sm",
+								"field-sizing-content text-pretty leading-relaxed",
+								"placeholder:text-muted-foreground/70",
+							)}
+						/>
+						<div className="absolute right-2 bottom-2">
+							<Select
+								value={effectiveThinking ?? null}
+								onValueChange={(value) => {
+									if (isPiThinkingLevel(value)) {
+										setThinkingPreference(value);
+									}
+								}}
+								disabled={thinkingSelectDisabled}
+							>
+								<SelectTrigger
+									size="sm"
+									aria-label="Thinking level"
+									className={cn(
+										"h-auto gap-1 border-0 bg-transparent px-1.5 py-0.5 text-muted-foreground shadow-none",
+										"hover:bg-transparent hover:text-foreground",
+										"focus-visible:border-0 focus-visible:ring-1 focus-visible:ring-ring/40",
+										"dark:bg-transparent dark:hover:bg-transparent",
+										"disabled:opacity-40",
+									)}
+								>
+									<SelectValue>{thinkingTriggerLabel}</SelectValue>
+								</SelectTrigger>
+								<SelectContent
+									side="top"
+									align="end"
+									alignItemWithTrigger={false}
+								>
+									<SelectGroup>
+										{thinkingOptions.map((level) => (
+											<SelectItem key={level} value={level}>
+												{PI_THINKING_LEVEL_LABELS[level]}
+											</SelectItem>
+										))}
+									</SelectGroup>
+								</SelectContent>
+							</Select>
+						</div>
+					</div>
 
 					<div className="flex shrink-0 self-end">
 						<Tooltip>

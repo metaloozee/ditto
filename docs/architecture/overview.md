@@ -41,7 +41,7 @@ flowchart LR
 | Product shell | `apps/web/src/routes`, `apps/web/src/components`, `apps/web/src/styles.css` | Dashboard, project/session navigation, chat timeline, settings, and Git workflow UI |
 | Browser data layer | `apps/web/src/integrations/tanstack-query`, `apps/web/src/integrations/trpc/react.ts` | Query cache, SSR dehydration, typed tRPC options, and client mutations |
 | Worker APIs | `apps/web/src/integrations/trpc`, `apps/web/src/routes/api.*` | Cookie-authenticated CRUD, workspace lifecycle, message history, SSE runs, and agent Git callbacks |
-| Domain services | `apps/web/src/lib` | Agent lifecycle, sandbox persistence, worktrees, Git export, secrets, message representation, and policy |
+| Domain services | `apps/web/src/lib` | Agent lifecycle, sandbox persistence, worktrees, provider credentials/capabilities, Git export, secrets, message representation, and policy |
 | Durable records | `apps/web/src/db`, `apps/web/migrations` | Users, OAuth state, projects, conversations, messages, sandbox handles, and backup generations |
 | Sandbox runtime | `Dockerfile`, `packages/sandbox-runner` | Baked PI harness, isolated shell sessions, NDJSON protocol, and agent-only Git tools |
 | Infrastructure | `alchemy.run.ts`, `apps/web/src/server.ts`, `apps/web/types/env.d.ts` | Cloudflare Worker, D1, R2, Sandbox Durable Object, bindings, and deployment (Alchemy sole deploy owner) |
@@ -98,10 +98,14 @@ not have an agent-capable sandbox. The current UI creates GitHub-backed projects
 
 ### Run the agent
 
-1. `Composer` posts the prompt and model to `/api/agent/stream`.
-2. `prepareAgentRun` verifies ownership and readiness, creates or resolves the
-   workspace session, ensures its worktree, and atomically inserts user and
-   pending assistant rows.
+1. `Composer` discovers model capabilities through `providerAuth.models`,
+   clamps the persisted abstract thinking preference to the selected model,
+   and posts the prompt, model, and optional effective level to
+   `/api/agent/stream`.
+2. The route authenticates the cookie and validates the JSON body. Then
+   `prepareAgentRun` verifies the account's model authorization and any
+   explicit thinking level before project/session/message side effects, creates
+   or resolves the workspace session, and ensures its worktree.
 3. `executeAgentRun` invokes the sandbox runner and emits `meta`,
    `control_ready`, ordered turn boundaries, `delta`, `agent`, `error`, and
    `done` SSE events.
@@ -136,9 +140,10 @@ not have an agent-capable sandbox. The current UI creates GitHub-backed projects
 | Project metadata and lifecycle | D1 `projects` | Includes sandbox ID, encrypted env vars, backup handle, and generations |
 | Conversation metadata | D1 `workspace_sessions` | Includes branch, base commit, worktree path, title, and archive status |
 | Chat history | D1 `messages` | Assistant rows have pending/complete/failed terminal lifecycle |
+| Provider credentials and model catalogs | D1 `ai_provider_credentials` | Encrypted per-user credentials plus bounded safe catalogs and connection status |
 | Repository files and Git refs | Sandbox `/workspace` | Primary clone plus `.ditto/worktrees/<sessionId>` |
 | PI conversation state | Sandbox `/workspace/.ditto/sessions/*.jsonl` | Separate from UI chat persistence |
-| User model preference | Browser local storage via Zustand | Convenience only; validated during rehydration |
+| User model and thinking preference | Browser local storage via Zustand (`ditto-user-preferences-v1`) | Convenience only; model syntax and canonical level are validated during rehydration; model capabilities are resolved server-side |
 | Optimistic streamed messages | Browser module memory | Bounded and removed after server message IDs appear |
 | Accepted follow-ups not yet started | PI agent session queue plus transient browser projection | Not durable; Stop drops queued items before D1 rows exist |
 | Workspace durability | R2 directory backup | Excludes dependencies, builds, caches, and `.env*` |
@@ -174,6 +179,9 @@ GitHub installation token.
   collide outside Git worktrees.
 - Agent runs are intentionally not aborted when the browser disconnects. The
   server finishes persistence rather than leaving a pending assistant row.
+- Thinking levels use Pi's canonical vocabulary. Missing capability metadata is a
+  legacy compatibility signal: the client omits the optional level and Pi keeps
+  its normal default rather than receiving a guessed provider-specific value.
 - Explicit Stop is a separate authenticated session-control request. It clears
   queued PI follow-ups, requests cooperative PI abort, and lets terminal SSE
   persistence remain authoritative.

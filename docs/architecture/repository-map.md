@@ -85,6 +85,7 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | `apps/web/src/components/ui/message-scroller.tsx` | Chat scroll context, viewport, anchor preservation, and jump button. |
 | `apps/web/src/components/ui/message.tsx` | Chat message layout primitive. |
 | `apps/web/src/components/ui/scroll-area.tsx` | Base UI scroll-area wrapper. |
+| `apps/web/src/components/ui/select.tsx` | Select primitive used for model thinking-level choices. |
 | `apps/web/src/components/ui/separator.tsx` | Semantic visual separator. |
 | `apps/web/src/components/ui/sheet.tsx` | Slide-over sheet primitive. |
 | `apps/web/src/components/ui/sidebar.tsx` | Responsive/collapsible sidebar state and component system. |
@@ -128,6 +129,7 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | `apps/web/src/integrations/trpc/routers/github.ts` | Authenticated GitHub import-state and branch-listing procedures. |
 | `apps/web/src/integrations/trpc/routers/health.ts` | Minimal public liveness procedure. |
 | `apps/web/src/integrations/trpc/routers/projects.ts` | Project CRUD, sandbox provisioning, encrypted environment-variable management, and project listing. |
+| `apps/web/src/integrations/trpc/routers/provider-auth.ts` | Authenticated provider catalog, connection, model-capability, and disconnect queries/mutations. |
 | `apps/web/src/integrations/trpc/routers/session-git.test.ts` | Router tests for generated vs explicit commit/PR metadata delegation and error mapping. |
 | `apps/web/src/integrations/trpc/routers/session-git.ts` | Authenticated UI API for session Git status, sync, commit, push, and pull requests. |
 | `apps/web/src/integrations/trpc/routers/workspace.test.ts` | Regression tests for `apps/web/src/integrations/trpc/routers/workspace.ts` behavior and edge cases. |
@@ -137,6 +139,7 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 
 | File | Responsibility |
 |---|---|
+| `apps/web/src/lib/account-provider-credentials.ts` | Encrypted account credentials, safe model catalogs, runtime projection, and refresh leases. |
 | `apps/web/src/lib/agent-control-service.test.ts` | Regression tests for ownership, safe control jobs, cleanup, and stale targets. |
 | `apps/web/src/lib/agent-control-service.ts` | Validates and dispatches run-scoped follow-up/Stop jobs to the sandbox control CLI. |
 | `apps/web/src/lib/agent-delta-batcher.test.ts` | Regression tests for `apps/web/src/lib/agent-delta-batcher.ts` behavior and edge cases. |
@@ -149,13 +152,14 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | `apps/web/src/lib/agent-message-parts.ts` | Canonical ordered assistant text/tool model and PI event reducers. |
 | `apps/web/src/lib/agent-message-storage.test.ts` | Regression tests for `apps/web/src/lib/agent-message-storage.ts` behavior and edge cases. |
 | `apps/web/src/lib/agent-message-storage.ts` | Bounds, serializes, migrates, and parses durable assistant parts. |
-| `apps/web/src/lib/agent-models.ts` | Allowlisted project-coder models and default model. |
+| `apps/web/src/lib/agent-models.test.ts` | Regression tests for canonical thinking levels, capability clamping, and model specifiers. |
+| `apps/web/src/lib/agent-models.ts` | Canonical Pi thinking levels, capability clamping, model-specifier validation, and fallback model metadata. |
 | `apps/web/src/lib/agent-run-service.test.ts` | Regression tests for `apps/web/src/lib/agent-run-service.ts` behavior and edge cases. |
-| `apps/web/src/lib/agent-run-service.ts` | Agent preparation, multi-turn streaming lifecycle, terminal D1 persistence, and post-run backup. |
+| `apps/web/src/lib/agent-run-service.ts` | Request/model/capability validation, agent preparation, multi-turn streaming lifecycle, terminal D1 persistence, and post-run backup. |
 | `apps/web/src/lib/agent-run.test.ts` | Regression tests for `apps/web/src/lib/agent-run.ts` behavior and edge cases. |
 | `apps/web/src/lib/agent-run.ts` | Sandbox shell/job execution, runner protocol bridge, streaming redaction, lock, and cleanup. |
 | `apps/web/src/lib/agent-stream-client.test.ts` | Regression tests for `apps/web/src/lib/agent-stream-client.ts` behavior and edge cases. |
-| `apps/web/src/lib/agent-stream-client.ts` | Browser SSE request/parser, typed turn handlers, and JSON agent-control client. |
+| `apps/web/src/lib/agent-stream-client.ts` | Browser SSE request/parser, typed turn handlers, optional thinking-level request field, and JSON agent-control client. |
 | `apps/web/src/lib/agent-stream-protocol.test.ts` | Regression tests for `apps/web/src/lib/agent-stream-protocol.ts` behavior and edge cases. |
 | `apps/web/src/lib/agent-stream-protocol.ts` | Worker-side runner NDJSON parsing and SSE encoding helpers. |
 | `apps/web/src/lib/agent-tool-presentation.test.ts` | Regression tests for `apps/web/src/lib/agent-tool-presentation.ts` behavior and edge cases. |
@@ -182,6 +186,7 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | `apps/web/src/lib/project-env-vars.ts` | Sanitizes, encrypts, decrypts, and hides project environment values. |
 | `apps/web/src/lib/project-sandbox.test.ts` | Regression tests for `apps/web/src/lib/project-sandbox.ts` behavior and edge cases. |
 | `apps/web/src/lib/project-sandbox.ts` | Connects/restores/recreates project sandboxes and versions backup writes. |
+| `apps/web/src/lib/provider-auth-service.ts` | Provider catalog discovery, auth/refresh sandbox orchestration, connection persistence, and account model discovery. |
 | `apps/web/src/lib/sandbox-backup.test.ts` | Regression tests for `apps/web/src/lib/sandbox-backup.ts` behavior and edge cases. |
 | `apps/web/src/lib/sandbox-backup.ts` | Backup handle codec, R2/local options, TTL, and exclusion policy. |
 | `apps/web/src/lib/sandbox-bootstrap.test.ts` | Regression tests for `apps/web/src/lib/sandbox-bootstrap.ts` behavior and edge cases. |
@@ -203,7 +208,7 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | `apps/web/src/lib/session-workspace-lock.ts` | Atomic per-session sandbox `/tmp` lock with stale-lock recovery. |
 | `apps/web/src/lib/session-worktree.test.ts` | Regression tests for `apps/web/src/lib/session-worktree.ts` behavior and edge cases. |
 | `apps/web/src/lib/session-worktree.ts` | Creates or restores a session branch/worktree and links shared dependencies. |
-| `apps/web/src/lib/user-preferences-store.ts` | Validated persisted browser preference for selected model. |
+| `apps/web/src/lib/user-preferences-store.ts` | Validated persisted browser model and abstract thinking-level preferences. |
 | `apps/web/src/lib/utils.ts` | Shared Tailwind class merge helper. |
 | `apps/web/src/lib/workspace-policy.test.ts` | Regression tests for `apps/web/src/lib/workspace-policy.ts` behavior and edge cases. |
 | `apps/web/src/lib/workspace-policy.ts` | Canonical workspace paths, session statuses, branch/lock naming, and title policy. |
@@ -215,7 +220,7 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | File | Responsibility |
 |---|---|
 | `apps/web/src/db/index.ts` | Constructs the typed Drizzle D1 client. |
-| `apps/web/src/db/schema.ts` | Current D1 schema for auth, projects, workspace sessions, messages, and starter todos. |
+| `apps/web/src/db/schema.ts` | Current D1 schema for auth, projects, workspace sessions, messages, provider credentials/attempts, and starter todos. |
 
 ### Sandbox runner (`packages/sandbox-runner`)
 
@@ -224,7 +229,9 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | `packages/sandbox-runner/.gitignore` | Excludes runner build output and dependencies. |
 | `packages/sandbox-runner/package-lock.json` | Generated pinned dependency graph for the independent runner package. |
 | `packages/sandbox-runner/package.json` | Independent npm package manifest for the baked PI runner. |
-| `packages/sandbox-runner/src/cli.ts` | Validates job files, invokes the harness, and writes protocol NDJSON to stdout. |
+| `packages/sandbox-runner/src/agent-job.test.ts` | Regression tests for sandbox job validation and canonical thinking levels. |
+| `packages/sandbox-runner/src/agent-job.ts` | Validates sandbox agent job JSON, including the canonical optional thinking level. |
+| `packages/sandbox-runner/src/cli.ts` | Reads validated job files, invokes the harness, and writes protocol NDJSON to stdout. |
 | `packages/sandbox-runner/src/control-channel.test.ts` | Regression tests for run-scoped Unix control framing, serialization, validation, and cleanup. |
 | `packages/sandbox-runner/src/control-channel.ts` | Run-scoped Unix socket protocol for serialized PI follow-up and Stop commands. |
 | `packages/sandbox-runner/src/control-cli.ts` | Reads one JSON control job, contacts the live runner socket, and prints one response. |
@@ -238,8 +245,10 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | `packages/sandbox-runner/src/git-metadata-job.ts` | Versioned job/result unions, size caps, and safe error encoding for metadata drafting. |
 | `packages/sandbox-runner/src/protocol.test.ts` | Regression tests for `packages/sandbox-runner/src/protocol.ts` behavior and edge cases. |
 | `packages/sandbox-runner/src/protocol.ts` | Versioned runner output union, PI event normalization, and terminal text fallback helpers. |
+| `packages/sandbox-runner/src/provider-auth.test.ts` | Regression tests for provider capability projection and runtime credential handling. |
+| `packages/sandbox-runner/src/provider-auth.ts` | Provider login/refresh runner, safe model capability projection, auth events, and runtime credential projection. |
 | `packages/sandbox-runner/src/run-agent.test.ts` | Regression tests for PI follow-up FIFO, Stop ordering, expected abort, and socket cleanup. |
-| `packages/sandbox-runner/src/run-agent.ts` | Creates/resumes PI sessions, binds run-scoped controls, emits turn/text/tool events, and settles a run. |
+| `packages/sandbox-runner/src/run-agent.ts` | Resolves model credentials, creates/resumes PI sessions with optional thinking level, binds controls, emits events, and settles a run. |
 | `packages/sandbox-runner/src/run-git-metadata.test.ts` | Regression tests for the isolated one-shot metadata PI session. |
 | `packages/sandbox-runner/src/run-git-metadata.ts` | In-memory PI session with a single terminating typed metadata tool and two-turn cap. |
 | `packages/sandbox-runner/src/runner-model.test.ts` | Regression tests for shared in-memory credential/model bootstrap. |
@@ -261,6 +270,7 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | `apps/web/migrations/0007_amused_shinobi_shaw.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
 | `apps/web/migrations/0008_chunky_sunset_bain.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
 | `apps/web/migrations/0009_worthless_young_avengers.sql` | Ordered Drizzle SQL migration in the D1 schema history. |
+| `apps/web/migrations/0010_worthless_george_stacy.sql` | Ordered Drizzle SQL migration adding account provider credentials and auth attempts. |
 | `apps/web/migrations/meta/0000_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
 | `apps/web/migrations/meta/0001_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
 | `apps/web/migrations/meta/0002_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
@@ -271,6 +281,7 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | `apps/web/migrations/meta/0007_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
 | `apps/web/migrations/meta/0008_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
 | `apps/web/migrations/meta/0009_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
+| `apps/web/migrations/meta/0010_snapshot.json` | Generated Drizzle schema snapshot corresponding to the numbered migration. |
 | `apps/web/migrations/meta/_journal.json` | Generated Drizzle migration journal and ordering metadata. |
 
 ### Root orchestration and Alchemy

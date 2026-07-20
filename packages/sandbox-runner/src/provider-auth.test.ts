@@ -528,9 +528,66 @@ describe("xAI device flow and permissions", () => {
 			providerId: "openai",
 			modelId: "gpt",
 			name: "GPT",
+			thinkingLevels: ["off"],
 		});
 		expect(models[0]).not.toHaveProperty("baseURL");
 		expect(models[0]).not.toHaveProperty("headers");
+		expect(models[0]).not.toHaveProperty("thinkingLevelMap");
+	});
+
+	it("derives thinkingLevels via Pi helper without leaking maps", () => {
+		const models = projectSafeModels(
+			{
+				getModels: () => [
+					{
+						provider: "opencode",
+						id: "plain",
+						name: "Plain",
+						reasoning: false,
+					},
+					{
+						provider: "opencode",
+						id: "standard",
+						name: "Standard",
+						reasoning: true,
+					},
+					{
+						provider: "opencode",
+						id: "sparse",
+						name: "Sparse",
+						reasoning: true,
+						thinkingLevelMap: {
+							minimal: null,
+							low: null,
+							medium: null,
+							high: "high",
+							max: "max",
+						},
+					},
+					{
+						provider: "opencode",
+						id: "xhigh-max",
+						name: "XHighMax",
+						reasoning: true,
+						thinkingLevelMap: {
+							xhigh: "xhigh",
+							max: "max",
+						},
+					},
+				],
+			} as never,
+			"opencode",
+		);
+		expect(models.map((m) => m.thinkingLevels)).toEqual([
+			["off"],
+			["off", "minimal", "low", "medium", "high"],
+			["off", "high", "max"],
+			["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+		]);
+		for (const model of models) {
+			expect(model).not.toHaveProperty("thinkingLevelMap");
+			expect(JSON.stringify(model)).not.toMatch(/token|budget/i);
+		}
 	});
 
 	it("toRuntimeCredential rejects unsupported oauth provider extras stripping", () => {

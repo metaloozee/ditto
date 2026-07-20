@@ -34,6 +34,8 @@ vi.mock("#/lib/provider-auth-service", () => ({
 			providerId: "opencode",
 			modelId: "deepseek-v4-flash-free",
 			name: "DeepSeek V4 Flash Free",
+			reasoning: true,
+			thinkingLevels: ["off", "high", "max"],
 		},
 	]),
 }));
@@ -53,6 +55,8 @@ describe("providerAuth router", () => {
 		expect(JSON.stringify(connections)).not.toMatch(/sk-|refresh|accessToken/);
 		const models = await caller.models();
 		expect(models.models[0]?.id).toContain("opencode/");
+		expect(models.models[0]?.thinkingLevels).toEqual(["off", "high", "max"]);
+		expect(JSON.stringify(models)).not.toMatch(/thinkingLevelMap/);
 		const disconnected = await caller.disconnect({ providerId: "anthropic" });
 		expect(disconnected.deleted).toBe(true);
 	});

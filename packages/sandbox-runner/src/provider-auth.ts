@@ -7,7 +7,9 @@ import {
 	type AuthPrompt,
 	type AuthType,
 	type Credential,
+	getSupportedThinkingLevels,
 	InMemoryCredentialStore,
+	type ModelThinkingLevel,
 } from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { AuthControlRequest, ProviderAuthOut } from "./protocol.js";
@@ -86,6 +88,8 @@ export type SafeModelProjection = {
 	name: string;
 	input?: string[];
 	reasoning?: boolean;
+	/** Canonical abstract Pi levels from getSupportedThinkingLevels (no provider map). */
+	thinkingLevels?: ModelThinkingLevel[];
 	contextWindow?: number;
 	maxTokens?: number;
 	cost?: {
@@ -261,6 +265,15 @@ export function projectSafeModels(
 				throw new Error("invalid_reasoning");
 			projected.reasoning = model.reasoning;
 		}
+		const thinkingLevels = getSupportedThinkingLevels(model);
+		if (
+			!Array.isArray(thinkingLevels) ||
+			thinkingLevels.length === 0 ||
+			thinkingLevels.length > 7
+		) {
+			throw new Error("invalid_thinking_levels");
+		}
+		projected.thinkingLevels = [...thinkingLevels];
 		if (model.contextWindow !== undefined) {
 			projected.contextWindow = requirePositiveInt(
 				model.contextWindow,

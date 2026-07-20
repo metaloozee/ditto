@@ -29,7 +29,11 @@ import {
 	serializeAssistantPartsMinimalForStorage,
 } from "#/lib/agent-message-storage";
 import {
+	FALLBACK_MODEL_THINKING_LEVELS,
+	isPiThinkingLevel,
 	isProjectCoderModelSpecifier,
+	PI_THINKING_LEVELS,
+	type PiThinkingLevel,
 	parseModelSpecifier,
 } from "#/lib/agent-models";
 import { runAgentInSandbox } from "#/lib/agent-run";
@@ -58,6 +62,8 @@ export const agentStreamBodySchema = z.object({
 	model: z.string().min(1).refine(isProjectCoderModelSpecifier, {
 		message: "Invalid model.",
 	}),
+	// Optional for old clients; Composer sends the effective selected level.
+	thinkingLevel: z.enum(PI_THINKING_LEVELS).optional(),
 });
 
 export type AgentStreamBody = z.infer<typeof agentStreamBodySchema>;
@@ -133,6 +139,7 @@ export type AgentRunContext = {
 	projectId: string;
 	message: string;
 	model: string;
+	thinkingLevel?: PiThinkingLevel;
 	runId: string;
 	sessionId: string;
 	createdSession: boolean;
@@ -251,6 +258,8 @@ export async function prepareAgentRun(options: {
 
 	// Resolve account credential / fallback before side effects.
 	let runtimeCredential: StoredCredential | null = null;
+	/** Exact authorized model capabilities; undefined = legacy catalog without levels. */
+	let authorizedThinkingLevels: readonly PiThinkingLevel[] | undefined;
 	const credentialDb = createCredentialRepository(db);
 	const owned = await deps.loadCredential({
 		db: credentialDb,
@@ -268,11 +277,12 @@ export async function prepareAgentRun(options: {
 		};
 	}
 	if (owned?.status === "connected") {
-		const inCatalog = owned.models.some(
+		const catalogModel = owned.models.find(
 			(m) =>
 				m.providerId === parsedModel.providerId &&
 				m.modelId === parsedModel.modelId,
 		);
+		const inCatalog = Boolean(catalogModel);
 		// Exact fallback remains the only operator exception when not in catalog.
 		if (!inCatalog && input.model !== FALLBACK_MODEL_SPECIFIER) {
 			return {
@@ -283,6 +293,12 @@ export async function prepareAgentRun(options: {
 						"Selected model is not available for this provider connection.",
 				},
 			};
+		}
+		// Exact fallback always uses canonical app capabilities (catalog may be legacy/stale).
+		if (input.model === FALLBACK_MODEL_SPECIFIER) {
+			authorizedThinkingLevels = FALLBACK_MODEL_THINKING_LEVELS;
+		} else if (catalogModel?.thinkingLevels) {
+			authorizedThinkingLevels = catalogModel.thinkingLevels;
 		}
 		if (input.model === FALLBACK_MODEL_SPECIFIER && !inCatalog) {
 			runtimeCredential = operatorFallbackCredential(env.OPENCODE_API_KEY);
@@ -328,6 +344,7 @@ export async function prepareAgentRun(options: {
 		}
 	} else if (input.model === FALLBACK_MODEL_SPECIFIER) {
 		runtimeCredential = operatorFallbackCredential(env.OPENCODE_API_KEY);
+		authorizedThinkingLevels = FALLBACK_MODEL_THINKING_LEVELS;
 	} else if (
 		parsedModel.providerId === FALLBACK_PROVIDER_ID &&
 		input.model !== FALLBACK_MODEL_SPECIFIER
@@ -348,6 +365,23 @@ export async function prepareAgentRun(options: {
 				error: "Connect this provider in Account Settings to use its models.",
 			},
 		};
+	}
+
+	// Reject unsupported explicit levels before project/session/message side effects.
+	if (input.thinkingLevel !== undefined) {
+		if (
+			!isPiThinkingLevel(input.thinkingLevel) ||
+			!authorizedThinkingLevels ||
+			!authorizedThinkingLevels.includes(input.thinkingLevel)
+		) {
+			return {
+				kind: "error",
+				status: 400,
+				body: {
+					error: "Unsupported thinking level for selected model.",
+				},
+			};
+		}
 	}
 
 	const project = await deps.loadProjectForUser({
@@ -572,6 +606,7 @@ export async function prepareAgentRun(options: {
 			projectId: input.projectId,
 			message: input.message,
 			model: input.model,
+			thinkingLevel: input.thinkingLevel,
 			runId,
 			sessionId,
 			createdSession,
@@ -766,6 +801,7 @@ export async function executeAgentRun(options: {
 			runId: context.runId,
 			cwd: context.sessionWorkspacePath,
 			model: context.model,
+			thinkingLevel: context.thinkingLevel,
 			prompt: context.message,
 			runtimeCredentialJson: context.runtimeCredentialJson,
 			envVars: context.envVars,

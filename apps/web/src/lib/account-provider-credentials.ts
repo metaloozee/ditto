@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import type { createDb } from "#/db";
 import { aiProviderCredentials, providerAuthAttempts } from "#/db/schema";
+import { PI_THINKING_LEVELS } from "#/lib/agent-models";
 import { decryptText, encryptText, providerCredentialAad } from "#/lib/crypto";
 
 /** Max agent command window (matches agent-run). */
@@ -55,6 +56,8 @@ export const PROVIDER_API_KEY_ENV: Record<string, string> = {
 	together: "TOGETHER_API_KEY",
 };
 
+const thinkingLevelSchema = z.enum(PI_THINKING_LEVELS);
+
 export const safeModelSchema = z
 	.object({
 		providerId: z.string().min(1).max(MAX_MODEL_FIELD),
@@ -62,6 +65,16 @@ export const safeModelSchema = z
 		name: z.string().min(1).max(MAX_NAME_FIELD),
 		input: z.array(z.string().max(64)).max(16).optional(),
 		reasoning: z.boolean().optional(),
+		// Optional so legacy D1 catalogs without the field remain readable.
+		thinkingLevels: z
+			.array(thinkingLevelSchema)
+			.min(1)
+			.max(PI_THINKING_LEVELS.length)
+			.refine(
+				(levels) => new Set(levels).size === levels.length,
+				"Duplicate thinking levels.",
+			)
+			.optional(),
 		contextWindow: z.number().int().positive().finite().safe().optional(),
 		maxTokens: z.number().int().positive().finite().safe().optional(),
 		cost: z

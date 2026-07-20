@@ -1,16 +1,9 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import { parseJob } from "./agent-job.js";
 import { encodeLine } from "./protocol.js";
 import { runAgent } from "./run-agent.js";
-
-type Job = {
-	runId: string;
-	conversationId: string;
-	model: string;
-	prompt: string;
-	cwd?: string;
-};
 
 const DEFAULT_CWD = "/workspace";
 const DEFAULT_AGENT_DIR = "/workspace/.ditto/pi-agent";
@@ -40,50 +33,6 @@ function parseArgs(argv: string[]): { jobPath?: string; error?: string } {
 	return { jobPath };
 }
 
-function isNonEmptyString(value: unknown): value is string {
-	return typeof value === "string" && value.trim().length > 0;
-}
-
-function parseJob(raw: string): { job?: Job; error?: string } {
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch {
-		return { error: "Job file must contain valid JSON" };
-	}
-
-	if (!parsed || typeof parsed !== "object") {
-		return { error: "Job must be a JSON object" };
-	}
-
-	const job = parsed as Partial<Job>;
-	if (!isNonEmptyString(job.runId)) {
-		return { error: "runId is required" };
-	}
-	if (!isNonEmptyString(job.conversationId)) {
-		return { error: "conversationId is required" };
-	}
-	if (!isNonEmptyString(job.model)) {
-		return { error: "model is required" };
-	}
-	if (!isNonEmptyString(job.prompt)) {
-		return { error: "prompt is required" };
-	}
-	if (job.cwd !== undefined && !isNonEmptyString(job.cwd)) {
-		return { error: "cwd must be a non-empty string when provided" };
-	}
-
-	return {
-		job: {
-			runId: job.runId,
-			conversationId: job.conversationId,
-			model: job.model,
-			prompt: job.prompt,
-			cwd: job.cwd,
-		},
-	};
-}
-
 async function main(): Promise<number> {
 	const { jobPath, error: argError } = parseArgs(process.argv.slice(2));
 	if (argError || !jobPath) {
@@ -110,6 +59,7 @@ async function main(): Promise<number> {
 		cwd: job.cwd ?? DEFAULT_CWD,
 		conversationId: job.conversationId,
 		modelSpecifier: job.model,
+		thinkingLevel: job.thinkingLevel,
 		prompt: job.prompt,
 		agentDir: DEFAULT_AGENT_DIR,
 		sessionsDir: DEFAULT_SESSIONS_DIR,

@@ -226,6 +226,11 @@ describe("provider-auth-service", () => {
 		).toBe(true);
 		expect(models.some((m) => m.modelId === "claude")).toBe(true);
 		expect(models.some((m) => m.modelId === "gpt")).toBe(false);
+		const fallback = models.find(
+			(m) => `${m.providerId}/${m.modelId}` === FALLBACK_MODEL_SPECIFIER,
+		);
+		expect(fallback?.reasoning).toBe(true);
+		expect(fallback?.thinkingLevels).toEqual(["off", "high", "max"]);
 	});
 
 	it("streamProviderAuth persists success result into account vault", async () => {

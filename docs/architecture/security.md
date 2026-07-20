@@ -43,6 +43,32 @@ Follow-up and Stop controls prove authenticated project ownership and an active,
 owned workspace session before any sandbox access. Missing, foreign, archived,
 or stale run targets are rejected without creating message rows.
 
+Model and thinking-level input is also untrusted browser input. The stream route
+requires a valid session and bounded `provider/model` syntax. The Worker then
+resolves the user's encrypted provider connection and catalog; it accepts only
+catalog models, plus the exact operator fallback, and rejects explicit thinking
+levels that are not authorized for that model. These checks happen before
+sandbox, session, or message side effects. Browser-side clamping improves UX but
+is not an authorization boundary.
+
+## Provider credentials and capability metadata
+
+Provider credentials are encrypted in `ai_provider_credentials` with
+`AI_CREDENTIALS_ENCRYPTION_KEY` and user/provider AAD. Provider login runs in an
+auth-only sandbox and persists only a bounded, validated safe model catalog
+alongside the credential. Catalog metadata contains model names and Pi's
+canonical thinking capabilities, not credential material. OAuth refresh uses a
+D1 lease and compare-and-swap version; a process whose exit cannot be confirmed
+keeps the lease until TTL rather than being released while it may still run.
+
+At project-run time, the Worker projects credentials into the minimum runtime
+shape. API-key environment fields are allowlisted; OAuth refresh is replaced by
+`ditto:no-refresh`, and the access token must outlive the agent command window
+plus safety skew. The runner receives this projection through
+`DITTO_PI_CREDENTIAL`, then deletes credential env values before PI session and
+tool initialization. The exact fallback uses operator `OPENCODE_API_KEY` and
+never requires an account connection.
+
 ## Secret storage and injection
 
 Project environment variables are normalized, deduplicated, encrypted with
@@ -130,7 +156,9 @@ the chat harness:
 ## Filesystem and command controls
 
 Prompts are serialized to a job file with the Sandbox file API and never
-interpolated into a shell command. Shell values that must enter commands are
+interpolated into a shell command. `agent-job.ts` validates that job at the
+sandbox boundary, including the optional thinking level's canonical vocabulary,
+before `cli.ts` invokes the runner. Shell values that must enter commands are
 single-quoted by narrow helpers. Destructive workspace clearing checks that the
 configured root is exactly `/workspace` before running.
 
@@ -182,6 +210,6 @@ dependencies, build outputs, and caches. Session worktrees symlink only
 
 - Credentials are account-scoped in D1 (`ai_provider_credentials`), encrypted with `AI_CREDENTIALS_ENCRYPTION_KEY` + user/provider AAD.
 - Login/refresh runs in auth-only sandboxes under `/tmp`; no `auth.json`, no project env, no R2 backup of secrets.
-- Project runners receive `DITTO_PI_CREDENTIAL` (runtime projection only; OAuth refresh stripped) and delete it before session/tools.
+- Project runners receive `DITTO_PI_CREDENTIAL` only as an allowlisted runtime projection; OAuth refresh is stripped and the runner deletes credential env values before session/tools.
+- Provider catalogs carry Pi's canonical thinking capabilities; missing levels remain readable for legacy D1 catalogs and cause the client to omit `thinkingLevel`.
 - Fallback model is exactly `opencode/deepseek-v4-flash-free` via operator `OPENCODE_API_KEY`.
-- Account Settings UI connects providers; composer lists fallback + connected models.

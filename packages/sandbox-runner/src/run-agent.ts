@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import {
 	createAgentSession,
 	SessionManager,
@@ -25,6 +26,8 @@ export type RunAgentOptions = {
 	cwd: string;
 	conversationId: string;
 	modelSpecifier: string;
+	/** Abstract Pi thinking level; Pi clamps again as defense. */
+	thinkingLevel?: ModelThinkingLevel;
 	prompt: string;
 	agentDir: string;
 	sessionsDir: string;
@@ -87,6 +90,7 @@ export async function runAgent(
 			agentDir: options.agentDir,
 			model,
 			modelRuntime,
+			thinkingLevel: options.thinkingLevel,
 			sessionManager,
 			settingsManager,
 			tools: [

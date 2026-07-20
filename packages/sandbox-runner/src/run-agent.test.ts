@@ -142,7 +142,10 @@ describe("runAgent live controls", () => {
 			provider: "provider",
 			modelId: "model",
 		});
-		const { result } = await beginRun(harness, { agentDir });
+		const { result } = await beginRun(harness, {
+			agentDir,
+			thinkingLevel: "high",
+		});
 		harness.finish();
 		await result;
 
@@ -151,6 +154,7 @@ describe("runAgent live controls", () => {
 			expect.objectContaining({
 				modelRuntime,
 				model,
+				thinkingLevel: "high",
 			}),
 		);
 		expect(

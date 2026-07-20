@@ -28,12 +28,14 @@ runtime behavior remain consistent.
 ### Chat or agent-runtime change
 
 1. [Frontend architecture](architecture/frontend.md)
-2. [Agent harness architecture](architecture/agent-harness.md)
-3. [Security and trust boundaries](architecture/security.md)
-4. Trace new runs through `apps/web/src/components/composer.tsx` →
+2. [Server and data architecture](architecture/server-and-data.md) for model
+   capability discovery and request validation
+3. [Agent harness architecture](architecture/agent-harness.md)
+4. [Security and trust boundaries](architecture/security.md)
+5. Trace new runs through `apps/web/src/components/composer.tsx` →
    `apps/web/src/routes/api.agent.stream.ts` → `apps/web/src/lib/agent-run-service.ts` →
    `apps/web/src/lib/agent-run.ts` → `packages/sandbox-runner`.
-5. Trace follow-up and Stop requests through `apps/web/src/components/composer.tsx` →
+6. Trace follow-up and Stop requests through `apps/web/src/components/composer.tsx` →
    `apps/web/src/routes/api.agent.control.ts` → `apps/web/src/lib/agent-control-service.ts` →
    `packages/sandbox-runner/src/control-channel.ts`.
 
@@ -75,7 +77,8 @@ sources.
 ## Architecture invariants
 
 - The Worker is the control plane and the only GitHub installation-token issuer.
-- D1 is authoritative for users, projects, workspace sessions, and chat history.
+- D1 is authoritative for users, projects, workspace sessions, chat history,
+  and encrypted account provider credentials/model catalogs.
 - The sandbox filesystem is authoritative for live repository and Git state.
 - R2 backups provide recovery; they are not a mounted live workspace.
 - A workspace session owns one chat thread, branch, and worktree.
@@ -85,6 +88,9 @@ sources.
 - An assistant message reaches `complete` or `failed`; it must not remain
   `pending` after a settled server run.
 - Routes and UI should orchestrate; shared policy belongs in `apps/web/src/lib`.
+- Thinking levels use Pi's canonical vocabulary. Capability metadata is
+  discovered from provider model catalogs, validated again at the Worker
+  boundary, and propagated to the sandbox job without provider-specific remapping.
 
 ## Keeping these documents current
 
@@ -93,7 +99,8 @@ Update architecture documentation in the same change when you alter:
 - a product concept or ownership boundary;
 - a route/API, durable table, lifecycle state, or event protocol;
 - sandbox persistence, worktree layout, concurrency, or backup behavior;
-- authentication, authorization, credential flow, redaction, or Git egress; or
+- authentication, authorization, credential flow, model capability flow,
+  redaction, or Git egress; or
 - the responsibility or generated status of a repository file.
 
 Prefer editing the narrow subsystem document and its repository-map entry over

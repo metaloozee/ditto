@@ -21,6 +21,7 @@ import {
 	updateCredentialUnderLease,
 	upsertCredential,
 } from "#/lib/account-provider-credentials";
+import { FALLBACK_MODEL_THINKING_LEVELS } from "#/lib/agent-models";
 import { splitStdoutBuffer } from "#/lib/agent-stream-protocol";
 import {
 	classifyAuthUrl,
@@ -184,6 +185,8 @@ const fallbackModel: SafeModel = {
 	providerId: "opencode",
 	modelId: "deepseek-v4-flash-free",
 	name: "DeepSeek V4 Flash Free",
+	reasoning: true,
+	thinkingLevels: [...FALLBACK_MODEL_THINKING_LEVELS],
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 };
 

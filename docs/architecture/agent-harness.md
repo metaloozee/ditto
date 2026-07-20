@@ -71,14 +71,21 @@ once (the runner itself does not snapshot).
 6. The Worker creates a sandbox shell session with cwd set to the session
    worktree, decrypts project environment values from D1, and injects them
    into the session `env` together with provider and callback credentials.
-   It writes a job file (prompt is not interpolated into shell commands).
+   It writes a job file containing the run IDs, model, prompt, cwd, and the
+   optional effective `thinkingLevel` (prompt is not interpolated into shell
+   commands).
 7. The Worker runs `ditto-runner` via `execStream` and parses versioned NDJSON
    stdout. The runner subscribes to PI SDK events and normalizes assistant
    `text_delta`, `tool_execution_start|update|end`, and run-scoped follow-up
    boundary events; growing partial-message snapshots do not cross the process
    boundary.
-8. The harness opens or resumes PI state under
+8. The runner validates the job, resolves the model and in-memory credential
+   store, then opens or resumes PI state under
    `/workspace/.ditto/sessions/<conversationId>.jsonl` on the primary tree.
+   `SessionManager.open` supplies durable history; an in-memory
+   `SettingsManager` enables compaction and `one-at-a-time` follow-ups. The
+   session is created with the session worktree cwd, resolved model/runtime,
+   optional thinking level, built-in coding tools, and Ditto Git custom tools.
 9. After the runner socket is listening, the Worker emits `control_ready`. A
    later PI user-message boundary finalizes the prior assistant, emits
    `turn_done`, inserts the started follow-up's D1 pair, and emits `turn_start`
@@ -93,6 +100,25 @@ once (the runner itself does not snapshot).
    best-effort via `persistProjectSandboxBackup` (versioned `createBackup` of
    `/workspace`, including `.ditto/worktrees`) and does not rewrite message
    status.
+
+## Thinking-level propagation
+
+Thinking levels are Pi abstractions, not provider-specific strings. The
+canonical order is `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`.
+The frontend clamps the saved preference to the selected model's advertised
+capabilities. The Worker validates an explicitly supplied level against the
+authorized account catalog before writing any job. If the catalog is legacy or
+has no capability metadata, the frontend omits the optional field and the
+Worker preserves that compatibility path.
+
+The optional value then travels through `AgentRunContext` to `runAgentInSandbox`,
+which writes it to `.ditto/jobs/<id>.json`. `agent-job.ts` is the sandbox trust
+boundary: it accepts only the canonical vocabulary before `cli.ts` passes the
+value to `runAgent`. `run-agent.ts` supplies it to `createAgentSession`; Pi
+clamps again as a defense against an invalid or stale capability boundary. An
+omitted value leaves Pi's normal model/session default in control. Follow-ups
+reuse that live PI session through the control socket; they do not create a new
+thinking-level request.
 
 ## Transport
 
@@ -254,8 +280,7 @@ runner changes so custom tools appear in the container.
 
 ## Account provider credentials (Plan 025)
 
-- Credentials are account-scoped in D1 (`ai_provider_credentials`), encrypted with `AI_CREDENTIALS_ENCRYPTION_KEY` + user/provider AAD.
+- Provider login projects bounded model catalogs from Pi, including supported thinking levels, and the Worker persists the safe catalog with the encrypted account credential.
 - Login/refresh runs in auth-only sandboxes under `/tmp`; no `auth.json`, no project env, no R2 backup of secrets.
-- Project runners receive `DITTO_PI_CREDENTIAL` (runtime projection only; OAuth refresh stripped) and delete it before session/tools.
+- Project runners receive only an allowlisted `DITTO_PI_CREDENTIAL` runtime projection; OAuth refresh is stripped, and the runner deletes credential env values before PI session/tools start.
 - Fallback model is exactly `opencode/deepseek-v4-flash-free` via operator `OPENCODE_API_KEY`.
-- Account Settings UI connects providers; composer lists fallback + connected models.

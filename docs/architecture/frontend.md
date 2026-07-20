@@ -41,7 +41,15 @@ The root context creates:
 
 Components call `useQuery`, `useInfiniteQuery`, and `useMutation` with options
 from `useTRPC()`. Server state belongs in React Query. Local view state stays in
-components. Only the selected model is persisted in Zustand/local storage.
+components. Selected model and thinking-level preference are persisted in
+Zustand/local storage. The preference store validates model syntax and canonical
+thinking-level values again when local storage rehydrates.
+
+The `providerAuth.models` query is the capability source for the composer. It
+returns the operator fallback plus models from connected providers; each model
+may include the exact canonical Pi thinking levels advertised by the runner.
+When the query has no usable catalog, the composer uses the same static fallback
+model list.
 
 The project workspace route coordinates the main read model:
 
@@ -60,8 +68,9 @@ states and history loading, and owns the transient streaming overlay.
 
 `Composer` owns one long-lived stream request:
 
-1. take the persisted model preference;
-2. call `streamAgentRun`;
+1. take the persisted model preference and clamp the thinking preference to the
+   selected model's supported levels;
+2. call `streamAgentRun` with the effective abstract thinking level;
 3. use `meta` to bind server-generated session/message IDs;
 4. append exact text-delta bytes and reduce PI tool events into ordered
    assistant parts without moving text across tool boundaries;
@@ -91,6 +100,22 @@ The browser SSE parser is deliberately small and event-oriented. The server is
 the authority for turn boundaries, terminal success, and durable message state.
 The Stop control does not abort the SSE fetch: a browser abort or disconnect
 stops local consumption but does not cancel the sandbox process.
+
+### Thinking-level preference
+
+Pi exposes one canonical ordered vocabulary: `off`, `minimal`, `low`, `medium`,
+`high`, `xhigh`, and `max`. The browser stores an abstract preference with
+`medium` as its default; it does not store a provider-specific setting. For a
+selected model, `effectiveThinkingLevel` keeps the preference when supported,
+otherwise scans upward in canonical order and then downward to the nearest
+supported level. The fallback model supports `off`, `high`, and `max`, so the
+default `medium` preference resolves to `high` for that model.
+
+The selector shows only the selected model's advertised capabilities and is
+disabled while a run is active. Missing or empty capability metadata is treated
+as legacy catalog data: the UI displays `Auto` and omits `thinkingLevel` from
+the stream request rather than guessing a level. The server remains the final
+authority; browser clamping is only the request/UI convenience layer.
 
 ## Assistant message model
 
@@ -171,8 +196,8 @@ coverage rather than one test file per wrapper.
 
 ## Account provider credentials (Plan 025)
 
-- Credentials are account-scoped in D1 (`ai_provider_credentials`), encrypted with `AI_CREDENTIALS_ENCRYPTION_KEY` + user/provider AAD.
+- Credentials are account-scoped in D1 (`ai_provider_credentials`), encrypted with `AI_CREDENTIALS_ENCRYPTION_KEY` + user/provider AAD. Safe model catalogs persist capability metadata, while legacy catalogs may omit thinking levels.
 - Login/refresh runs in auth-only sandboxes under `/tmp`; no `auth.json`, no project env, no R2 backup of secrets.
-- Project runners receive `DITTO_PI_CREDENTIAL` (runtime projection only; OAuth refresh stripped) and delete it before session/tools.
-- Fallback model is exactly `opencode/deepseek-v4-flash-free` via operator `OPENCODE_API_KEY`.
-- Account Settings UI connects providers; composer lists fallback + connected models.
+- Project runners receive `DITTO_PI_CREDENTIAL` as an allowlisted runtime projection (OAuth refresh stripped and expiry checked); the runner deletes it before PI session/tools start.
+- Fallback model is exactly `opencode/deepseek-v4-flash-free` via operator `OPENCODE_API_KEY`, with `off`, `high`, and `max` capabilities.
+- Account Settings connects providers; the composer lists the fallback and connected models and uses their capability metadata.

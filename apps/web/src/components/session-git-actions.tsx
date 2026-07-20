@@ -385,7 +385,11 @@ function SessionGitActionsView({
 							>
 								<ChevronDownIcon className="size-3" aria-hidden />
 							</DropdownMenuTrigger>
-							<DropdownMenuContent sideOffset={10} align="end" className="min-w-40">
+							<DropdownMenuContent
+								sideOffset={10}
+								align="end"
+								className="min-w-40"
+							>
 								{actions.map((action) => (
 									<DropdownMenuItem
 										key={action.id}

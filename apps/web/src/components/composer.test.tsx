@@ -45,21 +45,34 @@ vi.mock("#/integrations/trpc/react", () => ({
 	}),
 }));
 
+const modelsQueryData = vi.hoisted(() => ({
+	current: {
+		models: [
+			{
+				id: "opencode/deepseek-v4-flash-free",
+				name: "DeepSeek V4 Flash Free",
+				provider: "opencode",
+				providerName: "OpenCode Zen",
+				thinkingLevels: ["off", "high", "max"] as readonly string[],
+			},
+		],
+	} as {
+		models: Array<{
+			id: string;
+			name: string;
+			provider: string;
+			providerName: string;
+			thinkingLevels?: readonly string[];
+		}>;
+	},
+}));
+
 vi.mock("@tanstack/react-query", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("@tanstack/react-query")>();
 	return {
 		...actual,
 		useQuery: () => ({
-			data: {
-				models: [
-					{
-						id: "opencode/deepseek-v4-flash-free",
-						name: "DeepSeek V4 Flash Free",
-						provider: "opencode",
-						providerName: "OpenCode Zen",
-					},
-				],
-			},
+			data: modelsQueryData.current,
 			isLoading: false,
 		}),
 	};
@@ -134,8 +147,27 @@ function followUpResponse(index: number) {
 }
 
 describe("Composer streaming updates", () => {
-	beforeEach(() => {
+	beforeEach(async () => {
 		vi.clearAllMocks();
+		modelsQueryData.current = {
+			models: [
+				{
+					id: "opencode/deepseek-v4-flash-free",
+					name: "DeepSeek V4 Flash Free",
+					provider: "opencode",
+					providerName: "OpenCode Zen",
+					thinkingLevels: ["off", "high", "max"],
+				},
+			],
+		};
+		localStorage.clear();
+		const { useUserPreferencesStore } = await import(
+			"#/lib/user-preferences-store"
+		);
+		useUserPreferencesStore.setState({
+			selectedModel: "opencode/deepseek-v4-flash-free",
+			thinkingLevel: "medium",
+		});
 	});
 
 	afterEach(() => {
@@ -158,6 +190,132 @@ describe("Composer streaming updates", () => {
 				expect.objectContaining({ message: "hello" }),
 				expect.any(Object),
 			);
+		});
+	});
+
+	it("clamps default medium to fallback high and sends thinkingLevel", async () => {
+		streamAgentRunMock.mockImplementation(async (_input, handlers) => {
+			handlers.onDone?.({ ok: true, content: "", assistantMessageId: null });
+		});
+
+		render(<Composer projectId="proj-1" sessionId="sess-1" />);
+
+		const thinking = screen.getByLabelText("Thinking level");
+		expect(thinking.textContent ?? "").toMatch(/High/i);
+		expect(thinking.textContent ?? "").not.toMatch(/Thinking:/i);
+
+		const textarea = screen.getByRole("textbox");
+		fireEvent.change(textarea, { target: { value: "hello" } });
+		fireEvent.keyDown(textarea, { key: "Enter" });
+
+		await waitFor(() => {
+			expect(streamAgentRunMock).toHaveBeenCalledWith(
+				expect.objectContaining({
+					message: "hello",
+					thinkingLevel: "high",
+				}),
+				expect.any(Object),
+			);
+		});
+	});
+
+	it("lists only supported thinking levels and sends user-selected max", async () => {
+		streamAgentRunMock.mockImplementation(async (_input, handlers) => {
+			handlers.onDone?.({ ok: true, content: "", assistantMessageId: null });
+		});
+
+		render(<Composer projectId="proj-1" sessionId="sess-1" />);
+
+		const trigger = screen.getByRole("combobox", { name: "Thinking level" });
+		fireEvent.click(trigger);
+
+		const options = await screen.findAllByRole("option");
+		const labels = options.map((el) => el.textContent?.trim() ?? "");
+		expect(labels).toEqual(expect.arrayContaining(["Off", "High", "Max"]));
+		expect(labels).toHaveLength(3);
+		expect(labels.join(" ")).not.toMatch(/Medium|Minimal|Extra high/i);
+
+		// Base UI Select requires pointerdown before click to allow mouse selection.
+		const maxOption = screen.getByRole("option", { name: "Max" });
+		fireEvent.pointerDown(maxOption);
+		fireEvent.click(maxOption);
+
+		await waitFor(() => {
+			expect(trigger.textContent ?? "").toMatch(/Max/i);
+			expect(trigger.textContent ?? "").not.toMatch(/Thinking:/i);
+		});
+
+		const textarea = screen.getByRole("textbox");
+		fireEvent.change(textarea, { target: { value: "go max" } });
+		fireEvent.keyDown(textarea, { key: "Enter" });
+
+		await waitFor(() => {
+			expect(streamAgentRunMock).toHaveBeenCalledWith(
+				expect.objectContaining({
+					message: "go max",
+					thinkingLevel: "max",
+				}),
+				expect.any(Object),
+			);
+		});
+	});
+
+	it("disables single-off thinking selector", async () => {
+		modelsQueryData.current = {
+			models: [
+				{
+					id: "opencode/deepseek-v4-flash-free",
+					name: "DeepSeek V4 Flash Free",
+					provider: "opencode",
+					providerName: "OpenCode Zen",
+					thinkingLevels: ["off"],
+				},
+			],
+		};
+		render(<Composer projectId="proj-1" sessionId="sess-1" />);
+		const thinking = screen.getByLabelText("Thinking level");
+		expect(thinking.textContent ?? "").toMatch(/Off/i);
+		expect(thinking.textContent ?? "").not.toMatch(/Thinking:/i);
+		expect((thinking as HTMLButtonElement).disabled).toBe(true);
+	});
+
+	it("disables thinking selector while streaming and omits level on follow-up", async () => {
+		const pending = createPendingStream();
+		sendAgentControlMock.mockResolvedValue(followUpResponse(1));
+
+		render(<Composer projectId="proj-1" sessionId="sess-1" />);
+
+		const textarea = screen.getByRole("textbox");
+		fireEvent.change(textarea, { target: { value: "first" } });
+		fireEvent.keyDown(textarea, { key: "Enter" });
+
+		await waitFor(() => {
+			expect(streamAgentRunMock).toHaveBeenCalledTimes(1);
+		});
+		expect(streamAgentRunMock.mock.calls[0]?.[0]).toEqual(
+			expect.objectContaining({ thinkingLevel: "high" }),
+		);
+
+		await act(async () => {
+			pending.handlers?.onControlReady?.({ runId: "run-1" });
+		});
+
+		expect(
+			(screen.getByLabelText("Thinking level") as HTMLButtonElement).disabled,
+		).toBe(true);
+
+		fireEvent.change(textarea, { target: { value: "second" } });
+		fireEvent.keyDown(textarea, { key: "Enter" });
+
+		await waitFor(() => {
+			expect(sendAgentControlMock).toHaveBeenCalled();
+		});
+		const controlPayload = sendAgentControlMock.mock.calls[0]?.[0];
+		expect(controlPayload).not.toHaveProperty("thinkingLevel");
+		expect(JSON.stringify(controlPayload)).not.toMatch(/thinkingLevel/);
+
+		await act(async () => {
+			pending.resolve?.();
 		});
 	});
 

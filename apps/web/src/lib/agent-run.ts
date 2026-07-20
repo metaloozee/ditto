@@ -3,6 +3,7 @@ import { parseSSEStream } from "@cloudflare/sandbox";
 import { nanoid } from "nanoid";
 import { credentialSecretValues } from "#/lib/account-provider-credentials";
 import { agentGitCallbackUrl, mintAgentGitJwt } from "#/lib/agent-git-jwt";
+import type { PiThinkingLevel } from "#/lib/agent-models";
 import {
 	parseRunnerStdoutLine,
 	type RunnerOut,
@@ -76,6 +77,7 @@ async function runAgentInSandboxLocked(options: {
 	runId: string;
 	cwd: string;
 	model: string;
+	thinkingLevel?: PiThinkingLevel;
 	prompt: string;
 	/** Runtime credential JSON for DITTO_PI_CREDENTIAL (no real OAuth refresh). */
 	runtimeCredentialJson: string;
@@ -267,6 +269,9 @@ async function runAgentInSandboxLocked(options: {
 				model: options.model,
 				prompt: options.prompt,
 				cwd: options.cwd,
+				...(options.thinkingLevel
+					? { thinkingLevel: options.thinkingLevel }
+					: {}),
 			}),
 		);
 
