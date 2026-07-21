@@ -3,6 +3,10 @@ FROM docker.io/cloudflare/sandbox:0.12.1
 COPY --chown=0:0 packages/sandbox-runner /opt/ditto-runner
 WORKDIR /opt/ditto-runner
 
+RUN npm install --global corepack@0.35.0 \
+  && corepack enable \
+  && corepack install --global pnpm@10.34.5 yarn@1.22.22
+
 RUN npm ci \
   && npm run build \
   && npm prune --omit=dev \
