@@ -102,9 +102,10 @@ export async function execOrThrow(
 		return result;
 	}
 
-	const stderr = result.stderr.trim();
-	const stdout = result.stdout.trim();
-	const output = redactSecrets(stderr || stdout, options.secrets ?? []);
+	const output = redactSecrets(
+		[result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n"),
+		options.secrets ?? [],
+	);
 	throw new Error(
 		output
 			? `${options.errorPrefix}: ${output}`
@@ -366,36 +367,33 @@ async function commandExists(
 	return result.success;
 }
 
-async function installWithNpmFallback(
+async function installWithRequiredPackageManager(
 	sandbox: ReturnType<typeof getSandbox>,
-	preferredCommand: string,
+	packageManager: string,
 	installCommand: string,
 	errorPrefix: string,
 	cwd: string,
 ): Promise<void> {
-	if (!(await commandExists(sandbox, preferredCommand, cwd))) {
+	if (!(await commandExists(sandbox, packageManager, cwd))) {
 		if (await commandExists(sandbox, "corepack", cwd)) {
 			await execOrThrow(sandbox, "corepack enable", {
 				cwd,
 				timeout: INSTALL_TIMEOUT_MS,
-				errorPrefix: `Failed to enable Corepack for ${preferredCommand}`,
+				errorPrefix: `Failed to enable Corepack for ${packageManager}`,
 			});
 		}
 	}
 
-	if (await commandExists(sandbox, preferredCommand, cwd)) {
-		await execOrThrow(sandbox, installCommand, {
-			cwd,
-			timeout: INSTALL_TIMEOUT_MS,
-			errorPrefix,
-		});
-		return;
+	if (!(await commandExists(sandbox, packageManager, cwd))) {
+		throw new Error(
+			`${packageManager} is required to install this project's dependencies, but it is unavailable in the sandbox.`,
+		);
 	}
 
-	await execOrThrow(sandbox, "npm install", {
+	await execOrThrow(sandbox, installCommand, {
 		cwd,
 		timeout: INSTALL_TIMEOUT_MS,
-		errorPrefix: `Failed to install dependencies with npm fallback for ${preferredCommand}`,
+		errorPrefix,
 	});
 }
 
@@ -410,7 +408,7 @@ export async function installDependencies(
 
 	const hasPnpmLock = await sandbox.exists(`${cwd}/pnpm-lock.yaml`);
 	if (hasPnpmLock.exists) {
-		await installWithNpmFallback(
+		await installWithRequiredPackageManager(
 			sandbox,
 			"pnpm",
 			"pnpm install --no-frozen-lockfile",
@@ -422,7 +420,7 @@ export async function installDependencies(
 
 	const hasYarnLock = await sandbox.exists(`${cwd}/yarn.lock`);
 	if (hasYarnLock.exists) {
-		await installWithNpmFallback(
+		await installWithRequiredPackageManager(
 			sandbox,
 			"yarn",
 			"yarn install",

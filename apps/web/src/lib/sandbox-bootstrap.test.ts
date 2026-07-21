@@ -21,9 +21,11 @@ vi.mock("#/lib/github-app", () => ({
 const {
 	backupSandboxWorkspace,
 	bootstrapSandbox,
+	execOrThrow,
 	fetchPrimaryBranchFromGitHub,
 	isSandboxRunnerHealthy,
 	isSandboxWorkspaceHydrated,
+	installDependencies,
 	restoreSandboxWorkspace,
 	syncPrimaryWorkspaceFromGitHub,
 } = await import("./sandbox-bootstrap");
@@ -35,12 +37,14 @@ function makeSandbox(
 	options: {
 		hasPackageJson?: boolean;
 		hasPnpmLock?: boolean;
+		hasYarnLock?: boolean;
 		hydrated?: boolean;
 		headSha?: string;
 	} = {},
 ) {
 	const hasPackageJson = options.hasPackageJson ?? true;
 	const hasPnpmLock = options.hasPnpmLock ?? true;
+	const hasYarnLock = options.hasYarnLock ?? false;
 	const hydrated = options.hydrated ?? true;
 	const headSha = options.headSha ?? "abc123";
 
@@ -50,6 +54,7 @@ function makeSandbox(
 			exists:
 				(path.endsWith("package.json") && hasPackageJson) ||
 				(path.endsWith("pnpm-lock.yaml") && hasPnpmLock) ||
+				(path.endsWith("yarn.lock") && hasYarnLock) ||
 				(path.endsWith(".git") && hydrated),
 			path,
 			timestamp: "2026-07-04T00:00:00.000Z",
@@ -151,6 +156,92 @@ describe("sandbox bootstrap helpers", () => {
 		});
 		expect(sandbox.writeFile).not.toHaveBeenCalled();
 		expect(sandbox.exec).not.toHaveBeenCalled();
+	});
+
+	it("includes stdout and stderr when a command fails", async () => {
+		const sandbox = makeSandbox();
+		sandbox.exec.mockResolvedValueOnce({
+			success: false,
+			stdout: "ERR_PNPM_IGNORED_BUILDS: Ignored build scripts",
+			stderr: "Corepack is about to download pnpm",
+			exitCode: 1,
+			command: "pnpm install",
+			duration: 1,
+			timestamp: "2026-07-04T00:00:00.000Z",
+		});
+
+		await expect(
+			execOrThrow(sandbox as never, "pnpm install", {
+				timeout: 1_000,
+				errorPrefix: "Install failed",
+			}),
+		).rejects.toThrow(
+			"Install failed: Corepack is about to download pnpm\nERR_PNPM_IGNORED_BUILDS: Ignored build scripts",
+		);
+	});
+
+	it.each([
+		{ manager: "pnpm", hasPnpmLock: true, hasYarnLock: false },
+		{ manager: "yarn", hasPnpmLock: false, hasYarnLock: true },
+	])("does not fall back to npm when $manager is unavailable", async ({
+		manager,
+		hasPnpmLock,
+		hasYarnLock,
+	}) => {
+		const sandbox = makeSandbox({ hasPnpmLock, hasYarnLock });
+		sandbox.exec.mockImplementation(async (command: string) => ({
+			success: !command.startsWith("command -v"),
+			stdout: "",
+			stderr: "",
+			exitCode: command.startsWith("command -v") ? 1 : 0,
+			command,
+			duration: 1,
+			timestamp: "2026-07-04T00:00:00.000Z",
+		}));
+		getSandboxMock.mockReturnValue(sandbox);
+
+		await expect(installDependencies(sandbox as never)).rejects.toThrow(
+			`${manager} is required`,
+		);
+		expect(sandbox.exec).not.toHaveBeenCalledWith(
+			"npm install",
+			expect.anything(),
+		);
+	});
+
+	it("enables Corepack before installing pnpm", async () => {
+		const sandbox = makeSandbox();
+		let corepackEnabled = false;
+		sandbox.exec.mockImplementation(async (command: string) => {
+			const success =
+				command === "command -v 'corepack'" ||
+				(command === "command -v 'pnpm'" && corepackEnabled) ||
+				!command.startsWith("command -v");
+			if (command === "corepack enable") {
+				corepackEnabled = true;
+			}
+			return {
+				success,
+				stdout: success ? "/usr/local/bin/pnpm\n" : "",
+				stderr: "",
+				exitCode: success ? 0 : 1,
+				command,
+				duration: 1,
+				timestamp: "2026-07-04T00:00:00.000Z",
+			};
+		});
+		getSandboxMock.mockReturnValue(sandbox);
+
+		await installDependencies(sandbox as never);
+
+		expect(sandbox.exec).toHaveBeenCalledWith(
+			"corepack enable",
+			expect.objectContaining({ cwd: "/workspace" }),
+		);
+		expect(sandbox.exec).toHaveBeenCalledWith(
+			"pnpm install --no-frozen-lockfile",
+			expect.objectContaining({ cwd: "/workspace" }),
+		);
 	});
 
 	it("creates a backup with the workspace backup options", async () => {
