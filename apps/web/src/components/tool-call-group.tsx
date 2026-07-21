@@ -28,6 +28,7 @@ export function ToolCallGroup({ tools, active = false }: ToolCallGroupProps) {
 		<Task className="border-b pb-2" defaultOpen={working}>
 			<TaskTrigger title={title}>
 				<div className="flex w-full cursor-pointer items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground">
+					<ChevronRightIcon className="size-3.5 shrink-0 transition-transform group-data-[panel-open]:rotate-90" />
 					<span
 						className={cn(
 							"min-w-0 flex-1 truncate font-medium",
@@ -37,7 +38,6 @@ export function ToolCallGroup({ tools, active = false }: ToolCallGroupProps) {
 					>
 						{title}
 					</span>
-					<ChevronRightIcon className="size-3.5 shrink-0 transition-transform group-data-[panel-open]:rotate-90" />
 				</div>
 			</TaskTrigger>
 			<TaskContent>

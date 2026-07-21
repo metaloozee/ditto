@@ -130,6 +130,26 @@ function CollapseHeader({
 	);
 }
 
+/** Collapsed shell shown while the edit tool is still running. */
+function EditToolRunningHeader({ name }: { name: string }) {
+	return (
+		<div
+			className="flex w-full items-center gap-2 border-border bg-muted/40 px-3 py-2 text-left text-xs"
+			aria-busy="true"
+		>
+			<ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground" />
+			<span
+				className="min-w-0 flex-1 truncate font-medium text-foreground"
+				title={name}
+				dir="rtl"
+			>
+				<span dir="ltr">{name}</span>
+			</span>
+			<LoaderCircleIcon className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+		</div>
+	);
+}
+
 function DiffBody({ data }: { data: EditToolDiffData }) {
 	const [collapsed, setCollapsed] = useState(false);
 	const onToggle = useCallback(() => {
@@ -215,7 +235,6 @@ function DiffBody({ data }: { data: EditToolDiffData }) {
 function EditToolFallback({ tool }: { tool: StreamToolCall }) {
 	const label = formatToolCallLabel(tool);
 	const failed = tool.status === "error";
-	const running = tool.status === "running";
 
 	return (
 		<div
@@ -226,9 +245,6 @@ function EditToolFallback({ tool }: { tool: StreamToolCall }) {
 					: "border-border text-muted-foreground",
 			)}
 		>
-			{running ? (
-				<LoaderCircleIcon className="size-3.5 shrink-0 animate-spin" />
-			) : null}
 			<span className="min-w-0 truncate" title={label}>
 				{label}
 			</span>
@@ -236,9 +252,30 @@ function EditToolFallback({ tool }: { tool: StreamToolCall }) {
 	);
 }
 
+function editToolDisplayName(
+	tool: StreamToolCall,
+	data: EditToolDiffData | null,
+): string {
+	if (data?.path) {
+		return data.path;
+	}
+	const label = formatToolCallLabel(tool);
+	return label === "edit" ? "file" : label.replace(/^edit\s+/, "");
+}
+
 export function EditToolPart({ tool }: { tool: StreamToolCall }) {
 	const data = getEditToolDiffData(tool);
 	const failed = tool.status === "error";
+	const running = tool.status === "running";
+	const name = editToolDisplayName(tool, data);
+
+	if (running) {
+		return (
+			<div className="w-full min-w-0 overflow-hidden rounded-md border bg-card">
+				<EditToolRunningHeader name={name} />
+			</div>
+		);
+	}
 
 	if (!data || (data.oldContents.length === 0 && !data.patch)) {
 		return <EditToolFallback tool={tool} />;
@@ -253,7 +290,7 @@ export function EditToolPart({ tool }: { tool: StreamToolCall }) {
 		>
 			{/* Vertical scroll lives here: pierre code panes clip overflow-y. */}
 			<div className="max-h-96 w-full min-w-0 overflow-x-auto overflow-y-auto overscroll-contain">
-				<ClientOnly fallback={<EditToolFallback tool={tool} />}>
+				<ClientOnly fallback={<EditToolRunningHeader name={name} />}>
 					<DiffBody data={data} />
 				</ClientOnly>
 			</div>
