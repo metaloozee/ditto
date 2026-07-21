@@ -16,6 +16,30 @@ function quoteShellArg(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
+async function prepareSessionWorktree(
+	sandbox: ReturnType<typeof getProjectSandbox>,
+	worktreePath: string,
+): Promise<void> {
+	const primaryNodeModules = `${WORKSPACE_PATH}/node_modules`;
+	await execOrThrow(
+		sandbox,
+		[
+			"set -euo pipefail",
+			`WT=${quoteShellArg(worktreePath)}`,
+			'EXCLUDE=$(git -C "$WT" rev-parse --git-path info/exclude)',
+			'mkdir -p "$(dirname "$EXCLUDE")" && touch "$EXCLUDE"',
+			`for PATTERN in '/node_modules' '/.env' '/.env.*'; do grep -Fqx -- "$PATTERN" "$EXCLUDE" || printf '%s\\n' "$PATTERN" >> "$EXCLUDE"; done`,
+			`if [ "$(readlink "$WT/node_modules" 2>/dev/null || true)" = ${quoteShellArg(primaryNodeModules)} ]; then git -C "$WT" rm --cached --ignore-unmatch -- node_modules; fi`,
+			`if [ -e ${quoteShellArg(primaryNodeModules)} ] && [ ! -e "$WT/node_modules" ]; then ln -s ${quoteShellArg(primaryNodeModules)} "$WT/node_modules"; fi`,
+		].join("; "),
+		{
+			cwd: WORKSPACE_PATH,
+			timeout: GIT_COMMAND_TIMEOUT_MS,
+			errorPrefix: "Failed to prepare session worktree",
+		},
+	);
+}
+
 export async function ensureSessionWorktree(options: {
 	env: Env;
 	sandboxId: string;
@@ -41,6 +65,7 @@ export async function ensureSessionWorktree(options: {
 	if (existing?.branchName && existing.workspacePath) {
 		const pathCheck = await sandbox.exists(existing.workspacePath);
 		if (pathCheck.exists) {
+			await prepareSessionWorktree(sandbox, existing.workspacePath);
 			return {
 				branchName: existing.branchName,
 				baseCommitSha: existing.baseCommitSha ?? "",
@@ -94,20 +119,7 @@ export async function ensureSessionWorktree(options: {
 		);
 	}
 
-	const primaryNodeModules = `${WORKSPACE_PATH}/node_modules`;
-	await execOrThrow(
-		sandbox,
-		[
-			"set -euo pipefail",
-			`WT=${quoteShellArg(worktreePath)}`,
-			`if [ -e ${quoteShellArg(primaryNodeModules)} ] && [ ! -e "$WT/node_modules" ]; then ln -s ${quoteShellArg(primaryNodeModules)} "$WT/node_modules"; fi`,
-		].join("; "),
-		{
-			cwd: WORKSPACE_PATH,
-			timeout: GIT_COMMAND_TIMEOUT_MS,
-			errorPrefix: "Failed to link session worktree dependencies",
-		},
-	);
+	await prepareSessionWorktree(sandbox, worktreePath);
 
 	return {
 		branchName,

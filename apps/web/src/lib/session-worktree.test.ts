@@ -44,7 +44,7 @@ describe("ensureSessionWorktree", () => {
 		vi.clearAllMocks();
 	});
 
-	it("creates branch, worktree, and node_modules symlink on first ensure", async () => {
+	it("creates a worktree with private runtime-file excludes", async () => {
 		const sandbox = makeSandbox(async (path) => {
 			if (path === "/workspace/.git") {
 				return { exists: true };
@@ -87,9 +87,16 @@ describe("ensureSessionWorktree", () => {
 		expect(execOrThrowMock).toHaveBeenCalledTimes(4);
 		expect(execOrThrowMock.mock.calls[1]?.[1]).toContain("git branch");
 		expect(execOrThrowMock.mock.calls[2]?.[1]).toContain("git worktree add");
-		expect(execOrThrowMock.mock.calls[3]?.[1]).toContain("ln -s");
-		expect(execOrThrowMock.mock.calls[3]?.[1]).toContain("node_modules");
-		expect(execOrThrowMock.mock.calls[3]?.[1]).not.toContain(".env");
+		const prepareCommand = String(execOrThrowMock.mock.calls[3]?.[1]);
+		expect(prepareCommand).toContain("rev-parse --git-path info/exclude");
+		expect(prepareCommand).toContain("'/node_modules'");
+		expect(prepareCommand).toContain("'/.env'");
+		expect(prepareCommand).toContain("'/.env.*'");
+		expect(prepareCommand).toContain("rm --cached --ignore-unmatch");
+		expect(prepareCommand).toContain("ln -s");
+		expect(prepareCommand.indexOf("info/exclude")).toBeLessThan(
+			prepareCommand.indexOf("ln -s"),
+		);
 	});
 
 	it("reuses existing metadata when worktree path still exists", async () => {
@@ -119,7 +126,10 @@ describe("ensureSessionWorktree", () => {
 			workspacePath: "/workspace/.ditto/worktrees/sess-1",
 		});
 		expect(syncPrimaryWorkspaceFromGitHubMock).not.toHaveBeenCalled();
-		expect(execOrThrowMock).not.toHaveBeenCalled();
+		expect(execOrThrowMock).toHaveBeenCalledTimes(1);
+		expect(execOrThrowMock.mock.calls[0]?.[1]).toContain(
+			"rev-parse --git-path info/exclude",
+		);
 	});
 
 	it("recreates worktree when stored path is missing", async () => {
