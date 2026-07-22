@@ -64,6 +64,9 @@ export const projects = sqliteTable(
 			.notNull()
 			.default("provisioning"),
 		envVars: text("envVars"),
+		previewLockToken: text("previewLockToken"),
+		previewLockExpiresAt: integer("previewLockExpiresAt"),
+		deletingAt: integer("deletingAt"),
 		createdAt: integer("created_at", { mode: "timestamp" }).default(
 			sql`(unixepoch())`,
 		),
@@ -92,6 +95,7 @@ export const workspaceSessions = sqliteTable(
 		status: text("status", { enum: [...WORKSPACE_SESSION_STATUSES] })
 			.notNull()
 			.default("active"),
+		previewPort: integer("previewPort"),
 		createdAt: integer("created_at", { mode: "timestamp" }).default(
 			sql`(unixepoch())`,
 		),
@@ -102,6 +106,10 @@ export const workspaceSessions = sqliteTable(
 	(table) => [
 		index("workspace_sessions_projectId_idx").on(table.projectId),
 		index("workspace_sessions_userId_idx").on(table.userId),
+		uniqueIndex("workspace_sessions_project_preview_port_uidx").on(
+			table.projectId,
+			table.previewPort,
+		),
 	],
 );
 

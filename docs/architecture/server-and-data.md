@@ -8,9 +8,10 @@ only process allowed to mint GitHub installation credentials.
 
 ## Entry points
 
-`apps/web/src/server.ts` exports the TanStack Start fetch handler and the Cloudflare
-Sandbox Durable Object class. TanStack Start routes provide four server-facing
-surfaces:
+`apps/web/src/server.ts` calls Sandbox `proxyToSandbox(request, env)` before the
+TanStack Start fetch handler. Unmatched production hosts under `*.ayn.wtf` return
+plain 404 and never fall through to the app. TanStack Start routes provide four
+server-facing surfaces:
 
 | Surface | Authentication | Use |
 |---|---|---|
@@ -35,8 +36,9 @@ and narrows context to an authenticated user.
 | `health` | Liveness query | none |
 | `github` | Import state and branch listing | GitHub OAuth visibility, installation Octokit |
 | `projects` | Create, list, get, rename, delete, env-var management | Authorization, encryption, bootstrap/restore |
-| `workspace` | Ensure/retry workspace, page messages, archive session | Sandbox lifecycle, cursor codec, session ownership |
+| `workspace` | Ensure/retry workspace, page messages, archive session | Sandbox lifecycle, cursor codec, session ownership, preview cleanup on archive |
 | `sessionGit` | Status, sync, commit, push, open PR | Worktree, Git state machine, secret policy, backup |
+| `sessionPreview` | Start/stop session website preview | D1 lifecycle lease, port allocation, fixed Vite/Next process, `exposePort` |
 | `providerAuth` | Provider catalog, account connections, model capabilities, disconnect | Provider catalog/auth sandboxes, encrypted credential repository |
 
 All project/session reads constrain both resource IDs and `userId`. Repository
@@ -62,6 +64,10 @@ The large workflows live in narrow modules rather than route handlers:
   runner-health, backup, restore, and command error handling.
 - `workspace-session.ts`, `session-worktree.ts`, and
   `session-workspace-lock.ts` own conversation lifecycle and write isolation.
+- `session-preview.ts` owns the external D1 project lifecycle lease, per-session
+  preview port allocation (`10000..10031`), fixed binary discovery/start, URL
+  validation, and stop/archive/delete cleanup ordering. Preview URLs are never
+  persisted.
 - `session-git.ts` is the shared Git/GitHub state machine used by browser and
   agent export paths.
 - `session-git-metadata.ts` collects bounded Git snapshots and bridges the

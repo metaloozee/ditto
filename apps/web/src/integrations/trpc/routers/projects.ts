@@ -17,6 +17,10 @@ import { ensureProjectSandbox } from "#/lib/project-sandbox";
 import { serializeSandboxBackup } from "#/lib/sandbox-backup";
 import { bootstrapSandbox, destroySandbox } from "#/lib/sandbox-bootstrap";
 import { redactSecrets } from "#/lib/secret-redaction";
+import {
+	deleteProjectWithPreviewFence,
+	SessionPreviewError,
+} from "#/lib/session-preview";
 
 export const projectsRouter = createTRPCRouter({
 	create: protectedProcedure
@@ -364,33 +368,34 @@ export const projectsRouter = createTRPCRouter({
 		.input(z.object({ id: z.string().min(1) }))
 		.mutation(async ({ ctx, input }) => {
 			const db = createDb(ctx.env);
-			const [project] = await db
-				.select({ id: projects.id, sandboxId: projects.sandboxId })
-				.from(projects)
-				.where(and(eq(projects.id, input.id), eq(projects.userId, ctx.user.id)))
-				.limit(1);
-
-			if (!project) {
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Project not found.",
-				});
-			}
-
-			if (project.sandboxId) {
-				await destroySandbox({
+			try {
+				return await deleteProjectWithPreviewFence({
+					db,
 					env: ctx.env,
-					sandboxId: project.sandboxId,
+					projectId: input.id,
+					userId: ctx.user.id,
+					destroySandbox,
+				});
+			} catch (error) {
+				if (error instanceof SessionPreviewError) {
+					if (error.code === "not_found") {
+						throw new TRPCError({
+							code: "NOT_FOUND",
+							message: "Project not found.",
+						});
+					}
+					if (error.code === "busy") {
+						throw new TRPCError({
+							code: "PRECONDITION_FAILED",
+							message: error.message,
+						});
+					}
+				}
+				throw new TRPCError({
+					code: "INTERNAL_SERVER_ERROR",
+					message: "Failed to delete project.",
 				});
 			}
-
-			await db
-				.delete(projects)
-				.where(
-					and(eq(projects.id, input.id), eq(projects.userId, ctx.user.id)),
-				);
-
-			return { id: project.id };
 		}),
 
 	list: protectedProcedure.query(async ({ ctx }) => {

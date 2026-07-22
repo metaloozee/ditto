@@ -177,6 +177,28 @@ R2 backups explicitly exclude `.env` and `.env.*`, package stores,
 dependencies, build outputs, and caches. Session worktrees symlink only
 `node_modules`; no environment file is shared from the primary clone.
 
+## Session preview public URLs
+
+Preview URLs from Sandbox `exposePort()` are ephemeral public bearer capabilities.
+Anyone with the URL can load the site until Stop/archive/delete revokes it.
+
+- Production base host is exactly `ayn.wtf`. Generated hosts are direct children
+  such as `https://<port>-<sandbox>-<token>.ayn.wtf`. One-time operator setup:
+  proxied wildcard DNS `A *.ayn.wtf → 192.0.2.0`, and Alchemy-managed Worker Route
+  `*.ayn.wtf/*` (`adopt: true`). Do not use `*.preview.ayn.wtf` (Universal SSL
+  does not cover that second-level wildcard automatically).
+- Local development uses the Wrangler/Alchemy localhost URL from `exposePort()`;
+  no public DNS is required.
+- URLs are returned only from authenticated `sessionPreview.start`. Never log,
+  persist, toast, normalize, or put them in query/cache/local storage.
+- Preview processes do not receive configured project environment variables.
+  Process logs and raw SDK errors are never projected to clients.
+- Stop/archive require successful `unexposePort` acknowledgement and confirmed
+  absence of the exact preview process before clearing the D1 port lease or
+  archiving. Project delete acquires the external D1 lifecycle lease, sets a
+  durable `deletingAt` tombstone, destroys the sandbox last, then deletes the D1
+  row. `retryRestore` cannot revive a deleting row.
+
 ## Failure posture
 
 - Ownership failures return not found/forbidden rather than continuing.
@@ -205,6 +227,7 @@ dependencies, build outputs, and caches. Session worktrees symlink only
 | UI git metadata | `apps/web/src/lib/session-git-metadata.ts`, `session-git-ui-actions.ts`, `packages/sandbox-runner/src/run-git-metadata.ts` |
 | Backup exclusions | `apps/web/src/lib/sandbox-backup.ts` |
 | Workspace locking | `apps/web/src/lib/session-workspace-lock.ts`, `workspace-policy.ts` |
+| Session preview | `apps/web/src/lib/session-preview.ts`, `apps/web/src/server.ts`, `alchemy.run.ts` |
 
 ## Account provider credentials (Plan 025)
 

@@ -7,7 +7,7 @@ import {
 const createDbMock = vi.hoisted(() => vi.fn());
 const ensureProjectSandboxMock = vi.hoisted(() => vi.fn());
 const resolveSessionForMessageWriteMock = vi.hoisted(() => vi.fn());
-const archiveOwnedActiveSessionMock = vi.hoisted(() => vi.fn());
+const archiveSessionWithPreviewCleanupMock = vi.hoisted(() => vi.fn());
 const workspaceSessionRecencyUpdateMock = vi.hoisted(() => vi.fn());
 const loadOwnedActiveSessionMock = vi.hoisted(() => vi.fn());
 
@@ -19,9 +19,26 @@ vi.mock("#/lib/project-sandbox", () => ({
 	ensureProjectSandbox: ensureProjectSandboxMock,
 }));
 
+vi.mock("#/lib/sandbox-bootstrap", () => ({
+	getProjectSandbox: vi.fn(),
+}));
+vi.mock("#/lib/session-worktree", () => ({
+	ensureSessionWorktree: vi.fn(),
+}));
+vi.mock("#/lib/session-workspace-lock", () => ({
+	withSessionWorkspaceLock: vi.fn(),
+}));
+
+vi.mock("#/lib/session-preview", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("#/lib/session-preview")>();
+	return {
+		...actual,
+		archiveSessionWithPreviewCleanup: archiveSessionWithPreviewCleanupMock,
+	};
+});
+
 vi.mock("#/lib/workspace-session", () => ({
 	resolveSessionForMessageWrite: resolveSessionForMessageWriteMock,
-	archiveOwnedActiveSession: archiveOwnedActiveSessionMock,
 	workspaceSessionRecencyUpdate: workspaceSessionRecencyUpdateMock,
 	loadOwnedActiveSession: loadOwnedActiveSessionMock,
 }));
@@ -147,9 +164,9 @@ describe("workspace.deleteSession archival", () => {
 		vi.clearAllMocks();
 	});
 
-	it("archives an owned active session", async () => {
+	it("archives an owned active session via preview cleanup", async () => {
 		createDbMock.mockReturnValue({});
-		archiveOwnedActiveSessionMock.mockResolvedValue({ id: "sess-1" });
+		archiveSessionWithPreviewCleanupMock.mockResolvedValue({ id: "sess-1" });
 
 		const caller = createCaller();
 		const result = await caller.deleteSession({
@@ -158,7 +175,7 @@ describe("workspace.deleteSession archival", () => {
 		});
 
 		expect(result).toEqual({ id: "sess-1" });
-		expect(archiveOwnedActiveSessionMock).toHaveBeenCalledWith(
+		expect(archiveSessionWithPreviewCleanupMock).toHaveBeenCalledWith(
 			expect.objectContaining({
 				projectId: "proj-1",
 				sessionId: "sess-1",
@@ -169,7 +186,10 @@ describe("workspace.deleteSession archival", () => {
 
 	it("rejects archived / missing / cross-user sessions with NOT_FOUND", async () => {
 		createDbMock.mockReturnValue({});
-		archiveOwnedActiveSessionMock.mockResolvedValue(null);
+		const { SessionPreviewError } = await import("#/lib/session-preview");
+		archiveSessionWithPreviewCleanupMock.mockRejectedValue(
+			new SessionPreviewError("not_found", "Session or project not found."),
+		);
 
 		const caller = createCaller();
 		await expect(
@@ -180,6 +200,27 @@ describe("workspace.deleteSession archival", () => {
 		).rejects.toMatchObject({
 			code: "NOT_FOUND",
 			message: "Session not found.",
+		});
+	});
+
+	it("does not archive when preview cleanup fails", async () => {
+		createDbMock.mockReturnValue({});
+		const { SessionPreviewError } = await import("#/lib/session-preview");
+		archiveSessionWithPreviewCleanupMock.mockRejectedValue(
+			new SessionPreviewError(
+				"cleanup_failed",
+				"Failed to fully stop the preview. Try again.",
+			),
+		);
+
+		const caller = createCaller();
+		await expect(
+			caller.deleteSession({
+				projectId: "proj-1",
+				sessionId: "sess-1",
+			}),
+		).rejects.toMatchObject({
+			code: "BAD_GATEWAY",
 		});
 	});
 });
@@ -399,5 +440,71 @@ describe("workspace.ensureWorkspace omits unbounded messages", () => {
 		expect(result.project).not.toHaveProperty("sandboxBackup");
 		expect(result.sessions).toEqual([]);
 		expect(result.selectedSession).toBeNull();
+	});
+});
+
+describe("workspace.retryRestore tombstone fence", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("rejects failed+deletingAt projects without sandbox access", async () => {
+		const project = {
+			id: "proj-1",
+			name: "P",
+			description: null,
+			userId: "user-1",
+			githubRepo: "acme/app",
+			githubInstallationId: 1,
+			sandboxId: "sandbox-1",
+			sandboxBackup: null,
+			sandboxBackupCreatedAt: null,
+			sandboxBackupRequestedGeneration: 0,
+			sandboxBackupStoredGeneration: 0,
+			status: "failed" as const,
+			deletingAt: 1_700_000_000,
+			previewLockToken: null,
+			previewLockExpiresAt: null,
+			envVars: null,
+			createdAt: new Date(),
+			updatedAt: new Date(),
+		};
+
+		const update = vi.fn(() => ({
+			set: vi.fn(() => ({
+				where: vi.fn(() => ({
+					returning: vi.fn(async () => []),
+				})),
+			})),
+		}));
+
+		const select = vi.fn(() => {
+			const chain: {
+				from: ReturnType<typeof vi.fn>;
+				where: ReturnType<typeof vi.fn>;
+				limit: ReturnType<typeof vi.fn>;
+			} = {
+				from: vi.fn(() => chain),
+				where: vi.fn(() => chain),
+				limit: vi.fn(async () => [project]),
+			};
+			return chain;
+		});
+
+		createDbMock.mockReturnValue({ select, update });
+
+		const caller = createCaller();
+		await expect(
+			caller.retryRestore({ projectId: "proj-1" }),
+		).rejects.toMatchObject({
+			code: "PRECONDITION_FAILED",
+			message: "Project cannot be restored.",
+		});
+
+		expect(ensureProjectSandboxMock).not.toHaveBeenCalled();
+		expect(update).toHaveBeenCalled();
+		// Project remains failed/tombstoned — no successful restore write.
+		expect(project.status).toBe("failed");
+		expect(project.deletingAt).toBe(1_700_000_000);
 	});
 });

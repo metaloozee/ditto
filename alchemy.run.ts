@@ -3,6 +3,7 @@ import {
 	Container,
 	D1Database,
 	R2Bucket,
+	Route,
 	TanStackStart,
 } from "alchemy/cloudflare";
 import { config } from "dotenv";
@@ -58,6 +59,7 @@ export const website = await TanStackStart("website", {
 			process.env.AI_CREDENTIALS_ENCRYPTION_KEY,
 		),
 		SANDBOX_TRANSPORT: "rpc",
+		PREVIEW_BASE_HOST: "ayn.wtf",
 	},
 	wrangler: {
 		main: "src/server.ts",
@@ -88,6 +90,13 @@ export const website = await TanStackStart("website", {
 			migrations: [{ new_sqlite_classes: ["Sandbox"], tag: "v1" }],
 		}),
 	},
+});
+
+await Route("session-previews", {
+	pattern: "*.ayn.wtf/*",
+	script: website,
+	adopt: true,
+	dev: true,
 });
 
 console.log({ url: website.url });

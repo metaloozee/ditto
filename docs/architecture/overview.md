@@ -132,13 +132,28 @@ not have an agent-capable sandbox. The current UI creates GitHub-backed projects
    scrubs `origin` back to its public URL.
 6. Successful sandbox mutations trigger a best-effort versioned R2 backup.
 
+### Session website preview
+
+1. Authenticated `sessionPreview.start` acquires an external D1 lifecycle lease
+   on the project row, rechecks ready/active ownership, and runs a fixed Vite or
+   Next binary in the session worktree on a leased port from `10000..10031`.
+2. After TCP readiness, the Worker calls Sandbox `exposePort()` and returns the
+   ephemeral public URL only in that mutation response.
+3. Production requests for `*.ayn.wtf` hit the Worker first; `proxyToSandbox()`
+   serves active exposures, and unmatched preview hosts return 404 without
+   falling through to the app.
+4. `sessionPreview.stop`, session archive, and project delete confirm
+   `unexposePort` plus exact process death under the same D1 lease before
+   clearing the port or destroying the sandbox.
+
 ## State ownership
 
 | State | Authority | Notes |
 |---|---|---|
 | Identity and OAuth account | D1 via better-auth | GitHub OAuth token is used to prove user-visible repository access |
 | Project metadata and lifecycle | D1 `projects` | Includes sandbox ID, encrypted env vars, backup handle, and generations |
-| Conversation metadata | D1 `workspace_sessions` | Includes branch, base commit, worktree path, title, and archive status |
+| Conversation metadata | D1 `workspace_sessions` | Includes branch, base commit, worktree path, title, archive status, and nullable preview port lease |
+| Preview lifecycle lease | D1 `projects.previewLockToken` / `previewLockExpiresAt` / `deletingAt` | External fence across Start/Stop/archive/delete; not stored inside the sandbox |
 | Chat history | D1 `messages` | Assistant rows have pending/complete/failed terminal lifecycle |
 | Provider credentials and model catalogs | D1 `ai_provider_credentials` | Encrypted per-user credentials plus bounded safe catalogs and connection status |
 | Repository files and Git refs | Sandbox `/workspace` | Primary clone plus `.ditto/worktrees/<sessionId>` |

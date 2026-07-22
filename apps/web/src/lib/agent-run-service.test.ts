@@ -61,6 +61,9 @@ const readyProject = {
 	sandboxBackupStoredGeneration: 0,
 	envVars: null,
 	status: "ready" as const,
+	previewLockToken: null,
+	previewLockExpiresAt: null,
+	deletingAt: null,
 	createdAt: new Date(),
 	updatedAt: new Date(),
 };
@@ -75,6 +78,7 @@ const activeSession = {
 	baseCommitSha: "abc123",
 	workspacePath: "/workspace/.ditto/worktrees/sess-1",
 	memoryPath: "/workspace/.ditto/memory",
+	previewPort: null,
 	createdAt: new Date(),
 	updatedAt: new Date(),
 };

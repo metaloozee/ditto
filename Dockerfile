@@ -1,4 +1,4 @@
-FROM docker.io/cloudflare/sandbox:0.12.1
+FROM docker.io/cloudflare/sandbox:0.12.3
 
 COPY --chown=0:0 packages/sandbox-runner /opt/ditto-runner
 WORKDIR /opt/ditto-runner
@@ -27,3 +27,6 @@ RUN npm ci \
   && ln -sf /opt/ditto-runner/dist/provider-catalog-cli.js /usr/local/bin/ditto-provider-catalog
 
 WORKDIR /workspace
+
+# Session preview port pool (local exposePort)
+EXPOSE 10000 10001 10002 10003 10004 10005 10006 10007 10008 10009 10010 10011 10012 10013 10014 10015 10016 10017 10018 10019 10020 10021 10022 10023 10024 10025 10026 10027 10028 10029 10030 10031

@@ -37,6 +37,9 @@ const baseProject = {
 	sandboxBackupStoredGeneration: 0,
 	status: "ready" as const,
 	envVars: null,
+	previewLockToken: null,
+	previewLockExpiresAt: null,
+	deletingAt: null,
 	createdAt: new Date("2026-07-04T00:00:00.000Z"),
 	updatedAt: new Date("2026-07-04T00:00:00.000Z"),
 };

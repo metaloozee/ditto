@@ -12,9 +12,10 @@ import {
 } from "#/lib/message-cursor";
 import { ensureProjectSandbox } from "#/lib/project-sandbox";
 import {
-	archiveOwnedActiveSession,
-	loadOwnedActiveSession,
-} from "#/lib/workspace-session";
+	archiveSessionWithPreviewCleanup,
+	SessionPreviewError,
+} from "#/lib/session-preview";
+import { loadOwnedActiveSession } from "#/lib/workspace-session";
 import { createTRPCRouter, protectedProcedure } from "../init";
 
 async function loadProjectOrThrow(options: {
@@ -168,15 +169,28 @@ export const workspaceRouter = createTRPCRouter({
 				userId: ctx.user.id,
 			});
 
-			await db
+			const [restored] = await db
 				.update(projects)
 				.set({
 					status: "ready",
 					updatedAt: sql`(unixepoch())`,
 				})
 				.where(
-					and(eq(projects.id, project.id), eq(projects.userId, ctx.user.id)),
-				);
+					and(
+						eq(projects.id, project.id),
+						eq(projects.userId, ctx.user.id),
+						eq(projects.status, "failed"),
+						sql`${projects.deletingAt} IS NULL`,
+					),
+				)
+				.returning({ id: projects.id });
+
+			if (!restored) {
+				throw new TRPCError({
+					code: "PRECONDITION_FAILED",
+					message: "Project cannot be restored.",
+				});
+			}
 
 			return await loadWorkspaceView({
 				db,
@@ -298,20 +312,35 @@ export const workspaceRouter = createTRPCRouter({
 		.mutation(async ({ ctx, input }) => {
 			const db = createDb(ctx.env);
 
-			const archived = await archiveOwnedActiveSession({
-				db,
-				projectId: input.projectId,
-				sessionId: input.sessionId,
-				userId: ctx.user.id,
-			});
-
-			if (!archived) {
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Session not found.",
+			try {
+				return await archiveSessionWithPreviewCleanup({
+					db,
+					env: ctx.env,
+					projectId: input.projectId,
+					sessionId: input.sessionId,
+					userId: ctx.user.id,
 				});
+			} catch (error) {
+				if (error instanceof SessionPreviewError) {
+					if (error.code === "not_found") {
+						throw new TRPCError({
+							code: "NOT_FOUND",
+							message: "Session not found.",
+						});
+					}
+					if (error.code === "cleanup_failed" || error.code === "busy") {
+						throw new TRPCError({
+							code:
+								error.code === "busy" ? "PRECONDITION_FAILED" : "BAD_GATEWAY",
+							message: error.message,
+						});
+					}
+					throw new TRPCError({
+						code: "PRECONDITION_FAILED",
+						message: error.message,
+					});
+				}
+				throw error;
 			}
-
-			return archived;
 		}),
 });
