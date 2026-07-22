@@ -164,6 +164,16 @@ archive, and account actions.
   environment variable keys/values. Values are write-only in the UI.
 - `SessionGitActions` renders the state machine returned by
   `sessionGit.gitStatus`; it does not independently infer Git workflow policy.
+- `ChatNavbar` owns the Preview toggle (`aria-pressed`) immediately right of Git
+  actions, plus disabled Terminal/Code labels. Preview is enabled whenever an
+  active session id exists, even if Git export is unavailable.
+- `Chat` composes a controlled Preview pane: desktop uses a bounded right sibling
+  (~42% width, min/max clamped) with chat `min-w-0`; mobile uses the existing
+  Sheet primitive. Closing hides the pane without stopping the server.
+- `SessionPreviewPane` keeps only ephemeral component state (idle/starting/ready/
+  stopping/failed). Start/Restart/Stop call `sessionPreview` mutations. The iframe
+  uses `referrerpolicy="no-referrer"` and a restrictive sandbox. Capability URLs
+  stay in component memory only — no toast, copy, query cache, or storage.
 - `NavUser` handles user identity display and sign-out.
 
 ## UI layers

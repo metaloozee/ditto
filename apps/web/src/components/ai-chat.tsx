@@ -17,6 +17,7 @@ import {
 	type StreamCommitPayload,
 } from "#/components/composer";
 import { CopyButton } from "#/components/copy-button";
+import { SessionPreviewPane } from "#/components/session-preview-pane";
 import { ToolCallGroup } from "#/components/tool-call-group";
 import { Bubble, BubbleContent } from "#/components/ui/bubble";
 import { Button, buttonVariants } from "#/components/ui/button";
@@ -34,6 +35,13 @@ import {
 	MessageScrollerViewport,
 	useMessageScrollerScrollable,
 } from "#/components/ui/message-scroller";
+import {
+	Sheet,
+	SheetContent,
+	SheetHeader,
+	SheetTitle,
+} from "#/components/ui/sheet";
+import { useIsMobile } from "#/hooks/use-mobile";
 import type {
 	AssistantMessagePart,
 	StreamToolCall,
@@ -587,14 +595,20 @@ export function Chat({
 		setCacheEpoch((epoch) => epoch + 1);
 	}
 
-	return (
-		<div className="relative mx-auto h-full w-full">
+	const [previewOpen, setPreviewOpen] = useState(false);
+	const isMobile = useIsMobile();
+	const previewEnabled = Boolean(projectId && sessionId);
+
+	const chatColumn = (
+		<div className="relative mx-auto h-full min-w-0 w-full">
 			<ChatNavbar
 				projectId={projectId}
 				sessionId={sessionId}
 				branchName={branchName}
 				gitExportEnabled={gitExportEnabled}
 				disabled={Boolean(disabledReason) || Boolean(streaming?.active)}
+				previewOpen={previewOpen}
+				onPreviewOpenChange={setPreviewOpen}
 			/>
 			<MessageScrollerProvider
 				autoScroll
@@ -721,6 +735,40 @@ export function Chat({
 					</div>
 				</MessageScroller>
 			</MessageScrollerProvider>
+		</div>
+	);
+
+	return (
+		<div className="flex h-full min-h-0 w-full min-w-0">
+			<div className="min-h-0 min-w-0 flex-1">{chatColumn}</div>
+			{previewEnabled && previewOpen && projectId && sessionId && !isMobile ? (
+				<div className="hidden min-h-0 w-[min(42%,28rem)] min-w-[18rem] max-w-xl shrink-0 md:block">
+					<SessionPreviewPane
+						projectId={projectId}
+						sessionId={sessionId}
+						className="h-full"
+					/>
+				</div>
+			) : null}
+			{previewEnabled && projectId && sessionId ? (
+				<Sheet open={previewOpen && isMobile} onOpenChange={setPreviewOpen}>
+					<SheetContent
+						side="right"
+						className="flex w-full flex-col gap-0 p-0 sm:max-w-md"
+					>
+						<SheetHeader className="sr-only">
+							<SheetTitle>Session website preview</SheetTitle>
+						</SheetHeader>
+						{previewOpen && isMobile ? (
+							<SessionPreviewPane
+								projectId={projectId}
+								sessionId={sessionId}
+								className="h-full border-l-0"
+							/>
+						) : null}
+					</SheetContent>
+				</Sheet>
+			) : null}
 		</div>
 	);
 }

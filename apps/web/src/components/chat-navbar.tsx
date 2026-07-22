@@ -1,12 +1,20 @@
-import { GitBranchIcon } from "lucide-react";
+import {
+	CodeIcon,
+	GitBranchIcon,
+	MonitorPlayIcon,
+	TerminalIcon,
+} from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import type { ReactNode } from "react";
 import { SessionGitActions } from "#/components/session-git-actions";
 import { SidebarTrigger, useSidebar } from "#/components/ui/sidebar";
 import {
 	Tooltip,
 	TooltipContent,
+	TooltipProvider,
 	TooltipTrigger,
 } from "#/components/ui/tooltip";
+import { cn } from "#/lib/utils";
 
 type ChatNavbarProps = {
 	projectId?: string;
@@ -14,9 +22,33 @@ type ChatNavbarProps = {
 	branchName?: string | null;
 	gitExportEnabled?: boolean;
 	disabled?: boolean;
+	previewOpen?: boolean;
+	onPreviewOpenChange?: (open: boolean) => void;
+	rightActions?: ReactNode;
 };
 
 const TRIGGER_SLOT_WIDTH = 40;
+
+function DisabledToolLabel({
+	label,
+	icon,
+}: {
+	label: string;
+	icon: ReactNode;
+}) {
+	return (
+		<span
+			className="inline-flex h-11 min-w-11 cursor-not-allowed items-center justify-center gap-1.5 rounded-md px-2 text-muted-foreground/50 text-xs sm:h-8 sm:min-w-0"
+			aria-disabled="true"
+			title={`${label} (coming soon)`}
+		>
+			<span className="shrink-0 [&_svg]:size-3.5" aria-hidden>
+				{icon}
+			</span>
+			<span className="hidden sm:inline">{label}</span>
+		</span>
+	);
+}
 
 export function ChatNavbar({
 	projectId,
@@ -24,6 +56,9 @@ export function ChatNavbar({
 	branchName,
 	gitExportEnabled = false,
 	disabled = false,
+	previewOpen = false,
+	onPreviewOpenChange,
+	rightActions,
 }: ChatNavbarProps) {
 	const { state } = useSidebar();
 	const reduceMotion = useReducedMotion();
@@ -31,6 +66,7 @@ export function ChatNavbar({
 	const duration = reduceMotion ? 0 : 0.2;
 	const ease = [0.23, 1, 0.32, 1] as const;
 	const branchLabel = branchName?.trim() || "—";
+	const hasSession = Boolean(sessionId);
 	const branch = (
 		<Tooltip>
 			<TooltipTrigger
@@ -74,22 +110,65 @@ export function ChatNavbar({
 		</div>
 	);
 
+	const previewToggle = (
+		<Tooltip>
+			<TooltipTrigger
+				render={
+					<button
+						type="button"
+						disabled={!hasSession}
+						aria-pressed={previewOpen}
+						aria-label="Preview"
+						onClick={() => onPreviewOpenChange?.(!previewOpen)}
+						className={cn(
+							"inline-flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-md px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:h-8 sm:min-w-0",
+							"disabled:pointer-events-none disabled:opacity-40",
+							previewOpen
+								? "bg-secondary text-secondary-foreground"
+								: "text-muted-foreground hover:bg-muted hover:text-foreground",
+						)}
+					>
+						<MonitorPlayIcon className="size-3.5 shrink-0" aria-hidden />
+						<span className="hidden sm:inline">Preview</span>
+					</button>
+				}
+			/>
+			<TooltipContent side="bottom">
+				{hasSession ? "Toggle website preview" : "Select a session to preview"}
+			</TooltipContent>
+		</Tooltip>
+	);
+
+	const tools = (
+		<TooltipProvider delay={200}>
+			<div className="flex shrink-0 items-center gap-1">
+				{rightActions}
+				{previewToggle}
+				<DisabledToolLabel label="Terminal" icon={<TerminalIcon />} />
+				<DisabledToolLabel label="Code" icon={<CodeIcon />} />
+			</div>
+		</TooltipProvider>
+	);
+
 	return (
 		<nav
 			aria-label="Chat controls"
-			className="absolute inset-x-0 top-0 z-10 flex w-full items-center bg-transparent px-3 pt-[max(1rem,env(safe-area-inset-top))] pb-2"
+			className="absolute inset-x-0 top-0 z-10 flex w-full items-center gap-2 bg-transparent px-3 pt-[max(1rem,env(safe-area-inset-top))] pb-2"
 		>
-			{gitExportEnabled && projectId && sessionId ? (
-				<SessionGitActions
-					projectId={projectId}
-					sessionId={sessionId}
-					disabled={disabled}
-				>
-					{left}
-				</SessionGitActions>
-			) : (
-				<div className="min-w-0 flex-1">{left}</div>
-			)}
+			<div className="min-w-0 flex-1">
+				{gitExportEnabled && projectId && sessionId ? (
+					<SessionGitActions
+						projectId={projectId}
+						sessionId={sessionId}
+						disabled={disabled}
+					>
+						{left}
+					</SessionGitActions>
+				) : (
+					<div className="min-w-0">{left}</div>
+				)}
+			</div>
+			{tools}
 		</nav>
 	);
 }
