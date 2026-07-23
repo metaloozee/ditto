@@ -183,7 +183,7 @@ describe("SessionPreviewPane", () => {
 		expect(stopMutate).not.toHaveBeenCalled();
 	});
 
-	it("restarts by discarding url then replacing on success", async () => {
+	it("reloads while running by replacing url on success", async () => {
 		startMutate
 			.mockImplementationOnce(
 				async (_input: unknown, opts: { onSuccess?: (r: unknown) => void }) => {
@@ -210,12 +210,47 @@ describe("SessionPreviewPane", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Start preview now" }));
 		const first = await screen.findByTitle("Session website preview");
 		expect(first.getAttribute("src")).toBe("https://10000-box-token.ayn.wtf");
-		fireEvent.click(screen.getByRole("button", { name: "Restart preview" }));
+		fireEvent.click(screen.getByRole("button", { name: "Reload preview" }));
 		await waitFor(() => {
 			expect(startMutate).toHaveBeenCalledTimes(2);
 		});
 		const second = await screen.findByTitle("Session website preview");
 		expect(second.getAttribute("src")).toBe("https://10001-box-token.ayn.wtf");
+	});
+
+	it("stop then start replaces url with a fresh preview", async () => {
+		startMutate
+			.mockImplementationOnce(
+				async (_input: unknown, opts: { onSuccess?: (r: unknown) => void }) => {
+					opts.onSuccess?.({
+						status: "running",
+						url: "https://10000-box-token.ayn.wtf",
+						port: 10000,
+						reused: false,
+					});
+				},
+			)
+			.mockImplementationOnce(
+				async (_input: unknown, opts: { onSuccess?: (r: unknown) => void }) => {
+					opts.onSuccess?.({
+						status: "running",
+						url: "https://10001-box-token.ayn.wtf",
+						port: 10001,
+						reused: false,
+					});
+				},
+			);
+
+		render(<SessionPreviewPane projectId="proj-1" sessionId="sess-1" />);
+		fireEvent.click(screen.getByRole("button", { name: "Start preview now" }));
+		await screen.findByTitle("Session website preview");
+		fireEvent.click(screen.getByRole("button", { name: "Stop preview" }));
+		await waitFor(() => {
+			expect(screen.queryByTitle("Session website preview")).toBeNull();
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Start preview now" }));
+		const iframe = await screen.findByTitle("Session website preview");
+		expect(iframe.getAttribute("src")).toBe("https://10001-box-token.ayn.wtf");
 	});
 
 	it("keeps iframe url and shows alert when stop fails", async () => {
@@ -239,7 +274,35 @@ describe("SessionPreviewPane", () => {
 		expect(alert.textContent).toMatch(/Failed to fully stop the preview/);
 	});
 
-	it("clears stop error on restart", async () => {
+	it("clears stop error on successful stop", async () => {
+		stopMutate
+			.mockImplementationOnce(
+				async (_input: unknown, opts: { onError?: (e: Error) => void }) => {
+					opts.onError?.(
+						new Error("Failed to fully stop the preview. Try again."),
+					);
+				},
+			)
+			.mockImplementationOnce(
+				async (_input: unknown, opts: { onSuccess?: () => void }) => {
+					opts.onSuccess?.();
+					return { status: "stopped" };
+				},
+			);
+		render(<SessionPreviewPane projectId="proj-1" sessionId="sess-1" />);
+		fireEvent.click(screen.getByRole("button", { name: "Start preview now" }));
+		await screen.findByTitle("Session website preview");
+		fireEvent.click(screen.getByRole("button", { name: "Stop preview" }));
+		await screen.findByRole("alert");
+		fireEvent.click(screen.getByRole("button", { name: "Stop preview" }));
+		await waitFor(() => {
+			expect(screen.queryByRole("alert")).toBeNull();
+		});
+		expect(screen.queryByTitle("Session website preview")).toBeNull();
+		expect(screen.getByText(SESSION_PREVIEW_PUBLIC_WARNING)).toBeTruthy();
+	});
+
+	it("clears stop error on reload", async () => {
 		stopMutate.mockImplementationOnce(
 			async (_input: unknown, opts: { onError?: (e: Error) => void }) => {
 				opts.onError?.(
@@ -252,7 +315,7 @@ describe("SessionPreviewPane", () => {
 		await screen.findByTitle("Session website preview");
 		fireEvent.click(screen.getByRole("button", { name: "Stop preview" }));
 		await screen.findByRole("alert");
-		fireEvent.click(screen.getByRole("button", { name: "Restart preview" }));
+		fireEvent.click(screen.getByRole("button", { name: "Reload preview" }));
 		await waitFor(() => {
 			expect(screen.queryByRole("alert")).toBeNull();
 		});
