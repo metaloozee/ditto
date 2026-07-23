@@ -261,6 +261,19 @@ export async function sendAgentControl(
 		credentials: "include",
 	});
 
+	if (!response.ok) {
+		let message = `Agent control failed (${response.status}).`;
+		try {
+			const errorBody: unknown = await response.json();
+			if (isRecord(errorBody) && typeof errorBody.error === "string") {
+				message = errorBody.error;
+			}
+		} catch {
+			// Keep status-based message when the error body is not JSON.
+		}
+		throw new Error(message);
+	}
+
 	let body: unknown;
 	try {
 		body = await response.json();
@@ -268,13 +281,6 @@ export async function sendAgentControl(
 		throw new Error("Agent control returned an invalid response.");
 	}
 
-	if (!response.ok) {
-		const message =
-			isRecord(body) && typeof body.error === "string"
-				? body.error
-				: `Agent control failed (${response.status}).`;
-		throw new Error(message);
-	}
 	if (!isRecord(body) || body.accepted !== true) {
 		throw new Error("Agent control returned an invalid response.");
 	}

@@ -199,6 +199,9 @@ export async function answerProviderAuthPrompt(options: {
 			value: options.value,
 		}),
 	});
+	if (!response.ok) {
+		throw new Error(`Provider auth control failed (${response.status}).`);
+	}
 	const body = (await response.json()) as { accepted?: boolean };
 	return { accepted: !!body.accepted };
 }
