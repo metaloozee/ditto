@@ -228,19 +228,23 @@ export function SessionSidebarItem({
 	);
 
 	async function handleArchiveSession(): Promise<void> {
-		await deleteSessionMutation.mutateAsync({
-			projectId: project.id,
-			sessionId: session.id,
-		});
-		clearSessionMessages(session.id);
-		await queryClient.invalidateQueries(trpc.projects.list.queryFilter());
-		setConfirmOpen(false);
-
-		if (isActive) {
-			await navigate({
-				to: "/project/$projectId",
-				params: { projectId: project.id },
+		try {
+			await deleteSessionMutation.mutateAsync({
+				projectId: project.id,
+				sessionId: session.id,
 			});
+			clearSessionMessages(session.id);
+			await queryClient.invalidateQueries(trpc.projects.list.queryFilter());
+			setConfirmOpen(false);
+
+			if (isActive) {
+				await navigate({
+					to: "/project/$projectId",
+					params: { projectId: project.id },
+				});
+			}
+		} catch {
+			// Mutation error state surfaces in the dialog.
 		}
 	}
 

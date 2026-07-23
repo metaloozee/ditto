@@ -115,22 +115,18 @@ export function ProjectSettingsDialog({
 
 	function handleOpenChange(nextOpen: boolean): void {
 		setOpen(nextOpen);
-		if (!nextOpen) {
-			setConfirmOpen(false);
-			resetNewEnvVarForm();
-			resetEditingEnvVarForm();
-			setDeletingEnvVarKey(null);
-			renameProjectMutation.reset();
-			setEnvVarMutation.reset();
-			deleteEnvVarMutation.reset();
-		}
-	}
-
-	useEffect(() => {
-		if (open) {
+		if (nextOpen) {
 			setName(project.name);
+			return;
 		}
-	}, [open, project.name]);
+		setConfirmOpen(false);
+		resetNewEnvVarForm();
+		resetEditingEnvVarForm();
+		setDeletingEnvVarKey(null);
+		renameProjectMutation.reset();
+		setEnvVarMutation.reset();
+		deleteEnvVarMutation.reset();
+	}
 
 	const trimmedName = name.trim();
 	const hasNameChanges = trimmedName.length > 0 && trimmedName !== project.name;
@@ -155,15 +151,19 @@ export function ProjectSettingsDialog({
 			return;
 		}
 
-		const updatedProject = await renameProjectMutation.mutateAsync({
-			id: project.id,
-			name: trimmedName,
-		});
-		setName(updatedProject.name);
-		await queryClient.invalidateQueries(trpc.projects.list.queryFilter());
-		await queryClient.invalidateQueries(
-			trpc.projects.get.queryFilter({ id: project.id }),
-		);
+		try {
+			const updatedProject = await renameProjectMutation.mutateAsync({
+				id: project.id,
+				name: trimmedName,
+			});
+			setName(updatedProject.name);
+			await queryClient.invalidateQueries(trpc.projects.list.queryFilter());
+			await queryClient.invalidateQueries(
+				trpc.projects.get.queryFilter({ id: project.id }),
+			);
+		} catch {
+			// Mutation error state surfaces in the dialog.
+		}
 	}
 
 	async function handleAddEnvVar(): Promise<void> {
@@ -171,13 +171,17 @@ export function ProjectSettingsDialog({
 			return;
 		}
 
-		await setEnvVarMutation.mutateAsync({
-			id: project.id,
-			key: normalizedNewEnvVarKey,
-			value: newEnvVarValue,
-		});
-		resetNewEnvVarForm();
-		await refreshEnvVars();
+		try {
+			await setEnvVarMutation.mutateAsync({
+				id: project.id,
+				key: normalizedNewEnvVarKey,
+				value: newEnvVarValue,
+			});
+			resetNewEnvVarForm();
+			await refreshEnvVars();
+		} catch {
+			// Mutation error state surfaces in the dialog.
+		}
 	}
 
 	async function handleReplaceEnvVar(): Promise<void> {
@@ -185,13 +189,17 @@ export function ProjectSettingsDialog({
 			return;
 		}
 
-		await setEnvVarMutation.mutateAsync({
-			id: project.id,
-			key: editingEnvVarKey,
-			value: editingEnvVarValue,
-		});
-		resetEditingEnvVarForm();
-		await refreshEnvVars();
+		try {
+			await setEnvVarMutation.mutateAsync({
+				id: project.id,
+				key: editingEnvVarKey,
+				value: editingEnvVarValue,
+			});
+			resetEditingEnvVarForm();
+			await refreshEnvVars();
+		} catch {
+			// Mutation error state surfaces in the dialog.
+		}
 	}
 
 	async function handleDeleteEnvVar(key: string): Promise<void> {
@@ -206,9 +214,10 @@ export function ProjectSettingsDialog({
 				resetEditingEnvVarForm();
 			}
 			await refreshEnvVars();
-		} finally {
-			setDeletingEnvVarKey(null);
+		} catch {
+			// Mutation state surfaces the error in the dialog.
 		}
+		setDeletingEnvVarKey(null);
 	}
 
 	return (
