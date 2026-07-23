@@ -163,10 +163,48 @@ describe("ensureSessionWorktree", () => {
 		});
 
 		expect(syncPrimaryWorkspaceFromGitHubMock).not.toHaveBeenCalled();
-		expect(result.baseCommitSha).toBe("newsha");
+		expect(result.baseCommitSha).toBe("oldsha");
+		expect(result.workspacePath).toBe("/workspace/.ditto/worktrees/sess-1");
 		expect(
 			execOrThrowMock.mock.calls.some((call) =>
 				String(call[1]).includes("git worktree add"),
+			),
+		).toBe(true);
+	});
+
+	it("backfills empty baseCommitSha from primary HEAD on repair", async () => {
+		const sandbox = makeSandbox(async (path) => {
+			if (path === "/workspace/.git") {
+				return { exists: true };
+			}
+			if (path === "/workspace/.ditto/worktrees/sess-1") {
+				return { exists: false };
+			}
+			return { exists: false };
+		});
+		getProjectSandboxMock.mockReturnValue(sandbox);
+		execOrThrowMock.mockResolvedValue({
+			stdout: "backfillsha\n",
+			success: true,
+		});
+
+		const result = await ensureSessionWorktree({
+			env: makeEnv(),
+			sandboxId: "sandbox-1",
+			sessionId: "sess-1",
+			...worktreeOptions,
+			existing: {
+				branchName: "ditto/session-sess-1",
+				baseCommitSha: "",
+				workspacePath: "/workspace/.ditto/worktrees/sess-1",
+			},
+		});
+
+		expect(syncPrimaryWorkspaceFromGitHubMock).not.toHaveBeenCalled();
+		expect(result.baseCommitSha).toBe("backfillsha");
+		expect(
+			execOrThrowMock.mock.calls.some((call) =>
+				String(call[1]).includes("git rev-parse HEAD"),
 			),
 		).toBe(true);
 	});

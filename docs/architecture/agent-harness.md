@@ -63,8 +63,11 @@ once (the runner itself does not snapshot).
    `baseCommitSha`, and `workspacePath` on the session row. Dirty tracked
    primary state, a locally ahead primary clone, or a diverged primary branch
    block fresh session worktree creation instead of overwriting local commits.
-   If worktree preparation fails for a **newly created** empty session, that
-   session row is removed before the 409 response.
+   `baseCommitSha` is set when the session branch/worktree is first created (or
+   one-time backfilled if empty). Repairing a missing worktree **must not**
+   overwrite a non-empty `baseCommitSha` — it is the frozen fork point for the
+   session. If worktree preparation fails for a **newly created** empty session,
+   that session row is removed before the 409 response.
 5. After the worktree is ready, the Worker inserts the user message
    (`status: complete`) and an assistant placeholder (`status: pending`) in
    one D1 batch, then opens the SSE stream and emits `meta`.

@@ -84,10 +84,13 @@ export async function ensureSessionWorktree(options: {
 }> {
 	const sandbox = getProjectSandbox(options.env, options.sandboxId);
 	await configureDittoGitIdentity(sandbox, WORKSPACE_PATH);
-	const branchName = sessionBranchName(options.sessionId);
-	const worktreePath = sessionWorktreePath(options.sessionId);
 	const existing = options.existing;
+	const isCreate = !existing?.branchName;
+	const branchName =
+		existing?.branchName ?? sessionBranchName(options.sessionId);
+	const worktreePath = sessionWorktreePath(options.sessionId);
 
+	// Phase 1: still reuse whatever path is stored when it exists on FS.
 	if (existing?.branchName && existing.workspacePath) {
 		const pathCheck = await sandbox.exists(existing.workspacePath);
 		if (pathCheck.exists) {
@@ -105,7 +108,7 @@ export async function ensureSessionWorktree(options: {
 		throw new Error("Primary workspace is not a git repository.");
 	}
 
-	if (!existing?.branchName) {
+	if (isCreate) {
 		await syncPrimaryWorkspaceFromGitHub({
 			env: options.env,
 			sandboxId: options.sandboxId,
@@ -114,12 +117,20 @@ export async function ensureSessionWorktree(options: {
 		});
 	}
 
-	const headResult = await execOrThrow(sandbox, "git rev-parse HEAD", {
-		cwd: WORKSPACE_PATH,
-		timeout: GIT_COMMAND_TIMEOUT_MS,
-		errorPrefix: "Failed to resolve primary HEAD",
-	});
-	const baseCommitSha = headResult.stdout.trim();
+	// Non-empty stored base is frozen. null/""/whitespace → one-time HEAD backfill
+	// (create always uses HEAD; repair with empty base also backfills).
+	const storedBase = existing?.baseCommitSha?.trim() ?? "";
+	let baseCommitSha: string;
+	if (!isCreate && storedBase.length > 0) {
+		baseCommitSha = storedBase;
+	} else {
+		const headResult = await execOrThrow(sandbox, "git rev-parse HEAD", {
+			cwd: WORKSPACE_PATH,
+			timeout: GIT_COMMAND_TIMEOUT_MS,
+			errorPrefix: "Failed to resolve primary HEAD",
+		});
+		baseCommitSha = headResult.stdout.trim();
+	}
 
 	const quotedBranch = quoteShellArg(branchName);
 	await execOrThrow(
