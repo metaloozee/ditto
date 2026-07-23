@@ -70,11 +70,12 @@ export function ChatNavbar({
 				{showSidebarTrigger ? (
 					<motion.div
 						key="sidebar-trigger"
-						initial={{ width: 0, opacity: 0, x: -12 }}
-						animate={{ width: TRIGGER_SLOT_WIDTH, opacity: 1, x: 0 }}
-						exit={{ width: 0, opacity: 0, x: -12 }}
+						initial={{ opacity: 0, x: -12 }}
+						animate={{ opacity: 1, x: 0 }}
+						exit={{ opacity: 0, x: -12 }}
 						transition={{ duration, ease }}
 						className="h-8 shrink-0 overflow-hidden"
+						style={{ width: TRIGGER_SLOT_WIDTH }}
 					>
 						<div className="flex size-8 items-center justify-center">
 							<SidebarTrigger className="size-8 shrink-0 cursor-pointer" />

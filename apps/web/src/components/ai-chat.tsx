@@ -271,7 +271,7 @@ function ChatEmptyState({
 						to="/"
 						className={cn(
 							buttonVariants({ variant: "default", size: "sm" }),
-							"mt-2 cursor-pointer transition-all active:scale-[0.98]",
+							"mt-2 cursor-pointer transition-transform active:scale-[0.98]",
 						)}
 					>
 						Go to Dashboard
@@ -303,7 +303,7 @@ function ChatEmptyState({
 							key={item.title}
 							type="button"
 							onClick={() => onSelectSuggestion?.(item.prompt)}
-							className="flex items-start gap-3 rounded-xl border border-border/80 bg-card/40 p-3.5 text-left transition-all duration-200 hover:-translate-y-[1px] hover:border-foreground/20 hover:bg-card hover:shadow-xs active:scale-[0.97] cursor-pointer"
+							className="flex items-start gap-3 rounded-xl border border-border/80 bg-card/40 p-3.5 text-left transition-[transform,colors,box-shadow] duration-200 hover:-translate-y-[1px] hover:border-foreground/20 hover:bg-card hover:shadow-xs active:scale-[0.97] cursor-pointer"
 							style={{
 								animationDelay: `${idx * 40}ms`,
 							}}
@@ -541,22 +541,24 @@ export function Chat({
 		[messages],
 	);
 
-	// Prune confirmed optimistic entries when server ids change (no Effect).
+	// Prune confirmed optimistic entries when server ids change.
 	// Display already filters via listPending; this only trims module cache.
 	const ackIdsKey = messages.map((message) => String(message.id)).join("\0");
 	const lastAckRef = useRef<{ sessionId: string; idsKey: string } | null>(null);
-	if (
-		cacheSessionId &&
-		messages.length > 0 &&
-		(lastAckRef.current?.sessionId !== cacheSessionId ||
-			lastAckRef.current?.idsKey !== ackIdsKey)
-	) {
+	useEffect(() => {
+		if (!cacheSessionId || messages.length === 0) return;
+		if (
+			lastAckRef.current?.sessionId === cacheSessionId &&
+			lastAckRef.current?.idsKey === ackIdsKey
+		) {
+			return;
+		}
 		lastAckRef.current = { sessionId: cacheSessionId, idsKey: ackIdsKey };
 		acknowledgeSessionMessages(
 			cacheSessionId,
 			messages.map((message) => message.id),
 		);
-	}
+	}, [ackIdsKey, cacheSessionId, messages]);
 
 	// cacheEpoch forces recompute when seed mutates module cache.
 	const overlay = useMemo(() => {
@@ -611,11 +613,9 @@ export function Chat({
 	const desktopToolsVisible =
 		toolsEnabled && toolsOpen && Boolean(projectId && sessionId) && !isMobile;
 
-	useEffect(() => {
-		if (desktopToolsVisible) {
-			setDesktopToolsMounted(true);
-		}
-	}, [desktopToolsVisible]);
+	if (desktopToolsVisible && !desktopToolsMounted) {
+		setDesktopToolsMounted(true);
+	}
 
 	// Drawer-like ease (Emil / Ionic): starts decisively, settles cleanly.
 	const toolsPaneEase = [0.32, 0.72, 0, 1] as const;
@@ -802,7 +802,7 @@ export function Chat({
 						className="min-h-0 min-w-0 overflow-hidden"
 					>
 						<motion.div
-							className="h-full min-h-0 will-change-transform"
+							className="h-full min-h-0"
 							initial={toolsPaneHidden}
 							animate={desktopToolsVisible ? toolsPaneShown : toolsPaneHidden}
 							transition={toolsPaneTransition}
