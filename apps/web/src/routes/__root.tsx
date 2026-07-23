@@ -7,7 +7,7 @@ import {
 } from "@tanstack/react-router";
 import type { TRPCOptionsProxy } from "@trpc/tanstack-react-query";
 import type * as React from "react";
-import { useEffect, useState } from "react";
+import { lazy, Suspense } from "react";
 import { AppShell } from "#/components/app-shell";
 import type { TRPCRouter } from "#/integrations/trpc/router";
 import appCss from "../styles.css?url";
@@ -47,17 +47,23 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 });
 
 /** Loads TanStack Devtools only in development; production never imports them. */
+const DevToolsBundle = import.meta.env.DEV
+	? lazy(async () => {
+			const mod = await import("#/integrations/tanstack-query/devtools-bundle");
+			function LoadedDevTools() {
+				return <>{mod.default()}</>;
+			}
+			return { default: LoadedDevTools };
+		})
+	: null;
+
 function DevTools() {
-	const [tools, setTools] = useState<React.ReactNode>(null);
-
-	useEffect(() => {
-		if (!import.meta.env.DEV) return;
-		void import("#/integrations/tanstack-query/devtools-bundle").then((mod) =>
-			setTools(mod.default()),
-		);
-	}, []);
-
-	return tools;
+	if (!DevToolsBundle) return null;
+	return (
+		<Suspense fallback={null}>
+			<DevToolsBundle />
+		</Suspense>
+	);
 }
 
 function RootDocument({ children }: { children: React.ReactNode }) {
