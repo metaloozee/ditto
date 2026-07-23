@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import type { createDb } from "#/db";
@@ -44,7 +44,7 @@ import {
 } from "#/lib/project-sandbox";
 import { resolveOAuthCredential } from "#/lib/provider-auth-service";
 import { redactSecrets } from "#/lib/secret-redaction";
-import { ensureSessionWorktree } from "#/lib/session-worktree";
+import { ensureSessionWorkspaceReady } from "#/lib/session-worktree";
 import { makeSessionTitleFromMessage } from "#/lib/workspace-policy";
 import {
 	type OwnedActiveSession,
@@ -166,7 +166,7 @@ export type AgentRunDeps = {
 	decryptEnvVars?: typeof decryptEnvVars;
 	ensureProjectSandbox?: typeof ensureProjectSandbox;
 	resolveSessionForMessageWrite?: typeof resolveSessionForMessageWrite;
-	ensureSessionWorktree?: typeof ensureSessionWorktree;
+	ensureSessionWorkspaceReady?: typeof ensureSessionWorkspaceReady;
 	runAgentInSandbox?: typeof runAgentInSandbox;
 	controlAgentRun?: typeof controlAgentRun;
 	persistProjectSandboxBackup?: typeof persistProjectSandboxBackup;
@@ -190,7 +190,7 @@ const defaultDeps: Required<AgentRunDeps> = {
 	decryptEnvVars,
 	ensureProjectSandbox,
 	resolveSessionForMessageWrite,
-	ensureSessionWorktree,
+	ensureSessionWorkspaceReady,
 	runAgentInSandbox,
 	controlAgentRun,
 	persistProjectSandboxBackup,
@@ -495,42 +495,32 @@ export async function prepareAgentRun(options: {
 
 	let sessionWorkspacePath: string;
 	try {
-		const ensuredWorktree = await deps.ensureSessionWorktree({
+		const ready = await deps.ensureSessionWorkspaceReady({
 			env,
 			sandboxId: ensuredProject.sandboxId as string,
 			sessionId,
 			githubRepo: linkedGithubRepo,
 			installationId: linkedInstallationId,
+			projectId: input.projectId,
+			userId,
+			db,
 			existing: {
 				branchName: workspaceSession.branchName,
 				baseCommitSha: workspaceSession.baseCommitSha,
 				workspacePath: workspaceSession.workspacePath,
 			},
+			// Always pass lock: "acquire". Readiness no-ops acquire on reuse
+			// and only wraps create/repair.
+			lock: "acquire",
 		});
-
-		if (
-			workspaceSession.branchName !== ensuredWorktree.branchName ||
-			workspaceSession.workspacePath !== ensuredWorktree.workspacePath ||
-			workspaceSession.baseCommitSha !== ensuredWorktree.baseCommitSha
-		) {
-			await db
-				.update(workspaceSessions)
-				.set({
-					branchName: ensuredWorktree.branchName,
-					baseCommitSha: ensuredWorktree.baseCommitSha,
-					workspacePath: ensuredWorktree.workspacePath,
-					updatedAt: sql`(unixepoch())`,
-				})
-				.where(eq(workspaceSessions.id, sessionId));
-			workspaceSession = {
-				...workspaceSession,
-				branchName: ensuredWorktree.branchName,
-				baseCommitSha: ensuredWorktree.baseCommitSha,
-				workspacePath: ensuredWorktree.workspacePath,
-			};
-		}
-
-		sessionWorkspacePath = ensuredWorktree.workspacePath;
+		// Bind is already done inside readiness when changed — do NOT duplicate D1 update.
+		workspaceSession = {
+			...workspaceSession,
+			branchName: ready.branchName,
+			baseCommitSha: ready.baseCommitSha,
+			workspacePath: ready.workspacePath,
+		};
+		sessionWorkspacePath = ready.workspacePath;
 	} catch (error) {
 		if (createdSession) {
 			await deleteEmptySession({ db, sessionId, userId });

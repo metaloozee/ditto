@@ -14,7 +14,7 @@ vi.mock("#/lib/project-sandbox", () => ({
 }));
 
 vi.mock("#/lib/session-worktree", () => ({
-	ensureSessionWorktree: vi.fn(),
+	ensureSessionWorkspaceReady: vi.fn(),
 }));
 
 vi.mock("#/lib/project-env-vars", () => ({
@@ -142,10 +142,12 @@ function baseDeps(overrides: Partial<AgentRunDeps> = {}): AgentRunDeps {
 			kind: "existing",
 			session: activeSession,
 		}),
-		ensureSessionWorktree: vi.fn().mockResolvedValue({
+		ensureSessionWorkspaceReady: vi.fn().mockResolvedValue({
+			mode: "reuse",
 			branchName: activeSession.branchName,
 			baseCommitSha: activeSession.baseCommitSha,
 			workspacePath: activeSession.workspacePath,
+			bound: false,
 		}),
 		loadCredential: vi.fn().mockResolvedValue(null),
 		runAgentInSandbox: vi.fn().mockResolvedValue({
@@ -255,12 +257,14 @@ describe("prepareAgentRun", () => {
 				.mockReturnValueOnce("run-1")
 				.mockReturnValueOnce("user-msg")
 				.mockReturnValueOnce("asst-msg"),
-			ensureSessionWorktree: vi.fn().mockImplementation(async () => {
+			ensureSessionWorkspaceReady: vi.fn().mockImplementation(async () => {
 				order.push("worktree");
 				return {
+					mode: "reuse",
 					branchName: activeSession.branchName,
 					baseCommitSha: activeSession.baseCommitSha,
 					workspacePath: activeSession.workspacePath,
+					bound: false,
 				};
 			}),
 		});
@@ -309,7 +313,7 @@ describe("prepareAgentRun", () => {
 				resolveSessionForMessageWrite: vi
 					.fn()
 					.mockResolvedValue({ kind: "create" }),
-				ensureSessionWorktree: vi
+				ensureSessionWorkspaceReady: vi
 					.fn()
 					.mockRejectedValue(new Error("dirty primary")),
 			}),
@@ -340,7 +344,7 @@ describe("prepareAgentRun", () => {
 				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
-				ensureSessionWorktree: vi
+				ensureSessionWorkspaceReady: vi
 					.fn()
 					.mockRejectedValue(new Error("worktree boom")),
 			}),
@@ -350,6 +354,41 @@ describe("prepareAgentRun", () => {
 			kind: "error",
 			status: 409,
 			body: { error: "worktree boom" },
+		});
+		expect(deleteFn).not.toHaveBeenCalled();
+		expect(batch).not.toHaveBeenCalled();
+	});
+
+	it("returns 409 with busy message when readiness is locked", async () => {
+		const { SessionWorkspaceBusyError } = await import(
+			"#/lib/session-workspace-lock-error"
+		);
+		const { db, deleteFn, batch } = createMockDb();
+
+		const result = await prepareAgentRun({
+			db,
+			env: makeEnv(),
+			userId: "user-1",
+			input: {
+				projectId: "proj-1",
+				sessionId: "sess-1",
+				message: "hi",
+				model: "opencode/deepseek-v4-flash-free",
+			},
+			deps: baseDeps({
+				ensureSessionWorkspaceReady: vi
+					.fn()
+					.mockRejectedValue(new SessionWorkspaceBusyError()),
+			}),
+		});
+
+		expect(result).toEqual({
+			kind: "error",
+			status: 409,
+			body: {
+				error:
+					"This session is busy. Wait for the active agent or Git operation to finish.",
+			},
 		});
 		expect(deleteFn).not.toHaveBeenCalled();
 		expect(batch).not.toHaveBeenCalled();

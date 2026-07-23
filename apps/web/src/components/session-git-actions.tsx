@@ -219,7 +219,9 @@ function SessionGitActionsView({
 							? workflow?.kind === "idle"
 								? "No session changes to open as a pull request"
 								: workflow?.kind === "unavailable"
-									? "GitHub status is currently unavailable"
+									? workflow.reason === "worktree"
+										? "Session worktree is not ready."
+										: "GitHub status is currently unavailable"
 									: dirty
 										? "Commit changes before opening a PR"
 										: "Working…"

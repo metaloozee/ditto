@@ -1,7 +1,7 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { createDb } from "#/db";
-import { projects, workspaceSessions } from "#/db/schema";
+import { projects } from "#/db/schema";
 import type { AgentGitJwtClaims } from "#/lib/agent-git-jwt";
 import { GitSecretPolicyError } from "#/lib/git-secret-policy";
 import { decryptEnvVars } from "#/lib/project-env-vars";
@@ -11,7 +11,7 @@ import {
 	openSessionPullRequest,
 	pushSessionBranch,
 } from "#/lib/session-git";
-import { ensureSessionWorktree } from "#/lib/session-worktree";
+import { ensureSessionWorkspaceReady } from "#/lib/session-worktree";
 import { loadOwnedActiveSession } from "#/lib/workspace-session";
 
 export const agentGitBodySchema = z.object({
@@ -104,34 +104,22 @@ export async function resolveAgentGitContext(options: {
 		project,
 	});
 
-	const ensured = await ensureSessionWorktree({
+	const ready = await ensureSessionWorkspaceReady({
 		env: options.env,
 		sandboxId: project.sandboxId,
 		sessionId: session.id,
 		githubRepo: project.githubRepo,
 		installationId: project.githubInstallationId,
+		projectId: options.claims.projectId,
+		userId: options.claims.userId,
+		db: options.db,
 		existing: {
 			branchName: session.branchName,
 			baseCommitSha: session.baseCommitSha,
 			workspacePath: session.workspacePath,
 		},
+		lock: "assumeHeld",
 	});
-
-	if (
-		session.branchName !== ensured.branchName ||
-		session.workspacePath !== ensured.workspacePath ||
-		session.baseCommitSha !== ensured.baseCommitSha
-	) {
-		await options.db
-			.update(workspaceSessions)
-			.set({
-				branchName: ensured.branchName,
-				baseCommitSha: ensured.baseCommitSha,
-				workspacePath: ensured.workspacePath,
-				updatedAt: sql`(unixepoch())`,
-			})
-			.where(eq(workspaceSessions.id, session.id));
-	}
 
 	const envVars = await decryptEnvVars(
 		project.envVars,
@@ -146,9 +134,9 @@ export async function resolveAgentGitContext(options: {
 		sandboxId: project.sandboxId,
 		session: {
 			id: session.id,
-			branchName: ensured.branchName,
-			baseCommitSha: ensured.baseCommitSha,
-			workspacePath: ensured.workspacePath,
+			branchName: ready.branchName,
+			baseCommitSha: ready.baseCommitSha,
+			workspacePath: ready.workspacePath,
 			title: session.title,
 		},
 		knownSecrets,

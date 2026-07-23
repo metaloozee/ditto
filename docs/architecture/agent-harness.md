@@ -170,6 +170,21 @@ environment values are stored encrypted in D1, decrypted by the Worker per run,
 and injected into each agent shell session's process `env`; worktrees never
 receive a `.env` file.
 
+Session workspace **readiness** (`ensureSessionWorkspaceReady`) centralizes
+create / reuse / repair of the session worktree and ownership-scoped D1 bind.
+**create** and **repair** take a short session workspace lock; **reuse** is
+unlocked. `baseCommitSha` is frozen after first set (or one-time empty backfill);
+repair preserves a non-empty base (see Runtime path above).
+
+- **Agent prepare** acquires only for create/repair; message rows still insert
+  after readiness releases the short lock.
+- **Agent git tools** call readiness with `assumeHeld` (the agent run already
+  holds the outer session lock).
+- **UI gitStatus** is prepare-only; a missing or non-canonical tree returns
+  workflow `unavailable` with reason `worktree` (no create/repair on poll).
+- **UI mutations** use full readiness with acquire on create/repair.
+- **Preview** repair uses readiness-owned acquire (no outer double-lock).
+
 Residual limits: all sessions still share one sandbox container process space
 (dev servers, ports, and long-running processes can collide). There is no
 application-level mutex per `projectId` yet; parallel agents should not run

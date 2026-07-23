@@ -246,6 +246,22 @@ describe("SessionGitActions workflow", () => {
 		).toBe(true);
 	});
 
+	it("disables Open PR when worktree is unavailable", () => {
+		setStatus(
+			{ kind: "unavailable", reason: "worktree" },
+			// force PR as primary so tooltip is on the primary button
+		);
+		// When unavailable with no PR, primary is empty; open the menu and confirm disabled.
+		render(<SessionGitActions projectId="proj-1" sessionId="sess-1" />);
+
+		const menu = openGitMenu();
+		expect(
+			isMenuItemDisabled(
+				within(menu).getByRole("menuitem", { name: /Open PR/i }),
+			),
+		).toBe(true);
+	});
+
 	it("labels an existing pull request clearly and includes its number in the tooltip", () => {
 		setStatus({
 			kind: "open-pr-existing",

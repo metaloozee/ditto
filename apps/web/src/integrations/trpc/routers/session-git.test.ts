@@ -5,7 +5,8 @@ const resolveMocks = vi.hoisted(() => ({
 	authorizeGitHubRepositoryAccess: vi.fn(),
 	decryptEnvVars: vi.fn(),
 	ensureProjectSandbox: vi.fn(),
-	ensureSessionWorktree: vi.fn(),
+	ensureSessionWorkspaceReady: vi.fn(),
+	prepareSessionWorkspaceIfPresent: vi.fn(),
 	loadOwnedActiveSession: vi.fn(),
 	commitSessionChanges: vi.fn(),
 	commitSessionChangesWithBackup: vi.fn(),
@@ -47,7 +48,9 @@ vi.mock("#/lib/project-sandbox", () => ({
 }));
 
 vi.mock("#/lib/session-worktree", () => ({
-	ensureSessionWorktree: resolveMocks.ensureSessionWorktree,
+	ensureSessionWorkspaceReady: resolveMocks.ensureSessionWorkspaceReady,
+	prepareSessionWorkspaceIfPresent:
+		resolveMocks.prepareSessionWorkspaceIfPresent,
 }));
 
 vi.mock("#/lib/workspace-session", () => ({
@@ -149,7 +152,15 @@ function setupResolved() {
 		workspacePath: "/workspace/.ditto/worktrees/sess-1",
 		title: "Add billing",
 	});
-	resolveMocks.ensureSessionWorktree.mockResolvedValue({
+	resolveMocks.ensureSessionWorkspaceReady.mockResolvedValue({
+		mode: "reuse",
+		branchName: "ditto/sess-1",
+		baseCommitSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		workspacePath: "/workspace/.ditto/worktrees/sess-1",
+		bound: false,
+	});
+	resolveMocks.prepareSessionWorkspaceIfPresent.mockResolvedValue({
+		ok: true,
 		branchName: "ditto/sess-1",
 		baseCommitSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		workspacePath: "/workspace/.ditto/worktrees/sess-1",
@@ -180,10 +191,74 @@ function asMutation(procedure: unknown): MockMutation {
 	return procedure as MockMutation;
 }
 
+type MockQuery = {
+	query: (args: {
+		ctx: typeof ctx;
+		input: Record<string, unknown>;
+	}) => Promise<unknown>;
+};
+
+function asQuery(procedure: unknown): MockQuery {
+	return procedure as MockQuery;
+}
+
+describe("sessionGitRouter gitStatus", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setupResolved();
+	});
+
+	it("returns worktree unavailable without calling git status", async () => {
+		resolveMocks.prepareSessionWorkspaceIfPresent.mockResolvedValue({
+			ok: false,
+			reason: "worktree",
+		});
+		const result = await asQuery(sessionGitRouter.gitStatus).query({
+			ctx,
+			input: { projectId: "proj-1", sessionId: "sess-1" },
+		});
+		expect(result).toMatchObject({
+			summary: "Session worktree is not ready.",
+			workflow: { kind: "unavailable", reason: "worktree" },
+		});
+		expect(resolveMocks.getSessionGitStatus).not.toHaveBeenCalled();
+		expect(resolveMocks.ensureSessionWorkspaceReady).not.toHaveBeenCalled();
+	});
+
+	it("uses prepare-only path when worktree is present", async () => {
+		resolveMocks.getSessionGitStatus.mockResolvedValue({
+			branch: "ditto/sess-1",
+			dirty: false,
+			workflow: { kind: "idle", reason: "no-changes" },
+		});
+		await asQuery(sessionGitRouter.gitStatus).query({
+			ctx,
+			input: { projectId: "proj-1", sessionId: "sess-1" },
+		});
+		expect(resolveMocks.prepareSessionWorkspaceIfPresent).toHaveBeenCalled();
+		expect(resolveMocks.ensureSessionWorkspaceReady).not.toHaveBeenCalled();
+		expect(resolveMocks.getSessionGitStatus).toHaveBeenCalled();
+	});
+});
+
 describe("sessionGitRouter commit/openPullRequest metadata wiring", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		setupResolved();
+	});
+
+	it("mutations call full readiness", async () => {
+		resolveMocks.commitSessionChangesWithGeneratedMessage.mockResolvedValue({
+			commitSha: "abc",
+			committed: true,
+		});
+		await asMutation(sessionGitRouter.commit).mutation({
+			ctx,
+			input: { projectId: "proj-1", sessionId: "sess-1" },
+		});
+		expect(resolveMocks.ensureSessionWorkspaceReady).toHaveBeenCalledWith(
+			expect.objectContaining({ lock: "acquire" }),
+		);
 	});
 
 	it("delegates absent commit message to generated orchestration", async () => {

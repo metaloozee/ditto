@@ -73,7 +73,9 @@ function preconditionMessage(
 		return "This session pull request is closed.";
 	}
 	if (workflow.kind === "unavailable") {
-		return "GitHub status is currently unavailable.";
+		return workflow.reason === "worktree"
+			? "Session worktree is not ready."
+			: "GitHub status is currently unavailable.";
 	}
 	if (workflow.kind === "sync") {
 		return `Sync the latest ${workflow.baseBranch} before opening a pull request.`;

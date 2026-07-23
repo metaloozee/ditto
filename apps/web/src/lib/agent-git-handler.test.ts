@@ -9,7 +9,7 @@ vi.mock("#/lib/project-sandbox", () => ({
 	ensureProjectSandbox: vi.fn(),
 }));
 vi.mock("#/lib/session-worktree", () => ({
-	ensureSessionWorktree: vi.fn(),
+	ensureSessionWorkspaceReady: vi.fn(),
 }));
 vi.mock("#/lib/session-git", () => ({
 	getSessionGitStatus: getSessionGitStatusMock,

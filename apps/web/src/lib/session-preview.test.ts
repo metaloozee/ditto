@@ -9,13 +9,7 @@ vi.mock("#/lib/project-sandbox", () => ({
 	ensureProjectSandbox: vi.fn(),
 }));
 vi.mock("#/lib/session-worktree", () => ({
-	ensureSessionWorktree: vi.fn(),
-	prepareSessionWorktree: vi.fn(),
-}));
-vi.mock("#/lib/session-workspace-lock", () => ({
-	withSessionWorkspaceLock: vi.fn(
-		async ({ run }: { run: () => Promise<unknown> }) => run(),
-	),
+	ensureSessionWorkspaceReady: vi.fn(),
 }));
 
 const {
@@ -437,11 +431,25 @@ function baseInjected(
 			project: project as never,
 			state: "connected" as const,
 		})),
-		ensureSessionWorktree: vi.fn(),
-		prepareSessionWorktree: vi.fn().mockResolvedValue(undefined),
-		withSessionWorkspaceLock: vi.fn(
-			async <T>({ run }: { run: () => Promise<T> }) => run(),
-		) as SessionPreviewDeps["withSessionWorkspaceLock"],
+		ensureSessionWorkspaceReady: vi.fn().mockImplementation(
+			async (opts: {
+				sessionId: string;
+				existing: {
+					branchName: string | null;
+					baseCommitSha: string | null;
+					workspacePath: string;
+				};
+			}) => ({
+				mode: "reuse" as const,
+				branchName:
+					opts.existing.branchName ?? `ditto/session-${opts.sessionId}`,
+				baseCommitSha: opts.existing.baseCommitSha ?? "abc",
+				workspacePath:
+					opts.existing.workspacePath ||
+					`/workspace/.ditto/worktrees/${opts.sessionId}`,
+				bound: false,
+			}),
+		),
 		nowSeconds: () => testNowSeconds,
 		randomToken: () => token,
 		sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
@@ -834,9 +842,7 @@ describe("project preview lease", () => {
 			sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
 			getSandbox: () => makeSandbox(),
 			ensureProjectSandbox: vi.fn(),
-			ensureSessionWorktree: vi.fn(),
-			prepareSessionWorktree: vi.fn(),
-			withSessionWorkspaceLock: vi.fn(),
+			ensureSessionWorkspaceReady: vi.fn(),
 		};
 
 		const first = await acquireProjectPreviewLease(deps, {
@@ -970,7 +976,13 @@ describe("startSessionPreview", () => {
 		});
 		const sandbox = viteSandbox();
 		wireExposeToPort(sandbox);
-		const prepare = vi.fn().mockResolvedValue(undefined);
+		const ensureReady = vi.fn().mockResolvedValue({
+			mode: "reuse",
+			branchName: "ditto/session-sess-1",
+			baseCommitSha: "abc",
+			workspacePath: "/workspace/.ditto/worktrees/sess-1",
+			bound: false,
+		});
 
 		await startSessionPreview(
 			{
@@ -983,15 +995,17 @@ describe("startSessionPreview", () => {
 			},
 			{
 				...baseInjected(sandbox, sqliteDb.db),
-				prepareSessionWorktree: prepare,
+				ensureSessionWorkspaceReady: ensureReady,
 			},
 		);
 
-		expect(prepare).toHaveBeenCalledWith({
-			env: expect.anything(),
-			sandboxId: "sandbox-1",
-			worktreePath: "/workspace/.ditto/worktrees/sess-1",
-		});
+		expect(ensureReady).toHaveBeenCalledWith(
+			expect.objectContaining({
+				sandboxId: "sandbox-1",
+				sessionId: "sess-1",
+				lock: "acquire",
+			}),
+		);
 		expect(sandbox.startProcess).toHaveBeenCalledWith(
 			expect.stringContaining("./node_modules/.bin/vite --host 0.0.0.0 --port"),
 			expect.any(Object),
@@ -1000,7 +1014,7 @@ describe("startSessionPreview", () => {
 			expect.not.stringContaining("--cacheDir"),
 			expect.any(Object),
 		);
-		expect(prepare.mock.invocationCallOrder[0]).toBeLessThan(
+		expect(ensureReady.mock.invocationCallOrder[0]).toBeLessThan(
 			(sandbox.startProcess as ReturnType<typeof vi.fn>).mock
 				.invocationCallOrder[0],
 		);
