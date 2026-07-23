@@ -187,7 +187,7 @@ export async function dispatchAgentGitAction(options: {
 
 	if (options.body.action === "openPullRequest") {
 		try {
-			const outcome = await runPushThenOpenPullRequest({
+			return await runPushThenOpenPullRequest({
 				ctx: {
 					env: options.env,
 					sandboxId: options.resolved.sandboxId,
@@ -207,7 +207,6 @@ export async function dispatchAgentGitAction(options: {
 				baseBranch: options.body.baseBranch,
 				existingPullRequestPolicy: "open",
 			});
-			return outcome.result;
 		} catch (error) {
 			if (error instanceof SessionGitExportPreconditionError) {
 				throw new AgentGitHttpError(409, error.message);
@@ -215,7 +214,6 @@ export async function dispatchAgentGitAction(options: {
 			if (error instanceof GitSecretPolicyError) {
 				throw new AgentGitHttpError(409, error.message);
 			}
-			if (error instanceof AgentGitHttpError) throw error;
 			throw new AgentGitHttpError(
 				502,
 				error instanceof Error ? error.message : "Failed to open pull request.",

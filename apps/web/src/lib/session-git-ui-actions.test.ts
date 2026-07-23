@@ -274,7 +274,6 @@ describe("openSessionPullRequestWithGeneratedMetadata", () => {
 			"lock:enter",
 			"status:1",
 			"generate",
-			"status:2",
 			"open",
 			"lock:exit",
 		]);
@@ -286,8 +285,8 @@ describe("openSessionPullRequestWithGeneratedMetadata", () => {
 		deps.getSessionGitStatus = vi.fn(async () => {
 			statusCalls += 1;
 			order.push(`status:${statusCalls}`);
-			// preview + core initial stay on push; core restatus becomes open-pr
-			if (statusCalls <= 2) {
+			// preview (initialStatus) stays on push; core restatus becomes open-pr
+			if (statusCalls === 1) {
 				return {
 					dirty: false,
 					workflow: {
@@ -323,9 +322,8 @@ describe("openSessionPullRequestWithGeneratedMetadata", () => {
 			"lock:enter",
 			"status:1",
 			"generate",
-			"status:2",
 			"push",
-			"status:3",
+			"status:2",
 			"open",
 			"lock:exit",
 			"backup",

@@ -163,16 +163,12 @@ export async function openSessionPullRequestWithGeneratedMetadata(
 						title: generated.title,
 						body: generated.body,
 						existingPullRequestPolicy: "shortCircuit",
+						initialStatus: preview,
 						onDidPush: () => {
 							didPush = true;
 						},
 					});
-					didPush = didPush || outcome.didPush;
-					result = {
-						url: outcome.result.url,
-						number: outcome.result.number,
-						title: generated.title,
-					};
+					result = { ...outcome, title: generated.title };
 				} catch (error) {
 					if (error instanceof SessionGitExportPreconditionError) {
 						throw new SessionGitMetadataError("snapshot_failed", error.message);

@@ -3,6 +3,7 @@ import type {
 	openSessionPullRequest,
 	pushSessionBranch,
 	SessionGitSession,
+	SessionGitStatus,
 	SessionGitWorkflow,
 } from "#/lib/session-git";
 
@@ -12,13 +13,6 @@ export const SESSION_WORKTREE_UNAVAILABLE_MESSAGE =
 export const SESSION_GIT_OPEN_PR_DIRTY_MESSAGE =
 	"Commit local changes before opening a pull request.";
 
-/**
- * Returns a user-facing blocker message when the workflow cannot proceed to
- * push-then-open / open-PR. Returns null when the workflow is allowed:
- * open-pr | push | open-pr-existing.
- *
- * Messages MUST match session-git-ui-actions preconditionMessage (028 worktree split).
- */
 export function sessionGitOpenPullRequestBlocker(
 	workflow: SessionGitWorkflow,
 ): string | null {
@@ -54,7 +48,7 @@ export class SessionGitExportPreconditionError extends Error {
 	}
 }
 
-export type SessionGitExportGitContext = {
+type SessionGitExportGitContext = {
 	env: Env;
 	sandboxId: string;
 	installationId: number;
@@ -65,36 +59,23 @@ export type SessionGitExportGitContext = {
 	bypassWorkspaceLock?: boolean;
 };
 
-export type SessionGitExportDeps = {
+type SessionGitExportDeps = {
 	getSessionGitStatus: typeof getSessionGitStatus;
 	pushSessionBranch: typeof pushSessionBranch;
 	openSessionPullRequest: typeof openSessionPullRequest;
 };
 
-export type ExistingPullRequestPolicy = "shortCircuit" | "open";
-
-export type RunPushThenOpenPullRequestOptions = {
+export async function runPushThenOpenPullRequest(options: {
 	ctx: SessionGitExportGitContext;
 	deps: SessionGitExportDeps;
 	title?: string;
 	body?: string;
 	baseBranch?: string;
-	existingPullRequestPolicy: ExistingPullRequestPolicy;
-	/**
-	 * Invoked once immediately after a successful pushSessionBranch, before restatus.
-	 * Adapters use this to set didPush for backup-after-failure paths.
-	 */
+	existingPullRequestPolicy: "shortCircuit" | "open";
 	onDidPush?: () => void;
-};
-
-export type RunPushThenOpenPullRequestResult = {
-	didPush: boolean;
-	result: { url: string; number: number };
-};
-
-export async function runPushThenOpenPullRequest(
-	options: RunPushThenOpenPullRequestOptions,
-): Promise<RunPushThenOpenPullRequestResult> {
+	/** When set, skip the initial getSessionGitStatus fetch. */
+	initialStatus?: SessionGitStatus;
+}): Promise<{ url: string; number: number }> {
 	const statusCtx = {
 		env: options.ctx.env,
 		sandboxId: options.ctx.sandboxId,
@@ -108,8 +89,9 @@ export async function runPushThenOpenPullRequest(
 		bypassWorkspaceLock: options.ctx.bypassWorkspaceLock,
 	};
 
-	let didPush = false;
-	let status = await options.deps.getSessionGitStatus(statusCtx);
+	let status =
+		options.initialStatus ??
+		(await options.deps.getSessionGitStatus(statusCtx));
 
 	if (status.dirty) {
 		throw new SessionGitExportPreconditionError(
@@ -122,17 +104,13 @@ export async function runPushThenOpenPullRequest(
 		options.existingPullRequestPolicy === "shortCircuit"
 	) {
 		return {
-			didPush: false,
-			result: {
-				url: status.workflow.pullRequest.url,
-				number: status.workflow.pullRequest.number,
-			},
+			url: status.workflow.pullRequest.url,
+			number: status.workflow.pullRequest.number,
 		};
 	}
 
 	if (status.workflow.kind === "push") {
 		await options.deps.pushSessionBranch(mutateCtx);
-		didPush = true;
 		options.onDidPush?.();
 		status = await options.deps.getSessionGitStatus(statusCtx);
 
@@ -141,11 +119,8 @@ export async function runPushThenOpenPullRequest(
 			options.existingPullRequestPolicy === "shortCircuit"
 		) {
 			return {
-				didPush,
-				result: {
-					url: status.workflow.pullRequest.url,
-					number: status.workflow.pullRequest.number,
-				},
+				url: status.workflow.pullRequest.url,
+				number: status.workflow.pullRequest.number,
 			};
 		}
 	}
@@ -156,9 +131,11 @@ export async function runPushThenOpenPullRequest(
 			options.existingPullRequestPolicy === "open");
 
 	if (!canOpen) {
-		const message =
-			sessionGitOpenPullRequestBlocker(status.workflow) ??
-			"This session has no changes to open as a pull request.";
+		const message = sessionGitOpenPullRequestBlocker(status.workflow);
+		if (message === null) {
+			// open-pr | push | open-pr-existing already handled above
+			throw new Error("unreachable: non-openable workflow without blocker");
+		}
 		throw new SessionGitExportPreconditionError(message);
 	}
 
@@ -169,8 +146,5 @@ export async function runPushThenOpenPullRequest(
 		baseBranch: options.baseBranch,
 	});
 
-	return {
-		didPush,
-		result: { url: opened.url, number: opened.number },
-	};
+	return { url: opened.url, number: opened.number };
 }

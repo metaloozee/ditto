@@ -486,8 +486,7 @@ export const sessionGitRouter = createTRPCRouter({
 							didPush = true;
 						},
 					});
-					didPush = didPush || outcome.didPush;
-					return outcome.result;
+					return outcome;
 				} catch (error) {
 					if (error instanceof SessionGitExportPreconditionError) {
 						throw new TRPCError({

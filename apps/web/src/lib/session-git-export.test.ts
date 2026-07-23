@@ -10,7 +10,6 @@ const {
 	runPushThenOpenPullRequest,
 	SESSION_GIT_OPEN_PR_DIRTY_MESSAGE,
 	SESSION_WORKTREE_UNAVAILABLE_MESSAGE,
-	SessionGitExportPreconditionError,
 	sessionGitOpenPullRequestBlocker,
 } = await import("./session-git-export");
 
@@ -139,8 +138,8 @@ describe("runPushThenOpenPullRequest", () => {
 		});
 
 		expect(outcome).toEqual({
-			didPush: false,
-			result: { url: pullRequest.url, number: pullRequest.number },
+			url: pullRequest.url,
+			number: pullRequest.number,
 		});
 		expect(openSessionPullRequest).not.toHaveBeenCalled();
 		expect(pushSessionBranch).not.toHaveBeenCalled();
@@ -165,7 +164,10 @@ describe("runPushThenOpenPullRequest", () => {
 			existingPullRequestPolicy: "open",
 		});
 
-		expect(outcome.didPush).toBe(false);
+		expect(outcome).toEqual({
+			url: pullRequest.url,
+			number: pullRequest.number,
+		});
 		expect(openSessionPullRequest).toHaveBeenCalledWith(
 			expect.objectContaining({
 				title: "T",
@@ -196,8 +198,8 @@ describe("runPushThenOpenPullRequest", () => {
 		});
 
 		expect(outcome).toEqual({
-			didPush: false,
-			result: { url: "https://example.com/pr/2", number: 2 },
+			url: "https://example.com/pr/2",
+			number: 2,
 		});
 		expect(pushSessionBranch).not.toHaveBeenCalled();
 		expect(openSessionPullRequest).toHaveBeenCalledTimes(1);
@@ -208,6 +210,30 @@ describe("runPushThenOpenPullRequest", () => {
 				baseBranch: "develop",
 			}),
 		);
+	});
+
+	it("uses initialStatus and skips first getSessionGitStatus", async () => {
+		openSessionPullRequest.mockResolvedValue({
+			url: "https://example.com/pr/2",
+			number: 2,
+		});
+
+		const outcome = await runPushThenOpenPullRequest({
+			ctx: makeCtx(),
+			deps,
+			existingPullRequestPolicy: "open",
+			initialStatus: {
+				dirty: false,
+				workflow: { kind: "open-pr" },
+			} as never,
+		});
+
+		expect(outcome).toEqual({
+			url: "https://example.com/pr/2",
+			number: 2,
+		});
+		expect(getSessionGitStatus).not.toHaveBeenCalled();
+		expect(openSessionPullRequest).toHaveBeenCalledTimes(1);
 	});
 
 	it("pushes then opens and calls onDidPush once", async () => {
@@ -235,8 +261,8 @@ describe("runPushThenOpenPullRequest", () => {
 		});
 
 		expect(outcome).toEqual({
-			didPush: true,
-			result: { url: "https://example.com/pr/3", number: 3 },
+			url: "https://example.com/pr/3",
+			number: 3,
 		});
 		expect(pushSessionBranch).toHaveBeenCalledTimes(1);
 		expect(pushSessionBranch).toHaveBeenCalledWith(
@@ -265,8 +291,8 @@ describe("runPushThenOpenPullRequest", () => {
 		});
 
 		expect(outcome).toEqual({
-			didPush: true,
-			result: { url: pullRequest.url, number: pullRequest.number },
+			url: pullRequest.url,
+			number: pullRequest.number,
 		});
 		expect(openSessionPullRequest).not.toHaveBeenCalled();
 	});
@@ -326,15 +352,8 @@ describe("runPushThenOpenPullRequest", () => {
 				deps,
 				existingPullRequestPolicy: "open",
 			}),
-		).rejects.toBeInstanceOf(SessionGitExportPreconditionError);
-
-		await expect(
-			runPushThenOpenPullRequest({
-				ctx: makeCtx(),
-				deps,
-				existingPullRequestPolicy: "open",
-			}),
 		).rejects.toMatchObject({
+			name: "SessionGitExportPreconditionError",
 			message: SESSION_WORKTREE_UNAVAILABLE_MESSAGE,
 		});
 		expect(pushSessionBranch).not.toHaveBeenCalled();
