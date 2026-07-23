@@ -13,6 +13,12 @@ import {
 } from "#/lib/session-git";
 import { bestEffortPersistSessionGitBackup } from "#/lib/session-git-backup";
 import {
+	runPushThenOpenPullRequest,
+	SESSION_GIT_OPEN_PR_DIRTY_MESSAGE,
+	SessionGitExportPreconditionError,
+	sessionGitOpenPullRequestBlocker,
+} from "#/lib/session-git-export";
+import {
 	generateCommitMetadata,
 	generatePullRequestMetadata,
 	SessionGitMetadataError,
@@ -61,26 +67,6 @@ function gitCtx(ctx: SessionGitUiActionContext) {
 		session: ctx.session,
 		knownSecrets: ctx.knownSecrets,
 	};
-}
-
-function preconditionMessage(
-	workflow: Awaited<ReturnType<typeof getSessionGitStatus>>["workflow"],
-): string {
-	if (workflow.kind === "merged-pr") {
-		return "This session pull request has already been merged.";
-	}
-	if (workflow.kind === "closed-pr") {
-		return "This session pull request is closed.";
-	}
-	if (workflow.kind === "unavailable") {
-		return workflow.reason === "worktree"
-			? "Session worktree is not ready."
-			: "GitHub status is currently unavailable.";
-	}
-	if (workflow.kind === "sync") {
-		return `Sync the latest ${workflow.baseBranch} before opening a pull request.`;
-	}
-	return "This session has no changes to open as a pull request.";
 }
 
 export async function commitSessionChangesWithGeneratedMessage(
@@ -145,76 +131,56 @@ export async function openSessionPullRequestWithGeneratedMetadata(
 			sandboxId: ctx.sandboxId,
 			sessionId: ctx.session.id,
 			run: async () => {
-				let status = await deps.getSessionGitStatus(gitCtx(ctx));
-
-				if (status.dirty) {
+				const preview = await deps.getSessionGitStatus(gitCtx(ctx));
+				if (preview.dirty) {
 					throw new SessionGitMetadataError(
 						"snapshot_failed",
-						"Commit local changes before opening a pull request.",
+						SESSION_GIT_OPEN_PR_DIRTY_MESSAGE,
 					);
 				}
-
-				if (status.workflow.kind === "open-pr-existing") {
+				if (preview.workflow.kind === "open-pr-existing") {
 					result = {
-						url: status.workflow.pullRequest.url,
-						number: status.workflow.pullRequest.number,
+						url: preview.workflow.pullRequest.url,
+						number: preview.workflow.pullRequest.number,
 					};
 					return;
 				}
-
-				if (
-					status.workflow.kind !== "open-pr" &&
-					status.workflow.kind !== "push"
-				) {
-					throw new SessionGitMetadataError(
-						"snapshot_failed",
-						preconditionMessage(status.workflow),
-					);
+				const blocker = sessionGitOpenPullRequestBlocker(preview.workflow);
+				if (blocker) {
+					throw new SessionGitMetadataError("snapshot_failed", blocker);
 				}
 
 				const generated = await deps.generatePullRequestMetadata(gitCtx(ctx));
 
-				if (status.workflow.kind === "push") {
-					await deps.pushSessionBranch({
-						...gitCtx(ctx),
-						bypassWorkspaceLock: true,
+				try {
+					const outcome = await runPushThenOpenPullRequest({
+						ctx: { ...gitCtx(ctx), bypassWorkspaceLock: true },
+						deps: {
+							getSessionGitStatus: deps.getSessionGitStatus,
+							pushSessionBranch: deps.pushSessionBranch,
+							openSessionPullRequest: deps.openSessionPullRequest,
+						},
+						title: generated.title,
+						body: generated.body,
+						existingPullRequestPolicy: "shortCircuit",
+						initialStatus: preview,
+						onDidPush: () => {
+							didPush = true;
+						},
 					});
-					didPush = true;
-					status = await deps.getSessionGitStatus(gitCtx(ctx));
-					if (status.workflow.kind === "open-pr-existing") {
-						result = {
-							url: status.workflow.pullRequest.url,
-							number: status.workflow.pullRequest.number,
-							title: generated.title,
-						};
-						return;
+					result = { ...outcome, title: generated.title };
+				} catch (error) {
+					if (error instanceof SessionGitExportPreconditionError) {
+						throw new SessionGitMetadataError("snapshot_failed", error.message);
 					}
-					if (status.workflow.kind !== "open-pr") {
-						throw new SessionGitMetadataError(
-							"snapshot_failed",
-							preconditionMessage(status.workflow),
-						);
-					}
+					throw error;
 				}
-
-				const opened = await deps.openSessionPullRequest({
-					...gitCtx(ctx),
-					title: generated.title,
-					body: generated.body,
-				});
-				result = {
-					url: opened.url,
-					number: opened.number,
-					title: generated.title,
-				};
 			},
 		});
 	} catch (error) {
 		actionError = error;
 	}
 
-	// Push mutates the remote/sandbox; always attempt backup after the lock
-	// releases, including when the subsequent open-PR call failed.
 	if (didPush) {
 		await deps.bestEffortPersistSessionGitBackup({
 			db: ctx.db,
@@ -222,10 +188,7 @@ export async function openSessionPullRequestWithGeneratedMetadata(
 			project: ctx.project,
 		});
 	}
-
-	if (actionError) {
-		throw actionError;
-	}
+	if (actionError) throw actionError;
 	if (!result) {
 		throw new SessionGitMetadataError(
 			"agent_failed",

@@ -237,8 +237,10 @@ describe("openSessionPullRequestWithGeneratedMetadata", () => {
 
 	it("generates, opens with verbatim metadata, no backup when push not needed", async () => {
 		const { deps, order } = makeDeps();
+		let statusCalls = 0;
 		deps.getSessionGitStatus = vi.fn(async () => {
-			order.push("status");
+			statusCalls += 1;
+			order.push(`status:${statusCalls}`);
 			return {
 				dirty: false,
 				workflow: { kind: "open-pr" as const },
@@ -270,7 +272,7 @@ describe("openSessionPullRequestWithGeneratedMetadata", () => {
 		});
 		expect(order).toEqual([
 			"lock:enter",
-			"status",
+			"status:1",
 			"generate",
 			"open",
 			"lock:exit",
@@ -283,6 +285,7 @@ describe("openSessionPullRequestWithGeneratedMetadata", () => {
 		deps.getSessionGitStatus = vi.fn(async () => {
 			statusCalls += 1;
 			order.push(`status:${statusCalls}`);
+			// preview (initialStatus) stays on push; core restatus becomes open-pr
 			if (statusCalls === 1) {
 				return {
 					dirty: false,
