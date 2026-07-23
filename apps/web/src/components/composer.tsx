@@ -199,7 +199,9 @@ export function Composer({
 	const partsRef = useRef<AssistantMessagePart[]>([]);
 	const promptRef = useRef("");
 	const textRef = useRef(text);
-	textRef.current = text;
+	useEffect(() => {
+		textRef.current = text;
+	}, [text]);
 	const assistantTextRef = useRef("");
 	const model = useUserPreferencesStore((state) => state.selectedModel);
 	const setModel = useUserPreferencesStore((state) => state.setSelectedModel);
@@ -606,6 +608,7 @@ export function Composer({
 		setControlPendingState(true);
 		const pendingRequest = { runId, snapshot };
 		pendingFollowUpRef.current = pendingRequest;
+		let failureMessage: string | null = null;
 		try {
 			const response = await sendAgentControl({
 				action: "follow_up",
@@ -616,49 +619,46 @@ export function Composer({
 				message: snapshot,
 			});
 			if (response.action !== "follow_up") {
-				throw new Error("Agent control returned an invalid response.");
-			}
-			if (
-				pendingFollowUpRef.current !== pendingRequest ||
-				runIdRef.current !== runId ||
-				!isStreamingRef.current
+				failureMessage = "Agent control returned an invalid response.";
+			} else if (
+				pendingFollowUpRef.current === pendingRequest &&
+				runIdRef.current === runId &&
+				isStreamingRef.current
 			) {
-				return;
-			}
-			const boundaryArrivedBeforeAck = preAckBoundaryIdsRef.current.delete(
-				response.requestId,
-			);
-			if (!boundaryArrivedBeforeAck) {
-				projectQueuedFollowUps([
-					...queuedFollowUpsRef.current,
-					{
-						requestId: response.requestId,
-						userMessageId: response.userMessageId,
-						assistantMessageId: response.assistantMessageId,
-						text: snapshot,
-					},
-				]);
-			}
-			if (textRef.current === snapshot) {
-				textRef.current = "";
-				setText("");
+				const boundaryArrivedBeforeAck = preAckBoundaryIdsRef.current.delete(
+					response.requestId,
+				);
+				if (!boundaryArrivedBeforeAck) {
+					projectQueuedFollowUps([
+						...queuedFollowUpsRef.current,
+						{
+							requestId: response.requestId,
+							userMessageId: response.userMessageId,
+							assistantMessageId: response.assistantMessageId,
+							text: snapshot,
+						},
+					]);
+				}
+				if (textRef.current === snapshot) {
+					textRef.current = "";
+					setText("");
+				}
 			}
 		} catch (error) {
-			if (
-				pendingFollowUpRef.current !== pendingRequest ||
-				runIdRef.current !== runId ||
-				!isStreamingRef.current
-			) {
-				return;
-			}
-			toast.error(
-				error instanceof Error ? error.message : "Failed to queue message.",
-			);
-		} finally {
-			if (pendingFollowUpRef.current === pendingRequest) {
-				pendingFollowUpRef.current = null;
-				setControlPendingState(false);
-			}
+			failureMessage =
+				error instanceof Error ? error.message : "Failed to queue message.";
+		}
+		if (
+			failureMessage &&
+			pendingFollowUpRef.current === pendingRequest &&
+			runIdRef.current === runId &&
+			isStreamingRef.current
+		) {
+			toast.error(failureMessage);
+		}
+		if (pendingFollowUpRef.current === pendingRequest) {
+			pendingFollowUpRef.current = null;
+			setControlPendingState(false);
 		}
 	}
 
@@ -679,6 +679,7 @@ export function Composer({
 		stoppingRef.current = true;
 		setStopping(true);
 		setControlPendingState(true);
+		let failureMessage: string | null = null;
 		try {
 			const response = await sendAgentControl({
 				action: "stop",
@@ -687,17 +688,18 @@ export function Composer({
 				runId,
 			});
 			if (response.action !== "stop") {
-				throw new Error("Agent control returned an invalid response.");
+				failureMessage = "Agent control returned an invalid response.";
 			}
 		} catch (error) {
+			failureMessage =
+				error instanceof Error ? error.message : "Failed to stop agent.";
+		}
+		if (failureMessage) {
 			stoppingRef.current = false;
 			setStopping(false);
-			toast.error(
-				error instanceof Error ? error.message : "Failed to stop agent.",
-			);
-		} finally {
-			setControlPendingState(false);
+			toast.error(failureMessage);
 		}
+		setControlPendingState(false);
 	}
 
 	async function handleSubmit(event: FormEvent<HTMLFormElement>) {
