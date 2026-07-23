@@ -1,3 +1,5 @@
+/** biome-ignore-all lint/a11y/useSemanticElements: false positive */
+/** biome-ignore-all lint/a11y/useAriaPropsForRole: false positive */
 import { Link } from "@tanstack/react-router";
 import {
 	BotIcon,
@@ -7,8 +9,18 @@ import {
 	SparklesIcon,
 	TerminalIcon,
 } from "lucide-react";
-import { motion, useReducedMotion } from "motion/react";
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import {
+	lazy,
+	type PointerEvent as ReactPointerEvent,
+	Suspense,
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { AssistantMarkdown } from "#/components/assistant-markdown";
 import { ChatNavbar } from "#/components/chat-navbar";
 import {
@@ -36,11 +48,6 @@ import {
 	MessageScrollerViewport,
 	useMessageScrollerScrollable,
 } from "#/components/ui/message-scroller";
-import {
-	ResizableHandle,
-	ResizablePanel,
-	ResizablePanelGroup,
-} from "#/components/ui/resizable";
 import {
 	Sheet,
 	SheetContent,
@@ -606,29 +613,60 @@ export function Chat({
 	}
 
 	const [toolsOpen, setToolsOpen] = useState(false);
-	const [desktopToolsMounted, setDesktopToolsMounted] = useState(false);
+	// Pixel width of the desktop tools rail; null until first open measures the shell.
+	const [toolsWidthPx, setToolsWidthPx] = useState<number | null>(null);
+	const [toolsResizing, setToolsResizing] = useState(false);
+	const toolsShellRef = useRef<HTMLDivElement>(null);
 	const isMobile = useIsMobile();
 	const reduceMotion = useReducedMotion();
 	const toolsEnabled = Boolean(projectId && sessionId);
 	const desktopToolsVisible =
 		toolsEnabled && toolsOpen && Boolean(projectId && sessionId) && !isMobile;
-
-	if (desktopToolsVisible && !desktopToolsMounted) {
-		setDesktopToolsMounted(true);
-	}
-
-	// Drawer-like ease (Emil / Ionic): starts decisively, settles cleanly.
-	const toolsPaneEase = [0.32, 0.72, 0, 1] as const;
+	// Drawer ease (Emil/Ionic). Instant while dragging or reduce-motion.
 	const toolsPaneTransition = {
-		duration: reduceMotion ? 0.15 : desktopToolsVisible ? 0.28 : 0.2,
-		ease: toolsPaneEase,
+		duration: reduceMotion || toolsResizing ? 0 : 0.2,
+		ease: [0.32, 0.72, 0, 1] as const,
 	};
-	const toolsPaneHidden = reduceMotion
-		? { opacity: 0 }
-		: { transform: "translateX(100%)", opacity: 0 };
-	const toolsPaneShown = reduceMotion
-		? { opacity: 1 }
-		: { transform: "translateX(0%)", opacity: 1 };
+
+	useLayoutEffect(() => {
+		if (!desktopToolsVisible || toolsWidthPx != null) return;
+		const shell = toolsShellRef.current?.offsetWidth ?? 0;
+		if (shell <= 0) return;
+		setToolsWidthPx(Math.round(shell * 0.68));
+	}, [desktopToolsVisible, toolsWidthPx]);
+
+	const onToolsResizePointerDown = useCallback(
+		(event: ReactPointerEvent<HTMLDivElement>) => {
+			if (toolsWidthPx == null) return;
+			event.preventDefault();
+			const handle = event.currentTarget;
+			const startX = event.clientX;
+			const startWidth = toolsWidthPx;
+			const shell = toolsShellRef.current?.offsetWidth ?? 0;
+			const minWidth = shell * 0.4;
+			const maxWidth = shell * 0.78;
+			handle.setPointerCapture(event.pointerId);
+			setToolsResizing(true);
+
+			const onMove = (moveEvent: PointerEvent) => {
+				const next = startWidth + (startX - moveEvent.clientX);
+				setToolsWidthPx(
+					Math.round(Math.min(maxWidth, Math.max(minWidth, next))),
+				);
+			};
+			const onUp = (upEvent: PointerEvent) => {
+				handle.releasePointerCapture(upEvent.pointerId);
+				handle.removeEventListener("pointermove", onMove);
+				handle.removeEventListener("pointerup", onUp);
+				handle.removeEventListener("pointercancel", onUp);
+				setToolsResizing(false);
+			};
+			handle.addEventListener("pointermove", onMove);
+			handle.addEventListener("pointerup", onUp);
+			handle.addEventListener("pointercancel", onUp);
+		},
+		[toolsWidthPx],
+	);
 
 	const chatColumn = (
 		<div className="relative mx-auto h-full min-w-0 w-full">
@@ -770,49 +808,46 @@ export function Chat({
 	);
 
 	return (
-		<div className="flex h-full min-h-0 w-full min-w-0">
-			{desktopToolsMounted && projectId && sessionId ? (
-				<ResizablePanelGroup
-					orientation="horizontal"
-					className="hidden h-full min-h-0 w-full md:flex"
-				>
-					<ResizablePanel
-						id="chat"
-						defaultSize="32%"
-						minSize="22%"
-						maxSize="50%"
-						className="min-h-0 min-w-0"
+		<div
+			ref={toolsShellRef}
+			className="flex h-full min-h-0 w-full min-w-0 overflow-hidden"
+		>
+			{/* Chat always flex-1; tools rail width tween is what expands/collapses it. */}
+			<div className="min-h-0 min-w-0 flex-1">{chatColumn}</div>
+			{/* Clipped-width rail: outer width animates, inner stays fixed so content
+			    doesn't reflow mid-tween. Avoids flex-grow/minSize threshold snaps. */}
+			<AnimatePresence initial={false}>
+				{desktopToolsVisible &&
+				toolsWidthPx != null &&
+				projectId &&
+				sessionId ? (
+					<motion.aside
+						key="desktop-tools"
+						initial={{ width: 0 }}
+						animate={{ width: toolsWidthPx }}
+						exit={{ width: 0 }}
+						transition={toolsPaneTransition}
+						className="relative h-full shrink-0 overflow-hidden"
 					>
-						{chatColumn}
-					</ResizablePanel>
-					{/* Invisible edge handle — drag the tools pane's left edge to resize */}
-					<ResizableHandle
-						aria-label="Resize tools panel"
-						className={cn(
-							"relative z-20 w-0 border-0 bg-transparent",
-							"after:absolute after:inset-y-0 after:left-0 after:w-3 after:translate-x-[-50%] after:bg-transparent after:transition-colors",
-							"hover:after:bg-border/50 active:after:bg-border/70",
-							"focus-visible:ring-0 focus-visible:outline-none",
-						)}
-					/>
-					<ResizablePanel
-						id="tools"
-						defaultSize="68%"
-						minSize="40%"
-						className="min-h-0 min-w-0 overflow-hidden"
-					>
-						<motion.div
-							className="h-full min-h-0"
-							initial={toolsPaneHidden}
-							animate={desktopToolsVisible ? toolsPaneShown : toolsPaneHidden}
-							transition={toolsPaneTransition}
-							onAnimationComplete={() => {
-								if (!desktopToolsVisible) {
-									setDesktopToolsMounted(false);
-								}
-							}}
+						<div
+							className="absolute inset-y-0 right-0 flex h-full"
+							style={{ width: toolsWidthPx }}
 						>
-							<div className="h-full min-h-0 p-2 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2">
+							{/* Drag the left edge to resize */}
+							<div
+								role="separator"
+								aria-orientation="vertical"
+								aria-label="Resize tools panel"
+								tabIndex={0}
+								onPointerDown={onToolsResizePointerDown}
+								className={cn(
+									"relative z-20 w-0 shrink-0 cursor-col-resize touch-none border-0 bg-transparent",
+									"after:absolute after:inset-y-0 after:left-0 after:w-3 after:translate-x-[-50%] after:bg-transparent after:transition-colors",
+									"hover:after:bg-border/50 active:after:bg-border/70",
+									"focus-visible:outline-none focus-visible:ring-0",
+								)}
+							/>
+							<div className="h-full min-h-0 min-w-0 flex-1 p-2 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2">
 								<SessionToolsPane
 									projectId={projectId}
 									sessionId={sessionId}
@@ -820,12 +855,10 @@ export function Chat({
 									onClose={() => setToolsOpen(false)}
 								/>
 							</div>
-						</motion.div>
-					</ResizablePanel>
-				</ResizablePanelGroup>
-			) : (
-				<div className="min-h-0 min-w-0 flex-1">{chatColumn}</div>
-			)}
+						</div>
+					</motion.aside>
+				) : null}
+			</AnimatePresence>
 			{toolsEnabled && projectId && sessionId ? (
 				<Sheet open={toolsOpen && isMobile} onOpenChange={setToolsOpen}>
 					<SheetContent

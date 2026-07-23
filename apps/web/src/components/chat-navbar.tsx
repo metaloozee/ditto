@@ -22,7 +22,8 @@ type ChatNavbarProps = {
 	rightActions?: ReactNode;
 };
 
-const TRIGGER_SLOT_WIDTH = 40;
+/** size-6 trigger (24px) + trailing gap so the branch eases left with the collapse. */
+const TRIGGER_SLOT_WIDTH = 32;
 
 export function ChatNavbar({
 	projectId,
@@ -70,15 +71,14 @@ export function ChatNavbar({
 				{showSidebarTrigger ? (
 					<motion.div
 						key="sidebar-trigger"
-						initial={{ opacity: 0, x: -12 }}
-						animate={{ opacity: 1, x: 0 }}
-						exit={{ opacity: 0, x: -12 }}
+						initial={{ opacity: 0, width: 0 }}
+						animate={{ opacity: 1, width: TRIGGER_SLOT_WIDTH }}
+						exit={{ opacity: 0, width: 0 }}
 						transition={{ duration, ease }}
-						className="h-8 shrink-0 overflow-hidden"
-						style={{ width: TRIGGER_SLOT_WIDTH }}
+						className="h-6 shrink-0 overflow-hidden"
 					>
-						<div className="flex size-8 items-center justify-center">
-							<SidebarTrigger className="size-8 shrink-0 cursor-pointer" />
+						<div className="flex size-6 items-center justify-center">
+							<SidebarTrigger className="size-6 shrink-0 cursor-pointer" />
 						</div>
 					</motion.div>
 				) : null}
