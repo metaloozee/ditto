@@ -11,6 +11,10 @@ import {
 	openSessionPullRequest,
 	pushSessionBranch,
 } from "#/lib/session-git";
+import {
+	runPushThenOpenPullRequest,
+	SessionGitExportPreconditionError,
+} from "#/lib/session-git-export";
 import { ensureSessionWorkspaceReady } from "#/lib/session-worktree";
 import { loadOwnedActiveSession } from "#/lib/workspace-session";
 
@@ -181,74 +185,60 @@ export async function dispatchAgentGitAction(options: {
 		return await getSessionGitStatus(statusCtx);
 	}
 
-	let status = await getSessionGitStatus(statusCtx);
-
-	if (status.dirty) {
-		const message =
-			options.body.action === "openPullRequest"
-				? "Commit local changes before opening a pull request."
-				: "Commit local changes before pushing.";
-		throw new AgentGitHttpError(409, message);
-	}
-
-	if (options.body.action === "push") {
-		if (status.workflow.kind !== "push") {
+	if (options.body.action === "openPullRequest") {
+		try {
+			const outcome = await runPushThenOpenPullRequest({
+				ctx: {
+					env: options.env,
+					sandboxId: options.resolved.sandboxId,
+					installationId: options.resolved.installationId,
+					githubRepo: options.resolved.githubRepo,
+					session: options.resolved.session,
+					knownSecrets: options.resolved.knownSecrets,
+					bypassWorkspaceLock: true,
+				},
+				deps: {
+					getSessionGitStatus,
+					pushSessionBranch,
+					openSessionPullRequest,
+				},
+				title: options.body.title,
+				body: options.body.body,
+				baseBranch: options.body.baseBranch,
+				existingPullRequestPolicy: "open",
+			});
+			return outcome.result;
+		} catch (error) {
+			if (error instanceof SessionGitExportPreconditionError) {
+				throw new AgentGitHttpError(409, error.message);
+			}
+			if (error instanceof GitSecretPolicyError) {
+				throw new AgentGitHttpError(409, error.message);
+			}
+			if (error instanceof AgentGitHttpError) throw error;
 			throw new AgentGitHttpError(
-				409,
-				status.workflow.kind === "sync"
-					? `Sync the latest ${status.workflow.baseBranch} before pushing.`
-					: "Nothing to push for this branch.",
+				502,
+				error instanceof Error ? error.message : "Failed to open pull request.",
 			);
 		}
-		try {
-			return await pushSessionBranch(gitCtx);
-		} catch (error) {
-			mapPushError(error);
-		}
 	}
 
-	if (status.workflow.kind === "push") {
-		try {
-			await pushSessionBranch(gitCtx);
-		} catch (error) {
-			mapPushError(error);
-		}
-		status = await getSessionGitStatus(statusCtx);
+	// standalone push
+	const status = await getSessionGitStatus(statusCtx);
+	if (status.dirty) {
+		throw new AgentGitHttpError(409, "Commit local changes before pushing.");
 	}
-
-	if (
-		status.workflow.kind !== "open-pr" &&
-		status.workflow.kind !== "open-pr-existing"
-	) {
-		const message =
-			status.workflow.kind === "merged-pr"
-				? "This session pull request has already been merged."
-				: status.workflow.kind === "closed-pr"
-					? "This session pull request is closed."
-					: status.workflow.kind === "unavailable"
-						? status.workflow.reason === "worktree"
-							? "Session worktree is not ready."
-							: "GitHub status is currently unavailable."
-						: status.workflow.kind === "sync"
-							? `Sync the latest ${status.workflow.baseBranch} before opening a pull request.`
-							: "This session has no changes to open as a pull request.";
-		throw new AgentGitHttpError(409, message);
-	}
-
-	try {
-		return await openSessionPullRequest({
-			...statusCtx,
-			title: options.body.title,
-			body: options.body.body,
-			baseBranch: options.body.baseBranch,
-		});
-	} catch (error) {
-		if (error instanceof GitSecretPolicyError) {
-			throw new AgentGitHttpError(409, error.message);
-		}
+	if (status.workflow.kind !== "push") {
 		throw new AgentGitHttpError(
-			502,
-			error instanceof Error ? error.message : "Failed to open pull request.",
+			409,
+			status.workflow.kind === "sync"
+				? `Sync the latest ${status.workflow.baseBranch} before pushing.`
+				: "Nothing to push for this branch.",
 		);
+	}
+	try {
+		return await pushSessionBranch(gitCtx);
+	} catch (error) {
+		mapPushError(error);
 	}
 }

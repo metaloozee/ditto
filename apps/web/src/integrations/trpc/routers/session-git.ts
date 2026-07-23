@@ -27,6 +27,11 @@ import {
 	commitSessionChangesWithBackup,
 	runSessionGitMutationWithBackup,
 } from "#/lib/session-git-backup";
+import {
+	runPushThenOpenPullRequest,
+	SESSION_WORKTREE_UNAVAILABLE_MESSAGE,
+	SessionGitExportPreconditionError,
+} from "#/lib/session-git-export";
 import { SessionGitMetadataError } from "#/lib/session-git-metadata";
 import { rethrowOrMapSessionGitMutationError } from "#/lib/session-git-trpc-errors";
 import {
@@ -45,8 +50,6 @@ const sessionInputSchema = z.object({
 	projectId: z.string().min(1),
 	sessionId: z.string().min(1),
 });
-
-const WORKTREE_UNAVAILABLE_MESSAGE = "Session worktree is not ready.";
 
 async function resolveSessionGitAuthContext(options: {
 	ctx: {
@@ -150,7 +153,7 @@ function worktreeUnavailableStatus(session: {
 		hasBranchChanges: false,
 		remoteBranchExists: null,
 		changedFiles: [],
-		summary: WORKTREE_UNAVAILABLE_MESSAGE,
+		summary: SESSION_WORKTREE_UNAVAILABLE_MESSAGE,
 		pullRequest: null,
 		workflow: { kind: "unavailable", reason: "worktree" },
 	};
@@ -459,60 +462,51 @@ export const sessionGitRouter = createTRPCRouter({
 
 			// Any explicit title/body/base keeps the deterministic non-PI path.
 			if (hasExplicitMetadata) {
-				let status = await getSessionGitStatus({
-					env: ctx.env,
-					sandboxId: resolved.sandboxId,
-					installationId: resolved.installationId,
-					githubRepo: resolved.githubRepo,
-					session: resolved.session,
-				});
-
-				if (status.dirty) {
-					throw new TRPCError({
-						code: "PRECONDITION_FAILED",
-						message: "Commit local changes before opening a pull request.",
-					});
-				}
-
-				const pushIfAhead = async (): Promise<boolean> => {
-					if (status.workflow.kind !== "push") {
-						return false;
-					}
-					try {
-						await pushSessionBranch({
+				let didPush = false;
+				try {
+					const outcome = await runPushThenOpenPullRequest({
+						ctx: {
 							env: ctx.env,
 							sandboxId: resolved.sandboxId,
 							installationId: resolved.installationId,
 							githubRepo: resolved.githubRepo,
 							session: resolved.session,
 							knownSecrets: resolved.knownSecrets,
-						});
-					} catch (error) {
-						if (error instanceof GitSecretPolicyError) {
-							mapSessionGitExportError(error);
-						}
-						const message =
-							error instanceof Error ? error.message : "Failed to push branch.";
+						},
+						deps: {
+							getSessionGitStatus,
+							pushSessionBranch,
+							openSessionPullRequest,
+						},
+						title: input.title,
+						body: input.body,
+						baseBranch: input.baseBranch,
+						existingPullRequestPolicy: "open",
+						onDidPush: () => {
+							didPush = true;
+						},
+					});
+					didPush = didPush || outcome.didPush;
+					return outcome.result;
+				} catch (error) {
+					if (error instanceof SessionGitExportPreconditionError) {
 						throw new TRPCError({
-							code:
-								message === GITHUB_APP_PUSH_PERMISSION_MESSAGE
-									? "FORBIDDEN"
-									: "BAD_GATEWAY",
-							message,
+							code: "PRECONDITION_FAILED",
+							message: error.message,
 						});
 					}
-					status = await getSessionGitStatus({
-						env: ctx.env,
-						sandboxId: resolved.sandboxId,
-						installationId: resolved.installationId,
-						githubRepo: resolved.githubRepo,
-						session: resolved.session,
+					if (error instanceof GitSecretPolicyError) {
+						mapSessionGitExportError(error);
+					}
+					const message = error instanceof Error ? error.message : "";
+					if (message === GITHUB_APP_PUSH_PERMISSION_MESSAGE) {
+						throw new TRPCError({ code: "FORBIDDEN", message });
+					}
+					rethrowOrMapSessionGitMutationError(error, {
+						fallbackMessage: "Failed to open pull request.",
+						forbiddenWhenMessage: GITHUB_APP_PR_PERMISSION_MESSAGE,
 					});
-					return true;
-				};
-
-				try {
-					const didPush = await pushIfAhead();
+				} finally {
 					if (didPush) {
 						await bestEffortPersistSessionGitBackup({
 							db: resolved.db,
@@ -520,42 +514,6 @@ export const sessionGitRouter = createTRPCRouter({
 							project: resolved.project,
 						});
 					}
-					if (
-						status.workflow.kind !== "open-pr" &&
-						status.workflow.kind !== "open-pr-existing"
-					) {
-						const message =
-							status.workflow.kind === "merged-pr"
-								? "This session pull request has already been merged."
-								: status.workflow.kind === "closed-pr"
-									? "This session pull request is closed."
-									: status.workflow.kind === "unavailable"
-										? status.workflow.reason === "worktree"
-											? WORKTREE_UNAVAILABLE_MESSAGE
-											: "GitHub status is currently unavailable."
-										: status.workflow.kind === "sync"
-											? `Sync the latest ${status.workflow.baseBranch} before opening a pull request.`
-											: "This session has no changes to open as a pull request.";
-						throw new TRPCError({
-							code: "PRECONDITION_FAILED",
-							message,
-						});
-					}
-					return await openSessionPullRequest({
-						env: ctx.env,
-						sandboxId: resolved.sandboxId,
-						installationId: resolved.installationId,
-						githubRepo: resolved.githubRepo,
-						session: resolved.session,
-						title: input.title,
-						body: input.body,
-						baseBranch: input.baseBranch,
-					});
-				} catch (error) {
-					rethrowOrMapSessionGitMutationError(error, {
-						fallbackMessage: "Failed to open pull request.",
-						forbiddenWhenMessage: GITHUB_APP_PR_PERMISSION_MESSAGE,
-					});
 				}
 			}
 
