@@ -541,22 +541,24 @@ export function Chat({
 		[messages],
 	);
 
-	// After server messages refresh, drop matching optimistic cache entries.
-	// Acknowledgement uses all loaded server IDs (flattened infinite pages).
-	useEffect(() => {
-		if (!cacheSessionId || messages.length === 0) {
-			return;
-		}
-		const removed = acknowledgeSessionMessages(
+	// Prune confirmed optimistic entries when server ids change (no Effect).
+	// Display already filters via listPending; this only trims module cache.
+	const ackIdsKey = messages.map((message) => String(message.id)).join("\0");
+	const lastAckRef = useRef<{ sessionId: string; idsKey: string } | null>(null);
+	if (
+		cacheSessionId &&
+		messages.length > 0 &&
+		(lastAckRef.current?.sessionId !== cacheSessionId ||
+			lastAckRef.current?.idsKey !== ackIdsKey)
+	) {
+		lastAckRef.current = { sessionId: cacheSessionId, idsKey: ackIdsKey };
+		acknowledgeSessionMessages(
 			cacheSessionId,
 			messages.map((message) => message.id),
 		);
-		if (removed) {
-			setCacheEpoch((epoch) => epoch + 1);
-		}
-	}, [cacheSessionId, messages]);
+	}
 
-	// cacheEpoch forces recompute when acknowledge/seed mutates module cache.
+	// cacheEpoch forces recompute when seed mutates module cache.
 	const overlay = useMemo(() => {
 		void cacheEpoch;
 		return pendingOverlay(cacheSessionId, messages);
