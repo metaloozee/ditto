@@ -212,5 +212,3 @@ export class StreamingSecretRedactor {
 		return toEmit;
 	}
 }
-
-export { REDACTION as SECRET_REDACTION_MARKER };

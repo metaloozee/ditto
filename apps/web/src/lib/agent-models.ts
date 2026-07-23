@@ -130,8 +130,4 @@ export const PROJECT_CODER_MODELS = [
 	},
 ] as const;
 
-export const PROJECT_CODER_MODEL_IDS = PROJECT_CODER_MODELS.map(
-	(model) => model.id,
-);
-
 export type ProjectCoderModelSpecifier = string;

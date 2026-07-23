@@ -118,9 +118,14 @@ function filterMeaningfulCommitSubjects(
 	if (!commitSubjects?.length) {
 		return [];
 	}
-	return commitSubjects
-		.map((subject) => subject.trim())
-		.filter((subject) => subject && !MERGE_COMMIT_SUBJECT_RE.test(subject));
+	const meaningful: string[] = [];
+	for (const subject of commitSubjects) {
+		const trimmed = subject.trim();
+		if (trimmed && !MERGE_COMMIT_SUBJECT_RE.test(trimmed)) {
+			meaningful.push(trimmed);
+		}
+	}
+	return meaningful;
 }
 
 /** Git log returns newest-first; reverse to oldest-first for listing and tie-breaking. */
