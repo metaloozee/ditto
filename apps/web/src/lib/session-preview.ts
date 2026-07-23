@@ -5,7 +5,10 @@ import { ensureProjectSandbox } from "#/lib/project-sandbox";
 import { getProjectSandbox } from "#/lib/sandbox-bootstrap";
 import { withSessionWorkspaceLock } from "#/lib/session-workspace-lock";
 import { SessionWorkspaceBusyError } from "#/lib/session-workspace-lock-error";
-import { ensureSessionWorktree } from "#/lib/session-worktree";
+import {
+	ensureSessionWorktree,
+	prepareSessionWorktree,
+} from "#/lib/session-worktree";
 import {
 	isSessionPreviewPort,
 	SESSION_PREVIEW_PORT_COUNT,
@@ -43,7 +46,7 @@ const ERROR_MESSAGES: Record<SessionPreviewErrorCode, string> = {
 	not_ready: "Project sandbox is not ready.",
 	busy: "Preview is busy. Try again shortly.",
 	unsupported_project:
-		"Only root Vite (>=6.1.0) and Next.js projects with a local dev binary are supported.",
+		"Only root Vite (>=6.1.0), Next.js, and Astro (>=5.4.0) projects with a local dev binary are supported.",
 	capacity_exhausted: "All preview ports for this project are in use.",
 	port_conflict: "Preview port is already in use by another process.",
 	start_failed: "Failed to start the preview server.",
@@ -60,9 +63,12 @@ export function sessionPreviewError(
 const LEASE_TTL_SECONDS = 900;
 const LEASE_ACQUIRE_BUDGET_MS = 5_000;
 const WAIT_FOR_PORT_MS = 30_000;
+const WAIT_FOR_HTTP_MS = 5_000;
 const PACKAGE_JSON_MAX_BYTES = 64 * 1024;
 const VITE_MIN_MAJOR = 6;
 const VITE_MIN_MINOR = 1;
+const ASTRO_MIN_MAJOR = 5;
+const ASTRO_MIN_MINOR = 4;
 const PREVIEW_BASE_HOST = "ayn.wtf";
 
 type ProcessStatus =
@@ -78,7 +84,12 @@ export type SessionPreviewProcess = {
 	status: ProcessStatus;
 	waitForPort: (
 		port: number,
-		options?: { mode?: "http" | "tcp"; timeout?: number },
+		options?: {
+			mode?: "http" | "tcp";
+			timeout?: number;
+			path?: string;
+			status?: number | { min: number; max: number };
+		},
 	) => Promise<void>;
 	kill: (signal?: string) => Promise<void>;
 	getStatus: () => Promise<ProcessStatus>;
@@ -120,6 +131,7 @@ export type SessionPreviewDeps = {
 	getSandbox: (env: Env, sandboxId: string) => SessionPreviewSandbox;
 	ensureProjectSandbox: typeof ensureProjectSandbox;
 	ensureSessionWorktree: typeof ensureSessionWorktree;
+	prepareSessionWorktree: typeof prepareSessionWorktree;
 	withSessionWorkspaceLock: typeof withSessionWorkspaceLock;
 	/** Test-only controlled barrier. */
 	barrier?: (label: string) => Promise<void>;
@@ -136,6 +148,7 @@ function defaultDeps(db: SessionPreviewDb, env: Env): SessionPreviewDeps {
 			getProjectSandbox(e, id) as unknown as SessionPreviewSandbox,
 		ensureProjectSandbox,
 		ensureSessionWorktree,
+		prepareSessionWorktree,
 		withSessionWorkspaceLock,
 	};
 }
@@ -257,7 +270,8 @@ export function resolvePreviewHostname(options: {
 		if (url.protocol !== "http:" && url.protocol !== "https:") {
 			throw sessionPreviewError("expose_failed");
 		}
-		return url.host; // retain port, e.g. localhost:5173
+		// SDK cannot put a preview label under an IPv4 literal; keep the port.
+		return url.port ? `localhost:${url.port}` : "localhost";
 	}
 
 	// Production: exact apex host only — no lookalikes, ports, or workers.dev.
@@ -277,7 +291,7 @@ export function resolvePreviewHostname(options: {
 	return PREVIEW_BASE_HOST;
 }
 
-type DevFramework = "vite" | "next";
+type DevFramework = "vite" | "next" | "astro";
 
 type DiscoveredCommand = {
 	framework: DevFramework;
@@ -321,19 +335,31 @@ export function parseLeadingSemver(
 	return [Number(match[1]), Number(match[2]), Number(match[3])];
 }
 
-export function isViteVersionSupported(version: string): boolean {
+function isMinVersion(
+	version: string,
+	minMajor: number,
+	minMinor: number,
+): boolean {
 	const parsed = parseLeadingSemver(version);
 	if (!parsed) {
 		return false;
 	}
 	const [major, minor] = parsed;
-	if (major > VITE_MIN_MAJOR) {
+	if (major > minMajor) {
 		return true;
 	}
-	if (major < VITE_MIN_MAJOR) {
+	if (major < minMajor) {
 		return false;
 	}
-	return minor >= VITE_MIN_MINOR;
+	return minor >= minMinor;
+}
+
+export function isViteVersionSupported(version: string): boolean {
+	return isMinVersion(version, VITE_MIN_MAJOR, VITE_MIN_MINOR);
+}
+
+export function isAstroVersionSupported(version: string): boolean {
+	return isMinVersion(version, ASTRO_MIN_MAJOR, ASTRO_MIN_MINOR);
 }
 
 export async function discoverPreviewCommand(options: {
@@ -382,19 +408,22 @@ export async function discoverPreviewCommand(options: {
 
 	const hasViteDep = "vite" in dependencies || "vite" in devDependencies;
 	const hasNextDep = "next" in dependencies || "next" in devDependencies;
-	if (hasViteDep && hasNextDep) {
-		throw sessionPreviewError("unsupported_project");
-	}
+	const hasAstroDep = "astro" in dependencies || "astro" in devDependencies;
 
 	const exactVite = devScript === "vite" || devScript === "vite dev";
 	const exactNext = devScript === "next" || devScript === "next dev";
-	if (exactVite === exactNext) {
+	const exactAstro = devScript === "astro" || devScript === "astro dev";
+	const matchCount = Number(exactVite) + Number(exactNext) + Number(exactAstro);
+	if (matchCount !== 1) {
 		throw sessionPreviewError("unsupported_project");
 	}
 	if (exactVite && !hasViteDep) {
 		throw sessionPreviewError("unsupported_project");
 	}
 	if (exactNext && !hasNextDep) {
+		throw sessionPreviewError("unsupported_project");
+	}
+	if (exactAstro && !hasAstroDep) {
 		throw sessionPreviewError("unsupported_project");
 	}
 
@@ -433,6 +462,44 @@ export async function discoverPreviewCommand(options: {
 		return {
 			framework: "vite",
 			command: `./node_modules/.bin/vite --host 0.0.0.0 --port ${port} --strictPort`,
+			env: {
+				HOST: "0.0.0.0",
+				PORT: String(port),
+				__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: ".ayn.wtf",
+			},
+		};
+	}
+
+	if (exactAstro) {
+		const versionPath = `${options.cwd}/node_modules/astro/package.json`;
+		const versionExists = await options.sandbox.exists(versionPath);
+		if (!versionExists.exists) {
+			throw sessionPreviewError("unsupported_project");
+		}
+		const versionFile = await options.sandbox.readFile(versionPath);
+		let versionJson: unknown;
+		try {
+			versionJson = JSON.parse(versionFile.content);
+		} catch {
+			throw sessionPreviewError("unsupported_project");
+		}
+		const version =
+			isPlainObject(versionJson) && typeof versionJson.version === "string"
+				? versionJson.version
+				: "";
+		if (!isAstroVersionSupported(version)) {
+			throw sessionPreviewError("unsupported_project");
+		}
+
+		const binPath = `${options.cwd}/node_modules/.bin/astro`;
+		const binExists = await options.sandbox.exists(binPath);
+		if (!binExists.exists) {
+			throw sessionPreviewError("unsupported_project");
+		}
+
+		return {
+			framework: "astro",
+			command: `./node_modules/.bin/astro dev --host 0.0.0.0 --port ${port} --allowed-hosts=.ayn.wtf`,
 			env: {
 				HOST: "0.0.0.0",
 				PORT: String(port),
@@ -557,8 +624,25 @@ export function validatePreviewUrl(options: {
 		if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
 			throw sessionPreviewError("expose_failed");
 		}
+		// Exposure host is canonical localhost[:port] from resolvePreviewHostname.
+		const expectedPort = options.hostname.startsWith("localhost:")
+			? options.hostname.slice("localhost:".length)
+			: options.hostname === "localhost"
+				? ""
+				: null;
+		if (expectedPort === null || parsed.port !== expectedPort) {
+			throw sessionPreviewError("expose_failed");
+		}
 		const host = parsed.hostname.toLowerCase();
-		if (host !== "localhost" && host !== "127.0.0.1") {
+		// SDK 0.12.3: http://<port>-<sandbox>-<token>.localhost:<app-port>/
+		if (!host.endsWith(".localhost")) {
+			throw sessionPreviewError("expose_failed");
+		}
+		const labels = host.slice(0, -".localhost".length).split(".");
+		if (labels.length !== 1 || !labels[0]) {
+			throw sessionPreviewError("expose_failed");
+		}
+		if (!labels[0].startsWith(`${options.port}-`)) {
 			throw sessionPreviewError("expose_failed");
 		}
 		return options.url;
@@ -692,6 +776,28 @@ async function failAfterAllocation(
 	throw original;
 }
 
+async function waitForPreviewReady(
+	process: SessionPreviewProcess,
+	port: number,
+): Promise<void> {
+	await process.waitForPort(port, {
+		mode: "tcp",
+		timeout: WAIT_FOR_PORT_MS,
+	});
+	try {
+		await process.waitForPort(port, {
+			mode: "http",
+			timeout: WAIT_FOR_HTTP_MS,
+			path: "/",
+			status: { min: 100, max: 599 },
+		});
+	} catch {}
+	const status = await process.getStatus();
+	if (!isHealthyStatus(status)) {
+		throw sessionPreviewError("start_failed");
+	}
+}
+
 async function resolveSessionWorktree(
 	deps: SessionPreviewDeps,
 	options: {
@@ -707,6 +813,15 @@ async function resolveSessionWorktree(
 	if (existingPath === canonical) {
 		const check = await sandbox.exists(existingPath);
 		if (check.exists) {
+			try {
+				await deps.prepareSessionWorktree({
+					env: deps.env,
+					sandboxId: options.sandboxId,
+					worktreePath: existingPath,
+				});
+			} catch {
+				throw sessionPreviewError("start_failed");
+			}
 			return existingPath;
 		}
 	}
@@ -934,11 +1049,11 @@ export async function startSessionPreview(
 
 			if (process && isHealthyStatus(process.status) && !existingExposure) {
 				try {
-					await process.waitForPort(port, {
-						mode: "tcp",
-						timeout: WAIT_FOR_PORT_MS,
-					});
-				} catch {
+					await waitForPreviewReady(process, port);
+				} catch (error) {
+					if (error instanceof SessionPreviewError) {
+						throw error;
+					}
 					throw sessionPreviewError("start_failed");
 				}
 				let exposedReuse: { url: string; port: number };
@@ -982,14 +1097,7 @@ export async function startSessionPreview(
 			const started = process;
 
 			try {
-				await started.waitForPort(port, {
-					mode: "tcp",
-					timeout: WAIT_FOR_PORT_MS,
-				});
-				const status = await started.getStatus();
-				if (!isHealthyStatus(status)) {
-					throw sessionPreviewError("start_failed");
-				}
+				await waitForPreviewReady(started, port);
 			} catch (error) {
 				if (error instanceof SessionPreviewError) {
 					throw error;

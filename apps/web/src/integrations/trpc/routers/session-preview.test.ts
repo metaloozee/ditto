@@ -16,6 +16,7 @@ vi.mock("#/lib/project-sandbox", () => ({
 }));
 vi.mock("#/lib/session-worktree", () => ({
 	ensureSessionWorktree: vi.fn(),
+	prepareSessionWorktree: vi.fn(),
 }));
 vi.mock("#/lib/session-workspace-lock", () => ({
 	withSessionWorkspaceLock: vi.fn(),
@@ -110,7 +111,7 @@ describe("sessionPreview router", () => {
 		startSessionPreviewMock.mockRejectedValue(
 			new SessionPreviewError(
 				"unsupported_project",
-				"Only root Vite (>=6.1.0) and Next.js projects with a local dev binary are supported.",
+				"Only root Vite (>=6.1.0), Next.js, and Astro (>=5.4.0) projects with a local dev binary are supported.",
 			),
 		);
 		await expect(

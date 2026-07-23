@@ -16,28 +16,54 @@ function quoteShellArg(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-async function prepareSessionWorktree(
+async function prepareSessionWorktreeFs(
 	sandbox: ReturnType<typeof getProjectSandbox>,
 	worktreePath: string,
 ): Promise<void> {
 	const primaryNodeModules = `${WORKSPACE_PATH}/node_modules`;
+	const primaryQ = quoteShellArg(primaryNodeModules);
 	await execOrThrow(
 		sandbox,
 		[
 			"set -euo pipefail",
 			`WT=${quoteShellArg(worktreePath)}`,
+			`PRIMARY=${primaryQ}`,
 			'EXCLUDE=$(git -C "$WT" rev-parse --git-path info/exclude)',
 			'mkdir -p "$(dirname "$EXCLUDE")" && touch "$EXCLUDE"',
 			`for PATTERN in '/node_modules' '/.env' '/.env.*'; do grep -Fqx -- "$PATTERN" "$EXCLUDE" || printf '%s\\n' "$PATTERN" >> "$EXCLUDE"; done`,
-			`if [ "$(readlink "$WT/node_modules" 2>/dev/null || true)" = ${quoteShellArg(primaryNodeModules)} ]; then git -C "$WT" rm --cached --ignore-unmatch -- node_modules; fi`,
-			`if [ -e ${quoteShellArg(primaryNodeModules)} ] && [ ! -e "$WT/node_modules" ]; then ln -s ${quoteShellArg(primaryNodeModules)} "$WT/node_modules"; fi`,
-		].join("; "),
+			'CURRENT=$(readlink "$WT/node_modules" 2>/dev/null || true)',
+			'if [ -e "$PRIMARY" ]; then',
+			'  if [ "$CURRENT" = "$PRIMARY" ]; then',
+			'    git -C "$WT" rm --cached --ignore-unmatch -- node_modules',
+			'  elif [ -L "$WT/node_modules" ]; then',
+			'    rm -f "$WT/node_modules"',
+			'    ln -s "$PRIMARY" "$WT/node_modules"',
+			'    git -C "$WT" rm --cached --ignore-unmatch -- node_modules',
+			'  elif [ ! -e "$WT/node_modules" ]; then',
+			'    ln -s "$PRIMARY" "$WT/node_modules"',
+			'    git -C "$WT" rm --cached --ignore-unmatch -- node_modules',
+			"  fi",
+			'elif [ -n "$CURRENT" ]; then',
+			'  if [ "$CURRENT" = "$PRIMARY" ] || [ ! -e "$WT/node_modules" ]; then',
+			'    rm -f "$WT/node_modules"',
+			"  fi",
+			"fi",
+		].join("\n"),
 		{
 			cwd: WORKSPACE_PATH,
 			timeout: GIT_COMMAND_TIMEOUT_MS,
 			errorPrefix: "Failed to prepare session worktree",
 		},
 	);
+}
+
+export async function prepareSessionWorktree(options: {
+	env: Env;
+	sandboxId: string;
+	worktreePath: string;
+}): Promise<void> {
+	const sandbox = getProjectSandbox(options.env, options.sandboxId);
+	await prepareSessionWorktreeFs(sandbox, options.worktreePath);
 }
 
 export async function ensureSessionWorktree(options: {
@@ -65,7 +91,7 @@ export async function ensureSessionWorktree(options: {
 	if (existing?.branchName && existing.workspacePath) {
 		const pathCheck = await sandbox.exists(existing.workspacePath);
 		if (pathCheck.exists) {
-			await prepareSessionWorktree(sandbox, existing.workspacePath);
+			await prepareSessionWorktreeFs(sandbox, existing.workspacePath);
 			return {
 				branchName: existing.branchName,
 				baseCommitSha: existing.baseCommitSha ?? "",
@@ -119,7 +145,7 @@ export async function ensureSessionWorktree(options: {
 		);
 	}
 
-	await prepareSessionWorktree(sandbox, worktreePath);
+	await prepareSessionWorktreeFs(sandbox, worktreePath);
 
 	return {
 		branchName,

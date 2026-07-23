@@ -20,7 +20,9 @@ vi.mock("#/lib/sandbox-bootstrap", () => ({
 	syncPrimaryWorkspaceFromGitHub: syncPrimaryWorkspaceFromGitHubMock,
 }));
 
-const { ensureSessionWorktree } = await import("./session-worktree");
+const { ensureSessionWorktree, prepareSessionWorktree } = await import(
+	"./session-worktree"
+);
 
 const worktreeOptions = {
 	githubRepo: "owner/repo",
@@ -37,6 +39,10 @@ function makeSandbox(
 	return {
 		exists: vi.fn(existsImpl),
 	};
+}
+
+function prepareCommand(): string {
+	return String(execOrThrowMock.mock.calls.at(-1)?.[1] ?? "");
 }
 
 describe("ensureSessionWorktree", () => {
@@ -87,16 +93,15 @@ describe("ensureSessionWorktree", () => {
 		expect(execOrThrowMock).toHaveBeenCalledTimes(4);
 		expect(execOrThrowMock.mock.calls[1]?.[1]).toContain("git branch");
 		expect(execOrThrowMock.mock.calls[2]?.[1]).toContain("git worktree add");
-		const prepareCommand = String(execOrThrowMock.mock.calls[3]?.[1]);
-		expect(prepareCommand).toContain("rev-parse --git-path info/exclude");
-		expect(prepareCommand).toContain("'/node_modules'");
-		expect(prepareCommand).toContain("'/.env'");
-		expect(prepareCommand).toContain("'/.env.*'");
-		expect(prepareCommand).toContain("rm --cached --ignore-unmatch");
-		expect(prepareCommand).toContain("ln -s");
-		expect(prepareCommand.indexOf("info/exclude")).toBeLessThan(
-			prepareCommand.indexOf("ln -s"),
-		);
+		const cmd = prepareCommand();
+		expect(cmd).toContain("rev-parse --git-path info/exclude");
+		expect(cmd).toContain("'/node_modules'");
+		expect(cmd).toContain("'/.env'");
+		expect(cmd).toContain("'/.env.*'");
+		expect(cmd).toContain("rm --cached --ignore-unmatch");
+		expect(cmd).toContain('ln -s "$PRIMARY"');
+		expect(cmd).toContain('[ -L "$WT/node_modules" ]');
+		expect(cmd.indexOf("info/exclude")).toBeLessThan(cmd.indexOf("ln -s"));
 	});
 
 	it("reuses existing metadata when worktree path still exists", async () => {
@@ -188,5 +193,54 @@ describe("ensureSessionWorktree", () => {
 		).rejects.toThrow("sync failed");
 
 		expect(execOrThrowMock).not.toHaveBeenCalled();
+	});
+});
+
+describe("prepareSessionWorktree", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("repairs broken or wrong-target node_modules symlinks", async () => {
+		const sandbox = makeSandbox(async () => ({ exists: true }));
+		getProjectSandboxMock.mockReturnValue(sandbox);
+		execOrThrowMock.mockResolvedValue({ stdout: "", success: true });
+
+		await prepareSessionWorktree({
+			env: makeEnv(),
+			sandboxId: "sandbox-1",
+			worktreePath: "/workspace/.ditto/worktrees/sess-1",
+		});
+
+		const cmd = prepareCommand();
+		expect(cmd).toContain(`PRIMARY='/workspace/node_modules'`);
+		expect(cmd).toContain('CURRENT=$(readlink "$WT/node_modules"');
+		expect(cmd).toContain('elif [ -L "$WT/node_modules" ]');
+		expect(cmd).toContain('rm -f "$WT/node_modules"');
+		expect(cmd).toContain('ln -s "$PRIMARY" "$WT/node_modules"');
+		expect(cmd).toContain(
+			'if [ "$CURRENT" = "$PRIMARY" ] || [ ! -e "$WT/node_modules" ]',
+		);
+	});
+
+	it("keeps a correct symlink and still refreshes excludes", async () => {
+		const sandbox = makeSandbox(async () => ({ exists: true }));
+		getProjectSandboxMock.mockReturnValue(sandbox);
+		execOrThrowMock.mockResolvedValue({ stdout: "", success: true });
+
+		await prepareSessionWorktree({
+			env: makeEnv(),
+			sandboxId: "sandbox-1",
+			worktreePath: "/workspace/.ditto/worktrees/sess-1",
+		});
+
+		const cmd = prepareCommand();
+		expect(cmd).toContain('if [ "$CURRENT" = "$PRIMARY" ]; then');
+		expect(cmd).toContain(
+			'git -C "$WT" rm --cached --ignore-unmatch -- node_modules',
+		);
+		expect(cmd).toContain("'/node_modules'");
+		// Real directory path is left alone (no wipe of non-symlink node_modules).
+		expect(cmd).not.toContain("rm -rf");
 	});
 });

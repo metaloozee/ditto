@@ -10,6 +10,7 @@ vi.mock("#/lib/project-sandbox", () => ({
 }));
 vi.mock("#/lib/session-worktree", () => ({
 	ensureSessionWorktree: vi.fn(),
+	prepareSessionWorktree: vi.fn(),
 }));
 vi.mock("#/lib/session-workspace-lock", () => ({
 	withSessionWorkspaceLock: vi.fn(
@@ -22,6 +23,7 @@ const {
 	archiveSessionWithPreviewCleanup,
 	deleteProjectWithPreviewFence,
 	discoverPreviewCommand,
+	isAstroVersionSupported,
 	isViteVersionSupported,
 	parseLeadingSemver,
 	releaseProjectPreviewLease,
@@ -436,6 +438,7 @@ function baseInjected(
 			state: "connected" as const,
 		})),
 		ensureSessionWorktree: vi.fn(),
+		prepareSessionWorktree: vi.fn().mockResolvedValue(undefined),
 		withSessionWorkspaceLock: vi.fn(
 			async <T>({ run }: { run: () => Promise<T> }) => run(),
 		) as SessionPreviewDeps["withSessionWorkspaceLock"],
@@ -478,6 +481,11 @@ describe("preview helpers", () => {
 		expect(isViteVersionSupported("^6.2.3")).toBe(false);
 		expect(isViteVersionSupported("garbage6.1.0")).toBe(false);
 		expect(isViteVersionSupported("6.1.0-beta.1")).toBe(false);
+		expect(isAstroVersionSupported("5.4.0")).toBe(true);
+		expect(isAstroVersionSupported("6.0.0")).toBe(true);
+		expect(isAstroVersionSupported("5.3.9")).toBe(false);
+		expect(isAstroVersionSupported("4.16.0")).toBe(false);
+		expect(isAstroVersionSupported("^5.4.0")).toBe(false);
 	});
 
 	it("resolves local host with port; production only exact HTTPS apex", () => {
@@ -492,7 +500,13 @@ describe("preview helpers", () => {
 				requestUrl: "http://127.0.0.1:8787/",
 				previewBaseHost: "ayn.wtf",
 			}),
-		).toBe("127.0.0.1:8787");
+		).toBe("localhost:8787");
+		expect(
+			resolvePreviewHostname({
+				requestUrl: "http://127.0.0.1/",
+				previewBaseHost: "ayn.wtf",
+			}),
+		).toBe("localhost");
 		expect(
 			resolvePreviewHostname({
 				requestUrl: "https://ayn.wtf/",
@@ -566,14 +580,49 @@ describe("preview helpers", () => {
 				local: false,
 			}),
 		).toThrow(SessionPreviewError);
+		// SDK 0.12.3 local shape: <port>-<sandbox>-<token>.localhost:<app-port>
 		expect(
 			validatePreviewUrl({
-				url: "http://localhost:10000/",
+				url: "http://10000-box-token.localhost:5173/",
 				port: 10000,
 				hostname: "localhost:5173",
 				local: true,
 			}),
-		).toBe("http://localhost:10000/");
+		).toBe("http://10000-box-token.localhost:5173/");
+		expect(
+			validatePreviewUrl({
+				url: "https://10000-box-token.localhost:5173/",
+				port: 10000,
+				hostname: "localhost:5173",
+				local: true,
+			}),
+		).toBe("https://10000-box-token.localhost:5173/");
+
+		const localRejects: Array<{
+			url: string;
+			port?: number;
+			hostname?: string;
+		}> = [
+			{ url: "http://10001-box-token.localhost:5173/" }, // wrong leased-port prefix
+			{ url: "http://10000-box.evil.localhost:5173/" }, // nested label
+			{ url: "http://10000-box-token.localhost.evil:5173/" }, // lookalike
+			{ url: "http://10000-box-token.localhost:4173/" }, // wrong Alchemy port
+			{ url: "http://localhost:10000/" }, // old incorrect shape
+			{ url: "http://10000-box-token.localhost:5173/?x=1" }, // search
+			{
+				url: "http://user:pass@10000-box-token.localhost:5173/",
+			}, // credentials
+		];
+		for (const row of localRejects) {
+			expect(() =>
+				validatePreviewUrl({
+					url: row.url,
+					port: row.port ?? 10000,
+					hostname: row.hostname ?? "localhost:5173",
+					local: true,
+				}),
+			).toThrow(SessionPreviewError);
+		}
 	});
 });
 
@@ -609,7 +658,11 @@ describe("discoverPreviewCommand", () => {
 			}),
 		});
 		await expect(
-			discoverPreviewCommand({ sandbox: old, cwd: "/wt", port: 10000 }),
+			discoverPreviewCommand({
+				sandbox: old,
+				cwd: "/wt",
+				port: 10000,
+			}),
 		).rejects.toMatchObject({ code: "unsupported_project" });
 
 		const wrapper = makeSandbox({
@@ -621,7 +674,11 @@ describe("discoverPreviewCommand", () => {
 			})),
 		});
 		await expect(
-			discoverPreviewCommand({ sandbox: wrapper, cwd: "/wt", port: 10000 }),
+			discoverPreviewCommand({
+				sandbox: wrapper,
+				cwd: "/wt",
+				port: 10000,
+			}),
 		).rejects.toMatchObject({ code: "unsupported_project" });
 	});
 
@@ -644,6 +701,122 @@ describe("discoverPreviewCommand", () => {
 		);
 		expect(result.env).toEqual({ HOST: "0.0.0.0", PORT: "10001" });
 	});
+
+	it("builds fixed astro command and env", async () => {
+		const sandbox = makeSandbox({
+			readFile: vi.fn(async (path: string) => {
+				if (path.includes("node_modules/astro")) {
+					return { content: JSON.stringify({ version: "5.4.0" }) };
+				}
+				return {
+					content: JSON.stringify({
+						scripts: { dev: "astro dev" },
+						dependencies: { astro: "5.4.0" },
+						devDependencies: { vite: "6.1.0" },
+					}),
+				};
+			}),
+		});
+		const result = await discoverPreviewCommand({
+			sandbox,
+			cwd: "/wt",
+			port: 10002,
+		});
+		expect(result.framework).toBe("astro");
+		expect(result.command).toBe(
+			"./node_modules/.bin/astro dev --host 0.0.0.0 --port 10002 --allowed-hosts=.ayn.wtf",
+		);
+		expect(result.env).toEqual({
+			HOST: "0.0.0.0",
+			PORT: "10002",
+			__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: ".ayn.wtf",
+		});
+	});
+
+	it("rejects old astro, wrappers, and missing binary", async () => {
+		const old = makeSandbox({
+			readFile: vi.fn(async (path: string) => {
+				if (path.includes("node_modules/astro")) {
+					return { content: JSON.stringify({ version: "5.3.0" }) };
+				}
+				return {
+					content: JSON.stringify({
+						scripts: { dev: "astro dev" },
+						dependencies: { astro: "5.3.0" },
+					}),
+				};
+			}),
+		});
+		await expect(
+			discoverPreviewCommand({
+				sandbox: old,
+				cwd: "/wt",
+				port: 10000,
+			}),
+		).rejects.toMatchObject({ code: "unsupported_project" });
+
+		const wrapper = makeSandbox({
+			readFile: vi.fn(async () => ({
+				content: JSON.stringify({
+					scripts: { dev: "astro dev --open" },
+					dependencies: { astro: "5.4.0" },
+				}),
+			})),
+		});
+		await expect(
+			discoverPreviewCommand({
+				sandbox: wrapper,
+				cwd: "/wt",
+				port: 10000,
+			}),
+		).rejects.toMatchObject({ code: "unsupported_project" });
+
+		const missingBin = makeSandbox({
+			readFile: vi.fn(async (path: string) => {
+				if (path.includes("node_modules/astro")) {
+					return { content: JSON.stringify({ version: "5.4.0" }) };
+				}
+				return {
+					content: JSON.stringify({
+						scripts: { dev: "astro" },
+						devDependencies: { astro: "5.4.0" },
+					}),
+				};
+			}),
+			exists: vi.fn(async (path: string) => ({
+				exists: !path.includes("node_modules/.bin/astro"),
+			})),
+		});
+		await expect(
+			discoverPreviewCommand({
+				sandbox: missingBin,
+				cwd: "/wt",
+				port: 10000,
+			}),
+		).rejects.toMatchObject({ code: "unsupported_project" });
+	});
+
+	it("selects astro by script when vite is also a direct dependency", async () => {
+		const sandbox = makeSandbox({
+			readFile: vi.fn(async (path: string) => {
+				if (path.includes("node_modules/astro")) {
+					return { content: JSON.stringify({ version: "5.7.1" }) };
+				}
+				return {
+					content: JSON.stringify({
+						scripts: { dev: "astro dev" },
+						dependencies: { astro: "5.7.1", vite: "6.2.0" },
+					}),
+				};
+			}),
+		});
+		const result = await discoverPreviewCommand({
+			sandbox,
+			cwd: "/wt",
+			port: 10000,
+		});
+		expect(result.framework).toBe("astro");
+	});
 });
 
 describe("project preview lease", () => {
@@ -662,6 +835,7 @@ describe("project preview lease", () => {
 			getSandbox: () => makeSandbox(),
 			ensureProjectSandbox: vi.fn(),
 			ensureSessionWorktree: vi.fn(),
+			prepareSessionWorktree: vi.fn(),
 			withSessionWorkspaceLock: vi.fn(),
 		};
 
@@ -789,6 +963,170 @@ describe("real D1 allocation semantics", () => {
 });
 
 describe("startSessionPreview", () => {
+	it("prepares node_modules on existing worktree before discovery", async () => {
+		const sqliteDb = createSqliteDb({
+			project: baseProject(),
+			sessions: [{ ...baseSession(), previewPort: 10000 }],
+		});
+		const sandbox = viteSandbox();
+		wireExposeToPort(sandbox);
+		const prepare = vi.fn().mockResolvedValue(undefined);
+
+		await startSessionPreview(
+			{
+				db: sqliteDb.db,
+				env: { PREVIEW_BASE_HOST: "ayn.wtf" } as Env,
+				projectId: "proj-1",
+				sessionId: "sess-1",
+				userId: "user-1",
+				requestUrl: "https://ayn.wtf/",
+			},
+			{
+				...baseInjected(sandbox, sqliteDb.db),
+				prepareSessionWorktree: prepare,
+			},
+		);
+
+		expect(prepare).toHaveBeenCalledWith({
+			env: expect.anything(),
+			sandboxId: "sandbox-1",
+			worktreePath: "/workspace/.ditto/worktrees/sess-1",
+		});
+		expect(sandbox.startProcess).toHaveBeenCalledWith(
+			expect.stringContaining("./node_modules/.bin/vite --host 0.0.0.0 --port"),
+			expect.any(Object),
+		);
+		expect(sandbox.startProcess).toHaveBeenCalledWith(
+			expect.not.stringContaining("--cacheDir"),
+			expect.any(Object),
+		);
+		expect(prepare.mock.invocationCallOrder[0]).toBeLessThan(
+			(sandbox.startProcess as ReturnType<typeof vi.fn>).mock
+				.invocationCallOrder[0],
+		);
+	});
+
+	it("waits tcp then best-effort http before expose", async () => {
+		const order: string[] = [];
+		const proc = makeProcess({
+			waitForPort: vi.fn(async (_port, opts) => {
+				order.push(opts?.mode ?? "unknown");
+			}),
+			getStatus: vi.fn(async (): Promise<"running"> => {
+				order.push("status");
+				return "running";
+			}),
+		});
+		const sandbox = viteSandbox({
+			getProcess: vi.fn().mockResolvedValue(null),
+			startProcess: vi.fn().mockResolvedValue(proc),
+			exposePort: vi.fn(async () => {
+				order.push("expose");
+				return { url: "https://10000-box-token.ayn.wtf", port: 10000 };
+			}),
+		});
+		const sqliteDb = createSqliteDb({
+			project: baseProject(),
+			sessions: [{ ...baseSession(), previewPort: 10000 }],
+		});
+
+		await startSessionPreview(
+			{
+				db: sqliteDb.db,
+				env: { PREVIEW_BASE_HOST: "ayn.wtf" } as Env,
+				projectId: "proj-1",
+				sessionId: "sess-1",
+				userId: "user-1",
+				requestUrl: "https://ayn.wtf/",
+			},
+			baseInjected(sandbox, sqliteDb.db),
+		);
+
+		expect(order).toEqual(["tcp", "http", "status", "expose"]);
+		expect(proc.waitForPort).toHaveBeenCalledWith(10000, {
+			mode: "tcp",
+			timeout: 30_000,
+		});
+		expect(proc.waitForPort).toHaveBeenCalledWith(10000, {
+			mode: "http",
+			timeout: 5_000,
+			path: "/",
+			status: { min: 100, max: 599 },
+		});
+	});
+
+	it("continues when http readiness fails but process stays healthy", async () => {
+		const proc = makeProcess({
+			waitForPort: vi.fn(async (_port, opts) => {
+				if (opts?.mode === "http") {
+					throw new Error("not ready");
+				}
+			}),
+			getStatus: vi.fn().mockResolvedValue("running"),
+		});
+		const sandbox = viteSandbox({
+			getProcess: vi.fn().mockResolvedValue(null),
+			startProcess: vi.fn().mockResolvedValue(proc),
+			exposePort: vi.fn().mockResolvedValue({
+				url: "https://10000-box-token.ayn.wtf",
+				port: 10000,
+			}),
+		});
+		const sqliteDb = createSqliteDb({
+			project: baseProject(),
+			sessions: [{ ...baseSession(), previewPort: 10000 }],
+		});
+
+		const result = await startSessionPreview(
+			{
+				db: sqliteDb.db,
+				env: { PREVIEW_BASE_HOST: "ayn.wtf" } as Env,
+				projectId: "proj-1",
+				sessionId: "sess-1",
+				userId: "user-1",
+				requestUrl: "https://ayn.wtf/",
+			},
+			baseInjected(sandbox, sqliteDb.db),
+		);
+		expect(result.status).toBe("running");
+		expect(sandbox.exposePort).toHaveBeenCalled();
+	});
+
+	it("accepts SDK 0.12.3 local expose URL and canonicalizes 127.0.0.1 host", async () => {
+		const sqliteDb = createSqliteDb({
+			project: baseProject(),
+			sessions: [{ ...baseSession(), previewPort: 10000 }],
+		});
+		const exposedUrl = "http://10000-box-token.localhost:5173/";
+		const sandbox = viteSandbox({
+			exposePort: vi.fn(async () => ({
+				url: exposedUrl,
+				port: 10000,
+			})),
+		});
+
+		const result = await startSessionPreview(
+			{
+				db: sqliteDb.db,
+				env: { PREVIEW_BASE_HOST: "ayn.wtf" } as Env,
+				projectId: "proj-1",
+				sessionId: "sess-1",
+				userId: "user-1",
+				requestUrl: "http://127.0.0.1:5173/project/p/session/s",
+			},
+			baseInjected(sandbox, sqliteDb.db),
+		);
+
+		expect(result.status).toBe("running");
+		expect(result.reused).toBe(false);
+		expect(result.url).toBe(exposedUrl);
+		expect(result.port).toBe(10000);
+		expect(sandbox.exposePort).toHaveBeenCalledWith(10000, {
+			hostname: "localhost:5173",
+		});
+		expect(sqliteDb.getSessionPort("sess-1")).toBe(10000);
+	});
+
 	it("starts, exposes, returns url without persisting it", async () => {
 		const sqliteDb = createSqliteDb({
 			project: baseProject(),
