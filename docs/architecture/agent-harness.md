@@ -63,8 +63,11 @@ once (the runner itself does not snapshot).
    `baseCommitSha`, and `workspacePath` on the session row. Dirty tracked
    primary state, a locally ahead primary clone, or a diverged primary branch
    block fresh session worktree creation instead of overwriting local commits.
-   If worktree preparation fails for a **newly created** empty session, that
-   session row is removed before the 409 response.
+   `baseCommitSha` is set when the session branch/worktree is first created (or
+   one-time backfilled if empty). Repairing a missing worktree **must not**
+   overwrite a non-empty `baseCommitSha` — it is the frozen fork point for the
+   session. If worktree preparation fails for a **newly created** empty session,
+   that session row is removed before the 409 response.
 5. After the worktree is ready, the Worker inserts the user message
    (`status: complete`) and an assistant placeholder (`status: pending`) in
    one D1 batch, then opens the SSE stream and emits `meta`.
@@ -166,6 +169,21 @@ worktree when present so dependencies are not reinstalled per session. Project
 environment values are stored encrypted in D1, decrypted by the Worker per run,
 and injected into each agent shell session's process `env`; worktrees never
 receive a `.env` file.
+
+Session workspace **readiness** (`ensureSessionWorkspaceReady`) centralizes
+create / reuse / repair of the session worktree and ownership-scoped D1 bind.
+**create** and **repair** take a short session workspace lock; **reuse** is
+unlocked. `baseCommitSha` is frozen after first set (or one-time empty backfill);
+repair preserves a non-empty base (see Runtime path above).
+
+- **Agent prepare** acquires only for create/repair; message rows still insert
+  after readiness releases the short lock.
+- **Agent git tools** call readiness with `assumeHeld` (the agent run already
+  holds the outer session lock).
+- **UI gitStatus** is prepare-only; a missing or non-canonical tree returns
+  workflow `unavailable` with reason `worktree` (no create/repair on poll).
+- **UI mutations** use full readiness with acquire on create/repair.
+- **Preview** repair uses readiness-owned acquire (no outer double-lock).
 
 Residual limits: all sessions still share one sandbox container process space
 (dev servers, ports, and long-running processes can collide). There is no

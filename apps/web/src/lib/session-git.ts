@@ -320,7 +320,7 @@ export type SessionGitWorkflow =
 	| { kind: "closed-pr"; pullRequest: SessionGitPullRequestRef }
 	| { kind: "merged-pr"; pullRequest: SessionGitPullRequestRef }
 	| { kind: "idle"; reason: "no-changes" }
-	| { kind: "unavailable"; reason: "github" };
+	| { kind: "unavailable"; reason: "github" | "worktree" };
 
 export function resolveSessionGitWorkflow(options: {
 	dirty: boolean;

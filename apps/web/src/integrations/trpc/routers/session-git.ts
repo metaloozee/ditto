@@ -18,6 +18,7 @@ import {
 	getSessionGitStatus,
 	openSessionPullRequest,
 	pushSessionBranch,
+	type SessionGitStatus,
 	SessionGitSyncPreconditionError,
 	syncSessionBranch,
 } from "#/lib/session-git";
@@ -33,7 +34,10 @@ import {
 	openSessionPullRequestWithGeneratedMetadata,
 } from "#/lib/session-git-ui-actions";
 import { SessionWorkspaceBusyError } from "#/lib/session-workspace-lock-error";
-import { ensureSessionWorktree } from "#/lib/session-worktree";
+import {
+	ensureSessionWorkspaceReady,
+	prepareSessionWorkspaceIfPresent,
+} from "#/lib/session-worktree";
 import { loadOwnedActiveSession } from "#/lib/workspace-session";
 import { createTRPCRouter, protectedProcedure } from "../init";
 
@@ -42,7 +46,9 @@ const sessionInputSchema = z.object({
 	sessionId: z.string().min(1),
 });
 
-async function resolveSessionGitContext(options: {
+const WORKTREE_UNAVAILABLE_MESSAGE = "Session worktree is not ready.";
+
+async function resolveSessionGitAuthContext(options: {
 	ctx: {
 		env: Env;
 		user: { id: string; name: string; email: string };
@@ -110,43 +116,6 @@ async function resolveSessionGitContext(options: {
 		project,
 	});
 
-	const ensured = await ensureSessionWorktree({
-		env: options.ctx.env,
-		sandboxId: project.sandboxId,
-		sessionId: session.id,
-		githubRepo: project.githubRepo,
-		installationId: project.githubInstallationId,
-		existing: {
-			branchName: session.branchName,
-			baseCommitSha: session.baseCommitSha,
-			workspacePath: session.workspacePath,
-		},
-	});
-
-	if (
-		session.branchName !== ensured.branchName ||
-		session.workspacePath !== ensured.workspacePath ||
-		session.baseCommitSha !== ensured.baseCommitSha
-	) {
-		await db
-			.update(workspaceSessions)
-			.set({
-				branchName: ensured.branchName,
-				baseCommitSha: ensured.baseCommitSha,
-				workspacePath: ensured.workspacePath,
-				updatedAt: sql`(unixepoch())`,
-			})
-			.where(eq(workspaceSessions.id, session.id));
-	}
-
-	const gitSession = {
-		id: session.id,
-		branchName: ensured.branchName,
-		baseCommitSha: ensured.baseCommitSha,
-		workspacePath: ensured.workspacePath,
-		title: session.title,
-	};
-
 	// Server-only secret values for push preflight; never returned to clients.
 	const envVars = await decryptEnvVars(
 		project.envVars,
@@ -166,9 +135,73 @@ async function resolveSessionGitContext(options: {
 		githubRepo: project.githubRepo,
 		installationId: project.githubInstallationId,
 		sandboxId: project.sandboxId,
-		session: gitSession,
+		session,
 		knownSecrets,
 	};
+}
+
+function worktreeUnavailableStatus(session: {
+	branchName: string | null;
+}): SessionGitStatus {
+	return {
+		branch: session.branchName ?? "",
+		dirty: false,
+		ahead: 0,
+		hasBranchChanges: false,
+		remoteBranchExists: null,
+		changedFiles: [],
+		summary: WORKTREE_UNAVAILABLE_MESSAGE,
+		pullRequest: null,
+		workflow: { kind: "unavailable", reason: "worktree" },
+	};
+}
+
+async function resolveSessionGitReadyForMutation(options: {
+	ctx: {
+		env: Env;
+		user: { id: string; name: string; email: string };
+		auth: Parameters<typeof authorizeGitHubRepositoryAccess>[0]["ctx"]["auth"];
+		request: { headers: Headers };
+	};
+	input: { projectId: string; sessionId: string };
+}) {
+	const auth = await resolveSessionGitAuthContext(options);
+	try {
+		const ready = await ensureSessionWorkspaceReady({
+			env: options.ctx.env,
+			sandboxId: auth.sandboxId,
+			sessionId: auth.session.id,
+			githubRepo: auth.githubRepo,
+			installationId: auth.installationId,
+			projectId: options.input.projectId,
+			userId: options.ctx.user.id,
+			db: auth.db,
+			existing: {
+				branchName: auth.session.branchName,
+				baseCommitSha: auth.session.baseCommitSha,
+				workspacePath: auth.session.workspacePath,
+			},
+			lock: "acquire",
+		});
+		return {
+			...auth,
+			session: {
+				id: auth.session.id,
+				branchName: ready.branchName,
+				baseCommitSha: ready.baseCommitSha,
+				workspacePath: ready.workspacePath,
+				title: auth.session.title,
+			},
+		};
+	} catch (error) {
+		if (error instanceof SessionWorkspaceBusyError) {
+			throw new TRPCError({
+				code: "PRECONDITION_FAILED",
+				message: error.message,
+			});
+		}
+		throw error;
+	}
 }
 
 function mapSessionGitExportError(error: unknown): never {
@@ -195,13 +228,32 @@ export const sessionGitRouter = createTRPCRouter({
 	gitStatus: protectedProcedure
 		.input(sessionInputSchema)
 		.query(async ({ ctx, input }) => {
-			const resolved = await resolveSessionGitContext({ ctx, input });
+			const auth = await resolveSessionGitAuthContext({ ctx, input });
+			const prepared = await prepareSessionWorkspaceIfPresent({
+				env: ctx.env,
+				sandboxId: auth.sandboxId,
+				sessionId: auth.session.id,
+				existing: {
+					branchName: auth.session.branchName,
+					baseCommitSha: auth.session.baseCommitSha,
+					workspacePath: auth.session.workspacePath,
+				},
+			});
+			if (!prepared.ok) {
+				return worktreeUnavailableStatus(auth.session);
+			}
 			return await getSessionGitStatus({
 				env: ctx.env,
-				sandboxId: resolved.sandboxId,
-				installationId: resolved.installationId,
-				githubRepo: resolved.githubRepo,
-				session: resolved.session,
+				sandboxId: auth.sandboxId,
+				installationId: auth.installationId,
+				githubRepo: auth.githubRepo,
+				session: {
+					id: auth.session.id,
+					branchName: prepared.branchName,
+					baseCommitSha: prepared.baseCommitSha,
+					workspacePath: prepared.workspacePath,
+					title: auth.session.title,
+				},
 			});
 		}),
 
@@ -212,7 +264,10 @@ export const sessionGitRouter = createTRPCRouter({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const resolved = await resolveSessionGitContext({ ctx, input });
+			const resolved = await resolveSessionGitReadyForMutation({
+				ctx,
+				input,
+			});
 			const author = sessionAuthor();
 			try {
 				// Explicit nonempty message keeps the legacy path (no generation).
@@ -270,7 +325,10 @@ export const sessionGitRouter = createTRPCRouter({
 	sync: protectedProcedure
 		.input(sessionInputSchema)
 		.mutation(async ({ ctx, input }) => {
-			const resolved = await resolveSessionGitContext({ ctx, input });
+			const resolved = await resolveSessionGitReadyForMutation({
+				ctx,
+				input,
+			});
 			const status = await getSessionGitStatus({
 				env: ctx.env,
 				sandboxId: resolved.sandboxId,
@@ -329,7 +387,10 @@ export const sessionGitRouter = createTRPCRouter({
 	push: protectedProcedure
 		.input(sessionInputSchema)
 		.mutation(async ({ ctx, input }) => {
-			const resolved = await resolveSessionGitContext({ ctx, input });
+			const resolved = await resolveSessionGitReadyForMutation({
+				ctx,
+				input,
+			});
 			const status = await getSessionGitStatus({
 				env: ctx.env,
 				sandboxId: resolved.sandboxId,
@@ -387,7 +448,10 @@ export const sessionGitRouter = createTRPCRouter({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const resolved = await resolveSessionGitContext({ ctx, input });
+			const resolved = await resolveSessionGitReadyForMutation({
+				ctx,
+				input,
+			});
 			const hasExplicitMetadata =
 				input.title !== undefined ||
 				input.body !== undefined ||
@@ -466,7 +530,9 @@ export const sessionGitRouter = createTRPCRouter({
 								: status.workflow.kind === "closed-pr"
 									? "This session pull request is closed."
 									: status.workflow.kind === "unavailable"
-										? "GitHub status is currently unavailable."
+										? status.workflow.reason === "worktree"
+											? WORKTREE_UNAVAILABLE_MESSAGE
+											: "GitHub status is currently unavailable."
 										: status.workflow.kind === "sync"
 											? `Sync the latest ${status.workflow.baseBranch} before opening a pull request.`
 											: "This session has no changes to open as a pull request.";

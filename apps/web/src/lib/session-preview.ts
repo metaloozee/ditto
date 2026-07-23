@@ -3,18 +3,13 @@ import type { createDb } from "#/db";
 import { projects, workspaceSessions } from "#/db/schema";
 import { ensureProjectSandbox } from "#/lib/project-sandbox";
 import { getProjectSandbox } from "#/lib/sandbox-bootstrap";
-import { withSessionWorkspaceLock } from "#/lib/session-workspace-lock";
 import { SessionWorkspaceBusyError } from "#/lib/session-workspace-lock-error";
-import {
-	ensureSessionWorktree,
-	prepareSessionWorktree,
-} from "#/lib/session-worktree";
+import { ensureSessionWorkspaceReady } from "#/lib/session-worktree";
 import {
 	isSessionPreviewPort,
 	SESSION_PREVIEW_PORT_COUNT,
 	SESSION_PREVIEW_PORT_MIN,
 	sessionPreviewProcessId,
-	sessionWorktreePath,
 } from "#/lib/workspace-policy";
 import { loadOwnedActiveSession } from "#/lib/workspace-session";
 
@@ -130,9 +125,7 @@ export type SessionPreviewDeps = {
 	sleep: (ms: number) => Promise<void>;
 	getSandbox: (env: Env, sandboxId: string) => SessionPreviewSandbox;
 	ensureProjectSandbox: typeof ensureProjectSandbox;
-	ensureSessionWorktree: typeof ensureSessionWorktree;
-	prepareSessionWorktree: typeof prepareSessionWorktree;
-	withSessionWorkspaceLock: typeof withSessionWorkspaceLock;
+	ensureSessionWorkspaceReady: typeof ensureSessionWorkspaceReady;
 	/** Test-only controlled barrier. */
 	barrier?: (label: string) => Promise<void>;
 };
@@ -147,9 +140,7 @@ function defaultDeps(db: SessionPreviewDb, env: Env): SessionPreviewDeps {
 		getSandbox: (e, id) =>
 			getProjectSandbox(e, id) as unknown as SessionPreviewSandbox,
 		ensureProjectSandbox,
-		ensureSessionWorktree,
-		prepareSessionWorktree,
-		withSessionWorkspaceLock,
+		ensureSessionWorkspaceReady,
 	};
 }
 
@@ -806,71 +797,27 @@ async function resolveSessionWorktree(
 		sandboxId: string;
 	},
 ): Promise<string> {
-	const canonical = sessionWorktreePath(options.session.id);
-	const existingPath = options.session.workspacePath;
-	const sandbox = deps.getSandbox(deps.env, options.sandboxId);
-
-	if (existingPath === canonical) {
-		const check = await sandbox.exists(existingPath);
-		if (check.exists) {
-			try {
-				await deps.prepareSessionWorktree({
-					env: deps.env,
-					sandboxId: options.sandboxId,
-					worktreePath: existingPath,
-				});
-			} catch {
-				throw sessionPreviewError("start_failed");
-			}
-			return existingPath;
-		}
+	if (!options.project.githubRepo || !options.project.githubInstallationId) {
+		throw sessionPreviewError("not_ready");
 	}
-
 	try {
-		const repaired = await deps.withSessionWorkspaceLock({
+		const ready = await deps.ensureSessionWorkspaceReady({
 			env: deps.env,
 			sandboxId: options.sandboxId,
 			sessionId: options.session.id,
-			run: async () => {
-				if (
-					!options.project.githubRepo ||
-					!options.project.githubInstallationId
-				) {
-					throw sessionPreviewError("not_ready");
-				}
-				return await deps.ensureSessionWorktree({
-					env: deps.env,
-					sandboxId: options.sandboxId,
-					sessionId: options.session.id,
-					githubRepo: options.project.githubRepo,
-					installationId: options.project.githubInstallationId,
-					existing: {
-						branchName: options.session.branchName,
-						baseCommitSha: options.session.baseCommitSha,
-						workspacePath: options.session.workspacePath,
-					},
-				});
+			githubRepo: options.project.githubRepo,
+			installationId: options.project.githubInstallationId,
+			projectId: options.project.id,
+			userId: options.session.userId,
+			db: deps.db,
+			existing: {
+				branchName: options.session.branchName,
+				baseCommitSha: options.session.baseCommitSha,
+				workspacePath: options.session.workspacePath,
 			},
+			lock: "acquire",
 		});
-
-		await deps.db
-			.update(workspaceSessions)
-			.set({
-				branchName: repaired.branchName,
-				baseCommitSha: repaired.baseCommitSha,
-				workspacePath: repaired.workspacePath,
-				updatedAt: sql`(unixepoch())`,
-			})
-			.where(
-				and(
-					eq(workspaceSessions.id, options.session.id),
-					eq(workspaceSessions.projectId, options.project.id),
-					eq(workspaceSessions.userId, options.session.userId),
-					eq(workspaceSessions.status, "active"),
-				),
-			);
-
-		return repaired.workspacePath;
+		return ready.workspacePath;
 	} catch (error) {
 		if (error instanceof SessionWorkspaceBusyError) {
 			throw sessionPreviewError("busy");
