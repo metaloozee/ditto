@@ -215,6 +215,50 @@ describe("dispatchAgentGitAction", () => {
 			number: 1,
 		});
 	});
+
+	it("rejects openPR when workflow unavailable/worktree", async () => {
+		getSessionGitStatusMock.mockResolvedValue({
+			dirty: false,
+			ahead: 0,
+			changedFiles: [],
+			workflow: { kind: "unavailable", reason: "worktree" },
+		});
+
+		await expect(
+			dispatchAgentGitAction({
+				env,
+				resolved,
+				body: { action: "openPullRequest" },
+			}),
+		).rejects.toMatchObject({
+			status: 409,
+			message: "Session worktree is not ready.",
+		});
+		expect(pushSessionBranchMock).not.toHaveBeenCalled();
+		expect(openSessionPullRequestMock).not.toHaveBeenCalled();
+	});
+
+	it("rejects openPR when workflow unavailable/github", async () => {
+		getSessionGitStatusMock.mockResolvedValue({
+			dirty: false,
+			ahead: 0,
+			changedFiles: [],
+			workflow: { kind: "unavailable", reason: "github" },
+		});
+
+		await expect(
+			dispatchAgentGitAction({
+				env,
+				resolved,
+				body: { action: "openPullRequest" },
+			}),
+		).rejects.toMatchObject({
+			status: 409,
+			message: "GitHub status is currently unavailable.",
+		});
+		expect(pushSessionBranchMock).not.toHaveBeenCalled();
+		expect(openSessionPullRequestMock).not.toHaveBeenCalled();
+	});
 });
 
 describe("resolveAgentGitContext sandbox mismatch", () => {

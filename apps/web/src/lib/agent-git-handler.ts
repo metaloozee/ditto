@@ -226,7 +226,9 @@ export async function dispatchAgentGitAction(options: {
 				: status.workflow.kind === "closed-pr"
 					? "This session pull request is closed."
 					: status.workflow.kind === "unavailable"
-						? "GitHub status is currently unavailable."
+						? status.workflow.reason === "worktree"
+							? "Session worktree is not ready."
+							: "GitHub status is currently unavailable."
 						: status.workflow.kind === "sync"
 							? `Sync the latest ${status.workflow.baseBranch} before opening a pull request.`
 							: "This session has no changes to open as a pull request.";
