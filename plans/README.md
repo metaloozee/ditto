@@ -215,6 +215,56 @@ load/Stop smokes are `NOT RUN` (no disposable fixture/deploy credentials in
 the executor environment). Wildcard DNS/TLS for random `*.ayn.wtf` already
 resolves with 404. No merge/push/deploy performed.
 
+## Plan 028 (session workspace readiness)
+
+Planned at commit `b52f806` on 2026-07-23 after product interview locked
+baseCommitSha freeze semantics, readiness modes (create/reuse/repair), lock
+hooks, ownership-scoped D1 bind, and soft gitStatus `worktree` unavailable.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 028 | Preserve baseCommitSha and centralize session workspace readiness | P0 | M | 005, 010, 017, 026, 027 (DONE) | DONE (worktree `/home/ayan/ditto-worktrees/028-session-workspace-readiness` @ `84df23b`; includes ponytail cleanup) |
+
+Locked outcomes:
+
+- `baseCommitSha` is a frozen fork point after first set; repair never overwrites
+  a non-empty base; empty base + existing branch backfills once from primary HEAD.
+- Grow `apps/web/src/lib/session-worktree.ts` with `ensureSessionWorkspaceReady`
+  (FS modes, lock hook, D1 bind when changed). Auth, sandbox wake, secrets,
+  messages, git mutate, preview process, and mega context loaders stay out.
+- Lock policy: prepareAgentRun acquires only create/repair (reuse unlocked);
+  agent-git `assumeHeld`; UI mutations acquire on create/repair; UI gitStatus
+  prepare-only with soft `unavailable/worktree`; preview readiness owns repair lock.
+- D1 bind WHERE `id+projectId+userId+status=active`; zero rows fail the operation.
+- Land as two logical commits/PR units: Phase 1 base preserve + tests + harness
+  note; Phase 2 readiness API + four callers + tests + concurrency docs.
+- Branch: `advisor/028-session-workspace-readiness`.
+
+## Plan 029 (session git export orchestration)
+
+Planned at commit `30c06f2` on 2026-07-23 after plan 028 landed readiness at
+callers. Deepens open-PR / push-then-PR orchestration without unifying auth,
+locks, or PI metadata generation.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 029 | Deepen Session Git export orchestration (open-PR / push-then-PR) | P1 | M | 028 (DONE) | DONE (merged `20ef927`; tip `8f8249d`) |
+
+Locked outcomes:
+
+- Phase 1 (S): agent `dispatchAgentGitAction` openPR reports exact
+  `Session worktree is not ready.` when `workflow.reason === "worktree"` (parity
+  with UI/028).
+- Phase 2 (M): pure `sessionGitOpenPullRequestBlocker` +
+  `runPushThenOpenPullRequest` in new `apps/web/src/lib/session-git-export.ts`.
+- Thin adapters keep divergent policy: UI generated = outer lock + PI generate +
+  backup if didPush + existing PR `shortCircuit`; router explicit = no outer lock
+  + backup if didPush + existing PR `open`; agent = `bypassWorkspaceLock` + no
+  backup + existing PR `open`.
+- MUST NOT unify: bypass/agent run lock, JWT vs tRPC auth, PI metadata into agent,
+  mega context loaders, agent mid-run backup, readiness inside core.
+- Branch: `advisor/029-session-git-export-orchestration`.
+
 ### Audit finding coverage
 
 | Selected finding | Covered by | Combination rationale |
@@ -471,6 +521,11 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
 - **027 requires 005, 011, 012, 017, and 024** — previews depend on stable
   session worktrees, the full verification baseline, secret redaction, extracted
   run/workspace locking, and the current Alchemy monorepo/Sandbox boundary.
+- **028 requires 005, 010, 017, 026, and 027** — readiness centralizes worktree
+  create/reuse/repair after session branches, primary sync, extracted run lock,
+  UI git lock/metadata paths, and preview's repair-under-lock pattern exist.
+- **029 requires 028** — export orchestration assumes callers already run
+  readiness; core must not re-implement worktree bind or soft gitStatus.
 
 ## Product decisions (locked 2026-07-09)
 
@@ -563,5 +618,128 @@ tree while sharing git objects and (via symlink) `node_modules`.
 19. `023-pi-follow-up-and-stop-controls.md`
 20. `024-conservative-sst-monorepo-migration.md`
 21. `025-account-provider-auth-and-pi-models.md`
-22. `026-agent-drafted-git-metadata.md`
-23. `027-session-live-previews.md`
+  22. `026-agent-drafted-git-metadata.md`
+  23. `027-session-live-previews.md`
+  24. `028-session-workspace-readiness.md`
+  25. `029-session-git-export-orchestration.md`
+
+## Planning update — 2026-07-23 (Plan 028)
+
+- **Current HEAD / planned-at**: `b52f806`.
+- **DONE 028** (advisor review APPROVE + ponytail cleanup APPROVE): branch
+  `advisor/028-session-workspace-readiness` in worktree
+  `/home/ayan/ditto-worktrees/028-session-workspace-readiness` @ `84df23b`.
+  - Phase 1 `91fd188` — preserve `baseCommitSha` on repair + backfill + tests + harness note
+  - Phase 2 `059bb23` — `ensureSessionWorkspaceReady` / prepare-if-present + four callers + UI worktree unavailable + docs
+  - Cleanup `84df23b` — drop legacy `ensureSessionWorktree`, `lock:"none"`, result `mode`/`bound`, fluff helpers (−303 lines)
+  - Focused tests 181/181 pass; `pnpm check` exit 0 (warnings only)
+  - `pnpm typecheck` fails on pre-existing `chat-navbar.tsx` error already on `b52f806` (out of scope)
+- **Merged**: 028 integrated on master at `30c06f2`.
+
+## Planning update — 2026-07-23 (Plan 029)
+
+- **Current HEAD / planned-at**: `30c06f2`.
+- **DONE 029** (advisor review APPROVE + ponytail slim): merged to master at
+  `20ef927`. Feature tip `8f8249d`.
+  - Phase 1 `5319a8b` — agent openPR worktree unavailable message + tests
+  - Phase 2 `4692f96` — `session-git-export` blocker + `runPushThenOpenPullRequest` +
+    thin UI/router/agent adapters
+  - Slim `8f8249d` — drop dual didPush, inline types, `initialStatus` skip fetch
+  - Focused tests 49/49 pass; worktree removed; branch deleted
+  - `pnpm typecheck` still fails only on pre-existing `chat-navbar.tsx` (OOS)
+
+## Reconciliation — 2026-07-23
+
+- **Current HEAD**: `20ef927` (`master`, 8 commits ahead of `origin/master` at
+  `b52f806`). Working tree: dirty only under `plans/` (this index + untracked
+  `028`/`029` plan files). No executor worktrees attached.
+- **Backlog status**: every plan **001–029 is DONE**. No TODO, IN PROGRESS, or
+  BLOCKED rows. Nothing executable from the backlog without a new plan.
+- **DONE spot-checks (features still on HEAD)**:
+  | Area | Evidence |
+  |---|---|
+  | 024 monorepo | `apps/web`, `packages/sandbox-runner` present; root `pnpm verify` orchestration intact |
+  | 025 PI 0.80.10 | runner lock + installed `@earendil-works/pi-ai@0.80.10` |
+  | 026 git metadata | `session-git-metadata.ts`, runner `run-git-metadata` still present |
+  | 027 preview backend | `session-preview.ts` `exposePort`/`unexposePort`; backend tests 39/39 pass |
+  | 028 readiness | `ensureSessionWorkspaceReady` / `prepareSessionWorkspaceIfPresent`; 12 worktree tests pass |
+  | 029 export orchestration | `session-git-export.ts` blocker + `runPushThenOpenPullRequest`; 21+8 related tests pass |
+  | 012/013 secrets | `secret-redaction.ts`, `git-secret-policy.ts` present |
+  | 021 docs | `docs/architecture/agent-harness.md` present |
+- **Cheap verification on HEAD**:
+  | Gate | Result |
+  |---|---|
+  | `pnpm check` | pass (32 warnings, exit 0) |
+  | `pnpm typecheck` | **FAIL** — `apps/web/src/components/chat-navbar.tsx:104` passes optional `onToolsOpenChange?: (open: boolean) => void` into `SessionToolsTrigger.onOpenChange` which requires `(open: boolean) => void` (introduced `ff47e34` tools-pane work, blamed on that commit) |
+  | `pnpm test` | **FAIL** — 591 passed, **3 failed**, all in `session-preview-pane.test.tsx` |
+  | runner typecheck | pass |
+  | runner tests | pass: 81 tests in 11 files |
+  | focused 028/029 | pass: 41 tests (`session-worktree`, `session-git-export`, `agent-git-handler`) |
+  | focused 027 backend | pass: 39 tests |
+  | production `pnpm build` | not re-run (writes artifacts; cheap reconcile only) |
+- **Plan 027 UI criterion drift (post-landing)**: commit `ff47e34`
+  (`feat(preview): add resizable session tools pane`) redesigned the preview
+  chrome after Plan 027 was marked DONE. Implementation still has stop-error
+  retain-iframe logic (`session-preview-pane.tsx` stop `onError` → `ready` +
+  `error`), but the pane no longer exposes a **"Restart preview"** control
+  (labels are now **Start preview** / **Retry preview** / **Stop preview**).
+  Three tests still assert the old label and fail:
+  1. `restarts by discarding url then replacing on success`
+  2. `keeps iframe url and shows alert when stop fails` (also saw stale URL
+     assertion vs `10001` — likely mock leftover after the missing Restart click)
+  3. `clears stop error on restart`
+  Backend Plan 027 gates remain green; this is **UI test / a11y-label drift**,
+  not evidence the preview backend was undone. Treat as a **new** small fix
+  plan (or a one-shot test update), not a reopen of 027.
+- **Plan 004 regression (unchanged since 2026-07-19)**:
+  `apps/web/src/components/ai-chat.tsx` still drives `setCacheEpoch` from a
+  message-dependent `useEffect` (~L544–557) plus a direct call (~L601).
+  Historical 004 work remains integrated; cleanup needs a **new** plan if
+  desired.
+- **Index hygiene**:
+  - `plans/028-session-workspace-readiness.md` and
+    `plans/029-session-git-export-orchestration.md` are still **untracked** on
+    master (implementation merged; plan bodies never committed). Commit them
+    with the next docs/plans commit if the backlog record should be durable.
+  - This reconciliation only edits `plans/README.md`.
+- **External / manual NOT RUN (still)**: Plan 023 GitHub-backed races, Plan 025
+  live provider matrix, Plan 026 live UI Git path, Plan 027 local Alchemy and
+  production `*.ayn.wtf` Start/load/Stop smokes. No credentials or deploys used.
+- **Rejected / refreshed TODO / BLOCKED**: none.
+- **Executable now**: none from existing plans.
+- **Suggested next plans** (not authored this run — say the word to write them):
+  1. **P0 / S** — restore green `pnpm typecheck`: narrow
+     `ChatNavbar` → `SessionToolsTrigger` `onOpenChange` typing (default no-op
+     or only render trigger when handler is defined — handler gate already
+     exists via `showToolsTrigger`).
+  2. **P0 / S** — update `session-preview-pane.test.tsx` to current Start/Retry/
+     Stop labels and re-assert stop-fail retain-iframe + error-clear behavior
+     so `pnpm test` is green again (plan 011 baseline).
+  3. **P2 / M** (optional) — Plan 004 cache-acknowledgement Effect cleanup.
+
+## Execution — 2026-07-23 (baseline fixes, no formal plan)
+
+User requested direct fix of the three reconciliation follow-ups via executor
+subagent (not new plan files).
+
+- **Branch / worktree**: `advisor/030-baseline-fixes` @
+  `/home/ayan/ditto-worktrees/030-baseline-fixes` tip `6fbd719`
+- **Commits**:
+  - `7d2d466` `fix(chat): narrow tools trigger onOpenChange for typecheck`
+  - `8b4eab0` `test(preview): align pane tests with start/stop labels`
+  - `6fbd719` `fix(chat): remove message-driven cache epoch effect`
+- **Scope**: only
+  `apps/web/src/components/{chat-navbar,ai-chat,session-preview-pane.test}.tsx`
+- **Advisor review: APPROVE**
+  - Independent re-run: `pnpm check` exit 0, `pnpm typecheck` exit 0,
+    `pnpm test` 60 files / **596 passed**
+  - Fix 1: control-flow narrow `showToolsTrigger && onToolsOpenChange` — correct
+  - Fix 2: tests match Reload/Stop/Start; stop-fail retain-iframe kept; added
+    stop→start and clear-error-on-successful-stop coverage; no prod preview
+    behavior change
+  - Fix 3: render-time ref-gated `acknowledgeSessionMessages` (idempotent cache
+    hygiene); display still via `listPending`; `cacheEpoch` only on seed.
+    Concurrent-discard safe because ack only drops ids present in that render’s
+    server messages. Existing `ai-chat` / cache tests pass.
+- **Not merged / not pushed** — merge is the user’s decision.
+
