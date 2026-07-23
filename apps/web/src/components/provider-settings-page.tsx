@@ -102,6 +102,7 @@ function AuthPromptForm({
 							<select
 								id={field.name}
 								name={field.name}
+								aria-label={prompt.message}
 								className="h-7 w-full rounded-md border border-input bg-input/20 px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 md:text-xs/relaxed"
 								value={field.state.value}
 								onBlur={field.handleBlur}
@@ -171,6 +172,7 @@ export function ProviderSettingsPage() {
 		authType: "api_key" | "oauth";
 	} | null>(null);
 	const attemptIdRef = useRef<string | null>(null);
+	const [attemptId, setAttemptId] = useState<string | null>(null);
 	const [status, setStatus] = useState("");
 	const [prompt, setPrompt] = useState<AuthPrompt | null>(null);
 	const [deviceCode, setDeviceCode] = useState<string | null>(null);
@@ -190,29 +192,37 @@ export function ProviderSettingsPage() {
 		setAuthUrl(null);
 	};
 
-	const cancelActiveAttemptRef = useRef(async () => {});
-	cancelActiveAttemptRef.current = async () => {
-		if (cancellingRef.current) return;
-		cancellingRef.current = true;
-		try {
-			abortRef.current?.abort();
-			abortRef.current = null;
-			const id = attemptIdRef.current;
-			attemptIdRef.current = null;
-			if (id) {
-				try {
-					await cancelProviderAuth({ attemptId: id });
-				} catch {
-					// Local attempt already closed; server cleanup is best-effort.
-				}
-			}
-			setConnecting(null);
-			setStatus("");
-			clearLocalSecrets();
-		} finally {
-			cancellingRef.current = false;
-		}
+	const assignAttemptId = (id: string | null) => {
+		attemptIdRef.current = id;
+		setAttemptId(id);
 	};
+
+	const cancelActiveAttemptRef = useRef(async () => {});
+	useEffect(() => {
+		cancelActiveAttemptRef.current = async () => {
+			if (cancellingRef.current) return;
+			cancellingRef.current = true;
+			try {
+				abortRef.current?.abort();
+				abortRef.current = null;
+				const id = attemptIdRef.current;
+				assignAttemptId(null);
+				if (id) {
+					try {
+						await cancelProviderAuth({ attemptId: id });
+					} catch {
+						// Local attempt already closed; server cleanup is best-effort.
+					}
+				}
+				setConnecting(null);
+				setStatus("");
+				clearLocalSecrets();
+			} catch {
+				// Best-effort cancel; ignore failures during teardown.
+			}
+			cancellingRef.current = false;
+		};
+	});
 
 	useEffect(() => {
 		return () => {
@@ -263,7 +273,7 @@ export function ProviderSettingsPage() {
 				onEvent: (event) => {
 					if (controller.signal.aborted) return;
 					if (event.event === "meta") {
-						attemptIdRef.current = event.data.attemptId;
+						assignAttemptId(event.data.attemptId);
 					} else if (event.event === "prompt") {
 						setPrompt({
 							promptId: event.data.promptId,
@@ -306,7 +316,7 @@ export function ProviderSettingsPage() {
 						setStatus(event.data.message);
 					} else if (event.event === "done") {
 						abortRef.current = null;
-						attemptIdRef.current = null;
+						assignAttemptId(null);
 						clearLocalSecrets();
 						if (event.data.ok) {
 							setStatus("Connected.");
@@ -331,7 +341,7 @@ export function ProviderSettingsPage() {
 			setConnecting(null);
 			clearLocalSecrets();
 			abortRef.current = null;
-			attemptIdRef.current = null;
+			assignAttemptId(null);
 		}
 	};
 
@@ -651,11 +661,11 @@ export function ProviderSettingsPage() {
 							</section>
 						) : null}
 
-						{prompt && attemptIdRef.current ? (
+						{prompt && attemptId ? (
 							<AuthPromptForm
 								key={prompt.promptId}
 								prompt={prompt}
-								attemptId={attemptIdRef.current}
+								attemptId={attemptId}
 								onCancel={() => void cancelActiveAttemptRef.current()}
 								onSubmitted={() => setPrompt(null)}
 							/>

@@ -335,23 +335,24 @@ export async function getProviderCatalog(options: {
 			for (const raw of parsed.providers) {
 				const p = catalogProviderSchema.safeParse(raw);
 				if (!p.success) continue;
-				if (!(p.data.providerId in PORTABLE_PROVIDER_AUTH)) continue;
-				const methods = p.data.authMethods.filter((m) =>
-					isAllowedProviderAuth(p.data.providerId, m.type),
+				const { providerId, name, authMethods, models: rawModels } = p.data;
+				if (!(providerId in PORTABLE_PROVIDER_AUTH)) continue;
+				const methods = authMethods.filter((m) =>
+					isAllowedProviderAuth(providerId, m.type),
 				);
 				if (methods.length === 0) continue;
 				let models: SafeModel[] = [];
 				try {
 					models = projectSafeModels(
-						safeModelCatalogSchema.parse(p.data.models ?? []),
-						p.data.providerId,
+						safeModelCatalogSchema.parse(rawModels ?? []),
+						providerId,
 					);
 				} catch {
 					models = [];
 				}
 				providers.push({
-					providerId: p.data.providerId,
-					name: p.data.name,
+					providerId,
+					name,
 					authMethods: methods,
 					models,
 				});
