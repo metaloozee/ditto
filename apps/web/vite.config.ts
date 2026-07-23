@@ -5,7 +5,7 @@ import { devtools } from "@tanstack/devtools-vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact, { reactCompilerPreset } from "@vitejs/plugin-react";
 import alchemy from "alchemy/cloudflare/tanstack-start";
-import { defineConfig, type Connect, type PluginOption } from "vite";
+import { type Connect, defineConfig, type PluginOption } from "vite";
 
 /**
  * Local session previews use `<port>-<sandbox>-<token>.localhost`.
@@ -43,11 +43,7 @@ function sessionPreviewDevProxy(): PluginOption {
 						continue;
 					}
 					const original = handle as Connect.NextHandleFunction;
-					const wrapped: Connect.NextHandleFunction = function (
-						req,
-						res,
-						next,
-					) {
+					const wrapped: Connect.NextHandleFunction = (req, res, next) => {
 						const host = req.headers.host ?? "";
 						if (localPreviewHost.test(host)) {
 							next();
