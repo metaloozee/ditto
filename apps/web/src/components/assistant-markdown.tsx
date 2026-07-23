@@ -13,7 +13,7 @@ import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
 import type { ComponentProps, ReactNode } from "react";
-import { isValidElement, useMemo } from "react";
+import { isValidElement } from "react";
 import { Streamdown } from "streamdown";
 import { cn } from "#/lib/utils";
 
@@ -108,15 +108,9 @@ function MarkdownCode({
 	...props
 }: CodeProps) {
 	const isBlock = "data-block" in props;
-	const code = useMemo(
-		() => childrenToText(children).replace(/\n$/, ""),
-		[children],
-	);
-	const language = useMemo(() => resolveLanguage(className), [className]);
-	const highlighted = useMemo(
-		() => (isBlock ? highlightCode(code, language) : null),
-		[code, isBlock, language],
-	);
+	const code = childrenToText(children).replace(/\n$/, "");
+	const language = resolveLanguage(className);
+	const highlighted = isBlock ? highlightCode(code, language) : null;
 
 	if (!isBlock) {
 		return (

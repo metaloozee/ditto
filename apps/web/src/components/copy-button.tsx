@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckIcon, CopyIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "#/components/ui/button";
 import {
 	Tooltip,
@@ -35,7 +35,7 @@ export function CopyButton({
 		};
 	}, []);
 
-	const handleCopy = useCallback(async () => {
+	async function handleCopy() {
 		if (!value || copiedValue === value) {
 			return;
 		}
@@ -53,7 +53,7 @@ export function CopyButton({
 		} catch {
 			// Keep feedback in-button only; silent on clipboard denial.
 		}
-	}, [value, copiedValue]);
+	}
 
 	const tooltip = copied ? copiedLabel : label;
 

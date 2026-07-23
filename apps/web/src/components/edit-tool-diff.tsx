@@ -3,7 +3,7 @@ import type { FileDiffMetadata } from "@pierre/diffs/react";
 import { MultiFileDiff, PatchDiff } from "@pierre/diffs/react";
 import { ClientOnly } from "@tanstack/react-router";
 import { ChevronRightIcon, LoaderCircleIcon } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useState } from "react";
 import type { StreamToolCall } from "#/lib/agent-message-parts";
 import {
 	type EditToolDiffData,
@@ -152,53 +152,35 @@ function EditToolRunningHeader({ name }: { name: string }) {
 
 function DiffBody({ data }: { data: EditToolDiffData }) {
 	const [collapsed, setCollapsed] = useState(false);
-	const onToggle = useCallback(() => {
+	const onToggle = () => {
 		setCollapsed((value) => !value);
-	}, []);
+	};
 
-	const oldContents = useMemo(
-		() => normalizeFileContents(data.oldContents),
-		[data.oldContents],
-	);
-	const newContents = useMemo(
-		() => normalizeFileContents(data.newContents),
-		[data.newContents],
-	);
+	const oldContents = normalizeFileContents(data.oldContents);
+	const newContents = normalizeFileContents(data.newContents);
 
-	const oldFile = useMemo(
-		() => ({
-			name: data.path,
-			contents: oldContents,
-			cacheKey: `old:${data.path}:${oldContents}`,
-		}),
-		[data.path, oldContents],
-	);
-	const newFile = useMemo(
-		() => ({
-			name: data.path,
-			contents: newContents,
-			cacheKey: `new:${data.path}:${newContents}`,
-		}),
-		[data.path, newContents],
-	);
+	const oldFile = {
+		name: data.path,
+		contents: oldContents,
+		cacheKey: `old:${data.path}:${oldContents}`,
+	};
+	const newFile = {
+		name: data.path,
+		contents: newContents,
+		cacheKey: `new:${data.path}:${newContents}`,
+	};
 
-	const options = useMemo(
-		() => ({
-			...BASE_DIFF_OPTIONS,
-			collapsed,
-		}),
-		[collapsed],
-	);
+	const options = {
+		...BASE_DIFF_OPTIONS,
+		collapsed,
+	};
 
-	const renderCustomHeader = useCallback(
-		(fileDiff: FileDiffMetadata) => (
-			<CollapseHeader
-				fileDiff={fileDiff}
-				collapsed={collapsed}
-				onToggle={onToggle}
-			/>
-		),
-		[collapsed, onToggle],
+	const renderCustomHeader = (fileDiff: FileDiffMetadata) => (
+		<CollapseHeader
+			fileDiff={fileDiff}
+			collapsed={collapsed}
+			onToggle={onToggle}
+		/>
 	);
 
 	const usablePatch = isUsablePatch(data.patch) ? data.patch : null;

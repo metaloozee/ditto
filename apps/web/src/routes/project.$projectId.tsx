@@ -5,7 +5,7 @@ import {
 	useQueryClient,
 } from "@tanstack/react-query";
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { Chat } from "#/components/ai-chat";
 import { Button } from "#/components/ui/button";
 import { useTRPC } from "#/integrations/trpc/react";
@@ -90,13 +90,9 @@ export function ProjectWorkspacePage({
 
 	// Pages arrive newest-first from the infinite query; reverse then flatten
 	// so the timeline is chronological (oldest → newest).
-	const serverMessages = useMemo(
-		() =>
-			[...(messagesQuery.data?.pages ?? [])]
-				.reverse()
-				.flatMap((page) => page.items),
-		[messagesQuery.data?.pages],
-	);
+	const serverMessages = [...(messagesQuery.data?.pages ?? [])]
+		.reverse()
+		.flatMap((page) => page.items);
 
 	const hasMoreHistory = Boolean(messagesQuery.hasNextPage);
 	const isLoadingMoreHistory = messagesQuery.isFetchingNextPage;

@@ -235,18 +235,20 @@ const Grainient: React.FC<GrainientProps> = ({
 		setSize();
 
 		let raf = 0;
+		let cancelled = false;
 		let isVisible = true;
 		let isPageVisible = !document.hidden;
 		const t0 = performance.now();
 
 		const loop = (t: number) => {
+			if (cancelled) return;
 			(program.uniforms.iTime as { value: number }).value = (t - t0) * 0.001;
 			renderer.render({ scene: mesh });
 			raf = requestAnimationFrame(loop);
 		};
 
 		const tryStart = () => {
-			if (isVisible && isPageVisible && raf === 0)
+			if (!cancelled && isVisible && isPageVisible && raf === 0)
 				raf = requestAnimationFrame(loop);
 		};
 		const tryStop = () => {
@@ -274,6 +276,7 @@ const Grainient: React.FC<GrainientProps> = ({
 		tryStart();
 
 		return () => {
+			cancelled = true;
 			tryStop();
 			ro.disconnect();
 			io.disconnect();

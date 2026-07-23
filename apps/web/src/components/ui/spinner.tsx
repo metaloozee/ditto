@@ -92,7 +92,6 @@ export const Spinner = React.forwardRef<
 			<SpinnerPrimitive
 				ref={ref}
 				aria-hidden
-				aria-label="Loading"
 				role="presentation"
 				className="h-full w-full"
 				{...props}
