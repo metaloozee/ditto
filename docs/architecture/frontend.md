@@ -164,12 +164,15 @@ archive, and account actions.
   environment variable keys/values. Values are write-only in the UI.
 - `SessionGitActions` renders the state machine returned by
   `sessionGit.gitStatus`; it does not independently infer Git workflow policy.
-- `ChatNavbar` owns the Preview toggle (`aria-pressed`) immediately right of Git
-  actions, plus disabled Terminal/Code labels. Preview is enabled whenever an
-  active session id exists, even if Git export is unavailable.
-- `Chat` composes a controlled Preview pane: desktop uses a bounded right sibling
-  (~42% width, min/max clamped) with chat `min-w-0`; mobile uses the existing
-  Sheet primitive. Closing hides the pane without stopping the server.
+- `ChatNavbar` owns a right-sidebar tools trigger (`aria-pressed`) immediately
+  right of Git actions. The trigger is enabled whenever an active session id
+  exists, even if Git export is unavailable.
+- `Chat` composes a controlled tools pane: desktop uses shadcn `ResizablePanelGroup`
+  (default ~32% chat / ~68% tools, drag handle between) with padding so
+  `rounded-lg` reads; mobile uses the existing Sheet primitive at near-full
+  width. Closing hides the pane without stopping the preview server.
+- `SessionToolsPane` is the `bg-muted` `rounded-lg` container with a header that
+  navigates Preview / Terminal / Code. Terminal and Code stay disabled.
 - `SessionPreviewPane` keeps only ephemeral component state (idle/starting/ready/
   stopping/failed). Start/Restart/Stop call `sessionPreview` mutations. The iframe
   uses `referrerpolicy="no-referrer"` and a restrictive sandbox. Capability URLs

@@ -135,10 +135,12 @@ not have an agent-capable sandbox. The current UI creates GitHub-backed projects
 ### Session website preview
 
 1. Authenticated `sessionPreview.start` acquires an external D1 lifecycle lease
-   on the project row, rechecks ready/active ownership, and runs a fixed Vite or
-   Next binary in the session worktree on a leased port from `10000..10031`.
-2. After TCP readiness, the Worker calls Sandbox `exposePort()` and returns the
-   ephemeral public URL only in that mutation response.
+   on the project row, rechecks ready/active ownership, and runs a fixed Vite,
+   Next, or Astro binary in the session worktree on a leased port from
+   `10000..10031`.
+2. After TCP readiness (plus a short best-effort HTTP probe), the Worker calls
+   Sandbox `exposePort()` and returns the ephemeral public URL only in that
+   mutation response.
 3. Production requests for `*.ayn.wtf` hit the Worker first; `proxyToSandbox()`
    serves active exposures, and unmatched preview hosts return 404 without
    falling through to the app.

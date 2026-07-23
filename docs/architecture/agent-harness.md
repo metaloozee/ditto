@@ -262,12 +262,18 @@ runner changes so custom tools appear in the container.
 
 - One process and one exposed port per active session. Process cwd is the exact
   canonical session worktree; process id is `ditto-preview-<safe-id>`.
-- Only exact root `dev` scripts `vite` / `vite dev` / `next` / `next dev` with the
-  matching direct dependency and local `node_modules/.bin` binary. Vite must be
-  `>=6.1.0`. Fixed commands only — never package scripts, hooks, or installers.
-- Preview process env is code-owned (`HOST`, `PORT`, and Vite
-  `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=.ayn.wtf`). Project env vars are not
-  decrypted or injected. No worktree backup on start.
+- Only exact root `dev` scripts `vite` / `vite dev` / `next` / `next dev` /
+  `astro` / `astro dev` with the matching direct dependency and local
+  `node_modules/.bin` binary. The exact script selects the framework (co-deps
+  such as Astro + Vite are fine). Vite must be `>=6.1.0`; Astro must be
+  `>=5.4.0` (for `--allowed-hosts`). Fixed commands only — never package
+  scripts, hooks, or installers.
+- Preview process env is code-owned (`HOST`, `PORT`, and for Vite/Astro
+  `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=.ayn.wtf`; Astro also gets CLI
+  `--allowed-hosts=.ayn.wtf`). Project env vars are not decrypted or injected.
+  No worktree backup on start. Every Start re-ensures the worktree
+  `node_modules` symlink; readiness is TCP then best-effort HTTP before
+  `exposePort`.
 - Concurrency boundary is the D1 project lifecycle lease (`previewLockToken` /
   expiry / `deletingAt`), not an in-sandbox lock. Writer lock is used only to
   repair a missing worktree, then released before the dev server runs.

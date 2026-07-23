@@ -167,6 +167,54 @@ patch paths, redacted the full snapshot, enforced job/path bounds, hardened
 turn/error behavior, and removed an out-of-scope runner package-bin change.
 No push, PR, merge, deployment, or live provider call was performed.
 
+## Plan 027 (session live previews)
+
+Planned at commit `e1f4547` on 2026-07-21 after tracing session worktrees,
+Sandbox process/exposed-port lifecycles, Cloudflare wildcard preview routing,
+tRPC ownership, project environment handling, chat/navbar composition, and the
+installed `@cloudflare/sandbox` 0.12.3 contract. The owner confirmed the apex
+zone `ayn.wtf` and dedicated `*.ayn.wtf` to previews.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 027 | Run session-worktree websites in a safe live-preview pane | P1 | L | 005, 011, 012, 017, 024 (DONE) | DONE (worktree `/home/ayan/ditto-plan-027-worktree` @ `7e3bbbd`; live smokes NOT RUN) |
+
+Locked outcomes:
+
+- Backend first: one owned workspace-session worktree, one atomic project-local
+  port lease, one managed dev-server process, exposed-port readiness/revocation,
+  code-owned failures, and explicit idempotent Start/Stop.
+- Align Worker SDK and Sandbox image at exact 0.12.3; use `exposePort()` and
+  `unexposePort()` instead of quick tunnels.
+- Production uses the confirmed apex `ayn.wtf`: a one-time proxied wildcard DNS
+  record plus an Alchemy-managed `*.ayn.wtf/*` Worker Route and proxy-first
+  `proxyToSandbox()` handling. Local development uses localhost and Docker's
+  explicit 10000–10031 port pool; it does not require public DNS.
+- Root Vite >=6.1 and Next.js local binaries only; package lifecycle scripts and
+  unsupported wrappers fail closed rather than executing arbitrary helpers or
+  modifying user code.
+- Public preview processes receive no configured project environment values.
+  Apps that need server secrets require a later allowlist or authenticated
+  design.
+- The final pane/navbar change is a separate UI-only commit so it can be
+  cherry-picked after backend validation. Preview is enabled; Terminal and Code
+  remain disabled future labels.
+
+**DONE after two review revisions (2026-07-22):** approved on branch
+`advisor/027-session-live-previews` in worktree
+`/home/ayan/ditto-plan-027-worktree`.
+- `5ef10c6` `feat(preview): add session preview backend`
+- `7e3bbbd` `feat(preview): add session preview pane`
+Independent review passed `pnpm verify` (web + 81 runner tests), focused
+preview suite (86 tests), typecheck, Docker image build, `git diff --check`,
+scope audit (backend standalone; UI cherry-picks on top), post-allocation
+cleanup boundary, production host exactness, strict Vite semver, Stop error
+alert + retained iframe, retryRestore tombstone fence, and real sqlite
+allocation/barrier races. Live local Alchemy and production `*.ayn.wtf` Start/
+load/Stop smokes are `NOT RUN` (no disposable fixture/deploy credentials in
+the executor environment). Wildcard DNS/TLS for random `*.ayn.wtf` already
+resolves with 404. No merge/push/deploy performed.
+
 ### Audit finding coverage
 
 | Selected finding | Covered by | Combination rationale |
@@ -420,6 +468,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
 - **026 requires 013, 014, and 025** — diff-aware metadata reuses secret
   redaction/egress checks, mutation-triggered backup semantics, and PI 0.80.10's
   in-memory credential/model runtime.
+- **027 requires 005, 011, 012, 017, and 024** — previews depend on stable
+  session worktrees, the full verification baseline, secret redaction, extracted
+  run/workspace locking, and the current Alchemy monorepo/Sandbox boundary.
 
 ## Product decisions (locked 2026-07-09)
 
@@ -513,3 +564,4 @@ tree while sharing git objects and (via symlink) `node_modules`.
 20. `024-conservative-sst-monorepo-migration.md`
 21. `025-account-provider-auth-and-pi-models.md`
 22. `026-agent-drafted-git-metadata.md`
+23. `027-session-live-previews.md`

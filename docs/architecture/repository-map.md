@@ -50,9 +50,11 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | File | Responsibility |
 |---|---|
 | `apps/web/src/components/ai-chat.test.tsx` | Regression tests for `apps/web/src/components/ai-chat.tsx` behavior and edge cases. |
-| `apps/web/src/components/ai-chat.tsx` | Chat timeline, message normalization, history loading, optimistic overlay, queued follow-up projection, assistant-part rendering, and responsive session preview composition. |
-| `apps/web/src/components/chat-navbar.tsx` | Chat top bar: branch, git actions slot, Preview toggle, disabled Terminal/Code labels. |
-| `apps/web/src/components/chat-navbar.test.tsx` | Preview toggle placement, independence from git actions, and disabled labels. |
+| `apps/web/src/components/ai-chat.tsx` | Chat timeline, message normalization, history loading, optimistic overlay, queued follow-up projection, assistant-part rendering, and responsive session tools pane composition. |
+| `apps/web/src/components/chat-navbar.tsx` | Chat top bar: branch, git actions slot, right-sidebar tools trigger. |
+| `apps/web/src/components/session-tools-pane.tsx` | Right tools container (`bg-muted`, `rounded-lg`) with Preview/Terminal/Code header; Terminal/Code disabled. |
+| `apps/web/src/components/session-tools-pane.test.tsx` | Tools pane chrome, disabled tabs, close control. |
+| `apps/web/src/components/chat-navbar.test.tsx` | Tools trigger placement, independence from git actions, and open-state toggle. |
 | `apps/web/src/components/session-preview-pane.tsx` | Ephemeral session website preview pane (start/restart/stop + sandboxed iframe). |
 | `apps/web/src/components/session-preview-pane.test.tsx` | Preview pane state, public warning, iframe policy, retry/restart/stop, stale-session suppression. |
 | `apps/web/src/components/ai-elements/model-selector.tsx` | Composable model selection dialog/command components. |

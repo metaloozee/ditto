@@ -10,8 +10,11 @@ only process allowed to mint GitHub installation credentials.
 
 `apps/web/src/server.ts` calls Sandbox `proxyToSandbox(request, env)` before the
 TanStack Start fetch handler. Unmatched production hosts under `*.ayn.wtf` return
-plain 404 and never fall through to the app. TanStack Start routes provide four
-server-facing surfaces:
+plain 404 and never fall through to the app. Local Vite (`vite.config.ts`)
+skips its transform/static middleware for session preview hosts
+(`<port>-<sandbox>-<token>.localhost`) so those requests reach the Worker and
+`proxyToSandbox` instead of the parent app's `/node_modules/.vite` optimizer.
+TanStack Start routes provide four server-facing surfaces:
 
 | Surface | Authentication | Use |
 |---|---|---|
@@ -38,7 +41,7 @@ and narrows context to an authenticated user.
 | `projects` | Create, list, get, rename, delete, env-var management | Authorization, encryption, bootstrap/restore |
 | `workspace` | Ensure/retry workspace, page messages, archive session | Sandbox lifecycle, cursor codec, session ownership, preview cleanup on archive |
 | `sessionGit` | Status, sync, commit, push, open PR | Worktree, Git state machine, secret policy, backup |
-| `sessionPreview` | Start/stop session website preview | D1 lifecycle lease, port allocation, fixed Vite/Next process, `exposePort` |
+| `sessionPreview` | Start/stop session website preview | D1 lifecycle lease, port allocation, fixed Vite/Next/Astro process, `exposePort` |
 | `providerAuth` | Provider catalog, account connections, model capabilities, disconnect | Provider catalog/auth sandboxes, encrypted credential repository |
 
 All project/session reads constrain both resource IDs and `userId`. Repository
