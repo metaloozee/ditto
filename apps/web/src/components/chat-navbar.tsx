@@ -91,7 +91,7 @@ export function ChatNavbar({
 			<div className="flex shrink-0 items-center gap-1">
 				{rightActions}
 				<AnimatePresence initial={false}>
-					{showToolsTrigger ? (
+					{showToolsTrigger && onToolsOpenChange ? (
 						<motion.div
 							key="tools-trigger"
 							initial={{ opacity: 0 }}
