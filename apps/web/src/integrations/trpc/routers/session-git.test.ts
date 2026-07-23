@@ -153,11 +153,9 @@ function setupResolved() {
 		title: "Add billing",
 	});
 	resolveMocks.ensureSessionWorkspaceReady.mockResolvedValue({
-		mode: "reuse",
 		branchName: "ditto/sess-1",
 		baseCommitSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		workspacePath: "/workspace/.ditto/worktrees/sess-1",
-		bound: false,
 	});
 	resolveMocks.prepareSessionWorkspaceIfPresent.mockResolvedValue({
 		ok: true,

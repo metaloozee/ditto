@@ -156,16 +156,6 @@ function worktreeUnavailableStatus(session: {
 	};
 }
 
-function mapSessionWorkspaceBusy(error: unknown): never {
-	if (error instanceof SessionWorkspaceBusyError) {
-		throw new TRPCError({
-			code: "PRECONDITION_FAILED",
-			message: error.message,
-		});
-	}
-	throw error;
-}
-
 async function resolveSessionGitReadyForMutation(options: {
 	ctx: {
 		env: Env;
@@ -202,15 +192,15 @@ async function resolveSessionGitReadyForMutation(options: {
 				workspacePath: ready.workspacePath,
 				title: auth.session.title,
 			},
-			project: {
-				id: auth.project.id,
-				userId: auth.project.userId,
-				sandboxId: auth.sandboxId,
-				status: auth.project.status,
-			},
 		};
 	} catch (error) {
-		mapSessionWorkspaceBusy(error);
+		if (error instanceof SessionWorkspaceBusyError) {
+			throw new TRPCError({
+				code: "PRECONDITION_FAILED",
+				message: error.message,
+			});
+		}
+		throw error;
 	}
 }
 

@@ -28,16 +28,10 @@ vi.mock("#/lib/session-workspace-lock", () => ({
 }));
 
 const {
-	ensureSessionWorktree,
 	ensureSessionWorkspaceReady,
 	prepareSessionWorktree,
 	prepareSessionWorkspaceIfPresent,
 } = await import("./session-worktree");
-
-const worktreeOptions = {
-	githubRepo: "owner/repo",
-	installationId: 42,
-};
 
 function makeEnv(): Env {
 	return {} as Env;
@@ -54,195 +48,6 @@ function makeSandbox(
 function prepareCommand(): string {
 	return String(execOrThrowMock.mock.calls.at(-1)?.[1] ?? "");
 }
-
-describe("ensureSessionWorktree", () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
-	it("creates a worktree with private runtime-file excludes", async () => {
-		const sandbox = makeSandbox(async (path) => {
-			if (path === "/workspace/.git") {
-				return { exists: true };
-			}
-			if (path === "/workspace/.ditto/worktrees/sess-1") {
-				return { exists: false };
-			}
-			return { exists: false };
-		});
-		getProjectSandboxMock.mockReturnValue(sandbox);
-		execOrThrowMock.mockResolvedValue({ stdout: "syncedsha\n", success: true });
-
-		const result = await ensureSessionWorktree({
-			env: makeEnv(),
-			sandboxId: "sandbox-1",
-			sessionId: "sess-1",
-			...worktreeOptions,
-		});
-
-		expect(
-			syncPrimaryWorkspaceFromGitHubMock.mock.invocationCallOrder[0],
-		).toBeLessThan(
-			execOrThrowMock.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER,
-		);
-		expect(syncPrimaryWorkspaceFromGitHubMock).toHaveBeenCalledWith({
-			env: makeEnv(),
-			sandboxId: "sandbox-1",
-			githubRepo: "owner/repo",
-			installationId: 42,
-		});
-		expect(result).toEqual({
-			branchName: "ditto/session-sess-1",
-			baseCommitSha: "syncedsha",
-			workspacePath: "/workspace/.ditto/worktrees/sess-1",
-		});
-		expect(configureDittoGitIdentityMock).toHaveBeenCalledWith(
-			sandbox,
-			"/workspace",
-		);
-		expect(execOrThrowMock).toHaveBeenCalledTimes(4);
-		expect(execOrThrowMock.mock.calls[1]?.[1]).toContain("git branch");
-		expect(execOrThrowMock.mock.calls[2]?.[1]).toContain("git worktree add");
-		const cmd = prepareCommand();
-		expect(cmd).toContain("rev-parse --git-path info/exclude");
-		expect(cmd).toContain("'/node_modules'");
-		expect(cmd).toContain("'/.env'");
-		expect(cmd).toContain("'/.env.*'");
-		expect(cmd).toContain("rm --cached --ignore-unmatch");
-		expect(cmd).toContain('ln -s "$PRIMARY"');
-		expect(cmd).toContain('[ -L "$WT/node_modules" ]');
-		expect(cmd.indexOf("info/exclude")).toBeLessThan(cmd.indexOf("ln -s"));
-	});
-
-	it("reuses existing metadata when worktree path still exists", async () => {
-		const sandbox = makeSandbox(async (path) => {
-			if (path === "/workspace/.ditto/worktrees/sess-1") {
-				return { exists: true };
-			}
-			return { exists: false };
-		});
-		getProjectSandboxMock.mockReturnValue(sandbox);
-
-		const result = await ensureSessionWorktree({
-			env: makeEnv(),
-			sandboxId: "sandbox-1",
-			sessionId: "sess-1",
-			...worktreeOptions,
-			existing: {
-				branchName: "ditto/session-sess-1",
-				baseCommitSha: "abc123",
-				workspacePath: "/workspace/.ditto/worktrees/sess-1",
-			},
-		});
-
-		expect(result).toEqual({
-			branchName: "ditto/session-sess-1",
-			baseCommitSha: "abc123",
-			workspacePath: "/workspace/.ditto/worktrees/sess-1",
-		});
-		expect(syncPrimaryWorkspaceFromGitHubMock).not.toHaveBeenCalled();
-		expect(execOrThrowMock).toHaveBeenCalledTimes(1);
-		expect(execOrThrowMock.mock.calls[0]?.[1]).toContain(
-			"rev-parse --git-path info/exclude",
-		);
-	});
-
-	it("recreates worktree when stored path is missing", async () => {
-		const sandbox = makeSandbox(async (path) => {
-			if (path === "/workspace/.git") {
-				return { exists: true };
-			}
-			if (path === "/workspace/.ditto/worktrees/sess-1") {
-				return { exists: false };
-			}
-			return { exists: false };
-		});
-		getProjectSandboxMock.mockReturnValue(sandbox);
-		execOrThrowMock.mockResolvedValue({ stdout: "newsha\n", success: true });
-
-		const result = await ensureSessionWorktree({
-			env: makeEnv(),
-			sandboxId: "sandbox-1",
-			sessionId: "sess-1",
-			...worktreeOptions,
-			existing: {
-				branchName: "ditto/session-sess-1",
-				baseCommitSha: "oldsha",
-				workspacePath: "/workspace/.ditto/worktrees/sess-1",
-			},
-		});
-
-		expect(syncPrimaryWorkspaceFromGitHubMock).not.toHaveBeenCalled();
-		expect(result.baseCommitSha).toBe("oldsha");
-		expect(result.workspacePath).toBe("/workspace/.ditto/worktrees/sess-1");
-		expect(
-			execOrThrowMock.mock.calls.some((call) =>
-				String(call[1]).includes("git worktree add"),
-			),
-		).toBe(true);
-	});
-
-	it("backfills empty baseCommitSha from primary HEAD on repair", async () => {
-		const sandbox = makeSandbox(async (path) => {
-			if (path === "/workspace/.git") {
-				return { exists: true };
-			}
-			if (path === "/workspace/.ditto/worktrees/sess-1") {
-				return { exists: false };
-			}
-			return { exists: false };
-		});
-		getProjectSandboxMock.mockReturnValue(sandbox);
-		execOrThrowMock.mockResolvedValue({
-			stdout: "backfillsha\n",
-			success: true,
-		});
-
-		const result = await ensureSessionWorktree({
-			env: makeEnv(),
-			sandboxId: "sandbox-1",
-			sessionId: "sess-1",
-			...worktreeOptions,
-			existing: {
-				branchName: "ditto/session-sess-1",
-				baseCommitSha: "",
-				workspacePath: "/workspace/.ditto/worktrees/sess-1",
-			},
-		});
-
-		expect(syncPrimaryWorkspaceFromGitHubMock).not.toHaveBeenCalled();
-		expect(result.baseCommitSha).toBe("backfillsha");
-		expect(
-			execOrThrowMock.mock.calls.some((call) =>
-				String(call[1]).includes("git rev-parse HEAD"),
-			),
-		).toBe(true);
-	});
-
-	it("does not create branch or worktree when sync fails", async () => {
-		const sandbox = makeSandbox(async (path) => {
-			if (path === "/workspace/.git") {
-				return { exists: true };
-			}
-			return { exists: false };
-		});
-		getProjectSandboxMock.mockReturnValue(sandbox);
-		syncPrimaryWorkspaceFromGitHubMock.mockRejectedValueOnce(
-			new Error("sync failed"),
-		);
-
-		await expect(
-			ensureSessionWorktree({
-				env: makeEnv(),
-				sandboxId: "sandbox-1",
-				sessionId: "sess-1",
-				...worktreeOptions,
-			}),
-		).rejects.toThrow("sync failed");
-
-		expect(execOrThrowMock).not.toHaveBeenCalled();
-	});
-});
 
 describe("prepareSessionWorktree", () => {
 	beforeEach(() => {
@@ -323,7 +128,7 @@ describe("ensureSessionWorkspaceReady", () => {
 		);
 	});
 
-	it("mode reuse prepares only and does not acquire lock", async () => {
+	it("reuse prepares only and does not acquire lock", async () => {
 		const sandbox = makeSandbox(async (path) => ({
 			exists: path === "/workspace/.ditto/worktrees/sess-1",
 		}));
@@ -342,9 +147,11 @@ describe("ensureSessionWorkspaceReady", () => {
 			lock: "acquire",
 		});
 
-		expect(result.mode).toBe("reuse");
-		expect(result.baseCommitSha).toBe("abc123");
-		expect(result.bound).toBe(false);
+		expect(result).toEqual({
+			branchName: "ditto/session-sess-1",
+			baseCommitSha: "abc123",
+			workspacePath: "/workspace/.ditto/worktrees/sess-1",
+		});
 		expect(withSessionWorkspaceLockMock).not.toHaveBeenCalled();
 		expect(update).not.toHaveBeenCalled();
 		expect(syncPrimaryWorkspaceFromGitHubMock).not.toHaveBeenCalled();
@@ -354,13 +161,13 @@ describe("ensureSessionWorkspaceReady", () => {
 		);
 	});
 
-	it("mode create syncs and acquires when lock is acquire", async () => {
+	it("create syncs and acquires when lock is acquire", async () => {
 		const sandbox = makeSandbox(async (path) => ({
 			exists: path === "/workspace/.git",
 		}));
 		getProjectSandboxMock.mockReturnValue(sandbox);
 		execOrThrowMock.mockResolvedValue({ stdout: "syncedsha\n", success: true });
-		const { db } = makeBindDb();
+		const { db, update } = makeBindDb();
 
 		const result = await ensureSessionWorkspaceReady({
 			...readyBase,
@@ -373,20 +180,23 @@ describe("ensureSessionWorkspaceReady", () => {
 			lock: "acquire",
 		});
 
-		expect(result.mode).toBe("create");
-		expect(result.baseCommitSha).toBe("syncedsha");
-		expect(result.bound).toBe(true);
+		expect(result).toEqual({
+			branchName: "ditto/session-sess-1",
+			baseCommitSha: "syncedsha",
+			workspacePath: "/workspace/.ditto/worktrees/sess-1",
+		});
 		expect(withSessionWorkspaceLockMock).toHaveBeenCalledTimes(1);
 		expect(syncPrimaryWorkspaceFromGitHubMock).toHaveBeenCalled();
+		expect(update).toHaveBeenCalled();
 	});
 
-	it("mode repair missing path keeps oldsha and acquires", async () => {
+	it("repair missing path keeps oldsha and acquires", async () => {
 		const sandbox = makeSandbox(async (path) => ({
 			exists: path === "/workspace/.git",
 		}));
 		getProjectSandboxMock.mockReturnValue(sandbox);
 		execOrThrowMock.mockResolvedValue({ stdout: "newsha\n", success: true });
-		const { db } = makeBindDb();
+		const { db, update } = makeBindDb();
 
 		const result = await ensureSessionWorkspaceReady({
 			...readyBase,
@@ -399,16 +209,48 @@ describe("ensureSessionWorkspaceReady", () => {
 			lock: "acquire",
 		});
 
-		expect(result.mode).toBe("repair");
 		expect(result.baseCommitSha).toBe("oldsha");
 		expect(result.workspacePath).toBe("/workspace/.ditto/worktrees/sess-1");
 		// D1 fields already match canonical — bind skipped even after FS repair.
-		expect(result.bound).toBe(false);
+		expect(update).not.toHaveBeenCalled();
 		expect(withSessionWorkspaceLockMock).toHaveBeenCalledTimes(1);
 		expect(syncPrimaryWorkspaceFromGitHubMock).not.toHaveBeenCalled();
 	});
 
-	it("mode repair non-canonical path binds canonical and keeps base", async () => {
+	it("repair empty baseCommitSha backfills from primary HEAD", async () => {
+		const sandbox = makeSandbox(async (path) => ({
+			exists: path === "/workspace/.git",
+		}));
+		getProjectSandboxMock.mockReturnValue(sandbox);
+		execOrThrowMock.mockResolvedValue({
+			stdout: "backfillsha\n",
+			success: true,
+		});
+		const { db, update } = makeBindDb();
+
+		const result = await ensureSessionWorkspaceReady({
+			...readyBase,
+			db,
+			existing: {
+				branchName: "ditto/session-sess-1",
+				baseCommitSha: "",
+				workspacePath: "/workspace/.ditto/worktrees/sess-1",
+			},
+			lock: "assumeHeld",
+		});
+
+		expect(result.baseCommitSha).toBe("backfillsha");
+		expect(withSessionWorkspaceLockMock).not.toHaveBeenCalled();
+		expect(syncPrimaryWorkspaceFromGitHubMock).not.toHaveBeenCalled();
+		expect(update).toHaveBeenCalled();
+		expect(
+			execOrThrowMock.mock.calls.some((call) =>
+				String(call[1]).includes("git rev-parse HEAD"),
+			),
+		).toBe(true);
+	});
+
+	it("repair non-canonical path binds canonical and keeps base", async () => {
 		const sandbox = makeSandbox(async (path) => {
 			if (path === "/workspace/.git") return { exists: true };
 			if (path === "/workspace/old-path") return { exists: true };
@@ -416,7 +258,7 @@ describe("ensureSessionWorkspaceReady", () => {
 		});
 		getProjectSandboxMock.mockReturnValue(sandbox);
 		execOrThrowMock.mockResolvedValue({ stdout: "newsha\n", success: true });
-		const { db } = makeBindDb();
+		const { db, update } = makeBindDb();
 
 		const result = await ensureSessionWorkspaceReady({
 			...readyBase,
@@ -426,13 +268,13 @@ describe("ensureSessionWorkspaceReady", () => {
 				baseCommitSha: "oldsha",
 				workspacePath: "/workspace/old-path",
 			},
-			lock: "none",
+			lock: "assumeHeld",
 		});
 
-		expect(result.mode).toBe("repair");
 		expect(result.baseCommitSha).toBe("oldsha");
 		expect(result.workspacePath).toBe("/workspace/.ditto/worktrees/sess-1");
 		expect(withSessionWorkspaceLockMock).not.toHaveBeenCalled();
+		expect(update).toHaveBeenCalled();
 	});
 
 	it("lock assumeHeld runs FS without acquire", async () => {
@@ -454,12 +296,12 @@ describe("ensureSessionWorkspaceReady", () => {
 			lock: "assumeHeld",
 		});
 
-		expect(result.mode).toBe("create");
+		expect(result.baseCommitSha).toBe("syncedsha");
 		expect(withSessionWorkspaceLockMock).not.toHaveBeenCalled();
 		expect(syncPrimaryWorkspaceFromGitHubMock).toHaveBeenCalled();
 	});
 
-	it("bind writes only when changed", async () => {
+	it("bind skips write when unchanged", async () => {
 		const sandbox = makeSandbox(async (path) => ({
 			exists: path === "/workspace/.ditto/worktrees/sess-1",
 		}));
@@ -467,7 +309,7 @@ describe("ensureSessionWorkspaceReady", () => {
 		execOrThrowMock.mockResolvedValue({ stdout: "", success: true });
 		const { db, update } = makeBindDb();
 
-		const first = await ensureSessionWorkspaceReady({
+		await ensureSessionWorkspaceReady({
 			...readyBase,
 			db,
 			existing: {
@@ -475,22 +317,8 @@ describe("ensureSessionWorkspaceReady", () => {
 				baseCommitSha: "abc123",
 				workspacePath: "/workspace/.ditto/worktrees/sess-1",
 			},
-			lock: "none",
+			lock: "assumeHeld",
 		});
-		expect(first.bound).toBe(false);
-		expect(update).not.toHaveBeenCalled();
-
-		const second = await ensureSessionWorkspaceReady({
-			...readyBase,
-			db,
-			existing: {
-				branchName: "ditto/session-sess-1",
-				baseCommitSha: "abc123",
-				workspacePath: "/workspace/.ditto/worktrees/sess-1",
-			},
-			lock: "none",
-		});
-		expect(second.bound).toBe(false);
 		expect(update).not.toHaveBeenCalled();
 	});
 
@@ -511,7 +339,7 @@ describe("ensureSessionWorkspaceReady", () => {
 					baseCommitSha: "oldsha",
 					workspacePath: "/workspace/old-path",
 				},
-				lock: "none",
+				lock: "assumeHeld",
 			}),
 		).rejects.toThrow(
 			"Failed to bind session workspace: session not active or not found.",

@@ -18,9 +18,7 @@ const GIT_COMMAND_TIMEOUT_MS = 120_000;
 
 export type SessionWorkspaceDb = ReturnType<typeof createDb>;
 
-export type SessionWorkspaceLockMode = "acquire" | "assumeHeld" | "none";
-
-export type SessionWorkspaceReadyMode = "create" | "reuse" | "repair";
+export type SessionWorkspaceLockMode = "acquire" | "assumeHeld";
 
 export type SessionWorkspaceExisting = {
 	branchName: string | null;
@@ -42,11 +40,9 @@ export type EnsureSessionWorkspaceReadyOptions = {
 };
 
 export type EnsureSessionWorkspaceReadyResult = {
-	mode: SessionWorkspaceReadyMode;
 	branchName: string;
 	baseCommitSha: string;
 	workspacePath: string;
-	bound: boolean;
 };
 
 export type PrepareSessionWorkspaceIfPresentOptions = {
@@ -171,20 +167,6 @@ async function ensureBranchAndWorktree(
 	await prepareSessionWorktreeFs(sandbox, worktreePath);
 }
 
-function resolveBaseCommitSha(options: {
-	isCreate: boolean;
-	existingBase: string | null | undefined;
-	headSha: string;
-}): string {
-	// Non-empty stored base is frozen. null/""/whitespace → one-time HEAD backfill
-	// (create always uses HEAD; repair with empty base also backfills).
-	const storedBase = options.existingBase?.trim() ?? "";
-	if (!options.isCreate && storedBase.length > 0) {
-		return storedBase;
-	}
-	return options.headSha;
-}
-
 async function runCreateWorktreeFs(options: {
 	env: Env;
 	sandboxId: string;
@@ -239,25 +221,6 @@ async function runRepairWorktreeFs(options: {
 	return { branchName, baseCommitSha, workspacePath };
 }
 
-async function runReuseWorktreeFs(options: {
-	env: Env;
-	sandboxId: string;
-	existing: SessionWorkspaceExisting;
-	canonicalPath: string;
-}): Promise<{
-	branchName: string;
-	baseCommitSha: string;
-	workspacePath: string;
-}> {
-	const sandbox = getProjectSandbox(options.env, options.sandboxId);
-	await prepareSessionWorktreeFs(sandbox, options.canonicalPath);
-	return {
-		branchName: options.existing.branchName as string,
-		baseCommitSha: options.existing.baseCommitSha ?? "",
-		workspacePath: options.canonicalPath,
-	};
-}
-
 async function bindSessionWorkspaceFields(options: {
 	db: SessionWorkspaceDb;
 	sessionId: string;
@@ -265,13 +228,13 @@ async function bindSessionWorkspaceFields(options: {
 	userId: string;
 	previous: SessionWorkspaceExisting;
 	next: { branchName: string; baseCommitSha: string; workspacePath: string };
-}): Promise<boolean> {
+}): Promise<void> {
 	const prevBase = options.previous.baseCommitSha ?? "";
 	const unchanged =
 		options.previous.branchName === options.next.branchName &&
 		prevBase === options.next.baseCommitSha &&
 		options.previous.workspacePath === options.next.workspacePath;
-	if (unchanged) return false;
+	if (unchanged) return;
 
 	const [row] = await options.db
 		.update(workspaceSessions)
@@ -296,14 +259,13 @@ async function bindSessionWorkspaceFields(options: {
 			"Failed to bind session workspace: session not active or not found.",
 		);
 	}
-	return true;
 }
 
 function detectMode(
 	existing: SessionWorkspaceExisting,
 	canonical: string,
 	pathExistsCanonical: boolean,
-): SessionWorkspaceReadyMode {
+): "create" | "reuse" | "repair" {
 	if (!existing.branchName) return "create";
 	if (existing.workspacePath === canonical && pathExistsCanonical) {
 		return "reuse";
@@ -320,18 +282,14 @@ export async function ensureSessionWorkspaceReady(
 	const mode = detectMode(options.existing, canonical, pathCheck.exists);
 
 	const run = async (): Promise<EnsureSessionWorkspaceReadyResult> => {
-		let next: {
-			branchName: string;
-			baseCommitSha: string;
-			workspacePath: string;
-		};
+		let next: EnsureSessionWorkspaceReadyResult;
 		if (mode === "reuse") {
-			next = await runReuseWorktreeFs({
-				env: options.env,
-				sandboxId: options.sandboxId,
-				existing: options.existing,
-				canonicalPath: canonical,
-			});
+			await prepareSessionWorktreeFs(sandbox, canonical);
+			next = {
+				branchName: options.existing.branchName as string,
+				baseCommitSha: options.existing.baseCommitSha ?? "",
+				workspacePath: canonical,
+			};
 		} else if (mode === "create") {
 			next = await runCreateWorktreeFs({
 				env: options.env,
@@ -349,7 +307,7 @@ export async function ensureSessionWorkspaceReady(
 			});
 		}
 
-		const bound = await bindSessionWorkspaceFields({
+		await bindSessionWorkspaceFields({
 			db: options.db,
 			sessionId: options.sessionId,
 			projectId: options.projectId,
@@ -358,10 +316,9 @@ export async function ensureSessionWorkspaceReady(
 			next,
 		});
 
-		return { mode, ...next, bound };
+		return next;
 	};
 
-	// Reuse never acquires. create/repair acquire only when lock==="acquire".
 	if (mode === "reuse" || options.lock !== "acquire") {
 		return await run();
 	}
@@ -395,70 +352,5 @@ export async function prepareSessionWorkspaceIfPresent(
 		branchName: branch,
 		baseCommitSha: options.existing.baseCommitSha?.trim() || "",
 		workspacePath: canonical,
-	};
-}
-
-/** @deprecated Prefer ensureSessionWorkspaceReady. Kept for Phase 1 base rules. */
-export async function ensureSessionWorktree(options: {
-	env: Env;
-	sandboxId: string;
-	sessionId: string;
-	githubRepo: string;
-	installationId: number;
-	existing?: {
-		branchName: string | null;
-		baseCommitSha: string | null;
-		workspacePath: string;
-	};
-}): Promise<{
-	branchName: string;
-	baseCommitSha: string;
-	workspacePath: string;
-}> {
-	const sandbox = getProjectSandbox(options.env, options.sandboxId);
-	await configureDittoGitIdentity(sandbox, WORKSPACE_PATH);
-	const existing = options.existing;
-	const isCreate = !existing?.branchName;
-	const branchName =
-		existing?.branchName ?? sessionBranchName(options.sessionId);
-	const worktreePath = sessionWorktreePath(options.sessionId);
-
-	// Phase 1: still reuse whatever path is stored when it exists on FS.
-	if (existing?.branchName && existing.workspacePath) {
-		const pathCheck = await sandbox.exists(existing.workspacePath);
-		if (pathCheck.exists) {
-			await prepareSessionWorktreeFs(sandbox, existing.workspacePath);
-			return {
-				branchName: existing.branchName,
-				baseCommitSha: existing.baseCommitSha ?? "",
-				workspacePath: existing.workspacePath,
-			};
-		}
-	}
-
-	await assertPrimaryGitRepo(sandbox);
-
-	if (isCreate) {
-		await syncPrimaryWorkspaceFromGitHub({
-			env: options.env,
-			sandboxId: options.sandboxId,
-			githubRepo: options.githubRepo,
-			installationId: options.installationId,
-		});
-	}
-
-	const headSha = await resolvePrimaryHeadSha(sandbox);
-	const baseCommitSha = resolveBaseCommitSha({
-		isCreate,
-		existingBase: existing?.baseCommitSha,
-		headSha,
-	});
-
-	await ensureBranchAndWorktree(sandbox, branchName, worktreePath);
-
-	return {
-		branchName,
-		baseCommitSha,
-		workspacePath: worktreePath,
 	};
 }

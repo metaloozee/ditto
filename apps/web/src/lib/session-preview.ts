@@ -815,7 +815,7 @@ async function resolveSessionWorktree(
 				baseCommitSha: options.session.baseCommitSha,
 				workspacePath: options.session.workspacePath,
 			},
-			lock: "acquire", // readiness no-ops lock on reuse
+			lock: "acquire",
 		});
 		return ready.workspacePath;
 	} catch (error) {

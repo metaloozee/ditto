@@ -509,11 +509,8 @@ export async function prepareAgentRun(options: {
 				baseCommitSha: workspaceSession.baseCommitSha,
 				workspacePath: workspaceSession.workspacePath,
 			},
-			// Always pass lock: "acquire". Readiness no-ops acquire on reuse
-			// and only wraps create/repair.
 			lock: "acquire",
 		});
-		// Bind is already done inside readiness when changed — do NOT duplicate D1 update.
 		workspaceSession = {
 			...workspaceSession,
 			branchName: ready.branchName,

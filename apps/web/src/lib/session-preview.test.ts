@@ -440,14 +440,12 @@ function baseInjected(
 					workspacePath: string;
 				};
 			}) => ({
-				mode: "reuse" as const,
 				branchName:
 					opts.existing.branchName ?? `ditto/session-${opts.sessionId}`,
 				baseCommitSha: opts.existing.baseCommitSha ?? "abc",
 				workspacePath:
 					opts.existing.workspacePath ||
 					`/workspace/.ditto/worktrees/${opts.sessionId}`,
-				bound: false,
 			}),
 		),
 		nowSeconds: () => testNowSeconds,
@@ -977,11 +975,9 @@ describe("startSessionPreview", () => {
 		const sandbox = viteSandbox();
 		wireExposeToPort(sandbox);
 		const ensureReady = vi.fn().mockResolvedValue({
-			mode: "reuse",
 			branchName: "ditto/session-sess-1",
 			baseCommitSha: "abc",
 			workspacePath: "/workspace/.ditto/worktrees/sess-1",
-			bound: false,
 		});
 
 		await startSessionPreview(

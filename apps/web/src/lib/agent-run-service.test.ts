@@ -143,11 +143,9 @@ function baseDeps(overrides: Partial<AgentRunDeps> = {}): AgentRunDeps {
 			session: activeSession,
 		}),
 		ensureSessionWorkspaceReady: vi.fn().mockResolvedValue({
-			mode: "reuse",
 			branchName: activeSession.branchName,
 			baseCommitSha: activeSession.baseCommitSha,
 			workspacePath: activeSession.workspacePath,
-			bound: false,
 		}),
 		loadCredential: vi.fn().mockResolvedValue(null),
 		runAgentInSandbox: vi.fn().mockResolvedValue({
@@ -260,11 +258,9 @@ describe("prepareAgentRun", () => {
 			ensureSessionWorkspaceReady: vi.fn().mockImplementation(async () => {
 				order.push("worktree");
 				return {
-					mode: "reuse",
 					branchName: activeSession.branchName,
 					baseCommitSha: activeSession.baseCommitSha,
 					workspacePath: activeSession.workspacePath,
-					bound: false,
 				};
 			}),
 		});
