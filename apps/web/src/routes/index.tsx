@@ -209,9 +209,12 @@ function ProjectCard({ project }: { project: ProjectListItem }) {
 				<motion.div
 					aria-hidden
 					initial={false}
-					animate={{ width: active ? 22 : 0 }}
+					animate={{
+						scaleX: active ? 1 : 0,
+						opacity: active ? 1 : 0,
+					}}
 					transition={shiftSpring}
-					className="overflow-hidden"
+					className="w-[22px] origin-right overflow-hidden"
 				>
 					<motion.div
 						className="flex w-[22px] items-center justify-end"
