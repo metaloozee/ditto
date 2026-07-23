@@ -19,88 +19,84 @@ afterEach(() => {
 	cleanup();
 });
 
-describe("ChatNavbar preview toggle", () => {
-	it("places Preview after git actions and keeps Terminal/Code disabled", () => {
+describe("ChatNavbar tools toggle", () => {
+	it("places tools trigger after git actions when tools are closed", () => {
 		render(
 			<ChatNavbar
 				projectId="proj-1"
 				sessionId="sess-1"
 				gitExportEnabled
-				previewOpen={false}
-				onPreviewOpenChange={() => undefined}
+				toolsOpen={false}
+				onToolsOpenChange={() => undefined}
 			/>,
 		);
 
-		const preview = screen.getByRole("button", { name: "Preview" });
-		expect(preview.getAttribute("aria-pressed")).toBe("false");
+		const toggle = screen.getByRole("button", { name: "Session tools" });
+		expect(toggle.getAttribute("aria-pressed")).toBe("false");
+		expect(toggle.className).toContain("size-6");
 		expect(screen.getByTestId("git-actions")).toBeTruthy();
-		expect(
-			screen.getByText("Terminal").closest("[aria-disabled='true']"),
-		).toBeTruthy();
-		expect(
-			screen.getByText("Code").closest("[aria-disabled='true']"),
-		).toBeTruthy();
+		expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
+		expect(screen.queryByText("Terminal")).toBeNull();
+		expect(screen.queryByText("Code")).toBeNull();
 	});
 
-	it("renders Preview even when git actions are unavailable", () => {
+	it("hides tools trigger in navbar when tools are open", () => {
+		render(
+			<ChatNavbar
+				projectId="proj-1"
+				sessionId="sess-1"
+				toolsOpen
+				onToolsOpenChange={() => undefined}
+			/>,
+		);
+		expect(screen.queryByRole("button", { name: "Session tools" })).toBeNull();
+	});
+
+	it("renders tools trigger even when git actions are unavailable", () => {
 		render(
 			<ChatNavbar
 				projectId="proj-1"
 				sessionId="sess-1"
 				gitExportEnabled={false}
-				previewOpen={false}
-				onPreviewOpenChange={() => undefined}
+				toolsOpen={false}
+				onToolsOpenChange={() => undefined}
 			/>,
 		);
-		expect(screen.getByRole("button", { name: "Preview" })).toBeTruthy();
+		expect(screen.getByRole("button", { name: "Session tools" })).toBeTruthy();
 		expect(screen.queryByTestId("git-actions")).toBeNull();
 	});
 
-	it("disables Preview only when no session exists", () => {
+	it("disables tools trigger only when no session exists", () => {
 		const onChange = vi.fn();
 		const { rerender } = render(
 			<ChatNavbar
 				projectId="proj-1"
 				sessionId={null}
-				previewOpen={false}
-				onPreviewOpenChange={onChange}
+				toolsOpen={false}
+				onToolsOpenChange={onChange}
 			/>,
 		);
 		expect(
-			(screen.getByRole("button", { name: "Preview" }) as HTMLButtonElement)
-				.disabled,
+			(
+				screen.getByRole("button", {
+					name: "Session tools",
+				}) as HTMLButtonElement
+			).disabled,
 		).toBe(true);
 
 		rerender(
 			<ChatNavbar
 				projectId="proj-1"
 				sessionId="sess-1"
-				previewOpen={false}
-				onPreviewOpenChange={onChange}
+				toolsOpen={false}
+				onToolsOpenChange={onChange}
 			/>,
 		);
 		const toggle = screen.getByRole("button", {
-			name: "Preview",
+			name: "Session tools",
 		}) as HTMLButtonElement;
 		expect(toggle.disabled).toBe(false);
 		fireEvent.click(toggle);
 		expect(onChange).toHaveBeenCalledWith(true);
-	});
-
-	it("closing preview only toggles open state (no stop)", () => {
-		const onChange = vi.fn();
-		render(
-			<ChatNavbar
-				projectId="proj-1"
-				sessionId="sess-1"
-				previewOpen
-				onPreviewOpenChange={onChange}
-			/>,
-		);
-		const toggle = screen.getByRole("button", { name: "Preview" });
-		expect(toggle.getAttribute("aria-pressed")).toBe("true");
-		fireEvent.click(toggle);
-		expect(onChange).toHaveBeenCalledWith(false);
-		expect(onChange).toHaveBeenCalledTimes(1);
 	});
 });

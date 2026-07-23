@@ -767,7 +767,7 @@ export function Composer({
 	const modelLabel = selectedModel?.name ?? "Select model";
 
 	return (
-		<section className="mx-auto w-full max-w-3xl px-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
+		<section className="mx-auto w-full max-w-3xl px-5 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
 			<form className="w-full" onSubmit={handleSubmit}>
 				<div className="flex items-end gap-2">
 					<div className="flex shrink-0 self-end">

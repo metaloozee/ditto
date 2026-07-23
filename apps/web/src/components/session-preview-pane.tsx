@@ -1,12 +1,20 @@
 import { useMutation } from "@tanstack/react-query";
 import {
+	GlobeIcon,
 	LoaderCircleIcon,
+	LockIcon,
 	MonitorPlayIcon,
 	RotateCcwIcon,
 	SquareIcon,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "#/components/ui/button";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from "#/components/ui/tooltip";
 import { useTRPC } from "#/integrations/trpc/react";
 import { cn } from "#/lib/utils";
 
@@ -25,6 +33,42 @@ export type SessionPreviewPaneProps = {
 	sessionId: string;
 	className?: string;
 };
+
+function hostFromUrl(url: string): string {
+	try {
+		return new URL(url).host;
+	} catch {
+		return "preview";
+	}
+}
+
+function addressLabel(state: PaneState): string {
+	switch (state.kind) {
+		case "ready":
+		case "stopping":
+			return hostFromUrl(state.url);
+		case "starting":
+			return "Starting preview…";
+		case "failed":
+			return "Preview failed";
+		default:
+			return "Preview not running";
+	}
+}
+
+function statusDotClass(state: PaneState): string {
+	switch (state.kind) {
+		case "ready":
+			return "bg-emerald-500";
+		case "starting":
+		case "stopping":
+			return "bg-amber-500";
+		case "failed":
+			return "bg-destructive";
+		default:
+			return "bg-muted-foreground/35";
+	}
+}
 
 export function SessionPreviewPane({
 	projectId,
@@ -111,91 +155,179 @@ export function SessionPreviewPane({
 
 	const busy =
 		activeState.kind === "starting" || activeState.kind === "stopping";
+	const running =
+		activeState.kind === "ready" || activeState.kind === "stopping";
+	const address = addressLabel(activeState);
 
 	return (
 		<section
 			aria-label="Session website preview"
 			className={cn(
-				"flex h-full min-h-0 min-w-0 flex-col border-border border-l bg-background",
+				"flex h-full min-h-0 min-w-0 flex-col bg-background",
 				className,
 			)}
 		>
-			<div className="flex shrink-0 items-center gap-2 border-border border-b px-3 py-2">
-				<MonitorPlayIcon
-					className="size-4 shrink-0 text-muted-foreground"
-					aria-hidden
-				/>
-				<span className="min-w-0 flex-1 truncate font-medium text-sm">
-					Preview
-				</span>
-				{activeState.kind === "ready" || activeState.kind === "stopping" ? (
-					<>
-						<Button
-							type="button"
-							variant="outline"
-							size="sm"
-							className="min-h-11 min-w-11 gap-1.5 sm:min-h-8 sm:min-w-0"
-							disabled={busy}
-							onClick={() => restart()}
-							aria-label="Restart preview"
-						>
-							<RotateCcwIcon className="size-3.5" aria-hidden />
-							<span className="hidden sm:inline">Restart</span>
-						</Button>
-						<Button
-							type="button"
-							variant="outline"
-							size="sm"
-							className="min-h-11 min-w-11 gap-1.5 sm:min-h-8 sm:min-w-0"
-							disabled={busy}
-							onClick={() => {
-								if (
-									activeState.kind === "ready" ||
-									activeState.kind === "stopping"
-								) {
-									stop(activeState.url);
-								}
-							}}
-							aria-label="Stop preview"
-						>
-							{activeState.kind === "stopping" ? (
-								<LoaderCircleIcon
-									className="size-3.5 animate-spin"
-									aria-hidden
+			<TooltipProvider delay={300}>
+				{/* Browser toolbar */}
+				<div className="flex shrink-0 items-center gap-1.5 border-border/70 border-b bg-muted/40 px-2 py-1.5">
+					<Tooltip>
+						<TooltipTrigger
+							render={
+								<Button
+									type="button"
+									variant="ghost"
+									size="icon-sm"
+									disabled={!running || busy}
+									onClick={() => restart()}
+									aria-label="Reload preview"
+									className="text-muted-foreground"
 								/>
+							}
+						>
+							{busy && activeState.kind === "starting" ? (
+								<LoaderCircleIcon className="animate-spin" aria-hidden />
 							) : (
-								<SquareIcon className="size-3.5" aria-hidden />
+								<RotateCcwIcon aria-hidden />
 							)}
-							<span className="hidden sm:inline">Stop</span>
-						</Button>
-					</>
-				) : (
-					<Button
-						type="button"
-						size="sm"
-						className="min-h-11 min-w-11 gap-1.5 sm:min-h-8 sm:min-w-0"
-						disabled={busy}
-						onClick={() => start()}
-						aria-label={
-							activeState.kind === "failed" ? "Retry preview" : "Start preview"
+						</TooltipTrigger>
+						<TooltipContent side="bottom">Reload</TooltipContent>
+					</Tooltip>
+
+					{/* Address bar */}
+					<div
+						className={cn(
+							"flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-border/70 bg-background px-2.5 shadow-xs",
+						)}
+						title={
+							running
+								? activeState.kind === "ready" ||
+									activeState.kind === "stopping"
+									? activeState.url
+									: address
+								: undefined
 						}
 					>
-						{activeState.kind === "starting" ? (
-							<LoaderCircleIcon className="size-3.5 animate-spin" aria-hidden />
+						{running ? (
+							<LockIcon
+								className="size-3 shrink-0 text-muted-foreground"
+								aria-hidden
+							/>
 						) : (
-							<MonitorPlayIcon className="size-3.5" aria-hidden />
+							<GlobeIcon
+								className="size-3 shrink-0 text-muted-foreground"
+								aria-hidden
+							/>
 						)}
-						<span className="hidden sm:inline">
-							{activeState.kind === "starting" ? "Starting…" : "Start"}
+						<span
+							className={cn(
+								"min-w-0 flex-1 truncate font-mono text-[11px] leading-none",
+								running ? "text-foreground/80" : "text-muted-foreground",
+							)}
+						>
+							{address}
 						</span>
-					</Button>
-				)}
-			</div>
+						<span
+							className={cn(
+								"size-1.5 shrink-0 rounded-full",
+								statusDotClass(activeState),
+							)}
+							aria-hidden
+						/>
+						<span className="sr-only">
+							Preview status:{" "}
+							{activeState.kind === "ready"
+								? "running"
+								: activeState.kind === "starting"
+									? "starting"
+									: activeState.kind === "stopping"
+										? "stopping"
+										: activeState.kind === "failed"
+											? "failed"
+											: "idle"}
+						</span>
+					</div>
 
-			<div className="flex min-h-0 flex-1 flex-col">
+					{running ? (
+						<Tooltip>
+							<TooltipTrigger
+								render={
+									<Button
+										type="button"
+										variant="ghost"
+										size="icon-sm"
+										disabled={busy}
+										onClick={() => {
+											if (
+												activeState.kind === "ready" ||
+												activeState.kind === "stopping"
+											) {
+												stop(activeState.url);
+											}
+										}}
+										aria-label="Stop preview"
+										className="text-muted-foreground"
+									/>
+								}
+							>
+								{activeState.kind === "stopping" ? (
+									<LoaderCircleIcon className="animate-spin" aria-hidden />
+								) : (
+									<SquareIcon aria-hidden />
+								)}
+							</TooltipTrigger>
+							<TooltipContent side="bottom">Stop</TooltipContent>
+						</Tooltip>
+					) : (
+						<Tooltip>
+							<TooltipTrigger
+								render={
+									<Button
+										type="button"
+										variant="ghost"
+										size="icon-sm"
+										disabled={busy}
+										onClick={() => start()}
+										aria-label={
+											activeState.kind === "failed"
+												? "Retry preview"
+												: "Start preview"
+										}
+										className="text-muted-foreground"
+									/>
+								}
+							>
+								{activeState.kind === "starting" ? (
+									<LoaderCircleIcon className="animate-spin" aria-hidden />
+								) : (
+									<MonitorPlayIcon aria-hidden />
+								)}
+							</TooltipTrigger>
+							<TooltipContent side="bottom">
+								{activeState.kind === "failed" ? "Retry" : "Start"}
+							</TooltipContent>
+						</Tooltip>
+					)}
+				</div>
+			</TooltipProvider>
+
+			{/* Viewport */}
+			<div className="relative flex min-h-0 flex-1 flex-col bg-background">
 				{activeState.kind === "idle" ? (
-					<div className="flex flex-1 flex-col items-start justify-center gap-3 p-4">
-						<p className="text-muted-foreground text-sm">{PUBLIC_WARNING}</p>
+					<div className="flex flex-1 flex-col items-center justify-center gap-4 p-6">
+						<div className="flex size-12 items-center justify-center rounded-xl border border-border/70 bg-muted/40">
+							<MonitorPlayIcon
+								className="size-5 text-muted-foreground"
+								aria-hidden
+							/>
+						</div>
+						<div className="flex max-w-sm flex-col items-center gap-1.5 text-center">
+							<p className="font-medium text-foreground text-sm text-balance">
+								Run a live preview
+							</p>
+							<p className="text-pretty text-muted-foreground text-xs/relaxed">
+								{PUBLIC_WARNING}
+							</p>
+						</div>
 						<Button
 							type="button"
 							onClick={() => start()}
@@ -208,16 +340,27 @@ export function SessionPreviewPane({
 				) : null}
 
 				{activeState.kind === "starting" || activeState.kind === "stopping" ? (
-					<output className="block p-4 text-muted-foreground text-sm">
-						{activeState.kind === "starting"
-							? "Starting preview…"
-							: "Stopping preview…"}
-					</output>
+					<div className="flex flex-1 flex-col items-center justify-center gap-3 p-6">
+						<LoaderCircleIcon
+							className="size-5 animate-spin text-muted-foreground"
+							aria-hidden
+						/>
+						<output className="text-muted-foreground text-sm">
+							{activeState.kind === "starting"
+								? "Starting preview…"
+								: "Stopping preview…"}
+						</output>
+					</div>
 				) : null}
 
 				{activeState.kind === "failed" ? (
-					<div className="flex flex-col gap-3 p-4" role="alert">
-						<p className="text-destructive text-sm">{activeState.message}</p>
+					<div
+						className="flex flex-1 flex-col items-center justify-center gap-3 p-6"
+						role="alert"
+					>
+						<p className="max-w-sm text-pretty text-center text-destructive text-sm">
+							{activeState.message}
+						</p>
 						<Button
 							type="button"
 							variant="outline"
@@ -233,7 +376,7 @@ export function SessionPreviewPane({
 					<>
 						{activeState.error ? (
 							<p
-								className="shrink-0 px-3 py-2 text-destructive text-sm"
+								className="shrink-0 border-border border-b px-3 py-2 text-destructive text-xs"
 								role="alert"
 							>
 								{activeState.error}

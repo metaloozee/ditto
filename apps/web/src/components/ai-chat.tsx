@@ -7,6 +7,7 @@ import {
 	SparklesIcon,
 	TerminalIcon,
 } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { AssistantMarkdown } from "#/components/assistant-markdown";
 import { ChatNavbar } from "#/components/chat-navbar";
@@ -17,7 +18,7 @@ import {
 	type StreamCommitPayload,
 } from "#/components/composer";
 import { CopyButton } from "#/components/copy-button";
-import { SessionPreviewPane } from "#/components/session-preview-pane";
+import { SessionToolsPane } from "#/components/session-tools-pane";
 import { ToolCallGroup } from "#/components/tool-call-group";
 import { Bubble, BubbleContent } from "#/components/ui/bubble";
 import { Button, buttonVariants } from "#/components/ui/button";
@@ -35,6 +36,11 @@ import {
 	MessageScrollerViewport,
 	useMessageScrollerScrollable,
 } from "#/components/ui/message-scroller";
+import {
+	ResizableHandle,
+	ResizablePanel,
+	ResizablePanelGroup,
+} from "#/components/ui/resizable";
 import {
 	Sheet,
 	SheetContent,
@@ -595,9 +601,32 @@ export function Chat({
 		setCacheEpoch((epoch) => epoch + 1);
 	}
 
-	const [previewOpen, setPreviewOpen] = useState(false);
+	const [toolsOpen, setToolsOpen] = useState(false);
+	const [desktopToolsMounted, setDesktopToolsMounted] = useState(false);
 	const isMobile = useIsMobile();
-	const previewEnabled = Boolean(projectId && sessionId);
+	const reduceMotion = useReducedMotion();
+	const toolsEnabled = Boolean(projectId && sessionId);
+	const desktopToolsVisible =
+		toolsEnabled && toolsOpen && Boolean(projectId && sessionId) && !isMobile;
+
+	useEffect(() => {
+		if (desktopToolsVisible) {
+			setDesktopToolsMounted(true);
+		}
+	}, [desktopToolsVisible]);
+
+	// Drawer-like ease (Emil / Ionic): starts decisively, settles cleanly.
+	const toolsPaneEase = [0.32, 0.72, 0, 1] as const;
+	const toolsPaneTransition = {
+		duration: reduceMotion ? 0.15 : desktopToolsVisible ? 0.28 : 0.2,
+		ease: toolsPaneEase,
+	};
+	const toolsPaneHidden = reduceMotion
+		? { opacity: 0 }
+		: { transform: "translateX(100%)", opacity: 0 };
+	const toolsPaneShown = reduceMotion
+		? { opacity: 1 }
+		: { transform: "translateX(0%)", opacity: 1 };
 
 	const chatColumn = (
 		<div className="relative mx-auto h-full min-w-0 w-full">
@@ -607,8 +636,8 @@ export function Chat({
 				branchName={branchName}
 				gitExportEnabled={gitExportEnabled}
 				disabled={Boolean(disabledReason) || Boolean(streaming?.active)}
-				previewOpen={previewOpen}
-				onPreviewOpenChange={setPreviewOpen}
+				toolsOpen={toolsOpen}
+				onToolsOpenChange={setToolsOpen}
 			/>
 			<MessageScrollerProvider
 				autoScroll
@@ -619,7 +648,7 @@ export function Chat({
 					<MessageScrollerViewport>
 						<MessageScrollerContent
 							className={cn(
-								"mx-auto max-w-2xl gap-4",
+								"mx-auto w-full max-w-2xl gap-4 px-5 sm:px-6",
 								!hasMessages && "justify-center",
 							)}
 						>
@@ -740,30 +769,77 @@ export function Chat({
 
 	return (
 		<div className="flex h-full min-h-0 w-full min-w-0">
-			<div className="min-h-0 min-w-0 flex-1">{chatColumn}</div>
-			{previewEnabled && previewOpen && projectId && sessionId && !isMobile ? (
-				<div className="hidden min-h-0 w-[min(42%,28rem)] min-w-[18rem] max-w-xl shrink-0 md:block">
-					<SessionPreviewPane
-						projectId={projectId}
-						sessionId={sessionId}
-						className="h-full"
+			{desktopToolsMounted && projectId && sessionId ? (
+				<ResizablePanelGroup
+					orientation="horizontal"
+					className="hidden h-full min-h-0 w-full md:flex"
+				>
+					<ResizablePanel
+						id="chat"
+						defaultSize="32%"
+						minSize="22%"
+						maxSize="50%"
+						className="min-h-0 min-w-0"
+					>
+						{chatColumn}
+					</ResizablePanel>
+					{/* Invisible edge handle — drag the tools pane's left edge to resize */}
+					<ResizableHandle
+						aria-label="Resize tools panel"
+						className={cn(
+							"relative z-20 w-0 border-0 bg-transparent",
+							"after:absolute after:inset-y-0 after:left-0 after:w-3 after:translate-x-[-50%] after:bg-transparent after:transition-colors",
+							"hover:after:bg-border/50 active:after:bg-border/70",
+							"focus-visible:ring-0 focus-visible:outline-none",
+						)}
 					/>
-				</div>
-			) : null}
-			{previewEnabled && projectId && sessionId ? (
-				<Sheet open={previewOpen && isMobile} onOpenChange={setPreviewOpen}>
+					<ResizablePanel
+						id="tools"
+						defaultSize="68%"
+						minSize="40%"
+						className="min-h-0 min-w-0 overflow-hidden"
+					>
+						<motion.div
+							className="h-full min-h-0 will-change-transform"
+							initial={toolsPaneHidden}
+							animate={desktopToolsVisible ? toolsPaneShown : toolsPaneHidden}
+							transition={toolsPaneTransition}
+							onAnimationComplete={() => {
+								if (!desktopToolsVisible) {
+									setDesktopToolsMounted(false);
+								}
+							}}
+						>
+							<div className="h-full min-h-0 p-2 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2">
+								<SessionToolsPane
+									projectId={projectId}
+									sessionId={sessionId}
+									className="h-full"
+									onClose={() => setToolsOpen(false)}
+								/>
+							</div>
+						</motion.div>
+					</ResizablePanel>
+				</ResizablePanelGroup>
+			) : (
+				<div className="min-h-0 min-w-0 flex-1">{chatColumn}</div>
+			)}
+			{toolsEnabled && projectId && sessionId ? (
+				<Sheet open={toolsOpen && isMobile} onOpenChange={setToolsOpen}>
 					<SheetContent
 						side="right"
-						className="flex w-full flex-col gap-0 p-0 sm:max-w-md"
+						showCloseButton={false}
+						className="flex w-full flex-col gap-0 bg-transparent p-2 data-[side=right]:w-[min(100%,48rem)] data-[side=right]:sm:max-w-none"
 					>
 						<SheetHeader className="sr-only">
-							<SheetTitle>Session website preview</SheetTitle>
+							<SheetTitle>Session tools</SheetTitle>
 						</SheetHeader>
-						{previewOpen && isMobile ? (
-							<SessionPreviewPane
+						{toolsOpen && isMobile ? (
+							<SessionToolsPane
 								projectId={projectId}
 								sessionId={sessionId}
-								className="h-full border-l-0"
+								className="h-full"
+								onClose={() => setToolsOpen(false)}
 							/>
 						) : null}
 					</SheetContent>
