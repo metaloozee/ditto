@@ -227,14 +227,16 @@ export async function ensureProjectSandbox(options: {
 	}
 
 	const sandboxId = options.project.sandboxId;
-	const hydrated = await isSandboxWorkspaceHydrated({
-		env: options.env,
-		sandboxId,
-	});
-	const runnerHealthy = await isSandboxRunnerHealthy({
-		env: options.env,
-		sandboxId,
-	});
+	const [hydrated, runnerHealthy] = await Promise.all([
+		isSandboxWorkspaceHydrated({
+			env: options.env,
+			sandboxId,
+		}),
+		isSandboxRunnerHealthy({
+			env: options.env,
+			sandboxId,
+		}),
+	]);
 	if (!runnerHealthy) {
 		throw new Error(
 			"Project sandbox runner image is invalid. Rebuild or redeploy the sandbox image.",
