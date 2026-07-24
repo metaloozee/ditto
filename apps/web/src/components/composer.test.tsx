@@ -931,4 +931,64 @@ describe("Composer streaming updates", () => {
 			).toBe(true),
 		);
 	});
+
+	it("disables textarea, model, thinking, and submit when disabledReason is set", async () => {
+		render(
+			<Composer
+				projectId="proj-1"
+				sessionId="sess-1"
+				disabledReason="Project sandbox is being provisioned."
+				inputText="draft survives"
+				onInputTextChange={() => undefined}
+			/>,
+		);
+
+		const textarea = screen.getByLabelText("Message") as HTMLTextAreaElement;
+		expect(textarea.disabled).toBe(true);
+		expect(textarea.value).toBe("draft survives");
+		expect(
+			(screen.getByLabelText("Thinking level") as HTMLButtonElement).disabled,
+		).toBe(true);
+		expect(
+			(screen.getByRole("button", { name: "Submit" }) as HTMLButtonElement)
+				.disabled,
+		).toBe(true);
+
+		fireEvent.keyDown(textarea, { key: "Enter", code: "Enter" });
+		expect(streamAgentRunMock).not.toHaveBeenCalled();
+	});
+
+	it("keeps a controlled draft across disable and re-enable", async () => {
+		let draft = "hello draft";
+		const onChange = vi.fn((value: string) => {
+			draft = value;
+		});
+
+		const { rerender } = render(
+			<Composer
+				projectId="proj-1"
+				sessionId="sess-1"
+				disabledReason="Project sandbox is being provisioned."
+				inputText={draft}
+				onInputTextChange={onChange}
+			/>,
+		);
+
+		expect(
+			(screen.getByLabelText("Message") as HTMLTextAreaElement).value,
+		).toBe("hello draft");
+
+		rerender(
+			<Composer
+				projectId="proj-1"
+				sessionId="sess-1"
+				inputText={draft}
+				onInputTextChange={onChange}
+			/>,
+		);
+
+		const textarea = screen.getByLabelText("Message") as HTMLTextAreaElement;
+		expect(textarea.disabled).toBe(false);
+		expect(textarea.value).toBe("hello draft");
+	});
 });

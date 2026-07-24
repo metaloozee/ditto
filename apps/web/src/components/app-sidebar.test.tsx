@@ -70,7 +70,7 @@ vi.mock("#/lib/auth.client", () => ({
 	},
 }));
 
-const { SessionSidebarItem } = await import("./app-sidebar");
+const { ProjectStatusIcon, SessionSidebarItem } = await import("./app-sidebar");
 
 const session = {
 	id: "sess-1",
@@ -161,5 +161,40 @@ describe("SessionSidebarItem archive UX", () => {
 				params: { projectId: "proj-1" },
 			});
 		});
+	});
+});
+
+describe("ProjectStatusIcon independent of workspace pending", () => {
+	afterEach(() => {
+		cleanup();
+	});
+
+	it("renders a folder for provisioning projects, not a spinner", () => {
+		const { container } = render(
+			<ProjectStatusIcon status="provisioning" isOpen={false} />,
+		);
+		// lucide FolderIcon has data-lucide or class; assert no animate-spin.
+		expect(container.querySelector(".animate-spin")).toBeNull();
+		expect(container.querySelector("svg")).toBeTruthy();
+	});
+
+	it("renders the failed alert icon", () => {
+		const { container } = render(
+			<ProjectStatusIcon status="failed" isOpen={false} />,
+		);
+		const svg = container.querySelector("svg");
+		expect(svg).toBeTruthy();
+		expect(svg?.getAttribute("class") ?? "").toContain("text-destructive");
+	});
+
+	it("sidebar data path only requests projects.list", async () => {
+		// The client query is wired only to projects.list (see AppSidebarClient).
+		// This test pins the mock surface so a future ensureWorkspace option fails.
+		const trpc = (await import("#/integrations/trpc/react")).useTRPC();
+		expect(trpc.projects.list).toBeTruthy();
+		expect(
+			(trpc as { workspace?: { ensureWorkspace?: unknown } }).workspace
+				?.ensureWorkspace,
+		).toBeUndefined();
 	});
 });

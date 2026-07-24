@@ -872,6 +872,7 @@ export function Composer({
 							placeholder="Ask Ditto to inspect the workspace…"
 							required
 							minLength={1}
+							disabled={Boolean(disabledReason)}
 							aria-invalid={messageInvalid || undefined}
 							aria-describedby={
 								messageInvalid ? "composer-message-error" : undefined

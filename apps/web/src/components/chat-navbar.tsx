@@ -103,7 +103,7 @@ export function ChatNavbar({
 							<SessionToolsTrigger
 								open={false}
 								onOpenChange={onToolsOpenChange}
-								disabled={!hasSession}
+								disabled={disabled || !hasSession}
 							/>
 						</motion.div>
 					) : null}
@@ -118,7 +118,7 @@ export function ChatNavbar({
 			className="absolute inset-x-0 top-0 z-10 flex w-full items-center gap-2 bg-transparent px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 sm:px-6"
 		>
 			<div className="min-w-0 flex-1">
-				{gitExportEnabled && projectId && sessionId ? (
+				{gitExportEnabled && projectId && sessionId && !disabled ? (
 					<SessionGitActions
 						projectId={projectId}
 						sessionId={sessionId}

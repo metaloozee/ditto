@@ -253,9 +253,11 @@ const SUGGESTIONS = [
 
 function ChatEmptyState({
 	hasProject,
+	disabled = false,
 	onSelectSuggestion,
 }: {
 	hasProject: boolean;
+	disabled?: boolean;
 	onSelectSuggestion?: (text: string) => void;
 }) {
 	if (!hasProject) {
@@ -309,8 +311,17 @@ function ChatEmptyState({
 						<button
 							key={item.title}
 							type="button"
-							onClick={() => onSelectSuggestion?.(item.prompt)}
-							className="flex items-start gap-3 rounded-xl border border-border/80 bg-card/40 p-3.5 text-left transition-[transform,colors,box-shadow] duration-200 hover:-translate-y-[1px] hover:border-foreground/20 hover:bg-card hover:shadow-xs active:scale-[0.97] cursor-pointer"
+							disabled={disabled}
+							onClick={() => {
+								if (disabled) return;
+								onSelectSuggestion?.(item.prompt);
+							}}
+							className={cn(
+								"flex items-start gap-3 rounded-xl border border-border/80 bg-card/40 p-3.5 text-left transition-[transform,colors,box-shadow] duration-200",
+								disabled
+									? "cursor-not-allowed opacity-50"
+									: "hover:-translate-y-[1px] hover:border-foreground/20 hover:bg-card hover:shadow-xs active:scale-[0.97] cursor-pointer",
+							)}
 							style={{
 								animationDelay: `${idx * 40}ms`,
 							}}
@@ -619,7 +630,15 @@ export function Chat({
 	const toolsShellRef = useRef<HTMLDivElement>(null);
 	const isMobile = useIsMobile();
 	const reduceMotion = useReducedMotion();
-	const toolsEnabled = Boolean(projectId && sessionId);
+	const toolsEnabled = Boolean(projectId && sessionId && !disabledReason);
+
+	// Close tools when workspace becomes unavailable so the pane does not
+	// silently reopen after readiness returns.
+	useEffect(() => {
+		if (disabledReason) {
+			setToolsOpen(false);
+		}
+	}, [disabledReason]);
 	const desktopToolsVisible =
 		toolsEnabled && toolsOpen && Boolean(projectId && sessionId) && !isMobile;
 	// Drawer ease (Emil/Ionic). Instant while dragging or reduce-motion.
@@ -775,6 +794,7 @@ export function Chat({
 								<MessageScrollerItem messageId="empty-conversation">
 									<ChatEmptyState
 										hasProject={Boolean(projectId || sessionId)}
+										disabled={Boolean(disabledReason)}
 										onSelectSuggestion={(prompt) => {
 											setInputText(prompt);
 											setTimeout(() => {

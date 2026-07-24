@@ -25,10 +25,19 @@ vi.mock("#/components/ui/sidebar", () => ({
 vi.mock("#/components/composer", () => ({
 	Composer: (props: {
 		onStreamingChange?: (state: ComposerStreamingState | null) => void;
+		disabledReason?: string;
 	}) => {
 		composerPropsRef.current = props;
 		return <div data-testid="composer-stub" />;
 	},
+}));
+
+vi.mock("#/components/session-tools-pane", () => ({
+	SessionToolsPane: () => <div data-testid="tools-pane" />,
+}));
+
+vi.mock("#/hooks/use-mobile", () => ({
+	useIsMobile: () => false,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -423,5 +432,83 @@ describe("Chat session cache acknowledgement", () => {
 		expect(screen.getByRole("status").textContent).toContain(
 			"2 messages queued",
 		);
+	});
+
+	it("keeps history readable while sandbox-backed actions are disabled", () => {
+		const onLoadEarlier = vi.fn();
+		render(
+			<Chat
+				projectId="proj-1"
+				sessionId="sess-1"
+				disabledReason="Project sandbox is being provisioned."
+				messages={[{ id: "msg-1", role: "user", content: "history stays" }]}
+				hasMoreHistory
+				onLoadEarlier={onLoadEarlier}
+			/>,
+		);
+
+		expect(screen.getByText("history stays")).toBeTruthy();
+		expect(composerPropsRef.current).toMatchObject({
+			disabledReason: "Project sandbox is being provisioned.",
+		});
+
+		const loadEarlier = screen.getByRole("button", {
+			name: /load earlier messages/i,
+		});
+		loadEarlier.click();
+		expect(onLoadEarlier).toHaveBeenCalledTimes(1);
+
+		// Tools trigger is disabled while workspace is unavailable.
+		expect(
+			(
+				screen.getByRole("button", {
+					name: "Session tools",
+				}) as HTMLButtonElement
+			).disabled,
+		).toBe(true);
+	});
+
+	it("disables empty-state suggestions when disabledReason is set", () => {
+		render(
+			<Chat
+				projectId="proj-1"
+				sessionId="sess-1"
+				disabledReason="Project sandbox is being provisioned."
+			/>,
+		);
+
+		const suggestion = screen.getByRole("button", {
+			name: /review changes/i,
+		}) as HTMLButtonElement;
+		expect(suggestion.disabled).toBe(true);
+	});
+
+	it("closes an open tools pane when disabledReason becomes truthy", async () => {
+		const { rerender } = render(<Chat projectId="proj-1" sessionId="sess-1" />);
+
+		// Opening tools hides the navbar trigger while the pane is open.
+		screen.getByRole("button", { name: "Session tools" }).click();
+		await waitFor(() => {
+			expect(
+				screen.queryByRole("button", { name: "Session tools" }),
+			).toBeNull();
+		});
+
+		rerender(
+			<Chat
+				projectId="proj-1"
+				sessionId="sess-1"
+				disabledReason="Project sandbox is being provisioned."
+			/>,
+		);
+
+		// disabledReason closes toolsOpen and re-shows a disabled trigger.
+		await waitFor(() => {
+			const toggle = screen.getByRole("button", {
+				name: "Session tools",
+			}) as HTMLButtonElement;
+			expect(toggle.disabled).toBe(true);
+		});
+		expect(screen.queryByTestId("tools-pane")).toBeNull();
 	});
 });

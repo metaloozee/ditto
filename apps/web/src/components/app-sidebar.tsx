@@ -12,7 +12,6 @@ import {
 	FolderIcon,
 	FolderOpenIcon,
 	Layers2Icon,
-	LoaderIcon,
 	MoreHorizontalIcon,
 	PlusIcon,
 	SearchIcon,
@@ -116,18 +115,14 @@ function BrandingWithTrigger(): React.JSX.Element {
 	);
 }
 
-function ProjectStatusIcon({
+/** Exported for unit tests; provisioning uses the normal folder icon. */
+export function ProjectStatusIcon({
 	status,
 	isOpen,
 }: {
 	status: SidebarProject["status"];
 	isOpen: boolean;
 }): React.JSX.Element {
-	if (status === "provisioning") {
-		return (
-			<LoaderIcon className="!size-4 animate-spin text-sidebar-foreground/50" />
-		);
-	}
 	if (status === "failed") {
 		return <AlertCircleIcon className="!size-4 text-destructive" />;
 	}

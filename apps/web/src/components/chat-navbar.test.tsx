@@ -99,4 +99,28 @@ describe("ChatNavbar tools toggle", () => {
 		fireEvent.click(toggle);
 		expect(onChange).toHaveBeenCalledWith(true);
 	});
+
+	it("disables tools and unmounts git actions when workspace is disabled", () => {
+		render(
+			<ChatNavbar
+				projectId="proj-1"
+				sessionId="sess-1"
+				gitExportEnabled
+				disabled
+				toolsOpen={false}
+				onToolsOpenChange={() => undefined}
+			/>,
+		);
+
+		expect(
+			(
+				screen.getByRole("button", {
+					name: "Session tools",
+				}) as HTMLButtonElement
+			).disabled,
+		).toBe(true);
+		expect(screen.queryByTestId("git-actions")).toBeNull();
+		// Left chrome still renders branch + sidebar remains usable via mock.
+		expect(screen.getByRole("button", { name: /branch/i })).toBeTruthy();
+	});
 });
