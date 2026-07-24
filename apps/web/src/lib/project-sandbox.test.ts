@@ -467,59 +467,60 @@ describe("ensureProjectSandbox", () => {
 		expect(updateMock).not.toHaveBeenCalled();
 	});
 
-	it.each(["stopping", "stopped", "stopped_with_code"] as const)(
-		"skips pre-lock probes for %s and restores from backup",
-		async (status) => {
-			getProjectSandboxStateMock.mockResolvedValue({ status });
-			const storedBackup = serializeSandboxBackup({
-				id: "backup-1",
-				dir: "/workspace",
-			});
-			const lockedProject = {
-				...baseProject,
-				sandboxBackup: storedBackup,
-				status: "provisioning" as const,
-			};
-			const updatedProject = {
-				...baseProject,
-				sandboxBackup: serializeSandboxBackup({
-					id: "backup-2",
-					dir: "/workspace",
-				}),
-				status: "ready" as const,
-			};
-			const { db, setCalls } = makeFakeDb({ lockedProject, updatedProject });
-
-			// Only post-restore probes should run.
-			isSandboxWorkspaceHydratedMock.mockResolvedValue(true);
-			isSandboxRunnerHealthyMock.mockResolvedValue(true);
-			restoreSandboxWorkspaceMock.mockResolvedValue(undefined);
-			backupSandboxWorkspaceMock.mockResolvedValue({
+	it.each([
+		"stopping",
+		"stopped",
+		"stopped_with_code",
+	] as const)("skips pre-lock probes for %s and restores from backup", async (status) => {
+		getProjectSandboxStateMock.mockResolvedValue({ status });
+		const storedBackup = serializeSandboxBackup({
+			id: "backup-1",
+			dir: "/workspace",
+		});
+		const lockedProject = {
+			...baseProject,
+			sandboxBackup: storedBackup,
+			status: "provisioning" as const,
+		};
+		const updatedProject = {
+			...baseProject,
+			sandboxBackup: serializeSandboxBackup({
 				id: "backup-2",
 				dir: "/workspace",
-			});
+			}),
+			status: "ready" as const,
+		};
+		const { db, setCalls } = makeFakeDb({ lockedProject, updatedProject });
 
-			await expect(
-				ensureProjectSandbox({
-					db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
-					env: makeEnv(),
-					project: baseProject,
-				}),
-			).resolves.toMatchObject({
-				state: "restored_from_backup",
-				project: updatedProject,
-			});
+		// Only post-restore probes should run.
+		isSandboxWorkspaceHydratedMock.mockResolvedValue(true);
+		isSandboxRunnerHealthyMock.mockResolvedValue(true);
+		restoreSandboxWorkspaceMock.mockResolvedValue(undefined);
+		backupSandboxWorkspaceMock.mockResolvedValue({
+			id: "backup-2",
+			dir: "/workspace",
+		});
 
-			// Pre-lock probes must not run: only post-restore probes.
-			expect(isSandboxWorkspaceHydratedMock).toHaveBeenCalledTimes(1);
-			expect(isSandboxRunnerHealthyMock).toHaveBeenCalledTimes(1);
-			expect(
-				callOrder(restoreSandboxWorkspaceMock, isSandboxWorkspaceHydratedMock)[0],
-			).toBe(0);
-			expect(setCalls[0]).toMatchObject({ status: "provisioning" });
-			expect(restoreSandboxWorkspaceMock).toHaveBeenCalled();
-		},
-	);
+		await expect(
+			ensureProjectSandbox({
+				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
+				env: makeEnv(),
+				project: baseProject,
+			}),
+		).resolves.toMatchObject({
+			state: "restored_from_backup",
+			project: updatedProject,
+		});
+
+		// Pre-lock probes must not run: only post-restore probes.
+		expect(isSandboxWorkspaceHydratedMock).toHaveBeenCalledTimes(1);
+		expect(isSandboxRunnerHealthyMock).toHaveBeenCalledTimes(1);
+		expect(
+			callOrder(restoreSandboxWorkspaceMock, isSandboxWorkspaceHydratedMock)[0],
+		).toBe(0);
+		expect(setCalls[0]).toMatchObject({ status: "provisioning" });
+		expect(restoreSandboxWorkspaceMock).toHaveBeenCalled();
+	});
 
 	it("observes runtime before hydration/runner probes on active containers", async () => {
 		isSandboxWorkspaceHydratedMock.mockResolvedValue(true);
@@ -531,12 +532,12 @@ describe("ensureProjectSandbox", () => {
 			project: baseProject,
 		});
 
-		expect(callOrder(getProjectSandboxStateMock, isSandboxWorkspaceHydratedMock)[0]).toBe(
-			0,
-		);
-		expect(callOrder(getProjectSandboxStateMock, isSandboxRunnerHealthyMock)[0]).toBe(
-			0,
-		);
+		expect(
+			callOrder(getProjectSandboxStateMock, isSandboxWorkspaceHydratedMock)[0],
+		).toBe(0);
+		expect(
+			callOrder(getProjectSandboxStateMock, isSandboxRunnerHealthyMock)[0],
+		).toBe(0);
 	});
 
 	it("rejects an invalid runner before mutating project state even when unhydrated", async () => {
@@ -610,10 +611,14 @@ describe("ensureProjectSandbox", () => {
 			}),
 		).rejects.toBeInstanceOf(ProjectSandboxProvisioningError);
 
-		expect(setCalls).toEqual([expect.objectContaining({ status: "provisioning" })]);
-		expect(setCalls.some((call) => (call as { status?: string }).status === "failed")).toBe(
-			false,
-		);
+		expect(setCalls).toEqual([
+			expect.objectContaining({ status: "provisioning" }),
+		]);
+		expect(
+			setCalls.some(
+				(call) => (call as { status?: string }).status === "failed",
+			),
+		).toBe(false);
 	});
 
 	it("restores from backup, re-backs up, and returns restored_from_backup", async () => {

@@ -16,8 +16,7 @@ vi.mock("#/db", () => ({
 }));
 
 vi.mock("#/lib/project-sandbox", async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import("#/lib/project-sandbox")>();
+	const actual = await importOriginal<typeof import("#/lib/project-sandbox")>();
 	return {
 		...actual,
 		ensureProjectSandbox: ensureProjectSandboxMock,
@@ -520,7 +519,9 @@ describe("workspace.ensureWorkspace readiness", () => {
 			new ProjectSandboxProvisioningError(),
 		);
 
-		const result = await createCaller().ensureWorkspace({ projectId: "proj-1" });
+		const result = await createCaller().ensureWorkspace({
+			projectId: "proj-1",
+		});
 
 		expect(result.sandbox.state).toBe("provisioning");
 		expect(result.restoreFailed).toBe(false);
@@ -533,14 +534,14 @@ describe("workspace.ensureWorkspace readiness", () => {
 	it("returns restoreFailed when D1 is actually failed", async () => {
 		const initial = readyProject();
 		const failed = readyProject({ status: "failed" });
-		createDbMock.mockReturnValue(
-			makeEnsureDb({ projects: [initial, failed] }),
-		);
+		createDbMock.mockReturnValue(makeEnsureDb({ projects: [initial, failed] }));
 		ensureProjectSandboxMock.mockRejectedValue(
 			new Error("Project sandbox restore failed. Please try again."),
 		);
 
-		const result = await createCaller().ensureWorkspace({ projectId: "proj-1" });
+		const result = await createCaller().ensureWorkspace({
+			projectId: "proj-1",
+		});
 
 		expect(result.sandbox.state).toBe("failed");
 		expect(result.restoreFailed).toBe(true);
@@ -572,7 +573,9 @@ describe("workspace.ensureWorkspace readiness", () => {
 				state: "connected",
 			});
 
-		const result = await createCaller().ensureWorkspace({ projectId: "proj-1" });
+		const result = await createCaller().ensureWorkspace({
+			projectId: "proj-1",
+		});
 
 		expect(result.sandbox.state).toBe("connected");
 		expect(result.restoreFailed).toBe(false);
@@ -590,7 +593,9 @@ describe("workspace.ensureWorkspace readiness", () => {
 			new ProjectSandboxProvisioningError(),
 		);
 
-		const result = await createCaller().ensureWorkspace({ projectId: "proj-1" });
+		const result = await createCaller().ensureWorkspace({
+			projectId: "proj-1",
+		});
 
 		expect(result.sandbox.state).toBe("provisioning");
 		expect(result.restoreFailed).toBe(false);

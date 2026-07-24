@@ -54,11 +54,15 @@ model list.
 The project workspace route coordinates the main read model:
 
 1. load owned project metadata;
-2. ensure or restore the project workspace;
-3. resolve the selected active session;
-4. page messages with a `(createdAt, rowid)` cursor;
-5. reverse newest-first pages into an oldest-to-newest timeline; and
-6. invalidate project, message, and Git queries after mutations.
+2. page D1 messages for an explicit session URL immediately (ownership-checked,
+   sandbox-independent);
+3. when D1 status is `ready`, ensure or restore the project workspace;
+4. resolve the selected active session from the ensure/retry payload;
+5. reverse newest-first pages into an oldest-to-newest timeline;
+6. show a workspace-local status bar while checking/provisioning or on restore
+   failure, and disable sandbox-backed controls until readiness succeeds; and
+7. invalidate `projects.get`, message, and Git queries after mutations — never
+   `projects.list` from workspace readiness.
 
 ## Chat composition
 
@@ -154,9 +158,11 @@ navigation without creating a second source of truth.
 
 ## Sidebar and project management
 
-`AppSidebar` loads the user's projects and active sessions, marks the route's
-current project/session, and hosts search, project creation, settings, session
-archive, and account actions.
+`AppSidebar` loads the user's projects and active sessions from D1 only
+(`projects.list`), marks the route's current project/session, and hosts search,
+project creation, settings, session archive, and account actions. It does not
+call `workspace.ensureWorkspace`, observe sandbox stubs, or spin on D1
+`provisioning` — cold-wake loading belongs to the workspace status bar.
 
 - `NewProjectDialog` lists repositories authorized through GitHub, collects
   project environment variables, and starts provisioning.
@@ -165,8 +171,9 @@ archive, and account actions.
 - `SessionGitActions` renders the state machine returned by
   `sessionGit.gitStatus`; it does not independently infer Git workflow policy.
 - `ChatNavbar` owns a right-sidebar tools trigger (`aria-pressed`) immediately
-  right of Git actions. The trigger is enabled whenever an active session id
-  exists, even if Git export is unavailable.
+  right of Git actions. The trigger requires an active session id and a ready
+  workspace; while `disabled`, Git actions are not mounted (they would query the
+  sandbox). The sidebar trigger stays usable.
 - `Chat` composes a controlled tools pane: desktop uses shadcn `ResizablePanelGroup`
   (default ~32% chat / ~68% tools, drag handle between) with padding so
   `rounded-lg` reads; mobile uses the existing Sheet primitive at near-full
@@ -196,8 +203,14 @@ agent, database, or Git services. `cn` is the shared Tailwind class merger.
 The component layer uses semantic buttons/forms, dialog primitives, labels,
 alerts, focus rings, keyboard submission, loading/disabled states, and screen
 reader text for icon-only controls. Message history preserves scroll anchors
-when older pages prepend. Expensive diagnostic UI is lazy-loaded, and development
-devtools are dynamically imported so neither enters the production path.
+when older pages prepend. During sandbox cold wake, D1 history stays visible,
+scrollable, and pageable while composer submit/model controls, empty-state
+suggestions, Git actions, and tools/preview entry points are disabled. A
+standalone top status bar (`output` / alert + Retry) announces provisioning or
+check/restore failure above the chat — not an overlay on `ChatNavbar` and not a
+full-page error that replaces history. Expensive diagnostic UI is lazy-loaded,
+and development devtools are dynamically imported so neither enters the
+production path.
 
 ## Tests
 

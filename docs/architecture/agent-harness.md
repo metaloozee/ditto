@@ -15,9 +15,12 @@ sandboxes hydrate through `restoreBackup` inside `ensureProjectSandbox`. A
 FUSE restore is ephemeral for the life of the container, so waking a sleeping
 project re-runs restore before agent work.
 
-Sandbox preparation also validates the baked runner manifest and CLI before it
-mutates project state. An invalid `/opt/ditto-runner` fails with an actionable
-image rebuild error instead of creating a broken agent run.
+Before any wake-causing `exists` or `exec` readiness probe,
+`getProjectSandboxState` observes the installed Sandbox/`Container` lifecycle
+via `getState()`. Inactive statuses enter the D1 provisioning fence and restore
+path directly; active candidates still verify `/workspace/.git` and the baked
+runner. An invalid `/opt/ditto-runner` fails with an actionable image rebuild
+error and does not mutate project state.
 
 Post-run and post-git snapshot writes share `persistProjectSandboxBackup`, which
 **versions** each attempt:

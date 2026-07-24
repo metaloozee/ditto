@@ -89,12 +89,19 @@ not have an agent-capable sandbox. The current UI creates GitHub-backed projects
 
 ### Open a workspace
 
-1. The project route queries project metadata and calls `workspace.ensureWorkspace`.
-2. `ensureProjectSandbox` returns a connected sandbox, restores its R2 backup,
-   or recreates it from GitHub.
-3. The Worker returns active workspace sessions and the selected session.
-4. The browser pages D1 messages newest-first, then reverses pages and rows for
-   chronological display.
+1. The project route loads owned project metadata and, for an explicit session
+   URL, pages D1 chat history independently of sandbox readiness.
+2. When D1 marks the project `ready`, the route calls
+   `workspace.ensureWorkspace`. The Worker observes the live container with
+   `getState()` before any filesystem or runner probe, then connects, restores
+   the R2 backup, or recreates from GitHub under the existing
+   `ready -> provisioning` fence.
+3. The Worker returns active workspace sessions, the selected session, and a
+   sandbox state (`connected`, restore/recreate success, `provisioning`, or
+   `failed`).
+4. While readiness is in progress, history stays readable and a workspace status
+   bar announces provisioning; sandbox-backed actions stay disabled until the
+   runtime is proven ready.
 
 ### Run the agent
 

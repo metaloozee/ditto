@@ -154,8 +154,14 @@ failed -- retry restore --------> ready | failed
 ready -- cold wake -------------> provisioning -> ready | failed
 ```
 
-A restore acquires a D1 status transition from `ready` to `provisioning`, which
-prevents two Workers from restoring the same project concurrently.
+D1 `ready` is the durable last-known successful provision/restore, not proof that
+the Cloudflare container is still alive. Before any `exists`/`exec` probe,
+`ensureProjectSandbox` observes the live runtime with `getState()`. Stopped,
+stopping, or stopped-with-code runtimes (and active runtimes whose workspace is
+not hydrated) take the existing D1 `ready -> provisioning` compare-and-set fence,
+then restore or recreate. Terminal ready/failed writes require the row still be
+`provisioning` so stale work cannot overwrite a later state. A compare-and-set
+loser is reported as provisioning, not as a terminal restore failure.
 
 ### Workspace session
 
@@ -230,7 +236,10 @@ generations so an older, slower backup cannot replace newer metadata.
 
 The sandbox filesystem is the live source for repository state. D1 stores the
 pointer and lifecycle metadata; R2 stores recoverable snapshots. Neither D1 nor
-R2 is treated as a live mounted repository.
+R2 is treated as a live mounted repository. Cold wake therefore starts with
+runtime observation (`getState`), then the provisioning fence and restore path
+above — not with wake-causing probes that could start an empty container while
+D1 still says `ready`.
 
 ## Infrastructure and configuration
 

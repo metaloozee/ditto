@@ -61,7 +61,7 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | `apps/web/src/components/ai-elements/task.tsx` | Composable task/progress presentation components. |
 | `apps/web/src/components/app-shell.tsx` | Composes sidebar, content inset, toasts, and global tooltip provider. |
 | `apps/web/src/components/app-sidebar.test.tsx` | Regression tests for `apps/web/src/components/app-sidebar.tsx` behavior and edge cases. |
-| `apps/web/src/components/app-sidebar.tsx` | Project/session navigation, search, creation/settings launchers, archival, and account footer. |
+| `apps/web/src/components/app-sidebar.tsx` | D1-only project/session navigation, search, creation/settings launchers, archival, and account footer (no workspace ensure; provisioning uses the normal folder icon). |
 | `apps/web/src/components/assistant-markdown.tsx` | Safe styled Markdown/code rendering for assistant text. |
 | `apps/web/src/components/composer.test.tsx` | Regression tests for `apps/web/src/components/composer.tsx` behavior and edge cases. |
 | `apps/web/src/components/composer.tsx` | Prompt/model input, browser-side SSE lifecycle, multi-turn commits, follow-up queueing, and Stop controls. |
@@ -118,7 +118,8 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | `apps/web/src/routes/installation.completed.tsx` | GitHub App installation popup completion notifier. |
 | `apps/web/src/routes/project.$projectId.index.tsx` | New-conversation child route for a project. |
 | `apps/web/src/routes/project.$projectId.session.$sessionId.tsx` | Existing-conversation child route for a project session. |
-| `apps/web/src/routes/project.$projectId.tsx` | Project workspace coordinator: project readiness, restore, selected session, history, and chat. |
+| `apps/web/src/routes/project.$projectId.tsx` | Project workspace coordinator: D1 history independent of sandbox wake, status bar, ensure/retry readiness, selected session, and chat. |
+| `apps/web/src/routes/project.$projectId.test.tsx` | Route coordination tests for history-before-readiness, status bar, retry, and list-invalidation boundaries. |
 | `apps/web/src/routes/sign-in.tsx` | GitHub OAuth sign-in UI and authenticated redirect. |
 
 ### Client/server integrations (`apps/web`)
@@ -191,12 +192,12 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | `apps/web/src/lib/message-cursor.ts` | Opaque validated `(createdAt,rowid)` cursor codec and comparison helpers. |
 | `apps/web/src/lib/project-env-vars.ts` | Sanitizes, encrypts, decrypts, and hides project environment values. |
 | `apps/web/src/lib/project-sandbox.test.ts` | Regression tests for `apps/web/src/lib/project-sandbox.ts` behavior and edge cases. |
-| `apps/web/src/lib/project-sandbox.ts` | Connects/restores/recreates project sandboxes and versions backup writes. |
+| `apps/web/src/lib/project-sandbox.ts` | Observes runtime state, connects/restores/recreates project sandboxes under the D1 provisioning fence, and versions backup writes. |
 | `apps/web/src/lib/provider-auth-service.ts` | Provider catalog discovery, auth/refresh sandbox orchestration, connection persistence, and account model discovery. |
 | `apps/web/src/lib/sandbox-backup.test.ts` | Regression tests for `apps/web/src/lib/sandbox-backup.ts` behavior and edge cases. |
 | `apps/web/src/lib/sandbox-backup.ts` | Backup handle codec, R2/local options, TTL, and exclusion policy. |
 | `apps/web/src/lib/sandbox-bootstrap.test.ts` | Regression tests for `apps/web/src/lib/sandbox-bootstrap.ts` behavior and edge cases. |
-| `apps/web/src/lib/sandbox-bootstrap.ts` | Low-level Sandbox SDK, Git clone/fetch, dependency install, health, backup, and restore operations. |
+| `apps/web/src/lib/sandbox-bootstrap.ts` | Low-level Sandbox SDK, lifecycle `getState` observation, Git clone/fetch, dependency install, health, backup, and restore operations. |
 | `apps/web/src/lib/secret-redaction.test.ts` | Regression tests for `apps/web/src/lib/secret-redaction.ts` behavior and edge cases. |
 | `apps/web/src/lib/secret-redaction.ts` | Concrete/pattern/streaming secret redaction for text and structured output. |
 | `apps/web/src/lib/session-git-backup.test.ts` | Regression tests for `apps/web/src/lib/session-git-backup.ts` behavior and edge cases. |
