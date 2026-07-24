@@ -8,6 +8,7 @@ import {
 import {
 	backupSandboxWorkspace,
 	bootstrapSandbox,
+	getProjectSandboxState,
 	isSandboxRunnerHealthy,
 	isSandboxWorkspaceHydrated,
 	restoreSandboxWorkspace,
@@ -28,6 +29,20 @@ export type PersistProjectSandboxBackupResult = {
 	stored: boolean;
 	candidateGeneration: number;
 };
+
+/** Another request owns the D1 provisioning fence; not a terminal restore failure. */
+export class ProjectSandboxProvisioningError extends Error {
+	constructor(message = "Project sandbox is already being restored.") {
+		super(message);
+		this.name = "ProjectSandboxProvisioningError";
+	}
+}
+
+const INACTIVE_SANDBOX_STATUSES = new Set([
+	"stopping",
+	"stopped",
+	"stopped_with_code",
+]);
 
 /**
  * Snapshot /workspace (incl. worktrees) and store the backup handle on the
@@ -129,15 +144,20 @@ async function markProjectRestoreFailed(options: {
 	db: ReturnType<typeof createDb>;
 	project: typeof projects.$inferSelect;
 }) {
-	await options.db
+	const [updated] = await options.db
 		.update(projects)
 		.set({ status: "failed", updatedAt: sql`(unixepoch())` })
 		.where(
 			and(
 				eq(projects.id, options.project.id),
 				eq(projects.userId, options.project.userId),
+				eq(projects.status, "provisioning"),
 			),
-		);
+		)
+		.returning({ id: projects.id });
+
+	// No row → another actor already moved status; swallow as no-op.
+	void updated;
 }
 
 /** Unconditional store for provisioning / restore-refresh paths only. */
@@ -158,6 +178,7 @@ async function storeReadyProjectBackup(options: {
 			and(
 				eq(projects.id, options.project.id),
 				eq(projects.userId, options.project.userId),
+				eq(projects.status, "provisioning"),
 			),
 		)
 		.returning();
@@ -211,57 +232,14 @@ async function recreateSandboxFromGitHub(options: {
 	return { project, state: "recreated_from_github" };
 }
 
-export async function ensureProjectSandbox(options: {
+async function restoreLockedProjectSandbox(options: {
 	db: ReturnType<typeof createDb>;
 	env: Env;
 	project: typeof projects.$inferSelect;
+	sandboxId: string;
 }): Promise<EnsureProjectSandboxResult> {
-	if (options.project.status !== "ready" || !options.project.sandboxId) {
-		throw new Error("Project sandbox is not ready yet.");
-	}
-
-	if (!options.project.githubRepo || !options.project.githubInstallationId) {
-		throw new Error(
-			"Project sandbox cannot be restored without a GitHub repository.",
-		);
-	}
-
-	const sandboxId = options.project.sandboxId;
-	const [hydrated, runnerHealthy] = await Promise.all([
-		isSandboxWorkspaceHydrated({
-			env: options.env,
-			sandboxId,
-		}),
-		isSandboxRunnerHealthy({
-			env: options.env,
-			sandboxId,
-		}),
-	]);
-	if (!runnerHealthy) {
-		throw new Error(
-			"Project sandbox runner image is invalid. Rebuild or redeploy the sandbox image.",
-		);
-	}
-
-	if (hydrated) {
-		return { project: options.project, state: "connected" };
-	}
-
-	const [lockedProject] = await options.db
-		.update(projects)
-		.set({ status: "provisioning", updatedAt: sql`(unixepoch())` })
-		.where(
-			and(
-				eq(projects.id, options.project.id),
-				eq(projects.userId, options.project.userId),
-				eq(projects.status, "ready"),
-			),
-		)
-		.returning();
-
-	if (!lockedProject) {
-		throw new Error("Project sandbox is already being restored.");
-	}
+	const lockedProject = options.project;
+	const sandboxId = options.sandboxId;
 
 	try {
 		const storedBackup = parseSandboxBackup(lockedProject.sandboxBackup);
@@ -323,4 +301,78 @@ export async function ensureProjectSandbox(options: {
 		});
 		throw new Error("Project sandbox restore failed. Please try again.");
 	}
+}
+
+export async function ensureProjectSandbox(options: {
+	db: ReturnType<typeof createDb>;
+	env: Env;
+	project: typeof projects.$inferSelect;
+}): Promise<EnsureProjectSandboxResult> {
+	if (options.project.status !== "ready" || !options.project.sandboxId) {
+		throw new Error("Project sandbox is not ready yet.");
+	}
+
+	if (!options.project.githubRepo || !options.project.githubInstallationId) {
+		throw new Error(
+			"Project sandbox cannot be restored without a GitHub repository.",
+		);
+	}
+
+	const sandboxId = options.project.sandboxId;
+	const runtime = await getProjectSandboxState(options.env, sandboxId);
+	const status = runtime.status;
+
+	let needsRestore = false;
+	if (INACTIVE_SANDBOX_STATUSES.has(status)) {
+		needsRestore = true;
+	} else if (status === "healthy" || status === "running") {
+		const [hydrated, runnerHealthy] = await Promise.all([
+			isSandboxWorkspaceHydrated({
+				env: options.env,
+				sandboxId,
+			}),
+			isSandboxRunnerHealthy({
+				env: options.env,
+				sandboxId,
+			}),
+		]);
+		if (!runnerHealthy) {
+			throw new Error(
+				"Project sandbox runner image is invalid. Rebuild or redeploy the sandbox image.",
+			);
+		}
+		if (hydrated) {
+			return { project: options.project, state: "connected" };
+		}
+		needsRestore = true;
+	} else {
+		throw new Error(`Unknown sandbox runtime status: ${String(status)}`);
+	}
+
+	if (!needsRestore) {
+		return { project: options.project, state: "connected" };
+	}
+
+	const [lockedProject] = await options.db
+		.update(projects)
+		.set({ status: "provisioning", updatedAt: sql`(unixepoch())` })
+		.where(
+			and(
+				eq(projects.id, options.project.id),
+				eq(projects.userId, options.project.userId),
+				eq(projects.status, "ready"),
+			),
+		)
+		.returning();
+
+	if (!lockedProject) {
+		throw new ProjectSandboxProvisioningError();
+	}
+
+	return await restoreLockedProjectSandbox({
+		db: options.db,
+		env: options.env,
+		project: lockedProject,
+		sandboxId,
+	});
 }

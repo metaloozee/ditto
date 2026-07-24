@@ -6,6 +6,7 @@ const restoreSandboxWorkspaceMock = vi.hoisted(() => vi.fn());
 const backupSandboxWorkspaceMock = vi.hoisted(() => vi.fn());
 const bootstrapSandboxMock = vi.hoisted(() => vi.fn());
 const isSandboxRunnerHealthyMock = vi.hoisted(() => vi.fn());
+const getProjectSandboxStateMock = vi.hoisted(() => vi.fn());
 
 vi.mock("#/lib/sandbox-bootstrap", () => ({
 	isSandboxWorkspaceHydrated: isSandboxWorkspaceHydratedMock,
@@ -13,11 +14,14 @@ vi.mock("#/lib/sandbox-bootstrap", () => ({
 	backupSandboxWorkspace: backupSandboxWorkspaceMock,
 	bootstrapSandbox: bootstrapSandboxMock,
 	isSandboxRunnerHealthy: isSandboxRunnerHealthyMock,
+	getProjectSandboxState: getProjectSandboxStateMock,
 }));
 
-const { ensureProjectSandbox, persistProjectSandboxBackup } = await import(
-	"./project-sandbox"
-);
+const {
+	ensureProjectSandbox,
+	persistProjectSandboxBackup,
+	ProjectSandboxProvisioningError,
+} = await import("./project-sandbox");
 const { projects } = await import("#/db/schema");
 
 const projectId = "project-1";
@@ -128,6 +132,9 @@ function makeVersionedDb(initial: ProjectRow = { ...baseProject }) {
 					}
 
 					if (set.status === "failed") {
+						if (state.project.status !== "provisioning") {
+							return [];
+						}
 						state.project = {
 							...state.project,
 							status: "failed",
@@ -136,8 +143,11 @@ function makeVersionedDb(initial: ProjectRow = { ...baseProject }) {
 						return [state.project];
 					}
 
-					// Unconditional storeReadyProjectBackup
+					// storeReadyProjectBackup — only while still provisioning
 					if (set.sandboxBackup !== undefined) {
+						if (state.project.status !== "provisioning") {
+							return [];
+						}
 						state.project = {
 							...state.project,
 							status: (set.status as ProjectRow["status"]) ?? "ready",
@@ -175,6 +185,9 @@ function makeVersionedDb(initial: ProjectRow = { ...baseProject }) {
 		setCalls,
 		updateMock,
 		getState: () => state.project,
+		setStatus(status: ProjectRow["status"]) {
+			state.project = { ...state.project, status };
+		},
 	};
 }
 
@@ -182,6 +195,10 @@ function makeVersionedDb(initial: ProjectRow = { ...baseProject }) {
 function makeFakeDb(options: {
 	lockedProject: ProjectRow | null;
 	updatedProject?: ProjectRow;
+	/** When true, failed-write returns empty (stale fence). */
+	rejectFailedWrite?: boolean;
+	/** When true, ready-store returns empty (stale fence). */
+	rejectReadyStore?: boolean;
 }) {
 	const returningQueue: unknown[][] = [];
 	returningQueue.push(options.lockedProject ? [options.lockedProject] : []);
@@ -190,10 +207,33 @@ function makeFakeDb(options: {
 	}
 
 	const setCalls: unknown[] = [];
-	const returningMock = vi.fn(async () => returningQueue.shift() ?? []);
+	const returningMock = vi.fn(async () => {
+		const next = returningQueue.shift();
+		if (next !== undefined) return next;
+		// Default behavior for unexpected extra writes
+		return [];
+	});
 	const whereMock = vi.fn(() => ({ returning: returningMock }));
-	const setMock = vi.fn((values: unknown) => {
+	const setMock = vi.fn((values: Record<string, unknown>) => {
 		setCalls.push(values);
+		if (values.status === "failed" && options.rejectFailedWrite) {
+			return {
+				where: vi.fn(() => ({
+					returning: vi.fn(async () => []),
+				})),
+			};
+		}
+		if (
+			values.sandboxBackup !== undefined &&
+			values.status === "ready" &&
+			options.rejectReadyStore
+		) {
+			return {
+				where: vi.fn(() => ({
+					returning: vi.fn(async () => []),
+				})),
+			};
+		}
 		return { where: whereMock };
 	});
 	const updateMock = vi.fn(() => ({ set: setMock }));
@@ -221,6 +261,16 @@ function deferred<T>() {
 		reject = rej;
 	});
 	return { promise, resolve, reject };
+}
+
+function callOrder(...spies: Array<ReturnType<typeof vi.fn>>) {
+	return spies
+		.map((spy, index) => ({
+			index,
+			order: spy.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+		}))
+		.sort((a, b) => a.order - b.order)
+		.map((entry) => entry.index);
 }
 
 describe("persistProjectSandboxBackup", () => {
@@ -380,9 +430,29 @@ describe("ensureProjectSandbox", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		isSandboxRunnerHealthyMock.mockResolvedValue(true);
+		getProjectSandboxStateMock.mockResolvedValue({ status: "healthy" });
 	});
 
-	it("returns connected when the workspace is already hydrated", async () => {
+	it("returns connected when healthy, hydrated, and runner is healthy", async () => {
+		isSandboxWorkspaceHydratedMock.mockResolvedValue(true);
+		const { db, updateMock } = makeFakeDb({ lockedProject: baseProject });
+
+		await expect(
+			ensureProjectSandbox({
+				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
+				env: makeEnv(),
+				project: baseProject,
+			}),
+		).resolves.toMatchObject({ state: "connected", project: baseProject });
+
+		expect(
+			callOrder(getProjectSandboxStateMock, isSandboxWorkspaceHydratedMock)[0],
+		).toBe(0);
+		expect(updateMock).not.toHaveBeenCalled();
+	});
+
+	it("returns connected when running, hydrated, and runner is healthy", async () => {
+		getProjectSandboxStateMock.mockResolvedValue({ status: "running" });
 		isSandboxWorkspaceHydratedMock.mockResolvedValue(true);
 		const { db, updateMock } = makeFakeDb({ lockedProject: baseProject });
 
@@ -395,6 +465,155 @@ describe("ensureProjectSandbox", () => {
 		).resolves.toMatchObject({ state: "connected", project: baseProject });
 
 		expect(updateMock).not.toHaveBeenCalled();
+	});
+
+	it.each(["stopping", "stopped", "stopped_with_code"] as const)(
+		"skips pre-lock probes for %s and restores from backup",
+		async (status) => {
+			getProjectSandboxStateMock.mockResolvedValue({ status });
+			const storedBackup = serializeSandboxBackup({
+				id: "backup-1",
+				dir: "/workspace",
+			});
+			const lockedProject = {
+				...baseProject,
+				sandboxBackup: storedBackup,
+				status: "provisioning" as const,
+			};
+			const updatedProject = {
+				...baseProject,
+				sandboxBackup: serializeSandboxBackup({
+					id: "backup-2",
+					dir: "/workspace",
+				}),
+				status: "ready" as const,
+			};
+			const { db, setCalls } = makeFakeDb({ lockedProject, updatedProject });
+
+			// Only post-restore probes should run.
+			isSandboxWorkspaceHydratedMock.mockResolvedValue(true);
+			isSandboxRunnerHealthyMock.mockResolvedValue(true);
+			restoreSandboxWorkspaceMock.mockResolvedValue(undefined);
+			backupSandboxWorkspaceMock.mockResolvedValue({
+				id: "backup-2",
+				dir: "/workspace",
+			});
+
+			await expect(
+				ensureProjectSandbox({
+					db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
+					env: makeEnv(),
+					project: baseProject,
+				}),
+			).resolves.toMatchObject({
+				state: "restored_from_backup",
+				project: updatedProject,
+			});
+
+			// Pre-lock probes must not run: only post-restore probes.
+			expect(isSandboxWorkspaceHydratedMock).toHaveBeenCalledTimes(1);
+			expect(isSandboxRunnerHealthyMock).toHaveBeenCalledTimes(1);
+			expect(
+				callOrder(restoreSandboxWorkspaceMock, isSandboxWorkspaceHydratedMock)[0],
+			).toBe(0);
+			expect(setCalls[0]).toMatchObject({ status: "provisioning" });
+			expect(restoreSandboxWorkspaceMock).toHaveBeenCalled();
+		},
+	);
+
+	it("observes runtime before hydration/runner probes on active containers", async () => {
+		isSandboxWorkspaceHydratedMock.mockResolvedValue(true);
+		const { db } = makeFakeDb({ lockedProject: baseProject });
+
+		await ensureProjectSandbox({
+			db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
+			env: makeEnv(),
+			project: baseProject,
+		});
+
+		expect(callOrder(getProjectSandboxStateMock, isSandboxWorkspaceHydratedMock)[0]).toBe(
+			0,
+		);
+		expect(callOrder(getProjectSandboxStateMock, isSandboxRunnerHealthyMock)[0]).toBe(
+			0,
+		);
+	});
+
+	it("rejects an invalid runner before mutating project state even when unhydrated", async () => {
+		const { db, updateMock } = makeFakeDb({ lockedProject: baseProject });
+		isSandboxWorkspaceHydratedMock.mockResolvedValue(false);
+		isSandboxRunnerHealthyMock.mockResolvedValue(false);
+
+		await expect(
+			ensureProjectSandbox({
+				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
+				env: makeEnv(),
+				project: baseProject,
+			}),
+		).rejects.toThrow("Project sandbox runner image is invalid");
+
+		expect(updateMock).not.toHaveBeenCalled();
+		expect(restoreSandboxWorkspaceMock).not.toHaveBeenCalled();
+	});
+
+	it("enters CAS restore when active, runner healthy, and unhydrated", async () => {
+		const storedBackup = serializeSandboxBackup({
+			id: "backup-1",
+			dir: "/workspace",
+		});
+		const lockedProject = {
+			...baseProject,
+			sandboxBackup: storedBackup,
+			status: "provisioning" as const,
+		};
+		const updatedProject = {
+			...baseProject,
+			sandboxBackup: serializeSandboxBackup({
+				id: "backup-2",
+				dir: "/workspace",
+			}),
+			status: "ready" as const,
+		};
+		const { db, setCalls } = makeFakeDb({ lockedProject, updatedProject });
+
+		isSandboxWorkspaceHydratedMock.mockResolvedValueOnce(false);
+		isSandboxWorkspaceHydratedMock.mockResolvedValueOnce(true);
+		restoreSandboxWorkspaceMock.mockResolvedValue(undefined);
+		backupSandboxWorkspaceMock.mockResolvedValue({
+			id: "backup-2",
+			dir: "/workspace",
+		});
+
+		await expect(
+			ensureProjectSandbox({
+				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
+				env: makeEnv(),
+				project: baseProject,
+			}),
+		).resolves.toMatchObject({
+			state: "restored_from_backup",
+			project: updatedProject,
+		});
+
+		expect(setCalls[0]).toMatchObject({ status: "provisioning" });
+	});
+
+	it("throws ProjectSandboxProvisioningError on compare-and-set loss", async () => {
+		const { db, setCalls } = makeFakeDb({ lockedProject: null });
+		getProjectSandboxStateMock.mockResolvedValue({ status: "stopped" });
+
+		await expect(
+			ensureProjectSandbox({
+				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
+				env: makeEnv(),
+				project: baseProject,
+			}),
+		).rejects.toBeInstanceOf(ProjectSandboxProvisioningError);
+
+		expect(setCalls).toEqual([expect.objectContaining({ status: "provisioning" })]);
+		expect(setCalls.some((call) => (call as { status?: string }).status === "failed")).toBe(
+			false,
+		);
 	});
 
 	it("restores from backup, re-backs up, and returns restored_from_backup", async () => {
@@ -454,23 +673,6 @@ describe("ensureProjectSandbox", () => {
 				dir: "/workspace",
 			}),
 		});
-	});
-
-	it("rejects an invalid runner before mutating project state", async () => {
-		const { db, updateMock } = makeFakeDb({ lockedProject: baseProject });
-		isSandboxWorkspaceHydratedMock.mockResolvedValue(true);
-		isSandboxRunnerHealthyMock.mockResolvedValue(false);
-
-		await expect(
-			ensureProjectSandbox({
-				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
-				env: makeEnv(),
-				project: baseProject,
-			}),
-		).rejects.toThrow("Project sandbox runner image is invalid");
-
-		expect(updateMock).not.toHaveBeenCalled();
-		expect(restoreSandboxWorkspaceMock).not.toHaveBeenCalled();
 	});
 
 	it("falls back to GitHub when restore from backup fails", async () => {
@@ -547,7 +749,7 @@ describe("ensureProjectSandbox", () => {
 		expect(bootstrapSandboxMock).toHaveBeenCalled();
 	});
 
-	it("marks the project failed when all restore paths throw", async () => {
+	it("marks the project failed when all restore paths throw while still provisioning", async () => {
 		const lockedProject = {
 			...baseProject,
 			sandboxBackup: null,
@@ -555,7 +757,7 @@ describe("ensureProjectSandbox", () => {
 		};
 		const { db, setCalls } = makeFakeDb({ lockedProject });
 
-		isSandboxWorkspaceHydratedMock.mockResolvedValueOnce(false);
+		getProjectSandboxStateMock.mockResolvedValue({ status: "stopped" });
 		bootstrapSandboxMock.mockRejectedValue(new Error("github failed"));
 
 		await expect(
@@ -567,5 +769,77 @@ describe("ensureProjectSandbox", () => {
 		).rejects.toThrow("Project sandbox restore failed. Please try again.");
 
 		expect(setCalls.at(-1)).toMatchObject({ status: "failed" });
+	});
+
+	it("does not claim success when a stale ready completion loses the provisioning fence", async () => {
+		const { db, getState, setStatus } = makeVersionedDb({
+			...baseProject,
+			sandboxBackup: serializeSandboxBackup({
+				id: "backup-1",
+				dir: "/workspace",
+			}),
+		});
+
+		getProjectSandboxStateMock.mockResolvedValue({ status: "stopped" });
+		isSandboxWorkspaceHydratedMock.mockResolvedValue(true);
+		isSandboxRunnerHealthyMock.mockResolvedValue(true);
+		restoreSandboxWorkspaceMock.mockImplementation(async () => {
+			// Another actor finished while restore was in flight.
+			setStatus("ready");
+		});
+		backupSandboxWorkspaceMock.mockResolvedValue({
+			id: "backup-2",
+			dir: "/workspace",
+		});
+
+		await expect(
+			ensureProjectSandbox({
+				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
+				env: makeEnv(),
+				project: baseProject,
+			}),
+		).rejects.toThrow("Project sandbox restore failed. Please try again.");
+
+		expect(getState().status).toBe("ready");
+		expect(getState().sandboxBackup).toContain("backup-1");
+	});
+
+	it("does not overwrite a non-provisioning row when marking failed", async () => {
+		const { db, getState, setStatus } = makeVersionedDb({
+			...baseProject,
+			sandboxBackup: null,
+		});
+
+		getProjectSandboxStateMock.mockResolvedValue({ status: "stopped" });
+		bootstrapSandboxMock.mockImplementation(async () => {
+			setStatus("ready");
+			throw new Error("github failed");
+		});
+
+		await expect(
+			ensureProjectSandbox({
+				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
+				env: makeEnv(),
+				project: baseProject,
+			}),
+		).rejects.toThrow("Project sandbox restore failed. Please try again.");
+
+		expect(getState().status).toBe("ready");
+	});
+
+	it("propagates getState errors without writing D1", async () => {
+		const { db, updateMock } = makeFakeDb({ lockedProject: baseProject });
+		getProjectSandboxStateMock.mockRejectedValue(new Error("rpc down"));
+
+		await expect(
+			ensureProjectSandbox({
+				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
+				env: makeEnv(),
+				project: baseProject,
+			}),
+		).rejects.toThrow("rpc down");
+
+		expect(updateMock).not.toHaveBeenCalled();
+		expect(isSandboxWorkspaceHydratedMock).not.toHaveBeenCalled();
 	});
 });

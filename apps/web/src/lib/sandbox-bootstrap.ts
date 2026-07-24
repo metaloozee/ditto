@@ -29,6 +29,12 @@ export function getProjectSandbox(env: Env, sandboxId: string) {
 	);
 }
 
+/** Read-only lifecycle observation; does not start or probe the filesystem. */
+export async function getProjectSandboxState(env: Env, sandboxId: string) {
+	const sandbox = getProjectSandbox(env, sandboxId);
+	return await sandbox.getState();
+}
+
 function quoteShellArg(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;
 }

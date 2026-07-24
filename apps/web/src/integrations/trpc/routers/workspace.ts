@@ -10,7 +10,10 @@ import {
 	messageCursorFromRow,
 	messageCursorOlderThanInputs,
 } from "#/lib/message-cursor";
-import { ensureProjectSandbox } from "#/lib/project-sandbox";
+import {
+	ensureProjectSandbox,
+	ProjectSandboxProvisioningError,
+} from "#/lib/project-sandbox";
 import {
 	archiveSessionWithPreviewCleanup,
 	SessionPreviewError,
@@ -55,20 +58,30 @@ function stripProjectSecrets(project: typeof projects.$inferSelect) {
 	return rest;
 }
 
+type WorkspaceSandboxState =
+	| "connected"
+	| "restored_from_backup"
+	| "recreated_from_github"
+	| "provisioning"
+	| "failed";
+
 async function ensureProjectWorkspace(options: {
 	db: ReturnType<typeof createDb>;
 	env: Env;
 	project: typeof projects.$inferSelect;
 }): Promise<{
 	project: typeof projects.$inferSelect;
-	sandboxState: string;
+	sandboxState: WorkspaceSandboxState;
 	restoreFailed: boolean;
 }> {
 	if (options.project.status !== "ready" || !options.project.sandboxId) {
+		const status = options.project.status;
+		const sandboxState: WorkspaceSandboxState =
+			status === "provisioning" || status === "failed" ? status : "failed";
 		return {
 			project: options.project,
-			sandboxState: options.project.status,
-			restoreFailed: options.project.status === "failed",
+			sandboxState,
+			restoreFailed: status === "failed",
 		};
 	}
 
@@ -84,12 +97,68 @@ async function ensureProjectWorkspace(options: {
 			sandboxState: ensured.state,
 			restoreFailed: false,
 		};
-	} catch {
-		return {
-			project: options.project,
-			sandboxState: "failed",
-			restoreFailed: true,
-		};
+	} catch (error) {
+		let thrown: unknown = error;
+
+		if (error instanceof ProjectSandboxProvisioningError) {
+			const current = await loadProjectOrThrow({
+				db: options.db,
+				projectId: options.project.id,
+				userId: options.project.userId,
+			});
+
+			if (current.status === "provisioning") {
+				return {
+					project: current,
+					sandboxState: "provisioning",
+					restoreFailed: false,
+				};
+			}
+			if (current.status === "failed") {
+				return {
+					project: current,
+					sandboxState: "failed",
+					restoreFailed: true,
+				};
+			}
+
+			// Winner finished; one nested ensure only.
+			try {
+				const ensured = await ensureProjectSandbox({
+					db: options.db,
+					env: options.env,
+					project: current,
+				});
+				return {
+					project: ensured.project,
+					sandboxState: ensured.state,
+					restoreFailed: false,
+				};
+			} catch (nested) {
+				if (nested instanceof ProjectSandboxProvisioningError) {
+					return {
+						project: current,
+						sandboxState: "provisioning",
+						restoreFailed: false,
+					};
+				}
+				thrown = nested;
+			}
+		}
+
+		const current = await loadProjectOrThrow({
+			db: options.db,
+			projectId: options.project.id,
+			userId: options.project.userId,
+		});
+		if (current.status === "failed") {
+			return {
+				project: current,
+				sandboxState: "failed",
+				restoreFailed: true,
+			};
+		}
+		throw thrown;
 	}
 }
 

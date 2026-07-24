@@ -23,6 +23,7 @@ const {
 	bootstrapSandbox,
 	execOrThrow,
 	fetchPrimaryBranchFromGitHub,
+	getProjectSandboxState,
 	isSandboxRunnerHealthy,
 	isSandboxWorkspaceHydrated,
 	installDependencies,
@@ -74,6 +75,8 @@ function makeSandbox(
 			duration: 10,
 			timestamp: "2026-07-04T00:00:00.000Z",
 		})),
+		getState: vi.fn().mockResolvedValue({ status: "healthy" }),
+		start: vi.fn().mockResolvedValue(undefined),
 		gitCheckout: vi.fn().mockResolvedValue(undefined),
 		createBackup: vi.fn().mockResolvedValue({
 			id: "backup-1",
@@ -86,6 +89,39 @@ function makeSandbox(
 describe("sandbox bootstrap helpers", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+	});
+
+	it("returns healthy sandbox state without waking the container", async () => {
+		const sandbox = makeSandbox();
+		sandbox.getState.mockResolvedValue({ status: "healthy" });
+		getSandboxMock.mockReturnValue(sandbox);
+
+		await expect(
+			getProjectSandboxState({ Sandbox: {} } as unknown as Env, "sandbox-1"),
+		).resolves.toEqual({ status: "healthy" });
+
+		expect(sandbox.getState).toHaveBeenCalledTimes(1);
+		expect(sandbox.exists).not.toHaveBeenCalled();
+		expect(sandbox.exec).not.toHaveBeenCalled();
+		expect(sandbox.start).not.toHaveBeenCalled();
+	});
+
+	it("returns stopped_with_code sandbox state without waking the container", async () => {
+		const sandbox = makeSandbox();
+		sandbox.getState.mockResolvedValue({
+			status: "stopped_with_code",
+			code: 1,
+		});
+		getSandboxMock.mockReturnValue(sandbox);
+
+		await expect(
+			getProjectSandboxState({ Sandbox: {} } as unknown as Env, "sandbox-1"),
+		).resolves.toEqual({ status: "stopped_with_code", code: 1 });
+
+		expect(sandbox.getState).toHaveBeenCalledTimes(1);
+		expect(sandbox.exists).not.toHaveBeenCalled();
+		expect(sandbox.exec).not.toHaveBeenCalled();
+		expect(sandbox.start).not.toHaveBeenCalled();
 	});
 
 	it("checks whether the workspace is hydrated", async () => {
