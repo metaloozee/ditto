@@ -9,7 +9,6 @@ import {
 } from "@tanstack/react-router";
 import {
 	AlertCircleIcon,
-	FileTextIcon,
 	FolderIcon,
 	FolderOpenIcon,
 	Layers2Icon,
@@ -37,19 +36,9 @@ import {
 import { Button } from "#/components/ui/button";
 import { Collapsible, CollapsibleContent } from "#/components/ui/collapsible";
 import {
-	Command,
-	CommandDialog,
-	CommandEmpty,
-	CommandGroup,
-	CommandInput,
-	CommandItem,
-	CommandList,
-	CommandSeparator,
-	CommandShortcut,
-} from "#/components/ui/command";
-import {
 	DropdownMenu,
 	DropdownMenuContent,
+	DropdownMenuGroup,
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "#/components/ui/dropdown-menu";
@@ -127,66 +116,6 @@ function BrandingWithTrigger(): React.JSX.Element {
 	);
 }
 
-function SearchCommandDialog({
-	open,
-	onOpenChange,
-	projects,
-}: {
-	open: boolean;
-	onOpenChange: (open: boolean) => void;
-	projects: SidebarProject[];
-}): React.JSX.Element {
-	return (
-		<CommandDialog
-			open={open}
-			onOpenChange={onOpenChange}
-			title="Search"
-			description="Search for projects."
-			className="sm:max-w-xl"
-		>
-			<Command>
-				<CommandInput placeholder="Search projects..." />
-				<CommandList>
-					<CommandEmpty>No projects found.</CommandEmpty>
-					<CommandGroup heading="Projects">
-						{projects.map((project, index) => (
-							<CommandItem
-								key={project.id}
-								value={`${project.name} ${project.description ?? ""}`}
-								onSelect={() => onOpenChange(false)}
-								className="cursor-pointer py-2"
-							>
-								<div className="flex min-w-0 flex-1 flex-col">
-									<span className="truncate text-sm font-medium">
-										{project.name}
-									</span>
-									{project.description ? (
-										<span className="truncate text-muted-foreground">
-											{project.description}
-										</span>
-									) : null}
-								</div>
-								<CommandShortcut>P{index + 1}</CommandShortcut>
-							</CommandItem>
-						))}
-					</CommandGroup>
-					<CommandSeparator />
-					<CommandGroup heading="Quick actions">
-						<CommandItem
-							value="Open docs documentation"
-							onSelect={() => onOpenChange(false)}
-							className="cursor-pointer py-2"
-						>
-							<FileTextIcon aria-hidden="true" />
-							<span className="text-sm font-medium">Open documentation</span>
-						</CommandItem>
-					</CommandGroup>
-				</CommandList>
-			</Command>
-		</CommandDialog>
-	);
-}
-
 function ProjectStatusIcon({
 	status,
 	isOpen,
@@ -260,6 +189,7 @@ export function SessionSidebarItem({
 							projectId: project.id,
 							sessionId: session.id,
 						}}
+						aria-label={session.title || "Untitled chat"}
 					/>
 				}
 				className="pr-7"
@@ -284,14 +214,16 @@ export function SessionSidebarItem({
 					sideOffset={4}
 					className="min-w-36"
 				>
-					<DropdownMenuItem
-						variant="destructive"
-						className="cursor-pointer"
-						onClick={() => setConfirmOpen(true)}
-					>
-						<TrashIcon />
-						<span>Archive Session</span>
-					</DropdownMenuItem>
+					<DropdownMenuGroup>
+						<DropdownMenuItem
+							variant="destructive"
+							className="cursor-pointer"
+							onClick={() => setConfirmOpen(true)}
+						>
+							<TrashIcon />
+							<span>Archive Session</span>
+						</DropdownMenuItem>
+					</DropdownMenuGroup>
 				</DropdownMenuContent>
 			</DropdownMenu>
 
@@ -304,6 +236,11 @@ export function SessionSidebarItem({
 							new messages.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
+					{deleteSessionMutation.isPending ? (
+						<p className="sr-only" aria-live="polite">
+							Archiving session
+						</p>
+					) : null}
 					<AlertDialogFooter>
 						<AlertDialogCancel>Cancel</AlertDialogCancel>
 						<AlertDialogAction
@@ -311,8 +248,11 @@ export function SessionSidebarItem({
 							onClick={() => void handleArchiveSession()}
 							disabled={deleteSessionMutation.isPending}
 							className="cursor-pointer"
+							aria-busy={deleteSessionMutation.isPending || undefined}
 						>
-							{deleteSessionMutation.isPending ? "Archiving…" : "Archive"}
+							<span aria-live="polite">
+								{deleteSessionMutation.isPending ? "Archiving…" : "Archive"}
+							</span>
 						</AlertDialogAction>
 					</AlertDialogFooter>
 				</AlertDialogContent>
@@ -493,7 +433,6 @@ function AppSidebarClient(
 ): React.JSX.Element {
 	const { state } = useSidebar();
 	const [newProjectOpen, setNewProjectOpen] = useState(false);
-	const [searchOpen, setSearchOpen] = useState(false);
 	const { data: session, isPending } = authClient.useSession();
 
 	const trpc = useTRPC();
@@ -536,7 +475,11 @@ function AppSidebarClient(
 										<Button
 											className="cursor-pointer"
 											variant="outline"
-											onClick={() => setSearchOpen(true)}
+											onClick={() => {
+												window.dispatchEvent(
+													new Event("ditto:open-command-menu"),
+												);
+											}}
 										/>
 									}
 								>
@@ -565,11 +508,6 @@ function AppSidebarClient(
 			<NewProjectDialog
 				open={newProjectOpen}
 				onOpenChange={setNewProjectOpen}
-			/>
-			<SearchCommandDialog
-				open={searchOpen}
-				onOpenChange={setSearchOpen}
-				projects={projects}
 			/>
 		</>
 	);

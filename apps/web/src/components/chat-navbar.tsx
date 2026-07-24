@@ -35,9 +35,9 @@ export function ChatNavbar({
 	onToolsOpenChange,
 	rightActions,
 }: ChatNavbarProps) {
-	const { state } = useSidebar();
+	const { state, isMobile } = useSidebar();
 	const reduceMotion = useReducedMotion();
-	const showSidebarTrigger = state === "collapsed";
+	const showSidebarTrigger = isMobile || state === "collapsed";
 	const duration = reduceMotion ? 0 : 0.2;
 	const ease = [0.23, 1, 0.32, 1] as const;
 	const branchLabel = branchName?.trim() || "—";
