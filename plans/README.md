@@ -265,6 +265,29 @@ Locked outcomes:
   mega context loaders, agent mid-run backup, readiness inside core.
 - Branch: `advisor/029-session-git-export-orchestration`.
 
+## Plan 030 (sandbox readiness loading)
+
+Planned at commit `6347ed1` on 2026-07-24 after tracing the project route,
+D1-only history/sidebar reads, workspace tRPC orchestration, cold restore fence,
+and the installed Cloudflare Sandbox 0.12.3 / Containers 0.3.7 lifecycle API.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 030 | Verify sandbox readiness while keeping D1 chat history visible | P1 | L | 014, 017, 028 (DONE) | TODO |
+
+Locked outcomes:
+
+- Observe inherited Sandbox `getState()` before any wake-causing filesystem or
+  runner probe; keep the existing D1 `ready -> provisioning` restore fence.
+- Explicit-session D1 messages render independently while readiness is pending;
+  sandbox-backed composer, Git, tools, and preview actions remain unavailable.
+- Provisioning uses a standalone accessible row above chat, not an overlay or
+  sidebar state.
+- Sidebar remains `projects.list`-only and renders no provisioning spinner.
+- No schema/migration, keep-alive change, detached `waitUntil` restore, or
+  automatic stale-provisioning timeout.
+- Branch: `advisor/030-sandbox-readiness-loading`.
+
 ### Audit finding coverage
 
 | Selected finding | Covered by | Combination rationale |
@@ -526,6 +549,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
   UI git lock/metadata paths, and preview's repair-under-lock pattern exist.
 - **029 requires 028** — export orchestration assumes callers already run
   readiness; core must not re-implement worktree bind or soft gitStatus.
+- **030 requires 014, 017, and 028** — cold project wake must preserve versioned
+  backup semantics, the existing agent lifecycle boundary, and session-worktree
+  readiness while changing only project runtime detection and open-workspace UX.
 
 ## Product decisions (locked 2026-07-09)
 
@@ -622,6 +648,7 @@ tree while sharing git objects and (via symlink) `node_modules`.
   23. `027-session-live-previews.md`
   24. `028-session-workspace-readiness.md`
   25. `029-session-git-export-orchestration.md`
+  26. `030-sandbox-readiness-loading.md`
 
 ## Planning update — 2026-07-23 (Plan 028)
 
@@ -742,4 +769,24 @@ subagent (not new plan files).
     Concurrent-discard safe because ack only drops ids present in that render’s
     server messages. Existing `ai-chat` / cache tests pass.
 - **Not merged / not pushed** — merge is the user’s decision.
+  Note: those baseline fixes are now present on master tip `6347ed1`; the
+  historical worktree branch name is unrelated to Plan 030 below.
 
+## Planning update — 2026-07-24 (Plan 030)
+
+- **Current HEAD / planned-at**: `6347ed1`.
+- **TODO 030**: cold-wake sandbox readiness with D1 chat history still visible.
+  Full handoff: `plans/030-sandbox-readiness-loading.md`.
+- **Cheap verification at planning time**:
+  | Gate | Result |
+  |---|---|
+  | `pnpm check` | pass (warning-only pre-existing diagnostics) |
+  | `pnpm typecheck` | pass |
+  | focused readiness-related tests | pass: 40 tests across 5 files |
+  | `pnpm test` | pass: 596 tests |
+- **Executable now**: Plan 030 only. Branch
+  `advisor/030-sandbox-readiness-loading`. No cloud deployment is required or
+  authorized by the plan.
+- **Deferred out of 030**: stale-provisioning lease/timeout, keep-alive tuning,
+  schema/runtime status column, dashboard provisioning presentation, and any
+  change to agent/Git/preview domain policy beyond parent-level disablement.
