@@ -75,7 +75,8 @@ export function NewProjectDialog({
 	const selectedRepository = githubRepos.find(
 		(repo) => repo.name === selectedRepo,
 	);
-	const isProvisioning = createProjectMutation.isPending;
+	const isPending = createProjectMutation.isPending;
+	const isProvisioning = isPending;
 	const invalidEnvVarIds = new Set<string>();
 	for (const envVar of envVars) {
 		if (
@@ -241,11 +242,15 @@ export function NewProjectDialog({
 						type="button"
 						onClick={() => void createProject()}
 						disabled={
-							!selectedRepository || isProvisioning || invalidEnvVarIds.size > 0
+							isPending ||
+							!selectedRepository ||
+							isProvisioning ||
+							invalidEnvVarIds.size > 0
 						}
+						aria-busy={isPending || undefined}
 					>
-						{isProvisioning ? <Spinner /> : null}
-						{isProvisioning ? "Creating project…" : "Create project"}
+						{isPending ? <Spinner /> : null}
+						{isPending ? "Creating project…" : "Create project"}
 					</Button>
 				</DialogFooter>
 			</DialogContent>
@@ -328,7 +333,9 @@ function RepositoryPicker({
 							</span>
 						</CommandEmpty>
 					) : repositories.length === 0 ? (
-						<CommandEmpty>No accessible repositories found.</CommandEmpty>
+						<CommandEmpty>
+							Nothing found. No accessible repositories yet.
+						</CommandEmpty>
 					) : (
 						<CommandGroup heading="Repositories">
 							{repositories.map((repo) => (

@@ -108,9 +108,12 @@ export function ProjectWorkspacePage({
 	if (projectQuery.error || !project) {
 		return (
 			<main className="flex h-dvh items-center justify-center p-6">
-				<p className="text-sm text-destructive" role="alert">
-					{projectQuery.error?.message ?? "Project not found."}
-				</p>
+				<div className="text-center">
+					<p className="text-sm font-medium">Nothing found</p>
+					<p className="mt-1 text-sm text-destructive" role="alert">
+						{projectQuery.error?.message ?? "Project not found."}
+					</p>
+				</div>
 			</main>
 		);
 	}
@@ -125,12 +128,15 @@ export function ProjectWorkspacePage({
 		);
 	}
 
+	const isPending =
+		retryRestoreMutation.isPending ||
+		(ensureWorkspaceMutation.isPending && !workspace);
 	const disabledReason =
 		project.status !== "ready"
 			? "Project sandbox is not ready yet."
 			: selectedSession?.status === "archived"
 				? "This conversation is archived."
-				: ensureWorkspaceMutation.isPending && !workspace
+				: isPending
 					? "Checking project sandbox..."
 					: undefined;
 
@@ -148,10 +154,11 @@ export function ProjectWorkspacePage({
 							type="button"
 							size="sm"
 							variant="outline"
-							disabled={retryRestoreMutation.isPending}
+							disabled={isPending}
+							aria-busy={isPending || undefined}
 							onClick={() => retryRestoreMutation.mutate({ projectId })}
 						>
-							Retry restore
+							{isPending ? "Retrying…" : "Retry restore"}
 						</Button>
 						{retryRestoreMutation.error ? (
 							<p className="w-full text-destructive" role="alert">

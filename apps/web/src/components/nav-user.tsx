@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
+	DropdownMenuGroup,
 	DropdownMenuItem,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
@@ -119,37 +120,45 @@ export function NavUser() {
 						align="end"
 						sideOffset={4}
 					>
-						<DropdownMenuItem className="group/user flex items-center gap-2 rounded-md px-1 py-1.5 text-left text-sm">
-							<Avatar className="size-8 rounded-lg">
-								<AvatarImage src={user.image ?? undefined} alt="" />
-								<AvatarFallback className="rounded-lg">
-									{initials}
-								</AvatarFallback>
-							</Avatar>
-							<div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
-								<span className="truncate font-medium">{displayName}</span>
-								<span className="min-h-4 truncate text-xs text-muted-foreground">
-									<HiddenEmail email={email} />
-								</span>
-							</div>
-						</DropdownMenuItem>
+						<DropdownMenuGroup>
+							<DropdownMenuItem className="group/user flex items-center gap-2 rounded-md px-1 py-1.5 text-left text-sm">
+								<Avatar className="size-8 rounded-lg">
+									<AvatarImage src={user.image ?? undefined} alt="" />
+									<AvatarFallback className="rounded-lg">
+										{initials}
+									</AvatarFallback>
+								</Avatar>
+								<div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
+									<span className="truncate font-medium">{displayName}</span>
+									<span className="min-h-4 truncate text-xs text-muted-foreground">
+										<HiddenEmail email={email} />
+									</span>
+								</div>
+							</DropdownMenuItem>
+						</DropdownMenuGroup>
 						<DropdownMenuSeparator />
-						<DropdownMenuItem render={<Link to="/settings" />}>
-							<SettingsIcon />
-							Settings
-						</DropdownMenuItem>
+						<DropdownMenuGroup>
+							<DropdownMenuItem
+								render={<Link to="/settings" aria-label="Settings" />}
+							>
+								<SettingsIcon />
+								Settings
+							</DropdownMenuItem>
+						</DropdownMenuGroup>
 						<DropdownMenuSeparator />
-						<DropdownMenuItem
-							role="button"
-							onClick={() => {
-								void authClient.signOut();
-								window.location.reload();
-							}}
-							variant="destructive"
-						>
-							<LogOutIcon />
-							Log out
-						</DropdownMenuItem>
+						<DropdownMenuGroup>
+							<DropdownMenuItem
+								role="button"
+								onClick={() => {
+									void authClient.signOut();
+									window.location.reload();
+								}}
+								variant="destructive"
+							>
+								<LogOutIcon />
+								Log out
+							</DropdownMenuItem>
+						</DropdownMenuGroup>
 					</DropdownMenuContent>
 				</DropdownMenu>
 			</SidebarMenuItem>

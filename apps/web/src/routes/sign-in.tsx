@@ -21,7 +21,7 @@ function SignIn(): JSX.Element {
 				<SignInView
 					action={
 						<Button type="button" size="lg" disabled>
-							<GithubIcon />
+							<GithubIcon data-icon="inline-start" />
 							Continue with GitHub
 						</Button>
 					}
@@ -84,13 +84,24 @@ function SignInClient(): JSX.Element {
 						<Spinner size="sm" />
 					) : (
 						<>
-							<GithubIcon />
+							<GithubIcon data-icon="inline-start" />
 							Continue with GitHub
 						</>
 					)}
 				</Button>
 			}
 			errorMessage={errorMessage}
+			status={
+				<span className="sr-only" aria-live="polite">
+					{isSigningIn
+						? "Signing in"
+						: errorMessage
+							? errorMessage
+							: isPending
+								? "Checking session"
+								: ""}
+				</span>
+			}
 		/>
 	);
 }
@@ -98,9 +109,11 @@ function SignInClient(): JSX.Element {
 function SignInView({
 	action,
 	errorMessage,
+	status,
 }: {
 	action: ReactNode;
 	errorMessage?: string | null;
+	status?: ReactNode;
 }): JSX.Element {
 	return (
 		<main className="flex min-h-dvh w-full max-w-full items-center justify-center overflow-x-hidden bg-background px-6 py-12">
@@ -123,6 +136,7 @@ function SignInView({
 
 				<div className="flex flex-col gap-3">
 					{action}
+					{status}
 					{errorMessage ? (
 						<p className="text-center text-sm text-destructive" role="alert">
 							{errorMessage}

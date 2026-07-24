@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
+	DropdownMenuGroup,
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "#/components/ui/dropdown-menu";
@@ -117,7 +118,7 @@ function SessionGitActionsView({
 	status,
 	statusLoading,
 	canRun,
-	busy,
+	isPending,
 	pendingStep,
 	onSync,
 	onCommit,
@@ -128,7 +129,7 @@ function SessionGitActionsView({
 	status: SessionGitStatus | undefined;
 	statusLoading: boolean;
 	canRun: boolean;
-	busy: boolean;
+	isPending: boolean;
 	pendingStep: WorkflowStepId | null;
 	onSync: () => void;
 	onCommit: () => void;
@@ -141,10 +142,14 @@ function SessionGitActionsView({
 	const aheadCount = status?.ahead ?? 0;
 	const changedCount = status?.changedFiles.length ?? 0;
 	const syncDisabled =
-		!canRun || busy || statusLoading || workflow?.kind !== "sync";
-	const commitDisabled = !canRun || busy || !dirty || statusLoading;
+		!canRun || isPending || statusLoading || workflow?.kind !== "sync";
+	const commitDisabled = !canRun || isPending || !dirty || statusLoading;
 	const pushDisabled =
-		!canRun || busy || statusLoading || !status || workflow?.kind !== "push";
+		!canRun ||
+		isPending ||
+		statusLoading ||
+		!status ||
+		workflow?.kind !== "push";
 	const pullRequestFromWorkflow =
 		workflow?.kind === "open-pr-existing" ||
 		workflow?.kind === "closed-pr" ||
@@ -156,11 +161,11 @@ function SessionGitActionsView({
 		workflow?.kind === "open-pr" || workflow?.kind === "push";
 	const openPrDisabled =
 		!canRun ||
-		busy ||
+		isPending ||
 		statusLoading ||
 		!status ||
 		(!pullRequest && !canOpenPullRequest);
-	const viewPrDisabled = !canRun || busy || statusLoading;
+	const viewPrDisabled = !canRun || isPending || statusLoading;
 	const prDisabled = pullRequest ? viewPrDisabled : openPrDisabled;
 	const nextStep: WorkflowStepId | null =
 		workflow?.kind === "sync"
@@ -282,7 +287,8 @@ function SessionGitActionsView({
 	const primary = primaryStep
 		? (actions.find((action) => action.id === primaryStep) ?? null)
 		: null;
-	const primaryDisabled = statusLoading || !primary || primary.disabled || busy;
+	const primaryDisabled =
+		statusLoading || !primary || primary.disabled || isPending;
 	const primaryPending = primaryStep !== null && pendingStep === primaryStep;
 	const primaryLabel = statusLoading
 		? "Loading Git status"
@@ -344,7 +350,8 @@ function SessionGitActionsView({
 								render={
 									<button
 										type="button"
-										disabled={primaryDisabled || primaryPending}
+										disabled={isPending || primaryDisabled || primaryPending}
+										aria-busy={isPending || primaryPending || undefined}
 										aria-label={primaryLabel}
 										aria-current={hasActivePrimary ? "step" : undefined}
 										title={primaryTooltip}
@@ -359,13 +366,17 @@ function SessionGitActionsView({
 										)}
 									>
 										<span className="shrink-0 [&_svg]:size-3" aria-hidden>
-											{statusLoading || primaryPending ? (
+											{isPending || statusLoading || primaryPending ? (
 												<LoaderCircleIcon className="animate-spin" />
 											) : (
 												(primary?.icon ?? <GitCommitHorizontalIcon />)
 											)}
 										</span>
-										<span>{primaryLabel}</span>
+										<span>
+											{isPending || primaryPending
+												? primaryLabel
+												: primaryLabel}
+										</span>
 									</button>
 								}
 							/>
@@ -374,7 +385,7 @@ function SessionGitActionsView({
 
 						<DropdownMenu>
 							<DropdownMenuTrigger
-								disabled={busy || statusLoading}
+								disabled={isPending || statusLoading}
 								aria-label="Choose git action"
 								className={cn(
 									"inline-flex w-6 cursor-pointer items-center justify-center",
@@ -392,30 +403,32 @@ function SessionGitActionsView({
 								align="end"
 								className="min-w-40"
 							>
-								{actions.map((action) => (
-									<DropdownMenuItem
-										key={action.id}
-										disabled={action.disabled || busy || statusLoading}
-										onClick={action.onSelect}
-										className="cursor-pointer"
-									>
-										<span className="shrink-0 [&_svg]:size-3.5" aria-hidden>
-											{pendingStep === action.id ? (
-												<LoaderCircleIcon className="animate-spin" />
-											) : (
-												action.icon
-											)}
-										</span>
-										<span className="min-w-0 flex-1 truncate">
-											{action.label}
-										</span>
-										{action.id === primaryStep ? (
-											<span className="text-muted-foreground text-xs">
-												Next
+								<DropdownMenuGroup>
+									{actions.map((action) => (
+										<DropdownMenuItem
+											key={action.id}
+											disabled={action.disabled || isPending || statusLoading}
+											onClick={action.onSelect}
+											className="cursor-pointer"
+										>
+											<span className="shrink-0 [&_svg]:size-3.5" aria-hidden>
+												{pendingStep === action.id ? (
+													<LoaderCircleIcon className="animate-spin" />
+												) : (
+													action.icon
+												)}
 											</span>
-										) : null}
-									</DropdownMenuItem>
-								))}
+											<span className="min-w-0 flex-1 truncate">
+												{action.label}
+											</span>
+											{action.id === primaryStep ? (
+												<span className="text-muted-foreground text-xs">
+													Next
+												</span>
+											) : null}
+										</DropdownMenuItem>
+									))}
+								</DropdownMenuGroup>
 							</DropdownMenuContent>
 						</DropdownMenu>
 					</fieldset>
@@ -546,7 +559,7 @@ export function SessionGitActions({
 	);
 
 	const statusLoading = isLoading && !status;
-	const busy =
+	const isPending =
 		syncMutation.isPending ||
 		commitMutation.isPending ||
 		pushMutation.isPending ||
@@ -567,29 +580,57 @@ export function SessionGitActions({
 		);
 	}
 
+	if (!status && !statusLoading) {
+		return (
+			<div className="flex w-full min-w-0 items-center justify-between gap-2">
+				<div className="flex min-w-0 items-center gap-1.5">{children}</div>
+				<span className="shrink-0 text-xs text-muted-foreground">
+					Nothing found
+				</span>
+			</div>
+		);
+	}
+
 	return (
-		<SessionGitActionsView
-			status={status}
-			statusLoading={statusLoading}
-			canRun={canRun}
-			busy={busy}
-			pendingStep={
-				syncMutation.isPending
-					? "sync"
-					: commitMutation.isPending
-						? "commit"
-						: pushMutation.isPending
-							? "push"
-							: openPrMutation.isPending
-								? "pr"
-								: null
-			}
-			onSync={() => syncMutation.mutate({ projectId, sessionId })}
-			onCommit={() => commitMutation.mutate({ projectId, sessionId })}
-			onPush={() => pushMutation.mutate({ projectId, sessionId })}
-			onOpenPullRequest={() => openPrMutation.mutate({ projectId, sessionId })}
-		>
-			{children}
-		</SessionGitActionsView>
+		<>
+			<span className="sr-only" aria-live="polite">
+				{isPending ? "Git action in progress" : ""}
+			</span>
+			<button
+				type="button"
+				className="sr-only"
+				tabIndex={-1}
+				disabled={isPending}
+				aria-busy={isPending || undefined}
+			>
+				{isPending ? <LoaderCircleIcon className="animate-spin" /> : null}
+				{isPending ? "Working…" : "Ready"}
+			</button>
+			<SessionGitActionsView
+				status={status}
+				statusLoading={statusLoading}
+				canRun={canRun}
+				isPending={isPending}
+				pendingStep={
+					syncMutation.isPending
+						? "sync"
+						: commitMutation.isPending
+							? "commit"
+							: pushMutation.isPending
+								? "push"
+								: openPrMutation.isPending
+									? "pr"
+									: null
+				}
+				onSync={() => syncMutation.mutate({ projectId, sessionId })}
+				onCommit={() => commitMutation.mutate({ projectId, sessionId })}
+				onPush={() => pushMutation.mutate({ projectId, sessionId })}
+				onOpenPullRequest={() =>
+					openPrMutation.mutate({ projectId, sessionId })
+				}
+			>
+				{children}
+			</SessionGitActionsView>
+		</>
 	);
 }

@@ -153,8 +153,12 @@ export function SessionPreviewPane({
 		stopMutation.mutate({ projectId, sessionId });
 	}
 
-	const busy =
-		activeState.kind === "starting" || activeState.kind === "stopping";
+	const isPending =
+		startMutation.isPending ||
+		stopMutation.isPending ||
+		activeState.kind === "starting" ||
+		activeState.kind === "stopping";
+	const busy = isPending;
 	const running =
 		activeState.kind === "ready" || activeState.kind === "stopping";
 	const address = addressLabel(activeState);
@@ -177,14 +181,15 @@ export function SessionPreviewPane({
 									type="button"
 									variant="ghost"
 									size="icon-sm"
-									disabled={!running || busy}
+									disabled={isPending || !running || busy}
+									aria-busy={isPending || undefined}
 									onClick={() => restart()}
 									aria-label="Reload preview"
 									className="text-muted-foreground"
 								/>
 							}
 						>
-							{busy && activeState.kind === "starting" ? (
+							{isPending && activeState.kind === "starting" ? (
 								<LoaderCircleIcon className="animate-spin" aria-hidden />
 							) : (
 								<RotateCcwIcon aria-hidden />

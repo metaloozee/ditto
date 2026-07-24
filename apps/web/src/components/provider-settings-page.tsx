@@ -27,7 +27,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "#/components/ui/dialog";
-import { Field, FieldLabel } from "#/components/ui/field";
+import { Field, FieldError, FieldLabel } from "#/components/ui/field";
 import { Input } from "#/components/ui/input";
 import { Skeleton } from "#/components/ui/skeleton";
 import { TooltipProvider } from "#/components/ui/tooltip";
@@ -88,58 +88,107 @@ function AuthPromptForm({
 
 	return (
 		<form
+			noValidate
 			onSubmit={(event) => {
 				event.preventDefault();
 				event.stopPropagation();
 				void form.handleSubmit();
 			}}
 		>
-			<form.Field name="answer">
-				{(field) => (
-					<Field>
-						<FieldLabel htmlFor={field.name}>{prompt.message}</FieldLabel>
-						{prompt.type === "select" ? (
-							<select
-								id={field.name}
-								name={field.name}
-								aria-label={prompt.message}
-								className="h-7 w-full rounded-md border border-input bg-input/20 px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 md:text-xs/relaxed"
-								value={field.state.value}
-								onBlur={field.handleBlur}
-								onChange={(event) => field.handleChange(event.target.value)}
-							>
-								<option value="">Select…</option>
-								{prompt.options?.map((option) => (
-									<option key={option.id} value={option.id}>
-										{option.label}
-									</option>
-								))}
-							</select>
-						) : (
-							<Input
-								id={field.name}
-								name={field.name}
-								type={prompt.type === "secret" ? "password" : "text"}
-								autoComplete="off"
-								placeholder={prompt.placeholder}
-								value={field.state.value}
-								onBlur={field.handleBlur}
-								onChange={(event) => field.handleChange(event.target.value)}
-							/>
-						)}
-					</Field>
-				)}
+			<form.Field
+				name="answer"
+				validators={{
+					onChange: ({ value }) =>
+						value.trim().length === 0 ? "A response is required." : undefined,
+					onSubmit: ({ value }) =>
+						value.trim().length === 0 ? "A response is required." : undefined,
+				}}
+			>
+				{(field) => {
+					const isInvalid =
+						field.state.meta.isTouched && !field.state.meta.isValid;
+					const errorId = `${field.name}-error`;
+
+					return (
+						<Field data-invalid={isInvalid || undefined}>
+							<FieldLabel htmlFor={field.name}>{prompt.message}</FieldLabel>
+							{prompt.type === "select" ? (
+								<select
+									id={field.name}
+									name={field.name}
+									aria-label={prompt.message}
+									aria-invalid={isInvalid || undefined}
+									aria-describedby={isInvalid ? errorId : undefined}
+									required={true}
+									className="h-7 w-full rounded-md border border-input bg-input/20 px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 md:text-xs/relaxed"
+									value={field.state.value}
+									onBlur={field.handleBlur}
+									onChange={(event) => field.handleChange(event.target.value)}
+								>
+									<option value="">Select…</option>
+									{prompt.options?.map((option) => (
+										<option key={option.id} value={option.id}>
+											{option.label}
+										</option>
+									))}
+								</select>
+							) : (
+								<Input
+									id={field.name}
+									name={field.name}
+									type={prompt.type === "secret" ? "password" : "text"}
+									autoComplete="off"
+									placeholder={prompt.placeholder}
+									value={field.state.value}
+									onBlur={field.handleBlur}
+									onChange={(event) => field.handleChange(event.target.value)}
+									aria-invalid={isInvalid || undefined}
+									aria-describedby={isInvalid ? errorId : undefined}
+									required={true}
+									minLength={1}
+								/>
+							)}
+							{isInvalid ? (
+								<FieldError id={errorId}>
+									{field.state.meta.errors
+										.map((error) => String(error))
+										.filter(Boolean)
+										.join(" ") || "A response is required."}
+								</FieldError>
+							) : null}
+						</Field>
+					);
+				}}
 			</form.Field>
 
 			<DialogFooter className="mt-4">
-				<Button type="button" variant="ghost" onClick={onCancel}>
-					Cancel
-				</Button>
-				<form.Subscribe selector={(state) => state.values.answer}>
-					{(answer) => (
-						<Button type="submit" disabled={!answer}>
-							Submit
-						</Button>
+				<form.Subscribe
+					selector={(state) => ({
+						answer: state.values.answer,
+						isPending: state.isSubmitting,
+					})}
+				>
+					{({ answer, isPending }) => (
+						<>
+							<Button
+								type="button"
+								variant="ghost"
+								onClick={onCancel}
+								disabled={isPending}
+							>
+								Cancel
+							</Button>
+							<Button
+								type="submit"
+								disabled={isPending || !answer}
+								aria-busy={isPending || undefined}
+							>
+								{isPending ? <LoaderIcon className="animate-spin" /> : null}
+								<span aria-live="polite">
+									{isPending ? "Submitting…" : "Submit"}
+								</span>
+							</Button>
+						</>
 					)}
 				</form.Subscribe>
 			</DialogFooter>
@@ -421,6 +470,13 @@ export function ProviderSettingsPage() {
 								</p>
 							</div>
 						</div>
+					) : providers.length === 0 ? (
+						<div className="border-b border-border/70 py-8 text-center text-sm">
+							<p className="font-medium">Nothing found</p>
+							<p className="mt-1 text-pretty text-muted-foreground">
+								No AI providers are available right now.
+							</p>
+						</div>
 					) : (
 						<ul className="divide-y divide-border/70 border-b border-border/70">
 							{providers.map((provider) => {
@@ -574,6 +630,7 @@ export function ProviderSettingsPage() {
 					<div className="flex flex-col gap-5 border-t border-border/70 px-5 py-5">
 						{!prompt && !deviceCode && !authUrl && status ? (
 							<output
+								aria-live="polite"
 								aria-atomic="true"
 								className="block min-h-8 text-sm text-pretty text-muted-foreground"
 							>
@@ -622,6 +679,7 @@ export function ProviderSettingsPage() {
 								</p>
 								{status ? (
 									<output
+										aria-live="polite"
 										aria-atomic="true"
 										className="block text-sm text-pretty text-muted-foreground"
 									>

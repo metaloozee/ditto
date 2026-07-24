@@ -92,7 +92,7 @@ function Home() {
 						className="cursor-pointer leading-none"
 						disabled={!user}
 					>
-						<PlusIcon className="size-4" />
+						<PlusIcon data-icon="inline-start" />
 						New Project
 					</Button>
 				</div>
@@ -210,11 +210,11 @@ function ProjectCard({ project }: { project: ProjectListItem }) {
 					aria-hidden
 					initial={false}
 					animate={{
-						scaleX: active ? 1 : 0,
+						width: active ? 22 : 0,
 						opacity: active ? 1 : 0,
 					}}
 					transition={shiftSpring}
-					className="w-[22px] origin-right overflow-hidden"
+					className="origin-right overflow-hidden"
 				>
 					<motion.div
 						className="flex w-[22px] items-center justify-end"

@@ -34,6 +34,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "#/components/ui/select";
+import { Spinner } from "#/components/ui/spinner";
 import { Textarea } from "#/components/ui/textarea";
 import {
 	Tooltip,
@@ -212,6 +213,7 @@ export function Composer({
 		(state) => state.setThinkingLevel,
 	);
 	const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
+	const [messageError, setMessageError] = useState<string | null>(null);
 	const navigate = useNavigate();
 	const trpc = useTRPC();
 	const modelsQuery = useQuery(trpc.providerAuth.models.queryOptions());
@@ -227,15 +229,19 @@ export function Composer({
 				thinkingLevels: m.thinkingLevels,
 			}));
 		}
-		return PROJECT_CODER_MODELS.map((m) => ({
-			id: m.id,
-			name: m.name,
-			chef: m.providerName,
-			chefSlug: m.provider,
-			providers: [m.provider],
-			thinkingLevels: m.thinkingLevels,
-		}));
-	}, [modelsQuery.data?.models]);
+		// Keep built-in defaults while the catalog loads or when none are connected.
+		if (modelsQuery.isPending || !modelsQuery.data) {
+			return PROJECT_CODER_MODELS.map((m) => ({
+				id: m.id,
+				name: m.name,
+				chef: m.providerName,
+				chefSlug: m.provider,
+				providers: [m.provider],
+				thinkingLevels: m.thinkingLevels,
+			}));
+		}
+		return [];
+	}, [modelsQuery.data, modelsQuery.isPending]);
 	const modelsByChef = useMemo(() => {
 		const map = new Map<string, Model[]>();
 		for (const modelOption of models) {
@@ -717,7 +723,11 @@ export function Composer({
 			return;
 		}
 
-		if (!snapshot.trim()) return;
+		if (!snapshot.trim()) {
+			setMessageError("Enter a message before sending.");
+			return;
+		}
+		setMessageError(null);
 		if (!projectId) {
 			textRef.current = "";
 			setText("");
@@ -748,6 +758,8 @@ export function Composer({
 			? "Auto"
 			: PI_THINKING_LEVEL_LABELS[effectiveThinking];
 	const hasText = Boolean(text.trim());
+	const isPending =
+		controlPending || stopping || (isStreaming && !controlReady);
 	const actionName = stopping
 		? "Stopping"
 		: isStreaming
@@ -756,21 +768,24 @@ export function Composer({
 				: hasText
 					? "Queue message"
 					: "Stop"
-			: "Submit";
+			: controlPending
+				? "Sending"
+				: "Submit";
 	const isStopAction = stopping || (isStreaming && controlReady && !hasText);
 	const submitDisabled =
 		Boolean(disabledReason) ||
 		modelsLoading ||
+		models.length === 0 ||
 		!models.some((m) => m.id === model) ||
-		controlPending ||
-		stopping ||
-		(isStreaming ? !controlReady : !hasText);
+		isPending ||
+		(isStreaming ? !controlReady && !isPending : !hasText);
+	const messageInvalid = Boolean(messageError);
 
 	const modelLabel = selectedModel?.name ?? "Select model";
 
 	return (
 		<section className="mx-auto w-full max-w-3xl px-5 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
-			<form className="w-full" onSubmit={handleSubmit}>
+			<form className="w-full" onSubmit={handleSubmit} noValidate>
 				<div className="flex items-end gap-2">
 					<div className="flex shrink-0 self-end">
 						<ModelSelector
@@ -787,7 +802,11 @@ export function Composer({
 													variant="outline"
 													size="icon-lg"
 													aria-label={modelLabel}
-													disabled={Boolean(disabledReason) || isStreaming}
+													disabled={
+														Boolean(disabledReason) ||
+														isStreaming ||
+														models.length === 0
+													}
 													className={cn(
 														"size-11 rounded-full bg-card shadow-xs",
 														"transition-transform duration-150 ease-out",
@@ -817,18 +836,29 @@ export function Composer({
 								<ModelSelectorInput placeholder="Search models…" />
 								<ModelSelectorList>
 									<ModelSelectorEmpty>No model found.</ModelSelectorEmpty>
-									{[...modelsByChef.entries()].map(([chef, chefModels]) => (
-										<ModelSelectorGroup heading={chef} key={chef}>
-											{chefModels.map((modelOption) => (
-												<ModelItem
-													key={modelOption.id}
-													model={modelOption}
-													onSelect={handleModelSelect}
-													selectedModel={model}
-												/>
-											))}
-										</ModelSelectorGroup>
-									))}
+									{models.length === 0 ? (
+										<div className="px-4 py-6 text-center text-sm text-muted-foreground">
+											<p className="font-medium text-foreground">
+												Nothing found
+											</p>
+											<p className="mt-1 text-xs text-pretty">
+												Connect an AI provider in Settings to choose a model.
+											</p>
+										</div>
+									) : (
+										[...modelsByChef.entries()].map(([chef, chefModels]) => (
+											<ModelSelectorGroup heading={chef} key={chef}>
+												{chefModels.map((modelOption) => (
+													<ModelItem
+														key={modelOption.id}
+														model={modelOption}
+														onSelect={handleModelSelect}
+														selectedModel={model}
+													/>
+												))}
+											</ModelSelectorGroup>
+										))
+									)}
 								</ModelSelectorList>
 							</ModelSelectorContent>
 						</ModelSelector>
@@ -840,9 +870,16 @@ export function Composer({
 							name="message"
 							value={text}
 							placeholder="Ask Ditto to inspect the workspace…"
+							required
+							minLength={1}
+							aria-invalid={messageInvalid || undefined}
+							aria-describedby={
+								messageInvalid ? "composer-message-error" : undefined
+							}
 							onChange={(event) => {
 								textRef.current = event.currentTarget.value;
 								setText(event.currentTarget.value);
+								if (messageError) setMessageError(null);
 							}}
 							onKeyDown={handleTextareaKeyDown}
 							className={cn(
@@ -900,7 +937,8 @@ export function Composer({
 										variant={isStopAction ? "destructive" : "default"}
 										size="icon-lg"
 										aria-label={actionName}
-										disabled={submitDisabled}
+										aria-busy={isPending || undefined}
+										disabled={isPending || submitDisabled}
 										className={cn(
 											"size-11 rounded-full shadow-xs",
 											"transition-transform duration-150 ease-out",
@@ -908,26 +946,30 @@ export function Composer({
 											"motion-reduce:transition-none motion-reduce:active:scale-100",
 										)}
 									>
-										<span className="relative size-4" aria-hidden>
-											<CornerDownLeftIcon
-												className={cn(
-													"absolute inset-0 size-4 transition-[opacity,transform,filter] duration-150 ease-out",
-													"motion-reduce:transition-none",
-													isStopAction
-														? "scale-90 opacity-0 blur-[2px]"
-														: "scale-100 opacity-100 blur-0",
-												)}
-											/>
-											<SquareIcon
-												className={cn(
-													"absolute inset-0 size-4 transition-[opacity,transform,filter] duration-150 ease-out",
-													"motion-reduce:transition-none",
-													isStopAction
-														? "scale-100 opacity-100 blur-0"
-														: "scale-90 opacity-0 blur-[2px]",
-												)}
-											/>
-										</span>
+										{isPending ? (
+											<Spinner className="size-4" aria-hidden />
+										) : (
+											<span className="relative size-4" aria-hidden>
+												<CornerDownLeftIcon
+													className={cn(
+														"absolute inset-0 size-4 transition-[opacity,transform,filter] duration-150 ease-out",
+														"motion-reduce:transition-none",
+														isStopAction
+															? "scale-90 opacity-0 blur-[2px]"
+															: "scale-100 opacity-100 blur-0",
+													)}
+												/>
+												<SquareIcon
+													className={cn(
+														"absolute inset-0 size-4 transition-[opacity,transform,filter] duration-150 ease-out",
+														"motion-reduce:transition-none",
+														isStopAction
+															? "scale-100 opacity-100 blur-0"
+															: "scale-90 opacity-0 blur-[2px]",
+													)}
+												/>
+											</span>
+										)}
 									</Button>
 								}
 							/>
@@ -935,6 +977,15 @@ export function Composer({
 						</Tooltip>
 					</div>
 				</div>
+				{messageError ? (
+					<p
+						id="composer-message-error"
+						className="mt-2 px-1 text-xs text-destructive"
+						role="alert"
+					>
+						{messageError}
+					</p>
+				) : null}
 			</form>
 		</section>
 	);

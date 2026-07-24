@@ -246,6 +246,13 @@ export function ProjectSettingsDialog({
 										disabled={isSavingName}
 										autoComplete="off"
 										aria-invalid={trimmedName.length === 0}
+										aria-describedby={
+											trimmedName.length === 0
+												? `project-name-error-${project.id}`
+												: renameProjectMutation.error
+													? `project-name-mutation-error-${project.id}`
+													: undefined
+										}
 									/>
 									<Button
 										type="button"
@@ -261,10 +268,14 @@ export function ProjectSettingsDialog({
 									</Button>
 								</div>
 								{trimmedName.length === 0 ? (
-									<FieldError>Project name is required.</FieldError>
+									<FieldError id={`project-name-error-${project.id}`}>
+										Project name is required.
+									</FieldError>
 								) : null}
 								{renameProjectMutation.error ? (
-									<FieldError>{renameProjectMutation.error.message}</FieldError>
+									<FieldError id={`project-name-mutation-error-${project.id}`}>
+										{renameProjectMutation.error.message}
+									</FieldError>
 								) : null}
 							</Field>
 						</FieldGroup>
@@ -323,8 +334,8 @@ export function ProjectSettingsDialog({
 								</p>
 							) : envVarKeys.length === 0 ? (
 								<div className="rounded-lg border border-dashed border-border bg-muted/20 p-3 text-xs text-muted-foreground">
-									No environment variables yet. Add one when this project needs
-									secrets or runtime configuration.
+									Nothing found yet. Add an environment variable when this
+									project needs secrets or runtime configuration.
 								</div>
 							) : (
 								<FieldGroup className="gap-2">
@@ -643,9 +654,16 @@ function DeleteProjectDialog({
 											spellCheck={false}
 											className="font-mono text-xs"
 											aria-invalid={isInvalid}
+											aria-describedby={
+												isInvalid
+													? `${field.name}-error`
+													: `${field.name}-description`
+											}
+											required
+											minLength={1}
 											disabled={deleteProjectMutation.isPending}
 										/>
-										<FieldDescription>
+										<FieldDescription id={`${field.name}-description`}>
 											Type{" "}
 											<code className="rounded bg-muted px-1 py-0.5 font-mono">
 												{targetText}
@@ -653,6 +671,7 @@ function DeleteProjectDialog({
 											.
 										</FieldDescription>
 										<FieldError
+											id={`${field.name}-error`}
 											errors={field.state.meta.errors.map((error) => ({
 												message: String(error),
 											}))}
