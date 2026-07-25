@@ -56,13 +56,15 @@ The project workspace route coordinates the main read model:
 1. load owned project metadata;
 2. page D1 messages for an explicit session URL immediately (ownership-checked,
    sandbox-independent);
-3. when D1 status is `ready`, ensure or restore the project workspace;
-4. resolve the selected active session from the ensure/retry payload;
+3. when D1 status is `ready`, run `workspace.checkSandbox`; auto-call
+   `workspace.provisionSandbox` only on `needs_restore`;
+4. resolve the selected active session from the check/provision/retry payload;
 5. reverse newest-first pages into an oldest-to-newest timeline;
-6. show a workspace-local status bar while checking/provisioning or on restore
-   failure, and disable sandbox-backed controls until readiness succeeds; and
-7. invalidate `projects.get`, message, and Git queries after mutations — never
-   `projects.list` from workspace readiness.
+6. toast only while this tab's provision work is in flight; keep inline status
+   bars for check errors and restore failure; disable sandbox-backed controls
+   until readiness succeeds; and
+7. invalidate `projects.get` and the check query from readiness paths — never
+   `projects.list`.
 
 ## Chat composition
 
@@ -161,8 +163,9 @@ navigation without creating a second source of truth.
 `AppSidebar` loads the user's projects and active sessions from D1 only
 (`projects.list`), marks the route's current project/session, and hosts search,
 project creation, settings, session archive, and account actions. It does not
-call `workspace.ensureWorkspace`, observe sandbox stubs, or spin on D1
-`provisioning` — cold-wake loading belongs to the workspace status bar.
+call `workspace.checkSandbox` / `workspace.provisionSandbox`, observe sandbox
+stubs, or spin on D1 `provisioning` — cold-wake loading belongs to the project
+workspace route.
 
 - `NewProjectDialog` lists repositories authorized through GitHub, collects
   project environment variables, and starts provisioning.
@@ -206,9 +209,10 @@ reader text for icon-only controls. Message history preserves scroll anchors
 when older pages prepend. During sandbox cold wake, D1 history stays visible,
 scrollable, and pageable while composer submit/model controls, empty-state
 suggestions, Git actions, and tools/preview entry points are disabled. A
-standalone top status bar (`output` / alert + Retry) announces provisioning or
-check/restore failure above the chat — not an overlay on `ChatNavbar` and not a
-full-page error that replaces history. Expensive diagnostic UI is lazy-loaded,
+provision toast announces this tab's restore work; inline status bars
+(`alert` + Retry) cover check errors and restore failure above the chat — not an
+overlay on `ChatNavbar` and not a full-page error that replaces history. Warm
+visits that are already connected stay silent. Expensive diagnostic UI is lazy-loaded,
 and development devtools are dynamically imported so neither enters the
 production path.
 

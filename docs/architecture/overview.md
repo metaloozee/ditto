@@ -91,17 +91,18 @@ not have an agent-capable sandbox. The current UI creates GitHub-backed projects
 
 1. The project route loads owned project metadata and, for an explicit session
    URL, pages D1 chat history independently of sandbox readiness.
-2. When D1 marks the project `ready`, the route calls
-   `workspace.ensureWorkspace`. The Worker observes the live container with
-   `getState()` before any filesystem or runner probe, then connects, restores
-   the R2 backup, or recreates from GitHub under the existing
-   `ready -> provisioning` fence.
+2. When D1 marks the project `ready`, the route runs `workspace.checkSandbox`
+   (observation only). If the check returns `needs_restore`, the route calls
+   `workspace.provisionSandbox` once under the existing
+   `ready -> provisioning` fence. Warm visits that are already `connected` stay
+   silent — no provision call and no toast.
 3. The Worker returns active workspace sessions, the selected session, and a
-   sandbox state (`connected`, restore/recreate success, `provisioning`, or
-   `failed`).
-4. While readiness is in progress, history stays readable and a workspace status
-   bar announces provisioning; sandbox-backed actions stay disabled until the
-   runtime is proven ready.
+   sandbox state (`connected`, `needs_restore`, restore/recreate success,
+   `provisioning`, or `failed`). `needs_restore` is runtime-only and is never
+   written to D1.
+4. History stays readable while check/provision runs. Sandbox-backed actions
+   stay disabled until the runtime is proven ready. A loading toast appears only
+   when this tab starts real provision work.
 
 ### Run the agent
 
