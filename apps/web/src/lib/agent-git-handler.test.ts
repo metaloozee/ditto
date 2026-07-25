@@ -4,9 +4,15 @@ import { GitSecretPolicyError } from "./git-secret-policy";
 const getSessionGitStatusMock = vi.hoisted(() => vi.fn());
 const pushSessionBranchMock = vi.hoisted(() => vi.fn());
 const openSessionPullRequestMock = vi.hoisted(() => vi.fn());
+const provisionProjectSandboxMock = vi.hoisted(() =>
+	vi.fn().mockResolvedValue({
+		project: { sandboxId: "sandbox-1", status: "ready" },
+		state: "connected",
+	}),
+);
 
 vi.mock("#/lib/project-sandbox", () => ({
-	ensureProjectSandbox: vi.fn(),
+	provisionProjectSandbox: provisionProjectSandboxMock,
 }));
 vi.mock("#/lib/session-worktree", () => ({
 	ensureSessionWorkspaceReady: vi.fn(),

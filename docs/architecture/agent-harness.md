@@ -11,7 +11,8 @@ events, persists chat in D1, and snapshots the workspace when a run finishes.
 
 Workspace files are durable through R2 directory backups, not by mounting an R2
 bucket on `/workspace`. `backupSandboxWorkspace` calls `createBackup`; cold
-sandboxes hydrate through `restoreBackup` inside `ensureProjectSandbox`. A
+sandboxes hydrate through `restoreBackup` inside `provisionProjectSandbox`
+(not the observation-only check path). A
 FUSE restore is ephemeral for the life of the container, so waking a sleeping
 project re-runs restore before agent work.
 

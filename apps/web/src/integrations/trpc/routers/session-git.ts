@@ -10,7 +10,7 @@ import {
 import { GitSecretPolicyError } from "#/lib/git-secret-policy";
 import { authorizeGitHubRepositoryAccess } from "#/lib/github-authorization";
 import { decryptEnvVars } from "#/lib/project-env-vars";
-import { ensureProjectSandbox } from "#/lib/project-sandbox";
+import { provisionProjectSandbox } from "#/lib/project-sandbox";
 import {
 	commitSessionChanges,
 	GITHUB_APP_PR_PERMISSION_MESSAGE,
@@ -113,11 +113,22 @@ async function resolveSessionGitAuthContext(options: {
 		installationId: project.githubInstallationId,
 	});
 
-	await ensureProjectSandbox({
+	const PROVISION_SUCCESS = new Set([
+		"connected",
+		"restored_from_backup",
+		"recreated_from_github",
+	]);
+	const ensured = await provisionProjectSandbox({
 		db,
 		env: options.ctx.env,
 		project,
 	});
+	if (!PROVISION_SUCCESS.has(ensured.state)) {
+		throw new TRPCError({
+			code: "PRECONDITION_FAILED",
+			message: "Project sandbox is not ready.",
+		});
+	}
 
 	// Server-only secret values for push preflight; never returned to clients.
 	const envVars = await decryptEnvVars(

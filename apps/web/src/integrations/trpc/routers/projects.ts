@@ -13,7 +13,7 @@ import {
 	sanitizeEnvVars,
 	toEnvVarKeys,
 } from "#/lib/project-env-vars";
-import { ensureProjectSandbox } from "#/lib/project-sandbox";
+import { provisionProjectSandbox } from "#/lib/project-sandbox";
 import { serializeSandboxBackup } from "#/lib/sandbox-backup";
 import { bootstrapSandbox, destroySandbox } from "#/lib/sandbox-bootstrap";
 import { redactSecrets } from "#/lib/secret-redaction";
@@ -263,13 +263,21 @@ export const projectsRouter = createTRPCRouter({
 			);
 
 			if (project.sandboxId) {
-				const ensured = await ensureProjectSandbox({
+				const PROVISION_SUCCESS = new Set([
+					"connected",
+					"restored_from_backup",
+					"recreated_from_github",
+				]);
+				const ensured = await provisionProjectSandbox({
 					db,
 					env: ctx.env,
 					project,
 				});
 
-				if (!ensured.project.sandboxId) {
+				if (
+					!PROVISION_SUCCESS.has(ensured.state) ||
+					!ensured.project.sandboxId
+				) {
 					throw new TRPCError({
 						code: "PRECONDITION_FAILED",
 						message: "Project sandbox is not ready yet.",
@@ -337,13 +345,21 @@ export const projectsRouter = createTRPCRouter({
 			);
 
 			if (project.sandboxId) {
-				const ensured = await ensureProjectSandbox({
+				const PROVISION_SUCCESS = new Set([
+					"connected",
+					"restored_from_backup",
+					"recreated_from_github",
+				]);
+				const ensured = await provisionProjectSandbox({
 					db,
 					env: ctx.env,
 					project,
 				});
 
-				if (!ensured.project.sandboxId) {
+				if (
+					!PROVISION_SUCCESS.has(ensured.state) ||
+					!ensured.project.sandboxId
+				) {
 					throw new TRPCError({
 						code: "PRECONDITION_FAILED",
 						message: "Project sandbox is not ready yet.",

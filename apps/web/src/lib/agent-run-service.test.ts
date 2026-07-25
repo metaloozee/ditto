@@ -9,7 +9,7 @@ vi.mock("#/lib/agent-control-service", () => ({
 }));
 
 vi.mock("#/lib/project-sandbox", () => ({
-	ensureProjectSandbox: vi.fn(),
+	provisionProjectSandbox: vi.fn(),
 	persistProjectSandboxBackup: vi.fn(),
 }));
 
@@ -134,9 +134,9 @@ function baseDeps(overrides: Partial<AgentRunDeps> = {}): AgentRunDeps {
 			.mockReturnValueOnce("asst-msg"),
 		loadProjectForUser: vi.fn().mockResolvedValue(readyProject),
 		decryptEnvVars: vi.fn().mockResolvedValue([]),
-		ensureProjectSandbox: vi.fn().mockResolvedValue({
+		provisionProjectSandbox: vi.fn().mockResolvedValue({
 			project: readyProject,
-			state: "ready",
+			state: "connected",
 		}),
 		resolveSessionForMessageWrite: vi.fn().mockResolvedValue({
 			kind: "existing",
@@ -208,6 +208,31 @@ describe("prepareAgentRun", () => {
 					...readyProject,
 					status: "provisioning",
 					sandboxId: null,
+				}),
+			}),
+		});
+		expect(result).toMatchObject({
+			kind: "error",
+			status: 409,
+			body: { error: "Project sandbox is not ready." },
+		});
+	});
+
+	it("returns 409 when provision resolves non-success state", async () => {
+		const { db } = createMockDb();
+		const result = await prepareAgentRun({
+			db,
+			env: makeEnv(),
+			userId: "user-1",
+			input: {
+				projectId: "proj-1",
+				message: "hi",
+				model: "opencode/deepseek-v4-flash-free",
+			},
+			deps: baseDeps({
+				provisionProjectSandbox: vi.fn().mockResolvedValue({
+					project: readyProject,
+					state: "provisioning",
 				}),
 			}),
 		});

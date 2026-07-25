@@ -14,9 +14,32 @@ import {
 	restoreSandboxWorkspace,
 } from "#/lib/sandbox-bootstrap";
 
-export type EnsureProjectSandboxResult = {
+export type CheckProjectSandboxState =
+	| "connected"
+	| "needs_restore"
+	| "provisioning"
+	| "failed";
+
+export type CheckProjectSandboxResult = {
 	project: typeof projects.$inferSelect;
-	state: "connected" | "restored_from_backup" | "recreated_from_github";
+	state: CheckProjectSandboxState;
+};
+
+export type ProvisionProjectSandboxState =
+	| "connected"
+	| "restored_from_backup"
+	| "recreated_from_github"
+	| "provisioning"
+	| "failed";
+
+export type ProvisionProjectSandboxResult = {
+	project: typeof projects.$inferSelect;
+	state: ProvisionProjectSandboxState;
+};
+
+type RestoreSuccessResult = {
+	project: typeof projects.$inferSelect;
+	state: "restored_from_backup" | "recreated_from_github";
 };
 
 export type PersistProjectSandboxBackupProject = Pick<
@@ -29,14 +52,6 @@ export type PersistProjectSandboxBackupResult = {
 	stored: boolean;
 	candidateGeneration: number;
 };
-
-/** Another request owns the D1 provisioning fence; not a terminal restore failure. */
-export class ProjectSandboxProvisioningError extends Error {
-	constructor(message = "Project sandbox is already being restored.") {
-		super(message);
-		this.name = "ProjectSandboxProvisioningError";
-	}
-}
 
 const INACTIVE_SANDBOX_STATUSES = new Set([
 	"stopping",
@@ -195,7 +210,7 @@ async function recreateSandboxFromGitHub(options: {
 	env: Env;
 	project: typeof projects.$inferSelect;
 	sandboxId: string;
-}): Promise<EnsureProjectSandboxResult> {
+}): Promise<RestoreSuccessResult> {
 	if (!options.project.githubRepo || !options.project.githubInstallationId) {
 		throw new Error(
 			"Project sandbox cannot be restored without a GitHub repository.",
@@ -237,7 +252,7 @@ async function restoreLockedProjectSandbox(options: {
 	env: Env;
 	project: typeof projects.$inferSelect;
 	sandboxId: string;
-}): Promise<EnsureProjectSandboxResult> {
+}): Promise<RestoreSuccessResult> {
 	const lockedProject = options.project;
 	const sandboxId = options.sandboxId;
 
@@ -303,13 +318,22 @@ async function restoreLockedProjectSandbox(options: {
 	}
 }
 
-export async function ensureProjectSandbox(options: {
+/** Observation only: never writes D1, never fences, never restores. */
+export async function checkProjectSandbox(options: {
 	db: ReturnType<typeof createDb>;
 	env: Env;
 	project: typeof projects.$inferSelect;
-}): Promise<EnsureProjectSandboxResult> {
-	if (options.project.status !== "ready" || !options.project.sandboxId) {
-		throw new Error("Project sandbox is not ready yet.");
+}): Promise<CheckProjectSandboxResult> {
+	if (options.project.status === "provisioning") {
+		return { project: options.project, state: "provisioning" };
+	}
+
+	if (
+		options.project.status === "failed" ||
+		options.project.status !== "ready" ||
+		!options.project.sandboxId
+	) {
+		return { project: options.project, state: "failed" };
 	}
 
 	if (!options.project.githubRepo || !options.project.githubInstallationId) {
@@ -322,10 +346,11 @@ export async function ensureProjectSandbox(options: {
 	const runtime = await getProjectSandboxState(options.env, sandboxId);
 	const status = runtime.status;
 
-	let needsRestore = false;
 	if (INACTIVE_SANDBOX_STATUSES.has(status)) {
-		needsRestore = true;
-	} else if (status === "healthy" || status === "running") {
+		return { project: options.project, state: "needs_restore" };
+	}
+
+	if (status === "healthy" || status === "running") {
 		const [hydrated, runnerHealthy] = await Promise.all([
 			isSandboxWorkspaceHydrated({
 				env: options.env,
@@ -344,13 +369,34 @@ export async function ensureProjectSandbox(options: {
 		if (hydrated) {
 			return { project: options.project, state: "connected" };
 		}
-		needsRestore = true;
-	} else {
-		throw new Error(`Unknown sandbox runtime status: ${String(status)}`);
+		return { project: options.project, state: "needs_restore" };
 	}
 
-	if (!needsRestore) {
-		return { project: options.project, state: "connected" };
+	throw new Error(`Unknown sandbox runtime status: ${String(status)}`);
+}
+
+/** Idempotent restore path. Contention returns provisioning; never throws it. */
+export async function provisionProjectSandbox(options: {
+	db: ReturnType<typeof createDb>;
+	env: Env;
+	project: typeof projects.$inferSelect;
+}): Promise<ProvisionProjectSandboxResult> {
+	const checked = await checkProjectSandbox(options);
+
+	if (checked.state === "connected") {
+		return { project: checked.project, state: "connected" };
+	}
+	if (checked.state === "provisioning") {
+		return { project: checked.project, state: "provisioning" };
+	}
+	if (checked.state === "failed") {
+		return { project: checked.project, state: "failed" };
+	}
+
+	// needs_restore
+	const sandboxId = options.project.sandboxId;
+	if (!sandboxId) {
+		return { project: options.project, state: "failed" };
 	}
 
 	const [lockedProject] = await options.db
@@ -366,7 +412,7 @@ export async function ensureProjectSandbox(options: {
 		.returning();
 
 	if (!lockedProject) {
-		throw new ProjectSandboxProvisioningError();
+		return { project: options.project, state: "provisioning" };
 	}
 
 	return await restoreLockedProjectSandbox({

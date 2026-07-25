@@ -96,7 +96,7 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | `apps/web/src/components/ui/sheet.tsx` | Slide-over sheet primitive. |
 | `apps/web/src/components/ui/sidebar.tsx` | Responsive/collapsible sidebar state and component system. |
 | `apps/web/src/components/ui/skeleton.tsx` | Loading placeholder primitive. |
-| `apps/web/src/components/ui/sonner.tsx` | Theme-aware toast viewport. |
+| `apps/web/src/components/ui/toast.tsx` | Base UI toast manager and viewport. |
 | `apps/web/src/components/ui/spinner.tsx` | Accessible SVG loading spinner. |
 | `apps/web/src/components/ui/textarea.tsx` | Styled textarea primitive. |
 | `apps/web/src/components/ui/tooltip.tsx` | Base UI tooltip primitives. |
@@ -118,7 +118,7 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | `apps/web/src/routes/installation.completed.tsx` | GitHub App installation popup completion notifier. |
 | `apps/web/src/routes/project.$projectId.index.tsx` | New-conversation child route for a project. |
 | `apps/web/src/routes/project.$projectId.session.$sessionId.tsx` | Existing-conversation child route for a project session. |
-| `apps/web/src/routes/project.$projectId.tsx` | Project workspace coordinator: D1 history independent of sandbox wake, status bar, ensure/retry readiness, selected session, and chat. |
+| `apps/web/src/routes/project.$projectId.tsx` | Project workspace coordinator: D1 history independent of sandbox wake, quiet warm check, provision-only toast, selected session, and chat. |
 | `apps/web/src/routes/project.$projectId.test.tsx` | Route coordination tests for history-before-readiness, status bar, retry, and list-invalidation boundaries. |
 | `apps/web/src/routes/sign-in.tsx` | GitHub OAuth sign-in UI and authenticated redirect. |
 
@@ -140,7 +140,7 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | `apps/web/src/integrations/trpc/routers/session-git.test.ts` | Router tests for generated vs explicit commit/PR metadata delegation and error mapping. |
 | `apps/web/src/integrations/trpc/routers/session-git.ts` | Authenticated UI API for session Git status, sync, commit, push, and pull requests. |
 | `apps/web/src/integrations/trpc/routers/workspace.test.ts` | Regression tests for `apps/web/src/integrations/trpc/routers/workspace.ts` behavior and edge cases. |
-| `apps/web/src/integrations/trpc/routers/workspace.ts` | Workspace ensure/retry, active-session reads, keyset message pagination, and session archival. |
+| `apps/web/src/integrations/trpc/routers/workspace.ts` | Sandbox check/provision/retry, active-session reads, keyset message pagination, and session archival. |
 
 ### Domain libraries (`apps/web`)
 
@@ -192,7 +192,7 @@ Generated under `apps/web` during local Alchemy/Vite: `apps/web/.alchemy/`, `app
 | `apps/web/src/lib/message-cursor.ts` | Opaque validated `(createdAt,rowid)` cursor codec and comparison helpers. |
 | `apps/web/src/lib/project-env-vars.ts` | Sanitizes, encrypts, decrypts, and hides project environment values. |
 | `apps/web/src/lib/project-sandbox.test.ts` | Regression tests for `apps/web/src/lib/project-sandbox.ts` behavior and edge cases. |
-| `apps/web/src/lib/project-sandbox.ts` | Observes runtime state, connects/restores/recreates project sandboxes under the D1 provisioning fence, and versions backup writes. |
+| `apps/web/src/lib/project-sandbox.ts` | Observation-only check, fenced provision/restore/recreate, and versioned backup writes. |
 | `apps/web/src/lib/provider-auth-service.ts` | Provider catalog discovery, auth/refresh sandbox orchestration, connection persistence, and account model discovery. |
 | `apps/web/src/lib/sandbox-backup.test.ts` | Regression tests for `apps/web/src/lib/sandbox-backup.ts` behavior and edge cases. |
 | `apps/web/src/lib/sandbox-backup.ts` | Backup handle codec, R2/local options, TTL, and exclusion policy. |

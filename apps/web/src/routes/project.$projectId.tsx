@@ -5,7 +5,7 @@ import {
 	useQueryClient,
 } from "@tanstack/react-query";
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Chat } from "#/components/ai-chat";
 import { Button } from "#/components/ui/button";
 import { toast } from "#/components/ui/toast";
@@ -115,9 +115,10 @@ export function ProjectWorkspacePage({
 }) {
 	const trpc = useTRPC();
 	const queryClient = useQueryClient();
-	const reensureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const latestWorkspaceSourceRef = useRef<"ensure" | "retry" | null>(null);
-	const readinessToastRef = useRef<{ id: string } | null>(null);
+	const provisionStartedRef = useRef(false);
+	const awaitingFenceRef = useRef(false);
+	const provisionToastRef = useRef<{ id: string } | null>(null);
+	const [awaitingFence, setAwaitingFence] = useState(false);
 
 	const projectQuery = useQuery(
 		trpc.projects.get.queryOptions(
@@ -132,12 +133,35 @@ export function ProjectWorkspacePage({
 	const project = projectQuery.data;
 	const d1Status = project?.status;
 
-	const { mutate: ensureWorkspace, ...ensureWorkspaceMutation } = useMutation(
-		trpc.workspace.ensureWorkspace.mutationOptions({
-			onSuccess: () => {
-				latestWorkspaceSourceRef.current = "ensure";
-				void queryClient.invalidateQueries(
+	const checkQuery = useQuery(
+		trpc.workspace.checkSandbox.queryOptions(
+			{ projectId, sessionId },
+			{
+				enabled: d1Status === "ready",
+				retry: false,
+				refetchInterval: (query) => {
+					const state = query.state.data?.sandbox?.state;
+					if (
+						d1Status === "provisioning" ||
+						state === "provisioning" ||
+						awaitingFenceRef.current
+					) {
+						return 1_000;
+					}
+					return false;
+				},
+			},
+		),
+	);
+
+	const provisionMutation = useMutation(
+		trpc.workspace.provisionSandbox.mutationOptions({
+			onSuccess: async () => {
+				await queryClient.invalidateQueries(
 					trpc.projects.get.queryFilter({ id: projectId }),
+				);
+				await queryClient.invalidateQueries(
+					trpc.workspace.checkSandbox.queryFilter({ projectId, sessionId }),
 				);
 			},
 		}),
@@ -145,86 +169,183 @@ export function ProjectWorkspacePage({
 
 	const retryRestoreMutation = useMutation(
 		trpc.workspace.retryRestore.mutationOptions({
-			onSuccess: () => {
-				latestWorkspaceSourceRef.current = "retry";
-				void queryClient.invalidateQueries(
+			onSuccess: async () => {
+				await queryClient.invalidateQueries(
 					trpc.projects.get.queryFilter({ id: projectId }),
+				);
+				await queryClient.invalidateQueries(
+					trpc.workspace.checkSandbox.queryFilter({ projectId, sessionId }),
 				);
 			},
 		}),
 	);
 
-	// Fire ensure when D1 says ready. Keyed on projectId + sessionId.
-	useEffect(() => {
-		if (reensureTimerRef.current != null) {
-			clearTimeout(reensureTimerRef.current);
-			reensureTimerRef.current = null;
-		}
-		if (d1Status === "ready") {
-			ensureWorkspace({ projectId, sessionId });
-		}
-		return () => {
-			if (reensureTimerRef.current != null) {
-				clearTimeout(reensureTimerRef.current);
-				reensureTimerRef.current = null;
-			}
-		};
-	}, [projectId, sessionId, d1Status, ensureWorkspace]);
-
-	const ensureData = ensureWorkspaceMutation.data as
-		| WorkspacePayload
-		| undefined;
-	const retryData = retryRestoreMutation.data as WorkspacePayload | undefined;
-
-	const matchingRetry = workspaceMatches(retryData, projectId, sessionId)
-		? retryData
-		: undefined;
-	const matchingEnsure = workspaceMatches(ensureData, projectId, sessionId)
-		? ensureData
-		: undefined;
-
-	// Prefer the most recently settled matching payload.
-	const matchingWorkspace =
-		latestWorkspaceSourceRef.current === "retry"
-			? (matchingRetry ?? matchingEnsure)
-			: (matchingEnsure ?? matchingRetry);
-
-	const ensurePending = ensureWorkspaceMutation.isPending;
-	const retryPending = retryRestoreMutation.isPending;
-	const readinessPending = ensurePending || retryPending;
-
-	// Schedule one delayed re-ensure when server reports still provisioning.
-	useEffect(() => {
-		if (reensureTimerRef.current != null) {
-			clearTimeout(reensureTimerRef.current);
-			reensureTimerRef.current = null;
-		}
-		if (
-			matchingWorkspace?.sandbox?.state === "provisioning" &&
-			!readinessPending &&
-			d1Status === "ready"
-		) {
-			reensureTimerRef.current = setTimeout(() => {
-				reensureTimerRef.current = null;
-				ensureWorkspace({ projectId, sessionId });
-			}, 1_000);
-		}
-		return () => {
-			if (reensureTimerRef.current != null) {
-				clearTimeout(reensureTimerRef.current);
-				reensureTimerRef.current = null;
-			}
-		};
-	}, [
-		matchingWorkspace,
-		readinessPending,
-		d1Status,
+	const checkState = checkQuery.data?.sandbox?.state;
+	const matchingProvision = workspaceMatches(
+		provisionMutation.data as WorkspacePayload | undefined,
 		projectId,
 		sessionId,
-		ensureWorkspace,
-	]);
+	)
+		? (provisionMutation.data as WorkspacePayload)
+		: undefined;
+	const provisionState = matchingProvision?.sandbox?.state;
+	const provisionPending = provisionMutation.isPending;
+	const retryPending = retryRestoreMutation.isPending;
 
-	const selectedSession = matchingWorkspace?.selectedSession ?? null;
+	const restoreFailed =
+		Boolean(checkQuery.data?.restoreFailed) ||
+		Boolean(matchingProvision?.restoreFailed) ||
+		d1Status === "failed";
+
+	const checkError =
+		checkQuery.error && d1Status === "ready" ? checkQuery.error : null;
+
+	const successReady =
+		d1Status === "ready" &&
+		!provisionPending &&
+		!awaitingFence &&
+		(checkState === "connected" ||
+			(provisionState != null &&
+				SUCCESS_SANDBOX_STATES.has(provisionState) &&
+				checkState !== "needs_restore"));
+
+	const isPreparing =
+		!restoreFailed &&
+		!checkError &&
+		!successReady &&
+		(d1Status === "provisioning" ||
+			checkState === "provisioning" ||
+			checkState === "needs_restore" ||
+			provisionPending ||
+			awaitingFence ||
+			(d1Status === "ready" &&
+				(checkQuery.isPending || checkQuery.isFetching) &&
+				!checkQuery.data));
+
+	// Reset provision/toast refs when project or session changes.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: cleanup must re-run on id change
+	useEffect(() => {
+		return () => {
+			const pending = provisionToastRef.current;
+			if (pending) {
+				toast.close(pending.id);
+			}
+			provisionToastRef.current = null;
+			provisionStartedRef.current = false;
+			awaitingFenceRef.current = false;
+			setAwaitingFence(false);
+		};
+	}, [projectId, sessionId]);
+
+	const startProvisionWithToast = useCallback(async () => {
+		const toastId = `sandbox-provision-${projectId}`;
+		const id = toast.add({
+			id: toastId,
+			type: "loading",
+			description: "Preparing project sandbox...",
+		});
+		provisionToastRef.current = { id };
+
+		try {
+			const result = (await provisionMutation.mutateAsync({
+				projectId,
+				sessionId,
+			})) as WorkspacePayload;
+			const state = result.sandbox?.state;
+
+			if (state && SUCCESS_SANDBOX_STATES.has(state)) {
+				toast.update(id, {
+					type: "success",
+					description: "Project sandbox ready",
+				});
+				provisionToastRef.current = null;
+				awaitingFenceRef.current = false;
+				setAwaitingFence(false);
+				provisionStartedRef.current = false;
+				return;
+			}
+
+			if (state === "failed" || result.restoreFailed) {
+				toast.update(id, {
+					type: "error",
+					description: "Workspace restore failed",
+				});
+				provisionToastRef.current = null;
+				awaitingFenceRef.current = false;
+				setAwaitingFence(false);
+				provisionStartedRef.current = false;
+				return;
+			}
+
+			if (state === "provisioning") {
+				// Keep loading; lost-fence settle effect finishes it.
+				awaitingFenceRef.current = true;
+				setAwaitingFence(true);
+				return;
+			}
+
+			// Unexpected non-terminal result — keep loading and poll.
+			awaitingFenceRef.current = true;
+			setAwaitingFence(true);
+		} catch (error) {
+			toast.update(id, {
+				type: "error",
+				description:
+					error instanceof Error
+						? error.message
+						: "Project sandbox is not ready yet.",
+			});
+			provisionToastRef.current = null;
+			awaitingFenceRef.current = false;
+			setAwaitingFence(false);
+			provisionStartedRef.current = false;
+		}
+	}, [projectId, sessionId, provisionMutation.mutateAsync]);
+
+	// Auto-provision only on needs_restore.
+	useEffect(() => {
+		if (checkState !== "needs_restore") {
+			// Re-arm so a later needs_restore (after failed attempt) can fire again.
+			if (!provisionPending) provisionStartedRef.current = false;
+			return;
+		}
+		if (provisionPending || provisionStartedRef.current) return;
+		provisionStartedRef.current = true;
+		void startProvisionWithToast();
+	}, [checkState, provisionPending, startProvisionWithToast]);
+
+	// Lost-fence settle: finish toast when check reaches a terminal state.
+	useEffect(() => {
+		if (!awaitingFenceRef.current) return;
+		const toastId = provisionToastRef.current?.id;
+		if (checkState === "connected") {
+			if (toastId) {
+				toast.update(toastId, {
+					type: "success",
+					description: "Project sandbox ready",
+				});
+			}
+			awaitingFenceRef.current = false;
+			setAwaitingFence(false);
+			provisionToastRef.current = null;
+			provisionStartedRef.current = false;
+			return;
+		}
+		if (checkState === "failed" || restoreFailed) {
+			if (toastId) {
+				toast.update(toastId, {
+					type: "error",
+					description: "Workspace restore failed",
+				});
+			}
+			awaitingFenceRef.current = false;
+			setAwaitingFence(false);
+			provisionToastRef.current = null;
+			provisionStartedRef.current = false;
+		}
+	}, [checkState, restoreFailed]);
+
+	const selectedSession = checkQuery.data?.selectedSession ?? null;
 	const selectedSessionId = sessionId ?? selectedSession?.id ?? null;
 
 	const messagesQuery = useInfiniteQuery(
@@ -250,87 +371,6 @@ export function ProjectWorkspacePage({
 	const hasMoreHistory = Boolean(messagesQuery.hasNextPage);
 	const isLoadingMoreHistory = messagesQuery.isFetchingNextPage;
 
-	const sandboxState = matchingWorkspace?.sandbox?.state;
-	const restoreFailed =
-		Boolean(matchingWorkspace?.restoreFailed) || d1Status === "failed";
-	const ensureError =
-		ensureWorkspaceMutation.error && !matchingWorkspace
-			? ensureWorkspaceMutation.error
-			: null;
-	const successReady =
-		Boolean(sandboxState && SUCCESS_SANDBOX_STATES.has(sandboxState)) &&
-		d1Status === "ready" &&
-		!readinessPending;
-
-	const isPreparing =
-		!restoreFailed &&
-		!ensureError &&
-		!successReady &&
-		(d1Status === "provisioning" ||
-			d1Status === "ready" ||
-			sandboxState === "provisioning");
-
-	// One loading→success/error toast for the whole wake cycle.
-	useEffect(() => {
-		const settle = (type: "success" | "error", description: string) => {
-			const pending = readinessToastRef.current;
-			if (!pending) return;
-			readinessToastRef.current = null;
-			toast.update(pending.id, { type, description });
-		};
-
-		if (isPreparing) {
-			if (!readinessToastRef.current) {
-				const id = toast.add({
-					id: `sandbox-ready-${projectId}`,
-					type: "loading",
-					description: "Preparing project sandbox...",
-				});
-				readinessToastRef.current = { id };
-			}
-			return;
-		}
-
-		if (successReady) {
-			settle("success", "Project sandbox ready");
-			return;
-		}
-
-		if (restoreFailed) {
-			settle("error", "Workspace restore failed");
-			return;
-		}
-
-		if (ensureError && d1Status === "ready" && !readinessPending) {
-			settle(
-				"error",
-				ensureError instanceof Error
-					? ensureError.message
-					: "Project sandbox is not ready yet.",
-			);
-		}
-	}, [
-		isPreparing,
-		successReady,
-		restoreFailed,
-		ensureError,
-		d1Status,
-		readinessPending,
-		projectId,
-	]);
-
-	// Drop in-flight toast on project/session change or unmount.
-	useEffect(() => {
-		const routeKey = `${projectId}:${sessionId ?? ""}`;
-		return () => {
-			void routeKey;
-			const pending = readinessToastRef.current;
-			if (!pending) return;
-			readinessToastRef.current = null;
-			toast.close(pending.id);
-		};
-	}, [projectId, sessionId]);
-
 	if (projectQuery.isPending) {
 		return (
 			<main className="flex h-dvh items-center justify-center p-6">
@@ -355,7 +395,7 @@ export function ProjectWorkspacePage({
 	let bar: "restore-failed" | "check-error" | null = null;
 	if (restoreFailed) {
 		bar = "restore-failed";
-	} else if (ensureError && d1Status === "ready" && !readinessPending) {
+	} else if (checkError && !provisionPending && !awaitingFence) {
 		bar = "check-error";
 	}
 
@@ -376,12 +416,19 @@ export function ProjectWorkspacePage({
 			{bar ? (
 				<WorkspaceStatusBar
 					mode={bar}
-					message={ensureError?.message}
-					pending={readinessPending}
+					message={checkError?.message}
+					pending={
+						retryPending ||
+						provisionPending ||
+						checkQuery.isFetching ||
+						checkQuery.isPending
+					}
 					onRetryRestore={() =>
 						retryRestoreMutation.mutate({ projectId, sessionId })
 					}
-					onRetryCheck={() => ensureWorkspace({ projectId, sessionId })}
+					onRetryCheck={() => {
+						void checkQuery.refetch();
+					}}
 					retryError={retryRestoreMutation.error?.message ?? null}
 				/>
 			) : null}

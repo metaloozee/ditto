@@ -5,7 +5,8 @@ import {
 } from "#/lib/message-cursor";
 
 const createDbMock = vi.hoisted(() => vi.fn());
-const ensureProjectSandboxMock = vi.hoisted(() => vi.fn());
+const checkProjectSandboxMock = vi.hoisted(() => vi.fn());
+const provisionProjectSandboxMock = vi.hoisted(() => vi.fn());
 const resolveSessionForMessageWriteMock = vi.hoisted(() => vi.fn());
 const archiveSessionWithPreviewCleanupMock = vi.hoisted(() => vi.fn());
 const workspaceSessionRecencyUpdateMock = vi.hoisted(() => vi.fn());
@@ -19,7 +20,8 @@ vi.mock("#/lib/project-sandbox", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("#/lib/project-sandbox")>();
 	return {
 		...actual,
-		ensureProjectSandbox: ensureProjectSandboxMock,
+		checkProjectSandbox: checkProjectSandboxMock,
+		provisionProjectSandbox: provisionProjectSandboxMock,
 	};
 });
 
@@ -48,9 +50,6 @@ vi.mock("#/lib/workspace-session", () => ({
 }));
 
 const { workspaceRouter } = await import("./workspace");
-const { ProjectSandboxProvisioningError } = await import(
-	"#/lib/project-sandbox"
-);
 
 function createCaller() {
 	return workspaceRouter.createCaller({
@@ -119,7 +118,7 @@ function makeMessage(
 /** Chainable select mock that records limit and returns provided rows. */
 function createMessagesDb(options: {
 	rows: MessageRow[];
-	/** Optional second select path for ensureWorkspace (project/sessions). */
+	/** Optional second select path for check/provision (project/sessions). */
 	project?: Record<string, unknown> | null;
 	sessions?: Record<string, unknown>[];
 }) {
@@ -145,7 +144,7 @@ function createMessagesDb(options: {
 			limit: vi.fn((n: number) => {
 				callMeta.limit = n;
 				// First select after loadOwnedActiveSession in messages is message rows.
-				// ensureWorkspace does project select then sessions select.
+				// check/provision does project select then sessions select.
 				if (options.project !== undefined && callIndex === 0) {
 					return Promise.resolve(options.project ? [options.project] : []);
 				}
@@ -396,150 +395,206 @@ describe("workspace.messages cursor paging", () => {
 	});
 });
 
-describe("workspace.ensureWorkspace omits unbounded messages", () => {
+function readyProject(overrides: Record<string, unknown> = {}) {
+	return {
+		id: "proj-1",
+		name: "P",
+		description: null,
+		userId: "user-1",
+		githubRepo: "acme/app",
+		githubInstallationId: 1,
+		sandboxId: "sandbox-1",
+		sandboxBackup: "secret",
+		sandboxBackupCreatedAt: null,
+		sandboxBackupRequestedGeneration: 0,
+		sandboxBackupStoredGeneration: 0,
+		status: "ready" as const,
+		envVars: "encrypted",
+		previewLockToken: null,
+		previewLockExpiresAt: null,
+		deletingAt: null,
+		createdAt: new Date(),
+		updatedAt: new Date(),
+		...overrides,
+	};
+}
+
+function makeWorkspaceDb(options: {
+	/** Project rows returned by successive project selects. */
+	projects: Array<Record<string, unknown>>;
+	sessions?: Record<string, unknown>[];
+}) {
+	let projectIndex = 0;
+	const select = vi.fn(() => {
+		const chain: {
+			from: ReturnType<typeof vi.fn>;
+			where: ReturnType<typeof vi.fn>;
+			orderBy: ReturnType<typeof vi.fn>;
+			limit: ReturnType<typeof vi.fn>;
+		} = {
+			from: vi.fn(() => chain),
+			where: vi.fn(() => chain),
+			orderBy: vi.fn(() => Promise.resolve(options.sessions ?? [])),
+			limit: vi.fn(() => {
+				const project =
+					options.projects[Math.min(projectIndex, options.projects.length - 1)];
+				projectIndex += 1;
+				return Promise.resolve(project ? [project] : []);
+			}),
+		};
+		return chain;
+	});
+	return { select };
+}
+
+describe("workspace.checkSandbox", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 	});
 
-	it("does not include messages in the ensureWorkspace payload", async () => {
-		const project = {
-			id: "proj-1",
-			name: "P",
-			description: null,
-			userId: "user-1",
-			githubRepo: null,
-			githubInstallationId: null,
-			sandboxId: null,
-			sandboxBackup: "secret",
-			sandboxBackupCreatedAt: null,
-			sandboxBackupRequestedGeneration: 0,
-			sandboxBackupStoredGeneration: 0,
-			status: "provisioning" as const,
-			envVars: "encrypted",
-			createdAt: new Date(),
-			updatedAt: new Date(),
-		};
-
-		// loadWorkspaceView: project select ends with limit; sessions select ends with orderBy.
-		const select = vi.fn(() => {
-			const chain: {
-				from: ReturnType<typeof vi.fn>;
-				where: ReturnType<typeof vi.fn>;
-				orderBy: ReturnType<typeof vi.fn>;
-				limit: ReturnType<typeof vi.fn>;
-			} = {
-				from: vi.fn(() => chain),
-				where: vi.fn(() => chain),
-				orderBy: vi.fn(() => Promise.resolve([])),
-				limit: vi.fn(() => Promise.resolve([project])),
-			};
-			return chain;
+	it("returns connected without calling provision", async () => {
+		const project = readyProject();
+		createDbMock.mockReturnValue(makeWorkspaceDb({ projects: [project] }));
+		checkProjectSandboxMock.mockResolvedValue({
+			project,
+			state: "connected",
 		});
 
-		createDbMock.mockReturnValue({ select });
+		const result = await createCaller().checkSandbox({ projectId: "proj-1" });
 
-		const caller = createCaller();
-		const result = await caller.ensureWorkspace({ projectId: "proj-1" });
+		expect(result.sandbox.state).toBe("connected");
+		expect(result.restoreFailed).toBe(false);
+		expect(result.project).not.toHaveProperty("envVars");
+		expect(result.project).not.toHaveProperty("sandboxBackup");
+		expect(result).not.toHaveProperty("messages");
+		expect(provisionProjectSandboxMock).not.toHaveBeenCalled();
+	});
+
+	it("returns needs_restore with secrets stripped", async () => {
+		const project = readyProject();
+		createDbMock.mockReturnValue(makeWorkspaceDb({ projects: [project] }));
+		checkProjectSandboxMock.mockResolvedValue({
+			project,
+			state: "needs_restore",
+		});
+
+		const result = await createCaller().checkSandbox({ projectId: "proj-1" });
+
+		expect(result.sandbox.state).toBe("needs_restore");
+		expect(result.restoreFailed).toBe(false);
+		expect(result.project).not.toHaveProperty("envVars");
+		expect(result.project).not.toHaveProperty("sandboxBackup");
+		expect(result).not.toHaveProperty("messages");
+		expect(provisionProjectSandboxMock).not.toHaveBeenCalled();
+	});
+
+	it("returns provisioning for D1 provisioning status", async () => {
+		const project = readyProject({ status: "provisioning" });
+		createDbMock.mockReturnValue(makeWorkspaceDb({ projects: [project] }));
+		checkProjectSandboxMock.mockResolvedValue({
+			project,
+			state: "provisioning",
+		});
+
+		const result = await createCaller().checkSandbox({ projectId: "proj-1" });
+
+		expect(result.sandbox.state).toBe("provisioning");
+		expect(result.restoreFailed).toBe(false);
+	});
+
+	it("rejects observation error while D1 remains ready (not restoreFailed)", async () => {
+		const project = readyProject();
+		createDbMock.mockReturnValue(makeWorkspaceDb({ projects: [project] }));
+		checkProjectSandboxMock.mockRejectedValue(new Error("rpc down"));
+
+		await expect(
+			createCaller().checkSandbox({ projectId: "proj-1" }),
+		).rejects.toThrow("rpc down");
+	});
+
+	it("does not include messages in the checkSandbox payload", async () => {
+		const project = readyProject({ status: "provisioning" });
+		createDbMock.mockReturnValue(makeWorkspaceDb({ projects: [project] }));
+		checkProjectSandboxMock.mockResolvedValue({
+			project,
+			state: "provisioning",
+		});
+
+		const result = await createCaller().checkSandbox({ projectId: "proj-1" });
 
 		expect(result).not.toHaveProperty("messages");
 		expect(result.project.id).toBe("proj-1");
-		expect(result.project).not.toHaveProperty("envVars");
-		expect(result.project).not.toHaveProperty("sandboxBackup");
 		expect(result.sessions).toEqual([]);
 		expect(result.selectedSession).toBeNull();
 	});
 });
 
-describe("workspace.ensureWorkspace readiness", () => {
+describe("workspace.provisionSandbox", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 	});
 
-	function readyProject(overrides: Record<string, unknown> = {}) {
-		return {
-			id: "proj-1",
-			name: "P",
-			description: null,
-			userId: "user-1",
-			githubRepo: "acme/app",
-			githubInstallationId: 1,
-			sandboxId: "sandbox-1",
-			sandboxBackup: "secret",
-			sandboxBackupCreatedAt: null,
-			sandboxBackupRequestedGeneration: 0,
-			sandboxBackupStoredGeneration: 0,
-			status: "ready" as const,
-			envVars: "encrypted",
-			previewLockToken: null,
-			previewLockExpiresAt: null,
-			deletingAt: null,
-			createdAt: new Date(),
-			updatedAt: new Date(),
-			...overrides,
-		};
-	}
-
-	function makeEnsureDb(options: {
-		/** Project rows returned by successive project selects. */
-		projects: Array<Record<string, unknown>>;
-		sessions?: Record<string, unknown>[];
-	}) {
-		let projectIndex = 0;
-		const select = vi.fn(() => {
-			const chain: {
-				from: ReturnType<typeof vi.fn>;
-				where: ReturnType<typeof vi.fn>;
-				orderBy: ReturnType<typeof vi.fn>;
-				limit: ReturnType<typeof vi.fn>;
-			} = {
-				from: vi.fn(() => chain),
-				where: vi.fn(() => chain),
-				orderBy: vi.fn(() => Promise.resolve(options.sessions ?? [])),
-				limit: vi.fn(() => {
-					const project =
-						options.projects[
-							Math.min(projectIndex, options.projects.length - 1)
-						];
-					projectIndex += 1;
-					return Promise.resolve(project ? [project] : []);
-				}),
-			};
-			return chain;
+	it("returns connected no-op", async () => {
+		const project = readyProject();
+		createDbMock.mockReturnValue(makeWorkspaceDb({ projects: [project] }));
+		provisionProjectSandboxMock.mockResolvedValue({
+			project,
+			state: "connected",
 		});
-		return { select };
-	}
 
-	it("returns provisioning when contention loses and D1 is still provisioning", async () => {
-		const initial = readyProject();
-		const provisioning = readyProject({ status: "provisioning" });
-		createDbMock.mockReturnValue(
-			makeEnsureDb({ projects: [initial, provisioning] }),
-		);
-		ensureProjectSandboxMock.mockRejectedValue(
-			new ProjectSandboxProvisioningError(),
-		);
+		const result = await createCaller().provisionSandbox({
+			projectId: "proj-1",
+		});
 
-		const result = await createCaller().ensureWorkspace({
+		expect(result.sandbox.state).toBe("connected");
+		expect(result.restoreFailed).toBe(false);
+		expect(result).not.toHaveProperty("messages");
+	});
+
+	it("returns restored_from_backup on restore success", async () => {
+		const project = readyProject();
+		createDbMock.mockReturnValue(makeWorkspaceDb({ projects: [project] }));
+		provisionProjectSandboxMock.mockResolvedValue({
+			project,
+			state: "restored_from_backup",
+		});
+
+		const result = await createCaller().provisionSandbox({
+			projectId: "proj-1",
+		});
+
+		expect(result.sandbox.state).toBe("restored_from_backup");
+		expect(result.restoreFailed).toBe(false);
+	});
+
+	it("returns provisioning on contention with a single mock call", async () => {
+		const project = readyProject();
+		createDbMock.mockReturnValue(makeWorkspaceDb({ projects: [project] }));
+		provisionProjectSandboxMock.mockResolvedValue({
+			project: readyProject({ status: "provisioning" }),
+			state: "provisioning",
+		});
+
+		const result = await createCaller().provisionSandbox({
 			projectId: "proj-1",
 		});
 
 		expect(result.sandbox.state).toBe("provisioning");
 		expect(result.restoreFailed).toBe(false);
-		expect(result.project).not.toHaveProperty("envVars");
-		expect(result.project).not.toHaveProperty("sandboxBackup");
-		expect(result).not.toHaveProperty("messages");
-		expect(ensureProjectSandboxMock).toHaveBeenCalledTimes(1);
+		expect(provisionProjectSandboxMock).toHaveBeenCalledTimes(1);
 	});
 
-	it("returns restoreFailed when D1 is actually failed", async () => {
+	it("returns restoreFailed when provision throws and D1 is failed", async () => {
 		const initial = readyProject();
 		const failed = readyProject({ status: "failed" });
-		createDbMock.mockReturnValue(makeEnsureDb({ projects: [initial, failed] }));
-		ensureProjectSandboxMock.mockRejectedValue(
+		createDbMock.mockReturnValue(
+			makeWorkspaceDb({ projects: [initial, failed] }),
+		);
+		provisionProjectSandboxMock.mockRejectedValue(
 			new Error("Project sandbox restore failed. Please try again."),
 		);
 
-		const result = await createCaller().ensureWorkspace({
+		const result = await createCaller().provisionSandbox({
 			projectId: "proj-1",
 		});
 
@@ -547,63 +602,20 @@ describe("workspace.ensureWorkspace readiness", () => {
 		expect(result.restoreFailed).toBe(true);
 	});
 
-	it("rejects a generic check error while D1 remains ready", async () => {
+	it("rethrows when provision throws and D1 is not failed", async () => {
 		const initial = readyProject();
 		createDbMock.mockReturnValue(
-			makeEnsureDb({ projects: [initial, initial] }),
+			makeWorkspaceDb({ projects: [initial, initial] }),
 		);
-		ensureProjectSandboxMock.mockRejectedValue(new Error("rpc down"));
+		provisionProjectSandboxMock.mockRejectedValue(new Error("rpc down"));
 
 		await expect(
-			createCaller().ensureWorkspace({ projectId: "proj-1" }),
+			createCaller().provisionSandbox({ projectId: "proj-1" }),
 		).rejects.toThrow("rpc down");
-	});
-
-	it("nested-ensures once when contention loser reloads a ready row", async () => {
-		const initial = readyProject();
-		const stillReady = readyProject();
-		createDbMock.mockReturnValue(
-			makeEnsureDb({ projects: [initial, stillReady] }),
-		);
-
-		ensureProjectSandboxMock
-			.mockRejectedValueOnce(new ProjectSandboxProvisioningError())
-			.mockResolvedValueOnce({
-				project: stillReady,
-				state: "connected",
-			});
-
-		const result = await createCaller().ensureWorkspace({
-			projectId: "proj-1",
-		});
-
-		expect(result.sandbox.state).toBe("connected");
-		expect(result.restoreFailed).toBe(false);
-		expect(ensureProjectSandboxMock).toHaveBeenCalledTimes(2);
-	});
-
-	it("returns provisioning when nested ensure also contends", async () => {
-		const initial = readyProject();
-		const stillReady = readyProject();
-		createDbMock.mockReturnValue(
-			makeEnsureDb({ projects: [initial, stillReady] }),
-		);
-
-		ensureProjectSandboxMock.mockRejectedValue(
-			new ProjectSandboxProvisioningError(),
-		);
-
-		const result = await createCaller().ensureWorkspace({
-			projectId: "proj-1",
-		});
-
-		expect(result.sandbox.state).toBe("provisioning");
-		expect(result.restoreFailed).toBe(false);
-		expect(ensureProjectSandboxMock).toHaveBeenCalledTimes(2);
 	});
 });
 
-describe("workspace.retryRestore tombstone fence", () => {
+describe("workspace.retryRestore", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 	});
@@ -661,10 +673,58 @@ describe("workspace.retryRestore tombstone fence", () => {
 			message: "Project cannot be restored.",
 		});
 
-		expect(ensureProjectSandboxMock).not.toHaveBeenCalled();
+		expect(checkProjectSandboxMock).not.toHaveBeenCalled();
+		expect(provisionProjectSandboxMock).not.toHaveBeenCalled();
 		expect(update).toHaveBeenCalled();
 		// Project remains failed/tombstoned — no successful restore write.
 		expect(project.status).toBe("failed");
 		expect(project.deletingAt).toBe(1_700_000_000);
+	});
+
+	it("returns check payload after successful failed→ready flip", async () => {
+		const failed = readyProject({ status: "failed" });
+		const ready = readyProject({ status: "ready" });
+
+		const update = vi.fn(() => ({
+			set: vi.fn(() => ({
+				where: vi.fn(() => ({
+					returning: vi.fn(async () => [{ id: "proj-1" }]),
+				})),
+			})),
+		}));
+
+		let projectIndex = 0;
+		const projectRows = [failed, ready];
+		const select = vi.fn(() => {
+			const chain: {
+				from: ReturnType<typeof vi.fn>;
+				where: ReturnType<typeof vi.fn>;
+				orderBy: ReturnType<typeof vi.fn>;
+				limit: ReturnType<typeof vi.fn>;
+			} = {
+				from: vi.fn(() => chain),
+				where: vi.fn(() => chain),
+				orderBy: vi.fn(() => Promise.resolve([])),
+				limit: vi.fn(() => {
+					const project =
+						projectRows[Math.min(projectIndex, projectRows.length - 1)];
+					projectIndex += 1;
+					return Promise.resolve(project ? [project] : []);
+				}),
+			};
+			return chain;
+		});
+
+		createDbMock.mockReturnValue({ select, update });
+		checkProjectSandboxMock.mockResolvedValue({
+			project: ready,
+			state: "needs_restore",
+		});
+
+		const result = await createCaller().retryRestore({ projectId: "proj-1" });
+
+		expect(result.sandbox.state).toBe("needs_restore");
+		expect(checkProjectSandboxMock).toHaveBeenCalledTimes(1);
+		expect(provisionProjectSandboxMock).not.toHaveBeenCalled();
 	});
 });

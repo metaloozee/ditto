@@ -39,7 +39,7 @@ and narrows context to an authenticated user.
 | `health` | Liveness query | none |
 | `github` | Import state and branch listing | GitHub OAuth visibility, installation Octokit |
 | `projects` | Create, list, get, rename, delete, env-var management | Authorization, encryption, bootstrap/restore |
-| `workspace` | Ensure/retry workspace, page messages, archive session | Sandbox lifecycle, cursor codec, session ownership, preview cleanup on archive |
+| `workspace` | Check/provision/retry sandbox, page messages, archive session | Sandbox lifecycle, cursor codec, session ownership, preview cleanup on archive |
 | `sessionGit` | Status, sync, commit, push, open PR | Worktree, Git state machine, secret policy, backup |
 | `sessionPreview` | Start/stop session website preview | D1 lifecycle lease, port allocation, fixed Vite/Next/Astro process, `exposePort` |
 | `providerAuth` | Provider catalog, account connections, model capabilities, disconnect | Provider catalog/auth sandboxes, encrypted credential repository |
@@ -61,8 +61,9 @@ The large workflows live in narrow modules rather than route handlers:
   targets without acquiring the active workspace-session lock.
 - `agent-run.ts` owns the Sandbox shell session, job file, runner process,
   protocol parsing, redaction, and cleanup.
-- `project-sandbox.ts` owns project readiness, cold restore/recreate, and
-  versioned backup metadata.
+- `project-sandbox.ts` owns observation (`checkProjectSandbox`), cold
+  restore/recreate (`provisionProjectSandbox`), and versioned backup metadata.
+  `needs_restore` is a runtime-only API state and is never written to D1.
 - `sandbox-bootstrap.ts` owns low-level Sandbox SDK, clone/fetch/install,
   runner-health, backup, restore, and command error handling.
 - `workspace-session.ts`, `session-worktree.ts`, and
@@ -155,13 +156,15 @@ ready -- cold wake -------------> provisioning -> ready | failed
 ```
 
 D1 `ready` is the durable last-known successful provision/restore, not proof that
-the Cloudflare container is still alive. Before any `exists`/`exec` probe,
-`ensureProjectSandbox` observes the live runtime with `getState()`. Stopped,
+the Cloudflare container is still alive. `checkProjectSandbox` observes the live
+runtime with `getState()` and never writes D1 or takes the fence. Stopped,
 stopping, or stopped-with-code runtimes (and active runtimes whose workspace is
-not hydrated) take the existing D1 `ready -> provisioning` compare-and-set fence,
-then restore or recreate. Terminal ready/failed writes require the row still be
-`provisioning` so stale work cannot overwrite a later state. A compare-and-set
-loser is reported as provisioning, not as a terminal restore failure.
+not hydrated) surface as `needs_restore`. `provisionProjectSandbox` is idempotent:
+connected is a no-op; only `needs_restore` takes the existing D1
+`ready -> provisioning` compare-and-set fence, then restores or recreates.
+Terminal ready/failed writes require the row still be `provisioning` so stale
+work cannot overwrite a later state. A compare-and-set loser is returned as
+`provisioning`, not as a terminal restore failure.
 
 ### Workspace session
 

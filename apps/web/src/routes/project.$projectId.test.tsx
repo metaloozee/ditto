@@ -3,10 +3,12 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const ensureMutateMock = vi.hoisted(() => vi.fn());
+const provisionMutateMock = vi.hoisted(() => vi.fn());
+const provisionMutateAsyncMock = vi.hoisted(() => vi.fn());
 const retryMutateMock = vi.hoisted(() => vi.fn());
 const invalidateQueriesMock = vi.hoisted(() => vi.fn());
 const fetchNextPageMock = vi.hoisted(() => vi.fn());
+const checkRefetchMock = vi.hoisted(() => vi.fn());
 
 const projectQueryState = vi.hoisted(() => ({
 	current: {
@@ -21,12 +23,33 @@ const projectQueryState = vi.hoisted(() => ({
 	},
 }));
 
-const ensureMutationState = vi.hoisted(() => ({
+const checkQueryState = vi.hoisted(() => ({
+	current: {
+		data: undefined as
+			| undefined
+			| {
+					project: { id: string; status?: string };
+					selectedSession?: {
+						id: string;
+						status?: string;
+						branchName?: string | null;
+					} | null;
+					sandbox?: { state?: string };
+					restoreFailed?: boolean;
+			  },
+		error: null as Error | null,
+		isPending: false,
+		isFetching: false,
+		refetch: checkRefetchMock,
+	},
+}));
+
+const provisionMutationState = vi.hoisted(() => ({
 	current: {
 		data: undefined as unknown,
 		error: null as Error | null,
 		isPending: false,
-		onSuccess: undefined as undefined | (() => void),
+		onSuccess: undefined as undefined | (() => void | Promise<void>),
 	},
 }));
 
@@ -35,7 +58,7 @@ const retryMutationState = vi.hoisted(() => ({
 		data: undefined as unknown,
 		error: null as Error | null,
 		isPending: false,
-		onSuccess: undefined as undefined | (() => void),
+		onSuccess: undefined as undefined | (() => void | Promise<void>),
 	},
 }));
 
@@ -76,6 +99,11 @@ const getQueryFilterMock = vi.hoisted(() =>
 		queryKey: ["projects", "get", input],
 	})),
 );
+const checkQueryFilterMock = vi.hoisted(() =>
+	vi.fn((input: unknown) => ({
+		queryKey: ["workspace", "checkSandbox", input],
+	})),
+);
 
 const mutationCallIndex = vi.hoisted(() => ({ current: 0 }));
 
@@ -83,25 +111,23 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("@tanstack/react-query")>();
 	return {
 		...actual,
-		useQuery: (options: {
-			queryKey?: unknown[];
-			refetchInterval?: unknown;
-		}) => {
-			void options;
-			// Reset mutation alternation at the start of each render.
+		useQuery: (options: { queryKey?: unknown[] }) => {
 			mutationCallIndex.current = 0;
+			const key = JSON.stringify(options.queryKey ?? []);
+			if (key.includes("checkSandbox")) return checkQueryState.current;
 			return projectQueryState.current;
 		},
-		useMutation: (options: { onSuccess?: () => void }) => {
+		useMutation: (options: { onSuccess?: () => void | Promise<void> }) => {
 			const index = mutationCallIndex.current;
 			mutationCallIndex.current += 1;
 			if (index === 0) {
-				ensureMutationState.current.onSuccess = options.onSuccess;
+				provisionMutationState.current.onSuccess = options.onSuccess;
 				return {
-					mutate: ensureMutateMock,
-					data: ensureMutationState.current.data,
-					error: ensureMutationState.current.error,
-					isPending: ensureMutationState.current.isPending,
+					mutate: provisionMutateMock,
+					mutateAsync: provisionMutateAsyncMock,
+					data: provisionMutationState.current.data,
+					error: provisionMutationState.current.error,
+					isPending: provisionMutationState.current.isPending,
 				};
 			}
 			retryMutationState.current.onSuccess = options.onSuccess;
@@ -151,11 +177,18 @@ vi.mock("#/integrations/trpc/react", () => ({
 			},
 		},
 		workspace: {
-			ensureWorkspace: {
-				mutationOptions: (opts?: { onSuccess?: () => void }) => opts ?? {},
+			checkSandbox: {
+				queryOptions: (input: unknown, opts?: object) => ({
+					queryKey: ["workspace", "checkSandbox", input],
+					...opts,
+				}),
+				queryFilter: checkQueryFilterMock,
+			},
+			provisionSandbox: {
+				mutationOptions: (opts?: object) => opts ?? {},
 			},
 			retryRestore: {
-				mutationOptions: (opts?: { onSuccess?: () => void }) => opts ?? {},
+				mutationOptions: (opts?: object) => opts ?? {},
 			},
 			messages: {
 				infiniteQueryOptions: (
@@ -236,6 +269,26 @@ vi.mock("#/components/ui/toast", () => ({
 
 const { ProjectWorkspacePage } = await import("./project.$projectId");
 
+function connectedCheck(overrides: Record<string, unknown> = {}) {
+	return {
+		data: {
+			project: { id: "proj-1", status: "ready" },
+			selectedSession: {
+				id: "sess-1",
+				status: "active",
+				branchName: "main",
+			},
+			sandbox: { state: "connected" },
+			restoreFailed: false,
+			...overrides,
+		},
+		error: null,
+		isPending: false,
+		isFetching: false,
+		refetch: checkRefetchMock,
+	};
+}
+
 describe("ProjectWorkspacePage readiness coordination", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -253,10 +306,17 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 			isPending: false,
 			error: null,
 		};
-		ensureMutationState.current = {
+		checkQueryState.current = {
 			data: undefined,
 			error: null,
 			isPending: true,
+			isFetching: true,
+			refetch: checkRefetchMock,
+		};
+		provisionMutationState.current = {
+			data: undefined,
+			error: null,
+			isPending: false,
 			onSuccess: undefined,
 		};
 		retryMutationState.current = {
@@ -265,6 +325,7 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 			isPending: false,
 			onSuccess: undefined,
 		};
+		provisionMutateAsyncMock.mockReset();
 		messagesQueryState.current = {
 			data: {
 				pages: [
@@ -293,38 +354,20 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 		vi.useRealTimers();
 	});
 
-	it("enables the URL session message query before ensure resolves", async () => {
-		ensureMutationState.current.isPending = true;
+	it("warm path: check connected → no toast, enabled, history visible", async () => {
+		checkQueryState.current = connectedCheck();
+
 		render(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
 
-		expect(messagesQueryState.enabledCaptures.at(-1)).toBe(true);
+		expect(toastAddMock).not.toHaveBeenCalled();
+		expect(provisionMutateAsyncMock).not.toHaveBeenCalled();
+		expect(screen.queryByTestId("disabled-reason")).toBeNull();
 		expect(screen.getByText("durable history")).toBeTruthy();
-		expect(screen.queryByRole("status")).toBeNull();
-		expect(toastAddMock).toHaveBeenCalledWith(
-			expect.objectContaining({
-				type: "loading",
-				description: "Preparing project sandbox...",
-			}),
-		);
-		expect(screen.getByTestId("disabled-reason").textContent).toBe(
-			"Project sandbox is being provisioned.",
-		);
-		expect(ensureMutateMock).toHaveBeenCalledWith({
-			projectId: "proj-1",
-			sessionId: "sess-1",
-		});
+		expect(messagesQueryState.enabledCaptures.at(-1)).toBe(true);
 	});
 
-	it("resolves the readiness toast and clears disabled reason on ensure success", async () => {
-		const { rerender } = render(
-			<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />,
-		);
-
-		const toastId = toastAddMock.mock.results.at(-1)?.value as string;
-
-		ensureMutationState.current = {
-			...ensureMutationState.current,
-			isPending: false,
+	it("cold path: needs_restore → one provision + loading then success toast", async () => {
+		checkQueryState.current = {
 			data: {
 				project: { id: "proj-1", status: "ready" },
 				selectedSession: {
@@ -332,11 +375,133 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 					status: "active",
 					branchName: "main",
 				},
-				sandbox: { state: "connected" },
+				sandbox: { state: "needs_restore" },
 				restoreFailed: false,
 			},
+			error: null,
+			isPending: false,
+			isFetching: false,
+			refetch: checkRefetchMock,
 		};
 
+		provisionMutateAsyncMock.mockImplementation(async () => {
+			const result = {
+				project: { id: "proj-1", status: "ready" },
+				selectedSession: {
+					id: "sess-1",
+					status: "active",
+					branchName: "main",
+				},
+				sandbox: { state: "restored_from_backup" },
+				restoreFailed: false,
+			};
+			provisionMutationState.current = {
+				...provisionMutationState.current,
+				isPending: false,
+				data: result,
+			};
+			return result;
+		});
+
+		const { rerender } = render(
+			<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />,
+		);
+
+		// Allow auto-provision effect to fire.
+		await act(async () => {
+			await Promise.resolve();
+			await Promise.resolve();
+		});
+
+		expect(provisionMutateAsyncMock).toHaveBeenCalledTimes(1);
+		expect(provisionMutateAsyncMock).toHaveBeenCalledWith({
+			projectId: "proj-1",
+			sessionId: "sess-1",
+		});
+		expect(toastAddMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "loading",
+				description: "Preparing project sandbox...",
+			}),
+		);
+		const toastId = toastAddMock.mock.results.at(-1)?.value as string;
+		expect(toastUpdateMock).toHaveBeenCalledWith(
+			toastId,
+			expect.objectContaining({
+				type: "success",
+				description: "Project sandbox ready",
+			}),
+		);
+
+		// After success, check becomes connected (via invalidation in real app).
+		checkQueryState.current = connectedCheck();
+		rerender(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
+		expect(screen.queryByTestId("disabled-reason")).toBeNull();
+		expect(screen.getByText("durable history")).toBeTruthy();
+	});
+
+	it("D1 provisioning: no provision call, no toast, disabled, history visible", async () => {
+		projectQueryState.current.data.status = "provisioning";
+		checkQueryState.current = {
+			data: undefined,
+			error: null,
+			isPending: false,
+			isFetching: false,
+			refetch: checkRefetchMock,
+		};
+
+		render(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
+
+		expect(provisionMutateAsyncMock).not.toHaveBeenCalled();
+		expect(toastAddMock).not.toHaveBeenCalled();
+		expect(screen.getByTestId("disabled-reason").textContent).toBe(
+			"Project sandbox is being provisioned.",
+		);
+		expect(screen.getByText("durable history")).toBeTruthy();
+	});
+
+	it("provision returns provisioning → keep loading until check connected", async () => {
+		checkQueryState.current = {
+			data: {
+				project: { id: "proj-1", status: "ready" },
+				selectedSession: { id: "sess-1", status: "active" },
+				sandbox: { state: "needs_restore" },
+				restoreFailed: false,
+			},
+			error: null,
+			isPending: false,
+			isFetching: false,
+			refetch: checkRefetchMock,
+		};
+
+		provisionMutateAsyncMock.mockResolvedValue({
+			project: { id: "proj-1", status: "provisioning" },
+			selectedSession: { id: "sess-1", status: "active" },
+			sandbox: { state: "provisioning" },
+			restoreFailed: false,
+		});
+
+		const { rerender } = render(
+			<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />,
+		);
+
+		await act(async () => {
+			await Promise.resolve();
+			await Promise.resolve();
+		});
+
+		const toastId = toastAddMock.mock.results.at(-1)?.value as string;
+		// No success toast yet.
+		expect(toastUpdateMock).not.toHaveBeenCalledWith(
+			toastId,
+			expect.objectContaining({ type: "success" }),
+		);
+		expect(screen.getByTestId("disabled-reason").textContent).toBe(
+			"Project sandbox is being provisioned.",
+		);
+
+		// Check flips to connected → success toast.
+		checkQueryState.current = connectedCheck();
 		rerender(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
 
 		expect(toastUpdateMock).toHaveBeenCalledWith(
@@ -347,183 +512,261 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 			}),
 		);
 		expect(screen.queryByTestId("disabled-reason")).toBeNull();
-		expect(screen.getByText("durable history")).toBeTruthy();
 	});
 
-	it("keeps history and exposes Retry on ensure/check error", async () => {
-		const { rerender } = render(
-			<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />,
-		);
-
-		ensureMutationState.current = {
-			...ensureMutationState.current,
-			isPending: false,
-			data: undefined,
-			error: new Error("rpc down"),
-		};
-
-		rerender(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
-
-		expect(screen.getByText("durable history")).toBeTruthy();
-		expect(screen.getByRole("alert").textContent).toContain("rpc down");
-		expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
-		expect(screen.getByTestId("disabled-reason").textContent).toBe(
-			"Project sandbox is not ready yet.",
-		);
-	});
-
-	it("keeps history and exposes Retry restore on restore failure", async () => {
-		const { rerender } = render(
-			<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />,
-		);
-
-		projectQueryState.current = {
-			...projectQueryState.current,
+	it("provision returns provisioning then check failed → error toast", async () => {
+		checkQueryState.current = {
 			data: {
-				...projectQueryState.current.data,
-				status: "failed",
+				project: { id: "proj-1", status: "ready" },
+				selectedSession: { id: "sess-1", status: "active" },
+				sandbox: { state: "needs_restore" },
+				restoreFailed: false,
 			},
-		};
-		ensureMutationState.current = {
-			...ensureMutationState.current,
+			error: null,
 			isPending: false,
+			isFetching: false,
+			refetch: checkRefetchMock,
+		};
+
+		provisionMutateAsyncMock.mockResolvedValue({
+			project: { id: "proj-1", status: "provisioning" },
+			selectedSession: { id: "sess-1", status: "active" },
+			sandbox: { state: "provisioning" },
+			restoreFailed: false,
+		});
+
+		const { rerender } = render(
+			<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />,
+		);
+
+		await act(async () => {
+			await Promise.resolve();
+			await Promise.resolve();
+		});
+
+		const toastId = toastAddMock.mock.results.at(-1)?.value as string;
+
+		checkQueryState.current = {
 			data: {
 				project: { id: "proj-1", status: "failed" },
 				selectedSession: { id: "sess-1", status: "active" },
 				sandbox: { state: "failed" },
 				restoreFailed: true,
 			},
+			error: null,
+			isPending: false,
+			isFetching: false,
+			refetch: checkRefetchMock,
 		};
-
-		rerender(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
-
-		expect(screen.getByText("durable history")).toBeTruthy();
-		expect(screen.getByRole("button", { name: "Retry restore" })).toBeTruthy();
-		expect(screen.getByText(/Workspace restore failed/i)).toBeTruthy();
-	});
-
-	it("consumes retry success directly without a second ensure", async () => {
 		projectQueryState.current.data.status = "failed";
-		ensureMutationState.current.isPending = false;
-		ensureMutationState.current.data = {
-			project: { id: "proj-1", status: "failed" },
-			selectedSession: { id: "sess-1", status: "active" },
-			sandbox: { state: "failed" },
-			restoreFailed: true,
-		};
-
-		const { rerender } = render(
-			<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />,
-		);
-		ensureMutateMock.mockClear();
-
-		// Simulate retry success payload + D1 ready, then onSuccess as RQ would.
-		projectQueryState.current.data.status = "ready";
-		retryMutationState.current = {
-			...retryMutationState.current,
-			isPending: false,
-			data: {
-				project: { id: "proj-1", status: "ready" },
-				selectedSession: {
-					id: "sess-1",
-					status: "active",
-					branchName: "main",
-				},
-				sandbox: { state: "restored_from_backup" },
-				restoreFailed: false,
-			},
-		};
-
-		const onSuccess = retryMutationState.current.onSuccess;
-		act(() => {
-			onSuccess?.();
-		});
-		rerender(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
-
-		expect(screen.queryByTestId("disabled-reason")).toBeNull();
-		// onSuccess only invalidates projects.get — no second ensure from retry.
-		const ensureCallsFromOnSuccess = ensureMutateMock.mock.calls.length;
-		// Ready flip may have triggered the keyed ensure effect once; onSuccess must not add more.
-		ensureMutateMock.mockClear();
-		act(() => {
-			onSuccess?.();
-		});
-		expect(ensureMutateMock).not.toHaveBeenCalled();
-		void ensureCallsFromOnSuccess;
-		expect(invalidateQueriesMock).toHaveBeenCalled();
-		expect(listQueryFilterMock).not.toHaveBeenCalled();
-	});
-
-	it("does not invalidate projects.list on ensure success", async () => {
-		render(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
-
-		const onSuccess = ensureMutationState.current.onSuccess;
-		act(() => {
-			onSuccess?.();
-		});
-
-		expect(getQueryFilterMock).toHaveBeenCalledWith({ id: "proj-1" });
-		expect(listQueryFilterMock).not.toHaveBeenCalled();
-	});
-
-	it("ignores a stale mutation result after project/session change", async () => {
-		ensureMutationState.current = {
-			...ensureMutationState.current,
-			isPending: false,
-			data: {
-				project: { id: "proj-old", status: "ready" },
-				selectedSession: { id: "sess-old", status: "active" },
-				sandbox: { state: "connected" },
-				restoreFailed: false,
-			},
-		};
-
-		render(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
-
-		// Stale payload must not make workspace usable.
-		expect(toastAddMock).toHaveBeenCalled();
-		expect(screen.getByTestId("disabled-reason").textContent).toBe(
-			"Project sandbox is being provisioned.",
-		);
-	});
-
-	it("does not fire ensure while D1 is already provisioning", async () => {
-		projectQueryState.current.data.status = "provisioning";
-		ensureMutationState.current.isPending = false;
-
-		render(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
-
-		expect(ensureMutateMock).not.toHaveBeenCalled();
-		expect(toastAddMock).toHaveBeenCalledWith(
-			expect.objectContaining({
-				type: "loading",
-				description: "Preparing project sandbox...",
-			}),
-		);
-		expect(screen.getByText("durable history")).toBeTruthy();
-	});
-
-	it("updates the readiness toast on ensure/check error", async () => {
-		const { rerender } = render(
-			<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />,
-		);
-		const toastId = toastAddMock.mock.results.at(-1)?.value as string;
-
-		ensureMutationState.current = {
-			...ensureMutationState.current,
-			isPending: false,
-			data: undefined,
-			error: new Error("rpc down"),
-		};
-
 		rerender(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
 
 		expect(toastUpdateMock).toHaveBeenCalledWith(
 			toastId,
 			expect.objectContaining({
 				type: "error",
-				description: "rpc down",
+				description: "Workspace restore failed",
 			}),
+		);
+	});
+
+	it("check error: check-error bar + Retry; no provision toast; history visible", async () => {
+		checkQueryState.current = {
+			data: undefined,
+			error: new Error("rpc down"),
+			isPending: false,
+			isFetching: false,
+			refetch: checkRefetchMock,
+		};
+
+		render(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
+
+		expect(screen.getByText("durable history")).toBeTruthy();
+		expect(screen.getByRole("alert").textContent).toContain("rpc down");
+		expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+		expect(toastAddMock).not.toHaveBeenCalled();
+		expect(provisionMutateAsyncMock).not.toHaveBeenCalled();
+		expect(screen.getByTestId("disabled-reason").textContent).toBe(
+			"Project sandbox is not ready yet.",
+		);
+	});
+
+	it("restore failed: restore-failed bar; history visible", async () => {
+		projectQueryState.current.data.status = "failed";
+		checkQueryState.current = {
+			data: {
+				project: { id: "proj-1", status: "failed" },
+				selectedSession: { id: "sess-1", status: "active" },
+				sandbox: { state: "failed" },
+				restoreFailed: true,
+			},
+			error: null,
+			isPending: false,
+			isFetching: false,
+			refetch: checkRefetchMock,
+		};
+
+		render(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
+
+		expect(screen.getByText("durable history")).toBeTruthy();
+		expect(screen.getByRole("button", { name: "Retry restore" })).toBeTruthy();
+		expect(screen.getByText(/Workspace restore failed/i)).toBeTruthy();
+	});
+
+	it("retry restore success: onSuccess does not call provision", async () => {
+		projectQueryState.current.data.status = "failed";
+		checkQueryState.current = {
+			data: {
+				project: { id: "proj-1", status: "failed" },
+				selectedSession: { id: "sess-1", status: "active" },
+				sandbox: { state: "failed" },
+				restoreFailed: true,
+			},
+			error: null,
+			isPending: false,
+			isFetching: false,
+			refetch: checkRefetchMock,
+		};
+
+		render(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
+		provisionMutateAsyncMock.mockClear();
+
+		const onSuccess = retryMutationState.current.onSuccess;
+		await act(async () => {
+			await onSuccess?.();
+		});
+
+		expect(provisionMutateAsyncMock).not.toHaveBeenCalled();
+		expect(getQueryFilterMock).toHaveBeenCalledWith({ id: "proj-1" });
+		expect(checkQueryFilterMock).toHaveBeenCalled();
+		expect(listQueryFilterMock).not.toHaveBeenCalled();
+	});
+
+	it("does not invalidate projects.list on provision success", async () => {
+		checkQueryState.current = {
+			data: {
+				project: { id: "proj-1", status: "ready" },
+				selectedSession: { id: "sess-1", status: "active" },
+				sandbox: { state: "needs_restore" },
+				restoreFailed: false,
+			},
+			error: null,
+			isPending: false,
+			isFetching: false,
+			refetch: checkRefetchMock,
+		};
+		provisionMutateAsyncMock.mockResolvedValue({
+			project: { id: "proj-1", status: "ready" },
+			selectedSession: { id: "sess-1", status: "active" },
+			sandbox: { state: "connected" },
+			restoreFailed: false,
+		});
+
+		render(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
+
+		await act(async () => {
+			await Promise.resolve();
+			await Promise.resolve();
+		});
+
+		const onSuccess = provisionMutationState.current.onSuccess;
+		listQueryFilterMock.mockClear();
+		await act(async () => {
+			await onSuccess?.();
+		});
+
+		expect(getQueryFilterMock).toHaveBeenCalledWith({ id: "proj-1" });
+		expect(listQueryFilterMock).not.toHaveBeenCalled();
+	});
+
+	it("ignores stale provision payload after projectId change and closes toast", async () => {
+		checkQueryState.current = {
+			data: {
+				project: { id: "proj-1", status: "ready" },
+				selectedSession: { id: "sess-1", status: "active" },
+				sandbox: { state: "needs_restore" },
+				restoreFailed: false,
+			},
+			error: null,
+			isPending: false,
+			isFetching: false,
+			refetch: checkRefetchMock,
+		};
+
+		// Hang provision so toast stays open.
+		let resolveProvision!: (value: unknown) => void;
+		provisionMutateAsyncMock.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					resolveProvision = resolve;
+				}),
+		);
+
+		const { rerender } = render(
+			<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />,
+		);
+
+		await act(async () => {
+			await Promise.resolve();
+			await Promise.resolve();
+		});
+
+		expect(toastAddMock).toHaveBeenCalled();
+		toastCloseMock.mockClear();
+
+		// Switch project while provision toast is open.
+		checkQueryState.current = {
+			data: undefined,
+			error: null,
+			isPending: true,
+			isFetching: true,
+			refetch: checkRefetchMock,
+		};
+		rerender(<ProjectWorkspacePage projectId="proj-2" sessionId="sess-2" />);
+
+		expect(toastCloseMock).toHaveBeenCalled();
+
+		// Stale provision result for old project must not enable workspace.
+		provisionMutationState.current = {
+			...provisionMutationState.current,
+			isPending: false,
+			data: {
+				project: { id: "proj-1", status: "ready" },
+				selectedSession: { id: "sess-1", status: "active" },
+				sandbox: { state: "connected" },
+				restoreFailed: false,
+			},
+		};
+		rerender(<ProjectWorkspacePage projectId="proj-2" sessionId="sess-2" />);
+
+		expect(screen.getByTestId("disabled-reason")).toBeTruthy();
+
+		// Clean up hanging promise.
+		await act(async () => {
+			resolveProvision({
+				project: { id: "proj-1", status: "ready" },
+				sandbox: { state: "connected" },
+				restoreFailed: false,
+			});
+			await Promise.resolve();
+		});
+	});
+
+	it("enables the URL session message query before check settles", async () => {
+		checkQueryState.current = {
+			data: undefined,
+			error: null,
+			isPending: true,
+			isFetching: true,
+			refetch: checkRefetchMock,
+		};
+
+		render(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
+
+		expect(messagesQueryState.enabledCaptures.at(-1)).toBe(true);
+		expect(screen.getByText("durable history")).toBeTruthy();
+		expect(screen.getByTestId("disabled-reason").textContent).toBe(
+			"Project sandbox is being provisioned.",
 		);
 	});
 });

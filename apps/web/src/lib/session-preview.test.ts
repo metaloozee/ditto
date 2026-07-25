@@ -6,7 +6,7 @@ vi.mock("#/lib/sandbox-bootstrap", () => ({
 	getProjectSandbox: vi.fn(),
 }));
 vi.mock("#/lib/project-sandbox", () => ({
-	ensureProjectSandbox: vi.fn(),
+	provisionProjectSandbox: vi.fn(),
 }));
 vi.mock("#/lib/session-worktree", () => ({
 	ensureSessionWorkspaceReady: vi.fn(),
@@ -427,7 +427,7 @@ function baseInjected(
 ): Partial<SessionPreviewDeps> {
 	return {
 		getSandbox: () => sandbox,
-		ensureProjectSandbox: vi.fn(async () => ({
+		provisionProjectSandbox: vi.fn(async () => ({
 			project: project as never,
 			state: "connected" as const,
 		})),
@@ -839,7 +839,7 @@ describe("project preview lease", () => {
 			randomToken: () => "token-a",
 			sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
 			getSandbox: () => makeSandbox(),
-			ensureProjectSandbox: vi.fn(),
+			provisionProjectSandbox: vi.fn(),
 			ensureSessionWorkspaceReady: vi.fn(),
 		};
 
@@ -1441,7 +1441,7 @@ describe("startSessionPreview", () => {
 				injected,
 			),
 		).rejects.toMatchObject({ code: "not_ready" });
-		expect(injected.ensureProjectSandbox).not.toHaveBeenCalled();
+		expect(injected.provisionProjectSandbox).not.toHaveBeenCalled();
 	});
 });
 
@@ -1815,7 +1815,7 @@ describe("controlled barrier races", () => {
 
 		releaseStart();
 		await expect(startPromise).rejects.toMatchObject({ code: "not_found" });
-		expect(injectedStart.ensureProjectSandbox).not.toHaveBeenCalled();
+		expect(injectedStart.provisionProjectSandbox).not.toHaveBeenCalled();
 		expect(sandbox.startProcess).not.toHaveBeenCalled();
 	});
 });
