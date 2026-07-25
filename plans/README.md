@@ -273,7 +273,7 @@ and the installed Cloudflare Sandbox 0.12.3 / Containers 0.3.7 lifecycle API.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 030 | Verify sandbox readiness while keeping D1 chat history visible | P1 | L | 014, 017, 028 (DONE) | TODO |
+| 030 | Verify sandbox readiness while keeping D1 chat history visible | P1 | L | 014, 017, 028 (DONE) | DONE (worktree `/home/ayan/ditto-worktrees/030-sandbox-readiness-loading` @ `a9fc894`; advisor review APPROVE) |
 
 Locked outcomes:
 
@@ -287,6 +287,32 @@ Locked outcomes:
 - No schema/migration, keep-alive change, detached `waitUntil` restore, or
   automatic stale-provisioning timeout.
 - Branch: `advisor/030-sandbox-readiness-loading`.
+
+## Plan 031 (sandbox check / provision split)
+
+Planned at commit `a9fc894` on 2026-07-25 from approved design
+`docs/superpowers/specs/2026-07-25-sandbox-check-provision-split-design.md`.
+Preserves the dirty Base UI toast migration already on the working tree.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 031 | Split sandbox check from provision (quiet warm path) | P1 | M | 030 (DONE) | DONE (worktree `/home/ayan/ditto-worktrees/031-sandbox-check-provision-split` @ `0cf32bf`; advisor review APPROVE) |
+
+Locked outcomes:
+
+- `checkProjectSandbox` observes only (no D1 status write, fence, or restore).
+- `provisionProjectSandbox` is idempotent; CAS fence unchanged; contention →
+  `provisioning`, not failed.
+- tRPC: `workspace.checkSandbox` query + `workspace.provisionSandbox` mutation;
+  remove `workspace.ensureWorkspace`.
+- Runtime-only `needs_restore` at the API boundary; never persisted to D1.
+- Client: warm check is silent; provision-only toast (`add`/`update`, not
+  `toast.promise`) when this tab starts provision; lost-fence keeps loading
+  until check is terminal.
+- Production wake callers (agent/git/preview/env) move to provision.
+- No schema/migration, sidebar work, preparing status bar happy path, or
+  `waitUntil` restore.
+- Branch: `advisor/031-sandbox-check-provision-split`.
 
 ### Audit finding coverage
 
@@ -552,6 +578,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
 - **030 requires 014, 017, and 028** — cold project wake must preserve versioned
   backup semantics, the existing agent lifecycle boundary, and session-worktree
   readiness while changing only project runtime detection and open-workspace UX.
+- **031 requires 030** — quiet warm path splits the Plan 030 ensure entry into
+  check vs provision without reopening fence, history-decoupling, or disablement
+  work already landed.
 
 ## Product decisions (locked 2026-07-09)
 
@@ -649,6 +678,7 @@ tree while sharing git objects and (via symlink) `node_modules`.
   24. `028-session-workspace-readiness.md`
   25. `029-session-git-export-orchestration.md`
   26. `030-sandbox-readiness-loading.md`
+  27. `031-sandbox-check-provision-split.md`
 
 ## Planning update — 2026-07-23 (Plan 028)
 
@@ -775,18 +805,32 @@ subagent (not new plan files).
 ## Planning update — 2026-07-24 (Plan 030)
 
 - **Current HEAD / planned-at**: `6347ed1`.
-- **TODO 030**: cold-wake sandbox readiness with D1 chat history still visible.
-  Full handoff: `plans/030-sandbox-readiness-loading.md`.
-- **Cheap verification at planning time**:
-  | Gate | Result |
-  |---|---|
-  | `pnpm check` | pass (warning-only pre-existing diagnostics) |
-  | `pnpm typecheck` | pass |
-  | focused readiness-related tests | pass: 40 tests across 5 files |
-  | `pnpm test` | pass: 596 tests |
-- **Executable now**: Plan 030 only. Branch
-  `advisor/030-sandbox-readiness-loading`. No cloud deployment is required or
-  authorized by the plan.
-- **Deferred out of 030**: stale-provisioning lease/timeout, keep-alive tuning,
-  schema/runtime status column, dashboard provisioning presentation, and any
-  change to agent/Git/preview domain policy beyond parent-level disablement.
+- **DONE 030** (advisor review APPROVE): branch
+  `advisor/030-sandbox-readiness-loading` in worktree
+  `/home/ayan/ditto-worktrees/030-sandbox-readiness-loading` @ `a9fc894`.
+  Commits:
+  1. `266c59d` fix(sandbox): observe runtime before restore
+  2. `993a966` fix(workspace): show chat during sandbox wake
+  3. `a9fc894` docs(workspace): document cold-wake readiness
+- **Review verification**: focused 112/112; `pnpm verify` exit 0; scope clean
+  (21 in-scope files only); no schema/lockfile/route-tree changes.
+- **Not merged / not pushed** — merge is the user’s decision.
+- **Deferred out of 030** (still): stale-provisioning lease/timeout, keep-alive
+  tuning, schema/runtime status column, dashboard provisioning presentation.
+
+## Planning update — 2026-07-25 (Plan 031)
+
+- **DONE 031** (advisor review APPROVE): branch
+  `advisor/031-sandbox-check-provision-split` in worktree
+  `/home/ayan/ditto-worktrees/031-sandbox-check-provision-split` @ `0cf32bf`.
+- Commits: `7828790` domain split; `6e2ed3c` quiet warm route; `0cf32bf` docs.
+- **Review verification**: focused 158/158; `pnpm verify` exit 0; scope clean
+  (22 in-scope files only); production `ensureWorkspace`/`ensureProjectSandbox`
+  greps empty; no schema/migration changes.
+- Pre-seeded dirty Base UI toast migration left uncommitted in the worktree
+  (package.json / App / composer / session-git-actions / toast.tsx / lockfile).
+- **Not merged / not pushed** — merge is the user’s decision.
+- Spec:
+  `docs/superpowers/specs/2026-07-25-sandbox-check-provision-split-design.md`.
+- **Deferred out of 031** (still): stale-provisioning lease/timeout, keep-alive
+  tuning, persisted runtime status column, sidebar provisioning presentation.

@@ -42,7 +42,7 @@
 
 ## Status
 
-- **Status**: TODO
+- **Status**: DONE (worktree `/home/ayan/ditto-worktrees/030-sandbox-readiness-loading` @ `a9fc894`; advisor review APPROVE)
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: MED - the change touches the project restore fence and the route

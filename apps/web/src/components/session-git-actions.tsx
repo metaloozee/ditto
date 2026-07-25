@@ -9,7 +9,6 @@ import {
 	UploadIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { toast } from "sonner";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -17,6 +16,7 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "#/components/ui/dropdown-menu";
+import { toast } from "#/components/ui/toast";
 import {
 	Tooltip,
 	TooltipContent,
@@ -478,16 +478,19 @@ export function SessionGitActions({
 						"message" in result && typeof result.message === "string"
 							? result.message
 							: undefined;
-					toast.success(
-						message ? `Changes committed: ${message}` : "Changes committed.",
-					);
+					toast.add({
+						type: "success",
+						description: message
+							? `Changes committed: ${message}`
+							: "Changes committed.",
+					});
 				} else {
-					toast.message("Nothing to commit.");
+					toast.add({ description: "Nothing to commit." });
 				}
 				invalidateStatus();
 			},
 			onError: (error) => {
-				toast.error(error.message);
+				toast.add({ type: "error", description: error.message });
 			},
 		}),
 	);
@@ -495,11 +498,14 @@ export function SessionGitActions({
 	const syncMutation = useMutation(
 		trpc.sessionGit.sync.mutationOptions({
 			onSuccess: (result) => {
-				toast.success(`Session synced with ${result.baseBranch}.`);
+				toast.add({
+					type: "success",
+					description: `Session synced with ${result.baseBranch}.`,
+				});
 				invalidateStatus();
 			},
 			onError: (error) => {
-				toast.error(error.message);
+				toast.add({ type: "error", description: error.message });
 			},
 		}),
 	);
@@ -507,11 +513,14 @@ export function SessionGitActions({
 	const pushMutation = useMutation(
 		trpc.sessionGit.push.mutationOptions({
 			onSuccess: () => {
-				toast.success("Branch pushed to GitHub.");
+				toast.add({
+					type: "success",
+					description: "Branch pushed to GitHub.",
+				});
 				invalidateStatus();
 			},
 			onError: (error) => {
-				toast.error(error.message);
+				toast.add({ type: "error", description: error.message });
 			},
 		}),
 	);
@@ -544,16 +553,18 @@ export function SessionGitActions({
 								}
 							: previous,
 				);
-				toast.success("Pull request opened.", {
-					action: {
-						label: "View",
+				toast.add({
+					type: "success",
+					description: "Pull request opened.",
+					actionProps: {
+						children: "View",
 						onClick: () => window.open(result.url, "_blank", "noopener"),
 					},
 				});
 				invalidateStatus();
 			},
 			onError: (error) => {
-				toast.error(error.message);
+				toast.add({ type: "error", description: error.message });
 			},
 		}),
 	);

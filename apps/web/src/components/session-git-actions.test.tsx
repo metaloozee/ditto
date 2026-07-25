@@ -83,12 +83,13 @@ vi.mock("#/integrations/trpc/react", () => ({
 	}),
 }));
 
-vi.mock("sonner", () => ({
-	toast: { error: vi.fn(), message: vi.fn(), success: vi.fn() },
+const toastAddMock = vi.hoisted(() => vi.fn());
+
+vi.mock("#/components/ui/toast", () => ({
+	toast: { add: toastAddMock, close: vi.fn(), promise: vi.fn() },
 }));
 
 const { SessionGitActions } = await import("./session-git-actions");
-const { toast } = await import("sonner");
 
 function setStatus(
 	workflow: Record<string, unknown>,
@@ -347,9 +348,10 @@ describe("SessionGitActions workflow", () => {
 			message: "feat: add billing",
 		});
 
-		expect(toast.success).toHaveBeenCalledWith(
-			"Changes committed: feat: add billing",
-		);
+		expect(toastAddMock).toHaveBeenCalledWith({
+			type: "success",
+			description: "Changes committed: feat: add billing",
+		});
 	});
 
 	it("fires one-click commit mutate without a message editor", () => {

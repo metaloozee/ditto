@@ -11,7 +11,6 @@ import {
 	useRef,
 	useState,
 } from "react";
-import { toast } from "sonner";
 import {
 	ModelSelector,
 	ModelSelectorContent,
@@ -36,6 +35,7 @@ import {
 } from "#/components/ui/select";
 import { Spinner } from "#/components/ui/spinner";
 import { Textarea } from "#/components/ui/textarea";
+import { toast } from "#/components/ui/toast";
 import {
 	Tooltip,
 	TooltipContent,
@@ -394,7 +394,10 @@ export function Composer({
 		if (done && done.ok === false && !assistantContent.trim()) {
 			// error toast already fired from onError when present
 		} else if (!done && !assistantContent.trim()) {
-			toast.error("Agent stream ended before a response was received.");
+			toast.add({
+				type: "error",
+				description: "Agent stream ended before a response was received.",
+			});
 		}
 
 		clearStreamingState();
@@ -571,7 +574,7 @@ export function Composer({
 						});
 					},
 					onError: (errorMessage) => {
-						toast.error(errorMessage);
+						toast.add({ type: "error", description: errorMessage });
 					},
 					onDone: (done) => {
 						const resolvedSessionId =
@@ -589,11 +592,13 @@ export function Composer({
 			}
 		} catch (streamError) {
 			clearStreamingState();
-			toast.error(
-				streamError instanceof Error
-					? streamError.message
-					: "Failed to run agent.",
-			);
+			toast.add({
+				type: "error",
+				description:
+					streamError instanceof Error
+						? streamError.message
+						: "Failed to run agent.",
+			});
 		}
 	}
 
@@ -660,7 +665,7 @@ export function Composer({
 			runIdRef.current === runId &&
 			isStreamingRef.current
 		) {
-			toast.error(failureMessage);
+			toast.add({ type: "error", description: failureMessage });
 		}
 		if (pendingFollowUpRef.current === pendingRequest) {
 			pendingFollowUpRef.current = null;
@@ -703,7 +708,7 @@ export function Composer({
 		if (failureMessage) {
 			stoppingRef.current = false;
 			setStopping(false);
-			toast.error(failureMessage);
+			toast.add({ type: "error", description: failureMessage });
 		}
 		setControlPendingState(false);
 	}

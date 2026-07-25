@@ -15,7 +15,7 @@ import type { ComposerStreamingState } from "./composer";
 const streamAgentRunMock = vi.hoisted(() => vi.fn());
 const sendAgentControlMock = vi.hoisted(() => vi.fn());
 const navigateMock = vi.hoisted(() => vi.fn());
-const toastErrorMock = vi.hoisted(() => vi.fn());
+const toastAddMock = vi.hoisted(() => vi.fn());
 
 vi.mock("#/lib/agent-stream-client", () => ({
 	sendAgentControl: sendAgentControlMock,
@@ -26,10 +26,11 @@ vi.mock("@tanstack/react-router", () => ({
 	useNavigate: () => navigateMock,
 }));
 
-vi.mock("sonner", () => ({
+vi.mock("#/components/ui/toast", () => ({
 	toast: {
-		error: toastErrorMock,
-		success: vi.fn(),
+		add: toastAddMock,
+		close: vi.fn(),
+		promise: vi.fn(),
 	},
 }));
 
@@ -683,9 +684,12 @@ describe("Composer streaming updates", () => {
 		fireEvent.submit(textarea.closest("form") as HTMLFormElement);
 
 		await waitFor(() =>
-			expect(toastErrorMock).toHaveBeenCalledWith("run settled"),
+			expect(toastAddMock).toHaveBeenCalledWith({
+				type: "error",
+				description: "run settled",
+			}),
 		);
-		expect(toastErrorMock).toHaveBeenCalledTimes(1);
+		expect(toastAddMock).toHaveBeenCalledTimes(1);
 		expect((textarea as HTMLTextAreaElement).value).toBe("keep me");
 		act(() => {
 			stream.handlers?.onDone?.({
@@ -873,7 +877,7 @@ describe("Composer streaming updates", () => {
 
 		expect((textarea as HTMLTextAreaElement).value).toBe("keep after terminal");
 		expect(latest).toBeNull();
-		expect(toastErrorMock).not.toHaveBeenCalled();
+		expect(toastAddMock).not.toHaveBeenCalled();
 		expect(streamAgentRunMock).toHaveBeenCalledTimes(1);
 	});
 

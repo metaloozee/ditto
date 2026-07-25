@@ -219,10 +219,19 @@ vi.mock("#/components/ui/button", () => ({
 	),
 }));
 
-vi.mock("#/components/ui/spinner", () => ({
-	Spinner: (props: { className?: string }) => (
-		<span data-testid="spinner" className={props.className} />
-	),
+const toastAddMock = vi.hoisted(() =>
+	vi.fn((options: { id?: string }) => options.id ?? "toast-1"),
+);
+const toastUpdateMock = vi.hoisted(() => vi.fn());
+const toastCloseMock = vi.hoisted(() => vi.fn());
+
+vi.mock("#/components/ui/toast", () => ({
+	toast: {
+		add: toastAddMock,
+		update: toastUpdateMock,
+		close: toastCloseMock,
+		promise: vi.fn(),
+	},
 }));
 
 const { ProjectWorkspacePage } = await import("./project.$projectId");
@@ -230,6 +239,9 @@ const { ProjectWorkspacePage } = await import("./project.$projectId");
 describe("ProjectWorkspacePage readiness coordination", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		toastAddMock.mockClear();
+		toastUpdateMock.mockClear();
+		toastCloseMock.mockClear();
 		vi.useFakeTimers({ shouldAdvanceTime: true });
 		projectQueryState.current = {
 			data: {
@@ -287,8 +299,12 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 
 		expect(messagesQueryState.enabledCaptures.at(-1)).toBe(true);
 		expect(screen.getByText("durable history")).toBeTruthy();
-		expect(screen.getByRole("status").textContent).toContain(
-			"Preparing project sandbox",
+		expect(screen.queryByRole("status")).toBeNull();
+		expect(toastAddMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "loading",
+				description: "Preparing project sandbox...",
+			}),
 		);
 		expect(screen.getByTestId("disabled-reason").textContent).toBe(
 			"Project sandbox is being provisioned.",
@@ -299,10 +315,12 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 		});
 	});
 
-	it("removes the bar and clears disabled reason on ensure success", async () => {
+	it("resolves the readiness toast and clears disabled reason on ensure success", async () => {
 		const { rerender } = render(
 			<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />,
 		);
+
+		const toastId = toastAddMock.mock.results.at(-1)?.value as string;
 
 		ensureMutationState.current = {
 			...ensureMutationState.current,
@@ -321,7 +339,13 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 
 		rerender(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
 
-		expect(screen.queryByRole("status")).toBeNull();
+		expect(toastUpdateMock).toHaveBeenCalledWith(
+			toastId,
+			expect.objectContaining({
+				type: "success",
+				description: "Project sandbox ready",
+			}),
+		);
 		expect(screen.queryByTestId("disabled-reason")).toBeNull();
 		expect(screen.getByText("durable history")).toBeTruthy();
 	});
@@ -416,7 +440,6 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 		});
 		rerender(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
 
-		expect(screen.queryByRole("status")).toBeNull();
 		expect(screen.queryByTestId("disabled-reason")).toBeNull();
 		// onSuccess only invalidates projects.get — no second ensure from retry.
 		const ensureCallsFromOnSuccess = ensureMutateMock.mock.calls.length;
@@ -458,7 +481,7 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 		render(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
 
 		// Stale payload must not make workspace usable.
-		expect(screen.getByRole("status")).toBeTruthy();
+		expect(toastAddMock).toHaveBeenCalled();
 		expect(screen.getByTestId("disabled-reason").textContent).toBe(
 			"Project sandbox is being provisioned.",
 		);
@@ -471,7 +494,36 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 		render(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
 
 		expect(ensureMutateMock).not.toHaveBeenCalled();
-		expect(screen.getByRole("status")).toBeTruthy();
+		expect(toastAddMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "loading",
+				description: "Preparing project sandbox...",
+			}),
+		);
 		expect(screen.getByText("durable history")).toBeTruthy();
+	});
+
+	it("updates the readiness toast on ensure/check error", async () => {
+		const { rerender } = render(
+			<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />,
+		);
+		const toastId = toastAddMock.mock.results.at(-1)?.value as string;
+
+		ensureMutationState.current = {
+			...ensureMutationState.current,
+			isPending: false,
+			data: undefined,
+			error: new Error("rpc down"),
+		};
+
+		rerender(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
+
+		expect(toastUpdateMock).toHaveBeenCalledWith(
+			toastId,
+			expect.objectContaining({
+				type: "error",
+				description: "rpc down",
+			}),
+		);
 	});
 });

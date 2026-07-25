@@ -8,7 +8,7 @@ import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { Chat } from "#/components/ai-chat";
 import { Button } from "#/components/ui/button";
-import { Spinner } from "#/components/ui/spinner";
+import { toast } from "#/components/ui/toast";
 import { useTRPC } from "#/integrations/trpc/react";
 
 export const Route = createFileRoute("/project/$projectId")({
@@ -50,25 +50,13 @@ function workspaceMatches(
 }
 
 function WorkspaceStatusBar(props: {
-	mode: "preparing" | "restore-failed" | "check-error";
+	mode: "restore-failed" | "check-error";
 	message?: string;
 	pending?: boolean;
 	onRetryRestore?: () => void;
 	onRetryCheck?: () => void;
 	retryError?: string | null;
 }) {
-	if (props.mode === "preparing") {
-		return (
-			<output
-				aria-live="polite"
-				className="flex shrink-0 items-center gap-2 border-b bg-background px-4 py-2 text-xs text-muted-foreground"
-			>
-				<Spinner className="size-3.5" aria-hidden />
-				<span>Preparing project sandbox...</span>
-			</output>
-		);
-	}
-
 	if (props.mode === "restore-failed") {
 		return (
 			<div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-background px-4 py-2 text-xs">
@@ -129,6 +117,7 @@ export function ProjectWorkspacePage({
 	const queryClient = useQueryClient();
 	const reensureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const latestWorkspaceSourceRef = useRef<"ensure" | "retry" | null>(null);
+	const readinessToastRef = useRef<{ id: string } | null>(null);
 
 	const projectQuery = useQuery(
 		trpc.projects.get.queryOptions(
@@ -261,6 +250,87 @@ export function ProjectWorkspacePage({
 	const hasMoreHistory = Boolean(messagesQuery.hasNextPage);
 	const isLoadingMoreHistory = messagesQuery.isFetchingNextPage;
 
+	const sandboxState = matchingWorkspace?.sandbox?.state;
+	const restoreFailed =
+		Boolean(matchingWorkspace?.restoreFailed) || d1Status === "failed";
+	const ensureError =
+		ensureWorkspaceMutation.error && !matchingWorkspace
+			? ensureWorkspaceMutation.error
+			: null;
+	const successReady =
+		Boolean(sandboxState && SUCCESS_SANDBOX_STATES.has(sandboxState)) &&
+		d1Status === "ready" &&
+		!readinessPending;
+
+	const isPreparing =
+		!restoreFailed &&
+		!ensureError &&
+		!successReady &&
+		(d1Status === "provisioning" ||
+			d1Status === "ready" ||
+			sandboxState === "provisioning");
+
+	// One loading→success/error toast for the whole wake cycle.
+	useEffect(() => {
+		const settle = (type: "success" | "error", description: string) => {
+			const pending = readinessToastRef.current;
+			if (!pending) return;
+			readinessToastRef.current = null;
+			toast.update(pending.id, { type, description });
+		};
+
+		if (isPreparing) {
+			if (!readinessToastRef.current) {
+				const id = toast.add({
+					id: `sandbox-ready-${projectId}`,
+					type: "loading",
+					description: "Preparing project sandbox...",
+				});
+				readinessToastRef.current = { id };
+			}
+			return;
+		}
+
+		if (successReady) {
+			settle("success", "Project sandbox ready");
+			return;
+		}
+
+		if (restoreFailed) {
+			settle("error", "Workspace restore failed");
+			return;
+		}
+
+		if (ensureError && d1Status === "ready" && !readinessPending) {
+			settle(
+				"error",
+				ensureError instanceof Error
+					? ensureError.message
+					: "Project sandbox is not ready yet.",
+			);
+		}
+	}, [
+		isPreparing,
+		successReady,
+		restoreFailed,
+		ensureError,
+		d1Status,
+		readinessPending,
+		projectId,
+	]);
+
+	// Drop in-flight toast on project/session change or unmount.
+	useEffect(() => {
+		const routeKey = `${projectId}:${sessionId ?? ""}`;
+		return () => {
+			void routeKey;
+			const pending = readinessToastRef.current;
+			if (!pending) return;
+			readinessToastRef.current = null;
+			toast.close(pending.id);
+		};
+	}, [projectId, sessionId]);
+
 	if (projectQuery.isPending) {
 		return (
 			<main className="flex h-dvh items-center justify-center p-6">
@@ -282,33 +352,11 @@ export function ProjectWorkspacePage({
 		);
 	}
 
-	const sandboxState = matchingWorkspace?.sandbox?.state;
-	const restoreFailed =
-		Boolean(matchingWorkspace?.restoreFailed) || d1Status === "failed";
-	const ensureError =
-		ensureWorkspaceMutation.error && !matchingWorkspace
-			? ensureWorkspaceMutation.error
-			: null;
-	const successReady =
-		Boolean(sandboxState && SUCCESS_SANDBOX_STATES.has(sandboxState)) &&
-		d1Status === "ready" &&
-		!readinessPending;
-
-	const isPreparing =
-		!restoreFailed &&
-		!ensureError &&
-		!successReady &&
-		(d1Status === "provisioning" ||
-			d1Status === "ready" ||
-			sandboxState === "provisioning");
-
-	let bar: "preparing" | "restore-failed" | "check-error" | null = null;
+	let bar: "restore-failed" | "check-error" | null = null;
 	if (restoreFailed) {
 		bar = "restore-failed";
 	} else if (ensureError && d1Status === "ready" && !readinessPending) {
 		bar = "check-error";
-	} else if (isPreparing) {
-		bar = "preparing";
 	}
 
 	const workspaceUsable = successReady;
