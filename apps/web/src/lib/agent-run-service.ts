@@ -39,8 +39,8 @@ import {
 import { runAgentInSandbox } from "#/lib/agent-run";
 import { decryptEnvVars } from "#/lib/project-env-vars";
 import {
-	ensureProjectSandbox,
 	persistProjectSandboxBackup,
+	provisionProjectSandbox,
 } from "#/lib/project-sandbox";
 import { resolveOAuthCredential } from "#/lib/provider-auth-service";
 import { redactSecrets } from "#/lib/secret-redaction";
@@ -164,7 +164,7 @@ export type AgentRunDeps = {
 		userId: string;
 	}) => Promise<typeof projects.$inferSelect | null>;
 	decryptEnvVars?: typeof decryptEnvVars;
-	ensureProjectSandbox?: typeof ensureProjectSandbox;
+	provisionProjectSandbox?: typeof provisionProjectSandbox;
 	resolveSessionForMessageWrite?: typeof resolveSessionForMessageWrite;
 	ensureSessionWorkspaceReady?: typeof ensureSessionWorkspaceReady;
 	runAgentInSandbox?: typeof runAgentInSandbox;
@@ -188,7 +188,7 @@ const defaultDeps: Required<AgentRunDeps> = {
 		return project ?? null;
 	},
 	decryptEnvVars,
-	ensureProjectSandbox,
+	provisionProjectSandbox,
 	resolveSessionForMessageWrite,
 	ensureSessionWorkspaceReady,
 	runAgentInSandbox,
@@ -411,14 +411,27 @@ export async function prepareAgentRun(options: {
 		env.BETTER_AUTH_SECRET,
 	);
 
+	const PROVISION_SUCCESS = new Set([
+		"connected",
+		"restored_from_backup",
+		"recreated_from_github",
+	]);
+
 	let ensuredProject = project;
 	let sandboxState: string;
 	try {
-		const ensured = await deps.ensureProjectSandbox({
+		const ensured = await deps.provisionProjectSandbox({
 			db,
 			env,
 			project,
 		});
+		if (!PROVISION_SUCCESS.has(ensured.state)) {
+			return {
+				kind: "error",
+				status: 409,
+				body: { error: "Project sandbox is not ready." },
+			};
+		}
 		ensuredProject = ensured.project;
 		sandboxState = ensured.state;
 	} catch (error) {

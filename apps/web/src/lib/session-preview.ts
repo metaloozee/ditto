@@ -1,7 +1,7 @@
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import type { createDb } from "#/db";
 import { projects, workspaceSessions } from "#/db/schema";
-import { ensureProjectSandbox } from "#/lib/project-sandbox";
+import { provisionProjectSandbox } from "#/lib/project-sandbox";
 import { getProjectSandbox } from "#/lib/sandbox-bootstrap";
 import { SessionWorkspaceBusyError } from "#/lib/session-workspace-lock-error";
 import { ensureSessionWorkspaceReady } from "#/lib/session-worktree";
@@ -124,7 +124,7 @@ export type SessionPreviewDeps = {
 	randomToken: () => string;
 	sleep: (ms: number) => Promise<void>;
 	getSandbox: (env: Env, sandboxId: string) => SessionPreviewSandbox;
-	ensureProjectSandbox: typeof ensureProjectSandbox;
+	provisionProjectSandbox: typeof provisionProjectSandbox;
 	ensureSessionWorkspaceReady: typeof ensureSessionWorkspaceReady;
 	/** Test-only controlled barrier. */
 	barrier?: (label: string) => Promise<void>;
@@ -139,7 +139,7 @@ function defaultDeps(db: SessionPreviewDb, env: Env): SessionPreviewDeps {
 		sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 		getSandbox: (e, id) =>
 			getProjectSandbox(e, id) as unknown as SessionPreviewSandbox,
-		ensureProjectSandbox,
+		provisionProjectSandbox,
 		ensureSessionWorkspaceReady,
 	};
 }
@@ -896,13 +896,18 @@ export async function startSessionPreview(
 			throw sessionPreviewError("not_found");
 		}
 
-		const ensured = await deps.ensureProjectSandbox({
+		const PROVISION_SUCCESS = new Set([
+			"connected",
+			"restored_from_backup",
+			"recreated_from_github",
+		]);
+		const ensured = await deps.provisionProjectSandbox({
 			db: deps.db,
 			env: deps.env,
 			project,
 		});
 		const sandboxId = ensured.project.sandboxId;
-		if (!sandboxId) {
+		if (!PROVISION_SUCCESS.has(ensured.state) || !sandboxId) {
 			throw sessionPreviewError("not_ready");
 		}
 

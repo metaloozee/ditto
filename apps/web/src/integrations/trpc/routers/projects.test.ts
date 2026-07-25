@@ -15,7 +15,7 @@ vi.mock("#/lib/sandbox-bootstrap", () => ({
 }));
 
 vi.mock("#/lib/project-sandbox", () => ({
-	ensureProjectSandbox: vi.fn(),
+	provisionProjectSandbox: vi.fn(),
 }));
 
 vi.mock("#/lib/session-worktree", () => ({

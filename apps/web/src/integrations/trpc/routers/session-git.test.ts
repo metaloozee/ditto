@@ -4,7 +4,7 @@ const resolveMocks = vi.hoisted(() => ({
 	createDb: vi.fn(),
 	authorizeGitHubRepositoryAccess: vi.fn(),
 	decryptEnvVars: vi.fn(),
-	ensureProjectSandbox: vi.fn(),
+	provisionProjectSandbox: vi.fn(),
 	ensureSessionWorkspaceReady: vi.fn(),
 	prepareSessionWorkspaceIfPresent: vi.fn(),
 	loadOwnedActiveSession: vi.fn(),
@@ -44,7 +44,7 @@ vi.mock("#/lib/project-env-vars", () => ({
 }));
 
 vi.mock("#/lib/project-sandbox", () => ({
-	ensureProjectSandbox: resolveMocks.ensureProjectSandbox,
+	provisionProjectSandbox: resolveMocks.provisionProjectSandbox,
 }));
 
 vi.mock("#/lib/session-worktree", () => ({
@@ -167,7 +167,10 @@ function setupResolved() {
 		{ key: "SECRET", value: "secretvalue1" },
 	]);
 	resolveMocks.authorizeGitHubRepositoryAccess.mockResolvedValue(undefined);
-	resolveMocks.ensureProjectSandbox.mockResolvedValue(undefined);
+	resolveMocks.provisionProjectSandbox.mockResolvedValue({
+		project: { id: "proj-1", sandboxId: "sandbox-1", status: "ready" },
+		state: "connected",
+	});
 	return db;
 }
 

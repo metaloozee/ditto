@@ -5,7 +5,7 @@ import { projects } from "#/db/schema";
 import type { AgentGitJwtClaims } from "#/lib/agent-git-jwt";
 import { GitSecretPolicyError } from "#/lib/git-secret-policy";
 import { decryptEnvVars } from "#/lib/project-env-vars";
-import { ensureProjectSandbox } from "#/lib/project-sandbox";
+import { provisionProjectSandbox } from "#/lib/project-sandbox";
 import {
 	getSessionGitStatus,
 	openSessionPullRequest,
@@ -102,11 +102,19 @@ export async function resolveAgentGitContext(options: {
 		throw new AgentGitHttpError(404, "Session not found.");
 	}
 
-	await ensureProjectSandbox({
+	const PROVISION_SUCCESS = new Set([
+		"connected",
+		"restored_from_backup",
+		"recreated_from_github",
+	]);
+	const ensured = await provisionProjectSandbox({
 		db: options.db,
 		env: options.env,
 		project,
 	});
+	if (!PROVISION_SUCCESS.has(ensured.state)) {
+		throw new AgentGitHttpError(409, "Project sandbox is not ready.");
+	}
 
 	const ready = await ensureSessionWorkspaceReady({
 		env: options.env,

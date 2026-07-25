@@ -11,8 +11,8 @@ import {
 	messageCursorOlderThanInputs,
 } from "#/lib/message-cursor";
 import {
-	ensureProjectSandbox,
-	ProjectSandboxProvisioningError,
+	checkProjectSandbox,
+	provisionProjectSandbox,
 } from "#/lib/project-sandbox";
 import {
 	archiveSessionWithPreviewCleanup,
@@ -60,152 +60,82 @@ function stripProjectSecrets(project: typeof projects.$inferSelect) {
 
 type WorkspaceSandboxState =
 	| "connected"
+	| "needs_restore"
 	| "restored_from_backup"
 	| "recreated_from_github"
 	| "provisioning"
 	| "failed";
 
-async function ensureProjectWorkspace(options: {
+async function loadSessionsAndBuildView(options: {
 	db: ReturnType<typeof createDb>;
-	env: Env;
-	project: typeof projects.$inferSelect;
-}): Promise<{
-	project: typeof projects.$inferSelect;
-	sandboxState: WorkspaceSandboxState;
-	restoreFailed: boolean;
-}> {
-	if (options.project.status !== "ready" || !options.project.sandboxId) {
-		const status = options.project.status;
-		const sandboxState: WorkspaceSandboxState =
-			status === "provisioning" || status === "failed" ? status : "failed";
-		return {
-			project: options.project,
-			sandboxState,
-			restoreFailed: status === "failed",
-		};
-	}
-
-	try {
-		const ensured = await ensureProjectSandbox({
-			db: options.db,
-			env: options.env,
-			project: options.project,
-		});
-
-		return {
-			project: ensured.project,
-			sandboxState: ensured.state,
-			restoreFailed: false,
-		};
-	} catch (error) {
-		let thrown: unknown = error;
-
-		if (error instanceof ProjectSandboxProvisioningError) {
-			const current = await loadProjectOrThrow({
-				db: options.db,
-				projectId: options.project.id,
-				userId: options.project.userId,
-			});
-
-			if (current.status === "provisioning") {
-				return {
-					project: current,
-					sandboxState: "provisioning",
-					restoreFailed: false,
-				};
-			}
-			if (current.status === "failed") {
-				return {
-					project: current,
-					sandboxState: "failed",
-					restoreFailed: true,
-				};
-			}
-
-			// Winner finished; one nested ensure only.
-			try {
-				const ensured = await ensureProjectSandbox({
-					db: options.db,
-					env: options.env,
-					project: current,
-				});
-				return {
-					project: ensured.project,
-					sandboxState: ensured.state,
-					restoreFailed: false,
-				};
-			} catch (nested) {
-				if (nested instanceof ProjectSandboxProvisioningError) {
-					return {
-						project: current,
-						sandboxState: "provisioning",
-						restoreFailed: false,
-					};
-				}
-				thrown = nested;
-			}
-		}
-
-		const current = await loadProjectOrThrow({
-			db: options.db,
-			projectId: options.project.id,
-			userId: options.project.userId,
-		});
-		if (current.status === "failed") {
-			return {
-				project: current,
-				sandboxState: "failed",
-				restoreFailed: true,
-			};
-		}
-		throw thrown;
-	}
-}
-
-async function loadWorkspaceView(options: {
-	db: ReturnType<typeof createDb>;
-	env: Env;
 	projectId: string;
 	userId: string;
 	sessionId?: string | null;
+	sandboxProject: typeof projects.$inferSelect;
+	sandboxState: WorkspaceSandboxState;
+	restoreFailed: boolean;
 }) {
-	const project = await loadProjectOrThrow(options);
-	const [sessions, workspace] = await Promise.all([
-		options.db
-			.select()
-			.from(workspaceSessions)
-			.where(
-				and(
-					eq(workspaceSessions.projectId, options.projectId),
-					eq(workspaceSessions.userId, options.userId),
-					eq(workspaceSessions.status, "active"),
-				),
-			)
-			.orderBy(desc(workspaceSessions.updatedAt)),
-		ensureProjectWorkspace({
-			db: options.db,
-			env: options.env,
-			project,
-		}),
-	]);
+	const sessions = await options.db
+		.select()
+		.from(workspaceSessions)
+		.where(
+			and(
+				eq(workspaceSessions.projectId, options.projectId),
+				eq(workspaceSessions.userId, options.userId),
+				eq(workspaceSessions.status, "active"),
+			),
+		)
+		.orderBy(desc(workspaceSessions.updatedAt));
 
 	const selectedSession = options.sessionId
 		? (sessions.find((session) => session.id === options.sessionId) ?? null)
 		: null;
 
 	return {
-		project: stripProjectSecrets(workspace.project),
-		sandbox: { state: workspace.sandboxState },
+		project: stripProjectSecrets(options.sandboxProject),
+		sandbox: { state: options.sandboxState },
 		sessions,
 		selectedSession,
-		restoreFailed: workspace.restoreFailed,
+		restoreFailed: options.restoreFailed,
 	};
 }
 
 const messageRowid = sql<number>`rowid`.mapWith(Number);
 
 export const workspaceRouter = createTRPCRouter({
-	ensureWorkspace: protectedProcedure
+	checkSandbox: protectedProcedure
+		.input(
+			z.object({
+				projectId: z.string().min(1),
+				sessionId: z.string().min(1).optional(),
+			}),
+		)
+		.query(async ({ ctx, input }) => {
+			const db = createDb(ctx.env);
+			const project = await loadProjectOrThrow({
+				db,
+				projectId: input.projectId,
+				userId: ctx.user.id,
+			});
+			const result = await checkProjectSandbox({
+				db,
+				env: ctx.env,
+				project,
+			});
+
+			return await loadSessionsAndBuildView({
+				db,
+				projectId: input.projectId,
+				userId: ctx.user.id,
+				sessionId: input.sessionId,
+				sandboxProject: result.project,
+				sandboxState: result.state,
+				restoreFailed:
+					result.state === "failed" || result.project.status === "failed",
+			});
+		}),
+
+	provisionSandbox: protectedProcedure
 		.input(
 			z.object({
 				projectId: z.string().min(1),
@@ -214,13 +144,48 @@ export const workspaceRouter = createTRPCRouter({
 		)
 		.mutation(async ({ ctx, input }) => {
 			const db = createDb(ctx.env);
-			return await loadWorkspaceView({
+			const project = await loadProjectOrThrow({
 				db,
-				env: ctx.env,
 				projectId: input.projectId,
 				userId: ctx.user.id,
-				sessionId: input.sessionId,
 			});
+
+			try {
+				const result = await provisionProjectSandbox({
+					db,
+					env: ctx.env,
+					project,
+				});
+
+				return await loadSessionsAndBuildView({
+					db,
+					projectId: input.projectId,
+					userId: ctx.user.id,
+					sessionId: input.sessionId,
+					sandboxProject: result.project,
+					sandboxState: result.state,
+					restoreFailed:
+						result.state === "failed" || result.project.status === "failed",
+				});
+			} catch (error) {
+				const current = await loadProjectOrThrow({
+					db,
+					projectId: input.projectId,
+					userId: ctx.user.id,
+				});
+				if (current.status === "failed") {
+					return await loadSessionsAndBuildView({
+						db,
+						projectId: input.projectId,
+						userId: ctx.user.id,
+						sessionId: input.sessionId,
+						sandboxProject: current,
+						sandboxState: "failed",
+						restoreFailed: true,
+					});
+				}
+				throw error;
+			}
 		}),
 
 	retryRestore: protectedProcedure
@@ -261,12 +226,27 @@ export const workspaceRouter = createTRPCRouter({
 				});
 			}
 
-			return await loadWorkspaceView({
+			// Follow-up via check only; client auto-provisions on needs_restore.
+			const reloaded = await loadProjectOrThrow({
+				db,
+				projectId: input.projectId,
+				userId: ctx.user.id,
+			});
+			const result = await checkProjectSandbox({
 				db,
 				env: ctx.env,
+				project: reloaded,
+			});
+
+			return await loadSessionsAndBuildView({
+				db,
 				projectId: input.projectId,
 				userId: ctx.user.id,
 				sessionId: input.sessionId,
+				sandboxProject: result.project,
+				sandboxState: result.state,
+				restoreFailed:
+					result.state === "failed" || result.project.status === "failed",
 			});
 		}),
 

@@ -18,9 +18,9 @@ vi.mock("#/lib/sandbox-bootstrap", () => ({
 }));
 
 const {
-	ensureProjectSandbox,
+	checkProjectSandbox,
+	provisionProjectSandbox,
 	persistProjectSandboxBackup,
-	ProjectSandboxProvisioningError,
 } = await import("./project-sandbox");
 const { projects } = await import("#/db/schema");
 
@@ -191,7 +191,7 @@ function makeVersionedDb(initial: ProjectRow = { ...baseProject }) {
 	};
 }
 
-/** Queue-based fake used by ensureProjectSandbox tests (unchanged control flow). */
+/** Queue-based fake used by check/provision tests. */
 function makeFakeDb(options: {
 	lockedProject: ProjectRow | null;
 	updatedProject?: ProjectRow;
@@ -426,7 +426,7 @@ describe("persistProjectSandboxBackup", () => {
 	});
 });
 
-describe("ensureProjectSandbox", () => {
+describe("checkProjectSandbox", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		isSandboxRunnerHealthyMock.mockResolvedValue(true);
@@ -438,8 +438,8 @@ describe("ensureProjectSandbox", () => {
 		const { db, updateMock } = makeFakeDb({ lockedProject: baseProject });
 
 		await expect(
-			ensureProjectSandbox({
-				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
+			checkProjectSandbox({
+				db: db as unknown as Parameters<typeof checkProjectSandbox>[0]["db"],
 				env: makeEnv(),
 				project: baseProject,
 			}),
@@ -457,14 +457,203 @@ describe("ensureProjectSandbox", () => {
 		const { db, updateMock } = makeFakeDb({ lockedProject: baseProject });
 
 		await expect(
-			ensureProjectSandbox({
-				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
+			checkProjectSandbox({
+				db: db as unknown as Parameters<typeof checkProjectSandbox>[0]["db"],
 				env: makeEnv(),
 				project: baseProject,
 			}),
 		).resolves.toMatchObject({ state: "connected", project: baseProject });
 
 		expect(updateMock).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"stopping",
+		"stopped",
+		"stopped_with_code",
+	] as const)("returns needs_restore for %s without D1 writes", async (status) => {
+		getProjectSandboxStateMock.mockResolvedValue({ status });
+		const { db, updateMock } = makeFakeDb({ lockedProject: baseProject });
+
+		await expect(
+			checkProjectSandbox({
+				db: db as unknown as Parameters<typeof checkProjectSandbox>[0]["db"],
+				env: makeEnv(),
+				project: baseProject,
+			}),
+		).resolves.toMatchObject({ state: "needs_restore", project: baseProject });
+
+		expect(updateMock).not.toHaveBeenCalled();
+		expect(restoreSandboxWorkspaceMock).not.toHaveBeenCalled();
+		expect(bootstrapSandboxMock).not.toHaveBeenCalled();
+		expect(isSandboxWorkspaceHydratedMock).not.toHaveBeenCalled();
+	});
+
+	it("returns needs_restore when active, runner healthy, and unhydrated", async () => {
+		isSandboxWorkspaceHydratedMock.mockResolvedValue(false);
+		const { db, updateMock } = makeFakeDb({ lockedProject: baseProject });
+
+		await expect(
+			checkProjectSandbox({
+				db: db as unknown as Parameters<typeof checkProjectSandbox>[0]["db"],
+				env: makeEnv(),
+				project: baseProject,
+			}),
+		).resolves.toMatchObject({ state: "needs_restore" });
+
+		expect(updateMock).not.toHaveBeenCalled();
+		expect(restoreSandboxWorkspaceMock).not.toHaveBeenCalled();
+	});
+
+	it("observes runtime before hydration/runner probes on active containers", async () => {
+		isSandboxWorkspaceHydratedMock.mockResolvedValue(true);
+		const { db } = makeFakeDb({ lockedProject: baseProject });
+
+		await checkProjectSandbox({
+			db: db as unknown as Parameters<typeof checkProjectSandbox>[0]["db"],
+			env: makeEnv(),
+			project: baseProject,
+		});
+
+		expect(
+			callOrder(getProjectSandboxStateMock, isSandboxWorkspaceHydratedMock)[0],
+		).toBe(0);
+		expect(
+			callOrder(getProjectSandboxStateMock, isSandboxRunnerHealthyMock)[0],
+		).toBe(0);
+	});
+
+	it("rejects an invalid runner without writing D1 even when unhydrated", async () => {
+		const { db, updateMock } = makeFakeDb({ lockedProject: baseProject });
+		isSandboxWorkspaceHydratedMock.mockResolvedValue(false);
+		isSandboxRunnerHealthyMock.mockResolvedValue(false);
+
+		await expect(
+			checkProjectSandbox({
+				db: db as unknown as Parameters<typeof checkProjectSandbox>[0]["db"],
+				env: makeEnv(),
+				project: baseProject,
+			}),
+		).rejects.toThrow("Project sandbox runner image is invalid");
+
+		expect(updateMock).not.toHaveBeenCalled();
+		expect(restoreSandboxWorkspaceMock).not.toHaveBeenCalled();
+	});
+
+	it("returns provisioning for D1 provisioning without getState", async () => {
+		const { db, updateMock } = makeFakeDb({ lockedProject: baseProject });
+		const provisioning = {
+			...baseProject,
+			status: "provisioning" as const,
+		};
+
+		await expect(
+			checkProjectSandbox({
+				db: db as unknown as Parameters<typeof checkProjectSandbox>[0]["db"],
+				env: makeEnv(),
+				project: provisioning,
+			}),
+		).resolves.toMatchObject({ state: "provisioning" });
+
+		expect(getProjectSandboxStateMock).not.toHaveBeenCalled();
+		expect(updateMock).not.toHaveBeenCalled();
+	});
+
+	it("returns failed for D1 failed without getState", async () => {
+		const { db, updateMock } = makeFakeDb({ lockedProject: baseProject });
+		const failed = { ...baseProject, status: "failed" as const };
+
+		await expect(
+			checkProjectSandbox({
+				db: db as unknown as Parameters<typeof checkProjectSandbox>[0]["db"],
+				env: makeEnv(),
+				project: failed,
+			}),
+		).resolves.toMatchObject({ state: "failed" });
+
+		expect(getProjectSandboxStateMock).not.toHaveBeenCalled();
+		expect(updateMock).not.toHaveBeenCalled();
+	});
+
+	it("returns failed when sandboxId is missing without getState", async () => {
+		const { db, updateMock } = makeFakeDb({ lockedProject: baseProject });
+		const missing = { ...baseProject, sandboxId: null };
+
+		await expect(
+			checkProjectSandbox({
+				db: db as unknown as Parameters<typeof checkProjectSandbox>[0]["db"],
+				env: makeEnv(),
+				project: missing,
+			}),
+		).resolves.toMatchObject({ state: "failed" });
+
+		expect(getProjectSandboxStateMock).not.toHaveBeenCalled();
+		expect(updateMock).not.toHaveBeenCalled();
+	});
+
+	it("propagates getState errors without writing D1", async () => {
+		const { db, updateMock } = makeFakeDb({ lockedProject: baseProject });
+		getProjectSandboxStateMock.mockRejectedValue(new Error("rpc down"));
+
+		await expect(
+			checkProjectSandbox({
+				db: db as unknown as Parameters<typeof checkProjectSandbox>[0]["db"],
+				env: makeEnv(),
+				project: baseProject,
+			}),
+		).rejects.toThrow("rpc down");
+
+		expect(updateMock).not.toHaveBeenCalled();
+		expect(isSandboxWorkspaceHydratedMock).not.toHaveBeenCalled();
+	});
+});
+
+describe("provisionProjectSandbox", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		isSandboxRunnerHealthyMock.mockResolvedValue(true);
+		getProjectSandboxStateMock.mockResolvedValue({ status: "healthy" });
+	});
+
+	it("returns connected when already healthy without D1 writes", async () => {
+		isSandboxWorkspaceHydratedMock.mockResolvedValue(true);
+		const { db, updateMock } = makeFakeDb({ lockedProject: baseProject });
+
+		await expect(
+			provisionProjectSandbox({
+				db: db as unknown as Parameters<
+					typeof provisionProjectSandbox
+				>[0]["db"],
+				env: makeEnv(),
+				project: baseProject,
+			}),
+		).resolves.toMatchObject({ state: "connected", project: baseProject });
+
+		expect(updateMock).not.toHaveBeenCalled();
+	});
+
+	it("returns provisioning on compare-and-set loss without marking failed", async () => {
+		const { db, setCalls } = makeFakeDb({ lockedProject: null });
+		getProjectSandboxStateMock.mockResolvedValue({ status: "stopped" });
+
+		await expect(
+			provisionProjectSandbox({
+				db: db as unknown as Parameters<
+					typeof provisionProjectSandbox
+				>[0]["db"],
+				env: makeEnv(),
+				project: baseProject,
+			}),
+		).resolves.toMatchObject({ state: "provisioning" });
+
+		expect(setCalls).toEqual([
+			expect.objectContaining({ status: "provisioning" }),
+		]);
+		expect(
+			setCalls.some(
+				(call) => (call as { status?: string }).status === "failed",
+			),
+		).toBe(false);
 	});
 
 	it.each([
@@ -502,8 +691,10 @@ describe("ensureProjectSandbox", () => {
 		});
 
 		await expect(
-			ensureProjectSandbox({
-				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
+			provisionProjectSandbox({
+				db: db as unknown as Parameters<
+					typeof provisionProjectSandbox
+				>[0]["db"],
 				env: makeEnv(),
 				project: baseProject,
 			}),
@@ -520,41 +711,6 @@ describe("ensureProjectSandbox", () => {
 		).toBe(0);
 		expect(setCalls[0]).toMatchObject({ status: "provisioning" });
 		expect(restoreSandboxWorkspaceMock).toHaveBeenCalled();
-	});
-
-	it("observes runtime before hydration/runner probes on active containers", async () => {
-		isSandboxWorkspaceHydratedMock.mockResolvedValue(true);
-		const { db } = makeFakeDb({ lockedProject: baseProject });
-
-		await ensureProjectSandbox({
-			db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
-			env: makeEnv(),
-			project: baseProject,
-		});
-
-		expect(
-			callOrder(getProjectSandboxStateMock, isSandboxWorkspaceHydratedMock)[0],
-		).toBe(0);
-		expect(
-			callOrder(getProjectSandboxStateMock, isSandboxRunnerHealthyMock)[0],
-		).toBe(0);
-	});
-
-	it("rejects an invalid runner before mutating project state even when unhydrated", async () => {
-		const { db, updateMock } = makeFakeDb({ lockedProject: baseProject });
-		isSandboxWorkspaceHydratedMock.mockResolvedValue(false);
-		isSandboxRunnerHealthyMock.mockResolvedValue(false);
-
-		await expect(
-			ensureProjectSandbox({
-				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
-				env: makeEnv(),
-				project: baseProject,
-			}),
-		).rejects.toThrow("Project sandbox runner image is invalid");
-
-		expect(updateMock).not.toHaveBeenCalled();
-		expect(restoreSandboxWorkspaceMock).not.toHaveBeenCalled();
 	});
 
 	it("enters CAS restore when active, runner healthy, and unhydrated", async () => {
@@ -586,8 +742,10 @@ describe("ensureProjectSandbox", () => {
 		});
 
 		await expect(
-			ensureProjectSandbox({
-				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
+			provisionProjectSandbox({
+				db: db as unknown as Parameters<
+					typeof provisionProjectSandbox
+				>[0]["db"],
 				env: makeEnv(),
 				project: baseProject,
 			}),
@@ -597,28 +755,6 @@ describe("ensureProjectSandbox", () => {
 		});
 
 		expect(setCalls[0]).toMatchObject({ status: "provisioning" });
-	});
-
-	it("throws ProjectSandboxProvisioningError on compare-and-set loss", async () => {
-		const { db, setCalls } = makeFakeDb({ lockedProject: null });
-		getProjectSandboxStateMock.mockResolvedValue({ status: "stopped" });
-
-		await expect(
-			ensureProjectSandbox({
-				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
-				env: makeEnv(),
-				project: baseProject,
-			}),
-		).rejects.toBeInstanceOf(ProjectSandboxProvisioningError);
-
-		expect(setCalls).toEqual([
-			expect.objectContaining({ status: "provisioning" }),
-		]);
-		expect(
-			setCalls.some(
-				(call) => (call as { status?: string }).status === "failed",
-			),
-		).toBe(false);
 	});
 
 	it("restores from backup, re-backs up, and returns restored_from_backup", async () => {
@@ -650,8 +786,10 @@ describe("ensureProjectSandbox", () => {
 		});
 
 		await expect(
-			ensureProjectSandbox({
-				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
+			provisionProjectSandbox({
+				db: db as unknown as Parameters<
+					typeof provisionProjectSandbox
+				>[0]["db"],
 				env: makeEnv(),
 				project: baseProject,
 			}),
@@ -708,8 +846,10 @@ describe("ensureProjectSandbox", () => {
 		});
 
 		await expect(
-			ensureProjectSandbox({
-				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
+			provisionProjectSandbox({
+				db: db as unknown as Parameters<
+					typeof provisionProjectSandbox
+				>[0]["db"],
 				env: makeEnv(),
 				project: baseProject,
 			}),
@@ -743,8 +883,10 @@ describe("ensureProjectSandbox", () => {
 		});
 
 		await expect(
-			ensureProjectSandbox({
-				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
+			provisionProjectSandbox({
+				db: db as unknown as Parameters<
+					typeof provisionProjectSandbox
+				>[0]["db"],
 				env: makeEnv(),
 				project: baseProject,
 			}),
@@ -766,8 +908,10 @@ describe("ensureProjectSandbox", () => {
 		bootstrapSandboxMock.mockRejectedValue(new Error("github failed"));
 
 		await expect(
-			ensureProjectSandbox({
-				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
+			provisionProjectSandbox({
+				db: db as unknown as Parameters<
+					typeof provisionProjectSandbox
+				>[0]["db"],
 				env: makeEnv(),
 				project: baseProject,
 			}),
@@ -798,8 +942,10 @@ describe("ensureProjectSandbox", () => {
 		});
 
 		await expect(
-			ensureProjectSandbox({
-				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
+			provisionProjectSandbox({
+				db: db as unknown as Parameters<
+					typeof provisionProjectSandbox
+				>[0]["db"],
 				env: makeEnv(),
 				project: baseProject,
 			}),
@@ -822,8 +968,10 @@ describe("ensureProjectSandbox", () => {
 		});
 
 		await expect(
-			ensureProjectSandbox({
-				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
+			provisionProjectSandbox({
+				db: db as unknown as Parameters<
+					typeof provisionProjectSandbox
+				>[0]["db"],
 				env: makeEnv(),
 				project: baseProject,
 			}),
@@ -832,19 +980,41 @@ describe("ensureProjectSandbox", () => {
 		expect(getState().status).toBe("ready");
 	});
 
-	it("propagates getState errors without writing D1", async () => {
+	it("returns provisioning when D1 is already provisioning", async () => {
 		const { db, updateMock } = makeFakeDb({ lockedProject: baseProject });
-		getProjectSandboxStateMock.mockRejectedValue(new Error("rpc down"));
+		const provisioning = {
+			...baseProject,
+			status: "provisioning" as const,
+		};
 
 		await expect(
-			ensureProjectSandbox({
-				db: db as unknown as Parameters<typeof ensureProjectSandbox>[0]["db"],
+			provisionProjectSandbox({
+				db: db as unknown as Parameters<
+					typeof provisionProjectSandbox
+				>[0]["db"],
 				env: makeEnv(),
-				project: baseProject,
+				project: provisioning,
 			}),
-		).rejects.toThrow("rpc down");
+		).resolves.toMatchObject({ state: "provisioning" });
 
 		expect(updateMock).not.toHaveBeenCalled();
-		expect(isSandboxWorkspaceHydratedMock).not.toHaveBeenCalled();
+	});
+
+	it("returns failed when D1 is failed without restoring", async () => {
+		const { db, updateMock } = makeFakeDb({ lockedProject: baseProject });
+		const failed = { ...baseProject, status: "failed" as const };
+
+		await expect(
+			provisionProjectSandbox({
+				db: db as unknown as Parameters<
+					typeof provisionProjectSandbox
+				>[0]["db"],
+				env: makeEnv(),
+				project: failed,
+			}),
+		).resolves.toMatchObject({ state: "failed" });
+
+		expect(updateMock).not.toHaveBeenCalled();
+		expect(restoreSandboxWorkspaceMock).not.toHaveBeenCalled();
 	});
 });
