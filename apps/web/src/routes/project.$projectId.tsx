@@ -5,11 +5,14 @@ import {
 	useQueryClient,
 } from "@tanstack/react-query";
 import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { AlertCircleIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Chat } from "#/components/ai-chat";
 import { Button } from "#/components/ui/button";
+import { useSidebar } from "#/components/ui/sidebar";
 import { toast } from "#/components/ui/toast";
 import { useTRPC } from "#/integrations/trpc/react";
+import { cn } from "#/lib/utils";
 
 export const Route = createFileRoute("/project/$projectId")({
 	component: ProjectDetailRoute,
@@ -57,51 +60,49 @@ function WorkspaceStatusBar(props: {
 	onRetryCheck?: () => void;
 	retryError?: string | null;
 }) {
-	if (props.mode === "restore-failed") {
-		return (
-			<div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-background px-4 py-2 text-xs">
-				<div className="min-w-0 text-muted-foreground">
-					<span className="text-destructive" role="alert">
-						Workspace restore failed
-					</span>
-				</div>
-				<Button
-					type="button"
-					size="sm"
-					variant="outline"
-					disabled={props.pending}
-					aria-busy={props.pending || undefined}
-					onClick={props.onRetryRestore}
-				>
-					{props.pending ? "Retrying…" : "Retry restore"}
-				</Button>
-				{props.retryError ? (
-					<p className="w-full text-destructive" role="alert">
-						{props.retryError}
-					</p>
-				) : null}
-			</div>
-		);
-	}
+	const { state, isMobile } = useSidebar();
+	// Match floating sidebar p-2 inset when open on desktop.
+	const alignSidebar = !isMobile && state === "expanded";
+	const message =
+		props.mode === "restore-failed"
+			? "Workspace restore failed"
+			: (props.message ?? "Project sandbox is not ready yet.");
+	const onRetry =
+		props.mode === "restore-failed" ? props.onRetryRestore : props.onRetryCheck;
+	const label = props.pending
+		? "Retrying…"
+		: props.mode === "restore-failed"
+			? "Retry restore"
+			: "Retry";
 
 	return (
 		<div
 			role="alert"
-			className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-background px-4 py-2 text-xs"
+			className={cn(
+				"flex shrink-0 flex-wrap items-center justify-between gap-2 border border-destructive/25 bg-destructive/10 px-4 py-2.5 text-xs text-destructive transition-[margin,border-radius,border-color] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none",
+				alignSidebar
+					? "mt-2 mr-2 rounded-t-lg"
+					: "mt-0 mr-0 rounded-none border-x-transparent border-t-transparent",
+			)}
 		>
-			<p className="min-w-0 text-destructive">
-				{props.message ?? "Project sandbox is not ready yet."}
-			</p>
+			<div className="flex min-w-0 items-center gap-2">
+				<AlertCircleIcon className="size-3.5 shrink-0" aria-hidden="true" />
+				<p className="min-w-0 font-medium">{message}</p>
+			</div>
 			<Button
 				type="button"
 				size="sm"
 				variant="outline"
+				className="border-destructive/30 bg-background/80 hover:bg-background"
 				disabled={props.pending}
 				aria-busy={props.pending || undefined}
-				onClick={props.onRetryCheck}
+				onClick={onRetry}
 			>
-				{props.pending ? "Retrying…" : "Retry"}
+				{label}
 			</Button>
+			{props.retryError ? (
+				<p className="w-full text-destructive/90">{props.retryError}</p>
+			) : null}
 		</div>
 	);
 }
@@ -418,10 +419,9 @@ export function ProjectWorkspacePage({
 					mode={bar}
 					message={checkError?.message}
 					pending={
-						retryPending ||
-						provisionPending ||
-						checkQuery.isFetching ||
-						checkQuery.isPending
+						bar === "restore-failed"
+							? retryPending || provisionPending
+							: checkQuery.isFetching || checkQuery.isPending
 					}
 					onRetryRestore={() =>
 						retryRestoreMutation.mutate({ projectId, sessionId })

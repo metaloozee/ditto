@@ -211,6 +211,10 @@ vi.mock("#/integrations/trpc/react", () => ({
 	}),
 }));
 
+vi.mock("#/components/ui/sidebar", () => ({
+	useSidebar: () => ({ state: "expanded", isMobile: false }),
+}));
+
 vi.mock("#/components/ai-chat", () => ({
 	Chat: (props: {
 		disabledReason?: string;
@@ -611,6 +615,25 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 		expect(screen.getByText("durable history")).toBeTruthy();
 		expect(screen.getByRole("button", { name: "Retry restore" })).toBeTruthy();
 		expect(screen.getByText(/Workspace restore failed/i)).toBeTruthy();
+	});
+
+	it("restore failed + disabled check pending: Retry restore enabled, not Retrying", () => {
+		// checkSandbox is disabled when d1Status === "failed"; RQ leaves isPending true.
+		projectQueryState.current.data.status = "failed";
+		checkQueryState.current = {
+			data: undefined,
+			error: null,
+			isPending: true,
+			isFetching: false,
+			refetch: checkRefetchMock,
+		};
+
+		render(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
+
+		const btn = screen.getByRole("button", { name: "Retry restore" });
+		expect(btn).toBeTruthy();
+		expect((btn as HTMLButtonElement).disabled).toBe(false);
+		expect(screen.queryByRole("button", { name: "Retrying\u2026" })).toBeNull();
 	});
 
 	it("retry restore success: onSuccess does not call provision", async () => {

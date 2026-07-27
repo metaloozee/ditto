@@ -1,6 +1,13 @@
 /** @vitest-environment jsdom */
 
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+	act,
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import type * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComposerStreamingState } from "#/components/composer";
@@ -510,5 +517,36 @@ describe("Chat session cache acknowledgement", () => {
 			expect(toggle.disabled).toBe(true);
 		});
 		expect(screen.queryByTestId("tools-pane")).toBeNull();
+	});
+
+	it("collapses long user messages behind Show more", () => {
+		const long = `start-${"word ".repeat(200)}-end`;
+		render(
+			<Chat
+				projectId="proj-1"
+				sessionId="sess-1"
+				messages={[{ id: "msg-long", role: "user", content: long }]}
+			/>,
+		);
+
+		const trigger = screen.getByRole("button", { name: "Show more" });
+		expect(trigger).toBeTruthy();
+		expect(screen.getByText(long)).toBeTruthy();
+
+		fireEvent.click(trigger);
+		expect(screen.getByRole("button", { name: "Show less" })).toBeTruthy();
+	});
+
+	it("does not show Show more for short user messages", () => {
+		render(
+			<Chat
+				projectId="proj-1"
+				sessionId="sess-1"
+				messages={[{ id: "msg-short", role: "user", content: "short note" }]}
+			/>,
+		);
+
+		expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
+		expect(screen.getByText("short note")).toBeTruthy();
 	});
 });

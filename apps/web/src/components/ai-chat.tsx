@@ -34,6 +34,7 @@ import { SessionToolsPane } from "#/components/session-tools-pane";
 import { ToolCallGroup } from "#/components/tool-call-group";
 import { Bubble, BubbleContent } from "#/components/ui/bubble";
 import { Button, buttonVariants } from "#/components/ui/button";
+import { Collapsible, CollapsibleTrigger } from "#/components/ui/collapsible";
 import {
 	Message,
 	MessageContent,
@@ -416,13 +417,92 @@ function StreamingAssistantRow({
 	);
 }
 
+/** Collapse long user bubbles so a 10k-word paste doesn't own the thread. */
+const LONG_USER_MESSAGE_CHARS = 600;
+/** Strong ease-out (Emil) — snappy start, soft settle. */
+const LONG_MSG_EASE = "cubic-bezier(0.23,1,0.32,1)";
+
+function UserMessageBody({ text }: { text: string }) {
+	const [open, setOpen] = useState(false);
+
+	if (text.length <= LONG_USER_MESSAGE_CHARS) {
+		return <p className="whitespace-pre-wrap text-sm/relaxed">{text}</p>;
+	}
+
+	return (
+		<Collapsible className="w-full min-w-0" open={open} onOpenChange={setOpen}>
+			<div className="relative">
+				<div
+					className={cn(
+						"overflow-hidden transition-[max-height] duration-200 motion-reduce:transition-none",
+						open ? "max-h-[min(200vh,120rem)]" : "max-h-36",
+					)}
+					style={{ transitionTimingFunction: LONG_MSG_EASE }}
+				>
+					<p className="whitespace-pre-wrap text-sm/relaxed">{text}</p>
+				</div>
+				<div
+					aria-hidden
+					className={cn(
+						"pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-secondary to-transparent transition-opacity duration-200 motion-reduce:transition-none",
+						open ? "opacity-0" : "opacity-100",
+					)}
+					style={{ transitionTimingFunction: LONG_MSG_EASE }}
+				/>
+				<div
+					className={cn(
+						"flex justify-center transition-[padding] duration-200 motion-reduce:transition-none",
+						open ? "pt-1.5" : "absolute inset-x-0 bottom-0 pb-1",
+					)}
+					style={{ transitionTimingFunction: LONG_MSG_EASE }}
+				>
+					<CollapsibleTrigger
+						aria-label={open ? "Show less" : "Show more"}
+						className={cn(
+							buttonVariants({ variant: "ghost", size: "xs" }),
+							"relative z-10 bg-secondary/80 text-secondary-foreground backdrop-blur-[2px]",
+							"transition-[transform,background-color,opacity] duration-150 ease-out",
+							"hover:bg-secondary active:scale-[0.97]",
+							"motion-reduce:transition-none motion-reduce:active:scale-100",
+						)}
+					>
+						<span className="relative inline-grid place-items-center">
+							<span
+								className={cn(
+									"col-start-1 row-start-1 transition-[opacity,transform,filter] duration-150 ease-out motion-reduce:transition-none",
+									open
+										? "scale-95 opacity-0 blur-[2px]"
+										: "scale-100 opacity-100 blur-0",
+								)}
+							>
+								Show more
+							</span>
+							<span
+								aria-hidden={!open}
+								className={cn(
+									"col-start-1 row-start-1 transition-[opacity,transform,filter] duration-150 ease-out motion-reduce:transition-none",
+									open
+										? "scale-100 opacity-100 blur-0"
+										: "scale-95 opacity-0 blur-[2px]",
+								)}
+							>
+								Show less
+							</span>
+						</span>
+					</CollapsibleTrigger>
+				</div>
+			</div>
+		</Collapsible>
+	);
+}
+
 function QueuedFollowUpRow({ queued }: { queued: QueuedFollowUp }) {
 	return (
 		<Message align="end">
 			<MessageContent className="group">
 				<Bubble align="end" variant="secondary">
 					<BubbleContent className="w-full max-w-none">
-						<p className="whitespace-pre-wrap text-sm/relaxed">{queued.text}</p>
+						<UserMessageBody text={queued.text} />
 					</BubbleContent>
 				</Bubble>
 				<MessageFooter>
@@ -474,9 +554,7 @@ function MessageRow({ message }: { message: NormalizedChatMessage }) {
 			<MessageContent className="group">
 				<Bubble align="end" variant="secondary">
 					<BubbleContent className="w-full max-w-none">
-						<p className="whitespace-pre-wrap text-sm/relaxed">
-							{message.content}
-						</p>
+						<UserMessageBody text={message.content} />
 					</BubbleContent>
 				</Bubble>
 				<MessageFooter className="gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100">

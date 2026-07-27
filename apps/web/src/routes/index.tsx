@@ -100,9 +100,8 @@ function Home() {
 				<div className="relative overflow-hidden rounded-xl w-full">
 					<Grainient
 						className="absolute! rounded-xl"
-						color1="#2563eb"
-						color2="#2d9cd4"
-						color3="#0369a1"
+						color1="#1275d8"
+						color2="#e19136"
 						timeSpeed={0.25}
 						colorBalance={0}
 						warpStrength={1}
