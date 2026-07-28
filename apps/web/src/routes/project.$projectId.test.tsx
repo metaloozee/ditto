@@ -784,8 +784,10 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 
 		expect(messagesQueryState.enabledCaptures.at(-1)).toBe(true);
 		expect(screen.getByText("durable history")).toBeTruthy();
+		// Warm check must not flash the provisioning bar.
+		expect(screen.queryByRole("status")).toBeNull();
 		expect(screen.getByTestId("disabled-reason").textContent).toBe(
-			"Project sandbox is being provisioned.",
+			"Project sandbox is not ready yet.",
 		);
 	});
 });

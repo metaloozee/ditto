@@ -241,6 +241,7 @@ export function ProjectWorkspacePage({
 				SUCCESS_SANDBOX_STATES.has(provisionState) &&
 				checkState !== "needs_restore"));
 
+	// True only while restore/provision is in flight — not during warm checkSandbox load.
 	const isPreparing =
 		!restoreFailed &&
 		!checkError &&
@@ -249,10 +250,7 @@ export function ProjectWorkspacePage({
 			checkState === "provisioning" ||
 			checkState === "needs_restore" ||
 			provisionPending ||
-			awaitingFence ||
-			(d1Status === "ready" &&
-				(checkQuery.isPending || checkQuery.isFetching) &&
-				!checkQuery.data));
+			awaitingFence);
 
 	// Reset provision fence when project or session changes.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: cleanup must re-run on id change
