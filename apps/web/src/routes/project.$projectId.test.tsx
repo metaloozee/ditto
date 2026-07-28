@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const provisionMutateMock = vi.hoisted(() => vi.fn());
@@ -370,7 +370,7 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 		expect(messagesQueryState.enabledCaptures.at(-1)).toBe(true);
 	});
 
-	it("cold path: needs_restore → one provision + loading then success toast", async () => {
+	it("cold path: needs_restore → provisioning bar then success toast", async () => {
 		checkQueryState.current = {
 			data: {
 				project: { id: "proj-1", status: "ready" },
@@ -424,27 +424,25 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 		});
 		expect(toastAddMock).toHaveBeenCalledWith(
 			expect.objectContaining({
-				type: "loading",
-				description: "Preparing project sandbox...",
-			}),
-		);
-		const toastId = toastAddMock.mock.results.at(-1)?.value as string;
-		expect(toastUpdateMock).toHaveBeenCalledWith(
-			toastId,
-			expect.objectContaining({
 				type: "success",
 				description: "Project sandbox ready",
 			}),
+		);
+		expect(toastAddMock).not.toHaveBeenCalledWith(
+			expect.objectContaining({ type: "loading" }),
 		);
 
 		// After success, check becomes connected (via invalidation in real app).
 		checkQueryState.current = connectedCheck();
 		rerender(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
 		expect(screen.queryByTestId("disabled-reason")).toBeNull();
+		await waitFor(() => {
+			expect(screen.queryByRole("status")).toBeNull();
+		});
 		expect(screen.getByText("durable history")).toBeTruthy();
 	});
 
-	it("D1 provisioning: no provision call, no toast, disabled, history visible", async () => {
+	it("D1 provisioning: no provision call, provisioning bar, disabled, history visible", async () => {
 		projectQueryState.current.data.status = "provisioning";
 		checkQueryState.current = {
 			data: undefined,
@@ -458,13 +456,16 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 
 		expect(provisionMutateAsyncMock).not.toHaveBeenCalled();
 		expect(toastAddMock).not.toHaveBeenCalled();
+		expect(screen.getByRole("status").textContent).toMatch(
+			/Preparing project sandbox/i,
+		);
 		expect(screen.getByTestId("disabled-reason").textContent).toBe(
 			"Project sandbox is being provisioned.",
 		);
 		expect(screen.getByText("durable history")).toBeTruthy();
 	});
 
-	it("provision returns provisioning → keep loading until check connected", async () => {
+	it("provision returns provisioning → bar until check connected, then success toast", async () => {
 		checkQueryState.current = {
 			data: {
 				project: { id: "proj-1", status: "ready" },
@@ -494,11 +495,10 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 			await Promise.resolve();
 		});
 
-		const toastId = toastAddMock.mock.results.at(-1)?.value as string;
-		// No success toast yet.
-		expect(toastUpdateMock).not.toHaveBeenCalledWith(
-			toastId,
-			expect.objectContaining({ type: "success" }),
+		// No success toast yet; blue bar is up.
+		expect(toastAddMock).not.toHaveBeenCalled();
+		expect(screen.getByRole("status").textContent).toMatch(
+			/Preparing project sandbox/i,
 		);
 		expect(screen.getByTestId("disabled-reason").textContent).toBe(
 			"Project sandbox is being provisioned.",
@@ -508,17 +508,19 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 		checkQueryState.current = connectedCheck();
 		rerender(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
 
-		expect(toastUpdateMock).toHaveBeenCalledWith(
-			toastId,
+		expect(toastAddMock).toHaveBeenCalledWith(
 			expect.objectContaining({
 				type: "success",
 				description: "Project sandbox ready",
 			}),
 		);
+		await waitFor(() => {
+			expect(screen.queryByRole("status")).toBeNull();
+		});
 		expect(screen.queryByTestId("disabled-reason")).toBeNull();
 	});
 
-	it("provision returns provisioning then check failed → error toast", async () => {
+	it("provision returns provisioning then check failed → failed bar, no error toast", async () => {
 		checkQueryState.current = {
 			data: {
 				project: { id: "proj-1", status: "ready" },
@@ -547,8 +549,6 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 			await Promise.resolve();
 			await Promise.resolve();
 		});
-
-		const toastId = toastAddMock.mock.results.at(-1)?.value as string;
 
 		checkQueryState.current = {
 			data: {
@@ -565,13 +565,9 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 		projectQueryState.current.data.status = "failed";
 		rerender(<ProjectWorkspacePage projectId="proj-1" sessionId="sess-1" />);
 
-		expect(toastUpdateMock).toHaveBeenCalledWith(
-			toastId,
-			expect.objectContaining({
-				type: "error",
-				description: "Workspace restore failed",
-			}),
-		);
+		expect(toastAddMock).not.toHaveBeenCalled();
+		expect(screen.getByText(/Workspace restore failed/i)).toBeTruthy();
+		expect(screen.queryByRole("status")).toBeNull();
 	});
 
 	it("check error: check-error bar + Retry; no provision toast; history visible", async () => {
@@ -702,7 +698,7 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 		expect(listQueryFilterMock).not.toHaveBeenCalled();
 	});
 
-	it("ignores stale provision payload after projectId change and closes toast", async () => {
+	it("ignores stale provision payload after projectId change", async () => {
 		checkQueryState.current = {
 			data: {
 				project: { id: "proj-1", status: "ready" },
@@ -716,7 +712,7 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 			refetch: checkRefetchMock,
 		};
 
-		// Hang provision so toast stays open.
+		// Hang provision so bar stays up.
 		let resolveProvision!: (value: unknown) => void;
 		provisionMutateAsyncMock.mockImplementation(
 			() =>
@@ -734,10 +730,12 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 			await Promise.resolve();
 		});
 
-		expect(toastAddMock).toHaveBeenCalled();
-		toastCloseMock.mockClear();
+		expect(screen.getByRole("status").textContent).toMatch(
+			/Preparing project sandbox/i,
+		);
+		expect(toastAddMock).not.toHaveBeenCalled();
 
-		// Switch project while provision toast is open.
+		// Switch project while provision is in flight.
 		checkQueryState.current = {
 			data: undefined,
 			error: null,
@@ -746,8 +744,6 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 			refetch: checkRefetchMock,
 		};
 		rerender(<ProjectWorkspacePage projectId="proj-2" sessionId="sess-2" />);
-
-		expect(toastCloseMock).toHaveBeenCalled();
 
 		// Stale provision result for old project must not enable workspace.
 		provisionMutationState.current = {

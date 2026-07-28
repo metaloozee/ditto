@@ -6,10 +6,12 @@ import {
 } from "@tanstack/react-query";
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { AlertCircleIcon } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Chat } from "#/components/ai-chat";
 import { Button } from "#/components/ui/button";
 import { useSidebar } from "#/components/ui/sidebar";
+import { Spinner } from "#/components/ui/spinner";
 import { toast } from "#/components/ui/toast";
 import { useTRPC } from "#/integrations/trpc/react";
 import { cn } from "#/lib/utils";
@@ -53,7 +55,7 @@ function workspaceMatches(
 }
 
 function WorkspaceStatusBar(props: {
-	mode: "restore-failed" | "check-error";
+	mode: "restore-failed" | "check-error" | "provisioning";
 	message?: string;
 	pending?: boolean;
 	onRetryRestore?: () => void;
@@ -61,10 +63,13 @@ function WorkspaceStatusBar(props: {
 	retryError?: string | null;
 }) {
 	const { state, isMobile } = useSidebar();
+	const reduceMotion = useReducedMotion();
 	// Match floating sidebar p-2 inset when open on desktop.
 	const alignSidebar = !isMobile && state === "expanded";
-	const message =
-		props.mode === "restore-failed"
+	const provisioning = props.mode === "provisioning";
+	const message = provisioning
+		? "Preparing project sandbox…"
+		: props.mode === "restore-failed"
 			? "Workspace restore failed"
 			: (props.message ?? "Project sandbox is not ready yet.");
 	const onRetry =
@@ -74,36 +79,63 @@ function WorkspaceStatusBar(props: {
 		: props.mode === "restore-failed"
 			? "Retry restore"
 			: "Retry";
+	// Strong ease-out (Emil). Exit slightly faster than enter.
+	const ease = [0.23, 1, 0.32, 1] as const;
+	const enter = {
+		duration: reduceMotion ? 0 : 0.2,
+		ease,
+	};
+	const exit = {
+		duration: reduceMotion ? 0 : 0.15,
+		ease,
+	};
 
 	return (
-		<div
-			role="alert"
-			className={cn(
-				"flex shrink-0 flex-wrap items-center justify-between gap-2 border border-destructive/25 bg-destructive/10 px-4 py-2.5 text-xs text-destructive transition-[margin,border-radius,border-color] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none",
-				alignSidebar
-					? "mt-2 mr-2 rounded-t-lg"
-					: "mt-0 mr-0 rounded-none border-x-transparent border-t-transparent",
-			)}
+		<motion.div
+			initial={{ height: 0, opacity: 0 }}
+			animate={{ height: "auto", opacity: 1, transition: enter }}
+			exit={{ height: 0, opacity: 0, transition: exit }}
+			className="shrink-0 overflow-hidden"
 		>
-			<div className="flex min-w-0 items-center gap-2">
-				<AlertCircleIcon className="size-3.5 shrink-0" aria-hidden="true" />
-				<p className="min-w-0 font-medium">{message}</p>
-			</div>
-			<Button
-				type="button"
-				size="sm"
-				variant="outline"
-				className="border-destructive/30 bg-background/80 hover:bg-background"
-				disabled={props.pending}
-				aria-busy={props.pending || undefined}
-				onClick={onRetry}
+			<div
+				role={provisioning ? "status" : "alert"}
+				aria-live={provisioning ? "polite" : undefined}
+				className={cn(
+					"flex flex-wrap items-center gap-2 border px-4 py-2.5 text-xs transition-[margin,border-radius,border-color] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none",
+					provisioning
+						? "justify-start border-blue-500/25 bg-blue-500/10 text-blue-700 dark:text-blue-300"
+						: "justify-between border-destructive/25 bg-destructive/10 text-destructive",
+					alignSidebar
+						? "mt-2 mr-2 rounded-t-lg"
+						: "mt-0 mr-0 rounded-none border-x-transparent border-t-transparent",
+				)}
 			>
-				{label}
-			</Button>
-			{props.retryError ? (
-				<p className="w-full text-destructive/90">{props.retryError}</p>
-			) : null}
-		</div>
+				<div className="flex min-w-0 items-center gap-2">
+					{provisioning ? (
+						<Spinner size="sm" className="size-3.5 shrink-0" />
+					) : (
+						<AlertCircleIcon className="size-3.5 shrink-0" aria-hidden="true" />
+					)}
+					<p className="min-w-0 font-medium">{message}</p>
+				</div>
+				{provisioning ? null : (
+					<Button
+						type="button"
+						size="sm"
+						variant="outline"
+						className="border-destructive/30 bg-background/80 hover:bg-background"
+						disabled={props.pending}
+						aria-busy={props.pending || undefined}
+						onClick={onRetry}
+					>
+						{label}
+					</Button>
+				)}
+				{props.retryError ? (
+					<p className="w-full text-destructive/90">{props.retryError}</p>
+				) : null}
+			</div>
+		</motion.div>
 	);
 }
 
@@ -118,7 +150,6 @@ export function ProjectWorkspacePage({
 	const queryClient = useQueryClient();
 	const provisionStartedRef = useRef(false);
 	const awaitingFenceRef = useRef(false);
-	const provisionToastRef = useRef<{ id: string } | null>(null);
 	const [awaitingFence, setAwaitingFence] = useState(false);
 
 	const projectQuery = useQuery(
@@ -223,30 +254,17 @@ export function ProjectWorkspacePage({
 				(checkQuery.isPending || checkQuery.isFetching) &&
 				!checkQuery.data));
 
-	// Reset provision/toast refs when project or session changes.
+	// Reset provision fence when project or session changes.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: cleanup must re-run on id change
 	useEffect(() => {
 		return () => {
-			const pending = provisionToastRef.current;
-			if (pending) {
-				toast.close(pending.id);
-			}
-			provisionToastRef.current = null;
 			provisionStartedRef.current = false;
 			awaitingFenceRef.current = false;
 			setAwaitingFence(false);
 		};
 	}, [projectId, sessionId]);
 
-	const startProvisionWithToast = useCallback(async () => {
-		const toastId = `sandbox-provision-${projectId}`;
-		const id = toast.add({
-			id: toastId,
-			type: "loading",
-			description: "Preparing project sandbox...",
-		});
-		provisionToastRef.current = { id };
-
+	const startProvision = useCallback(async () => {
 		try {
 			const result = (await provisionMutation.mutateAsync({
 				projectId,
@@ -255,11 +273,10 @@ export function ProjectWorkspacePage({
 			const state = result.sandbox?.state;
 
 			if (state && SUCCESS_SANDBOX_STATES.has(state)) {
-				toast.update(id, {
+				toast.add({
 					type: "success",
 					description: "Project sandbox ready",
 				});
-				provisionToastRef.current = null;
 				awaitingFenceRef.current = false;
 				setAwaitingFence(false);
 				provisionStartedRef.current = false;
@@ -267,36 +284,16 @@ export function ProjectWorkspacePage({
 			}
 
 			if (state === "failed" || result.restoreFailed) {
-				toast.update(id, {
-					type: "error",
-					description: "Workspace restore failed",
-				});
-				provisionToastRef.current = null;
 				awaitingFenceRef.current = false;
 				setAwaitingFence(false);
 				provisionStartedRef.current = false;
 				return;
 			}
 
-			if (state === "provisioning") {
-				// Keep loading; lost-fence settle effect finishes it.
-				awaitingFenceRef.current = true;
-				setAwaitingFence(true);
-				return;
-			}
-
-			// Unexpected non-terminal result — keep loading and poll.
+			// provisioning / unexpected non-terminal — keep bar; settle effect finishes it.
 			awaitingFenceRef.current = true;
 			setAwaitingFence(true);
-		} catch (error) {
-			toast.update(id, {
-				type: "error",
-				description:
-					error instanceof Error
-						? error.message
-						: "Project sandbox is not ready yet.",
-			});
-			provisionToastRef.current = null;
+		} catch {
 			awaitingFenceRef.current = false;
 			setAwaitingFence(false);
 			provisionStartedRef.current = false;
@@ -312,36 +309,25 @@ export function ProjectWorkspacePage({
 		}
 		if (provisionPending || provisionStartedRef.current) return;
 		provisionStartedRef.current = true;
-		void startProvisionWithToast();
-	}, [checkState, provisionPending, startProvisionWithToast]);
+		void startProvision();
+	}, [checkState, provisionPending, startProvision]);
 
-	// Lost-fence settle: finish toast when check reaches a terminal state.
+	// Lost-fence settle: success toast when check reaches a terminal state.
 	useEffect(() => {
 		if (!awaitingFenceRef.current) return;
-		const toastId = provisionToastRef.current?.id;
 		if (checkState === "connected") {
-			if (toastId) {
-				toast.update(toastId, {
-					type: "success",
-					description: "Project sandbox ready",
-				});
-			}
+			toast.add({
+				type: "success",
+				description: "Project sandbox ready",
+			});
 			awaitingFenceRef.current = false;
 			setAwaitingFence(false);
-			provisionToastRef.current = null;
 			provisionStartedRef.current = false;
 			return;
 		}
 		if (checkState === "failed" || restoreFailed) {
-			if (toastId) {
-				toast.update(toastId, {
-					type: "error",
-					description: "Workspace restore failed",
-				});
-			}
 			awaitingFenceRef.current = false;
 			setAwaitingFence(false);
-			provisionToastRef.current = null;
 			provisionStartedRef.current = false;
 		}
 	}, [checkState, restoreFailed]);
@@ -393,11 +379,13 @@ export function ProjectWorkspacePage({
 		);
 	}
 
-	let bar: "restore-failed" | "check-error" | null = null;
+	let bar: "restore-failed" | "check-error" | "provisioning" | null = null;
 	if (restoreFailed) {
 		bar = "restore-failed";
 	} else if (checkError && !provisionPending && !awaitingFence) {
 		bar = "check-error";
+	} else if (isPreparing) {
+		bar = "provisioning";
 	}
 
 	const workspaceUsable = successReady;
@@ -414,24 +402,27 @@ export function ProjectWorkspacePage({
 
 	return (
 		<main className="flex h-dvh flex-col overflow-hidden bg-background">
-			{bar ? (
-				<WorkspaceStatusBar
-					mode={bar}
-					message={checkError?.message}
-					pending={
-						bar === "restore-failed"
-							? retryPending || provisionPending
-							: checkQuery.isFetching || checkQuery.isPending
-					}
-					onRetryRestore={() =>
-						retryRestoreMutation.mutate({ projectId, sessionId })
-					}
-					onRetryCheck={() => {
-						void checkQuery.refetch();
-					}}
-					retryError={retryRestoreMutation.error?.message ?? null}
-				/>
-			) : null}
+			<AnimatePresence initial={false}>
+				{bar ? (
+					<WorkspaceStatusBar
+						key="workspace-status"
+						mode={bar}
+						message={checkError?.message}
+						pending={
+							bar === "restore-failed"
+								? retryPending || provisionPending
+								: checkQuery.isFetching || checkQuery.isPending
+						}
+						onRetryRestore={() =>
+							retryRestoreMutation.mutate({ projectId, sessionId })
+						}
+						onRetryCheck={() => {
+							void checkQuery.refetch();
+						}}
+						retryError={retryRestoreMutation.error?.message ?? null}
+					/>
+				) : null}
+			</AnimatePresence>
 			<div className="min-h-0 flex-1">
 				<Chat
 					projectId={projectId}
