@@ -401,7 +401,7 @@ export function ProjectWorkspacePage({
 	}
 
 	return (
-		<main className="flex h-dvh flex-col overflow-hidden bg-background">
+		<main className="flex h-dvh min-w-0 flex-col overflow-hidden bg-background">
 			<AnimatePresence initial={false}>
 				{bar ? (
 					<WorkspaceStatusBar
@@ -423,7 +423,7 @@ export function ProjectWorkspacePage({
 					/>
 				) : null}
 			</AnimatePresence>
-			<div className="min-h-0 flex-1">
+			<div className="min-h-0 min-w-0 flex-1">
 				<Chat
 					projectId={projectId}
 					sessionId={selectedSessionId}

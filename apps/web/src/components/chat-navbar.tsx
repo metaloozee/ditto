@@ -22,7 +22,7 @@ type ChatNavbarProps = {
 	rightActions?: ReactNode;
 };
 
-/** size-6 trigger (24px) + trailing gap so the branch eases left with the collapse. */
+/** size-6 trigger (24px) + 8px gap. Width-tweened so neighbors ease instead of snap. */
 const TRIGGER_SLOT_WIDTH = 32;
 
 export function ChatNavbar({
@@ -87,50 +87,49 @@ export function ChatNavbar({
 		</div>
 	);
 
-	const tools = (
-		<TooltipProvider delay={200}>
-			<div className="flex shrink-0 items-center gap-1">
-				{rightActions}
-				<AnimatePresence initial={false}>
-					{showToolsTrigger && onToolsOpenChange ? (
-						<motion.div
-							key="tools-trigger"
-							initial={{ opacity: 0 }}
-							animate={{ opacity: 1 }}
-							exit={{ opacity: 0 }}
-							transition={{ duration, ease }}
-						>
-							<SessionToolsTrigger
-								open={false}
-								onOpenChange={onToolsOpenChange}
-								disabled={disabled || !hasSession}
-							/>
-						</motion.div>
-					) : null}
-				</AnimatePresence>
-			</div>
-		</TooltipProvider>
-	);
-
 	return (
 		<nav
 			aria-label="Chat controls"
-			className="absolute inset-x-0 top-0 z-10 flex w-full items-center gap-2 bg-transparent px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 sm:px-6"
+			className="pointer-events-none absolute inset-x-0 top-0 z-10 w-full bg-gradient-to-b from-background from-60% to-transparent pt-[max(1rem,env(safe-area-inset-top))] pb-6 sm:pb-8"
 		>
-			<div className="min-w-0 flex-1">
-				{gitExportEnabled && projectId && sessionId && !disabled ? (
-					<SessionGitActions
-						projectId={projectId}
-						sessionId={sessionId}
-						disabled={disabled}
-					>
-						{left}
-					</SessionGitActions>
-				) : (
-					<div className="min-w-0">{left}</div>
-				)}
+			<div className="pointer-events-auto flex w-full items-center px-5 sm:px-6">
+				<div className="min-w-0 flex-1">
+					{gitExportEnabled && projectId && sessionId && !disabled ? (
+						<SessionGitActions
+							projectId={projectId}
+							sessionId={sessionId}
+							disabled={disabled}
+						>
+							{left}
+						</SessionGitActions>
+					) : (
+						<div className="min-w-0">{left}</div>
+					)}
+				</div>
+				{rightActions ? (
+					<div className="ml-2 flex shrink-0 items-center">{rightActions}</div>
+				) : null}
+				<TooltipProvider delay={200}>
+					<AnimatePresence initial={false}>
+						{showToolsTrigger && onToolsOpenChange ? (
+							<motion.div
+								key="tools-trigger"
+								initial={{ opacity: 0, width: 0 }}
+								animate={{ opacity: 1, width: TRIGGER_SLOT_WIDTH }}
+								exit={{ opacity: 0, width: 0 }}
+								transition={{ duration, ease }}
+								className="flex h-6 shrink-0 items-center justify-end overflow-hidden"
+							>
+								<SessionToolsTrigger
+									open={false}
+									onOpenChange={onToolsOpenChange}
+									disabled={disabled || !hasSession}
+								/>
+							</motion.div>
+						) : null}
+					</AnimatePresence>
+				</TooltipProvider>
 			</div>
-			{tools}
 		</nav>
 	);
 }
