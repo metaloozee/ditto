@@ -314,6 +314,98 @@ Locked outcomes:
   `waitUntil` restore.
 - Branch: `advisor/031-sandbox-check-provision-split`.
 
+## Plan 032 (privileged Git credential boundary)
+
+Planned at commit `b783dec` on 2026-07-29 from Workstream 1 of the approved
+`docs/superpowers/specs/2026-07-26-platform-hardening-design.md` umbrella spec.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 032 | Isolate privileged GitHub fetch and push operations | P0 | L | 010, 013, 029 (DONE) | DONE (worktree `advisor/032-isolate-privileged-git` @ 4da19f4; live fetch/push/PR auth-channel smoke PASS) |
+
+Locked outcomes:
+
+- Token-bearing fetch/push runs from a fresh temporary bare repository with a
+  code-owned Git environment, disabled hooks/helpers, HTTPS-only transport, and
+  no inherited repository/system/global config.
+- Fetch/push installation auth is command-scoped environment-backed HTTP auth;
+  no fetch/push token or encoded credential enters a URL, command, remote, file,
+  log, or backup. Initial SDK clone remains a deferred exception.
+- Push exports the exact `headRev` inspected by the existing shared egress
+  preflight; UI and agent paths stay unified.
+- Primary/session fetch and push share one branch-ref validator/builder; every
+  full ref/refspec remains shell-quoted as one argument.
+- Clone/bootstrap auth, same-UID process isolation, and custom proxy/CA support
+  remain out of scope.
+- Branch: `advisor/032-isolate-privileged-git`.
+
+## Plan 033 (detached agent SSE delivery)
+
+Planned at commit `b783dec` on 2026-07-29 from STREAM-1 and STREAM-2 in
+Workstream 2 of the approved
+`docs/superpowers/specs/2026-07-26-platform-hardening-design.md` umbrella spec.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 033 | Detach agent SSE delivery without stopping execution | P0 | S | 017, 018, 023, 032 | DONE-local (merged `23babdb`; CF disconnect smoke NOT RUN) |
+
+Locked outcomes:
+
+- The route owns an explicit attached/detached/closed delivery state; browser
+  cancellation makes later SSE encoding and controller operations no-ops.
+- Delivery/controller races never throw into `executeAgentRun`; terminal
+  assistant persistence and post-run backup continue after disconnect *for as
+  long as the Worker invocation survives*.
+- Browser cancellation remains distinct from authenticated Stop and never
+  aborts the sandbox process.
+- Runner/Worker queue bounds, stdout backpressure, coalescing, and public tool
+  event projection remain in the later STREAM-3/STREAM-4 plan.
+- **This plan is a small delivery-safety patch**, not a durable-execution
+  redesign. Cloudflare may still cancel the HTTP invocation after client
+  disconnect (`waitUntil()` ≤ ~30s). A deployed >30s disconnect smoke was
+  **not** run (project not deployed; Sandboxes not provisioned). Treat
+  post-disconnect completion as best-effort until a later ownership change.
+- **Future direction (maintainer)**: agent-run ownership may move off the
+  request-scoped Worker onto a Durable Object (and/or Workflow/Queue) so long
+  runs outlive the browser connection. Do not paper over that gap with
+  `waitUntil()` inside this patch.
+- Branch: `advisor/033-detach-agent-sse-delivery` (merged into local master).
+
+## Plans 034–036 (sandbox ownership and runner trust)
+
+Planned at commit `b783dec` on 2026-07-29 from Workstream 3 of the approved
+`docs/superpowers/specs/2026-07-26-platform-hardening-design.md` umbrella spec.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 034 | Own every project sandbox before bootstrap and reconcile failures | P0 | M | 032, 033 | TODO |
+| 035 | Isolate sandbox workloads and verify the runner before credentials | P0 | L | 032, 033, 034 | TODO (feasibility-gated) |
+| 036 | Centralize runner entrypoints and sandbox provision success | P1 | M | 034, 035 | TODO |
+
+Locked outcomes:
+
+- Plan 034 reuses the existing `projects.sandboxId`, backup, status, and deletion
+  fields: the initial provisioning row owns the generated ID before first
+  sandbox contact; final ready persistence is fenced/read back; failed rows
+  retain the exact ID/backup for existing retry/delete. No migration or
+  background reconciler.
+- Plan 035 must first prove that a dropped workload cannot reach the pinned
+  Sandbox root control plane. A global Docker `USER` is rejected for SDK 0.12.3.
+  If the capability gate fails, mark BLOCKED instead of shipping a cosmetic UID
+  drop. If it passes, repository commands run through a fixed non-root launcher,
+  project env is applied only after the drop, and a complete root-owned integrity
+  gate runs before credentials.
+- Plan 035 requires local image and authorized deployed smokes for control-plane
+  denial, FUSE backup/restore, UID/write permissions, tamper fencing, agent,
+  preview, and Plan-032 credential-lane isolation. Without them it is BLOCKED.
+- Plan 036 uses `packages/sandbox-runner/package.json#bin` as the exact six-entry
+  image manifest, with a tested Worker role map and manifest-derived Docker/
+  integrity coverage. It also replaces every copied three-state provision
+  success set with one pure shared predicate.
+- Branches: `advisor/034-project-sandbox-ownership`,
+  `advisor/035-sandbox-workload-runner-integrity`, and
+  `advisor/036-sandbox-runner-contract`.
+
 ### Audit finding coverage
 
 | Selected finding | Covered by | Combination rationale |
@@ -581,6 +673,21 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
 - **031 requires 030** — quiet warm path splits the Plan 030 ensure entry into
   check vs provision without reopening fence, history-decoupling, or disablement
   work already landed.
+- **032 requires 010, 013, and 029** — isolate the established primary/session
+  fetch and shared push orchestration only after synchronization, outgoing
+  secret preflight, and push-then-PR routing are stable.
+- **033 requires 017, 018, 023, and 032** — detach response delivery only after
+  the run service owns terminal persistence/backup, ordered batching is stable,
+  authenticated follow-up/Stop is the sole execution-control contract, and
+  Plan 032's overlapping architecture-doc edits have landed.
+- **034 requires 032 and 033** — bootstrap ownership follows the approved
+  hardening order and rebases its security/server documentation after both
+  preceding cross-cutting plans land.
+- **035 requires 032, 033, and 034** — the non-root/integrity boundary must
+  preserve isolated privileged Git, detached execution, and the stable sandbox
+  ownership/recovery key. Its control-plane capability gate may block execution.
+- **036 requires 034 and 035** — artifact/provision contract cleanup derives
+  from the landed integrity/launcher boundary and cannot certify it in advance.
 
 ## Product decisions (locked 2026-07-09)
 
@@ -673,12 +780,17 @@ tree while sharing git objects and (via symlink) `node_modules`.
 19. `023-pi-follow-up-and-stop-controls.md`
 20. `024-conservative-sst-monorepo-migration.md`
 21. `025-account-provider-auth-and-pi-models.md`
-  22. `026-agent-drafted-git-metadata.md`
-  23. `027-session-live-previews.md`
-  24. `028-session-workspace-readiness.md`
-  25. `029-session-git-export-orchestration.md`
-  26. `030-sandbox-readiness-loading.md`
-  27. `031-sandbox-check-provision-split.md`
+22. `026-agent-drafted-git-metadata.md`
+23. `027-session-live-previews.md`
+24. `028-session-workspace-readiness.md`
+25. `029-session-git-export-orchestration.md`
+26. `030-sandbox-readiness-loading.md`
+27. `031-sandbox-check-provision-split.md`
+28. `032-isolate-privileged-git.md`
+29. `033-detach-agent-sse-delivery.md`
+30. `034-own-and-clean-project-sandboxes.md`
+31. `035-isolate-sandbox-workloads-and-verify-runner.md`
+32. `036-centralize-sandbox-runner-contract.md`
 
 ## Planning update — 2026-07-23 (Plan 028)
 
@@ -834,3 +946,123 @@ subagent (not new plan files).
   `docs/superpowers/specs/2026-07-25-sandbox-check-provision-split-design.md`.
 - **Deferred out of 031** (still): stale-provisioning lease/timeout, keep-alive
   tuning, persisted runtime status column, sidebar provisioning presentation.
+
+## Planning update — 2026-07-29 (Plan 032)
+
+- **Current HEAD / planned-at**: `b783dec`.
+- **TODO 032**: isolate GitHub installation-token fetch/push from repository
+  hooks/configuration, remove tokenized URLs, validate and quote full refs, and
+  retain the existing shared outgoing-secret preflight.
+- **Source state at planning time**: clean at HEAD. The approved umbrella spec
+  `docs/superpowers/specs/2026-07-26-platform-hardening-design.md` is an existing
+  untracked user file and must be preserved untouched.
+- **Executable now**: Plan 032. Live GitHub fetch/push must PASS before DONE;
+  otherwise mark BLOCKED with local gates recorded. PR/Docker smokes may be
+  recorded NOT RUN only as specified by the plan. No deployment is authorized.
+
+## Execution update — 2026-07-31 (Plan 032)
+
+- **Worktree**: `/home/ayan/ditto/.worktrees/032-isolate-privileged-git`
+- **Branch**: `advisor/032-isolate-privileged-git` @ `4da19f4`
+- **Local gates**: focused privileged-git tests 19/19; earlier focused lib suite
+  105/105; biome clean; web `tsc --noEmit` exit 0. Full `pnpm test` still has
+  pre-existing out-of-scope failure in `ai-chat.test.tsx` (`bg-transparent`).
+- **Docker image smoke**: PASS via `docker.exe` — `node=/usr/local/bin/node`,
+  `git=/usr/bin/git`, `GIT_CONFIG_COUNT` env config works. Follow-up commit
+  `4da19f4` corrected launcher node path (was wrongly `/usr/bin/node`).
+- **Live GitHub fetch/push smoke**: PASS — installation-token HTTP Basic via
+  `http.https://github.com/.extraHeader` against installation-accessible repo
+  `metaloozee/skills` on disposable branch `ditto/plan-032-smoke-semi`; exact-SHA
+  stage/push; source `pre-push`/URL-rewrite config not consulted; branch deleted
+  after. (Could not add a brand-new repo to the selected-repos installation via
+  API; auth channel proof used an accessible repo + disposable branch.)
+- **PR creation smoke**: PASS (draft PR opened with installation token, then
+  closed; branch deleted).
+- **Status**: DONE. Not merged — user decision.
+- **Next**: merge `advisor/032-isolate-privileged-git`, then Plan 033.
+
+## Planning update — 2026-07-29 (Plan 033)
+
+- **Current HEAD / planned-at**: `b783dec`.
+- **TODO 033**: make agent SSE cancellation detach browser delivery without
+  throwing controller errors into execution; preserve terminal message writes,
+  backup, and authenticated Stop semantics.
+- **Baseline**: focused agent tests pass (3 files / 52 tests), typecheck passes,
+  and check exits 0 with 32 warnings. The full web suite currently has one
+  unrelated navbar-class assertion failure in `ai-chat.test.tsx`; Plan 033 must
+  not modify it and must compare the before/after full-suite result.
+- **Source state at planning time**: implementation/docs paths are unchanged at
+  HEAD. Preserve the existing Plan 032/index edits and untracked umbrella spec.
+- **Executable now**: Plan 032 is BLOCKED on live GitHub auth only (local work
+  on `advisor/032-isolate-privileged-git`). Plan 033 starts after 032 lands
+  because their documentation scope overlaps. Plan 033's local implementation
+  needs no external service, but DONE requires an authorized deployed
+  >30-second disconnect smoke; without it, record BLOCKED.
+
+## Planning update — 2026-07-29 (Plans 034–036)
+
+- **Current HEAD / planned-at**: `b783dec`.
+- **TODO 034**: close SANDBOX-1 without a migration by persisting the generated
+  sandbox ID before bootstrap, fencing/read-backing readiness, and retaining a
+  failed retry/delete record when cleanup cannot complete.
+- **TODO 035**: address SANDBOX-2/3 only after proving the pinned root Sandbox
+  control plane is inaccessible to a dropped workload. Upstream SDK 0.12.3 has
+  no per-command user option, and a Docker `USER` also drops root-required
+  control-plane setup; failure of the explicit local/deployed capability gate
+  blocks this plan rather than authorizing a weaker boundary.
+- **TODO 036**: after 035 is DONE, make the runner package bin manifest cover all
+  six Worker entries (including agent control and Git metadata), derive/test
+  Docker/health/Worker parity, and centralize the exact three provision-success
+  states.
+- **Planning verification**: focused project/bootstrap/sandbox tests pass (3
+  files / 57 tests); runner suite passes (11 files / 81 tests). A fresh-context
+  xAI Grok 4.5 subagent cold-reviewed all three plans; 034/035 were tightened
+  around recovery evidence, fixed identity/session mechanics, capability gating,
+  CI, and integrity latency, while 036 passed with contract-test nits applied.
+  No source build, Docker build, deploy, or live credential flow was run while
+  planning.
+- **Source state**: preserve the existing modified index and untracked approved
+  umbrella spec/Plans 032–033. Plans 034–036 are additional planning artifacts;
+  no source file was modified.
+- **Executable now**: Plan 032 local work is on
+  `advisor/032-isolate-privileged-git` (BLOCKED pending live GitHub smoke).
+  After 032 DONE/merge: 033 → 034. Plan 035 begins with a mandatory security
+  capability gate and may become BLOCKED. Plan 036 cannot start until 035 is
+  DONE.
+
+## Execution update — 2026-07-31 (Plan 033)
+
+- **Worktree**: `/home/ayan/ditto/.worktrees/033-detach-agent-sse-delivery`
+- **Branch**: `advisor/033-detach-agent-sse-delivery` @ `23babdb`
+  (`fix(agent): detach SSE delivery on cancel`)
+- **Merged into**: local `master` @ `23babdb` (fast-forward; user-directed).
+  Not pushed to `origin`.
+- **Executor**: xAI Grok 4.5; advisor review APPROVE for local scope
+- **Files**: `api.agent.stream.ts`, `api.agent.stream.test.ts`,
+  `docs/architecture/agent-harness.md`, `docs/architecture/security.md`
+- **What shipped**: small route-owned `attached | detached | closed` delivery
+  state so browser cancel cannot throw into `executeAgentRun`. Authenticated
+  Stop unchanged. No Queue/Workflow/DO ownership change.
+- **Local verification (implemented + tested)**:
+  - Focused agent tests: 3 files / 57 pass (52 baseline + 5 disconnect/error
+    cases: text, tool progress, follow-up boundary, terminal settlement,
+    unexpected service escape).
+  - `pnpm typecheck` exit 0; `pnpm check` exit 0 (32 pre-existing warnings);
+    `pnpm build` exit 0; `pnpm runner:verify` exit 0; `git diff --check` clean;
+    scope exact.
+  - Full web suite: same sole pre-existing `ai-chat.test.tsx`
+    `bg-transparent` failure; no new regressions from this plan.
+- **Cloudflare / deployed disconnect smoke**: **NOT RUN**. Project is early-stage
+  and not deployed; operator is not provisioning Cloudflare Sandboxes for this
+  gate. Residual risk stands: after client disconnect, CF may cancel the Worker
+  invocation; assistant can remain `pending` and backup may not run. Do not use
+  `waitUntil()` as a substitute.
+- **Status**: **DONE-local** — code merged and locally verified. Full platform
+  DONE (STREAM-1 durable post-disconnect execution) is **deferred**, not faked.
+- **Maintainer note (2026-07-31)**: this is intentionally a small patch. A future
+  design may move agent-run ownership from the request-scoped Worker to a
+  Durable Object (optionally with Workflow/Queue) so long runs outlive the
+  browser connection; SSE would become delivery-only against that owner.
+- **Next**: Plan 034 may proceed against this local baseline. Re-run a deployed
+  >30s disconnect smoke whenever staging exists; if CF cancels mid-run, commission
+  the DO/Workflow ownership work rather than enlarging this patch.
