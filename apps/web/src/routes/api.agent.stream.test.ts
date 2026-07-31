@@ -11,6 +11,11 @@ const prepareAgentRunMock = vi.hoisted(() => vi.fn());
 const executeAgentRunMock = vi.hoisted(() => vi.fn());
 const createAuthMock = vi.hoisted(() => vi.fn());
 const createDbMock = vi.hoisted(() => vi.fn());
+const encodeSseEventMock = vi.hoisted(() =>
+	vi.fn((event: string, data: unknown) => {
+		return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+	}),
+);
 
 const routeOptions = vi.hoisted(() => ({
 	current: null as null | {
@@ -64,6 +69,10 @@ vi.mock("#/lib/agent-run-service", () => ({
 	executeAgentRun: executeAgentRunMock,
 }));
 
+vi.mock("#/lib/agent-stream-protocol", () => ({
+	encodeSseEvent: encodeSseEventMock,
+}));
+
 await import("./api.agent.stream");
 
 function getPostHandler() {
@@ -84,6 +93,16 @@ function authed() {
 	});
 }
 
+function deferred<T = void>() {
+	let resolve!: (value: T) => void;
+	let reject!: (error: unknown) => void;
+	const promise = new Promise<T>((res, rej) => {
+		resolve = res;
+		reject = rej;
+	});
+	return { promise, resolve, reject };
+}
+
 async function postJson(body: unknown): Promise<Response> {
 	return getPostHandler()({
 		request: new Request("http://localhost/api/agent/stream", {
@@ -92,6 +111,40 @@ async function postJson(body: unknown): Promise<Response> {
 			body: JSON.stringify(body),
 		}),
 	});
+}
+
+const STREAM_BODY = {
+	projectId: "proj-1",
+	message: "hi",
+	model: "opencode/deepseek-v4-flash-free",
+} as const;
+
+function readyPrepare() {
+	prepareAgentRunMock.mockResolvedValue({
+		kind: "ready",
+		context: {
+			sessionId: "sess-1",
+			assistantMessageId: "asst-1",
+		},
+	});
+}
+
+async function readFirstChunk(reader: ReadableStreamDefaultReader<Uint8Array>) {
+	const first = await reader.read();
+	expect(first.done).toBe(false);
+	expect(first.value).toBeInstanceOf(Uint8Array);
+	return first.value;
+}
+
+function bodyReader(
+	response: Response,
+): ReadableStreamDefaultReader<Uint8Array> {
+	const body = response.body;
+	expect(body).not.toBeNull();
+	if (!body) {
+		throw new Error("expected response body");
+	}
+	return body.getReader();
 }
 
 describe("api.agent.stream POST adapter", () => {
@@ -164,13 +217,7 @@ describe("api.agent.stream POST adapter", () => {
 	});
 
 	it("encodes SSE events from executeAgentRun in order", async () => {
-		prepareAgentRunMock.mockResolvedValue({
-			kind: "ready",
-			context: {
-				sessionId: "sess-1",
-				assistantMessageId: "asst-1",
-			},
-		});
+		readyPrepare();
 
 		executeAgentRunMock.mockImplementation(async ({ emit }) => {
 			emit({
@@ -212,6 +259,361 @@ describe("api.agent.stream POST adapter", () => {
 		expect(metaAt).toBeGreaterThanOrEqual(0);
 		expect(deltaAt).toBeGreaterThan(metaAt);
 		expect(doneAt).toBeGreaterThan(deltaAt);
+	});
+});
+
+describe("api.agent.stream disconnect delivery", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		createDbMock.mockReturnValue({});
+		authed();
+		readyPrepare();
+	});
+
+	it("detaches during text without stopping execution markers", async () => {
+		const phaseReached = deferred();
+		const release = deferred();
+		const executionFinished = deferred();
+		const markers: string[] = [];
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+		executeAgentRunMock.mockImplementation(async ({ emit }) => {
+			try {
+				emit({
+					event: "meta",
+					data: {
+						sessionId: "sess-1",
+						userMessageId: "u1",
+						assistantMessageId: "asst-1",
+						createdSession: false,
+						sandboxState: "ready",
+					},
+				});
+				emit({ event: "delta", data: { delta: "Hi" } });
+				phaseReached.resolve();
+				await release.promise;
+				emit({ event: "delta", data: { delta: " there" } });
+				markers.push("terminal-persistence");
+				markers.push("backup");
+				emit({
+					event: "done",
+					data: {
+						ok: true,
+						assistantMessageId: "asst-1",
+						content: "Hi there",
+					},
+				});
+				executionFinished.resolve();
+			} catch (error) {
+				executionFinished.reject(error);
+				throw error;
+			}
+		});
+
+		const response = await postJson(STREAM_BODY);
+		const reader = bodyReader(response);
+		await phaseReached.promise;
+		await readFirstChunk(reader);
+
+		const encodeCountAtCancel = encodeSseEventMock.mock.calls.length;
+		const cancellation = reader.cancel("navigation");
+		release.resolve();
+
+		await expect(cancellation).resolves.toBeUndefined();
+		await expect(executionFinished.promise).resolves.toBeUndefined();
+		expect(markers).toEqual(["terminal-persistence", "backup"]);
+		expect(encodeSseEventMock.mock.calls.length).toBe(encodeCountAtCancel);
+		expect(warnSpy).not.toHaveBeenCalled();
+		expect(errorSpy).not.toHaveBeenCalled();
+		warnSpy.mockRestore();
+		errorSpy.mockRestore();
+	});
+
+	it("detaches during tool progress without stopping execution markers", async () => {
+		const phaseReached = deferred();
+		const release = deferred();
+		const executionFinished = deferred();
+		const markers: string[] = [];
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+		executeAgentRunMock.mockImplementation(async ({ emit }) => {
+			try {
+				emit({
+					event: "meta",
+					data: {
+						sessionId: "sess-1",
+						userMessageId: "u1",
+						assistantMessageId: "asst-1",
+						createdSession: false,
+						sandboxState: "ready",
+					},
+				});
+				emit({
+					event: "agent",
+					data: {
+						type: "tool_execution_start",
+						toolCallId: "tool-1",
+						toolName: "bash",
+					},
+				});
+				phaseReached.resolve();
+				await release.promise;
+				emit({
+					event: "agent",
+					data: {
+						type: "tool_execution_update",
+						toolCallId: "tool-1",
+						toolName: "bash",
+					},
+				});
+				emit({
+					event: "agent",
+					data: {
+						type: "tool_execution_end",
+						toolCallId: "tool-1",
+						toolName: "bash",
+					},
+				});
+				markers.push("terminal-persistence");
+				markers.push("backup");
+				emit({
+					event: "done",
+					data: {
+						ok: true,
+						assistantMessageId: "asst-1",
+						content: "",
+					},
+				});
+				executionFinished.resolve();
+			} catch (error) {
+				executionFinished.reject(error);
+				throw error;
+			}
+		});
+
+		const response = await postJson(STREAM_BODY);
+		const reader = bodyReader(response);
+		await phaseReached.promise;
+		await readFirstChunk(reader);
+
+		const encodeCountAtCancel = encodeSseEventMock.mock.calls.length;
+		const cancellation = reader.cancel("navigation");
+		release.resolve();
+
+		await expect(cancellation).resolves.toBeUndefined();
+		await expect(executionFinished.promise).resolves.toBeUndefined();
+		expect(markers).toEqual(["terminal-persistence", "backup"]);
+		expect(encodeSseEventMock.mock.calls.length).toBe(encodeCountAtCancel);
+		expect(warnSpy).not.toHaveBeenCalled();
+		expect(errorSpy).not.toHaveBeenCalled();
+		warnSpy.mockRestore();
+		errorSpy.mockRestore();
+	});
+
+	it("detaches at queued follow-up boundary without stopping execution markers", async () => {
+		const phaseReached = deferred();
+		const release = deferred();
+		const executionFinished = deferred();
+		const markers: string[] = [];
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+		executeAgentRunMock.mockImplementation(async ({ emit }) => {
+			try {
+				emit({
+					event: "meta",
+					data: {
+						sessionId: "sess-1",
+						userMessageId: "u1",
+						assistantMessageId: "asst-1",
+						createdSession: false,
+						sandboxState: "ready",
+					},
+				});
+				emit({ event: "delta", data: { delta: "first" } });
+				phaseReached.resolve();
+				await release.promise;
+				emit({
+					event: "agent",
+					data: { type: "turn_done", assistantMessageId: "asst-1" },
+				});
+				emit({
+					event: "agent",
+					data: {
+						type: "turn_start",
+						userMessageId: "u2",
+						assistantMessageId: "asst-2",
+					},
+				});
+				markers.push("follow-up-terminal-persistence");
+				markers.push("backup");
+				emit({
+					event: "done",
+					data: {
+						ok: true,
+						assistantMessageId: "asst-2",
+						content: "second",
+					},
+				});
+				executionFinished.resolve();
+			} catch (error) {
+				executionFinished.reject(error);
+				throw error;
+			}
+		});
+
+		const response = await postJson(STREAM_BODY);
+		const reader = bodyReader(response);
+		await phaseReached.promise;
+		await readFirstChunk(reader);
+
+		const encodeCountAtCancel = encodeSseEventMock.mock.calls.length;
+		const cancellation = reader.cancel("navigation");
+		release.resolve();
+
+		await expect(cancellation).resolves.toBeUndefined();
+		await expect(executionFinished.promise).resolves.toBeUndefined();
+		expect(markers).toEqual(["follow-up-terminal-persistence", "backup"]);
+		expect(encodeSseEventMock.mock.calls.length).toBe(encodeCountAtCancel);
+		expect(warnSpy).not.toHaveBeenCalled();
+		expect(errorSpy).not.toHaveBeenCalled();
+		warnSpy.mockRestore();
+		errorSpy.mockRestore();
+	});
+
+	it("detaches during terminal settlement without skipping persistence or backup", async () => {
+		const phaseReached = deferred();
+		const release = deferred();
+		const executionFinished = deferred();
+		const markers: string[] = [];
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+		executeAgentRunMock.mockImplementation(async ({ emit }) => {
+			try {
+				emit({
+					event: "meta",
+					data: {
+						sessionId: "sess-1",
+						userMessageId: "u1",
+						assistantMessageId: "asst-1",
+						createdSession: false,
+						sandboxState: "ready",
+					},
+				});
+				emit({ event: "delta", data: { delta: "Hi" } });
+				markers.push("terminal-persistence-started");
+				phaseReached.resolve();
+				await release.promise;
+				markers.push("terminal-persistence-complete");
+				markers.push("backup");
+				emit({
+					event: "done",
+					data: {
+						ok: true,
+						assistantMessageId: "asst-1",
+						content: "Hi",
+					},
+				});
+				executionFinished.resolve();
+			} catch (error) {
+				executionFinished.reject(error);
+				throw error;
+			}
+		});
+
+		const response = await postJson(STREAM_BODY);
+		const reader = bodyReader(response);
+		await phaseReached.promise;
+		await readFirstChunk(reader);
+
+		const encodeCountAtCancel = encodeSseEventMock.mock.calls.length;
+		const cancellation = reader.cancel("navigation");
+		release.resolve();
+
+		await expect(cancellation).resolves.toBeUndefined();
+		await expect(executionFinished.promise).resolves.toBeUndefined();
+		expect(markers).toEqual([
+			"terminal-persistence-started",
+			"terminal-persistence-complete",
+			"backup",
+		]);
+		expect(encodeSseEventMock.mock.calls.length).toBe(encodeCountAtCancel);
+		expect(warnSpy).not.toHaveBeenCalled();
+		expect(errorSpy).not.toHaveBeenCalled();
+		warnSpy.mockRestore();
+		errorSpy.mockRestore();
+	});
+
+	it("errors an attached reader once on unexpected executeAgentRun escape", async () => {
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		const phaseReached = deferred();
+		const release = deferred();
+
+		executeAgentRunMock.mockImplementation(async ({ emit }) => {
+			emit({
+				event: "meta",
+				data: {
+					sessionId: "sess-1",
+					userMessageId: "u1",
+					assistantMessageId: "asst-1",
+					createdSession: false,
+					sandboxState: "ready",
+				},
+			});
+			phaseReached.resolve();
+			await release.promise;
+			throw new Error("secret-bearing-raw-failure sk-live-xyz");
+		});
+
+		const response = await postJson(STREAM_BODY);
+		const reader = bodyReader(response);
+		// Attach early so stream error does not surface as unhandled rejection.
+		const closed = reader.closed.then(
+			() => ({ ok: true as const }),
+			(error: unknown) => ({ ok: false as const, error }),
+		);
+
+		// Start the stream pull without awaiting so start() can reach phaseReached.
+		const firstRead = reader.read();
+		await phaseReached.promise;
+		const first = await firstRead;
+		expect(first.done).toBe(false);
+		release.resolve();
+
+		let readError: unknown;
+		try {
+			await reader.read();
+		} catch (error) {
+			readError = error;
+		}
+		expect(readError).toBeInstanceOf(Error);
+		expect(String(readError)).toContain("agent stream execution failed");
+		expect(String(readError)).not.toContain("secret-bearing-raw-failure");
+		expect(String(readError)).not.toContain("sk-live-xyz");
+
+		const closedResult = await closed;
+		expect(closedResult.ok).toBe(false);
+		if (!closedResult.ok) {
+			expect(String(closedResult.error)).not.toContain(
+				"secret-bearing-raw-failure",
+			);
+			expect(String(closedResult.error)).not.toContain("sk-live-xyz");
+		}
+
+		// Second terminal action must not warn (close after error is a no-op).
+		expect(errorSpy).toHaveBeenCalledWith("agent stream execution failed");
+		const logged = errorSpy.mock.calls
+			.map((call) => call.map(String).join(" "))
+			.join("\n");
+		expect(logged).not.toContain("secret-bearing-raw-failure");
+		expect(logged).not.toContain("sk-live-xyz");
+		expect(warnSpy).not.toHaveBeenCalled();
+		warnSpy.mockRestore();
+		errorSpy.mockRestore();
 	});
 });
 

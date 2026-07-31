@@ -221,9 +221,13 @@ Anyone with the URL can load the site until Stop/archive/delete revokes it.
 - Secret preflight and ambiguous outgoing Git ranges fail closed.
 - Sandbox runner health is checked before project state is mutated.
 - Assistant terminal persistence is attempted before successful `done`.
-- Browser fetch cancellation and disconnect do not cancel execution. Only an
-  authenticated Stop control calls PI `clearQueue()` and cooperative `abort()`;
-  terminal SSE persistence remains authoritative.
+- Browser fetch cancellation and disconnect detach stream delivery only. The
+  route-owned `attached` / `detached` / `closed` state makes later encode,
+  enqueue, close, and error no-ops; they do not cancel sandbox execution. Only
+  an authenticated Stop control calls PI `clearQueue()` and cooperative
+  `abort()`. Terminal assistant persistence and post-run backup continue while
+  the invocation survives; delivery/controller failures log static secret-free
+  messages and are not classified as agent-run failures.
 - Backup failure is reported as non-fatal after a completed run or Git mutation;
   it does not rewrite the successful operation's result.
 - Client-visible errors are redacted, while server logs avoid raw credentials.

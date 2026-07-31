@@ -57,21 +57,53 @@ export const Route = createFileRoute("/api/agent/stream")({
 				}
 
 				const encoder = new TextEncoder();
+				type DeliveryState = "attached" | "detached" | "closed";
+				let delivery: DeliveryState = "attached";
 				const readable = new ReadableStream<Uint8Array>({
 					async start(controller) {
-						const enqueue = (event: string, data: unknown) => {
-							controller.enqueue(encoder.encode(encodeSseEvent(event, data)));
+						const deliver = (event: string, data: unknown) => {
+							if (delivery !== "attached") {
+								return;
+							}
+							try {
+								controller.enqueue(encoder.encode(encodeSseEvent(event, data)));
+							} catch {
+								delivery = "detached";
+								console.warn("agent stream delivery failed");
+							}
 						};
 
 						try {
 							await executeAgentRun({
 								context: prepared.context,
 								emit: ({ event, data }) => {
-									enqueue(event, data);
+									deliver(event, data);
 								},
 							});
+						} catch {
+							console.error("agent stream execution failed");
+							if (delivery === "attached") {
+								delivery = "closed";
+								try {
+									controller.error(new Error("agent stream execution failed"));
+								} catch {
+									console.warn("agent stream delivery failed");
+								}
+							}
 						} finally {
-							controller.close();
+							if (delivery === "attached") {
+								delivery = "closed";
+								try {
+									controller.close();
+								} catch {
+									console.warn("agent stream delivery failed");
+								}
+							}
+						}
+					},
+					cancel() {
+						if (delivery === "attached") {
+							delivery = "detached";
 						}
 					},
 				});

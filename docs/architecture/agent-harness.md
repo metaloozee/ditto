@@ -34,8 +34,8 @@ Post-run and post-git snapshot writes share `persistProjectSandboxBackup`, which
 Out-of-order completions therefore cannot let an older snapshot replace a newer
 stored generation. Superseded candidates are not failures. First-provision and
 restore/recreate paths may still write the backup handle without the generation
-gate. After each completed agent run, the stream route calls the versioned helper
-once (the runner itself does not snapshot).
+gate. After each completed agent run, `agent-run-service` calls the versioned
+helper once (the runner and stream route do not snapshot).
 
 ## Qualified session layers
 
@@ -160,7 +160,15 @@ after use.
 
 Stop acknowledgement means cancellation was requested, not that the provider
 or tool stopped instantly. The original runner completion and SSE `done` remain
-terminal authority. A browser disconnect remains detached from execution.
+terminal authority. Authenticated Stop is the only application path that cancels
+execution.
+
+The stream route owns per-response delivery state (`attached` → `detached` →
+`closed`). Browser reader cancellation detaches delivery only: later SSE encode
+and enqueue become no-ops, while `executeAgentRun` continues terminal assistant
+persistence and post-run backup for as long as the Worker invocation survives.
+Expected detach is silent; delivery/controller races log a static secret-free
+warning and never throw into the run service.
 
 ## Concurrency
 
