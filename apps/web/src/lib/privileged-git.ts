@@ -3,9 +3,9 @@ import {
 	redactGitHubExportOutput,
 } from "#/lib/github-export";
 
-/** Absolute binaries from the Cloudflare sandbox image (verified in image smoke). */
+/** Absolute binaries from the Cloudflare sandbox image (verified in image smoke): node=/usr/local/bin/node, git=/usr/bin/git. */
 export const PRIVILEGED_GIT_BIN = "/usr/bin/git";
-export const PRIVILEGED_NODE_BIN = "/usr/bin/node";
+export const PRIVILEGED_NODE_BIN = "/usr/local/bin/node";
 
 const TRUSTED_BIN_PREFIXES = ["/usr/bin/", "/usr/local/bin/"] as const;
 
