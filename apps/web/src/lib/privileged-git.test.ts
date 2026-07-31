@@ -4,6 +4,7 @@ import {
 	buildCredentialRedactionSecrets,
 	buildPrivilegedGitChildEnv,
 	fetchGitHubBranchIsolated,
+	PRIVILEGED_GIT_LAUNCHER_SOURCE,
 	PRIVILEGED_NODE_BIN,
 	pushGitHubCommitIsolated,
 	validateGitBranchRefs,
@@ -772,6 +773,14 @@ describe("fetchGitHubBranchIsolated", () => {
 });
 
 describe("launcher source hygiene", () => {
+	it("launcher source is valid JS with escaped newlines", () => {
+		expect(PRIVILEGED_GIT_LAUNCHER_SOURCE).toContain("invalid cwd\\n");
+		expect(PRIVILEGED_GIT_LAUNCHER_SOURCE).not.toMatch(
+			/invalid cwd"\s*\n\s*"\)/,
+		);
+		new Function(PRIVILEGED_GIT_LAUNCHER_SOURCE);
+	});
+
 	it("launcher payload contains no credential and does not merge process.env", async () => {
 		const mintToken = vi.fn(async () => TOKEN);
 		let launcherEncoded: string | undefined;

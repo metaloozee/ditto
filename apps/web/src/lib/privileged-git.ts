@@ -69,7 +69,7 @@ if (!Array.isArray(args) || typeof env !== "object" || env === null) {
 }
 const cwd = process.env.DITTO_PRIVILEGED_GIT_CWD;
 if (!cwd || !cwd.startsWith("/tmp/ditto-privileged-git-")) {
-  process.stderr.write("privileged-git launcher: invalid cwd\n");
+  process.stderr.write("privileged-git launcher: invalid cwd\\n");
   process.exit(2);
 }
 const result = spawnSync(gitBin, args, {
@@ -86,6 +86,8 @@ if (result.stdout) process.stdout.write(result.stdout);
 if (result.stderr) process.stderr.write(result.stderr);
 process.exit(result.status === null ? 1 : result.status);
 `;
+
+export const PRIVILEGED_GIT_LAUNCHER_SOURCE = LAUNCHER_SOURCE;
 
 function assertTrustedBinPath(path: string, label: string): void {
 	if (!TRUSTED_BIN_PREFIXES.some((prefix) => path.startsWith(prefix))) {
