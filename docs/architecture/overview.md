@@ -30,7 +30,7 @@ flowchart LR
   Sandbox --> Runner
   Sandbox -->|create/restore backup| R2
   Worker -->|OAuth and installation auth| GitHub
-  Sandbox -->|short-lived tokenized fetch/push URL| GitHub
+  Sandbox -->|isolated temp-bare HTTPS fetch/push| GitHub
   Runner -->|signed callback for push/PR| Worker
 ```
 
@@ -80,8 +80,9 @@ runtime sequence connecting these layers.
 2. `projects.create` reauthorizes the selected repository, encrypts project
    environment variables, and creates the D1 project row.
 3. `bootstrapSandbox` creates or clears the project sandbox, clones with a
-   short-lived installation token, scrubs the remote URL, installs dependencies,
-   and creates the first R2 directory backup.
+   short-lived installation token (tokenized URL is the explicit initial-clone
+   exception), scrubs the remote URL, installs dependencies, and creates the
+   first R2 directory backup.
 4. The project moves from `provisioning` to `ready`; failures move it to `failed`.
 
 Projects created without a GitHub repository are accepted by the server but do
@@ -135,9 +136,12 @@ not have an agent-capable sandbox. The current UI creates GitHub-backed projects
 2. UI mutations and signed agent callbacks share the same `session-git` domain
    functions.
 3. Mutations run in the session worktree under a per-session atomic lock.
-4. Push preflight rejects secret-like paths and known secret content.
-5. Network Git uses a newly minted GitHub App installation token and always
-   scrubs `origin` back to its public URL.
+4. Push preflight rejects secret-like paths and known secret content before any
+   token is minted; the exact preflight `headRev` is what gets pushed.
+5. Credential-bearing fetch/push runs from a fresh temporary bare repository
+   with a public GitHub URL and command-scoped env auth; objects transfer by
+   exact SHA without credentials. Remote scrubbing remains defense in depth.
+   Initial SDK clone still uses a tokenized URL as the documented exception.
 6. Successful sandbox mutations trigger a best-effort versioned R2 backup.
 
 ### Session website preview

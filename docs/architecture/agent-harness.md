@@ -241,12 +241,18 @@ shared `node_modules`. A successful sync stores the new default-branch commit as
 changes.
 
 - Network git uses a short-lived **GitHub App installation access token**
-  minted per operation (including the one-shot primary-branch fetch before the
-  first session worktree). Tokens are never stored in D1, job files, SSE, env
-  vars, or as a persisted `origin` URL; fetch uses a tokenized URL argument and
-  scrubs `origin` back to the public HTTPS URL in `finally`.
-- Push uses a tokenized remote URL argument, then **scrubs** `origin` back to
-  the public HTTPS URL in a `finally` block (primary `/workspace` and worktree).
+  minted per operation at the last responsible moment (including the one-shot
+  primary-branch fetch before the first session worktree). Tokens are never
+  stored in D1, job files, SSE, env vars, remotes, hooks, or durable files.
+  Credential-bearing fetch/push run only from a fresh temporary bare repository
+  with code-owned config/environment, disabled hooks/helpers, public GitHub
+  HTTPS URL, and ephemeral command-scoped env authentication. Objects move
+  between the worktree and temp repo without credentials and are verified by
+  exact SHA. Branch refs are validated; full refs/refspecs are shell-quoted as
+  one argument. Remote scrubbing back to the public HTTPS URL remains defense
+  in depth. Initial SDK clone remains the explicit tokenized-URL exception.
+- Push still runs outgoing secret preflight once before token mint; UI and agent
+  paths share `pushSessionBranch`.
 - Command output is redacted before errors reach the client.
 - Opening a PR uses installation Octokit auth (not the user's OAuth token).
 - v1 has no merge API or merge button.

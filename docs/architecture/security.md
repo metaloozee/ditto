@@ -107,11 +107,25 @@ to the redaction marker.
 
 ## Git credential handling
 
-GitHub installation tokens are minted per operation inside the Worker. Clone,
-fetch, and push pass a tokenized HTTPS URL as a command argument only for that
-operation. A `finally` path resets `origin` to the public HTTPS URL. Tokens are
-provided to command-error redaction and are never persisted in D1, R2 metadata,
-runner environment, job files, or remote configuration.
+The Worker mints a repository-scoped GitHub App installation token at the last
+responsible moment for each network Git operation. Credential-bearing fetch and
+push run only from a fresh temporary bare Git repository outside `/workspace`,
+with code-owned config and environment: hooks and credential helpers disabled,
+system/global config suppressed, HTTPS-only protocol policy, public
+`https://github.com/<owner>/<repo>.git` URL, and ephemeral command-scoped
+environment authentication (HTTP Basic via Git environment-backed config). The
+token never enters remote URLs, local Git config files, hooks, durable files,
+D1, backups, jobs, logs, or the agent environment.
+
+Repository objects move between the session/primary worktree and the temporary
+bare repository without the credential environment and are verified by exact
+SHA after transfer. Branch refs are validated with `git check-ref-format`; full
+refs and refspecs are shell-quoted as one argument at use.
+
+Initial SDK clone (`sandbox.gitCheckout`) remains the explicit tokenized-URL
+exception. Remote scrubbing back to the public HTTPS URL stays as defense in
+depth. Direct HTTPS with system CAs is supported; trusted custom proxy/CA
+configuration would require an explicit future application setting.
 
 The runner receives only a Ditto callback URL and scoped JWT. Push and pull
 request operations return through the Worker, which mints the installation token
@@ -120,7 +134,8 @@ and applies the same domain policy as the UI.
 ## Git egress policy
 
 Before outgoing commits are pushed, `git-secret-policy.ts` fails closed when it
-cannot establish or inspect the outgoing range. It blocks:
+cannot establish or inspect the outgoing range. UI and agent export share this
+single preflight on `pushSessionBranch`. It blocks:
 
 - `.env` and `.env.*` paths at any nesting level;
 - binary or unreadable additions that cannot be inspected safely;
