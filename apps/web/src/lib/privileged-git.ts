@@ -67,8 +67,14 @@ if (!Array.isArray(args) || typeof env !== "object" || env === null) {
   process.stderr.write("privileged-git launcher: invalid input shapes\\n");
   process.exit(2);
 }
+const cwd = process.env.DITTO_PRIVILEGED_GIT_CWD;
+if (!cwd || !cwd.startsWith("/tmp/ditto-privileged-git-")) {
+  process.stderr.write("privileged-git launcher: invalid cwd\n");
+  process.exit(2);
+}
 const result = spawnSync(gitBin, args, {
   env,
+  cwd,
   stdio: ["ignore", "pipe", "pipe"],
   encoding: "utf8",
 });
@@ -369,28 +375,23 @@ async function initTempBareRepo(
 		`git --git-dir=${quotedTemp} config --local --list`,
 		{ errorPrefix: "Failed to inspect privileged git temp repository config" },
 	);
-	const forbidden =
-		/^(include|includeif|url\.|remote\.|core\.sshcommand|core\.gitproxy|http\.proxy|https\.proxy)/i;
+	// Exact keys only — never prefix-allow core.* (blocks core.sshCommand, etc.).
+	const allowedLocalConfig = new Set([
+		"core.repositoryformatversion",
+		"core.filemode",
+		"core.bare",
+		"core.logallrefupdates",
+		"core.hookspath",
+		"core.askpass",
+		"credential.helper",
+		"extensions.worktreeconfig",
+	]);
 	for (const line of listed.split("\n")) {
 		const key = line.split("=")[0]?.trim().toLowerCase() ?? "";
 		if (!key) {
 			continue;
 		}
-		if (
-			key === "core.hookspath" ||
-			key === "credential.helper" ||
-			key === "core.askpass"
-		) {
-			continue;
-		}
-		if (
-			key.startsWith("core.") ||
-			key.startsWith("repack.") ||
-			key.startsWith("gc.")
-		) {
-			continue;
-		}
-		if (forbidden.test(key)) {
+		if (!allowedLocalConfig.has(key)) {
 			throw new Error(
 				"Privileged git temp repository has unexpected local configuration.",
 			);
@@ -486,6 +487,7 @@ async function runIsolatedNetworkGit(
 			DITTO_PRIVILEGED_GIT_BIN: PRIVILEGED_GIT_BIN,
 			DITTO_PRIVILEGED_GIT_ARGS: JSON.stringify(options.gitArgs),
 			DITTO_PRIVILEGED_GIT_CHILD_ENV: JSON.stringify(childEnv),
+			DITTO_PRIVILEGED_GIT_CWD: options.tempDir,
 		},
 	});
 

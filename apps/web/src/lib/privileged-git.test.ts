@@ -351,6 +351,12 @@ describe("pushGitHubCommitIsolated", () => {
 			`${HEAD_SHA}:refs/heads/ditto/session-1`,
 		]);
 		expect(JSON.stringify(gitArgs)).not.toContain(TOKEN);
+		expect(networkCall.options?.env?.DITTO_PRIVILEGED_GIT_CWD).toBe(
+			networkCall.options?.cwd,
+		);
+		expect(networkCall.options?.env?.DITTO_PRIVILEGED_GIT_CWD).toMatch(
+			/^\/tmp\/ditto-privileged-git-/,
+		);
 		expect(childEnv.GIT_CONFIG_NOSYSTEM).toBe("1");
 		expect(childEnv.GIT_TERMINAL_PROMPT).toBe("0");
 		expect(childEnv.credential_helper ?? childEnv.GIT_CONFIG_VALUE_4).toBe("");
@@ -539,6 +545,34 @@ describe("pushGitHubCommitIsolated", () => {
 				String(call[0]).includes("git init --bare"),
 			),
 		).toBe(false);
+	});
+
+	it("rejects unexpected local config like core.sshCommand before token mint", async () => {
+		const mintToken = vi.fn(async () => TOKEN);
+		const { sandbox, calls } = makeSandbox((command, options) =>
+			defaultPushHandler(command, options, {
+				configExtra: "core.sshcommand=evil",
+			}),
+		);
+
+		await expect(
+			pushGitHubCommitIsolated({
+				sandbox,
+				githubRepo: "acme/repo",
+				branchName: "main",
+				sourceCwd: WORKTREE,
+				headRev: HEAD_SHA,
+				mintToken,
+			}),
+		).rejects.toThrow(/unexpected local configuration/);
+
+		expect(mintToken).not.toHaveBeenCalled();
+		expect(calls.some((call) => isNetworkLauncherCommand(call.command))).toBe(
+			false,
+		);
+		expect(calls.some((call) => call.command.startsWith("rm -rf -- "))).toBe(
+			true,
+		);
 	});
 
 	it("uses distinct temp directories for concurrent pushes and cleans each", async () => {
@@ -768,5 +802,8 @@ describe("launcher source hygiene", () => {
 		expect(source).not.toContain(TOKEN);
 		expect(source).not.toContain("x-access-token");
 		expect(source).toContain("DITTO_PRIVILEGED_GIT_CHILD_ENV");
+		expect(source).toContain("DITTO_PRIVILEGED_GIT_CWD");
+		expect(source).toContain("cwd");
+		expect(source).toContain("/tmp/ditto-privileged-git-");
 	});
 });
