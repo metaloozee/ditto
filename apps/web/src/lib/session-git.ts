@@ -14,6 +14,10 @@ import {
 	redactGitHubExportOutput,
 } from "#/lib/github-export";
 import {
+	pushGitHubCommitIsolated,
+	validateGitBranchRefs,
+} from "#/lib/privileged-git";
+import {
 	fetchPrimaryBranchFromGitHub,
 	getProjectSandbox,
 	installDependencies,
@@ -107,10 +111,6 @@ async function withGitMutationLock<T>(
 
 function publicRepoUrl(githubRepo: string): string {
 	return `https://github.com/${githubRepo}.git`;
-}
-
-function tokenizedRepoUrl(githubRepo: string, token: string): string {
-	return `https://x-access-token:${token}@github.com/${githubRepo}.git`;
 }
 
 function formatGitError(
@@ -756,34 +756,32 @@ async function pushSessionBranchUnlocked(
 
 	// Preflight must run before minting an installation token so UI push, agent
 	// push, and open-PR auto-push share one secret egress gate.
-	await assertOutgoingGitRangeSafe({
+	const { headRev } = await assertOutgoingGitRangeSafe({
 		sandbox,
 		cwd,
 		branchName,
 		knownSecrets: ctx.knownSecrets,
 	});
 
-	// Token mint + push share the same try so scoped-token API 403s map cleanly.
-	// Scrub remotes in finally even if mint fails (no-op if remotes never changed).
+	// Token mint happens inside isolated push only after exact-SHA staging.
+	// Scrub remotes in finally even if mint fails (defense in depth).
 	let token: string | undefined;
 	try {
-		token = await getInstallationAccessToken(
-			ctx.env,
-			ctx.installationId,
-			installationTokenOptions(ctx.githubRepo),
-		);
-		const pushUrl = tokenizedRepoUrl(ctx.githubRepo, token);
-		const quotedPushUrl = quoteGitHubExportShellArg(pushUrl);
-
-		await execGitOrThrow(
+		await pushGitHubCommitIsolated({
 			sandbox,
-			`git push ${quotedPushUrl} HEAD:refs/heads/${branchName}`,
-			{
-				cwd,
-				errorPrefix: "Failed to push branch",
-				secrets: [token],
+			githubRepo: ctx.githubRepo,
+			branchName,
+			sourceCwd: cwd,
+			headRev,
+			mintToken: async () => {
+				token = await getInstallationAccessToken(
+					ctx.env,
+					ctx.installationId,
+					installationTokenOptions(ctx.githubRepo),
+				);
+				return token;
 			},
-		);
+		});
 
 		try {
 			await syncBranchTrackingAfterPush(sandbox, cwd, branchName);
@@ -1141,7 +1139,15 @@ export async function openSessionPullRequest(
 		(await octokit.rest.repos.get({ owner, repo })).data.default_branch;
 	const head = ctx.session.branchName;
 
-	const existingPr = await findOpenSessionPullRequest(ctx, base);
+	// Validate once before find/create so bad refs never become "no existing PR".
+	const sandbox = getProjectSandbox(ctx.env, ctx.sandboxId);
+	const validatedHead = await validateGitBranchRefs(sandbox, head);
+	const validatedBase = await validateGitBranchRefs(sandbox, base);
+
+	const existingPr = await findOpenSessionPullRequest(
+		ctx,
+		validatedBase.branchName,
+	);
 	if (existingPr) {
 		return { url: existingPr.url, number: existingPr.number };
 	}
@@ -1150,18 +1156,18 @@ export async function openSessionPullRequest(
 	const needsDefaultBody = ctx.body === undefined;
 	const commitSubjects =
 		needsDefaultTitle || needsDefaultBody
-			? await collectSessionCommitSubjects(ctx, base)
+			? await collectSessionCommitSubjects(ctx, validatedBase.branchName)
 			: undefined;
 	const changedFiles = needsDefaultBody
-		? await collectSessionChangedFiles(ctx, base)
+		? await collectSessionChangedFiles(ctx, validatedBase.branchName)
 		: undefined;
 
 	try {
 		const created = await octokit.rest.pulls.create({
 			owner,
 			repo,
-			head,
-			base,
+			head: validatedHead.branchName,
+			base: validatedBase.branchName,
 			title:
 				ctx.title ??
 				buildPullRequestTitle({

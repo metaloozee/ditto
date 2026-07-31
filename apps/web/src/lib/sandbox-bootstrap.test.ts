@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getSandboxMock = vi.hoisted(() => vi.fn());
 const getInstallationAccessTokenMock = vi.hoisted(() => vi.fn());
+const fetchGitHubBranchIsolatedMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@cloudflare/sandbox", () => ({
 	getSandbox: getSandboxMock,
@@ -16,6 +17,10 @@ vi.mock("#/lib/github-app", () => ({
 		}
 		return parts[parts.length - 1];
 	},
+}));
+
+vi.mock("#/lib/privileged-git", () => ({
+	fetchGitHubBranchIsolated: fetchGitHubBranchIsolatedMock,
 }));
 
 const {
@@ -603,6 +608,32 @@ function makeSyncSandbox(state: SyncSandboxState) {
 	return { sandbox, installCalls, state };
 }
 
+function mockIsolatedFetch(remoteSha: string, _branchName = "main") {
+	fetchGitHubBranchIsolatedMock.mockImplementation(async (options) => {
+		const token = await options.mintToken();
+		if (!token) {
+			throw new Error("missing token");
+		}
+		if (options.destinationCwd !== "/workspace") {
+			throw new Error(`unexpected destination ${options.destinationCwd}`);
+		}
+		return {
+			branchName: options.branchName,
+			headSha: remoteSha,
+			refs: {
+				branchName: options.branchName,
+				headRef: `refs/heads/${options.branchName}`,
+				remoteTrackingRef: `refs/remotes/origin/${options.branchName}`,
+				isolatedFetchRefspec: `+refs/heads/${options.branchName}:refs/ditto-isolated`,
+				pushRefspecFrom: (sha: string) =>
+					`${sha}:refs/heads/${options.branchName}`,
+				destinationFetchRefspecFrom: (sha: string) =>
+					`${sha}:refs/remotes/origin/${options.branchName}`,
+			},
+		};
+	});
+}
+
 describe("syncPrimaryWorkspaceFromGitHub", () => {
 	const syncOptions = {
 		env: { Sandbox: {} } as unknown as Env,
@@ -614,6 +645,7 @@ describe("syncPrimaryWorkspaceFromGitHub", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		getInstallationAccessTokenMock.mockResolvedValue("token-abc-12345");
+		mockIsolatedFetch("same123");
 	});
 
 	it("fetches unchanged clean branch, skips install, scrubs origin", async () => {
@@ -622,6 +654,7 @@ describe("syncPrimaryWorkspaceFromGitHub", () => {
 			remoteSha: "same123",
 		});
 		getSandboxMock.mockReturnValue(sandbox);
+		mockIsolatedFetch("same123");
 
 		await expect(syncPrimaryWorkspaceFromGitHub(syncOptions)).resolves.toEqual({
 			branchName: "main",
@@ -629,6 +662,13 @@ describe("syncPrimaryWorkspaceFromGitHub", () => {
 			updated: false,
 		});
 
+		expect(fetchGitHubBranchIsolatedMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				githubRepo: "owner/repo",
+				branchName: "main",
+				destinationCwd: "/workspace",
+			}),
+		);
 		expect(getInstallationAccessTokenMock).toHaveBeenCalledWith(
 			expect.objectContaining({ Sandbox: {} }),
 			42,
@@ -638,7 +678,7 @@ describe("syncPrimaryWorkspaceFromGitHub", () => {
 			sandbox.exec.mock.calls.some((call) =>
 				String(call[0]).startsWith("git fetch --no-tags"),
 			),
-		).toBe(true);
+		).toBe(false);
 		expect(
 			sandbox.exec.mock.calls.some((call) =>
 				INSTALL_COMMAND_RE.test(String(call[0])),
@@ -658,6 +698,7 @@ describe("syncPrimaryWorkspaceFromGitHub", () => {
 			headBehind: true,
 		});
 		getSandboxMock.mockReturnValue(sandbox);
+		mockIsolatedFetch("newsha");
 
 		await expect(syncPrimaryWorkspaceFromGitHub(syncOptions)).resolves.toEqual({
 			branchName: "main",
@@ -685,11 +726,7 @@ describe("syncPrimaryWorkspaceFromGitHub", () => {
 			/uncommitted changes to tracked files/,
 		);
 		expect(getInstallationAccessTokenMock).not.toHaveBeenCalled();
-		expect(
-			sandbox.exec.mock.calls.some((call) =>
-				String(call[0]).startsWith("git fetch"),
-			),
-		).toBe(false);
+		expect(fetchGitHubBranchIsolatedMock).not.toHaveBeenCalled();
 	});
 
 	it("allows untracked .ditto state without rejecting", async () => {
@@ -713,6 +750,7 @@ describe("syncPrimaryWorkspaceFromGitHub", () => {
 			headBehind: false,
 		});
 		getSandboxMock.mockReturnValue(sandbox);
+		mockIsolatedFetch("remotesha");
 
 		await expect(syncPrimaryWorkspaceFromGitHub(syncOptions)).rejects.toThrow(
 			/unpublished local commits/,
@@ -732,6 +770,7 @@ describe("syncPrimaryWorkspaceFromGitHub", () => {
 			headBehind: false,
 		});
 		getSandboxMock.mockReturnValue(sandbox);
+		mockIsolatedFetch("remotesha");
 
 		await expect(syncPrimaryWorkspaceFromGitHub(syncOptions)).rejects.toThrow(
 			/diverged from GitHub/,
@@ -747,10 +786,15 @@ describe("syncPrimaryWorkspaceFromGitHub", () => {
 		const { sandbox } = makeSyncSandbox({
 			headSha: "same123",
 			remoteSha: "same123",
-			fetchFails: true,
-			fetchError: "auth failed for token-abc-12345",
 		});
 		getSandboxMock.mockReturnValue(sandbox);
+		fetchGitHubBranchIsolatedMock.mockImplementation(async (options) => {
+			await options.mintToken();
+			// Real helper redacts before throwing; surface the post-redaction shape.
+			throw new Error(
+				"Failed to fetch branch from GitHub: auth failed for [REDACTED]",
+			);
+		});
 
 		let thrownMessage = "";
 		try {
@@ -774,6 +818,7 @@ describe("syncPrimaryWorkspaceFromGitHub", () => {
 			retrySignal: true,
 		});
 		getSandboxMock.mockReturnValue(sandbox);
+		mockIsolatedFetch("same123");
 
 		await expect(
 			syncPrimaryWorkspaceFromGitHub(syncOptions),
@@ -796,6 +841,7 @@ describe("syncPrimaryWorkspaceFromGitHub", () => {
 			installFails: true,
 		});
 		getSandboxMock.mockReturnValue(sandbox);
+		mockIsolatedFetch("newsha");
 
 		await expect(syncPrimaryWorkspaceFromGitHub(syncOptions)).rejects.toThrow(
 			/install failed/,
@@ -820,11 +866,77 @@ describe("syncPrimaryWorkspaceFromGitHub", () => {
 		await expect(syncPrimaryWorkspaceFromGitHub(syncOptions)).rejects.toThrow(
 			/detached HEAD/,
 		);
-		expect(
-			sandbox.exec.mock.calls.some((call) =>
-				String(call[0]).startsWith("git fetch"),
-			),
-		).toBe(false);
+		expect(fetchGitHubBranchIsolatedMock).not.toHaveBeenCalled();
+	});
+
+	it("rejects failed tracked-status reads before token mint", async () => {
+		const { sandbox } = makeSyncSandbox({
+			headSha: "same123",
+			remoteSha: "same123",
+		});
+		sandbox.exec.mockImplementation(async (command: string) => {
+			if (command === "git status --porcelain --untracked-files=no") {
+				return {
+					success: false,
+					stdout: "",
+					stderr: "status failed",
+					exitCode: 128,
+					command,
+					duration: 1,
+					timestamp: "2026-07-04T00:00:00.000Z",
+				};
+			}
+			return {
+				success: true,
+				stdout: "",
+				stderr: "",
+				exitCode: 0,
+				command,
+				duration: 1,
+				timestamp: "2026-07-04T00:00:00.000Z",
+			};
+		});
+		getSandboxMock.mockReturnValue(sandbox);
+
+		await expect(syncPrimaryWorkspaceFromGitHub(syncOptions)).rejects.toThrow(
+			/Failed to inspect primary workspace status/,
+		);
+		expect(fetchGitHubBranchIsolatedMock).not.toHaveBeenCalled();
+		expect(getInstallationAccessTokenMock).not.toHaveBeenCalled();
+	});
+
+	it("rejects empty symbolic branch output before token mint", async () => {
+		const { sandbox } = makeSyncSandbox({
+			headSha: "same123",
+			remoteSha: "same123",
+			branch: "",
+		});
+		getSandboxMock.mockReturnValue(sandbox);
+
+		await expect(syncPrimaryWorkspaceFromGitHub(syncOptions)).rejects.toThrow(
+			/branch name is empty/,
+		);
+		expect(fetchGitHubBranchIsolatedMock).not.toHaveBeenCalled();
+	});
+
+	it("passes shell-significant branch names to isolated fetch", async () => {
+		const branch = "feat/x;$(id)";
+		const { sandbox } = makeSyncSandbox({
+			headSha: "same123",
+			remoteSha: "same123",
+			branch,
+		});
+		getSandboxMock.mockReturnValue(sandbox);
+		mockIsolatedFetch("same123", branch);
+
+		await expect(syncPrimaryWorkspaceFromGitHub(syncOptions)).resolves.toEqual({
+			branchName: branch,
+			headSha: "same123",
+			updated: false,
+		});
+		expect(fetchGitHubBranchIsolatedMock).toHaveBeenCalledWith(
+			expect.objectContaining({ branchName: branch }),
+		);
 	});
 });
 
@@ -836,6 +948,7 @@ describe("fetchPrimaryBranchFromGitHub", () => {
 		});
 		getSandboxMock.mockReturnValue(sandbox);
 		getInstallationAccessTokenMock.mockResolvedValue("token-abc-12345");
+		mockIsolatedFetch("develop-sha", "develop");
 
 		await expect(
 			fetchPrimaryBranchFromGitHub({
@@ -847,13 +960,13 @@ describe("fetchPrimaryBranchFromGitHub", () => {
 			}),
 		).resolves.toEqual({ branchName: "develop", headSha: "develop-sha" });
 
-		expect(
-			sandbox.exec.mock.calls.some((call) =>
-				String(call[0]).includes(
-					"+refs/heads/develop:refs/remotes/origin/develop",
-				),
-			),
-		).toBe(true);
+		expect(fetchGitHubBranchIsolatedMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				branchName: "develop",
+				destinationCwd: "/workspace",
+				githubRepo: "owner/repo",
+			}),
+		);
 		expect(
 			sandbox.exec.mock.calls.some((call) =>
 				String(call[0]).startsWith("git merge"),

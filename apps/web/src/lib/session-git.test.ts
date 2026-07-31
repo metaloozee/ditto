@@ -6,12 +6,19 @@ const getGitHubAppMock = vi.hoisted(() => vi.fn());
 const scrubGithubRemoteMock = vi.hoisted(() => vi.fn());
 const fetchPrimaryBranchFromGitHubMock = vi.hoisted(() => vi.fn());
 const installDependenciesMock = vi.hoisted(() => vi.fn());
+const pushGitHubCommitIsolatedMock = vi.hoisted(() => vi.fn());
+const validateGitBranchRefsMock = vi.hoisted(() => vi.fn());
 
 vi.mock("#/lib/sandbox-bootstrap", () => ({
 	getProjectSandbox: getProjectSandboxMock,
 	scrubGithubRemote: scrubGithubRemoteMock,
 	fetchPrimaryBranchFromGitHub: fetchPrimaryBranchFromGitHubMock,
 	installDependencies: installDependenciesMock,
+}));
+
+vi.mock("#/lib/privileged-git", () => ({
+	pushGitHubCommitIsolated: pushGitHubCommitIsolatedMock,
+	validateGitBranchRefs: validateGitBranchRefsMock,
 }));
 
 vi.mock("#/lib/session-workspace-lock", () => ({
@@ -300,6 +307,20 @@ describe("session git", () => {
 			headSha: "new-main-sha",
 		});
 		installDependenciesMock.mockResolvedValue(undefined);
+		pushGitHubCommitIsolatedMock.mockImplementation(async (options) => {
+			await options.mintToken();
+		});
+		validateGitBranchRefsMock.mockImplementation(
+			async (_sandbox, branchName: string) => ({
+				branchName,
+				headRef: `refs/heads/${branchName}`,
+				remoteTrackingRef: `refs/remotes/origin/${branchName}`,
+				isolatedFetchRefspec: `+refs/heads/${branchName}:refs/ditto-isolated`,
+				pushRefspecFrom: (sha: string) => `${sha}:refs/heads/${branchName}`,
+				destinationFetchRefspecFrom: (sha: string) =>
+					`${sha}:refs/remotes/origin/${branchName}`,
+			}),
+		);
 		mockNoOpenPullRequest();
 	});
 
@@ -984,11 +1005,6 @@ describe("session git", () => {
 			if (preflight) {
 				return preflight;
 			}
-			if (command.startsWith("git push ")) {
-				expect(command).toContain(TOKEN);
-				expect(command).not.toContain("--set-upstream");
-				return { success: true, stdout: "", stderr: "", exitCode: 0 };
-			}
 			if (command.startsWith("git update-ref ")) {
 				expect(command).toContain("refs/remotes/origin/ditto/session-sess-1");
 				expect(command).not.toContain(TOKEN);
@@ -1017,11 +1033,24 @@ describe("session git", () => {
 			remoteBranch: "ditto/session-sess-1",
 			pushed: true,
 		});
+		expect(pushGitHubCommitIsolatedMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				sourceCwd: WORKTREE,
+				branchName: "ditto/session-sess-1",
+				headRev: PREFLIGHT_HEAD,
+				githubRepo: "acme/repo",
+			}),
+		);
 		expect(getInstallationAccessTokenMock).toHaveBeenCalledWith(
 			expect.anything(),
 			42,
 			{ repositories: ["repo"] },
 		);
+		expect(
+			sandbox.exec.mock.calls.some((call) =>
+				String(call[0]).startsWith("git push "),
+			),
+		).toBe(false);
 		expect(scrubGithubRemoteMock).toHaveBeenCalledTimes(2);
 	});
 
@@ -1052,6 +1081,7 @@ describe("session git", () => {
 		expect(message).toContain("nested/.env.local");
 		expect(message).not.toContain(FIXTURE_SECRET);
 		expect(getInstallationAccessTokenMock).not.toHaveBeenCalled();
+		expect(pushGitHubCommitIsolatedMock).not.toHaveBeenCalled();
 		expect(
 			sandbox.exec.mock.calls.some((call) =>
 				String(call[0]).startsWith("git push "),
@@ -1065,18 +1095,13 @@ describe("session git", () => {
 			if (preflight) {
 				return preflight;
 			}
-			if (command.startsWith("git push ")) {
-				expect(command).not.toContain("--set-upstream");
-				return {
-					success: false,
-					stdout: "",
-					stderr: `remote error with ${TOKEN}`,
-					exitCode: 1,
-				};
-			}
 			throw new Error(`unexpected command: ${command}`);
 		});
 		getProjectSandboxMock.mockReturnValue(sandbox);
+		pushGitHubCommitIsolatedMock.mockImplementation(async (options) => {
+			const token = await options.mintToken();
+			throw new Error(`remote error with ${token}`);
+		});
 
 		let message = "";
 		try {
@@ -1101,17 +1126,15 @@ describe("session git", () => {
 			if (preflight) {
 				return preflight;
 			}
-			if (command.startsWith("git push ")) {
-				return {
-					success: false,
-					stdout: "",
-					stderr: `remote: Permission to acme/repo.git denied to ditto-web[bot].\nfatal: unable to access 'https://x-access-token:${TOKEN}@github.com/acme/repo.git/': The requested URL returned error: 403`,
-					exitCode: 128,
-				};
-			}
 			throw new Error(`unexpected command: ${command}`);
 		});
 		getProjectSandboxMock.mockReturnValue(sandbox);
+		pushGitHubCommitIsolatedMock.mockImplementation(async (options) => {
+			const token = await options.mintToken();
+			throw new Error(
+				`remote: Permission to acme/repo.git denied to ditto-web[bot].\nfatal: unable to access 'https://x-access-token:${token}@github.com/acme/repo.git/': The requested URL returned error: 403`,
+			);
+		});
 
 		let message = "";
 		try {
@@ -1138,18 +1161,15 @@ describe("session git", () => {
 			if (preflight) {
 				return preflight;
 			}
-			if (command.startsWith("git push ")) {
-				return {
-					success: false,
-					stdout: "",
-					stderr:
-						" ! [rejected] HEAD -> ditto/session-sess-1 (non-fast-forward)",
-					exitCode: 1,
-				};
-			}
 			throw new Error(`unexpected command: ${command}`);
 		});
 		getProjectSandboxMock.mockReturnValue(sandbox);
+		pushGitHubCommitIsolatedMock.mockImplementation(async (options) => {
+			await options.mintToken();
+			throw new Error(
+				" ! [rejected] HEAD -> ditto/session-sess-1 (non-fast-forward)",
+			);
+		});
 
 		let message = "";
 		try {

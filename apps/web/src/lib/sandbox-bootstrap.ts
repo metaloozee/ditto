@@ -7,6 +7,7 @@ import {
 	getInstallationAccessToken,
 	repositoryNameFromSlug,
 } from "#/lib/github-app";
+import { fetchGitHubBranchIsolated } from "#/lib/privileged-git";
 import { getSandboxBackupOptions } from "#/lib/sandbox-backup";
 import { redactSecrets } from "#/lib/secret-redaction";
 import { WORKSPACE_PATH } from "#/lib/workspace-policy";
@@ -192,6 +193,11 @@ export async function syncPrimaryWorkspaceFromGitHub(options: {
 			timeout: CLONE_TIMEOUT_MS,
 		},
 	);
+	if (!trackedStatus.success) {
+		throw new Error(
+			"Failed to inspect primary workspace status before syncing from GitHub.",
+		);
+	}
 	if (trackedStatus.stdout.trim()) {
 		throw new Error(
 			"Primary workspace has uncommitted changes to tracked files. Commit or discard them before starting a new session.",
@@ -211,43 +217,35 @@ export async function syncPrimaryWorkspaceFromGitHub(options: {
 		);
 	}
 	const branchName = branchResult.stdout.trim();
+	if (!branchName) {
+		throw new Error(
+			"Primary workspace branch name is empty. Check out a branch before starting a new session.",
+		);
+	}
 
 	const repoName = repositoryNameFromSlug(options.githubRepo);
-	const token = await getInstallationAccessToken(
-		options.env,
-		options.installationId,
-		repoName ? { repositories: [repoName] } : undefined,
-	);
-	const tokenizedRepoUrl = `https://x-access-token:${token}@github.com/${options.githubRepo}.git`;
-	const execSecrets = [token] as const;
 
 	try {
-		await execOrThrow(
+		const fetched = await fetchGitHubBranchIsolated({
 			sandbox,
-			`git fetch --no-tags ${quoteShellArg(tokenizedRepoUrl)} +refs/heads/${branchName}:refs/remotes/origin/${branchName}`,
-			{
-				cwd: WORKSPACE_PATH,
-				timeout: CLONE_TIMEOUT_MS,
-				errorPrefix: "Failed to fetch primary workspace from GitHub",
-				secrets: execSecrets,
-			},
-		);
+			githubRepo: options.githubRepo,
+			branchName,
+			destinationCwd: WORKSPACE_PATH,
+			mintToken: () =>
+				getInstallationAccessToken(
+					options.env,
+					options.installationId,
+					repoName ? { repositories: [repoName] } : undefined,
+				),
+		});
+		const remoteRef = fetched.refs.remoteTrackingRef;
+		const remoteSha = fetched.headSha;
 
 		const headSha = (
 			await execOrThrow(sandbox, "git rev-parse HEAD", {
 				cwd: WORKSPACE_PATH,
 				timeout: CLONE_TIMEOUT_MS,
 				errorPrefix: "Failed to resolve primary HEAD",
-				secrets: execSecrets,
-			})
-		).stdout.trim();
-		const remoteRef = `refs/remotes/origin/${branchName}`;
-		const remoteSha = (
-			await execOrThrow(sandbox, `git rev-parse ${quoteShellArg(remoteRef)}`, {
-				cwd: WORKSPACE_PATH,
-				timeout: CLONE_TIMEOUT_MS,
-				errorPrefix: "Failed to resolve fetched remote HEAD",
-				secrets: execSecrets,
 			})
 		).stdout.trim();
 
@@ -255,7 +253,7 @@ export async function syncPrimaryWorkspaceFromGitHub(options: {
 			if (await primaryDepsRetrySignalExists(sandbox)) {
 				await refreshPrimaryDependencies(sandbox);
 			}
-			return { branchName, headSha, updated: false };
+			return { branchName: fetched.branchName, headSha, updated: false };
 		}
 
 		const remoteIsAncestor = await sandbox.exec(
@@ -291,7 +289,6 @@ export async function syncPrimaryWorkspaceFromGitHub(options: {
 				cwd: WORKSPACE_PATH,
 				timeout: CLONE_TIMEOUT_MS,
 				errorPrefix: "Failed to fast-forward primary workspace",
-				secrets: execSecrets,
 			},
 		);
 
@@ -302,7 +299,6 @@ export async function syncPrimaryWorkspaceFromGitHub(options: {
 				cwd: WORKSPACE_PATH,
 				timeout: CLONE_TIMEOUT_MS,
 				errorPrefix: "Failed to verify primary HEAD after fast-forward",
-				secrets: execSecrets,
 			})
 		).stdout.trim();
 		if (synchronizedHead !== remoteSha) {
@@ -311,7 +307,11 @@ export async function syncPrimaryWorkspaceFromGitHub(options: {
 			);
 		}
 
-		return { branchName, headSha: synchronizedHead, updated: true };
+		return {
+			branchName: fetched.branchName,
+			headSha: synchronizedHead,
+			updated: true,
+		};
 	} finally {
 		await scrubGithubRemote(sandbox, WORKSPACE_PATH, publicRepoUrl);
 	}
@@ -326,36 +326,22 @@ export async function fetchPrimaryBranchFromGitHub(options: {
 }): Promise<{ branchName: string; headSha: string }> {
 	const sandbox = getProjectSandbox(options.env, options.sandboxId);
 	const repoName = repositoryNameFromSlug(options.githubRepo);
-	const token = await getInstallationAccessToken(
-		options.env,
-		options.installationId,
-		repoName ? { repositories: [repoName] } : undefined,
-	);
-	const tokenizedRepoUrl = `https://x-access-token:${token}@github.com/${options.githubRepo}.git`;
 	const publicRepoUrl = `https://github.com/${options.githubRepo}.git`;
-	const remoteRef = `refs/remotes/origin/${options.branchName}`;
-	const refspec = `+refs/heads/${options.branchName}:refs/remotes/origin/${options.branchName}`;
 
 	try {
-		await execOrThrow(
+		const fetched = await fetchGitHubBranchIsolated({
 			sandbox,
-			`git fetch --no-tags ${quoteShellArg(tokenizedRepoUrl)} ${quoteShellArg(refspec)}`,
-			{
-				cwd: WORKSPACE_PATH,
-				timeout: CLONE_TIMEOUT_MS,
-				errorPrefix: "Failed to fetch base branch from GitHub",
-				secrets: [token],
-			},
-		);
-		const headSha = (
-			await execOrThrow(sandbox, `git rev-parse ${quoteShellArg(remoteRef)}`, {
-				cwd: WORKSPACE_PATH,
-				timeout: CLONE_TIMEOUT_MS,
-				errorPrefix: "Failed to resolve fetched base branch",
-				secrets: [token],
-			})
-		).stdout.trim();
-		return { branchName: options.branchName, headSha };
+			githubRepo: options.githubRepo,
+			branchName: options.branchName,
+			destinationCwd: WORKSPACE_PATH,
+			mintToken: () =>
+				getInstallationAccessToken(
+					options.env,
+					options.installationId,
+					repoName ? { repositories: [repoName] } : undefined,
+				),
+		});
+		return { branchName: fetched.branchName, headSha: fetched.headSha };
 	} finally {
 		await scrubGithubRemote(sandbox, WORKSPACE_PATH, publicRepoUrl);
 	}
