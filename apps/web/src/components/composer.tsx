@@ -799,7 +799,7 @@ export function Composer({
 	const modelLabel = selectedModel?.name ?? "Select model";
 
 	return (
-		<section className="@container mx-auto w-full min-w-0 max-w-3xl px-5 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
+		<section className="@container mx-auto w-full min-w-0 max-w-3xl px-5 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-6">
 			<form className="w-full" onSubmit={handleSubmit} noValidate>
 				{/*
 				  Narrow (<420px container): one card — textarea row, then
