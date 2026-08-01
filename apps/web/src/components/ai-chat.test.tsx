@@ -120,9 +120,8 @@ describe("Chat session cache acknowledgement", () => {
 		expect(
 			screen.getByRole("button", { name: "Branch ditto/session-sess-1" }),
 		).toBeTruthy();
-		expect(navbar.className).toContain("inset-x-0");
-		expect(navbar.className).toContain("bg-gradient-to-b");
-		expect(navbar.className).toContain("from-background");
+		expect(navbar.className).not.toContain("absolute");
+		expect(navbar.className).not.toContain("bg-gradient-to-b");
 		expect(navbar.className).not.toContain("max-w-");
 	});
 

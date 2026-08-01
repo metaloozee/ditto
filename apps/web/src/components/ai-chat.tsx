@@ -766,7 +766,7 @@ export function Chat({
 	);
 
 	const chatColumn = (
-		<div className="relative mx-auto h-full min-w-0 w-full">
+		<div className="mx-auto flex h-full min-h-0 w-full min-w-0 flex-col">
 			<ChatNavbar
 				projectId={projectId}
 				sessionId={sessionId}
@@ -781,7 +781,7 @@ export function Chat({
 				defaultScrollPosition="last-anchor"
 				scrollPreviousItemPeek={64}
 			>
-				<MessageScroller>
+				<MessageScroller className="h-auto min-h-0 flex-1">
 					<MessageScrollerViewport>
 						<MessageScrollerContent
 							className={cn(
@@ -802,8 +802,6 @@ export function Chat({
 											messageId={`message-${message.id}`}
 											className={cn(
 												"m-0",
-												index === 0 && !hasMoreHistory && "mt-20",
-												index === 0 && hasMoreHistory && "mt-2",
 												index === displayMessages.length - 1 &&
 													!hasStreamingTail &&
 													"mb-20",
@@ -816,11 +814,7 @@ export function Chat({
 									{showOptimisticUser && streaming ? (
 										<MessageScrollerItem
 											messageId="streaming-user"
-											className={cn(
-												"mt-0",
-												displayMessages.length === 0 && "mt-20",
-												!showStreamingAssistant && "mb-20",
-											)}
+											className={cn("m-0", !showStreamingAssistant && "mb-20")}
 											scrollAnchor
 										>
 											<MessageRow
@@ -836,10 +830,7 @@ export function Chat({
 										<MessageScrollerItem
 											messageId="streaming-assistant"
 											className={cn(
-												"mt-0",
-												displayMessages.length === 0 &&
-													!showOptimisticUser &&
-													"mt-20",
+												"m-0",
 												queuedFollowUps.length === 0 && "mb-20",
 											)}
 										>
@@ -857,7 +848,7 @@ export function Chat({
 													key={queued.requestId}
 													messageId={`queued-${queued.requestId}`}
 													className={cn(
-														"mt-0",
+														"m-0",
 														index === queuedFollowUps.length - 1 && "mb-20",
 													)}
 													scrollAnchor
