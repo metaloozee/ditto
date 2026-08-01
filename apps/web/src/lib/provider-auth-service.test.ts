@@ -7,7 +7,9 @@ import {
 	credentialRowMatches,
 	LEASE_TTL_MS,
 	loadCredential,
+	releaseLease,
 	type SafeModel,
+	updateCredentialUnderLease,
 	upsertCredential,
 } from "#/lib/account-provider-credentials";
 
@@ -583,12 +585,6 @@ describe("provider-auth-service", () => {
 			nowMs: clock.value,
 			createId,
 		});
-		const loaded = await loadCredential({
-			db,
-			userId: "user-a",
-			providerId: "anthropic",
-			encryptionKey: KEY,
-		});
 
 		const order: string[] = [];
 		const outcome = await resolveOAuthCredential({
@@ -596,8 +592,6 @@ describe("provider-auth-service", () => {
 			env: env(),
 			userId: "user-a",
 			providerId: "anthropic",
-			stored: loaded!.credential,
-			version: loaded!.version,
 			nowMs: () => clock.value,
 			createId,
 			deps: {
@@ -692,8 +686,6 @@ describe("provider-auth-service", () => {
 			env: env(),
 			userId: "user-a",
 			providerId: "anthropic",
-			stored: loaded!.credential,
-			version: loaded!.version,
 			nowMs: () => clock.value,
 			createId,
 			runResolve: async ({ terminate }) => {
@@ -755,20 +747,12 @@ describe("provider-auth-service", () => {
 			nowMs: clock.value,
 			createId,
 		});
-		const loaded = await loadCredential({
-			db,
-			userId: "user-a",
-			providerId: "anthropic",
-			encryptionKey: KEY,
-		});
 
 		const outcome = await resolveOAuthCredential({
 			db,
 			env: env(),
 			userId: "user-a",
 			providerId: "anthropic",
-			stored: loaded!.credential,
-			version: loaded!.version,
 			nowMs: () => clock.value,
 			createId,
 			runResolve: async ({ terminate }) => {
@@ -812,20 +796,12 @@ describe("provider-auth-service", () => {
 			nowMs: clock.value,
 			createId,
 		});
-		const old = await loadCredential({
-			db,
-			userId: "user-a",
-			providerId: "anthropic",
-			encryptionKey: KEY,
-		});
 
 		await resolveOAuthCredential({
 			db,
 			env: env(),
 			userId: "user-a",
 			providerId: "anthropic",
-			stored: old!.credential,
-			version: old!.version,
 			nowMs: () => clock.value,
 			createId,
 			runResolve: async () => {
@@ -864,19 +840,11 @@ describe("provider-auth-service", () => {
 			nowMs: clock.value,
 			createId,
 		});
-		const old = await loadCredential({
-			db,
-			userId: "user-a",
-			providerId: "anthropic",
-			encryptionKey: KEY,
-		});
 		const outcome = await resolveOAuthCredential({
 			db,
 			env: env(),
 			userId: "user-a",
 			providerId: "anthropic",
-			stored: old!.credential,
-			version: old!.version,
 			nowMs: () => clock.value,
 			createId,
 			runResolve: async () => ({
@@ -928,19 +896,11 @@ describe("provider-auth-service", () => {
 			nowMs: clock.value,
 			createId,
 		});
-		const old = await loadCredential({
-			db,
-			userId: "user-a",
-			providerId: "anthropic",
-			encryptionKey: KEY,
-		});
 		const outcome = await resolveOAuthCredential({
 			db,
 			env: env(),
 			userId: "user-a",
 			providerId: "anthropic",
-			stored: old!.credential,
-			version: old!.version,
 			nowMs: () => clock.value,
 			createId,
 			runResolve: async () => ({
@@ -956,6 +916,356 @@ describe("provider-auth-service", () => {
 			}),
 		});
 		expect(outcome).toEqual({ ok: false, code: "refresh_failed" });
+	});
+
+	it("CRED-1: resolve feeds post-lease DB credential to runResolve", async () => {
+		await upsertCredential({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			authType: "oauth",
+			credential: {
+				type: "oauth",
+				refresh: "refresh-authoritative-aa",
+				access: "access-expired-token-xx",
+				expires: clock.value + 1000,
+			},
+			models: [model],
+			encryptionKey: KEY,
+			nowMs: clock.value,
+			createId,
+		});
+
+		let seenRefresh: string | undefined;
+		const outcome = await resolveOAuthCredential({
+			db,
+			env: env(),
+			userId: "user-a",
+			providerId: "anthropic",
+			nowMs: () => clock.value,
+			createId,
+			runResolve: async ({ stored }) => {
+				if (stored.type === "oauth") seenRefresh = stored.refresh;
+				return {
+					ok: true,
+					resultJson: JSON.stringify({
+						storedCredential: {
+							type: "oauth",
+							refresh: "refresh-rotated-new-bb",
+							access: "access-rotated-new-bb",
+							expires: clock.value + 3_600_000,
+						},
+					}),
+				};
+			},
+		});
+		expect(seenRefresh).toBe("refresh-authoritative-aa");
+		expect(outcome.ok).toBe(true);
+		if (outcome.ok) {
+			expect(outcome.runtime).toMatchObject({
+				type: "oauth",
+				refresh: "ditto:no-refresh",
+				access: "access-rotated-new-bb",
+			});
+		}
+		const final = await loadCredential({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			encryptionKey: KEY,
+		});
+		expect(final?.version).toBe(2);
+		expect(final?.credential).toMatchObject({
+			type: "oauth",
+			refresh: "refresh-rotated-new-bb",
+		});
+	});
+
+	it("CRED-1: short-circuits usable post-lease credential without provider call", async () => {
+		await upsertCredential({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			authType: "oauth",
+			credential: {
+				type: "oauth",
+				refresh: "refresh-v1-token-xxxx",
+				access: "access-usable-v1-xxxx",
+				expires: clock.value + 3_600_000,
+			},
+			models: [model],
+			encryptionKey: KEY,
+			nowMs: clock.value,
+			createId,
+		});
+
+		const concurrent = await acquireLease({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			nowMs: clock.value,
+			createId: () => "concurrent-lease",
+		});
+		expect(concurrent).not.toBeNull();
+		if (!concurrent) throw new Error("expected concurrent lease");
+		const rotated = await updateCredentialUnderLease({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			leaseId: concurrent.leaseId,
+			expectedVersion: concurrent.version,
+			credential: {
+				type: "oauth",
+				refresh: "refresh-v2-rotated-xx",
+				access: "access-usable-v2-xxxx",
+				expires: clock.value + 3_600_000,
+			},
+			encryptionKey: KEY,
+			nowMs: clock.value,
+		});
+		expect(rotated).toBe("ok");
+		await releaseLease({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			leaseId: concurrent.leaseId,
+			nowMs: clock.value,
+		});
+
+		let called = false;
+		const outcome = await resolveOAuthCredential({
+			db,
+			env: env(),
+			userId: "user-a",
+			providerId: "anthropic",
+			nowMs: () => clock.value,
+			createId,
+			runResolve: async () => {
+				called = true;
+				throw new Error("provider must not be called");
+			},
+		});
+		expect(called).toBe(false);
+		expect(outcome.ok).toBe(true);
+		if (outcome.ok) {
+			expect(outcome.runtime).toMatchObject({
+				type: "oauth",
+				refresh: "ditto:no-refresh",
+				access: "access-usable-v2-xxxx",
+				expires: clock.value + 3_600_000,
+			});
+		}
+		const final = await loadCredential({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			encryptionKey: KEY,
+		});
+		expect(final?.version).toBe(2);
+		expect(final?.credential).toMatchObject({
+			refresh: "refresh-v2-rotated-xx",
+		});
+	});
+
+	it("CRED-1: still-expired post-lease row refreshes with leased body", async () => {
+		await upsertCredential({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			authType: "oauth",
+			credential: {
+				type: "oauth",
+				refresh: "r-old-token-xxxxxxx",
+				access: "a-old-token-xxxxxxx",
+				expires: clock.value + 1000,
+			},
+			models: [model],
+			encryptionKey: KEY,
+			nowMs: clock.value,
+			createId,
+		});
+
+		let seenRefresh: string | undefined;
+		const outcome = await resolveOAuthCredential({
+			db,
+			env: env(),
+			userId: "user-a",
+			providerId: "anthropic",
+			nowMs: () => clock.value,
+			createId,
+			runResolve: async ({ stored }) => {
+				if (stored.type === "oauth") seenRefresh = stored.refresh;
+				return {
+					ok: true,
+					resultJson: JSON.stringify({
+						storedCredential: {
+							type: "oauth",
+							refresh: "r-new-token-xxxxxxx",
+							access: "a-new-token-xxxxxxx",
+							expires: clock.value + 3_600_000,
+						},
+					}),
+				};
+			},
+		});
+		expect(seenRefresh).toBe("r-old-token-xxxxxxx");
+		expect(outcome.ok).toBe(true);
+		if (outcome.ok) {
+			expect(outcome.runtime).toMatchObject({
+				refresh: "ditto:no-refresh",
+				access: "a-new-token-xxxxxxx",
+			});
+		}
+		const final = await loadCredential({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			encryptionKey: KEY,
+		});
+		expect(final?.version).toBe(2);
+		expect(final?.credential).toMatchObject({
+			refresh: "r-new-token-xxxxxxx",
+		});
+	});
+
+	it("CRED-1: never replays pre-wait refresh after concurrent rotation", async () => {
+		await upsertCredential({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			authType: "oauth",
+			credential: {
+				type: "oauth",
+				refresh: "refresh-pre-wait-xxxx",
+				access: "access-pre-wait-xxxxx",
+				expires: clock.value + 1000,
+			},
+			models: [model],
+			encryptionKey: KEY,
+			nowMs: clock.value,
+			createId,
+		});
+
+		const concurrent = await acquireLease({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			nowMs: clock.value,
+			createId: () => "pre-wait-rotator",
+		});
+		expect(concurrent).not.toBeNull();
+		if (!concurrent) throw new Error("expected concurrent lease");
+		const rotated = await updateCredentialUnderLease({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			leaseId: concurrent.leaseId,
+			expectedVersion: concurrent.version,
+			credential: {
+				type: "oauth",
+				refresh: "refresh-post-wait-xxx",
+				access: "access-still-expired-x",
+				expires: clock.value + 1000,
+			},
+			encryptionKey: KEY,
+			nowMs: clock.value,
+		});
+		expect(rotated).toBe("ok");
+		await releaseLease({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			leaseId: concurrent.leaseId,
+			nowMs: clock.value,
+		});
+
+		let seenRefresh: string | undefined;
+		const outcome = await resolveOAuthCredential({
+			db,
+			env: env(),
+			userId: "user-a",
+			providerId: "anthropic",
+			nowMs: () => clock.value,
+			createId,
+			runResolve: async ({ stored }) => {
+				if (stored.type === "oauth") seenRefresh = stored.refresh;
+				return {
+					ok: true,
+					resultJson: JSON.stringify({
+						storedCredential: {
+							type: "oauth",
+							refresh: "refresh-final-token-x",
+							access: "access-final-token-xx",
+							expires: clock.value + 3_600_000,
+						},
+					}),
+				};
+			},
+		});
+		expect(seenRefresh).toBe("refresh-post-wait-xxx");
+		expect(seenRefresh).not.toBe("refresh-pre-wait-xxxx");
+		expect(outcome.ok).toBe(true);
+		const final = await loadCredential({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			encryptionKey: KEY,
+		});
+		expect(final?.version).toBe(3);
+		expect(final?.credential).toMatchObject({
+			refresh: "refresh-final-token-x",
+		});
+	});
+
+	it("CRED-1: version skew after lease returns busy without provider call", async () => {
+		await upsertCredential({
+			db,
+			userId: "user-a",
+			providerId: "anthropic",
+			authType: "oauth",
+			credential: {
+				type: "oauth",
+				refresh: "refresh-skew-token-xx",
+				access: "access-skew-token-xxx",
+				expires: clock.value + 1000,
+			},
+			models: [model],
+			encryptionKey: KEY,
+			nowMs: clock.value,
+			createId,
+		});
+
+		const skewed: CredentialRepository = {
+			getRow: async (userId, providerId) => {
+				const row = await db.getRow(userId, providerId);
+				return row ? { ...row, version: row.version + 1 } : null;
+			},
+			listRows: (userId) => db.listRows(userId),
+			insertRow: (row) => db.insertRow(row),
+			updateRow: (where, set) => db.updateRow(where, set),
+			deleteRow: (where) => db.deleteRow(where),
+			clearExpiredLeases: (now) => db.clearExpiredLeases(now),
+			insertAttempt: (row) => db.insertAttempt(row),
+			getAttempt: (id, userId) => db.getAttempt(id, userId),
+			updateAttempt: (id, set) => db.updateAttempt(id, set),
+			deleteExpiredAttempts: (now) => db.deleteExpiredAttempts(now),
+		};
+
+		let called = false;
+		const outcome = await resolveOAuthCredential({
+			db: skewed,
+			env: env(),
+			userId: "user-a",
+			providerId: "anthropic",
+			nowMs: () => clock.value,
+			createId,
+			runResolve: async () => {
+				called = true;
+				throw new Error("provider must not be called");
+			},
+		});
+		expect(called).toBe(false);
+		expect(outcome).toEqual({ ok: false, code: "busy" });
 	});
 
 	it("controlProviderAuth: ownership 404", async () => {

@@ -324,8 +324,6 @@ export async function prepareAgentRun(options: {
 					env,
 					userId,
 					providerId: parsedModel.providerId,
-					stored: owned.credential,
-					version: owned.version,
 				});
 				if (!refreshed.ok) {
 					return {

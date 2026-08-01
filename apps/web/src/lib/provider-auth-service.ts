@@ -10,6 +10,7 @@ import {
 	type CredentialRepository,
 	createCredentialRepository,
 	FALLBACK_MODEL_SPECIFIER,
+	loadCredential,
 	markNeedsRelogin,
 	parseStoredCredential,
 	toRuntimeCredential as projectRuntimeCredential,
@@ -878,8 +879,6 @@ export async function resolveOAuthCredential(options: {
 	env: Env;
 	userId: string;
 	providerId: string;
-	stored: StoredCredential;
-	version: number;
 	nowMs?: () => number;
 	createId?: () => string;
 	deps?: AuthDeps;
@@ -938,7 +937,7 @@ export async function resolveOAuthCredential(options: {
 			providerId: options.providerId,
 			errorCode: "oauth_refresh_failed",
 			leaseId: lease.leaseId,
-			expectedVersion: options.version,
+			expectedVersion: lease.version,
 			nowMs: nowMs(),
 		});
 	};
@@ -973,6 +972,34 @@ export async function resolveOAuthCredential(options: {
 	};
 
 	try {
+		// CRED-1: always re-read under the held lease. Never refresh from a
+		// caller-supplied pre-wait snapshot (rotating refresh tokens).
+		const loaded = await loadCredential({
+			db: repo,
+			userId: options.userId,
+			providerId: options.providerId,
+			encryptionKey: options.env.AI_CREDENTIALS_ENCRYPTION_KEY,
+		});
+		if (!loaded) return { ok: false, code: "missing" };
+		if (loaded.version !== lease.version) return { ok: false, code: "busy" };
+		if (loaded.status !== "connected") {
+			return { ok: false, code: "refresh_failed" };
+		}
+
+		try {
+			const runtime = projectRuntimeCredential(
+				loaded.credential,
+				options.providerId,
+				{ nowMs: nowMs() },
+			);
+			return { ok: true, runtime };
+		} catch {
+			// still expired / not usable — fall through to provider refresh
+		}
+
+		const authoritative = loaded.credential;
+		const expectedVersion = lease.version;
+
 		const job = {
 			mode: "resolve" as const,
 			attemptId,
@@ -1002,7 +1029,7 @@ export async function resolveOAuthCredential(options: {
 			try {
 				const outcome = await options.runResolve({
 					job,
-					stored: options.stored,
+					stored: authoritative,
 					timeoutMs: AUTH_RESOLUTION_TIMEOUT_MS,
 					signal: abort.signal,
 					terminate: async (proc) => {
@@ -1040,7 +1067,7 @@ export async function resolveOAuthCredential(options: {
 				id: `auth-resolve-${safeId(attemptId)}`,
 				cwd: "/tmp",
 				env: {
-					DITTO_PI_STORED_CREDENTIAL: JSON.stringify(options.stored),
+					DITTO_PI_STORED_CREDENTIAL: JSON.stringify(authoritative),
 				},
 				commandTimeoutMs:
 					AUTH_RESOLUTION_TIMEOUT_MS + AUTH_PROCESS_KILL_GRACE_MS,
@@ -1154,7 +1181,7 @@ export async function resolveOAuthCredential(options: {
 			userId: options.userId,
 			providerId: options.providerId,
 			leaseId: lease.leaseId,
-			expectedVersion: options.version,
+			expectedVersion,
 			credential: stored,
 			encryptionKey: options.env.AI_CREDENTIALS_ENCRYPTION_KEY,
 			nowMs: nowMs(),
