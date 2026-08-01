@@ -75,6 +75,14 @@ const config = defineConfig(({ mode }) => {
 				external: ["node:async_hooks", "cloudflare:workers"],
 			},
 		},
+		server: {
+			host: "0.0.0.0",
+			allowedHosts: [".ts.net"],
+		},
+		preview: {
+			host: "0.0.0.0",
+			allowedHosts: [".ts.net"],
+		},
 		plugins: [
 			devtools(),
 			tailwindcss(),

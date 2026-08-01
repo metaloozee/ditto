@@ -10,6 +10,8 @@ export function createAuth(env: Env) {
 	return betterAuth({
 		secret: env.BETTER_AUTH_SECRET,
 		baseURL: env.BETTER_AUTH_URL || undefined,
+		// Local vite + Tailscale Serve can both hit the same worker.
+		trustedOrigins: ["http://localhost:5173", "http://127.0.0.1:5173"],
 		database: drizzleAdapter(db, {
 			provider: "sqlite",
 			schema,
