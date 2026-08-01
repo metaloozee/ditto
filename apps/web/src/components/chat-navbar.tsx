@@ -3,7 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type { ReactNode } from "react";
 import { SessionGitActions } from "#/components/session-git-actions";
 import { SessionToolsTrigger } from "#/components/session-tools-trigger";
-import { SidebarTrigger, useSidebar } from "#/components/ui/sidebar";
+import { SidebarModeTrigger } from "#/components/sidebar-mode-trigger";
 import {
 	Tooltip,
 	TooltipContent,
@@ -35,9 +35,7 @@ export function ChatNavbar({
 	onToolsOpenChange,
 	rightActions,
 }: ChatNavbarProps) {
-	const { state, isMobile } = useSidebar();
 	const reduceMotion = useReducedMotion();
-	const showSidebarTrigger = isMobile || state === "collapsed";
 	const duration = reduceMotion ? 0 : 0.2;
 	const ease = [0.23, 1, 0.32, 1] as const;
 	const branchLabel = branchName?.trim() || "—";
@@ -67,22 +65,7 @@ export function ChatNavbar({
 	);
 	const left = (
 		<div className="flex h-8 min-w-0 items-center">
-			<AnimatePresence initial={false}>
-				{showSidebarTrigger ? (
-					<motion.div
-						key="sidebar-trigger"
-						initial={{ opacity: 0, width: 0 }}
-						animate={{ opacity: 1, width: TRIGGER_SLOT_WIDTH }}
-						exit={{ opacity: 0, width: 0 }}
-						transition={{ duration, ease }}
-						className="h-6 shrink-0 overflow-hidden"
-					>
-						<div className="flex size-6 items-center justify-center">
-							<SidebarTrigger className="size-6 shrink-0 cursor-pointer" />
-						</div>
-					</motion.div>
-				) : null}
-			</AnimatePresence>
+			<SidebarModeTrigger />
 			{branch}
 		</div>
 	);
@@ -90,9 +73,9 @@ export function ChatNavbar({
 	return (
 		<nav
 			aria-label="Chat controls"
-			className="pointer-events-none absolute inset-x-0 top-0 z-10 w-full bg-gradient-to-b from-background from-60% to-transparent pt-[max(1rem,env(safe-area-inset-top))] pb-6 sm:pb-8"
+			className="w-full shrink-0 pt-[max(1rem,env(safe-area-inset-top))] pb-2"
 		>
-			<div className="pointer-events-auto flex w-full items-center px-5 sm:px-6">
+			<div className="flex w-full items-center px-5 sm:px-6">
 				<div className="min-w-0 flex-1">
 					{gitExportEnabled && projectId && sessionId && !disabled ? (
 						<SessionGitActions

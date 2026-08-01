@@ -10,7 +10,7 @@ vi.mock("#/components/session-git-actions", () => ({
 
 vi.mock("#/components/ui/sidebar", () => ({
 	SidebarTrigger: () => <button type="button">Sidebar</button>,
-	useSidebar: () => ({ state: "expanded" }),
+	useSidebar: () => ({ state: "expanded", isMobile: false }),
 }));
 
 const { ChatNavbar } = await import("./chat-navbar");
