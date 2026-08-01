@@ -34,7 +34,7 @@ export function sanitizeEnvVars(
 			});
 		}
 
-		envVarsByKey.set(key, envVar.value.trim());
+		envVarsByKey.set(key, envVar.value);
 	}
 
 	return Array.from(envVarsByKey, ([key, value]) => ({ key, value }));
