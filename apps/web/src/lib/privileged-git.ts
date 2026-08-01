@@ -599,6 +599,83 @@ export async function fetchGitHubBranchIsolated(options: {
 	};
 }
 
+function assertAbsoluteGitPath(path: string, label: string): void {
+	if (!path.startsWith("/") || path.includes("\0") || path.includes("\n")) {
+		throw new Error(`${label} path is invalid.`);
+	}
+	if (path.includes("//") || path.split("/").includes("..")) {
+		throw new Error(`${label} path is invalid.`);
+	}
+}
+
+/**
+ * Point the temp bare repo at the source object store and create TEMP_REF at
+ * headRev. Avoids `git fetch` from a blobless partial clone (sandbox SDK).
+ */
+async function stageCommitViaAlternates(
+	sandbox: PrivilegedGitSandbox,
+	options: {
+		tempDir: string;
+		sourceCwd: string;
+		headRev: string;
+	},
+): Promise<void> {
+	const commonDir = await readStdoutOrThrow(
+		sandbox,
+		"git rev-parse --path-format=absolute --git-common-dir",
+		{
+			cwd: options.sourceCwd,
+			errorPrefix: "Failed to resolve source git directory for push staging",
+		},
+	);
+	assertAbsoluteGitPath(commonDir, "Source git directory");
+
+	const objectType = await readStdoutOrThrow(
+		sandbox,
+		`git cat-file -t ${quoteGitHubExportShellArg(options.headRev)}`,
+		{
+			cwd: options.sourceCwd,
+			errorPrefix: "Failed to read preflight commit object",
+		},
+	);
+	if (objectType !== "commit") {
+		throw new Error("Preflight head revision is not a commit object.");
+	}
+
+	const objectsDir = `${commonDir}/objects`;
+	const quotedTemp = quoteGitHubExportShellArg(options.tempDir);
+	const quotedObjects = quoteGitHubExportShellArg(objectsDir);
+	const quotedRef = quoteGitHubExportShellArg(TEMP_REF);
+	const quotedSha = quoteGitHubExportShellArg(options.headRev);
+	const alternatesPath = `${options.tempDir}/objects/info/alternates`;
+	const quotedAlternates = quoteGitHubExportShellArg(alternatesPath);
+
+	await execOrThrow(
+		sandbox,
+		[
+			`mkdir -p ${quoteGitHubExportShellArg(`${options.tempDir}/objects/info`)}`,
+			`printf '%s\n' ${quotedObjects} > ${quotedAlternates}`,
+			`git --git-dir=${quotedTemp} update-ref ${quotedRef} ${quotedSha}`,
+		].join(" && "),
+		{
+			errorPrefix: "Failed to stage push commit into isolated repository",
+		},
+	);
+
+	const stagedSha = await readStdoutOrThrow(
+		sandbox,
+		`git --git-dir=${quotedTemp} rev-parse ${quotedRef}`,
+		{
+			errorPrefix: "Failed to verify staged push commit",
+		},
+	);
+	if (stagedSha !== options.headRev) {
+		throw new Error(
+			"Isolated push ref does not match the preflight head revision.",
+		);
+	}
+}
+
 /**
  * Push the exact preflight HEAD SHA to GitHub from a fresh temp bare repo.
  * Token mint runs only after local staging and SHA verification.
@@ -638,36 +715,16 @@ export async function pushGitHubCommitIsolated(options: {
 				);
 			}
 
-			// Import exact SHA into temp bare without credentials.
-			const importRefspec = `${options.headRev}:${TEMP_REF}`;
-			await execOrThrow(
-				options.sandbox,
-				[
-					"git",
-					"fetch",
-					"--no-tags",
-					quoteGitHubExportShellArg(options.sourceCwd),
-					quoteGitHubExportShellArg(importRefspec),
-				].join(" "),
-				{
-					cwd: tempDir,
-					errorPrefix: "Failed to stage push commit into isolated repository",
-				},
-			);
-
-			const stagedSha = await readStdoutOrThrow(
-				options.sandbox,
-				`git rev-parse ${quoteGitHubExportShellArg(TEMP_REF)}`,
-				{
-					cwd: tempDir,
-					errorPrefix: "Failed to verify staged push commit",
-				},
-			);
-			if (stagedSha !== options.headRev) {
-				throw new Error(
-					"Isolated push ref does not match the preflight head revision.",
-				);
-			}
+			// Stage via object alternates + update-ref. Do NOT git-fetch the source
+			// into an empty bare repo: Cloudflare sandbox clones use
+			// --filter=blob:none, and upload-pack disables lazy fetch, so packing
+			// the full reachable closure fails on missing promisor blobs. Alternates
+			// let the later push negotiate with GitHub and send only novel objects.
+			await stageCommitViaAlternates(options.sandbox, {
+				tempDir,
+				sourceCwd: options.sourceCwd,
+				headRev: options.headRev,
+			});
 
 			const token = await options.mintToken();
 			secrets.current = buildCredentialRedactionSecrets(token);

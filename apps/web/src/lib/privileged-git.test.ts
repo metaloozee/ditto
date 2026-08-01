@@ -117,19 +117,40 @@ function defaultPushHandler(
 		expect(options?.cwd).toBe(WORKTREE);
 		return ok(`${state.sourceHead ?? HEAD_SHA}\n`);
 	}
+	if (command === "git rev-parse --path-format=absolute --git-common-dir") {
+		expect(options?.cwd).toBe(WORKTREE);
+		return ok(`${WORKSPACE}/.git\n`);
+	}
+	if (command.startsWith("git cat-file -t ") && command.includes(HEAD_SHA)) {
+		expect(options?.cwd).toBe(WORKTREE);
+		return ok("commit\n");
+	}
+	// Staging uses alternates + update-ref (not fetch-from-worktree).
 	if (
-		command.startsWith("git fetch --no-tags ") &&
-		command.includes(quoteGitHubExportShellArg(WORKTREE))
+		command.includes("objects/info/alternates") &&
+		command.includes("update-ref")
 	) {
-		expect(options?.cwd).toMatch(/^\/tmp\/ditto-privileged-git-/);
+		expect(command).toContain(
+			quoteGitHubExportShellArg(`${WORKSPACE}/.git/objects`),
+		);
+		expect(command).toContain("refs/ditto-isolated");
+		expect(command).toContain(HEAD_SHA);
+		expect(command).not.toContain("git fetch");
 		expect(options?.env).toBeUndefined();
 		return ok("");
 	}
 	if (
-		command.includes("git rev-parse ") &&
+		command.includes("rev-parse") &&
 		command.includes("refs/ditto-isolated")
 	) {
 		return ok(`${state.stagedSha ?? HEAD_SHA}\n`);
+	}
+	// Old fetch-from-worktree staging must never run.
+	if (
+		command.startsWith("git fetch --no-tags ") &&
+		command.includes(quoteGitHubExportShellArg(WORKTREE))
+	) {
+		throw new Error(`unexpected fetch-from-worktree staging: ${command}`);
 	}
 	if (isNetworkLauncherCommand(command)) {
 		if (state.networkFail) {
@@ -326,15 +347,28 @@ describe("pushGitHubCommitIsolated", () => {
 		);
 		const stageOrder = calls.findIndex(
 			(call) =>
-				call.command.startsWith("git fetch --no-tags ") &&
-				call.command.includes(WORKTREE),
+				call.command.includes("objects/info/alternates") &&
+				call.command.includes("update-ref"),
 		);
 		const headOrder = calls.findIndex(
 			(call) => call.command === "git rev-parse HEAD",
 		);
+		const commonDirOrder = calls.findIndex(
+			(call) =>
+				call.command ===
+				"git rev-parse --path-format=absolute --git-common-dir",
+		);
 		expect(headOrder).toBeGreaterThanOrEqual(0);
-		expect(stageOrder).toBeGreaterThan(headOrder);
+		expect(commonDirOrder).toBeGreaterThan(headOrder);
+		expect(stageOrder).toBeGreaterThan(commonDirOrder);
 		expect(mintOrder).toBeGreaterThan(stageOrder);
+		expect(
+			calls.some(
+				(call) =>
+					call.command.startsWith("git fetch --no-tags ") &&
+					call.command.includes(WORKTREE),
+			),
+		).toBe(false);
 
 		// mintToken is invoked only when network is about to run — after stage verify.
 		const networkCall = calls[mintOrder];
@@ -464,6 +498,107 @@ describe("pushGitHubCommitIsolated", () => {
 		expect(calls.some((call) => call.command.startsWith("rm -rf -- "))).toBe(
 			true,
 		);
+	});
+
+	it("rejects non-commit preflight objects before token mint", async () => {
+		const mintToken = vi.fn(async () => TOKEN);
+		const { sandbox, calls } = makeSandbox((command, options) => {
+			if (command.startsWith("git cat-file -t ")) {
+				return ok("blob\n");
+			}
+			return defaultPushHandler(command, options);
+		});
+
+		await expect(
+			pushGitHubCommitIsolated({
+				sandbox,
+				githubRepo: "acme/repo",
+				branchName: "main",
+				sourceCwd: WORKTREE,
+				headRev: HEAD_SHA,
+				mintToken,
+			}),
+		).rejects.toThrow(/not a commit object/);
+
+		expect(mintToken).not.toHaveBeenCalled();
+		expect(calls.some((call) => isNetworkLauncherCommand(call.command))).toBe(
+			false,
+		);
+		expect(calls.some((call) => call.command.startsWith("rm -rf -- "))).toBe(
+			true,
+		);
+	});
+
+	it("rejects invalid source git common-dir paths before token mint", async () => {
+		const mintToken = vi.fn(async () => TOKEN);
+		const { sandbox, calls } = makeSandbox((command, options) => {
+			if (command === "git rev-parse --path-format=absolute --git-common-dir") {
+				return ok("../evil/.git\n");
+			}
+			return defaultPushHandler(command, options);
+		});
+
+		await expect(
+			pushGitHubCommitIsolated({
+				sandbox,
+				githubRepo: "acme/repo",
+				branchName: "main",
+				sourceCwd: WORKTREE,
+				headRev: HEAD_SHA,
+				mintToken,
+			}),
+		).rejects.toThrow(/Source git directory path is invalid/);
+
+		expect(mintToken).not.toHaveBeenCalled();
+		expect(
+			calls.some(
+				(call) =>
+					call.command.includes("objects/info/alternates") &&
+					call.command.includes("update-ref"),
+			),
+		).toBe(false);
+		expect(calls.some((call) => call.command.startsWith("rm -rf -- "))).toBe(
+			true,
+		);
+	});
+
+	it("stages via object alternates instead of fetch-from-worktree (blobless clone safe)", async () => {
+		const mintToken = vi.fn(async () => TOKEN);
+		const { sandbox, calls } = makeSandbox((command, options) =>
+			defaultPushHandler(command, options),
+		);
+
+		await pushGitHubCommitIsolated({
+			sandbox,
+			githubRepo: "acme/repo",
+			branchName: "main",
+			sourceCwd: WORKTREE,
+			headRev: HEAD_SHA,
+			mintToken,
+		});
+
+		const stage = calls.find(
+			(call) =>
+				call.command.includes("objects/info/alternates") &&
+				call.command.includes("update-ref"),
+		);
+		expect(stage).toBeDefined();
+		expect(stage?.command).toContain(
+			quoteGitHubExportShellArg(`${WORKSPACE}/.git/objects`),
+		);
+		expect(stage?.command).toContain(
+			quoteGitHubExportShellArg("refs/ditto-isolated"),
+		);
+		expect(stage?.command).toContain(quoteGitHubExportShellArg(HEAD_SHA));
+		// Must not pack the partial clone into an empty bare (lazy-fetch disabled).
+		expect(
+			calls.some(
+				(call) =>
+					call.command.startsWith("git fetch --no-tags ") &&
+					call.command.includes(WORKTREE),
+			),
+		).toBe(false);
+		expect(mintToken).toHaveBeenCalledTimes(1);
 	});
 
 	it("does not consult repository-controlled remote names or source worktree as network cwd", async () => {
