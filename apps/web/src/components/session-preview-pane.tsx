@@ -167,13 +167,13 @@ export function SessionPreviewPane({
 		<section
 			aria-label="Session website preview"
 			className={cn(
-				"flex h-full min-h-0 min-w-0 flex-col bg-background",
+				"flex h-full min-h-0 min-w-0 flex-col bg-transparent",
 				className,
 			)}
 		>
 			<TooltipProvider delay={300}>
 				{/* Browser toolbar */}
-				<div className="flex shrink-0 items-center gap-1.5 border-border/70 border-b bg-muted/40 px-2 py-1.5">
+				<div className="flex shrink-0 items-center gap-1.5 border-sidebar-border border-b px-2 py-1.5">
 					<Tooltip>
 						<TooltipTrigger
 							render={
@@ -201,7 +201,7 @@ export function SessionPreviewPane({
 					{/* Address bar */}
 					<div
 						className={cn(
-							"flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-border/70 bg-background px-2.5 shadow-xs",
+							"flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-sidebar-border bg-background px-2.5 shadow-xs",
 						)}
 						title={
 							running
@@ -319,7 +319,7 @@ export function SessionPreviewPane({
 			<div className="relative flex min-h-0 flex-1 flex-col bg-background">
 				{activeState.kind === "idle" ? (
 					<div className="flex flex-1 flex-col items-center justify-center gap-4 p-6">
-						<div className="flex size-12 items-center justify-center rounded-xl border border-border/70 bg-muted/40">
+						<div className="flex size-12 items-center justify-center rounded-xl border border-border bg-card shadow-xs">
 							<MonitorPlayIcon
 								className="size-5 text-muted-foreground"
 								aria-hidden

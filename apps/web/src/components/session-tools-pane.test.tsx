@@ -29,7 +29,7 @@ describe("SessionToolsPane", () => {
 		);
 
 		const pane = screen.getByRole("region", { name: "Session tools" });
-		expect(pane.className).toContain("bg-muted");
+		expect(pane.className).toContain("bg-sidebar");
 		expect(pane.className).toContain("rounded-lg");
 		expect(pane.className).toContain("border");
 

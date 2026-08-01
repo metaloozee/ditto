@@ -64,7 +64,7 @@ export function SessionToolsPane({
 		<section
 			aria-label="Session tools"
 			className={cn(
-				"flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border/80 bg-muted shadow-sm",
+				"flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-sidebar-border bg-sidebar text-sidebar-foreground shadow-sm",
 				className,
 			)}
 		>
