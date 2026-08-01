@@ -1,5 +1,8 @@
 import { TRPCError } from "@trpc/server";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
+import type { createDb } from "#/db";
+import { projects } from "#/db/schema";
 import { decryptText, encryptText } from "#/lib/crypto";
 import { ENV_VAR_KEY_DESCRIPTION, normalizeEnvVarKey } from "#/lib/env-vars";
 import type { SandboxEnvVar } from "#/lib/sandbox-bootstrap";
@@ -68,4 +71,36 @@ export async function decryptEnvVars(
 			message: "Failed to read project environment variables.",
 		});
 	}
+}
+
+export const PROJECT_ENV_CAS_MAX_ATTEMPTS = 5;
+
+export async function compareAndSetProjectEnvVars(options: {
+	db: ReturnType<typeof createDb>;
+	projectId: string;
+	userId: string;
+	expectedCiphertext: string | null;
+	nextCiphertext: string | null;
+}): Promise<boolean> {
+	const matchesExpected =
+		options.expectedCiphertext === null
+			? isNull(projects.envVars)
+			: eq(projects.envVars, options.expectedCiphertext);
+
+	const [updated] = await options.db
+		.update(projects)
+		.set({
+			envVars: options.nextCiphertext,
+			updatedAt: sql`(unixepoch())`,
+		})
+		.where(
+			and(
+				eq(projects.id, options.projectId),
+				eq(projects.userId, options.userId),
+				matchesExpected,
+			),
+		)
+		.returning({ id: projects.id });
+
+	return updated != null;
 }

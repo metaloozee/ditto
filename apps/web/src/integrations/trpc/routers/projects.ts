@@ -7,13 +7,14 @@ import { projects, workspaceSessions } from "#/db/schema";
 import { createTRPCRouter, protectedProcedure } from "#/integrations/trpc/init";
 import { authorizeGitHubRepositoryAccess } from "#/lib/github-authorization";
 import {
+	compareAndSetProjectEnvVars,
 	decryptEnvVars,
 	encryptEnvVars,
 	envVarsSchema,
+	PROJECT_ENV_CAS_MAX_ATTEMPTS,
 	sanitizeEnvVars,
 	toEnvVarKeys,
 } from "#/lib/project-env-vars";
-import { provisionProjectSandbox } from "#/lib/project-sandbox";
 import { serializeSandboxBackup } from "#/lib/sandbox-backup";
 import { bootstrapSandbox, destroySandbox } from "#/lib/sandbox-bootstrap";
 import { redactSecrets } from "#/lib/secret-redaction";
@@ -239,63 +240,47 @@ export const projectsRouter = createTRPCRouter({
 			}
 
 			const db = createDb(ctx.env);
-			const [project] = await db
-				.select()
-				.from(projects)
-				.where(and(eq(projects.id, input.id), eq(projects.userId, ctx.user.id)))
-				.limit(1);
+			const secret = ctx.env.BETTER_AUTH_SECRET;
 
-			if (!project) {
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Project not found.",
-				});
-			}
+			for (let attempt = 0; attempt < PROJECT_ENV_CAS_MAX_ATTEMPTS; attempt++) {
+				const [project] = await db
+					.select({ envVars: projects.envVars })
+					.from(projects)
+					.where(
+						and(eq(projects.id, input.id), eq(projects.userId, ctx.user.id)),
+					)
+					.limit(1);
 
-			const envVars = await decryptEnvVars(
-				project.envVars,
-				ctx.env.BETTER_AUTH_SECRET,
-			);
-			const nextEnvVars = sanitizeEnvVars([...envVars, nextEnvVar]);
-			const encryptedEnvVars = await encryptEnvVars(
-				nextEnvVars,
-				ctx.env.BETTER_AUTH_SECRET,
-			);
-
-			if (project.sandboxId) {
-				const PROVISION_SUCCESS = new Set([
-					"connected",
-					"restored_from_backup",
-					"recreated_from_github",
-				]);
-				const ensured = await provisionProjectSandbox({
-					db,
-					env: ctx.env,
-					project,
-				});
-
-				if (
-					!PROVISION_SUCCESS.has(ensured.state) ||
-					!ensured.project.sandboxId
-				) {
+				if (!project) {
 					throw new TRPCError({
-						code: "PRECONDITION_FAILED",
-						message: "Project sandbox is not ready yet.",
+						code: "NOT_FOUND",
+						message: "Project not found.",
 					});
+				}
+
+				const expectedCiphertext = project.envVars;
+				const current = await decryptEnvVars(expectedCiphertext, secret);
+				const nextEnvVars = sanitizeEnvVars([...current, nextEnvVar]);
+				const nextCiphertext = await encryptEnvVars(nextEnvVars, secret);
+
+				const wrote = await compareAndSetProjectEnvVars({
+					db,
+					projectId: input.id,
+					userId: ctx.user.id,
+					expectedCiphertext,
+					nextCiphertext,
+				});
+
+				if (wrote) {
+					return toEnvVarKeys(nextEnvVars);
 				}
 			}
 
-			await db
-				.update(projects)
-				.set({
-					envVars: encryptedEnvVars,
-					updatedAt: sql`(unixepoch())`,
-				})
-				.where(
-					and(eq(projects.id, input.id), eq(projects.userId, ctx.user.id)),
-				);
-
-			return toEnvVarKeys(nextEnvVars);
+			throw new TRPCError({
+				code: "CONFLICT",
+				message:
+					"Environment variables were updated concurrently. Please retry.",
+			});
 		}),
 
 	deleteEnvVar: protectedProcedure
@@ -316,68 +301,52 @@ export const projectsRouter = createTRPCRouter({
 			}
 
 			const db = createDb(ctx.env);
-			const [project] = await db
-				.select()
-				.from(projects)
-				.where(and(eq(projects.id, input.id), eq(projects.userId, ctx.user.id)))
-				.limit(1);
+			const secret = ctx.env.BETTER_AUTH_SECRET;
 
-			if (!project) {
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Project not found.",
-				});
-			}
+			for (let attempt = 0; attempt < PROJECT_ENV_CAS_MAX_ATTEMPTS; attempt++) {
+				const [project] = await db
+					.select({ envVars: projects.envVars })
+					.from(projects)
+					.where(
+						and(eq(projects.id, input.id), eq(projects.userId, ctx.user.id)),
+					)
+					.limit(1);
 
-			const envVars = await decryptEnvVars(
-				project.envVars,
-				ctx.env.BETTER_AUTH_SECRET,
-			);
-			const nextEnvVars = envVars.filter((envVar) => envVar.key !== key);
-
-			if (nextEnvVars.length === envVars.length) {
-				return toEnvVarKeys(envVars);
-			}
-
-			const encryptedEnvVars = await encryptEnvVars(
-				nextEnvVars,
-				ctx.env.BETTER_AUTH_SECRET,
-			);
-
-			if (project.sandboxId) {
-				const PROVISION_SUCCESS = new Set([
-					"connected",
-					"restored_from_backup",
-					"recreated_from_github",
-				]);
-				const ensured = await provisionProjectSandbox({
-					db,
-					env: ctx.env,
-					project,
-				});
-
-				if (
-					!PROVISION_SUCCESS.has(ensured.state) ||
-					!ensured.project.sandboxId
-				) {
+				if (!project) {
 					throw new TRPCError({
-						code: "PRECONDITION_FAILED",
-						message: "Project sandbox is not ready yet.",
+						code: "NOT_FOUND",
+						message: "Project not found.",
 					});
+				}
+
+				const expectedCiphertext = project.envVars;
+				const current = await decryptEnvVars(expectedCiphertext, secret);
+				const nextEnvVars = current.filter((envVar) => envVar.key !== key);
+
+				if (nextEnvVars.length === current.length) {
+					return toEnvVarKeys(current);
+				}
+
+				const nextCiphertext = await encryptEnvVars(nextEnvVars, secret);
+
+				const wrote = await compareAndSetProjectEnvVars({
+					db,
+					projectId: input.id,
+					userId: ctx.user.id,
+					expectedCiphertext,
+					nextCiphertext,
+				});
+
+				if (wrote) {
+					return toEnvVarKeys(nextEnvVars);
 				}
 			}
 
-			await db
-				.update(projects)
-				.set({
-					envVars: encryptedEnvVars,
-					updatedAt: sql`(unixepoch())`,
-				})
-				.where(
-					and(eq(projects.id, input.id), eq(projects.userId, ctx.user.id)),
-				);
-
-			return toEnvVarKeys(nextEnvVars);
+			throw new TRPCError({
+				code: "CONFLICT",
+				message:
+					"Environment variables were updated concurrently. Please retry.",
+			});
 		}),
 
 	deleteProject: protectedProcedure
