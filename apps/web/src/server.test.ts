@@ -24,7 +24,7 @@ describe("server fetch routing", () => {
 		handlerFetchMock.mockResolvedValue(new Response("app", { status: 200 }));
 	});
 
-	it("returns proxied sandbox response unchanged, including SDK 500", async () => {
+	it("returns non-HTML proxied responses unchanged, including SDK 500", async () => {
 		const proxied = new Response("preview-error", { status: 500 });
 		proxyToSandboxMock.mockResolvedValue(proxied);
 
@@ -34,6 +34,30 @@ describe("server fetch routing", () => {
 		expect(response).toBe(proxied);
 		expect(response.status).toBe(500);
 		expect(handlerFetchMock).not.toHaveBeenCalled();
+	});
+
+	it("injects compact scrollbar styles into proxied HTML", async () => {
+		const proxied = new Response(
+			"<!doctype html><html><head><title>x</title></head><body>hi</body></html>",
+			{
+				status: 200,
+				headers: { "content-type": "text/html; charset=utf-8" },
+			},
+		);
+		proxyToSandboxMock.mockResolvedValue(proxied);
+
+		const response = await server.fetch(
+			new Request("https://10000-box-token.ayn.wtf/"),
+			env,
+		);
+		const html = await response.text();
+
+		expect(response).not.toBe(proxied);
+		expect(html).toContain("data-ditto-scrollbar");
+		expect(html).toContain("scrollbar-width:thin");
+		expect(html.indexOf("data-ditto-scrollbar")).toBeLessThan(
+			html.indexOf("</head>"),
+		);
 	});
 
 	it("falls through to TanStack on apex host when proxy misses", async () => {
