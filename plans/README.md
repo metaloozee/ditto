@@ -406,6 +406,34 @@ Locked outcomes:
   `advisor/035-sandbox-workload-runner-integrity`, and
   `advisor/036-sandbox-runner-contract`.
 
+## Plan 037 (OAuth refresh lease — CRED-1)
+
+Planned at commit `2c37ee1` on 2026-08-01 from Workstream 4 CRED-1 of
+`docs/superpowers/specs/2026-07-26-platform-hardening-design.md`.
+Independent of sandbox plans 034–036.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 037 | Refresh OAuth from the post-lease authoritative credential row | P0 | S | — | DONE (worktree `.worktrees/advisor-037-oauth-refresh-post-lease-credential` @ `be08692`; reviewer APPROVE) |
+| 038 | Make project env set/delete concurrent-safe with ciphertext CAS | P1 | S | — | DONE (worktree `.worktrees/advisor-038-project-env-mutation-cas` @ `20e8d64`; reviewer APPROVE) |
+
+Locked outcomes (037):
+
+- After `acquireLeaseWithWait`, re-read the credential row; never feed a
+  caller pre-wait `stored`/`version` into the provider refresh or CAS.
+- Remove `stored`/`version` from `resolveOAuthCredential` options so stale
+  replay is unrepresentable. Sole caller: `agent-run-service.ts`.
+- Usable post-lease credential short-circuits with no provider call; version
+  skew → `busy`. Process-death / `retainLease` ordering unchanged.
+- Branch: `advisor/037-oauth-refresh-post-lease-credential`.
+
+Locked outcomes (038):
+
+- Ciphertext CAS on `projects.envVars` (null-safe); bounded retry; CONFLICT
+  on exhaustion; no schema migration; not `updatedAt`.
+- Remove `provisionProjectSandbox` from set/delete (D1 is SoT).
+- Branch: `advisor/038-project-env-mutation-cas`.
+
 ### Audit finding coverage
 
 | Selected finding | Covered by | Combination rationale |
@@ -688,6 +716,12 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
   ownership/recovery key. Its control-plane capability gate may block execution.
 - **036 requires 034 and 035** — artifact/provision contract cleanup derives
   from the landed integrity/launcher boundary and cannot certify it in advance.
+- **037 depends on nothing in 034–036** — CRED-1 is confined to
+  `resolveOAuthCredential` + agent-run call site. Can run in parallel with
+  sandbox ownership/integrity work.
+- **038 depends on nothing** — ENV-3 ciphertext CAS on project env set/delete;
+  F4 value non-trim already on master. Parallel-safe with 037 and 034–036
+  (disjoint files).
 
 ## Product decisions (locked 2026-07-09)
 
@@ -791,6 +825,8 @@ tree while sharing git objects and (via symlink) `node_modules`.
 30. `034-own-and-clean-project-sandboxes.md`
 31. `035-isolate-sandbox-workloads-and-verify-runner.md`
 32. `036-centralize-sandbox-runner-contract.md`
+33. `037-oauth-refresh-post-lease-credential.md` (independent; may run parallel to 034–036)
+34. `038-project-env-mutation-cas.md` (independent; may run parallel to 037 and 034–036)
 
 ## Planning update — 2026-07-23 (Plan 028)
 
@@ -1066,3 +1102,33 @@ subagent (not new plan files).
 - **Next**: Plan 034 may proceed against this local baseline. Re-run a deployed
   >30s disconnect smoke whenever staging exists; if CF cancels mid-run, commission
   the DO/Workflow ownership work rather than enlarging this patch.
+
+## Planning update — 2026-08-01 (Plan 037)
+
+- **Current HEAD / planned-at**: `2c37ee1`.
+- **DONE 037**: CRED-1 — after refresh-lease acquire, re-read authoritative
+  credential; drop caller `stored`/`version` from `resolveOAuthCredential`;
+  short-circuit when post-lease access is already usable; never replay a
+  pre-wait rotating refresh token. Process kill/`retainLease` unchanged.
+  Landed at `be08692` on `advisor/037-oauth-refresh-post-lease-credential`
+  (worktree `.worktrees/advisor-037-oauth-refresh-post-lease-credential`).
+- **Depends on**: none. Parallel-safe with 034–036.
+- **Branch**: `advisor/037-oauth-refresh-post-lease-credential`.
+- **Verify**: `pnpm check`, `pnpm typecheck`, focused
+  `provider-auth-service` + `agent-run-service` vitest.
+
+## Planning update — Plan 038
+
+- **Plan**: `plans/038-project-env-mutation-cas.md`
+- **Title**: Make project env set/delete concurrent-safe with ciphertext CAS (ENV-3)
+- **Priority / Effort / Risk**: P1 / S / LOW–MED
+- **Status**: DONE (worktree `.worktrees/advisor-038-project-env-mutation-cas` @ `20e8d64`; reviewer APPROVE)
+- **Depends on**: none (F4/ENV-2 value non-trim already on master; independent of 037)
+- **Current HEAD / planned-at**: `2c37ee1` (2026-08-01); executed @ `20e8d64`
+- **Branch**: `advisor/038-project-env-mutation-cas`
+- **Locked outcomes**: ciphertext CAS on `projects.envVars` (null-safe); 5-attempt
+  retry; CONFLICT on exhaustion; remove `provisionProjectSandbox` from set/delete
+  (D1 SoT); no schema migration; no value-trim or ENV-4 scope
+- **Verify**: `pnpm check`, `pnpm typecheck`, focused
+  `projects.test.ts` + `project-env-vars.test.ts`
+- **Parallel-safe with**: 037 and 034–036 (disjoint files)
