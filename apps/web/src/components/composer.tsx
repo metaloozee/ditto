@@ -67,6 +67,16 @@ import {
 import { useUserPreferencesStore } from "#/lib/user-preferences-store";
 import { cn } from "#/lib/utils";
 
+/** Strong ease-out (Emil) — snappy start, soft settle. Full class strings for Tailwind scan. */
+const morphEaseClass = "ease-[cubic-bezier(0.23,1,0.32,1)]";
+/** Controls settle into the card bar when entering narrow; off when wide. */
+const controlSettleClass = cn(
+	"motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1",
+	"motion-safe:duration-200 motion-safe:fill-mode-both",
+	"motion-safe:ease-[cubic-bezier(0.23,1,0.32,1)]",
+	"@[420px]:animate-none",
+);
+
 interface Model {
 	chef: string;
 	chefSlug: string;
@@ -789,10 +799,64 @@ export function Composer({
 	const modelLabel = selectedModel?.name ?? "Select model";
 
 	return (
-		<section className="mx-auto w-full max-w-3xl px-5 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
+		<section className="@container mx-auto w-full min-w-0 max-w-3xl px-5 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
 			<form className="w-full" onSubmit={handleSubmit} noValidate>
-				<div className="flex items-end gap-2">
-					<div className="flex shrink-0 self-end">
+				{/*
+				  Narrow (<420px container): one card — textarea row, then
+				  Model · Thinking · spacer · Send.
+				  Wide: model | pill textarea + thinking | send (unchanged).
+				*/}
+				<div
+					className={cn(
+						"grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-end gap-y-1",
+						"rounded-3xl border border-border bg-card shadow-xs",
+						"transition-[background-color,border-color,box-shadow,border-radius,gap] duration-200",
+						morphEaseClass,
+						"motion-reduce:transition-none",
+						"@[420px]:grid-cols-[auto_minmax(0,1fr)_auto] @[420px]:gap-2 @[420px]:gap-y-0",
+						"@[420px]:rounded-none @[420px]:border-0 @[420px]:bg-transparent @[420px]:shadow-none",
+					)}
+				>
+					<div className="relative col-span-4 min-w-0 @[420px]:col-span-1 @[420px]:col-start-2 @[420px]:row-start-1">
+						<Textarea
+							aria-label="Message"
+							name="message"
+							value={text}
+							placeholder="Ask Ditto to inspect the workspace…"
+							required
+							minLength={1}
+							disabled={Boolean(disabledReason)}
+							aria-invalid={messageInvalid || undefined}
+							aria-describedby={
+								messageInvalid ? "composer-message-error" : undefined
+							}
+							onChange={(event) => {
+								textRef.current = event.currentTarget.value;
+								setText(event.currentTarget.value);
+								if (messageError) setMessageError(null);
+							}}
+							onKeyDown={handleTextareaKeyDown}
+							className={cn(
+								"min-h-11 max-h-48 w-full resize-none rounded-3xl border-0 bg-transparent px-4 py-3 text-sm shadow-none md:text-sm",
+								"dark:bg-transparent",
+								"field-sizing-content text-pretty leading-relaxed",
+								"placeholder:text-muted-foreground/70",
+								"transition-[padding,background-color,box-shadow,border-color] duration-200",
+								morphEaseClass,
+								"motion-reduce:transition-none",
+								"@[420px]:border @[420px]:border-border @[420px]:bg-card @[420px]:py-2 @[420px]:pr-24 @[420px]:shadow-xs",
+								"@[420px]:dark:bg-card",
+							)}
+						/>
+					</div>
+
+					<div
+						className={cn(
+							"col-start-1 row-start-2 flex shrink-0 p-2 pt-0",
+							"@[420px]:col-start-1 @[420px]:row-start-1 @[420px]:p-0",
+							controlSettleClass,
+						)}
+					>
 						<ModelSelector
 							open={modelSelectorOpen}
 							onOpenChange={setModelSelectorOpen}
@@ -813,9 +877,11 @@ export function Composer({
 														models.length === 0
 													}
 													className={cn(
-														"size-11 rounded-full bg-card shadow-xs",
-														"transition-transform duration-150 ease-out",
-														"active:scale-[0.97]",
+														"size-9 rounded-full bg-card shadow-xs @[420px]:size-11",
+														// size morph 200ms; press feedback stays crisp via active scale
+														"transition-[transform,width,height] duration-200",
+														morphEaseClass,
+														"active:scale-[0.97] active:duration-150",
 														"motion-reduce:transition-none motion-reduce:active:scale-100",
 													)}
 												>
@@ -869,72 +935,62 @@ export function Composer({
 						</ModelSelector>
 					</div>
 
-					<div className="relative min-w-0 flex-1">
-						<Textarea
-							aria-label="Message"
-							name="message"
-							value={text}
-							placeholder="Ask Ditto to inspect the workspace…"
-							required
-							minLength={1}
-							disabled={Boolean(disabledReason)}
-							aria-invalid={messageInvalid || undefined}
-							aria-describedby={
-								messageInvalid ? "composer-message-error" : undefined
-							}
-							onChange={(event) => {
-								textRef.current = event.currentTarget.value;
-								setText(event.currentTarget.value);
-								if (messageError) setMessageError(null);
+					<div
+						className={cn(
+							"col-start-2 row-start-2 flex items-center self-center pb-2",
+							"transition-[margin,padding] duration-200 motion-reduce:transition-none",
+							morphEaseClass,
+							"motion-safe:delay-50",
+							"@[420px]:col-start-2 @[420px]:row-start-1 @[420px]:z-10 @[420px]:mb-2 @[420px]:mr-2 @[420px]:justify-self-end @[420px]:self-end @[420px]:pb-0",
+							controlSettleClass,
+						)}
+					>
+						<Select
+							value={effectiveThinking ?? null}
+							onValueChange={(value) => {
+								if (isPiThinkingLevel(value)) {
+									setThinkingPreference(value);
+								}
 							}}
-							onKeyDown={handleTextareaKeyDown}
-							className={cn(
-								"min-h-11 max-h-48 w-full resize-none rounded-3xl border-border bg-card px-4 py-2 pr-24 text-sm shadow-xs md:text-sm",
-								"field-sizing-content text-pretty leading-relaxed",
-								"placeholder:text-muted-foreground/70",
-							)}
-						/>
-						<div className="absolute right-2 bottom-2">
-							<Select
-								value={effectiveThinking ?? null}
-								onValueChange={(value) => {
-									if (isPiThinkingLevel(value)) {
-										setThinkingPreference(value);
-									}
-								}}
-								disabled={thinkingSelectDisabled}
+							disabled={thinkingSelectDisabled}
+						>
+							<SelectTrigger
+								size="sm"
+								aria-label="Thinking level"
+								className={cn(
+									"h-auto gap-1 border-0 bg-transparent px-1.5 py-0.5 text-muted-foreground shadow-none",
+									"hover:bg-transparent hover:text-foreground",
+									"focus-visible:border-0 focus-visible:ring-1 focus-visible:ring-ring/40",
+									"dark:bg-transparent dark:hover:bg-transparent",
+									"disabled:opacity-40",
+								)}
 							>
-								<SelectTrigger
-									size="sm"
-									aria-label="Thinking level"
-									className={cn(
-										"h-auto gap-1 border-0 bg-transparent px-1.5 py-0.5 text-muted-foreground shadow-none",
-										"hover:bg-transparent hover:text-foreground",
-										"focus-visible:border-0 focus-visible:ring-1 focus-visible:ring-ring/40",
-										"dark:bg-transparent dark:hover:bg-transparent",
-										"disabled:opacity-40",
-									)}
-								>
-									<SelectValue>{thinkingTriggerLabel}</SelectValue>
-								</SelectTrigger>
-								<SelectContent
-									side="top"
-									align="end"
-									alignItemWithTrigger={false}
-								>
-									<SelectGroup>
-										{thinkingOptions.map((level) => (
-											<SelectItem key={level} value={level}>
-												{PI_THINKING_LEVEL_LABELS[level]}
-											</SelectItem>
-										))}
-									</SelectGroup>
-								</SelectContent>
-							</Select>
-						</div>
+								<SelectValue>{thinkingTriggerLabel}</SelectValue>
+							</SelectTrigger>
+							<SelectContent
+								side="top"
+								align="end"
+								alignItemWithTrigger={false}
+							>
+								<SelectGroup>
+									{thinkingOptions.map((level) => (
+										<SelectItem key={level} value={level}>
+											{PI_THINKING_LEVEL_LABELS[level]}
+										</SelectItem>
+									))}
+								</SelectGroup>
+							</SelectContent>
+						</Select>
 					</div>
 
-					<div className="flex shrink-0 self-end">
+					<div
+						className={cn(
+							"col-start-4 row-start-2 flex shrink-0 p-2 pt-0",
+							"@[420px]:col-start-3 @[420px]:row-start-1 @[420px]:p-0",
+							"motion-safe:delay-75",
+							controlSettleClass,
+						)}
+					>
 						<Tooltip>
 							<TooltipTrigger
 								render={
@@ -946,9 +1002,10 @@ export function Composer({
 										aria-busy={isPending || undefined}
 										disabled={isPending || submitDisabled}
 										className={cn(
-											"size-11 rounded-full shadow-xs",
-											"transition-transform duration-150 ease-out",
-											"active:scale-[0.97]",
+											"size-9 rounded-full shadow-xs @[420px]:size-11",
+											"transition-[transform,width,height] duration-200",
+											morphEaseClass,
+											"active:scale-[0.97] active:duration-150",
 											"motion-reduce:transition-none motion-reduce:active:scale-100",
 										)}
 									>
