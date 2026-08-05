@@ -187,7 +187,7 @@ function SessionGitActionsView({
 			: "Session already includes the latest base branch";
 	const commitTooltip =
 		pendingStep === "commit"
-			? "Drafting and committing…"
+			? "Committing…"
 			: commitDisabled
 				? dirty
 					? "Working…"
@@ -213,7 +213,7 @@ function SessionGitActionsView({
 					: "Open PR";
 	const prTooltip =
 		pendingStep === "pr"
-			? "Drafting and opening pull request…"
+			? "Opening PR…"
 			: workflow?.kind === "merged-pr"
 				? "View merged pull request on GitHub"
 				: workflow?.kind === "closed-pr"
@@ -290,20 +290,22 @@ function SessionGitActionsView({
 	const primaryDisabled =
 		statusLoading || !primary || primary.disabled || isPending;
 	const primaryPending = primaryStep !== null && pendingStep === primaryStep;
+	const pendingLabels: Partial<Record<WorkflowStepId, string>> = {
+		sync: "Syncing…",
+		commit: "Committing…",
+		push: "Pushing…",
+		pr: "Opening PR…",
+	};
 	const primaryLabel = statusLoading
-		? "Loading Git status"
-		: pendingStep === "commit"
-			? "Drafting and committing…"
-			: pendingStep === "pr"
-				? "Drafting and opening pull request…"
-				: (primary?.label ?? "Up to date");
+		? "Loading…"
+		: pendingStep
+			? (pendingLabels[pendingStep] ?? primary?.label ?? "Working…")
+			: (primary?.label ?? "Up to date");
 	const primaryTooltip = statusLoading
-		? "Loading Git status"
-		: pendingStep === "commit"
-			? "Drafting and committing…"
-			: pendingStep === "pr"
-				? "Drafting and opening pull request…"
-				: (primary?.tooltip ?? "No git action needed");
+		? "Loading…"
+		: pendingStep
+			? (pendingLabels[pendingStep] ?? primary?.tooltip ?? "Working…")
+			: (primary?.tooltip ?? "No git action needed");
 	const hasActivePrimary =
 		!statusLoading && Boolean(primary && !primary.disabled);
 

@@ -153,7 +153,7 @@ describe("SessionGitActions workflow", () => {
 		render(<SessionGitActions projectId="proj-1" sessionId="sess-1" />);
 
 		const loadingButton = screen.getByRole("button", {
-			name: "Loading Git status",
+			name: "Loading…",
 		});
 		expect(loadingButton).toHaveProperty("disabled", true);
 		expect(loadingButton.querySelector(".animate-spin")).not.toBeNull();
@@ -307,35 +307,33 @@ describe("SessionGitActions workflow", () => {
 		).toBe(false);
 	});
 
-	it("uses drafting accessible labels while commit is pending and disables controls", () => {
+	it("uses short accessible labels while commit is pending and disables controls", () => {
 		setStatus({ kind: "commit" });
 		mutationStateMock.commitPending = true;
 
 		render(<SessionGitActions projectId="proj-1" sessionId="sess-1" />);
 
 		const primary = screen.getByRole("button", {
-			name: "Drafting and committing…",
+			name: "Committing…",
 		});
 		expect(primary).toHaveProperty("disabled", true);
-		expect(primary.getAttribute("title")).toBe("Drafting and committing…");
+		expect(primary.getAttribute("title")).toBe("Committing…");
 		expect(
 			screen.getByRole("button", { name: "Choose git action" }),
 		).toHaveProperty("disabled", true);
 	});
 
-	it("uses drafting accessible labels while open PR is pending", () => {
+	it("uses short accessible labels while open PR is pending", () => {
 		setStatus({ kind: "open-pr" });
 		mutationStateMock.prPending = true;
 
 		render(<SessionGitActions projectId="proj-1" sessionId="sess-1" />);
 
 		const primary = screen.getByRole("button", {
-			name: "Drafting and opening pull request…",
+			name: "Opening PR…",
 		});
 		expect(primary).toHaveProperty("disabled", true);
-		expect(primary.getAttribute("title")).toBe(
-			"Drafting and opening pull request…",
-		);
+		expect(primary.getAttribute("title")).toBe("Opening PR…");
 	});
 
 	it("toasts the generated commit message text on success", () => {
