@@ -1,12 +1,12 @@
 import { useMutation } from "@tanstack/react-query";
+import { Globe, Lock } from "lucide";
 import {
-	GlobeIcon,
 	LoaderCircleIcon,
-	LockIcon,
 	MonitorPlayIcon,
 	RotateCcwIcon,
 	SquareIcon,
 } from "lucide-react";
+import { MorphIcon } from "morphicons/react";
 import { useState } from "react";
 import { Button } from "#/components/ui/button";
 import {
@@ -212,17 +212,11 @@ export function SessionPreviewPane({
 								: undefined
 						}
 					>
-						{running ? (
-							<LockIcon
-								className="size-3 shrink-0 text-muted-foreground"
-								aria-hidden
-							/>
-						) : (
-							<GlobeIcon
-								className="size-3 shrink-0 text-muted-foreground"
-								aria-hidden
-							/>
-						)}
+						<MorphIcon
+							icon={running ? Lock : Globe}
+							className="size-3 shrink-0 text-muted-foreground"
+							spring="snappy"
+						/>
 						<span
 							className={cn(
 								"min-w-0 flex-1 truncate font-mono text-[11px] leading-none",

@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { CheckIcon, CornerDownLeftIcon, SquareIcon } from "lucide-react";
+import { CornerDownLeft, Square } from "lucide";
+import { CheckIcon } from "lucide-react";
+import { MorphIcon } from "morphicons/react";
 import {
 	type Dispatch,
 	type FormEvent,
@@ -1012,26 +1014,11 @@ export function Composer({
 										{isPending ? (
 											<Spinner className="size-4" aria-hidden />
 										) : (
-											<span className="relative size-4" aria-hidden>
-												<CornerDownLeftIcon
-													className={cn(
-														"absolute inset-0 size-4 transition-[opacity,transform,filter] duration-150 ease-out",
-														"motion-reduce:transition-none",
-														isStopAction
-															? "scale-90 opacity-0 blur-[2px]"
-															: "scale-100 opacity-100 blur-0",
-													)}
-												/>
-												<SquareIcon
-													className={cn(
-														"absolute inset-0 size-4 transition-[opacity,transform,filter] duration-150 ease-out",
-														"motion-reduce:transition-none",
-														isStopAction
-															? "scale-100 opacity-100 blur-0"
-															: "scale-90 opacity-0 blur-[2px]",
-													)}
-												/>
-											</span>
+											<MorphIcon
+												icon={isStopAction ? Square : CornerDownLeft}
+												className="size-4"
+												spring="snappy"
+											/>
 										)}
 									</Button>
 								}

@@ -1,6 +1,7 @@
 "use client";
 
-import { CheckIcon, CopyIcon } from "lucide-react";
+import { Check, Copy } from "lucide";
+import { MorphIcon } from "morphicons/react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "#/components/ui/button";
 import {
@@ -76,26 +77,11 @@ export function CopyButton({
 							className,
 						)}
 					>
-						<span className="relative size-2.5" aria-hidden="true">
-							<CopyIcon
-								className={cn(
-									"absolute inset-0 size-2.5 transition-[opacity,transform,filter] duration-150 ease-out",
-									"motion-reduce:transition-none",
-									copied
-										? "scale-90 opacity-0 blur-[2px]"
-										: "scale-100 opacity-100 blur-0",
-								)}
-							/>
-							<CheckIcon
-								className={cn(
-									"absolute inset-0 size-2.5 transition-[opacity,transform,filter] duration-150 ease-out",
-									"motion-reduce:transition-none",
-									copied
-										? "scale-100 opacity-100 blur-0"
-										: "scale-90 opacity-0 blur-[2px]",
-								)}
-							/>
-						</span>
+						<MorphIcon
+							icon={copied ? Check : Copy}
+							className="size-2.5"
+							spring="snappy"
+						/>
 						<span className="sr-only" aria-live="polite">
 							{copied ? copiedLabel : ""}
 						</span>

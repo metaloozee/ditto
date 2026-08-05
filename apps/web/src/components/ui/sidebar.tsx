@@ -3,7 +3,8 @@
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
 import { cva, type VariantProps } from "class-variance-authority";
-import { PanelLeftCloseIcon, PanelLeftOpenIcon } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen } from "lucide";
+import { MorphIcon } from "morphicons/react";
 import * as React from "react";
 import { Button } from "#/components/ui/button.tsx";
 import { Input } from "#/components/ui/input.tsx";
@@ -278,25 +279,11 @@ function SidebarTrigger({
 			}}
 			{...props}
 		>
-			<span className="relative size-4 text-muted-foreground" aria-hidden>
-				{/* Crossfade open/close glyphs so the affordance tracks state without a hard cut. */}
-				<PanelLeftCloseIcon
-					className={cn(
-						"absolute inset-0 size-4 transition-[opacity,transform,filter] duration-150 ease-out",
-						"motion-reduce:transition-none",
-						isExpanded
-							? "scale-100 opacity-100 blur-0"
-							: "scale-90 opacity-0 blur-[2px]",
-					)}
-				/>
-				<PanelLeftOpenIcon
-					className={cn(
-						"absolute inset-0 size-4 transition-[opacity,transform,filter] duration-150 ease-out",
-						"motion-reduce:transition-none",
-						isExpanded
-							? "scale-90 opacity-0 blur-[2px]"
-							: "scale-100 opacity-100 blur-0",
-					)}
+			<span className="text-muted-foreground" aria-hidden>
+				<MorphIcon
+					icon={isExpanded ? PanelLeftClose : PanelLeftOpen}
+					className="size-4"
+					spring="snappy"
 				/>
 			</span>
 			<span className="sr-only">

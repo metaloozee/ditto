@@ -7,16 +7,16 @@ import {
 	useNavigate,
 	useParams,
 } from "@tanstack/react-router";
+import { Folder, FolderOpen } from "lucide";
 import {
 	AlertCircleIcon,
-	FolderIcon,
-	FolderOpenIcon,
 	Layers2Icon,
 	MoreHorizontalIcon,
 	PlusIcon,
 	SearchIcon,
 	TrashIcon,
 } from "lucide-react";
+import { MorphIcon } from "morphicons/react";
 import type * as React from "react";
 import { useState } from "react";
 import { NavUser } from "#/components/nav-user";
@@ -126,10 +126,12 @@ export function ProjectStatusIcon({
 	if (status === "failed") {
 		return <AlertCircleIcon className="!size-4 text-destructive" />;
 	}
-	return isOpen ? (
-		<FolderOpenIcon className="!size-4" />
-	) : (
-		<FolderIcon className="!size-4" />
+	return (
+		<MorphIcon
+			icon={isOpen ? FolderOpen : Folder}
+			className="!size-4"
+			spring="snappy"
+		/>
 	);
 }
 

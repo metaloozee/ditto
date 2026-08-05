@@ -560,7 +560,7 @@ describe("Composer streaming updates", () => {
 		act(() => stream.handlers?.onControlReady?.({ runId: "run-1" }));
 		const stop = screen.getByRole("button", { name: "Stop" });
 		expect((stop as HTMLButtonElement).disabled).toBe(false);
-		expect(stop.querySelector(".lucide-square")).not.toBeNull();
+		expect(stop.querySelector("svg")).not.toBeNull();
 
 		fireEvent.change(textarea, { target: { value: "   " } });
 		expect(
@@ -570,7 +570,7 @@ describe("Composer streaming updates", () => {
 		fireEvent.change(textarea, { target: { value: "follow up" } });
 		const queue = screen.getByRole("button", { name: "Queue message" });
 		expect((queue as HTMLButtonElement).disabled).toBe(false);
-		expect(queue.querySelector(".lucide-corner-down-left")).not.toBeNull();
+		expect(queue.querySelector("svg")).not.toBeNull();
 
 		act(() => {
 			stream.handlers?.onDone?.({
