@@ -204,6 +204,7 @@ describe("durable agent-run migration 0012", () => {
 		const columns = db.prepare("PRAGMA table_info(agent_runs)").all() as {
 			name: string;
 			notnull: number;
+			dflt_value: string | null;
 		}[];
 		expect(columns.map((column) => column.name)).toEqual([
 			"id",
@@ -225,6 +226,73 @@ describe("durable agent-run migration 0012", () => {
 			"updated_at",
 		]);
 		expect(
+			columns.map((column) => [column.name, column.notnull, column.dflt_value]),
+		).toEqual([
+			["id", 1, null],
+			["workspaceSessionId", 1, null],
+			["projectId", 1, null],
+			["userId", 1, null],
+			["sequence", 1, null],
+			["predecessorRunId", 0, null],
+			["status", 1, "'accepted'"],
+			["currentExecutionEpoch", 0, null],
+			["stopRequestId", 0, null],
+			["stopRequestedAt", 0, null],
+			["outcomeCode", 0, null],
+			["acceptedAt", 1, "unixepoch()"],
+			["startedAt", 0, null],
+			["finalizingAt", 0, null],
+			["finishedAt", 0, null],
+			["created_at", 1, "unixepoch()"],
+			["updated_at", 1, "unixepoch()"],
+		]);
+		const piColumns = db
+			.prepare("PRAGMA table_info(pi_agent_sessions)")
+			.all() as {
+			name: string;
+			notnull: number;
+			dflt_value: string | null;
+		}[];
+		expect(
+			piColumns.map((column) => [
+				column.name,
+				column.notnull,
+				column.dflt_value,
+			]),
+		).toEqual([
+			["workspaceSessionId", 1, null],
+			["projectId", 1, null],
+			["userId", 1, null],
+			["currentRunId", 0, null],
+			["created_at", 1, "unixepoch()"],
+			["updated_at", 1, "unixepoch()"],
+		]);
+		const turnColumns = db.prepare("PRAGMA table_info(turns)").all() as {
+			name: string;
+			notnull: number;
+			dflt_value: string | null;
+		}[];
+		expect(
+			turnColumns.map((column) => [
+				column.name,
+				column.notnull,
+				column.dflt_value,
+			]),
+		).toEqual([
+			["id", 1, null],
+			["runId", 1, null],
+			["workspaceSessionId", 1, null],
+			["projectId", 1, null],
+			["userId", 1, null],
+			["sequence", 1, null],
+			["requestId", 1, null],
+			["userMessageId", 1, null],
+			["assistantMessageId", 1, null],
+			["modelSpecifier", 1, null],
+			["thinkingLevel", 0, null],
+			["created_at", 1, "unixepoch()"],
+		]);
+		expect(
 			columns.find((column) => column.name === "workspaceSessionId")?.notnull,
 		).toBe(1);
 		const indexes = db
@@ -242,6 +310,14 @@ describe("durable agent-run migration 0012", () => {
 				"turns_assistant_message_uidx",
 			]),
 		);
+		expect(indexes.map((index) => index.name)).toEqual(
+			expect.arrayContaining([
+				"agent_runs_userId_idx",
+				"pi_agent_sessions_project_user_idx",
+				"turns_run_sequence_uidx",
+				"turns_project_session_run_idx",
+			]),
+		);
 		const sql = (
 			db
 				.prepare(
@@ -251,9 +327,63 @@ describe("durable agent-run migration 0012", () => {
 		).sql;
 		expect(sql).toContain("agent_runs_status_ck");
 		expect(sql).toContain("agent_runs_terminal_shape_ck");
-		expect(
-			(db.prepare("PRAGMA foreign_key_list(turns)").all() as unknown[]).length,
-		).toBe(6);
+		expect(sql).toContain("agent_runs_sequence_positive_ck");
+		expect(sql).toContain("agent_runs_outcome_shape_ck");
+		const turnSql = (
+			db
+				.prepare(
+					"SELECT sql FROM sqlite_master WHERE type='table' AND name='turns'",
+				)
+				.get() as { sql: string }
+		).sql;
+		expect(turnSql).toContain("turns_sequence_positive_ck");
+		expect(turnSql).toContain("turns_request_nonempty_ck");
+		expect(turnSql).toContain("turns_model_nonempty_ck");
+		expect(turnSql).toContain("turns_thinking_level_ck");
+		const foreignKeys = (
+			db.prepare("PRAGMA foreign_key_list(agent_runs)").all() as {
+				table: string;
+				on_delete: string;
+			}[]
+		).map((foreignKey) => [foreignKey.table, foreignKey.on_delete]);
+		expect(foreignKeys).toEqual(
+			expect.arrayContaining([
+				["workspace_sessions", "CASCADE"],
+				["projects", "CASCADE"],
+				["user", "CASCADE"],
+				["agent_runs", "SET NULL"],
+			]),
+		);
+		for (const table of ["pi_agent_sessions", "turns"] as const) {
+			const foreignKeyRows = db
+				.prepare(`PRAGMA foreign_key_list(${table})`)
+				.all() as {
+				table: string;
+				on_delete: string;
+			}[];
+			expect(foreignKeyRows.length).toBe(table === "turns" ? 6 : 4);
+			expect(foreignKeyRows.map((foreignKey) => foreignKey.table)).toEqual(
+				expect.arrayContaining(
+					table === "turns"
+						? [
+								"agent_runs",
+								"workspace_sessions",
+								"projects",
+								"user",
+								"messages",
+								"messages",
+							]
+						: ["workspace_sessions", "projects", "user", "agent_runs"],
+				),
+			);
+			expect(
+				foreignKeyRows.every(
+					(foreignKey) =>
+						foreignKey.on_delete === "CASCADE" ||
+						foreignKey.on_delete === "SET NULL",
+				),
+			).toBe(true);
+		}
 	});
 
 	it("cascades the owned model with its workspace session", () => {

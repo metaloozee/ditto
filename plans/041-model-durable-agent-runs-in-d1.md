@@ -1265,3 +1265,8 @@ Stop and report back — do not improvise — if:
   could not be demonstrated. Steps 8–9 were skipped and status is
   `DONE-local` / STOPPED at the cloud boundary; no infrastructure was created,
   adopted, replaced, or mutated.
+- Final revision verification: migration plus persistence passed (2 files,
+  15 tests); acceptance filter passed 5 tests; transition/epoch/stop/terminal/
+  assistant/ownership filter passed 6 tests; runtime regression passed 67
+  tests; typecheck, Biome, `pnpm verify`, source guards, storage guard, and
+  `git diff --check` all passed.

@@ -28,7 +28,9 @@ function migrate(sqlite: DatabaseSync) {
 			sqlite.exec(statement);
 }
 
-function makeDb(options: { failAt?: number } = {}) {
+function makeDb(
+	options: { failAt?: number; beforeBatch?: () => void | Promise<void> } = {},
+) {
 	const sqlite = new DatabaseSync(":memory:");
 	migrate(sqlite);
 	const prepared = (query: string, args: unknown[] = []) => {
@@ -52,6 +54,7 @@ function makeDb(options: { failAt?: number } = {}) {
 			}>,
 		) => {
 			const operation = batchQueue.then(async () => {
+				await options.beforeBatch?.();
 				sqlite.exec("BEGIN");
 				try {
 					const results = [];
@@ -81,13 +84,26 @@ function makeDb(options: { failAt?: number } = {}) {
 		)
 		.run("u1", "User", "u1@example.test", 0, 1, 1);
 	sqlite
+		.prepare(
+			"INSERT INTO user (id,name,email,emailVerified,createdAt,updatedAt) VALUES (?,?,?,?,?,?)",
+		)
+		.run("u2", "Other", "u2@example.test", 0, 1, 1);
+	sqlite
 		.prepare("INSERT INTO projects (id,name,userId,status) VALUES (?,?,?,?)")
 		.run("p1", "Project", "u1", "ready");
+	sqlite
+		.prepare("INSERT INTO projects (id,name,userId,status) VALUES (?,?,?,?)")
+		.run("p2", "Other", "u2", "ready");
 	sqlite
 		.prepare(
 			"INSERT INTO workspace_sessions (id,projectId,userId,status) VALUES (?,?,?,?)",
 		)
 		.run("s1", "p1", "u1", "active");
+	sqlite
+		.prepare(
+			"INSERT INTO workspace_sessions (id,projectId,userId,status) VALUES (?,?,?,?)",
+		)
+		.run("s2", "p2", "u2", "active");
 	return { db, sqlite };
 }
 const scope = { userId: "u1", projectId: "p1", workspaceSessionId: "s1" };
@@ -555,42 +571,47 @@ describe("agent-run persistence", () => {
 			modelSpecifier: "model",
 		});
 		if ("kind" in created) throw new Error("ownership setup failed");
-		const foreign = { userId: "u2", projectId: "p2", workspaceSessionId: "s2" };
-		const foreignLoad = await loadOwnedAgentRun({
-			db,
-			...foreign,
-			runId: created.runId,
-		});
-		expect(foreignLoad).toBeNull();
-		for (const result of [
-			await requestAgentRunStop({
+		for (const foreign of [
+			{ userId: "u2", projectId: "p1", workspaceSessionId: "s1" },
+			{ userId: "u1", projectId: "p2", workspaceSessionId: "s1" },
+			{ userId: "u1", projectId: "p1", workspaceSessionId: "s2" },
+		]) {
+			const foreignLoad = await loadOwnedAgentRun({
 				db,
 				...foreign,
 				runId: created.runId,
-				requestId: "foreign-stop",
-			}),
-			await transitionAgentRun({
-				db,
-				...foreign,
-				runId: created.runId,
-				from: "accepted",
-				to: "running",
-			}),
-			await advanceAgentRunEpoch({
-				db,
-				...foreign,
-				runId: created.runId,
-				expectedEpoch: 1,
-			}),
-			await settleTurnAssistant({
-				db,
-				...foreign,
-				turnId: created.turnId,
-				status: "complete",
-				content: "x",
-			}),
-		])
-			expect(result).toMatchObject({ kind: "error", code: "not_found" });
+			});
+			expect(foreignLoad).toBeNull();
+			for (const result of [
+				await requestAgentRunStop({
+					db,
+					...foreign,
+					runId: created.runId,
+					requestId: "foreign-stop",
+				}),
+				await transitionAgentRun({
+					db,
+					...foreign,
+					runId: created.runId,
+					from: "accepted",
+					to: "running",
+				}),
+				await advanceAgentRunEpoch({
+					db,
+					...foreign,
+					runId: created.runId,
+					expectedEpoch: 1,
+				}),
+				await settleTurnAssistant({
+					db,
+					...foreign,
+					turnId: created.turnId,
+					status: "complete",
+					content: "x",
+				}),
+			])
+				expect(result).toMatchObject({ kind: "error", code: "not_found" });
+		}
 		sqlite
 			.prepare("UPDATE workspace_sessions SET status='archived' WHERE id='s1'")
 			.run();
@@ -612,6 +633,35 @@ describe("agent-run persistence", () => {
 			}),
 		).toMatchObject({ kind: "error", code: "not_found" });
 		expect(
+			await loadOwnedAgentRun({ db, ...scope, runId: created.runId }),
+		).toBeNull();
+		expect(
+			await transitionAgentRun({
+				db,
+				...scope,
+				runId: created.runId,
+				from: "accepted",
+				to: "running",
+			}),
+		).toMatchObject({ kind: "error", code: "not_found" });
+		expect(
+			await advanceAgentRunEpoch({
+				db,
+				...scope,
+				runId: created.runId,
+				expectedEpoch: 1,
+			}),
+		).toMatchObject({ kind: "error", code: "not_found" });
+		expect(
+			await settleTurnAssistant({
+				db,
+				...scope,
+				turnId: created.turnId,
+				status: "complete",
+				content: "x",
+			}),
+		).toMatchObject({ kind: "error", code: "not_found" });
+		expect(
 			await settleTurnAssistant({
 				db,
 				...scope,
@@ -620,5 +670,398 @@ describe("agent-run persistence", () => {
 				content: "x",
 			}),
 		).toMatchObject({ kind: "error", code: "not_found" });
+	});
+
+	it("race interleavings reroute, archive, and deduplicate atomically", async () => {
+		let stopped = false;
+		const stoppingOptions: { beforeBatch?: () => void } = {};
+		const stopping = makeDb(stoppingOptions);
+		const initialStopping = await acceptAgentInput({
+			db: stopping.db,
+			...scope,
+			requestId: "race-initial",
+			message: "initial",
+			modelSpecifier: "model",
+			createId: (() => {
+				let n = 0;
+				return () => `race-run-${++n}`;
+			})(),
+		});
+		if ("kind" in initialStopping) throw new Error("interleaving setup failed");
+		stoppingOptions.beforeBatch = () => {
+			if (stopped) return;
+			stopped = true;
+			stopping.sqlite
+				.prepare("UPDATE agent_runs SET status='stopping' WHERE id=?")
+				.run(initialStopping.runId);
+		};
+		const rerouted = await acceptAgentInput({
+			db: stopping.db,
+			...scope,
+			requestId: "race-reroute",
+			message: "reroute",
+			modelSpecifier: "model",
+			createId: (() => {
+				let n = 0;
+				return () => `race-successor-${++n}`;
+			})(),
+		});
+		if ("kind" in rerouted) throw new Error("reroute setup failed");
+		expect(rerouted.createdRun).toBe(true);
+		expect(
+			stopping.sqlite
+				.prepare("SELECT status FROM agent_runs WHERE id=?")
+				.get(initialStopping.runId),
+		).toEqual({ status: "stopping" });
+		expect(
+			stopping.sqlite.prepare("SELECT COUNT(*) AS count FROM turns").get(),
+		).toEqual({ count: 2 });
+
+		let archived = false;
+		const archivedOptions: { beforeBatch?: () => void } = {};
+		const archivedDb = makeDb(archivedOptions);
+		archivedOptions.beforeBatch = () => {
+			if (archived) return;
+			archived = true;
+			archivedDb.sqlite
+				.prepare(
+					"UPDATE workspace_sessions SET status='archived' WHERE id='s1'",
+				)
+				.run();
+		};
+		const archiveResult = await acceptAgentInput({
+			db: archivedDb.db,
+			...scope,
+			requestId: "race-archive",
+			message: "archive",
+			modelSpecifier: "model",
+		});
+		expect(archiveResult).toMatchObject({ kind: "error", code: "not_found" });
+		expect(
+			archivedDb.sqlite
+				.prepare("SELECT COUNT(*) AS count FROM agent_runs")
+				.get(),
+		).toEqual({ count: 0 });
+		expect(
+			archivedDb.sqlite.prepare("SELECT COUNT(*) AS count FROM turns").get(),
+		).toEqual({ count: 0 });
+
+		const concurrent = makeDb();
+		const concurrentResults = await Promise.all(
+			["same-a", "same-b"].map((requestId) =>
+				acceptAgentInput({
+					db: concurrent.db,
+					...scope,
+					requestId: "same-request",
+					message: "same",
+					modelSpecifier: "model",
+					createId: (() => {
+						let n = 0;
+						return () => `${requestId}-${++n}`;
+					})(),
+				}),
+			),
+		);
+		expect(concurrentResults[0]).toMatchObject({
+			runId: (concurrentResults[1] as { runId: string }).runId,
+			turnId: (concurrentResults[1] as { turnId: string }).turnId,
+			userMessageId: (concurrentResults[1] as { userMessageId: string })
+				.userMessageId,
+			assistantMessageId: (
+				concurrentResults[1] as { assistantMessageId: string }
+			).assistantMessageId,
+		});
+		expect(
+			concurrent.sqlite.prepare("SELECT COUNT(*) AS count FROM turns").get(),
+		).toEqual({ count: 1 });
+	});
+
+	it("routes every stopping, finalizing, and terminal state to one unchanged successor", async () => {
+		for (const state of [
+			"stopping",
+			"finalizing",
+			"completed",
+			"failed",
+			"cancelled",
+			"interrupted",
+		] as const) {
+			const { db, sqlite } = makeDb();
+			const predecessor = await acceptAgentInput({
+				db,
+				...scope,
+				requestId: `before-${state}`,
+				message: "before",
+				modelSpecifier: "model",
+			});
+			if ("kind" in predecessor) throw new Error("successor setup failed");
+			const before = sqlite
+				.prepare("SELECT * FROM agent_runs WHERE id=?")
+				.get(predecessor.runId);
+			sqlite
+				.prepare("UPDATE agent_runs SET status=?,finishedAt=? WHERE id=?")
+				.run(
+					state,
+					["completed", "failed", "cancelled", "interrupted"].includes(state)
+						? 1
+						: null,
+					predecessor.runId,
+				);
+			const expected = sqlite
+				.prepare("SELECT * FROM agent_runs WHERE id=?")
+				.get(predecessor.runId);
+			const successor = await acceptAgentInput({
+				db,
+				...scope,
+				requestId: `after-${state}`,
+				message: "after",
+				modelSpecifier: "model",
+			});
+			if ("kind" in successor) throw new Error(`successor failed for ${state}`);
+			expect(successor.createdRun).toBe(true);
+			expect(
+				sqlite
+					.prepare("SELECT * FROM agent_runs WHERE id=?")
+					.get(predecessor.runId),
+			).toEqual(expected);
+			expect(
+				sqlite
+					.prepare("SELECT predecessorRunId FROM agent_runs WHERE id=?")
+					.get(successor.runId),
+			).toEqual({ predecessorRunId: predecessor.runId });
+			const duplicate = await acceptAgentInput({
+				db,
+				...scope,
+				requestId: `after-${state}`,
+				message: "after",
+				modelSpecifier: "model",
+			});
+			expect(duplicate).toMatchObject({
+				duplicate: true,
+				runId: successor.runId,
+				turnId: successor.turnId,
+			});
+			expect(before).toBeTruthy();
+		}
+	});
+
+	it("covers stop idempotency, assistant settlement, outcome validation, and whitespace inputs", async () => {
+		const accepted = makeDb();
+		const acceptedRun = await acceptAgentInput({
+			db: accepted.db,
+			...scope,
+			requestId: "stop-accepted",
+			message: "x",
+			modelSpecifier: "model",
+		});
+		if ("kind" in acceptedRun) throw new Error("stop setup failed");
+		expect(
+			await requestAgentRunStop({
+				db: accepted.db,
+				...scope,
+				runId: acceptedRun.runId,
+				requestId: "stop",
+			}),
+		).toEqual({ accepted: true, status: "stopping" });
+		expect(
+			await requestAgentRunStop({
+				db: accepted.db,
+				...scope,
+				runId: acceptedRun.runId,
+				requestId: "stop-again",
+			}),
+		).toEqual({ accepted: false, status: "stopping" });
+
+		const running = makeDb();
+		const runningRun = await acceptAgentInput({
+			db: running.db,
+			...scope,
+			requestId: "stop-running",
+			message: "x",
+			modelSpecifier: "model",
+		});
+		if ("kind" in runningRun) throw new Error("running setup failed");
+		await transitionAgentRun({
+			db: running.db,
+			...scope,
+			runId: runningRun.runId,
+			from: "accepted",
+			to: "running",
+			expectedEpoch: null,
+		});
+		expect(
+			await requestAgentRunStop({
+				db: running.db,
+				...scope,
+				runId: runningRun.runId,
+				requestId: "stop-running",
+			}),
+		).toEqual({ accepted: true, status: "stopping" });
+
+		for (const state of [
+			"finalizing",
+			"completed",
+			"failed",
+			"cancelled",
+			"interrupted",
+		] as const) {
+			const terminal = makeDb();
+			const run = await acceptAgentInput({
+				db: terminal.db,
+				...scope,
+				requestId: `stop-${state}`,
+				message: "x",
+				modelSpecifier: "model",
+			});
+			if ("kind" in run) throw new Error("terminal stop setup failed");
+			terminal.sqlite
+				.prepare("UPDATE agent_runs SET status=?,finishedAt=? WHERE id=?")
+				.run(
+					state,
+					["completed", "failed", "cancelled", "interrupted"].includes(state)
+						? 1
+						: null,
+					run.runId,
+				);
+			const before = terminal.sqlite
+				.prepare("SELECT * FROM agent_runs WHERE id=?")
+				.get(run.runId);
+			expect(
+				await requestAgentRunStop({
+					db: terminal.db,
+					...scope,
+					runId: run.runId,
+					requestId: "late-stop",
+				}),
+			).toEqual({ accepted: false, status: state });
+			expect(
+				terminal.sqlite
+					.prepare("SELECT * FROM agent_runs WHERE id=?")
+					.get(run.runId),
+			).toEqual(before);
+		}
+
+		const failedAssistant = makeDb();
+		const failedRun = await acceptAgentInput({
+			db: failedAssistant.db,
+			...scope,
+			requestId: "assistant-failed",
+			message: "x",
+			modelSpecifier: "model",
+		});
+		if ("kind" in failedRun) throw new Error("assistant setup failed");
+		expect(
+			await settleTurnAssistant({
+				db: failedAssistant.db,
+				...scope,
+				turnId: failedRun.turnId,
+				status: "failed",
+				content: "failure",
+				tools: "[]",
+			}),
+		).toEqual({ status: "failed" });
+		expect(
+			failedAssistant.sqlite
+				.prepare("SELECT content,tools,status FROM messages WHERE id=?")
+				.get(failedRun.assistantMessageId),
+		).toEqual({ content: "failure", tools: "[]", status: "failed" });
+		expect(
+			await settleTurnAssistant({
+				db: failedAssistant.db,
+				...scope,
+				turnId: failedRun.turnId,
+				status: "failed",
+				content: "failure",
+				tools: "[]",
+			}),
+		).toEqual({ status: "failed" });
+		expect(
+			await settleTurnAssistant({
+				db: failedAssistant.db,
+				...scope,
+				turnId: failedRun.turnId,
+				status: "failed",
+				content: "different",
+				tools: "[]",
+			}),
+		).toMatchObject({ kind: "error", code: "idempotency_conflict" });
+
+		const invalidOutcome = makeDb();
+		const invalidRun = await acceptAgentInput({
+			db: invalidOutcome.db,
+			...scope,
+			requestId: "invalid-outcome",
+			message: "x",
+			modelSpecifier: "model",
+		});
+		if ("kind" in invalidRun) throw new Error("outcome setup failed");
+		invalidOutcome.sqlite
+			.prepare(
+				"UPDATE messages SET status='complete',content='done' WHERE id=?",
+			)
+			.run(invalidRun.assistantMessageId);
+		invalidOutcome.sqlite
+			.prepare("UPDATE agent_runs SET status='finalizing' WHERE id=?")
+			.run(invalidRun.runId);
+		const beforeOutcome = invalidOutcome.sqlite
+			.prepare("SELECT * FROM agent_runs WHERE id=?")
+			.get(invalidRun.runId);
+		expect(
+			await transitionAgentRun({
+				db: invalidOutcome.db,
+				...scope,
+				runId: invalidRun.runId,
+				from: "finalizing",
+				to: "completed",
+				outcomeCode: "not machine text",
+			}),
+		).toMatchObject({ kind: "error", code: "invalid" });
+		expect(
+			await transitionAgentRun({
+				db: invalidOutcome.db,
+				...scope,
+				runId: invalidRun.runId,
+				from: "finalizing",
+				to: "completed",
+				outcomeCode: "x".repeat(129),
+			}),
+		).toMatchObject({ kind: "error", code: "invalid" });
+		expect(
+			invalidOutcome.sqlite
+				.prepare("SELECT * FROM agent_runs WHERE id=?")
+				.get(invalidRun.runId),
+		).toEqual(beforeOutcome);
+
+		let ioCount = 0;
+		const whitespace = makeDb({ beforeBatch: () => void ioCount++ });
+		expect(
+			await acceptAgentInput({
+				db: whitespace.db,
+				userId: " ",
+				projectId: "p1",
+				workspaceSessionId: "s1",
+				requestId: "x",
+				message: "x",
+				modelSpecifier: "model",
+			}),
+		).toMatchObject({ kind: "error", code: "invalid" });
+		expect(
+			await acceptAgentInput({
+				db: whitespace.db,
+				...scope,
+				requestId: " ",
+				message: "x",
+				modelSpecifier: "model",
+			}),
+		).toMatchObject({ kind: "error", code: "invalid" });
+		expect(
+			await acceptAgentInput({
+				db: whitespace.db,
+				...scope,
+				requestId: "x",
+				message: "x",
+				modelSpecifier: " ",
+			}),
+		).toMatchObject({ kind: "error", code: "invalid" });
+		expect(ioCount).toBe(0);
 	});
 });

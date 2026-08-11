@@ -112,7 +112,11 @@ function isTerminal(status: string): status is TerminalRunStatus {
 	return (TERMINAL_RUN_STATUSES as readonly string[]).includes(status);
 }
 function validId(valueToCheck: string, max = MAX_REQUEST_LENGTH): boolean {
-	return valueToCheck.length > 0 && valueToCheck.length <= max;
+	return (
+		valueToCheck.trim().length > 0 &&
+		valueToCheck.length > 0 &&
+		valueToCheck.length <= max
+	);
 }
 function isUniqueError(cause: unknown): boolean {
 	const message = cause instanceof Error ? cause.message : String(cause);
@@ -257,7 +261,7 @@ export async function acceptAgentInput(
 			statements.push(
 				client
 					.prepare(
-						`INSERT INTO pi_agent_sessions (workspaceSessionId,projectId,userId,currentRunId,created_at,updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(workspaceSessionId) DO UPDATE SET currentRunId=excluded.currentRunId,updated_at=excluded.updated_at WHERE pi_agent_sessions.currentRunId IS ? OR pi_agent_sessions.currentRunId=?`,
+						`INSERT INTO pi_agent_sessions (workspaceSessionId,projectId,userId,currentRunId,created_at,updated_at) SELECT ?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM workspace_sessions WHERE id=? AND projectId=? AND userId=? AND status='active') AND EXISTS (SELECT 1 FROM agent_runs WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=? AND status='accepted') ON CONFLICT(workspaceSessionId) DO UPDATE SET currentRunId=excluded.currentRunId,updated_at=excluded.updated_at WHERE pi_agent_sessions.currentRunId IS ? OR pi_agent_sessions.currentRunId=?`,
 					)
 					.bind(
 						options.workspaceSessionId,
@@ -266,6 +270,13 @@ export async function acceptAgentInput(
 						runId,
 						timestamp,
 						timestamp,
+						options.workspaceSessionId,
+						options.projectId,
+						options.userId,
+						runId,
+						options.workspaceSessionId,
+						options.projectId,
+						options.userId,
 						predecessor,
 						predecessor,
 					),
@@ -372,10 +383,15 @@ export async function acceptAgentInput(
 		statements.push(
 			client
 				.prepare(
-					`UPDATE workspace_sessions SET updated_at=? WHERE id=? AND projectId=? AND userId=? AND status='active'`,
+					`UPDATE workspace_sessions SET updated_at=? WHERE id=? AND projectId=? AND userId=? AND status='active' AND EXISTS (SELECT 1 FROM turns WHERE id=? AND runId=? AND workspaceSessionId=? AND projectId=? AND userId=?)`,
 				)
 				.bind(
 					timestamp,
+					options.workspaceSessionId,
+					options.projectId,
+					options.userId,
+					turnId,
+					runId,
 					options.workspaceSessionId,
 					options.projectId,
 					options.userId,
@@ -390,8 +406,17 @@ export async function acceptAgentInput(
 					(entry, index) =>
 						(entry.meta?.changes ?? 0) !== expectedChanges[index],
 				)
-			)
+			) {
+				const activeSession = await one(
+					client,
+					`SELECT id FROM workspace_sessions WHERE id=? AND projectId=? AND userId=? AND status='active'`,
+					options.workspaceSessionId,
+					options.projectId,
+					options.userId,
+				);
+				if (!activeSession) return error("not_found");
 				continue;
+			}
 			const out = await projection(options, turnId, !append, false);
 			if ("kind" in out) continue;
 			return out;
@@ -428,7 +453,7 @@ export async function loadOwnedAgentRun(
 	if (!validId(options.runId)) return error("invalid");
 	const run = await one(
 		clientOf(options.db),
-		`SELECT * FROM agent_runs WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=?`,
+		`SELECT r.* FROM agent_runs r JOIN workspace_sessions s ON s.id=r.workspaceSessionId AND s.projectId=r.projectId AND s.userId=r.userId AND s.status='active' WHERE r.id=? AND r.workspaceSessionId=? AND r.projectId=? AND r.userId=?`,
 		options.runId,
 		options.workspaceSessionId,
 		options.projectId,
@@ -437,8 +462,11 @@ export async function loadOwnedAgentRun(
 	if (!run) return null;
 	const turns = await all(
 		clientOf(options.db),
-		`SELECT t.*, um.content AS userContent, um.status AS userStatus, am.content AS assistantContent, am.status AS assistantStatus, am.tools AS assistantTools FROM turns t JOIN messages um ON um.id=t.userMessageId JOIN messages am ON am.id=t.assistantMessageId WHERE t.runId=? AND t.workspaceSessionId=? AND t.projectId=? AND t.userId=? ORDER BY t.sequence`,
+		`SELECT t.*, um.content AS userContent, um.status AS userStatus, am.content AS assistantContent, am.status AS assistantStatus, am.tools AS assistantTools FROM turns t JOIN agent_runs r ON r.id=t.runId JOIN workspace_sessions s ON s.id=t.workspaceSessionId AND s.projectId=t.projectId AND s.userId=t.userId AND s.status='active' JOIN messages um ON um.id=t.userMessageId JOIN messages am ON am.id=t.assistantMessageId WHERE t.runId=? AND t.workspaceSessionId=? AND t.projectId=? AND t.userId=? AND r.workspaceSessionId=? AND r.projectId=? AND r.userId=? ORDER BY t.sequence`,
 		options.runId,
+		options.workspaceSessionId,
+		options.projectId,
+		options.userId,
 		options.workspaceSessionId,
 		options.projectId,
 		options.userId,
@@ -458,7 +486,7 @@ export async function requestAgentRunStop(
 	const client = clientOf(options.db);
 	const row = await one(
 		client,
-		`SELECT status,stopRequestId FROM agent_runs WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=?`,
+		`SELECT r.status,r.stopRequestId FROM agent_runs r JOIN workspace_sessions s ON s.id=r.workspaceSessionId AND s.projectId=r.projectId AND s.userId=r.userId AND s.status='active' WHERE r.id=? AND r.workspaceSessionId=? AND r.projectId=? AND r.userId=?`,
 		options.runId,
 		options.workspaceSessionId,
 		options.projectId,
@@ -474,7 +502,7 @@ export async function requestAgentRunStop(
 	const result = await client.batch([
 		client
 			.prepare(
-				`UPDATE agent_runs SET status='stopping',stopRequestId=?,stopRequestedAt=?,updated_at=? WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=? AND status IN ('accepted','running')`,
+				`UPDATE agent_runs SET status='stopping',stopRequestId=?,stopRequestedAt=?,updated_at=? WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=? AND status IN ('accepted','running') AND EXISTS (SELECT 1 FROM workspace_sessions WHERE id=? AND projectId=? AND userId=? AND status='active')`,
 			)
 			.bind(
 				options.requestId,
@@ -484,12 +512,15 @@ export async function requestAgentRunStop(
 				options.workspaceSessionId,
 				options.projectId,
 				options.userId,
+				options.workspaceSessionId,
+				options.projectId,
+				options.userId,
 			),
 	]);
 	if ((result[0]?.meta?.changes ?? 0) !== 1) {
 		const current = await one(
 			client,
-			`SELECT status FROM agent_runs WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=?`,
+			`SELECT r.status FROM agent_runs r JOIN workspace_sessions s ON s.id=r.workspaceSessionId AND s.projectId=r.projectId AND s.userId=r.userId AND s.status='active' WHERE r.id=? AND r.workspaceSessionId=? AND r.projectId=? AND r.userId=?`,
 			options.runId,
 			options.workspaceSessionId,
 			options.projectId,
@@ -526,7 +557,7 @@ export async function transitionAgentRun(
 	const client = clientOf(options.db);
 	const owned = await one(
 		client,
-		`SELECT status FROM agent_runs WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=?`,
+		`SELECT r.status FROM agent_runs r JOIN workspace_sessions s ON s.id=r.workspaceSessionId AND s.projectId=r.projectId AND s.userId=r.userId AND s.status='active' WHERE r.id=? AND r.workspaceSessionId=? AND r.projectId=? AND r.userId=?`,
 		options.runId,
 		options.workspaceSessionId,
 		options.projectId,
@@ -578,13 +609,16 @@ export async function transitionAgentRun(
 		options.projectId,
 		options.userId,
 		options.from,
+		options.workspaceSessionId,
+		options.projectId,
+		options.userId,
 	);
 	if (options.expectedEpoch !== undefined)
 		params.push(options.expectedEpoch, options.expectedEpoch);
 	const result = await client.batch([
 		client
 			.prepare(
-				`UPDATE agent_runs SET ${set} WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=? AND status=?${expected}`,
+				`UPDATE agent_runs SET ${set} WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=? AND status=? AND EXISTS (SELECT 1 FROM workspace_sessions WHERE id=? AND projectId=? AND userId=? AND status='active')${expected}`,
 			)
 			.bind(...params),
 	]);
@@ -606,7 +640,7 @@ export async function advanceAgentRunEpoch(
 		return error("invalid");
 	const owned = await one(
 		clientOf(options.db),
-		`SELECT id FROM agent_runs WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=?`,
+		`SELECT r.id FROM agent_runs r JOIN workspace_sessions s ON s.id=r.workspaceSessionId AND s.projectId=r.projectId AND s.userId=r.userId AND s.status='active' WHERE r.id=? AND r.workspaceSessionId=? AND r.projectId=? AND r.userId=?`,
 		options.runId,
 		options.workspaceSessionId,
 		options.projectId,
@@ -617,7 +651,7 @@ export async function advanceAgentRunEpoch(
 	const result = await clientOf(options.db).batch([
 		clientOf(options.db)
 			.prepare(
-				`UPDATE agent_runs SET currentExecutionEpoch=?,updated_at=? WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=? AND status IN ('accepted','running','stopping','finalizing') AND currentExecutionEpoch=?`,
+				`UPDATE agent_runs SET currentExecutionEpoch=?,updated_at=? WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=? AND status IN ('accepted','running','stopping','finalizing') AND currentExecutionEpoch=? AND EXISTS (SELECT 1 FROM workspace_sessions WHERE id=? AND projectId=? AND userId=? AND status='active')`,
 			)
 			.bind(
 				options.expectedEpoch + 1,
@@ -627,6 +661,9 @@ export async function advanceAgentRunEpoch(
 				options.projectId,
 				options.userId,
 				options.expectedEpoch,
+				options.workspaceSessionId,
+				options.projectId,
+				options.userId,
 			),
 	]);
 	return (result[0]?.meta?.changes ?? 0) === 1
@@ -650,7 +687,7 @@ export async function settleTurnAssistant(
 	const client = clientOf(options.db);
 	const message = await one(
 		client,
-		`SELECT m.id,m.status,m.content,m.tools FROM turns t JOIN agent_runs r ON r.id=t.runId JOIN messages m ON m.id=t.assistantMessageId WHERE t.id=? AND t.runId=r.id AND t.workspaceSessionId=? AND t.projectId=? AND t.userId=? AND r.workspaceSessionId=? AND r.projectId=? AND r.userId=? AND m.id=t.assistantMessageId AND m.sessionId=? AND m.projectId=? AND m.userId=? AND m.role='assistant'`,
+		`SELECT m.id,m.status,m.content,m.tools FROM turns t JOIN agent_runs r ON r.id=t.runId JOIN workspace_sessions s ON s.id=t.workspaceSessionId AND s.projectId=t.projectId AND s.userId=t.userId AND s.status='active' JOIN messages m ON m.id=t.assistantMessageId WHERE t.id=? AND t.runId=r.id AND t.workspaceSessionId=? AND t.projectId=? AND t.userId=? AND r.workspaceSessionId=? AND r.projectId=? AND r.userId=? AND m.id=t.assistantMessageId AND m.sessionId=? AND m.projectId=? AND m.userId=? AND m.role='assistant'`,
 		options.turnId,
 		options.workspaceSessionId,
 		options.projectId,
@@ -673,13 +710,16 @@ export async function settleTurnAssistant(
 	const result = await client.batch([
 		client
 			.prepare(
-				`UPDATE messages SET content=?,tools=?,status=? WHERE id=? AND sessionId=? AND projectId=? AND userId=? AND role='assistant' AND status='pending'`,
+				`UPDATE messages SET content=?,tools=?,status=? WHERE id=? AND sessionId=? AND projectId=? AND userId=? AND role='assistant' AND status='pending' AND EXISTS (SELECT 1 FROM workspace_sessions WHERE id=? AND projectId=? AND userId=? AND status='active')`,
 			)
 			.bind(
 				options.content,
 				options.tools ?? null,
 				options.status,
 				message.id,
+				options.workspaceSessionId,
+				options.projectId,
+				options.userId,
 				options.workspaceSessionId,
 				options.projectId,
 				options.userId,
