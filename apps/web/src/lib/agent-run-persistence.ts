@@ -115,9 +115,8 @@ function validId(valueToCheck: string, max = MAX_REQUEST_LENGTH): boolean {
 	return valueToCheck.length > 0 && valueToCheck.length <= max;
 }
 function isUniqueError(cause: unknown): boolean {
-	return /unique|constraint/i.test(
-		cause instanceof Error ? cause.message : String(cause),
-	);
+	const message = cause instanceof Error ? cause.message : String(cause);
+	return /UNIQUE constraint failed|SQLITE_CONSTRAINT_UNIQUE/i.test(message);
 }
 function asNumber(valueToCheck: unknown): number {
 	return typeof valueToCheck === "number" ? valueToCheck : Number(valueToCheck);
@@ -238,18 +237,21 @@ export async function acceptAgentInput(
 			statements.push(
 				client
 					.prepare(
-						`INSERT INTO agent_runs (id,workspaceSessionId,projectId,userId,sequence,predecessorRunId,status,acceptedAt,created_at,updated_at) SELECT ?,?,?,?,COALESCE(MAX(sequence),0)+1,?,'accepted',?,?,? FROM agent_runs WHERE workspaceSessionId=?`,
+						`INSERT INTO agent_runs (id,workspaceSessionId,projectId,userId,sequence,predecessorRunId,status,acceptedAt,created_at,updated_at) SELECT ?,?,?,?,(SELECT COALESCE(MAX(sequence),0)+1 FROM agent_runs WHERE workspaceSessionId=?),?,'accepted',?,?,? WHERE EXISTS (SELECT 1 FROM workspace_sessions WHERE id=? AND projectId=? AND userId=? AND status='active')`,
 					)
 					.bind(
 						runId,
 						options.workspaceSessionId,
 						options.projectId,
 						options.userId,
+						options.workspaceSessionId,
 						predecessor,
 						timestamp,
 						timestamp,
 						timestamp,
 						options.workspaceSessionId,
+						options.projectId,
+						options.userId,
 					),
 			);
 			statements.push(
@@ -279,11 +281,14 @@ export async function acceptAgentInput(
 			statements.push(
 				client
 					.prepare(
-						`UPDATE agent_runs SET updated_at=? WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=? AND status IN ('accepted','running')`,
+						`UPDATE agent_runs SET updated_at=? WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=? AND status IN ('accepted','running') AND EXISTS (SELECT 1 FROM workspace_sessions WHERE id=? AND projectId=? AND userId=? AND status='active')`,
 					)
 					.bind(
 						timestamp,
 						runId,
+						options.workspaceSessionId,
+						options.projectId,
+						options.userId,
 						options.workspaceSessionId,
 						options.projectId,
 						options.userId,
@@ -293,7 +298,7 @@ export async function acceptAgentInput(
 		statements.push(
 			client
 				.prepare(
-					`INSERT INTO messages (id,sessionId,projectId,userId,role,content,model,status,created_at) SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM agent_runs WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=? AND status IN ('accepted','running'))`,
+					`INSERT INTO messages (id,sessionId,projectId,userId,role,content,model,status,created_at) SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM agent_runs WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=? AND status IN ('accepted','running')) AND EXISTS (SELECT 1 FROM workspace_sessions WHERE id=? AND projectId=? AND userId=? AND status='active')`,
 				)
 				.bind(
 					userMessageId,
@@ -309,12 +314,15 @@ export async function acceptAgentInput(
 					options.workspaceSessionId,
 					options.projectId,
 					options.userId,
+					options.workspaceSessionId,
+					options.projectId,
+					options.userId,
 				),
 		);
 		statements.push(
 			client
 				.prepare(
-					`INSERT INTO messages (id,sessionId,projectId,userId,role,content,status,created_at) SELECT ?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM agent_runs WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=? AND status IN ('accepted','running'))`,
+					`INSERT INTO messages (id,sessionId,projectId,userId,role,content,status,created_at) SELECT ?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM agent_runs WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=? AND status IN ('accepted','running')) AND EXISTS (SELECT 1 FROM workspace_sessions WHERE id=? AND projectId=? AND userId=? AND status='active')`,
 				)
 				.bind(
 					assistantMessageId,
@@ -329,12 +337,15 @@ export async function acceptAgentInput(
 					options.workspaceSessionId,
 					options.projectId,
 					options.userId,
+					options.workspaceSessionId,
+					options.projectId,
+					options.userId,
 				),
 		);
 		statements.push(
 			client
 				.prepare(
-					`INSERT INTO turns (id,runId,workspaceSessionId,projectId,userId,sequence,requestId,userMessageId,assistantMessageId,modelSpecifier,thinkingLevel,created_at) SELECT ?,?,?,?,?,COALESCE(MAX(sequence),0)+1,?,?,?,?,?,? FROM turns WHERE runId=? AND EXISTS (SELECT 1 FROM agent_runs WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=? AND status IN ('accepted','running'))`,
+					`INSERT INTO turns (id,runId,workspaceSessionId,projectId,userId,sequence,requestId,userMessageId,assistantMessageId,modelSpecifier,thinkingLevel,created_at) SELECT ?,?,?,?,?,(SELECT COALESCE(MAX(sequence),0)+1 FROM turns WHERE runId=?),?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM agent_runs WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=? AND status IN ('accepted','running')) AND EXISTS (SELECT 1 FROM workspace_sessions WHERE id=? AND projectId=? AND userId=? AND status='active')`,
 				)
 				.bind(
 					turnId,
@@ -342,6 +353,7 @@ export async function acceptAgentInput(
 					options.workspaceSessionId,
 					options.projectId,
 					options.userId,
+					runId,
 					options.requestId,
 					userMessageId,
 					assistantMessageId,
@@ -349,7 +361,9 @@ export async function acceptAgentInput(
 					options.thinkingLevel ?? null,
 					timestamp,
 					runId,
-					runId,
+					options.workspaceSessionId,
+					options.projectId,
+					options.userId,
 					options.workspaceSessionId,
 					options.projectId,
 					options.userId,
@@ -358,7 +372,7 @@ export async function acceptAgentInput(
 		statements.push(
 			client
 				.prepare(
-					`UPDATE workspace_sessions SET updated_at=? WHERE id=? AND projectId=? AND userId=?`,
+					`UPDATE workspace_sessions SET updated_at=? WHERE id=? AND projectId=? AND userId=? AND status='active'`,
 				)
 				.bind(
 					timestamp,
@@ -369,7 +383,15 @@ export async function acceptAgentInput(
 		);
 		try {
 			const result = await client.batch(statements);
-			if (!append && (result[0]?.meta?.changes ?? 0) !== 1) continue;
+			const expectedChanges = append ? [1, 1, 1, 1, 1] : [1, 1, 0, 1, 1, 1, 1];
+			if (
+				result.length !== expectedChanges.length ||
+				result.some(
+					(entry, index) =>
+						(entry.meta?.changes ?? 0) !== expectedChanges[index],
+				)
+			)
+				continue;
 			const out = await projection(options, turnId, !append, false);
 			if ("kind" in out) continue;
 			return out;
@@ -464,8 +486,21 @@ export async function requestAgentRunStop(
 				options.userId,
 			),
 	]);
-	if ((result[0]?.meta?.changes ?? 0) !== 1)
-		return { accepted: false, status: "stopping" };
+	if ((result[0]?.meta?.changes ?? 0) !== 1) {
+		const current = await one(
+			client,
+			`SELECT status FROM agent_runs WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=?`,
+			options.runId,
+			options.workspaceSessionId,
+			options.projectId,
+			options.userId,
+		);
+		if (!current) return error("not_found");
+		return {
+			accepted: false,
+			status: String(current.status) as AgentRunStatus,
+		};
+	}
 	return { accepted: true, status: "stopping" };
 }
 
@@ -522,13 +557,17 @@ export async function transitionAgentRun(
 			? `status='running',startedAt=COALESCE(startedAt,?),currentExecutionEpoch=?,updated_at=?`
 			: options.to === "finalizing"
 				? `status='finalizing',finalizingAt=COALESCE(finalizingAt,?),updated_at=?`
-				: `status=?,outcomeCode=?,finishedAt=?,updated_at=?`;
+				: options.to === "stopping"
+					? `status=?,updated_at=?`
+					: `status=?,outcomeCode=?,finishedAt=?,updated_at=?`;
 	const params: unknown[] =
 		options.to === "running"
 			? [timestamp, epoch, timestamp]
 			: options.to === "finalizing"
 				? [timestamp, timestamp]
-				: [options.to, options.outcomeCode ?? null, timestamp, timestamp];
+				: options.to === "stopping"
+					? [options.to, timestamp]
+					: [options.to, options.outcomeCode ?? null, timestamp, timestamp];
 	const expected =
 		options.expectedEpoch === undefined
 			? ""
@@ -611,8 +650,14 @@ export async function settleTurnAssistant(
 	const client = clientOf(options.db);
 	const message = await one(
 		client,
-		`SELECT m.id,m.status,m.content,m.tools FROM turns t JOIN agent_runs r ON r.id=t.runId JOIN messages m ON m.id=t.assistantMessageId WHERE t.id=? AND t.workspaceSessionId=? AND t.projectId=? AND t.userId=?`,
+		`SELECT m.id,m.status,m.content,m.tools FROM turns t JOIN agent_runs r ON r.id=t.runId JOIN messages m ON m.id=t.assistantMessageId WHERE t.id=? AND t.runId=r.id AND t.workspaceSessionId=? AND t.projectId=? AND t.userId=? AND r.workspaceSessionId=? AND r.projectId=? AND r.userId=? AND m.id=t.assistantMessageId AND m.sessionId=? AND m.projectId=? AND m.userId=? AND m.role='assistant'`,
 		options.turnId,
+		options.workspaceSessionId,
+		options.projectId,
+		options.userId,
+		options.workspaceSessionId,
+		options.projectId,
+		options.userId,
 		options.workspaceSessionId,
 		options.projectId,
 		options.userId,
@@ -628,9 +673,17 @@ export async function settleTurnAssistant(
 	const result = await client.batch([
 		client
 			.prepare(
-				`UPDATE messages SET content=?,tools=?,status=? WHERE id=? AND status='pending'`,
+				`UPDATE messages SET content=?,tools=?,status=? WHERE id=? AND sessionId=? AND projectId=? AND userId=? AND role='assistant' AND status='pending'`,
 			)
-			.bind(options.content, options.tools ?? null, options.status, message.id),
+			.bind(
+				options.content,
+				options.tools ?? null,
+				options.status,
+				message.id,
+				options.workspaceSessionId,
+				options.projectId,
+				options.userId,
+			),
 	]);
 	return (result[0]?.meta?.changes ?? 0) === 1
 		? { status: options.status }

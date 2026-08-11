@@ -73,10 +73,22 @@ describe("durable agent-run migration 0012", () => {
 		const before = db
 			.prepare("SELECT id,content FROM messages ORDER BY id")
 			.all();
+		const beforeShape = db
+			.prepare(
+				"SELECT id,sessionId,projectId,userId,role,content,model,status,tools,created_at FROM messages ORDER BY id",
+			)
+			.all();
 		apply(db, files.length, files.length - 1);
 		expect(
 			db.prepare("SELECT id,content FROM messages ORDER BY id").all(),
 		).toEqual(before);
+		expect(
+			db
+				.prepare(
+					"SELECT id,sessionId,projectId,userId,role,content,model,status,tools,created_at FROM messages ORDER BY id",
+				)
+				.all(),
+		).toEqual(beforeShape);
 		expect(
 			db.prepare("SELECT COUNT(*) AS count FROM agent_runs").get(),
 		).toEqual({ count: 0 });
@@ -145,6 +157,103 @@ describe("durable agent-run migration 0012", () => {
 					"bogus",
 				),
 		).toThrow();
+		db.prepare(
+			"INSERT INTO agent_runs (id,workspaceSessionId,projectId,userId,sequence,predecessorRunId,status) VALUES (?,?,?,?,?,?,?)",
+		).run("r2", "s1", "p1", "u1", 2, "r1", "accepted");
+		expect(() =>
+			db
+				.prepare(
+					"INSERT INTO agent_runs (id,workspaceSessionId,projectId,userId,sequence,predecessorRunId,status) VALUES (?,?,?,?,?,?,?)",
+				)
+				.run("r3", "s1", "p1", "u1", 3, "r1", "accepted"),
+		).toThrow();
+		expect(() =>
+			db
+				.prepare(
+					"INSERT INTO turns (id,runId,workspaceSessionId,projectId,userId,sequence,requestId,userMessageId,assistantMessageId,modelSpecifier) VALUES (?,?,?,?,?,?,?,?,?,?)",
+				)
+				.run("t2", "r2", "s1", "p1", "u1", 1, "req-1", "m1", "m2", "model"),
+		).toThrow();
+		expect(() =>
+			db
+				.prepare(
+					"INSERT INTO turns (id,runId,workspaceSessionId,projectId,userId,sequence,requestId,userMessageId,assistantMessageId,modelSpecifier) VALUES (?,?,?,?,?,?,?,?,?,?)",
+				)
+				.run("t3", "r2", "s1", "p1", "u1", 1, "req-3", "m3", "m4", "model"),
+		).toThrow();
+		expect(() =>
+			db
+				.prepare(
+					"INSERT INTO turns (id,runId,workspaceSessionId,projectId,userId,sequence,requestId,userMessageId,assistantMessageId,modelSpecifier) VALUES (?,?,?,?,?,?,?,?,?,?)",
+				)
+				.run("t4", "r2", "s1", "p1", "u1", 0, "req-4", "m3", "m4", "model"),
+		).toThrow();
+		expect(() =>
+			db
+				.prepare(
+					"INSERT INTO agent_runs (id,workspaceSessionId,projectId,userId,sequence,status) VALUES (?,?,?,?,?,?)",
+				)
+				.run("r4", "missing", "p1", "u1", 4, "accepted"),
+		).toThrow();
+	});
+
+	it("records exact SQLite columns, defaults, indexes, checks and foreign keys", () => {
+		const db = new DatabaseSync(":memory:");
+		db.exec("PRAGMA foreign_keys=ON");
+		apply(db);
+		const columns = db.prepare("PRAGMA table_info(agent_runs)").all() as {
+			name: string;
+			notnull: number;
+		}[];
+		expect(columns.map((column) => column.name)).toEqual([
+			"id",
+			"workspaceSessionId",
+			"projectId",
+			"userId",
+			"sequence",
+			"predecessorRunId",
+			"status",
+			"currentExecutionEpoch",
+			"stopRequestId",
+			"stopRequestedAt",
+			"outcomeCode",
+			"acceptedAt",
+			"startedAt",
+			"finalizingAt",
+			"finishedAt",
+			"created_at",
+			"updated_at",
+		]);
+		expect(
+			columns.find((column) => column.name === "workspaceSessionId")?.notnull,
+		).toBe(1);
+		const indexes = db
+			.prepare(
+				"SELECT name FROM sqlite_master WHERE type='index' AND tbl_name IN ('agent_runs','pi_agent_sessions','turns') ORDER BY name",
+			)
+			.all() as { name: string }[];
+		expect(indexes.map((index) => index.name)).toEqual(
+			expect.arrayContaining([
+				"agent_runs_predecessor_uidx",
+				"agent_runs_session_sequence_uidx",
+				"agent_runs_project_session_status_idx",
+				"turns_user_request_uidx",
+				"turns_user_message_uidx",
+				"turns_assistant_message_uidx",
+			]),
+		);
+		const sql = (
+			db
+				.prepare(
+					"SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_runs'",
+				)
+				.get() as { sql: string }
+		).sql;
+		expect(sql).toContain("agent_runs_status_ck");
+		expect(sql).toContain("agent_runs_terminal_shape_ck");
+		expect(
+			(db.prepare("PRAGMA foreign_key_list(turns)").all() as unknown[]).length,
+		).toBe(6);
 	});
 
 	it("cascades the owned model with its workspace session", () => {
@@ -168,5 +277,31 @@ describe("durable agent-run migration 0012", () => {
 		expect(db.prepare("SELECT COUNT(*) AS count FROM messages").get()).toEqual({
 			count: 0,
 		});
+	});
+
+	it("keeps a second Workspace Session isolated during cascade", () => {
+		const db = new DatabaseSync(":memory:");
+		db.exec("PRAGMA foreign_keys=ON");
+		apply(db);
+		seed(db);
+		db.prepare(
+			"INSERT INTO projects (id,name,userId,status) VALUES (?,?,?,?)",
+		).run("p2", "Other", "u1", "ready");
+		db.prepare(
+			"INSERT INTO workspace_sessions (id,projectId,userId,status) VALUES (?,?,?,?)",
+		).run("s2", "p2", "u1", "active");
+		db.prepare(
+			"INSERT INTO agent_runs (id,workspaceSessionId,projectId,userId,sequence,status) VALUES (?,?,?,?,?,?)",
+		).run("r2", "s2", "p2", "u1", 1, "accepted");
+		db.prepare(
+			"INSERT INTO pi_agent_sessions (workspaceSessionId,projectId,userId,currentRunId) VALUES (?,?,?,?)",
+		).run("s2", "p2", "u1", "r2");
+		db.prepare("DELETE FROM workspace_sessions WHERE id=?").run("s1");
+		expect(db.prepare("SELECT id FROM agent_runs").all()).toEqual([
+			{ id: "r2" },
+		]);
+		expect(
+			db.prepare("SELECT workspaceSessionId FROM pi_agent_sessions").all(),
+		).toEqual([{ workspaceSessionId: "s2" }]);
 	});
 });
