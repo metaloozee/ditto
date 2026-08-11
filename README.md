@@ -22,7 +22,8 @@ Alchemy is the sole deployment owner (`pnpm dev` / `pnpm deploy` / `pnpm destroy
 
 ## Alchemy v2 (ayan stage)
 
-- Exact pins: `alchemy@2.0.0-beta.70`, `effect@4.0.0-beta.106`, and `@effect/platform-node@4.0.0-beta.106` at the workspace root (Node local dev needs the platform package).
+- Exact pins: `alchemy@2.0.0-beta.70`, `effect@4.0.0-beta.103`, and `@effect/platform-node@4.0.0-beta.103` at the workspace root (Node local dev needs the platform package). Alchemy beta.70 still calls `Schema.TaggedErrorClass` (removed in effect beta.104+). `pnpm-workspace.yaml` overrides force the coherent Effect set to beta.103 (`effect`, `@effect/platform-node-shared`, `@effect/platform-bun`, `@effect/sql-d1`, `@effect/sql-sqlite-do`, `@effect/vitest`) so distilled packages and `>=beta.102` ranges cannot drag in beta.106/107.
+- Local Container image: `alchemy.run.ts` uses prebuilt `ditto-sandbox-039-local:test` (root `Dockerfile` context breaks under ViteChildRunner's `apps/web` cwd). Set `DOCKER_BIN=./scripts/docker-local.sh` so local image tags skip `docker pull`. Container resource id is `sandbox-container` (must differ from env key `Sandbox` or DO namespace binding is collapsed).
 - Stack state is local v2 state under `.alchemy/` (gitignored). Generated Alchemy/Wrangler files are secret-bearing local artifacts — never commit them.
 - `pnpm dev`, `pnpm deploy`, and `pnpm destroy` hard-code `--stage ayan` only. A different stage or shared-state/CI deployment needs a separate plan.
 - The `ayan` stage is disposable: no D1/R2/Durable Object/process/preview continuity is guaranteed across destroy/recreate.

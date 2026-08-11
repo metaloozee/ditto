@@ -2,6 +2,18 @@ packages:
   - apps/*
 overrides:
   'alchemy>miniflare': 4.20260710.0
+  # Coherent Effect set for Alchemy beta.70 Node local CLI/provider:
+  # - effect beta.104+ drops Schema.TaggedErrorClass (CLI crash).
+  # - Distilled packages depend on effect directly (>=beta.102) → otherwise beta.106.
+  # - platform-node@103's shared@^beta.103 caret matches beta.107 (peers effect@^beta.107).
+  # - alchemy pulls platform-bun/sql-d1/sql-sqlite-do/vitest via >=beta.102 → beta.107
+  #   (each peers effect@^beta.107); local D1/DO/Container modules import them at runtime.
+  effect: 4.0.0-beta.103
+  '@effect/platform-node-shared': 4.0.0-beta.103
+  '@effect/platform-bun': 4.0.0-beta.103
+  '@effect/sql-d1': 4.0.0-beta.103
+  '@effect/sql-sqlite-do': 4.0.0-beta.103
+  '@effect/vitest': 4.0.0-beta.103
 packageExtensions:
   # Streamdown 2.5.0 omits the @types/react peer needed by strict pnpm TypeScript workspaces; remove this extension when upstream declares that peer.
   streamdown@2.5.0:

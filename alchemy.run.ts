@@ -19,14 +19,24 @@ const SandboxBackups = Cloudflare.R2.Bucket("sandbox-backups", {
 	name: sandboxBackupBucketName,
 });
 
-const SandboxContainer = Cloudflare.Container<SandboxDurableObject>("Sandbox", {
-	name: "ditto-sandbox-ayan",
-	className: "Sandbox",
-	context: ".",
-	dockerfile: "Dockerfile",
-	instanceType: "lite",
-	maxInstances: 1,
-});
+// Resource id must differ from env binding name: Alchemy collapses bindings by sid,
+// and Container wires both durable_object_namespace (sid=env key) and containers
+// (sid=resource id). Same id drops the DO namespace → local worker dies with
+// "Durable Object namespace Sandbox not found".
+// Prefer a prebuilt local image: Alchemy's local provider stores context as a
+// path.relative() string, and ViteChildRunner builds from apps/web, so root
+// Dockerfile + monorepo context never resolve. Cloud deploy can switch back to
+// context/dockerfile later.
+const SandboxContainer = Cloudflare.Container<SandboxDurableObject>(
+	"sandbox-container",
+	{
+		name: "ditto-sandbox-ayan",
+		className: "Sandbox",
+		image: "ditto-sandbox-039-local:test",
+		instanceType: "lite",
+		maxInstances: 1,
+	},
+);
 
 export const Website = Cloudflare.Website.Vite("website", {
 	name: "ditto-website-ayan",
