@@ -20,6 +20,14 @@ Ditto is a TanStack Start app deployed with Alchemy on Cloudflare Workers. It us
 
 Alchemy is the sole deployment owner (`pnpm dev` / `pnpm deploy` / `pnpm destroy`). This monorepo layout does not introduce SST, Wrangler-as-deploy, or any other deployment boundary.
 
+## Alchemy v2 (ayan stage)
+
+- Exact pins: `alchemy@2.0.0-beta.70` and `effect@4.0.0-beta.106` at the workspace root.
+- Stack state is local v2 state under `.alchemy/` (gitignored). Generated Alchemy/Wrangler files are secret-bearing local artifacts — never commit them.
+- `pnpm dev`, `pnpm deploy`, and `pnpm destroy` hard-code `--stage ayan` only. A different stage or shared-state/CI deployment needs a separate plan.
+- The `ayan` stage is disposable: no D1/R2/Durable Object/process/preview continuity is guaranteed across destroy/recreate.
+- Deploy planning uses `pnpm exec alchemy deploy --stage ayan --dry-run` (no separate `plan` script).
+
 ## Prerequisites
 
 - Node.js 22.15+ for the app (22.19+ for the sandbox runner; 22.17+ recommended for local dev)
@@ -50,9 +58,9 @@ From the repository root:
 pnpm dev
 ```
 
-Alchemy runs from the root, generates local Wrangler config under
-`apps/web/.alchemy/local/`, and starts Vite with `apps/web` as cwd (env files
-resolve from the repo root via `envDir`).
+Alchemy runs from the root against stage `ayan`, uses local v2 state, and starts
+Vite with `apps/web` as the Website root (env files resolve from the repo root
+via `envDir`).
 
 Before opening a PR, run the full verification gate (app + runner typecheck/tests/build):
 
@@ -78,10 +86,10 @@ Migrations live under `apps/web/migrations`. Root `pnpm db:*` scripts forward to
 
 ## Scripts
 
-- `pnpm dev` — local Alchemy + Vite (root)
+- `pnpm dev` — local Alchemy + Vite for stage `ayan` only
 - `pnpm build` — production build of `@ditto/web`
-- `pnpm deploy` — deploy with Alchemy (sole deploy owner)
-- `pnpm destroy` — tear down Alchemy resources
+- `pnpm deploy` — `alchemy deploy --stage ayan` (sole deploy owner)
+- `pnpm destroy` — `alchemy destroy --stage ayan` (destructive; no continuity)
 - `pnpm check` — Biome check (repo root)
 - `pnpm lint` — Biome lint
 - `pnpm format` — Biome format
@@ -131,7 +139,8 @@ Account Settings.
 - For GitHub-linked projects, the Ditto GitHub App needs **Contents: Read &
   write** and **Pull requests: Read & write** so the Worker can push session
   branches and open pull requests (installation token; never stored in the DB).
-- `pnpm deploy` and `pnpm destroy` are managed through Alchemy only.
+- `pnpm deploy` and `pnpm destroy` are managed through Alchemy only, stage
+  `ayan` only.
 - `apps/web/src/server.ts` exports the Cloudflare Sandbox binding used by the app.
 - `OPENCODE_API_KEY` is required as the operator fallback for
   `opencode/deepseek-v4-flash-free`. Account provider credentials are injected

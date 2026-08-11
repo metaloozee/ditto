@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "alchemy dev",
+    "dev": "alchemy dev --stage ayan",
     "build": "pnpm --filter @ditto/web build",
     "preview": "pnpm --filter @ditto/web preview",
     "test": "pnpm --filter @ditto/web test",
@@ -15,8 +15,8 @@
     "runner:install": "npm ci --prefix packages/sandbox-runner",
     "runner:verify": "npm run typecheck --prefix packages/sandbox-runner && npm test --prefix packages/sandbox-runner && npm run build --prefix packages/sandbox-runner",
     "verify": "pnpm check && pnpm typecheck && pnpm test && pnpm build && pnpm runner:verify",
-    "deploy": "alchemy deploy",
-    "destroy": "alchemy destroy",
+    "deploy": "alchemy deploy --stage ayan",
+    "destroy": "alchemy destroy --stage ayan",
     "db:generate": "pnpm --filter @ditto/web db:generate",
     "db:migrate": "pnpm --filter @ditto/web db:migrate",
     "db:push": "pnpm --filter @ditto/web db:push",
@@ -25,7 +25,8 @@
     "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
-    "alchemy": "^0.93.11"
+    "alchemy": "2.0.0-beta.70",
+    "effect": "4.0.0-beta.106"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.5",
