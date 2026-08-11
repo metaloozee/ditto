@@ -52,7 +52,7 @@
 - **Category**: direction
 - **Planned at**: commit `e3abdee`, 2026-08-11
 - **Branch**: `advisor/041-model-durable-agent-runs-in-d1`
-- **Execution status**: BLOCKED — Step 1 frozen install rejected locked `@cloudflare/workers-types@5.20260811.1` under the 4,320-minute minimum-release-age policy; retry after 2026-08-14 00:59:59 UTC
+- **Execution status**: DONE-local — blocked only for full DONE because no exact deployed `ditto-ayan-db` exists for the required remote migration smoke
 
 ## Why this matters
 
@@ -1254,6 +1254,7 @@ Stop and report back — do not improvise — if:
   CAS/retry handling, batch result inspection, successor routing, and the
   expanded migration/persistence matrices are present. No credential, token,
   prompt, cookie, header, environment value, or deploy-output body was recorded.
+  Source implementation commit: `663a355`.
 - Verification: exact acceptance filter passed (3 tests); exact transition,
   epoch, stop, terminal, assistant, and ownership filter passed (4 tests);
   migration plus persistence suite passed (2 files, 12 tests); current runtime
