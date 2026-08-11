@@ -362,7 +362,7 @@
         },
         "agent_runs_outcome_shape_ck": {
           "name": "agent_runs_outcome_shape_ck",
-          "value": "(\"agent_runs\".\"status\" IN ('completed','failed','cancelled','interrupted') OR \"agent_runs\".\"outcomeCode\" IS NULL) AND (\"agent_runs\".\"outcomeCode\" IS NULL OR (\"agent_runs\".\"outcomeCode\" GLOB '[a-z0-9_:-]*' AND length(\"agent_runs\".\"outcomeCode\") <= 128))"
+          "value": "(\"agent_runs\".\"status\" IN ('completed','failed','cancelled','interrupted') OR \"agent_runs\".\"outcomeCode\" IS NULL) AND (\"agent_runs\".\"outcomeCode\" IS NULL OR (length(\"agent_runs\".\"outcomeCode\") <= 128 AND length(\"agent_runs\".\"outcomeCode\") > 0 AND \"agent_runs\".\"outcomeCode\" NOT GLOB '*[^a-z0-9_:-]*'))"
         }
       }
     },

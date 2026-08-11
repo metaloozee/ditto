@@ -244,7 +244,7 @@ export const agentRuns = sqliteTable(
 		),
 		check(
 			"agent_runs_outcome_shape_ck",
-			sql`(${table.status} IN ('completed','failed','cancelled','interrupted') OR ${table.outcomeCode} IS NULL) AND (${table.outcomeCode} IS NULL OR (${table.outcomeCode} GLOB '[a-z0-9_:-]*' AND length(${table.outcomeCode}) <= 128))`,
+			sql`(${table.status} IN ('completed','failed','cancelled','interrupted') OR ${table.outcomeCode} IS NULL) AND (${table.outcomeCode} IS NULL OR (length(${table.outcomeCode}) <= 128 AND length(${table.outcomeCode}) > 0 AND ${table.outcomeCode} NOT GLOB '*[^a-z0-9_:-]*'))`,
 		),
 	],
 );

@@ -24,7 +24,7 @@ CREATE TABLE `agent_runs` (
 	CONSTRAINT "agent_runs_status_ck" CHECK("agent_runs"."status" IN ('accepted','running','stopping','finalizing','completed','failed','cancelled','interrupted')),
 	CONSTRAINT "agent_runs_epoch_positive_ck" CHECK("agent_runs"."currentExecutionEpoch" IS NULL OR "agent_runs"."currentExecutionEpoch" > 0),
 	CONSTRAINT "agent_runs_terminal_shape_ck" CHECK(("agent_runs"."status" IN ('completed','failed','cancelled','interrupted') AND "agent_runs"."finishedAt" IS NOT NULL) OR ("agent_runs"."status" NOT IN ('completed','failed','cancelled','interrupted') AND "agent_runs"."finishedAt" IS NULL)),
-	CONSTRAINT "agent_runs_outcome_shape_ck" CHECK(("agent_runs"."status" IN ('completed','failed','cancelled','interrupted') OR "agent_runs"."outcomeCode" IS NULL) AND ("agent_runs"."outcomeCode" IS NULL OR ("agent_runs"."outcomeCode" GLOB '[a-z0-9_:-]*' AND length("agent_runs"."outcomeCode") <= 128)))
+	CONSTRAINT "agent_runs_outcome_shape_ck" CHECK(("agent_runs"."status" IN ('completed','failed','cancelled','interrupted') OR "agent_runs"."outcomeCode" IS NULL) AND ("agent_runs"."outcomeCode" IS NULL OR (length("agent_runs"."outcomeCode") <= 128 AND length("agent_runs"."outcomeCode") > 0 AND "agent_runs"."outcomeCode" NOT GLOB '*[^a-z0-9_:-]*')))
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `agent_runs_session_sequence_uidx` ON `agent_runs` (`workspaceSessionId`,`sequence`);--> statement-breakpoint

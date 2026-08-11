@@ -185,6 +185,10 @@ export async function acceptAgentInput(
 	const client = clientOf(options.db);
 	const createId = options.createId ?? (() => crypto.randomUUID());
 	const now = options.now ?? (() => Date.now());
+	const candidateRunId = createId();
+	const candidateTurnId = createId();
+	const candidateUserMessageId = createId();
+	const candidateAssistantMessageId = createId();
 	const duplicate = await duplicateForRequest(options);
 	if (duplicate) {
 		const exact =
@@ -223,10 +227,10 @@ export async function acceptAgentInput(
 		);
 		const status = String(pointer?.status ?? "none");
 		const append = status === "accepted" || status === "running";
-		const runId = append ? String(pointer?.runId) : createId();
-		const turnId = createId();
-		const userMessageId = createId();
-		const assistantMessageId = createId();
+		const runId = append ? String(pointer?.runId) : candidateRunId;
+		const turnId = candidateTurnId;
+		const userMessageId = candidateUserMessageId;
+		const assistantMessageId = candidateAssistantMessageId;
 		const timestamp = Math.floor(now() / 1000);
 		const statements: D1PreparedStatement[] = [];
 		if (!append) {
@@ -251,7 +255,7 @@ export async function acceptAgentInput(
 			statements.push(
 				client
 					.prepare(
-						`INSERT INTO pi_agent_sessions (workspaceSessionId,projectId,userId,currentRunId,created_at,updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(workspaceSessionId) DO UPDATE SET currentRunId=excluded.currentRunId,updated_at=excluded.updated_at`,
+						`INSERT INTO pi_agent_sessions (workspaceSessionId,projectId,userId,currentRunId,created_at,updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(workspaceSessionId) DO UPDATE SET currentRunId=excluded.currentRunId,updated_at=excluded.updated_at WHERE pi_agent_sessions.currentRunId IS ? OR pi_agent_sessions.currentRunId=?`,
 					)
 					.bind(
 						options.workspaceSessionId,
@@ -260,7 +264,16 @@ export async function acceptAgentInput(
 						runId,
 						timestamp,
 						timestamp,
+						predecessor,
+						predecessor,
 					),
+			);
+			statements.push(
+				client
+					.prepare(
+						`DELETE FROM agent_runs WHERE id=? AND NOT EXISTS (SELECT 1 FROM pi_agent_sessions WHERE workspaceSessionId=? AND currentRunId=?)`,
+					)
+					.bind(runId, options.workspaceSessionId, runId),
 			);
 		} else {
 			statements.push(
@@ -280,7 +293,7 @@ export async function acceptAgentInput(
 		statements.push(
 			client
 				.prepare(
-					`INSERT INTO messages (id,sessionId,projectId,userId,role,content,model,status,created_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+					`INSERT INTO messages (id,sessionId,projectId,userId,role,content,model,status,created_at) SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM agent_runs WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=? AND status IN ('accepted','running'))`,
 				)
 				.bind(
 					userMessageId,
@@ -292,12 +305,16 @@ export async function acceptAgentInput(
 					options.modelSpecifier,
 					"complete",
 					timestamp,
+					runId,
+					options.workspaceSessionId,
+					options.projectId,
+					options.userId,
 				),
 		);
 		statements.push(
 			client
 				.prepare(
-					`INSERT INTO messages (id,sessionId,projectId,userId,role,content,status,created_at) VALUES (?,?,?,?,?,?,?,?)`,
+					`INSERT INTO messages (id,sessionId,projectId,userId,role,content,status,created_at) SELECT ?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM agent_runs WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=? AND status IN ('accepted','running'))`,
 				)
 				.bind(
 					assistantMessageId,
@@ -308,12 +325,16 @@ export async function acceptAgentInput(
 					"",
 					"pending",
 					timestamp,
+					runId,
+					options.workspaceSessionId,
+					options.projectId,
+					options.userId,
 				),
 		);
 		statements.push(
 			client
 				.prepare(
-					`INSERT INTO turns (id,runId,workspaceSessionId,projectId,userId,sequence,requestId,userMessageId,assistantMessageId,modelSpecifier,thinkingLevel,created_at) SELECT ?,?,?,?,?,COALESCE(MAX(sequence),0)+1,?,?,?,?,?,? FROM turns WHERE runId=?`,
+					`INSERT INTO turns (id,runId,workspaceSessionId,projectId,userId,sequence,requestId,userMessageId,assistantMessageId,modelSpecifier,thinkingLevel,created_at) SELECT ?,?,?,?,?,COALESCE(MAX(sequence),0)+1,?,?,?,?,?,? FROM turns WHERE runId=? AND EXISTS (SELECT 1 FROM agent_runs WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=? AND status IN ('accepted','running'))`,
 				)
 				.bind(
 					turnId,
@@ -328,6 +349,10 @@ export async function acceptAgentInput(
 					options.thinkingLevel ?? null,
 					timestamp,
 					runId,
+					runId,
+					options.workspaceSessionId,
+					options.projectId,
+					options.userId,
 				),
 		);
 		statements.push(
@@ -464,6 +489,15 @@ export async function transitionAgentRun(
 	)
 		return error("invalid");
 	const client = clientOf(options.db);
+	const owned = await one(
+		client,
+		`SELECT status FROM agent_runs WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=?`,
+		options.runId,
+		options.workspaceSessionId,
+		options.projectId,
+		options.userId,
+	);
+	if (!owned) return error("not_found");
 	const pending =
 		options.to === "completed" ||
 		options.to === "failed" ||
@@ -531,6 +565,15 @@ export async function advanceAgentRunEpoch(
 ): Promise<{ epoch: number } | PersistenceError> {
 	if (!Number.isInteger(options.expectedEpoch) || options.expectedEpoch < 1)
 		return error("invalid");
+	const owned = await one(
+		clientOf(options.db),
+		`SELECT id FROM agent_runs WHERE id=? AND workspaceSessionId=? AND projectId=? AND userId=?`,
+		options.runId,
+		options.workspaceSessionId,
+		options.projectId,
+		options.userId,
+	);
+	if (!owned) return error("not_found");
 	const timestamp = Math.floor((options.now ?? (() => Date.now()))() / 1000);
 	const result = await clientOf(options.db).batch([
 		clientOf(options.db)
@@ -568,14 +611,19 @@ export async function settleTurnAssistant(
 	const client = clientOf(options.db);
 	const message = await one(
 		client,
-		`SELECT m.id,m.status FROM turns t JOIN agent_runs r ON r.id=t.runId JOIN messages m ON m.id=t.assistantMessageId WHERE t.id=? AND t.workspaceSessionId=? AND t.projectId=? AND t.userId=?`,
+		`SELECT m.id,m.status,m.content,m.tools FROM turns t JOIN agent_runs r ON r.id=t.runId JOIN messages m ON m.id=t.assistantMessageId WHERE t.id=? AND t.workspaceSessionId=? AND t.projectId=? AND t.userId=?`,
 		options.turnId,
 		options.workspaceSessionId,
 		options.projectId,
 		options.userId,
 	);
 	if (!message) return error("not_found");
-	if (message.status === options.status) return { status: options.status };
+	if (message.status === options.status) {
+		return message.content === options.content &&
+			(message.tools ?? null) === (options.tools ?? null)
+			? { status: options.status }
+			: error("idempotency_conflict");
+	}
 	if (message.status !== "pending") return error("terminal");
 	const result = await client.batch([
 		client
