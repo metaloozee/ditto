@@ -177,7 +177,7 @@ zone `ayn.wtf` and dedicated `*.ayn.wtf` to previews.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 027 | Run session-worktree websites in a safe live-preview pane | P1 | L | 005, 011, 012, 017, 024 (DONE) | DONE (worktree `/home/ayan/ditto-plan-027-worktree` @ `7e3bbbd`; live smokes NOT RUN) |
+| 027 | Run session-worktree websites in a safe live-preview pane | P1 | L | 005, 011, 012, 017, 024 (DONE) | DONE-local (`7e3bbbd`; automated gates + Docker passed, mandatory live smokes deferred) |
 
 Locked outcomes:
 
@@ -371,47 +371,10 @@ Locked outcomes:
   `waitUntil()` inside this patch.
 - Branch: `advisor/033-detach-agent-sse-delivery` (merged into local master).
 
-## Plans 034–036 (sandbox ownership and runner trust)
-
-Planned at commit `b783dec` on 2026-07-29 from Workstream 3 of the approved
-`docs/superpowers/specs/2026-07-26-platform-hardening-design.md` umbrella spec.
-
-| Plan | Title | Priority | Effort | Depends on | Status |
-|------|-------|----------|--------|------------|--------|
-| 034 | Own every project sandbox before bootstrap and reconcile failures | P0 | M | 032, 033 | TODO |
-| 035 | Isolate sandbox workloads and verify the runner before credentials | P0 | L | 032, 033, 034 | TODO (feasibility-gated) |
-| 036 | Centralize runner entrypoints and sandbox provision success | P1 | M | 034, 035 | TODO |
-
-Locked outcomes:
-
-- Plan 034 reuses the existing `projects.sandboxId`, backup, status, and deletion
-  fields: the initial provisioning row owns the generated ID before first
-  sandbox contact; final ready persistence is fenced/read back; failed rows
-  retain the exact ID/backup for existing retry/delete. No migration or
-  background reconciler.
-- Plan 035 must first prove that a dropped workload cannot reach the pinned
-  Sandbox root control plane. A global Docker `USER` is rejected for SDK 0.12.3.
-  If the capability gate fails, mark BLOCKED instead of shipping a cosmetic UID
-  drop. If it passes, repository commands run through a fixed non-root launcher,
-  project env is applied only after the drop, and a complete root-owned integrity
-  gate runs before credentials.
-- Plan 035 requires local image and authorized deployed smokes for control-plane
-  denial, FUSE backup/restore, UID/write permissions, tamper fencing, agent,
-  preview, and Plan-032 credential-lane isolation. Without them it is BLOCKED.
-- Plan 036 uses `packages/sandbox-runner/package.json#bin` as the exact six-entry
-  image manifest, with a tested Worker role map and manifest-derived Docker/
-  integrity coverage. It also replaces every copied three-state provision
-  success set with one pure shared predicate.
-- Branches: `advisor/034-project-sandbox-ownership`,
-  `advisor/035-sandbox-workload-runner-integrity`, and
-  `advisor/036-sandbox-runner-contract`.
-
 ## Plan 037 (OAuth refresh lease — CRED-1)
 
 Planned at commit `2c37ee1` on 2026-08-01 from Workstream 4 CRED-1 of
 `docs/superpowers/specs/2026-07-26-platform-hardening-design.md`.
-Independent of sandbox plans 034–036.
-
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
 | 037 | Refresh OAuth from the post-lease authoritative credential row | P0 | S | — | DONE (worktree `.worktrees/advisor-037-oauth-refresh-post-lease-credential` @ `be08692`; reviewer APPROVE) |
@@ -434,6 +397,109 @@ Locked outcomes (038):
 - Remove `provisionProjectSandbox` from set/delete (D1 is SoT).
 - Branch: `advisor/038-project-env-mutation-cas`.
 
+## Plan 039 (Alchemy v2 dev stage for ayan-named resources)
+
+Planned at commit `d44012a` on 2026-08-09 from the resolved disposable
+Alchemy v2 resource graph. This is the first dependency-eligible architecture
+handoff plan after Plans 034–036 were removed as superseded.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 039 | Migrate ayan-named resources to Alchemy v2 stage dev | P0 | L | — | DONE-local (`e3abdee`; local graph/app/Docker accepted, paid-plan cloud cutover deferred) |
+
+Locked outcomes:
+
+- Migrate to explicit Alchemy v2 stage `dev` with exact
+  `alchemy@2.0.0-beta.70`, `effect@4.0.0-beta.103`, and
+  `@effect/platform-node@4.0.0-beta.103`, using
+  coherent Effect beta.103 overrides, `Alchemy.Stack("ditto")`,
+  `Cloudflare.providers()`, and developer-owned local state.
+- Destroy v1 first and prove the fixed D1, R2, Worker,
+  ContainerApplication, and `*.ayn.wtf/*` route absent before creating v2
+  without adoption or continuity claims.
+- Preserve exact physical names, binding names/classification, TanStack custom
+  Worker entry, stable Sandbox package/image `0.12.3`, and RPC transport.
+- Require deployed D1/R2/SSR/assets/Sandbox/Preview acceptance, v2
+  destroy/recreate from empty state, and a destructive v1 rollback rehearsal
+  that destroys v1 before v2 reclaims the names.
+- Do not add Brain, Workflow, Trusted Git Executor, Sandbox `@next`, wildcard
+  DNS ownership, shared deployment state, or resources outside the fixed
+  ayan-named graph.
+- Branch: `advisor/039-alchemy-v2-ayan-recreation`.
+
+## Plan 041 (D1-authoritative durable Agent Runs)
+
+Planned at commit `e3abdee` on 2026-08-11 after tracing the current D1 schema,
+request-owned run/control path, migration history, Alchemy v2 D1 ownership, and
+Cloudflare's current transactional `D1Database.batch()` contract. Plan 040 is a
+mutually exclusive no-GO contingency and is intentionally not created on this
+accepted GO route.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 041 | Model durable Agent Runs in D1 | P0 | L | 039 (DONE-local) | DONE-local — implementation approved; full DONE awaits the deployed ayan D1 migration smoke |
+
+Locked outcomes:
+
+- D1 owns one Pi Agent Session per Workspace Session, immutable-at-terminal
+  Agent Runs, ordered Turns, complete user messages, pending/terminal assistant
+  messages, Stop intent, terminal outcome, idempotency, successor order, and
+  current Execution Epoch references.
+- Exact run states are `accepted` / `running` / `stopping` / `finalizing` and
+  `completed` / `failed` / `cancelled` / `interrupted`; terminal runs never
+  reopen.
+- Acceptance is one D1 batch transaction for run + Turn 1 + complete user +
+  pending assistant. Exact duplicate request IDs return the same result;
+  conflicting reuse returns 409.
+- Input during stopping/finalizing/terminal creates or joins one ordered
+  successor. Ownership-safe reads/writes always scope user + project +
+  Workspace Session.
+- Current `/api/agent/*`, Pi, Workflow, Brain DO/SQLite, browser, R2, Sandbox,
+  and Alchemy resource behavior remain untouched; no credential-bearing run
+  fields.
+- Local implementation may reach `DONE-local`, but Plan 041 cannot be `DONE`
+  and dependent production work cannot start until migration 0012 is applied
+  through the converged Alchemy v2 stage `dev` and smoked on the pre-existing
+  disposable `ditto-ayan-db`. Absence/unauthorized cloud is an explicit STOP at
+  the remote boundary, never invented evidence.
+- Branch: `advisor/041-model-durable-agent-runs-in-d1`.
+
+## Plan 047 (ephemeral Trusted Git Executor)
+
+Planned at commit `e3abdee` on 2026-08-11 after reading the current Cloudflare
+Container outbound/lifecycle/rollout docs, latest Workers types, exact installed
+`@cloudflare/containers@0.3.7`, and exact installed Alchemy v2 beta.70
+Container/binding/migration declarations. Plans 042–046 remain absent and are
+not prerequisites.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 047 | Add the ephemeral Trusted Git Executor | P0 | L | 039 (DONE-local) | BLOCKED — locked Workers types remain inside the 72-hour supply-chain quarantine until 2026-08-14 00:59:59 UTC |
+
+Locked outcomes:
+
+- Add only Website binding/class `TrustedGitExecutor`, physical application
+  `ditto-git-executor-ayan`, a distinct SQLite Durable Object migration,
+  `basic`, max 4, and immediate Container rollout after Git admission drains.
+- Derive one fresh executor identity from Git Publication ID plus Execution
+  Epoch; no Pi/project checkout or mount/terminal/public route/persistent
+  credential/Project Sandbox access; destroy on every terminal path.
+- Deny outbound internet by default. Worker-side HTTPS interception admits only
+  exact repository-scoped GitHub upload-pack or receive-pack shapes in separate
+  expiring phases; fresh installation tokens are minted/injected/revoked outside
+  the container and never passed as persisted outbound-handler params.
+- Stream one bounded R2 bundle into a fresh bare quarantine, run fixed stock-Git
+  protocol/resource validation before write access, push only the exact
+  non-force refspec, and reconcile the exact remote ref before any ambiguous
+  write retry.
+- Local code/image/proxy work may reach DONE-local after the synthetic
+  smart-HTTP stock-Git proxy proves credentials absent from container env/argv/
+  files/process metadata/output/logs. Full DONE additionally requires a
+  read-only deployed real-GitHub platform prototype before the deployed
+  non-force push, denial, canary, revocation, capacity, cleanup,
+  replacement, resource, migration, immediate-rollout, and convergence matrix.
+- Branch: `advisor/047-add-ephemeral-trusted-git-executor`.
+
 ### Audit finding coverage
 
 | Selected finding | Covered by | Combination rationale |
@@ -450,7 +516,7 @@ Locked outcomes (038):
 | 19, 21 | 019 | Production code splitting and unused dependency removal share build/lockfile verification |
 | 24 | 021 | Documentation-only alignment, sequenced after plan 010's architecture edits |
 
-Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
+Status values: TODO | IN PROGRESS | DONE | DONE-local (implemented locally; named external gates deferred) | BLOCKED (reason) | REJECTED (rationale)
 
 ## Reconciliation — 2026-07-12
 
@@ -708,20 +774,25 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
   the run service owns terminal persistence/backup, ordered batching is stable,
   authenticated follow-up/Stop is the sole execution-control contract, and
   Plan 032's overlapping architecture-doc edits have landed.
-- **034 requires 032 and 033** — bootstrap ownership follows the approved
-  hardening order and rebases its security/server documentation after both
-  preceding cross-cutting plans land.
-- **035 requires 032, 033, and 034** — the non-root/integrity boundary must
-  preserve isolated privileged Git, detached execution, and the stable sandbox
-  ownership/recovery key. Its control-plane capability gate may block execution.
-- **036 requires 034 and 035** — artifact/provision contract cleanup derives
-  from the landed integrity/launcher boundary and cannot certify it in advance.
-- **037 depends on nothing in 034–036** — CRED-1 is confined to
-  `resolveOAuthCredential` + agent-run call site. Can run in parallel with
-  sandbox ownership/integrity work.
+- **037 depends on nothing** — CRED-1 is confined to
+  `resolveOAuthCredential` + agent-run call site.
 - **038 depends on nothing** — ENV-3 ciphertext CAS on project env set/delete;
-  F4 value non-trim already on master. Parallel-safe with 037 and 034–036
-  (disjoint files).
+  F4 value non-trim was already on master.
+- **039 depends on nothing** — local Alchemy v2 is accepted. A refreshed paid-plan
+  cloud cutover remains the infrastructure prerequisite for later Brain/Workflow
+  resources and must not pre-create them.
+- **041 requires 039** — the D1 domain/schema/service can be implemented and
+  verified locally on the accepted Alchemy v2 code baseline, but full DONE and
+  dependent production work require migration smoke on the already-deployed
+  disposable `ditto-ayan-db`. Plan 041 must not create that missing cloud graph.
+  Plan 040 remains absent unless the separate direct-Pi gate later records
+  no-GO.
+- **047 requires only 039** — its source/image/proxy work is locally executable
+  on the accepted Alchemy v2 baseline and may run independently of Plan 041.
+  Full DONE requires Plan 039's separately authorized deployed graph plus paid
+  Containers and a disposable GitHub acceptance fixture; Plan 047 must not
+  create the missing cloud graph. Plans 042–046 remain absent and are not
+  prerequisites.
 
 ## Product decisions (locked 2026-07-09)
 
@@ -822,11 +893,11 @@ tree while sharing git objects and (via symlink) `node_modules`.
 27. `031-sandbox-check-provision-split.md`
 28. `032-isolate-privileged-git.md`
 29. `033-detach-agent-sse-delivery.md`
-30. `034-own-and-clean-project-sandboxes.md`
-31. `035-isolate-sandbox-workloads-and-verify-runner.md`
-32. `036-centralize-sandbox-runner-contract.md`
-33. `037-oauth-refresh-post-lease-credential.md` (independent; may run parallel to 034–036)
-34. `038-project-env-mutation-cas.md` (independent; may run parallel to 037 and 034–036)
+30. `037-oauth-refresh-post-lease-credential.md`
+31. `038-project-env-mutation-cas.md` (independent; may run parallel to 037)
+32. `039-migrate-ayan-stack-to-alchemy-v2.md` (DONE-local; cloud cutover deferred)
+33. `041-model-durable-agent-runs-in-d1.md` (DONE-local; full DONE requires deployed ayan D1 smoke)
+34. `047-add-ephemeral-trusted-git-executor.md` (TODO; runs independently of 041 after 039; local synthetic proxy required, full DONE requires deployed Container/GitHub acceptance)
 
 ## Planning update — 2026-07-23 (Plan 028)
 
@@ -1035,37 +1106,6 @@ subagent (not new plan files).
   needs no external service, but DONE requires an authorized deployed
   >30-second disconnect smoke; without it, record BLOCKED.
 
-## Planning update — 2026-07-29 (Plans 034–036)
-
-- **Current HEAD / planned-at**: `b783dec`.
-- **TODO 034**: close SANDBOX-1 without a migration by persisting the generated
-  sandbox ID before bootstrap, fencing/read-backing readiness, and retaining a
-  failed retry/delete record when cleanup cannot complete.
-- **TODO 035**: address SANDBOX-2/3 only after proving the pinned root Sandbox
-  control plane is inaccessible to a dropped workload. Upstream SDK 0.12.3 has
-  no per-command user option, and a Docker `USER` also drops root-required
-  control-plane setup; failure of the explicit local/deployed capability gate
-  blocks this plan rather than authorizing a weaker boundary.
-- **TODO 036**: after 035 is DONE, make the runner package bin manifest cover all
-  six Worker entries (including agent control and Git metadata), derive/test
-  Docker/health/Worker parity, and centralize the exact three provision-success
-  states.
-- **Planning verification**: focused project/bootstrap/sandbox tests pass (3
-  files / 57 tests); runner suite passes (11 files / 81 tests). A fresh-context
-  xAI Grok 4.5 subagent cold-reviewed all three plans; 034/035 were tightened
-  around recovery evidence, fixed identity/session mechanics, capability gating,
-  CI, and integrity latency, while 036 passed with contract-test nits applied.
-  No source build, Docker build, deploy, or live credential flow was run while
-  planning.
-- **Source state**: preserve the existing modified index and untracked approved
-  umbrella spec/Plans 032–033. Plans 034–036 are additional planning artifacts;
-  no source file was modified.
-- **Executable now**: Plan 032 local work is on
-  `advisor/032-isolate-privileged-git` (BLOCKED pending live GitHub smoke).
-  After 032 DONE/merge: 033 → 034. Plan 035 begins with a mandatory security
-  capability gate and may become BLOCKED. Plan 036 cannot start until 035 is
-  DONE.
-
 ## Execution update — 2026-07-31 (Plan 033)
 
 - **Worktree**: `/home/ayan/ditto/.worktrees/033-detach-agent-sse-delivery`
@@ -1099,9 +1139,9 @@ subagent (not new plan files).
   design may move agent-run ownership from the request-scoped Worker to a
   Durable Object (optionally with Workflow/Queue) so long runs outlive the
   browser connection; SSE would become delivery-only against that owner.
-- **Next**: Plan 034 may proceed against this local baseline. Re-run a deployed
-  >30s disconnect smoke whenever staging exists; if CF cancels mid-run, commission
-  the DO/Workflow ownership work rather than enlarging this patch.
+- **Next**: Re-run a deployed >30s disconnect smoke whenever staging exists;
+  if CF cancels mid-run, use the current Brain/Workflow wayfinding effort rather
+  than enlarging this patch.
 
 ## Planning update — 2026-08-01 (Plan 037)
 
@@ -1112,7 +1152,7 @@ subagent (not new plan files).
   pre-wait rotating refresh token. Process kill/`retainLease` unchanged.
   Landed at `be08692` on `advisor/037-oauth-refresh-post-lease-credential`
   (worktree `.worktrees/advisor-037-oauth-refresh-post-lease-credential`).
-- **Depends on**: none. Parallel-safe with 034–036.
+- **Depends on**: none.
 - **Branch**: `advisor/037-oauth-refresh-post-lease-credential`.
 - **Verify**: `pnpm check`, `pnpm typecheck`, focused
   `provider-auth-service` + `agent-run-service` vitest.
@@ -1131,4 +1171,158 @@ subagent (not new plan files).
   (D1 SoT); no schema migration; no value-trim or ENV-4 scope
 - **Verify**: `pnpm check`, `pnpm typecheck`, focused
   `projects.test.ts` + `project-env-vars.test.ts`
-- **Parallel-safe with**: 037 and 034–036 (disjoint files)
+- **Parallel-safe with**: 037 (disjoint files)
+
+## Planning update — 2026-08-09 (Plan 039)
+
+- **Current HEAD / planned-at**: `d44012a`.
+- **DONE-local 039**: local migration accepted at `5189054`, then stage-renamed
+  at `e3abdee` from `ayan` to `dev`; Alchemy v2 beta.70, coherent Effect/platform-node
+  beta.103, automatic root Docker build,
+  local D1/R2/Container/Worker graph, SSR/assets, and stable Sandbox 0.12.3 RPC
+  wiring. The originally planned Effect beta.106 crashes Alchemy's Node CLI.
+- **Depends on**: none. Plan 041 now follows this accepted local source baseline.
+  Brain runtime, Workflow, Git executor, Sandbox `@next`, and later UI plans
+  remain intentionally uncreated.
+- **Reconciliation**: Plans 034–036 were intentionally removed as superseded.
+  Keep those files deleted; do not restore their obsolete Project Sandbox or
+  runner ownership mechanisms. Plans 037–038 are complete and independent.
+- **Future paid-plan execution shape**: refresh the plan first, then require a
+  clean baseline; destructive v1 destroy and authoritative absence checks;
+  empty-state v2 deploy without adoption; full deployed acceptance; v2
+  destroy/recreate; fresh-v1 destructive rollback; v1 destroy before final v2
+  restoration.
+- **Continuity**: none. D1 rows, R2 objects, Durable Object state, Sandbox
+  processes, previews, and uptime are disposable for this cutover.
+- **Executable now**: no cloud execution. The operator is on Cloudflare's free
+  plan; paid-plan inventory/deploy/recreate/rollback requires a refreshed plan.
+  Local implementation lives on `advisor/039-alchemy-v2-ayan-recreation`.
+
+## Reconciliation — 2026-08-11
+
+- **Current HEAD**: `e3abdee` on `master`, 8 commits ahead of
+  `origin/master`. The working tree already contained the current plan/skill
+  changes; reconciliation changed only plan records.
+- **Backlog status**: Plans 001–032 and 037–038 remain historically DONE, with
+  Plan 027 now accurately labeled **DONE-local** because its mandatory live
+  preview smokes were never run. Plan 033 remains **DONE-local** pending a
+  deployed >30-second disconnect smoke. Plan 039 remains **DONE-local**; its
+  paid-plan Cloudflare cutover requires a refreshed plan and is not executable
+  from the current file.
+- **Superseded**: Plans 034–036 are REJECTED by the later architecture handoff;
+  their existing deletions are intentional and were not restored.
+- **Cheap current-HEAD verification**:
+  | Gate | Result |
+  |---|---|
+  | `./node_modules/.bin/biome check .` | pass (20 warnings, no errors) |
+  | `npm run typecheck --prefix apps/web` | pass |
+  | `npm test --prefix apps/web` | pass: 702 tests in 63 files |
+  | runner typecheck + tests | pass: 81 tests in 11 files |
+  | `git diff --check` | pass |
+  | Plan 039 package/Stack/Sandbox static contracts | pass |
+- **Root pnpm wrapper limitation**: `pnpm check`, `pnpm typecheck`, and
+  `pnpm test` stopped before their scripts because the active 72-hour
+  supply-chain policy rejected newly published
+  `@cloudflare/workers-types@5.20260811.1`. Direct locked-tool checks above
+  passed. No policy or lockfile was changed; the production build was not
+  repeated during this cheap reconciliation.
+- **Plan 004 criterion regression**: `apps/web/src/components/ai-chat.tsx:644`
+  again acknowledges message-cache entries in a message-driven `useEffect`.
+  The historical plan remains DONE, but its no-prop-sync-Effect invariant is
+  not verified on current HEAD. Any cleanup should be a new plan.
+- **Historical drift only**: older plans retain pre-monorepo paths and
+  superseded implementation details. Their landing commits/equivalents and
+  sampled features remain in current history; rewriting 20,000 lines of
+  archival plans would add no execution value.
+- **Index hygiene**: Plan 039 remains untracked; the intentional 034–036
+  deletions and current plan/status updates are also uncommitted.
+- **Worktrees**: no executor worktree is active. Two dead prototype worktree
+  records under `/tmp` are prunable; reconciliation did not mutate Git metadata.
+- **External checks not rerun**: provider/login matrices, deployed preview and
+  disconnect smokes, live Git paths, and Plan 039 cloud inventory/cutover.
+- **Executable now**: none. Refresh Plan 039 only after paid-plan Cloudflare
+  execution is authorized; write a new plan if the Plan 004 Effect cleanup is
+  wanted.
+
+## Planning update — 2026-08-11 (Plan 041)
+
+- **Current HEAD / planned-at**: `e3abdee`.
+- **DONE-local 041**: added the D1-authoritative Pi Agent Session / Agent Run / Turn
+  foundation, atomic idempotent acceptance, ordered successor routing, durable
+  Stop intent, terminal immutability, Execution Epoch CAS references, generated
+  migration 0012, and empty/existing database plus transition/race/ownership
+  tests. Do not wire the current request-owned Pi/SSE/control path yet.
+- **Dependency state**: Plan 039 is accurately `DONE-local`. Its source graph is
+  enough for Plan 041 local execution, but no deployed ayan D1 is proven. Plan
+  041 may therefore become `DONE-local`; it cannot become full `DONE`, and no
+  dependent production work may start, until the mandatory deployed migration
+  smoke passes on the pre-existing disposable `ditto-ayan-db`.
+- **STOP/BLOCK boundary**: if the remote database/Alchemy ownership is absent or
+  unauthorized after local gates pass, stop without deploying or creating the
+  graph and record `DONE-local (BLOCKED for full DONE: deployed ayan D1 migration
+  smoke unavailable)`. A present remote migration or integrity failure is
+  `BLOCKED`, not local success.
+- **Route decision**: Plan 040 was not created; it remains a mutually exclusive
+  no-GO contingency rather than a compatibility plan.
+- **Planning verification**: direct app typecheck passed; focused current
+  migration/run/workspace tests passed (3 files, 44 tests). Current Cloudflare
+  D1 docs and latest Workers types still expose rollback-capable transactional
+  `D1Database.batch()` with prepared statements.
+- **Dirty-tree preservation**: this planning pass changes only
+  `plans/041-model-durable-agent-runs-in-d1.md` and this index. All pre-existing
+  modified/deleted/untracked work remains untouched.
+- **Execution result**: approved locally on clean branch
+  `advisor/041-model-durable-agent-runs-in-d1`; source implementation commit
+  `663a355`. Frozen root and runner installs passed after the operator explicitly
+  disabled pnpm's global minimum-release-age policy. Independent verification
+  passed migration/persistence matrices, 67 current-runtime regression tests,
+  typecheck, Biome, `pnpm verify`, source/storage guards, and `git diff --check`.
+- **Cloud boundary**: read-only inventory found no exact deployed
+  `ditto-ayan-db`, so Steps 8–9 were not run and no infrastructure was created or
+  deployed. Plan 041 is `DONE-local (BLOCKED for full DONE: deployed ayan D1
+  migration smoke unavailable)`.
+- **Executable now**: Plan 041 has no remaining local work. Full DONE and any
+  dependent production work still require an authorized pre-existing ayan D1
+  and the mandatory migration smoke.
+
+## Planning update — 2026-08-11 (Plan 047)
+
+- **Current HEAD / planned-at**: `e3abdee`.
+- **TODO 047**: add the standalone `TrustedGitExecutor` Container/SQLite DO,
+  minimal pinned Git/CA/fixed-helper image, deny-all exact GitHub smart-HTTP
+  proxy, fresh outside-container installation credentials, bounded R2
+  quarantine validation, exact non-force push/reconciliation, safe results, and
+  terminal destruction.
+- **Dependency state**: Plan 039 alone is required and is `DONE-local`. Plan 047
+  Steps 1–7 are locally executable on that source baseline and may run in
+  parallel with Plan 041. Plans 042–046 were not created and are not hidden
+  prerequisites.
+- **API evidence**: current Cloudflare docs expose Container HTTPS interception,
+  `ContainerProxy`, direct `ctx.container` exec/destroy, and immediate rollout.
+  Latest Workers types are `5.20260811.1`; exact installed
+  `@cloudflare/containers@0.3.7` supports runtime handlers but persists their
+  params in DO SQLite, so the plan permits only non-secret phase metadata there.
+  Exact installed Alchemy beta.70 supports the second low-level Container,
+  `basic`, max 4, immediate rollout, and generated `new_sqlite_classes` migration.
+- **Mandatory platform gate**: Step 10 first runs a read-only real-GitHub stock
+  Git fetch through the deployed exact HTTPS proxy while credentials remain
+  absent from container-visible surfaces. Only after that passes may the
+  disposable non-force write run. Failure is STOP, never a reason to widen
+  egress or add a credential helper/token file/terminal.
+- **Cloud boundary**: full DONE requires the separately accepted deployed Plan
+  039 graph, Workers Paid Containers, and disposable GitHub fixture. Absence
+  after local graph/synthetic-proxy gates yields accurate DONE-local; Plan 047 does not
+  deploy/create the missing base graph. A present failing deployed gate is
+  BLOCKED.
+- **Dirty-tree preservation**: this planning pass created only
+  `plans/047-add-ephemeral-trusted-git-executor.md` and added Plan 047 records to
+  this existing dirty index. It did not modify Plan 041, source code, deleted
+  Plans 034–036, scratch/skill work, or Git worktree metadata.
+- **Execution attempt**: the clean `advisor/047-add-ephemeral-trusted-git-executor`
+  worktree was created, but Step 1 stopped before source edits when two frozen
+  installs rejected locked `@cloudflare/workers-types@5.20260811.1` under the
+  repository's 4,320-minute minimum-release-age policy. No permitted in-scope
+  fix exists; retry after 2026-08-14 00:59:59 UTC.
+- **Executable now**: blocked at Step 1. After the quarantine expires, retry in
+  the existing clean worktree. Steps 8–10 and full DONE still wait at the
+  deployed Container/GitHub boundary.

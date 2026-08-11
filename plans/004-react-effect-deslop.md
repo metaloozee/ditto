@@ -22,11 +22,11 @@
 - **Category**: bug | perf | tech-debt
 - **Planned at**: commit `523e5c0`, 2026-07-09 (plus uncommitted chat streaming changes)
 - **Execution**: DONE — integrated by commit `6ac3b74`.
-- **Reconciliation 2026-07-19**: the historical work remains integrated, but
+- **Reconciliation 2026-08-11**: the historical work remains integrated, but
   later pagination/cache work reintroduced a message-driven `useEffect` that
-  mutates the session cache and calls `setCacheEpoch`; the plan's no-prop-sync
-  Effect invariant no longer holds on current HEAD. Track any correction as a
-  new plan rather than reopening this completed WIP plan.
+  mutates the session cache; `setCacheEpoch` remains event-driven. The plan's
+  no-prop-sync Effect invariant no longer holds on current HEAD. Track any
+  correction as a new plan rather than reopening this completed WIP plan.
 - **React Doctor baseline**: 62/100 on `--scope changed` (2 errors, 8 warnings)
 
 ## Why this matters

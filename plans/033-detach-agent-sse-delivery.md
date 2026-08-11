@@ -28,6 +28,7 @@
 - **Category**: bug
 - **Requirements**: STREAM-1 and STREAM-2 from the approved platform-hardening specification
 - **Planned at**: commit `b783dec`, 2026-07-29
+- **Execution status**: DONE-local — merged at `23babdb`; deployed >30-second disconnect smoke deferred
 
 ## Why this matters
 

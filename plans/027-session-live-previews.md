@@ -11,7 +11,7 @@
 - **Risk**: HIGH — repository code becomes reachable on public wildcard URLs
 - **Dependencies**: Plans 005, 011, 012, 017, and 024 (all DONE)
 - **Pinned base commit**: `e1f4547`
-- **Execution status**: DONE (automated gates + Docker build; live smokes NOT RUN) — branch `advisor/027-session-live-previews` @ `7e3bbbd`
+- **Execution status**: DONE-local (automated gates + Docker build; mandatory live smokes deferred) — implementation `7e3bbbd` is in current history
 - **Production preview zone**: apex `ayn.wtf`; previews use `*.ayn.wtf`
 - **Local preview origin**: Wrangler/Alchemy localhost URL; no public DNS needed
 
