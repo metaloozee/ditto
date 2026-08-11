@@ -20,11 +20,11 @@ Ditto is a TanStack Start app deployed with Alchemy on Cloudflare Workers. It us
 
 Alchemy is the sole deployment owner (`pnpm dev` / `pnpm deploy` / `pnpm destroy`). This monorepo layout does not introduce SST, Wrangler-as-deploy, or any other deployment boundary.
 
-## Alchemy v2 (ayan stage)
+## Alchemy v2 (dev stage)
 
 - Exact deps: `alchemy@2.0.0-beta.70`, `effect@4.0.0-beta.103`, `@effect/platform-node@4.0.0-beta.103` (workspace overrides pin the coherent Effect beta.103 set).
 - Container id `sandbox`, env `Sandbox`; image from root `Dockerfile`.
-- `pnpm dev` runs Alchemy from `apps/web` (entry `../../alchemy.run.ts`) so local Docker context resolves to the repo root. `pnpm deploy` / `pnpm destroy` stay root-level `--stage ayan`.
+- `pnpm dev` runs Alchemy from `apps/web` (entry `../../alchemy.run.ts`) so local Docker context resolves to the repo root. `pnpm deploy` / `pnpm destroy` stay root-level `--stage dev`.
 - Local state: `.alchemy/` (gitignored). Stage is disposable.
 
 ## Prerequisites
@@ -57,7 +57,7 @@ From the repository root:
 pnpm dev
 ```
 
-Runs Alchemy from `apps/web` against stage `ayan` so the root Docker context
+Runs Alchemy from `apps/web` against stage `dev` so the root Docker context
 resolves correctly. Env files load from the repo root.
 
 Before opening a PR, run the full verification gate (app + runner typecheck/tests/build):
@@ -84,10 +84,10 @@ Migrations live under `apps/web/migrations`. Root `pnpm db:*` scripts forward to
 
 ## Scripts
 
-- `pnpm dev` — local Alchemy + Vite for stage `ayan` only
+- `pnpm dev` — local Alchemy + Vite for stage `dev` only
 - `pnpm build` — production build of `@ditto/web`
-- `pnpm deploy` — `alchemy deploy --stage ayan` (sole deploy owner)
-- `pnpm destroy` — `alchemy destroy --stage ayan` (destructive; no continuity)
+- `pnpm deploy` — `alchemy deploy --stage dev` (sole deploy owner)
+- `pnpm destroy` — `alchemy destroy --stage dev` (destructive; no continuity)
 - `pnpm check` — Biome check (repo root)
 - `pnpm lint` — Biome lint
 - `pnpm format` — Biome format
@@ -138,7 +138,7 @@ Account Settings.
   write** and **Pull requests: Read & write** so the Worker can push session
   branches and open pull requests (installation token; never stored in the DB).
 - `pnpm deploy` and `pnpm destroy` are managed through Alchemy only, stage
-  `ayan` only.
+  `dev` only.
 - `apps/web/src/server.ts` exports the Cloudflare Sandbox binding used by the app.
 - `OPENCODE_API_KEY` is required as the operator fallback for
   `opencode/deepseek-v4-flash-free`. Account provider credentials are injected
