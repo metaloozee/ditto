@@ -22,7 +22,7 @@ Alchemy is the sole deployment owner (`pnpm dev` / `pnpm deploy` / `pnpm destroy
 
 ## Alchemy v2 (ayan stage)
 
-- Exact pins: `alchemy@2.0.0-beta.70` and `effect@4.0.0-beta.106` at the workspace root.
+- Exact pins: `alchemy@2.0.0-beta.70`, `effect@4.0.0-beta.106`, and `@effect/platform-node@4.0.0-beta.106` at the workspace root (Node local dev needs the platform package).
 - Stack state is local v2 state under `.alchemy/` (gitignored). Generated Alchemy/Wrangler files are secret-bearing local artifacts — never commit them.
 - `pnpm dev`, `pnpm deploy`, and `pnpm destroy` hard-code `--stage ayan` only. A different stage or shared-state/CI deployment needs a separate plan.
 - The `ayan` stage is disposable: no D1/R2/Durable Object/process/preview continuity is guaranteed across destroy/recreate.
