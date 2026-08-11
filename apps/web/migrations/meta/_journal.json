@@ -85,6 +85,13 @@
       "when": 1784734820963,
       "tag": "0011_handy_loa",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1786454667978,
+      "tag": "0012_elite_union_jack",
+      "breakpoints": true
     }
   ]
 }

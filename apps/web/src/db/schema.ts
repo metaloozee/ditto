@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
+import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import {
+	check,
 	index,
 	integer,
 	sqliteTable,
@@ -148,6 +150,188 @@ export const messages = sqliteTable(
 	(table) => [
 		index("messages_sessionId_idx").on(table.sessionId),
 		index("messages_projectId_idx").on(table.projectId),
+	],
+);
+
+export const AGENT_RUN_STATUSES = [
+	"accepted",
+	"running",
+	"stopping",
+	"finalizing",
+	"completed",
+	"failed",
+	"cancelled",
+	"interrupted",
+] as const;
+export const AGENT_RUN_TERMINAL_STATUSES = [
+	"completed",
+	"failed",
+	"cancelled",
+	"interrupted",
+] as const;
+export const PI_THINKING_LEVELS = [
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+	"max",
+] as const;
+
+export const agentRuns = sqliteTable(
+	"agent_runs",
+	{
+		id: text("id").primaryKey(),
+		workspaceSessionId: text("workspaceSessionId")
+			.notNull()
+			.references(() => workspaceSessions.id, { onDelete: "cascade" }),
+		projectId: text("projectId")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		userId: text("userId")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		sequence: integer("sequence").notNull(),
+		predecessorRunId: text("predecessorRunId").references(
+			(): AnySQLiteColumn => agentRuns.id,
+			{ onDelete: "set null" },
+		),
+		status: text("status", { enum: AGENT_RUN_STATUSES })
+			.notNull()
+			.default("accepted"),
+		currentExecutionEpoch: integer("currentExecutionEpoch"),
+		stopRequestId: text("stopRequestId"),
+		stopRequestedAt: integer("stopRequestedAt", { mode: "timestamp" }),
+		outcomeCode: text("outcomeCode"),
+		acceptedAt: integer("acceptedAt", { mode: "timestamp" })
+			.notNull()
+			.default(sql`(unixepoch())`),
+		startedAt: integer("startedAt", { mode: "timestamp" }),
+		finalizingAt: integer("finalizingAt", { mode: "timestamp" }),
+		finishedAt: integer("finishedAt", { mode: "timestamp" }),
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.default(sql`(unixepoch())`),
+		updatedAt: integer("updated_at", { mode: "timestamp" })
+			.notNull()
+			.default(sql`(unixepoch())`),
+	},
+	(table) => [
+		uniqueIndex("agent_runs_session_sequence_uidx").on(
+			table.workspaceSessionId,
+			table.sequence,
+		),
+		uniqueIndex("agent_runs_predecessor_uidx").on(table.predecessorRunId),
+		index("agent_runs_project_session_status_idx").on(
+			table.projectId,
+			table.workspaceSessionId,
+			table.status,
+		),
+		index("agent_runs_userId_idx").on(table.userId),
+		check("agent_runs_sequence_positive_ck", sql`${table.sequence} > 0`),
+		check(
+			"agent_runs_status_ck",
+			sql`${table.status} IN ('accepted','running','stopping','finalizing','completed','failed','cancelled','interrupted')`,
+		),
+		check(
+			"agent_runs_epoch_positive_ck",
+			sql`${table.currentExecutionEpoch} IS NULL OR ${table.currentExecutionEpoch} > 0`,
+		),
+		check(
+			"agent_runs_terminal_shape_ck",
+			sql`(${table.status} IN ('completed','failed','cancelled','interrupted') AND ${table.finishedAt} IS NOT NULL) OR (${table.status} NOT IN ('completed','failed','cancelled','interrupted') AND ${table.finishedAt} IS NULL)`,
+		),
+		check(
+			"agent_runs_outcome_shape_ck",
+			sql`(${table.status} IN ('completed','failed','cancelled','interrupted') OR ${table.outcomeCode} IS NULL) AND (${table.outcomeCode} IS NULL OR (${table.outcomeCode} GLOB '[a-z0-9_:-]*' AND length(${table.outcomeCode}) <= 128))`,
+		),
+	],
+);
+
+export const piAgentSessions = sqliteTable(
+	"pi_agent_sessions",
+	{
+		workspaceSessionId: text("workspaceSessionId")
+			.primaryKey()
+			.references(() => workspaceSessions.id, { onDelete: "cascade" }),
+		projectId: text("projectId")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		userId: text("userId")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		currentRunId: text("currentRunId").references(() => agentRuns.id, {
+			onDelete: "set null",
+		}),
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.default(sql`(unixepoch())`),
+		updatedAt: integer("updated_at", { mode: "timestamp" })
+			.notNull()
+			.default(sql`(unixepoch())`),
+	},
+	(table) => [
+		index("pi_agent_sessions_project_user_idx").on(
+			table.projectId,
+			table.userId,
+		),
+	],
+);
+
+export const turns = sqliteTable(
+	"turns",
+	{
+		id: text("id").primaryKey(),
+		runId: text("runId")
+			.notNull()
+			.references(() => agentRuns.id, { onDelete: "cascade" }),
+		workspaceSessionId: text("workspaceSessionId")
+			.notNull()
+			.references(() => workspaceSessions.id, { onDelete: "cascade" }),
+		projectId: text("projectId")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		userId: text("userId")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		sequence: integer("sequence").notNull(),
+		requestId: text("requestId").notNull(),
+		userMessageId: text("userMessageId")
+			.notNull()
+			.references(() => messages.id, { onDelete: "cascade" }),
+		assistantMessageId: text("assistantMessageId")
+			.notNull()
+			.references(() => messages.id, { onDelete: "cascade" }),
+		modelSpecifier: text("modelSpecifier").notNull(),
+		thinkingLevel: text("thinkingLevel", { enum: PI_THINKING_LEVELS }),
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.default(sql`(unixepoch())`),
+	},
+	(table) => [
+		uniqueIndex("turns_run_sequence_uidx").on(table.runId, table.sequence),
+		uniqueIndex("turns_user_request_uidx").on(table.userId, table.requestId),
+		uniqueIndex("turns_user_message_uidx").on(table.userMessageId),
+		uniqueIndex("turns_assistant_message_uidx").on(table.assistantMessageId),
+		index("turns_project_session_run_idx").on(
+			table.projectId,
+			table.workspaceSessionId,
+			table.runId,
+		),
+		check("turns_sequence_positive_ck", sql`${table.sequence} > 0`),
+		check(
+			"turns_request_nonempty_ck",
+			sql`length(trim(${table.requestId})) > 0 AND length(${table.requestId}) <= 128`,
+		),
+		check(
+			"turns_model_nonempty_ck",
+			sql`length(trim(${table.modelSpecifier})) > 0`,
+		),
+		check(
+			"turns_thinking_level_ck",
+			sql`${table.thinkingLevel} IS NULL OR ${table.thinkingLevel} IN ('off','minimal','low','medium','high','xhigh','max')`,
+		),
 	],
 );
 
