@@ -22,12 +22,10 @@ Alchemy is the sole deployment owner (`pnpm dev` / `pnpm deploy` / `pnpm destroy
 
 ## Alchemy v2 (ayan stage)
 
-- Exact pins: `alchemy@2.0.0-beta.70`, `effect@4.0.0-beta.103`, and `@effect/platform-node@4.0.0-beta.103` at the workspace root (Node local dev needs the platform package). Alchemy beta.70 still calls `Schema.TaggedErrorClass` (removed in effect beta.104+). `pnpm-workspace.yaml` overrides force the coherent Effect set to beta.103 (`effect`, `@effect/platform-node-shared`, `@effect/platform-bun`, `@effect/sql-d1`, `@effect/sql-sqlite-do`, `@effect/vitest`) so distilled packages and `>=beta.102` ranges cannot drag in beta.106/107.
-- Local Container image: `alchemy.run.ts` uses prebuilt `ditto-sandbox-039-local:test` (root `Dockerfile` context breaks under ViteChildRunner's `apps/web` cwd). Set `DOCKER_BIN=./scripts/docker-local.sh` so local image tags skip `docker pull`. Container resource id is `sandbox-container` (must differ from env key `Sandbox` or DO namespace binding is collapsed).
-- Stack state is local v2 state under `.alchemy/` (gitignored). Generated Alchemy/Wrangler files are secret-bearing local artifacts — never commit them.
-- `pnpm dev`, `pnpm deploy`, and `pnpm destroy` hard-code `--stage ayan` only. A different stage or shared-state/CI deployment needs a separate plan.
-- The `ayan` stage is disposable: no D1/R2/Durable Object/process/preview continuity is guaranteed across destroy/recreate.
-- Deploy planning uses `pnpm exec alchemy deploy --stage ayan --dry-run` (no separate `plan` script).
+- Exact deps: `alchemy@2.0.0-beta.70`, `effect@4.0.0-beta.103`, `@effect/platform-node@4.0.0-beta.103` (workspace overrides pin the coherent Effect beta.103 set).
+- Container id `sandbox`, env `Sandbox`; image from root `Dockerfile`.
+- `pnpm dev` runs Alchemy from `apps/web` (entry `../../alchemy.run.ts`) so local Docker context resolves to the repo root. `pnpm deploy` / `pnpm destroy` stay root-level `--stage ayan`.
+- Local state: `.alchemy/` (gitignored). Stage is disposable.
 
 ## Prerequisites
 
@@ -59,9 +57,8 @@ From the repository root:
 pnpm dev
 ```
 
-Alchemy runs from the root against stage `ayan`, uses local v2 state, and starts
-Vite with `apps/web` as the Website root (env files resolve from the repo root
-via `envDir`).
+Runs Alchemy from `apps/web` against stage `ayan` so the root Docker context
+resolves correctly. Env files load from the repo root.
 
 Before opening a PR, run the full verification gate (app + runner typecheck/tests/build):
 

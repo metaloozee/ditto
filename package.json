@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "alchemy dev --stage ayan",
+    "dev": "cd apps/web && alchemy dev --stage ayan ../../alchemy.run.ts",
     "build": "pnpm --filter @ditto/web build",
     "preview": "pnpm --filter @ditto/web preview",
     "test": "pnpm --filter @ditto/web test",
