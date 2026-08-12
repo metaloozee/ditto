@@ -8,6 +8,16 @@ vi.mock("@cloudflare/sandbox", () => ({
 	Sandbox: class Sandbox {},
 }));
 
+vi.mock("@cloudflare/containers", () => ({
+	Container: class Container {},
+	ContainerProxy: class ContainerProxy {},
+}));
+
+vi.mock("#/lib/trusted-git-executor", () => ({
+	TrustedGitExecutor: class TrustedGitExecutor {},
+	ContainerProxy: class ContainerProxy {},
+}));
+
 vi.mock("@tanstack/react-start/server-entry", () => ({
 	default: {
 		fetch: handlerFetchMock,
