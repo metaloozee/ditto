@@ -1,7 +1,10 @@
+import { ContainerProxy } from "@cloudflare/containers";
 import { proxyToSandbox, type SandboxEnv } from "@cloudflare/sandbox";
 import handler from "@tanstack/react-start/server-entry";
 
 export { Sandbox } from "@cloudflare/sandbox";
+export { TrustedGitExecutor } from "#/lib/trusted-git-executor";
+export { ContainerProxy };
 
 const PREVIEW_ZONE_SUFFIX = ".ayn.wtf";
 

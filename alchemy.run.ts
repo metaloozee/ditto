@@ -4,6 +4,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import { config } from "dotenv";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
+import type { TrustedGitExecutor as TrustedGitExecutorDurableObject } from "./apps/web/src/lib/trusted-git-executor.ts";
 import type { Sandbox as SandboxDurableObject } from "./apps/web/src/server.ts";
 
 // Alchemy local Container stores context as path.relative(cwd); run dev from apps/web so root resolves as ../..
@@ -34,6 +35,23 @@ const SandboxContainer = Cloudflare.Container<SandboxDurableObject>("sandbox", {
 	maxInstances: 1,
 });
 
+const TrustedGitExecutorContainer =
+	Cloudflare.Container<TrustedGitExecutorDurableObject>(
+		"trusted-git-executor",
+		{
+			name: "ditto-git-executor-ayan",
+			className: "TrustedGitExecutor",
+			context: path.join(repoRoot, "containers/trusted-git-executor"),
+			dockerfile: path.join(
+				repoRoot,
+				"containers/trusted-git-executor/Dockerfile",
+			),
+			instanceType: "basic",
+			maxInstances: 4,
+			rollout: { strategy: "immediate" },
+		},
+	);
+
 export const Website = Cloudflare.Website.Vite("website", {
 	name: "ditto-website-ayan",
 	rootDir: path.join(repoRoot, "apps/web"),
@@ -46,6 +64,7 @@ export const Website = Cloudflare.Website.Vite("website", {
 	env: {
 		DB: Database,
 		Sandbox: SandboxContainer,
+		TrustedGitExecutor: TrustedGitExecutorContainer,
 		BACKUP_BUCKET: SandboxBackups,
 		BACKUP_BUCKET_NAME: sandboxBackupBucketName,
 		CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID ?? "",

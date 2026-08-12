@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
+    "@cloudflare/containers": "0.3.7",
     "@cloudflare/sandbox": "0.12.3",
     "@fontsource-variable/geist": "^5.2.9",
     "@pierre/diffs": "^1.2.11",
