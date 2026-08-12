@@ -1,0 +1,533 @@
+#!/bin/sh
+# Fixed Trusted Git Executor helper. Worker-selected subcommands only.
+# Never evaluates caller shell text; never prints raw git packet/object data.
+set -eu
+
+HELPER_VERSION="1"
+STATE_ROOT="${DITTO_GIT_EXECUTOR_STATE:-/var/lib/ditto-git-executor}"
+QUARANTINE_DIR="${STATE_ROOT}/quarantine"
+EMPTY_HOME="${STATE_ROOT}/home"
+EMPTY_CONFIG="${EMPTY_HOME}/.gitconfig-empty"
+HOOKS_DISABLED="${EMPTY_HOME}/hooks-disabled"
+MAX_BUNDLE_BYTES=$((64 * 1024 * 1024))
+MAX_OBJECT_BYTES=$((256 * 1024 * 1024))
+MAX_BLOB_BYTES=$((8 * 1024 * 1024))
+MAX_OBJECTS=100000
+MAX_COMMITS=1000
+MAX_PATH_RECORDS=20000
+MAX_DIAG_BYTES=$((8 * 1024))
+RESULT_CODE="error"
+RESULT_MSG="unspecified"
+RESULT_JSON_EXTRA=""
+
+emit_json() {
+	# $1 code, $2 message, optional extra JSON object fields already encoded
+	code="$1"
+	msg="$2"
+	extra="${3:-}"
+	# Bound and sanitize message to single-line safe JSON string content.
+	msg=$(printf '%s' "$msg" | tr '\n\r\t' '   ' | cut -c1-512)
+	msg=$(printf '%s' "$msg" | sed 's/\\/\\\\/g; s/"/\\"/g')
+	if [ -n "$extra" ]; then
+		printf '{"ok":%s,"code":"%s","message":"%s",%s}\n' \
+			"$([ "$code" = "ok" ] && echo true || echo false)" \
+			"$code" "$msg" "$extra"
+	else
+		printf '{"ok":%s,"code":"%s","message":"%s"}\n' \
+			"$([ "$code" = "ok" ] && echo true || echo false)" \
+			"$code" "$msg"
+	fi
+}
+
+fail() {
+	code="$1"
+	msg="$2"
+	extra="${3:-}"
+	emit_json "$code" "$msg" "$extra" >&1
+	exit 1
+}
+
+ok_result() {
+	msg="$1"
+	extra="${2:-}"
+	emit_json "ok" "$msg" "$extra"
+	exit 0
+}
+
+cleanup_state() {
+	rm -rf "${QUARANTINE_DIR}" 2>/dev/null || true
+	rm -rf "${STATE_ROOT}/tmp" 2>/dev/null || true
+}
+
+prepare_home() {
+	mkdir -p "${EMPTY_HOME}" "${HOOKS_DISABLED}" "${STATE_ROOT}/tmp"
+	chmod 700 "${EMPTY_HOME}" "${HOOKS_DISABLED}" "${STATE_ROOT}/tmp"
+	: >"${EMPTY_CONFIG}"
+	chmod 600 "${EMPTY_CONFIG}"
+}
+
+# Stock git with a sealed environment. Never inherits caller env secrets.
+# Local-only: file protocol allowed for bundle quarantine paths only.
+run_git_local() {
+	env -i \
+		PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+		HOME="${EMPTY_HOME}" \
+		XDG_CONFIG_HOME="${EMPTY_HOME}/.config" \
+		LANG=C \
+		LC_ALL=C \
+		GIT_TERMINAL_PROMPT=0 \
+		GIT_CONFIG_NOSYSTEM=1 \
+		GIT_CONFIG_GLOBAL="${EMPTY_CONFIG}" \
+		GIT_TRACE=0 \
+		GIT_TRACE_SETUP=0 \
+		GIT_CURL_VERBOSE=0 \
+		GIT_CONFIG_COUNT=7 \
+		GIT_CONFIG_KEY_0=protocol.allow \
+		GIT_CONFIG_VALUE_0=never \
+		GIT_CONFIG_KEY_1=protocol.https.allow \
+		GIT_CONFIG_VALUE_1=always \
+		GIT_CONFIG_KEY_2=protocol.file.allow \
+		GIT_CONFIG_VALUE_2=always \
+		GIT_CONFIG_KEY_3=core.hooksPath \
+		GIT_CONFIG_VALUE_3="${HOOKS_DISABLED}" \
+		GIT_CONFIG_KEY_4=credential.helper \
+		GIT_CONFIG_VALUE_4= \
+		GIT_CONFIG_KEY_5=http.followRedirects \
+		GIT_CONFIG_VALUE_5=false \
+		GIT_CONFIG_KEY_6=core.askPass \
+		GIT_CONFIG_VALUE_6= \
+		/usr/bin/git "$@"
+}
+
+# Network git (ls-remote/push). file protocol denied.
+run_git_net() {
+	env -i \
+		PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+		HOME="${EMPTY_HOME}" \
+		XDG_CONFIG_HOME="${EMPTY_HOME}/.config" \
+		LANG=C \
+		LC_ALL=C \
+		GIT_TERMINAL_PROMPT=0 \
+		GIT_CONFIG_NOSYSTEM=1 \
+		GIT_CONFIG_GLOBAL="${EMPTY_CONFIG}" \
+		GIT_TRACE=0 \
+		GIT_TRACE_SETUP=0 \
+		GIT_CURL_VERBOSE=0 \
+		GIT_CONFIG_COUNT=7 \
+		GIT_CONFIG_KEY_0=protocol.allow \
+		GIT_CONFIG_VALUE_0=never \
+		GIT_CONFIG_KEY_1=protocol.https.allow \
+		GIT_CONFIG_VALUE_1=always \
+		GIT_CONFIG_KEY_2=protocol.file.allow \
+		GIT_CONFIG_VALUE_2=never \
+		GIT_CONFIG_KEY_3=core.hooksPath \
+		GIT_CONFIG_VALUE_3="${HOOKS_DISABLED}" \
+		GIT_CONFIG_KEY_4=credential.helper \
+		GIT_CONFIG_VALUE_4= \
+		GIT_CONFIG_KEY_5=http.followRedirects \
+		GIT_CONFIG_VALUE_5=false \
+		GIT_CONFIG_KEY_6=core.askPass \
+		GIT_CONFIG_VALUE_6= \
+		/usr/bin/git "$@"
+}
+
+is_sha1() {
+	printf '%s' "$1" | grep -Eq '^[0-9a-f]{40}$'
+}
+
+is_heads_ref() {
+	# Exact refs/heads/... ; reject traversal and option-like shapes.
+	ref="$1"
+	printf '%s' "$ref" | grep -Eq '^refs/heads/[A-Za-z0-9._/-]+$' || return 1
+	case "$ref" in
+	*..* | *//* | */./* | */. | *./ | -* | */-* | *" "* | *$'\n'* | *$'\r'* | *$'\t'*)
+		return 1
+		;;
+	esac
+	# Length bound (512 bytes full ref)
+	[ "${#ref}" -le 512 ] || return 1
+	return 0
+}
+
+is_safe_name() {
+	# owner or repo short name
+	printf '%s' "$1" | grep -Eq '^[A-Za-z0-9._-]{1,100}$' || return 1
+	case "$1" in
+	.* | -* | *..*) return 1 ;;
+	esac
+	return 0
+}
+
+hex_sha256_file() {
+	# Prefer sha256sum; fall back to openssl.
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum "$1" | awk '{print $1}'
+	else
+		openssl dgst -sha256 "$1" | awk '{print $NF}'
+	fi
+}
+
+cmd_hold() {
+	# Idle hold so the container can start without a listener.
+	# Cloudflare may restart; sleep forever is fine for entrypoint.
+	while true; do
+		sleep 3600
+	done
+}
+
+cmd_scan_canary() {
+	# Worker-driven negative scan. Canary is read from stdin (one line) so it is
+	# not present in this process argv. Never echo the canary back.
+	canary=$(dd bs=4096 count=1 status=none 2>/dev/null | tr -d '\n\r' || true)
+	[ -n "$canary" ] || fail "invalid_args" "canary required"
+	[ "${#canary}" -le 256 ] || fail "invalid_args" "canary too long"
+	hits=0
+	# Scan sibling processes and state files — not this helper's own argv/stdin.
+	for path in /proc/[0-9]*/cmdline /proc/[0-9]*/environ; do
+		# Skip self
+		case "$path" in
+		"/proc/self/"* | "/proc/$$/"*) continue ;;
+		esac
+		if [ -r "$path" ] && grep -a -F -q -- "$canary" "$path" 2>/dev/null; then
+			hits=$((hits + 1))
+		fi
+	done
+	if [ -d "${STATE_ROOT}" ]; then
+		if grep -a -R -F -q -- "$canary" "${STATE_ROOT}" 2>/dev/null; then
+			hits=$((hits + 1))
+		fi
+	fi
+	unset canary
+	if [ "$hits" -eq 0 ]; then
+		ok_result "canary absent" '"hits":0'
+	else
+		fail "canary_present" "canary detected" "\"hits\":${hits}"
+	fi
+}
+
+import_bundle_into_quarantine() {
+	bundle_path="$1"
+	expected_ref="$2"
+	expected_tip="$3"
+	expected_old="$4" # empty string means absent
+
+	rm -rf "${QUARANTINE_DIR}"
+	mkdir -m 700 "${QUARANTINE_DIR}"
+
+	# Fresh bare repository: no template, no shared hooks.
+	run_git_local -c init.templateDir= init --bare "${QUARANTINE_DIR}" >/dev/null 2>&1 \
+		|| fail "init_failed" "bare init failed"
+
+	# Disable replace refs / alternates explicitly.
+	run_git_local --git-dir="${QUARANTINE_DIR}" config core.repositoryFormatVersion 0 >/dev/null 2>&1 || true
+	run_git_local --git-dir="${QUARANTINE_DIR}" config extensions.worktreeConfig false >/dev/null 2>&1 || true
+	rm -f "${QUARANTINE_DIR}/objects/info/alternates" \
+		"${QUARANTINE_DIR}/objects/info/http-alternates" 2>/dev/null || true
+
+	# Bundle list must contain exactly one ref matching expected_ref.
+	list_out=$(run_git_local bundle list-heads "$bundle_path" 2>/dev/null) \
+		|| fail "bundle_invalid" "bundle list failed"
+	ref_count=$(printf '%s\n' "$list_out" | sed '/^$/d' | wc -l | tr -d ' ')
+	[ "$ref_count" = "1" ] || fail "bundle_refs" "expected exactly one ref"
+
+	listed_sha=$(printf '%s\n' "$list_out" | awk 'NR==1 {print $1}')
+	listed_ref=$(printf '%s\n' "$list_out" | awk 'NR==1 {$1=""; sub(/^ /,""); print}')
+	is_sha1 "$listed_sha" || fail "bundle_refs" "invalid listed sha"
+	[ "$listed_ref" = "$expected_ref" ] || fail "bundle_refs" "unexpected ref"
+	[ "$listed_sha" = "$expected_tip" ] || fail "bundle_tip" "tip mismatch"
+
+	# Import only the expected ref.
+	run_git_local --git-dir="${QUARANTINE_DIR}" fetch --no-tags --no-recurse-submodules \
+		"$bundle_path" "refs/heads/*:refs/heads/*" >/dev/null 2>&1 \
+		|| fail "bundle_import" "bundle fetch failed"
+
+	# Ensure only the expected ref exists under refs/.
+	refs_out=$(run_git_local --git-dir="${QUARANTINE_DIR}" for-each-ref --format='%(refname) %(objectname)' 2>/dev/null) \
+		|| fail "refs_list" "for-each-ref failed"
+	ref_lines=$(printf '%s\n' "$refs_out" | sed '/^$/d' | wc -l | tr -d ' ')
+	[ "$ref_lines" = "1" ] || fail "extra_refs" "unexpected refs present"
+	got_ref=$(printf '%s\n' "$refs_out" | awk 'NR==1 {print $1}')
+	got_sha=$(printf '%s\n' "$refs_out" | awk 'NR==1 {print $2}')
+	[ "$got_ref" = "$expected_ref" ] || fail "bundle_refs" "imported ref mismatch"
+	[ "$got_sha" = "$expected_tip" ] || fail "bundle_tip" "imported tip mismatch"
+
+	# Strict fsck of full reachable closure.
+	run_git_local --git-dir="${QUARANTINE_DIR}" fsck --full --strict --no-progress >/dev/null 2>&1 \
+		|| fail "fsck_failed" "strict fsck failed"
+
+	# Reject shallow/promisor leftovers.
+	if [ -f "${QUARANTINE_DIR}/shallow" ] || [ -d "${QUARANTINE_DIR}/objects/pack" ] && ls "${QUARANTINE_DIR}/objects/pack"/*.promisor >/dev/null 2>&1; then
+		fail "shallow_or_promisor" "shallow or promisor state present"
+	fi
+	if [ -d "${QUARANTINE_DIR}/objects/info" ] && [ -f "${QUARANTINE_DIR}/objects/info/alternates" ]; then
+		fail "alternates" "alternates present"
+	fi
+	# No replace refs
+	if [ -d "${QUARANTINE_DIR}/refs/replace" ] && [ -n "$(ls -A "${QUARANTINE_DIR}/refs/replace" 2>/dev/null || true)" ]; then
+		fail "replace_refs" "replace refs present"
+	fi
+
+	# Object / commit / blob / path bounds via cat-file --batch-check and rev-list.
+	commit_count=$(run_git_local --git-dir="${QUARANTINE_DIR}" rev-list --count --all 2>/dev/null | tr -d ' \n') \
+		|| fail "count_failed" "commit count failed"
+	case "$commit_count" in
+	'' | *[!0-9]*) fail "count_failed" "invalid commit count" ;;
+	esac
+	[ "$commit_count" -le "$MAX_COMMITS" ] || fail "commit_limit" "too many commits"
+
+	# Reachable object count and total size / blob size.
+	obj_stats=$(run_git_local --git-dir="${QUARANTINE_DIR}" cat-file --batch-check --batch-all-objects 2>/dev/null) \
+		|| fail "objects_failed" "object enumeration failed"
+	obj_count=$(printf '%s\n' "$obj_stats" | sed '/^$/d' | wc -l | tr -d ' ')
+	[ "$obj_count" -le "$MAX_OBJECTS" ] || fail "object_limit" "too many objects"
+
+	total_bytes=0
+	printf '%s\n' "$obj_stats" | while IFS= read -r line; do
+		# format: <sha> <type> <size>
+		otype=$(printf '%s' "$line" | awk '{print $2}')
+		osize=$(printf '%s' "$line" | awk '{print $3}')
+		case "$osize" in
+		'' | *[!0-9]*) exit 11 ;;
+		esac
+		if [ "$otype" = "blob" ] && [ "$osize" -gt "$MAX_BLOB_BYTES" ]; then
+			exit 12
+		fi
+	done
+	batch_rc=$?
+	[ "$batch_rc" -eq 0 ] || {
+		[ "$batch_rc" -eq 12 ] && fail "blob_limit" "blob too large"
+		fail "objects_failed" "object scan failed"
+	}
+
+	# Approximate total reachable packed+loose size via count-objects -v
+	size_pack=$(run_git_local --git-dir="${QUARANTINE_DIR}" count-objects -v 2>/dev/null | awk -F': ' '/^size-pack:/ {print $2+0} /^size:/ {s+=$2} END {print s+0}')
+	# count-objects sizes are in KiB
+	total_kib=$(run_git_local --git-dir="${QUARANTINE_DIR}" count-objects -v 2>/dev/null | awk -F': ' '
+		/^size:/ {s+=$2}
+		/^size-pack:/ {s+=$2}
+		END {print s+0}
+	')
+	total_bytes=$((total_kib * 1024))
+	[ "$total_bytes" -le "$MAX_OBJECT_BYTES" ] || fail "object_bytes_limit" "reachable objects too large"
+
+	# Path record bound via diff-tree against empty tree or expected old.
+	empty_tree=$(run_git_local --git-dir="${QUARANTINE_DIR}" hash-object -t tree /dev/null 2>/dev/null)
+	if [ -n "$expected_old" ]; then
+		is_sha1 "$expected_old" || fail "invalid_old" "expected old sha invalid"
+		# Ancestry: expected_old must be ancestor of tip (non-force fast-forward or equal).
+		if [ "$expected_old" = "$expected_tip" ]; then
+			:
+		else
+			run_git_local --git-dir="${QUARANTINE_DIR}" merge-base --is-ancestor "$expected_old" "$expected_tip" >/dev/null 2>&1 \
+				|| fail "ancestry" "proposed does not descend from expected old"
+		fi
+		# Ensure expected_old is present in quarantine (self-contained bundle).
+		run_git_local --git-dir="${QUARANTINE_DIR}" cat-file -e "${expected_old}^{commit}" >/dev/null 2>&1 \
+			|| fail "old_missing" "expected old not in bundle"
+		base_for_paths="$expected_old"
+	else
+		base_for_paths="$empty_tree"
+	fi
+
+	path_count=$(run_git_local --git-dir="${QUARANTINE_DIR}" diff-tree -r --name-only "$base_for_paths" "$expected_tip" 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ') \
+		|| fail "paths_failed" "path enumeration failed"
+	[ "$path_count" -le "$MAX_PATH_RECORDS" ] || fail "path_limit" "too many path records"
+
+	# Reject submodule gitlinks in the tip tree.
+	if run_git_local --git-dir="${QUARANTINE_DIR}" ls-tree -r "$expected_tip" 2>/dev/null | awk '{print $1}' | grep -qx '160000'; then
+		fail "submodule" "submodule gitlink present"
+	fi
+
+	# Reject LFS pointer dependency heuristically: .gitattributes containing filter=lfs
+	if run_git_local --git-dir="${QUARANTINE_DIR}" cat-file -e "${expected_tip}^{tree}:.gitattributes" 2>/dev/null; then
+		attrs=$(run_git_local --git-dir="${QUARANTINE_DIR}" show "${expected_tip}:.gitattributes" 2>/dev/null || true)
+		printf '%s' "$attrs" | grep -Eq 'filter=lfs' && fail "lfs" "lfs filter present"
+	fi
+
+	RESULT_JSON_EXTRA=$(printf '"ref":"%s","tip":"%s","commitCount":%s,"objectCount":%s,"pathCount":%s,"quarantine":true' \
+		"$expected_ref" "$expected_tip" "$commit_count" "$obj_count" "$path_count")
+}
+
+cmd_validate_bundle() {
+	# Args: <expected_sha256_hex> <expected_size> <expected_ref> <expected_tip> <expected_old_or_->
+	# Bundle bytes on stdin.
+	expected_digest="${1:-}"
+	expected_size="${2:-}"
+	expected_ref="${3:-}"
+	expected_tip="${4:-}"
+	expected_old_raw="${5:-}"
+
+	printf '%s' "$expected_digest" | grep -Eq '^[0-9a-f]{64}$' || fail "invalid_args" "digest"
+	case "$expected_size" in
+	'' | *[!0-9]*) fail "invalid_args" "size" ;;
+	esac
+	[ "$expected_size" -le "$MAX_BUNDLE_BYTES" ] || fail "bundle_limit" "bundle too large"
+	is_heads_ref "$expected_ref" || fail "invalid_ref" "ref"
+	is_sha1 "$expected_tip" || fail "invalid_tip" "tip"
+	expected_old=""
+	if [ "$expected_old_raw" != "-" ] && [ -n "$expected_old_raw" ]; then
+		is_sha1 "$expected_old_raw" || fail "invalid_old" "old"
+		expected_old="$expected_old_raw"
+	fi
+
+	prepare_home
+	trap cleanup_state EXIT INT TERM
+
+	bundle_path="${STATE_ROOT}/tmp/bundle.gitbundle"
+	rm -f "$bundle_path"
+	# Stream stdin to file with hard size cap (expected_size + reject oversize).
+	# Use dd with count limit; then confirm exact size.
+	max_read=$((expected_size + 1))
+	dd bs=65536 count=$(( (max_read + 65535) / 65536 )) of="$bundle_path" status=none 2>/dev/null || true
+	actual_size=$(wc -c <"$bundle_path" | tr -d ' ')
+	[ "$actual_size" = "$expected_size" ] || fail "size_mismatch" "bundle size mismatch"
+	chmod 600 "$bundle_path"
+
+	actual_digest=$(hex_sha256_file "$bundle_path")
+	[ "$actual_digest" = "$expected_digest" ] || fail "digest_mismatch" "bundle digest mismatch"
+
+	import_bundle_into_quarantine "$bundle_path" "$expected_ref" "$expected_tip" "$expected_old"
+	# Keep quarantine for a subsequent push-validated in the same container life;
+	# drop only the bundle temp. Trap still cleans on exit of this process; Worker
+	# runs push-validated as a separate exec, so persist quarantine intentionally.
+	trap - EXIT INT TERM
+	rm -f "$bundle_path"
+	# Mark quarantine ready.
+	printf '%s\n' "$expected_ref" >"${QUARANTINE_DIR}/.ditto-expected-ref"
+	printf '%s\n' "$expected_tip" >"${QUARANTINE_DIR}/.ditto-expected-tip"
+	chmod 600 "${QUARANTINE_DIR}/.ditto-expected-ref" "${QUARANTINE_DIR}/.ditto-expected-tip"
+	ok_result "validated" "$RESULT_JSON_EXTRA"
+}
+
+cmd_push_validated() {
+	# Args: <owner> <repo> <ref> <tip>
+	# Uses quarantine from validate-bundle. Remote is fixed github HTTPS shape.
+	owner="${1:-}"
+	repo="${2:-}"
+	ref="${3:-}"
+	tip="${4:-}"
+	is_safe_name "$owner" || fail "invalid_args" "owner"
+	is_safe_name "$repo" || fail "invalid_args" "repo"
+	is_heads_ref "$ref" || fail "invalid_ref" "ref"
+	is_sha1 "$tip" || fail "invalid_tip" "tip"
+
+	prepare_home
+	[ -d "${QUARANTINE_DIR}" ] || fail "no_quarantine" "quarantine missing"
+	[ -f "${QUARANTINE_DIR}/.ditto-expected-ref" ] || fail "no_quarantine" "quarantine incomplete"
+	stored_ref=$(cat "${QUARANTINE_DIR}/.ditto-expected-ref")
+	stored_tip=$(cat "${QUARANTINE_DIR}/.ditto-expected-tip")
+	[ "$stored_ref" = "$ref" ] || fail "ref_mismatch" "quarantine ref mismatch"
+	[ "$stored_tip" = "$tip" ] || fail "tip_mismatch" "quarantine tip mismatch"
+
+	# Ensure Cloudflare interception CA is trusted when present.
+	if [ -f /etc/cloudflare/certs/cloudflare-containers-ca.crt ]; then
+		export SSL_CERT_FILE="${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}"
+		# Append is platform-managed; git uses system CA bundle.
+	fi
+
+	url="https://github.com/${owner}/${repo}.git"
+	# Non-force exact refspec only.
+	refspec="${tip}:${ref}"
+
+	# Capture stderr to a bounded temp; never dump raw packets to stdout.
+	err_file="${STATE_ROOT}/tmp/push.err"
+	out_file="${STATE_ROOT}/tmp/push.out"
+	: >"$err_file"
+	: >"$out_file"
+	set +e
+	run_git_net --git-dir="${QUARANTINE_DIR}" push --no-tags --no-follow-tags \
+		--no-recurse-submodules --receive-pack=git-receive-pack \
+		"$url" "$refspec" >"$out_file" 2>"$err_file"
+	rc=$?
+	set -e
+
+	# Bound diagnostics; do not emit git output on success path beyond JSON.
+	if [ "$rc" -eq 0 ]; then
+		cleanup_state
+		ok_result "pushed" "$(printf '"ref":"%s","tip":"%s","exitCode":0' "$ref" "$tip")"
+	fi
+	# Failure: return safe code only.
+	cleanup_state
+	fail "push_failed" "push failed" "$(printf '"exitCode":%s' "$rc")"
+}
+
+cmd_ls_remote_ref() {
+	# Args: <owner> <repo> <ref>
+	owner="${1:-}"
+	repo="${2:-}"
+	ref="${3:-}"
+	is_safe_name "$owner" || fail "invalid_args" "owner"
+	is_safe_name "$repo" || fail "invalid_args" "repo"
+	is_heads_ref "$ref" || fail "invalid_ref" "ref"
+	prepare_home
+
+	url="https://github.com/${owner}/${repo}.git"
+	out_file="${STATE_ROOT}/tmp/ls.out"
+	err_file="${STATE_ROOT}/tmp/ls.err"
+	mkdir -p "${STATE_ROOT}/tmp"
+	set +e
+	run_git_net ls-remote --heads "$url" "$ref" >"$out_file" 2>"$err_file"
+	rc=$?
+	set -e
+	if [ "$rc" -ne 0 ]; then
+		fail "ls_remote_failed" "ls-remote failed" "$(printf '"exitCode":%s' "$rc")"
+	fi
+	# Exact one line or empty (absent).
+	lines=$(sed '/^$/d' "$out_file" | wc -l | tr -d ' ')
+	if [ "$lines" = "0" ]; then
+		ok_result "absent" '"present":false,"sha":null'
+	fi
+	if [ "$lines" != "1" ]; then
+		fail "ls_remote_ambiguous" "unexpected ls-remote lines"
+	fi
+	sha=$(awk 'NR==1 {print $1}' "$out_file")
+	got_ref=$(awk 'NR==1 {$1=""; sub(/^ /,""); print}' "$out_file")
+	is_sha1 "$sha" || fail "ls_remote_invalid" "invalid sha"
+	[ "$got_ref" = "$ref" ] || fail "ls_remote_ref" "ref mismatch"
+	ok_result "present" "$(printf '"present":true,"sha":"%s"' "$sha")"
+}
+
+cmd_fetch_ref() {
+	# Read-only probe that materializes nothing durable beyond ls-remote.
+	cmd_ls_remote_ref "$@"
+}
+
+usage_fail() {
+	fail "unknown_command" "unknown or invalid command"
+}
+
+main() {
+	cmd="${1:-}"
+	[ -n "$cmd" ] || usage_fail
+	shift || true
+	case "$cmd" in
+	hold)
+		cmd_hold
+		;;
+	scan-canary)
+		[ "$#" -eq 0 ] || fail "invalid_args" "scan-canary arity"
+		cmd_scan_canary
+		;;
+	validate-bundle)
+		[ "$#" -eq 5 ] || fail "invalid_args" "validate-bundle arity"
+		cmd_validate_bundle "$@"
+		;;
+	push-validated)
+		[ "$#" -eq 4 ] || fail "invalid_args" "push-validated arity"
+		cmd_push_validated "$@"
+		;;
+	ls-remote-ref)
+		[ "$#" -eq 3 ] || fail "invalid_args" "ls-remote-ref arity"
+		cmd_ls_remote_ref "$@"
+		;;
+	fetch-ref)
+		[ "$#" -eq 3 ] || fail "invalid_args" "fetch-ref arity"
+		cmd_fetch_ref "$@"
+		;;
+	*)
+		usage_fail
+		;;
+	esac
+}
+
+main "$@"
