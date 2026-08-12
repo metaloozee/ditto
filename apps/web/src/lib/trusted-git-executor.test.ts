@@ -1498,6 +1498,208 @@ describe("TrustedGitExecutor orchestration", () => {
 		expect(pushCount).toBe(1);
 	});
 
+	it("stdin-close failure after write start reconciles proposed as success", async () => {
+		let pushCount = 0;
+		const phaseOrder: string[] = [];
+		const { ctx } = makeCtx({
+			execImpl: async (cmd) => {
+				const sub = cmd[1];
+				if (sub === "validate-bundle") {
+					return makeExecProcess({
+						stdoutObj: {
+							ok: true,
+							code: "ok",
+							tip: SHA_NEW,
+							ref: "refs/heads/main",
+						},
+					});
+				}
+				if (sub === "push-validated") {
+					pushCount += 1;
+					const proc = makeExecProcess({
+						hangExit: true,
+						stdoutStream: emptyStream(),
+					});
+					proc.stdin.close = vi.fn(async () => {
+						throw new Error("stdin close failed");
+					});
+					return proc;
+				}
+				if (sub === "ls-remote-ref") {
+					if (pushCount === 0) {
+						return makeExecProcess({
+							stdoutObj: {
+								ok: true,
+								code: "ok",
+								present: true,
+								sha: SHA_OLD,
+							},
+						});
+					}
+					// post-start uncertainty reconcile sees proposed
+					return makeExecProcess({
+						stdoutObj: {
+							ok: true,
+							code: "ok",
+							present: true,
+							sha: SHA_NEW,
+						},
+					});
+				}
+				return makeExecProcess({ stdoutObj: { ok: true } });
+			},
+		});
+		// biome-ignore lint/suspicious/noExplicitAny: test harness
+		const exec = new TrustedGitExecutor(ctx as any, makeEnv() as any);
+		const setOutbound = exec.setOutboundByHost as ReturnType<typeof vi.fn>;
+		setOutbound.mockImplementation(
+			async (_h: string, _n: string, params: { phase: string }) => {
+				phaseOrder.push(params.phase);
+			},
+		);
+		const result = await exec.validateAndPush(basePush);
+		expect(result.ok).toBe(true);
+		if (result.ok) expect(result.code).toBe("reconciled");
+		expect(pushCount).toBe(1);
+		// write revoked before read reconcile; last enable is read
+		expect(phaseOrder.filter((p) => p === "write").length).toBe(1);
+		expect(phaseOrder[phaseOrder.length - 1]).toBe("read");
+		expect(exec.removeOutboundByHost).toHaveBeenCalled();
+	});
+
+	it("stdin-close failure on exact old permits one retry then re-reconciles", async () => {
+		let pushCount = 0;
+		let reconcileReads = 0;
+		const phaseOrder: string[] = [];
+		const { ctx } = makeCtx({
+			execImpl: async (cmd) => {
+				const sub = cmd[1];
+				if (sub === "validate-bundle") {
+					return makeExecProcess({
+						stdoutObj: {
+							ok: true,
+							code: "ok",
+							tip: SHA_NEW,
+							ref: "refs/heads/main",
+						},
+					});
+				}
+				if (sub === "push-validated") {
+					pushCount += 1;
+					const proc = makeExecProcess({
+						hangExit: true,
+						stdoutStream: emptyStream(),
+					});
+					// Every write attempt fails stdin close after start.
+					proc.stdin.close = vi.fn(async () => {
+						throw new Error("stdin close failed");
+					});
+					return proc;
+				}
+				if (sub === "ls-remote-ref") {
+					if (pushCount === 0) {
+						return makeExecProcess({
+							stdoutObj: {
+								ok: true,
+								code: "ok",
+								present: true,
+								sha: SHA_OLD,
+							},
+						});
+					}
+					reconcileReads += 1;
+					return makeExecProcess({
+						stdoutObj: {
+							ok: true,
+							code: "ok",
+							present: true,
+							sha: SHA_OLD,
+						},
+					});
+				}
+				return makeExecProcess({ stdoutObj: { ok: true } });
+			},
+		});
+		// biome-ignore lint/suspicious/noExplicitAny: test harness
+		const exec = new TrustedGitExecutor(ctx as any, makeEnv() as any);
+		const setOutbound = exec.setOutboundByHost as ReturnType<typeof vi.fn>;
+		setOutbound.mockImplementation(
+			async (_h: string, _n: string, params: { phase: string }) => {
+				phaseOrder.push(params.phase);
+			},
+		);
+		const result = await exec.validateAndPush(basePush);
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.code).toBe("interrupted");
+		// one original + one permitted retry; no blind second retry
+		expect(pushCount).toBe(2);
+		expect(reconcileReads).toBe(2);
+		// write, then read reconcile, then write retry, then read re-reconcile
+		expect(phaseOrder.filter((p) => p === "write").length).toBe(2);
+		expect(
+			phaseOrder.filter((p) => p === "read").length,
+		).toBeGreaterThanOrEqual(2);
+		expect(phaseOrder[phaseOrder.length - 1]).toBe("read");
+	});
+
+	it("stdin-close failure with third-state remote is interrupted without retry", async () => {
+		let pushCount = 0;
+		const foreign = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+		const { ctx } = makeCtx({
+			execImpl: async (cmd) => {
+				const sub = cmd[1];
+				if (sub === "validate-bundle") {
+					return makeExecProcess({
+						stdoutObj: {
+							ok: true,
+							code: "ok",
+							tip: SHA_NEW,
+							ref: "refs/heads/main",
+						},
+					});
+				}
+				if (sub === "push-validated") {
+					pushCount += 1;
+					const proc = makeExecProcess({
+						hangExit: true,
+						stdoutStream: emptyStream(),
+					});
+					proc.stdin.close = vi.fn(async () => {
+						throw new Error("stdin close failed");
+					});
+					return proc;
+				}
+				if (sub === "ls-remote-ref") {
+					if (pushCount === 0) {
+						return makeExecProcess({
+							stdoutObj: {
+								ok: true,
+								code: "ok",
+								present: true,
+								sha: SHA_OLD,
+							},
+						});
+					}
+					return makeExecProcess({
+						stdoutObj: {
+							ok: true,
+							code: "ok",
+							present: true,
+							sha: foreign,
+						},
+					});
+				}
+				return makeExecProcess({ stdoutObj: { ok: true } });
+			},
+		});
+		// biome-ignore lint/suspicious/noExplicitAny: test harness
+		const exec = new TrustedGitExecutor(ctx as any, makeEnv() as any);
+		const result = await exec.validateAndPush(basePush);
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.code).toBe("interrupted");
+		expect(pushCount).toBe(1);
+	});
+
 	it("bounded process hang on never-closing streams destroys container", async () => {
 		const mkNever = () =>
 			new ReadableStream<Uint8Array>({

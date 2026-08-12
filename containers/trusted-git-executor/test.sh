@@ -255,6 +255,38 @@ test_image() {
 	[[ "$(json_code "$out")" == "path_limit" ]] || die "expected path_limit: $out"
 	pass "multi-commit path churn counted (test limit override)"
 
+	# Root/initial commit path records must count (plain diff-tree omits parentless).
+	# One root commit adding three paths under DITTO_TEST_MAX_PATH_RECORDS=2 => path_limit.
+	rootp="$WORKDIR/root-paths"
+	mkdir -p "$rootp"
+	git -c init.defaultBranch=main init -q "$rootp"
+	git -C "$rootp" config user.email "plan047@example.com"
+	git -C "$rootp" config user.name "Plan 047"
+	git -C "$rootp" config commit.gpgsign false
+	echo one >"$rootp/one.txt"
+	echo two >"$rootp/two.txt"
+	echo three >"$rootp/three.txt"
+	git -C "$rootp" add one.txt two.txt three.txt
+	git -C "$rootp" commit -q -m "root-three-paths"
+	ROOT_TIP="$(git -C "$rootp" rev-parse HEAD)"
+	git -C "$rootp" bundle create "$WORKDIR/root-paths.bundle" refs/heads/main
+	rsz=$(wc -c <"$WORKDIR/root-paths.bundle" | tr -d ' ')
+	rdig=$(sha256sum "$WORKDIR/root-paths.bundle" | awk '{print $1}')
+	set +e
+	out="$(docker run --rm -i \
+		--user 65532:65532 \
+		--read-only \
+		--tmpfs /var/lib/ditto-git-executor:rw,size=256m,mode=1777 \
+		--network none \
+		-e DITTO_TEST_MAX_PATH_RECORDS=2 \
+		--entrypoint /usr/local/bin/ditto-git-executor \
+		"$IMAGE" validate-bundle "$rdig" "$rsz" "refs/heads/main" "$ROOT_TIP" "-" <"$WORKDIR/root-paths.bundle" 2>/dev/null)"
+	rc=$?
+	set -e
+	[[ "$rc" -ne 0 ]] || die "root commit under low path limit should fail: $out"
+	[[ "$(json_code "$out")" == "path_limit" ]] || die "expected path_limit for root paths: $out"
+	pass "root-commit path records counted (test limit override)"
+
 	CANARY='ghs_CANARYTOKEN_plan047_do_not_leak_0123456789abcdef'
 
 	out="$(printf '%s' "$CANARY" | run_helper scan-canary)"

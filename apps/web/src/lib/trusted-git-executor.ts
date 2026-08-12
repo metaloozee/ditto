@@ -1124,25 +1124,80 @@ export class TrustedGitExecutor extends Container<TrustedGitExecutorEnv> {
 				input.proposedSha,
 			];
 
-			const pushOnce = async () => {
+			/**
+			 * Start one push write. Once exec returns a handle, every subsequent
+			 * failure (stdin close, runner throw) is post-start uncertainty: keep
+			 * the child for cleanup and return a non-clean result so the caller
+			 * revokes write and performs exact-ref reconciliation. Never throw
+			 * past process start — that would skip reconcile via the outer catch.
+			 */
+			const pushOnce = async (): Promise<{
+				exitCode: number;
+				stdout: string;
+				stderr: string;
+				timedOut: boolean;
+				overflow: boolean;
+				killed: boolean;
+				proc: { kill: (signal?: number) => void };
+			}> => {
+				const uncertain = (proc: {
+					kill: (signal?: number) => void;
+				}): {
+					exitCode: number;
+					stdout: string;
+					stderr: string;
+					timedOut: boolean;
+					overflow: boolean;
+					killed: boolean;
+					proc: { kill: (signal?: number) => void };
+				} => {
+					try {
+						proc.kill();
+					} catch {
+						// final cleanup also kills; ignore here
+					}
+					// Keep `child` set so cleanupFinally still owns destruction.
+					return {
+						exitCode: 1,
+						stdout: "",
+						stderr: "",
+						timedOut: false,
+						overflow: false,
+						killed: true,
+						proc,
+					};
+				};
+
 				const proc = await container.exec([HELPER, ...pushArgv], {
 					stdin: "pipe",
 					stdout: "pipe",
 					stderr: "pipe",
 				});
+				// From here the write process has started — no throw path that
+				// bypasses reconciliation is allowed.
 				processStarted = true;
 				child = proc;
-				if (proc.stdin) {
-					await proc.stdin.close();
+
+				try {
+					if (proc.stdin) {
+						await proc.stdin.close();
+					}
+				} catch {
+					return uncertain(proc);
 				}
-				const result = await runBoundedProcess(proc, {
-					timeoutMs: this.gitCommandTimeoutMs,
-					maxStdoutBytes: TRUSTED_GIT_LIMITS.diagnosticMaxBytes,
-					maxStderrBytes: TRUSTED_GIT_LIMITS.diagnosticMaxBytes,
-					killGraceMs: this.killGraceMs,
-				});
-				child = null;
-				return { ...result, proc };
+
+				try {
+					const result = await runBoundedProcess(proc, {
+						timeoutMs: this.gitCommandTimeoutMs,
+						maxStdoutBytes: TRUSTED_GIT_LIMITS.diagnosticMaxBytes,
+						maxStderrBytes: TRUSTED_GIT_LIMITS.diagnosticMaxBytes,
+						killGraceMs: this.killGraceMs,
+					});
+					child = null;
+					return { ...result, proc };
+				} catch {
+					return uncertain(proc);
+				}
 			};
 
 			let pushResult = await pushOnce();

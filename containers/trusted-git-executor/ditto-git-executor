@@ -460,7 +460,8 @@ import_bundle_into_quarantine() {
 	while IFS= read -r commit || [ -n "$commit" ]; do
 		[ -n "$commit" ] || continue
 		# Bound per-commit listing so a single huge tree cannot materialize unbounded output.
-		n=$(run_git_local --git-dir="${QUARANTINE_DIR}" diff-tree -r --name-only --no-commit-id "$commit" 2>/dev/null \
+		# --root includes the initial commit's full tree (plain diff-tree omits parentless commits).
+		n=$(run_git_local --git-dir="${QUARANTINE_DIR}" diff-tree --root -r --name-only --no-commit-id "$commit" 2>/dev/null \
 			| sed '/^$/d' \
 			| head -n "$((MAX_PATH_RECORDS + 1))" \
 			| wc -l \
