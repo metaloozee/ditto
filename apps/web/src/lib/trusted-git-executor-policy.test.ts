@@ -31,6 +31,7 @@ function phase(
 		repo: REPO,
 		phase: "read" as const,
 		expiresAtMs: Date.now() + 60_000,
+		containerId: "do-test-1",
 		...overrides,
 	};
 }
@@ -111,6 +112,15 @@ describe("input validation", () => {
 		);
 		expect(() =>
 			validateProbeInput({ ...base, ref: "refs/heads/../x" }),
+		).toThrow(TrustedGitPolicyError);
+		expect(() =>
+			validateProbeInput({ ...base, ref: "refs/heads/.hidden" }),
+		).toThrow(TrustedGitPolicyError);
+		expect(() =>
+			validateProbeInput({ ...base, ref: "refs/heads/foo.lock" }),
+		).toThrow(TrustedGitPolicyError);
+		expect(() =>
+			validateProbeInput({ ...base, ref: "refs/heads/foo." }),
 		).toThrow(TrustedGitPolicyError);
 		expect(() => validateProbeInput({ ...base, owner: "ACME/evil" })).toThrow(
 			TrustedGitPolicyError,
@@ -201,7 +211,7 @@ describe("smart-HTTP adversarial denial", () => {
 		).toThrow(TrustedGitPolicyError);
 	};
 
-	it("denies host lookalikes, trailing dots handled, userinfo, ports, schemes", () => {
+	it("denies host lookalikes, trailing dots, uppercase, :443, userinfo, ports, schemes", () => {
 		deny(
 			`https://github.com.evil/${OWNER}/${REPO}.git/info/refs?service=git-upload-pack`,
 		);
@@ -213,6 +223,16 @@ describe("smart-HTTP adversarial denial", () => {
 		);
 		deny(
 			`http://github.com/${OWNER}/${REPO}.git/info/refs?service=git-upload-pack`,
+		);
+		// Raw authority must be exact lowercase github.com — parser would normalize these.
+		denyRaw(
+			`https://GITHUB.COM/${OWNER}/${REPO}.git/info/refs?service=git-upload-pack`,
+		);
+		denyRaw(
+			`https://github.com./${OWNER}/${REPO}.git/info/refs?service=git-upload-pack`,
+		);
+		denyRaw(
+			`https://github.com:443/${OWNER}/${REPO}.git/info/refs?service=git-upload-pack`,
 		);
 		denyRaw(
 			`https://x-access-token:tok@github.com/${OWNER}/${REPO}.git/info/refs?service=git-upload-pack`,
@@ -276,6 +296,44 @@ describe("smart-HTTP adversarial denial", () => {
 		deny(`${base}/info/refs?service=git-upload-pack`, {
 			headers: { cookie: "a=b" },
 		});
+		// Header allowlist value checks
+		deny(`${base}/info/refs?service=git-upload-pack`, {
+			headers: { accept: "text/html" },
+		});
+		deny(`${base}/info/refs?service=git-upload-pack`, {
+			headers: { "git-protocol": "version=1" },
+		});
+		deny(`${base}/info/refs?service=git-upload-pack`, {
+			headers: { "user-agent": "curl/8.0" },
+		});
+	});
+
+	it("denies container/class grant mismatch when ctx provided", () => {
+		expect(() =>
+			classifySmartHttpRequest(
+				req(`${base}/info/refs?service=git-upload-pack`),
+				phase(),
+				Date.now(),
+				{ containerId: "other", className: "TrustedGitExecutor" },
+			),
+		).toThrow(TrustedGitPolicyError);
+		expect(() =>
+			classifySmartHttpRequest(
+				req(`${base}/info/refs?service=git-upload-pack`),
+				phase(),
+				Date.now(),
+				{ containerId: "do-test-1", className: "Sandbox" },
+			),
+		).toThrow(TrustedGitPolicyError);
+		// Matching ctx allows
+		expect(
+			classifySmartHttpRequest(
+				req(`${base}/info/refs?service=git-upload-pack`),
+				phase(),
+				Date.now(),
+				{ containerId: "do-test-1", className: "TrustedGitExecutor" },
+			).kind,
+		).toBe("read-discovery");
 	});
 });
 
@@ -332,7 +390,9 @@ describe("upstream request builder and token headers", () => {
 		);
 		expect(upstream.redirect).toBe("manual");
 		// Basic must decode to x-access-token:token
-		const basic = upstream.headers.get("authorization")!.slice("Basic ".length);
+		const auth = upstream.headers.get("authorization");
+		expect(auth).toBeTruthy();
+		const basic = (auth ?? "").slice("Basic ".length);
 		expect(atob(basic)).toBe(`x-access-token:${token}`);
 	});
 });
@@ -457,10 +517,30 @@ describe("results, redaction, reconciliation", () => {
 			owner: OWNER,
 			repo: REPO,
 			phase: "read",
+			containerId: "do-test-1",
 			nowMs: 1_000,
 			ttlMs: 999_999,
 		});
 		expect(g.expiresAtMs - 1_000).toBe(TRUSTED_GIT_LIMITS.phaseGrantMaxMs);
+		expect(g.containerId).toBe("do-test-1");
 		expect(JSON.stringify(g)).not.toMatch(/gh[pousr]_/i);
+	});
+
+	it("finalizer runs before close so revoke failure is not success", async () => {
+		const order: string[] = [];
+		const src = new ReadableStream<Uint8Array>({
+			start(c) {
+				c.enqueue(new Uint8Array([1]));
+				c.close();
+			},
+		});
+		const bounded = boundReadableStream(src, 100, async () => {
+			order.push("finalize");
+			throw new Error("revoke failed");
+		});
+		const reader = bounded.getReader();
+		await reader.read(); // data
+		await expect(reader.read()).rejects.toBeTruthy();
+		expect(order).toEqual(["finalize"]);
 	});
 });

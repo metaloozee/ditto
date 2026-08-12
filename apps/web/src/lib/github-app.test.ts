@@ -11,7 +11,6 @@ vi.mock("octokit", () => ({
 				},
 			},
 		};
-		constructor(_opts: { appId: string; privateKey: string }) {}
 	},
 }));
 

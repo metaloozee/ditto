@@ -24,15 +24,33 @@ export const TRUSTED_GIT_LIMITS = {
 	ambiguousWriteRetries: 1,
 	diagnosticMaxBytes: 8 * 1024,
 	resultMaxBytes: 16 * 1024,
+	userAgentMaxBytes: 256,
+	containerIdMaxBytes: 128,
 } as const;
 
 export const TRUSTED_GIT_GITHUB_HOST = "github.com";
 export const TRUSTED_GIT_IDENTITY_DOMAIN = "ditto:trusted-git-executor:v1";
+export const TRUSTED_GIT_CLASS_NAME = "TrustedGitExecutor";
 
 const OWNER_REPO_RE = /^[A-Za-z0-9._-]{1,100}$/;
 const SHA1_RE = /^[0-9a-f]{40}$/;
 const SHA256_RE = /^[0-9a-f]{64}$/;
-const HEADS_REF_RE = /^refs\/heads\/[A-Za-z0-9._/-]+$/;
+const CONTAINER_ID_RE = /^[A-Za-z0-9._:-]{1,128}$/;
+
+/** Exact Accept values permitted on smart-HTTP requests. */
+const ALLOWED_ACCEPT = new Set([
+	"*/*",
+	"application/x-git-upload-pack-result",
+	"application/x-git-receive-pack-result",
+	"application/x-git-upload-pack-advertisement",
+	"application/x-git-receive-pack-advertisement",
+]);
+
+const READ_RPC_CONTENT_TYPE = "application/x-git-upload-pack-request";
+const WRITE_RPC_CONTENT_TYPE = "application/x-git-receive-pack-request";
+
+/** Git user-agent: git/X.Y or git/X.Y.Z with optional suffix suffix-free bound. */
+const GIT_USER_AGENT_RE = /^git\/\d+\.\d+(?:\.\d+)?(?:\s+\([^)]{1,64}\))?$/;
 
 export type TrustedGitPhase = "read" | "write";
 
@@ -94,6 +112,8 @@ export type PhaseGrantParams = {
 	repo: string;
 	phase: TrustedGitPhase;
 	expiresAtMs: number;
+	/** Non-secret container id bound at grant time; handler requires exact match. */
+	containerId: string;
 };
 
 export type ValidatedPublicationInput = {
@@ -112,6 +132,23 @@ export type ValidatedBundleInput = ValidatedPublicationInput & {
 	proposedSha: string;
 	expectedOldSha: string | null;
 };
+
+export type HelperLsRemote =
+	| { ok: true; present: true; sha: string }
+	| { ok: true; present: false; sha: null }
+	| { ok: false; code: string };
+
+export type HelperValidate =
+	| {
+			ok: true;
+			ref: string;
+			tip: string;
+	  }
+	| { ok: false; code: string };
+
+export type HelperPush =
+	| { ok: true; ref: string; tip: string }
+	| { ok: false; code: string };
 
 // --- Validation helpers ---
 
@@ -193,22 +230,57 @@ export function validateRepoName(repo: unknown): asserts repo is string {
 	}
 }
 
+/**
+ * Mirror git check-ref-format restrictions for refs/heads/* Session Branches.
+ * Rejects leading-dot components, .lock, trailing dots, @{, and special chars.
+ */
 export function validateHeadsRef(ref: unknown): asserts ref is string {
-	if (typeof ref !== "string" || !HEADS_REF_RE.test(ref)) {
+	if (typeof ref !== "string") {
 		throw new TrustedGitPolicyError("invalid_input", "ref");
 	}
-	if (
-		ref.includes("..") ||
-		ref.includes("//") ||
-		ref.includes("/./") ||
-		ref.endsWith("/.") ||
-		ref.endsWith("/") ||
-		ref.includes("/-")
-	) {
-		throw new TrustedGitPolicyError("invalid_input", "ref shape");
+	if (!ref.startsWith("refs/heads/")) {
+		throw new TrustedGitPolicyError("invalid_input", "ref");
 	}
 	if (utf8Bytes(ref) > TRUSTED_GIT_LIMITS.fullRefMaxBytes) {
 		throw new TrustedGitPolicyError("invalid_input", "ref size");
+	}
+	const body = ref.slice("refs/heads/".length);
+	if (body.length === 0) {
+		throw new TrustedGitPolicyError("invalid_input", "ref empty");
+	}
+	// git check-ref-format disallows these globally.
+	if (
+		body.includes("..") ||
+		body.includes("//") ||
+		body.includes("@{") ||
+		body.includes("\\") ||
+		body.endsWith(".") ||
+		body.endsWith("/") ||
+		body.startsWith("/") ||
+		hasControlOrSpace(body) ||
+		/[~^:?*[]/.test(body) ||
+		body.includes("*") ||
+		body.includes("?") ||
+		body === "@"
+	) {
+		throw new TrustedGitPolicyError("invalid_input", "ref shape");
+	}
+	const parts = body.split("/");
+	for (const part of parts) {
+		if (
+			part.length === 0 ||
+			part.startsWith(".") ||
+			part.endsWith(".") ||
+			part.endsWith(".lock") ||
+			part.includes("*") ||
+			part === "@"
+		) {
+			throw new TrustedGitPolicyError("invalid_input", "ref component");
+		}
+		// Component must be GitHub/git-safe characters only.
+		if (!/^[A-Za-z0-9._-]+$/.test(part)) {
+			throw new TrustedGitPolicyError("invalid_input", "ref chars");
+		}
 	}
 }
 
@@ -252,6 +324,15 @@ export function validateSha1OrNull(
 		throw new TrustedGitPolicyError("invalid_input", field);
 	}
 	return value;
+}
+
+export function validateContainerId(id: unknown): asserts id is string {
+	if (typeof id !== "string" || !CONTAINER_ID_RE.test(id)) {
+		throw new TrustedGitPolicyError("invalid_input", "containerId");
+	}
+	if (utf8Bytes(id) > TRUSTED_GIT_LIMITS.containerIdMaxBytes) {
+		throw new TrustedGitPolicyError("invalid_input", "containerId size");
+	}
 }
 
 export function validateProbeInput(input: {
@@ -367,16 +448,6 @@ export async function assertIdentityMatch(
 
 // --- Egress request classification ---
 
-const FORWARDED_HEADER_ALLOWLIST = new Set([
-	"accept",
-	"content-type",
-	"git-protocol",
-	"user-agent",
-]);
-
-const READ_RPC_CONTENT_TYPE = "application/x-git-upload-pack-request";
-const WRITE_RPC_CONTENT_TYPE = "application/x-git-receive-pack-request";
-
 export type ClassifiedSmartHttpRequest = {
 	kind: SmartHttpRequestKind;
 	service: TrustedGitService;
@@ -384,25 +455,18 @@ export type ClassifiedSmartHttpRequest = {
 	repo: string;
 };
 
-function normalizeHostname(host: string): string {
-	return host.trim().toLowerCase().replace(/\.$/, "");
-}
-
 /**
- * Classify an outbound container request as one of the four allowed smart-HTTP
- * shapes for the exact owner/repo and phase. Throws TrustedGitPolicyError on deny.
+ * Inspect raw authority before URL parser normalization.
+ * Rejects uppercase hosts, trailing dots, explicit :443, userinfo, non-https.
  */
-export function classifySmartHttpRequest(
-	request: Request,
-	params: Pick<PhaseGrantParams, "owner" | "repo" | "phase" | "expiresAtMs">,
-	nowMs: number = Date.now(),
-): ClassifiedSmartHttpRequest {
-	if (nowMs > params.expiresAtMs) {
-		throw new TrustedGitPolicyError("expired", "phase expired");
+export function assertExactGithubAuthority(rawUrl: string): void {
+	if (
+		typeof rawUrl !== "string" ||
+		rawUrl.length === 0 ||
+		rawUrl.length > 4096
+	) {
+		throw new TrustedGitPolicyError("denied", "url");
 	}
-
-	// Reject credentials / traversal in the raw URL before parser normalization.
-	const rawUrl = request.url;
 	if (
 		rawUrl.includes("@") ||
 		rawUrl.includes("..") ||
@@ -411,6 +475,104 @@ export function classifySmartHttpRequest(
 	) {
 		throw new TrustedGitPolicyError("denied", "raw url");
 	}
+	// Scheme must be exact lowercase https://
+	if (!rawUrl.startsWith("https://")) {
+		throw new TrustedGitPolicyError("denied", "scheme");
+	}
+	const rest = rawUrl.slice("https://".length);
+	const slash = rest.indexOf("/");
+	const authority = slash === -1 ? rest : rest.slice(0, slash);
+	// Exact host only — no userinfo, port, trailing dot, or case variants.
+	if (authority !== TRUSTED_GIT_GITHUB_HOST) {
+		throw new TrustedGitPolicyError("denied", "authority");
+	}
+}
+
+function validateForwardedHeaders(
+	request: Request,
+	kind: SmartHttpRequestKind,
+): void {
+	// Only allowlisted headers may be present among security-relevant ones;
+	// buildUpstream drops others. Here we reject disallowed values on allowlist.
+	const accept = request.headers.get("accept");
+	if (accept !== null) {
+		// Allow comma-separated subset of approved values only.
+		const parts = accept.split(",").map((p) => p.trim().toLowerCase());
+		for (const p of parts) {
+			// Strip optional ;q=
+			const base = (p.split(";")[0] ?? "").trim();
+			if (!base || !ALLOWED_ACCEPT.has(base)) {
+				throw new TrustedGitPolicyError("denied", "accept");
+			}
+		}
+	}
+
+	const ctype = request.headers.get("content-type");
+	if (kind === "read-rpc") {
+		if (ctype !== READ_RPC_CONTENT_TYPE) {
+			throw new TrustedGitPolicyError("denied", "content-type");
+		}
+	} else if (kind === "write-rpc") {
+		if (ctype !== WRITE_RPC_CONTENT_TYPE) {
+			throw new TrustedGitPolicyError("denied", "content-type");
+		}
+	} else if (ctype !== null && ctype !== "") {
+		// Discovery should not carry a content-type we forward.
+		throw new TrustedGitPolicyError("denied", "content-type");
+	}
+
+	const gitProtocol = request.headers.get("git-protocol");
+	if (gitProtocol !== null) {
+		// Exact version=2 only (optional header).
+		if (gitProtocol !== "version=2") {
+			throw new TrustedGitPolicyError("denied", "git-protocol");
+		}
+	}
+
+	const ua = request.headers.get("user-agent");
+	if (ua !== null) {
+		if (utf8Bytes(ua) > TRUSTED_GIT_LIMITS.userAgentMaxBytes) {
+			throw new TrustedGitPolicyError("denied", "user-agent size");
+		}
+		if (!GIT_USER_AGENT_RE.test(ua)) {
+			throw new TrustedGitPolicyError("denied", "user-agent");
+		}
+	}
+}
+
+/**
+ * Classify an outbound container request as one of the four allowed smart-HTTP
+ * shapes for the exact owner/repo and phase. Throws TrustedGitPolicyError on deny.
+ */
+export function classifySmartHttpRequest(
+	request: Request,
+	params: Pick<
+		PhaseGrantParams,
+		"owner" | "repo" | "phase" | "expiresAtMs" | "containerId"
+	> & {
+		/** Optional expected container id from grant; required when present on params. */
+	},
+	nowMs: number = Date.now(),
+	ctx?: { containerId?: string; className?: string },
+): ClassifiedSmartHttpRequest {
+	if (nowMs > params.expiresAtMs) {
+		throw new TrustedGitPolicyError("expired", "phase expired");
+	}
+
+	if (ctx) {
+		if (ctx.className !== TRUSTED_GIT_CLASS_NAME) {
+			throw new TrustedGitPolicyError("denied", "className");
+		}
+		if (
+			typeof ctx.containerId !== "string" ||
+			ctx.containerId !== params.containerId
+		) {
+			throw new TrustedGitPolicyError("denied", "containerId");
+		}
+	}
+
+	const rawUrl = request.url;
+	assertExactGithubAuthority(rawUrl);
 
 	let url: URL;
 	try {
@@ -422,19 +584,14 @@ export function classifySmartHttpRequest(
 	if (url.protocol !== "https:") {
 		throw new TrustedGitPolicyError("denied", "scheme");
 	}
-	if (url.port !== "" && url.port !== "443") {
+	// Parser may normalize; still require empty port (explicit :443 already denied by authority).
+	if (url.port !== "") {
 		throw new TrustedGitPolicyError("denied", "port");
 	}
 	if (url.username || url.password) {
 		throw new TrustedGitPolicyError("denied", "userinfo");
 	}
-
-	const host = normalizeHostname(url.hostname);
-	if (host !== TRUSTED_GIT_GITHUB_HOST) {
-		throw new TrustedGitPolicyError("denied", "host");
-	}
-	// Exact host label only (no trailing-dot variants slipping past).
-	if (url.hostname.toLowerCase() !== TRUSTED_GIT_GITHUB_HOST) {
+	if (url.hostname !== TRUSTED_GIT_GITHUB_HOST) {
 		throw new TrustedGitPolicyError("denied", "host");
 	}
 
@@ -452,19 +609,14 @@ export function classifySmartHttpRequest(
 		throw new TrustedGitPolicyError("denied", "method");
 	}
 
-	// Path: /<owner>/<repo>.git/(info/refs|git-upload-pack|git-receive-pack)
 	const path = url.pathname;
 	if (
 		path.includes("//") ||
 		path.includes("/./") ||
 		path.includes("/../") ||
-		path.includes("%")
+		path.includes("%") ||
+		path.includes("..")
 	) {
-		// Percent-encoding can smuggle; require decoded exact path only.
-		// URL.pathname is already decoded; reject residual % and dot segments.
-		throw new TrustedGitPolicyError("denied", "path");
-	}
-	if (path.includes("..")) {
 		throw new TrustedGitPolicyError("denied", "path");
 	}
 
@@ -474,14 +626,16 @@ export function classifySmartHttpRequest(
 	if (!match) {
 		throw new TrustedGitPolicyError("denied", "path shape");
 	}
-	const owner = match[1]!;
-	const repo = match[2]!;
-	const tail = match[3]!;
+	const owner = match[1] ?? "";
+	const repo = match[2] ?? "";
+	const tail = match[3] ?? "";
+	if (!owner || !repo || !tail) {
+		throw new TrustedGitPolicyError("denied", "path shape");
+	}
 
 	if (owner !== params.owner || repo !== params.repo) {
 		throw new TrustedGitPolicyError("denied", "repository");
 	}
-	// Prefix/suffix confusion already prevented by exact regex + equality.
 
 	let kind: SmartHttpRequestKind;
 	let service: TrustedGitService;
@@ -490,7 +644,6 @@ export function classifySmartHttpRequest(
 		if (method !== "GET") {
 			throw new TrustedGitPolicyError("denied", "discovery method");
 		}
-		// Exact single query key service=
 		const keys = [...url.searchParams.keys()];
 		if (keys.length !== 1 || keys[0] !== "service") {
 			throw new TrustedGitPolicyError("denied", "query");
@@ -499,7 +652,6 @@ export function classifySmartHttpRequest(
 		if (svc !== "git-upload-pack" && svc !== "git-receive-pack") {
 			throw new TrustedGitPolicyError("denied", "service");
 		}
-		// Reject duplicate service keys (searchParams collapses; check raw).
 		const rawQuery = url.search.startsWith("?")
 			? url.search.slice(1)
 			: url.search;
@@ -515,10 +667,6 @@ export function classifySmartHttpRequest(
 		if (url.search !== "") {
 			throw new TrustedGitPolicyError("denied", "rpc query");
 		}
-		const ctype = request.headers.get("content-type");
-		if (ctype !== READ_RPC_CONTENT_TYPE) {
-			throw new TrustedGitPolicyError("denied", "content-type");
-		}
 		service = "git-upload-pack";
 		kind = "read-rpc";
 	} else if (tail === "git-receive-pack") {
@@ -528,17 +676,14 @@ export function classifySmartHttpRequest(
 		if (url.search !== "") {
 			throw new TrustedGitPolicyError("denied", "rpc query");
 		}
-		const ctype = request.headers.get("content-type");
-		if (ctype !== WRITE_RPC_CONTENT_TYPE) {
-			throw new TrustedGitPolicyError("denied", "content-type");
-		}
 		service = "git-receive-pack";
 		kind = "write-rpc";
 	} else {
 		throw new TrustedGitPolicyError("denied", "path tail");
 	}
 
-	// Phase separation.
+	validateForwardedHeaders(request, kind);
+
 	const isRead = service === "git-upload-pack";
 	if (params.phase === "read" && !isRead) {
 		throw new TrustedGitPolicyError("phase_mismatch", "write in read phase");
@@ -547,7 +692,6 @@ export function classifySmartHttpRequest(
 		throw new TrustedGitPolicyError("phase_mismatch", "read in write phase");
 	}
 
-	// GET must not carry a body we forward; Request bodies on GET are rejected.
 	if (method === "GET" && request.body !== null) {
 		throw new TrustedGitPolicyError("denied", "get body");
 	}
@@ -563,22 +707,43 @@ export function buildUpstreamGitRequest(
 	request: Request,
 	classified: ClassifiedSmartHttpRequest,
 	installationToken: string,
+	body?: ReadableStream<Uint8Array> | null,
 ): Request {
 	const url = new URL(request.url);
-	// Reconstruct exact canonical URL without userinfo.
 	const canonical = `https://${TRUSTED_GIT_GITHUB_HOST}${url.pathname}${url.search}`;
 
 	const headers = new Headers();
 	for (const [name, value] of request.headers.entries()) {
 		const lower = name.toLowerCase();
-		if (!FORWARDED_HEADER_ALLOWLIST.has(lower)) {
+		if (
+			lower !== "accept" &&
+			lower !== "content-type" &&
+			lower !== "git-protocol" &&
+			lower !== "user-agent"
+		) {
 			continue;
 		}
-		if (lower === "user-agent" && utf8Bytes(value) > 256) {
-			continue;
+		if (lower === "user-agent") {
+			if (
+				utf8Bytes(value) > TRUSTED_GIT_LIMITS.userAgentMaxBytes ||
+				!GIT_USER_AGENT_RE.test(value)
+			) {
+				continue;
+			}
+		}
+		if (lower === "accept") {
+			const parts = value.split(",").map((p) => p.trim().toLowerCase());
+			let ok = true;
+			for (const p of parts) {
+				const base = (p.split(";")[0] ?? "").trim();
+				if (!ALLOWED_ACCEPT.has(base)) {
+					ok = false;
+					break;
+				}
+			}
+			if (!ok) continue;
 		}
 		if (lower === "content-type") {
-			// Only the exact RPC types (discovery has none required).
 			if (classified.kind === "read-rpc" && value !== READ_RPC_CONTENT_TYPE) {
 				continue;
 			}
@@ -592,20 +757,30 @@ export function buildUpstreamGitRequest(
 				continue;
 			}
 		}
+		if (lower === "git-protocol" && value !== "version=2") {
+			continue;
+		}
 		headers.set(name, value);
 	}
 
 	const basic = btoa(`x-access-token:${installationToken}`);
 	headers.set("authorization", `Basic ${basic}`);
-	headers.set("accept", headers.get("accept") ?? "*/*");
+	if (!headers.has("accept")) {
+		headers.set("accept", "*/*");
+	}
+
+	const outBody =
+		body === undefined
+			? (request.body as ReadableStream<Uint8Array> | null)
+			: body;
 
 	return new Request(canonical, {
 		method: request.method.toUpperCase(),
 		headers,
-		body: request.body,
+		body: outBody,
 		redirect: "manual",
 		// @ts-expect-error duplex required for streamed body in some runtimes
-		duplex: request.body ? "half" : undefined,
+		duplex: outBody ? "half" : undefined,
 	});
 }
 
@@ -621,7 +796,8 @@ export type StreamFinalizer = () => Promise<void>;
 
 /**
  * Wrap a readable stream with a byte cap. Oversize aborts with denied error.
- * Invokes finalizer exactly once on EOF, error, cancel, or abort.
+ * Invokes finalizer exactly once. Finalizer runs before successful close so a
+ * revoke failure cannot look like normal EOF success.
  */
 export function boundReadableStream(
 	source: ReadableStream<Uint8Array>,
@@ -630,10 +806,16 @@ export function boundReadableStream(
 ): ReadableStream<Uint8Array> {
 	let seen = 0;
 	let finalized = false;
+	let finalizeError: unknown;
 	const runFinalizer = async () => {
 		if (finalized) return;
 		finalized = true;
-		await finalizer();
+		try {
+			await finalizer();
+		} catch (err) {
+			finalizeError = err;
+			throw err;
+		}
 	};
 
 	const reader = source.getReader();
@@ -642,30 +824,58 @@ export function boundReadableStream(
 			try {
 				const { done, value } = await reader.read();
 				if (done) {
-					controller.close();
-					await runFinalizer();
+					try {
+						await runFinalizer();
+						controller.close();
+					} catch (err) {
+						controller.error(
+							err instanceof TrustedGitPolicyError
+								? err
+								: new TrustedGitPolicyError("revoke_failed", "finalize"),
+						);
+					}
 					return;
 				}
 				seen += value.byteLength;
 				if (seen > maxBytes) {
-					await reader.cancel("oversize");
+					try {
+						await reader.cancel("oversize");
+					} catch {
+						// ignore
+					}
+					try {
+						await runFinalizer();
+					} catch {
+						// prefer oversize signal; finalize still ran once
+					}
 					controller.error(
 						new TrustedGitPolicyError("denied", "body oversize"),
 					);
-					await runFinalizer();
 					return;
 				}
 				controller.enqueue(value);
 			} catch (err) {
+				try {
+					await runFinalizer();
+				} catch (finErr) {
+					controller.error(finErr instanceof Error ? finErr : err);
+					return;
+				}
 				controller.error(err);
-				await runFinalizer();
 			}
 		},
-		async cancel() {
+		async cancel(reason) {
 			try {
-				await reader.cancel();
+				await reader.cancel(reason);
 			} finally {
-				await runFinalizer();
+				try {
+					await runFinalizer();
+				} catch {
+					// cancel path still finalizes once
+				}
+			}
+			if (finalizeError) {
+				// Surface finalize failure to cancel callers when possible.
 			}
 		},
 	});
@@ -694,6 +904,94 @@ export function countingTransform(
 	});
 }
 
+// --- Helper JSON boundary revalidation ---
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Revalidate ls-remote helper JSON at the Worker boundary. Never trust raw strings. */
+export function parseHelperLsRemote(raw: unknown): HelperLsRemote {
+	if (!isPlainObject(raw)) {
+		return { ok: false, code: "helper_invalid" };
+	}
+	if (raw.ok === true) {
+		if (raw.present === true) {
+			if (typeof raw.sha !== "string" || !isExactSha1(raw.sha)) {
+				return { ok: false, code: "helper_invalid" };
+			}
+			return { ok: true, present: true, sha: raw.sha };
+		}
+		if (raw.present === false && (raw.sha === null || raw.sha === undefined)) {
+			return { ok: true, present: false, sha: null };
+		}
+		return { ok: false, code: "helper_invalid" };
+	}
+	if (
+		raw.ok === false &&
+		typeof raw.code === "string" &&
+		raw.code.length <= 64
+	) {
+		return { ok: false, code: raw.code };
+	}
+	return { ok: false, code: "helper_invalid" };
+}
+
+export function parseHelperValidate(
+	raw: unknown,
+	expected: { ref: string; tip: string },
+): HelperValidate {
+	if (!isPlainObject(raw)) {
+		return { ok: false, code: "helper_invalid" };
+	}
+	if (raw.ok === true) {
+		if (typeof raw.ref !== "string" || typeof raw.tip !== "string") {
+			return { ok: false, code: "helper_invalid" };
+		}
+		if (raw.ref !== expected.ref || raw.tip !== expected.tip) {
+			return { ok: false, code: "helper_mismatch" };
+		}
+		if (!isExactSha1(raw.tip)) {
+			return { ok: false, code: "helper_invalid" };
+		}
+		return { ok: true, ref: raw.ref, tip: raw.tip };
+	}
+	if (
+		raw.ok === false &&
+		typeof raw.code === "string" &&
+		raw.code.length <= 64
+	) {
+		return { ok: false, code: raw.code };
+	}
+	return { ok: false, code: "helper_invalid" };
+}
+
+export function parseHelperPush(
+	raw: unknown,
+	expected: { ref: string; tip: string },
+): HelperPush {
+	if (!isPlainObject(raw)) {
+		return { ok: false, code: "helper_invalid" };
+	}
+	if (raw.ok === true) {
+		// tip/ref optional on push success but when present must match.
+		const ref = typeof raw.ref === "string" ? raw.ref : expected.ref;
+		const tip = typeof raw.tip === "string" ? raw.tip : expected.tip;
+		if (ref !== expected.ref || tip !== expected.tip || !isExactSha1(tip)) {
+			return { ok: false, code: "helper_mismatch" };
+		}
+		return { ok: true, ref, tip };
+	}
+	if (
+		raw.ok === false &&
+		typeof raw.code === "string" &&
+		raw.code.length <= 64
+	) {
+		return { ok: false, code: raw.code };
+	}
+	return { ok: false, code: "helper_invalid" };
+}
+
 // --- Safe results ---
 
 export function capDiagnostic(
@@ -705,9 +1003,8 @@ export function capDiagnostic(
 	if (bytes.byteLength <= TRUSTED_GIT_LIMITS.diagnosticMaxBytes) {
 		return redacted;
 	}
-	// Truncate on UTF-8 byte boundary.
 	let end = TRUSTED_GIT_LIMITS.diagnosticMaxBytes;
-	while (end > 0 && (bytes[end]! & 0xc0) === 0x80) {
+	while (end > 0 && ((bytes[end] ?? 0) & 0xc0) === 0x80) {
 		end -= 1;
 	}
 	return new TextDecoder().decode(bytes.slice(0, end));
@@ -780,7 +1077,6 @@ export function makeErrorResult(input: {
 function assertResultBound(result: TrustedGitSafeResult): void {
 	const serialized = JSON.stringify(result);
 	if (utf8Bytes(serialized) > TRUSTED_GIT_LIMITS.resultMaxBytes) {
-		// Fail closed: strip diagnostic.
 		if ("diagnostic" in result) {
 			delete (result as { diagnostic?: string }).diagnostic;
 		}
@@ -794,9 +1090,11 @@ export function buildPhaseGrant(input: {
 	owner: string;
 	repo: string;
 	phase: TrustedGitPhase;
+	containerId: string;
 	nowMs?: number;
 	ttlMs?: number;
 }): PhaseGrantParams {
+	validateContainerId(input.containerId);
 	const now = input.nowMs ?? Date.now();
 	const ttl = Math.min(
 		input.ttlMs ?? TRUSTED_GIT_LIMITS.phaseGrantMaxMs,
@@ -810,6 +1108,7 @@ export function buildPhaseGrant(input: {
 		repo: input.repo,
 		phase: input.phase,
 		expiresAtMs: now + ttl,
+		containerId: input.containerId,
 	};
 }
 
@@ -824,6 +1123,7 @@ export function assertPhaseGrantNonSecret(params: PhaseGrantParams): void {
 	) {
 		throw new TrustedGitPolicyError("internal", "secret in phase grant");
 	}
+	validateContainerId(params.containerId);
 }
 
 export function isRedirectStatus(status: number): boolean {
@@ -853,4 +1153,143 @@ export function reconcileWriteRef(input: {
 		return { action: "retry" };
 	}
 	return { action: "interrupted", observed: input.observedSha };
+}
+
+/**
+ * Concurrent-safe drain of a process stream with hard byte cap.
+ * On overflow, cancels the reader and reports overflow.
+ */
+export async function drainProcessStream(
+	stream: ReadableStream<Uint8Array> | null,
+	maxBytes: number,
+): Promise<{ text: string; overflow: boolean; bytes: number }> {
+	if (!stream) {
+		return { text: "", overflow: false, bytes: 0 };
+	}
+	const reader = stream.getReader();
+	const chunks: Uint8Array[] = [];
+	let total = 0;
+	let overflow = false;
+	for (;;) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		total += value.byteLength;
+		if (total > maxBytes) {
+			overflow = true;
+			try {
+				await reader.cancel("overflow");
+			} catch {
+				// ignore
+			}
+			break;
+		}
+		chunks.push(value);
+	}
+	const keep = overflow ? maxBytes : total;
+	const merged = new Uint8Array(Math.min(keep, total));
+	let offset = 0;
+	for (const c of chunks) {
+		const slice =
+			c.byteLength > merged.byteLength - offset
+				? c.subarray(0, merged.byteLength - offset)
+				: c;
+		merged.set(slice, offset);
+		offset += slice.byteLength;
+		if (offset >= merged.byteLength) break;
+	}
+	return {
+		text: new TextDecoder().decode(merged),
+		overflow,
+		bytes: total,
+	};
+}
+
+export type BoundedProcessHandle = {
+	stdout: ReadableStream<Uint8Array> | null;
+	stderr: ReadableStream<Uint8Array> | null;
+	exitCode: Promise<number>;
+	kill: (signal?: number) => void;
+};
+
+export type BoundedProcessResult = {
+	exitCode: number;
+	stdout: string;
+	stderr: string;
+	timedOut: boolean;
+	overflow: boolean;
+	killed: boolean;
+};
+
+/**
+ * One bounded runner for validate/ls/push: concurrent drains, byte overflow
+ * failure, real wall-clock race, kill without indefinite wait.
+ * Never calls output() after stream consumption.
+ */
+export async function runBoundedProcess(
+	proc: BoundedProcessHandle,
+	options: {
+		timeoutMs: number;
+		maxStdoutBytes: number;
+		maxStderrBytes: number;
+		/** Grace after kill before treating exit as hung. */
+		killGraceMs?: number;
+	},
+): Promise<BoundedProcessResult> {
+	const killGraceMs = options.killGraceMs ?? 2_000;
+	let timedOut = false;
+	let killed = false;
+	let overflow = false;
+
+	const kill = () => {
+		killed = true;
+		try {
+			proc.kill();
+		} catch {
+			// ignore
+		}
+	};
+
+	const timer = setTimeout(() => {
+		timedOut = true;
+		kill();
+	}, options.timeoutMs);
+
+	const exitRace = Promise.race([
+		proc.exitCode.then((code) => ({ kind: "exit" as const, code })),
+		new Promise<{ kind: "hang" }>((resolve) => {
+			// Resolved only after timeout+grace if exitCode never settles.
+			const watch = () => {
+				if (!timedOut && !killed) {
+					setTimeout(watch, 50);
+					return;
+				}
+				setTimeout(() => resolve({ kind: "hang" }), killGraceMs);
+			};
+			setTimeout(watch, options.timeoutMs);
+		}),
+	]);
+
+	try {
+		const [stdoutDrain, stderrDrain, exit] = await Promise.all([
+			drainProcessStream(proc.stdout, options.maxStdoutBytes),
+			drainProcessStream(proc.stderr, options.maxStderrBytes),
+			exitRace,
+		]);
+		overflow = stdoutDrain.overflow || stderrDrain.overflow;
+		if (overflow && !killed) {
+			kill();
+		}
+		const exitCode =
+			exit.kind === "exit" ? exit.code : timedOut || killed ? 124 : 1;
+		return {
+			exitCode,
+			stdout: stdoutDrain.text,
+			stderr: stderrDrain.text,
+			timedOut,
+			overflow,
+			killed,
+		};
+	} finally {
+		clearTimeout(timer);
+	}
 }
