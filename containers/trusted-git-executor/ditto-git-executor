@@ -16,6 +16,18 @@ MAX_BLOB_BYTES=$((8 * 1024 * 1024))
 MAX_OBJECTS=100000
 MAX_COMMITS=1000
 MAX_PATH_RECORDS=20000
+# Test-only override: positive int strictly below production max.
+if [ -n "${DITTO_TEST_MAX_PATH_RECORDS:-}" ]; then
+	case "${DITTO_TEST_MAX_PATH_RECORDS}" in
+	'' | *[!0-9]*) ;;
+	*)
+		if [ "${DITTO_TEST_MAX_PATH_RECORDS}" -ge 1 ] &&
+			[ "${DITTO_TEST_MAX_PATH_RECORDS}" -lt "${MAX_PATH_RECORDS}" ]; then
+			MAX_PATH_RECORDS="${DITTO_TEST_MAX_PATH_RECORDS}"
+		fi
+		;;
+	esac
+fi
 PUSH_ATTEMPT_FILE="${STATE_ROOT}/push-attempts"
 
 emit_json() {
@@ -416,7 +428,6 @@ import_bundle_into_quarantine() {
 	[ "$scan_err" -eq 0 ] || fail "objects_failed" "object scan failed"
 	[ "$blob_over" -eq 0 ] || fail "blob_limit" "blob too large"
 
-	empty_tree=$(run_git_local --git-dir="${QUARANTINE_DIR}" hash-object -t tree /dev/null 2>/dev/null)
 	if [ -n "$expected_old" ]; then
 		is_sha1 "$expected_old" || fail "invalid_old" "expected old sha invalid"
 		if [ "$expected_old" != "$expected_tip" ]; then
@@ -425,14 +436,42 @@ import_bundle_into_quarantine() {
 		fi
 		run_git_local --git-dir="${QUARANTINE_DIR}" cat-file -e "${expected_old}^{commit}" >/dev/null 2>&1 \
 			|| fail "old_missing" "expected old not in bundle"
-		base_for_paths="$expected_old"
-	else
-		base_for_paths="$empty_tree"
 	fi
 
-	path_count=$(run_git_local --git-dir="${QUARANTINE_DIR}" diff-tree -r --name-only "$base_for_paths" "$expected_tip" 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ') \
-		|| fail "paths_failed" "path enumeration failed"
-	[ "$path_count" -le "$MAX_PATH_RECORDS" ] || fail "path_limit" "too many path records"
+	# Count path records across the inspected reachable change history — not just
+	# the net tip diff. A history can churn >MAX_PATH_RECORDS paths and end with
+	# a tiny net tree. Initial publication (no old) counts every commit on tip;
+	# updates count commits in expected_old..expected_tip only.
+	commits_file="${STATE_ROOT}/tmp/path-commits.txt"
+	mkdir -p "${STATE_ROOT}/tmp"
+	: >"$commits_file"
+	if [ -n "$expected_old" ]; then
+		run_git_local --git-dir="${QUARANTINE_DIR}" rev-list --reverse "${expected_old}..${expected_tip}" \
+			>"$commits_file" 2>/dev/null \
+			|| fail "paths_failed" "commit walk failed"
+	else
+		# Initial publication: all commits reachable from tip.
+		run_git_local --git-dir="${QUARANTINE_DIR}" rev-list --reverse "${expected_tip}" \
+			>"$commits_file" 2>/dev/null \
+			|| fail "paths_failed" "commit walk failed"
+	fi
+
+	path_count=0
+	while IFS= read -r commit || [ -n "$commit" ]; do
+		[ -n "$commit" ] || continue
+		# Bound per-commit listing so a single huge tree cannot materialize unbounded output.
+		n=$(run_git_local --git-dir="${QUARANTINE_DIR}" diff-tree -r --name-only --no-commit-id "$commit" 2>/dev/null \
+			| sed '/^$/d' \
+			| head -n "$((MAX_PATH_RECORDS + 1))" \
+			| wc -l \
+			| tr -d ' ') || fail "paths_failed" "path enumeration failed"
+		case "$n" in
+		'' | *[!0-9]*) fail "paths_failed" "path count parse failed" ;;
+		esac
+		path_count=$((path_count + n))
+		[ "$path_count" -le "$MAX_PATH_RECORDS" ] || fail "path_limit" "too many path records"
+	done <"$commits_file"
+	rm -f "$commits_file"
 
 	reject_lfs_and_gitlinks
 

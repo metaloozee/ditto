@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	boundReadableStream,
 	buildPhaseGrant,
@@ -10,6 +10,7 @@ import {
 	makeErrorResult,
 	makeSuccessResult,
 	reconcileWriteRef,
+	runBoundedProcess,
 	TRUSTED_GIT_LIMITS,
 	TrustedGitPolicyError,
 	validateProbeInput,
@@ -308,6 +309,35 @@ describe("smart-HTTP adversarial denial", () => {
 		});
 	});
 
+	it("denies Accept parameters and oversize Accept/git-protocol", () => {
+		// Parameters must not be stripped and forwarded.
+		deny(`${base}/info/refs?service=git-upload-pack`, {
+			headers: { accept: "*/*;secret=x" },
+		});
+		deny(`${base}/info/refs?service=git-upload-pack`, {
+			headers: { accept: "*/*;q=0.9" },
+		});
+		deny(`${base}/info/refs?service=git-upload-pack`, {
+			headers: {
+				accept: `*/*${"a".repeat(TRUSTED_GIT_LIMITS.acceptMaxBytes)}`,
+			},
+		});
+		deny(`${base}/info/refs?service=git-upload-pack`, {
+			headers: {
+				"git-protocol": `version=2${"x".repeat(TRUSTED_GIT_LIMITS.gitProtocolMaxBytes)}`,
+			},
+		});
+		// Exact approved values still allowed.
+		expect(
+			classifySmartHttpRequest(
+				req(`${base}/info/refs?service=git-upload-pack`, {
+					headers: { accept: "*/*" },
+				}),
+				phase(),
+			).kind,
+		).toBe("read-discovery");
+	});
+
 	it("denies container/class grant mismatch when ctx provided", () => {
 		expect(() =>
 			classifySmartHttpRequest(
@@ -542,5 +572,138 @@ describe("results, redaction, reconciliation", () => {
 		await reader.read(); // data
 		await expect(reader.read()).rejects.toBeTruthy();
 		expect(order).toEqual(["finalize"]);
+	});
+});
+
+describe("runBoundedProcess hard bounds", () => {
+	function neverStream(): ReadableStream<Uint8Array> {
+		return new ReadableStream<Uint8Array>({
+			pull() {
+				// never enqueues and never closes
+			},
+			cancel() {
+				// ignore — even cancel may hang at source; drain must not await it
+				return new Promise(() => {});
+			},
+		});
+	}
+
+	it("returns within grace when stdout never closes", async () => {
+		const kill = vi.fn();
+		const started = Date.now();
+		const result = await runBoundedProcess(
+			{
+				stdout: neverStream(),
+				stderr: new ReadableStream({
+					start(c) {
+						c.close();
+					},
+				}),
+				exitCode: Promise.resolve(0),
+				kill,
+			},
+			{
+				timeoutMs: 40,
+				maxStdoutBytes: 1024,
+				maxStderrBytes: 1024,
+				killGraceMs: 30,
+			},
+		);
+		const elapsed = Date.now() - started;
+		expect(elapsed).toBeLessThan(500);
+		expect(result.timedOut).toBe(true);
+		expect(kill).toHaveBeenCalled();
+	});
+
+	it("returns within grace when stderr never closes", async () => {
+		const kill = vi.fn();
+		const started = Date.now();
+		const result = await runBoundedProcess(
+			{
+				stdout: new ReadableStream({
+					start(c) {
+						c.close();
+					},
+				}),
+				stderr: neverStream(),
+				exitCode: Promise.resolve(0),
+				kill,
+			},
+			{
+				timeoutMs: 40,
+				maxStdoutBytes: 1024,
+				maxStderrBytes: 1024,
+				killGraceMs: 30,
+			},
+		);
+		expect(Date.now() - started).toBeLessThan(500);
+		expect(result.timedOut).toBe(true);
+		expect(kill).toHaveBeenCalled();
+	});
+
+	it("returns within grace when exitCode never settles", async () => {
+		const kill = vi.fn();
+		const started = Date.now();
+		const result = await runBoundedProcess(
+			{
+				stdout: new ReadableStream({
+					start(c) {
+						c.close();
+					},
+				}),
+				stderr: new ReadableStream({
+					start(c) {
+						c.close();
+					},
+				}),
+				exitCode: new Promise(() => {}),
+				kill,
+			},
+			{
+				timeoutMs: 40,
+				maxStdoutBytes: 1024,
+				maxStderrBytes: 1024,
+				killGraceMs: 30,
+			},
+		);
+		expect(Date.now() - started).toBeLessThan(500);
+		expect(result.timedOut).toBe(true);
+		expect(result.killed).toBe(true);
+		expect(kill).toHaveBeenCalled();
+	});
+
+	it("kills immediately on overflow even if exit never settles", async () => {
+		const kill = vi.fn();
+		const started = Date.now();
+		const flood = new ReadableStream<Uint8Array>({
+			start(c) {
+				const chunk = new Uint8Array(2048);
+				chunk.fill(65);
+				for (let i = 0; i < 10; i++) c.enqueue(chunk);
+				// never close
+			},
+		});
+		const result = await runBoundedProcess(
+			{
+				stdout: flood,
+				stderr: new ReadableStream({
+					start(c) {
+						c.close();
+					},
+				}),
+				exitCode: new Promise(() => {}),
+				kill,
+			},
+			{
+				timeoutMs: 5_000,
+				maxStdoutBytes: 1024,
+				maxStderrBytes: 1024,
+				killGraceMs: 40,
+			},
+		);
+		expect(Date.now() - started).toBeLessThan(1000);
+		expect(result.overflow).toBe(true);
+		expect(kill).toHaveBeenCalled();
+		expect(result.killed).toBe(true);
 	});
 });

@@ -160,6 +160,20 @@ export class TrustedGitExecutor extends Container<TrustedGitExecutorEnv> {
 					return new Response(message, { status });
 				};
 
+				// Abort upstream fetch on request oversize/source error so the
+				// handler cannot observe a successful Response afterward.
+				const upstreamAbort = new AbortController();
+				let requestFailed = false;
+				let requestFailMessage = "request failed";
+
+				const failRequest = (message: string) => {
+					requestFailed = true;
+					requestFailMessage = message;
+					if (!upstreamAbort.signal.aborted) {
+						upstreamAbort.abort();
+					}
+				};
+
 				// Bound REQUEST body (POST RPC) before upstream fetch.
 				let outboundBody: ReadableStream<Uint8Array> | null = null;
 				if (request.body) {
@@ -175,6 +189,7 @@ export class TrustedGitExecutor extends Container<TrustedGitExecutorEnv> {
 								}
 								seen += value.byteLength;
 								if (seen > TRUSTED_GIT_LIMITS.httpBodyMaxBytes) {
+									failRequest("request oversize");
 									try {
 										await reader.cancel("oversize");
 									} catch {
@@ -192,6 +207,7 @@ export class TrustedGitExecutor extends Container<TrustedGitExecutorEnv> {
 								}
 								controller.enqueue(value);
 							} catch (err) {
+								failRequest("request source error");
 								try {
 									await finalize();
 								} catch {
@@ -201,15 +217,13 @@ export class TrustedGitExecutor extends Container<TrustedGitExecutorEnv> {
 							}
 						},
 						async cancel() {
+							failRequest("request cancelled");
 							try {
 								await reader.cancel();
 							} finally {
 								if (!finalized) {
-									try {
-										await finalize();
-									} catch {
-										// ignore
-									}
+									// Surface revoke failure when cancel can propagate it.
+									await finalize();
 								}
 							}
 						},
@@ -225,9 +239,27 @@ export class TrustedGitExecutor extends Container<TrustedGitExecutorEnv> {
 
 				let upstream: Response;
 				try {
-					upstream = await fetch(upstreamReq);
+					upstream = await fetch(
+						new Request(upstreamReq, { signal: upstreamAbort.signal }),
+					);
 				} catch {
-					return failAfterFinalize(502, "upstream failed");
+					return failAfterFinalize(
+						502,
+						requestFailed ? requestFailMessage : "upstream failed",
+					);
+				}
+
+				// Even if a buggy fetch resolves after body failure, never succeed.
+				if (requestFailed || upstreamAbort.signal.aborted) {
+					try {
+						await upstream.body?.cancel();
+					} catch {
+						// ignore
+					}
+					return failAfterFinalize(
+						502,
+						requestFailed ? requestFailMessage : "request aborted",
+					);
 				}
 
 				if (isRedirectStatus(upstream.status)) {
@@ -365,44 +397,60 @@ export class TrustedGitExecutor extends Container<TrustedGitExecutorEnv> {
 
 	/**
 	 * Clear fail-safe only after full successful cleanup.
-	 * Never call this when phase revoke, destroy, op-clear, or terminal put failed.
+	 * Returns false when deleteSchedules fails — caller must treat as cleanup_failed.
 	 */
-	private clearFailSafe(): void {
+	private clearFailSafe(): boolean {
 		try {
 			this.deleteSchedules(FAILSAFE_CALLBACK);
+			return true;
 		} catch {
-			// Best-effort; retained fail-safe is safer than silent loss.
+			return false;
 		}
 	}
 
 	/**
 	 * Fail-safe callback invoked by base Container.alarm via schedule().
 	 * Must remain a method on this class (schedule looks up by name).
+	 * Base alarm deletes the one-time schedule after the callback, so incomplete
+	 * cleanup must schedule a replacement retry before returning.
 	 */
 	async failSafeCleanup(): Promise<void> {
+		let revoked = false;
+		let destroyed = false;
+		let opCleared = false;
+
 		try {
 			await this.removeOutboundByHost(TRUSTED_GIT_GITHUB_HOST);
-		} catch {
-			// continue
-		}
-		try {
 			await this.setOutboundHandler("denyAll");
+			revoked = true;
 		} catch {
-			// continue
-		}
-		try {
-			if (this.ctx.container) {
-				await this.ctx.container.destroy();
+			try {
+				await this.setOutboundHandler("denyAll");
+			} catch {
+				// keep revoked=false
 			}
-		} catch {
-			// continue
 		}
-		try {
-			await this.ctx.storage.delete(STATE_KEY_OP);
-		} catch {
-			// continue
+
+		destroyed = await this.destroyAndProve();
+
+		// Only clear non-secret op state after phase deny + destruction proof.
+		if (revoked && destroyed) {
+			try {
+				await this.ctx.storage.delete(STATE_KEY_OP);
+				opCleared = true;
+			} catch {
+				opCleared = false;
+			}
 		}
-		// Do not clear remaining schedules here — base alarm manages lifecycle.
+
+		if (!(revoked && destroyed && opCleared)) {
+			// Replacement fail-safe: base already consumed the prior one-shot schedule.
+			try {
+				await this.scheduleFailSafe();
+			} catch {
+				// nothing else available
+			}
+		}
 	}
 
 	private async ensureContainerStarted(): Promise<void> {
@@ -550,9 +598,12 @@ export class TrustedGitExecutor extends Container<TrustedGitExecutorEnv> {
 			}
 		}
 
-		const cleaned = revoked && destroyed && opCleared && terminalOk;
+		let cleaned = revoked && destroyed && opCleared && terminalOk;
 		if (cleaned) {
-			this.clearFailSafe();
+			// deleteSchedules failure must override nominal Git success.
+			if (!this.clearFailSafe()) {
+				cleaned = false;
+			}
 		}
 		// If not cleaned, fail-safe schedule is intentionally retained.
 		return { revoked, destroyed, cleaned };
@@ -1139,25 +1190,53 @@ export class TrustedGitExecutor extends Container<TrustedGitExecutorEnv> {
 				};
 			};
 
-			if (pushResult.timedOut || pushResult.overflow) {
-				return await finish(
-					makeErrorResult({
-						code: pushResult.timedOut ? "timeout" : "upstream",
-						publicationIdHash,
-						executionEpoch: input.executionEpoch,
-						revoked: writeRevoked,
-						destroyed: false,
-						diagnostic: pushResult.overflow ? "output overflow" : "timeout",
-					}),
-				);
-			}
+			/** Fresh READ-phase exact-ref check. Write phase must already be revoked. */
+			const reconcileOnce = async () => {
+				const readGrant = buildPhaseGrant({
+					publicationIdHash,
+					executionEpoch: input.executionEpoch,
+					installationId: input.installationId,
+					owner: input.owner,
+					repo: input.repo,
+					phase: "read",
+					containerId: this.currentContainerId(),
+				});
+				await this.enablePhase(readGrant);
+				const ls = await this.execHelper([
+					"ls-remote-ref",
+					input.owner,
+					input.repo,
+					input.ref,
+				]);
+				try {
+					await this.revokePhase();
+				} catch {
+					writeRevoked = false;
+				}
+				const lsParsed = parseHelperLsRemote(parseJsonUnknown(ls.stdout));
+				if (ls.timedOut || ls.overflow || ls.exitCode !== 0 || !lsParsed.ok) {
+					return { action: "interrupted" as const, observed: null };
+				}
+				return reconcileWriteRef({
+					observedSha: lsParsed.present ? lsParsed.sha : null,
+					proposedSha: input.proposedSha,
+					expectedOldSha: input.expectedOldSha,
+				});
+			};
 
 			const pushParsed = parseHelperPush(parseJsonUnknown(pushResult.stdout), {
 				ref: input.ref,
 				tip: input.proposedSha,
 			});
 
-			if (pushResult.exitCode === 0 && pushParsed.ok) {
+			// Direct success only on clean helper OK — never after timeout/overflow.
+			const cleanPushSuccess =
+				!pushResult.timedOut &&
+				!pushResult.overflow &&
+				pushResult.exitCode === 0 &&
+				pushParsed.ok;
+
+			if (cleanPushSuccess) {
 				return await finish(
 					makeSuccessResult({
 						publicationIdHash,
@@ -1171,39 +1250,10 @@ export class TrustedGitExecutor extends Container<TrustedGitExecutorEnv> {
 				);
 			}
 
-			// Post-start uncertainty: reconcile via fresh read phase.
+			// Every post-write-start uncertainty (timeout, overflow, invalid helper
+			// output, nonzero exit, drain/throw recovered as failed push) reconciles.
 			if (processStarted) {
-				const readGrant2 = buildPhaseGrant({
-					publicationIdHash,
-					executionEpoch: input.executionEpoch,
-					installationId: input.installationId,
-					owner: input.owner,
-					repo: input.repo,
-					phase: "read",
-					containerId: this.currentContainerId(),
-				});
-				await this.enablePhase(readGrant2);
-				const ls = await this.execHelper([
-					"ls-remote-ref",
-					input.owner,
-					input.repo,
-					input.ref,
-				]);
-				try {
-					await this.revokePhase();
-				} catch {
-					writeRevoked = false;
-				}
-
-				const lsParsed = parseHelperLsRemote(parseJsonUnknown(ls.stdout));
-				const decision =
-					ls.exitCode === 0 && lsParsed.ok
-						? reconcileWriteRef({
-								observedSha: lsParsed.present ? lsParsed.sha : null,
-								proposedSha: input.proposedSha,
-								expectedOldSha: input.expectedOldSha,
-							})
-						: ({ action: "interrupted", observed: null } as const);
+				const decision = await reconcileOnce();
 
 				if (decision.action === "success") {
 					return await finish(
@@ -1221,7 +1271,7 @@ export class TrustedGitExecutor extends Container<TrustedGitExecutorEnv> {
 				}
 
 				if (decision.action === "retry") {
-					// Quarantine is preserved by helper after first failed push.
+					// One retry only after observed exact old/absence.
 					const retryGrant = buildPhaseGrant({
 						publicationIdHash,
 						executionEpoch: input.executionEpoch,
@@ -1243,11 +1293,13 @@ export class TrustedGitExecutor extends Container<TrustedGitExecutorEnv> {
 						parseJsonUnknown(pushResult.stdout),
 						{ ref: input.ref, tip: input.proposedSha },
 					);
-					if (
+					const retryClean =
+						!pushResult.timedOut &&
+						!pushResult.overflow &&
 						pushResult.exitCode === 0 &&
-						retryParsed.ok &&
-						!pushResult.timedOut
-					) {
+						retryParsed.ok;
+
+					if (retryClean) {
 						return await finish(
 							makeSuccessResult({
 								publicationIdHash,
@@ -1261,41 +1313,16 @@ export class TrustedGitExecutor extends Container<TrustedGitExecutorEnv> {
 						);
 					}
 
-					// Re-reconcile once more; no second retry.
-					const readGrant3 = buildPhaseGrant({
-						publicationIdHash,
-						executionEpoch: input.executionEpoch,
-						installationId: input.installationId,
-						owner: input.owner,
-						repo: input.repo,
-						phase: "read",
-						containerId: this.currentContainerId(),
-					});
-					await this.enablePhase(readGrant3);
-					const ls2 = await this.execHelper([
-						"ls-remote-ref",
-						input.owner,
-						input.repo,
-						input.ref,
-					]);
-					try {
-						await this.revokePhase();
-					} catch {
-						writeRevoked = false;
-					}
-					const ls2Parsed = parseHelperLsRemote(parseJsonUnknown(ls2.stdout));
-					const observed2 =
-						ls2.exitCode === 0 && ls2Parsed.ok && ls2Parsed.present
-							? ls2Parsed.sha
-							: null;
-					if (observed2 === input.proposedSha) {
+					// Retry timeout/overflow/invalid/nonzero: re-reconcile once, no 2nd retry.
+					const decision2 = await reconcileOnce();
+					if (decision2.action === "success") {
 						return await finish(
 							makeSuccessResult({
 								code: "reconciled",
 								publicationIdHash,
 								executionEpoch: input.executionEpoch,
 								ref: input.ref,
-								sha: input.proposedSha,
+								sha: decision2.sha,
 								revoked: true,
 								destroyed: true,
 								capacityRetries,

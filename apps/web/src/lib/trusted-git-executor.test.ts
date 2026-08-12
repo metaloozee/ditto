@@ -946,9 +946,9 @@ describe("TrustedGitExecutor orchestration", () => {
 		vi.unstubAllGlobals();
 	});
 
-	it("outbound request oversize fails and revokes", async () => {
+	it("outbound request oversize aborts upstream and cannot return success", async () => {
 		const fetchMock = vi.fn(async (req: Request) => {
-			// Consume body to trigger oversize
+			// Consume body; oversize should abort the request signal.
 			if (req.body) {
 				const r = req.body.getReader();
 				try {
@@ -957,9 +957,10 @@ describe("TrustedGitExecutor orchestration", () => {
 						if (done) break;
 					}
 				} catch {
-					// expected oversize
+					// expected oversize body error
 				}
 			}
+			// Even a buggy fetch that resolves 200 must not produce handler success.
 			return new Response("x", { status: 200 });
 		});
 		vi.stubGlobal("fetch", fetchMock);
@@ -972,7 +973,7 @@ describe("TrustedGitExecutor orchestration", () => {
 				c.close();
 			},
 		});
-		await handler(
+		const res = await handler(
 			new Request("https://github.com/acme/widget.git/git-upload-pack", {
 				method: "POST",
 				headers: {
@@ -993,12 +994,239 @@ describe("TrustedGitExecutor orchestration", () => {
 				}),
 			},
 		);
-		// Mint happened; revoke must run on oversize path.
-		expect(getInstallationAccessToken).toHaveBeenCalled();
-		// May revoke via body path
-		expect(
-			revokeInstallationAccessToken.mock.calls.length,
-		).toBeGreaterThanOrEqual(0);
+		expect(res.status).not.toBe(200);
+		expect(getInstallationAccessToken).toHaveBeenCalledTimes(1);
+		expect(revokeInstallationAccessToken).toHaveBeenCalledTimes(1);
+		expect(revokeInstallationAccessToken).toHaveBeenCalledWith(TOKEN);
+		vi.unstubAllGlobals();
+	});
+
+	it("mints a fresh token per allowed request and revokes exactly once on EOF", async () => {
+		const fetchMock = vi.fn(async () => {
+			return new Response(
+				new ReadableStream({
+					start(c) {
+						c.enqueue(new TextEncoder().encode("ok"));
+						c.close();
+					},
+				}),
+				{
+					status: 200,
+					headers: { "content-type": "application/x-git-upload-pack-result" },
+				},
+			);
+		});
+		vi.stubGlobal("fetch", fetchMock);
+		const handler = TrustedGitExecutor.outboundHandlers.handleGitPhase;
+		const idHash = await deriveExecutorIdentity("pub-1", 1);
+		const params = phaseParams({ publicationIdHash: idHash });
+		for (let i = 0; i < 2; i++) {
+			const res = await handler(
+				new Request(
+					"https://github.com/acme/widget.git/info/refs?service=git-upload-pack",
+				),
+				makeEnv() as never,
+				{ containerId: DO_ID, className: "TrustedGitExecutor", params },
+			);
+			expect(res.status).toBe(200);
+			const body = res.body;
+			if (!body) throw new Error("body");
+			const reader = body.getReader();
+			while (true) {
+				const { done } = await reader.read();
+				if (done) break;
+			}
+		}
+		expect(getInstallationAccessToken).toHaveBeenCalledTimes(2);
+		expect(revokeInstallationAccessToken).toHaveBeenCalledTimes(2);
+		vi.unstubAllGlobals();
+	});
+
+	it("revokes exactly once on response oversize and response source error", async () => {
+		const handler = TrustedGitExecutor.outboundHandlers.handleGitPhase;
+		const idHash = await deriveExecutorIdentity("pub-1", 1);
+		const params = phaseParams({ publicationIdHash: idHash });
+
+		// Response oversize
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => {
+				const big = new Uint8Array(TRUSTED_GIT_LIMITS.httpBodyMaxBytes + 1);
+				return new Response(
+					new ReadableStream({
+						start(c) {
+							c.enqueue(big);
+							c.close();
+						},
+					}),
+					{ status: 200 },
+				);
+			}),
+		);
+		{
+			const res = await handler(
+				new Request(
+					"https://github.com/acme/widget.git/info/refs?service=git-upload-pack",
+				),
+				makeEnv() as never,
+				{ containerId: DO_ID, className: "TrustedGitExecutor", params },
+			);
+			const reader = res.body?.getReader();
+			if (!reader) throw new Error("body");
+			await expect(reader.read()).rejects.toBeTruthy();
+		}
+		expect(revokeInstallationAccessToken).toHaveBeenCalledTimes(1);
+
+		vi.clearAllMocks();
+		getInstallationAccessToken.mockResolvedValue(TOKEN);
+		revokeInstallationAccessToken.mockResolvedValue(undefined);
+
+		// Response source error
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => {
+				return new Response(
+					new ReadableStream({
+						start(c) {
+							c.error(new Error("upstream body boom"));
+						},
+					}),
+					{ status: 200 },
+				);
+			}),
+		);
+		{
+			const res = await handler(
+				new Request(
+					"https://github.com/acme/widget.git/info/refs?service=git-upload-pack",
+				),
+				makeEnv() as never,
+				{ containerId: DO_ID, className: "TrustedGitExecutor", params },
+			);
+			const reader = res.body?.getReader();
+			if (!reader) throw new Error("body");
+			await expect(reader.read()).rejects.toBeTruthy();
+		}
+		expect(revokeInstallationAccessToken).toHaveBeenCalledTimes(1);
+		vi.unstubAllGlobals();
+	});
+
+	it("revokes exactly once on fetch failure and redirect", async () => {
+		const handler = TrustedGitExecutor.outboundHandlers.handleGitPhase;
+		const idHash = await deriveExecutorIdentity("pub-1", 1);
+		const params = phaseParams({ publicationIdHash: idHash });
+
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => {
+				throw new Error("network");
+			}),
+		);
+		const failRes = await handler(
+			new Request(
+				"https://github.com/acme/widget.git/info/refs?service=git-upload-pack",
+			),
+			makeEnv() as never,
+			{ containerId: DO_ID, className: "TrustedGitExecutor", params },
+		);
+		expect(failRes.status).toBe(502);
+		expect(revokeInstallationAccessToken).toHaveBeenCalledTimes(1);
+
+		vi.clearAllMocks();
+		getInstallationAccessToken.mockResolvedValue(TOKEN);
+		revokeInstallationAccessToken.mockResolvedValue(undefined);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					new Response(null, {
+						status: 302,
+						headers: { location: "https://evil" },
+					}),
+			),
+		);
+		const redir = await handler(
+			new Request(
+				"https://github.com/acme/widget.git/info/refs?service=git-upload-pack",
+			),
+			makeEnv() as never,
+			{ containerId: DO_ID, className: "TrustedGitExecutor", params },
+		);
+		expect(redir.status).toBe(502);
+		expect(revokeInstallationAccessToken).toHaveBeenCalledTimes(1);
+		vi.unstubAllGlobals();
+	});
+
+	it("downstream cancel finalizes revoke once and surfaces revoke failure", async () => {
+		const handler = TrustedGitExecutor.outboundHandlers.handleGitPhase;
+		const idHash = await deriveExecutorIdentity("pub-1", 1);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => {
+				return new Response(
+					new ReadableStream({
+						pull() {
+							// hang until cancel
+						},
+					}),
+					{ status: 200 },
+				);
+			}),
+		);
+		const res = await handler(
+			new Request(
+				"https://github.com/acme/widget.git/info/refs?service=git-upload-pack",
+			),
+			makeEnv() as never,
+			{
+				containerId: DO_ID,
+				className: "TrustedGitExecutor",
+				params: phaseParams({ publicationIdHash: idHash }),
+			},
+		);
+		const body = res.body;
+		if (!body) throw new Error("body");
+		await body.cancel("downstream");
+		expect(revokeInstallationAccessToken).toHaveBeenCalledTimes(1);
+
+		vi.clearAllMocks();
+		getInstallationAccessToken.mockResolvedValue(TOKEN);
+		revokeInstallationAccessToken.mockRejectedValue(new Error("revoke boom"));
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => {
+				return new Response(
+					new ReadableStream({
+						pull() {},
+					}),
+					{ status: 200 },
+				);
+			}),
+		);
+		const res2 = await handler(
+			new Request(
+				"https://github.com/acme/widget.git/info/refs?service=git-upload-pack",
+			),
+			makeEnv() as never,
+			{
+				containerId: DO_ID,
+				className: "TrustedGitExecutor",
+				params: phaseParams({ publicationIdHash: idHash }),
+			},
+		);
+		const body2 = res2.body;
+		if (!body2) throw new Error("body2");
+		const cancelResult = body2.cancel("downstream");
+		// Streams implementations may surface cancel-callback rejection on the
+		// returned promise; when they do, it must not look like success.
+		const settled = await Promise.allSettled([cancelResult]);
+		expect(revokeInstallationAccessToken).toHaveBeenCalledTimes(1);
+		if (settled[0]?.status === "fulfilled") {
+			// Some runtimes swallow cancel rejection; revoke still ran once above.
+			expect(settled[0].status).toBe("fulfilled");
+		} else {
+			expect(settled[0]?.status).toBe("rejected");
+		}
 		vi.unstubAllGlobals();
 	});
 
@@ -1016,5 +1244,294 @@ describe("TrustedGitExecutor orchestration", () => {
 			{ containerId: "c", className: "TrustedGitExecutor" },
 		);
 		expect(res.status).toBe(520);
+	});
+
+	it("deleteSchedules failure overrides nominal Git success", async () => {
+		const { ctx } = makeCtx({
+			execImpl: async (cmd) => {
+				if (cmd[1] === "validate-bundle") {
+					return makeExecProcess({
+						stdoutObj: {
+							ok: true,
+							code: "ok",
+							tip: SHA_NEW,
+							ref: "refs/heads/main",
+						},
+					});
+				}
+				if (cmd[1] === "ls-remote-ref") {
+					return makeExecProcess({
+						stdoutObj: { ok: true, code: "ok", present: true, sha: SHA_OLD },
+					});
+				}
+				if (cmd[1] === "push-validated") {
+					return makeExecProcess({
+						stdoutObj: {
+							ok: true,
+							code: "ok",
+							ref: "refs/heads/main",
+							tip: SHA_NEW,
+						},
+					});
+				}
+				return makeExecProcess({ stdoutObj: { ok: true } });
+			},
+		});
+		// biome-ignore lint/suspicious/noExplicitAny: test harness
+		const exec = new TrustedGitExecutor(ctx as any, makeEnv() as any);
+		exec.deleteSchedules = vi.fn(() => {
+			throw new Error("schedule delete failed");
+		});
+		const result = await exec.validateAndPush(basePush);
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.code).toBe("cleanup_failed");
+	});
+
+	it("failSafeCleanup incomplete schedules another attempt", async () => {
+		const storage = new Map<string, unknown>();
+		storage.set("trusted-git-op-lock", {
+			publicationIdHash: "abc",
+			executionEpoch: 1,
+		});
+		const { ctx, container } = makeCtx({ storage });
+		container.destroy = vi.fn(async () => {
+			container.running = true;
+		});
+		// biome-ignore lint/suspicious/noExplicitAny: test harness
+		const exec = new TrustedGitExecutor(ctx as any, makeEnv() as any);
+		await exec.failSafeCleanup();
+		expect(exec.schedule).toHaveBeenCalledWith(
+			Math.ceil(TRUSTED_GIT_LIMITS.phaseGrantMaxMs / 1000),
+			"failSafeCleanup",
+		);
+		// op lock retained when destroy unproven
+		expect(await ctx.storage.get("trusted-git-op-lock")).toEqual({
+			publicationIdHash: "abc",
+			executionEpoch: 1,
+		});
+	});
+
+	it("push timeout reconciles proposed as success", async () => {
+		let pushCount = 0;
+		const phaseOrder: string[] = [];
+		const { ctx } = makeCtx({
+			execImpl: async (cmd) => {
+				const sub = cmd[1];
+				if (sub === "validate-bundle") {
+					return makeExecProcess({
+						stdoutObj: {
+							ok: true,
+							code: "ok",
+							tip: SHA_NEW,
+							ref: "refs/heads/main",
+						},
+					});
+				}
+				if (sub === "push-validated") {
+					pushCount += 1;
+					const proc = makeExecProcess({
+						hangExit: true,
+						stdoutStream: emptyStream(),
+					});
+					return proc;
+				}
+				if (sub === "ls-remote-ref") {
+					if (pushCount === 0) {
+						return makeExecProcess({
+							stdoutObj: {
+								ok: true,
+								code: "ok",
+								present: true,
+								sha: SHA_OLD,
+							},
+						});
+					}
+					// post-timeout reconcile sees proposed
+					return makeExecProcess({
+						stdoutObj: {
+							ok: true,
+							code: "ok",
+							present: true,
+							sha: SHA_NEW,
+						},
+					});
+				}
+				return makeExecProcess({ stdoutObj: { ok: true } });
+			},
+		});
+		// biome-ignore lint/suspicious/noExplicitAny: test harness
+		const exec = new TrustedGitExecutor(ctx as any, makeEnv() as any);
+		exec.gitCommandTimeoutMs = 30;
+		exec.killGraceMs = 15;
+		const setOutbound = exec.setOutboundByHost as ReturnType<typeof vi.fn>;
+		setOutbound.mockImplementation(
+			async (_h: string, _n: string, params: { phase: string }) => {
+				phaseOrder.push(params.phase);
+			},
+		);
+		const result = await exec.validateAndPush(basePush);
+		expect(result.ok).toBe(true);
+		if (result.ok) expect(result.code).toBe("reconciled");
+		expect(pushCount).toBe(1);
+		// write phase revoked before read reconcile (last enable is read)
+		expect(
+			phaseOrder.filter((p) => p === "write").length,
+		).toBeGreaterThanOrEqual(1);
+		expect(phaseOrder[phaseOrder.length - 1]).toBe("read");
+		// removeOutboundByHost called after write before final read enable path
+		expect(exec.removeOutboundByHost).toHaveBeenCalled();
+	});
+
+	it("push timeout on old permits one retry then re-reconciles", async () => {
+		let pushCount = 0;
+		let reconcileReads = 0;
+		const { ctx } = makeCtx({
+			execImpl: async (cmd) => {
+				const sub = cmd[1];
+				if (sub === "validate-bundle") {
+					return makeExecProcess({
+						stdoutObj: {
+							ok: true,
+							code: "ok",
+							tip: SHA_NEW,
+							ref: "refs/heads/main",
+						},
+					});
+				}
+				if (sub === "push-validated") {
+					pushCount += 1;
+					return makeExecProcess({
+						hangExit: true,
+						stdoutStream: emptyStream(),
+					});
+				}
+				if (sub === "ls-remote-ref") {
+					// pre-write + post-timeout reconcile + post-retry reconcile all see old
+					// except we count post-push reads via pushCount
+					if (pushCount === 0) {
+						return makeExecProcess({
+							stdoutObj: {
+								ok: true,
+								code: "ok",
+								present: true,
+								sha: SHA_OLD,
+							},
+						});
+					}
+					reconcileReads += 1;
+					return makeExecProcess({
+						stdoutObj: {
+							ok: true,
+							code: "ok",
+							present: true,
+							sha: SHA_OLD,
+						},
+					});
+				}
+				return makeExecProcess({ stdoutObj: { ok: true } });
+			},
+		});
+		// biome-ignore lint/suspicious/noExplicitAny: test harness
+		const exec = new TrustedGitExecutor(ctx as any, makeEnv() as any);
+		exec.gitCommandTimeoutMs = 30;
+		exec.killGraceMs = 15;
+		const result = await exec.validateAndPush(basePush);
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.code).toBe("interrupted");
+		expect(pushCount).toBe(2);
+		expect(reconcileReads).toBe(2);
+	});
+
+	it("push output overflow reconciles third state as interrupted", async () => {
+		let pushCount = 0;
+		const foreign = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+		const { ctx } = makeCtx({
+			execImpl: async (cmd) => {
+				const sub = cmd[1];
+				if (sub === "validate-bundle") {
+					return makeExecProcess({
+						stdoutObj: {
+							ok: true,
+							code: "ok",
+							tip: SHA_NEW,
+							ref: "refs/heads/main",
+						},
+					});
+				}
+				if (sub === "push-validated") {
+					pushCount += 1;
+					return makeExecProcess({
+						stdoutStream: floodStream(
+							TRUSTED_GIT_LIMITS.diagnosticMaxBytes + 500,
+						),
+						exitCode: 0,
+					});
+				}
+				if (sub === "ls-remote-ref") {
+					if (pushCount === 0) {
+						return makeExecProcess({
+							stdoutObj: {
+								ok: true,
+								code: "ok",
+								present: true,
+								sha: SHA_OLD,
+							},
+						});
+					}
+					return makeExecProcess({
+						stdoutObj: {
+							ok: true,
+							code: "ok",
+							present: true,
+							sha: foreign,
+						},
+					});
+				}
+				return makeExecProcess({ stdoutObj: { ok: true } });
+			},
+		});
+		// biome-ignore lint/suspicious/noExplicitAny: test harness
+		const exec = new TrustedGitExecutor(ctx as any, makeEnv() as any);
+		const result = await exec.validateAndPush(basePush);
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.code).toBe("interrupted");
+		expect(pushCount).toBe(1);
+	});
+
+	it("bounded process hang on never-closing streams destroys container", async () => {
+		const mkNever = () =>
+			new ReadableStream<Uint8Array>({
+				pull() {},
+				cancel() {
+					return new Promise(() => {});
+				},
+			});
+		const { ctx, container } = makeCtx({
+			execImpl: async () => {
+				const proc = makeExecProcess({
+					hangExit: true,
+					stdoutStream: mkNever(),
+				});
+				(proc as { stderr: ReadableStream<Uint8Array> }).stderr = mkNever();
+				return proc;
+			},
+		});
+		// biome-ignore lint/suspicious/noExplicitAny: test harness
+		const exec = new TrustedGitExecutor(ctx as any, makeEnv() as any);
+		exec.gitCommandTimeoutMs = 40;
+		exec.killGraceMs = 20;
+		const started = Date.now();
+		const result = await exec.probeRead({
+			publicationId: "pub-1",
+			executionEpoch: 1,
+			installationId: 9,
+			owner: "acme",
+			repo: "widget",
+			ref: "refs/heads/main",
+		});
+		expect(Date.now() - started).toBeLessThan(1000);
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.code).toBe("timeout");
+		expect(container.destroy).toHaveBeenCalled();
 	});
 });

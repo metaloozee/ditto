@@ -26,6 +26,8 @@ export const TRUSTED_GIT_LIMITS = {
 	resultMaxBytes: 16 * 1024,
 	userAgentMaxBytes: 256,
 	containerIdMaxBytes: 128,
+	acceptMaxBytes: 256,
+	gitProtocolMaxBytes: 64,
 } as const;
 
 export const TRUSTED_GIT_GITHUB_HOST = "github.com";
@@ -488,6 +490,24 @@ export function assertExactGithubAuthority(rawUrl: string): void {
 	}
 }
 
+/** Exact comma-separated Accept values only — no parameters, no q-values. */
+export function parseExactAcceptHeader(accept: string): string[] {
+	if (utf8Bytes(accept) > TRUSTED_GIT_LIMITS.acceptMaxBytes) {
+		throw new TrustedGitPolicyError("denied", "accept size");
+	}
+	const parts = accept.split(",").map((p) => p.trim().toLowerCase());
+	if (parts.length === 0) {
+		throw new TrustedGitPolicyError("denied", "accept");
+	}
+	for (const p of parts) {
+		// Reject empty segments and any parameter form (e.g. */*;secret=x).
+		if (!p || p.includes(";") || !ALLOWED_ACCEPT.has(p)) {
+			throw new TrustedGitPolicyError("denied", "accept");
+		}
+	}
+	return parts;
+}
+
 function validateForwardedHeaders(
 	request: Request,
 	kind: SmartHttpRequestKind,
@@ -496,15 +516,7 @@ function validateForwardedHeaders(
 	// buildUpstream drops others. Here we reject disallowed values on allowlist.
 	const accept = request.headers.get("accept");
 	if (accept !== null) {
-		// Allow comma-separated subset of approved values only.
-		const parts = accept.split(",").map((p) => p.trim().toLowerCase());
-		for (const p of parts) {
-			// Strip optional ;q=
-			const base = (p.split(";")[0] ?? "").trim();
-			if (!base || !ALLOWED_ACCEPT.has(base)) {
-				throw new TrustedGitPolicyError("denied", "accept");
-			}
-		}
+		parseExactAcceptHeader(accept);
 	}
 
 	const ctype = request.headers.get("content-type");
@@ -523,6 +535,9 @@ function validateForwardedHeaders(
 
 	const gitProtocol = request.headers.get("git-protocol");
 	if (gitProtocol !== null) {
+		if (utf8Bytes(gitProtocol) > TRUSTED_GIT_LIMITS.gitProtocolMaxBytes) {
+			throw new TrustedGitPolicyError("denied", "git-protocol size");
+		}
 		// Exact version=2 only (optional header).
 		if (gitProtocol !== "version=2") {
 			throw new TrustedGitPolicyError("denied", "git-protocol");
@@ -732,16 +747,14 @@ export function buildUpstreamGitRequest(
 			}
 		}
 		if (lower === "accept") {
-			const parts = value.split(",").map((p) => p.trim().toLowerCase());
-			let ok = true;
-			for (const p of parts) {
-				const base = (p.split(";")[0] ?? "").trim();
-				if (!ALLOWED_ACCEPT.has(base)) {
-					ok = false;
-					break;
-				}
+			try {
+				// Forward only the exact validated form (no parameters).
+				const parts = parseExactAcceptHeader(value);
+				headers.set("accept", parts.join(", "));
+			} catch {
+				continue;
 			}
-			if (!ok) continue;
+			continue;
 		}
 		if (lower === "content-type") {
 			if (classified.kind === "read-rpc" && value !== READ_RPC_CONTENT_TYPE) {
@@ -757,8 +770,13 @@ export function buildUpstreamGitRequest(
 				continue;
 			}
 		}
-		if (lower === "git-protocol" && value !== "version=2") {
-			continue;
+		if (lower === "git-protocol") {
+			if (
+				utf8Bytes(value) > TRUSTED_GIT_LIMITS.gitProtocolMaxBytes ||
+				value !== "version=2"
+			) {
+				continue;
+			}
 		}
 		headers.set(name, value);
 	}
@@ -806,16 +824,10 @@ export function boundReadableStream(
 ): ReadableStream<Uint8Array> {
 	let seen = 0;
 	let finalized = false;
-	let finalizeError: unknown;
 	const runFinalizer = async () => {
 		if (finalized) return;
 		finalized = true;
-		try {
-			await finalizer();
-		} catch (err) {
-			finalizeError = err;
-			throw err;
-		}
+		await finalizer();
 	};
 
 	const reader = source.getReader();
@@ -865,18 +877,11 @@ export function boundReadableStream(
 			}
 		},
 		async cancel(reason) {
-			try {
-				await reader.cancel(reason);
-			} finally {
-				try {
-					await runFinalizer();
-				} catch {
-					// cancel path still finalizes once
-				}
-			}
-			if (finalizeError) {
-				// Surface finalize failure to cancel callers when possible.
-			}
+			// Never await source cancel indefinitely — still finalize exactly once.
+			void reader.cancel(reason);
+			// Rethrow revoke failure so callers of cancel() observe it when the
+			// Streams implementation propagates cancel-callback rejection.
+			await runFinalizer();
 		},
 	});
 }
@@ -1162,6 +1167,10 @@ export function reconcileWriteRef(input: {
 export async function drainProcessStream(
 	stream: ReadableStream<Uint8Array> | null,
 	maxBytes: number,
+	options?: {
+		signal?: AbortSignal;
+		onOverflow?: () => void;
+	},
 ): Promise<{ text: string; overflow: boolean; bytes: number }> {
 	if (!stream) {
 		return { text: "", overflow: false, bytes: 0 };
@@ -1170,20 +1179,58 @@ export async function drainProcessStream(
 	const chunks: Uint8Array[] = [];
 	let total = 0;
 	let overflow = false;
-	for (;;) {
-		const { done, value } = await reader.read();
-		if (done) break;
-		total += value.byteLength;
-		if (total > maxBytes) {
-			overflow = true;
-			try {
-				await reader.cancel("overflow");
-			} catch {
-				// ignore
-			}
-			break;
+	const signal = options?.signal;
+
+	const readOnce = async (): Promise<ReadableStreamReadResult<Uint8Array>> => {
+		if (signal?.aborted) {
+			return { done: true, value: undefined };
 		}
-		chunks.push(value);
+		if (!signal) {
+			return reader.read();
+		}
+		return new Promise<ReadableStreamReadResult<Uint8Array>>(
+			(resolve, reject) => {
+				if (signal.aborted) {
+					resolve({ done: true, value: undefined });
+					return;
+				}
+				const onAbort = () => {
+					resolve({ done: true, value: undefined });
+				};
+				signal.addEventListener("abort", onAbort, { once: true });
+				reader.read().then(
+					(result) => {
+						signal.removeEventListener("abort", onAbort);
+						resolve(result);
+					},
+					(err) => {
+						signal.removeEventListener("abort", onAbort);
+						reject(err);
+					},
+				);
+			},
+		);
+	};
+
+	try {
+		for (;;) {
+			if (signal?.aborted) break;
+			const { done, value } = await readOnce();
+			if (done || !value) break;
+			total += value.byteLength;
+			if (total > maxBytes) {
+				overflow = true;
+				options?.onOverflow?.();
+				// Do not await cancel — source cancel hooks may hang forever.
+				void reader.cancel("overflow");
+				break;
+			}
+			chunks.push(value);
+		}
+	} catch {
+		// stream error or cancelled reader — treat as end
+	} finally {
+		void reader.cancel("drain-end");
 	}
 	const keep = overflow ? maxBytes : total;
 	const merged = new Uint8Array(Math.min(keep, total));
@@ -1221,8 +1268,9 @@ export type BoundedProcessResult = {
 };
 
 /**
- * One bounded runner for validate/ls/push: concurrent drains, byte overflow
- * failure, real wall-clock race, kill without indefinite wait.
+ * One bounded runner for validate/ls/push: concurrent abortable drains, byte
+ * overflow failure with immediate kill, real wall-clock race, and hard return
+ * within timeout+killGrace even when streams/exitCode never settle.
  * Never calls output() after stream consumption.
  */
 export async function runBoundedProcess(
@@ -1231,7 +1279,7 @@ export async function runBoundedProcess(
 		timeoutMs: number;
 		maxStdoutBytes: number;
 		maxStderrBytes: number;
-		/** Grace after kill before treating exit as hung. */
+		/** Grace after kill before treating exit/streams as hung. */
 		killGraceMs?: number;
 	},
 ): Promise<BoundedProcessResult> {
@@ -1239,6 +1287,7 @@ export async function runBoundedProcess(
 	let timedOut = false;
 	let killed = false;
 	let overflow = false;
+	const abort = new AbortController();
 
 	const kill = () => {
 		killed = true;
@@ -1247,6 +1296,13 @@ export async function runBoundedProcess(
 		} catch {
 			// ignore
 		}
+		if (!abort.signal.aborted) {
+			try {
+				abort.abort();
+			} catch {
+				// ignore
+			}
+		}
 	};
 
 	const timer = setTimeout(() => {
@@ -1254,40 +1310,103 @@ export async function runBoundedProcess(
 		kill();
 	}, options.timeoutMs);
 
-	const exitRace = Promise.race([
-		proc.exitCode.then((code) => ({ kind: "exit" as const, code })),
-		new Promise<{ kind: "hang" }>((resolve) => {
-			// Resolved only after timeout+grace if exitCode never settles.
-			const watch = () => {
-				if (!timedOut && !killed) {
-					setTimeout(watch, 50);
-					return;
-				}
-				setTimeout(() => resolve({ kind: "hang" }), killGraceMs);
-			};
-			setTimeout(watch, options.timeoutMs);
+	const onOverflow = () => {
+		overflow = true;
+		// Kill immediately on flood — do not wait for exit or peer drain.
+		kill();
+	};
+
+	const drainsPromise = Promise.all([
+		drainProcessStream(proc.stdout, options.maxStdoutBytes, {
+			signal: abort.signal,
+			onOverflow,
+		}),
+		drainProcessStream(proc.stderr, options.maxStderrBytes, {
+			signal: abort.signal,
+			onOverflow,
 		}),
 	]);
 
+	const exitPromise = Promise.resolve(proc.exitCode).then(
+		(code) => ({ kind: "exit" as const, code }),
+		() => ({ kind: "exit" as const, code: 1 }),
+	);
+
+	const groupPromise = Promise.all([drainsPromise, exitPromise]).then(
+		([drains, exit]) => ({ kind: "group" as const, drains, exit }),
+	);
+
+	// After stop (timeout/overflow/kill), allow only killGrace for hang recovery.
+	const gracePromise = new Promise<{ kind: "grace" }>((resolve) => {
+		const poll = () => {
+			if (timedOut || overflow || killed) {
+				setTimeout(() => resolve({ kind: "grace" }), killGraceMs);
+				return;
+			}
+			setTimeout(poll, 5);
+		};
+		poll();
+	});
+
+	// Absolute ceiling from start so a stuck poll cannot hang forever.
+	const absolutePromise = new Promise<{ kind: "absolute" }>((resolve) => {
+		setTimeout(
+			() => resolve({ kind: "absolute" }),
+			options.timeoutMs + killGraceMs + 25,
+		);
+	});
+
 	try {
-		const [stdoutDrain, stderrDrain, exit] = await Promise.all([
-			drainProcessStream(proc.stdout, options.maxStdoutBytes),
-			drainProcessStream(proc.stderr, options.maxStderrBytes),
-			exitRace,
+		const winner = await Promise.race([
+			groupPromise,
+			gracePromise,
+			absolutePromise,
 		]);
-		overflow = stdoutDrain.overflow || stderrDrain.overflow;
-		if (overflow && !killed) {
-			kill();
+
+		if (winner.kind === "group") {
+			const [stdoutDrain, stderrDrain] = winner.drains;
+			overflow = overflow || stdoutDrain.overflow || stderrDrain.overflow;
+			if ((overflow || timedOut) && !killed) {
+				kill();
+			}
+			const exitCode = timedOut
+				? 124
+				: winner.exit.kind === "exit"
+					? winner.exit.code
+					: 1;
+			return {
+				exitCode,
+				stdout: stdoutDrain.text,
+				stderr: stderrDrain.text,
+				timedOut,
+				overflow,
+				killed,
+			};
 		}
-		const exitCode =
-			exit.kind === "exit" ? exit.code : timedOut || killed ? 124 : 1;
+
+		// Grace/absolute: streams or exit never settled. Fail closed immediately.
+		kill();
+		let stdoutText = "";
+		let stderrText = "";
+		const snap = await Promise.race([
+			drainsPromise.then((d) => ({ ok: true as const, d })),
+			Promise.resolve({ ok: false as const }),
+		]);
+		if (snap.ok) {
+			stdoutText = snap.d[0]?.text ?? "";
+			stderrText = snap.d[1]?.text ?? "";
+			overflow =
+				overflow ||
+				Boolean(snap.d[0]?.overflow) ||
+				Boolean(snap.d[1]?.overflow);
+		}
 		return {
-			exitCode,
-			stdout: stdoutDrain.text,
-			stderr: stderrDrain.text,
-			timedOut,
+			exitCode: 124,
+			stdout: stdoutText,
+			stderr: stderrText,
+			timedOut: timedOut || winner.kind === "absolute",
 			overflow,
-			killed,
+			killed: true,
 		};
 	} finally {
 		clearTimeout(timer);

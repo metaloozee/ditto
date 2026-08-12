@@ -220,7 +220,43 @@ test_image() {
 	[[ "$(json_code "$out")" == "lfs" ]] || die "lfs code: $out"
 	pass "lfs pointer rejection"
 
+	# Multi-commit path churn counted across history (not net tip diff).
+	# Three commits each add a distinct file then the last deletes the first two
+	# so net tip diff is tiny; with a lowered path-record limit this must fail.
+	churn="$WORKDIR/churn"
+	mkdir -p "$churn"
+	git -c init.defaultBranch=main init -q "$churn"
+	git -C "$churn" config user.email "plan047@example.com"
+	git -C "$churn" config user.name "Plan 047"
+	git -C "$churn" config commit.gpgsign false
+	echo a >"$churn/a.txt"
+	git -C "$churn" add a.txt && git -C "$churn" commit -q -m "a"
+	echo b >"$churn/b.txt"
+	git -C "$churn" add b.txt && git -C "$churn" commit -q -m "b"
+	echo c >"$churn/c.txt"
+	rm -f "$churn/a.txt" "$churn/b.txt"
+	git -C "$churn" add -A && git -C "$churn" commit -q -m "c-net-small"
+	CHURN_TIP="$(git -C "$churn" rev-parse HEAD)"
+	git -C "$churn" bundle create "$WORKDIR/churn.bundle" refs/heads/main
+	csz=$(wc -c <"$WORKDIR/churn.bundle" | tr -d ' ')
+	cdig=$(sha256sum "$WORKDIR/churn.bundle" | awk '{print $1}')
+	set +e
+	out="$(docker run --rm -i \
+		--user 65532:65532 \
+		--read-only \
+		--tmpfs /var/lib/ditto-git-executor:rw,size=256m,mode=1777 \
+		--network none \
+		-e DITTO_TEST_MAX_PATH_RECORDS=2 \
+		--entrypoint /usr/local/bin/ditto-git-executor \
+		"$IMAGE" validate-bundle "$cdig" "$csz" "refs/heads/main" "$CHURN_TIP" "-" <"$WORKDIR/churn.bundle" 2>/dev/null)"
+	rc=$?
+	set -e
+	[[ "$rc" -ne 0 ]] || die "path churn under low limit should fail: $out"
+	[[ "$(json_code "$out")" == "path_limit" ]] || die "expected path_limit: $out"
+	pass "multi-commit path churn counted (test limit override)"
+
 	CANARY='ghs_CANARYTOKEN_plan047_do_not_leak_0123456789abcdef'
+
 	out="$(printf '%s' "$CANARY" | run_helper scan-canary)"
 	json_ok "$out" || die "canary scan failed: $out"
 	printf '%s' "$out" | grep -F -q "$CANARY" && die "canary echoed on stdout"
@@ -296,13 +332,36 @@ CANARY = open(os.environ["CANARY_FILE"], "r", encoding="utf-8").read().strip()
 ALLOWED_OWNER = os.environ.get("ALLOWED_OWNER", "acme")
 ALLOWED_REPO = os.environ.get("ALLOWED_REPO", "widget")
 PHASE = os.environ.get("PHASE", "read")
+PHASE_FILE = os.environ.get("PHASE_FILE", "")
+EXPIRY_AT_MS = os.environ.get("EXPIRY_AT_MS", "")
 LOG_PATH = os.environ.get("REQ_LOG", "/tmp/req.log")
 CERT = os.environ["TLS_CERT"]
 KEY = os.environ["TLS_KEY"]
 
-def log_req(method: str, path: str, query: str, ctype: str) -> None:
+def current_phase() -> str:
+    if PHASE_FILE and os.path.isfile(PHASE_FILE):
+        try:
+            with open(PHASE_FILE, "r", encoding="utf-8") as f:
+                val = f.read().strip()
+            if val:
+                return val
+        except OSError:
+            pass
+    return PHASE
+
+def is_expired() -> bool:
+    if not EXPIRY_AT_MS:
+        return False
+    try:
+        exp = int(EXPIRY_AT_MS)
+    except ValueError:
+        return True
+    now_ms = int(__import__("time").time() * 1000)
+    return now_ms > exp
+
+def log_req(method: str, path: str, query: str, ctype: str, phase: str) -> None:
     with open(LOG_PATH, "a", encoding="utf-8") as f:
-        f.write(f"{method} {path}?{query} ctype={ctype} phase={PHASE}\n")
+        f.write(f"{method} {path}?{query} ctype={ctype} phase={phase}\n")
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -323,14 +382,18 @@ class Handler(BaseHTTPRequestHandler):
             return None
         return m.group(1), m.group(2), m.group(3) or ""
 
-    def _phase_allows(self, service: str) -> bool:
-        if PHASE == "deny":
+    def _phase_allows(self, service: str, phase: str) -> bool:
+        if phase == "deny":
             return False
-        if PHASE == "read":
+        if phase == "redirect":
+            return True  # handled before service checks
+        if phase == "expired":
+            return False
+        if phase == "read":
             return service == "git-upload-pack"
-        if PHASE == "write":
+        if phase == "write":
             return service == "git-receive-pack"
-        if PHASE == "both":
+        if phase == "both":
             return service in ("git-upload-pack", "git-receive-pack")
         return False
 
@@ -341,6 +404,15 @@ class Handler(BaseHTTPRequestHandler):
         self._handle(True)
 
     def _handle(self, is_post: bool) -> None:
+        phase = current_phase()
+        if is_expired() or phase == "expired":
+            return self._deny(403, b"expired")
+        if phase == "redirect":
+            self.send_response(302)
+            self.send_header("Location", "https://evil.example/steal")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         parsed = self._match()
         if not parsed:
             return self._deny(404, b"not found")
@@ -349,7 +421,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._deny(404, b"repo")
         qs = self.path.split("?", 1)[1] if "?" in self.path else ""
         ctype = self.headers.get("Content-Type", "")
-        log_req(self.command, f"/{owner}/{repo}.git{sub}", qs, ctype)
+        log_req(self.command, f"/{owner}/{repo}.git{sub}", qs, ctype, phase)
 
         if self.headers.get("Authorization") or self.headers.get("Cookie"):
             return self._deny(400, b"inbound auth")
@@ -361,19 +433,19 @@ class Handler(BaseHTTPRequestHandler):
             if qs not in ("service=git-upload-pack", "service=git-receive-pack"):
                 return self._deny(403, b"query")
             service = qs.split("=", 1)[1]
-            if not self._phase_allows(service):
+            if not self._phase_allows(service, phase):
                 return self._deny(403, b"phase")
         elif sub == "/git-upload-pack":
             if not is_post or ctype != "application/x-git-upload-pack-request":
                 return self._deny(403, b"shape")
             service = "git-upload-pack"
-            if not self._phase_allows(service):
+            if not self._phase_allows(service, phase):
                 return self._deny(403, b"phase")
         elif sub == "/git-receive-pack":
             if not is_post or ctype != "application/x-git-receive-pack-request":
                 return self._deny(403, b"shape")
             service = "git-receive-pack"
-            if not self._phase_allows(service):
+            if not self._phase_allows(service, phase):
                 return self._deny(403, b"phase")
         else:
             return self._deny(403, b"path")
@@ -470,6 +542,14 @@ PY
 		docker rm -f "$cid" >/dev/null
 	fi
 
+	# Runtime-switchable phase control file (same proxy process).
+	mkdir -p "$WORKDIR/control"
+	printf '%s\n' "$phase" >"$WORKDIR/control/phase"
+	chmod 666 "$WORKDIR/control/phase" 2>/dev/null || true
+	expiry_args=()
+	if [[ -n "${PROXY_EXPIRY_AT_MS:-}" ]]; then
+		expiry_args+=(-e "EXPIRY_AT_MS=${PROXY_EXPIRY_AT_MS}")
+	fi
 	PROXY_CID="$(docker run -d --rm \
 		--name "ditto047proxy_$RANDOM" \
 		--network "$NET_NAME" \
@@ -478,6 +558,8 @@ PY
 		-e CANARY_FILE=/secret/canary.token \
 		-e REQ_LOG=/tmp/req.log \
 		-e PHASE="$phase" \
+		-e PHASE_FILE=/control/phase \
+		"${expiry_args[@]}" \
 		-e ALLOWED_OWNER=acme \
 		-e ALLOWED_REPO=widget \
 		-e PORT=443 \
@@ -488,6 +570,7 @@ PY
 		-v "$WORKDIR/canary.token:/secret/canary.token:ro" \
 		-v "$WORKDIR/certs/github.crt:/certs/github.crt:ro" \
 		-v "$WORKDIR/certs/github.key:/certs/github.key:ro" \
+		-v "$WORKDIR/control:/control" \
 		ditto047-proxy-py:local \
 		python /proxy.py)"
 
@@ -533,10 +616,26 @@ start_executor() {
 	docker inspect -f '{{.State.Running}}' "$EXEC_CID" | grep -q true || die "executor not running"
 }
 
+set_proxy_phase() {
+	local p="$1"
+	printf '%s\n' "$p" >"$WORKDIR/control/phase"
+}
+
+assert_no_canary() {
+	local where="$1"
+	local data="$2"
+	# Do not print the canary value.
+	if printf '%s' "$data" | grep -F -q -- "$CANARY_TOKEN"; then
+		die "canary present in $where"
+	fi
+}
+
+
 test_proxy() {
 	require_image
 	make_repos "$WORKDIR"
 	generate_ca_and_cert
+	CANARY_TOKEN='ghs_CANARYTOKEN_plan047_proxy_only_0123456789abcdef'
 
 	# --- Read phase via actual ls-remote-ref ---
 	start_https_proxy read
@@ -545,41 +644,52 @@ test_proxy() {
 	out="$(exec_helper ls-remote-ref acme widget refs/heads/main)"
 	json_ok "$out" || die "ls-remote-ref failed: $out"
 	echo "$out" | grep -q "$OLD_SHA\|$TIP_SHA" || die "unexpected ls-remote sha: $out"
-	# present true with exact sha
 	echo "$out" | grep -q '"present":true' || die "expected present: $out"
 	pass "helper ls-remote-ref over HTTPS github.com"
 
-	# Request shapes: only upload-pack discovery/rpc
 	req_log="$(docker exec "$PROXY_CID" cat /tmp/req.log 2>/dev/null || true)"
 	echo "$req_log" | grep -q 'info/refs?service=git-upload-pack' || die "missing read discovery: $req_log"
 	echo "$req_log" | grep -q 'git-receive-pack' && die "write leaked into read phase: $req_log"
+	assert_no_canary "proxy request log" "$req_log"
 	pass "exact read request shapes"
 
 	# Credential canary scan of THE SAME executor container
-	CANARY_TOKEN="$(cat "$WORKDIR/canary.token")"
 	scan_out="$(printf '%s' "$CANARY_TOKEN" | exec_helper scan-canary)"
-	json_ok "$scan_out" || die "canary present in executor: $scan_out"
-	printf '%s' "$scan_out" | grep -F -q "$CANARY_TOKEN" && die "canary echoed"
-	# Also prove not in argv/env/files via host-side docker inspect (no values of secrets)
+	json_ok "$scan_out" || die "canary present in executor"
+	assert_no_canary "scan-canary stdout" "$scan_out"
 	exec_env="$(docker inspect -f '{{json .Config.Env}}' "$EXEC_CID")"
-	printf '%s' "$exec_env" | grep -F -q "$CANARY_TOKEN" && die "canary in executor env"
+	assert_no_canary "executor env" "$exec_env"
+	exec_args="$(docker inspect -f '{{json .Args}}{{json .Config.Cmd}}{{json .Config.Entrypoint}}' "$EXEC_CID")"
+	assert_no_canary "executor argv" "$exec_args"
 	pass "credential absent from same executor argv/env/files/output"
 
-	# Phase deny / expiry model
-	start_https_proxy deny
-	# Point executor at new proxy IP
+	# Absolute expiry: proxy denies after EXPIRY_AT_MS
+	PROXY_EXPIRY_AT_MS="$(( $(date +%s%3N) - 1000 ))"
+	start_https_proxy read
 	docker rm -f "$EXEC_CID" >/dev/null 2>&1 || true
 	EXEC_CID=""
 	start_executor
 	set +e
-	den_out="$(exec_helper ls-remote-ref acme widget refs/heads/main 2>/dev/null)"
-	den_rc=$?
+	exp_out="$(exec_helper ls-remote-ref acme widget refs/heads/main 2>/dev/null)"
+	exp_rc=$?
 	set -e
-	[[ "$den_rc" -ne 0 ]] || die "phase deny should fail: $den_out"
-	pass "phase removal/deny"
+	[[ "$exp_rc" -ne 0 ]] || die "expired phase should fail: $exp_out"
+	pass "absolute expiry denies ls-remote-ref"
+	unset PROXY_EXPIRY_AT_MS
 
-	# Redirect denial is enforced in Worker policy; local proxy does not redirect.
-	# Prove helper never disables TLS: without CA mount, HTTPS must fail.
+	# Redirect mode: fixed helper must fail (does not silently follow off-host)
+	start_https_proxy redirect
+	docker rm -f "$EXEC_CID" >/dev/null 2>&1 || true
+	EXEC_CID=""
+	start_executor
+	set +e
+	redir_out="$(exec_helper ls-remote-ref acme widget refs/heads/main 2>/dev/null)"
+	redir_rc=$?
+	set -e
+	[[ "$redir_rc" -ne 0 ]] || die "redirect should fail ls-remote-ref: $redir_out"
+	pass "redirect denial via fixed ls-remote-ref"
+
+	# TLS required: without CA mount, HTTPS must fail
 	start_https_proxy read
 	no_ca_cid="$(docker run -d --rm \
 		--user 65532:65532 \
@@ -595,14 +705,13 @@ test_proxy() {
 	[[ "$no_ca_rc" -ne 0 ]] || die "missing CF CA should fail TLS: $no_ca_out"
 	pass "TLS required; synthetic CA needed (never disable TLS)"
 
-	# --- Write path: validate-bundle + push-validated on SAME executor ---
-	# Allow both read and write services so ls-remote during tests and push work.
+	# --- Same-container write: validate, deny push, switch phase, retry push ---
 	start_https_proxy both
 	docker rm -f "$EXEC_CID" >/dev/null 2>&1 || true
 	EXEC_CID=""
 	start_executor
+	SAME_EXEC="$EXEC_CID"
 
-	# Create third commit + bundle for non-force advance
 	echo "third" >>"$WORKDIR/src/README.md"
 	git -C "$WORKDIR/src" add README.md
 	git -C "$WORKDIR/src" commit -q -m "third"
@@ -614,113 +723,52 @@ test_proxy() {
 
 	val_out="$(exec_helper validate-bundle "$WDIGEST" "$WSIZE" "$REF" "$NEW_TIP" "$REMOTE_OLD" <"$WORKDIR/write.bundle")"
 	json_ok "$val_out" || die "validate-bundle failed: $val_out"
-	pass "validate-bundle on executor"
-
-	# Quarantine must exist inside executor for push
 	docker exec -u 65532:65532 "$EXEC_CID" test -d /var/lib/ditto-git-executor/quarantine \
 		|| die "quarantine missing after validate"
-	pass "quarantine retained after validate"
+	pass "validate-bundle on executor"
 
-	push_out="$(exec_helper push-validated acme widget "$REF" "$NEW_TIP")"
-	json_ok "$push_out" || die "push-validated failed: $push_out"
-	remote_tip="$(git --git-dir="$WORKDIR/remote.git" rev-parse refs/heads/main)"
-	[[ "$remote_tip" == "$NEW_TIP" ]] || die "remote tip $remote_tip != $NEW_TIP"
-	pass "non-force push-validated via HTTPS github.com"
-
-	req_log="$(docker exec "$PROXY_CID" cat /tmp/req.log 2>/dev/null || true)"
-	echo "$req_log" | grep -q 'git-receive-pack' || die "missing receive-pack: $req_log"
-	pass "write request shapes logged"
-
-	# Retry-preserved quarantine: force a failed push then ensure quarantine remains for retry.
-	# Reset remote to old, re-validate, fail first push by setting phase deny mid-way is hard;
-	# instead: validate again on fresh executor, first push with PHASE=deny, check quarantine remains.
-	start_https_proxy deny
-	docker rm -f "$EXEC_CID" >/dev/null 2>&1 || true
-	EXEC_CID=""
-	start_executor
-	# Need a bundle relative to current remote (already at NEW_TIP). Create fourth commit.
-	echo "fourth" >>"$WORKDIR/src/README.md"
-	git -C "$WORKDIR/src" add README.md
-	git -C "$WORKDIR/src" commit -q -m "fourth"
-	TIP4="$(git -C "$WORKDIR/src" rev-parse HEAD)"
-	git -C "$WORKDIR/src" bundle create "$WORKDIR/retry.bundle" "$REF"
-	RSIZE="$(wc -c <"$WORKDIR/retry.bundle" | tr -d ' ')"
-	RDIGEST="$(sha256sum "$WORKDIR/retry.bundle" | awk '{print $1}')"
-	# validate does not need network
-	val2="$(exec_helper validate-bundle "$RDIGEST" "$RSIZE" "$REF" "$TIP4" "$NEW_TIP" <"$WORKDIR/retry.bundle")"
-	json_ok "$val2" || die "retry validate failed: $val2"
-	docker exec -u 65532:65532 "$EXEC_CID" test -d /var/lib/ditto-git-executor/quarantine \
-		|| die "quarantine missing before failed push"
+	# Deny first push on the SAME container via control file (no recreate).
+	set_proxy_phase deny
 	set +e
-	fail_push="$(exec_helper push-validated acme widget "$REF" "$TIP4" 2>/dev/null)"
+	fail_push="$(exec_helper push-validated acme widget "$REF" "$NEW_TIP" 2>/dev/null)"
 	fail_rc=$?
 	set -e
 	[[ "$fail_rc" -ne 0 ]] || die "deny-phase push should fail"
-	# Quarantine preserved after first failure for authorized retry
+	[[ "$EXEC_CID" == "$SAME_EXEC" ]] || die "executor recreated unexpectedly"
 	docker exec -u 65532:65532 "$EXEC_CID" test -d /var/lib/ditto-git-executor/quarantine \
 		|| die "quarantine deleted after first failed push"
 	docker exec -u 65532:65532 "$EXEC_CID" test -f /var/lib/ditto-git-executor/quarantine/.ditto-expected-tip \
 		|| die "quarantine marker missing after first failed push"
-	pass "retry-preserved quarantine after first failed push"
+	pass "same-container deny push preserves quarantine"
 
-	# Successful retry after re-enabling write
-	start_https_proxy both
-	docker rm -f "$EXEC_CID" >/dev/null 2>&1 || true
-	# Keep same state volume? New container loses quarantine — prove retry path on continuous container:
-	# Restart executor with same validate then fail then succeed on ONE container.
-	EXEC_CID=""
-	start_executor
-	val3="$(exec_helper validate-bundle "$RDIGEST" "$RSIZE" "$REF" "$TIP4" "$NEW_TIP" <"$WORKDIR/retry.bundle")"
-	json_ok "$val3" || die "retry2 validate: $val3"
-	# Flip proxy to deny for first push without recreating executor: restart proxy only, keep EXEC_CID
-	old_exec="$EXEC_CID"
-	start_https_proxy deny
-	# Re-add host mapping requires recreate of executor — docker --add-host is create-time.
-	# So: recreate executor would lose quarantine. Instead use a writable hosts approach via
-	# network alias on the proxy container.
-	docker rm -f "$PROXY_CID" >/dev/null 2>&1 || true
-	PROXY_CID="$(docker run -d --rm \
-		--name "ditto047proxy_$RANDOM" \
-		--network "$NET_NAME" \
-		--network-alias github.com \
-		-e REPO_ROOT=/git/remote.git \
-		-e CANARY_FILE=/secret/canary.token \
-		-e REQ_LOG=/tmp/req.log \
-		-e PHASE=both \
-		-e ALLOWED_OWNER=acme \
-		-e ALLOWED_REPO=widget \
-		-e PORT=443 \
-		-e TLS_CERT=/certs/github.crt \
-		-e TLS_KEY=/certs/github.key \
-		-v "$WORKDIR/remote.git:/git/remote.git" \
-		-v "$WORKDIR/proxy.py:/proxy.py:ro" \
-		-v "$WORKDIR/canary.token:/secret/canary.token:ro" \
-		-v "$WORKDIR/certs/github.crt:/certs/github.crt:ro" \
-		-v "$WORKDIR/certs/github.key:/certs/github.key:ro" \
-		ditto047-proxy-py:local \
-		python /proxy.py)"
-	sleep 1
-	# Recreate executor WITHOUT add-host, relying on network-alias github.com
-	docker rm -f "$old_exec" >/dev/null 2>&1 || true
-	EXEC_CID="$(docker run -d \
-		--name "ditto047exec_$RANDOM" \
-		--user 65532:65532 \
-		--network "$NET_NAME" \
-		-v "$WORKDIR/certs/ca.crt:/etc/cloudflare/certs/cloudflare-containers-ca.crt:ro" \
-		--tmpfs /var/lib/ditto-git-executor:rw,size=256m,mode=1777 \
-		"$IMAGE")"
-	sleep 0.5
-	val4="$(exec_helper validate-bundle "$RDIGEST" "$RSIZE" "$REF" "$TIP4" "$NEW_TIP" <"$WORKDIR/retry.bundle")"
-	json_ok "$val4" || die "alias validate: $val4"
-	push4="$(exec_helper push-validated acme widget "$REF" "$TIP4")"
-	json_ok "$push4" || die "alias push failed: $push4"
-	remote_tip4="$(git --git-dir="$WORKDIR/remote.git" rev-parse refs/heads/main)"
-	[[ "$remote_tip4" == "$TIP4" ]] || die "remote tip4 $remote_tip4 != $TIP4"
-	pass "push via network-alias github.com + mounted CF CA"
+	# Switch proxy phase to write on the same proxy+executor; second push succeeds.
+	set_proxy_phase write
+	push_out="$(exec_helper push-validated acme widget "$REF" "$NEW_TIP")"
+	json_ok "$push_out" || die "retry push-validated failed: $push_out"
+	[[ "$EXEC_CID" == "$SAME_EXEC" ]] || die "executor changed on retry"
+	remote_tip="$(git --git-dir="$WORKDIR/remote.git" rev-parse refs/heads/main)"
+	[[ "$remote_tip" == "$NEW_TIP" ]] || die "remote tip $remote_tip != $NEW_TIP"
+	pass "same-container retry push-validated succeeds after phase switch"
+
+	# Third attempt impossible: quarantine cleaned after successful push.
+	set +e
+	third="$(exec_helper push-validated acme widget "$REF" "$NEW_TIP" 2>/dev/null)"
+	third_rc=$?
+	set -e
+	[[ "$third_rc" -ne 0 ]] || die "third push should be impossible"
+	docker exec -u 65532:65532 "$EXEC_CID" test ! -d /var/lib/ditto-git-executor/quarantine \
+		|| die "quarantine should be gone after successful push"
+	pass "third attempt impossible; cleanup state gone"
+
+	req_log="$(docker exec "$PROXY_CID" cat /tmp/req.log 2>/dev/null || true)"
+	echo "$req_log" | grep -q 'git-receive-pack' || die "missing receive-pack: $req_log"
+	assert_no_canary "proxy request log post-write" "$req_log"
+	pass "write request shapes logged without canary"
 
 	# Final canary scan on executor after write
 	scan2="$(printf '%s' "$CANARY_TOKEN" | exec_helper scan-canary)"
-	json_ok "$scan2" || die "post-write canary: $scan2"
+	json_ok "$scan2" || die "post-write canary present"
+	assert_no_canary "post-write scan stdout" "$scan2"
 	pass "post-write credential-negative scan"
 
 	# Cleanup proof
@@ -732,6 +780,7 @@ test_proxy() {
 	NET_NAME=""
 	pass "proxy fixture cleanup"
 }
+
 
 case "$MODE" in
 image)
