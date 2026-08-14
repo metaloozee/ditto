@@ -464,17 +464,41 @@ Locked outcomes:
   the remote boundary, never invented evidence.
 - Branch: `advisor/041-model-durable-agent-runs-in-d1`.
 
+## Plan 042 (project Brain Pi Runtime)
+
+Planned at commit `878a6a3` on 2026-08-12 after reconciling the completed local
+Alchemy v2, durable Agent Run, and Trusted Git Executor foundations; re-reading
+the direct Pi-in-workerd evidence and current Pi 0.80.10 seams; and checking
+current Cloudflare Durable Object, Worker limits, Alchemy, and workerd-test
+surfaces.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 042 | Host the project Pi Runtime in Brain | P0 | L | 039, 041 (both DONE-local) | REJECTED — Coding Agent-root route superseded by Plan 054's passed Agent Core boundary; do not execute or merge either attempt |
+
+Historical disposition:
+
+- The plan targeted `@earendil-works/pi-coding-agent@0.80.10`; its public graph
+  statically reached `jiti` and Node/resource/tool substrate that the mandatory
+  workerd path could not accept under the plan's no-alias/no-patch boundary.
+- Attempts ending at `76aa578` and `5e09159` remain unmerged evidence. They are
+  not implementation foundations and must not be retried or cherry-picked.
+- The direct Brain route itself remains accepted because the subsequent exact,
+  unmodified Agent Core/Pi AI spike passed. Plan 054 replaces this plan without
+  a module-URL definition, Coding Agent dependency, or separate runner.
+- File retained: `plans/042-host-project-pi-runtime-in-brain.md`.
+
 ## Plan 047 (ephemeral Trusted Git Executor)
 
 Planned at commit `e3abdee` on 2026-08-11 after reading the current Cloudflare
 Container outbound/lifecycle/rollout docs, latest Workers types, exact installed
 `@cloudflare/containers@0.3.7`, and exact installed Alchemy v2 beta.70
-Container/binding/migration declarations. Plans 042–046 remain absent and are
-not prerequisites.
+Container/binding/migration declarations. Plan 042 is an independent Brain lane
+and is not a prerequisite for this already-completed local foundation.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 047 | Add the ephemeral Trusted Git Executor | P0 | L | 039 (DONE-local) | BLOCKED — locked Workers types remain inside the 72-hour supply-chain quarantine until 2026-08-14 00:59:59 UTC |
+| 047 | Add the ephemeral Trusted Git Executor | P0 | L | 039 (DONE-local) | DONE-local (integrated on local `master` at `878a6a3`; paid cloud acceptance deferred) |
 
 Locked outcomes:
 
@@ -499,6 +523,84 @@ Locked outcomes:
   non-force push, denial, canary, revocation, capacity, cleanup,
   replacement, resource, migration, immediate-rollout, and convergence matrix.
 - Branch: `advisor/047-add-ephemeral-trusted-git-executor`.
+
+## Plan 054 (project Brain Agent Core Runtime)
+
+Planned at commit `878a6a3` on 2026-08-13 after the exact unmodified Agent Core
+compatibility spike passed its production-artifact local-workerd and separate
+Vitest paths. Plan number 054 is deliberate: identities 043–053 remain reserved
+by the architecture handoff, while existing Plan 047 keeps its identity.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 054 | Host the project Agent Core Runtime in Brain | P0 | L | 039, 041 (both DONE-local) | BLOCKED / DECOMPOSED — four monolithic attempts failed; execute staged Plans 055–058 instead; all prior branches remain unapproved |
+
+Locked outcomes:
+
+- Add one project-scoped SQLite `Brain` Durable Object to the existing Website
+  Worker using exact public, unmodified `@earendil-works/pi-agent-core@0.80.10`
+  plus `@earendil-works/pi-ai@0.80.10`; Coding Agent, Agent Core `./node`,
+  private imports, shims, jiti, local process tools, and a runner fallback are
+  forbidden from the Brain graph.
+- Compose direct `AgentHarness` with Brain-owned `ExecutionEnv` and
+  `SessionStorage`, static resources, code-owned tools, ambient-denied in-memory
+  credentials, and unmodified TypeBox validation.
+- Keep D1 authoritative for conversations and Agent Runs. Brain SQLite owns
+  immutable Safe Checkpoint generations/chunks/pointers and bounded redacted
+  monotonic events; existing R2 stores immutable compressed payloads above
+  512 KiB; memory remains a bounded multi-session cache.
+- Prove payload-before-pointer faults, hash/length-checked restore, two-session
+  isolation, full workerd process restart/reconstruction, exact production
+  artifacts, memory, startup, bundle, forbidden graph, client-negative,
+  security, scope, and full-repository verification.
+- Keep execution dormant: no current `/api/agent/*`, browser, Workflow, Git,
+  Preview, production jail/tools, request-path cutover, Sandbox `@next`, or
+  Project Sandbox runner change. No cloud deployment is authorized.
+- Local gates may reach `DONE-local`. Real-provider streaming and deployed
+  release/soak remain mandatory future production-admission gates when paid
+  infrastructure is available; their current absence is not a local no-go.
+- Historical Plan 042's Coding Agent-root approach is rejected evidence and is
+  not executable or a dependency. Plan 054 is the replacement Agent Core route
+  and becomes the Brain runtime prerequisite for the reserved Workflow,
+  scheduling, gateway, jail, and downstream handoff chain.
+- Plan 047 remains parallel-safe and independent.
+- Branch: `advisor/054-host-project-agent-core-runtime-in-brain`.
+
+**Blocked Grok 4.5 High retry (2026-08-13):** branch
+`pi-agent-17141575-3247-47c` at `f948514` is preserved as rejected evidence only.
+Independent review reproduced accepted cyclic parent state and an empty metadata
+ID in the custom SessionStorage. Although full `pnpm verify` passed, its workerd
+report fixes mandatory R2/max-checkpoint/Stop/interleaving/redaction checks to
+true and substitutes artifact bytes for heap data; its production report starts
+the Brain test config/driver rather than the exact Website and treats nonempty
+output as full-graph equivalence; its Alchemy report can infer the SQLite
+migration from source. Credential-env retention, checkpoint-secret redaction,
+interleaved event identity/redaction, checkpoint failure semantics, cache caps,
+and bounded checkpoint encoding also fail the locked design. Do not merge,
+cherry-pick, or revise this branch; a future attempt must start clean from
+`878a6a3`. The earlier Grok 4.6 branch remains unapproved for the reasons in the
+plan file.
+
+## Plans 055–058 (staged Brain recovery)
+
+Plan 054's architecture remains the target, but its monolithic execution shape
+is rejected after four attempts coupled state adapters, runtime concurrency,
+workerd durability, and exact Website evidence. The staged chain starts from
+`878a6a3`; no prior implementation branch may be reused.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 055 | Build the validated Brain state core | P0 | L | 039, 041 | TODO |
+| 056 | Compose the bounded Agent Core Brain runtime | P0 | L | 055 | PLANNED-NEXT |
+| 057 | Prove Brain durability and restart in workerd | P0 | L | 056 | PLANNED-NEXT |
+| 058 | Prove the exact Website and Alchemy resource graph | P0 | L | 057 | PLANNED-NEXT |
+
+Dependency order is strict: 055 establishes adapters/storage; 056 adds runtime
+and the dormant DO; 057 adds real workerd SQLite/R2/restart evidence; 058 adds
+exact generated Website/full-graph/Alchemy/resource evidence and the final root
+gate. Plans 056–058 receive executable plan files only after the preceding phase
+is independently approved, so their current-state excerpts name reviewed code
+rather than another speculative implementation.
 
 ### Audit finding coverage
 
@@ -787,12 +889,25 @@ Status values: TODO | IN PROGRESS | DONE | DONE-local (implemented locally; name
   disposable `ditto-ayan-db`. Plan 041 must not create that missing cloud graph.
   Plan 040 remains absent unless the separate direct-Pi gate later records
   no-GO.
+- **042 is REJECTED historical evidence** — its Coding Agent-root workerd path
+  required forbidden compatibility treatment. The passed Agent Core spike
+  resolves the architecture question through Plan 054; never execute, merge,
+  or use Plan 042 as a prerequisite.
 - **047 requires only 039** — its source/image/proxy work is locally executable
   on the accepted Alchemy v2 baseline and may run independently of Plan 041.
   Full DONE requires Plan 039's separately authorized deployed graph plus paid
   Containers and a disposable GitHub acceptance fixture; Plan 047 must not
-  create the missing cloud graph. Plans 042–046 remain absent and are not
-  prerequisites.
+  create the missing cloud graph. Plans 042–046 are not prerequisites for Plan
+  047.
+- **054 requires 039 and 041 at their recorded `DONE-local` boundaries** — the
+  accepted Alchemy v2 Website/R2 graph and D1 Agent Run domain are sufficient
+  for local production-foundation work. Historical Plan 042 is rejected
+  Coding Agent-root evidence, not a dependency; Plan 054 is its Agent Core
+  replacement. Plan 047 is independent and parallel-safe. After Plan 054 reaches
+  `DONE-local`, it is the runtime prerequisite for local work on reserved Plans
+  043–046 and their downstream chain, but no component may enter production
+  until a future paid-plan real-provider/deployed release-and-soak admission
+  passes for the exact candidate.
 
 ## Product decisions (locked 2026-07-09)
 
@@ -897,7 +1012,9 @@ tree while sharing git objects and (via symlink) `node_modules`.
 31. `038-project-env-mutation-cas.md` (independent; may run parallel to 037)
 32. `039-migrate-ayan-stack-to-alchemy-v2.md` (DONE-local; cloud cutover deferred)
 33. `041-model-durable-agent-runs-in-d1.md` (DONE-local; full DONE requires deployed ayan D1 smoke)
-34. `047-add-ephemeral-trusted-git-executor.md` (TODO; runs independently of 041 after 039; local synthetic proxy required, full DONE requires deployed Container/GitHub acceptance)
+34. `042-host-project-pi-runtime-in-brain.md` (REJECTED historical Coding Agent-root evidence; never execute)
+35. `047-add-ephemeral-trusted-git-executor.md` (DONE-local at `878a6a3`; root-aware path limit and stdin-close reconciliation approved; paid cloud acceptance deferred to a separate future plan)
+36. `054-host-project-agent-core-runtime-in-brain.md` (BLOCKED; Grok 4.5 and 4.6 branches are unapproved evidence; any future attempt starts clean from `878a6a3`; 043–053 remain blocked)
 
 ## Planning update — 2026-07-23 (Plan 028)
 
@@ -1326,3 +1443,302 @@ subagent (not new plan files).
 - **Executable now**: blocked at Step 1. After the quarantine expires, retry in
   the existing clean worktree. Steps 8–10 and full DONE still wait at the
   deployed Container/GitHub boundary.
+
+## Reconciliation — 2026-08-11 (post-041 merge)
+
+- **Current HEAD**: `5374f2b` on `master`, **up to date with `origin/master`**.
+  Working tree clean before this reconciliation (plan-record edits only).
+- **UTC clock**: `2026-08-11T14:47Z` during recon.
+
+### Status actions
+
+| Plan | Previous | Action | Result |
+|------|----------|--------|--------|
+| 001–032, 037–038 | DONE / DONE-local | Cheap spot-check | **Verified** — feature files still present; focused suites green |
+| 033 | DONE-local | Not re-smoked | **Still DONE-local** — deployed >30s disconnect smoke not run |
+| 039 | DONE-local | Pin/API spot-check | **Verified DONE-local** — `alchemy@2.0.0-beta.70`, Sandbox `0.12.3`, containers `0.3.7`, stage `dev` |
+| 041 | DONE-local | Verify on master | **Verified DONE-local** — merged (`8e91022`…`6441fb5`); migration `0012` + schema + persistence present |
+| 047 | BLOCKED (workers-types quarantine → 2026-08-14) | Investigate obstacle | **Cleared → TODO** (executable) |
+
+### Plan 047 unblock evidence
+
+The Step 1 blocker was `pnpm` rejecting `@cloudflare/workers-types@5.20260811.1`
+under a 4,320-minute minimum-release-age policy. On current HEAD:
+
+| Check | Result |
+|---|---|
+| Project `minimumReleaseAge` | `0` (pnpm project config) |
+| `npm pack @cloudflare/workers-types@5.20260811.1` | **succeeds** (types tarball unpackable) |
+| Required Container surface in packed types | `interceptOutboundHttps`, `exec(cmd: string[])`, `destroy` **present** |
+| Installed `@cloudflare/containers@0.3.7` | `setOutboundByHost` / `removeOutboundByHost` / `ContainerProxy` **present** |
+| Alchemy beta.70 Container surface | `rollout.strategy` `"immediate"`, `newSqliteClasses` **present** |
+| Drift `e3abdee..HEAD` on Plan 047 scope paths | **empty** (plan body still valid; start at current master) |
+
+No plan rewrite was required — only status refresh. **Do not** reuse the
+stale worktree tip `e3abdee` without rebasing onto current `master`; create a
+fresh clean worktree from `5374f2b+` when executing.
+
+### Plan 041 verification
+
+| Check | Result |
+|---|---|
+| Commits on master | `8e91022` feat → `cc4a4f6`/`90a164c` tests → `663a355` ownership → `6441fb5` plan docs |
+| Schema | `agent_runs`, `pi_agent_sessions`, turns present in `apps/web/src/db/schema.ts` |
+| Migration | `apps/web/migrations/0012_elite_union_jack.sql` present |
+| Focused tests | **68/68** (`agent-run*`, `agent-control-service`, migration) |
+| Full DONE cloud gate | **Still open** — no deployed `ditto-ayan-db` migration smoke; remains DONE-local |
+
+### DONE spot-checks (cheap)
+
+| Area | Evidence |
+|---|---|
+| 032 privileged git | `privileged-git.ts` present; **22** tests pass |
+| 012/013 secrets | `secret-redaction` **26** tests pass |
+| 037 OAuth post-lease | `provider-auth-service.ts` re-reads under lease; **24** provider-auth tests pass |
+| 038 env CAS | `project-env-vars` **6** tests pass |
+| 033 SSE detach | `DeliveryState = attached \| detached \| closed` still in stream route |
+| 039 pins | alchemy `2.0.0-beta.70`, sandbox `0.12.3`, containers `0.3.7` |
+
+### Current-HEAD verification
+
+| Gate | Result |
+|---|---|
+| `pnpm check` | pass (20 warnings, exit 0) |
+| `pnpm typecheck` | pass |
+| web vitest | pass: **717** tests in **65** files |
+| runner tests | pass: **81** tests in **11** files |
+| runner typecheck | pass |
+| production `pnpm build` | not re-run (writes artifacts; cheap reconcile) |
+
+### Worktrees / hygiene
+
+| Path | Branch | Tip | Note |
+|---|---|---|---|
+| `/home/ayan/ditto-worktrees/041-model-durable-agent-runs-in-d1` | `advisor/041-…` | `6441fb5` | Fully merged into master; safe to remove |
+| `/home/ayan/ditto-worktrees/047-add-ephemeral-trusted-git-executor` | `advisor/047-…` | `e3abdee` | Clean but **stale base**; recreate from master for execute |
+| `/tmp/ditto-brain-probe`, `/tmp/ditto-session-isolation` | prototypes | prunable | Unrelated |
+
+### Known non-blocking drift (not reopened)
+
+- **Plan 004 criterion**: `ai-chat.tsx` still uses a message-id-keyed
+  `useEffect` to call `acknowledgeSessionMessages` (~L644–657). Cache-epoch
+  no longer syncs from that path. Historical 004 remains DONE; any stricter
+  cleanup is a **new** plan if desired.
+- **Plans 027 / 033 / 039 / 041 external smokes**: still NOT RUN (preview live,
+  disconnect, paid Alchemy cutover, deployed D1 migration).
+- **Plans 034–036**: remain intentionally deleted/superseded.
+
+### Executable now
+
+1. **`047-add-ephemeral-trusted-git-executor.md`** — only open local execution
+   item. Steps 1–7 on a clean worktree from current master; full DONE still
+   needs deployed Container/GitHub acceptance after Plan 039 cloud cutover.
+2. Nothing else from the backlog is local-TODO. Full DONE for 039/041 and
+   dependent production work still wait on authorized cloud gates.
+
+### Rejected this run
+
+- None. Quarantine was an environmental install gate, not a finding rejection.
+
+## Execution update — 2026-08-12 (Plan 047)
+
+- **Verdict**: **BLOCK** after two reviewer revision rounds.
+- **Implementation**: branch `pi-agent-dd3c362e-d7b0-4e6`, tip `82594d2`.
+  Nothing was merged, pushed, or deployed.
+- **Scope**: 14 allowed implementation paths; `pnpm-lock.yaml` contains only the
+  direct `@cloudflare/containers@0.3.7` importer edge.
+- **Independent green gates**: frozen installs, typecheck, Biome, focused
+  **68/68**, rebuilt image/helper and HTTPS proxy matrices, `git diff --check`,
+  scope guards, and `pnpm verify` (**778** web + **81** runner tests and builds).
+- **Local Alchemy**: executor reports the graph started (`7` resources), built
+  the dedicated executor image, emitted `TrustedGitExecutor`, and shut down.
+- **First failed security gate**: an initial/root commit adding three paths was
+  accepted under `DITTO_TEST_MAX_PATH_RECORDS=2` and reported `pathCount: 0`.
+  The helper's history walk does not include root changes. This violates the
+  fixed 20,000 changed/path-record bound.
+- **Retry requirement**: resume from `82594d2` in a new isolated worktree; make
+  root path counting explicit and bounded; add the exact root-commit fixture;
+  also reconcile exact remote state if stdin close fails after write `exec`
+  returns a process handle. Rerun every local gate and request fresh review.
+- **Owner completion decision (2026-08-12)**: development remains on
+  Cloudflare's Free plan, so paid Containers acceptance cannot run. Steps 8–10
+  are `DEFERRED-owner-free-plan`, not a blocker. After the local retry patch and
+  every Step 1–7 gate pass, Plan 047 reaches terminal `DONE-local` and may be
+  merged as a local foundation. Any future paid deployment, production caller,
+  or Git cutover gets a separate plan with fresh platform research.
+- **Historical executable state**: `82594d2` was not mergeable because of the
+  local path-limit bug. The approved retry at `878a6a3` supersedes it.
+
+## Local approval — 2026-08-12 (Plan 047)
+
+- **Verdict/status**: **APPROVE → DONE-local**.
+- **Implementation**: branch `pi-agent-abcc46b7-4aca-4ff`, tip `878a6a3`.
+  Nothing was merged, pushed, or deployed; integration remains the owner's
+  decision.
+- **Fixed blockers**: root commits now contribute bounded changed/path records;
+  a three-path root under test limit two returns `path_limit`. Failure closing
+  stdin after write process start now enters exact-ref reconciliation rather
+  than bypassing it.
+- **Independent green gates**: exact scope/lock edge, frozen installs,
+  typecheck, Biome, focused **71/71**, rebuilt image/helper matrix, HTTPS proxy
+  matrix, root adversarial reproduction, `git diff --check`, Sandbox guards,
+  and `pnpm verify` (**781** web + **81** runner tests and both builds).
+- **Local Alchemy**: graph reported `Done: 7 succeeded`, emitted
+  `TrustedGitExecutor`, built the dedicated `alchemy-dev/trustedgitexecutor`
+  image, and was stopped during the bounded review.
+- **Cloud**: Steps 8–10 are `DEFERRED-owner-free-plan`; they are not Plan 047
+  completion gates. Any future paid deployment or production Git cutover gets
+  a separate plan and must not infer deployed proof from this DONE-local.
+- **Executable now**: no remaining Plan 047 implementation work. The approved
+  branch may be integrated when the owner chooses.
+
+## Reconciliation — 2026-08-12 (post-047 integration)
+
+- **Current HEAD**: `878a6a3` on local `master`, six commits ahead of
+  `origin/master` at `5374f2b`. Plan 047's six implementation commits are now
+  integrated linearly on local `master`; they have not been pushed.
+- **Working tree at start**: modified only in
+  `plans/047-add-ephemeral-trusted-git-executor.md` and this index, containing
+  the reviewed Plan 047 status/evidence records. This reconciliation preserved
+  those edits and changed only plan records.
+- **Plan-file review**: every existing plan file was reread. No TODO,
+  IN PROGRESS, or active BLOCKED plan remains. Historical paths, unchecked
+  checklists, and dated status transitions in completed plans remain archival;
+  they are not executable instructions on the current monorepo.
+
+### Status actions
+
+| Plans | Previous | Reconciliation result |
+|---|---|---|
+| 001–032, 037–038 | DONE / DONE-local | **Verified** by landing-commit ancestry, sampled current feature evidence, and the green current-HEAD repository gates below. |
+| 027, 033 | DONE-local | **Unchanged** — deployed preview and >30-second disconnect smokes remain unrun; do not promote to DONE. |
+| 039 | DONE-local | **Unchanged** — local Alchemy v2 source remains accepted; its old paid-cloud cutover steps are superseded and require a fresh authorized plan. |
+| 041 | DONE-local | **Verified** — migration 0012, schema, and persistence foundation remain present; deployed `ditto-ayan-db` migration smoke remains unavailable. |
+| 047 | DONE-local | **Verified and integrated locally** at exact reviewed SHA `878a6a3`; no local implementation work remains. Paid cloud Steps 8–10 are owner-deferred and any future deployment/cutover requires a new plan. |
+
+### Current-HEAD verification
+
+| Gate | Result |
+|---|---|
+| `pnpm check` | pass; 20 existing warnings, no errors |
+| `pnpm typecheck` | pass |
+| `npm test --prefix apps/web` | pass: **781** tests in **68** files |
+| runner typecheck | pass |
+| runner tests | pass: **81** tests in **11** files |
+| `git diff --check` | pass |
+| Plan 047 scope from `origin/master..HEAD` | exact 14 in-scope implementation paths; no out-of-scope path |
+| Plan 047 retry guards | root-aware `diff-tree --root` path counting and three stdin-close reconciliation cases present |
+| Plan 047 resource pins/shape | Containers `0.3.7`, Sandbox `0.12.3`, `TrustedGitExecutor`, basic/max-4/immediate present |
+| Plan 041 foundation | migration `0012` plus `agent_runs` / `pi_agent_sessions` schema present |
+
+The production build, Docker image/helper matrix, local Alchemy graph, and
+external Cloudflare/GitHub checks were not rerun during this cheap
+reconciliation. They passed during independent Plan 047 review at the same
+source SHA where applicable; deployed paid-plan checks remain explicitly
+unproven.
+
+### Known archival drift and external gates
+
+- Plan 004's message-id-keyed cache-acknowledgement Effect remains a known later
+  regression. Keep historical Plan 004 DONE; write a new plan if stricter Effect
+  cleanup is wanted.
+- Plans 027, 033, 039, and 041 retain their documented external acceptance gaps.
+  Plan 047's paid cloud work is owner-deferred rather than an active blocker.
+- Plans 034–036 remain intentionally absent/superseded. Plans 040 and 042–046
+  remain intentionally uncreated.
+- No executor worktree is attached. The only dirty files after reconciliation
+  are the two plan records above; commit them if Plan 047's terminal status
+  should be durable in Git.
+
+### Executable now
+
+None. The backlog has no TODO, IN PROGRESS, or active BLOCKED plan.
+
+## Historical planning update — 2026-08-12 (Plan 042; superseded)
+
+- **Current HEAD / planned-at**: `878a6a3`; local `master` remains six commits
+  ahead of `origin/master`. Existing dirty Plan 047 evidence and index edits
+  were preserved; this pass changed plan records only.
+- **Executed foundations**:
+  - Plan 039 is `DONE-local`: Alchemy v2 stage `dev`, exact beta.70/beta.103
+    source graph, fixed ayan-named resources, stable Sandbox 0.12.3.
+  - Plan 041 is `DONE-local`: migration 0012 and D1 Agent Run / Pi Agent Session
+    / Turn persistence are integrated; remote D1 smoke is still unavailable.
+  - Plan 047 is `DONE-local`: the Trusted Git Executor foundation is integrated
+    at `878a6a3`; paid Container/GitHub acceptance remains owner-deferred.
+- **Fresh verification**: `pnpm check` and `pnpm typecheck` pass (20 existing
+  warnings, no errors); Plan 041 focused tests pass **15/15**; Plan 047 focused
+  tests pass **71/71**; sandbox-runner typecheck and tests pass **81/81**.
+- **Then-new plan**: `042-host-project-pi-runtime-in-brain.md` was initially
+  `TODO`. Its later Coding Agent-root attempts failed their mandatory workerd
+  boundary and the plan is now `REJECTED`; this paragraph is historical only.
+- **Still blocked/not created**: Plan 040 remains a no-GO contingency. Plans
+  043–046 and 048–053 remain dependency-blocked and uncreated. Refreshed cloud
+  admission for 039/041/047 is unavailable on the owner's Free plan.
+
+### Historical executable state (superseded)
+
+Plan 042 is no longer executable. See the 2026-08-13 Plan 054 update below.
+
+## Planning update — 2026-08-13 (Agent Core replacement)
+
+- **Plan 042**: `REJECTED`. Its Coding Agent-root attempts remain unmerged
+  historical evidence and must not be retried, cherry-picked, or used as a
+  dependency.
+- **Plan 054**: the new Agent Core/Pi AI production-foundation plan was generated
+  by a GPT-5.6 Sol planning subagent at commit `878a6a3`. It uses the exact
+  public unmodified Agent Core boundary proven by the compatibility spike,
+  keeps product execution dormant, and defers real-provider/deployed admission.
+- **Cold reviews**: after the requested Grok reviews failed to start because of
+  exhausted xAI credits, the owner authorized GPT-5.6 Sol Medium. Two
+  independent tracks reviewed executor completeness and architecture/security.
+  Their findings tightened Stop concurrency, exact RPC/schema/caps, checkpoint
+  event cursors, provider-stream quiescence, bounded redaction, credential
+  laziness, maximum-cache memory evidence, report invocation/schema, and the
+  bounded Alchemy gate. Both tracks returned `APPROVE` after reconciliation.
+
+## Execution update — 2026-08-13 (Plan 054 blocked)
+
+- **Executor**: xAI Grok 4.6 with High reasoning in an isolated worktree. The
+  first agent was externally interrupted; a fresh Grok executor continued from
+  its preserved partial commit and stopped rather than claiming completion.
+- **Unapproved branch**: `pi-agent-96af83ad-8d2d-4d1` at `f87fe2f`. Do not merge,
+  push, or use it as completion evidence.
+- **Reviewer verification**: frozen install and app typecheck pass; 46 pure
+  Brain tests and 5 limited workerd tests pass; `git diff --check` passes.
+- **BLOCK reasons**: the workerd producer dry-bundles but hard-codes
+  restart/restore, functional, and memory passes; the production producer does
+  not start or measure the exact Website/full-graph artifacts and hard-codes
+  startup/memory passes; the Alchemy probe was not run without an approved
+  inherited secret environment and contains fixed unrelated-resource passes;
+  `apps/web/tsconfig.json` is outside Plan 054 Scope; `pnpm verify` was not run.
+- **External gates**: provider stream remains `not-authorized`; cloud deploy is
+  `not-run`. Neither caused the local block.
+
+## Retry update — 2026-08-13 (Plan 054 still blocked)
+
+- **Executor**: xAI Grok 4.5 with High reasoning from a fresh isolated worktree
+  at `878a6a3`; preserved branch `pi-agent-17141575-3247-47c` at `f948514`.
+- **Reviewer verification**: frozen installs, app typecheck, 37 pure Brain tests,
+  6 limited workerd tests, full `pnpm verify` (819 web / 81 runner tests), scope,
+  source guards, and `git diff --check` pass.
+- **First failed implementation gate**: the custom SessionStorage accepts parent
+  cycles and empty metadata IDs. Runtime review also found retained full-env
+  credential access, non-session-scoped streaming redaction, invented event Turn
+  identity, successful results after checkpoint failure, unenforced post-turn
+  cache growth, and non-streaming checkpoint buffers.
+- **Evidence remains invalid**: workerd R2/max-checkpoint/Stop/interleaving/
+  redaction checks are fixed true and heap fields can equal artifact bytes; the
+  production gate starts the Brain test entry, not the Website, and does not
+  prove full-graph equivalence or maximum-cache resource use; Alchemy may infer
+  the SQLite migration from source.
+- **Verdict**: `BLOCK`. Do not merge, push, cherry-pick, or revise either Grok
+  branch. Provider stream remains `not-authorized`; cloud deploy is `not-run`.
+
+### Executable now
+
+Plan 054 has no approved implementation. A future retry, if requested, must use
+another clean isolated worktree at `878a6a3`, implement the existing plan from
+scratch, and receive a secure inherited environment for the local Alchemy gate.
+Do not copy `.env*` or continue from either unapproved branch. Reserved Plans
+043–053 remain blocked.

@@ -8,17 +8,16 @@
 > credential in the container, expose a shell/process/terminal API, or fall back
 > to the current Project Sandbox Git implementation.
 >
-> **Cloud completion boundary**: Plan 039 is `DONE-local`; its paid-plan cloud
-> cutover remains deferred. Steps 1–7 are locally executable from a clean
-> worktree at `e3abdee`. Steps 8–10 require the already-deployed and converged
-> Alchemy v2 `dev` Website graph, Workers Paid Containers, an
-> installation-accessible disposable GitHub fixture, and authorization to make
-> one disposable non-force branch update. If those prerequisites are absent,
-> stop at Step 8 and record
-> `DONE-local (BLOCKED for full DONE: deployed Container/GitHub acceptance unavailable)`.
-> Do not create or repair Plan 039's missing cloud graph from this plan. A
-> present-but-failing Container, migration, egress, Git, revocation, or cleanup
-> check is `BLOCKED`, not `DONE-local`.
+> **Local-only completion boundary (owner decision, 2026-08-12)**: the owner is
+> developing on Cloudflare's Free plan and cannot run paid Containers acceptance.
+> Steps 1–7 are the complete execution scope for this plan. When they pass,
+> record terminal status `DONE-local`; Steps 8–10 are permanently deferred and
+> are not blockers or prerequisites for merging this foundation during local
+> development. Do not create, repair, deploy, or adopt Plan 039's cloud graph
+> from this plan. No production caller or Git cutover may claim deployed
+> Container/GitHub proof. If paid deployment becomes relevant later, create a
+> separate fresh plan for platform validation and production admission rather
+> than reopening Plan 047.
 >
 > **Mandatory stock-Git platform gate**: Current Cloudflare documentation and
 > installed declarations expose the required outbound HTTPS interception, but
@@ -64,7 +63,7 @@
 - **Category**: security
 - **Planned at**: commit `e3abdee`, 2026-08-11
 - **Branch**: `advisor/047-add-ephemeral-trusted-git-executor`
-- **Execution status**: BLOCKED — Step 1 frozen install rejected locked `@cloudflare/workers-types@5.20260811.1` under the 4,320-minute minimum-release-age policy; retry after 2026-08-14 00:59:59 UTC
+- **Execution status**: DONE-local — approved and integrated on local `master` at `878a6a3` after the narrow retry fixed root-commit path counting and post-start stdin-close reconciliation. All Step 1–7 local gates passed independently. Cloud Steps 8–10 are `DEFERRED-owner-free-plan` and are not Plan 047 completion gates.
 
 ## Why this matters
 
@@ -1130,17 +1129,17 @@ only:
 - deployed acceptance test IDs with safe counts/SHAs/booleans;
 - exact first failed/unrun gate and accurate status.
 
-Status rules:
+Status rules (owner-local development boundary, 2026-08-12):
 
-- `DONE`: every local gate, deployed read-only stock-Git prototype, Steps 8–10 deployment, real
-  fetch/non-force push, denial, canary, revocation, capacity, bounds,
-  replacement, cleanup, and convergence check passed.
-- `DONE-local (BLOCKED for full DONE: deployed Container/GitHub acceptance unavailable)`:
-  every local graph/synthetic-proxy gate passed, but Plan 039's
-  accepted deployed graph, paid Containers, secure authorization, or disposable
-  fixture was absent. No dependent production Git work may claim deployed proof.
-- `BLOCKED (<first failed gate>)`: API/platform-prototype/security/local invariant fails,
-  or a present deployed migration/Container/GitHub/cleanup check fails.
+- `DONE-local`: every Step 1–7 local graph, synthetic HTTPS stock-Git proxy,
+  image/helper, policy, credential, orchestration, regression, and repository
+  gate passed. This is terminal completion for Plan 047 and is sufficient to
+  merge the local foundation.
+- `BLOCKED-local (<first failed gate>)`: a required Step 1–7 API, security,
+  helper, image, graph, proxy, or verification invariant fails.
+- Steps 8–10 are `DEFERRED-owner-free-plan`, not `BLOCKED` and not required for
+  Plan 047 completion. They confer no deployed proof. A future paid deployment,
+  production caller, or Git cutover requires a separate newly researched plan.
 
 Do not update Plan 041 or any other status. Do not create Plans 042–046.
 
@@ -1327,3 +1326,72 @@ Stop and report — do not improvise — if:
   naming or formatting.
 - Plan 041 may execute in parallel in its independent worktree. Plans 042–046
   remain absent and are not prerequisites.
+
+## Execution evidence — 2026-08-12
+
+- **Executor model**: `xai/grok-4.5`, high reasoning, isolated worktrees.
+- **Implementation branch**: `pi-agent-dd3c362e-d7b0-4e6` at `82594d2`
+  (five commits from `5374f2b`). Earlier reviewed attempts are superseded.
+- **Changed implementation files**: exactly the 14 paths in this plan's scope;
+  the lockfile changes only the direct web importer edge for
+  `@cloudflare/containers@0.3.7`.
+- **Independent PASS**: frozen root/runner installs; app typecheck; Biome;
+  focused suite (**68/68**); rebuilt image/helper matrix; HTTPS synthetic
+  stock-Git proxy matrix; `git diff --check`; scope guards; and `pnpm verify`
+  (**778** web tests, **81** runner tests, app/runner builds).
+- **Executor-reported local graph**: Alchemy dev reached `Done: 7 succeeded`,
+  built the dedicated `TrustedGitExecutor` image, emitted the class/binding, and
+  shut down cleanly. No cloud deployment or GitHub acceptance was run.
+- **Blocking reviewer reproduction**: create an initial one-commit bundle whose
+  root commit adds three paths, run `validate-bundle` with
+  `DITTO_TEST_MAX_PATH_RECORDS=2`, expected `path_limit`; actual exit `0` with a
+  safe JSON success result reporting `pathCount: 0`. In
+  `containers/trusted-git-executor/ditto-git-executor`, the per-commit
+  `git diff-tree` path walk omits root changes because it lacks root-aware
+  enumeration.
+- **Required retry patch**: count root commit paths (for example, use a reviewed
+  `diff-tree --root` shape or explicit empty-tree comparison) while preserving
+  bounded streaming/counting for every commit. Add an image fixture containing
+  more root paths than a lowered test limit and assert exact `path_limit` before
+  considering the local resource gate complete.
+- **Additional review guard**: after a write `exec` returns a process handle,
+  treat a failing stdin close or any runner exception as post-start uncertainty
+  and perform exact-ref reconciliation before returning; add a deterministic
+  test for this path.
+- **Historical status**: `82594d2` was blocked after two revision rounds. The
+  narrow retry at `878a6a3` fixed both recorded blockers and supersedes this
+  historical verdict. Cloud Steps 8–10 remain `DEFERRED-owner-free-plan` and
+  require a separate future plan if the owner later adopts a paid deployment.
+
+## Local approval evidence — 2026-08-12
+
+- **Verdict**: `APPROVE`; terminal plan status `DONE-local`.
+- **Implementation branch**: `pi-agent-abcc46b7-4aca-4ff` at `878a6a3`.
+- **Retry scope**: exactly
+  `containers/trusted-git-executor/ditto-git-executor`,
+  `containers/trusted-git-executor/test.sh`,
+  `apps/web/src/lib/trusted-git-executor.ts`, and
+  `apps/web/src/lib/trusted-git-executor.test.ts` changed after the blocked
+  implementation. Full implementation remains within the 14 allowed paths;
+  the lockfile has only the direct Containers importer edge.
+- **Root-path reproduction**: an initial bundle with three root paths under
+  `DITTO_TEST_MAX_PATH_RECORDS=2` exits nonzero with safe code `path_limit`.
+  The helper now uses root-aware, bounded per-commit path enumeration.
+- **Write uncertainty**: deterministic tests prove stdin-close failure after
+  write process start reconciles proposed as success, permits one retry only
+  after exact old, and interrupts without retry on a third state.
+- **Independent verification**: frozen root and runner installs; app typecheck;
+  Biome; focused Plan 047 suite (**71/71**); rebuilt pinned image; complete
+  image/helper matrix; HTTPS synthetic stock-Git proxy matrix; exact root
+  adversarial reproduction; `git diff --check`; Project Sandbox/source scope
+  guards; and `pnpm verify` (**781** web tests, **81** runner tests, app and
+  runner builds) all passed.
+- **Local graph**: Alchemy reported `Done: 7 succeeded`, emitted the
+  `TrustedGitExecutor` resource/binding, and the dedicated
+  `alchemy-dev/trustedgitexecutor` image exists. It was then stopped during the
+  bounded review run. No cloud deploy or GitHub acceptance ran.
+- **Cloud boundary**: Steps 8–10 are `DEFERRED-owner-free-plan`. This approval
+  establishes local foundation correctness only; it does not claim deployed
+  Cloudflare interception, paid Containers, real installation credentials, or
+  remote mutation proof. Any later paid deployment/cutover requires a separate
+  plan.
