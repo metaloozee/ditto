@@ -91,8 +91,14 @@ helper once (the runner and stream route do not snapshot).
    `/workspace/.ditto/sessions/<conversationId>.jsonl` on the primary tree.
    `SessionManager.open` supplies durable history; an in-memory
    `SettingsManager` enables compaction and `one-at-a-time` follow-ups. The
-   session is created with the session worktree cwd, resolved model/runtime,
-   optional thinking level, built-in coding tools, and Ditto Git custom tools.
+   runner constructs an explicit locked resource loader that disables
+   repository discovery of extensions, skills, prompts, themes, settings, and
+   context files, then loads only the image-owned Ditto extension from
+   `/opt/ditto-runner/dist/ditto-extension.js`. The session is created with
+   that loader, the session worktree cwd, resolved model/runtime, optional
+   thinking level, and built-in coding tools. The Ditto Git tools are
+   registered by the image-owned extension. Git metadata keeps an empty
+   resource loader.
 9. After the runner socket is listening, the Worker emits `control_ready`. A
    later PI user-message boundary finalizes the prior assistant, emits
    `turn_done`, inserts the started follow-up's D1 pair, and emits `turn_start`
@@ -332,7 +338,10 @@ runner changes so custom tools appear in the container.
   Agent Git tools call the Worker with `DITTO_GIT_CALLBACK_URL` and
   `DITTO_GIT_CALLBACK_TOKEN`. A later Worker-owned Git operation passes an
   installation token into a separate short-lived sandbox process.
-- Normal chat runs use PI's default project resource loader. Repository-owned
-  PI extensions, skills, and context files are not disabled in this path.
+- Normal chat constructs an explicit locked resource loader. It disables
+  repository discovery of PI extensions, skills, prompts, themes, settings,
+  and context files, and loads only the image-owned Ditto extension from
+  `/opt/ditto-runner/dist/ditto-extension.js`. Git metadata keeps the empty
+  loader.
 - Never log or expose raw `OPENCODE_API_KEY` values in logs, SSE payloads, or
   UI copy.

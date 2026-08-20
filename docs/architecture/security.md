@@ -180,7 +180,11 @@ interpolated into a shell command. `agent-job.ts` validates that job at the
 sandbox boundary, including the optional thinking level's canonical vocabulary,
 before `cli.ts` invokes the runner. Shell values that must enter commands are
 single-quoted by narrow helpers. Destructive workspace clearing checks that the
-configured root is exactly `/workspace` before running.
+configured root is exactly `/workspace` before running. Normal chat constructs
+an explicit locked PI resource loader: it disables repository-owned
+extensions, skills, prompts, themes, settings, and context-file discovery, and
+loads only `/opt/ditto-runner/dist/ditto-extension.js`. Git metadata keeps the
+empty loader.
 
 Follow-up text likewise travels in a bounded JSON job, never argv. The Worker
 invokes only the baked control CLI with a generated job path; the CLI reaches a
@@ -249,8 +253,11 @@ isolation:
   environment before tools start, but the container held those values.
 - GitHub installation tokens enter a separate sandbox process during network
   fetch and push.
-- Normal chat runs use PI's default project resource loader. Repository-owned
-  extensions, skills, and context files remain discoverable.
+- Normal chat constructs an explicit locked resource loader. Repository-owned
+  extensions, skills, prompts, themes, settings, and context files are not
+  discoverable. Only the image-owned Ditto extension at
+  `/opt/ditto-runner/dist/ditto-extension.js` is loaded. Git metadata keeps
+  the empty loader.
 - The project sandbox has no deny-by-default outbound request policy.
 
 The [platform credential broker and per-session sandbox isolation

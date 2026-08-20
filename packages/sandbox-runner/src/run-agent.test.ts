@@ -5,21 +5,43 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ControlRequest } from "./control-channel.js";
 import type { RunnerOut } from "./protocol.js";
 
-const mocks = vi.hoisted(() => ({
-	createAgentSession: vi.fn(),
-	startControlServer: vi.fn(),
-	resolveRunnerModel: vi.fn(),
-	controlHandler: undefined as
-		| ((request: ControlRequest) => Promise<unknown>)
-		| undefined,
-	close: vi.fn(async () => undefined),
-}));
+const mocks = vi.hoisted(() => {
+	const fakeResourceLoader = {
+		getExtensions: () => ({ extensions: [], errors: [], runtime: {} }),
+		getSkills: () => ({ skills: [], diagnostics: [] }),
+		getPrompts: () => ({ prompts: [], diagnostics: [] }),
+		getThemes: () => ({ themes: [], diagnostics: [] }),
+		getAgentsFiles: () => ({ agentsFiles: [] }),
+		getSystemPrompt: () => undefined,
+		getAppendSystemPrompt: () => [],
+		extendResources: () => {},
+		reload: async () => {},
+	};
+	return {
+		IMAGE_OWNED_DITTO_EXTENSION_PATH:
+			"/opt/ditto-runner/dist/ditto-extension.js",
+		createAgentSession: vi.fn(),
+		startControlServer: vi.fn(),
+		resolveRunnerModel: vi.fn(),
+		createLockedChatResourceLoader: vi.fn(),
+		fakeResourceLoader,
+		controlHandler: undefined as
+			| ((request: ControlRequest) => Promise<unknown>)
+			| undefined,
+		close: vi.fn(async () => undefined),
+	};
+});
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
 	createAgentSession: mocks.createAgentSession,
 	defineTool: (tool: unknown) => tool,
 	SessionManager: { open: () => ({}) },
 	SettingsManager: { inMemory: (settings: unknown) => settings },
+}));
+
+vi.mock("./locked-resource-loader.js", () => ({
+	createLockedChatResourceLoader: mocks.createLockedChatResourceLoader,
+	IMAGE_OWNED_DITTO_EXTENSION_PATH: mocks.IMAGE_OWNED_DITTO_EXTENSION_PATH,
 }));
 
 vi.mock("./runner-model.js", () => ({
@@ -34,6 +56,7 @@ vi.mock("./control-channel.js", async (importOriginal) => {
 	};
 });
 
+import { IMAGE_OWNED_DITTO_EXTENSION_PATH as imageOwnedPath } from "./locked-resource-loader.js";
 import { runAgent } from "./run-agent.js";
 
 type SessionHarness = ReturnType<typeof makeSession>;
@@ -127,8 +150,12 @@ describe("runAgent live controls", () => {
 			mocks.controlHandler = options.handle;
 			return { socketPath: "/tmp/test.sock", close: mocks.close };
 		});
+		mocks.createLockedChatResourceLoader.mockResolvedValue(
+			mocks.fakeResourceLoader,
+		);
 		delete process.env.OPENCODE_API_KEY;
 		delete process.env.DITTO_PI_CREDENTIAL;
+		delete process.env.DITTO_EXTENSION_PATH;
 	});
 
 	it("passes resolved modelRuntime into createAgentSession without auth.json", async () => {
@@ -266,5 +293,106 @@ describe("runAgent live controls", () => {
 		await result;
 		expect(mocks.close).toHaveBeenCalledTimes(1);
 		expect(events.some((event) => event.kind === "error")).toBe(true);
+	});
+
+	it("passes the locked loader and code-owned extension path, not env or job", async () => {
+		process.env.DITTO_EXTENSION_PATH = "/tmp/untrusted-ditto-extension.js";
+		const harness = makeSession();
+		const cwd = path.join(os.tmpdir(), "ditto-run-agent-test");
+		const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "ditto-agent-"));
+		const { result } = await beginRun(harness, { cwd, agentDir });
+		harness.finish();
+		await result;
+
+		expect(imageOwnedPath).toBe(mocks.IMAGE_OWNED_DITTO_EXTENSION_PATH);
+		expect(mocks.createLockedChatResourceLoader).toHaveBeenCalledWith({
+			cwd,
+			agentDir,
+			settingsManager: {
+				compaction: { enabled: true },
+				followUpMode: "one-at-a-time",
+			},
+			extensionPath: mocks.IMAGE_OWNED_DITTO_EXTENSION_PATH,
+		});
+		expect(mocks.createLockedChatResourceLoader.mock.calls[0]?.[0]).not.toEqual(
+			expect.objectContaining({
+				extensionPath: process.env.DITTO_EXTENSION_PATH,
+			}),
+		);
+		const sessionArgs = mocks.createAgentSession.mock.calls[0]?.[0] as {
+			resourceLoader: unknown;
+			customTools?: unknown;
+			tools: string[];
+		};
+		expect(sessionArgs.resourceLoader).toBe(mocks.fakeResourceLoader);
+		expect(sessionArgs.customTools).toBeUndefined();
+		expect(sessionArgs.tools).toEqual([
+			"read",
+			"bash",
+			"edit",
+			"write",
+			"grep",
+			"find",
+			"ls",
+			"ditto_push_branch",
+			"ditto_open_pull_request",
+		]);
+	});
+
+	it("loads resources before createAgentSession and session.prompt", async () => {
+		const harness = makeSession();
+		const order: string[] = [];
+		mocks.createLockedChatResourceLoader.mockImplementation(async () => {
+			order.push("loader");
+			return mocks.fakeResourceLoader;
+		});
+		mocks.createAgentSession.mockImplementation(async () => {
+			order.push("session");
+			return { session: harness.session };
+		});
+		harness.session.prompt.mockImplementation(async () => {
+			order.push("prompt");
+		});
+
+		const events: RunnerOut[] = [];
+		const result = await runAgent({
+			runId: "run-1",
+			cwd: path.join(os.tmpdir(), "ditto-run-agent-test"),
+			conversationId: "session-1",
+			modelSpecifier: "provider/model",
+			prompt: "initial",
+			agentDir: path.join(os.tmpdir(), "ditto-run-agent-test", "agent"),
+			sessionsDir: path.join(os.tmpdir(), "ditto-run-agent-test", "sessions"),
+			onEvent: (event) => events.push(event),
+		});
+
+		expect(result.ok).toBe(true);
+		expect(order).toEqual(["loader", "session", "prompt"]);
+		expect(events.some((event) => event.kind === "error")).toBe(false);
+	});
+
+	it("fails before a model call when the image-owned extension path is invalid", async () => {
+		mocks.createLockedChatResourceLoader.mockRejectedValue(
+			new Error("Ditto extension did not load"),
+		);
+		const harness = makeSession();
+		mocks.createAgentSession.mockResolvedValue({ session: harness.session });
+		const events: RunnerOut[] = [];
+		const result = await runAgent({
+			runId: "run-1",
+			cwd: path.join(os.tmpdir(), "ditto-run-agent-test"),
+			conversationId: "session-1",
+			modelSpecifier: "provider/model",
+			prompt: "initial",
+			agentDir: path.join(os.tmpdir(), "ditto-run-agent-test", "agent"),
+			sessionsDir: path.join(os.tmpdir(), "ditto-run-agent-test", "sessions"),
+			onEvent: (event) => events.push(event),
+		});
+
+		expect(result.ok).toBe(false);
+		expect(mocks.createAgentSession).not.toHaveBeenCalled();
+		expect(harness.session.prompt).not.toHaveBeenCalled();
+		expect(events.some((event) => event.kind === "error")).toBe(true);
+		expect(events.at(-1)).toMatchObject({ kind: "done", ok: false });
 	});
 });

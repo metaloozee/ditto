@@ -16,6 +16,7 @@ RUN npm ci \
   && test -s dist/provider-auth-control-cli.js \
   && test -s dist/provider-catalog-cli.js \
   && test -s dist/git-metadata-cli.js \
+  && test -s dist/ditto-extension.js \
   && node -e 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8"))' \
   && chmod +x dist/cli.js \
     dist/provider-auth-cli.js \

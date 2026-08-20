@@ -1,8 +1,14 @@
 # Lock PI resource loading to image-owned code
 
-Status: TODO
+Status: DONE
 
 Written against commit `62c99b4`. Complete plan 001 first.
+
+Executed 2026-08-20 in worktree
+`/home/ayan/.grok/worktrees/ayan-ditto/subagent-01a02037-4e7f-76a2-9afc-9a1e093ef707`.
+Advisor verdict: accept. HEAD remains `46c3be4`. Changes are uncommitted in the
+worktree. Spec digest unchanged:
+`f104e9ba66b97ce8f5a196a08854fa7819cfd7e37186f8b46cfb429c2124c5b3`.
 
 Before editing, compare the current commit and target spec with plan 001's
 recorded values. Read drift in PI runner and resource-loader code. Stop if the

@@ -11,7 +11,10 @@ import {
 	type ControlResponse,
 	startControlServer,
 } from "./control-channel.js";
-import { dittoGitCustomTools } from "./ditto-git-tools.js";
+import {
+	createLockedChatResourceLoader,
+	IMAGE_OWNED_DITTO_EXTENSION_PATH,
+} from "./locked-resource-loader.js";
 import {
 	extractUserTextFromMessageStart,
 	type FollowUpCorrelation,
@@ -85,6 +88,12 @@ export async function runAgent(
 			compaction: { enabled: true },
 			followUpMode: "one-at-a-time",
 		});
+		const resourceLoader = await createLockedChatResourceLoader({
+			cwd: options.cwd,
+			agentDir: options.agentDir,
+			settingsManager,
+			extensionPath: IMAGE_OWNED_DITTO_EXTENSION_PATH,
+		});
 		const { session: agentSession } = await createAgentSession({
 			cwd: options.cwd,
 			agentDir: options.agentDir,
@@ -93,6 +102,7 @@ export async function runAgent(
 			thinkingLevel: options.thinkingLevel,
 			sessionManager,
 			settingsManager,
+			resourceLoader,
 			tools: [
 				"read",
 				"bash",
@@ -104,7 +114,6 @@ export async function runAgent(
 				"ditto_push_branch",
 				"ditto_open_pull_request",
 			],
-			customTools: [...dittoGitCustomTools],
 		});
 		session = agentSession;
 
