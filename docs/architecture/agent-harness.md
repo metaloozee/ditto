@@ -249,12 +249,14 @@ shared `node_modules`. A successful sync stores the new default-branch commit as
 changes.
 
 - Network git uses a short-lived **GitHub App installation access token**
-  minted per operation at the last responsible moment (including the one-shot
-  primary-branch fetch before the first session worktree). Tokens are never
-  stored in D1, job files, SSE, env vars, remotes, hooks, or durable files.
-  Credential-bearing fetch/push run only from a fresh temporary bare repository
-  with code-owned config/environment, disabled hooks/helpers, public GitHub
-  HTTPS URL, and ephemeral command-scoped env authentication. Objects move
+  minted per operation at the last responsible moment, including the one-shot
+  primary-branch fetch before the first session worktree. The Worker passes the
+  token to a short-lived launcher process inside the project sandbox. The token
+  is absent from the agent-runner environment, D1, job files, SSE, remotes,
+  hooks, and durable files. Credential-bearing fetch and push run only from a
+  fresh temporary bare repository with code-owned configuration, disabled
+  hooks and credential helpers, a public GitHub HTTPS URL, and a closed
+  command-scoped environment. Objects move
   between the worktree and temp repo without credentials and are verified by
   exact SHA. Branch refs are validated; full refs/refspecs are shell-quoted as
   one argument. Remote scrubbing back to the public HTTPS URL remains defense
@@ -277,7 +279,8 @@ Chat-driven git uses PI custom tools in the sandbox runner (`ditto_push_branch`,
 `ditto_open_pull_request`). Those tools `POST` to Worker `POST /api/agent/git`
 with a short-lived HS256 JWT (`DITTO_GIT_CALLBACK_TOKEN`) minted when the
 agent shell session starts. The Worker verifies the JWT and reuses the same
-`session-git` helpers as the UI (installation token only inside the Worker).
+`session-git` helpers as the UI. The Worker mints the installation token, then
+passes it only to the isolated network Git launcher inside the sandbox.
 Use bash for local `git status` / `git commit`; use Ditto tools for push and
 open PR only.
 
@@ -320,23 +323,16 @@ runner changes so custom tools appear in the container.
   string interpolation.
 - Stderr and client-visible errors pass through `redactSecrets`.
 - Project environment values are decrypted in the Worker and injected only as
-  sandbox shell session process environment variables. Provider and callback
-  credentials (for example `OPENCODE_API_KEY`, `DITTO_GIT_CALLBACK_TOKEN`) follow
-  the same rule: never stored in worktree files, job JSON, SSE payloads, or git
-  remotes.
-- The agent can read its process environment through bash, so output redaction
-  and pre-push scrub policies (plans 012/013) remain necessary; process env is
-  not a hidden vault from the harness.
-- GitHub App installation tokens are never placed in the sandbox. Agent git
-  tools call the Worker callback with `DITTO_GIT_CALLBACK_URL` and
-  `DITTO_GIT_CALLBACK_TOKEN` only (no `GIT_TOKEN` or `x-access-token` in
-  runner env).
+  sandbox shell session process environment variables. The projected provider
+  credential (`DITTO_PI_CREDENTIAL`) and the Git callback JWT follow the same
+  rule. They never enter worktree files, job JSON, SSE payloads, or Git remotes.
+- The container can expose process environments, so output redaction and Git
+  secret preflight remain necessary. A process environment is not a vault.
+- GitHub App installation tokens do not enter the agent runner environment.
+  Agent Git tools call the Worker with `DITTO_GIT_CALLBACK_URL` and
+  `DITTO_GIT_CALLBACK_TOKEN`. A later Worker-owned Git operation passes an
+  installation token into a separate short-lived sandbox process.
+- Normal chat runs use PI's default project resource loader. Repository-owned
+  PI extensions, skills, and context files are not disabled in this path.
 - Never log or expose raw `OPENCODE_API_KEY` values in logs, SSE payloads, or
   UI copy.
-
-## Account provider credentials (Plan 025)
-
-- Provider login projects bounded model catalogs from Pi, including supported thinking levels, and the Worker persists the safe catalog with the encrypted account credential.
-- Login/refresh runs in auth-only sandboxes under `/tmp`; no `auth.json`, no project env, no R2 backup of secrets.
-- Project runners receive only an allowlisted `DITTO_PI_CREDENTIAL` runtime projection; OAuth refresh is stripped, and the runner deletes credential env values before PI session/tools start.
-- Fallback model is exactly `opencode/deepseek-v4-flash-free` via operator `OPENCODE_API_KEY`.

@@ -1,109 +1,40 @@
 # Ditto documentation
 
-This directory is the architecture map for Ditto. Read it before changing a
-cross-cutting flow so product terms, state ownership, security boundaries, and
-runtime behavior remain consistent.
+Use this index to find the document that owns a claim. Current architecture, proposed work, research, and local planning have different authority.
 
-## Start here
+## Current product and system
 
-| Document | Read when you need to understand |
+| Document | Purpose |
 |---|---|
-| [System architecture](architecture/overview.md) | Product goal, system context, major units, primary flows, state ownership, dependency direction, and limits |
-| [Frontend architecture](architecture/frontend.md) | Routes, React Query/tRPC state, chat streaming, assistant parts, navigation, and UI layers |
-| [Server and data architecture](architecture/server-and-data.md) | Worker entry points, tRPC routers, domain services, D1 schema, lifecycles, pagination, and infrastructure |
-| [Agent harness architecture](architecture/agent-harness.md) | Sandbox wake/restore, PI runner execution, SSE, live session controls, session worktrees, concurrency, Git export, and backups |
-| [Security and trust boundaries](architecture/security.md) | Authentication, authorization, encrypted env vars, redaction, callback JWTs, Git credentials, and egress policy |
-| [Repository map](architecture/repository-map.md) | Responsibility of every source, test, migration, plan, configuration, and agent-tooling file |
+| [`PRODUCT.md`](../PRODUCT.md) | Current product, users, direction, and design principles |
+| [`CONTEXT.md`](../CONTEXT.md) | Canonical domain terms and relationships |
+| [System architecture](architecture/overview.md) | System units, primary flows, state ownership, and current limits |
+| [Frontend architecture](architecture/frontend.md) | Routes, browser state, chat, settings, and UI composition |
+| [Server and data architecture](architecture/server-and-data.md) | Worker entry points, tRPC, domain services, schema, and lifecycles |
+| [Agent harness architecture](architecture/agent-harness.md) | Agent execution, controls, worktrees, Git export, preview, and backups |
+| [Security boundaries](architecture/security.md) | Current trust model, credential paths, redaction, Git policy, and known gaps |
+| [Repository map](architecture/repository-map.md) | Source ownership and change routing |
 
-## Recommended reading paths
+Current source code, tests, and `apps/web/src/db/schema.ts` define implemented behavior. When a current architecture page disagrees with code, update the page in the same change.
 
-### New maintainer or coding agent
+## Decisions, specifications, and research
 
-1. Read [`PRODUCT.md`](../PRODUCT.md) for users, purpose, and design principles.
-2. Read [System architecture](architecture/overview.md).
-3. Follow the subsystem document for the files you will change.
-4. Use the [Repository map](architecture/repository-map.md) to locate owners,
-   adjacent tests, generated files, and historical plans.
+| Location | Authority |
+|---|---|
+| `docs/adr/` | Decisions that remain in force. The directory stays empty until a decision meets the ADR threshold. |
+| `docs/specs/` | Proposed or required behavior. Read the status block before treating a spec as implemented. |
+| `docs/research/` | Historical evidence and platform investigation. Research does not define current behavior. |
 
-### Chat or agent-runtime change
+The [platform credential broker spec](specs/platform-credential-broker.md) is gated and needs revision. Its implementation audit separates completed supporting work from the security guarantees that remain absent.
 
-1. [Frontend architecture](architecture/frontend.md)
-2. [Server and data architecture](architecture/server-and-data.md) for model
-   capability discovery and request validation
-3. [Agent harness architecture](architecture/agent-harness.md)
-4. [Security and trust boundaries](architecture/security.md)
-5. Trace new runs through `apps/web/src/components/composer.tsx` →
-   `apps/web/src/routes/api.agent.stream.ts` → `apps/web/src/lib/agent-run-service.ts` →
-   `apps/web/src/lib/agent-run.ts` → `packages/sandbox-runner`.
-6. Trace follow-up and Stop requests through `apps/web/src/components/composer.tsx` →
-   `apps/web/src/routes/api.agent.control.ts` → `apps/web/src/lib/agent-control-service.ts` →
-   `packages/sandbox-runner/src/control-channel.ts`.
+## Reading paths
 
-### Project, sandbox, or persistence change
+For a chat or agent-runtime change, read the frontend, server, harness, and security pages.
 
-1. [Server and data architecture](architecture/server-and-data.md)
-2. [Agent harness architecture](architecture/agent-harness.md)
-3. `apps/web/src/integrations/trpc/routers/projects.ts` →
-   `apps/web/src/lib/project-sandbox.ts` → `apps/web/src/lib/sandbox-bootstrap.ts` →
-   `apps/web/src/lib/sandbox-backup.ts`
+For project lifecycle, persistence, or preview work, read the server, harness, and security pages.
 
-### Git or GitHub change
+For Git or GitHub work, read the Git export section in the harness page and the Git sections in the security page.
 
-1. [Agent harness architecture](architecture/agent-harness.md#git-export)
-2. [Security and trust boundaries](architecture/security.md)
-3. `apps/web/src/integrations/trpc/routers/session-git.ts` and
-   `apps/web/src/lib/agent-git-handler.ts` → `apps/web/src/lib/session-git.ts` → GitHub helpers
+For a schema change, read the server page, edit `apps/web/src/db/schema.ts`, and generate the matching migration.
 
-### Schema or message-history change
-
-1. [Server and data architecture](architecture/server-and-data.md)
-2. `apps/web/src/db/schema.ts`
-3. The relevant domain service and tRPC router
-4. Generated `apps/web/migrations/*` and colocated regression tests
-
-## Sources of truth
-
-When documents and code disagree, use this order while correcting the drift:
-
-1. `PRODUCT.md` for product intent and vocabulary.
-2. Current source code and `apps/web/src/db/schema.ts` for implemented behavior.
-3. `docs/architecture/*` for the intended cross-file model.
-4. `plans/*` for historical rationale only.
-
-Implementation plans are not current specifications. Generated route trees,
-Drizzle snapshots, lockfiles, and build output are not hand-edited architecture
-sources.
-
-## Architecture invariants
-
-- The Worker is the control plane and the only GitHub installation-token issuer.
-- D1 is authoritative for users, projects, workspace sessions, chat history,
-  and encrypted account provider credentials/model catalogs.
-- The sandbox filesystem is authoritative for live repository and Git state.
-- R2 backups provide recovery; they are not a mounted live workspace.
-- A workspace session owns one chat thread, branch, and worktree.
-- UI Git and agent Git paths reuse the same domain services and security policy.
-- Project environment values are encrypted at rest, process-injected at run
-  time, redacted at output boundaries, and never written to worktree `.env`.
-- An assistant message reaches `complete` or `failed`; it must not remain
-  `pending` after a settled server run.
-- Routes and UI should orchestrate; shared policy belongs in `apps/web/src/lib`.
-- Thinking levels use Pi's canonical vocabulary. Capability metadata is
-  discovered from provider model catalogs, validated again at the Worker
-  boundary, and propagated to the sandbox job without provider-specific remapping.
-
-## Keeping these documents current
-
-Update architecture documentation in the same change when you alter:
-
-- a product concept or ownership boundary;
-- a route/API, durable table, lifecycle state, or event protocol;
-- sandbox persistence, worktree layout, concurrency, or backup behavior;
-- authentication, authorization, credential flow, model capability flow,
-  redaction, or Git egress; or
-- the responsibility or generated status of a repository file.
-
-Prefer editing the narrow subsystem document and its repository-map entry over
-copying the same explanation into multiple files. Keep
-`architecture/agent-harness.md` as the detailed execution-path reference and
-link to it from broader documents.
+The maintainer's optional planning and review process lives in [Agent-assisted development](development/agent-workflow.md). Git ignores `.scratch/` and `plans/`; neither directory is project documentation.

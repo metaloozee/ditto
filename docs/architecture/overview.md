@@ -3,9 +3,9 @@
 ## Goal
 
 Ditto is a web-based AI coding workspace for GitHub repositories. A user signs in
-with GitHub, imports a repository, opens one or more isolated conversations, asks
-an agent to inspect or change code, and exports the result as commits, a pushed
-branch, and a pull request.
+with GitHub, imports a repository, opens conversation-specific Git worktrees,
+asks an agent to inspect or change code, and exports the result as commits, a
+pushed branch, and a pull request.
 
 The product optimizes for an inspectable build loop rather than a general-purpose
 browser IDE. The durable product record is in D1; the live repository and agent
@@ -26,11 +26,11 @@ flowchart LR
 
   Browser -->|tRPC, auth, SSE, agent control| Worker
   Worker --> D1
-  Worker -->|Durable Object RPC| Sandbox
+  Worker -->|Durable Object RPC and short-lived credentials| Sandbox
   Sandbox --> Runner
   Sandbox -->|create/restore backup| R2
   Worker -->|OAuth and installation auth| GitHub
-  Sandbox -->|isolated temp-bare HTTPS fetch/push| GitHub
+  Sandbox -->|temporary bare-repo HTTPS fetch/push| GitHub
   Runner -->|signed callback for push/PR| Worker
 ```
 
@@ -45,7 +45,7 @@ flowchart LR
 | Durable records | `apps/web/src/db`, `apps/web/migrations` | Users, OAuth state, projects, conversations, messages, sandbox handles, and backup generations |
 | Sandbox runtime | `Dockerfile`, `packages/sandbox-runner` | Baked PI harness, isolated shell sessions, NDJSON protocol, and agent-only Git tools |
 | Infrastructure | `alchemy.run.ts`, `apps/web/src/server.ts`, `apps/web/types/env.d.ts` | Cloudflare Worker, D1, R2, Sandbox Durable Object, bindings, and deployment (Alchemy sole deploy owner) |
-| Engineering support | `plans`, `.agents`, `.claude`, `.cursor`, `.github` | Historical implementation intent, coding-agent guidance, hooks, and CI |
+| Engineering support | `AGENTS.md`, `docs/development` | Coding-agent guidance and the optional human workflow |
 
 ## Product hierarchy
 
@@ -128,6 +128,17 @@ not have an agent-capable sandbox. The current UI creates GitHub-backed projects
    retaining a bounded optimistic cache until D1 catches up.
 7. Every started assistant is redacted and persisted as `complete` or `failed`;
    one versioned workspace backup follows the settled outer run best-effort.
+
+### Connect a model provider
+
+1. Account Settings lists the providers supported by the baked runner.
+2. `/api/provider-auth/stream` starts an isolated auth sandbox for login,
+   reconnect, or catalog discovery.
+3. `/api/provider-auth/control` carries answers for interactive login prompts.
+4. The Worker encrypts the account credential and stores only a bounded safe
+   model catalog beside it.
+5. Agent runs receive an allowlisted credential projection. OAuth refresh data
+   is removed, and the access token must outlive the run window.
 
 ### Export work
 
@@ -219,6 +230,14 @@ GitHub installation token.
 - Session deletion is archival. Archived sessions are excluded from active
   reads and cannot receive new messages.
 - There is no merge operation in Ditto; pull requests are completed on GitHub.
+- Provider credentials, the agent Git callback JWT, and short-lived
+  installation tokens still enter the project sandbox on their current paths.
+- Normal chat runs still use PI's default project resource discovery.
+- The project sandbox does not have a deny-by-default outbound request policy.
+
+The [gated platform credential broker
+spec](../specs/platform-credential-broker.md) proposes removal of these current
+container exposures. The spec needs revision before implementation.
 
 ## Where to read next
 

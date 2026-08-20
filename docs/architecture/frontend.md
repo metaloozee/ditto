@@ -19,6 +19,7 @@ and toasts.
 |---|---|
 | `/` | Authentication-aware project dashboard and create-project entry point |
 | `/sign-in` | GitHub OAuth sign-in and redirect for an existing session |
+| `/settings` | Account-level AI provider connections and model access |
 | `/installation/completed` | Notifies the opener that GitHub App installation completed, then closes |
 | `/project/$projectId` | Parent project workspace and data orchestration |
 | `/project/$projectId/` | New-conversation view for a project |
@@ -28,6 +29,8 @@ and toasts.
 | `/api/agent/stream` | Cookie-authenticated agent SSE endpoint |
 | `/api/agent/control` | Cookie-authenticated follow-up and Stop endpoint for the active PI agent session |
 | `/api/agent/git` | JWT-authenticated callback used by sandbox agent tools |
+| `/api/provider-auth/stream` | Cookie-authenticated provider login and reconnect stream |
+| `/api/provider-auth/control` | Cookie-authenticated answers for an active provider login prompt |
 
 `apps/web/src/routeTree.gen.ts` is generated from these files. Do not edit it directly.
 
@@ -171,6 +174,8 @@ workspace route.
   project environment variables, and starts provisioning.
 - `ProjectSettingsDialog` renames or deletes a project and manages encrypted
   environment variable keys/values. Values are write-only in the UI.
+- `ProviderSettingsPage` lists account provider connections, runs interactive
+  login or reconnect flows, and disconnects providers.
 - `SessionGitActions` renders the state machine returned by
   `sessionGit.gitStatus`; it does not independently infer Git workflow policy.
 - `ChatNavbar` owns a right-sidebar tools trigger (`aria-pressed`) immediately
@@ -223,11 +228,3 @@ coordination boundaries: streamed chat rendering, composer lifecycle, sidebar
 archival/navigation, project creation, session Git workflow, and tool grouping.
 Primitive UI files generally rely on their upstream behavior and product-level
 coverage rather than one test file per wrapper.
-
-## Account provider credentials (Plan 025)
-
-- Credentials are account-scoped in D1 (`ai_provider_credentials`), encrypted with `AI_CREDENTIALS_ENCRYPTION_KEY` + user/provider AAD. Safe model catalogs persist capability metadata, while legacy catalogs may omit thinking levels.
-- Login/refresh runs in auth-only sandboxes under `/tmp`; no `auth.json`, no project env, no R2 backup of secrets.
-- Project runners receive `DITTO_PI_CREDENTIAL` as an allowlisted runtime projection (OAuth refresh stripped and expiry checked); the runner deletes it before PI session/tools start.
-- Fallback model is exactly `opencode/deepseek-v4-flash-free` via operator `OPENCODE_API_KEY`, with `off`, `high`, and `max` capabilities.
-- Account Settings connects providers; the composer lists the fallback and connected models and uses their capability metadata.

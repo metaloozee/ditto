@@ -18,7 +18,7 @@ model.
 | Sandbox | Isolated repository execution | Keeping process environment hidden from the agent |
 | PI harness/model | Requested code work | Authorization decisions, secret-safe output, GitHub credentials |
 | GitHub | Repository and PR authority | Ditto application ownership without OAuth/App checks |
-| R2 backup | Encrypted Cloudflare object storage for workspace snapshots | Live filesystem semantics or secret-file filtering beyond configured excludes |
+| R2 backup | Workspace snapshot storage | Live filesystem semantics or secret-file filtering beyond configured excludes |
 
 ## Authentication and authorization
 
@@ -27,17 +27,19 @@ creates the auth session once per request, and protected procedures require a
 user. Direct SSE and `/api/agent/control` handling perform the same better-auth
 session check.
 
-Every project and workspace-session lookup includes the authenticated `userId`.
-GitHub operations also call `authorizeGitHubRepositoryAccess`, which checks the
-user OAuth token's visible repositories and installation ID. The OAuth token
-proves user access; a short-lived GitHub App installation token performs the
-server-side repository mutation.
+Every browser project and workspace-session lookup includes the authenticated
+`userId`. Project import and browser Git operations also call
+`authorizeGitHubRepositoryAccess`, which checks the user's visible repositories
+and installation ID through GitHub OAuth. A short-lived GitHub App installation
+token performs the server-side repository mutation.
 
 The sandbox runner cannot call browser-authenticated tRPC. Its two Git tools use
 `/api/agent/git` with a short-lived HS256 bearer JWT containing project, session,
-user, sandbox, subject, issue time, and expiry. The Worker verifies shape,
+user, sandbox, subject, and expiry. The Worker verifies shape,
 signature, subject, and time, then resolves claims against current D1 ownership
-and readiness before dispatch.
+and readiness before dispatch. This callback has no user OAuth session, so it
+does not repeat the visible-repository check. A revoked or invalid App
+installation fails when the Worker requests or uses its installation token.
 
 Follow-up and Stop controls prove authenticated project ownership and an active,
 owned workspace session before any sandbox access. Missing, foreign, archived,
@@ -76,10 +78,10 @@ AES-256-GCM, and stored as a versioned payload in `projects.envVars`. The key is
 derived from `BETTER_AUTH_SECRET` with PBKDF2-SHA-256, a random salt, and 310,000
 iterations. The UI can list keys but never reads values back.
 
-At run time the Worker decrypts values and injects them into the isolated shell
-session process environment together with `OPENCODE_API_KEY` and the Git callback
-JWT. Values are not written to a worktree `.env`, agent job JSON, SSE metadata,
-or Git remote.
+At run time the Worker decrypts project values and injects them into the agent
+shell environment. The same environment receives `DITTO_PI_CREDENTIAL` and the
+Git callback URL and JWT. These values do not enter a worktree `.env`, agent job
+JSON, SSE metadata, or Git remote.
 
 The process environment is not a vault from the agent: shell tools can read it.
 Controls therefore also exist on output and Git egress.
@@ -108,14 +110,16 @@ to the redaction marker.
 ## Git credential handling
 
 The Worker mints a repository-scoped GitHub App installation token at the last
-responsible moment for each network Git operation. Credential-bearing fetch and
-push run only from a fresh temporary bare Git repository outside `/workspace`,
-with code-owned config and environment: hooks and credential helpers disabled,
-system/global config suppressed, HTTPS-only protocol policy, public
-`https://github.com/<owner>/<repo>.git` URL, and ephemeral command-scoped
-environment authentication (HTTP Basic via Git environment-backed config). The
-token never enters remote URLs, local Git config files, hooks, durable files,
-D1, backups, jobs, logs, or the agent environment.
+responsible moment for each network Git operation. It passes the token to a
+short-lived launcher process inside the project sandbox. The launcher starts
+Git with a closed, code-owned environment and HTTP Basic authentication.
+
+Credential-bearing fetch and push use a fresh temporary bare Git repository
+outside `/workspace`. Hooks and credential helpers are disabled. System and
+global configuration are suppressed. The protocol is HTTPS-only, and the
+remote is the public `https://github.com/<owner>/<repo>.git` URL. The token does
+not enter remote URLs, local Git configuration, hooks, durable files, D1,
+backups, jobs, logs, or the agent-runner environment.
 
 Repository objects move between the session/primary worktree and the temporary
 bare repository without the credential environment and are verified by exact
@@ -128,8 +132,9 @@ depth. Direct HTTPS with system CAs is supported; trusted custom proxy/CA
 configuration would require an explicit future application setting.
 
 The runner receives only a Ditto callback URL and scoped JWT. Push and pull
-request operations return through the Worker, which mints the installation token
-and applies the same domain policy as the UI.
+request operations return through the Worker. The Worker applies the same
+domain policy as the UI and owns installation-token minting. The sandbox still
+receives the installation token for the short network Git process.
 
 ## Git egress policy
 
@@ -232,6 +237,26 @@ Anyone with the URL can load the site until Stop/archive/delete revokes it.
   it does not rewrite the successful operation's result.
 - Client-visible errors are redacted, while server logs avoid raw credentials.
 
+## Known gaps
+
+The current controls reduce exposure but do not provide container-compromise
+isolation:
+
+- All workspace sessions in a project share one sandbox filesystem, process
+  table, and network namespace. Git worktrees isolate normal file edits only.
+- Provider credentials and the Git callback JWT enter the project sandbox when
+  an agent run starts. The runner deletes provider values from its own
+  environment before tools start, but the container held those values.
+- GitHub installation tokens enter a separate sandbox process during network
+  fetch and push.
+- Normal chat runs use PI's default project resource loader. Repository-owned
+  extensions, skills, and context files remain discoverable.
+- The project sandbox has no deny-by-default outbound request policy.
+
+The [platform credential broker and per-session sandbox isolation
+spec](../specs/platform-credential-broker.md) proposes stronger boundaries. Its
+status is gated and needs revision before implementation.
+
 ## Security-sensitive files
 
 | Concern | Files |
@@ -247,11 +272,3 @@ Anyone with the URL can load the site until Stop/archive/delete revokes it.
 | Backup exclusions | `apps/web/src/lib/sandbox-backup.ts` |
 | Workspace locking | `apps/web/src/lib/session-workspace-lock.ts`, `workspace-policy.ts` |
 | Session preview | `apps/web/src/lib/session-preview.ts`, `apps/web/src/server.ts`, `alchemy.run.ts` |
-
-## Account provider credentials (Plan 025)
-
-- Credentials are account-scoped in D1 (`ai_provider_credentials`), encrypted with `AI_CREDENTIALS_ENCRYPTION_KEY` + user/provider AAD.
-- Login/refresh runs in auth-only sandboxes under `/tmp`; no `auth.json`, no project env, no R2 backup of secrets.
-- Project runners receive `DITTO_PI_CREDENTIAL` only as an allowlisted runtime projection; OAuth refresh is stripped and the runner deletes credential env values before session/tools.
-- Provider catalogs carry Pi's canonical thinking capabilities; missing levels remain readable for legacy D1 catalogs and cause the client to omit `thinkingLevel`.
-- Fallback model is exactly `opencode/deepseek-v4-flash-free` via operator `OPENCODE_API_KEY`.

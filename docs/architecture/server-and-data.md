@@ -14,7 +14,7 @@ plain 404 and never fall through to the app. Local Vite (`vite.config.ts`)
 skips its transform/static middleware for session preview hosts
 (`<port>-<sandbox>-<token>.localhost`) so those requests reach the Worker and
 `proxyToSandbox` instead of the parent app's `/node_modules/.vite` optimizer.
-TanStack Start routes provide four server-facing surfaces:
+TanStack Start routes provide seven server-facing surfaces:
 
 | Surface | Authentication | Use |
 |---|---|---|
@@ -23,10 +23,12 @@ TanStack Start routes provide four server-facing surfaces:
 | `/api/agent/stream` | Cookie session checked directly | Long-lived SSE agent run |
 | `/api/agent/control` | Cookie session checked directly | Follow-up or Stop for one active PI agent session |
 | `/api/agent/git` | Short-lived scoped HS256 JWT | Push/PR actions invoked by PI tools |
+| `/api/provider-auth/stream` | Cookie session checked directly | Provider login, reconnect, and catalog discovery stream |
+| `/api/provider-auth/control` | Cookie session checked directly | Answers for an active provider login prompt |
 
-The agent routes bypass tRPC because they stream SSE, control a live run, or
-serve a machine callback. Their business logic still delegates to `apps/web/src/lib`
-services.
+The agent and provider-auth routes bypass tRPC when they stream events, control
+a live process, or serve a machine callback. Their business logic still
+delegates to `apps/web/src/lib` services.
 
 ## tRPC control plane
 
@@ -271,10 +273,3 @@ transitions in agent orchestration, sandbox bootstrap/restore, Git export,
 redaction, JWT validation, worktree behavior, message compatibility, and tRPC
 ownership. `pnpm verify` is the root quality gate and also runs the independent
 runner package verification.
-
-## Account provider credentials (Plan 025)
-
-- Credentials are account-scoped in D1 and encrypted with `AI_CREDENTIALS_ENCRYPTION_KEY` plus user/provider AAD.
-- Login and OAuth refresh run in auth-only `/tmp` sandboxes. Refresh leases are bounded; an unconfirmed process exit leaves the lease to TTL rather than releasing it while a process may still run.
-- Project runs receive only an allowlisted runtime projection in `DITTO_PI_CREDENTIAL`: OAuth refresh is replaced with `ditto:no-refresh`, access expiry must outlive the agent window plus safety skew, and the runner deletes the env values before PI/tools start.
-- Fallback model is exactly `opencode/deepseek-v4-flash-free` via operator `OPENCODE_API_KEY`; it is available even when no account connection exists.

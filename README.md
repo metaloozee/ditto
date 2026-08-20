@@ -7,8 +7,10 @@ Ditto is a TanStack Start app deployed with Alchemy on Cloudflare Workers. It us
 - GitHub repo import for projects
 - `@cloudflare/sandbox` for workspace instantiation
 - R2-backed sandbox backup/restore
-- agent runs in the Cloudflare sandbox via the PI harness; the client streams
-  `POST /api/agent/stream` (SSE)
+- account-level AI provider connections and model catalogs
+- conversation-specific Git worktrees, session previews, and GitHub export
+- agent runs in the Cloudflare sandbox through the PI harness, streamed to the
+  client from `POST /api/agent/stream`
 
 ## Repository layout
 
@@ -22,7 +24,7 @@ Alchemy is the sole deployment owner (`pnpm dev` / `pnpm deploy` / `pnpm destroy
 
 ## Prerequisites
 
-- Node.js 22.15+ for the app (22.19+ for the sandbox runner; 22.17+ recommended for local dev)
+- Node.js 22.19+ for the full repository
 - pnpm (workspace root + `apps/web`) and npm (`packages/sandbox-runner` only)
 - Cloudflare / GitHub credentials for the configured environment
 
@@ -130,13 +132,16 @@ Account Settings.
 
 - For GitHub-linked projects, the Ditto GitHub App needs **Contents: Read &
   write** and **Pull requests: Read & write** so the Worker can push session
-  branches and open pull requests (installation token; never stored in the DB).
+  branches and open pull requests. Installation tokens are short-lived and are
+  never stored in D1 or workspace files.
 - `pnpm deploy` and `pnpm destroy` are managed through Alchemy only.
 - `apps/web/src/server.ts` exports the Cloudflare Sandbox binding used by the app.
 - `OPENCODE_API_KEY` is required as the operator fallback for
   `opencode/deepseek-v4-flash-free`. Account provider credentials are injected
   ephemerally via `DITTO_PI_CREDENTIAL` and deleted inside the runner before
   tools start.
-- Agent harness architecture: `docs/architecture/agent-harness.md`
-- Concurrent agent runs per project are not enforced yet; see the architecture
-  doc for deferred concurrency notes.
+- Domain terminology: `CONTEXT.md`
+- Documentation index: `docs/README.md`
+- Agent-assisted development workflow: `docs/development/agent-workflow.md`
+- Workspace sessions use separate Git worktrees but share one project sandbox.
+  See `docs/architecture/agent-harness.md` for concurrency limits.
