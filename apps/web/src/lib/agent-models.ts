@@ -14,15 +14,18 @@ export const PI_THINKING_LEVELS = [
 
 export type PiThinkingLevel = (typeof PI_THINKING_LEVELS)[number];
 
-/** Pi default before model-specific clamping. */
-export const DEFAULT_THINKING_LEVEL: PiThinkingLevel = "medium";
-
 /** Exact capabilities of the operator fallback model under Pi 0.80.10. */
 export const FALLBACK_MODEL_THINKING_LEVELS = [
 	"off",
 	"high",
 	"max",
 ] as const satisfies readonly PiThinkingLevel[];
+
+export type SupportedThinkingLevel =
+	(typeof FALLBACK_MODEL_THINKING_LEVELS)[number];
+
+/** Default preference for the fixed model (`medium` is not supported). */
+export const DEFAULT_THINKING_LEVEL: SupportedThinkingLevel = "high";
 
 export const PI_THINKING_LEVEL_LABELS: Record<PiThinkingLevel, string> = {
 	off: "Off",
@@ -38,6 +41,15 @@ export function isPiThinkingLevel(value: unknown): value is PiThinkingLevel {
 	return (
 		typeof value === "string" &&
 		(PI_THINKING_LEVELS as readonly string[]).includes(value)
+	);
+}
+
+export function isSupportedThinkingLevel(
+	value: unknown,
+): value is SupportedThinkingLevel {
+	return (
+		typeof value === "string" &&
+		(FALLBACK_MODEL_THINKING_LEVELS as readonly string[]).includes(value)
 	);
 }
 
@@ -86,40 +98,28 @@ export type ParsedModelSpecifier = {
 	modelId: string;
 };
 
+const FIXED_MODEL_PROVIDER_ID = "opencode";
+const FIXED_MODEL_ID = "deepseek-v4-flash-free";
+
 /**
- * Syntax-only model specifier parse. Availability is decided by account
- * credential logic, not this helper.
+ * Parse the only valid project coder model. Availability is the same check:
+ * the specifier must equal `DEFAULT_PROJECT_CODER_MODEL`.
  */
 export function parseModelSpecifier(
 	value: string,
 ): ParsedModelSpecifier | null {
-	if (
-		typeof value !== "string" ||
-		value.length === 0 ||
-		value.length > MAX_MODEL_SPECIFIER_LENGTH
-	) {
-		return null;
-	}
-	const slash = value.indexOf("/");
-	if (
-		slash <= 0 ||
-		slash !== value.lastIndexOf("/") ||
-		slash === value.length - 1
-	) {
-		return null;
-	}
-	const providerId = value.slice(0, slash);
-	const modelId = value.slice(slash + 1);
-	if (!providerId || !modelId) return null;
-	return { providerId, modelId };
+	if (value !== DEFAULT_PROJECT_CODER_MODEL) return null;
+	return { providerId: FIXED_MODEL_PROVIDER_ID, modelId: FIXED_MODEL_ID };
 }
 
-/** Syntax-only validator for request schemas. Not an availability check. */
-export function isProjectCoderModelSpecifier(value: string): boolean {
-	return parseModelSpecifier(value) !== null;
+/** Exact-literal validator for the fixed project coder model. */
+export function isProjectCoderModelSpecifier(
+	value: string,
+): value is typeof DEFAULT_PROJECT_CODER_MODEL {
+	return value === DEFAULT_PROJECT_CODER_MODEL;
 }
 
-/** Fallback-only static list for zero-connection accounts. */
+/** Fixed-model list for composer context. */
 export const PROJECT_CODER_MODELS = [
 	{
 		id: DEFAULT_PROJECT_CODER_MODEL,
@@ -130,4 +130,4 @@ export const PROJECT_CODER_MODELS = [
 	},
 ] as const;
 
-export type ProjectCoderModelSpecifier = string;
+export type ProjectCoderModelSpecifier = typeof DEFAULT_PROJECT_CODER_MODEL;

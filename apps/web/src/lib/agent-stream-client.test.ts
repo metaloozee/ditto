@@ -62,7 +62,6 @@ describe("agent-stream-client transport", () => {
 			{
 				projectId: "p1",
 				message: "hi",
-				model: "opencode-go/claude-sonnet-4",
 			},
 			handlers,
 		);
@@ -104,7 +103,6 @@ describe("agent-stream-client transport", () => {
 			{
 				projectId: "p1",
 				message: "hi",
-				model: "opencode-go/claude-sonnet-4",
 			},
 			{
 				onControlReady: (data) => calls.push(["ready", data]),
@@ -154,7 +152,6 @@ describe("agent-stream-client transport", () => {
 			{
 				projectId: "p1",
 				message: "hi",
-				model: "opencode-go/claude-sonnet-4",
 			},
 			{
 				onAgent: (event, occurredAt) => {
@@ -198,7 +195,6 @@ describe("agent-stream-client transport", () => {
 			{
 				projectId: "p1",
 				message: "hi",
-				model: "opencode-go/claude-sonnet-4",
 			},
 			{
 				onDelta: (delta) => deltas.push(delta),
@@ -243,7 +239,6 @@ describe("agent control client", () => {
 				projectId: "project-1",
 				sessionId: "session-1",
 				runId: "run-1",
-				model: "opencode-go/claude-sonnet-4",
 				message: "next",
 			}),
 		).resolves.toMatchObject({ action: "follow_up", requestId: "request-1" });
@@ -320,7 +315,6 @@ describe("agent control client", () => {
 			{
 				projectId: "project-1",
 				message: "hi",
-				model: "opencode-go/claude-sonnet-4",
 			},
 			{},
 			{ signal: controller.signal },

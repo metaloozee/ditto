@@ -34,79 +34,8 @@ vi.mock("#/components/ui/toast", () => ({
 	},
 }));
 
-vi.mock("#/integrations/trpc/react", () => ({
-	useTRPC: () => ({
-		providerAuth: {
-			models: {
-				queryOptions: () => ({
-					queryKey: ["providerAuth", "models"],
-				}),
-			},
-		},
-	}),
-}));
-
-const modelsQueryData = vi.hoisted(() => ({
-	current: {
-		models: [
-			{
-				id: "opencode/deepseek-v4-flash-free",
-				name: "DeepSeek V4 Flash Free",
-				provider: "opencode",
-				providerName: "OpenCode Zen",
-				thinkingLevels: ["off", "high", "max"] as readonly string[],
-			},
-		],
-	} as {
-		models: Array<{
-			id: string;
-			name: string;
-			provider: string;
-			providerName: string;
-			thinkingLevels?: readonly string[];
-		}>;
-	},
-}));
-
-vi.mock("@tanstack/react-query", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("@tanstack/react-query")>();
-	return {
-		...actual,
-		useQuery: () => ({
-			data: modelsQueryData.current,
-			isLoading: false,
-		}),
-	};
-});
-
 vi.mock("#/components/ai-elements/model-selector", () => ({
-	ModelSelector: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
-	ModelSelectorContent: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
-	ModelSelectorEmpty: () => null,
-	ModelSelectorGroup: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
-	ModelSelectorInput: () => null,
-	ModelSelectorItem: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
-	ModelSelectorList: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
 	ModelSelectorLogo: () => null,
-	ModelSelectorLogoGroup: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
-	ModelSelectorName: ({ children }: { children: React.ReactNode }) => (
-		<span>{children}</span>
-	),
-	ModelSelectorTrigger: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
 }));
 
 const { Composer } = await import("./composer");
@@ -150,24 +79,12 @@ function followUpResponse(index: number) {
 describe("Composer streaming updates", () => {
 	beforeEach(async () => {
 		vi.clearAllMocks();
-		modelsQueryData.current = {
-			models: [
-				{
-					id: "opencode/deepseek-v4-flash-free",
-					name: "DeepSeek V4 Flash Free",
-					provider: "opencode",
-					providerName: "OpenCode Zen",
-					thinkingLevels: ["off", "high", "max"],
-				},
-			],
-		};
 		localStorage.clear();
 		const { useUserPreferencesStore } = await import(
 			"#/lib/user-preferences-store"
 		);
 		useUserPreferencesStore.setState({
-			selectedModel: "opencode/deepseek-v4-flash-free",
-			thinkingLevel: "medium",
+			thinkingLevel: "high",
 		});
 	});
 
@@ -194,7 +111,29 @@ describe("Composer streaming updates", () => {
 		});
 	});
 
-	it("clamps default medium to fallback high and sends thinkingLevel", async () => {
+	it("does not send a model or query providers", async () => {
+		streamAgentRunMock.mockImplementation(async (_input, handlers) => {
+			handlers.onDone?.({ ok: true, content: "", assistantMessageId: null });
+		});
+
+		render(<Composer projectId="proj-1" sessionId="sess-1" />);
+
+		expect(screen.queryByPlaceholderText("Search models…")).toBeNull();
+		expect(screen.getByLabelText("DeepSeek V4 Flash Free")).toBeTruthy();
+
+		const textarea = screen.getByRole("textbox");
+		fireEvent.change(textarea, { target: { value: "hello" } });
+		fireEvent.keyDown(textarea, { key: "Enter" });
+
+		await waitFor(() => {
+			expect(streamAgentRunMock).toHaveBeenCalled();
+		});
+		const payload = streamAgentRunMock.mock.calls[0]?.[0];
+		expect(payload).not.toHaveProperty("model");
+		expect(JSON.stringify(payload)).not.toMatch(/model/);
+	});
+
+	it("uses the supported high default and sends thinkingLevel", async () => {
 		streamAgentRunMock.mockImplementation(async (_input, handlers) => {
 			handlers.onDone?.({ ok: true, content: "", assistantMessageId: null });
 		});
@@ -261,25 +200,6 @@ describe("Composer streaming updates", () => {
 		});
 	});
 
-	it("disables single-off thinking selector", async () => {
-		modelsQueryData.current = {
-			models: [
-				{
-					id: "opencode/deepseek-v4-flash-free",
-					name: "DeepSeek V4 Flash Free",
-					provider: "opencode",
-					providerName: "OpenCode Zen",
-					thinkingLevels: ["off"],
-				},
-			],
-		};
-		render(<Composer projectId="proj-1" sessionId="sess-1" />);
-		const thinking = screen.getByLabelText("Thinking level");
-		expect(thinking.textContent ?? "").toMatch(/Off/i);
-		expect(thinking.textContent ?? "").not.toMatch(/Thinking:/i);
-		expect((thinking as HTMLButtonElement).disabled).toBe(true);
-	});
-
 	it("disables thinking selector while streaming and omits level on follow-up", async () => {
 		const pending = createPendingStream();
 		sendAgentControlMock.mockResolvedValue(followUpResponse(1));
@@ -313,7 +233,9 @@ describe("Composer streaming updates", () => {
 		});
 		const controlPayload = sendAgentControlMock.mock.calls[0]?.[0];
 		expect(controlPayload).not.toHaveProperty("thinkingLevel");
+		expect(controlPayload).not.toHaveProperty("model");
 		expect(JSON.stringify(controlPayload)).not.toMatch(/thinkingLevel/);
+		expect(JSON.stringify(controlPayload)).not.toMatch(/"model"/);
 
 		await act(async () => {
 			pending.resolve?.();
@@ -936,7 +858,7 @@ describe("Composer streaming updates", () => {
 		);
 	});
 
-	it("disables textarea, model, thinking, and submit when disabledReason is set", async () => {
+	it("disables textarea, thinking, and submit when disabledReason is set", async () => {
 		render(
 			<Composer
 				projectId="proj-1"

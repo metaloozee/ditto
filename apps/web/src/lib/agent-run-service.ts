@@ -5,14 +5,8 @@ import type { createDb } from "#/db";
 import { messages, projects, workspaceSessions } from "#/db/schema";
 import {
 	assertCredentialConfig,
-	createCredentialRepository,
 	credentialSecretValues,
-	FALLBACK_MODEL_SPECIFIER,
-	FALLBACK_PROVIDER_ID,
-	loadCredential,
 	operatorFallbackCredential,
-	type StoredCredential,
-	toRuntimeCredential,
 } from "#/lib/account-provider-credentials";
 import { controlAgentRun } from "#/lib/agent-control-service";
 import { createDeltaBatcher } from "#/lib/agent-delta-batcher";
@@ -29,12 +23,10 @@ import {
 	serializeAssistantPartsMinimalForStorage,
 } from "#/lib/agent-message-storage";
 import {
+	DEFAULT_PROJECT_CODER_MODEL,
 	FALLBACK_MODEL_THINKING_LEVELS,
-	isPiThinkingLevel,
-	isProjectCoderModelSpecifier,
-	PI_THINKING_LEVELS,
+	isSupportedThinkingLevel,
 	type PiThinkingLevel,
-	parseModelSpecifier,
 } from "#/lib/agent-models";
 import { runAgentInSandbox } from "#/lib/agent-run";
 import { decryptEnvVars } from "#/lib/project-env-vars";
@@ -42,7 +34,6 @@ import {
 	persistProjectSandboxBackup,
 	provisionProjectSandbox,
 } from "#/lib/project-sandbox";
-import { resolveOAuthCredential } from "#/lib/provider-auth-service";
 import { redactSecrets } from "#/lib/secret-redaction";
 import { ensureSessionWorkspaceReady } from "#/lib/session-worktree";
 import { makeSessionTitleFromMessage } from "#/lib/workspace-policy";
@@ -59,11 +50,8 @@ export const agentStreamBodySchema = z.object({
 	projectId: z.string().min(1),
 	sessionId: z.string().min(1).optional(),
 	message: z.string().trim().min(1),
-	model: z.string().min(1).refine(isProjectCoderModelSpecifier, {
-		message: "Invalid model.",
-	}),
 	// Optional for old clients; Composer sends the effective selected level.
-	thinkingLevel: z.enum(PI_THINKING_LEVELS).optional(),
+	thinkingLevel: z.enum(FALLBACK_MODEL_THINKING_LEVELS).optional(),
 });
 
 export type AgentStreamBody = z.infer<typeof agentStreamBodySchema>;
@@ -173,7 +161,6 @@ export type AgentRunDeps = {
 	redactSecrets?: typeof redactSecrets;
 	prepareAssistantMessageStorage?: typeof prepareAssistantMessageStorage;
 	serializeAssistantPartsMinimalForStorage?: typeof serializeAssistantPartsMinimalForStorage;
-	loadCredential?: typeof loadCredential;
 };
 
 const defaultDeps: Required<AgentRunDeps> = {
@@ -197,7 +184,6 @@ const defaultDeps: Required<AgentRunDeps> = {
 	redactSecrets,
 	prepareAssistantMessageStorage,
 	serializeAssistantPartsMinimalForStorage,
-	loadCredential,
 };
 
 function mergeDeps(deps?: AgentRunDeps): Required<AgentRunDeps> {
@@ -247,139 +233,21 @@ export async function prepareAgentRun(options: {
 		};
 	}
 
-	const parsedModel = parseModelSpecifier(input.model);
-	if (!parsedModel) {
-		return {
-			kind: "error",
-			status: 400,
-			body: { error: "Invalid model." },
-		};
-	}
+	const model = DEFAULT_PROJECT_CODER_MODEL;
+	const runtimeCredential = operatorFallbackCredential(env.OPENCODE_API_KEY);
 
-	// Resolve account credential / fallback before side effects.
-	let runtimeCredential: StoredCredential | null = null;
-	/** Exact authorized model capabilities; undefined = legacy catalog without levels. */
-	let authorizedThinkingLevels: readonly PiThinkingLevel[] | undefined;
-	const credentialDb = createCredentialRepository(db);
-	const owned = await deps.loadCredential({
-		db: credentialDb,
-		userId,
-		providerId: parsedModel.providerId,
-		encryptionKey: env.AI_CREDENTIALS_ENCRYPTION_KEY,
-	});
-	if (owned?.status === "needs_relogin") {
-		return {
-			kind: "error",
-			status: 409,
-			body: {
-				error: "Provider requires re-login. Reconnect it in Account Settings.",
-			},
-		};
-	}
-	if (owned?.status === "connected") {
-		const catalogModel = owned.models.find(
-			(m) =>
-				m.providerId === parsedModel.providerId &&
-				m.modelId === parsedModel.modelId,
-		);
-		const inCatalog = Boolean(catalogModel);
-		// Exact fallback remains the only operator exception when not in catalog.
-		if (!inCatalog && input.model !== FALLBACK_MODEL_SPECIFIER) {
-			return {
-				kind: "error",
-				status: 409,
-				body: {
-					error:
-						"Selected model is not available for this provider connection.",
-				},
-			};
-		}
-		// Exact fallback always uses canonical app capabilities (catalog may be legacy/stale).
-		if (input.model === FALLBACK_MODEL_SPECIFIER) {
-			authorizedThinkingLevels = FALLBACK_MODEL_THINKING_LEVELS;
-		} else if (catalogModel?.thinkingLevels) {
-			authorizedThinkingLevels = catalogModel.thinkingLevels;
-		}
-		if (input.model === FALLBACK_MODEL_SPECIFIER && !inCatalog) {
-			runtimeCredential = operatorFallbackCredential(env.OPENCODE_API_KEY);
-		} else {
-			try {
-				runtimeCredential = toRuntimeCredential(
-					owned.credential,
-					parsedModel.providerId,
-				);
-			} catch {
-				if (owned.credential.type !== "oauth") {
-					return {
-						kind: "error",
-						status: 409,
-						body: {
-							error:
-								"Provider session expired. Reconnect it in Account Settings.",
-						},
-					};
-				}
-				const refreshed = await resolveOAuthCredential({
-					db: credentialDb,
-					env,
-					userId,
-					providerId: parsedModel.providerId,
-				});
-				if (!refreshed.ok) {
-					return {
-						kind: "error",
-						status: 409,
-						body: {
-							error:
-								refreshed.code === "busy"
-									? "Provider credentials are busy. Try again shortly."
-									: "Provider session expired. Reconnect it in Account Settings.",
-						},
-					};
-				}
-				runtimeCredential = refreshed.runtime;
-			}
-		}
-	} else if (input.model === FALLBACK_MODEL_SPECIFIER) {
-		runtimeCredential = operatorFallbackCredential(env.OPENCODE_API_KEY);
-		authorizedThinkingLevels = FALLBACK_MODEL_THINKING_LEVELS;
-	} else if (
-		parsedModel.providerId === FALLBACK_PROVIDER_ID &&
-		input.model !== FALLBACK_MODEL_SPECIFIER
+	// Reject unsupported explicit levels before project/session/message side effects.
+	if (
+		input.thinkingLevel !== undefined &&
+		!isSupportedThinkingLevel(input.thinkingLevel)
 	) {
 		return {
 			kind: "error",
-			status: 409,
+			status: 400,
 			body: {
-				error:
-					"Connect an OpenCode credential in Account Settings to use this model.",
+				error: "Unsupported thinking level for selected model.",
 			},
 		};
-	} else {
-		return {
-			kind: "error",
-			status: 409,
-			body: {
-				error: "Connect this provider in Account Settings to use its models.",
-			},
-		};
-	}
-
-	// Reject unsupported explicit levels before project/session/message side effects.
-	if (input.thinkingLevel !== undefined) {
-		if (
-			!isPiThinkingLevel(input.thinkingLevel) ||
-			!authorizedThinkingLevels ||
-			!authorizedThinkingLevels.includes(input.thinkingLevel)
-		) {
-			return {
-				kind: "error",
-				status: 400,
-				body: {
-					error: "Unsupported thinking level for selected model.",
-				},
-			};
-		}
 	}
 
 	const project = await deps.loadProjectForUser({
@@ -558,7 +426,7 @@ export async function prepareAgentRun(options: {
 				userId,
 				role: "user",
 				content: input.message,
-				model: input.model,
+				model,
 				status: "complete",
 			})
 			.returning(),
@@ -603,7 +471,7 @@ export async function prepareAgentRun(options: {
 			userId,
 			projectId: input.projectId,
 			message: input.message,
-			model: input.model,
+			model,
 			thinkingLevel: input.thinkingLevel,
 			runId,
 			sessionId,

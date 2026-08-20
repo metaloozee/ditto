@@ -1,59 +1,56 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
-	DEFAULT_PROJECT_CODER_MODEL,
+	clampToSupportedThinkingLevel,
 	DEFAULT_THINKING_LEVEL,
+	FALLBACK_MODEL_THINKING_LEVELS,
 	isPiThinkingLevel,
-	MAX_MODEL_SPECIFIER_LENGTH,
+	isSupportedThinkingLevel,
 	type PiThinkingLevel,
-	parseModelSpecifier,
+	type SupportedThinkingLevel,
 } from "#/lib/agent-models";
 
 type UserPreferencesState = {
-	selectedModel: string;
-	setSelectedModel: (model: string) => void;
 	/** Saved abstract preference; not overwritten when a model only supports off. */
-	thinkingLevel: PiThinkingLevel;
+	thinkingLevel: SupportedThinkingLevel;
 	setThinkingLevel: (level: PiThinkingLevel) => void;
 };
 
-function isBoundedModelPreference(value: unknown): value is string {
-	return (
-		typeof value === "string" &&
-		value.length > 0 &&
-		value.length <= MAX_MODEL_SPECIFIER_LENGTH &&
-		parseModelSpecifier(value) !== null
-	);
+function clampPersistedThinkingLevel(value: unknown): SupportedThinkingLevel {
+	if (!isPiThinkingLevel(value)) return DEFAULT_THINKING_LEVEL;
+	return clampToSupportedThinkingLevel(
+		value,
+		FALLBACK_MODEL_THINKING_LEVELS,
+	) as SupportedThinkingLevel;
 }
 
 export const useUserPreferencesStore = create<UserPreferencesState>()(
 	persist(
 		(set) => ({
-			selectedModel: DEFAULT_PROJECT_CODER_MODEL,
-			setSelectedModel: (selectedModel) => {
-				if (!isBoundedModelPreference(selectedModel)) return;
-				set({ selectedModel });
-			},
 			thinkingLevel: DEFAULT_THINKING_LEVEL,
 			setThinkingLevel: (thinkingLevel) => {
-				if (!isPiThinkingLevel(thinkingLevel)) return;
+				if (!isSupportedThinkingLevel(thinkingLevel)) return;
 				set({ thinkingLevel });
 			},
 		}),
 		{
 			name: "ditto-user-preferences-v1",
 			partialize: (state) => ({
-				selectedModel: state.selectedModel,
 				thinkingLevel: state.thinkingLevel,
 			}),
+			merge: (persisted, current) => {
+				const stored =
+					persisted && typeof persisted === "object"
+						? (persisted as Record<string, unknown>)
+						: {};
+				return {
+					...current,
+					thinkingLevel: clampPersistedThinkingLevel(stored.thinkingLevel),
+				};
+			},
 			onRehydrateStorage: () => (state) => {
 				if (!state) return;
-				if (!isBoundedModelPreference(state.selectedModel)) {
-					state.selectedModel = DEFAULT_PROJECT_CODER_MODEL;
-				}
-				if (!isPiThinkingLevel(state.thinkingLevel)) {
-					state.thinkingLevel = DEFAULT_THINKING_LEVEL;
-				}
+				state.thinkingLevel = clampPersistedThinkingLevel(state.thinkingLevel);
 			},
 		},
 	),

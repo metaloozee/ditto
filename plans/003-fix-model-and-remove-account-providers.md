@@ -1,8 +1,11 @@
 # Fix the model and remove account-provider product paths
 
-Status: TODO
+Status: DONE
 
-Written against commit `62c99b4`. Complete plan 002 first.
+Written against commit `62c99b4`. Executed 2026-08-20 from `a49af50` (plan 002).
+Uncommitted changes are in
+`/home/ayan/.grok/worktrees/ayan-ditto/subagent-01a02050-f0b0-7711-a8f6-79df790255ef`.
+Copy or merge that worktree before running plans that depend on 003.
 
 Before editing, compare the current commit and target spec with plan 001's
 recorded values. Read drift in model, provider, settings, and runner files. Stop

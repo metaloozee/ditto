@@ -1,10 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import {
-	ChevronsUpDownIcon,
-	LogInIcon,
-	LogOutIcon,
-	SettingsIcon,
-} from "lucide-react";
+import { ChevronsUpDownIcon, LogInIcon, LogOutIcon } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar";
 import {
 	DropdownMenu,
@@ -107,7 +102,7 @@ export function NavUser() {
 								<div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
 									<span className="truncate font-medium">{displayName}</span>
 									<span className="min-h-4 truncate text-xs text-sidebar-foreground/70">
-										Account Settings
+										<HiddenEmail email={email} />
 									</span>
 								</div>
 								<ChevronsUpDownIcon className="ml-auto" />
@@ -134,15 +129,6 @@ export function NavUser() {
 										<HiddenEmail email={email} />
 									</span>
 								</div>
-							</DropdownMenuItem>
-						</DropdownMenuGroup>
-						<DropdownMenuSeparator />
-						<DropdownMenuGroup>
-							<DropdownMenuItem
-								render={<Link to="/settings" aria-label="Settings" />}
-							>
-								<SettingsIcon />
-								Settings
 							</DropdownMenuItem>
 						</DropdownMenuGroup>
 						<DropdownMenuSeparator />

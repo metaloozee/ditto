@@ -111,7 +111,7 @@ async function beginRun(
 		runId: "run-1",
 		cwd: path.join(os.tmpdir(), "ditto-run-agent-test"),
 		conversationId: "session-1",
-		modelSpecifier: "provider/model",
+		modelSpecifier: "opencode/deepseek-v4-flash-free",
 		prompt: "initial",
 		agentDir: path.join(os.tmpdir(), "ditto-run-agent-test", "agent"),
 		sessionsDir: path.join(os.tmpdir(), "ditto-run-agent-test", "sessions"),
@@ -130,7 +130,7 @@ const followUp = (requestId: string, text: string): ControlRequest => ({
 	requestId,
 	runId: "run-1",
 	sessionId: "session-1",
-	model: "provider/model",
+	model: "opencode/deepseek-v4-flash-free",
 	text,
 	userMessageId: `user-${requestId}`,
 	assistantMessageId: `assistant-${requestId}`,
@@ -176,7 +176,9 @@ describe("runAgent live controls", () => {
 		harness.finish();
 		await result;
 
-		expect(mocks.resolveRunnerModel).toHaveBeenCalledWith("provider/model");
+		expect(mocks.resolveRunnerModel).toHaveBeenCalledWith(
+			"opencode/deepseek-v4-flash-free",
+		);
 		expect(mocks.createAgentSession).toHaveBeenCalledWith(
 			expect.objectContaining({
 				modelRuntime,
@@ -359,7 +361,7 @@ describe("runAgent live controls", () => {
 			runId: "run-1",
 			cwd: path.join(os.tmpdir(), "ditto-run-agent-test"),
 			conversationId: "session-1",
-			modelSpecifier: "provider/model",
+			modelSpecifier: "opencode/deepseek-v4-flash-free",
 			prompt: "initial",
 			agentDir: path.join(os.tmpdir(), "ditto-run-agent-test", "agent"),
 			sessionsDir: path.join(os.tmpdir(), "ditto-run-agent-test", "sessions"),
@@ -382,7 +384,7 @@ describe("runAgent live controls", () => {
 			runId: "run-1",
 			cwd: path.join(os.tmpdir(), "ditto-run-agent-test"),
 			conversationId: "session-1",
-			modelSpecifier: "provider/model",
+			modelSpecifier: "opencode/deepseek-v4-flash-free",
 			prompt: "initial",
 			agentDir: path.join(os.tmpdir(), "ditto-run-agent-test", "agent"),
 			sessionsDir: path.join(os.tmpdir(), "ditto-run-agent-test", "sessions"),

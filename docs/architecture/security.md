@@ -46,30 +46,21 @@ owned workspace session before any sandbox access. Missing, foreign, archived,
 or stale run targets are rejected without creating message rows.
 
 Model and thinking-level input is also untrusted browser input. The stream route
-requires a valid session and bounded `provider/model` syntax. The Worker then
-resolves the user's encrypted provider connection and catalog; it accepts only
-catalog models, plus the exact operator fallback, and rejects explicit thinking
-levels that are not authorized for that model. These checks happen before
-sandbox, session, or message side effects. Browser-side clamping improves UX but
-is not an authorization boundary.
+requires a valid session. The browser does not send a model field. The Worker
+always uses `opencode/deepseek-v4-flash-free` and rejects any thinking level
+outside `off`, `high`, and `max` before sandbox, session, or message side
+effects. The runner rejects every other model specifier. Browser-side clamping
+improves UX but is not an authorization boundary.
 
-## Provider credentials and capability metadata
+## Operator credential and leftover encryption binding
 
-Provider credentials are encrypted in `ai_provider_credentials` with
-`AI_CREDENTIALS_ENCRYPTION_KEY` and user/provider AAD. Provider login runs in an
-auth-only sandbox and persists only a bounded, validated safe model catalog
-alongside the credential. Catalog metadata contains model names and Pi's
-canonical thinking capabilities, not credential material. OAuth refresh uses a
-D1 lease and compare-and-swap version; a process whose exit cannot be confirmed
-keeps the lease until TTL rather than being released while it may still run.
+Agent runs use the operator `OPENCODE_API_KEY` projected as
+`DITTO_PI_CREDENTIAL`. The runner deletes credential env values before PI
+session and tool initialization.
 
-At project-run time, the Worker projects credentials into the minimum runtime
-shape. API-key environment fields are allowlisted; OAuth refresh is replaced by
-`ditto:no-refresh`, and the access token must outlive the agent command window
-plus safety skew. The runner receives this projection through
-`DITTO_PI_CREDENTIAL`, then deletes credential env values before PI session and
-tool initialization. The exact fallback uses operator `OPENCODE_API_KEY` and
-never requires an account connection.
+`AI_CREDENTIALS_ENCRYPTION_KEY` remains bound for leftover
+`ai_provider_credentials` rows. Account-provider login, catalogs, and OAuth
+refresh are not current product paths and are pending removal.
 
 ## Secret storage and injection
 

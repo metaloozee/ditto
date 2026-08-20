@@ -207,7 +207,7 @@ export const verification = sqliteTable(
 	(table) => [index("verification_identifier_idx").on(table.identifier)],
 );
 
-/** Account-scoped AI provider credentials. D1 is the sole authority. */
+/** Leftover account-provider rows. Not a current product path; pending removal. */
 export const aiProviderCredentials = sqliteTable(
 	"ai_provider_credentials",
 	{
@@ -243,7 +243,7 @@ export const aiProviderCredentials = sqliteTable(
 	],
 );
 
-/** Non-secret coordination for in-flight provider login attempts. */
+/** Leftover provider-login attempt rows. Not a current product path; pending removal. */
 export const providerAuthAttempts = sqliteTable(
 	"provider_auth_attempts",
 	{

@@ -123,10 +123,9 @@ AI_CREDENTIALS_ENCRYPTION_KEY=
 
 `BETTER_AUTH_URL` defaults to `http://localhost:5173` if omitted.
 `AI_CREDENTIALS_ENCRYPTION_KEY` must be nonempty and distinct from
-`BETTER_AUTH_SECRET`. It encrypts account-level AI provider credentials.
-`OPENCODE_API_KEY` is the operator credential for the free fallback model
-`opencode/deepseek-v4-flash-free` only. Users connect their own providers in
-Account Settings.
+`BETTER_AUTH_SECRET`. It remains bound for leftover `ai_provider_credentials`
+rows and is pending removal. `OPENCODE_API_KEY` is the operator credential for
+the only supported model, `opencode/deepseek-v4-flash-free`.
 
 ## Notes
 
@@ -136,10 +135,9 @@ Account Settings.
   never stored in D1 or workspace files.
 - `pnpm deploy` and `pnpm destroy` are managed through Alchemy only.
 - `apps/web/src/server.ts` exports the Cloudflare Sandbox binding used by the app.
-- `OPENCODE_API_KEY` is required as the operator fallback for
-  `opencode/deepseek-v4-flash-free`. Account provider credentials are injected
-  ephemerally via `DITTO_PI_CREDENTIAL` and deleted inside the runner before
-  tools start.
+- `OPENCODE_API_KEY` is required for `opencode/deepseek-v4-flash-free`. The
+  operator credential is injected ephemerally via `DITTO_PI_CREDENTIAL` and
+  deleted inside the runner before tools start.
 - Domain terminology: `CONTEXT.md`
 - Documentation index: `docs/README.md`
 - Agent-assisted development workflow: `docs/development/agent-workflow.md`

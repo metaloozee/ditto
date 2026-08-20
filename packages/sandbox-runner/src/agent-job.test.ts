@@ -24,6 +24,20 @@ describe("parseJob", () => {
 		expect(error).toMatch(/thinkingLevel/);
 	});
 
+	it("rejects Pi levels outside off, high, and max", () => {
+		const { error } = parseJob(
+			JSON.stringify({ ...base, thinkingLevel: "medium" }),
+		);
+		expect(error).toMatch(/thinkingLevel/);
+	});
+
+	it("rejects every model other than the fixed literal", () => {
+		const { error } = parseJob(
+			JSON.stringify({ ...base, model: "provider/model" }),
+		);
+		expect(error).toMatch(/Unknown model/);
+	});
+
 	it("allows omitting thinkingLevel", () => {
 		const { job, error } = parseJob(JSON.stringify(base));
 		expect(error).toBeUndefined();

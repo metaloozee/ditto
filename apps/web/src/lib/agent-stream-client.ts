@@ -100,7 +100,6 @@ export type AgentControlInput =
 			projectId: string;
 			sessionId: string;
 			runId: string;
-			model: string;
 			message: string;
 	  }
 	| {
@@ -292,7 +291,6 @@ export async function streamAgentRun(
 		projectId: string;
 		sessionId?: string;
 		message: string;
-		model: string;
 		/** Abstract Pi level; omit for legacy clients / unknown model capabilities. */
 		thinkingLevel?: PiThinkingLevel;
 	},

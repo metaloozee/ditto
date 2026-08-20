@@ -19,7 +19,6 @@ and toasts.
 |---|---|
 | `/` | Authentication-aware project dashboard and create-project entry point |
 | `/sign-in` | GitHub OAuth sign-in and redirect for an existing session |
-| `/settings` | Account-level AI provider connections and model access |
 | `/installation/completed` | Notifies the opener that GitHub App installation completed, then closes |
 | `/project/$projectId` | Parent project workspace and data orchestration |
 | `/project/$projectId/` | New-conversation view for a project |
@@ -29,8 +28,6 @@ and toasts.
 | `/api/agent/stream` | Cookie-authenticated agent SSE endpoint |
 | `/api/agent/control` | Cookie-authenticated follow-up and Stop endpoint for the active PI agent session |
 | `/api/agent/git` | JWT-authenticated callback used by sandbox agent tools |
-| `/api/provider-auth/stream` | Cookie-authenticated provider login and reconnect stream |
-| `/api/provider-auth/control` | Cookie-authenticated answers for an active provider login prompt |
 
 `apps/web/src/routeTree.gen.ts` is generated from these files. Do not edit it directly.
 
@@ -44,15 +41,11 @@ The root context creates:
 
 Components call `useQuery`, `useInfiniteQuery`, and `useMutation` with options
 from `useTRPC()`. Server state belongs in React Query. Local view state stays in
-components. Selected model and thinking-level preference are persisted in
-Zustand/local storage. The preference store validates model syntax and canonical
-thinking-level values again when local storage rehydrates.
-
-The `providerAuth.models` query is the capability source for the composer. It
-returns the operator fallback plus models from connected providers; each model
-may include the exact canonical Pi thinking levels advertised by the runner.
-When the query has no usable catalog, the composer uses the same static fallback
-model list.
+components. The thinking-level preference is persisted in Zustand/local storage.
+The preference store clamps unsupported persisted values to `off`, `high`, or
+`max` when local storage rehydrates. Ditto uses one model,
+`opencode/deepseek-v4-flash-free`; the composer does not query a provider
+catalog or send a model field.
 
 The project workspace route coordinates the main read model:
 
@@ -77,9 +70,8 @@ states and history loading, and owns the transient streaming overlay.
 
 `Composer` owns one long-lived stream request:
 
-1. take the persisted model preference and clamp the thinking preference to the
-   selected model's supported levels;
-2. call `streamAgentRun` with the effective abstract thinking level;
+1. clamp the persisted thinking preference to `off`, `high`, or `max`;
+2. call `streamAgentRun` with the effective abstract thinking level (no model field);
 3. use `meta` to bind server-generated session/message IDs;
 4. append exact text-delta bytes and reduce PI tool events into ordered
    assistant parts without moving text across tool boundaries;
@@ -112,18 +104,10 @@ stops local consumption but does not cancel the sandbox process.
 
 ### Thinking-level preference
 
-Pi exposes one canonical ordered vocabulary: `off`, `minimal`, `low`, `medium`,
-`high`, `xhigh`, and `max`. The browser stores an abstract preference with
-`medium` as its default; it does not store a provider-specific setting. For a
-selected model, `effectiveThinkingLevel` keeps the preference when supported,
-otherwise scans upward in canonical order and then downward to the nearest
-supported level. The fallback model supports `off`, `high`, and `max`, so the
-default `medium` preference resolves to `high` for that model.
-
-The selector shows only the selected model's advertised capabilities and is
-disabled while a run is active. Missing or empty capability metadata is treated
-as legacy catalog data: the UI displays `Auto` and omits `thinkingLevel` from
-the stream request rather than guessing a level. The server remains the final
+The fixed model supports `off`, `high`, and `max`. The browser stores an abstract
+preference with `high` as its default. An older persisted value such as
+`medium` is clamped to `high` on rehydrate. The selector shows only those three
+levels and is disabled while a run is active. The server remains the final
 authority; browser clamping is only the request/UI convenience layer.
 
 ## Assistant message model
@@ -174,8 +158,6 @@ workspace route.
   project environment variables, and starts provisioning.
 - `ProjectSettingsDialog` renames or deletes a project and manages encrypted
   environment variable keys/values. Values are write-only in the UI.
-- `ProviderSettingsPage` lists account provider connections, runs interactive
-  login or reconnect flows, and disconnects providers.
 - `SessionGitActions` renders the state machine returned by
   `sessionGit.gitStatus`; it does not independently infer Git workflow policy.
 - `ChatNavbar` owns a right-sidebar tools trigger (`aria-pressed`) immediately

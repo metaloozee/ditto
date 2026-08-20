@@ -63,7 +63,6 @@ vi.mock("#/lib/agent-run-service", () => ({
 		projectId: z.string().min(1),
 		sessionId: z.string().min(1).optional(),
 		message: z.string().trim().min(1),
-		model: z.string().min(1),
 	}),
 	prepareAgentRun: prepareAgentRunMock,
 	executeAgentRun: executeAgentRunMock,
@@ -116,7 +115,6 @@ async function postJson(body: unknown): Promise<Response> {
 const STREAM_BODY = {
 	projectId: "proj-1",
 	message: "hi",
-	model: "opencode/deepseek-v4-flash-free",
 } as const;
 
 function readyPrepare() {
@@ -166,7 +164,6 @@ describe("api.agent.stream POST adapter", () => {
 				body: JSON.stringify({
 					projectId: "p1",
 					message: "hi",
-					model: "opencode/deepseek-v4-flash-free",
 				}),
 			}),
 		});
@@ -206,7 +203,6 @@ describe("api.agent.stream POST adapter", () => {
 		const response = await postJson({
 			projectId: "proj-1",
 			message: "hi",
-			model: "opencode/deepseek-v4-flash-free",
 		});
 
 		expect(response.status).toBe(409);
@@ -244,7 +240,6 @@ describe("api.agent.stream POST adapter", () => {
 		const response = await postJson({
 			projectId: "proj-1",
 			message: "hi",
-			model: "opencode/deepseek-v4-flash-free",
 		});
 
 		expect(response.status).toBe(200);

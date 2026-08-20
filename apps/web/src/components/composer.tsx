@@ -1,7 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { CornerDownLeft, Square } from "lucide";
-import { CheckIcon } from "lucide-react";
 import { MorphIcon } from "morphicons/react";
 import {
 	type Dispatch,
@@ -9,23 +7,10 @@ import {
 	type KeyboardEvent,
 	type SetStateAction,
 	useEffect,
-	useMemo,
 	useRef,
 	useState,
 } from "react";
-import {
-	ModelSelector,
-	ModelSelectorContent,
-	ModelSelectorEmpty,
-	ModelSelectorGroup,
-	ModelSelectorInput,
-	ModelSelectorItem,
-	ModelSelectorList,
-	ModelSelectorLogo,
-	ModelSelectorLogoGroup,
-	ModelSelectorName,
-	ModelSelectorTrigger,
-} from "#/components/ai-elements/model-selector";
+import { ModelSelectorLogo } from "#/components/ai-elements/model-selector";
 import { Button } from "#/components/ui/button";
 import {
 	Select,
@@ -43,7 +28,6 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "#/components/ui/tooltip";
-import { useTRPC } from "#/integrations/trpc/react";
 import {
 	type AssistantMessagePart,
 	appendAssistantTextDelta,
@@ -56,9 +40,9 @@ import {
 import {
 	DEFAULT_PROJECT_CODER_MODEL,
 	effectiveThinkingLevel,
-	isPiThinkingLevel,
+	FALLBACK_MODEL_THINKING_LEVELS,
+	isSupportedThinkingLevel,
 	PI_THINKING_LEVEL_LABELS,
-	type PiThinkingLevel,
 	PROJECT_CODER_MODELS,
 } from "#/lib/agent-models";
 import {
@@ -79,20 +63,7 @@ const controlSettleClass = cn(
 	"@[420px]:animate-none",
 );
 
-interface Model {
-	chef: string;
-	chefSlug: string;
-	id: string;
-	name: string;
-	providers: string[];
-	thinkingLevels?: readonly PiThinkingLevel[];
-}
-
-interface ModelItemProps {
-	model: Model;
-	onSelect: (id: string) => void;
-	selectedModel: string;
-}
+const FIXED_MODEL = PROJECT_CODER_MODELS[0];
 
 function handleTextareaKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
 	if (
@@ -103,25 +74,6 @@ function handleTextareaKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
 		event.preventDefault();
 		event.currentTarget.form?.requestSubmit();
 	}
-}
-
-function ModelItem({ model, onSelect, selectedModel }: ModelItemProps) {
-	return (
-		<ModelSelectorItem onSelect={() => onSelect(model.id)} value={model.id}>
-			<ModelSelectorLogo className="size-5" provider={model.chefSlug} />
-			<ModelSelectorName>{model.name}</ModelSelectorName>
-			<ModelSelectorLogoGroup>
-				{model.providers.map((provider) => (
-					<ModelSelectorLogo key={provider} provider={provider} />
-				))}
-			</ModelSelectorLogoGroup>
-			{selectedModel === model.id ? (
-				<CheckIcon className="ml-auto size-4" />
-			) : (
-				<div className="ml-auto size-4" />
-			)}
-		</ModelSelectorItem>
-	);
 }
 
 export type ComposerStreamingState = {
@@ -216,60 +168,14 @@ export function Composer({
 		textRef.current = text;
 	}, [text]);
 	const assistantTextRef = useRef("");
-	const model = useUserPreferencesStore((state) => state.selectedModel);
-	const setModel = useUserPreferencesStore((state) => state.setSelectedModel);
 	const thinkingPreference = useUserPreferencesStore(
 		(state) => state.thinkingLevel,
 	);
 	const setThinkingPreference = useUserPreferencesStore(
 		(state) => state.setThinkingLevel,
 	);
-	const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
 	const [messageError, setMessageError] = useState<string | null>(null);
 	const navigate = useNavigate();
-	const trpc = useTRPC();
-	const modelsQuery = useQuery(trpc.providerAuth.models.queryOptions());
-	const models = useMemo<Model[]>(() => {
-		const fromServer = modelsQuery.data?.models ?? [];
-		if (fromServer.length > 0) {
-			return fromServer.map((m) => ({
-				id: m.id,
-				name: m.name,
-				chef: m.providerName || m.provider,
-				chefSlug: m.provider,
-				providers: [m.provider],
-				thinkingLevels: m.thinkingLevels,
-			}));
-		}
-		// Keep built-in defaults while the catalog loads or when none are connected.
-		if (modelsQuery.isPending || !modelsQuery.data) {
-			return PROJECT_CODER_MODELS.map((m) => ({
-				id: m.id,
-				name: m.name,
-				chef: m.providerName,
-				chefSlug: m.provider,
-				providers: [m.provider],
-				thinkingLevels: m.thinkingLevels,
-			}));
-		}
-		return [];
-	}, [modelsQuery.data, modelsQuery.isPending]);
-	const modelsByChef = useMemo(() => {
-		const map = new Map<string, Model[]>();
-		for (const modelOption of models) {
-			const group = map.get(modelOption.chef);
-			if (group) group.push(modelOption);
-			else map.set(modelOption.chef, [modelOption]);
-		}
-		return map;
-	}, [models]);
-	useEffect(() => {
-		if (models.length === 0) return;
-		if (!models.some((m) => m.id === model)) {
-			setModel(DEFAULT_PROJECT_CODER_MODEL);
-		}
-	}, [model, models, setModel]);
-	const modelsLoading = modelsQuery.isLoading;
 
 	function clearStreamingState(): void {
 		isStreamingRef.current = false;
@@ -295,7 +201,7 @@ export function Composer({
 			tools: [],
 			parts: [],
 			queuedFollowUps: [],
-			model,
+			model: DEFAULT_PROJECT_CODER_MODEL,
 		};
 	}
 
@@ -356,7 +262,7 @@ export function Composer({
 				id: options.assistantMessageId,
 				role: "assistant",
 				content: options.content,
-				model,
+				model: DEFAULT_PROJECT_CODER_MODEL,
 				tools: options.tools,
 				parts: options.parts,
 			},
@@ -454,14 +360,13 @@ export function Composer({
 		try {
 			const thinkingLevel = effectiveThinkingLevel(
 				thinkingPreference,
-				models.find((m) => m.id === model)?.thinkingLevels,
+				FALLBACK_MODEL_THINKING_LEVELS,
 			);
 			await streamAgentRun(
 				{
 					projectId,
 					sessionId: streamSessionId,
 					message: prompt,
-					model,
 					...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
 				},
 				{
@@ -481,7 +386,7 @@ export function Composer({
 								active: true,
 								userMessageId: meta.userMessageId,
 								assistantMessageId: meta.assistantMessageId,
-								model,
+								model: DEFAULT_PROJECT_CODER_MODEL,
 							};
 						});
 					},
@@ -522,7 +427,7 @@ export function Composer({
 							tools: [],
 							parts: [],
 							queuedFollowUps: queuedFollowUpsRef.current,
-							model,
+							model: DEFAULT_PROJECT_CODER_MODEL,
 						}));
 					},
 					onQueueCancelled: ({ requestId }) => {
@@ -638,7 +543,6 @@ export function Composer({
 				projectId,
 				sessionId: activeSessionId,
 				runId,
-				model,
 				message: snapshot,
 			});
 			if (response.action !== "follow_up") {
@@ -753,26 +657,15 @@ export function Composer({
 		await startInitialPrompt(snapshot);
 	}
 
-	function handleModelSelect(id: string): void {
-		setModel(id);
-		setModelSelectorOpen(false);
-	}
-
-	const selectedModel = models.find((modelOption) => modelOption.id === model);
-	const selectedThinkingLevels = selectedModel?.thinkingLevels;
+	const thinkingOptions = FALLBACK_MODEL_THINKING_LEVELS;
 	const effectiveThinking = effectiveThinkingLevel(
 		thinkingPreference,
-		selectedThinkingLevels,
+		thinkingOptions,
 	);
-	const thinkingOptions = selectedThinkingLevels ?? [];
-	const thinkingSelectDisabled =
-		Boolean(disabledReason) ||
-		isStreaming ||
-		thinkingOptions.length <= 1 ||
-		effectiveThinking === undefined;
+	const thinkingSelectDisabled = Boolean(disabledReason) || isStreaming;
 	const thinkingTriggerLabel =
 		effectiveThinking === undefined
-			? "Auto"
+			? PI_THINKING_LEVEL_LABELS[thinkingPreference]
 			: PI_THINKING_LEVEL_LABELS[effectiveThinking];
 	const hasText = Boolean(text.trim());
 	const isPending =
@@ -791,14 +684,11 @@ export function Composer({
 	const isStopAction = stopping || (isStreaming && controlReady && !hasText);
 	const submitDisabled =
 		Boolean(disabledReason) ||
-		modelsLoading ||
-		models.length === 0 ||
-		!models.some((m) => m.id === model) ||
 		isPending ||
 		(isStreaming ? !controlReady && !isPending : !hasText);
 	const messageInvalid = Boolean(messageError);
 
-	const modelLabel = selectedModel?.name ?? "Select model";
+	const modelLabel = FIXED_MODEL.name;
 
 	return (
 		<section className="@container mx-auto w-full min-w-0 max-w-3xl px-5 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-6">
@@ -859,82 +749,25 @@ export function Composer({
 							controlSettleClass,
 						)}
 					>
-						<ModelSelector
-							open={modelSelectorOpen}
-							onOpenChange={setModelSelectorOpen}
-						>
-							<Tooltip>
-								<TooltipTrigger
-									render={
-										<ModelSelectorTrigger
-											render={
-												<Button
-													type="button"
-													variant="outline"
-													size="icon-lg"
-													aria-label={modelLabel}
-													disabled={
-														Boolean(disabledReason) ||
-														isStreaming ||
-														models.length === 0
-													}
-													className={cn(
-														"size-9 rounded-full bg-card shadow-xs @[420px]:size-11",
-														// size morph 200ms; press feedback stays crisp via active scale
-														"transition-[transform,width,height] duration-200",
-														morphEaseClass,
-														"active:scale-[0.97] active:duration-150",
-														"motion-reduce:transition-none motion-reduce:active:scale-100",
-													)}
-												>
-													{selectedModel?.chefSlug ? (
-														<ModelSelectorLogo
-															className="size-5"
-															provider={selectedModel.chefSlug}
-														/>
-													) : (
-														<span
-															className="size-5 rounded-full bg-muted"
-															aria-hidden
-														/>
-													)}
-												</Button>
-											}
+						<Tooltip>
+							<TooltipTrigger
+								render={
+									<span
+										role="img"
+										aria-label={modelLabel}
+										className={cn(
+											"inline-flex size-9 items-center justify-center rounded-full border border-border bg-card shadow-xs @[420px]:size-11",
+										)}
+									>
+										<ModelSelectorLogo
+											className="size-5"
+											provider={FIXED_MODEL.provider}
 										/>
-									}
-								/>
-								<TooltipContent side="top">{modelLabel}</TooltipContent>
-							</Tooltip>
-							<ModelSelectorContent showCloseButton={false}>
-								<ModelSelectorInput placeholder="Search models…" />
-								<ModelSelectorList>
-									<ModelSelectorEmpty>No model found.</ModelSelectorEmpty>
-									{models.length === 0 ? (
-										<div className="px-4 py-6 text-center text-sm text-muted-foreground">
-											<p className="font-medium text-foreground">
-												Nothing found
-											</p>
-											<p className="mt-1 text-xs text-pretty">
-												Connect an AI provider in Settings to choose a model.
-											</p>
-										</div>
-									) : (
-										[...modelsByChef.entries()].map(([chef, chefModels]) => (
-											<ModelSelectorGroup heading={chef} key={chef}>
-												{chefModels.map((modelOption) => (
-													<ModelItem
-														key={modelOption.id}
-														model={modelOption}
-														onSelect={handleModelSelect}
-														selectedModel={model}
-													/>
-												))}
-											</ModelSelectorGroup>
-										))
-									)}
-								</ModelSelectorList>
-							</ModelSelectorContent>
-						</ModelSelector>
+									</span>
+								}
+							/>
+							<TooltipContent side="top">{modelLabel}</TooltipContent>
+						</Tooltip>
 					</div>
 
 					<div
@@ -950,7 +783,7 @@ export function Composer({
 						<Select
 							value={effectiveThinking ?? null}
 							onValueChange={(value) => {
-								if (isPiThinkingLevel(value)) {
+								if (isSupportedThinkingLevel(value)) {
 									setThinkingPreference(value);
 								}
 							}}

@@ -9,10 +9,12 @@ Plan 001 was executed on 2026-08-20. The spec digest after that change is
 `f104e9ba66b97ce8f5a196a08854fa7819cfd7e37186f8b46cfb429c2124c5b3`. Later
 plans should start from that digest. The spec is already in this workspace.
 
-Plan 002 was executed on 2026-08-20. Uncommitted runner and architecture
-changes are in
-`/home/ayan/.grok/worktrees/ayan-ditto/subagent-01a02037-4e7f-76a2-9afc-9a1e093ef707`.
-Copy or merge that worktree before running plan 003.
+Plan 002 was executed on 2026-08-20 and is on `a49af50`.
+
+Plan 003 was executed on 2026-08-20. Uncommitted Worker, runner, UI, and
+architecture changes are in
+`/home/ayan/.grok/worktrees/ayan-ditto/subagent-01a02050-f0b0-7711-a8f6-79df790255ef`.
+Copy or merge that worktree before running plans that depend on 003.
 
 Before executing any remaining plan, compare both the commit and the spec
 digest. Read the new diff if either changed. Stop if a required guarantee,
@@ -24,7 +26,7 @@ trust decision, or cutover rule changed.
 |---|---|---|---|
 | [001](001-resolve-module-and-platform-contracts.md) | DONE | none | The spec states implementable module interfaces and records local Sandbox contract results. |
 | [002](002-lock-pi-resource-loading.md) | DONE | 001 | Normal chat loads only the image-owned Ditto extension and no repository resources. |
-| [003](003-fix-model-and-remove-account-providers.md) | TODO | 002 | Ditto exposes one fixed model and removes account-provider product paths. |
+| [003](003-fix-model-and-remove-account-providers.md) | DONE | 002 | Ditto exposes one fixed model and removes account-provider product paths. |
 | [004](004-add-token-free-archive-transport.md) | TODO | 001 | The Worker streams archives through R2 bindings without giving the sandbox an R2 capability. |
 | [005](005-build-project-seeds-through-brokered-fetch.md) | TODO | 003, 004 | Temporary builders use durable identity and brokered Git fetch to create immutable project seeds. |
 | [006](006-move-runtime-ownership-to-workspace-sessions.md) | TODO | 005 | Each workspace session owns one sandbox, branch checkout, and lifecycle generation. |

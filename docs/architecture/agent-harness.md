@@ -116,17 +116,13 @@ helper once (the runner and stream route do not snapshot).
 
 ## Thinking-level propagation
 
-Thinking levels are Pi abstractions, not provider-specific strings. The
-canonical order is `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`.
-The frontend clamps the saved preference to the selected model's advertised
-capabilities. The Worker validates an explicitly supplied level against the
-authorized account catalog before writing any job. If the catalog is legacy or
-has no capability metadata, the frontend omits the optional field and the
-Worker preserves that compatibility path.
+The fixed model supports `off`, `high`, and `max`. The frontend clamps the saved
+preference to those levels. The Worker rejects any other explicit level before
+writing a job. Omitting the field remains valid for old clients.
 
 The optional value then travels through `AgentRunContext` to `runAgentInSandbox`,
 which writes it to `.ditto/jobs/<id>.json`. `agent-job.ts` is the sandbox trust
-boundary: it accepts only the canonical vocabulary before `cli.ts` passes the
+boundary: it accepts only `off`, `high`, and `max` before `cli.ts` passes the
 value to `runAgent`. `run-agent.ts` supplies it to `createAgentSession`; Pi
 clamps again as a defense against an invalid or stale capability boundary. An
 omitted value leaves Pi's normal model/session default in control. Follow-ups

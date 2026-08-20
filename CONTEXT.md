@@ -6,7 +6,7 @@ Ditto uses the terms below in product discussion, specifications, architecture d
 
 ### User
 
-A person signed in to Ditto. A user owns projects, workspace sessions, messages, provider credentials, and provider model catalogs.
+A person signed in to Ditto. A user owns projects, workspace sessions, and messages.
 
 ## Project work
 
@@ -62,15 +62,15 @@ A temporary public view of the application running from one workspace session. T
 
 ### Provider credential
 
-An account-level authorization that lets a user run models from one AI provider. A credential can use an API key or OAuth and can require the user to sign in again.
+Leftover D1 records in `ai_provider_credentials`. Account-provider connections are not a current product feature. These rows are pending removal.
 
 ### Provider model catalog
 
-The safe list of models and capabilities discovered for one provider credential. The catalog contains model metadata, not provider secrets.
+Leftover catalog JSON stored beside those credential rows. Not a current product feature; pending removal.
 
 ### Thinking level
 
-A provider-independent request for how much reasoning a model should apply. Ditto offers only levels supported by the selected model.
+A request for how much reasoning the fixed model should apply. Ditto supports `off`, `high`, and `max`.
 
 ## Git work
 

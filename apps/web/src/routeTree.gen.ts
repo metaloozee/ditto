@@ -10,7 +10,6 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as InstallationCompletedRouteImport } from './routes/installation.completed'
 import { Route as ProjectProjectIdRouteImport } from './routes/project.$projectId'
@@ -18,8 +17,6 @@ import { Route as ApiAgentControlRouteImport } from './routes/api.agent.control'
 import { Route as ApiAgentGitRouteImport } from './routes/api.agent.git'
 import { Route as ApiAgentStreamRouteImport } from './routes/api.agent.stream'
 import { Route as ApiAuthSplatRouteImport } from './routes/api.auth.$'
-import { Route as ApiProviderAuthControlRouteImport } from './routes/api.provider-auth.control'
-import { Route as ApiProviderAuthStreamRouteImport } from './routes/api.provider-auth.stream'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
 import { Route as ProjectProjectIdIndexRouteImport } from './routes/project.$projectId.index'
 import { Route as ProjectProjectIdSessionSessionIdRouteImport } from './routes/project.$projectId.session.$sessionId'
@@ -27,11 +24,6 @@ import { Route as ProjectProjectIdSessionSessionIdRouteImport } from './routes/p
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignInRoute = SignInRouteImport.update({
@@ -69,16 +61,6 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiProviderAuthControlRoute = ApiProviderAuthControlRouteImport.update({
-  id: '/api/provider-auth/control',
-  path: '/api/provider-auth/control',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiProviderAuthStreamRoute = ApiProviderAuthStreamRouteImport.update({
-  id: '/api/provider-auth/stream',
-  path: '/api/provider-auth/stream',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiTrpcSplatRoute = ApiTrpcSplatRouteImport.update({
   id: '/api/trpc/$',
   path: '/api/trpc/$',
@@ -98,7 +80,6 @@ const ProjectProjectIdSessionSessionIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/installation/completed': typeof InstallationCompletedRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
@@ -106,23 +87,18 @@ export interface FileRoutesByFullPath {
   '/api/agent/git': typeof ApiAgentGitRoute
   '/api/agent/stream': typeof ApiAgentStreamRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/provider-auth/control': typeof ApiProviderAuthControlRoute
-  '/api/provider-auth/stream': typeof ApiProviderAuthStreamRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/project/$projectId/': typeof ProjectProjectIdIndexRoute
   '/project/$projectId/session/$sessionId': typeof ProjectProjectIdSessionSessionIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/installation/completed': typeof InstallationCompletedRoute
   '/api/agent/control': typeof ApiAgentControlRoute
   '/api/agent/git': typeof ApiAgentGitRoute
   '/api/agent/stream': typeof ApiAgentStreamRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/provider-auth/control': typeof ApiProviderAuthControlRoute
-  '/api/provider-auth/stream': typeof ApiProviderAuthStreamRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/project/$projectId': typeof ProjectProjectIdIndexRoute
   '/project/$projectId/session/$sessionId': typeof ProjectProjectIdSessionSessionIdRoute
@@ -130,7 +106,6 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/installation/completed': typeof InstallationCompletedRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
@@ -138,8 +113,6 @@ export interface FileRoutesById {
   '/api/agent/git': typeof ApiAgentGitRoute
   '/api/agent/stream': typeof ApiAgentStreamRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/provider-auth/control': typeof ApiProviderAuthControlRoute
-  '/api/provider-auth/stream': typeof ApiProviderAuthStreamRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/project/$projectId/': typeof ProjectProjectIdIndexRoute
   '/project/$projectId/session/$sessionId': typeof ProjectProjectIdSessionSessionIdRoute
@@ -148,7 +121,6 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/settings'
     | '/sign-in'
     | '/installation/completed'
     | '/project/$projectId'
@@ -156,30 +128,24 @@ export interface FileRouteTypes {
     | '/api/agent/git'
     | '/api/agent/stream'
     | '/api/auth/$'
-    | '/api/provider-auth/control'
-    | '/api/provider-auth/stream'
     | '/api/trpc/$'
     | '/project/$projectId/'
     | '/project/$projectId/session/$sessionId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/settings'
     | '/sign-in'
     | '/installation/completed'
     | '/api/agent/control'
     | '/api/agent/git'
     | '/api/agent/stream'
     | '/api/auth/$'
-    | '/api/provider-auth/control'
-    | '/api/provider-auth/stream'
     | '/api/trpc/$'
     | '/project/$projectId'
     | '/project/$projectId/session/$sessionId'
   id:
     | '__root__'
     | '/'
-    | '/settings'
     | '/sign-in'
     | '/installation/completed'
     | '/project/$projectId'
@@ -187,8 +153,6 @@ export interface FileRouteTypes {
     | '/api/agent/git'
     | '/api/agent/stream'
     | '/api/auth/$'
-    | '/api/provider-auth/control'
-    | '/api/provider-auth/stream'
     | '/api/trpc/$'
     | '/project/$projectId/'
     | '/project/$projectId/session/$sessionId'
@@ -196,7 +160,6 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  SettingsRoute: typeof SettingsRoute
   SignInRoute: typeof SignInRoute
   InstallationCompletedRoute: typeof InstallationCompletedRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRouteWithChildren
@@ -204,8 +167,6 @@ export interface RootRouteChildren {
   ApiAgentGitRoute: typeof ApiAgentGitRoute
   ApiAgentStreamRoute: typeof ApiAgentStreamRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
-  ApiProviderAuthControlRoute: typeof ApiProviderAuthControlRoute
-  ApiProviderAuthStreamRoute: typeof ApiProviderAuthStreamRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
 }
 
@@ -216,13 +177,6 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-in': {
@@ -274,20 +228,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/provider-auth/control': {
-      id: '/api/provider-auth/control'
-      path: '/api/provider-auth/control'
-      fullPath: '/api/provider-auth/control'
-      preLoaderRoute: typeof ApiProviderAuthControlRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/provider-auth/stream': {
-      id: '/api/provider-auth/stream'
-      path: '/api/provider-auth/stream'
-      fullPath: '/api/provider-auth/stream'
-      preLoaderRoute: typeof ApiProviderAuthStreamRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/trpc/$': {
       id: '/api/trpc/$'
       path: '/api/trpc/$'
@@ -327,7 +267,6 @@ const ProjectProjectIdRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  SettingsRoute: SettingsRoute,
   SignInRoute: SignInRoute,
   InstallationCompletedRoute: InstallationCompletedRoute,
   ProjectProjectIdRoute: ProjectProjectIdRouteWithChildren,
@@ -335,8 +274,6 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAgentGitRoute: ApiAgentGitRoute,
   ApiAgentStreamRoute: ApiAgentStreamRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
-  ApiProviderAuthControlRoute: ApiProviderAuthControlRoute,
-  ApiProviderAuthStreamRoute: ApiProviderAuthStreamRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
 }
 export const routeTree = rootRouteImport

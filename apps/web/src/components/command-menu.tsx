@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { ClientOnly, useNavigate } from "@tanstack/react-router";
-import { FileTextIcon, PlusIcon } from "lucide-react";
+import { PlusIcon } from "lucide-react";
 import type { JSX } from "react";
 import { useEffect, useState } from "react";
 import {
@@ -112,17 +112,6 @@ function CommandMenuClient(): JSX.Element {
 						>
 							<PlusIcon aria-hidden="true" />
 							<span className="text-sm font-medium">Go to home</span>
-						</CommandItem>
-						<CommandItem
-							value="Open settings"
-							onSelect={() => {
-								setOpen(false);
-								void navigate({ to: "/settings" });
-							}}
-							className="cursor-pointer py-2"
-						>
-							<FileTextIcon aria-hidden="true" />
-							<span className="text-sm font-medium">Open settings</span>
 						</CommandItem>
 					</CommandGroup>
 				</CommandList>

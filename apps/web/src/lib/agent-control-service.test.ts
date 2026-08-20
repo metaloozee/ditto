@@ -61,7 +61,6 @@ const followUp = {
 	projectId: "project-1",
 	sessionId: "session-1",
 	runId: "run-1",
-	model: "opencode/deepseek-v4-flash-free" as const,
 	message: "do not put this text in the shell command",
 };
 
@@ -101,6 +100,7 @@ describe("agent control service", () => {
 			},
 		});
 		const job = JSON.parse(harness.writeFile.mock.calls[0][1]);
+		expect(job.model).toBe("opencode/deepseek-v4-flash-free");
 		expect(job.text).toBe(followUp.message);
 		const command = harness.exec.mock.calls[0][0] as string;
 		expect(command).toBe(

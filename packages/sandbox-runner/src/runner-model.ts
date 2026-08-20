@@ -1,6 +1,9 @@
 import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
+export const RUNNER_MODEL_SPECIFIER =
+	"opencode/deepseek-v4-flash-free" as const;
+
 export type ParsedModelSpecifier = {
 	provider: string;
 	modelId: string;
@@ -14,6 +17,13 @@ export type ResolvedRunnerModel = {
 };
 
 const MODEL_SPECIFIER_MAX = 128;
+const FIXED_PROVIDER = "opencode";
+const FIXED_MODEL_ID = "deepseek-v4-flash-free";
+
+function scrubCredentialEnv(): void {
+	delete process.env.DITTO_PI_CREDENTIAL;
+	delete process.env.OPENCODE_API_KEY;
+}
 
 export function parseModelSpecifier(
 	modelSpecifier: string,
@@ -26,19 +36,18 @@ export function parseModelSpecifier(
 	) {
 		return { error: "Unknown model: invalid specifier" };
 	}
-	const slash = modelSpecifier.indexOf("/");
-	if (slash <= 0 || slash === modelSpecifier.length - 1) {
+	if (modelSpecifier !== RUNNER_MODEL_SPECIFIER) {
 		return { error: `Unknown model: ${modelSpecifier}` };
 	}
 
 	return {
-		provider: modelSpecifier.slice(0, slash),
-		modelId: modelSpecifier.slice(slash + 1),
+		provider: FIXED_PROVIDER,
+		modelId: FIXED_MODEL_ID,
 	};
 }
 
 /**
- * Resolve a provider/model and seed an in-memory credential store.
+ * Resolve the fixed provider/model and seed an in-memory credential store.
  * Deletes DITTO_PI_CREDENTIAL and OPENCODE_API_KEY from the process env before
  * any Agent Session or tool can start (including on error paths after parse).
  * Never returns credential material.
@@ -49,8 +58,7 @@ export async function resolveRunnerModel(
 	const parsed = parseModelSpecifier(modelSpecifier);
 	if ("error" in parsed) {
 		// Still scrub env so a bad specifier cannot leave secrets for later tools.
-		delete process.env.DITTO_PI_CREDENTIAL;
-		delete process.env.OPENCODE_API_KEY;
+		scrubCredentialEnv();
 		return parsed;
 	}
 
@@ -58,8 +66,7 @@ export async function resolveRunnerModel(
 	const rawCredential =
 		process.env.DITTO_PI_CREDENTIAL ?? process.env.OPENCODE_API_KEY;
 	// Delete before session/tools so bash children cannot inherit secrets.
-	delete process.env.DITTO_PI_CREDENTIAL;
-	delete process.env.OPENCODE_API_KEY;
+	scrubCredentialEnv();
 
 	if (rawCredential) {
 		let credential: { type: string; [key: string]: unknown };

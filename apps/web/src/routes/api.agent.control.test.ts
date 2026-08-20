@@ -28,7 +28,6 @@ vi.mock("#/lib/agent-control-service", () => ({
 			projectId: z.string().min(1),
 			sessionId: z.string().min(1),
 			runId: z.string().min(1),
-			model: z.string().min(1),
 			message: z.string().trim().min(1),
 		}),
 		z.object({
@@ -104,7 +103,6 @@ describe("api.agent.control", () => {
 			projectId: "project-1",
 			sessionId: "session-1",
 			runId: "run-1",
-			model: "provider/model",
 			message: "next",
 		},
 		{

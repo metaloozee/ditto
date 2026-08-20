@@ -3,7 +3,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import type { createDb } from "#/db";
 import { projects } from "#/db/schema";
-import { isProjectCoderModelSpecifier } from "#/lib/agent-models";
+import { DEFAULT_PROJECT_CODER_MODEL } from "#/lib/agent-models";
 import { getProjectSandbox } from "#/lib/sandbox-bootstrap";
 import { loadOwnedActiveSession } from "#/lib/workspace-session";
 
@@ -22,9 +22,6 @@ const commonSchema = z.object({
 export const agentControlBodySchema = z.discriminatedUnion("action", [
 	commonSchema.extend({
 		action: z.literal("follow_up"),
-		model: z.string().min(1).refine(isProjectCoderModelSpecifier, {
-			message: "Invalid model.",
-		}),
 		message: z.string().trim().min(1).max(32_000),
 	}),
 	commonSchema.extend({ action: z.literal("stop") }),
@@ -204,7 +201,7 @@ export async function controlAgentRun(options: {
 					requestId,
 					runId: input.runId,
 					sessionId: input.sessionId,
-					model: input.model,
+					model: DEFAULT_PROJECT_CODER_MODEL,
 					text: input.message,
 					userMessageId: deps.createId(),
 					assistantMessageId: deps.createId(),

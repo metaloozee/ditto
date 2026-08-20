@@ -21,12 +21,6 @@ vi.mock("#/lib/project-env-vars", () => ({
 	decryptEnvVars: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock("#/lib/provider-auth-service", () => ({
-	resolveOAuthCredential: vi
-		.fn()
-		.mockResolvedValue({ ok: false, code: "refresh_failed" }),
-}));
-
 vi.mock("#/lib/workspace-session", () => ({
 	resolveSessionForMessageWrite: vi.fn(),
 	workspaceSessionRecencyUpdate: vi.fn((_db: unknown, sessionId: string) => ({
@@ -147,7 +141,6 @@ function baseDeps(overrides: Partial<AgentRunDeps> = {}): AgentRunDeps {
 			baseCommitSha: activeSession.baseCommitSha,
 			workspacePath: activeSession.workspacePath,
 		}),
-		loadCredential: vi.fn().mockResolvedValue(null),
 		runAgentInSandbox: vi.fn().mockResolvedValue({
 			ok: true,
 			assistantText: "Hello",
@@ -179,7 +172,6 @@ describe("prepareAgentRun", () => {
 			input: {
 				projectId: "missing",
 				message: "hi",
-				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
 				loadProjectForUser: vi.fn().mockResolvedValue(null),
@@ -201,7 +193,6 @@ describe("prepareAgentRun", () => {
 			input: {
 				projectId: "proj-1",
 				message: "hi",
-				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
 				loadProjectForUser: vi.fn().mockResolvedValue({
@@ -227,7 +218,6 @@ describe("prepareAgentRun", () => {
 			input: {
 				projectId: "proj-1",
 				message: "hi",
-				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
 				provisionProjectSandbox: vi.fn().mockResolvedValue({
@@ -253,7 +243,6 @@ describe("prepareAgentRun", () => {
 				projectId: "proj-1",
 				sessionId: "sess-archived",
 				message: "hi",
-				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
 				resolveSessionForMessageWrite: vi
@@ -303,7 +292,6 @@ describe("prepareAgentRun", () => {
 				projectId: "proj-1",
 				sessionId: "sess-1",
 				message: "hi",
-				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps,
 		});
@@ -327,7 +315,6 @@ describe("prepareAgentRun", () => {
 			input: {
 				projectId: "proj-1",
 				message: "hi",
-				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
 				createId: vi.fn().mockReturnValue("sess-new"),
@@ -362,7 +349,6 @@ describe("prepareAgentRun", () => {
 				projectId: "proj-1",
 				sessionId: "sess-1",
 				message: "hi",
-				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
 				ensureSessionWorkspaceReady: vi
@@ -394,7 +380,6 @@ describe("prepareAgentRun", () => {
 				projectId: "proj-1",
 				sessionId: "sess-1",
 				message: "hi",
-				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
 				ensureSessionWorkspaceReady: vi
@@ -427,7 +412,6 @@ describe("prepareAgentRun", () => {
 				projectId: "proj-1",
 				sessionId: "sess-1",
 				message: "hi",
-				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
 				createId: vi
@@ -458,69 +442,40 @@ describe("prepareAgentRun", () => {
 		});
 	});
 
-	it("rejects arbitrary same-provider model not in owned catalog", async () => {
-		const { db } = createMockDb();
+	it("fails missing OPENCODE_API_KEY before project, session, message, or sandbox calls", async () => {
+		const loadProjectForUser = vi.fn();
+		const provisionProjectSandbox = vi.fn();
+		const resolveSessionForMessageWrite = vi.fn();
+		const { db, insert, batch } = createMockDb();
+		const env = makeEnv();
+		env.OPENCODE_API_KEY = "";
 		const result = await prepareAgentRun({
 			db,
-			env: makeEnv(),
+			env,
 			userId: "user-1",
 			input: {
 				projectId: "proj-1",
 				message: "hi",
-				model: "anthropic/claude-opus-not-listed",
 			},
 			deps: baseDeps({
-				loadCredential: vi.fn().mockResolvedValue({
-					id: "c1",
-					authType: "api_key",
-					status: "connected",
-					version: 1,
-					credential: { type: "api_key", key: "sk-user-anthropic-key-xxxx" },
-					models: [
-						{
-							providerId: "anthropic",
-							modelId: "claude-sonnet",
-							name: "Claude Sonnet",
-						},
-					],
-					lastErrorCode: null,
-				}),
+				loadProjectForUser,
+				provisionProjectSandbox,
+				resolveSessionForMessageWrite,
 			}),
 		});
 		expect(result).toMatchObject({
 			kind: "error",
-			status: 409,
-			body: {
-				error: expect.stringMatching(/not available/i),
-			},
+			status: 500,
+			body: { error: "Server credentials are not configured." },
 		});
+		expect(loadProjectForUser).not.toHaveBeenCalled();
+		expect(provisionProjectSandbox).not.toHaveBeenCalled();
+		expect(resolveSessionForMessageWrite).not.toHaveBeenCalled();
+		expect(insert).not.toHaveBeenCalled();
+		expect(batch).not.toHaveBeenCalled();
 	});
 
-	it("rejects foreign-account style missing credential for non-fallback model", async () => {
-		const { db } = createMockDb();
-		const result = await prepareAgentRun({
-			db,
-			env: makeEnv(),
-			userId: "user-1",
-			input: {
-				projectId: "proj-1",
-				message: "hi",
-				model: "anthropic/claude-sonnet",
-			},
-			deps: baseDeps({
-				loadCredential: vi.fn().mockResolvedValue(null),
-			}),
-		});
-		expect(result).toMatchObject({
-			kind: "error",
-			status: 409,
-			body: {
-				error: expect.stringMatching(/Connect this provider/i),
-			},
-		});
-	});
-
-	it("allows exact fallback only without account credential", async () => {
+	it("always uses the fixed model and operator fallback credential", async () => {
 		const { db, batch } = createMockDb();
 		batch.mockResolvedValue([[{ id: "user-msg" }], [{ id: "asst-msg" }]]);
 		const result = await prepareAgentRun({
@@ -531,10 +486,8 @@ describe("prepareAgentRun", () => {
 				projectId: "proj-1",
 				sessionId: "sess-1",
 				message: "hi",
-				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
-				loadCredential: vi.fn().mockResolvedValue(null),
 				createId: vi
 					.fn()
 					.mockReturnValueOnce("run-1")
@@ -543,17 +496,38 @@ describe("prepareAgentRun", () => {
 			}),
 		});
 		expect(result.kind).toBe("ready");
+		if (result.kind === "ready") {
+			expect(result.context.model).toBe("opencode/deepseek-v4-flash-free");
+			expect(JSON.parse(result.context.runtimeCredentialJson)).toEqual({
+				type: "api_key",
+				key: makeEnv().OPENCODE_API_KEY,
+			});
+		}
 	});
 
 	it("rejects invalid thinkingLevel enum at the boundary", async () => {
 		const { agentStreamBodySchema } = await import("./agent-run-service");
-		const parsed = agentStreamBodySchema.safeParse({
-			projectId: "proj-1",
-			message: "hi",
-			model: "opencode/deepseek-v4-flash-free",
-			thinkingLevel: "ultra",
-		});
-		expect(parsed.success).toBe(false);
+		expect(
+			agentStreamBodySchema.safeParse({
+				projectId: "proj-1",
+				message: "hi",
+				thinkingLevel: "ultra",
+			}).success,
+		).toBe(false);
+		expect(
+			agentStreamBodySchema.safeParse({
+				projectId: "proj-1",
+				message: "hi",
+				thinkingLevel: "medium",
+			}).success,
+		).toBe(false);
+		expect(
+			agentStreamBodySchema.safeParse({
+				projectId: "proj-1",
+				message: "hi",
+				thinkingLevel: "low",
+			}).success,
+		).toBe(false);
 	});
 
 	it("rejects unsupported valid level before side effects", async () => {
@@ -566,11 +540,9 @@ describe("prepareAgentRun", () => {
 			input: {
 				projectId: "proj-1",
 				message: "hi",
-				model: "opencode/deepseek-v4-flash-free",
 				thinkingLevel: "medium",
-			},
+			} as never,
 			deps: baseDeps({
-				loadCredential: vi.fn().mockResolvedValue(null),
 				loadProjectForUser,
 			}),
 		});
@@ -595,11 +567,9 @@ describe("prepareAgentRun", () => {
 				projectId: "proj-1",
 				sessionId: "sess-1",
 				message: "hi",
-				model: "opencode/deepseek-v4-flash-free",
 				thinkingLevel: "high",
 			},
 			deps: baseDeps({
-				loadCredential: vi.fn().mockResolvedValue(null),
 				createId: vi
 					.fn()
 					.mockReturnValueOnce("run-1")
@@ -613,77 +583,6 @@ describe("prepareAgentRun", () => {
 		}
 	});
 
-	it("authorizes fallback high when owned catalog row lacks thinkingLevels", async () => {
-		const { db, batch } = createMockDb();
-		batch.mockResolvedValue([[{ id: "user-msg" }], [{ id: "asst-msg" }]]);
-		const ownedFallback = {
-			id: "c1",
-			authType: "api_key" as const,
-			status: "connected" as const,
-			version: 1,
-			credential: {
-				type: "api_key" as const,
-				key: "sk-user-opencode-key-xxxx",
-			},
-			// Legacy catalog: model present, thinkingLevels missing.
-			models: [
-				{
-					providerId: "opencode",
-					modelId: "deepseek-v4-flash-free",
-					name: "DeepSeek V4 Flash Free",
-				},
-			],
-			lastErrorCode: null,
-		};
-
-		const accepted = await prepareAgentRun({
-			db,
-			env: makeEnv(),
-			userId: "user-1",
-			input: {
-				projectId: "proj-1",
-				sessionId: "sess-1",
-				message: "hi",
-				model: "opencode/deepseek-v4-flash-free",
-				thinkingLevel: "high",
-			},
-			deps: baseDeps({
-				loadCredential: vi.fn().mockResolvedValue(ownedFallback),
-				createId: vi
-					.fn()
-					.mockReturnValueOnce("run-1")
-					.mockReturnValueOnce("user-msg")
-					.mockReturnValueOnce("asst-msg"),
-			}),
-		});
-		expect(accepted.kind).toBe("ready");
-		if (accepted.kind === "ready") {
-			expect(accepted.context.thinkingLevel).toBe("high");
-		}
-
-		const rejected = await prepareAgentRun({
-			db,
-			env: makeEnv(),
-			userId: "user-1",
-			input: {
-				projectId: "proj-1",
-				message: "hi",
-				model: "opencode/deepseek-v4-flash-free",
-				thinkingLevel: "medium",
-			},
-			deps: baseDeps({
-				loadCredential: vi.fn().mockResolvedValue(ownedFallback),
-			}),
-		});
-		expect(rejected).toMatchObject({
-			kind: "error",
-			status: 400,
-			body: {
-				error: expect.stringMatching(/Unsupported thinking level/i),
-			},
-		});
-	});
-
 	it("omitting thinkingLevel remains backward compatible", async () => {
 		const { db, batch } = createMockDb();
 		batch.mockResolvedValue([[{ id: "user-msg" }], [{ id: "asst-msg" }]]);
@@ -695,10 +594,8 @@ describe("prepareAgentRun", () => {
 				projectId: "proj-1",
 				sessionId: "sess-1",
 				message: "hi",
-				model: "opencode/deepseek-v4-flash-free",
 			},
 			deps: baseDeps({
-				loadCredential: vi.fn().mockResolvedValue(null),
 				createId: vi
 					.fn()
 					.mockReturnValueOnce("run-1")
@@ -710,73 +607,6 @@ describe("prepareAgentRun", () => {
 		if (result.kind === "ready") {
 			expect(result.context.thinkingLevel).toBeUndefined();
 		}
-	});
-
-	it("rejects other opencode models without account credential", async () => {
-		const { db } = createMockDb();
-		const result = await prepareAgentRun({
-			db,
-			env: makeEnv(),
-			userId: "user-1",
-			input: {
-				projectId: "proj-1",
-				message: "hi",
-				model: "opencode/some-paid-model",
-			},
-			deps: baseDeps({
-				loadCredential: vi.fn().mockResolvedValue(null),
-			}),
-		});
-		expect(result).toMatchObject({
-			kind: "error",
-			status: 409,
-		});
-	});
-
-	it("needs_relogin returns 409 without refresh", async () => {
-		const { db } = createMockDb();
-		const resolveOAuth = vi.mocked(
-			(await import("#/lib/provider-auth-service")).resolveOAuthCredential,
-		);
-		resolveOAuth.mockClear();
-		const result = await prepareAgentRun({
-			db,
-			env: makeEnv(),
-			userId: "user-1",
-			input: {
-				projectId: "proj-1",
-				message: "hi",
-				model: "anthropic/claude-sonnet",
-			},
-			deps: baseDeps({
-				loadCredential: vi.fn().mockResolvedValue({
-					id: "c1",
-					authType: "oauth",
-					status: "needs_relogin",
-					version: 3,
-					credential: {
-						type: "oauth",
-						refresh: "r",
-						access: "a",
-						expires: Date.now() + 999999,
-					},
-					models: [
-						{
-							providerId: "anthropic",
-							modelId: "claude-sonnet",
-							name: "Claude",
-						},
-					],
-					lastErrorCode: "oauth_refresh_failed",
-				}),
-			}),
-		});
-		expect(result).toMatchObject({
-			kind: "error",
-			status: 409,
-			body: { error: expect.stringMatching(/re-login/i) },
-		});
-		expect(resolveOAuth).not.toHaveBeenCalled();
 	});
 });
 
@@ -1281,7 +1111,6 @@ describe("executeAgentRun", () => {
 
 		const minimal = vi.fn().mockReturnValue('[{"type":"tool"}]');
 		const { events, run } = collectEvents(context, {
-			loadCredential: vi.fn().mockResolvedValue(null),
 			runAgentInSandbox: vi.fn().mockResolvedValue({
 				ok: true,
 				assistantText: "ok",
@@ -1313,7 +1142,6 @@ describe("executeAgentRun", () => {
 		const context = makeContext({ db: mockDb.db });
 
 		const { events, run } = collectEvents(context, {
-			loadCredential: vi.fn().mockResolvedValue(null),
 			runAgentInSandbox: vi.fn().mockResolvedValue({
 				ok: true,
 				assistantText: "ok",
@@ -1344,7 +1172,6 @@ describe("executeAgentRun", () => {
 		const context = makeContext({ db: mockDb.db });
 
 		const { events, run } = collectEvents(context, {
-			loadCredential: vi.fn().mockResolvedValue(null),
 			runAgentInSandbox: vi.fn().mockResolvedValue({
 				ok: true,
 				assistantText: "done",
