@@ -115,6 +115,13 @@ export async function commitSessionChangesWithGeneratedMessage(
 			db: ctx.db,
 			env: ctx.env,
 			project: ctx.project,
+			session: {
+				id: ctx.session.id,
+				baseCommitSha: ctx.session.baseCommitSha,
+				workspacePath: ctx.session.workspacePath,
+				branchName: ctx.session.branchName,
+				sandboxIdentityId: ctx.session.sandboxIdentityId,
+			},
 		});
 	}
 
@@ -193,6 +200,13 @@ export async function openSessionPullRequestWithGeneratedMetadata(
 			db: ctx.db,
 			env: ctx.env,
 			project: ctx.project,
+			session: {
+				id: ctx.session.id,
+				baseCommitSha: ctx.session.baseCommitSha,
+				workspacePath: ctx.session.workspacePath,
+				branchName: ctx.session.branchName,
+				sandboxIdentityId: ctx.session.sandboxIdentityId,
+			},
 		});
 	}
 	if (actionError) throw actionError;

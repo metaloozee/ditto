@@ -27,7 +27,8 @@ export type SessionPreviewErrorCode =
 	| "port_conflict"
 	| "start_failed"
 	| "expose_failed"
-	| "cleanup_failed";
+	| "cleanup_failed"
+	| "not_durable";
 
 export class SessionPreviewError extends Error {
 	readonly code: SessionPreviewErrorCode;
@@ -50,6 +51,7 @@ const ERROR_MESSAGES: Record<SessionPreviewErrorCode, string> = {
 	start_failed: "Failed to start the preview server.",
 	expose_failed: "Failed to expose the preview port.",
 	cleanup_failed: "Failed to fully stop the preview. Try again.",
+	not_durable: "Workspace recovery has uncheckpointed mutations.",
 };
 
 export function sessionPreviewError(
@@ -1219,6 +1221,21 @@ export async function archiveSessionWithPreviewCleanup(
 		});
 		if (!session) {
 			throw sessionPreviewError("not_found");
+		}
+
+		const { requireDurable, WorkspaceRecoveryError } = await import(
+			"#/lib/workspace-recovery"
+		);
+		try {
+			await requireDurable(deps.db, options.sessionId);
+		} catch (error) {
+			if (
+				error instanceof WorkspaceRecoveryError &&
+				error.code === "not_durable"
+			) {
+				throw sessionPreviewError("not_durable");
+			}
+			throw error;
 		}
 
 		if (session.previewPort != null) {

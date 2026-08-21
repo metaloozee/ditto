@@ -446,6 +446,52 @@ export const projectSeeds = sqliteTable(
 	(table) => [uniqueIndex("project_seeds_projectId_uidx").on(table.projectId)],
 );
 
+export const WORKSPACE_RECOVERY_STATES = [
+	"healthy",
+	"pending",
+	"degraded",
+	"failed",
+] as const;
+
+export const workspaceSessionRecoveries = sqliteTable(
+	"workspace_session_recoveries",
+	{
+		sessionId: text("sessionId")
+			.primaryKey()
+			.references(() => workspaceSessions.id, { onDelete: "cascade" }),
+		mutationGeneration: integer("mutationGeneration", { mode: "number" })
+			.notNull()
+			.default(0),
+		durableGeneration: integer("durableGeneration", { mode: "number" })
+			.notNull()
+			.default(0),
+		pendingGeneration: integer("pendingGeneration", { mode: "number" }),
+		pendingSince: integer("pendingSince", { mode: "timestamp" }),
+		currentArchiveId: text("currentArchiveId"),
+		previousArchiveId: text("previousArchiveId"),
+		state: text("state", {
+			enum: WORKSPACE_RECOVERY_STATES,
+		})
+			.notNull()
+			.default("healthy"),
+		reasonCode: text("reasonCode"),
+		retryAttempts: integer("retryAttempts", { mode: "number" })
+			.notNull()
+			.default(0),
+		retryAt: integer("retryAt", { mode: "number" }),
+		checkpointLeaseId: text("checkpointLeaseId"),
+		checkpointLeaseExpiresAt: integer("checkpointLeaseExpiresAt", {
+			mode: "timestamp",
+		}),
+		createdAt: integer("created_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+		updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+	},
+);
+
 /** Leftover provider-login attempt rows. Not a current product path; pending removal. */
 export const providerAuthAttempts = sqliteTable(
 	"provider_auth_attempts",

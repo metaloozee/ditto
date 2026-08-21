@@ -244,6 +244,14 @@ async function resolveSessionGitReadyForMutation(options: {
 				baseCommitSha: lease.baseCommitSha,
 				workspacePath: lease.workspacePath,
 				title: auth.session.title,
+				sandboxIdentityId: auth.session.sandboxIdentityId,
+			},
+			backupSession: {
+				id: auth.session.id,
+				sandboxIdentityId: auth.session.sandboxIdentityId,
+				baseCommitSha: lease.baseCommitSha,
+				workspacePath: lease.workspacePath,
+				branchName: lease.branchName,
 			},
 		}),
 	);
@@ -335,6 +343,7 @@ export const sessionGitRouter = createTRPCRouter({
 						db: resolved.db,
 						env: ctx.env,
 						project: resolved.project,
+						session: resolved.backupSession,
 						commit: () =>
 							commitSessionChanges({
 								env: ctx.env,
@@ -406,6 +415,7 @@ export const sessionGitRouter = createTRPCRouter({
 					db: resolved.db,
 					env: ctx.env,
 					project: resolved.project,
+					session: resolved.backupSession,
 					run: () =>
 						syncSessionBranch({
 							env: ctx.env,
@@ -476,6 +486,7 @@ export const sessionGitRouter = createTRPCRouter({
 					db: resolved.db,
 					env: ctx.env,
 					project: resolved.project,
+					session: resolved.backupSession,
 					run: () =>
 						pushSessionBranch({
 							env: ctx.env,
@@ -574,6 +585,7 @@ export const sessionGitRouter = createTRPCRouter({
 							db: resolved.db,
 							env: ctx.env,
 							project: resolved.project,
+							session: resolved.backupSession,
 						});
 					}
 				}

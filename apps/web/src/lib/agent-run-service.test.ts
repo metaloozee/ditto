@@ -13,9 +13,16 @@ vi.mock("#/lib/project-sandbox", () => ({
 	persistProjectSandboxBackup: vi.fn(),
 }));
 
+vi.mock("#/lib/workspace-recovery", () => ({
+	recordMutationAndCheckpoint: vi.fn(),
+}));
+
+const isLegacySharedSandboxSessionMock = vi.hoisted(() => vi.fn(() => true));
+
 vi.mock("#/lib/workspace-runtime", () => ({
 	ensureWorkspaceRuntimeReady: vi.fn(),
 	withWorkspaceRuntimeLease: vi.fn(),
+	isLegacySharedSandboxSession: isLegacySharedSandboxSessionMock,
 	WorkspaceRuntimeError: class WorkspaceRuntimeError extends Error {
 		code: string;
 		constructor(code: string, message: string) {
@@ -186,6 +193,14 @@ function baseDeps(overrides: Partial<AgentRunDeps> = {}): AgentRunDeps {
 		}),
 		persistProjectSandboxBackup: vi.fn().mockResolvedValue({
 			project: readyProject,
+		}),
+		recordMutationAndCheckpoint: vi.fn().mockResolvedValue({
+			state: "healthy",
+			reasonCode: null,
+			mutationGeneration: 1,
+			durableGeneration: 1,
+			pending: false,
+			shouldCheckpoint: false,
 		}),
 		redactSecrets: vi.fn((text: string) => text),
 		prepareAssistantMessageStorage: vi.fn().mockReturnValue({
@@ -1307,6 +1322,58 @@ describe("executeAgentRun", () => {
 		});
 		expect(updateSets.some((set) => set.status === "complete")).toBe(true);
 		expect(updateSets.every((set) => set.status !== "failed")).toBe(true);
+	});
+
+	it("checkpoints dedicated sessions and keeps assistant complete on degraded recovery", async () => {
+		isLegacySharedSandboxSessionMock.mockReturnValue(false);
+		const mockDb = createMockDb();
+		const updateSets: Array<Record<string, unknown>> = [];
+		mockDb.updateSet.mockImplementation((values: Record<string, unknown>) => {
+			updateSets.push(values);
+			return { where: mockDb.updateWhere };
+		});
+		const context = makeContext({ db: mockDb.db });
+		const recordMutationAndCheckpoint = vi.fn().mockResolvedValue({
+			state: "degraded",
+			reasonCode: "checkpoint_failed",
+			mutationGeneration: 1,
+			durableGeneration: 0,
+			pending: true,
+			shouldCheckpoint: false,
+		});
+
+		const { events, run } = collectEvents(context, {
+			runAgentInSandbox: vi.fn().mockResolvedValue({
+				ok: true,
+				assistantText: "done",
+			}),
+			recordMutationAndCheckpoint,
+			persistProjectSandboxBackup: vi.fn(),
+			prepareAssistantMessageStorage: vi.fn().mockReturnValue({
+				storageParts: [],
+				toolsColumn: null,
+			}),
+		});
+
+		await run();
+
+		expect(recordMutationAndCheckpoint).toHaveBeenCalledWith({
+			db: mockDb.db,
+			env: context.env,
+			userId: context.userId,
+			projectId: context.projectId,
+			sessionId: context.sessionId,
+		});
+		expect(events.at(-1)).toMatchObject({
+			event: "done",
+			data: {
+				ok: true,
+				backupError: "Workspace recovery degraded: checkpoint_failed",
+			},
+		});
+		expect(updateSets.some((set) => set.status === "complete")).toBe(true);
+		expect(updateSets.every((set) => set.status !== "failed")).toBe(true);
+		isLegacySharedSandboxSessionMock.mockReturnValue(true);
 	});
 
 	it("emits agent events and persists tools on success", async () => {

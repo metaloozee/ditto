@@ -55,7 +55,13 @@ function workspaceMatches(
 }
 
 function WorkspaceStatusBar(props: {
-	mode: "restore-failed" | "check-error" | "provisioning";
+	mode:
+		| "restore-failed"
+		| "check-error"
+		| "provisioning"
+		| "recovery-pending"
+		| "recovery-degraded"
+		| "recovery-failed";
 	message?: string;
 	pending?: boolean;
 	onRetryRestore?: () => void;
@@ -67,13 +73,24 @@ function WorkspaceStatusBar(props: {
 	// Match floating sidebar p-2 inset when open on desktop.
 	const alignSidebar = !isMobile && state === "expanded";
 	const provisioning = props.mode === "provisioning";
+	const recoveryWarning =
+		props.mode === "recovery-pending" ||
+		props.mode === "recovery-degraded" ||
+		props.mode === "recovery-failed";
 	const message = provisioning
 		? "Preparing project sandbox…"
 		: props.mode === "restore-failed"
 			? "Workspace restore failed"
-			: (props.message ?? "Project sandbox is not ready yet.");
+			: props.mode === "recovery-pending"
+				? "Workspace recovery is pending"
+				: props.mode === "recovery-degraded"
+					? "Workspace recovery is degraded"
+					: props.mode === "recovery-failed"
+						? "Workspace recovery failed"
+						: (props.message ?? "Project sandbox is not ready yet.");
 	const onRetry =
 		props.mode === "restore-failed" ? props.onRetryRestore : props.onRetryCheck;
+	const showRetry = !provisioning && !recoveryWarning;
 	const label = props.pending
 		? "Retrying…"
 		: props.mode === "restore-failed"
@@ -118,7 +135,7 @@ function WorkspaceStatusBar(props: {
 					)}
 					<p className="min-w-0 font-medium">{message}</p>
 				</div>
-				{provisioning ? null : (
+				{showRetry ? (
 					<Button
 						type="button"
 						size="sm"
@@ -130,7 +147,7 @@ function WorkspaceStatusBar(props: {
 					>
 						{label}
 					</Button>
-				)}
+				) : null}
 				{props.retryError ? (
 					<p className="w-full text-destructive/90">{props.retryError}</p>
 				) : null}
@@ -377,13 +394,27 @@ export function ProjectWorkspacePage({
 		);
 	}
 
-	let bar: "restore-failed" | "check-error" | "provisioning" | null = null;
+	const recoveryState = checkQuery.data?.recovery?.state ?? null;
+	let bar:
+		| "restore-failed"
+		| "check-error"
+		| "provisioning"
+		| "recovery-pending"
+		| "recovery-degraded"
+		| "recovery-failed"
+		| null = null;
 	if (restoreFailed) {
 		bar = "restore-failed";
 	} else if (checkError && !provisionPending && !awaitingFence) {
 		bar = "check-error";
 	} else if (isPreparing) {
 		bar = "provisioning";
+	} else if (recoveryState === "failed") {
+		bar = "recovery-failed";
+	} else if (recoveryState === "degraded") {
+		bar = "recovery-degraded";
+	} else if (recoveryState === "pending") {
+		bar = "recovery-pending";
 	}
 
 	const workspaceUsable = successReady;

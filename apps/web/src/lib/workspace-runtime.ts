@@ -35,6 +35,10 @@ import {
 	sessionBranchName,
 	WORKSPACE_PATH,
 } from "#/lib/workspace-policy";
+import {
+	hasRecoveryArchives,
+	restore as restoreWorkspaceRecovery,
+} from "#/lib/workspace-recovery";
 import { loadOwnedActiveSession } from "#/lib/workspace-session";
 
 export const WORKSPACE_SESSION_FETCH_OPERATION_TYPE = "workspace_session_fetch";
@@ -128,15 +132,22 @@ function defaultLockMode(
 	if (lock) {
 		return lock;
 	}
-	if (purpose === "agent_run" || purpose === "mutating_git") {
+	if (
+		purpose === "agent_run" ||
+		purpose === "mutating_git" ||
+		purpose === "backup_restore"
+	) {
 		return "acquire";
 	}
 	return "none";
 }
 
-function isLegacySharedSandboxSession(
-	session: SessionRow,
-	project: ProjectRow,
+export function isLegacySharedSandboxSession(
+	session: Pick<
+		SessionRow,
+		"sandboxIdentityId" | "baseCommitSha" | "workspacePath" | "branchName"
+	>,
+	project: Pick<ProjectRow, "sandboxId">,
 ): boolean {
 	const frozen = (session.baseCommitSha ?? "").trim().length > 0;
 	const worktree =
@@ -174,6 +185,7 @@ function isNonRetryable(error: unknown): boolean {
 		code === "container_mismatch" ||
 		code === "seed_unavailable" ||
 		code === "archive_incompatible" ||
+		code === "recovery_restore_failed" ||
 		code === "not_found" ||
 		code === "not_ready" ||
 		code === "invalid_repository" ||
@@ -458,7 +470,13 @@ async function provisionDedicatedSession(options: {
 		);
 	}
 
-	const { archiveId } = await loadReadySeed(options.db, options.project.id);
+	const recoverFromArchives = await hasRecoveryArchives(
+		options.db,
+		options.session.id,
+	);
+	const seedArchiveId = recoverFromArchives
+		? null
+		: (await loadReadySeed(options.db, options.project.id)).archiveId;
 	const { branchName: defaultBranch, headRef } = await resolveDefaultBranch({
 		env: options.env,
 		installationId: options.project.githubInstallationId,
@@ -512,10 +530,57 @@ async function provisionDedicatedSession(options: {
 			lifecycleGeneration: identity.lifecycleGeneration,
 		});
 
+		if (recoverFromArchives) {
+			const sandboxId = identity.sandboxId;
+			const recoveryLease: WorkspaceRuntimeLease = {
+				sessionId: options.session.id,
+				purpose: "backup_restore",
+				workspacePath: WORKSPACE_PATH,
+				branchName:
+					options.session.branchName ?? sessionBranchName(options.session.id),
+				baseCommitSha: options.session.baseCommitSha ?? "",
+				sandbox,
+				identity,
+				projectEnv: null,
+				matchesSandboxClaim: (claimed) => claimed === sandboxId,
+			};
+			const restored = await restoreWorkspaceRecovery({
+				db: options.db,
+				env: options.env,
+				lease: recoveryLease,
+			});
+			if (!restored.ok) {
+				throw new WorkspaceRuntimeError(
+					"recovery_restore_failed",
+					"Workspace recovery restore failed for both archives.",
+				);
+			}
+			await configureDittoGitIdentity(sandbox, WORKSPACE_PATH);
+			await assertGitAndRunner(sandbox);
+			const sessionBranch =
+				options.session.branchName ?? sessionBranchName(options.session.id);
+			const bound = await bindSessionRuntimeFields({
+				db: options.db,
+				session: options.session,
+				identityId: identity.id,
+				branchName: sessionBranch,
+				baseCommitSha: options.session.baseCommitSha ?? "",
+			});
+			await setIdentityState(options.db, identity.id, "ready");
+			return {
+				sandbox,
+				sandboxId: identity.sandboxId,
+				identity,
+				workspacePath: WORKSPACE_PATH,
+				branchName: bound.branchName,
+				baseCommitSha: bound.baseCommitSha,
+			};
+		}
+
 		await restoreArchive(options.env, options.db, {
 			sandbox: sandbox as ArchiveSandbox,
 			sandboxId: identity.sandboxId,
-			archiveId,
+			archiveId: seedArchiveId as string,
 		});
 
 		const fetched = await options.authority.withOperation(

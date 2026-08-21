@@ -1,9 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const persistProjectSandboxBackupMock = vi.hoisted(() => vi.fn());
+const recordMutationAndCheckpointMock = vi.hoisted(() => vi.fn());
+const isLegacySharedSandboxSessionMock = vi.hoisted(() => vi.fn());
 
 vi.mock("#/lib/project-sandbox", () => ({
 	persistProjectSandboxBackup: persistProjectSandboxBackupMock,
+}));
+
+vi.mock("#/lib/workspace-recovery", () => ({
+	recordMutationAndCheckpoint: recordMutationAndCheckpointMock,
+}));
+
+vi.mock("#/lib/workspace-runtime", () => ({
+	isLegacySharedSandboxSession: isLegacySharedSandboxSessionMock,
 }));
 
 const { commitSessionChangesWithBackup, runSessionGitMutationWithBackup } =
@@ -16,6 +26,22 @@ const project = {
 	status: "ready" as const,
 };
 
+const legacySession = {
+	id: "sess-1",
+	sandboxIdentityId: null,
+	baseCommitSha: "abc",
+	workspacePath: "/workspace/.ditto/worktrees/sess-1",
+	branchName: "ditto/session-sess-1",
+};
+
+const dedicatedSession = {
+	id: "sess-2",
+	sandboxIdentityId: "ident-1",
+	baseCommitSha: "abc",
+	workspacePath: "/workspace",
+	branchName: "ditto/session-sess-2",
+};
+
 const db = {} as Parameters<typeof commitSessionChangesWithBackup>[0]["db"];
 const env = {} as Env;
 
@@ -23,10 +49,15 @@ describe("session-git-backup", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		persistProjectSandboxBackupMock.mockResolvedValue({});
+		recordMutationAndCheckpointMock.mockResolvedValue({
+			state: "healthy",
+			pending: false,
+		});
+		isLegacySharedSandboxSessionMock.mockReturnValue(true);
 	});
 
 	describe("commitSessionChangesWithBackup", () => {
-		it("persists when committed is true", async () => {
+		it("persists legacy project backup when committed is true", async () => {
 			const commit = vi.fn().mockResolvedValue({
 				commitSha: "abc",
 				committed: true,
@@ -36,6 +67,7 @@ describe("session-git-backup", () => {
 				db,
 				env,
 				project,
+				session: legacySession,
 				commit,
 			});
 
@@ -45,6 +77,32 @@ describe("session-git-backup", () => {
 				env,
 				project,
 			});
+			expect(recordMutationAndCheckpointMock).not.toHaveBeenCalled();
+		});
+
+		it("checkpoints dedicated session recovery when committed is true", async () => {
+			isLegacySharedSandboxSessionMock.mockReturnValue(false);
+			const commit = vi.fn().mockResolvedValue({
+				commitSha: "abc",
+				committed: true,
+			});
+
+			await commitSessionChangesWithBackup({
+				db,
+				env,
+				project,
+				session: dedicatedSession,
+				commit,
+			});
+
+			expect(recordMutationAndCheckpointMock).toHaveBeenCalledWith({
+				db,
+				env,
+				userId: "u1",
+				projectId: "p1",
+				sessionId: "sess-2",
+			});
+			expect(persistProjectSandboxBackupMock).not.toHaveBeenCalled();
 		});
 
 		it("does not persist when committed is false", async () => {
@@ -53,9 +111,16 @@ describe("session-git-backup", () => {
 				committed: false,
 			});
 
-			await commitSessionChangesWithBackup({ db, env, project, commit });
+			await commitSessionChangesWithBackup({
+				db,
+				env,
+				project,
+				session: legacySession,
+				commit,
+			});
 
 			expect(persistProjectSandboxBackupMock).not.toHaveBeenCalled();
+			expect(recordMutationAndCheckpointMock).not.toHaveBeenCalled();
 		});
 
 		it("returns git result when persist throws", async () => {
@@ -71,7 +136,13 @@ describe("session-git-backup", () => {
 				.mockImplementation(() => {});
 
 			await expect(
-				commitSessionChangesWithBackup({ db, env, project, commit }),
+				commitSessionChangesWithBackup({
+					db,
+					env,
+					project,
+					session: legacySession,
+					commit,
+				}),
 			).resolves.toEqual({ commitSha: "abc", committed: true });
 
 			consoleError.mockRestore();
@@ -83,7 +154,13 @@ describe("session-git-backup", () => {
 			const run = vi.fn().mockResolvedValue({ pushed: true });
 
 			await expect(
-				runSessionGitMutationWithBackup({ db, env, project, run }),
+				runSessionGitMutationWithBackup({
+					db,
+					env,
+					project,
+					session: legacySession,
+					run,
+				}),
 			).resolves.toEqual({ pushed: true });
 
 			expect(persistProjectSandboxBackupMock).toHaveBeenCalled();
@@ -99,7 +176,13 @@ describe("session-git-backup", () => {
 				.mockImplementation(() => {});
 
 			await expect(
-				runSessionGitMutationWithBackup({ db, env, project, run }),
+				runSessionGitMutationWithBackup({
+					db,
+					env,
+					project,
+					session: legacySession,
+					run,
+				}),
 			).resolves.toEqual({ pushed: true });
 
 			consoleError.mockRestore();

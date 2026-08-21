@@ -297,6 +297,24 @@ function createSqliteDb(seed: {
 		);
 		CREATE UNIQUE INDEX workspace_sessions_project_preview_port_uidx
 			ON workspace_sessions (projectId, previewPort);
+		CREATE TABLE workspace_session_recoveries (
+			sessionId text PRIMARY KEY NOT NULL,
+			mutationGeneration integer NOT NULL DEFAULT 0,
+			durableGeneration integer NOT NULL DEFAULT 0,
+			pendingGeneration integer,
+			pendingSince integer,
+			currentArchiveId text,
+			previousArchiveId text,
+			state text NOT NULL DEFAULT 'healthy',
+			reasonCode text,
+			retryAttempts integer NOT NULL DEFAULT 0,
+			retryAt integer,
+			checkpointLeaseId text,
+			checkpointLeaseExpiresAt integer,
+			created_at integer,
+			updated_at integer,
+			FOREIGN KEY (sessionId) REFERENCES workspace_sessions(id) ON DELETE CASCADE
+		);
 	`);
 
 	sqlite
@@ -1548,6 +1566,38 @@ describe("stop and archive cleanup", () => {
 		expect(sqliteDb.getSessionStatus("sess-1")).toBe("active");
 		expect(sqliteDb.getSessionPort("sess-1")).toBe(10005);
 	});
+
+	it("refuses archive while workspace recovery is not durable", async () => {
+		const sandbox = makeSandbox({
+			getProcess: vi.fn().mockResolvedValue(null),
+			unexposePort: vi.fn().mockResolvedValue(undefined),
+		});
+		const sqliteDb = createSqliteDb({
+			project: baseProject(),
+			sessions: [{ ...baseSession(), previewPort: null }],
+		});
+		sqliteDb.sqlite
+			.prepare(
+				`INSERT INTO workspace_session_recoveries (
+					sessionId, mutationGeneration, durableGeneration, pendingGeneration, state
+				) VALUES (?, 1, 0, 1, 'pending')`,
+			)
+			.run("sess-1");
+
+		await expect(
+			archiveSessionWithPreviewCleanup(
+				{
+					db: sqliteDb.db,
+					env: {} as Env,
+					projectId: "proj-1",
+					sessionId: "sess-1",
+					userId: "user-1",
+				},
+				baseInjected(sandbox, sqliteDb.db, "lease-a"),
+			),
+		).rejects.toMatchObject({ code: "not_durable" });
+		expect(sqliteDb.getSessionStatus("sess-1")).toBe("active");
+	});
 });
 
 describe("deleteProjectWithPreviewFence", () => {
@@ -1583,6 +1633,35 @@ describe("deleteProjectWithPreviewFence", () => {
 			sandboxId: "sandbox-1",
 		});
 		expect(mem.project.deletingAt).toBe(1_700_000_000);
+	});
+
+	it("deletes even when workspace recovery is pending", async () => {
+		const sqliteDb = createSqliteDb({
+			project: baseProject(),
+			sessions: [baseSession()],
+		});
+		sqliteDb.sqlite
+			.prepare(
+				`INSERT INTO workspace_session_recoveries (
+					sessionId, mutationGeneration, durableGeneration, pendingGeneration, state
+				) VALUES (?, 1, 0, 1, 'pending')`,
+			)
+			.run("sess-1");
+		const destroySandbox = vi.fn(async () => undefined);
+
+		const result = await deleteProjectWithPreviewFence(
+			{
+				db: sqliteDb.db,
+				env: {} as Env,
+				projectId: "proj-1",
+				userId: "user-1",
+				destroySandbox,
+			},
+			baseInjected(makeSandbox(), sqliteDb.db, "del-pending"),
+		);
+		expect(result).toEqual({ id: "proj-1" });
+		expect(destroySandbox).toHaveBeenCalled();
+		expect(sqliteDb.getProject()).toBeUndefined();
 	});
 
 	it("keeps tombstone and releases lease when destroy fails", async () => {

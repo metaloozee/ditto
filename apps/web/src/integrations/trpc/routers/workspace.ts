@@ -15,6 +15,7 @@ import {
 	archiveSessionWithPreviewCleanup,
 	SessionPreviewError,
 } from "#/lib/session-preview";
+import { getWorkspaceRecoveryState } from "#/lib/workspace-recovery";
 import {
 	ensureWorkspaceRuntimeReady,
 	observeWorkspaceRuntime,
@@ -93,12 +94,25 @@ async function loadSessionsAndBuildView(options: {
 		? (sessions.find((session) => session.id === options.sessionId) ?? null)
 		: null;
 
+	const recovery = selectedSession
+		? await getWorkspaceRecoveryState(options.db, selectedSession.id)
+		: null;
+
 	return {
 		project: stripProjectSecrets(options.sandboxProject),
 		sandbox: { state: options.sandboxState },
 		sessions,
 		selectedSession,
 		restoreFailed: options.restoreFailed,
+		recovery: recovery
+			? {
+					state: recovery.state,
+					reasonCode: recovery.reasonCode,
+					mutationGeneration: recovery.mutationGeneration,
+					durableGeneration: recovery.durableGeneration,
+					pending: recovery.pending,
+				}
+			: null,
 	};
 }
 

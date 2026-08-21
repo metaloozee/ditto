@@ -28,8 +28,15 @@ path directly; active candidates still verify `/workspace/.git` and the baked
 runner. An invalid `/opt/ditto-runner` fails with an actionable image rebuild
 error and does not mutate project state.
 
-Post-run and post-git snapshot writes share `persistProjectSandboxBackup`, which
-**versions** each attempt:
+Dedicated workspace sessions checkpoint through `WorkspaceRecovery`
+(`workspace-recovery.ts`): after each completed agent run and successful
+mutating Git operation, the session reserves a mutation generation and archives
+under `ownerKind: "workspace_recovery"`. Current and previous successful
+archives are retained; older archives are abandoned for async cleanup. Checkpoint
+failure does not rewrite a settled assistant message or Git result.
+
+Legacy shared project-sandbox sessions still use `persistProjectSandboxBackup`,
+which **versions** each attempt:
 
 1. Atomically increments `sandboxBackupRequestedGeneration` (candidate).
 2. Creates the compressed workspace archive and streams it to R2.
@@ -39,8 +46,7 @@ Post-run and post-git snapshot writes share `persistProjectSandboxBackup`, which
 Out-of-order completions therefore cannot let an older snapshot replace a newer
 stored generation. Superseded candidates are not failures. First-provision and
 restore/recreate paths may still write the backup handle without the generation
-gate. After each completed agent run, `agent-run-service` calls the versioned
-helper once (the runner and stream route do not snapshot).
+gate.
 
 ## Qualified session layers
 
@@ -103,10 +109,10 @@ helper once (the runner and stream route do not snapshot).
 11. On success the Worker persists each started assistant with
    `status: complete` before its turn settles. On runner/stream/storage failure
    it persists accumulated partial content with `status: failed`, then emits
-   `error` followed by failed `done`. Backup is
-   best-effort via `persistProjectSandboxBackup` (versioned token-free archive
-   of `/workspace`, including `.ditto/worktrees`) and does not rewrite message
-   status.
+   `error` followed by failed `done`. Dedicated sessions checkpoint via
+   `WorkspaceRecovery`; legacy shared sandboxes still use
+   `persistProjectSandboxBackup`. Backup is best-effort and does not rewrite
+   message status.
 
 ## Thinking-level propagation
 
@@ -257,14 +263,14 @@ changes.
 - Command output is redacted before errors reach the client.
 - Opening a PR uses installation Octokit auth (not the user's OAuth token).
 - v1 has no merge API or merge button.
-- UI and Worker session git mutations refresh the project sandbox backup
-  **only after the session lock releases** following a sandbox-mutating success
-  (commit that created a commit, or PR open that first pushed — including when
-  the subsequent open-PR call fails after a successful push). Opening a PR when
-  no push was needed does not snapshot. Backups are best-effort: a failed
-  snapshot does not turn a completed git mutation into a reported failure. Cold
-  restore therefore does not resurrect pre-export dirty worktrees after real
-  mutations.
+- UI and Worker session git mutations refresh recovery (dedicated) or the
+  project sandbox backup (legacy) **only after the session lock releases**
+  following a sandbox-mutating success (commit that created a commit, or PR
+  open that first pushed — including when the subsequent open-PR call fails
+  after a successful push). Opening a PR when no push was needed does not
+  snapshot. Backups are best-effort: a failed snapshot does not turn a
+  completed git mutation into a reported failure. Cold restore therefore does
+  not resurrect pre-export dirty worktrees after real mutations.
 
 Chat-driven git uses PI custom tools in the sandbox runner (`ditto_push_branch`,
 `ditto_open_pull_request`). Those tools `POST` JSON to the image-owned origin

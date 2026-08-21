@@ -43,6 +43,14 @@ vi.mock("#/lib/sandbox-archive", () => ({
 	ARCHIVE_COMPATIBILITY_KEY: "ditto-workspace-archive-v1",
 }));
 
+const hasRecoveryArchivesMock = vi.hoisted(() => vi.fn());
+const restoreWorkspaceRecoveryMock = vi.hoisted(() => vi.fn());
+
+vi.mock("#/lib/workspace-recovery", () => ({
+	hasRecoveryArchives: hasRecoveryArchivesMock,
+	restore: restoreWorkspaceRecoveryMock,
+}));
+
 vi.mock("#/lib/project-env-vars", () => ({
 	decryptEnvVars: decryptEnvVarsMock,
 }));
@@ -515,6 +523,12 @@ describe("WorkspaceRuntime", () => {
 		vi.clearAllMocks();
 		store = makeStore();
 		sandboxes.clear();
+		hasRecoveryArchivesMock.mockResolvedValue(false);
+		restoreWorkspaceRecoveryMock.mockResolvedValue({
+			ok: true,
+			usedPrevious: false,
+			reasonCode: null,
+		});
 		decryptEnvVarsMock.mockResolvedValue([{ key: "SECRET", value: "s3cret" }]);
 		configureDittoGitIdentityMock.mockResolvedValue(undefined);
 		getInstallationOctokitMock.mockResolvedValue({
@@ -797,6 +811,47 @@ describe("WorkspaceRuntime", () => {
 		expect(store.identityRows.size).toBe(0);
 		expect(restoreArchiveMock).not.toHaveBeenCalled();
 		expect(ensureSessionWorkspaceReadyMock).toHaveBeenCalled();
+	});
+
+	it("restores dedicated sessions from recovery archives instead of the seed", async () => {
+		seedProject(store);
+		seedSession(store, {
+			branchName: "ditto/session-sess-1",
+			baseCommitSha: HEAD_SHA,
+		});
+		hasRecoveryArchivesMock.mockResolvedValue(true);
+		restoreWorkspaceRecoveryMock.mockResolvedValue({
+			ok: true,
+			usedPrevious: true,
+			reasonCode: "restored_previous",
+		});
+
+		const lease = await open({ sessionId: "sess-1", purpose: "preview" });
+		expect(restoreWorkspaceRecoveryMock).toHaveBeenCalled();
+		expect(restoreArchiveMock).not.toHaveBeenCalled();
+		expect(fetchGitHubBranchBrokeredMock).not.toHaveBeenCalled();
+		expect(lease.baseCommitSha).toBe(HEAD_SHA);
+	});
+
+	it("does not fall back to the project seed when recovery restore fails", async () => {
+		seedProject(store);
+		seedSession(store, {
+			branchName: "ditto/session-sess-1",
+			baseCommitSha: HEAD_SHA,
+		});
+		hasRecoveryArchivesMock.mockResolvedValue(true);
+		restoreWorkspaceRecoveryMock.mockResolvedValue({
+			ok: false,
+			reasonCode: "restore_failed",
+		});
+
+		await expect(open({ sessionId: "sess-1" })).rejects.toMatchObject({
+			code: "recovery_restore_failed",
+		});
+		expect(restoreArchiveMock).not.toHaveBeenCalled();
+		expect(store.sessionRows.get("sess-1")?.runtimeFailureReasonCode).toBe(
+			"recovery_restore_failed",
+		);
 	});
 
 	it("fails closed for a foreign session", async () => {

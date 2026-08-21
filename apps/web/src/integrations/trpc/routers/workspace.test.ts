@@ -62,6 +62,10 @@ vi.mock("#/lib/workspace-session", () => ({
 	loadOwnedActiveSession: loadOwnedActiveSessionMock,
 }));
 
+vi.mock("#/lib/workspace-recovery", () => ({
+	getWorkspaceRecoveryState: vi.fn().mockResolvedValue(null),
+}));
+
 const { workspaceRouter } = await import("./workspace");
 
 function createCaller() {

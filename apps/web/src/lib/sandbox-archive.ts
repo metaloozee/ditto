@@ -590,6 +590,23 @@ async function markAbandoned(
 		.where(and(eq(archives.id, archiveId), eq(archives.status, "uploading")));
 }
 
+/** Mark a ready archive for async R2 cleanup after it falls out of retention. */
+export async function abandonArchive(
+	db: Db,
+	archiveId: string,
+	nowSeconds = Math.floor(Date.now() / 1000),
+): Promise<void> {
+	await db
+		.update(archives)
+		.set({
+			status: "abandoned",
+			cleanupRetryAt: cleanupRetryAt(nowSeconds, 0),
+			cleanupAttempts: 0,
+			updatedAt: sql`(unixepoch())`,
+		})
+		.where(and(eq(archives.id, archiveId), eq(archives.status, "ready")));
+}
+
 async function withLegacyProjectQuiesce<T>(options: {
 	db: Db;
 	env: Env;

@@ -72,6 +72,9 @@ The large workflows live in narrow modules rather than route handlers:
   `needs_restore` is a runtime-only API state and is never written to D1.
 - `sandbox-archive.ts` owns token-free archive create/restore/delete. It is the
   only module that knows R2 object keys. Callers receive opaque archive IDs.
+- `workspace-recovery.ts` owns per-session checkpoint generations, restore
+  fallback between current/previous archives, recovery health, and abandoning
+  superseded recovery archives. It never exposes R2 keys to callers.
 - `sandbox-authority.ts` owns sandbox identity registration, generation
   rotation, permanent retirement, and privileged operation open/close/resolve.
 - `sandbox-egress-broker.ts` owns outbound classification, authority lookup,

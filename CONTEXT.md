@@ -32,7 +32,11 @@ The legacy runtime that hosts one shared project workspace. All workspace sessio
 
 ### Project backup
 
-A recoverable snapshot of a project workspace. A backup restores work after the live workspace stops. It is not a live workspace and does not replace durable product records. Legacy projects may still own project backups.
+A recoverable snapshot of a project workspace. A backup restores work after the live workspace stops. It is not a live workspace and does not replace durable product records. Legacy projects may still own project backups for shared sandboxes.
+
+### Workspace session recovery
+
+The recovery lineage owned by one workspace session: mutation generation, current and previous successful archives, pending checkpoint state, and recovery health. Dedicated session sandboxes checkpoint through this lineage. Legacy shared-sandbox sessions keep project backups instead.
 
 ### Project environment value
 
@@ -116,5 +120,6 @@ User
         ├── Agent runs
         ├── Session branch
         ├── Session sandbox (`/workspace` checkout) or legacy worktree
+        ├── Session recovery lineage (dedicated sandboxes)
         └── Session preview
 ```

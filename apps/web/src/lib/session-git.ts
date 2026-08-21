@@ -64,6 +64,8 @@ export type SessionGitSession = {
 	baseCommitSha?: string | null;
 	workspacePath: string;
 	title?: string | null;
+	/** Present for dedicated session sandboxes; null/absent for legacy worktrees. */
+	sandboxIdentityId?: string | null;
 };
 
 type SessionGitSandbox = ReturnType<typeof getProjectSandbox>;
