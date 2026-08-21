@@ -130,11 +130,17 @@ Object state. Both runs passed every item.
 The application has one project sandbox per project. Workspace sessions use
 separate Git worktrees inside the shared sandbox.
 
-The Worker passes three credential classes into project-sandbox processes:
+The Worker passes these credential classes into sandbox processes:
 
-- `DITTO_PI_CREDENTIAL` for the selected model provider
-- `DITTO_GIT_CALLBACK_TOKEN` for agent Git actions
-- a GitHub installation token for a short-lived network Git launcher
+- a GitHub installation token for a short-lived network Git launcher on the
+  remaining push path
+- user-owned project environment values into the agent command only
+
+The OpenCode API key stays in the Worker. Agent Git tools call
+`http://ditto.internal/v1/git-action` with no callback URL or bearer token.
+The Worker opens a `ditto_action` / `agent_git` operation beside the model
+`agent_run` window and dispatches status, push, and open-PR through
+Worker-owned Git modules.
 
 The runner deletes provider values from its environment before PI creates
 tools. The Git launcher uses a temporary bare repository, a closed environment,
@@ -154,9 +160,9 @@ runtime. Session recovery backups remain a later plan.
 | Design area | Status | Evidence |
 |---|---|---|
 | Ditto-owned Sandbox subclass | Not implemented | `apps/web/src/server.ts` re-exports the stock `Sandbox` class. |
-| Outbound credential dispatch | Partial | Git fetch and OpenCode model requests resolve the sandbox identity and replace placeholders. Ditto-action remains later. |
+| Outbound credential dispatch | Partial | Git fetch, OpenCode model requests, and Ditto Git actions resolve the sandbox identity. GitHub installation-token removal for push remains later. |
 | OpenCode credential removal | Implemented | Worker holds `OPENCODE_API_KEY`. Sandbox PI uses the public placeholder. `open-code-contract.ts` constructs the authenticated upstream request. |
-| Token-free agent Git capability | Not implemented | Agent tools call `/api/agent/git` with a scoped HS256 JWT. |
+| Token-free agent Git capability | Implemented | Image-owned origin `http://ditto.internal/v1/git-action`; Worker classifies it before public internet, resolves the trusted identity and open `ditto_action` / `agent_git` D1 operation, and dispatches `agent-git-handler.ts`. HS256 callback JWT and the public Git route are gone. |
 | GitHub installation-token removal | Not implemented | `apps/web/src/lib/privileged-git.ts` passes the token to a sandbox process. |
 | Token-free R2 recovery | Not implemented | Production backup and restore use the stock Sandbox SDK path. |
 | Contract-based outbound policy | Not implemented | The stock project sandbox retains normal network access. |

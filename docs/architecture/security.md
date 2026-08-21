@@ -33,13 +33,15 @@ Every browser project and workspace-session lookup includes the authenticated
 and installation ID through GitHub OAuth. A short-lived GitHub App installation
 token performs the server-side repository mutation.
 
-The sandbox runner cannot call browser-authenticated tRPC. Its two Git tools use
-`/api/agent/git` with a short-lived HS256 bearer JWT containing project, session,
-user, sandbox, subject, and expiry. The Worker verifies shape,
-signature, subject, and time, then resolves claims against current D1 ownership
-and readiness before dispatch. This callback has no user OAuth session, so it
-does not repeat the visible-repository check. A revoked or invalid App
-installation fails when the Worker requests or uses its installation token.
+The sandbox runner cannot call browser-authenticated tRPC. Its two Git tools
+POST to the image-owned origin `http://ditto.internal/v1/git-action` with no
+bearer token. The outbound broker classifies that request, resolves the trusted
+sandbox identity and the sole open `ditto_action` operation from D1, and
+dispatches Worker-owned Git services. Identity, session, and branch come from
+D1 and the runtime lease, not from the sandbox body. This path has no user
+OAuth session, so it does not repeat the visible-repository check. A revoked or
+invalid App installation fails when the Worker requests or uses its
+installation token.
 
 Follow-up and Stop controls prove authenticated project ownership and an active,
 owned workspace session before any sandbox access. Missing, foreign, archived,
@@ -71,8 +73,8 @@ derived from `BETTER_AUTH_SECRET` with PBKDF2-SHA-256, a random salt, and 310,00
 iterations. The UI can list keys but never reads values back.
 
 At run time the Worker decrypts project values and injects them into the agent
-shell environment. The same environment receives the Git callback URL and JWT.
-The OpenCode key never enters the sandbox. These values do not enter a worktree
+shell environment. The OpenCode key never enters the sandbox. No Git callback
+bearer token or callback URL is injected. These values do not enter a worktree
 `.env`, agent job JSON, SSE metadata, or Git remote.
 
 The process environment is not a vault from the agent: shell tools can read it.
@@ -119,8 +121,8 @@ bare repository without the credential environment and are verified by exact
 SHA. Branch refs are validated with `git check-ref-format`; full refs and
 refspecs are shell-quoted as one argument at use.
 
-The runner receives only a Ditto callback URL and scoped JWT. Push and pull
-request operations return through the Worker. The Worker applies the same
+The runner posts Git actions to a code-owned synthetic origin. Push and pull
+request operations return through the Worker broker. The Worker applies the same
 domain policy as the UI and owns installation-token minting.
 
 ## Git egress policy
@@ -143,7 +145,7 @@ policy blocks export from the sandbox to GitHub.
 One-click UI Commit / Open PR spawn an ephemeral metadata agent that is **not**
 the chat harness:
 
-- No project environment variables, GitHub tokens, git-callback JWT, or OpenCode
+- No project environment variables, GitHub tokens, Git callback credentials, or OpenCode
   key in the shell or job. Metadata requests use a one-request `git_metadata`
   model operation and the public OpenCode placeholder.
 - Input is a bounded, redacted **Git snapshot** (paths/stat/patch/subjects),
@@ -213,7 +215,7 @@ Anyone with the URL can load the site until Stop/archive/delete revokes it.
 ## Failure posture
 
 - Ownership failures return not found/forbidden rather than continuing.
-- Invalid or expired agent JWTs return 401.
+- Missing, stale, expired, or mismatched Ditto Git-action operations fail closed.
 - Secret preflight and ambiguous outgoing Git ranges fail closed.
 - Sandbox runner health is checked before project state is mutated.
 - Assistant terminal persistence is attempted before successful `done`.
@@ -236,9 +238,8 @@ isolation:
 - New workspace sessions own a dedicated sandbox (filesystem, process table,
   and localhost). Legacy sessions may still share one project sandbox; Git
   worktrees isolate normal file edits only on that path.
-- Provider credentials and the Git callback JWT enter the legacy project
-  sandbox when an agent run starts. The runner deletes provider values from its
-  own environment before tools start, but the container held those values.
+- Provider credentials no longer enter sandbox agent runs. The OpenCode key
+  stays in the Worker. Git callback bearer tokens are not issued.
 - GitHub installation tokens stay in the Worker for project-seed builder fetch.
   Legacy session sync and agent push still inject tokens into a short-lived
   sandbox Git process.
@@ -261,7 +262,7 @@ remaining cut-over work (per-session sandboxes, model broker, legacy columns).
 | Auth/session | `apps/web/src/lib/auth.ts`, `auth.client.ts`, `auth.functions.ts`, `apps/web/src/integrations/trpc/init.ts` |
 | Live agent control | `apps/web/src/lib/agent-control-service.ts`, `apps/web/src/routes/api.agent.control.ts`, `packages/sandbox-runner/src/control-channel.ts` |
 | GitHub authorization | `apps/web/src/lib/github-authorization.ts`, `github-app.ts`, `github-repositories.ts` |
-| Agent callback JWT | `apps/web/src/lib/agent-git-jwt.ts`, `agent-git-handler.ts`, `apps/web/src/routes/api.agent.git.ts` |
+| Agent Git actions | `apps/web/src/lib/ditto-action-contract.ts`, `agent-git-handler.ts`, `sandbox-egress-broker.ts` |
 | Encryption/env vars | `apps/web/src/lib/crypto.ts`, `project-env-vars.ts`, `env-vars.ts` |
 | Redaction | `apps/web/src/lib/secret-redaction.ts`, `agent-run.ts`, `github-export.ts` |
 | Git egress | `apps/web/src/lib/git-secret-policy.ts`, `session-git.ts` |

@@ -94,8 +94,6 @@ describe("runAgentInSandbox", () => {
 				cwd: SESSION_WORKTREE_CWD,
 				env: expect.objectContaining({
 					DATABASE_URL: "postgres://secret",
-					DITTO_GIT_CALLBACK_URL: "http://localhost:5173/api/agent/git",
-					DITTO_GIT_CALLBACK_TOKEN: expect.any(String),
 					GIT_AUTHOR_NAME: "Ditto",
 					GIT_AUTHOR_EMAIL: "ditto@users.noreply.github.com",
 					GIT_COMMITTER_NAME: "Ditto",
@@ -109,12 +107,18 @@ describe("runAgentInSandbox", () => {
 		>;
 		expect(sessionEnv).not.toHaveProperty("DITTO_PI_CREDENTIAL");
 		expect(sessionEnv).not.toHaveProperty("OPENCODE_API_KEY");
+		expect(
+			Object.keys(sessionEnv).some((key) => key.includes("CALLBACK")),
+		).toBe(false);
+		expect(JSON.stringify(sessionEnv)).not.toContain("api/agent/git");
 		expect(JSON.stringify(sessionEnv)).not.toContain(
 			makeEnv().OPENCODE_API_KEY,
 		);
 		expect(execStream.mock.calls[0]?.[0]).not.toContain(
 			makeEnv().OPENCODE_API_KEY,
 		);
+		expect(execStream.mock.calls[0]?.[0]).not.toContain("api/agent/git");
+		expect(writeFile.mock.calls[0]?.[1]).not.toContain("api/agent/git");
 		expect(writeFile).toHaveBeenCalledWith(
 			expect.stringMatching(/\/workspace\/\.ditto\/jobs\/.+\.json$/),
 			JSON.stringify({
@@ -424,15 +428,16 @@ describe("runAgentInSandbox", () => {
 		expect(message).not.toContain("A".repeat(500));
 	});
 
-	it("redacts git callback JWT from stderr error surfaces", async () => {
-		let gitCallbackToken = "";
+	it("does not inject a Git callback URL or token into session env, job, or command", async () => {
 		const writeFile = vi.fn().mockResolvedValue(undefined);
 		const mkdir = vi.fn().mockResolvedValue(undefined);
 		const execStream = vi.fn().mockResolvedValue(new ReadableStream());
 		const deleteSession = vi.fn().mockResolvedValue(undefined);
-		const createSession = vi.fn().mockImplementation(async (opts) => {
-			gitCallbackToken = opts.env.DITTO_GIT_CALLBACK_TOKEN;
-			return { id: "agent-conv-3", writeFile, mkdir, execStream };
+		const createSession = vi.fn().mockResolvedValue({
+			id: "agent-conv-3",
+			writeFile,
+			mkdir,
+			execStream,
 		});
 
 		getProjectSandboxMock.mockReturnValue({
@@ -442,18 +447,12 @@ describe("runAgentInSandbox", () => {
 
 		parseSSEStreamMock.mockImplementation(async function* () {
 			yield {
-				type: "stderr",
-				timestamp: new Date().toISOString(),
-				data: `fatal: auth failed token=${gitCallbackToken}\n`,
-			};
-			yield {
 				type: "complete",
 				timestamp: new Date().toISOString(),
-				exitCode: 1,
+				exitCode: 0,
 			};
 		});
 
-		const onRunnerMessage = vi.fn();
 		await runAgentInSandbox({
 			env: makeEnv(),
 			sandboxId: "sandbox-1",
@@ -464,18 +463,23 @@ describe("runAgentInSandbox", () => {
 			cwd: SESSION_WORKTREE_CWD,
 			model: "opencode/deepseek-v4-flash-free",
 			prompt: "fail",
-			onRunnerMessage,
+			onRunnerMessage: vi.fn(),
 		});
 
-		expect(gitCallbackToken.length).toBeGreaterThan(8);
-		const errorCall = onRunnerMessage.mock.calls.find(
-			(call) => call[0]?.kind === "error",
-		);
-		expect(errorCall?.[0]).toMatchObject({
-			kind: "error",
-			message: expect.stringContaining("[REDACTED]"),
+		const sessionEnv = createSession.mock.calls[0]?.[0]?.env as Record<
+			string,
+			string
+		>;
+		const dumped = JSON.stringify({
+			env: sessionEnv,
+			job: writeFile.mock.calls,
+			command: execStream.mock.calls,
 		});
-		expect(errorCall?.[0]?.message).not.toContain(gitCallbackToken);
+		expect(
+			Object.keys(sessionEnv).some((key) => key.includes("CALLBACK")),
+		).toBe(false);
+		expect(dumped).not.toContain("api/agent/git");
+		expect(dumped).not.toMatch(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\./);
 	});
 
 	it("redacts project env secrets from assistant_delta (whole and split)", async () => {
@@ -651,19 +655,15 @@ describe("runAgentInSandbox", () => {
 	it("never surfaces OPENCODE_API_KEY or fixture secrets in any onRunnerMessage payload", async () => {
 		const projectSecret = "postgres://secret-db-url-xyz";
 		const apiKey = makeEnv().OPENCODE_API_KEY;
-		let gitCallbackToken = "";
 		const writeFile = vi.fn().mockResolvedValue(undefined);
 		const mkdir = vi.fn().mockResolvedValue(undefined);
 		const execStream = vi.fn().mockResolvedValue(new ReadableStream());
 		const deleteSession = vi.fn().mockResolvedValue(undefined);
-		const createSession = vi.fn().mockImplementation(async (opts) => {
-			gitCallbackToken = opts.env.DITTO_GIT_CALLBACK_TOKEN;
-			return {
-				id: "agent-conv-redact-all",
-				writeFile,
-				mkdir,
-				execStream,
-			};
+		const createSession = vi.fn().mockResolvedValue({
+			id: "agent-conv-redact-all",
+			writeFile,
+			mkdir,
+			execStream,
 		});
 
 		getProjectSandboxMock.mockReturnValue({
@@ -678,7 +678,7 @@ describe("runAgentInSandbox", () => {
 				data: `${JSON.stringify({
 					v: 1,
 					kind: "assistant_delta",
-					delta: `key=${apiKey} db=${projectSecret} jwt=${gitCallbackToken}`,
+					delta: `key=${apiKey} db=${projectSecret}`,
 				})}\n`,
 			};
 			yield {
@@ -712,10 +712,20 @@ describe("runAgentInSandbox", () => {
 			onRunnerMessage,
 		});
 
+		const sessionEnv = createSession.mock.calls[0]?.[0]?.env as Record<
+			string,
+			string
+		>;
+		expect(
+			Object.keys(sessionEnv).some((key) => key.includes("CALLBACK")),
+		).toBe(false);
 		const allPayload = JSON.stringify(onRunnerMessage.mock.calls);
 		expect(allPayload).not.toContain(apiKey);
 		expect(allPayload).not.toContain(projectSecret);
-		expect(allPayload).not.toContain(gitCallbackToken);
 		expect(allPayload).toContain("[REDACTED]");
+		expect(JSON.stringify(writeFile.mock.calls)).not.toContain("api/agent/git");
+		expect(JSON.stringify(execStream.mock.calls)).not.toContain(
+			"api/agent/git",
+		);
 	});
 });

@@ -14,7 +14,6 @@ import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as InstallationCompletedRouteImport } from './routes/installation.completed'
 import { Route as ProjectProjectIdRouteImport } from './routes/project.$projectId'
 import { Route as ApiAgentControlRouteImport } from './routes/api.agent.control'
-import { Route as ApiAgentGitRouteImport } from './routes/api.agent.git'
 import { Route as ApiAgentStreamRouteImport } from './routes/api.agent.stream'
 import { Route as ApiAuthSplatRouteImport } from './routes/api.auth.$'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
@@ -44,11 +43,6 @@ const ProjectProjectIdRoute = ProjectProjectIdRouteImport.update({
 const ApiAgentControlRoute = ApiAgentControlRouteImport.update({
   id: '/api/agent/control',
   path: '/api/agent/control',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAgentGitRoute = ApiAgentGitRouteImport.update({
-  id: '/api/agent/git',
-  path: '/api/agent/git',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAgentStreamRoute = ApiAgentStreamRouteImport.update({
@@ -84,7 +78,6 @@ export interface FileRoutesByFullPath {
   '/installation/completed': typeof InstallationCompletedRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
   '/api/agent/control': typeof ApiAgentControlRoute
-  '/api/agent/git': typeof ApiAgentGitRoute
   '/api/agent/stream': typeof ApiAgentStreamRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
@@ -96,7 +89,6 @@ export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/installation/completed': typeof InstallationCompletedRoute
   '/api/agent/control': typeof ApiAgentControlRoute
-  '/api/agent/git': typeof ApiAgentGitRoute
   '/api/agent/stream': typeof ApiAgentStreamRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
@@ -110,7 +102,6 @@ export interface FileRoutesById {
   '/installation/completed': typeof InstallationCompletedRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
   '/api/agent/control': typeof ApiAgentControlRoute
-  '/api/agent/git': typeof ApiAgentGitRoute
   '/api/agent/stream': typeof ApiAgentStreamRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
@@ -125,7 +116,6 @@ export interface FileRouteTypes {
     | '/installation/completed'
     | '/project/$projectId'
     | '/api/agent/control'
-    | '/api/agent/git'
     | '/api/agent/stream'
     | '/api/auth/$'
     | '/api/trpc/$'
@@ -137,7 +127,6 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/installation/completed'
     | '/api/agent/control'
-    | '/api/agent/git'
     | '/api/agent/stream'
     | '/api/auth/$'
     | '/api/trpc/$'
@@ -150,7 +139,6 @@ export interface FileRouteTypes {
     | '/installation/completed'
     | '/project/$projectId'
     | '/api/agent/control'
-    | '/api/agent/git'
     | '/api/agent/stream'
     | '/api/auth/$'
     | '/api/trpc/$'
@@ -164,7 +152,6 @@ export interface RootRouteChildren {
   InstallationCompletedRoute: typeof InstallationCompletedRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRouteWithChildren
   ApiAgentControlRoute: typeof ApiAgentControlRoute
-  ApiAgentGitRoute: typeof ApiAgentGitRoute
   ApiAgentStreamRoute: typeof ApiAgentStreamRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
@@ -205,13 +192,6 @@ declare module '@tanstack/react-router' {
       path: '/api/agent/control'
       fullPath: '/api/agent/control'
       preLoaderRoute: typeof ApiAgentControlRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/agent/git': {
-      id: '/api/agent/git'
-      path: '/api/agent/git'
-      fullPath: '/api/agent/git'
-      preLoaderRoute: typeof ApiAgentGitRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/agent/stream': {
@@ -271,7 +251,6 @@ const rootRouteChildren: RootRouteChildren = {
   InstallationCompletedRoute: InstallationCompletedRoute,
   ProjectProjectIdRoute: ProjectProjectIdRouteWithChildren,
   ApiAgentControlRoute: ApiAgentControlRoute,
-  ApiAgentGitRoute: ApiAgentGitRoute,
   ApiAgentStreamRoute: ApiAgentStreamRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,

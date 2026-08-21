@@ -49,7 +49,7 @@ Routes and components orchestrate. Shared ownership checks, lifecycle rules, sec
 | `src/runner-model.ts` | Model lookup and the in-memory credential store |
 | `src/control-channel.ts` | Run-scoped control socket protocol |
 | `src/protocol.ts` | Versioned NDJSON runner protocol |
-| `src/ditto-git-*` | Agent Git tool definitions and Worker callback client |
+| `src/ditto-git-*` | Agent Git tool definitions and synthetic-origin Git-action client |
 | `src/git-metadata-*` and `src/run-git-metadata.ts` | Isolated commit and pull-request metadata generation |
 
 The root `Dockerfile` installs this package into the sandbox image. Rebuild the image after changing the runner, its package files, or the Dockerfile.

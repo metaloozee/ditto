@@ -1,7 +1,6 @@
 import type { ExecEvent } from "@cloudflare/sandbox";
 import { parseSSEStream } from "@cloudflare/sandbox";
 import { nanoid } from "nanoid";
-import { agentGitCallbackUrl, mintAgentGitJwt } from "#/lib/agent-git-jwt";
 import type { PiThinkingLevel } from "#/lib/agent-models";
 import {
 	parseRunnerStdoutLine,
@@ -80,7 +79,6 @@ async function runAgentInSandboxLocked(options: {
 	thinkingLevel?: PiThinkingLevel;
 	prompt: string;
 	envVars?: readonly SandboxEnvVar[];
-	gitCallbackToken?: string;
 	onRunnerMessage: (msg: RunnerOut) => void | Promise<void>;
 }): Promise<{
 	ok: boolean;
@@ -89,23 +87,12 @@ async function runAgentInSandboxLocked(options: {
 	const sandbox =
 		options.sandbox ??
 		getProjectSandbox(options.env, options.sandboxId as string);
-	const gitCallbackToken =
-		options.gitCallbackToken ??
-		(await mintAgentGitJwt({
-			secret: options.env.BETTER_AUTH_SECRET,
-			projectId: options.projectId,
-			sessionId: options.conversationId,
-			userId: options.userId,
-			sandboxId: options.sandboxId as string,
-		}));
 	const projectEnv = projectEnvRecord(options.envVars);
 	const shell = await sandbox.createSession({
 		id: `agent-${options.conversationId}`,
 		cwd: options.cwd,
 		env: {
 			...projectEnv,
-			DITTO_GIT_CALLBACK_URL: agentGitCallbackUrl(options.env),
-			DITTO_GIT_CALLBACK_TOKEN: gitCallbackToken,
 			...dittoGitAuthorEnv(),
 		},
 		commandTimeoutMs: AGENT_COMMAND_TIMEOUT_MS,
@@ -120,7 +107,6 @@ async function runAgentInSandboxLocked(options: {
 
 	const secretValues = [
 		options.env.OPENCODE_API_KEY,
-		gitCallbackToken,
 		...Object.values(projectEnv),
 	].filter(
 		(value): value is string => typeof value === "string" && value.length > 0,

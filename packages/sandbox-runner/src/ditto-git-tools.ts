@@ -1,9 +1,6 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
-import {
-	postAgentGitAction,
-	readDittoGitCallbackEnv,
-} from "./ditto-git-callback.js";
+import { postAgentGitAction } from "./ditto-git-action.js";
 import {
 	DITTO_GIT_PROMPT_GUIDELINES,
 	DITTO_OPEN_PULL_REQUEST_DESCRIPTION,
@@ -21,7 +18,6 @@ export const dittoPushBranchTool = defineTool({
 	parameters: Type.Object({}),
 	async execute() {
 		const result = await postAgentGitAction({
-			env: readDittoGitCallbackEnv(),
 			body: { action: "push" },
 		});
 		return {
@@ -67,7 +63,6 @@ export const dittoOpenPullRequestTool = defineTool({
 		}
 
 		const result = await postAgentGitAction({
-			env: readDittoGitCallbackEnv(),
 			body,
 		});
 		return {

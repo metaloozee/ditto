@@ -32,7 +32,7 @@ flowchart LR
   Worker -->|OAuth and installation auth| GitHub
   Worker -->|brokered Git smart-HTTP| GitHub
   Sandbox -->|legacy tokenized network Git until cut-over| GitHub
-  Runner -->|signed callback for push/PR| Worker
+  Runner -->|brokered Git action origin| Worker
 ```
 
 ## Architectural units
@@ -41,7 +41,7 @@ flowchart LR
 |---|---|---|
 | Product shell | `apps/web/src/routes`, `apps/web/src/components`, `apps/web/src/styles.css` | Dashboard, project/session navigation, chat timeline, and Git workflow UI |
 | Browser data layer | `apps/web/src/integrations/tanstack-query`, `apps/web/src/integrations/trpc/react.ts` | Query cache, SSR dehydration, typed tRPC options, and client mutations |
-| Worker APIs | `apps/web/src/integrations/trpc`, `apps/web/src/routes/api.*` | Cookie-authenticated CRUD, workspace lifecycle, message history, SSE runs, and agent Git callbacks |
+| Worker APIs | `apps/web/src/integrations/trpc`, `apps/web/src/routes/api.*` | Cookie-authenticated CRUD, workspace lifecycle, message history, SSE runs, and agent control |
 | Domain services | `apps/web/src/lib` | Agent lifecycle, sandbox persistence, worktrees, Git export, secrets, message representation, and policy |
 | Durable records | `apps/web/src/db`, `apps/web/migrations` | Users, OAuth state, projects, conversations, messages, sandbox handles, and backup generations |
 | Sandbox runtime | `Dockerfile`, `packages/sandbox-runner` | Baked PI harness, isolated shell sessions, NDJSON protocol, and agent-only Git tools |
@@ -143,7 +143,7 @@ Legacy projects that still own a project sandbox continue to restore through
 
 1. `sessionGit.gitStatus` derives a workflow state such as `commit`, `sync`,
    `push`, or `open-pr` from the session checkout and GitHub.
-2. UI mutations and signed agent callbacks share the same `session-git` domain
+2. UI mutations and brokered agent Git actions share the same `session-git` domain
    functions.
 3. Mutations run in the session checkout under a per-session atomic lock.
 4. Push preflight rejects secret-like paths and known secret content before any
@@ -204,7 +204,7 @@ sandbox runner CLI
 ```
 
 Routes should stay thin. Cross-entry-point policy belongs in `apps/web/src/lib` so the UI
-tRPC path and agent callback path cannot drift. Sandbox credentials are minted
+tRPC path and brokered agent Git-action path cannot drift. Sandbox credentials are minted
 by the Worker at the last responsible moment; the runner never receives a
 GitHub installation token.
 
@@ -236,8 +236,8 @@ GitHub installation token.
 - New project-seed builders fetch Git through the Worker broker; the
   installation token stays in the Worker. Legacy session sync and agent Git
   still inject short-lived tokens into sandbox network Git processes.
-- Provider credentials and the agent Git callback JWT still enter legacy
-  project-sandbox agent runs.
+- Provider credentials and Git callback bearer tokens do not enter sandbox
+  agent runs. The OpenCode key stays in the Worker.
 - Normal chat runs still use PI's default project resource discovery.
 - Builders attach `dittoCatchAll` via `setOutboundHandler` and are brokered;
   legacy project sandboxes never set the handler and keep direct internet until

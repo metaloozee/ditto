@@ -1,6 +1,20 @@
 import { eq } from "drizzle-orm";
 import { createDb } from "#/db";
 import { projects, workspaceSessions } from "#/db/schema";
+import type {
+	dispatchAgentGitAction,
+	resolveAgentGitContext,
+} from "#/lib/agent-git-handler";
+import {
+	classifyDittoActionRequest,
+	DITTO_ACTION_CONTRACT_VERSION,
+	DITTO_ACTION_OPERATION_TYPE,
+	DittoActionContractError,
+	isDittoSyntheticHost,
+	validateDittoActionRequest,
+	wrapDittoActionError,
+	wrapDittoActionResult,
+} from "#/lib/ditto-action-contract";
 import {
 	buildAuthenticatedGitUpstreamRequest,
 	classifyGithubGitRequest,
@@ -39,13 +53,21 @@ export type SandboxEgressBrokerDeps = {
 	createDb?: typeof createDb;
 	createAuthority?: typeof createSandboxAuthority;
 	mintInstallationToken?: typeof getInstallationAccessToken;
+	resolveAgentGitContext?: typeof resolveAgentGitContext;
+	dispatchAgentGitAction?: typeof dispatchAgentGitAction;
 };
 
-const DITTO_SYNTHETIC_HOST_SUFFIXES = [
-	".ditto.internal",
-	".ditto.invalid",
-	".ditto.local",
-];
+function agentGitHttpStatus(error: unknown): number | null {
+	if (
+		error instanceof Error &&
+		error.name === "AgentGitHttpError" &&
+		"status" in error &&
+		typeof (error as { status: unknown }).status === "number"
+	) {
+		return (error as { status: number }).status;
+	}
+	return null;
+}
 
 function deny(
 	status: number,
@@ -161,8 +183,7 @@ function isPrivateOrSpecialHostname(hostname: string): boolean {
 }
 
 function isPrivilegedPlaceholderHost(hostname: string): boolean {
-	const host = hostname.toLowerCase();
-	return DITTO_SYNTHETIC_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix));
+	return isDittoSyntheticHost(hostname);
 }
 
 function classifyOutbound(request: Request): {
@@ -190,6 +211,17 @@ function classifyOutbound(request: Request): {
 		return { family: "model" };
 	}
 	if (opencode.kind === "model_near_miss") {
+		return {
+			family: "denied_privileged",
+			reasonCode: "privileged_placeholder",
+		};
+	}
+
+	const dittoAction = classifyDittoActionRequest(request);
+	if (dittoAction.kind === "ditto_action") {
+		return { family: "ditto_action" };
+	}
+	if (dittoAction.kind === "ditto_action_near_miss") {
 		return {
 			family: "denied_privileged",
 			reasonCode: "privileged_placeholder",
@@ -514,6 +546,139 @@ async function handleOpenCodeModel(options: {
 	}
 }
 
+async function handleDittoAction(options: {
+	request: Request;
+	env: Env;
+	trusted: TrustedOutboundHandlerContext;
+	deps: SandboxEgressBrokerDeps;
+}): Promise<Response> {
+	const dbFactory = options.deps.createDb ?? createDb;
+	const authorityFactory =
+		options.deps.createAuthority ?? createSandboxAuthority;
+	let resolveGitContext = options.deps.resolveAgentGitContext;
+	let dispatchGit = options.deps.dispatchAgentGitAction;
+	if (!resolveGitContext || !dispatchGit) {
+		const gitHandler = await import("#/lib/agent-git-handler");
+		resolveGitContext = resolveGitContext ?? gitHandler.resolveAgentGitContext;
+		dispatchGit = dispatchGit ?? gitHandler.dispatchAgentGitAction;
+	}
+	if (!resolveGitContext || !dispatchGit) {
+		recordDenial({
+			reasonCode: "git_action_denied",
+			family: "ditto_action",
+		});
+		return deny(403, "git_action_denied");
+	}
+	const db = dbFactory(options.env);
+	const authority = authorityFactory(db);
+
+	let resolved: ResolvedOutboundOperation;
+	try {
+		resolved = await authority.resolveOutboundRequest(
+			options.trusted,
+			"ditto_action",
+		);
+	} catch (error) {
+		const code =
+			error instanceof SandboxAuthorityError ? error.code : "authority_denied";
+		recordDenial({ reasonCode: code, family: "ditto_action" });
+		return deny(403, code);
+	}
+
+	const { operation, identity } = resolved;
+	if (operation.type !== DITTO_ACTION_OPERATION_TYPE) {
+		recordDenial({
+			reasonCode: "operation_type_mismatch",
+			correlationId: operation.correlationId,
+			family: "ditto_action",
+		});
+		return deny(403, "operation_type_mismatch", operation.correlationId);
+	}
+	if (operation.contractVersion !== DITTO_ACTION_CONTRACT_VERSION) {
+		recordDenial({
+			reasonCode: "contract_version",
+			correlationId: operation.correlationId,
+			family: "ditto_action",
+		});
+		return deny(403, "contract_version", operation.correlationId);
+	}
+	if (!identity.workspaceSessionId) {
+		recordDenial({
+			reasonCode: "identity_binding_mismatch",
+			correlationId: operation.correlationId,
+			family: "ditto_action",
+		});
+		return deny(403, "identity_binding_mismatch", operation.correlationId);
+	}
+
+	const validated = await validateDittoActionRequest(options.request, {
+		contractVersion: operation.contractVersion,
+	});
+	if (!validated.ok) {
+		recordDenial({
+			reasonCode: validated.code,
+			correlationId: operation.correlationId,
+			family: "ditto_action",
+		});
+		return deny(403, validated.code, operation.correlationId);
+	}
+
+	let gitContext: Awaited<ReturnType<typeof resolveAgentGitContext>>;
+	try {
+		gitContext = await resolveGitContext({
+			db,
+			env: options.env,
+			identity: {
+				userId: identity.userId,
+				projectId: identity.projectId,
+				workspaceSessionId: identity.workspaceSessionId,
+				sandboxId: identity.sandboxId,
+			},
+		});
+	} catch {
+		recordDenial({
+			reasonCode: "git_action_denied",
+			correlationId: operation.correlationId,
+			family: "ditto_action",
+		});
+		return deny(403, "git_action_denied", operation.correlationId);
+	}
+
+	try {
+		const result = await dispatchGit({
+			env: options.env,
+			resolved: gitContext,
+			body: validated.body,
+			allowedRefs: operation.allowedRefs,
+		});
+		return wrapDittoActionResult(result, gitContext.knownSecrets);
+	} catch (error) {
+		const gitStatus = agentGitHttpStatus(error);
+		if (gitStatus != null) {
+			recordDenial({
+				reasonCode: "git_action_denied",
+				correlationId: operation.correlationId,
+				family: "ditto_action",
+			});
+			return wrapDittoActionError(gitStatus, gitContext.knownSecrets);
+		}
+		if (error instanceof DittoActionContractError) {
+			recordDenial({
+				reasonCode: error.code,
+				correlationId: operation.correlationId,
+				family: "ditto_action",
+			});
+			return deny(403, error.code, operation.correlationId);
+		}
+		recordDenial({
+			reasonCode: "git_action_failed",
+			correlationId: operation.correlationId,
+			family: "ditto_action",
+		});
+		return deny(502, "git_action_failed", operation.correlationId);
+	}
+}
+
 /**
  * Sole outbound handler entry for sandbox HTTP(S) interception.
  */
@@ -568,11 +733,12 @@ export async function handleOutbound(
 	}
 
 	if (classification.family === "ditto_action") {
-		recordDenial({
-			reasonCode: "privileged_unimplemented",
-			family: classification.family,
+		return handleDittoAction({
+			request,
+			env,
+			trusted,
+			deps,
 		});
-		return deny(403, "privileged_unimplemented");
 	}
 
 	return handlePublicInternet(request, fetchImpl);

@@ -26,11 +26,12 @@ TanStack Start routes provide five server-facing surfaces:
 | `/api/trpc/$` | Cookie session in tRPC context | Browser queries and mutations |
 | `/api/agent/stream` | Cookie session checked directly | Long-lived SSE agent run |
 | `/api/agent/control` | Cookie session checked directly | Follow-up or Stop for one active PI agent session |
-| `/api/agent/git` | Short-lived scoped HS256 JWT | Push/PR actions invoked by PI tools |
 
-The agent routes bypass tRPC when they stream events, control a live process, or
-serve a machine callback. Their business logic still delegates to
-`apps/web/src/lib` services.
+The agent routes bypass tRPC when they stream events or control a live process.
+Their business logic still delegates to `apps/web/src/lib` services. Agent Git
+tools call a synthetic internal origin; the sandbox egress broker resolves the
+trusted identity and dispatches Worker-owned Git services. There is no public
+Git callback route.
 
 ## tRPC control plane
 
@@ -59,7 +60,8 @@ The large workflows live in narrow modules rather than route handlers:
   multi-turn stream persistence, terminal settlement, and backup. It validates
   `OPENCODE_API_KEY` and any explicit thinking level (`off`, `high`, `max`)
   before project/session/message side effects, then opens an `agent_run` model
-  operation around the sandbox command. The key stays in the Worker.
+  operation and a nested `ditto_action` / `agent_git` operation around the
+  sandbox command. The key stays in the Worker.
 - `agent-control-service.ts` authenticates run-scoped follow-up/Stop ownership,
   writes the bounded control job, invokes the baked control CLI, and maps stale
   targets without acquiring the active workspace-session lock.
@@ -73,10 +75,12 @@ The large workflows live in narrow modules rather than route handlers:
 - `sandbox-authority.ts` owns sandbox identity registration, generation
   rotation, permanent retirement, and privileged operation open/close/resolve.
 - `sandbox-egress-broker.ts` owns outbound classification, authority lookup,
-  Git fetch forwarding, OpenCode model forwarding, and credential-free public
-  internet policy.
+  Git fetch forwarding, OpenCode model forwarding, Ditto Git-action dispatch,
+  and credential-free public internet policy.
 - `open-code-contract.ts` validates the pinned OpenCode chat-completions
   request, constructs a fresh upstream request, and streams the response.
+- `ditto-action-contract.ts` validates the pinned `http://ditto.internal/v1/git-action`
+  request and wraps a bounded, redacted Git-action result.
 - `project-seed.ts` owns temporary builder provisioning for new GitHub imports.
 - `sandbox-bootstrap.ts` owns low-level Sandbox SDK helpers and the legacy
   project-sandbox clone/fetch/install and archive-backed backup/restore path.
@@ -93,10 +97,10 @@ The large workflows live in narrow modules rather than route handlers:
   model operation.
 - `session-git-ui-actions.ts` orchestrates UI Commit/Open PR under one session
   lock (snapshot → generate → mutate → release → conditional backup).
-- `agent-git-handler.ts` resolves JWT claims back to current D1 state and
-  dispatches to the same Git services.
+- `agent-git-handler.ts` resolves D1 ownership and runtime state for brokered
+  agent Git actions and dispatches to the same Git services.
 - `github-export.ts` owns deterministic branch/PR text helpers and safe
-  command/error formatting for non-UI/agent-callback callers.
+  command/error formatting for non-UI callers.
 - `git-secret-policy.ts` is a fail-closed preflight over outgoing commit paths
   and added content.
 - `account-provider-credentials.ts` owns the operator fallback credential
@@ -279,8 +283,8 @@ available (`envDir` points at the monorepo root).
 ## Tests
 
 Tests are colocated as `*.test.ts`/`*.test.tsx`. Domain tests favor injected
-Sandbox, D1, clock, and callback doubles. The largest suites cover full state
+Sandbox, D1, clock, and broker doubles. The largest suites cover full state
 transitions in agent orchestration, sandbox bootstrap/restore, Git export,
-redaction, JWT validation, worktree behavior, message compatibility, and tRPC
+redaction, worktree behavior, message compatibility, and tRPC
 ownership. `pnpm verify` is the root quality gate and also runs the independent
 runner package verification.

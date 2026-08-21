@@ -698,8 +698,9 @@ describe("generateGitMetadata", () => {
 		const sessionEnv = sandbox.createSession.mock.calls[0][0].env;
 		expect(sessionEnv).not.toHaveProperty("DITTO_PI_CREDENTIAL");
 		expect(sessionEnv).not.toHaveProperty("OPENCODE_API_KEY");
-		expect(sessionEnv).not.toHaveProperty("DITTO_GIT_CALLBACK_URL");
-		expect(sessionEnv).not.toHaveProperty("DITTO_GIT_CALLBACK_TOKEN");
+		expect(
+			Object.keys(sessionEnv).some((key) => key.includes("CALLBACK")),
+		).toBe(false);
 		expect(sessionEnv).not.toHaveProperty("GITHUB_TOKEN");
 		expect(JSON.stringify(sessionEnv)).not.toContain(env.OPENCODE_API_KEY);
 		expect(shell.exec.mock.calls[0][0]).toContain(

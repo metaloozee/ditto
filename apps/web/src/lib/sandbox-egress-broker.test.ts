@@ -1,10 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	DITTO_GIT_ACTION_ORIGIN,
+	MAX_DITTO_ACTION_REQUEST_BODY_BYTES,
+} from "./ditto-action-contract";
+import {
 	OPENCODE_PLACEHOLDER_API_KEY,
 	OPENCODE_REQUEST_MODEL,
 } from "./open-code-contract";
 import { SandboxAuthorityError } from "./sandbox-authority";
 import { handleOutbound } from "./sandbox-egress-broker";
+
+const resolveAgentGitContextMock = vi.fn();
+const dispatchAgentGitActionMock = vi.fn();
 
 const mintTokenMock = vi.fn(async () => "ghs_minted_token");
 const fetchMock = vi.fn();
@@ -45,6 +52,65 @@ function makeCtx(
 		containerId: "container-1",
 		className: "Sandbox",
 		params,
+	};
+}
+
+function dittoGitRequest(options?: {
+	body?: unknown;
+	rawBody?: string;
+	headers?: HeadersInit;
+	url?: string;
+	method?: string;
+}): Request {
+	const body =
+		options?.rawBody ?? JSON.stringify(options?.body ?? { action: "status" });
+	return new Request(options?.url ?? DITTO_GIT_ACTION_ORIGIN, {
+		method: options?.method ?? "POST",
+		headers: {
+			"content-type": "application/json",
+			...Object.fromEntries(new Headers(options?.headers ?? [])),
+		},
+		body,
+	});
+}
+
+function dittoActionResolved(overrides?: {
+	operation?: Record<string, unknown>;
+	identity?: Record<string, unknown>;
+}) {
+	return {
+		identity: {
+			id: "id-1",
+			kind: "workspace_session",
+			sandboxId: "sbx-1",
+			containerId: "container-1",
+			userId: "user-1",
+			projectId: "proj-1",
+			workspaceSessionId: "sess-1",
+			lifecycleGeneration: 1,
+			state: "ready",
+			retiredAt: null,
+			...overrides?.identity,
+		},
+		operation: {
+			id: "op-git-1",
+			identityId: "id-1",
+			lifecycleGeneration: 1,
+			family: "ditto_action",
+			type: "agent_git",
+			contractVersion: 1,
+			repository: null,
+			allowedRefs: ["ditto/session-abc"],
+			maxRequests: null,
+			consumedRequests: 0,
+			contractDenials: 0,
+			openedAt: new Date(),
+			expiresAt: new Date(Date.now() + 60_000),
+			closedAt: null,
+			closeReason: null,
+			correlationId: "corr-git-1",
+			...overrides?.operation,
+		},
 	};
 }
 
@@ -130,6 +196,8 @@ describe("SandboxEgressBroker", () => {
 				recordContractDenial: recordContractDenialMock,
 			}) as never,
 		mintInstallationToken: mintTokenMock,
+		resolveAgentGitContext: resolveAgentGitContextMock,
+		dispatchAgentGitAction: dispatchAgentGitActionMock,
 	};
 
 	it("denied privileged request never forwards to a public origin", async () => {
@@ -490,5 +558,210 @@ describe("SandboxEgressBroker", () => {
 		);
 		expect(response.status).toBe(403);
 		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("exact Ditto Git action dispatches from D1 identity and redacts secrets", async () => {
+		const secret = "proj-fixture-secret-value-01";
+		resolveMock.mockResolvedValue(dittoActionResolved());
+		resolveAgentGitContextMock.mockResolvedValue({
+			db: {},
+			userId: "user-1",
+			projectId: "proj-1",
+			githubRepo: "acme/app",
+			installationId: 42,
+			claimedSandboxId: "sbx-1",
+			sessionId: "sess-1",
+			sessionTitle: "Fix",
+			knownSecrets: [secret],
+		});
+		dispatchAgentGitActionMock.mockResolvedValue({
+			pushed: true,
+			note: `export ${secret}`,
+		});
+		const response = await handleOutbound(
+			dittoGitRequest({ body: { action: "push" } }),
+			{} as Env,
+			makeCtx(),
+			deps,
+		);
+		expect(response.status).toBe(200);
+		expect(resolveMock).toHaveBeenCalledWith(
+			expect.objectContaining({ identityId: "id-1" }),
+			"ditto_action",
+		);
+		expect(resolveAgentGitContextMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				identity: {
+					userId: "user-1",
+					projectId: "proj-1",
+					workspaceSessionId: "sess-1",
+					sandboxId: "sbx-1",
+				},
+			}),
+		);
+		expect(dispatchAgentGitActionMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				body: { action: "push" },
+				allowedRefs: ["ditto/session-abc"],
+			}),
+		);
+		const body = (await response.json()) as {
+			ok: boolean;
+			result: { pushed: boolean; note: string };
+		};
+		expect(body.ok).toBe(true);
+		expect(body.result.pushed).toBe(true);
+		expect(JSON.stringify(body)).not.toContain(secret);
+		expect(JSON.stringify(body)).not.toContain("op-git-1");
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("Ditto Git action with no open operation fails closed", async () => {
+		resolveMock.mockRejectedValue(
+			new SandboxAuthorityError("operation_not_open", "missing"),
+		);
+		const response = await handleOutbound(
+			dittoGitRequest(),
+			{} as Env,
+			makeCtx(),
+			deps,
+		);
+		expect(response.status).toBe(403);
+		expect(dispatchAgentGitActionMock).not.toHaveBeenCalled();
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("stale generation fails closed for Ditto Git action", async () => {
+		resolveMock.mockRejectedValue(
+			new SandboxAuthorityError("generation_mismatch", "stale"),
+		);
+		const response = await handleOutbound(
+			dittoGitRequest(),
+			{} as Env,
+			makeCtx({ identityId: "id-1", lifecycleGeneration: 9 }),
+			deps,
+		);
+		expect(response.status).toBe(403);
+		expect(dispatchAgentGitActionMock).not.toHaveBeenCalled();
+	});
+
+	it("wrong session identity fails closed for Ditto Git action", async () => {
+		resolveMock.mockResolvedValue(
+			dittoActionResolved({
+				identity: { workspaceSessionId: null },
+			}),
+		);
+		const response = await handleOutbound(
+			dittoGitRequest(),
+			{} as Env,
+			makeCtx(),
+			deps,
+		);
+		expect(response.status).toBe(403);
+		const body = (await response.json()) as { reasonCode: string };
+		expect(body.reasonCode).toBe("identity_binding_mismatch");
+		expect(dispatchAgentGitActionMock).not.toHaveBeenCalled();
+	});
+
+	it("expired Ditto Git operation fails closed", async () => {
+		resolveMock.mockRejectedValue(
+			new SandboxAuthorityError("operation_expired", "expired"),
+		);
+		const response = await handleOutbound(
+			dittoGitRequest(),
+			{} as Env,
+			makeCtx(),
+			deps,
+		);
+		expect(response.status).toBe(403);
+		expect(dispatchAgentGitActionMock).not.toHaveBeenCalled();
+	});
+
+	it("malformed action, extra field, oversized body, and authorization fail closed", async () => {
+		resolveMock.mockResolvedValue(dittoActionResolved());
+		const cases = [
+			dittoGitRequest({ body: { action: "merge" } }),
+			dittoGitRequest({ body: { action: "push", sessionId: "sess-1" } }),
+			dittoGitRequest({
+				rawBody: `{"action":"push","pad":"${"x".repeat(MAX_DITTO_ACTION_REQUEST_BODY_BYTES)}"}`,
+			}),
+			dittoGitRequest({ headers: { authorization: "Bearer stolen" } }),
+		];
+		for (const request of cases) {
+			dispatchAgentGitActionMock.mockClear();
+			const response = await handleOutbound(
+				request,
+				{} as Env,
+				makeCtx(),
+				deps,
+			);
+			expect(response.status).toBe(403);
+			expect(dispatchAgentGitActionMock).not.toHaveBeenCalled();
+			expect(fetchMock).not.toHaveBeenCalled();
+		}
+	});
+
+	it("public internet request cannot invoke the Ditto Git adapter", async () => {
+		fetchMock.mockResolvedValue(new Response("ok", { status: 200 }));
+		const response = await handleOutbound(
+			new Request("https://example.com/", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ action: "push" }),
+			}),
+			{} as Env,
+			makeCtx(),
+			deps,
+		);
+		expect(response.status).toBe(200);
+		expect(dispatchAgentGitActionMock).not.toHaveBeenCalled();
+		expect(resolveAgentGitContextMock).not.toHaveBeenCalled();
+		expect(fetchMock).toHaveBeenCalledOnce();
+	});
+
+	it("maps handler errors to a generic sandbox-visible body", async () => {
+		resolveMock.mockResolvedValue(dittoActionResolved());
+		resolveAgentGitContextMock.mockResolvedValue({
+			knownSecrets: ["proj-fixture-secret-value-01"],
+		});
+		const handlerError = new Error("Commit local changes before pushing.");
+		handlerError.name = "AgentGitHttpError";
+		(handlerError as unknown as { status: number }).status = 409;
+		dispatchAgentGitActionMock.mockRejectedValue(handlerError);
+		const response = await handleOutbound(
+			dittoGitRequest({ body: { action: "push" } }),
+			{} as Env,
+			makeCtx(),
+			deps,
+		);
+		expect(response.status).toBe(409);
+		const body = (await response.json()) as { ok: boolean; error: string };
+		expect(body).toEqual({ ok: false, error: "Git action failed." });
+		expect(JSON.stringify(body)).not.toContain("proj-fixture-secret-value-01");
+		expect(JSON.stringify(body)).not.toContain("op-git-1");
+	});
+
+	it("ditto.internal near-misses never reach public internet", async () => {
+		const urls = [
+			"https://ditto.internal/v1/git-action",
+			"http://ditto.internal/v1/other",
+			"http://ditto.internal/v1/git-action?x=1",
+			"http://ditto.internal:8080/v1/git-action",
+		];
+		for (const url of urls) {
+			fetchMock.mockClear();
+			dispatchAgentGitActionMock.mockClear();
+			const response = await handleOutbound(
+				new Request(url, { method: "POST" }),
+				{} as Env,
+				makeCtx(),
+				deps,
+			);
+			expect(response.status).toBe(403);
+			const body = (await response.json()) as { reasonCode: string };
+			expect(body.reasonCode).toBe("privileged_placeholder");
+			expect(fetchMock).not.toHaveBeenCalled();
+			expect(dispatchAgentGitActionMock).not.toHaveBeenCalled();
+		}
 	});
 });

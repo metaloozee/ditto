@@ -163,7 +163,6 @@ function setupResolved() {
 				sandbox: { exec: vi.fn() },
 				identity: null,
 				projectEnv: null,
-				issueGitCallbackToken: async () => "",
 				matchesSandboxClaim: () => true,
 			}),
 	);

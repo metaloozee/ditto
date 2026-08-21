@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+	DITTO_GIT_ACTION_URL,
 	postAgentGitAction,
-	readDittoGitCallbackEnv,
-} from "./ditto-git-callback.js";
+} from "./ditto-git-action.js";
 import {
 	DITTO_GIT_PROMPT_GUIDELINES,
 	DITTO_OPEN_PULL_REQUEST_DESCRIPTION,
@@ -22,22 +22,13 @@ describe("ditto-git-guidance", () => {
 	});
 });
 
-describe("ditto-git-callback", () => {
+describe("ditto-git-action", () => {
 	afterEach(() => {
 		vi.unstubAllGlobals();
 		vi.restoreAllMocks();
 	});
 
-	it("returns error when callback env is missing", async () => {
-		const result = await postAgentGitAction({
-			env: readDittoGitCallbackEnv({}),
-			body: { action: "push" },
-		});
-		expect(result.ok).toBe(false);
-		expect(result.text).toContain("Git callback not configured");
-	});
-
-	it("posts push action with bearer token", async () => {
+	it("posts push action to the synthetic origin without an Authorization header", async () => {
 		const fetchMock = vi.fn().mockResolvedValue(
 			new Response(JSON.stringify({ ok: true, result: { pushed: true } }), {
 				status: 200,
@@ -47,23 +38,69 @@ describe("ditto-git-callback", () => {
 		vi.stubGlobal("fetch", fetchMock);
 
 		const result = await postAgentGitAction({
-			env: {
-				callbackUrl: "http://localhost:5173/api/agent/git",
-				callbackToken: "jwt-token-secret",
-			},
 			body: { action: "push" },
 		});
 
 		expect(fetchMock).toHaveBeenCalledWith(
-			"http://localhost:5173/api/agent/git",
+			DITTO_GIT_ACTION_URL,
 			expect.objectContaining({
 				method: "POST",
-				headers: expect.objectContaining({
-					Authorization: "Bearer jwt-token-secret",
-				}),
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({ action: "push" }),
 			}),
 		);
+		const headers = fetchMock.mock.calls[0]?.[1]?.headers as Record<
+			string,
+			string
+		>;
+		expect(headers).not.toHaveProperty("Authorization");
 		expect(result.ok).toBe(true);
-		expect(result.text).not.toContain("jwt-token-secret");
+		expect(result.text).toContain("pushed");
+	});
+
+	it("returns a generic failure when the Worker denies the operation", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			new Response(
+				JSON.stringify({
+					error: "denied",
+					reasonCode: "operation_not_open",
+					correlationId: "corr-1",
+				}),
+				{
+					status: 403,
+					headers: {
+						"Content-Type": "application/json",
+						"x-ditto-deny-reason": "operation_not_open",
+						authorization: "Bearer leaked",
+					},
+				},
+			),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		const result = await postAgentGitAction({
+			body: { action: "openPullRequest" },
+		});
+
+		expect(result.ok).toBe(false);
+		expect(result.text).toBe("denied");
+		expect(result.text).not.toMatch(/Bearer/i);
+		expect(result.text).not.toContain("leaked");
+	});
+
+	it("returns a generic failure when the request cannot be sent", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockRejectedValue(new Error("network down")),
+		);
+
+		const result = await postAgentGitAction({
+			body: { action: "push" },
+		});
+
+		expect(result.ok).toBe(false);
+		expect(result.text).toContain("Git action failed");
 	});
 });

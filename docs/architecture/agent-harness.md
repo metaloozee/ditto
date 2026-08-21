@@ -70,7 +70,8 @@ helper once (the runner and stream route do not snapshot).
    one D1 batch, then opens the SSE stream and emits `meta`.
 6. The Worker creates a sandbox shell session with cwd set to the session
    checkout, decrypts project environment values from D1, and injects them
-   into the session `env` together with provider and callback credentials.
+   into the session `env` together with Git author identity. No Git callback
+   URL, bearer token, or OpenCode key is injected.
    It writes a job file containing the run IDs, model, prompt, cwd, and the
    optional effective `thinkingLevel` (prompt is not interpolated into shell
    commands).
@@ -213,7 +214,7 @@ not the session title or prompt:
 1. Under the session lock, the Worker builds a bounded, redacted snapshot
    (commit: temporary index of safe paths; PR: exact stored `baseCommitSha` to
    `HEAD` subjects/paths/stat/patch). Secret-like paths are omitted; staged
-   secrets fail closed. No project env, GitHub tokens, callback JWT, chat text,
+   secrets fail closed. No project env, GitHub tokens, Git callback credentials, chat text,
    or session title enter the job.
 2. A short-lived sandbox shell runs `ditto-git-metadata` without the OpenCode
    key. The Worker opens a one-request `git_metadata` model operation for the
@@ -266,13 +267,14 @@ changes.
   mutations.
 
 Chat-driven git uses PI custom tools in the sandbox runner (`ditto_push_branch`,
-`ditto_open_pull_request`). Those tools `POST` to Worker `POST /api/agent/git`
-with a short-lived HS256 JWT (`DITTO_GIT_CALLBACK_TOKEN`) minted when the
-agent shell session starts. The Worker verifies the JWT and reuses the same
-`session-git` helpers as the UI. The Worker mints the installation token, then
-passes it only to the isolated network Git launcher inside the sandbox.
+`ditto_open_pull_request`). Those tools `POST` JSON to the image-owned origin
+`http://ditto.internal/v1/git-action` with no Authorization header. The Worker
+outbound broker classifies that origin, resolves the trusted sandbox identity
+and the open `ditto_action` / `agent_git` operation from D1, and reuses the
+same `session-git` helpers as the UI. The Worker mints the installation token,
+then passes it only to the isolated network Git launcher inside the sandbox.
 Use bash for local `git status` / `git commit`; use Ditto tools for push and
-open PR only.
+open PR only. Agent tools cannot merge or close a pull request.
 
 Agent git guidance (tool `promptGuidelines` + descriptions):
 
@@ -313,15 +315,16 @@ runner changes so custom tools appear in the container.
   string interpolation.
 - Stderr and client-visible errors pass through `redactSecrets`.
 - Project environment values are decrypted in the Worker and injected only as
-  sandbox shell session process environment variables. The Git callback JWT
-  follows the same rule. The OpenCode key stays in the Worker and never enters
-  worktree files, job JSON, SSE payloads, Git remotes, or sandbox env.
+  sandbox shell session process environment variables. The OpenCode key stays
+  in the Worker and never enters worktree files, job JSON, SSE payloads, Git
+  remotes, or sandbox env. No Git callback bearer token or callback URL enters
+  a sandbox process.
 - The container can expose process environments, so output redaction and Git
   secret preflight remain necessary. A process environment is not a vault.
 - GitHub App installation tokens do not enter the agent runner environment.
-  Agent Git tools call the Worker with `DITTO_GIT_CALLBACK_URL` and
-  `DITTO_GIT_CALLBACK_TOKEN`. A later Worker-owned Git operation passes an
-  installation token into a separate short-lived sandbox process.
+  Agent Git tools call the synthetic Ditto origin through the outbound broker.
+  A later Worker-owned Git operation passes an installation token into a
+  separate short-lived sandbox process.
 - Normal chat constructs an explicit locked resource loader. It disables
   repository discovery of PI extensions, skills, prompts, themes, settings,
   and context files, and loads only the image-owned Ditto extension from

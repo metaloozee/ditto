@@ -171,7 +171,6 @@ function baseDeps(overrides: Partial<AgentRunDeps> = {}): AgentRunDeps {
 					retiredAt: null,
 				},
 				projectEnv: [],
-				issueGitCallbackToken: async () => "jwt",
 				matchesSandboxClaim: () => true,
 			}),
 		),
@@ -753,7 +752,8 @@ describe("executeAgentRun", () => {
 			}),
 		});
 		await run();
-		expect(withOperation).toHaveBeenCalledWith(
+		expect(withOperation).toHaveBeenNthCalledWith(
+			1,
 			expect.objectContaining({
 				identityId: "ident-1",
 				family: "model",
@@ -763,8 +763,23 @@ describe("executeAgentRun", () => {
 			}),
 			expect.any(Function),
 		);
+		expect(withOperation).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({
+				identityId: "ident-1",
+				family: "ditto_action",
+				type: "agent_git",
+				contractVersion: 1,
+				allowedRefs: ["ditto/session-sess-1"],
+				maxRequests: null,
+			}),
+			expect.any(Function),
+		);
 		expect(runAgentInSandbox.mock.calls[0]?.[0]).not.toHaveProperty(
 			"runtimeCredentialJson",
+		);
+		expect(runAgentInSandbox.mock.calls[0]?.[0]).not.toHaveProperty(
+			"gitCallbackToken",
 		);
 	});
 
@@ -782,7 +797,6 @@ describe("executeAgentRun", () => {
 					sandbox: {} as never,
 					identity: null,
 					projectEnv: [],
-					issueGitCallbackToken: async () => "jwt",
 					matchesSandboxClaim: () => true,
 				}),
 			),

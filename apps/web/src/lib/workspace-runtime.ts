@@ -7,7 +7,6 @@ import {
 	sandboxIdentities,
 	workspaceSessions,
 } from "#/db/schema";
-import { mintAgentGitJwt } from "#/lib/agent-git-jwt";
 import { GIT_FETCH_CONTRACT_VERSION } from "#/lib/git-fetch-contract";
 import { getGitHubApp } from "#/lib/github-app";
 import { fetchGitHubBranchBrokered } from "#/lib/privileged-git";
@@ -98,11 +97,6 @@ export type WorkspaceRuntimeLease = {
 	sandbox: WorkspaceRuntimeSandbox;
 	identity: SandboxIdentityHandle | null;
 	projectEnv: readonly SandboxEnvVar[] | null;
-	issueGitCallbackToken: (options: {
-		secret: string;
-		projectId: string;
-		userId: string;
-	}) => Promise<string>;
 	matchesSandboxClaim: (sandboxId: string) => boolean;
 };
 
@@ -775,21 +769,6 @@ function buildLease(options: {
 		sandbox: options.prepared.sandbox,
 		identity: options.prepared.identity,
 		projectEnv: options.projectEnv,
-		issueGitCallbackToken: async (tokenOptions) => {
-			if (options.purpose !== "agent_run") {
-				throw new WorkspaceRuntimeError(
-					"purpose_denied",
-					"Git callback tokens are only issued for agent runs.",
-				);
-			}
-			return mintAgentGitJwt({
-				secret: tokenOptions.secret,
-				projectId: tokenOptions.projectId,
-				sessionId: options.sessionId,
-				userId: tokenOptions.userId,
-				sandboxId,
-			});
-		},
 		matchesSandboxClaim: (claimed) => claimed === sandboxId,
 	};
 }

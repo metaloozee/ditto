@@ -15,7 +15,6 @@ const withWorkspaceRuntimeLeaseMock = vi.hoisted(() =>
 			sandbox: { exec: vi.fn() },
 			identity: null,
 			projectEnv: null,
-			issueGitCallbackToken: async () => "",
 			matchesSandboxClaim: (id: string) => id === "sandbox-1",
 		}),
 	),
@@ -30,9 +29,8 @@ vi.mock("#/lib/session-git", () => ({
 	openSessionPullRequest: openSessionPullRequestMock,
 }));
 
-const { AgentGitHttpError, dispatchAgentGitAction } = await import(
-	"./agent-git-handler"
-);
+const { AgentGitHttpError, agentGitBodySchema, dispatchAgentGitAction } =
+	await import("./agent-git-handler");
 
 /** Synthetic only — never a live credential. */
 const FIXTURE_SECRET = "proj-fixture-secret-value-01";
@@ -246,6 +244,52 @@ describe("dispatchAgentGitAction", () => {
 		});
 		expect(pushSessionBranchMock).not.toHaveBeenCalled();
 		expect(openSessionPullRequestMock).not.toHaveBeenCalled();
+	});
+
+	it("returns status without known project secrets", async () => {
+		getSessionGitStatusMock.mockResolvedValue({
+			dirty: false,
+			ahead: 0,
+			changedFiles: [],
+			workflow: { kind: "idle", reason: "no-changes" },
+		});
+
+		const result = await dispatchAgentGitAction({
+			env,
+			resolved,
+			body: { action: "status" },
+		});
+
+		expect(getSessionGitStatusMock).toHaveBeenCalledWith(
+			expect.not.objectContaining({
+				knownSecrets: expect.anything(),
+			}),
+		);
+		expect(JSON.stringify(result)).not.toContain(FIXTURE_SECRET);
+	});
+
+	it("rejects push when allowedRefs does not include the session branch", async () => {
+		await expect(
+			dispatchAgentGitAction({
+				env,
+				resolved,
+				body: { action: "push" },
+				allowedRefs: ["other-branch"],
+			}),
+		).rejects.toMatchObject({
+			status: 403,
+			message: "Branch is not allowed for this operation.",
+		});
+		expect(pushSessionBranchMock).not.toHaveBeenCalled();
+	});
+
+	it("rejects merge and close in the action schema", () => {
+		expect(agentGitBodySchema.safeParse({ action: "merge" }).success).toBe(
+			false,
+		);
+		expect(agentGitBodySchema.safeParse({ action: "close" }).success).toBe(
+			false,
+		);
 	});
 
 	it("rejects openPR when workflow unavailable/github", async () => {

@@ -82,9 +82,6 @@ function makeHarness(
 						retiredAt: null,
 					},
 					projectEnv: null,
-					issueGitCallbackToken: async () => {
-						throw new Error("control does not issue git tokens");
-					},
 					matchesSandboxClaim: () => true,
 				}),
 		),

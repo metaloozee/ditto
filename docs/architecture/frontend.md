@@ -27,7 +27,6 @@ and toasts.
 | `/api/trpc/$` | tRPC fetch adapter |
 | `/api/agent/stream` | Cookie-authenticated agent SSE endpoint |
 | `/api/agent/control` | Cookie-authenticated follow-up and Stop endpoint for the active PI agent session |
-| `/api/agent/git` | JWT-authenticated callback used by sandbox agent tools |
 
 `apps/web/src/routeTree.gen.ts` is generated from these files. Do not edit it directly.
 

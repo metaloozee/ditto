@@ -2,7 +2,6 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { createDb } from "#/db";
 import { projects } from "#/db/schema";
-import type { AgentGitJwtClaims } from "#/lib/agent-git-jwt";
 import { GitSecretPolicyError } from "#/lib/git-secret-policy";
 import { decryptEnvVars } from "#/lib/project-env-vars";
 import {
@@ -58,15 +57,24 @@ export type ResolvedAgentGitContext = {
 export async function resolveAgentGitContext(options: {
 	db: ReturnType<typeof createDb>;
 	env: Env;
-	claims: AgentGitJwtClaims;
+	identity: {
+		userId: string;
+		projectId: string;
+		workspaceSessionId: string | null;
+		sandboxId: string;
+	};
 }): Promise<ResolvedAgentGitContext> {
+	if (!options.identity.workspaceSessionId) {
+		throw new AgentGitHttpError(404, "Session not found.");
+	}
+
 	const [project] = await options.db
 		.select()
 		.from(projects)
 		.where(
 			and(
-				eq(projects.id, options.claims.projectId),
-				eq(projects.userId, options.claims.userId),
+				eq(projects.id, options.identity.projectId),
+				eq(projects.userId, options.identity.userId),
 			),
 		)
 		.limit(1);
@@ -88,9 +96,9 @@ export async function resolveAgentGitContext(options: {
 
 	const session = await loadOwnedActiveSession({
 		db: options.db,
-		projectId: options.claims.projectId,
-		sessionId: options.claims.sessionId,
-		userId: options.claims.userId,
+		projectId: options.identity.projectId,
+		sessionId: options.identity.workspaceSessionId,
+		userId: options.identity.userId,
 	});
 
 	if (!session) {
@@ -105,11 +113,11 @@ export async function resolveAgentGitContext(options: {
 
 	return {
 		db: options.db,
-		userId: options.claims.userId,
+		userId: options.identity.userId,
 		projectId: project.id,
 		githubRepo: project.githubRepo,
 		installationId: project.githubInstallationId,
-		claimedSandboxId: options.claims.sandboxId,
+		claimedSandboxId: options.identity.sandboxId,
 		sessionId: session.id,
 		sessionTitle: session.title,
 		knownSecrets,
@@ -130,6 +138,7 @@ export async function dispatchAgentGitAction(options: {
 	env: Env;
 	resolved: ResolvedAgentGitContext;
 	body: AgentGitBody;
+	allowedRefs?: string[] | null;
 }): Promise<unknown> {
 	return await withWorkspaceRuntimeLease(
 		{
@@ -146,6 +155,16 @@ export async function dispatchAgentGitAction(options: {
 				throw new AgentGitHttpError(
 					403,
 					"Sandbox does not match this agent run.",
+				);
+			}
+			if (
+				options.allowedRefs &&
+				options.allowedRefs.length > 0 &&
+				!options.allowedRefs.includes(lease.branchName)
+			) {
+				throw new AgentGitHttpError(
+					403,
+					"Branch is not allowed for this operation.",
 				);
 			}
 			const session = {

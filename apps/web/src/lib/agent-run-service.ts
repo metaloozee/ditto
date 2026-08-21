@@ -25,6 +25,10 @@ import {
 	type PiThinkingLevel,
 } from "#/lib/agent-models";
 import { AGENT_COMMAND_TIMEOUT_MS, runAgentInSandbox } from "#/lib/agent-run";
+import {
+	DITTO_ACTION_CONTRACT_VERSION,
+	DITTO_ACTION_OPERATION_TYPE,
+} from "#/lib/ditto-action-contract";
 import { OPENCODE_CONTRACT_VERSION } from "#/lib/open-code-contract";
 import { decryptEnvVars } from "#/lib/project-env-vars";
 import { persistProjectSandboxBackup } from "#/lib/project-sandbox";
@@ -637,163 +641,180 @@ export async function executeAgentRun(options: {
 						"Workspace session has no sandbox identity for model access.",
 					);
 				}
+				const identity = lease.identity;
 				const authority = deps.createAuthority(context.db);
+				const expiresAt = new Date(Date.now() + AGENT_COMMAND_TIMEOUT_MS);
 				return await authority.withOperation(
 					{
-						identityId: lease.identity.id,
+						identityId: identity.id,
 						family: "model",
 						type: "agent_run",
 						contractVersion: OPENCODE_CONTRACT_VERSION,
 						maxRequests: null,
-						expiresAt: new Date(Date.now() + AGENT_COMMAND_TIMEOUT_MS),
+						expiresAt,
 					},
 					async () =>
-						deps.runAgentInSandbox({
-							env: context.env,
-							sandbox: lease.sandbox,
-							projectId: context.projectId,
-							userId: context.userId,
-							conversationId: context.sessionId,
-							runId: context.runId,
-							cwd: lease.workspacePath,
-							model: context.model,
-							thinkingLevel: context.thinkingLevel,
-							prompt: context.message,
-							envVars: lease.projectEnv ?? context.envVars,
-							gitCallbackToken: await lease.issueGitCallbackToken({
-								secret: context.env.BETTER_AUTH_SECRET,
-								projectId: context.projectId,
-								userId: context.userId,
-							}),
-							bypassWorkspaceLock: true,
-							onRunnerMessage: async (msg) => {
-								if (msg.kind === "assistant_delta") {
-									deltaBatcher.push(msg.delta);
-									return;
-								}
-								// Flush pending text before tools/errors so ordering is preserved.
-								deltaBatcher.flush();
-								if (msg.kind === "ready") {
-									emit({
-										event: "control_ready",
-										data: { runId: context.runId },
-									});
-									return;
-								}
-								if (msg.kind === "control_event") {
-									if (msg.event.type === "follow_up_cancelled") {
-										emit({
-											event: "queue_cancelled",
-											data: {
-												requestId: msg.event.requestId,
-												userMessageId: msg.event.userMessageId,
-												assistantMessageId: msg.event.assistantMessageId,
-											},
-										});
-										return;
-									}
-									if (msg.event.type === "stop_requested") return;
-
-									try {
-										const settled = await settleTurn(currentTurn, "complete");
-										emit({
-											event: "turn_done",
-											data: {
-												userMessageId: currentTurn.userMessageId,
-												assistantMessageId: currentTurn.assistantMessageId,
-												content: settled.content,
-												...(settled.tools.length > 0
-													? { tools: settled.tools }
-													: {}),
-												...(settled.parts.length > 0
-													? { parts: settled.parts }
-													: {}),
-											},
-										});
-
-										knownPendingAssistants.add(msg.event.assistantMessageId);
-										const [userRows, assistantRows] = await context.db.batch([
-											context.db
-												.insert(messages)
-												.values({
-													id: msg.event.userMessageId,
-													sessionId: context.sessionId,
-													projectId: context.projectId,
-													userId: context.userId,
-													role: "user",
-													content: msg.event.text,
-													model: context.model,
-													status: "complete",
-												})
-												.returning(),
-											context.db
-												.insert(messages)
-												.values({
-													id: msg.event.assistantMessageId,
-													sessionId: context.sessionId,
-													projectId: context.projectId,
-													userId: context.userId,
-													role: "assistant",
-													content: "",
-													status: "pending",
-												})
-												.returning(),
-											workspaceSessionRecencyUpdate(
-												context.db,
-												context.sessionId,
-											),
-										]);
-										if (!userRows?.[0] || !assistantRows?.[0]) {
-											throw new Error("Failed to persist follow-up messages.");
-										}
-										currentTurn = {
-											userMessageId: msg.event.userMessageId,
-											assistantMessageId: msg.event.assistantMessageId,
-											text: msg.event.text,
-											parts: [],
-										};
-										emit({
-											event: "turn_start",
-											data: {
-												requestId: msg.event.requestId,
-												userMessageId: msg.event.userMessageId,
-												assistantMessageId: msg.event.assistantMessageId,
-												text: msg.event.text,
-											},
-										});
-									} catch (error) {
-										await requestStop().catch(() => undefined);
-										await failKnownPending();
-										throw error;
-									}
-									return;
-								}
-								if (msg.kind === "agent_event") {
-									// One server-assigned occurrence time for SSE + reducer.
-									const occurredAt = deps.now();
-									emit({
-										event: "agent",
-										data: { event: msg.event, occurredAt },
-									});
-									const nextParts = applyAgentToolEventToParts(
-										currentTurn.parts,
-										msg.event,
-										occurredAt,
-									);
-									if (nextParts) {
-										currentTurn.parts = nextParts;
-									}
-								}
-								if (msg.kind === "error") {
-									emit({
-										event: "error",
-										data: {
-											message: redact(msg.message, context.secretValues),
-										},
-									});
-								}
+						await authority.withOperation(
+							{
+								identityId: identity.id,
+								family: "ditto_action",
+								type: DITTO_ACTION_OPERATION_TYPE,
+								contractVersion: DITTO_ACTION_CONTRACT_VERSION,
+								allowedRefs: [lease.branchName],
+								maxRequests: null,
+								expiresAt,
 							},
-						}),
+							async () =>
+								deps.runAgentInSandbox({
+									env: context.env,
+									sandbox: lease.sandbox,
+									projectId: context.projectId,
+									userId: context.userId,
+									conversationId: context.sessionId,
+									runId: context.runId,
+									cwd: lease.workspacePath,
+									model: context.model,
+									thinkingLevel: context.thinkingLevel,
+									prompt: context.message,
+									envVars: lease.projectEnv ?? context.envVars,
+									bypassWorkspaceLock: true,
+									onRunnerMessage: async (msg) => {
+										if (msg.kind === "assistant_delta") {
+											deltaBatcher.push(msg.delta);
+											return;
+										}
+										// Flush pending text before tools/errors so ordering is preserved.
+										deltaBatcher.flush();
+										if (msg.kind === "ready") {
+											emit({
+												event: "control_ready",
+												data: { runId: context.runId },
+											});
+											return;
+										}
+										if (msg.kind === "control_event") {
+											if (msg.event.type === "follow_up_cancelled") {
+												emit({
+													event: "queue_cancelled",
+													data: {
+														requestId: msg.event.requestId,
+														userMessageId: msg.event.userMessageId,
+														assistantMessageId: msg.event.assistantMessageId,
+													},
+												});
+												return;
+											}
+											if (msg.event.type === "stop_requested") return;
+
+											try {
+												const settled = await settleTurn(
+													currentTurn,
+													"complete",
+												);
+												emit({
+													event: "turn_done",
+													data: {
+														userMessageId: currentTurn.userMessageId,
+														assistantMessageId: currentTurn.assistantMessageId,
+														content: settled.content,
+														...(settled.tools.length > 0
+															? { tools: settled.tools }
+															: {}),
+														...(settled.parts.length > 0
+															? { parts: settled.parts }
+															: {}),
+													},
+												});
+
+												knownPendingAssistants.add(
+													msg.event.assistantMessageId,
+												);
+												const [userRows, assistantRows] =
+													await context.db.batch([
+														context.db
+															.insert(messages)
+															.values({
+																id: msg.event.userMessageId,
+																sessionId: context.sessionId,
+																projectId: context.projectId,
+																userId: context.userId,
+																role: "user",
+																content: msg.event.text,
+																model: context.model,
+																status: "complete",
+															})
+															.returning(),
+														context.db
+															.insert(messages)
+															.values({
+																id: msg.event.assistantMessageId,
+																sessionId: context.sessionId,
+																projectId: context.projectId,
+																userId: context.userId,
+																role: "assistant",
+																content: "",
+																status: "pending",
+															})
+															.returning(),
+														workspaceSessionRecencyUpdate(
+															context.db,
+															context.sessionId,
+														),
+													]);
+												if (!userRows?.[0] || !assistantRows?.[0]) {
+													throw new Error(
+														"Failed to persist follow-up messages.",
+													);
+												}
+												currentTurn = {
+													userMessageId: msg.event.userMessageId,
+													assistantMessageId: msg.event.assistantMessageId,
+													text: msg.event.text,
+													parts: [],
+												};
+												emit({
+													event: "turn_start",
+													data: {
+														requestId: msg.event.requestId,
+														userMessageId: msg.event.userMessageId,
+														assistantMessageId: msg.event.assistantMessageId,
+														text: msg.event.text,
+													},
+												});
+											} catch (error) {
+												await requestStop().catch(() => undefined);
+												await failKnownPending();
+												throw error;
+											}
+											return;
+										}
+										if (msg.kind === "agent_event") {
+											// One server-assigned occurrence time for SSE + reducer.
+											const occurredAt = deps.now();
+											emit({
+												event: "agent",
+												data: { event: msg.event, occurredAt },
+											});
+											const nextParts = applyAgentToolEventToParts(
+												currentTurn.parts,
+												msg.event,
+												occurredAt,
+											);
+											if (nextParts) {
+												currentTurn.parts = nextParts;
+											}
+										}
+										if (msg.kind === "error") {
+											emit({
+												event: "error",
+												data: {
+													message: redact(msg.message, context.secretValues),
+												},
+											});
+										}
+									},
+								}),
+						),
 				);
 			},
 		);
