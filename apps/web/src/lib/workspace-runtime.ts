@@ -798,11 +798,13 @@ function mapIdentityState(
 	if (state === "ready") {
 		return "connected";
 	}
-	if (state === "queued" || state === "provisioning" || state === "restoring") {
+	if (
+		state === "unprovisioned" ||
+		state === "queued" ||
+		state === "provisioning" ||
+		state === "restoring"
+	) {
 		return "provisioning";
-	}
-	if (state === "unprovisioned") {
-		return "connected";
 	}
 	return "failed";
 }

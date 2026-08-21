@@ -11,9 +11,9 @@ only process allowed to mint GitHub installation credentials.
 `apps/web/src/server.ts` exports a Ditto `Sandbox` subclass (HTTPS intercept on;
 internet left enabled for legacy instances) with a catch-all outbound handler
 registry, re-exports `ContainerProxy`, and calls `proxyToSandbox(request, env)`
-before the TanStack Start fetch handler. Only builders call
-`setOutboundHandler("dittoCatchAll", …)`; legacy project sandboxes keep direct
-internet until later plans. Unmatched production hosts under `*.ayn.wtf` return plain
+before the TanStack Start fetch handler. Builders and new workspace-session
+sandboxes call `setOutboundHandler("dittoCatchAll", …)`; legacy project
+sandboxes keep direct internet until later plans. Unmatched production hosts under `*.ayn.wtf` return plain
 404 and never fall through to the app. Local Vite (`vite.config.ts`) skips its
 transform/static middleware for session preview hosts
 (`<port>-<sandbox>-<token>.localhost`) so those requests reach the Worker and

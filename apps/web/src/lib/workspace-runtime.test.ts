@@ -815,4 +815,33 @@ describe("WorkspaceRuntime", () => {
 		expect(observed.state).toBe("connected");
 		expect(checkProjectSandboxMock).not.toHaveBeenCalled();
 	});
+
+	it("observes an unprovisioned session identity as provisioning", async () => {
+		seedProject(store);
+		seedSession(store, { sandboxIdentityId: "ident-unprov" });
+		store.identityRows.set("ident-unprov", {
+			id: "ident-unprov",
+			kind: "workspace_session",
+			sandboxId: "sbx-unprov",
+			containerId: "container-unprov",
+			userId: "user-1",
+			projectId: "proj-1",
+			workspaceSessionId: "sess-1",
+			lifecycleGeneration: 1,
+			state: "unprovisioned",
+			retiredAt: null,
+			createdAt: new Date(),
+			updatedAt: new Date(),
+		});
+
+		const observed = await observeWorkspaceRuntime({
+			env,
+			db: store.db,
+			userId: "user-1",
+			projectId: "proj-1",
+			sessionId: "sess-1",
+			authority: createSandboxAuthority(store.db),
+		});
+		expect(observed.state).toBe("provisioning");
+	});
 });
