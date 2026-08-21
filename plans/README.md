@@ -6,8 +6,7 @@ spec digest
 `d24ce53aeb29603f6c743e90354387828687299c199859e0d8988648ff262460`.
 
 Plan 001 was executed on 2026-08-20. The spec digest after that change is
-`f104e9ba66b97ce8f5a196a08854fa7819cfd7e37186f8b46cfb429c2124c5b3`. Later
-plans should start from that digest. The spec is already in this workspace.
+`f104e9ba66b97ce8f5a196a08854fa7819cfd7e37186f8b46cfb429c2124c5b3`.
 
 Plan 002 was executed on 2026-08-20 and is on `a49af50`.
 
@@ -16,6 +15,11 @@ Plan 003 was executed on 2026-08-20 and is on `79d7727`.
 Plan 004 was executed on 2026-08-21 and is on `8b2a3b9`.
 
 Plan 005 was executed on 2026-08-21 and is on `e7dc34b`.
+
+Plan 006 was executed on 2026-08-21 and is on `913f0e9`. The spec digest
+after that change is
+`83d0fe14a16093e22d4d028dcb92c18d7a1623c7ecc8322974a7a5fe416e81c6`. Later
+plans should start from that digest. The spec is already in this workspace.
 
 Before executing any remaining plan, compare both the commit and the spec
 digest. Read the new diff if either changed. Stop if a required guarantee,
@@ -30,7 +34,7 @@ trust decision, or cutover rule changed.
 | [003](003-fix-model-and-remove-account-providers.md) | DONE | 002 | Ditto exposes one fixed model and removes account-provider product paths. |
 | [004](004-add-token-free-archive-transport.md) | DONE | 001 | The Worker streams archives through R2 bindings without giving the sandbox an R2 capability. |
 | [005](005-build-project-seeds-through-brokered-fetch.md) | DONE | 003, 004 | Temporary builders use durable identity and brokered Git fetch to create immutable project seeds. |
-| [006](006-move-runtime-ownership-to-workspace-sessions.md) | TODO | 005 | Each workspace session owns one sandbox, branch checkout, and lifecycle generation. |
+| [006](006-move-runtime-ownership-to-workspace-sessions.md) | DONE | 005 | Each workspace session owns one sandbox, branch checkout, and lifecycle generation. |
 | [007](007-broker-opencode-requests.md) | TODO | 006 | Agent and metadata model requests use exact contracts; the OpenCode key stays in the Worker. |
 | [008](008-remove-agent-git-callback-token.md) | TODO | 006 | The image-owned extension invokes Worker Git actions through a synthetic origin without a JWT. |
 | [009](009-broker-git-push.md) | TODO | 005, 006, 008 | Fetch and push use brokered GitHub credentials; no installation token enters a sandbox. |

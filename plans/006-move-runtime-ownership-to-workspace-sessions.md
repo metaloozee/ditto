@@ -1,8 +1,12 @@
 # Move runtime ownership to workspace sessions
 
-Status: TODO
+Status: DONE
 
 Written against commit `62c99b4`. Complete plan 005 first.
+
+Executed 2026-08-21 from `0635c47` (plans 001–005 already on HEAD). Advisor
+verdict: accept. Merged onto `brain` as `913f0e9`. Spec digest after execution:
+`83d0fe14a16093e22d4d028dcb92c18d7a1623c7ecc8322974a7a5fe416e81c6`.
 
 Before editing, compare the current commit and target spec with plan 001's
 recorded values. Read drift across every caller listed in scope. Stop if a
