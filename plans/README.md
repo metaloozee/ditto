@@ -18,7 +18,11 @@ Plan 005 was executed on 2026-08-21 and is on `e7dc34b`.
 
 Plan 006 was executed on 2026-08-21 and is on `913f0e9`. The spec digest
 after that change is
-`83d0fe14a16093e22d4d028dcb92c18d7a1623c7ecc8322974a7a5fe416e81c6`. Later
+`83d0fe14a16093e22d4d028dcb92c18d7a1623c7ecc8322974a7a5fe416e81c6`.
+
+Plan 007 was executed on 2026-08-21 and is on `d2474ad`. The spec digest
+after that change is
+`a63f8b989e2270c89ed40db16edacc8aa5ddab23c4fac33a250f5cd2756f4e38`. Later
 plans should start from that digest. The spec is already in this workspace.
 
 Before executing any remaining plan, compare both the commit and the spec
@@ -35,7 +39,7 @@ trust decision, or cutover rule changed.
 | [004](004-add-token-free-archive-transport.md) | DONE | 001 | The Worker streams archives through R2 bindings without giving the sandbox an R2 capability. |
 | [005](005-build-project-seeds-through-brokered-fetch.md) | DONE | 003, 004 | Temporary builders use durable identity and brokered Git fetch to create immutable project seeds. |
 | [006](006-move-runtime-ownership-to-workspace-sessions.md) | DONE | 005 | Each workspace session owns one sandbox, branch checkout, and lifecycle generation. |
-| [007](007-broker-opencode-requests.md) | TODO | 006 | Agent and metadata model requests use exact contracts; the OpenCode key stays in the Worker. |
+| [007](007-broker-opencode-requests.md) | DONE | 006 | Agent and metadata model requests use exact contracts; the OpenCode key stays in the Worker. |
 | [008](008-remove-agent-git-callback-token.md) | TODO | 006 | The image-owned extension invokes Worker Git actions through a synthetic origin without a JWT. |
 | [009](009-broker-git-push.md) | TODO | 005, 006, 008 | Fetch and push use brokered GitHub credentials; no installation token enters a sandbox. |
 | [010](010-add-session-recovery-lineages.md) | TODO | 004, 006 | Session mutations create fenced recovery checkpoints with current and previous restore fallback. |

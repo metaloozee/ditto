@@ -1,8 +1,13 @@
 # Broker OpenCode requests
 
-Status: TODO
+Status: DONE
 
 Written against commit `62c99b4`. Complete plan 006 first.
+
+Executed 2026-08-21 from `56e46c3` (plans 001–006 already on HEAD). Advisor
+verdict: accept. Merged onto `brain` as `d2474ad`. Spec digest after execution:
+`a63f8b989e2270c89ed40db16edacc8aa5ddab23c4fac33a250f5cd2756f4e38`.
+Local Sandbox integration gate was skipped (no local container listener).
 
 Before editing, compare the current commit and target spec with plan 001's
 recorded values. Read drift in PI, OpenCode, agent, metadata, authority, and
