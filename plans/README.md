@@ -11,10 +11,9 @@ plans should start from that digest. The spec is already in this workspace.
 
 Plan 002 was executed on 2026-08-20 and is on `a49af50`.
 
-Plan 003 was executed on 2026-08-20. Uncommitted Worker, runner, UI, and
-architecture changes are in
-`/home/ayan/.grok/worktrees/ayan-ditto/subagent-01a02050-f0b0-7711-a8f6-79df790255ef`.
-Copy or merge that worktree before running plans that depend on 003.
+Plan 003 was executed on 2026-08-20 and is on `79d7727`.
+
+Plan 004 was executed on 2026-08-21 and is on `8b2a3b9`.
 
 Before executing any remaining plan, compare both the commit and the spec
 digest. Read the new diff if either changed. Stop if a required guarantee,
@@ -27,7 +26,7 @@ trust decision, or cutover rule changed.
 | [001](001-resolve-module-and-platform-contracts.md) | DONE | none | The spec states implementable module interfaces and records local Sandbox contract results. |
 | [002](002-lock-pi-resource-loading.md) | DONE | 001 | Normal chat loads only the image-owned Ditto extension and no repository resources. |
 | [003](003-fix-model-and-remove-account-providers.md) | DONE | 002 | Ditto exposes one fixed model and removes account-provider product paths. |
-| [004](004-add-token-free-archive-transport.md) | TODO | 001 | The Worker streams archives through R2 bindings without giving the sandbox an R2 capability. |
+| [004](004-add-token-free-archive-transport.md) | DONE | 001 | The Worker streams archives through R2 bindings without giving the sandbox an R2 capability. |
 | [005](005-build-project-seeds-through-brokered-fetch.md) | TODO | 003, 004 | Temporary builders use durable identity and brokered Git fetch to create immutable project seeds. |
 | [006](006-move-runtime-ownership-to-workspace-sessions.md) | TODO | 005 | Each workspace session owns one sandbox, branch checkout, and lifecycle generation. |
 | [007](007-broker-opencode-requests.md) | TODO | 006 | Agent and metadata model requests use exact contracts; the OpenCode key stays in the Worker. |

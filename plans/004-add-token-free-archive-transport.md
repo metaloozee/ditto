@@ -1,8 +1,12 @@
 # Add token-free archive transport
 
-Status: TODO
+Status: DONE
 
 Written against commit `62c99b4`. Complete plan 001 first.
+
+Executed 2026-08-21 from `79d7727` (plans 001–003 already on HEAD). Advisor
+verdict: accept. Merged onto `brain` as `8b2a3b9`. Spec digest unchanged:
+`f104e9ba66b97ce8f5a196a08854fa7819cfd7e37186f8b46cfb429c2124c5b3`.
 
 Before editing, compare the current commit and target spec with plan 001's
 recorded values. Read drift in backup, R2, schema, and Sandbox transport code.
