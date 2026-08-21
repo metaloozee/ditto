@@ -111,6 +111,7 @@ export const projectsRouter = createTRPCRouter({
 					sandboxId,
 					githubRepo: githubImport.repo,
 					installationId: githubImport.installationId,
+					userId: ctx.user.id,
 				});
 
 				const [updatedProject] = await db

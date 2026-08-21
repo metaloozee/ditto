@@ -9,12 +9,17 @@ events, persists chat in D1, and snapshots the workspace when a run finishes.
 
 ## Persistence
 
-Workspace files are durable through R2 directory backups, not by mounting an R2
-bucket on `/workspace`. `backupSandboxWorkspace` calls `createBackup`; cold
-sandboxes hydrate through `restoreBackup` inside `provisionProjectSandbox`
-(not the observation-only check path). A
-FUSE restore is ephemeral for the life of the container, so waking a sleeping
-project re-runs restore before agent work.
+Workspace files are durable through Worker-owned compressed archives streamed
+through the R2 `BACKUP_BUCKET` binding, not by mounting a bucket on
+`/workspace`. Callers use opaque archive IDs; `sandbox-archive.ts` is the only
+module that knows the R2 object key. The sandbox never receives that key, an R2
+credential, a signed URL, or a bearer capability. `backupSandboxWorkspace`
+creates a tar.gz at a fixed path and the Worker streams it with RPC
+`readFile(..., { encoding: "none" })` into `BACKUP_BUCKET.put()`. Cold
+sandboxes hydrate through `restoreSandboxWorkspace` inside
+`provisionProjectSandbox` (not the observation-only check path): the Worker
+reads the object through the binding, writes the stream to the same fixed path,
+and extracts it. Waking a sleeping project re-runs restore before agent work.
 
 Before any wake-causing `exists` or `exec` readiness probe,
 `getProjectSandboxState` observes the installed Sandbox/`Container` lifecycle
@@ -27,8 +32,8 @@ Post-run and post-git snapshot writes share `persistProjectSandboxBackup`, which
 **versions** each attempt:
 
 1. Atomically increments `sandboxBackupRequestedGeneration` (candidate).
-2. Creates the R2 backup for the live workspace.
-3. Stores the handle only when
+2. Creates the compressed workspace archive and streams it to R2.
+3. Stores the opaque archive ID only when
    `sandboxBackupStoredGeneration < candidateGeneration`.
 
 Out-of-order completions therefore cannot let an older snapshot replace a newer
@@ -110,8 +115,8 @@ helper once (the runner and stream route do not snapshot).
    `status: complete` before its turn settles. On runner/stream/storage failure
    it persists accumulated partial content with `status: failed`, then emits
    `error` followed by failed `done`. Backup is
-   best-effort via `persistProjectSandboxBackup` (versioned `createBackup` of
-   `/workspace`, including `.ditto/worktrees`) and does not rewrite message
+   best-effort via `persistProjectSandboxBackup` (versioned token-free archive
+   of `/workspace`, including `.ditto/worktrees`) and does not rewrite message
    status.
 
 ## Thinking-level propagation

@@ -7,6 +7,11 @@ const backupSandboxWorkspaceMock = vi.hoisted(() => vi.fn());
 const bootstrapSandboxMock = vi.hoisted(() => vi.fn());
 const isSandboxRunnerHealthyMock = vi.hoisted(() => vi.fn());
 const getProjectSandboxStateMock = vi.hoisted(() => vi.fn());
+const deleteArchiveMock = vi.hoisted(() => vi.fn());
+
+vi.mock("#/lib/sandbox-archive", () => ({
+	deleteArchive: deleteArchiveMock,
+}));
 
 vi.mock("#/lib/sandbox-bootstrap", () => ({
 	isSandboxWorkspaceHydrated: isSandboxWorkspaceHydratedMock,
@@ -249,7 +254,6 @@ function makeFakeDb(options: {
 function makeEnv() {
 	return {
 		Sandbox: {},
-		USE_LOCAL_BUCKET_BACKUPS: "true",
 	} as unknown as Env;
 }
 
@@ -283,7 +287,6 @@ describe("persistProjectSandboxBackup", () => {
 
 		backupSandboxWorkspaceMock.mockResolvedValue({
 			id: "bak-1",
-			dir: "/workspace",
 		});
 
 		const result = await persistProjectSandboxBackup({
@@ -303,6 +306,8 @@ describe("persistProjectSandboxBackup", () => {
 			env: makeEnv(),
 			sandboxId,
 			projectId,
+			userId: "user-1",
+			generation: 1,
 		});
 		expect(result.stored).toBe(true);
 		expect(result.candidateGeneration).toBe(1);
@@ -336,8 +341,8 @@ describe("persistProjectSandboxBackup", () => {
 	it("does not let an older candidate replace a newer stored generation", async () => {
 		const { db, getState } = makeVersionedDb();
 
-		const gen1Backup = deferred<{ id: string; dir: string }>();
-		const gen2Backup = deferred<{ id: string; dir: string }>();
+		const gen1Backup = deferred<{ id: string }>();
+		const gen2Backup = deferred<{ id: string }>();
 		let backupCall = 0;
 		backupSandboxWorkspaceMock.mockImplementation(() => {
 			backupCall += 1;
@@ -365,7 +370,7 @@ describe("persistProjectSandboxBackup", () => {
 		await Promise.resolve();
 
 		// Resolve gen2 first — should store.
-		gen2Backup.resolve({ id: "bak-gen2", dir: "/workspace" });
+		gen2Backup.resolve({ id: "bak-gen2" });
 		const r2 = await p2;
 		expect(r2.stored).toBe(true);
 		expect(r2.candidateGeneration).toBe(2);
@@ -373,19 +378,29 @@ describe("persistProjectSandboxBackup", () => {
 		expect(getState().sandboxBackupStoredGeneration).toBe(2);
 
 		// Resolve gen1 later — must not replace.
-		gen1Backup.resolve({ id: "bak-gen1", dir: "/workspace" });
+		gen1Backup.resolve({ id: "bak-gen1" });
 		const r1 = await p1;
 		expect(r1.stored).toBe(false);
 		expect(r1.candidateGeneration).toBe(1);
 		expect(getState().sandboxBackup).toContain("bak-gen2");
 		expect(getState().sandboxBackupStoredGeneration).toBe(2);
+		expect(deleteArchiveMock).toHaveBeenCalledWith(
+			persistOpts.env,
+			persistOpts.db,
+			"bak-gen1",
+		);
+		expect(deleteArchiveMock).not.toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			"bak-gen2",
+		);
 	});
 
 	it("allows an older candidate to store when a newer candidate fails", async () => {
 		const { db, getState } = makeVersionedDb();
 
-		const gen1Backup = deferred<{ id: string; dir: string }>();
-		const gen2Backup = deferred<{ id: string; dir: string }>();
+		const gen1Backup = deferred<{ id: string }>();
+		const gen2Backup = deferred<{ id: string }>();
 		let backupCall = 0;
 		backupSandboxWorkspaceMock.mockImplementation(() => {
 			backupCall += 1;
@@ -417,7 +432,7 @@ describe("persistProjectSandboxBackup", () => {
 		expect(getState().sandboxBackupRequestedGeneration).toBe(2);
 
 		// gen1 succeeds and may store.
-		gen1Backup.resolve({ id: "bak-gen1", dir: "/workspace" });
+		gen1Backup.resolve({ id: "bak-gen1" });
 		const r1 = await p1;
 		expect(r1.stored).toBe(true);
 		expect(r1.candidateGeneration).toBe(1);
@@ -662,10 +677,7 @@ describe("provisionProjectSandbox", () => {
 		"stopped_with_code",
 	] as const)("skips pre-lock probes for %s and restores from backup", async (status) => {
 		getProjectSandboxStateMock.mockResolvedValue({ status });
-		const storedBackup = serializeSandboxBackup({
-			id: "backup-1",
-			dir: "/workspace",
-		});
+		const storedBackup = serializeSandboxBackup("backup-1");
 		const lockedProject = {
 			...baseProject,
 			sandboxBackup: storedBackup,
@@ -673,10 +685,7 @@ describe("provisionProjectSandbox", () => {
 		};
 		const updatedProject = {
 			...baseProject,
-			sandboxBackup: serializeSandboxBackup({
-				id: "backup-2",
-				dir: "/workspace",
-			}),
+			sandboxBackup: serializeSandboxBackup("backup-2"),
 			status: "ready" as const,
 		};
 		const { db, setCalls } = makeFakeDb({ lockedProject, updatedProject });
@@ -687,7 +696,6 @@ describe("provisionProjectSandbox", () => {
 		restoreSandboxWorkspaceMock.mockResolvedValue(undefined);
 		backupSandboxWorkspaceMock.mockResolvedValue({
 			id: "backup-2",
-			dir: "/workspace",
 		});
 
 		await expect(
@@ -714,10 +722,7 @@ describe("provisionProjectSandbox", () => {
 	});
 
 	it("enters CAS restore when active, runner healthy, and unhydrated", async () => {
-		const storedBackup = serializeSandboxBackup({
-			id: "backup-1",
-			dir: "/workspace",
-		});
+		const storedBackup = serializeSandboxBackup("backup-1");
 		const lockedProject = {
 			...baseProject,
 			sandboxBackup: storedBackup,
@@ -725,10 +730,7 @@ describe("provisionProjectSandbox", () => {
 		};
 		const updatedProject = {
 			...baseProject,
-			sandboxBackup: serializeSandboxBackup({
-				id: "backup-2",
-				dir: "/workspace",
-			}),
+			sandboxBackup: serializeSandboxBackup("backup-2"),
 			status: "ready" as const,
 		};
 		const { db, setCalls } = makeFakeDb({ lockedProject, updatedProject });
@@ -738,7 +740,6 @@ describe("provisionProjectSandbox", () => {
 		restoreSandboxWorkspaceMock.mockResolvedValue(undefined);
 		backupSandboxWorkspaceMock.mockResolvedValue({
 			id: "backup-2",
-			dir: "/workspace",
 		});
 
 		await expect(
@@ -758,10 +759,7 @@ describe("provisionProjectSandbox", () => {
 	});
 
 	it("restores from backup, re-backs up, and returns restored_from_backup", async () => {
-		const storedBackup = serializeSandboxBackup({
-			id: "backup-1",
-			dir: "/workspace",
-		});
+		const storedBackup = serializeSandboxBackup("backup-1");
 		const lockedProject = {
 			...baseProject,
 			sandboxBackup: storedBackup,
@@ -769,10 +767,7 @@ describe("provisionProjectSandbox", () => {
 		};
 		const updatedProject = {
 			...baseProject,
-			sandboxBackup: serializeSandboxBackup({
-				id: "backup-2",
-				dir: "/workspace",
-			}),
+			sandboxBackup: serializeSandboxBackup("backup-2"),
 			status: "ready" as const,
 		};
 		const { db, setCalls } = makeFakeDb({ lockedProject, updatedProject });
@@ -782,7 +777,6 @@ describe("provisionProjectSandbox", () => {
 		restoreSandboxWorkspaceMock.mockResolvedValue(undefined);
 		backupSandboxWorkspaceMock.mockResolvedValue({
 			id: "backup-2",
-			dir: "/workspace",
 		});
 
 		await expect(
@@ -801,30 +795,25 @@ describe("provisionProjectSandbox", () => {
 		expect(restoreSandboxWorkspaceMock).toHaveBeenCalledWith({
 			env: makeEnv(),
 			sandboxId,
-			backup: { id: "backup-1", dir: "/workspace" },
+			archiveId: "backup-1",
 		});
 		expect(backupSandboxWorkspaceMock).toHaveBeenCalledWith({
 			env: makeEnv(),
 			sandboxId,
 			projectId,
+			userId: "user-1",
 		});
 		expect(setCalls[0]).toMatchObject({ status: "provisioning" });
 		expect(setCalls[1]).toMatchObject({
 			status: "ready",
-			sandboxBackup: serializeSandboxBackup({
-				id: "backup-2",
-				dir: "/workspace",
-			}),
+			sandboxBackup: serializeSandboxBackup("backup-2"),
 		});
 	});
 
 	it("falls back to GitHub when restore from backup fails", async () => {
 		const lockedProject = {
 			...baseProject,
-			sandboxBackup: serializeSandboxBackup({
-				id: "backup-1",
-				dir: "/workspace",
-			}),
+			sandboxBackup: serializeSandboxBackup("backup-1"),
 			status: "provisioning" as const,
 		};
 		const updatedProject = {
@@ -838,11 +827,10 @@ describe("provisionProjectSandbox", () => {
 		restoreSandboxWorkspaceMock.mockRejectedValue(new Error("restore failed"));
 		bootstrapSandboxMock.mockResolvedValue({
 			sandboxId,
-			backup: { id: "github-backup", dir: "/workspace" },
+			backup: "github-backup",
 		});
 		backupSandboxWorkspaceMock.mockResolvedValue({
 			id: "github-backup",
-			dir: "/workspace",
 		});
 
 		await expect(
@@ -875,11 +863,10 @@ describe("provisionProjectSandbox", () => {
 		isSandboxWorkspaceHydratedMock.mockResolvedValueOnce(true);
 		bootstrapSandboxMock.mockResolvedValue({
 			sandboxId,
-			backup: { id: "github-backup", dir: "/workspace" },
+			backup: "github-backup",
 		});
 		backupSandboxWorkspaceMock.mockResolvedValue({
 			id: "github-backup",
-			dir: "/workspace",
 		});
 
 		await expect(
@@ -923,10 +910,7 @@ describe("provisionProjectSandbox", () => {
 	it("does not claim success when a stale ready completion loses the provisioning fence", async () => {
 		const { db, getState, setStatus } = makeVersionedDb({
 			...baseProject,
-			sandboxBackup: serializeSandboxBackup({
-				id: "backup-1",
-				dir: "/workspace",
-			}),
+			sandboxBackup: serializeSandboxBackup("backup-1"),
 		});
 
 		getProjectSandboxStateMock.mockResolvedValue({ status: "stopped" });
@@ -938,7 +922,6 @@ describe("provisionProjectSandbox", () => {
 		});
 		backupSandboxWorkspaceMock.mockResolvedValue({
 			id: "backup-2",
-			dir: "/workspace",
 		});
 
 		await expect(

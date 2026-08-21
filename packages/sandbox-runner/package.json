@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "bin": {
-    "ditto-runner": "./dist/cli.js"
+    "ditto-runner": "./dist/cli.js",
+    "ditto-archive": "./dist/archive-cli.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

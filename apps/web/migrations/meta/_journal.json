@@ -85,6 +85,13 @@
       "when": 1784734820963,
       "tag": "0011_handy_loa",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1787293235169,
+      "tag": "0012_pale_hiroim",
+      "breakpoints": true
     }
   ]
 }

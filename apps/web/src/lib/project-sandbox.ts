@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { createDb } from "#/db";
 import { projects } from "#/db/schema";
+import { deleteArchive } from "#/lib/sandbox-archive";
 import {
 	parseSandboxBackup,
 	serializeSandboxBackup,
@@ -60,7 +61,7 @@ const INACTIVE_SANDBOX_STATUSES = new Set([
 ]);
 
 /**
- * Snapshot /workspace (incl. worktrees) and store the backup handle on the
+ * Snapshot /workspace (incl. worktrees) and store the opaque archive ID on the
  * project row only when this candidate is still the newest generation.
  * Same durability path as post-agent-run and post-git mutation backups.
  */
@@ -104,13 +105,15 @@ export async function persistProjectSandboxBackup(options: {
 		env: options.env,
 		sandboxId: reserved.sandboxId,
 		projectId: options.project.id,
+		userId: options.project.userId,
+		generation: candidateGeneration,
 	});
 
 	const [storedProject] = await options.db
 		.update(projects)
 		.set({
 			status: "ready",
-			sandboxBackup: serializeSandboxBackup(backup),
+			sandboxBackup: serializeSandboxBackup(backup.id),
 			sandboxBackupCreatedAt: sql`(unixepoch())`,
 			sandboxBackupStoredGeneration: candidateGeneration,
 			updatedAt: sql`(unixepoch())`,
@@ -130,6 +133,12 @@ export async function persistProjectSandboxBackup(options: {
 			stored: true,
 			candidateGeneration,
 		};
+	}
+
+	try {
+		await deleteArchive(options.env, options.db, backup.id);
+	} catch {
+		// Cleanup retry remains on the archive row.
 	}
 
 	// Candidate was superseded by a newer completed snapshot — not a failure.
@@ -179,7 +188,7 @@ async function markProjectRestoreFailed(options: {
 async function storeReadyProjectBackup(options: {
 	db: ReturnType<typeof createDb>;
 	project: typeof projects.$inferSelect;
-	backup: Parameters<typeof serializeSandboxBackup>[0];
+	backup: string;
 }) {
 	const [updatedProject] = await options.db
 		.update(projects)
@@ -223,6 +232,7 @@ async function recreateSandboxFromGitHub(options: {
 		sandboxId: options.sandboxId,
 		githubRepo: options.project.githubRepo,
 		installationId: options.project.githubInstallationId,
+		userId: options.project.userId,
 	});
 
 	if (
@@ -264,7 +274,7 @@ async function restoreLockedProjectSandbox(options: {
 				await restoreSandboxWorkspace({
 					env: options.env,
 					sandboxId,
-					backup: storedBackup,
+					archiveId: storedBackup,
 				});
 			} catch {
 				return await recreateSandboxFromGitHub({
@@ -279,6 +289,7 @@ async function restoreLockedProjectSandbox(options: {
 				env: options.env,
 				sandboxId,
 				projectId: lockedProject.id,
+				userId: lockedProject.userId,
 			});
 
 			if (
@@ -297,7 +308,7 @@ async function restoreLockedProjectSandbox(options: {
 			const project = await storeReadyProjectBackup({
 				db: options.db,
 				project: lockedProject,
-				backup,
+				backup: backup.id,
 			});
 
 			return { project, state: "restored_from_backup" };

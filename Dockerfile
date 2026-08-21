@@ -13,10 +13,12 @@ RUN npm ci \
   && test -s package.json \
   && test -s dist/cli.js \
   && test -s dist/git-metadata-cli.js \
+  && test -s dist/archive-cli.js \
   && test -s dist/ditto-extension.js \
   && node -e 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8"))' \
-  && chmod +x dist/cli.js \
-  && ln -sf /opt/ditto-runner/dist/cli.js /usr/local/bin/ditto-runner
+  && chmod +x dist/cli.js dist/archive-cli.js \
+  && ln -sf /opt/ditto-runner/dist/cli.js /usr/local/bin/ditto-runner \
+  && ln -sf /opt/ditto-runner/dist/archive-cli.js /usr/local/bin/ditto-archive
 
 WORKDIR /workspace
 

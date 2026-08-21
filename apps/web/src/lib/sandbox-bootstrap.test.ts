@@ -3,9 +3,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const getSandboxMock = vi.hoisted(() => vi.fn());
 const getInstallationAccessTokenMock = vi.hoisted(() => vi.fn());
 const fetchGitHubBranchIsolatedMock = vi.hoisted(() => vi.fn());
+const createArchiveMock = vi.hoisted(() => vi.fn());
+const restoreArchiveMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@cloudflare/sandbox", () => ({
 	getSandbox: getSandboxMock,
+}));
+
+vi.mock("#/db", () => ({
+	createDb: vi.fn(() => ({})),
+}));
+
+vi.mock("#/lib/sandbox-archive", () => ({
+	createArchive: createArchiveMock,
+	restoreArchive: restoreArchiveMock,
 }));
 
 vi.mock("#/lib/github-app", () => ({
@@ -65,7 +76,6 @@ function makeSandbox(
 			path,
 			timestamp: "2026-07-04T00:00:00.000Z",
 		})),
-		restoreBackup: vi.fn().mockResolvedValue({ success: true }),
 		writeFile: vi.fn().mockResolvedValue({
 			success: true,
 			path: "/workspace/.env",
@@ -83,10 +93,6 @@ function makeSandbox(
 		getState: vi.fn().mockResolvedValue({ status: "healthy" }),
 		start: vi.fn().mockResolvedValue(undefined),
 		gitCheckout: vi.fn().mockResolvedValue(undefined),
-		createBackup: vi.fn().mockResolvedValue({
-			id: "backup-1",
-			dir: "/workspace",
-		}),
 		destroy: vi.fn().mockResolvedValue(undefined),
 	};
 }
@@ -184,17 +190,25 @@ describe("sandbox bootstrap helpers", () => {
 	it("restores a backup and skips install without package.json", async () => {
 		const sandbox = makeSandbox({ hasPackageJson: false });
 		getSandboxMock.mockReturnValue(sandbox);
+		restoreArchiveMock.mockResolvedValue({
+			archive: { id: "backup-1" },
+			extractedBytes: 0,
+		});
 
 		await restoreSandboxWorkspace({
 			env: { Sandbox: {} } as unknown as Env,
 			sandboxId: "sandbox-1",
-			backup: { id: "backup-1", dir: "/workspace" },
+			archiveId: "backup-1",
 		});
 
-		expect(sandbox.restoreBackup).toHaveBeenCalledWith({
-			id: "backup-1",
-			dir: "/workspace",
-		});
+		expect(restoreArchiveMock).toHaveBeenCalledWith(
+			expect.objectContaining({ Sandbox: {} }),
+			{},
+			expect.objectContaining({
+				sandboxId: "sandbox-1",
+				archiveId: "backup-1",
+			}),
+		);
 		expect(sandbox.writeFile).not.toHaveBeenCalled();
 		expect(sandbox.exec).not.toHaveBeenCalled();
 	});
@@ -285,27 +299,39 @@ describe("sandbox bootstrap helpers", () => {
 		);
 	});
 
-	it("creates a backup with the workspace backup options", async () => {
+	it("creates a backup through the token-free archive module", async () => {
 		const sandbox = makeSandbox();
 		getSandboxMock.mockReturnValue(sandbox);
+		createArchiveMock.mockResolvedValue({
+			id: "backup-1",
+			formatVersion: 1,
+			compatibilityKey: "ditto-workspace-archive-v1",
+			byteCount: 12,
+			digest: "abc",
+			generation: 0,
+		});
 
 		await expect(
 			backupSandboxWorkspace({
-				env: {
-					Sandbox: {},
-					USE_LOCAL_BUCKET_BACKUPS: "true",
-				} as unknown as Env,
+				env: { Sandbox: {} } as unknown as Env,
 				sandboxId: "sandbox-1",
 				projectId: "project-1",
+				userId: "user-1",
 			}),
-		).resolves.toEqual({ id: "backup-1", dir: "/workspace" });
+		).resolves.toMatchObject({ id: "backup-1" });
 
-		expect(sandbox.createBackup).toHaveBeenCalledWith(
+		expect(createArchiveMock).toHaveBeenCalledWith(
+			expect.objectContaining({ Sandbox: {} }),
+			{},
 			expect.objectContaining({
-				dir: "/workspace",
-				name: "project-project-1",
-				localBucket: true,
+				sandboxId: "sandbox-1",
+				ownerKind: "legacy_project",
+				ownerId: "project-1",
+				userId: "user-1",
 			}),
+		);
+		expect(JSON.stringify(createArchiveMock.mock.calls[0])).not.toMatch(
+			/R2_ACCESS_KEY_ID|createBackup|objectKey/,
 		);
 	});
 
@@ -313,21 +339,27 @@ describe("sandbox bootstrap helpers", () => {
 		const sandbox = makeSandbox();
 		getSandboxMock.mockReturnValue(sandbox);
 		getInstallationAccessTokenMock.mockResolvedValue("token-123");
+		createArchiveMock.mockResolvedValue({
+			id: "backup-1",
+			formatVersion: 1,
+			compatibilityKey: "ditto-workspace-archive-v1",
+			byteCount: 12,
+			digest: "abc",
+			generation: 0,
+		});
 
 		await expect(
 			bootstrapSandbox({
-				env: {
-					Sandbox: {},
-					USE_LOCAL_BUCKET_BACKUPS: "true",
-				} as unknown as Env,
+				env: { Sandbox: {} } as unknown as Env,
 				projectId: "project-1",
 				sandboxId: "sandbox-1",
 				githubRepo: "owner/repo",
 				installationId: 42,
+				userId: "user-1",
 			}),
 		).resolves.toEqual({
 			sandboxId: "sandbox-1",
-			backup: { id: "backup-1", dir: "/workspace" },
+			backup: "backup-1",
 		});
 
 		expect(getInstallationAccessTokenMock).toHaveBeenCalledWith(
@@ -358,14 +390,12 @@ describe("sandbox bootstrap helpers", () => {
 
 		await expect(
 			bootstrapSandbox({
-				env: {
-					Sandbox: {},
-					USE_LOCAL_BUCKET_BACKUPS: "true",
-				} as unknown as Env,
+				env: { Sandbox: {} } as unknown as Env,
 				projectId: "project-1",
 				sandboxId: "sandbox-1",
 				githubRepo: "owner/repo",
 				installationId: 42,
+				userId: "user-1",
 			}),
 		).rejects.toThrow("clone failed");
 

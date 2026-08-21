@@ -243,6 +243,57 @@ export const aiProviderCredentials = sqliteTable(
 	],
 );
 
+export const ARCHIVE_OWNER_KINDS = [
+	"legacy_project",
+	"project_seed",
+	"workspace_recovery",
+] as const;
+
+export const ARCHIVE_STATUSES = [
+	"uploading",
+	"ready",
+	"abandoned",
+	"deleting",
+] as const;
+
+export const archives = sqliteTable(
+	"archives",
+	{
+		id: text("id").primaryKey(),
+		ownerKind: text("ownerKind", {
+			enum: ARCHIVE_OWNER_KINDS,
+		}).notNull(),
+		ownerId: text("ownerId").notNull(),
+		objectKey: text("objectKey").notNull(),
+		formatVersion: integer("formatVersion", { mode: "number" }).notNull(),
+		compatibilityKey: text("compatibilityKey").notNull(),
+		byteCount: integer("byteCount", { mode: "number" }).notNull().default(0),
+		digest: text("digest").notNull(),
+		generation: integer("generation", { mode: "number" }).notNull().default(0),
+		status: text("status", {
+			enum: ARCHIVE_STATUSES,
+		}).notNull(),
+		cleanupRetryAt: integer("cleanupRetryAt", { mode: "number" }),
+		cleanupAttempts: integer("cleanupAttempts", { mode: "number" })
+			.notNull()
+			.default(0),
+		createdAt: integer("created_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+		updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+	},
+	(table) => [
+		index("archives_ownerKind_ownerId_idx").on(table.ownerKind, table.ownerId),
+		index("archives_status_cleanupRetryAt_idx").on(
+			table.status,
+			table.cleanupRetryAt,
+		),
+		uniqueIndex("archives_objectKey_uidx").on(table.objectKey),
+	],
+);
+
 /** Leftover provider-login attempt rows. Not a current product path; pending removal. */
 export const providerAuthAttempts = sqliteTable(
 	"provider_auth_attempts",

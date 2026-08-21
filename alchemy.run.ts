@@ -28,9 +28,8 @@ const database = await D1Database("database", {
 	migrationsTable: "drizzle_migrations",
 });
 
-const sandboxBackupBucketName = `${app.name}-${app.stage}-sandbox-backups`;
 const sandboxBackups = await R2Bucket("sandbox-backups", {
-	name: sandboxBackupBucketName,
+	name: `${app.name}-${app.stage}-sandbox-backups`,
 });
 
 export const website = await TanStackStart("website", {
@@ -40,11 +39,7 @@ export const website = await TanStackStart("website", {
 		DB: database,
 		Sandbox: sandbox,
 		BACKUP_BUCKET: sandboxBackups,
-		BACKUP_BUCKET_NAME: sandboxBackupBucketName,
 		CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID ?? "",
-		R2_ACCESS_KEY_ID: alchemy.secret(process.env.R2_ACCESS_KEY_ID),
-		R2_SECRET_ACCESS_KEY: alchemy.secret(process.env.R2_SECRET_ACCESS_KEY),
-		USE_LOCAL_BUCKET_BACKUPS: process.env.USE_LOCAL_BUCKET_BACKUPS ?? "",
 		BETTER_AUTH_SECRET: alchemy.secret(process.env.BETTER_AUTH_SECRET),
 		BETTER_AUTH_URL: process.env.BETTER_AUTH_URL ?? "",
 		GITHUB_CLIENT_ID: process.env.GITHUB_CLIENT_ID ?? "",

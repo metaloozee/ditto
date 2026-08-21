@@ -1,4 +1,5 @@
-import { type DirectoryBackup, getSandbox } from "@cloudflare/sandbox";
+import { getSandbox } from "@cloudflare/sandbox";
+import { createDb } from "#/db";
 import {
 	DITTO_GIT_AUTHOR_EMAIL,
 	DITTO_GIT_AUTHOR_NAME,
@@ -8,7 +9,12 @@ import {
 	repositoryNameFromSlug,
 } from "#/lib/github-app";
 import { fetchGitHubBranchIsolated } from "#/lib/privileged-git";
-import { getSandboxBackupOptions } from "#/lib/sandbox-backup";
+import {
+	type ArchiveRef,
+	type ArchiveSandbox,
+	createArchive,
+	restoreArchive,
+} from "#/lib/sandbox-archive";
 import { redactSecrets } from "#/lib/secret-redaction";
 import { WORKSPACE_PATH } from "#/lib/workspace-policy";
 
@@ -456,20 +462,33 @@ export async function backupSandboxWorkspace(options: {
 	env: Env;
 	sandboxId: string;
 	projectId: string;
-}): Promise<DirectoryBackup> {
+	userId: string;
+	generation?: number;
+	quiesce?: boolean;
+}): Promise<ArchiveRef> {
 	const sandbox = getProjectSandbox(options.env, options.sandboxId);
-	return await sandbox.createBackup(
-		getSandboxBackupOptions({ env: options.env, projectId: options.projectId }),
-	);
+	return await createArchive(options.env, createDb(options.env), {
+		sandbox: sandbox as ArchiveSandbox,
+		sandboxId: options.sandboxId,
+		ownerKind: "legacy_project",
+		ownerId: options.projectId,
+		userId: options.userId,
+		generation: options.generation ?? 0,
+		quiesce: options.quiesce,
+	});
 }
 
 export async function restoreSandboxWorkspace(options: {
 	env: Env;
 	sandboxId: string;
-	backup: DirectoryBackup;
+	archiveId: string;
 }): Promise<void> {
 	const sandbox = getProjectSandbox(options.env, options.sandboxId);
-	await sandbox.restoreBackup(options.backup);
+	await restoreArchive(options.env, createDb(options.env), {
+		sandbox: sandbox as ArchiveSandbox,
+		sandboxId: options.sandboxId,
+		archiveId: options.archiveId,
+	});
 	await installDependencies(sandbox);
 }
 
@@ -499,7 +518,8 @@ export async function bootstrapSandbox(options: {
 	sandboxId: string;
 	githubRepo: string;
 	installationId: number;
-}): Promise<{ sandboxId: string; backup: DirectoryBackup }> {
+	userId: string;
+}): Promise<{ sandboxId: string; backup: string }> {
 	const sandbox = getProjectSandbox(options.env, options.sandboxId);
 
 	try {
@@ -526,13 +546,16 @@ export async function bootstrapSandbox(options: {
 		await configureDittoGitIdentity(sandbox, WORKSPACE_PATH);
 
 		await installDependencies(sandbox);
-		const backup = await backupSandboxWorkspace({
+		const archive = await backupSandboxWorkspace({
 			env: options.env,
 			sandboxId: options.sandboxId,
 			projectId: options.projectId,
+			userId: options.userId,
+			generation: 0,
+			quiesce: false,
 		});
 
-		return { sandboxId: options.sandboxId, backup };
+		return { sandboxId: options.sandboxId, backup: archive.id };
 	} catch (error) {
 		await sandbox.destroy();
 		throw error;
