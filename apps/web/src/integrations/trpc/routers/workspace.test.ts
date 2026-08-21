@@ -5,7 +5,8 @@ import {
 } from "#/lib/message-cursor";
 
 const createDbMock = vi.hoisted(() => vi.fn());
-const checkProjectSandboxMock = vi.hoisted(() => vi.fn());
+const observeWorkspaceRuntimeMock = vi.hoisted(() => vi.fn());
+const ensureWorkspaceRuntimeReadyMock = vi.hoisted(() => vi.fn());
 const provisionProjectSandboxMock = vi.hoisted(() => vi.fn());
 const resolveSessionForMessageWriteMock = vi.hoisted(() => vi.fn());
 const archiveSessionWithPreviewCleanupMock = vi.hoisted(() => vi.fn());
@@ -20,10 +21,22 @@ vi.mock("#/lib/project-sandbox", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("#/lib/project-sandbox")>();
 	return {
 		...actual,
-		checkProjectSandbox: checkProjectSandboxMock,
 		provisionProjectSandbox: provisionProjectSandboxMock,
 	};
 });
+
+vi.mock("#/lib/workspace-runtime", () => ({
+	observeWorkspaceRuntime: observeWorkspaceRuntimeMock,
+	ensureWorkspaceRuntimeReady: ensureWorkspaceRuntimeReadyMock,
+	withWorkspaceRuntimeLease: vi.fn(),
+	WorkspaceRuntimeError: class WorkspaceRuntimeError extends Error {
+		code: string;
+		constructor(code: string, message: string) {
+			super(message);
+			this.code = code;
+		}
+	},
+}));
 
 vi.mock("#/lib/sandbox-bootstrap", () => ({
 	getProjectSandbox: vi.fn(),
@@ -455,7 +468,7 @@ describe("workspace.checkSandbox", () => {
 	it("returns connected without calling provision", async () => {
 		const project = readyProject();
 		createDbMock.mockReturnValue(makeWorkspaceDb({ projects: [project] }));
-		checkProjectSandboxMock.mockResolvedValue({
+		observeWorkspaceRuntimeMock.mockResolvedValue({
 			project,
 			state: "connected",
 		});
@@ -473,7 +486,7 @@ describe("workspace.checkSandbox", () => {
 	it("returns needs_restore with secrets stripped", async () => {
 		const project = readyProject();
 		createDbMock.mockReturnValue(makeWorkspaceDb({ projects: [project] }));
-		checkProjectSandboxMock.mockResolvedValue({
+		observeWorkspaceRuntimeMock.mockResolvedValue({
 			project,
 			state: "needs_restore",
 		});
@@ -491,7 +504,7 @@ describe("workspace.checkSandbox", () => {
 	it("returns provisioning for D1 provisioning status", async () => {
 		const project = readyProject({ status: "provisioning" });
 		createDbMock.mockReturnValue(makeWorkspaceDb({ projects: [project] }));
-		checkProjectSandboxMock.mockResolvedValue({
+		observeWorkspaceRuntimeMock.mockResolvedValue({
 			project,
 			state: "provisioning",
 		});
@@ -505,7 +518,7 @@ describe("workspace.checkSandbox", () => {
 	it("rejects observation error while D1 remains ready (not restoreFailed)", async () => {
 		const project = readyProject();
 		createDbMock.mockReturnValue(makeWorkspaceDb({ projects: [project] }));
-		checkProjectSandboxMock.mockRejectedValue(new Error("rpc down"));
+		observeWorkspaceRuntimeMock.mockRejectedValue(new Error("rpc down"));
 
 		await expect(
 			createCaller().checkSandbox({ projectId: "proj-1" }),
@@ -515,7 +528,7 @@ describe("workspace.checkSandbox", () => {
 	it("does not include messages in the checkSandbox payload", async () => {
 		const project = readyProject({ status: "provisioning" });
 		createDbMock.mockReturnValue(makeWorkspaceDb({ projects: [project] }));
-		checkProjectSandboxMock.mockResolvedValue({
+		observeWorkspaceRuntimeMock.mockResolvedValue({
 			project,
 			state: "provisioning",
 		});
@@ -673,7 +686,7 @@ describe("workspace.retryRestore", () => {
 			message: "Project cannot be restored.",
 		});
 
-		expect(checkProjectSandboxMock).not.toHaveBeenCalled();
+		expect(observeWorkspaceRuntimeMock).not.toHaveBeenCalled();
 		expect(provisionProjectSandboxMock).not.toHaveBeenCalled();
 		expect(update).toHaveBeenCalled();
 		// Project remains failed/tombstoned — no successful restore write.
@@ -716,7 +729,7 @@ describe("workspace.retryRestore", () => {
 		});
 
 		createDbMock.mockReturnValue({ select, update });
-		checkProjectSandboxMock.mockResolvedValue({
+		observeWorkspaceRuntimeMock.mockResolvedValue({
 			project: ready,
 			state: "needs_restore",
 		});
@@ -724,7 +737,7 @@ describe("workspace.retryRestore", () => {
 		const result = await createCaller().retryRestore({ projectId: "proj-1" });
 
 		expect(result.sandbox.state).toBe("needs_restore");
-		expect(checkProjectSandboxMock).toHaveBeenCalledTimes(1);
+		expect(observeWorkspaceRuntimeMock).toHaveBeenCalledTimes(1);
 		expect(provisionProjectSandboxMock).not.toHaveBeenCalled();
 	});
 });

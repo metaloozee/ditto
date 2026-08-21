@@ -610,11 +610,8 @@ async function withLegacyProjectQuiesce<T>(options: {
 		getSandbox: () => {
 			throw new Error("Archive quiesce does not start a sandbox.");
 		},
-		provisionProjectSandbox: async () => {
-			throw new Error("Archive quiesce does not provision a sandbox.");
-		},
-		ensureSessionWorkspaceReady: async () => {
-			throw new Error("Archive quiesce does not prepare a worktree.");
+		withWorkspaceRuntimeLease: async () => {
+			throw new Error("Archive quiesce does not open a workspace runtime.");
 		},
 	} satisfies SessionPreviewDeps;
 	const { token } = await acquireProjectPreviewLease(deps, {

@@ -9,12 +9,20 @@ vi.mock("#/lib/agent-control-service", () => ({
 }));
 
 vi.mock("#/lib/project-sandbox", () => ({
-	provisionProjectSandbox: vi.fn(),
 	persistProjectSandboxBackup: vi.fn(),
 }));
 
-vi.mock("#/lib/session-worktree", () => ({
-	ensureSessionWorkspaceReady: vi.fn(),
+vi.mock("#/lib/workspace-runtime", () => ({
+	ensureWorkspaceRuntimeReady: vi.fn(),
+	withWorkspaceRuntimeLease: vi.fn(),
+	WorkspaceRuntimeError: class WorkspaceRuntimeError extends Error {
+		code: string;
+		constructor(code: string, message: string) {
+			super(message);
+			this.code = code;
+			this.name = "WorkspaceRuntimeError";
+		}
+	},
 }));
 
 vi.mock("#/lib/project-env-vars", () => ({
@@ -73,6 +81,10 @@ const activeSession = {
 	workspacePath: "/workspace/.ditto/worktrees/sess-1",
 	memoryPath: "/workspace/.ditto/memory",
 	previewPort: null,
+	sandboxIdentityId: null,
+	runtimeLeaseId: null,
+	runtimeLeaseExpiresAt: null,
+	runtimeFailureReasonCode: null,
 	createdAt: new Date(),
 	updatedAt: new Date(),
 };
@@ -128,19 +140,28 @@ function baseDeps(overrides: Partial<AgentRunDeps> = {}): AgentRunDeps {
 			.mockReturnValueOnce("asst-msg"),
 		loadProjectForUser: vi.fn().mockResolvedValue(readyProject),
 		decryptEnvVars: vi.fn().mockResolvedValue([]),
-		provisionProjectSandbox: vi.fn().mockResolvedValue({
-			project: readyProject,
-			state: "connected",
-		}),
 		resolveSessionForMessageWrite: vi.fn().mockResolvedValue({
 			kind: "existing",
 			session: activeSession,
 		}),
-		ensureSessionWorkspaceReady: vi.fn().mockResolvedValue({
+		ensureWorkspaceRuntimeReady: vi.fn().mockResolvedValue({
 			branchName: activeSession.branchName,
 			baseCommitSha: activeSession.baseCommitSha,
 			workspacePath: activeSession.workspacePath,
 		}),
+		withWorkspaceRuntimeLease: vi.fn(async (_input, run) =>
+			run({
+				sessionId: "sess-1",
+				purpose: "agent_run",
+				workspacePath: activeSession.workspacePath,
+				branchName: activeSession.branchName as string,
+				baseCommitSha: activeSession.baseCommitSha as string,
+				sandbox: {} as never,
+				projectEnv: [],
+				issueGitCallbackToken: async () => "jwt",
+				matchesSandboxClaim: () => true,
+			}),
+		),
 		runAgentInSandbox: vi.fn().mockResolvedValue({
 			ok: true,
 			assistantText: "Hello",
@@ -209,7 +230,7 @@ describe("prepareAgentRun", () => {
 		});
 	});
 
-	it("returns 409 when provision resolves non-success state", async () => {
+	it("returns 409 when session runtime prep fails", async () => {
 		const { db } = createMockDb();
 		const result = await prepareAgentRun({
 			db,
@@ -217,19 +238,19 @@ describe("prepareAgentRun", () => {
 			userId: "user-1",
 			input: {
 				projectId: "proj-1",
+				sessionId: "sess-1",
 				message: "hi",
 			},
 			deps: baseDeps({
-				provisionProjectSandbox: vi.fn().mockResolvedValue({
-					project: readyProject,
-					state: "provisioning",
-				}),
+				ensureWorkspaceRuntimeReady: vi
+					.fn()
+					.mockRejectedValue(new Error("runtime down")),
 			}),
 		});
 		expect(result).toMatchObject({
 			kind: "error",
 			status: 409,
-			body: { error: "Project sandbox is not ready." },
+			body: { error: "runtime down" },
 		});
 	});
 
@@ -269,7 +290,7 @@ describe("prepareAgentRun", () => {
 				.mockReturnValueOnce("run-1")
 				.mockReturnValueOnce("user-msg")
 				.mockReturnValueOnce("asst-msg"),
-			ensureSessionWorkspaceReady: vi.fn().mockImplementation(async () => {
+			ensureWorkspaceRuntimeReady: vi.fn().mockImplementation(async () => {
 				order.push("worktree");
 				return {
 					branchName: activeSession.branchName,
@@ -321,7 +342,7 @@ describe("prepareAgentRun", () => {
 				resolveSessionForMessageWrite: vi
 					.fn()
 					.mockResolvedValue({ kind: "create" }),
-				ensureSessionWorkspaceReady: vi
+				ensureWorkspaceRuntimeReady: vi
 					.fn()
 					.mockRejectedValue(new Error("dirty primary")),
 			}),
@@ -351,7 +372,7 @@ describe("prepareAgentRun", () => {
 				message: "hi",
 			},
 			deps: baseDeps({
-				ensureSessionWorkspaceReady: vi
+				ensureWorkspaceRuntimeReady: vi
 					.fn()
 					.mockRejectedValue(new Error("worktree boom")),
 			}),
@@ -382,7 +403,7 @@ describe("prepareAgentRun", () => {
 				message: "hi",
 			},
 			deps: baseDeps({
-				ensureSessionWorkspaceReady: vi
+				ensureWorkspaceRuntimeReady: vi
 					.fn()
 					.mockRejectedValue(new SessionWorkspaceBusyError()),
 			}),
@@ -444,7 +465,7 @@ describe("prepareAgentRun", () => {
 
 	it("fails missing OPENCODE_API_KEY before project, session, message, or sandbox calls", async () => {
 		const loadProjectForUser = vi.fn();
-		const provisionProjectSandbox = vi.fn();
+		const ensureWorkspaceRuntimeReady = vi.fn();
 		const resolveSessionForMessageWrite = vi.fn();
 		const { db, insert, batch } = createMockDb();
 		const env = makeEnv();
@@ -459,7 +480,7 @@ describe("prepareAgentRun", () => {
 			},
 			deps: baseDeps({
 				loadProjectForUser,
-				provisionProjectSandbox,
+				ensureWorkspaceRuntimeReady,
 				resolveSessionForMessageWrite,
 			}),
 		});
@@ -469,7 +490,7 @@ describe("prepareAgentRun", () => {
 			body: { error: "Server credentials are not configured." },
 		});
 		expect(loadProjectForUser).not.toHaveBeenCalled();
-		expect(provisionProjectSandbox).not.toHaveBeenCalled();
+		expect(ensureWorkspaceRuntimeReady).not.toHaveBeenCalled();
 		expect(resolveSessionForMessageWrite).not.toHaveBeenCalled();
 		expect(insert).not.toHaveBeenCalled();
 		expect(batch).not.toHaveBeenCalled();

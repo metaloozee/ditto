@@ -96,6 +96,16 @@ export const workspaceSessions = sqliteTable(
 			.notNull()
 			.default("active"),
 		previewPort: integer("previewPort"),
+		/**
+		 * Nullable for legacy shared-sandbox sessions. No FK: identity
+		 * tombstones are permanent and never cascade-deleted.
+		 */
+		sandboxIdentityId: text("sandboxIdentityId"),
+		runtimeLeaseId: text("runtimeLeaseId"),
+		runtimeLeaseExpiresAt: integer("runtimeLeaseExpiresAt", {
+			mode: "timestamp",
+		}),
+		runtimeFailureReasonCode: text("runtimeFailureReasonCode"),
 		createdAt: integer("created_at", { mode: "timestamp" }).default(
 			sql`(unixepoch())`,
 		),
@@ -106,6 +116,9 @@ export const workspaceSessions = sqliteTable(
 	(table) => [
 		index("workspace_sessions_projectId_idx").on(table.projectId),
 		index("workspace_sessions_userId_idx").on(table.userId),
+		index("workspace_sessions_sandboxIdentityId_idx").on(
+			table.sandboxIdentityId,
+		),
 		uniqueIndex("workspace_sessions_project_preview_port_uidx").on(
 			table.projectId,
 			table.previewPort,

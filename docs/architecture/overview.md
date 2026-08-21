@@ -3,7 +3,7 @@
 ## Goal
 
 Ditto is a web-based AI coding workspace for GitHub repositories. A user signs in
-with GitHub, imports a repository, opens conversation-specific Git worktrees,
+with GitHub, imports a repository, opens conversation-specific workspace sessions,
 asks an agent to inspect or change code, and exports the result as commits, a
 pushed branch, and a pull request.
 
@@ -55,7 +55,7 @@ User
 └── Project (GitHub repository + encrypted environment variables)
     ├── Project seed (immutable archive; new imports)
     ├── Project sandbox (legacy shared runtime until cut-over)
-    └── Workspace session (chat thread + session branch/worktree)
+    └── Workspace session (chat thread + session branch + dedicated sandbox or legacy worktree)
         ├── Messages (D1 user/assistant history)
         ├── PI session (sandbox JSONL model/tool history)
         └── Git export state (commit, push, pull request)
@@ -122,7 +122,7 @@ Legacy projects that still own a project sandbox continue to restore through
 2. The route authenticates the cookie and validates the JSON body. Then
    `prepareAgentRun` checks `OPENCODE_API_KEY` and any explicit thinking level
    before project/session/message side effects, creates or resolves the
-   workspace session, and ensures its worktree. The Worker always uses
+   workspace session, and opens it through `WorkspaceRuntime`. The Worker always uses
    `opencode/deepseek-v4-flash-free`.
 3. `executeAgentRun` invokes the sandbox runner and emits `meta`,
    `control_ready`, ordered turn boundaries, `delta`, `agent`, `error`, and
@@ -141,10 +141,10 @@ Legacy projects that still own a project sandbox continue to restore through
 ### Export work
 
 1. `sessionGit.gitStatus` derives a workflow state such as `commit`, `sync`,
-   `push`, or `open-pr` from the session worktree and GitHub.
+   `push`, or `open-pr` from the session checkout and GitHub.
 2. UI mutations and signed agent callbacks share the same `session-git` domain
    functions.
-3. Mutations run in the session worktree under a per-session atomic lock.
+3. Mutations run in the session checkout under a per-session atomic lock.
 4. Push preflight rejects secret-like paths and known secret content before any
    token is minted; the exact preflight `headRev` is what gets pushed.
 5. Credential-bearing fetch/push runs from a fresh temporary bare repository
@@ -157,7 +157,7 @@ Legacy projects that still own a project sandbox continue to restore through
 
 1. Authenticated `sessionPreview.start` acquires an external D1 lifecycle lease
    on the project row, rechecks ready/active ownership, and runs a fixed Vite,
-   Next, or Astro binary in the session worktree on a leased port from
+   Next, or Astro binary in the session checkout on a leased port from
    `10000..10031`.
 2. After TCP readiness (plus a short best-effort HTTP probe), the Worker calls
    Sandbox `exposePort()` and returns the ephemeral public URL only in that
@@ -175,11 +175,11 @@ Legacy projects that still own a project sandbox continue to restore through
 |---|---|---|
 | Identity and OAuth account | D1 via better-auth | GitHub OAuth token is used to prove user-visible repository access |
 | Project metadata and lifecycle | D1 `projects` | Includes sandbox ID, encrypted env vars, backup handle, and generations |
-| Conversation metadata | D1 `workspace_sessions` | Includes branch, base commit, worktree path, title, archive status, and nullable preview port lease |
+| Conversation metadata | D1 `workspace_sessions` | Includes branch, base commit, checkout path, sandbox identity, runtime lease, title, archive status, and nullable preview port lease |
 | Preview lifecycle lease | D1 `projects.previewLockToken` / `previewLockExpiresAt` / `deletingAt` | External fence across Start/Stop/archive/delete; not stored inside the sandbox |
 | Chat history | D1 `messages` | Assistant rows have pending/complete/failed terminal lifecycle |
 | Leftover provider credential rows | D1 `ai_provider_credentials` / `provider_auth_attempts` | Not a current product path; pending removal |
-| Repository files and Git refs | Sandbox `/workspace` | Primary clone plus `.ditto/worktrees/<sessionId>` |
+| Repository files and Git refs | Sandbox `/workspace` | Dedicated session checkout on the new path; legacy primary clone plus `.ditto/worktrees/<sessionId>` |
 | PI conversation state | Sandbox `/workspace/.ditto/sessions/*.jsonl` | Separate from UI chat persistence |
 | User thinking preference | Browser local storage via Zustand (`ditto-user-preferences-v1`) | Convenience only; unsupported persisted levels are clamped to `off`, `high`, or `max` |
 | Optimistic streamed messages | Browser module memory | Bounded and removed after server message IDs appear |
@@ -210,12 +210,15 @@ GitHub installation token.
 ## Deliberate boundaries and limits
 
 - New GitHub imports own an immutable project seed and no persistent sandbox.
+  New workspace sessions restore that seed into a dedicated session sandbox.
   Legacy projects may still own one shared Cloudflare sandbox ID with Git
   worktree isolation until that path is removed.
-- Session worktrees share the primary clone's `node_modules` by symlink. They do
-  not share `.env` files.
-- Shell processes and ports are container-wide, so parallel sessions can still
-  collide outside Git worktrees on the legacy shared sandbox.
+- Legacy session worktrees share the primary clone's `node_modules` by symlink.
+  They do not share `.env` files. New sessions run from `/workspace` in their
+  own sandbox and do not create those worktrees.
+- Shell processes and ports are container-wide on a legacy shared sandbox, so
+  parallel sessions can still collide there. Dedicated session sandboxes isolate
+  filesystem, process table, and localhost.
 - Agent runs are intentionally not aborted when the browser disconnects. The
   server finishes persistence rather than leaving a pending assistant row.
 - Thinking levels use Pi's canonical vocabulary. Missing capability metadata is a

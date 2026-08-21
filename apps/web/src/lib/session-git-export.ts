@@ -50,7 +50,8 @@ export class SessionGitExportPreconditionError extends Error {
 
 type SessionGitExportGitContext = {
 	env: Env;
-	sandboxId: string;
+	sandboxId?: string;
+	sandbox?: Parameters<typeof getSessionGitStatus>[0]["sandbox"];
 	installationId: number;
 	githubRepo: string;
 	session: SessionGitSession;
@@ -79,6 +80,7 @@ export async function runPushThenOpenPullRequest(options: {
 	const statusCtx = {
 		env: options.ctx.env,
 		sandboxId: options.ctx.sandboxId,
+		sandbox: options.ctx.sandbox,
 		installationId: options.ctx.installationId,
 		githubRepo: options.ctx.githubRepo,
 		session: options.ctx.session,

@@ -4,9 +4,7 @@ const resolveMocks = vi.hoisted(() => ({
 	createDb: vi.fn(),
 	authorizeGitHubRepositoryAccess: vi.fn(),
 	decryptEnvVars: vi.fn(),
-	provisionProjectSandbox: vi.fn(),
-	ensureSessionWorkspaceReady: vi.fn(),
-	prepareSessionWorkspaceIfPresent: vi.fn(),
+	withWorkspaceRuntimeLease: vi.fn(),
 	loadOwnedActiveSession: vi.fn(),
 	commitSessionChanges: vi.fn(),
 	commitSessionChangesWithBackup: vi.fn(),
@@ -43,14 +41,16 @@ vi.mock("#/lib/project-env-vars", () => ({
 	decryptEnvVars: resolveMocks.decryptEnvVars,
 }));
 
-vi.mock("#/lib/project-sandbox", () => ({
-	provisionProjectSandbox: resolveMocks.provisionProjectSandbox,
-}));
-
-vi.mock("#/lib/session-worktree", () => ({
-	ensureSessionWorkspaceReady: resolveMocks.ensureSessionWorkspaceReady,
-	prepareSessionWorkspaceIfPresent:
-		resolveMocks.prepareSessionWorkspaceIfPresent,
+vi.mock("#/lib/workspace-runtime", () => ({
+	withWorkspaceRuntimeLease: resolveMocks.withWorkspaceRuntimeLease,
+	WorkspaceRuntimeError: class WorkspaceRuntimeError extends Error {
+		code: string;
+		constructor(code: string, message: string) {
+			super(message);
+			this.name = "WorkspaceRuntimeError";
+			this.code = code;
+		}
+	},
 }));
 
 vi.mock("#/lib/workspace-session", () => ({
@@ -152,25 +152,24 @@ function setupResolved() {
 		workspacePath: "/workspace/.ditto/worktrees/sess-1",
 		title: "Add billing",
 	});
-	resolveMocks.ensureSessionWorkspaceReady.mockResolvedValue({
-		branchName: "ditto/sess-1",
-		baseCommitSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-		workspacePath: "/workspace/.ditto/worktrees/sess-1",
-	});
-	resolveMocks.prepareSessionWorkspaceIfPresent.mockResolvedValue({
-		ok: true,
-		branchName: "ditto/sess-1",
-		baseCommitSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-		workspacePath: "/workspace/.ditto/worktrees/sess-1",
-	});
+	resolveMocks.withWorkspaceRuntimeLease.mockImplementation(
+		async (_input: unknown, run: (lease: unknown) => Promise<unknown>) =>
+			run({
+				sessionId: "sess-1",
+				purpose: "local_git_read",
+				workspacePath: "/workspace/.ditto/worktrees/sess-1",
+				branchName: "ditto/sess-1",
+				baseCommitSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+				sandbox: { exec: vi.fn() },
+				projectEnv: null,
+				issueGitCallbackToken: async () => "",
+				matchesSandboxClaim: () => true,
+			}),
+	);
 	resolveMocks.decryptEnvVars.mockResolvedValue([
 		{ key: "SECRET", value: "secretvalue1" },
 	]);
 	resolveMocks.authorizeGitHubRepositoryAccess.mockResolvedValue(undefined);
-	resolveMocks.provisionProjectSandbox.mockResolvedValue({
-		project: { id: "proj-1", sandboxId: "sandbox-1", status: "ready" },
-		state: "connected",
-	});
 	return db;
 }
 
@@ -210,10 +209,13 @@ describe("sessionGitRouter gitStatus", () => {
 	});
 
 	it("returns worktree unavailable without calling git status", async () => {
-		resolveMocks.prepareSessionWorkspaceIfPresent.mockResolvedValue({
-			ok: false,
-			reason: "worktree",
-		});
+		const { WorkspaceRuntimeError } = await import("#/lib/workspace-runtime");
+		resolveMocks.withWorkspaceRuntimeLease.mockRejectedValue(
+			new WorkspaceRuntimeError(
+				"not_ready",
+				"Workspace session runtime is not ready.",
+			),
+		);
 		const result = await asQuery(sessionGitRouter.gitStatus).query({
 			ctx,
 			input: { projectId: "proj-1", sessionId: "sess-1" },
@@ -223,10 +225,9 @@ describe("sessionGitRouter gitStatus", () => {
 			workflow: { kind: "unavailable", reason: "worktree" },
 		});
 		expect(resolveMocks.getSessionGitStatus).not.toHaveBeenCalled();
-		expect(resolveMocks.ensureSessionWorkspaceReady).not.toHaveBeenCalled();
 	});
 
-	it("uses prepare-only path when worktree is present", async () => {
+	it("reads git status through the session runtime", async () => {
 		resolveMocks.getSessionGitStatus.mockResolvedValue({
 			branch: "ditto/sess-1",
 			dirty: false,
@@ -236,8 +237,13 @@ describe("sessionGitRouter gitStatus", () => {
 			ctx,
 			input: { projectId: "proj-1", sessionId: "sess-1" },
 		});
-		expect(resolveMocks.prepareSessionWorkspaceIfPresent).toHaveBeenCalled();
-		expect(resolveMocks.ensureSessionWorkspaceReady).not.toHaveBeenCalled();
+		expect(resolveMocks.withWorkspaceRuntimeLease).toHaveBeenCalledWith(
+			expect.objectContaining({
+				purpose: "local_git_read",
+				ensureReady: false,
+			}),
+			expect.any(Function),
+		);
 		expect(resolveMocks.getSessionGitStatus).toHaveBeenCalled();
 	});
 });
@@ -257,8 +263,12 @@ describe("sessionGitRouter commit/openPullRequest metadata wiring", () => {
 			ctx,
 			input: { projectId: "proj-1", sessionId: "sess-1" },
 		});
-		expect(resolveMocks.ensureSessionWorkspaceReady).toHaveBeenCalledWith(
-			expect.objectContaining({ lock: "acquire" }),
+		expect(resolveMocks.withWorkspaceRuntimeLease).toHaveBeenCalledWith(
+			expect.objectContaining({
+				purpose: "mutating_git",
+				ensureReady: true,
+			}),
+			expect.any(Function),
 		);
 	});
 

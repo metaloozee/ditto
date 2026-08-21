@@ -29,7 +29,8 @@ export type SessionGitUiActionContext = {
 	env: Env;
 	db: ReturnType<typeof createDb>;
 	project: PersistProjectSandboxBackupProject;
-	sandboxId: string;
+	sandboxId?: string;
+	sandbox?: Parameters<typeof getSessionGitStatus>[0]["sandbox"];
 	installationId: number;
 	githubRepo: string;
 	session: SessionGitSession;
@@ -62,6 +63,7 @@ function gitCtx(ctx: SessionGitUiActionContext) {
 	return {
 		env: ctx.env,
 		sandboxId: ctx.sandboxId,
+		sandbox: ctx.sandbox,
 		installationId: ctx.installationId,
 		githubRepo: ctx.githubRepo,
 		session: ctx.session,
@@ -80,6 +82,7 @@ export async function commitSessionChangesWithGeneratedMessage(
 	await deps.withSessionWorkspaceLock({
 		env: ctx.env,
 		sandboxId: ctx.sandboxId,
+		sandbox: ctx.sandbox,
 		sessionId: ctx.session.id,
 		run: async () => {
 			const generated = await deps.generateCommitMetadata(gitCtx(ctx));
@@ -129,6 +132,7 @@ export async function openSessionPullRequestWithGeneratedMetadata(
 		await deps.withSessionWorkspaceLock({
 			env: ctx.env,
 			sandboxId: ctx.sandboxId,
+			sandbox: ctx.sandbox,
 			sessionId: ctx.session.id,
 			run: async () => {
 				const preview = await deps.getSessionGitStatus(gitCtx(ctx));

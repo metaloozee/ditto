@@ -145,8 +145,9 @@ Normal chat does not pass an explicit PI resource loader. PI uses default
 project discovery and can load repository-owned code before the first model
 request.
 
-Project rows own sandbox identity, backup handles, and backup generations.
-Workspace sessions do not own a sandbox or a backup.
+Project rows own sandbox identity, backup handles, and backup generations on
+the legacy path. New workspace sessions own a dedicated sandbox identity and
+runtime. Session recovery backups remain a later plan.
 
 ## Implementation audit
 
@@ -159,7 +160,7 @@ Workspace sessions do not own a sandbox or a backup.
 | GitHub installation-token removal | Not implemented | `apps/web/src/lib/privileged-git.ts` passes the token to a sandbox process. |
 | Token-free R2 recovery | Not implemented | Production backup and restore use the stock Sandbox SDK path. |
 | Contract-based outbound policy | Not implemented | The stock project sandbox retains normal network access. |
-| One sandbox per workspace session | Not implemented | `projects.sandboxId` owns the sandbox. |
+| One sandbox per workspace session | Implemented for new sessions | `WorkspaceRuntime` provisions a `workspace_session` identity and sandbox. Legacy sessions may still share a project sandbox until plan 012. |
 | Safe chat resource loader | Not implemented | `packages/sandbox-runner/src/run-agent.ts` omits `resourceLoader`. |
 | Workspace-session backups | Not implemented | Backup fields and generation counters live on `projects`. |
 | Capacity queue and lifecycle | Not implemented | Ditto has no persisted workspace-session sandbox state machine. |

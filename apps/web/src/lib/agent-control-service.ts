@@ -4,7 +4,10 @@ import { z } from "zod";
 import type { createDb } from "#/db";
 import { projects } from "#/db/schema";
 import { DEFAULT_PROJECT_CODER_MODEL } from "#/lib/agent-models";
-import { getProjectSandbox } from "#/lib/sandbox-bootstrap";
+import {
+	WorkspaceRuntimeError,
+	withWorkspaceRuntimeLease,
+} from "#/lib/workspace-runtime";
 import { loadOwnedActiveSession } from "#/lib/workspace-session";
 
 const CONTROL_DIRECTORY = "/tmp/ditto-agent-controls";
@@ -75,7 +78,7 @@ type ControlDeps = {
 		userId: string;
 	}) => Promise<typeof projects.$inferSelect | null>;
 	loadOwnedActiveSession?: typeof loadOwnedActiveSession;
-	getProjectSandbox?: typeof getProjectSandbox;
+	withWorkspaceRuntimeLease?: typeof withWorkspaceRuntimeLease;
 };
 
 const defaultDeps: Required<ControlDeps> = {
@@ -89,7 +92,7 @@ const defaultDeps: Required<ControlDeps> = {
 		return project ?? null;
 	},
 	loadOwnedActiveSession,
-	getProjectSandbox,
+	withWorkspaceRuntimeLease,
 };
 
 function safeId(value: string): string {
@@ -185,7 +188,7 @@ export async function controlAgentRun(options: {
 			body: { error: "Session not found." },
 		};
 	}
-	if (project.status !== "ready" || !project.sandboxId) {
+	if (project.status !== "ready") {
 		return {
 			kind: "error",
 			status: 409,
@@ -212,68 +215,95 @@ export async function controlAgentRun(options: {
 					runId: input.runId,
 					sessionId: input.sessionId,
 				};
-	const sandbox = deps.getProjectSandbox(env, project.sandboxId);
-	const shell = await sandbox.createSession({
-		id: `agent-control-${safeId(requestId)}`,
-		commandTimeoutMs: CONTROL_TIMEOUT_MS,
-	});
-	const jobPath = `${CONTROL_DIRECTORY}/${safeId(requestId)}.json`;
 
 	try {
-		await shell.mkdir(CONTROL_DIRECTORY, { recursive: true });
-		await shell.writeFile(jobPath, JSON.stringify(job));
-		const result = await shell.exec(
-			`node ${CONTROL_CLI} --job ${quoteGeneratedPath(jobPath)}`,
-			{ timeout: CONTROL_TIMEOUT_MS },
+		return await deps.withWorkspaceRuntimeLease(
+			{
+				env,
+				db,
+				userId,
+				projectId: input.projectId,
+				sessionId: input.sessionId,
+				purpose: "agent_control",
+				lock: "none",
+			},
+			async (lease) => {
+				if (lease.projectEnv != null) {
+					throw new WorkspaceRuntimeError(
+						"purpose_denied",
+						"Agent control must not receive project environment values.",
+					);
+				}
+				const sandbox = lease.sandbox;
+				const shell = await sandbox.createSession({
+					id: `agent-control-${safeId(requestId)}`,
+					commandTimeoutMs: CONTROL_TIMEOUT_MS,
+				});
+				const jobPath = `${CONTROL_DIRECTORY}/${safeId(requestId)}.json`;
+				try {
+					await shell.mkdir(CONTROL_DIRECTORY, { recursive: true });
+					await shell.writeFile(jobPath, JSON.stringify(job));
+					const result = await shell.exec(
+						`node ${CONTROL_CLI} --job ${quoteGeneratedPath(jobPath)}`,
+						{ timeout: CONTROL_TIMEOUT_MS },
+					);
+					if (!result.success && !result.stdout.trim()) {
+						return {
+							kind: "error" as const,
+							status: 409 as const,
+							body: { error: "The active agent run is no longer available." },
+						};
+					}
+					let response: ParsedControlResponse;
+					try {
+						response = parseControlResponse(result.stdout);
+					} catch {
+						return {
+							kind: "error" as const,
+							status: 409 as const,
+							body: { error: "The active agent run is no longer available." },
+						};
+					}
+					if (!response.accepted) {
+						return {
+							kind: "error" as const,
+							status: 409 as const,
+							body: {
+								error: "The active agent run could not accept that control.",
+							},
+						};
+					}
+					if (!responseMatchesJob(response, job)) {
+						return {
+							kind: "error" as const,
+							status: 409 as const,
+							body: { error: "The active agent run is no longer available." },
+						};
+					}
+					return {
+						kind: "accepted" as const,
+						status: 200 as const,
+						body: response,
+					};
+				} finally {
+					try {
+						await shell.deleteFile(jobPath);
+					} catch {
+						// Best-effort cleanup after every outcome.
+					}
+					try {
+						await sandbox.deleteSession(shell.id);
+					} catch {
+						// Best-effort cleanup after every outcome.
+					}
+				}
+			},
 		);
-		if (!result.success && !result.stdout.trim()) {
-			return {
-				kind: "error",
-				status: 409,
-				body: { error: "The active agent run is no longer available." },
-			};
-		}
-		let response: ParsedControlResponse;
-		try {
-			response = parseControlResponse(result.stdout);
-		} catch {
-			return {
-				kind: "error",
-				status: 409,
-				body: { error: "The active agent run is no longer available." },
-			};
-		}
-		if (!response.accepted) {
-			return {
-				kind: "error",
-				status: 409,
-				body: { error: "The active agent run could not accept that control." },
-			};
-		}
-		if (!responseMatchesJob(response, job)) {
-			return {
-				kind: "error",
-				status: 409,
-				body: { error: "The active agent run is no longer available." },
-			};
-		}
-		return { kind: "accepted", status: 200, body: response };
 	} catch {
 		return {
 			kind: "error",
 			status: 409,
 			body: { error: "The active agent run is no longer available." },
 		};
-	} finally {
-		try {
-			await shell.deleteFile(jobPath);
-		} catch {
-			// Best-effort cleanup after every outcome.
-		}
-		try {
-			await sandbox.deleteSession(shell.id);
-		} catch {
-			// Best-effort cleanup after every outcome.
-		}
 	}
 }

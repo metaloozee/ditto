@@ -1,16 +1,19 @@
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import type { createDb } from "#/db";
 import { projects, workspaceSessions } from "#/db/schema";
-import { provisionProjectSandbox } from "#/lib/project-sandbox";
 import { getProjectSandbox } from "#/lib/sandbox-bootstrap";
 import { SessionWorkspaceBusyError } from "#/lib/session-workspace-lock-error";
-import { ensureSessionWorkspaceReady } from "#/lib/session-worktree";
 import {
 	isSessionPreviewPort,
 	SESSION_PREVIEW_PORT_COUNT,
 	SESSION_PREVIEW_PORT_MIN,
 	sessionPreviewProcessId,
 } from "#/lib/workspace-policy";
+import {
+	WorkspaceRuntimeError,
+	type WorkspaceRuntimeLease,
+	withWorkspaceRuntimeLease,
+} from "#/lib/workspace-runtime";
 import { loadOwnedActiveSession } from "#/lib/workspace-session";
 
 export type SessionPreviewDb = ReturnType<typeof createDb>;
@@ -124,8 +127,7 @@ export type SessionPreviewDeps = {
 	randomToken: () => string;
 	sleep: (ms: number) => Promise<void>;
 	getSandbox: (env: Env, sandboxId: string) => SessionPreviewSandbox;
-	provisionProjectSandbox: typeof provisionProjectSandbox;
-	ensureSessionWorkspaceReady: typeof ensureSessionWorkspaceReady;
+	withWorkspaceRuntimeLease: typeof withWorkspaceRuntimeLease;
 	/** Test-only controlled barrier. */
 	barrier?: (label: string) => Promise<void>;
 };
@@ -139,13 +141,11 @@ function defaultDeps(db: SessionPreviewDb, env: Env): SessionPreviewDeps {
 		sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 		getSandbox: (e, id) =>
 			getProjectSandbox(e, id) as unknown as SessionPreviewSandbox,
-		provisionProjectSandbox,
-		ensureSessionWorkspaceReady,
+		withWorkspaceRuntimeLease,
 	};
 }
 
 type ProjectRow = typeof projects.$inferSelect;
-type SessionRow = typeof workspaceSessions.$inferSelect;
 
 async function loadOwnedProject(
 	db: SessionPreviewDb,
@@ -789,38 +789,47 @@ async function waitForPreviewReady(
 	}
 }
 
-async function resolveSessionWorktree(
+async function withPreviewLease<T>(
 	deps: SessionPreviewDeps,
 	options: {
-		project: ProjectRow;
-		session: SessionRow;
-		sandboxId: string;
+		projectId: string;
+		sessionId: string;
+		userId: string;
+		ensureReady?: boolean;
 	},
-): Promise<string> {
-	if (!options.project.githubRepo || !options.project.githubInstallationId) {
-		throw sessionPreviewError("not_ready");
-	}
+	run: (lease: WorkspaceRuntimeLease) => Promise<T>,
+): Promise<T> {
 	try {
-		const ready = await deps.ensureSessionWorkspaceReady({
-			env: deps.env,
-			sandboxId: options.sandboxId,
-			sessionId: options.session.id,
-			githubRepo: options.project.githubRepo,
-			installationId: options.project.githubInstallationId,
-			projectId: options.project.id,
-			userId: options.session.userId,
-			db: deps.db,
-			existing: {
-				branchName: options.session.branchName,
-				baseCommitSha: options.session.baseCommitSha,
-				workspacePath: options.session.workspacePath,
+		return await deps.withWorkspaceRuntimeLease(
+			{
+				env: deps.env,
+				db: deps.db,
+				userId: options.userId,
+				projectId: options.projectId,
+				sessionId: options.sessionId,
+				purpose: "preview",
+				lock: "none",
+				ensureReady: options.ensureReady,
 			},
-			lock: "acquire",
-		});
-		return ready.workspacePath;
+			async (lease) => {
+				if (lease.projectEnv != null) {
+					throw sessionPreviewError("start_failed");
+				}
+				return await run(lease);
+			},
+		);
 	} catch (error) {
 		if (error instanceof SessionWorkspaceBusyError) {
 			throw sessionPreviewError("busy");
+		}
+		if (error instanceof WorkspaceRuntimeError) {
+			if (error.code === "not_found") {
+				throw sessionPreviewError("not_found");
+			}
+			if (error.code === "not_ready") {
+				throw sessionPreviewError("not_ready");
+			}
+			throw sessionPreviewError("start_failed");
 		}
 		if (error instanceof SessionPreviewError) {
 			throw error;
@@ -878,8 +887,6 @@ export async function startSessionPreview(
 		}
 		if (
 			project.status !== "ready" ||
-			!project.sandboxId ||
-			project.sandboxId !== project.sandboxId.toLowerCase() ||
 			!project.githubRepo ||
 			!project.githubInstallationId
 		) {
@@ -896,196 +903,190 @@ export async function startSessionPreview(
 			throw sessionPreviewError("not_found");
 		}
 
-		const PROVISION_SUCCESS = new Set([
-			"connected",
-			"restored_from_backup",
-			"recreated_from_github",
-		]);
-		const ensured = await deps.provisionProjectSandbox({
-			db: deps.db,
-			env: deps.env,
-			project,
-		});
-		const sandboxId = ensured.project.sandboxId;
-		if (!PROVISION_SUCCESS.has(ensured.state) || !sandboxId) {
-			throw sessionPreviewError("not_ready");
-		}
-
-		const cwd = await resolveSessionWorktree(deps, {
-			project: ensured.project,
-			session,
-			sandboxId,
-		});
-
-		const sandbox = deps.getSandbox(deps.env, sandboxId);
-		const processId = sessionPreviewProcessId(options.sessionId);
-
-		// Discover before allocating capacity — unsupported projects fail without cleanup.
-		const provisionalPort =
-			session.previewPort != null && isSessionPreviewPort(session.previewPort)
-				? session.previewPort
-				: SESSION_PREVIEW_PORT_MIN +
-					(await hashSessionOffset(options.sessionId));
-
-		await discoverPreviewCommand({
-			sandbox,
-			cwd,
-			port: provisionalPort,
-		});
-
-		const port = await allocatePreviewPort(deps, {
-			sessionId: options.sessionId,
-			projectId: options.projectId,
-			userId: options.userId,
-			existingPort: session.previewPort,
-		});
-		await deps.barrier?.("after_allocate");
-
-		// ONE structured boundary for every non-success exit after allocation.
-		try {
-			const discovered = await discoverPreviewCommand({
-				sandbox,
-				cwd,
-				port,
-			});
-
-			// Re-check ownership under lease immediately before runtime mutation.
-			const active = await loadOwnedActiveSession({
-				db: deps.db,
+		return await withPreviewLease(
+			deps,
+			{
 				projectId: options.projectId,
 				sessionId: options.sessionId,
 				userId: options.userId,
-			});
-			if (!active || active.previewPort !== port) {
-				throw sessionPreviewError("not_found");
-			}
-			const readyProject = await loadOwnedProject(
-				deps.db,
-				options.projectId,
-				options.userId,
-			);
-			if (
-				!readyProject ||
-				readyProject.status !== "ready" ||
-				readyProject.deletingAt != null
-			) {
-				throw sessionPreviewError("not_ready");
-			}
+				ensureReady: true,
+			},
+			async (lease) => {
+				const cwd = lease.workspacePath;
+				const sandbox = lease.sandbox as unknown as SessionPreviewSandbox;
+				const processId = sessionPreviewProcessId(options.sessionId);
 
-			await deps.barrier?.("before_runtime");
+				// Discover before allocating capacity — unsupported projects fail without cleanup.
+				const provisionalPort =
+					session.previewPort != null &&
+					isSessionPreviewPort(session.previewPort)
+						? session.previewPort
+						: SESSION_PREVIEW_PORT_MIN +
+							(await hashSessionOffset(options.sessionId));
 
-			let process: SessionPreviewProcess | null;
-			try {
-				process = await sandbox.getProcess(processId);
-			} catch {
-				throw sessionPreviewError("start_failed");
-			}
-
-			let exposed: Array<{ url: string; port: number; status: "active" }>;
-			try {
-				exposed = await sandbox.getExposedPorts(host);
-			} catch {
-				throw sessionPreviewError("start_failed");
-			}
-			const existingExposure = exposed.find((entry) => entry.port === port);
-
-			if (process && isHealthyStatus(process.status) && existingExposure) {
-				const url = validatePreviewUrl({
-					url: existingExposure.url,
-					port,
-					hostname: host,
-					local,
-				});
-				return { status: "running", url, port, reused: true };
-			}
-
-			if (process && isHealthyStatus(process.status) && !existingExposure) {
-				try {
-					await waitForPreviewReady(process, port);
-				} catch (error) {
-					if (error instanceof SessionPreviewError) {
-						throw error;
-					}
-					throw sessionPreviewError("start_failed");
-				}
-				let exposedReuse: { url: string; port: number };
-				try {
-					exposedReuse = await sandbox.exposePort(port, { hostname: host });
-				} catch {
-					throw sessionPreviewError("expose_failed");
-				}
-				if (exposedReuse.port !== port) {
-					throw sessionPreviewError("expose_failed");
-				}
-				const url = validatePreviewUrl({
-					url: exposedReuse.url,
-					port: exposedReuse.port,
-					hostname: host,
-					local,
-				});
-				return { status: "running", url, port, reused: true };
-			}
-
-			// Start with --strictPort / fixed Next port. Generic terminal/readiness
-			// failure is start_failed (not port_conflict) without a root port probe.
-			try {
-				process = await sandbox.startProcess(discovered.command, {
-					processId,
+				await discoverPreviewCommand({
+					sandbox,
 					cwd,
-					env: discovered.env,
-					autoCleanup: true,
+					port: provisionalPort,
 				});
-			} catch {
-				const existing = await sandbox.getProcess(processId).catch(() => null);
-				if (existing && isHealthyStatus(existing.status)) {
-					process = existing;
-				} else {
-					throw sessionPreviewError("start_failed");
+
+				const port = await allocatePreviewPort(deps, {
+					sessionId: options.sessionId,
+					projectId: options.projectId,
+					userId: options.userId,
+					existingPort: session.previewPort,
+				});
+				await deps.barrier?.("after_allocate");
+
+				// ONE structured boundary for every non-success exit after allocation.
+				try {
+					const discovered = await discoverPreviewCommand({
+						sandbox,
+						cwd,
+						port,
+					});
+
+					// Re-check ownership under lease immediately before runtime mutation.
+					const active = await loadOwnedActiveSession({
+						db: deps.db,
+						projectId: options.projectId,
+						sessionId: options.sessionId,
+						userId: options.userId,
+					});
+					if (!active || active.previewPort !== port) {
+						throw sessionPreviewError("not_found");
+					}
+					const readyProject = await loadOwnedProject(
+						deps.db,
+						options.projectId,
+						options.userId,
+					);
+					if (
+						!readyProject ||
+						readyProject.status !== "ready" ||
+						readyProject.deletingAt != null
+					) {
+						throw sessionPreviewError("not_ready");
+					}
+
+					await deps.barrier?.("before_runtime");
+
+					let process: SessionPreviewProcess | null;
+					try {
+						process = await sandbox.getProcess(processId);
+					} catch {
+						throw sessionPreviewError("start_failed");
+					}
+
+					let exposed: Array<{ url: string; port: number; status: "active" }>;
+					try {
+						exposed = await sandbox.getExposedPorts(host);
+					} catch {
+						throw sessionPreviewError("start_failed");
+					}
+					const existingExposure = exposed.find((entry) => entry.port === port);
+
+					if (process && isHealthyStatus(process.status) && existingExposure) {
+						const url = validatePreviewUrl({
+							url: existingExposure.url,
+							port,
+							hostname: host,
+							local,
+						});
+						return { status: "running", url, port, reused: true };
+					}
+
+					if (process && isHealthyStatus(process.status) && !existingExposure) {
+						try {
+							await waitForPreviewReady(process, port);
+						} catch (error) {
+							if (error instanceof SessionPreviewError) {
+								throw error;
+							}
+							throw sessionPreviewError("start_failed");
+						}
+						let exposedReuse: { url: string; port: number };
+						try {
+							exposedReuse = await sandbox.exposePort(port, { hostname: host });
+						} catch {
+							throw sessionPreviewError("expose_failed");
+						}
+						if (exposedReuse.port !== port) {
+							throw sessionPreviewError("expose_failed");
+						}
+						const url = validatePreviewUrl({
+							url: exposedReuse.url,
+							port: exposedReuse.port,
+							hostname: host,
+							local,
+						});
+						return { status: "running", url, port, reused: true };
+					}
+
+					// Start with --strictPort / fixed Next port. Generic terminal/readiness
+					// failure is start_failed (not port_conflict) without a root port probe.
+					try {
+						process = await sandbox.startProcess(discovered.command, {
+							processId,
+							cwd,
+							env: discovered.env,
+							autoCleanup: true,
+						});
+					} catch {
+						const existing = await sandbox
+							.getProcess(processId)
+							.catch(() => null);
+						if (existing && isHealthyStatus(existing.status)) {
+							process = existing;
+						} else {
+							throw sessionPreviewError("start_failed");
+						}
+					}
+					if (!process) {
+						throw sessionPreviewError("start_failed");
+					}
+					const started = process;
+
+					try {
+						await waitForPreviewReady(started, port);
+					} catch (error) {
+						if (error instanceof SessionPreviewError) {
+							throw error;
+						}
+						throw sessionPreviewError("start_failed");
+					}
+
+					let exposedResult: { url: string; port: number };
+					try {
+						exposedResult = await sandbox.exposePort(port, { hostname: host });
+					} catch {
+						throw sessionPreviewError("expose_failed");
+					}
+
+					if (exposedResult.port !== port) {
+						throw sessionPreviewError("expose_failed");
+					}
+
+					const url = validatePreviewUrl({
+						url: exposedResult.url,
+						port,
+						hostname: host,
+						local,
+					});
+					return { status: "running", url, port, reused: false };
+				} catch (error) {
+					return await failAfterAllocation(deps, {
+						sandbox,
+						port,
+						processId,
+						sessionId: options.sessionId,
+						projectId: options.projectId,
+						userId: options.userId,
+						error,
+					});
 				}
-			}
-			if (!process) {
-				throw sessionPreviewError("start_failed");
-			}
-			const started = process;
-
-			try {
-				await waitForPreviewReady(started, port);
-			} catch (error) {
-				if (error instanceof SessionPreviewError) {
-					throw error;
-				}
-				throw sessionPreviewError("start_failed");
-			}
-
-			let exposedResult: { url: string; port: number };
-			try {
-				exposedResult = await sandbox.exposePort(port, { hostname: host });
-			} catch {
-				throw sessionPreviewError("expose_failed");
-			}
-
-			if (exposedResult.port !== port) {
-				throw sessionPreviewError("expose_failed");
-			}
-
-			const url = validatePreviewUrl({
-				url: exposedResult.url,
-				port,
-				hostname: host,
-				local,
-			});
-			return { status: "running", url, port, reused: false };
-		} catch (error) {
-			return await failAfterAllocation(deps, {
-				sandbox,
-				port,
-				processId,
-				sessionId: options.sessionId,
-				projectId: options.projectId,
-				userId: options.userId,
-				error,
-			});
-		}
+			},
+		);
 	} finally {
 		await releaseProjectPreviewLease(deps, {
 			projectId: options.projectId,
@@ -1142,17 +1143,26 @@ export async function stopSessionPreview(
 			options.projectId,
 			options.userId,
 		);
-		if (!project?.sandboxId) {
+		if (!project || project.status !== "ready") {
 			throw sessionPreviewError("not_ready");
 		}
 
-		const sandbox = deps.getSandbox(deps.env, project.sandboxId);
 		const processId = sessionPreviewProcessId(options.sessionId);
-		const cleaned = await cleanupPreviewRuntime({
-			sandbox,
-			port: session.previewPort,
-			processId,
-		});
+		const cleaned = await withPreviewLease(
+			deps,
+			{
+				projectId: options.projectId,
+				sessionId: options.sessionId,
+				userId: options.userId,
+				ensureReady: false,
+			},
+			async (lease) =>
+				cleanupPreviewRuntime({
+					sandbox: lease.sandbox as unknown as SessionPreviewSandbox,
+					port: session.previewPort as number,
+					processId,
+				}),
+		);
 
 		if (!cleaned.unexposed || !cleaned.processGone) {
 			throw sessionPreviewError("cleanup_failed");
@@ -1220,16 +1230,25 @@ export async function archiveSessionWithPreviewCleanup(
 				options.projectId,
 				options.userId,
 			);
-			if (!project?.sandboxId) {
+			if (!project || project.status !== "ready") {
 				throw sessionPreviewError("not_ready");
 			}
-			const sandbox = deps.getSandbox(deps.env, project.sandboxId);
 			const processId = sessionPreviewProcessId(options.sessionId);
-			const cleaned = await cleanupPreviewRuntime({
-				sandbox,
-				port: session.previewPort,
-				processId,
-			});
+			const cleaned = await withPreviewLease(
+				deps,
+				{
+					projectId: options.projectId,
+					sessionId: options.sessionId,
+					userId: options.userId,
+					ensureReady: false,
+				},
+				async (lease) =>
+					cleanupPreviewRuntime({
+						sandbox: lease.sandbox as unknown as SessionPreviewSandbox,
+						port: session.previewPort as number,
+						processId,
+					}),
+			);
 			if (!cleaned.unexposed || !cleaned.processGone) {
 				throw sessionPreviewError("cleanup_failed");
 			}

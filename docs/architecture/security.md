@@ -232,9 +232,9 @@ Anyone with the URL can load the site until Stop/archive/delete revokes it.
 The current controls reduce exposure but do not provide container-compromise
 isolation:
 
-- Legacy projects still share one sandbox filesystem, process table, and
-  network namespace across workspace sessions. Git worktrees isolate normal
-  file edits only. New imports own a project seed and no persistent sandbox.
+- New workspace sessions own a dedicated sandbox (filesystem, process table,
+  and localhost). Legacy sessions may still share one project sandbox; Git
+  worktrees isolate normal file edits only on that path.
 - Provider credentials and the Git callback JWT enter the legacy project
   sandbox when an agent run starts. The runner deletes provider values from its
   own environment before tools start, but the container held those values.

@@ -80,9 +80,12 @@ export type SessionGitSession = {
 	title?: string | null;
 };
 
+type SessionGitSandbox = ReturnType<typeof getProjectSandbox>;
+
 type SessionGitContext = {
 	env: Env;
-	sandboxId: string;
+	sandboxId?: string;
+	sandbox?: SessionGitSandbox;
 	installationId: number;
 	githubRepo: string;
 	session: SessionGitSession;
@@ -94,6 +97,16 @@ type SessionGitContext = {
 	bypassWorkspaceLock?: boolean;
 };
 
+function resolveSessionGitSandbox(ctx: SessionGitContext): SessionGitSandbox {
+	if (ctx.sandbox) {
+		return ctx.sandbox;
+	}
+	if (!ctx.sandboxId) {
+		throw new Error("Session git requires a runtime sandbox.");
+	}
+	return getProjectSandbox(ctx.env, ctx.sandboxId);
+}
+
 async function withGitMutationLock<T>(
 	ctx: SessionGitContext,
 	run: () => Promise<T>,
@@ -104,6 +117,7 @@ async function withGitMutationLock<T>(
 	return await withSessionWorkspaceLock({
 		env: ctx.env,
 		sandboxId: ctx.sandboxId,
+		sandbox: ctx.sandbox,
 		sessionId: ctx.session.id,
 		run,
 	});
@@ -498,7 +512,7 @@ export type SessionGitStatus = {
 export async function getSessionGitStatus(
 	ctx: SessionGitContext,
 ): Promise<SessionGitStatus> {
-	const sandbox = getProjectSandbox(ctx.env, ctx.sandboxId);
+	const sandbox = resolveSessionGitSandbox(ctx);
 	const cwd = ctx.session.workspacePath;
 
 	const statusResult = await execGitOrThrow(
@@ -578,7 +592,7 @@ async function commitSessionChangesUnlocked(
 		authorEmail: string;
 	},
 ): Promise<{ commitSha: string | null; committed: boolean }> {
-	const sandbox = getProjectSandbox(ctx.env, ctx.sandboxId);
+	const sandbox = resolveSessionGitSandbox(ctx);
 	const cwd = ctx.session.workspacePath;
 
 	const statusResult = await execGitOrThrow(
@@ -668,7 +682,7 @@ async function syncSessionBranchUnlocked(
 	baseCommitSha: string;
 	updated: boolean;
 }> {
-	const sandbox = getProjectSandbox(ctx.env, ctx.sandboxId);
+	const sandbox = resolveSessionGitSandbox(ctx);
 	const cwd = ctx.session.workspacePath;
 	const statusResult = await execGitOrThrow(
 		sandbox,
@@ -687,6 +701,7 @@ async function syncSessionBranchUnlocked(
 	const primary = await fetchPrimaryBranchFromGitHub({
 		env: ctx.env,
 		sandboxId: ctx.sandboxId,
+		sandbox,
 		githubRepo: ctx.githubRepo,
 		installationId: ctx.installationId,
 		branchName: ctx.baseBranch,
@@ -749,7 +764,7 @@ export async function syncSessionBranch(
 async function pushSessionBranchUnlocked(
 	ctx: SessionGitContext,
 ): Promise<{ remoteBranch: string; pushed: boolean }> {
-	const sandbox = getProjectSandbox(ctx.env, ctx.sandboxId);
+	const sandbox = resolveSessionGitSandbox(ctx);
 	const cwd = ctx.session.workspacePath;
 	const branchName = ctx.session.branchName;
 	const publicUrl = publicRepoUrl(ctx.githubRepo);
@@ -1021,7 +1036,7 @@ async function collectSessionCommitSubjects(
 	base: string,
 ): Promise<string[]> {
 	try {
-		const sandbox = getProjectSandbox(ctx.env, ctx.sandboxId);
+		const sandbox = resolveSessionGitSandbox(ctx);
 		const cwd = ctx.session.workspacePath;
 		const quotedBase = quoteGitHubExportShellArg(base);
 
@@ -1089,7 +1104,7 @@ async function collectSessionChangedFiles(
 	base: string,
 ): Promise<string[]> {
 	try {
-		const sandbox = getProjectSandbox(ctx.env, ctx.sandboxId);
+		const sandbox = resolveSessionGitSandbox(ctx);
 		const cwd = ctx.session.workspacePath;
 		const quotedBase = quoteGitHubExportShellArg(base);
 
@@ -1140,7 +1155,7 @@ export async function openSessionPullRequest(
 	const head = ctx.session.branchName;
 
 	// Validate once before find/create so bad refs never become "no existing PR".
-	const sandbox = getProjectSandbox(ctx.env, ctx.sandboxId);
+	const sandbox = resolveSessionGitSandbox(ctx);
 	const validatedHead = await validateGitBranchRefs(sandbox, head);
 	const validatedBase = await validateGitBranchRefs(sandbox, base);
 

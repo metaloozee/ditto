@@ -325,12 +325,15 @@ export async function syncPrimaryWorkspaceFromGitHub(options: {
 
 export async function fetchPrimaryBranchFromGitHub(options: {
 	env: Env;
-	sandboxId: string;
+	sandboxId?: string;
+	sandbox?: ReturnType<typeof getProjectSandbox>;
 	githubRepo: string;
 	installationId: number;
 	branchName: string;
 }): Promise<{ branchName: string; headSha: string }> {
-	const sandbox = getProjectSandbox(options.env, options.sandboxId);
+	const sandbox =
+		options.sandbox ??
+		getProjectSandbox(options.env, options.sandboxId as string);
 	const repoName = repositoryNameFromSlug(options.githubRepo);
 	const publicRepoUrl = `https://github.com/${options.githubRepo}.git`;
 

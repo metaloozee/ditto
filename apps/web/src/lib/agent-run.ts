@@ -70,7 +70,8 @@ function projectEnvRecord(
 
 async function runAgentInSandboxLocked(options: {
 	env: Env;
-	sandboxId: string;
+	sandboxId?: string;
+	sandbox?: ReturnType<typeof getProjectSandbox>;
 	projectId: string;
 	userId: string;
 	conversationId: string;
@@ -82,19 +83,24 @@ async function runAgentInSandboxLocked(options: {
 	/** Runtime credential JSON for DITTO_PI_CREDENTIAL (no real OAuth refresh). */
 	runtimeCredentialJson: string;
 	envVars?: readonly SandboxEnvVar[];
+	gitCallbackToken?: string;
 	onRunnerMessage: (msg: RunnerOut) => void | Promise<void>;
 }): Promise<{
 	ok: boolean;
 	assistantText: string;
 }> {
-	const sandbox = getProjectSandbox(options.env, options.sandboxId);
-	const gitCallbackToken = await mintAgentGitJwt({
-		secret: options.env.BETTER_AUTH_SECRET,
-		projectId: options.projectId,
-		sessionId: options.conversationId,
-		userId: options.userId,
-		sandboxId: options.sandboxId,
-	});
+	const sandbox =
+		options.sandbox ??
+		getProjectSandbox(options.env, options.sandboxId as string);
+	const gitCallbackToken =
+		options.gitCallbackToken ??
+		(await mintAgentGitJwt({
+			secret: options.env.BETTER_AUTH_SECRET,
+			projectId: options.projectId,
+			sessionId: options.conversationId,
+			userId: options.userId,
+			sandboxId: options.sandboxId as string,
+		}));
 	const projectEnv = projectEnvRecord(options.envVars);
 	const shell = await sandbox.createSession({
 		id: `agent-${options.conversationId}`,
@@ -347,11 +353,17 @@ async function runAgentInSandboxLocked(options: {
 }
 
 export async function runAgentInSandbox(
-	options: Parameters<typeof runAgentInSandboxLocked>[0],
+	options: Parameters<typeof runAgentInSandboxLocked>[0] & {
+		bypassWorkspaceLock?: boolean;
+	},
 ): ReturnType<typeof runAgentInSandboxLocked> {
+	if (options.bypassWorkspaceLock) {
+		return await runAgentInSandboxLocked(options);
+	}
 	return await withSessionWorkspaceLock({
 		env: options.env,
 		sandboxId: options.sandboxId,
+		sandbox: options.sandbox,
 		sessionId: options.conversationId,
 		run: () => runAgentInSandboxLocked(options),
 	});

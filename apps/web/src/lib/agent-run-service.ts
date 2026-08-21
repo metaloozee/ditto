@@ -30,13 +30,15 @@ import {
 } from "#/lib/agent-models";
 import { runAgentInSandbox } from "#/lib/agent-run";
 import { decryptEnvVars } from "#/lib/project-env-vars";
-import {
-	persistProjectSandboxBackup,
-	provisionProjectSandbox,
-} from "#/lib/project-sandbox";
+import { persistProjectSandboxBackup } from "#/lib/project-sandbox";
 import { redactSecrets } from "#/lib/secret-redaction";
-import { ensureSessionWorkspaceReady } from "#/lib/session-worktree";
+import { SessionWorkspaceBusyError } from "#/lib/session-workspace-lock-error";
 import { makeSessionTitleFromMessage } from "#/lib/workspace-policy";
+import {
+	ensureWorkspaceRuntimeReady,
+	WorkspaceRuntimeError,
+	withWorkspaceRuntimeLease,
+} from "#/lib/workspace-runtime";
 import {
 	type OwnedActiveSession,
 	resolveSessionForMessageWrite,
@@ -152,9 +154,9 @@ export type AgentRunDeps = {
 		userId: string;
 	}) => Promise<typeof projects.$inferSelect | null>;
 	decryptEnvVars?: typeof decryptEnvVars;
-	provisionProjectSandbox?: typeof provisionProjectSandbox;
 	resolveSessionForMessageWrite?: typeof resolveSessionForMessageWrite;
-	ensureSessionWorkspaceReady?: typeof ensureSessionWorkspaceReady;
+	ensureWorkspaceRuntimeReady?: typeof ensureWorkspaceRuntimeReady;
+	withWorkspaceRuntimeLease?: typeof withWorkspaceRuntimeLease;
 	runAgentInSandbox?: typeof runAgentInSandbox;
 	controlAgentRun?: typeof controlAgentRun;
 	persistProjectSandboxBackup?: typeof persistProjectSandboxBackup;
@@ -175,9 +177,9 @@ const defaultDeps: Required<AgentRunDeps> = {
 		return project ?? null;
 	},
 	decryptEnvVars,
-	provisionProjectSandbox,
 	resolveSessionForMessageWrite,
-	ensureSessionWorkspaceReady,
+	ensureWorkspaceRuntimeReady,
+	withWorkspaceRuntimeLease,
 	runAgentInSandbox,
 	controlAgentRun,
 	persistProjectSandboxBackup,
@@ -264,7 +266,7 @@ export async function prepareAgentRun(options: {
 		};
 	}
 
-	if (project.status !== "ready" || !project.sandboxId) {
+	if (project.status !== "ready") {
 		return {
 			kind: "error",
 			status: 409,
@@ -277,39 +279,8 @@ export async function prepareAgentRun(options: {
 		env.BETTER_AUTH_SECRET,
 	);
 
-	const PROVISION_SUCCESS = new Set([
-		"connected",
-		"restored_from_backup",
-		"recreated_from_github",
-	]);
-
-	let ensuredProject = project;
-	let sandboxState: string;
-	try {
-		const ensured = await deps.provisionProjectSandbox({
-			db,
-			env,
-			project,
-		});
-		if (!PROVISION_SUCCESS.has(ensured.state)) {
-			return {
-				kind: "error",
-				status: 409,
-				body: { error: "Project sandbox is not ready." },
-			};
-		}
-		ensuredProject = ensured.project;
-		sandboxState = ensured.state;
-	} catch (error) {
-		return {
-			kind: "error",
-			status: 409,
-			body: {
-				error:
-					error instanceof Error ? error.message : "Failed to prepare sandbox.",
-			},
-		};
-	}
+	const ensuredProject = project;
+	const sandboxState = "connected";
 
 	const resolved = await deps.resolveSessionForMessageWrite({
 		db,
@@ -374,20 +345,13 @@ export async function prepareAgentRun(options: {
 
 	let sessionWorkspacePath: string;
 	try {
-		const ready = await deps.ensureSessionWorkspaceReady({
+		const ready = await deps.ensureWorkspaceRuntimeReady({
 			env,
-			sandboxId: ensuredProject.sandboxId as string,
-			sessionId,
-			githubRepo: linkedGithubRepo,
-			installationId: linkedInstallationId,
-			projectId: input.projectId,
-			userId,
 			db,
-			existing: {
-				branchName: workspaceSession.branchName,
-				baseCommitSha: workspaceSession.baseCommitSha,
-				workspacePath: workspaceSession.workspacePath,
-			},
+			userId,
+			projectId: input.projectId,
+			sessionId,
+			purpose: "agent_run",
 			lock: "acquire",
 		});
 		workspaceSession = {
@@ -406,9 +370,13 @@ export async function prepareAgentRun(options: {
 			status: 409,
 			body: {
 				error:
-					error instanceof Error
+					error instanceof SessionWorkspaceBusyError
 						? error.message
-						: "Failed to prepare session worktree.",
+						: error instanceof WorkspaceRuntimeError
+							? error.message
+							: error instanceof Error
+								? error.message
+								: "Failed to prepare session worktree.",
 			},
 		};
 	}
@@ -658,137 +626,159 @@ export async function executeAgentRun(options: {
 	};
 
 	try {
-		const runResult = await deps.runAgentInSandbox({
-			env: context.env,
-			sandboxId: context.ensuredProject.sandboxId as string,
-			projectId: context.projectId,
-			userId: context.userId,
-			conversationId: context.sessionId,
-			runId: context.runId,
-			cwd: context.sessionWorkspacePath,
-			model: context.model,
-			thinkingLevel: context.thinkingLevel,
-			prompt: context.message,
-			runtimeCredentialJson: context.runtimeCredentialJson,
-			envVars: context.envVars,
-			onRunnerMessage: async (msg) => {
-				if (msg.kind === "assistant_delta") {
-					deltaBatcher.push(msg.delta);
-					return;
-				}
-				// Flush pending text before tools/errors so ordering is preserved.
-				deltaBatcher.flush();
-				if (msg.kind === "ready") {
-					emit({ event: "control_ready", data: { runId: context.runId } });
-					return;
-				}
-				if (msg.kind === "control_event") {
-					if (msg.event.type === "follow_up_cancelled") {
-						emit({
-							event: "queue_cancelled",
-							data: {
-								requestId: msg.event.requestId,
-								userMessageId: msg.event.userMessageId,
-								assistantMessageId: msg.event.assistantMessageId,
-							},
-						});
-						return;
-					}
-					if (msg.event.type === "stop_requested") return;
-
-					try {
-						const settled = await settleTurn(currentTurn, "complete");
-						emit({
-							event: "turn_done",
-							data: {
-								userMessageId: currentTurn.userMessageId,
-								assistantMessageId: currentTurn.assistantMessageId,
-								content: settled.content,
-								...(settled.tools.length > 0 ? { tools: settled.tools } : {}),
-								...(settled.parts.length > 0 ? { parts: settled.parts } : {}),
-							},
-						});
-
-						knownPendingAssistants.add(msg.event.assistantMessageId);
-						const [userRows, assistantRows] = await context.db.batch([
-							context.db
-								.insert(messages)
-								.values({
-									id: msg.event.userMessageId,
-									sessionId: context.sessionId,
-									projectId: context.projectId,
-									userId: context.userId,
-									role: "user",
-									content: msg.event.text,
-									model: context.model,
-									status: "complete",
-								})
-								.returning(),
-							context.db
-								.insert(messages)
-								.values({
-									id: msg.event.assistantMessageId,
-									sessionId: context.sessionId,
-									projectId: context.projectId,
-									userId: context.userId,
-									role: "assistant",
-									content: "",
-									status: "pending",
-								})
-								.returning(),
-							workspaceSessionRecencyUpdate(context.db, context.sessionId),
-						]);
-						if (!userRows?.[0] || !assistantRows?.[0]) {
-							throw new Error("Failed to persist follow-up messages.");
-						}
-						currentTurn = {
-							userMessageId: msg.event.userMessageId,
-							assistantMessageId: msg.event.assistantMessageId,
-							text: msg.event.text,
-							parts: [],
-						};
-						emit({
-							event: "turn_start",
-							data: {
-								requestId: msg.event.requestId,
-								userMessageId: msg.event.userMessageId,
-								assistantMessageId: msg.event.assistantMessageId,
-								text: msg.event.text,
-							},
-						});
-					} catch (error) {
-						await requestStop().catch(() => undefined);
-						await failKnownPending();
-						throw error;
-					}
-					return;
-				}
-				if (msg.kind === "agent_event") {
-					// One server-assigned occurrence time for SSE + reducer.
-					const occurredAt = deps.now();
-					emit({
-						event: "agent",
-						data: { event: msg.event, occurredAt },
-					});
-					const nextParts = applyAgentToolEventToParts(
-						currentTurn.parts,
-						msg.event,
-						occurredAt,
-					);
-					if (nextParts) {
-						currentTurn.parts = nextParts;
-					}
-				}
-				if (msg.kind === "error") {
-					emit({
-						event: "error",
-						data: {
-							message: redact(msg.message, context.secretValues),
-						},
-					});
-				}
+		const runResult = await deps.withWorkspaceRuntimeLease(
+			{
+				env: context.env,
+				db: context.db,
+				userId: context.userId,
+				projectId: context.projectId,
+				sessionId: context.sessionId,
+				purpose: "agent_run",
+				lock: "acquire",
 			},
-		});
+			async (lease) =>
+				deps.runAgentInSandbox({
+					env: context.env,
+					sandbox: lease.sandbox,
+					projectId: context.projectId,
+					userId: context.userId,
+					conversationId: context.sessionId,
+					runId: context.runId,
+					cwd: lease.workspacePath,
+					model: context.model,
+					thinkingLevel: context.thinkingLevel,
+					prompt: context.message,
+					runtimeCredentialJson: context.runtimeCredentialJson,
+					envVars: lease.projectEnv ?? context.envVars,
+					gitCallbackToken: await lease.issueGitCallbackToken({
+						secret: context.env.BETTER_AUTH_SECRET,
+						projectId: context.projectId,
+						userId: context.userId,
+					}),
+					bypassWorkspaceLock: true,
+					onRunnerMessage: async (msg) => {
+						if (msg.kind === "assistant_delta") {
+							deltaBatcher.push(msg.delta);
+							return;
+						}
+						// Flush pending text before tools/errors so ordering is preserved.
+						deltaBatcher.flush();
+						if (msg.kind === "ready") {
+							emit({ event: "control_ready", data: { runId: context.runId } });
+							return;
+						}
+						if (msg.kind === "control_event") {
+							if (msg.event.type === "follow_up_cancelled") {
+								emit({
+									event: "queue_cancelled",
+									data: {
+										requestId: msg.event.requestId,
+										userMessageId: msg.event.userMessageId,
+										assistantMessageId: msg.event.assistantMessageId,
+									},
+								});
+								return;
+							}
+							if (msg.event.type === "stop_requested") return;
+
+							try {
+								const settled = await settleTurn(currentTurn, "complete");
+								emit({
+									event: "turn_done",
+									data: {
+										userMessageId: currentTurn.userMessageId,
+										assistantMessageId: currentTurn.assistantMessageId,
+										content: settled.content,
+										...(settled.tools.length > 0
+											? { tools: settled.tools }
+											: {}),
+										...(settled.parts.length > 0
+											? { parts: settled.parts }
+											: {}),
+									},
+								});
+
+								knownPendingAssistants.add(msg.event.assistantMessageId);
+								const [userRows, assistantRows] = await context.db.batch([
+									context.db
+										.insert(messages)
+										.values({
+											id: msg.event.userMessageId,
+											sessionId: context.sessionId,
+											projectId: context.projectId,
+											userId: context.userId,
+											role: "user",
+											content: msg.event.text,
+											model: context.model,
+											status: "complete",
+										})
+										.returning(),
+									context.db
+										.insert(messages)
+										.values({
+											id: msg.event.assistantMessageId,
+											sessionId: context.sessionId,
+											projectId: context.projectId,
+											userId: context.userId,
+											role: "assistant",
+											content: "",
+											status: "pending",
+										})
+										.returning(),
+									workspaceSessionRecencyUpdate(context.db, context.sessionId),
+								]);
+								if (!userRows?.[0] || !assistantRows?.[0]) {
+									throw new Error("Failed to persist follow-up messages.");
+								}
+								currentTurn = {
+									userMessageId: msg.event.userMessageId,
+									assistantMessageId: msg.event.assistantMessageId,
+									text: msg.event.text,
+									parts: [],
+								};
+								emit({
+									event: "turn_start",
+									data: {
+										requestId: msg.event.requestId,
+										userMessageId: msg.event.userMessageId,
+										assistantMessageId: msg.event.assistantMessageId,
+										text: msg.event.text,
+									},
+								});
+							} catch (error) {
+								await requestStop().catch(() => undefined);
+								await failKnownPending();
+								throw error;
+							}
+							return;
+						}
+						if (msg.kind === "agent_event") {
+							// One server-assigned occurrence time for SSE + reducer.
+							const occurredAt = deps.now();
+							emit({
+								event: "agent",
+								data: { event: msg.event, occurredAt },
+							});
+							const nextParts = applyAgentToolEventToParts(
+								currentTurn.parts,
+								msg.event,
+								occurredAt,
+							);
+							if (nextParts) {
+								currentTurn.parts = nextParts;
+							}
+						}
+						if (msg.kind === "error") {
+							emit({
+								event: "error",
+								data: {
+									message: redact(msg.message, context.secretValues),
+								},
+							});
+						}
+					},
+				}),
+		);
 
 		// Flush any remaining batched text before terminal persistence / done.
 		deltaBatcher.dispose();
@@ -832,12 +822,14 @@ export async function executeAgentRun(options: {
 
 		let backupError: string | undefined;
 		try {
-			const backupResult = await deps.persistProjectSandboxBackup({
-				db: context.db,
-				env: context.env,
-				project: context.ensuredProject,
-			});
-			context.ensuredProject = backupResult.project;
+			if (context.ensuredProject.sandboxId) {
+				const backupResult = await deps.persistProjectSandboxBackup({
+					db: context.db,
+					env: context.env,
+					project: context.ensuredProject,
+				});
+				context.ensuredProject = backupResult.project;
+			}
 		} catch (error) {
 			backupError = redact(
 				error instanceof Error

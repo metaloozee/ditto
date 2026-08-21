@@ -179,9 +179,12 @@ type SnapshotCommon = {
 	patchOriginalBytes: number;
 };
 
+type MetadataSandbox = ReturnType<typeof getProjectSandbox>;
+
 type MetadataContext = {
 	env: Env;
-	sandboxId: string;
+	sandboxId?: string;
+	sandbox?: MetadataSandbox;
 	session: {
 		id: string;
 		branchName: string;
@@ -190,6 +193,16 @@ type MetadataContext = {
 	};
 	knownSecrets?: readonly string[];
 };
+
+function resolveMetadataSandbox(ctx: MetadataContext): MetadataSandbox {
+	if (ctx.sandbox) {
+		return ctx.sandbox;
+	}
+	if (!ctx.sandboxId) {
+		throw new Error("Git metadata requires a runtime sandbox.");
+	}
+	return getProjectSandbox(ctx.env, ctx.sandboxId);
+}
 
 const PROTOCOL_ERROR_MESSAGES: Record<
 	Exclude<
@@ -408,7 +421,7 @@ export async function collectCommitMetadataSnapshot(
 	| { kind: "commit"; requestId: string; job: z.infer<typeof commitJobSchema> }
 	| { kind: "no_changes" }
 > {
-	const sandbox = getProjectSandbox(ctx.env, ctx.sandboxId);
+	const sandbox = resolveMetadataSandbox(ctx);
 	const cwd = ctx.session.workspacePath;
 	const requestId = nanoid();
 	const tmpIndex = `/tmp/ditto-git-metadata-index-${requestId}`;
@@ -541,7 +554,7 @@ export async function collectPullRequestMetadataSnapshot(
 	requestId: string;
 	job: z.infer<typeof pullRequestJobSchema>;
 }> {
-	const sandbox = getProjectSandbox(ctx.env, ctx.sandboxId);
+	const sandbox = resolveMetadataSandbox(ctx);
 	const cwd = ctx.session.workspacePath;
 	const requestId = nanoid();
 	const patchPath = `/tmp/ditto-git-metadata-patch-${requestId}`;
@@ -708,7 +721,8 @@ export async function generateGitMetadata<
 		| z.infer<typeof pullRequestJobSchema>,
 >(options: {
 	env: Env;
-	sandboxId: string;
+	sandboxId?: string;
+	sandbox?: MetadataSandbox;
 	cwd: string;
 	job: TJob;
 	knownSecrets?: readonly string[];
@@ -717,7 +731,16 @@ export async function generateGitMetadata<
 		? CommitMetadataResult
 		: PullRequestMetadataResult
 > {
-	const sandbox = getProjectSandbox(options.env, options.sandboxId);
+	const sandbox = resolveMetadataSandbox({
+		env: options.env,
+		sandboxId: options.sandboxId,
+		sandbox: options.sandbox,
+		session: {
+			id: "metadata",
+			branchName: "",
+			workspacePath: options.cwd,
+		},
+	});
 	const requestId = options.job.requestId;
 	const jobPath = `${JOB_DIR}/${requestId}.json`;
 	const knownSecrets = options.knownSecrets ?? [];
@@ -850,6 +873,7 @@ export async function generateCommitMetadata(
 	const result = await generateGitMetadata({
 		env: ctx.env,
 		sandboxId: ctx.sandboxId,
+		sandbox: ctx.sandbox,
 		cwd: ctx.session.workspacePath,
 		job: snapshot.job,
 		knownSecrets: ctx.knownSecrets,
@@ -868,6 +892,7 @@ export async function generatePullRequestMetadata(
 	const result = await generateGitMetadata({
 		env: ctx.env,
 		sandboxId: ctx.sandboxId,
+		sandbox: ctx.sandbox,
 		cwd: ctx.session.workspacePath,
 		job: snapshot.job,
 		knownSecrets: ctx.knownSecrets,

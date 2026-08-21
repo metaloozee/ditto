@@ -47,7 +47,7 @@ helper once (the runner and stream route do not snapshot).
 | Layer | Store | ID | Role |
 |-------|-------|----|------|
 | Workspace conversation | D1 `workspace_sessions` | `sessionId` / `conversationId` | UI chat thread and message history |
-| Session git worktree | Sandbox filesystem | `ditto/session-<shortId>` on `/workspace/.ditto/worktrees/<sessionId>` | Per-session branch and isolated working tree |
+| Session checkout | Sandbox filesystem | Dedicated `/workspace` on the new path, or `ditto/session-<shortId>` on `/workspace/.ditto/worktrees/<sessionId>` for legacy | Per-session branch and isolated working tree |
 | Sandbox shell session | Cloudflare Sandbox `createSession` | e.g. `agent-<conversationId>` or `git-metadata-<id>` | Isolated cwd and env for one harness run |
 | PI agent session (chat) | File `/workspace/.ditto/sessions/<sessionId>.jsonl` | Same as D1 session id | Model history, tools, and harness state |
 | PI agent session (UI git metadata) | In-memory only (`SessionManager.inMemory`) | Ephemeral request id | One-shot commit/PR metadata drafting; no JSONL, D1, or chat history |
@@ -56,32 +56,20 @@ helper once (the runner and stream route do not snapshot).
 
 1. The user sends a message from the composer.
 2. The client `POST`s `/api/agent/stream` with cookie auth.
-3. The Worker ensures the project sandbox is awake and hydrated.
-4. The Worker creates or loads a D1 workspace session. On the first agent
-   message for a session, it ensures a git worktree under
-   `/workspace/.ditto/worktrees/<sessionId>` on branch
-   `ditto/session-<shortId>` **before** any chat rows are written. Before
-   creating that branch for a **new** session (no established `branchName`
-   yet), the Worker fetches and fast-forwards the primary clone's **currently
-   checked-out** branch from GitHub so `baseCommitSha` matches pushed remote
-   state. Existing sessions keep their established branch and worktree; Ditto
-   does not fetch, merge, or reset them automatically. Only changes pushed to
-   the linked GitHub repository are visible; unpushed commits on a developer
-   laptop are outside the sandbox. Symlinks shared `node_modules` from the
-   primary `/workspace` tree only (not `.env`), and persists `branchName`,
-   `baseCommitSha`, and `workspacePath` on the session row. Dirty tracked
-   primary state, a locally ahead primary clone, or a diverged primary branch
-   block fresh session worktree creation instead of overwriting local commits.
-   `baseCommitSha` is set when the session branch/worktree is first created (or
-   one-time backfilled if empty). Repairing a missing worktree **must not**
-   overwrite a non-empty `baseCommitSha` — it is the frozen fork point for the
-   session. If worktree preparation fails for a **newly created** empty session,
-   that session row is removed before the 409 response.
-5. After the worktree is ready, the Worker inserts the user message
+3. The Worker opens the workspace session through `WorkspaceRuntime`. New
+   sessions restore the project seed into a dedicated sandbox, fetch the latest
+   default branch through the Git broker, and check out `ditto/session-<shortId>`
+   at `/workspace`. Legacy sessions that already have a frozen base commit keep
+   their worktree in the shared project sandbox. `baseCommitSha` is frozen on
+   first set and is never moved automatically.
+4. The Worker creates or loads a D1 workspace session **before** runtime
+   preparation. If runtime preparation fails for a **newly created** empty
+   session, that session row is removed before the 409 response.
+5. After the runtime is ready, the Worker inserts the user message
    (`status: complete`) and an assistant placeholder (`status: pending`) in
    one D1 batch, then opens the SSE stream and emits `meta`.
 6. The Worker creates a sandbox shell session with cwd set to the session
-   worktree, decrypts project environment values from D1, and injects them
+   checkout, decrypts project environment values from D1, and injects them
    into the session `env` together with provider and callback credentials.
    It writes a job file containing the run IDs, model, prompt, cwd, and the
    optional effective `thinkingLevel` (prompt is not interpolated into shell
@@ -179,21 +167,19 @@ warning and never throw into the run service.
 
 ## Concurrency
 
-Concurrent workspace sessions for the same project use separate git worktrees
-under `/workspace/.ditto/worktrees/<sessionId>`, each on its own
-`ditto/session-*` branch. Agent coding runs use the session worktree as `cwd`,
-so file edits do not stomp another session's tree. The primary `/workspace` tree
-stays the package-install root; `/workspace/node_modules` is symlinked into each
-worktree when present so dependencies are not reinstalled per session. Project
-environment values are stored encrypted in D1, decrypted by the Worker per run,
-and injected into each agent shell session's process `env`; worktrees never
-receive a `.env` file.
+Concurrent workspace sessions for the same project use dedicated sandboxes on
+the new path, each with its own filesystem, process table, localhost namespace,
+and `ditto/session-*` branch checked out at `/workspace`. Legacy sessions still
+use separate git worktrees under `/workspace/.ditto/worktrees/<sessionId>` inside
+a shared project sandbox. Agent coding runs use the session checkout as `cwd`.
+Project environment values are stored encrypted in D1, decrypted by the Worker
+per run, and injected only into the agent command; checkouts never receive a
+`.env` file.
 
-Session workspace **readiness** (`ensureSessionWorkspaceReady`) centralizes
-create / reuse / repair of the session worktree and ownership-scoped D1 bind.
-**create** and **repair** take a short session workspace lock; **reuse** is
-unlocked. `baseCommitSha` is frozen after first set (or one-time empty backfill);
-repair preserves a non-empty base (see Runtime path above).
+`WorkspaceRuntime` is the readiness interface. Callers identify an owned
+workspace session and a purpose; they do not pass raw sandbox IDs. Legacy
+worktree create/repair remains in `ensureSessionWorkspaceReady` for sessions
+that already have a frozen base commit in a project sandbox.
 
 - **Agent prepare** acquires only for create/repair; message rows still insert
   after readiness releases the short lock.
@@ -204,13 +190,10 @@ repair preserves a non-empty base (see Runtime path above).
 - **UI mutations** use full readiness with acquire on create/repair.
 - **Preview** repair uses readiness-owned acquire (no outer double-lock).
 
-Residual limits: all sessions still share one sandbox container process space
-(dev servers, ports, and long-running processes can collide). There is no
-application-level mutex per `projectId` yet; parallel agents should not run
-competing installs on the primary tree. Within one session, agent runs and
-mutating UI Git operations share an atomic lock under sandbox `/tmp`, preventing
-concurrent worktree writers across Worker requests without persisting locks in
-workspace backups. UI Commit and UI Open PR hold that same lock from snapshot
+Residual limits: legacy sessions still share one sandbox container process
+space. Dedicated session sandboxes isolate those collisions. Within one
+session, agent runs and mutating UI Git operations share an atomic lock under
+sandbox `/tmp`. UI Commit and UI Open PR hold that same lock from snapshot
 collection through generation and mutation; nested git helpers bypass re-lock.
 
 The live control path intentionally bypasses that workspace-session lock: the

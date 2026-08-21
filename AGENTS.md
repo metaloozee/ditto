@@ -30,7 +30,7 @@ When sources disagree, current code defines implemented behavior. Fix stale dura
 
 - The Worker is the control plane and the only issuer of GitHub installation tokens.
 - D1 owns durable product records. The sandbox filesystem owns live repository and Git state. R2 backups provide recovery.
-- A workspace session owns one chat thread, branch, and worktree.
+- A workspace session owns one chat thread, branch, and runtime. New sessions use a dedicated sandbox and `/workspace` checkout; legacy sessions may still share a project sandbox with Git worktrees.
 - Every project and workspace operation checks the authenticated user's ownership.
 - Secrets stay encrypted at rest, enter sandbox processes only when needed, and are redacted before output. Project secrets never enter worktree `.env` files.
 - Every settled agent run leaves its assistant message in `complete` or `failed`, never `pending`.

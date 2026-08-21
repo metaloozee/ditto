@@ -288,6 +288,10 @@ function createSqliteDb(seed: {
 			memoryPath text NOT NULL DEFAULT '/workspace/.ditto/project-memory.md',
 			status text NOT NULL DEFAULT 'active',
 			previewPort integer,
+			sandboxIdentityId text,
+			runtimeLeaseId text,
+			runtimeLeaseExpiresAt integer,
+			runtimeFailureReasonCode text,
 			created_at integer,
 			updated_at integer
 		);
@@ -427,25 +431,19 @@ function baseInjected(
 ): Partial<SessionPreviewDeps> {
 	return {
 		getSandbox: () => sandbox,
-		provisionProjectSandbox: vi.fn(async () => ({
-			project: project as never,
-			state: "connected" as const,
-		})),
-		ensureSessionWorkspaceReady: vi.fn().mockImplementation(
-			async (opts: {
-				sessionId: string;
-				existing: {
-					branchName: string | null;
-					baseCommitSha: string | null;
-					workspacePath: string;
-				};
-			}) => ({
-				branchName:
-					opts.existing.branchName ?? `ditto/session-${opts.sessionId}`,
-				baseCommitSha: opts.existing.baseCommitSha ?? "abc",
-				workspacePath:
-					opts.existing.workspacePath ||
-					`/workspace/.ditto/worktrees/${opts.sessionId}`,
+		withWorkspaceRuntimeLease: vi.fn(async (input, run) =>
+			run({
+				sessionId: input.sessionId,
+				purpose: input.purpose,
+				workspacePath: `/workspace/.ditto/worktrees/${input.sessionId}`,
+				branchName: `ditto/session-${input.sessionId}`,
+				baseCommitSha: "abc",
+				sandbox: sandbox as never,
+				projectEnv: null,
+				issueGitCallbackToken: async () => {
+					throw new Error("preview does not issue git tokens");
+				},
+				matchesSandboxClaim: (id: string) => id === project.sandboxId,
 			}),
 		),
 		nowSeconds: () => testNowSeconds,
@@ -839,8 +837,7 @@ describe("project preview lease", () => {
 			randomToken: () => "token-a",
 			sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
 			getSandbox: () => makeSandbox(),
-			provisionProjectSandbox: vi.fn(),
-			ensureSessionWorkspaceReady: vi.fn(),
+			withWorkspaceRuntimeLease: vi.fn(),
 		};
 
 		const first = await acquireProjectPreviewLease(deps, {
@@ -974,11 +971,7 @@ describe("startSessionPreview", () => {
 		});
 		const sandbox = viteSandbox();
 		wireExposeToPort(sandbox);
-		const ensureReady = vi.fn().mockResolvedValue({
-			branchName: "ditto/session-sess-1",
-			baseCommitSha: "abc",
-			workspacePath: "/workspace/.ditto/worktrees/sess-1",
-		});
+		const injected = baseInjected(sandbox, sqliteDb.db);
 
 		await startSessionPreview(
 			{
@@ -989,18 +982,15 @@ describe("startSessionPreview", () => {
 				userId: "user-1",
 				requestUrl: "https://ayn.wtf/",
 			},
-			{
-				...baseInjected(sandbox, sqliteDb.db),
-				ensureSessionWorkspaceReady: ensureReady,
-			},
+			injected,
 		);
 
-		expect(ensureReady).toHaveBeenCalledWith(
+		expect(injected.withWorkspaceRuntimeLease).toHaveBeenCalledWith(
 			expect.objectContaining({
-				sandboxId: "sandbox-1",
 				sessionId: "sess-1",
-				lock: "acquire",
+				purpose: "preview",
 			}),
+			expect.any(Function),
 		);
 		expect(sandbox.startProcess).toHaveBeenCalledWith(
 			expect.stringContaining("./node_modules/.bin/vite --host 0.0.0.0 --port"),
@@ -1010,7 +1000,10 @@ describe("startSessionPreview", () => {
 			expect.not.stringContaining("--cacheDir"),
 			expect.any(Object),
 		);
-		expect(ensureReady.mock.invocationCallOrder[0]).toBeLessThan(
+		expect(
+			(injected.withWorkspaceRuntimeLease as ReturnType<typeof vi.fn>).mock
+				.invocationCallOrder[0],
+		).toBeLessThan(
 			(sandbox.startProcess as ReturnType<typeof vi.fn>).mock
 				.invocationCallOrder[0],
 		);
@@ -1441,7 +1434,7 @@ describe("startSessionPreview", () => {
 				injected,
 			),
 		).rejects.toMatchObject({ code: "not_ready" });
-		expect(injected.provisionProjectSandbox).not.toHaveBeenCalled();
+		expect(injected.withWorkspaceRuntimeLease).not.toHaveBeenCalled();
 	});
 });
 
@@ -1815,7 +1808,7 @@ describe("controlled barrier races", () => {
 
 		releaseStart();
 		await expect(startPromise).rejects.toMatchObject({ code: "not_found" });
-		expect(injectedStart.provisionProjectSandbox).not.toHaveBeenCalled();
+		expect(injectedStart.withWorkspaceRuntimeLease).not.toHaveBeenCalled();
 		expect(sandbox.startProcess).not.toHaveBeenCalled();
 	});
 });

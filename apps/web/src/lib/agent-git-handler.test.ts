@@ -4,18 +4,24 @@ import { GitSecretPolicyError } from "./git-secret-policy";
 const getSessionGitStatusMock = vi.hoisted(() => vi.fn());
 const pushSessionBranchMock = vi.hoisted(() => vi.fn());
 const openSessionPullRequestMock = vi.hoisted(() => vi.fn());
-const provisionProjectSandboxMock = vi.hoisted(() =>
-	vi.fn().mockResolvedValue({
-		project: { sandboxId: "sandbox-1", status: "ready" },
-		state: "connected",
-	}),
+const withWorkspaceRuntimeLeaseMock = vi.hoisted(() =>
+	vi.fn(async (_input: unknown, run: (lease: unknown) => Promise<unknown>) =>
+		run({
+			sessionId: "sess-1",
+			purpose: "mutating_git",
+			workspacePath: "/workspace/.ditto/worktrees/sess-1",
+			branchName: "ditto/session-abc",
+			baseCommitSha: "abc123",
+			sandbox: { exec: vi.fn() },
+			projectEnv: null,
+			issueGitCallbackToken: async () => "",
+			matchesSandboxClaim: (id: string) => id === "sandbox-1",
+		}),
+	),
 );
 
-vi.mock("#/lib/project-sandbox", () => ({
-	provisionProjectSandbox: provisionProjectSandboxMock,
-}));
-vi.mock("#/lib/session-worktree", () => ({
-	ensureSessionWorkspaceReady: vi.fn(),
+vi.mock("#/lib/workspace-runtime", () => ({
+	withWorkspaceRuntimeLease: withWorkspaceRuntimeLeaseMock,
 }));
 vi.mock("#/lib/session-git", () => ({
 	getSessionGitStatus: getSessionGitStatusMock,
@@ -31,17 +37,14 @@ const { AgentGitHttpError, dispatchAgentGitAction } = await import(
 const FIXTURE_SECRET = "proj-fixture-secret-value-01";
 
 const resolved = {
+	db: {} as never,
+	userId: "user-1",
 	projectId: "proj-1",
 	githubRepo: "acme/repo",
 	installationId: 42,
-	sandboxId: "sandbox-1",
-	session: {
-		id: "sess-1",
-		branchName: "ditto/session-abc",
-		baseCommitSha: "abc123",
-		workspacePath: "/workspace/.ditto/worktrees/sess-1",
-		title: "Fix bug",
-	},
+	claimedSandboxId: "sandbox-1",
+	sessionId: "sess-1",
+	sessionTitle: "Fix bug",
 	knownSecrets: [FIXTURE_SECRET] as readonly string[],
 };
 

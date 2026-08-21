@@ -1,7 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("#/lib/sandbox-bootstrap", () => ({
-	getProjectSandbox: vi.fn(),
+vi.mock("#/lib/workspace-runtime", () => ({
+	withWorkspaceRuntimeLease: vi.fn(),
+	WorkspaceRuntimeError: class WorkspaceRuntimeError extends Error {
+		code: string;
+		constructor(code: string, message: string) {
+			super(message);
+			this.code = code;
+			this.name = "WorkspaceRuntimeError";
+		}
+	},
 }));
 
 import { controlAgentRun } from "./agent-control-service";
@@ -51,7 +59,22 @@ function makeHarness(
 			userId: "user-1",
 			status: "active",
 		}),
-		getProjectSandbox: vi.fn(() => sandbox),
+		withWorkspaceRuntimeLease: vi.fn(
+			async (_input: unknown, run: (lease: unknown) => Promise<unknown>) =>
+				run({
+					sessionId: "session-1",
+					purpose: "agent_control",
+					workspacePath: "/workspace",
+					branchName: "ditto/session-1",
+					baseCommitSha: "abc",
+					sandbox,
+					projectEnv: null,
+					issueGitCallbackToken: async () => {
+						throw new Error("control does not issue git tokens");
+					},
+					matchesSandboxClaim: () => true,
+				}),
+		),
 	};
 	return { deps, sandbox, shell, writeFile, deleteFile, exec };
 }
@@ -78,7 +101,7 @@ describe("agent control service", () => {
 			deps: harness.deps as never,
 		});
 		expect(result).toMatchObject({ kind: "error", status: 404 });
-		expect(harness.deps.getProjectSandbox).not.toHaveBeenCalled();
+		expect(harness.deps.withWorkspaceRuntimeLease).not.toHaveBeenCalled();
 		expect(harness.deps.loadOwnedActiveSession).not.toHaveBeenCalled();
 	});
 

@@ -12,13 +12,23 @@ function quoteShellArg(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
+export type SessionWorkspaceLockSandbox = {
+	exec: (
+		command: string,
+		options?: { cwd?: string; timeout?: number },
+	) => Promise<{ success: boolean }>;
+};
+
 export async function withSessionWorkspaceLock<T>(options: {
 	env: Env;
-	sandboxId: string;
+	sandboxId?: string;
+	sandbox?: SessionWorkspaceLockSandbox;
 	sessionId: string;
 	run: () => Promise<T>;
 }): Promise<T> {
-	const sandbox = getProjectSandbox(options.env, options.sandboxId);
+	const sandbox =
+		options.sandbox ??
+		getProjectSandbox(options.env, options.sandboxId as string);
 	const lockPath = sessionWorkspaceLockPath(options.sessionId);
 	const acquired = await sandbox.exec(
 		[

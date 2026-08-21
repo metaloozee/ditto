@@ -56,7 +56,7 @@ A time-bounded Worker-owned window that authorizes one contract family for a san
 
 ### Workspace session
 
-A user's conversation and line of work within one project. A workspace session owns one chat thread, one branch, and one worktree. An archived workspace session remains part of history but cannot receive new work.
+A user's conversation and line of work within one project. A workspace session owns one chat thread, one branch, and one runtime. On the new path that runtime is a dedicated sandbox whose `/workspace` checkout holds the session branch. Legacy sessions may still share a project sandbox and use Git worktrees until that path is removed. An archived workspace session remains part of history but cannot receive new work.
 
 Use "workspace session" in full. "Session" alone is ambiguous because Ditto also has auth sessions and agent runtime sessions.
 
@@ -74,7 +74,7 @@ A structured update produced during an agent run. Agent events describe text, to
 
 ### Session preview
 
-A temporary public view of the application running from one workspace session. The preview belongs to that session's worktree and does not publish the project.
+A temporary public view of the application running from one workspace session. The preview belongs to that session's checkout and does not publish the project.
 
 ## Models and credentials
 
@@ -115,5 +115,6 @@ User
         ├── Messages
         ├── Agent runs
         ├── Session branch
+        ├── Session sandbox (`/workspace` checkout) or legacy worktree
         └── Session preview
 ```

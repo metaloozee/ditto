@@ -10,7 +10,6 @@ import {
 import { GitSecretPolicyError } from "#/lib/git-secret-policy";
 import { authorizeGitHubRepositoryAccess } from "#/lib/github-authorization";
 import { decryptEnvVars } from "#/lib/project-env-vars";
-import { provisionProjectSandbox } from "#/lib/project-sandbox";
 import {
 	commitSessionChanges,
 	GITHUB_APP_PR_PERMISSION_MESSAGE,
@@ -40,9 +39,11 @@ import {
 } from "#/lib/session-git-ui-actions";
 import { SessionWorkspaceBusyError } from "#/lib/session-workspace-lock-error";
 import {
-	ensureSessionWorkspaceReady,
-	prepareSessionWorkspaceIfPresent,
-} from "#/lib/session-worktree";
+	WorkspaceRuntimeError,
+	type WorkspaceRuntimeLease,
+	type WorkspaceRuntimePurpose,
+	withWorkspaceRuntimeLease,
+} from "#/lib/workspace-runtime";
 import { loadOwnedActiveSession } from "#/lib/workspace-session";
 import { createTRPCRouter, protectedProcedure } from "../init";
 
@@ -86,7 +87,7 @@ async function resolveSessionGitAuthContext(options: {
 		});
 	}
 
-	if (project.status !== "ready" || !project.sandboxId) {
+	if (project.status !== "ready") {
 		throw new TRPCError({
 			code: "PRECONDITION_FAILED",
 			message: "Project sandbox is not ready.",
@@ -113,24 +114,6 @@ async function resolveSessionGitAuthContext(options: {
 		installationId: project.githubInstallationId,
 	});
 
-	const PROVISION_SUCCESS = new Set([
-		"connected",
-		"restored_from_backup",
-		"recreated_from_github",
-	]);
-	const ensured = await provisionProjectSandbox({
-		db,
-		env: options.ctx.env,
-		project,
-	});
-	if (!PROVISION_SUCCESS.has(ensured.state)) {
-		throw new TRPCError({
-			code: "PRECONDITION_FAILED",
-			message: "Project sandbox is not ready.",
-		});
-	}
-
-	// Server-only secret values for push preflight; never returned to clients.
 	const envVars = await decryptEnvVars(
 		project.envVars,
 		options.ctx.env.BETTER_AUTH_SECRET,
@@ -148,10 +131,73 @@ async function resolveSessionGitAuthContext(options: {
 		},
 		githubRepo: project.githubRepo,
 		installationId: project.githubInstallationId,
-		sandboxId: project.sandboxId,
 		session,
 		knownSecrets,
 	};
+}
+
+async function withOwnedSessionGitLease<T>(
+	options: {
+		ctx: {
+			env: Env;
+			user: { id: string; name: string; email: string };
+			auth: Parameters<
+				typeof authorizeGitHubRepositoryAccess
+			>[0]["ctx"]["auth"];
+			request: { headers: Headers };
+		};
+		input: { projectId: string; sessionId: string };
+		purpose: WorkspaceRuntimePurpose;
+		ensureReady: boolean;
+		lock?: "acquire" | "assumeHeld" | "none";
+	},
+	run: (
+		auth: Awaited<ReturnType<typeof resolveSessionGitAuthContext>>,
+		lease: WorkspaceRuntimeLease,
+	) => Promise<T>,
+): Promise<T> {
+	const auth = await resolveSessionGitAuthContext(options);
+	try {
+		return await withWorkspaceRuntimeLease(
+			{
+				env: options.ctx.env,
+				db: auth.db,
+				userId: options.ctx.user.id,
+				projectId: options.input.projectId,
+				sessionId: options.input.sessionId,
+				purpose: options.purpose,
+				ensureReady: options.ensureReady,
+				lock: options.lock,
+			},
+			async (lease) => {
+				if (lease.projectEnv != null && options.purpose !== "agent_run") {
+					throw new TRPCError({
+						code: "INTERNAL_SERVER_ERROR",
+						message:
+							"Git operations must not receive project environment values.",
+					});
+				}
+				return await run(auth, lease);
+			},
+		);
+	} catch (error) {
+		if (error instanceof SessionWorkspaceBusyError) {
+			throw new TRPCError({
+				code: "PRECONDITION_FAILED",
+				message: error.message,
+			});
+		}
+		if (error instanceof WorkspaceRuntimeError && error.code === "not_ready") {
+			throw error;
+		}
+		if (error instanceof WorkspaceRuntimeError && error.code === "not_found") {
+			throw new TRPCError({
+				code: "NOT_FOUND",
+				message: error.message,
+			});
+		}
+		throw error;
+	}
 }
 
 function worktreeUnavailableStatus(session: {
@@ -178,44 +224,27 @@ async function resolveSessionGitReadyForMutation(options: {
 		request: { headers: Headers };
 	};
 	input: { projectId: string; sessionId: string };
+	purpose?: WorkspaceRuntimePurpose;
 }) {
-	const auth = await resolveSessionGitAuthContext(options);
-	try {
-		const ready = await ensureSessionWorkspaceReady({
-			env: options.ctx.env,
-			sandboxId: auth.sandboxId,
-			sessionId: auth.session.id,
-			githubRepo: auth.githubRepo,
-			installationId: auth.installationId,
-			projectId: options.input.projectId,
-			userId: options.ctx.user.id,
-			db: auth.db,
-			existing: {
-				branchName: auth.session.branchName,
-				baseCommitSha: auth.session.baseCommitSha,
-				workspacePath: auth.session.workspacePath,
-			},
-			lock: "acquire",
-		});
-		return {
+	return await withOwnedSessionGitLease(
+		{
+			...options,
+			purpose: options.purpose ?? "mutating_git",
+			ensureReady: true,
+			lock: "none",
+		},
+		async (auth, lease) => ({
 			...auth,
+			sandbox: lease.sandbox,
 			session: {
 				id: auth.session.id,
-				branchName: ready.branchName,
-				baseCommitSha: ready.baseCommitSha,
-				workspacePath: ready.workspacePath,
+				branchName: lease.branchName,
+				baseCommitSha: lease.baseCommitSha,
+				workspacePath: lease.workspacePath,
 				title: auth.session.title,
 			},
-		};
-	} catch (error) {
-		if (error instanceof SessionWorkspaceBusyError) {
-			throw new TRPCError({
-				code: "PRECONDITION_FAILED",
-				message: error.message,
-			});
-		}
-		throw error;
-	}
+		}),
+	);
 }
 
 function mapSessionGitExportError(error: unknown): never {
@@ -243,32 +272,39 @@ export const sessionGitRouter = createTRPCRouter({
 		.input(sessionInputSchema)
 		.query(async ({ ctx, input }) => {
 			const auth = await resolveSessionGitAuthContext({ ctx, input });
-			const prepared = await prepareSessionWorkspaceIfPresent({
-				env: ctx.env,
-				sandboxId: auth.sandboxId,
-				sessionId: auth.session.id,
-				existing: {
-					branchName: auth.session.branchName,
-					baseCommitSha: auth.session.baseCommitSha,
-					workspacePath: auth.session.workspacePath,
-				},
-			});
-			if (!prepared.ok) {
-				return worktreeUnavailableStatus(auth.session);
+			try {
+				return await withOwnedSessionGitLease(
+					{
+						ctx,
+						input,
+						purpose: "local_git_read",
+						ensureReady: false,
+						lock: "none",
+					},
+					async (_auth, lease) =>
+						getSessionGitStatus({
+							env: ctx.env,
+							sandbox: lease.sandbox,
+							installationId: auth.installationId,
+							githubRepo: auth.githubRepo,
+							session: {
+								id: auth.session.id,
+								branchName: lease.branchName,
+								baseCommitSha: lease.baseCommitSha,
+								workspacePath: lease.workspacePath,
+								title: auth.session.title,
+							},
+						}),
+				);
+			} catch (error) {
+				if (
+					error instanceof WorkspaceRuntimeError &&
+					error.code === "not_ready"
+				) {
+					return worktreeUnavailableStatus(auth.session);
+				}
+				throw error;
 			}
-			return await getSessionGitStatus({
-				env: ctx.env,
-				sandboxId: auth.sandboxId,
-				installationId: auth.installationId,
-				githubRepo: auth.githubRepo,
-				session: {
-					id: auth.session.id,
-					branchName: prepared.branchName,
-					baseCommitSha: prepared.baseCommitSha,
-					workspacePath: prepared.workspacePath,
-					title: auth.session.title,
-				},
-			});
 		}),
 
 	commit: protectedProcedure
@@ -294,7 +330,7 @@ export const sessionGitRouter = createTRPCRouter({
 						commit: () =>
 							commitSessionChanges({
 								env: ctx.env,
-								sandboxId: resolved.sandboxId,
+								sandbox: resolved.sandbox,
 								installationId: resolved.installationId,
 								githubRepo: resolved.githubRepo,
 								session: resolved.session,
@@ -307,7 +343,7 @@ export const sessionGitRouter = createTRPCRouter({
 					env: ctx.env,
 					db: resolved.db,
 					project: resolved.project,
-					sandboxId: resolved.sandboxId,
+					sandbox: resolved.sandbox,
 					installationId: resolved.installationId,
 					githubRepo: resolved.githubRepo,
 					session: resolved.session,
@@ -345,7 +381,7 @@ export const sessionGitRouter = createTRPCRouter({
 			});
 			const status = await getSessionGitStatus({
 				env: ctx.env,
-				sandboxId: resolved.sandboxId,
+				sandbox: resolved.sandbox,
 				installationId: resolved.installationId,
 				githubRepo: resolved.githubRepo,
 				session: resolved.session,
@@ -365,7 +401,7 @@ export const sessionGitRouter = createTRPCRouter({
 					run: () =>
 						syncSessionBranch({
 							env: ctx.env,
-							sandboxId: resolved.sandboxId,
+							sandbox: resolved.sandbox,
 							installationId: resolved.installationId,
 							githubRepo: resolved.githubRepo,
 							session: resolved.session,
@@ -407,7 +443,7 @@ export const sessionGitRouter = createTRPCRouter({
 			});
 			const status = await getSessionGitStatus({
 				env: ctx.env,
-				sandboxId: resolved.sandboxId,
+				sandbox: resolved.sandbox,
 				installationId: resolved.installationId,
 				githubRepo: resolved.githubRepo,
 				session: resolved.session,
@@ -435,7 +471,7 @@ export const sessionGitRouter = createTRPCRouter({
 					run: () =>
 						pushSessionBranch({
 							env: ctx.env,
-							sandboxId: resolved.sandboxId,
+							sandbox: resolved.sandbox,
 							installationId: resolved.installationId,
 							githubRepo: resolved.githubRepo,
 							session: resolved.session,
@@ -478,7 +514,7 @@ export const sessionGitRouter = createTRPCRouter({
 					const outcome = await runPushThenOpenPullRequest({
 						ctx: {
 							env: ctx.env,
-							sandboxId: resolved.sandboxId,
+							sandbox: resolved.sandbox,
 							installationId: resolved.installationId,
 							githubRepo: resolved.githubRepo,
 							session: resolved.session,
@@ -532,7 +568,7 @@ export const sessionGitRouter = createTRPCRouter({
 					env: ctx.env,
 					db: resolved.db,
 					project: resolved.project,
-					sandboxId: resolved.sandboxId,
+					sandbox: resolved.sandbox,
 					installationId: resolved.installationId,
 					githubRepo: resolved.githubRepo,
 					session: resolved.session,

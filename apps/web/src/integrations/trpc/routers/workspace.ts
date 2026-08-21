@@ -10,14 +10,16 @@ import {
 	messageCursorFromRow,
 	messageCursorOlderThanInputs,
 } from "#/lib/message-cursor";
-import {
-	checkProjectSandbox,
-	provisionProjectSandbox,
-} from "#/lib/project-sandbox";
+import { provisionProjectSandbox } from "#/lib/project-sandbox";
 import {
 	archiveSessionWithPreviewCleanup,
 	SessionPreviewError,
 } from "#/lib/session-preview";
+import {
+	ensureWorkspaceRuntimeReady,
+	observeWorkspaceRuntime,
+	WorkspaceRuntimeError,
+} from "#/lib/workspace-runtime";
 import { loadOwnedActiveSession } from "#/lib/workspace-session";
 import { createTRPCRouter, protectedProcedure } from "../init";
 
@@ -112,15 +114,17 @@ export const workspaceRouter = createTRPCRouter({
 		)
 		.query(async ({ ctx, input }) => {
 			const db = createDb(ctx.env);
-			const project = await loadProjectOrThrow({
+			await loadProjectOrThrow({
 				db,
 				projectId: input.projectId,
 				userId: ctx.user.id,
 			});
-			const result = await checkProjectSandbox({
+			const result = await observeWorkspaceRuntime({
 				db,
 				env: ctx.env,
-				project,
+				userId: ctx.user.id,
+				projectId: input.projectId,
+				sessionId: input.sessionId,
 			});
 
 			return await loadSessionsAndBuildView({
@@ -151,6 +155,50 @@ export const workspaceRouter = createTRPCRouter({
 			});
 
 			try {
+				if (input.sessionId) {
+					await ensureWorkspaceRuntimeReady({
+						env: ctx.env,
+						db,
+						userId: ctx.user.id,
+						projectId: input.projectId,
+						sessionId: input.sessionId,
+					});
+					const observed = await observeWorkspaceRuntime({
+						db,
+						env: ctx.env,
+						userId: ctx.user.id,
+						projectId: input.projectId,
+						sessionId: input.sessionId,
+					});
+					return await loadSessionsAndBuildView({
+						db,
+						projectId: input.projectId,
+						userId: ctx.user.id,
+						sessionId: input.sessionId,
+						sandboxProject: observed.project,
+						sandboxState: observed.state,
+						restoreFailed: observed.state === "failed",
+					});
+				}
+
+				if (!project.sandboxId) {
+					const observed = await observeWorkspaceRuntime({
+						db,
+						env: ctx.env,
+						userId: ctx.user.id,
+						projectId: input.projectId,
+					});
+					return await loadSessionsAndBuildView({
+						db,
+						projectId: input.projectId,
+						userId: ctx.user.id,
+						sessionId: input.sessionId,
+						sandboxProject: observed.project,
+						sandboxState: observed.state,
+						restoreFailed: observed.state === "failed",
+					});
+				}
+
 				const result = await provisionProjectSandbox({
 					db,
 					env: ctx.env,
@@ -168,6 +216,13 @@ export const workspaceRouter = createTRPCRouter({
 						result.state === "failed" || result.project.status === "failed",
 				});
 			} catch (error) {
+				if (error instanceof WorkspaceRuntimeError) {
+					throw new TRPCError({
+						code:
+							error.code === "not_found" ? "NOT_FOUND" : "PRECONDITION_FAILED",
+						message: error.message,
+					});
+				}
 				const current = await loadProjectOrThrow({
 					db,
 					projectId: input.projectId,
@@ -227,15 +282,17 @@ export const workspaceRouter = createTRPCRouter({
 			}
 
 			// Follow-up via check only; client auto-provisions on needs_restore.
-			const reloaded = await loadProjectOrThrow({
+			await loadProjectOrThrow({
 				db,
 				projectId: input.projectId,
 				userId: ctx.user.id,
 			});
-			const result = await checkProjectSandbox({
+			const result = await observeWorkspaceRuntime({
 				db,
 				env: ctx.env,
-				project: reloaded,
+				userId: ctx.user.id,
+				projectId: input.projectId,
+				sessionId: input.sessionId,
 			});
 
 			return await loadSessionsAndBuildView({

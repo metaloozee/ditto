@@ -5,7 +5,6 @@ import { projects } from "#/db/schema";
 import type { AgentGitJwtClaims } from "#/lib/agent-git-jwt";
 import { GitSecretPolicyError } from "#/lib/git-secret-policy";
 import { decryptEnvVars } from "#/lib/project-env-vars";
-import { provisionProjectSandbox } from "#/lib/project-sandbox";
 import {
 	getSessionGitStatus,
 	openSessionPullRequest,
@@ -15,7 +14,10 @@ import {
 	runPushThenOpenPullRequest,
 	SessionGitExportPreconditionError,
 } from "#/lib/session-git-export";
-import { ensureSessionWorkspaceReady } from "#/lib/session-worktree";
+import {
+	type WorkspaceRuntimeLease,
+	withWorkspaceRuntimeLease,
+} from "#/lib/workspace-runtime";
 import { loadOwnedActiveSession } from "#/lib/workspace-session";
 
 export const agentGitBodySchema = z.object({
@@ -38,17 +40,14 @@ export class AgentGitHttpError extends Error {
 }
 
 export type ResolvedAgentGitContext = {
+	db: ReturnType<typeof createDb>;
+	userId: string;
 	projectId: string;
 	githubRepo: string;
 	installationId: number;
-	sandboxId: string;
-	session: {
-		id: string;
-		branchName: string;
-		baseCommitSha: string;
-		workspacePath: string;
-		title?: string | null;
-	};
+	claimedSandboxId: string;
+	sessionId: string;
+	sessionTitle: string | null;
 	/**
 	 * Decrypted project env values for push preflight only.
 	 * Server memory — never include in client/agent responses.
@@ -83,12 +82,8 @@ export async function resolveAgentGitContext(options: {
 		);
 	}
 
-	if (project.status !== "ready" || !project.sandboxId) {
+	if (project.status !== "ready") {
 		throw new AgentGitHttpError(409, "Project sandbox is not ready.");
-	}
-
-	if (project.sandboxId !== options.claims.sandboxId) {
-		throw new AgentGitHttpError(403, "Sandbox does not match this agent run.");
 	}
 
 	const session = await loadOwnedActiveSession({
@@ -102,37 +97,6 @@ export async function resolveAgentGitContext(options: {
 		throw new AgentGitHttpError(404, "Session not found.");
 	}
 
-	const PROVISION_SUCCESS = new Set([
-		"connected",
-		"restored_from_backup",
-		"recreated_from_github",
-	]);
-	const ensured = await provisionProjectSandbox({
-		db: options.db,
-		env: options.env,
-		project,
-	});
-	if (!PROVISION_SUCCESS.has(ensured.state)) {
-		throw new AgentGitHttpError(409, "Project sandbox is not ready.");
-	}
-
-	const ready = await ensureSessionWorkspaceReady({
-		env: options.env,
-		sandboxId: project.sandboxId,
-		sessionId: session.id,
-		githubRepo: project.githubRepo,
-		installationId: project.githubInstallationId,
-		projectId: options.claims.projectId,
-		userId: options.claims.userId,
-		db: options.db,
-		existing: {
-			branchName: session.branchName,
-			baseCommitSha: session.baseCommitSha,
-			workspacePath: session.workspacePath,
-		},
-		lock: "assumeHeld",
-	});
-
 	const envVars = await decryptEnvVars(
 		project.envVars,
 		options.env.BETTER_AUTH_SECRET,
@@ -140,17 +104,14 @@ export async function resolveAgentGitContext(options: {
 	const knownSecrets = envVars.map((envVar) => envVar.value);
 
 	return {
+		db: options.db,
+		userId: options.claims.userId,
 		projectId: project.id,
 		githubRepo: project.githubRepo,
 		installationId: project.githubInstallationId,
-		sandboxId: project.sandboxId,
-		session: {
-			id: session.id,
-			branchName: ready.branchName,
-			baseCommitSha: ready.baseCommitSha,
-			workspacePath: ready.workspacePath,
-			title: session.title,
-		},
+		claimedSandboxId: options.claims.sandboxId,
+		sessionId: session.id,
+		sessionTitle: session.title,
 		knownSecrets,
 	};
 }
@@ -170,81 +131,101 @@ export async function dispatchAgentGitAction(options: {
 	resolved: ResolvedAgentGitContext;
 	body: AgentGitBody;
 }): Promise<unknown> {
-	// knownSecrets stay server-side for push preflight; never on status responses.
-	const gitCtx = {
-		env: options.env,
-		sandboxId: options.resolved.sandboxId,
-		installationId: options.resolved.installationId,
-		githubRepo: options.resolved.githubRepo,
-		session: options.resolved.session,
-		knownSecrets: options.resolved.knownSecrets,
-		bypassWorkspaceLock: true,
-	};
-
-	const statusCtx = {
-		env: options.env,
-		sandboxId: options.resolved.sandboxId,
-		installationId: options.resolved.installationId,
-		githubRepo: options.resolved.githubRepo,
-		session: options.resolved.session,
-	};
-
-	if (options.body.action === "status") {
-		return await getSessionGitStatus(statusCtx);
-	}
-
-	if (options.body.action === "openPullRequest") {
-		try {
-			return await runPushThenOpenPullRequest({
-				ctx: {
-					env: options.env,
-					sandboxId: options.resolved.sandboxId,
-					installationId: options.resolved.installationId,
-					githubRepo: options.resolved.githubRepo,
-					session: options.resolved.session,
-					knownSecrets: options.resolved.knownSecrets,
-					bypassWorkspaceLock: true,
-				},
-				deps: {
-					getSessionGitStatus,
-					pushSessionBranch,
-					openSessionPullRequest,
-				},
-				title: options.body.title,
-				body: options.body.body,
-				baseBranch: options.body.baseBranch,
-				existingPullRequestPolicy: "open",
-			});
-		} catch (error) {
-			if (error instanceof SessionGitExportPreconditionError) {
-				throw new AgentGitHttpError(409, error.message);
+	return await withWorkspaceRuntimeLease(
+		{
+			env: options.env,
+			db: options.resolved.db,
+			userId: options.resolved.userId,
+			projectId: options.resolved.projectId,
+			sessionId: options.resolved.sessionId,
+			purpose: "mutating_git",
+			lock: "assumeHeld",
+		},
+		async (lease: WorkspaceRuntimeLease) => {
+			if (!lease.matchesSandboxClaim(options.resolved.claimedSandboxId)) {
+				throw new AgentGitHttpError(
+					403,
+					"Sandbox does not match this agent run.",
+				);
 			}
-			if (error instanceof GitSecretPolicyError) {
-				throw new AgentGitHttpError(409, error.message);
-			}
-			throw new AgentGitHttpError(
-				502,
-				error instanceof Error ? error.message : "Failed to open pull request.",
-			);
-		}
-	}
+			const session = {
+				id: options.resolved.sessionId,
+				branchName: lease.branchName,
+				baseCommitSha: lease.baseCommitSha,
+				workspacePath: lease.workspacePath,
+				title: options.resolved.sessionTitle,
+			};
+			const gitCtx = {
+				env: options.env,
+				sandbox: lease.sandbox,
+				installationId: options.resolved.installationId,
+				githubRepo: options.resolved.githubRepo,
+				session,
+				knownSecrets: options.resolved.knownSecrets,
+				bypassWorkspaceLock: true,
+			};
+			const statusCtx = {
+				env: options.env,
+				sandbox: lease.sandbox,
+				installationId: options.resolved.installationId,
+				githubRepo: options.resolved.githubRepo,
+				session,
+			};
 
-	// standalone push
-	const status = await getSessionGitStatus(statusCtx);
-	if (status.dirty) {
-		throw new AgentGitHttpError(409, "Commit local changes before pushing.");
-	}
-	if (status.workflow.kind !== "push") {
-		throw new AgentGitHttpError(
-			409,
-			status.workflow.kind === "sync"
-				? `Sync the latest ${status.workflow.baseBranch} before pushing.`
-				: "Nothing to push for this branch.",
-		);
-	}
-	try {
-		return await pushSessionBranch(gitCtx);
-	} catch (error) {
-		mapPushError(error);
-	}
+			if (options.body.action === "status") {
+				return await getSessionGitStatus(statusCtx);
+			}
+
+			if (options.body.action === "openPullRequest") {
+				try {
+					return await runPushThenOpenPullRequest({
+						ctx: gitCtx,
+						deps: {
+							getSessionGitStatus,
+							pushSessionBranch,
+							openSessionPullRequest,
+						},
+						title: options.body.title,
+						body: options.body.body,
+						baseBranch: options.body.baseBranch,
+						existingPullRequestPolicy: "open",
+					});
+				} catch (error) {
+					if (error instanceof SessionGitExportPreconditionError) {
+						throw new AgentGitHttpError(409, error.message);
+					}
+					if (error instanceof GitSecretPolicyError) {
+						throw new AgentGitHttpError(409, error.message);
+					}
+					throw new AgentGitHttpError(
+						502,
+						error instanceof Error
+							? error.message
+							: "Failed to open pull request.",
+					);
+				}
+			}
+
+			const status = await getSessionGitStatus(statusCtx);
+			if (status.dirty) {
+				throw new AgentGitHttpError(
+					409,
+					"Commit local changes before pushing.",
+				);
+			}
+			if (status.workflow.kind !== "push") {
+				throw new AgentGitHttpError(
+					409,
+					status.workflow.kind === "sync"
+						? `Sync the latest ${status.workflow.baseBranch} before pushing.`
+						: "Nothing to push for this branch.",
+				);
+			}
+			try {
+				return await pushSessionBranch(gitCtx);
+			} catch (error) {
+				mapPushError(error);
+			}
+		},
+	);
 }
