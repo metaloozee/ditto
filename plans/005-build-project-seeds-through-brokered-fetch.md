@@ -1,8 +1,12 @@
 # Build project seeds through brokered Git fetch
 
-Status: TODO
+Status: DONE
 
 Written against commit `62c99b4`. Complete plans 003 and 004 first.
+
+Executed 2026-08-21 from `c5a8f73` (plans 001–004 already on HEAD). Advisor
+verdict: accept. Merged onto `brain` as `e7dc34b`. Spec digest unchanged:
+`f104e9ba66b97ce8f5a196a08854fa7819cfd7e37186f8b46cfb429c2124c5b3`.
 
 Before editing, compare the current commit and target spec with plan 001's
 recorded values. Read drift in project import, Git, authority, schema, and
