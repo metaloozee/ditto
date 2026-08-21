@@ -2,11 +2,33 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const proxyToSandboxMock = vi.hoisted(() => vi.fn());
 const handlerFetchMock = vi.hoisted(() => vi.fn());
+const handleOutboundMock = vi.hoisted(() => vi.fn());
 
-vi.mock("@cloudflare/sandbox", () => ({
-	proxyToSandbox: proxyToSandboxMock,
-	Sandbox: class Sandbox {},
-}));
+const outboundHandlersRegistry = vi.hoisted(() => {
+	const registry = new Map<string, Record<string, unknown>>();
+	return registry;
+});
+
+vi.mock("@cloudflare/sandbox", () => {
+	class BaseSandbox {
+		static get outboundHandlers(): Record<string, unknown> | undefined {
+			return outboundHandlersRegistry.get(BaseSandbox.name);
+		}
+		static set outboundHandlers(handlers: Record<string, unknown>) {
+			const existing = outboundHandlersRegistry.get(BaseSandbox.name) ?? {};
+			outboundHandlersRegistry.set(BaseSandbox.name, {
+				...existing,
+				...handlers,
+			});
+		}
+	}
+	class ContainerProxy {}
+	return {
+		proxyToSandbox: proxyToSandboxMock,
+		Sandbox: BaseSandbox,
+		ContainerProxy,
+	};
+});
 
 vi.mock("@tanstack/react-start/server-entry", () => ({
 	default: {
@@ -14,7 +36,12 @@ vi.mock("@tanstack/react-start/server-entry", () => ({
 	},
 }));
 
-const { default: server } = await import("./server");
+vi.mock("#/lib/sandbox-egress-broker", () => ({
+	handleOutbound: handleOutboundMock,
+}));
+
+const serverModule = await import("./server");
+const { default: server, Sandbox, ContainerProxy } = serverModule;
 
 const env = { Sandbox: {} } as Env;
 
@@ -108,5 +135,28 @@ describe("server fetch routing", () => {
 
 		expect(await response.text()).toBe("app");
 		expect(handlerFetchMock).toHaveBeenCalledOnce();
+	});
+});
+
+describe("Sandbox subclass exports", () => {
+	it("exports ContainerProxy from the Worker entrypoint", () => {
+		expect(ContainerProxy).toBeTypeOf("function");
+	});
+
+	it("assigns Sandbox.outboundHandlers via setter (not only a class field)", () => {
+		expect(Sandbox.outboundHandlers?.dittoCatchAll).toBeTypeOf("function");
+		expect(Sandbox.name).toBe("Sandbox");
+	});
+
+	it("enables HTTPS intercept without disabling legacy internet", () => {
+		const constructed = new (
+			Sandbox as unknown as new () => {
+				enableInternet: boolean | undefined;
+				interceptHttps: boolean;
+			}
+		)();
+		expect(constructed.interceptHttps).toBe(true);
+		// Legacy project sandboxes keep direct internet until they set a catch-all.
+		expect(constructed.enableInternet).not.toBe(false);
 	});
 });

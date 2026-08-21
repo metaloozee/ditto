@@ -1,7 +1,36 @@
-import { proxyToSandbox, type SandboxEnv } from "@cloudflare/sandbox";
+import {
+	Sandbox as BaseSandbox,
+	ContainerProxy,
+	proxyToSandbox,
+	type SandboxEnv,
+} from "@cloudflare/sandbox";
 import handler from "@tanstack/react-start/server-entry";
+import { handleOutbound } from "#/lib/sandbox-egress-broker";
 
-export { Sandbox } from "@cloudflare/sandbox";
+export class Sandbox extends BaseSandbox {
+	// Leave internet enabled for legacy project sandboxes that never call
+	// setOutboundHandler. Builders attach dittoCatchAll at runtime instead.
+	interceptHttps = true;
+}
+
+async function dittoCatchAll(
+	request: Request,
+	env: Env,
+	ctx: {
+		containerId: string;
+		className: string;
+		params: { identityId: string; lifecycleGeneration: number };
+	},
+): Promise<Response> {
+	return handleOutbound(request, env, ctx);
+}
+
+// Class-field static outboundHandlers does not populate the SDK registry.
+Sandbox.outboundHandlers = {
+	dittoCatchAll,
+};
+
+export { ContainerProxy };
 
 const PREVIEW_ZONE_SUFFIX = ".ayn.wtf";
 

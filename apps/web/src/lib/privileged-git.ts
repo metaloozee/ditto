@@ -141,6 +141,23 @@ export function buildCredentialRedactionSecrets(
 	return [token, rawUserPass, encoded, header];
 }
 
+function buildClosedGitChildEnvBase(homeDir: string): Record<string, string> {
+	const emptyConfig = `${homeDir}/.gitconfig-empty`;
+	return {
+		PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		HOME: homeDir,
+		XDG_CONFIG_HOME: `${homeDir}/.config`,
+		LANG: "C",
+		LC_ALL: "C",
+		GIT_TERMINAL_PROMPT: "0",
+		GIT_CONFIG_NOSYSTEM: "1",
+		GIT_CONFIG_GLOBAL: emptyConfig,
+		GIT_TRACE: "0",
+		GIT_TRACE_SETUP: "0",
+		GIT_CURL_VERBOSE: "0",
+	};
+}
+
 /**
  * Exact Git child environment for the token-bearing network command.
  * Does not merge any inherited process environment.
@@ -156,21 +173,11 @@ export function buildPrivilegedGitChildEnv(options: {
 
 	const homeDir = options.homeDir;
 	const { header } = encodeBasicAuthHeader(options.token);
+	const base = buildClosedGitChildEnvBase(homeDir);
 	const hooksPath = `${homeDir}/hooks-disabled`;
-	const emptyConfig = `${homeDir}/.gitconfig-empty`;
 
 	return {
-		PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-		HOME: homeDir,
-		XDG_CONFIG_HOME: `${homeDir}/.config`,
-		LANG: "C",
-		LC_ALL: "C",
-		GIT_TERMINAL_PROMPT: "0",
-		GIT_CONFIG_NOSYSTEM: "1",
-		GIT_CONFIG_GLOBAL: emptyConfig,
-		GIT_TRACE: "0",
-		GIT_TRACE_SETUP: "0",
-		GIT_CURL_VERBOSE: "0",
+		...base,
 		GIT_CONFIG_COUNT: "7",
 		GIT_CONFIG_KEY_0: "http.https://github.com/.extraHeader",
 		GIT_CONFIG_VALUE_0: header,
@@ -186,6 +193,47 @@ export function buildPrivilegedGitChildEnv(options: {
 		GIT_CONFIG_VALUE_5: "false",
 		GIT_CONFIG_KEY_6: "core.askPass",
 		GIT_CONFIG_VALUE_6: "",
+	};
+}
+
+/** CA file used by Cloudflare HTTPS interception inside the sandbox image. */
+export const CLOUDFLARE_CONTAINERS_CA_PATH =
+	"/etc/cloudflare/certs/cloudflare-containers-ca.crt";
+
+/**
+ * Credential-free Git child environment for brokered network commands.
+ * The Worker egress broker injects the installation token on the upstream hop.
+ * Protocol v1 avoids stock git's v2 ls-refs namespace probes that would fail the
+ * exact-ref contract; the contract still accepts a narrow v2 ls-refs.
+ */
+export function buildBrokeredGitChildEnv(options: {
+	homeDir: string;
+	/** Inherited env snapshot used only to prove sentinels are dropped in tests. */
+	inheritedEnv?: Record<string, string | undefined>;
+}): Record<string, string> {
+	void options.inheritedEnv;
+	const homeDir = options.homeDir;
+	const base = buildClosedGitChildEnvBase(homeDir);
+	return {
+		...base,
+		GIT_SSL_CAINFO: CLOUDFLARE_CONTAINERS_CA_PATH,
+		GIT_CONFIG_COUNT: "8",
+		GIT_CONFIG_KEY_0: "protocol.allow",
+		GIT_CONFIG_VALUE_0: "never",
+		GIT_CONFIG_KEY_1: "protocol.https.allow",
+		GIT_CONFIG_VALUE_1: "always",
+		GIT_CONFIG_KEY_2: "core.hooksPath",
+		GIT_CONFIG_VALUE_2: `${homeDir}/hooks-disabled`,
+		GIT_CONFIG_KEY_3: "credential.helper",
+		GIT_CONFIG_VALUE_3: "",
+		GIT_CONFIG_KEY_4: "http.followRedirects",
+		GIT_CONFIG_VALUE_4: "false",
+		GIT_CONFIG_KEY_5: "core.askPass",
+		GIT_CONFIG_VALUE_5: "",
+		GIT_CONFIG_KEY_6: "protocol.version",
+		GIT_CONFIG_VALUE_6: "1",
+		GIT_CONFIG_KEY_7: "http.sslCAInfo",
+		GIT_CONFIG_VALUE_7: CLOUDFLARE_CONTAINERS_CA_PATH,
 	};
 }
 
@@ -506,6 +554,159 @@ async function runIsolatedNetworkGit(
 			),
 		);
 	}
+}
+
+async function runBrokeredNetworkGit(
+	sandbox: PrivilegedGitSandbox,
+	options: {
+		tempDir: string;
+		launcherPath: string;
+		gitArgs: string[];
+		errorPrefix: string;
+	},
+): Promise<void> {
+	assertTrustedBinPath(PRIVILEGED_GIT_BIN, "git");
+	assertTrustedBinPath(PRIVILEGED_NODE_BIN, "node");
+
+	const homeDir = `${options.tempDir}/home`;
+	const childEnv = buildBrokeredGitChildEnv({ homeDir });
+
+	const command = [
+		quoteGitHubExportShellArg(PRIVILEGED_NODE_BIN),
+		quoteGitHubExportShellArg(options.launcherPath),
+	].join(" ");
+
+	const result = await sandbox.exec(command, {
+		cwd: options.tempDir,
+		timeout: PRIVILEGED_GIT_TIMEOUT_MS,
+		env: {
+			DITTO_PRIVILEGED_GIT_BIN: PRIVILEGED_GIT_BIN,
+			DITTO_PRIVILEGED_GIT_ARGS: JSON.stringify(options.gitArgs),
+			DITTO_PRIVILEGED_GIT_CHILD_ENV: JSON.stringify(childEnv),
+			DITTO_PRIVILEGED_GIT_CWD: options.tempDir,
+		},
+	});
+
+	if (!result.success) {
+		const output = [result.stderr.trim(), result.stdout.trim()]
+			.filter(Boolean)
+			.join("\n");
+		throw new Error(
+			formatPrivilegedGitError(
+				options.errorPrefix,
+				output,
+				[],
+				result.exitCode,
+			),
+		);
+	}
+}
+
+/**
+ * Fetch one branch over HTTPS into a fresh temp bare repo, then materialize it
+ * into destinationCwd without any GitHub credentials in the sandbox.
+ * The Worker egress broker authenticates the network hop.
+ */
+export async function fetchGitHubBranchBrokered(options: {
+	sandbox: PrivilegedGitSandbox;
+	githubRepo: string;
+	branchName: string;
+	destinationCwd: string;
+}): Promise<{
+	branchName: string;
+	headSha: string;
+	refs: ValidatedGitBranchRefs;
+}> {
+	assertGithubRepoSlug(options.githubRepo);
+	assertAbsoluteGitPath(options.destinationCwd, "Destination");
+	const refs = await validateGitBranchRefs(options.sandbox, options.branchName);
+	const publicUrl = publicGitHubRepoUrl(options.githubRepo);
+	const secrets: SecretBag = { current: [] };
+
+	const headSha = await withTempBareRepo(
+		options.sandbox,
+		secrets,
+		async (tempDir, launcherPath) => {
+			await runBrokeredNetworkGit(options.sandbox, {
+				tempDir,
+				launcherPath,
+				gitArgs: ["fetch", "--no-tags", publicUrl, refs.isolatedFetchRefspec],
+				errorPrefix: "Failed to fetch branch from GitHub",
+			});
+
+			const isolatedSha = await readStdoutOrThrow(
+				options.sandbox,
+				`git --git-dir=${quoteGitHubExportShellArg(tempDir)} rev-parse ${quoteGitHubExportShellArg(TEMP_REF)}`,
+				{
+					errorPrefix: "Failed to resolve fetched commit",
+				},
+			);
+			if (!/^[0-9a-f]{40}$/i.test(isolatedSha)) {
+				throw new Error("Fetched commit SHA is malformed.");
+			}
+
+			const quotedDest = quoteGitHubExportShellArg(options.destinationCwd);
+			await execOrThrow(
+				options.sandbox,
+				[`mkdir -p ${quotedDest}`, `git init --template= ${quotedDest}`].join(
+					" && ",
+				),
+				{
+					errorPrefix: "Failed to initialize destination workspace",
+				},
+			);
+
+			await execOrThrow(
+				options.sandbox,
+				[
+					"git",
+					"fetch",
+					"--no-tags",
+					quoteGitHubExportShellArg(tempDir),
+					quoteGitHubExportShellArg(`${isolatedSha}:${refs.headRef}`),
+				].join(" "),
+				{
+					cwd: options.destinationCwd,
+					errorPrefix: "Failed to import fetched commit into workspace",
+				},
+			);
+
+			await execOrThrow(
+				options.sandbox,
+				[
+					`git checkout --force ${quoteGitHubExportShellArg(refs.branchName)}`,
+					`git remote remove origin 2>/dev/null || true`,
+					`git remote add origin ${quoteGitHubExportShellArg(publicUrl)}`,
+				].join(" && "),
+				{
+					cwd: options.destinationCwd,
+					errorPrefix: "Failed to check out fetched branch",
+				},
+			);
+
+			const destSha = await readStdoutOrThrow(
+				options.sandbox,
+				"git rev-parse HEAD",
+				{
+					cwd: options.destinationCwd,
+					errorPrefix: "Failed to verify workspace HEAD",
+				},
+			);
+			if (destSha !== isolatedSha) {
+				throw new Error(
+					"Destination HEAD does not match the isolated fetch SHA.",
+				);
+			}
+
+			return isolatedSha;
+		},
+	);
+
+	return {
+		branchName: refs.branchName,
+		headSha,
+		refs,
+	};
 }
 
 /**

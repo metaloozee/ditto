@@ -15,8 +15,8 @@ import {
 	sanitizeEnvVars,
 	toEnvVarKeys,
 } from "#/lib/project-env-vars";
-import { serializeSandboxBackup } from "#/lib/sandbox-backup";
-import { bootstrapSandbox, destroySandbox } from "#/lib/sandbox-bootstrap";
+import { buildProjectSeed } from "#/lib/project-seed";
+import { destroySandbox } from "#/lib/sandbox-bootstrap";
 import { redactSecrets } from "#/lib/secret-redaction";
 import {
 	deleteProjectWithPreviewFence,
@@ -78,21 +78,19 @@ export const projectsRouter = createTRPCRouter({
 			const db = createDb(ctx.env);
 			const projectId = nanoid();
 
-			const [project] = await db
-				.insert(projects)
-				.values({
-					id: projectId,
-					name: projectName,
-					description: input.description,
-					userId: ctx.user.id,
-					githubRepo: githubImport?.repo,
-					githubInstallationId: githubImport?.installationId,
-					status: githubImport ? "provisioning" : "ready",
-					envVars: encryptedEnvVars,
-				})
-				.returning();
-
 			if (!githubImport) {
+				const [project] = await db
+					.insert(projects)
+					.values({
+						id: projectId,
+						name: projectName,
+						description: input.description,
+						userId: ctx.user.id,
+						status: "ready",
+						envVars: encryptedEnvVars,
+					})
+					.returning();
+
 				const {
 					envVars: _envVars,
 					sandboxBackup: _sandboxBackup,
@@ -102,36 +100,25 @@ export const projectsRouter = createTRPCRouter({
 				return projectResponse;
 			}
 
-			const sandboxId = crypto.randomUUID().toLowerCase();
-
 			try {
-				const { backup } = await bootstrapSandbox({
+				const { project } = await buildProjectSeed({
 					env: ctx.env,
+					db,
+					userId: ctx.user.id,
 					projectId,
-					sandboxId,
+					name: projectName,
+					description: input.description,
 					githubRepo: githubImport.repo,
 					installationId: githubImport.installationId,
-					userId: ctx.user.id,
+					encryptedEnvVars,
 				});
-
-				const [updatedProject] = await db
-					.update(projects)
-					.set({
-						sandboxId,
-						sandboxBackup: serializeSandboxBackup(backup),
-						sandboxBackupCreatedAt: sql`(unixepoch())`,
-						status: "ready",
-						updatedAt: sql`(unixepoch())`,
-					})
-					.where(eq(projects.id, projectId))
-					.returning();
 
 				const {
 					envVars: _envVars,
 					sandboxBackup: _sandboxBackup,
 					sandboxBackupCreatedAt: _sandboxBackupCreatedAt,
 					...projectResponse
-				} = updatedProject;
+				} = project;
 				return projectResponse;
 			} catch (err) {
 				await db
@@ -150,7 +137,7 @@ export const projectsRouter = createTRPCRouter({
 									err.message,
 									sanitizedEnvVars.map((envVar) => envVar.value),
 								)
-							: "Failed to provision sandbox. Please try again.",
+							: "Failed to build project seed. Please try again.",
 				});
 			}
 		}),

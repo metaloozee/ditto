@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { quoteGitHubExportShellArg } from "#/lib/github-export";
 import {
+	buildBrokeredGitChildEnv,
 	buildCredentialRedactionSecrets,
 	buildPrivilegedGitChildEnv,
+	CLOUDFLARE_CONTAINERS_CA_PATH,
+	fetchGitHubBranchBrokered,
 	fetchGitHubBranchIsolated,
 	PRIVILEGED_GIT_LAUNCHER_SOURCE,
 	PRIVILEGED_NODE_BIN,
@@ -226,6 +229,47 @@ function defaultFetchHandler(
 	}
 	throw new Error(`unexpected command: ${command}`);
 }
+
+describe("buildBrokeredGitChildEnv", () => {
+	it("contains no token, x-access-token, or Authorization header", () => {
+		const env = buildBrokeredGitChildEnv({
+			homeDir: "/tmp/home",
+			inheritedEnv: {
+				HTTP_PROXY: "http://evil",
+				DITTO_SENTINEL: "nope",
+				GIT_ASKPASS: "/evil",
+			},
+		});
+		const serialized = JSON.stringify(env);
+		expect(serialized).not.toMatch(/ghs_|x-access-token|Authorization/i);
+		expect(env).not.toHaveProperty("DITTO_SENTINEL");
+		expect(env).not.toHaveProperty("HTTP_PROXY");
+		expect(env.GIT_CONFIG_NOSYSTEM).toBe("1");
+		expect(env.GIT_CONFIG_VALUE_0).toBe("never");
+		expect(env.GIT_CONFIG_VALUE_3).toBe("");
+		expect(env.GIT_CONFIG_VALUE_4).toBe("false");
+		expect(env.GIT_CONFIG_VALUE_6).toBe("1");
+		expect(env.GIT_SSL_CAINFO).toBe(CLOUDFLARE_CONTAINERS_CA_PATH);
+		expect(env.GIT_CONFIG_VALUE_7).toBe(CLOUDFLARE_CONTAINERS_CA_PATH);
+		expect(env.GIT_CONFIG_KEY_0).toBe("protocol.allow");
+		expect(
+			Object.values(env).every(
+				(value) => !/authorization|x-access-token/i.test(value),
+			),
+		).toBe(true);
+	});
+
+	it("does not put the intercept CA on the token-bearing child env", () => {
+		const tokenEnv = buildPrivilegedGitChildEnv({
+			token: TOKEN,
+			homeDir: "/tmp/home",
+		});
+		expect(tokenEnv).not.toHaveProperty("GIT_SSL_CAINFO");
+		expect(Object.values(tokenEnv).join("\n")).not.toContain(
+			CLOUDFLARE_CONTAINERS_CA_PATH,
+		);
+	});
+});
 
 describe("buildPrivilegedGitChildEnv", () => {
 	it("drops inherited sentinel variables and clears proxy/helper injection", () => {
@@ -949,5 +993,98 @@ describe("launcher source hygiene", () => {
 		expect(source).toContain("DITTO_PRIVILEGED_GIT_CWD");
 		expect(source).toContain("cwd");
 		expect(source).toContain("/tmp/ditto-privileged-git-");
+	});
+});
+
+describe("fetchGitHubBranchBrokered", () => {
+	function brokeredFetchHandler(
+		command: string,
+		options?: ExecCall["options"],
+	): ReturnType<typeof ok> {
+		if (command.startsWith("git check-ref-format ")) {
+			return ok("");
+		}
+		if (command.includes("mkdir -m 0700") || command.includes("base64 -d")) {
+			return ok("");
+		}
+		if (command.includes("git init --bare")) {
+			return ok("");
+		}
+		if (command.includes("config --local --list")) {
+			return ok(
+				[
+					"core.repositoryformatversion=0",
+					"core.bare=true",
+					"core.hookspath=/tmp/hooks",
+					"credential.helper=",
+					"core.askpass=",
+				].join("\n"),
+			);
+		}
+		if (isNetworkLauncherCommand(command)) {
+			return ok("");
+		}
+		if (
+			command.includes("rev-parse") &&
+			command.includes("refs/ditto-isolated") &&
+			command.includes("--git-dir=")
+		) {
+			return ok(`${FETCH_SHA}\n`);
+		}
+		if (command.includes("git init --template=") && command.includes("mkdir")) {
+			return ok("");
+		}
+		if (
+			command.startsWith("git fetch --no-tags ") &&
+			command.includes("/tmp/ditto-privileged-git-")
+		) {
+			expect(options?.cwd).toBe(WORKSPACE);
+			expect(options?.env).toBeUndefined();
+			return ok("");
+		}
+		if (command.includes("git checkout --force")) {
+			expect(options?.cwd).toBe(WORKSPACE);
+			return ok("");
+		}
+		if (command === "git rev-parse HEAD") {
+			expect(options?.cwd).toBe(WORKSPACE);
+			return ok(`${FETCH_SHA}\n`);
+		}
+		if (command.startsWith("rm -rf -- ")) {
+			return ok("");
+		}
+		throw new Error(`unexpected command: ${command}`);
+	}
+
+	it("network child env has no token, x-access-token, or Authorization", async () => {
+		const { sandbox, calls } = makeSandbox((command, options) =>
+			brokeredFetchHandler(command, options),
+		);
+
+		const result = await fetchGitHubBranchBrokered({
+			sandbox,
+			githubRepo: "acme/repo",
+			branchName: "main",
+			destinationCwd: WORKSPACE,
+		});
+
+		expect(result.headSha).toBe(FETCH_SHA);
+		const networkCall = calls.find((call) =>
+			isNetworkLauncherCommand(call.command),
+		);
+		expect(networkCall).toBeDefined();
+		expect(networkCall?.command).not.toContain(TOKEN);
+		expect(networkCall?.command).not.toContain("x-access-token");
+		const { gitArgs, childEnv } = parseNetworkEnv(networkCall?.options);
+		expect(gitArgs).toEqual([
+			"fetch",
+			"--no-tags",
+			"https://github.com/acme/repo.git",
+			"+refs/heads/main:refs/ditto-isolated",
+		]);
+		const serialized = JSON.stringify(childEnv);
+		expect(serialized).not.toMatch(/ghs_|x-access-token|Authorization/i);
+		expect(childEnv.GIT_CONFIG_VALUE_0).toBe("never");
+		expect(Object.values(childEnv).join("\n")).not.toMatch(/Authorization/i);
 	});
 });

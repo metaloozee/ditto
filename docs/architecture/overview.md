@@ -26,11 +26,12 @@ flowchart LR
 
   Browser -->|tRPC, auth, SSE, agent control| Worker
   Worker --> D1
-  Worker -->|Durable Object RPC and short-lived credentials| Sandbox
+  Worker -->|Durable Object RPC; brokered outbound| Sandbox
   Sandbox --> Runner
-  Sandbox -->|create/restore backup| R2
+  Worker -->|R2 archive stream| R2
   Worker -->|OAuth and installation auth| GitHub
-  Sandbox -->|temporary bare-repo HTTPS fetch/push| GitHub
+  Worker -->|brokered Git smart-HTTP| GitHub
+  Sandbox -->|legacy tokenized network Git until cut-over| GitHub
   Runner -->|signed callback for push/PR| Worker
 ```
 
@@ -51,7 +52,9 @@ flowchart LR
 
 ```text
 User
-└── Project (GitHub repository + sandbox + encrypted environment variables)
+└── Project (GitHub repository + encrypted environment variables)
+    ├── Project seed (immutable archive; new imports)
+    ├── Project sandbox (legacy shared runtime until cut-over)
     └── Workspace session (chat thread + session branch/worktree)
         ├── Messages (D1 user/assistant history)
         ├── PI session (sandbox JSONL model/tool history)
@@ -77,16 +80,22 @@ runtime sequence connecting these layers.
 
 1. `NewProjectDialog` loads repositories visible through the user's GitHub OAuth
    token and GitHub App installations.
-2. `projects.create` reauthorizes the selected repository, encrypts project
-   environment variables, and creates the D1 project row.
-3. `bootstrapSandbox` creates or clears the project sandbox, clones with a
-   short-lived installation token (tokenized URL is the explicit initial-clone
-   exception), scrubs the remote URL, installs dependencies, and creates the
-   first R2 directory backup.
-4. The project moves from `provisioning` to `ready`; failures move it to `failed`.
+2. `projects.create` reauthorizes the selected repository and encrypts project
+   environment variables.
+3. `buildProjectSeed` creates the project, pending seed, sandbox identity, and
+   Git fetch operation in one D1 batch, then runs a temporary builder. The
+   builder fetches the owned default branch through the Worker Git broker
+   (installation token stays in the Worker), stores a source-only seed archive
+   in R2, and is destroyed and permanently retired. Dependency-inclusive seeds
+   wait on benchmarks that are not yet in-tree, so imports are source-only.
+4. The project moves from `provisioning` to `ready` only after seed metadata is
+   durable; failures move it to `failed`. New imports do not store
+   `projects.sandboxId`.
 
 Projects created without a GitHub repository are accepted by the server but do
 not have an agent-capable sandbox. The current UI creates GitHub-backed projects.
+Legacy projects that still own a project sandbox continue to restore through
+`bootstrapSandbox` / `project-sandbox` until that path is removed.
 
 ### Open a workspace
 
@@ -200,12 +209,13 @@ GitHub installation token.
 
 ## Deliberate boundaries and limits
 
-- A project has one Cloudflare sandbox ID; sessions isolate files with Git
-  worktrees, not separate containers.
+- New GitHub imports own an immutable project seed and no persistent sandbox.
+  Legacy projects may still own one shared Cloudflare sandbox ID with Git
+  worktree isolation until that path is removed.
 - Session worktrees share the primary clone's `node_modules` by symlink. They do
   not share `.env` files.
 - Shell processes and ports are container-wide, so parallel sessions can still
-  collide outside Git worktrees.
+  collide outside Git worktrees on the legacy shared sandbox.
 - Agent runs are intentionally not aborted when the browser disconnects. The
   server finishes persistence rather than leaving a pending assistant row.
 - Thinking levels use Pi's canonical vocabulary. Missing capability metadata is a
@@ -214,19 +224,23 @@ GitHub installation token.
 - Explicit Stop is a separate authenticated session-control request. It clears
   queued PI follow-ups, requests cooperative PI abort, and lets terminal SSE
   persistence remain authoritative.
-- R2 backups are snapshots, not a mounted filesystem. Cold wake always hydrates
-  explicitly.
+- R2 archives are Worker-streamed snapshots, not a mounted filesystem. Cold wake
+  always hydrates explicitly.
 - Session deletion is archival. Archived sessions are excluded from active
   reads and cannot receive new messages.
 - There is no merge operation in Ditto; pull requests are completed on GitHub.
-- Provider credentials, the agent Git callback JWT, and short-lived
-  installation tokens still enter the project sandbox on their current paths.
+- New project-seed builders fetch Git through the Worker broker; the
+  installation token stays in the Worker. Legacy session sync and agent Git
+  still inject short-lived tokens into sandbox network Git processes.
+- Provider credentials and the agent Git callback JWT still enter legacy
+  project-sandbox agent runs.
 - Normal chat runs still use PI's default project resource discovery.
-- The project sandbox does not have a deny-by-default outbound request policy.
+- Builders attach `dittoCatchAll` via `setOutboundHandler` and are brokered;
+  legacy project sandboxes never set the handler and keep direct internet until
+  later plans. The shared subclass does not set `enableInternet = false`.
 
-The [gated platform credential broker
-spec](../specs/platform-credential-broker.md) proposes removal of these current
-container exposures. The spec needs revision before implementation.
+See [platform credential broker](../specs/platform-credential-broker.md) for the
+remaining cut-over (per-session sandboxes, model broker, legacy column removal).
 
 ## Where to read next
 

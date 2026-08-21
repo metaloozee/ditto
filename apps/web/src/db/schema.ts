@@ -294,6 +294,139 @@ export const archives = sqliteTable(
 	],
 );
 
+export const SANDBOX_IDENTITY_KINDS = [
+	"project_seed",
+	"workspace_session",
+] as const;
+
+export const SANDBOX_IDENTITY_STATES = [
+	"unprovisioned",
+	"queued",
+	"provisioning",
+	"ready",
+	"restoring",
+	"destroying",
+	"destroyed",
+	"failed",
+] as const;
+
+export const PRIVILEGED_OPERATION_FAMILIES = [
+	"model",
+	"git_transport",
+	"ditto_action",
+] as const;
+
+export const PROJECT_SEED_BUILD_STATES = [
+	"pending",
+	"ready",
+	"failed",
+] as const;
+
+export const sandboxIdentities = sqliteTable(
+	"sandbox_identities",
+	{
+		id: text("id").primaryKey(),
+		kind: text("kind", {
+			enum: SANDBOX_IDENTITY_KINDS,
+		}).notNull(),
+		sandboxId: text("sandboxId").notNull(),
+		containerId: text("containerId").notNull(),
+		userId: text("userId").notNull(),
+		projectId: text("projectId").notNull(),
+		workspaceSessionId: text("workspaceSessionId"),
+		lifecycleGeneration: integer("lifecycleGeneration", { mode: "number" })
+			.notNull()
+			.default(1),
+		state: text("state", {
+			enum: SANDBOX_IDENTITY_STATES,
+		}).notNull(),
+		retiredAt: integer("retiredAt", { mode: "timestamp" }),
+		createdAt: integer("created_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+		updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+	},
+	(table) => [
+		uniqueIndex("sandbox_identities_sandboxId_uidx").on(table.sandboxId),
+		index("sandbox_identities_kind_projectId_idx").on(
+			table.kind,
+			table.projectId,
+		),
+	],
+);
+
+export const privilegedOperations = sqliteTable(
+	"privileged_operations",
+	{
+		id: text("id").primaryKey(),
+		identityId: text("identityId").notNull(),
+		lifecycleGeneration: integer("lifecycleGeneration", {
+			mode: "number",
+		}).notNull(),
+		family: text("family", {
+			enum: PRIVILEGED_OPERATION_FAMILIES,
+		}).notNull(),
+		type: text("type").notNull(),
+		contractVersion: integer("contractVersion", { mode: "number" }).notNull(),
+		repository: text("repository"),
+		allowedRefs: text("allowedRefs"),
+		maxRequests: integer("maxRequests", { mode: "number" }),
+		consumedRequests: integer("consumedRequests", { mode: "number" })
+			.notNull()
+			.default(0),
+		openedAt: integer("openedAt", { mode: "timestamp" }).notNull(),
+		expiresAt: integer("expiresAt", { mode: "timestamp" }).notNull(),
+		closedAt: integer("closedAt", { mode: "timestamp" }),
+		closeReason: text("closeReason"),
+		/** Worker-generated; never accept from the sandbox. */
+		correlationId: text("correlationId").notNull(),
+		/**
+		 * Partial-open uniqueness sentinel: `'open'` while the operation is open,
+		 * then the operation id once closed. Enforces one open row per identity+family.
+		 */
+		openSlot: text("openSlot").notNull().default("open"),
+		createdAt: integer("created_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+		updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+	},
+	(table) => [
+		index("privileged_operations_identityId_idx").on(table.identityId),
+		uniqueIndex("privileged_operations_open_family_uidx").on(
+			table.identityId,
+			table.family,
+			table.openSlot,
+		),
+	],
+);
+
+export const projectSeeds = sqliteTable(
+	"project_seeds",
+	{
+		id: text("id").primaryKey(),
+		projectId: text("projectId").notNull(),
+		sourceCommit: text("sourceCommit"),
+		archiveId: text("archiveId"),
+		formatVersion: integer("formatVersion", { mode: "number" }).notNull(),
+		compatibilityKey: text("compatibilityKey").notNull(),
+		buildState: text("buildState", {
+			enum: PROJECT_SEED_BUILD_STATES,
+		}).notNull(),
+		failureReasonCode: text("failureReasonCode"),
+		createdAt: integer("created_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+		updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+	},
+	(table) => [uniqueIndex("project_seeds_projectId_uidx").on(table.projectId)],
+);
+
 /** Leftover provider-login attempt rows. Not a current product path; pending removal. */
 export const providerAuthAttempts = sqliteTable(
 	"provider_auth_attempts",

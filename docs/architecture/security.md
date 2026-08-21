@@ -100,32 +100,27 @@ to the redaction marker.
 
 ## Git credential handling
 
-The Worker mints a repository-scoped GitHub App installation token at the last
-responsible moment for each network Git operation. It passes the token to a
-short-lived launcher process inside the project sandbox. The launcher starts
-Git with a closed, code-owned environment and HTTP Basic authentication.
+The Worker is the only minter of GitHub App installation tokens.
 
-Credential-bearing fetch and push use a fresh temporary bare Git repository
-outside `/workspace`. Hooks and credential helpers are disabled. System and
-global configuration are suppressed. The protocol is HTTPS-only, and the
-remote is the public `https://github.com/<owner>/<repo>.git` URL. The token does
-not enter remote URLs, local Git configuration, hooks, durable files, D1,
-backups, jobs, logs, or the agent-runner environment.
+For new project-seed builders, Git smart-HTTP to the owned repository is
+brokered by the Worker outbound handler. The builder uses a public
+`https://github.com/<owner>/<repo>.git` URL and a closed, credential-free child
+environment. After durable authority and the Git fetch contract pass, the
+Worker mints the installation token onto a fresh upstream request only. The
+token never enters the sandbox URL, environment, file, or process argument.
 
-Repository objects move between the session/primary worktree and the temporary
+Legacy session sync and agent push still pass a short-lived token into a
+sandbox network Git launcher. That launcher uses a fresh temporary bare
+repository outside `/workspace`, disables hooks and credential helpers,
+suppresses system/global configuration, and authenticates over HTTPS with a
+public remote URL. Repository objects move between the worktree and temporary
 bare repository without the credential environment and are verified by exact
-SHA after transfer. Branch refs are validated with `git check-ref-format`; full
-refs and refspecs are shell-quoted as one argument at use.
-
-Initial SDK clone (`sandbox.gitCheckout`) remains the explicit tokenized-URL
-exception. Remote scrubbing back to the public HTTPS URL stays as defense in
-depth. Direct HTTPS with system CAs is supported; trusted custom proxy/CA
-configuration would require an explicit future application setting.
+SHA. Branch refs are validated with `git check-ref-format`; full refs and
+refspecs are shell-quoted as one argument at use.
 
 The runner receives only a Ditto callback URL and scoped JWT. Push and pull
 request operations return through the Worker. The Worker applies the same
-domain policy as the UI and owns installation-token minting. The sandbox still
-receives the installation token for the short network Git process.
+domain policy as the UI and owns installation-token minting.
 
 ## Git egress policy
 
@@ -237,23 +232,26 @@ Anyone with the URL can load the site until Stop/archive/delete revokes it.
 The current controls reduce exposure but do not provide container-compromise
 isolation:
 
-- All workspace sessions in a project share one sandbox filesystem, process
-  table, and network namespace. Git worktrees isolate normal file edits only.
-- Provider credentials and the Git callback JWT enter the project sandbox when
-  an agent run starts. The runner deletes provider values from its own
-  environment before tools start, but the container held those values.
-- GitHub installation tokens enter a separate sandbox process during network
-  fetch and push.
+- Legacy projects still share one sandbox filesystem, process table, and
+  network namespace across workspace sessions. Git worktrees isolate normal
+  file edits only. New imports own a project seed and no persistent sandbox.
+- Provider credentials and the Git callback JWT enter the legacy project
+  sandbox when an agent run starts. The runner deletes provider values from its
+  own environment before tools start, but the container held those values.
+- GitHub installation tokens stay in the Worker for project-seed builder fetch.
+  Legacy session sync and agent push still inject tokens into a short-lived
+  sandbox Git process.
 - Normal chat constructs an explicit locked resource loader. Repository-owned
   extensions, skills, prompts, themes, settings, and context files are not
   discoverable. Only the image-owned Ditto extension at
   `/opt/ditto-runner/dist/ditto-extension.js` is loaded. Git metadata keeps
   the empty loader.
-- The project sandbox has no deny-by-default outbound request policy.
+- Builders that call `setOutboundHandler` are brokered through the Worker
+  catch-all. Legacy project sandboxes that never set the handler keep direct
+  internet until later plans; the shared subclass does not disable internet.
 
-The [platform credential broker and per-session sandbox isolation
-spec](../specs/platform-credential-broker.md) proposes stronger boundaries. Its
-status is gated and needs revision before implementation.
+See [platform credential broker](../specs/platform-credential-broker.md) for
+remaining cut-over work (per-session sandboxes, model broker, legacy columns).
 
 ## Security-sensitive files
 
@@ -266,6 +264,7 @@ status is gated and needs revision before implementation.
 | Encryption/env vars | `apps/web/src/lib/crypto.ts`, `project-env-vars.ts`, `env-vars.ts` |
 | Redaction | `apps/web/src/lib/secret-redaction.ts`, `agent-run.ts`, `github-export.ts` |
 | Git egress | `apps/web/src/lib/git-secret-policy.ts`, `session-git.ts` |
+| Broker / seed | `apps/web/src/lib/sandbox-authority.ts`, `sandbox-egress-broker.ts`, `git-fetch-contract.ts`, `project-seed.ts`, `apps/web/src/server.ts` |
 | UI git metadata | `apps/web/src/lib/session-git-metadata.ts`, `session-git-ui-actions.ts`, `packages/sandbox-runner/src/run-git-metadata.ts` |
 | Backup exclusions | `apps/web/src/lib/sandbox-backup.ts` |
 | Workspace locking | `apps/web/src/lib/session-workspace-lock.ts`, `workspace-policy.ts` |

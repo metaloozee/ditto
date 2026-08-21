@@ -8,15 +8,20 @@ const createDbMock = vi.hoisted(() => vi.fn());
 const deleteProjectWithPreviewFenceMock = vi.hoisted(() => vi.fn());
 const destroySandboxMock = vi.hoisted(() => vi.fn());
 const provisionProjectSandboxMock = vi.hoisted(() => vi.fn());
+const buildProjectSeedMock = vi.hoisted(() => vi.fn());
+const authorizeGitHubRepositoryAccessMock = vi.hoisted(() => vi.fn());
 
 vi.mock("#/db", () => ({
 	createDb: createDbMock,
 }));
 
 vi.mock("#/lib/sandbox-bootstrap", () => ({
-	bootstrapSandbox: vi.fn(),
 	destroySandbox: destroySandboxMock,
 	getProjectSandbox: vi.fn(),
+}));
+
+vi.mock("#/lib/project-seed", () => ({
+	buildProjectSeed: buildProjectSeedMock,
 }));
 
 vi.mock("#/lib/project-sandbox", () => ({
@@ -32,7 +37,7 @@ vi.mock("#/lib/session-workspace-lock", () => ({
 }));
 
 vi.mock("#/lib/github-authorization", () => ({
-	authorizeGitHubRepositoryAccess: vi.fn(),
+	authorizeGitHubRepositoryAccess: authorizeGitHubRepositoryAccessMock,
 }));
 
 vi.mock("#/lib/project-env-vars", async (importOriginal) => {
@@ -40,10 +45,6 @@ vi.mock("#/lib/project-env-vars", async (importOriginal) => {
 		await importOriginal<typeof import("#/lib/project-env-vars")>();
 	return actual;
 });
-
-vi.mock("#/lib/sandbox-backup", () => ({
-	serializeSandboxBackup: vi.fn(),
-}));
 
 vi.mock("#/lib/session-preview", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("#/lib/session-preview")>();
@@ -294,6 +295,88 @@ async function readKeys(ciphertext: string | null) {
 		byKey: Object.fromEntries(vars.map((v) => [v.key, v.value])),
 	};
 }
+
+describe("projects.create GitHub import", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		authorizeGitHubRepositoryAccessMock.mockResolvedValue(undefined);
+	});
+
+	it("builds a project seed and does not store sandboxId", async () => {
+		buildProjectSeedMock.mockResolvedValue({
+			project: {
+				id: "proj-1",
+				name: "App",
+				description: null,
+				userId: "user-1",
+				githubRepo: "acme/app",
+				githubInstallationId: 9,
+				sandboxId: null,
+				sandboxBackup: null,
+				sandboxBackupCreatedAt: null,
+				sandboxBackupRequestedGeneration: 0,
+				sandboxBackupStoredGeneration: 0,
+				status: "ready",
+				envVars: null,
+				previewLockToken: null,
+				previewLockExpiresAt: null,
+				deletingAt: null,
+				createdAt: new Date(),
+				updatedAt: new Date(),
+			},
+			seed: {
+				id: "seed-1",
+				projectId: "proj-1",
+				sourceCommit: "a".repeat(40),
+				archiveId: "archive-1",
+				formatVersion: 1,
+				compatibilityKey: "seed",
+				buildState: "ready",
+				failureReasonCode: null,
+			},
+			identity: {
+				id: "id-1",
+				kind: "project_seed",
+				sandboxId: "sbx-temp",
+				containerId: "container-1",
+				userId: "user-1",
+				projectId: "proj-1",
+				workspaceSessionId: null,
+				lifecycleGeneration: 1,
+				state: "destroyed",
+				retiredAt: new Date(),
+			},
+		});
+		createDbMock.mockReturnValue({
+			update() {
+				return {
+					set() {
+						return {
+							where: async () => undefined,
+						};
+					},
+				};
+			},
+		});
+
+		const result = await createCaller().create({
+			name: "App",
+			githubRepo: "acme/app",
+			githubInstallationId: 9,
+		});
+
+		expect(authorizeGitHubRepositoryAccessMock).toHaveBeenCalledOnce();
+		expect(buildProjectSeedMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				githubRepo: "acme/app",
+				installationId: 9,
+				userId: "user-1",
+			}),
+		);
+		expect(result.sandboxId).toBeNull();
+		expect(result.status).toBe("ready");
+	});
+});
 
 describe("projects.deleteProject fence", () => {
 	beforeEach(() => {

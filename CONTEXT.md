@@ -12,19 +12,27 @@ A person signed in to Ditto. A user owns projects, workspace sessions, and messa
 
 ### Project
 
-A GitHub repository registered with Ditto for one user. A project groups its workspace, workspace sessions, environment values, and Git export permissions.
+A GitHub repository registered with Ditto for one user. A project groups its workspace sessions, environment values, Git export permissions, and an immutable project seed. New GitHub imports own a project seed and no persistent sandbox. Legacy projects may still own a shared project sandbox until that path is removed.
+
+### Project seed
+
+An immutable archive of a repository checkout prepared for later workspace restore. A project seed records the source commit and compatibility inputs. It is not a live workspace and is never derived from a mutable workspace-session backup.
+
+### Project-seed builder
+
+A temporary sandbox used only to fetch an owned repository through the Worker, prepare the seed tree, and stream the seed archive. The builder is destroyed and permanently retired after seed creation. It receives no model access and no project environment values.
 
 ### Project workspace
 
-The live project files available to Ditto. The workspace contains the primary repository checkout and the worktrees owned by workspace sessions.
+The live project files available to Ditto. On the legacy path, the workspace contains the primary repository checkout and the worktrees owned by workspace sessions.
 
 ### Project sandbox
 
-The runtime that hosts one project workspace. All workspace sessions in a project currently share the project sandbox while using separate Git worktrees.
+The legacy runtime that hosts one shared project workspace. All workspace sessions in a project currently share the project sandbox while using separate Git worktrees. New imports do not create a project sandbox.
 
 ### Project backup
 
-A recoverable snapshot of a project workspace. A backup restores work after the live workspace stops. It is not a live workspace and does not replace durable product records.
+A recoverable snapshot of a project workspace. A backup restores work after the live workspace stops. It is not a live workspace and does not replace durable product records. Legacy projects may still own project backups.
 
 ### Project environment value
 
@@ -33,6 +41,16 @@ A named secret or configuration value supplied by the user for project commands.
 ### Project memory
 
 Project-scoped context that remains available across workspace sessions. Project memory is separate from a conversation and from repository-owned instructions.
+
+## Sandbox identity and privilege
+
+### Sandbox identity
+
+A durable Ditto record that binds a random sandbox ID, Cloudflare container ID, owners, lifecycle generation, and retirement state. Retired identities remain as permanent tombstones and never regain authority.
+
+### Privileged operation
+
+A time-bounded Worker-owned window that authorizes one contract family for a sandbox identity. The sandbox cannot invent or extend a privileged operation. Privileged families include model requests, Git transport, and Ditto actions.
 
 ## Conversations and execution
 
@@ -87,11 +105,12 @@ The flow that turns session work into a commit, pushed branch, and optional pull
 ```text
 User
 └── Project
-    ├── Project sandbox
+    ├── Project seed (new imports; immutable)
+    ├── Project sandbox (legacy shared runtime)
     │   └── Project workspace
     │       ├── Primary repository checkout
     │       └── Workspace session worktrees
-    ├── Project backup
+    ├── Project backup (legacy)
     └── Workspace session
         ├── Messages
         ├── Agent runs
