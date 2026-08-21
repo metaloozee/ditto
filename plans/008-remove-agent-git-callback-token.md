@@ -1,9 +1,13 @@
 # Remove the agent Git callback token
 
-Status: TODO
+Status: DONE
 
 Written against commit `62c99b4`. Complete plan 006 first. Plan 007 may run
 before or after this plan.
+
+Executed 2026-08-21 from `b28f470` (plans 001–007 already on HEAD). Advisor
+verdict: accept. Merged onto `brain` as `5ed000b`. Spec digest after execution:
+`3deb3e5eb7f4af7f36a3b2bf4d2c0926ef9d7e198b8033fb558d874de441195d`.
 
 Before editing, compare the current commit and target spec with plan 001's
 recorded values. Read drift in Ditto tools, agent Git policy, authority, and

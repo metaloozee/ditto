@@ -22,8 +22,13 @@ after that change is
 
 Plan 007 was executed on 2026-08-21 and is on `d2474ad`. The spec digest
 after that change is
-`a63f8b989e2270c89ed40db16edacc8aa5ddab23c4fac33a250f5cd2756f4e38`. Later
-plans should start from that digest. The spec is already in this workspace.
+`a63f8b989e2270c89ed40db16edacc8aa5ddab23c4fac33a250f5cd2756f4e38`.
+
+Plan 008 was executed on 2026-08-21 and is on `5ed000b`. The spec digest
+after that change is
+`3deb3e5eb7f4af7f36a3b2bf4d2c0926ef9d7e198b8033fb558d874de441195d`.
+Later plans should start from that digest. The spec is already in this
+workspace.
 
 Before executing any remaining plan, compare both the commit and the spec
 digest. Read the new diff if either changed. Stop if a required guarantee,
@@ -40,7 +45,7 @@ trust decision, or cutover rule changed.
 | [005](005-build-project-seeds-through-brokered-fetch.md) | DONE | 003, 004 | Temporary builders use durable identity and brokered Git fetch to create immutable project seeds. |
 | [006](006-move-runtime-ownership-to-workspace-sessions.md) | DONE | 005 | Each workspace session owns one sandbox, branch checkout, and lifecycle generation. |
 | [007](007-broker-opencode-requests.md) | DONE | 006 | Agent and metadata model requests use exact contracts; the OpenCode key stays in the Worker. |
-| [008](008-remove-agent-git-callback-token.md) | TODO | 006 | The image-owned extension invokes Worker Git actions through a synthetic origin without a JWT. |
+| [008](008-remove-agent-git-callback-token.md) | DONE | 006 | The image-owned extension invokes Worker Git actions through a synthetic origin without a JWT. |
 | [009](009-broker-git-push.md) | TODO | 005, 006, 008 | Fetch and push use brokered GitHub credentials; no installation token enters a sandbox. |
 | [010](010-add-session-recovery-lineages.md) | TODO | 004, 006 | Session mutations create fenced recovery checkpoints with current and previous restore fallback. |
 | [011](011-add-capacity-preview-and-idle-lifecycle.md) | TODO | 006, 010 | Durable capacity work, preview checkpoint deferral, idle shutdown, archive, and deletion follow one runtime module. |
