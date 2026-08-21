@@ -7,6 +7,7 @@ import {
 	DITTO_GIT_AUTHOR_EMAIL,
 	DITTO_GIT_AUTHOR_NAME,
 } from "#/lib/ditto-git-identity";
+import { SessionGitPushUnavailableError } from "#/lib/git-push-contract";
 import { GitSecretPolicyError } from "#/lib/git-secret-policy";
 import { authorizeGitHubRepositoryAccess } from "#/lib/github-authorization";
 import { decryptEnvVars } from "#/lib/project-env-vars";
@@ -236,6 +237,7 @@ async function resolveSessionGitReadyForMutation(options: {
 		async (auth, lease) => ({
 			...auth,
 			sandbox: lease.sandbox,
+			identity: lease.identity,
 			session: {
 				id: auth.session.id,
 				branchName: lease.branchName,
@@ -249,6 +251,12 @@ async function resolveSessionGitReadyForMutation(options: {
 
 function mapSessionGitExportError(error: unknown): never {
 	if (error instanceof GitSecretPolicyError) {
+		throw new TRPCError({
+			code: "PRECONDITION_FAILED",
+			message: error.message,
+		});
+	}
+	if (error instanceof SessionGitPushUnavailableError) {
 		throw new TRPCError({
 			code: "PRECONDITION_FAILED",
 			message: error.message,
@@ -476,10 +484,14 @@ export const sessionGitRouter = createTRPCRouter({
 							githubRepo: resolved.githubRepo,
 							session: resolved.session,
 							knownSecrets: resolved.knownSecrets,
+							identity: resolved.identity,
 						}),
 				});
 			} catch (error) {
-				if (error instanceof GitSecretPolicyError) {
+				if (
+					error instanceof GitSecretPolicyError ||
+					error instanceof SessionGitPushUnavailableError
+				) {
 					mapSessionGitExportError(error);
 				}
 				rethrowOrMapSessionGitMutationError(error, {
@@ -519,6 +531,7 @@ export const sessionGitRouter = createTRPCRouter({
 							githubRepo: resolved.githubRepo,
 							session: resolved.session,
 							knownSecrets: resolved.knownSecrets,
+							identity: resolved.identity,
 						},
 						deps: {
 							getSessionGitStatus,
@@ -541,7 +554,10 @@ export const sessionGitRouter = createTRPCRouter({
 							message: error.message,
 						});
 					}
-					if (error instanceof GitSecretPolicyError) {
+					if (
+						error instanceof GitSecretPolicyError ||
+						error instanceof SessionGitPushUnavailableError
+					) {
 						mapSessionGitExportError(error);
 					}
 					const message = error instanceof Error ? error.message : "";
@@ -573,6 +589,7 @@ export const sessionGitRouter = createTRPCRouter({
 					githubRepo: resolved.githubRepo,
 					session: resolved.session,
 					knownSecrets: resolved.knownSecrets,
+					identity: resolved.identity,
 				});
 			} catch (error) {
 				if (error instanceof SessionGitMetadataError) {

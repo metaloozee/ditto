@@ -1,0 +1,1 @@
+ALTER TABLE `privileged_operations` ADD `contractState` text;

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
 	buildAuthenticatedGitUpstreamRequest,
+	classifyGithubGitRequest,
 	GIT_FETCH_CONTRACT_VERSION,
 	validateGitFetchRequest,
 } from "./git-fetch-contract";
@@ -64,6 +65,32 @@ function minimalV2FetchBody(
 }
 
 describe("git-fetch-contract", () => {
+	it("classifies git-receive-pack as git_transport", () => {
+		const classified = classifyGithubGitRequest(
+			new Request("https://github.com/acme/app.git/git-receive-pack", {
+				method: "POST",
+			}),
+		);
+		expect(classified.kind).toBe("git_transport");
+	});
+
+	it("classifies info/refs receive-pack as git_transport", () => {
+		const classified = classifyGithubGitRequest(
+			new Request(
+				"https://github.com/acme/app.git/info/refs?service=git-receive-pack",
+			),
+		);
+		expect(classified.kind).toBe("git_transport");
+	});
+
+	it("classifies near-miss .git paths as git_transport_near_miss, not public internet", () => {
+		const classified = classifyGithubGitRequest(
+			new Request("https://github.com/acme/app.git/objects/pack/pack-1.pack"),
+		);
+		expect(classified.kind).toBe("git_transport_near_miss");
+		expect(classified.kind).not.toBe("other");
+	});
+
 	it("passes GET info/refs?service=git-upload-pack", async () => {
 		const result = await validateGitFetchRequest(infoRefsRequest(), BOUND);
 		expect(result.ok).toBe(true);

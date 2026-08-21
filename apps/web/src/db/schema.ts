@@ -393,6 +393,8 @@ export const privilegedOperations = sqliteTable(
 		contractDenials: integer("contractDenials", { mode: "number" })
 			.notNull()
 			.default(0),
+		/** JSON contract payload (push preflight HEAD + advertised old OID). */
+		contractState: text("contractState"),
 		openedAt: integer("openedAt", { mode: "timestamp" }).notNull(),
 		expiresAt: integer("expiresAt", { mode: "timestamp" }).notNull(),
 		closedAt: integer("closedAt", { mode: "timestamp" }),

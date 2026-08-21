@@ -23,6 +23,18 @@ import {
 	wrapGitUpstreamResponse,
 } from "#/lib/git-fetch-contract";
 import {
+	buildAuthenticatedGitPushUpstreamRequest,
+	GIT_PUSH_CONTRACT_VERSION,
+	GIT_PUSH_ENABLED,
+	isGitReceivePackRequest,
+	isGitUploadPackRequest,
+	parseGitPushContractState,
+	readGitPushDiscoveryResponse,
+	serializeGitPushContractState,
+	validateGitPushRequest,
+	wrapGitPushReceivePackResponse,
+} from "#/lib/git-push-contract";
+import {
 	getInstallationAccessToken,
 	repositoryNameFromSlug,
 } from "#/lib/github-app";
@@ -37,8 +49,11 @@ import {
 } from "#/lib/open-code-contract";
 import {
 	createSandboxAuthority,
+	type PrivilegedOperationHandle,
 	type ResolvedOutboundOperation,
+	type SandboxAuthority,
 	SandboxAuthorityError,
+	type SandboxIdentityHandle,
 	type TrustedOutboundHandlerContext,
 } from "#/lib/sandbox-authority";
 
@@ -338,11 +353,17 @@ async function handleGitTransport(options: {
 	const db = dbFactory(options.env);
 	const authority = authorityFactory(db);
 
+	const receivePack = isGitReceivePackRequest(options.request);
+	const consume = !(
+		receivePack && options.request.method.toUpperCase() === "GET"
+	);
+
 	let resolved: ResolvedOutboundOperation;
 	try {
 		resolved = await authority.resolveOutboundRequest(
 			options.trusted,
 			"git_transport",
+			{ consume },
 		);
 	} catch (error) {
 		const code =
@@ -352,6 +373,44 @@ async function handleGitTransport(options: {
 	}
 
 	const { operation, identity } = resolved;
+	if (operation.type === "push" || receivePack) {
+		if (!GIT_PUSH_ENABLED) {
+			recordDenial({
+				reasonCode: "push_disabled",
+				correlationId: operation.correlationId,
+				family: "git_transport",
+			});
+			try {
+				await authority.closeOperation(operation.id, "push_disabled");
+			} catch {
+				// fail closed even if close races
+			}
+			return deny(403, "push_disabled", operation.correlationId);
+		}
+	}
+
+	if (operation.type === "push") {
+		return handleGitPushTransport({
+			request: options.request,
+			env: options.env,
+			identity,
+			operation,
+			authority,
+			db,
+			fetchImpl: options.fetchImpl,
+			mintToken,
+		});
+	}
+
+	if (receivePack) {
+		recordDenial({
+			reasonCode: "receive_pack_denied",
+			correlationId: operation.correlationId,
+			family: "git_transport",
+		});
+		return deny(403, "receive_pack_denied", operation.correlationId);
+	}
+
 	if (
 		operation.contractVersion !== GIT_FETCH_CONTRACT_VERSION ||
 		!operation.repository ||
@@ -434,6 +493,138 @@ async function handleGitTransport(options: {
 			family: "git_transport",
 		});
 		return deny(502, code, operation.correlationId);
+	}
+}
+
+async function handleGitPushTransport(options: {
+	request: Request;
+	env: Env;
+	identity: SandboxIdentityHandle;
+	operation: PrivilegedOperationHandle;
+	authority: SandboxAuthority;
+	db: ReturnType<typeof createDb>;
+	fetchImpl: typeof fetch;
+	mintToken: typeof getInstallationAccessToken;
+}): Promise<Response> {
+	const { operation, identity, authority } = options;
+	const closeAndDeny = async (status: number, code: string) => {
+		recordDenial({
+			reasonCode: code,
+			correlationId: operation.correlationId,
+			family: "git_transport",
+		});
+		try {
+			await authority.closeOperation(operation.id, code);
+		} catch {
+			// already closed
+		}
+		return deny(status, code, operation.correlationId);
+	};
+
+	if (isGitUploadPackRequest(options.request)) {
+		return closeAndDeny(403, "upload_pack_denied");
+	}
+	if (
+		operation.contractVersion !== GIT_PUSH_CONTRACT_VERSION ||
+		!operation.repository ||
+		!operation.allowedRefs?.length
+	) {
+		return closeAndDeny(403, "operation_incomplete");
+	}
+
+	const contractState = parseGitPushContractState(operation.contractState);
+	if (!contractState?.preflightHeadSha) {
+		return closeAndDeny(403, "operation_incomplete");
+	}
+
+	const [project] = await options.db
+		.select({
+			githubInstallationId: projects.githubInstallationId,
+			githubRepo: projects.githubRepo,
+		})
+		.from(projects)
+		.where(eq(projects.id, identity.projectId))
+		.limit(1);
+	if (
+		!project?.githubInstallationId ||
+		!project.githubRepo ||
+		project.githubRepo !== operation.repository
+	) {
+		return closeAndDeny(403, "project_binding_mismatch");
+	}
+
+	const method = options.request.method.toUpperCase();
+	const isDiscovery = method === "GET";
+	if (isDiscovery && contractState.advertisedOldOid) {
+		return closeAndDeny(403, "duplicate_discovery");
+	}
+
+	const validated = await validateGitPushRequest(options.request, {
+		repository: operation.repository,
+		allowedRefs: operation.allowedRefs,
+		preflightHeadSha: contractState.preflightHeadSha,
+		advertisedOldOid: contractState.advertisedOldOid ?? null,
+		contractVersion: operation.contractVersion,
+	});
+	if (!validated.ok) {
+		return closeAndDeny(403, validated.code);
+	}
+
+	const shortName = repositoryNameFromSlug(operation.repository);
+	const installationId = project.githubInstallationId;
+	let upstreamRequest: Request;
+	try {
+		upstreamRequest = await buildAuthenticatedGitPushUpstreamRequest({
+			validated,
+			mintToken: () =>
+				options.mintToken(options.env, installationId, {
+					repositories: shortName ? [shortName] : undefined,
+				}),
+		});
+	} catch {
+		return closeAndDeny(502, "token_mint_failed");
+	}
+
+	const allowedRef = operation.allowedRefs[0]!;
+	try {
+		const upstream = await options.fetchImpl(upstreamRequest);
+		if (validated.phase === "discovery") {
+			const discovered = await readGitPushDiscoveryResponse(
+				upstream,
+				allowedRef,
+			);
+			try {
+				await authority.updateOperationContractState(
+					operation.id,
+					operation.contractState,
+					serializeGitPushContractState({
+						preflightHeadSha: contractState.preflightHeadSha,
+						advertisedOldOid: discovered.oldOid,
+					}),
+				);
+			} catch (error) {
+				const code =
+					error instanceof SandboxAuthorityError
+						? error.code
+						: "duplicate_discovery";
+				return closeAndDeny(403, code);
+			}
+			return discovered.response;
+		}
+
+		const wrapped = await wrapGitPushReceivePackResponse(upstream, allowedRef);
+		try {
+			await authority.closeOperation(operation.id, "git_push_settled");
+		} catch {
+			// already closed
+		}
+		return wrapped;
+	} catch (error) {
+		const code =
+			error instanceof Error && "code" in error
+				? String((error as { code: string }).code)
+				: "upstream_denied";
+		return closeAndDeny(502, code);
 	}
 }
 

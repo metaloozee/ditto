@@ -100,11 +100,11 @@ function normalizeRepoPath(ownerRepo: string): string {
 	return trimmed.toLowerCase();
 }
 
-function parseGithubSmartHttpPath(
+export function parseGithubSmartHttpPath(
 	pathname: string,
 ): { owner: string; repo: string; servicePath: string } | null {
 	const match = pathname.match(
-		/^\/([^/]+)\/([^/]+?)(\.git)?\/(info\/refs|git-upload-pack)\/?$/,
+		/^\/([^/]+)\/([^/]+?)(\.git)?\/(info\/refs|git-upload-pack|git-receive-pack)\/?$/,
 	);
 	if (!match) {
 		return null;

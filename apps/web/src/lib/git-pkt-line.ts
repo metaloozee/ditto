@@ -51,7 +51,11 @@ function parseHexLength(bytes: Uint8Array, offset: number): number {
 
 export function decodePktLines(
 	buffer: Uint8Array,
-	options?: { maxLines?: number; maxLineBytes?: number },
+	options?: {
+		maxLines?: number;
+		maxLineBytes?: number;
+		stopAtFlush?: boolean;
+	},
 ): { lines: PktLine[]; consumed: number } {
 	const maxLines = options?.maxLines ?? MAX_PKT_LINES;
 	const maxLineBytes = options?.maxLineBytes ?? MAX_PKT_LINE_BYTES;
@@ -69,6 +73,9 @@ export function decodePktLines(
 		if (length === PKT_FLUSH) {
 			lines.push({ kind: "flush" });
 			offset += 4;
+			if (options?.stopAtFlush) {
+				break;
+			}
 			continue;
 		}
 		if (length === PKT_DELIM) {

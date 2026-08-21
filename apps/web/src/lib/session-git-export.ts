@@ -58,6 +58,7 @@ type SessionGitExportGitContext = {
 	knownSecrets?: readonly string[];
 	/** Caller supplies; agent/UI-under-lock pass true. Router explicit omits/false. */
 	bypassWorkspaceLock?: boolean;
+	identity?: Parameters<typeof pushSessionBranch>[0]["identity"];
 };
 
 type SessionGitExportDeps = {
@@ -89,6 +90,7 @@ export async function runPushThenOpenPullRequest(options: {
 		...statusCtx,
 		knownSecrets: options.ctx.knownSecrets,
 		bypassWorkspaceLock: options.ctx.bypassWorkspaceLock,
+		identity: options.ctx.identity,
 	};
 
 	let status =

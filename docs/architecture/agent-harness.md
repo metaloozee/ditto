@@ -271,10 +271,12 @@ Chat-driven git uses PI custom tools in the sandbox runner (`ditto_push_branch`,
 `http://ditto.internal/v1/git-action` with no Authorization header. The Worker
 outbound broker classifies that origin, resolves the trusted sandbox identity
 and the open `ditto_action` / `agent_git` operation from D1, and reuses the
-same `session-git` helpers as the UI. The Worker mints the installation token,
-then passes it only to the isolated network Git launcher inside the sandbox.
-Use bash for local `git status` / `git commit`; use Ditto tools for push and
-open PR only. Agent tools cannot merge or close a pull request.
+same `session-git` helpers as the UI. Product push is disabled until
+non-fast-forward rejection is proved, so push and open-PR auto-push return
+that GitHub push is currently unavailable after secret preflight. Installation
+tokens stay in the Worker. Local commits still work. Use bash for local
+`git status` / `git commit`; use Ditto tools for push and open PR only. Agent
+tools cannot merge or close a pull request.
 
 Agent git guidance (tool `promptGuidelines` + descriptions):
 
@@ -323,8 +325,9 @@ runner changes so custom tools appear in the container.
   secret preflight remain necessary. A process environment is not a vault.
 - GitHub App installation tokens do not enter the agent runner environment.
   Agent Git tools call the synthetic Ditto origin through the outbound broker.
-  A later Worker-owned Git operation passes an installation token into a
-  separate short-lived sandbox process.
+  Product Git push is disabled; the receive-pack contract exists, but the
+  Worker does not mint an installation token onto a sandbox Git launcher for
+  UI or agent push.
 - Normal chat constructs an explicit locked resource loader. It disables
   repository discovery of PI extensions, skills, prompts, themes, settings,
   and context files, and loads only the image-owned Ditto extension from

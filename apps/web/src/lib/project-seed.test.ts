@@ -117,6 +117,7 @@ function makeDb() {
 								maxRequests: (value.maxRequests as number | null) ?? null,
 								consumedRequests: Number(value.consumedRequests ?? 0),
 								contractDenials: Number(value.contractDenials ?? 0),
+								contractState: (value.contractState as string | null) ?? null,
 								openedAt: value.openedAt as Date,
 								expiresAt: value.expiresAt as Date,
 								closedAt: null,

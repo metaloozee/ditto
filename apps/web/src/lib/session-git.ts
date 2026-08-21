@@ -1,30 +1,23 @@
+import { SessionGitPushUnavailableError } from "#/lib/git-push-contract";
 import {
 	assertOutgoingGitRangeSafe,
 	isSecretLikeGitPath,
 } from "#/lib/git-secret-policy";
-import {
-	getGitHubApp,
-	getInstallationAccessToken,
-	repositoryNameFromSlug,
-} from "#/lib/github-app";
+import { getGitHubApp } from "#/lib/github-app";
 import {
 	buildPullRequestTitle,
 	buildSessionPullRequestBody,
 	quoteGitHubExportShellArg,
 	redactGitHubExportOutput,
 } from "#/lib/github-export";
-import {
-	pushGitHubCommitIsolated,
-	validateGitBranchRefs,
-} from "#/lib/privileged-git";
+import { validateGitBranchRefs } from "#/lib/privileged-git";
+import type { SandboxIdentityHandle } from "#/lib/sandbox-authority";
 import {
 	fetchPrimaryBranchFromGitHub,
 	getProjectSandbox,
 	installDependencies,
-	scrubGithubRemote,
 } from "#/lib/sandbox-bootstrap";
 import { withSessionWorkspaceLock } from "#/lib/session-workspace-lock";
-import { WORKSPACE_PATH } from "#/lib/workspace-policy";
 
 export { isSecretLikeGitPath } from "#/lib/git-secret-policy";
 
@@ -65,13 +58,6 @@ export function isGitHubAppPermissionDenied(message: string): boolean {
 	return false;
 }
 
-function installationTokenOptions(
-	githubRepo: string,
-): { repositories: string[] } | undefined {
-	const repoName = repositoryNameFromSlug(githubRepo);
-	return repoName ? { repositories: [repoName] } : undefined;
-}
-
 export type SessionGitSession = {
 	id: string;
 	branchName: string;
@@ -95,6 +81,11 @@ type SessionGitContext = {
 	 */
 	knownSecrets?: readonly string[];
 	bypassWorkspaceLock?: boolean;
+	/**
+	 * Workspace-session identity for a future brokered push `withOperation`.
+	 * Product push does not open `git_transport` while `GIT_PUSH_ENABLED` is false.
+	 */
+	identity?: SandboxIdentityHandle | null;
 };
 
 function resolveSessionGitSandbox(ctx: SessionGitContext): SessionGitSandbox {
@@ -121,10 +112,6 @@ async function withGitMutationLock<T>(
 		sessionId: ctx.session.id,
 		run,
 	});
-}
-
-function publicRepoUrl(githubRepo: string): string {
-	return `https://github.com/${githubRepo}.git`;
 }
 
 function formatGitError(
@@ -431,26 +418,6 @@ async function countAheadWithoutUpstream(
 		return 1;
 	}
 	return 0;
-}
-
-async function syncBranchTrackingAfterPush(
-	sandbox: ReturnType<typeof getProjectSandbox>,
-	cwd: string,
-	branchName: string,
-): Promise<void> {
-	const quotedRemoteRef = quoteGitHubExportShellArg(
-		`refs/remotes/origin/${branchName}`,
-	);
-	const quotedUpstream = quoteGitHubExportShellArg(`origin/${branchName}`);
-
-	await sandbox.exec(`git update-ref ${quotedRemoteRef} HEAD`, {
-		cwd,
-		timeout: GIT_COMMAND_TIMEOUT_MS,
-	});
-	await sandbox.exec(`git branch --set-upstream-to=${quotedUpstream}`, {
-		cwd,
-		timeout: GIT_COMMAND_TIMEOUT_MS,
-	});
 }
 
 function buildStatusSummary(options: {
@@ -767,62 +734,20 @@ async function pushSessionBranchUnlocked(
 	const sandbox = resolveSessionGitSandbox(ctx);
 	const cwd = ctx.session.workspacePath;
 	const branchName = ctx.session.branchName;
-	const publicUrl = publicRepoUrl(ctx.githubRepo);
 
-	// Preflight must run before minting an installation token so UI push, agent
+	// Preflight must run before any GitHub credential work so UI push, agent
 	// push, and open-PR auto-push share one secret egress gate.
-	const { headRev } = await assertOutgoingGitRangeSafe({
+	await assertOutgoingGitRangeSafe({
 		sandbox,
 		cwd,
 		branchName,
 		knownSecrets: ctx.knownSecrets,
 	});
 
-	// Token mint happens inside isolated push only after exact-SHA staging.
-	// Scrub remotes in finally even if mint fails (defense in depth).
-	let token: string | undefined;
-	try {
-		await pushGitHubCommitIsolated({
-			sandbox,
-			githubRepo: ctx.githubRepo,
-			branchName,
-			sourceCwd: cwd,
-			headRev,
-			mintToken: async () => {
-				token = await getInstallationAccessToken(
-					ctx.env,
-					ctx.installationId,
-					installationTokenOptions(ctx.githubRepo),
-				);
-				return token;
-			},
-		});
-
-		try {
-			await syncBranchTrackingAfterPush(sandbox, cwd, branchName);
-		} catch {
-			// Push already succeeded; tracking sync is best-effort.
-		}
-	} catch (error) {
-		const raw = error instanceof Error ? error.message : String(error);
-		const message =
-			token != null ? redactGitHubExportOutput(raw, [token]) || raw : raw;
-		if (
-			isGitHubAppPermissionDenied(raw) ||
-			isGitHubAppPermissionDenied(message)
-		) {
-			throw new Error(GITHUB_APP_PUSH_PERMISSION_MESSAGE);
-		}
-		if (message !== raw) {
-			throw new Error(message);
-		}
-		throw error;
-	} finally {
-		await scrubGithubRemote(sandbox, cwd, publicUrl);
-		await scrubGithubRemote(sandbox, WORKSPACE_PATH, publicUrl);
-	}
-
-	return { remoteBranch: branchName, pushed: true };
+	// Receive-pack contract exists, but product push stays closed until a
+	// crafted non-fast-forward is proved rejected. Do not mint tokens, open
+	// git_transport, or call isolated/brokered push from this path.
+	throw new SessionGitPushUnavailableError();
 }
 
 export async function pushSessionBranch(

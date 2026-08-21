@@ -177,25 +177,26 @@ describe("SessionGitActions workflow", () => {
 		).toBe(true);
 	});
 
-	it("makes Push the next step when the remote branch is missing", () => {
+	it("does not present Push as a working action when the remote branch is missing", () => {
 		setStatus({ kind: "push", reason: "remote-branch-missing" });
 
 		render(<SessionGitActions projectId="proj-1" sessionId="sess-1" />);
 
-		expect(
-			screen.getByRole("button", { name: "Push" }).getAttribute("aria-current"),
-		).toBe("step");
-		expect(screen.getByRole("button", { name: "Push" })).toHaveProperty(
-			"disabled",
-			false,
+		const primary = screen.getByRole("button", { name: "Push" });
+		expect(primary).toHaveProperty("disabled", true);
+		expect(primary.getAttribute("title")).toBe(
+			"Pushing to GitHub is currently unavailable.",
 		);
 
 		const menu = openGitMenu();
 		expect(
+			isMenuItemDisabled(within(menu).getByRole("menuitem", { name: /Push/i })),
+		).toBe(true);
+		expect(
 			isMenuItemDisabled(
 				within(menu).getByRole("menuitem", { name: /Open PR/i }),
 			),
-		).toBe(false);
+		).toBe(true);
 	});
 
 	it("makes Sync the next step when the base branch advances", () => {
@@ -280,7 +281,7 @@ describe("SessionGitActions workflow", () => {
 		).toBe("View pull request #7 on GitHub");
 	});
 
-	it("keeps Push primary when ahead while View PR stays available", () => {
+	it("keeps Push primary but unavailable when ahead while View PR stays available", () => {
 		setStatus(
 			{ kind: "push", reason: "unpushed-commits" },
 			{
@@ -296,10 +297,13 @@ describe("SessionGitActions workflow", () => {
 
 		expect(screen.getByRole("button", { name: "Push" })).toHaveProperty(
 			"disabled",
-			false,
+			true,
 		);
 
 		const menu = openGitMenu();
+		expect(
+			isMenuItemDisabled(within(menu).getByRole("menuitem", { name: /Push/i })),
+		).toBe(true);
 		expect(
 			isMenuItemDisabled(
 				within(menu).getByRole("menuitem", { name: /View PR/i }),

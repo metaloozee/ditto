@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { createDb } from "#/db";
 import { projects } from "#/db/schema";
+import { SessionGitPushUnavailableError } from "#/lib/git-push-contract";
 import { GitSecretPolicyError } from "#/lib/git-secret-policy";
 import { decryptEnvVars } from "#/lib/project-env-vars";
 import {
@@ -128,6 +129,9 @@ function mapPushError(error: unknown): never {
 	if (error instanceof GitSecretPolicyError) {
 		throw new AgentGitHttpError(409, error.message);
 	}
+	if (error instanceof SessionGitPushUnavailableError) {
+		throw new AgentGitHttpError(409, error.message);
+	}
 	if (error instanceof AgentGitHttpError) {
 		throw error;
 	}
@@ -182,6 +186,7 @@ export async function dispatchAgentGitAction(options: {
 				session,
 				knownSecrets: options.resolved.knownSecrets,
 				bypassWorkspaceLock: true,
+				identity: lease.identity,
 			};
 			const statusCtx = {
 				env: options.env,
@@ -214,6 +219,9 @@ export async function dispatchAgentGitAction(options: {
 						throw new AgentGitHttpError(409, error.message);
 					}
 					if (error instanceof GitSecretPolicyError) {
+						throw new AgentGitHttpError(409, error.message);
+					}
+					if (error instanceof SessionGitPushUnavailableError) {
 						throw new AgentGitHttpError(409, error.message);
 					}
 					throw new AgentGitHttpError(

@@ -9,6 +9,7 @@ import {
 	fetchGitHubBranchIsolated,
 	PRIVILEGED_GIT_LAUNCHER_SOURCE,
 	PRIVILEGED_NODE_BIN,
+	pushGitHubCommitBrokered,
 	pushGitHubCommitIsolated,
 	validateGitBranchRefs,
 } from "./privileged-git";
@@ -1086,5 +1087,46 @@ describe("fetchGitHubBranchBrokered", () => {
 		expect(serialized).not.toMatch(/ghs_|x-access-token|Authorization/i);
 		expect(childEnv.GIT_CONFIG_VALUE_0).toBe("never");
 		expect(Object.values(childEnv).join("\n")).not.toMatch(/Authorization/i);
+	});
+});
+
+describe("pushGitHubCommitBrokered", () => {
+	it("stages exact SHA then pushes without a token in child or launcher env", async () => {
+		const { sandbox, calls } = makeSandbox((command, options) =>
+			defaultPushHandler(command, options),
+		);
+
+		await pushGitHubCommitBrokered({
+			sandbox,
+			githubRepo: "acme/repo",
+			branchName: "ditto/session-1",
+			sourceCwd: WORKTREE,
+			headRev: HEAD_SHA,
+		});
+
+		const networkCall = calls.find((call) =>
+			isNetworkLauncherCommand(call.command),
+		);
+		expect(networkCall).toBeDefined();
+		expect(networkCall?.command).not.toContain(TOKEN);
+		expect(networkCall?.command).not.toContain("x-access-token");
+		expect(networkCall?.command).not.toContain("Authorization");
+		expect(JSON.stringify(networkCall?.options?.env ?? {})).not.toMatch(
+			/ghs_|x-access-token|Authorization/i,
+		);
+
+		const { gitArgs, childEnv } = parseNetworkEnv(networkCall?.options);
+		expect(gitArgs).toEqual([
+			"push",
+			"--no-verify",
+			"https://github.com/acme/repo.git",
+			`${HEAD_SHA}:refs/heads/ditto/session-1`,
+		]);
+		const serialized = JSON.stringify(childEnv);
+		expect(serialized).not.toMatch(/ghs_|x-access-token|Authorization/i);
+		expect(Object.values(childEnv).join("\n")).not.toMatch(
+			/ghs_|x-access-token|Authorization/i,
+		);
+		expect(childEnv.GIT_CONFIG_VALUE_0).toBe("never");
 	});
 });

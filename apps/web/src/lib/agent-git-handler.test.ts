@@ -31,6 +31,8 @@ vi.mock("#/lib/session-git", () => ({
 
 const { AgentGitHttpError, agentGitBodySchema, dispatchAgentGitAction } =
 	await import("./agent-git-handler");
+const { GIT_PUSH_UNAVAILABLE_MESSAGE, SessionGitPushUnavailableError } =
+	await import("./git-push-contract");
 
 /** Synthetic only — never a live credential. */
 const FIXTURE_SECRET = "proj-fixture-secret-value-01";
@@ -54,37 +56,35 @@ describe("dispatchAgentGitAction", () => {
 		vi.clearAllMocks();
 	});
 
-	it("calls pushSessionBranch when clean and ahead", async () => {
+	it("maps unavailable push to a client-safe error without leaking secrets", async () => {
 		getSessionGitStatusMock.mockResolvedValue({
 			dirty: false,
 			ahead: 2,
 			changedFiles: [],
 			workflow: { kind: "push", reason: "unpushed-commits" },
 		});
-		pushSessionBranchMock.mockResolvedValue({
-			remoteBranch: "ditto/session-abc",
-			pushed: true,
-		});
+		pushSessionBranchMock.mockRejectedValue(
+			new SessionGitPushUnavailableError(),
+		);
 
-		const result = await dispatchAgentGitAction({
-			env,
-			resolved,
-			body: { action: "push" },
+		await expect(
+			dispatchAgentGitAction({
+				env,
+				resolved,
+				body: { action: "push" },
+			}),
+		).rejects.toMatchObject({
+			status: 409,
+			message: GIT_PUSH_UNAVAILABLE_MESSAGE,
 		});
-
 		expect(pushSessionBranchMock).toHaveBeenCalledTimes(1);
 		expect(pushSessionBranchMock).toHaveBeenCalledWith(
 			expect.objectContaining({
 				knownSecrets: [FIXTURE_SECRET],
 				bypassWorkspaceLock: true,
+				identity: null,
 			}),
 		);
-		expect(result).toEqual({
-			remoteBranch: "ditto/session-abc",
-			pushed: true,
-		});
-		// Client-facing result must not include secret values.
-		expect(JSON.stringify(result)).not.toContain(FIXTURE_SECRET);
 	});
 
 	it("rejects push when dirty", async () => {
@@ -177,51 +177,35 @@ describe("dispatchAgentGitAction", () => {
 		);
 	});
 
-	it("openPullRequest pushes first when ahead", async () => {
-		getSessionGitStatusMock
-			.mockResolvedValueOnce({
-				dirty: false,
-				ahead: 1,
-				changedFiles: ["b.ts"],
-				workflow: { kind: "push", reason: "unpushed-commits" },
-			})
-			.mockResolvedValueOnce({
-				dirty: false,
-				ahead: 0,
-				changedFiles: ["b.ts"],
-				workflow: { kind: "open-pr" },
-			});
-		pushSessionBranchMock.mockResolvedValue({ pushed: true });
-		openSessionPullRequestMock.mockResolvedValue({
-			url: "https://github.com/acme/repo/pull/1",
-			number: 1,
+	it("openPullRequest surfaces unavailable instead of minting when ahead", async () => {
+		getSessionGitStatusMock.mockResolvedValue({
+			dirty: false,
+			ahead: 1,
+			changedFiles: ["b.ts"],
+			workflow: { kind: "push", reason: "unpushed-commits" },
 		});
+		pushSessionBranchMock.mockRejectedValue(
+			new SessionGitPushUnavailableError(),
+		);
 
-		const result = await dispatchAgentGitAction({
-			env,
-			resolved,
-			body: { action: "openPullRequest", title: "My PR" },
+		await expect(
+			dispatchAgentGitAction({
+				env,
+				resolved,
+				body: { action: "openPullRequest", title: "My PR" },
+			}),
+		).rejects.toMatchObject({
+			status: 409,
+			message: GIT_PUSH_UNAVAILABLE_MESSAGE,
 		});
-
 		expect(pushSessionBranchMock).toHaveBeenCalledTimes(1);
 		expect(pushSessionBranchMock).toHaveBeenCalledWith(
-			expect.objectContaining({ knownSecrets: [FIXTURE_SECRET] }),
-		);
-		expect(openSessionPullRequestMock).toHaveBeenCalledWith(
 			expect.objectContaining({
-				title: "My PR",
+				knownSecrets: [FIXTURE_SECRET],
+				identity: null,
 			}),
 		);
-		expect(openSessionPullRequestMock.mock.calls[0]?.[0]).not.toHaveProperty(
-			"changedFileCount",
-		);
-		expect(openSessionPullRequestMock.mock.calls[0]?.[0]).not.toHaveProperty(
-			"knownSecrets",
-		);
-		expect(result).toEqual({
-			url: "https://github.com/acme/repo/pull/1",
-			number: 1,
-		});
+		expect(openSessionPullRequestMock).not.toHaveBeenCalled();
 	});
 
 	it("rejects openPR when workflow unavailable/worktree", async () => {

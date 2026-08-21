@@ -42,6 +42,7 @@ export type PrivilegedOperationHandle = {
 	maxRequests: number | null;
 	consumedRequests: number;
 	contractDenials: number;
+	contractState: string | null;
 	openedAt: Date;
 	expiresAt: Date;
 	closedAt: Date | null;
@@ -120,6 +121,7 @@ function toOperationHandle(
 		maxRequests: row.maxRequests,
 		consumedRequests: row.consumedRequests,
 		contractDenials: row.contractDenials,
+		contractState: row.contractState ?? null,
 		openedAt: row.openedAt,
 		expiresAt: row.expiresAt,
 		closedAt: row.closedAt ?? null,
@@ -207,8 +209,14 @@ export type SandboxAuthority = {
 		repository?: string | null;
 		allowedRefs?: string[] | null;
 		maxRequests?: number | null;
+		contractState?: string | null;
 		expiresAt: Date;
 	}): Promise<PrivilegedOperationHandle>;
+	updateOperationContractState(
+		operationId: string,
+		expected: string | null,
+		next: string,
+	): Promise<PrivilegedOperationHandle>;
 	closeOperation(
 		operationId: string,
 		closeReason: string,
@@ -233,6 +241,7 @@ export type SandboxAuthority = {
 			repository?: string | null;
 			allowedRefs?: string[] | null;
 			maxRequests?: number | null;
+			contractState?: string | null;
 			expiresAt: Date;
 		},
 		run: (operation: PrivilegedOperationHandle) => Promise<T>,
@@ -240,6 +249,7 @@ export type SandboxAuthority = {
 	resolveOutboundRequest(
 		ctx: TrustedOutboundHandlerContext,
 		family: PrivilegedOperationFamily,
+		options?: { consume?: boolean },
 	): Promise<ResolvedOutboundOperation>;
 };
 
@@ -384,6 +394,7 @@ export function createSandboxAuthority(db: Db): SandboxAuthority {
 						maxRequests: input.maxRequests ?? null,
 						consumedRequests: 0,
 						contractDenials: 0,
+						contractState: input.contractState ?? null,
 						openedAt,
 						expiresAt: input.expiresAt,
 						correlationId,
@@ -523,6 +534,57 @@ export function createSandboxAuthority(db: Db): SandboxAuthority {
 			return toOperationHandle(row);
 		},
 
+		async updateOperationContractState(operationId, expected, next) {
+			const [existing] = await db
+				.select()
+				.from(privilegedOperations)
+				.where(eq(privilegedOperations.id, operationId))
+				.limit(1);
+			if (!existing) {
+				throw new SandboxAuthorityError(
+					"operation_not_found",
+					"Privileged operation not found.",
+				);
+			}
+			if (existing.closedAt != null) {
+				throw new SandboxAuthorityError(
+					"operation_closed",
+					"Privileged operation is closed.",
+				);
+			}
+			const current = existing.contractState ?? null;
+			if (current !== expected) {
+				throw new SandboxAuthorityError(
+					"contract_state_conflict",
+					"Privileged operation contract state does not match.",
+				);
+			}
+			const updated = await db
+				.update(privilegedOperations)
+				.set({
+					contractState: next,
+					updatedAt: sql`(unixepoch())`,
+				})
+				.where(
+					and(
+						eq(privilegedOperations.id, operationId),
+						isNull(privilegedOperations.closedAt),
+						expected == null
+							? isNull(privilegedOperations.contractState)
+							: eq(privilegedOperations.contractState, expected),
+					),
+				)
+				.returning();
+			const row = updated[0];
+			if (!row) {
+				throw new SandboxAuthorityError(
+					"contract_state_conflict",
+					"Privileged operation contract state does not match.",
+				);
+			}
+			return toOperationHandle(row);
+		},
+
 		async withOperation(input, run) {
 			const operation = await this.openOperation(input);
 			try {
@@ -532,7 +594,7 @@ export function createSandboxAuthority(db: Db): SandboxAuthority {
 			}
 		},
 
-		async resolveOutboundRequest(ctx, family) {
+		async resolveOutboundRequest(ctx, family, options) {
 			const identity = await loadIdentity(db, ctx.identityId);
 			if (!identity) {
 				throw new SandboxAuthorityError(
@@ -585,7 +647,8 @@ export function createSandboxAuthority(db: Db): SandboxAuthority {
 				);
 			}
 
-			if (operation.maxRequests != null) {
+			const consume = options?.consume !== false;
+			if (consume && operation.maxRequests != null) {
 				const nextConsumed = operation.consumedRequests + 1;
 				if (nextConsumed > operation.maxRequests) {
 					throw new SandboxAuthorityError(

@@ -1,5 +1,9 @@
 import { TRPCError } from "@trpc/server";
 import { describe, expect, it } from "vitest";
+import {
+	GIT_PUSH_UNAVAILABLE_MESSAGE,
+	SessionGitPushUnavailableError,
+} from "#/lib/git-push-contract";
 import { rethrowOrMapSessionGitMutationError } from "#/lib/session-git-trpc-errors";
 import { SessionWorkspaceBusyError } from "#/lib/session-workspace-lock-error";
 
@@ -36,6 +40,23 @@ describe("rethrowOrMapSessionGitMutationError", () => {
 			expect(error).toBeInstanceOf(TRPCError);
 			expect((error as TRPCError).code).toBe("FORBIDDEN");
 			expect((error as TRPCError).message).toBe(PUSH_FORBIDDEN_MESSAGE);
+		}
+	});
+
+	it("maps unavailable product push to a precondition failure", () => {
+		try {
+			rethrowOrMapSessionGitMutationError(
+				new SessionGitPushUnavailableError(),
+				{
+					fallbackMessage: "Failed to push branch.",
+					forbiddenWhenMessage: PUSH_FORBIDDEN_MESSAGE,
+				},
+			);
+			expect.fail("expected throw");
+		} catch (error) {
+			expect(error).toBeInstanceOf(TRPCError);
+			expect((error as TRPCError).code).toBe("PRECONDITION_FAILED");
+			expect((error as TRPCError).message).toBe(GIT_PUSH_UNAVAILABLE_MESSAGE);
 		}
 	});
 

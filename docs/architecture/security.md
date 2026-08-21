@@ -112,8 +112,11 @@ environment. After durable authority and the Git fetch contract pass, the
 Worker mints the installation token onto a fresh upstream request only. The
 token never enters the sandbox URL, environment, file, or process argument.
 
-Legacy session sync and agent push still pass a short-lived token into a
-sandbox network Git launcher. That launcher uses a fresh temporary bare
+A receive-pack contract exists for one serialized GitHub smart-HTTP push, but
+product push stays disabled until a crafted non-fast-forward receive-pack is
+proved rejected. Installation tokens stay in the Worker. Local commits and
+secret preflight remain. Legacy session sync still passes a short-lived token
+into a sandbox network Git launcher. That launcher uses a fresh temporary bare
 repository outside `/workspace`, disables hooks and credential helpers,
 suppresses system/global configuration, and authenticates over HTTPS with a
 public remote URL. Repository objects move between the worktree and temporary
@@ -240,9 +243,9 @@ isolation:
   worktrees isolate normal file edits only on that path.
 - Provider credentials no longer enter sandbox agent runs. The OpenCode key
   stays in the Worker. Git callback bearer tokens are not issued.
-- GitHub installation tokens stay in the Worker for project-seed builder fetch.
-  Legacy session sync and agent push still inject tokens into a short-lived
-  sandbox Git process.
+- GitHub installation tokens stay in the Worker for project-seed builder fetch
+  and for product Git push (currently disabled). Legacy session sync still
+  injects a token into a short-lived sandbox Git process.
 - Normal chat constructs an explicit locked resource loader. Repository-owned
   extensions, skills, prompts, themes, settings, and context files are not
   discoverable. Only the image-owned Ditto extension at

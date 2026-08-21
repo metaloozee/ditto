@@ -878,6 +878,66 @@ async function stageCommitViaAlternates(
 }
 
 /**
+ * Push the exact preflight HEAD SHA over HTTPS from a fresh temp bare repo.
+ * The Worker egress broker authenticates the network hop. No token is minted
+ * into the sandbox.
+ */
+export async function pushGitHubCommitBrokered(options: {
+	sandbox: PrivilegedGitSandbox;
+	githubRepo: string;
+	branchName: string;
+	sourceCwd: string;
+	headRev: string;
+}): Promise<void> {
+	assertGithubRepoSlug(options.githubRepo);
+	if (!/^[0-9a-f]{40}$/i.test(options.headRev)) {
+		throw new Error("Invalid preflight head revision.");
+	}
+
+	const refs = await validateGitBranchRefs(options.sandbox, options.branchName);
+	const publicUrl = publicGitHubRepoUrl(options.githubRepo);
+	const secrets: SecretBag = { current: [] };
+
+	await withTempBareRepo(
+		options.sandbox,
+		secrets,
+		async (tempDir, launcherPath) => {
+			const sourceHead = await readStdoutOrThrow(
+				options.sandbox,
+				"git rev-parse HEAD",
+				{
+					cwd: options.sourceCwd,
+					errorPrefix: "Failed to resolve source HEAD before push",
+				},
+			);
+			if (sourceHead !== options.headRev) {
+				throw new Error(
+					"Source HEAD changed after secret preflight; refusing to push.",
+				);
+			}
+
+			await stageCommitViaAlternates(options.sandbox, {
+				tempDir,
+				sourceCwd: options.sourceCwd,
+				headRev: options.headRev,
+			});
+
+			await runBrokeredNetworkGit(options.sandbox, {
+				tempDir,
+				launcherPath,
+				gitArgs: [
+					"push",
+					"--no-verify",
+					publicUrl,
+					refs.pushRefspecFrom(options.headRev),
+				],
+				errorPrefix: "Failed to push branch",
+			});
+		},
+	);
+}
+
+/**
  * Push the exact preflight HEAD SHA to GitHub from a fresh temp bare repo.
  * Token mint runs only after local staging and SHA verification.
  */

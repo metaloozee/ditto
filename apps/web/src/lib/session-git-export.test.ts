@@ -360,6 +360,31 @@ describe("runPushThenOpenPullRequest", () => {
 		expect(openSessionPullRequest).not.toHaveBeenCalled();
 	});
 
+	it("propagates SessionGitPushUnavailableError without opening a PR", async () => {
+		const { SessionGitPushUnavailableError, GIT_PUSH_UNAVAILABLE_MESSAGE } =
+			await import("./git-push-contract");
+		getSessionGitStatus.mockResolvedValue({
+			dirty: false,
+			workflow: { kind: "push", reason: "unpushed-commits" },
+		});
+		pushSessionBranch.mockRejectedValue(new SessionGitPushUnavailableError());
+		const onDidPush = vi.fn();
+
+		await expect(
+			runPushThenOpenPullRequest({
+				ctx: makeCtx(),
+				deps,
+				existingPullRequestPolicy: "open",
+				onDidPush,
+			}),
+		).rejects.toMatchObject({
+			name: "SessionGitPushUnavailableError",
+			message: GIT_PUSH_UNAVAILABLE_MESSAGE,
+		});
+		expect(onDidPush).not.toHaveBeenCalled();
+		expect(openSessionPullRequest).not.toHaveBeenCalled();
+	});
+
 	it("propagates push failure without calling onDidPush", async () => {
 		getSessionGitStatus.mockResolvedValue({
 			dirty: false,

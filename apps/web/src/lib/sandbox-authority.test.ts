@@ -135,6 +135,7 @@ function makeAuthorityDb() {
 									maxRequests: (value.maxRequests as number | null) ?? null,
 									consumedRequests: Number(value.consumedRequests ?? 0),
 									contractDenials: Number(value.contractDenials ?? 0),
+									contractState: (value.contractState as string | null) ?? null,
 									openedAt: value.openedAt as Date,
 									expiresAt: value.expiresAt as Date,
 									closedAt: (value.closedAt as Date | null) ?? null,
@@ -241,6 +242,24 @@ function makeAuthorityDb() {
 										) {
 											return [];
 										}
+										const strings = params.filter(
+											(value): value is string => typeof value === "string",
+										);
+										if ("contractState" in patch) {
+											const expectedState = row.contractState ?? null;
+											if (
+												expectedState != null &&
+												!strings.includes(expectedState)
+											) {
+												return [];
+											}
+											if (
+												expectedState == null &&
+												strings.includes(row.id) === false
+											) {
+												// CAS on null state uses isNull; allow when no expected JSON string matches another row's state.
+											}
+										}
 										const next: OperationRow = {
 											...row,
 											closedAt:
@@ -265,6 +284,10 @@ function makeAuthorityDb() {
 												"contractDenials" in patch
 													? Number(patch.contractDenials)
 													: row.contractDenials,
+											contractState:
+												"contractState" in patch
+													? (patch.contractState as string | null)
+													: row.contractState,
 											updatedAt: new Date(),
 										};
 										operations.set(row.id, next);

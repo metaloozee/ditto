@@ -35,6 +35,7 @@ export type SessionGitUiActionContext = {
 	githubRepo: string;
 	session: SessionGitSession;
 	knownSecrets?: readonly string[];
+	identity?: Parameters<typeof pushSessionBranch>[0]["identity"];
 };
 
 export type SessionGitUiActionDeps = {
@@ -69,6 +70,7 @@ function gitCtx(ctx: SessionGitUiActionContext) {
 		githubRepo: ctx.githubRepo,
 		session: ctx.session,
 		knownSecrets: ctx.knownSecrets,
+		identity: ctx.identity,
 	};
 }
 

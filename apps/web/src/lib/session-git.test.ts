@@ -6,7 +6,6 @@ const getGitHubAppMock = vi.hoisted(() => vi.fn());
 const scrubGithubRemoteMock = vi.hoisted(() => vi.fn());
 const fetchPrimaryBranchFromGitHubMock = vi.hoisted(() => vi.fn());
 const installDependenciesMock = vi.hoisted(() => vi.fn());
-const pushGitHubCommitIsolatedMock = vi.hoisted(() => vi.fn());
 const validateGitBranchRefsMock = vi.hoisted(() => vi.fn());
 
 vi.mock("#/lib/sandbox-bootstrap", () => ({
@@ -17,7 +16,6 @@ vi.mock("#/lib/sandbox-bootstrap", () => ({
 }));
 
 vi.mock("#/lib/privileged-git", () => ({
-	pushGitHubCommitIsolated: pushGitHubCommitIsolatedMock,
 	validateGitBranchRefs: validateGitBranchRefsMock,
 }));
 
@@ -40,7 +38,6 @@ vi.mock("#/lib/github-app", () => ({
 }));
 
 const {
-	GITHUB_APP_PUSH_PERMISSION_MESSAGE,
 	commitSessionChanges,
 	findOpenSessionPullRequest,
 	getSessionGitStatus,
@@ -50,6 +47,8 @@ const {
 	resolveSessionGitWorkflow,
 	syncSessionBranch,
 } = await import("./session-git");
+const { GIT_PUSH_UNAVAILABLE_MESSAGE, SessionGitPushUnavailableError } =
+	await import("./git-push-contract");
 
 function mockNoOpenPullRequest() {
 	getGitHubAppMock.mockReturnValue({
@@ -307,9 +306,6 @@ describe("session git", () => {
 			headSha: "new-main-sha",
 		});
 		installDependenciesMock.mockResolvedValue(undefined);
-		pushGitHubCommitIsolatedMock.mockImplementation(async (options) => {
-			await options.mintToken();
-		});
 		validateGitBranchRefsMock.mockImplementation(
 			async (_sandbox, branchName: string) => ({
 				branchName,
@@ -999,59 +995,38 @@ describe("session git", () => {
 		expect(sandbox.exec).toHaveBeenCalledTimes(1);
 	});
 
-	it("pushes with installation token and scrubs remotes", async () => {
+	it("runs secret preflight then throws unavailable without minting or isolated push", async () => {
 		const sandbox = makeSandbox(async (command) => {
 			const preflight = answerSafePreflight(command);
 			if (preflight) {
 				return preflight;
 			}
-			if (command.startsWith("git update-ref ")) {
-				expect(command).toContain("refs/remotes/origin/ditto/session-sess-1");
-				expect(command).not.toContain(TOKEN);
-				expect(command).not.toContain("x-access-token");
-				return { success: true, stdout: "", stderr: "", exitCode: 0 };
-			}
-			if (command.startsWith("git branch --set-upstream-to=")) {
-				expect(command).toContain("origin/ditto/session-sess-1");
-				expect(command).not.toContain(TOKEN);
-				expect(command).not.toContain("x-access-token");
-				return { success: true, stdout: "", stderr: "", exitCode: 0 };
-			}
 			throw new Error(`unexpected command: ${command}`);
 		});
 		getProjectSandboxMock.mockReturnValue(sandbox);
 
-		const result = await pushSessionBranch({
-			env: makeEnv(),
-			sandboxId: "sandbox-1",
-			installationId: 42,
-			githubRepo: "acme/repo",
-			session: makeSession(),
-		});
-
-		expect(result).toEqual({
-			remoteBranch: "ditto/session-sess-1",
-			pushed: true,
-		});
-		expect(pushGitHubCommitIsolatedMock).toHaveBeenCalledWith(
-			expect.objectContaining({
-				sourceCwd: WORKTREE,
-				branchName: "ditto/session-sess-1",
-				headRev: PREFLIGHT_HEAD,
+		let thrown: unknown;
+		try {
+			await pushSessionBranch({
+				env: makeEnv(),
+				sandboxId: "sandbox-1",
+				installationId: 42,
 				githubRepo: "acme/repo",
-			}),
-		);
-		expect(getInstallationAccessTokenMock).toHaveBeenCalledWith(
-			expect.anything(),
-			42,
-			{ repositories: ["repo"] },
-		);
+				session: makeSession(),
+			});
+		} catch (error) {
+			thrown = error;
+		}
+		expect(thrown).toBeInstanceOf(SessionGitPushUnavailableError);
+		expect(thrown).toMatchObject({ message: GIT_PUSH_UNAVAILABLE_MESSAGE });
+		expect(sandbox.exec).toHaveBeenCalled();
+		expect(getInstallationAccessTokenMock).not.toHaveBeenCalled();
 		expect(
 			sandbox.exec.mock.calls.some((call) =>
 				String(call[0]).startsWith("git push "),
 			),
 		).toBe(false);
-		expect(scrubGithubRemoteMock).toHaveBeenCalledTimes(2);
+		expect(scrubGithubRemoteMock).not.toHaveBeenCalled();
 	});
 
 	it("blocks push preflight before minting a token when secret path is present", async () => {
@@ -1081,170 +1056,11 @@ describe("session git", () => {
 		expect(message).toContain("nested/.env.local");
 		expect(message).not.toContain(FIXTURE_SECRET);
 		expect(getInstallationAccessTokenMock).not.toHaveBeenCalled();
-		expect(pushGitHubCommitIsolatedMock).not.toHaveBeenCalled();
 		expect(
 			sandbox.exec.mock.calls.some((call) =>
 				String(call[0]).startsWith("git push "),
 			),
 		).toBe(false);
-	});
-
-	it("redacts installation token from push errors and still scrubs remotes", async () => {
-		const sandbox = makeSandbox(async (command) => {
-			const preflight = answerSafePreflight(command);
-			if (preflight) {
-				return preflight;
-			}
-			throw new Error(`unexpected command: ${command}`);
-		});
-		getProjectSandboxMock.mockReturnValue(sandbox);
-		pushGitHubCommitIsolatedMock.mockImplementation(async (options) => {
-			const token = await options.mintToken();
-			throw new Error(`remote error with ${token}`);
-		});
-
-		let message = "";
-		try {
-			await pushSessionBranch({
-				env: makeEnv(),
-				sandboxId: "sandbox-1",
-				installationId: 42,
-				githubRepo: "acme/repo",
-				session: makeSession(),
-			});
-		} catch (error) {
-			message = error instanceof Error ? error.message : String(error);
-		}
-		expect(message).toContain("[REDACTED]");
-		expect(message).not.toContain(TOKEN);
-		expect(scrubGithubRemoteMock).toHaveBeenCalledTimes(2);
-	});
-
-	it("maps git push 403 permission denied to an actionable app permissions message", async () => {
-		const sandbox = makeSandbox(async (command) => {
-			const preflight = answerSafePreflight(command);
-			if (preflight) {
-				return preflight;
-			}
-			throw new Error(`unexpected command: ${command}`);
-		});
-		getProjectSandboxMock.mockReturnValue(sandbox);
-		pushGitHubCommitIsolatedMock.mockImplementation(async (options) => {
-			const token = await options.mintToken();
-			throw new Error(
-				`remote: Permission to acme/repo.git denied to ditto-web[bot].\nfatal: unable to access 'https://x-access-token:${token}@github.com/acme/repo.git/': The requested URL returned error: 403`,
-			);
-		});
-
-		let message = "";
-		try {
-			await pushSessionBranch({
-				env: makeEnv(),
-				sandboxId: "sandbox-1",
-				installationId: 42,
-				githubRepo: "acme/repo",
-				session: makeSession(),
-			});
-		} catch (error) {
-			message = error instanceof Error ? error.message : String(error);
-		}
-
-		expect(message).toBe(GITHUB_APP_PUSH_PERMISSION_MESSAGE);
-		expect(message).not.toContain(TOKEN);
-		expect(message).not.toContain("x-access-token");
-		expect(scrubGithubRemoteMock).toHaveBeenCalledTimes(2);
-	});
-
-	it("does not map non-permission push failures to the app permissions message", async () => {
-		const sandbox = makeSandbox(async (command) => {
-			const preflight = answerSafePreflight(command);
-			if (preflight) {
-				return preflight;
-			}
-			throw new Error(`unexpected command: ${command}`);
-		});
-		getProjectSandboxMock.mockReturnValue(sandbox);
-		pushGitHubCommitIsolatedMock.mockImplementation(async (options) => {
-			await options.mintToken();
-			throw new Error(
-				" ! [rejected] HEAD -> ditto/session-sess-1 (non-fast-forward)",
-			);
-		});
-
-		let message = "";
-		try {
-			await pushSessionBranch({
-				env: makeEnv(),
-				sandboxId: "sandbox-1",
-				installationId: 42,
-				githubRepo: "acme/repo",
-				session: makeSession(),
-			});
-		} catch (error) {
-			message = error instanceof Error ? error.message : String(error);
-		}
-
-		expect(message).toContain("non-fast-forward");
-		expect(message).not.toBe(GITHUB_APP_PUSH_PERMISSION_MESSAGE);
-		expect(scrubGithubRemoteMock).toHaveBeenCalledTimes(2);
-	});
-
-	it("maps installation token mint permission failures to the app permissions message", async () => {
-		const sandbox = makeSandbox(async (command) => {
-			const preflight = answerSafePreflight(command);
-			if (preflight) {
-				return preflight;
-			}
-			throw new Error("unexpected git command during token-mint failure");
-		});
-		getProjectSandboxMock.mockReturnValue(sandbox);
-		getInstallationAccessTokenMock.mockRejectedValue(
-			new Error(
-				"HttpError: Resource not accessible by integration - https://docs.github.com/rest/apps/apps#create-an-installation-access-token-for-an-app",
-			),
-		);
-
-		let message = "";
-		try {
-			await pushSessionBranch({
-				env: makeEnv(),
-				sandboxId: "sandbox-1",
-				installationId: 42,
-				githubRepo: "acme/repo",
-				session: makeSession(),
-			});
-		} catch (error) {
-			message = error instanceof Error ? error.message : String(error);
-		}
-
-		expect(message).toBe(GITHUB_APP_PUSH_PERMISSION_MESSAGE);
-		// Scrub still runs even though push never executed.
-		expect(scrubGithubRemoteMock).toHaveBeenCalledTimes(2);
-	});
-
-	it("does not map bare status code 403 to the app permissions message", async () => {
-		const sandbox = makeSandbox(async (command) => {
-			const preflight = answerSafePreflight(command);
-			if (preflight) {
-				return preflight;
-			}
-			throw new Error("unexpected git command during token-mint failure");
-		});
-		getProjectSandboxMock.mockReturnValue(sandbox);
-		getInstallationAccessTokenMock.mockRejectedValue(
-			new Error("Request failed with status code 403"),
-		);
-
-		await expect(
-			pushSessionBranch({
-				env: makeEnv(),
-				sandboxId: "sandbox-1",
-				installationId: 42,
-				githubRepo: "acme/repo",
-				session: makeSession(),
-			}),
-		).rejects.toThrow("Request failed with status code 403");
-		expect(scrubGithubRemoteMock).toHaveBeenCalledTimes(2);
 	});
 
 	it("creates a pull request using commit subjects and changed files from the branch range", async () => {

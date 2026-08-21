@@ -234,8 +234,11 @@ GitHub installation token.
   reads and cannot receive new messages.
 - There is no merge operation in Ditto; pull requests are completed on GitHub.
 - New project-seed builders fetch Git through the Worker broker; the
-  installation token stays in the Worker. Legacy session sync and agent Git
-  still inject short-lived tokens into sandbox network Git processes.
+  installation token stays in the Worker. Product push is disabled until a
+  crafted non-fast-forward receive-pack is proved rejected; the receive-pack
+  contract exists, local commits and secret preflight remain, and installation
+  tokens stay in the Worker. Legacy session sync still injects a short-lived
+  token into a sandbox network Git process.
 - Provider credentials and Git callback bearer tokens do not enter sandbox
   agent runs. The OpenCode key stays in the Worker.
 - Normal chat runs still use PI's default project resource discovery.

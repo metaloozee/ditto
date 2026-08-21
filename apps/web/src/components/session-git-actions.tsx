@@ -24,6 +24,10 @@ import {
 	TooltipTrigger,
 } from "#/components/ui/tooltip";
 import { useTRPC } from "#/integrations/trpc/react";
+import {
+	GIT_PUSH_ENABLED,
+	GIT_PUSH_UNAVAILABLE_MESSAGE,
+} from "#/lib/git-push-contract";
 import type { SessionGitStatus } from "#/lib/session-git";
 import { cn } from "#/lib/utils";
 
@@ -144,12 +148,14 @@ function SessionGitActionsView({
 	const syncDisabled =
 		!canRun || isPending || statusLoading || workflow?.kind !== "sync";
 	const commitDisabled = !canRun || isPending || !dirty || statusLoading;
+	const pushUnavailable = !GIT_PUSH_ENABLED;
 	const pushDisabled =
 		!canRun ||
 		isPending ||
 		statusLoading ||
 		!status ||
-		workflow?.kind !== "push";
+		workflow?.kind !== "push" ||
+		pushUnavailable;
 	const pullRequestFromWorkflow =
 		workflow?.kind === "open-pr-existing" ||
 		workflow?.kind === "closed-pr" ||
@@ -158,7 +164,8 @@ function SessionGitActionsView({
 			: null;
 	const pullRequest = pullRequestFromWorkflow ?? status?.pullRequest ?? null;
 	const canOpenPullRequest =
-		workflow?.kind === "open-pr" || workflow?.kind === "push";
+		workflow?.kind === "open-pr" ||
+		(workflow?.kind === "push" && GIT_PUSH_ENABLED);
 	const openPrDisabled =
 		!canRun ||
 		isPending ||
@@ -194,15 +201,17 @@ function SessionGitActionsView({
 					: "No uncommitted changes"
 				: "Commit local changes on this session branch";
 	const pushTooltip =
-		workflow?.kind === "push" && workflow.reason === "remote-branch-missing"
-			? "Restore deleted branch on GitHub"
-			: pushDisabled
-				? dirty
-					? "Commit changes before pushing"
-					: aheadCount <= 0
-						? "Branch is up to date with remote"
-						: "Working…"
-				: `Push ${aheadCount} ${aheadCount === 1 ? "commit" : "commits"} to GitHub`;
+		workflow?.kind === "push" && pushUnavailable
+			? GIT_PUSH_UNAVAILABLE_MESSAGE
+			: workflow?.kind === "push" && workflow.reason === "remote-branch-missing"
+				? "Restore deleted branch on GitHub"
+				: pushDisabled
+					? dirty
+						? "Commit changes before pushing"
+						: aheadCount <= 0
+							? "Branch is up to date with remote"
+							: "Working…"
+					: `Push ${aheadCount} ${aheadCount === 1 ? "commit" : "commits"} to GitHub`;
 	const prLabel =
 		workflow?.kind === "merged-pr"
 			? `Merged #${workflow.pullRequest.number}`
@@ -231,7 +240,9 @@ function SessionGitActionsView({
 										? "Commit changes before opening a PR"
 										: "Working…"
 							: workflow?.kind === "push"
-								? "Push branch and open a pull request"
+								? pushUnavailable
+									? GIT_PUSH_UNAVAILABLE_MESSAGE
+									: "Push branch and open a pull request"
 								: "Open a pull request for this branch";
 
 	function handlePrAction(): void {

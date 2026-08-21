@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { SessionGitPushUnavailableError } from "#/lib/git-push-contract";
 import { SessionWorkspaceBusyError } from "#/lib/session-workspace-lock-error";
 
 export function rethrowOrMapSessionGitMutationError(
@@ -7,6 +8,12 @@ export function rethrowOrMapSessionGitMutationError(
 ): never {
 	if (error instanceof TRPCError) {
 		throw error;
+	}
+	if (error instanceof SessionGitPushUnavailableError) {
+		throw new TRPCError({
+			code: "PRECONDITION_FAILED",
+			message: error.message,
+		});
 	}
 	if (error instanceof SessionWorkspaceBusyError) {
 		throw new TRPCError({

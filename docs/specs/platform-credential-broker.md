@@ -133,7 +133,7 @@ separate Git worktrees inside the shared sandbox.
 The Worker passes these credential classes into sandbox processes:
 
 - a GitHub installation token for a short-lived network Git launcher on the
-  remaining push path
+  remaining legacy session-sync fetch path
 - user-owned project environment values into the agent command only
 
 The OpenCode API key stays in the Worker. Agent Git tools call
@@ -160,10 +160,10 @@ runtime. Session recovery backups remain a later plan.
 | Design area | Status | Evidence |
 |---|---|---|
 | Ditto-owned Sandbox subclass | Not implemented | `apps/web/src/server.ts` re-exports the stock `Sandbox` class. |
-| Outbound credential dispatch | Partial | Git fetch, OpenCode model requests, and Ditto Git actions resolve the sandbox identity. GitHub installation-token removal for push remains later. |
+| Outbound credential dispatch | Partial | Git fetch, OpenCode model requests, and Ditto Git actions resolve the sandbox identity. A receive-pack contract exists; product push is disabled until non-fast-forward rejection is proved. Installation tokens stay in the Worker. Local commits and secret preflight remain. |
 | OpenCode credential removal | Implemented | Worker holds `OPENCODE_API_KEY`. Sandbox PI uses the public placeholder. `open-code-contract.ts` constructs the authenticated upstream request. |
 | Token-free agent Git capability | Implemented | Image-owned origin `http://ditto.internal/v1/git-action`; Worker classifies it before public internet, resolves the trusted identity and open `ditto_action` / `agent_git` D1 operation, and dispatches `agent-git-handler.ts`. HS256 callback JWT and the public Git route are gone. |
-| GitHub installation-token removal | Not implemented | `apps/web/src/lib/privileged-git.ts` passes the token to a sandbox process. |
+| GitHub installation-token removal | Partial | Product push does not mint sandbox tokens. Isolated fetch still injects a token for legacy session sync. |
 | Token-free R2 recovery | Not implemented | Production backup and restore use the stock Sandbox SDK path. |
 | Contract-based outbound policy | Not implemented | The stock project sandbox retains normal network access. |
 | One sandbox per workspace session | Implemented for new sessions | `WorkspaceRuntime` provisions a `workspace_session` identity and sandbox. Legacy sessions may still share a project sandbox until plan 012. |

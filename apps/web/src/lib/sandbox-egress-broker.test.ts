@@ -17,6 +17,7 @@ const mintTokenMock = vi.fn(async () => "ghs_minted_token");
 const fetchMock = vi.fn();
 const resolveMock = vi.fn();
 const recordContractDenialMock = vi.fn();
+const closeOperationMock = vi.fn();
 const sessionUpdateMock = vi.fn();
 
 const PINNED_BODY = {
@@ -123,6 +124,7 @@ describe("SandboxEgressBroker", () => {
 			identityId: "id-1",
 			workspaceSessionId: "sess-1",
 		});
+		closeOperationMock.mockResolvedValue(undefined);
 		resolveMock.mockResolvedValue({
 			identity: {
 				id: "id-1",
@@ -194,6 +196,7 @@ describe("SandboxEgressBroker", () => {
 			({
 				resolveOutboundRequest: resolveMock,
 				recordContractDenial: recordContractDenialMock,
+				closeOperation: closeOperationMock,
 			}) as never,
 		mintInstallationToken: mintTokenMock,
 		resolveAgentGitContext: resolveAgentGitContextMock,
@@ -327,6 +330,132 @@ describe("SandboxEgressBroker", () => {
 		expect(upstream.url.startsWith("https://github.com/acme/app.git/")).toBe(
 			true,
 		);
+	});
+
+	it("denies receive-pack while GIT_PUSH_ENABLED is false without minting", async () => {
+		resolveMock.mockResolvedValue({
+			identity: {
+				id: "id-1",
+				kind: "workspace_session",
+				sandboxId: "sbx-1",
+				containerId: "container-1",
+				userId: "user-1",
+				projectId: "proj-1",
+				workspaceSessionId: "sess-1",
+				lifecycleGeneration: 1,
+				state: "ready",
+				retiredAt: null,
+			},
+			operation: {
+				id: "op-push-1",
+				identityId: "id-1",
+				lifecycleGeneration: 1,
+				family: "git_transport",
+				type: "push",
+				contractVersion: 1,
+				repository: "acme/app",
+				allowedRefs: ["refs/heads/ditto/session-1"],
+				maxRequests: 2,
+				consumedRequests: 0,
+				contractDenials: 0,
+				contractState: JSON.stringify({
+					preflightHeadSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				}),
+				openedAt: new Date(),
+				expiresAt: new Date(Date.now() + 60_000),
+				closedAt: null,
+				closeReason: null,
+				correlationId: "corr-push-1",
+			},
+		});
+		const response = await handleOutbound(
+			new Request("https://github.com/acme/app.git/git-receive-pack", {
+				method: "POST",
+				headers: {
+					"content-type": "application/x-git-receive-pack-request",
+				},
+				body: "PACK",
+			}),
+			{} as Env,
+			makeCtx(),
+			deps,
+		);
+		expect(response.status).toBe(403);
+		const body = (await response.json()) as { reasonCode: string };
+		expect(body.reasonCode).toBe("push_disabled");
+		expect(mintTokenMock).not.toHaveBeenCalled();
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(closeOperationMock).toHaveBeenCalledWith(
+			"op-push-1",
+			"push_disabled",
+		);
+	});
+
+	it("denies fetch-typed operation that hits git-receive-pack without minting", async () => {
+		const response = await handleOutbound(
+			new Request("https://github.com/acme/app.git/git-receive-pack", {
+				method: "POST",
+				headers: {
+					"content-type": "application/x-git-receive-pack-request",
+				},
+				body: "PACK",
+			}),
+			{} as Env,
+			makeCtx(),
+			deps,
+		);
+		expect(response.status).toBe(403);
+		const body = (await response.json()) as { reasonCode: string };
+		expect(body.reasonCode).toBe("push_disabled");
+		expect(mintTokenMock).not.toHaveBeenCalled();
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("denies receive-pack credential-shaped headers without minting", async () => {
+		const response = await handleOutbound(
+			new Request("https://github.com/acme/app.git/git-receive-pack", {
+				method: "POST",
+				headers: {
+					"content-type": "application/x-git-receive-pack-request",
+					Authorization: "Bearer stolen",
+					Cookie: "session=1",
+				},
+				body: "PACK",
+			}),
+			{} as Env,
+			makeCtx(),
+			deps,
+		);
+		expect(response.status).toBe(403);
+		expect(mintTokenMock).not.toHaveBeenCalled();
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("denies a second concurrent receive-pack without minting", async () => {
+		const makeReceivePack = () =>
+			new Request("https://github.com/acme/app.git/git-receive-pack", {
+				method: "POST",
+				headers: {
+					"content-type": "application/x-git-receive-pack-request",
+				},
+				body: "PACK",
+			});
+		const first = await handleOutbound(
+			makeReceivePack(),
+			{} as Env,
+			makeCtx(),
+			deps,
+		);
+		const second = await handleOutbound(
+			makeReceivePack(),
+			{} as Env,
+			makeCtx(),
+			deps,
+		);
+		expect(first.status).toBe(403);
+		expect(second.status).toBe(403);
+		expect(mintTokenMock).not.toHaveBeenCalled();
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
 	it("synthetic ditto origin denies as privileged", async () => {
