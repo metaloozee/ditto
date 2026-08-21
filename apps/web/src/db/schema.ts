@@ -389,6 +389,10 @@ export const privilegedOperations = sqliteTable(
 		consumedRequests: integer("consumedRequests", { mode: "number" })
 			.notNull()
 			.default(0),
+		/** Durable OpenCode contract-denial count for the open operation. */
+		contractDenials: integer("contractDenials", { mode: "number" })
+			.notNull()
+			.default(0),
 		openedAt: integer("openedAt", { mode: "timestamp" }).notNull(),
 		expiresAt: integer("expiresAt", { mode: "timestamp" }).notNull(),
 		closedAt: integer("closedAt", { mode: "timestamp" }),

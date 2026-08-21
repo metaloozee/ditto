@@ -96,6 +96,7 @@ export type WorkspaceRuntimeLease = {
 	branchName: string;
 	baseCommitSha: string;
 	sandbox: WorkspaceRuntimeSandbox;
+	identity: SandboxIdentityHandle | null;
 	projectEnv: readonly SandboxEnvVar[] | null;
 	issueGitCallbackToken: (options: {
 		secret: string;
@@ -772,6 +773,7 @@ function buildLease(options: {
 		branchName: options.prepared.branchName,
 		baseCommitSha: options.prepared.baseCommitSha,
 		sandbox: options.prepared.sandbox,
+		identity: options.prepared.identity,
 		projectEnv: options.projectEnv,
 		issueGitCallbackToken: async (tokenOptions) => {
 			if (options.purpose !== "agent_run") {

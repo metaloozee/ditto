@@ -28,6 +28,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 }));
 
 import {
+	OPENCODE_PLACEHOLDER_API_KEY,
 	parseModelSpecifier,
 	RUNNER_MODEL_SPECIFIER,
 	resolveRunnerModel,
@@ -75,11 +76,12 @@ describe("resolveRunnerModel", () => {
 		delete process.env.DITTO_PI_CREDENTIAL;
 	});
 
-	it("seeds the selected provider in memory and deletes credential env vars", async () => {
+	it("seeds the public placeholder and deletes leftover credential env vars", async () => {
 		process.env.DITTO_PI_CREDENTIAL = JSON.stringify({
 			type: "api_key",
 			key: "test-opencode-key",
 		});
+		process.env.OPENCODE_API_KEY = "legacy-key";
 		const resolved = await resolveRunnerModel(RUNNER_MODEL_SPECIFIER);
 		expect("error" in resolved).toBe(false);
 		if ("error" in resolved) return;
@@ -91,7 +93,12 @@ describe("resolveRunnerModel", () => {
 			expect.any(Function),
 		);
 		const seeded = await mocks.credentialModify.mock.calls[0][1](undefined);
-		expect(seeded).toEqual({ type: "api_key", key: "test-opencode-key" });
+		expect(seeded).toEqual({
+			type: "api_key",
+			key: OPENCODE_PLACEHOLDER_API_KEY,
+		});
+		expect(seeded).not.toEqual({ type: "api_key", key: "test-opencode-key" });
+		expect(seeded).not.toEqual({ type: "api_key", key: "legacy-key" });
 		expect(mocks.modelRuntimeCreate).toHaveBeenCalledWith({
 			credentials: expect.any(Object),
 			modelsPath: null,
@@ -103,12 +110,15 @@ describe("resolveRunnerModel", () => {
 		});
 	});
 
-	it("accepts legacy bare OPENCODE_API_KEY strings", async () => {
+	it("does not seed leftover OPENCODE_API_KEY as the credential", async () => {
 		process.env.OPENCODE_API_KEY = "legacy-key";
 		const resolved = await resolveRunnerModel(RUNNER_MODEL_SPECIFIER);
 		expect("error" in resolved).toBe(false);
 		const seeded = await mocks.credentialModify.mock.calls[0][1](undefined);
-		expect(seeded).toEqual({ type: "api_key", key: "legacy-key" });
+		expect(seeded).toEqual({
+			type: "api_key",
+			key: OPENCODE_PLACEHOLDER_API_KEY,
+		});
 		expect(process.env.OPENCODE_API_KEY).toBeUndefined();
 	});
 

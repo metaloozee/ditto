@@ -58,8 +58,8 @@ The large workflows live in narrow modules rather than route handlers:
 - `agent-run-service.ts` is the transaction-like agent lifecycle: prepare,
   multi-turn stream persistence, terminal settlement, and backup. It validates
   `OPENCODE_API_KEY` and any explicit thinking level (`off`, `high`, `max`)
-  before project/session/message side effects, then uses the operator fallback
-  credential for the fixed model.
+  before project/session/message side effects, then opens an `agent_run` model
+  operation around the sandbox command. The key stays in the Worker.
 - `agent-control-service.ts` authenticates run-scoped follow-up/Stop ownership,
   writes the bounded control job, invokes the baked control CLI, and maps stale
   targets without acquiring the active workspace-session lock.
@@ -73,7 +73,10 @@ The large workflows live in narrow modules rather than route handlers:
 - `sandbox-authority.ts` owns sandbox identity registration, generation
   rotation, permanent retirement, and privileged operation open/close/resolve.
 - `sandbox-egress-broker.ts` owns outbound classification, authority lookup,
-  Git fetch forwarding, and credential-free public internet policy.
+  Git fetch forwarding, OpenCode model forwarding, and credential-free public
+  internet policy.
+- `open-code-contract.ts` validates the pinned OpenCode chat-completions
+  request, constructs a fresh upstream request, and streams the response.
 - `project-seed.ts` owns temporary builder provisioning for new GitHub imports.
 - `sandbox-bootstrap.ts` owns low-level Sandbox SDK helpers and the legacy
   project-sandbox clone/fetch/install and archive-backed backup/restore path.
@@ -86,7 +89,8 @@ The large workflows live in narrow modules rather than route handlers:
 - `session-git.ts` is the shared Git/GitHub state machine used by browser and
   agent export paths.
 - `session-git-metadata.ts` collects bounded Git snapshots and bridges the
-  one-shot `ditto-git-metadata` runner (operator-fallback credential only).
+  one-shot `ditto-git-metadata` runner through a one-request `git_metadata`
+  model operation.
 - `session-git-ui-actions.ts` orchestrates UI Commit/Open PR under one session
   lock (snapshot → generate → mutate → release → conditional backup).
 - `agent-git-handler.ts` resolves JWT claims back to current D1 state and

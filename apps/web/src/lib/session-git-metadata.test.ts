@@ -1,16 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getProjectSandboxMock = vi.hoisted(() => vi.fn());
-const operatorFallbackCredentialMock = vi.hoisted(() =>
-	vi.fn((key: string) => ({ type: "api_key", key })),
-);
 
 vi.mock("#/lib/sandbox-bootstrap", () => ({
 	getProjectSandbox: getProjectSandboxMock,
-}));
-
-vi.mock("#/lib/account-provider-credentials", () => ({
-	operatorFallbackCredential: operatorFallbackCredentialMock,
 }));
 
 const {
@@ -54,6 +47,17 @@ function fail(stderr = "raw git boom SECRET_SENTINEL_XYZ") {
 const env = {
 	OPENCODE_API_KEY: "sk-test-key-12345678901234567890",
 } as Env;
+
+function metadataOp() {
+	const withOperation = vi.fn(async (_input: unknown, run: () => unknown) =>
+		run(),
+	);
+	return {
+		identityId: "ident-1",
+		authority: { withOperation } as never,
+		withOperation,
+	};
+}
 
 const session = {
 	id: "sess-1",
@@ -655,7 +659,7 @@ describe("generateGitMetadata", () => {
 		vi.clearAllMocks();
 	});
 
-	it("runs the static CLI with only operator credential env and cleans up", async () => {
+	it("runs the static CLI without a model credential and opens a one-request operation", async () => {
 		const { sandbox, shell } = makeSandbox();
 		shell.exec.mockResolvedValue({
 			success: true,
@@ -664,35 +668,60 @@ describe("generateGitMetadata", () => {
 				'{"v":1,"kind":"result","requestId":"req-1","result":{"kind":"commit","message":"feat: add app"}}\n',
 			stderr: "",
 		});
+		const op = metadataOp();
 
 		const result = await generateGitMetadata({
 			env,
 			sandboxId: "sbx",
 			cwd: WORKTREE,
 			job: baseCommitJob,
+			...op,
 		});
 
 		expect(result.result).toEqual({ kind: "commit", message: "feat: add app" });
+		expect(op.withOperation).toHaveBeenCalledWith(
+			expect.objectContaining({
+				identityId: "ident-1",
+				family: "model",
+				type: "git_metadata",
+				maxRequests: 1,
+				contractVersion: 1,
+			}),
+			expect.any(Function),
+		);
 		expect(sandbox.createSession).toHaveBeenCalledWith(
 			expect.objectContaining({
 				cwd: WORKTREE,
-				env: {
-					DITTO_PI_CREDENTIAL: JSON.stringify({
-						type: "api_key",
-						key: env.OPENCODE_API_KEY,
-					}),
-				},
+				env: {},
 			}),
 		);
 		const sessionEnv = sandbox.createSession.mock.calls[0][0].env;
+		expect(sessionEnv).not.toHaveProperty("DITTO_PI_CREDENTIAL");
+		expect(sessionEnv).not.toHaveProperty("OPENCODE_API_KEY");
 		expect(sessionEnv).not.toHaveProperty("DITTO_GIT_CALLBACK_URL");
 		expect(sessionEnv).not.toHaveProperty("DITTO_GIT_CALLBACK_TOKEN");
 		expect(sessionEnv).not.toHaveProperty("GITHUB_TOKEN");
+		expect(JSON.stringify(sessionEnv)).not.toContain(env.OPENCODE_API_KEY);
 		expect(shell.exec.mock.calls[0][0]).toContain(
 			"/opt/ditto-runner/dist/git-metadata-cli.js",
 		);
+		expect(shell.exec.mock.calls[0][0]).not.toContain(env.OPENCODE_API_KEY);
 		expect(shell.deleteFile).toHaveBeenCalled();
 		expect(sandbox.deleteSession).toHaveBeenCalledWith("shell-1");
+	});
+
+	it("rejects a missing OpenCode key before creating a sandbox session", async () => {
+		const { sandbox } = makeSandbox();
+		await expect(
+			generateGitMetadata({
+				env: { OPENCODE_API_KEY: "" } as Env,
+				sandboxId: "sbx",
+				cwd: WORKTREE,
+				job: baseCommitJob,
+				...metadataOp(),
+			}),
+		).rejects.toMatchObject({ code: "agent_failed" });
+		expect(sandbox.createSession).not.toHaveBeenCalled();
 	});
 
 	it("rejects jobs over the 128 KiB raw ceiling before writeFile", async () => {
@@ -719,6 +748,7 @@ describe("generateGitMetadata", () => {
 				sandboxId: "sbx",
 				cwd: WORKTREE,
 				job: hugeJob as typeof baseCommitJob,
+				...metadataOp(),
 			}),
 		).rejects.toMatchObject({
 			code: "snapshot_failed",
@@ -742,6 +772,7 @@ describe("generateGitMetadata", () => {
 				sandboxId: "sbx",
 				cwd: WORKTREE,
 				job: baseCommitJob,
+				...metadataOp(),
 			}),
 		).rejects.toMatchObject({ code: "output_rejected" });
 
@@ -757,6 +788,7 @@ describe("generateGitMetadata", () => {
 				sandboxId: "sbx",
 				cwd: WORKTREE,
 				job: baseCommitJob,
+				...metadataOp(),
 			}),
 		).rejects.toSatisfy((error: unknown) => {
 			expect(error).toBeInstanceOf(SessionGitMetadataError);
@@ -780,6 +812,7 @@ describe("generateGitMetadata", () => {
 				sandboxId: "sbx",
 				cwd: WORKTREE,
 				job: baseCommitJob,
+				...metadataOp(),
 			}),
 		).rejects.toMatchObject({ code: "agent_failed" });
 		expect(shell.deleteFile).toHaveBeenCalled();
@@ -798,6 +831,7 @@ describe("generateGitMetadata", () => {
 				sandboxId: "sbx",
 				cwd: WORKTREE,
 				job: baseCommitJob,
+				...metadataOp(),
 			}),
 		).rejects.toMatchObject({ code: "output_rejected" });
 
@@ -808,6 +842,7 @@ describe("generateGitMetadata", () => {
 				sandboxId: "sbx",
 				cwd: WORKTREE,
 				job: baseCommitJob,
+				...metadataOp(),
 			}),
 		).rejects.toSatisfy((error: unknown) => {
 			expect((error as Error).message).not.toContain("SENTINEL_PROC");
@@ -832,6 +867,7 @@ describe("generateGitMetadata", () => {
 				sandboxId: "sbx",
 				cwd: WORKTREE,
 				job: baseCommitJob,
+				...metadataOp(),
 			}),
 		).rejects.toMatchObject({
 			code: "missing_result",
@@ -854,6 +890,7 @@ describe("generateGitMetadata", () => {
 				sandboxId: "sbx",
 				cwd: WORKTREE,
 				job: baseCommitJob,
+				...metadataOp(),
 			}),
 		).rejects.toMatchObject({ code: "output_rejected" });
 
@@ -870,6 +907,7 @@ describe("generateGitMetadata", () => {
 				sandboxId: "sbx",
 				cwd: WORKTREE,
 				job: baseCommitJob,
+				...metadataOp(),
 			}),
 		).rejects.toMatchObject({ code: "output_rejected" });
 	});

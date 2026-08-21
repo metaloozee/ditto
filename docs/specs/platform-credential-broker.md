@@ -154,8 +154,8 @@ runtime. Session recovery backups remain a later plan.
 | Design area | Status | Evidence |
 |---|---|---|
 | Ditto-owned Sandbox subclass | Not implemented | `apps/web/src/server.ts` re-exports the stock `Sandbox` class. |
-| Outbound credential dispatch | Not implemented | No outbound handler resolves a sandbox identity or replaces a placeholder credential. |
-| OpenCode credential removal | Not implemented | `apps/web/src/lib/agent-run.ts` passes `DITTO_PI_CREDENTIAL` into the agent shell. |
+| Outbound credential dispatch | Partial | Git fetch and OpenCode model requests resolve the sandbox identity and replace placeholders. Ditto-action remains later. |
+| OpenCode credential removal | Implemented | Worker holds `OPENCODE_API_KEY`. Sandbox PI uses the public placeholder. `open-code-contract.ts` constructs the authenticated upstream request. |
 | Token-free agent Git capability | Not implemented | Agent tools call `/api/agent/git` with a scoped HS256 JWT. |
 | GitHub installation-token removal | Not implemented | `apps/web/src/lib/privileged-git.ts` passes the token to a sandbox process. |
 | Token-free R2 recovery | Not implemented | Production backup and restore use the stock Sandbox SDK path. |

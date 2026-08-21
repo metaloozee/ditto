@@ -161,6 +161,7 @@ function setupResolved() {
 				branchName: "ditto/sess-1",
 				baseCommitSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 				sandbox: { exec: vi.fn() },
+				identity: null,
 				projectEnv: null,
 				issueGitCallbackToken: async () => "",
 				matchesSandboxClaim: () => true,

@@ -45,6 +45,7 @@ function makeHarness(
 		deleteSession: vi.fn().mockResolvedValue(undefined),
 	};
 	const ids = ["request-1", "user-2", "assistant-2"];
+	const closeOpenFamily = vi.fn();
 	const deps = {
 		createId: () => ids.shift() ?? "extra-id",
 		loadProjectForUser: vi.fn().mockResolvedValue({
@@ -68,6 +69,18 @@ function makeHarness(
 					branchName: "ditto/session-1",
 					baseCommitSha: "abc",
 					sandbox,
+					identity: {
+						id: "ident-1",
+						kind: "workspace_session",
+						sandboxId: "sandbox-1",
+						containerId: "container-1",
+						userId: "user-1",
+						projectId: "project-1",
+						workspaceSessionId: "session-1",
+						lifecycleGeneration: 1,
+						state: "ready",
+						retiredAt: null,
+					},
 					projectEnv: null,
 					issueGitCallbackToken: async () => {
 						throw new Error("control does not issue git tokens");
@@ -75,8 +88,11 @@ function makeHarness(
 					matchesSandboxClaim: () => true,
 				}),
 		),
+		createAuthority: vi.fn(() => ({
+			closeOpenFamily,
+		})),
 	};
-	return { deps, sandbox, shell, writeFile, deleteFile, exec };
+	return { deps, sandbox, shell, writeFile, deleteFile, exec, closeOpenFamily };
 }
 
 const followUp = {
@@ -131,6 +147,13 @@ describe("agent control service", () => {
 		);
 		expect(command).not.toContain(followUp.message);
 		expect(harness.deleteFile).toHaveBeenCalledTimes(1);
+		expect(harness.sandbox.createSession).toHaveBeenCalledWith(
+			expect.objectContaining({ env: {} }),
+		);
+		const sessionEnv = harness.sandbox.createSession.mock.calls[0]?.[0]?.env;
+		expect(sessionEnv).not.toHaveProperty("DITTO_PI_CREDENTIAL");
+		expect(sessionEnv).not.toHaveProperty("OPENCODE_API_KEY");
+		expect(harness.closeOpenFamily).not.toHaveBeenCalled();
 	});
 
 	it("accepts Stop and deletes the temporary job", async () => {
@@ -156,6 +179,11 @@ describe("agent control service", () => {
 		});
 		expect(result.kind).toBe("accepted");
 		expect(harness.deleteFile).toHaveBeenCalledTimes(1);
+		expect(harness.closeOpenFamily).toHaveBeenCalledWith(
+			"ident-1",
+			"model",
+			"agent_stop",
+		);
 	});
 
 	it("rejects accepted responses that do not correlate to the generated job", async () => {

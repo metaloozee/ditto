@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { createDb } from "#/db";
-import { projects } from "#/db/schema";
+import { projects, workspaceSessions } from "#/db/schema";
 import {
 	buildAuthenticatedGitUpstreamRequest,
 	classifyGithubGitRequest,
@@ -12,6 +12,15 @@ import {
 	getInstallationAccessToken,
 	repositoryNameFromSlug,
 } from "#/lib/github-app";
+import {
+	buildAuthenticatedOpenCodeUpstreamRequest,
+	classifyOpenCodeRequest,
+	OPENCODE_CONTRACT_VERSION,
+	OPENCODE_OPERATION_TYPES,
+	OpenCodeContractError,
+	validateOpenCodeRequest,
+	wrapOpenCodeUpstreamResponse,
+} from "#/lib/open-code-contract";
 import {
 	createSandboxAuthority,
 	type ResolvedOutboundOperation,
@@ -31,12 +40,6 @@ export type SandboxEgressBrokerDeps = {
 	createAuthority?: typeof createSandboxAuthority;
 	mintInstallationToken?: typeof getInstallationAccessToken;
 };
-
-const OPENCODE_HOST_MARKERS = [
-	"opencode.ai",
-	"api.opencode.ai",
-	"opencode.ditto.invalid",
-];
 
 const DITTO_SYNTHETIC_HOST_SUFFIXES = [
 	".ditto.internal",
@@ -159,9 +162,6 @@ function isPrivateOrSpecialHostname(hostname: string): boolean {
 
 function isPrivilegedPlaceholderHost(hostname: string): boolean {
 	const host = hostname.toLowerCase();
-	if (OPENCODE_HOST_MARKERS.includes(host)) {
-		return true;
-	}
 	return DITTO_SYNTHETIC_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix));
 }
 
@@ -183,6 +183,17 @@ function classifyOutbound(request: Request): {
 
 	if (url.protocol !== "http:" && url.protocol !== "https:") {
 		return { family: "denied_privileged", reasonCode: "non_http" };
+	}
+
+	const opencode = classifyOpenCodeRequest(request);
+	if (opencode.kind === "model") {
+		return { family: "model" };
+	}
+	if (opencode.kind === "model_near_miss") {
+		return {
+			family: "denied_privileged",
+			reasonCode: "privileged_placeholder",
+		};
 	}
 
 	const host = url.hostname.toLowerCase();
@@ -394,6 +405,115 @@ async function handleGitTransport(options: {
 	}
 }
 
+async function markSessionContractReview(
+	db: ReturnType<typeof createDb>,
+	workspaceSessionId: string,
+): Promise<void> {
+	await db
+		.update(workspaceSessions)
+		.set({
+			runtimeFailureReasonCode: "opencode_contract_denial_limit",
+		})
+		.where(eq(workspaceSessions.id, workspaceSessionId));
+}
+
+async function handleOpenCodeModel(options: {
+	request: Request;
+	env: Env;
+	trusted: TrustedOutboundHandlerContext;
+	fetchImpl: typeof fetch;
+	deps: SandboxEgressBrokerDeps;
+}): Promise<Response> {
+	const dbFactory = options.deps.createDb ?? createDb;
+	const authorityFactory =
+		options.deps.createAuthority ?? createSandboxAuthority;
+	const db = dbFactory(options.env);
+	const authority = authorityFactory(db);
+
+	let resolved: ResolvedOutboundOperation;
+	try {
+		resolved = await authority.resolveOutboundRequest(options.trusted, "model");
+	} catch (error) {
+		const code =
+			error instanceof SandboxAuthorityError ? error.code : "authority_denied";
+		recordDenial({ reasonCode: code, family: "model" });
+		return deny(403, code);
+	}
+
+	const { operation } = resolved;
+	if (
+		!(OPENCODE_OPERATION_TYPES as readonly string[]).includes(operation.type)
+	) {
+		recordDenial({
+			reasonCode: "operation_type_mismatch",
+			correlationId: operation.correlationId,
+			family: "model",
+		});
+		return deny(403, "operation_type_mismatch", operation.correlationId);
+	}
+	if (operation.contractVersion !== OPENCODE_CONTRACT_VERSION) {
+		recordDenial({
+			reasonCode: "contract_version",
+			correlationId: operation.correlationId,
+			family: "model",
+		});
+		return deny(403, "contract_version", operation.correlationId);
+	}
+
+	const apiKey = options.env.OPENCODE_API_KEY?.trim() ?? "";
+	if (!apiKey) {
+		recordDenial({
+			reasonCode: "missing_opencode_key",
+			correlationId: operation.correlationId,
+			family: "model",
+		});
+		return deny(403, "missing_opencode_key", operation.correlationId);
+	}
+
+	const validated = await validateOpenCodeRequest(options.request, {
+		contractVersion: operation.contractVersion,
+	});
+	if (!validated.ok) {
+		recordDenial({
+			reasonCode: validated.code,
+			correlationId: operation.correlationId,
+			family: "model",
+		});
+		try {
+			const denial = await authority.recordContractDenial(operation.id);
+			if (denial.closed && denial.workspaceSessionId) {
+				await markSessionContractReview(db, denial.workspaceSessionId);
+			}
+		} catch {
+			// Denial persistence must not restore forwarding.
+		}
+		return deny(403, validated.code, operation.correlationId);
+	}
+
+	const upstreamRequest = buildAuthenticatedOpenCodeUpstreamRequest({
+		validated,
+		apiKey,
+		signal: options.request.signal,
+	});
+	const upstream = await options.fetchImpl(upstreamRequest);
+	try {
+		return wrapOpenCodeUpstreamResponse(upstream);
+	} catch (error) {
+		const code =
+			error instanceof OpenCodeContractError
+				? error.code
+				: error instanceof Error && "code" in error
+					? String((error as { code: string }).code)
+					: "upstream_denied";
+		recordDenial({
+			reasonCode: code,
+			correlationId: operation.correlationId,
+			family: "model",
+		});
+		return deny(502, code, operation.correlationId);
+	}
+}
+
 /**
  * Sole outbound handler entry for sandbox HTTP(S) interception.
  */
@@ -437,10 +557,17 @@ export async function handleOutbound(
 		});
 	}
 
-	if (
-		classification.family === "model" ||
-		classification.family === "ditto_action"
-	) {
+	if (classification.family === "model") {
+		return handleOpenCodeModel({
+			request,
+			env,
+			trusted,
+			fetchImpl,
+			deps,
+		});
+	}
+
+	if (classification.family === "ditto_action") {
 		recordDenial({
 			reasonCode: "privileged_unimplemented",
 			family: classification.family,

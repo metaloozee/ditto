@@ -215,10 +215,10 @@ not the session title or prompt:
    `HEAD` subjects/paths/stat/patch). Secret-like paths are omitted; staged
    secrets fail closed. No project env, GitHub tokens, callback JWT, chat text,
    or session title enter the job.
-2. A short-lived sandbox shell runs `ditto-git-metadata` with only
-   `DITTO_PI_CREDENTIAL` from the fixed operator fallback
-   (`opencode/deepseek-v4-flash-free` via `OPENCODE_API_KEY`). Job files live
-   under `/tmp/ditto-git-metadata-jobs/` and are deleted afterward.
+2. A short-lived sandbox shell runs `ditto-git-metadata` without the OpenCode
+   key. The Worker opens a one-request `git_metadata` model operation for the
+   session identity, and PI uses the public placeholder. Job files live under
+   `/tmp/ditto-git-metadata-jobs/` and are deleted afterward.
 3. The metadata runner uses an in-memory PI session, empty resource discovery,
    no repository/mutation tools, and exactly one terminating typed tool
    (`submit_commit_metadata` or `submit_pull_request_metadata`). At most two
@@ -313,9 +313,9 @@ runner changes so custom tools appear in the container.
   string interpolation.
 - Stderr and client-visible errors pass through `redactSecrets`.
 - Project environment values are decrypted in the Worker and injected only as
-  sandbox shell session process environment variables. The projected provider
-  credential (`DITTO_PI_CREDENTIAL`) and the Git callback JWT follow the same
-  rule. They never enter worktree files, job JSON, SSE payloads, or Git remotes.
+  sandbox shell session process environment variables. The Git callback JWT
+  follows the same rule. The OpenCode key stays in the Worker and never enters
+  worktree files, job JSON, SSE payloads, Git remotes, or sandbox env.
 - The container can expose process environments, so output redaction and Git
   secret preflight remain necessary. A process environment is not a vault.
 - GitHub App installation tokens do not enter the agent runner environment.

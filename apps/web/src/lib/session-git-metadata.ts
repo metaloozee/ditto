@@ -1,8 +1,15 @@
+import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
-import { operatorFallbackCredential } from "#/lib/account-provider-credentials";
+import type { createDb } from "#/db";
+import { workspaceSessions } from "#/db/schema";
 import { isSecretLikeGitPath } from "#/lib/git-secret-policy";
 import { quoteGitHubExportShellArg } from "#/lib/github-export";
+import { OPENCODE_CONTRACT_VERSION } from "#/lib/open-code-contract";
+import {
+	createSandboxAuthority,
+	type SandboxAuthority,
+} from "#/lib/sandbox-authority";
 import { getProjectSandbox } from "#/lib/sandbox-bootstrap";
 import { redactSecrets, redactStructured } from "#/lib/secret-redaction";
 import {
@@ -12,7 +19,7 @@ import {
 } from "#/lib/session-git";
 
 const GIT_COMMAND_TIMEOUT_MS = 120_000;
-const METADATA_TIMEOUT_MS = 120_000;
+export const METADATA_TIMEOUT_MS = 120_000;
 const METADATA_CLI = "/opt/ditto-runner/dist/git-metadata-cli.js";
 const JOB_DIR = "/tmp/ditto-git-metadata-jobs";
 const RAW_JOB_MAX_BYTES = 128 * 1024;
@@ -183,6 +190,7 @@ type MetadataSandbox = ReturnType<typeof getProjectSandbox>;
 
 type MetadataContext = {
 	env: Env;
+	db?: ReturnType<typeof createDb>;
 	sandboxId?: string;
 	sandbox?: MetadataSandbox;
 	session: {
@@ -192,6 +200,7 @@ type MetadataContext = {
 		workspacePath: string;
 	};
 	knownSecrets?: readonly string[];
+	authority?: SandboxAuthority;
 };
 
 function resolveMetadataSandbox(ctx: MetadataContext): MetadataSandbox {
@@ -712,6 +721,18 @@ function assertOutputSecretFree(
 	}
 }
 
+async function resolveSessionIdentityId(
+	db: ReturnType<typeof createDb>,
+	sessionId: string,
+): Promise<string | null> {
+	const [row] = await db
+		.select({ sandboxIdentityId: workspaceSessions.sandboxIdentityId })
+		.from(workspaceSessions)
+		.where(eq(workspaceSessions.id, sessionId))
+		.limit(1);
+	return row?.sandboxIdentityId ?? null;
+}
+
 /**
  * Run the one-shot metadata CLI against a prepared job. Cleans job + shell.
  */
@@ -726,6 +747,8 @@ export async function generateGitMetadata<
 	cwd: string;
 	job: TJob;
 	knownSecrets?: readonly string[];
+	identityId: string;
+	authority: SandboxAuthority;
 }): Promise<
 	TJob["kind"] extends "commit"
 		? CommitMetadataResult
@@ -744,14 +767,19 @@ export async function generateGitMetadata<
 	const requestId = options.job.requestId;
 	const jobPath = `${JOB_DIR}/${requestId}.json`;
 	const knownSecrets = options.knownSecrets ?? [];
-	const credential = operatorFallbackCredential(options.env.OPENCODE_API_KEY);
-	const credentialJson = JSON.stringify(credential);
-	const secretValues = [
-		credentialJson,
-		credential.key,
-		options.env.OPENCODE_API_KEY,
-		...knownSecrets,
-	].filter(
+	if (!options.env.OPENCODE_API_KEY?.trim()) {
+		throw new SessionGitMetadataError(
+			"agent_failed",
+			"Server credentials are not configured.",
+		);
+	}
+	if (!options.identityId) {
+		throw new SessionGitMetadataError(
+			"agent_failed",
+			"Workspace session has no sandbox identity for model access.",
+		);
+	}
+	const secretValues = [options.env.OPENCODE_API_KEY, ...knownSecrets].filter(
 		(value): value is string => typeof value === "string" && value.length > 0,
 	);
 
@@ -759,105 +787,123 @@ export async function generateGitMetadata<
 	assertJobWithinRawLimit(options.job);
 	const jobJson = JSON.stringify(options.job);
 
-	const shell = await sandbox.createSession({
-		id: `git-metadata-${requestId}`.slice(0, 60),
-		cwd: options.cwd,
-		env: {
-			DITTO_PI_CREDENTIAL: credentialJson,
+	return await options.authority.withOperation(
+		{
+			identityId: options.identityId,
+			family: "model",
+			type: "git_metadata",
+			contractVersion: OPENCODE_CONTRACT_VERSION,
+			maxRequests: 1,
+			expiresAt: new Date(Date.now() + METADATA_TIMEOUT_MS),
 		},
-		commandTimeoutMs: METADATA_TIMEOUT_MS,
-	});
-
-	try {
-		await shell.mkdir(JOB_DIR, { recursive: true });
-		await shell.writeFile(jobPath, jobJson);
-		const result = await shell.exec(
-			`node ${METADATA_CLI} --job ${quoteShellArg(jobPath)}`,
-			{ timeout: METADATA_TIMEOUT_MS },
-		);
-
-		const stdout = result.stdout.trim();
-		const lines = stdout.split("\n").filter((line) => line.trim().length > 0);
-		if (lines.length !== 1) {
-			throw new SessionGitMetadataError(
-				"agent_failed",
-				"Metadata agent returned an invalid response.",
-			);
-		}
-
-		let parsedJson: unknown;
-		try {
-			parsedJson = JSON.parse(lines[0] ?? "");
-		} catch {
-			throw new SessionGitMetadataError(
-				"agent_failed",
-				"Metadata agent returned non-JSON output.",
-			);
-		}
-
-		const parsed = metadataOutSchema.safeParse(parsedJson);
-		if (!parsed.success) {
-			throw new SessionGitMetadataError(
-				"output_rejected",
-				"Metadata agent output failed validation.",
-			);
-		}
-
-		if (parsed.data.kind === "error") {
-			const code = parsed.data.code;
-			throw new SessionGitMetadataError(code, PROTOCOL_ERROR_MESSAGES[code]);
-		}
-
-		if (parsed.data.requestId !== requestId) {
-			throw new SessionGitMetadataError(
-				"output_rejected",
-				"Metadata agent request id mismatch.",
-			);
-		}
-
-		if (options.job.kind === "commit") {
-			if (parsed.data.result.kind !== "commit") {
-				throw new SessionGitMetadataError(
-					"output_rejected",
-					"Metadata agent returned the wrong output kind.",
-				);
-			}
-		} else if (parsed.data.result.kind !== "pull_request") {
-			throw new SessionGitMetadataError(
-				"output_rejected",
-				"Metadata agent returned the wrong output kind.",
-			);
-		}
-
-		assertOutputSecretFree(parsed.data.result, secretValues);
-		return parsed.data as TJob["kind"] extends "commit"
-			? CommitMetadataResult
-			: PullRequestMetadataResult;
-	} catch (error) {
-		if (error instanceof SessionGitMetadataError) {
-			throw error;
-		}
-		throw new SessionGitMetadataError("agent_failed", "Metadata agent failed.");
-	} finally {
-		try {
-			await shell.deleteFile(jobPath);
-		} catch {
-			// best-effort
-		}
-		try {
-			await sandbox.exec(`rm -f -- ${quoteShellArg(jobPath)}`, {
-				cwd: "/tmp",
-				timeout: 10_000,
+		async () => {
+			const shell = await sandbox.createSession({
+				id: `git-metadata-${requestId}`.slice(0, 60),
+				cwd: options.cwd,
+				env: {},
+				commandTimeoutMs: METADATA_TIMEOUT_MS,
 			});
-		} catch {
-			// best-effort
-		}
-		try {
-			await sandbox.deleteSession(shell.id);
-		} catch {
-			// best-effort
-		}
-	}
+
+			try {
+				await shell.mkdir(JOB_DIR, { recursive: true });
+				await shell.writeFile(jobPath, jobJson);
+				const result = await shell.exec(
+					`node ${METADATA_CLI} --job ${quoteShellArg(jobPath)}`,
+					{ timeout: METADATA_TIMEOUT_MS },
+				);
+
+				const stdout = result.stdout.trim();
+				const lines = stdout
+					.split("\n")
+					.filter((line) => line.trim().length > 0);
+				if (lines.length !== 1) {
+					throw new SessionGitMetadataError(
+						"agent_failed",
+						"Metadata agent returned an invalid response.",
+					);
+				}
+
+				let parsedJson: unknown;
+				try {
+					parsedJson = JSON.parse(lines[0] ?? "");
+				} catch {
+					throw new SessionGitMetadataError(
+						"agent_failed",
+						"Metadata agent returned non-JSON output.",
+					);
+				}
+
+				const parsed = metadataOutSchema.safeParse(parsedJson);
+				if (!parsed.success) {
+					throw new SessionGitMetadataError(
+						"output_rejected",
+						"Metadata agent output failed validation.",
+					);
+				}
+
+				if (parsed.data.kind === "error") {
+					const code = parsed.data.code;
+					throw new SessionGitMetadataError(
+						code,
+						PROTOCOL_ERROR_MESSAGES[code],
+					);
+				}
+
+				if (parsed.data.requestId !== requestId) {
+					throw new SessionGitMetadataError(
+						"output_rejected",
+						"Metadata agent request id mismatch.",
+					);
+				}
+
+				if (options.job.kind === "commit") {
+					if (parsed.data.result.kind !== "commit") {
+						throw new SessionGitMetadataError(
+							"output_rejected",
+							"Metadata agent returned the wrong output kind.",
+						);
+					}
+				} else if (parsed.data.result.kind !== "pull_request") {
+					throw new SessionGitMetadataError(
+						"output_rejected",
+						"Metadata agent returned the wrong output kind.",
+					);
+				}
+
+				assertOutputSecretFree(parsed.data.result, secretValues);
+				return parsed.data as TJob["kind"] extends "commit"
+					? CommitMetadataResult
+					: PullRequestMetadataResult;
+			} catch (error) {
+				if (error instanceof SessionGitMetadataError) {
+					throw error;
+				}
+				throw new SessionGitMetadataError(
+					"agent_failed",
+					"Metadata agent failed.",
+				);
+			} finally {
+				try {
+					await shell.deleteFile(jobPath);
+				} catch {
+					// best-effort
+				}
+				try {
+					await sandbox.exec(`rm -f -- ${quoteShellArg(jobPath)}`, {
+						cwd: "/tmp",
+						timeout: 10_000,
+					});
+				} catch {
+					// best-effort
+				}
+				try {
+					await sandbox.deleteSession(shell.id);
+				} catch {
+					// best-effort
+				}
+			}
+		},
+	);
 }
 
 export async function generateCommitMetadata(
@@ -870,6 +916,19 @@ export async function generateCommitMetadata(
 	if (snapshot.kind === "no_changes") {
 		return { kind: "no_changes" };
 	}
+	if (!ctx.db) {
+		throw new SessionGitMetadataError(
+			"agent_failed",
+			"Workspace session has no sandbox identity for model access.",
+		);
+	}
+	const identityId = await resolveSessionIdentityId(ctx.db, ctx.session.id);
+	if (!identityId) {
+		throw new SessionGitMetadataError(
+			"agent_failed",
+			"Workspace session has no sandbox identity for model access.",
+		);
+	}
 	const result = await generateGitMetadata({
 		env: ctx.env,
 		sandboxId: ctx.sandboxId,
@@ -877,6 +936,8 @@ export async function generateCommitMetadata(
 		cwd: ctx.session.workspacePath,
 		job: snapshot.job,
 		knownSecrets: ctx.knownSecrets,
+		identityId,
+		authority: ctx.authority ?? createSandboxAuthority(ctx.db),
 	});
 	return {
 		kind: "commit",
@@ -889,6 +950,19 @@ export async function generatePullRequestMetadata(
 	ctx: MetadataContext,
 ): Promise<{ title: string; body: string; requestId: string }> {
 	const snapshot = await collectPullRequestMetadataSnapshot(ctx);
+	if (!ctx.db) {
+		throw new SessionGitMetadataError(
+			"agent_failed",
+			"Workspace session has no sandbox identity for model access.",
+		);
+	}
+	const identityId = await resolveSessionIdentityId(ctx.db, ctx.session.id);
+	if (!identityId) {
+		throw new SessionGitMetadataError(
+			"agent_failed",
+			"Workspace session has no sandbox identity for model access.",
+		);
+	}
 	const result = await generateGitMetadata({
 		env: ctx.env,
 		sandboxId: ctx.sandboxId,
@@ -896,6 +970,8 @@ export async function generatePullRequestMetadata(
 		cwd: ctx.session.workspacePath,
 		job: snapshot.job,
 		knownSecrets: ctx.knownSecrets,
+		identityId,
+		authority: ctx.authority ?? createSandboxAuthority(ctx.db),
 	});
 	return {
 		title: result.result.title,

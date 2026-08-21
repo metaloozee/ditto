@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("#/lib/agent-run", () => ({
 	runAgentInSandbox: vi.fn(),
+	AGENT_COMMAND_TIMEOUT_MS: 600_000,
 }));
 
 vi.mock("#/lib/agent-control-service", () => ({
@@ -157,11 +158,29 @@ function baseDeps(overrides: Partial<AgentRunDeps> = {}): AgentRunDeps {
 				branchName: activeSession.branchName as string,
 				baseCommitSha: activeSession.baseCommitSha as string,
 				sandbox: {} as never,
+				identity: {
+					id: "ident-1",
+					kind: "workspace_session",
+					sandboxId: "sb-1",
+					containerId: "container-1",
+					userId: "user-1",
+					projectId: "proj-1",
+					workspaceSessionId: "sess-1",
+					lifecycleGeneration: 1,
+					state: "ready",
+					retiredAt: null,
+				},
 				projectEnv: [],
 				issueGitCallbackToken: async () => "jwt",
 				matchesSandboxClaim: () => true,
 			}),
 		),
+		createAuthority: vi.fn(() => ({
+			withOperation: vi.fn(
+				async (_input: unknown, run: (op: unknown) => unknown) =>
+					run({ id: "op-1" }),
+			),
+		})) as never,
 		runAgentInSandbox: vi.fn().mockResolvedValue({
 			ok: true,
 			assistantText: "Hello",
@@ -496,7 +515,7 @@ describe("prepareAgentRun", () => {
 		expect(batch).not.toHaveBeenCalled();
 	});
 
-	it("always uses the fixed model and operator fallback credential", async () => {
+	it("always uses the fixed model and keeps the OpenCode key out of run context serialization", async () => {
 		const { db, batch } = createMockDb();
 		batch.mockResolvedValue([[{ id: "user-msg" }], [{ id: "asst-msg" }]]);
 		const result = await prepareAgentRun({
@@ -519,10 +538,8 @@ describe("prepareAgentRun", () => {
 		expect(result.kind).toBe("ready");
 		if (result.kind === "ready") {
 			expect(result.context.model).toBe("opencode/deepseek-v4-flash-free");
-			expect(JSON.parse(result.context.runtimeCredentialJson)).toEqual({
-				type: "api_key",
-				key: makeEnv().OPENCODE_API_KEY,
-			});
+			expect(result.context).not.toHaveProperty("runtimeCredentialJson");
+			expect(result.context.secretValues).toContain(makeEnv().OPENCODE_API_KEY);
 		}
 	});
 
@@ -654,10 +671,6 @@ describe("executeAgentRun", () => {
 			assistantMessageId: "asst-msg",
 			envVars: [],
 			secretValues: [makeEnv().OPENCODE_API_KEY],
-			runtimeCredentialJson: JSON.stringify({
-				type: "api_key",
-				key: makeEnv().OPENCODE_API_KEY,
-			}),
 			...overrides,
 		};
 	}
@@ -719,6 +732,69 @@ describe("executeAgentRun", () => {
 		});
 		expect(updateSets.some((set) => set.status === "complete")).toBe(true);
 		expect(updateSets.some((set) => set.content === "Hello")).toBe(true);
+	});
+
+	it("opens an agent_run model operation and does not pass a sandbox credential", async () => {
+		const withOperation = vi.fn(
+			async (_input: unknown, run: (op: unknown) => unknown) =>
+				run({ id: "op-1" }),
+		);
+		const runAgentInSandbox = vi.fn().mockResolvedValue({
+			ok: true,
+			assistantText: "Hello",
+		});
+		const context = makeContext();
+		const { run } = collectEvents(context, {
+			createAuthority: () => ({ withOperation }) as never,
+			runAgentInSandbox,
+			prepareAssistantMessageStorage: vi.fn().mockReturnValue({
+				storageParts: [],
+				toolsColumn: null,
+			}),
+		});
+		await run();
+		expect(withOperation).toHaveBeenCalledWith(
+			expect.objectContaining({
+				identityId: "ident-1",
+				family: "model",
+				type: "agent_run",
+				contractVersion: 1,
+				maxRequests: null,
+			}),
+			expect.any(Function),
+		);
+		expect(runAgentInSandbox.mock.calls[0]?.[0]).not.toHaveProperty(
+			"runtimeCredentialJson",
+		);
+	});
+
+	it("fails closed for legacy sessions without a sandbox identity", async () => {
+		const runAgentInSandbox = vi.fn();
+		const context = makeContext();
+		const { events, run } = collectEvents(context, {
+			withWorkspaceRuntimeLease: vi.fn(async (_input, callback) =>
+				callback({
+					sessionId: "sess-1",
+					purpose: "agent_run",
+					workspacePath: activeSession.workspacePath,
+					branchName: activeSession.branchName as string,
+					baseCommitSha: activeSession.baseCommitSha as string,
+					sandbox: {} as never,
+					identity: null,
+					projectEnv: [],
+					issueGitCallbackToken: async () => "jwt",
+					matchesSandboxClaim: () => true,
+				}),
+			),
+			runAgentInSandbox,
+			prepareAssistantMessageStorage: vi.fn().mockReturnValue({
+				storageParts: [],
+				toolsColumn: null,
+			}),
+		});
+		await run();
+		expect(runAgentInSandbox).not.toHaveBeenCalled();
+		expect(events.some((event) => event.event === "error")).toBe(true);
 	});
 
 	it("persists and emits one-at-a-time follow-up turn boundaries in order", async () => {

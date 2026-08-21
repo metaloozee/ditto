@@ -1,7 +1,6 @@
 import type { ExecEvent } from "@cloudflare/sandbox";
 import { parseSSEStream } from "@cloudflare/sandbox";
 import { nanoid } from "nanoid";
-import { credentialSecretValues } from "#/lib/account-provider-credentials";
 import { agentGitCallbackUrl, mintAgentGitJwt } from "#/lib/agent-git-jwt";
 import type { PiThinkingLevel } from "#/lib/agent-models";
 import {
@@ -20,7 +19,7 @@ import { withSessionWorkspaceLock } from "#/lib/session-workspace-lock";
 import { WORKSPACE_PATH } from "#/lib/workspace-policy";
 
 const RUNNER_CLI = "/opt/ditto-runner/dist/cli.js";
-const AGENT_COMMAND_TIMEOUT_MS = 600_000;
+export const AGENT_COMMAND_TIMEOUT_MS = 600_000;
 
 /** Max characters retained from stderr for exit/empty-response diagnostics. */
 export const STDERR_TAIL_MAX_CHARS = 4096;
@@ -80,8 +79,6 @@ async function runAgentInSandboxLocked(options: {
 	model: string;
 	thinkingLevel?: PiThinkingLevel;
 	prompt: string;
-	/** Runtime credential JSON for DITTO_PI_CREDENTIAL (no real OAuth refresh). */
-	runtimeCredentialJson: string;
 	envVars?: readonly SandboxEnvVar[];
 	gitCallbackToken?: string;
 	onRunnerMessage: (msg: RunnerOut) => void | Promise<void>;
@@ -107,7 +104,6 @@ async function runAgentInSandboxLocked(options: {
 		cwd: options.cwd,
 		env: {
 			...projectEnv,
-			DITTO_PI_CREDENTIAL: options.runtimeCredentialJson,
 			DITTO_GIT_CALLBACK_URL: agentGitCallbackUrl(options.env),
 			DITTO_GIT_CALLBACK_TOKEN: gitCallbackToken,
 			...dittoGitAuthorEnv(),
@@ -122,17 +118,8 @@ async function runAgentInSandboxLocked(options: {
 	let sawRunnerDone = false;
 	let errorEmitted = false;
 
-	let credentialLeaves: string[] = [];
-	try {
-		credentialLeaves = credentialSecretValues(
-			JSON.parse(options.runtimeCredentialJson) as unknown,
-		);
-	} catch {
-		credentialLeaves = [];
-	}
 	const secretValues = [
-		options.runtimeCredentialJson,
-		...credentialLeaves,
+		options.env.OPENCODE_API_KEY,
 		gitCallbackToken,
 		...Object.values(projectEnv),
 	].filter(

@@ -134,6 +134,7 @@ function makeAuthorityDb() {
 									allowedRefs: (value.allowedRefs as string | null) ?? null,
 									maxRequests: (value.maxRequests as number | null) ?? null,
 									consumedRequests: Number(value.consumedRequests ?? 0),
+									contractDenials: Number(value.contractDenials ?? 0),
 									openedAt: value.openedAt as Date,
 									expiresAt: value.expiresAt as Date,
 									closedAt: (value.closedAt as Date | null) ?? null,
@@ -218,10 +219,28 @@ function makeAuthorityDb() {
 									}
 									if (table === privilegedOperations) {
 										const candidates = findOperations(where);
+										const params = collectParams(where);
+										const numbers = params.filter(
+											(value): value is number => typeof value === "number",
+										);
 										const row =
 											candidates.find((item) => item.closedAt == null) ??
 											candidates[0];
 										if (!row) return [];
+										if (
+											"consumedRequests" in patch &&
+											numbers.length > 0 &&
+											!numbers.includes(row.consumedRequests)
+										) {
+											return [];
+										}
+										if (
+											"contractDenials" in patch &&
+											numbers.length > 0 &&
+											!numbers.includes(row.contractDenials)
+										) {
+											return [];
+										}
 										const next: OperationRow = {
 											...row,
 											closedAt:
@@ -242,6 +261,10 @@ function makeAuthorityDb() {
 												"consumedRequests" in patch
 													? Number(patch.consumedRequests)
 													: row.consumedRequests,
+											contractDenials:
+												"contractDenials" in patch
+													? Number(patch.contractDenials)
+													: row.contractDenials,
 											updatedAt: new Date(),
 										};
 										operations.set(row.id, next);
@@ -434,5 +457,88 @@ describe("SandboxAuthority", () => {
 		);
 		expect(resolved.operation.repository).toBe("acme/app");
 		expect(resolved.operation.allowedRefs).toEqual(["refs/heads/main"]);
+	});
+
+	it("git_metadata consumes exactly one request under concurrent resolve", async () => {
+		const identity = await register();
+		await authority.openOperation({
+			identityId: identity.id,
+			family: "model",
+			type: "git_metadata",
+			contractVersion: 1,
+			maxRequests: 1,
+			expiresAt: new Date(Date.now() + 60_000),
+		});
+		const ctx = {
+			identityId: identity.id,
+			lifecycleGeneration: 1,
+			containerId: identity.containerId,
+		};
+		const results = await Promise.allSettled([
+			authority.resolveOutboundRequest(ctx, "model"),
+			authority.resolveOutboundRequest(ctx, "model"),
+		]);
+		const fulfilled = results.filter((result) => result.status === "fulfilled");
+		const rejected = results.filter((result) => result.status === "rejected");
+		expect(fulfilled).toHaveLength(1);
+		expect(rejected).toHaveLength(1);
+		expect(rejected[0]).toMatchObject({
+			status: "rejected",
+			reason: expect.objectContaining({ code: "operation_exhausted" }),
+		});
+	});
+
+	it("agent_run allows multiple valid resolves until closed", async () => {
+		const identity = await register();
+		const operation = await authority.openOperation({
+			identityId: identity.id,
+			family: "model",
+			type: "agent_run",
+			contractVersion: 1,
+			maxRequests: null,
+			expiresAt: new Date(Date.now() + 60_000),
+		});
+		const ctx = {
+			identityId: identity.id,
+			lifecycleGeneration: 1,
+			containerId: identity.containerId,
+		};
+		await authority.resolveOutboundRequest(ctx, "model");
+		await authority.resolveOutboundRequest(ctx, "model");
+		await authority.closeOperation(operation.id, "agent_run_settled");
+		await expect(
+			authority.resolveOutboundRequest(ctx, "model"),
+		).rejects.toMatchObject({ code: "operation_not_open" });
+	});
+
+	it("three contract denials close the operation", async () => {
+		const identity = await authority.registerIdentity({
+			kind: "workspace_session",
+			sandboxId: "sbx-session",
+			containerId: "container-1",
+			userId: "user-1",
+			projectId: "proj-1",
+			workspaceSessionId: "sess-1",
+		});
+		const operation = await authority.openOperation({
+			identityId: identity.id,
+			family: "model",
+			type: "agent_run",
+			contractVersion: 1,
+			expiresAt: new Date(Date.now() + 60_000),
+		});
+		const first = await authority.recordContractDenial(operation.id);
+		const second = await authority.recordContractDenial(operation.id);
+		const third = await authority.recordContractDenial(operation.id);
+		expect(first).toMatchObject({ denials: 1, closed: false });
+		expect(second).toMatchObject({ denials: 2, closed: false });
+		expect(third).toMatchObject({
+			denials: 3,
+			closed: true,
+			workspaceSessionId: "sess-1",
+		});
+		const closed = store.operations.get(operation.id);
+		expect(closed?.closedAt).toBeInstanceOf(Date);
+		expect(closed?.closeReason).toBe("opencode_contract_denial_limit");
 	});
 });

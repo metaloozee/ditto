@@ -62,6 +62,7 @@ const defaultDeps: SessionGitUiActionDeps = {
 function gitCtx(ctx: SessionGitUiActionContext) {
 	return {
 		env: ctx.env,
+		db: ctx.db,
 		sandboxId: ctx.sandboxId,
 		sandbox: ctx.sandbox,
 		installationId: ctx.installationId,

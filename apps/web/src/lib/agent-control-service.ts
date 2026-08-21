@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { createDb } from "#/db";
 import { projects } from "#/db/schema";
 import { DEFAULT_PROJECT_CODER_MODEL } from "#/lib/agent-models";
+import { createSandboxAuthority } from "#/lib/sandbox-authority";
 import {
 	WorkspaceRuntimeError,
 	withWorkspaceRuntimeLease,
@@ -79,6 +80,7 @@ type ControlDeps = {
 	}) => Promise<typeof projects.$inferSelect | null>;
 	loadOwnedActiveSession?: typeof loadOwnedActiveSession;
 	withWorkspaceRuntimeLease?: typeof withWorkspaceRuntimeLease;
+	createAuthority?: typeof createSandboxAuthority;
 };
 
 const defaultDeps: Required<ControlDeps> = {
@@ -93,6 +95,7 @@ const defaultDeps: Required<ControlDeps> = {
 	},
 	loadOwnedActiveSession,
 	withWorkspaceRuntimeLease,
+	createAuthority: createSandboxAuthority,
 };
 
 function safeId(value: string): string {
@@ -238,6 +241,7 @@ export async function controlAgentRun(options: {
 				const shell = await sandbox.createSession({
 					id: `agent-control-${safeId(requestId)}`,
 					commandTimeoutMs: CONTROL_TIMEOUT_MS,
+					env: {},
 				});
 				const jobPath = `${CONTROL_DIRECTORY}/${safeId(requestId)}.json`;
 				try {
@@ -279,6 +283,11 @@ export async function controlAgentRun(options: {
 							status: 409 as const,
 							body: { error: "The active agent run is no longer available." },
 						};
+					}
+					if (job.action === "stop" && lease.identity) {
+						await deps
+							.createAuthority(db)
+							.closeOpenFamily(lease.identity.id, "model", "agent_stop");
 					}
 					return {
 						kind: "accepted" as const,

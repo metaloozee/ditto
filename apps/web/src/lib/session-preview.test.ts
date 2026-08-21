@@ -439,6 +439,7 @@ function baseInjected(
 				branchName: `ditto/session-${input.sessionId}`,
 				baseCommitSha: "abc",
 				sandbox: sandbox as never,
+				identity: null,
 				projectEnv: null,
 				issueGitCallbackToken: async () => {
 					throw new Error("preview does not issue git tokens");

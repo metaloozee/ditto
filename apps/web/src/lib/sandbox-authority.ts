@@ -8,6 +8,7 @@ import {
 	type SANDBOX_IDENTITY_STATES,
 	sandboxIdentities,
 } from "#/db/schema";
+import { OPENCODE_CONTRACT_DENIAL_LIMIT } from "#/lib/open-code-contract";
 
 type Db = ReturnType<typeof createDb>;
 
@@ -40,6 +41,7 @@ export type PrivilegedOperationHandle = {
 	allowedRefs: string[] | null;
 	maxRequests: number | null;
 	consumedRequests: number;
+	contractDenials: number;
 	openedAt: Date;
 	expiresAt: Date;
 	closedAt: Date | null;
@@ -117,6 +119,7 @@ function toOperationHandle(
 		allowedRefs: parseAllowedRefs(row.allowedRefs),
 		maxRequests: row.maxRequests,
 		consumedRequests: row.consumedRequests,
+		contractDenials: row.contractDenials,
 		openedAt: row.openedAt,
 		expiresAt: row.expiresAt,
 		closedAt: row.closedAt ?? null,
@@ -210,6 +213,17 @@ export type SandboxAuthority = {
 		operationId: string,
 		closeReason: string,
 	): Promise<PrivilegedOperationHandle>;
+	closeOpenFamily(
+		identityId: string,
+		family: PrivilegedOperationFamily,
+		closeReason: string,
+	): Promise<PrivilegedOperationHandle | null>;
+	recordContractDenial(operationId: string): Promise<{
+		denials: number;
+		closed: boolean;
+		identityId: string;
+		workspaceSessionId: string | null;
+	}>;
 	withOperation<T>(
 		input: {
 			identityId: string;
@@ -369,6 +383,7 @@ export function createSandboxAuthority(db: Db): SandboxAuthority {
 								: null,
 						maxRequests: input.maxRequests ?? null,
 						consumedRequests: 0,
+						contractDenials: 0,
 						openedAt,
 						expiresAt: input.expiresAt,
 						correlationId,
@@ -394,6 +409,84 @@ export function createSandboxAuthority(db: Db): SandboxAuthority {
 				}
 				throw error;
 			}
+		},
+
+		async closeOpenFamily(identityId, family, closeReason) {
+			const existing = await loadOpenOperation(db, identityId, family);
+			if (!existing) {
+				return null;
+			}
+			return this.closeOperation(existing.id, closeReason);
+		},
+
+		async recordContractDenial(operationId) {
+			const [existing] = await db
+				.select()
+				.from(privilegedOperations)
+				.where(eq(privilegedOperations.id, operationId))
+				.limit(1);
+			if (!existing) {
+				throw new SandboxAuthorityError(
+					"operation_not_found",
+					"Privileged operation not found.",
+				);
+			}
+			if (existing.closedAt != null) {
+				const identity = await loadIdentity(db, existing.identityId);
+				return {
+					denials: existing.contractDenials,
+					closed: true,
+					identityId: existing.identityId,
+					workspaceSessionId: identity?.workspaceSessionId ?? null,
+				};
+			}
+			const nextDenials = existing.contractDenials + 1;
+			const updated = await db
+				.update(privilegedOperations)
+				.set({
+					contractDenials: nextDenials,
+					updatedAt: sql`(unixepoch())`,
+				})
+				.where(
+					and(
+						eq(privilegedOperations.id, operationId),
+						isNull(privilegedOperations.closedAt),
+						eq(privilegedOperations.contractDenials, existing.contractDenials),
+					),
+				)
+				.returning();
+			const row = updated[0];
+			if (!row) {
+				const [again] = await db
+					.select()
+					.from(privilegedOperations)
+					.where(eq(privilegedOperations.id, operationId))
+					.limit(1);
+				const identity = again
+					? await loadIdentity(db, again.identityId)
+					: null;
+				return {
+					denials: again?.contractDenials ?? nextDenials,
+					closed: again?.closedAt != null,
+					identityId: again?.identityId ?? existing.identityId,
+					workspaceSessionId: identity?.workspaceSessionId ?? null,
+				};
+			}
+			let closed = row.closedAt != null;
+			if (row.contractDenials >= OPENCODE_CONTRACT_DENIAL_LIMIT && !closed) {
+				await this.closeOperation(
+					operationId,
+					"opencode_contract_denial_limit",
+				);
+				closed = true;
+			}
+			const identity = await loadIdentity(db, row.identityId);
+			return {
+				denials: row.contractDenials,
+				closed,
+				identityId: row.identityId,
+				workspaceSessionId: identity?.workspaceSessionId ?? null,
+			};
 		},
 
 		async closeOperation(operationId, closeReason) {

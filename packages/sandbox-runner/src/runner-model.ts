@@ -4,6 +4,10 @@ import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 export const RUNNER_MODEL_SPECIFIER =
 	"opencode/deepseek-v4-flash-free" as const;
 
+/** Public placeholder. Has no authority without Worker identity + open operation. */
+export const OPENCODE_PLACEHOLDER_API_KEY =
+	"ditto-public-opencode-placeholder" as const;
+
 export type ParsedModelSpecifier = {
 	provider: string;
 	modelId: string;
@@ -47,10 +51,9 @@ export function parseModelSpecifier(
 }
 
 /**
- * Resolve the fixed provider/model and seed an in-memory credential store.
- * Deletes DITTO_PI_CREDENTIAL and OPENCODE_API_KEY from the process env before
- * any Agent Session or tool can start (including on error paths after parse).
- * Never returns credential material.
+ * Resolve the fixed provider/model and seed an in-memory credential store
+ * with the public OpenCode placeholder. Env credential values are deleted
+ * and never used as the credential.
  */
 export async function resolveRunnerModel(
 	modelSpecifier: string,
@@ -63,28 +66,16 @@ export async function resolveRunnerModel(
 	}
 
 	const credentials = new InMemoryCredentialStore();
-	const rawCredential =
-		process.env.DITTO_PI_CREDENTIAL ?? process.env.OPENCODE_API_KEY;
-	// Delete before session/tools so bash children cannot inherit secrets.
+	// Delete before session/tools so bash children cannot inherit leftover secrets.
 	scrubCredentialEnv();
-
-	if (rawCredential) {
-		let credential: { type: string; [key: string]: unknown };
-		try {
-			const parsedCred = JSON.parse(rawCredential) as {
-				type?: string;
-			};
-			if (parsedCred && typeof parsedCred === "object" && parsedCred.type) {
-				credential = parsedCred as { type: string; [key: string]: unknown };
-			} else {
-				// Legacy bare API key string (operator bridge).
-				credential = { type: "api_key", key: rawCredential };
-			}
-		} catch {
-			credential = { type: "api_key", key: rawCredential };
-		}
-		await credentials.modify(parsed.provider, async () => credential as never);
-	}
+	await credentials.modify(
+		parsed.provider,
+		async () =>
+			({
+				type: "api_key",
+				key: OPENCODE_PLACEHOLDER_API_KEY,
+			}) as never,
+	);
 
 	const modelRuntime = await ModelRuntime.create({
 		credentials,

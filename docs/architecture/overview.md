@@ -123,7 +123,8 @@ Legacy projects that still own a project sandbox continue to restore through
    `prepareAgentRun` checks `OPENCODE_API_KEY` and any explicit thinking level
    before project/session/message side effects, creates or resolves the
    workspace session, and opens it through `WorkspaceRuntime`. The Worker always uses
-   `opencode/deepseek-v4-flash-free`.
+   `opencode/deepseek-v4-flash-free` and brokers model HTTP through the
+   OpenCode request contract. The key never enters the sandbox.
 3. `executeAgentRun` invokes the sandbox runner and emits `meta`,
    `control_ready`, ordered turn boundaries, `delta`, `agent`, `error`, and
    `done` SSE events.

@@ -13,6 +13,7 @@ const withWorkspaceRuntimeLeaseMock = vi.hoisted(() =>
 			branchName: "ditto/session-abc",
 			baseCommitSha: "abc123",
 			sandbox: { exec: vi.fn() },
+			identity: null,
 			projectEnv: null,
 			issueGitCallbackToken: async () => "",
 			matchesSandboxClaim: (id: string) => id === "sandbox-1",

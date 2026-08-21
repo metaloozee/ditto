@@ -54,9 +54,10 @@ improves UX but is not an authorization boundary.
 
 ## Operator credential and leftover encryption binding
 
-Agent runs use the operator `OPENCODE_API_KEY` projected as
-`DITTO_PI_CREDENTIAL`. The runner deletes credential env values before PI
-session and tool initialization.
+Agent runs keep `OPENCODE_API_KEY` in the Worker. Sandbox PI uses one public
+placeholder that has no authority without a current sandbox identity and an
+open D1 `model` operation. The outbound handler validates the pinned OpenCode
+request contract, then attaches the real key only to a fresh upstream request.
 
 `AI_CREDENTIALS_ENCRYPTION_KEY` remains bound for leftover
 `ai_provider_credentials` rows. Account-provider login, catalogs, and OAuth
@@ -70,9 +71,9 @@ derived from `BETTER_AUTH_SECRET` with PBKDF2-SHA-256, a random salt, and 310,00
 iterations. The UI can list keys but never reads values back.
 
 At run time the Worker decrypts project values and injects them into the agent
-shell environment. The same environment receives `DITTO_PI_CREDENTIAL` and the
-Git callback URL and JWT. These values do not enter a worktree `.env`, agent job
-JSON, SSE metadata, or Git remote.
+shell environment. The same environment receives the Git callback URL and JWT.
+The OpenCode key never enters the sandbox. These values do not enter a worktree
+`.env`, agent job JSON, SSE metadata, or Git remote.
 
 The process environment is not a vault from the agent: shell tools can read it.
 Controls therefore also exist on output and Git egress.
@@ -142,9 +143,9 @@ policy blocks export from the sandbox to GitHub.
 One-click UI Commit / Open PR spawn an ephemeral metadata agent that is **not**
 the chat harness:
 
-- No project environment variables, GitHub tokens, or git-callback JWT in the
-  shell or job. Only operator-fallback `DITTO_PI_CREDENTIAL` is passed and
-  deleted inside the runner before the PI session starts.
+- No project environment variables, GitHub tokens, git-callback JWT, or OpenCode
+  key in the shell or job. Metadata requests use a one-request `git_metadata`
+  model operation and the public OpenCode placeholder.
 - Input is a bounded, redacted **Git snapshot** (paths/stat/patch/subjects),
   never the user prompt or session title. Secret-like paths are omitted;
   `redactStructured` runs before the job is written; patch size is capped.

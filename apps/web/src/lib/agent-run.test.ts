@@ -32,11 +32,6 @@ function makeEnv(): Env {
 	} as Env;
 }
 
-const RUNTIME_CREDENTIAL_JSON = JSON.stringify({
-	type: "api_key",
-	key: "sk-test-key-12345678901234567890",
-});
-
 describe("runAgentInSandbox", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -82,7 +77,6 @@ describe("runAgentInSandbox", () => {
 			runId: "run-1",
 			cwd: SESSION_WORKTREE_CWD,
 			model: "opencode/deepseek-v4-flash-free",
-			runtimeCredentialJson: RUNTIME_CREDENTIAL_JSON,
 			prompt: "do the thing",
 			envVars: [{ key: "DATABASE_URL", value: "postgres://secret" }],
 			onRunnerMessage,
@@ -100,7 +94,6 @@ describe("runAgentInSandbox", () => {
 				cwd: SESSION_WORKTREE_CWD,
 				env: expect.objectContaining({
 					DATABASE_URL: "postgres://secret",
-					DITTO_PI_CREDENTIAL: RUNTIME_CREDENTIAL_JSON,
 					DITTO_GIT_CALLBACK_URL: "http://localhost:5173/api/agent/git",
 					DITTO_GIT_CALLBACK_TOKEN: expect.any(String),
 					GIT_AUTHOR_NAME: "Ditto",
@@ -109,6 +102,18 @@ describe("runAgentInSandbox", () => {
 					GIT_COMMITTER_EMAIL: "ditto@users.noreply.github.com",
 				}),
 			}),
+		);
+		const sessionEnv = createSession.mock.calls[0]?.[0]?.env as Record<
+			string,
+			string
+		>;
+		expect(sessionEnv).not.toHaveProperty("DITTO_PI_CREDENTIAL");
+		expect(sessionEnv).not.toHaveProperty("OPENCODE_API_KEY");
+		expect(JSON.stringify(sessionEnv)).not.toContain(
+			makeEnv().OPENCODE_API_KEY,
+		);
+		expect(execStream.mock.calls[0]?.[0]).not.toContain(
+			makeEnv().OPENCODE_API_KEY,
 		);
 		expect(writeFile).toHaveBeenCalledWith(
 			expect.stringMatching(/\/workspace\/\.ditto\/jobs\/.+\.json$/),
@@ -176,7 +181,6 @@ describe("runAgentInSandbox", () => {
 			cwd: SESSION_WORKTREE_CWD,
 			model: "opencode/deepseek-v4-flash-free",
 			thinkingLevel: "high",
-			runtimeCredentialJson: RUNTIME_CREDENTIAL_JSON,
 			prompt: "do the thing",
 			onRunnerMessage: vi.fn(),
 		});
@@ -260,7 +264,6 @@ describe("runAgentInSandbox", () => {
 			runId: "run-order",
 			cwd: SESSION_WORKTREE_CWD,
 			model: "opencode/deepseek-v4-flash-free",
-			runtimeCredentialJson: RUNTIME_CREDENTIAL_JSON,
 			prompt: "check order",
 			onRunnerMessage,
 		});
@@ -318,7 +321,6 @@ describe("runAgentInSandbox", () => {
 			runId: "run-2",
 			cwd: "/workspace/.ditto/worktrees/conv-2",
 			model: "opencode/deepseek-v4-flash-free",
-			runtimeCredentialJson: RUNTIME_CREDENTIAL_JSON,
 			prompt: "ping",
 			onRunnerMessage,
 		});
@@ -404,7 +406,6 @@ describe("runAgentInSandbox", () => {
 			runId: "run-stderr-bound",
 			cwd: SESSION_WORKTREE_CWD,
 			model: "opencode/deepseek-v4-flash-free",
-			runtimeCredentialJson: RUNTIME_CREDENTIAL_JSON,
 			prompt: "fail big",
 			onRunnerMessage,
 		});
@@ -462,7 +463,6 @@ describe("runAgentInSandbox", () => {
 			runId: "run-3",
 			cwd: SESSION_WORKTREE_CWD,
 			model: "opencode/deepseek-v4-flash-free",
-			runtimeCredentialJson: RUNTIME_CREDENTIAL_JSON,
 			prompt: "fail",
 			onRunnerMessage,
 		});
@@ -544,7 +544,6 @@ describe("runAgentInSandbox", () => {
 			runId: "run-redact-delta",
 			cwd: SESSION_WORKTREE_CWD,
 			model: "opencode/deepseek-v4-flash-free",
-			runtimeCredentialJson: RUNTIME_CREDENTIAL_JSON,
 			prompt: "echo secret",
 			envVars: [{ key: "DATABASE_URL", value: projectSecret }],
 			onRunnerMessage,
@@ -627,7 +626,6 @@ describe("runAgentInSandbox", () => {
 			runId: "run-redact-event",
 			cwd: SESSION_WORKTREE_CWD,
 			model: "opencode/deepseek-v4-flash-free",
-			runtimeCredentialJson: RUNTIME_CREDENTIAL_JSON,
 			prompt: "run tool",
 			envVars: [{ key: "API_TOKEN", value: projectSecret }],
 			onRunnerMessage,
@@ -709,7 +707,6 @@ describe("runAgentInSandbox", () => {
 			runId: "run-redact-all",
 			cwd: SESSION_WORKTREE_CWD,
 			model: "opencode/deepseek-v4-flash-free",
-			runtimeCredentialJson: RUNTIME_CREDENTIAL_JSON,
 			prompt: "leak",
 			envVars: [{ key: "DATABASE_URL", value: projectSecret }],
 			onRunnerMessage,
