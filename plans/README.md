@@ -27,8 +27,18 @@ after that change is
 Plan 008 was executed on 2026-08-21 and is on `5ed000b`. The spec digest
 after that change is
 `3deb3e5eb7f4af7f36a3b2bf4d2c0926ef9d7e198b8033fb558d874de441195d`.
-Later plans should start from that digest. The spec is already in this
-workspace.
+
+Plan 009 was executed on 2026-08-21. Advisor verdict: accept. Implementation
+is on worktree commit `42da0a8` and is not merged onto `brain`. The spec
+digest after that change is
+`0c505b7d3d1f85fd16f8579cad55d10e5f81beb6e8f520a5cb18086b1b782fe4`.
+Product push is disabled until non-fast-forward rejection is proved.
+
+Plan 010 was executed on 2026-08-21. Advisor verdict: accept. Merged onto
+`brain` as `d5e8585`. The spec digest is unchanged
+(`0c505b7d3d1f85fd16f8579cad55d10e5f81beb6e8f520a5cb18086b1b782fe4`).
+Later plans should start from that digest. Preview deferral, idle shutdown,
+and final backup-before-archive remain plan 011.
 
 Before executing any remaining plan, compare both the commit and the spec
 digest. Read the new diff if either changed. Stop if a required guarantee,
@@ -46,8 +56,8 @@ trust decision, or cutover rule changed.
 | [006](006-move-runtime-ownership-to-workspace-sessions.md) | DONE | 005 | Each workspace session owns one sandbox, branch checkout, and lifecycle generation. |
 | [007](007-broker-opencode-requests.md) | DONE | 006 | Agent and metadata model requests use exact contracts; the OpenCode key stays in the Worker. |
 | [008](008-remove-agent-git-callback-token.md) | DONE | 006 | The image-owned extension invokes Worker Git actions through a synthetic origin without a JWT. |
-| [009](009-broker-git-push.md) | TODO | 005, 006, 008 | Fetch and push use brokered GitHub credentials; no installation token enters a sandbox. |
-| [010](010-add-session-recovery-lineages.md) | TODO | 004, 006 | Session mutations create fenced recovery checkpoints with current and previous restore fallback. |
+| [009](009-broker-git-push.md) | DONE | 005, 006, 008 | Receive-pack contract exists; product push is disabled until non-fast-forward rejection is proved. UI/agent push does not mint sandbox tokens. |
+| [010](010-add-session-recovery-lineages.md) | DONE | 004, 006 | Session mutations create fenced recovery checkpoints with current and previous restore fallback. |
 | [011](011-add-capacity-preview-and-idle-lifecycle.md) | TODO | 006, 010 | Durable capacity work, preview checkpoint deferral, idle shutdown, archive, and deletion follow one runtime module. |
 | [012](012-cut-over-and-delete-legacy-paths.md) | TODO | 003 through 011 | Legacy project sandboxes, credential injection, provider data, and obsolete docs are removed. |
 

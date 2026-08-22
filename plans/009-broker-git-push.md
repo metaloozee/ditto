@@ -1,8 +1,19 @@
 # Broker Git push
 
-Status: TODO
+Status: DONE
 
 Written against commit `62c99b4`. Complete plans 005, 006, and 008 first.
+
+Executed 2026-08-21 from `713501a` (plans 001–008 already on HEAD). Advisor
+verdict: accept. Worktree
+`/home/ayan/.grok/worktrees/ayan-ditto/subagent-01a024c8-5d55-72b1-b99d-f252e450c86a`
+commit `42da0a8`. Not merged onto `brain`. Spec digest after execution:
+`0c505b7d3d1f85fd16f8579cad55d10e5f81beb6e8f520a5cb18086b1b782fe4`.
+
+Force-update gate: not proved. `GIT_PUSH_ENABLED` is `false`. Receive-pack
+parser and push contract exist; UI/agent/session-git report push unavailable
+after secret preflight and do not mint sandbox tokens. Leftover token-in-sandbox
+fetch remains on legacy session sync via `fetchPrimaryBranchFromGitHub`.
 
 Before editing, compare the current commit and target spec with plan 001's
 recorded values. Read drift in Git staging, secret preflight, authority, and

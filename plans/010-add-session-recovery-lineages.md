@@ -1,8 +1,22 @@
 # Add workspace-session recovery lineages
 
-Status: TODO
+Status: DONE
 
 Written against commit `62c99b4`. Complete plans 004 and 006 first.
+
+Executed 2026-08-21 from `42da0a8` (plans 001–009 already on HEAD). Advisor
+verdict: accept. Merged onto `brain` as `d5e8585`. Spec digest unchanged:
+`0c505b7d3d1f85fd16f8579cad55d10e5f81beb6e8f520a5cb18086b1b782fe4`.
+
+Dedicated sessions own a 1:1 `workspace_session_recoveries` row and checkpoint
+through `WorkspaceRecovery`. Current/previous restore fallback works; checkpoint
+failure does not rewrite a settled assistant or Git result. Archive is blocked
+while pending/degraded; user deletion is not. Legacy `persistProjectSandboxBackup`
+remains for shared project sandboxes.
+
+Preview deferral, idle destroy fencing, and final backup-before-archive remain
+plan 011. `retryAt` is recorded but consumed on the next mutation/checkpoint,
+not by a sweeper. Runtime open does not auto-retry a degraded checkpoint.
 
 Before editing, compare the current commit and target spec with plan 001's
 recorded values. Read drift in mutation callers, archive transport, runtime,
