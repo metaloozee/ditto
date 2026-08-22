@@ -61,36 +61,49 @@ function WorkspaceStatusBar(props: {
 		| "provisioning"
 		| "recovery-pending"
 		| "recovery-degraded"
-		| "recovery-failed";
+		| "recovery-failed"
+		| "capacity-queued"
+		| "workspace-saving";
 	message?: string;
 	pending?: boolean;
 	onRetryRestore?: () => void;
 	onRetryCheck?: () => void;
+	onCancelQueue?: () => void;
 	retryError?: string | null;
 }) {
 	const { state, isMobile } = useSidebar();
 	const reduceMotion = useReducedMotion();
 	// Match floating sidebar p-2 inset when open on desktop.
 	const alignSidebar = !isMobile && state === "expanded";
-	const provisioning = props.mode === "provisioning";
+	const provisioning =
+		props.mode === "provisioning" ||
+		props.mode === "capacity-queued" ||
+		props.mode === "workspace-saving";
 	const recoveryWarning =
 		props.mode === "recovery-pending" ||
 		props.mode === "recovery-degraded" ||
 		props.mode === "recovery-failed";
+	const queued = props.mode === "capacity-queued";
+	const saving = props.mode === "workspace-saving";
 	const message = provisioning
 		? "Preparing project sandbox…"
-		: props.mode === "restore-failed"
-			? "Workspace restore failed"
-			: props.mode === "recovery-pending"
-				? "Workspace recovery is pending"
-				: props.mode === "recovery-degraded"
-					? "Workspace recovery is degraded"
-					: props.mode === "recovery-failed"
-						? "Workspace recovery failed"
-						: (props.message ?? "Project sandbox is not ready yet.");
+		: saving
+			? "Saving workspace…"
+			: queued
+				? (props.message ?? "Waiting for workspace capacity…")
+				: props.mode === "restore-failed"
+					? "Workspace restore failed"
+					: props.mode === "recovery-pending"
+						? "Backup pending. Latest changes are not durable yet."
+						: props.mode === "recovery-degraded"
+							? "Workspace recovery is degraded"
+							: props.mode === "recovery-failed"
+								? "Workspace recovery failed"
+								: (props.message ?? "Project sandbox is not ready yet.");
 	const onRetry =
 		props.mode === "restore-failed" ? props.onRetryRestore : props.onRetryCheck;
-	const showRetry = !provisioning && !recoveryWarning;
+	const showRetry = !provisioning && !recoveryWarning && !queued && !saving;
+	const showCancel = queued && Boolean(props.onCancelQueue);
 	const label = props.pending
 		? "Retrying…"
 		: props.mode === "restore-failed"
@@ -146,6 +159,17 @@ function WorkspaceStatusBar(props: {
 						onClick={onRetry}
 					>
 						{label}
+					</Button>
+				) : null}
+				{showCancel ? (
+					<Button
+						type="button"
+						size="sm"
+						variant="outline"
+						className="border-blue-500/30 bg-background/80 hover:bg-background"
+						onClick={props.onCancelQueue}
+					>
+						Cancel
 					</Button>
 				) : null}
 				{props.retryError ? (
@@ -222,6 +246,16 @@ export function ProjectWorkspacePage({
 				await queryClient.invalidateQueries(
 					trpc.projects.get.queryFilter({ id: projectId }),
 				);
+				await queryClient.invalidateQueries(
+					trpc.workspace.checkSandbox.queryFilter({ projectId, sessionId }),
+				);
+			},
+		}),
+	);
+
+	const cancelWorkMutation = useMutation(
+		trpc.workspace.cancelRuntimeWork.mutationOptions({
+			onSuccess: async () => {
 				await queryClient.invalidateQueries(
 					trpc.workspace.checkSandbox.queryFilter({ projectId, sessionId }),
 				);
@@ -395,6 +429,7 @@ export function ProjectWorkspacePage({
 	}
 
 	const recoveryState = checkQuery.data?.recovery?.state ?? null;
+	const runtimeWork = checkQuery.data?.runtimeWork ?? null;
 	let bar:
 		| "restore-failed"
 		| "check-error"
@@ -402,6 +437,8 @@ export function ProjectWorkspacePage({
 		| "recovery-pending"
 		| "recovery-degraded"
 		| "recovery-failed"
+		| "capacity-queued"
+		| "workspace-saving"
 		| null = null;
 	if (restoreFailed) {
 		bar = "restore-failed";
@@ -413,6 +450,10 @@ export function ProjectWorkspacePage({
 		bar = "recovery-failed";
 	} else if (recoveryState === "degraded") {
 		bar = "recovery-degraded";
+	} else if (checkQuery.data?.recovery?.reasonCode === "workspace_saving") {
+		bar = "workspace-saving";
+	} else if (runtimeWork?.status === "queued") {
+		bar = "capacity-queued";
 	} else if (recoveryState === "pending") {
 		bar = "recovery-pending";
 	}
@@ -436,7 +477,13 @@ export function ProjectWorkspacePage({
 					<WorkspaceStatusBar
 						key="workspace-status"
 						mode={bar}
-						message={checkError?.message}
+						message={
+							bar === "capacity-queued"
+								? runtimeWork?.queuePosition
+									? `Waiting for workspace capacity (position ${runtimeWork.queuePosition})…`
+									: "Waiting for workspace capacity…"
+								: checkError?.message
+						}
 						pending={
 							bar === "restore-failed"
 								? retryPending || provisionPending
@@ -448,6 +495,15 @@ export function ProjectWorkspacePage({
 						onRetryCheck={() => {
 							void checkQuery.refetch();
 						}}
+						onCancelQueue={
+							runtimeWork?.workId
+								? () =>
+										cancelWorkMutation.mutate({
+											projectId,
+											workId: runtimeWork.workId,
+										})
+								: undefined
+						}
 						retryError={retryRestoreMutation.error?.message ?? null}
 					/>
 				) : null}
@@ -467,6 +523,7 @@ export function ProjectWorkspacePage({
 					onLoadEarlier={() => {
 						void messagesQuery.fetchNextPage();
 					}}
+					recovery={checkQuery.data?.recovery ?? null}
 					onWorkspaceRefresh={(activeSessionId) => {
 						void queryClient.invalidateQueries(
 							trpc.projects.list.queryFilter(),

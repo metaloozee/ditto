@@ -120,6 +120,11 @@ type ChatProps = {
 	/** Fetch the next older page (infinite query). */
 	onLoadEarlier?: () => void;
 	onWorkspaceRefresh?: (sessionId: string) => void;
+	recovery?: {
+		state: string;
+		reasonCode: string | null;
+		pending: boolean;
+	} | null;
 };
 
 /**
@@ -622,6 +627,7 @@ export function Chat({
 	isLoadingMoreHistory = false,
 	onLoadEarlier,
 	onWorkspaceRefresh,
+	recovery,
 }: ChatProps) {
 	const [streaming, setStreaming] = useState<ComposerStreamingState | null>(
 		null,
@@ -942,6 +948,7 @@ export function Chat({
 									sessionId={sessionId}
 									className="h-full"
 									onClose={() => setToolsOpen(false)}
+									recovery={recovery}
 								/>
 							</div>
 						</div>
@@ -964,6 +971,7 @@ export function Chat({
 								sessionId={sessionId}
 								className="h-full"
 								onClose={() => setToolsOpen(false)}
+								recovery={recovery}
 							/>
 						) : null}
 					</SheetContent>

@@ -17,8 +17,12 @@ import {
 } from "#/lib/session-preview";
 import { getWorkspaceRecoveryState } from "#/lib/workspace-recovery";
 import {
+	cancelWorkspaceWork,
+	continueWorkspaceFromArchive,
 	ensureWorkspaceRuntimeReady,
+	getSessionRuntimeWork,
 	observeWorkspaceRuntime,
+	submitWorkspaceWork,
 	WorkspaceRuntimeError,
 } from "#/lib/workspace-runtime";
 import { loadOwnedActiveSession } from "#/lib/workspace-session";
@@ -97,6 +101,13 @@ async function loadSessionsAndBuildView(options: {
 	const recovery = selectedSession
 		? await getWorkspaceRecoveryState(options.db, selectedSession.id)
 		: null;
+	const runtimeWork = selectedSession
+		? await getSessionRuntimeWork({
+				db: options.db,
+				sessionId: selectedSession.id,
+				userId: options.userId,
+			})
+		: null;
 
 	return {
 		project: stripProjectSecrets(options.sandboxProject),
@@ -113,6 +124,7 @@ async function loadSessionsAndBuildView(options: {
 					pending: recovery.pending,
 				}
 			: null,
+		runtimeWork,
 	};
 }
 
@@ -420,6 +432,91 @@ export const workspaceRouter = createTRPCRouter({
 				.map(({ rowid: _rowid, ...item }) => item);
 
 			return { items, nextCursor };
+		}),
+
+	cancelRuntimeWork: protectedProcedure
+		.input(
+			z.object({
+				projectId: z.string().min(1),
+				workId: z.string().min(1),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const db = createDb(ctx.env);
+			const cancelled = await cancelWorkspaceWork({
+				env: ctx.env,
+				db,
+				workId: input.workId,
+				userId: ctx.user.id,
+			});
+			if (!cancelled) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Runtime work not found.",
+				});
+			}
+			return cancelled;
+		}),
+
+	retryBackup: protectedProcedure
+		.input(
+			z.object({
+				projectId: z.string().min(1),
+				sessionId: z.string().min(1),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const db = createDb(ctx.env);
+			const session = await loadOwnedActiveSession({
+				db,
+				projectId: input.projectId,
+				sessionId: input.sessionId,
+				userId: ctx.user.id,
+			});
+			if (!session) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Session not found.",
+				});
+			}
+			return await submitWorkspaceWork({
+				env: ctx.env,
+				db,
+				intent: {
+					kind: "recovery_retry",
+					projectId: input.projectId,
+					sessionId: input.sessionId,
+					userId: ctx.user.id,
+				},
+			});
+		}),
+
+	continueFromArchive: protectedProcedure
+		.input(
+			z.object({
+				projectId: z.string().min(1),
+				archivedSessionId: z.string().min(1),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const db = createDb(ctx.env);
+			try {
+				return await continueWorkspaceFromArchive({
+					db,
+					userId: ctx.user.id,
+					projectId: input.projectId,
+					archivedSessionId: input.archivedSessionId,
+				});
+			} catch (error) {
+				if (error instanceof WorkspaceRuntimeError) {
+					throw new TRPCError({
+						code:
+							error.code === "not_found" ? "NOT_FOUND" : "PRECONDITION_FAILED",
+						message: error.message,
+					});
+				}
+				throw error;
+			}
 		}),
 
 	deleteSession: protectedProcedure

@@ -50,10 +50,32 @@ export const Route = createFileRoute("/api/agent/stream")({
 					env,
 					userId: session.user.id,
 					input: parsed.data,
+					waitUntil: (promise) => {
+						const runtime = globalThis as {
+							waitUntil?: (p: Promise<unknown>) => void;
+						};
+						runtime.waitUntil?.(promise);
+					},
 				});
 
 				if (prepared.kind === "error") {
 					return jsonResponse(prepared.body, prepared.status);
+				}
+
+				if (prepared.kind === "queued") {
+					return jsonResponse(
+						{
+							queued: true,
+							workId: prepared.receipt.workId,
+							queuePosition: prepared.receipt.queuePosition,
+							queueExpiresAt: prepared.receipt.queueExpiresAt,
+							sessionId: prepared.context.sessionId,
+							userMessageId: prepared.context.userMessageId,
+							assistantMessageId: prepared.context.assistantMessageId,
+							createdSession: prepared.context.createdSession,
+						},
+						202,
+					);
 				}
 
 				const encoder = new TextEncoder();

@@ -32,6 +32,11 @@ function mapSessionPreviewError(error: unknown): never {
 					code: "BAD_GATEWAY",
 					message: error.message,
 				});
+			case "not_durable":
+				throw new TRPCError({
+					code: "PRECONDITION_FAILED",
+					message: error.message,
+				});
 		}
 	}
 	throw new TRPCError({

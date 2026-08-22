@@ -15,7 +15,7 @@ model.
 | Browser | User interaction and cookie transport | Resource ownership, Git policy, durable terminal state |
 | Worker | Authentication, authorization, secret handling, D1 writes, credential minting | Arbitrary text emitted by agent/sandbox commands |
 | D1 | Durable metadata under Worker access | Plaintext project secrets (stored encrypted instead) |
-| Sandbox | Isolated repository execution | Keeping process environment hidden from the agent |
+| Sandbox | Isolated repository execution; preview-traffic timestamps in Durable Object storage | Keeping process environment hidden from the agent; public preview URLs and tokens |
 | PI harness/model | Requested code work | Authorization decisions, secret-safe output, GitHub credentials |
 | GitHub | Repository and PR authority | Ditto application ownership without OAuth/App checks |
 | R2 backup | Workspace snapshot storage | Live filesystem semantics or secret-file filtering beyond configured excludes |

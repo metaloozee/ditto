@@ -169,7 +169,7 @@ runtime. Session recovery backups remain a later plan.
 | One sandbox per workspace session | Implemented for new sessions | `WorkspaceRuntime` provisions a `workspace_session` identity and sandbox. Legacy sessions may still share a project sandbox until plan 012. |
 | Safe chat resource loader | Not implemented | `packages/sandbox-runner/src/run-agent.ts` omits `resourceLoader`. |
 | Workspace-session backups | Not implemented | Backup fields and generation counters live on `projects`. |
-| Capacity queue and lifecycle | Not implemented | Session identity states and runtime leases exist on workspace_sessions / sandbox_identities. Global capacity queue and idle shutdown remain plan 011. |
+| Capacity queue and lifecycle | Implemented | `WorkspaceRuntime` persists `workspace_runtime_work` and `workspace_capacity_leases`. Drain + one-minute cron enforce 20 global / 2 per-user running slots, 15-minute queue expiry, preview checkpoint deferral, and idle slot release. |
 
 ## Controls to preserve
 

@@ -97,6 +97,11 @@ export const workspaceSessions = sqliteTable(
 			.default("active"),
 		previewPort: integer("previewPort"),
 		/**
+		 * Set while the user wants preview running on the dedicated-session
+		 * path. Not a URL or token. Dedicated sessions leave previewPort null.
+		 */
+		previewStartedAt: integer("previewStartedAt", { mode: "timestamp" }),
+		/**
 		 * Nullable for legacy shared-sandbox sessions. No FK: identity
 		 * tombstones are permanent and never cascade-deleted.
 		 */
@@ -490,6 +495,102 @@ export const workspaceSessionRecoveries = sqliteTable(
 			sql`(unixepoch())`,
 		),
 	},
+);
+
+export const WORKSPACE_WORK_INTENTS = [
+	"agent_run",
+	"git_mutation",
+	"preview_start",
+	"recovery_retry",
+	"archive",
+	"destruction",
+] as const;
+
+export const WORKSPACE_WORK_STATUSES = [
+	"queued",
+	"leased",
+	"running",
+	"complete",
+	"failed",
+	"cancelled",
+] as const;
+
+/**
+ * Durable runtime work. Callers persist identifiers and bounded payload only —
+ * never Request, Response, Error, functions, streams, or class instances.
+ */
+export const workspaceRuntimeWork = sqliteTable(
+	"workspace_runtime_work",
+	{
+		id: text("id").primaryKey(),
+		fifoSeq: integer("fifoSeq").notNull(),
+		identityId: text("identityId"),
+		sessionId: text("sessionId"),
+		projectId: text("projectId").notNull(),
+		userId: text("userId").notNull(),
+		intent: text("intent", {
+			enum: WORKSPACE_WORK_INTENTS,
+		}).notNull(),
+		payload: text("payload"),
+		status: text("status", {
+			enum: WORKSPACE_WORK_STATUSES,
+		})
+			.notNull()
+			.default("queued"),
+		leaseToken: text("leaseToken"),
+		leaseExpiresAt: integer("leaseExpiresAt"),
+		retryCount: integer("retryCount", { mode: "number" }).notNull().default(0),
+		reasonCode: text("reasonCode"),
+		queueExpiresAt: integer("queueExpiresAt").notNull(),
+		userMessageId: text("userMessageId"),
+		assistantMessageId: text("assistantMessageId"),
+		createdAt: integer("created_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+		updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+	},
+	(table) => [
+		uniqueIndex("workspace_runtime_work_fifoSeq_uidx").on(table.fifoSeq),
+		index("workspace_runtime_work_status_fifoSeq_idx").on(
+			table.status,
+			table.fifoSeq,
+		),
+		index("workspace_runtime_work_sessionId_idx").on(table.sessionId),
+		index("workspace_runtime_work_userId_idx").on(table.userId),
+		index("workspace_runtime_work_projectId_idx").on(table.projectId),
+		uniqueIndex("workspace_runtime_work_assistantMessageId_uidx").on(
+			table.assistantMessageId,
+		),
+	],
+);
+
+/** Unexpired rows are running workspace-session capacity slots. */
+export const workspaceCapacityLeases = sqliteTable(
+	"workspace_capacity_leases",
+	{
+		id: text("id").primaryKey(),
+		sessionId: text("sessionId").notNull(),
+		userId: text("userId").notNull(),
+		identityId: text("identityId"),
+		leaseToken: text("leaseToken").notNull(),
+		expiresAt: integer("expiresAt").notNull(),
+		createdAt: integer("created_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+		updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+	},
+	(table) => [
+		uniqueIndex("workspace_capacity_leases_sessionId_uidx").on(table.sessionId),
+		index("workspace_capacity_leases_userId_expiresAt_idx").on(
+			table.userId,
+			table.expiresAt,
+		),
+		index("workspace_capacity_leases_expiresAt_idx").on(table.expiresAt),
+	],
 );
 
 /** Leftover provider-login attempt rows. Not a current product path; pending removal. */

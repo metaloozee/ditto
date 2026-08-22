@@ -370,6 +370,26 @@ export function Composer({
 					...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
 				},
 				{
+					onQueued: (queued) => {
+						streamSessionId = queued.sessionId;
+						activeSessionIdRef.current = queued.sessionId;
+						userMessageIdRef.current = queued.userMessageId;
+						assistantMessageIdRef.current = queued.assistantMessageId;
+						if (queued.createdSession) {
+							shouldNavigateToSessionRef.current = true;
+						}
+						streamSettledRef.current = true;
+						commitTurn({
+							sessionId: queued.sessionId,
+							userMessageId: queued.userMessageId,
+							assistantMessageId: queued.assistantMessageId,
+							userText: prompt,
+							content: "",
+							parts: [],
+							tools: [],
+						});
+						onWorkspaceRefresh?.(queued.sessionId);
+					},
 					onMeta: (meta) => {
 						runIdRef.current = meta.runId;
 						streamSessionId = meta.sessionId;

@@ -31,6 +31,7 @@ vi.mock("#/lib/github-app", () => ({
 vi.mock("#/lib/sandbox-bootstrap", () => ({
 	getProjectSandbox: getProjectSandboxMock,
 	configureDittoGitIdentity: configureDittoGitIdentityMock,
+	getProjectSandboxState: vi.fn(async () => ({ status: "healthy" })),
 }));
 
 vi.mock("#/lib/privileged-git", () => ({
@@ -69,6 +70,21 @@ vi.mock("#/lib/session-workspace-lock", () => ({
 		async ({ run }: { run: () => Promise<unknown> }) => await run(),
 	),
 }));
+
+vi.mock("#/lib/workspace-runtime-capacity", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("#/lib/workspace-runtime-capacity")>();
+	return {
+		...actual,
+		acquireCapacitySlot: vi.fn(async () => ({
+			id: "cap-1",
+			leaseToken: "cap-token",
+			expiresAt: 9_999_999_999,
+		})),
+		releaseCapacitySlot: vi.fn(async () => true),
+		hasUnexpiredCapacitySlot: vi.fn(async () => true),
+	};
+});
 
 const {
 	observeWorkspaceRuntime,
@@ -482,6 +498,7 @@ function seedSession(
 		runtimeLeaseId: null,
 		runtimeLeaseExpiresAt: null,
 		runtimeFailureReasonCode: null,
+		previewStartedAt: null,
 		createdAt: new Date(),
 		updatedAt: new Date(),
 		...overrides,
@@ -503,6 +520,7 @@ function makeSandbox(label: string) {
 		})),
 		createSession: vi.fn(),
 		deleteSession: vi.fn(),
+		getState: vi.fn(async () => ({ status: "healthy" })),
 	};
 }
 

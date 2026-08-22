@@ -72,6 +72,14 @@ A user or assistant entry in a workspace session. An assistant message is pendin
 
 One active execution of the coding agent for a workspace session. An agent run can contain an initial turn and queued follow-up turns. Stop ends the active run cooperatively.
 
+### Runtime work
+
+A durable, serializable unit of workspace-session work (agent run, Git mutation, preview start, recovery retry, archive, or destruction). Callers submit an intent and receive a receipt. The first user message and pending assistant are stored before the work is queued or started.
+
+### Running slot
+
+An unexpired capacity lease held by a workspace-session runtime the Worker most recently observed as active. Sleeping and cold ready runtimes do not consume a running slot.
+
 ### Agent event
 
 A structured update produced during an agent run. Agent events describe text, tool activity, turn boundaries, control readiness, errors, and completion.

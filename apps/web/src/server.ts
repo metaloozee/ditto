@@ -7,10 +7,44 @@ import {
 import handler from "@tanstack/react-start/server-entry";
 import { handleOutbound } from "#/lib/sandbox-egress-broker";
 
+const PREVIEW_LAST_TRAFFIC_STORAGE_KEY = "ditto.previewLastTrafficAt";
+
 export class Sandbox extends BaseSandbox {
 	// Leave internet enabled for legacy project sandboxes that never call
 	// setOutboundHandler. Builders attach dittoCatchAll at runtime instead.
 	interceptHttps = true;
+	sleepAfter = "10m";
+
+	async fetch(request: Request): Promise<Response> {
+		const response = await super.fetch(request);
+		if (shouldRecordPreviewTraffic(request)) {
+			try {
+				await this.ctx.storage.put(
+					PREVIEW_LAST_TRAFFIC_STORAGE_KEY,
+					Date.now(),
+				);
+			} catch {
+				// Observation is best-effort and must not fail preview.
+			}
+		}
+		return response;
+	}
+
+	async getPreviewLastTrafficAt(): Promise<number | null> {
+		const value = await this.ctx.storage.get<number>(
+			PREVIEW_LAST_TRAFFIC_STORAGE_KEY,
+		);
+		return typeof value === "number" ? value : null;
+	}
+}
+
+function shouldRecordPreviewTraffic(request: Request): boolean {
+	try {
+		const host = new URL(request.url).hostname.toLowerCase();
+		return /^\d+-/.test(host);
+	} catch {
+		return false;
+	}
 }
 
 async function dittoCatchAll(
@@ -104,7 +138,11 @@ function stripBodyHeaders(source: Headers): Headers {
 }
 
 export default {
-	async fetch(request: Request, env: Env): Promise<Response> {
+	async fetch(
+		request: Request,
+		env: Env,
+		_ctx?: ExecutionContext,
+	): Promise<Response> {
 		const proxied = await proxyToSandbox(request, env as unknown as SandboxEnv);
 		if (proxied) {
 			return injectPreviewScrollbar(proxied);
@@ -116,5 +154,22 @@ export default {
 		}
 
 		return handler.fetch(request);
+	},
+
+	async scheduled(
+		_controller: ScheduledController,
+		env: Env,
+		ctx: ExecutionContext,
+	): Promise<void> {
+		const { createDb } = await import("#/db");
+		const { drainWorkspaceRuntime } = await import("#/lib/workspace-runtime");
+		const drain = drainWorkspaceRuntime({
+			env,
+			db: createDb(env),
+			waitUntil: (promise) => ctx.waitUntil(promise),
+			invocationStartedAt: Date.now(),
+		});
+		ctx.waitUntil(drain);
+		await drain;
 	},
 };

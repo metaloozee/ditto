@@ -21,7 +21,10 @@ const isLegacySharedSandboxSessionMock = vi.hoisted(() => vi.fn(() => true));
 
 vi.mock("#/lib/workspace-runtime", () => ({
 	ensureWorkspaceRuntimeReady: vi.fn(),
+	submitWorkspaceWork: vi.fn(),
 	withWorkspaceRuntimeLease: vi.fn(),
+	completeWork: vi.fn(),
+	failWork: vi.fn(),
 	isLegacySharedSandboxSession: isLegacySharedSandboxSessionMock,
 	WorkspaceRuntimeError: class WorkspaceRuntimeError extends Error {
 		code: string;
@@ -93,6 +96,7 @@ const activeSession = {
 	runtimeLeaseId: null,
 	runtimeLeaseExpiresAt: null,
 	runtimeFailureReasonCode: null,
+	previewStartedAt: null,
 	createdAt: new Date(),
 	updatedAt: new Date(),
 };
@@ -118,6 +122,14 @@ function createMockDb() {
 	const insertValues = vi.fn().mockReturnValue({ returning: insertReturning });
 	const insert = vi.fn().mockReturnValue({ values: insertValues });
 
+	const selectLimit = vi.fn().mockResolvedValue([{ max: 0 }]);
+	const selectWhere = vi.fn().mockReturnValue({ limit: selectLimit });
+	const selectFrom = vi.fn().mockReturnValue({
+		where: selectWhere,
+		limit: selectLimit,
+	});
+	const select = vi.fn().mockReturnValue({ from: selectFrom });
+
 	const batch = vi.fn();
 
 	return {
@@ -126,6 +138,7 @@ function createMockDb() {
 			insert,
 			update,
 			delete: deleteFn,
+			select,
 		} as never,
 		batch,
 		insert,
@@ -136,6 +149,7 @@ function createMockDb() {
 		updateWhere,
 		deleteFn,
 		deleteWhere,
+		select,
 	};
 }
 
@@ -143,7 +157,8 @@ function baseDeps(overrides: Partial<AgentRunDeps> = {}): AgentRunDeps {
 	return {
 		createId: vi
 			.fn()
-			.mockReturnValueOnce("sess-new")
+			.mockReturnValueOnce("run-1")
+			.mockReturnValueOnce("work-1")
 			.mockReturnValueOnce("user-msg")
 			.mockReturnValueOnce("asst-msg"),
 		loadProjectForUser: vi.fn().mockResolvedValue(readyProject),
@@ -156,6 +171,17 @@ function baseDeps(overrides: Partial<AgentRunDeps> = {}): AgentRunDeps {
 			branchName: activeSession.branchName,
 			baseCommitSha: activeSession.baseCommitSha,
 			workspacePath: activeSession.workspacePath,
+		}),
+		submitWorkspaceWork: vi.fn().mockResolvedValue({
+			workId: "work-1",
+			status: "running",
+			queuePosition: null,
+			queueExpiresAt: null,
+			sessionId: "sess-1",
+			intent: "agent_run",
+			reasonCode: null,
+			userMessageId: "user-msg",
+			assistantMessageId: "asst-msg",
 		}),
 		withWorkspaceRuntimeLease: vi.fn(async (_input, run) =>
 			run({
@@ -263,30 +289,6 @@ describe("prepareAgentRun", () => {
 		});
 	});
 
-	it("returns 409 when session runtime prep fails", async () => {
-		const { db } = createMockDb();
-		const result = await prepareAgentRun({
-			db,
-			env: makeEnv(),
-			userId: "user-1",
-			input: {
-				projectId: "proj-1",
-				sessionId: "sess-1",
-				message: "hi",
-			},
-			deps: baseDeps({
-				ensureWorkspaceRuntimeReady: vi
-					.fn()
-					.mockRejectedValue(new Error("runtime down")),
-			}),
-		});
-		expect(result).toMatchObject({
-			kind: "error",
-			status: 409,
-			body: { error: "runtime down" },
-		});
-	});
-
 	it("returns 404 for archived / missing sessions without creating a replacement", async () => {
 		const { db, batch, insert } = createMockDb();
 		const result = await prepareAgentRun({
@@ -313,7 +315,7 @@ describe("prepareAgentRun", () => {
 		expect(insert).not.toHaveBeenCalled();
 	});
 
-	it("prepares worktree before inserting messages for an existing session", async () => {
+	it("persists messages and work before submitting capacity work", async () => {
 		const order: string[] = [];
 		const { db, batch } = createMockDb();
 
@@ -321,21 +323,28 @@ describe("prepareAgentRun", () => {
 			createId: vi
 				.fn()
 				.mockReturnValueOnce("run-1")
+				.mockReturnValueOnce("work-1")
 				.mockReturnValueOnce("user-msg")
 				.mockReturnValueOnce("asst-msg"),
-			ensureWorkspaceRuntimeReady: vi.fn().mockImplementation(async () => {
-				order.push("worktree");
+			submitWorkspaceWork: vi.fn().mockImplementation(async () => {
+				order.push("capacity");
 				return {
-					branchName: activeSession.branchName,
-					baseCommitSha: activeSession.baseCommitSha,
-					workspacePath: activeSession.workspacePath,
+					workId: "work-1",
+					status: "running",
+					queuePosition: null,
+					queueExpiresAt: null,
+					sessionId: "sess-1",
+					intent: "agent_run",
+					reasonCode: null,
+					userMessageId: "user-msg",
+					assistantMessageId: "asst-msg",
 				};
 			}),
 		});
 
 		batch.mockImplementation(async () => {
 			order.push("messages");
-			return [[{ id: "user-msg" }], [{ id: "asst-msg" }]];
+			return [[{ id: "user-msg" }], [{ id: "asst-msg" }], [{ id: "work-1" }]];
 		});
 
 		const result = await prepareAgentRun({
@@ -351,50 +360,21 @@ describe("prepareAgentRun", () => {
 		});
 
 		expect(result.kind).toBe("ready");
-		expect(order).toEqual(["worktree", "messages"]);
+		expect(order).toEqual(["messages", "capacity"]);
 		if (result.kind === "ready") {
 			expect(result.context.assistantMessageId).toBe("asst-msg");
+			expect(result.context.workId).toBe("work-1");
 			expect(result.context.createdSession).toBe(false);
 		}
 	});
 
-	it("cleans up a newly created empty session when worktree prep fails", async () => {
-		const { db, deleteFn, deleteWhere, batch } = createMockDb();
-		batch.mockResolvedValueOnce([[{ ...activeSession, id: "sess-new" }]]);
-
-		const result = await prepareAgentRun({
-			db,
-			env: makeEnv(),
-			userId: "user-1",
-			input: {
-				projectId: "proj-1",
-				message: "hi",
-			},
-			deps: baseDeps({
-				createId: vi.fn().mockReturnValue("sess-new"),
-				resolveSessionForMessageWrite: vi
-					.fn()
-					.mockResolvedValue({ kind: "create" }),
-				ensureWorkspaceRuntimeReady: vi
-					.fn()
-					.mockRejectedValue(new Error("dirty primary")),
-			}),
-		});
-
-		expect(result).toEqual({
-			kind: "error",
-			status: 409,
-			body: { error: "dirty primary" },
-		});
-		expect(deleteFn).toHaveBeenCalled();
-		expect(deleteWhere).toHaveBeenCalled();
-		// Session create batch only — no message insert.
-		expect(batch).toHaveBeenCalledTimes(1);
-	});
-
-	it("leaves an existing session untouched when worktree prep fails", async () => {
-		const { db, deleteFn, batch } = createMockDb();
-
+	it("returns queued when capacity is unavailable after durable rows exist", async () => {
+		const { db, batch } = createMockDb();
+		batch.mockResolvedValue([
+			[{ id: "user-msg" }],
+			[{ id: "asst-msg" }],
+			[{ id: "work-1" }],
+		]);
 		const result = await prepareAgentRun({
 			db,
 			env: makeEnv(),
@@ -405,28 +385,35 @@ describe("prepareAgentRun", () => {
 				message: "hi",
 			},
 			deps: baseDeps({
-				ensureWorkspaceRuntimeReady: vi
-					.fn()
-					.mockRejectedValue(new Error("worktree boom")),
+				submitWorkspaceWork: vi.fn().mockResolvedValue({
+					workId: "work-1",
+					status: "queued",
+					queuePosition: 2,
+					queueExpiresAt: 1_700_000_000,
+					sessionId: "sess-1",
+					intent: "agent_run",
+					reasonCode: null,
+					userMessageId: "user-msg",
+					assistantMessageId: "asst-msg",
+				}),
 			}),
 		});
-
-		expect(result).toEqual({
-			kind: "error",
-			status: 409,
-			body: { error: "worktree boom" },
-		});
-		expect(deleteFn).not.toHaveBeenCalled();
-		expect(batch).not.toHaveBeenCalled();
+		expect(result.kind).toBe("queued");
+		if (result.kind === "queued") {
+			expect(result.receipt.queuePosition).toBe(2);
+			expect(result.context.assistantMessageId).toBe("asst-msg");
+		}
 	});
 
-	it("returns 409 with busy message when readiness is locked", async () => {
-		const { SessionWorkspaceBusyError } = await import(
-			"#/lib/session-workspace-lock-error"
-		);
-		const { db, deleteFn, batch } = createMockDb();
-
-		const result = await prepareAgentRun({
+	it("does not provision before messages are durable", async () => {
+		const { db, batch } = createMockDb();
+		const ensureWorkspaceRuntimeReady = vi.fn();
+		batch.mockResolvedValue([
+			[{ id: "user-msg" }],
+			[{ id: "asst-msg" }],
+			[{ id: "work-1" }],
+		]);
+		await prepareAgentRun({
 			db,
 			env: makeEnv(),
 			userId: "user-1",
@@ -436,27 +423,20 @@ describe("prepareAgentRun", () => {
 				message: "hi",
 			},
 			deps: baseDeps({
-				ensureWorkspaceRuntimeReady: vi
-					.fn()
-					.mockRejectedValue(new SessionWorkspaceBusyError()),
+				ensureWorkspaceRuntimeReady,
 			}),
 		});
-
-		expect(result).toEqual({
-			kind: "error",
-			status: 409,
-			body: {
-				error:
-					"This session is busy. Wait for the active agent or Git operation to finish.",
-			},
-		});
-		expect(deleteFn).not.toHaveBeenCalled();
-		expect(batch).not.toHaveBeenCalled();
+		expect(ensureWorkspaceRuntimeReady).not.toHaveBeenCalled();
+		expect(batch).toHaveBeenCalled();
 	});
 
 	it("inserts assistant placeholder with pending status", async () => {
 		const { db, insert, insertValues, batch } = createMockDb();
-		batch.mockResolvedValue([[{ id: "user-msg" }], [{ id: "asst-msg" }]]);
+		batch.mockResolvedValue([
+			[{ id: "user-msg" }],
+			[{ id: "asst-msg" }],
+			[{ id: "work-1" }],
+		]);
 
 		const result = await prepareAgentRun({
 			db,
@@ -471,6 +451,7 @@ describe("prepareAgentRun", () => {
 				createId: vi
 					.fn()
 					.mockReturnValueOnce("run-1")
+					.mockReturnValueOnce("work-1")
 					.mockReturnValueOnce("user-msg")
 					.mockReturnValueOnce("asst-msg"),
 			}),
@@ -531,7 +512,11 @@ describe("prepareAgentRun", () => {
 
 	it("always uses the fixed model and keeps the OpenCode key out of run context serialization", async () => {
 		const { db, batch } = createMockDb();
-		batch.mockResolvedValue([[{ id: "user-msg" }], [{ id: "asst-msg" }]]);
+		batch.mockResolvedValue([
+			[{ id: "user-msg" }],
+			[{ id: "asst-msg" }],
+			[{ id: "work-1" }],
+		]);
 		const result = await prepareAgentRun({
 			db,
 			env: makeEnv(),
@@ -545,6 +530,7 @@ describe("prepareAgentRun", () => {
 				createId: vi
 					.fn()
 					.mockReturnValueOnce("run-1")
+					.mockReturnValueOnce("work-1")
 					.mockReturnValueOnce("user-msg")
 					.mockReturnValueOnce("asst-msg"),
 			}),
@@ -610,7 +596,11 @@ describe("prepareAgentRun", () => {
 
 	it("accepts supported thinkingLevel into context", async () => {
 		const { db, batch } = createMockDb();
-		batch.mockResolvedValue([[{ id: "user-msg" }], [{ id: "asst-msg" }]]);
+		batch.mockResolvedValue([
+			[{ id: "user-msg" }],
+			[{ id: "asst-msg" }],
+			[{ id: "work-1" }],
+		]);
 		const result = await prepareAgentRun({
 			db,
 			env: makeEnv(),
@@ -625,6 +615,7 @@ describe("prepareAgentRun", () => {
 				createId: vi
 					.fn()
 					.mockReturnValueOnce("run-1")
+					.mockReturnValueOnce("work-1")
 					.mockReturnValueOnce("user-msg")
 					.mockReturnValueOnce("asst-msg"),
 			}),
@@ -637,7 +628,11 @@ describe("prepareAgentRun", () => {
 
 	it("omitting thinkingLevel remains backward compatible", async () => {
 		const { db, batch } = createMockDb();
-		batch.mockResolvedValue([[{ id: "user-msg" }], [{ id: "asst-msg" }]]);
+		batch.mockResolvedValue([
+			[{ id: "user-msg" }],
+			[{ id: "asst-msg" }],
+			[{ id: "work-1" }],
+		]);
 		const result = await prepareAgentRun({
 			db,
 			env: makeEnv(),
@@ -651,6 +646,7 @@ describe("prepareAgentRun", () => {
 				createId: vi
 					.fn()
 					.mockReturnValueOnce("run-1")
+					.mockReturnValueOnce("work-1")
 					.mockReturnValueOnce("user-msg")
 					.mockReturnValueOnce("asst-msg"),
 			}),
@@ -675,6 +671,7 @@ describe("executeAgentRun", () => {
 			message: "hi",
 			model: "opencode/deepseek-v4-flash-free",
 			runId: "run-1",
+			workId: "work-1",
 			sessionId: "sess-1",
 			createdSession: false,
 			workspaceSession: activeSession,

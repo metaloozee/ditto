@@ -35,7 +35,8 @@ function createRecoveryDb() {
 			id text PRIMARY KEY NOT NULL,
 			projectId text NOT NULL,
 			userId text NOT NULL,
-			status text NOT NULL DEFAULT 'active'
+			status text NOT NULL DEFAULT 'active',
+			previewStartedAt integer
 		);
 		CREATE TABLE archives (
 			id text PRIMARY KEY NOT NULL,
@@ -50,6 +51,26 @@ function createRecoveryDb() {
 			status text NOT NULL,
 			cleanupRetryAt integer,
 			cleanupAttempts integer NOT NULL DEFAULT 0,
+			created_at integer,
+			updated_at integer
+		);
+		CREATE TABLE workspace_runtime_work (
+			id text PRIMARY KEY NOT NULL,
+			fifoSeq integer NOT NULL,
+			identityId text,
+			sessionId text,
+			projectId text NOT NULL,
+			userId text NOT NULL,
+			intent text NOT NULL,
+			payload text,
+			status text NOT NULL DEFAULT 'queued',
+			leaseToken text,
+			leaseExpiresAt integer,
+			retryCount integer NOT NULL DEFAULT 0,
+			reasonCode text,
+			queueExpiresAt integer NOT NULL,
+			userMessageId text,
+			assistantMessageId text,
 			created_at integer,
 			updated_at integer
 		);
@@ -659,5 +680,66 @@ describe("WorkspaceRecovery", () => {
 			/secret-object-key/,
 		);
 		consoleError.mockRestore();
+	});
+
+	it("defers checkpoint while preview is live without resetting pendingSince", async () => {
+		const mocks = makeArchiveMocks();
+		sqlite
+			.prepare(
+				`UPDATE workspace_sessions SET previewStartedAt = ? WHERE id = ?`,
+			)
+			.run(1_700_000_000, "sess-1");
+		const first = await recordMutationAndCheckpoint(
+			{
+				db,
+				env,
+				userId: "user-1",
+				projectId: "proj-1",
+				sessionId: "sess-1",
+			},
+			{
+				now: () => 1_700_000_000_000,
+				archive: mocks.archive,
+				withWorkspaceRuntimeLease: async (_input, run) => run(makeLease()),
+			},
+		);
+		expect(first.pending).toBe(true);
+		expect(first.durableGeneration).toBe(0);
+		expect(mocks.archive.create).not.toHaveBeenCalled();
+
+		const second = await recordMutationAndCheckpoint(
+			{
+				db,
+				env,
+				userId: "user-1",
+				projectId: "proj-1",
+				sessionId: "sess-1",
+			},
+			{
+				now: () => 1_700_000_030_000,
+				archive: mocks.archive,
+				withWorkspaceRuntimeLease: async (_input, run) => run(makeLease()),
+			},
+		);
+		expect(second.mutationGeneration).toBe(2);
+		expect(second.durableGeneration).toBe(0);
+		const row = sqlite
+			.prepare(
+				`SELECT pendingSince, pendingGeneration, durableGeneration FROM workspace_session_recoveries WHERE sessionId = ?`,
+			)
+			.get("sess-1") as {
+			pendingSince: number;
+			pendingGeneration: number;
+			durableGeneration: number;
+		};
+		expect(row.pendingSince).toBe(1_700_000_000);
+		expect(row.pendingGeneration).toBe(2);
+		expect(row.durableGeneration).toBe(0);
+	});
+
+	it("does not let preview filesystem activity mint a durable agent generation", async () => {
+		const state = await getWorkspaceRecoveryState(db, "sess-1");
+		expect(state?.durableGeneration ?? 0).toBe(0);
+		expect(state?.mutationGeneration ?? 0).toBe(0);
 	});
 });

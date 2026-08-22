@@ -18,8 +18,8 @@ const sandbox = await Container("sandbox", {
 		context: ".",
 		dockerfile: "Dockerfile",
 	},
-	instanceType: "lite",
-	maxInstances: 1,
+	instanceType: "basic",
+	maxInstances: 20,
 });
 
 const database = await D1Database("database", {
@@ -35,6 +35,7 @@ const sandboxBackups = await R2Bucket("sandbox-backups", {
 export const website = await TanStackStart("website", {
 	cwd: "apps/web",
 	url: true,
+	crons: ["* * * * *"],
 	bindings: {
 		DB: database,
 		Sandbox: sandbox,
@@ -69,8 +70,8 @@ export const website = await TanStackStart("website", {
 				{
 					class_name: "Sandbox",
 					image: "../../../../Dockerfile",
-					instance_type: "lite",
-					max_instances: 1,
+					instance_type: "basic",
+					max_instances: 20,
 				},
 			],
 			durable_objects: {

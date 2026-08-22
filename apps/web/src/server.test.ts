@@ -11,6 +11,15 @@ const outboundHandlersRegistry = vi.hoisted(() => {
 
 vi.mock("@cloudflare/sandbox", () => {
 	class BaseSandbox {
+		ctx = {
+			storage: {
+				put: async () => undefined,
+				get: async () => null,
+			},
+		};
+		async fetch(request: Request): Promise<Response> {
+			return new Response(`base:${new URL(request.url).hostname}`);
+		}
 		static get outboundHandlers(): Record<string, unknown> | undefined {
 			return outboundHandlersRegistry.get(BaseSandbox.name);
 		}
@@ -153,10 +162,16 @@ describe("Sandbox subclass exports", () => {
 			Sandbox as unknown as new () => {
 				enableInternet: boolean | undefined;
 				interceptHttps: boolean;
+				sleepAfter: string;
 			}
 		)();
 		expect(constructed.interceptHttps).toBe(true);
 		// Legacy project sandboxes keep direct internet until they set a catch-all.
 		expect(constructed.enableInternet).not.toBe(false);
+		expect(constructed.sleepAfter).toBe("10m");
+	});
+
+	it("exports a scheduled drain handler", () => {
+		expect(server.scheduled).toBeTypeOf("function");
 	});
 });

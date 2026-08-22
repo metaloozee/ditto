@@ -85,6 +85,8 @@ type SessionState = {
 	userId: string;
 	status: "active" | "archived";
 	previewPort: number | null;
+	previewStartedAt: number | null;
+	sandboxIdentityId: string | null;
 	branchName: string | null;
 	baseCommitSha: string | null;
 	workspacePath: string;
@@ -108,10 +110,19 @@ function createMemoryDb(seed: {
 	const session = sessions.get(seed.session.id)!;
 
 	function isProjectsTable(table: Record<string, unknown>) {
-		return "previewLockToken" in table || "sandboxId" in table;
+		return "previewLockToken" in table || "deletingAt" in table;
 	}
 	function isSessionsTable(table: Record<string, unknown>) {
 		return "previewPort" in table;
+	}
+	function isIdentitiesTable(table: Record<string, unknown>) {
+		return "containerId" in table || "lifecycleGeneration" in table;
+	}
+	function isWorkTable(table: Record<string, unknown>) {
+		return "fifoSeq" in table || "assistantMessageId" in table;
+	}
+	function isArchivesTable(table: Record<string, unknown>) {
+		return "objectKey" in table || "ownerKind" in table;
 	}
 
 	const db = {
@@ -146,7 +157,15 @@ function createMemoryDb(seed: {
 			} = { fields };
 			const chain = {
 				from: (table: Record<string, unknown>) => {
-					state.table = isSessionsTable(table) ? "sessions" : "projects";
+					state.table = isSessionsTable(table)
+						? "sessions"
+						: isIdentitiesTable(table)
+							? "identities"
+							: isWorkTable(table)
+								? "work"
+								: isArchivesTable(table)
+									? "archives"
+									: "projects";
 					return chain;
 				},
 				where: () => chain,
@@ -164,7 +183,31 @@ function createMemoryDb(seed: {
 						}
 						return row.status === "active" ? [{ ...row }] : [];
 					}
+					if (
+						state.table === "identities" ||
+						state.table === "work" ||
+						state.table === "archives"
+					) {
+						return [];
+					}
 					return [{ ...project }];
+				},
+				// biome-ignore lint/suspicious/noThenProperty: drizzle thenable mock
+				then(
+					resolve: (value: unknown) => unknown,
+					reject?: (error: unknown) => unknown,
+				) {
+					const rows =
+						state.table === "identities" ||
+						state.table === "work" ||
+						state.table === "archives"
+							? []
+							: state.table === "sessions"
+								? session.status === "active"
+									? [{ ...session }]
+									: []
+								: [{ ...project }];
+					return Promise.resolve(rows).then(resolve, reject);
 				},
 			};
 			return chain;
@@ -205,6 +248,10 @@ function createMemoryDb(seed: {
 						if (sessionsTable) {
 							if ("previewPort" in values) {
 								session.previewPort = values.previewPort as number | null;
+							}
+							if ("previewStartedAt" in values) {
+								session.previewStartedAt =
+									(values.previewStartedAt as number | null) ?? null;
 							}
 							if (values.status === "archived") session.status = "archived";
 							if ("workspacePath" in values) {
@@ -288,6 +335,7 @@ function createSqliteDb(seed: {
 			memoryPath text NOT NULL DEFAULT '/workspace/.ditto/project-memory.md',
 			status text NOT NULL DEFAULT 'active',
 			previewPort integer,
+			previewStartedAt integer,
 			sandboxIdentityId text,
 			runtimeLeaseId text,
 			runtimeLeaseExpiresAt integer,
@@ -297,6 +345,81 @@ function createSqliteDb(seed: {
 		);
 		CREATE UNIQUE INDEX workspace_sessions_project_preview_port_uidx
 			ON workspace_sessions (projectId, previewPort);
+		CREATE TABLE sandbox_identities (
+			id text PRIMARY KEY NOT NULL,
+			kind text NOT NULL,
+			sandboxId text NOT NULL,
+			containerId text NOT NULL,
+			userId text NOT NULL,
+			projectId text NOT NULL,
+			workspaceSessionId text,
+			lifecycleGeneration integer NOT NULL DEFAULT 1,
+			state text NOT NULL,
+			retiredAt integer,
+			created_at integer,
+			updated_at integer
+		);
+		CREATE TABLE workspace_runtime_work (
+			id text PRIMARY KEY NOT NULL,
+			fifoSeq integer NOT NULL,
+			identityId text,
+			sessionId text,
+			projectId text NOT NULL,
+			userId text NOT NULL,
+			intent text NOT NULL,
+			payload text,
+			status text NOT NULL DEFAULT 'queued',
+			leaseToken text,
+			leaseExpiresAt integer,
+			retryCount integer NOT NULL DEFAULT 0,
+			reasonCode text,
+			queueExpiresAt integer NOT NULL,
+			userMessageId text,
+			assistantMessageId text,
+			created_at integer,
+			updated_at integer
+		);
+		CREATE TABLE privileged_operations (
+			id text PRIMARY KEY NOT NULL,
+			identityId text NOT NULL,
+			lifecycleGeneration integer NOT NULL,
+			family text NOT NULL,
+			type text NOT NULL,
+			contractVersion integer NOT NULL,
+			closedAt integer,
+			openSlot text NOT NULL DEFAULT 'open',
+			correlationId text NOT NULL DEFAULT 'c',
+			consumedRequests integer NOT NULL DEFAULT 0,
+			contractDenials integer NOT NULL DEFAULT 0,
+			openedAt integer NOT NULL DEFAULT 0,
+			expiresAt integer NOT NULL DEFAULT 0
+		);
+		CREATE TABLE workspace_capacity_leases (
+			id text PRIMARY KEY NOT NULL,
+			sessionId text NOT NULL,
+			userId text NOT NULL,
+			identityId text,
+			leaseToken text NOT NULL,
+			expiresAt integer NOT NULL,
+			created_at integer,
+			updated_at integer
+		);
+		CREATE TABLE archives (
+			id text PRIMARY KEY NOT NULL,
+			ownerKind text NOT NULL,
+			ownerId text NOT NULL,
+			objectKey text NOT NULL,
+			formatVersion integer NOT NULL,
+			compatibilityKey text NOT NULL,
+			byteCount integer NOT NULL DEFAULT 0,
+			digest text NOT NULL,
+			generation integer NOT NULL DEFAULT 0,
+			status text NOT NULL,
+			cleanupRetryAt integer,
+			cleanupAttempts integer NOT NULL DEFAULT 0,
+			created_at integer,
+			updated_at integer
+		);
 		CREATE TABLE workspace_session_recoveries (
 			sessionId text PRIMARY KEY NOT NULL,
 			mutationGeneration integer NOT NULL DEFAULT 0,
@@ -414,6 +537,8 @@ const baseSession = (id = "sess-1"): SessionState => ({
 	userId: "user-1",
 	status: "active",
 	previewPort: null,
+	previewStartedAt: null,
+	sandboxIdentityId: null,
 	branchName: `ditto/session-${id}`,
 	baseCommitSha: "abc",
 	workspacePath: `/workspace/.ditto/worktrees/${id}`,

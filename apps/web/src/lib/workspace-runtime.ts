@@ -5,6 +5,7 @@ import {
 	projectSeeds,
 	projects,
 	sandboxIdentities,
+	workspaceSessionRecoveries,
 	workspaceSessions,
 } from "#/db/schema";
 import { GIT_FETCH_CONTRACT_VERSION } from "#/lib/git-fetch-contract";
@@ -22,6 +23,7 @@ import {
 import {
 	configureDittoGitIdentity,
 	getProjectSandbox,
+	getProjectSandboxState,
 	type SandboxEnvVar,
 } from "#/lib/sandbox-bootstrap";
 import { withSessionWorkspaceLock } from "#/lib/session-workspace-lock";
@@ -39,12 +41,63 @@ import {
 	hasRecoveryArchives,
 	restore as restoreWorkspaceRecovery,
 } from "#/lib/workspace-recovery";
+import {
+	acquireCapacitySlot,
+	cancelProjectWork,
+	cancelWorkspaceWorkRow,
+	completeWork,
+	drainWorkspaceRuntimeQueue,
+	failWork,
+	hasUnexpiredCapacitySlot,
+	loadQueuedWorkForSession,
+	loadWorkspaceWork,
+	parseWorkspaceWorkPayload,
+	persistWorkspaceWork,
+	releaseCapacitySlot,
+	settleAssistantFailed,
+	submitPersistedWork,
+	WORKSPACE_AGENT_COMMAND_RESERVE_MS,
+	WORKSPACE_CAPACITY_GLOBAL_LIMIT,
+	WORKSPACE_CAPACITY_PER_USER_LIMIT,
+	WORKSPACE_CRON_INVOCATION_LIMIT_MS,
+	WORKSPACE_DRAIN_CRON,
+	WORKSPACE_IDLE_TIMEOUT_MS,
+	WORKSPACE_PREVIEW_CHECKPOINT_DEFERRAL_MS,
+	WORKSPACE_QUEUE_TTL_MS,
+	type WorkspaceRuntimeWaitUntil,
+	type WorkspaceWorkIntent,
+	type WorkspaceWorkReceipt,
+	type WorkspaceWorkRow,
+} from "#/lib/workspace-runtime-capacity";
+import { WorkspaceRuntimeError } from "#/lib/workspace-runtime-error";
 import { loadOwnedActiveSession } from "#/lib/workspace-session";
 
 export const WORKSPACE_SESSION_FETCH_OPERATION_TYPE = "workspace_session_fetch";
 export const WORKSPACE_SESSION_FETCH_OPERATION_TTL_MS = 15 * 60 * 1000;
 export const WORKSPACE_RUNTIME_LEASE_TTL_MS = 20 * 60 * 1000;
 export const WORKSPACE_RUNTIME_PATH = WORKSPACE_PATH;
+export {
+	WORKSPACE_AGENT_COMMAND_RESERVE_MS,
+	WORKSPACE_CAPACITY_GLOBAL_LIMIT,
+	WORKSPACE_CAPACITY_PER_USER_LIMIT,
+	WORKSPACE_CRON_INVOCATION_LIMIT_MS,
+	WORKSPACE_DRAIN_CRON,
+	WORKSPACE_IDLE_TIMEOUT_MS,
+	WORKSPACE_PREVIEW_CHECKPOINT_DEFERRAL_MS,
+	WORKSPACE_QUEUE_TTL_MS,
+};
+export { WorkspaceRuntimeError } from "#/lib/workspace-runtime-error";
+export type {
+	WorkspaceRuntimeWaitUntil,
+	WorkspaceWorkIntent,
+	WorkspaceWorkReceipt,
+};
+
+const INACTIVE_SANDBOX_STATUSES = new Set([
+	"stopping",
+	"stopped",
+	"stopped_with_code",
+]);
 
 const RUNNER_CLI_PATH = "/opt/ditto-runner/dist/cli.js";
 const RUNNER_PACKAGE_PATH = "/opt/ditto-runner/package.json";
@@ -103,16 +156,6 @@ export type WorkspaceRuntimeLease = {
 	projectEnv: readonly SandboxEnvVar[] | null;
 	matchesSandboxClaim: (sandboxId: string) => boolean;
 };
-
-export class WorkspaceRuntimeError extends Error {
-	readonly code: string;
-
-	constructor(code: string, message: string) {
-		super(message);
-		this.name = "WorkspaceRuntimeError";
-		this.code = code;
-	}
-}
 
 function quoteShellArg(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;
@@ -765,11 +808,23 @@ async function prepareRuntimeOnce(options: {
 		options.session,
 	);
 	if (existing && existing.state === "ready" && existing.retiredAt == null) {
-		return serveDedicatedReady({
-			env: options.env,
-			session: options.session,
-			identity: existing,
-		});
+		let liveStatus: string | null = null;
+		try {
+			const live = await getProjectSandboxState(
+				options.env,
+				existing.sandboxId,
+			);
+			liveStatus = live.status;
+		} catch {
+			liveStatus = "stopped";
+		}
+		if (!liveStatus || !INACTIVE_SANDBOX_STATUSES.has(liveStatus)) {
+			return serveDedicatedReady({
+				env: options.env,
+				session: options.session,
+				identity: existing,
+			});
+		}
 	}
 	if (!options.ensureReady) {
 		throw new WorkspaceRuntimeError(
@@ -896,6 +951,29 @@ export async function observeWorkspaceRuntime(options: {
 			const authority = options.authority ?? createSandboxAuthority(options.db);
 			const identity = await authority.getIdentity(session.sandboxIdentityId);
 			if (identity && identity.retiredAt == null) {
+				if (identity.state === "ready") {
+					try {
+						const live = await getProjectSandboxState(
+							options.env,
+							identity.sandboxId,
+						);
+						if (INACTIVE_SANDBOX_STATUSES.has(live.status)) {
+							await releaseCapacitySlot({
+								db: options.db,
+								sessionId: session.id,
+								nowMs: Date.now(),
+							});
+							return { project, state: "needs_restore" };
+						}
+					} catch {
+						await releaseCapacitySlot({
+							db: options.db,
+							sessionId: session.id,
+							nowMs: Date.now(),
+						});
+						return { project, state: "needs_restore" };
+					}
+				}
 				return { project, state: mapIdentityState(identity.state) };
 			}
 		}
@@ -956,7 +1034,8 @@ export async function withWorkspaceRuntimeLease<T>(
 		);
 	}
 
-	const now = new Date(input.now?.() ?? Date.now());
+	const nowMs = input.now?.() ?? Date.now();
+	const now = new Date(nowMs);
 	const { leaseId } = await acquireLifecycleLease({
 		db: input.db,
 		session,
@@ -968,8 +1047,25 @@ export async function withWorkspaceRuntimeLease<T>(
 		((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
 	const ensureReady = input.ensureReady !== false;
 	const lockMode = defaultLockMode(input.purpose, input.lock);
+	const dedicated = !isLegacySharedSandboxSession(session, project);
 
 	try {
+		if (dedicated) {
+			const slot = await acquireCapacitySlot({
+				db: input.db,
+				sessionId: session.id,
+				userId: input.userId,
+				identityId: session.sandboxIdentityId,
+				nowMs,
+			});
+			if (!slot) {
+				throw new WorkspaceRuntimeError(
+					"capacity_unavailable",
+					"Workspace capacity is unavailable.",
+				);
+			}
+		}
+
 		const prepared = await prepareRuntimeWithRetry({
 			env: input.env,
 			db: input.db,
@@ -1036,3 +1132,457 @@ export async function ensureWorkspaceRuntimeReady(
 		}),
 	);
 }
+
+export type SubmitWorkspaceWorkInput = {
+	env: Env;
+	db: Db;
+	intent: WorkspaceWorkIntent;
+	workId?: string;
+	waitUntil?: WorkspaceRuntimeWaitUntil;
+	now?: () => number;
+	createId?: () => string;
+	/** When false, persist and queue only — do not start execution. */
+	start?: boolean;
+};
+
+export async function submitWorkspaceWork(
+	input: SubmitWorkspaceWorkInput,
+): Promise<WorkspaceWorkReceipt> {
+	const nowMs = input.now?.() ?? Date.now();
+	const work = await persistWorkspaceWork({
+		db: input.db,
+		intent: input.intent,
+		workId: input.workId,
+		nowMs,
+		createId: input.createId,
+	});
+	const receipt =
+		input.start === false
+			? await loadWorkspaceWork({
+					db: input.db,
+					workId: work.id,
+					userId: input.intent.userId,
+					nowMs,
+				})
+			: await submitPersistedWork({
+					db: input.db,
+					work,
+					nowMs,
+					createId: input.createId,
+				});
+	await trackWorkspaceRuntimeDrain({
+		env: input.env,
+		db: input.db,
+		waitUntil: input.waitUntil,
+		now: input.now,
+		createId: input.createId,
+	});
+	return (
+		receipt ?? {
+			workId: work.id,
+			status: work.status,
+			queuePosition: work.status === "queued" ? 1 : null,
+			queueExpiresAt: work.queueExpiresAt,
+			sessionId: work.sessionId,
+			intent: work.intent,
+			reasonCode: work.reasonCode,
+			userMessageId: work.userMessageId,
+			assistantMessageId: work.assistantMessageId,
+		}
+	);
+}
+
+export async function cancelWorkspaceWork(options: {
+	env: Env;
+	db: Db;
+	workId: string;
+	userId: string;
+	waitUntil?: WorkspaceRuntimeWaitUntil;
+	now?: () => number;
+}): Promise<WorkspaceWorkReceipt | null> {
+	const nowMs = options.now?.() ?? Date.now();
+	const cancelled = await cancelWorkspaceWorkRow({
+		db: options.db,
+		workId: options.workId,
+		userId: options.userId,
+		nowMs,
+	});
+	await trackWorkspaceRuntimeDrain({
+		env: options.env,
+		db: options.db,
+		waitUntil: options.waitUntil,
+		now: options.now,
+	});
+	if (!cancelled) {
+		return null;
+	}
+	return {
+		workId: cancelled.id,
+		status: cancelled.status,
+		queuePosition: null,
+		queueExpiresAt: cancelled.queueExpiresAt,
+		sessionId: cancelled.sessionId,
+		intent: cancelled.intent,
+		reasonCode: cancelled.reasonCode,
+		userMessageId: cancelled.userMessageId,
+		assistantMessageId: cancelled.assistantMessageId,
+	};
+}
+
+export async function getWorkspaceWork(options: {
+	db: Db;
+	workId: string;
+	userId: string;
+	now?: () => number;
+}): Promise<WorkspaceWorkReceipt | null> {
+	return loadWorkspaceWork({
+		db: options.db,
+		workId: options.workId,
+		userId: options.userId,
+		nowMs: options.now?.() ?? Date.now(),
+	});
+}
+
+export async function getSessionRuntimeWork(options: {
+	db: Db;
+	sessionId: string;
+	userId: string;
+	now?: () => number;
+}): Promise<WorkspaceWorkReceipt | null> {
+	return loadQueuedWorkForSession({
+		db: options.db,
+		sessionId: options.sessionId,
+		userId: options.userId,
+		nowMs: options.now?.() ?? Date.now(),
+	});
+}
+
+async function executeWorkspaceWork(options: {
+	db: Db;
+	env: Env;
+	work: WorkspaceWorkRow;
+	now: () => number;
+}): Promise<void> {
+	const payload = parseWorkspaceWorkPayload(options.work.payload);
+	switch (options.work.intent) {
+		case "agent_run": {
+			const agent = await import("#/lib/agent-run-service");
+			const context = await agent.loadAgentRunContextFromWork({
+				db: options.db,
+				env: options.env,
+				work: options.work,
+				payload,
+			});
+			if (!context) {
+				throw new WorkspaceRuntimeError(
+					"work_context_missing",
+					"Queued agent work is missing message context.",
+				);
+			}
+			await agent.executeAgentRun({
+				context,
+				emit: () => undefined,
+			});
+			return;
+		}
+		case "preview_start": {
+			const preview = await import("#/lib/session-preview");
+			if (!options.work.sessionId) {
+				throw new WorkspaceRuntimeError(
+					"session_required",
+					"Preview start requires a workspace session.",
+				);
+			}
+			const requestUrl =
+				typeof payload?.requestUrl === "string" ? payload.requestUrl : "";
+			await preview.startSessionPreview({
+				db: options.db,
+				env: options.env,
+				projectId: options.work.projectId,
+				sessionId: options.work.sessionId,
+				userId: options.work.userId,
+				requestUrl,
+			});
+			return;
+		}
+		case "recovery_retry": {
+			const recovery = await import("#/lib/workspace-recovery");
+			if (!options.work.sessionId) {
+				throw new WorkspaceRuntimeError(
+					"session_required",
+					"Recovery retry requires a workspace session.",
+				);
+			}
+			await recovery.forcePreviewCheckpoint({
+				db: options.db,
+				env: options.env,
+				userId: options.work.userId,
+				projectId: options.work.projectId,
+				sessionId: options.work.sessionId,
+			});
+			return;
+		}
+		case "git_mutation": {
+			if (!options.work.sessionId) {
+				throw new WorkspaceRuntimeError(
+					"session_required",
+					"Git mutation requires a workspace session.",
+				);
+			}
+			await ensureWorkspaceRuntimeReady({
+				env: options.env,
+				db: options.db,
+				userId: options.work.userId,
+				projectId: options.work.projectId,
+				sessionId: options.work.sessionId,
+				purpose: "mutating_git",
+			});
+			return;
+		}
+		case "archive": {
+			const preview = await import("#/lib/session-preview");
+			if (!options.work.sessionId) {
+				throw new WorkspaceRuntimeError(
+					"session_required",
+					"Archive requires a workspace session.",
+				);
+			}
+			await preview.archiveSessionWithPreviewCleanup({
+				db: options.db,
+				env: options.env,
+				projectId: options.work.projectId,
+				sessionId: options.work.sessionId,
+				userId: options.work.userId,
+			});
+			return;
+		}
+		case "destruction": {
+			const preview = await import("#/lib/session-preview");
+			const bootstrap = await import("#/lib/sandbox-bootstrap");
+			await preview.deleteProjectWithPreviewFence({
+				db: options.db,
+				env: options.env,
+				projectId: options.work.projectId,
+				userId: options.work.userId,
+				destroySandbox: bootstrap.destroySandbox,
+			});
+			return;
+		}
+		default: {
+			throw new WorkspaceRuntimeError(
+				"unsupported_intent",
+				"Unsupported runtime work intent.",
+			);
+		}
+	}
+}
+
+export async function trackWorkspaceRuntimeDrain(options: {
+	env: Env;
+	db: Db;
+	waitUntil?: WorkspaceRuntimeWaitUntil;
+	now?: () => number;
+	createId?: () => string;
+}): Promise<void> {
+	if (!options.waitUntil) {
+		return;
+	}
+	options.waitUntil(drainWorkspaceRuntime(options));
+}
+
+export async function drainWorkspaceRuntime(options: {
+	env: Env;
+	db: Db;
+	waitUntil?: WorkspaceRuntimeWaitUntil;
+	now?: () => number;
+	createId?: () => string;
+	invocationStartedAt?: number;
+	invocationLimitMs?: number;
+}): Promise<void> {
+	const now = options.now ?? Date.now;
+	await reclaimSleepingCapacity({
+		db: options.db,
+		env: options.env,
+		nowMs: now(),
+	});
+	const recovery = await import("#/lib/workspace-recovery");
+	await recovery.enqueueDuePreviewCheckpoints({
+		db: options.db,
+		env: options.env,
+		nowMs: now(),
+	});
+	const archive = await import("#/lib/sandbox-archive");
+	const cleanup = archive.retryArchiveCleanup({
+		env: options.env,
+		db: options.db,
+		nowSeconds: Math.floor(now() / 1000),
+	});
+	options.waitUntil?.(cleanup);
+	await drainWorkspaceRuntimeQueue({
+		env: options.env,
+		db: options.db,
+		waitUntil: options.waitUntil,
+		now: options.now,
+		createId: options.createId,
+		invocationStartedAt: options.invocationStartedAt,
+		invocationLimitMs: options.invocationLimitMs,
+		execute: executeWorkspaceWork,
+	});
+	if (!options.waitUntil) {
+		await cleanup;
+	}
+}
+
+async function reclaimSleepingCapacity(options: {
+	db: Db;
+	env: Env;
+	nowMs: number;
+}): Promise<void> {
+	const identities = await options.db
+		.select()
+		.from(sandboxIdentities)
+		.where(
+			and(
+				eq(sandboxIdentities.kind, "workspace_session"),
+				eq(sandboxIdentities.state, "ready"),
+				isNull(sandboxIdentities.retiredAt),
+			),
+		);
+	for (const identity of identities) {
+		if (!identity.workspaceSessionId) {
+			continue;
+		}
+		let liveStatus: string | null = null;
+		try {
+			const live = await getProjectSandboxState(
+				options.env,
+				identity.sandboxId,
+			);
+			liveStatus = live.status;
+		} catch {
+			liveStatus = "stopped";
+		}
+		if (liveStatus && INACTIVE_SANDBOX_STATUSES.has(liveStatus)) {
+			const [session] = await options.db
+				.select({
+					id: workspaceSessions.id,
+					previewStartedAt: workspaceSessions.previewStartedAt,
+				})
+				.from(workspaceSessions)
+				.where(eq(workspaceSessions.id, identity.workspaceSessionId))
+				.limit(1);
+			const [recovery] = await options.db
+				.select({
+					pendingGeneration: workspaceSessionRecoveries.pendingGeneration,
+					state: workspaceSessionRecoveries.state,
+				})
+				.from(workspaceSessionRecoveries)
+				.where(
+					eq(workspaceSessionRecoveries.sessionId, identity.workspaceSessionId),
+				)
+				.limit(1);
+			const pendingPreview =
+				session?.previewStartedAt != null &&
+				recovery != null &&
+				(recovery.pendingGeneration != null || recovery.state === "pending");
+			if (pendingPreview) {
+				continue;
+			}
+			await releaseCapacitySlot({
+				db: options.db,
+				sessionId: identity.workspaceSessionId,
+				nowMs: options.nowMs,
+			});
+		}
+	}
+}
+
+export async function continueWorkspaceFromArchive(options: {
+	db: Db;
+	userId: string;
+	projectId: string;
+	archivedSessionId: string;
+	createId?: () => string;
+}): Promise<{ sessionId: string }> {
+	const [archived] = await options.db
+		.select()
+		.from(workspaceSessions)
+		.where(
+			and(
+				eq(workspaceSessions.id, options.archivedSessionId),
+				eq(workspaceSessions.projectId, options.projectId),
+				eq(workspaceSessions.userId, options.userId),
+				eq(workspaceSessions.status, "archived"),
+			),
+		)
+		.limit(1);
+	if (!archived) {
+		throw new WorkspaceRuntimeError(
+			"not_found",
+			"Archived workspace session not found.",
+		);
+	}
+	const [recovery] = await options.db
+		.select()
+		.from(workspaceSessionRecoveries)
+		.where(eq(workspaceSessionRecoveries.sessionId, archived.id))
+		.limit(1);
+	if (!recovery?.currentArchiveId) {
+		throw new WorkspaceRuntimeError(
+			"not_found",
+			"Archived workspace session has no recovery archive.",
+		);
+	}
+	const createId = options.createId ?? nanoid;
+	const sessionId = createId();
+	const [created] = await options.db
+		.insert(workspaceSessions)
+		.values({
+			id: sessionId,
+			projectId: options.projectId,
+			userId: options.userId,
+			title: archived.title,
+			status: "active",
+			branchName: null,
+			baseCommitSha: archived.baseCommitSha,
+			workspacePath: WORKSPACE_PATH,
+		})
+		.returning({ id: workspaceSessions.id });
+	if (!created) {
+		throw new WorkspaceRuntimeError(
+			"work_insert_failed",
+			"Failed to create workspace session from archive.",
+		);
+	}
+	await options.db.insert(workspaceSessionRecoveries).values({
+		sessionId,
+		mutationGeneration: recovery.durableGeneration,
+		durableGeneration: recovery.durableGeneration,
+		currentArchiveId: recovery.currentArchiveId,
+		previousArchiveId: recovery.previousArchiveId,
+		state: "healthy",
+	});
+	return { sessionId };
+}
+
+export async function releaseWorkspaceCapacityOnSleep(options: {
+	db: Db;
+	sessionId: string;
+	now?: () => number;
+}): Promise<boolean> {
+	const held = await hasUnexpiredCapacitySlot({
+		db: options.db,
+		sessionId: options.sessionId,
+		nowMs: options.now?.() ?? Date.now(),
+	});
+	if (!held) {
+		return false;
+	}
+	return releaseCapacitySlot({
+		db: options.db,
+		sessionId: options.sessionId,
+		nowMs: options.now?.() ?? Date.now(),
+	});
+}
+
+export { cancelProjectWork, completeWork, failWork, settleAssistantFailed };

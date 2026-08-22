@@ -130,12 +130,20 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
 					isPending: provisionMutationState.current.isPending,
 				};
 			}
-			retryMutationState.current.onSuccess = options.onSuccess;
+			if (index === 1) {
+				retryMutationState.current.onSuccess = options.onSuccess;
+				return {
+					mutate: retryMutateMock,
+					data: retryMutationState.current.data,
+					error: retryMutationState.current.error,
+					isPending: retryMutationState.current.isPending,
+				};
+			}
 			return {
-				mutate: retryMutateMock,
-				data: retryMutationState.current.data,
-				error: retryMutationState.current.error,
-				isPending: retryMutationState.current.isPending,
+				mutate: vi.fn(),
+				data: undefined,
+				error: null,
+				isPending: false,
 			};
 		},
 		useInfiniteQuery: (options: { enabled?: boolean }) => {
@@ -188,6 +196,9 @@ vi.mock("#/integrations/trpc/react", () => ({
 				mutationOptions: (opts?: object) => opts ?? {},
 			},
 			retryRestore: {
+				mutationOptions: (opts?: object) => opts ?? {},
+			},
+			cancelRuntimeWork: {
 				mutationOptions: (opts?: object) => opts ?? {},
 			},
 			messages: {

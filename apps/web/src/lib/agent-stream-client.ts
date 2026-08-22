@@ -81,6 +81,17 @@ export type DonePayload = {
 	backupError?: string;
 };
 
+export type QueuedAgentRunPayload = {
+	queued: true;
+	workId: string;
+	queuePosition: number | null;
+	queueExpiresAt: number | null;
+	sessionId: string;
+	userMessageId: string;
+	assistantMessageId: string;
+	createdSession: boolean;
+};
+
 export type AgentStreamHandlers = {
 	onMeta?: (data: MetaPayload) => void;
 	onControlReady?: (data: ControlReadyPayload) => void;
@@ -92,6 +103,7 @@ export type AgentStreamHandlers = {
 	onAgent?: (event: unknown, occurredAt?: number) => void;
 	onError?: (message: string) => void;
 	onDone?: (data: DonePayload) => void;
+	onQueued?: (data: QueuedAgentRunPayload) => void;
 };
 
 export type AgentControlInput =
@@ -307,6 +319,27 @@ export async function streamAgentRun(
 		credentials: "include",
 		signal: options?.signal,
 	});
+
+	if (response.status === 202) {
+		let body: unknown;
+		try {
+			body = await response.json();
+		} catch {
+			throw new Error("Queued agent run returned invalid JSON.");
+		}
+		if (
+			isRecord(body) &&
+			body.queued === true &&
+			typeof body.workId === "string" &&
+			typeof body.sessionId === "string" &&
+			typeof body.userMessageId === "string" &&
+			typeof body.assistantMessageId === "string"
+		) {
+			handlers.onQueued?.(body as QueuedAgentRunPayload);
+			return;
+		}
+		throw new Error("Queued agent run returned an invalid response.");
+	}
 
 	if (!response.ok) {
 		const bodyText = await response.text().catch(() => "");

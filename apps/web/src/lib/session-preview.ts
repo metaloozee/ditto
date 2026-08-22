@@ -1,6 +1,11 @@
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import type { createDb } from "#/db";
-import { projects, workspaceSessions } from "#/db/schema";
+import {
+	archives,
+	projects,
+	sandboxIdentities,
+	workspaceSessions,
+} from "#/db/schema";
 import { getProjectSandbox } from "#/lib/sandbox-bootstrap";
 import { SessionWorkspaceBusyError } from "#/lib/session-workspace-lock-error";
 import {
@@ -8,12 +13,16 @@ import {
 	SESSION_PREVIEW_PORT_COUNT,
 	SESSION_PREVIEW_PORT_MIN,
 	sessionPreviewProcessId,
+	WORKSPACE_SESSION_PREVIEW_PORT,
 } from "#/lib/workspace-policy";
 import {
+	cancelProjectWork,
+	isLegacySharedSandboxSession,
 	WorkspaceRuntimeError,
 	type WorkspaceRuntimeLease,
 	withWorkspaceRuntimeLease,
 } from "#/lib/workspace-runtime";
+import { WORKSPACE_IDLE_TIMEOUT_MS } from "#/lib/workspace-runtime-capacity";
 import { loadOwnedActiveSession } from "#/lib/workspace-session";
 
 export type SessionPreviewDb = ReturnType<typeof createDb>;
@@ -721,6 +730,45 @@ async function clearSessionPreviewPort(
 	}
 }
 
+async function markPreviewStarted(
+	deps: SessionPreviewDeps,
+	options: { sessionId: string; projectId: string; userId: string },
+): Promise<void> {
+	await deps.db
+		.update(workspaceSessions)
+		.set({
+			previewStartedAt: sql`(unixepoch())`,
+			updatedAt: sql`(unixepoch())`,
+		})
+		.where(
+			and(
+				eq(workspaceSessions.id, options.sessionId),
+				eq(workspaceSessions.projectId, options.projectId),
+				eq(workspaceSessions.userId, options.userId),
+				eq(workspaceSessions.status, "active"),
+			),
+		);
+}
+
+async function clearPreviewStarted(
+	deps: SessionPreviewDeps,
+	options: { sessionId: string; projectId: string; userId: string },
+): Promise<void> {
+	await deps.db
+		.update(workspaceSessions)
+		.set({
+			previewStartedAt: null,
+			updatedAt: sql`(unixepoch())`,
+		})
+		.where(
+			and(
+				eq(workspaceSessions.id, options.sessionId),
+				eq(workspaceSessions.projectId, options.projectId),
+				eq(workspaceSessions.userId, options.userId),
+			),
+		);
+}
+
 /**
  * Post-allocation failure boundary: cleanup once, then rethrow fixed error.
  * On incomplete cleanup, throw cleanup_failed and retain the D1 port lease.
@@ -871,11 +919,32 @@ export async function startSessionPreview(
 	});
 	const local = host.startsWith("localhost") || host.startsWith("127.0.0.1");
 
-	await deps.barrier?.("before_lease");
-	const { token } = await acquireProjectPreviewLease(deps, {
+	const projectForKind = await loadOwnedProject(
+		deps.db,
+		options.projectId,
+		options.userId,
+	);
+	const sessionForKind = await loadOwnedActiveSession({
+		db: deps.db,
 		projectId: options.projectId,
+		sessionId: options.sessionId,
 		userId: options.userId,
 	});
+	const legacy =
+		projectForKind != null &&
+		sessionForKind != null &&
+		isLegacySharedSandboxSession(sessionForKind, projectForKind);
+
+	await deps.barrier?.("before_lease");
+	let token: string | null = null;
+	if (legacy) {
+		token = (
+			await acquireProjectPreviewLease(deps, {
+				projectId: options.projectId,
+				userId: options.userId,
+			})
+		).token;
+	}
 	await deps.barrier?.("after_lease");
 
 	try {
@@ -919,12 +988,13 @@ export async function startSessionPreview(
 				const processId = sessionPreviewProcessId(options.sessionId);
 
 				// Discover before allocating capacity — unsupported projects fail without cleanup.
-				const provisionalPort =
-					session.previewPort != null &&
-					isSessionPreviewPort(session.previewPort)
+				const provisionalPort = legacy
+					? session.previewPort != null &&
+						isSessionPreviewPort(session.previewPort)
 						? session.previewPort
 						: SESSION_PREVIEW_PORT_MIN +
-							(await hashSessionOffset(options.sessionId));
+							(await hashSessionOffset(options.sessionId))
+					: WORKSPACE_SESSION_PREVIEW_PORT;
 
 				await discoverPreviewCommand({
 					sandbox,
@@ -932,12 +1002,14 @@ export async function startSessionPreview(
 					port: provisionalPort,
 				});
 
-				const port = await allocatePreviewPort(deps, {
-					sessionId: options.sessionId,
-					projectId: options.projectId,
-					userId: options.userId,
-					existingPort: session.previewPort,
-				});
+				const port = legacy
+					? await allocatePreviewPort(deps, {
+							sessionId: options.sessionId,
+							projectId: options.projectId,
+							userId: options.userId,
+							existingPort: session.previewPort,
+						})
+					: WORKSPACE_SESSION_PREVIEW_PORT;
 				await deps.barrier?.("after_allocate");
 
 				// ONE structured boundary for every non-success exit after allocation.
@@ -955,7 +1027,7 @@ export async function startSessionPreview(
 						sessionId: options.sessionId,
 						userId: options.userId,
 					});
-					if (!active || active.previewPort !== port) {
+					if (!active || (legacy && active.previewPort !== port)) {
 						throw sessionPreviewError("not_found");
 					}
 					const readyProject = await loadOwnedProject(
@@ -995,6 +1067,13 @@ export async function startSessionPreview(
 							hostname: host,
 							local,
 						});
+						if (!legacy) {
+							await markPreviewStarted(deps, {
+								sessionId: options.sessionId,
+								projectId: options.projectId,
+								userId: options.userId,
+							});
+						}
 						return { status: "running", url, port, reused: true };
 					}
 
@@ -1022,6 +1101,13 @@ export async function startSessionPreview(
 							hostname: host,
 							local,
 						});
+						if (!legacy) {
+							await markPreviewStarted(deps, {
+								sessionId: options.sessionId,
+								projectId: options.projectId,
+								userId: options.userId,
+							});
+						}
 						return { status: "running", url, port, reused: true };
 					}
 
@@ -1075,6 +1161,13 @@ export async function startSessionPreview(
 						hostname: host,
 						local,
 					});
+					if (!legacy) {
+						await markPreviewStarted(deps, {
+							sessionId: options.sessionId,
+							projectId: options.projectId,
+							userId: options.userId,
+						});
+					}
 					return { status: "running", url, port, reused: false };
 				} catch (error) {
 					return await failAfterAllocation(deps, {
@@ -1090,11 +1183,13 @@ export async function startSessionPreview(
 			},
 		);
 	} finally {
-		await releaseProjectPreviewLease(deps, {
-			projectId: options.projectId,
-			userId: options.userId,
-			token,
-		});
+		if (token) {
+			await releaseProjectPreviewLease(deps, {
+				projectId: options.projectId,
+				userId: options.userId,
+				token,
+			});
+		}
 	}
 }
 
@@ -1118,10 +1213,33 @@ export async function stopSessionPreview(
 		env: options.env,
 	};
 
-	const { token } = await acquireProjectPreviewLease(deps, {
+	const projectForKind = await loadOwnedProject(
+		deps.db,
+		options.projectId,
+		options.userId,
+	);
+	const sessionForKind = await loadOwnedActiveSession({
+		db: deps.db,
 		projectId: options.projectId,
+		sessionId: options.sessionId,
 		userId: options.userId,
 	});
+	if (!sessionForKind) {
+		throw sessionPreviewError("not_found");
+	}
+	const legacy =
+		projectForKind != null &&
+		isLegacySharedSandboxSession(sessionForKind, projectForKind);
+
+	let token: string | null = null;
+	if (legacy) {
+		token = (
+			await acquireProjectPreviewLease(deps, {
+				projectId: options.projectId,
+				userId: options.userId,
+			})
+		).token;
+	}
 
 	try {
 		const session = await loadOwnedActiveSession({
@@ -1133,10 +1251,14 @@ export async function stopSessionPreview(
 		if (!session) {
 			throw sessionPreviewError("not_found");
 		}
-		if (session.previewPort == null) {
+		if (legacy && session.previewPort == null) {
 			return { status: "stopped" };
 		}
-		if (!isSessionPreviewPort(session.previewPort)) {
+		if (!legacy && session.previewStartedAt == null) {
+			return { status: "stopped" };
+		}
+		const port = legacy ? session.previewPort : WORKSPACE_SESSION_PREVIEW_PORT;
+		if (port == null || !isSessionPreviewPort(port)) {
 			throw sessionPreviewError("cleanup_failed");
 		}
 
@@ -1161,7 +1283,7 @@ export async function stopSessionPreview(
 			async (lease) =>
 				cleanupPreviewRuntime({
 					sandbox: lease.sandbox as unknown as SessionPreviewSandbox,
-					port: session.previewPort as number,
+					port,
 					processId,
 				}),
 		);
@@ -1170,21 +1292,186 @@ export async function stopSessionPreview(
 			throw sessionPreviewError("cleanup_failed");
 		}
 
-		await clearSessionPreviewPort(deps, {
-			sessionId: options.sessionId,
-			projectId: options.projectId,
-			userId: options.userId,
-			port: session.previewPort,
-		});
+		if (legacy) {
+			await clearSessionPreviewPort(deps, {
+				sessionId: options.sessionId,
+				projectId: options.projectId,
+				userId: options.userId,
+				port,
+			});
+		} else {
+			const { checkpoint, getWorkspaceRecoveryState } = await import(
+				"#/lib/workspace-recovery"
+			);
+			const recovery = await getWorkspaceRecoveryState(
+				deps.db,
+				options.sessionId,
+			);
+			if (recovery?.pending) {
+				const { withWorkspaceRuntimeLease } = await import(
+					"#/lib/workspace-runtime"
+				);
+				try {
+					const result = await withWorkspaceRuntimeLease(
+						{
+							env: deps.env,
+							db: deps.db,
+							userId: options.userId,
+							projectId: options.projectId,
+							sessionId: options.sessionId,
+							purpose: "backup_restore",
+							lock: "acquire",
+						},
+						async (lease) =>
+							checkpoint({
+								db: deps.db,
+								env: deps.env,
+								lease,
+								userId: options.userId,
+							}),
+					);
+					if (result.state === "degraded" || result.state === "failed") {
+						await clearPreviewStarted(deps, {
+							sessionId: options.sessionId,
+							projectId: options.projectId,
+							userId: options.userId,
+						});
+						throw sessionPreviewError("not_durable");
+					}
+				} catch (error) {
+					await clearPreviewStarted(deps, {
+						sessionId: options.sessionId,
+						projectId: options.projectId,
+						userId: options.userId,
+					});
+					if (error instanceof SessionPreviewError) {
+						throw error;
+					}
+					throw sessionPreviewError("not_durable");
+				}
+			}
+			await clearPreviewStarted(deps, {
+				sessionId: options.sessionId,
+				projectId: options.projectId,
+				userId: options.userId,
+			});
+		}
 
 		return { status: "stopped" };
 	} finally {
-		await releaseProjectPreviewLease(deps, {
-			projectId: options.projectId,
-			userId: options.userId,
-			token,
-		});
+		if (token) {
+			await releaseProjectPreviewLease(deps, {
+				projectId: options.projectId,
+				userId: options.userId,
+				token,
+			});
+		}
 	}
+}
+
+export async function interruptPreviewForCheckpoint(options: {
+	db: SessionPreviewDb;
+	env: Env;
+	projectId: string;
+	sessionId: string;
+	userId: string;
+}): Promise<void> {
+	const deps = defaultDeps(options.db, options.env);
+	const processId = sessionPreviewProcessId(options.sessionId);
+	try {
+		await withPreviewLease(
+			deps,
+			{
+				projectId: options.projectId,
+				sessionId: options.sessionId,
+				userId: options.userId,
+				ensureReady: false,
+			},
+			async (lease) => {
+				await cleanupPreviewRuntime({
+					sandbox: lease.sandbox as unknown as SessionPreviewSandbox,
+					port: WORKSPACE_SESSION_PREVIEW_PORT,
+					processId,
+				});
+			},
+		);
+	} catch {
+		// Preview may already be stopped; checkpoint still proceeds.
+	}
+}
+
+async function previewLastTrafficAt(
+	env: Env,
+	sandboxId: string,
+): Promise<number | null> {
+	const namespace = env.Sandbox as {
+		idFromName: (name: string) => unknown;
+		get: (id: unknown) => {
+			getPreviewLastTrafficAt?: () => Promise<number | null>;
+		};
+	};
+	try {
+		const stub = namespace.get(namespace.idFromName(sandboxId));
+		const value = await stub.getPreviewLastTrafficAt?.();
+		return typeof value === "number" ? value : null;
+	} catch {
+		return null;
+	}
+}
+
+export async function maybeRestartPreviewAfterCheckpoint(options: {
+	db: SessionPreviewDb;
+	env: Env;
+	projectId: string;
+	sessionId: string;
+	userId: string;
+	requestUrl?: string;
+	nowMs?: number;
+}): Promise<boolean> {
+	const deps = defaultDeps(options.db, options.env);
+	const session = await loadOwnedActiveSession({
+		db: options.db,
+		projectId: options.projectId,
+		sessionId: options.sessionId,
+		userId: options.userId,
+	});
+	if (!session?.sandboxIdentityId) {
+		await clearPreviewStarted(deps, options);
+		return false;
+	}
+	const { createSandboxAuthority } = await import("#/lib/sandbox-authority");
+	const identity = await createSandboxAuthority(options.db).getIdentity(
+		session.sandboxIdentityId,
+	);
+	if (!identity || identity.retiredAt != null) {
+		await clearPreviewStarted(deps, options);
+		return false;
+	}
+	const lastTraffic = await previewLastTrafficAt(
+		options.env,
+		identity.sandboxId,
+	);
+	const nowMs = options.nowMs ?? Date.now();
+	const recent =
+		lastTraffic != null && nowMs - lastTraffic <= WORKSPACE_IDLE_TIMEOUT_MS;
+	if (!recent) {
+		await clearPreviewStarted(deps, options);
+		return false;
+	}
+	const requestUrl =
+		options.requestUrl ??
+		(options.env.PREVIEW_BASE_HOST
+			? `https://${options.env.PREVIEW_BASE_HOST}/`
+			: "http://localhost/");
+	await startSessionPreview({
+		db: options.db,
+		env: options.env,
+		projectId: options.projectId,
+		sessionId: options.sessionId,
+		userId: options.userId,
+		requestUrl,
+	});
+	return true;
 }
 
 /**
@@ -1238,15 +1525,20 @@ export async function archiveSessionWithPreviewCleanup(
 			throw error;
 		}
 
-		if (session.previewPort != null) {
-			if (!isSessionPreviewPort(session.previewPort)) {
+		const project = await loadOwnedProject(
+			deps.db,
+			options.projectId,
+			options.userId,
+		);
+		const dedicated =
+			project != null && !isLegacySharedSandboxSession(session, project);
+		const port = dedicated
+			? WORKSPACE_SESSION_PREVIEW_PORT
+			: session.previewPort;
+		if (port != null && (dedicated || session.previewPort != null)) {
+			if (!isSessionPreviewPort(port)) {
 				throw sessionPreviewError("cleanup_failed");
 			}
-			const project = await loadOwnedProject(
-				deps.db,
-				options.projectId,
-				options.userId,
-			);
 			if (!project || project.status !== "ready") {
 				throw sessionPreviewError("not_ready");
 			}
@@ -1262,18 +1554,53 @@ export async function archiveSessionWithPreviewCleanup(
 				async (lease) =>
 					cleanupPreviewRuntime({
 						sandbox: lease.sandbox as unknown as SessionPreviewSandbox,
-						port: session.previewPort as number,
+						port,
 						processId,
 					}),
 			);
 			if (!cleaned.unexposed || !cleaned.processGone) {
 				throw sessionPreviewError("cleanup_failed");
 			}
-			await clearSessionPreviewPort(deps, {
+			if (session.previewPort != null) {
+				await clearSessionPreviewPort(deps, {
+					sessionId: options.sessionId,
+					projectId: options.projectId,
+					userId: options.userId,
+					port: session.previewPort,
+				});
+			}
+			await clearPreviewStarted(deps, {
 				sessionId: options.sessionId,
 				projectId: options.projectId,
 				userId: options.userId,
-				port: session.previewPort,
+			});
+		}
+
+		if (dedicated && session.sandboxIdentityId) {
+			const { createSandboxAuthority } = await import(
+				"#/lib/sandbox-authority"
+			);
+			const { destroySandbox } = await import("#/lib/sandbox-bootstrap");
+			const { releaseCapacitySlot } = await import(
+				"#/lib/workspace-runtime-capacity"
+			);
+			const authority = createSandboxAuthority(deps.db);
+			const identity = await authority.getIdentity(session.sandboxIdentityId);
+			if (identity && identity.retiredAt == null) {
+				await authority.retireIdentity(identity.id);
+				try {
+					await destroySandbox({
+						env: deps.env,
+						sandboxId: identity.sandboxId,
+					});
+				} catch {
+					// Identity is already retired so the ID cannot be reused.
+				}
+			}
+			await releaseCapacitySlot({
+				db: deps.db,
+				sessionId: options.sessionId,
+				nowMs: Date.now(),
 			});
 		}
 
@@ -1365,11 +1692,94 @@ export async function deleteProjectWithPreviewFence(
 		}
 		tombstoned = true;
 
+		const { createSandboxAuthority } = await import("#/lib/sandbox-authority");
+		const { abandonArchive } = await import("#/lib/sandbox-archive");
+		const authority = createSandboxAuthority(deps.db);
+		const identities = await deps.db
+			.select()
+			.from(sandboxIdentities)
+			.where(eq(sandboxIdentities.projectId, options.projectId));
+		for (const identity of identities) {
+			if (identity.retiredAt == null) {
+				await authority.retireIdentity(identity.id);
+			}
+		}
+
+		await cancelProjectWork({
+			db: deps.db,
+			projectId: options.projectId,
+			userId: options.userId,
+			nowMs: Date.now(),
+		});
+
+		const sessions = await deps.db
+			.select()
+			.from(workspaceSessions)
+			.where(eq(workspaceSessions.projectId, options.projectId));
+		for (const session of sessions) {
+			const port =
+				session.previewPort ??
+				(session.sandboxIdentityId ? WORKSPACE_SESSION_PREVIEW_PORT : null);
+			if (port == null) {
+				continue;
+			}
+			const identity = identities.find(
+				(row) => row.id === session.sandboxIdentityId,
+			);
+			const sandboxIdForPreview = identity?.sandboxId ?? sandboxId;
+			if (!sandboxIdForPreview) {
+				continue;
+			}
+			try {
+				const sandbox = deps.getSandbox(
+					deps.env,
+					sandboxIdForPreview,
+				) as SessionPreviewSandbox;
+				await cleanupPreviewRuntime({
+					sandbox,
+					port,
+					processId: sessionPreviewProcessId(session.id),
+				});
+			} catch {
+				// Best-effort revoke; identity is already retired.
+			}
+		}
+
+		for (const identity of identities) {
+			try {
+				await options.destroySandbox({
+					env: options.env,
+					sandboxId: identity.sandboxId,
+				});
+			} catch {
+				// Tombstone remains; retry can destroy again.
+			}
+		}
+
 		if (sandboxId) {
 			await options.destroySandbox({
 				env: options.env,
 				sandboxId,
 			});
+		}
+
+		const nowSeconds = deps.nowSeconds();
+		const ownerIds = [
+			options.projectId,
+			...sessions.map((session) => session.id),
+		];
+		for (const ownerId of ownerIds) {
+			const archiveRows = await deps.db
+				.select({ id: archives.id })
+				.from(archives)
+				.where(eq(archives.ownerId, ownerId));
+			for (const row of archiveRows) {
+				try {
+					await abandonArchive(deps.db, row.id, nowSeconds);
+				} catch {
+					// Cleanup worker retries abandoned/deleting rows.
+				}
+			}
 		}
 
 		const deleted = await deps.db

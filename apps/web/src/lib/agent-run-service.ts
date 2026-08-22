@@ -2,7 +2,12 @@ import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import type { createDb } from "#/db";
-import { messages, projects, workspaceSessions } from "#/db/schema";
+import {
+	messages,
+	projects,
+	workspaceRuntimeWork,
+	workspaceSessions,
+} from "#/db/schema";
 import { assertCredentialConfig } from "#/lib/account-provider-credentials";
 import { controlAgentRun } from "#/lib/agent-control-service";
 import { createDeltaBatcher } from "#/lib/agent-delta-batcher";
@@ -34,15 +39,26 @@ import { decryptEnvVars } from "#/lib/project-env-vars";
 import { persistProjectSandboxBackup } from "#/lib/project-sandbox";
 import { createSandboxAuthority } from "#/lib/sandbox-authority";
 import { redactSecrets } from "#/lib/secret-redaction";
-import { SessionWorkspaceBusyError } from "#/lib/session-workspace-lock-error";
 import { makeSessionTitleFromMessage } from "#/lib/workspace-policy";
 import { recordMutationAndCheckpoint } from "#/lib/workspace-recovery";
 import {
+	completeWork,
 	ensureWorkspaceRuntimeReady,
+	failWork,
 	isLegacySharedSandboxSession,
+	submitWorkspaceWork,
 	WorkspaceRuntimeError,
 	withWorkspaceRuntimeLease,
 } from "#/lib/workspace-runtime";
+import type { WorkspaceWorkRow } from "#/lib/workspace-runtime-capacity";
+import {
+	allocateWorkFifoSeq,
+	parseWorkspaceWorkPayload,
+	WORKSPACE_QUEUE_TTL_MS,
+	type WorkspaceWorkPayload,
+	type WorkspaceWorkReceipt,
+	workspaceWorkInsertValues,
+} from "#/lib/workspace-runtime-capacity";
 import {
 	type OwnedActiveSession,
 	resolveSessionForMessageWrite,
@@ -121,10 +137,16 @@ export type AgentRunHttpError = {
 	body: { error: string; issues?: z.ZodIssue[] };
 };
 
-export type AgentRunPrepared = {
-	kind: "ready";
-	context: AgentRunContext;
-};
+export type AgentRunPrepared =
+	| {
+			kind: "ready";
+			context: AgentRunContext;
+	  }
+	| {
+			kind: "queued";
+			context: AgentRunContext;
+			receipt: WorkspaceWorkReceipt;
+	  };
 
 export type AgentRunContext = {
 	db: ReturnType<typeof createDb>;
@@ -135,6 +157,7 @@ export type AgentRunContext = {
 	model: string;
 	thinkingLevel?: PiThinkingLevel;
 	runId: string;
+	workId: string;
 	sessionId: string;
 	createdSession: boolean;
 	workspaceSession: OwnedActiveSession;
@@ -159,6 +182,7 @@ export type AgentRunDeps = {
 	decryptEnvVars?: typeof decryptEnvVars;
 	resolveSessionForMessageWrite?: typeof resolveSessionForMessageWrite;
 	ensureWorkspaceRuntimeReady?: typeof ensureWorkspaceRuntimeReady;
+	submitWorkspaceWork?: typeof submitWorkspaceWork;
 	withWorkspaceRuntimeLease?: typeof withWorkspaceRuntimeLease;
 	runAgentInSandbox?: typeof runAgentInSandbox;
 	createAuthority?: typeof createSandboxAuthority;
@@ -184,6 +208,7 @@ const defaultDeps: Required<AgentRunDeps> = {
 	decryptEnvVars,
 	resolveSessionForMessageWrite,
 	ensureWorkspaceRuntimeReady,
+	submitWorkspaceWork,
 	withWorkspaceRuntimeLease,
 	runAgentInSandbox,
 	createAuthority: createSandboxAuthority,
@@ -199,24 +224,9 @@ function mergeDeps(deps?: AgentRunDeps): Required<AgentRunDeps> {
 	return { ...defaultDeps, ...deps };
 }
 
-async function deleteEmptySession(options: {
-	db: ReturnType<typeof createDb>;
-	sessionId: string;
-	userId: string;
-}): Promise<void> {
-	await options.db
-		.delete(workspaceSessions)
-		.where(
-			and(
-				eq(workspaceSessions.id, options.sessionId),
-				eq(workspaceSessions.userId, options.userId),
-			),
-		);
-}
-
 /**
- * Authenticate-adjacent prep: project, sandbox, session, worktree, then
- * message insert. Does not construct HTTP responses or SSE text.
+ * Persist session + messages + runtime work before capacity or provision.
+ * Does not construct HTTP responses or SSE text.
  */
 export async function prepareAgentRun(options: {
 	db: ReturnType<typeof createDb>;
@@ -224,6 +234,7 @@ export async function prepareAgentRun(options: {
 	userId: string;
 	input: AgentStreamBody;
 	deps?: AgentRunDeps;
+	waitUntil?: (promise: Promise<unknown>) => void;
 }): Promise<AgentRunPrepared | AgentRunHttpError> {
 	const deps = mergeDeps(options.deps);
 	const { db, env, userId, input } = options;
@@ -280,6 +291,14 @@ export async function prepareAgentRun(options: {
 		};
 	}
 
+	if (!project.githubRepo || project.githubInstallationId == null) {
+		return {
+			kind: "error",
+			status: 409,
+			body: { error: "Project is not linked to a GitHub repository." },
+		};
+	}
+
 	const envVars = await deps.decryptEnvVars(
 		project.envVars,
 		env.BETTER_AUTH_SECRET,
@@ -303,16 +322,39 @@ export async function prepareAgentRun(options: {
 		};
 	}
 
-	let sessionId: string;
-	let createdSession = false;
-	let workspaceSession: OwnedActiveSession | null;
+	const createdSession = resolved.kind === "create";
+	const sessionId =
+		resolved.kind === "existing" ? resolved.session.id : deps.createId();
+	const runId = deps.createId();
+	const workId = deps.createId();
+	const userMessageId = deps.createId();
+	const assistantMessageId = deps.createId();
+	const nowMs = deps.now();
+	const queueExpiresAt =
+		Math.floor(nowMs / 1000) + Math.floor(WORKSPACE_QUEUE_TTL_MS / 1000);
+	const fifoSeq = await allocateWorkFifoSeq(db);
+	const workValues = workspaceWorkInsertValues({
+		id: workId,
+		fifoSeq,
+		queueExpiresAt,
+		intent: {
+			kind: "agent_run",
+			projectId: input.projectId,
+			userId,
+			sessionId,
+			userMessageId,
+			assistantMessageId,
+			payload: {
+				runId,
+				model,
+				thinkingLevel: input.thinkingLevel ?? null,
+			},
+		},
+	});
 
-	if (resolved.kind === "existing") {
-		workspaceSession = resolved.session;
-		sessionId = workspaceSession.id;
-	} else {
-		sessionId = deps.createId();
-		const [createdRows] = await db.batch([
+	const batchStatements = [];
+	if (createdSession) {
+		batchStatements.push(
 			db
 				.insert(workspaceSessions)
 				.values({
@@ -323,74 +365,9 @@ export async function prepareAgentRun(options: {
 					status: "active",
 				})
 				.returning(),
-		]);
-		workspaceSession = createdRows?.[0] ?? null;
-		createdSession = true;
+		);
 	}
-
-	if (!workspaceSession || !sessionId) {
-		return {
-			kind: "error",
-			status: 500,
-			body: { error: "Failed to create workspace session." },
-		};
-	}
-
-	const linkedGithubRepo = ensuredProject.githubRepo;
-	const linkedInstallationId = ensuredProject.githubInstallationId;
-	if (!linkedGithubRepo || linkedInstallationId == null) {
-		if (createdSession) {
-			await deleteEmptySession({ db, sessionId, userId });
-		}
-		return {
-			kind: "error",
-			status: 409,
-			body: { error: "Project is not linked to a GitHub repository." },
-		};
-	}
-
-	let sessionWorkspacePath: string;
-	try {
-		const ready = await deps.ensureWorkspaceRuntimeReady({
-			env,
-			db,
-			userId,
-			projectId: input.projectId,
-			sessionId,
-			purpose: "agent_run",
-			lock: "acquire",
-		});
-		workspaceSession = {
-			...workspaceSession,
-			branchName: ready.branchName,
-			baseCommitSha: ready.baseCommitSha,
-			workspacePath: ready.workspacePath,
-		};
-		sessionWorkspacePath = ready.workspacePath;
-	} catch (error) {
-		if (createdSession) {
-			await deleteEmptySession({ db, sessionId, userId });
-		}
-		return {
-			kind: "error",
-			status: 409,
-			body: {
-				error:
-					error instanceof SessionWorkspaceBusyError
-						? error.message
-						: error instanceof WorkspaceRuntimeError
-							? error.message
-							: error instanceof Error
-								? error.message
-								: "Failed to prepare session worktree.",
-			},
-		};
-	}
-
-	const runId = deps.createId();
-	const userMessageId = deps.createId();
-	const assistantMessageId = deps.createId();
-	const [userRows, assistantRows] = await db.batch([
+	batchStatements.push(
 		db
 			.insert(messages)
 			.values({
@@ -416,10 +393,35 @@ export async function prepareAgentRun(options: {
 				status: "pending",
 			})
 			.returning(),
+		db.insert(workspaceRuntimeWork).values(workValues).returning(),
 		workspaceSessionRecencyUpdate(db, sessionId),
-	]);
+	);
 
-	if (!userRows?.[0] || !assistantRows?.[0]) {
+	const batchResult = await db.batch(batchStatements as never);
+	const sessionRows = createdSession
+		? (batchResult[0] as OwnedActiveSession[] | undefined)
+		: undefined;
+	const userOffset = createdSession ? 1 : 0;
+	const userRows = batchResult[userOffset] as Array<{ id: string }> | undefined;
+	const assistantRows = batchResult[userOffset + 1] as
+		| Array<{ id: string }>
+		| undefined;
+
+	let workspaceSession: OwnedActiveSession | null =
+		resolved.kind === "existing"
+			? resolved.session
+			: (sessionRows?.[0] ?? null);
+
+	if (!workspaceSession) {
+		const [loaded] = await db
+			.select()
+			.from(workspaceSessions)
+			.where(eq(workspaceSessions.id, sessionId))
+			.limit(1);
+		workspaceSession = loaded ?? null;
+	}
+
+	if (!workspaceSession || !userRows?.[0] || !assistantRows?.[0]) {
 		return {
 			kind: "error",
 			status: 500,
@@ -434,28 +436,139 @@ export async function prepareAgentRun(options: {
 		(value): value is string => typeof value === "string" && value.length > 0,
 	);
 
-	return {
-		kind: "ready",
-		context: {
-			db,
-			env,
-			userId,
+	const context: AgentRunContext = {
+		db,
+		env,
+		userId,
+		projectId: input.projectId,
+		message: input.message,
+		model,
+		thinkingLevel: input.thinkingLevel,
+		runId,
+		workId,
+		sessionId,
+		createdSession,
+		workspaceSession,
+		ensuredProject,
+		sandboxState,
+		sessionWorkspacePath: workspaceSession.workspacePath,
+		userMessageId,
+		assistantMessageId,
+		envVars,
+		secretValues,
+	};
+
+	const receipt = await deps.submitWorkspaceWork({
+		env,
+		db,
+		workId,
+		intent: {
+			kind: "agent_run",
 			projectId: input.projectId,
-			message: input.message,
-			model,
-			thinkingLevel: input.thinkingLevel,
-			runId,
+			userId,
 			sessionId,
-			createdSession,
-			workspaceSession,
-			ensuredProject,
-			sandboxState,
-			sessionWorkspacePath,
 			userMessageId,
 			assistantMessageId,
-			envVars,
-			secretValues,
+			payload: {
+				runId,
+				model,
+				thinkingLevel: input.thinkingLevel ?? null,
+			},
 		},
+		waitUntil: options.waitUntil,
+		now: deps.now,
+		createId: deps.createId,
+	});
+
+	if (receipt.status === "queued") {
+		return { kind: "queued", context, receipt };
+	}
+
+	return { kind: "ready", context };
+}
+
+export async function loadAgentRunContextFromWork(options: {
+	db: ReturnType<typeof createDb>;
+	env: Env;
+	work: WorkspaceWorkRow;
+	payload: WorkspaceWorkPayload | null;
+	deps?: AgentRunDeps;
+}): Promise<AgentRunContext | null> {
+	const deps = mergeDeps(options.deps);
+	const { work, env } = options;
+	if (!work.sessionId || !work.userMessageId || !work.assistantMessageId) {
+		return null;
+	}
+	const project = await deps.loadProjectForUser({
+		db: options.db,
+		projectId: work.projectId,
+		userId: work.userId,
+	});
+	if (!project) {
+		return null;
+	}
+	const [session] = await options.db
+		.select()
+		.from(workspaceSessions)
+		.where(
+			and(
+				eq(workspaceSessions.id, work.sessionId),
+				eq(workspaceSessions.userId, work.userId),
+			),
+		)
+		.limit(1);
+	if (!session) {
+		return null;
+	}
+	const [userMessage] = await options.db
+		.select()
+		.from(messages)
+		.where(eq(messages.id, work.userMessageId))
+		.limit(1);
+	if (!userMessage) {
+		return null;
+	}
+	const envVars = await deps.decryptEnvVars(
+		project.envVars,
+		env.BETTER_AUTH_SECRET,
+	);
+	const payload = options.payload ?? parseWorkspaceWorkPayload(work.payload);
+	const runId = typeof payload?.runId === "string" ? payload.runId : work.id;
+	const model =
+		typeof payload?.model === "string"
+			? payload.model
+			: (userMessage.model ?? "");
+	const thinkingRaw = payload?.thinkingLevel;
+	const thinkingLevel =
+		thinkingRaw === "off" || thinkingRaw === "high" || thinkingRaw === "max"
+			? thinkingRaw
+			: undefined;
+	const secretValues = [
+		env.OPENCODE_API_KEY,
+		...envVars.map((envVar) => envVar.value),
+	].filter(
+		(value): value is string => typeof value === "string" && value.length > 0,
+	);
+	return {
+		db: options.db,
+		env,
+		userId: work.userId,
+		projectId: work.projectId,
+		message: userMessage.content,
+		model,
+		thinkingLevel,
+		runId,
+		workId: work.id,
+		sessionId: session.id,
+		createdSession: false,
+		workspaceSession: session,
+		ensuredProject: project,
+		sandboxState: "connected",
+		sessionWorkspacePath: session.workspacePath,
+		userMessageId: work.userMessageId,
+		assistantMessageId: work.assistantMessageId,
+		envVars,
+		secretValues,
 	};
 }
 
@@ -860,6 +973,13 @@ export async function executeAgentRun(options: {
 					backupError: message,
 				},
 			});
+			if (context.workId) {
+				await failWork({
+					db: context.db,
+					workId: context.workId,
+					reasonCode: "persist_failed",
+				});
+			}
 			return;
 		}
 
@@ -965,6 +1085,21 @@ export async function executeAgentRun(options: {
 				...(fullParts.length > 0 ? { parts: fullParts } : {}),
 				...(message ? { backupError: message } : {}),
 			},
+		});
+		if (context.workId) {
+			await failWork({
+				db: context.db,
+				workId: context.workId,
+				reasonCode: "execution_failed",
+			});
+		}
+		return;
+	}
+
+	if (context.workId) {
+		await completeWork({
+			db: context.db,
+			workId: context.workId,
 		});
 	}
 }

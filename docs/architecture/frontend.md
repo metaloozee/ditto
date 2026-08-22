@@ -99,7 +99,14 @@ follow-up acknowledgement and only if the user has not typed newer text.
 The browser SSE parser is deliberately small and event-oriented. The server is
 the authority for turn boundaries, terminal success, and durable message state.
 The Stop control does not abort the SSE fetch: a browser abort or disconnect
-stops local consumption but does not cancel the sandbox process.
+stops local consumption but does not cancel the sandbox process. When global or
+per-user capacity is unavailable, `/api/agent/stream` returns `202` with queue
+position; the workspace status bar shows that position and Cancel, and the UI
+polls durable work plus message rows.
+
+The preview pane keeps using its existing alert area: backup-pending warning,
+workspace-saving during a forced checkpoint, and separate Retry Backup /
+Restart Preview actions after a failed checkpoint.
 
 ### Thinking-level preference
 

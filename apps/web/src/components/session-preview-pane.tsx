@@ -23,7 +23,8 @@ type PaneState =
 	| { kind: "starting" }
 	| { kind: "ready"; url: string; error?: string }
 	| { kind: "stopping"; url: string }
-	| { kind: "failed"; message: string };
+	| { kind: "saving"; url?: string }
+	| { kind: "failed"; message: string; backupFailed?: boolean };
 
 const PUBLIC_WARNING =
 	"Preview links are public to anyone with the URL until you stop them.";
@@ -32,6 +33,11 @@ export type SessionPreviewPaneProps = {
 	projectId: string;
 	sessionId: string;
 	className?: string;
+	recovery?: {
+		state: string;
+		reasonCode: string | null;
+		pending: boolean;
+	} | null;
 };
 
 function hostFromUrl(url: string): string {
@@ -49,6 +55,8 @@ function addressLabel(state: PaneState): string {
 			return hostFromUrl(state.url);
 		case "starting":
 			return "Starting preview…";
+		case "saving":
+			return "Saving workspace…";
 		case "failed":
 			return "Preview failed";
 		default:
@@ -62,6 +70,7 @@ function statusDotClass(state: PaneState): string {
 			return "bg-emerald-500";
 		case "starting":
 		case "stopping":
+		case "saving":
 			return "bg-amber-500";
 		case "failed":
 			return "bg-destructive";
@@ -74,6 +83,7 @@ export function SessionPreviewPane({
 	projectId,
 	sessionId,
 	className,
+	recovery,
 }: SessionPreviewPaneProps) {
 	const trpc = useTRPC();
 	const [pane, setPane] = useState<{ sessionId: string; state: PaneState }>({
@@ -119,6 +129,18 @@ export function SessionPreviewPane({
 		}),
 	);
 
+	const retryBackupMutation = useMutation(
+		trpc.workspace.retryBackup.mutationOptions({
+			onError: (error) => {
+				setState({
+					kind: "failed",
+					message: error.message || "Failed to retry backup.",
+					backupFailed: true,
+				});
+			},
+		}),
+	);
+
 	const stopMutation = useMutation(
 		trpc.sessionPreview.stop.mutationOptions({
 			onSuccess: () => {
@@ -153,11 +175,22 @@ export function SessionPreviewPane({
 		stopMutation.mutate({ projectId, sessionId });
 	}
 
+	const backupPending = Boolean(recovery?.pending);
+	const backupFailed =
+		recovery?.state === "degraded" ||
+		recovery?.state === "failed" ||
+		(activeState.kind === "failed" && activeState.backupFailed);
+	const workspaceSaving =
+		activeState.kind === "saving" ||
+		(backupPending && recovery?.reasonCode === "workspace_saving");
+
 	const isPending =
 		startMutation.isPending ||
 		stopMutation.isPending ||
+		retryBackupMutation.isPending ||
 		activeState.kind === "starting" ||
-		activeState.kind === "stopping";
+		activeState.kind === "stopping" ||
+		workspaceSaving;
 	const busy = isPending;
 	const running =
 		activeState.kind === "ready" || activeState.kind === "stopping";
@@ -360,19 +393,84 @@ export function SessionPreviewPane({
 						<p className="max-w-sm text-pretty text-center text-destructive text-sm">
 							{activeState.message}
 						</p>
-						<Button
-							type="button"
-							variant="outline"
-							className="min-h-11 w-fit"
-							onClick={() => start()}
-						>
-							Retry
-						</Button>
+						{backupFailed ? (
+							<div className="flex flex-wrap items-center justify-center gap-2">
+								<Button
+									type="button"
+									variant="outline"
+									className="min-h-11 w-fit"
+									onClick={() =>
+										retryBackupMutation.mutate({ projectId, sessionId })
+									}
+								>
+									Retry Backup
+								</Button>
+								<Button
+									type="button"
+									variant="outline"
+									className="min-h-11 w-fit"
+									onClick={() => start()}
+								>
+									Restart Preview
+								</Button>
+							</div>
+						) : (
+							<Button
+								type="button"
+								variant="outline"
+								className="min-h-11 w-fit"
+								onClick={() => start()}
+							>
+								Retry
+							</Button>
+						)}
+					</div>
+				) : null}
+
+				{activeState.kind === "saving" ? (
+					<div className="flex flex-1 flex-col items-center justify-center gap-3 p-6">
+						<LoaderCircleIcon
+							className="size-5 animate-spin text-muted-foreground"
+							aria-hidden
+						/>
+						<output className="text-muted-foreground text-sm">
+							Saving workspace…
+						</output>
 					</div>
 				) : null}
 
 				{activeState.kind === "ready" ? (
 					<>
+						{backupPending ? (
+							<output className="shrink-0 border-border border-b px-3 py-2 text-amber-700 text-xs dark:text-amber-300">
+								Backup pending. Latest preview files are not durable yet.
+							</output>
+						) : null}
+						{backupFailed ? (
+							<p
+								className="shrink-0 border-border border-b px-3 py-2 text-destructive text-xs"
+								role="alert"
+							>
+								<span className="mr-2">Workspace backup failed.</span>
+								<button
+									type="button"
+									className="underline"
+									onClick={() =>
+										retryBackupMutation.mutate({ projectId, sessionId })
+									}
+								>
+									Retry Backup
+								</button>
+								<span className="mx-1">·</span>
+								<button
+									type="button"
+									className="underline"
+									onClick={() => restart()}
+								>
+									Restart Preview
+								</button>
+							</p>
+						) : null}
 						{activeState.error ? (
 							<p
 								className="shrink-0 border-border border-b px-3 py-2 text-destructive text-xs"

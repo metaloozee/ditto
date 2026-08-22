@@ -28,6 +28,10 @@ vi.mock("#/lib/project-sandbox", async (importOriginal) => {
 vi.mock("#/lib/workspace-runtime", () => ({
 	observeWorkspaceRuntime: observeWorkspaceRuntimeMock,
 	ensureWorkspaceRuntimeReady: ensureWorkspaceRuntimeReadyMock,
+	getSessionRuntimeWork: vi.fn().mockResolvedValue(null),
+	cancelWorkspaceWork: vi.fn(),
+	submitWorkspaceWork: vi.fn(),
+	continueWorkspaceFromArchive: vi.fn(),
 	withWorkspaceRuntimeLease: vi.fn(),
 	WorkspaceRuntimeError: class WorkspaceRuntimeError extends Error {
 		code: string;

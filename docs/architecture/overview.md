@@ -156,19 +156,24 @@ Legacy projects that still own a project sandbox continue to restore through
 
 ### Session website preview
 
-1. Authenticated `sessionPreview.start` acquires an external D1 lifecycle lease
-   on the project row, rechecks ready/active ownership, and runs a fixed Vite,
-   Next, or Astro binary in the session checkout on a leased port from
-   `10000..10031`.
+1. Authenticated `sessionPreview.start` runs a fixed Vite, Next, or Astro binary
+   in the session checkout. Dedicated session sandboxes use one well-known
+   localhost port and keep a stable `exposePort` capability URL. Legacy shared
+   sandboxes still lease a port from `10000..10031`.
 2. After TCP readiness (plus a short best-effort HTTP probe), the Worker calls
    Sandbox `exposePort()` and returns the ephemeral public URL only in that
-   mutation response.
+   mutation response. Cold restore reapplies `exposePort()` so forwarding
+   targets the new runtime.
 3. Production requests for `*.ayn.wtf` hit the Worker first; `proxyToSandbox()`
    serves active exposures, and unmatched preview hosts return 404 without
-   falling through to the app.
-4. `sessionPreview.stop`, session archive, and project delete confirm
-   `unexposePort` plus exact process death under the same D1 lease before
-   clearing the port or destroying the sandbox.
+   falling through to the app. Recent preview traffic is recorded in Sandbox
+   Durable Object storage, not D1.
+4. Mutations during a live preview reserve a pending recovery generation and
+   defer checkpoint for up to ten minutes. Forced checkpoint stops the preview
+   process, saves, and restarts only when recent traffic was observed.
+5. `sessionPreview.stop`, session archive, and project delete revoke forwarding,
+   settle pending recovery when required, and retire dedicated session
+   identities before destroying sandboxes.
 
 ## State ownership
 
@@ -176,8 +181,10 @@ Legacy projects that still own a project sandbox continue to restore through
 |---|---|---|
 | Identity and OAuth account | D1 via better-auth | GitHub OAuth token is used to prove user-visible repository access |
 | Project metadata and lifecycle | D1 `projects` | Includes sandbox ID, encrypted env vars, backup handle, and generations |
-| Conversation metadata | D1 `workspace_sessions` | Includes branch, base commit, checkout path, sandbox identity, runtime lease, title, archive status, and nullable preview port lease |
-| Preview lifecycle lease | D1 `projects.previewLockToken` / `previewLockExpiresAt` / `deletingAt` | External fence across Start/Stop/archive/delete; not stored inside the sandbox |
+| Conversation metadata | D1 `workspace_sessions` | Includes branch, base commit, checkout path, sandbox identity, runtime lease, title, archive status, nullable legacy preview port, and preview-started timestamp |
+| Runtime work | D1 `workspace_runtime_work` | Durable FIFO queue of serializable workspace intents |
+| Running slots | D1 `workspace_capacity_leases` | Unexpired leases for active workspace-session runtimes (20 global, 2 per user) |
+| Preview lifecycle lease | D1 `projects.previewLockToken` / `previewLockExpiresAt` / `deletingAt` | Legacy shared-sandbox fence across Start/Stop/archive/delete; dedicated sessions do not allocate preview ports here |
 | Chat history | D1 `messages` | Assistant rows have pending/complete/failed terminal lifecycle |
 | Leftover provider credential rows | D1 `ai_provider_credentials` / `provider_auth_attempts` | Not a current product path; pending removal |
 | Repository files and Git refs | Sandbox `/workspace` | Dedicated session checkout on the new path; legacy primary clone plus `.ditto/worktrees/<sessionId>` |

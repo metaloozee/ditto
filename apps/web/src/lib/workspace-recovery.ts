@@ -5,12 +5,13 @@
  * before the turn ended, so durability follows completed mutations, not
  * assistant success.
  */
-import { and, eq, isNull, lte, or, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { createDb } from "#/db";
 import {
 	type WORKSPACE_RECOVERY_STATES,
 	workspaceSessionRecoveries,
+	workspaceSessions,
 } from "#/db/schema";
 import {
 	type ArchiveRef,
@@ -23,6 +24,10 @@ import {
 	restoreArchive,
 } from "#/lib/sandbox-archive";
 import type { WorkspaceRuntimeLease } from "#/lib/workspace-runtime";
+import {
+	persistWorkspaceWork,
+	WORKSPACE_PREVIEW_CHECKPOINT_DEFERRAL_MS,
+} from "#/lib/workspace-runtime-capacity";
 
 type Db = ReturnType<typeof createDb>;
 
@@ -705,6 +710,23 @@ export async function hasRecoveryArchives(
  * Reserve a mutation generation and checkpoint under a backup_restore lease.
  * Best-effort: returns degraded state on checkpoint failure without throwing.
  */
+async function sessionPreviewIsLive(
+	db: Db,
+	sessionId: string,
+): Promise<boolean> {
+	const [session] = await db
+		.select({ previewStartedAt: workspaceSessions.previewStartedAt })
+		.from(workspaceSessions)
+		.where(eq(workspaceSessions.id, sessionId))
+		.limit(1);
+	return session?.previewStartedAt != null;
+}
+
+/**
+ * Reserve a mutation generation and checkpoint under a backup_restore lease.
+ * Live previews defer the checkpoint until the first-pending timer fires.
+ * Best-effort: returns degraded state on checkpoint failure without throwing.
+ */
 export async function recordMutationAndCheckpoint(
 	options: {
 		db: Db;
@@ -720,6 +742,10 @@ export async function recordMutationAndCheckpoint(
 		{ db: options.db, sessionId: options.sessionId },
 		deps,
 	);
+	const previewLive = await sessionPreviewIsLive(options.db, options.sessionId);
+	if (previewLive) {
+		return recorded;
+	}
 	if (!recorded.shouldCheckpoint) {
 		return recorded;
 	}
@@ -754,6 +780,121 @@ export async function recordMutationAndCheckpoint(
 		);
 		console.error(
 			"Workspace recovery checkpoint failed.",
+			redactedErrorMessage(error),
+		);
+		return toRecoveryState(failed, false);
+	}
+}
+
+export async function enqueueDuePreviewCheckpoints(options: {
+	db: Db;
+	env: Env;
+	nowMs: number;
+}): Promise<number> {
+	const dueBefore = new Date(
+		options.nowMs - WORKSPACE_PREVIEW_CHECKPOINT_DEFERRAL_MS,
+	);
+	const due = await options.db
+		.select({
+			sessionId: workspaceSessionRecoveries.sessionId,
+		})
+		.from(workspaceSessionRecoveries)
+		.innerJoin(
+			workspaceSessions,
+			eq(workspaceSessions.id, workspaceSessionRecoveries.sessionId),
+		)
+		.where(
+			and(
+				eq(workspaceSessions.status, "active"),
+				isNotNull(workspaceSessions.previewStartedAt),
+				isNotNull(workspaceSessionRecoveries.pendingGeneration),
+				lte(workspaceSessionRecoveries.pendingSince, dueBefore),
+			),
+		);
+	for (const row of due) {
+		const [session] = await options.db
+			.select()
+			.from(workspaceSessions)
+			.where(eq(workspaceSessions.id, row.sessionId))
+			.limit(1);
+		if (!session) {
+			continue;
+		}
+		await persistWorkspaceWork({
+			db: options.db,
+			intent: {
+				kind: "recovery_retry",
+				projectId: session.projectId,
+				userId: session.userId,
+				sessionId: session.id,
+			},
+			nowMs: options.nowMs,
+		});
+	}
+	return due.length;
+}
+
+export async function forcePreviewCheckpoint(
+	options: {
+		db: Db;
+		env: Env;
+		userId: string;
+		projectId: string;
+		sessionId: string;
+	},
+	injected?: WorkspaceRecoveryDeps,
+): Promise<RecoveryState> {
+	const deps = mergeDeps(injected);
+	const preview = await import("#/lib/session-preview");
+	await preview.interruptPreviewForCheckpoint({
+		db: options.db,
+		env: options.env,
+		projectId: options.projectId,
+		sessionId: options.sessionId,
+		userId: options.userId,
+	});
+	try {
+		const withLease = await resolveWithLease(deps);
+		const result = await withLease(
+			{
+				env: options.env,
+				db: options.db,
+				userId: options.userId,
+				projectId: options.projectId,
+				sessionId: options.sessionId,
+				purpose: "backup_restore",
+			},
+			async (lease) =>
+				checkpoint(
+					{
+						db: options.db,
+						env: options.env,
+						lease,
+						userId: options.userId,
+					},
+					deps,
+				),
+		);
+		if (result.state === "degraded" || result.state === "failed") {
+			return result;
+		}
+		await preview.maybeRestartPreviewAfterCheckpoint({
+			db: options.db,
+			env: options.env,
+			projectId: options.projectId,
+			sessionId: options.sessionId,
+			userId: options.userId,
+		});
+		return result;
+	} catch (error) {
+		const failed = await markCheckpointFailure(
+			options.db,
+			options.sessionId,
+			"checkpoint_failed",
+			deps.now(),
+		);
+		console.error(
+			"Workspace recovery forced checkpoint failed.",
 			redactedErrorMessage(error),
 		);
 		return toRecoveryState(failed, false);

@@ -255,6 +255,39 @@ describe("api.agent.stream POST adapter", () => {
 		expect(deltaAt).toBeGreaterThan(metaAt);
 		expect(doneAt).toBeGreaterThan(deltaAt);
 	});
+
+	it("returns 202 JSON when the agent run is queued", async () => {
+		prepareAgentRunMock.mockResolvedValue({
+			kind: "queued",
+			context: {
+				sessionId: "sess-1",
+				userMessageId: "user-1",
+				assistantMessageId: "asst-1",
+				createdSession: true,
+			},
+			receipt: {
+				workId: "work-1",
+				status: "queued",
+				queuePosition: 3,
+				queueExpiresAt: 1_700_000_000,
+			},
+		});
+		const response = await postJson({
+			projectId: "proj-1",
+			message: "hi",
+		});
+		expect(response.status).toBe(202);
+		expect(await response.json()).toMatchObject({
+			queued: true,
+			workId: "work-1",
+			queuePosition: 3,
+			sessionId: "sess-1",
+			userMessageId: "user-1",
+			assistantMessageId: "asst-1",
+			createdSession: true,
+		});
+		expect(executeAgentRunMock).not.toHaveBeenCalled();
+	});
 });
 
 describe("api.agent.stream disconnect delivery", () => {

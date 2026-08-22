@@ -9,6 +9,8 @@ export const SESSION_PREVIEW_PORT_MIN = 10000;
 export const SESSION_PREVIEW_PORT_MAX = 10031;
 export const SESSION_PREVIEW_PORT_COUNT =
 	SESSION_PREVIEW_PORT_MAX - SESSION_PREVIEW_PORT_MIN + 1;
+/** Dedicated session sandboxes share this localhost port; do not persist it. */
+export const WORKSPACE_SESSION_PREVIEW_PORT = SESSION_PREVIEW_PORT_MIN;
 
 function sanitizeSessionSegment(value: string): string {
 	const sanitized = value.replaceAll(/[^A-Za-z0-9._-]+/g, "-");

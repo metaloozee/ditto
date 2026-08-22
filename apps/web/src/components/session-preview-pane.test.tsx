@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const startMutate = vi.hoisted(() => vi.fn());
 const stopMutate = vi.hoisted(() => vi.fn());
+const retryBackupMutate = vi.hoisted(() => vi.fn());
 
 vi.mock("#/integrations/trpc/react", () => ({
 	useTRPC: () => ({
@@ -40,6 +41,14 @@ vi.mock("#/integrations/trpc/react", () => ({
 					}) => {
 						return stopMutate(input, opts);
 					},
+				}),
+			},
+		},
+		workspace: {
+			retryBackup: {
+				mutationOptions: () => ({
+					mutationFn: async (input: { projectId: string; sessionId: string }) =>
+						retryBackupMutate(input),
 				}),
 			},
 		},
@@ -320,5 +329,37 @@ describe("SessionPreviewPane", () => {
 			expect(screen.queryByRole("alert")).toBeNull();
 		});
 		await screen.findByTitle("Session website preview");
+	});
+
+	it("shows Retry Backup and Restart Preview after a failed checkpoint", async () => {
+		startMutate.mockImplementationOnce(
+			async (_input: unknown, opts: { onError?: (e: Error) => void }) => {
+				opts.onError?.(new Error("start failed"));
+			},
+		);
+		render(
+			<SessionPreviewPane
+				projectId="proj-1"
+				sessionId="sess-1"
+				recovery={{
+					state: "degraded",
+					reasonCode: "checkpoint_failed",
+					pending: true,
+				}}
+			/>,
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Start preview now" }));
+		await screen.findByRole("alert");
+		expect(screen.getByRole("button", { name: "Retry Backup" })).toBeTruthy();
+		expect(
+			screen.getByRole("button", { name: "Restart Preview" }),
+		).toBeTruthy();
+		fireEvent.click(screen.getByRole("button", { name: "Retry Backup" }));
+		await waitFor(() => {
+			expect(retryBackupMutate).toHaveBeenCalledWith({
+				projectId: "proj-1",
+				sessionId: "sess-1",
+			});
+		});
 	});
 });

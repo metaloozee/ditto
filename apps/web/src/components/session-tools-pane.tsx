@@ -14,6 +14,11 @@ export type SessionToolsPaneProps = {
 	sessionId: string;
 	className?: string;
 	onClose?: () => void;
+	recovery?: {
+		state: string;
+		reasonCode: string | null;
+		pending: boolean;
+	} | null;
 };
 
 function WindowLights({ onClose }: { onClose?: () => void }) {
@@ -59,6 +64,7 @@ export function SessionToolsPane({
 	sessionId,
 	className,
 	onClose,
+	recovery,
 }: SessionToolsPaneProps) {
 	return (
 		<section
@@ -120,6 +126,7 @@ export function SessionToolsPane({
 							projectId={projectId}
 							sessionId={sessionId}
 							className="h-full border-0 bg-transparent"
+							recovery={recovery}
 						/>
 					</TabsContent>
 				</Tabs>
