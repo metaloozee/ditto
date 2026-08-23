@@ -279,6 +279,12 @@ async function acquireLifecycleLease(options: {
 					isNull(workspaceSessions.runtimeLeaseId),
 					lte(workspaceSessions.runtimeLeaseExpiresAt, options.now),
 				),
+				sql`exists (
+					select 1 from ${projects}
+					where ${projects.id} = ${options.session.projectId}
+						and ${projects.userId} = ${options.session.userId}
+						and ${projects.status} = ${"ready"}
+				)`,
 			),
 		)
 		.returning({ id: workspaceSessions.id });

@@ -10,6 +10,7 @@ import {
 	createSandboxAuthority,
 	SandboxAuthorityError,
 } from "#/lib/sandbox-authority";
+import { SessionWorkspaceBusyError } from "#/lib/session-workspace-lock-error";
 import { WORKSPACE_PATH } from "#/lib/workspace-policy";
 
 const getInstallationOctokitMock = vi.hoisted(() => vi.fn());
@@ -112,7 +113,14 @@ function collectParams(node: unknown): unknown[] {
 		}
 		if (Array.isArray(obj.queryChunks)) {
 			for (const chunk of obj.queryChunks) {
-				walk(chunk);
+				if (
+					chunk == null ||
+					(typeof chunk !== "object" && !Array.isArray(chunk))
+				) {
+					params.push(chunk);
+				} else {
+					walk(chunk);
+				}
 			}
 			return;
 		}
@@ -136,6 +144,7 @@ function makeStore() {
 	const identityRows = new Map<string, IdentityRow>();
 	const operationRows = new Map<string, OperationRow>();
 	const eventOrder: string[] = [];
+	const hooks: { afterProjectRead?: () => void } = {};
 
 	function findSession(where: unknown): SessionRow | undefined {
 		const params = collectParams(where);
@@ -277,6 +286,11 @@ function makeStore() {
 							})();
 							return {
 								async limit(n: number) {
+									if (table === projects) {
+										const afterProjectRead = hooks.afterProjectRead;
+										hooks.afterProjectRead = undefined;
+										afterProjectRead?.();
+									}
 									return rows.slice(0, n);
 								},
 								// biome-ignore lint/suspicious/noThenProperty: drizzle thenable mock
@@ -303,12 +317,26 @@ function makeStore() {
 									if (!row) return [];
 									if (
 										"runtimeLeaseId" in patch &&
-										patch.runtimeLeaseId != null &&
-										row.runtimeLeaseId &&
-										row.runtimeLeaseExpiresAt &&
-										row.runtimeLeaseExpiresAt.getTime() > Date.now()
+										patch.runtimeLeaseId != null
 									) {
-										return [];
+										const params = collectParams(where);
+										if (params.includes("ready")) {
+											const project = projectRows.get(row.projectId);
+											if (
+												!project ||
+												project.userId !== row.userId ||
+												project.status !== "ready"
+											) {
+												return [];
+											}
+										}
+										if (
+											row.runtimeLeaseId &&
+											row.runtimeLeaseExpiresAt &&
+											row.runtimeLeaseExpiresAt.getTime() > Date.now()
+										) {
+											return [];
+										}
 									}
 									const next: SessionRow = {
 										...row,
@@ -419,6 +447,7 @@ function makeStore() {
 		identityRows,
 		operationRows,
 		eventOrder,
+		hooks,
 	};
 }
 
@@ -826,6 +855,44 @@ describe("WorkspaceRuntime", () => {
 		await expect(open({ sessionId: "missing" })).rejects.toMatchObject({
 			code: "not_found",
 		});
+	});
+
+	it("does not acquire a lease after project deletion starts", async () => {
+		seedProject(store);
+		seedSession(store);
+		store.hooks.afterProjectRead = () => {
+			const project = store.projectRows.get("proj-1");
+			if (project) {
+				store.projectRows.set(project.id, {
+					...project,
+					status: "deleting",
+				});
+			}
+		};
+		const run = vi.fn(async () => undefined);
+
+		await expect(
+			withWorkspaceRuntimeLease(
+				{
+					env,
+					db: store.db,
+					userId: "user-1",
+					projectId: "proj-1",
+					sessionId: "sess-1",
+					purpose: "preview",
+					sleep: async () => undefined,
+					authority: createSandboxAuthority(store.db),
+				},
+				run,
+			),
+		).rejects.toBeInstanceOf(SessionWorkspaceBusyError);
+
+		expect(run).not.toHaveBeenCalled();
+		expect(restoreArchiveMock).not.toHaveBeenCalled();
+		expect(getProjectSandboxMock).not.toHaveBeenCalled();
+		expect(store.identityRows.size).toBe(0);
+		expect(store.sessionRows.get("sess-1")?.runtimeLeaseId).toBeNull();
+		expect(store.sessionRows.get("sess-1")?.runtimeLeaseExpiresAt).toBeNull();
 	});
 
 	it("observes seed-ready projects as connected before first session runtime", async () => {
