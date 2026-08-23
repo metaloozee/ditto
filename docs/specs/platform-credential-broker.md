@@ -2,7 +2,7 @@
 
 Status: local cutover implemented; clean local end-to-end and production validation deferred
 
-Last implementation audit: 2026-08-23 in the plan 012 cutover commit
+Last implementation audit: 2026-08-23 in cutover commit `89561ec` and deletion revision commit `f5dae76`
 
 Background research:
 
@@ -787,10 +787,10 @@ reconnect old credential-injection code during rollback.
 
 ## Local cutover validation
 
-Automated validation passed on 2026-08-23 in the plan 012 cutover commit:
+Automated validation passed on 2026-08-23 across cutover commit `89561ec` and deletion revision commit `f5dae76`:
 
 - generated Drizzle schema and migration metadata
-- all 63 web test files, 667 tests
+- all 63 web test files, 674 tests
 - web TypeScript and production build
 - all 11 runner test files, 79 tests, plus runner typecheck and build
 - Biome, legacy searches, migration safety inspection, and diff checks
