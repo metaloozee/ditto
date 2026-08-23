@@ -3,7 +3,6 @@ import {
 	DITTO_GIT_AUTHOR_EMAIL,
 	DITTO_GIT_AUTHOR_NAME,
 } from "#/lib/ditto-git-identity";
-import type { PersistProjectSandboxBackupProject } from "#/lib/project-sandbox";
 import {
 	commitSessionChanges,
 	getSessionGitStatus,
@@ -11,7 +10,10 @@ import {
 	pushSessionBranch,
 	type SessionGitSession,
 } from "#/lib/session-git";
-import { bestEffortPersistSessionGitBackup } from "#/lib/session-git-backup";
+import {
+	bestEffortPersistSessionGitBackup,
+	type SessionGitBackupProject,
+} from "#/lib/session-git-backup";
 import {
 	runPushThenOpenPullRequest,
 	SESSION_GIT_OPEN_PR_DIRTY_MESSAGE,
@@ -28,7 +30,7 @@ import { withSessionWorkspaceLock } from "#/lib/session-workspace-lock";
 export type SessionGitUiActionContext = {
 	env: Env;
 	db: ReturnType<typeof createDb>;
-	project: PersistProjectSandboxBackupProject;
+	project: SessionGitBackupProject;
 	sandboxId?: string;
 	sandbox?: Parameters<typeof getSessionGitStatus>[0]["sandbox"];
 	installationId: number;
@@ -115,13 +117,7 @@ export async function commitSessionChangesWithGeneratedMessage(
 			db: ctx.db,
 			env: ctx.env,
 			project: ctx.project,
-			session: {
-				id: ctx.session.id,
-				baseCommitSha: ctx.session.baseCommitSha,
-				workspacePath: ctx.session.workspacePath,
-				branchName: ctx.session.branchName,
-				sandboxIdentityId: ctx.session.sandboxIdentityId,
-			},
+			session: { id: ctx.session.id },
 		});
 	}
 
@@ -200,13 +196,7 @@ export async function openSessionPullRequestWithGeneratedMetadata(
 			db: ctx.db,
 			env: ctx.env,
 			project: ctx.project,
-			session: {
-				id: ctx.session.id,
-				baseCommitSha: ctx.session.baseCommitSha,
-				workspacePath: ctx.session.workspacePath,
-				branchName: ctx.session.branchName,
-				sandboxIdentityId: ctx.session.sandboxIdentityId,
-			},
+			session: { id: ctx.session.id },
 		});
 	}
 	if (actionError) throw actionError;

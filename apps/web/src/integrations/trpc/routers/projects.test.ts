@@ -5,9 +5,8 @@ import { decryptEnvVars, encryptEnvVars } from "#/lib/project-env-vars";
 const TEST_SECRET = "test-better-auth-secret-min-length";
 
 const createDbMock = vi.hoisted(() => vi.fn());
-const deleteProjectWithPreviewFenceMock = vi.hoisted(() => vi.fn());
+const deleteProjectRuntimeMock = vi.hoisted(() => vi.fn());
 const destroySandboxMock = vi.hoisted(() => vi.fn());
-const provisionProjectSandboxMock = vi.hoisted(() => vi.fn());
 const buildProjectSeedMock = vi.hoisted(() => vi.fn());
 const authorizeGitHubRepositoryAccessMock = vi.hoisted(() => vi.fn());
 
@@ -22,14 +21,6 @@ vi.mock("#/lib/sandbox-bootstrap", () => ({
 
 vi.mock("#/lib/project-seed", () => ({
 	buildProjectSeed: buildProjectSeedMock,
-}));
-
-vi.mock("#/lib/project-sandbox", () => ({
-	provisionProjectSandbox: provisionProjectSandboxMock,
-}));
-
-vi.mock("#/lib/session-worktree", () => ({
-	ensureSessionWorkspaceReady: vi.fn(),
 }));
 
 vi.mock("#/lib/session-workspace-lock", () => ({
@@ -50,7 +41,7 @@ vi.mock("#/lib/session-preview", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("#/lib/session-preview")>();
 	return {
 		...actual,
-		deleteProjectWithPreviewFence: deleteProjectWithPreviewFenceMock,
+		deleteProjectRuntime: deleteProjectRuntimeMock,
 	};
 });
 
@@ -61,7 +52,6 @@ type ProjectRow = {
 	id: string;
 	userId: string;
 	envVars: string | null;
-	sandboxId: string | null;
 	[key: string]: unknown;
 };
 
@@ -302,7 +292,7 @@ describe("projects.create GitHub import", () => {
 		authorizeGitHubRepositoryAccessMock.mockResolvedValue(undefined);
 	});
 
-	it("builds a project seed and does not store sandboxId", async () => {
+	it("builds a project seed without runtime fields", async () => {
 		buildProjectSeedMock.mockResolvedValue({
 			project: {
 				id: "proj-1",
@@ -311,16 +301,8 @@ describe("projects.create GitHub import", () => {
 				userId: "user-1",
 				githubRepo: "acme/app",
 				githubInstallationId: 9,
-				sandboxId: null,
-				sandboxBackup: null,
-				sandboxBackupCreatedAt: null,
-				sandboxBackupRequestedGeneration: 0,
-				sandboxBackupStoredGeneration: 0,
 				status: "ready",
 				envVars: null,
-				previewLockToken: null,
-				previewLockExpiresAt: null,
-				deletingAt: null,
 				createdAt: new Date(),
 				updatedAt: new Date(),
 			},
@@ -373,22 +355,22 @@ describe("projects.create GitHub import", () => {
 				userId: "user-1",
 			}),
 		);
-		expect(result.sandboxId).toBeNull();
+		expect(result).not.toHaveProperty("sandboxId");
 		expect(result.status).toBe("ready");
 	});
 });
 
-describe("projects.deleteProject fence", () => {
+describe("projects.deleteProject", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		createDbMock.mockReturnValue({});
 	});
 
-	it("delegates to deleteProjectWithPreviewFence with destroySandbox", async () => {
-		deleteProjectWithPreviewFenceMock.mockResolvedValue({ id: "proj-1" });
+	it("delegates to deleteProjectRuntime with destroySandbox", async () => {
+		deleteProjectRuntimeMock.mockResolvedValue({ id: "proj-1" });
 		const result = await createCaller().deleteProject({ id: "proj-1" });
 		expect(result).toEqual({ id: "proj-1" });
-		expect(deleteProjectWithPreviewFenceMock).toHaveBeenCalledWith(
+		expect(deleteProjectRuntimeMock).toHaveBeenCalledWith(
 			expect.objectContaining({
 				projectId: "proj-1",
 				userId: "user-1",
@@ -398,7 +380,7 @@ describe("projects.deleteProject fence", () => {
 	});
 
 	it("maps not_found", async () => {
-		deleteProjectWithPreviewFenceMock.mockRejectedValue(
+		deleteProjectRuntimeMock.mockRejectedValue(
 			new SessionPreviewError("not_found", "Session or project not found."),
 		);
 		await expect(
@@ -410,7 +392,7 @@ describe("projects.deleteProject fence", () => {
 	});
 
 	it("maps busy", async () => {
-		deleteProjectWithPreviewFenceMock.mockRejectedValue(
+		deleteProjectRuntimeMock.mockRejectedValue(
 			new SessionPreviewError("busy", "Preview is busy. Try again shortly."),
 		);
 		await expect(
@@ -422,10 +404,6 @@ describe("projects.deleteProject fence", () => {
 describe("projects env var mutations", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		provisionProjectSandboxMock.mockResolvedValue({
-			state: "connected",
-			project: { sandboxId: "sbx-1" },
-		});
 	});
 
 	it("set||set keeps sibling keys (stale write barrier)", async () => {
@@ -436,7 +414,6 @@ describe("projects env var mutations", () => {
 			id: "proj-1",
 			userId: "user-1",
 			envVars: cipherA,
-			sandboxId: null,
 		});
 		createDbMock.mockReturnValue(store.db);
 
@@ -462,7 +439,6 @@ describe("projects env var mutations", () => {
 			id: "proj-1",
 			userId: "user-1",
 			envVars: cipher,
-			sandboxId: null,
 		});
 		createDbMock.mockReturnValue(store.db);
 
@@ -491,7 +467,6 @@ describe("projects env var mutations", () => {
 			id: "proj-1",
 			userId: "user-1",
 			envVars: cipher,
-			sandboxId: null,
 		});
 		createDbMock.mockReturnValue(store.db);
 
@@ -517,7 +492,6 @@ describe("projects env var mutations", () => {
 			id: "proj-1",
 			userId: "user-1",
 			envVars: cipher,
-			sandboxId: null,
 		});
 		createDbMock.mockReturnValue(store.db);
 
@@ -549,7 +523,6 @@ describe("projects env var mutations", () => {
 			id: "proj-1",
 			userId: "user-1",
 			envVars: cipher,
-			sandboxId: null,
 		});
 		store.setScrambleBeforeCas(true, rivals);
 		createDbMock.mockReturnValue(store.db);
@@ -562,28 +535,11 @@ describe("projects env var mutations", () => {
 		});
 	});
 
-	it("does not call provisionProjectSandbox when sandboxId is set", async () => {
-		const cipher = await seedCipher([{ key: "A", value: "1" }]);
-		const store = createProjectDbMock({
-			id: "proj-1",
-			userId: "user-1",
-			envVars: cipher,
-			sandboxId: "sbx-1",
-		});
-		createDbMock.mockReturnValue(store.db);
-
-		await createCaller().setEnvVar({ id: "proj-1", key: "B", value: "2" });
-		await createCaller().deleteEnvVar({ id: "proj-1", key: "A" });
-
-		expect(provisionProjectSandboxMock).not.toHaveBeenCalled();
-	});
-
 	it("setEnvVar NOT_FOUND when project missing", async () => {
 		const store = createProjectDbMock({
 			id: "proj-1",
 			userId: "user-1",
 			envVars: null,
-			sandboxId: null,
 		});
 		// Force ownership mismatch via empty match: use different id seed then query other
 		createDbMock.mockReturnValue(store.db);
@@ -597,7 +553,6 @@ describe("projects env var mutations", () => {
 			id: "proj-1",
 			userId: "user-1",
 			envVars: null,
-			sandboxId: null,
 		});
 		createDbMock.mockReturnValue(store.db);
 		await expect(

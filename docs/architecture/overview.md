@@ -2,15 +2,7 @@
 
 ## Goal
 
-Ditto is a web-based AI coding workspace for GitHub repositories. A user signs in
-with GitHub, imports a repository, opens conversation-specific workspace sessions,
-asks an agent to inspect or change code, and exports the result as commits, a
-pushed branch, and a pull request.
-
-The product optimizes for an inspectable build loop rather than a general-purpose
-browser IDE. The durable product record is in D1; the live repository and agent
-processes run in a Cloudflare Sandbox; R2 backups make that workspace survive a
-cold sandbox.
+Ditto is a web-based AI coding workspace for GitHub repositories. The Worker owns authentication, policy, credentials, and durable state. Each workspace session runs in its own untrusted Cloudflare Sandbox. D1 stores product and runtime authority, while Worker-streamed R2 archives provide seeds and recovery.
 
 ## System context
 
@@ -19,247 +11,86 @@ flowchart LR
   Browser[React browser client]
   Worker[TanStack Start Worker]
   D1[(Cloudflare D1)]
-  Sandbox[Cloudflare Sandbox container]
-  Runner[Ditto runner + PI harness]
-  R2[(R2 workspace backups)]
-  GitHub[GitHub OAuth + App APIs]
+  Sandbox[Workspace-session sandbox]
+  Runner[Ditto runner and PI]
+  R2[(R2 archives)]
+  GitHub[GitHub OAuth and App APIs]
+  OpenCode[OpenCode API]
 
-  Browser -->|tRPC, auth, SSE, agent control| Worker
+  Browser -->|tRPC, auth, SSE, control| Worker
   Worker --> D1
-  Worker -->|Durable Object RPC; brokered outbound| Sandbox
+  Worker -->|Durable Object RPC| Sandbox
   Sandbox --> Runner
-  Worker -->|R2 archive stream| R2
-  Worker -->|OAuth and installation auth| GitHub
-  Worker -->|brokered Git smart-HTTP| GitHub
-  Sandbox -->|legacy tokenized network Git until cut-over| GitHub
-  Runner -->|brokered Git action origin| Worker
+  Sandbox -->|classified outbound request| Worker
+  Worker -->|validated model contract| OpenCode
+  Worker -->|validated Git contract and App auth| GitHub
+  Worker -->|archive stream through binding| R2
 ```
-
-## Architectural units
-
-| Unit | Primary paths | Responsibility |
-|---|---|---|
-| Product shell | `apps/web/src/routes`, `apps/web/src/components`, `apps/web/src/styles.css` | Dashboard, project/session navigation, chat timeline, and Git workflow UI |
-| Browser data layer | `apps/web/src/integrations/tanstack-query`, `apps/web/src/integrations/trpc/react.ts` | Query cache, SSR dehydration, typed tRPC options, and client mutations |
-| Worker APIs | `apps/web/src/integrations/trpc`, `apps/web/src/routes/api.*` | Cookie-authenticated CRUD, workspace lifecycle, message history, SSE runs, and agent control |
-| Domain services | `apps/web/src/lib` | Agent lifecycle, sandbox persistence, worktrees, Git export, secrets, message representation, and policy |
-| Durable records | `apps/web/src/db`, `apps/web/migrations` | Users, OAuth state, projects, conversations, messages, sandbox handles, and backup generations |
-| Sandbox runtime | `Dockerfile`, `packages/sandbox-runner` | Baked PI harness, isolated shell sessions, NDJSON protocol, and agent-only Git tools |
-| Infrastructure | `alchemy.run.ts`, `apps/web/src/server.ts`, `apps/web/types/env.d.ts` | Cloudflare Worker, D1, R2, Sandbox Durable Object, bindings, and deployment (Alchemy sole deploy owner) |
-| Engineering support | `AGENTS.md`, `docs/development` | Coding-agent guidance and the optional human workflow |
 
 ## Product hierarchy
 
 ```text
 User
-└── Project (GitHub repository + encrypted environment variables)
-    ├── Project seed (immutable archive; new imports)
-    ├── Project sandbox (legacy shared runtime until cut-over)
-    └── Workspace session (chat thread + session branch + dedicated sandbox or legacy worktree)
-        ├── Messages (D1 user/assistant history)
-        ├── PI session (sandbox JSONL model/tool history)
-        └── Git export state (commit, push, pull request)
+└── Project (GitHub repository + encrypted environment values)
+    ├── Immutable project seed
+    └── Workspace session (conversation + branch + isolated runtime + recovery)
+        ├── Messages
+        ├── PI history
+        └── Git export state
 ```
 
-The word **session** is overloaded in dependencies, so use the qualified names
-below:
+Projects do not own a sandbox or mutable backup. A temporary builder creates the immutable seed and retires. A workspace session owns one random sandbox identity, `/workspace` checkout, lifecycle generation, capacity lease, and current/previous recovery archives.
 
-| Name | Meaning |
-|---|---|
-| Auth session | better-auth login row and cookie |
-| Workspace session | User-visible project conversation in D1 |
-| Sandbox shell session | One isolated command environment created for an agent run |
-| PI agent session | Resumable model/tool history in a JSONL file |
+## Main flows
 
-See [Agent harness architecture](agent-harness.md) for the identifiers and
-runtime sequence connecting these layers.
+### Import
 
-## Primary product flows
+`projects.create` reauthorizes the repository and calls `ProjectSeed`. The module records the project, seed, builder identity, and Git-fetch operation before sandbox work. The builder attaches the outbound broker, fetches the owned default branch without a token in the sandbox, creates a source-only archive through the R2 binding, then retires permanently.
 
-### Import a project
+### Open and run
 
-1. `NewProjectDialog` loads repositories visible through the user's GitHub OAuth
-   token and GitHub App installations.
-2. `projects.create` reauthorizes the selected repository and encrypts project
-   environment variables.
-3. `buildProjectSeed` creates the project, pending seed, sandbox identity, and
-   Git fetch operation in one D1 batch, then runs a temporary builder. The
-   builder fetches the owned default branch through the Worker Git broker
-   (installation token stays in the Worker), stores a source-only seed archive
-   in R2, and is destroyed and permanently retired. Dependency-inclusive seeds
-   wait on benchmarks that are not yet in-tree, so imports are source-only.
-4. The project moves from `provisioning` to `ready` only after seed metadata is
-   durable; failures move it to `failed`. New imports do not store
-   `projects.sandboxId`.
+D1 history loads independently of runtime state. Runtime observation does not wake the container. First demand opens `WorkspaceRuntime`, acquires durable capacity, creates or restores the session sandbox, attaches the outbound handler, and returns a lease. Agent commands alone receive decrypted project environment values.
 
-Projects created without a GitHub repository are accepted by the server but do
-not have an agent-capable sandbox. The current UI creates GitHub-backed projects.
-Legacy projects that still own a project sandbox continue to restore through
-`bootstrapSandbox` / `project-sandbox` until that path is removed.
+The browser sends a prompt and optional `off`, `high`, or `max` thinking level. The Worker always selects `opencode/deepseek-v4-flash-free`. PI uses a public placeholder. The Worker validates each OpenCode request against current D1 identity and operation authority before adding the real key upstream.
 
-### Open a workspace
+### Recovery
 
-1. The project route loads owned project metadata and, for an explicit session
-   URL, pages D1 chat history independently of sandbox readiness.
-2. When D1 marks the project `ready`, the route runs `workspace.checkSandbox`
-   (observation only). If the check returns `needs_restore`, the route calls
-   `workspace.provisionSandbox` once under the existing
-   `ready -> provisioning` fence. Warm visits that are already `connected` stay
-   silent — no provision call and no toast.
-3. The Worker returns active workspace sessions, the selected session, and a
-   sandbox state (`connected`, `needs_restore`, restore/recreate success,
-   `provisioning`, or `failed`). `needs_restore` is runtime-only and is never
-   written to D1.
-4. History stays readable while check/provision runs. Sandbox-backed actions
-   stay disabled until the runtime is proven ready. A loading toast appears only
-   when this tab starts real provision work.
+Each completed agent run or successful local Git mutation reserves a session mutation generation. `WorkspaceRecovery` checkpoints under an exclusive runtime lease. Current and previous generations remain available. Restore tries current, then previous, and never falls back silently to the project seed.
 
-### Run the agent
+R2 object keys stay inside `sandbox-archive.ts` and D1. Archive bytes stream through RPC and the Worker binding. Sandboxes receive no R2 credentials, signed URLs, object keys, or bucket mounts.
 
-1. `Composer` clamps the persisted thinking preference to `off`, `high`, or
-   `max` and posts the prompt plus optional effective level to
-   `/api/agent/stream`. The browser does not send a model field.
-2. The route authenticates the cookie and validates the JSON body. Then
-   `prepareAgentRun` checks `OPENCODE_API_KEY` and any explicit thinking level
-   before project/session/message side effects, creates or resolves the
-   workspace session, and opens it through `WorkspaceRuntime`. The Worker always uses
-   `opencode/deepseek-v4-flash-free` and brokers model HTTP through the
-   OpenCode request contract. The key never enters the sandbox.
-3. `executeAgentRun` invokes the sandbox runner and emits `meta`,
-   `control_ready`, ordered turn boundaries, `delta`, `agent`, `error`, and
-   `done` SSE events.
-4. While that stream is live, `/api/agent/control` can queue a PI follow-up or
-   explicitly request Stop. Stop is session control; a browser disconnect is
-   still detached from execution.
-5. A queued follow-up is transient until PI starts it. At `turn_start`, the
-   Worker inserts its complete user row and pending assistant row in D1; no D1
-   rows are created for queued follow-ups dropped by Stop.
-6. The browser builds an ordered assistant-parts timeline for each turn while
-   retaining a bounded optimistic cache until D1 catches up.
-7. Every started assistant is redacted and persisted as `complete` or `failed`;
-   one versioned workspace backup follows the settled outer run best-effort.
+### Git
 
-### Export work
+Project-seed fetch and workspace sync use exact smart-HTTP contracts. The Worker mints installation tokens only after identity and request validation. Product push remains disabled until a crafted non-fast-forward receive-pack is proved rejected. Pull-request creation stays Worker-owned through Octokit.
 
-1. `sessionGit.gitStatus` derives a workflow state such as `commit`, `sync`,
-   `push`, or `open-pr` from the session checkout and GitHub.
-2. UI mutations and brokered agent Git actions share the same `session-git` domain
-   functions.
-3. Mutations run in the session checkout under a per-session atomic lock.
-4. Push preflight rejects secret-like paths and known secret content before any
-   token is minted; the exact preflight `headRev` is what gets pushed.
-5. Credential-bearing fetch/push runs from a fresh temporary bare repository
-   with a public GitHub URL and command-scoped env auth; objects transfer by
-   exact SHA without credentials. Remote scrubbing remains defense in depth.
-   Initial SDK clone still uses a tokenized URL as the documented exception.
-6. Successful sandbox mutations trigger a best-effort versioned R2 backup.
+### Preview and lifecycle
 
-### Session website preview
+Each workspace-session sandbox uses fixed port `10000` and one stable exposure capability while active. Preview traffic observation stays in the Sandbox Durable Object. Live preview can defer a pending checkpoint for at most ten minutes. Stop checkpoints pending work before completion.
 
-1. Authenticated `sessionPreview.start` runs a fixed Vite, Next, or Astro binary
-   in the session checkout. Dedicated session sandboxes use one well-known
-   localhost port and keep a stable `exposePort` capability URL. Legacy shared
-   sandboxes still lease a port from `10000..10031`.
-2. After TCP readiness (plus a short best-effort HTTP probe), the Worker calls
-   Sandbox `exposePort()` and returns the ephemeral public URL only in that
-   mutation response. Cold restore reapplies `exposePort()` so forwarding
-   targets the new runtime.
-3. Production requests for `*.ayn.wtf` hit the Worker first; `proxyToSandbox()`
-   serves active exposures, and unmatched preview hosts return 404 without
-   falling through to the app. Recent preview traffic is recorded in Sandbox
-   Durable Object storage, not D1.
-4. Mutations during a live preview reserve a pending recovery generation and
-   defer checkpoint for up to ten minutes. Forced checkpoint stops the preview
-   process, saves, and restarts only when recent traffic was observed.
-5. `sessionPreview.stop`, session archive, and project delete revoke forwarding,
-   settle pending recovery when required, and retire dedicated session
-   identities before destroying sandboxes.
+D1 runtime work and capacity leases enforce FIFO queueing, 20 global running slots, two per user, and 15-minute queue expiry. Sleeping runtimes release capacity. The Sandbox class sleeps after ten idle minutes.
 
-## State ownership
+Archive checkpoints final pending work, revokes preview, retires the identity, destroys the runtime, and retains recovery. Project deletion marks the project `deleting`, retires identity authority, closes operations, cancels work, revokes previews, destroys runtimes, records archive cleanup, then removes product rows. Permanent identity tombstones survive.
 
-| State | Authority | Notes |
-|---|---|---|
-| Identity and OAuth account | D1 via better-auth | GitHub OAuth token is used to prove user-visible repository access |
-| Project metadata and lifecycle | D1 `projects` | Includes sandbox ID, encrypted env vars, backup handle, and generations |
-| Conversation metadata | D1 `workspace_sessions` | Includes branch, base commit, checkout path, sandbox identity, runtime lease, title, archive status, nullable legacy preview port, and preview-started timestamp |
-| Runtime work | D1 `workspace_runtime_work` | Durable FIFO queue of serializable workspace intents |
-| Running slots | D1 `workspace_capacity_leases` | Unexpired leases for active workspace-session runtimes (20 global, 2 per user) |
-| Preview lifecycle lease | D1 `projects.previewLockToken` / `previewLockExpiresAt` / `deletingAt` | Legacy shared-sandbox fence across Start/Stop/archive/delete; dedicated sessions do not allocate preview ports here |
-| Chat history | D1 `messages` | Assistant rows have pending/complete/failed terminal lifecycle |
-| Leftover provider credential rows | D1 `ai_provider_credentials` / `provider_auth_attempts` | Not a current product path; pending removal |
-| Repository files and Git refs | Sandbox `/workspace` | Dedicated session checkout on the new path; legacy primary clone plus `.ditto/worktrees/<sessionId>` |
-| PI conversation state | Sandbox `/workspace/.ditto/sessions/*.jsonl` | Separate from UI chat persistence |
-| User thinking preference | Browser local storage via Zustand (`ditto-user-preferences-v1`) | Convenience only; unsupported persisted levels are clamped to `off`, `high`, or `max` |
-| Optimistic streamed messages | Browser module memory | Bounded and removed after server message IDs appear |
-| Accepted follow-ups not yet started | PI agent session queue plus transient browser projection | Not durable; Stop drops queued items before D1 rows exist |
-| Workspace durability | R2 directory backup | Excludes dependencies, builds, caches, and `.env*` |
-
-## Dependency direction
-
-The intended dependency flow is:
+## Trust and dependency direction
 
 ```text
-routes/components
-  -> tRPC routers or narrow browser libraries
-  -> domain services in apps/web/src/lib
-  -> DB, Cloudflare Sandbox, GitHub, Web Crypto
+routes and components
+  -> tRPC routers or narrow browser clients
+  -> apps/web/src/lib domain modules
+  -> D1, Sandbox RPC, R2 bindings, GitHub, OpenCode
 
-sandbox runner CLI
+sandbox runner
   -> PI harness
-  -> NDJSON stdout
+  -> versioned NDJSON
   -> Worker orchestration
 ```
 
-Routes should stay thin. Cross-entry-point policy belongs in `apps/web/src/lib` so the UI
-tRPC path and brokered agent Git-action path cannot drift. Sandbox credentials are minted
-by the Worker at the last responsible moment; the runner never receives a
-GitHub installation token.
+Everything in a sandbox is untrusted. Routes do not mint credentials or construct raw sandbox clients. New runtime uses go through `WorkspaceRuntime`; privileged egress goes through `SandboxAuthority` and `SandboxEgressBroker`.
 
-## Deliberate boundaries and limits
+## Current limits
 
-- New GitHub imports own an immutable project seed and no persistent sandbox.
-  New workspace sessions restore that seed into a dedicated session sandbox.
-  Legacy projects may still own one shared Cloudflare sandbox ID with Git
-  worktree isolation until that path is removed.
-- Legacy session worktrees share the primary clone's `node_modules` by symlink.
-  They do not share `.env` files. New sessions run from `/workspace` in their
-  own sandbox and do not create those worktrees.
-- Shell processes and ports are container-wide on a legacy shared sandbox, so
-  parallel sessions can still collide there. Dedicated session sandboxes isolate
-  filesystem, process table, and localhost.
-- Agent runs are intentionally not aborted when the browser disconnects. The
-  server finishes persistence rather than leaving a pending assistant row.
-- Thinking levels use Pi's canonical vocabulary. Missing capability metadata is a
-  legacy compatibility signal: the client omits the optional level and Pi keeps
-  its normal default rather than receiving a guessed provider-specific value.
-- Explicit Stop is a separate authenticated session-control request. It clears
-  queued PI follow-ups, requests cooperative PI abort, and lets terminal SSE
-  persistence remain authoritative.
-- R2 archives are Worker-streamed snapshots, not a mounted filesystem. Cold wake
-  always hydrates explicitly.
-- Session deletion is archival. Archived sessions are excluded from active
-  reads and cannot receive new messages.
-- There is no merge operation in Ditto; pull requests are completed on GitHub.
-- New project-seed builders fetch Git through the Worker broker; the
-  installation token stays in the Worker. Product push is disabled until a
-  crafted non-fast-forward receive-pack is proved rejected; the receive-pack
-  contract exists, local commits and secret preflight remain, and installation
-  tokens stay in the Worker. Legacy session sync still injects a short-lived
-  token into a sandbox network Git process.
-- Provider credentials and Git callback bearer tokens do not enter sandbox
-  agent runs. The OpenCode key stays in the Worker.
-- Normal chat runs still use PI's default project resource discovery.
-- Builders attach `dittoCatchAll` via `setOutboundHandler` and are brokered;
-  legacy project sandboxes never set the handler and keep direct internet until
-  later plans. The shared subclass does not set `enableInternet = false`.
-
-See [platform credential broker](../specs/platform-credential-broker.md) for the
-remaining cut-over (per-session sandboxes, model broker, legacy column removal).
-
-## Where to read next
-
-- [Frontend architecture](frontend.md) — routes, query state, chat, and UI composition.
-- [Server and data architecture](server-and-data.md) — APIs, domain services, and schema.
-- [Agent harness architecture](agent-harness.md) — sandbox execution, persistence, concurrency, and Git export.
-- [Security and trust boundaries](security.md) — authentication, authorization, encryption, and egress controls.
-- [Repository map](repository-map.md) — purpose of every file and generated artifact class.
+- One fixed model and three thinking levels.
+- Product push is disabled pending the non-fast-forward integration gate.
+- Project environment values are visible to the agent command and may leave through credential-free public internet access.
+- Preview-created filesystem changes are disposable.
+- Production Sandbox behavior remains unvalidated until paid-plan tests run.

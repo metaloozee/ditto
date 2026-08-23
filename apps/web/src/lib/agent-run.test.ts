@@ -26,7 +26,6 @@ const { appendRollingTail, runAgentInSandbox, STDERR_TAIL_MAX_CHARS } =
 function makeEnv(): Env {
 	return {
 		OPENCODE_API_KEY: "sk-test-key-12345678901234567890",
-		AI_CREDENTIALS_ENCRYPTION_KEY: "ai-credentials-encryption-key-test-aaaa",
 		BETTER_AUTH_SECRET: "test-better-auth-secret-min-length",
 		BETTER_AUTH_URL: "http://localhost:5173",
 	} as Env;

@@ -1,343 +1,50 @@
 # Agent harness architecture
 
-## Goal
+## Runtime ownership
 
-Ditto runs AI coding work inside each project's Cloudflare sandbox. The browser
-talks to a Worker over Server-Sent Events (SSE); the Worker wakes the sandbox,
-starts an isolated shell session, runs the PI harness, forwards streaming
-events, persists chat in D1, and snapshots the workspace when a run finishes.
+Each workspace session owns one Cloudflare Sandbox identity and one `/workspace` Git checkout. Sessions do not share filesystems, process tables, localhost namespaces, or dependency directories. The session row stores its branch, frozen base commit, sandbox identity, lifecycle lease, and recovery state relationship. Checkout paths are code-owned and not persisted.
 
-## Persistence
+`WorkspaceRuntime` is the only application interface for runtime access. Callers provide owned user, project, session, and purpose identifiers. The module validates ownership and lifecycle, acquires capacity, restores when needed, attaches the outbound broker, and returns a narrow lease. Agent commands receive project environment values; control, Git, preview, backup, and restore leases do not.
 
-Workspace files are durable through Worker-owned compressed archives streamed
-through the R2 `BACKUP_BUCKET` binding, not by mounting a bucket on
-`/workspace`. Callers use opaque archive IDs; `sandbox-archive.ts` is the only
-module that knows the R2 object key. The sandbox never receives that key, an R2
-credential, a signed URL, or a bearer capability. `backupSandboxWorkspace`
-creates a tar.gz at a fixed path and the Worker streams it with RPC
-`readFile(..., { encoding: "none" })` into `BACKUP_BUCKET.put()`. Cold
-sandboxes hydrate through `restoreSandboxWorkspace` inside
-`provisionProjectSandbox` (not the observation-only check path): the Worker
-reads the object through the binding, writes the stream to the same fixed path,
-and extracts it. Waking a sleeping project re-runs restore before agent work.
+## Agent sequence
 
-Before any wake-causing `exists` or `exec` readiness probe,
-`getProjectSandboxState` observes the installed Sandbox/`Container` lifecycle
-via `getState()`. Inactive statuses enter the D1 provisioning fence and restore
-path directly; active candidates still verify `/workspace/.git` and the baked
-runner. An invalid `/opt/ditto-runner` fails with an actionable image rebuild
-error and does not mutate project state.
+1. The browser posts a prompt and optional thinking level to `/api/agent/stream`.
+2. The Worker authenticates the cookie, validates `off`, `high`, or `max`, and checks that `OPENCODE_API_KEY` exists before project, session, message, or runtime side effects.
+3. The user message, pending assistant, and durable runtime work row are inserted before provisioning or queueing.
+4. `WorkspaceRuntime` creates or restores the session sandbox from the project seed or current/previous session recovery archive.
+5. The Worker opens `model/agent_run` and `ditto_action/agent_git` operation windows.
+6. `agent-run.ts` creates a sandbox shell at `/workspace`, injects only project environment values and Git author identity, writes a bounded job file, and starts the baked runner.
+7. The runner validates the fixed model and job, creates an in-memory public OpenCode placeholder, and loads only `/opt/ditto-runner/dist/ditto-extension.js`. Repository extensions, skills, prompts, themes, settings, and context discovery stay disabled.
+8. PI events cross versioned NDJSON, then SSE. The Worker redacts text, structured tool payloads, stderr, and persistence output.
+9. Every started assistant settles to `complete` or `failed`.
+10. The session records a mutation generation and checkpoints through `WorkspaceRecovery` under an exclusive lease. Checkpoint failure does not rewrite a successful assistant.
 
-Dedicated workspace sessions checkpoint through `WorkspaceRecovery`
-(`workspace-recovery.ts`): after each completed agent run and successful
-mutating Git operation, the session reserves a mutation generation and archives
-under `ownerKind: "workspace_recovery"`. Current and previous successful
-archives are retained; older archives are abandoned for async cleanup. Checkpoint
-failure does not rewrite a settled assistant message or Git result.
+Follow-up and Stop use a separate authenticated control route and the run-scoped Unix socket. Browser disconnect detaches stream delivery but does not cancel execution. Only authenticated Stop clears queued PI turns and requests cooperative abort.
 
-Legacy shared project-sandbox sessions still use `persistProjectSandboxBackup`,
-which **versions** each attempt:
+## Model broker
 
-1. Atomically increments `sandboxBackupRequestedGeneration` (candidate).
-2. Creates the compressed workspace archive and streams it to R2.
-3. Stores the opaque archive ID only when
-   `sandboxBackupStoredGeneration < candidateGeneration`.
+The runner accepts only `opencode/deepseek-v4-flash-free`. It never reads a real model credential. PI's placeholder has no authority by itself.
 
-Out-of-order completions therefore cannot let an older snapshot replace a newer
-stored generation. Superseded candidates are not failures. First-provision and
-restore/recreate paths may still write the backup handle without the generation
-gate.
+For every intercepted OpenCode request, the Worker validates current identity, lifecycle generation, sole open model operation, placeholder, method, host, path, headers, bounded body schema, exact model, and contract version. It constructs a fresh upstream request with the real key and streams the response. Three contract denials close the operation and mark the workspace session for review.
 
-## Qualified session layers
+## Git
 
-| Layer | Store | ID | Role |
-|-------|-------|----|------|
-| Workspace conversation | D1 `workspace_sessions` | `sessionId` / `conversationId` | UI chat thread and message history |
-| Session checkout | Sandbox filesystem | Dedicated `/workspace` on the new path, or `ditto/session-<shortId>` on `/workspace/.ditto/worktrees/<sessionId>` for legacy | Per-session branch and isolated working tree |
-| Sandbox shell session | Cloudflare Sandbox `createSession` | e.g. `agent-<conversationId>` or `git-metadata-<id>` | Isolated cwd and env for one harness run |
-| PI agent session (chat) | File `/workspace/.ditto/sessions/<sessionId>.jsonl` | Same as D1 session id | Model history, tools, and harness state |
-| PI agent session (UI git metadata) | In-memory only (`SessionManager.inMemory`) | Ephemeral request id | One-shot commit/PR metadata drafting; no JSONL, D1, or chat history |
+Workspace bootstrap and sync use brokered Git smart HTTP. The network child has a closed, credential-free environment, disabled hooks and credential helpers, fixed CA trust, disabled redirects, and a public GitHub URL. The Worker adds installation auth only after the exact Git contract passes.
 
-## Runtime path
+Local Git reads and mutations run under the session lock at `/workspace`. UI and agent paths share branch ownership and secret preflight. Product push remains disabled until a crafted non-fast-forward receive-pack test proves rejection. Pull-request creation remains in the Worker through Octokit.
 
-1. The user sends a message from the composer.
-2. The client `POST`s `/api/agent/stream` with cookie auth.
-3. The Worker opens the workspace session through `WorkspaceRuntime`. New
-   sessions restore the project seed into a dedicated sandbox, fetch the latest
-   default branch through the Git broker, and check out `ditto/session-<shortId>`
-   at `/workspace`. Legacy sessions that already have a frozen base commit keep
-   their worktree in the shared project sandbox. `baseCommitSha` is frozen on
-   first set and is never moved automatically.
-4. The Worker creates or loads a D1 workspace session **before** runtime
-   preparation. If runtime preparation fails for a **newly created** empty
-   session, that session row is removed before the 409 response.
-5. After the runtime is ready, the Worker inserts the user message
-   (`status: complete`) and an assistant placeholder (`status: pending`) in
-   one D1 batch, then opens the SSE stream and emits `meta`.
-6. The Worker creates a sandbox shell session with cwd set to the session
-   checkout, decrypts project environment values from D1, and injects them
-   into the session `env` together with Git author identity. No Git callback
-   URL, bearer token, or OpenCode key is injected.
-   It writes a job file containing the run IDs, model, prompt, cwd, and the
-   optional effective `thinkingLevel` (prompt is not interpolated into shell
-   commands).
-7. The Worker runs `ditto-runner` via `execStream` and parses versioned NDJSON
-   stdout. The runner subscribes to PI SDK events and normalizes assistant
-   `text_delta`, `tool_execution_start|update|end`, and run-scoped follow-up
-   boundary events; growing partial-message snapshots do not cross the process
-   boundary.
-8. The runner validates the job, resolves the model and in-memory credential
-   store, then opens or resumes PI state under
-   `/workspace/.ditto/sessions/<conversationId>.jsonl` on the primary tree.
-   `SessionManager.open` supplies durable history; an in-memory
-   `SettingsManager` enables compaction and `one-at-a-time` follow-ups. The
-   runner constructs an explicit locked resource loader that disables
-   repository discovery of extensions, skills, prompts, themes, settings, and
-   context files, then loads only the image-owned Ditto extension from
-   `/opt/ditto-runner/dist/ditto-extension.js`. The session is created with
-   that loader, the session worktree cwd, resolved model/runtime, optional
-   thinking level, and built-in coding tools. The Ditto Git tools are
-   registered by the image-owned extension. Git metadata keeps an empty
-   resource loader.
-9. After the runner socket is listening, the Worker emits `control_ready`. A
-   later PI user-message boundary finalizes the prior assistant, emits
-   `turn_done`, inserts the started follow-up's D1 pair, and emits `turn_start`
-   before that turn's assistant deltas.
-10. The Worker redacts runner output and structured control events, flushes held
-   safe text before ordering boundaries, batches only contiguous text deltas,
-   and forwards SSE events in source order.
-11. On success the Worker persists each started assistant with
-   `status: complete` before its turn settles. On runner/stream/storage failure
-   it persists accumulated partial content with `status: failed`, then emits
-   `error` followed by failed `done`. Dedicated sessions checkpoint via
-   `WorkspaceRecovery`; legacy shared sandboxes still use
-   `persistProjectSandboxBackup`. Backup is best-effort and does not rewrite
-   message status.
+Git metadata drafting uses a separate in-memory PI session, empty resource discovery, one typed output tool, a bounded redacted diff snapshot, and one-request model authority. It receives no project environment values or platform credentials.
 
-## Thinking-level propagation
+## Recovery and archive transport
 
-The fixed model supports `off`, `high`, and `max`. The frontend clamps the saved
-preference to those levels. The Worker rejects any other explicit level before
-writing a job. Omitting the field remains valid for old clients.
+`WorkspaceRecovery` owns monotonically increasing mutation generations and current/previous archives. Checkpoint promotion uses compare-and-set fencing. Restore tries current and then previous; failure preserves both for diagnosis.
 
-The optional value then travels through `AgentRunContext` to `runAgentInSandbox`,
-which writes it to `.ditto/jobs/<id>.json`. `agent-job.ts` is the sandbox trust
-boundary: it accepts only `off`, `high`, and `max` before `cli.ts` passes the
-value to `runAgent`. `run-agent.ts` supplies it to `createAgentSession`; Pi
-clamps again as a defense against an invalid or stale capability boundary. An
-omitted value leaves Pi's normal model/session default in control. Follow-ups
-reuse that live PI session through the control socket; they do not create a new
-thinking-level request.
+The image-owned archive CLI writes one fixed temporary file. The Worker streams it over Sandbox RPC to the R2 binding with byte-count and digest checks. Restore reverses that stream and validates metadata, extracted size, Git state, and the baked runner. No stock Sandbox backup API, signed URL, object key, R2 credential, or bucket mount enters the container.
 
-## Transport
+## Preview, archive, and deletion
 
-The Sandbox Durable Object talks to the container with RPC transport
-(`transport: "rpc"` in `getProjectSandbox`). Multi-step SDK calls multiplex on
-one connection so long agent runs do not exhaust HTTP subrequest limits.
+Preview runs one code-owned Vite, Next, or Astro command on port `10000`. Preview processes receive no project values. A live preview defers recovery for at most ten minutes; Stop saves pending mutations before completion.
 
-PI assistant text updates and tool execution events remain separate throughout
-the runner, Worker, SSE, and browser layers. A tool event is an ordering
-boundary: pending redacted text and pending server-side delta batches flush
-before the tool is forwarded. Text parts concatenate the original delta bytes
-without synthetic whitespace, while tool parts retain their chronological
-position in the assistant-parts timeline.
+Archiving stops preview, performs the final pending checkpoint, requires durable recovery, retires and destroys the session runtime, and keeps the recovery lineage. Continuing archived work creates a new session identity, branch, and recovery lineage.
 
-### Live PI agent session controls
-
-The browser sends follow-up or Stop as a second cookie-authenticated
-`POST /api/agent/control`; it does not open another SSE stream or runner job.
-The Worker verifies project and active workspace-session ownership, writes a
-bounded JSON control job under `/tmp/ditto-agent-controls`, and runs the static
-baked `control-cli.js --job <generated-path>` command. User text never appears
-in argv or shell interpolation.
-
-The control CLI connects to a short `runId`-derived Unix-domain socket owned by
-the existing runner process. That process alone owns the live PI agent session:
-follow-up calls PI `followUp()` in `one-at-a-time` mode, while Stop calls
-`clearQueue()` before cooperative `abort()`. Socket commands are serialized, so
-follow-up and Stop cannot mutate the PI queue concurrently. Queued metadata is
-transient; D1 rows begin only when PI emits the correlated user turn boundary.
-The socket, control job, and short-lived sandbox shell session are cleaned up
-after use.
-
-Stop acknowledgement means cancellation was requested, not that the provider
-or tool stopped instantly. The original runner completion and SSE `done` remain
-terminal authority. Authenticated Stop is the only application path that cancels
-execution.
-
-The stream route owns per-response delivery state (`attached` → `detached` →
-`closed`). Browser reader cancellation detaches delivery only: later SSE encode
-and enqueue become no-ops, while `executeAgentRun` continues terminal assistant
-persistence and post-run backup for as long as the Worker invocation survives.
-Expected detach is silent; delivery/controller races log a static secret-free
-warning and never throw into the run service.
-
-## Concurrency
-
-Concurrent workspace sessions for the same project use dedicated sandboxes on
-the new path, each with its own filesystem, process table, localhost namespace,
-and `ditto/session-*` branch checked out at `/workspace`. Legacy sessions still
-use separate git worktrees under `/workspace/.ditto/worktrees/<sessionId>` inside
-a shared project sandbox. Agent coding runs use the session checkout as `cwd`.
-Project environment values are stored encrypted in D1, decrypted by the Worker
-per run, and injected only into the agent command; checkouts never receive a
-`.env` file.
-
-`WorkspaceRuntime` is the readiness interface. Callers identify an owned
-workspace session and a purpose; they do not pass raw sandbox IDs. Legacy
-worktree create/repair remains in `ensureSessionWorkspaceReady` for sessions
-that already have a frozen base commit in a project sandbox.
-
-- **Agent prepare** acquires only for create/repair; message rows still insert
-  after readiness releases the short lock.
-- **Agent git tools** call readiness with `assumeHeld` (the agent run already
-  holds the outer session lock).
-- **UI gitStatus** is prepare-only; a missing or non-canonical tree returns
-  workflow `unavailable` with reason `worktree` (no create/repair on poll).
-- **UI mutations** use full readiness with acquire on create/repair.
-- **Preview** repair uses readiness-owned acquire (no outer double-lock).
-
-Residual limits: legacy sessions still share one sandbox container process
-space. Dedicated session sandboxes isolate those collisions. Within one
-session, agent runs and mutating UI Git operations share an atomic lock under
-sandbox `/tmp`. UI Commit and UI Open PR hold that same lock from snapshot
-collection through generation and mutation; nested git helpers bypass re-lock.
-
-The live control path intentionally bypasses that workspace-session lock: the
-active agent run already holds it, so reacquiring it would deadlock. Controls
-only reach the same run-scoped Unix socket and do not start a second filesystem
-writer.
-
-## Git export
-
-Users commit, push, and open pull requests from the project UI (tRPC
-`sessionGit.*`). The Worker runs git commands in the session worktree cwd
-(`workspace_sessions.workspacePath`), not in the chat agent harness.
-
-One-click UI Commit and UI Open PR draft metadata from the **actual Git diff**,
-not the session title or prompt:
-
-1. Under the session lock, the Worker builds a bounded, redacted snapshot
-   (commit: temporary index of safe paths; PR: exact stored `baseCommitSha` to
-   `HEAD` subjects/paths/stat/patch). Secret-like paths are omitted; staged
-   secrets fail closed. No project env, GitHub tokens, Git callback credentials, chat text,
-   or session title enter the job.
-2. A short-lived sandbox shell runs `ditto-git-metadata` without the OpenCode
-   key. The Worker opens a one-request `git_metadata` model operation for the
-   session identity, and PI uses the public placeholder. Job files live under
-   `/tmp/ditto-git-metadata-jobs/` and are deleted afterward.
-3. The metadata runner uses an in-memory PI session, empty resource discovery,
-   no repository/mutation tools, and exactly one terminating typed tool
-   (`submit_commit_metadata` or `submit_pull_request_metadata`). At most two
-   assistant turns. No durable PI JSONL or chat history.
-4. The Worker independently Zod-validates the one-line protocol result and
-   rejects secret-bearing output. Generation failure aborts with no Git/GitHub
-   mutation. Explicit commit `message` or PR `title`/`body`/`baseBranch` still
-   use the legacy paths (deterministic PR builders for non-UI/agent callers).
-
-Existing sessions can explicitly sync the latest GitHub default branch through
-`sessionGit.sync`. Sync requires a clean session worktree, fetches the named
-default branch without switching the primary checkout, and merges the exact
-fetched commit into the session branch without rebasing or rewriting session
-commits. Conflicting merges are aborted before dependency installation. After a
-successful merge, dependencies are installed from the session worktree into the
-shared `node_modules`. A successful sync stores the new default-branch commit as
-`baseCommitSha`, so upstream-only changes are not reported as session-authored
-changes.
-
-- Network git uses a short-lived **GitHub App installation access token**
-  minted per operation at the last responsible moment, including the one-shot
-  primary-branch fetch before the first session worktree. The Worker passes the
-  token to a short-lived launcher process inside the project sandbox. The token
-  is absent from the agent-runner environment, D1, job files, SSE, remotes,
-  hooks, and durable files. Credential-bearing fetch and push run only from a
-  fresh temporary bare repository with code-owned configuration, disabled
-  hooks and credential helpers, a public GitHub HTTPS URL, and a closed
-  command-scoped environment. Objects move
-  between the worktree and temp repo without credentials and are verified by
-  exact SHA. Branch refs are validated; full refs/refspecs are shell-quoted as
-  one argument. Remote scrubbing back to the public HTTPS URL remains defense
-  in depth. Initial SDK clone remains the explicit tokenized-URL exception.
-- Push still runs outgoing secret preflight once before token mint; UI and agent
-  paths share `pushSessionBranch`.
-- Command output is redacted before errors reach the client.
-- Opening a PR uses installation Octokit auth (not the user's OAuth token).
-- v1 has no merge API or merge button.
-- UI and Worker session git mutations refresh recovery (dedicated) or the
-  project sandbox backup (legacy) **only after the session lock releases**
-  following a sandbox-mutating success (commit that created a commit, or PR
-  open that first pushed — including when the subsequent open-PR call fails
-  after a successful push). Opening a PR when no push was needed does not
-  snapshot. Backups are best-effort: a failed snapshot does not turn a
-  completed git mutation into a reported failure. Cold restore therefore does
-  not resurrect pre-export dirty worktrees after real mutations.
-
-Chat-driven git uses PI custom tools in the sandbox runner (`ditto_push_branch`,
-`ditto_open_pull_request`). Those tools `POST` JSON to the image-owned origin
-`http://ditto.internal/v1/git-action` with no Authorization header. The Worker
-outbound broker classifies that origin, resolves the trusted sandbox identity
-and the open `ditto_action` / `agent_git` operation from D1, and reuses the
-same `session-git` helpers as the UI. Product push is disabled until
-non-fast-forward rejection is proved, so push and open-PR auto-push return
-that GitHub push is currently unavailable after secret preflight. Installation
-tokens stay in the Worker. Local commits still work. Use bash for local
-`git status` / `git commit`; use Ditto tools for push and open PR only. Agent
-tools cannot merge or close a pull request.
-
-Agent git guidance (tool `promptGuidelines` + descriptions):
-
-- Local commits use **Conventional Commits**
-  (`feat:`, `fix:`, `chore:`, …; imperative subject).
-- Before `ditto_open_pull_request`, the agent should review commits and the
-  diff, then pass a **humanized title** and **brief body** (not raw commit
-  subjects alone). Worker defaults still apply if title/body are omitted
-  (deterministic helpers in `github-export.ts` from commit subjects and
-  `git diff --name-only` file paths vs base).
-
-Operators must rebuild the sandbox image (restart `pnpm dev` or redeploy) after
-runner changes so custom tools appear in the container.
-
-## Session website preview
-
-- One process and one exposed port per active session. Process cwd is the exact
-  canonical session worktree; process id is `ditto-preview-<safe-id>`.
-- Only exact root `dev` scripts `vite` / `vite dev` / `next` / `next dev` /
-  `astro` / `astro dev` with the matching direct dependency and local
-  `node_modules/.bin` binary. The exact script selects the framework (co-deps
-  such as Astro + Vite are fine). Vite must be `>=6.1.0`; Astro must be
-  `>=5.4.0` (for `--allowed-hosts`). Fixed commands only — never package
-  scripts, hooks, or installers.
-- Preview process env is code-owned (`HOST`, `PORT`, and for Vite/Astro
-  `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=.ayn.wtf`; Astro also gets CLI
-  `--allowed-hosts=.ayn.wtf`). Project env vars are not decrypted or injected.
-  No worktree backup on start. Every Start re-ensures the worktree
-  `node_modules` symlink; readiness is TCP then best-effort HTTP before
-  `exposePort`.
-- Concurrency boundary is the D1 project lifecycle lease (`previewLockToken` /
-  expiry / `deletingAt`), not an in-sandbox lock. Writer lock is used only to
-  repair a missing worktree, then released before the dev server runs.
-
-## Security notes
-
-- User prompts travel in job files written with `writeFile`, not via shell
-  string interpolation.
-- Stderr and client-visible errors pass through `redactSecrets`.
-- Project environment values are decrypted in the Worker and injected only as
-  sandbox shell session process environment variables. The OpenCode key stays
-  in the Worker and never enters worktree files, job JSON, SSE payloads, Git
-  remotes, or sandbox env. No Git callback bearer token or callback URL enters
-  a sandbox process.
-- The container can expose process environments, so output redaction and Git
-  secret preflight remain necessary. A process environment is not a vault.
-- GitHub App installation tokens do not enter the agent runner environment.
-  Agent Git tools call the synthetic Ditto origin through the outbound broker.
-  Product Git push is disabled; the receive-pack contract exists, but the
-  Worker does not mint an installation token onto a sandbox Git launcher for
-  UI or agent push.
-- Normal chat constructs an explicit locked resource loader. It disables
-  repository discovery of PI extensions, skills, prompts, themes, settings,
-  and context files, and loads only the image-owned Ditto extension from
-  `/opt/ditto-runner/dist/ditto-extension.js`. Git metadata keeps the empty
-  loader.
-- Never log or expose raw `OPENCODE_API_KEY` values in logs, SSE payloads, or
-  UI copy.
+Project deletion changes the project to `deleting`, retires all identities before cleanup, cancels runtime work, revokes previews, destroys runtimes, marks archives for retryable deletion, and then removes product rows. Identity tombstones remain permanent.

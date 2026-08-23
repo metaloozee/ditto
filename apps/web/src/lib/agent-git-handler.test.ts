@@ -9,7 +9,7 @@ const withWorkspaceRuntimeLeaseMock = vi.hoisted(() =>
 		run({
 			sessionId: "sess-1",
 			purpose: "mutating_git",
-			workspacePath: "/workspace/.ditto/worktrees/sess-1",
+			workspacePath: "/workspace",
 			branchName: "ditto/session-abc",
 			baseCommitSha: "abc123",
 			sandbox: { exec: vi.fn() },

@@ -54,8 +54,6 @@ function makeCtx(): SessionGitUiActionContext {
 		project: {
 			id: "p1",
 			userId: "u1",
-			sandboxId: "s1",
-			status: "ready",
 		},
 		sandboxId: "s1",
 		installationId: 1,
@@ -64,7 +62,7 @@ function makeCtx(): SessionGitUiActionContext {
 			id: "sess-1",
 			branchName: "ditto/sess-1",
 			baseCommitSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-			workspacePath: "/workspace/.ditto/worktrees/sess-1",
+			workspacePath: "/workspace",
 		},
 		knownSecrets: ["secretvalue1"],
 	};

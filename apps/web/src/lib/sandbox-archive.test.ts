@@ -2,21 +2,8 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { archives, workspaceSessions } from "#/db/schema";
-
-const acquireLeaseMock = vi.hoisted(() => vi.fn());
-const releaseLeaseMock = vi.hoisted(() => vi.fn());
-const withLockMock = vi.hoisted(() => vi.fn());
-
-vi.mock("#/lib/session-preview", () => ({
-	acquireProjectPreviewLease: acquireLeaseMock,
-	releaseProjectPreviewLease: releaseLeaseMock,
-}));
-
-vi.mock("#/lib/session-workspace-lock", () => ({
-	withSessionWorkspaceLock: withLockMock,
-}));
 
 const {
 	ARCHIVE_CLI_PATH,
@@ -383,22 +370,13 @@ function deferred<T>() {
 
 const createInput = {
 	sandboxId: "sandbox-1",
-	ownerKind: "legacy_project" as const,
+	ownerKind: "workspace_recovery" as const,
 	ownerId: "project-1",
 	userId: "user-1",
 	generation: 1,
 };
 
 describe("sandbox-archive", () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-		acquireLeaseMock.mockResolvedValue({ token: "lease-1", project: {} });
-		releaseLeaseMock.mockResolvedValue(undefined);
-		withLockMock.mockImplementation(
-			async ({ run }: { run: () => Promise<unknown> }) => run(),
-		);
-	});
-
 	it("streams an archive larger than 32 MiB into R2 without buffering", async () => {
 		const size = ARCHIVE_RPC_STREAM_THRESHOLD_BYTES + 1;
 		const sandbox = makeSandbox({
@@ -545,9 +523,6 @@ describe("sandbox-archive", () => {
 		});
 		expect(ref.digest).toBe(EMPTY_SHA256);
 		expect([...archiveRows.values()][0]?.status).toBe("ready");
-		expect(acquireLeaseMock).toHaveBeenCalled();
-		expect(releaseLeaseMock).toHaveBeenCalled();
-		expect(withLockMock).toHaveBeenCalled();
 		expect(
 			sandbox.exec.mock.calls.some((call) =>
 				String(call[0]).includes(`rm -f -- '${ARCHIVE_TEMP_PATH}'`),

@@ -27,7 +27,7 @@ const session = {
 	id: "sess-1",
 	branchName: "ditto/sess-1",
 	baseCommitSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-	workspacePath: "/workspace/.ditto/worktrees/sess-1",
+	workspacePath: "/workspace",
 };
 
 function makeCtx(overrides: { bypassWorkspaceLock?: boolean } = {}) {

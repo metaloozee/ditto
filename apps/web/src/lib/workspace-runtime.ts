@@ -12,7 +12,6 @@ import { GIT_FETCH_CONTRACT_VERSION } from "#/lib/git-fetch-contract";
 import { getGitHubApp } from "#/lib/github-app";
 import { fetchGitHubBranchBrokered } from "#/lib/privileged-git";
 import { decryptEnvVars } from "#/lib/project-env-vars";
-import { checkProjectSandbox } from "#/lib/project-sandbox";
 import { type ArchiveSandbox, restoreArchive } from "#/lib/sandbox-archive";
 import {
 	createSandboxAuthority,
@@ -28,15 +27,7 @@ import {
 } from "#/lib/sandbox-bootstrap";
 import { withSessionWorkspaceLock } from "#/lib/session-workspace-lock";
 import { SessionWorkspaceBusyError } from "#/lib/session-workspace-lock-error";
-import {
-	ensureSessionWorkspaceReady,
-	prepareSessionWorkspaceIfPresent,
-} from "#/lib/session-worktree";
-import {
-	SESSION_WORKTREE_ROOT,
-	sessionBranchName,
-	WORKSPACE_PATH,
-} from "#/lib/workspace-policy";
+import { sessionBranchName, WORKSPACE_PATH } from "#/lib/workspace-policy";
 import {
 	hasRecoveryArchives,
 	restore as restoreWorkspaceRecovery,
@@ -183,25 +174,6 @@ function defaultLockMode(
 		return "acquire";
 	}
 	return "none";
-}
-
-export function isLegacySharedSandboxSession(
-	session: Pick<
-		SessionRow,
-		"sandboxIdentityId" | "baseCommitSha" | "workspacePath" | "branchName"
-	>,
-	project: Pick<ProjectRow, "sandboxId">,
-): boolean {
-	const frozen = (session.baseCommitSha ?? "").trim().length > 0;
-	const worktree =
-		session.workspacePath.startsWith(SESSION_WORKTREE_ROOT) ||
-		(session.workspacePath !== WORKSPACE_PATH && session.branchName != null);
-	return (
-		session.sandboxIdentityId == null &&
-		frozen &&
-		worktree &&
-		Boolean(project.sandboxId)
-	);
 }
 
 function isNonRetryable(error: unknown): boolean {
@@ -446,7 +418,6 @@ async function bindSessionRuntimeFields(options: {
 			sandboxIdentityId: options.identityId,
 			branchName: options.branchName,
 			baseCommitSha: frozen,
-			workspacePath: WORKSPACE_PATH,
 			runtimeFailureReasonCode: null,
 			updatedAt: sql`(unixepoch())`,
 		})
@@ -693,83 +664,6 @@ async function loadExistingIdentity(
 	return authority.getIdentity(session.sandboxIdentityId);
 }
 
-async function serveLegacySession(options: {
-	env: Env;
-	db: Db;
-	project: ProjectRow;
-	session: SessionRow;
-	ensureReady: boolean;
-}): Promise<PreparedRuntime> {
-	const sandboxId = options.project.sandboxId;
-	if (!sandboxId) {
-		throw new WorkspaceRuntimeError(
-			"not_ready",
-			"Legacy session is missing a project sandbox.",
-		);
-	}
-	if (
-		!options.project.githubRepo ||
-		options.project.githubInstallationId == null
-	) {
-		throw new WorkspaceRuntimeError(
-			"not_ready",
-			"Project is not linked to a GitHub repository.",
-		);
-	}
-
-	if (!options.ensureReady) {
-		const prepared = await prepareSessionWorkspaceIfPresent({
-			env: options.env,
-			sandboxId,
-			sessionId: options.session.id,
-			existing: {
-				branchName: options.session.branchName,
-				baseCommitSha: options.session.baseCommitSha,
-				workspacePath: options.session.workspacePath,
-			},
-		});
-		if (!prepared.ok) {
-			throw new WorkspaceRuntimeError(
-				"not_ready",
-				"Session worktree is not ready.",
-			);
-		}
-		return {
-			sandbox: getProjectSandbox(options.env, sandboxId),
-			sandboxId,
-			identity: null,
-			workspacePath: prepared.workspacePath,
-			branchName: prepared.branchName,
-			baseCommitSha: prepared.baseCommitSha,
-		};
-	}
-
-	const ready = await ensureSessionWorkspaceReady({
-		env: options.env,
-		sandboxId,
-		sessionId: options.session.id,
-		githubRepo: options.project.githubRepo,
-		installationId: options.project.githubInstallationId,
-		projectId: options.project.id,
-		userId: options.session.userId,
-		db: options.db,
-		existing: {
-			branchName: options.session.branchName,
-			baseCommitSha: options.session.baseCommitSha,
-			workspacePath: options.session.workspacePath,
-		},
-		lock: "assumeHeld",
-	});
-	return {
-		sandbox: getProjectSandbox(options.env, sandboxId),
-		sandboxId,
-		identity: null,
-		workspacePath: ready.workspacePath,
-		branchName: ready.branchName,
-		baseCommitSha: ready.baseCommitSha,
-	};
-}
-
 async function serveDedicatedReady(options: {
 	env: Env;
 	session: SessionRow;
@@ -799,10 +693,6 @@ async function prepareRuntimeOnce(options: {
 	authority: SandboxAuthority;
 	ensureReady: boolean;
 }): Promise<PreparedRuntime> {
-	if (isLegacySharedSandboxSession(options.session, options.project)) {
-		return serveLegacySession(options);
-	}
-
 	const existing = await loadExistingIdentity(
 		options.authority,
 		options.session,
@@ -977,26 +867,9 @@ export async function observeWorkspaceRuntime(options: {
 				return { project, state: mapIdentityState(identity.state) };
 			}
 		}
-		if (session && isLegacySharedSandboxSession(session, project)) {
-			const checked = await checkProjectSandbox({
-				db: options.db,
-				env: options.env,
-				project,
-			});
-			return { project: checked.project, state: checked.state };
-		}
 		if (session && project.status === "ready") {
 			return { project, state: "connected" };
 		}
-	}
-
-	if (project.sandboxId) {
-		const checked = await checkProjectSandbox({
-			db: options.db,
-			env: options.env,
-			project,
-		});
-		return { project: checked.project, state: checked.state };
 	}
 
 	if (project.status === "ready") {
@@ -1028,10 +901,7 @@ export async function withWorkspaceRuntimeLease<T>(
 		throw new WorkspaceRuntimeError("not_found", "Project not found.");
 	}
 	if (project.status !== "ready") {
-		throw new WorkspaceRuntimeError(
-			"not_ready",
-			"Project sandbox is not ready.",
-		);
+		throw new WorkspaceRuntimeError("not_ready", "Project is not ready.");
 	}
 
 	const nowMs = input.now?.() ?? Date.now();
@@ -1047,23 +917,19 @@ export async function withWorkspaceRuntimeLease<T>(
 		((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
 	const ensureReady = input.ensureReady !== false;
 	const lockMode = defaultLockMode(input.purpose, input.lock);
-	const dedicated = !isLegacySharedSandboxSession(session, project);
-
 	try {
-		if (dedicated) {
-			const slot = await acquireCapacitySlot({
-				db: input.db,
-				sessionId: session.id,
-				userId: input.userId,
-				identityId: session.sandboxIdentityId,
-				nowMs,
-			});
-			if (!slot) {
-				throw new WorkspaceRuntimeError(
-					"capacity_unavailable",
-					"Workspace capacity is unavailable.",
-				);
-			}
+		const slot = await acquireCapacitySlot({
+			db: input.db,
+			sessionId: session.id,
+			userId: input.userId,
+			identityId: session.sandboxIdentityId,
+			nowMs,
+		});
+		if (!slot) {
+			throw new WorkspaceRuntimeError(
+				"capacity_unavailable",
+				"Workspace capacity is unavailable.",
+			);
 		}
 
 		const prepared = await prepareRuntimeWithRetry({
@@ -1359,7 +1225,7 @@ async function executeWorkspaceWork(options: {
 		case "destruction": {
 			const preview = await import("#/lib/session-preview");
 			const bootstrap = await import("#/lib/sandbox-bootstrap");
-			await preview.deleteProjectWithPreviewFence({
+			await preview.deleteProjectRuntime({
 				db: options.db,
 				env: options.env,
 				projectId: options.work.projectId,
@@ -1545,7 +1411,6 @@ export async function continueWorkspaceFromArchive(options: {
 			status: "active",
 			branchName: null,
 			baseCommitSha: archived.baseCommitSha,
-			workspacePath: WORKSPACE_PATH,
 		})
 		.returning({ id: workspaceSessions.id });
 	if (!created) {

@@ -4,7 +4,7 @@
 
 Ditto is a web-based AI coding workspace for GitHub repositories. A user signs in with GitHub, imports an authorized repository, and works with a coding agent inside a Cloudflare Sandbox.
 
-Each workspace session has a conversation, a Git branch, and a worktree. The user can inspect agent activity, preview supported web applications, commit changes, push the session branch, and open a pull request.
+Each workspace session has a conversation, Git branch, isolated sandbox, and recovery lineage. The user can inspect agent activity, preview supported web applications, and commit changes. Branch push and pull-request creation remain unavailable until Ditto proves that brokered Git rejects non-fast-forward updates.
 
 Ditto currently requires a GitHub repository. The UI does not create a new repository or a project from an empty template. Terminal and code-browser tabs are visible but disabled. Pull requests are merged on GitHub.
 
@@ -15,7 +15,7 @@ Ditto serves two groups:
 - People who want guided, plain-language help while changing a web application.
 - Developers who want a browser-based coding agent without setting up the repository locally.
 
-Both groups need to know which project, conversation, model, branch, and runtime they are using. Agent work must remain inspectable.
+Both groups need to know which project, conversation, fixed model, branch, and runtime they are using. Agent work must remain inspectable.
 
 ## Product direction
 

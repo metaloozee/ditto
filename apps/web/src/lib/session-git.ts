@@ -1,3 +1,4 @@
+import { GIT_FETCH_CONTRACT_VERSION } from "#/lib/git-fetch-contract";
 import { SessionGitPushUnavailableError } from "#/lib/git-push-contract";
 import {
 	assertOutgoingGitRangeSafe,
@@ -10,10 +11,15 @@ import {
 	quoteGitHubExportShellArg,
 	redactGitHubExportOutput,
 } from "#/lib/github-export";
-import { validateGitBranchRefs } from "#/lib/privileged-git";
-import type { SandboxIdentityHandle } from "#/lib/sandbox-authority";
 import {
-	fetchPrimaryBranchFromGitHub,
+	fetchGitHubBranchIntoRepositoryBrokered,
+	validateGitBranchRefs,
+} from "#/lib/privileged-git";
+import type {
+	SandboxAuthority,
+	SandboxIdentityHandle,
+} from "#/lib/sandbox-authority";
+import {
 	getProjectSandbox,
 	installDependencies,
 } from "#/lib/sandbox-bootstrap";
@@ -22,6 +28,8 @@ import { withSessionWorkspaceLock } from "#/lib/session-workspace-lock";
 export { isSecretLikeGitPath } from "#/lib/git-secret-policy";
 
 const GIT_COMMAND_TIMEOUT_MS = 120_000;
+const SESSION_SYNC_FETCH_OPERATION_TYPE = "workspace_session_fetch";
+const SESSION_SYNC_FETCH_OPERATION_TTL_MS = 15 * 60 * 1000;
 
 /** Actionable message when the GitHub App lacks write access (push). */
 export const GITHUB_APP_PUSH_PERMISSION_MESSAGE =
@@ -64,7 +72,6 @@ export type SessionGitSession = {
 	baseCommitSha?: string | null;
 	workspacePath: string;
 	title?: string | null;
-	/** Present for dedicated session sandboxes; null/absent for legacy worktrees. */
 	sandboxIdentityId?: string | null;
 };
 
@@ -88,6 +95,7 @@ type SessionGitContext = {
 	 * Product push does not open `git_transport` while `GIT_PUSH_ENABLED` is false.
 	 */
 	identity?: SandboxIdentityHandle | null;
+	authority?: SandboxAuthority;
 };
 
 function resolveSessionGitSandbox(ctx: SessionGitContext): SessionGitSandbox {
@@ -667,14 +675,27 @@ async function syncSessionBranchUnlocked(
 		);
 	}
 
-	const primary = await fetchPrimaryBranchFromGitHub({
-		env: ctx.env,
-		sandboxId: ctx.sandboxId,
-		sandbox,
-		githubRepo: ctx.githubRepo,
-		installationId: ctx.installationId,
-		branchName: ctx.baseBranch,
-	});
+	if (!ctx.identity || !ctx.authority) {
+		throw new Error("Session sync requires current sandbox authority.");
+	}
+	const primary = await ctx.authority.withOperation(
+		{
+			identityId: ctx.identity.id,
+			family: "git_transport",
+			type: SESSION_SYNC_FETCH_OPERATION_TYPE,
+			contractVersion: GIT_FETCH_CONTRACT_VERSION,
+			repository: ctx.githubRepo,
+			allowedRefs: [`refs/heads/${ctx.baseBranch}`],
+			expiresAt: new Date(Date.now() + SESSION_SYNC_FETCH_OPERATION_TTL_MS),
+		},
+		async () =>
+			fetchGitHubBranchIntoRepositoryBrokered({
+				sandbox,
+				githubRepo: ctx.githubRepo,
+				branchName: ctx.baseBranch,
+				destinationCwd: cwd,
+			}),
+	);
 	const quotedBaseHead = quoteGitHubExportShellArg(primary.headSha);
 	const alreadyIntegrated = await sandbox.exec(
 		`git merge-base --is-ancestor ${quotedBaseHead} HEAD`,
@@ -708,7 +729,7 @@ async function syncSessionBranchUnlocked(
 		});
 		if (!abortResult.success) {
 			throw new Error(
-				"Sync failed and the conflicting merge could not be aborted. Resolve the session worktree manually.",
+				"Sync failed and the conflicting merge could not be aborted. Resolve the workspace manually.",
 			);
 		}
 		throw new SessionGitSyncPreconditionError(

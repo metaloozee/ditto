@@ -11,13 +11,6 @@ vi.mock("#/db", () => ({
 vi.mock("#/lib/sandbox-bootstrap", () => ({
 	getProjectSandbox: vi.fn(),
 }));
-vi.mock("#/lib/project-sandbox", () => ({
-	provisionProjectSandbox: vi.fn(),
-}));
-vi.mock("#/lib/session-worktree", () => ({
-	ensureSessionWorkspaceReady: vi.fn(),
-	prepareSessionWorktree: vi.fn(),
-}));
 vi.mock("#/lib/session-workspace-lock", () => ({
 	withSessionWorkspaceLock: vi.fn(),
 }));

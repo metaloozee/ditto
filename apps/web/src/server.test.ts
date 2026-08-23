@@ -157,7 +157,7 @@ describe("Sandbox subclass exports", () => {
 		expect(Sandbox.name).toBe("Sandbox");
 	});
 
-	it("enables HTTPS intercept without disabling legacy internet", () => {
+	it("routes all sandbox internet through the outbound broker", () => {
 		const constructed = new (
 			Sandbox as unknown as new () => {
 				enableInternet: boolean | undefined;
@@ -166,8 +166,7 @@ describe("Sandbox subclass exports", () => {
 			}
 		)();
 		expect(constructed.interceptHttps).toBe(true);
-		// Legacy project sandboxes keep direct internet until they set a catch-all.
-		expect(constructed.enableInternet).not.toBe(false);
+		expect(constructed.enableInternet).toBe(false);
 		expect(constructed.sleepAfter).toBe("10m");
 	});
 

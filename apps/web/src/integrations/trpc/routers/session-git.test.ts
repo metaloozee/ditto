@@ -149,7 +149,7 @@ function setupResolved() {
 		id: "sess-1",
 		branchName: "ditto/sess-1",
 		baseCommitSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-		workspacePath: "/workspace/.ditto/worktrees/sess-1",
+		workspacePath: "/workspace",
 		title: "Add billing",
 	});
 	resolveMocks.withWorkspaceRuntimeLease.mockImplementation(
@@ -157,7 +157,7 @@ function setupResolved() {
 			run({
 				sessionId: "sess-1",
 				purpose: "local_git_read",
-				workspacePath: "/workspace/.ditto/worktrees/sess-1",
+				workspacePath: "/workspace",
 				branchName: "ditto/sess-1",
 				baseCommitSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 				sandbox: { exec: vi.fn() },

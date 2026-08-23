@@ -38,7 +38,7 @@ import { ENV_VAR_KEY_DESCRIPTION, normalizeEnvVarKey } from "#/lib/env-vars";
 type SettingsProject = {
 	id: string;
 	name: string;
-	status: "provisioning" | "ready" | "failed";
+	status: "provisioning" | "ready" | "failed" | "deleting";
 };
 
 type ProjectSettingsDialogProps = {

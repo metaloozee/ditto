@@ -146,7 +146,6 @@ describe("runGitMetadata", () => {
 			provider: "opencode",
 			modelId: "deepseek-v4-flash-free",
 		});
-		delete process.env.DITTO_PI_CREDENTIAL;
 		delete process.env.OPENCODE_API_KEY;
 	});
 

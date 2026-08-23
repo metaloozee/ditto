@@ -154,7 +154,6 @@ describe("runAgent live controls", () => {
 			mocks.fakeResourceLoader,
 		);
 		delete process.env.OPENCODE_API_KEY;
-		delete process.env.DITTO_PI_CREDENTIAL;
 		delete process.env.DITTO_EXTENSION_PATH;
 	});
 

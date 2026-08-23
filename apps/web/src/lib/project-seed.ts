@@ -233,7 +233,6 @@ export async function buildProjectSeed(
 				userId: input.userId,
 				githubRepo: input.githubRepo,
 				githubInstallationId: input.installationId,
-				sandboxId: null,
 				status: "provisioning",
 				envVars: input.encryptedEnvVars,
 			})
@@ -342,7 +341,6 @@ export async function buildProjectSeed(
 			ownerId: input.projectId,
 			userId: input.userId,
 			generation: 0,
-			quiesce: false,
 		});
 
 		const [readySeed] = await input.db

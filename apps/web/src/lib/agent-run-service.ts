@@ -8,7 +8,6 @@ import {
 	workspaceRuntimeWork,
 	workspaceSessions,
 } from "#/db/schema";
-import { assertCredentialConfig } from "#/lib/account-provider-credentials";
 import { controlAgentRun } from "#/lib/agent-control-service";
 import { createDeltaBatcher } from "#/lib/agent-delta-batcher";
 import {
@@ -36,7 +35,6 @@ import {
 } from "#/lib/ditto-action-contract";
 import { OPENCODE_CONTRACT_VERSION } from "#/lib/open-code-contract";
 import { decryptEnvVars } from "#/lib/project-env-vars";
-import { persistProjectSandboxBackup } from "#/lib/project-sandbox";
 import { createSandboxAuthority } from "#/lib/sandbox-authority";
 import { redactSecrets } from "#/lib/secret-redaction";
 import { makeSessionTitleFromMessage } from "#/lib/workspace-policy";
@@ -45,7 +43,6 @@ import {
 	completeWork,
 	ensureWorkspaceRuntimeReady,
 	failWork,
-	isLegacySharedSandboxSession,
 	submitWorkspaceWork,
 	WorkspaceRuntimeError,
 	withWorkspaceRuntimeLease,
@@ -163,7 +160,6 @@ export type AgentRunContext = {
 	workspaceSession: OwnedActiveSession;
 	ensuredProject: typeof projects.$inferSelect;
 	sandboxState: string;
-	sessionWorkspacePath: string;
 	userMessageId: string;
 	assistantMessageId: string;
 	envVars: Awaited<ReturnType<typeof decryptEnvVars>>;
@@ -187,7 +183,6 @@ export type AgentRunDeps = {
 	runAgentInSandbox?: typeof runAgentInSandbox;
 	createAuthority?: typeof createSandboxAuthority;
 	controlAgentRun?: typeof controlAgentRun;
-	persistProjectSandboxBackup?: typeof persistProjectSandboxBackup;
 	recordMutationAndCheckpoint?: typeof recordMutationAndCheckpoint;
 	redactSecrets?: typeof redactSecrets;
 	prepareAssistantMessageStorage?: typeof prepareAssistantMessageStorage;
@@ -213,7 +208,6 @@ const defaultDeps: Required<AgentRunDeps> = {
 	runAgentInSandbox,
 	createAuthority: createSandboxAuthority,
 	controlAgentRun,
-	persistProjectSandboxBackup,
 	recordMutationAndCheckpoint,
 	redactSecrets,
 	prepareAssistantMessageStorage,
@@ -239,13 +233,7 @@ export async function prepareAgentRun(options: {
 	const deps = mergeDeps(options.deps);
 	const { db, env, userId, input } = options;
 
-	try {
-		assertCredentialConfig({
-			AI_CREDENTIALS_ENCRYPTION_KEY: env.AI_CREDENTIALS_ENCRYPTION_KEY,
-			BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET,
-			OPENCODE_API_KEY: env.OPENCODE_API_KEY,
-		});
-	} catch {
+	if (!env.OPENCODE_API_KEY?.trim()) {
 		return {
 			kind: "error",
 			status: 500,
@@ -451,7 +439,6 @@ export async function prepareAgentRun(options: {
 		workspaceSession,
 		ensuredProject,
 		sandboxState,
-		sessionWorkspacePath: workspaceSession.workspacePath,
 		userMessageId,
 		assistantMessageId,
 		envVars,
@@ -564,7 +551,6 @@ export async function loadAgentRunContextFromWork(options: {
 		workspaceSession: session,
 		ensuredProject: project,
 		sandboxState: "connected",
-		sessionWorkspacePath: session.workspacePath,
 		userMessageId: work.userMessageId,
 		assistantMessageId: work.assistantMessageId,
 		envVars,
@@ -985,35 +971,20 @@ export async function executeAgentRun(options: {
 
 		let backupError: string | undefined;
 		try {
-			const legacy = isLegacySharedSandboxSession(
-				context.workspaceSession,
-				context.ensuredProject,
-			);
-			if (legacy) {
-				if (context.ensuredProject.sandboxId) {
-					const backupResult = await deps.persistProjectSandboxBackup({
-						db: context.db,
-						env: context.env,
-						project: context.ensuredProject,
-					});
-					context.ensuredProject = backupResult.project;
-				}
-			} else {
-				const recovery = await deps.recordMutationAndCheckpoint({
-					db: context.db,
-					env: context.env,
-					userId: context.userId,
-					projectId: context.projectId,
-					sessionId: context.sessionId,
-				});
-				if (recovery.state === "degraded" || recovery.state === "failed") {
-					backupError = redact(
-						recovery.reasonCode
-							? `Workspace recovery ${recovery.state}: ${recovery.reasonCode}`
-							: `Workspace recovery ${recovery.state}.`,
-						context.secretValues,
-					);
-				}
+			const recovery = await deps.recordMutationAndCheckpoint({
+				db: context.db,
+				env: context.env,
+				userId: context.userId,
+				projectId: context.projectId,
+				sessionId: context.sessionId,
+			});
+			if (recovery.state === "degraded" || recovery.state === "failed") {
+				backupError = redact(
+					recovery.reasonCode
+						? `Workspace recovery ${recovery.state}: ${recovery.reasonCode}`
+						: `Workspace recovery ${recovery.state}.`,
+					context.secretValues,
+				);
 			}
 		} catch (error) {
 			backupError = redact(

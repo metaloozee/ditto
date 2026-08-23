@@ -13,7 +13,7 @@ const {
 	SessionGitMetadataError,
 } = await import("./session-git-metadata");
 
-const WORKTREE = "/workspace/.ditto/worktrees/sess-1";
+const WORKTREE = "/workspace";
 
 function makeSandbox() {
 	const exec = vi.fn();

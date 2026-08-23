@@ -11,6 +11,7 @@ import { SessionGitPushUnavailableError } from "#/lib/git-push-contract";
 import { GitSecretPolicyError } from "#/lib/git-secret-policy";
 import { authorizeGitHubRepositoryAccess } from "#/lib/github-authorization";
 import { decryptEnvVars } from "#/lib/project-env-vars";
+import { createSandboxAuthority } from "#/lib/sandbox-authority";
 import {
 	commitSessionChanges,
 	GITHUB_APP_PR_PERMISSION_MESSAGE,
@@ -127,8 +128,6 @@ async function resolveSessionGitAuthContext(options: {
 		project: {
 			id: project.id,
 			userId: project.userId,
-			sandboxId: project.sandboxId,
-			status: project.status,
 		},
 		githubRepo: project.githubRepo,
 		installationId: project.githubInstallationId,
@@ -424,6 +423,8 @@ export const sessionGitRouter = createTRPCRouter({
 							githubRepo: resolved.githubRepo,
 							session: resolved.session,
 							baseBranch,
+							identity: resolved.identity,
+							authority: createSandboxAuthority(resolved.db),
 						}),
 				});
 

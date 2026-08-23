@@ -6,11 +6,7 @@ import {
 	text,
 	uniqueIndex,
 } from "drizzle-orm/sqlite-core";
-import {
-	PROJECT_MEMORY_PATH,
-	WORKSPACE_PATH,
-	WORKSPACE_SESSION_STATUSES,
-} from "#/lib/workspace-policy";
+import { WORKSPACE_SESSION_STATUSES } from "#/lib/workspace-policy";
 
 export const todos = sqliteTable("todos", {
 	id: integer({ mode: "number" }).primaryKey({
@@ -45,28 +41,12 @@ export const projects = sqliteTable(
 			.references(() => user.id, { onDelete: "cascade" }),
 		githubRepo: text("githubRepo"),
 		githubInstallationId: integer("githubInstallationId"),
-		sandboxId: text("sandboxId"),
-		sandboxBackup: text("sandboxBackup"),
-		sandboxBackupCreatedAt: integer("sandboxBackupCreatedAt", {
-			mode: "timestamp",
-		}),
-		sandboxBackupRequestedGeneration: integer(
-			"sandboxBackupRequestedGeneration",
-		)
-			.notNull()
-			.default(0),
-		sandboxBackupStoredGeneration: integer("sandboxBackupStoredGeneration")
-			.notNull()
-			.default(0),
 		status: text("status", {
-			enum: ["provisioning", "ready", "failed"],
+			enum: ["provisioning", "ready", "failed", "deleting"],
 		})
 			.notNull()
 			.default("provisioning"),
 		envVars: text("envVars"),
-		previewLockToken: text("previewLockToken"),
-		previewLockExpiresAt: integer("previewLockExpiresAt"),
-		deletingAt: integer("deletingAt"),
 		createdAt: integer("created_at", { mode: "timestamp" }).default(
 			sql`(unixepoch())`,
 		),
@@ -90,21 +70,12 @@ export const workspaceSessions = sqliteTable(
 		title: text("title"),
 		branchName: text("branchName"),
 		baseCommitSha: text("baseCommitSha"),
-		workspacePath: text("workspacePath").notNull().default(WORKSPACE_PATH),
-		memoryPath: text("memoryPath").notNull().default(PROJECT_MEMORY_PATH),
 		status: text("status", { enum: [...WORKSPACE_SESSION_STATUSES] })
 			.notNull()
 			.default("active"),
-		previewPort: integer("previewPort"),
-		/**
-		 * Set while the user wants preview running on the dedicated-session
-		 * path. Not a URL or token. Dedicated sessions leave previewPort null.
-		 */
+		/** Set while the user wants preview running. Not a URL or token. */
 		previewStartedAt: integer("previewStartedAt", { mode: "timestamp" }),
-		/**
-		 * Nullable for legacy shared-sandbox sessions. No FK: identity
-		 * tombstones are permanent and never cascade-deleted.
-		 */
+		/** No FK: identity tombstones are permanent and never cascade-deleted. */
 		sandboxIdentityId: text("sandboxIdentityId"),
 		runtimeLeaseId: text("runtimeLeaseId"),
 		runtimeLeaseExpiresAt: integer("runtimeLeaseExpiresAt", {
@@ -123,10 +94,6 @@ export const workspaceSessions = sqliteTable(
 		index("workspace_sessions_userId_idx").on(table.userId),
 		index("workspace_sessions_sandboxIdentityId_idx").on(
 			table.sandboxIdentityId,
-		),
-		uniqueIndex("workspace_sessions_project_preview_port_uidx").on(
-			table.projectId,
-			table.previewPort,
 		),
 	],
 );
@@ -225,44 +192,7 @@ export const verification = sqliteTable(
 	(table) => [index("verification_identifier_idx").on(table.identifier)],
 );
 
-/** Leftover account-provider rows. Not a current product path; pending removal. */
-export const aiProviderCredentials = sqliteTable(
-	"ai_provider_credentials",
-	{
-		id: text("id").primaryKey(),
-		userId: text("userId")
-			.notNull()
-			.references(() => user.id, { onDelete: "cascade" }),
-		providerId: text("providerId").notNull(),
-		authType: text("authType", { enum: ["api_key", "oauth"] }).notNull(),
-		encryptedCredential: text("encryptedCredential").notNull(),
-		/** Safe model projection JSON only — never headers/endpoints/auth. */
-		modelCatalog: text("modelCatalog").notNull(),
-		status: text("status", { enum: ["connected", "needs_relogin"] })
-			.notNull()
-			.default("connected"),
-		lastErrorCode: text("lastErrorCode"),
-		version: integer("version").notNull().default(1),
-		leaseId: text("leaseId"),
-		leaseExpiresAt: integer("leaseExpiresAt", { mode: "timestamp" }),
-		createdAt: integer("created_at", { mode: "timestamp" })
-			.notNull()
-			.default(sql`(unixepoch())`),
-		updatedAt: integer("updated_at", { mode: "timestamp" })
-			.notNull()
-			.default(sql`(unixepoch())`),
-	},
-	(table) => [
-		uniqueIndex("ai_provider_credentials_user_provider_uidx").on(
-			table.userId,
-			table.providerId,
-		),
-		index("ai_provider_credentials_userId_idx").on(table.userId),
-	],
-);
-
 export const ARCHIVE_OWNER_KINDS = [
-	"legacy_project",
 	"project_seed",
 	"workspace_recovery",
 ] as const;
@@ -591,31 +521,4 @@ export const workspaceCapacityLeases = sqliteTable(
 		),
 		index("workspace_capacity_leases_expiresAt_idx").on(table.expiresAt),
 	],
-);
-
-/** Leftover provider-login attempt rows. Not a current product path; pending removal. */
-export const providerAuthAttempts = sqliteTable(
-	"provider_auth_attempts",
-	{
-		id: text("id").primaryKey(),
-		userId: text("userId")
-			.notNull()
-			.references(() => user.id, { onDelete: "cascade" }),
-		providerId: text("providerId").notNull(),
-		authType: text("authType", { enum: ["api_key", "oauth"] }).notNull(),
-		authSandboxId: text("authSandboxId"),
-		status: text("status", {
-			enum: ["pending", "complete", "failed", "cancelled"],
-		})
-			.notNull()
-			.default("pending"),
-		expiresAt: integer("expiresAt", { mode: "timestamp" }).notNull(),
-		createdAt: integer("created_at", { mode: "timestamp" })
-			.notNull()
-			.default(sql`(unixepoch())`),
-		updatedAt: integer("updated_at", { mode: "timestamp" })
-			.notNull()
-			.default(sql`(unixepoch())`),
-	},
-	(table) => [index("provider_auth_attempts_userId_idx").on(table.userId)],
 );

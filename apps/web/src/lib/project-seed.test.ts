@@ -138,16 +138,8 @@ function makeDb() {
 							githubRepo: (value.githubRepo as string | null) ?? null,
 							githubInstallationId:
 								(value.githubInstallationId as number | null) ?? null,
-							sandboxId: (value.sandboxId as string | null) ?? null,
-							sandboxBackup: null,
-							sandboxBackupCreatedAt: null,
-							sandboxBackupRequestedGeneration: 0,
-							sandboxBackupStoredGeneration: 0,
 							status: value.status as ProjectRow["status"],
 							envVars: (value.envVars as string | null) ?? null,
-							previewLockToken: null,
-							previewLockExpiresAt: null,
-							deletingAt: null,
 							createdAt: new Date(),
 							updatedAt: new Date(),
 						} satisfies ProjectRow;
@@ -440,7 +432,7 @@ describe("buildProjectSeed", () => {
 			encryptedEnvVars: null,
 		});
 		expect(result.project.status).toBe("ready");
-		expect(result.project.sandboxId).toBeNull();
+		expect(result.project).not.toHaveProperty("sandboxId");
 		const seed = [...store.seedRows.values()][0];
 		expect(seed?.buildState).toBe("ready");
 		expect(seed?.archiveId).toBe("archive-1");

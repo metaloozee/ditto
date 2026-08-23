@@ -10,7 +10,7 @@ import {
 	createSandboxAuthority,
 	SandboxAuthorityError,
 } from "#/lib/sandbox-authority";
-import { SESSION_WORKTREE_ROOT, WORKSPACE_PATH } from "#/lib/workspace-policy";
+import { WORKSPACE_PATH } from "#/lib/workspace-policy";
 
 const getInstallationOctokitMock = vi.hoisted(() => vi.fn());
 const getProjectSandboxMock = vi.hoisted(() => vi.fn());
@@ -18,9 +18,6 @@ const configureDittoGitIdentityMock = vi.hoisted(() => vi.fn());
 const fetchGitHubBranchBrokeredMock = vi.hoisted(() => vi.fn());
 const restoreArchiveMock = vi.hoisted(() => vi.fn());
 const decryptEnvVarsMock = vi.hoisted(() => vi.fn());
-const checkProjectSandboxMock = vi.hoisted(() => vi.fn());
-const ensureSessionWorkspaceReadyMock = vi.hoisted(() => vi.fn());
-const prepareSessionWorkspaceIfPresentMock = vi.hoisted(() => vi.fn());
 
 vi.mock("#/lib/github-app", () => ({
 	getGitHubApp: () => ({
@@ -54,15 +51,6 @@ vi.mock("#/lib/workspace-recovery", () => ({
 
 vi.mock("#/lib/project-env-vars", () => ({
 	decryptEnvVars: decryptEnvVarsMock,
-}));
-
-vi.mock("#/lib/project-sandbox", () => ({
-	checkProjectSandbox: checkProjectSandboxMock,
-}));
-
-vi.mock("#/lib/session-worktree", () => ({
-	ensureSessionWorkspaceReady: ensureSessionWorkspaceReadyMock,
-	prepareSessionWorkspaceIfPresent: prepareSessionWorkspaceIfPresentMock,
 }));
 
 vi.mock("#/lib/session-workspace-lock", () => ({
@@ -348,10 +336,6 @@ function makeStore() {
 											"baseCommitSha" in patch
 												? (patch.baseCommitSha as string | null)
 												: row.baseCommitSha,
-										workspacePath:
-											typeof patch.workspacePath === "string"
-												? patch.workspacePath
-												: row.workspacePath,
 										updatedAt: new Date(),
 									};
 									sessionRows.set(row.id, next);
@@ -449,16 +433,8 @@ function seedProject(
 		userId: "user-1",
 		githubRepo: "acme/app",
 		githubInstallationId: 7,
-		sandboxId: null,
-		sandboxBackup: null,
-		sandboxBackupCreatedAt: null,
-		sandboxBackupRequestedGeneration: 0,
-		sandboxBackupStoredGeneration: 0,
 		status: "ready",
 		envVars: "cipher",
-		previewLockToken: null,
-		previewLockExpiresAt: null,
-		deletingAt: null,
 		createdAt: new Date(),
 		updatedAt: new Date(),
 		...overrides,
@@ -490,10 +466,7 @@ function seedSession(
 		title: "Chat",
 		branchName: null,
 		baseCommitSha: null,
-		workspacePath: WORKSPACE_PATH,
-		memoryPath: "/workspace/.ditto/project-memory.md",
 		status: "active",
-		previewPort: null,
 		sandboxIdentityId: null,
 		runtimeLeaseId: null,
 		runtimeLeaseExpiresAt: null,
@@ -744,7 +717,6 @@ describe("WorkspaceRuntime", () => {
 		const lease = await open({ sessionId: "sess-1" });
 		expect(lease.baseCommitSha).toBe(HEAD_SHA);
 		expect(store.sessionRows.get("sess-1")?.baseCommitSha).toBe(HEAD_SHA);
-		expect(store.sessionRows.get("sess-1")?.workspacePath).toBe(WORKSPACE_PATH);
 		expect(fetchGitHubBranchBrokeredMock).toHaveBeenCalledWith(
 			expect.objectContaining({
 				githubRepo: "acme/app",
@@ -808,29 +780,6 @@ describe("WorkspaceRuntime", () => {
 		expect(restore.projectEnv).toBeNull();
 	});
 
-	it("serves legacy worktrees without creating a session identity", async () => {
-		seedProject(store, { sandboxId: "project-sandbox" });
-		seedSession(store, {
-			id: "sess-legacy",
-			branchName: "ditto/session-legacy",
-			baseCommitSha: "legacy-sha",
-			workspacePath: `${SESSION_WORKTREE_ROOT}/sess-legacy`,
-		});
-		ensureSessionWorkspaceReadyMock.mockResolvedValue({
-			branchName: "ditto/session-legacy",
-			baseCommitSha: "legacy-sha",
-			workspacePath: `${SESSION_WORKTREE_ROOT}/sess-legacy`,
-		});
-
-		const lease = await open({ sessionId: "sess-legacy", purpose: "preview" });
-		expect(lease.workspacePath).toBe(`${SESSION_WORKTREE_ROOT}/sess-legacy`);
-		expect(lease.baseCommitSha).toBe("legacy-sha");
-		expect(lease.matchesSandboxClaim("project-sandbox")).toBe(true);
-		expect(store.identityRows.size).toBe(0);
-		expect(restoreArchiveMock).not.toHaveBeenCalled();
-		expect(ensureSessionWorkspaceReadyMock).toHaveBeenCalled();
-	});
-
 	it("restores dedicated sessions from recovery archives instead of the seed", async () => {
 		seedProject(store);
 		seedSession(store, {
@@ -879,7 +828,7 @@ describe("WorkspaceRuntime", () => {
 		});
 	});
 
-	it("observes seed-ready projects as connected without a project sandbox", async () => {
+	it("observes seed-ready projects as connected before first session runtime", async () => {
 		seedProject(store);
 		const observed = await observeWorkspaceRuntime({
 			env,
@@ -888,7 +837,6 @@ describe("WorkspaceRuntime", () => {
 			projectId: "proj-1",
 		});
 		expect(observed.state).toBe("connected");
-		expect(checkProjectSandboxMock).not.toHaveBeenCalled();
 	});
 
 	it("observes an unprovisioned session identity as provisioning", async () => {

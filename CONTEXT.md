@@ -12,31 +12,15 @@ A person signed in to Ditto. A user owns projects, workspace sessions, and messa
 
 ### Project
 
-A GitHub repository registered with Ditto for one user. A project groups its workspace sessions, environment values, Git export permissions, and an immutable project seed. New GitHub imports own a project seed and no persistent sandbox. Legacy projects may still own a shared project sandbox until that path is removed.
+A GitHub repository registered with Ditto for one user. A project groups its workspace sessions, environment values, Git export permissions, and one immutable project seed. A project does not own a live runtime.
 
 ### Project seed
 
-An immutable archive of a repository checkout prepared for later workspace restore. A project seed records the source commit and compatibility inputs. It is not a live workspace and is never derived from a mutable workspace-session backup.
+An immutable archive of a repository checkout prepared for workspace restore. A project seed records the source commit and compatibility inputs. It is not a live workspace and is never derived from mutable workspace-session recovery.
 
 ### Project-seed builder
 
-A temporary sandbox used only to fetch an owned repository through the Worker, prepare the seed tree, and stream the seed archive. The builder is destroyed and permanently retired after seed creation. It receives no model access and no project environment values.
-
-### Project workspace
-
-The live project files available to Ditto. On the legacy path, the workspace contains the primary repository checkout and the worktrees owned by workspace sessions.
-
-### Project sandbox
-
-The legacy runtime that hosts one shared project workspace. All workspace sessions in a project currently share the project sandbox while using separate Git worktrees. New imports do not create a project sandbox.
-
-### Project backup
-
-A recoverable snapshot of a project workspace. A backup restores work after the live workspace stops. It is not a live workspace and does not replace durable product records. Legacy projects may still own project backups for shared sandboxes.
-
-### Workspace session recovery
-
-The recovery lineage owned by one workspace session: mutation generation, current and previous successful archives, pending checkpoint state, and recovery health. Dedicated session sandboxes checkpoint through this lineage. Legacy shared-sandbox sessions keep project backups instead.
+A temporary sandbox used only to fetch an owned repository through the Worker, prepare the seed tree, and stream the seed archive. The builder is destroyed and permanently retired after seed creation. It receives no model access or project environment values.
 
 ### Project environment value
 
@@ -60,9 +44,13 @@ A time-bounded Worker-owned window that authorizes one contract family for a san
 
 ### Workspace session
 
-A user's conversation and line of work within one project. A workspace session owns one chat thread, one branch, and one runtime. On the new path that runtime is a dedicated sandbox whose `/workspace` checkout holds the session branch. Legacy sessions may still share a project sandbox and use Git worktrees until that path is removed. An archived workspace session remains part of history but cannot receive new work.
+A user's conversation and line of work within one project. A workspace session owns one chat thread, branch, sandbox runtime, and recovery lineage. Its sandbox has a `/workspace` checkout for the session branch. An archived workspace session remains part of history but cannot receive new work.
 
 Use "workspace session" in full. "Session" alone is ambiguous because Ditto also has auth sessions and agent runtime sessions.
+
+### Workspace session recovery
+
+The recovery lineage owned by one workspace session: mutation generation, current and previous successful archives, pending checkpoint state, and recovery health.
 
 ### Message
 
@@ -74,7 +62,7 @@ One active execution of the coding agent for a workspace session. An agent run c
 
 ### Runtime work
 
-A durable, serializable unit of workspace-session work (agent run, Git mutation, preview start, recovery retry, archive, or destruction). Callers submit an intent and receive a receipt. The first user message and pending assistant are stored before the work is queued or started.
+A durable, serializable unit of workspace-session work, such as an agent run, Git mutation, preview start, recovery retry, archive, or destruction. Callers submit an intent and receive a receipt. The first user message and pending assistant are stored before the work is queued or started.
 
 ### Running slot
 
@@ -88,15 +76,7 @@ A structured update produced during an agent run. Agent events describe text, to
 
 A temporary public view of the application running from one workspace session. The preview belongs to that session's checkout and does not publish the project.
 
-## Models and credentials
-
-### Provider credential
-
-Leftover D1 records in `ai_provider_credentials`. Account-provider connections are not a current product feature. These rows are pending removal.
-
-### Provider model catalog
-
-Leftover catalog JSON stored beside those credential rows. Not a current product feature; pending removal.
+## Models
 
 ### Thinking level
 
@@ -110,24 +90,19 @@ The Git branch owned by a workspace session. Ditto creates the branch from the p
 
 ### Git export
 
-The flow that turns session work into a commit, pushed branch, and optional pull request. UI actions and agent tools use the same ownership and secret policies.
+The flow that turns session work into a commit, pushed branch, and optional pull request. UI actions and agent tools use the same ownership and secret policies. Product push remains disabled until non-fast-forward rejection is proved.
 
 ## Relationships
 
 ```text
 User
 └── Project
-    ├── Project seed (new imports; immutable)
-    ├── Project sandbox (legacy shared runtime)
-    │   └── Project workspace
-    │       ├── Primary repository checkout
-    │       └── Workspace session worktrees
-    ├── Project backup (legacy)
+    ├── Project seed (immutable)
     └── Workspace session
         ├── Messages
         ├── Agent runs
         ├── Session branch
-        ├── Session sandbox (`/workspace` checkout) or legacy worktree
-        ├── Session recovery lineage (dedicated sandboxes)
+        ├── Session sandbox (`/workspace` checkout)
+        ├── Session recovery lineage
         └── Session preview
 ```

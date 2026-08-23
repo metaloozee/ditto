@@ -10,8 +10,7 @@ import { handleOutbound } from "#/lib/sandbox-egress-broker";
 const PREVIEW_LAST_TRAFFIC_STORAGE_KEY = "ditto.previewLastTrafficAt";
 
 export class Sandbox extends BaseSandbox {
-	// Leave internet enabled for legacy project sandboxes that never call
-	// setOutboundHandler. Builders attach dittoCatchAll at runtime instead.
+	enableInternet = false;
 	interceptHttps = true;
 	sleepAfter = "10m";
 

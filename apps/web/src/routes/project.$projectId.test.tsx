@@ -468,7 +468,7 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 		expect(provisionMutateAsyncMock).not.toHaveBeenCalled();
 		expect(toastAddMock).not.toHaveBeenCalled();
 		expect(screen.getByRole("status").textContent).toMatch(
-			/Preparing project sandbox/i,
+			/Preparing workspace/i,
 		);
 		expect(screen.getByTestId("disabled-reason").textContent).toBe(
 			"Project sandbox is being provisioned.",
@@ -509,7 +509,7 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 		// No success toast yet; blue bar is up.
 		expect(toastAddMock).not.toHaveBeenCalled();
 		expect(screen.getByRole("status").textContent).toMatch(
-			/Preparing project sandbox/i,
+			/Preparing workspace/i,
 		);
 		expect(screen.getByTestId("disabled-reason").textContent).toBe(
 			"Project sandbox is being provisioned.",
@@ -742,7 +742,7 @@ describe("ProjectWorkspacePage readiness coordination", () => {
 		});
 
 		expect(screen.getByRole("status").textContent).toMatch(
-			/Preparing project sandbox/i,
+			/Preparing workspace/i,
 		);
 		expect(toastAddMock).not.toHaveBeenCalled();
 

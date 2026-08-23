@@ -41,10 +41,6 @@ export type ValidatedGitBranchRefs = {
 	destinationFetchRefspecFrom(sha: string): string;
 };
 
-export type MintInstallationToken = () => Promise<string>;
-
-type SecretBag = { current: readonly string[] };
-
 const LAUNCHER_SOURCE = `"use strict";
 const { spawnSync } = require("node:child_process");
 const gitBin = process.env.DITTO_PRIVILEGED_GIT_BIN;
@@ -119,28 +115,6 @@ function assertGithubRepoSlug(githubRepo: string): void {
 	}
 }
 
-function encodeBasicAuthHeader(token: string): {
-	rawUserPass: string;
-	encoded: string;
-	header: string;
-} {
-	const rawUserPass = `x-access-token:${token}`;
-	const encoded = btoa(rawUserPass);
-	return {
-		rawUserPass,
-		encoded,
-		header: `Authorization: Basic ${encoded}`,
-	};
-}
-
-/** Secrets that must never appear in errors, command strings, or logs. */
-export function buildCredentialRedactionSecrets(
-	token: string,
-): readonly string[] {
-	const { rawUserPass, encoded, header } = encodeBasicAuthHeader(token);
-	return [token, rawUserPass, encoded, header];
-}
-
 function buildClosedGitChildEnvBase(homeDir: string): Record<string, string> {
 	const emptyConfig = `${homeDir}/.gitconfig-empty`;
 	return {
@@ -155,44 +129,6 @@ function buildClosedGitChildEnvBase(homeDir: string): Record<string, string> {
 		GIT_TRACE: "0",
 		GIT_TRACE_SETUP: "0",
 		GIT_CURL_VERBOSE: "0",
-	};
-}
-
-/**
- * Exact Git child environment for the token-bearing network command.
- * Does not merge any inherited process environment.
- */
-export function buildPrivilegedGitChildEnv(options: {
-	token: string;
-	homeDir: string;
-	/** Inherited env snapshot used only to prove sentinels are dropped in tests. */
-	inheritedEnv?: Record<string, string | undefined>;
-}): Record<string, string> {
-	// inheritedEnv is intentionally unread — callers must not spread it in.
-	void options.inheritedEnv;
-
-	const homeDir = options.homeDir;
-	const { header } = encodeBasicAuthHeader(options.token);
-	const base = buildClosedGitChildEnvBase(homeDir);
-	const hooksPath = `${homeDir}/hooks-disabled`;
-
-	return {
-		...base,
-		GIT_CONFIG_COUNT: "7",
-		GIT_CONFIG_KEY_0: "http.https://github.com/.extraHeader",
-		GIT_CONFIG_VALUE_0: header,
-		GIT_CONFIG_KEY_1: "protocol.allow",
-		GIT_CONFIG_VALUE_1: "never",
-		GIT_CONFIG_KEY_2: "protocol.https.allow",
-		GIT_CONFIG_VALUE_2: "always",
-		GIT_CONFIG_KEY_3: "core.hooksPath",
-		GIT_CONFIG_VALUE_3: hooksPath,
-		GIT_CONFIG_KEY_4: "credential.helper",
-		GIT_CONFIG_VALUE_4: "",
-		GIT_CONFIG_KEY_5: "http.followRedirects",
-		GIT_CONFIG_VALUE_5: "false",
-		GIT_CONFIG_KEY_6: "core.askPass",
-		GIT_CONFIG_VALUE_6: "",
 	};
 }
 
@@ -451,7 +387,6 @@ async function initTempBareRepo(
 
 async function withTempBareRepo<T>(
 	sandbox: PrivilegedGitSandbox,
-	secrets: SecretBag,
 	run: (tempDir: string, launcherPath: string) => Promise<T>,
 ): Promise<T> {
 	const tempDir = newTempDir();
@@ -468,7 +403,7 @@ async function withTempBareRepo<T>(
 
 	let cleanupError: unknown;
 	try {
-		await removeTempDir(sandbox, tempDir, secrets.current);
+		await removeTempDir(sandbox, tempDir, []);
 	} catch (error) {
 		cleanupError = error;
 	}
@@ -481,7 +416,7 @@ async function withTempBareRepo<T>(
 					: String(cleanupError);
 			console.error(
 				"privileged-git temp cleanup failed after primary error:",
-				redactGitHubExportOutput(cleanupMessage, secrets.current),
+				redactGitHubExportOutput(cleanupMessage, []),
 			);
 		}
 		throw primaryError;
@@ -496,64 +431,12 @@ async function withTempBareRepo<T>(
 			formatPrivilegedGitError(
 				"Failed to clean up privileged git temp directory",
 				cleanupMessage,
-				secrets.current,
+				[],
 			),
 		);
 	}
 
 	return value as T;
-}
-
-async function runIsolatedNetworkGit(
-	sandbox: PrivilegedGitSandbox,
-	options: {
-		tempDir: string;
-		launcherPath: string;
-		token: string;
-		gitArgs: string[];
-		errorPrefix: string;
-	},
-): Promise<void> {
-	assertTrustedBinPath(PRIVILEGED_GIT_BIN, "git");
-	assertTrustedBinPath(PRIVILEGED_NODE_BIN, "node");
-
-	const homeDir = `${options.tempDir}/home`;
-	const secrets = buildCredentialRedactionSecrets(options.token);
-	const childEnv = buildPrivilegedGitChildEnv({
-		token: options.token,
-		homeDir,
-	});
-
-	// Command string must never include the token or auth material.
-	const command = [
-		quoteGitHubExportShellArg(PRIVILEGED_NODE_BIN),
-		quoteGitHubExportShellArg(options.launcherPath),
-	].join(" ");
-
-	const result = await sandbox.exec(command, {
-		cwd: options.tempDir,
-		timeout: PRIVILEGED_GIT_TIMEOUT_MS,
-		env: {
-			DITTO_PRIVILEGED_GIT_BIN: PRIVILEGED_GIT_BIN,
-			DITTO_PRIVILEGED_GIT_ARGS: JSON.stringify(options.gitArgs),
-			DITTO_PRIVILEGED_GIT_CHILD_ENV: JSON.stringify(childEnv),
-			DITTO_PRIVILEGED_GIT_CWD: options.tempDir,
-		},
-	});
-
-	if (!result.success) {
-		const output = [result.stderr.trim(), result.stdout.trim()]
-			.filter(Boolean)
-			.join("\n");
-		throw new Error(
-			formatPrivilegedGitError(
-				options.errorPrefix,
-				output,
-				secrets,
-				result.exitCode,
-			),
-		);
-	}
 }
 
 async function runBrokeredNetworkGit(
@@ -621,11 +504,9 @@ export async function fetchGitHubBranchBrokered(options: {
 	assertAbsoluteGitPath(options.destinationCwd, "Destination");
 	const refs = await validateGitBranchRefs(options.sandbox, options.branchName);
 	const publicUrl = publicGitHubRepoUrl(options.githubRepo);
-	const secrets: SecretBag = { current: [] };
 
 	const headSha = await withTempBareRepo(
 		options.sandbox,
-		secrets,
 		async (tempDir, launcherPath) => {
 			await runBrokeredNetworkGit(options.sandbox, {
 				tempDir,
@@ -709,55 +590,39 @@ export async function fetchGitHubBranchBrokered(options: {
 	};
 }
 
-/**
- * Fetch one branch over HTTPS into a fresh temp bare repo, then copy the exact
- * SHA into the destination repository's remote-tracking ref without credentials.
- */
-export async function fetchGitHubBranchIsolated(options: {
+/** Fetch one branch through the broker into an existing repository. */
+export async function fetchGitHubBranchIntoRepositoryBrokered(options: {
 	sandbox: PrivilegedGitSandbox;
 	githubRepo: string;
 	branchName: string;
 	destinationCwd: string;
-	mintToken: MintInstallationToken;
 }): Promise<{
 	branchName: string;
 	headSha: string;
 	refs: ValidatedGitBranchRefs;
 }> {
 	assertGithubRepoSlug(options.githubRepo);
+	assertAbsoluteGitPath(options.destinationCwd, "Destination");
 	const refs = await validateGitBranchRefs(options.sandbox, options.branchName);
 	const publicUrl = publicGitHubRepoUrl(options.githubRepo);
-	const secrets: SecretBag = { current: [] };
 
 	const headSha = await withTempBareRepo(
 		options.sandbox,
-		secrets,
 		async (tempDir, launcherPath) => {
-			const token = await options.mintToken();
-			secrets.current = buildCredentialRedactionSecrets(token);
-
-			await runIsolatedNetworkGit(options.sandbox, {
+			await runBrokeredNetworkGit(options.sandbox, {
 				tempDir,
 				launcherPath,
-				token,
 				gitArgs: ["fetch", "--no-tags", publicUrl, refs.isolatedFetchRefspec],
 				errorPrefix: "Failed to fetch branch from GitHub",
 			});
-
 			const isolatedSha = await readStdoutOrThrow(
 				options.sandbox,
 				`git --git-dir=${quoteGitHubExportShellArg(tempDir)} rev-parse ${quoteGitHubExportShellArg(TEMP_REF)}`,
-				{
-					errorPrefix: "Failed to resolve fetched commit",
-					secrets: secrets.current,
-				},
+				{ errorPrefix: "Failed to resolve fetched commit" },
 			);
 			if (!/^[0-9a-f]{40}$/i.test(isolatedSha)) {
 				throw new Error("Fetched commit SHA is malformed.");
 			}
-
-			// Local transfer: no credential environment.
-			const destRefspec = refs.destinationFetchRefspecFrom(isolatedSha);
 			await execOrThrow(
 				options.sandbox,
 				[
@@ -765,39 +630,32 @@ export async function fetchGitHubBranchIsolated(options: {
 					"fetch",
 					"--no-tags",
 					quoteGitHubExportShellArg(tempDir),
-					quoteGitHubExportShellArg(destRefspec),
+					quoteGitHubExportShellArg(
+						refs.destinationFetchRefspecFrom(isolatedSha),
+					),
 				].join(" "),
 				{
 					cwd: options.destinationCwd,
 					errorPrefix: "Failed to import fetched commit into workspace",
-					secrets: secrets.current,
 				},
 			);
-
-			const destSha = await readStdoutOrThrow(
+			const destinationSha = await readStdoutOrThrow(
 				options.sandbox,
 				`git rev-parse ${quoteGitHubExportShellArg(refs.remoteTrackingRef)}`,
 				{
 					cwd: options.destinationCwd,
 					errorPrefix: "Failed to verify imported remote-tracking ref",
-					secrets: secrets.current,
 				},
 			);
-			if (destSha !== isolatedSha) {
+			if (destinationSha !== isolatedSha) {
 				throw new Error(
-					"Destination remote-tracking ref does not match the isolated fetch SHA.",
+					"Destination remote-tracking ref does not match the fetched commit.",
 				);
 			}
-
 			return isolatedSha;
 		},
 	);
-
-	return {
-		branchName: refs.branchName,
-		headSha,
-		refs,
-	};
+	return { branchName: refs.branchName, headSha, refs };
 }
 
 function assertAbsoluteGitPath(path: string, label: string): void {
@@ -896,112 +754,38 @@ export async function pushGitHubCommitBrokered(options: {
 
 	const refs = await validateGitBranchRefs(options.sandbox, options.branchName);
 	const publicUrl = publicGitHubRepoUrl(options.githubRepo);
-	const secrets: SecretBag = { current: [] };
 
-	await withTempBareRepo(
-		options.sandbox,
-		secrets,
-		async (tempDir, launcherPath) => {
-			const sourceHead = await readStdoutOrThrow(
-				options.sandbox,
-				"git rev-parse HEAD",
-				{
-					cwd: options.sourceCwd,
-					errorPrefix: "Failed to resolve source HEAD before push",
-				},
+	await withTempBareRepo(options.sandbox, async (tempDir, launcherPath) => {
+		const sourceHead = await readStdoutOrThrow(
+			options.sandbox,
+			"git rev-parse HEAD",
+			{
+				cwd: options.sourceCwd,
+				errorPrefix: "Failed to resolve source HEAD before push",
+			},
+		);
+		if (sourceHead !== options.headRev) {
+			throw new Error(
+				"Source HEAD changed after secret preflight; refusing to push.",
 			);
-			if (sourceHead !== options.headRev) {
-				throw new Error(
-					"Source HEAD changed after secret preflight; refusing to push.",
-				);
-			}
+		}
 
-			await stageCommitViaAlternates(options.sandbox, {
-				tempDir,
-				sourceCwd: options.sourceCwd,
-				headRev: options.headRev,
-			});
+		await stageCommitViaAlternates(options.sandbox, {
+			tempDir,
+			sourceCwd: options.sourceCwd,
+			headRev: options.headRev,
+		});
 
-			await runBrokeredNetworkGit(options.sandbox, {
-				tempDir,
-				launcherPath,
-				gitArgs: [
-					"push",
-					"--no-verify",
-					publicUrl,
-					refs.pushRefspecFrom(options.headRev),
-				],
-				errorPrefix: "Failed to push branch",
-			});
-		},
-	);
-}
-
-/**
- * Push the exact preflight HEAD SHA to GitHub from a fresh temp bare repo.
- * Token mint runs only after local staging and SHA verification.
- */
-export async function pushGitHubCommitIsolated(options: {
-	sandbox: PrivilegedGitSandbox;
-	githubRepo: string;
-	branchName: string;
-	sourceCwd: string;
-	headRev: string;
-	mintToken: MintInstallationToken;
-}): Promise<void> {
-	assertGithubRepoSlug(options.githubRepo);
-	if (!/^[0-9a-f]{40}$/i.test(options.headRev)) {
-		throw new Error("Invalid preflight head revision.");
-	}
-
-	const refs = await validateGitBranchRefs(options.sandbox, options.branchName);
-	const publicUrl = publicGitHubRepoUrl(options.githubRepo);
-	const secrets: SecretBag = { current: [] };
-
-	await withTempBareRepo(
-		options.sandbox,
-		secrets,
-		async (tempDir, launcherPath) => {
-			const sourceHead = await readStdoutOrThrow(
-				options.sandbox,
-				"git rev-parse HEAD",
-				{
-					cwd: options.sourceCwd,
-					errorPrefix: "Failed to resolve source HEAD before push",
-				},
-			);
-			if (sourceHead !== options.headRev) {
-				throw new Error(
-					"Source HEAD changed after secret preflight; refusing to push.",
-				);
-			}
-
-			// Stage via object alternates + update-ref. Do NOT git-fetch the source
-			// into an empty bare repo: Cloudflare sandbox clones use
-			// --filter=blob:none, and upload-pack disables lazy fetch, so packing
-			// the full reachable closure fails on missing promisor blobs. Alternates
-			// let the later push negotiate with GitHub and send only novel objects.
-			await stageCommitViaAlternates(options.sandbox, {
-				tempDir,
-				sourceCwd: options.sourceCwd,
-				headRev: options.headRev,
-			});
-
-			const token = await options.mintToken();
-			secrets.current = buildCredentialRedactionSecrets(token);
-
-			await runIsolatedNetworkGit(options.sandbox, {
-				tempDir,
-				launcherPath,
-				token,
-				gitArgs: [
-					"push",
-					"--no-verify",
-					publicUrl,
-					refs.pushRefspecFrom(options.headRev),
-				],
-				errorPrefix: "Failed to push branch",
-			});
-		},
-	);
+		await runBrokeredNetworkGit(options.sandbox, {
+			tempDir,
+			launcherPath,
+			gitArgs: [
+				"push",
+				"--no-verify",
+				publicUrl,
+				refs.pushRefspecFrom(options.headRev),
+			],
+			errorPrefix: "Failed to push branch",
+		});
+	});
 }

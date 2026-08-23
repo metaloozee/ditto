@@ -31,7 +31,6 @@ vi.mock("cloudflare:workers", () => ({
 	env: {
 		BETTER_AUTH_SECRET: "test-secret",
 		OPENCODE_API_KEY: "sk-test",
-		AI_CREDENTIALS_ENCRYPTION_KEY: "ai-credentials-encryption-key-test-aaaa",
 	},
 }));
 
@@ -197,7 +196,7 @@ describe("api.agent.stream POST adapter", () => {
 		prepareAgentRunMock.mockResolvedValue({
 			kind: "error",
 			status: 409,
-			body: { error: "Failed to prepare session worktree." },
+			body: { error: "Failed to prepare workspace." },
 		});
 
 		const response = await postJson({
@@ -207,7 +206,7 @@ describe("api.agent.stream POST adapter", () => {
 
 		expect(response.status).toBe(409);
 		expect(await response.json()).toEqual({
-			error: "Failed to prepare session worktree.",
+			error: "Failed to prepare workspace.",
 		});
 		expect(executeAgentRunMock).not.toHaveBeenCalled();
 	});

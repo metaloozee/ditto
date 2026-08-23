@@ -86,7 +86,7 @@ function WorkspaceStatusBar(props: {
 	const queued = props.mode === "capacity-queued";
 	const saving = props.mode === "workspace-saving";
 	const message = provisioning
-		? "Preparing project sandbox…"
+		? "Preparing workspace…"
 		: saving
 			? "Saving workspace…"
 			: queued

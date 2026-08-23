@@ -1,276 +1,61 @@
 # Security and trust boundaries
 
-## Goal
+## Trust model
 
-Ditto executes an AI coding agent against user repositories. The architecture
-therefore assumes prompts, repository contents, tool output, and sandbox process
-environment are untrusted or disclosure-prone. Authorization and secret controls
-are enforced at the Worker and Git export boundaries, not delegated to the
-model.
+Everything inside a sandbox is untrusted. This includes the repository, dependencies, PI, the Ditto runner and extension, build scripts, tools, process environment, and filesystem. The Worker, D1, R2 binding, and Cloudflare isolation boundary remain trusted.
 
-## Trust zones
+The Worker enforces authentication, ownership, credential minting, outbound contracts, archive metadata, and terminal message state. Browser input, model output, sandbox errors, and preview URLs are not authority.
 
-| Zone | Trusted for | Not trusted for |
-|---|---|---|
-| Browser | User interaction and cookie transport | Resource ownership, Git policy, durable terminal state |
-| Worker | Authentication, authorization, secret handling, D1 writes, credential minting | Arbitrary text emitted by agent/sandbox commands |
-| D1 | Durable metadata under Worker access | Plaintext project secrets (stored encrypted instead) |
-| Sandbox | Isolated repository execution; preview-traffic timestamps in Durable Object storage | Keeping process environment hidden from the agent; public preview URLs and tokens |
-| PI harness/model | Requested code work | Authorization decisions, secret-safe output, GitHub credentials |
-| GitHub | Repository and PR authority | Ditto application ownership without OAuth/App checks |
-| R2 backup | Workspace snapshot storage | Live filesystem semantics or secret-file filtering beyond configured excludes |
+## Sandbox authority and egress
 
-## Authentication and authorization
+Each builder or workspace runtime has a permanent D1 identity with a random sandbox ID, trusted container ID, owners, lifecycle generation, and retirement state. Privileged operations open in one of three families: `model`, `git_transport`, or `ditto_action`. An identity can have at most one open operation per family.
 
-Browser APIs use better-auth GitHub OAuth and an HTTP-only session cookie. tRPC
-creates the auth session once per request, and protected procedures require a
-user. Direct SSE and `/api/agent/control` handling perform the same better-auth
-session check.
+The Sandbox class disables default internet access. Each runtime attaches the Worker-owned `dittoCatchAll` handler parameters. The sandbox cannot choose its identity, generation, or operation ID.
 
-Every browser project and workspace-session lookup includes the authenticated
-`userId`. Project import and browser Git operations also call
-`authorizeGitHubRepositoryAccess`, which checks the user's visible repositories
-and installation ID through GitHub OAuth. A short-lived GitHub App installation
-token performs the server-side repository mutation.
+`SandboxEgressBroker` classifies each HTTP or HTTPS request. A failed privileged contract never falls through to public internet. General internet access permits only credential-free public HTTP and HTTPS destinations and rejects private, loopback, link-local, metadata, literal-IP, embedded-credential, and ambiguous hosts. This policy does not prevent all exfiltration or DNS channels.
 
-The sandbox runner cannot call browser-authenticated tRPC. Its two Git tools
-POST to the image-owned origin `http://ditto.internal/v1/git-action` with no
-bearer token. The outbound broker classifies that request, resolves the trusted
-sandbox identity and the sole open `ditto_action` operation from D1, and
-dispatches Worker-owned Git services. Identity, session, and branch come from
-D1 and the runtime lease, not from the sandbox body. This path has no user
-OAuth session, so it does not repeat the visible-repository check. A revoked or
-invalid App installation fails when the Worker requests or uses its
-installation token.
+## Platform credentials
 
-Follow-up and Stop controls prove authenticated project ownership and an active,
-owned workspace session before any sandbox access. Missing, foreign, archived,
-or stale run targets are rejected without creating message rows.
+- `OPENCODE_API_KEY` stays in the Worker and is added only to a fresh request after the fixed OpenCode contract passes.
+- GitHub installation tokens stay in the Worker and are added only to approved Git smart-HTTP requests.
+- Agent Git actions use a fixed synthetic origin with D1 authority, not a callback URL or JWT.
+- R2 access uses the Worker binding. Sandboxes receive no R2 key, signed URL, object key, bearer capability, or mounted bucket.
+- Provider credentials, catalogs, login attempts, routes, runner commands, and encryption binding are absent.
 
-Model and thinking-level input is also untrusted browser input. The stream route
-requires a valid session. The browser does not send a model field. The Worker
-always uses `opencode/deepseek-v4-flash-free` and rejects any thinking level
-outside `off`, `high`, and `max` before sandbox, session, or message side
-effects. The runner rejects every other model specifier. Browser-side clamping
-improves UX but is not an authorization boundary.
+There is no credential fallback into a sandbox when a broker contract fails.
 
-## Operator credential and leftover encryption binding
+## Project environment values
 
-Agent runs keep `OPENCODE_API_KEY` in the Worker. Sandbox PI uses one public
-placeholder that has no authority without a current sandbox identity and an
-open D1 `model` operation. The outbound handler validates the pinned OpenCode
-request contract, then attaches the real key only to a fresh upstream request.
+Project environment values are AES-256-GCM encrypted at rest using a key derived from `BETTER_AUTH_SECRET`. The UI lists keys but never reads values back.
 
-`AI_CREDENTIALS_ENCRYPTION_KEY` remains bound for leftover
-`ai_provider_credentials` rows. Account-provider login, catalogs, and OAuth
-refresh are not current product paths and are pending removal.
+The Worker decrypts values only for the agent shell. Builders, Git children, previews, archive commands, restore commands, control sessions, and the container entrypoint do not receive them. The agent can still read and exfiltrate these user-owned values, so output redaction and Git secret preflight remain required.
 
-## Secret storage and injection
+## PI resources
 
-Project environment variables are normalized, deduplicated, encrypted with
-AES-256-GCM, and stored as a versioned payload in `projects.envVars`. The key is
-derived from `BETTER_AUTH_SECRET` with PBKDF2-SHA-256, a random salt, and 310,000
-iterations. The UI can list keys but never reads values back.
+Normal chat constructs an explicit locked resource loader. It disables repository-owned extensions, skills, prompt templates, themes, settings, and context-file discovery, then loads only the image-owned Ditto extension. Git metadata uses an empty resource loader and one typed output tool.
 
-At run time the Worker decrypts project values and injects them into the agent
-shell environment. The OpenCode key never enters the sandbox. No Git callback
-bearer token or callback URL is injected. These values do not enter a worktree
-`.env`, agent job JSON, SSE metadata, or Git remote.
+Prompts and follow-ups travel in bounded JSON job files, never shell interpolation. Run-scoped sockets, jobs, and shell sessions are removed after use. Session mutations use an atomic lock under `/tmp`, outside recovery archives.
 
-The process environment is not a vault from the agent: shell tools can read it.
-Controls therefore also exist on output and Git egress.
+## Output and Git redaction
 
-## Output redaction
+`secret-redaction.ts` removes known project values and recognized GitHub, provider-key, AWS-key, and PEM shapes from streamed text, tool payloads, stderr, errors, and persisted assistant content. Streaming redaction handles values split across chunks with bounded buffering.
 
-`secret-redaction.ts` removes known concrete secrets of at least eight
-characters plus common GitHub, provider-key, AWS-key, and PEM patterns.
-Redaction is applied to:
+Git export fails closed on secret-like paths, binary or unreadable additions, known project values, recognized secret shapes, malformed output, or unresolved ranges. The local commit remains available; only export is blocked.
 
-- runner text deltas, including secrets split across stream chunks;
-- structured PI events and tool payloads;
-- stderr and command failures;
-- assistant content before D1 persistence; and
-- Git/export errors before they reach the client.
+## Recovery
 
-The streaming redactor holds only a suffix that could complete a configured
-exact secret, plus a small bounded window for secret-shaped patterns. Very long
-configured values therefore do not buffer an entire assistant response. A PI
-tool event ends the current assistant-text segment, so the Worker's runner
-bridge safely flushes held text before forwarding the tool event. Incomplete
-PEM regions stay
-held until a complete block arrives or the segment ends, when they fail closed
-to the redaction marker.
+Archive content is untrusted. The Worker verifies format, compatibility, byte count, digest, generation, extracted size, Git state, and runner health. Current/previous fallback never silently restores the immutable seed after session mutations.
 
-## Git credential handling
+Archive object keys and content never enter user-visible errors or logs. Failed R2 deletion persists retry metadata. Identity tombstones survive project deletion and fail closed while cleanup remains pending.
 
-The Worker is the only minter of GitHub App installation tokens.
+## Preview capabilities
 
-For new project-seed builders, Git smart-HTTP to the owned repository is
-brokered by the Worker outbound handler. The builder uses a public
-`https://github.com/<owner>/<repo>.git` URL and a closed, credential-free child
-environment. After durable authority and the Git fetch contract pass, the
-Worker mints the installation token onto a fresh upstream request only. The
-token never enters the sandbox URL, environment, file, or process argument.
+A preview URL is a public bearer capability. Ditto returns it only from the authenticated start mutation and does not persist, toast, copy, normalize, or log it. Stop, archive, and project deletion revoke forwarding. Preview processes run fixed commands at port `10000` without project environment values.
 
-A receive-pack contract exists for one serialized GitHub smart-HTTP push, but
-product push stays disabled until a crafted non-fast-forward receive-pack is
-proved rejected. Installation tokens stay in the Worker. Local commits and
-secret preflight remain. Legacy session sync still passes a short-lived token
-into a sandbox network Git launcher. That launcher uses a fresh temporary bare
-repository outside `/workspace`, disables hooks and credential helpers,
-suppresses system/global configuration, and authenticates over HTTPS with a
-public remote URL. Repository objects move between the worktree and temporary
-bare repository without the credential environment and are verified by exact
-SHA. Branch refs are validated with `git check-ref-format`; full refs and
-refspecs are shell-quoted as one argument at use.
+## Deletion order
 
-The runner posts Git actions to a code-owned synthetic origin. Push and pull
-request operations return through the Worker broker. The Worker applies the same
-domain policy as the UI and owns installation-token minting.
+Project deletion first changes the project to `deleting` and retires identity authority. It then closes operations, cancels work, revokes previews, destroys sandboxes, marks archives for cleanup, and deletes product rows. New runtime and privileged requests fail after the first authority step.
 
-## Git egress policy
+## Remaining production gate
 
-Before outgoing commits are pushed, `git-secret-policy.ts` fails closed when it
-cannot establish or inspect the outgoing range. UI and agent export share this
-single preflight on `pushSessionBranch`. It blocks:
-
-- `.env` and `.env.*` paths at any nesting level;
-- binary or unreadable additions that cannot be inspected safely;
-- known project secret values found in added lines;
-- recognized secret-shaped content; and
-- malformed Git output or unresolved commit ranges.
-
-Local agent edits and commits remain possible so work is not destroyed; the
-policy blocks export from the sandbox to GitHub.
-
-## UI git-metadata drafting
-
-One-click UI Commit / Open PR spawn an ephemeral metadata agent that is **not**
-the chat harness:
-
-- No project environment variables, GitHub tokens, Git callback credentials, or OpenCode
-  key in the shell or job. Metadata requests use a one-request `git_metadata`
-  model operation and the public OpenCode placeholder.
-- Input is a bounded, redacted **Git snapshot** (paths/stat/patch/subjects),
-  never the user prompt or session title. Secret-like paths are omitted;
-  `redactStructured` runs before the job is written; patch size is capped.
-- The agent has no repository tools, no disk resource discovery, and only one
-  typed terminating output tool. Prompt wording treats the diff as untrusted
-  data; isolation is enforced by tool removal, schema validation, and redaction,
-  not prompt text alone.
-- Output is independently Zod-validated in the Worker and rejected if
-  secret redaction would change it. Errors are reason-coded and redacted; raw
-  model/diff/stderr/credentials never reach the browser.
-- `/tmp` job, patch, and temp-index artifacts are removed on every path. The
-  metadata session is in-memory and disposed; nothing is written to D1 or PI
-  JSONL. Generation failure occurs before any Git/GitHub mutation.
-
-## Filesystem and command controls
-
-Prompts are serialized to a job file with the Sandbox file API and never
-interpolated into a shell command. `agent-job.ts` validates that job at the
-sandbox boundary, including the optional thinking level's canonical vocabulary,
-before `cli.ts` invokes the runner. Shell values that must enter commands are
-single-quoted by narrow helpers. Destructive workspace clearing checks that the
-configured root is exactly `/workspace` before running. Normal chat constructs
-an explicit locked PI resource loader: it disables repository-owned
-extensions, skills, prompts, themes, settings, and context-file discovery, and
-loads only `/opt/ditto-runner/dist/ditto-extension.js`. Git metadata keeps the
-empty loader.
-
-Follow-up text likewise travels in a bounded JSON job, never argv. The Worker
-invokes only the baked control CLI with a generated job path; the CLI reaches a
-run-scoped Unix-domain socket under `/tmp`. Control jobs, sockets, and temporary
-sandbox shell sessions are removed on success and failure. Structured control
-events and diagnostics pass through the same bounded redaction boundary as
-runner output.
-
-Per-session mutations acquire an atomic directory lock under `/tmp`. Locks are
-outside `/workspace`, so backups do not preserve stale lock state. A stale-lock
-recovery window prevents permanent deadlock after an interrupted process.
-
-R2 backups explicitly exclude `.env` and `.env.*`, package stores,
-dependencies, build outputs, and caches. Session worktrees symlink only
-`node_modules`; no environment file is shared from the primary clone.
-
-## Session preview public URLs
-
-Preview URLs from Sandbox `exposePort()` are ephemeral public bearer capabilities.
-Anyone with the URL can load the site until Stop/archive/delete revokes it.
-
-- Production base host is exactly `ayn.wtf`. Generated hosts are direct children
-  such as `https://<port>-<sandbox>-<token>.ayn.wtf`. One-time operator setup:
-  proxied wildcard DNS `A *.ayn.wtf → 192.0.2.0`, and Alchemy-managed Worker Route
-  `*.ayn.wtf/*` (`adopt: true`). Do not use `*.preview.ayn.wtf` (Universal SSL
-  does not cover that second-level wildcard automatically).
-- Local development uses the Wrangler/Alchemy localhost URL from `exposePort()`;
-  no public DNS is required.
-- URLs are returned only from authenticated `sessionPreview.start`. Never log,
-  persist, toast, normalize, or put them in query/cache/local storage.
-- Preview processes do not receive configured project environment variables.
-  Process logs and raw SDK errors are never projected to clients.
-- Stop/archive require successful `unexposePort` acknowledgement and confirmed
-  absence of the exact preview process before clearing the D1 port lease or
-  archiving. Project delete acquires the external D1 lifecycle lease, sets a
-  durable `deletingAt` tombstone, destroys the sandbox last, then deletes the D1
-  row. `retryRestore` cannot revive a deleting row.
-
-## Failure posture
-
-- Ownership failures return not found/forbidden rather than continuing.
-- Missing, stale, expired, or mismatched Ditto Git-action operations fail closed.
-- Secret preflight and ambiguous outgoing Git ranges fail closed.
-- Sandbox runner health is checked before project state is mutated.
-- Assistant terminal persistence is attempted before successful `done`.
-- Browser fetch cancellation and disconnect detach stream delivery only. The
-  route-owned `attached` / `detached` / `closed` state makes later encode,
-  enqueue, close, and error no-ops; they do not cancel sandbox execution. Only
-  an authenticated Stop control calls PI `clearQueue()` and cooperative
-  `abort()`. Terminal assistant persistence and post-run backup continue while
-  the invocation survives; delivery/controller failures log static secret-free
-  messages and are not classified as agent-run failures.
-- Backup failure is reported as non-fatal after a completed run or Git mutation;
-  it does not rewrite the successful operation's result.
-- Client-visible errors are redacted, while server logs avoid raw credentials.
-
-## Known gaps
-
-The current controls reduce exposure but do not provide container-compromise
-isolation:
-
-- New workspace sessions own a dedicated sandbox (filesystem, process table,
-  and localhost). Legacy sessions may still share one project sandbox; Git
-  worktrees isolate normal file edits only on that path.
-- Provider credentials no longer enter sandbox agent runs. The OpenCode key
-  stays in the Worker. Git callback bearer tokens are not issued.
-- GitHub installation tokens stay in the Worker for project-seed builder fetch
-  and for product Git push (currently disabled). Legacy session sync still
-  injects a token into a short-lived sandbox Git process.
-- Normal chat constructs an explicit locked resource loader. Repository-owned
-  extensions, skills, prompts, themes, settings, and context files are not
-  discoverable. Only the image-owned Ditto extension at
-  `/opt/ditto-runner/dist/ditto-extension.js` is loaded. Git metadata keeps
-  the empty loader.
-- Builders that call `setOutboundHandler` are brokered through the Worker
-  catch-all. Legacy project sandboxes that never set the handler keep direct
-  internet until later plans; the shared subclass does not disable internet.
-
-See [platform credential broker](../specs/platform-credential-broker.md) for
-remaining cut-over work (per-session sandboxes, model broker, legacy columns).
-
-## Security-sensitive files
-
-| Concern | Files |
-|---|---|
-| Auth/session | `apps/web/src/lib/auth.ts`, `auth.client.ts`, `auth.functions.ts`, `apps/web/src/integrations/trpc/init.ts` |
-| Live agent control | `apps/web/src/lib/agent-control-service.ts`, `apps/web/src/routes/api.agent.control.ts`, `packages/sandbox-runner/src/control-channel.ts` |
-| GitHub authorization | `apps/web/src/lib/github-authorization.ts`, `github-app.ts`, `github-repositories.ts` |
-| Agent Git actions | `apps/web/src/lib/ditto-action-contract.ts`, `agent-git-handler.ts`, `sandbox-egress-broker.ts` |
-| Encryption/env vars | `apps/web/src/lib/crypto.ts`, `project-env-vars.ts`, `env-vars.ts` |
-| Redaction | `apps/web/src/lib/secret-redaction.ts`, `agent-run.ts`, `github-export.ts` |
-| Git egress | `apps/web/src/lib/git-secret-policy.ts`, `session-git.ts` |
-| Broker / seed | `apps/web/src/lib/sandbox-authority.ts`, `sandbox-egress-broker.ts`, `git-fetch-contract.ts`, `project-seed.ts`, `apps/web/src/server.ts` |
-| UI git metadata | `apps/web/src/lib/session-git-metadata.ts`, `session-git-ui-actions.ts`, `packages/sandbox-runner/src/run-git-metadata.ts` |
-| Backup exclusions | `apps/web/src/lib/sandbox-backup.ts` |
-| Workspace locking | `apps/web/src/lib/session-workspace-lock.ts`, `workspace-policy.ts` |
-| Session preview | `apps/web/src/lib/session-preview.ts`, `apps/web/src/server.ts`, `alchemy.run.ts` |
+Local tests cover identity and contract rejection, token-free archives, session isolation, queue state, preview recovery, and deletion order. Paid-plan production tests have not run. Production use remains blocked until HTTPS interception, Git transport, RPC archive streaming, sleep/restore, capacity, and preview routing pass in Cloudflare production.

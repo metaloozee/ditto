@@ -9,10 +9,6 @@ vi.mock("#/lib/agent-control-service", () => ({
 	controlAgentRun: vi.fn(),
 }));
 
-vi.mock("#/lib/project-sandbox", () => ({
-	persistProjectSandboxBackup: vi.fn(),
-}));
-
 vi.mock("#/lib/workspace-recovery", () => ({
 	recordMutationAndCheckpoint: vi.fn(),
 }));
@@ -67,16 +63,8 @@ const readyProject = {
 	userId: "user-1",
 	githubRepo: "acme/repo",
 	githubInstallationId: 1,
-	sandboxId: "sb-1",
-	sandboxBackup: null,
-	sandboxBackupCreatedAt: null,
-	sandboxBackupRequestedGeneration: 0,
-	sandboxBackupStoredGeneration: 0,
 	envVars: null,
 	status: "ready" as const,
-	previewLockToken: null,
-	previewLockExpiresAt: null,
-	deletingAt: null,
 	createdAt: new Date(),
 	updatedAt: new Date(),
 };
@@ -89,9 +77,7 @@ const activeSession = {
 	title: "Chat",
 	branchName: "ditto/session-sess-1",
 	baseCommitSha: "abc123",
-	workspacePath: "/workspace/.ditto/worktrees/sess-1",
-	memoryPath: "/workspace/.ditto/memory",
-	previewPort: null,
+	workspacePath: "/workspace",
 	sandboxIdentityId: null,
 	runtimeLeaseId: null,
 	runtimeLeaseExpiresAt: null,
@@ -104,7 +90,6 @@ const activeSession = {
 function makeEnv(): Env {
 	return {
 		OPENCODE_API_KEY: "sk-test-key-12345678901234567890",
-		AI_CREDENTIALS_ENCRYPTION_KEY: "ai-credentials-encryption-key-test-aaaa",
 		BETTER_AUTH_SECRET: "test-better-auth-secret-min-length",
 		BETTER_AUTH_URL: "http://localhost:5173",
 	} as Env;
@@ -216,9 +201,6 @@ function baseDeps(overrides: Partial<AgentRunDeps> = {}): AgentRunDeps {
 		runAgentInSandbox: vi.fn().mockResolvedValue({
 			ok: true,
 			assistantText: "Hello",
-		}),
-		persistProjectSandboxBackup: vi.fn().mockResolvedValue({
-			project: readyProject,
 		}),
 		recordMutationAndCheckpoint: vi.fn().mockResolvedValue({
 			state: "healthy",
@@ -677,7 +659,6 @@ describe("executeAgentRun", () => {
 			workspaceSession: activeSession,
 			ensuredProject: readyProject,
 			sandboxState: "ready",
-			sessionWorkspacePath: activeSession.workspacePath,
 			userMessageId: "user-msg",
 			assistantMessageId: "asst-msg",
 			envVars: [],
@@ -1299,7 +1280,7 @@ describe("executeAgentRun", () => {
 				ok: true,
 				assistantText: "done",
 			}),
-			persistProjectSandboxBackup: vi
+			recordMutationAndCheckpoint: vi
 				.fn()
 				.mockRejectedValue(new Error("backup metadata failed")),
 			prepareAssistantMessageStorage: vi.fn().mockReturnValue({
@@ -1345,7 +1326,6 @@ describe("executeAgentRun", () => {
 				assistantText: "done",
 			}),
 			recordMutationAndCheckpoint,
-			persistProjectSandboxBackup: vi.fn(),
 			prepareAssistantMessageStorage: vi.fn().mockReturnValue({
 				storageParts: [],
 				toolsColumn: null,

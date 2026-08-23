@@ -19,7 +19,7 @@ import { buildProjectSeed } from "#/lib/project-seed";
 import { destroySandbox } from "#/lib/sandbox-bootstrap";
 import { redactSecrets } from "#/lib/secret-redaction";
 import {
-	deleteProjectWithPreviewFence,
+	deleteProjectRuntime,
 	SessionPreviewError,
 } from "#/lib/session-preview";
 
@@ -29,8 +29,8 @@ export const projectsRouter = createTRPCRouter({
 			z.object({
 				name: z.string().min(1),
 				description: z.string().optional(),
-				githubRepo: z.string().optional(),
-				githubInstallationId: z.number().int().positive().optional(),
+				githubRepo: z.string().min(1),
+				githubInstallationId: z.number().int().positive(),
 				envVars: envVarsSchema.optional(),
 			}),
 		)
@@ -43,31 +43,11 @@ export const projectsRouter = createTRPCRouter({
 				});
 			}
 
-			const hasGithubRepo = input.githubRepo !== undefined;
-			const hasGithubInstallationId = input.githubInstallationId !== undefined;
-			if (hasGithubRepo !== hasGithubInstallationId) {
-				throw new TRPCError({
-					code: "BAD_REQUEST",
-					message: "Github Repository and Installation ID is required.",
-				});
-			}
-
-			const githubImport =
-				input.githubRepo !== undefined &&
-				input.githubInstallationId !== undefined
-					? {
-							repo: input.githubRepo,
-							installationId: input.githubInstallationId,
-						}
-					: null;
-
-			if (githubImport) {
-				await authorizeGitHubRepositoryAccess({
-					ctx,
-					repo: githubImport.repo,
-					installationId: githubImport.installationId,
-				});
-			}
+			await authorizeGitHubRepositoryAccess({
+				ctx,
+				repo: input.githubRepo,
+				installationId: input.githubInstallationId,
+			});
 
 			const sanitizedEnvVars = sanitizeEnvVars(input.envVars);
 			const encryptedEnvVars = await encryptEnvVars(
@@ -78,28 +58,6 @@ export const projectsRouter = createTRPCRouter({
 			const db = createDb(ctx.env);
 			const projectId = nanoid();
 
-			if (!githubImport) {
-				const [project] = await db
-					.insert(projects)
-					.values({
-						id: projectId,
-						name: projectName,
-						description: input.description,
-						userId: ctx.user.id,
-						status: "ready",
-						envVars: encryptedEnvVars,
-					})
-					.returning();
-
-				const {
-					envVars: _envVars,
-					sandboxBackup: _sandboxBackup,
-					sandboxBackupCreatedAt: _sandboxBackupCreatedAt,
-					...projectResponse
-				} = project;
-				return projectResponse;
-			}
-
 			try {
 				const { project } = await buildProjectSeed({
 					env: ctx.env,
@@ -108,17 +66,12 @@ export const projectsRouter = createTRPCRouter({
 					projectId,
 					name: projectName,
 					description: input.description,
-					githubRepo: githubImport.repo,
-					installationId: githubImport.installationId,
+					githubRepo: input.githubRepo,
+					installationId: input.githubInstallationId,
 					encryptedEnvVars,
 				});
 
-				const {
-					envVars: _envVars,
-					sandboxBackup: _sandboxBackup,
-					sandboxBackupCreatedAt: _sandboxBackupCreatedAt,
-					...projectResponse
-				} = project;
+				const { envVars: _envVars, ...projectResponse } = project;
 				return projectResponse;
 			} catch (err) {
 				await db
@@ -342,7 +295,7 @@ export const projectsRouter = createTRPCRouter({
 		.mutation(async ({ ctx, input }) => {
 			const db = createDb(ctx.env);
 			try {
-				return await deleteProjectWithPreviewFence({
+				return await deleteProjectRuntime({
 					db,
 					env: ctx.env,
 					projectId: input.id,
@@ -382,7 +335,6 @@ export const projectsRouter = createTRPCRouter({
 					userId: projects.userId,
 					githubRepo: projects.githubRepo,
 					githubInstallationId: projects.githubInstallationId,
-					sandboxId: projects.sandboxId,
 					status: projects.status,
 					createdAt: projects.createdAt,
 					updatedAt: projects.updatedAt,
@@ -434,7 +386,6 @@ export const projectsRouter = createTRPCRouter({
 					userId: projects.userId,
 					githubRepo: projects.githubRepo,
 					githubInstallationId: projects.githubInstallationId,
-					sandboxId: projects.sandboxId,
 					status: projects.status,
 					createdAt: projects.createdAt,
 					updatedAt: projects.updatedAt,

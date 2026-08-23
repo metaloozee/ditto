@@ -144,7 +144,7 @@ function redactedErrorMessage(error: unknown): string {
 	}
 	if (error instanceof Error) {
 		return error.message.replace(
-			/(workspace_recovery|legacy_project|project_seed)\/[^\s"']+/gi,
+			/(workspace_recovery|project_seed)\/[^\s"']+/gi,
 			"[redacted-archive-ref]",
 		);
 	}
@@ -465,7 +465,6 @@ async function checkpointOnce(options: {
 			ownerId: options.lease.sessionId,
 			userId: options.userId,
 			generation: options.candidateGeneration,
-			quiesce: false,
 		});
 		archiveId = archive.id;
 		const promoted = await promoteArchive({

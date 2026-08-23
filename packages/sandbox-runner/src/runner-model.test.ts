@@ -73,20 +73,14 @@ describe("resolveRunnerModel", () => {
 		});
 		mocks.modelRuntimeCreate.mockResolvedValue({ getModel: mocks.getModel });
 		delete process.env.OPENCODE_API_KEY;
-		delete process.env.DITTO_PI_CREDENTIAL;
 	});
 
-	it("seeds the public placeholder and deletes leftover credential env vars", async () => {
-		process.env.DITTO_PI_CREDENTIAL = JSON.stringify({
-			type: "api_key",
-			key: "test-opencode-key",
-		});
+	it("seeds the public placeholder without using operator env", async () => {
 		process.env.OPENCODE_API_KEY = "legacy-key";
 		const resolved = await resolveRunnerModel(RUNNER_MODEL_SPECIFIER);
 		expect("error" in resolved).toBe(false);
 		if ("error" in resolved) return;
 
-		expect(process.env.DITTO_PI_CREDENTIAL).toBeUndefined();
 		expect(process.env.OPENCODE_API_KEY).toBeUndefined();
 		expect(mocks.credentialModify).toHaveBeenCalledWith(
 			"opencode",
@@ -122,22 +116,16 @@ describe("resolveRunnerModel", () => {
 		expect(process.env.OPENCODE_API_KEY).toBeUndefined();
 	});
 
-	it("fails cleanly for unknown models and still scrubs env", async () => {
-		process.env.DITTO_PI_CREDENTIAL = JSON.stringify({
-			type: "api_key",
-			key: "secret",
-		});
+	it("fails cleanly for unknown models", async () => {
 		const resolved = await resolveRunnerModel("provider/missing");
 		expect(resolved).toEqual({ error: "Unknown model: provider/missing" });
-		expect(process.env.DITTO_PI_CREDENTIAL).toBeUndefined();
 		expect(mocks.modelRuntimeCreate).not.toHaveBeenCalled();
 	});
 
-	it("scrubs env even when the specifier is invalid", async () => {
-		process.env.DITTO_PI_CREDENTIAL = "secret";
+	it("scrubs operator env even when the specifier is invalid", async () => {
+		process.env.OPENCODE_API_KEY = "secret";
 		const resolved = await resolveRunnerModel("bad");
 		expect(resolved).toEqual({ error: "Unknown model: bad" });
-		expect(process.env.DITTO_PI_CREDENTIAL).toBeUndefined();
 		expect(process.env.OPENCODE_API_KEY).toBeUndefined();
 		expect(mocks.modelRuntimeCreate).not.toHaveBeenCalled();
 	});

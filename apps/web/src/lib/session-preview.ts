@@ -1,4 +1,4 @@
-import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { createDb } from "#/db";
 import {
 	archives,
@@ -9,15 +9,11 @@ import {
 import { getProjectSandbox } from "#/lib/sandbox-bootstrap";
 import { SessionWorkspaceBusyError } from "#/lib/session-workspace-lock-error";
 import {
-	isSessionPreviewPort,
-	SESSION_PREVIEW_PORT_COUNT,
-	SESSION_PREVIEW_PORT_MIN,
 	sessionPreviewProcessId,
 	WORKSPACE_SESSION_PREVIEW_PORT,
 } from "#/lib/workspace-policy";
 import {
 	cancelProjectWork,
-	isLegacySharedSandboxSession,
 	WorkspaceRuntimeError,
 	type WorkspaceRuntimeLease,
 	withWorkspaceRuntimeLease,
@@ -69,8 +65,6 @@ export function sessionPreviewError(
 	return new SessionPreviewError(code, ERROR_MESSAGES[code]);
 }
 
-const LEASE_TTL_SECONDS = 900;
-const LEASE_ACQUIRE_BUDGET_MS = 5_000;
 const WAIT_FOR_PORT_MS = 30_000;
 const WAIT_FOR_HTTP_MS = 5_000;
 const PACKAGE_JSON_MAX_BYTES = 64 * 1024;
@@ -135,8 +129,6 @@ export type SessionPreviewDeps = {
 	db: SessionPreviewDb;
 	env: Env;
 	nowSeconds: () => number;
-	randomToken: () => string;
-	sleep: (ms: number) => Promise<void>;
 	getSandbox: (env: Env, sandboxId: string) => SessionPreviewSandbox;
 	withWorkspaceRuntimeLease: typeof withWorkspaceRuntimeLease;
 	/** Test-only controlled barrier. */
@@ -148,8 +140,6 @@ function defaultDeps(db: SessionPreviewDb, env: Env): SessionPreviewDeps {
 		db,
 		env,
 		nowSeconds: () => Math.floor(Date.now() / 1000),
-		randomToken: () => crypto.randomUUID(),
-		sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 		getSandbox: (e, id) =>
 			getProjectSandbox(e, id) as unknown as SessionPreviewSandbox,
 		withWorkspaceRuntimeLease,
@@ -169,96 +159,6 @@ async function loadOwnedProject(
 		.where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
 		.limit(1);
 	return project ?? null;
-}
-
-/**
- * Acquire the external D1 lifecycle lease on a project row.
- * No Sandbox operations. Bound contention retries to 5s.
- */
-export async function acquireProjectPreviewLease(
-	deps: SessionPreviewDeps,
-	options: {
-		projectId: string;
-		userId: string;
-		/** When true, allow acquiring an expired lease even if deletingAt is set. */
-		allowDeleting?: boolean;
-	},
-): Promise<{ token: string; project: ProjectRow }> {
-	const deadline = Date.now() + LEASE_ACQUIRE_BUDGET_MS;
-	const token = deps.randomToken();
-
-	while (Date.now() <= deadline) {
-		const now = deps.nowSeconds();
-		const expiresAt = now + LEASE_TTL_SECONDS;
-
-		const openLease = or(
-			isNull(projects.previewLockToken),
-			isNull(projects.previewLockExpiresAt),
-			sql`${projects.previewLockExpiresAt} <= ${now}`,
-		);
-
-		const conditions = [
-			eq(projects.id, options.projectId),
-			eq(projects.userId, options.userId),
-			openLease,
-		];
-		if (!options.allowDeleting) {
-			conditions.push(isNull(projects.deletingAt));
-		}
-
-		await deps.db
-			.update(projects)
-			.set({
-				previewLockToken: token,
-				previewLockExpiresAt: expiresAt,
-				updatedAt: sql`(unixepoch())`,
-			})
-			.where(and(...conditions));
-
-		const project = await loadOwnedProject(
-			deps.db,
-			options.projectId,
-			options.userId,
-		);
-		if (!project) {
-			throw sessionPreviewError("not_found");
-		}
-		if (project.previewLockToken === token) {
-			if (!options.allowDeleting && project.deletingAt != null) {
-				await releaseProjectPreviewLease(deps, {
-					projectId: options.projectId,
-					userId: options.userId,
-					token,
-				});
-				throw sessionPreviewError("not_found");
-			}
-			return { token, project };
-		}
-
-		await deps.sleep(50);
-	}
-
-	throw sessionPreviewError("busy");
-}
-
-export async function releaseProjectPreviewLease(
-	deps: SessionPreviewDeps,
-	options: { projectId: string; userId: string; token: string },
-): Promise<void> {
-	await deps.db
-		.update(projects)
-		.set({
-			previewLockToken: null,
-			previewLockExpiresAt: null,
-			updatedAt: sql`(unixepoch())`,
-		})
-		.where(
-			and(
-				eq(projects.id, options.projectId),
-				eq(projects.userId, options.userId),
-				eq(projects.previewLockToken, options.token),
-			),
-		);
 }
 
 export function resolvePreviewHostname(options: {
@@ -430,7 +330,7 @@ export async function discoverPreviewCommand(options: {
 	}
 
 	const port = options.port;
-	if (!isSessionPreviewPort(port)) {
+	if (port !== WORKSPACE_SESSION_PREVIEW_PORT) {
 		throw sessionPreviewError("start_failed");
 	}
 
@@ -524,71 +424,6 @@ export async function discoverPreviewCommand(options: {
 			PORT: String(port),
 		},
 	};
-}
-
-async function hashSessionOffset(sessionId: string): Promise<number> {
-	const data = new TextEncoder().encode(sessionId);
-	const digest = await crypto.subtle.digest("SHA-256", data);
-	const view = new DataView(digest);
-	return view.getUint32(0) % SESSION_PREVIEW_PORT_COUNT;
-}
-
-async function allocatePreviewPort(
-	deps: SessionPreviewDeps,
-	options: {
-		sessionId: string;
-		projectId: string;
-		userId: string;
-		existingPort: number | null;
-	},
-): Promise<number> {
-	if (
-		options.existingPort != null &&
-		isSessionPreviewPort(options.existingPort)
-	) {
-		return options.existingPort;
-	}
-
-	const offset = await hashSessionOffset(options.sessionId);
-
-	for (let i = 0; i < SESSION_PREVIEW_PORT_COUNT; i++) {
-		const candidate =
-			SESSION_PREVIEW_PORT_MIN + ((offset + i) % SESSION_PREVIEW_PORT_COUNT);
-
-		await deps.db.run(
-			sql`UPDATE OR IGNORE workspace_sessions
-SET previewPort = ${candidate}
-WHERE id = ${options.sessionId}
-  AND projectId = ${options.projectId}
-  AND userId = ${options.userId}
-  AND status = 'active'
-  AND previewPort IS NULL`,
-		);
-
-		const [row] = await deps.db
-			.select({
-				previewPort: workspaceSessions.previewPort,
-				status: workspaceSessions.status,
-			})
-			.from(workspaceSessions)
-			.where(
-				and(
-					eq(workspaceSessions.id, options.sessionId),
-					eq(workspaceSessions.projectId, options.projectId),
-					eq(workspaceSessions.userId, options.userId),
-				),
-			)
-			.limit(1);
-
-		if (!row || row.status !== "active") {
-			throw sessionPreviewError("not_found");
-		}
-		if (row.previewPort != null && isSessionPreviewPort(row.previewPort)) {
-			return row.previewPort;
-		}
-	}
-
-	throw sessionPreviewError("capacity_exhausted");
 }
 
 function isHealthyStatus(status: ProcessStatus | undefined): boolean {
@@ -703,33 +538,6 @@ async function cleanupPreviewRuntime(options: {
 	return { unexposed, processGone };
 }
 
-async function clearSessionPreviewPort(
-	deps: SessionPreviewDeps,
-	options: {
-		sessionId: string;
-		projectId: string;
-		userId: string;
-		port: number;
-	},
-): Promise<void> {
-	try {
-		await deps.db
-			.update(workspaceSessions)
-			.set({ previewPort: null, updatedAt: sql`(unixepoch())` })
-			.where(
-				and(
-					eq(workspaceSessions.id, options.sessionId),
-					eq(workspaceSessions.projectId, options.projectId),
-					eq(workspaceSessions.userId, options.userId),
-					eq(workspaceSessions.status, "active"),
-					eq(workspaceSessions.previewPort, options.port),
-				),
-			);
-	} catch {
-		throw sessionPreviewError("cleanup_failed");
-	}
-}
-
 async function markPreviewStarted(
 	deps: SessionPreviewDeps,
 	options: { sessionId: string; projectId: string; userId: string },
@@ -773,18 +581,12 @@ async function clearPreviewStarted(
  * Post-allocation failure boundary: cleanup once, then rethrow fixed error.
  * On incomplete cleanup, throw cleanup_failed and retain the D1 port lease.
  */
-async function failAfterAllocation(
-	deps: SessionPreviewDeps,
-	options: {
-		sandbox: SessionPreviewSandbox;
-		port: number;
-		processId: string;
-		sessionId: string;
-		projectId: string;
-		userId: string;
-		error: unknown;
-	},
-): Promise<never> {
+async function failAfterAllocation(options: {
+	sandbox: SessionPreviewSandbox;
+	port: number;
+	processId: string;
+	error: unknown;
+}): Promise<never> {
 	const original =
 		options.error instanceof SessionPreviewError
 			? options.error
@@ -808,12 +610,6 @@ async function failAfterAllocation(
 	if (!cleaned.unexposed || !cleaned.processGone) {
 		throw sessionPreviewError("cleanup_failed");
 	}
-	await clearSessionPreviewPort(deps, {
-		sessionId: options.sessionId,
-		projectId: options.projectId,
-		userId: options.userId,
-		port: options.port,
-	});
 	throw original;
 }
 
@@ -919,278 +715,209 @@ export async function startSessionPreview(
 	});
 	const local = host.startsWith("localhost") || host.startsWith("127.0.0.1");
 
-	const projectForKind = await loadOwnedProject(
+	await deps.barrier?.("before_lease");
+	await deps.barrier?.("after_lease");
+
+	const project = await loadOwnedProject(
 		deps.db,
 		options.projectId,
 		options.userId,
 	);
-	const sessionForKind = await loadOwnedActiveSession({
+	if (!project || project.status === "deleting") {
+		throw sessionPreviewError("not_found");
+	}
+	if (
+		project.status !== "ready" ||
+		!project.githubRepo ||
+		!project.githubInstallationId
+	) {
+		throw sessionPreviewError("not_ready");
+	}
+
+	const session = await loadOwnedActiveSession({
 		db: deps.db,
 		projectId: options.projectId,
 		sessionId: options.sessionId,
 		userId: options.userId,
 	});
-	const legacy =
-		projectForKind != null &&
-		sessionForKind != null &&
-		isLegacySharedSandboxSession(sessionForKind, projectForKind);
-
-	await deps.barrier?.("before_lease");
-	let token: string | null = null;
-	if (legacy) {
-		token = (
-			await acquireProjectPreviewLease(deps, {
-				projectId: options.projectId,
-				userId: options.userId,
-			})
-		).token;
+	if (!session) {
+		throw sessionPreviewError("not_found");
 	}
-	await deps.barrier?.("after_lease");
 
-	try {
-		const project = await loadOwnedProject(
-			deps.db,
-			options.projectId,
-			options.userId,
-		);
-		if (!project || project.deletingAt != null) {
-			throw sessionPreviewError("not_found");
-		}
-		if (
-			project.status !== "ready" ||
-			!project.githubRepo ||
-			!project.githubInstallationId
-		) {
-			throw sessionPreviewError("not_ready");
-		}
-
-		const session = await loadOwnedActiveSession({
-			db: deps.db,
+	return await withPreviewLease(
+		deps,
+		{
 			projectId: options.projectId,
 			sessionId: options.sessionId,
 			userId: options.userId,
-		});
-		if (!session) {
-			throw sessionPreviewError("not_found");
-		}
+			ensureReady: true,
+		},
+		async (lease) => {
+			const cwd = lease.workspacePath;
+			const sandbox = lease.sandbox as unknown as SessionPreviewSandbox;
+			const processId = sessionPreviewProcessId(options.sessionId);
 
-		return await withPreviewLease(
-			deps,
-			{
-				projectId: options.projectId,
-				sessionId: options.sessionId,
-				userId: options.userId,
-				ensureReady: true,
-			},
-			async (lease) => {
-				const cwd = lease.workspacePath;
-				const sandbox = lease.sandbox as unknown as SessionPreviewSandbox;
-				const processId = sessionPreviewProcessId(options.sessionId);
+			const port = WORKSPACE_SESSION_PREVIEW_PORT;
+			await discoverPreviewCommand({ sandbox, cwd, port });
+			await deps.barrier?.("after_allocate");
 
-				// Discover before allocating capacity — unsupported projects fail without cleanup.
-				const provisionalPort = legacy
-					? session.previewPort != null &&
-						isSessionPreviewPort(session.previewPort)
-						? session.previewPort
-						: SESSION_PREVIEW_PORT_MIN +
-							(await hashSessionOffset(options.sessionId))
-					: WORKSPACE_SESSION_PREVIEW_PORT;
-
-				await discoverPreviewCommand({
+			// ONE structured boundary for every non-success exit after allocation.
+			try {
+				const discovered = await discoverPreviewCommand({
 					sandbox,
 					cwd,
-					port: provisionalPort,
+					port,
 				});
 
-				const port = legacy
-					? await allocatePreviewPort(deps, {
-							sessionId: options.sessionId,
-							projectId: options.projectId,
-							userId: options.userId,
-							existingPort: session.previewPort,
-						})
-					: WORKSPACE_SESSION_PREVIEW_PORT;
-				await deps.barrier?.("after_allocate");
+				// Re-check ownership under lease immediately before runtime mutation.
+				const active = await loadOwnedActiveSession({
+					db: deps.db,
+					projectId: options.projectId,
+					sessionId: options.sessionId,
+					userId: options.userId,
+				});
+				if (!active) {
+					throw sessionPreviewError("not_found");
+				}
+				const readyProject = await loadOwnedProject(
+					deps.db,
+					options.projectId,
+					options.userId,
+				);
+				if (!readyProject || readyProject.status !== "ready") {
+					throw sessionPreviewError("not_ready");
+				}
 
-				// ONE structured boundary for every non-success exit after allocation.
+				await deps.barrier?.("before_runtime");
+
+				let process: SessionPreviewProcess | null;
 				try {
-					const discovered = await discoverPreviewCommand({
-						sandbox,
-						cwd,
-						port,
-					});
+					process = await sandbox.getProcess(processId);
+				} catch {
+					throw sessionPreviewError("start_failed");
+				}
 
-					// Re-check ownership under lease immediately before runtime mutation.
-					const active = await loadOwnedActiveSession({
-						db: deps.db,
-						projectId: options.projectId,
+				let exposed: Array<{ url: string; port: number; status: "active" }>;
+				try {
+					exposed = await sandbox.getExposedPorts(host);
+				} catch {
+					throw sessionPreviewError("start_failed");
+				}
+				const existingExposure = exposed.find((entry) => entry.port === port);
+
+				if (process && isHealthyStatus(process.status) && existingExposure) {
+					const url = validatePreviewUrl({
+						url: existingExposure.url,
+						port,
+						hostname: host,
+						local,
+					});
+					await markPreviewStarted(deps, {
 						sessionId: options.sessionId,
+						projectId: options.projectId,
 						userId: options.userId,
 					});
-					if (!active || (legacy && active.previewPort !== port)) {
-						throw sessionPreviewError("not_found");
-					}
-					const readyProject = await loadOwnedProject(
-						deps.db,
-						options.projectId,
-						options.userId,
-					);
-					if (
-						!readyProject ||
-						readyProject.status !== "ready" ||
-						readyProject.deletingAt != null
-					) {
-						throw sessionPreviewError("not_ready");
-					}
+					return { status: "running", url, port, reused: true };
+				}
 
-					await deps.barrier?.("before_runtime");
-
-					let process: SessionPreviewProcess | null;
+				if (process && isHealthyStatus(process.status) && !existingExposure) {
 					try {
-						process = await sandbox.getProcess(processId);
-					} catch {
-						throw sessionPreviewError("start_failed");
-					}
-
-					let exposed: Array<{ url: string; port: number; status: "active" }>;
-					try {
-						exposed = await sandbox.getExposedPorts(host);
-					} catch {
-						throw sessionPreviewError("start_failed");
-					}
-					const existingExposure = exposed.find((entry) => entry.port === port);
-
-					if (process && isHealthyStatus(process.status) && existingExposure) {
-						const url = validatePreviewUrl({
-							url: existingExposure.url,
-							port,
-							hostname: host,
-							local,
-						});
-						if (!legacy) {
-							await markPreviewStarted(deps, {
-								sessionId: options.sessionId,
-								projectId: options.projectId,
-								userId: options.userId,
-							});
-						}
-						return { status: "running", url, port, reused: true };
-					}
-
-					if (process && isHealthyStatus(process.status) && !existingExposure) {
-						try {
-							await waitForPreviewReady(process, port);
-						} catch (error) {
-							if (error instanceof SessionPreviewError) {
-								throw error;
-							}
-							throw sessionPreviewError("start_failed");
-						}
-						let exposedReuse: { url: string; port: number };
-						try {
-							exposedReuse = await sandbox.exposePort(port, { hostname: host });
-						} catch {
-							throw sessionPreviewError("expose_failed");
-						}
-						if (exposedReuse.port !== port) {
-							throw sessionPreviewError("expose_failed");
-						}
-						const url = validatePreviewUrl({
-							url: exposedReuse.url,
-							port: exposedReuse.port,
-							hostname: host,
-							local,
-						});
-						if (!legacy) {
-							await markPreviewStarted(deps, {
-								sessionId: options.sessionId,
-								projectId: options.projectId,
-								userId: options.userId,
-							});
-						}
-						return { status: "running", url, port, reused: true };
-					}
-
-					// Start with --strictPort / fixed Next port. Generic terminal/readiness
-					// failure is start_failed (not port_conflict) without a root port probe.
-					try {
-						process = await sandbox.startProcess(discovered.command, {
-							processId,
-							cwd,
-							env: discovered.env,
-							autoCleanup: true,
-						});
-					} catch {
-						const existing = await sandbox
-							.getProcess(processId)
-							.catch(() => null);
-						if (existing && isHealthyStatus(existing.status)) {
-							process = existing;
-						} else {
-							throw sessionPreviewError("start_failed");
-						}
-					}
-					if (!process) {
-						throw sessionPreviewError("start_failed");
-					}
-					const started = process;
-
-					try {
-						await waitForPreviewReady(started, port);
+						await waitForPreviewReady(process, port);
 					} catch (error) {
 						if (error instanceof SessionPreviewError) {
 							throw error;
 						}
 						throw sessionPreviewError("start_failed");
 					}
-
-					let exposedResult: { url: string; port: number };
+					let exposedReuse: { url: string; port: number };
 					try {
-						exposedResult = await sandbox.exposePort(port, { hostname: host });
+						exposedReuse = await sandbox.exposePort(port, { hostname: host });
 					} catch {
 						throw sessionPreviewError("expose_failed");
 					}
-
-					if (exposedResult.port !== port) {
+					if (exposedReuse.port !== port) {
 						throw sessionPreviewError("expose_failed");
 					}
-
 					const url = validatePreviewUrl({
-						url: exposedResult.url,
-						port,
+						url: exposedReuse.url,
+						port: exposedReuse.port,
 						hostname: host,
 						local,
 					});
-					if (!legacy) {
-						await markPreviewStarted(deps, {
-							sessionId: options.sessionId,
-							projectId: options.projectId,
-							userId: options.userId,
-						});
-					}
-					return { status: "running", url, port, reused: false };
-				} catch (error) {
-					return await failAfterAllocation(deps, {
-						sandbox,
-						port,
-						processId,
+					await markPreviewStarted(deps, {
 						sessionId: options.sessionId,
 						projectId: options.projectId,
 						userId: options.userId,
-						error,
 					});
+					return { status: "running", url, port, reused: true };
 				}
-			},
-		);
-	} finally {
-		if (token) {
-			await releaseProjectPreviewLease(deps, {
-				projectId: options.projectId,
-				userId: options.userId,
-				token,
-			});
-		}
-	}
+
+				// Start with --strictPort / fixed Next port. Generic terminal/readiness
+				// failure is start_failed (not port_conflict) without a root port probe.
+				try {
+					process = await sandbox.startProcess(discovered.command, {
+						processId,
+						cwd,
+						env: discovered.env,
+						autoCleanup: true,
+					});
+				} catch {
+					const existing = await sandbox
+						.getProcess(processId)
+						.catch(() => null);
+					if (existing && isHealthyStatus(existing.status)) {
+						process = existing;
+					} else {
+						throw sessionPreviewError("start_failed");
+					}
+				}
+				if (!process) {
+					throw sessionPreviewError("start_failed");
+				}
+				const started = process;
+
+				try {
+					await waitForPreviewReady(started, port);
+				} catch (error) {
+					if (error instanceof SessionPreviewError) {
+						throw error;
+					}
+					throw sessionPreviewError("start_failed");
+				}
+
+				let exposedResult: { url: string; port: number };
+				try {
+					exposedResult = await sandbox.exposePort(port, { hostname: host });
+				} catch {
+					throw sessionPreviewError("expose_failed");
+				}
+
+				if (exposedResult.port !== port) {
+					throw sessionPreviewError("expose_failed");
+				}
+
+				const url = validatePreviewUrl({
+					url: exposedResult.url,
+					port,
+					hostname: host,
+					local,
+				});
+				await markPreviewStarted(deps, {
+					sessionId: options.sessionId,
+					projectId: options.projectId,
+					userId: options.userId,
+				});
+				return { status: "running", url, port, reused: false };
+			} catch (error) {
+				return await failAfterAllocation({
+					sandbox,
+					port,
+					processId,
+					error,
+				});
+			}
+		},
+	);
 }
 
 export type StopSessionPreviewResult = { status: "stopped" };
@@ -1213,160 +940,104 @@ export async function stopSessionPreview(
 		env: options.env,
 	};
 
-	const projectForKind = await loadOwnedProject(
-		deps.db,
-		options.projectId,
-		options.userId,
-	);
-	const sessionForKind = await loadOwnedActiveSession({
+	const session = await loadOwnedActiveSession({
 		db: deps.db,
 		projectId: options.projectId,
 		sessionId: options.sessionId,
 		userId: options.userId,
 	});
-	if (!sessionForKind) {
+	if (!session) {
 		throw sessionPreviewError("not_found");
 	}
-	const legacy =
-		projectForKind != null &&
-		isLegacySharedSandboxSession(sessionForKind, projectForKind);
+	if (session.previewStartedAt == null) {
+		return { status: "stopped" };
+	}
+	const port = WORKSPACE_SESSION_PREVIEW_PORT;
 
-	let token: string | null = null;
-	if (legacy) {
-		token = (
-			await acquireProjectPreviewLease(deps, {
-				projectId: options.projectId,
-				userId: options.userId,
-			})
-		).token;
+	const project = await loadOwnedProject(
+		deps.db,
+		options.projectId,
+		options.userId,
+	);
+	if (!project || project.status !== "ready") {
+		throw sessionPreviewError("not_ready");
 	}
 
-	try {
-		const session = await loadOwnedActiveSession({
-			db: deps.db,
+	const processId = sessionPreviewProcessId(options.sessionId);
+	const cleaned = await withPreviewLease(
+		deps,
+		{
 			projectId: options.projectId,
 			sessionId: options.sessionId,
 			userId: options.userId,
-		});
-		if (!session) {
-			throw sessionPreviewError("not_found");
-		}
-		if (legacy && session.previewPort == null) {
-			return { status: "stopped" };
-		}
-		if (!legacy && session.previewStartedAt == null) {
-			return { status: "stopped" };
-		}
-		const port = legacy ? session.previewPort : WORKSPACE_SESSION_PREVIEW_PORT;
-		if (port == null || !isSessionPreviewPort(port)) {
-			throw sessionPreviewError("cleanup_failed");
-		}
-
-		const project = await loadOwnedProject(
-			deps.db,
-			options.projectId,
-			options.userId,
-		);
-		if (!project || project.status !== "ready") {
-			throw sessionPreviewError("not_ready");
-		}
-
-		const processId = sessionPreviewProcessId(options.sessionId);
-		const cleaned = await withPreviewLease(
-			deps,
-			{
-				projectId: options.projectId,
-				sessionId: options.sessionId,
-				userId: options.userId,
-				ensureReady: false,
-			},
-			async (lease) =>
-				cleanupPreviewRuntime({
-					sandbox: lease.sandbox as unknown as SessionPreviewSandbox,
-					port,
-					processId,
-				}),
-		);
-
-		if (!cleaned.unexposed || !cleaned.processGone) {
-			throw sessionPreviewError("cleanup_failed");
-		}
-
-		if (legacy) {
-			await clearSessionPreviewPort(deps, {
-				sessionId: options.sessionId,
-				projectId: options.projectId,
-				userId: options.userId,
+			ensureReady: false,
+		},
+		async (lease) =>
+			cleanupPreviewRuntime({
+				sandbox: lease.sandbox as unknown as SessionPreviewSandbox,
 				port,
-			});
-		} else {
-			const { checkpoint, getWorkspaceRecoveryState } = await import(
-				"#/lib/workspace-recovery"
-			);
-			const recovery = await getWorkspaceRecoveryState(
-				deps.db,
-				options.sessionId,
-			);
-			if (recovery?.pending) {
-				const { withWorkspaceRuntimeLease } = await import(
-					"#/lib/workspace-runtime"
-				);
-				try {
-					const result = await withWorkspaceRuntimeLease(
-						{
-							env: deps.env,
-							db: deps.db,
-							userId: options.userId,
-							projectId: options.projectId,
-							sessionId: options.sessionId,
-							purpose: "backup_restore",
-							lock: "acquire",
-						},
-						async (lease) =>
-							checkpoint({
-								db: deps.db,
-								env: deps.env,
-								lease,
-								userId: options.userId,
-							}),
-					);
-					if (result.state === "degraded" || result.state === "failed") {
-						await clearPreviewStarted(deps, {
-							sessionId: options.sessionId,
-							projectId: options.projectId,
-							userId: options.userId,
-						});
-						throw sessionPreviewError("not_durable");
-					}
-				} catch (error) {
-					await clearPreviewStarted(deps, {
-						sessionId: options.sessionId,
-						projectId: options.projectId,
+				processId,
+			}),
+	);
+
+	if (!cleaned.unexposed || !cleaned.processGone) {
+		throw sessionPreviewError("cleanup_failed");
+	}
+
+	const { checkpoint, getWorkspaceRecoveryState } = await import(
+		"#/lib/workspace-recovery"
+	);
+	const recovery = await getWorkspaceRecoveryState(deps.db, options.sessionId);
+	if (recovery?.pending) {
+		const { withWorkspaceRuntimeLease } = await import(
+			"#/lib/workspace-runtime"
+		);
+		try {
+			const result = await withWorkspaceRuntimeLease(
+				{
+					env: deps.env,
+					db: deps.db,
+					userId: options.userId,
+					projectId: options.projectId,
+					sessionId: options.sessionId,
+					purpose: "backup_restore",
+					lock: "acquire",
+				},
+				async (lease) =>
+					checkpoint({
+						db: deps.db,
+						env: deps.env,
+						lease,
 						userId: options.userId,
-					});
-					if (error instanceof SessionPreviewError) {
-						throw error;
-					}
-					throw sessionPreviewError("not_durable");
-				}
+					}),
+			);
+			if (result.state === "degraded" || result.state === "failed") {
+				await clearPreviewStarted(deps, {
+					sessionId: options.sessionId,
+					projectId: options.projectId,
+					userId: options.userId,
+				});
+				throw sessionPreviewError("not_durable");
 			}
+		} catch (error) {
 			await clearPreviewStarted(deps, {
 				sessionId: options.sessionId,
 				projectId: options.projectId,
 				userId: options.userId,
 			});
-		}
-
-		return { status: "stopped" };
-	} finally {
-		if (token) {
-			await releaseProjectPreviewLease(deps, {
-				projectId: options.projectId,
-				userId: options.userId,
-				token,
-			});
+			if (error instanceof SessionPreviewError) {
+				throw error;
+			}
+			throw sessionPreviewError("not_durable");
 		}
 	}
+	await clearPreviewStarted(deps, {
+		sessionId: options.sessionId,
+		projectId: options.projectId,
+		userId: options.userId,
+	});
+
+	return { status: "stopped" };
 }
 
 export async function interruptPreviewForCheckpoint(options: {
@@ -1494,147 +1165,132 @@ export async function archiveSessionWithPreviewCleanup(
 		env: options.env,
 	};
 
-	const { token } = await acquireProjectPreviewLease(deps, {
+	const session = await loadOwnedActiveSession({
+		db: deps.db,
 		projectId: options.projectId,
+		sessionId: options.sessionId,
 		userId: options.userId,
 	});
+	if (!session) {
+		throw sessionPreviewError("not_found");
+	}
 
-	try {
-		const session = await loadOwnedActiveSession({
-			db: deps.db,
-			projectId: options.projectId,
-			sessionId: options.sessionId,
-			userId: options.userId,
-		});
-		if (!session) {
-			throw sessionPreviewError("not_found");
+	const project = await loadOwnedProject(
+		deps.db,
+		options.projectId,
+		options.userId,
+	);
+	const port = WORKSPACE_SESSION_PREVIEW_PORT;
+	if (session.previewStartedAt != null) {
+		if (!project || project.status !== "ready") {
+			throw sessionPreviewError("not_ready");
 		}
-
-		const { requireDurable, WorkspaceRecoveryError } = await import(
-			"#/lib/workspace-recovery"
-		);
-		try {
-			await requireDurable(deps.db, options.sessionId);
-		} catch (error) {
-			if (
-				error instanceof WorkspaceRecoveryError &&
-				error.code === "not_durable"
-			) {
-				throw sessionPreviewError("not_durable");
-			}
-			throw error;
-		}
-
-		const project = await loadOwnedProject(
-			deps.db,
-			options.projectId,
-			options.userId,
-		);
-		const dedicated =
-			project != null && !isLegacySharedSandboxSession(session, project);
-		const port = dedicated
-			? WORKSPACE_SESSION_PREVIEW_PORT
-			: session.previewPort;
-		if (port != null && (dedicated || session.previewPort != null)) {
-			if (!isSessionPreviewPort(port)) {
-				throw sessionPreviewError("cleanup_failed");
-			}
-			if (!project || project.status !== "ready") {
-				throw sessionPreviewError("not_ready");
-			}
-			const processId = sessionPreviewProcessId(options.sessionId);
-			const cleaned = await withPreviewLease(
-				deps,
-				{
-					projectId: options.projectId,
-					sessionId: options.sessionId,
-					userId: options.userId,
-					ensureReady: false,
-				},
-				async (lease) =>
-					cleanupPreviewRuntime({
-						sandbox: lease.sandbox as unknown as SessionPreviewSandbox,
-						port,
-						processId,
-					}),
-			);
-			if (!cleaned.unexposed || !cleaned.processGone) {
-				throw sessionPreviewError("cleanup_failed");
-			}
-			if (session.previewPort != null) {
-				await clearSessionPreviewPort(deps, {
-					sessionId: options.sessionId,
-					projectId: options.projectId,
-					userId: options.userId,
-					port: session.previewPort,
-				});
-			}
-			await clearPreviewStarted(deps, {
-				sessionId: options.sessionId,
+		const processId = sessionPreviewProcessId(options.sessionId);
+		const cleaned = await withPreviewLease(
+			deps,
+			{
 				projectId: options.projectId,
-				userId: options.userId,
-			});
-		}
-
-		if (dedicated && session.sandboxIdentityId) {
-			const { createSandboxAuthority } = await import(
-				"#/lib/sandbox-authority"
-			);
-			const { destroySandbox } = await import("#/lib/sandbox-bootstrap");
-			const { releaseCapacitySlot } = await import(
-				"#/lib/workspace-runtime-capacity"
-			);
-			const authority = createSandboxAuthority(deps.db);
-			const identity = await authority.getIdentity(session.sandboxIdentityId);
-			if (identity && identity.retiredAt == null) {
-				await authority.retireIdentity(identity.id);
-				try {
-					await destroySandbox({
-						env: deps.env,
-						sandboxId: identity.sandboxId,
-					});
-				} catch {
-					// Identity is already retired so the ID cannot be reused.
-				}
-			}
-			await releaseCapacitySlot({
-				db: deps.db,
 				sessionId: options.sessionId,
-				nowMs: Date.now(),
-			});
+				userId: options.userId,
+				ensureReady: false,
+			},
+			async (lease) =>
+				cleanupPreviewRuntime({
+					sandbox: lease.sandbox as unknown as SessionPreviewSandbox,
+					port,
+					processId,
+				}),
+		);
+		if (!cleaned.unexposed || !cleaned.processGone) {
+			throw sessionPreviewError("cleanup_failed");
 		}
-
-		const [archived] = await deps.db
-			.update(workspaceSessions)
-			.set({ status: "archived", updatedAt: sql`(unixepoch())` })
-			.where(
-				and(
-					eq(workspaceSessions.id, options.sessionId),
-					eq(workspaceSessions.projectId, options.projectId),
-					eq(workspaceSessions.userId, options.userId),
-					eq(workspaceSessions.status, "active"),
-				),
-			)
-			.returning({ id: workspaceSessions.id });
-
-		if (!archived) {
-			throw sessionPreviewError("not_found");
-		}
-		return archived;
-	} finally {
-		await releaseProjectPreviewLease(deps, {
+		await clearPreviewStarted(deps, {
+			sessionId: options.sessionId,
 			projectId: options.projectId,
 			userId: options.userId,
-			token,
 		});
 	}
+
+	const { checkpoint, requireDurable, WorkspaceRecoveryError } = await import(
+		"#/lib/workspace-recovery"
+	);
+	try {
+		await deps.withWorkspaceRuntimeLease(
+			{
+				env: deps.env,
+				db: deps.db,
+				userId: options.userId,
+				projectId: options.projectId,
+				sessionId: options.sessionId,
+				purpose: "backup_restore",
+				lock: "acquire",
+			},
+			async (lease) =>
+				checkpoint({
+					db: deps.db,
+					env: deps.env,
+					lease,
+					userId: options.userId,
+				}),
+		);
+		await requireDurable(deps.db, options.sessionId);
+	} catch (error) {
+		if (
+			error instanceof WorkspaceRecoveryError &&
+			error.code === "not_durable"
+		) {
+			throw sessionPreviewError("not_durable");
+		}
+		throw error;
+	}
+
+	if (session.sandboxIdentityId) {
+		const { createSandboxAuthority } = await import("#/lib/sandbox-authority");
+		const { destroySandbox } = await import("#/lib/sandbox-bootstrap");
+		const { releaseCapacitySlot } = await import(
+			"#/lib/workspace-runtime-capacity"
+		);
+		const authority = createSandboxAuthority(deps.db);
+		const identity = await authority.getIdentity(session.sandboxIdentityId);
+		if (identity && identity.retiredAt == null) {
+			await authority.retireIdentity(identity.id);
+			try {
+				await destroySandbox({
+					env: deps.env,
+					sandboxId: identity.sandboxId,
+				});
+			} catch {
+				// Identity is already retired so the ID cannot be reused.
+			}
+		}
+		await releaseCapacitySlot({
+			db: deps.db,
+			sessionId: options.sessionId,
+			nowMs: Date.now(),
+		});
+	}
+
+	const [archived] = await deps.db
+		.update(workspaceSessions)
+		.set({ status: "archived", updatedAt: sql`(unixepoch())` })
+		.where(
+			and(
+				eq(workspaceSessions.id, options.sessionId),
+				eq(workspaceSessions.projectId, options.projectId),
+				eq(workspaceSessions.userId, options.userId),
+				eq(workspaceSessions.status, "active"),
+			),
+		)
+		.returning({ id: workspaceSessions.id });
+
+	if (!archived) {
+		throw sessionPreviewError("not_found");
+	}
+	return archived;
 }
 
-/**
- * Delete a project under the external D1 lifecycle lease.
- * Sets durable tombstone, destroys sandbox last, then deletes D1 row.
- */
-export async function deleteProjectWithPreviewFence(
+/** Revoke project authority before runtime and archive cleanup. */
+export async function deleteProjectRuntime(
 	options: {
 		db: SessionPreviewDb;
 		env: Env;
@@ -1650,171 +1306,108 @@ export async function deleteProjectWithPreviewFence(
 		db: options.db,
 		env: options.env,
 	};
+	const project = await loadOwnedProject(
+		deps.db,
+		options.projectId,
+		options.userId,
+	);
+	if (!project) {
+		throw sessionPreviewError("not_found");
+	}
+	const [tombstone] = await deps.db
+		.update(projects)
+		.set({ status: "deleting", updatedAt: sql`(unixepoch())` })
+		.where(
+			and(
+				eq(projects.id, options.projectId),
+				eq(projects.userId, options.userId),
+			),
+		)
+		.returning({ id: projects.id });
+	if (!tombstone) {
+		throw sessionPreviewError("not_found");
+	}
 
-	const { token } = await acquireProjectPreviewLease(deps, {
+	const sessions = await deps.db
+		.select()
+		.from(workspaceSessions)
+		.where(eq(workspaceSessions.projectId, options.projectId));
+	const identities = await deps.db
+		.select()
+		.from(sandboxIdentities)
+		.where(eq(sandboxIdentities.projectId, options.projectId));
+	const { createSandboxAuthority } = await import("#/lib/sandbox-authority");
+	const authority = createSandboxAuthority(deps.db);
+	for (const identity of identities) {
+		if (identity.retiredAt == null) {
+			await authority.retireIdentity(identity.id);
+		}
+	}
+	await cancelProjectWork({
+		db: deps.db,
 		projectId: options.projectId,
 		userId: options.userId,
-		allowDeleting: true,
+		nowMs: Date.now(),
 	});
 
-	let sandboxId: string | null = null;
-	let tombstoned = false;
-
-	try {
-		const project = await loadOwnedProject(
-			deps.db,
-			options.projectId,
-			options.userId,
+	for (const session of sessions) {
+		if (session.previewStartedAt == null || !session.sandboxIdentityId) {
+			continue;
+		}
+		const identity = identities.find(
+			(row) => row.id === session.sandboxIdentityId,
 		);
-		if (!project) {
-			throw sessionPreviewError("not_found");
+		if (!identity) {
+			continue;
 		}
-		sandboxId = project.sandboxId;
-
-		const [tombstone] = await deps.db
-			.update(projects)
-			.set({
-				status: "failed",
-				deletingAt: deps.nowSeconds(),
-				updatedAt: sql`(unixepoch())`,
-			})
-			.where(
-				and(
-					eq(projects.id, options.projectId),
-					eq(projects.userId, options.userId),
-					eq(projects.previewLockToken, token),
-				),
-			)
-			.returning({ id: projects.id });
-
-		if (!tombstone) {
-			throw sessionPreviewError("not_found");
+		try {
+			await cleanupPreviewRuntime({
+				sandbox: deps.getSandbox(deps.env, identity.sandboxId),
+				port: WORKSPACE_SESSION_PREVIEW_PORT,
+				processId: sessionPreviewProcessId(session.id),
+			});
+		} catch {
+			// Retired authority prevents reuse while runtime cleanup retries.
 		}
-		tombstoned = true;
-
-		const { createSandboxAuthority } = await import("#/lib/sandbox-authority");
-		const { abandonArchive } = await import("#/lib/sandbox-archive");
-		const authority = createSandboxAuthority(deps.db);
-		const identities = await deps.db
-			.select()
-			.from(sandboxIdentities)
-			.where(eq(sandboxIdentities.projectId, options.projectId));
-		for (const identity of identities) {
-			if (identity.retiredAt == null) {
-				await authority.retireIdentity(identity.id);
-			}
-		}
-
-		await cancelProjectWork({
-			db: deps.db,
-			projectId: options.projectId,
-			userId: options.userId,
-			nowMs: Date.now(),
-		});
-
-		const sessions = await deps.db
-			.select()
-			.from(workspaceSessions)
-			.where(eq(workspaceSessions.projectId, options.projectId));
-		for (const session of sessions) {
-			const port =
-				session.previewPort ??
-				(session.sandboxIdentityId ? WORKSPACE_SESSION_PREVIEW_PORT : null);
-			if (port == null) {
-				continue;
-			}
-			const identity = identities.find(
-				(row) => row.id === session.sandboxIdentityId,
-			);
-			const sandboxIdForPreview = identity?.sandboxId ?? sandboxId;
-			if (!sandboxIdForPreview) {
-				continue;
-			}
-			try {
-				const sandbox = deps.getSandbox(
-					deps.env,
-					sandboxIdForPreview,
-				) as SessionPreviewSandbox;
-				await cleanupPreviewRuntime({
-					sandbox,
-					port,
-					processId: sessionPreviewProcessId(session.id),
-				});
-			} catch {
-				// Best-effort revoke; identity is already retired.
-			}
-		}
-
-		for (const identity of identities) {
-			try {
-				await options.destroySandbox({
-					env: options.env,
-					sandboxId: identity.sandboxId,
-				});
-			} catch {
-				// Tombstone remains; retry can destroy again.
-			}
-		}
-
-		if (sandboxId) {
+	}
+	for (const identity of identities) {
+		try {
 			await options.destroySandbox({
 				env: options.env,
-				sandboxId,
+				sandboxId: identity.sandboxId,
 			});
+		} catch {
+			// The permanent identity tombstone remains authoritative.
 		}
-
-		const nowSeconds = deps.nowSeconds();
-		const ownerIds = [
-			options.projectId,
-			...sessions.map((session) => session.id),
-		];
-		for (const ownerId of ownerIds) {
-			const archiveRows = await deps.db
-				.select({ id: archives.id })
-				.from(archives)
-				.where(eq(archives.ownerId, ownerId));
-			for (const row of archiveRows) {
-				try {
-					await abandonArchive(deps.db, row.id, nowSeconds);
-				} catch {
-					// Cleanup worker retries abandoned/deleting rows.
-				}
-			}
-		}
-
-		const deleted = await deps.db
-			.delete(projects)
-			.where(
-				and(
-					eq(projects.id, options.projectId),
-					eq(projects.userId, options.userId),
-					eq(projects.previewLockToken, token),
-					sql`${projects.deletingAt} IS NOT NULL`,
-				),
-			)
-			.returning({ id: projects.id });
-
-		if (!deleted[0]) {
-			throw sessionPreviewError("not_found");
-		}
-
-		// Row deletion consumes the lease — no release.
-		return deleted[0];
-	} catch (error) {
-		if (tombstoned) {
-			// Keep tombstone; only release D1 lease so delete can be retried.
-			await releaseProjectPreviewLease(deps, {
-				projectId: options.projectId,
-				userId: options.userId,
-				token,
-			});
-			throw error;
-		}
-		await releaseProjectPreviewLease(deps, {
-			projectId: options.projectId,
-			userId: options.userId,
-			token,
-		});
-		throw error;
 	}
+
+	const { abandonArchive } = await import("#/lib/sandbox-archive");
+	const ownerIds = [
+		options.projectId,
+		...sessions.map((session) => session.id),
+	];
+	for (const ownerId of ownerIds) {
+		const archiveRows = await deps.db
+			.select({ id: archives.id })
+			.from(archives)
+			.where(eq(archives.ownerId, ownerId));
+		for (const row of archiveRows) {
+			await abandonArchive(deps.db, row.id, deps.nowSeconds());
+		}
+	}
+
+	const [deleted] = await deps.db
+		.delete(projects)
+		.where(
+			and(
+				eq(projects.id, options.projectId),
+				eq(projects.userId, options.userId),
+				eq(projects.status, "deleting"),
+			),
+		)
+		.returning({ id: projects.id });
+	if (!deleted) {
+		throw sessionPreviewError("not_found");
+	}
+	return deleted;
 }

@@ -1,12 +1,6 @@
 import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import type { createDb } from "#/db";
-import {
-	type ARCHIVE_OWNER_KINDS,
-	archives,
-	workspaceSessions,
-} from "#/db/schema";
-import type { SessionPreviewDeps } from "#/lib/session-preview";
-import { withSessionWorkspaceLock } from "#/lib/session-workspace-lock";
+import { type ARCHIVE_OWNER_KINDS, archives } from "#/db/schema";
 import { WORKSPACE_PATH } from "#/lib/workspace-policy";
 
 export const ARCHIVE_FORMAT_VERSION = 1;
@@ -73,7 +67,6 @@ export type CreateArchiveInput = {
 	ownerId: string;
 	userId: string;
 	generation: number;
-	quiesce?: boolean;
 	limits?: ArchiveLimits;
 };
 
@@ -607,66 +600,6 @@ export async function abandonArchive(
 		.where(and(eq(archives.id, archiveId), eq(archives.status, "ready")));
 }
 
-async function withLegacyProjectQuiesce<T>(options: {
-	db: Db;
-	env: Env;
-	projectId: string;
-	userId: string;
-	sandboxId: string;
-	run: () => Promise<T>;
-}): Promise<T> {
-	const { acquireProjectPreviewLease, releaseProjectPreviewLease } =
-		await import("#/lib/session-preview");
-	const deps = {
-		db: options.db,
-		env: options.env,
-		nowSeconds: () => Math.floor(Date.now() / 1000),
-		randomToken: () => crypto.randomUUID(),
-		sleep: (ms: number) =>
-			new Promise<void>((resolve) => setTimeout(resolve, ms)),
-		getSandbox: () => {
-			throw new Error("Archive quiesce does not start a sandbox.");
-		},
-		withWorkspaceRuntimeLease: async () => {
-			throw new Error("Archive quiesce does not open a workspace runtime.");
-		},
-	} satisfies SessionPreviewDeps;
-	const { token } = await acquireProjectPreviewLease(deps, {
-		projectId: options.projectId,
-		userId: options.userId,
-	});
-	try {
-		const sessions = await options.db
-			.select({ id: workspaceSessions.id })
-			.from(workspaceSessions)
-			.where(
-				and(
-					eq(workspaceSessions.projectId, options.projectId),
-					eq(workspaceSessions.status, "active"),
-				),
-			);
-		const acquire = async (index: number): Promise<T> => {
-			const session = sessions[index];
-			if (!session) {
-				return await options.run();
-			}
-			return await withSessionWorkspaceLock({
-				env: options.env,
-				sandboxId: options.sandboxId,
-				sessionId: session.id,
-				run: () => acquire(index + 1),
-			});
-		};
-		return await acquire(0);
-	} finally {
-		await releaseProjectPreviewLease(deps, {
-			projectId: options.projectId,
-			userId: options.userId,
-			token,
-		});
-	}
-}
-
 async function createArchiveBody(options: {
 	env: Env;
 	db: Db;
@@ -753,24 +686,7 @@ export async function createArchive(
 	db: Db,
 	input: CreateArchiveInput,
 ): Promise<ArchiveRef> {
-	const run = () =>
-		createArchiveBody({
-			env,
-			db,
-			sandbox: input.sandbox,
-			input,
-		});
-	if (input.quiesce === false || input.ownerKind !== "legacy_project") {
-		return await run();
-	}
-	return await withLegacyProjectQuiesce({
-		db,
-		env,
-		projectId: input.ownerId,
-		userId: input.userId,
-		sandboxId: input.sandboxId,
-		run,
-	});
+	return createArchiveBody({ env, db, sandbox: input.sandbox, input });
 }
 
 export async function restoreArchive(

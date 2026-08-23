@@ -25,7 +25,6 @@ const FIXED_PROVIDER = "opencode";
 const FIXED_MODEL_ID = "deepseek-v4-flash-free";
 
 function scrubCredentialEnv(): void {
-	delete process.env.DITTO_PI_CREDENTIAL;
 	delete process.env.OPENCODE_API_KEY;
 }
 

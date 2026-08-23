@@ -10,7 +10,6 @@ import {
 	messageCursorFromRow,
 	messageCursorOlderThanInputs,
 } from "#/lib/message-cursor";
-import { provisionProjectSandbox } from "#/lib/project-sandbox";
 import {
 	archiveSessionWithPreviewCleanup,
 	SessionPreviewError,
@@ -55,13 +54,7 @@ async function loadProjectOrThrow(options: {
 }
 
 function stripProjectSecrets(project: typeof projects.$inferSelect) {
-	const {
-		envVars: _envVars,
-		sandboxBackup: _sandboxBackup,
-		sandboxBackupCreatedAt: _sandboxBackupCreatedAt,
-		...rest
-	} = project;
-
+	const { envVars: _envVars, ...rest } = project;
 	return rest;
 }
 
@@ -174,7 +167,7 @@ export const workspaceRouter = createTRPCRouter({
 		)
 		.mutation(async ({ ctx, input }) => {
 			const db = createDb(ctx.env);
-			const project = await loadProjectOrThrow({
+			await loadProjectOrThrow({
 				db,
 				projectId: input.projectId,
 				userId: ctx.user.id,
@@ -207,39 +200,20 @@ export const workspaceRouter = createTRPCRouter({
 					});
 				}
 
-				if (!project.sandboxId) {
-					const observed = await observeWorkspaceRuntime({
-						db,
-						env: ctx.env,
-						userId: ctx.user.id,
-						projectId: input.projectId,
-					});
-					return await loadSessionsAndBuildView({
-						db,
-						projectId: input.projectId,
-						userId: ctx.user.id,
-						sessionId: input.sessionId,
-						sandboxProject: observed.project,
-						sandboxState: observed.state,
-						restoreFailed: observed.state === "failed",
-					});
-				}
-
-				const result = await provisionProjectSandbox({
+				const observed = await observeWorkspaceRuntime({
 					db,
 					env: ctx.env,
-					project,
+					userId: ctx.user.id,
+					projectId: input.projectId,
 				});
-
 				return await loadSessionsAndBuildView({
 					db,
 					projectId: input.projectId,
 					userId: ctx.user.id,
 					sessionId: input.sessionId,
-					sandboxProject: result.project,
-					sandboxState: result.state,
-					restoreFailed:
-						result.state === "failed" || result.project.status === "failed",
+					sandboxProject: observed.project,
+					sandboxState: observed.state,
+					restoreFailed: observed.state === "failed",
 				});
 			} catch (error) {
 				if (error instanceof WorkspaceRuntimeError) {
@@ -295,7 +269,6 @@ export const workspaceRouter = createTRPCRouter({
 						eq(projects.id, project.id),
 						eq(projects.userId, ctx.user.id),
 						eq(projects.status, "failed"),
-						sql`${projects.deletingAt} IS NULL`,
 					),
 				)
 				.returning({ id: projects.id });

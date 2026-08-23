@@ -1,8 +1,8 @@
 # Platform credential broker and workspace-session sandbox isolation
 
-Status: approved design; local implementation ready; production validation deferred
+Status: local cutover implemented; clean local end-to-end and production validation deferred
 
-Last implementation audit: 2026-08-20 at `57a29d5`
+Last implementation audit: 2026-08-23 in the plan 012 cutover commit
 
 Background research:
 
@@ -127,49 +127,30 @@ Object state. Both runs passed every item.
 
 ## Current implementation
 
-The application has one project sandbox per project. Workspace sessions use
-separate Git worktrees inside the shared sandbox.
+Projects own immutable seeds and no live runtime. Every workspace session owns a dedicated sandbox identity, fixed `/workspace` checkout, lifecycle generation, capacity lease, and current/previous recovery lineage. The pre-launch cutover reset removes old project and workspace rows before dropping transition columns.
 
-The Worker passes these credential classes into sandbox processes:
+The Sandbox class disables default internet access. Builders and workspace runtimes attach the Worker-owned catch-all broker. OpenCode, Git fetch, workspace sync, and Ditto actions use exact D1-backed contracts. Product push remains disabled because the non-fast-forward feasibility gate has not passed.
 
-- a GitHub installation token for a short-lived network Git launcher on the
-  remaining legacy session-sync fetch path
-- user-owned project environment values into the agent command only
+The Worker streams project seeds and recovery archives through the R2 binding. Sandboxes receive no storage credential, object key, signed URL, bucket mount, OpenCode key, GitHub installation token, callback JWT, or internal bearer token. User-owned project values enter the agent command only and remain covered by redaction and Git secret preflight.
 
-The OpenCode API key stays in the Worker. Agent Git tools call
-`http://ditto.internal/v1/git-action` with no callback URL or bearer token.
-The Worker opens a `ditto_action` / `agent_git` operation beside the model
-`agent_run` window and dispatches status, push, and open-PR through
-Worker-owned Git modules.
-
-The runner deletes provider values from its environment before PI creates
-tools. The Git launcher uses a temporary bare repository, a closed environment,
-disabled hooks, and disabled credential helpers. These controls reduce exposure
-but do not protect credentials from a compromised sandbox.
-
-Normal chat does not pass an explicit PI resource loader. PI uses default
-project discovery and can load repository-owned code before the first model
-request.
-
-Project rows own sandbox identity, backup handles, and backup generations on
-the legacy path. New workspace sessions own a dedicated sandbox identity and
-runtime. Session recovery backups remain a later plan.
+Normal chat loads only the image-owned Ditto extension. Provider credentials, provider auth, catalogs, shared runtime code, worktree code, callback routes, token-bearing Git launchers, stock backup paths, and their deployment bindings are absent.
 
 ## Implementation audit
 
 | Design area | Status | Evidence |
 |---|---|---|
-| Ditto-owned Sandbox subclass | Not implemented | `apps/web/src/server.ts` re-exports the stock `Sandbox` class. |
-| Outbound credential dispatch | Partial | Git fetch, OpenCode model requests, and Ditto Git actions resolve the sandbox identity. A receive-pack contract exists; product push is disabled until non-fast-forward rejection is proved. Installation tokens stay in the Worker. Local commits and secret preflight remain. |
-| OpenCode credential removal | Implemented | Worker holds `OPENCODE_API_KEY`. Sandbox PI uses the public placeholder. `open-code-contract.ts` constructs the authenticated upstream request. |
-| Token-free agent Git capability | Implemented | Image-owned origin `http://ditto.internal/v1/git-action`; Worker classifies it before public internet, resolves the trusted identity and open `ditto_action` / `agent_git` D1 operation, and dispatches `agent-git-handler.ts`. HS256 callback JWT and the public Git route are gone. |
-| GitHub installation-token removal | Partial | Product push does not mint sandbox tokens. Isolated fetch still injects a token for legacy session sync. |
-| Token-free R2 recovery | Not implemented | Production backup and restore use the stock Sandbox SDK path. |
-| Contract-based outbound policy | Not implemented | The stock project sandbox retains normal network access. |
-| One sandbox per workspace session | Implemented for new sessions | `WorkspaceRuntime` provisions a `workspace_session` identity and sandbox. Legacy sessions may still share a project sandbox until plan 012. |
-| Safe chat resource loader | Not implemented | `packages/sandbox-runner/src/run-agent.ts` omits `resourceLoader`. |
-| Workspace-session backups | Not implemented | Backup fields and generation counters live on `projects`. |
-| Capacity queue and lifecycle | Implemented | `WorkspaceRuntime` persists `workspace_runtime_work` and `workspace_capacity_leases`. Drain + one-minute cron enforce 20 global / 2 per-user running slots, 15-minute queue expiry, preview checkpoint deferral, and idle slot release. |
+| Ditto-owned Sandbox subclass | Implemented locally | `server.ts` disables default internet, intercepts HTTPS, registers `dittoCatchAll`, tracks preview traffic, and sleeps after ten idle minutes. |
+| Outbound credential dispatch | Implemented locally | Git fetch/sync, OpenCode, and Ditto actions resolve current identity and operation authority. Product push stays disabled pending its feasibility gate. |
+| OpenCode credential removal | Implemented locally | `OPENCODE_API_KEY` stays in the Worker; runner PI uses the public placeholder. |
+| Token-free agent Git capability | Implemented locally | Synthetic origin and D1 authority replace the public callback route and JWT. |
+| GitHub installation-token removal | Implemented locally | No sandbox launcher receives a token. Brokered Git adds auth only on the Worker upstream request. |
+| Token-free R2 recovery | Implemented locally | `sandbox-archive.ts` streams RPC bytes through the Worker binding with metadata and integrity checks. |
+| Contract-based outbound policy | Implemented locally | Every runtime uses the catch-all; failed privileged requests do not fall through to public internet. |
+| One sandbox per workspace session | Implemented locally | `WorkspaceRuntime` provisions only `workspace_session` identities and fixed `/workspace` checkouts. |
+| Safe chat resource loader | Implemented locally | Runner tests prove repository PI resources are undiscoverable and the image-owned extension loads. |
+| Workspace-session recovery | Implemented locally | Mutation generations, current/previous fallback, preview deferral, archive checkpoint, and cleanup are session-owned. |
+| Capacity queue and lifecycle | Implemented locally | Durable FIFO work and capacity leases enforce 20 global and two per-user running slots. |
+| Legacy schema and deployment removal | Implemented locally | The destructive pre-launch migration removes provider tables and transition columns while preserving final authority, archive cleanup, auth, runtime, recovery, and queue definitions. |
 
 ## Controls to preserve
 
@@ -803,6 +784,25 @@ runtime feature flag.
 Before a future production cutover, create an operator-only D1 and R2
 disaster-recovery backup. The application is fix-forward after cutover. Do not
 reconnect old credential-injection code during rollback.
+
+## Local cutover validation
+
+Automated validation passed on 2026-08-23 in the plan 012 cutover commit:
+
+- generated Drizzle schema and migration metadata
+- all 63 web test files, 667 tests
+- web TypeScript and production build
+- all 11 runner test files, 79 tests, plus runner typecheck and build
+- Biome, legacy searches, migration safety inspection, and diff checks
+
+The clean local end-to-end matrix did not run. This isolated environment has no
+Cloudflare account, Better Auth, GitHub OAuth/App, or OpenCode credentials and
+cannot import a private test repository or start paid Sandbox capacity. The
+unrun matrix is: builder retirement, two-session runtime isolation, all thinking
+levels, commit/export feasibility, preview mutation and cold restore,
+archive/continue, project deletion, and live process/D1 credential inspection.
+Do not treat that matrix as passed. The spec does not claim complete local or
+production validation until it runs.
 
 ## Future production validation
 

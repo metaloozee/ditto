@@ -4,19 +4,20 @@ const getProjectSandboxMock = vi.hoisted(() => vi.fn());
 const getInstallationAccessTokenMock = vi.hoisted(() => vi.fn());
 const getGitHubAppMock = vi.hoisted(() => vi.fn());
 const scrubGithubRemoteMock = vi.hoisted(() => vi.fn());
-const fetchPrimaryBranchFromGitHubMock = vi.hoisted(() => vi.fn());
+const fetchGitHubBranchIntoRepositoryBrokeredMock = vi.hoisted(() => vi.fn());
 const installDependenciesMock = vi.hoisted(() => vi.fn());
 const validateGitBranchRefsMock = vi.hoisted(() => vi.fn());
 
 vi.mock("#/lib/sandbox-bootstrap", () => ({
 	getProjectSandbox: getProjectSandboxMock,
 	scrubGithubRemote: scrubGithubRemoteMock,
-	fetchPrimaryBranchFromGitHub: fetchPrimaryBranchFromGitHubMock,
 	installDependencies: installDependenciesMock,
 }));
 
 vi.mock("#/lib/privileged-git", () => ({
 	validateGitBranchRefs: validateGitBranchRefsMock,
+	fetchGitHubBranchIntoRepositoryBrokered:
+		fetchGitHubBranchIntoRepositoryBrokeredMock,
 }));
 
 vi.mock("#/lib/session-workspace-lock", () => ({
@@ -80,7 +81,7 @@ function mockGetBranch(
 	});
 }
 
-const WORKTREE = "/workspace/.ditto/worktrees/sess-1";
+const WORKTREE = "/workspace";
 const TOKEN = `ghs_${"t".repeat(40)}`;
 const STATUS_CMD = "git status --porcelain=v1 -z -uall";
 const PREFLIGHT_BASE = "basebasebasebasebasebasebasebasebasebase";
@@ -301,7 +302,7 @@ describe("session git", () => {
 		vi.clearAllMocks();
 		getInstallationAccessTokenMock.mockResolvedValue(TOKEN);
 		scrubGithubRemoteMock.mockResolvedValue(undefined);
-		fetchPrimaryBranchFromGitHubMock.mockResolvedValue({
+		fetchGitHubBranchIntoRepositoryBrokeredMock.mockResolvedValue({
 			branchName: "main",
 			headSha: "new-main-sha",
 		});
@@ -1477,11 +1478,17 @@ describe("syncSessionBranch", () => {
 		githubRepo: "acme/repo",
 		session: makeSession({ baseCommitSha: "old-main-sha" }),
 		baseBranch: "main",
+		identity: { id: "identity-1" } as never,
+		authority: {
+			withOperation: vi.fn(
+				async (_input: unknown, run: () => Promise<unknown>) => await run(),
+			),
+		} as never,
 	};
 
 	beforeEach(() => {
 		vi.clearAllMocks();
-		fetchPrimaryBranchFromGitHubMock.mockResolvedValue({
+		fetchGitHubBranchIntoRepositoryBrokeredMock.mockResolvedValue({
 			branchName: "main",
 			headSha: "new-main-sha",
 		});
@@ -1506,7 +1513,7 @@ describe("syncSessionBranch", () => {
 		await expect(syncSessionBranch(context)).rejects.toThrow(
 			"Commit local changes before syncing",
 		);
-		expect(fetchPrimaryBranchFromGitHubMock).not.toHaveBeenCalled();
+		expect(fetchGitHubBranchIntoRepositoryBrokeredMock).not.toHaveBeenCalled();
 	});
 
 	it("updates the base without merging when main is already integrated", async () => {
@@ -1526,7 +1533,7 @@ describe("syncSessionBranch", () => {
 			baseCommitSha: "new-main-sha",
 			updated: false,
 		});
-		expect(fetchPrimaryBranchFromGitHubMock).toHaveBeenCalledWith(
+		expect(fetchGitHubBranchIntoRepositoryBrokeredMock).toHaveBeenCalledWith(
 			expect.objectContaining({ branchName: "main" }),
 		);
 		expect(installDependenciesMock).toHaveBeenCalledWith(sandbox, WORKTREE);

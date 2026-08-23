@@ -23,7 +23,7 @@ type ProjectListItem = {
 	id: string;
 	name: string;
 	description?: string | null;
-	status: "provisioning" | "ready" | "failed";
+	status: "provisioning" | "ready" | "failed" | "deleting";
 	githubRepo?: string | null;
 	sessions: Array<{ id: string }>;
 	createdAt?: Date | null;
