@@ -2,7 +2,7 @@
 
 Status: local cutover implemented; clean local end-to-end and production validation deferred
 
-Last implementation audit: 2026-08-23 in cutover commit `89561ec` and deletion revision commit `f5dae76`
+Last implementation audit: 2026-08-23 in cutover commit `89561ec`, deletion revision commit `f5dae76`, and lifecycle lease-fence revision commit `e6a67cee83c10e411890effcfaf31003f3cbb8b6`
 
 Background research:
 
@@ -149,7 +149,7 @@ Normal chat loads only the image-owned Ditto extension. Provider credentials, pr
 | One sandbox per workspace session | Implemented locally | `WorkspaceRuntime` provisions only `workspace_session` identities and fixed `/workspace` checkouts. |
 | Safe chat resource loader | Implemented locally | Runner tests prove repository PI resources are undiscoverable and the image-owned extension loads. |
 | Workspace-session recovery | Implemented locally | Mutation generations, current/previous fallback, preview deferral, archive checkpoint, and cleanup are session-owned. |
-| Capacity queue and lifecycle | Implemented locally | Durable FIFO work and capacity leases enforce 20 global and two per-user running slots. |
+| Capacity queue and lifecycle | Implemented locally | Durable FIFO work and capacity leases enforce 20 global and two per-user running slots. Lease-fence revision `e6a67cee83c10e411890effcfaf31003f3cbb8b6` makes lifecycle lease acquisition atomically conditional on the owned project remaining ready. |
 | Legacy schema and deployment removal | Implemented locally | The destructive pre-launch migration removes provider tables and transition columns while preserving final authority, archive cleanup, auth, runtime, recovery, and queue definitions. |
 
 ## Controls to preserve
@@ -787,10 +787,10 @@ reconnect old credential-injection code during rollback.
 
 ## Local cutover validation
 
-Automated validation passed on 2026-08-23 across cutover commit `89561ec` and deletion revision commit `f5dae76`:
+Automated validation passed on 2026-08-23 across cutover commit `89561ec`, deletion revision commit `f5dae76`, and lifecycle lease-fence revision commit `e6a67cee83c10e411890effcfaf31003f3cbb8b6`:
 
 - generated Drizzle schema and migration metadata
-- all 63 web test files, 674 tests
+- all 63 web test files, 675 tests
 - web TypeScript and production build
 - all 11 runner test files, 79 tests, plus runner typecheck and build
 - Biome, legacy searches, migration safety inspection, and diff checks
