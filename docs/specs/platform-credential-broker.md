@@ -2,7 +2,7 @@
 
 Status: local cutover implemented; clean local end-to-end and production validation deferred
 
-Last implementation audit: 2026-08-23 in cutover commit `89561ec`, deletion revision commit `f5dae76`, and lifecycle lease-fence revision commit `e6a67cee83c10e411890effcfaf31003f3cbb8b6`
+Last implementation audit: 2026-08-23 in cutover commit `4430b44`, deletion revision commit `f5dae76`, and lifecycle lease-fence revision commit `e6a67cee83c10e411890effcfaf31003f3cbb8b6`
 
 Background research:
 
@@ -787,7 +787,7 @@ reconnect old credential-injection code during rollback.
 
 ## Local cutover validation
 
-Automated validation passed on 2026-08-23 across cutover commit `89561ec`, deletion revision commit `f5dae76`, and lifecycle lease-fence revision commit `e6a67cee83c10e411890effcfaf31003f3cbb8b6`:
+Automated validation passed on 2026-08-23 across cutover commit `4430b44`, deletion revision commit `f5dae76`, and lifecycle lease-fence revision commit `e6a67cee83c10e411890effcfaf31003f3cbb8b6`:
 
 - generated Drizzle schema and migration metadata
 - all 63 web test files, 675 tests
