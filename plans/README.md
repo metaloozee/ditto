@@ -37,8 +37,12 @@ Product push is disabled until non-fast-forward rejection is proved.
 Plan 010 was executed on 2026-08-21. Advisor verdict: accept. Merged onto
 `brain` as `d5e8585`. The spec digest is unchanged
 (`0c505b7d3d1f85fd16f8579cad55d10e5f81beb6e8f520a5cb18086b1b782fe4`).
-Later plans should start from that digest. Preview deferral, idle shutdown,
-and final backup-before-archive remain plan 011.
+
+Plan 011 was executed on 2026-08-22. Advisor verdict: accept with follow-ups.
+Merged onto `brain` as `cd3883a`. The spec digest after that change is
+`28cf032d4d3ea043a9fdd810013a8939284ed1806917887b1289ba14129868ab`.
+Later plans should start from that digest. Drain `waitUntil` wiring,
+archive-final-checkpoint, and git-mutation queueing remain follow-ups on 011.
 
 Before executing any remaining plan, compare both the commit and the spec
 digest. Read the new diff if either changed. Stop if a required guarantee,
@@ -58,7 +62,7 @@ trust decision, or cutover rule changed.
 | [008](008-remove-agent-git-callback-token.md) | DONE | 006 | The image-owned extension invokes Worker Git actions through a synthetic origin without a JWT. |
 | [009](009-broker-git-push.md) | DONE | 005, 006, 008 | Receive-pack contract exists; product push is disabled until non-fast-forward rejection is proved. UI/agent push does not mint sandbox tokens. |
 | [010](010-add-session-recovery-lineages.md) | DONE | 004, 006 | Session mutations create fenced recovery checkpoints with current and previous restore fallback. |
-| [011](011-add-capacity-preview-and-idle-lifecycle.md) | TODO | 006, 010 | Durable capacity work, preview checkpoint deferral, idle shutdown, archive, and deletion follow one runtime module. |
+| [011](011-add-capacity-preview-and-idle-lifecycle.md) | DONE | 006, 010 | Durable capacity work, preview checkpoint deferral, idle shutdown, archive, and deletion follow one runtime module. Merged as `cd3883a`. |
 | [012](012-cut-over-and-delete-legacy-paths.md) | TODO | 003 through 011 | Legacy project sandboxes, credential injection, provider data, and obsolete docs are removed. |
 
 Plans 002 and 004 may run in either order after plan 001. All other edges are

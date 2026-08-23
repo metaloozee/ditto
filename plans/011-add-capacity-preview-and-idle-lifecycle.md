@@ -1,8 +1,30 @@
 # Add capacity, preview checkpointing, and idle lifecycle
 
-Status: TODO
+Status: DONE
 
 Written against commit `62c99b4`. Complete plans 006 and 010 first.
+
+Executed 2026-08-22 from `454660a` (plans 001–010 already on HEAD). Advisor
+verdict: accept with follow-ups. Merged onto `brain` as `cd3883a`. The spec
+digest after that change is
+`28cf032d4d3ea043a9fdd810013a8939284ed1806917887b1289ba14129868ab`.
+
+Durable `workspace_runtime_work` and `workspace_capacity_leases` hold FIFO
+capacity work. First-message rows land before provision. Immediate and queued
+agent runs share `executeAgentRun`. Dedicated previews use one fixed localhost
+port, defer checkpoints while `previewStartedAt` is set, and store last-traffic
+only in Sandbox Durable Object storage. Alchemy is `basic` / `maxInstances: 20`
+with `sleepAfter = "10m"` and a one-minute cron drain.
+
+Follow-ups, not merge blockers:
+
+- Drain-after-enqueue uses `globalThis.waitUntil`; Worker `fetch` does not pass
+  `ExecutionContext.waitUntil`. Cancel/enqueue drain currently waits for cron.
+- Archive still calls `requireDurable` instead of taking a final checkpoint
+  when recovery is only pending.
+- Git mutations still run in-request through `withWorkspaceRuntimeLease`.
+- `continueFromArchive` is tRPC-only; no Composer button.
+- The preview-filesystem durability test does not simulate preview writes.
 
 Before editing, compare the current commit and target spec with plan 001's
 recorded values. Read drift in runtime, preview, agent messages, Alchemy, and
