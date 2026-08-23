@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gt, isNotNull, sql } from "drizzle-orm";
 import type { createDb } from "#/db";
 import {
 	archives,
@@ -1343,12 +1343,31 @@ export async function deleteProjectRuntime(
 			await authority.retireIdentity(identity.id);
 		}
 	}
+	const nowSeconds = deps.nowSeconds();
 	await cancelProjectWork({
 		db: deps.db,
 		projectId: options.projectId,
 		userId: options.userId,
-		nowMs: Date.now(),
+		nowMs: nowSeconds * 1000,
 	});
+
+	const [leasedSession] = await deps.db
+		.select({ id: workspaceSessions.id })
+		.from(workspaceSessions)
+		.where(
+			and(
+				eq(workspaceSessions.projectId, options.projectId),
+				isNotNull(workspaceSessions.runtimeLeaseId),
+				gt(
+					workspaceSessions.runtimeLeaseExpiresAt,
+					new Date(nowSeconds * 1000),
+				),
+			),
+		)
+		.limit(1);
+	if (leasedSession) {
+		throw sessionPreviewError("busy");
+	}
 
 	for (const session of sessions) {
 		if (session.previewStartedAt == null || !session.sandboxIdentityId) {
@@ -1370,6 +1389,7 @@ export async function deleteProjectRuntime(
 			// Retired authority prevents reuse while runtime cleanup retries.
 		}
 	}
+	let destroyFailed = false;
 	for (const identity of identities) {
 		try {
 			await options.destroySandbox({
@@ -1377,11 +1397,16 @@ export async function deleteProjectRuntime(
 				sandboxId: identity.sandboxId,
 			});
 		} catch {
-			// The permanent identity tombstone remains authoritative.
+			destroyFailed = true;
 		}
 	}
+	if (destroyFailed) {
+		throw sessionPreviewError("cleanup_failed");
+	}
 
-	const { abandonArchive } = await import("#/lib/sandbox-archive");
+	const { abandonArchiveForProjectDeletion } = await import(
+		"#/lib/sandbox-archive"
+	);
 	const ownerIds = [
 		options.projectId,
 		...sessions.map((session) => session.id),
@@ -1392,7 +1417,7 @@ export async function deleteProjectRuntime(
 			.from(archives)
 			.where(eq(archives.ownerId, ownerId));
 		for (const row of archiveRows) {
-			await abandonArchive(deps.db, row.id, deps.nowSeconds());
+			await abandonArchiveForProjectDeletion(deps.db, row.id, nowSeconds);
 		}
 	}
 

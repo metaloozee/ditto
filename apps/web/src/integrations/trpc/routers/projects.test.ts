@@ -399,6 +399,18 @@ describe("projects.deleteProject", () => {
 			createCaller().deleteProject({ id: "proj-1" }),
 		).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
 	});
+
+	it("maps retryable cleanup failure", async () => {
+		deleteProjectRuntimeMock.mockRejectedValue(
+			new SessionPreviewError(
+				"cleanup_failed",
+				"Failed to fully stop the preview. Try again.",
+			),
+		);
+		await expect(
+			createCaller().deleteProject({ id: "proj-1" }),
+		).rejects.toMatchObject({ code: "BAD_GATEWAY" });
+	});
 });
 
 describe("projects env var mutations", () => {

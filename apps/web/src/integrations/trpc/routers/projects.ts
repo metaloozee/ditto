@@ -310,9 +310,10 @@ export const projectsRouter = createTRPCRouter({
 							message: "Project not found.",
 						});
 					}
-					if (error.code === "busy") {
+					if (error.code === "busy" || error.code === "cleanup_failed") {
 						throw new TRPCError({
-							code: "PRECONDITION_FAILED",
+							code:
+								error.code === "busy" ? "PRECONDITION_FAILED" : "BAD_GATEWAY",
 							message: error.message,
 						});
 					}

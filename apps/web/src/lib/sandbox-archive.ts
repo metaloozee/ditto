@@ -583,11 +583,11 @@ async function markAbandoned(
 		.where(and(eq(archives.id, archiveId), eq(archives.status, "uploading")));
 }
 
-/** Mark a ready archive for async R2 cleanup after it falls out of retention. */
-export async function abandonArchive(
+async function abandonArchiveWithStatuses(
 	db: Db,
 	archiveId: string,
-	nowSeconds = Math.floor(Date.now() / 1000),
+	statuses: Array<"uploading" | "ready">,
+	nowSeconds: number,
 ): Promise<void> {
 	await db
 		.update(archives)
@@ -597,7 +597,30 @@ export async function abandonArchive(
 			cleanupAttempts: 0,
 			updatedAt: sql`(unixepoch())`,
 		})
-		.where(and(eq(archives.id, archiveId), eq(archives.status, "ready")));
+		.where(and(eq(archives.id, archiveId), inArray(archives.status, statuses)));
+}
+
+/** Mark a ready archive for async R2 cleanup after it falls out of retention. */
+export async function abandonArchive(
+	db: Db,
+	archiveId: string,
+	nowSeconds = Math.floor(Date.now() / 1000),
+): Promise<void> {
+	await abandonArchiveWithStatuses(db, archiveId, ["ready"], nowSeconds);
+}
+
+/** Mark a fenced project's complete or interrupted archive for async cleanup. */
+export async function abandonArchiveForProjectDeletion(
+	db: Db,
+	archiveId: string,
+	nowSeconds = Math.floor(Date.now() / 1000),
+): Promise<void> {
+	await abandonArchiveWithStatuses(
+		db,
+		archiveId,
+		["uploading", "ready"],
+		nowSeconds,
+	);
 }
 
 async function createArchiveBody(options: {
