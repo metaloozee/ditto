@@ -1,5 +1,7 @@
 # Repository map
 
+Status: target architecture. Implementation and validation pending. Requirements live in [trusted-session-runtime.md](../specs/trusted-session-runtime.md). Paths below are the current tree. The second Worker service and trusted brain image are not in the tree until cutover.
+
 This reference maps stable areas of the repository to their responsibilities. It does not list every file.
 
 ## Root
@@ -8,11 +10,11 @@ This reference maps stable areas of the repository to their responsibilities. It
 |---|---|
 | `package.json` | Root commands and the pnpm workspace toolchain |
 | `pnpm-workspace.yaml` | The `apps/*` pnpm workspace and dependency policy |
-| `alchemy.run.ts` | Cloudflare Worker, D1, R2, Sandbox, bindings, and preview route |
-| `Dockerfile` | Sandbox image and the baked `ditto-runner` commands |
+| `alchemy.run.ts` | Both Worker services, D1, R2, container images, bindings, and preview route |
+| `Dockerfile` | Execution sandbox image. A second image pins Pi and Ditto-owned adapters. |
 | `README.md` | Installation, development, commands, and configuration |
-| `PRODUCT.md` | Current product and product direction |
-| `CONTEXT.md` | Canonical domain language |
+| `PRODUCT.md` | Current shipped product and product direction |
+| `CONTEXT.md` | Canonical domain language for the architecture this spec ships |
 | `AGENTS.md` | Repository instructions for coding agents |
 | `CLAUDE.md` | Claude Code import of `AGENTS.md` |
 
@@ -32,33 +34,33 @@ Alchemy is the only deployment owner. Wrangler configuration under `apps/web/.al
 | `apps/web/src/lib/` | Shared product policy and multi-step workflows |
 | `apps/web/src/db/schema.ts` | Current D1 schema |
 | `apps/web/migrations/` | Generated D1 migration history |
-| `apps/web/src/server.ts` | Worker entry point and preview proxy |
+| `apps/web/src/server.ts` | Product Worker entry point and preview origin. Container classes live on the runtime Worker. |
 | `apps/web/src/styles.css` | Tailwind theme and global styles |
 | `apps/web/vite.config.ts` | Build, test, React, Tailwind, and local preview configuration |
 
 Routes and components orchestrate. Shared ownership checks, lifecycle rules, security policy, and cross-entry-point behavior belong in `apps/web/src/lib`.
 
-## Sandbox runner
+## Agent and execution images
 
-`packages/sandbox-runner` is an independent npm package. It is not a pnpm workspace member.
+`packages/sandbox-runner` is an independent npm package. It is not a pnpm workspace member. Today it is the in-sandbox runner. After cutover, Pi and Ditto-owned adapters live in the trusted brain image; the execution image keeps repository tools and the remote-tool endpoint.
 
 | Path | Responsibility |
 |---|---|
-| `src/cli.ts` and `src/agent-job.ts` | Agent job boundary and CLI |
-| `src/run-agent.ts` | PI session creation, events, follow-ups, and Stop |
-| `src/runner-model.ts` | Model lookup and the in-memory credential store |
-| `src/control-channel.ts` | Run-scoped control socket protocol |
+| `src/cli.ts` and `src/agent-job.ts` | Current agent job boundary and CLI |
+| `src/run-agent.ts` | Current PI session creation, events, follow-ups, and Stop |
+| `src/runner-model.ts` | Model lookup and the in-memory public placeholder |
+| `src/control-channel.ts` | Current run-scoped control socket protocol |
 | `src/protocol.ts` | Versioned NDJSON runner protocol |
 | `src/ditto-git-*` | Agent Git tool definitions and synthetic-origin Git-action client |
 | `src/git-metadata-*` and `src/run-git-metadata.ts` | Isolated commit and pull-request metadata generation |
 
-The root `Dockerfile` installs this package into the sandbox image. Rebuild the image after changing the runner, its package files, or the Dockerfile.
+Rebuild the relevant image after changing runner code, package files, or Dockerfiles.
 
 ## Documentation
 
 | Path | Responsibility |
 |---|---|
-| `docs/architecture/` | Implemented cross-file behavior and current limits |
+| `docs/architecture/` | Target cross-file behavior with a pending-implementation status until cutover |
 | `docs/adr/` | Durable architectural decisions |
 | `docs/specs/` | Proposed or required behavior with explicit status |
 | `docs/research/` | Historical investigation and cited platform facts |
@@ -77,10 +79,11 @@ The root `Dockerfile` installs this package into the sandbox image. Rebuild the 
 
 ## Change routing
 
-- Product behavior starts in `PRODUCT.md` and the system overview.
+- Product behavior that already ships starts in `PRODUCT.md`.
+- Target system behavior starts in the spec, then the system overview.
 - Domain terminology starts in `CONTEXT.md`.
 - UI and chat changes start in the frontend page.
 - API, schema, and persistence changes start in the server page.
-- Agent, worktree, backup, preview, and Git changes start in the harness page.
+- Agent, execution, backup, preview, and Git changes start in the harness page.
 - Authentication, credentials, output, environment values, and Git egress changes require the security page.
 - Infrastructure changes go through `alchemy.run.ts`. Do not add another deployment path.

@@ -1,5 +1,7 @@
 # Frontend architecture
 
+Status: target architecture. Implementation and validation pending. Requirements live in [trusted-session-runtime.md](../specs/trusted-session-runtime.md). Running code still uses the one-sandbox harness until cutover. Component paths below are the current UI; command receipts, durable follow-ups, and reconnect are the shipped behavior for this spec.
+
 ## Goal
 
 The frontend presents projects and conversations as a calm workspace while
@@ -25,8 +27,8 @@ and toasts.
 | `/project/$projectId/session/$sessionId` | Existing conversation view |
 | `/api/auth/$` | better-auth request handler |
 | `/api/trpc/$` | tRPC fetch adapter |
-| `/api/agent/stream` | Cookie-authenticated agent SSE endpoint |
-| `/api/agent/control` | Cookie-authenticated follow-up and Stop endpoint for the active PI agent session |
+| `/api/agent/stream` | Cookie-authenticated command admission and event subscription. The connection does not own the run. |
+| `/api/agent/control` | Cookie-authenticated follow-up, Stop, queue cancellation, and recovery commands |
 
 `apps/web/src/routeTree.gen.ts` is generated from these files. Do not edit it directly.
 
@@ -50,13 +52,13 @@ The project workspace route coordinates the main read model:
 
 1. load owned project metadata;
 2. page D1 messages for an explicit session URL immediately (ownership-checked,
-   sandbox-independent);
-3. when D1 status is `ready`, run `workspace.checkSandbox`; auto-call
-   `workspace.provisionSandbox` only on `needs_restore`;
+   without starting either container);
+3. when D1 status is `ready`, observe runtime without waking containers; provision
+   only when an explicit operation needs live execution;
 4. resolve the selected active session from the check/provision/retry payload;
 5. reverse newest-first pages into an oldest-to-newest timeline;
 6. toast only while this tab's provision work is in flight; keep inline status
-   bars for check errors and restore failure; disable sandbox-backed controls
+   bars for check errors and restore failure; disable execution-backed controls
    until readiness succeeds; and
 7. invalidate `projects.get` and the check query from readiness paths — never
    `projects.list`.
@@ -74,11 +76,13 @@ states and history loading, and owns the transient streaming overlay.
 3. use `meta` to bind server-generated session/message IDs;
 4. append exact text-delta bytes and reduce PI tool events into ordered
    assistant parts without moving text across tool boundaries;
-5. after `control_ready`, send follow-ups through the separate JSON control
-   request without starting another stream;
+5. after a coordinator-accepted receipt, send follow-ups as durable commands
+   through the control route without starting another run;
 6. commit each `turn_done` pair, promote the matching queued draft at
    `turn_start`, and commit the final pair at overall `done`; and
 7. navigate a newly created conversation to its canonical session URL.
+   Reconnect must restore a committed snapshot and subsequent events without
+   depending on the original stream remaining open.
 
 The composer action follows this matrix:
 
@@ -92,17 +96,19 @@ The composer action follows this matrix:
 | Control pending or stopping | Any | Disabled until acknowledgement or terminal SSE |
 
 Accepted follow-ups appear after the active assistant in FIFO order with a
-visible and announced `Queued` status. This projection is transient, not a
-browser scheduler or durable queue. The textarea is cleared only after a
-follow-up acknowledgement and only if the user has not typed newer text.
+visible and announced `Queued` status. They are durable commands with their own
+user and assistant message IDs, not a browser-only queue. The textarea is
+cleared only after a follow-up acknowledgement and only if the user has not
+typed newer text.
 
-The browser SSE parser is deliberately small and event-oriented. The server is
-the authority for turn boundaries, terminal success, and durable message state.
-The Stop control does not abort the SSE fetch: a browser abort or disconnect
-stops local consumption but does not cancel the sandbox process. When global or
-per-user capacity is unavailable, `/api/agent/stream` returns `202` with queue
-position; the workspace status bar shows that position and Cancel, and the UI
-polls durable work plus message rows.
+The browser event parser is deliberately small. The coordinator is the
+authority for turn boundaries, terminal success, and durable message state.
+D1 projections can lag; the UI must distinguish lag from an active run. Stop
+does not abort the event fetch: a browser abort or disconnect stops local
+consumption but does not cancel the agent run. The UI must not report that
+execution has stopped until Stop is applied. When global or per-user capacity
+is unavailable, admission returns a queued receipt; the workspace status bar
+shows that position and Cancel.
 
 The preview pane keeps using its existing alert area: backup-pending warning,
 workspace-saving during a forced checkpoint, and separate Retry Backup /
@@ -169,7 +175,7 @@ workspace route.
 - `ChatNavbar` owns a right-sidebar tools trigger (`aria-pressed`) immediately
   right of Git actions. The trigger requires an active session id and a ready
   workspace; while `disabled`, Git actions are not mounted (they would query the
-  sandbox). The sidebar trigger stays usable.
+  execution sandbox). The sidebar trigger stays usable.
 - `Chat` composes a controlled tools pane: desktop uses shadcn `ResizablePanelGroup`
   (default ~32% chat / ~68% tools, drag handle between) with padding so
   `rounded-lg` reads; mobile uses the existing Sheet primitive at near-full
@@ -199,15 +205,15 @@ agent, database, or Git services. `cn` is the shared Tailwind class merger.
 The component layer uses semantic buttons/forms, dialog primitives, labels,
 alerts, focus rings, keyboard submission, loading/disabled states, and screen
 reader text for icon-only controls. Message history preserves scroll anchors
-when older pages prepend. During sandbox cold wake, D1 history stays visible,
-scrollable, and pageable while composer submit/model controls, empty-state
-suggestions, Git actions, and tools/preview entry points are disabled. A
-provision toast announces this tab's restore work; inline status bars
-(`alert` + Retry) cover check errors and restore failure above the chat — not an
-overlay on `ChatNavbar` and not a full-page error that replaces history. Warm
-visits that are already connected stay silent. Expensive diagnostic UI is lazy-loaded,
-and development devtools are dynamically imported so neither enters the
-production path.
+when older pages prepend. Opening history must not start the brain or the
+execution sandbox. During cold wake, D1 history stays visible, scrollable, and
+pageable while composer submit, Git actions, and tools/preview entry points are
+disabled. A provision toast announces this tab's restore work; inline status
+bars (`alert` + Retry) cover check errors and restore failure above the chat,
+not an overlay on `ChatNavbar` and not a full-page error that replaces history.
+Warm visits that are already connected stay silent. Expensive diagnostic UI is
+lazy-loaded, and development devtools are dynamically imported so neither
+enters the production path.
 
 ## Tests
 

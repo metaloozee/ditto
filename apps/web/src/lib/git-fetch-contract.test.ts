@@ -103,6 +103,32 @@ describe("git-fetch-contract", () => {
 		}
 	});
 
+	it("passes stock git/2.34.1 info/refs headers", async () => {
+		const result = await validateGitFetchRequest(
+			new Request(
+				"https://github.com/acme/app.git/info/refs?service=git-upload-pack",
+				{
+					method: "GET",
+					headers: {
+						Host: "github.com",
+						"User-Agent": "git/2.34.1",
+						Accept: "*/*",
+						"Accept-Encoding": "deflate, gzip, br, zstd",
+						Pragma: "no-cache",
+						"Git-Protocol": "version=1",
+					},
+				},
+			),
+			BOUND,
+		);
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			expect(result.headers.has("host")).toBe(false);
+			expect(result.headers.get("pragma")).toBe("no-cache");
+			expect(result.headers.has("accept-encoding")).toBe(false);
+		}
+	});
+
 	it("passes POST upload-pack with minimal v2 fetch", async () => {
 		const result = await validateGitFetchRequest(
 			uploadPackRequest(minimalV2FetchBody()),

@@ -72,6 +72,14 @@ export type SandboxEgressBrokerDeps = {
 	dispatchAgentGitAction?: typeof dispatchAgentGitAction;
 };
 
+/**
+ * workerd's `fetch` is a method. `const fetchImpl = fetch; fetchImpl(req)`
+ * throws Illegal invocation. Call it on globalThis, or use an injected impl.
+ */
+export function resolveOutboundFetch(fetchImpl?: typeof fetch): typeof fetch {
+	return fetchImpl ?? ((input, init) => globalThis.fetch(input, init));
+}
+
 function agentGitHttpStatus(error: unknown): number | null {
 	if (
 		error instanceof Error &&
@@ -479,7 +487,28 @@ async function handleGitTransport(options: {
 		return deny(502, "token_mint_failed", operation.correlationId);
 	}
 
-	const upstream = await options.fetchImpl(upstreamRequest);
+	let upstream: Response;
+	try {
+		upstream = await options.fetchImpl(upstreamRequest);
+	} catch (error) {
+		const message =
+			error instanceof Error ? error.message : "GitHub fetch threw.";
+		console.error(
+			JSON.stringify({
+				type: "sandbox_egress_exception",
+				reasonCode: "upstream_fetch_failed",
+				correlationId: operation.correlationId,
+				family: "git_transport",
+				message,
+			}),
+		);
+		recordDenial({
+			reasonCode: "upstream_fetch_failed",
+			correlationId: operation.correlationId,
+			family: "git_transport",
+		});
+		return deny(502, "upstream_fetch_failed", operation.correlationId);
+	}
 	try {
 		return wrapGitUpstreamResponse(upstream);
 	} catch (error) {
@@ -879,7 +908,7 @@ export async function handleOutbound(
 	ctx: OutboundHandlerRuntimeContext,
 	deps: SandboxEgressBrokerDeps = {},
 ): Promise<Response> {
-	const fetchImpl = deps.fetch ?? fetch;
+	const fetchImpl = resolveOutboundFetch(deps.fetch);
 	const narrowed = narrowTrustedParams(ctx.params);
 	if (!narrowed) {
 		recordDenial({ reasonCode: "invalid_handler_params" });
@@ -903,34 +932,52 @@ export async function handleOutbound(
 		return deny(403, classification.reasonCode ?? "privileged_denied");
 	}
 
-	if (classification.family === "git_transport") {
-		return handleGitTransport({
-			request,
-			env,
-			trusted,
-			fetchImpl,
-			deps,
-		});
-	}
+	try {
+		if (classification.family === "git_transport") {
+			return await handleGitTransport({
+				request,
+				env,
+				trusted,
+				fetchImpl,
+				deps,
+			});
+		}
 
-	if (classification.family === "model") {
-		return handleOpenCodeModel({
-			request,
-			env,
-			trusted,
-			fetchImpl,
-			deps,
-		});
-	}
+		if (classification.family === "model") {
+			return await handleOpenCodeModel({
+				request,
+				env,
+				trusted,
+				fetchImpl,
+				deps,
+			});
+		}
 
-	if (classification.family === "ditto_action") {
-		return handleDittoAction({
-			request,
-			env,
-			trusted,
-			deps,
-		});
-	}
+		if (classification.family === "ditto_action") {
+			return await handleDittoAction({
+				request,
+				env,
+				trusted,
+				deps,
+			});
+		}
 
-	return handlePublicInternet(request, fetchImpl);
+		return await handlePublicInternet(request, fetchImpl);
+	} catch (error) {
+		const message =
+			error instanceof Error ? error.message : "outbound handler threw";
+		console.error(
+			JSON.stringify({
+				type: "sandbox_egress_exception",
+				reasonCode: "handler_exception",
+				family: classification.family,
+				message,
+			}),
+		);
+		recordDenial({
+			reasonCode: "handler_exception",
+			family: classification.family,
+		});
+		return deny(502, "handler_exception");
+	}
 }

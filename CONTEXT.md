@@ -2,6 +2,8 @@
 
 Ditto uses the terms below in product discussion, specifications, architecture documents, and code. Implementation details belong in `docs/architecture/`.
 
+These terms describe the architecture the trusted workspace-session runtime ships. Until cutover, running code still uses one untrusted sandbox for both the agent and the repository.
+
 ## People and ownership
 
 ### User
@@ -20,7 +22,7 @@ An immutable archive of a repository checkout prepared for workspace restore. A 
 
 ### Project-seed builder
 
-A temporary sandbox used only to fetch an owned repository through the Worker, prepare the seed tree, and stream the seed archive. The builder is destroyed and permanently retired after seed creation. It receives no model access or project environment values.
+A temporary execution sandbox used only to fetch an owned repository, prepare the seed tree, and stream the seed archive. It has no trusted brain, no model access, and no project environment values. It is destroyed and permanently retired after seed creation.
 
 ### Project environment value
 
@@ -30,31 +32,55 @@ A named secret or configuration value supplied by the user for project commands.
 
 Project-scoped context that remains available across workspace sessions. Project memory is separate from a conversation and from repository-owned instructions.
 
-## Sandbox identity and privilege
+## Identities and privilege
 
 ### Sandbox identity
 
-A durable Ditto record that binds a random sandbox ID, Cloudflare container ID, owners, lifecycle generation, and retirement state. Retired identities remain as permanent tombstones and never regain authority.
+A durable Ditto record that binds a random sandbox ID, container identity, owners, lifecycle generation, and retirement state. Distinct identity roles exist for project-seed builders, execution sandboxes, and trusted brains. Retired identities remain as permanent tombstones and never regain authority.
 
 ### Privileged operation
 
-A time-bounded Worker-owned window that authorizes one contract family for a sandbox identity. The sandbox cannot invent or extend a privileged operation. Privileged families include model requests, Git transport, and Ditto actions.
+A time-bounded Ditto-owned window that authorizes one contract family for an identity. Families include model requests, Git transport, and Ditto actions. The identity cannot invent or extend a window. Ditto opens a window only when it admits execution, not when it merely accepts a command.
 
 ## Conversations and execution
 
 ### Workspace session
 
-A user's conversation and line of work within one project. A workspace session owns one chat thread, branch, sandbox runtime, and recovery lineage. Its sandbox has a `/workspace` checkout for the session branch. An archived workspace session remains part of history but cannot receive new work.
+A user's conversation and line of work within one project. A workspace session owns one chat thread, branch, trusted session runtime, trusted brain, execution sandbox, and recovery lineage. The execution sandbox has a `/workspace` checkout for the session branch. An archived workspace session remains part of history but cannot receive new work.
 
 Use "workspace session" in full. "Session" alone is ambiguous because Ditto also has auth sessions and agent runtime sessions.
 
+### Trusted session runtime
+
+The coordinator for one workspace session. It consumes commands, supervises the agent run, journals effects, and decides recovery. It is not the repository checkout and does not run repository processes.
+
+### Trusted brain
+
+The coding-agent process for one workspace session. It owns the model loop, compaction, and continuation of that session. It does not execute repository code, install repository dependencies, or load repository-owned agent configuration.
+
+### Execution sandbox
+
+The untrusted environment that holds a workspace session's `/workspace` checkout, Git binaries, dependencies, builds, tests, and preview. Repository commands run here. The trusted brain does not.
+
 ### Workspace session recovery
 
-The recovery lineage owned by one workspace session: mutation generation, current and previous successful archives, pending checkpoint state, and recovery health.
+The recovery lineage owned by one workspace session: mutation generation, current and previous successful paired checkpoints, pending checkpoint state, and recovery health.
+
+### Paired checkpoint
+
+An immutable workspace archive together with the matching agent continuation and execution position. Restore always takes both. Ditto keeps the current and previous successful pairs. Restore never silently falls back to the project seed.
+
+### Run epoch
+
+A counter that increases when the trusted session runtime supersedes an execution attempt, including Stop and recovery takeover. Work from an older epoch is not admitted.
 
 ### Message
 
 A user or assistant entry in a workspace session. An assistant message is pending while its agent run is active, then becomes complete or failed.
+
+### Command
+
+An accepted prompt, follow-up, Stop, queue cancellation, or explicit recovery decision with a durable receipt. Admission is not execution.
 
 ### Agent run
 
@@ -66,7 +92,7 @@ A durable, serializable unit of workspace-session work, such as an agent run, Gi
 
 ### Running slot
 
-An unexpired capacity lease held by a workspace-session runtime the Worker most recently observed as active. Sleeping and cold ready runtimes do not consume a running slot.
+An unexpired capacity lease for a trusted brain container or an execution container that Ditto most recently observed as active. Sleeping and cold ready runtimes do not consume a running slot. The two pools are independent.
 
 ### Agent event
 
@@ -98,11 +124,16 @@ The flow that turns session work into a commit, pushed branch, and optional pull
 User
 └── Project
     ├── Project seed (immutable)
+    ├── Project-seed builder (temporary execution sandbox, no brain)
     └── Workspace session
         ├── Messages
+        ├── Commands
         ├── Agent runs
         ├── Session branch
-        ├── Session sandbox (`/workspace` checkout)
+        ├── Trusted session runtime
+        ├── Trusted brain
+        ├── Execution sandbox (`/workspace` checkout)
         ├── Session recovery lineage
+        │   └── Paired checkpoints (current and previous)
         └── Session preview
 ```

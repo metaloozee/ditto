@@ -8,7 +8,10 @@ import {
 	OPENCODE_REQUEST_MODEL,
 } from "./open-code-contract";
 import { SandboxAuthorityError } from "./sandbox-authority";
-import { handleOutbound } from "./sandbox-egress-broker";
+import {
+	handleOutbound,
+	resolveOutboundFetch,
+} from "./sandbox-egress-broker";
 
 const resolveAgentGitContextMock = vi.fn();
 const dispatchAgentGitActionMock = vi.fn();
@@ -114,6 +117,33 @@ function dittoActionResolved(overrides?: {
 		},
 	};
 }
+
+describe("resolveOutboundFetch", () => {
+	it("calls globalThis.fetch as a method so workerd does not throw Illegal invocation", async () => {
+		const original = globalThis.fetch;
+		const host = globalThis;
+		globalThis.fetch = function (this: unknown) {
+			if (this !== host) {
+				throw new TypeError(
+					"Illegal invocation: function called with incorrect `this` reference. See https://developers.cloudflare.com/workers/observability/errors/#illegal-invocation-errors for details.",
+				);
+			}
+			return Promise.resolve(new Response("ok", { status: 200 }));
+		} as typeof fetch;
+		try {
+			const impl = resolveOutboundFetch();
+			const detached = globalThis.fetch;
+			expect(() => detached(new Request("https://example.com/"))).toThrow(
+				/Illegal invocation/,
+			);
+			await expect(impl(new Request("https://example.com/"))).resolves.toBeInstanceOf(
+				Response,
+			);
+		} finally {
+			globalThis.fetch = original;
+		}
+	});
+});
 
 describe("SandboxEgressBroker", () => {
 	beforeEach(() => {
@@ -301,6 +331,32 @@ describe("SandboxEgressBroker", () => {
 		expect(response.status).toBe(403);
 		expect(fetchMock).not.toHaveBeenCalled();
 		expect(mintTokenMock).not.toHaveBeenCalled();
+	});
+
+	it("maps a thrown GitHub fetch to 502 instead of leaking an exception", async () => {
+		fetchMock.mockRejectedValue(new Error("network boom"));
+		const response = await handleOutbound(
+			new Request(
+				"https://github.com/acme/app.git/info/refs?service=git-upload-pack",
+				{
+					headers: {
+						Host: "github.com",
+						"User-Agent": "git/2.34.1",
+						Accept: "*/*",
+						"Accept-Encoding": "deflate, gzip, br, zstd",
+						Pragma: "no-cache",
+						"Git-Protocol": "version=1",
+					},
+				},
+			),
+			{} as Env,
+			makeCtx(),
+			deps,
+		);
+		expect(response.status).toBe(502);
+		const body = (await response.json()) as { reasonCode: string };
+		expect(body.reasonCode).toBe("upstream_fetch_failed");
+		expect(mintTokenMock).toHaveBeenCalledOnce();
 	});
 
 	it("valid git info/refs mints token only on the fresh upstream request", async () => {

@@ -50,7 +50,11 @@ const ALLOWED_REQUEST_HEADERS = new Set([
 	"git-protocol",
 	"user-agent",
 	"accept-encoding",
+	"pragma",
 ]);
+
+/** Present on intercepted HTTP but implied by the validated URL. */
+const IGNORED_REQUEST_HEADERS = new Set(["host"]);
 
 const FORBIDDEN_REQUEST_HEADERS = [
 	"authorization",
@@ -102,6 +106,9 @@ function normalizeRepoPath(ownerRepo: string): string {
 function assertAllowedHeaders(request: Request): void {
 	for (const [name, value] of request.headers) {
 		const lower = name.toLowerCase();
+		if (IGNORED_REQUEST_HEADERS.has(lower)) {
+			continue;
+		}
 		if (FORBIDDEN_REQUEST_HEADERS.includes(lower)) {
 			throw new GitPushContractError(
 				"forbidden_header",
@@ -401,8 +408,15 @@ export async function validateGitPushRequest(
 
 		const headers = new Headers();
 		for (const name of ALLOWED_REQUEST_HEADERS) {
+			if (
+				name === "authorization" ||
+				name === "cookie" ||
+				name === "accept-encoding"
+			) {
+				continue;
+			}
 			const value = request.headers.get(name);
-			if (value != null && name !== "authorization" && name !== "cookie") {
+			if (value != null) {
 				headers.set(name, value);
 			}
 		}

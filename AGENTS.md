@@ -4,13 +4,13 @@
 
 Ditto is a web-based AI coding workspace for GitHub repositories. A user imports a repository, works with an agent in an isolated project workspace, previews the result, and exports changes through Git.
 
-The web app runs on Cloudflare. It keeps durable product state in D1, runs repositories and coding agents in Cloudflare Sandboxes, and stores workspace recovery backups in R2.
+The web app runs on Cloudflare. It keeps durable product state in D1 and stores workspace recovery backups in R2. Running code still executes the agent inside an untrusted sandbox. The accepted target splits a trusted brain from that execution sandbox. See `docs/specs/trusted-session-runtime.md`.
 
 ## Repository map
 
 - `apps/web` contains the TanStack Start UI, Worker routes, domain services, D1 schema, and migrations.
 - `packages/sandbox-runner` contains the independent Node.js runner baked into the sandbox image. It uses npm, not the pnpm workspace.
-- `docs/architecture` explains the implemented system and its trust boundaries.
+- `docs/architecture` explains the accepted target system and its trust boundaries. Pages are pending implementation until cutover.
 - `docs/adr` records architectural decisions that remain in force.
 - `docs/specs` contains behavioral requirements and proposed changes. Read each spec's status before treating it as implemented.
 - `CONTEXT.md` defines Ditto's domain terms.
@@ -20,11 +20,11 @@ The web app runs on Cloudflare. It keeps durable product state in D1, runs repos
 - Product intent: `PRODUCT.md`
 - Domain terminology: `CONTEXT.md`
 - Current behavior: source code, tests, and `apps/web/src/db/schema.ts`
-- Architecture: `docs/architecture/`
+- Target architecture: `docs/architecture/` and `CONTEXT.md`, pending cutover
 - Decisions: `docs/adr/`
 - Behavioral requirements: `docs/specs/`
 
-When sources disagree, current code defines implemented behavior. Fix stale durable documentation in the same change.
+When sources disagree about what runs today, current code wins. When they disagree about the trusted-runtime target, the spec wins. Do not rewrite architecture pages back to the one-sandbox harness to match current code.
 
 ## Core invariants
 

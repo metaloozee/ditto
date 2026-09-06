@@ -1,73 +1,76 @@
 # Server and data architecture
 
-## Worker authority
+Status: target architecture. Implementation and validation pending. Requirements live in [trusted-session-runtime.md](../specs/trusted-session-runtime.md). Running code still uses the one-sandbox harness until cutover.
 
-The Cloudflare Worker is Ditto's control plane. It authenticates browser requests, checks ownership, stores durable product state, coordinates session runtimes, and is the only issuer of GitHub installation tokens. Alchemy owns deployment.
+## Two Worker services
 
-`apps/web/src/server.ts` exports Ditto's Sandbox subclass with HTTPS interception, `enableInternet = false`, and ten-minute sleep. Every builder and workspace runtime attaches `dittoCatchAll` with Worker-owned identity parameters. The handler classifies privileged contracts before applying the credential-free public internet policy. `scheduled()` drains durable runtime work and archive cleanup.
+Alchemy owns both deployments.
 
-Browser entry points are better-auth, tRPC, agent SSE, and agent control. Agent Git tools use `http://ditto.internal/v1/git-action`; there is no public callback route or callback JWT.
+The product Worker authenticates browser requests, checks ownership, stores durable command admission, enforces global capacity policy, issues GitHub installation tokens, and is the public preview origin. It never drives an agent loop, waits for a run to finish, or talks to a container except through the runtime service. It binds D1, authentication secrets, GitHub App and OAuth secrets, and a service binding to the runtime Worker. It must not bind `OPENCODE_API_KEY`, the runtime-state encryption key, `SessionRuntime`, or `Sandbox`.
+
+The runtime Worker owns `SessionRuntime` and `Sandbox`. It binds D1, R2, `OPENCODE_API_KEY`, and the runtime-state encryption key. It must not bind the GitHub App private key, GitHub OAuth secrets, or authentication secrets. Admission on the product Worker asks this service whether the model key is configured and does not receive the key.
+
+Service bindings are bidirectional. Product delivers commands, proxies preview, starts seed jobs, and pings model-key configuration. Runtime sends reconstructed git requests for product mint-and-fetch. The installation token never enters the runtime Worker.
+
+Browser entry points stay on the product Worker: better-auth, tRPC, command admission, event subscription, and agent control. Agent Git tools use `http://ditto.internal/v1/git-action`; there is no public callback route or callback JWT. Neither an SSE handler nor `waitUntil` owns a run.
 
 ## Domain modules
 
-- `sandbox-authority.ts` owns identity registration, generation rotation, operation windows, retirement, and fail-closed resolution.
-- `sandbox-egress-broker.ts` classifies outbound requests and dispatches OpenCode, Git, Ditto-action, or public-internet contracts.
-- `project-seed.ts` provisions temporary builders and immutable seeds.
-- `workspace-runtime.ts` owns session runtime readiness, restore, leases, capacity work, and retirement.
-- `workspace-recovery.ts` owns mutation generations, checkpoint promotion, fallback restore, and recovery health.
-- `sandbox-archive.ts` owns R2 object keys and streamed archive create, restore, and cleanup.
-- `agent-run-service.ts` owns message persistence, model operation windows, terminal settlement, and recovery checkpointing.
-- `session-git.ts` owns Git state and export policy. Workspace sync opens a brokered Git-fetch operation.
-- `session-preview.ts` owns fixed-port preview process lifecycle, archive, and project deletion cleanup.
+Policy remains in `apps/web/src/lib`. After cutover those modules sit behind the command boundary instead of competing for the active run.
 
-Routes orchestrate these modules. They do not accept raw sandbox IDs, lifecycle generations, or archive object keys from browser input.
+- `sandbox-authority.ts` owns identity registration, generation rotation, operation windows, retirement, and fail-closed resolution. The coordinator opens windows at execution admission.
+- `sandbox-egress-broker.ts` classifies outbound requests. OpenCode attach runs on the runtime Worker. Git mint-and-fetch runs on the product Worker after the runtime Worker validates the contract.
+- `project-seed.ts` provisions temporary builders and immutable seeds through the runtime service. Builders have no `SessionRuntime`.
+- Workspace runtime, recovery, archive, Git, and preview participate in coordinator serialization. Observational reads must not wake containers.
 
-## Current schema
+Routes orchestrate. They do not accept raw sandbox IDs, lifecycle generations, or archive object keys from browser input.
 
-### Product and auth
+## Durable state
 
-| Table | Purpose |
-|---|---|
-| `user`, `session`, `account`, `verification` | better-auth identity, OAuth, and login state |
-| `projects` | Owned repository metadata, encrypted environment values, and project lifecycle |
-| `project_seeds` | One immutable seed record per project |
-| `workspace_sessions` | Conversation, branch/base commit, runtime identity, lifecycle lease, preview intent, and status |
-| `messages` | User and terminally settled assistant history |
+### D1, both Workers
 
-A project row has no sandbox, mutable backup, generation, preview-lock, or deletion timestamp columns. A workspace-session row has no checkout path, memory path, worktree path, or preview-port column. `/workspace` and port `10000` are code-owned runtime constants.
+| Table | Purpose | Writer |
+|---|---|---|
+| `user`, `session`, `account`, `verification` | better-auth identity, OAuth, and login state | Product |
+| `projects` | Owned repository metadata, encrypted environment values, and project lifecycle | Product |
+| `project_seeds` | One immutable seed record per project | Product |
+| `workspace_sessions` | Conversation, branch/base commit, identities, lifecycle, preview intent, and status | Product admits; runtime projects execution fields |
+| `messages` | User messages and assistant projections | Product admits; runtime projects terminal assistant state |
+| `sandbox_identities` | Permanent builder, execution-sandbox, and trusted-brain tombstones | Product registers and retires |
+| `privileged_operations` | Model, Git, and Ditto-action windows | Runtime coordinator at execution admission |
+| `archives` | Opaque archive metadata and retryable cleanup | Runtime projects after coordinator commit |
+| `workspace_session_recoveries` | Mutation generation and current/previous pair pointers | Runtime projects after coordinator commit |
+| `workspace_runtime_work` | Durable command delivery | Product admits; dispatcher retries |
+| `workspace_capacity_leases` | Unexpired brain and execution running slots | Product reserves; runtime observes liveness |
 
-### Runtime authority and recovery
+A project row has no sandbox or mutable backup columns. `/workspace` and port `10000` are code-owned runtime constants. D1 must not independently advance an accepted run because a dispatcher lease expired.
 
-| Table | Purpose |
-|---|---|
-| `sandbox_identities` | Permanent builder and workspace-session identity tombstones |
-| `privileged_operations` | Current and historical model, Git, and Ditto-action windows |
-| `archives` | Opaque archive metadata and retryable cleanup state |
-| `workspace_session_recoveries` | Session mutation and current/previous archive lineage |
-| `workspace_runtime_work` | Durable serializable FIFO work |
-| `workspace_capacity_leases` | Unexpired global/per-user running slots |
+### SessionRuntime SQLite
 
-Archive owners are only `project_seed` and `workspace_recovery`. Provider credential and provider-login tables are gone.
+Authoritative for consumed commands, run epochs and states, the effect journal, Pi continuation or encrypted references, committed paired checkpoints, the event sequence, and pending D1 projections. The coordinator commits terminal execution state and a pending D1 update in one local transaction. A retryable projector updates matching message and command rows idempotently.
+
+### R2
+
+Immutable workspace archives and encrypted large runtime records. Bytes travel between fixed sandbox paths and the runtime Worker binding. Containers receive no R2 capability.
+
+### Container disks
+
+Live workspace files or reconstructible Pi working files. Never the only copy of accepted commands or Pi continuation state.
+
+No transaction spans D1, DO SQLite, R2, and an external effect.
 
 ## Lifecycle
 
 Project status is `provisioning`, `ready`, `failed`, or `deleting`. The `deleting` status blocks new work while authority and storage cleanup run.
 
-Workspace-session product status is `active` or `archived`. Runtime identity state is separate: `unprovisioned`, `queued`, `provisioning`, `restoring`, `ready`, `failed`, `destroying`, or `destroyed`. Each transition uses D1 leases and generation checks.
+Workspace-session product status is `active` or `archived`. Brain and execution identity state are separate. Assistant messages move from `pending` to `complete` or `failed`. The initial user message, pending assistant, and delivery intent are durable before capacity or provisioning starts.
 
-Assistant messages move from `pending` to `complete` or `failed`. The initial user message, pending assistant, and runtime work record are durable before capacity or provisioning starts.
+Agent runs use queued, starting, running, recovering, stopping, complete, failed, and canceled. Recovering and stopping are observable and not success.
 
-## Cutover migration
+## Historical cutover migration
 
-Migration `0019_needy_squadron_sinister.sql` is an explicit pre-launch local reset. It:
-
-1. closes open operations and permanently retires active identities;
-2. marks retained archive rows for cleanup;
-3. deletes provider rows, queued work, messages, recovery rows, workspace sessions, project seeds, and projects in dependency order;
-4. drops provider tables and obsolete project/workspace columns.
-
-It preserves auth tables and rows, identity tombstones, operation definitions, archive cleanup rows, and every final seed, runtime, recovery, queue, and authority table definition. Never use this reset as the production project-deletion path.
+Migration `0019_needy_squadron_sinister.sql` is a pre-launch local reset. It must not be repeated as production project deletion or as the trusted-runtime cutover. That cutover is non-destructive and is not authorized by documentation acceptance.
 
 ## Configuration
 
-`alchemy.run.ts` binds D1, one R2 bucket, the Sandbox container, auth/GitHub configuration, `OPENCODE_API_KEY`, RPC transport, and the preview host. It does not bind provider-credential encryption or R2 access keys. The sandbox receives no deployment secret or storage credential.
+`alchemy.run.ts` must define both Worker services, both container images, shared D1, shared R2, and the bindings above. It must not put `OPENCODE_API_KEY` on the product Worker or the GitHub App private key on the runtime Worker. Neither container image receives a deployment secret or storage credential.

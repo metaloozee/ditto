@@ -1,6 +1,10 @@
 # Platform credential broker and workspace-session sandbox isolation
 
-Status: local cutover implemented; clean local end-to-end and production validation deferred
+Status: superseded as a target specification by [Trusted workspace-session runtime](trusted-session-runtime.md).
+
+This document is historical implementation evidence. Its remaining text records the prior scope, decisions, and validation results, not instructions for the new runtime. The canonical specification carries forward the required security controls and uncompleted gates. In particular, the old exclusions of a trusted agent container and the old pre-launch reset do not apply to new work.
+
+Historical implementation status: local cutover implemented; clean local end-to-end and production validation deferred.
 
 Last implementation audit: 2026-08-23 in cutover commit `4430b44`, deletion revision commit `f5dae76`, and lifecycle lease-fence revision commit `e6a67cee83c10e411890effcfaf31003f3cbb8b6`
 
