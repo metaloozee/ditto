@@ -8,10 +8,7 @@ import {
 	OPENCODE_REQUEST_MODEL,
 } from "./open-code-contract";
 import { SandboxAuthorityError } from "./sandbox-authority";
-import {
-	handleOutbound,
-	resolveOutboundFetch,
-} from "./sandbox-egress-broker";
+import { handleOutbound, resolveOutboundFetch } from "./sandbox-egress-broker";
 
 const resolveAgentGitContextMock = vi.fn();
 const dispatchAgentGitActionMock = vi.fn();
@@ -136,9 +133,9 @@ describe("resolveOutboundFetch", () => {
 			expect(() => detached(new Request("https://example.com/"))).toThrow(
 				/Illegal invocation/,
 			);
-			await expect(impl(new Request("https://example.com/"))).resolves.toBeInstanceOf(
-				Response,
-			);
+			await expect(
+				impl(new Request("https://example.com/")),
+			).resolves.toBeInstanceOf(Response);
 		} finally {
 			globalThis.fetch = original;
 		}
