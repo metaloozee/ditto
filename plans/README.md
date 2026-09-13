@@ -1,18 +1,22 @@
 # Trusted workspace-session runtime implementation plans
 
-Astra-authored plans against `c963890` on branch `brain`, with evidence corrections and Luna cold review plus rereview. Status: DRAFT, requested Grok technical review still BLOCKED by provider rejection before execution. Luna confirmed CR01-CR09 resolved in plan text and phase 001 executable as feasibility. Its overall verdict remains NOT READY: implementation and platform evidence are absent, and later phases remain dependency-blocked. This is not runtime or release approval. No implementation, deployment, migration, staging, or commit is authorized by this plan set.
+The original plans were drafted against `c963890` on branch `brain`, with evidence corrections and Luna cold review. Phase 001 is now refined against `20d3160` using reviewed local experiments at Pi `0.80.10` and `0.85.1`. Its next step is a bounded recovery-adapter experiment at exact `0.85.1`; handoff to 002 remains BLOCKED. Current runner source still pins `0.80.10`.
+
+The earlier requested broad Grok plan review did not complete. Later xAI Grok-4.6 agents completed targeted continuation, restoration and runner-compatibility experiments, which the advisor independently checked. A fresh-context xAI review of the refined 001 found it ready for the local experiment, not F-Pi PASS. That is not a review or implementation of the remaining phases. Luna's earlier CR01-CR09 dispositions remain historical plan-text evidence, not runtime approval. No deployment, migration, staging or commit is authorized by this plan set.
 
 Canonical requirements: `docs/specs/trusted-session-runtime.md`, all 516 lines reread during the editorial pass. The accepted architecture is pending implementation. Current source wins for current behavior; the spec wins for the target. Research and architecture pages are supporting context, not alternate requirements.
 
 ## Scope and safety
 
-Only `plans/*.md` were written. Existing unrelated modification `apps/web/src/lib/sandbox-egress-broker.test.ts` was present at the start. Preserve it. Before execution, compare HEAD and that diff, then revalidate any affected excerpt/test. Do not reset, stage, or overwrite it. At editorial verification, `git status --short` reports `?? plans/`; `git check-ignore` matches neither `plans/` nor `plans/README.md`. These plans are untracked, not ignored. Do not stage them without a separate request.
+This refinement changes only `plans/001-feasibility.md` and this index in the main checkout. Local experiment source and candidate manifests remain uncommitted in isolated worktrees identified in 001. No experimental implementation has been applied to the user's branch.
+
+The main checkout was clean at `20d3160` before this refinement, and plans are now tracked. The earlier dirty `apps/web/src/lib/sandbox-egress-broker.test.ts` and untracked-plans notes describe the original editorial pass, not current status. Always inspect actual status and preserve unrelated work. Do not reset, stage or overwrite it.
 
 The spec does not authorize paid environments, production inspection, deployment, shared D1 migration, identity retirement in a live account, backup deletion, Git pushes, or source commits. Name the intended environment and wait for separate authorization before such work. Implementation, test and build commands below are future executor gates. The editorial pass ran only read-only Git and document/source consistency checks. Never print secret values, request bodies, raw provider records, archive bytes, or capability URLs in evidence.
 
 The improve skill's `references/plan-template.md` was unavailable as reported by recon. `references/audit-playbook.md` also returned ENOENT during the drafter's own read. This set uses the user's explicit standalone-plan requirements instead. No hidden template compliance is claimed.
 
-## Cold-review dispositions
+## Historical cold-review dispositions
 
 Luna completed a fresh rereview of the actual revised plans and canonical spec. It confirmed all nine findings below resolved at the plan-text level, identified no additional plan-text correction, and explicitly found phase 001 executable as feasibility. These are not validated implementations. Its overall NOT READY verdict still applies to implementation/platform/release evidence. Grok remains blocked before execution.
 
@@ -34,7 +38,7 @@ No source, infrastructure, install, tests, staging or commit is part of these re
 
 | Phase | Plan | Prerequisites | Gate delivered | Status | Effort / risk |
 |---|---|---|---|---|---|
-| 001 | [Feasibility](001-feasibility.md) | none | Pinned Pi barrier/restore experiment and two-Worker/two-image topology evidence | TODO | L / high |
+| 001 | [Feasibility](001-feasibility.md) | none | Pi 0.85.1 recovery-adapter/barrier proof and two-Worker/two-image topology evidence | BLOCKED handoff; local adapter experiment next | L / high |
 | 002 | [Contracts and identity](002-contracts-and-identity.md) | 001 local feasibility | Versioned wire contracts, additive D1 schema, ownership fence | BLOCKED 001 | M / high |
 | 003 | [Command admission and delivery](003-command-admission-and-delivery.md) | 002 | Durable idempotent receipts and retrying delivery, no request-owned run | BLOCKED 002 | L / high |
 | 004 | [Coordinator and encrypted journal](004-coordinator-and-encrypted-journal.md) | 003 | Durable execution decisions, epochs, journal, encrypted storage and projections | BLOCKED 003 | L / high |
@@ -64,7 +68,9 @@ A failed local feasibility requirement stops dependent implementation. Paid test
 
 Each numbered plan repeats its required subset. Names below are planned, not existing APIs.
 
-- `packages/runtime-contracts`, pnpm package `@ditto/runtime-contracts`: versioned JSON schemas and types only, no Pi, Cloudflare, auth, or DB imports. Build before independent npm consumers and verify the actual imported artifact is fresh; a copied npm file dependency is not refreshed by building workspace dist alone. From 002, `brain:verify` prepends `contracts:verify` and `contracts:check`; standalone brain gates require the same prerequisites. `packages/session-brain` is an independent npm package, like `packages/sandbox-runner`; it pins Pi `0.80.10` and consumes `file:../runtime-contracts`. `apps/runtime`, pnpm package `@ditto/runtime`, owns the runtime Worker. No Sandbox protocol migration.
+Phase 001 now targets Pi `0.85.1` and explicit in-memory entry import. The `0.80.10` prerequisite in 002 and the version/JSONL-import assumptions in 006 are stale for that candidate. Both phases remain blocked. Reconcile those assumptions with the actual successful 001 recipe before their execution; do not use them to downgrade Pi or claim recovery has already been proved.
+
+- `packages/runtime-contracts`, pnpm package `@ditto/runtime-contracts`: versioned JSON schemas and types only, no Pi, Cloudflare, auth, or DB imports. Build before independent npm consumers and verify the actual imported artifact is fresh; a copied npm file dependency is not refreshed by building workspace dist alone. From 002, `brain:verify` prepends `contracts:verify` and `contracts:check`; standalone brain gates require the same prerequisites. `packages/session-brain` is an independent npm package, like `packages/sandbox-runner`; its next feasibility target is exact Pi `0.85.1`. It has no contracts dependency in 001 and consumes `file:../runtime-contracts` only from 002 after the full local handoff gate. `apps/runtime`, pnpm package `@ditto/runtime`, owns the runtime Worker. No Sandbox protocol migration.
 - `CommandV1`: workspace variants carry `version`, `kind`, `commandId`, `commandSeq`, `userId`, `projectId`, `workspaceSessionId`, `runtimeOwnerVersion`, optional exact `targetRunId`, message IDs where applicable, bounded scalar payload, accepted time and persisted queue deadline. 009 adds project-scoped deletion without a fabricated workspace sequence. Product creates authority-bearing fields. Browser supplies an idempotency key and permitted business input, never identities, epochs, or object keys.
 - `ReceiptV1`: immutable IDs plus evolving admission/delivery/execution status, queue deadline/position, Stop recorded/applied status, reason, and projection version. HTTP acceptance does not mean execution started. Idempotency scope is owner plus project for first-session creation/project deletion, owner plus workspace session otherwise, with command kind and canonical payload hash included in conflict detection. Retain dedupe for the retained workspace lifetime.
 - Command-kind delivery is phased: 003 adds prompts/follow-ups/Stop/queue cancellation and defines the recovery union, without accepting missing handlers. 006 delivers failed-run decisions, 007 paired restore/backup retry, 008 preview lifecycle, 005 UI Git admission, and 009 archive/continue/project deletion. Each uses the existing contracts package, durable idempotency and coordinator serialization. Model-free commands do not require model configuration or create chat message pairs. Recovery variants are `abandon_failed_run`, `retry_known_safe`, `acknowledge_uncertainty_and_start_new_action`, `restore_checkpoint_acknowledging_loss`, `retry_backup` and `restart_preview`; 003 defines their exact contracts. Pi-starting recovery actions require model/capacity and explicit message rules, never implicit replay. 009 defines project-deletion scope explicitly rather than inventing a workspace sequence for a project.
@@ -137,7 +143,7 @@ Every row starts NOT RUN for the target, independent of old local test results. 
 
 | Gate | Owner | Required evidence |
 |---|---|---|
-| F-Pi | 001, production adapter retest 006 | All awaited barriers and lossless continuation at Pi 0.80.10, including error swallowing and identical follow-up text |
+| F-Pi | 001, production adapter retest 006 | All awaited barriers and safe continuation at candidate Pi 0.85.1, including error swallowing and identical follow-up IDs. Import tests pass; direct continuation still fails both interrupted-tool cases. |
 | F-Topology | 001 | Alchemy first creation and update with both classes on runtime, cyclic private bindings, DO identity source and supported scheduler |
 | P-Bridge | 005, 012 | Real Node HTTP bridge and executor/builder denial of brain contracts |
 | P-Model | 005, 006, 012 | HTTPS CA/interception, actual provider streaming/cancellation, no platform keys in either container |
@@ -152,7 +158,7 @@ Every row starts NOT RUN for the target, independent of old local test results. 
 | R-Local | 012 | Extended `pnpm verify` including new packages; no skipped required tests |
 | R-Matrix | 012 | T01-T36 against real two-container target plus historical unrun import/isolation/Git/preview/archive/delete/environment matrix |
 
-## Verification baseline and command caveat
+## Original verification baseline and command caveat
 
 The parent supplied these independent baseline results for `c963890` plus the preexisting dirty egress test. The drafter did not run them and does not claim them as target-runtime evidence:
 
@@ -167,6 +173,10 @@ The parent supplied these independent baseline results for `c963890` plus the pr
 Use `pnpm --filter @ditto/web exec vitest run <paths>` for narrow web gates. The documented `pnpm --filter @ditto/web test -- <test-file>` remains a repository command, but is not reliably narrow under this pnpm version. Root `pnpm verify` builds and writes ignored outputs; execute only during authorized implementation, never during a read-only plan review. New package commands are defined in 001 and 002 before later plans use them.
 
 ## Evidence limits and open decisions
+
+Current 001 evidence: all 79 existing runner tests pass on both Pi versions; candidate runner typecheck/build fail on two missing metadata ResourceLoader methods. The `0.85.1` import tests preserve synthetic state and explicitly select a non-last leaf, but require strict caller validation and defensive copying. Both direct-continuation blockers remain. The refined plan specifies the compatibility change, strict import boundary and journal-led recovery experiment. No full barrier proof, topology evidence, live-provider replay test or paid gate has passed. Candidate lockfiles also refreshed unrelated semver-resolved packages and need dependency review before adoption. See 001 for exact test cases, commands and artifact paths.
+
+The following paragraphs describe the original editorial pass and its limits. They do not supersede the newer executable evidence in 001.
 
 The editorial pass read all 13 plan files, the complete target spec, and the local source ranges behind every quoted code/SQL/manifest excerpt. It checked all 30 fenced source excerpts with indentation normalized, corrected line anchors, checked local plan links and the 55 distinct local test-command paths, and read root/web/runner manifests, workspace membership and CI. It also read the installed Pi session-manager declarations, the cited event/tool-hook/compaction source ranges, and Alchemy's WorkerRef implementation. This verifies those bounded excerpts, not the entire codebase or runtime behavior. Installed `SessionManager.inMemory` has no entries argument and compaction uses `firstKeptEntryId`; no executable restore recipe has been proved.
 
