@@ -1,6 +1,8 @@
 # Trusted workspace-session runtime implementation plans
 
-The original plans were drafted against `c963890` on branch `brain`, with evidence corrections and Luna cold review. Phase 001 is now refined against `20d3160` using reviewed local experiments at Pi `0.80.10` and `0.85.1`. Its next step is a bounded recovery-adapter experiment at exact `0.85.1`; handoff to 002 remains BLOCKED. Current runner source still pins `0.80.10`.
+Reconcile at `6eefdd1` on `brain` (plans dirty only). `closing-the-loop.md` is still missing; this pass used the skill's reconcile bullets.
+
+001 local A-D and Docker boot PASS in `/tmp/ditto-feasibility-execute.bw57gx/worktree`. Paid F-Topology / P-Restart / incarnation death NOT RUN. Maintainer accepted local Docker instead of a paid Cloudflare plan. 002 is unblocked as contracts/schema only; execute it on that worktree, not clean `brain` (`0.80.10`, no `session-brain`). 003+ stay blocked on a finished 002. No phase is DONE on `brain`. No implementation was applied to the user's branch.
 
 The earlier requested broad Grok plan review did not complete. Later xAI Grok-4.6 agents completed targeted continuation, restoration and runner-compatibility experiments, which the advisor independently checked. A fresh-context xAI review of the refined 001 found it ready for the local experiment, not F-Pi PASS. That is not a review or implementation of the remaining phases. Luna's earlier CR01-CR09 dispositions remain historical plan-text evidence, not runtime approval. No deployment, migration, staging or commit is authorized by this plan set.
 
@@ -8,7 +10,7 @@ Canonical requirements: `docs/specs/trusted-session-runtime.md`, all 516 lines r
 
 ## Scope and safety
 
-This refinement changes only `plans/001-feasibility.md` and this index in the main checkout. Local experiment source and candidate manifests remain uncommitted in isolated worktrees identified in 001. No experimental implementation has been applied to the user's branch.
+Plan-file updates in the main checkout are review evidence only. Candidate source remains uncommitted in `/tmp/ditto-feasibility-execute.bw57gx/worktree`. The first rejected worktree is gone. Do not copy either candidate onto `brain`. The second candidate's own plan text overstates D; use the advisor review in this checkout.
 
 The main checkout was clean at `20d3160` before this refinement, and plans are now tracked. The earlier dirty `apps/web/src/lib/sandbox-egress-broker.test.ts` and untracked-plans notes describe the original editorial pass, not current status. Always inspect actual status and preserve unrelated work. Do not reset, stage or overwrite it.
 
@@ -38,8 +40,8 @@ No source, infrastructure, install, tests, staging or commit is part of these re
 
 | Phase | Plan | Prerequisites | Gate delivered | Status | Effort / risk |
 |---|---|---|---|---|---|
-| 001 | [Feasibility](001-feasibility.md) | none | Pi 0.85.1 recovery-adapter/barrier proof and two-Worker/two-image topology evidence | BLOCKED handoff; local adapter experiment next | L / high |
-| 002 | [Contracts and identity](002-contracts-and-identity.md) | 001 local feasibility | Versioned wire contracts, additive D1 schema, ownership fence | BLOCKED 001 | M / high |
+| 001 | [Feasibility](001-feasibility.md) | none | Pi 0.85.1 recovery-adapter/barrier proof and two-Worker/two-image topology evidence | Local PASS in worktree; paid F NOT RUN; not landed on `brain` | L / high |
+| 002 | [Contracts and identity](002-contracts-and-identity.md) | 001 local feasibility | Versioned wire contracts, additive D1 schema, ownership fence | Ready to execute on 001 worktree | M / high |
 | 003 | [Command admission and delivery](003-command-admission-and-delivery.md) | 002 | Durable idempotent receipts and retrying delivery, no request-owned run | BLOCKED 002 | L / high |
 | 004 | [Coordinator and encrypted journal](004-coordinator-and-encrypted-journal.md) | 003 | Durable execution decisions, epochs, journal, encrypted storage and projections | BLOCKED 003 | L / high |
 | 005 | [Privileged transport and remote execution](005-privileged-transport-and-remote-execution.md) | 004 | Private bridge, split credential broker, remote executor, Git/environment policy | BLOCKED 004 | L / high |
@@ -68,7 +70,7 @@ A failed local feasibility requirement stops dependent implementation. Paid test
 
 Each numbered plan repeats its required subset. Names below are planned, not existing APIs.
 
-Phase 001 now targets Pi `0.85.1` and explicit in-memory entry import. The `0.80.10` prerequisite in 002 and the version/JSONL-import assumptions in 006 are stale for that candidate. Both phases remain blocked. Reconcile those assumptions with the actual successful 001 recipe before their execution; do not use them to downgrade Pi or claim recovery has already been proved.
+Phase 001 proved Pi `0.85.1` and `SessionManager.inMemory(cwd, options, entries)` then `branch(leafId)`. 002 and 006 plan text now carry that recipe. Do not downgrade to `0.80.10` or reconstruct import by rewriting JSONL. 006 remains blocked on 005; only its version/restore assumptions were refreshed.
 
 - `packages/runtime-contracts`, pnpm package `@ditto/runtime-contracts`: versioned JSON schemas and types only, no Pi, Cloudflare, auth, or DB imports. Build before independent npm consumers and verify the actual imported artifact is fresh; a copied npm file dependency is not refreshed by building workspace dist alone. From 002, `brain:verify` prepends `contracts:verify` and `contracts:check`; standalone brain gates require the same prerequisites. `packages/session-brain` is an independent npm package, like `packages/sandbox-runner`; its next feasibility target is exact Pi `0.85.1`. It has no contracts dependency in 001 and consumes `file:../runtime-contracts` only from 002 after the full local handoff gate. `apps/runtime`, pnpm package `@ditto/runtime`, owns the runtime Worker. No Sandbox protocol migration.
 - `CommandV1`: workspace variants carry `version`, `kind`, `commandId`, `commandSeq`, `userId`, `projectId`, `workspaceSessionId`, `runtimeOwnerVersion`, optional exact `targetRunId`, message IDs where applicable, bounded scalar payload, accepted time and persisted queue deadline. 009 adds project-scoped deletion without a fabricated workspace sequence. Product creates authority-bearing fields. Browser supplies an idempotency key and permitted business input, never identities, epochs, or object keys.
@@ -174,7 +176,7 @@ Use `pnpm --filter @ditto/web exec vitest run <paths>` for narrow web gates. The
 
 ## Evidence limits and open decisions
 
-Current 001 evidence: all 79 existing runner tests pass on both Pi versions; candidate runner typecheck/build fail on two missing metadata ResourceLoader methods. The `0.85.1` import tests preserve synthetic state and explicitly select a non-last leaf, but require strict caller validation and defensive copying. Both direct-continuation blockers remain. The refined plan specifies the compatibility change, strict import boundary and journal-led recovery experiment. No full barrier proof, topology evidence, live-provider replay test or paid gate has passed. Candidate lockfiles also refreshed unrelated semver-resolved packages and need dependency review before adoption. See 001 for exact test cases, commands and artifact paths.
+Reconcile evidence: 001 worktree still present (detached `6eefdd1`, uncommitted source). `brain` HEAD `6eefdd1`, runner still `0.80.10`. Local 001 A-D + Docker boot stand. 002/006 version drift to `0.80.10` / JSONL-only import retired in plan text. No DONE phase on the branch. Next execute: 002 on the 001 worktree.
 
 The following paragraphs describe the original editorial pass and its limits. They do not supersede the newer executable evidence in 001.
 

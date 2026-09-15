@@ -1,12 +1,12 @@
 # 002: Add contracts, durable identities and ownership fences
 
-Status: BLOCKED on 001 local feasibility. Base HEAD: `c963890`, branch `brain`. Effort: M, 3-5 days. Risk: high, because a missing fence creates two execution owners.
+Status: Ready to execute. 001 local feasibility is satisfied in `/tmp/ditto-feasibility-execute.bw57gx/worktree` (Pi `0.85.1` recovery recipe, Docker boot). Not implemented. Execute on that tree, not clean `brain`. Paid 001 topology stays NOT RUN and still blocks real-user enablement. Original plan base `c963890`. Effort: M, 3-5 days. Risk: high, because a missing fence creates two execution owners.
 
 ## Problem, target and prerequisites
 
 Current D1 rows model one sandbox identity and one running-slot pool. The target needs durable commands, brain identity, process incarnation, coordinator projections and paired checkpoints without changing what old readers think existing rows mean.
 
-Required 001 deliverables: an executable Pi 0.80.10 barrier/restoration recipe, supported Container identity/scheduler API, and a locally demonstrated Alchemy two-service reference procedure. Paid evidence may remain NOT RUN, which blocks real-user enablement. 001 defines `@ditto/runtime` with `typecheck` and `test`, and independent npm `packages/session-brain` with `typecheck`, `test`, `build`. No production migration or deployment follows from those local deliverables.
+Required 001 deliverables now in the worktree: Pi `0.85.1` barrier/restoration recipe (`SessionManager.inMemory(imageOwnedCwd, undefined, structuredClone(entries))` then `branch(leafId)` before `createAgentSession`; journal-led recovery of one committed tool batch; 8-barrier SIGKILL matrix). `@ditto/runtime` has `typecheck` and `test`. Independent npm `packages/session-brain` has `typecheck`, `test`, `build`. Docker images `ditto-feasibility-brain:local` and `ditto-feasibility-sandbox:local` boot. Live Alchemy two-service create, DO restart, and incarnation death are NOT RUN. Paid evidence may remain NOT RUN, which blocks real-user enablement. No production migration or deployment follows from those local deliverables. Do not downgrade to `0.80.10`.
 
 Target here is additive schema and a small shared wire contract. It does not execute commands, move keys/classes, import old histories, or remove legacy behavior. All existing sessions remain `legacy` until an explicit fenced migration.
 

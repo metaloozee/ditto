@@ -1,6 +1,6 @@
 # 001: Prove Pi 0.85.1 recovery and the two-container topology
 
-Status: BLOCKED for handoff to 002. The next local subphase is the recovery-adapter experiment below, not another attempt at bare `continue()`. Revised against HEAD `20d3160`, branch `brain`; original plan base `c963890`. Effort: L. Risk: high.
+Status: Local 001 accepted as the 002 prerequisite. A-D and Docker boot PASS in `/tmp/ditto-feasibility-execute.bw57gx/worktree` at detached `6eefdd1`. Paid F-Topology, P-Restart, and incarnation lifetime stay NOT RUN, not PASS. Source is not on `brain`. Execute 002 on that worktree (or a branch copied from it), not on clean `brain` at `0.80.10`. Original refinement base `20d3160`, branch `brain`; original plan base `c963890`. Effort: L. Risk: high.
 
 This refinement selects Pi `0.85.1` for the next authorized executor checkout. It does not upgrade the current runner, apply the experimental code, authorize deployment, or declare feasibility passed. Only plan files change during this refinement.
 
@@ -39,6 +39,254 @@ Optional source artifacts, all uncommitted and outside the main checkout:
 - `/tmp/ditto-pi-0851.TQcwtT/runner`: candidate runner manifests, failing compile evidence, unchanged runner source.
 
 Inspect artifacts before selectively reusing source. Do not copy whole worktrees, dependency directories, generated output or their plan files. Candidate brain installs refreshed unrelated semver-resolved dependencies, including Node types and build tooling; their lockfiles are not an approved minimal migration. If these temporary artifacts have disappeared, reconstruct the cases specified here and rerun them. The plan does not depend on their continued existence.
+
+## Execution review at `6eefdd1`
+
+Executor: `xai/grok-4.6`, High reasoning. Candidate remains uncommitted in `/tmp/ditto-feasibility-execute.2xREVW/worktree`, detached at `6eefdd1`. The advisor read every new source/test file and the tracked source/manifest/doc diff, checked lock-version changes, and reran the gates below. No candidate source or dependency change was applied to the main checkout. Only this plan and the index receive review evidence.
+
+Verdict: **REJECTED**, not local feasibility PASS. The worktree's own plan files claim A-D passed; those claims are not accepted evidence. Its extra `packages/session-brain/.gitignore` is outside the explicit file whitelist and duplicates root ignores. Leave the candidate intact for diagnosis; do not copy it wholesale.
+
+Environment: Node `v24.21.0`, npm `11.19.0`, pnpm `11.8.0`. Both independent packages resolve Pi AI, coding-agent and nested agent-core to `0.85.1`, with no lockfile links. TypeScript `5.9.3`, Vitest `3.2.7` and root Node types `22.20.1` were preserved. Brain and runner dependency version maps match. Other changed versions are Anthropic SDK `0.91.1` to `0.123.0`, OpenAI `6.26.0` to `6.40.0`, TypeBox `1.1.38` to `1.3.7`, undici `8.5.0` to `8.9.0`, protobufjs `7.6.4` to `7.6.5`, and brace-expansion `5.0.6` to `5.0.9`. This verifies resolution, not a dependency security audit.
+
+| Independent gate | Result |
+|---|---|
+| `pnpm runner:verify` | PASS: typecheck, 79 tests, build. Named loader compatibility change is correct. |
+| `pnpm brain:verify` | PASS as written: typecheck, 46 tests, build. Does not establish B-D requirements. |
+| `pnpm check` | FAIL: 9 errors, 13 warnings. New brain source has formatting/import errors. |
+| `git diff --check` | PASS for tracked candidate changes. |
+| Advisor recovery/validation probes below | FAIL: the persisted probe exits 1 with 10 failed guarantees. A separate actual kill/restart at the entry-materialization boundary also changed the saved entry ID. |
+| `pnpm verify`, runtime/topology/streaming/paid gates | NOT RUN. No runtime package exists. B-D failures prohibit starting E. |
+
+All following paths refer to the candidate worktree, not the main checkout. Abbreviated `src/` paths mean `packages/session-brain/src/`. Line numbers refer to the reviewed, unmodified candidate.
+
+| ID | Verified defect | Evidence and observation |
+|---|---|---|
+| ER01 | Explicit unknown outcomes are replayed. | `packages/session-brain/src/pi-recovery.ts:783-821` and `src/main.ts:635-659` only block `admitted` without a result. `outcome_unknown` falls through to admission/dispatch. With an existing synthetic effect receipt count of 1, recovery returned `continued`, raised the counter to 2, and called the provider once. |
+| ER02 | Committed positions do not include their entries or terminal state. | `src/pi-recovery.ts:941-985` saves a generated `piEntryId` but never the entry or updated checkpoint. `src/main.ts:689-704,737-738` similarly saves follow-up IDs and a final-answer label without user/final entries or terminal flags. Two process replacements generated different result entry IDs and each inferred again. A killed child at `after-entry-before-continue` had saved an ID absent from its checkpoint; restart replaced that ID. Two identical-text commands became consumed while neither user entry appeared in the saved checkpoint. |
+| ER03 | Recovery does not preserve the effective tool result. | `src/pi-recovery.ts:818-821,863-935` commits before `afterToolCall`, then manually calls a tool and hooks. `src/main.ts:654-681` discards that call's return and materializes the earlier saved result. An after-hook transformed content and `isError`, but the journal retained the original content and `false`. `loadJournal` at `src/pi-recovery.ts:644-675` also silently filters result content to text. No image-owned extension is installed by `src/main.ts:63-81`; extension transitions are not proved. |
+| ER04 | Barrier labels are not persistence proofs; real write failure does not latch. | `src/pi-recovery.ts:757-770` appends a string to `barrierLog`. `src/main.ts:551,586-613,738` uses these strings for initial command, extension state, existing compaction, assistant response and final answer. `src/pi-recovery.test.ts:543-616` checks marker membership and pre-seeded effect counts, not durable content or per-boundary operation ordering. The live-tool failure case covers only the marker-file injection. A real `writeFileSync` EISDIR failure at `src/pi-recovery.ts:708-716` left `isLatched` false. Retry, metadata, actual compaction and extension-hook failure paths remain unproved. |
+| ER05 | Restore accepts invalid state and loses supported settings. | `src/pi-recovery.ts:173-181,362-375,382,498,535-549` counts UTF-16 characters as bytes, only checks a content block's `type` string, permits a compaction reference after its own entry, and retains only compaction/retry enable flags. A checkpoint of 8,884 UTF-8 bytes passed an 8,192-byte limit. `{type: "toolCall"}` passed without IDs/name/arguments. A forward `firstKeptEntryId` passed. Requested compaction limits 1,234/5,678 restored as defaults 16,384/20,000. `createOfflineHarness` at `src/main.ts:191-210,594-599` also replaces restored settings with its own defaults. |
+| ER06 | Logical identity and authority are narrower than the required contract. | `src/main.ts:582-585,615-616` creates tool names from journal input and matches effects by call ID only; `src/pi-recovery.ts:783-788,949-953` also uses call ID without run/originating assistant/selected branch. `assertAuthority` compares one three-field tuple, not executor incarnation plus execution position; live dispatch does not recheck it. These are source-confirmed gaps, not platform identity findings. |
+
+The first attempt's blockers were implementation defects, not an SDK impossibility. A second executor repaired them. That does not finish phase 001.
+
+## Second execution review
+
+Executor: `xai/grok-4.6`, High reasoning. Candidate uncommitted in `/tmp/ditto-feasibility-execute.bw57gx/worktree`, detached `6eefdd1`. The previous rejected worktree is gone. The advisor read the new brain/runner sources, reran gates, and reran the red probe below. No candidate source was applied to the main checkout. The executor's own plan text claiming "local B-D repaired" is not accepted for D.
+
+Recipe in this candidate: clone entries, `SessionManager.inMemory(imageOwnedCwd, undefined, workingEntries)`, `branch(leafId)`, journaled dispatch of prepared tools through public `beforeToolCall`/`afterToolCall` plus `runRemoteEffect`, commit the hook-normalized result and Pi entry/leaf into the checkpoint, dispose that session, create a new `createAgentSession` from the committed manager, then `session.agent.continue()`. Grep found no `agent.state.messages =` assignment. No STOP/SDK gap was shown.
+
+Fixture policy in `packages/session-brain/src/pi-recovery.ts` `FIXTURE_LIMITS`: `maxBytes=8192`, `maxEntries=32`, `maxNesting=16`. Test policy, not production limits. Pi AI, coding-agent, and nested agent-core are `0.85.1` in runner and brain.
+
+| Independent gate | Result |
+|---|---|
+| `pnpm runner:verify` | PASS: typecheck, 79 tests, build. |
+| `pnpm brain:verify` | PASS: typecheck, 27 tests, build. |
+| Advisor red probe | PASS, exit 0, 10/10. |
+| Scoped `biome check` on new brain/runner files | PASS. |
+| `git diff --check` | PASS. |
+| D 8 barriers × 3 crash positions | FAIL / incomplete. Named SIGKILL coverage exists for entry materialization, admission-before-dispatch, and follow-up persist. Missing initial-command, assistant-tools, final-answer, compaction, extension-state, and spending-attempt, each at before-persist / after-persist-before-ack / after-ack-before-next. No live Pi-swallowed persist-failure case during a tool batch. |
+| E topology/streaming, `runtime:verify`, `pnpm verify`, paid | NOT RUN. Correctly not started. |
+
+ER01-ER06 against this candidate:
+
+- ER01: `unknownOrUnproved` blocks `outcome_unknown` and `admitted` without a result at recover entry. Probe and R05/R05b PASS.
+- ER02: `snapshotSession` writes header, entries, and leaf after materialization. SIGKILL at `after-entry-before-continue` keeps the same `piEntryId` in the checkpoint. Second recovery is terminal with zero inference. Probe PASS.
+- ER03: `afterToolCall` content/`isError` is what gets journaled. In-process hook test PASS.
+- ER04: real `writeFileSync` EISDIR latches `admission.latched`. Probe PASS. This is not the full D matrix.
+- ER05: UTF-8 `Buffer.byteLength`, full tool-call shape, forward compaction rejected, compaction settings 1234/5678 restored. Probe PASS.
+- ER06: effects keyed by `{runId, assistantEntryId, toolCallId}`; `runRemoteEffect` rechecks authority and execution position.
+
+Do not copy this worktree onto `brain`. Do not treat A-C as F-Pi or as permission to implement 002.
+
+## Third execution review
+
+Executor: `xai/grok-4.6`, High reasoning, D-only. Same worktree `/tmp/ditto-feasibility-execute.bw57gx/worktree`. The advisor read the new D tests and persist helpers, reran gates, and reran the red probe. No candidate source was applied to the main checkout. The executor's plan-file self-verdict is not authority.
+
+D as reviewed: eight named barriers, each SIGKILL-tested at before-persist, after-persist-before-ack, and after-ack-before-next. Mid-crash assertions inspect journal/checkpoint content (consumed command IDs, user entries, committed assistant tool calls, hook-normalized results, terminal flag/content, compaction summary/`firstKeptEntryId`/leaf, extension `phase`, spending attempts). Restart then asserts durable recovery or, for tool-result before-persist, a blocked unknown outcome. Live persist failure through `tool_result` latches; `call-b` does not run; reopen stays blocked. Final answer waits on the public `continue()`/`compact()` promise, not `message_end`.
+
+Enforcers: `consumeInitialCommand`; `consumeOneFollowUp`; public `tool_call` then `persistAssistantResponseBeforeDispatch`; public `tool_result` then `persistToolResultFromHook`; `persistFinalAnswerAfterRunPromise`; public `session_compact`; public `tool_call` then `persistExtensionStateTransition`; `admitSpendingAttempt` wrapping `streamFunction` (retry and metadata included).
+
+| Independent gate | Result |
+|---|---|
+| `pnpm runner:verify` | PASS, 79 tests |
+| `pnpm brain:verify` | PASS, 40 tests |
+| Advisor red probe | PASS, exit 0, 10/10 |
+| Scoped biome on `packages/session-brain/src` | PASS |
+| D 8	imes3 SIGKILL matrix plus live swallowed persist | PASS as local synthetic evidence |
+| E topology/streaming, `runtime:verify`, `pnpm verify`, paid | NOT RUN |
+
+Residual, not a D reject: `runRemoteEffect` compares `leafId` to `journal.assistantEntryId` on both sides, so execution-position checks do not bind the selected session leaf. Keep that visible for 006.
+
+## Fourth execution review
+
+Executor: `xai/grok-4.6`, High reasoning, local E. Same worktree. The advisor read `alchemy.run.ts`, `apps/runtime/src/server.ts`, `src/feasibility.test.ts`, the brain Dockerfile, and reran gates. Production website graph and bindings are unchanged; extra runtime workers exist only when `app.local && DITTO_LOCAL_RUNTIME_TOPOLOGY=1`. No candidate source was applied to the main checkout.
+
+| Row | Advisor verdict | Evidence class |
+|---|---|---|
+| E1 two services, both classes on runtime, distinct images, named bidirectional `WorkerEntrypoint`, default fetch 404, header spoof fails, unbound attacker has no `RUNTIME` | PASS local | Miniflare/workerd plus source. Not a Cloudflare account deploy. |
+| E2 first create and update | PASS local sequence; live Alchemy first-create NOT RUN | Miniflare stub then named-entrypoint update. Alchemy local Miniflare drops `entrypoint`; `Worker.experimentalEntrypoint` is unsupported in local Alchemy. Needs a maintainer-approved non-prod account. |
+| E3 Sandbox `0.12.3` `readFile({encoding:"none"})` / `writeFile(ReadableStream)` and archive CLI before/after stream | PASS local adapter; live container stream NOT RUN | SDK source plus Node mock sandbox. No whole-archive `arrayBuffer` in the adapter; no container R2. |
+| E4 readiness ≠ work complete, `containerId`/`className` from Container source, distinct incarnation, executor brain-only denial, `schedule` after persisted wakeup, no `alarm` override | PASS local application/SDK; P-Restart NOT RUN | Helpers and source greps. `denyUnlessBrain(callerRole)` is still an application argument, not platform identity. Surviving-Node DO restart untested. |
+| E5 exact old incarnation terminated or isolated replacement | BLOCKED / NOT RUN | Cancel ack, lease expiry, and untrusted executor receipt are explicitly insufficient. Unknown lifetime. |
+| F paid measurements | NOT RUN | No budget authorization. |
+
+Independent gates: `pnpm --filter @ditto/runtime exec vitest run src/feasibility.test.ts` 19 PASS; `pnpm runtime:verify` PASS; `pnpm brain:verify` 40 PASS; red probe 10/10 exit 0; `pnpm check` PASS with 11 existing warnings; `pnpm typecheck` PASS.
+
+Do not copy this worktree onto `brain`. Do not implement 002 unless the maintainer explicitly starts that phase. F-Topology stays NOT RUN.
+
+## Fifth execution review
+
+Executor: `xai/grok-4.6`, High reasoning, Docker boot. Same worktree. Docker Desktop 29.6.2 was available. The advisor independently reran process start on the leftover images and read `apps/runtime/src/docker-feasibility.test.ts`. No candidate source was applied to the main checkout. Alchemy local/dev was not started (no secrets, production website graph still requires `alchemy.secret`).
+
+| Observation | Result |
+|---|---|
+| `ditto-feasibility-brain:local` (`d00930bc331f`, 718MB, `node:22-bookworm-slim`) | PASS Docker. Advisor `docker run` printed `brain-process-started` and `barrier-enforcers object`. |
+| `ditto-feasibility-sandbox:local` (`a9a08ad3699a`, 1.3GB, `cloudflare/sandbox:0.12.3`) | PASS Docker. Advisor `docker run -d` was `true running`. Logs: `Container server started` on :3000, `0.12.3`, API server only. Proof container removed. |
+| Alchemy local two-service create | NOT RUN |
+| Paid F-Topology / P-Restart / incarnation lifetime | NOT RUN / BLOCKED |
+
+`apps/runtime/src/docker-feasibility.test.ts` is extra relative to the named `feasibility.test.ts` whitelist; it rebuilds both images when executed. Default `runtime:verify` still reported 19 tests in the executor log; do not assume CI will skip Docker. Images remain on disk. 0 leftover proof containers.
+
+### Reproduce rejected guarantees
+
+Regression probe for ER01-ER06. Run only in a disposable candidate. It writes synthetic files under ignored `.scratch/` and uses the offline fixture. Against `/tmp/ditto-feasibility-execute.bw57gx/worktree` it exits 0. Against the rejected first candidate it exited 1 with 10 failures. It does not prove D. Do not rewrite the assertions to match weaker behavior.
+
+```sh
+cd /tmp/ditto-feasibility-execute.bw57gx/worktree
+python3 - <<'PY' | PI_OFFLINE=1 node --input-type=module
+from pathlib import Path
+text = Path('/home/ayan/ditto/plans/001-feasibility.md').read_text()
+section = text.split('<!-- advisor-001-probe:start -->', 1)[1]
+print(section.split('```js\n', 1)[1].split('```', 1)[0])
+PY
+```
+
+<!-- advisor-001-probe:start -->
+```js
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import {
+  assistantToolUse, buildRestorationFixture, checkpointFromFixture,
+} from './packages/session-brain/src/main.ts';
+import {
+  FIXTURE_LIMITS, isLatched, loadJournal, parseAndValidateCheckpoint,
+  restoreValidatedCheckpoint, saveJournal, saveReceipts, validateCheckpoint,
+} from './packages/session-brain/src/pi-recovery.ts';
+fs.mkdirSync('.scratch', { recursive: true });
+const root = fs.mkdtempSync(path.join(process.cwd(), '.scratch/advisor-001-'));
+let failures = 0;
+function check(name, assertion) {
+  try { assertion(); console.log(`PASS ${name}`); }
+  catch { failures++; console.log(`FAIL ${name}`); }
+}
+const checkpoint = () => checkpointFromFixture(buildRestorationFixture(root));
+function seed(name, state = 'prepared', followUps = []) {
+  const dir = path.join(root, name);
+  const cp = checkpoint();
+  cp.fileEntries = cp.fileEntries.slice(0, 5);
+  cp.leafId = 'ent-a1';
+  const message = assistantToolUse({
+    provider: 'offline', model: 'offline-1', api: 'faux', timestamp: 5,
+    calls: [
+      { id: 'call-a', name: 'tool_a', arguments: { n: 1 } },
+      { id: 'call-b', name: 'tool_b', arguments: { n: 2 } },
+    ],
+  });
+  cp.fileEntries.at(-1).message = message;
+  cp.committedProviderResponses = [message];
+  cp.attempt = 1; cp.epoch = 1; cp.incarnation = 'brain-1';
+  saveJournal(dir, {
+    authority: { incarnation: 'brain-1', epoch: 1, attempt: 1 },
+    runId: 'run-1', assistantEntryId: 'ent-a1', checkpoint: cp,
+    effects: message.content.map((call, index) => ({
+      runId: 'run-1', assistantEntryId: 'ent-a1', toolCallId: call.id,
+      toolName: call.name, arguments: call.arguments,
+      state: index === 0 ? state : 'prepared',
+    })),
+    acceptedCommandIds: followUps.map(item => item.commandId),
+    consumedCommandIds: [], followUps,
+  });
+  return dir;
+}
+function recover(dir) {
+  const requestPath = path.join(dir, 'request.json');
+  const agentDir = path.join(dir, 'agent');
+  fs.mkdirSync(agentDir, { recursive: true });
+  fs.writeFileSync(requestPath, JSON.stringify({
+    action: 'recover', journalDir: dir, imageOwnedCwd: root, agentDir,
+    expectedAuthority: { incarnation: 'brain-1', epoch: 1, attempt: 1 },
+  }));
+  const child = spawnSync(process.execPath, [
+    'packages/session-brain/src/restoration-child.ts', requestPath,
+  ], { encoding: 'utf8', timeout: 15000, env: { ...process.env, PI_OFFLINE: '1' } });
+  assert.equal(child.status, 0, 'synthetic child must run');
+  return JSON.parse(child.stdout);
+}
+const unknownDir = seed('unknown', 'outcome_unknown');
+saveReceipts(unknownDir, { 'call-a': { count: 1, output: 'tool_a:1' } });
+const unknown = recover(unknownDir);
+check('unknown outcome blocks without replay or inference', () => {
+  assert.equal(unknown.status, 'blocked');
+  assert.equal(unknown.receipts['call-a'].count, 1);
+  assert.equal(unknown.providerCalls, 0);
+});
+const repeatDir = seed('repeat');
+recover(repeatDir);
+const before = loadJournal(repeatDir);
+const repeated = recover(repeatDir);
+const after = loadJournal(repeatDir);
+check('result entry IDs survive process replacement', () => {
+  assert.deepEqual(after.effects.map(e => e.piEntryId), before.effects.map(e => e.piEntryId));
+});
+check('result entries are saved with their IDs', () => {
+  assert.ok(after.effects.every(e => after.checkpoint.fileEntries.some(entry => entry.id === e.piEntryId)));
+});
+check('completed continuation is terminal without another inference', () => {
+  assert.equal(repeated.status, 'terminal');
+  assert.equal(repeated.providerCalls, 0);
+});
+const followDir = seed('follow-ups', 'prepared', [
+  { commandId: 'cmd-1', text: 'same text' },
+  { commandId: 'cmd-2', text: 'same text' },
+]);
+recover(followDir); recover(followDir);
+const follow = loadJournal(followDir);
+check('consumed follow-ups have durable matching user entries', () => {
+  assert.equal(follow.checkpoint.fileEntries.filter(e =>
+    e.type === 'message' && e.message.role === 'user' && e.message.content === 'same text',
+  ).length, follow.consumedCommandIds.length);
+});
+const unicode = checkpoint();
+unicode.extensionState = { pad: '' };
+unicode.extensionState.pad = '界'.repeat(FIXTURE_LIMITS.maxBytes - JSON.stringify(unicode).length);
+const text = JSON.stringify(unicode);
+assert.ok(Buffer.byteLength(text) > FIXTURE_LIMITS.maxBytes);
+check('UTF-8 byte limit rejects oversized checkpoints', () => {
+  assert.throws(() => parseAndValidateCheckpoint(text));
+});
+const malformed = checkpoint();
+malformed.fileEntries.find(e => e.id === 'ent-a1').message.content = [{ type: 'toolCall' }];
+check('malformed tool calls rejected before import', () => assert.throws(() => validateCheckpoint(malformed)));
+const forward = checkpoint();
+forward.fileEntries.find(e => e.id === 'ent-comp').firstKeptEntryId = 'ent-a3';
+check('forward compaction references rejected', () => assert.throws(() => validateCheckpoint(forward)));
+const settings = checkpoint();
+settings.settings.compaction = { enabled: true, reserveTokens: 1234, keepRecentTokens: 5678 };
+check('supported compaction settings restored exactly', () => {
+  const restored = restoreValidatedCheckpoint(validateCheckpoint(settings), root);
+  assert.deepEqual(restored.settingsManager.getCompactionSettings(), settings.settings.compaction);
+});
+const ioDir = path.join(root, 'write-failure');
+fs.mkdirSync(path.join(ioDir, 'journal.json'), { recursive: true });
+assert.throws(() => saveJournal(ioDir, after));
+check('real persistence error latches admission closed', () => assert.equal(isLatched(ioDir), true));
+console.log(`${failures} rejected guarantees; synthetic fixtures: ${root}`);
+process.exitCode = failures ? 1 : 0;
+```
+<!-- advisor-001-probe:end -->
 
 ## Current code and exact SDK seams
 
