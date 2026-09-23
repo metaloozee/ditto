@@ -1,6 +1,12 @@
 import { App } from "octokit";
 
-export function getGitHubApp(env: Env): App {
+/** Product GitHub App credentials. Not a runtime policy dependency. */
+export type GitHubAppCredentials = {
+	readonly GITHUB_APP_ID: string;
+	readonly GITHUB_APP_PRIVATE_KEY: string;
+};
+
+export function getGitHubApp(env: GitHubAppCredentials): App {
 	return new App({
 		appId: env.GITHUB_APP_ID,
 		privateKey: env.GITHUB_APP_PRIVATE_KEY,
@@ -15,7 +21,7 @@ export function getGitHubApp(env: Env): App {
  * earlier if the installation cannot access the named repo.
  */
 export async function getInstallationAccessToken(
-	env: Env,
+	env: GitHubAppCredentials,
 	installationId: number,
 	options?: {
 		repositories?: string[];

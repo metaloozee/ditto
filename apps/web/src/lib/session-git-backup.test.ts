@@ -4,6 +4,9 @@ const recordMutationAndCheckpointMock = vi.hoisted(() => vi.fn());
 vi.mock("#/lib/workspace-recovery", () => ({
 	recordMutationAndCheckpoint: recordMutationAndCheckpointMock,
 }));
+vi.mock("#/lib/workspace-runtime", () => ({
+	withWorkspaceRuntimeLease: vi.fn(),
+}));
 
 const { commitSessionChangesWithBackup, runSessionGitMutationWithBackup } =
 	await import("./session-git-backup");
@@ -27,13 +30,18 @@ describe("session Git recovery", () => {
 			commit: vi.fn().mockResolvedValue({ commitSha: "abc", committed: true }),
 		});
 		expect(result).toEqual({ commitSha: "abc", committed: true });
-		expect(recordMutationAndCheckpointMock).toHaveBeenCalledWith({
-			db,
-			env,
-			userId: "u1",
-			projectId: "p1",
-			sessionId: "sess-1",
-		});
+		expect(recordMutationAndCheckpointMock).toHaveBeenCalledWith(
+			{
+				db,
+				env,
+				userId: "u1",
+				projectId: "p1",
+				sessionId: "sess-1",
+			},
+			expect.objectContaining({
+				withWorkspaceRuntimeLease: expect.any(Function),
+			}),
+		);
 	});
 
 	it("does not checkpoint a no-op commit", async () => {

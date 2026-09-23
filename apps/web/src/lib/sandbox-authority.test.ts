@@ -1,309 +1,93 @@
+import { DatabaseSync } from "node:sqlite";
+import { drizzle } from "drizzle-orm/sqlite-proxy";
 import { beforeEach, describe, expect, it } from "vitest";
-import { privilegedOperations, sandboxIdentities } from "#/db/schema";
+import type { createDb } from "#/db";
 import {
 	createSandboxAuthority,
 	SandboxAuthorityError,
 } from "./sandbox-authority";
 
-type IdentityRow = typeof sandboxIdentities.$inferSelect;
-type OperationRow = typeof privilegedOperations.$inferSelect;
-
-function collectParams(node: unknown): unknown[] {
-	const params: unknown[] = [];
-	const seen = new Set<unknown>();
-	const walk = (value: unknown) => {
-		if (value == null || typeof value !== "object") {
-			return;
-		}
-		if (seen.has(value)) {
-			return;
-		}
-		seen.add(value);
-		const obj = value as {
-			queryChunks?: unknown[];
-			value?: unknown;
-			encoder?: unknown;
-			table?: unknown;
-		};
-		// Skip column/table objects to avoid walking circular schema graphs.
-		if ("table" in obj && "name" in obj && "columnType" in obj) {
-			return;
-		}
-		if (Array.isArray(obj.queryChunks)) {
-			for (const chunk of obj.queryChunks) {
-				walk(chunk);
-			}
-			return;
-		}
-		if ("value" in obj) {
-			params.push(obj.value);
-			if (Array.isArray(obj.value)) {
-				for (const part of obj.value) {
-					walk(part);
-				}
-			}
-		}
-	};
-	walk(node);
-	return params.flatMap((value) => (Array.isArray(value) ? value : [value]));
-}
+type Db = ReturnType<typeof createDb>;
 
 function makeAuthorityDb() {
-	const identities = new Map<string, IdentityRow>();
-	const operations = new Map<string, OperationRow>();
-
-	function findIdentity(where: unknown): IdentityRow | undefined {
-		const params = collectParams(where).filter(
-			(value): value is string => typeof value === "string",
+	const sqlite = new DatabaseSync(":memory:");
+	sqlite.exec(`
+		CREATE TABLE workspace_sessions (
+			id text PRIMARY KEY NOT NULL,
+			projectId text NOT NULL,
+			userId text NOT NULL,
+			status text NOT NULL DEFAULT 'active',
+			runtimeOwner text NOT NULL DEFAULT 'legacy',
+			runtimeOwnerVersion integer NOT NULL DEFAULT 1
 		);
-		for (const id of params) {
-			const row = identities.get(id);
-			if (row) return row;
+		CREATE TABLE sandbox_identities (
+			id text PRIMARY KEY NOT NULL,
+			kind text NOT NULL,
+			sandboxId text NOT NULL,
+			containerId text NOT NULL,
+			userId text NOT NULL,
+			projectId text NOT NULL,
+			workspaceSessionId text,
+			controllerClass text,
+			controllerNamespace text,
+			incarnationId text,
+			incarnationStartedAt integer,
+			lifecycleGeneration integer NOT NULL DEFAULT 1,
+			state text NOT NULL,
+			retiredAt integer,
+			created_at integer,
+			updated_at integer
+		);
+		CREATE TABLE privileged_operations (
+			id text PRIMARY KEY NOT NULL,
+			identityId text NOT NULL,
+			lifecycleGeneration integer NOT NULL,
+			family text NOT NULL,
+			type text NOT NULL,
+			contractVersion integer NOT NULL,
+			runtimeOwnerVersion integer NOT NULL DEFAULT 1,
+			runId text,
+			runEpoch integer,
+			incarnationId text,
+			admissionReference text,
+			repository text,
+			allowedRefs text,
+			maxRequests integer,
+			consumedRequests integer NOT NULL DEFAULT 0,
+			contractDenials integer NOT NULL DEFAULT 0,
+			contractState text,
+			openedAt integer NOT NULL,
+			expiresAt integer NOT NULL,
+			closedAt integer,
+			closeReason text,
+			correlationId text NOT NULL,
+			openSlot text NOT NULL DEFAULT 'open',
+			created_at integer,
+			updated_at integer
+		);
+		CREATE UNIQUE INDEX privileged_operations_open_family_uidx
+			ON privileged_operations (identityId, family, openSlot);
+		INSERT INTO workspace_sessions (id, projectId, userId, runtimeOwner, runtimeOwnerVersion)
+		VALUES ('sess-1', 'proj-1', 'user-1', 'legacy', 1);
+	`);
+	const db = drizzle(async (query, params, method) => {
+		const stmt = sqlite.prepare(query);
+		if (method === "run") {
+			stmt.run(...(params as never[]));
+			return { rows: [] };
 		}
-		return undefined;
-	}
-
-	function findOperations(where: unknown): OperationRow[] {
-		const params = collectParams(where);
-		const strings = params.filter(
-			(value): value is string => typeof value === "string",
-		);
-		return [...operations.values()].filter((row) => {
-			if (strings.includes(row.id)) {
-				return true;
-			}
-			const identityMatch = strings.includes(row.identityId);
-			const familyMatch = strings.includes(row.family);
-			if (identityMatch && familyMatch) {
-				return row.closedAt == null;
-			}
-			if (identityMatch && !familyMatch) {
-				// closeOpenOperationsForIdentity: all open ops for identity
-				return row.closedAt == null;
-			}
-			return false;
-		});
-	}
-
-	const db = {
-		insert(table: unknown) {
+		if (method === "get") {
+			const row = stmt.get(...(params as never[])) as
+				| Record<string, unknown>
+				| undefined;
 			return {
-				values(value: Record<string, unknown>) {
-					return {
-						async returning() {
-							if (table === sandboxIdentities) {
-								const row: IdentityRow = {
-									id: String(value.id),
-									kind: value.kind as IdentityRow["kind"],
-									sandboxId: String(value.sandboxId),
-									containerId: String(value.containerId),
-									userId: String(value.userId),
-									projectId: String(value.projectId),
-									workspaceSessionId:
-										(value.workspaceSessionId as string | null) ?? null,
-									lifecycleGeneration: Number(value.lifecycleGeneration ?? 1),
-									state: value.state as IdentityRow["state"],
-									retiredAt: (value.retiredAt as Date | null) ?? null,
-									createdAt: new Date(),
-									updatedAt: new Date(),
-								};
-								identities.set(row.id, row);
-								return [row];
-							}
-							if (table === privilegedOperations) {
-								const openConflict = [...operations.values()].some(
-									(existing) =>
-										existing.identityId === value.identityId &&
-										existing.family === value.family &&
-										existing.openSlot === "open" &&
-										existing.closedAt == null,
-								);
-								if (openConflict && value.openSlot === "open") {
-									throw new Error(
-										"UNIQUE constraint failed: privileged_operations.open_family",
-									);
-								}
-								const row: OperationRow = {
-									id: String(value.id),
-									identityId: String(value.identityId),
-									lifecycleGeneration: Number(value.lifecycleGeneration),
-									family: value.family as OperationRow["family"],
-									type: String(value.type),
-									contractVersion: Number(value.contractVersion),
-									repository: (value.repository as string | null) ?? null,
-									allowedRefs: (value.allowedRefs as string | null) ?? null,
-									maxRequests: (value.maxRequests as number | null) ?? null,
-									consumedRequests: Number(value.consumedRequests ?? 0),
-									contractDenials: Number(value.contractDenials ?? 0),
-									contractState: (value.contractState as string | null) ?? null,
-									openedAt: value.openedAt as Date,
-									expiresAt: value.expiresAt as Date,
-									closedAt: (value.closedAt as Date | null) ?? null,
-									closeReason: (value.closeReason as string | null) ?? null,
-									correlationId: String(value.correlationId),
-									openSlot: String(value.openSlot ?? "open"),
-									createdAt: new Date(),
-									updatedAt: new Date(),
-								};
-								operations.set(row.id, row);
-								return [row];
-							}
-							return [];
-						},
-					};
-				},
+				rows: row ? (Object.values(row) as unknown[]) : (undefined as never),
 			};
-		},
-		select() {
-			return {
-				from(table: unknown) {
-					return {
-						where(where: unknown) {
-							const rows =
-								table === sandboxIdentities
-									? (() => {
-											const row = findIdentity(where);
-											return row ? [row] : [];
-										})()
-									: table === privilegedOperations
-										? findOperations(where)
-										: [];
-							const result = {
-								async limit(n: number) {
-									return rows.slice(0, n);
-								},
-								// Drizzle query builders are thenable; tests mirror that.
-								// biome-ignore lint/suspicious/noThenProperty: drizzle thenable mock
-								then(
-									resolve: (value: unknown) => unknown,
-									reject?: (error: unknown) => unknown,
-								) {
-									return Promise.resolve(rows).then(resolve, reject);
-								},
-							};
-							return result;
-						},
-					};
-				},
-			};
-		},
-		update(table: unknown) {
-			return {
-				set(patch: Record<string, unknown>) {
-					return {
-						where(where: unknown) {
-							return {
-								async returning() {
-									if (table === sandboxIdentities) {
-										const row = findIdentity(where);
-										if (!row) return [];
-										const next: IdentityRow = {
-											...row,
-											lifecycleGeneration:
-												"lifecycleGeneration" in patch
-													? Number(patch.lifecycleGeneration)
-													: row.lifecycleGeneration,
-											state:
-												"state" in patch
-													? (patch.state as IdentityRow["state"])
-													: row.state,
-											retiredAt:
-												"retiredAt" in patch
-													? patch.retiredAt == null
-														? null
-														: new Date()
-													: row.retiredAt,
-											updatedAt: new Date(),
-										};
-										identities.set(row.id, next);
-										return [next];
-									}
-									if (table === privilegedOperations) {
-										const candidates = findOperations(where);
-										const params = collectParams(where);
-										const numbers = params.filter(
-											(value): value is number => typeof value === "number",
-										);
-										const row =
-											candidates.find((item) => item.closedAt == null) ??
-											candidates[0];
-										if (!row) return [];
-										if (
-											"consumedRequests" in patch &&
-											numbers.length > 0 &&
-											!numbers.includes(row.consumedRequests)
-										) {
-											return [];
-										}
-										if (
-											"contractDenials" in patch &&
-											numbers.length > 0 &&
-											!numbers.includes(row.contractDenials)
-										) {
-											return [];
-										}
-										const strings = params.filter(
-											(value): value is string => typeof value === "string",
-										);
-										if ("contractState" in patch) {
-											const expectedState = row.contractState ?? null;
-											if (
-												expectedState != null &&
-												!strings.includes(expectedState)
-											) {
-												return [];
-											}
-											if (
-												expectedState == null &&
-												strings.includes(row.id) === false
-											) {
-												// CAS on null state uses isNull; allow when no expected JSON string matches another row's state.
-											}
-										}
-										const next: OperationRow = {
-											...row,
-											closedAt:
-												"closedAt" in patch
-													? patch.closedAt == null
-														? null
-														: new Date()
-													: row.closedAt,
-											closeReason:
-												"closeReason" in patch
-													? (patch.closeReason as string | null)
-													: row.closeReason,
-											openSlot:
-												"openSlot" in patch
-													? String(patch.openSlot)
-													: row.openSlot,
-											consumedRequests:
-												"consumedRequests" in patch
-													? Number(patch.consumedRequests)
-													: row.consumedRequests,
-											contractDenials:
-												"contractDenials" in patch
-													? Number(patch.contractDenials)
-													: row.contractDenials,
-											contractState:
-												"contractState" in patch
-													? (patch.contractState as string | null)
-													: row.contractState,
-											updatedAt: new Date(),
-										};
-										operations.set(row.id, next);
-										return [next];
-									}
-									return [];
-								},
-							};
-						},
-					};
-				},
-			};
-		},
-	};
-
-	return { db: db as never, identities, operations };
+		}
+		const rows = stmt.all(...(params as never[])) as Record<string, unknown>[];
+		return { rows: rows.map((row) => Object.values(row)) };
+	}) as unknown as Db;
+	return { db, sqlite };
 }
 
 describe("SandboxAuthority", () => {
@@ -425,14 +209,15 @@ describe("SandboxAuthority", () => {
 			),
 		).rejects.toThrow("boom");
 
-		const open = [...store.operations.values()].filter(
-			(row) => row.closedAt == null,
-		);
+		const open = store.sqlite
+			.prepare("SELECT id FROM privileged_operations WHERE closedAt IS NULL")
+			.all();
 		expect(open).toHaveLength(0);
-		const closed = [...store.operations.values()];
-		expect(closed).toHaveLength(1);
-		expect(closed[0]?.closeReason).toBe("with_operation_settled");
-		expect(closed[0]?.openSlot).toBe(closed[0]?.id);
+		const closed = store.sqlite
+			.prepare("SELECT id, closeReason, openSlot FROM privileged_operations")
+			.get() as { id: string; closeReason: string; openSlot: string };
+		expect(closed.closeReason).toBe("with_operation_settled");
+		expect(closed.openSlot).toBe(closed.id);
 	});
 
 	it("missing open operation carries no authority", async () => {
@@ -560,8 +345,56 @@ describe("SandboxAuthority", () => {
 			closed: true,
 			workspaceSessionId: "sess-1",
 		});
-		const closed = store.operations.get(operation.id);
-		expect(closed?.closedAt).toBeInstanceOf(Date);
-		expect(closed?.closeReason).toBe("opencode_contract_denial_limit");
+		const closed = store.sqlite
+			.prepare(
+				"SELECT closedAt, closeReason FROM privileged_operations WHERE id = ?",
+			)
+			.get(operation.id) as { closedAt: number | null; closeReason: string };
+		expect(closed.closedAt).toEqual(expect.any(Number));
+		expect(closed.closeReason).toBe("opencode_contract_denial_limit");
+	});
+
+	it("opens builder operations when the identity has no workspace session", async () => {
+		const identity = await register();
+		expect(identity.workspaceSessionId).toBeNull();
+		const operation = await authority.openOperation({
+			identityId: identity.id,
+			family: "git_transport",
+			type: "project_seed_fetch",
+			contractVersion: 1,
+			expiresAt: new Date(Date.now() + 60_000),
+		});
+		expect(operation.runtimeOwnerVersion).toBe(1);
+		expect(operation.runId).toBeNull();
+	});
+
+	it("does not open trusted brain operation windows", async () => {
+		const identity = await authority.registerIdentity({
+			kind: "trusted_brain",
+			sandboxId: "brain-1",
+			containerId: "brain-container",
+			userId: "user-1",
+			projectId: "proj-1",
+			workspaceSessionId: "sess-1",
+		});
+		await expect(
+			authority.openOperation({
+				identityId: identity.id,
+				family: "model",
+				type: "agent_run",
+				contractVersion: 1,
+				expiresAt: new Date(Date.now() + 60_000),
+			}),
+		).rejects.toMatchObject({ code: "trusted_windows_closed" });
+		await expect(
+			authority.resolveOutboundRequest(
+				{
+					identityId: identity.id,
+					lifecycleGeneration: 1,
+					containerId: identity.containerId,
+				},
+				"model",
+			),
+		).rejects.toMatchObject({ code: "trusted_windows_closed" });
 	});
 });

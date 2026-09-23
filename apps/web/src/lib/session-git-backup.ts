@@ -1,5 +1,6 @@
 import type { createDb } from "#/db";
 import { recordMutationAndCheckpoint } from "#/lib/workspace-recovery";
+import { withWorkspaceRuntimeLease } from "#/lib/workspace-runtime";
 
 export type SessionGitBackupProject = {
 	id: string;
@@ -17,13 +18,19 @@ export async function bestEffortPersistSessionGitBackup(options: {
 	session: SessionGitBackupSession;
 }): Promise<void> {
 	try {
-		await recordMutationAndCheckpoint({
-			db: options.db,
-			env: options.env,
-			userId: options.project.userId,
-			projectId: options.project.id,
-			sessionId: options.session.id,
-		});
+		await recordMutationAndCheckpoint(
+			{
+				db: options.db,
+				env: options.env,
+				userId: options.project.userId,
+				projectId: options.project.id,
+				sessionId: options.session.id,
+			},
+			{
+				withWorkspaceRuntimeLease: (input, run) =>
+					withWorkspaceRuntimeLease({ ...input, env: options.env }, run),
+			},
+		);
 	} catch (error) {
 		console.error(
 			"Failed to checkpoint workspace after Git mutation.",

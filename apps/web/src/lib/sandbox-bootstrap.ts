@@ -11,7 +11,14 @@ const INSTALL_TIMEOUT_MS = 300_000;
 
 export type SandboxEnvVar = { key: string; value: string };
 
-export function getProjectSandbox(env: Env, sandboxId: string) {
+export type ProjectSandboxBinding = {
+	Sandbox: unknown;
+};
+
+export function getProjectSandbox(
+	env: ProjectSandboxBinding,
+	sandboxId: string,
+) {
 	return getSandbox(
 		env.Sandbox as Parameters<typeof getSandbox>[0],
 		sandboxId,
@@ -23,7 +30,10 @@ export function getProjectSandbox(env: Env, sandboxId: string) {
 }
 
 /** Read-only lifecycle observation; does not start or probe the filesystem. */
-export async function getProjectSandboxState(env: Env, sandboxId: string) {
+export async function getProjectSandboxState(
+	env: ProjectSandboxBinding,
+	sandboxId: string,
+) {
 	return getProjectSandbox(env, sandboxId).getState();
 }
 
@@ -32,7 +42,7 @@ function quoteShellArg(value: string): string {
 }
 
 export async function destroySandbox(options: {
-	env: Env;
+	env: ProjectSandboxBinding;
 	sandboxId: string;
 }): Promise<void> {
 	await getProjectSandbox(options.env, options.sandboxId).destroy();
@@ -156,7 +166,7 @@ export async function installDependencies(
 }
 
 export async function clearSandboxWorkspace(options: {
-	env: Env;
+	env: ProjectSandboxBinding;
 	sandboxId: string;
 }): Promise<void> {
 	if (WORKSPACE_PATH !== "/workspace") {

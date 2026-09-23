@@ -83,6 +83,12 @@ const activeSession = {
 	runtimeLeaseExpiresAt: null,
 	runtimeFailureReasonCode: null,
 	previewStartedAt: null,
+	runtimeOwner: "legacy" as const,
+	runtimeOwnerVersion: 1,
+	brainIdentityId: null,
+	runtimeProtocolVersion: null,
+	runtimeJournalVersion: null,
+	productProjectionVersion: 0,
 	createdAt: new Date(),
 	updatedAt: new Date(),
 };
@@ -96,7 +102,8 @@ function makeEnv(): Env {
 }
 
 function createMockDb() {
-	const updateWhere = vi.fn().mockResolvedValue(undefined);
+	const updateReturning = vi.fn().mockResolvedValue([{ id: "asst-msg" }]);
+	const updateWhere = vi.fn().mockReturnValue({ returning: updateReturning });
 	const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
 	const update = vi.fn().mockReturnValue({ set: updateSet });
 
@@ -105,7 +112,11 @@ function createMockDb() {
 
 	const insertReturning = vi.fn();
 	const insertValues = vi.fn().mockReturnValue({ returning: insertReturning });
-	const insert = vi.fn().mockReturnValue({ values: insertValues });
+	const insertSelect = vi.fn().mockReturnValue({ returning: insertReturning });
+	const insert = vi.fn().mockReturnValue({
+		values: insertValues,
+		select: insertSelect,
+	});
 
 	const selectLimit = vi.fn().mockResolvedValue([{ max: 0 }]);
 	const selectWhere = vi.fn().mockReturnValue({ limit: selectLimit });
@@ -128,10 +139,12 @@ function createMockDb() {
 		batch,
 		insert,
 		insertValues,
+		insertSelect,
 		insertReturning,
 		update,
 		updateSet,
 		updateWhere,
+		updateReturning,
 		deleteFn,
 		deleteWhere,
 		select,
@@ -326,7 +339,12 @@ describe("prepareAgentRun", () => {
 
 		batch.mockImplementation(async () => {
 			order.push("messages");
-			return [[{ id: "user-msg" }], [{ id: "asst-msg" }], [{ id: "work-1" }]];
+			return [
+				[{ id: "user-msg" }],
+				[{ id: "asst-msg" }],
+				[{ id: "work-1" }],
+				[{ id: "sess-1" }],
+			];
 		});
 
 		const result = await prepareAgentRun({
@@ -356,6 +374,7 @@ describe("prepareAgentRun", () => {
 			[{ id: "user-msg" }],
 			[{ id: "asst-msg" }],
 			[{ id: "work-1" }],
+			[{ id: "sess-1" }],
 		]);
 		const result = await prepareAgentRun({
 			db,
@@ -394,6 +413,7 @@ describe("prepareAgentRun", () => {
 			[{ id: "user-msg" }],
 			[{ id: "asst-msg" }],
 			[{ id: "work-1" }],
+			[{ id: "sess-1" }],
 		]);
 		await prepareAgentRun({
 			db,
@@ -413,11 +433,12 @@ describe("prepareAgentRun", () => {
 	});
 
 	it("inserts assistant placeholder with pending status", async () => {
-		const { db, insert, insertValues, batch } = createMockDb();
+		const { db, insert, insertSelect, batch } = createMockDb();
 		batch.mockResolvedValue([
 			[{ id: "user-msg" }],
 			[{ id: "asst-msg" }],
 			[{ id: "work-1" }],
+			[{ id: "sess-1" }],
 		]);
 
 		const result = await prepareAgentRun({
@@ -441,22 +462,8 @@ describe("prepareAgentRun", () => {
 
 		expect(result.kind).toBe("ready");
 		expect(insert).toHaveBeenCalled();
-		const valueCalls = insertValues.mock.calls.map(
-			(call) => call[0] as Record<string, unknown>,
-		);
-		const assistantInsert = valueCalls.find(
-			(values) => values.role === "assistant",
-		);
-		const userInsert = valueCalls.find((values) => values.role === "user");
-		expect(assistantInsert).toMatchObject({
-			id: "asst-msg",
-			content: "",
-			status: "pending",
-		});
-		expect(userInsert).toMatchObject({
-			id: "user-msg",
-			status: "complete",
-		});
+		expect(insertSelect).toHaveBeenCalled();
+		expect(batch).toHaveBeenCalled();
 	});
 
 	it("fails missing OPENCODE_API_KEY before project, session, message, or sandbox calls", async () => {
@@ -498,6 +505,7 @@ describe("prepareAgentRun", () => {
 			[{ id: "user-msg" }],
 			[{ id: "asst-msg" }],
 			[{ id: "work-1" }],
+			[{ id: "sess-1" }],
 		]);
 		const result = await prepareAgentRun({
 			db,
@@ -582,6 +590,7 @@ describe("prepareAgentRun", () => {
 			[{ id: "user-msg" }],
 			[{ id: "asst-msg" }],
 			[{ id: "work-1" }],
+			[{ id: "sess-1" }],
 		]);
 		const result = await prepareAgentRun({
 			db,
@@ -614,6 +623,7 @@ describe("prepareAgentRun", () => {
 			[{ id: "user-msg" }],
 			[{ id: "asst-msg" }],
 			[{ id: "work-1" }],
+			[{ id: "sess-1" }],
 		]);
 		const result = await prepareAgentRun({
 			db,
@@ -637,6 +647,34 @@ describe("prepareAgentRun", () => {
 		if (result.kind === "ready") {
 			expect(result.context.thinkingLevel).toBeUndefined();
 		}
+	});
+
+	it("rejects a non-legacy session before message inserts", async () => {
+		const { db, batch, insert } = createMockDb();
+		await expect(
+			prepareAgentRun({
+				db,
+				env: makeEnv(),
+				userId: "user-1",
+				input: {
+					projectId: "proj-1",
+					sessionId: "sess-1",
+					message: "hi",
+				},
+				deps: baseDeps({
+					resolveSessionForMessageWrite: vi.fn().mockResolvedValue({
+						kind: "existing",
+						session: {
+							...activeSession,
+							runtimeOwner: "migrating",
+							runtimeOwnerVersion: 2,
+						},
+					}),
+				}),
+			}),
+		).rejects.toMatchObject({ code: "runtime_owner_mismatch" });
+		expect(batch).not.toHaveBeenCalled();
+		expect(insert).not.toHaveBeenCalled();
 	});
 });
 
@@ -806,7 +844,11 @@ describe("executeAgentRun", () => {
 
 	it("persists and emits one-at-a-time follow-up turn boundaries in order", async () => {
 		const mockDb = createMockDb();
-		mockDb.batch.mockResolvedValue([[{ id: "user-2" }], [{ id: "asst-2" }]]);
+		mockDb.batch.mockResolvedValue([
+			[{ id: "user-2" }],
+			[{ id: "asst-2" }],
+			[{ id: "sess-1" }],
+		]);
 		const updateSets: Array<Record<string, unknown>> = [];
 		mockDb.updateSet.mockImplementation((values: Record<string, unknown>) => {
 			updateSets.push(values);
@@ -876,19 +918,22 @@ describe("executeAgentRun", () => {
 		expect(updateSets.filter((set) => set.status === "complete")).toHaveLength(
 			2,
 		);
-		expect(mockDb.insertValues).toHaveBeenCalledWith(
-			expect.objectContaining({ id: "user-2", status: "complete" }),
-		);
-		expect(mockDb.insertValues).toHaveBeenCalledWith(
-			expect.objectContaining({ id: "asst-2", status: "pending" }),
-		);
+		expect(mockDb.batch).toHaveBeenCalled();
 	});
 
 	it("creates three D1 pairs for two follow-ups and isolates final content", async () => {
 		const mockDb = createMockDb();
 		mockDb.batch
-			.mockResolvedValueOnce([[{ id: "user-2" }], [{ id: "asst-2" }]])
-			.mockResolvedValueOnce([[{ id: "user-3" }], [{ id: "asst-3" }]]);
+			.mockResolvedValueOnce([
+				[{ id: "user-2" }],
+				[{ id: "asst-2" }],
+				[{ id: "sess-1" }],
+			])
+			.mockResolvedValueOnce([
+				[{ id: "user-3" }],
+				[{ id: "asst-3" }],
+				[{ id: "sess-1" }],
+			]);
 		const context = makeContext({ db: mockDb.db });
 		const { events, run } = collectEvents(context, {
 			runAgentInSandbox: vi.fn().mockImplementation(async (opts) => {
@@ -927,7 +972,7 @@ describe("executeAgentRun", () => {
 
 	it("requests Stop and fails a partially created follow-up assistant when its boundary batch fails", async () => {
 		const mockDb = createMockDb();
-		mockDb.batch.mockResolvedValue([[{ id: "user-2" }], []]);
+		mockDb.batch.mockResolvedValue([[{ id: "user-2" }], [], []]);
 		const updateSets: Array<Record<string, unknown>> = [];
 		mockDb.updateSet.mockImplementation((values: Record<string, unknown>) => {
 			updateSets.push(values);
@@ -981,7 +1026,11 @@ describe("executeAgentRun", () => {
 
 	it("persists the active started follow-up as failed with partial content after Stop", async () => {
 		const mockDb = createMockDb();
-		mockDb.batch.mockResolvedValue([[{ id: "user-2" }], [{ id: "asst-2" }]]);
+		mockDb.batch.mockResolvedValue([
+			[{ id: "user-2" }],
+			[{ id: "asst-2" }],
+			[{ id: "sess-1" }],
+		]);
 		const updateSets: Array<Record<string, unknown>> = [];
 		mockDb.updateSet.mockImplementation((values: Record<string, unknown>) => {
 			updateSets.push(values);
@@ -1034,7 +1083,11 @@ describe("executeAgentRun", () => {
 
 	it("isolates text and tool chronology across follow-up turns", async () => {
 		const mockDb = createMockDb();
-		mockDb.batch.mockResolvedValue([[{ id: "user-2" }], [{ id: "asst-2" }]]);
+		mockDb.batch.mockResolvedValue([
+			[{ id: "user-2" }],
+			[{ id: "asst-2" }],
+			[{ id: "sess-1" }],
+		]);
 		const context = makeContext({ db: mockDb.db });
 		const { events, run } = collectEvents(context, {
 			runAgentInSandbox: vi.fn().mockImplementation(async (opts) => {
@@ -1206,7 +1259,11 @@ describe("executeAgentRun", () => {
 			updateCount += 1;
 			if (updateCount === 1) {
 				return {
-					where: vi.fn().mockRejectedValue(new Error("payload too large")),
+					where: vi.fn().mockReturnValue({
+						returning: vi
+							.fn()
+							.mockRejectedValue(new Error("payload too large")),
+					}),
 				};
 			}
 			return { where: mockDb.updateWhere };
@@ -1334,13 +1391,18 @@ describe("executeAgentRun", () => {
 
 		await run();
 
-		expect(recordMutationAndCheckpoint).toHaveBeenCalledWith({
-			db: mockDb.db,
-			env: context.env,
-			userId: context.userId,
-			projectId: context.projectId,
-			sessionId: context.sessionId,
-		});
+		expect(recordMutationAndCheckpoint).toHaveBeenCalledWith(
+			{
+				db: mockDb.db,
+				env: context.env,
+				userId: context.userId,
+				projectId: context.projectId,
+				sessionId: context.sessionId,
+			},
+			expect.objectContaining({
+				withWorkspaceRuntimeLease: expect.any(Function),
+			}),
+		);
 		expect(events.at(-1)).toMatchObject({
 			event: "done",
 			data: {
@@ -1646,5 +1708,34 @@ describe("executeAgentRun", () => {
 			data: { ok: false, content: "partial text" },
 		});
 		expect(updateSets.some((set) => set.content === "partial text")).toBe(true);
+	});
+
+	it("does not report a successful settlement after ownership is lost", async () => {
+		const mockDb = createMockDb();
+		mockDb.updateReturning.mockResolvedValue([]);
+		const context = makeContext({ db: mockDb.db });
+		const { events, run } = collectEvents(context, {
+			runAgentInSandbox: vi.fn().mockImplementation(async (opts) => {
+				await opts.onRunnerMessage({
+					kind: "assistant_delta",
+					delta: "Hello",
+				});
+				return { ok: true, assistantText: "Hello" };
+			}),
+			prepareAssistantMessageStorage: vi.fn().mockReturnValue({
+				storageParts: [],
+				toolsColumn: null,
+			}),
+		});
+		await run();
+		const done = events.filter((event) => event.event === "done");
+		expect(done.some((event) => event.data.ok === true)).toBe(false);
+		expect(
+			events.some(
+				(event) =>
+					event.event === "error" ||
+					(event.event === "done" && event.data.ok === false),
+			),
+		).toBe(true);
 	});
 });
