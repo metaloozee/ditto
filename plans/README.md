@@ -1,10 +1,10 @@
 # Trusted workspace-session runtime implementation plans
 
-Current 002 verdict: **ACCEPTED in the isolated worktree** `/home/ayan/ditto-worktrees/plan-001-reexecute` at `6eefdd1`. The user approved the R5 adjustment, tests and both supporting source edits. The advisor's final check found no drift across 691 reviewed regular files. See the [acceptance review](002-expanded-repair-review.md). Full gates passed 722 web, 43 brain, 20 runtime and 79 runner tests. The final type-only cleanup preserves identical emitted JavaScript; its typechecks, focused tests and adversarial probes also pass. 003 is unblocked but not started. Future subagents must use `gpt-6-sol` with medium reasoning. Source remains uncommitted, with 001 implementation preserved, and none has been applied to `brain`. Paid topology remains NOT RUN and blocks real-user enablement. Earlier reviews and `/tmp` targets below are historical.
+001 local feasibility and 002 are accepted and landed on `brain` at merge `693a334`. The user approved 002's R5 adjustment, tests and supporting source edits. See the [acceptance review](002-expanded-repair-review.md). Pre-merge gates passed 722 web, 43 brain, 20 runtime and 79 runner tests, and both adversarial probe variants had zero failures. The merge changed no tested source files. 003 is ready but not started; use a new worktree from merged `brain`. Future subagents must use `gpt-6-sol` with medium reasoning. Paid topology remains NOT RUN and blocks real-user enablement. No remote push, deployment or shared migration occurred. Earlier reviews and `/tmp` targets below are historical.
 
 Historical reconcile at `6eefdd1` on `brain` (plans dirty only). `closing-the-loop.md` was missing; that pass used the skill's reconcile bullets.
 
-Historical 001 reconcile: local A-D and Docker boot passed in `/tmp/ditto-feasibility-execute.bw57gx/worktree`. Paid F-Topology / P-Restart / incarnation death were NOT RUN. The maintainer accepted local Docker instead of a paid Cloudflare plan. That evidence originally unblocked 002 as contracts/schema only. The accepted 002 now lives in the replacement worktree named above. No implementation was applied to the user's branch.
+Historical 001 reconcile: local A-D and Docker boot passed in `/tmp/ditto-feasibility-execute.bw57gx/worktree`. Paid F-Topology / P-Restart / incarnation death were NOT RUN. The maintainer accepted local Docker instead of a paid Cloudflare plan. That evidence originally unblocked 002 as contracts/schema only. The accepted code has since landed locally on `brain`.
 
 The earlier requested broad Grok plan review did not complete. Later xAI Grok-4.6 agents completed targeted continuation, restoration and runner-compatibility experiments, which the advisor independently checked. A fresh-context xAI review of the refined 001 found it ready for the local experiment, not F-Pi PASS. That is not a review or implementation of the remaining phases. Luna's earlier CR01-CR09 dispositions remain historical plan-text evidence, not runtime approval. No deployment, migration, staging or commit is authorized by this plan set.
 
@@ -12,11 +12,11 @@ Canonical requirements: `docs/specs/trusted-session-runtime.md`, all 516 lines r
 
 ## Scope and safety
 
-Plan-file updates in the main checkout are review evidence only. Accepted 001/002 source remains uncommitted in `/home/ayan/ditto-worktrees/plan-001-reexecute`. The earlier `/tmp` worktrees are not execution targets. Do not copy source onto `brain`. Use the advisor plans and acceptance review in this checkout; the executor worktree's plan copies are stale.
+Accepted 001/002 source is committed on local `brain`; the old execution worktree retains untracked review evidence and stale plan copies. The earlier `/tmp` worktrees are not execution targets. Use the plans and acceptance review in this checkout. Start 003, if separately requested, in a new worktree from merged `brain`.
 
 The main checkout was clean at `20d3160` before this refinement, and plans are now tracked. The earlier dirty `apps/web/src/lib/sandbox-egress-broker.test.ts` and untracked-plans notes describe the original editorial pass, not current status. Always inspect actual status and preserve unrelated work. Do not reset, stage or overwrite it.
 
-The spec does not authorize paid environments, production inspection, deployment, shared D1 migration, identity retirement in a live account, backup deletion, Git pushes, or source commits. Name the intended environment and wait for separate authorization before such work. Implementation, test and build commands below are future executor gates. The editorial pass ran only read-only Git and document/source consistency checks. Never print secret values, request bodies, raw provider records, archive bytes, or capability URLs in evidence.
+The user explicitly authorized local source commits and a branch merge for 001/002. That did not authorize paid environments, production inspection, deployment, shared D1 migration, identity retirement in a live account, backup deletion or Git pushes. Name the intended environment and wait for separate authorization before such work. Implementation, test and build commands below are future executor gates. The editorial pass ran only read-only Git and document/source consistency checks. Never print secret values, request bodies, raw provider records, archive bytes, or capability URLs in evidence.
 
 The improve skill's `references/plan-template.md` was unavailable as reported by recon. `references/audit-playbook.md` also returned ENOENT during the drafter's own read. This set uses the user's explicit standalone-plan requirements instead. No hidden template compliance is claimed.
 
@@ -42,8 +42,8 @@ No source, infrastructure, install, tests, staging or commit is part of these re
 
 | Phase | Plan | Prerequisites | Gate delivered | Status | Effort / risk |
 |---|---|---|---|---|---|
-| 001 | [Feasibility](001-feasibility.md) | none | Pi 0.85.1 recovery-adapter/barrier proof and two-Worker/two-image topology evidence | Local PASS in worktree; paid F NOT RUN; not landed on `brain` | L / high |
-| 002 | [Contracts and identity](002-contracts-and-identity.md) | 001 local feasibility | Versioned wire contracts, additive D1 schema, ownership fence | ACCEPTED in retained worktree; uncommitted, not applied to `brain` | M / high |
+| 001 | [Feasibility](001-feasibility.md) | none | Pi 0.85.1 recovery-adapter/barrier proof and two-Worker/two-image topology evidence | Local PASS, landed on `brain`; paid F NOT RUN | L / high |
+| 002 | [Contracts and identity](002-contracts-and-identity.md) | 001 local feasibility | Versioned wire contracts, additive D1 schema, ownership fence | ACCEPTED, landed on `brain`; no shared D1 migration | M / high |
 | 003 | [Command admission and delivery](003-command-admission-and-delivery.md) | 002 | Durable idempotent receipts and retrying delivery, no request-owned run | READY; not started | L / high |
 | 004 | [Coordinator and encrypted journal](004-coordinator-and-encrypted-journal.md) | 003 | Durable execution decisions, epochs, journal, encrypted storage and projections | BLOCKED 003 | L / high |
 | 005 | [Privileged transport and remote execution](005-privileged-transport-and-remote-execution.md) | 004 | Private bridge, split credential broker, remote executor, Git/environment policy | BLOCKED 004 | L / high |
@@ -178,7 +178,7 @@ Use `pnpm --filter @ditto/web exec vitest run <paths>` for narrow web gates. The
 
 ## Evidence limits and open decisions
 
-Current execution target: `/home/ayan/ditto-worktrees/plan-001-reexecute`, branch `codex/plan-001-reexecute`, HEAD `6eefdd1`, with uncommitted accepted 001/002 source. Advisor `brain` remains at `d4e447e`, with plan-only changes. Existing local 001 A-D and Docker evidence stand; paid topology is still NOT RUN. Next eligible phase is 003, not yet requested or started. Acceptance here does not mean source has landed on `brain`.
+Integrated baseline: local `brain` merge `693a334` contains accepted 001/002 source; the old execution worktree is not the starting point for 003. Local 001 A-D and Docker evidence stand; paid topology is still NOT RUN. Next eligible phase is 003, not yet requested or started. No integration into the remote branch or live environment has occurred.
 
 The following paragraphs describe the original editorial pass and its limits. They do not supersede the newer executable evidence in 001.
 

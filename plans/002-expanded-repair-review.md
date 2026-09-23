@@ -1,13 +1,13 @@
 # 002 expanded repair review
 
-Verdict: **ACCEPTED in the isolated worktree**. The user approved the R5 adjustment, test changes and both supporting source edits. The final approval-time check found no drift across 691 reviewed regular files and no new regular files. All recorded verification remains applicable. Phase 003 is unblocked but not started; nothing is applied to `brain`, committed or deployed.
+Verdict: **ACCEPTED and merged locally into `brain`** at `693a334`. The user approved the R5 adjustment, test changes and both supporting source edits. The final approval-time check found no drift across 691 reviewed regular files and no new regular files. Pre-merge full gates and adversarial probes passed. Phase 003 is ready but not started. Nothing was pushed, deployed, or migrated to a shared database.
 
 This is the current review. [The first repair review](002-repair-review.md) and [the original execution review](002-execution-review.md) remain historical evidence, not descriptions of the current candidate.
 
 ## Target and scope
 
-- Advisor checkout: `/home/ayan/ditto`, branch `brain`, HEAD `d4e447e`. Advisor writes remain under `plans/` only.
-- Executor checkout: `/home/ayan/ditto-worktrees/plan-001-reexecute`, branch `codex/plan-001-reexecute`, HEAD `6eefdd1`. Candidate source remains uncommitted.
+- At review: advisor checkout `/home/ayan/ditto`, branch `brain`, HEAD `d4e447e`; source edits came from the executor only.
+- At review: executor checkout `/home/ayan/ditto-worktrees/plan-001-reexecute`, branch `codex/plan-001-reexecute`, HEAD `6eefdd1`, with uncommitted candidate source. That source was later committed and merged into `brain` at `693a334` without changing the reviewed source files.
 - Expanded repair and first final corrections: xAI Grok 4.6, agent `c5f44063-c80f-46d`.
 - Clean compiler-output correction: xAI Grok 4.6, agent `6dd5c992-5bc9-46c`.
 - The user's subsequent instruction changes future subagents to `gpt-6-sol` with medium reasoning. Read-only R5 verification completed as `9ae07aed-23d9-4c2` with that configuration. The advisor checked its cited implementation paths independently.
@@ -96,4 +96,4 @@ Both approved source files still match the reviewed hashes. Approval is recorded
 
 This review covers the repair deltas and their production paths, not a fresh audit of every unchanged schema/contract invariant or later-phase behavior. Docker boot, paid topology, live deployment, shared D1 migration and real-user trusted routing were not run. Existing local 001 evidence is preserved; paid topology remains NOT RUN and blocks real-user enablement.
 
-Plan 002 is accepted with its approved scope and design adjustment. Plan 003 is ready for a separate execution request against this retained worktree; it has not started. Acceptance does not authorize applying source to `brain`, staging, committing, pushing, deploying or enabling real-user trusted sessions.
+Plan 002 is accepted with its approved scope and design adjustment. At the user's later request, source was committed and merged locally into `brain` at `693a334`. Plan 003 is ready for a separate execution request from that baseline; it has not started. This merge does not authorize pushing, deploying or enabling real-user trusted sessions.

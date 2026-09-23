@@ -1,8 +1,8 @@
 # 001: Prove Pi 0.85.1 recovery and the two-container topology
 
-Status: Local 001 accepted as the 002 prerequisite. A-D and Docker boot PASS in `/tmp/ditto-feasibility-execute.bw57gx/worktree` at detached `6eefdd1`. Paid F-Topology, P-Restart, and incarnation lifetime stay NOT RUN, not PASS. Source is not on `brain`. Execute 002 on that worktree (or a branch copied from it), not on clean `brain` at `0.80.10`. Original refinement base `20d3160`, branch `brain`; original plan base `c963890`. Effort: L. Risk: high.
+Status: Local 001 accepted and landed on `brain` through merge `693a334`, alongside accepted 002. Pi `0.85.1` and its runner changes are committed; the pre-merge brain/runtime/runner verification passed. A-D and Docker boot were proved in the earlier local worktree; Docker boot was not repeated after merge. Paid F-Topology, P-Restart, and incarnation lifetime remain NOT RUN, not PASS. No real-user trusted runtime enablement is authorized. Original refinement base `20d3160`; original plan base `c963890`. Effort: L. Risk: high.
 
-This refinement selects Pi `0.85.1` for the next authorized executor checkout. It does not upgrade the current runner, apply the experimental code, authorize deployment, or declare feasibility passed. Only plan files change during this refinement.
+Historical refinement note: this plan selected Pi `0.85.1` and local feasibility gates before implementation. The runner and experimental code have since landed on `brain`; paid platform feasibility has not been demonstrated. The earlier editorial refinement changed only plan files.
 
 ## Problem and scope
 
