@@ -2,7 +2,9 @@
 
 Status: Local 001 accepted and landed on `brain` through merge `693a334`, alongside accepted 002. Pi `0.85.1` and its runner changes are committed; the pre-merge brain/runtime/runner verification passed. A-D and Docker boot were proved in the earlier local worktree; Docker boot was not repeated after merge. Paid F-Topology, P-Restart, and incarnation lifetime remain NOT RUN, not PASS. No real-user trusted runtime enablement is authorized. Original refinement base `20d3160`; original plan base `c963890`. Effort: L. Risk: high.
 
-Historical refinement note: this plan selected Pi `0.85.1` and local feasibility gates before implementation. The runner and experimental code have since landed on `brain`; paid platform feasibility has not been demonstrated. The earlier editorial refinement changed only plan files.
+Reconciled at `a5c1185`. The current handoff is the landed Pi `0.85.1` local recipe: validate and clone entries, import with `SessionManager.inMemory(imageOwnedCwd, undefined, entries)`, select `branch(leafId)`, reconcile journaled tools, then continue from committed state. 002 is accepted and 003 is ready. Production integration and barrier revalidation belong to 006; paid topology, surviving-container restart and exact incarnation termination/isolation still need authorized evidence.
+
+The candidate experiments, five execution reviews and original work instructions below are historical records. Their rejected verdicts, temporary paths, package-absence claims and restrictions on starting 002 describe earlier candidates, not the landed baseline. Preserve their findings without treating them as current blockers or repeating completed work. See [the index](README.md) and [002 acceptance](002-expanded-repair-review.md) for current status.
 
 ## Problem and scope
 
@@ -14,7 +16,7 @@ Full coding-agent remains responsible for inference, normal turns, compaction an
 
 No production inspection, live model calls, deployment, shared database mutation, cloud identity retirement, archive deletion, staging or commits. Paid integration needs separate environment and budget authorization. Preserve existing work, including uncommitted experiment files. Do not copy credentials, `.env.local`, `.alchemy` or `.wrangler` state into an executor checkout.
 
-## Reviewed evidence, not completion
+## Historical candidate experiments, before local acceptance
 
 Experiments used Node `v24.21.0`, npm `11.19.0`, real pinned coding-agent packages, synthetic state and offline providers. The advisor read their code and independently reran the reported tests and compile gates. Pi AI, coding-agent and transitive agent-core resolved to the stated version.
 
@@ -288,9 +290,9 @@ process.exitCode = failures ? 1 : 0;
 ```
 <!-- advisor-001-probe:end -->
 
-## Current code and exact SDK seams
+## Original code baseline and exact SDK seams
 
-Current main-checkout manifests still pin runner Pi AI and coding-agent to `0.80.10`. `packages/session-brain` and `apps/runtime` are not yet tracked there. `packages/sandbox-runner/src/run-agent.ts:85-90` opens a local session file and uses in-memory settings with auto-compaction and one-at-a-time follow-ups. That is current behavior, not the new recovery design.
+At the original refinement baseline, runner Pi AI and coding-agent were pinned to `0.80.10`, and `packages/session-brain` and `apps/runtime` were not yet tracked. The brain and runtime packages are now tracked; runner and brain pin `0.85.1`. The original `packages/sandbox-runner/src/run-agent.ts:85-90` reference described opening a local session file and using in-memory settings with auto-compaction and one-at-a-time follow-ups. That was evidence of legacy execution, not the new recovery design.
 
 `packages/sandbox-runner/src/run-git-metadata.ts:36-52` supplies a custom empty loader. Its current prompt methods are:
 
@@ -344,9 +346,11 @@ expect(loader.getAgentsFiles().agentsFiles).toEqual([]);
 
 Use `unknown` plus runtime validation, not `any` or unchecked casts over restored data. Test behavior, not file existence.
 
-## Files and deliverables
+## Original files and deliverables
 
-Permitted executor changes for the next local subphases:
+The following whitelist records the completed local implementation scope, not a request to recreate these packages. Historical source anchors in this section and the original steps below have not been refreshed for later-phase changes.
+
+Permitted executor changes at that time:
 
 - `packages/sandbox-runner/package.json`, `package-lock.json`; `src/run-git-metadata.ts` only for the two loader methods; corresponding assertions in `src/run-git-metadata.test.ts`; matching loader methods in `src/run-agent.test.ts`'s fake loader.
 - Independent npm `packages/session-brain/package.json`, `package-lock.json`, `tsconfig.json`; `src/main.ts`, `pi-feasibility.test.ts`, `pi-restoration.test.ts`, `restoration-child.ts`; new `src/pi-recovery.ts` and `src/pi-recovery.test.ts` for the bounded adapter and its process-boundary tests. Extend the existing child command fixture rather than creating an unrelated test framework.
@@ -357,7 +361,7 @@ Only after the Pi gates pass: `packages/session-brain/Dockerfile`; `apps/runtime
 
 Out of scope: product routes/UI, D1 migrations, actual runtime journal/crypto services, production network/credential policy, legacy execution removal, historical-session migration, and implementation of phases 002-012. Other runner API failures beyond the named loader change require reporting a new compatibility finding before expanding scope.
 
-## Ordered work and gates
+## Original ordered work and gates
 
 ### A. Establish one reproducible candidate checkout
 
@@ -514,7 +518,7 @@ Handoff to 002 requires: all local recovery/barrier/topology requirements PASS; 
 
 Brain has no contracts dependency in 001. Inspect npm file-dependency installation behavior, but do not claim consumer freshness before a consumer exists. When 002 adds `file:../runtime-contracts`, it must prepend contracts build and the actual installed-consumer freshness check to `brain:verify`; copied file dependencies are not assumed linked or refreshed by building workspace output.
 
-Before handing off, reconcile the version/import assumptions in `plans/002-contracts-and-identity.md:9` and `plans/006-trusted-pi-continuation.md:7,33,64` against the successful recipe. Those plans currently say `0.80.10` and reconstruct JSONL because in-memory import was unavailable. They remain blocked, not authority to downgrade or discard validated recovery semantics. This refinement changes only 001 and its index; later plan revision must carry the actual proven recipe, not a speculative broad replacement.
+The version/import handoff is complete. Plans 002 and 006 carry the proved Pi `0.85.1` import/recovery recipe; 002 is accepted and 006 remains blocked on 005, not on selecting a recipe. The reconciliation at `a5c1185` also corrects the stale 0.80.10 instructions in 011/012. Preserve historical 0.80.10 experiment results as history, never as an instruction to downgrade.
 
 ## Authoritative platform references
 

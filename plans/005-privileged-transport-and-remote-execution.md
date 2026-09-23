@@ -23,25 +23,29 @@ Preserve this observed SDK registration constraint, then prove it for both targe
 
 `apps/web/src/lib/sandbox-egress-broker.ts:471-480` builds Git upstream requests and mints repository-scoped tokens in the same Worker today. `handleOutbound` at 905-984 classifies privileged requests before public fallback. Move attach/fetch responsibilities by contract, not by passing the token through a service binding.
 
-`apps/web/src/lib/workspace-runtime.ts:951-957`:
+Policy-boundary reference refreshed at `a5c1185` after the accepted R5 extraction. `apps/web/src/lib/workspace-runtime-policy.ts:329-332` now invokes a supplied operation:
 
 ```ts
 let projectEnv: readonly SandboxEnvVar[] | null = null;
 if (input.purpose === "agent_run") {
-  projectEnv = await decryptEnvVars(
-    project.envVars,
-    input.env.BETTER_AUTH_SECRET,
-  );
+  projectEnv = await deps.decryptProjectValues(project.envVars);
 }
 ```
 
-The target runtime cannot bind that auth secret. Product must materialize values only for an admitted executor operation, not at HTTP prompt acceptance.
+The product wrapper in `apps/web/src/lib/workspace-runtime.ts:801-802` binds the key:
+
+```ts
+decryptProjectValues: (encrypted) =>
+  decryptEnvVars(encrypted, input.env.BETTER_AUTH_SECRET),
+```
+
+Preserve this accepted boundary and the product-only `prepareRuntime` adapter for provisioning/GitHub metadata. The target runtime cannot bind the auth secret. 005 still must authorize materialization for an admitted executor operation, not HTTP prompt acceptance; the existing callback alone is not that new service protocol.
 
 Existing regression exemplar `packages/sandbox-runner/src/locked-resource-loader.test.ts:149-154` asserts empty skills/prompts/themes/context and no system override. New remote-tool tests should assert actual host-access absence, not just the loader's flags. Web tests use `describe/it/expect/vi` and DI; runner tests use Vitest and temporary workspaces.
 
 ## Files
 
-Existing reusable policy: `apps/web/src/lib/sandbox-authority.ts`, `sandbox-egress-broker.ts`, `open-code-contract.ts`, `git-fetch-contract.ts`, `git-push-contract.ts`, `git-receive-pack.ts`, `ditto-action-contract.ts`, `agent-git-handler.ts`, `privileged-git.ts`, `session-git.ts`, `session-git-export.ts`, `session-git-metadata.ts`, `git-secret-policy.ts`, `project-env-vars.ts`, `secret-redaction.ts`. Retain focused tests, but preserve the unrelated dirty egress test and add a separate file instead of overwriting it.
+Existing reusable policy: `apps/web/src/lib/sandbox-authority.ts`, `sandbox-egress-broker.ts`, `open-code-contract.ts`, `git-fetch-contract.ts`, `git-push-contract.ts`, `git-receive-pack.ts`, `ditto-action-contract.ts`, `agent-git-handler.ts`, `privileged-git.ts`, `session-git.ts`, `session-git-export.ts`, `session-git-metadata.ts`, `git-secret-policy.ts`, `project-env-vars.ts`, `secret-redaction.ts`. Retain focused tests and preserve any actual unrelated edits. The original dirty-egress-test note is historical; check current status rather than assuming the file is dirty.
 
 New: `apps/runtime/src/brain-transport.ts`, `executor-dispatch.ts`, `runtime-egress.ts`; `apps/web/src/lib/runtime-product-service.ts`, `session-runtime-security.test.ts`; `packages/sandbox-runner/src/remote-tool.ts`, `remote-tool-cli.ts`, `remote-tool.test.ts`. Extend portable contracts, `apps/web/src/lib/session-command.ts`, `session-command.test.ts`, the command fixture and the existing workspace tRPC Git adapters. Modify `apps/web/src/server.ts` to export a private product-service entrypoint, not public internal routes. Add executor image files only additively while old sessions need the old CLI.
 

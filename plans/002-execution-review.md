@@ -1,8 +1,8 @@
 # 002 execution review
 
-Historical first-candidate review. The current [repair review](002-repair-review.md) supersedes its current-state findings and verification results; retain this document as the original R1-R8 handoff.
+**SUPERSEDED historical first-candidate review.** Final acceptance is recorded in [002-expanded-repair-review.md](002-expanded-repair-review.md): 002 landed at `693a334` and 003 is ready, not started. The intermediate [repair review](002-repair-review.md) is also historical. Findings, source anchors, commands and handoff instructions below describe the original candidate only; retain them as the R1-R8 audit trail.
 
-Verdict: **CHANGES REQUIRED**. The xAI Grok 4.6 executor finished and its listed local gates pass independently, but the candidate breaks real prompt admission and does not implement the required ownership and dependency boundaries. Do not mark 002 complete or unblock 003.
+Historical verdict: **CHANGES REQUIRED**. The xAI Grok 4.6 executor's listed local gates passed independently, but that candidate broke prompt admission and lacked the required ownership and dependency boundaries. That verdict blocked 003 at the time; it does not override final acceptance.
 
 ## Execution target and preservation
 

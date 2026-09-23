@@ -1,8 +1,8 @@
 # 002 repair execution review
 
-Historical verdict: **CHANGES REQUIRED** for the first repair. The failures and counts below describe that earlier candidate. See the current [expanded repair review](002-expanded-repair-review.md) for the repaired paths, passing gates and remaining acceptance decisions. Phase 003 stays blocked.
+**SUPERSEDED historical first-repair review.** Final acceptance is recorded in [002-expanded-repair-review.md](002-expanded-repair-review.md): 002 landed at `693a334` and 003 is ready, not started. The failures, counts, source anchors and repair instructions below describe the earlier candidate only.
 
-This review supersedes the current-state verdict in [the first execution review](002-execution-review.md). That earlier review remains historical evidence. Read both for the original R1-R8 requirements and their disposition below.
+Historical verdict: **CHANGES REQUIRED**. This review followed [the first execution review](002-execution-review.md) and kept 003 blocked at that time. Both documents preserve the original R1-R8 requirements and repair history; neither is a current request to repeat those repairs.
 
 ## Target and preservation
 
@@ -114,7 +114,7 @@ cd /home/ayan/ditto-worktrees/plan-001-reexecute
 node /home/ayan/ditto/plans/002-repair-probes.cjs "$PWD" --npm
 ```
 
-Requires installed dependencies and fresh contracts output. `pnpm brain:verify` supplied that build in this review. Expected current output includes:
+Requires installed dependencies and fresh contracts output. `pnpm brain:verify` supplied that build in this historical review. Observed output from the rejected first-repair candidate included:
 
 ```text
 PASS already-migrating callback: denied runtime_owner_mismatch

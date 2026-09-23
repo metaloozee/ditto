@@ -2,15 +2,21 @@
 
 Status: ACCEPTED and landed on `brain` in merge `693a334`, including the approved R5 adjustment, test changes and supporting source edits. Final pre-merge verification passed 722 web, 43 brain, 20 runtime and 79 runner tests plus both adversarial probe variants with zero failures. The final approval-time check found no drift across 691 reviewed regular files; the merge changed only plan files outside the tested source. Read the [acceptance review](002-expanded-repair-review.md); earlier reviews are historical. Future subagents must use `gpt-6-sol` with medium reasoning. 003 is ready but not started; start from this merged `brain` baseline in a new worktree. Pi `0.85.1` recovery tests pass; Docker boot was not rerun. Paid 001 topology stays NOT RUN and blocks real-user enablement. Original plan base `c963890`. Effort: M, 3-5 days. Risk: high, because a missing fence creates two execution owners.
 
-## Problem, target and prerequisites
+## Accepted handoff at `a5c1185`
 
-Current D1 rows model one sandbox identity and one running-slot pool. The target needs durable commands, brain identity, process incarnation, coordinator projections and paired checkpoints without changing what old readers think existing rows mean.
+The contracts package, migration `0020_trusted_runtime_additive.sql`, ownership fences and shared policy boundary are landed. The original scope, source excerpts and work steps below remain the acceptance requirements, not a new execution queue. 003 must extend the existing contracts/schema and use the accepted adapters, not recreate them. No new acceptance tests were run for this documentation reconciliation.
+
+The extra 002 review files are successive candidate reviews. Only [002-expanded-repair-review.md](002-expanded-repair-review.md) records final acceptance. Keep its R5 decision: shared lease policy uses `prepareRuntime`; product adapters retain provisioning, GitHub metadata and decryption. The older probes/verdicts do not reopen accepted repairs.
+
+## Original problem, target and prerequisites
+
+Before 002, D1 rows modeled one sandbox identity and one running-slot pool. The target needs durable commands, brain identity, process incarnation, coordinator projections and paired checkpoints without changing what old readers think existing rows mean.
 
 Required 001 deliverables now in the worktree: Pi `0.85.1` barrier/restoration recipe (`SessionManager.inMemory(imageOwnedCwd, undefined, structuredClone(entries))` then `branch(leafId)` before `createAgentSession`; journal-led recovery of one committed tool batch; 8-barrier SIGKILL matrix). `@ditto/runtime` has `typecheck` and `test`. Independent npm `packages/session-brain` has `typecheck`, `test`, `build`. Docker images `ditto-feasibility-brain:local` and `ditto-feasibility-sandbox:local` boot. Live Alchemy two-service create, DO restart, and incarnation death are NOT RUN. Paid evidence may remain NOT RUN, which blocks real-user enablement. No production migration or deployment follows from those local deliverables. Do not downgrade to `0.80.10`.
 
 Target here is additive schema and a small shared wire contract. It does not execute commands, move keys/classes, import old histories, or remove legacy behavior. All existing sessions remain `legacy` until an explicit fenced migration.
 
-## Rechecked local evidence
+## Original baseline evidence
 
 `apps/web/src/db/schema.ts:245-248`:
 
@@ -50,7 +56,7 @@ Proposed:
 - `apps/web/src/db/trusted-runtime-migration.test.ts`.
 - `apps/web/migrations/0020_trusted_runtime_additive.sql` and generated snapshot metadata, only if 0020 is still the next migration at execution. STOP on numbering drift, select the next unused migration, and update all plan references together.
 
-No changes to the contents of historical migration 0019. Do not apply migrations to any shared database. Do not overwrite the unrelated dirty `sandbox-egress-broker.test.ts`.
+No changes to the contents of historical migration 0019. Do not apply migrations to any shared database. Preserve actual unrelated worktree changes; the original dirty `sandbox-egress-broker.test.ts` note is historical.
 
 ## Approved R5 scope expansion
 
@@ -71,7 +77,7 @@ These changes do not authorize a new service protocol, service-binding movement,
 
 R2, R4 and R6 pass the regressions recorded in [the acceptance review](002-expanded-repair-review.md). Preserve those repairs. The approved cleanup is complete: it touched only the three files named in point 2 and removed unused types/assertions without moving executable code. Verify `pnpm typecheck`, `pnpm --filter @ditto/runtime typecheck`, `pnpm --filter @ditto/runtime test`, the existing workspace policy/adapter tests, `pnpm check` and `git diff --check`. Keep `plans/002-repair-probes.cjs` passing with `--npm --adapter --tsc-build`; the last full brain/repository gates remain required acceptance evidence. If an API change invalidates a probe, report the drift and preserve an equivalent regression; do not count an untriggered hook or loader error as a PASS.
 
-## Planned contract and schema
+## Accepted contract and schema requirements
 
 Create `@ditto/runtime-contracts` with no runtime dependencies. Use strict parsing from `unknown` and explicit bounds; avoid importing Pi into workerd. Add only this package to the pnpm workspace in addition to `apps/*`. The independent brain uses `file:../runtime-contracts`, with `dist` exports. Build contracts before installing/building an npm consumer; lockfiles must resolve the same source. Prove whether pinned npm links or copies this file dependency. For a copy, document and test the owning npm refresh/install recipe in an authorized executor checkout; rebuilding the workspace dist alone is insufficient. Preserve independence of `packages/sandbox-runner`.
 
@@ -100,9 +106,11 @@ Wire `CommandV1`, `ReceiptV1`, `BrainEnvelopeV1`, `EffectV1`, `ContinuationV1`, 
 - Pairs bind archive, continuation, execution position, generation, compatibility, source incarnations and outstanding effects. Product snapshots exclude raw provider state, encryption metadata and R2/preview capabilities.
 - Initial proposed bounds: 64 KiB command body, 32,000 text characters, 128-byte idempotency/ID fields, 8 KiB delivery envelope, 1 MiB brain control record, 64 KiB stream frame, 1 MiB per subscriber buffer. Larger runtime content uses bounded chunked encrypted records and opaque transport paging, never an R2 key in Node. Reuse stricter existing model/Git contract limits. Test bounds in bytes as well as characters. If 001 proves these prevent the supported fixed-model context, revise limits explicitly with measured memory evidence before execution, not an unbounded exception.
 
-## Ordered steps and verification
+## Original implementation steps and verification
 
-1. Drift-check HEAD, dirty file and next migration number. Read the complete schema and current authority implementation. Add contract types/parsers first and tests for unknown version, duplicate authority fields, oversized encodings, invalid integers and malformed unions. Verify `pnpm --filter @ditto/runtime-contracts exec vitest run src/contracts.test.ts`; expect no permissive parsing or unknown-field forwarding.
+These steps record how 002 was accepted. Migration 0020 and the named packages already exist; later phases must not regenerate or replay this phase as unfinished work.
+
+1. Drift-check HEAD, actual worktree changes and next migration number. Read the complete schema and current authority implementation. Add contract types/parsers first and tests for unknown version, duplicate authority fields, oversized encodings, invalid integers and malformed unions. Verify `pnpm --filter @ditto/runtime-contracts exec vitest run src/contracts.test.ts`; expect no permissive parsing or unknown-field forwarding.
 2. Add additive schema/migration in a disposable fixture. Populate retained projects/messages/identities/archives before applying only the new migration. Prove counts, IDs, content hashes and legacy interpretation survive, constraints reject duplicate keys, and rollback of failed batch leaves no sequence/message residue. Add schema-level SQL fixtures for per-target version/membership columns and noncascading cleanup/fences when project/session/auth rows are deleted. Check transactional accounting-mode/version constraints with populated legacy claims. Actual projection CAS behavior is completed in 004, retryable full key/hash/content purge in 009, and both-allocator cutover/concurrent admission proof in 008; these are not passing implementation claims in 002. Verify `pnpm --filter @ditto/web exec vitest run src/db/trusted-runtime-migration.test.ts`.
 3. Implement `assertRuntimeOwner({session, expectedOwner, ownerVersion})` and compare-and-set owner transition policy. Old execution/queue/settlement entry points must reject a non-legacy owner before any effect. Trusted windows require trusted owner/role/current epoch. No new actual windows open in this phase. Verify `pnpm --filter @ditto/web exec vitest run src/lib/session-runtime-ownership.test.ts src/lib/sandbox-authority.test.ts`.
 4. Narrow shared policy function dependencies so the runtime cannot receive global product `Env`. Add compile-time forbidden-binding assertions to the new Worker type tests. Keep actual binding movement for 011, with separate target/test configuration now. Verify `pnpm typecheck`, `pnpm --filter @ditto/runtime typecheck`, `pnpm contracts:verify`, `pnpm check`.
@@ -111,7 +119,7 @@ Expected outcome for every command is exit 0 and no skipped required case. Paren
 
 ## Handoff and done criteria
 
-003 receives strict versioned parsers, immutable receipt IDs, retained idempotency schema, monotonic transactional sequence allocation, delivery fields and enforced ownership fence. 004 receives distinct epochs/incarnations, encrypted-content envelope types and projection/pair fields. No actual plaintext continuation is written yet.
+003 receives strict versioned parsers, receipt types with immutable IDs, retained idempotency and sequence-counter schema, delivery fields and enforced ownership fences. It implements transactional sequence allocation and durable receipt/message/outbox admission; schema acceptance alone did not implement those services. 004 receives distinct epochs/incarnations, encrypted-content envelope types and projection/pair fields. No actual plaintext continuation is written yet.
 
 Machine-checkable completion requires migration-preservation tests, owner-fence tests, contract tests and all four step-4 commands passing. Source fixture queries must assert zero duplicate owner/sequence/key/open-slot rows and unchanged retained data. Active source behavior remains legacy with no new real-user routing.
 

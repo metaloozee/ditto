@@ -1,12 +1,12 @@
 # 006: Run full Pi behind awaited durable continuation barriers
 
-Status: BLOCKED on 005 and the exact 001 Pi recipe. Base HEAD: `c963890`, branch `brain`. Effort: L, 5-8 days. Risk: high. Unsupported continuation is a stop condition, not a reason to replay a prompt.
+Status: BLOCKED on 005. The exact 001 Pi `0.85.1` local recipe is accepted and landed at `693a334`; this phase must integrate and revalidate it against the production journal/transport. Original drafting base: `c963890`, branch `brain`; prerequisite status reconciled at `a5c1185`, not a full source-excerpt refresh. Effort: L, 5-8 days. Risk: high. Unsupported continuation is a stop condition, not a reason to replay a prompt.
 
 ## Target and prerequisite contracts
 
 Move full Pi `0.85.1` into the trusted Node image for isolated target sessions, using the 001 restore/recovery recipe. Preserve the fixed model, supported thinking levels, compaction, image-owned Git metadata tools and queued follow-ups. Repository execution stays remote. Do not downgrade to `0.80.10`.
 
-005 supplies an identity-validated HTTP bridge, seven remote tool handlers, model/Git/action broker, execution-only environment materialization and no local fallback. 004 owns encrypted canonical journal, effect states, Stop/epoch barriers, run lifecycle, read-only snapshots, pending D1 projection and durable scheduling. 003 provides accepted commands and per-follow-up message IDs. 001 must already have proven the precise public Pi hook/wrapper/restore recipe. Its results, not current global docs, are prerequisites.
+005 supplies an identity-validated HTTP bridge, seven remote tool handlers, model/Git/action broker, execution-only environment materialization and no local fallback. 004 owns encrypted canonical journal, effect states, Stop/epoch barriers, run lifecycle, read-only snapshots, pending D1 projection and durable scheduling. 003 provides accepted commands and per-follow-up message IDs. 001 has proven the local public Pi hook/wrapper/restore recipe in the landed `packages/session-brain/src/pi-recovery.ts` and its tests. Use that accepted recipe, not the earlier rejected candidates or current global docs. Its local evidence does not satisfy this phase's production-adapter or paid restart gates.
 
 Continuation contract includes full pinned Pi entries, selected leaf, compaction `firstKeptEntryId`, model/thinking settings, image-owned extension state, provider-specific metadata, original tool IDs, actual results, accepted/consumed command position and unresolved effects. Container-local JSONL is a reconstructible working copy. No untrusted archive reaches trusted executable/configuration paths.
 

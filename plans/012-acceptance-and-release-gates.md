@@ -14,7 +14,7 @@ No source refactor, new architecture, dependency bump, shared DB migration, Git 
 
 ## Rechecked baseline and conventions
 
-`package.json:9-17` currently defines these scripts. This is a fragment of the scripts object:
+Root `package.json` defines the legacy gates below. At `a5c1185`, `contracts:verify`, `runtime:verify` and `brain:verify` also exist but root `verify` still does not invoke them. This is a fragment of the scripts object:
 
 ```json
 "test": "pnpm --filter @ditto/web test",
@@ -73,8 +73,8 @@ Record policy selection independently from PASS/FAIL/NOT RUN evidence. Tested so
 
 ## Ordered acceptance work
 
-1. Recheck HEAD, worktree and all source excerpts. Preserve preexisting `sandbox-egress-broker.test.ts` changes. Read completed phase diffs and evidence; every unavailable prerequisite is BLOCKED, not assumed. Run all local phase gates and complete T01-T36 trace table below, with exact test title/path and latest commit.
-2. Add deterministic end-to-end sequences through authenticated handlers: create/retry, queue under both pools, follow-up, disconnect, model response/tool-result interruption, coordinator restart with surviving brain, executor loss and paired fallback, Stop unknown shell, archive/continue, GC/deletion races and nondestructive import. Include the A-Auth smoke separately from DI fault sequences, mixed legacy/trusted/builder/preview single-ledger contention, exact recovery-union negative cases, cross-owner/older-run projection ordering, and termination-versus-isolation capacity races. Ensure no target command can fall back to legacy runner. Use real Pi 0.80.10 and local persistent store, not only mocked SessionRuntime.
+1. Recheck HEAD, worktree and all source excerpts. Preserve actual unrelated changes; the old dirty `sandbox-egress-broker.test.ts` note is historical. Read completed phase diffs and evidence; every unavailable prerequisite is BLOCKED, not assumed. Run all local phase gates and complete T01-T36 trace table below, with exact test title/path and latest commit.
+2. Add deterministic end-to-end sequences through authenticated handlers: create/retry, queue under both pools, follow-up, disconnect, model response/tool-result interruption, coordinator restart with surviving brain, executor loss and paired fallback, Stop unknown shell, archive/continue, GC/deletion races and nondestructive import. Include the A-Auth smoke separately from DI fault sequences, mixed legacy/trusted/builder/preview single-ledger contention, exact recovery-union negative cases, cross-owner/older-run projection ordering, and termination-versus-isolation capacity races. Ensure no target command can fall back to legacy runner. Use real pinned Pi `0.85.1` and local persistent storage, not only mocked SessionRuntime. The version was reconciled at `a5c1185` to match accepted 001/002; revalidate the production adapter, not merely the local feasibility fixture.
 3. Run local final gates, including real runtime bundling under the 001 recipe. Required commands:
 
 ```sh
@@ -98,7 +98,7 @@ All must exit 0 with no required skips. Root check may still report explicitly b
 8. Run the historical Git rejection gate against the explicitly approved disposable remote: valid narrow intended push only where gate procedure allows; crafted non-fast-forward, alternate refs/capabilities, delete refs and extra refs rejected before remote SHA changes. Record before/after SHAs, trusted operation IDs and rejection categories, no token/body. Keep branch push and PR creation disabled unless all relevant historical gates and maintainer enablement approval pass. A parser-only rejection is not proof of remote behavior.
 9. Rerun the historical platform matrix: public/private import; two session filesystem/Git isolation; stop/follow-up; supported dependency classes; seed compatibility; binary/large diffs; preview/cold restore/stop; archive/continue; deletion; project-value isolation and redaction; broker role separation; existing disabled terminal/code/export behavior. Read the broker spec/release checklist in full before enumerating the exact cases. Add any historical missing case explicitly rather than declare supersession by T01-T36.
 10. Rehearse DR using only disposable backed-up data: restore D1 product/identity fences, coordinator encrypted canonical history, R2 pairs and retained key versions. Verify wrong/missing key blocks safely, current/previous restores match, identities are not reused, dedupe/tombstones prevent old delivery replay and source backups remain retained. Production backup creation/restore requires separate authorization. If no supported recoverable coordinator backup procedure exists, R-DR remains BLOCKED; R2 workspace archives alone do not restore the trusted conversation.
-11. Grok technical review remains blocked by provider rejection before execution; obtain that requested review when available. Luna completed initial cold review and fresh rereview, confirmed CR01-CR09 resolved in plan text, and found phase 001 executable as feasibility. It retained overall NOT READY because implementation/platform evidence is absent; no runtime or release approval follows. README records dispositions. Review the eventual implementation and evidence separately before release. Record further findings/dispositions in these plan files, not a separate report. Resolve feasibility/security/data-loss findings before release. User-visible unresolved layout/copy decisions remain approval gates even when backend tests pass.
+11. The originally requested broad Grok plan review did not complete after provider rejection. Later targeted Grok experiments and 001/002 execution reviews completed, but did not review all remaining phases or authorize release. Obtain the outstanding broad technical review using the maintainer's current reviewer selection. Luna's initial cold review/rereview resolved CR01-CR09 in plan text and found 001 executable; its historical NOT READY verdict is not a renewed block on accepted 001/002 or ready 003. README records dispositions. Review the eventual implementation and evidence separately before release. Record further findings/dispositions in these plan files, not a separate report. Resolve feasibility/security/data-loss findings before release. User-visible unresolved layout/copy decisions remain approval gates even when backend tests pass.
 12. Only with all gates PASS or an explicitly permitted source-only policy result, named target and separate maintainer approval, execute 011's bounded rollout. Perform post-cutover new/retained session, preview, Stop, archive and history smoke. If rollout fails, stop new admission and preserve owner fence; never reactivate stale legacy execution after trusted effects. Record final bindings/legacy executable count. Do not remove old archives or identity tombstones merely to make counts look clean.
 
 ## T01-T36 result ledger
@@ -127,9 +127,9 @@ All target results initially NOT RUN. Populate exact titles, commit and result a
 
 For each row append actual command, environment/stage, timestamp, commit, dependency versions, image digests, compatibility date, configured limits, relevant metrics and sanitized evidence location within these plans. No external report is required by this drafting task.
 
-| Gate | Owner | Initial result / release rule |
+| Gate | Owner | Evidence status / release rule |
 |---|---|---|
-| F-Pi | 001,006 | NOT RUN; all exact continuation/barrier positions required |
+| F-Pi | 001,006 | 001 local recipe/barriers accepted; 006 production-adapter validation NOT RUN. Local feasibility is not full target acceptance. |
 | F-Topology | 001 | NOT RUN; first-deploy/update/private identity/scheduler required |
 | P-Bridge | 005,012 | NOT RUN; actual trusted platform source and role denial |
 | P-Model | 005,006,012 | NOT RUN; real HTTPS stream/abort/no container key |
@@ -144,8 +144,8 @@ For each row append actual command, environment/stage, timestamp, commit, depend
 | R-Local | 012 | NOT RUN; extended verify and actual runtime bundle |
 | R-Matrix | 012 | NOT RUN; T01-T36 plus historical integration matrix |
 | A-Auth | 012 | Local NOT RUN / paid NOT RUN; real disposable-cookie admission/control HTTP adapter smoke |
-| Technical review | dispatcher/grok-4.6 | BLOCKED; two provider request rejections before reviewer execution, no review produced |
-| Fresh cold review | dispatcher/gpt-5.6-luna | COMPLETED initial review and fresh rereview. CR01-CR09 resolved in plan text; 001 executable as feasibility. Overall NOT READY pending implementation/platform evidence, not runtime/release approval. |
+| Broad technical review | Maintainer-selected reviewer; originally requested Grok | NOT COMPLETED. Later targeted experiments and 001/002 reviews do not replace the requested broad review or final implementation review. |
+| Fresh cold review | dispatcher/gpt-5.6-luna | Historical initial review and rereview COMPLETED; CR01-CR09 resolved in plan text. Its then-NOT READY verdict does not supersede later 001/002 local acceptance. No full runtime/release approval. |
 | Production rollout authorization | maintainer | NOT GRANTED |
 
 ## Completion, maintenance and STOP

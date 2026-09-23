@@ -1,16 +1,22 @@
 # 003: Admit durable commands and deliver them idempotently
 
-Status: READY, NOT STARTED. Accepted 001/002 source landed on `brain` in merge `693a334`; see the [002 acceptance review](002-expanded-repair-review.md). A separately requested execution should start from the merged `brain` baseline in a new worktree and read current plans from `/home/ayan/ditto/plans`. Preserve unrelated work; the old execution worktree retains untracked evidence and is not a clean starting point. Use `gpt-6-sol` with medium reasoning for subagents. Paid topology remains NOT RUN and blocks real-user enablement. Original plan base: `c963890`, branch `brain`. Effort: L, 4-6 days. Risk: high.
+Status: READY, NOT STARTED. Reconciled against `a5c1185` on `brain`; accepted 001/002 source landed in merge `693a334`. See the [002 acceptance review](002-expanded-repair-review.md). Original drafting base `c963890` is historical, not a checkout target. Effort: L, 4-6 days. Risk: high.
+
+For a separately requested execution, create a new worktree from current merged `brain` and read the reconciled plans from `/home/ayan/ditto/plans`. New worktrees do not inherit uncommitted plan edits. Preserve actual unrelated work; old executor checkouts and their plan copies are not the starting point. Use `gpt-6-sol` with medium reasoning for subagents. Paid topology remains NOT RUN and blocks real-user enablement, not this local admission/delivery implementation.
 
 ## Target and prerequisites
 
 Replace request-owned prompt admission for explicitly trusted test sessions with an authenticated command service returning durable receipts. Keep production/default sessions on the fenced legacy route until release. This phase does not launch Pi or claim coordinator acceptance from a mock as platform evidence.
 
-Required inputs from 002: strict `@ditto/runtime-contracts` parsers, `session_commands`, `session_command_keys`, transactional session sequence counter, delivery fields on `workspace_runtime_work`, `runtimeOwner/runtimeOwnerVersion`, and permanent tombstones. A command references complete user and pending assistant IDs, not an embedded transcript. First-session idempotency is scoped to owner plus project; later commands to owner plus workspace session. An identical key/payload returns the original immutable IDs. A different canonical payload conflicts. All timestamps in the new protocol use epoch milliseconds; explicitly convert old second-based D1 queue fields at the compatibility adapter.
+Required inputs from 002 are landed: strict `@ditto/runtime-contracts` parsers, `session_commands`, `session_command_keys`, `session_command_sequences` counter schema, delivery fields on `workspace_runtime_work`, `runtimeOwner/runtimeOwnerVersion`, and permanent tombstones. 003 implements transactional counter allocation together with command/message/outbox admission; 002 did not implement that service. A command references complete user and pending assistant IDs, not an embedded transcript. First-session idempotency is scoped to owner plus project; later commands to owner plus workspace session. An identical key/payload returns the original immutable IDs. A different canonical payload conflicts. All timestamps in the new protocol use epoch milliseconds; explicitly convert old second-based D1 queue fields at the compatibility adapter.
 
 001 already defines `@ditto/runtime` test/typecheck and independent npm brain gates. 002 defines contracts build/test/typecheck. No real containers, model windows, Git windows, or project values are needed for admission.
 
-## Rechecked current behavior
+Reuse `packages/runtime-contracts/src/command.ts`: `CommandV1`, `BrowserCommandV1`, `ReceiptV1` and their parsers already cover prompt, follow-up, Stop and cancellation. Extend them for the recovery union below without enabling absent handlers. Reuse `apps/web/src/lib/session-runtime-ownership.ts` for the owner fence and `apps/web/src/lib/sqlite-d1-test-utils.ts` for real D1-batch fixture behavior. Migration `apps/web/migrations/0020_trusted_runtime_additive.sql` already exists; do not recreate it or alter historical migrations.
+
+Preserve the accepted R5 boundary. `workspace-runtime-policy.ts` contains shared lease policy; `workspace-runtime.ts` supplies product-only preparation, GitHub metadata, decryption and lock adapters. A new runtime dependency must not receive product `Env` or pull those product modules into the shared graph. The approved `prepareRuntime` callback is intentional, not an unfinished metadata-extraction repair.
+
+## Current behavior rechecked at `a5c1185`
 
 `apps/web/src/routes/api.agent.stream.ts:98-105` runs execution inside SSE startup:
 
@@ -26,7 +32,7 @@ try {
 
 `apps/web/src/lib/agent-run-service.ts` already batches session, user, assistant and runtime-work inserts, but `prepareAgentRun` directly checks the product's model-key binding and allocates fresh IDs. `apps/web/src/lib/agent-control-service.ts:14-18` uses an executor-side control CLI and socket directory. Follow-ups there are accepted before D1 message rows exist; `packages/sandbox-runner/src/run-agent.ts:59` retains them in memory.
 
-`apps/web/src/lib/workspace-runtime.ts:1154-1157` makes the dispatcher an execution owner:
+`apps/web/src/lib/workspace-runtime.ts:984-987`, inside `executeWorkspaceWork`, makes the legacy dispatcher an execution owner:
 
 ```ts
 await agent.executeAgentRun({
@@ -55,7 +61,7 @@ Keep the captured production handler and existing injected-auth fixture pattern.
 
 ## File scope
 
-Existing adapters: `apps/web/src/routes/api.agent.stream.ts`, `api.agent.control.ts`, their tests; `apps/web/src/lib/agent-run-service.ts`, `agent-control-service.ts`, `workspace-runtime.ts`, `workspace-runtime-capacity.ts`; `apps/web/src/server.ts` scheduled path. Existing `apps/web/src/lib/agent-models.ts` fixes model and supported thinking levels.
+Existing adapters: `apps/web/src/routes/api.agent.stream.ts`, `api.agent.control.ts`, their tests; `apps/web/src/lib/agent-run-service.ts`, `agent-control-service.ts`, `workspace-runtime.ts`, `workspace-runtime-capacity.ts` and their nearest tests; `apps/web/src/server.ts` scheduled path. Existing `apps/web/src/lib/agent-models.ts` fixes model and supported thinking levels. Extend `packages/runtime-contracts/src/command.ts` and `src/contracts.test.ts` for the required union. Read the accepted shared-policy and ownership helpers above; preserve their boundary rather than repeating 002's extraction.
 
 New: `apps/web/src/lib/session-command.ts`, `session-command-delivery.ts`, `session-runtime-client.ts`; corresponding `session-command.test.ts` and `session-command-delivery.test.ts`; `apps/web/src/test/session-runtime-fixture.ts`. Use the existing two API route paths, dispatching an explicitly versioned JSON command for trusted owners. Add GET observation handling on `/api/agent/stream` in 004/010. Do not create an unrelated new UI layout or edit generated route tree by hand.
 
@@ -84,10 +90,10 @@ Define these exact discriminants in `packages/runtime-contracts/src/command.ts` 
 
 ## Ordered work and tests
 
-1. Drift-check `git rev-parse --short HEAD` and `git status --short`; preserve the dirty egress test. Build contracts before using its package export: `pnpm --filter @ditto/runtime-contracts build`. Create strict route/version discrimination. Old client requests for legacy owners retain current behavior; old requests targeting a trusted/migrating owner return an upgrade/recovery category and never launch the old runner.
+1. Drift-check `git rev-parse --short HEAD` and `git status --short` against this reconciled baseline; preserve actual unrelated changes. The original dirty-egress-test note is historical. Verify and build the existing contracts before using their package exports: `pnpm contracts:verify`. Create strict route/version discrimination. Old client requests for legacy owners retain current behavior; old requests targeting a trusted/migrating owner return an upgrade/recovery category and never launch the old runner.
 2. Implement ownership/archive/deleting checks and configuration probe. Keep auth entrypoints unchanged. Admission rechecks owned project/session and owner fence inside the persistence decision, so deletion racing the initial read cannot accept new work. Add T01/T02 via the authenticated handler, asserting no command/message/session/delivery rows and no container/upstream calls on rejection. Verify `pnpm --filter @ditto/web exec vitest run src/lib/session-command.test.ts`.
 3. Implement atomic key reservation, sequence allocation, message/session creation and outbox insert. Use a proven transactional D1 batch or equivalent single atomic statement design with bounded conflict retry. A first-session retry after a lost response must return the original session. Concurrent same-key submissions create one logical command; conflicting payloads create none beyond the first. Treat normalized text and thinking defaults consistently in canonical hashing. Add T03/T04 and failure after every statement. Same command key after deletion cannot recreate the target. Rerun the same narrow test.
-4. Add durable follow-up, Stop and queue cancellation. Define the recovery union above, but reject its unimplemented executable variants until their owning phase enables both admission and handler. 005 adds UI Git variants and admission, 008 adds preview variants and admission, and 009 adds archive/continue/project-deletion variants and admission. Model configuration and message creation follow command kind: prompt/follow-up and new recovery actions that invoke Pi require configuration; model-free controls remain available during provider outage. Recovery message rules are in the table above. Follow-up gets its own message pair on acceptance, exact target run and FIFO sequence. Do not call `session.followUp` yet. Stop accepts durable intent even when runtime is unavailable; recorded != applied. Queue cancellation retains the instruction and failed assistant projection. Final cancellation decisions are coordinator-owned, not a product shortcut. Extend T01-T04 to controls.
+4. Add durable follow-up, Stop and queue cancellation. Define the recovery union above, but reject its unimplemented executable variants until their owning phase enables both admission and handler. 005 adds UI Git variants and admission, 008 adds preview variants and admission, and 009 adds archive/continue/project-deletion variants and admission. Model configuration and message creation follow command kind: prompt/follow-up and new recovery actions that invoke Pi require configuration; model-free controls remain available during provider outage. Recovery message rules are in the table above. Follow-up gets its own message pair on acceptance, exact target run and FIFO sequence. Do not call `session.followUp` yet. Stop accepts durable intent even when runtime is unavailable; recorded != applied. Queue cancellation retains the instruction and failed assistant projection. Final cancellation decisions are coordinator-owned, not a product shortcut. Extend T01-T04 to controls. Run `pnpm --filter @ditto/runtime-contracts exec vitest run src/contracts.test.ts` for strict parsing of the new discriminants, then rerun the command tests to prove admission rejects unavailable variants.
 5. Split trusted delivery from legacy work execution/expiry. Initial defaults: at most 25 deliveries or 20 seconds per pass, 5-second service call timeout, persisted bounded exponential backoff from 1 second to 60 seconds with jitter, and a minute cron retry. These are policy bounds, not platform guarantees. Immediate delivery is optional and never required for acceptance. Dispatcher lease expiry only redelivers trusted work. It must never call legacy `expireQueuedWork`, `reclaimExpiredWorkLeases`, `failWork`, or release observed execution capacity for a trusted command. Add T05 plus delivery-side T06/T07 cases: retain the same IDs after a lost acknowledgment, retry a missing predecessor, and deliver a persisted cancellation without mutating terminal execution state. Observe outbound calls and D1 receipts only. Coordinator dedupe, actual sequence consumption and advancement through cancellation are completed in 004, not proved by this delivery fixture. Verify `pnpm --filter @ditto/web exec vitest run src/lib/session-command-delivery.test.ts src/lib/workspace-runtime-capacity.test.ts`.
 6. Keep the production scheduled entrypoint backward-compatible: legacy work goes to the old executor only after fence validation; trusted work goes to delivery only. `waitUntil` may finish a bounded delivery attempt, not a run. Verify route regressions and root gates:
 
@@ -95,10 +101,12 @@ Define these exact discriminants in `packages/runtime-contracts/src/command.ts` 
 pnpm --filter @ditto/web exec vitest run src/routes/api.agent.stream.test.ts src/routes/api.agent.control.test.ts src/lib/agent-run-service.test.ts
 pnpm check
 pnpm typecheck
-pnpm --filter @ditto/runtime-contracts typecheck
+pnpm contracts:verify
 ```
 
-All commands should exit 0 with named files selected and no skipped new tests. The documented `pnpm --filter @ditto/web test -- <file>` ran the full suite at the parent baseline; `exec vitest run` is deliberate.
+Before handoff, rerun the inherited local gates: `pnpm verify`, `pnpm runtime:verify` and `pnpm brain:verify`. Root verification alone does not include brain/runtime. Brain verification checks the installed contracts artifact; with its pinned npm `12.0.2`, use `npm run contracts:refresh --prefix packages/session-brain` if the copied dependency is stale, then rerun the gate. Do not weaken freshness checks or count tests against stale output. Existing ownership/migration/policy regressions must remain passing.
+
+All commands should exit 0 with named files selected for narrow tests and no skipped required cases. The documented `pnpm --filter @ditto/web test -- <file>` ran the full suite at the parent baseline; `exec vitest run` is deliberate.
 
 ## Handoff, done and maintenance
 
