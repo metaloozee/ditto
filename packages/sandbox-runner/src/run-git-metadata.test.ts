@@ -178,7 +178,9 @@ describe("runGitMetadata", () => {
 		expect(args.resourceLoader.getSystemPrompt()).toBe(
 			GIT_METADATA_SYSTEM_PROMPT,
 		);
+		expect(args.resourceLoader.getSystemPromptSource()).toBeUndefined();
 		expect(args.resourceLoader.getAppendSystemPrompt()).toEqual([]);
+		expect(args.resourceLoader.getAppendSystemPromptSources()).toEqual([]);
 		expect(args.resourceLoader.getSkills()).toEqual({
 			skills: [],
 			diagnostics: [],
