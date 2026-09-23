@@ -5,12 +5,52 @@ import {
 	R2Bucket,
 	Route,
 	TanStackStart,
+	Worker,
+	WorkerRef,
 } from "alchemy/cloudflare";
 import { config } from "dotenv";
 
 config({ path: [".env.local", ".env"] });
 
 const app = await alchemy("ditto");
+
+if (app.local && process.env.DITTO_LOCAL_RUNTIME_TOPOLOGY === "1") {
+	const runtimeServiceName = `${app.name}-${app.stage}-runtime-local`;
+	const productServiceName = `${app.name}-${app.stage}-product-bridge-local`;
+	const runtimeRef = WorkerRef({ service: runtimeServiceName });
+	const productRef = WorkerRef({ service: productServiceName });
+	const brainContainer = await Container("local-session-brain", {
+		className: "SessionRuntime",
+		build: {
+			context: "packages/session-brain",
+			dockerfile: "Dockerfile",
+		},
+		instanceType: "basic",
+		maxInstances: 20,
+	});
+	const runtimeSandbox = await Container("local-runtime-sandbox", {
+		className: "Sandbox",
+		build: { context: ".", dockerfile: "Dockerfile" },
+		instanceType: "basic",
+		maxInstances: 20,
+	});
+	await Worker("local-product-bridge", {
+		name: productServiceName,
+		entrypoint: "apps/runtime/src/server.ts",
+		bindings: {
+			RUNTIME: Worker.experimentalEntrypoint(runtimeRef, "RuntimeEntrypoint"),
+		},
+	});
+	await Worker("local-session-runtime", {
+		name: runtimeServiceName,
+		entrypoint: "apps/runtime/src/server.ts",
+		bindings: {
+			SessionRuntime: brainContainer,
+			Sandbox: runtimeSandbox,
+			PRODUCT: Worker.experimentalEntrypoint(productRef, "ProductEntrypoint"),
+		},
+	});
+}
 
 const sandbox = await Container("sandbox", {
 	className: "Sandbox",

@@ -1,0 +1,26 @@
+{
+  "name": "ditto-session-brain",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "contracts:check": "vitest run src/pi-feasibility.test.ts -t contracts-consumer-freshness",
+    "contracts:refresh": "node ./scripts/refresh-contracts.mjs"
+  },
+  "engines": {
+    "node": ">=22.19.0",
+    "npm": "12.0.2"
+  },
+  "dependencies": {
+    "@ditto/runtime-contracts": "file:../runtime-contracts",
+    "@earendil-works/pi-ai": "0.85.1",
+    "@earendil-works/pi-coding-agent": "0.85.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}

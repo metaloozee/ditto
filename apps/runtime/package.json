@@ -1,0 +1,23 @@
+{
+  "name": "@ditto/runtime",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.forbidden-bindings.json"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "0.3.7",
+    "@cloudflare/sandbox": "0.12.3"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.12.21",
+    "@cloudflare/workers-types": "^4.20260605.1",
+    "@types/node": "^22.10.2",
+    "@vitest/runner": "^3.2.7",
+    "@vitest/snapshot": "^3.2.7",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}

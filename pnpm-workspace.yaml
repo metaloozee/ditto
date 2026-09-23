@@ -1,5 +1,6 @@
 packages:
   - apps/*
+  - packages/runtime-contracts
 overrides:
   'alchemy>miniflare': 4.20260710.0
 packageExtensions:
