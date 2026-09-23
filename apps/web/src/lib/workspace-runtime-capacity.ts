@@ -7,10 +7,12 @@ import { nanoid } from "nanoid";
 import type { createDb } from "#/db";
 import {
 	messages,
+	runtimeCapacityPolicy,
 	type WORKSPACE_WORK_INTENTS,
 	type WORKSPACE_WORK_STATUSES,
 	workspaceCapacityLeases,
 	workspaceRuntimeWork,
+	workspaceSessions,
 } from "#/db/schema";
 import { WorkspaceRuntimeError } from "#/lib/workspace-runtime-error";
 
@@ -62,17 +64,32 @@ export type WorkspaceWorkReceipt = {
 
 export type WorkspaceWorkRow = typeof workspaceRuntimeWork.$inferSelect;
 
+const legacyWorkOwner = sql`(
+	${workspaceRuntimeWork.runtimeOwner} = 'legacy'
+	AND ${workspaceRuntimeWork.commandId} IS NULL
+	AND ${workspaceRuntimeWork.protocolVersion} IS NULL
+	AND (
+		${workspaceRuntimeWork.sessionId} IS NULL
+		OR EXISTS (
+			SELECT 1 FROM ${workspaceSessions}
+			WHERE ${workspaceSessions.id} = ${workspaceRuntimeWork.sessionId}
+				AND ${workspaceSessions.runtimeOwner} = 'legacy'
+				AND ${workspaceSessions.runtimeOwnerVersion} = ${workspaceRuntimeWork.runtimeOwnerVersion}
+		)
+	)
+)`;
+
 export type WorkspaceRuntimeWaitUntil = (promise: Promise<unknown>) => void;
+
+export type { WorkspaceRuntimeCapacityEnv } from "#/lib/runtime-policy-types";
 
 export type WorkspaceWorkExecutor = (options: {
 	db: Db;
-	env: Env;
 	work: WorkspaceWorkRow;
 	now: () => number;
 }) => Promise<void>;
 
 export type DrainWorkspaceRuntimeOptions = {
-	env: Env;
 	db: Db;
 	waitUntil?: WorkspaceRuntimeWaitUntil;
 	now?: () => number;
@@ -168,6 +185,72 @@ async function nextFifoSeq(db: Db): Promise<number> {
 	return Number(row?.max ?? 0) + 1;
 }
 
+function isCurrentLegacyWorkRow(
+	row: WorkspaceWorkRow,
+	expectedOwnerVersion: number,
+): boolean {
+	return (
+		row.runtimeOwner === "legacy" &&
+		row.commandId == null &&
+		row.protocolVersion == null &&
+		row.runtimeOwnerVersion === expectedOwnerVersion
+	);
+}
+
+function workInsertSelectFields(values: {
+	id: string;
+	fifoSeq: number;
+	intent: WorkspaceWorkIntent;
+	payload: string | null;
+	queueExpiresAt: number;
+	runtimeOwnerVersion: number;
+}) {
+	return {
+		id: sql<string>`${values.id}`.as("id"),
+		fifoSeq: sql<number>`${values.fifoSeq}`.as("fifoSeq"),
+		identityId: sql<string | null>`${values.intent.identityId ?? null}`.as(
+			"identityId",
+		),
+		sessionId: sql<string | null>`${values.intent.sessionId ?? null}`.as(
+			"sessionId",
+		),
+		projectId: sql<string>`${values.intent.projectId}`.as("projectId"),
+		userId: sql<string>`${values.intent.userId}`.as("userId"),
+		intent: sql<string>`${values.intent.kind}`.as("intent"),
+		payload: sql<string | null>`${values.payload}`.as("payload"),
+		status: sql<string>`${"queued"}`.as("status"),
+		leaseToken: sql<string | null>`null`.as("leaseToken"),
+		leaseExpiresAt: sql<number | null>`null`.as("leaseExpiresAt"),
+		retryCount: sql<number>`0`.as("retryCount"),
+		reasonCode: sql<string | null>`null`.as("reasonCode"),
+		queueExpiresAt: sql<number>`${values.queueExpiresAt}`.as("queueExpiresAt"),
+		userMessageId: sql<
+			string | null
+		>`${values.intent.userMessageId ?? null}`.as("userMessageId"),
+		assistantMessageId: sql<
+			string | null
+		>`${values.intent.assistantMessageId ?? null}`.as("assistantMessageId"),
+		protocolVersion: sql<number | null>`null`.as("protocolVersion"),
+		runtimeOwner: sql<string>`${"legacy"}`.as("runtimeOwner"),
+		runtimeOwnerVersion: sql<number>`${values.runtimeOwnerVersion}`.as(
+			"runtimeOwnerVersion",
+		),
+		commandId: sql<string | null>`null`.as("commandId"),
+		deliveryState: sql<string>`${"pending"}`.as("deliveryState"),
+		deliveryLeaseToken: sql<string | null>`null`.as("deliveryLeaseToken"),
+		deliveryLeaseExpiresAt: sql<number | null>`null`.as(
+			"deliveryLeaseExpiresAt",
+		),
+		deliveryAttempts: sql<number>`0`.as("deliveryAttempts"),
+		startupRoles: sql<string | null>`null`.as("startupRoles"),
+		startupPools: sql<string | null>`null`.as("startupPools"),
+		expectedIdentityId: sql<string | null>`null`.as("expectedIdentityId"),
+		startupDeadline: sql<number | null>`null`.as("startupDeadline"),
+		createdAt: sql`(unixepoch())`.as("createdAt"),
+		updatedAt: sql`(unixepoch())`.as("updatedAt"),
+	};
+}
+
 async function insertWorkRow(options: {
 	db: Db;
 	id: string;
@@ -176,31 +259,96 @@ async function insertWorkRow(options: {
 	nowMs: number;
 }): Promise<WorkspaceWorkRow> {
 	const payload = serializePayload(options.intent.payload);
+	let runtimeOwnerVersion = 1;
+	const sessionId = options.intent.sessionId ?? null;
+	if (sessionId) {
+		const [owner] = await options.db
+			.select({
+				runtimeOwner: workspaceSessions.runtimeOwner,
+				runtimeOwnerVersion: workspaceSessions.runtimeOwnerVersion,
+			})
+			.from(workspaceSessions)
+			.where(
+				and(
+					eq(workspaceSessions.id, sessionId),
+					eq(workspaceSessions.userId, options.intent.userId),
+				),
+			)
+			.limit(1);
+		if (!owner || owner.runtimeOwner !== "legacy")
+			throw new WorkspaceRuntimeError(
+				"runtime_owner_mismatch",
+				"Legacy runtime work is fenced for this session.",
+			);
+		runtimeOwnerVersion = owner.runtimeOwnerVersion;
+	}
 	let lastError: unknown;
 	for (let attempt = 0; attempt < 5; attempt++) {
 		const fifoSeq = await nextFifoSeq(options.db);
 		try {
-			const [row] = await options.db
-				.insert(workspaceRuntimeWork)
-				.values({
-					id: options.id,
-					fifoSeq,
-					identityId: options.intent.identityId ?? null,
-					sessionId: options.intent.sessionId ?? null,
-					projectId: options.intent.projectId,
-					userId: options.intent.userId,
-					intent: options.intent.kind,
-					payload,
-					status: "queued",
-					queueExpiresAt: options.queueExpiresAt,
-					userMessageId: options.intent.userMessageId ?? null,
-					assistantMessageId: options.intent.assistantMessageId ?? null,
-				})
-				.returning();
+			const fields = workInsertSelectFields({
+				id: options.id,
+				fifoSeq,
+				intent: options.intent,
+				payload,
+				queueExpiresAt: options.queueExpiresAt,
+				runtimeOwnerVersion,
+			});
+			const [row] = sessionId
+				? await options.db
+						.insert(workspaceRuntimeWork)
+						.select(
+							options.db
+								.select(fields)
+								.from(workspaceSessions)
+								.where(
+									and(
+										eq(workspaceSessions.id, sessionId),
+										eq(workspaceSessions.userId, options.intent.userId),
+										eq(workspaceSessions.runtimeOwner, "legacy"),
+										eq(
+											workspaceSessions.runtimeOwnerVersion,
+											runtimeOwnerVersion,
+										),
+									),
+								),
+						)
+						.returning()
+				: await options.db
+						.insert(workspaceRuntimeWork)
+						.values({
+							id: options.id,
+							fifoSeq,
+							identityId: options.intent.identityId ?? null,
+							sessionId: null,
+							projectId: options.intent.projectId,
+							userId: options.intent.userId,
+							intent: options.intent.kind,
+							payload,
+							status: "queued",
+							queueExpiresAt: options.queueExpiresAt,
+							userMessageId: options.intent.userMessageId ?? null,
+							assistantMessageId: options.intent.assistantMessageId ?? null,
+							runtimeOwner: "legacy",
+							runtimeOwnerVersion,
+						})
+						.returning();
 			if (row) {
 				return row;
 			}
+			if (sessionId) {
+				throw new WorkspaceRuntimeError(
+					"runtime_owner_mismatch",
+					"Legacy runtime work is fenced for this session.",
+				);
+			}
 		} catch (error) {
+			if (
+				error instanceof WorkspaceRuntimeError &&
+				error.code === "runtime_owner_mismatch"
+			) {
+				throw error;
+			}
 			lastError = error;
 			const message = error instanceof Error ? error.message : String(error);
 			if (
@@ -217,8 +365,14 @@ async function insertWorkRow(options: {
 						),
 					)
 					.limit(1);
-				if (existing) {
+				if (existing && isCurrentLegacyWorkRow(existing, runtimeOwnerVersion)) {
 					return existing;
+				}
+				if (existing) {
+					throw new WorkspaceRuntimeError(
+						"runtime_owner_mismatch",
+						"Legacy runtime work is fenced for this session.",
+					);
 				}
 			}
 			if (!/unique|constraint/i.test(message)) {
@@ -257,6 +411,43 @@ async function accurateQueuePosition(
 	return ahead.length + 1;
 }
 
+async function loadLegacyCapacityPolicy(
+	db: Db,
+): Promise<{ accountingMode: "legacy"; version: number }> {
+	const [policy] = await db
+		.select({
+			accountingMode: runtimeCapacityPolicy.accountingMode,
+			version: runtimeCapacityPolicy.version,
+		})
+		.from(runtimeCapacityPolicy)
+		.where(eq(runtimeCapacityPolicy.id, 1))
+		.limit(1);
+	if (!policy || policy.accountingMode !== "legacy") {
+		throw new WorkspaceRuntimeError(
+			"capacity_accounting_unified",
+			"Legacy capacity allocation is closed after accounting cutover.",
+		);
+	}
+	return { accountingMode: "legacy", version: policy.version };
+}
+
+function matchingLegacyAccounting(version: number) {
+	return sql`EXISTS (
+		SELECT 1 FROM ${runtimeCapacityPolicy}
+		WHERE ${runtimeCapacityPolicy.id} = 1
+			AND ${runtimeCapacityPolicy.accountingMode} = 'legacy'
+			AND ${runtimeCapacityPolicy.version} = ${version}
+	)`;
+}
+
+function matchingLegacyAccountingMode() {
+	return sql`EXISTS (
+		SELECT 1 FROM ${runtimeCapacityPolicy}
+		WHERE ${runtimeCapacityPolicy.id} = 1
+			AND ${runtimeCapacityPolicy.accountingMode} = 'legacy'
+	)`;
+}
+
 export async function acquireCapacitySlot(options: {
 	db: Db;
 	sessionId: string;
@@ -265,6 +456,7 @@ export async function acquireCapacitySlot(options: {
 	nowMs: number;
 	createId?: () => string;
 }): Promise<{ id: string; leaseToken: string; expiresAt: number } | null> {
+	const policy = await loadLegacyCapacityPolicy(options.db);
 	const now = nowSeconds(options.nowMs);
 	const expiresAt = now + Math.floor(WORKSPACE_CAPACITY_LEASE_TTL_MS / 1000);
 	const createId = options.createId ?? nanoid;
@@ -283,6 +475,7 @@ export async function acquireCapacitySlot(options: {
 			and(
 				eq(workspaceCapacityLeases.sessionId, options.sessionId),
 				sql`${workspaceCapacityLeases.expiresAt} > ${now}`,
+				matchingLegacyAccounting(policy.version),
 			),
 		)
 		.returning({
@@ -320,6 +513,12 @@ export async function acquireCapacitySlot(options: {
 			SELECT 1 FROM workspace_capacity_leases
 			WHERE sessionId = ${options.sessionId} AND expiresAt > ${now}
 		)
+		AND EXISTS (
+			SELECT 1 FROM runtime_capacity_policy
+			WHERE id = 1
+				AND accountingMode = 'legacy'
+				AND version = ${policy.version}
+		)
 	`);
 
 	const [inserted] = await options.db
@@ -333,6 +532,7 @@ export async function acquireCapacitySlot(options: {
 		)
 		.limit(1);
 	if (!inserted) {
+		await loadLegacyCapacityPolicy(options.db);
 		return null;
 	}
 	return {
@@ -349,6 +549,7 @@ export async function releaseCapacitySlot(options: {
 	nowMs: number;
 }): Promise<boolean> {
 	const now = nowSeconds(options.nowMs);
+	const accounting = matchingLegacyAccountingMode();
 	if (options.leaseToken) {
 		const released = await options.db
 			.delete(workspaceCapacityLeases)
@@ -356,6 +557,7 @@ export async function releaseCapacitySlot(options: {
 				and(
 					eq(workspaceCapacityLeases.sessionId, options.sessionId),
 					eq(workspaceCapacityLeases.leaseToken, options.leaseToken),
+					accounting,
 				),
 			)
 			.returning({ id: workspaceCapacityLeases.id });
@@ -369,6 +571,7 @@ export async function releaseCapacitySlot(options: {
 			and(
 				eq(workspaceCapacityLeases.sessionId, options.sessionId),
 				lte(workspaceCapacityLeases.expiresAt, now),
+				accounting,
 			),
 		)
 		.returning({ id: workspaceCapacityLeases.id });
@@ -377,7 +580,9 @@ export async function releaseCapacitySlot(options: {
 	}
 	const forced = await options.db
 		.delete(workspaceCapacityLeases)
-		.where(eq(workspaceCapacityLeases.sessionId, options.sessionId))
+		.where(
+			and(eq(workspaceCapacityLeases.sessionId, options.sessionId), accounting),
+		)
 		.returning({ id: workspaceCapacityLeases.id });
 	return Boolean(forced[0]);
 }
@@ -389,7 +594,12 @@ export async function purgeExpiredCapacitySlots(
 	const now = nowSeconds(nowMs);
 	const deleted = await db
 		.delete(workspaceCapacityLeases)
-		.where(lte(workspaceCapacityLeases.expiresAt, now))
+		.where(
+			and(
+				lte(workspaceCapacityLeases.expiresAt, now),
+				matchingLegacyAccountingMode(),
+			),
+		)
 		.returning({ id: workspaceCapacityLeases.id });
 	return deleted.length;
 }
@@ -435,6 +645,7 @@ async function leaseNextWork(options: {
 			and(
 				eq(workspaceRuntimeWork.status, "queued"),
 				sql`${workspaceRuntimeWork.queueExpiresAt} > ${now}`,
+				legacyWorkOwner,
 			),
 		)
 		.orderBy(asc(workspaceRuntimeWork.fifoSeq))
@@ -457,6 +668,7 @@ async function leaseNextWork(options: {
 					eq(workspaceRuntimeWork.id, candidate.id),
 					eq(workspaceRuntimeWork.status, "queued"),
 					sql`${workspaceRuntimeWork.queueExpiresAt} > ${now}`,
+					legacyWorkOwner,
 				),
 			)
 			.returning();
@@ -479,6 +691,7 @@ async function markWorkStatus(options: {
 	const conditions = [
 		eq(workspaceRuntimeWork.id, options.workId),
 		inArray(workspaceRuntimeWork.status, from),
+		legacyWorkOwner,
 	];
 	if (options.leaseToken) {
 		conditions.push(eq(workspaceRuntimeWork.leaseToken, options.leaseToken));
@@ -551,6 +764,8 @@ export async function settleAssistantFailed(options: {
 	db: Db;
 	assistantMessageId: string | null;
 	userId: string;
+	sessionId: string | null;
+	runtimeOwnerVersion: number;
 }): Promise<void> {
 	if (!options.assistantMessageId) {
 		return;
@@ -565,6 +780,7 @@ export async function settleAssistantFailed(options: {
 				eq(messages.id, options.assistantMessageId),
 				eq(messages.userId, options.userId),
 				eq(messages.status, "pending"),
+				sql`EXISTS (SELECT 1 FROM ${workspaceSessions} WHERE ${workspaceSessions.id} = ${options.sessionId} AND ${workspaceSessions.runtimeOwner} = 'legacy' AND ${workspaceSessions.runtimeOwnerVersion} = ${options.runtimeOwnerVersion})`,
 			),
 		);
 }
@@ -587,6 +803,7 @@ export async function expireQueuedWork(options: {
 			and(
 				eq(workspaceRuntimeWork.status, "queued"),
 				lte(workspaceRuntimeWork.queueExpiresAt, now),
+				legacyWorkOwner,
 			),
 		)
 		.returning();
@@ -595,6 +812,8 @@ export async function expireQueuedWork(options: {
 			db: options.db,
 			assistantMessageId: row.assistantMessageId,
 			userId: row.userId,
+			sessionId: row.sessionId,
+			runtimeOwnerVersion: row.runtimeOwnerVersion,
 		});
 	}
 	return expired;
@@ -619,6 +838,7 @@ export async function reclaimExpiredWorkLeases(options: {
 				eq(workspaceRuntimeWork.status, "leased"),
 				isNotNull(workspaceRuntimeWork.leaseExpiresAt),
 				lte(workspaceRuntimeWork.leaseExpiresAt, now),
+				legacyWorkOwner,
 			),
 		)
 		.returning();
@@ -638,6 +858,7 @@ export async function reclaimExpiredWorkLeases(options: {
 				eq(workspaceRuntimeWork.status, "running"),
 				isNotNull(workspaceRuntimeWork.leaseExpiresAt),
 				lte(workspaceRuntimeWork.leaseExpiresAt, now),
+				legacyWorkOwner,
 			),
 		)
 		.returning();
@@ -646,6 +867,8 @@ export async function reclaimExpiredWorkLeases(options: {
 			db: options.db,
 			assistantMessageId: row.assistantMessageId,
 			userId: row.userId,
+			sessionId: row.sessionId,
+			runtimeOwnerVersion: row.runtimeOwnerVersion,
 		});
 		if (row.sessionId) {
 			await releaseCapacitySlot({
@@ -697,6 +920,7 @@ export async function cancelWorkspaceWorkRow(options: {
 				eq(workspaceRuntimeWork.id, options.workId),
 				eq(workspaceRuntimeWork.userId, options.userId),
 				inArray(workspaceRuntimeWork.status, ["queued", "leased", "running"]),
+				legacyWorkOwner,
 			),
 		)
 		.returning();
@@ -707,6 +931,8 @@ export async function cancelWorkspaceWorkRow(options: {
 		db: options.db,
 		assistantMessageId: cancelled.assistantMessageId,
 		userId: cancelled.userId,
+		sessionId: cancelled.sessionId,
+		runtimeOwnerVersion: cancelled.runtimeOwnerVersion,
 	});
 	if (cancelled.sessionId) {
 		await releaseCapacitySlot({
@@ -783,7 +1009,9 @@ export async function loadQueuedWorkForSession(options: {
 			and(
 				eq(workspaceRuntimeWork.sessionId, options.sessionId),
 				eq(workspaceRuntimeWork.userId, options.userId),
+				eq(workspaceRuntimeWork.runtimeOwner, "legacy"),
 				inArray(workspaceRuntimeWork.status, ["queued", "leased", "running"]),
+				legacyWorkOwner,
 			),
 		)
 		.orderBy(asc(workspaceRuntimeWork.fifoSeq))
@@ -819,6 +1047,7 @@ async function tryStartWork(options: {
 				and(
 					eq(workspaceRuntimeWork.id, options.work.id),
 					eq(workspaceRuntimeWork.status, "queued"),
+					legacyWorkOwner,
 				),
 			)
 			.returning();
@@ -827,6 +1056,8 @@ async function tryStartWork(options: {
 				db: options.db,
 				assistantMessageId: expired.assistantMessageId,
 				userId: expired.userId,
+				sessionId: expired.sessionId,
+				runtimeOwnerVersion: expired.runtimeOwnerVersion,
 			});
 			return expired;
 		}
@@ -851,6 +1082,7 @@ async function tryStartWork(options: {
 			and(
 				eq(workspaceRuntimeWork.id, options.work.id),
 				eq(workspaceRuntimeWork.status, "queued"),
+				legacyWorkOwner,
 			),
 		)
 		.returning();
@@ -885,6 +1117,7 @@ async function tryStartWork(options: {
 					eq(workspaceRuntimeWork.id, leased.id),
 					eq(workspaceRuntimeWork.status, "leased"),
 					eq(workspaceRuntimeWork.leaseToken, token),
+					legacyWorkOwner,
 				),
 			)
 			.returning();
@@ -919,6 +1152,35 @@ export async function persistWorkspaceWork(options: {
 			)
 			.limit(1);
 		if (existing) {
+			let expectedVersion = existing.runtimeOwnerVersion;
+			if (options.intent.sessionId) {
+				const [owner] = await options.db
+					.select({
+						runtimeOwner: workspaceSessions.runtimeOwner,
+						runtimeOwnerVersion: workspaceSessions.runtimeOwnerVersion,
+					})
+					.from(workspaceSessions)
+					.where(
+						and(
+							eq(workspaceSessions.id, options.intent.sessionId),
+							eq(workspaceSessions.userId, options.intent.userId),
+						),
+					)
+					.limit(1);
+				if (!owner || owner.runtimeOwner !== "legacy") {
+					throw new WorkspaceRuntimeError(
+						"runtime_owner_mismatch",
+						"Legacy runtime work is fenced for this session.",
+					);
+				}
+				expectedVersion = owner.runtimeOwnerVersion;
+			}
+			if (!isCurrentLegacyWorkRow(existing, expectedVersion)) {
+				throw new WorkspaceRuntimeError(
+					"runtime_owner_mismatch",
+					"Legacy runtime work is fenced for this session.",
+				);
+			}
 			return existing;
 		}
 	}
@@ -988,6 +1250,8 @@ async function drainOnce(options: DrainWorkspaceRuntimeOptions): Promise<void> {
 				db: options.db,
 				assistantMessageId: leased.assistantMessageId,
 				userId: leased.userId,
+				sessionId: leased.sessionId,
+				runtimeOwnerVersion: leased.runtimeOwnerVersion,
 			});
 			continue;
 		}
@@ -1015,6 +1279,7 @@ async function drainOnce(options: DrainWorkspaceRuntimeOptions): Promise<void> {
 							eq(workspaceRuntimeWork.id, leased.id),
 							eq(workspaceRuntimeWork.status, "leased"),
 							eq(workspaceRuntimeWork.leaseToken, leased.leaseToken ?? ""),
+							legacyWorkOwner,
 						),
 					);
 				break;
@@ -1035,7 +1300,6 @@ async function drainOnce(options: DrainWorkspaceRuntimeOptions): Promise<void> {
 		try {
 			await execute({
 				db: options.db,
-				env: options.env,
 				work: running,
 				now,
 			});
@@ -1059,6 +1323,8 @@ async function drainOnce(options: DrainWorkspaceRuntimeOptions): Promise<void> {
 				db: options.db,
 				assistantMessageId: running.assistantMessageId,
 				userId: running.userId,
+				sessionId: running.sessionId,
+				runtimeOwnerVersion: running.runtimeOwnerVersion,
 			});
 		}
 	}
@@ -1081,6 +1347,7 @@ export function workspaceWorkInsertValues(options: {
 	fifoSeq: number;
 	intent: WorkspaceWorkIntent;
 	queueExpiresAt: number;
+	runtimeOwnerVersion?: number;
 }): typeof workspaceRuntimeWork.$inferInsert {
 	return {
 		id: options.id,
@@ -1095,5 +1362,7 @@ export function workspaceWorkInsertValues(options: {
 		queueExpiresAt: options.queueExpiresAt,
 		userMessageId: options.intent.userMessageId ?? null,
 		assistantMessageId: options.intent.assistantMessageId ?? null,
+		runtimeOwner: "legacy",
+		runtimeOwnerVersion: options.runtimeOwnerVersion ?? 1,
 	};
 }

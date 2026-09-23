@@ -1,9 +1,9 @@
-import { and, eq, isNull, lte, or, sql } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { createDb } from "#/db";
 import {
 	projectSeeds,
-	projects,
+	type projects,
 	sandboxIdentities,
 	workspaceSessionRecoveries,
 	workspaceSessions,
@@ -33,7 +33,6 @@ import {
 	restore as restoreWorkspaceRecovery,
 } from "#/lib/workspace-recovery";
 import {
-	acquireCapacitySlot,
 	cancelProjectWork,
 	cancelWorkspaceWorkRow,
 	completeWork,
@@ -61,12 +60,41 @@ import {
 	type WorkspaceWorkRow,
 } from "#/lib/workspace-runtime-capacity";
 import { WorkspaceRuntimeError } from "#/lib/workspace-runtime-error";
+import {
+	containerIdForSandbox,
+	loadOwnedProject,
+	type PreparedWorkspaceRuntime,
+	WORKSPACE_RUNTIME_LEASE_TTL_MS,
+	type WorkspaceRuntimeLockMode,
+	type WorkspaceRuntimeObservationState,
+	type WorkspaceRuntimePurpose,
+	type WorkspaceSandboxNamespace,
+	withWorkspaceRuntimePolicyLease,
+} from "#/lib/workspace-runtime-policy";
 import { loadOwnedActiveSession } from "#/lib/workspace-session";
 
 export const WORKSPACE_SESSION_FETCH_OPERATION_TYPE = "workspace_session_fetch";
 export const WORKSPACE_SESSION_FETCH_OPERATION_TTL_MS = 15 * 60 * 1000;
-export const WORKSPACE_RUNTIME_LEASE_TTL_MS = 20 * 60 * 1000;
+export { WORKSPACE_RUNTIME_LEASE_TTL_MS };
 export const WORKSPACE_RUNTIME_PATH = WORKSPACE_PATH;
+export type {
+	WorkspaceRuntimeLockMode,
+	WorkspaceRuntimeObservationState,
+	WorkspaceRuntimePurpose,
+	WorkspaceSandboxNamespace as WorkspaceSandboxEnv,
+};
+export type WorkspaceRuntimeSandbox = ReturnType<typeof getProjectSandbox>;
+export type WorkspaceRuntimeLease = {
+	sessionId: string;
+	purpose: WorkspaceRuntimePurpose;
+	workspacePath: string;
+	branchName: string;
+	baseCommitSha: string;
+	sandbox: WorkspaceRuntimeSandbox;
+	identity: SandboxIdentityHandle | null;
+	projectEnv: readonly SandboxEnvVar[] | null;
+	matchesSandboxClaim: (sandboxId: string) => boolean;
+};
 export {
 	WORKSPACE_AGENT_COMMAND_RESERVE_MS,
 	WORKSPACE_CAPACITY_GLOBAL_LIMIT,
@@ -100,27 +128,6 @@ type Db = ReturnType<typeof createDb>;
 type ProjectRow = typeof projects.$inferSelect;
 type SessionRow = typeof workspaceSessions.$inferSelect;
 
-export type WorkspaceRuntimePurpose =
-	| "agent_run"
-	| "agent_control"
-	| "local_git_read"
-	| "mutating_git"
-	| "git_metadata"
-	| "preview"
-	| "backup_restore";
-
-export type WorkspaceRuntimeLockMode = "acquire" | "assumeHeld" | "none";
-
-export type WorkspaceRuntimeObservationState =
-	| "connected"
-	| "needs_restore"
-	| "restored_from_backup"
-	| "recreated_from_github"
-	| "provisioning"
-	| "failed";
-
-export type WorkspaceRuntimeSandbox = ReturnType<typeof getProjectSandbox>;
-
 export type OpenWorkspaceRuntimeInput = {
 	env: Env;
 	db: Db;
@@ -136,44 +143,8 @@ export type OpenWorkspaceRuntimeInput = {
 	now?: () => number;
 };
 
-export type WorkspaceRuntimeLease = {
-	sessionId: string;
-	purpose: WorkspaceRuntimePurpose;
-	workspacePath: string;
-	branchName: string;
-	baseCommitSha: string;
-	sandbox: WorkspaceRuntimeSandbox;
-	identity: SandboxIdentityHandle | null;
-	projectEnv: readonly SandboxEnvVar[] | null;
-	matchesSandboxClaim: (sandboxId: string) => boolean;
-};
-
 function quoteShellArg(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;
-}
-
-function containerIdForSandbox(env: Env, sandboxId: string): string {
-	const namespace = env.Sandbox as {
-		idFromName: (name: string) => { toString(): string };
-	};
-	return namespace.idFromName(sandboxId).toString();
-}
-
-function defaultLockMode(
-	purpose: WorkspaceRuntimePurpose,
-	lock?: WorkspaceRuntimeLockMode,
-): WorkspaceRuntimeLockMode {
-	if (lock) {
-		return lock;
-	}
-	if (
-		purpose === "agent_run" ||
-		purpose === "mutating_git" ||
-		purpose === "backup_restore"
-	) {
-		return "acquire";
-	}
-	return "none";
 }
 
 function isNonRetryable(error: unknown): boolean {
@@ -208,19 +179,6 @@ function isNonRetryable(error: unknown): boolean {
 	);
 }
 
-async function loadOwnedProject(
-	db: Db,
-	projectId: string,
-	userId: string,
-): Promise<ProjectRow | null> {
-	const [project] = await db
-		.select()
-		.from(projects)
-		.where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
-		.limit(1);
-	return project ?? null;
-}
-
 async function setIdentityState(
 	db: Db,
 	identityId: string,
@@ -251,67 +209,6 @@ async function persistFailure(
 	if (identityId) {
 		await setIdentityState(db, identityId, "failed");
 	}
-}
-
-async function acquireLifecycleLease(options: {
-	db: Db;
-	session: SessionRow;
-	now: Date;
-}): Promise<{ leaseId: string; expiresAt: Date }> {
-	const leaseId = nanoid();
-	const expiresAt = new Date(
-		options.now.getTime() + WORKSPACE_RUNTIME_LEASE_TTL_MS,
-	);
-	const [row] = await options.db
-		.update(workspaceSessions)
-		.set({
-			runtimeLeaseId: leaseId,
-			runtimeLeaseExpiresAt: expiresAt,
-			updatedAt: sql`(unixepoch())`,
-		})
-		.where(
-			and(
-				eq(workspaceSessions.id, options.session.id),
-				eq(workspaceSessions.projectId, options.session.projectId),
-				eq(workspaceSessions.userId, options.session.userId),
-				eq(workspaceSessions.status, "active"),
-				or(
-					isNull(workspaceSessions.runtimeLeaseId),
-					lte(workspaceSessions.runtimeLeaseExpiresAt, options.now),
-				),
-				sql`exists (
-					select 1 from ${projects}
-					where ${projects.id} = ${options.session.projectId}
-						and ${projects.userId} = ${options.session.userId}
-						and ${projects.status} = ${"ready"}
-				)`,
-			),
-		)
-		.returning({ id: workspaceSessions.id });
-	if (!row) {
-		throw new SessionWorkspaceBusyError();
-	}
-	return { leaseId, expiresAt };
-}
-
-async function releaseLifecycleLease(options: {
-	db: Db;
-	sessionId: string;
-	leaseId: string;
-}): Promise<void> {
-	await options.db
-		.update(workspaceSessions)
-		.set({
-			runtimeLeaseId: null,
-			runtimeLeaseExpiresAt: null,
-			updatedAt: sql`(unixepoch())`,
-		})
-		.where(
-			and(
-				eq(workspaceSessions.id, options.sessionId),
-				eq(workspaceSessions.runtimeLeaseId, options.leaseId),
-			),
-		);
 }
 
 async function resolveDefaultBranch(options: {
@@ -431,6 +328,11 @@ async function bindSessionRuntimeFields(options: {
 			and(
 				eq(workspaceSessions.id, options.session.id),
 				eq(workspaceSessions.status, "active"),
+				eq(workspaceSessions.runtimeOwner, "legacy"),
+				eq(
+					workspaceSessions.runtimeOwnerVersion,
+					options.session.runtimeOwnerVersion,
+				),
 				// Freeze only when unset; concurrent provision must not move it.
 				or(
 					isNull(workspaceSessions.baseCommitSha),
@@ -463,14 +365,7 @@ async function bindSessionRuntimeFields(options: {
 	};
 }
 
-type PreparedRuntime = {
-	sandbox: WorkspaceRuntimeSandbox;
-	sandboxId: string;
-	identity: SandboxIdentityHandle | null;
-	workspacePath: string;
-	branchName: string;
-	baseCommitSha: string;
-};
+type PreparedRuntime = PreparedWorkspaceRuntime;
 
 async function provisionDedicatedSession(options: {
 	env: Env;
@@ -769,26 +664,6 @@ async function prepareRuntimeWithRetry(options: {
 	throw lastError;
 }
 
-function buildLease(options: {
-	sessionId: string;
-	purpose: WorkspaceRuntimePurpose;
-	prepared: PreparedRuntime;
-	projectEnv: readonly SandboxEnvVar[] | null;
-}): WorkspaceRuntimeLease {
-	const sandboxId = options.prepared.sandboxId;
-	return {
-		sessionId: options.sessionId,
-		purpose: options.purpose,
-		workspacePath: options.prepared.workspacePath,
-		branchName: options.prepared.branchName,
-		baseCommitSha: options.prepared.baseCommitSha,
-		sandbox: options.prepared.sandbox,
-		identity: options.prepared.identity,
-		projectEnv: options.projectEnv,
-		matchesSandboxClaim: (claimed) => claimed === sandboxId,
-	};
-}
-
 function mapIdentityState(
 	state: SandboxIdentityHandle["state"],
 ): WorkspaceRuntimeObservationState {
@@ -854,19 +729,23 @@ export async function observeWorkspaceRuntime(options: {
 							identity.sandboxId,
 						);
 						if (INACTIVE_SANDBOX_STATUSES.has(live.status)) {
+							if (session.runtimeOwner === "legacy") {
+								await releaseCapacitySlot({
+									db: options.db,
+									sessionId: session.id,
+									nowMs: Date.now(),
+								});
+							}
+							return { project, state: "needs_restore" };
+						}
+					} catch {
+						if (session.runtimeOwner === "legacy") {
 							await releaseCapacitySlot({
 								db: options.db,
 								sessionId: session.id,
 								nowMs: Date.now(),
 							});
-							return { project, state: "needs_restore" };
 						}
-					} catch {
-						await releaseCapacitySlot({
-							db: options.db,
-							sessionId: session.id,
-							nowMs: Date.now(),
-						});
 						return { project, state: "needs_restore" };
 					}
 				}
@@ -888,98 +767,49 @@ export async function withWorkspaceRuntimeLease<T>(
 	input: OpenWorkspaceRuntimeInput,
 	run: (lease: WorkspaceRuntimeLease) => Promise<T>,
 ): Promise<T> {
-	const session = await loadOwnedActiveSession({
-		db: input.db,
-		projectId: input.projectId,
-		sessionId: input.sessionId,
-		userId: input.userId,
-	});
-	if (!session) {
-		throw new WorkspaceRuntimeError("not_found", "Session not found.");
-	}
-
-	const project = await loadOwnedProject(
-		input.db,
-		input.projectId,
-		input.userId,
-	);
-	if (!project) {
-		throw new WorkspaceRuntimeError("not_found", "Project not found.");
-	}
-	if (project.status !== "ready") {
-		throw new WorkspaceRuntimeError("not_ready", "Project is not ready.");
-	}
-
-	const nowMs = input.now?.() ?? Date.now();
-	const now = new Date(nowMs);
-	const { leaseId } = await acquireLifecycleLease({
-		db: input.db,
-		session,
-		now,
-	});
-	const authority = input.authority ?? createSandboxAuthority(input.db);
-	const sleep =
-		input.sleep ??
-		((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
-	const ensureReady = input.ensureReady !== false;
-	const lockMode = defaultLockMode(input.purpose, input.lock);
-	try {
-		const slot = await acquireCapacitySlot({
+	return withWorkspaceRuntimePolicyLease(
+		{
 			db: input.db,
-			sessionId: session.id,
 			userId: input.userId,
-			identityId: session.sandboxIdentityId,
-			nowMs,
-		});
-		if (!slot) {
-			throw new WorkspaceRuntimeError(
-				"capacity_unavailable",
-				"Workspace capacity is unavailable.",
-			);
-		}
-
-		const prepared = await prepareRuntimeWithRetry({
-			env: input.env,
-			db: input.db,
-			project,
-			session,
-			authority,
-			ensureReady,
-			sleep,
-		});
-
-		let projectEnv: readonly SandboxEnvVar[] | null = null;
-		if (input.purpose === "agent_run") {
-			projectEnv = await decryptEnvVars(
-				project.envVars,
-				input.env.BETTER_AUTH_SECRET,
-			);
-		}
-
-		const lease = buildLease({
-			sessionId: session.id,
+			projectId: input.projectId,
+			sessionId: input.sessionId,
 			purpose: input.purpose,
-			prepared,
-			projectEnv,
-		});
-
-		const invoke = () => run(lease);
-		if (lockMode === "acquire") {
-			return await withSessionWorkspaceLock({
-				env: input.env,
-				sandbox: prepared.sandbox,
-				sessionId: session.id,
-				run: invoke,
-			});
-		}
-		return await invoke();
-	} finally {
-		await releaseLifecycleLease({
-			db: input.db,
-			sessionId: session.id,
-			leaseId,
-		});
-	}
+			lock: input.lock,
+			ensureReady: input.ensureReady,
+			authority: input.authority ?? createSandboxAuthority(input.db),
+			sleep: input.sleep,
+			now: input.now,
+		},
+		{
+			prepareRuntime: ({
+				db,
+				project,
+				session,
+				authority,
+				ensureReady,
+				sleep,
+			}) =>
+				prepareRuntimeWithRetry({
+					env: input.env,
+					db,
+					project,
+					session,
+					authority,
+					ensureReady,
+					sleep,
+				}),
+			decryptProjectValues: (encrypted) =>
+				decryptEnvVars(encrypted, input.env.BETTER_AUTH_SECRET),
+			withLock: ({ sandbox, sessionId, run: invoke }) =>
+				withSessionWorkspaceLock({
+					env: input.env,
+					sandbox,
+					sessionId,
+					run: invoke,
+				}),
+		},
+		(lease) => run(lease as WorkspaceRuntimeLease),
+	);
 }
 
 export async function ensureWorkspaceRuntimeReady(
@@ -1185,13 +1015,32 @@ async function executeWorkspaceWork(options: {
 					"Recovery retry requires a workspace session.",
 				);
 			}
-			await recovery.forcePreviewCheckpoint({
-				db: options.db,
-				env: options.env,
-				userId: options.work.userId,
-				projectId: options.work.projectId,
-				sessionId: options.work.sessionId,
-			});
+			const preview = await import("#/lib/session-preview");
+			await recovery.forcePreviewCheckpoint(
+				{
+					db: options.db,
+					env: options.env,
+					userId: options.work.userId,
+					projectId: options.work.projectId,
+					sessionId: options.work.sessionId,
+				},
+				{
+					withWorkspaceRuntimeLease: (input, run) =>
+						withWorkspaceRuntimeLease({ ...input, env: options.env }, run),
+					preview: {
+						interruptPreviewForCheckpoint: (input) =>
+							preview.interruptPreviewForCheckpoint({
+								...input,
+								env: options.env,
+							}),
+						maybeRestartPreviewAfterCheckpoint: (input) =>
+							preview.maybeRestartPreviewAfterCheckpoint({
+								...input,
+								env: options.env,
+							}),
+					},
+				},
+			);
 			return;
 		}
 		case "git_mutation": {
@@ -1291,14 +1140,19 @@ export async function drainWorkspaceRuntime(options: {
 	});
 	options.waitUntil?.(cleanup);
 	await drainWorkspaceRuntimeQueue({
-		env: options.env,
 		db: options.db,
 		waitUntil: options.waitUntil,
 		now: options.now,
 		createId: options.createId,
 		invocationStartedAt: options.invocationStartedAt,
 		invocationLimitMs: options.invocationLimitMs,
-		execute: executeWorkspaceWork,
+		execute: async ({ db, work, now }) =>
+			executeWorkspaceWork({
+				db,
+				env: options.env,
+				work,
+				now,
+			}),
 	});
 	if (!options.waitUntil) {
 		await cleanup;
@@ -1339,10 +1193,14 @@ async function reclaimSleepingCapacity(options: {
 				.select({
 					id: workspaceSessions.id,
 					previewStartedAt: workspaceSessions.previewStartedAt,
+					runtimeOwner: workspaceSessions.runtimeOwner,
 				})
 				.from(workspaceSessions)
 				.where(eq(workspaceSessions.id, identity.workspaceSessionId))
 				.limit(1);
+			if (session?.runtimeOwner !== "legacy") {
+				continue;
+			}
 			const [recovery] = await options.db
 				.select({
 					pendingGeneration: workspaceSessionRecoveries.pendingGeneration,

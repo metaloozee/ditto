@@ -60,6 +60,28 @@ vi.mock("#/lib/session-workspace-lock", () => ({
 	),
 }));
 
+const policyLeaseCapture = vi.hoisted(() => ({
+	input: null as Record<string, unknown> | null,
+}));
+
+vi.mock("#/lib/workspace-runtime-policy", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("#/lib/workspace-runtime-policy")>();
+	return {
+		...actual,
+		withWorkspaceRuntimePolicyLease: vi.fn(
+			async (input: Record<string, unknown>, deps: never, run: never) => {
+				policyLeaseCapture.input = input;
+				return actual.withWorkspaceRuntimePolicyLease(
+					input as never,
+					deps,
+					run,
+				);
+			},
+		),
+	};
+});
+
 vi.mock("#/lib/workspace-runtime-capacity", async (importOriginal) => {
 	const actual =
 		await importOriginal<typeof import("#/lib/workspace-runtime-capacity")>();
@@ -188,78 +210,133 @@ function makeStore() {
 		});
 	}
 
+	let lastSelectFields: Record<string, unknown> | undefined;
+	const insertValues = (table: unknown, value: Record<string, unknown>) => {
+		const exec = async () => {
+			if (
+				table === sandboxIdentities ||
+				("containerId" in value && "kind" in value)
+			) {
+				const row: IdentityRow = {
+					id: String(value.id),
+					kind: value.kind as IdentityRow["kind"],
+					sandboxId: String(value.sandboxId),
+					containerId: String(value.containerId),
+					userId: String(value.userId),
+					projectId: String(value.projectId),
+					workspaceSessionId:
+						(value.workspaceSessionId as string | null) ?? null,
+					controllerClass: (value.controllerClass as string | null) ?? null,
+					controllerNamespace:
+						(value.controllerNamespace as string | null) ?? null,
+					incarnationId: (value.incarnationId as string | null) ?? null,
+					incarnationStartedAt:
+						(value.incarnationStartedAt as number | null) ?? null,
+					lifecycleGeneration: Number(value.lifecycleGeneration ?? 1),
+					state: value.state as IdentityRow["state"],
+					retiredAt: null,
+					createdAt: new Date(),
+					updatedAt: new Date(),
+				};
+				identityRows.set(row.id, row);
+				return [row];
+			}
+			if (
+				table === privilegedOperations ||
+				("correlationId" in value && "family" in value) ||
+				("family" in value && "identityId" in value)
+			) {
+				const row: OperationRow = {
+					id: String(value.id),
+					identityId: String(value.identityId),
+					lifecycleGeneration: Number(value.lifecycleGeneration ?? 1),
+					family: value.family as OperationRow["family"],
+					type: String(value.type),
+					contractVersion: Number(value.contractVersion ?? 1),
+					runtimeOwnerVersion: Number(value.runtimeOwnerVersion ?? 1),
+					runId: (value.runId as string | null) ?? null,
+					runEpoch: (value.runEpoch as number | null) ?? null,
+					incarnationId: (value.incarnationId as string | null) ?? null,
+					admissionReference:
+						(value.admissionReference as string | null) ?? null,
+					repository: (value.repository as string | null) ?? null,
+					allowedRefs: (value.allowedRefs as string | null) ?? null,
+					maxRequests: (value.maxRequests as number | null) ?? null,
+					consumedRequests: Number(value.consumedRequests ?? 0),
+					contractDenials: Number(value.contractDenials ?? 0),
+					contractState: (value.contractState as string | null) ?? null,
+					openedAt: (value.openedAt as Date) ?? new Date(),
+					expiresAt:
+						typeof value.expiresAt === "number"
+							? new Date(Number(value.expiresAt) * 1000)
+							: ((value.expiresAt as Date) ?? new Date(Date.now() + 60_000)),
+					closedAt: null,
+					closeReason: null,
+					correlationId: String(value.correlationId ?? "corr"),
+					openSlot: String(value.openSlot ?? "open"),
+					createdAt: new Date(),
+					updatedAt: new Date(),
+				};
+				operationRows.set(row.id, row);
+				return [row];
+			}
+			return [];
+		};
+		return {
+			returning: exec,
+			// biome-ignore lint/suspicious/noThenProperty: drizzle thenable mock
+			then(
+				resolve: (value: unknown) => unknown,
+				reject?: (error: unknown) => unknown,
+			) {
+				return exec().then(resolve, reject);
+			},
+		};
+	};
 	const db = {
 		insert(table: unknown) {
 			return {
+				select(query?: unknown) {
+					const value: Record<string, unknown> = {};
+					for (const [key, node] of Object.entries(lastSelectFields ?? {})) {
+						const params = collectParams(node).filter(
+							(param) => param != null && param !== "",
+						);
+						value[key] = params[0] ?? null;
+					}
+					const extras = collectParams(query);
+					const identity = [...identityRows.values()].at(-1);
+					if (!value.identityId && identity) {
+						value.identityId = identity.id;
+					}
+					if (!value.family) {
+						value.family =
+							extras.find((param) => param === "git_transport") ??
+							"git_transport";
+					}
+					if (!value.type) {
+						value.type =
+							extras.find(
+								(param) => typeof param === "string" && param.includes("fetch"),
+							) ?? "workspace_session_fetch";
+					}
+					if (!value.id) {
+						value.id = `op-${operationRows.size + 1}`;
+					}
+					if (!value.correlationId) {
+						value.correlationId = `corr-${operationRows.size + 1}`;
+					}
+					return insertValues(table, value);
+				},
 				values(value: Record<string, unknown>) {
-					const exec = async () => {
-						if (
-							table === sandboxIdentities ||
-							("containerId" in value && "kind" in value)
-						) {
-							const row: IdentityRow = {
-								id: String(value.id),
-								kind: value.kind as IdentityRow["kind"],
-								sandboxId: String(value.sandboxId),
-								containerId: String(value.containerId),
-								userId: String(value.userId),
-								projectId: String(value.projectId),
-								workspaceSessionId:
-									(value.workspaceSessionId as string | null) ?? null,
-								lifecycleGeneration: Number(value.lifecycleGeneration ?? 1),
-								state: value.state as IdentityRow["state"],
-								retiredAt: null,
-								createdAt: new Date(),
-								updatedAt: new Date(),
-							};
-							identityRows.set(row.id, row);
-							return [row];
-						}
-						if (
-							table === privilegedOperations ||
-							("correlationId" in value && "family" in value)
-						) {
-							const row: OperationRow = {
-								id: String(value.id),
-								identityId: String(value.identityId),
-								lifecycleGeneration: Number(value.lifecycleGeneration),
-								family: value.family as OperationRow["family"],
-								type: String(value.type),
-								contractVersion: Number(value.contractVersion),
-								repository: (value.repository as string | null) ?? null,
-								allowedRefs: (value.allowedRefs as string | null) ?? null,
-								maxRequests: (value.maxRequests as number | null) ?? null,
-								consumedRequests: Number(value.consumedRequests ?? 0),
-								contractDenials: Number(value.contractDenials ?? 0),
-								contractState: (value.contractState as string | null) ?? null,
-								openedAt: value.openedAt as Date,
-								expiresAt: value.expiresAt as Date,
-								closedAt: null,
-								closeReason: null,
-								correlationId: String(value.correlationId),
-								openSlot: String(value.openSlot ?? "open"),
-								createdAt: new Date(),
-								updatedAt: new Date(),
-							};
-							operationRows.set(row.id, row);
-							return [row];
-						}
-						return [];
-					};
-					return {
-						returning: exec,
-						// biome-ignore lint/suspicious/noThenProperty: drizzle thenable mock
-						then(
-							resolve: (value: unknown) => unknown,
-							reject?: (error: unknown) => unknown,
-						) {
-							return exec().then(resolve, reject);
-						},
-					};
+					return insertValues(table, value);
 				},
 			};
 		},
-		select() {
+		select(fields?: Record<string, unknown>) {
+			if (fields) {
+				lastSelectFields = fields;
+			}
 			return {
 				from(table: unknown) {
 					return {
@@ -478,6 +555,11 @@ function seedProject(
 		compatibilityKey: "seed",
 		buildState: "ready",
 		failureReasonCode: null,
+		startupRoles: null,
+		startupPools: null,
+		expectedRuntimeOwnerVersion: null,
+		expectedIdentityId: null,
+		startupDeadline: null,
 		createdAt: new Date(),
 		updatedAt: new Date(),
 	});
@@ -501,6 +583,12 @@ function seedSession(
 		runtimeLeaseExpiresAt: null,
 		runtimeFailureReasonCode: null,
 		previewStartedAt: null,
+		runtimeOwner: "legacy",
+		runtimeOwnerVersion: 1,
+		brainIdentityId: null,
+		runtimeProtocolVersion: null,
+		runtimeJournalVersion: null,
+		productProjectionVersion: 0,
 		createdAt: new Date(),
 		updatedAt: new Date(),
 		...overrides,
@@ -622,6 +710,45 @@ describe("WorkspaceRuntime", () => {
 			async (lease) => lease,
 		);
 	}
+
+	it("does not forward product Env or credential keys into shared policy", async () => {
+		seedProject(store);
+		seedSession(store, { id: "sess-1" });
+		policyLeaseCapture.input = null;
+		const productEnv = {
+			...env,
+			BETTER_AUTH_SECRET: "fixture-only",
+			GITHUB_APP_PRIVATE_KEY: "fixture-only",
+			OPENCODE_API_KEY: "fixture-only",
+		} as Env;
+		await withWorkspaceRuntimeLease(
+			{
+				env: productEnv,
+				db: store.db,
+				userId: "user-1",
+				projectId: "proj-1",
+				sessionId: "sess-1",
+				purpose: "local_git_read",
+				sleep: async () => undefined,
+				authority: createSandboxAuthority(store.db),
+			},
+			async () => undefined,
+		);
+		expect(policyLeaseCapture.input).not.toBeNull();
+		const forwarded = policyLeaseCapture.input ?? {};
+		expect(Object.hasOwn(forwarded, "env")).toBe(false);
+		expect(forwarded).not.toHaveProperty("BETTER_AUTH_SECRET");
+		expect(forwarded).not.toHaveProperty("GITHUB_APP_PRIVATE_KEY");
+		expect(forwarded).not.toHaveProperty("OPENCODE_API_KEY");
+		expect(forwarded).toEqual(
+			expect.objectContaining({
+				userId: "user-1",
+				projectId: "proj-1",
+				sessionId: "sess-1",
+				purpose: "local_git_read",
+			}),
+		);
+	});
 
 	it("gives two sessions distinct sandbox IDs", async () => {
 		seedProject(store);
@@ -917,6 +1044,10 @@ describe("WorkspaceRuntime", () => {
 			userId: "user-1",
 			projectId: "proj-1",
 			workspaceSessionId: "sess-1",
+			controllerClass: null,
+			controllerNamespace: null,
+			incarnationId: null,
+			incarnationStartedAt: null,
 			lifecycleGeneration: 1,
 			state: "unprovisioned",
 			retiredAt: null,

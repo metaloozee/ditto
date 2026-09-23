@@ -79,6 +79,14 @@ function makeDb() {
 								buildState: value.buildState as SeedRow["buildState"],
 								failureReasonCode:
 									(value.failureReasonCode as string | null) ?? null,
+								startupRoles: (value.startupRoles as string | null) ?? null,
+								startupPools: (value.startupPools as string | null) ?? null,
+								expectedRuntimeOwnerVersion:
+									(value.expectedRuntimeOwnerVersion as number | null) ?? null,
+								expectedIdentityId:
+									(value.expectedIdentityId as string | null) ?? null,
+								startupDeadline:
+									(value.startupDeadline as number | null) ?? null,
 								createdAt: new Date(),
 								updatedAt: new Date(),
 							} satisfies SeedRow;
@@ -95,6 +103,13 @@ function makeDb() {
 								projectId: String(value.projectId),
 								workspaceSessionId:
 									(value.workspaceSessionId as string | null) ?? null,
+								controllerClass:
+									(value.controllerClass as string | null) ?? null,
+								controllerNamespace:
+									(value.controllerNamespace as string | null) ?? null,
+								incarnationId: (value.incarnationId as string | null) ?? null,
+								incarnationStartedAt:
+									(value.incarnationStartedAt as number | null) ?? null,
 								lifecycleGeneration: Number(value.lifecycleGeneration ?? 1),
 								state: value.state as IdentityRow["state"],
 								retiredAt: null,
@@ -112,6 +127,12 @@ function makeDb() {
 								family: value.family as OperationRow["family"],
 								type: String(value.type),
 								contractVersion: Number(value.contractVersion),
+								runtimeOwnerVersion: Number(value.runtimeOwnerVersion ?? 1),
+								runId: (value.runId as string | null) ?? null,
+								runEpoch: (value.runEpoch as number | null) ?? null,
+								incarnationId: (value.incarnationId as string | null) ?? null,
+								admissionReference:
+									(value.admissionReference as string | null) ?? null,
 								repository: (value.repository as string | null) ?? null,
 								allowedRefs: (value.allowedRefs as string | null) ?? null,
 								maxRequests: (value.maxRequests as number | null) ?? null,

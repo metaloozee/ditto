@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+	check,
 	index,
 	integer,
 	sqliteTable,
@@ -82,6 +83,18 @@ export const workspaceSessions = sqliteTable(
 			mode: "timestamp",
 		}),
 		runtimeFailureReasonCode: text("runtimeFailureReasonCode"),
+		runtimeOwner: text("runtimeOwner", {
+			enum: ["legacy", "migrating", "trusted_v1", "blocked"],
+		})
+			.notNull()
+			.default("legacy"),
+		runtimeOwnerVersion: integer("runtimeOwnerVersion").notNull().default(1),
+		brainIdentityId: text("brainIdentityId"),
+		runtimeProtocolVersion: integer("runtimeProtocolVersion"),
+		runtimeJournalVersion: integer("runtimeJournalVersion"),
+		productProjectionVersion: integer("productProjectionVersion")
+			.notNull()
+			.default(0),
 		createdAt: integer("created_at", { mode: "timestamp" }).default(
 			sql`(unixepoch())`,
 		),
@@ -245,6 +258,7 @@ export const archives = sqliteTable(
 export const SANDBOX_IDENTITY_KINDS = [
 	"project_seed",
 	"workspace_session",
+	"trusted_brain",
 ] as const;
 
 export const SANDBOX_IDENTITY_STATES = [
@@ -282,6 +296,10 @@ export const sandboxIdentities = sqliteTable(
 		userId: text("userId").notNull(),
 		projectId: text("projectId").notNull(),
 		workspaceSessionId: text("workspaceSessionId"),
+		controllerClass: text("controllerClass"),
+		controllerNamespace: text("controllerNamespace"),
+		incarnationId: text("incarnationId"),
+		incarnationStartedAt: integer("incarnationStartedAt"),
 		lifecycleGeneration: integer("lifecycleGeneration", { mode: "number" })
 			.notNull()
 			.default(1),
@@ -318,6 +336,11 @@ export const privilegedOperations = sqliteTable(
 		}).notNull(),
 		type: text("type").notNull(),
 		contractVersion: integer("contractVersion", { mode: "number" }).notNull(),
+		runtimeOwnerVersion: integer("runtimeOwnerVersion").notNull().default(1),
+		runId: text("runId"),
+		runEpoch: integer("runEpoch"),
+		incarnationId: text("incarnationId"),
+		admissionReference: text("admissionReference"),
 		repository: text("repository"),
 		allowedRefs: text("allowedRefs"),
 		maxRequests: integer("maxRequests", { mode: "number" }),
@@ -371,6 +394,11 @@ export const projectSeeds = sqliteTable(
 			enum: PROJECT_SEED_BUILD_STATES,
 		}).notNull(),
 		failureReasonCode: text("failureReasonCode"),
+		startupRoles: text("startupRoles"),
+		startupPools: text("startupPools"),
+		expectedRuntimeOwnerVersion: integer("expectedRuntimeOwnerVersion"),
+		expectedIdentityId: text("expectedIdentityId"),
+		startupDeadline: integer("startupDeadline"),
 		createdAt: integer("created_at", { mode: "timestamp" }).default(
 			sql`(unixepoch())`,
 		),
@@ -474,6 +502,24 @@ export const workspaceRuntimeWork = sqliteTable(
 		queueExpiresAt: integer("queueExpiresAt").notNull(),
 		userMessageId: text("userMessageId"),
 		assistantMessageId: text("assistantMessageId"),
+		protocolVersion: integer("protocolVersion"),
+		runtimeOwner: text("runtimeOwner", { enum: ["legacy", "trusted_v1"] })
+			.notNull()
+			.default("legacy"),
+		runtimeOwnerVersion: integer("runtimeOwnerVersion").notNull().default(1),
+		commandId: text("commandId"),
+		deliveryState: text("deliveryState", {
+			enum: ["pending", "leased", "delivered", "acknowledged", "failed"],
+		})
+			.notNull()
+			.default("pending"),
+		deliveryLeaseToken: text("deliveryLeaseToken"),
+		deliveryLeaseExpiresAt: integer("deliveryLeaseExpiresAt"),
+		deliveryAttempts: integer("deliveryAttempts").notNull().default(0),
+		startupRoles: text("startupRoles"),
+		startupPools: text("startupPools"),
+		expectedIdentityId: text("expectedIdentityId"),
+		startupDeadline: integer("startupDeadline"),
 		createdAt: integer("created_at", { mode: "timestamp" }).default(
 			sql`(unixepoch())`,
 		),
@@ -493,6 +539,7 @@ export const workspaceRuntimeWork = sqliteTable(
 		uniqueIndex("workspace_runtime_work_assistantMessageId_uidx").on(
 			table.assistantMessageId,
 		),
+		uniqueIndex("workspace_runtime_work_commandId_uidx").on(table.commandId),
 	],
 );
 
@@ -521,4 +568,307 @@ export const workspaceCapacityLeases = sqliteTable(
 		),
 		index("workspace_capacity_leases_expiresAt_idx").on(table.expiresAt),
 	],
+);
+
+export const SESSION_COMMAND_KINDS = [
+	"prompt",
+	"follow_up",
+	"stop",
+	"cancel",
+	"project_delete",
+] as const;
+export const SESSION_COMMAND_TARGET_KINDS = [
+	"project",
+	"workspace_session",
+] as const;
+
+export const sessionCommands = sqliteTable(
+	"session_commands",
+	{
+		id: text("id").primaryKey(),
+		userId: text("userId").notNull(),
+		targetKind: text("targetKind", {
+			enum: SESSION_COMMAND_TARGET_KINDS,
+		}).notNull(),
+		targetId: text("targetId").notNull(),
+		projectId: text("projectId").notNull(),
+		sessionId: text("sessionId"),
+		kind: text("kind", { enum: SESSION_COMMAND_KINDS }).notNull(),
+		commandSeq: integer("commandSeq"),
+		targetRunId: text("targetRunId"),
+		targetCommandId: text("targetCommandId"),
+		payloadVersion: integer("payloadVersion").notNull(),
+		userMessageId: text("userMessageId"),
+		assistantMessageId: text("assistantMessageId"),
+		payloadDigest: text("payloadDigest").notNull(),
+		acceptedAt: integer("acceptedAt").notNull(),
+		deadlineAt: integer("deadlineAt").notNull(),
+		admissionVersion: integer("admissionVersion").notNull().default(1),
+		executionProjectionVersion: integer("executionProjectionVersion")
+			.notNull()
+			.default(0),
+		reasonCode: text("reasonCode"),
+	},
+	(table) => [
+		uniqueIndex("session_commands_session_seq_uidx").on(
+			table.sessionId,
+			table.commandSeq,
+		),
+		index("session_commands_user_target_idx").on(
+			table.userId,
+			table.targetKind,
+			table.targetId,
+		),
+		check(
+			"session_commands_kind_enum",
+			sql`${table.kind} IN ('prompt', 'follow_up', 'stop', 'cancel', 'project_delete')`,
+		),
+		check(
+			"session_commands_target_kind_enum",
+			sql`${table.targetKind} IN ('project', 'workspace_session')`,
+		),
+		check(
+			"session_commands_target_shape",
+			sql`(${table.kind} = 'project_delete' AND ${table.targetKind} = 'project' AND ${table.sessionId} IS NULL AND ${table.commandSeq} IS NULL) OR (${table.kind} != 'project_delete' AND ${table.targetKind} = 'workspace_session' AND ${table.sessionId} IS NOT NULL AND ${table.commandSeq} IS NOT NULL AND typeof(${table.commandSeq}) = 'integer' AND ${table.commandSeq} > 0)`,
+		),
+		check(
+			"session_commands_message_shape",
+			sql`(${table.kind} IN ('prompt', 'follow_up') AND ${table.userMessageId} IS NOT NULL AND ${table.assistantMessageId} IS NOT NULL) OR (${table.kind} NOT IN ('prompt', 'follow_up') AND ${table.userMessageId} IS NULL AND ${table.assistantMessageId} IS NULL)`,
+		),
+		check(
+			"session_commands_run_shape",
+			sql`(${table.kind} IN ('follow_up', 'stop') AND ${table.targetRunId} IS NOT NULL AND ${table.targetCommandId} IS NULL) OR (${table.kind} = 'cancel' AND ${table.targetRunId} IS NULL AND ${table.targetCommandId} IS NOT NULL) OR (${table.kind} NOT IN ('follow_up', 'stop', 'cancel') AND ${table.targetRunId} IS NULL AND ${table.targetCommandId} IS NULL)`,
+		),
+		check(
+			"session_commands_versions",
+			sql`typeof(${table.payloadVersion}) = 'integer' AND ${table.payloadVersion} > 0 AND typeof(${table.admissionVersion}) = 'integer' AND ${table.admissionVersion} > 0 AND typeof(${table.executionProjectionVersion}) = 'integer' AND ${table.executionProjectionVersion} >= 0`,
+		),
+	],
+);
+
+export const sessionCommandKeys = sqliteTable(
+	"session_command_keys",
+	{
+		id: text("id").primaryKey(),
+		userId: text("userId").notNull(),
+		targetKind: text("targetKind", {
+			enum: SESSION_COMMAND_TARGET_KINDS,
+		}).notNull(),
+		targetId: text("targetId").notNull(),
+		idempotencyKey: text("idempotencyKey").notNull(),
+		commandKind: text("commandKind", { enum: SESSION_COMMAND_KINDS }).notNull(),
+		canonicalPayloadHash: text("canonicalPayloadHash").notNull(),
+		commandId: text("commandId").notNull(),
+		receiptId: text("receiptId").notNull(),
+		createdAt: integer("createdAt").notNull(),
+	},
+	(table) => [
+		uniqueIndex("session_command_keys_scope_uidx").on(
+			table.userId,
+			table.targetKind,
+			table.targetId,
+			table.idempotencyKey,
+		),
+		uniqueIndex("session_command_keys_receipt_uidx").on(table.receiptId),
+	],
+);
+
+export const sessionCommandSequences = sqliteTable(
+	"session_command_sequences",
+	{
+		sessionId: text("sessionId").primaryKey(),
+		nextSequence: integer("nextSequence").notNull().default(1),
+		updatedAt: integer("updatedAt").notNull(),
+	},
+	(table) => [
+		check("session_command_sequences_positive", sql`${table.nextSequence} > 0`),
+	],
+);
+
+export const runtimeCapacityPolicy = sqliteTable(
+	"runtime_capacity_policy",
+	{
+		id: integer("id").primaryKey(),
+		accountingMode: text("accountingMode", { enum: ["legacy", "unified"] })
+			.notNull()
+			.default("legacy"),
+		version: integer("version").notNull().default(1),
+		updatedAt: integer("updatedAt").notNull(),
+	},
+	(table) => [
+		check("runtime_capacity_policy_singleton", sql`${table.id} = 1`),
+		check(
+			"runtime_capacity_policy_mode",
+			sql`${table.accountingMode} IN ('legacy', 'unified')`,
+		),
+		check(
+			"runtime_capacity_policy_version",
+			sql`typeof(${table.version}) = 'integer' AND ${table.version} > 0`,
+		),
+	],
+);
+
+export const runtimeCapacityReservations = sqliteTable(
+	"runtime_capacity_reservations",
+	{
+		id: text("id").primaryKey(),
+		pool: text("pool", { enum: ["brain", "execution"] }).notNull(),
+		ownerKind: text("ownerKind", {
+			enum: ["workspace_session", "builder", "preview"],
+		}).notNull(),
+		ownerId: text("ownerId").notNull(),
+		userId: text("userId").notNull(),
+		sessionId: text("sessionId"),
+		identityId: text("identityId").notNull(),
+		incarnationId: text("incarnationId"),
+		reservationGroupId: text("reservationGroupId").notNull(),
+		observedState: text("observedState", {
+			enum: ["reserved", "starting", "running", "terminating", "released"],
+		}).notNull(),
+		expiresAt: integer("expiresAt"),
+		runtimeOwnerVersion: integer("runtimeOwnerVersion").notNull(),
+		accountingVersion: integer("accountingVersion").notNull(),
+		activeSlot: text("activeSlot").notNull().default("active"),
+		createdAt: integer("createdAt").notNull(),
+		updatedAt: integer("updatedAt").notNull(),
+	},
+	(table) => [
+		uniqueIndex("runtime_capacity_reservations_identity_pool_active_uidx").on(
+			table.identityId,
+			table.pool,
+			table.activeSlot,
+		),
+		check(
+			"runtime_capacity_reservations_enums",
+			sql`${table.pool} IN ('brain', 'execution') AND ${table.ownerKind} IN ('workspace_session', 'builder', 'preview') AND ${table.observedState} IN ('reserved', 'starting', 'running', 'terminating', 'released')`,
+		),
+		check(
+			"runtime_capacity_reservations_versions",
+			sql`typeof(${table.runtimeOwnerVersion}) = 'integer' AND ${table.runtimeOwnerVersion} > 0 AND typeof(${table.accountingVersion}) = 'integer' AND ${table.accountingVersion} > 0`,
+		),
+	],
+);
+
+export const runtimeCheckpointPairs = sqliteTable("runtime_checkpoint_pairs", {
+	id: text("id").primaryKey(),
+	sessionId: text("sessionId").notNull(),
+	archiveId: text("archiveId").notNull(),
+	continuationObjectKey: text("continuationObjectKey").notNull(),
+	archiveDigest: text("archiveDigest").notNull(),
+	continuationDigest: text("continuationDigest").notNull(),
+	archiveByteCount: integer("archiveByteCount").notNull(),
+	continuationByteCount: integer("continuationByteCount").notNull(),
+	compatibilityKey: text("compatibilityKey").notNull(),
+	brainIdentityId: text("brainIdentityId").notNull(),
+	brainIncarnationId: text("brainIncarnationId").notNull(),
+	executorIdentityId: text("executorIdentityId").notNull(),
+	executorIncarnationId: text("executorIncarnationId").notNull(),
+	mutationGeneration: integer("mutationGeneration").notNull(),
+	executionPosition: integer("executionPosition").notNull(),
+	outstandingEffectCount: integer("outstandingEffectCount").notNull(),
+	outstandingEffectSummary: text("outstandingEffectSummary").notNull(),
+	createdAt: integer("createdAt").notNull(),
+});
+
+export const runtimeCheckpointPointers = sqliteTable(
+	"runtime_checkpoint_pointers",
+	{
+		sessionId: text("sessionId").primaryKey(),
+		runtimeOwnerVersion: integer("runtimeOwnerVersion").notNull(),
+		currentPairId: text("currentPairId"),
+		previousPairId: text("previousPairId"),
+		mutationGeneration: integer("mutationGeneration").notNull(),
+		updatedAt: integer("updatedAt").notNull(),
+	},
+);
+
+export const runtimeProjectionCursors = sqliteTable(
+	"runtime_projection_cursors",
+	{
+		sessionId: text("sessionId").notNull(),
+		targetKind: text("targetKind", {
+			enum: ["command", "message", "session"],
+		}).notNull(),
+		targetId: text("targetId").notNull(),
+		runtimeOwnerVersion: integer("runtimeOwnerVersion").notNull(),
+		coordinatorSeq: integer("coordinatorSeq").notNull(),
+		updatedAt: integer("updatedAt").notNull(),
+	},
+	(table) => [
+		uniqueIndex("runtime_projection_cursors_target_uidx").on(
+			table.sessionId,
+			table.targetKind,
+			table.targetId,
+		),
+	],
+);
+
+export const runtimeCommandMemberships = sqliteTable(
+	"runtime_command_memberships",
+	{
+		commandId: text("commandId").primaryKey(),
+		sessionId: text("sessionId").notNull(),
+		runId: text("runId"),
+		userMessageId: text("userMessageId"),
+		assistantMessageId: text("assistantMessageId"),
+		runEpoch: integer("runEpoch"),
+	},
+);
+
+export const runtimeMigrations = sqliteTable("runtime_migrations", {
+	id: text("id").primaryKey(),
+	sessionId: text("sessionId").notNull(),
+	expectedOwner: text("expectedOwner", {
+		enum: ["legacy", "migrating", "trusted_v1", "blocked"],
+	}).notNull(),
+	expectedOwnerVersion: integer("expectedOwnerVersion").notNull(),
+	sourceArchiveId: text("sourceArchiveId"),
+	sourceIdentityId: text("sourceIdentityId"),
+	startupRoles: text("startupRoles"),
+	startupPools: text("startupPools"),
+	expectedIdentityId: text("expectedIdentityId"),
+	startupDeadline: integer("startupDeadline"),
+	state: text("state", { enum: ["pending", "complete", "failed"] }).notNull(),
+	createdAt: integer("createdAt").notNull(),
+});
+
+export const runtimeCleanupJobs = sqliteTable("runtime_cleanup_jobs", {
+	id: text("id").primaryKey(),
+	targetKind: text("targetKind", {
+		enum: ["project", "workspace_session"],
+	}).notNull(),
+	targetId: text("targetId").notNull(),
+	state: text("state", {
+		enum: ["pending", "running", "complete", "failed"],
+	}).notNull(),
+	retryAt: integer("retryAt"),
+	attempts: integer("attempts").notNull().default(0),
+	createdAt: integer("createdAt").notNull(),
+});
+
+export const runtimeDeletedTargetFences = sqliteTable(
+	"runtime_deleted_target_fences",
+	{
+		targetKind: text("targetKind", {
+			enum: ["project", "workspace_session"],
+		}).notNull(),
+		targetId: text("targetId").notNull(),
+		lastOwnerVersion: integer("lastOwnerVersion").notNull(),
+		deletedAt: integer("deletedAt").notNull(),
+	},
+	(table) => [
+		uniqueIndex("runtime_deleted_target_fences_target_uidx").on(
+			table.targetKind,
+			table.targetId,
+		),
+	],
+);
+
+export const runtimeRetiredIdentityFences = sqliteTable(
+	"runtime_retired_identity_fences",
+	{
+		identityId: text("identityId").primaryKey(),
+		lifecycleGeneration: integer("lifecycleGeneration").notNull(),
+		retiredAt: integer("retiredAt").notNull(),
+	},
 );

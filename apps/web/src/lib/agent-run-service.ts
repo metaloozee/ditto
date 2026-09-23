@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import type { createDb } from "#/db";
@@ -37,6 +37,14 @@ import { OPENCODE_CONTRACT_VERSION } from "#/lib/open-code-contract";
 import { decryptEnvVars } from "#/lib/project-env-vars";
 import { createSandboxAuthority } from "#/lib/sandbox-authority";
 import { redactSecrets } from "#/lib/secret-redaction";
+import {
+	assertRuntimeOwner,
+	isEmptyReturning,
+	legacyOwnedSessionRecencyUpdate,
+	matchingLegacyOwner,
+	ownershipConflictFromEmptyBatch,
+	RuntimeOwnershipError,
+} from "#/lib/session-runtime-ownership";
 import { makeSessionTitleFromMessage } from "#/lib/workspace-policy";
 import { recordMutationAndCheckpoint } from "#/lib/workspace-recovery";
 import {
@@ -59,7 +67,6 @@ import {
 import {
 	type OwnedActiveSession,
 	resolveSessionForMessageWrite,
-	workspaceSessionRecencyUpdate,
 } from "#/lib/workspace-session";
 
 export const MESSAGE_STATUSES = ["pending", "complete", "failed"] as const;
@@ -218,6 +225,108 @@ function mergeDeps(deps?: AgentRunDeps): Required<AgentRunDeps> {
 	return { ...defaultDeps, ...deps };
 }
 
+type AgentRunDb = ReturnType<typeof createDb>;
+
+function insertMessageIfLegacyOwner(
+	db: AgentRunDb,
+	values: {
+		id: string;
+		sessionId: string;
+		projectId: string;
+		userId: string;
+		role: "user" | "assistant";
+		content: string;
+		model?: string | null;
+		status: "pending" | "complete" | "failed";
+	},
+	ownerVersion: number,
+) {
+	return db
+		.insert(messages)
+		.select(
+			db
+				.select({
+					id: sql<string>`${values.id}`.as("id"),
+					sessionId: sql<string>`${values.sessionId}`.as("sessionId"),
+					projectId: sql<string>`${values.projectId}`.as("projectId"),
+					userId: sql<string>`${values.userId}`.as("userId"),
+					role: sql<"user" | "assistant">`${values.role}`.as("role"),
+					content: sql<string>`${values.content}`.as("content"),
+					model: sql<string | null>`${values.model ?? null}`.as("model"),
+					tools: sql<string | null>`null`.as("tools"),
+					status: sql<"pending" | "complete" | "failed">`${values.status}`.as(
+						"status",
+					),
+					createdAt: sql`(unixepoch())`.as("createdAt"),
+				})
+				.from(workspaceSessions)
+				.where(matchingLegacyOwner(values.sessionId, ownerVersion)),
+		)
+		.returning();
+}
+
+function insertWorkIfLegacyOwner(
+	db: AgentRunDb,
+	values: ReturnType<typeof workspaceWorkInsertValues>,
+	sessionId: string,
+	ownerVersion: number,
+) {
+	return db
+		.insert(workspaceRuntimeWork)
+		.select(
+			db
+				.select({
+					id: sql<string>`${values.id}`.as("id"),
+					fifoSeq: sql<number>`${values.fifoSeq}`.as("fifoSeq"),
+					identityId: sql<string | null>`${values.identityId ?? null}`.as(
+						"identityId",
+					),
+					sessionId: sql<string | null>`${values.sessionId ?? null}`.as(
+						"sessionId",
+					),
+					projectId: sql<string>`${values.projectId}`.as("projectId"),
+					userId: sql<string>`${values.userId}`.as("userId"),
+					intent: sql<string>`${values.intent}`.as("intent"),
+					payload: sql<string | null>`${values.payload ?? null}`.as("payload"),
+					status: sql<string>`${values.status}`.as("status"),
+					leaseToken: sql<string | null>`null`.as("leaseToken"),
+					leaseExpiresAt: sql<number | null>`null`.as("leaseExpiresAt"),
+					retryCount: sql<number>`0`.as("retryCount"),
+					reasonCode: sql<string | null>`null`.as("reasonCode"),
+					queueExpiresAt: sql<number>`${values.queueExpiresAt}`.as(
+						"queueExpiresAt",
+					),
+					userMessageId: sql<string | null>`${values.userMessageId ?? null}`.as(
+						"userMessageId",
+					),
+					assistantMessageId: sql<
+						string | null
+					>`${values.assistantMessageId ?? null}`.as("assistantMessageId"),
+					protocolVersion: sql<number | null>`null`.as("protocolVersion"),
+					runtimeOwner: sql<string>`${values.runtimeOwner}`.as("runtimeOwner"),
+					runtimeOwnerVersion: sql<number>`${values.runtimeOwnerVersion}`.as(
+						"runtimeOwnerVersion",
+					),
+					commandId: sql<string | null>`null`.as("commandId"),
+					deliveryState: sql<string>`${"pending"}`.as("deliveryState"),
+					deliveryLeaseToken: sql<string | null>`null`.as("deliveryLeaseToken"),
+					deliveryLeaseExpiresAt: sql<number | null>`null`.as(
+						"deliveryLeaseExpiresAt",
+					),
+					deliveryAttempts: sql<number>`0`.as("deliveryAttempts"),
+					startupRoles: sql<string | null>`null`.as("startupRoles"),
+					startupPools: sql<string | null>`null`.as("startupPools"),
+					expectedIdentityId: sql<string | null>`null`.as("expectedIdentityId"),
+					startupDeadline: sql<number | null>`null`.as("startupDeadline"),
+					createdAt: sql`(unixepoch())`.as("createdAt"),
+					updatedAt: sql`(unixepoch())`.as("updatedAt"),
+				})
+				.from(workspaceSessions)
+				.where(matchingLegacyOwner(sessionId, ownerVersion)),
+		)
+		.returning();
+}
+
 /**
  * Persist session + messages + runtime work before capacity or provision.
  * Does not construct HTTP responses or SSE text.
@@ -311,6 +420,13 @@ export async function prepareAgentRun(options: {
 	}
 
 	const createdSession = resolved.kind === "create";
+	if (resolved.kind === "existing") {
+		assertRuntimeOwner({
+			session: resolved.session,
+			expectedOwner: "legacy",
+			ownerVersion: resolved.session.runtimeOwnerVersion,
+		});
+	}
 	const sessionId =
 		resolved.kind === "existing" ? resolved.session.id : deps.createId();
 	const runId = deps.createId();
@@ -338,60 +454,95 @@ export async function prepareAgentRun(options: {
 				thinkingLevel: input.thinkingLevel ?? null,
 			},
 		},
+		runtimeOwnerVersion:
+			resolved.kind === "existing" ? resolved.session.runtimeOwnerVersion : 1,
 	});
 
-	const batchStatements = [];
-	if (createdSession) {
-		batchStatements.push(
-			db
-				.insert(workspaceSessions)
-				.values({
-					id: sessionId,
-					projectId: input.projectId,
-					userId,
-					title: makeSessionTitleFromMessage(input.message),
-					status: "active",
-				})
-				.returning(),
-		);
-	}
-	batchStatements.push(
-		db
-			.insert(messages)
-			.values({
-				id: userMessageId,
-				sessionId,
-				projectId: input.projectId,
-				userId,
-				role: "user",
-				content: input.message,
-				model,
-				status: "complete",
-			})
-			.returning(),
-		db
-			.insert(messages)
-			.values({
-				id: assistantMessageId,
-				sessionId,
-				projectId: input.projectId,
-				userId,
-				role: "assistant",
-				content: "",
-				status: "pending",
-			})
-			.returning(),
-		db.insert(workspaceRuntimeWork).values(workValues).returning(),
-		workspaceSessionRecencyUpdate(db, sessionId),
+	const ownerVersion =
+		resolved.kind === "existing" ? resolved.session.runtimeOwnerVersion : 1;
+	const userInsert = insertMessageIfLegacyOwner(
+		db,
+		{
+			id: userMessageId,
+			sessionId,
+			projectId: input.projectId,
+			userId,
+			role: "user",
+			content: input.message,
+			model,
+			status: "complete",
+		},
+		ownerVersion,
+	);
+	const assistantInsert = insertMessageIfLegacyOwner(
+		db,
+		{
+			id: assistantMessageId,
+			sessionId,
+			projectId: input.projectId,
+			userId,
+			role: "assistant",
+			content: "",
+			status: "pending",
+		},
+		ownerVersion,
+	);
+	const workInsert = insertWorkIfLegacyOwner(
+		db,
+		workValues,
+		sessionId,
+		ownerVersion,
+	);
+	const recencyUpdate = legacyOwnedSessionRecencyUpdate(
+		db,
+		sessionId,
+		ownerVersion,
 	);
 
-	const batchResult = await db.batch(batchStatements as never);
+	let batchResult: unknown[];
+	try {
+		batchResult = createdSession
+			? await db.batch([
+					db
+						.insert(workspaceSessions)
+						.values({
+							id: sessionId,
+							projectId: input.projectId,
+							userId,
+							title: makeSessionTitleFromMessage(input.message),
+							status: "active",
+						})
+						.returning(),
+					userInsert,
+					assistantInsert,
+					workInsert,
+					recencyUpdate,
+				])
+			: await db.batch([
+					userInsert,
+					assistantInsert,
+					workInsert,
+					recencyUpdate,
+				]);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (message.includes("runtime_owner_mismatch")) {
+			return ownershipConflictFromEmptyBatch();
+		}
+		throw error;
+	}
 	const sessionRows = createdSession
 		? (batchResult[0] as OwnedActiveSession[] | undefined)
 		: undefined;
 	const userOffset = createdSession ? 1 : 0;
 	const userRows = batchResult[userOffset] as Array<{ id: string }> | undefined;
 	const assistantRows = batchResult[userOffset + 1] as
+		| Array<{ id: string }>
+		| undefined;
+	const workRows = batchResult[userOffset + 2] as
+		| Array<{ id: string }>
+		| undefined;
+	const recencyRows = batchResult[userOffset + 3] as
 		| Array<{ id: string }>
 		| undefined;
 
@@ -409,6 +560,15 @@ export async function prepareAgentRun(options: {
 		workspaceSession = loaded ?? null;
 	}
 
+	if (
+		isEmptyReturning(userRows) ||
+		isEmptyReturning(assistantRows) ||
+		isEmptyReturning(workRows) ||
+		isEmptyReturning(recencyRows) ||
+		(createdSession && isEmptyReturning(sessionRows))
+	) {
+		return ownershipConflictFromEmptyBatch();
+	}
 	if (!workspaceSession || !userRows?.[0] || !assistantRows?.[0]) {
 		return {
 			kind: "error",
@@ -507,6 +667,17 @@ export async function loadAgentRunContextFromWork(options: {
 	if (!session) {
 		return null;
 	}
+	if (work.runtimeOwner !== "legacy") {
+		throw new RuntimeOwnershipError(
+			"runtime_owner_mismatch",
+			"Queued agent work is not a legacy execution owner.",
+		);
+	}
+	assertRuntimeOwner({
+		session,
+		expectedOwner: "legacy",
+		ownerVersion: work.runtimeOwnerVersion,
+	});
 	const [userMessage] = await options.db
 		.select()
 		.from(messages)
@@ -570,7 +741,7 @@ async function persistAssistantTerminal(options: {
 	const { toolsColumn } = deps.prepareAssistantMessageStorage(parts);
 
 	try {
-		await context.db
+		const [updated] = await context.db
 			.update(messages)
 			.set({
 				content,
@@ -581,17 +752,28 @@ async function persistAssistantTerminal(options: {
 				and(
 					eq(messages.id, assistantMessageId),
 					eq(messages.userId, context.userId),
+					sql`EXISTS (SELECT 1 FROM ${workspaceSessions} WHERE ${workspaceSessions.id} = ${context.sessionId} AND ${workspaceSessions.runtimeOwner} = 'legacy' AND ${workspaceSessions.runtimeOwnerVersion} = ${context.workspaceSession.runtimeOwnerVersion})`,
 				),
+			)
+			.returning({ id: messages.id });
+		if (!updated) {
+			throw new RuntimeOwnershipError(
+				"runtime_owner_mismatch",
+				"Legacy assistant settlement lost runtime ownership.",
 			);
+		}
 		return { toolsColumn };
 	} catch (error) {
+		if (error instanceof RuntimeOwnershipError) {
+			throw error;
+		}
 		console.error(
 			"Failed to persist assistant message tools; retrying with minimal serialization.",
 			error instanceof Error ? error.message : error,
 		);
 		const fallbackTools = deps.serializeAssistantPartsMinimalForStorage(parts);
 		try {
-			await context.db
+			const [updated] = await context.db
 				.update(messages)
 				.set({
 					content,
@@ -602,8 +784,16 @@ async function persistAssistantTerminal(options: {
 					and(
 						eq(messages.id, assistantMessageId),
 						eq(messages.userId, context.userId),
+						sql`EXISTS (SELECT 1 FROM ${workspaceSessions} WHERE ${workspaceSessions.id} = ${context.sessionId} AND ${workspaceSessions.runtimeOwner} = 'legacy' AND ${workspaceSessions.runtimeOwnerVersion} = ${context.workspaceSession.runtimeOwnerVersion})`,
 					),
+				)
+				.returning({ id: messages.id });
+			if (!updated) {
+				throw new RuntimeOwnershipError(
+					"runtime_owner_mismatch",
+					"Legacy assistant settlement lost runtime ownership.",
 				);
+			}
 			return { toolsColumn: fallbackTools };
 		} catch (fallbackError) {
 			console.error(
@@ -832,41 +1022,57 @@ export async function executeAgentRun(options: {
 												knownPendingAssistants.add(
 													msg.event.assistantMessageId,
 												);
-												const [userRows, assistantRows] =
-													await context.db.batch([
-														context.db
-															.insert(messages)
-															.values({
-																id: msg.event.userMessageId,
-																sessionId: context.sessionId,
-																projectId: context.projectId,
-																userId: context.userId,
-																role: "user",
-																content: msg.event.text,
-																model: context.model,
-																status: "complete",
-															})
-															.returning(),
-														context.db
-															.insert(messages)
-															.values({
-																id: msg.event.assistantMessageId,
-																sessionId: context.sessionId,
-																projectId: context.projectId,
-																userId: context.userId,
-																role: "assistant",
-																content: "",
-																status: "pending",
-															})
-															.returning(),
-														workspaceSessionRecencyUpdate(
-															context.db,
-															context.sessionId,
-														),
-													]);
-												if (!userRows?.[0] || !assistantRows?.[0]) {
-													throw new Error(
-														"Failed to persist follow-up messages.",
+												const followUpBatch = await context.db.batch([
+													insertMessageIfLegacyOwner(
+														context.db,
+														{
+															id: msg.event.userMessageId,
+															sessionId: context.sessionId,
+															projectId: context.projectId,
+															userId: context.userId,
+															role: "user",
+															content: msg.event.text,
+															model: context.model,
+															status: "complete",
+														},
+														context.workspaceSession.runtimeOwnerVersion,
+													),
+													insertMessageIfLegacyOwner(
+														context.db,
+														{
+															id: msg.event.assistantMessageId,
+															sessionId: context.sessionId,
+															projectId: context.projectId,
+															userId: context.userId,
+															role: "assistant",
+															content: "",
+															status: "pending",
+														},
+														context.workspaceSession.runtimeOwnerVersion,
+													),
+													legacyOwnedSessionRecencyUpdate(
+														context.db,
+														context.sessionId,
+														context.workspaceSession.runtimeOwnerVersion,
+													),
+												]);
+												const userRows = followUpBatch[0] as
+													| Array<{ id: string }>
+													| undefined;
+												const assistantRows = followUpBatch[1] as
+													| Array<{ id: string }>
+													| undefined;
+												const recencyRows = followUpBatch[2] as
+													| Array<{ id: string }>
+													| undefined;
+												if (
+													isEmptyReturning(userRows) ||
+													isEmptyReturning(assistantRows) ||
+													isEmptyReturning(recencyRows)
+												) {
+													throw new RuntimeOwnershipError(
+														"runtime_owner_mismatch",
+														"Workspace runtime ownership changed.",
 													);
 												}
 												currentTurn = {
@@ -971,13 +1177,19 @@ export async function executeAgentRun(options: {
 
 		let backupError: string | undefined;
 		try {
-			const recovery = await deps.recordMutationAndCheckpoint({
-				db: context.db,
-				env: context.env,
-				userId: context.userId,
-				projectId: context.projectId,
-				sessionId: context.sessionId,
-			});
+			const recovery = await deps.recordMutationAndCheckpoint(
+				{
+					db: context.db,
+					env: context.env,
+					userId: context.userId,
+					projectId: context.projectId,
+					sessionId: context.sessionId,
+				},
+				{
+					withWorkspaceRuntimeLease: (input, run) =>
+						deps.withWorkspaceRuntimeLease({ ...input, env: context.env }, run),
+				},
+			);
 			if (recovery.state === "degraded" || recovery.state === "failed") {
 				backupError = redact(
 					recovery.reasonCode

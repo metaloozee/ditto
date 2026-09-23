@@ -7,6 +7,7 @@ import {
 	type SANDBOX_IDENTITY_KINDS,
 	type SANDBOX_IDENTITY_STATES,
 	sandboxIdentities,
+	workspaceSessions,
 } from "#/db/schema";
 import { OPENCODE_CONTRACT_DENIAL_LIMIT } from "#/lib/open-code-contract";
 
@@ -25,6 +26,9 @@ export type SandboxIdentityHandle = {
 	userId: string;
 	projectId: string;
 	workspaceSessionId: string | null;
+	controllerClass: string | null;
+	controllerNamespace: string | null;
+	incarnationId: string | null;
 	lifecycleGeneration: number;
 	state: SandboxIdentityState;
 	retiredAt: Date | null;
@@ -37,6 +41,11 @@ export type PrivilegedOperationHandle = {
 	family: PrivilegedOperationFamily;
 	type: string;
 	contractVersion: number;
+	runtimeOwnerVersion: number;
+	runId: string | null;
+	runEpoch: number | null;
+	incarnationId: string | null;
+	admissionReference: string | null;
 	repository: string | null;
 	allowedRefs: string[] | null;
 	maxRequests: number | null;
@@ -54,6 +63,9 @@ export type TrustedOutboundHandlerContext = {
 	identityId: string;
 	lifecycleGeneration: number;
 	containerId: string;
+	incarnationId?: string | null;
+	runEpoch?: number | null;
+	runtimeOwnerVersion?: number;
 };
 
 export type ResolvedOutboundOperation = {
@@ -100,6 +112,9 @@ function toIdentityHandle(
 		userId: row.userId,
 		projectId: row.projectId,
 		workspaceSessionId: row.workspaceSessionId,
+		controllerClass: row.controllerClass ?? null,
+		controllerNamespace: row.controllerNamespace ?? null,
+		incarnationId: row.incarnationId ?? null,
 		lifecycleGeneration: row.lifecycleGeneration,
 		state: row.state,
 		retiredAt: row.retiredAt ?? null,
@@ -116,6 +131,11 @@ function toOperationHandle(
 		family: row.family,
 		type: row.type,
 		contractVersion: row.contractVersion,
+		runtimeOwnerVersion: row.runtimeOwnerVersion,
+		runId: row.runId ?? null,
+		runEpoch: row.runEpoch ?? null,
+		incarnationId: row.incarnationId ?? null,
+		admissionReference: row.admissionReference ?? null,
 		repository: row.repository,
 		allowedRefs: parseAllowedRefs(row.allowedRefs),
 		maxRequests: row.maxRequests,
@@ -159,6 +179,146 @@ async function loadOpenOperation(
 		)
 		.limit(1);
 	return row ? toOperationHandle(row) : null;
+}
+
+function requireStoredMatch(
+	stored: string | number | null | undefined,
+	provided: string | number | null | undefined,
+	code: string,
+	message: string,
+): void {
+	if (stored == null) {
+		return;
+	}
+	if (provided == null || provided !== stored) {
+		throw new SandboxAuthorityError(code, message);
+	}
+}
+
+async function loadLegacyWorkspaceAdmission(
+	db: Db,
+	identity: SandboxIdentityHandle,
+): Promise<{ runtimeOwnerVersion: number }> {
+	if (identity.workspaceSessionId == null) {
+		return { runtimeOwnerVersion: 1 };
+	}
+	const [session] = await db
+		.select({
+			id: workspaceSessions.id,
+			runtimeOwner: workspaceSessions.runtimeOwner,
+			runtimeOwnerVersion: workspaceSessions.runtimeOwnerVersion,
+		})
+		.from(workspaceSessions)
+		.where(eq(workspaceSessions.id, identity.workspaceSessionId))
+		.limit(1);
+	if (!session || session.runtimeOwner !== "legacy") {
+		throw new SandboxAuthorityError(
+			"runtime_owner_mismatch",
+			"Workspace runtime ownership does not admit a legacy operation.",
+		);
+	}
+	return { runtimeOwnerVersion: session.runtimeOwnerVersion };
+}
+
+function identityIncarnationMatchesSql(incarnationId: string | null) {
+	return sql`(
+		(
+			${sandboxIdentities.incarnationId} IS NULL
+			AND ${incarnationId} IS NULL
+		)
+		OR ${sandboxIdentities.incarnationId} = ${incarnationId}
+	)`;
+}
+
+function storedNullableMatchesSql(
+	column:
+		| typeof privilegedOperations.incarnationId
+		| typeof privilegedOperations.runEpoch,
+	provided: string | number | null | undefined,
+) {
+	return sql`(
+		${column} IS NULL
+		OR ${column} = ${provided ?? null}
+	)`;
+}
+
+function workspaceAdmissionSql(
+	identityId: string,
+	expectedOwnerVersion: number,
+	options?: {
+		lifecycleGeneration?: number;
+		incarnationId?: string | null;
+	},
+) {
+	const generationPredicate =
+		options?.lifecycleGeneration == null
+			? sql`TRUE`
+			: sql`${sandboxIdentities.lifecycleGeneration} = ${options.lifecycleGeneration}`;
+	const incarnationPredicate =
+		options && "incarnationId" in options
+			? identityIncarnationMatchesSql(options.incarnationId ?? null)
+			: sql`TRUE`;
+	return sql`EXISTS (
+		SELECT 1 FROM ${sandboxIdentities}
+		LEFT JOIN ${workspaceSessions}
+			ON ${workspaceSessions.id} = ${sandboxIdentities.workspaceSessionId}
+		WHERE ${sandboxIdentities.id} = ${identityId}
+			AND ${sandboxIdentities.retiredAt} IS NULL
+			AND ${sandboxIdentities.state} != 'destroyed'
+			AND ${sandboxIdentities.kind} != 'trusted_brain'
+			AND ${generationPredicate}
+			AND ${incarnationPredicate}
+			AND (
+				${sandboxIdentities.workspaceSessionId} IS NULL
+				OR (
+					${workspaceSessions.runtimeOwner} = 'legacy'
+					AND ${workspaceSessions.runtimeOwnerVersion} = ${expectedOwnerVersion}
+				)
+			)
+	)`;
+}
+
+function liveOutboundOperationSql(
+	ctx: TrustedOutboundHandlerContext,
+	family: PrivilegedOperationFamily,
+) {
+	const callerVersionPredicate =
+		ctx.runtimeOwnerVersion == null
+			? sql`TRUE`
+			: sql`${privilegedOperations.runtimeOwnerVersion} = ${ctx.runtimeOwnerVersion}`;
+	return and(
+		eq(privilegedOperations.identityId, ctx.identityId),
+		eq(privilegedOperations.family, family),
+		isNull(privilegedOperations.closedAt),
+		sql`${privilegedOperations.expiresAt} > (unixepoch())`,
+		eq(privilegedOperations.lifecycleGeneration, ctx.lifecycleGeneration),
+		callerVersionPredicate,
+		storedNullableMatchesSql(
+			privilegedOperations.incarnationId,
+			ctx.incarnationId,
+		),
+		storedNullableMatchesSql(privilegedOperations.runEpoch, ctx.runEpoch),
+		sql`EXISTS (
+			SELECT 1 FROM ${sandboxIdentities}
+			LEFT JOIN ${workspaceSessions}
+				ON ${workspaceSessions.id} = ${sandboxIdentities.workspaceSessionId}
+			WHERE ${sandboxIdentities.id} = ${privilegedOperations.identityId}
+				AND ${sandboxIdentities.retiredAt} IS NULL
+				AND ${sandboxIdentities.state} != 'destroyed'
+				AND ${sandboxIdentities.kind} != 'trusted_brain'
+				AND ${sandboxIdentities.lifecycleGeneration} = ${privilegedOperations.lifecycleGeneration}
+				AND ${sandboxIdentities.lifecycleGeneration} = ${ctx.lifecycleGeneration}
+				AND ${sandboxIdentities.containerId} = ${ctx.containerId}
+				AND ${identityIncarnationMatchesSql(ctx.incarnationId ?? null)}
+				AND (
+					${sandboxIdentities.workspaceSessionId} IS NULL
+					OR (
+						${workspaceSessions.runtimeOwner} = 'legacy'
+						AND ${workspaceSessions.runtimeOwnerVersion} = ${privilegedOperations.runtimeOwnerVersion}
+					)
+				)
+		)`,
+	);
 }
 
 async function closeOpenOperationsForIdentity(
@@ -211,6 +371,11 @@ export type SandboxAuthority = {
 		maxRequests?: number | null;
 		contractState?: string | null;
 		expiresAt: Date;
+		runtimeOwnerVersion?: number;
+		runId?: string | null;
+		runEpoch?: number | null;
+		incarnationId?: string | null;
+		admissionReference?: string | null;
 	}): Promise<PrivilegedOperationHandle>;
 	updateOperationContractState(
 		operationId: string,
@@ -243,6 +408,11 @@ export type SandboxAuthority = {
 			maxRequests?: number | null;
 			contractState?: string | null;
 			expiresAt: Date;
+			runtimeOwnerVersion?: number;
+			runId?: string | null;
+			runEpoch?: number | null;
+			incarnationId?: string | null;
+			admissionReference?: string | null;
 		},
 		run: (operation: PrivilegedOperationHandle) => Promise<T>,
 	): Promise<T>;
@@ -361,6 +531,12 @@ export function createSandboxAuthority(db: Db): SandboxAuthority {
 					"Cannot open an operation on a retired identity.",
 				);
 			}
+			if (identity.kind === "trusted_brain") {
+				throw new SandboxAuthorityError(
+					"trusted_windows_closed",
+					"Trusted brain operation windows are not opened in this phase.",
+				);
+			}
 			const existing = await loadOpenOperation(
 				db,
 				input.identityId,
@@ -373,38 +549,121 @@ export function createSandboxAuthority(db: Db): SandboxAuthority {
 				);
 			}
 
+			const admission = await loadLegacyWorkspaceAdmission(db, identity);
+			if (
+				input.runtimeOwnerVersion != null &&
+				input.runtimeOwnerVersion !== admission.runtimeOwnerVersion
+			) {
+				throw new SandboxAuthorityError(
+					"runtime_owner_mismatch",
+					"Privileged operation runtime owner version does not match.",
+				);
+			}
 			const id = nanoid();
 			const correlationId = crypto.randomUUID();
 			const openedAt = new Date();
+			const expiresAtSeconds = Math.floor(input.expiresAt.getTime() / 1000);
+			const values = {
+				id,
+				identityId: input.identityId,
+				lifecycleGeneration: identity.lifecycleGeneration,
+				family: input.family,
+				type: input.type,
+				contractVersion: input.contractVersion,
+				runtimeOwnerVersion: admission.runtimeOwnerVersion,
+				runId: input.runId ?? null,
+				runEpoch: input.runEpoch ?? null,
+				incarnationId: input.incarnationId ?? identity.incarnationId,
+				admissionReference: input.admissionReference ?? null,
+				repository: input.repository ?? null,
+				allowedRefs:
+					input.allowedRefs != null ? JSON.stringify(input.allowedRefs) : null,
+				maxRequests: input.maxRequests ?? null,
+				consumedRequests: 0,
+				contractDenials: 0,
+				contractState: input.contractState ?? null,
+				openedAt,
+				expiresAt: input.expiresAt,
+				correlationId,
+				openSlot: "open" as const,
+			};
 			try {
 				const [row] = await db
 					.insert(privilegedOperations)
-					.values({
-						id,
-						identityId: input.identityId,
-						lifecycleGeneration: identity.lifecycleGeneration,
-						family: input.family,
-						type: input.type,
-						contractVersion: input.contractVersion,
-						repository: input.repository ?? null,
-						allowedRefs:
-							input.allowedRefs != null
-								? JSON.stringify(input.allowedRefs)
-								: null,
-						maxRequests: input.maxRequests ?? null,
-						consumedRequests: 0,
-						contractDenials: 0,
-						contractState: input.contractState ?? null,
-						openedAt,
-						expiresAt: input.expiresAt,
-						correlationId,
-						openSlot: "open",
-					})
+					.select(
+						db
+							.select({
+								id: sql<string>`${values.id}`.as("id"),
+								identityId: sql<string>`${values.identityId}`.as("identityId"),
+								lifecycleGeneration:
+									sql<number>`${values.lifecycleGeneration}`.as(
+										"lifecycleGeneration",
+									),
+								family: sql<string>`${values.family}`.as("family"),
+								type: sql<string>`${values.type}`.as("type"),
+								contractVersion: sql<number>`${values.contractVersion}`.as(
+									"contractVersion",
+								),
+								runtimeOwnerVersion:
+									sql<number>`${values.runtimeOwnerVersion}`.as(
+										"runtimeOwnerVersion",
+									),
+								runId: sql<string | null>`${values.runId}`.as("runId"),
+								runEpoch: sql<number | null>`${values.runEpoch}`.as("runEpoch"),
+								incarnationId: sql<string | null>`${values.incarnationId}`.as(
+									"incarnationId",
+								),
+								admissionReference: sql<
+									string | null
+								>`${values.admissionReference}`.as("admissionReference"),
+								repository: sql<string | null>`${values.repository}`.as(
+									"repository",
+								),
+								allowedRefs: sql<string | null>`${values.allowedRefs}`.as(
+									"allowedRefs",
+								),
+								maxRequests: sql<number | null>`${values.maxRequests}`.as(
+									"maxRequests",
+								),
+								consumedRequests: sql<number>`0`.as("consumedRequests"),
+								contractDenials: sql<number>`0`.as("contractDenials"),
+								contractState: sql<string | null>`${values.contractState}`.as(
+									"contractState",
+								),
+								openedAt: sql`(unixepoch())`.as("openedAt"),
+								expiresAt: sql<number>`${expiresAtSeconds}`.as("expiresAt"),
+								closedAt: sql`null`.as("closedAt"),
+								closeReason: sql`null`.as("closeReason"),
+								correlationId: sql<string>`${correlationId}`.as(
+									"correlationId",
+								),
+								openSlot: sql<string>`${"open"}`.as("openSlot"),
+								createdAt: sql`(unixepoch())`.as("createdAt"),
+								updatedAt: sql`(unixepoch())`.as("updatedAt"),
+							})
+							.from(sandboxIdentities)
+							.where(
+								and(
+									eq(sandboxIdentities.id, input.identityId),
+									isNull(sandboxIdentities.retiredAt),
+									sql`${sandboxIdentities.kind} != 'trusted_brain'`,
+									sql`${sandboxIdentities.state} != 'destroyed'`,
+									workspaceAdmissionSql(
+										input.identityId,
+										admission.runtimeOwnerVersion,
+										{
+											lifecycleGeneration: identity.lifecycleGeneration,
+											incarnationId: identity.incarnationId,
+										},
+									),
+								),
+							),
+					)
 					.returning();
 				if (!row) {
 					throw new SandboxAuthorityError(
-						"operation_insert_failed",
-						"Failed to open privileged operation.",
+						"runtime_owner_mismatch",
+						"Workspace runtime ownership does not admit a legacy operation.",
 					);
 				}
 				return toOperationHandle(row);
@@ -620,72 +879,107 @@ export function createSandboxAuthority(db: Db): SandboxAuthority {
 					"Sandbox container identity does not match.",
 				);
 			}
-
-			const operation = await loadOpenOperation(db, identity.id, family);
-			if (!operation) {
+			if (identity.kind === "trusted_brain") {
 				throw new SandboxAuthorityError(
-					"operation_not_open",
-					`No open ${family} operation for this identity.`,
+					"trusted_windows_closed",
+					"Trusted brain callbacks are not admitted in this phase.",
 				);
 			}
-			if (operation.lifecycleGeneration !== identity.lifecycleGeneration) {
-				throw new SandboxAuthorityError(
-					"generation_mismatch",
-					"Open operation lifecycle generation does not match identity.",
-				);
-			}
-			if (operation.closedAt != null) {
-				throw new SandboxAuthorityError(
-					"operation_closed",
-					"Privileged operation is closed.",
-				);
-			}
-			if (operation.expiresAt.getTime() <= Date.now()) {
-				throw new SandboxAuthorityError(
-					"operation_expired",
-					"Privileged operation has expired.",
-				);
-			}
+			requireStoredMatch(
+				identity.incarnationId,
+				ctx.incarnationId,
+				"incarnation_mismatch",
+				"Sandbox incarnation does not match.",
+			);
+			await loadLegacyWorkspaceAdmission(db, identity);
 
 			const consume = options?.consume !== false;
-			if (consume && operation.maxRequests != null) {
-				const nextConsumed = operation.consumedRequests + 1;
-				if (nextConsumed > operation.maxRequests) {
-					throw new SandboxAuthorityError(
-						"operation_exhausted",
-						"Privileged operation request budget is exhausted.",
-					);
-				}
-				const updated = await db
-					.update(privilegedOperations)
-					.set({
-						consumedRequests: nextConsumed,
-						updatedAt: sql`(unixepoch())`,
-					})
-					.where(
-						and(
-							eq(privilegedOperations.id, operation.id),
-							isNull(privilegedOperations.closedAt),
-							eq(
-								privilegedOperations.consumedRequests,
-								operation.consumedRequests,
-							),
-						),
-					)
-					.returning();
-				if (!updated[0]) {
-					throw new SandboxAuthorityError(
-						"operation_exhausted",
-						"Privileged operation request budget is exhausted.",
-					);
-				}
+			const consumeBudget = sql`(
+				${consume ? sql`TRUE` : sql`FALSE`} = FALSE
+				OR ${privilegedOperations.maxRequests} IS NULL
+				OR ${privilegedOperations.consumedRequests} < ${privilegedOperations.maxRequests}
+			)`;
+			const nextConsumed = sql`CASE
+				WHEN ${consume ? sql`TRUE` : sql`FALSE`} = TRUE
+					AND ${privilegedOperations.maxRequests} IS NOT NULL
+				THEN ${privilegedOperations.consumedRequests} + 1
+				ELSE ${privilegedOperations.consumedRequests}
+			END`;
+			const updated = await db
+				.update(privilegedOperations)
+				.set({
+					consumedRequests: nextConsumed,
+					updatedAt: sql`(unixepoch())`,
+				})
+				.where(and(liveOutboundOperationSql(ctx, family), consumeBudget))
+				.returning();
+			if (updated[0]) {
 				return {
 					identity,
 					operation: toOperationHandle(updated[0]),
 				};
 			}
 
-			return { identity, operation };
+			const existing = await loadOpenOperation(db, identity.id, family);
+			if (!existing) {
+				throw new SandboxAuthorityError(
+					"operation_not_open",
+					`No open ${family} operation for this identity.`,
+				);
+			}
+			if (existing.lifecycleGeneration !== identity.lifecycleGeneration) {
+				throw new SandboxAuthorityError(
+					"generation_mismatch",
+					"Open operation lifecycle generation does not match identity.",
+				);
+			}
+			if (existing.closedAt != null) {
+				throw new SandboxAuthorityError(
+					"operation_closed",
+					"Privileged operation is closed.",
+				);
+			}
+			if (existing.expiresAt.getTime() <= Date.now()) {
+				throw new SandboxAuthorityError(
+					"operation_expired",
+					"Privileged operation has expired.",
+				);
+			}
+			if (
+				ctx.runtimeOwnerVersion != null &&
+				ctx.runtimeOwnerVersion !== existing.runtimeOwnerVersion
+			) {
+				throw new SandboxAuthorityError(
+					"runtime_owner_mismatch",
+					"Privileged operation runtime owner version does not match.",
+				);
+			}
+			requireStoredMatch(
+				existing.incarnationId,
+				ctx.incarnationId,
+				"incarnation_mismatch",
+				"Privileged operation incarnation does not match.",
+			);
+			requireStoredMatch(
+				existing.runEpoch,
+				ctx.runEpoch,
+				"run_epoch_mismatch",
+				"Privileged operation run epoch does not match.",
+			);
+			if (
+				consume &&
+				existing.maxRequests != null &&
+				existing.consumedRequests >= existing.maxRequests
+			) {
+				throw new SandboxAuthorityError(
+					"operation_exhausted",
+					"Privileged operation request budget is exhausted.",
+				);
+			}
+			throw new SandboxAuthorityError(
+				"runtime_owner_mismatch",
+				"Workspace runtime ownership does not admit a legacy operation.",
+			);
 		},
 	};
 }

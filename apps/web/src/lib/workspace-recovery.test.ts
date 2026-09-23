@@ -2,10 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { drizzle } from "drizzle-orm/sqlite-proxy";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { createDb } from "#/db";
-
-vi.mock("#/lib/workspace-runtime", () => ({
-	withWorkspaceRuntimeLease: vi.fn(),
-}));
+import type { ArchiveBackupStore } from "./sandbox-archive";
 
 vi.mock("#/lib/sandbox-archive", () => ({
 	createArchive: vi.fn(),
@@ -24,7 +21,7 @@ const {
 	WorkspaceRecoveryError,
 } = await import("#/lib/workspace-recovery");
 type WorkspaceRuntimeLease =
-	import("#/lib/workspace-runtime").WorkspaceRuntimeLease;
+	import("#/lib/workspace-runtime-policy").WorkspaceRuntimeLease;
 
 type Db = ReturnType<typeof createDb>;
 
@@ -144,6 +141,9 @@ function makeLease(
 			userId: "user-1",
 			projectId: "proj-1",
 			workspaceSessionId: "sess-1",
+			controllerClass: null,
+			controllerNamespace: null,
+			incarnationId: null,
 			lifecycleGeneration: 1,
 			state: "ready",
 			retiredAt: null,
@@ -165,7 +165,7 @@ function makeArchiveMocks() {
 	const abandoned: string[] = [];
 	const restored: string[] = [];
 	const restoreImpl = vi.fn(
-		async (_env: Env, _db: Db, input: { archiveId: string }) => {
+		async (_env: ArchiveBackupStore, _db: Db, input: { archiveId: string }) => {
 			restored.push(input.archiveId);
 			return {
 				archive: {
@@ -189,7 +189,7 @@ function makeArchiveMocks() {
 		archive: {
 			create: vi.fn(
 				async (
-					_env: Env,
+					_env: ArchiveBackupStore,
 					_db: Db,
 					input: {
 						ownerKind: string;

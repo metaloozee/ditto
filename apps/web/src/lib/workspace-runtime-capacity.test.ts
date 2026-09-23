@@ -8,13 +8,16 @@ import {
 	cancelWorkspaceWorkRow,
 	drainWorkspaceRuntimeQueue,
 	expireQueuedWork,
+	loadQueuedWorkForSession,
 	persistWorkspaceWork,
+	purgeExpiredCapacitySlots,
 	releaseCapacitySlot,
 	submitPersistedWork,
 	WORKSPACE_CAPACITY_GLOBAL_LIMIT,
 	WORKSPACE_CAPACITY_PER_USER_LIMIT,
 	WORKSPACE_QUEUE_TTL_MS,
 } from "#/lib/workspace-runtime-capacity";
+import { WorkspaceRuntimeError } from "#/lib/workspace-runtime-error";
 
 type Db = ReturnType<typeof createDb>;
 
@@ -32,7 +35,9 @@ function createCapacityDb() {
 			id text PRIMARY KEY NOT NULL,
 			projectId text NOT NULL,
 			userId text NOT NULL,
-			status text NOT NULL DEFAULT 'active'
+			status text NOT NULL DEFAULT 'active',
+			runtimeOwner text NOT NULL DEFAULT 'legacy',
+			runtimeOwnerVersion integer NOT NULL DEFAULT 1
 		);
 		CREATE TABLE messages (
 			id text PRIMARY KEY NOT NULL,
@@ -63,6 +68,18 @@ function createCapacityDb() {
 			queueExpiresAt integer NOT NULL,
 			userMessageId text,
 			assistantMessageId text,
+			protocolVersion integer,
+			runtimeOwner text NOT NULL DEFAULT 'legacy',
+			runtimeOwnerVersion integer NOT NULL DEFAULT 1,
+			commandId text,
+			deliveryState text NOT NULL DEFAULT 'pending',
+			deliveryLeaseToken text,
+			deliveryLeaseExpiresAt integer,
+			deliveryAttempts integer NOT NULL DEFAULT 0,
+			startupRoles text,
+			startupPools text,
+			expectedIdentityId text,
+			startupDeadline integer,
 			created_at integer,
 			updated_at integer
 		);
@@ -82,8 +99,22 @@ function createCapacityDb() {
 		);
 		CREATE UNIQUE INDEX workspace_capacity_leases_sessionId_uidx
 			ON workspace_capacity_leases (sessionId);
+		CREATE TABLE runtime_capacity_policy (
+			id integer PRIMARY KEY NOT NULL,
+			accountingMode text NOT NULL DEFAULT 'legacy',
+			version integer NOT NULL DEFAULT 1,
+			updatedAt integer NOT NULL
+		);
+		INSERT INTO runtime_capacity_policy (id, accountingMode, version, updatedAt)
+		VALUES (1, 'legacy', 1, 0);
 	`);
 
+	let hook:
+		| {
+				match: (query: string) => boolean;
+				callback: () => void | Promise<void>;
+		  }
+		| undefined;
 	const db = drizzle(async (sql, params, method) => {
 		const stmt = sqlite.prepare(sql);
 		if (method === "run") {
@@ -94,15 +125,34 @@ function createCapacityDb() {
 			const row = stmt.get(...(params as never[])) as
 				| Record<string, unknown>
 				| undefined;
+			if (hook?.match(sql)) {
+				const callback = hook.callback;
+				hook = undefined;
+				await callback();
+			}
 			return {
 				rows: row ? (Object.values(row) as unknown[]) : (undefined as never),
 			};
 		}
 		const rows = stmt.all(...(params as never[])) as Record<string, unknown>[];
+		if (hook?.match(sql)) {
+			const callback = hook.callback;
+			hook = undefined;
+			await callback();
+		}
 		return { rows: rows.map((r) => Object.values(r)) };
 	}) as unknown as Db;
 
-	return { db, sqlite };
+	return {
+		db,
+		sqlite,
+		once(
+			match: (query: string) => boolean,
+			callback: () => void | Promise<void>,
+		) {
+			hook = { match, callback };
+		},
+	};
 }
 
 function seedUserSession(
@@ -267,7 +317,6 @@ describe("workspace work FIFO drain", () => {
 
 		const executed: string[] = [];
 		await drainWorkspaceRuntimeQueue({
-			env: {} as Env,
 			db,
 			now: () => nowMs,
 			execute: async ({ work }) => {
@@ -317,13 +366,11 @@ describe("workspace work FIFO drain", () => {
 		void barrier;
 		await Promise.all([
 			drainWorkspaceRuntimeQueue({
-				env: {} as Env,
 				db,
 				now: () => nowMs,
 				execute,
 			}),
 			drainWorkspaceRuntimeQueue({
-				env: {} as Env,
 				db,
 				now: () => nowMs,
 				execute,
@@ -467,7 +514,6 @@ describe("local capacity characterization", () => {
 
 		nowMs += 1000;
 		await drainWorkspaceRuntimeQueue({
-			env: {} as Env,
 			db,
 			now: () => nowMs,
 			execute: async () => undefined,
@@ -516,5 +562,290 @@ describe("local capacity characterization", () => {
 		});
 		const receipt = await submitPersistedWork({ db, work, nowMs });
 		expect(receipt.status).toBe("running");
+	});
+
+	it("does not treat trusted delivery as a legacy active run", async () => {
+		const { db, sqlite } = createCapacityDb();
+		const nowMs = 1_700_000_000_000;
+		const projectId = seedUserSession(sqlite, {
+			userId: "user-1",
+			sessionId: "sess-1",
+		});
+		sqlite
+			.prepare(
+				`UPDATE workspace_sessions SET runtimeOwner='trusted_v1', runtimeOwnerVersion=2 WHERE id='sess-1'`,
+			)
+			.run();
+		sqlite
+			.prepare(
+				`INSERT INTO workspace_runtime_work (id, fifoSeq, sessionId, projectId, userId, intent, status, queueExpiresAt, runtimeOwner, runtimeOwnerVersion) VALUES ('trusted-work', 1, 'sess-1', ?, 'user-1', 'agent_run', 'running', 9999999999, 'trusted_v1', 2)`,
+			)
+			.run(projectId);
+		const queued = await loadQueuedWorkForSession({
+			db,
+			sessionId: "sess-1",
+			userId: "user-1",
+			nowMs,
+		});
+		expect(queued).toBeNull();
+	});
+
+	it("fails closed when capacity accounting is unified", async () => {
+		const { db, sqlite } = createCapacityDb();
+		seedUserSession(sqlite, { userId: "user-1", sessionId: "sess-1" });
+		sqlite
+			.prepare(
+				`UPDATE runtime_capacity_policy SET accountingMode='unified', version=2 WHERE id=1`,
+			)
+			.run();
+		await expect(
+			acquireCapacitySlot({
+				db,
+				sessionId: "sess-1",
+				userId: "user-1",
+				nowMs: 1_700_000_000_000,
+			}),
+		).rejects.toMatchObject({ code: "capacity_accounting_unified" });
+	});
+
+	it("fails closed when the accounting policy row is missing", async () => {
+		const { db, sqlite } = createCapacityDb();
+		seedUserSession(sqlite, { userId: "user-1", sessionId: "sess-1" });
+		sqlite.exec("DELETE FROM runtime_capacity_policy");
+		await expect(
+			acquireCapacitySlot({
+				db,
+				sessionId: "sess-1",
+				userId: "user-1",
+				nowMs: 1_700_000_000_000,
+			}),
+		).rejects.toMatchObject({ code: "capacity_accounting_unified" });
+		expect(
+			sqlite
+				.prepare("SELECT count(*) AS n FROM workspace_capacity_leases")
+				.get(),
+		).toEqual({ n: 0 });
+	});
+
+	it("does not create a lease when accounting mode changes between read and write", async () => {
+		const { sqlite } = createCapacityDb();
+		seedUserSession(sqlite, { userId: "user-1", sessionId: "sess-1" });
+		let afterPolicyRead: (() => void) | undefined;
+		const db = drizzle(async (query, params, method) => {
+			const stmt = sqlite.prepare(query);
+			if (method === "run") {
+				stmt.run(...(params as never[]));
+				return { rows: [] };
+			}
+			const rows = stmt.all(...(params as never[])) as Record<
+				string,
+				unknown
+			>[];
+			if (
+				afterPolicyRead &&
+				query.startsWith("select") &&
+				query.includes("runtime_capacity_policy")
+			) {
+				const callback = afterPolicyRead;
+				afterPolicyRead = undefined;
+				callback();
+			}
+			const values = rows.map((row) => Object.values(row));
+			return { rows: method === "get" ? values[0] : values };
+		}) as unknown as Db;
+		afterPolicyRead = () => {
+			sqlite.exec(
+				"UPDATE runtime_capacity_policy SET accountingMode = 'unified', version = 2 WHERE id = 1",
+			);
+		};
+		await expect(
+			acquireCapacitySlot({
+				db,
+				sessionId: "sess-1",
+				userId: "user-1",
+				nowMs: 1_700_000_000_000,
+			}),
+		).rejects.toMatchObject({ code: "capacity_accounting_unified" });
+		expect(
+			sqlite
+				.prepare("SELECT count(*) AS n FROM workspace_capacity_leases")
+				.get(),
+		).toEqual({ n: 0 });
+	});
+
+	it("does not let stale release or purge mutate accounting after cutover", async () => {
+		const { db, sqlite } = createCapacityDb();
+		seedUserSession(sqlite, { userId: "user-1", sessionId: "sess-1" });
+		const nowMs = 1_700_000_000_000;
+		const slot = await acquireCapacitySlot({
+			db,
+			sessionId: "sess-1",
+			userId: "user-1",
+			nowMs,
+		});
+		expect(slot).not.toBeNull();
+		sqlite
+			.prepare(
+				`UPDATE runtime_capacity_policy SET accountingMode='unified', version=2 WHERE id=1`,
+			)
+			.run();
+		await expect(
+			releaseCapacitySlot({
+				db,
+				sessionId: "sess-1",
+				leaseToken: slot?.leaseToken,
+				nowMs,
+			}),
+		).resolves.toBe(false);
+		expect(
+			sqlite
+				.prepare("SELECT count(*) AS n FROM workspace_capacity_leases")
+				.get(),
+		).toEqual({ n: 1 });
+		await expect(
+			purgeExpiredCapacitySlots(db, nowMs + 3_600_000),
+		).resolves.toBe(0);
+		expect(
+			sqlite
+				.prepare("SELECT count(*) AS n FROM workspace_capacity_leases")
+				.get(),
+		).toEqual({ n: 1 });
+	});
+
+	it("does not mutate trusted workspace or project delivery rows during legacy expiry", async () => {
+		const { db, sqlite } = createCapacityDb();
+		const projectId = seedUserSession(sqlite, {
+			userId: "user-1",
+			sessionId: "sess-1",
+		});
+		sqlite
+			.prepare(
+				`UPDATE workspace_sessions SET runtimeOwner='trusted_v1', runtimeOwnerVersion=2 WHERE id='sess-1'`,
+			)
+			.run();
+		sqlite
+			.prepare(
+				`INSERT INTO workspace_runtime_work (
+					id, fifoSeq, sessionId, projectId, userId, intent, status, queueExpiresAt,
+					runtimeOwner, runtimeOwnerVersion, commandId, protocolVersion, deliveryState
+				) VALUES ('trusted-ws', 1, 'sess-1', ?, 'user-1', 'agent_run', 'queued', 1,
+					'trusted_v1', 2, 'cmd-ws', 1, 'pending')`,
+			)
+			.run(projectId);
+		sqlite
+			.prepare(
+				`INSERT INTO workspace_runtime_work (
+					id, fifoSeq, sessionId, projectId, userId, intent, status, queueExpiresAt,
+					runtimeOwner, runtimeOwnerVersion, commandId, protocolVersion, deliveryState
+				) VALUES ('trusted-delivery', 2, NULL, ?, 'user-1', 'destruction', 'queued', 1,
+					'trusted_v1', 1, 'command', 1, 'pending')`,
+			)
+			.run(projectId);
+		sqlite
+			.prepare(
+				`INSERT INTO workspace_runtime_work (
+					id, fifoSeq, sessionId, projectId, userId, intent, status, queueExpiresAt,
+					runtimeOwner, runtimeOwnerVersion
+				) VALUES ('legacy-null', 3, NULL, ?, 'user-1', 'destruction', 'queued', 1,
+					'legacy', 1)`,
+			)
+			.run(projectId);
+		await expireQueuedWork({ db, nowMs: 1_700_000_000_000 });
+		expect(
+			sqlite
+				.prepare(
+					"SELECT id, status FROM workspace_runtime_work ORDER BY fifoSeq",
+				)
+				.all(),
+		).toEqual([
+			{ id: "trusted-ws", status: "queued" },
+			{ id: "trusted-delivery", status: "queued" },
+			{ id: "legacy-null", status: "failed" },
+		]);
+	});
+
+	it("does not requeue leased work after ownership changes before capacity exhaustion", async () => {
+		const { db, sqlite, once } = createCapacityDb();
+		const nowMs = 1_700_000_000_000;
+		const projectId = seedUserSession(sqlite, {
+			userId: "u",
+			sessionId: "s",
+		});
+		seedUserSession(sqlite, { userId: "u", sessionId: "other-1" });
+		seedUserSession(sqlite, { userId: "u", sessionId: "other-2" });
+		sqlite.exec(
+			`INSERT INTO workspace_capacity_leases (id, sessionId, userId, leaseToken, expiresAt)
+			 VALUES ('l1', 'other-1', 'u', 't1', 4102444800), ('l2', 'other-2', 'u', 't2', 4102444800);
+			 INSERT INTO workspace_runtime_work (id, fifoSeq, projectId, userId, sessionId, intent, queueExpiresAt)
+			 VALUES ('work', 1, '${projectId}', 'u', 's', 'agent_run', 4102444800)`,
+		);
+		let statusAtFence: string | undefined;
+		once(
+			(query) =>
+				query.startsWith("select") && query.includes("runtime_capacity_policy"),
+			() => {
+				statusAtFence = (
+					sqlite
+						.prepare(
+							"SELECT status FROM workspace_runtime_work WHERE id='work'",
+						)
+						.get() as { status: string }
+				).status;
+				sqlite.exec(
+					"UPDATE workspace_sessions SET runtimeOwner='migrating', runtimeOwnerVersion=2 WHERE id='s'",
+				);
+			},
+		);
+		await drainWorkspaceRuntimeQueue({
+			db,
+			now: () => nowMs,
+		});
+		const statusAfter = (
+			sqlite
+				.prepare(
+					"SELECT status, leaseToken FROM workspace_runtime_work WHERE id='work'",
+				)
+				.get() as { status: string; leaseToken: string | null }
+		).status;
+		expect(statusAtFence).toBe("leased");
+		expect(statusAfter).toBe("leased");
+	});
+
+	it("fails session-target insertion without residue when ownership changes after the owner read", async () => {
+		const { db, sqlite, once } = createCapacityDb();
+		const nowMs = 1_700_000_000_000;
+		const projectId = seedUserSession(sqlite, {
+			userId: "u",
+			sessionId: "s",
+		});
+		once(
+			(query) =>
+				query.startsWith("select") && query.includes("workspace_sessions"),
+			() => {
+				sqlite.exec(
+					"UPDATE workspace_sessions SET runtimeOwner='migrating', runtimeOwnerVersion=2 WHERE id='s'",
+				);
+			},
+		);
+		await expect(
+			persistWorkspaceWork({
+				db,
+				workId: "late-work",
+				intent: {
+					kind: "preview_start",
+					projectId,
+					userId: "u",
+					sessionId: "s",
+				},
+				nowMs,
+			}),
+		).rejects.toBeInstanceOf(WorkspaceRuntimeError);
+		expect(
+			sqlite
+				.prepare(
+					"SELECT count(*) AS n FROM workspace_runtime_work WHERE id='late-work'",
+				)
+				.get(),
+		).toEqual({ n: 0 });
 	});
 });

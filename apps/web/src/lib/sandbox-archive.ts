@@ -37,6 +37,20 @@ export type RestoreResult = {
 	extractedBytes: number;
 };
 
+export type ArchiveBackupObject = {
+	body?: ReadableStream<Uint8Array> | null;
+};
+
+export type ArchiveBackupBucket = {
+	put(key: string, value: unknown): Promise<unknown>;
+	get(key: string): Promise<ArchiveBackupObject | null>;
+	delete(key: string): Promise<unknown>;
+};
+
+export type ArchiveBackupStore = {
+	BACKUP_BUCKET: ArchiveBackupBucket;
+};
+
 export type ArchiveSandbox = {
 	exec: (
 		command: string,
@@ -624,7 +638,7 @@ export async function abandonArchiveForProjectDeletion(
 }
 
 async function createArchiveBody(options: {
-	env: Env;
+	env: ArchiveBackupStore;
 	db: Db;
 	sandbox: ArchiveSandbox;
 	input: CreateArchiveInput;
@@ -705,7 +719,7 @@ async function createArchiveBody(options: {
 }
 
 export async function createArchive(
-	env: Env,
+	env: ArchiveBackupStore,
 	db: Db,
 	input: CreateArchiveInput,
 ): Promise<ArchiveRef> {
@@ -713,7 +727,7 @@ export async function createArchive(
 }
 
 export async function restoreArchive(
-	env: Env,
+	env: ArchiveBackupStore,
 	db: Db,
 	input: RestoreArchiveInput,
 ): Promise<RestoreResult> {
@@ -767,7 +781,7 @@ export async function restoreArchive(
 }
 
 export async function deleteArchive(
-	env: Env,
+	env: ArchiveBackupStore,
 	db: Db,
 	archiveId: string,
 ): Promise<void> {
@@ -801,7 +815,7 @@ export async function deleteArchive(
 }
 
 export async function retryArchiveCleanup(options: {
-	env: Env;
+	env: ArchiveBackupStore;
 	db: Db;
 	nowSeconds?: number;
 	limit?: number;
@@ -842,7 +856,10 @@ export async function retryArchiveCleanup(options: {
 	return { cleaned };
 }
 
-export function createSandboxArchive(env: Env, db: Db): SandboxArchive {
+export function createSandboxArchive(
+	env: ArchiveBackupStore,
+	db: Db,
+): SandboxArchive {
 	return {
 		create: (input) => createArchive(env, db, input),
 		restore: (input) => restoreArchive(env, db, input),

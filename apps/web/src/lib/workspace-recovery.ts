@@ -14,6 +14,7 @@ import {
 	workspaceSessions,
 } from "#/db/schema";
 import {
+	type ArchiveBackupStore,
 	type ArchiveRef,
 	type RestoreResult as ArchiveRestoreResult,
 	type ArchiveSandbox,
@@ -23,11 +24,11 @@ import {
 	type RestoreArchiveInput,
 	restoreArchive,
 } from "#/lib/sandbox-archive";
-import type { WorkspaceRuntimeLease } from "#/lib/workspace-runtime";
 import {
 	persistWorkspaceWork,
 	WORKSPACE_PREVIEW_CHECKPOINT_DEFERRAL_MS,
 } from "#/lib/workspace-runtime-capacity";
+import type { WorkspaceRuntimeLease } from "#/lib/workspace-runtime-policy";
 
 type Db = ReturnType<typeof createDb>;
 
@@ -71,9 +72,13 @@ export class WorkspaceRecoveryError extends Error {
 type RecoveryRow = typeof workspaceSessionRecoveries.$inferSelect;
 
 export type WorkspaceRecoveryArchive = {
-	create: (env: Env, db: Db, input: CreateArchiveInput) => Promise<ArchiveRef>;
+	create: (
+		env: ArchiveBackupStore,
+		db: Db,
+		input: CreateArchiveInput,
+	) => Promise<ArchiveRef>;
 	restore: (
-		env: Env,
+		env: ArchiveBackupStore,
 		db: Db,
 		input: RestoreArchiveInput,
 	) => Promise<ArchiveRestoreResult>;
@@ -82,7 +87,6 @@ export type WorkspaceRecoveryArchive = {
 
 type WithWorkspaceRuntimeLease = <T>(
 	input: {
-		env: Env;
 		db: Db;
 		userId: string;
 		projectId: string;
@@ -92,11 +96,27 @@ type WithWorkspaceRuntimeLease = <T>(
 	run: (lease: WorkspaceRuntimeLease) => Promise<T>,
 ) => Promise<T>;
 
+export type WorkspaceRecoveryPreview = {
+	interruptPreviewForCheckpoint: (input: {
+		db: Db;
+		projectId: string;
+		sessionId: string;
+		userId: string;
+	}) => Promise<unknown>;
+	maybeRestartPreviewAfterCheckpoint: (input: {
+		db: Db;
+		projectId: string;
+		sessionId: string;
+		userId: string;
+	}) => Promise<unknown>;
+};
+
 export type WorkspaceRecoveryDeps = {
 	createId?: () => string;
 	now?: () => number;
 	archive?: WorkspaceRecoveryArchive;
 	withWorkspaceRuntimeLease?: WithWorkspaceRuntimeLease;
+	preview?: WorkspaceRecoveryPreview;
 };
 
 const defaultArchive: WorkspaceRecoveryArchive = {
@@ -111,17 +131,20 @@ function mergeDeps(deps?: WorkspaceRecoveryDeps) {
 		now: deps?.now ?? (() => Date.now()),
 		archive: deps?.archive ?? defaultArchive,
 		withWorkspaceRuntimeLease: deps?.withWorkspaceRuntimeLease,
+		preview: deps?.preview,
 	};
 }
 
-async function resolveWithLease(
+function resolveWithLease(
 	deps: ReturnType<typeof mergeDeps>,
-): Promise<WithWorkspaceRuntimeLease> {
+): WithWorkspaceRuntimeLease {
 	if (deps.withWorkspaceRuntimeLease) {
 		return deps.withWorkspaceRuntimeLease;
 	}
-	const runtime = await import("#/lib/workspace-runtime");
-	return runtime.withWorkspaceRuntimeLease;
+	throw new WorkspaceRecoveryError(
+		"lease_required",
+		"Workspace recovery requires an injected runtime lease.",
+	);
 }
 
 function toRecoveryState(
@@ -441,7 +464,7 @@ async function promoteArchive(options: {
 
 async function checkpointOnce(options: {
 	db: Db;
-	env: Env;
+	env: ArchiveBackupStore;
 	lease: WorkspaceRuntimeLease;
 	userId: string;
 	candidateGeneration: number;
@@ -502,7 +525,7 @@ async function checkpointOnce(options: {
 export async function checkpoint(
 	options: {
 		db: Db;
-		env: Env;
+		env: ArchiveBackupStore;
 		lease: WorkspaceRuntimeLease;
 		userId: string;
 	},
@@ -587,7 +610,7 @@ export async function checkpoint(
 export async function restore(
 	options: {
 		db: Db;
-		env: Env;
+		env: ArchiveBackupStore;
 		lease: WorkspaceRuntimeLease;
 	},
 	injected?: WorkspaceRecoveryDeps,
@@ -729,7 +752,7 @@ async function sessionPreviewIsLive(
 export async function recordMutationAndCheckpoint(
 	options: {
 		db: Db;
-		env: Env;
+		env: ArchiveBackupStore;
 		userId: string;
 		projectId: string;
 		sessionId: string;
@@ -749,10 +772,9 @@ export async function recordMutationAndCheckpoint(
 		return recorded;
 	}
 	try {
-		const withLease = await resolveWithLease(deps);
+		const withLease = resolveWithLease(deps);
 		return await withLease(
 			{
-				env: options.env,
 				db: options.db,
 				userId: options.userId,
 				projectId: options.projectId,
@@ -787,7 +809,7 @@ export async function recordMutationAndCheckpoint(
 
 export async function enqueueDuePreviewCheckpoints(options: {
 	db: Db;
-	env: Env;
+	env: ArchiveBackupStore;
 	nowMs: number;
 }): Promise<number> {
 	const dueBefore = new Date(
@@ -836,7 +858,7 @@ export async function enqueueDuePreviewCheckpoints(options: {
 export async function forcePreviewCheckpoint(
 	options: {
 		db: Db;
-		env: Env;
+		env: ArchiveBackupStore;
 		userId: string;
 		projectId: string;
 		sessionId: string;
@@ -844,19 +866,23 @@ export async function forcePreviewCheckpoint(
 	injected?: WorkspaceRecoveryDeps,
 ): Promise<RecoveryState> {
 	const deps = mergeDeps(injected);
-	const preview = await import("#/lib/session-preview");
+	if (!deps.preview) {
+		throw new WorkspaceRecoveryError(
+			"preview_required",
+			"Forced preview checkpoints require injected preview operations.",
+		);
+	}
+	const preview = deps.preview;
 	await preview.interruptPreviewForCheckpoint({
 		db: options.db,
-		env: options.env,
 		projectId: options.projectId,
 		sessionId: options.sessionId,
 		userId: options.userId,
 	});
 	try {
-		const withLease = await resolveWithLease(deps);
+		const withLease = resolveWithLease(deps);
 		const result = await withLease(
 			{
-				env: options.env,
 				db: options.db,
 				userId: options.userId,
 				projectId: options.projectId,
@@ -879,7 +905,6 @@ export async function forcePreviewCheckpoint(
 		}
 		await preview.maybeRestartPreviewAfterCheckpoint({
 			db: options.db,
-			env: options.env,
 			projectId: options.projectId,
 			sessionId: options.sessionId,
 			userId: options.userId,
