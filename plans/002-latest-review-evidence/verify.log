@@ -1,0 +1,748 @@
+$ pnpm check && pnpm typecheck && pnpm test && pnpm build && pnpm runner:verify
+$ biome check
+packages/runtime-contracts/src/contracts.test.ts:266:26 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    264 │ 		expect(() => parseBrowserCommandV1(nested)).toThrow(/JSON|nesting|byte/);
+    265 │ 		try {
+  > 266 │ 			parseBrowserCommandV1("[".repeat(8000) + "0" + "]".repeat(8000));
+        │ 			                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    267 │ 			throw new Error("expected nested JSON to fail");
+    268 │ 		} catch (error) {
+
+  i Unsafe fix: Use a template literal.
+
+    264 264 │   		expect(() => parseBrowserCommandV1(nested)).toThrow(/JSON|nesting|byte/);
+    265 265 │   		try {
+    266     │ - → → → parseBrowserCommandV1("[".repeat(8000)·+·"0"·+·"]".repeat(8000));
+        266 │ + → → → parseBrowserCommandV1(`${"[".repeat(8000)}0${"]".repeat(8000)}`);
+    267 267 │   			throw new Error("expected nested JSON to fail");
+    268 268 │   		} catch (error) {
+
+
+apps/web/src/lib/git-fetch-contract.ts:117:10 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    115 │ 	}
+    116 │ 	return {
+  > 117 │ 		owner: match[1]!,
+        │ 		       ^^^^^^^^^
+    118 │ 		repo: match[2]!,
+    119 │ 		servicePath: match[4]!,
+
+
+apps/web/src/lib/git-fetch-contract.ts:118:9 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    116 │ 	return {
+    117 │ 		owner: match[1]!,
+  > 118 │ 		repo: match[2]!,
+        │ 		      ^^^^^^^^^
+    119 │ 		servicePath: match[4]!,
+    120 │ 	};
+
+
+apps/web/src/lib/git-fetch-contract.ts:119:16 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    117 │ 		owner: match[1]!,
+    118 │ 		repo: match[2]!,
+  > 119 │ 		servicePath: match[4]!,
+        │ 		             ^^^^^^^^^
+    120 │ 	};
+    121 │ }
+
+
+apps/web/src/lib/git-pkt-line.ts:42:16 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    40 │ 	let value = 0;
+    41 │ 	for (let i = 0; i < 4; i++) {
+  > 42 │ 		const byte = bytes[offset + i]!;
+       │ 		             ^^^^^^^^^^^^^^^^^^
+    43 │ 		if (!isHexChar(byte)) {
+    44 │ 			throw new PktLineError("non_hex_length", "Pkt-line length is not hex.");
+
+
+apps/web/src/lib/git-receive-pack.ts:139:17 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    137 │ 		);
+    138 │ 	}
+  > 139 │ 	const oldOid = match[1]!.toLowerCase();
+        │ 	               ^^^^^^^^^
+    140 │ 	const newOid = match[2]!.toLowerCase();
+    141 │ 	const ref = match[3]!;
+
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+
+    137 137 │   		);
+    138 138 │   	}
+    139     │ - → const·oldOid·=·match[1]!.toLowerCase();
+        139 │ + → const·oldOid·=·match[1]?.toLowerCase();
+    140 140 │   	const newOid = match[2]!.toLowerCase();
+    141 141 │   	const ref = match[3]!;
+
+
+apps/web/src/lib/git-receive-pack.ts:140:17 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    138 │ 	}
+    139 │ 	const oldOid = match[1]!.toLowerCase();
+  > 140 │ 	const newOid = match[2]!.toLowerCase();
+        │ 	               ^^^^^^^^^
+    141 │ 	const ref = match[3]!;
+    142 │ 	assertSha1Oid(oldOid, "old object id");
+
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+
+    138 138 │   	}
+    139 139 │   	const oldOid = match[1]!.toLowerCase();
+    140     │ - → const·newOid·=·match[2]!.toLowerCase();
+        140 │ + → const·newOid·=·match[2]?.toLowerCase();
+    141 141 │   	const ref = match[3]!;
+    142 142 │   	assertSha1Oid(oldOid, "old object id");
+
+
+apps/web/src/lib/git-receive-pack.ts:141:14 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    139 │ 	const oldOid = match[1]!.toLowerCase();
+    140 │ 	const newOid = match[2]!.toLowerCase();
+  > 141 │ 	const ref = match[3]!;
+        │ 	            ^^^^^^^^^
+    142 │ 	assertSha1Oid(oldOid, "old object id");
+    143 │ 	assertSha1Oid(newOid, "new object id");
+
+
+apps/web/src/lib/git-receive-pack.ts:220:15 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    218 │ 			);
+    219 │ 		}
+  > 220 │ 		const oid = parts[0]!.toLowerCase();
+        │ 		            ^^^^^^^^^
+    221 │ 		const name = parts.slice(1).join(" ");
+    222 │ 		if (name.endsWith("^{}")) {
+
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+
+    218 218 │   			);
+    219 219 │   		}
+    220     │ - → → const·oid·=·parts[0]!.toLowerCase();
+        220 │ + → → const·oid·=·parts[0]?.toLowerCase();
+    221 221 │   		const name = parts.slice(1).join(" ");
+    222 222 │   		if (name.endsWith("^{}")) {
+
+
+apps/web/src/lib/git-receive-pack.ts:328:18 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    326 │ 	}
+    327 │
+  > 328 │ 	const command = commands[0]!;
+        │ 	                ^^^^^^^^^^^^
+    329 │ 	if (command.newOid === ZERO_OID) {
+    330 │ 		throw new GitReceivePackError("deletion", "Ref deletion is not allowed.");
+
+
+apps/web/src/lib/git-receive-pack.ts:373:16 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    371 │ 			continue;
+    372 │ 		}
+  > 373 │ 		const band = line.data[0]!;
+        │ 		             ^^^^^^^^^^^^^
+    374 │ 		if (band === 1 || band === 2 || band === 3) {
+    375 │ 			sawBand = true;
+
+
+apps/web/src/lib/sandbox-egress-broker.ts:617:21 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    615 │ 	}
+    616 │
+  > 617 │ 	const allowedRef = operation.allowedRefs[0]!;
+        │ 	                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+    618 │ 	try {
+    619 │ 		const upstream = await options.fetchImpl(upstreamRequest);
+
+
+Checked 315 files in 769ms. No fixes applied.
+Found 11 warnings.
+Found 1 info.
+$ pnpm --filter @ditto/web typecheck
+$ tsc --noEmit
+$ pnpm --filter @ditto/web test
+$ vitest run
+Warning: Route file "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/project.$projectId.test.tsx" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/-project.$projectId.test.tsx" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/api.agent.control.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/-api.agent.control.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/api.agent.stream.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/-api.agent.stream.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+
+ RUN  v4.1.10 /home/ayan/ditto-worktrees/plan-001-reexecute/apps/web
+
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+
+ Test Files  68 passed (68)
+      Tests  722 passed (722)
+   Start at  07:35:55
+   Duration  42.70s (transform 20.95s, setup 0ms, import 58.29s, tests 37.52s, environment 11.25s)
+
+$ pnpm --filter @ditto/web build
+$ vite build
+Warning: Route file "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/project.$projectId.test.tsx" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/-project.$projectId.test.tsx" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/api.agent.control.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/-api.agent.control.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/api.agent.stream.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/-api.agent.stream.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/project.$projectId.test.tsx" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/-project.$projectId.test.tsx" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/api.agent.control.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/-api.agent.control.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/api.agent.stream.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/-api.agent.stream.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/project.$projectId.test.tsx" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/-project.$projectId.test.tsx" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/api.agent.control.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/-api.agent.control.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/api.agent.stream.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/-api.agent.stream.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+vite v8.1.5 building client environment for production...
+[2K
+transforming...✓ 5709 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/client/assets/geist-cyrillic-ext-wght-normal-DjL33-gN.woff2        7.42 kB
+dist/client/assets/geist-vietnamese-wght-normal-6IgcOCM7.woff2          8.00 kB
+dist/client/assets/geist-cyrillic-wght-normal-BEAKL7Jp.woff2           15.08 kB
+dist/client/assets/geist-latin-ext-wght-normal-DC-KSUi6.woff2          16.51 kB
+dist/client/assets/geist-latin-wght-normal-BgDaEnEv.woff2              29.40 kB
+dist/client/assets/styles-CP6V88uQ.css                                175.57 kB │ gzip:  27.64 kB
+dist/client/assets/mermaid-GHXKKRXX-CtevxaPL.js                         0.07 kB │ gzip:   0.08 kB
+dist/client/assets/compiler-runtime-rsGP3YMw.js                         0.23 kB │ gzip:   0.21 kB
+dist/client/assets/project._projectId.index-DrbX_CAJ.js                 0.29 kB │ gzip:   0.22 kB
+dist/client/assets/project._projectId.session._sessionId-DAlpNnIg.js    0.34 kB │ gzip:   0.25 kB
+dist/client/assets/qss-Bqk2G4CH.js                                      0.44 kB │ gzip:   0.29 kB
+dist/client/assets/highlighted-body-OFNGDK62-BqQdTXyN.js                0.53 kB │ gzip:   0.35 kB
+dist/client/assets/codeowners-C8r90Shi.js                               0.54 kB │ gzip:   0.31 kB
+dist/client/assets/installation.completed-D3Ztwwun.js                   0.68 kB │ gzip:   0.43 kB
+dist/client/assets/shellsession-BXesbcHH.js                             0.71 kB │ gzip:   0.42 kB
+dist/client/assets/tsv-sltzmVWM.js                                      0.73 kB │ gzip:   0.33 kB
+dist/client/assets/html-derivative-CpRwrLa7.js                          0.84 kB │ gzip:   0.45 kB
+dist/client/assets/git-rebase-VSvg8wq9.js                               0.98 kB │ gzip:   0.43 kB
+dist/client/assets/qmldir-DCQb3MpD.js                                   0.99 kB │ gzip:   0.44 kB
+dist/client/assets/csv-Dx-8-gkx.js                                      1.13 kB │ gzip:   0.36 kB
+dist/client/assets/preload-helper-Czpn1I53.js                           1.19 kB │ gzip:   0.67 kB
+dist/client/assets/git-commit-BSykSTBG.js                               1.22 kB │ gzip:   0.52 kB
+dist/client/assets/xsl-BwCWa6wg.js                                      1.36 kB │ gzip:   0.50 kB
+dist/client/assets/dotenv-_5a1GRtc.js                                   1.41 kB │ gzip:   0.52 kB
+dist/client/assets/sparql-D_iOobhT.js                                   1.47 kB │ gzip:   0.81 kB
+dist/client/assets/ini-B5eOa1yu.js                                      1.51 kB │ gzip:   0.49 kB
+dist/client/assets/utils-CBM2Uq5Q.js                                    1.52 kB │ gzip:   0.84 kB
+dist/client/assets/fortran-fixed-form-DEKoE2YW.js                       1.66 kB │ gzip:   0.68 kB
+dist/client/assets/docker-IyjqRm3v.js                                   1.73 kB │ gzip:   0.59 kB
+dist/client/assets/hxml-B0Qn7Nwc.js                                     1.74 kB │ gzip:   0.87 kB
+dist/client/assets/desktop-Dlh5hvp9.js                                  1.82 kB │ gzip:   0.75 kB
+dist/client/assets/erb-DgeNXRCP.js                                      2.13 kB │ gzip:   0.62 kB
+dist/client/assets/wenyan-C8pVoKbM.js                                   2.15 kB │ gzip:   1.08 kB
+dist/client/assets/jssm-DXw9l8Rf.js                                     2.23 kB │ gzip:   0.61 kB
+dist/client/assets/edge-QcZyw0c3.js                                     2.30 kB │ gzip:   0.67 kB
+dist/client/assets/reg-CRGYupPL.js                                      2.33 kB │ gzip:   0.69 kB
+dist/client/assets/diff-woXpYk--.js                                     2.56 kB │ gzip:   0.68 kB
+dist/client/assets/gleam-CSRkHgEL.js                                    2.57 kB │ gzip:   0.81 kB
+dist/client/assets/hy-CZbG8q4J.js                                       2.64 kB │ gzip:   1.17 kB
+dist/client/assets/sign-in-Dq7TPZEv.js                                  2.66 kB │ gzip:   1.17 kB
+dist/client/assets/openscad-BUDT5pXO.js                                 2.81 kB │ gzip:   1.00 kB
+dist/client/assets/log-BNLmms1o.js                                      2.84 kB │ gzip:   0.89 kB
+dist/client/assets/json-Cgm2MsJZ.js                                     2.88 kB │ gzip:   0.82 kB
+dist/client/assets/cairo-DLTphjLi.js                                    2.93 kB │ gzip:   0.80 kB
+dist/client/assets/berry-DKpUyyne.js                                    2.99 kB │ gzip:   0.80 kB
+dist/client/assets/jsonl-CmCQp5Yx.js                                    3.00 kB │ gzip:   0.78 kB
+dist/client/assets/jsonc-CYpm1nAK.js                                    3.10 kB │ gzip:   0.78 kB
+dist/client/assets/logo-Cluzi2Zq.js                                     3.12 kB │ gzip:   1.46 kB
+dist/client/assets/po-BiJDBrnU.js                                       3.23 kB │ gzip:   0.90 kB
+dist/client/assets/json5-BR5RXkoi.js                                    3.24 kB │ gzip:   0.82 kB
+dist/client/assets/mipsasm-BMqwQI7S.js                                  3.25 kB │ gzip:   1.17 kB
+dist/client/assets/tasl-DMoTqEGO.js                                     3.28 kB │ gzip:   0.84 kB
+dist/client/assets/genie-CV2tkWYe.js                                    3.34 kB │ gzip:   1.20 kB
+dist/client/assets/rel-BtDbiS_P.js                                      3.36 kB │ gzip:   1.10 kB
+dist/client/assets/vala-zf12oZj6.js                                     3.36 kB │ gzip:   1.18 kB
+dist/client/assets/splunk-BC2Px7Mm.js                                   3.42 kB │ gzip:   1.51 kB
+dist/client/assets/hurl-Dp1kUbxc.js                                     3.51 kB │ gzip:   1.10 kB
+dist/client/assets/agent-tool-presentation-BgvT2hA9.js                  3.53 kB │ gzip:   1.51 kB
+dist/client/assets/react-dom-CrK8yE57.js                                3.54 kB │ gzip:   1.34 kB
+dist/client/assets/fluent-C03EYrpw.js                                   3.60 kB │ gzip:   0.89 kB
+dist/client/assets/ssh-config-BgfXC-Er.js                               3.61 kB │ gzip:   1.59 kB
+dist/client/assets/jsonnet-CJTPZ8u_.js                                  3.61 kB │ gzip:   1.03 kB
+dist/client/assets/kdl-CsD5j6eV.js                                      3.62 kB │ gzip:   1.03 kB
+dist/client/assets/narrat-_X_XdTYD.js                                   3.66 kB │ gzip:   1.09 kB
+dist/client/assets/turtle-ByJddavk.js                                   3.69 kB │ gzip:   0.96 kB
+dist/client/assets/glsl-DMf9FQ3L.js                                     3.69 kB │ gzip:   1.45 kB
+dist/client/assets/zenscript-BnlCZFoB.js                                3.90 kB │ gzip:   1.28 kB
+dist/client/assets/ron-VUp2lXgN.js                                      3.90 kB │ gzip:   0.97 kB
+dist/client/assets/gn-ilITqXS6.js                                       3.99 kB │ gzip:   1.47 kB
+dist/client/assets/pascal-4ZHwLPI5.js                                   4.14 kB │ gzip:   1.67 kB
+dist/client/assets/http-BBnLLuXT.js                                     4.41 kB │ gzip:   1.06 kB
+dist/client/assets/tcl-CZd0xW_V.js                                      4.42 kB │ gzip:   1.50 kB
+dist/client/assets/lazyRouteComponent-BEWk_Hob.js                       4.45 kB │ gzip:   1.56 kB
+dist/client/assets/nextflow-BJtWHP5T.js                                 4.50 kB │ gzip:   1.16 kB
+dist/client/assets/rosmsg-CAekHB0j.js                                   4.51 kB │ gzip:   1.05 kB
+dist/client/assets/polar-C7UOKdEL.js                                    4.66 kB │ gzip:   1.12 kB
+dist/client/assets/sdbl-bTVj8UrX.js                                     4.69 kB │ gzip:   2.00 kB
+dist/client/assets/fennel-DQxkIbk2.js                                   4.76 kB │ gzip:   1.53 kB
+dist/client/assets/bibtex-Ci_nEsc7.js                                   4.78 kB │ gzip:   0.83 kB
+dist/client/assets/llvm-Cm23YOpf.js                                     5.04 kB │ gzip:   2.01 kB
+dist/client/assets/wgsl-BsKzXJz4.js                                     5.13 kB │ gzip:   1.38 kB
+dist/client/assets/gdresource-C0sCabJj.js                               5.28 kB │ gzip:   1.33 kB
+dist/client/assets/zig-CMLA9XwU.js                                      5.33 kB │ gzip:   1.55 kB
+dist/client/assets/qml-BmTdaChB.js                                      5.33 kB │ gzip:   1.38 kB
+dist/client/assets/dax-BkyTk9wS.js                                      5.35 kB │ gzip:   2.21 kB
+dist/client/assets/bicep-CUHmPFLl.js                                    5.37 kB │ gzip:   1.14 kB
+dist/client/assets/xml-KfsEGp13.js                                      5.44 kB │ gzip:   1.24 kB
+dist/client/assets/awk-BWXHIvNe.js                                      5.45 kB │ gzip:   1.37 kB
+dist/client/assets/coq-BrsZFFmf.js                                      5.54 kB │ gzip:   1.91 kB
+dist/client/assets/jinja-uLtEH6Uh.js                                    5.62 kB │ gzip:   1.36 kB
+dist/client/assets/lean-CewbzKMR.js                                     5.77 kB │ gzip:   1.91 kB
+dist/client/assets/moonbit-CaWjb8XO.js                                  5.89 kB │ gzip:   1.67 kB
+dist/client/assets/powerquery-DNMTfnFr.js                               5.89 kB │ gzip:   1.51 kB
+dist/client/assets/shaderlab-TOUzSsQk.js                                5.91 kB │ gzip:   2.08 kB
+dist/client/assets/verilog-CiiDBU1e.js                                  5.92 kB │ gzip:   1.89 kB
+dist/client/assets/cypher-ClKdZ_lG.js                                   5.94 kB │ gzip:   1.71 kB
+dist/client/assets/vb-Djn5o6TS.js                                       6.08 kB │ gzip:   2.33 kB
+dist/client/assets/red-CJ3rzSJv.js                                      6.25 kB │ gzip:   1.59 kB
+dist/client/assets/min-dark-BSWPekZh.js                                 6.28 kB │ gzip:   1.70 kB
+dist/client/assets/gdshader-CBce3t8t.js                                 6.31 kB │ gzip:   1.72 kB
+dist/client/assets/prisma-BsRQq5mF.js                                   6.32 kB │ gzip:   1.38 kB
+dist/client/assets/ara-4CJ0cIlV.js                                      6.35 kB │ gzip:   1.80 kB
+dist/client/assets/clojure-DqKBuwfJ.js                                  6.40 kB │ gzip:   1.41 kB
+dist/client/assets/postcss-BXeXVLqQ.js                                  6.41 kB │ gzip:   1.90 kB
+dist/client/assets/toml-CcmNWLt0.js                                     6.41 kB │ gzip:   1.28 kB
+dist/client/assets/solarized-light-DSh2HLQt.js                          6.47 kB │ gzip:   1.71 kB
+dist/client/assets/proto-DB4EqR-F.js                                    6.54 kB │ gzip:   1.41 kB
+dist/client/assets/smalltalk-B16xEiuN.js                                6.58 kB │ gzip:   1.61 kB
+dist/client/assets/r-lTqRof4u.js                                        6.60 kB │ gzip:   1.83 kB
+dist/client/assets/talonscript-CohzipZa.js                              6.75 kB │ gzip:   1.48 kB
+dist/client/assets/solarized-dark-DV17i1UV.js                           6.84 kB │ gzip:   1.78 kB
+dist/client/assets/riscv-Ckw8ddFX.js                                    6.90 kB │ gzip:   1.97 kB
+dist/client/assets/soy-YIWHJWDB.js                                      6.92 kB │ gzip:   1.62 kB
+dist/client/assets/min-light-DDpmG2fV.js                                6.96 kB │ gzip:   1.88 kB
+dist/client/assets/scheme-DQCgrYNe.js                                   7.16 kB │ gzip:   2.04 kB
+dist/client/assets/hlsl-Cvrh5tZx.js                                     7.25 kB │ gzip:   2.18 kB
+dist/client/assets/qss-Fe1Jh2GI.js                                      7.46 kB │ gzip:   2.57 kB
+dist/client/assets/systemd-BxMlprV5.js                                  7.86 kB │ gzip:   2.54 kB
+dist/client/assets/monokai-CdkpiU2Y.js                                  7.88 kB │ gzip:   1.90 kB
+dist/client/assets/regexp-9-R4yF2X.js                                   8.04 kB │ gzip:   1.46 kB
+dist/client/assets/haml-CJHHeoL9.js                                     8.33 kB │ gzip:   1.85 kB
+dist/client/assets/typst-DI99ib-x.js                                    8.38 kB │ gzip:   1.66 kB
+dist/client/assets/vue-html-Bf5lLZKy.js                                 8.47 kB │ gzip:   1.68 kB
+dist/client/assets/plsql-DGHpHOYJ.js                                    8.50 kB │ gzip:   2.99 kB
+dist/client/assets/dart-CnvKMtbv.js                                     8.61 kB │ gzip:   1.99 kB
+dist/client/assets/jsx-runtime-D8nDyRPw.js                              8.72 kB │ gzip:   3.33 kB
+dist/client/assets/horizon-CE9ld1lL.js                                  8.77 kB │ gzip:   1.94 kB
+dist/client/assets/kotlin-DhhofPvG.js                                   8.77 kB │ gzip:   2.12 kB
+dist/client/assets/horizon-bright-DSNQnXHK.js                           8.78 kB │ gzip:   1.96 kB
+dist/client/assets/make-Dixweg8N.js                                     8.95 kB │ gzip:   1.76 kB
+dist/client/assets/andromeeda-vGVdxbeo.js                               9.01 kB │ gzip:   2.35 kB
+dist/client/assets/project._projectId-B3TnNkzt.js                       9.05 kB │ gzip:   3.49 kB
+dist/client/assets/sas-ji922Pjp.js                                      9.06 kB │ gzip:   3.82 kB
+dist/client/assets/dark-plus-Cs2F2srj.js                                9.09 kB │ gzip:   2.10 kB
+dist/client/assets/slack-dark-DnToyrRv.js                               9.11 kB │ gzip:   1.96 kB
+dist/client/assets/sass-DXrisJhu.js                                     9.28 kB │ gzip:   2.48 kB
+dist/client/assets/plastic-DQwYfKfQ.js                                  9.29 kB │ gzip:   1.96 kB
+dist/client/assets/slack-ochin-B2OO5cIa.js                              9.42 kB │ gzip:   2.08 kB
+dist/client/assets/tex-B05xMlZq.js                                      9.67 kB │ gzip:   3.06 kB
+dist/client/assets/jison-CgOQvZt0.js                                    9.69 kB │ gzip:   1.86 kB
+dist/client/assets/cmake-Bj61d0ZC.js                                    9.84 kB │ gzip:   3.37 kB
+dist/client/assets/light-plus-DVQuIRkW.js                               9.93 kB │ gzip:   2.27 kB
+dist/client/assets/hcl-Dh228itO.js                                     10.04 kB │ gzip:   1.93 kB
+dist/client/assets/rst-nrDuRYpI.js                                     10.31 kB │ gzip:   2.24 kB
+dist/client/assets/pkl-ot-7Btpt.js                                     10.36 kB │ gzip:   1.37 kB
+dist/client/assets/beancount-D-usSTwE.js                               10.36 kB │ gzip:   1.43 kB
+dist/client/assets/nextflow-groovy-DJMQeKeT.js                         10.43 kB │ gzip:   2.13 kB
+dist/client/assets/dream-maker-DW3nJb8Q.js                             10.46 kB │ gzip:   2.25 kB
+dist/client/assets/raku-B3gFvitq.js                                    10.46 kB │ gzip:   2.94 kB
+dist/client/assets/yaml-Dt9AOyPV.js                                    10.56 kB │ gzip:   2.31 kB
+dist/client/assets/just-BkAjedUt.js                                    10.81 kB │ gzip:   2.60 kB
+dist/client/assets/elm-DrTpi8z2.js                                     10.94 kB │ gzip:   2.10 kB
+dist/client/assets/github-light-EUqPIrTm.js                            11.18 kB │ gzip:   2.49 kB
+dist/client/assets/prolog-iXnhIJG7.js                                  11.34 kB │ gzip:   3.84 kB
+dist/client/assets/terraform-DswuEJGm.js                               11.38 kB │ gzip:   2.51 kB
+dist/client/assets/github-dark-C-LZuMrd.js                             11.40 kB │ gzip:   2.53 kB
+dist/client/assets/puppet-CDv2pdJW.js                                  11.43 kB │ gzip:   2.10 kB
+dist/client/assets/laserwave-C_8bwKvT.js                               11.49 kB │ gzip:   2.57 kB
+dist/client/assets/gherkin-DExj1W_8.js                                 11.93 kB │ gzip:   5.04 kB
+dist/client/assets/wasm-ByWQv1Qj.js                                    12.00 kB │ gzip:   2.17 kB
+dist/client/assets/hjson-CxZEssPk.js                                   12.04 kB │ gzip:   1.64 kB
+dist/client/assets/handlebars-Bxuforch.js                              12.16 kB │ gzip:   2.37 kB
+dist/client/assets/apache-U0d_L8uA.js                                  12.44 kB │ gzip:   3.71 kB
+dist/client/assets/vesper-DdrHHSXu.js                                  12.73 kB │ gzip:   1.99 kB
+dist/client/assets/bat-Bo4NYOV-.js                                     12.88 kB │ gzip:   3.22 kB
+dist/client/assets/fish-BJitypiv.js                                    13.03 kB │ gzip:   1.73 kB
+dist/client/assets/v-DETTlOr0.js                                       13.20 kB │ gzip:   2.73 kB
+dist/client/assets/vitesse-light-VbXTXTou.js                           13.61 kB │ gzip:   3.03 kB
+dist/client/assets/aurora-x-CDeNXAV0.js                                13.65 kB │ gzip:   2.28 kB
+dist/client/assets/vitesse-black-fwtXNY1n.js                           13.67 kB │ gzip:   3.05 kB
+dist/client/assets/vitesse-dark-BZCL-v6S.js                            13.75 kB │ gzip:   3.06 kB
+dist/client/assets/pug-Iwbcn2OY.js                                     13.84 kB │ gzip:   2.58 kB
+dist/client/assets/synthwave-84-nFMaYfgc.js                            14.03 kB │ gzip:   2.85 kB
+dist/client/assets/github-light-default-BXViO-2h.js                    14.15 kB │ gzip:   3.02 kB
+dist/client/assets/clarity-SemFz856.js                                 14.26 kB │ gzip:   2.46 kB
+dist/client/assets/github-light-high-contrast-B68TUdTA.js              14.27 kB │ gzip:   3.00 kB
+dist/client/assets/github-dark-dimmed-Bx1FflLF.js                      14.43 kB │ gzip:   3.11 kB
+dist/client/assets/github-dark-default-DXG-b-1a.js                     14.43 kB │ gzip:   3.12 kB
+dist/client/assets/github-dark-high-contrast-B_tTalzw.js               14.59 kB │ gzip:   3.07 kB
+dist/client/assets/gnuplot-7GGW24-e.js                                 14.77 kB │ gzip:   3.27 kB
+dist/client/assets/rust-Cfkwpbl8.js                                    15.06 kB │ gzip:   2.71 kB
+dist/client/assets/kusto-C7mF5XQf.js                                   15.16 kB │ gzip:   3.92 kB
+dist/client/assets/actionscript-3--17pq3dv.js                          15.19 kB │ gzip:   2.67 kB
+dist/client/assets/nix-IvuFDN5E.js                                     15.50 kB │ gzip:   2.47 kB
+dist/client/assets/lua-Deub4Gjl.js                                     15.59 kB │ gzip:   3.19 kB
+dist/client/assets/luau-FMPmPwt6.js                                    15.62 kB │ gzip:   3.39 kB
+dist/client/assets/spinner-CIII7FWf.js                                 15.67 kB │ gzip:   6.35 kB
+dist/client/assets/abap-CLvhMVsD.js                                    15.84 kB │ gzip:   5.93 kB
+dist/client/assets/solidity-CKzVLygQ.js                                16.06 kB │ gzip:   3.09 kB
+dist/client/assets/matlab-D7qyCx1q.js                                  16.07 kB │ gzip:   3.06 kB
+dist/client/assets/cue-CE9AQfxI.js                                     16.19 kB │ gzip:   2.04 kB
+dist/client/assets/elixir-DEhLtRUP.js                                  16.26 kB │ gzip:   2.76 kB
+dist/client/assets/odin-B1RWQWA5.js                                    16.50 kB │ gzip:   2.92 kB
+dist/client/assets/ts-tags-BfFHW3rF.js                                 16.54 kB │ gzip:   2.05 kB
+dist/client/assets/kanagawa-wave-CTweb8Dz.js                           17.12 kB │ gzip:   2.90 kB
+dist/client/assets/kanagawa-lotus-BN08jTvb.js                          17.12 kB │ gzip:   2.90 kB
+dist/client/assets/kanagawa-dragon-CXtmUGW6.js                         17.12 kB │ gzip:   2.92 kB
+dist/client/assets/move-B1IS1UjX.js                                    17.49 kB │ gzip:   3.06 kB
+dist/client/assets/graphql-mSkwGYVM.js                                 18.08 kB │ gzip:   2.52 kB
+dist/client/assets/liquid-DQx5Uf0d.js                                  18.10 kB │ gzip:   3.14 kB
+dist/client/assets/svelte-DAjt5mUN.js                                  18.24 kB │ gzip:   3.14 kB
+dist/client/assets/material-theme-Bm3Qr25_.js                          18.61 kB │ gzip:   3.10 kB
+dist/client/assets/material-theme-darker-2IIEA8gg.js                   18.62 kB │ gzip:   3.10 kB
+dist/client/assets/material-theme-ocean-CHQ94UKr.js                    18.62 kB │ gzip:   3.12 kB
+dist/client/assets/material-theme-lighter-uhdI0v04.js                  18.63 kB │ gzip:   3.10 kB
+dist/client/assets/material-theme-palenight-B5W6OYN7.js                18.63 kB │ gzip:   3.11 kB
+dist/client/assets/gdscript-Cp2uCuqX.js                                18.98 kB │ gzip:   3.75 kB
+dist/client/assets/lib-4kndEVYh.js                                     19.06 kB │ gzip:   6.56 kB
+dist/client/assets/groovy-CacY0gHj.js                                  19.17 kB │ gzip:   3.59 kB
+dist/client/assets/mdc-CZTdwSMw.js                                     19.54 kB │ gzip:   6.66 kB
+dist/client/assets/ayu-dark-DluEY0Gj.js                                20.07 kB │ gzip:   3.93 kB
+dist/client/assets/ayu-mirage-Bqwy1Gya.js                              20.08 kB │ gzip:   3.91 kB
+dist/client/assets/glimmer-js-ChNcI97Z.js                              20.08 kB │ gzip:   2.94 kB
+dist/client/assets/glimmer-ts-DGC4APCU.js                              20.08 kB │ gzip:   2.93 kB
+dist/client/assets/powershell-DshXNtvi.js                              20.14 kB │ gzip:   4.05 kB
+dist/client/assets/ayu-light-C3h-C4tm.js                               20.14 kB │ gzip:   3.89 kB
+dist/client/assets/viml-DvXPmvsu.js                                    20.35 kB │ gzip:   6.73 kB
+dist/client/assets/nushell-DcLAeLz5.js                                 20.40 kB │ gzip:   5.21 kB
+dist/client/assets/snazzy-light-4G7pJPwS.js                            20.77 kB │ gzip:   3.80 kB
+dist/client/assets/twig-Bdi8MMFt.js                                    20.90 kB │ gzip:   3.65 kB
+dist/client/assets/dracula-BHWKrbxM.js                                 21.06 kB │ gzip:   3.99 kB
+dist/client/assets/dracula-soft-5eyTD99u.js                            21.07 kB │ gzip:   4.02 kB
+dist/client/assets/wit-DdvCle-K.js                                     21.46 kB │ gzip:   2.87 kB
+dist/client/assets/rose-pine-BthvhNj6.js                               21.74 kB │ gzip:   3.86 kB
+dist/client/assets/rose-pine-moon-hon4tzzS.js                          21.75 kB │ gzip:   3.87 kB
+dist/client/assets/rose-pine-dawn-Dg85fqjY.js                          21.75 kB │ gzip:   3.88 kB
+dist/client/assets/nim-B8jMyHaJ.js                                     22.45 kB │ gzip:   3.15 kB
+dist/client/assets/common-lisp-Cv5bFMCO.js                             22.57 kB │ gzip:   6.07 kB
+dist/client/assets/surrealql-CRGhbaeG.js                               22.58 kB │ gzip:   4.31 kB
+dist/client/assets/gruvbox-dark-hard-C820rvS2.js                       22.63 kB │ gzip:   4.15 kB
+dist/client/assets/gruvbox-dark-soft-MrdJrrXF.js                       22.63 kB │ gzip:   4.15 kB
+dist/client/assets/gruvbox-light-hard-BC_s9l72.js                      22.63 kB │ gzip:   4.16 kB
+dist/client/assets/gruvbox-light-soft-BSMLrYjP.js                      22.63 kB │ gzip:   4.16 kB
+dist/client/assets/gruvbox-dark-medium-BPjhmG05.js                     22.63 kB │ gzip:   4.15 kB
+dist/client/assets/gruvbox-light-medium-BAWPOn9u.js                    22.63 kB │ gzip:   4.16 kB
+dist/client/assets/bird2-C6vDhewU.js                                   22.93 kB │ gzip:   4.65 kB
+dist/client/assets/sql-CnPzgWzi.js                                     23.48 kB │ gzip:   7.51 kB
+dist/client/assets/cadence-CQ2zXKGN.js                                 23.66 kB │ gzip:   3.65 kB
+dist/client/assets/astro-DbFjCyNF.js                                   24.02 kB │ gzip:   7.59 kB
+dist/client/assets/apl-DShbcBjw.js                                     24.02 kB │ gzip:   4.16 kB
+dist/client/assets/templ-DJ6bK04e.js                                   24.06 kB │ gzip:   5.40 kB
+dist/client/assets/angular-html-BWAizRUf.js                            24.24 kB │ gzip:   3.98 kB
+dist/client/assets/vhdl-BroJfC0k.js                                    24.25 kB │ gzip:   3.86 kB
+dist/client/assets/vue-CDP7d_kR.js                                     24.48 kB │ gzip:   2.95 kB
+dist/client/assets/purescript-9MfHhQsQ.js                              24.67 kB │ gzip:   3.24 kB
+dist/client/assets/typespec-BRdr0IET.js                                25.03 kB │ gzip:   2.62 kB
+dist/client/assets/one-light-D7Lr4KcI.js                               25.29 kB │ gzip:   3.63 kB
+dist/client/assets/fsharp-D13ZGOAj.js                                  25.30 kB │ gzip:   4.12 kB
+dist/client/assets/marko-CU8KPJjZ.js                                   25.48 kB │ gzip:   3.59 kB
+dist/client/assets/night-owl-light-eJ-hLW7d.js                         25.89 kB │ gzip:   4.23 kB
+dist/client/assets/system-verilog-DJ5XKQeo.js                          26.19 kB │ gzip:   4.82 kB
+dist/client/assets/nord-Cb4Vim4T.js                                    26.72 kB │ gzip:   4.35 kB
+dist/client/assets/codeql-oeQT6MSM.js                                  26.87 kB │ gzip:   3.79 kB
+dist/client/assets/c3-BFHwR3_K.js                                      26.96 kB │ gzip:   3.92 kB
+dist/client/assets/bundle-mjs-B_AA55HL.js                              27.22 kB │ gzip:   8.67 kB
+dist/client/assets/scss-BTorim2w.js                                    27.26 kB │ gzip:   4.22 kB
+dist/client/assets/java-B46AtNqH.js                                    27.28 kB │ gzip:   4.31 kB
+dist/client/assets/coffee-CDGEyIOK.js                                  27.42 kB │ gzip:   6.35 kB
+dist/client/assets/razor-DeG0WNHe.js                                   27.45 kB │ gzip:   3.54 kB
+dist/client/assets/scala-DKOlJaKm.js                                   28.87 kB │ gzip:   3.92 kB
+dist/client/assets/night-owl-DhmEMT88.js                               28.91 kB │ gzip:   5.14 kB
+dist/client/assets/crystal-CaRlmqwv.js                                 29.41 kB │ gzip:   4.43 kB
+dist/client/assets/mermaid-Bk4SNUv9.js                                 29.50 kB │ gzip:   3.64 kB
+dist/client/assets/applescript-CCn79oCD.js                             29.56 kB │ gzip:   5.94 kB
+dist/client/assets/pierre-dark-CpLgRqie.js                             30.54 kB │ gzip:   4.74 kB
+dist/client/assets/pierre-light-CoaEpmwp.js                            30.54 kB │ gzip:   4.73 kB
+dist/client/assets/pierre-dark-soft-kZQmAZld.js                        30.55 kB │ gzip:   4.77 kB
+dist/client/assets/pierre-light-soft-lWLdNTOI.js                       30.55 kB │ gzip:   4.73 kB
+dist/client/assets/pierre-dark-tritanopia-CpjhbsIL.js                  30.56 kB │ gzip:   4.68 kB
+dist/client/assets/pierre-light-tritanopia-CEbqgOJL.js                 30.57 kB │ gzip:   4.69 kB
+dist/client/assets/pierre-dark-protanopia-deuteranopia-B35FxJx-.js     30.59 kB │ gzip:   4.76 kB
+dist/client/assets/pierre-light-protanopia-deuteranopia-0fSaH845.js    30.59 kB │ gzip:   4.72 kB
+dist/client/assets/julia-BMZaZTfA.js                                   31.00 kB │ gzip:   4.30 kB
+dist/client/assets/stylus-B6D30XZt.js                                  31.06 kB │ gzip:   8.01 kB
+dist/client/assets/poimandres-DRFjx7u4.js                              33.49 kB │ gzip:   5.49 kB
+dist/client/assets/one-dark-pro-CLwyXe_n.js                            33.78 kB │ gzip:   5.50 kB
+dist/client/assets/bsl-BkkzgIyY.js                                     33.86 kB │ gzip:   8.34 kB
+dist/client/assets/haxe-OTjmBuCE.js                                    35.15 kB │ gzip:   5.90 kB
+dist/client/assets/nginx-CGfy0gtw.js                                   35.35 kB │ gzip:   4.45 kB
+dist/client/assets/houston-CsvMBhTu.js                                 35.41 kB │ gzip:   5.76 kB
+dist/client/assets/tokyo-night-oM2G3aXe.js                             35.66 kB │ gzip:   6.22 kB
+dist/client/assets/erlang-Cphh6RMH.js                                  37.47 kB │ gzip:   4.36 kB
+dist/client/assets/cobol-CSWE6_-B.js                                   39.07 kB │ gzip:  10.89 kB
+dist/client/assets/asm-Cmm7eHzH.js                                     40.71 kB │ gzip:   8.16 kB
+dist/client/assets/haskell-D8IpX4py.js                                 41.48 kB │ gzip:   6.41 kB
+dist/client/assets/shellscript-ne0qxsCs.js                             41.54 kB │ gzip:   6.13 kB
+dist/client/assets/perl-BvULR-Qj.js                                    43.14 kB │ gzip:   4.64 kB
+dist/client/assets/d-qD-0Kul2.js                                       43.78 kB │ gzip:   8.43 kB
+dist/client/assets/pierre-dark-vibrant-CpQYzh95.js                     44.75 kB │ gzip:   5.28 kB
+dist/client/assets/pierre-light-vibrant-D80Fkn33.js                    44.76 kB │ gzip:   5.27 kB
+dist/client/assets/ruby-CYYzuL9N.js                                    46.60 kB │ gzip:   5.70 kB
+dist/client/assets/go-rLFTqkRN.js                                      46.81 kB │ gzip:   5.14 kB
+dist/client/assets/catppuccin-mocha-DYhrFGRu.js                        47.25 kB │ gzip:   7.98 kB
+dist/client/assets/catppuccin-latte-DwIHMF0Q.js                        47.25 kB │ gzip:   7.98 kB
+dist/client/assets/catppuccin-frappe-3VR1Za6u.js                       47.25 kB │ gzip:   7.99 kB
+dist/client/assets/catppuccin-macchiato-DYnBP6_5.js                    47.26 kB │ gzip:   7.99 kB
+dist/client/assets/apex-VAyPSnFM.js                                    47.76 kB │ gzip:   6.81 kB
+dist/client/assets/ada-C5qYipkI.js                                     48.07 kB │ gzip:   5.96 kB
+dist/client/assets/css-DkwZSuad.js                                     49.10 kB │ gzip:  11.95 kB
+dist/client/assets/imba-DsUTQ-LC.js                                    49.92 kB │ gzip:   9.47 kB
+dist/client/assets/everforest-dark-sB-x3p7T.js                         53.74 kB │ gzip:   8.37 kB
+dist/client/assets/everforest-light-Df2xbC6M.js                        53.74 kB │ gzip:   8.36 kB
+dist/client/assets/wikitext-ClFFjSW2.js                                55.87 kB │ gzip:   4.81 kB
+dist/client/assets/stata-BliKxwr4.js                                   56.99 kB │ gzip:  12.39 kB
+dist/client/assets/html-Cxj-cYQu.js                                    57.31 kB │ gzip:  11.78 kB
+dist/client/assets/ballerina-B7ZEbQpA.js                               58.68 kB │ gzip:   8.10 kB
+dist/client/assets/markdown-BYOwaDjH.js                                59.32 kB │ gzip:   5.66 kB
+dist/client/assets/routes-ChPUTSlT.js                                  60.94 kB │ gzip:  19.47 kB
+dist/client/assets/ocaml-O90oeIOV.js                                   62.44 kB │ gzip:   5.04 kB
+dist/client/assets/mojo-BgCJLMeH.js                                    69.79 kB │ gzip:   9.21 kB
+dist/client/assets/python-gzcpVVnB.js                                  69.94 kB │ gzip:   9.09 kB
+dist/client/assets/c-B2Rnkf-b.js                                       72.17 kB │ gzip:  10.55 kB
+dist/client/assets/latex-0LcnOkSU.js                                   72.87 kB │ gzip:   6.74 kB
+dist/client/assets/vyper-CgoNMtux.js                                   74.64 kB │ gzip:  10.69 kB
+dist/client/assets/hack-9fo60Isx.js                                    81.05 kB │ gzip:  26.43 kB
+dist/client/assets/swift-DonLKvLd.js                                   86.68 kB │ gzip:  14.69 kB
+dist/client/assets/fortran-free-form-CYNrtFtB.js                       88.96 kB │ gzip:  11.18 kB
+dist/client/assets/csharp-oqKa8noW.js                                  90.18 kB │ gzip:  10.71 kB
+dist/client/assets/racket-DcIDlBhZ.js                                  92.38 kB │ gzip:  15.07 kB
+dist/client/assets/less-DVTAwKKz.js                                    97.62 kB │ gzip:  14.84 kB
+dist/client/assets/blade-DL8wTl4J.js                                  104.97 kB │ gzip:  28.30 kB
+dist/client/assets/objective-c-D1A_Heim.js                            105.40 kB │ gzip:  23.63 kB
+dist/client/assets/php-B7Yzxmad.js                                    113.08 kB │ gzip:  28.85 kB
+dist/client/assets/asciidoc-DE70LPWp.js                               131.52 kB │ gzip:   9.31 kB
+dist/client/assets/mdx-DQZ5AkYe.js                                    136.10 kB │ gzip:  23.54 kB
+dist/client/assets/objective-cpp-BsSzOQcm.js                          171.96 kB │ gzip:  30.98 kB
+dist/client/assets/javascript-gfuPlgma.js                             174.88 kB │ gzip:  16.68 kB
+dist/client/assets/tsx-Dnwfhevw.js                                    175.59 kB │ gzip:  16.67 kB
+dist/client/assets/jsx-DMj_JeW3.js                                    177.85 kB │ gzip:  16.77 kB
+dist/client/assets/typescript-DAigotvK.js                             181.14 kB │ gzip:  16.29 kB
+dist/client/assets/angular-ts-t332JOEL.js                             183.73 kB │ gzip:  16.78 kB
+dist/client/assets/vue-vine-BfYhYbNs.js                               190.05 kB │ gzip:  18.07 kB
+dist/client/assets/wolfram-DLL8P-h_.js                                262.38 kB │ gzip:  77.63 kB
+dist/client/assets/react-Zei4zJsG.js                                  341.33 kB │ gzip: 107.37 kB
+dist/client/assets/ai-chat-DM_ssE3H.js                                398.17 kB │ gzip: 128.71 kB
+dist/client/assets/chunk-BO2N2NFS-6qigl0a2.js                         429.81 kB │ gzip: 130.16 kB
+dist/client/assets/edit-tool-diff-YDwl7Mi1.js                         432.02 kB │ gzip: 122.38 kB
+dist/client/assets/index-BZnUrewE.js                                  491.47 kB │ gzip: 152.87 kB
+dist/client/assets/wasm-BnjxR4X6.js                                   622.32 kB │ gzip: 232.09 kB
+dist/client/assets/cpp-BbWAMlOS.js                                    626.13 kB │ gzip:  48.09 kB
+dist/client/assets/emacs-lisp-B4R74twV.js                             779.87 kB │ gzip: 197.55 kB
+
+[33m[PLUGIN_TIMINGS] [0mYour build spent significant time in plugins. Here is a breakdown:
+  - tanstack-start-core:import-protection (53%)
+  - @tanstack/devtools:remove-devtools-on-build (33%)
+  - tanstack-start-core:import-protection-transform-cache (13%)
+See https://rolldown.rs/reference/InputOptions.checks#plugintimings for more details.
+
+[plugin builtin:vite-reporter]
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 6.39s
+vite v8.1.5 building ssr environment for production...
+[2K
+transforming...✓ 536 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/server/assets/utils-C_uf36nf.js                                    0.18 kB │ gzip:   0.15 kB
+dist/server/assets/empty-plugin-adapters-Cq4--YW-.js                    0.28 kB │ gzip:   0.18 kB
+dist/server/assets/start-BA6h5TjK.js                                    0.29 kB │ gzip:   0.21 kB
+dist/server/assets/env-vars-BdepWpri.js                                 0.40 kB │ gzip:   0.27 kB
+dist/server/assets/project._projectId.session._sessionId-BSwyjHfE.js    0.42 kB │ gzip:   0.24 kB
+dist/server/assets/project._projectId.index-DZ8O5cwd.js                 0.45 kB │ gzip:   0.27 kB
+dist/server/assets/project._projectId.session._sessionId-COYm9GtH.js    0.51 kB │ gzip:   0.29 kB
+dist/server/assets/project._projectId.index-CeHWZxPL.js                 0.53 kB │ gzip:   0.33 kB
+dist/server/assets/installation.completed-DZbQWjQ6.js                   0.65 kB │ gzip:   0.40 kB
+dist/server/assets/auth.functions-DrE23EdR.js                           1.18 kB │ gzip:   0.60 kB
+dist/server/assets/workspace-policy-CMLIpKyc.js                         1.34 kB │ gzip:   0.60 kB
+dist/server/assets/sign-in-CsxzwQcE.js                                  2.04 kB │ gzip:   0.78 kB
+dist/server/assets/_tanstack-start-manifest_v-vV6AX5Ua.js               2.25 kB │ gzip:   0.70 kB
+dist/server/assets/button-BaASd6lp.js                                   2.96 kB │ gzip:   1.02 kB
+dist/server/assets/edit-tool-diff-C-kXJukG.js                           3.09 kB │ gzip:   1.24 kB
+dist/server/assets/sandbox-bootstrap-Cb8Oo3vT.js                        4.54 kB │ gzip:   1.52 kB
+dist/server/assets/secret-redaction-HN8f9UDy.js                         5.27 kB │ gzip:   1.88 kB
+dist/server/assets/agent-git-handler-aH2Cd-u1.js                        5.31 kB │ gzip:   1.65 kB
+dist/server/assets/agent-tool-presentation-B1OQGbUJ.js                  7.97 kB │ gzip:   2.77 kB
+dist/server/assets/routes-C98HZmPA.js                                   8.03 kB │ gzip:   2.66 kB
+dist/server/assets/agent-message-storage-BN-kqcJK.js                   12.83 kB │ gzip:   3.38 kB
+dist/server/assets/project._projectId-BdIOirL2.js                      13.83 kB │ gzip:   3.74 kB
+dist/server/assets/project._projectId-l1V73xfH.js                      13.96 kB │ gzip:   3.79 kB
+dist/server/assets/command-CBqob79Y.js                                 14.29 kB │ gzip:   3.71 kB
+dist/server/assets/dist-B_B4ImNc.js                                    14.70 kB │ gzip:   4.16 kB
+dist/server/assets/workspace-recovery-ByE97v8T.js                      17.62 kB │ gzip:   3.89 kB
+dist/server/assets/git-fetch-contract-pHj0iEBF.js                      17.88 kB │ gzip:   4.94 kB
+dist/server/assets/sandbox-archive-CEQGCcwh.js                         18.62 kB │ gzip:   5.72 kB
+dist/server/assets/server-C7mHtpts.js                                  29.18 kB │ gzip:   8.00 kB
+dist/server/assets/schema-DRbzqZ6f.js                                  29.54 kB │ gzip:   5.58 kB
+dist/server/assets/workspace-runtime-capacity-CeU2UyN2.js              29.74 kB │ gzip:   5.87 kB
+dist/server/assets/session-preview-BE3Eg0cX.js                         30.45 kB │ gzip:   6.50 kB
+dist/server/assets/routes-qhfEaFtt.js                                  31.09 kB │ gzip:   8.78 kB
+dist/server/assets/session-git-export-BWXI8x6P.js                      32.33 kB │ gzip:   7.96 kB
+dist/server/assets/agent-run-service-Du6Y2uYw.js                       41.96 kB │ gzip:   9.94 kB
+dist/server/assets/sandbox-authority-B0-7VVWQ.js                       43.47 kB │ gzip:   9.35 kB
+dist/server/assets/esm-CgbJz1Eo.js                                     46.00 kB │ gzip:  10.69 kB
+dist/server/assets/workspace-runtime-Ddh0OJJ_.js                       64.14 kB │ gzip:  15.94 kB
+dist/server/assets/router-DYZHFTZh.js                                 129.95 kB │ gzip:  28.84 kB
+dist/server/assets/ai-chat-C6Z4xJBo.js                                150.50 kB │ gzip:  33.61 kB
+dist/server/server.js                                                 224.96 kB │ gzip:  54.56 kB
+dist/server/assets/auth-DfoAje3w.js                                   781.71 kB │ gzip: 172.62 kB
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/db/index.ts is dynamically imported by src/server.ts but also statically imported by src/integrations/trpc/routers/projects.ts, src/integrations/trpc/routers/session-git.ts, src/integrations/trpc/routers/session-preview.ts, src/integrations/trpc/routers/workspace.ts, src/lib/auth.ts, ..., dynamic import will not move module into another chunk.
+
+✓ built in 700ms
+$ npm run typecheck --prefix packages/sandbox-runner && npm test --prefix packages/sandbox-runner && npm run build --prefix packages/sandbox-runner
+npm notice run typecheck
+npm notice run tsc -p tsconfig.json --noEmit
+npm notice run test
+npm notice run vitest run
+
+ RUN  v3.2.7 /home/ayan/ditto-worktrees/plan-001-reexecute/packages/sandbox-runner
+
+ ✓ src/archive.test.ts (8 tests) 63ms
+ ✓ src/control-channel.test.ts (7 tests) 39ms
+ ✓ src/run-agent.test.ts (8 tests) 268ms
+ ✓ src/ditto-git-tools.test.ts (4 tests) 9ms
+ ✓ src/run-git-metadata.test.ts (13 tests) 16ms
+ ✓ src/locked-resource-loader.test.ts (4 tests) 76ms
+ ✓ src/runner-model.test.ts (7 tests) 6ms
+ ✓ src/git-metadata-cli.test.ts (5 tests) 7ms
+ ✓ src/git-metadata-job.test.ts (10 tests) 7ms
+ ✓ src/protocol.test.ts (8 tests) 5ms
+ ✓ src/agent-job.test.ts (5 tests) 3ms
+
+ Test Files  11 passed (11)
+      Tests  79 passed (79)
+   Start at  07:36:53
+   Duration  1.37s (transform 333ms, setup 0ms, collect 1.71s, tests 499ms, environment 2ms, prepare 577ms)
+
+npm notice run build
+npm notice run tsc -p tsconfig.json

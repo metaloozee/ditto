@@ -1,6 +1,6 @@
 # 003: Admit durable commands and deliver them idempotently
 
-Status: BLOCKED on 002. Base HEAD: `c963890`, branch `brain`. Effort: L, 4-6 days. Risk: high.
+Status: READY, NOT STARTED. 002 is [accepted](002-expanded-repair-review.md) in `/home/ayan/ditto-worktrees/plan-001-reexecute`, branch `codex/plan-001-reexecute`, HEAD `6eefdd1`, with required uncommitted 001/002 source. Any separately requested execution must preserve that candidate and read the current advisor plans from `/home/ayan/ditto/plans`, not use clean `brain` or stale worktree plan copies. Use `gpt-6-sol` with medium reasoning for subagents. Paid topology remains NOT RUN and blocks real-user enablement. Original plan base: `c963890`, branch `brain`. Effort: L, 4-6 days. Risk: high.
 
 ## Target and prerequisites
 

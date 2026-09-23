@@ -1,0 +1,17 @@
+PASS already-migrating callback: denied runtime_owner_mismatch
+PASS unlimited callback owner changes after owner read: denied runtime_owner_mismatch
+durable owner at return: migrating
+PASS explicit caller owner-version mismatch: denied runtime_owner_mismatch
+PASS operation insertion after actual lifecycle rotation: denied runtime_owner_mismatch
+identity/operation generations: undefined
+PASS legacy drainer mutation after ownership fence: leased -> leased
+PASS legacy queue admission after owner read: denied=true, insertedRows=0
+PASS prototype unknown field: ContractParseError unknown_field
+PASS deep array: ContractParseError invalid_json
+PASS deep object: ContractParseError invalid_json
+PASS product adapter excludes Env from shared policy input: envForwarded=false
+npm 12.0.2, directory file dependency installed as copy
+Actual refresh script: node ./scripts/refresh-contracts.mjs
+PASS actual copied-consumer refresh: imported=after, declarations=fresh, producer=tsc
+PASS refresh removes deleted emitted artifacts: staleFiles=none
+Residual failures: 0

@@ -1,0 +1,28 @@
+{
+  "baseline": "executor plans/002-approved-cleanup-evidence/baseline-sha256.json",
+  "baseline_count": 681,
+  "unchanged_count": 678,
+  "changed": [
+    "apps/runtime/src/forbidden-bindings.type-test.ts",
+    "apps/web/src/lib/runtime-policy-bindings.type-test.ts",
+    "apps/web/src/lib/workspace-runtime-policy.ts"
+  ],
+  "added": [],
+  "removed": [],
+  "before_copy_hashes_match": true,
+  "emitted_js_identical_for_all_three_files": true,
+  "prior_manifest_exclusions": {
+    "count": 10,
+    "note": "The cleanup manifest omitted ten pre-existing secret/credential-named source, skill and documentation files. They match the larger final-corrections baseline; they are not new files.",
+    "changed": []
+  },
+  "independent_verification": {
+    "web_typecheck": "PASS",
+    "runtime_typecheck": "PASS",
+    "runtime_tests": "20 PASS",
+    "focused_web_tests": "15 PASS",
+    "pnpm_check": "PASS, 11 warnings",
+    "probes_npm_adapter_tsc_build": "PASS, zero residual failures",
+    "diff_check_both_checkouts": "PASS"
+  }
+}

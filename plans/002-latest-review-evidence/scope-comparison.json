@@ -1,0 +1,57 @@
+{
+  "002-expanded-repair-evidence": {
+    "baseline_count": 687,
+    "unchanged_count": 663,
+    "changed": [
+      "apps/runtime/src/forbidden-bindings.type-test.ts",
+      "apps/runtime/tsconfig.forbidden-bindings.json",
+      "apps/runtime/tsconfig.json",
+      "apps/web/src/lib/agent-run-service.ownership.test.ts",
+      "apps/web/src/lib/runtime-policy-bindings.type-test.ts",
+      "apps/web/src/lib/sandbox-authority.ownership.test.ts",
+      "packages/session-brain/package.json",
+      "packages/session-brain/src/pi-feasibility.test.ts",
+      "apps/web/src/db/index.ts",
+      "apps/web/src/lib/agent-run-service.test.ts",
+      "apps/web/src/lib/agent-run-service.ts",
+      "apps/web/src/lib/github-app.ts",
+      "apps/web/src/lib/sandbox-archive.ts",
+      "apps/web/src/lib/sandbox-authority.test.ts",
+      "apps/web/src/lib/sandbox-authority.ts",
+      "apps/web/src/lib/sandbox-bootstrap.ts",
+      "apps/web/src/lib/session-git-backup.test.ts",
+      "apps/web/src/lib/session-git-backup.ts",
+      "apps/web/src/lib/workspace-recovery.test.ts",
+      "apps/web/src/lib/workspace-recovery.ts",
+      "apps/web/src/lib/workspace-runtime-capacity.test.ts",
+      "apps/web/src/lib/workspace-runtime-capacity.ts",
+      "apps/web/src/lib/workspace-runtime.test.ts",
+      "apps/web/src/lib/workspace-runtime.ts"
+    ],
+    "missing": [],
+    "new": [
+      "apps/runtime/src/forbidden-import-graph.test.ts",
+      "apps/web/src/lib/workspace-runtime-policy.test.ts",
+      "apps/web/src/lib/workspace-runtime-policy.ts",
+      "packages/session-brain/scripts/refresh-contracts.mjs"
+    ],
+    "excluded_existing_skill_symlinks": 10,
+    "protected_count": 43,
+    "protected_changed": []
+  },
+  "002-final-corrections-evidence": {
+    "baseline_count": 691,
+    "unchanged_count": 687,
+    "changed": [
+      "packages/session-brain/scripts/refresh-contracts.mjs",
+      "packages/session-brain/src/pi-feasibility.test.ts",
+      "apps/web/src/lib/workspace-runtime.test.ts",
+      "apps/web/src/lib/workspace-runtime.ts"
+    ],
+    "missing": [],
+    "new": [],
+    "excluded_existing_skill_symlinks": 10,
+    "protected_count": 43,
+    "protected_changed": []
+  }
+}

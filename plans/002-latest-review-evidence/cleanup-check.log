@@ -1,0 +1,184 @@
+$ biome check
+packages/runtime-contracts/src/contracts.test.ts:266:26 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    264 │ 		expect(() => parseBrowserCommandV1(nested)).toThrow(/JSON|nesting|byte/);
+    265 │ 		try {
+  > 266 │ 			parseBrowserCommandV1("[".repeat(8000) + "0" + "]".repeat(8000));
+        │ 			                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    267 │ 			throw new Error("expected nested JSON to fail");
+    268 │ 		} catch (error) {
+
+  i Unsafe fix: Use a template literal.
+
+    264 264 │   		expect(() => parseBrowserCommandV1(nested)).toThrow(/JSON|nesting|byte/);
+    265 265 │   		try {
+    266     │ - → → → parseBrowserCommandV1("[".repeat(8000)·+·"0"·+·"]".repeat(8000));
+        266 │ + → → → parseBrowserCommandV1(`${"[".repeat(8000)}0${"]".repeat(8000)}`);
+    267 267 │   			throw new Error("expected nested JSON to fail");
+    268 268 │   		} catch (error) {
+
+
+apps/web/src/lib/git-fetch-contract.ts:117:10 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    115 │ 	}
+    116 │ 	return {
+  > 117 │ 		owner: match[1]!,
+        │ 		       ^^^^^^^^^
+    118 │ 		repo: match[2]!,
+    119 │ 		servicePath: match[4]!,
+
+
+apps/web/src/lib/git-fetch-contract.ts:118:9 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    116 │ 	return {
+    117 │ 		owner: match[1]!,
+  > 118 │ 		repo: match[2]!,
+        │ 		      ^^^^^^^^^
+    119 │ 		servicePath: match[4]!,
+    120 │ 	};
+
+
+apps/web/src/lib/git-fetch-contract.ts:119:16 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    117 │ 		owner: match[1]!,
+    118 │ 		repo: match[2]!,
+  > 119 │ 		servicePath: match[4]!,
+        │ 		             ^^^^^^^^^
+    120 │ 	};
+    121 │ }
+
+
+apps/web/src/lib/git-pkt-line.ts:42:16 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    40 │ 	let value = 0;
+    41 │ 	for (let i = 0; i < 4; i++) {
+  > 42 │ 		const byte = bytes[offset + i]!;
+       │ 		             ^^^^^^^^^^^^^^^^^^
+    43 │ 		if (!isHexChar(byte)) {
+    44 │ 			throw new PktLineError("non_hex_length", "Pkt-line length is not hex.");
+
+
+apps/web/src/lib/git-receive-pack.ts:139:17 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    137 │ 		);
+    138 │ 	}
+  > 139 │ 	const oldOid = match[1]!.toLowerCase();
+        │ 	               ^^^^^^^^^
+    140 │ 	const newOid = match[2]!.toLowerCase();
+    141 │ 	const ref = match[3]!;
+
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+
+    137 137 │   		);
+    138 138 │   	}
+    139     │ - → const·oldOid·=·match[1]!.toLowerCase();
+        139 │ + → const·oldOid·=·match[1]?.toLowerCase();
+    140 140 │   	const newOid = match[2]!.toLowerCase();
+    141 141 │   	const ref = match[3]!;
+
+
+apps/web/src/lib/git-receive-pack.ts:140:17 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    138 │ 	}
+    139 │ 	const oldOid = match[1]!.toLowerCase();
+  > 140 │ 	const newOid = match[2]!.toLowerCase();
+        │ 	               ^^^^^^^^^
+    141 │ 	const ref = match[3]!;
+    142 │ 	assertSha1Oid(oldOid, "old object id");
+
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+
+    138 138 │   	}
+    139 139 │   	const oldOid = match[1]!.toLowerCase();
+    140     │ - → const·newOid·=·match[2]!.toLowerCase();
+        140 │ + → const·newOid·=·match[2]?.toLowerCase();
+    141 141 │   	const ref = match[3]!;
+    142 142 │   	assertSha1Oid(oldOid, "old object id");
+
+
+apps/web/src/lib/git-receive-pack.ts:141:14 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    139 │ 	const oldOid = match[1]!.toLowerCase();
+    140 │ 	const newOid = match[2]!.toLowerCase();
+  > 141 │ 	const ref = match[3]!;
+        │ 	            ^^^^^^^^^
+    142 │ 	assertSha1Oid(oldOid, "old object id");
+    143 │ 	assertSha1Oid(newOid, "new object id");
+
+
+apps/web/src/lib/git-receive-pack.ts:220:15 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    218 │ 			);
+    219 │ 		}
+  > 220 │ 		const oid = parts[0]!.toLowerCase();
+        │ 		            ^^^^^^^^^
+    221 │ 		const name = parts.slice(1).join(" ");
+    222 │ 		if (name.endsWith("^{}")) {
+
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+
+    218 218 │   			);
+    219 219 │   		}
+    220     │ - → → const·oid·=·parts[0]!.toLowerCase();
+        220 │ + → → const·oid·=·parts[0]?.toLowerCase();
+    221 221 │   		const name = parts.slice(1).join(" ");
+    222 222 │   		if (name.endsWith("^{}")) {
+
+
+apps/web/src/lib/git-receive-pack.ts:328:18 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    326 │ 	}
+    327 │
+  > 328 │ 	const command = commands[0]!;
+        │ 	                ^^^^^^^^^^^^
+    329 │ 	if (command.newOid === ZERO_OID) {
+    330 │ 		throw new GitReceivePackError("deletion", "Ref deletion is not allowed.");
+
+
+apps/web/src/lib/git-receive-pack.ts:373:16 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    371 │ 			continue;
+    372 │ 		}
+  > 373 │ 		const band = line.data[0]!;
+        │ 		             ^^^^^^^^^^^^^
+    374 │ 		if (band === 1 || band === 2 || band === 3) {
+    375 │ 			sawBand = true;
+
+
+apps/web/src/lib/sandbox-egress-broker.ts:617:21 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    615 │ 	}
+    616 │
+  > 617 │ 	const allowedRef = operation.allowedRefs[0]!;
+        │ 	                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+    618 │ 	try {
+    619 │ 		const upstream = await options.fetchImpl(upstreamRequest);
+
+
+Checked 318 files in 732ms. No fixes applied.
+Found 11 warnings.
+Found 1 info.

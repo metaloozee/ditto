@@ -1,0 +1,35 @@
+Warning: Route file "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/project.$projectId.test.tsx" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/-project.$projectId.test.tsx" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/api.agent.control.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/-api.agent.control.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/api.agent.stream.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-001-reexecute/apps/web/src/routes/-api.agent.stream.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+
+ RUN  v4.1.10 /home/ayan/ditto-worktrees/plan-001-reexecute/apps/web
+
+
+ Test Files  2 passed (2)
+      Tests  15 passed (15)
+   Start at  07:52:57
+   Duration  1.29s (transform 709ms, setup 0ms, import 1.95s, tests 56ms, environment 0ms)
