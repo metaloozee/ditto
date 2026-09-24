@@ -1,0 +1,24 @@
+{"name":"stream: default denies trusted creation","result":"PASS","observed":{"status":409,"rows":{"sessions":0,"messages":0,"commands":0,"keys":0,"work":0}}}
+{"name":"stream: injected eligible transport admits without product key","result":"PASS","observed":{"status":202,"productKeyReads":0}}
+{"name":"stream: duplicate fields remain rejected","result":"PASS","observed":{"status":400,"commands":1}}
+{"name":"stream: missing auth rejects","result":"PASS","observed":{"status":401}}
+{"name":"control: default denies trusted creation","result":"PASS","observed":{"status":409,"rows":{"sessions":0,"messages":0,"commands":0,"keys":0,"work":0}}}
+{"name":"control: injected eligible transport admits without product key","result":"PASS","observed":{"status":202,"productKeyReads":0}}
+{"name":"control: duplicate fields remain rejected","result":"PASS","observed":{"status":400,"commands":1}}
+{"name":"control: missing auth rejects","result":"PASS","observed":{"status":401}}
+{"name":"durable thinking off","result":"PASS","observed":{"level":"off","ownerVersion":1}}
+{"name":"durable thinking high","result":"PASS","observed":{"level":"high","ownerVersion":1}}
+{"name":"durable thinking max","result":"PASS","observed":{"level":"max","ownerVersion":1}}
+{"name":"normalized idempotency and blank rejection","result":"PASS","observed":{"retryStatus":202,"blankStatus":400}}
+{"name":"receipt retry and model-free Stop survive outage","result":"PASS","observed":{"retryStatus":202,"stopStatus":202,"stopState":"recorded"}}
+{"name":"runtime protocol mismatch is side-effect free","result":"PASS","observed":{"status":409,"commands":0}}
+{"name":"acknowledged backlog progresses once per command","result":"PASS","observed":{"calls":26,"unique":26}}
+{"name":"lost acknowledgment retries immutable IDs","result":"PASS","observed":{"pending":"pending","final":"delivered","calls":2}}
+{"name":"backoff starts after failure","result":"PASS","observed":{"calls":1,"postFailureDelay":1000}}
+{"name":"pass budget includes persisted handoff read","result":"PASS","observed":{"elapsedMs":101,"budgetMs":100,"readDelayMs":80,"serviceDelayMs":80,"readDelayCount":1,"state":"pending"}}
+{"name":"expired lease-renewal budget does not start an RPC","result":"PASS","observed":{"renewalDelayCount":1,"storageElapsedMs":120,"budgetMs":100,"outboundCalls":0}}
+{"name":"one workspace gap does not starve another workspace","result":"PASS","observed":{"healthySecondCommandState":"delivered","passes":3}}
+{"name":"reconstruction does not grant new authority to an old command","result":"PASS","observed":{"originalVersion":1,"reconstructedVersion":1}}
+{"name":"reconstruction fails closed on missing persisted settings","result":"PASS","observed":{"rejected":false,"hasCommand":false,"thinkingLevel":null}}
+{"name":"all nine batch failures retain no admission or sequence rows","result":"PASS","observed":{"statements":9}}
+{"checks":23,"failures":0}

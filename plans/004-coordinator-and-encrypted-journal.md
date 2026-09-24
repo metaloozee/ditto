@@ -1,6 +1,6 @@
 # 004: Make the coordinator authoritative and encrypt its journal
 
-Status: BLOCKED on 003. Base HEAD: `c963890`, branch `brain`. Effort: L, 5-8 days. Risk: high.
+Status: READY FOR LOCAL EXECUTION, NOT STARTED. Prerequisite 003 landed on local `brain` at merge `162e134`. Prepared executor: `/home/ayan/ditto-worktrees/plan-004-grok`, branch `grok/plan-004-coordinator`, from current `brain` with the committed handoff updates. Dependencies are installed and all inherited gates plus the 23 repair probes pass there. Recheck status before execution; preserve unrelated work. Original drafting base `c963890` is historical, not a checkout target. See the [003 acceptance review](003-repair-review.md) and [integration verification](003-repair-evidence/integration/README.md). Use `xai/grok-4.6` for subagents unless the next execution request overrides it. Effort: L, 5-8 days. Risk: high.
 
 ## Target and prerequisite contract
 
@@ -10,11 +10,19 @@ D1 admission alone cannot supervise a run. Build `SessionRuntime extends Contain
 
 No production/default routing switch, legacy key removal, provider request, or real mutating run is enabled here. Admission to actual execution remains closed until the downstream capacity and initial-pair gates exist. Deterministic transport faults in the test fixture are not Cloudflare evidence.
 
+## Landed 003 integration contract
+
+- `apps/web/src/lib/session-runtime-client.ts` is the shared transport seam for both production handlers and the scheduled drain. Its default transport is unavailable and trusted admission defaults to false. Extend that seam and the local fixture without enabling ordinary users or treating browser protocol version as eligibility.
+- `deliver` and `control` take `{commandId, ownerVersion}`. `SessionRuntimeHandoffAck` carries `{version: 1, commandId, ownerVersion, acceptedPosition, receiptId}`. The dispatcher requires exact persisted identity/receipt matches and `acceptedPosition === commandSeq`. This is the acknowledged command's sequence, not a consumed high-water mark. Priority Stop acknowledgment must not imply ordinary gaps were consumed.
+- `reconstructAdmittedCommandV1` in `session-command.ts` rebuilds the persisted command and settings using the accepted outbox owner version. Use a narrow trusted product adapter for D1-backed reconstruction, never product `Env` in runtime. Reconstruction does not authorize execution; consumption must revalidate current membership, ownership and lifecycle.
+- A valid handoff acknowledgment marks delivery `delivered` and removes that row from retry selection. It does not settle execution or assistants. Persist coordinator acceptance and its wakeup intent before replying; preserve the same IDs through lost acknowledgments. Full T06/T07 consumption and dedupe remain this phase's work.
+- `session-runtime-fixture.ts` invokes captured production POST handlers with mocked auth and request-local transport injection. Extend it to real coordinator persistence and observation, not a second fake acceptance implementation. Existing T03/T04 title labels are inconsistent; select the required behavior files rather than relying only on ID filters.
+
 ## Rechecked local evidence
 
-`apps/web/src/lib/workspace-runtime-capacity.ts:627-657` currently marks a running work lease failed using `work_lease_expired`, then settles assistants and releases capacity. That must remain legacy-only. A dispatcher lease is not process liveness.
+Source anchors in this section were checked at `162e134`. `reclaimExpiredWorkLeases` in `apps/web/src/lib/workspace-runtime-capacity.ts:822-882` marks legacy running work failed using `work_lease_expired`, then settles assistants and releases capacity. The existing `legacyWorkOwner` predicates fence those updates. Preserve them. Trusted delivery expiry in `session-command-delivery.ts` only permits retry; a dispatcher lease is not process liveness.
 
-`apps/web/src/db/schema.ts:124-130` has assistant lifecycle `pending | complete | failed`. Preserve those product states even though coordinator runs have more states.
+`apps/web/src/db/schema.ts:133-141` has assistant lifecycle `pending | complete | failed`. Preserve those product states even though coordinator runs have more states.
 
 `apps/web/src/lib/crypto.ts:1-4`:
 
@@ -39,9 +47,9 @@ Use generated, non-secret test keys for new tests and assert wrong-owner/missing
 
 ## Files
 
-New runtime files: `apps/runtime/src/session-runtime.ts`, `journal.ts`, `runtime-crypto.ts`, `product-projector.ts`, `reconcile.ts`, `runtime-crypto.test.ts`. Modify `apps/runtime/src/server.ts` and its inferred binding types from 001. New product tests: `apps/web/src/lib/session-runtime-journal.test.ts`, `session-runtime-control.test.ts`. Extend `apps/web/src/test/session-runtime-fixture.ts`, `session-runtime-client.ts`, and GET observation on `apps/web/src/routes/api.agent.stream.ts`.
+New runtime files: `apps/runtime/src/session-runtime.ts`, `journal.ts`, `runtime-crypto.ts`, `product-projector.ts`, `reconcile.ts`, `runtime-crypto.test.ts`. Evolve the existing feasibility `SessionRuntime` class in `apps/runtime/src/server.ts` and its binding types in `apps/runtime/types/env.d.ts`; do not create a second coordinator. The existing caller-role-string methods are feasibility fixtures, not production authentication. Use the named private service boundary from the accepted design. New product tests: `apps/web/src/lib/session-runtime-journal.test.ts`, `session-runtime-control.test.ts`. Extend `apps/web/src/test/session-runtime-fixture.ts`, `session-runtime-client.ts`, and GET observation on `apps/web/src/routes/api.agent.stream.ts`.
 
-Narrow shared DB/policy dependencies in `apps/web/src/lib/sandbox-authority.ts` and `workspace-runtime-capacity.ts`, without copying their policy into runtime. No broad auth or UI imports. Root Alchemy changes remain target/local-only until 011; runtime encryption key bindings must not be added to the product Worker.
+Reuse the accepted shared-policy boundary in `workspace-runtime-policy.ts` and the product-only adapters in `workspace-runtime.ts`. The R5 `prepareRuntime` callback is intentional. Narrow additional dependencies on `sandbox-authority.ts` and `workspace-runtime-capacity.ts` only where this phase needs them; do not copy their policy into runtime or reopen the accepted extraction. No broad auth or UI imports. Root Alchemy changes remain target/local-only until 011; runtime encryption key bindings must not be added to the product Worker.
 
 ## Internal schema and APIs
 
@@ -96,7 +104,7 @@ pnpm typecheck
 pnpm check
 ```
 
-Expect all named tests and static gates exit 0 without skips. The parent baseline is recorded separately in README; no target result is preclaimed. Use `exec vitest run` rather than the documented wrapper that selected all web suites.
+Expect all named tests and static gates exit 0 without skips. Also rerun the inherited gates `pnpm verify`, `pnpm runtime:verify` and `pnpm brain:verify` before handoff. Root verification alone does not cover runtime/brain; the brain gate checks copied-contract freshness. The merged 003 baseline passed all three plus 23 independent probes, as recorded in the integration logs. No phase-004 target result is preclaimed. Use `exec vitest run` rather than the documented wrapper that selected all web suites.
 
 ## Exit contract, stop and maintenance
 

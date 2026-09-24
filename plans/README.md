@@ -1,24 +1,24 @@
 # Trusted workspace-session runtime implementation plans
 
-001 local feasibility and 002 are accepted and landed on `brain` at merge `693a334`. **003 is ACCEPTED LOCALLY, NOT LANDED.** Paid topology, restart and incarnation-lifetime evidence remain NOT RUN and block real-user trusted-runtime enablement.
+001 local feasibility and 002 landed on `brain` at merge `693a334`. 003 is accepted and landed on local `brain` at merge `162e134`. **004 is READY FOR LOCAL EXECUTION, NOT STARTED.** Paid topology, restart and incarnation-lifetime evidence remain NOT RUN and block real-user trusted-runtime enablement.
 
-003 execution and repair used `xai/grok-4.6` in `/home/ayan/ditto-worktrees/plan-003-grok`, detached at `d18bf57`. Its source is unstaged and uncommitted. Final independent verification passed 23 probes, 757 web tests, 79 runner tests, 20 runtime tests, 43 brain tests, contracts/freshness checks and build/typecheck gates. See the [003 repair acceptance review](003-repair-review.md), [probes](003-repair-probes.cjs), and [final evidence](003-repair-evidence/final/). The [initial rejection](003-execution-review.md) is superseded. 004 requires integration of the reviewed 003 source or an explicit decision to continue in that worktree; current `brain` does not contain 003.
+003 execution and repair used `xai/grok-4.6` in `/home/ayan/ditto-worktrees/plan-003-grok`, originally detached at `d18bf57`. The user subsequently authorized source commits and a local merge. Source commits `237affb` and `03af7f0` preserve all 17 accepted file hashes. Post-merge verification passed 23 probes, 757 web tests, 79 runner tests, 20 runtime tests, 43 brain tests, contracts/freshness checks and build/typecheck gates. See the [003 acceptance review](003-repair-review.md), [probes](003-repair-probes.cjs), and [integration record](003-repair-evidence/integration/README.md). The [initial rejection](003-execution-review.md) is historical.
 
-Reconciled against `a5c1185` on `brain`. Git comparison confirmed that source outside `plans/` matches the accepted execution branch at `4e2bad8`; the checkout was clean before these documentation edits. This reconciliation changes no source and reruns no tests. The [002 acceptance review](002-expanded-repair-review.md) remains the acceptance record, including the approved R5 adjustment and verification timing.
+The earlier 001/002 reconciliation at `a5c1185` confirmed the source from `4e2bad8`. The [002 acceptance review](002-expanded-repair-review.md) still governs its approved R5 adjustment. The current 004 handoff uses the merged 003 baseline, not that older checkout.
 
-Canonical requirements: [trusted-session-runtime.md](../docs/specs/trusted-session-runtime.md). Current source wins for implemented behavior; the spec wins for the target. Local acceptance of 001/002 is not completion of the trusted runtime or permission to deploy it.
+Canonical requirements: [trusted-session-runtime.md](../docs/specs/trusted-session-runtime.md). Current source wins for implemented behavior; the spec wins for the target. Local acceptance of 001-003 is not completion of the trusted runtime or permission to deploy it.
 
-## What is ready for 003
+## Implemented baseline for 004
 
 - 001 delivered pinned Pi `0.85.1`, the local journal-led recovery/import recipe and persistence-barrier crash tests, runner compatibility, local topology fixtures and earlier Docker boot evidence. The brain is still feasibility code, not the production coordinator/agent integration.
-- 002 delivered strict runtime contracts, additive migration `0020`, identity/ownership and delivery schema, legacy-owner fences, shared lease policy with product-only adapters, and contracts-consumer freshness checks. The sequence counter and capacity ledger exist as schema; durable command admission/allocation belongs to 003 and unified capacity allocation to 008.
-- 003 implements authenticated durable admission, idempotent receipts, transactional sequence/message/outbox writes, durable controls and bounded retrying delivery. It does not launch Pi or implement 004's coordinator, execution deduplication or sequence consumption. Existing/default sessions remain on the fenced legacy path.
+- 002 delivered strict runtime contracts, additive migration `0020`, identity/ownership and delivery schema, legacy-owner fences, shared lease policy with product-only adapters, and contracts-consumer freshness checks. 003 now uses the sequence schema for durable allocation; unified capacity allocation still belongs to 008.
+- 003 implements authenticated durable admission, idempotent receipts, transactional sequence/message/outbox writes, durable controls and bounded retrying delivery. It does not launch Pi or implement 004's coordinator, execution deduplication or sequence consumption. Existing/default sessions remain on the fenced legacy path. Trusted eligibility remains closed by default.
 
-Continue with [003's acceptance review](003-repair-review.md), [003](003-command-admission-and-delivery.md), and the accepted 002 review. Preserve the reviewed 003 candidate for separately authorized integration; do not use the historical 001/002 executor checkout. Read current plans from this checkout because the candidate's copies predate review. The latest 003 execution and repair requests selected `xai/grok-4.6`, overriding the historical `gpt-6-sol` preference.
+Start with [004](004-coordinator-and-encrypted-journal.md), [003's acceptance review](003-repair-review.md), and the accepted 002 review. The prepared executor is `/home/ayan/ditto-worktrees/plan-004-grok`, branch `grok/plan-004-coordinator`, based on current local `brain` with these committed plans. Dependencies are installed; all three inherited gates and the 23 repair probes pass there. Recheck status before execution and preserve historical worktrees and unrelated work. The recorded executor preference is `xai/grok-4.6`, unless the next execution request overrides it. Preparation did not implement or start 004.
 
 ## Plan and evidence map
 
-There is one implementation plan per numbered phase. The extra 002 files record successive reviews, not additional work items.
+There is one implementation plan per numbered phase. The extra 002/003 review and evidence files record successive candidates, not additional work items.
 
 | Artifact | Role |
 |---|---|
@@ -28,16 +28,20 @@ There is one implementation plan per numbered phase. The extra 002 files record 
 | [002-review-probes.cjs](002-review-probes.cjs) | Historical observational reproducer; references a removed helper and is not a current regression gate |
 | [002-repair-probes.cjs](002-repair-probes.cjs) | Accepted repair reproducer; version-specific and requires installed dependencies/fresh contracts |
 | [002-latest-review-evidence/](002-latest-review-evidence/) | Preserved local verification logs and scope summaries |
+| [003-repair-review.md](003-repair-review.md) | Final 003 acceptance and phase-004 limits |
+| [003-repair-probes.cjs](003-repair-probes.cjs) | Accepted 23-check reproducer; pass the candidate root explicitly |
+| [003-repair-evidence/integration/](003-repair-evidence/integration/) | Landed source commits, hash comparison and post-merge verification |
+| [003-execution-evidence/](003-execution-evidence/), [003-repair-execution-evidence/](003-repair-execution-evidence/) | Historical executor logs, including failed intermediate attempts; final acceptance supersedes early summaries |
 
-Do not run either probe using its default old absolute worktree. A future authorized local verification must pass its candidate root explicitly and follow the acceptance review's prerequisites and optional modes. The repair probe's npm modes create disposable fixtures and run install/build commands; they are not read-only document checks. Before-edit manifests referenced in old executor directories are not all present here. Their availability was not rechecked; tracked summaries are historical evidence, not a claim that every comparison is reproducible from a fresh clone.
+Pass the candidate root explicitly when running probes. The historical 002 probes default to an old worktree; follow that acceptance review's prerequisites and optional modes. Its repair probe's npm modes create disposable fixtures and run install/build commands; they are not read-only document checks. Some 002 before-edit manifests remain outside this checkout. Their availability was not rechecked; historical summaries do not establish that every old comparison is reproducible from a fresh clone. The 003 acceptance manifest and before-copies are committed under `003-repair-evidence/`.
 
 ## Scope and safety
 
-Accepted 001/002 source is committed on local `brain`. Old reviews refer to retained evidence and stale plan copies in executor and `/tmp` worktrees; those are provenance, not execution targets. Starting 003 requires its own execution request.
+Accepted 001-003 source is committed on local `brain`. Old reviews refer to retained evidence and stale plan copies in executor and `/tmp` worktrees; those are provenance, not execution targets. Starting 004 requires its own execution request.
 
-Plans are tracked. The old dirty `apps/web/src/lib/sandbox-egress-broker.test.ts` and untracked-plans notes are historical. Always inspect actual status and preserve unrelated work. Do not reset, stage or overwrite it.
+Plans are tracked. The old dirty `apps/web/src/lib/sandbox-egress-broker.test.ts` and untracked-plans notes are historical. Always inspect actual status and preserve unrelated work. Do not reset, stage or overwrite it. The historical 001 worktree still contains untracked evidence; 003 integration left it untouched.
 
-The user explicitly authorized local source commits and a branch merge for 001/002. That did not authorize paid environments, production inspection, deployment, shared D1 migration, identity retirement in a live account, backup deletion or Git pushes. Name the intended environment and wait for separate authorization before such work. Implementation, test and build commands below are future executor gates. The editorial pass ran only read-only Git and document/source consistency checks. Never print secret values, request bodies, raw provider records, archive bytes, or capability URLs in evidence.
+The user explicitly authorized local source commits and branch merges for 001-003. That did not authorize paid environments, production inspection, deployment, shared D1 migration, identity retirement in a live account, backup deletion or Git pushes. Name the intended environment and wait for separate authorization before such work. Implementation, test and build commands below are executor gates. The original editorial pass was read-only; subsequent execution and integration results are recorded in their respective reviews. Never print secret values, request bodies, raw provider records, archive bytes, or capability URLs in evidence.
 
 The improve skill's `references/plan-template.md` was unavailable as reported by recon. `references/audit-playbook.md` also returned ENOENT during the drafter's own read. This set uses the user's explicit standalone-plan requirements instead. No hidden template compliance is claimed.
 
@@ -57,7 +61,7 @@ Before implementation, Luna reread the revised plans and canonical spec and conf
 | CR08 | Partially accepted; resolved in plan text | 007/012 separate dependency policy from benchmark evidence. Source-only is permitted, not benchmark PASS. Reject skipping P-Git for runtime production readiness: canonical platform gates and carried-forward historical gates require it even while push remains separately disabled. No failed-topology bypass. |
 | CR09 | Accepted; resolved in plan text | 001 has no contracts dependency; 002 prepends contracts verification and installed-consumer freshness to brain verification. Later standalone calls enforce the same order; copied npm file dependencies require a proved refresh recipe. |
 
-No source, infrastructure, install, tests, staging or commit is part of these revisions. Read-only document checks are not runtime evidence.
+The historical cold-review revisions were documentation-only. Read-only document checks are not runtime evidence; later implementation and integration have their own test records.
 
 ## Execution order and status
 
@@ -65,8 +69,8 @@ No source, infrastructure, install, tests, staging or commit is part of these re
 |---|---|---|---|---|---|
 | 001 | [Feasibility](001-feasibility.md) | none | Pi 0.85.1 recovery-adapter/barrier proof and two-Worker/two-image topology evidence | Local PASS, landed on `brain`; paid F NOT RUN | L / high |
 | 002 | [Contracts and identity](002-contracts-and-identity.md) | 001 local feasibility | Versioned wire contracts, additive D1 schema, ownership fence | ACCEPTED, landed on `brain`; no shared D1 migration | M / high |
-| 003 | [Command admission and delivery](003-command-admission-and-delivery.md) | 002 | Durable idempotent receipts and retrying delivery, no request-owned run | ACCEPTED LOCALLY; unstaged/uncommitted, not landed | L / high |
-| 004 | [Coordinator and encrypted journal](004-coordinator-and-encrypted-journal.md) | 003 | Durable execution decisions, epochs, journal, encrypted storage and projections | Requires reviewed 003 source integration | L / high |
+| 003 | [Command admission and delivery](003-command-admission-and-delivery.md) | 002 | Durable idempotent receipts and retrying delivery, no request-owned run | ACCEPTED, landed on local `brain` at `162e134` | L / high |
+| 004 | [Coordinator and encrypted journal](004-coordinator-and-encrypted-journal.md) | 003 | Durable execution decisions, epochs, journal, encrypted storage and projections | READY for local execution; not started | L / high |
 | 005 | [Privileged transport and remote execution](005-privileged-transport-and-remote-execution.md) | 004 | Private bridge, split credential broker, remote executor, Git/environment policy | BLOCKED 004 | L / high |
 | 006 | [Trusted Pi continuation](006-trusted-pi-continuation.md) | 005 | Full Pi running remotely with awaited persistence and safe process recovery | BLOCKED 005 | L / high |
 | 007 | [Paired recovery and seeds](007-paired-recovery-and-seeds.md) | 006 | Initial baseline, immutable pair publication, verified fallback, builder relocation | BLOCKED 006 | L / high |
@@ -185,7 +189,7 @@ Test IDs must prefix test titles. Paths below are planned. The fault-matrix help
 
 ## Verification commands
 
-The accepted review records 722 web, 43 brain, 20 runtime and 79 runner tests passing, plus both repair-probe variants with zero failures. Full repository/brain gates preceded the final type-only cleanup; focused gates and equivalent emitted JavaScript checks followed it. See the acceptance review for exact timing. No runtime gates were rerun during this reconciliation.
+The merged 003 baseline at `162e134` passed 757 web, 43 brain, 20 runtime, 79 runner and 14 contracts tests, copied-consumer freshness checks, and all 23 independent repair probes. All three inherited gates ran again after the merge, first in the retained 003 worktree and then in the freshly installed 004 worktree. Both contain the accepted source bytes, matching local `brain`. Logs are in [003 integration evidence](003-repair-evidence/integration/); `004-*` logs verify the prepared workspace baseline, not phase-004 functionality. This supersedes the older 722-web-test baseline, not the historical verification timing recorded in the 002 review.
 
 During authorized implementation, use all three commands for the inherited local gate:
 
@@ -213,7 +217,7 @@ Use `pnpm --filter @ditto/web exec vitest run <paths>` for narrow web gates. The
 
 ## Evidence limits and open decisions
 
-This reconciliation checked the accepted source baseline, plan status/provenance, the 003 source references and inherited package gates, plus known downstream version and policy-boundary drift. It did not rerun tests, audit all runtime invariants, inspect old external worktrees or revalidate every later-phase source excerpt. Plans 004-012 retain their original drafting bases and need a source drift check when their prerequisites land. Historical source anchors inside accepted plans and reviews describe the reviewed revision unless explicitly refreshed.
+003 integration preserved the accepted source, reran the inherited gates and probes, and refreshed 004's starting revision, transport acknowledgment contract, policy boundary and source anchors. It did not implement 004 or audit every downstream invariant. Plans 005-012 retain their historical drafting bases and need a source drift check when their prerequisites land. Historical anchors and test results in accepted plans and reviews describe their reviewed revision unless explicitly refreshed.
 
 The original editorial pass checked 13 plans, the complete target spec, 30 source excerpts and 55 test-command paths. At that time Pi 0.80.10 lacked the in-memory entries import and no executable restore recipe had been proved. Those limitations were superseded by 001's accepted Pi 0.85.1 recipe and tests. The later reconcile at `6eefdd1` accepted local A-D and Docker evidence from `/tmp/ditto-feasibility-execute.bw57gx/worktree`, while paid topology/restart/incarnation evidence stayed NOT RUN. These are historical records, not directions to restore an old checkout.
 

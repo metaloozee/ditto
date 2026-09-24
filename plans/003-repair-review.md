@@ -2,9 +2,9 @@
 
 Verdict: **ACCEPTED for plan 003's local admission/delivery scope.** Independent behavioral probes and all inherited verification gates pass on the final candidate. This supersedes the [rejected initial candidate](003-execution-review.md).
 
-Source remains unstaged and uncommitted in `/home/ayan/ditto-worktrees/plan-003-grok`, detached at `d18bf57`. It has not been copied or merged into `brain`. Phase 004 must inherit this reviewed source before execution; a new checkout of current `brain` does not contain 003.
+Integration update: the user subsequently authorized commits and a local branch merge. The exact accepted source landed on `brain` at `162e134`, through source commits `237affb` and `03af7f0`. The retained worktree `/home/ayan/ditto-worktrees/plan-003-grok` now uses branch `grok/plan-003-admission`. All 17 source hashes still match. All three verification gates and the 23 probes passed again on the merged revision. See the [integration record and logs](003-repair-evidence/integration/README.md).
 
-No staging, commit, merge, push, deployment, shared database migration, live credential access, paid-platform validation or real-user enablement was performed. Local acceptance is not release approval.
+The review below records the earlier acceptance of the uncommitted candidate at base `d18bf57`. No push, deployment, shared database migration, live credential access, paid-platform validation or real-user enablement was performed during review or integration. Local acceptance is not release approval.
 
 ## Candidate and scope
 
@@ -106,4 +106,4 @@ The final slow-read probe takes approximately 101 ms for a 100 ms test budget, i
 
 ## Next step
 
-The reviewed 003 candidate is ready for a separately authorized source integration. Do not start 004 from a clean `brain` checkout until it contains this candidate, or unless the user explicitly chooses to continue from the reviewed worktree. No staging, commit, merge or deployment is implied by acceptance.
+003 integration is complete. [004](004-coordinator-and-encrypted-journal.md) is ready for a separate local execution request in `/home/ayan/ditto-worktrees/plan-004-grok`, branch `grok/plan-004-coordinator`. It starts from current `brain`, has installed dependencies and committed plans, and passes all inherited gates plus the 23 repair probes. Preparing this baseline did not implement or start 004 and did not authorize deployment.
