@@ -1,0 +1,3 @@
+$ pnpm --filter @ditto/web typecheck
+$ tsc --noEmit
+EXIT:0

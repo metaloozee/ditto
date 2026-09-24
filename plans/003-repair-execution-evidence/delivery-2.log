@@ -1,0 +1,106 @@
+Warning: Route file "/home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/routes/project.$projectId.test.tsx" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/routes/-project.$projectId.test.tsx" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/routes/api.agent.control.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/routes/-api.agent.control.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/routes/api.agent.stream.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/routes/-api.agent.stream.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+
+ RUN  v4.1.10 /home/ayan/ditto-worktrees/plan-003-grok/apps/web
+
+ ❯ src/lib/session-command-delivery.test.ts (12 tests | 2 failed) 574ms
+     × delivery storage faults leave work pending without settling messages 10ms
+     × production scheduled dispatch delivers through the shared resolver 137ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/lib/session-command-delivery.test.ts > session command delivery > delivery storage faults leave work pending without settling messages
+AssertionError: expected [Function] to throw error matching /storage fault/ but got 'Failed query: select "workspace_runti…'
+
+- Expected:
+/storage fault/
+
++ Received:
+"Failed query: select \"workspace_runtime_work\".\"id\", \"workspace_runtime_work\".\"fifoSeq\", \"workspace_runtime_work\".\"identityId\", \"workspace_runtime_work\".\"sessionId\", \"workspace_runtime_work\".\"projectId\", \"workspace_runtime_work\".\"userId\", \"workspace_runtime_work\".\"intent\", \"workspace_runtime_work\".\"payload\", \"workspace_runtime_work\".\"status\", \"workspace_runtime_work\".\"leaseToken\", \"workspace_runtime_work\".\"leaseExpiresAt\", \"workspace_runtime_work\".\"retryCount\", \"workspace_runtime_work\".\"reasonCode\", \"workspace_runtime_work\".\"queueExpiresAt\", \"workspace_runtime_work\".\"userMessageId\", \"workspace_runtime_work\".\"assistantMessageId\", \"workspace_runtime_work\".\"protocolVersion\", \"workspace_runtime_work\".\"runtimeOwner\", \"workspace_runtime_work\".\"runtimeOwnerVersion\", \"workspace_runtime_work\".\"commandId\", \"workspace_runtime_work\".\"deliveryState\", \"workspace_runtime_work\".\"deliveryLeaseToken\", \"workspace_runtime_work\".\"deliveryLeaseExpiresAt\", \"workspace_runtime_work\".\"deliveryAttempts\", \"workspace_runtime_work\".\"startupRoles\", \"workspace_runtime_work\".\"startupPools\", \"workspace_runtime_work\".\"expectedIdentityId\", \"workspace_runtime_work\".\"startupDeadline\", \"workspace_runtime_work\".\"created_at\", \"workspace_runtime_work\".\"updated_at\", \"session_commands\".\"kind\", \"session_commands\".\"commandSeq\" from \"workspace_runtime_work\" inner join \"session_commands\" on \"session_commands\".\"id\" = \"workspace_runtime_work\".\"commandId\" where (\"workspace_runtime_work\".\"runtimeOwner\" = ? and \"workspace_runtime_work\".\"deliveryState\" = ? and (\"workspace_runtime_work\".\"deliveryLeaseExpiresAt\" IS NULL or \"workspace_runtime_work\".\"deliveryLeaseExpiresAt\" <= ?) and (
+		\"workspace_runtime_work\".\"runtimeOwner\" = 'trusted_v1'
+		AND \"workspace_runtime_work\".\"commandId\" IS NOT NULL
+		AND \"workspace_runtime_work\".\"protocolVersion\" IS NOT NULL
+		AND EXISTS (
+			SELECT 1 FROM \"workspace_sessions\"
+			WHERE \"workspace_sessions\".\"id\" = \"workspace_runtime_work\".\"sessionId\"
+				AND \"workspace_sessions\".\"runtimeOwner\" = 'trusted_v1'
+				AND \"workspace_sessions\".\"runtimeOwnerVersion\" = \"workspace_runtime_work\".\"runtimeOwnerVersion\"
+		)
+	)) order by CASE \"session_commands\".\"kind\" WHEN 'stop' THEN 0 ELSE 1 END, \"session_commands\".\"commandSeq\" asc, \"workspace_runtime_work\".\"fifoSeq\" asc limit ?
+params: trusted_v1,pending,1700000000000,8"
+
+ ❯ src/lib/session-command-delivery.test.ts:459:34
+    457|   fixture.seedTrustedSession();
+    458|   const admitted = await fixture.asUser("user-1").command(promptBody()…
+    459|   await expect(fixture.deliver()).rejects.toThrow(/storage fault/);
+       |                                  ^
+    460|   expect(
+    461|    fixture.sqlite.prepare("SELECT status FROM messages").all(),
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/lib/session-command-delivery.test.ts > session command delivery > production scheduled dispatch delivers through the shared resolver
+Error: Failed query: select "id", "kind", "sandboxId", "containerId", "userId", "projectId", "workspaceSessionId", "controllerClass", "controllerNamespace", "incarnationId", "incarnationStartedAt", "lifecycleGeneration", "state", "retiredAt", "created_at", "updated_at" from "sandbox_identities" where ("sandbox_identities"."kind" = ? and "sandbox_identities"."state" = ? and "sandbox_identities"."retiredAt" is null)
+params: workspace_session,ready
+ ❯ D1PreparedQuery.queryWithCache ../../node_modules/.pnpm/drizzle-orm@0.45.2_@cloudflare+workers-types@4.20260702.1_@opentelemetry+api@1.9.1_kysely@0.29.4/node_modules/src/sqlite-core/session.ts:80:10
+ ❯ D1PreparedQuery.values ../../node_modules/.pnpm/drizzle-orm@0.45.2_@cloudflare+workers-types@4.20260702.1_@opentelemetry+api@1.9.1_kysely@0.29.4/node_modules/src/d1/session.ts:280:9
+ ❯ D1PreparedQuery.all ../../node_modules/.pnpm/drizzle-orm@0.45.2_@cloudflare+workers-types@4.20260702.1_@opentelemetry+api@1.9.1_kysely@0.29.4/node_modules/src/d1/session.ts:217:15
+ ❯ reclaimSleepingCapacity src/lib/workspace-runtime.ts:1183:21
+    1181|  nowMs: number;
+    1182| }): Promise<void> {
+    1183|  const identities = await options.db
+       |                     ^
+    1184|   .select()
+    1185|   .from(sandboxIdentities)
+ ❯ drainWorkspaceRuntime src/lib/workspace-runtime.ts:1132:2
+ ❯ src/lib/session-command-delivery.test.ts:479:3
+
+Caused by: Error: no such column: "controllerClass" - should this be a string literal in single-quotes?
+ ❯ executeAll src/lib/sqlite-d1-test-utils.ts:29:27
+ ❯ Object.raw src/lib/sqlite-d1-test-utils.ts:71:11
+ ❯ ../../node_modules/.pnpm/drizzle-orm@0.45.2_@cloudflare+workers-types@4.20260702.1_@opentelemetry+api@1.9.1_kysely@0.29.4/node_modules/drizzle-orm/d1/session.js:181:40
+ ❯ D1PreparedQuery.queryWithCache ../../node_modules/.pnpm/drizzle-orm@0.45.2_@cloudflare+workers-types@4.20260702.1_@opentelemetry+api@1.9.1_kysely@0.29.4/node_modules/drizzle-orm/sqlite-core/session.js:41:22
+ ❯ D1PreparedQuery.values ../../node_modules/.pnpm/drizzle-orm@0.45.2_@cloudflare+workers-types@4.20260702.1_@opentelemetry+api@1.9.1_kysely@0.29.4/node_modules/drizzle-orm/d1/session.js:180:23
+ ❯ D1PreparedQuery.all ../../node_modules/.pnpm/drizzle-orm@0.45.2_@cloudflare+workers-types@4.20260702.1_@opentelemetry+api@1.9.1_kysely@0.29.4/node_modules/drizzle-orm/d1/session.js:132:29
+ ❯ SQLiteSelectBase.all ../../node_modules/.pnpm/drizzle-orm@0.45.2_@cloudflare+workers-types@4.20260702.1_@opentelemetry+api@1.9.1_kysely@0.29.4/node_modules/drizzle-orm/sqlite-core/query-builders/select.js:641:28
+ ❯ SQLiteSelectBase.execute ../../node_modules/.pnpm/drizzle-orm@0.45.2_@cloudflare+workers-types@4.20260702.1_@opentelemetry+api@1.9.1_kysely@0.29.4/node_modules/drizzle-orm/sqlite-core/query-builders/select.js:650:17
+ ❯ SQLiteSelectBase.then ../../node_modules/.pnpm/drizzle-orm@0.45.2_@cloudflare+workers-types@4.20260702.1_@opentelemetry+api@1.9.1_kysely@0.29.4/node_modules/drizzle-orm/query-promise.js:21:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'ERR_SQLITE_ERROR', errcode: 1, errstr: 'SQL logic error' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 10 passed (12)
+   Start at  07:55:25
+   Duration  1.64s (transform 571ms, setup 0ms, import 900ms, tests 574ms, environment 0ms)
+
+undefined
+/home/ayan/ditto-worktrees/plan-003-grok/apps/web:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/lib/session-command-delivery.test.ts
