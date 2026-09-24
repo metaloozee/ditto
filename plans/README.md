@@ -1,6 +1,8 @@
 # Trusted workspace-session runtime implementation plans
 
-001 local feasibility and 002 are accepted and landed on `brain` at merge `693a334`. **003 is READY, NOT STARTED.** Paid topology, restart and incarnation-lifetime evidence remain NOT RUN and block real-user trusted-runtime enablement.
+001 local feasibility and 002 are accepted and landed on `brain` at merge `693a334`. **003 is ACCEPTED LOCALLY, NOT LANDED.** Paid topology, restart and incarnation-lifetime evidence remain NOT RUN and block real-user trusted-runtime enablement.
+
+003 execution and repair used `xai/grok-4.6` in `/home/ayan/ditto-worktrees/plan-003-grok`, detached at `d18bf57`. Its source is unstaged and uncommitted. Final independent verification passed 23 probes, 757 web tests, 79 runner tests, 20 runtime tests, 43 brain tests, contracts/freshness checks and build/typecheck gates. See the [003 repair acceptance review](003-repair-review.md), [probes](003-repair-probes.cjs), and [final evidence](003-repair-evidence/final/). The [initial rejection](003-execution-review.md) is superseded. 004 requires integration of the reviewed 003 source or an explicit decision to continue in that worktree; current `brain` does not contain 003.
 
 Reconciled against `a5c1185` on `brain`. Git comparison confirmed that source outside `plans/` matches the accepted execution branch at `4e2bad8`; the checkout was clean before these documentation edits. This reconciliation changes no source and reruns no tests. The [002 acceptance review](002-expanded-repair-review.md) remains the acceptance record, including the approved R5 adjustment and verification timing.
 
@@ -12,7 +14,7 @@ Canonical requirements: [trusted-session-runtime.md](../docs/specs/trusted-sessi
 - 002 delivered strict runtime contracts, additive migration `0020`, identity/ownership and delivery schema, legacy-owner fences, shared lease policy with product-only adapters, and contracts-consumer freshness checks. The sequence counter and capacity ledger exist as schema; durable command admission/allocation belongs to 003 and unified capacity allocation to 008.
 - 003 implements authenticated durable admission, idempotent receipts, transactional sequence/message/outbox writes, durable controls and bounded retrying delivery. It does not launch Pi or implement 004's coordinator, execution deduplication or sequence consumption. Existing/default sessions remain on the fenced legacy path.
 
-Start with [003](003-command-admission-and-delivery.md) and the acceptance review. Use a new worktree from current merged `brain`, not the old execution checkout. A new worktree does not inherit uncommitted plan edits: use the reconciled plans from this checkout until they are separately committed. The recorded executor preference remains `gpt-6-sol` with medium reasoning.
+Continue with [003's acceptance review](003-repair-review.md), [003](003-command-admission-and-delivery.md), and the accepted 002 review. Preserve the reviewed 003 candidate for separately authorized integration; do not use the historical 001/002 executor checkout. Read current plans from this checkout because the candidate's copies predate review. The latest 003 execution and repair requests selected `xai/grok-4.6`, overriding the historical `gpt-6-sol` preference.
 
 ## Plan and evidence map
 
@@ -63,8 +65,8 @@ No source, infrastructure, install, tests, staging or commit is part of these re
 |---|---|---|---|---|---|
 | 001 | [Feasibility](001-feasibility.md) | none | Pi 0.85.1 recovery-adapter/barrier proof and two-Worker/two-image topology evidence | Local PASS, landed on `brain`; paid F NOT RUN | L / high |
 | 002 | [Contracts and identity](002-contracts-and-identity.md) | 001 local feasibility | Versioned wire contracts, additive D1 schema, ownership fence | ACCEPTED, landed on `brain`; no shared D1 migration | M / high |
-| 003 | [Command admission and delivery](003-command-admission-and-delivery.md) | 002 | Durable idempotent receipts and retrying delivery, no request-owned run | READY; not started | L / high |
-| 004 | [Coordinator and encrypted journal](004-coordinator-and-encrypted-journal.md) | 003 | Durable execution decisions, epochs, journal, encrypted storage and projections | BLOCKED 003 | L / high |
+| 003 | [Command admission and delivery](003-command-admission-and-delivery.md) | 002 | Durable idempotent receipts and retrying delivery, no request-owned run | ACCEPTED LOCALLY; unstaged/uncommitted, not landed | L / high |
+| 004 | [Coordinator and encrypted journal](004-coordinator-and-encrypted-journal.md) | 003 | Durable execution decisions, epochs, journal, encrypted storage and projections | Requires reviewed 003 source integration | L / high |
 | 005 | [Privileged transport and remote execution](005-privileged-transport-and-remote-execution.md) | 004 | Private bridge, split credential broker, remote executor, Git/environment policy | BLOCKED 004 | L / high |
 | 006 | [Trusted Pi continuation](006-trusted-pi-continuation.md) | 005 | Full Pi running remotely with awaited persistence and safe process recovery | BLOCKED 005 | L / high |
 | 007 | [Paired recovery and seeds](007-paired-recovery-and-seeds.md) | 006 | Initial baseline, immutable pair publication, verified fallback, builder relocation | BLOCKED 006 | L / high |

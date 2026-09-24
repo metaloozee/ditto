@@ -1,0 +1,144 @@
+{
+  "root": "/home/ayan/ditto-worktrees/plan-003-grok",
+  "base": "d18bf57855f2cfa8179adb3395a3ac544e5eca36",
+  "baselineFiles": 697,
+  "repairChanges": [
+    {
+      "path": "apps/web/src/lib/session-command-delivery.test.ts",
+      "beforeSha256": "73de7065062c1fbc638e2de30b3b34d4dc1570af4e9f00ca31f99b107dfc1cb4",
+      "afterSha256": "abc4295e15770708765037454703ba6f6b19911ef6f599e1a97a7b618eb9f013"
+    },
+    {
+      "path": "apps/web/src/lib/session-command-delivery.ts",
+      "beforeSha256": "fccd62ded401b1c8da0404a65a77c7d2d81e3231008abf43fa44a9c52a0fc8e6",
+      "afterSha256": "81939329e55f550a0a52b81db3835cccb05dd19ae4d4374f61cd378fba47d182"
+    },
+    {
+      "path": "apps/web/src/lib/session-command.test.ts",
+      "beforeSha256": "0e42f4a1efd2189a53d02ec3db3fbfcf177dae1851a18dc1d1ae64331ffa7453",
+      "afterSha256": "8eedecb47e0881b1539546d3ab359335557916c33908dd079069ba0057eced83"
+    },
+    {
+      "path": "apps/web/src/lib/session-command.ts",
+      "beforeSha256": "1f62efab3237f450b35b36e883c379347734a7f4efe58396d3b0c7ad30e0d080",
+      "afterSha256": "fce00b9d961314d8b75b4a9265e1b500b3af36be5b0f01a4e70a3a29b2f9f4ce"
+    },
+    {
+      "path": "apps/web/src/lib/session-runtime-client.ts",
+      "beforeSha256": "1c5c8a3746c7a49f896b474ff9aaf73009077ab8ab4767e17d7f6039721c8f57",
+      "afterSha256": "91a1e4b246d22ac84c2297f30a10edebf1d4efc89ab221f2e609b94cb2f48569"
+    },
+    {
+      "path": "apps/web/src/lib/sqlite-d1-test-utils.ts",
+      "beforeSha256": "c08878f06e033a35f24a6516008e720e9b2d5221660d7a291253bbef1c669863",
+      "afterSha256": "6bba479a54597d81ba3a2669ff4dd0a08b440bd6e709da8a877a3d9444ebee3f"
+    },
+    {
+      "path": "apps/web/src/lib/workspace-runtime.ts",
+      "beforeSha256": "f5fa6e27bd4034c9a2ac04f9afd5c2b99312980027bc61ecf60ba650c0b03d87",
+      "afterSha256": "52fb461b721ea5e676524e7403b4ece6eb47be3c3b88e759d0774500e76beb33"
+    },
+    {
+      "path": "apps/web/src/routes/api.agent.control.ts",
+      "beforeSha256": "9abc4ab5dc255e201f061fcc5e17da2d263363489c7dec0c2b0f19eb0e6e8243",
+      "afterSha256": "8baa6f703f34a8f1b64392092027f91d2464c7f9c19df9fe254f1b51f58bd75e"
+    },
+    {
+      "path": "apps/web/src/routes/api.agent.stream.ts",
+      "beforeSha256": "16691fdf67bffa5ebfa2350ffab81b618291a18113c001572ffdd22be4fc3e39",
+      "afterSha256": "a3ee7059d19ae78c272092017f85f895f46db4c2a2d3113d434db0f48328fd3b"
+    },
+    {
+      "path": "apps/web/src/test/session-runtime-fixture.ts",
+      "beforeSha256": "2774ffc7f67203a982e468a4bb487dbae22d8e56dc936c19fb9f022d7b527671",
+      "afterSha256": "7c32bd222054fdcc8a72c2879e7e83ae42214cc53ecb359d13df6af86b588caf"
+    }
+  ],
+  "candidateSource": [
+    {
+      "path": "apps/web/src/lib/agent-control-service.test.ts",
+      "status": "modified",
+      "sha256": "7216550bf38fcedafdd3888e4b517522f06dddeca203a699e568299b5917dd95"
+    },
+    {
+      "path": "apps/web/src/lib/agent-control-service.ts",
+      "status": "modified",
+      "sha256": "c981757ba7862ee6db3af2bae9d50163d9563525a89b94046ea1708569f069e5"
+    },
+    {
+      "path": "apps/web/src/lib/agent-run-service.ownership.test.ts",
+      "status": "modified",
+      "sha256": "1ded1af8787b4ac17e9104925ab7efa56f04bc83cf0acc3b1a19b6af6fa438eb"
+    },
+    {
+      "path": "apps/web/src/lib/agent-run-service.test.ts",
+      "status": "modified",
+      "sha256": "5b088cdd5e32576f12a3336e9b9a75f0d70bfde12ffbdb8e10a40496da35f01f"
+    },
+    {
+      "path": "apps/web/src/lib/agent-run-service.ts",
+      "status": "modified",
+      "sha256": "89f9bf71ad5a887281cd0b5e115ae81816f7ff075caf50489c5af3620bcacd74"
+    },
+    {
+      "path": "apps/web/src/lib/session-command-delivery.test.ts",
+      "status": "added",
+      "sha256": "abc4295e15770708765037454703ba6f6b19911ef6f599e1a97a7b618eb9f013"
+    },
+    {
+      "path": "apps/web/src/lib/session-command-delivery.ts",
+      "status": "added",
+      "sha256": "81939329e55f550a0a52b81db3835cccb05dd19ae4d4374f61cd378fba47d182"
+    },
+    {
+      "path": "apps/web/src/lib/session-command.test.ts",
+      "status": "added",
+      "sha256": "8eedecb47e0881b1539546d3ab359335557916c33908dd079069ba0057eced83"
+    },
+    {
+      "path": "apps/web/src/lib/session-command.ts",
+      "status": "added",
+      "sha256": "fce00b9d961314d8b75b4a9265e1b500b3af36be5b0f01a4e70a3a29b2f9f4ce"
+    },
+    {
+      "path": "apps/web/src/lib/session-runtime-client.ts",
+      "status": "added",
+      "sha256": "91a1e4b246d22ac84c2297f30a10edebf1d4efc89ab221f2e609b94cb2f48569"
+    },
+    {
+      "path": "apps/web/src/lib/sqlite-d1-test-utils.ts",
+      "status": "modified",
+      "sha256": "6bba479a54597d81ba3a2669ff4dd0a08b440bd6e709da8a877a3d9444ebee3f"
+    },
+    {
+      "path": "apps/web/src/lib/workspace-runtime.ts",
+      "status": "modified",
+      "sha256": "52fb461b721ea5e676524e7403b4ece6eb47be3c3b88e759d0774500e76beb33"
+    },
+    {
+      "path": "apps/web/src/routes/api.agent.control.ts",
+      "status": "modified",
+      "sha256": "8baa6f703f34a8f1b64392092027f91d2464c7f9c19df9fe254f1b51f58bd75e"
+    },
+    {
+      "path": "apps/web/src/routes/api.agent.stream.ts",
+      "status": "modified",
+      "sha256": "a3ee7059d19ae78c272092017f85f895f46db4c2a2d3113d434db0f48328fd3b"
+    },
+    {
+      "path": "apps/web/src/test/session-runtime-fixture.ts",
+      "status": "added",
+      "sha256": "7c32bd222054fdcc8a72c2879e7e83ae42214cc53ecb359d13df6af86b588caf"
+    },
+    {
+      "path": "packages/runtime-contracts/src/command.ts",
+      "status": "modified",
+      "sha256": "97843b781c252a2dd481d8e809df8a4223e66a60ad50f23664f664ca28e456d9"
+    },
+    {
+      "path": "packages/runtime-contracts/src/contracts.test.ts",
+      "status": "modified",
+      "sha256": "0e4783619117e7c9fb80233c15421b45a06bfe3c824d1f3c67b1c2a9c9d11457"
+    }
+  ]
+}

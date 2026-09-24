@@ -1,0 +1,1408 @@
+diff --git a/apps/web/src/lib/agent-control-service.test.ts b/apps/web/src/lib/agent-control-service.test.ts
+index 1d38e35..7c7b2ee 100644
+--- a/apps/web/src/lib/agent-control-service.test.ts
++++ b/apps/web/src/lib/agent-control-service.test.ts
+@@ -59,6 +59,8 @@ function makeHarness(
+ 			projectId: "project-1",
+ 			userId: "user-1",
+ 			status: "active",
++			runtimeOwner: "legacy",
++			runtimeOwnerVersion: 1,
+ 		}),
+ 		withWorkspaceRuntimeLease: vi.fn(
+ 			async (_input: unknown, run: (lease: unknown) => Promise<unknown>) =>
+diff --git a/apps/web/src/lib/agent-control-service.ts b/apps/web/src/lib/agent-control-service.ts
+index 89ed0a2..79ef1cc 100644
+--- a/apps/web/src/lib/agent-control-service.ts
++++ b/apps/web/src/lib/agent-control-service.ts
+@@ -5,6 +5,7 @@ import type { createDb } from "#/db";
+ import { projects } from "#/db/schema";
+ import { DEFAULT_PROJECT_CODER_MODEL } from "#/lib/agent-models";
+ import { createSandboxAuthority } from "#/lib/sandbox-authority";
++import { legacyRequestRejection } from "#/lib/session-command";
+ import {
+ 	WorkspaceRuntimeError,
+ 	withWorkspaceRuntimeLease,
+@@ -69,7 +70,11 @@ type ParsedControlResponse = z.infer<typeof controlResponseSchema>;
+ 
+ export type AgentControlResult =
+ 	| { kind: "accepted"; status: 200; body: Record<string, unknown> }
+-	| { kind: "error"; status: 404 | 409 | 500; body: { error: string } };
++	| {
++			kind: "error";
++			status: 404 | 409 | 500;
++			body: { error: string; category?: string };
++	  };
+ 
+ type ControlDeps = {
+ 	createId?: () => string;
+@@ -191,6 +196,17 @@ export async function controlAgentRun(options: {
+ 			body: { error: "Session not found." },
+ 		};
+ 	}
++	const ownerRejection = legacyRequestRejection(session.runtimeOwner);
++	if (ownerRejection) {
++		return {
++			kind: "error",
++			status: 409,
++			body: {
++				error: ownerRejection.message,
++				category: ownerRejection.category,
++			},
++		};
++	}
+ 	if (project.status !== "ready") {
+ 		return {
+ 			kind: "error",
+diff --git a/apps/web/src/lib/agent-run-service.ownership.test.ts b/apps/web/src/lib/agent-run-service.ownership.test.ts
+index 5a627ee..983f04b 100644
+--- a/apps/web/src/lib/agent-run-service.ownership.test.ts
++++ b/apps/web/src/lib/agent-run-service.ownership.test.ts
+@@ -236,6 +236,32 @@ describe("agent run ownership batches through drizzle-orm/d1", () => {
+ 		expect(counts(sqlite)).toEqual({ sessions: 1, messages: 0, work: 0 });
+ 	});
+ 
++	it("does not launch the legacy runner for a trusted or migrating owner", async () => {
++		const { db, sqlite } = createOwnershipDb();
++		seedLegacySession(sqlite, { owner: "trusted_v1", version: 2 });
++		const result = await prepareAgentRun({
++			db,
++			env: makeEnv(),
++			userId: "user-1",
++			input: { projectId: "proj-1", sessionId: "sess-1", message: "hi" },
++			deps: baseDeps({
++				resolveSessionForMessageWrite: vi.fn().mockResolvedValue({
++					kind: "existing",
++					session: sessionRow({
++						runtimeOwner: "trusted_v1",
++						runtimeOwnerVersion: 2,
++					}),
++				}),
++			}),
++		});
++		expect(result).toMatchObject({
++			kind: "error",
++			status: 409,
++			body: { category: "upgrade_recovery" },
++		});
++		expect(counts(sqlite)).toEqual({ sessions: 1, messages: 0, work: 0 });
++	});
++
+ 	it("accepts a legacy owner after a migrating round trip at the current version", async () => {
+ 		const { db, sqlite } = createOwnershipDb();
+ 		seedLegacySession(sqlite, { owner: "legacy", version: 3 });
+diff --git a/apps/web/src/lib/agent-run-service.test.ts b/apps/web/src/lib/agent-run-service.test.ts
+index 152c909..4fa5a2f 100644
+--- a/apps/web/src/lib/agent-run-service.test.ts
++++ b/apps/web/src/lib/agent-run-service.test.ts
+@@ -651,28 +651,31 @@ describe("prepareAgentRun", () => {
+ 
+ 	it("rejects a non-legacy session before message inserts", async () => {
+ 		const { db, batch, insert } = createMockDb();
+-		await expect(
+-			prepareAgentRun({
+-				db,
+-				env: makeEnv(),
+-				userId: "user-1",
+-				input: {
+-					projectId: "proj-1",
+-					sessionId: "sess-1",
+-					message: "hi",
+-				},
+-				deps: baseDeps({
+-					resolveSessionForMessageWrite: vi.fn().mockResolvedValue({
+-						kind: "existing",
+-						session: {
+-							...activeSession,
+-							runtimeOwner: "migrating",
+-							runtimeOwnerVersion: 2,
+-						},
+-					}),
++		const result = await prepareAgentRun({
++			db,
++			env: makeEnv(),
++			userId: "user-1",
++			input: {
++				projectId: "proj-1",
++				sessionId: "sess-1",
++				message: "hi",
++			},
++			deps: baseDeps({
++				resolveSessionForMessageWrite: vi.fn().mockResolvedValue({
++					kind: "existing",
++					session: {
++						...activeSession,
++						runtimeOwner: "migrating",
++						runtimeOwnerVersion: 2,
++					},
+ 				}),
+ 			}),
+-		).rejects.toMatchObject({ code: "runtime_owner_mismatch" });
++		});
++		expect(result).toMatchObject({
++			kind: "error",
++			status: 409,
++			body: { category: "upgrade_recovery" },
++		});
+ 		expect(batch).not.toHaveBeenCalled();
+ 		expect(insert).not.toHaveBeenCalled();
+ 	});
+diff --git a/apps/web/src/lib/agent-run-service.ts b/apps/web/src/lib/agent-run-service.ts
+index df9eb20..2cefd5b 100644
+--- a/apps/web/src/lib/agent-run-service.ts
++++ b/apps/web/src/lib/agent-run-service.ts
+@@ -37,6 +37,7 @@ import { OPENCODE_CONTRACT_VERSION } from "#/lib/open-code-contract";
+ import { decryptEnvVars } from "#/lib/project-env-vars";
+ import { createSandboxAuthority } from "#/lib/sandbox-authority";
+ import { redactSecrets } from "#/lib/secret-redaction";
++import { legacyRequestRejection } from "#/lib/session-command";
+ import {
+ 	assertRuntimeOwner,
+ 	isEmptyReturning,
+@@ -138,7 +139,7 @@ export type AgentRunStreamEvent =
+ export type AgentRunHttpError = {
+ 	kind: "error";
+ 	status: number;
+-	body: { error: string; issues?: z.ZodIssue[] };
++	body: { error: string; issues?: z.ZodIssue[]; category?: string };
+ };
+ 
+ export type AgentRunPrepared =
+@@ -421,11 +422,26 @@ export async function prepareAgentRun(options: {
+ 
+ 	const createdSession = resolved.kind === "create";
+ 	if (resolved.kind === "existing") {
+-		assertRuntimeOwner({
+-			session: resolved.session,
+-			expectedOwner: "legacy",
+-			ownerVersion: resolved.session.runtimeOwnerVersion,
+-		});
++		try {
++			assertRuntimeOwner({
++				session: resolved.session,
++				expectedOwner: "legacy",
++				ownerVersion: resolved.session.runtimeOwnerVersion,
++			});
++		} catch (error) {
++			if (error instanceof RuntimeOwnershipError) {
++				const rejection = legacyRequestRejection(resolved.session.runtimeOwner);
++				return {
++					kind: "error",
++					status: rejection?.status ?? 409,
++					body: {
++						error: rejection?.message ?? "Workspace runtime ownership changed.",
++						category: rejection?.category,
++					},
++				};
++			}
++			throw error;
++		}
+ 	}
+ 	const sessionId =
+ 		resolved.kind === "existing" ? resolved.session.id : deps.createId();
+diff --git a/apps/web/src/lib/sqlite-d1-test-utils.ts b/apps/web/src/lib/sqlite-d1-test-utils.ts
+index 6bfeeb6..4bde62d 100644
+--- a/apps/web/src/lib/sqlite-d1-test-utils.ts
++++ b/apps/web/src/lib/sqlite-d1-test-utils.ts
+@@ -23,7 +23,9 @@ function executeAll(
+ 	sqlite: DatabaseSync,
+ 	sql: string,
+ 	params: unknown[],
++	beforeStatement?: (sql: string) => void,
+ ): Record<string, unknown>[] {
++	beforeStatement?.(sql);
+ 	const statement = sqlite.prepare(sql);
+ 	const bound = normalizeParams(params);
+ 	try {
+@@ -42,14 +44,16 @@ function createStatement(
+ 	sqlite: DatabaseSync,
+ 	sql: string,
+ 	params: unknown[] = [],
++	beforeStatement?: (sql: string) => void,
+ ): BoundStatement {
+ 	const statement: BoundStatement = {
+ 		sql,
+ 		params,
+ 		bind(...values: unknown[]) {
+-			return createStatement(sqlite, sql, values);
++			return createStatement(sqlite, sql, values, beforeStatement);
+ 		},
+ 		async run() {
++			beforeStatement?.(sql);
+ 			const bound = normalizeParams(params);
+ 			const result = sqlite.prepare(sql).run(...(bound as never[]));
+ 			return {
+@@ -59,33 +63,52 @@ function createStatement(
+ 		},
+ 		async all() {
+ 			return {
+-				results: executeAll(sqlite, sql, params),
++				results: executeAll(sqlite, sql, params, beforeStatement),
+ 				success: true,
+ 			};
+ 		},
+ 		async raw() {
+-			return executeAll(sqlite, sql, params).map((row) => Object.values(row));
++			return executeAll(sqlite, sql, params, beforeStatement).map((row) =>
++				Object.values(row),
++			);
+ 		},
+ 		async first() {
+-			return executeAll(sqlite, sql, params)[0] ?? null;
++			return executeAll(sqlite, sql, params, beforeStatement)[0] ?? null;
+ 		},
+ 	};
+ 	return statement;
+ }
+ 
+-export function createSqliteD1(sqlite: DatabaseSync): D1Database {
++export function createSqliteD1(
++	sqlite: DatabaseSync,
++	options?: {
++		beforeBatchStatement?: (index: number, sql: string) => void;
++		beforeStatement?: (sql: string) => void;
++	},
++): D1Database {
+ 	return {
+ 		prepare(sql: string) {
+-			return createStatement(sqlite, sql) as unknown as D1PreparedStatement;
++			return createStatement(
++				sqlite,
++				sql,
++				[],
++				options?.beforeStatement,
++			) as unknown as D1PreparedStatement;
+ 		},
+ 		async batch<T = unknown>(statements: D1PreparedStatement[]) {
+ 			sqlite.exec("BEGIN IMMEDIATE");
+ 			try {
+ 				const results: D1Result<T>[] = [];
+-				for (const statement of statements) {
++				for (const [index, statement] of statements.entries()) {
+ 					const bound = statement as unknown as BoundStatement;
++					options?.beforeBatchStatement?.(index, bound.sql);
+ 					results.push({
+-						results: executeAll(sqlite, bound.sql, bound.params) as T[],
++						results: executeAll(
++							sqlite,
++							bound.sql,
++							bound.params,
++							options?.beforeStatement,
++						) as T[],
+ 						success: true,
+ 						meta: {
+ 							duration: 0,
+@@ -118,8 +141,14 @@ export function createSqliteD1(sqlite: DatabaseSync): D1Database {
+ 	} as unknown as D1Database;
+ }
+ 
+-export function createD1Drizzle(sqlite: DatabaseSync): Db {
+-	return drizzle(createSqliteD1(sqlite), { schema }) as unknown as Db;
++export function createD1Drizzle(
++	sqlite: DatabaseSync,
++	options?: {
++		beforeBatchStatement?: (index: number, sql: string) => void;
++		beforeStatement?: (sql: string) => void;
++	},
++): Db {
++	return drizzle(createSqliteD1(sqlite, options), { schema }) as unknown as Db;
+ }
+ 
+ export const OWNERSHIP_D1_SCHEMA = `
+diff --git a/apps/web/src/lib/workspace-runtime.ts b/apps/web/src/lib/workspace-runtime.ts
+index 72d5f72..97b80c8 100644
+--- a/apps/web/src/lib/workspace-runtime.ts
++++ b/apps/web/src/lib/workspace-runtime.ts
+@@ -25,6 +25,8 @@ import {
+ 	getProjectSandboxState,
+ 	type SandboxEnvVar,
+ } from "#/lib/sandbox-bootstrap";
++import { deliverSessionCommands } from "#/lib/session-command-delivery";
++import { resolveSessionRuntimeTransport } from "#/lib/session-runtime-client";
+ import { withSessionWorkspaceLock } from "#/lib/session-workspace-lock";
+ import { SessionWorkspaceBusyError } from "#/lib/session-workspace-lock-error";
+ import { sessionBranchName, WORKSPACE_PATH } from "#/lib/workspace-policy";
+@@ -965,6 +967,12 @@ async function executeWorkspaceWork(options: {
+ 	work: WorkspaceWorkRow;
+ 	now: () => number;
+ }): Promise<void> {
++	if (
++		options.work.runtimeOwner === "trusted_v1" ||
++		options.work.commandId != null
++	) {
++		return;
++	}
+ 	const payload = parseWorkspaceWorkPayload(options.work.payload);
+ 	switch (options.work.intent) {
+ 		case "agent_run": {
+@@ -1139,6 +1147,14 @@ export async function drainWorkspaceRuntime(options: {
+ 		nowSeconds: Math.floor(now() / 1000),
+ 	});
+ 	options.waitUntil?.(cleanup);
++	const delivery = deliverSessionCommands({
++		db: options.db,
++		runtime: resolveSessionRuntimeTransport(),
++		clock: { now },
++		createId: options.createId,
++	});
++	options.waitUntil?.(delivery);
++	await delivery;
+ 	await drainWorkspaceRuntimeQueue({
+ 		db: options.db,
+ 		waitUntil: options.waitUntil,
+diff --git a/apps/web/src/routes/api.agent.control.ts b/apps/web/src/routes/api.agent.control.ts
+index fb8e065..47ba89d 100644
+--- a/apps/web/src/routes/api.agent.control.ts
++++ b/apps/web/src/routes/api.agent.control.ts
+@@ -6,6 +6,18 @@ import {
+ 	controlAgentRun,
+ } from "#/lib/agent-control-service";
+ import { createAuth } from "#/lib/auth";
++import {
++	classifyAgentRequestBody,
++	handleSessionCommandRequest,
++	readBoundedAgentRequestText,
++	SessionCommandError,
++} from "#/lib/session-command";
++import {
++	createSessionRuntimeClient,
++	isTrustedAdmissionEligible,
++	resolveSessionAdmissionHooks,
++	resolveSessionRuntimeTransport,
++} from "#/lib/session-runtime-client";
+ 
+ function jsonResponse(body: unknown, status: number): Response {
+ 	return new Response(JSON.stringify(body), {
+@@ -23,13 +35,53 @@ export const Route = createFileRoute("/api/agent/control")({
+ 				});
+ 				if (!session?.user) return jsonResponse({ error: "Unauthorized" }, 401);
+ 
+-				let body: unknown;
++				let raw: string;
+ 				try {
+-					body = await request.json();
+-				} catch {
+-					return jsonResponse({ error: "Invalid JSON body." }, 400);
++					raw = await readBoundedAgentRequestText(request);
++				} catch (error) {
++					if (error instanceof SessionCommandError) {
++						return jsonResponse(
++							{ error: error.message, code: error.code },
++							error.status,
++						);
++					}
++					throw error;
++				}
++
++				const classified = classifyAgentRequestBody(raw);
++				if (classified.mode === "error") {
++					return jsonResponse(
++						classified.error?.body,
++						classified.error?.status ?? 400,
++					);
++				}
++
++				const db = createDb(env);
++				if (classified.mode === "versioned") {
++					if (!isTrustedAdmissionEligible()) {
++						return jsonResponse(
++							{
++								error: "Trusted command admission is not enabled.",
++								code: "trusted_admission_ineligible",
++								category: "upgrade_recovery",
++							},
++							409,
++						);
++					}
++					const admission = resolveSessionAdmissionHooks();
++					const result = await handleSessionCommandRequest({
++						db,
++						runtime: createSessionRuntimeClient(
++							resolveSessionRuntimeTransport(),
++						),
++						authenticatedUserId: session.user.id,
++						body: raw,
++						now: admission.now,
++						createId: admission.createId,
++					});
++					return jsonResponse(result.body, result.status);
+ 				}
+-				const parsed = agentControlBodySchema.safeParse(body);
++				const parsed = agentControlBodySchema.safeParse(classified.decoded);
+ 				if (!parsed.success) {
+ 					return jsonResponse(
+ 						{ error: "Invalid request.", issues: parsed.error.issues },
+@@ -38,7 +90,7 @@ export const Route = createFileRoute("/api/agent/control")({
+ 				}
+ 
+ 				const result = await controlAgentRun({
+-					db: createDb(env),
++					db,
+ 					env,
+ 					userId: session.user.id,
+ 					input: parsed.data,
+diff --git a/apps/web/src/routes/api.agent.stream.ts b/apps/web/src/routes/api.agent.stream.ts
+index 34c97d4..8d382ad 100644
+--- a/apps/web/src/routes/api.agent.stream.ts
++++ b/apps/web/src/routes/api.agent.stream.ts
+@@ -8,6 +8,18 @@ import {
+ } from "#/lib/agent-run-service";
+ import { encodeSseEvent } from "#/lib/agent-stream-protocol";
+ import { createAuth } from "#/lib/auth";
++import {
++	classifyAgentRequestBody,
++	handleSessionCommandRequest,
++	readBoundedAgentRequestText,
++	SessionCommandError,
++} from "#/lib/session-command";
++import {
++	createSessionRuntimeClient,
++	isTrustedAdmissionEligible,
++	resolveSessionAdmissionHooks,
++	resolveSessionRuntimeTransport,
++} from "#/lib/session-runtime-client";
+ 
+ function jsonResponse(body: unknown, status: number): Response {
+ 	return new Response(JSON.stringify(body), {
+@@ -29,14 +41,54 @@ export const Route = createFileRoute("/api/agent/stream")({
+ 					return jsonResponse({ error: "Unauthorized" }, 401);
+ 				}
+ 
+-				let body: unknown;
++				let raw: string;
+ 				try {
+-					body = await request.json();
+-				} catch {
+-					return jsonResponse({ error: "Invalid JSON body." }, 400);
++					raw = await readBoundedAgentRequestText(request);
++				} catch (error) {
++					if (error instanceof SessionCommandError) {
++						return jsonResponse(
++							{ error: error.message, code: error.code },
++							error.status,
++						);
++					}
++					throw error;
++				}
++
++				const classified = classifyAgentRequestBody(raw);
++				if (classified.mode === "error") {
++					return jsonResponse(
++						classified.error?.body,
++						classified.error?.status ?? 400,
++					);
+ 				}
+ 
+-				const parsed = agentStreamBodySchema.safeParse(body);
++				const db = createDb(env);
++				if (classified.mode === "versioned") {
++					if (!isTrustedAdmissionEligible()) {
++						return jsonResponse(
++							{
++								error: "Trusted command admission is not enabled.",
++								code: "trusted_admission_ineligible",
++								category: "upgrade_recovery",
++							},
++							409,
++						);
++					}
++					const admission = resolveSessionAdmissionHooks();
++					const result = await handleSessionCommandRequest({
++						db,
++						runtime: createSessionRuntimeClient(
++							resolveSessionRuntimeTransport(),
++						),
++						authenticatedUserId: session.user.id,
++						body: raw,
++						now: admission.now,
++						createId: admission.createId,
++					});
++					return jsonResponse(result.body, result.status);
++				}
++
++				const parsed = agentStreamBodySchema.safeParse(classified.decoded);
+ 				if (!parsed.success) {
+ 					return jsonResponse(
+ 						{ error: "Invalid request.", issues: parsed.error.issues },
+@@ -44,7 +96,6 @@ export const Route = createFileRoute("/api/agent/stream")({
+ 					);
+ 				}
+ 
+-				const db = createDb(env);
+ 				const prepared = await prepareAgentRun({
+ 					db,
+ 					env,
+diff --git a/packages/runtime-contracts/src/command.ts b/packages/runtime-contracts/src/command.ts
+index cbe003b..fdda798 100644
+--- a/packages/runtime-contracts/src/command.ts
++++ b/packages/runtime-contracts/src/command.ts
+@@ -12,7 +12,29 @@ import { RUNTIME_LIMITS } from "./limits.js";
+ export { ContractParseError, encodedBytes } from "./json.js";
+ 
+ const THINKING_LEVELS = ["off", "high", "max"] as const;
+-const COMMAND_KINDS = ["prompt", "follow_up", "stop", "cancel"] as const;
++export const ORDINARY_COMMAND_KINDS = [
++	"prompt",
++	"follow_up",
++	"stop",
++	"cancel",
++] as const;
++export const RECOVERY_COMMAND_KINDS = [
++	"abandon_failed_run",
++	"retry_known_safe",
++	"acknowledge_uncertainty_and_start_new_action",
++	"restore_checkpoint_acknowledging_loss",
++	"retry_backup",
++	"restart_preview",
++] as const;
++const COMMAND_KINDS = [
++	...ORDINARY_COMMAND_KINDS,
++	...RECOVERY_COMMAND_KINDS,
++] as const;
++
++export type ThinkingLevelV1 = (typeof THINKING_LEVELS)[number];
++export type OrdinaryCommandKindV1 = (typeof ORDINARY_COMMAND_KINDS)[number];
++export type RecoveryCommandKindV1 = (typeof RECOVERY_COMMAND_KINDS)[number];
++export type CommandKindV1 = (typeof COMMAND_KINDS)[number];
+ 
+ type CommandBaseV1 = {
+ 	version: 1;
+@@ -32,7 +54,7 @@ export type CommandV1 =
+ 			userMessageId: string;
+ 			assistantMessageId: string;
+ 			text: string;
+-			thinkingLevel?: (typeof THINKING_LEVELS)[number];
++			thinkingLevel?: ThinkingLevelV1;
+ 	  })
+ 	| (CommandBaseV1 & {
+ 			kind: "follow_up";
+@@ -48,6 +70,49 @@ export type CommandV1 =
+ 	| (CommandBaseV1 & {
+ 			kind: "cancel";
+ 			targetCommandId: string;
++	  })
++	| (CommandBaseV1 & {
++			kind: "abandon_failed_run";
++			targetRunId: string;
++			expectedRecoveryPosition: number;
++	  })
++	| (CommandBaseV1 & {
++			kind: "retry_known_safe";
++			targetRunId: string;
++			expectedRecoveryPosition: number;
++			safeRetryReason: string;
++			runId: string;
++			assistantMessageId: string;
++	  })
++	| (CommandBaseV1 & {
++			kind: "acknowledge_uncertainty_and_start_new_action";
++			targetRunId: string;
++			expectedRecoveryPosition: number;
++			unresolvedOperationIds: string[];
++			uncertaintyAcknowledged: true;
++			runId: string;
++			userMessageId: string;
++			assistantMessageId: string;
++			text: string;
++			thinkingLevel?: ThinkingLevelV1;
++	  })
++	| (CommandBaseV1 & {
++			kind: "restore_checkpoint_acknowledging_loss";
++			committedPairId: string;
++			expectedMutationGeneration: number;
++			expectedRecoveryPosition: number;
++			unbackedLossAcknowledged: true;
++	  })
++	| (CommandBaseV1 & {
++			kind: "retry_backup";
++			expectedMutationGeneration: number;
++			expectedRecoveryPosition: number;
++			pendingCheckpointIntentId?: string;
++	  })
++	| (CommandBaseV1 & {
++			kind: "restart_preview";
++			expectedMutationGeneration: number;
++			restartRequested: true;
+ 	  });
+ 
+ export type BrowserCommandV1 =
+@@ -58,7 +123,7 @@ export type BrowserCommandV1 =
+ 			projectId: string;
+ 			sessionId?: string;
+ 			text: string;
+-			thinkingLevel?: (typeof THINKING_LEVELS)[number];
++			thinkingLevel?: ThinkingLevelV1;
+ 	  }
+ 	| {
+ 			version: 1;
+@@ -84,6 +149,68 @@ export type BrowserCommandV1 =
+ 			projectId: string;
+ 			sessionId: string;
+ 			targetCommandId: string;
++	  }
++	| {
++			version: 1;
++			idempotencyKey: string;
++			kind: "abandon_failed_run";
++			projectId: string;
++			sessionId: string;
++			targetRunId: string;
++			expectedRecoveryPosition: number;
++	  }
++	| {
++			version: 1;
++			idempotencyKey: string;
++			kind: "retry_known_safe";
++			projectId: string;
++			sessionId: string;
++			targetRunId: string;
++			expectedRecoveryPosition: number;
++			safeRetryReason: string;
++	  }
++	| {
++			version: 1;
++			idempotencyKey: string;
++			kind: "acknowledge_uncertainty_and_start_new_action";
++			projectId: string;
++			sessionId: string;
++			targetRunId: string;
++			expectedRecoveryPosition: number;
++			unresolvedOperationIds: string[];
++			uncertaintyAcknowledged: true;
++			text: string;
++			thinkingLevel?: ThinkingLevelV1;
++	  }
++	| {
++			version: 1;
++			idempotencyKey: string;
++			kind: "restore_checkpoint_acknowledging_loss";
++			projectId: string;
++			sessionId: string;
++			committedPairId: string;
++			expectedMutationGeneration: number;
++			expectedRecoveryPosition: number;
++			unbackedLossAcknowledged: true;
++	  }
++	| {
++			version: 1;
++			idempotencyKey: string;
++			kind: "retry_backup";
++			projectId: string;
++			sessionId: string;
++			expectedMutationGeneration: number;
++			expectedRecoveryPosition: number;
++			pendingCheckpointIntentId?: string;
++	  }
++	| {
++			version: 1;
++			idempotencyKey: string;
++			kind: "restart_preview";
++			projectId: string;
++			sessionId: string;
++			expectedMutationGeneration: number;
++			restartRequested: true;
+ 	  };
+ 
+ export type ReceiptV1 = {
+@@ -119,6 +246,16 @@ const COMMAND_KEYS = [
+ 	"targetCommandId",
+ 	"text",
+ 	"thinkingLevel",
++	"expectedRecoveryPosition",
++	"expectedMutationGeneration",
++	"safeRetryReason",
++	"unresolvedOperationIds",
++	"uncertaintyAcknowledged",
++	"runId",
++	"committedPairId",
++	"unbackedLossAcknowledged",
++	"pendingCheckpointIntentId",
++	"restartRequested",
+ ] as const;
+ 
+ const BROWSER_KEYS = [
+@@ -131,6 +268,15 @@ const BROWSER_KEYS = [
+ 	"targetCommandId",
+ 	"text",
+ 	"thinkingLevel",
++	"expectedRecoveryPosition",
++	"expectedMutationGeneration",
++	"safeRetryReason",
++	"unresolvedOperationIds",
++	"uncertaintyAcknowledged",
++	"committedPairId",
++	"unbackedLossAcknowledged",
++	"pendingCheckpointIntentId",
++	"restartRequested",
+ ] as const;
+ 
+ const RECEIPT_KEYS = [
+@@ -179,6 +325,38 @@ function optionalBoundedId(
+ 	});
+ }
+ 
++function trueField(record: Record<string, unknown>, key: string): true {
++	if (record[key] !== true) {
++		throw new ContractParseError("invalid_field", `${key} must be true.`);
++	}
++	return true;
++}
++
++function idListField(record: Record<string, unknown>, key: string): string[] {
++	const value = record[key];
++	if (!Array.isArray(value) || value.length === 0) {
++		throw new ContractParseError(
++			"invalid_field",
++			`${key} must be a non-empty array of ids.`,
++		);
++	}
++	return value.map((item, index) => {
++		if (typeof item !== "string" || item.length === 0) {
++			throw new ContractParseError(
++				"invalid_field",
++				`${key}[${index}] must be a non-empty string.`,
++			);
++		}
++		if (new TextEncoder().encode(item).byteLength > RUNTIME_LIMITS.idBytes) {
++			throw new ContractParseError(
++				"field_too_large",
++				`${key}[${index}] exceeds its byte limit.`,
++			);
++		}
++		return item;
++	});
++}
++
+ function commandBase(record: Record<string, unknown>): CommandBaseV1 {
+ 	const acceptedAt = integerField(record, "acceptedAt", { minimum: 0 });
+ 	const deadlineAt = integerField(record, "deadlineAt", { minimum: 0 });
+@@ -295,6 +473,233 @@ export function parseCommandV1(value: unknown): CommandV1 {
+ 			targetRunId: boundedId(record, "targetRunId"),
+ 		};
+ 	}
++	if (kind === "cancel") {
++		const record = strictRecord(
++			decoded,
++			[
++				"version",
++				"kind",
++				"commandId",
++				"commandSeq",
++				"userId",
++				"projectId",
++				"workspaceSessionId",
++				"runtimeOwnerVersion",
++				"acceptedAt",
++				"deadlineAt",
++				"targetCommandId",
++			],
++			"CommandV1.cancel",
++		);
++		return {
++			...commandBase(record),
++			kind,
++			targetCommandId: boundedId(record, "targetCommandId"),
++		};
++	}
++	if (kind === "abandon_failed_run") {
++		const record = strictRecord(
++			decoded,
++			[
++				"version",
++				"kind",
++				"commandId",
++				"commandSeq",
++				"userId",
++				"projectId",
++				"workspaceSessionId",
++				"runtimeOwnerVersion",
++				"acceptedAt",
++				"deadlineAt",
++				"targetRunId",
++				"expectedRecoveryPosition",
++			],
++			"CommandV1.abandon_failed_run",
++		);
++		return {
++			...commandBase(record),
++			kind,
++			targetRunId: boundedId(record, "targetRunId"),
++			expectedRecoveryPosition: integerField(
++				record,
++				"expectedRecoveryPosition",
++				{
++					minimum: 0,
++				},
++			),
++		};
++	}
++	if (kind === "retry_known_safe") {
++		const record = strictRecord(
++			decoded,
++			[
++				"version",
++				"kind",
++				"commandId",
++				"commandSeq",
++				"userId",
++				"projectId",
++				"workspaceSessionId",
++				"runtimeOwnerVersion",
++				"acceptedAt",
++				"deadlineAt",
++				"targetRunId",
++				"expectedRecoveryPosition",
++				"safeRetryReason",
++				"runId",
++				"assistantMessageId",
++			],
++			"CommandV1.retry_known_safe",
++		);
++		return {
++			...commandBase(record),
++			kind,
++			targetRunId: boundedId(record, "targetRunId"),
++			expectedRecoveryPosition: integerField(
++				record,
++				"expectedRecoveryPosition",
++				{
++					minimum: 0,
++				},
++			),
++			safeRetryReason: stringField(record, "safeRetryReason", {
++				maxBytes: RUNTIME_LIMITS.idBytes,
++			}),
++			runId: boundedId(record, "runId"),
++			assistantMessageId: boundedId(record, "assistantMessageId"),
++		};
++	}
++	if (kind === "acknowledge_uncertainty_and_start_new_action") {
++		const record = strictRecord(
++			decoded,
++			[
++				"version",
++				"kind",
++				"commandId",
++				"commandSeq",
++				"userId",
++				"projectId",
++				"workspaceSessionId",
++				"runtimeOwnerVersion",
++				"acceptedAt",
++				"deadlineAt",
++				"targetRunId",
++				"expectedRecoveryPosition",
++				"unresolvedOperationIds",
++				"uncertaintyAcknowledged",
++				"runId",
++				"userMessageId",
++				"assistantMessageId",
++				"text",
++				"thinkingLevel",
++			],
++			"CommandV1.acknowledge_uncertainty_and_start_new_action",
++		);
++		return {
++			...commandBase(record),
++			kind,
++			targetRunId: boundedId(record, "targetRunId"),
++			expectedRecoveryPosition: integerField(
++				record,
++				"expectedRecoveryPosition",
++				{
++					minimum: 0,
++				},
++			),
++			unresolvedOperationIds: idListField(record, "unresolvedOperationIds"),
++			uncertaintyAcknowledged: trueField(record, "uncertaintyAcknowledged"),
++			runId: boundedId(record, "runId"),
++			userMessageId: boundedId(record, "userMessageId"),
++			assistantMessageId: boundedId(record, "assistantMessageId"),
++			text: commandText(record),
++			thinkingLevel: optionalLiteralField(
++				record,
++				"thinkingLevel",
++				THINKING_LEVELS,
++			),
++		};
++	}
++	if (kind === "restore_checkpoint_acknowledging_loss") {
++		const record = strictRecord(
++			decoded,
++			[
++				"version",
++				"kind",
++				"commandId",
++				"commandSeq",
++				"userId",
++				"projectId",
++				"workspaceSessionId",
++				"runtimeOwnerVersion",
++				"acceptedAt",
++				"deadlineAt",
++				"committedPairId",
++				"expectedMutationGeneration",
++				"expectedRecoveryPosition",
++				"unbackedLossAcknowledged",
++			],
++			"CommandV1.restore_checkpoint_acknowledging_loss",
++		);
++		return {
++			...commandBase(record),
++			kind,
++			committedPairId: boundedId(record, "committedPairId"),
++			expectedMutationGeneration: integerField(
++				record,
++				"expectedMutationGeneration",
++				{ minimum: 0 },
++			),
++			expectedRecoveryPosition: integerField(
++				record,
++				"expectedRecoveryPosition",
++				{
++					minimum: 0,
++				},
++			),
++			unbackedLossAcknowledged: trueField(record, "unbackedLossAcknowledged"),
++		};
++	}
++	if (kind === "retry_backup") {
++		const record = strictRecord(
++			decoded,
++			[
++				"version",
++				"kind",
++				"commandId",
++				"commandSeq",
++				"userId",
++				"projectId",
++				"workspaceSessionId",
++				"runtimeOwnerVersion",
++				"acceptedAt",
++				"deadlineAt",
++				"expectedMutationGeneration",
++				"expectedRecoveryPosition",
++				"pendingCheckpointIntentId",
++			],
++			"CommandV1.retry_backup",
++		);
++		return {
++			...commandBase(record),
++			kind,
++			expectedMutationGeneration: integerField(
++				record,
++				"expectedMutationGeneration",
++				{ minimum: 0 },
++			),
++			expectedRecoveryPosition: integerField(
++				record,
++				"expectedRecoveryPosition",
++				{
++					minimum: 0,
++				},
++			),
++			pendingCheckpointIntentId: optionalBoundedId(
++				record,
++				"pendingCheckpointIntentId",
++			),
++		};
++	}
+ 	const record = strictRecord(
+ 		decoded,
+ 		[
+@@ -308,14 +713,20 @@ export function parseCommandV1(value: unknown): CommandV1 {
+ 			"runtimeOwnerVersion",
+ 			"acceptedAt",
+ 			"deadlineAt",
+-			"targetCommandId",
++			"expectedMutationGeneration",
++			"restartRequested",
+ 		],
+-		"CommandV1.cancel",
++		"CommandV1.restart_preview",
+ 	);
+ 	return {
+ 		...commandBase(record),
+ 		kind,
+-		targetCommandId: boundedId(record, "targetCommandId"),
++		expectedMutationGeneration: integerField(
++			record,
++			"expectedMutationGeneration",
++			{ minimum: 0 },
++		),
++		restartRequested: trueField(record, "restartRequested"),
+ 	};
+ }
+ 
+@@ -408,6 +819,211 @@ export function parseBrowserCommandV1(value: unknown): BrowserCommandV1 {
+ 			targetRunId: boundedId(record, "targetRunId"),
+ 		};
+ 	}
++	if (kind === "cancel") {
++		const record = strictRecord(
++			decoded,
++			[
++				"version",
++				"idempotencyKey",
++				"kind",
++				"projectId",
++				"sessionId",
++				"targetCommandId",
++			],
++			"BrowserCommandV1.cancel",
++		);
++		return {
++			version,
++			idempotencyKey,
++			kind,
++			projectId,
++			sessionId: boundedId(record, "sessionId"),
++			targetCommandId: boundedId(record, "targetCommandId"),
++		};
++	}
++	if (kind === "abandon_failed_run") {
++		const record = strictRecord(
++			decoded,
++			[
++				"version",
++				"idempotencyKey",
++				"kind",
++				"projectId",
++				"sessionId",
++				"targetRunId",
++				"expectedRecoveryPosition",
++			],
++			"BrowserCommandV1.abandon_failed_run",
++		);
++		return {
++			version,
++			idempotencyKey,
++			kind,
++			projectId,
++			sessionId: boundedId(record, "sessionId"),
++			targetRunId: boundedId(record, "targetRunId"),
++			expectedRecoveryPosition: integerField(
++				record,
++				"expectedRecoveryPosition",
++				{
++					minimum: 0,
++				},
++			),
++		};
++	}
++	if (kind === "retry_known_safe") {
++		const record = strictRecord(
++			decoded,
++			[
++				"version",
++				"idempotencyKey",
++				"kind",
++				"projectId",
++				"sessionId",
++				"targetRunId",
++				"expectedRecoveryPosition",
++				"safeRetryReason",
++			],
++			"BrowserCommandV1.retry_known_safe",
++		);
++		return {
++			version,
++			idempotencyKey,
++			kind,
++			projectId,
++			sessionId: boundedId(record, "sessionId"),
++			targetRunId: boundedId(record, "targetRunId"),
++			expectedRecoveryPosition: integerField(
++				record,
++				"expectedRecoveryPosition",
++				{
++					minimum: 0,
++				},
++			),
++			safeRetryReason: stringField(record, "safeRetryReason", {
++				maxBytes: RUNTIME_LIMITS.idBytes,
++			}),
++		};
++	}
++	if (kind === "acknowledge_uncertainty_and_start_new_action") {
++		const record = strictRecord(
++			decoded,
++			[
++				"version",
++				"idempotencyKey",
++				"kind",
++				"projectId",
++				"sessionId",
++				"targetRunId",
++				"expectedRecoveryPosition",
++				"unresolvedOperationIds",
++				"uncertaintyAcknowledged",
++				"text",
++				"thinkingLevel",
++			],
++			"BrowserCommandV1.acknowledge_uncertainty_and_start_new_action",
++		);
++		return {
++			version,
++			idempotencyKey,
++			kind,
++			projectId,
++			sessionId: boundedId(record, "sessionId"),
++			targetRunId: boundedId(record, "targetRunId"),
++			expectedRecoveryPosition: integerField(
++				record,
++				"expectedRecoveryPosition",
++				{
++					minimum: 0,
++				},
++			),
++			unresolvedOperationIds: idListField(record, "unresolvedOperationIds"),
++			uncertaintyAcknowledged: trueField(record, "uncertaintyAcknowledged"),
++			text: commandText(record),
++			thinkingLevel: optionalLiteralField(
++				record,
++				"thinkingLevel",
++				THINKING_LEVELS,
++			),
++		};
++	}
++	if (kind === "restore_checkpoint_acknowledging_loss") {
++		const record = strictRecord(
++			decoded,
++			[
++				"version",
++				"idempotencyKey",
++				"kind",
++				"projectId",
++				"sessionId",
++				"committedPairId",
++				"expectedMutationGeneration",
++				"expectedRecoveryPosition",
++				"unbackedLossAcknowledged",
++			],
++			"BrowserCommandV1.restore_checkpoint_acknowledging_loss",
++		);
++		return {
++			version,
++			idempotencyKey,
++			kind,
++			projectId,
++			sessionId: boundedId(record, "sessionId"),
++			committedPairId: boundedId(record, "committedPairId"),
++			expectedMutationGeneration: integerField(
++				record,
++				"expectedMutationGeneration",
++				{ minimum: 0 },
++			),
++			expectedRecoveryPosition: integerField(
++				record,
++				"expectedRecoveryPosition",
++				{
++					minimum: 0,
++				},
++			),
++			unbackedLossAcknowledged: trueField(record, "unbackedLossAcknowledged"),
++		};
++	}
++	if (kind === "retry_backup") {
++		const record = strictRecord(
++			decoded,
++			[
++				"version",
++				"idempotencyKey",
++				"kind",
++				"projectId",
++				"sessionId",
++				"expectedMutationGeneration",
++				"expectedRecoveryPosition",
++				"pendingCheckpointIntentId",
++			],
++			"BrowserCommandV1.retry_backup",
++		);
++		return {
++			version,
++			idempotencyKey,
++			kind,
++			projectId,
++			sessionId: boundedId(record, "sessionId"),
++			expectedMutationGeneration: integerField(
++				record,
++				"expectedMutationGeneration",
++				{ minimum: 0 },
++			),
++			expectedRecoveryPosition: integerField(
++				record,
++				"expectedRecoveryPosition",
++				{
++					minimum: 0,
++				},
++			),
++			pendingCheckpointIntentId: optionalBoundedId(
++				record,
++				"pendingCheckpointIntentId",
++			),
++		};
++	}
+ 	const record = strictRecord(
+ 		decoded,
+ 		[
+@@ -416,9 +1032,10 @@ export function parseBrowserCommandV1(value: unknown): BrowserCommandV1 {
+ 			"kind",
+ 			"projectId",
+ 			"sessionId",
+-			"targetCommandId",
++			"expectedMutationGeneration",
++			"restartRequested",
+ 		],
+-		"BrowserCommandV1.cancel",
++		"BrowserCommandV1.restart_preview",
+ 	);
+ 	return {
+ 		version,
+@@ -426,7 +1043,12 @@ export function parseBrowserCommandV1(value: unknown): BrowserCommandV1 {
+ 		kind,
+ 		projectId,
+ 		sessionId: boundedId(record, "sessionId"),
+-		targetCommandId: boundedId(record, "targetCommandId"),
++		expectedMutationGeneration: integerField(
++			record,
++			"expectedMutationGeneration",
++			{ minimum: 0 },
++		),
++		restartRequested: trueField(record, "restartRequested"),
+ 	};
+ }
+ 
+diff --git a/packages/runtime-contracts/src/contracts.test.ts b/packages/runtime-contracts/src/contracts.test.ts
+index 5d622f3..97b99d0 100644
+--- a/packages/runtime-contracts/src/contracts.test.ts
++++ b/packages/runtime-contracts/src/contracts.test.ts
+@@ -58,7 +58,7 @@ describe("runtime contracts", () => {
+ 		expect(() => parseCommandV1(escaped)).toThrow(/Duplicate JSON key userId/);
+ 	});
+ 
+-	it("rejects malformed discriminated unions and unimplemented kinds", () => {
++	it("rejects malformed discriminated unions and still-unimplemented kinds", () => {
+ 		expect(() => parseCommandV1({ ...command, kind: "follow_up" })).toThrow(
+ 			/unknown field|targetRunId/,
+ 		);
+@@ -76,7 +76,7 @@ describe("runtime contracts", () => {
+ 		).toThrow(/kind/);
+ 		expect(() =>
+ 			parseCommandV1({ ...command, kind: "abandon_failed_run" }),
+-		).toThrow(/kind/);
++		).toThrow(/unknown field|targetRunId|expectedRecoveryPosition/);
+ 		expect(() =>
+ 			parseBrowserCommandV1({
+ 				version: 1,
+@@ -84,7 +84,109 @@ describe("runtime contracts", () => {
+ 				kind: "restore_checkpoint_acknowledging_loss",
+ 				projectId: "proj",
+ 			}),
+-		).toThrow(/kind/);
++		).toThrow(/sessionId|committedPairId|unknown field|invalid_field/);
++	});
++
++	it("parses recovery discriminants with their permitted payloads", () => {
++		const base = {
++			version: 1 as const,
++			commandId: "cmd",
++			commandSeq: 3,
++			userId: "user",
++			projectId: "proj",
++			workspaceSessionId: "sess",
++			runtimeOwnerVersion: 1,
++			acceptedAt: 10,
++			deadlineAt: 20,
++		};
++		expect(
++			parseCommandV1({
++				...base,
++				kind: "abandon_failed_run",
++				targetRunId: "run-1",
++				expectedRecoveryPosition: 4,
++			}),
++		).toMatchObject({
++			kind: "abandon_failed_run",
++			targetRunId: "run-1",
++			expectedRecoveryPosition: 4,
++		});
++		expect(
++			parseCommandV1({
++				...base,
++				kind: "retry_known_safe",
++				targetRunId: "run-1",
++				expectedRecoveryPosition: 4,
++				safeRetryReason: "no_unresolved_effect",
++				runId: "run-2",
++				assistantMessageId: "asst-2",
++			}),
++		).toMatchObject({ kind: "retry_known_safe", runId: "run-2" });
++		expect(
++			parseCommandV1({
++				...base,
++				kind: "acknowledge_uncertainty_and_start_new_action",
++				targetRunId: "run-1",
++				expectedRecoveryPosition: 4,
++				unresolvedOperationIds: ["op-1"],
++				uncertaintyAcknowledged: true,
++				runId: "run-2",
++				userMessageId: "user-2",
++				assistantMessageId: "asst-2",
++				text: "continue",
++			}),
++		).toMatchObject({
++			kind: "acknowledge_uncertainty_and_start_new_action",
++			uncertaintyAcknowledged: true,
++		});
++		expect(
++			parseCommandV1({
++				...base,
++				kind: "restore_checkpoint_acknowledging_loss",
++				committedPairId: "pair-1",
++				expectedMutationGeneration: 2,
++				expectedRecoveryPosition: 4,
++				unbackedLossAcknowledged: true,
++			}),
++		).toMatchObject({
++			kind: "restore_checkpoint_acknowledging_loss",
++			committedPairId: "pair-1",
++		});
++		expect(
++			parseCommandV1({
++				...base,
++				kind: "retry_backup",
++				expectedMutationGeneration: 2,
++				expectedRecoveryPosition: 4,
++			}),
++		).toMatchObject({ kind: "retry_backup" });
++		expect(
++			parseCommandV1({
++				...base,
++				kind: "restart_preview",
++				expectedMutationGeneration: 2,
++				restartRequested: true,
++			}),
++		).toMatchObject({ kind: "restart_preview", restartRequested: true });
++		expect(
++			parseBrowserCommandV1({
++				version: 1,
++				idempotencyKey: "key",
++				kind: "abandon_failed_run",
++				projectId: "proj",
++				sessionId: "sess",
++				targetRunId: "run-1",
++				expectedRecoveryPosition: 4,
++			}),
++		).toMatchObject({ kind: "abandon_failed_run" });
++		expect(() =>
++			parseCommandV1({
++				...base,
++				kind: "restart_preview",
++				expectedMutationGeneration: 2,
++				restartRequested: false,
++			}),
++		).toThrow(/restartRequested/);
+ 	});
+ 
+ 	it("parses cancel without a target run", () => {

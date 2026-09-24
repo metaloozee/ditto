@@ -1,0 +1,2913 @@
+--- /home/ayan/ditto/plans/003-repair-evidence/before/apps/web/src/lib/session-command-delivery.test.ts	2026-09-24 07:36:47.518313756 +0200
++++ /home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/lib/session-command-delivery.test.ts	2026-09-24 08:23:05.637474061 +0200
+@@ -1,10 +1,98 @@
+-import { describe, expect, it } from "vitest";
++import { describe, expect, it, vi } from "vitest";
++import { deliverSessionCommands } from "#/lib/session-command-delivery";
++import {
++	SessionRuntimeHandoffError,
++	withSessionRuntimeCallTimeout,
++} from "#/lib/session-runtime-client";
+ import {
+ 	expireQueuedWork,
+ 	failWork,
+ 	reclaimExpiredWorkLeases,
+ } from "#/lib/workspace-runtime-capacity";
+-import { createSessionRuntimeFixture } from "#/test/session-runtime-fixture";
++import {
++	createSessionRuntimeFixture,
++	sessionRuntimeRouteHarness,
++} from "#/test/session-runtime-fixture";
++
++vi.mock("cloudflare:workers", () => ({ env: {} }));
++vi.mock("@tanstack/react-router", () => ({
++	createFileRoute: () => (options: unknown) => options,
++}));
++vi.mock("#/db", () => ({
++	createDb: () => {
++		if (!sessionRuntimeRouteHarness.db) {
++			throw new Error("fixture db missing");
++		}
++		return sessionRuntimeRouteHarness.db;
++	},
++}));
++vi.mock("#/lib/auth", () => ({
++	createAuth: () => ({
++		api: {
++			getSession: async () =>
++				sessionRuntimeRouteHarness.userId
++					? { user: { id: sessionRuntimeRouteHarness.userId } }
++					: null,
++		},
++	}),
++}));
++vi.mock("#/lib/agent-run-service", () => ({
++	prepareAgentRun: () => {
++		throw new Error("Unexpected legacy invocation");
++	},
++	executeAgentRun: () => {
++		throw new Error("Unexpected legacy invocation");
++	},
++	agentStreamBodySchema: {
++		safeParse: () => {
++			throw new Error("Unexpected legacy invocation");
++		},
++	},
++}));
++vi.mock("#/lib/agent-control-service", () => ({
++	controlAgentRun: () => {
++		throw new Error("Unexpected legacy invocation");
++	},
++	agentControlBodySchema: {
++		safeParse: () => {
++			throw new Error("Unexpected legacy invocation");
++		},
++	},
++}));
++vi.mock("#/lib/workspace-recovery", () => ({
++	enqueueDuePreviewCheckpoints: async () => undefined,
++	hasRecoveryArchives: async () => false,
++	restore: async () => undefined,
++}));
++vi.mock("#/lib/sandbox-archive", () => ({
++	retryArchiveCleanup: async () => undefined,
++	restoreArchive: async () => undefined,
++	ARCHIVE_FORMAT_VERSION: 1,
++	ARCHIVE_COMPATIBILITY_KEY: "ditto-workspace-archive-v1",
++}));
++vi.mock("#/lib/sandbox-bootstrap", () => ({
++	getProjectSandbox: async () => ({}),
++	configureDittoGitIdentity: async () => undefined,
++	getProjectSandboxState: async () => ({ status: "healthy" }),
++	destroySandbox: async () => undefined,
++}));
++vi.mock("#/lib/sandbox-authority", () => ({
++	createSandboxAuthority: () => ({}),
++	SandboxAuthorityError: class extends Error {},
++}));
++vi.mock("#/lib/github-app", () => ({
++	getGitHubApp: () => ({ getInstallationOctokit: async () => ({}) }),
++}));
++vi.mock("#/lib/privileged-git", () => ({
++	fetchGitHubBranchBrokered: async () => undefined,
++}));
++vi.mock("#/lib/project-env-vars", () => ({
++	decryptEnvVars: () => [],
++}));
++vi.mock("#/lib/session-workspace-lock", () => ({
++	withSessionWorkspaceLock: async ({ run }: { run: () => Promise<unknown> }) =>
++		await run(),
++}));
+ 
+ function promptBody(overrides: Record<string, unknown> = {}) {
+ 	return {
+@@ -29,18 +117,14 @@
+ 		expect(
+ 			fixture.outbound.filter((call) => call.method === "deliver"),
+ 		).toEqual([{ method: "deliver", input: { commandId, ownerVersion: 1 } }]);
+-		const work = fixture.sqlite
+-			.prepare(
+-				"SELECT status, deliveryState, commandId FROM workspace_runtime_work WHERE commandId = ?",
+-			)
+-			.get(commandId) as {
++		const work = fixture.observeWork(commandId) as {
+ 			status: string;
+ 			deliveryState: string;
+ 			commandId: string;
+ 		};
+ 		expect(work).toMatchObject({
+ 			status: "queued",
+-			deliveryState: "pending",
++			deliveryState: "delivered",
+ 			commandId,
+ 		});
+ 		await expireQueuedWork({ db: fixture.db, nowMs: fixture.now() });
+@@ -66,14 +150,47 @@
+ 		);
+ 	});
+ 
++	it("T05 accepted handoff leaves the undelivered backlog and later work progresses", async () => {
++		const fixture = createSessionRuntimeFixture();
++		fixture.seedTrustedSession();
++		const ids: string[] = [];
++		for (let n = 0; n < 26; n++) {
++			const result = await fixture
++				.asUser("user-1")
++				.command(promptBody({ idempotencyKey: `k-${n}`, text: `hello ${n}` }));
++			ids.push((result.body as { commandId: string }).commandId);
++		}
++		await fixture.deliver();
++		await fixture.deliver();
++		const outbound = fixture.outbound.filter(
++			(call) => call.method === "deliver",
++		);
++		expect(outbound.some((call) => call.input.commandId === ids[25])).toBe(
++			true,
++		);
++		expect(new Set(outbound.map((call) => call.input.commandId)).size).toBe(26);
++		expect(
++			fixture.sqlite
++				.prepare(
++					"SELECT deliveryState, count(*) AS n FROM workspace_runtime_work GROUP BY deliveryState",
++				)
++				.all(),
++		).toEqual([{ deliveryState: "delivered", n: 26 }]);
++	});
++
+ 	it("T06 delivery-only: lost acknowledgment redelivers the same command ids", async () => {
+ 		const fixture = createSessionRuntimeFixture();
+ 		fixture.seedTrustedSession();
+ 		const admitted = await fixture.asUser("user-1").command(promptBody());
+ 		const commandId = (admitted.body as { commandId: string }).commandId;
++		fixture.loseNextAcknowledgment();
+ 		await fixture.deliver();
++		expect(
++			(fixture.observeWork(commandId) as { deliveryState: string })
++				.deliveryState,
++		).toBe("pending");
+ 		fixture.sqlite.exec(
+-			"UPDATE workspace_runtime_work SET deliveryLeaseExpiresAt = 0 WHERE commandId IS NOT NULL",
++			"UPDATE workspace_runtime_work SET deliveryLeaseExpiresAt = 0",
+ 		);
+ 		await fixture.deliver();
+ 		const deliveries = fixture.outbound.filter(
+@@ -85,9 +202,11 @@
+ 			method: "deliver",
+ 			input: { commandId, ownerVersion: 1 },
+ 		});
+-		expect((admitted.body as { status: string }).status === "admitted").toBe(
+-			true,
+-		);
++		expect((admitted.body as { status: string }).status).toBe("admitted");
++		expect(
++			(fixture.observeWork(commandId) as { deliveryState: string })
++				.deliveryState,
++		).toBe("delivered");
+ 	});
+ 
+ 	it("T06 delivery-only: retries a missing predecessor before a later command", async () => {
+@@ -97,23 +216,55 @@
+ 		const second = await fixture
+ 			.asUser("user-1")
+ 			.command(promptBody({ idempotencyKey: "key-2", text: "again" }));
+-		await fixture.deliver({ maxDeliveries: 1 });
+ 		const firstId = (first.body as { commandId: string }).commandId;
+ 		const secondId = (second.body as { commandId: string }).commandId;
++		let predecessorReady = false;
++		fixture.setDeliverImpl(async (input) => {
++			if (!predecessorReady) {
++				throw new SessionRuntimeHandoffError(
++					"missing_predecessor",
++					"missing_predecessor",
++				);
++			}
++			const row = fixture.sqlite
++				.prepare(
++					`SELECT sc.commandSeq AS commandSeq, k.receiptId AS receiptId
++					 FROM session_commands sc
++					 JOIN session_command_keys k ON k.commandId = sc.id
++					 WHERE sc.id = ?`,
++				)
++				.get(input.commandId) as { commandSeq: number; receiptId: string };
++			return {
++				version: 1,
++				commandId: input.commandId,
++				ownerVersion: input.ownerVersion,
++				acceptedPosition: row.commandSeq,
++				receiptId: row.receiptId,
++			};
++		});
++		await fixture.deliver({ maxDeliveries: 2 });
+ 		expect(
+-			fixture.outbound.filter((call) => call.method === "deliver"),
+-		).toEqual([
+-			{ method: "deliver", input: { commandId: firstId, ownerVersion: 1 } },
+-		]);
++			fixture.outbound
++				.filter((call) => call.method === "deliver")
++				.map((call) => call.input.commandId),
++		).toEqual([firstId]);
++		expect(
++			(fixture.observeWork(firstId) as { deliveryState: string }).deliveryState,
++		).toBe("pending");
++		expect(
++			(fixture.observeWork(secondId) as { deliveryState: string })
++				.deliveryState,
++		).toBe("pending");
++		predecessorReady = true;
+ 		fixture.sqlite.exec(
+ 			"UPDATE workspace_runtime_work SET deliveryLeaseExpiresAt = 0",
+ 		);
+ 		await fixture.deliver({ maxDeliveries: 2 });
+-		const deliveredIds = fixture.outbound
+-			.filter((call) => call.method === "deliver")
+-			.map((call) => (call.method === "deliver" ? call.input.commandId : ""));
+-		expect(deliveredIds[0]).toBe(firstId);
+-		expect(deliveredIds).toContain(secondId);
++		expect(
++			fixture.outbound
++				.filter((call) => call.method === "deliver")
++				.map((call) => call.input.commandId),
++		).toEqual([firstId, firstId, secondId]);
+ 	});
+ 
+ 	it("T07 delivery-only: delivers persisted cancellation and stop without mutating terminal execution state", async () => {
+@@ -156,4 +307,426 @@
+ 				.all(),
+ 		).toEqual([{ status: "queued" }]);
+ 	});
++
++	it("T07 delivery-only: priority Stop bypasses an ordinary missing predecessor", async () => {
++		const fixture = createSessionRuntimeFixture();
++		fixture.seedTrustedSession();
++		const first = await fixture.asUser("user-1").command(promptBody());
++		await fixture.asUser("user-1").command({
++			version: 1,
++			idempotencyKey: "stop-1",
++			kind: "stop",
++			projectId: "proj-1",
++			sessionId: "sess-1",
++			targetRunId: "run-1",
++		});
++		fixture.setDeliverImpl(async () => {
++			throw new SessionRuntimeHandoffError(
++				"missing_predecessor",
++				"missing_predecessor",
++			);
++		});
++		await fixture.deliver({ maxDeliveries: 4 });
++		expect(fixture.outbound.some((call) => call.method === "control")).toBe(
++			true,
++		);
++		expect(
++			(
++				fixture.observeWork(
++					(first.body as { commandId: string }).commandId,
++				) as { deliveryState: string }
++			).deliveryState,
++		).toBe("pending");
++	});
++
++	it("rejects invalid acknowledgments and keeps the command deliverable", async () => {
++		const fixture = createSessionRuntimeFixture();
++		fixture.seedTrustedSession();
++		const admitted = await fixture.asUser("user-1").command(promptBody());
++		const commandId = (admitted.body as { commandId: string }).commandId;
++		fixture.setDeliverImpl(async () => ({
++			version: 1,
++			commandId: "other",
++			ownerVersion: 1,
++			acceptedPosition: 1,
++			receiptId: "r1",
++		}));
++		await fixture.deliver();
++		expect(
++			(fixture.observeWork(commandId) as { deliveryState: string })
++				.deliveryState,
++		).toBe("pending");
++	});
++
++	it("computes retry backoff after a failed attempt and bounds jitter", async () => {
++		let clock = 1_700_000_000_000;
++		const fixture = createSessionRuntimeFixture({
++			now: () => clock,
++			random: () => 0.5,
++		});
++		fixture.seedTrustedSession();
++		await fixture.asUser("user-1").command(promptBody());
++		const attemptsAt: number[] = [];
++		fixture.setDeliverImpl(async () => {
++			attemptsAt.push(clock);
++			clock += 4_900;
++			throw new Error("synthetic transport outage");
++		});
++		await deliverSessionCommands({
++			db: fixture.db,
++			runtime: fixture.runtime,
++			clock: { now: () => clock, random: () => 0.5 },
++			budget: { maxDeliveries: 2 },
++		});
++		expect(attemptsAt).toHaveLength(1);
++		const firstAttemptAt = attemptsAt[0];
++		expect(firstAttemptAt).toEqual(expect.any(Number));
++		if (typeof firstAttemptAt !== "number") {
++			throw new Error("missing attempt timestamp");
++		}
++		const nextAt = (
++			fixture.sqlite
++				.prepare(
++					"SELECT deliveryLeaseExpiresAt AS nextAt FROM workspace_runtime_work",
++				)
++				.get() as { nextAt: number }
++		).nextAt;
++		const delay = nextAt - firstAttemptAt - 4_900;
++		expect(delay).toBeGreaterThanOrEqual(1_000);
++		expect(delay).toBeLessThanOrEqual(60_000);
++	});
++
++	it("times out a slow service call with an actual async timer", async () => {
++		await expect(
++			withSessionRuntimeCallTimeout(
++				() => new Promise((resolve) => setTimeout(resolve, 50)),
++				10,
++			),
++		).rejects.toMatchObject({ code: "runtime_timeout" });
++	});
++
++	it("stale lease callbacks cannot accept after takeover", async () => {
++		let resolveFirst: ((value: unknown) => void) | undefined;
++		const firstCall = new Promise((resolve) => {
++			resolveFirst = resolve;
++		});
++		const fixture = createSessionRuntimeFixture();
++		fixture.seedTrustedSession();
++		const admitted = await fixture.asUser("user-1").command(promptBody());
++		const commandId = (admitted.body as { commandId: string }).commandId;
++		let calls = 0;
++		fixture.setDeliverImpl(async (input) => {
++			calls += 1;
++			if (calls === 1) {
++				await firstCall;
++				return {
++					version: 1,
++					commandId: input.commandId,
++					ownerVersion: input.ownerVersion,
++					acceptedPosition: 99,
++					receiptId: "stale",
++				};
++			}
++			const row = fixture.sqlite
++				.prepare(
++					`SELECT sc.commandSeq AS commandSeq, k.receiptId AS receiptId
++					 FROM session_commands sc
++					 JOIN session_command_keys k ON k.commandId = sc.id
++					 WHERE sc.id = ?`,
++				)
++				.get(input.commandId) as { commandSeq: number; receiptId: string };
++			return {
++				version: 1,
++				commandId: input.commandId,
++				ownerVersion: input.ownerVersion,
++				acceptedPosition: row.commandSeq,
++				receiptId: row.receiptId,
++			};
++		});
++		const firstPass = fixture.deliver({ maxDeliveries: 1 });
++		await new Promise((resolve) => setTimeout(resolve, 10));
++		fixture.sqlite.exec(
++			"UPDATE workspace_runtime_work SET deliveryState = 'pending', deliveryLeaseToken = NULL, deliveryLeaseExpiresAt = 0",
++		);
++		await fixture.deliver({ maxDeliveries: 1 });
++		resolveFirst?.(undefined);
++		await firstPass;
++		expect(
++			(fixture.observeWork(commandId) as { deliveryState: string })
++				.deliveryState,
++		).toBe("delivered");
++		expect(calls).toBe(2);
++	});
++
++	it("delivery storage faults leave work pending without settling messages", async () => {
++		const fixture = createSessionRuntimeFixture({
++			failStatement: (sql) =>
++				/^\s*update\s+"workspace_runtime_work"/i.test(sql) &&
++				sql.includes("deliveryAttempts"),
++		});
++		fixture.seedTrustedSession();
++		const admitted = await fixture.asUser("user-1").command(promptBody());
++		await expect(fixture.deliver()).rejects.toThrow(
++			/storage fault|Failed query/,
++		);
++		expect(fixture.sqlite.prepare("SELECT status FROM messages").all()).toEqual(
++			expect.arrayContaining([{ status: "complete" }, { status: "pending" }]),
++		);
++		expect(
++			(
++				fixture.observeWork(
++					(admitted.body as { commandId: string }).commandId,
++				) as { deliveryState: string }
++			).deliveryState,
++		).not.toBe("delivered");
++	});
++
++	it("pass budget includes delayed persisted handoff reads before the transport call", async () => {
++		let delayArmed = false;
++		let readDelayCount = 0;
++		const fixture = createSessionRuntimeFixture({
++			now: Date.now,
++			failStatement: (query) => {
++				if (
++					delayArmed &&
++					/^select/i.test(query) &&
++					query.includes('inner join "workspace_sessions"') &&
++					query.includes('inner join "session_command_keys"')
++				) {
++					delayArmed = false;
++					readDelayCount += 1;
++					Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 80);
++				}
++				return false;
++			},
++		});
++		fixture.seedTrustedSession();
++		const admitted = await fixture.asUser("user-1").command(promptBody());
++		const commandId = (admitted.body as { commandId: string }).commandId;
++		fixture.setDeliverImpl(async (input) => {
++			await new Promise((resolve) => setTimeout(resolve, 80));
++			const row = fixture.sqlite
++				.prepare(
++					`SELECT sc.commandSeq AS commandSeq, k.receiptId AS receiptId
++					 FROM session_commands sc
++					 JOIN session_command_keys k ON k.commandId = sc.id
++					 WHERE sc.id = ?`,
++				)
++				.get(input.commandId) as { commandSeq: number; receiptId: string };
++			return {
++				version: 1,
++				commandId: input.commandId,
++				ownerVersion: input.ownerVersion,
++				acceptedPosition: row.commandSeq,
++				receiptId: row.receiptId,
++			};
++		});
++		delayArmed = true;
++		const began = Date.now();
++		await fixture.deliver({ maxMs: 100, maxDeliveries: 1 });
++		const elapsed = Date.now() - began;
++		expect(readDelayCount).toBe(1);
++		expect(
++			(fixture.observeWork(commandId) as { deliveryState: string })
++				.deliveryState,
++		).not.toBe("delivered");
++		expect(elapsed).toBeLessThan(140);
++		await new Promise((resolve) => setTimeout(resolve, 100));
++	});
++
++	it("expired lease-renewal budget does not start an RPC", async () => {
++		let clock = 1_700_000_000_000;
++		let delayRenewal = false;
++		let renewalDelayCount = 0;
++		const fixture = createSessionRuntimeFixture({
++			now: () => clock,
++			failStatement: (query) => {
++				if (
++					delayRenewal &&
++					/^update "workspace_runtime_work" set "deliveryLeaseExpiresAt"/i.test(
++						query,
++					)
++				) {
++					delayRenewal = false;
++					renewalDelayCount += 1;
++					clock += 120;
++				}
++				return false;
++			},
++		});
++		fixture.seedTrustedSession();
++		const admitted = await fixture.asUser("user-1").command(promptBody());
++		const commandId = (admitted.body as { commandId: string }).commandId;
++		delayRenewal = true;
++		await fixture.deliver({ maxMs: 100, maxDeliveries: 1 });
++		expect(renewalDelayCount).toBe(1);
++		expect(
++			fixture.outbound.filter((call) => call.method === "deliver"),
++		).toHaveLength(0);
++		expect(
++			(
++				fixture.sqlite
++					.prepare(
++						"SELECT deliveryState AS deliveryState, deliveryAttempts AS deliveryAttempts FROM workspace_runtime_work WHERE commandId = ?",
++					)
++					.get(commandId) as {
++					deliveryState: string;
++					deliveryAttempts: number;
++				}
++			).deliveryAttempts,
++		).toBe(0);
++	});
++
++	it("partial lease-renewal budget still starts a remaining-bounded RPC", async () => {
++		let clock = 1_700_000_000_000;
++		let delayRenewal = false;
++		const fixture = createSessionRuntimeFixture({
++			now: () => clock,
++			failStatement: (query) => {
++				if (
++					delayRenewal &&
++					/^update "workspace_runtime_work" set "deliveryLeaseExpiresAt"/i.test(
++						query,
++					)
++				) {
++					delayRenewal = false;
++					clock += 30;
++				}
++				return false;
++			},
++		});
++		fixture.seedTrustedSession();
++		const admitted = await fixture.asUser("user-1").command(promptBody());
++		const commandId = (admitted.body as { commandId: string }).commandId;
++		delayRenewal = true;
++		await fixture.deliver({ maxMs: 100, maxDeliveries: 1 });
++		expect(
++			fixture.outbound.filter((call) => call.method === "deliver"),
++		).toEqual([{ method: "deliver", input: { commandId, ownerVersion: 1 } }]);
++		expect(
++			(fixture.observeWork(commandId) as { deliveryState: string })
++				.deliveryState,
++		).toBe("delivered");
++	});
++
++	it("T06 delivery-only: a missing predecessor on one workspace does not starve another, including a backlog past the candidate window and a priority Stop", async () => {
++		let clock = 1_700_000_000_000;
++		const fixture = createSessionRuntimeFixture({
++			now: () => clock,
++			random: () => 0.5,
++		});
++		fixture.seedTrustedSession({ sessionId: "a" });
++		fixture.seedTrustedSession({ sessionId: "b" });
++		const blocked: string[] = [];
++		for (let n = 0; n < 10; n++) {
++			const result = await fixture.asUser("user-1").command(
++				promptBody({
++					sessionId: "a",
++					idempotencyKey: `a-${n}`,
++					text: `blocked ${n}`,
++				}),
++			);
++			blocked.push((result.body as { commandId: string }).commandId);
++		}
++		const b1 = await fixture.asUser("user-1").command(
++			promptBody({
++				sessionId: "b",
++				idempotencyKey: "b-1",
++				text: "healthy 1",
++			}),
++		);
++		const b2 = await fixture.asUser("user-1").command(
++			promptBody({
++				sessionId: "b",
++				idempotencyKey: "b-2",
++				text: "healthy 2",
++			}),
++		);
++		const stop = await fixture.asUser("user-1").command({
++			version: 1,
++			idempotencyKey: "a-stop",
++			kind: "stop",
++			projectId: "proj-1",
++			sessionId: "a",
++			targetRunId: "run-a",
++		});
++		const firstBlocked = blocked[0];
++		const secondBlocked = blocked[1];
++		if (!firstBlocked || !secondBlocked) {
++			throw new Error("missing blocked commands");
++		}
++		fixture.setDeliverImpl(async (input) => {
++			if (input.commandId === firstBlocked) {
++				throw new SessionRuntimeHandoffError(
++					"runtime_unavailable",
++					"synthetic unavailable",
++				);
++			}
++			if (blocked.includes(input.commandId)) {
++				throw new SessionRuntimeHandoffError(
++					"missing_predecessor",
++					"synthetic missing predecessor",
++				);
++			}
++			const row = fixture.sqlite
++				.prepare(
++					`SELECT sc.commandSeq AS commandSeq, k.receiptId AS receiptId
++					 FROM session_commands sc
++					 JOIN session_command_keys k ON k.commandId = sc.id
++					 WHERE sc.id = ?`,
++				)
++				.get(input.commandId) as { commandSeq: number; receiptId: string };
++			return {
++				version: 1,
++				commandId: input.commandId,
++				ownerVersion: input.ownerVersion,
++				acceptedPosition: row.commandSeq,
++				receiptId: row.receiptId,
++			};
++		});
++		for (let pass = 0; pass < 3; pass++) {
++			await fixture.deliver();
++			clock += 60_000;
++		}
++		const b1Id = (b1.body as { commandId: string }).commandId;
++		const b2Id = (b2.body as { commandId: string }).commandId;
++		const stopId = (stop.body as { commandId: string }).commandId;
++		expect(
++			(fixture.observeWork(b1Id) as { deliveryState: string }).deliveryState,
++		).toBe("delivered");
++		expect(
++			(fixture.observeWork(b2Id) as { deliveryState: string }).deliveryState,
++		).toBe("delivered");
++		expect(
++			(fixture.observeWork(stopId) as { deliveryState: string }).deliveryState,
++		).toBe("delivered");
++		expect(
++			(fixture.observeWork(firstBlocked) as { deliveryState: string })
++				.deliveryState,
++		).toBe("pending");
++	});
++
++	it("production scheduled dispatch delivers through the shared resolver", async () => {
++		const fixture = createSessionRuntimeFixture();
++		fixture.seedTrustedSession();
++		const admitted = await fixture.asUser("user-1").command(promptBody());
++		const commandId = (admitted.body as { commandId: string }).commandId;
++		await fixture.scheduledDrain();
++		expect(
++			fixture.outbound.filter((call) => call.method === "deliver"),
++		).toEqual([{ method: "deliver", input: { commandId, ownerVersion: 1 } }]);
++		expect(
++			(fixture.observeWork(commandId) as { deliveryState: string })
++				.deliveryState,
++		).toBe("delivered");
++		expect(
++			(
++				fixture.sqlite
++					.prepare(
++						"SELECT status FROM workspace_runtime_work WHERE commandId = ?",
++					)
++					.get(commandId) as { status: string }
++			).status,
++		).toBe("queued");
++	});
+ });
+--- /home/ayan/ditto/plans/003-repair-evidence/before/apps/web/src/lib/session-command-delivery.ts	2026-09-24 07:36:47.518313756 +0200
++++ /home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/lib/session-command-delivery.ts	2026-09-24 08:23:05.633615421 +0200
+@@ -1,12 +1,19 @@
+-import { and, asc, eq, inArray, lte, or, sql } from "drizzle-orm";
++import { and, asc, eq, lte, notInArray, or, sql } from "drizzle-orm";
+ import { nanoid } from "nanoid";
+ import type { createDb } from "#/db";
+ import {
++	sessionCommandKeys,
+ 	sessionCommands,
+ 	workspaceRuntimeWork,
+ 	workspaceSessions,
+ } from "#/db/schema";
+ import type { SessionRuntime } from "#/lib/session-runtime-client";
++import {
++	parseSessionRuntimeHandoffAck,
++	SESSION_RUNTIME_CALL_TIMEOUT_MS,
++	SessionRuntimeHandoffError,
++	withSessionRuntimeCallTimeout,
++} from "#/lib/session-runtime-client";
+ 
+ type Db = ReturnType<typeof createDb>;
+ 
+@@ -51,7 +58,7 @@
+ 	)`;
+ }
+ 
+-async function loadPersistedCommand(options: {
++async function loadPersistedHandoff(options: {
+ 	db: Db;
+ 	commandId: string;
+ 	ownerVersion: number;
+@@ -62,24 +69,45 @@
+ 			kind: sessionCommands.kind,
+ 			sessionId: sessionCommands.sessionId,
+ 			commandSeq: sessionCommands.commandSeq,
++			userId: sessionCommands.userId,
++			projectId: sessionCommands.projectId,
+ 			runtimeOwnerVersion: workspaceSessions.runtimeOwnerVersion,
++			receiptId: sessionCommandKeys.receiptId,
+ 		})
+ 		.from(sessionCommands)
+ 		.innerJoin(
+ 			workspaceSessions,
+ 			eq(workspaceSessions.id, sessionCommands.sessionId),
+ 		)
++		.innerJoin(
++			sessionCommandKeys,
++			eq(sessionCommandKeys.commandId, sessionCommands.id),
++		)
+ 		.where(
+ 			and(
+ 				eq(sessionCommands.id, options.commandId),
+ 				eq(workspaceSessions.runtimeOwner, "trusted_v1"),
+ 				eq(workspaceSessions.runtimeOwnerVersion, options.ownerVersion),
++				eq(sessionCommandKeys.commandId, options.commandId),
+ 			),
+ 		)
+ 		.limit(1);
+ 	return row ?? null;
+ }
+ 
++function ackMatchesPersisted(
++	ack: ReturnType<typeof parseSessionRuntimeHandoffAck>,
++	command: NonNullable<Awaited<ReturnType<typeof loadPersistedHandoff>>>,
++): boolean {
++	return (
++		ack.commandId === command.id &&
++		ack.ownerVersion === command.runtimeOwnerVersion &&
++		ack.acceptedPosition === command.commandSeq &&
++		ack.receiptId === command.receiptId &&
++		command.commandSeq != null
++	);
++}
++
+ async function leaseDeliveryRow(options: {
+ 	db: Db;
+ 	workId: string;
+@@ -99,7 +127,7 @@
+ 			and(
+ 				eq(workspaceRuntimeWork.id, options.workId),
+ 				eq(workspaceRuntimeWork.runtimeOwner, "trusted_v1"),
+-				inArray(workspaceRuntimeWork.deliveryState, ["pending", "delivered"]),
++				eq(workspaceRuntimeWork.deliveryState, "pending"),
+ 				or(
+ 					sql`${workspaceRuntimeWork.deliveryLeaseExpiresAt} IS NULL`,
+ 					lte(workspaceRuntimeWork.deliveryLeaseExpiresAt, options.nowMs),
+@@ -136,6 +164,77 @@
+ 		);
+ }
+ 
++async function releaseUnusedLease(options: {
++	db: Db;
++	workId: string;
++	token: string;
++}) {
++	await options.db
++		.update(workspaceRuntimeWork)
++		.set({
++			deliveryState: "pending",
++			deliveryLeaseToken: null,
++			deliveryLeaseExpiresAt: null,
++			updatedAt: sql`(unixepoch())`,
++		})
++		.where(
++			and(
++				eq(workspaceRuntimeWork.id, options.workId),
++				eq(workspaceRuntimeWork.deliveryLeaseToken, options.token),
++				eq(workspaceRuntimeWork.runtimeOwner, "trusted_v1"),
++			),
++		);
++}
++
++async function renewDeliveryLease(options: {
++	db: Db;
++	workId: string;
++	token: string;
++	leaseExpiresAt: number;
++}) {
++	await options.db
++		.update(workspaceRuntimeWork)
++		.set({
++			deliveryLeaseExpiresAt: options.leaseExpiresAt,
++			updatedAt: sql`(unixepoch())`,
++		})
++		.where(
++			and(
++				eq(workspaceRuntimeWork.id, options.workId),
++				eq(workspaceRuntimeWork.deliveryLeaseToken, options.token),
++				eq(workspaceRuntimeWork.deliveryState, "leased"),
++				eq(workspaceRuntimeWork.runtimeOwner, "trusted_v1"),
++			),
++		);
++}
++
++async function markDeliveryAccepted(options: {
++	db: Db;
++	workId: string;
++	token: string;
++	attempts: number;
++}) {
++	const [updated] = await options.db
++		.update(workspaceRuntimeWork)
++		.set({
++			deliveryState: "delivered",
++			deliveryLeaseToken: null,
++			deliveryLeaseExpiresAt: null,
++			deliveryAttempts: options.attempts,
++			updatedAt: sql`(unixepoch())`,
++		})
++		.where(
++			and(
++				eq(workspaceRuntimeWork.id, options.workId),
++				eq(workspaceRuntimeWork.deliveryLeaseToken, options.token),
++				eq(workspaceRuntimeWork.deliveryState, "leased"),
++				eq(workspaceRuntimeWork.runtimeOwner, "trusted_v1"),
++			),
++		)
++		.returning({ id: workspaceRuntimeWork.id });
++	return updated ?? null;
++}
++
+ export async function deliverSessionCommands(options: {
+ 	db: Db;
+ 	runtime: SessionRuntime;
+@@ -150,9 +249,11 @@
+ 		options.budget?.maxDeliveries ?? TRUSTED_DELIVERY_MAX_PER_PASS;
+ 	const maxMs = options.budget?.maxMs ?? TRUSTED_DELIVERY_MAX_PASS_MS;
+ 	const startedAt = now();
++	const passDeadlineAt = startedAt + maxMs;
+ 	let delivered = 0;
++	const blockedOrdinarySessions = new Set<string>();
+ 
+-	const reclaimExpired = await options.db
++	await options.db
+ 		.update(workspaceRuntimeWork)
+ 		.set({
+ 			deliveryState: "pending",
+@@ -167,13 +268,20 @@
+ 				lte(workspaceRuntimeWork.deliveryLeaseExpiresAt, now()),
+ 				trustedDeliveryOwner(),
+ 			),
+-		)
+-		.returning({ id: workspaceRuntimeWork.id });
+-	void reclaimExpired;
++		);
+ 
+-	while (delivered < maxDeliveries && now() - startedAt < maxMs) {
++	while (delivered < maxDeliveries) {
+ 		const remaining = maxMs - (now() - startedAt);
+ 		if (remaining <= 0) break;
++		const callTimeoutMs = Math.min(SESSION_RUNTIME_CALL_TIMEOUT_MS, remaining);
++		if (callTimeoutMs <= 0) break;
++		const blockedSessions = [...blockedOrdinarySessions];
++		const blockedOrdinary = blockedSessions.length
++			? or(
++					eq(sessionCommands.kind, "stop"),
++					notInArray(workspaceRuntimeWork.sessionId, blockedSessions),
++				)
++			: sql`TRUE`;
+ 		const candidates = await options.db
+ 			.select({
+ 				work: workspaceRuntimeWork,
+@@ -188,12 +296,13 @@
+ 			.where(
+ 				and(
+ 					eq(workspaceRuntimeWork.runtimeOwner, "trusted_v1"),
+-					inArray(workspaceRuntimeWork.deliveryState, ["pending", "delivered"]),
++					eq(workspaceRuntimeWork.deliveryState, "pending"),
+ 					or(
+ 						sql`${workspaceRuntimeWork.deliveryLeaseExpiresAt} IS NULL`,
+ 						lte(workspaceRuntimeWork.deliveryLeaseExpiresAt, now()),
+ 					),
+ 					trustedDeliveryOwner(),
++					blockedOrdinary,
+ 				),
+ 			)
+ 			.orderBy(
+@@ -206,12 +315,17 @@
+ 		let leased = null as typeof workspaceRuntimeWork.$inferSelect | null;
+ 		let leasedKind: string | null = null;
+ 		for (const candidate of candidates) {
++			const sessionId = candidate.work.sessionId;
++			const isStop = candidate.kind === "stop";
++			if (!isStop && sessionId && blockedOrdinarySessions.has(sessionId)) {
++				continue;
++			}
+ 			const token = createId();
+ 			const row = await leaseDeliveryRow({
+ 				db: options.db,
+ 				workId: candidate.work.id,
+ 				token,
+-				leaseExpiresAt: now() + Math.min(remaining, 5_000),
++				leaseExpiresAt: now() + callTimeoutMs,
+ 				nowMs: now(),
+ 			});
+ 			if (row) {
+@@ -222,54 +336,131 @@
+ 		}
+ 		if (!leased?.commandId) break;
+ 
+-		const command = await loadPersistedCommand({
++		const token = leased.deliveryLeaseToken ?? "";
++		const remainingAfterLease = maxMs - (now() - startedAt);
++		if (remainingAfterLease <= 0) {
++			await releaseUnusedLease({
++				db: options.db,
++				workId: leased.id,
++				token,
++			});
++			break;
++		}
++
++		const command = await loadPersistedHandoff({
+ 			db: options.db,
+ 			commandId: leased.commandId,
+ 			ownerVersion: leased.runtimeOwnerVersion,
+ 		});
++		const remainingBeforeRenewal = passDeadlineAt - now();
++		if (remainingBeforeRenewal <= 0) {
++			await releaseUnusedLease({
++				db: options.db,
++				workId: leased.id,
++				token,
++			});
++			break;
++		}
++		const renewedLeaseDeadlineAt =
++			now() + Math.min(SESSION_RUNTIME_CALL_TIMEOUT_MS, remainingBeforeRenewal);
++		await renewDeliveryLease({
++			db: options.db,
++			workId: leased.id,
++			token,
++			leaseExpiresAt: renewedLeaseDeadlineAt,
++		});
++		const remainingAfterRenewal = Math.min(
++			passDeadlineAt - now(),
++			renewedLeaseDeadlineAt - now(),
++		);
++		if (remainingAfterRenewal <= 0) {
++			await releaseUnusedLease({
++				db: options.db,
++				workId: leased.id,
++				token,
++			});
++			break;
++		}
++		const serviceTimeoutMs = Math.min(
++			SESSION_RUNTIME_CALL_TIMEOUT_MS,
++			remainingAfterRenewal,
++		);
+ 		const attempts = leased.deliveryAttempts + 1;
+-		const nextAt = now() + backoffMs(attempts, random);
+ 		try {
+-			if (!command) {
++			if (!command || command.commandSeq == null) {
+ 				await releaseDeliveryAttempt({
+ 					db: options.db,
+ 					workId: leased.id,
+-					token: leased.deliveryLeaseToken ?? "",
++					token,
+ 					attempts,
+-					nextAt,
++					nextAt: now() + backoffMs(attempts, random),
+ 				});
+ 				delivered += 1;
+ 				continue;
+ 			}
+-			if (leasedKind === "stop" || command.kind === "stop") {
+-				await options.runtime.control({
+-					commandId: command.id,
+-					ownerVersion: command.runtimeOwnerVersion,
+-				});
+-			} else {
+-				await options.runtime.deliver({
+-					commandId: command.id,
+-					ownerVersion: command.runtimeOwnerVersion,
+-				});
++			const input = {
++				commandId: command.id,
++				ownerVersion: command.runtimeOwnerVersion,
++			};
++			const callStarted = now();
++			const rawAck =
++				leasedKind === "stop" || command.kind === "stop"
++					? await withSessionRuntimeCallTimeout(
++							() => options.runtime.control(input),
++							serviceTimeoutMs,
++							{ now },
++						)
++					: await withSessionRuntimeCallTimeout(
++							() => options.runtime.deliver(input),
++							serviceTimeoutMs,
++							{ now },
++						);
++			if (
++				now() > passDeadlineAt ||
++				now() > renewedLeaseDeadlineAt ||
++				now() - callStarted > serviceTimeoutMs
++			) {
++				throw new SessionRuntimeHandoffError(
++					"runtime_timeout",
++					"runtime_timeout",
++				);
++			}
++			const ack = parseSessionRuntimeHandoffAck(rawAck);
++			if (!ackMatchesPersisted(ack, command)) {
++				throw new SessionRuntimeHandoffError(
++					"invalid_ack",
++					"Handoff acknowledgment does not match persisted command.",
++				);
++			}
++			const accepted = await markDeliveryAccepted({
++				db: options.db,
++				workId: leased.id,
++				token,
++				attempts,
++			});
++			if (!accepted) {
++				delivered += 1;
++				continue;
++			}
++		} catch (error) {
++			if (
++				error instanceof SessionRuntimeHandoffError &&
++				error.code === "missing_predecessor" &&
++				leasedKind !== "stop" &&
++				leased.sessionId
++			) {
++				blockedOrdinarySessions.add(leased.sessionId);
+ 			}
+-		} catch {
+ 			await releaseDeliveryAttempt({
+ 				db: options.db,
+ 				workId: leased.id,
+-				token: leased.deliveryLeaseToken ?? "",
++				token,
+ 				attempts,
+-				nextAt,
++				nextAt: now() + backoffMs(attempts, random),
+ 			});
+ 			delivered += 1;
+ 			continue;
+ 		}
+-		await releaseDeliveryAttempt({
+-			db: options.db,
+-			workId: leased.id,
+-			token: leased.deliveryLeaseToken ?? "",
+-			attempts,
+-			nextAt,
+-		});
+ 		delivered += 1;
+ 	}
+ 
+--- /home/ayan/ditto/plans/003-repair-evidence/before/apps/web/src/lib/session-command.test.ts	2026-09-24 07:36:47.518313756 +0200
++++ /home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/lib/session-command.test.ts	2026-09-24 08:14:45.690080377 +0200
+@@ -1,5 +1,56 @@
+-import { describe, expect, it } from "vitest";
+-import { createSessionRuntimeFixture } from "#/test/session-runtime-fixture";
++import { describe, expect, it, vi } from "vitest";
++import { handleSessionCommandRequest } from "#/lib/session-command";
++import {
++	createSessionRuntimeFixture,
++	sessionRuntimeRouteHarness,
++} from "#/test/session-runtime-fixture";
++import { RUNTIME_LIMITS } from "../../../../packages/runtime-contracts/src/limits.js";
++
++vi.mock("cloudflare:workers", () => ({ env: {} }));
++vi.mock("@tanstack/react-router", () => ({
++	createFileRoute: () => (options: unknown) => options,
++}));
++vi.mock("#/db", () => ({
++	createDb: () => {
++		if (!sessionRuntimeRouteHarness.db) {
++			throw new Error("fixture db missing");
++		}
++		return sessionRuntimeRouteHarness.db;
++	},
++}));
++vi.mock("#/lib/auth", () => ({
++	createAuth: () => ({
++		api: {
++			getSession: async () =>
++				sessionRuntimeRouteHarness.userId
++					? { user: { id: sessionRuntimeRouteHarness.userId } }
++					: null,
++		},
++	}),
++}));
++vi.mock("#/lib/agent-run-service", () => ({
++	prepareAgentRun: () => {
++		throw new Error("Unexpected legacy invocation");
++	},
++	executeAgentRun: () => {
++		throw new Error("Unexpected legacy invocation");
++	},
++	agentStreamBodySchema: {
++		safeParse: () => {
++			throw new Error("Unexpected legacy invocation");
++		},
++	},
++}));
++vi.mock("#/lib/agent-control-service", () => ({
++	controlAgentRun: () => {
++		throw new Error("Unexpected legacy invocation");
++	},
++	agentControlBodySchema: {
++		safeParse: () => {
++			throw new Error("Unexpected legacy invocation");
++		},
++	},
++}));
+ 
+ function promptBody(overrides: Record<string, unknown> = {}) {
+ 	return {
+@@ -12,8 +63,41 @@
+ 	};
+ }
+ 
++const recoveryBodies: Record<string, Record<string, unknown>> = {
++	abandon_failed_run: {
++		targetRunId: "run-1",
++		expectedRecoveryPosition: 2,
++	},
++	retry_known_safe: {
++		targetRunId: "run-1",
++		expectedRecoveryPosition: 2,
++		safeRetryReason: "safe",
++	},
++	acknowledge_uncertainty_and_start_new_action: {
++		targetRunId: "run-1",
++		expectedRecoveryPosition: 2,
++		unresolvedOperationIds: ["op-1"],
++		uncertaintyAcknowledged: true,
++		text: "next",
++	},
++	restore_checkpoint_acknowledging_loss: {
++		committedPairId: "pair-1",
++		expectedMutationGeneration: 1,
++		expectedRecoveryPosition: 2,
++		unbackedLossAcknowledged: true,
++	},
++	retry_backup: {
++		expectedMutationGeneration: 1,
++		expectedRecoveryPosition: 2,
++	},
++	restart_preview: {
++		expectedMutationGeneration: 1,
++		restartRequested: true,
++	},
++};
++
+ describe("session command admission", () => {
+-	it("T01 mocked-auth rejects unowned, archived, migrating, blocked, and deleting targets with no rows or upstream work", async () => {
++	it("T01 mocked-auth captured handler rejects unowned, archived, migrating, blocked, and deleting targets with no rows or upstream work", async () => {
+ 		const unowned = createSessionRuntimeFixture();
+ 		unowned.seedProject({ userId: "owner-1" });
+ 		const unownedResult = await unowned
+@@ -93,7 +177,31 @@
+ 		);
+ 	});
+ 
+-	it("T02 mocked-auth rejects missing model config and invalid thinking before prompt side effects", async () => {
++	it("T01 default production handlers do not create trusted sessions from a browser version field", async () => {
++		for (const path of ["stream", "control"] as const) {
++			const fixture = createSessionRuntimeFixture();
++			fixture.seedProject();
++			const result = await fixture.asUser("user-1").command(promptBody(), {
++				path,
++				trustedAdmissionEligible: false,
++			});
++			expect(result.status).not.toBe(202);
++			expect(fixture.counts()).toEqual({
++				sessions: 0,
++				messages: 0,
++				commands: 0,
++				keys: 0,
++				work: 0,
++			});
++			expect(
++				fixture.sqlite
++					.prepare("SELECT runtimeOwner FROM workspace_sessions")
++					.get(),
++			).toBeUndefined();
++		}
++	});
++
++	it("T02 mocked-auth captured handler rejects missing model config and invalid thinking before prompt side effects", async () => {
+ 		const missing = createSessionRuntimeFixture({ modelConfigured: false });
+ 		missing.seedProject();
+ 		const missingResult = await missing.asUser("user-1").command(promptBody());
+@@ -126,6 +234,17 @@
+ 		expect(invalid.outbound).toEqual([]);
+ 	});
+ 
++	it("T02 rejects incompatible runtime protocol before prompt writes", async () => {
++		const fixture = createSessionRuntimeFixture({ protocolVersion: 2 });
++		fixture.seedTrustedSession();
++		const result = await fixture
++			.asUser("user-1")
++			.command(promptBody({ sessionId: "sess-1" }));
++		expect(result.status).not.toBe(202);
++		expect(fixture.counts().commands).toBe(0);
++		expect(fixture.counts().messages).toBe(0);
++	});
++
+ 	it("T03 admits a first trusted prompt atomically and replays the original session", async () => {
+ 		const fixture = createSessionRuntimeFixture();
+ 		fixture.seedProject();
+@@ -146,6 +265,10 @@
+ 			keys: 1,
+ 			work: 1,
+ 		});
++		expect(fixture.observeReceipt(receipt.commandId)).toMatchObject({
++			commandId: receipt.commandId,
++			commandSeq: 1,
++		});
+ 		const retry = await fixture.asUser("user-1").command(promptBody());
+ 		expect(retry.status).toBe(202);
+ 		expect(retry.body).toMatchObject({
+@@ -188,6 +311,157 @@
+ 		expect(fixture.counts().commands).toBe(1);
+ 	});
+ 
++	it("T03 persists thinking settings so CommandV1 can be reconstructed after request loss", async () => {
++		const fixture = createSessionRuntimeFixture();
++		fixture.seedTrustedSession();
++		const levels = ["off", "high", "max", undefined] as const;
++		const ids: string[] = [];
++		for (const [index, level] of levels.entries()) {
++			const result = await fixture.asUser("user-1").command(
++				promptBody({
++					idempotencyKey: `think-${index}`,
++					sessionId: "sess-1",
++					text: `hello ${index}`,
++					...(level ? { thinkingLevel: level } : {}),
++				}),
++			);
++			expect(result.status).toBe(202);
++			ids.push((result.body as { commandId: string }).commandId);
++		}
++		for (const [index, level] of levels.entries()) {
++			const commandId = ids[index];
++			if (!commandId) throw new Error("missing command id");
++			const reconstructed = await fixture.reconstructCommand(commandId);
++			expect(reconstructed).toMatchObject({
++				kind: "prompt",
++				thinkingLevel: level ?? "high",
++				text: `hello ${index}`,
++			});
++			const retry = await fixture.asUser("user-1").command(
++				promptBody({
++					idempotencyKey: `think-${index}`,
++					sessionId: "sess-1",
++					text: `hello ${index}`,
++					...(level ? { thinkingLevel: level } : {}),
++				}),
++			);
++			expect(retry.body).toMatchObject({ commandId });
++		}
++	});
++
++	it("T03 normalizes trim-equivalent text and rejects whitespace-only prompts and follow-ups", async () => {
++		const fixture = createSessionRuntimeFixture();
++		fixture.seedTrustedSession();
++		const first = await fixture
++			.asUser("user-1")
++			.command(promptBody({ sessionId: "sess-1" }));
++		expect(first.status).toBe(202);
++		const equivalent = await fixture
++			.asUser("user-1")
++			.command(promptBody({ sessionId: "sess-1", text: "  hello  " }));
++		expect(equivalent.status).toBe(202);
++		expect(equivalent.body).toMatchObject({
++			commandId: (first.body as { commandId: string }).commandId,
++		});
++		const blank = await fixture.asUser("user-1").command(
++			promptBody({
++				sessionId: "sess-1",
++				idempotencyKey: "blank",
++				text: "   ",
++			}),
++		);
++		expect(blank.status).toBe(400);
++		const interior = await fixture.asUser("user-1").command(
++			promptBody({
++				sessionId: "sess-1",
++				idempotencyKey: "interior",
++				text: "hello  world",
++			}),
++		);
++		expect(interior.status).toBe(202);
++		const reconstructed = await fixture.reconstructCommand(
++			(interior.body as { commandId: string }).commandId,
++		);
++		expect(reconstructed).toMatchObject({ text: "hello  world" });
++		const followBlank = await fixture.asUser("user-1").command({
++			version: 1,
++			idempotencyKey: "follow-blank",
++			kind: "follow_up",
++			projectId: "proj-1",
++			sessionId: "sess-1",
++			targetRunId: "run-1",
++			text: "\n\t",
++		});
++		expect(followBlank.status).toBe(400);
++	});
++
++	it("reconstruction keeps the accepted owner version after a later session transition", async () => {
++		const fixture = createSessionRuntimeFixture();
++		fixture.seedTrustedSession();
++		const admitted = await fixture
++			.asUser("user-1")
++			.command(promptBody({ sessionId: "sess-1" }));
++		const commandId = (admitted.body as { commandId: string }).commandId;
++		fixture.sqlite.exec(
++			"UPDATE workspace_sessions SET runtimeOwnerVersion = 3",
++		);
++		const reconstructed = await fixture.reconstructCommand(commandId);
++		expect(reconstructed).toMatchObject({
++			runtimeOwnerVersion: 1,
++			thinkingLevel: "high",
++		});
++	});
++
++	it("reconstruction fails closed on missing, malformed, or mismatched prompt settings", async () => {
++		const fixture = createSessionRuntimeFixture();
++		fixture.seedTrustedSession();
++		const admitted = await fixture.asUser("user-1").command(
++			promptBody({
++				sessionId: "sess-1",
++				thinkingLevel: "max",
++			}),
++		);
++		const commandId = (admitted.body as { commandId: string }).commandId;
++		const receipt = fixture.observeReceipt(commandId) as {
++			userMessageId: string;
++			assistantMessageId: string;
++		};
++		const original = await fixture.reconstructCommand(commandId);
++		expect(original).toMatchObject({
++			thinkingLevel: "max",
++			text: "hello",
++		});
++
++		fixture.sqlite.exec("UPDATE workspace_runtime_work SET payload = '{}' ");
++		expect(await fixture.reconstructCommand(commandId)).toBeNull();
++
++		fixture.sqlite.exec(
++			"UPDATE workspace_runtime_work SET payload = 'not-json'",
++		);
++		expect(await fixture.reconstructCommand(commandId)).toBeNull();
++
++		fixture.sqlite.exec(
++			`UPDATE workspace_runtime_work SET payload = '${JSON.stringify({ commandKind: "stop", thinkingLevel: "max" })}'`,
++		);
++		expect(await fixture.reconstructCommand(commandId)).toBeNull();
++
++		fixture.sqlite.exec(
++			`UPDATE workspace_runtime_work SET payload = '${JSON.stringify({ commandKind: "prompt", thinkingLevel: "medium" })}'`,
++		);
++		expect(await fixture.reconstructCommand(commandId)).toBeNull();
++
++		fixture.sqlite.exec(
++			`UPDATE workspace_runtime_work SET payload = '${JSON.stringify({ commandKind: "prompt", thinkingLevel: "max" })}'`,
++		);
++		fixture.sqlite
++			.prepare("DELETE FROM messages WHERE id = ?")
++			.run(receipt.userMessageId);
++		expect(await fixture.reconstructCommand(commandId)).toBeNull();
++
++		fixture.sqlite.exec("DELETE FROM workspace_runtime_work");
++		expect(await fixture.reconstructCommand(commandId)).toBeNull();
++	});
++
+ 	it("T04 rolls back when any batch statement fails", async () => {
+ 		for (let failBatchAt = 0; failBatchAt < 9; failBatchAt++) {
+ 			const fixture = createSessionRuntimeFixture({ failBatchAt });
+@@ -274,14 +548,17 @@
+ 		expect(follow.body).toMatchObject({ commandSeq: 2, status: "admitted" });
+ 		expect(fixture.counts().messages).toBe(4);
+ 		fixture.setModelConfigured(false);
+-		const stop = await fixture.asUser("user-1").command({
+-			version: 1,
+-			idempotencyKey: "stop-1",
+-			kind: "stop",
+-			projectId: "proj-1",
+-			sessionId: "sess-1",
+-			targetRunId: "run-1",
+-		});
++		const stop = await fixture.asUser("user-1").command(
++			{
++				version: 1,
++				idempotencyKey: "stop-1",
++				kind: "stop",
++				projectId: "proj-1",
++				sessionId: "sess-1",
++				targetRunId: "run-1",
++			},
++			{ path: "control" },
++		);
+ 		expect(stop).toMatchObject({
+ 			status: 202,
+ 			body: { stopState: "recorded", status: "admitted" },
+@@ -306,19 +583,20 @@
+ 	it("parses recovery kinds but rejects their admission", async () => {
+ 		const fixture = createSessionRuntimeFixture();
+ 		fixture.seedTrustedSession();
+-		const result = await fixture.asUser("user-1").command({
+-			version: 1,
+-			idempotencyKey: "recover-1",
+-			kind: "abandon_failed_run",
+-			projectId: "proj-1",
+-			sessionId: "sess-1",
+-			targetRunId: "run-1",
+-			expectedRecoveryPosition: 2,
+-		});
+-		expect(result).toMatchObject({
+-			status: 409,
+-			body: { code: "unimplemented_command" },
+-		});
++		for (const [kind, extra] of Object.entries(recoveryBodies)) {
++			const result = await fixture.asUser("user-1").command({
++				version: 1,
++				idempotencyKey: `recover-${kind}`,
++				kind,
++				projectId: "proj-1",
++				sessionId: "sess-1",
++				...extra,
++			});
++			expect(result).toMatchObject({
++				status: 409,
++				body: { code: "unimplemented_command" },
++			});
++		}
+ 		expect(fixture.counts()).toEqual({
+ 			sessions: 1,
+ 			messages: 0,
+@@ -327,4 +605,90 @@
+ 			work: 0,
+ 		});
+ 	});
++
++	it("captured handlers reject duplicate, escaped duplicate, oversized, unknown version, and authority fields", async () => {
++		for (const path of ["stream", "control"] as const) {
++			const fixture = createSessionRuntimeFixture();
++			fixture.seedTrustedSession();
++			const duplicate = JSON.stringify(
++				promptBody({ sessionId: "sess-1" }),
++			).replace('"version":1', '"version":2,"version":1');
++			const duplicateResult = await fixture
++				.asUser("user-1")
++				.command({}, { path, raw: duplicate });
++			expect(duplicateResult.status).toBe(400);
++			expect(fixture.counts().commands).toBe(0);
++
++			const escaped = `{"version":1,"idempotencyKey":"esc","kind":"prompt","projectId":"proj-1","sessionId":"sess-1","text":"hello","\\u0076ersion":2}`;
++			const escapedResult = await fixture
++				.asUser("user-1")
++				.command({}, { path, raw: escaped });
++			expect(escapedResult.status).toBe(400);
++
++			const unknownVersion = await fixture.asUser("user-1").command(
++				{
++					...promptBody({ sessionId: "sess-1" }),
++					version: 2,
++				},
++				{ path },
++			);
++			expect(unknownVersion.status).toBe(400);
++
++			const authority = await fixture.asUser("user-1").command(
++				{
++					...promptBody({ sessionId: "sess-1" }),
++					userId: "attacker",
++				},
++				{ path },
++			);
++			expect(authority.status).toBe(400);
++
++			const oversized = `${" ".repeat(RUNTIME_LIMITS.commandBodyBytes + 8)}{"version":1}`;
++			const oversizedResult = await fixture
++				.asUser("user-1")
++				.command({}, { path, raw: oversized });
++			expect(oversizedResult.status).toBe(400);
++			const invalidUtf8 = await fixture
++				.asUser("user-1")
++				.command({}, { path, bytes: new Uint8Array([0xff, 0xfe, 0xfd]) });
++			expect(invalidUtf8.status).toBe(400);
++			expect(fixture.counts().commands).toBe(0);
++		}
++	});
++});
++
++describe("session command request classification", () => {
++	it("does not fall through to legacy execution for malformed versioned bodies", async () => {
++		const fixture = createSessionRuntimeFixture();
++		fixture.seedProject();
++		const result = await fixture
++			.asUser("user-1")
++			.command({}, { raw: '{"version":1,}' });
++		expect(result.status).toBe(400);
++		expect(fixture.counts().commands).toBe(0);
++	});
++
++	it("service protocol mismatch still fails closed without rows", async () => {
++		const fixture = createSessionRuntimeFixture();
++		fixture.seedTrustedSession();
++		const result = await handleSessionCommandRequest({
++			db: fixture.db,
++			runtime: {
++				modelConfiguration: async () => ({
++					configured: true,
++					protocolVersion: 2,
++				}),
++				deliver: async () => {
++					throw new Error("unused");
++				},
++				control: async () => {
++					throw new Error("unused");
++				},
++			},
++			authenticatedUserId: "user-1",
++			body: promptBody({ sessionId: "sess-1" }),
++		});
++		expect(result.status).not.toBe(202);
++		expect(fixture.counts().commands).toBe(0);
++	});
+ });
+--- /home/ayan/ditto/plans/003-repair-evidence/before/apps/web/src/lib/session-command.ts	2026-09-24 07:36:47.518313756 +0200
++++ /home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/lib/session-command.ts	2026-09-24 08:15:31.434122391 +0200
+@@ -22,12 +22,16 @@
+ import { WORKSPACE_QUEUE_TTL_MS } from "#/lib/workspace-runtime-capacity";
+ import {
+ 	type BrowserCommandV1,
++	type CommandV1,
+ 	ContractParseError,
+ 	parseBrowserCommandV1,
++	parseCommandV1,
+ 	parseReceiptV1,
+ 	RECOVERY_COMMAND_KINDS,
+ 	type ReceiptV1,
+ } from "../../../../packages/runtime-contracts/src/command.js";
++import { decodeJsonText } from "../../../../packages/runtime-contracts/src/json.js";
++import { RUNTIME_LIMITS } from "../../../../packages/runtime-contracts/src/limits.js";
+ 
+ type Db = ReturnType<typeof createDb>;
+ 
+@@ -55,6 +59,103 @@
+ 	);
+ }
+ 
++export async function readBoundedAgentRequestText(
++	request: Request,
++	maxBytes = RUNTIME_LIMITS.commandBodyBytes,
++): Promise<string> {
++	const contentLength = request.headers.get("content-length");
++	if (contentLength != null && contentLength !== "") {
++		const length = Number(contentLength);
++		if (Number.isFinite(length) && length > maxBytes) {
++			throw new SessionCommandError(
++				"contract_too_large",
++				"JSON exceeds its byte limit.",
++				400,
++			);
++		}
++	}
++	const reader = request.body?.getReader();
++	if (!reader) return "";
++	const chunks: Uint8Array[] = [];
++	let size = 0;
++	while (true) {
++		const { done, value } = await reader.read();
++		if (done) break;
++		if (!value) continue;
++		size += value.byteLength;
++		if (size > maxBytes) {
++			await reader.cancel().catch(() => undefined);
++			throw new SessionCommandError(
++				"contract_too_large",
++				"JSON exceeds its byte limit.",
++				400,
++			);
++		}
++		chunks.push(value);
++	}
++	const bytes = new Uint8Array(size);
++	let offset = 0;
++	for (const chunk of chunks) {
++		bytes.set(chunk, offset);
++		offset += chunk.byteLength;
++	}
++	try {
++		return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
++	} catch {
++		throw new SessionCommandError(
++			"invalid_json",
++			"Request body is not valid UTF-8.",
++			400,
++		);
++	}
++}
++
++function nativeJsonParse(raw: string): unknown {
++	try {
++		return JSON.parse(raw) as unknown;
++	} catch {
++		return null;
++	}
++}
++
++export function classifyAgentRequestBody(raw: string): {
++	mode: "versioned" | "legacy" | "error";
++	decoded?: unknown;
++	error?: { status: number; body: unknown };
++} {
++	try {
++		const decoded = decodeJsonText(raw, RUNTIME_LIMITS.commandBodyBytes);
++		if (isVersionedAgentCommand(decoded)) {
++			return { mode: "versioned", decoded };
++		}
++		return { mode: "legacy", decoded };
++	} catch (error) {
++		if (error instanceof ContractParseError) {
++			const native = nativeJsonParse(raw);
++			const versioned =
++				isVersionedAgentCommand(native) || /"version"\s*:/.test(raw);
++			if (
++				versioned ||
++				error.code === "duplicate_field" ||
++				error.code === "contract_too_large"
++			) {
++				return {
++					mode: "error",
++					error: {
++						status: 400,
++						body: { error: error.message, code: error.code },
++					},
++				};
++			}
++			return {
++				mode: "error",
++				error: { status: 400, body: { error: "Invalid JSON body." } },
++			};
++		}
++		throw error;
++	}
++}
++
+ export function legacyRequestRejection(
+ 	runtimeOwner: string | null | undefined,
+ ): SessionCommandError | null {
+@@ -125,6 +226,46 @@
+ 	return { kind: input.kind };
+ }
+ 
++function normalizeAdmittedCommand(input: BrowserCommandV1): BrowserCommandV1 {
++	if (input.kind === "prompt") {
++		const text = input.text.trim();
++		if (text.length === 0) {
++			throw new SessionCommandError(
++				"invalid_request",
++				"Prompt text is required.",
++				400,
++			);
++		}
++		return {
++			...input,
++			text,
++			thinkingLevel: input.thinkingLevel ?? DEFAULT_THINKING_LEVEL,
++		};
++	}
++	if (input.kind === "follow_up") {
++		const text = input.text.trim();
++		if (text.length === 0) {
++			throw new SessionCommandError(
++				"invalid_request",
++				"Follow-up text is required.",
++				400,
++			);
++		}
++		return { ...input, text };
++	}
++	return input;
++}
++
++function durableOutboxPayload(input: BrowserCommandV1): string {
++	if (input.kind === "prompt") {
++		return JSON.stringify({
++			commandKind: "prompt",
++			thinkingLevel: input.thinkingLevel ?? DEFAULT_THINKING_LEVEL,
++		});
++	}
++	return JSON.stringify({ commandKind: input.kind });
++}
++
+ function isUniqueConstraint(error: unknown): boolean {
+ 	const message = error instanceof Error ? error.message : String(error);
+ 	return /unique constraint failed/i.test(message);
+@@ -245,6 +386,201 @@
+ 	return row ?? null;
+ }
+ 
++function parseOutboxSettings(
++	payload: string | null,
++	expectedKind: string,
++):
++	| {
++			ok: true;
++			commandKind: string;
++			thinkingLevel?: "off" | "high" | "max";
++	  }
++	| { ok: false } {
++	if (!payload) return { ok: false };
++	try {
++		const parsed: unknown = JSON.parse(payload);
++		if (
++			typeof parsed !== "object" ||
++			parsed === null ||
++			Array.isArray(parsed)
++		) {
++			return { ok: false };
++		}
++		const record = parsed as Record<string, unknown>;
++		if (record.commandKind !== expectedKind) {
++			return { ok: false };
++		}
++		if (expectedKind === "prompt") {
++			if (
++				record.thinkingLevel !== "off" &&
++				record.thinkingLevel !== "high" &&
++				record.thinkingLevel !== "max"
++			) {
++				return { ok: false };
++			}
++			return {
++				ok: true,
++				commandKind: "prompt",
++				thinkingLevel: record.thinkingLevel,
++			};
++		}
++		return { ok: true, commandKind: expectedKind };
++	} catch {
++		return { ok: false };
++	}
++}
++
++export async function reconstructAdmittedCommandV1(
++	db: Db,
++	commandId: string,
++): Promise<CommandV1 | null> {
++	const command = await loadCommand(db, commandId);
++	if (!command?.sessionId || command.commandSeq == null) return null;
++	const [work] = await db
++		.select()
++		.from(workspaceRuntimeWork)
++		.where(eq(workspaceRuntimeWork.commandId, command.id))
++		.limit(1);
++	if (
++		!work ||
++		work.commandId !== command.id ||
++		work.sessionId !== command.sessionId ||
++		work.userId !== command.userId ||
++		work.projectId !== command.projectId ||
++		work.runtimeOwner !== "trusted_v1"
++	) {
++		return null;
++	}
++	const [session] = await db
++		.select({
++			id: workspaceSessions.id,
++			userId: workspaceSessions.userId,
++			projectId: workspaceSessions.projectId,
++		})
++		.from(workspaceSessions)
++		.where(eq(workspaceSessions.id, command.sessionId))
++		.limit(1);
++	if (
++		!session ||
++		session.userId !== command.userId ||
++		session.projectId !== command.projectId
++	) {
++		return null;
++	}
++	const settings = parseOutboxSettings(work.payload, command.kind);
++	if (!settings.ok) return null;
++	const base = {
++		version: 1 as const,
++		commandId: command.id,
++		commandSeq: command.commandSeq,
++		userId: command.userId,
++		projectId: command.projectId,
++		workspaceSessionId: command.sessionId,
++		runtimeOwnerVersion: work.runtimeOwnerVersion,
++		acceptedAt: command.acceptedAt,
++		deadlineAt: command.deadlineAt,
++	};
++	if (command.kind === "prompt") {
++		if (
++			!command.userMessageId ||
++			!command.assistantMessageId ||
++			settings.thinkingLevel === undefined
++		) {
++			return null;
++		}
++		const [userMessage] = await db
++			.select({
++				content: messages.content,
++				sessionId: messages.sessionId,
++				userId: messages.userId,
++			})
++			.from(messages)
++			.where(eq(messages.id, command.userMessageId))
++			.limit(1);
++		const [assistantMessage] = await db
++			.select({
++				sessionId: messages.sessionId,
++			})
++			.from(messages)
++			.where(eq(messages.id, command.assistantMessageId))
++			.limit(1);
++		if (
++			!userMessage ||
++			userMessage.sessionId !== command.sessionId ||
++			userMessage.userId !== command.userId ||
++			!assistantMessage ||
++			assistantMessage.sessionId !== command.sessionId
++		) {
++			return null;
++		}
++		return parseCommandV1({
++			...base,
++			kind: "prompt",
++			userMessageId: command.userMessageId,
++			assistantMessageId: command.assistantMessageId,
++			text: userMessage.content,
++			thinkingLevel: settings.thinkingLevel,
++		});
++	}
++	if (command.kind === "follow_up") {
++		if (
++			!command.userMessageId ||
++			!command.assistantMessageId ||
++			!command.targetRunId
++		) {
++			return null;
++		}
++		const [userMessage] = await db
++			.select({
++				content: messages.content,
++				sessionId: messages.sessionId,
++				userId: messages.userId,
++			})
++			.from(messages)
++			.where(eq(messages.id, command.userMessageId))
++			.limit(1);
++		const [assistantMessage] = await db
++			.select({
++				sessionId: messages.sessionId,
++			})
++			.from(messages)
++			.where(eq(messages.id, command.assistantMessageId))
++			.limit(1);
++		if (
++			!userMessage ||
++			userMessage.sessionId !== command.sessionId ||
++			userMessage.userId !== command.userId ||
++			!assistantMessage ||
++			assistantMessage.sessionId !== command.sessionId
++		) {
++			return null;
++		}
++		return parseCommandV1({
++			...base,
++			kind: "follow_up",
++			userMessageId: command.userMessageId,
++			assistantMessageId: command.assistantMessageId,
++			targetRunId: command.targetRunId,
++			text: userMessage.content,
++		});
++	}
++	if (command.kind === "stop" && command.targetRunId) {
++		return parseCommandV1({
++			...base,
++			kind: "stop",
++			targetRunId: command.targetRunId,
++		});
++	}
++	if (command.kind === "cancel" && command.targetCommandId) {
++		return parseCommandV1({
++			...base,
++			kind: "cancel",
++			targetCommandId: command.targetCommandId,
++		});
++	}
++	return null;
++}
++
+ async function assertReplayAccess(options: {
+ 	db: Db;
+ 	userId: string;
+@@ -794,9 +1130,9 @@
+ 					projectId: sql<string>`${options.input.projectId}`.as("projectId"),
+ 					userId: sql<string>`${options.userId}`.as("userId"),
+ 					intent: sql<"agent_run">`'agent_run'`.as("intent"),
+-					payload: sql<string | null>`${JSON.stringify({
+-						commandKind: options.input.kind,
+-					})}`.as("payload"),
++					payload: sql<string | null>`${durableOutboxPayload(
++						options.input,
++					)}`.as("payload"),
+ 					status: sql<"queued">`'queued'`.as("status"),
+ 					leaseToken: sql<string | null>`null`.as("leaseToken"),
+ 					leaseExpiresAt: sql<number | null>`null`.as("leaseExpiresAt"),
+@@ -934,7 +1270,7 @@
+ }): Promise<ReceiptV1> {
+ 	const now = options.now ?? Date.now;
+ 	const createId = options.createId ?? nanoid;
+-	const input = parseBrowserCommandV1(options.input);
++	const input = normalizeAdmittedCommand(parseBrowserCommandV1(options.input));
+ 	if (isRecoveryKind(input.kind)) {
+ 		throw new SessionCommandError(
+ 			"unimplemented_command",
+@@ -969,6 +1305,14 @@
+ 	});
+ 	if (requiresModel(input.kind)) {
+ 		const configuration = await options.runtime.modelConfiguration();
++		if (configuration.protocolVersion !== SESSION_RUNTIME_PROTOCOL_VERSION) {
++			throw new SessionCommandError(
++				"runtime_protocol_mismatch",
++				"Runtime protocol is incompatible.",
++				409,
++				"runtime_protocol_mismatch",
++			);
++		}
+ 		if (!configuration.configured) {
+ 			throw new SessionCommandError(
+ 				"model_unconfigured",
+--- /home/ayan/ditto/plans/003-repair-evidence/before/apps/web/src/lib/session-runtime-client.ts	2026-09-24 07:36:47.522203317 +0200
++++ /home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/lib/session-runtime-client.ts	2026-09-24 07:50:13.614781048 +0200
+@@ -1,3 +1,5 @@
++import { AsyncLocalStorage } from "node:async_hooks";
++
+ export const SESSION_RUNTIME_PROTOCOL_VERSION = 1;
+ export const SESSION_RUNTIME_CALL_TIMEOUT_MS = 5_000;
+ 
+@@ -16,35 +18,201 @@
+ 	ownerVersion: number;
+ };
+ 
++export type SessionRuntimeHandoffAck = {
++	version: 1;
++	commandId: string;
++	ownerVersion: number;
++	acceptedPosition: number;
++	receiptId: string;
++};
++
+ export type SessionRuntime = {
+ 	modelConfiguration(): Promise<SessionRuntimeModelConfiguration>;
+-	deliver(input: SessionRuntimeDeliverInput): Promise<void>;
+-	control(input: SessionRuntimeControlInput): Promise<void>;
++	deliver(input: SessionRuntimeDeliverInput): Promise<SessionRuntimeHandoffAck>;
++	control(input: SessionRuntimeControlInput): Promise<SessionRuntimeHandoffAck>;
++};
++
++export class SessionRuntimeHandoffError extends Error {
++	constructor(
++		readonly code:
++			| "missing_predecessor"
++			| "runtime_unavailable"
++			| "runtime_timeout"
++			| "invalid_ack",
++		message: string,
++	) {
++		super(message);
++		this.name = "SessionRuntimeHandoffError";
++	}
++}
++
++export function createUnavailableSessionRuntime(): SessionRuntime {
++	return {
++		async modelConfiguration() {
++			return {
++				configured: false,
++				protocolVersion: SESSION_RUNTIME_PROTOCOL_VERSION,
++			};
++		},
++		async deliver() {
++			throw new SessionRuntimeHandoffError(
++				"runtime_unavailable",
++				"runtime_unavailable",
++			);
++		},
++		async control() {
++			throw new SessionRuntimeHandoffError(
++				"runtime_unavailable",
++				"runtime_unavailable",
++			);
++		},
++	};
++}
++
++export function parseSessionRuntimeHandoffAck(
++	value: unknown,
++): SessionRuntimeHandoffAck {
++	if (typeof value !== "object" || value === null || Array.isArray(value)) {
++		throw new SessionRuntimeHandoffError(
++			"invalid_ack",
++			"Handoff acknowledgment must be an object.",
++		);
++	}
++	const record = value as Record<string, unknown>;
++	if (record.version !== 1) {
++		throw new SessionRuntimeHandoffError(
++			"invalid_ack",
++			"Handoff acknowledgment version is unsupported.",
++		);
++	}
++	if (typeof record.commandId !== "string" || record.commandId.length === 0) {
++		throw new SessionRuntimeHandoffError(
++			"invalid_ack",
++			"Handoff acknowledgment commandId is invalid.",
++		);
++	}
++	if (
++		!Number.isSafeInteger(record.ownerVersion) ||
++		(record.ownerVersion as number) < 1
++	) {
++		throw new SessionRuntimeHandoffError(
++			"invalid_ack",
++			"Handoff acknowledgment ownerVersion is invalid.",
++		);
++	}
++	if (
++		!Number.isSafeInteger(record.acceptedPosition) ||
++		(record.acceptedPosition as number) < 1
++	) {
++		throw new SessionRuntimeHandoffError(
++			"invalid_ack",
++			"Handoff acknowledgment acceptedPosition is invalid.",
++		);
++	}
++	if (typeof record.receiptId !== "string" || record.receiptId.length === 0) {
++		throw new SessionRuntimeHandoffError(
++			"invalid_ack",
++			"Handoff acknowledgment receiptId is invalid.",
++		);
++	}
++	return {
++		version: 1,
++		commandId: record.commandId,
++		ownerVersion: record.ownerVersion as number,
++		acceptedPosition: record.acceptedPosition as number,
++		receiptId: record.receiptId,
++	};
++}
++
++export type SessionRuntimeCallClock = {
++	now: () => number;
+ };
+ 
++export async function withSessionRuntimeCallTimeout<T>(
++	operation: () => Promise<T>,
++	timeoutMs: number,
++	clock?: SessionRuntimeCallClock,
++): Promise<T> {
++	if (timeoutMs <= 0) {
++		throw new SessionRuntimeHandoffError("runtime_timeout", "runtime_timeout");
++	}
++	const started = clock?.now() ?? Date.now();
++	let timer: ReturnType<typeof setTimeout> | undefined;
++	try {
++		const result = await Promise.race([
++			operation(),
++			new Promise<never>((_, reject) => {
++				timer = setTimeout(() => {
++					reject(
++						new SessionRuntimeHandoffError(
++							"runtime_timeout",
++							"runtime_timeout",
++						),
++					);
++				}, timeoutMs);
++			}),
++		]);
++		if (clock && clock.now() - started > timeoutMs) {
++			throw new SessionRuntimeHandoffError(
++				"runtime_timeout",
++				"runtime_timeout",
++			);
++		}
++		return result;
++	} finally {
++		if (timer !== undefined) clearTimeout(timer);
++	}
++}
++
++type SessionRuntimeResolution = {
++	transport?: SessionRuntime;
++	trustedAdmissionEligible?: boolean;
++	now?: () => number;
++	createId?: () => string;
++};
++
++const resolution = new AsyncLocalStorage<SessionRuntimeResolution>();
++
++export function withSessionRuntimeResolution<T>(
++	overrides: SessionRuntimeResolution,
++	run: () => T,
++): T {
++	const parent = resolution.getStore() ?? {};
++	return resolution.run({ ...parent, ...overrides }, run);
++}
++
++export function isTrustedAdmissionEligible(): boolean {
++	return resolution.getStore()?.trustedAdmissionEligible === true;
++}
++
++export function resolveSessionRuntimeTransport(): SessionRuntime {
++	return resolution.getStore()?.transport ?? createUnavailableSessionRuntime();
++}
++
++export function resolveSessionAdmissionHooks(): {
++	now?: () => number;
++	createId?: () => string;
++} {
++	const store = resolution.getStore();
++	return { now: store?.now, createId: store?.createId };
++}
++
+ export function createSessionRuntimeClient(
+ 	transport: SessionRuntime,
+-	options?: { timeoutMs?: number },
++	options?: { timeoutMs?: number; clock?: SessionRuntimeCallClock },
+ ): SessionRuntime {
+ 	const timeoutMs = options?.timeoutMs ?? SESSION_RUNTIME_CALL_TIMEOUT_MS;
+-	const withTimeout = async <T>(operation: () => Promise<T>): Promise<T> => {
+-		let timer: ReturnType<typeof setTimeout> | undefined;
+-		try {
+-			return await Promise.race([
+-				operation(),
+-				new Promise<T>((_, reject) => {
+-					timer = setTimeout(() => {
+-						reject(new Error("runtime_timeout"));
+-					}, timeoutMs);
+-				}),
+-			]);
+-		} finally {
+-			if (timer !== undefined) clearTimeout(timer);
+-		}
+-	};
++	const withTimeout = <T>(operation: () => Promise<T>): Promise<T> =>
++		withSessionRuntimeCallTimeout(operation, timeoutMs, options?.clock);
+ 	return {
+ 		modelConfiguration: () => withTimeout(() => transport.modelConfiguration()),
+-		deliver: (input) => withTimeout(() => transport.deliver(input)),
+-		control: (input) => withTimeout(() => transport.control(input)),
++		deliver: async (input) =>
++			parseSessionRuntimeHandoffAck(
++				await withTimeout(() => transport.deliver(input)),
++			),
++		control: async (input) =>
++			parseSessionRuntimeHandoffAck(
++				await withTimeout(() => transport.control(input)),
++			),
+ 	};
+ }
+--- /home/ayan/ditto/plans/003-repair-evidence/before/apps/web/src/lib/sqlite-d1-test-utils.ts	2026-09-24 07:36:47.522203317 +0200
++++ /home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/lib/sqlite-d1-test-utils.ts	2026-09-24 07:49:47.712302003 +0200
+@@ -23,7 +23,9 @@
+ 	sqlite: DatabaseSync,
+ 	sql: string,
+ 	params: unknown[],
++	beforeStatement?: (sql: string) => void,
+ ): Record<string, unknown>[] {
++	beforeStatement?.(sql);
+ 	const statement = sqlite.prepare(sql);
+ 	const bound = normalizeParams(params);
+ 	try {
+@@ -42,14 +44,16 @@
+ 	sqlite: DatabaseSync,
+ 	sql: string,
+ 	params: unknown[] = [],
++	beforeStatement?: (sql: string) => void,
+ ): BoundStatement {
+ 	const statement: BoundStatement = {
+ 		sql,
+ 		params,
+ 		bind(...values: unknown[]) {
+-			return createStatement(sqlite, sql, values);
++			return createStatement(sqlite, sql, values, beforeStatement);
+ 		},
+ 		async run() {
++			beforeStatement?.(sql);
+ 			const bound = normalizeParams(params);
+ 			const result = sqlite.prepare(sql).run(...(bound as never[]));
+ 			return {
+@@ -59,15 +63,17 @@
+ 		},
+ 		async all() {
+ 			return {
+-				results: executeAll(sqlite, sql, params),
++				results: executeAll(sqlite, sql, params, beforeStatement),
+ 				success: true,
+ 			};
+ 		},
+ 		async raw() {
+-			return executeAll(sqlite, sql, params).map((row) => Object.values(row));
++			return executeAll(sqlite, sql, params, beforeStatement).map((row) =>
++				Object.values(row),
++			);
+ 		},
+ 		async first() {
+-			return executeAll(sqlite, sql, params)[0] ?? null;
++			return executeAll(sqlite, sql, params, beforeStatement)[0] ?? null;
+ 		},
+ 	};
+ 	return statement;
+@@ -77,11 +83,17 @@
+ 	sqlite: DatabaseSync,
+ 	options?: {
+ 		beforeBatchStatement?: (index: number, sql: string) => void;
++		beforeStatement?: (sql: string) => void;
+ 	},
+ ): D1Database {
+ 	return {
+ 		prepare(sql: string) {
+-			return createStatement(sqlite, sql) as unknown as D1PreparedStatement;
++			return createStatement(
++				sqlite,
++				sql,
++				[],
++				options?.beforeStatement,
++			) as unknown as D1PreparedStatement;
+ 		},
+ 		async batch<T = unknown>(statements: D1PreparedStatement[]) {
+ 			sqlite.exec("BEGIN IMMEDIATE");
+@@ -91,7 +103,12 @@
+ 					const bound = statement as unknown as BoundStatement;
+ 					options?.beforeBatchStatement?.(index, bound.sql);
+ 					results.push({
+-						results: executeAll(sqlite, bound.sql, bound.params) as T[],
++						results: executeAll(
++							sqlite,
++							bound.sql,
++							bound.params,
++							options?.beforeStatement,
++						) as T[],
+ 						success: true,
+ 						meta: {
+ 							duration: 0,
+@@ -128,6 +145,7 @@
+ 	sqlite: DatabaseSync,
+ 	options?: {
+ 		beforeBatchStatement?: (index: number, sql: string) => void;
++		beforeStatement?: (sql: string) => void;
+ 	},
+ ): Db {
+ 	return drizzle(createSqliteD1(sqlite, options), { schema }) as unknown as Db;
+--- /home/ayan/ditto/plans/003-repair-evidence/before/apps/web/src/lib/workspace-runtime.ts	2026-09-24 07:36:47.522203317 +0200
++++ /home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/lib/workspace-runtime.ts	2026-09-24 07:49:20.933881769 +0200
+@@ -26,10 +26,7 @@
+ 	type SandboxEnvVar,
+ } from "#/lib/sandbox-bootstrap";
+ import { deliverSessionCommands } from "#/lib/session-command-delivery";
+-import {
+-	createSessionRuntimeClient,
+-	SESSION_RUNTIME_PROTOCOL_VERSION,
+-} from "#/lib/session-runtime-client";
++import { resolveSessionRuntimeTransport } from "#/lib/session-runtime-client";
+ import { withSessionWorkspaceLock } from "#/lib/session-workspace-lock";
+ import { SessionWorkspaceBusyError } from "#/lib/session-workspace-lock-error";
+ import { sessionBranchName, WORKSPACE_PATH } from "#/lib/workspace-policy";
+@@ -1152,18 +1149,7 @@
+ 	options.waitUntil?.(cleanup);
+ 	const delivery = deliverSessionCommands({
+ 		db: options.db,
+-		runtime: createSessionRuntimeClient({
+-			modelConfiguration: async () => ({
+-				configured: Boolean(options.env.OPENCODE_API_KEY?.trim()),
+-				protocolVersion: SESSION_RUNTIME_PROTOCOL_VERSION,
+-			}),
+-			deliver: async () => {
+-				throw new Error("runtime_unavailable");
+-			},
+-			control: async () => {
+-				throw new Error("runtime_unavailable");
+-			},
+-		}),
++		runtime: resolveSessionRuntimeTransport(),
+ 		clock: { now },
+ 		createId: options.createId,
+ 	});
+--- /home/ayan/ditto/plans/003-repair-evidence/before/apps/web/src/routes/api.agent.control.ts	2026-09-24 07:36:47.522203317 +0200
++++ /home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/routes/api.agent.control.ts	2026-09-24 07:50:26.836790940 +0200
+@@ -7,12 +7,16 @@
+ } from "#/lib/agent-control-service";
+ import { createAuth } from "#/lib/auth";
+ import {
++	classifyAgentRequestBody,
+ 	handleSessionCommandRequest,
+-	isVersionedAgentCommand,
++	readBoundedAgentRequestText,
++	SessionCommandError,
+ } from "#/lib/session-command";
+ import {
+ 	createSessionRuntimeClient,
+-	SESSION_RUNTIME_PROTOCOL_VERSION,
++	isTrustedAdmissionEligible,
++	resolveSessionAdmissionHooks,
++	resolveSessionRuntimeTransport,
+ } from "#/lib/session-runtime-client";
+ 
+ function jsonResponse(body: unknown, status: number): Response {
+@@ -31,34 +35,53 @@
+ 				});
+ 				if (!session?.user) return jsonResponse({ error: "Unauthorized" }, 401);
+ 
+-				let body: unknown;
++				let raw: string;
+ 				try {
+-					body = await request.json();
+-				} catch {
+-					return jsonResponse({ error: "Invalid JSON body." }, 400);
++					raw = await readBoundedAgentRequestText(request);
++				} catch (error) {
++					if (error instanceof SessionCommandError) {
++						return jsonResponse(
++							{ error: error.message, code: error.code },
++							error.status,
++						);
++					}
++					throw error;
+ 				}
++
++				const classified = classifyAgentRequestBody(raw);
++				if (classified.mode === "error") {
++					return jsonResponse(
++						classified.error?.body,
++						classified.error?.status ?? 400,
++					);
++				}
++
+ 				const db = createDb(env);
+-				if (isVersionedAgentCommand(body)) {
++				if (classified.mode === "versioned") {
++					if (!isTrustedAdmissionEligible()) {
++						return jsonResponse(
++							{
++								error: "Trusted command admission is not enabled.",
++								code: "trusted_admission_ineligible",
++								category: "upgrade_recovery",
++							},
++							409,
++						);
++					}
++					const admission = resolveSessionAdmissionHooks();
+ 					const result = await handleSessionCommandRequest({
+ 						db,
+-						runtime: createSessionRuntimeClient({
+-							modelConfiguration: async () => ({
+-								configured: Boolean(env.OPENCODE_API_KEY?.trim()),
+-								protocolVersion: SESSION_RUNTIME_PROTOCOL_VERSION,
+-							}),
+-							deliver: async () => {
+-								throw new Error("runtime_unavailable");
+-							},
+-							control: async () => {
+-								throw new Error("runtime_unavailable");
+-							},
+-						}),
++						runtime: createSessionRuntimeClient(
++							resolveSessionRuntimeTransport(),
++						),
+ 						authenticatedUserId: session.user.id,
+-						body,
++						body: raw,
++						now: admission.now,
++						createId: admission.createId,
+ 					});
+ 					return jsonResponse(result.body, result.status);
+ 				}
+-				const parsed = agentControlBodySchema.safeParse(body);
++				const parsed = agentControlBodySchema.safeParse(classified.decoded);
+ 				if (!parsed.success) {
+ 					return jsonResponse(
+ 						{ error: "Invalid request.", issues: parsed.error.issues },
+--- /home/ayan/ditto/plans/003-repair-evidence/before/apps/web/src/routes/api.agent.stream.ts	2026-09-24 07:36:47.522203317 +0200
++++ /home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/routes/api.agent.stream.ts	2026-09-24 07:50:26.836790940 +0200
+@@ -9,12 +9,16 @@
+ import { encodeSseEvent } from "#/lib/agent-stream-protocol";
+ import { createAuth } from "#/lib/auth";
+ import {
++	classifyAgentRequestBody,
+ 	handleSessionCommandRequest,
+-	isVersionedAgentCommand,
++	readBoundedAgentRequestText,
++	SessionCommandError,
+ } from "#/lib/session-command";
+ import {
+ 	createSessionRuntimeClient,
+-	SESSION_RUNTIME_PROTOCOL_VERSION,
++	isTrustedAdmissionEligible,
++	resolveSessionAdmissionHooks,
++	resolveSessionRuntimeTransport,
+ } from "#/lib/session-runtime-client";
+ 
+ function jsonResponse(body: unknown, status: number): Response {
+@@ -37,36 +41,54 @@
+ 					return jsonResponse({ error: "Unauthorized" }, 401);
+ 				}
+ 
+-				let body: unknown;
++				let raw: string;
+ 				try {
+-					body = await request.json();
+-				} catch {
+-					return jsonResponse({ error: "Invalid JSON body." }, 400);
++					raw = await readBoundedAgentRequestText(request);
++				} catch (error) {
++					if (error instanceof SessionCommandError) {
++						return jsonResponse(
++							{ error: error.message, code: error.code },
++							error.status,
++						);
++					}
++					throw error;
++				}
++
++				const classified = classifyAgentRequestBody(raw);
++				if (classified.mode === "error") {
++					return jsonResponse(
++						classified.error?.body,
++						classified.error?.status ?? 400,
++					);
+ 				}
+ 
+ 				const db = createDb(env);
+-				if (isVersionedAgentCommand(body)) {
++				if (classified.mode === "versioned") {
++					if (!isTrustedAdmissionEligible()) {
++						return jsonResponse(
++							{
++								error: "Trusted command admission is not enabled.",
++								code: "trusted_admission_ineligible",
++								category: "upgrade_recovery",
++							},
++							409,
++						);
++					}
++					const admission = resolveSessionAdmissionHooks();
+ 					const result = await handleSessionCommandRequest({
+ 						db,
+-						runtime: createSessionRuntimeClient({
+-							modelConfiguration: async () => ({
+-								configured: Boolean(env.OPENCODE_API_KEY?.trim()),
+-								protocolVersion: SESSION_RUNTIME_PROTOCOL_VERSION,
+-							}),
+-							deliver: async () => {
+-								throw new Error("runtime_unavailable");
+-							},
+-							control: async () => {
+-								throw new Error("runtime_unavailable");
+-							},
+-						}),
++						runtime: createSessionRuntimeClient(
++							resolveSessionRuntimeTransport(),
++						),
+ 						authenticatedUserId: session.user.id,
+-						body,
++						body: raw,
++						now: admission.now,
++						createId: admission.createId,
+ 					});
+ 					return jsonResponse(result.body, result.status);
+ 				}
+ 
+-				const parsed = agentStreamBodySchema.safeParse(body);
++				const parsed = agentStreamBodySchema.safeParse(classified.decoded);
+ 				if (!parsed.success) {
+ 					return jsonResponse(
+ 						{ error: "Invalid request.", issues: parsed.error.issues },
+--- /home/ayan/ditto/plans/003-repair-evidence/before/apps/web/src/test/session-runtime-fixture.ts	2026-09-24 07:36:47.522203317 +0200
++++ /home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/test/session-runtime-fixture.ts	2026-09-24 07:58:43.225601780 +0200
+@@ -1,21 +1,30 @@
+ import { DatabaseSync } from "node:sqlite";
+ import type { createDb } from "#/db";
+-import {
+-	handleSessionCommandRequest,
+-	type SessionCommandError,
+-} from "#/lib/session-command";
++import { reconstructAdmittedCommandV1 } from "#/lib/session-command";
+ import { deliverSessionCommands } from "#/lib/session-command-delivery";
+ import type {
+ 	SessionRuntime,
+ 	SessionRuntimeControlInput,
+ 	SessionRuntimeDeliverInput,
++	SessionRuntimeHandoffAck,
++} from "#/lib/session-runtime-client";
++import {
++	SessionRuntimeHandoffError,
++	withSessionRuntimeResolution,
+ } from "#/lib/session-runtime-client";
+-import { createSessionRuntimeClient } from "#/lib/session-runtime-client";
+ import {
+ 	createD1Drizzle,
+ 	OWNERSHIP_D1_SCHEMA,
+ } from "#/lib/sqlite-d1-test-utils";
+ 
++export const sessionRuntimeRouteHarness: {
++	db: ReturnType<typeof createDb> | null;
++	userId: string | null;
++} = {
++	db: null,
++	userId: "user-1",
++};
++
+ export const SESSION_COMMAND_D1_SCHEMA = `
+ ${OWNERSHIP_D1_SCHEMA}
+ CREATE TABLE user (
+@@ -91,6 +100,44 @@
+ 	ON session_commands (sessionId, commandSeq);
+ CREATE UNIQUE INDEX workspace_runtime_work_commandId_uidx
+ 	ON workspace_runtime_work (commandId);
++CREATE TABLE sandbox_identities (
++	id text PRIMARY KEY NOT NULL,
++	kind text NOT NULL,
++	sandboxId text NOT NULL,
++	containerId text NOT NULL,
++	userId text NOT NULL,
++	projectId text NOT NULL,
++	workspaceSessionId text,
++	controllerClass text,
++	controllerNamespace text,
++	incarnationId text,
++	incarnationStartedAt integer,
++	lifecycleGeneration integer NOT NULL DEFAULT 1,
++	state text NOT NULL,
++	retiredAt integer,
++	created_at integer,
++	updated_at integer
++);
++CREATE TABLE workspace_capacity_leases (
++	id text PRIMARY KEY NOT NULL,
++	sessionId text NOT NULL,
++	userId text NOT NULL,
++	identityId text,
++	leaseToken text NOT NULL,
++	expiresAt integer NOT NULL,
++	created_at integer,
++	updated_at integer
++);
++CREATE UNIQUE INDEX workspace_capacity_leases_sessionId_uidx
++	ON workspace_capacity_leases (sessionId);
++CREATE TABLE runtime_capacity_policy (
++	id integer PRIMARY KEY NOT NULL,
++	accountingMode text NOT NULL DEFAULT 'legacy',
++	version integer NOT NULL DEFAULT 1,
++	updatedAt integer NOT NULL
++);
++INSERT INTO runtime_capacity_policy (id, accountingMode, version, updatedAt)
++VALUES (1, 'legacy', 1, 0);
+ `;
+ 
+ export type RecordedRuntimeCall =
+@@ -98,42 +145,138 @@
+ 	| { method: "deliver"; input: SessionRuntimeDeliverInput }
+ 	| { method: "control"; input: SessionRuntimeControlInput };
+ 
++type AgentRoute = {
++	server: {
++		handlers: {
++			POST: (ctx: { request: Request }) => Promise<Response>;
++		};
++	};
++};
++
++let streamRoute: AgentRoute | null = null;
++let controlRoute: AgentRoute | null = null;
++
++async function loadAgentRoute(path: "stream" | "control"): Promise<AgentRoute> {
++	if (path === "stream") {
++		if (!streamRoute) {
++			const loaded = (await import("#/routes/api.agent.stream")) as unknown as {
++				Route: AgentRoute;
++			};
++			streamRoute = loaded.Route;
++		}
++		return streamRoute;
++	}
++	if (!controlRoute) {
++		const loaded = (await import("#/routes/api.agent.control")) as unknown as {
++			Route: AgentRoute;
++		};
++		controlRoute = loaded.Route;
++	}
++	return controlRoute;
++}
++
+ export function createSessionRuntimeFixture(options?: {
+ 	now?: () => number;
+ 	random?: () => number;
+ 	modelConfigured?: boolean;
+ 	failBatchAt?: number;
++	failStatement?: (sql: string) => boolean;
+ 	createId?: () => string;
++	protocolVersion?: number;
+ }) {
+ 	const sqlite = new DatabaseSync(":memory:");
+ 	sqlite.exec(SESSION_COMMAND_D1_SCHEMA);
+-	const db = createD1Drizzle(
+-		sqlite,
+-		options?.failBatchAt === undefined
+-			? undefined
+-			: {
+-					beforeBatchStatement: (index) => {
++	const db = createD1Drizzle(sqlite, {
++		beforeBatchStatement:
++			options?.failBatchAt === undefined
++				? undefined
++				: (index) => {
+ 						if (index === options.failBatchAt) {
+ 							throw new Error(`injected failure at ${index}`);
+ 						}
+ 					},
+-				},
+-	);
++		beforeStatement: options?.failStatement
++			? (sql) => {
++					if (options.failStatement?.(sql)) {
++						throw new Error("injected delivery storage fault");
++					}
++				}
++			: undefined,
++	});
+ 	const outbound: RecordedRuntimeCall[] = [];
+ 	let configured = options?.modelConfigured ?? true;
++	let protocolVersion = options?.protocolVersion ?? 1;
++	let deliverImpl:
++		| ((
++				input: SessionRuntimeDeliverInput,
++		  ) => Promise<SessionRuntimeHandoffAck | undefined>)
++		| null = null;
++	let controlImpl:
++		| ((
++				input: SessionRuntimeControlInput,
++		  ) => Promise<SessionRuntimeHandoffAck | undefined>)
++		| null = null;
++	let loseNextAck = false;
++
++	function lookupAck(input: {
++		commandId: string;
++		ownerVersion: number;
++	}): SessionRuntimeHandoffAck {
++		const row = sqlite
++			.prepare(
++				`SELECT sc.commandSeq AS commandSeq, k.receiptId AS receiptId
++				 FROM session_commands sc
++				 JOIN session_command_keys k ON k.commandId = sc.id
++				 WHERE sc.id = ?`,
++			)
++			.get(input.commandId) as
++			| { commandSeq: number; receiptId: string }
++			| undefined;
++		if (!row) {
++			throw new SessionRuntimeHandoffError(
++				"invalid_ack",
++				"No persisted command for acknowledgment.",
++			);
++		}
++		return {
++			version: 1,
++			commandId: input.commandId,
++			ownerVersion: input.ownerVersion,
++			acceptedPosition: row.commandSeq,
++			receiptId: row.receiptId,
++		};
++	}
++
+ 	const transport: SessionRuntime = {
+ 		async modelConfiguration() {
+ 			outbound.push({ method: "modelConfiguration" });
+-			return { configured, protocolVersion: 1 };
++			return { configured, protocolVersion };
+ 		},
+ 		async deliver(input) {
+ 			outbound.push({ method: "deliver", input });
++			if (loseNextAck) {
++				loseNextAck = false;
++				return undefined as unknown as SessionRuntimeHandoffAck;
++			}
++			if (deliverImpl) {
++				const ack = await deliverImpl(input);
++				return ack as SessionRuntimeHandoffAck;
++			}
++			return lookupAck(input);
+ 		},
+ 		async control(input) {
+ 			outbound.push({ method: "control", input });
++			if (loseNextAck) {
++				loseNextAck = false;
++				return undefined as unknown as SessionRuntimeHandoffAck;
++			}
++			if (controlImpl) {
++				const ack = await controlImpl(input);
++				return ack as SessionRuntimeHandoffAck;
++			}
++			return lookupAck(input);
+ 		},
+ 	};
+-	const runtime = createSessionRuntimeClient(transport);
+ 	const now = options?.now ?? (() => 1_700_000_000_000);
+ 
+ 	function seedProject(input?: {
+@@ -219,10 +362,30 @@
+ 		};
+ 	}
+ 
++	function activateHarness(userId: string | null) {
++		sessionRuntimeRouteHarness.db = db as ReturnType<typeof createDb>;
++		sessionRuntimeRouteHarness.userId = userId;
++	}
++
++	function withResolution<T>(
++		run: () => T,
++		overrides?: { trustedAdmissionEligible?: boolean },
++	): T {
++		return withSessionRuntimeResolution(
++			{
++				transport,
++				trustedAdmissionEligible: overrides?.trustedAdmissionEligible ?? true,
++				now,
++				createId: options?.createId,
++			},
++			run,
++		);
++	}
++
+ 	return {
+ 		db: db as ReturnType<typeof createDb>,
+ 		sqlite,
+-		runtime,
++		runtime: transport,
+ 		outbound,
+ 		now,
+ 		counts,
+@@ -231,29 +394,121 @@
+ 		setModelConfigured(value: boolean) {
+ 			configured = value;
+ 		},
+-		/** Mocked-auth ownership/admission helper, not proof of cookie authentication. */
++		setProtocolVersion(value: number) {
++			protocolVersion = value;
++		},
++		setDeliverImpl(
++			handler:
++				| ((
++						input: SessionRuntimeDeliverInput,
++				  ) => Promise<SessionRuntimeHandoffAck | undefined>)
++				| null,
++		) {
++			deliverImpl = handler;
++		},
++		setControlImpl(
++			handler:
++				| ((
++						input: SessionRuntimeControlInput,
++				  ) => Promise<SessionRuntimeHandoffAck | undefined>)
++				| null,
++		) {
++			controlImpl = handler;
++		},
++		loseNextAcknowledgment() {
++			loseNextAck = true;
++		},
++		observeReceipt(commandId: string) {
++			return sqlite
++				.prepare(
++					`SELECT k.receiptId AS receiptId, k.commandId AS commandId, sc.kind AS kind,
++					        sc.commandSeq AS commandSeq, sc.userMessageId AS userMessageId,
++					        sc.assistantMessageId AS assistantMessageId, sc.sessionId AS sessionId
++					 FROM session_command_keys k
++					 JOIN session_commands sc ON sc.id = k.commandId
++					 WHERE k.commandId = ?`,
++				)
++				.get(commandId);
++		},
++		observeMessages(sessionId: string) {
++			return sqlite
++				.prepare(
++					"SELECT id, role, content, status FROM messages WHERE sessionId = ? ORDER BY role DESC",
++				)
++				.all(sessionId);
++		},
++		observeWork(commandId: string) {
++			return sqlite
++				.prepare(
++					"SELECT status, deliveryState, payload, commandId FROM workspace_runtime_work WHERE commandId = ?",
++				)
++				.get(commandId);
++		},
++		async reconstructCommand(commandId: string) {
++			return reconstructAdmittedCommandV1(
++				db as ReturnType<typeof createDb>,
++				commandId,
++			);
++		},
++		/** Mocked-auth captured production-handler helper, not proof of cookie authentication. */
+ 		asUser(userId: string) {
+ 			return {
+-				async command(body: unknown) {
+-					return handleSessionCommandRequest({
+-						db: db as ReturnType<typeof createDb>,
+-						runtime,
+-						authenticatedUserId: userId,
+-						body,
+-						now,
+-						createId: options?.createId,
+-					});
++				async command(
++					body: unknown,
++					request: {
++						raw?: string;
++						bytes?: Uint8Array;
++						path?: "stream" | "control";
++						trustedAdmissionEligible?: boolean;
++					} = {},
++				) {
++					activateHarness(userId);
++					const path = request.path ?? "stream";
++					const route = await loadAgentRoute(path);
++					const payload = request.bytes ?? request.raw ?? JSON.stringify(body);
++					return withResolution(
++						async () => {
++							const response = await route.server.handlers.POST({
++								request: new Request(`http://localhost/api/agent/${path}`, {
++									method: "POST",
++									headers: { "Content-Type": "application/json" },
++									body: payload as BodyInit,
++								}),
++							});
++							return {
++								status: response.status,
++								body: (await response.json()) as unknown,
++							};
++						},
++						{
++							trustedAdmissionEligible:
++								request.trustedAdmissionEligible ?? true,
++						},
++					);
+ 				},
+ 			};
+ 		},
+ 		async deliver(budget?: { maxDeliveries?: number; maxMs?: number }) {
+-			return deliverSessionCommands({
+-				db: db as ReturnType<typeof createDb>,
+-				runtime,
+-				clock: { now, random: options?.random ?? (() => 0.5) },
+-				budget,
+-				createId: options?.createId,
+-			});
++			return withResolution(() =>
++				deliverSessionCommands({
++					db: db as ReturnType<typeof createDb>,
++					runtime: transport,
++					clock: { now, random: options?.random ?? (() => 0.5) },
++					budget,
++					createId: options?.createId,
++				}),
++			);
++		},
++		async scheduledDrain() {
++			const { drainWorkspaceRuntime } = await import("#/lib/workspace-runtime");
++			return withResolution(() =>
++				drainWorkspaceRuntime({
++					env: {} as Env,
++					db: db as ReturnType<typeof createDb>,
++					now,
++					createId: options?.createId,
++				}),
++			);
+ 		},
+ 	};
+ }
+@@ -261,4 +516,4 @@
+ export type SessionRuntimeFixture = ReturnType<
+ 	typeof createSessionRuntimeFixture
+ >;
+-export type { SessionCommandError };
++export type { SessionCommandError } from "#/lib/session-command";

@@ -1,0 +1,18 @@
+{"name":"stream: default production adapter does not create trusted sessions","result":"FAIL","observed":{"status":202,"owner":"trusted_v1","rows":{"sessions":1,"messages":2,"commands":1,"keys":1,"work":1}}}
+{"name":"stream: trusted model probe does not read product key","result":"FAIL","observed":{"productKeyReads":1}}
+{"name":"stream: route preserves duplicate-field rejection","result":"FAIL","observed":{"rawParserRejected":true,"routeStatus":202,"commands":1}}
+{"name":"control: default production adapter does not create trusted sessions","result":"FAIL","observed":{"status":202,"owner":"trusted_v1","rows":{"sessions":1,"messages":2,"commands":1,"keys":1,"work":1}}}
+{"name":"control: trusted model probe does not read product key","result":"FAIL","observed":{"productKeyReads":1}}
+{"name":"control: route preserves duplicate-field rejection","result":"FAIL","observed":{"rawParserRejected":true,"routeStatus":202,"commands":1}}
+{"name":"accepted thinking setting survives in durable payload","result":"FAIL","observed":{"status":202,"recoverableThinkingField":false,"workPayload":"{\"commandKind\":\"prompt\"}"}}
+{"name":"receipt message mapping shape","result":"INFO","observed":{"receiptFields":["commandId","commandSeq","projectId","projectionVersion","queueDeadlineAt","receiptId","status","userId","version","workspaceSessionId"]},"note":"The existing ReceiptV1 contract has no direct message-id fields. This shape alone is not a rejection."}
+{"name":"successful delivery leaves retry queue and later work progresses","result":"FAIL","observed":{"passes":3,"calls":75,"uniqueCommands":25,"lastCommandDelivered":false,"states":[{"deliveryState":"pending","n":26}]}}
+{"name":"delivery pass respects 20-second logical-clock budget","result":"FAIL","observed":{"elapsedMs":24500,"attempts":5,"eachCallMs":4900}}
+{"name":"delivery after product tombstone","result":"INFO","observed":{"deliveriesAfterFence":1},"note":"This proves an outbound delivery, not execution or recreation. Consumption-side lifecycle rejection remains required in 004; do not treat the call alone as unauthorized execution."}
+{"name":"backoff starts after failed transport attempt","result":"FAIL","observed":{"relativeAttemptStartsMs":[0,4900],"callDurationMs":4900,"minimumPostFailureBackoffMs":1000}}
+{"name":"admission normalizes text and rejects blank prompts","result":"FAIL","observed":{"equivalentRetryStatus":409,"blankPromptStatus":202}}
+{"name":"admission fails closed on incompatible runtime protocol","result":"FAIL","observed":{"status":202,"commands":1}}
+{"name":"atomic guard rejects concurrent deletion","result":"PASS","observed":{"status":409,"rows":{"sessions":1,"messages":0,"commands":0,"keys":0,"work":0}}}
+{"name":"atomic guard rejects concurrent ownership","result":"PASS","observed":{"status":409,"rows":{"sessions":1,"messages":0,"commands":0,"keys":0,"work":0}}}
+{"name":"batch faults leave no admission rows or sequence gaps","result":"PASS","observed":{"testedStatementPositions":9}}
+{"checks":15,"failures":12}
