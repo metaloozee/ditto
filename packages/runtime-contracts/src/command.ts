@@ -12,7 +12,29 @@ import { RUNTIME_LIMITS } from "./limits.js";
 export { ContractParseError, encodedBytes } from "./json.js";
 
 const THINKING_LEVELS = ["off", "high", "max"] as const;
-const COMMAND_KINDS = ["prompt", "follow_up", "stop", "cancel"] as const;
+export const ORDINARY_COMMAND_KINDS = [
+	"prompt",
+	"follow_up",
+	"stop",
+	"cancel",
+] as const;
+export const RECOVERY_COMMAND_KINDS = [
+	"abandon_failed_run",
+	"retry_known_safe",
+	"acknowledge_uncertainty_and_start_new_action",
+	"restore_checkpoint_acknowledging_loss",
+	"retry_backup",
+	"restart_preview",
+] as const;
+const COMMAND_KINDS = [
+	...ORDINARY_COMMAND_KINDS,
+	...RECOVERY_COMMAND_KINDS,
+] as const;
+
+export type ThinkingLevelV1 = (typeof THINKING_LEVELS)[number];
+export type OrdinaryCommandKindV1 = (typeof ORDINARY_COMMAND_KINDS)[number];
+export type RecoveryCommandKindV1 = (typeof RECOVERY_COMMAND_KINDS)[number];
+export type CommandKindV1 = (typeof COMMAND_KINDS)[number];
 
 type CommandBaseV1 = {
 	version: 1;
@@ -32,7 +54,7 @@ export type CommandV1 =
 			userMessageId: string;
 			assistantMessageId: string;
 			text: string;
-			thinkingLevel?: (typeof THINKING_LEVELS)[number];
+			thinkingLevel?: ThinkingLevelV1;
 	  })
 	| (CommandBaseV1 & {
 			kind: "follow_up";
@@ -48,6 +70,49 @@ export type CommandV1 =
 	| (CommandBaseV1 & {
 			kind: "cancel";
 			targetCommandId: string;
+	  })
+	| (CommandBaseV1 & {
+			kind: "abandon_failed_run";
+			targetRunId: string;
+			expectedRecoveryPosition: number;
+	  })
+	| (CommandBaseV1 & {
+			kind: "retry_known_safe";
+			targetRunId: string;
+			expectedRecoveryPosition: number;
+			safeRetryReason: string;
+			runId: string;
+			assistantMessageId: string;
+	  })
+	| (CommandBaseV1 & {
+			kind: "acknowledge_uncertainty_and_start_new_action";
+			targetRunId: string;
+			expectedRecoveryPosition: number;
+			unresolvedOperationIds: string[];
+			uncertaintyAcknowledged: true;
+			runId: string;
+			userMessageId: string;
+			assistantMessageId: string;
+			text: string;
+			thinkingLevel?: ThinkingLevelV1;
+	  })
+	| (CommandBaseV1 & {
+			kind: "restore_checkpoint_acknowledging_loss";
+			committedPairId: string;
+			expectedMutationGeneration: number;
+			expectedRecoveryPosition: number;
+			unbackedLossAcknowledged: true;
+	  })
+	| (CommandBaseV1 & {
+			kind: "retry_backup";
+			expectedMutationGeneration: number;
+			expectedRecoveryPosition: number;
+			pendingCheckpointIntentId?: string;
+	  })
+	| (CommandBaseV1 & {
+			kind: "restart_preview";
+			expectedMutationGeneration: number;
+			restartRequested: true;
 	  });
 
 export type BrowserCommandV1 =
@@ -58,7 +123,7 @@ export type BrowserCommandV1 =
 			projectId: string;
 			sessionId?: string;
 			text: string;
-			thinkingLevel?: (typeof THINKING_LEVELS)[number];
+			thinkingLevel?: ThinkingLevelV1;
 	  }
 	| {
 			version: 1;
@@ -84,6 +149,68 @@ export type BrowserCommandV1 =
 			projectId: string;
 			sessionId: string;
 			targetCommandId: string;
+	  }
+	| {
+			version: 1;
+			idempotencyKey: string;
+			kind: "abandon_failed_run";
+			projectId: string;
+			sessionId: string;
+			targetRunId: string;
+			expectedRecoveryPosition: number;
+	  }
+	| {
+			version: 1;
+			idempotencyKey: string;
+			kind: "retry_known_safe";
+			projectId: string;
+			sessionId: string;
+			targetRunId: string;
+			expectedRecoveryPosition: number;
+			safeRetryReason: string;
+	  }
+	| {
+			version: 1;
+			idempotencyKey: string;
+			kind: "acknowledge_uncertainty_and_start_new_action";
+			projectId: string;
+			sessionId: string;
+			targetRunId: string;
+			expectedRecoveryPosition: number;
+			unresolvedOperationIds: string[];
+			uncertaintyAcknowledged: true;
+			text: string;
+			thinkingLevel?: ThinkingLevelV1;
+	  }
+	| {
+			version: 1;
+			idempotencyKey: string;
+			kind: "restore_checkpoint_acknowledging_loss";
+			projectId: string;
+			sessionId: string;
+			committedPairId: string;
+			expectedMutationGeneration: number;
+			expectedRecoveryPosition: number;
+			unbackedLossAcknowledged: true;
+	  }
+	| {
+			version: 1;
+			idempotencyKey: string;
+			kind: "retry_backup";
+			projectId: string;
+			sessionId: string;
+			expectedMutationGeneration: number;
+			expectedRecoveryPosition: number;
+			pendingCheckpointIntentId?: string;
+	  }
+	| {
+			version: 1;
+			idempotencyKey: string;
+			kind: "restart_preview";
+			projectId: string;
+			sessionId: string;
+			expectedMutationGeneration: number;
+			restartRequested: true;
 	  };
 
 export type ReceiptV1 = {
@@ -119,6 +246,16 @@ const COMMAND_KEYS = [
 	"targetCommandId",
 	"text",
 	"thinkingLevel",
+	"expectedRecoveryPosition",
+	"expectedMutationGeneration",
+	"safeRetryReason",
+	"unresolvedOperationIds",
+	"uncertaintyAcknowledged",
+	"runId",
+	"committedPairId",
+	"unbackedLossAcknowledged",
+	"pendingCheckpointIntentId",
+	"restartRequested",
 ] as const;
 
 const BROWSER_KEYS = [
@@ -131,6 +268,15 @@ const BROWSER_KEYS = [
 	"targetCommandId",
 	"text",
 	"thinkingLevel",
+	"expectedRecoveryPosition",
+	"expectedMutationGeneration",
+	"safeRetryReason",
+	"unresolvedOperationIds",
+	"uncertaintyAcknowledged",
+	"committedPairId",
+	"unbackedLossAcknowledged",
+	"pendingCheckpointIntentId",
+	"restartRequested",
 ] as const;
 
 const RECEIPT_KEYS = [
@@ -176,6 +322,38 @@ function optionalBoundedId(
 	return stringField(record, key, {
 		optional: true,
 		maxBytes: RUNTIME_LIMITS.idBytes,
+	});
+}
+
+function trueField(record: Record<string, unknown>, key: string): true {
+	if (record[key] !== true) {
+		throw new ContractParseError("invalid_field", `${key} must be true.`);
+	}
+	return true;
+}
+
+function idListField(record: Record<string, unknown>, key: string): string[] {
+	const value = record[key];
+	if (!Array.isArray(value) || value.length === 0) {
+		throw new ContractParseError(
+			"invalid_field",
+			`${key} must be a non-empty array of ids.`,
+		);
+	}
+	return value.map((item, index) => {
+		if (typeof item !== "string" || item.length === 0) {
+			throw new ContractParseError(
+				"invalid_field",
+				`${key}[${index}] must be a non-empty string.`,
+			);
+		}
+		if (new TextEncoder().encode(item).byteLength > RUNTIME_LIMITS.idBytes) {
+			throw new ContractParseError(
+				"field_too_large",
+				`${key}[${index}] exceeds its byte limit.`,
+			);
+		}
+		return item;
 	});
 }
 
@@ -295,6 +473,233 @@ export function parseCommandV1(value: unknown): CommandV1 {
 			targetRunId: boundedId(record, "targetRunId"),
 		};
 	}
+	if (kind === "cancel") {
+		const record = strictRecord(
+			decoded,
+			[
+				"version",
+				"kind",
+				"commandId",
+				"commandSeq",
+				"userId",
+				"projectId",
+				"workspaceSessionId",
+				"runtimeOwnerVersion",
+				"acceptedAt",
+				"deadlineAt",
+				"targetCommandId",
+			],
+			"CommandV1.cancel",
+		);
+		return {
+			...commandBase(record),
+			kind,
+			targetCommandId: boundedId(record, "targetCommandId"),
+		};
+	}
+	if (kind === "abandon_failed_run") {
+		const record = strictRecord(
+			decoded,
+			[
+				"version",
+				"kind",
+				"commandId",
+				"commandSeq",
+				"userId",
+				"projectId",
+				"workspaceSessionId",
+				"runtimeOwnerVersion",
+				"acceptedAt",
+				"deadlineAt",
+				"targetRunId",
+				"expectedRecoveryPosition",
+			],
+			"CommandV1.abandon_failed_run",
+		);
+		return {
+			...commandBase(record),
+			kind,
+			targetRunId: boundedId(record, "targetRunId"),
+			expectedRecoveryPosition: integerField(
+				record,
+				"expectedRecoveryPosition",
+				{
+					minimum: 0,
+				},
+			),
+		};
+	}
+	if (kind === "retry_known_safe") {
+		const record = strictRecord(
+			decoded,
+			[
+				"version",
+				"kind",
+				"commandId",
+				"commandSeq",
+				"userId",
+				"projectId",
+				"workspaceSessionId",
+				"runtimeOwnerVersion",
+				"acceptedAt",
+				"deadlineAt",
+				"targetRunId",
+				"expectedRecoveryPosition",
+				"safeRetryReason",
+				"runId",
+				"assistantMessageId",
+			],
+			"CommandV1.retry_known_safe",
+		);
+		return {
+			...commandBase(record),
+			kind,
+			targetRunId: boundedId(record, "targetRunId"),
+			expectedRecoveryPosition: integerField(
+				record,
+				"expectedRecoveryPosition",
+				{
+					minimum: 0,
+				},
+			),
+			safeRetryReason: stringField(record, "safeRetryReason", {
+				maxBytes: RUNTIME_LIMITS.idBytes,
+			}),
+			runId: boundedId(record, "runId"),
+			assistantMessageId: boundedId(record, "assistantMessageId"),
+		};
+	}
+	if (kind === "acknowledge_uncertainty_and_start_new_action") {
+		const record = strictRecord(
+			decoded,
+			[
+				"version",
+				"kind",
+				"commandId",
+				"commandSeq",
+				"userId",
+				"projectId",
+				"workspaceSessionId",
+				"runtimeOwnerVersion",
+				"acceptedAt",
+				"deadlineAt",
+				"targetRunId",
+				"expectedRecoveryPosition",
+				"unresolvedOperationIds",
+				"uncertaintyAcknowledged",
+				"runId",
+				"userMessageId",
+				"assistantMessageId",
+				"text",
+				"thinkingLevel",
+			],
+			"CommandV1.acknowledge_uncertainty_and_start_new_action",
+		);
+		return {
+			...commandBase(record),
+			kind,
+			targetRunId: boundedId(record, "targetRunId"),
+			expectedRecoveryPosition: integerField(
+				record,
+				"expectedRecoveryPosition",
+				{
+					minimum: 0,
+				},
+			),
+			unresolvedOperationIds: idListField(record, "unresolvedOperationIds"),
+			uncertaintyAcknowledged: trueField(record, "uncertaintyAcknowledged"),
+			runId: boundedId(record, "runId"),
+			userMessageId: boundedId(record, "userMessageId"),
+			assistantMessageId: boundedId(record, "assistantMessageId"),
+			text: commandText(record),
+			thinkingLevel: optionalLiteralField(
+				record,
+				"thinkingLevel",
+				THINKING_LEVELS,
+			),
+		};
+	}
+	if (kind === "restore_checkpoint_acknowledging_loss") {
+		const record = strictRecord(
+			decoded,
+			[
+				"version",
+				"kind",
+				"commandId",
+				"commandSeq",
+				"userId",
+				"projectId",
+				"workspaceSessionId",
+				"runtimeOwnerVersion",
+				"acceptedAt",
+				"deadlineAt",
+				"committedPairId",
+				"expectedMutationGeneration",
+				"expectedRecoveryPosition",
+				"unbackedLossAcknowledged",
+			],
+			"CommandV1.restore_checkpoint_acknowledging_loss",
+		);
+		return {
+			...commandBase(record),
+			kind,
+			committedPairId: boundedId(record, "committedPairId"),
+			expectedMutationGeneration: integerField(
+				record,
+				"expectedMutationGeneration",
+				{ minimum: 0 },
+			),
+			expectedRecoveryPosition: integerField(
+				record,
+				"expectedRecoveryPosition",
+				{
+					minimum: 0,
+				},
+			),
+			unbackedLossAcknowledged: trueField(record, "unbackedLossAcknowledged"),
+		};
+	}
+	if (kind === "retry_backup") {
+		const record = strictRecord(
+			decoded,
+			[
+				"version",
+				"kind",
+				"commandId",
+				"commandSeq",
+				"userId",
+				"projectId",
+				"workspaceSessionId",
+				"runtimeOwnerVersion",
+				"acceptedAt",
+				"deadlineAt",
+				"expectedMutationGeneration",
+				"expectedRecoveryPosition",
+				"pendingCheckpointIntentId",
+			],
+			"CommandV1.retry_backup",
+		);
+		return {
+			...commandBase(record),
+			kind,
+			expectedMutationGeneration: integerField(
+				record,
+				"expectedMutationGeneration",
+				{ minimum: 0 },
+			),
+			expectedRecoveryPosition: integerField(
+				record,
+				"expectedRecoveryPosition",
+				{
+					minimum: 0,
+				},
+			),
+			pendingCheckpointIntentId: optionalBoundedId(
+				record,
+				"pendingCheckpointIntentId",
+			),
+		};
+	}
 	const record = strictRecord(
 		decoded,
 		[
@@ -308,14 +713,20 @@ export function parseCommandV1(value: unknown): CommandV1 {
 			"runtimeOwnerVersion",
 			"acceptedAt",
 			"deadlineAt",
-			"targetCommandId",
+			"expectedMutationGeneration",
+			"restartRequested",
 		],
-		"CommandV1.cancel",
+		"CommandV1.restart_preview",
 	);
 	return {
 		...commandBase(record),
 		kind,
-		targetCommandId: boundedId(record, "targetCommandId"),
+		expectedMutationGeneration: integerField(
+			record,
+			"expectedMutationGeneration",
+			{ minimum: 0 },
+		),
+		restartRequested: trueField(record, "restartRequested"),
 	};
 }
 
@@ -408,6 +819,211 @@ export function parseBrowserCommandV1(value: unknown): BrowserCommandV1 {
 			targetRunId: boundedId(record, "targetRunId"),
 		};
 	}
+	if (kind === "cancel") {
+		const record = strictRecord(
+			decoded,
+			[
+				"version",
+				"idempotencyKey",
+				"kind",
+				"projectId",
+				"sessionId",
+				"targetCommandId",
+			],
+			"BrowserCommandV1.cancel",
+		);
+		return {
+			version,
+			idempotencyKey,
+			kind,
+			projectId,
+			sessionId: boundedId(record, "sessionId"),
+			targetCommandId: boundedId(record, "targetCommandId"),
+		};
+	}
+	if (kind === "abandon_failed_run") {
+		const record = strictRecord(
+			decoded,
+			[
+				"version",
+				"idempotencyKey",
+				"kind",
+				"projectId",
+				"sessionId",
+				"targetRunId",
+				"expectedRecoveryPosition",
+			],
+			"BrowserCommandV1.abandon_failed_run",
+		);
+		return {
+			version,
+			idempotencyKey,
+			kind,
+			projectId,
+			sessionId: boundedId(record, "sessionId"),
+			targetRunId: boundedId(record, "targetRunId"),
+			expectedRecoveryPosition: integerField(
+				record,
+				"expectedRecoveryPosition",
+				{
+					minimum: 0,
+				},
+			),
+		};
+	}
+	if (kind === "retry_known_safe") {
+		const record = strictRecord(
+			decoded,
+			[
+				"version",
+				"idempotencyKey",
+				"kind",
+				"projectId",
+				"sessionId",
+				"targetRunId",
+				"expectedRecoveryPosition",
+				"safeRetryReason",
+			],
+			"BrowserCommandV1.retry_known_safe",
+		);
+		return {
+			version,
+			idempotencyKey,
+			kind,
+			projectId,
+			sessionId: boundedId(record, "sessionId"),
+			targetRunId: boundedId(record, "targetRunId"),
+			expectedRecoveryPosition: integerField(
+				record,
+				"expectedRecoveryPosition",
+				{
+					minimum: 0,
+				},
+			),
+			safeRetryReason: stringField(record, "safeRetryReason", {
+				maxBytes: RUNTIME_LIMITS.idBytes,
+			}),
+		};
+	}
+	if (kind === "acknowledge_uncertainty_and_start_new_action") {
+		const record = strictRecord(
+			decoded,
+			[
+				"version",
+				"idempotencyKey",
+				"kind",
+				"projectId",
+				"sessionId",
+				"targetRunId",
+				"expectedRecoveryPosition",
+				"unresolvedOperationIds",
+				"uncertaintyAcknowledged",
+				"text",
+				"thinkingLevel",
+			],
+			"BrowserCommandV1.acknowledge_uncertainty_and_start_new_action",
+		);
+		return {
+			version,
+			idempotencyKey,
+			kind,
+			projectId,
+			sessionId: boundedId(record, "sessionId"),
+			targetRunId: boundedId(record, "targetRunId"),
+			expectedRecoveryPosition: integerField(
+				record,
+				"expectedRecoveryPosition",
+				{
+					minimum: 0,
+				},
+			),
+			unresolvedOperationIds: idListField(record, "unresolvedOperationIds"),
+			uncertaintyAcknowledged: trueField(record, "uncertaintyAcknowledged"),
+			text: commandText(record),
+			thinkingLevel: optionalLiteralField(
+				record,
+				"thinkingLevel",
+				THINKING_LEVELS,
+			),
+		};
+	}
+	if (kind === "restore_checkpoint_acknowledging_loss") {
+		const record = strictRecord(
+			decoded,
+			[
+				"version",
+				"idempotencyKey",
+				"kind",
+				"projectId",
+				"sessionId",
+				"committedPairId",
+				"expectedMutationGeneration",
+				"expectedRecoveryPosition",
+				"unbackedLossAcknowledged",
+			],
+			"BrowserCommandV1.restore_checkpoint_acknowledging_loss",
+		);
+		return {
+			version,
+			idempotencyKey,
+			kind,
+			projectId,
+			sessionId: boundedId(record, "sessionId"),
+			committedPairId: boundedId(record, "committedPairId"),
+			expectedMutationGeneration: integerField(
+				record,
+				"expectedMutationGeneration",
+				{ minimum: 0 },
+			),
+			expectedRecoveryPosition: integerField(
+				record,
+				"expectedRecoveryPosition",
+				{
+					minimum: 0,
+				},
+			),
+			unbackedLossAcknowledged: trueField(record, "unbackedLossAcknowledged"),
+		};
+	}
+	if (kind === "retry_backup") {
+		const record = strictRecord(
+			decoded,
+			[
+				"version",
+				"idempotencyKey",
+				"kind",
+				"projectId",
+				"sessionId",
+				"expectedMutationGeneration",
+				"expectedRecoveryPosition",
+				"pendingCheckpointIntentId",
+			],
+			"BrowserCommandV1.retry_backup",
+		);
+		return {
+			version,
+			idempotencyKey,
+			kind,
+			projectId,
+			sessionId: boundedId(record, "sessionId"),
+			expectedMutationGeneration: integerField(
+				record,
+				"expectedMutationGeneration",
+				{ minimum: 0 },
+			),
+			expectedRecoveryPosition: integerField(
+				record,
+				"expectedRecoveryPosition",
+				{
+					minimum: 0,
+				},
+			),
+			pendingCheckpointIntentId: optionalBoundedId(
+				record,
+				"pendingCheckpointIntentId",
+			),
+		};
+	}
 	const record = strictRecord(
 		decoded,
 		[
@@ -416,9 +1032,10 @@ export function parseBrowserCommandV1(value: unknown): BrowserCommandV1 {
 			"kind",
 			"projectId",
 			"sessionId",
-			"targetCommandId",
+			"expectedMutationGeneration",
+			"restartRequested",
 		],
-		"BrowserCommandV1.cancel",
+		"BrowserCommandV1.restart_preview",
 	);
 	return {
 		version,
@@ -426,7 +1043,12 @@ export function parseBrowserCommandV1(value: unknown): BrowserCommandV1 {
 		kind,
 		projectId,
 		sessionId: boundedId(record, "sessionId"),
-		targetCommandId: boundedId(record, "targetCommandId"),
+		expectedMutationGeneration: integerField(
+			record,
+			"expectedMutationGeneration",
+			{ minimum: 0 },
+		),
+		restartRequested: trueField(record, "restartRequested"),
 	};
 }
 

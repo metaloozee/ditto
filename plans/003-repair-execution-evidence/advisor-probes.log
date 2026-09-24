@@ -1,0 +1,33 @@
+{"name":"stream: default production adapter does not create trusted sessions","result":"PASS","observed":{"status":409,"rows":{"sessions":0,"messages":0,"commands":0,"keys":0,"work":0}}}
+{"name":"stream: trusted model probe does not read product key","result":"PASS","observed":{"productKeyReads":0}}
+{"name":"stream: route preserves duplicate-field rejection","result":"PASS","observed":{"rawParserRejected":true,"routeStatus":400,"commands":0}}
+{"name":"control: default production adapter does not create trusted sessions","result":"PASS","observed":{"status":409,"rows":{"sessions":0,"messages":0,"commands":0,"keys":0,"work":0}}}
+{"name":"control: trusted model probe does not read product key","result":"PASS","observed":{"productKeyReads":0}}
+{"name":"control: route preserves duplicate-field rejection","result":"PASS","observed":{"rawParserRejected":true,"routeStatus":400,"commands":0}}
+DrizzleQueryError: Failed query: select "id", "userId", "targetKind", "targetId", "idempotencyKey", "commandKind", "canonicalPayloadHash", "commandId", "receiptId", "createdAt" from "session_command_keys" where ("session_command_keys"."userId" = ? and "session_command_keys"."targetKind" = ? and "session_command_keys"."targetId" = ? and "session_command_keys"."idempotencyKey" = ?) limit ?
+params: user-1,workspace_session,sess-1,key-1,1
+    at D1PreparedQuery.queryWithCache (/home/ayan/ditto-worktrees/plan-003-grok/node_modules/.pnpm/drizzle-orm@0.45.2_@cloudflare+workers-types@4.20260702.1_@opentelemetry+api@1.9.1_kysely@0.29.4/node_modules/drizzle-orm/sqlite-core/session.cjs:69:15)
+    at async D1PreparedQuery.values (/home/ayan/ditto-worktrees/plan-003-grok/node_modules/.pnpm/drizzle-orm@0.45.2_@cloudflare+workers-types@4.20260702.1_@opentelemetry+api@1.9.1_kysely@0.29.4/node_modules/drizzle-orm/d1/session.cjs:205:12)
+    at async D1PreparedQuery.all (/home/ayan/ditto-worktrees/plan-003-grok/node_modules/.pnpm/drizzle-orm@0.45.2_@cloudflare+workers-types@4.20260702.1_@opentelemetry+api@1.9.1_kysely@0.29.4/node_modules/drizzle-orm/d1/session.cjs:157:18)
+    at async loadKey (eval at load (/home/ayan/ditto/plans/003-review-probes.cjs:34:3), <anonymous>:262:19)
+    at async admitSessionCommand (eval at load (/home/ayan/ditto/plans/003-review-probes.cjs:34:3), <anonymous>:807:22)
+    at async handleSessionCommandRequest (eval at load (/home/ayan/ditto/plans/003-review-probes.cjs:34:3), <anonymous>:872:25)
+    at async Object.POST (eval at load (/home/ayan/ditto/plans/003-review-probes.cjs:34:3), <anonymous>:55:36)
+    at async withResolution.trustedAdmissionEligible (eval at load (/home/ayan/ditto/plans/003-review-probes.cjs:34:3), <anonymous>:359:42)
+    at async main (/home/ayan/ditto/plans/003-review-probes.cjs:87:20) {
+  query: 'select "id", "userId", "targetKind", "targetId", "idempotencyKey", "commandKind", "canonicalPayloadHash", "commandId", "receiptId", "createdAt" from "session_command_keys" where ("session_command_keys"."userId" = ? and "session_command_keys"."targetKind" = ? and "session_command_keys"."targetId" = ? and "session_command_keys"."idempotencyKey" = ?) limit ?',
+  params: [ 'user-1', 'workspace_session', 'sess-1', 'key-1', 1 ],
+  cause: Error: database is not open
+      at executeAll (eval at load (/home/ayan/ditto/plans/003-review-probes.cjs:34:3), <anonymous>:48:30)
+      at Object.raw (eval at load (/home/ayan/ditto/plans/003-review-probes.cjs:34:3), <anonymous>:85:20)
+      at /home/ayan/ditto-worktrees/plan-003-grok/node_modules/.pnpm/drizzle-orm@0.45.2_@cloudflare+workers-types@4.20260702.1_@opentelemetry+api@1.9.1_kysely@0.29.4/node_modules/drizzle-orm/d1/session.cjs:206:40
+      at D1PreparedQuery.queryWithCache (/home/ayan/ditto-worktrees/plan-003-grok/node_modules/.pnpm/drizzle-orm@0.45.2_@cloudflare+workers-types@4.20260702.1_@opentelemetry+api@1.9.1_kysely@0.29.4/node_modules/drizzle-orm/sqlite-core/session.cjs:67:22)
+      at D1PreparedQuery.values (/home/ayan/ditto-worktrees/plan-003-grok/node_modules/.pnpm/drizzle-orm@0.45.2_@cloudflare+workers-types@4.20260702.1_@opentelemetry+api@1.9.1_kysely@0.29.4/node_modules/drizzle-orm/d1/session.cjs:205:23)
+      at D1PreparedQuery.all (/home/ayan/ditto-worktrees/plan-003-grok/node_modules/.pnpm/drizzle-orm@0.45.2_@cloudflare+workers-types@4.20260702.1_@opentelemetry+api@1.9.1_kysely@0.29.4/node_modules/drizzle-orm/d1/session.cjs:157:29)
+      at SQLiteSelectBase.all (/home/ayan/ditto-worktrees/plan-003-grok/node_modules/.pnpm/drizzle-orm@0.45.2_@cloudflare+workers-types@4.20260702.1_@opentelemetry+api@1.9.1_kysely@0.29.4/node_modules/drizzle-orm/sqlite-core/query-builders/select.cjs:664:28)
+      at SQLiteSelectBase.execute (/home/ayan/ditto-worktrees/plan-003-grok/node_modules/.pnpm/drizzle-orm@0.45.2_@cloudflare+workers-types@4.20260702.1_@opentelemetry+api@1.9.1_kysely@0.29.4/node_modules/drizzle-orm/sqlite-core/query-builders/select.cjs:673:17)
+      at SQLiteSelectBase.then (/home/ayan/ditto-worktrees/plan-003-grok/node_modules/.pnpm/drizzle-orm@0.45.2_@cloudflare+workers-types@4.20260702.1_@opentelemetry+api@1.9.1_kysely@0.29.4/node_modules/drizzle-orm/query-promise.cjs:44:17) {
+    code: 'ERR_INVALID_STATE'
+  }
+}
+EXIT:2

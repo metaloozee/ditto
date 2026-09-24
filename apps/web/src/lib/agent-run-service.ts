@@ -37,6 +37,7 @@ import { OPENCODE_CONTRACT_VERSION } from "#/lib/open-code-contract";
 import { decryptEnvVars } from "#/lib/project-env-vars";
 import { createSandboxAuthority } from "#/lib/sandbox-authority";
 import { redactSecrets } from "#/lib/secret-redaction";
+import { legacyRequestRejection } from "#/lib/session-command";
 import {
 	assertRuntimeOwner,
 	isEmptyReturning,
@@ -138,7 +139,7 @@ export type AgentRunStreamEvent =
 export type AgentRunHttpError = {
 	kind: "error";
 	status: number;
-	body: { error: string; issues?: z.ZodIssue[] };
+	body: { error: string; issues?: z.ZodIssue[]; category?: string };
 };
 
 export type AgentRunPrepared =
@@ -421,11 +422,26 @@ export async function prepareAgentRun(options: {
 
 	const createdSession = resolved.kind === "create";
 	if (resolved.kind === "existing") {
-		assertRuntimeOwner({
-			session: resolved.session,
-			expectedOwner: "legacy",
-			ownerVersion: resolved.session.runtimeOwnerVersion,
-		});
+		try {
+			assertRuntimeOwner({
+				session: resolved.session,
+				expectedOwner: "legacy",
+				ownerVersion: resolved.session.runtimeOwnerVersion,
+			});
+		} catch (error) {
+			if (error instanceof RuntimeOwnershipError) {
+				const rejection = legacyRequestRejection(resolved.session.runtimeOwner);
+				return {
+					kind: "error",
+					status: rejection?.status ?? 409,
+					body: {
+						error: rejection?.message ?? "Workspace runtime ownership changed.",
+						category: rejection?.category,
+					},
+				};
+			}
+			throw error;
+		}
 	}
 	const sessionId =
 		resolved.kind === "existing" ? resolved.session.id : deps.createId();

@@ -1,0 +1,13 @@
+$ pnpm --filter @ditto/runtime-contracts typecheck && pnpm --filter @ditto/runtime-contracts exec vitest run && pnpm --filter @ditto/runtime-contracts build
+$ tsc --noEmit
+
+ RUN  v3.2.7 /home/ayan/ditto-worktrees/plan-003-grok/packages/runtime-contracts
+
+ ✓ src/contracts.test.ts (14 tests) 12ms
+
+ Test Files  1 passed (1)
+      Tests  14 passed (14)
+   Start at  19:16:06
+   Duration  389ms (transform 108ms, setup 0ms, collect 118ms, tests 12ms, environment 0ms, prepare 83ms)
+
+$ tsc -p tsconfig.json

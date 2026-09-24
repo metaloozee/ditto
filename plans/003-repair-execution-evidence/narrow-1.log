@@ -1,0 +1,91 @@
+Warning: Route file "/home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/routes/api.agent.control.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/routes/-api.agent.control.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/routes/project.$projectId.test.tsx" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/routes/-project.$projectId.test.tsx" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/routes/api.agent.stream.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/routes/-api.agent.stream.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+
+ RUN  v4.1.10 /home/ayan/ditto-worktrees/plan-003-grok/apps/web
+
+ ❯ src/lib/session-command-delivery.test.ts (12 tests | 3 failed) 901ms
+     × T06 delivery-only: lost acknowledgment redelivers the same command ids 17ms
+     × delivery storage faults leave work pending without settling messages 7ms
+     × production scheduled dispatch delivers through the shared resolver 492ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/lib/session-command-delivery.test.ts > session command delivery > T06 delivery-only: lost acknowledgment redelivers the same command ids
+AssertionError: expected [ { method: 'deliver', …(1) } ] to have a length of 2 but got 1
+
+- Expected
++ Received
+
+- 2
++ 1
+
+ ❯ src/lib/session-command-delivery.test.ts:168:22
+    166|    (call) => call.method === "deliver",
+    167|   );
+    168|   expect(deliveries).toHaveLength(2);
+       |                      ^
+    169|   expect(deliveries[0]).toEqual(deliveries[1]);
+    170|   expect(deliveries[0]).toEqual({
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  src/lib/session-command-delivery.test.ts > session command delivery > delivery storage faults leave work pending without settling messages
+AssertionError: promise resolved "{ delivered: 1 }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "delivered": 1,
+  }
+
+ ❯ src/lib/session-command-delivery.test.ts:426:34
+    424|   fixture.seedTrustedSession();
+    425|   const admitted = await fixture.asUser("user-1").command(promptBody()…
+    426|   await expect(fixture.deliver()).rejects.toThrow(/storage fault/);
+       |                                  ^
+    427|   expect(
+    428|    fixture.sqlite.prepare("SELECT status FROM messages").all(),
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  src/lib/session-command-delivery.test.ts > session command delivery > production scheduled dispatch delivers through the shared resolver
+Error: Cannot find module '/home/ayan/ditto-worktrees/plan-003-grok/node_modules/.pnpm/@cloudflare+containers@0.3.7/node_modules/@cloudflare/containers/dist/lib/container' imported from /home/ayan/ditto-worktrees/plan-003-grok/node_modules/.pnpm/@cloudflare+containers@0.3.7/node_modules/@cloudflare/containers/dist/index.js
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  3 failed | 43 passed (46)
+   Start at  07:54:45
+   Duration  2.03s (transform 1.34s, setup 0ms, import 3.48s, tests 1.36s, environment 0ms)
+
+undefined
+/home/ayan/ditto-worktrees/plan-003-grok/apps/web:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/lib/session-command.test.ts src/lib/session-command-delivery.test.ts src/routes/api.agent.stream.test.ts src/routes/api.agent.control.test.ts

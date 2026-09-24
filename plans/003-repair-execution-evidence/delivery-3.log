@@ -1,0 +1,64 @@
+Warning: Route file "/home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/routes/project.$projectId.test.tsx" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/routes/-project.$projectId.test.tsx" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/routes/api.agent.control.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/routes/-api.agent.control.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/routes/api.agent.stream.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-003-grok/apps/web/src/routes/-api.agent.stream.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+
+ RUN  v4.1.10 /home/ayan/ditto-worktrees/plan-003-grok/apps/web
+
+ ❯ src/lib/session-command-delivery.test.ts (12 tests | 1 failed) 679ms
+     × delivery storage faults leave work pending without settling messages 16ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/lib/session-command-delivery.test.ts > session command delivery > delivery storage faults leave work pending without settling messages
+AssertionError: expected [Function] to throw error matching /storage fault/ but got 'Failed query: update "workspace_runti…'
+
+- Expected:
+/storage fault/
+
++ Received:
+"Failed query: update \"workspace_runtime_work\" set \"deliveryState\" = ?, \"deliveryLeaseToken\" = ?, \"deliveryLeaseExpiresAt\" = ?, \"deliveryAttempts\" = ?, \"updated_at\" = (unixepoch()) where (\"workspace_runtime_work\".\"id\" = ? and \"workspace_runtime_work\".\"deliveryLeaseToken\" = ? and \"workspace_runtime_work\".\"runtimeOwner\" = ?)
+params: pending,,1700000001000,1,We4zPb5NeyrFRDdr91Qrn,lgFEIuVz-B6iBbrA814Mr,trusted_v1"
+
+ ❯ src/lib/session-command-delivery.test.ts:459:34
+    457|   fixture.seedTrustedSession();
+    458|   const admitted = await fixture.asUser("user-1").command(promptBody()…
+    459|   await expect(fixture.deliver()).rejects.toThrow(/storage fault/);
+       |                                  ^
+    460|   expect(
+    461|    fixture.sqlite.prepare("SELECT status FROM messages").all(),
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 11 passed (12)
+   Start at  07:55:48
+   Duration  2.12s (transform 731ms, setup 0ms, import 1.23s, tests 679ms, environment 0ms)
+
+undefined
+/home/ayan/ditto-worktrees/plan-003-grok/apps/web:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/lib/session-command-delivery.test.ts

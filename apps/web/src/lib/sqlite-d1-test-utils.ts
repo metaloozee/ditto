@@ -23,7 +23,9 @@ function executeAll(
 	sqlite: DatabaseSync,
 	sql: string,
 	params: unknown[],
+	beforeStatement?: (sql: string) => void,
 ): Record<string, unknown>[] {
+	beforeStatement?.(sql);
 	const statement = sqlite.prepare(sql);
 	const bound = normalizeParams(params);
 	try {
@@ -42,14 +44,16 @@ function createStatement(
 	sqlite: DatabaseSync,
 	sql: string,
 	params: unknown[] = [],
+	beforeStatement?: (sql: string) => void,
 ): BoundStatement {
 	const statement: BoundStatement = {
 		sql,
 		params,
 		bind(...values: unknown[]) {
-			return createStatement(sqlite, sql, values);
+			return createStatement(sqlite, sql, values, beforeStatement);
 		},
 		async run() {
+			beforeStatement?.(sql);
 			const bound = normalizeParams(params);
 			const result = sqlite.prepare(sql).run(...(bound as never[]));
 			return {
@@ -59,33 +63,52 @@ function createStatement(
 		},
 		async all() {
 			return {
-				results: executeAll(sqlite, sql, params),
+				results: executeAll(sqlite, sql, params, beforeStatement),
 				success: true,
 			};
 		},
 		async raw() {
-			return executeAll(sqlite, sql, params).map((row) => Object.values(row));
+			return executeAll(sqlite, sql, params, beforeStatement).map((row) =>
+				Object.values(row),
+			);
 		},
 		async first() {
-			return executeAll(sqlite, sql, params)[0] ?? null;
+			return executeAll(sqlite, sql, params, beforeStatement)[0] ?? null;
 		},
 	};
 	return statement;
 }
 
-export function createSqliteD1(sqlite: DatabaseSync): D1Database {
+export function createSqliteD1(
+	sqlite: DatabaseSync,
+	options?: {
+		beforeBatchStatement?: (index: number, sql: string) => void;
+		beforeStatement?: (sql: string) => void;
+	},
+): D1Database {
 	return {
 		prepare(sql: string) {
-			return createStatement(sqlite, sql) as unknown as D1PreparedStatement;
+			return createStatement(
+				sqlite,
+				sql,
+				[],
+				options?.beforeStatement,
+			) as unknown as D1PreparedStatement;
 		},
 		async batch<T = unknown>(statements: D1PreparedStatement[]) {
 			sqlite.exec("BEGIN IMMEDIATE");
 			try {
 				const results: D1Result<T>[] = [];
-				for (const statement of statements) {
+				for (const [index, statement] of statements.entries()) {
 					const bound = statement as unknown as BoundStatement;
+					options?.beforeBatchStatement?.(index, bound.sql);
 					results.push({
-						results: executeAll(sqlite, bound.sql, bound.params) as T[],
+						results: executeAll(
+							sqlite,
+							bound.sql,
+							bound.params,
+							options?.beforeStatement,
+						) as T[],
 						success: true,
 						meta: {
 							duration: 0,
@@ -118,8 +141,14 @@ export function createSqliteD1(sqlite: DatabaseSync): D1Database {
 	} as unknown as D1Database;
 }
 
-export function createD1Drizzle(sqlite: DatabaseSync): Db {
-	return drizzle(createSqliteD1(sqlite), { schema }) as unknown as Db;
+export function createD1Drizzle(
+	sqlite: DatabaseSync,
+	options?: {
+		beforeBatchStatement?: (index: number, sql: string) => void;
+		beforeStatement?: (sql: string) => void;
+	},
+): Db {
+	return drizzle(createSqliteD1(sqlite, options), { schema }) as unknown as Db;
 }
 
 export const OWNERSHIP_D1_SCHEMA = `

@@ -59,6 +59,8 @@ function makeHarness(
 			projectId: "project-1",
 			userId: "user-1",
 			status: "active",
+			runtimeOwner: "legacy",
+			runtimeOwnerVersion: 1,
 		}),
 		withWorkspaceRuntimeLease: vi.fn(
 			async (_input: unknown, run: (lease: unknown) => Promise<unknown>) =>

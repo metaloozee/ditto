@@ -1,0 +1,501 @@
+$ biome check
+packages/runtime-contracts/src/contracts.test.ts:368:26 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    366 │ 		expect(() => parseBrowserCommandV1(nested)).toThrow(/JSON|nesting|byte/);
+    367 │ 		try {
+  > 368 │ 			parseBrowserCommandV1("[".repeat(8000) + "0" + "]".repeat(8000));
+        │ 			                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    369 │ 			throw new Error("expected nested JSON to fail");
+    370 │ 		} catch (error) {
+  
+  i Unsafe fix: Use a template literal.
+  
+    366 366 │   		expect(() => parseBrowserCommandV1(nested)).toThrow(/JSON|nesting|byte/);
+    367 367 │   		try {
+    368     │ - → → → parseBrowserCommandV1("[".repeat(8000)·+·"0"·+·"]".repeat(8000));
+        368 │ + → → → parseBrowserCommandV1(`${"[".repeat(8000)}0${"]".repeat(8000)}`);
+    369 369 │   			throw new Error("expected nested JSON to fail");
+    370 370 │   		} catch (error) {
+  
+
+apps/web/src/lib/git-fetch-contract.ts:117:10 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    115 │ 	}
+    116 │ 	return {
+  > 117 │ 		owner: match[1]!,
+        │ 		       ^^^^^^^^^
+    118 │ 		repo: match[2]!,
+    119 │ 		servicePath: match[4]!,
+  
+
+apps/web/src/lib/git-fetch-contract.ts:118:9 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    116 │ 	return {
+    117 │ 		owner: match[1]!,
+  > 118 │ 		repo: match[2]!,
+        │ 		      ^^^^^^^^^
+    119 │ 		servicePath: match[4]!,
+    120 │ 	};
+  
+
+apps/web/src/lib/git-fetch-contract.ts:119:16 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    117 │ 		owner: match[1]!,
+    118 │ 		repo: match[2]!,
+  > 119 │ 		servicePath: match[4]!,
+        │ 		             ^^^^^^^^^
+    120 │ 	};
+    121 │ }
+  
+
+apps/web/src/lib/git-pkt-line.ts:42:16 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    40 │ 	let value = 0;
+    41 │ 	for (let i = 0; i < 4; i++) {
+  > 42 │ 		const byte = bytes[offset + i]!;
+       │ 		             ^^^^^^^^^^^^^^^^^^
+    43 │ 		if (!isHexChar(byte)) {
+    44 │ 			throw new PktLineError("non_hex_length", "Pkt-line length is not hex.");
+  
+
+apps/web/src/lib/git-receive-pack.ts:139:17 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    137 │ 		);
+    138 │ 	}
+  > 139 │ 	const oldOid = match[1]!.toLowerCase();
+        │ 	               ^^^^^^^^^
+    140 │ 	const newOid = match[2]!.toLowerCase();
+    141 │ 	const ref = match[3]!;
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    137 137 │   		);
+    138 138 │   	}
+    139     │ - → const·oldOid·=·match[1]!.toLowerCase();
+        139 │ + → const·oldOid·=·match[1]?.toLowerCase();
+    140 140 │   	const newOid = match[2]!.toLowerCase();
+    141 141 │   	const ref = match[3]!;
+  
+
+apps/web/src/lib/git-receive-pack.ts:140:17 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    138 │ 	}
+    139 │ 	const oldOid = match[1]!.toLowerCase();
+  > 140 │ 	const newOid = match[2]!.toLowerCase();
+        │ 	               ^^^^^^^^^
+    141 │ 	const ref = match[3]!;
+    142 │ 	assertSha1Oid(oldOid, "old object id");
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    138 138 │   	}
+    139 139 │   	const oldOid = match[1]!.toLowerCase();
+    140     │ - → const·newOid·=·match[2]!.toLowerCase();
+        140 │ + → const·newOid·=·match[2]?.toLowerCase();
+    141 141 │   	const ref = match[3]!;
+    142 142 │   	assertSha1Oid(oldOid, "old object id");
+  
+
+apps/web/src/lib/git-receive-pack.ts:141:14 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    139 │ 	const oldOid = match[1]!.toLowerCase();
+    140 │ 	const newOid = match[2]!.toLowerCase();
+  > 141 │ 	const ref = match[3]!;
+        │ 	            ^^^^^^^^^
+    142 │ 	assertSha1Oid(oldOid, "old object id");
+    143 │ 	assertSha1Oid(newOid, "new object id");
+  
+
+apps/web/src/lib/git-receive-pack.ts:220:15 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    218 │ 			);
+    219 │ 		}
+  > 220 │ 		const oid = parts[0]!.toLowerCase();
+        │ 		            ^^^^^^^^^
+    221 │ 		const name = parts.slice(1).join(" ");
+    222 │ 		if (name.endsWith("^{}")) {
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    218 218 │   			);
+    219 219 │   		}
+    220     │ - → → const·oid·=·parts[0]!.toLowerCase();
+        220 │ + → → const·oid·=·parts[0]?.toLowerCase();
+    221 221 │   		const name = parts.slice(1).join(" ");
+    222 222 │   		if (name.endsWith("^{}")) {
+  
+
+apps/web/src/lib/git-receive-pack.ts:328:18 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    326 │ 	}
+    327 │ 
+  > 328 │ 	const command = commands[0]!;
+        │ 	                ^^^^^^^^^^^^
+    329 │ 	if (command.newOid === ZERO_OID) {
+    330 │ 		throw new GitReceivePackError("deletion", "Ref deletion is not allowed.");
+  
+
+apps/web/src/lib/git-receive-pack.ts:373:16 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    371 │ 			continue;
+    372 │ 		}
+  > 373 │ 		const band = line.data[0]!;
+        │ 		             ^^^^^^^^^^^^^
+    374 │ 		if (band === 1 || band === 2 || band === 3) {
+    375 │ 			sawBand = true;
+  
+
+apps/web/src/lib/sandbox-egress-broker.ts:617:21 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    615 │ 	}
+    616 │ 
+  > 617 │ 	const allowedRef = operation.allowedRefs[0]!;
+        │ 	                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+    618 │ 	try {
+    619 │ 		const upstream = await options.fetchImpl(upstreamRequest);
+  
+
+apps/web/src/lib/session-command-delivery.test.ts:381:19 lint/style/noNonNullAssertion ━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    379 │ 				.get() as { nextAt: number }
+    380 │ 		).nextAt;
+  > 381 │ 		expect(nextAt - attemptsAt[0]! - 4_900).toBeGreaterThanOrEqual(1_000);
+        │ 		                ^^^^^^^^^^^^^^
+    382 │ 		expect(nextAt - attemptsAt[0]! - 4_900).toBeLessThanOrEqual(60_000);
+    383 │ 	});
+  
+
+apps/web/src/lib/session-command-delivery.test.ts:382:19 lint/style/noNonNullAssertion ━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    380 │ 		).nextAt;
+    381 │ 		expect(nextAt - attemptsAt[0]! - 4_900).toBeGreaterThanOrEqual(1_000);
+  > 382 │ 		expect(nextAt - attemptsAt[0]! - 4_900).toBeLessThanOrEqual(60_000);
+        │ 		                ^^^^^^^^^^^^^^
+    383 │ 	});
+    384 │ 
+  
+
+apps/web/src/lib/session-command-delivery.test.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+    156 156 │   		const ids: string[] = [];
+    157 157 │   		for (let n = 0; n < 26; n++) {
+    158     │ - → → → const·result·=·await·fixture.asUser("user-1").command(
+    159     │ - → → → → promptBody({·idempotencyKey:·`k-${n}`,·text:·`hello·${n}`·}),
+    160     │ - → → → );
+        158 │ + → → → const·result·=·await·fixture
+        159 │ + → → → → .asUser("user-1")
+        160 │ + → → → → .command(promptBody({·idempotencyKey:·`k-${n}`,·text:·`hello·${n}`·}));
+    161 161 │   			ids.push((result.body as { commandId: string }).commandId);
+    162 162 │   		}
+    163 163 │   		await fixture.deliver();
+    164 164 │   		await fixture.deliver();
+    165     │ - → → const·outbound·=·fixture.outbound.filter((call)·=>·call.method·===·"deliver");
+    166     │ - → → expect(outbound.some((call)·=>·call.input.commandId·===·ids[25])).toBe(true);
+        165 │ + → → const·outbound·=·fixture.outbound.filter(
+        166 │ + → → → (call)·=>·call.method·===·"deliver",
+        167 │ + → → );
+        168 │ + → → expect(outbound.some((call)·=>·call.input.commandId·===·ids[25])).toBe(
+        169 │ + → → → true,
+        170 │ + → → );
+    167 171 │   		expect(new Set(outbound.map((call) => call.input.commandId)).size).toBe(26);
+    168 172 │   		expect(
+    ······· │ 
+    183 187 │   		await fixture.deliver();
+    184 188 │   		expect(
+    185     │ - → → → (fixture.observeWork(commandId)·as·{·deliveryState:·string·}).deliveryState,
+        189 │ + → → → (fixture.observeWork(commandId)·as·{·deliveryState:·string·})
+        190 │ + → → → → .deliveryState,
+    186 191 │   		).toBe("pending");
+    187 192 │   		fixture.sqlite.exec(
+    ······· │ 
+    200 205 │   		expect((admitted.body as { status: string }).status).toBe("admitted");
+    201 206 │   		expect(
+    202     │ - → → → (fixture.observeWork(commandId)·as·{·deliveryState:·string·}).deliveryState,
+        207 │ + → → → (fixture.observeWork(commandId)·as·{·deliveryState:·string·})
+        208 │ + → → → → .deliveryState,
+    203 209 │   		).toBe("delivered");
+    204 210 │   	});
+    ······· │ 
+    247 253 │   		).toBe("pending");
+    248 254 │   		expect(
+    249     │ - → → → (fixture.observeWork(secondId)·as·{·deliveryState:·string·}).deliveryState,
+        255 │ + → → → (fixture.observeWork(secondId)·as·{·deliveryState:·string·})
+        256 │ + → → → → .deliveryState,
+    250 257 │   		).toBe("pending");
+    251 258 │   		predecessorReady = true;
+    ······· │ 
+    347 354 │   		await fixture.deliver();
+    348 355 │   		expect(
+    349     │ - → → → (fixture.observeWork(commandId)·as·{·deliveryState:·string·}).deliveryState,
+        356 │ + → → → (fixture.observeWork(commandId)·as·{·deliveryState:·string·})
+        357 │ + → → → → .deliveryState,
+    350 358 │   		).toBe("pending");
+    351 359 │   	});
+    ······· │ 
+    439 447 │   		await firstPass;
+    440 448 │   		expect(
+    441     │ - → → → (fixture.observeWork(commandId)·as·{·deliveryState:·string·}).deliveryState,
+        449 │ + → → → (fixture.observeWork(commandId)·as·{·deliveryState:·string·})
+        450 │ + → → → → .deliveryState,
+    442 451 │   		).toBe("delivered");
+    443 452 │   		expect(calls).toBe(2);
+    ······· │ 
+    455 464 │   			/storage fault|Failed query/,
+    456 465 │   		);
+    457     │ - → → expect(
+    458     │ - → → → fixture.sqlite.prepare("SELECT·status·FROM·messages").all(),
+    459     │ - → → ).toEqual(
+        466 │ + → → expect(fixture.sqlite.prepare("SELECT·status·FROM·messages").all()).toEqual(
+    460 467 │   			expect.arrayContaining([{ status: "complete" }, { status: "pending" }]),
+    461 468 │   		);
+    ······· │ 
+    479 486 │   		).toEqual([{ method: "deliver", input: { commandId, ownerVersion: 1 } }]);
+    480 487 │   		expect(
+    481     │ - → → → (fixture.observeWork(commandId)·as·{·deliveryState:·string·}).deliveryState,
+        488 │ + → → → (fixture.observeWork(commandId)·as·{·deliveryState:·string·})
+        489 │ + → → → → .deliveryState,
+    482 490 │   		).toBe("delivered");
+    483 491 │   		expect(
+    484     │ - → → → (fixture.sqlite
+    485     │ - → → → → .prepare("SELECT·status·FROM·workspace_runtime_work·WHERE·commandId·=·?")
+    486     │ - → → → → .get(commandId)·as·{·status:·string·}).status,
+        492 │ + → → → (
+        493 │ + → → → → fixture.sqlite
+        494 │ + → → → → → .prepare(
+        495 │ + → → → → → → "SELECT·status·FROM·workspace_runtime_work·WHERE·commandId·=·?",
+        496 │ + → → → → → )
+        497 │ + → → → → → .get(commandId)·as·{·status:·string·}
+        498 │ + → → → ).status,
+    487 499 │   		).toBe("queued");
+    488 500 │   	});
+  
+
+apps/web/src/lib/session-command.test.ts:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━━━━━━
+
+  × The imports and exports are not sorted.
+  
+  > 1 │ import { describe, expect, it, vi } from "vitest";
+      │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2 │ import { handleSessionCommandRequest } from "#/lib/session-command";
+    3 │ import { RUNTIME_LIMITS } from "../../../../packages/runtime-contracts/src/limits.js";
+  
+  i Safe fix: Organize Imports (Biome)
+  
+      1   1 │   import { describe, expect, it, vi } from "vitest";
+      2   2 │   import { handleSessionCommandRequest } from "#/lib/session-command";
+      3     │ - import·{·RUNTIME_LIMITS·}·from·"../../../../packages/runtime-contracts/src/limits.js";
+      4     │ - import·{
+      5     │ - → createSessionRuntimeFixture,
+      6     │ - → sessionRuntimeRouteHarness,
+      7     │ - }·from·"#/test/session-runtime-fixture";
+          3 │ + import·{
+          4 │ + → createSessionRuntimeFixture,
+          5 │ + → sessionRuntimeRouteHarness,
+          6 │ + }·from·"#/test/session-runtime-fixture";
+          7 │ + import·{·RUNTIME_LIMITS·}·from·"../../../../packages/runtime-contracts/src/limits.js";
+      8   8 │   
+      9   9 │   vi.mock("cloudflare:workers", () => ({ env: {} }));
+  
+
+apps/web/src/lib/session-command.test.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+    547 547 │   				promptBody({ sessionId: "sess-1" }),
+    548 548 │   			).replace('"version":1', '"version":2,"version":1');
+    549     │ - → → → const·duplicateResult·=·await·fixture.asUser("user-1").command(
+    550     │ - → → → → {},
+    551     │ - → → → → {·path,·raw:·duplicate·},
+    552     │ - → → → );
+        549 │ + → → → const·duplicateResult·=·await·fixture
+        550 │ + → → → → .asUser("user-1")
+        551 │ + → → → → .command({},·{·path,·raw:·duplicate·});
+    553 552 │   			expect(duplicateResult.status).toBe(400);
+    554 553 │   			expect(fixture.counts().commands).toBe(0);
+    ······· │ 
+    583 582 │   				.command({}, { path, raw: oversized });
+    584 583 │   			expect(oversizedResult.status).toBe(400);
+    585     │ - → → → const·invalidUtf8·=·await·fixture.asUser("user-1").command(
+    586     │ - → → → → {},
+    587     │ - → → → → {·path,·bytes:·new·Uint8Array([0xff,·0xfe,·0xfd])·},
+    588     │ - → → → );
+        584 │ + → → → const·invalidUtf8·=·await·fixture
+        585 │ + → → → → .asUser("user-1")
+        586 │ + → → → → .command({},·{·path,·bytes:·new·Uint8Array([0xff,·0xfe,·0xfd])·});
+    589 587 │   			expect(invalidUtf8.status).toBe(400);
+    590 588 │   			expect(fixture.counts().commands).toBe(0);
+    ······· │ 
+    597 595 │   		const fixture = createSessionRuntimeFixture();
+    598 596 │   		fixture.seedProject();
+    599     │ - → → const·result·=·await·fixture.asUser("user-1").command(
+    600     │ - → → → {},
+    601     │ - → → → {·raw:·'{"version":1,}'·},
+    602     │ - → → );
+        597 │ + → → const·result·=·await·fixture
+        598 │ + → → → .asUser("user-1")
+        599 │ + → → → .command({},·{·raw:·'{"version":1,}'·});
+    603 600 │   		expect(result.status).toBe(400);
+    604 601 │   		expect(fixture.counts().commands).toBe(0);
+  
+
+apps/web/src/lib/session-command.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+     394  394 │   	try {
+     395  395 │   		const parsed: unknown = JSON.parse(payload);
+     396      │ - → → if·(typeof·parsed·!==·"object"·||·parsed·===·null·||·Array.isArray(parsed))·{
+          396 │ + → → if·(
+          397 │ + → → → typeof·parsed·!==·"object"·||
+          398 │ + → → → parsed·===·null·||
+          399 │ + → → → Array.isArray(parsed)
+          400 │ + → → )·{
+     397  401 │   			return {};
+     398  402 │   		}
+    ········· │ 
+     454  458 │   		deadlineAt: command.deadlineAt,
+     455  459 │   	};
+     456      │ - → if·(command.kind·===·"prompt"·&&·command.userMessageId·&&·command.assistantMessageId·&&·text·!==·undefined)·{
+          460 │ + → if·(
+          461 │ + → → command.kind·===·"prompt"·&&
+          462 │ + → → command.userMessageId·&&
+          463 │ + → → command.assistantMessageId·&&
+          464 │ + → → text·!==·undefined
+          465 │ + → )·{
+     457  466 │   		return parseCommandV1({
+     458  467 │   			...base,
+    ········· │ 
+     464  473 │   		});
+     465  474 │   	}
+     466      │ - → if·(command.kind·===·"follow_up"·&&·command.userMessageId·&&·command.assistantMessageId·&&·command.targetRunId·&&·text·!==·undefined)·{
+          475 │ + → if·(
+          476 │ + → → command.kind·===·"follow_up"·&&
+          477 │ + → → command.userMessageId·&&
+          478 │ + → → command.assistantMessageId·&&
+          479 │ + → → command.targetRunId·&&
+          480 │ + → → text·!==·undefined
+          481 │ + → )·{
+     467  482 │   		return parseCommandV1({
+     468  483 │   			...base,
+    ········· │ 
+    1180 1195 │   	const now = options.now ?? Date.now;
+    1181 1196 │   	const createId = options.createId ?? nanoid;
+    1182      │ - → const·input·=·normalizeAdmittedCommand(
+    1183      │ - → → parseBrowserCommandV1(options.input),
+    1184      │ - → );
+         1197 │ + → const·input·=·normalizeAdmittedCommand(parseBrowserCommandV1(options.input));
+    1185 1198 │   	if (isRecoveryKind(input.kind)) {
+    1186 1199 │   		throw new SessionCommandError(
+  
+
+apps/web/src/test/session-runtime-fixture.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+    399 399 │   		},
+    400 400 │   		setDeliverImpl(
+    401     │ - → → → handler:·((
+    402     │ - → → → → input:·SessionRuntimeDeliverInput,
+    403     │ - → → → )·=>·Promise<SessionRuntimeHandoffAck·|·undefined>)·|·null,
+        401 │ + → → → handler:
+        402 │ + → → → → |·((
+        403 │ + → → → → → → input:·SessionRuntimeDeliverInput,
+        404 │ + → → → → ··)·=>·Promise<SessionRuntimeHandoffAck·|·undefined>)
+        405 │ + → → → → |·null,
+    404 406 │   		) {
+    405 407 │   			deliverImpl = handler;
+    406 408 │   		},
+    407 409 │   		setControlImpl(
+    408     │ - → → → handler:·((
+    409     │ - → → → → input:·SessionRuntimeControlInput,
+    410     │ - → → → )·=>·Promise<SessionRuntimeHandoffAck·|·undefined>)·|·null,
+        410 │ + → → → handler:
+        411 │ + → → → → |·((
+        412 │ + → → → → → → input:·SessionRuntimeControlInput,
+        413 │ + → → → → ··)·=>·Promise<SessionRuntimeHandoffAck·|·undefined>)
+        414 │ + → → → → |·null,
+    411 415 │   		) {
+    412 416 │   			controlImpl = handler;
+    ······· │ 
+    463 467 │   					const route = await loadAgentRoute(path);
+    464 468 │   					const payload = request.bytes ?? request.raw ?? JSON.stringify(body);
+    465     │ - → → → → → return·withResolution(async·()·=>·{
+    466     │ - → → → → → → const·response·=·await·route.server.handlers.POST({
+    467     │ - → → → → → → → request:·new·Request(`http://localhost/api/agent/${path}`,·{
+    468     │ - → → → → → → → → method:·"POST",
+    469     │ - → → → → → → → → headers:·{·"Content-Type":·"application/json"·},
+    470     │ - → → → → → → → → body:·payload,
+    471     │ - → → → → → → → }),
+    472     │ - → → → → → → });
+    473     │ - → → → → → → return·{
+    474     │ - → → → → → → → status:·response.status,
+    475     │ - → → → → → → → body:·(await·response.json())·as·unknown,
+    476     │ - → → → → → → };
+    477     │ - → → → → → },·{
+    478     │ - → → → → → → trustedAdmissionEligible:
+    479     │ - → → → → → → → request.trustedAdmissionEligible·??·true,
+    480     │ - → → → → → });
+        469 │ + → → → → → return·withResolution(
+        470 │ + → → → → → → async·()·=>·{
+        471 │ + → → → → → → → const·response·=·await·route.server.handlers.POST({
+        472 │ + → → → → → → → → request:·new·Request(`http://localhost/api/agent/${path}`,·{
+        473 │ + → → → → → → → → → method:·"POST",
+        474 │ + → → → → → → → → → headers:·{·"Content-Type":·"application/json"·},
+        475 │ + → → → → → → → → → body:·payload,
+        476 │ + → → → → → → → → }),
+        477 │ + → → → → → → → });
+        478 │ + → → → → → → → return·{
+        479 │ + → → → → → → → → status:·response.status,
+        480 │ + → → → → → → → → body:·(await·response.json())·as·unknown,
+        481 │ + → → → → → → → };
+        482 │ + → → → → → → },
+        483 │ + → → → → → → {
+        484 │ + → → → → → → → trustedAdmissionEligible:
+        485 │ + → → → → → → → → request.trustedAdmissionEligible·??·true,
+        486 │ + → → → → → → },
+        487 │ + → → → → → );
+    481 488 │   				},
+    482 489 │   			};
+  
+
+Checked 263 files in 665ms. No fixes applied.
+Found 5 errors.
+Found 13 warnings.
+Found 1 info.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.
+  
+
+[ELIFECYCLE] Command failed with exit code 1.
+EXIT:1

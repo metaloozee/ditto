@@ -58,7 +58,7 @@ describe("runtime contracts", () => {
 		expect(() => parseCommandV1(escaped)).toThrow(/Duplicate JSON key userId/);
 	});
 
-	it("rejects malformed discriminated unions and unimplemented kinds", () => {
+	it("rejects malformed discriminated unions and still-unimplemented kinds", () => {
 		expect(() => parseCommandV1({ ...command, kind: "follow_up" })).toThrow(
 			/unknown field|targetRunId/,
 		);
@@ -76,7 +76,7 @@ describe("runtime contracts", () => {
 		).toThrow(/kind/);
 		expect(() =>
 			parseCommandV1({ ...command, kind: "abandon_failed_run" }),
-		).toThrow(/kind/);
+		).toThrow(/unknown field|targetRunId|expectedRecoveryPosition/);
 		expect(() =>
 			parseBrowserCommandV1({
 				version: 1,
@@ -84,7 +84,109 @@ describe("runtime contracts", () => {
 				kind: "restore_checkpoint_acknowledging_loss",
 				projectId: "proj",
 			}),
-		).toThrow(/kind/);
+		).toThrow(/sessionId|committedPairId|unknown field|invalid_field/);
+	});
+
+	it("parses recovery discriminants with their permitted payloads", () => {
+		const base = {
+			version: 1 as const,
+			commandId: "cmd",
+			commandSeq: 3,
+			userId: "user",
+			projectId: "proj",
+			workspaceSessionId: "sess",
+			runtimeOwnerVersion: 1,
+			acceptedAt: 10,
+			deadlineAt: 20,
+		};
+		expect(
+			parseCommandV1({
+				...base,
+				kind: "abandon_failed_run",
+				targetRunId: "run-1",
+				expectedRecoveryPosition: 4,
+			}),
+		).toMatchObject({
+			kind: "abandon_failed_run",
+			targetRunId: "run-1",
+			expectedRecoveryPosition: 4,
+		});
+		expect(
+			parseCommandV1({
+				...base,
+				kind: "retry_known_safe",
+				targetRunId: "run-1",
+				expectedRecoveryPosition: 4,
+				safeRetryReason: "no_unresolved_effect",
+				runId: "run-2",
+				assistantMessageId: "asst-2",
+			}),
+		).toMatchObject({ kind: "retry_known_safe", runId: "run-2" });
+		expect(
+			parseCommandV1({
+				...base,
+				kind: "acknowledge_uncertainty_and_start_new_action",
+				targetRunId: "run-1",
+				expectedRecoveryPosition: 4,
+				unresolvedOperationIds: ["op-1"],
+				uncertaintyAcknowledged: true,
+				runId: "run-2",
+				userMessageId: "user-2",
+				assistantMessageId: "asst-2",
+				text: "continue",
+			}),
+		).toMatchObject({
+			kind: "acknowledge_uncertainty_and_start_new_action",
+			uncertaintyAcknowledged: true,
+		});
+		expect(
+			parseCommandV1({
+				...base,
+				kind: "restore_checkpoint_acknowledging_loss",
+				committedPairId: "pair-1",
+				expectedMutationGeneration: 2,
+				expectedRecoveryPosition: 4,
+				unbackedLossAcknowledged: true,
+			}),
+		).toMatchObject({
+			kind: "restore_checkpoint_acknowledging_loss",
+			committedPairId: "pair-1",
+		});
+		expect(
+			parseCommandV1({
+				...base,
+				kind: "retry_backup",
+				expectedMutationGeneration: 2,
+				expectedRecoveryPosition: 4,
+			}),
+		).toMatchObject({ kind: "retry_backup" });
+		expect(
+			parseCommandV1({
+				...base,
+				kind: "restart_preview",
+				expectedMutationGeneration: 2,
+				restartRequested: true,
+			}),
+		).toMatchObject({ kind: "restart_preview", restartRequested: true });
+		expect(
+			parseBrowserCommandV1({
+				version: 1,
+				idempotencyKey: "key",
+				kind: "abandon_failed_run",
+				projectId: "proj",
+				sessionId: "sess",
+				targetRunId: "run-1",
+				expectedRecoveryPosition: 4,
+			}),
+		).toMatchObject({ kind: "abandon_failed_run" });
+		expect(() =>
+			parseCommandV1({
+				...base,
+				kind: "restart_preview",
+				expectedMutationGeneration: 2,
+				restartRequested: false,
+			}),
+		).toThrow(/restartRequested/);
 	});
 
 	it("parses cancel without a target run", () => {

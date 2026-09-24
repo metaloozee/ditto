@@ -1,0 +1,25 @@
+$ pnpm --filter @ditto/runtime typecheck && pnpm --filter @ditto/runtime exec vitest run
+$ tsc --noEmit && tsc --noEmit -p tsconfig.forbidden-bindings.json
+
+ RUN  v3.2.7 /home/ayan/ditto-worktrees/plan-003-grok/apps/runtime
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+ ✓ src/forbidden-import-graph.test.ts (1 test) 38ms
+ ✓ src/feasibility.test.ts (19 tests) 219ms
+
+ Test Files  2 passed (2)
+      Tests  20 passed (20)
+   Start at  08:00:44
+   Duration  1.83s (transform 64ms, setup 0ms, collect 132ms, tests 257ms, environment 0ms, prepare 289ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+EXIT:0

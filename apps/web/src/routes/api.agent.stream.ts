@@ -8,6 +8,18 @@ import {
 } from "#/lib/agent-run-service";
 import { encodeSseEvent } from "#/lib/agent-stream-protocol";
 import { createAuth } from "#/lib/auth";
+import {
+	classifyAgentRequestBody,
+	handleSessionCommandRequest,
+	readBoundedAgentRequestText,
+	SessionCommandError,
+} from "#/lib/session-command";
+import {
+	createSessionRuntimeClient,
+	isTrustedAdmissionEligible,
+	resolveSessionAdmissionHooks,
+	resolveSessionRuntimeTransport,
+} from "#/lib/session-runtime-client";
 
 function jsonResponse(body: unknown, status: number): Response {
 	return new Response(JSON.stringify(body), {
@@ -29,14 +41,54 @@ export const Route = createFileRoute("/api/agent/stream")({
 					return jsonResponse({ error: "Unauthorized" }, 401);
 				}
 
-				let body: unknown;
+				let raw: string;
 				try {
-					body = await request.json();
-				} catch {
-					return jsonResponse({ error: "Invalid JSON body." }, 400);
+					raw = await readBoundedAgentRequestText(request);
+				} catch (error) {
+					if (error instanceof SessionCommandError) {
+						return jsonResponse(
+							{ error: error.message, code: error.code },
+							error.status,
+						);
+					}
+					throw error;
 				}
 
-				const parsed = agentStreamBodySchema.safeParse(body);
+				const classified = classifyAgentRequestBody(raw);
+				if (classified.mode === "error") {
+					return jsonResponse(
+						classified.error?.body,
+						classified.error?.status ?? 400,
+					);
+				}
+
+				const db = createDb(env);
+				if (classified.mode === "versioned") {
+					if (!isTrustedAdmissionEligible()) {
+						return jsonResponse(
+							{
+								error: "Trusted command admission is not enabled.",
+								code: "trusted_admission_ineligible",
+								category: "upgrade_recovery",
+							},
+							409,
+						);
+					}
+					const admission = resolveSessionAdmissionHooks();
+					const result = await handleSessionCommandRequest({
+						db,
+						runtime: createSessionRuntimeClient(
+							resolveSessionRuntimeTransport(),
+						),
+						authenticatedUserId: session.user.id,
+						body: raw,
+						now: admission.now,
+						createId: admission.createId,
+					});
+					return jsonResponse(result.body, result.status);
+				}
+
+				const parsed = agentStreamBodySchema.safeParse(classified.decoded);
 				if (!parsed.success) {
 					return jsonResponse(
 						{ error: "Invalid request.", issues: parsed.error.issues },
@@ -44,7 +96,6 @@ export const Route = createFileRoute("/api/agent/stream")({
 					);
 				}
 
-				const db = createDb(env);
 				const prepared = await prepareAgentRun({
 					db,
 					env,

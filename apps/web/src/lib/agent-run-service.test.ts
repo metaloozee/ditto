@@ -651,28 +651,31 @@ describe("prepareAgentRun", () => {
 
 	it("rejects a non-legacy session before message inserts", async () => {
 		const { db, batch, insert } = createMockDb();
-		await expect(
-			prepareAgentRun({
-				db,
-				env: makeEnv(),
-				userId: "user-1",
-				input: {
-					projectId: "proj-1",
-					sessionId: "sess-1",
-					message: "hi",
-				},
-				deps: baseDeps({
-					resolveSessionForMessageWrite: vi.fn().mockResolvedValue({
-						kind: "existing",
-						session: {
-							...activeSession,
-							runtimeOwner: "migrating",
-							runtimeOwnerVersion: 2,
-						},
-					}),
+		const result = await prepareAgentRun({
+			db,
+			env: makeEnv(),
+			userId: "user-1",
+			input: {
+				projectId: "proj-1",
+				sessionId: "sess-1",
+				message: "hi",
+			},
+			deps: baseDeps({
+				resolveSessionForMessageWrite: vi.fn().mockResolvedValue({
+					kind: "existing",
+					session: {
+						...activeSession,
+						runtimeOwner: "migrating",
+						runtimeOwnerVersion: 2,
+					},
 				}),
 			}),
-		).rejects.toMatchObject({ code: "runtime_owner_mismatch" });
+		});
+		expect(result).toMatchObject({
+			kind: "error",
+			status: 409,
+			body: { category: "upgrade_recovery" },
+		});
 		expect(batch).not.toHaveBeenCalled();
 		expect(insert).not.toHaveBeenCalled();
 	});

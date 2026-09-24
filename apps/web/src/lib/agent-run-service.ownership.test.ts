@@ -236,6 +236,32 @@ describe("agent run ownership batches through drizzle-orm/d1", () => {
 		expect(counts(sqlite)).toEqual({ sessions: 1, messages: 0, work: 0 });
 	});
 
+	it("does not launch the legacy runner for a trusted or migrating owner", async () => {
+		const { db, sqlite } = createOwnershipDb();
+		seedLegacySession(sqlite, { owner: "trusted_v1", version: 2 });
+		const result = await prepareAgentRun({
+			db,
+			env: makeEnv(),
+			userId: "user-1",
+			input: { projectId: "proj-1", sessionId: "sess-1", message: "hi" },
+			deps: baseDeps({
+				resolveSessionForMessageWrite: vi.fn().mockResolvedValue({
+					kind: "existing",
+					session: sessionRow({
+						runtimeOwner: "trusted_v1",
+						runtimeOwnerVersion: 2,
+					}),
+				}),
+			}),
+		});
+		expect(result).toMatchObject({
+			kind: "error",
+			status: 409,
+			body: { category: "upgrade_recovery" },
+		});
+		expect(counts(sqlite)).toEqual({ sessions: 1, messages: 0, work: 0 });
+	});
+
 	it("accepts a legacy owner after a migrating round trip at the current version", async () => {
 		const { db, sqlite } = createOwnershipDb();
 		seedLegacySession(sqlite, { owner: "legacy", version: 3 });

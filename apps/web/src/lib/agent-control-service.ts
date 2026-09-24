@@ -5,6 +5,7 @@ import type { createDb } from "#/db";
 import { projects } from "#/db/schema";
 import { DEFAULT_PROJECT_CODER_MODEL } from "#/lib/agent-models";
 import { createSandboxAuthority } from "#/lib/sandbox-authority";
+import { legacyRequestRejection } from "#/lib/session-command";
 import {
 	WorkspaceRuntimeError,
 	withWorkspaceRuntimeLease,
@@ -69,7 +70,11 @@ type ParsedControlResponse = z.infer<typeof controlResponseSchema>;
 
 export type AgentControlResult =
 	| { kind: "accepted"; status: 200; body: Record<string, unknown> }
-	| { kind: "error"; status: 404 | 409 | 500; body: { error: string } };
+	| {
+			kind: "error";
+			status: 404 | 409 | 500;
+			body: { error: string; category?: string };
+	  };
 
 type ControlDeps = {
 	createId?: () => string;
@@ -189,6 +194,17 @@ export async function controlAgentRun(options: {
 			kind: "error",
 			status: 404,
 			body: { error: "Session not found." },
+		};
+	}
+	const ownerRejection = legacyRequestRejection(session.runtimeOwner);
+	if (ownerRejection) {
+		return {
+			kind: "error",
+			status: 409,
+			body: {
+				error: ownerRejection.message,
+				category: ownerRejection.category,
+			},
 		};
 	}
 	if (project.status !== "ready") {
