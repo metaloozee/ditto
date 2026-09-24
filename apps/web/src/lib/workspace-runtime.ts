@@ -25,6 +25,8 @@ import {
 	getProjectSandboxState,
 	type SandboxEnvVar,
 } from "#/lib/sandbox-bootstrap";
+import { deliverSessionCommands } from "#/lib/session-command-delivery";
+import { resolveSessionRuntimeTransport } from "#/lib/session-runtime-client";
 import { withSessionWorkspaceLock } from "#/lib/session-workspace-lock";
 import { SessionWorkspaceBusyError } from "#/lib/session-workspace-lock-error";
 import { sessionBranchName, WORKSPACE_PATH } from "#/lib/workspace-policy";
@@ -965,6 +967,12 @@ async function executeWorkspaceWork(options: {
 	work: WorkspaceWorkRow;
 	now: () => number;
 }): Promise<void> {
+	if (
+		options.work.runtimeOwner === "trusted_v1" ||
+		options.work.commandId != null
+	) {
+		return;
+	}
 	const payload = parseWorkspaceWorkPayload(options.work.payload);
 	switch (options.work.intent) {
 		case "agent_run": {
@@ -1139,6 +1147,14 @@ export async function drainWorkspaceRuntime(options: {
 		nowSeconds: Math.floor(now() / 1000),
 	});
 	options.waitUntil?.(cleanup);
+	const delivery = deliverSessionCommands({
+		db: options.db,
+		runtime: resolveSessionRuntimeTransport(),
+		clock: { now },
+		createId: options.createId,
+	});
+	options.waitUntil?.(delivery);
+	await delivery;
 	await drainWorkspaceRuntimeQueue({
 		db: options.db,
 		waitUntil: options.waitUntil,
