@@ -1,0 +1,5 @@
+{"name":"W01 sustained schedule outage retains outbox ownership and later deduped recovery","result":"PASS","observed":{"initialDelivery":"pending","finalDelivery":"delivered","armedCallbacks":1,"runs":1,"scheduleCalls":3}}
+{"name":"W02 effect dedupe repairs scheduling after the admission commit survived an outage","result":"FAIL","observed":{"firstCode":"schedule_unavailable","duplicateAccepted":true,"armedCallbacks":0,"scheduleCalls":2,"dispatches":1}}
+{"name":"W03 terminal membership pages share one budget and later settle every assistant","result":"FAIL","observed":{"firstPassMembershipRows":61,"firstPassPages":3,"firstPassProcessed":1,"assistantCount":61,"pendingAssistants":0,"retryLost":false}}
+{"name":"W04 positive: retry journal failure memory-latches even when writing the latch fails","result":"PASS","observed":{"scheduleFaultHit":true,"journalFaultHit":true,"latchFaultHit":true,"laterEffectAdmitted":false}}
+{"checks":4,"failures":2}

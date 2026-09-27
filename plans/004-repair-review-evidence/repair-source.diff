@@ -1,0 +1,2935 @@
+--- before/apps/runtime/src/server.ts
++++ after/apps/runtime/src/server.ts
+@@ -1,13 +1,23 @@
+ import { WorkerEntrypoint } from "cloudflare:workers";
+ import { Container } from "@cloudflare/containers";
+ import { Sandbox as BaseSandbox, type ISandbox } from "@cloudflare/sandbox";
++import type { EffectV1 } from "../../../packages/runtime-contracts/src/runtime.js";
+ import {
+ 	initializeJournalTables,
++	metaValue,
+ 	recordConstructorObservation,
+ } from "./journal.js";
++import type {
++	ProjectionApplyResult,
++	ProjectionPayload,
++} from "./product-projector.js";
+ import { parseRuntimeKeyring, type RuntimeKeyring } from "./runtime-crypto.js";
+ import {
++	CoordinatorError,
++	type CurrentAuthority,
+ 	createCoordinatorSqlFromDurableObject,
++	type ProductAdapters,
++	type ReconstructedAdmission,
+ 	SessionCoordinator,
+ 	type SessionRuntimeHandoffAck,
+ } from "./session-runtime.js";
+@@ -156,7 +166,39 @@
+ 		});
+ 	}
+ 
+-	private async coordinator(identity?: {
++	private productAdapters(): ProductAdapters {
++		const product = this.env.PRODUCT;
++		return {
++			reconstructCommand: async (commandId) => {
++				if (!product?.reconstructCommand) return null;
++				return product.reconstructCommand(commandId);
++			},
++			readCurrentAuthority: async (input) => {
++				if (!product?.readCurrentAuthority) return null;
++				return product.readCurrentAuthority(input);
++			},
++			applyProjections: async (payloads, now) => {
++				if (!product?.applyProjections) return [];
++				return product.applyProjections(payloads, now);
++			},
++		};
++	}
++
++	private journalIdentity(): {
++		ownerId: string;
++		workspaceSessionId: string;
++		projectId: string;
++	} | null {
++		const sql = createCoordinatorSqlFromDurableObject(this.ctx);
++		const ownerId = metaValue(sql, "owner_id");
++		const workspaceSessionId = metaValue(sql, "workspace_session_id");
++		const projectId = metaValue(sql, "project_id");
++		if (!ownerId || !workspaceSessionId || !projectId) return null;
++		if (ownerId === "unknown" || projectId === "unknown") return null;
++		return { ownerId, workspaceSessionId, projectId };
++	}
++
++	private async coordinator(identity: {
+ 		ownerId: string;
+ 		workspaceSessionId: string;
+ 		projectId: string;
+@@ -166,24 +208,29 @@
+ 		this.#coordinator = new SessionCoordinator({
+ 			sql: createCoordinatorSqlFromDurableObject(this.ctx),
+ 			keyring,
+-			adapters: {
+-				reconstructCommand: async () => null,
+-				readCurrentAuthority: async () => null,
+-				applyProjections: async () => [],
+-			},
++			adapters: this.productAdapters(),
+ 			scheduler: {
+ 				schedule: (when, callback, payload) =>
+ 					this.schedule(when, callback, payload),
+ 			},
+ 			clock: { now: () => Date.now() },
+-			identity: identity ?? {
+-				ownerId: "unknown",
+-				workspaceSessionId: this.ctx.id.toString(),
+-				projectId: "unknown",
+-			},
++			identity,
+ 		});
+ 		this.#coordinator.initialize();
+ 		return this.#coordinator;
++	}
++
++	private async requireCoordinator(): Promise<SessionCoordinator> {
++		if (this.#coordinator) return this.#coordinator;
++		const identity = this.journalIdentity();
++		if (!identity) {
++			throw new CoordinatorError(
++				"command_missing",
++				"not_found",
++				crypto.randomUUID(),
++			);
++		}
++		return this.coordinator(identity);
+ 	}
+ 
+ 	async persistWakeup(when: Date | number, intent: Record<string, unknown>) {
+@@ -197,9 +244,10 @@
+ 
+ 	async reconcileWakeup(_intent: Record<string, unknown>): Promise<void> {
+ 		try {
+-			await (await this.coordinator()).reconcile();
++			await (await this.requireCoordinator()).reconcile();
+ 		} catch {
+-			await (await this.coordinator()).repairSchedule(Date.now());
++			const coordinator = this.#coordinator;
++			if (coordinator) await coordinator.repairSchedule(Date.now());
+ 		}
+ 	}
+ 
+@@ -207,18 +255,60 @@
+ 		commandId: string;
+ 		ownerVersion: number;
+ 	}): Promise<SessionRuntimeHandoffAck> {
+-		return (await this.coordinator()).acceptCommand(input);
++		const reconstructed = await this.productAdapters().reconstructCommand(
++			input.commandId,
++		);
++		if (!reconstructed) {
++			throw new CoordinatorError(
++				"command_missing",
++				"not_found",
++				crypto.randomUUID(),
++			);
++		}
++		const coordinator = await this.coordinator({
++			ownerId: reconstructed.command.userId,
++			workspaceSessionId: reconstructed.command.workspaceSessionId,
++			projectId: reconstructed.command.projectId,
++		});
++		return coordinator.acceptCommand(input);
+ 	}
+ 
+ 	async control(input: {
+ 		commandId: string;
+ 		ownerVersion: number;
+ 	}): Promise<SessionRuntimeHandoffAck> {
+-		return (await this.coordinator()).control(input);
++		return this.acceptCommand(input);
+ 	}
+ 
+ 	async readSnapshot(): Promise<unknown> {
+-		return (await this.coordinator()).readSnapshot();
++		return (await this.requireCoordinator()).readSnapshot();
++	}
++
++	async admitEffect(effect: EffectV1): Promise<{ state: EffectV1["state"] }> {
++		return (await this.requireCoordinator()).admitEffect(effect);
++	}
++
++	async recordEffectResult(input: {
++		runId: string;
++		assistantEntryId: string;
++		toolCallId: string;
++		attempt: number;
++		result: unknown;
++	}): Promise<{ state: EffectV1["state"] }> {
++		return (await this.requireCoordinator()).recordEffectResult(input);
++	}
++
++	async commitContinuation(input: {
++		expectedPosition: number;
++		snapshot: unknown;
++	}): Promise<{ position: number }> {
++		return (await this.requireCoordinator()).commitContinuation(input);
++	}
++
++	async readCanonicalContinuation(position: number): Promise<unknown> {
++		return (await this.requireCoordinator()).readCanonicalContinuation(
++			position,
++		);
+ 	}
+ 
+ 	async fetch(): Promise<Response> {
+@@ -240,11 +330,26 @@
+ 		return { configured: false, protocolVersion: 1 };
+ 	}
+ 
++	private async workspaceName(commandId: string): Promise<string> {
++		const sessionId =
++			await this.env.PRODUCT.resolveWorkspaceSessionId(commandId);
++		if (!sessionId) {
++			throw new CoordinatorError(
++				"command_missing",
++				"not_found",
++				crypto.randomUUID(),
++			);
++		}
++		return sessionId;
++	}
++
+ 	async deliver(input: {
+ 		commandId: string;
+ 		ownerVersion: number;
+ 	}): Promise<SessionRuntimeHandoffAck> {
+-		const stub = this.env.SessionRuntime.getByName(input.commandId);
++		const stub = this.env.SessionRuntime.getByName(
++			await this.workspaceName(input.commandId),
++		);
+ 		return stub.acceptCommand(input);
+ 	}
+ 
+@@ -252,7 +357,9 @@
+ 		commandId: string;
+ 		ownerVersion: number;
+ 	}): Promise<SessionRuntimeHandoffAck> {
+-		const stub = this.env.SessionRuntime.getByName(input.commandId);
++		const stub = this.env.SessionRuntime.getByName(
++			await this.workspaceName(input.commandId),
++		);
+ 		return stub.control(input);
+ 	}
+ 
+@@ -271,6 +378,32 @@
+ }
+ 
+ export class ProductEntrypoint extends WorkerEntrypoint<Env> {
++	async reconstructCommand(
++		_commandId: string,
++	): Promise<ReconstructedAdmission | null> {
++		return null;
++	}
++
++	async readCurrentAuthority(_input: {
++		workspaceSessionId: string;
++		userId: string;
++		projectId: string;
++	}): Promise<CurrentAuthority | null> {
++		return null;
++	}
++
++	async applyProjections(
++		_payloads: ProjectionPayload[],
++		_now: number,
++	): Promise<ProjectionApplyResult[]> {
++		return [];
++	}
++
++	async resolveWorkspaceSessionId(commandId: string): Promise<string | null> {
++		const reconstructed = await this.reconstructCommand(commandId);
++		return reconstructed?.command.workspaceSessionId ?? null;
++	}
++
+ 	async observeRuntime(commandId: string): Promise<string> {
+ 		return `observed:${commandId}`;
+ 	}
+--- before/apps/web/src/test/session-runtime-fixture.ts
++++ after/apps/web/src/test/session-runtime-fixture.ts
+@@ -393,6 +393,53 @@
+ 		return { userId, projectId };
+ 	}
+ 
++	function seedExecutorIdentity(input?: {
++		userId?: string;
++		projectId?: string;
++		sessionId?: string;
++		incarnationId?: string;
++		lifecycleGeneration?: number;
++	}) {
++		const userId = input?.userId ?? "user-1";
++		const projectId = input?.projectId ?? "proj-1";
++		const sessionId = input?.sessionId ?? "sess-1";
++		const incarnationId = input?.incarnationId ?? "synthetic-exec-1";
++		const lifecycleGeneration = input?.lifecycleGeneration ?? 1;
++		sqlite
++			.prepare(
++				`INSERT OR REPLACE INTO sandbox_identities (
++					id, kind, sandboxId, containerId, userId, projectId, workspaceSessionId,
++					incarnationId, lifecycleGeneration, state
++				) VALUES (?, 'workspace_session', ?, ?, ?, ?, ?, ?, ?, 'ready')`,
++			)
++			.run(
++				`identity-${sessionId}`,
++				`sandbox-${sessionId}`,
++				`container-${sessionId}`,
++				userId,
++				projectId,
++				sessionId,
++				incarnationId,
++				lifecycleGeneration,
++			);
++		const expiresAt = Math.floor(now() / 1000) + 24 * 3600;
++		sqlite
++			.prepare(
++				`INSERT OR REPLACE INTO workspace_capacity_leases (
++					id, sessionId, userId, identityId, leaseToken, expiresAt
++				) VALUES (?, ?, ?, ?, ?, ?)`,
++			)
++			.run(
++				`lease-${sessionId}`,
++				sessionId,
++				userId,
++				`identity-${sessionId}`,
++				`lease-token-${sessionId}`,
++				expiresAt,
++			);
++		return { userId, projectId, sessionId, incarnationId, lifecycleGeneration };
++	}
++
+ 	function seedTrustedSession(input?: {
+ 		userId?: string;
+ 		projectId?: string;
+@@ -487,6 +534,7 @@
+ 		counts,
+ 		seedProject,
+ 		seedTrustedSession,
++		seedExecutorIdentity,
+ 		setModelConfigured(value: boolean) {
+ 			configured = value;
+ 		},
+--- before/apps/runtime/src/journal.ts
++++ after/apps/runtime/src/journal.ts
+@@ -583,6 +583,76 @@
+ 	);
+ }
+ 
++export function listEffectsByRun(
++	sql: CoordinatorSql,
++	runId: string,
++): EffectRow[] {
++	return sql.query<EffectRow>(
++		"SELECT * FROM effects WHERE run_id = ? ORDER BY attempt ASC",
++		runId,
++	);
++}
++
++export function listActiveEffects(sql: CoordinatorSql): EffectRow[] {
++	return sql.query<EffectRow>(
++		`SELECT * FROM effects WHERE state IN ('prepared', 'admitted', 'outcome_unknown')`,
++	);
++}
++
++export function hasUnresolvedWriter(sql: CoordinatorSql): boolean {
++	return (
++		(sql.query<{ n: number }>(
++			`SELECT count(*) AS n
++			 FROM effects e
++			 JOIN runs r ON r.run_id = e.run_id
++			 WHERE e.state IN ('prepared', 'admitted', 'outcome_unknown')
++			   AND r.state NOT IN ('complete', 'failed', 'canceled')`,
++		)[0]?.n ?? 0) > 0
++	);
++}
++
++export function isolationEvidencePresent(sql: CoordinatorSql): boolean {
++	return (
++		(sql.query<{ n: number }>(
++			`SELECT count(*) AS n FROM process_observations
++			 WHERE isolation_evidence_ref IS NOT NULL AND isolation_evidence_ref != ''`,
++		)[0]?.n ?? 0) > 0
++	);
++}
++
++export function nextWorkDeadline(
++	sql: CoordinatorSql,
++	now: number,
++): number | null {
++	const candidates: number[] = [];
++	for (const wakeup of listPendingWakeups(sql)) {
++		candidates.push(Number(wakeup.deadline_at));
++	}
++	for (const run of listRuns(sql)) {
++		if (
++			run.recovery_deadline_at != null &&
++			run.state !== "complete" &&
++			run.state !== "failed" &&
++			run.state !== "canceled"
++		) {
++			candidates.push(Number(run.recovery_deadline_at));
++		}
++	}
++	for (const effect of listActiveEffects(sql)) {
++		candidates.push(Number(effect.deadline));
++	}
++	if (pendingProjectionCount(sql) > 0) {
++		candidates.push(now);
++	}
++	const acceptedGap = sql.query<{ n: number }>(
++		"SELECT count(*) AS n FROM commands WHERE consumption_state = 'accepted'",
++	)[0]?.n;
++	if (Number(acceptedGap ?? 0) > 0) {
++		candidates.push(now);
++	}
++	return candidates.length === 0 ? null : Math.min(...candidates);
++}
++
+ export function insertEffect(sql: CoordinatorSql, row: EffectRow): void {
+ 	sql.query(
+ 		`INSERT INTO effects (
+--- before/apps/runtime/src/product-projector.ts
++++ after/apps/runtime/src/product-projector.ts
+@@ -66,6 +66,35 @@
+ 	)
+ )`;
+ 
++const DELETION_FENCE = `
++	NOT EXISTS (
++		SELECT 1 FROM runtime_deleted_target_fences f
++		WHERE (f.targetKind = 'workspace_session' AND f.targetId = ?)
++		   OR (f.targetKind = 'project' AND f.targetId = ?)
++	)
++`;
++
++const SESSION_ACTIVE = `
++	EXISTS (
++		SELECT 1 FROM workspace_sessions s
++		WHERE s.id = ?
++			AND s.projectId = ?
++			AND s.userId = ?
++			AND s.runtimeOwner = 'trusted_v1'
++			AND s.runtimeOwnerVersion = ?
++			AND s.status IN ('active', 'archived')
++	)
++`;
++
++const PROJECT_PRESENT = `
++	EXISTS (
++		SELECT 1 FROM projects p
++		WHERE p.id = ?
++			AND p.userId = ?
++			AND p.status != 'deleting'
++	)
++`;
++
+ function cursorParams(
+ 	sessionId: string,
+ 	targetKind: string,
+@@ -86,58 +115,19 @@
+ 	];
+ }
+ 
+-function membershipAndLifecycleSql(options: {
+-	sessionAlias: string;
+-	requirePendingAssistant?: boolean;
+-	expectedCommandStatus?: string;
+-}): string {
+-	const pending = options.requirePendingAssistant
+-		? "AND messages.status = 'pending'"
+-		: "";
+-	return `
+-		AND EXISTS (
+-			SELECT 1 FROM projects p
+-			WHERE p.id = ${options.sessionAlias}.projectId
+-				AND p.userId = ${options.sessionAlias}.userId
+-				AND p.status != 'deleting'
+-		)
+-		AND EXISTS (
+-			SELECT 1 FROM workspace_sessions s
+-			WHERE s.id = ${options.sessionAlias}.sessionId
+-				AND s.projectId = ${options.sessionAlias}.projectId
+-				AND s.userId = ${options.sessionAlias}.userId
+-				AND s.runtimeOwner = 'trusted_v1'
+-				AND s.runtimeOwnerVersion = ?
+-				AND s.status IN ('active', 'archived')
+-		)
+-		${pending}
+-	`;
+-}
+-
+ export function messageTerminalUpdateSql(): string {
+ 	return `
+ 		UPDATE messages
+-		SET status = ?
++		SET status = ?,
++			content = CASE WHEN ? IS NOT NULL THEN ? ELSE content END
+ 		WHERE id = ?
+ 			AND sessionId = ?
+ 			AND projectId = ?
+ 			AND userId = ?
+ 			AND status = 'pending'
+-			AND EXISTS (
+-				SELECT 1 FROM projects p
+-				WHERE p.id = messages.projectId
+-					AND p.userId = messages.userId
+-					AND p.status != 'deleting'
+-			)
+-			AND EXISTS (
+-				SELECT 1 FROM workspace_sessions s
+-				WHERE s.id = messages.sessionId
+-					AND s.projectId = messages.projectId
+-					AND s.userId = messages.userId
+-					AND s.runtimeOwner = 'trusted_v1'
+-					AND s.runtimeOwnerVersion = ?
+-					AND s.status IN ('active', 'archived')
+-			)
++			AND ${PROJECT_PRESENT}
++			AND ${SESSION_ACTIVE}
++			AND ${DELETION_FENCE}
+ 			AND EXISTS (
+ 				SELECT 1 FROM runtime_command_memberships m
+ 				WHERE m.assistantMessageId = messages.id
+@@ -159,21 +149,9 @@
+ 			AND projectId = ?
+ 			AND userId = ?
+ 			AND executionProjectionVersion = ?
+-			AND EXISTS (
+-				SELECT 1 FROM projects p
+-				WHERE p.id = session_commands.projectId
+-					AND p.userId = session_commands.userId
+-					AND p.status != 'deleting'
+-			)
+-			AND EXISTS (
+-				SELECT 1 FROM workspace_sessions s
+-				WHERE s.id = session_commands.sessionId
+-					AND s.projectId = session_commands.projectId
+-					AND s.userId = session_commands.userId
+-					AND s.runtimeOwner = 'trusted_v1'
+-					AND s.runtimeOwnerVersion = ?
+-					AND s.status IN ('active', 'archived')
+-			)
++			AND ${PROJECT_PRESENT}
++			AND ${SESSION_ACTIVE}
++			AND ${DELETION_FENCE}
+ 			AND ${CURSOR_CAS}
+ 		RETURNING id
+ 	`;
+@@ -188,26 +166,23 @@
+ 		WHERE NOT EXISTS (
+ 			SELECT 1 FROM runtime_command_memberships WHERE commandId = ?
+ 		)
++		AND ${SESSION_ACTIVE}
++		AND ${PROJECT_PRESENT}
++		AND ${DELETION_FENCE}
+ 		AND EXISTS (
+-			SELECT 1 FROM workspace_sessions s
+-			WHERE s.id = ?
+-				AND s.userId = ?
+-				AND s.projectId = ?
+-				AND s.runtimeOwner = 'trusted_v1'
+-				AND s.runtimeOwnerVersion = ?
+-				AND s.status IN ('active', 'archived')
+-		)
+-		AND EXISTS (
+-			SELECT 1 FROM projects p
+-			WHERE p.id = ?
+-				AND p.userId = ?
+-				AND p.status != 'deleting'
++			SELECT 1 FROM session_commands sc
++			WHERE sc.id = ?
++				AND sc.sessionId = ?
++				AND sc.userId = ?
++				AND sc.projectId = ?
++				AND (sc.userMessageId = ? OR (? IS NULL AND sc.userMessageId IS NULL))
++				AND (sc.assistantMessageId = ? OR (? IS NULL AND sc.assistantMessageId IS NULL))
+ 		)
+ 		RETURNING commandId
+ 	`;
+ }
+ 
+-export function cursorUpdateSql(): string {
++export function cursorUpdateSql(targetPredicate: string): string {
+ 	return `
+ 		UPDATE runtime_projection_cursors
+ 		SET runtimeOwnerVersion = ?, coordinatorSeq = ?, updatedAt = ?
+@@ -216,10 +191,11 @@
+ 				runtimeOwnerVersion < ?
+ 				OR (runtimeOwnerVersion = ? AND coordinatorSeq < ?)
+ 			)
++			AND ${targetPredicate}
+ 	`;
+ }
+ 
+-export function cursorInsertSql(): string {
++export function cursorInsertSql(targetPredicate: string): string {
+ 	return `
+ 		INSERT INTO runtime_projection_cursors (
+ 			sessionId, targetKind, targetId, runtimeOwnerVersion, coordinatorSeq, updatedAt
+@@ -229,14 +205,46 @@
+ 			SELECT 1 FROM runtime_projection_cursors
+ 			WHERE sessionId = ? AND targetKind = ? AND targetId = ?
+ 		)
++		AND ${targetPredicate}
+ 	`;
+ }
++
++function messageAppliedPredicate(): string {
++	return `
++		EXISTS (
++			SELECT 1 FROM messages
++			WHERE id = ?
++				AND sessionId = ?
++				AND projectId = ?
++				AND userId = ?
++				AND status = ?
++		)
++	`;
++}
++
++function commandAppliedPredicate(): string {
++	return `
++		EXISTS (
++			SELECT 1 FROM session_commands
++			WHERE id = ?
++				AND sessionId = ?
++				AND projectId = ?
++				AND userId = ?
++				AND executionProjectionVersion = ?
++		)
++	`;
++}
++
++type StatementSpan = {
++	payload: ProjectionPayload;
++	targetIndex: number;
++};
+ 
+ function statementsForPayload(
+ 	prepare: D1Like["prepare"],
+ 	payload: ProjectionPayload,
+ 	now: number,
+-): D1PreparedStatement[] {
++): { statements: D1PreparedStatement[]; targetIndex: number } {
+ 	const statements: D1PreparedStatement[] = [];
+ 	if (payload.targetKind === "membership") {
+ 		statements.push(
+@@ -249,22 +257,43 @@
+ 				payload.runEpoch ?? null,
+ 				payload.commandId,
+ 				payload.workspaceSessionId,
+-				payload.userId,
+-				payload.projectId,
+-				payload.ownerVersion,
+-				payload.projectId,
+-				payload.userId,
++				payload.projectId,
++				payload.userId,
++				payload.ownerVersion,
++				payload.projectId,
++				payload.userId,
++				payload.workspaceSessionId,
++				payload.projectId,
++				payload.commandId,
++				payload.workspaceSessionId,
++				payload.userId,
++				payload.projectId,
++				payload.userMessageId ?? null,
++				payload.userMessageId ?? null,
++				payload.assistantMessageId ?? null,
++				payload.assistantMessageId ?? null,
+ 			),
+ 		);
+-	} else if (payload.targetKind === "message") {
++		return { statements, targetIndex: 0 };
++	}
++	if (payload.targetKind === "message") {
+ 		statements.push(
+ 			prepare(messageTerminalUpdateSql()).bind(
+ 				payload.status,
+-				payload.targetId,
+-				payload.workspaceSessionId,
+-				payload.projectId,
+-				payload.userId,
+-				payload.ownerVersion,
++				payload.contentRedacted ?? null,
++				payload.contentRedacted ?? null,
++				payload.targetId,
++				payload.workspaceSessionId,
++				payload.projectId,
++				payload.userId,
++				payload.projectId,
++				payload.userId,
++				payload.workspaceSessionId,
++				payload.projectId,
++				payload.userId,
++				payload.ownerVersion,
++				payload.workspaceSessionId,
++				payload.projectId,
+ 				payload.commandId,
+ 				payload.runId,
+ 				...cursorParams(
+@@ -276,7 +305,46 @@
+ 				),
+ 			),
+ 		);
+-	} else if (payload.targetKind === "command") {
++		const applied = messageAppliedPredicate();
++		statements.push(
++			prepare(cursorUpdateSql(applied)).bind(
++				payload.ownerVersion,
++				payload.coordinatorSeq,
++				now,
++				payload.workspaceSessionId,
++				payload.targetKind,
++				payload.targetId,
++				payload.ownerVersion,
++				payload.ownerVersion,
++				payload.coordinatorSeq,
++				payload.targetId,
++				payload.workspaceSessionId,
++				payload.projectId,
++				payload.userId,
++				payload.status,
++			),
++		);
++		statements.push(
++			prepare(cursorInsertSql(applied)).bind(
++				payload.workspaceSessionId,
++				payload.targetKind,
++				payload.targetId,
++				payload.ownerVersion,
++				payload.coordinatorSeq,
++				now,
++				payload.workspaceSessionId,
++				payload.targetKind,
++				payload.targetId,
++				payload.targetId,
++				payload.workspaceSessionId,
++				payload.projectId,
++				payload.userId,
++				payload.status,
++			),
++		);
++		return { statements, targetIndex: 0 };
++	}
++	if (payload.targetKind === "command") {
+ 		statements.push(
+ 			prepare(commandUpdateSql()).bind(
+ 				payload.coordinatorSeq,
+@@ -286,7 +354,14 @@
+ 				payload.projectId,
+ 				payload.userId,
+ 				Number(payload.expectedSourceStatus ?? 0),
+-				payload.ownerVersion,
++				payload.projectId,
++				payload.userId,
++				payload.workspaceSessionId,
++				payload.projectId,
++				payload.userId,
++				payload.ownerVersion,
++				payload.workspaceSessionId,
++				payload.projectId,
+ 				...cursorParams(
+ 					payload.workspaceSessionId,
+ 					"command",
+@@ -296,10 +371,9 @@
+ 				),
+ 			),
+ 		);
+-	}
+-	if (payload.targetKind !== "membership") {
++		const applied = commandAppliedPredicate();
+ 		statements.push(
+-			prepare(cursorUpdateSql()).bind(
++			prepare(cursorUpdateSql(applied)).bind(
+ 				payload.ownerVersion,
+ 				payload.coordinatorSeq,
+ 				now,
+@@ -309,10 +383,15 @@
+ 				payload.ownerVersion,
+ 				payload.ownerVersion,
+ 				payload.coordinatorSeq,
++				payload.targetId,
++				payload.workspaceSessionId,
++				payload.projectId,
++				payload.userId,
++				payload.coordinatorSeq,
+ 			),
+ 		);
+ 		statements.push(
+-			prepare(cursorInsertSql()).bind(
++			prepare(cursorInsertSql(applied)).bind(
+ 				payload.workspaceSessionId,
+ 				payload.targetKind,
+ 				payload.targetId,
+@@ -322,16 +401,47 @@
+ 				payload.workspaceSessionId,
+ 				payload.targetKind,
+ 				payload.targetId,
++				payload.targetId,
++				payload.workspaceSessionId,
++				payload.projectId,
++				payload.userId,
++				payload.coordinatorSeq,
+ 			),
+ 		);
+-	}
+-	return statements;
++		return { statements, targetIndex: 0 };
++	}
++	return { statements, targetIndex: -1 };
++}
++
++async function sessionOwnerVersion(
++	d1: D1Like,
++	sessionId: string,
++): Promise<number | null> {
++	const row = await d1
++		.prepare("SELECT runtimeOwnerVersion FROM workspace_sessions WHERE id = ?")
++		.bind(sessionId)
++		.first();
++	if (!row) return null;
++	return Number(row.runtimeOwnerVersion);
+ }
+ 
+ export async function classifyZeroRowProjection(
+ 	d1: D1Like,
+ 	payload: ProjectionPayload,
+ ): Promise<ProjectionClassification> {
++	const ownerAt = async (): Promise<number | null> =>
++		sessionOwnerVersion(d1, payload.workspaceSessionId);
++	const started = await ownerAt();
++	if (started == null) return "deleted";
++
++	const recheck = async (): Promise<ProjectionClassification | null> => {
++		const current = await ownerAt();
++		if (current == null) return "deleted";
++		if (current !== started) return "retry";
++		if (current > payload.ownerVersion) return "stale_owner";
++		return null;
++	};
++
+ 	const fence = await d1
+ 		.prepare(
+ 			`SELECT targetKind FROM runtime_deleted_target_fences
+@@ -340,6 +450,8 @@
+ 		)
+ 		.bind(payload.workspaceSessionId, payload.projectId)
+ 		.first();
++	const afterFence = await recheck();
++	if (afterFence) return afterFence;
+ 	if (fence) return "deleted";
+ 
+ 	const session = await d1
+@@ -349,10 +461,9 @@
+ 		)
+ 		.bind(payload.workspaceSessionId)
+ 		.first();
++	const afterSession = await recheck();
++	if (afterSession) return afterSession;
+ 	if (!session) return "deleted";
+-
+-	const ownerVersion = Number(session.runtimeOwnerVersion);
+-	if (ownerVersion > payload.ownerVersion) return "stale_owner";
+ 	if (
+ 		session.runtimeOwner !== "trusted_v1" ||
+ 		session.userId !== payload.userId ||
+@@ -368,6 +479,8 @@
+ 			)
+ 			.bind(payload.targetId)
+ 			.first();
++		const afterMessage = await recheck();
++		if (afterMessage) return afterMessage;
+ 		if (!message) return "deleted";
+ 		if (
+ 			message.sessionId !== payload.workspaceSessionId ||
+@@ -386,6 +499,8 @@
+ 			)
+ 			.bind(payload.targetId, payload.workspaceSessionId)
+ 			.first();
++		const afterMembership = await recheck();
++		if (afterMembership) return afterMembership;
+ 		if (
+ 			!membership ||
+ 			membership.commandId !== payload.commandId ||
+@@ -403,6 +518,8 @@
+ 			)
+ 			.bind(payload.targetId)
+ 			.first();
++		const afterCommand = await recheck();
++		if (afterCommand) return afterCommand;
+ 		if (!command) return "deleted";
+ 		if (
+ 			command.sessionId !== payload.workspaceSessionId ||
+@@ -411,6 +528,44 @@
+ 		) {
+ 			return "blocked_membership";
+ 		}
++		if (
++			Number(command.executionProjectionVersion) !==
++			Number(payload.expectedSourceStatus ?? 0)
++		) {
++			return "blocked_membership";
++		}
++	}
++
++	if (payload.targetKind === "membership") {
++		const command = await d1
++			.prepare(
++				`SELECT id, sessionId, userId, projectId, userMessageId, assistantMessageId
++				 FROM session_commands WHERE id = ?`,
++			)
++			.bind(payload.commandId ?? payload.targetId)
++			.first();
++		const afterCommand = await recheck();
++		if (afterCommand) return afterCommand;
++		if (!command) return "blocked_membership";
++		if (
++			command.sessionId !== payload.workspaceSessionId ||
++			command.userId !== payload.userId ||
++			command.projectId !== payload.projectId ||
++			(payload.assistantMessageId != null &&
++				command.assistantMessageId !== payload.assistantMessageId) ||
++			(payload.userMessageId != null &&
++				command.userMessageId !== payload.userMessageId)
++		) {
++			return "blocked_membership";
++		}
++		const existing = await d1
++			.prepare(
++				"SELECT commandId FROM runtime_command_memberships WHERE commandId = ?",
++			)
++			.bind(payload.commandId ?? payload.targetId)
++			.first();
++		if (existing) return "already_applied";
++		return "blocked_membership";
+ 	}
+ 
+ 	const cursor = await d1
+@@ -420,6 +575,8 @@
+ 		)
+ 		.bind(payload.workspaceSessionId, payload.targetKind, payload.targetId)
+ 		.first();
++	const afterCursor = await recheck();
++	if (afterCursor) return afterCursor;
+ 	if (cursor) {
+ 		const storedOwner = Number(cursor.runtimeOwnerVersion);
+ 		const storedSeq = Number(cursor.coordinatorSeq);
+@@ -432,8 +589,13 @@
+ 		}
+ 	}
+ 
+-	if (ownerVersion !== payload.ownerVersion) return "blocked_membership";
+ 	return "blocked_membership";
++}
++
++function targetMatched(result: D1Result<unknown> | undefined): boolean {
++	const changes = Number(result?.meta?.changes ?? 0);
++	const returned = Array.isArray(result?.results) ? result.results.length : 0;
++	return changes > 0 || returned > 0;
+ }
+ 
+ export async function applyProductProjectionBatch(
+@@ -441,54 +603,56 @@
+ 	payloads: ProjectionPayload[],
+ 	now: number,
+ ): Promise<ProjectionApplyResult[]> {
++	if (payloads.length === 0) return [];
++	const statements: D1PreparedStatement[] = [];
++	const spans: StatementSpan[] = [];
++	for (const payload of payloads) {
++		const prepared = statementsForPayload(d1.prepare.bind(d1), payload, now);
++		spans.push({
++			payload,
++			targetIndex:
++				prepared.targetIndex < 0
++					? -1
++					: statements.length + prepared.targetIndex,
++		});
++		statements.push(...prepared.statements);
++	}
++	let batchResult: D1Result<unknown>[];
++	try {
++		batchResult = (await d1.batch(statements)) as D1Result<unknown>[];
++	} catch {
++		return payloads.map(() => ({
++			classification: "retry" as const,
++			retry: true,
++		}));
++	}
+ 	const results: ProjectionApplyResult[] = [];
+-	for (const payload of payloads) {
+-		const ownerBefore = await d1
+-			.prepare(
+-				"SELECT runtimeOwnerVersion FROM workspace_sessions WHERE id = ?",
+-			)
+-			.bind(payload.workspaceSessionId)
+-			.first();
+-		try {
+-			const prepared = statementsForPayload(d1.prepare.bind(d1), payload, now);
+-			const batchResult = await d1.batch(prepared);
+-			const first = batchResult[0];
+-			const changes = Number(first?.meta?.changes ?? 0);
+-			const returned = Array.isArray(first?.results) ? first.results.length : 0;
+-			if (payload.targetKind === "membership") {
+-				results.push({
+-					classification: "applied",
+-					retry: false,
+-				});
+-				continue;
+-			}
+-			if (changes > 0 || returned > 0) {
+-				results.push({ classification: "applied", retry: false });
+-				continue;
+-			}
+-			const ownerAfter = await d1
+-				.prepare(
+-					"SELECT runtimeOwnerVersion FROM workspace_sessions WHERE id = ?",
+-				)
+-				.bind(payload.workspaceSessionId)
+-				.first();
+-			if (
+-				Number(ownerBefore?.runtimeOwnerVersion) !==
+-				Number(ownerAfter?.runtimeOwnerVersion)
+-			) {
+-				results.push({ classification: "retry", retry: true });
+-				continue;
+-			}
+-			const classification = await classifyZeroRowProjection(d1, payload);
+-			results.push({
+-				classification,
+-				retry: classification === "retry",
+-			});
+-		} catch {
++	for (const span of spans) {
++		if (span.targetIndex < 0) {
++			results.push({ classification: "already_applied", retry: false });
++			continue;
++		}
++		const ownerBefore = await sessionOwnerVersion(
++			d1,
++			span.payload.workspaceSessionId,
++		);
++		if (targetMatched(batchResult[span.targetIndex])) {
++			results.push({ classification: "applied", retry: false });
++			continue;
++		}
++		const ownerAfter = await sessionOwnerVersion(
++			d1,
++			span.payload.workspaceSessionId,
++		);
++		if (ownerBefore !== ownerAfter) {
+ 			results.push({ classification: "retry", retry: true });
+-		}
++			continue;
++		}
++		const classification = await classifyZeroRowProjection(d1, span.payload);
++		results.push({
++			classification,
++			retry: classification === "retry",
++		});
+ 	}
+ 	return results;
+ }
+-
+-void membershipAndLifecycleSql;
+--- before/apps/runtime/src/reconcile.ts
++++ after/apps/runtime/src/reconcile.ts
+@@ -3,10 +3,10 @@
+ 	isFatalLatched,
+ 	listDueWakeups,
+ 	listPendingProjections,
+-	listPendingWakeups,
+ 	listRuns,
+ 	markProjection,
+ 	markWakeup,
++	nextWorkDeadline,
+ 	type ProjectionRow,
+ 	RECONCILE_MAX_INTENTS,
+ 	RECONCILE_MAX_MS,
+@@ -27,8 +27,8 @@
+ };
+ 
+ export type ReconcileHooks = {
+-	consumeReadyCommands: (now: number) => void;
+-	settleExpiredRuns: (now: number) => void;
++	consumeReadyCommands: (now: number, max: number) => number;
++	settleExpiredRuns: (now: number, max: number) => number;
+ };
+ 
+ export type ReconcileResult = {
+@@ -64,11 +64,20 @@
+ 	const maxMs = options.maxMs ?? RECONCILE_MAX_MS;
+ 	let processed = 0;
+ 
+-	const due = options.sql.transaction(() => {
+-		options.hooks.consumeReadyCommands(started);
+-		options.hooks.settleExpiredRuns(started);
+-		return listDueWakeups(options.sql, started, maxIntents);
++	processed += options.sql.transaction(() => {
++		const consumed = options.hooks.consumeReadyCommands(started, maxIntents);
++		const remaining = Math.max(0, maxIntents - consumed);
++		const settled = options.hooks.settleExpiredRuns(started, remaining);
++		return consumed + settled;
+ 	});
++
++	const wakeupBudget = Math.max(0, maxIntents - processed);
++	const due =
++		wakeupBudget === 0 || options.clock.now() - started >= maxMs
++			? []
++			: options.sql.transaction(() =>
++					listDueWakeups(options.sql, started, wakeupBudget),
++				);
+ 
+ 	for (const wakeup of due) {
+ 		if (processed >= maxIntents || options.clock.now() - started >= maxMs) {
+@@ -80,9 +89,13 @@
+ 		processed += 1;
+ 	}
+ 
+-	const pending = options.sql.transaction(() =>
+-		listPendingProjections(options.sql, maxIntents),
+-	);
++	const projectionBudget = Math.max(0, maxIntents - processed);
++	const pending =
++		projectionBudget === 0 || options.clock.now() - started >= maxMs
++			? []
++			: options.sql.transaction(() =>
++					listPendingProjections(options.sql, projectionBudget),
++				);
+ 	if (pending.length > 0 && options.clock.now() - started < maxMs) {
+ 		let payloads: ProjectionPayload[] = [];
+ 		try {
+@@ -151,16 +164,9 @@
+ 	}
+ 
+ 	const next = options.sql.transaction(() => {
+-		const remaining = listPendingWakeups(options.sql);
+ 		const lag = listPendingProjections(options.sql, 1).length;
+-		const nextDeadline =
+-			remaining.length > 0
+-				? Math.min(...remaining.map((row) => Number(row.deadline_at)))
+-				: lag > 0
+-					? options.clock.now()
+-					: null;
+ 		return {
+-			nextDeadlineAt: nextDeadline,
++			nextDeadlineAt: nextWorkDeadline(options.sql, options.clock.now()),
+ 			projectionLag: lag,
+ 			fatal: isFatalLatched(options.sql),
+ 		};
+@@ -178,8 +184,11 @@
+ 	sql: CoordinatorSql,
+ 	now: number,
+ 	onTerminal: (runId: string) => void,
+-): void {
++	max = Number.POSITIVE_INFINITY,
++): number {
++	let settled = 0;
+ 	for (const run of listRuns(sql)) {
++		if (settled >= max) break;
+ 		if (
+ 			run.recovery_deadline_at != null &&
+ 			Number(run.recovery_deadline_at) <= now &&
+@@ -193,6 +202,8 @@
+ 				blockedReviewReason: "recovery_deadline_expired",
+ 			});
+ 			onTerminal(run.run_id);
+-		}
+-	}
++			settled += 1;
++		}
++	}
++	return settled;
+ }
+--- before/apps/runtime/src/runtime-crypto.test.ts
++++ after/apps/runtime/src/runtime-crypto.test.ts
+@@ -159,4 +159,70 @@
+ 		);
+ 		expect(serialized).not.toMatch(/plaintext|secret-record|canonical-body/);
+ 	});
++
++	it("T31 rejects cross-write chunk splicing and oversized manifests before allocation", async () => {
++		const keyring = await importRuntimeKeyringFromBytes("v1", {
++			v1: keyBytes(6),
++		});
++		const first = await encryptRuntimePayload(
++			new Uint8Array([1, 1, 1, 1]),
++			keyring,
++			aad(),
++			{ inlineMaxBytes: 1, chunkBytes: 2 },
++		);
++		const second = await encryptRuntimePayload(
++			new Uint8Array([2, 2, 2, 2]),
++			keyring,
++			aad(),
++			{ inlineMaxBytes: 1, chunkBytes: 2 },
++		);
++		expect(first.kind).toBe("chunked");
++		expect(second.kind).toBe("chunked");
++		if (first.kind !== "chunked" || second.kind !== "chunked") {
++			throw new Error("expected chunked");
++		}
++		const digest = Buffer.from(
++			await crypto.subtle.digest("SHA-256", new Uint8Array([1, 1, 2, 2])),
++		).toString("hex");
++		const mixed = {
++			...first.manifest,
++			chunks: [first.manifest.chunks[0], second.manifest.chunks[1]],
++			digest,
++		};
++		await expect(
++			decryptRuntimePayload(
++				{ kind: "chunked", manifest: mixed },
++				keyring,
++				aad(),
++			),
++		).rejects.toMatchObject({
++			code: expect.stringMatching(/decrypt_failed|invalid_manifest/),
++		});
++		const reordered = {
++			...first.manifest,
++			chunks: [first.manifest.chunks[1], first.manifest.chunks[0]],
++		};
++		await expect(
++			decryptRuntimePayload(
++				{ kind: "chunked", manifest: reordered },
++				keyring,
++				aad(),
++			),
++		).rejects.toMatchObject({
++			code: expect.stringMatching(/decrypt_failed|invalid_manifest/),
++		});
++		await expect(
++			decryptRuntimePayload(
++				{
++					kind: "chunked",
++					manifest: {
++						...first.manifest,
++						totalLength: 8 * 1024 * 1024 + 1,
++					},
++				},
++				keyring,
++				aad(),
++			),
++		).rejects.toMatchObject({ code: "invalid_manifest" });
++	});
+ });
+--- before/apps/runtime/src/runtime-crypto.ts
++++ after/apps/runtime/src/runtime-crypto.ts
+@@ -7,6 +7,8 @@
+ const AAD_PREFIX = "ditto-runtime";
+ const DEFAULT_CHUNK_BYTES = 16 * 1024;
+ const DEFAULT_INLINE_MAX_BYTES = 32 * 1024;
++const MAX_CHUNK_COUNT = 4096;
++const MAX_PAYLOAD_BYTES = 8 * 1024 * 1024;
+ 
+ export const RUNTIME_CRYPTO_FORMAT_VERSION = FORMAT_VERSION;
+ export const RUNTIME_CRYPTO_CHUNK_BYTES = DEFAULT_CHUNK_BYTES;
+@@ -46,6 +48,7 @@
+ export type RuntimeChunkManifestV1 = {
+ 	version: 1;
+ 	recordId: string;
++	writeId: string;
+ 	chunkCount: number;
+ 	totalLength: number;
+ 	digest: string;
+@@ -120,11 +123,17 @@
+ 	aad: RuntimeAad,
+ 	ordinal: number,
+ 	chunkCount: number,
++	binding: { writeId: string; digest: string; totalLength: number },
+ ): RuntimeAad {
+ 	return {
+ 		...aad,
+-		recordId: `${aad.recordId}:${ordinal}:${chunkCount}`,
++		recordId: `${aad.recordId}:${ordinal}:${chunkCount}:${binding.writeId}:${binding.digest}:${binding.totalLength}`,
+ 	};
++}
++
++function randomWriteId(): string {
++	const bytes = crypto.getRandomValues(new Uint8Array(16));
++	return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+ }
+ 
+ async function importRawKey(bytes: Uint8Array): Promise<CryptoKey> {
+@@ -339,6 +348,9 @@
+ 	if (chunkBytes < 1 || inlineMax < 1) {
+ 		throw new RuntimeCryptoError("invalid_manifest");
+ 	}
++	if (plaintext.byteLength > MAX_PAYLOAD_BYTES) {
++		throw new RuntimeCryptoError("invalid_manifest");
++	}
+ 	if (plaintext.byteLength <= inlineMax) {
+ 		return {
+ 			kind: "inline",
+@@ -347,6 +359,12 @@
+ 		};
+ 	}
+ 	const chunkCount = Math.ceil(plaintext.byteLength / chunkBytes);
++	if (chunkCount > MAX_CHUNK_COUNT) {
++		throw new RuntimeCryptoError("invalid_manifest");
++	}
++	const digest = await sha256Hex(plaintext);
++	const writeId = randomWriteId();
++	const binding = { writeId, digest, totalLength: plaintext.byteLength };
+ 	const chunks: RuntimeCiphertextV1[] = [];
+ 	for (let ordinal = 0; ordinal < chunkCount; ordinal += 1) {
+ 		const start = ordinal * chunkBytes;
+@@ -355,7 +373,7 @@
+ 			await encryptRuntimeRecord(
+ 				slice,
+ 				keyring,
+-				chunkAad(aad, ordinal, chunkCount),
++				chunkAad(aad, ordinal, chunkCount, binding),
+ 			),
+ 		);
+ 	}
+@@ -364,9 +382,10 @@
+ 		manifest: {
+ 			version: 1,
+ 			recordId: aad.recordId,
++			writeId,
+ 			chunkCount,
+ 			totalLength: plaintext.byteLength,
+-			digest: await sha256Hex(plaintext),
++			digest,
+ 			formatVersion: aad.formatVersion,
+ 			chunks,
+ 		},
+@@ -389,22 +408,34 @@
+ 		manifest.version !== 1 ||
+ 		manifest.recordId !== aad.recordId ||
+ 		manifest.formatVersion !== aad.formatVersion ||
++		typeof manifest.writeId !== "string" ||
++		manifest.writeId.length === 0 ||
+ 		manifest.chunkCount < 1 ||
+ 		manifest.chunks.length !== manifest.chunkCount ||
+-		manifest.totalLength < 1
++		manifest.totalLength < 1 ||
++		manifest.chunkCount > MAX_CHUNK_COUNT ||
++		manifest.totalLength > MAX_PAYLOAD_BYTES
+ 	) {
+ 		throw new RuntimeCryptoError("invalid_manifest");
+ 	}
++	const binding = {
++		writeId: manifest.writeId,
++		digest: manifest.digest,
++		totalLength: manifest.totalLength,
++	};
+ 	const parts: Uint8Array[] = [];
+ 	let total = 0;
+ 	for (let ordinal = 0; ordinal < manifest.chunkCount; ordinal += 1) {
+ 		const part = await decryptRuntimeRecord(
+ 			manifest.chunks[ordinal],
+ 			keyring,
+-			chunkAad(aad, ordinal, manifest.chunkCount),
++			chunkAad(aad, ordinal, manifest.chunkCount, binding),
+ 		);
+ 		parts.push(part);
+ 		total += part.byteLength;
++		if (total > MAX_PAYLOAD_BYTES) {
++			throw new RuntimeCryptoError("invalid_manifest");
++		}
+ 	}
+ 	if (total !== manifest.totalLength) {
+ 		throw new RuntimeCryptoError("invalid_manifest");
+@@ -444,17 +475,22 @@
+ 	if (
+ 		record.version !== 1 ||
+ 		typeof record.recordId !== "string" ||
++		typeof record.writeId !== "string" ||
++		record.writeId.length === 0 ||
+ 		typeof record.digest !== "string" ||
+ 		record.formatVersion !== FORMAT_VERSION ||
+ 		!Array.isArray(record.chunks) ||
+ 		typeof record.chunkCount !== "number" ||
+-		typeof record.totalLength !== "number"
++		typeof record.totalLength !== "number" ||
++		record.chunkCount > MAX_CHUNK_COUNT ||
++		record.totalLength > MAX_PAYLOAD_BYTES
+ 	) {
+ 		throw new RuntimeCryptoError("invalid_manifest");
+ 	}
+ 	return {
+ 		version: 1,
+ 		recordId: record.recordId,
++		writeId: record.writeId,
+ 		chunkCount: record.chunkCount,
+ 		totalLength: record.totalLength,
+ 		digest: record.digest,
+--- before/apps/runtime/src/session-runtime.ts
++++ after/apps/runtime/src/session-runtime.ts
+@@ -13,6 +13,7 @@
+ 	getCommandBySeq,
+ 	getEffect,
+ 	getRun,
++	hasUnresolvedWriter,
+ 	initializeJournalSchema,
+ 	insertCommand,
+ 	insertEffect,
+@@ -21,14 +22,17 @@
+ 	insertRun,
+ 	insertWakeup,
+ 	isFatalLatched,
++	isolationEvidencePresent,
+ 	latchFatal,
+ 	listCommands,
++	listEffectsByRun,
+ 	listEffectsForLogical,
+ 	listEvents,
+ 	listRuns,
+ 	markFirstInterruption,
+ 	metaValue,
+ 	nextCoordinatorSeq,
++	nextWorkDeadline,
+ 	pendingProjectionCount,
+ 	RECOVERY_DEADLINE_MS,
+ 	type RunState,
+@@ -44,6 +48,7 @@
+ } from "./product-projector.js";
+ import { processReconcilePass, settleExpiredRunsNow } from "./reconcile.js";
+ import {
++	decryptRuntimeText,
+ 	encryptRuntimePayload,
+ 	encryptRuntimeText,
+ 	RUNTIME_CRYPTO_FORMAT_VERSION,
+@@ -59,6 +64,12 @@
+ 	ownerVersion: number;
+ 	acceptedPosition: number;
+ 	receiptId: string;
++};
++
++export type ProcessIdentityRecord = {
++	incarnationId: string;
++	lifecycleGeneration: number;
++	state: string;
+ };
+ 
+ export type CurrentAuthority = {
+@@ -70,6 +81,8 @@
+ 	sessionStatus: string;
+ 	projectStatus: string;
+ 	lifecycleGeneration: number;
++	processIdentities: ProcessIdentityRecord[];
++	capacityExpiresAt: number | null;
+ };
+ 
+ export type ReconstructedAdmission = {
+@@ -215,7 +228,11 @@
+ 	private readonly createIdFn: () => string;
+ 	private readonly log: ((entry: AllowlistedLog) => void) | undefined;
+ 	private initialized = false;
++	private memoryFatal = false;
++	private canonicalRestore: "unchecked" | "ok" | "failed" = "unchecked";
++	private consumeOwnerVersion: number | null = null;
+ 	containerWakeCount = 0;
++	dispatchAttemptCount = 0;
+ 
+ 	constructor(options: SessionCoordinatorOptions) {
+ 		this.sql = options.sql;
+@@ -249,61 +266,204 @@
+ 		});
+ 	}
+ 
++	private isFatal(): boolean {
++		return this.memoryFatal || isFatalLatched(this.sql);
++	}
++
++	private latchFatalMemoryAndStore(): void {
++		this.memoryFatal = true;
++		try {
++			this.sql.transaction(() => latchFatal(this.sql));
++		} catch {
++			// Keep the in-memory latch when the journal cannot persist it.
++		}
++	}
++
++	private deny(code: string, category: string): never {
++		throw new CoordinatorError(code, category, this.createIdFn());
++	}
++
++	private assertFreshAuthority(
++		authority: CurrentAuthority | null,
++		expected?: {
++			userId: string;
++			projectId: string;
++			workspaceSessionId: string;
++		},
++	): CurrentAuthority {
++		if (
++			!authority ||
++			authority.runtimeOwner !== "trusted_v1" ||
++			(expected &&
++				(authority.userId !== expected.userId ||
++					authority.projectId !== expected.projectId ||
++					authority.workspaceSessionId !== expected.workspaceSessionId)) ||
++			authority.userId !== this.identity.ownerId ||
++			authority.projectId !== this.identity.projectId ||
++			authority.workspaceSessionId !== this.identity.workspaceSessionId ||
++			authority.projectStatus === "deleting" ||
++			authority.sessionStatus === "deleted"
++		) {
++			this.deny("authority_denied", "forbidden");
++		}
++		return authority;
++	}
++
++	private effectAdmissionAllowed(
++		authority: CurrentAuthority,
++		effect: EffectV1,
++		now: number,
++	): boolean {
++		if (authority.sessionStatus !== "active") return false;
++		if (authority.projectStatus === "deleting") return false;
++		const identity = authority.processIdentities.find(
++			(row) =>
++				row.incarnationId === effect.executorIncarnationId &&
++				row.lifecycleGeneration === effect.lifecycleGeneration,
++		);
++		if (!identity) return false;
++		if (authority.capacityExpiresAt == null) return false;
++		const expiresAt = authority.capacityExpiresAt;
++		const nowSeconds = Math.floor(now / 1000);
++		if (expiresAt < nowSeconds && expiresAt < now) return false;
++		return true;
++	}
++
++	async ensureCanonicalRestore(): Promise<void> {
++		this.initialize();
++		if (this.canonicalRestore === "ok") return;
++		if (this.canonicalRestore === "failed" || this.isFatal()) {
++			this.canonicalRestore = "failed";
++			this.deny("canonical_restore_failed", "unavailable");
++		}
++		try {
++			const commands = this.sql.transaction(() => listCommands(this.sql));
++			for (const command of commands) {
++				if (!command.ciphertext) continue;
++				await decryptRuntimeText(
++					command.ciphertext,
++					this.keyring,
++					commandAad(this.identity, `command:${command.command_id}`),
++				);
++			}
++			const effects = this.sql.transaction(() =>
++				this.sql.query<{
++					args_ciphertext: string | null;
++					run_id: string;
++					assistant_entry_id: string;
++					tool_call_id: string;
++					attempt: number;
++				}>(
++					"SELECT args_ciphertext, run_id, assistant_entry_id, tool_call_id, attempt FROM effects",
++				),
++			);
++			for (const effect of effects) {
++				if (!effect.args_ciphertext) continue;
++				await decryptRuntimeText(
++					effect.args_ciphertext,
++					this.keyring,
++					commandAad(
++						this.identity,
++						`effect-args:${effect.run_id}:${effect.assistant_entry_id}:${effect.tool_call_id}:${effect.attempt}`,
++					),
++				);
++			}
++			const continuations = this.sql.transaction(() =>
++				this.sql.query<{
++					position: number;
++					ciphertext: string | null;
++					ciphertext_ref: string | null;
++				}>(
++					"SELECT position, ciphertext, ciphertext_ref FROM continuations ORDER BY position ASC",
++				),
++			);
++			for (const continuation of continuations) {
++				const aad = commandAad(
++					this.identity,
++					`continuation:${continuation.position}`,
++				);
++				if (continuation.ciphertext) {
++					await decryptRuntimeText(continuation.ciphertext, this.keyring, aad);
++				}
++			}
++			this.canonicalRestore = "ok";
++		} catch {
++			this.canonicalRestore = "failed";
++			this.latchFatalMemoryAndStore();
++			this.deny("canonical_restore_failed", "unavailable");
++		}
++	}
++
++	async readCanonicalContinuation(position: number): Promise<unknown> {
++		await this.ensureCanonicalRestore();
++		const row = this.sql.transaction(
++			() =>
++				this.sql.query<{
++					position: number;
++					ciphertext: string | null;
++					ciphertext_ref: string | null;
++				}>(
++					"SELECT position, ciphertext, ciphertext_ref FROM continuations WHERE position = ?",
++					position,
++				)[0],
++		);
++		if (!row?.ciphertext) this.deny("continuation_missing", "not_found");
++		const plaintext = await decryptRuntimeText(
++			row.ciphertext,
++			this.keyring,
++			commandAad(this.identity, `continuation:${position}`),
++		);
++		return JSON.parse(plaintext) as unknown;
++	}
++
+ 	async acceptCommand(input: {
+ 		commandId: string;
+ 		ownerVersion: number;
+ 	}): Promise<SessionRuntimeHandoffAck> {
+ 		this.initialize();
++		await this.ensureCanonicalRestore();
+ 		const reconstructed = await this.adapters.reconstructCommand(
+ 			input.commandId,
+ 		);
+-		if (!reconstructed) {
+-			throw new CoordinatorError(
+-				"command_missing",
+-				"not_found",
+-				this.createIdFn(),
+-			);
+-		}
++		if (!reconstructed) this.deny("command_missing", "not_found");
+ 		const command = reconstructed.command;
+ 		if (command.commandId !== input.commandId) {
+-			throw new CoordinatorError(
+-				"command_mismatch",
+-				"invalid",
+-				this.createIdFn(),
+-			);
++			this.deny("command_mismatch", "invalid");
+ 		}
+ 		if (command.workspaceSessionId !== this.identity.workspaceSessionId) {
+-			throw new CoordinatorError(
+-				"session_mismatch",
+-				"not_found",
+-				this.createIdFn(),
+-			);
+-		}
+-		const authority = await this.adapters.readCurrentAuthority({
+-			workspaceSessionId: command.workspaceSessionId,
+-			userId: command.userId,
+-			projectId: command.projectId,
+-		});
+-		if (
+-			!authority ||
+-			authority.runtimeOwner !== "trusted_v1" ||
+-			authority.userId !== command.userId ||
+-			authority.projectId !== command.projectId ||
+-			authority.workspaceSessionId !== command.workspaceSessionId ||
+-			authority.projectStatus === "deleting" ||
+-			authority.sessionStatus === "deleted"
+-		) {
+-			throw new CoordinatorError(
+-				"authority_denied",
+-				"forbidden",
+-				this.createIdFn(),
+-			);
++			this.deny("session_mismatch", "not_found");
++		}
++		if (command.projectId !== this.identity.projectId) {
++			this.deny("project_mismatch", "not_found");
++		}
++		if (command.userId !== this.identity.ownerId) {
++			this.deny("owner_mismatch", "forbidden");
++		}
++		const persistedOwnerVersion = command.runtimeOwnerVersion;
++		if (input.ownerVersion !== persistedOwnerVersion) {
++			this.deny("owner_version_mismatch", "conflict");
++		}
++		let authority = this.assertFreshAuthority(
++			await this.adapters.readCurrentAuthority({
++				workspaceSessionId: command.workspaceSessionId,
++				userId: command.userId,
++				projectId: command.projectId,
++			}),
++			{
++				userId: command.userId,
++				projectId: command.projectId,
++				workspaceSessionId: command.workspaceSessionId,
++			},
++		);
++		if (authority.runtimeOwnerVersion !== persistedOwnerVersion) {
++			this.deny("stale_owner_version", "conflict");
+ 		}
+ 
+ 		const existing = this.sql.transaction(() =>
+ 			getCommand(this.sql, command.commandId),
+ 		);
+ 		if (existing) {
++			await this.repairSchedule();
+ 			return {
+ 				version: 1,
+ 				commandId: existing.command_id,
+@@ -322,14 +482,31 @@
+ 				)
+ 			: null;
+ 
++		authority = this.assertFreshAuthority(
++			await this.adapters.readCurrentAuthority({
++				workspaceSessionId: command.workspaceSessionId,
++				userId: command.userId,
++				projectId: command.projectId,
++			}),
++			{
++				userId: command.userId,
++				projectId: command.projectId,
++				workspaceSessionId: command.workspaceSessionId,
++			},
++		);
++		if (authority.runtimeOwnerVersion !== persistedOwnerVersion) {
++			this.deny("stale_owner_version", "conflict");
++		}
++
++		let canceledPredecessor: ReconstructedAdmission | null = null;
++		if (command.kind === "cancel") {
++			canceledPredecessor = await this.adapters.reconstructCommand(
++				command.targetCommandId,
++			);
++		}
++
+ 		const ack = this.sql.transaction(() => {
+-			if (isFatalLatched(this.sql)) {
+-				throw new CoordinatorError(
+-					"fatal_latch",
+-					"unavailable",
+-					this.createIdFn(),
+-				);
+-			}
++			if (this.isFatal()) this.deny("fatal_latch", "unavailable");
+ 			const raced = getCommand(this.sql, command.commandId);
+ 			if (raced) {
+ 				return {
+@@ -346,7 +523,7 @@
+ 				command_id: command.commandId,
+ 				command_seq: command.commandSeq,
+ 				kind: command.kind,
+-				owner_version: input.ownerVersion,
++				owner_version: persistedOwnerVersion,
+ 				receipt_id: reconstructed.receiptId,
+ 				payload_hash: reconstructed.payloadHash,
+ 				user_message_id:
+@@ -370,16 +547,20 @@
+ 			});
+ 			this.enqueueWakeup("accept", this.clock.now());
+ 			if (command.kind === "stop") {
+-				this.applyStop(command, input.ownerVersion);
++				this.applyStop(command, persistedOwnerVersion);
+ 			} else if (command.kind === "cancel") {
+-				this.applyCancel(command);
++				this.applyCancel(command, canceledPredecessor);
+ 			} else {
+-				this.consumeReadyCommands(this.clock.now());
++				this.consumeReadyCommands(
++					this.clock.now(),
++					Number.POSITIVE_INFINITY,
++					persistedOwnerVersion,
++				);
+ 			}
+ 			return {
+ 				version: 1 as const,
+ 				commandId: command.commandId,
+-				ownerVersion: input.ownerVersion,
++				ownerVersion: persistedOwnerVersion,
+ 				acceptedPosition: command.commandSeq,
+ 				receiptId: reconstructed.receiptId,
+ 			};
+@@ -413,21 +594,18 @@
+ 
+ 	async admitEffect(effect: EffectV1): Promise<{ state: EffectV1["state"] }> {
+ 		this.initialize();
+-		const authority = await this.adapters.readCurrentAuthority({
+-			workspaceSessionId: this.identity.workspaceSessionId,
+-			userId: this.identity.ownerId,
+-			projectId: this.identity.projectId,
+-		});
+-		if (
+-			!authority ||
+-			authority.runtimeOwner !== "trusted_v1" ||
+-			authority.workspaceSessionId !== this.identity.workspaceSessionId
+-		) {
+-			throw new CoordinatorError(
+-				"authority_denied",
+-				"forbidden",
+-				this.createIdFn(),
+-			);
++		await this.ensureCanonicalRestore();
++		if (this.isFatal()) this.deny("fatal_latch", "unavailable");
++		this.dispatchAttemptCount += 1;
++		let authority = this.assertFreshAuthority(
++			await this.adapters.readCurrentAuthority({
++				workspaceSessionId: this.identity.workspaceSessionId,
++				userId: this.identity.ownerId,
++				projectId: this.identity.projectId,
++			}),
++		);
++		if (!this.effectAdmissionAllowed(authority, effect, this.clock.now())) {
++			this.deny("execution_gate", "forbidden");
+ 		}
+ 		const argsJson = JSON.stringify(effect.arguments);
+ 		const argsCipher = await encryptRuntimeText(
+@@ -438,48 +616,74 @@
+ 				`effect-args:${effect.runId}:${effect.assistantEntryId}:${effect.toolCallId}:${effect.attempt}`,
+ 			),
+ 		);
++		authority = this.assertFreshAuthority(
++			await this.adapters.readCurrentAuthority({
++				workspaceSessionId: this.identity.workspaceSessionId,
++				userId: this.identity.ownerId,
++				projectId: this.identity.projectId,
++			}),
++		);
++		if (!this.effectAdmissionAllowed(authority, effect, this.clock.now())) {
++			this.deny("execution_gate", "forbidden");
++		}
++		const existing = this.sql.transaction(() =>
++			getEffect(this.sql, {
++				runId: effect.runId,
++				assistantEntryId: effect.assistantEntryId,
++				toolCallId: effect.toolCallId,
++				attempt: effect.attempt,
++			}),
++		);
++		if (existing?.args_ciphertext) {
++			const storedArgs = await decryptRuntimeText(
++				existing.args_ciphertext,
++				this.keyring,
++				commandAad(
++					this.identity,
++					`effect-args:${effect.runId}:${effect.assistantEntryId}:${effect.toolCallId}:${effect.attempt}`,
++				),
++			);
++			if (
++				storedArgs !== argsJson ||
++				existing.expected_incarnation !== effect.executorIncarnationId ||
++				Number(existing.lifecycle_generation) !== effect.lifecycleGeneration
++			) {
++				this.deny("effect_identity_conflict", "conflict");
++			}
++		}
+ 		return this.sql.transaction(() => {
+-			if (isFatalLatched(this.sql)) {
+-				throw new CoordinatorError(
+-					"fatal_latch",
+-					"unavailable",
+-					this.createIdFn(),
+-				);
+-			}
++			if (this.isFatal()) this.deny("fatal_latch", "unavailable");
+ 			const run = getRun(this.sql, effect.runId);
+-			if (!run) {
+-				throw new CoordinatorError(
+-					"run_missing",
+-					"not_found",
+-					this.createIdFn(),
+-				);
++			if (!run) this.deny("run_missing", "not_found");
++			if (Number(run.owner_version) !== authority.runtimeOwnerVersion) {
++				this.deny("stale_owner_version", "conflict");
+ 			}
+ 			if (Number(run.epoch) !== effect.runEpoch) {
+-				throw new CoordinatorError(
+-					"epoch_mismatch",
+-					"conflict",
+-					this.createIdFn(),
+-				);
++				this.deny("epoch_mismatch", "conflict");
+ 			}
+ 			if (TERMINAL_RUN.has(run.state) || run.state === "stopping") {
+-				throw new CoordinatorError(
+-					"run_barrier",
+-					"conflict",
+-					this.createIdFn(),
+-				);
++				this.deny("run_barrier", "conflict");
+ 			}
+ 			if (effect.deadline <= this.clock.now()) {
+-				throw new CoordinatorError("deadline", "conflict", this.createIdFn());
+-			}
+-			const existing = getEffect(this.sql, {
++				this.deny("deadline", "conflict");
++			}
++			const unknown = this.sql.query<{ n: number }>(
++				`SELECT count(*) AS n FROM effects
++				 WHERE run_id = ? AND state = 'outcome_unknown'`,
++				effect.runId,
++			)[0];
++			if (Number(unknown?.n ?? 0) > 0) {
++				this.deny("outcome_unknown", "conflict");
++			}
++			const current = getEffect(this.sql, {
+ 				runId: effect.runId,
+ 				assistantEntryId: effect.assistantEntryId,
+ 				toolCallId: effect.toolCallId,
+ 				attempt: effect.attempt,
+ 			});
+-			if (existing) {
+-				if (existing.state === "admitted" || existing.state === "prepared") {
+-					if (existing.state === "prepared") {
++			if (current) {
++				if (current.state === "admitted" || current.state === "prepared") {
++					if (current.state === "prepared") {
+ 						updateEffectState(
+ 							this.sql,
+ 							{
+@@ -493,11 +697,7 @@
+ 					}
+ 					return { state: "admitted" as const };
+ 				}
+-				throw new CoordinatorError(
+-					"effect_conflict",
+-					"conflict",
+-					this.createIdFn(),
+-				);
++				this.deny("effect_conflict", "conflict");
+ 			}
+ 			const logical = listEffectsForLogical(this.sql, {
+ 				runId: effect.runId,
+@@ -507,14 +707,13 @@
+ 			if (
+ 				logical.some(
+ 					(row) =>
+-						row.state === "result_recorded" || row.state === "outcome_unknown",
++						row.state === "prepared" ||
++						row.state === "admitted" ||
++						row.state === "result_recorded" ||
++						row.state === "outcome_unknown",
+ 				)
+ 			) {
+-				throw new CoordinatorError(
+-					"effect_write_once",
+-					"conflict",
+-					this.createIdFn(),
+-				);
++				this.deny("effect_write_once", "conflict");
+ 			}
+ 			insertEffect(this.sql, {
+ 				run_id: effect.runId,
+@@ -582,22 +781,12 @@
+ 				),
+ 			);
+ 		} catch {
+-			this.sql.transaction(() => latchFatal(this.sql));
+-			throw new CoordinatorError(
+-				"fatal_latch",
+-				"unavailable",
+-				this.createIdFn(),
+-			);
++			this.latchFatalMemoryAndStore();
++			this.deny("fatal_latch", "unavailable");
+ 		}
+ 		try {
+ 			return this.sql.transaction(() => {
+-				if (isFatalLatched(this.sql)) {
+-					throw new CoordinatorError(
+-						"fatal_latch",
+-						"unavailable",
+-						this.createIdFn(),
+-					);
+-				}
++				if (this.isFatal()) this.deny("fatal_latch", "unavailable");
+ 				const existing = getEffect(this.sql, input);
+ 				if (!existing || existing.state !== "admitted") {
+ 					if (
+@@ -628,12 +817,8 @@
+ 			});
+ 		} catch (error) {
+ 			if (error instanceof CoordinatorError) throw error;
+-			this.sql.transaction(() => latchFatal(this.sql));
+-			throw new CoordinatorError(
+-				"fatal_latch",
+-				"unavailable",
+-				this.createIdFn(),
+-			);
++			this.latchFatalMemoryAndStore();
++			this.deny("fatal_latch", "unavailable");
+ 		}
+ 	}
+ 
+@@ -647,6 +832,12 @@
+ 			const existing = getEffect(this.sql, input);
+ 			if (!existing || existing.state !== "admitted") return;
+ 			updateEffectState(this.sql, input, { state: "outcome_unknown" });
++			updateRunState(this.sql, input.runId, {
++				state: "failed",
++				updatedAt: this.clock.now(),
++				blockedReviewReason: "outcome_unknown",
++			});
++			this.queueTerminalProjections(input.runId, "failed", "outcome_unknown");
+ 		});
+ 	}
+ 
+@@ -655,85 +846,114 @@
+ 		snapshot: unknown;
+ 	}): Promise<{ position: number }> {
+ 		this.initialize();
++		await this.ensureCanonicalRestore();
++		if (this.isFatal()) this.deny("fatal_latch", "unavailable");
++		const authority = this.assertFreshAuthority(
++			await this.adapters.readCurrentAuthority({
++				workspaceSessionId: this.identity.workspaceSessionId,
++				userId: this.identity.ownerId,
++				projectId: this.identity.projectId,
++			}),
++		);
+ 		const bytes = new TextEncoder().encode(JSON.stringify(input.snapshot));
+ 		const stored = await encryptRuntimePayload(
+ 			bytes,
+ 			this.keyring,
+ 			commandAad(this.identity, `continuation:${input.expectedPosition + 1}`),
+ 		);
+-		return this.sql.transaction(() => {
+-			if (isFatalLatched(this.sql)) {
+-				throw new CoordinatorError(
+-					"fatal_latch",
+-					"unavailable",
+-					this.createIdFn(),
++		this.assertFreshAuthority(
++			await this.adapters.readCurrentAuthority({
++				workspaceSessionId: this.identity.workspaceSessionId,
++				userId: this.identity.ownerId,
++				projectId: this.identity.projectId,
++			}),
++		);
++		try {
++			return this.sql.transaction(() => {
++				if (this.isFatal()) this.deny("fatal_latch", "unavailable");
++				const runs = listRuns(this.sql);
++				const active = runs.filter(
++					(run) => !TERMINAL_RUN.has(run.state) && run.state !== "stopping",
+ 				);
+-			}
+-			const current = continuationPosition(this.sql);
+-			if (current !== input.expectedPosition) {
+-				throw new CoordinatorError(
+-					"position_conflict",
+-					"conflict",
+-					this.createIdFn(),
+-				);
+-			}
+-			const next = current + 1;
+-			let ciphertext: string | null = null;
+-			let ciphertextRef: string | null = null;
+-			if (stored.kind === "inline") {
+-				ciphertext = serializeRuntimeCiphertext(stored.envelope);
+-			} else {
+-				ciphertextRef = stored.manifest.recordId;
+-				this.sql.query(
+-					`INSERT INTO large_record_manifests (
++				if (active.length === 0)
++					this.deny("continuation_superseded", "conflict");
++				const run = active[active.length - 1];
++				if (
++					!run ||
++					Number(run.owner_version) !== authority.runtimeOwnerVersion
++				) {
++					this.deny("stale_owner_version", "conflict");
++				}
++				const current = continuationPosition(this.sql);
++				if (current !== input.expectedPosition) {
++					throw new CoordinatorError(
++						"position_conflict",
++						"conflict",
++						this.createIdFn(),
++					);
++				}
++				const next = current + 1;
++				let ciphertext: string | null = null;
++				let ciphertextRef: string | null = null;
++				if (stored.kind === "inline") {
++					ciphertext = serializeRuntimeCiphertext(stored.envelope);
++				} else {
++					ciphertextRef = stored.manifest.recordId;
++					this.sql.query(
++						`INSERT INTO large_record_manifests (
+ 						record_id, chunk_count, total_length, digest, format_version, committed
+ 					) VALUES (?, ?, ?, ?, ?, 0)`,
+-					stored.manifest.recordId,
+-					stored.manifest.chunkCount,
+-					stored.manifest.totalLength,
+-					stored.manifest.digest,
+-					stored.manifest.formatVersion,
+-				);
+-				stored.manifest.chunks.forEach((chunk, ordinal) => {
++						stored.manifest.recordId,
++						stored.manifest.chunkCount,
++						stored.manifest.totalLength,
++						stored.manifest.digest,
++						stored.manifest.formatVersion,
++					);
++					stored.manifest.chunks.forEach((chunk, ordinal) => {
++						this.sql.query(
++							`INSERT INTO large_record_chunks (record_id, ordinal, ciphertext, byte_length)
++						 VALUES (?, ?, ?, ?)`,
++							stored.manifest.recordId,
++							ordinal,
++							serializeRuntimeCiphertext(chunk),
++							0,
++						);
++					});
+ 					this.sql.query(
+-						`INSERT INTO large_record_chunks (record_id, ordinal, ciphertext, byte_length)
+-						 VALUES (?, ?, ?, ?)`,
++						"UPDATE large_record_manifests SET committed = 1 WHERE record_id = ?",
+ 						stored.manifest.recordId,
+-						ordinal,
+-						serializeRuntimeCiphertext(chunk),
+-						0,
+ 					);
+-				});
++					void serializeRuntimeManifest;
++				}
+ 				this.sql.query(
+-					"UPDATE large_record_manifests SET committed = 1 WHERE record_id = ?",
+-					stored.manifest.recordId,
+-				);
+-				void serializeRuntimeManifest;
+-			}
+-			this.sql.query(
+-				`INSERT INTO continuations (
++					`INSERT INTO continuations (
+ 					id, position, ciphertext, ciphertext_ref, format_version, committed_at
+ 				) VALUES (?, ?, ?, ?, ?, ?)`,
+-				this.createIdFn(),
+-				next,
+-				ciphertext,
+-				ciphertextRef,
+-				RUNTIME_CRYPTO_FORMAT_VERSION,
+-				this.clock.now(),
+-			);
+-			setMeta(this.sql, "continuation_position", String(next));
+-			insertEvent(this.sql, {
+-				kind: "state_changed",
+-				payloadRedacted: JSON.stringify({
++					this.createIdFn(),
++					next,
++					ciphertext,
++					ciphertextRef,
++					RUNTIME_CRYPTO_FORMAT_VERSION,
++					this.clock.now(),
++				);
++				setMeta(this.sql, "continuation_position", String(next));
++				insertEvent(this.sql, {
+ 					kind: "state_changed",
+-					targetKind: "session",
+-					targetId: this.identity.workspaceSessionId,
+-					status: "continuation_committed",
+-				}),
+-				createdAt: this.clock.now(),
++					payloadRedacted: JSON.stringify({
++						kind: "state_changed",
++						targetKind: "session",
++						targetId: this.identity.workspaceSessionId,
++						status: "continuation_committed",
++					}),
++					createdAt: this.clock.now(),
++				});
++				return { position: next };
+ 			});
+-			return { position: next };
+-		});
++		} catch (error) {
++			if (error instanceof CoordinatorError) throw error;
++			this.latchFatalMemoryAndStore();
++			this.deny("fatal_latch", "unavailable");
++		}
+ 	}
+ 
+ 	async reconcile(): Promise<{
+@@ -742,19 +962,37 @@
+ 		nextDeadlineAt: number | null;
+ 	}> {
+ 		this.initialize();
++		await this.ensureCanonicalRestore();
++		const authority = this.assertFreshAuthority(
++			await this.adapters.readCurrentAuthority({
++				workspaceSessionId: this.identity.workspaceSessionId,
++				userId: this.identity.ownerId,
++				projectId: this.identity.projectId,
++			}),
++		);
++		this.consumeOwnerVersion = authority.runtimeOwnerVersion;
+ 		try {
+ 			const result = await processReconcilePass({
+ 				sql: this.sql,
+ 				adapters: this.adapters,
+ 				hooks: {
+-					consumeReadyCommands: (now) => this.consumeReadyCommands(now),
+-					settleExpiredRuns: (now) =>
+-						settleExpiredRunsNow(this.sql, now, (runId) =>
+-							this.queueTerminalProjections(
+-								runId,
+-								"failed",
+-								"recovery_deadline_expired",
+-							),
++					consumeReadyCommands: (now, max) =>
++						this.consumeReadyCommands(
++							now,
++							max,
++							this.consumeOwnerVersion ?? undefined,
++						),
++					settleExpiredRuns: (now, max) =>
++						settleExpiredRunsNow(
++							this.sql,
++							now,
++							(runId) =>
++								this.queueTerminalProjections(
++									runId,
++									"failed",
++									"recovery_deadline_expired",
++								),
++							max,
+ 						),
+ 				},
+ 				clock: this.clock,
+@@ -787,10 +1025,9 @@
+ 	async repairSchedule(nextDeadlineAt?: number | null): Promise<void> {
+ 		const deadline =
+ 			nextDeadlineAt === undefined
+-				? this.sql.transaction(() => {
+-						const pending = pendingProjectionCount(this.sql);
+-						return pending > 0 ? this.clock.now() : null;
+-					})
++				? this.sql.transaction(() =>
++						nextWorkDeadline(this.sql, this.clock.now()),
++					)
+ 				: nextDeadlineAt;
+ 		if (deadline == null) return;
+ 		await this.scheduler.schedule(new Date(deadline), "reconcileWakeup", {
+@@ -799,16 +1036,18 @@
+ 	}
+ 
+ 	forceFatalLatch(): void {
+-		this.sql.transaction(() => latchFatal(this.sql));
++		this.latchFatalMemoryAndStore();
+ 	}
+ 
+ 	recordInterruption(runId: string): {
+ 		firstInterruptionAt: number;
+ 		recoveryDeadlineAt: number;
+ 	} {
+-		return this.sql.transaction(() =>
+-			markFirstInterruption(this.sql, runId, this.clock.now()),
+-		);
++		return this.sql.transaction(() => {
++			const marked = markFirstInterruption(this.sql, runId, this.clock.now());
++			this.enqueueWakeup("recovery_deadline", marked.recoveryDeadlineAt);
++			return marked;
++		});
+ 	}
+ 
+ 	private enqueueWakeup(reason: string, deadlineAt: number): void {
+@@ -822,78 +1061,135 @@
+ 		});
+ 	}
+ 
+-	private consumeReadyCommands(now: number): void {
+-		if (isFatalLatched(this.sql)) return;
++	private consumeReadyCommands(
++		now: number,
++		max = Number.POSITIVE_INFINITY,
++		ownerVersion?: number,
++	): number {
++		if (this.isFatal()) return 0;
+ 		let expected = consumedOrdinarySeq(this.sql) + 1;
+-		while (true) {
++		let processed = 0;
++		while (processed < max) {
+ 			const command = getCommandBySeq(this.sql, expected);
+-			if (!command) return;
++			if (!command) {
++				const later = this.sql.query<{ n: number }>(
++					"SELECT count(*) AS n FROM commands WHERE command_seq > ?",
++					expected,
++				)[0];
++				if (Number(later?.n ?? 0) > 0) {
++					this.enqueueWakeup("gap", now + 1000);
++				}
++				return processed;
++			}
++			if (
++				ownerVersion != null &&
++				Number(command.owner_version) !== ownerVersion &&
++				command.kind !== "stop" &&
++				command.kind !== "cancel"
++			) {
++				return processed;
++			}
+ 			if (command.kind === "stop") {
+ 				expected += 1;
+ 				setMeta(this.sql, "consumed_ordinary_seq", String(expected - 1));
++				processed += 1;
+ 				continue;
+ 			}
+ 			if (command.consumption_state === "canceled") {
+ 				setMeta(this.sql, "consumed_ordinary_seq", String(expected));
+ 				expected += 1;
++				processed += 1;
+ 				continue;
+ 			}
+ 			if (command.consumption_state === "consumed") {
+ 				setMeta(this.sql, "consumed_ordinary_seq", String(expected));
+ 				expected += 1;
++				processed += 1;
+ 				continue;
+ 			}
+ 			if (command.kind === "cancel") {
+ 				setCommandConsumption(this.sql, command.command_id, "consumed");
+ 				setMeta(this.sql, "consumed_ordinary_seq", String(expected));
+ 				expected += 1;
++				processed += 1;
+ 				continue;
+ 			}
+ 			if (command.kind === "prompt") {
+-				this.startRunFromPrompt(command, now);
++				const started = this.startRunFromPrompt(command, now);
++				if (!started) return processed;
+ 				const after = getCommand(this.sql, command.command_id);
+ 				if (after?.consumption_state !== "canceled") {
+ 					setCommandConsumption(this.sql, command.command_id, "consumed");
+ 				}
+ 				setMeta(this.sql, "consumed_ordinary_seq", String(expected));
+ 				expected += 1;
++				processed += 1;
+ 				continue;
+ 			}
+ 			if (command.kind === "follow_up") {
+ 				const target = command.target_run_id
+ 					? getRun(this.sql, command.target_run_id)
+ 					: undefined;
+-				if (!target || TERMINAL_RUN.has(target.state)) {
++				if (
++					!target ||
++					TERMINAL_RUN.has(target.state) ||
++					target.state === "stopping"
++				) {
+ 					setCommandConsumption(this.sql, command.command_id, "denied");
++					this.queueDeniedFollowUp(command);
+ 					setMeta(this.sql, "consumed_ordinary_seq", String(expected));
+ 					expected += 1;
+-					continue;
+-				}
+-				if (Number(target.epoch) !== currentEpoch(this.sql)) {
+-					setCommandConsumption(this.sql, command.command_id, "denied");
+-					setMeta(this.sql, "consumed_ordinary_seq", String(expected));
+-					expected += 1;
++					processed += 1;
+ 					continue;
+ 				}
+ 				setCommandConsumption(this.sql, command.command_id, "consumed");
++				this.queueMembershipProjection(command, Number(target.epoch));
+ 				setMeta(this.sql, "consumed_ordinary_seq", String(expected));
+ 				expected += 1;
++				processed += 1;
+ 				continue;
+ 			}
+-			return;
+-		}
++			return processed;
++		}
++		return processed;
+ 	}
+ 
+ 	private startRunFromPrompt(
+ 		command: ReturnType<typeof getCommand> & object,
+ 		now: number,
+-	): void {
++	): boolean {
+ 		const row = command as NonNullable<ReturnType<typeof getCommand>>;
+ 		if (metaValue(this.sql, `run_barrier:${row.command_id}`)) {
+ 			setCommandConsumption(this.sql, row.command_id, "canceled");
+-			return;
+-		}
+-		const epoch = currentEpoch(this.sql);
++			this.queueCanceledCommandProjections(row);
++			return true;
++		}
++		if (Number(row.deadline_at) <= now) {
++			insertRun(this.sql, {
++				run_id: row.command_id,
++				origin_command_id: row.command_id,
++				state: "failed",
++				epoch: 1,
++				owner_version: Number(row.owner_version),
++				first_interruption_at: null,
++				recovery_deadline_at: null,
++				brain_incarnation: null,
++				executor_incarnation: null,
++				blocked_review_reason: "queue_expired",
++				assistant_message_id: row.assistant_message_id,
++				user_message_id: row.user_message_id,
++				created_at: now,
++				updated_at: now,
++			});
++			this.queueMembershipProjection(row, 1);
++			this.queueTerminalProjections(row.command_id, "failed", "queue_expired");
++			return true;
++		}
++		if (hasUnresolvedWriter(this.sql) && !isolationEvidencePresent(this.sql)) {
++			this.enqueueWakeup("unresolved_writer", now + 1000);
++			return false;
++		}
++		const epoch = 1;
+ 		insertRun(this.sql, {
+ 			run_id: row.command_id,
+ 			origin_command_id: row.command_id,
+@@ -921,24 +1217,38 @@
+ 			}),
+ 			createdAt: now,
+ 		});
++		return true;
+ 	}
+ 
+ 	private applyStop(command: CommandV1, ownerVersion: number): void {
+ 		if (command.kind !== "stop") return;
+ 		const now = this.clock.now();
+ 		const targetRunId = command.targetRunId;
+-		const nextEpoch = currentEpoch(this.sql) + 1;
+-		setMeta(this.sql, "current_epoch", String(nextEpoch));
+-		setMeta(this.sql, `run_barrier:${targetRunId}`, String(nextEpoch));
++		setMeta(this.sql, `run_barrier:${targetRunId}`, "1");
+ 		const target = getRun(this.sql, targetRunId);
++		const unresolved =
++			target &&
++			listEffectsByRun(this.sql, targetRunId).some(
++				(row) =>
++					row.state === "prepared" ||
++					row.state === "admitted" ||
++					row.state === "outcome_unknown",
++			);
+ 		if (target && !TERMINAL_RUN.has(target.state)) {
++			const nextEpoch = Number(target.epoch) + 1;
+ 			updateRunState(this.sql, targetRunId, {
+-				state: "canceled",
++				state: unresolved ? "stopping" : "canceled",
+ 				updatedAt: now,
+ 				epoch: nextEpoch,
+-				blockedReviewReason: "stop_applied",
++				blockedReviewReason: unresolved
++					? "stop_unresolved_writer"
++					: "stop_applied",
+ 			});
+-			this.queueTerminalProjections(targetRunId, "canceled", "stop_applied");
++			if (!unresolved) {
++				this.queueTerminalProjections(targetRunId, "canceled", "stop_applied");
++			} else {
++				this.enqueueWakeup("stop_reconcile", now + 1000);
++			}
+ 		}
+ 		for (const row of listCommands(this.sql)) {
+ 			if (row.command_id === command.commandId) continue;
+@@ -946,21 +1256,9 @@
+ 				row.target_run_id === targetRunId ||
+ 				(row.kind === "prompt" && row.command_id === targetRunId);
+ 			if (!targetsRun) continue;
+-			if (
+-				row.consumption_state === "accepted" ||
+-				Number(row.command_seq) > command.commandSeq
+-			) {
+-				if (row.consumption_state !== "consumed") {
+-					setCommandConsumption(this.sql, row.command_id, "canceled");
+-				}
+-			}
+-			if (
+-				row.kind === "prompt" &&
+-				row.command_id === targetRunId &&
+-				row.consumption_state === "accepted"
+-			) {
+-				setCommandConsumption(this.sql, row.command_id, "canceled");
+-			}
++			if (row.consumption_state === "consumed") continue;
++			setCommandConsumption(this.sql, row.command_id, "canceled");
++			this.queueCanceledCommandProjections(row);
+ 		}
+ 		setCommandConsumption(this.sql, command.commandId, "consumed");
+ 		this.sql.query(
+@@ -990,27 +1288,72 @@
+ 			}),
+ 			createdAt: now,
+ 		});
+-		this.consumeReadyCommands(now);
+-		void ownerVersion;
++		this.consumeReadyCommands(now, Number.POSITIVE_INFINITY, ownerVersion);
+ 		void RECOVERY_DEADLINE_MS;
+-		void markFirstInterruption;
+-	}
+-
+-	private applyCancel(command: CommandV1): void {
++		void currentEpoch;
++	}
++
++	private applyCancel(
++		command: CommandV1,
++		predecessor: ReconstructedAdmission | null,
++	): void {
+ 		if (command.kind !== "cancel") return;
+ 		setMeta(this.sql, `cancel_barrier:${command.targetCommandId}`, "1");
+-		const target = getCommand(this.sql, command.targetCommandId);
++		let target = getCommand(this.sql, command.targetCommandId);
++		if (
++			!target &&
++			predecessor &&
++			predecessor.command.commandId === command.targetCommandId
++		) {
++			insertCommand(this.sql, {
++				command_id: predecessor.command.commandId,
++				command_seq: predecessor.command.commandSeq,
++				kind: predecessor.command.kind,
++				owner_version: predecessor.command.runtimeOwnerVersion,
++				receipt_id: predecessor.receiptId,
++				payload_hash: predecessor.payloadHash,
++				user_message_id:
++					"userMessageId" in predecessor.command
++						? (predecessor.command.userMessageId ?? null)
++						: null,
++				assistant_message_id:
++					"assistantMessageId" in predecessor.command
++						? (predecessor.command.assistantMessageId ?? null)
++						: null,
++				target_run_id:
++					"targetRunId" in predecessor.command
++						? (predecessor.command.targetRunId ?? null)
++						: null,
++				target_command_id:
++					"targetCommandId" in predecessor.command
++						? (predecessor.command.targetCommandId ?? null)
++						: null,
++				accepted_at: predecessor.command.acceptedAt,
++				deadline_at: predecessor.command.deadlineAt,
++				consumption_state: "canceled",
++				stop_barrier: 0,
++				ciphertext: null,
++				ciphertext_ref: null,
++			});
++			target = getCommand(this.sql, command.targetCommandId);
++		}
+ 		if (target && target.consumption_state === "accepted") {
+ 			setCommandConsumption(this.sql, target.command_id, "canceled");
+ 		}
++		if (target) this.queueCanceledCommandProjections(target);
+ 		setCommandConsumption(this.sql, command.commandId, "consumed");
+-		this.consumeReadyCommands(this.clock.now());
++		this.consumeReadyCommands(
++			this.clock.now(),
++			Number.POSITIVE_INFINITY,
++			command.runtimeOwnerVersion,
++		);
+ 	}
+ 
+ 	private queueMembershipProjection(
+ 		command: NonNullable<ReturnType<typeof getCommand>>,
+ 		epoch: number,
+ 	): void {
++		const runId = command.target_run_id ?? command.command_id;
+ 		this.queueProjection({
+ 			targetKind: "membership",
+ 			targetId: command.command_id,
+@@ -1019,11 +1362,37 @@
+ 			projectId: this.identity.projectId,
+ 			ownerVersion: Number(command.owner_version),
+ 			commandId: command.command_id,
+-			runId: command.command_id,
++			runId,
+ 			runEpoch: epoch,
+ 			userMessageId: command.user_message_id ?? undefined,
+ 			assistantMessageId: command.assistant_message_id ?? undefined,
+ 		});
++	}
++
++	private queueCanceledCommandProjections(
++		command: NonNullable<ReturnType<typeof getCommand>>,
++	): void {
++		if (!command.assistant_message_id) return;
++		const runId = command.target_run_id ?? command.command_id;
++		this.queueMembershipProjection(command, 1);
++		this.queueProjection({
++			targetKind: "message",
++			targetId: command.assistant_message_id,
++			workspaceSessionId: this.identity.workspaceSessionId,
++			userId: this.identity.ownerId,
++			projectId: this.identity.projectId,
++			ownerVersion: Number(command.owner_version),
++			status: "failed",
++			reasonCode: "canceled",
++			commandId: command.command_id,
++			runId,
++		});
++	}
++
++	private queueDeniedFollowUp(
++		command: NonNullable<ReturnType<typeof getCommand>>,
++	): void {
++		this.queueCanceledCommandProjections(command);
+ 	}
+ 
+ 	private queueTerminalProjections(
+@@ -1034,15 +1403,44 @@
+ 		const run = getRun(this.sql, runId);
+ 		if (!run) return;
+ 		const ownerVersion = Number(run.owner_version);
+-		if (run.assistant_message_id) {
++		const status = state === "complete" ? "complete" : "failed";
++		const assistants = new Set<string>();
++		if (run.assistant_message_id) assistants.add(run.assistant_message_id);
++		for (const command of listCommands(this.sql)) {
++			if (!command.assistant_message_id) continue;
++			if (command.command_id === runId || command.target_run_id === runId) {
++				assistants.add(command.assistant_message_id);
++				this.queueMembershipProjection(command, Number(run.epoch));
++				this.queueProjection({
++					targetKind: "message",
++					targetId: command.assistant_message_id,
++					workspaceSessionId: this.identity.workspaceSessionId,
++					userId: this.identity.ownerId,
++					projectId: this.identity.projectId,
++					ownerVersion,
++					status,
++					reasonCode,
++					commandId: command.command_id,
++					runId,
++				});
++			}
++		}
++		for (const assistantId of assistants) {
++			if (
++				[...listCommands(this.sql)].some(
++					(command) => command.assistant_message_id === assistantId,
++				)
++			) {
++				continue;
++			}
+ 			this.queueProjection({
+ 				targetKind: "message",
+-				targetId: run.assistant_message_id,
++				targetId: assistantId,
+ 				workspaceSessionId: this.identity.workspaceSessionId,
+ 				userId: this.identity.ownerId,
+ 				projectId: this.identity.projectId,
+ 				ownerVersion,
+-				status: state === "complete" ? "complete" : "failed",
++				status,
+ 				reasonCode,
+ 				commandId: run.origin_command_id,
+ 				runId,
+--- before/apps/web/src/lib/session-runtime-authority.ts
++++ after/apps/web/src/lib/session-runtime-authority.ts
+@@ -1,6 +1,12 @@
+ import { and, eq } from "drizzle-orm";
+ import type { createDb } from "#/db";
+-import { projects, sessionCommandKeys, workspaceSessions } from "#/db/schema";
++import {
++	projects,
++	sandboxIdentities,
++	sessionCommandKeys,
++	workspaceCapacityLeases,
++	workspaceSessions,
++} from "#/db/schema";
+ import { reconstructAdmittedCommandV1 } from "#/lib/session-command";
+ import {
+ 	applyProductProjectionBatch,
+@@ -54,6 +60,55 @@
+ 		)
+ 		.limit(1);
+ 	if (!project) return null;
++	const identities = await db
++		.select({
++			incarnationId: sandboxIdentities.incarnationId,
++			lifecycleGeneration: sandboxIdentities.lifecycleGeneration,
++			state: sandboxIdentities.state,
++			retiredAt: sandboxIdentities.retiredAt,
++		})
++		.from(sandboxIdentities)
++		.where(
++			and(
++				eq(sandboxIdentities.userId, input.userId),
++				eq(sandboxIdentities.projectId, input.projectId),
++				eq(sandboxIdentities.workspaceSessionId, input.workspaceSessionId),
++			),
++		);
++	const processIdentities = identities.flatMap((row) => {
++		if (
++			typeof row.incarnationId !== "string" ||
++			row.incarnationId.length === 0 ||
++			row.retiredAt != null ||
++			row.state === "destroyed" ||
++			row.state === "destroying"
++		) {
++			return [];
++		}
++		return [
++			{
++				incarnationId: row.incarnationId,
++				lifecycleGeneration: row.lifecycleGeneration,
++				state: row.state,
++			},
++		];
++	});
++	const [lease] = await db
++		.select({
++			expiresAt: workspaceCapacityLeases.expiresAt,
++		})
++		.from(workspaceCapacityLeases)
++		.where(
++			and(
++				eq(workspaceCapacityLeases.sessionId, input.workspaceSessionId),
++				eq(workspaceCapacityLeases.userId, input.userId),
++			),
++		)
++		.limit(1);
++	const lifecycleGeneration =
++		processIdentities.length === 0
++			? 0
++			: Math.max(...processIdentities.map((row) => row.lifecycleGeneration));
+ 	return {
+ 		userId: session.userId,
+ 		projectId: session.projectId,
+@@ -62,7 +117,9 @@
+ 		runtimeOwnerVersion: session.runtimeOwnerVersion,
+ 		sessionStatus: session.status,
+ 		projectStatus: project.status,
+-		lifecycleGeneration: 1,
++		lifecycleGeneration,
++		processIdentities,
++		capacityExpiresAt: lease ? Number(lease.expiresAt) : null,
+ 	};
+ }
+ 
+--- before/apps/web/src/lib/session-runtime-control.test.ts
++++ after/apps/web/src/lib/session-runtime-control.test.ts
+@@ -238,6 +238,7 @@
+ 
+ 	it("T15/T16 intro: Stop fences late predecessors and rejects superseded epoch admissions", async () => {
+ 		const created = fixture();
++		created.seedExecutorIdentity({ incarnationId: "exec-1" });
+ 		const first = await created.asUser("user-1").command(promptBody());
+ 		const runId = (first.body as { commandId: string }).commandId;
+ 		await created.deliver();
+@@ -287,6 +288,7 @@
+ 
+ 	it("rejects conflicting effect results and keeps identical acknowledgments idempotent", async () => {
+ 		const created = fixture();
++		created.seedExecutorIdentity({ incarnationId: "exec-1" });
+ 		const admitted = await created.asUser("user-1").command(promptBody());
+ 		const runId = (admitted.body as { commandId: string }).commandId;
+ 		await created.deliver();
+@@ -316,4 +318,101 @@
+ 			coord.recordEffectResult({ ...key, result: { ok: false } }),
+ 		).rejects.toMatchObject({ code: "effect_conflict" });
+ 	});
++
++	it("T07 cancellation of missing N advances N+1 without delivering N", async () => {
++		const created = fixture();
++		const first = await created.asUser("user-1").command(promptBody());
++		const second = await created
++			.asUser("user-1")
++			.command(promptBody({ idempotencyKey: "key-2", text: "again" }));
++		const firstId = (first.body as { commandId: string }).commandId;
++		const secondId = (second.body as { commandId: string }).commandId;
++		const canceled = await created.asUser("user-1").command({
++			version: 1,
++			idempotencyKey: "cancel-1",
++			kind: "cancel",
++			projectId: "proj-1",
++			sessionId: "sess-1",
++			targetCommandId: firstId,
++		});
++		const coord = await created.ensureCoordinator({ sessionId: "sess-1" });
++		await coord.acceptCommand({ commandId: secondId, ownerVersion: 1 });
++		await coord.acceptCommand({
++			commandId: (canceled.body as { commandId: string }).commandId,
++			ownerVersion: 1,
++		});
++		const snapshot = (
++			await created.asUser("user-1").observe({
++				projectId: "proj-1",
++				sessionId: "sess-1",
++			})
++		).body as { snapshot: SnapshotV1 };
++		expect(
++			snapshot.snapshot.commandStates.find((row) => row.id === secondId)
++				?.status,
++		).toBe("consumed");
++		expect(snapshot.snapshot.runStates.map((row) => row.id)).toEqual([
++			secondId,
++		]);
++	});
++
++	it("uncooperative Stop stays stopping and blocks a replacement writer", async () => {
++		const created = fixture();
++		created.seedExecutorIdentity({ incarnationId: "synthetic-exec-1" });
++		const first = await created.asUser("user-1").command(promptBody());
++		const runId = (first.body as { commandId: string }).commandId;
++		await created.deliver();
++		const coord = created.coordinator("sess-1");
++		await coord.admitEffect({
++			version: 1,
++			runId,
++			assistantEntryId: (
++				created.observeReceipt(runId) as { assistantMessageId: string }
++			).assistantMessageId,
++			toolCallId: "tool-1",
++			attempt: 1,
++			executorIncarnationId: "synthetic-exec-1",
++			runEpoch: 1,
++			lifecycleGeneration: 1,
++			deadline: 1_700_000_000_000 + 60_000,
++			arguments: { operation: "synthetic" },
++			outcomePolicy: "never_retry",
++			state: "prepared",
++		});
++		await created.asUser("user-1").command({
++			version: 1,
++			idempotencyKey: "stop-1",
++			kind: "stop",
++			projectId: "proj-1",
++			sessionId: "sess-1",
++			targetRunId: runId,
++		});
++		await created.deliver();
++		const observed = await created.asUser("user-1").observe({
++			projectId: "proj-1",
++			sessionId: "sess-1",
++		});
++		const snapshot = (observed.body as { snapshot: SnapshotV1 }).snapshot;
++		expect(snapshot.runStates[0]?.status).toBe("stopping");
++		const next = await created
++			.asUser("user-1")
++			.command(promptBody({ idempotencyKey: "next" }));
++		await created.deliver();
++		await expect(
++			coord.admitEffect({
++				version: 1,
++				runId: (next.body as { commandId: string }).commandId,
++				assistantEntryId: "asst-next",
++				toolCallId: "tool-1",
++				attempt: 1,
++				executorIncarnationId: "synthetic-exec-1",
++				runEpoch: 2,
++				lifecycleGeneration: 1,
++				deadline: 1_700_000_000_000 + 60_000,
++				arguments: { operation: "synthetic" },
++				outcomePolicy: "never_retry",
++				state: "prepared",
++			}),
++		).rejects.toMatchObject({ code: expect.any(String) });
++	});
+ });
+--- before/apps/web/src/lib/session-runtime-journal.test.ts
++++ after/apps/web/src/lib/session-runtime-journal.test.ts
+@@ -230,6 +230,7 @@
+ 
+ 	it("latches fatal persistence and admits no later effects", async () => {
+ 		const created = fixture();
++		created.seedExecutorIdentity({ incarnationId: "exec-1" });
+ 		const admitted = await created.asUser("user-1").command(promptBody());
+ 		const runId = (admitted.body as { commandId: string }).commandId;
+ 		await created.deliver();
+@@ -275,6 +276,7 @@
+ 
+ 	it("rejects continuation position conflicts and commits the next position", async () => {
+ 		const created = fixture();
++		created.seedExecutorIdentity({ incarnationId: "exec-1" });
+ 		await created.asUser("user-1").command(promptBody());
+ 		await created.deliver();
+ 		const coord = created.coordinator("sess-1");
+@@ -331,5 +333,81 @@
+ 				.prepare("SELECT count(*) AS n FROM messages WHERE role = 'assistant'")
+ 				.get() as { n: number },
+ 		).toEqual({ n: 1 });
++		expect(
++			(
++				created.sqlite
++					.prepare("SELECT status FROM messages WHERE role = 'assistant'")
++					.get() as { status: string }
++			).status,
++		).toBe("pending");
++	});
++
++	it("actual continuation persistence failure latches later effect admission", async () => {
++		const created = fixture();
++		created.seedExecutorIdentity({ incarnationId: "exec-1" });
++		const admitted = await created.asUser("user-1").command(promptBody());
++		const runId = (admitted.body as { commandId: string }).commandId;
++		await created.deliver();
++		const coord = created.coordinator("sess-1");
++		const original = coord.sql.query.bind(coord.sql);
++		let inject = true;
++		coord.sql.query = (sql: string, ...args: never[]) => {
++			if (inject && /INSERT INTO continuations/.test(sql)) {
++				inject = false;
++				throw new Error("synthetic persistence failure");
++			}
++			return original(sql, ...args);
++		};
++		await expect(
++			coord.commitContinuation({ expectedPosition: 0, snapshot: { n: 1 } }),
++		).rejects.toMatchObject({ code: "fatal_latch" });
++		await expect(
++			coord.admitEffect({
++				version: 1,
++				runId,
++				assistantEntryId: "asst-1",
++				toolCallId: "tool-1",
++				attempt: 1,
++				executorIncarnationId: "exec-1",
++				runEpoch: 1,
++				lifecycleGeneration: 1,
++				deadline: 1_700_000_000_000 + 60_000,
++				arguments: { path: "x" },
++				outcomePolicy: "never_retry",
++				state: "prepared",
++			}),
++		).rejects.toMatchObject({
++			code: expect.stringMatching(/fatal_latch|canonical_restore_failed/),
++		});
++	});
++
++	it("tampered retained command ciphertext fails closed before effect admission", async () => {
++		const created = fixture({ persistentJournal: true });
++		created.seedExecutorIdentity({ incarnationId: "exec-1" });
++		const admitted = await created.asUser("user-1").command(promptBody());
++		const runId = (admitted.body as { commandId: string }).commandId;
++		await created.deliver();
++		created
++			.coordinator("sess-1")
++			.sql.query(
++				"UPDATE commands SET ciphertext = 'invalid-authenticated-record'",
++			);
++		await created.restartJournals();
++		await expect(
++			created.coordinator("sess-1").admitEffect({
++				version: 1,
++				runId,
++				assistantEntryId: "asst-1",
++				toolCallId: "tool-1",
++				attempt: 1,
++				executorIncarnationId: "exec-1",
++				runEpoch: 1,
++				lifecycleGeneration: 1,
++				deadline: 1_700_000_000_000 + 60_000,
++				arguments: { path: "x" },
++				outcomePolicy: "never_retry",
++				state: "prepared",
++			}),
++		).rejects.toMatchObject({ code: "canonical_restore_failed" });
+ 	});
+ });

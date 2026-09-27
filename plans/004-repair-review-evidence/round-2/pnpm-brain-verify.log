@@ -1,0 +1,72 @@
+$ pnpm contracts:verify && npm run contracts:check --prefix packages/session-brain && npm run typecheck --prefix packages/session-brain && npm test --prefix packages/session-brain && npm run build --prefix packages/session-brain
+$ pnpm --filter @ditto/runtime-contracts typecheck && pnpm --filter @ditto/runtime-contracts exec vitest run && pnpm --filter @ditto/runtime-contracts build
+$ tsc --noEmit
+
+ RUN  v3.2.7 /home/ayan/ditto-worktrees/plan-004-grok/packages/runtime-contracts
+
+ ✓ src/contracts.test.ts (14 tests) 23ms
+
+ Test Files  1 passed (1)
+      Tests  14 passed (14)
+   Start at  18:24:58
+   Duration  737ms (transform 259ms, setup 0ms, collect 275ms, tests 23ms, environment 0ms, prepare 112ms)
+
+$ tsc -p tsconfig.json
+npm notice run contracts:check
+npm notice run vitest run src/pi-feasibility.test.ts -t contracts-consumer-freshness
+
+ RUN  v3.2.7 /home/ayan/ditto-worktrees/plan-004-grok/packages/session-brain
+
+ ✓ src/pi-feasibility.test.ts (6 tests | 3 skipped) 7917ms
+   ✓ contracts-consumer-freshness > contracts-consumer-freshness: imported emitted JS/declarations match a fresh contracts build  942ms
+   ✓ contracts-consumer-freshness > contracts-consumer-freshness: isolated npm copy is stale until the documented npm refresh recipe  6909ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed | 3 skipped (6)
+   Start at  18:25:02
+   Duration  9.46s (transform 177ms, setup 0ms, collect 1.20s, tests 7.92s, environment 0ms, prepare 65ms)
+
+npm notice run typecheck
+npm notice run tsc -p tsconfig.json --noEmit
+npm notice run test
+npm notice run vitest run
+
+ RUN  v3.2.7 /home/ayan/ditto-worktrees/plan-004-grok/packages/session-brain
+
+ ✓ src/pi-restoration.test.ts (3 tests) 12ms
+ ✓ src/pi-feasibility.test.ts (6 tests) 23173ms
+   ✓ contracts-consumer-freshness > contracts-consumer-freshness: imported emitted JS/declarations match a fresh contracts build  1883ms
+   ✓ contracts-consumer-freshness > contracts-consumer-freshness: isolated npm copy is stale until the documented npm refresh recipe  21073ms
+ ✓ src/pi-recovery.test.ts (34 tests) 31668ms
+   ✓ awaited durability barriers > initial-command: SIGKILL before-persist and restart  6716ms
+   ✓ awaited durability barriers > initial-command: SIGKILL after-persist-before-ack and restart  6303ms
+   ✓ awaited durability barriers > initial-command: SIGKILL after-ack-before-next and restart  6444ms
+   ✓ awaited durability barriers > follow-up: SIGKILL before-persist and restart  6476ms
+   ✓ awaited durability barriers > follow-up: SIGKILL after-persist-before-ack and restart  6268ms
+   ✓ awaited durability barriers > follow-up: SIGKILL after-ack-before-next and restart  6719ms
+   ✓ awaited durability barriers > assistant-tools: SIGKILL before-persist and restart  6340ms
+   ✓ awaited durability barriers > assistant-tools: SIGKILL after-persist-before-ack and restart  6271ms
+   ✓ awaited durability barriers > assistant-tools: SIGKILL after-ack-before-next and restart  6410ms
+   ✓ awaited durability barriers > tool-result: SIGKILL before-persist and restart  5888ms
+   ✓ awaited durability barriers > tool-result: SIGKILL after-persist-before-ack and restart  6368ms
+   ✓ awaited durability barriers > tool-result: SIGKILL after-ack-before-next and restart  6624ms
+   ✓ awaited durability barriers > final-answer: SIGKILL before-persist and restart  6511ms
+   ✓ awaited durability barriers > final-answer: SIGKILL after-persist-before-ack and restart  5606ms
+   ✓ awaited durability barriers > final-answer: SIGKILL after-ack-before-next and restart  6492ms
+   ✓ awaited durability barriers > compaction: SIGKILL before-persist and restart  6044ms
+   ✓ awaited durability barriers > compaction: SIGKILL after-persist-before-ack and restart  6253ms
+   ✓ awaited durability barriers > compaction: SIGKILL after-ack-before-next and restart  6257ms
+   ✓ awaited durability barriers > extension-state: SIGKILL before-persist and restart  6676ms
+   ✓ awaited durability barriers > extension-state: SIGKILL after-persist-before-ack and restart  6171ms
+   ✓ awaited durability barriers > extension-state: SIGKILL after-ack-before-next and restart  5644ms
+   ✓ awaited durability barriers > spending-attempt: SIGKILL before-persist and restart  5245ms
+   ✓ awaited durability barriers > spending-attempt: SIGKILL after-persist-before-ack and restart  5241ms
+   ✓ awaited durability barriers > spending-attempt: SIGKILL after-ack-before-next and restart  4889ms
+
+ Test Files  3 passed (3)
+      Tests  43 passed (43)
+   Start at  18:25:16
+   Duration  33.38s (transform 288ms, setup 0ms, collect 4.26s, tests 54.85s, environment 0ms, prepare 281ms)
+
+npm notice run build
+npm notice run tsc -p tsconfig.json

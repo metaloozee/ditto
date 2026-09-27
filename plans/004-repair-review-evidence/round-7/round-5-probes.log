@@ -1,0 +1,6 @@
+{"name":"V01 positive: ordinary delivery arms an actual callback before leaving outbox","result":"PASS","observed":{"deliveryState":"delivered","armedCallbacks":1}}
+{"name":"V02 first schedule failure cannot strand acknowledged acceptance","result":"PASS","observed":{"faultHit":true,"firstDeliveryState":"delivered","firstArmedCallbacks":1,"finalDeliveryState":"delivered","finalArmedCallbacks":1}}
+{"name":"V03 a real retry-intent write failure must latch later effects","result":"PASS","observed":{"scheduleFaultHit":true,"journalFaultHit":true,"acceptReturnedSuccess":false,"laterEffectAdmitted":false}}
+{"name":"V04 Stop cannot exempt an interrupted run from its fixed recovery deadline","result":"PASS","observed":{"runState":"failed","reason":"recovery_deadline_expired","deadlineUnchanged":true,"unresolvedEffectsRetained":1,"assistantStatuses":["failed"],"laterEffectAdmitted":false}}
+{"name":"V05 settling one run does not scan the entire unrelated command history","result":"PASS","observed":{"runState":"failed","largestCommandQueryRows":1}}
+{"checks":5,"failures":0}

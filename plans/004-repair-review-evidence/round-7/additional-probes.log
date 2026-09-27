@@ -1,0 +1,5 @@
+{"name":"J01 failed terminal-intent INSERT rolls back terminal state and latches","result":"PASS","observed":{"faultHit":true,"runState":"queued","terminalJobs":0,"laterEffectAdmitted":false}}
+{"name":"J02 terminal work resumes its persisted page after restart and settles every assistant","result":"PASS","observed":{"persistedCursor":25,"lagAfterRestart":82,"retryLost":false,"remainingJobs":0,"assistants":31,"pendingAssistants":0}}
+{"name":"J03 failed page cursor commit rolls back enqueued projections and preserves progress","result":"PASS","observed":{"faultHit":true,"cursorBefore":0,"cursorAfter":0,"projectionCountUnchanged":true,"fatal":true}}
+{"name":"J04 retry payload cannot extend the actual scheduled effect deadline","result":"PASS","observed":{"duplicateAccepted":true,"deadlinePreserved":true,"dispatches":1}}
+{"checks":4,"failures":0}

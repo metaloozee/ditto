@@ -1,0 +1,57 @@
+{
+  "base": "9db8c3846e3033fe08ea947fdd999ff51b3cfb82",
+  "branch": "grok/plan-004-coordinator",
+  "root": "/home/ayan/ditto-worktrees/plan-004-grok",
+  "sourceModified": [
+    "apps/runtime/src/server.ts",
+    "apps/runtime/types/env.d.ts",
+    "apps/runtime/vitest.config.ts",
+    "apps/web/src/lib/session-command.test.ts",
+    "apps/web/src/lib/session-runtime-client.ts",
+    "apps/web/src/routes/api.agent.stream.ts",
+    "apps/web/src/test/session-runtime-fixture.ts"
+  ],
+  "sourceAdded": [
+    "apps/runtime/src/journal.ts",
+    "apps/runtime/src/product-projector.ts",
+    "apps/runtime/src/reconcile.ts",
+    "apps/runtime/src/runtime-crypto.test.ts",
+    "apps/runtime/src/runtime-crypto.ts",
+    "apps/runtime/src/session-runtime.ts",
+    "apps/web/src/lib/session-runtime-authority.ts",
+    "apps/web/src/lib/session-runtime-control.test.ts",
+    "apps/web/src/lib/session-runtime-journal.test.ts"
+  ],
+  "sha256": {
+    "apps/runtime/src/server.ts": "6e286e169bf9e2de3001e11e9ea0189da133ab2d38477dba8f87ac7012bc7d86",
+    "apps/runtime/types/env.d.ts": "5803bb3ace5dd574617bc84437428b75f6a5f40a0195b00edce2d26861432fcf",
+    "apps/runtime/vitest.config.ts": "3ecc855c6d649bd238d785d812109e9e0fcafb60364824e1cf34ee80ba893dc5",
+    "apps/web/src/lib/session-command.test.ts": "959ee2a5ec5f8c098f4810aefc980bbfc66b3e6d8b3b04ccd37f7a6d4720d6a0",
+    "apps/web/src/lib/session-runtime-client.ts": "28716a14ee95a9c8e110e5f759c42fee4c38395089a0a53c6e65bbde73c3d485",
+    "apps/web/src/routes/api.agent.stream.ts": "65064e7278d98df00e5621bcaf4357304f521a4d96b50fefc20a66d31ca8ca71",
+    "apps/web/src/test/session-runtime-fixture.ts": "2652b5ba129c30e312b5337a0c35ad985df2fd497c09dec70950f7ef40ad678b",
+    "apps/runtime/src/journal.ts": "db025da94e85e64928aae0674e8691d6910c2edf132c82f68b6d19224abd5802",
+    "apps/runtime/src/product-projector.ts": "fa4c44a96f83bdd8f5228e99fc87a97cee8a9930942e0da6b5de09a4254ce443",
+    "apps/runtime/src/reconcile.ts": "90bb951b6bdd625c14b939b8713c951a7366010bdd5b2a22b4924fb893170350",
+    "apps/runtime/src/runtime-crypto.test.ts": "1387312be3350ed7b911900ad312c2a5c605c3e19f7ec361fb9d4bf20461b9f5",
+    "apps/runtime/src/runtime-crypto.ts": "81e76951b42137107d8ba54d967676ed8a74019637c561b4e22b9140346f4073",
+    "apps/runtime/src/session-runtime.ts": "6c51af96b6f406775f4df87d9094ebcb1bcbec5d6cd96b4ba77fba736d127528",
+    "apps/web/src/lib/session-runtime-authority.ts": "b2de531e0c93381abf6476c79b1a257ce4e351bc5992a567e0bc000f255fc373",
+    "apps/web/src/lib/session-runtime-control.test.ts": "1be3a6e7e84f3075c73ebbeba6ec469d60d35faddb5de06cdf4c83e6b9c27e53",
+    "apps/web/src/lib/session-runtime-journal.test.ts": "4e2cad9cfdafea9c2dc0ad9271502b67c3f0b46ab5f144789e3b15de730ce906"
+  },
+  "stagedFiles": [],
+  "changedFromRejected": [
+    "apps/runtime/src/server.ts",
+    "apps/web/src/test/session-runtime-fixture.ts",
+    "apps/runtime/src/journal.ts",
+    "apps/runtime/src/product-projector.ts",
+    "apps/runtime/src/reconcile.ts",
+    "apps/runtime/src/runtime-crypto.test.ts",
+    "apps/runtime/src/runtime-crypto.ts",
+    "apps/runtime/src/session-runtime.ts",
+    "apps/web/src/lib/session-runtime-authority.ts",
+    "apps/web/src/lib/session-runtime-control.test.ts",
+    "apps/web/src/lib/session-runtime-journal.test.ts"
+  ]
+}

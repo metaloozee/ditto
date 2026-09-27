@@ -1,0 +1,14 @@
+{"name":"S01 positive: recovery pointer CAS applies to the owned workspace","result":"PASS","observed":{"classification":"applied","generation":2}}
+{"name":"S02 a recovery envelope cannot mutate another user workspace pointer","result":"FAIL","observed":{"classification":"applied","foreignGeneration":2,"cursors":1}}
+{"name":"S03 positive: current brain can commit and read canonical continuation","result":"PASS","observed":{"roundTrip":true}}
+{"name":"S04 trusted_brain rejects a wrong controller class","result":"FAIL","observed":{"effectAdmitted":true}}
+{"name":"S04 workspace_session rejects a wrong controller class","result":"FAIL","observed":{"effectAdmitted":true}}
+{"name":"S05 wrong-controller brain cannot receive canonical plaintext","result":"FAIL","observed":{"canonicalReadAccepted":true}}
+{"name":"S06 failed reconciliation terminal write latches later admissions","result":"FAIL","observed":{"faultHit":true,"reconcileReturned":true,"nextEffectAdmitted":true}}
+{"name":"S07 restore blocks missing-command-bytes","result":"FAIL","observed":{"effectAdmitted":true}}
+{"name":"S07 restore blocks unsupported-continuation-version","result":"FAIL","observed":{"effectAdmitted":true}}
+{"name":"S07 restore blocks unsupported-chunk-record-version","result":"FAIL","observed":{"effectAdmitted":true}}
+{"name":"S08 Stop settles after the last admitted effect records its result","result":"FAIL","observed":{"runState":"stopping","assistantStatuses":["pending"],"nextDeadline":null}}
+{"name":"S09 positive: a valid restart restores canonical bytes and permits effects","result":"PASS","observed":{"effectAdmitted":true}}
+{"name":"S10 restore time budget applies between record types, including short batches","result":"FAIL","observed":{"restoreReturnedSuccess":true,"decryptCalls":2,"restoreState":"ok"}}
+{"checks":13,"failures":10}

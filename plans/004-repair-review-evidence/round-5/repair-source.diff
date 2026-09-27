@@ -1,0 +1,1059 @@
+--- before/apps/runtime/src/journal.ts
++++ after/apps/runtime/src/journal.ts
+@@ -13,6 +13,7 @@
+ export const RECONCILE_MAX_INTENTS = 25;
+ export const RECONCILE_MAX_MS = 5_000;
+ export const WORK_RETRY_MS = 1_000;
++export const SUCCESSFUL_TERMINATION_RESULT = "terminated";
+ 
+ export type CommandConsumptionState =
+ 	| "accepted"
+@@ -91,6 +92,8 @@
+ 		result_ref TEXT,
+ 		result_digest TEXT,
+ 		expected_incarnation TEXT NOT NULL,
++		expected_identity TEXT NOT NULL DEFAULT '',
++		expected_controller_class TEXT NOT NULL DEFAULT '',
+ 		epoch INTEGER NOT NULL,
+ 		deadline INTEGER NOT NULL,
+ 		outcome_policy TEXT NOT NULL,
+@@ -448,11 +451,72 @@
+ 	return sql.query<RunRow>("SELECT * FROM runs ORDER BY created_at ASC");
+ }
+ 
+-export function listStoppingRuns(sql: CoordinatorSql, limit: number): RunRow[] {
++export function boundedIntentLimit(max: number): number {
++	if (!Number.isFinite(max) || max <= 0) return 0;
++	return Math.min(Math.floor(max), RECONCILE_MAX_INTENTS);
++}
++
++export function listDueExpiredRuns(
++	sql: CoordinatorSql,
++	now: number,
++	limit: number,
++): RunRow[] {
++	const bounded = boundedIntentLimit(limit);
++	if (bounded <= 0) return [];
+ 	return sql.query<RunRow>(
+-		`SELECT * FROM runs WHERE state = 'stopping' ORDER BY updated_at ASC LIMIT ?`,
+-		limit,
+-	);
++		`SELECT * FROM runs
++		 WHERE recovery_deadline_at IS NOT NULL
++		   AND recovery_deadline_at <= ?
++		   AND state NOT IN ('complete', 'failed', 'canceled', 'stopping')
++		 ORDER BY recovery_deadline_at ASC, run_id ASC
++		 LIMIT ?`,
++		now,
++		bounded,
++	);
++}
++
++export function listStoppingRuns(
++	sql: CoordinatorSql,
++	limit: number,
++	after?: { updatedAt: number; runId: string } | null,
++): RunRow[] {
++	const bounded = boundedIntentLimit(limit);
++	if (bounded <= 0) return [];
++	return sql.query<RunRow>(
++		`SELECT * FROM runs
++		 WHERE state = 'stopping'
++		   AND (? IS NULL OR updated_at > ? OR (updated_at = ? AND run_id > ?))
++		 ORDER BY updated_at ASC, run_id ASC
++		 LIMIT ?`,
++		after == null ? null : after.runId,
++		after?.updatedAt ?? 0,
++		after?.updatedAt ?? 0,
++		after?.runId ?? "",
++		bounded,
++	);
++}
++
++export function readStoppingScanCursor(sql: CoordinatorSql): {
++	updatedAt: number;
++	runId: string;
++} | null {
++	const runId = metaValue(sql, "stopping_scan_run_id");
++	const updatedAt = metaValue(sql, "stopping_scan_updated_at");
++	if (!runId || updatedAt == null || updatedAt === "") return null;
++	return { runId, updatedAt: Number(updatedAt) };
++}
++
++export function writeStoppingScanCursor(
++	sql: CoordinatorSql,
++	row: { updated_at: number; run_id: string },
++): void {
++	setMeta(sql, "stopping_scan_run_id", row.run_id);
++	setMeta(sql, "stopping_scan_updated_at", String(row.updated_at));
++}
++
++export function clearStoppingScanCursor(sql: CoordinatorSql): void {
++	setMeta(sql, "stopping_scan_run_id", "");
++	setMeta(sql, "stopping_scan_updated_at", "");
+ }
+ 
+ export function insertRun(sql: CoordinatorSql, row: RunRow): void {
+@@ -530,7 +594,7 @@
+ 		`UPDATE runs SET
+ 			first_interruption_at = ?,
+ 			recovery_deadline_at = ?,
+-			state = CASE WHEN state IN ('complete','failed','canceled') THEN state ELSE 'recovering' END,
++			state = CASE WHEN state IN ('starting', 'running') THEN 'recovering' ELSE state END,
+ 			updated_at = ?
+ 		 WHERE run_id = ? AND first_interruption_at IS NULL`,
+ 		firstInterruptionAt,
+@@ -552,6 +616,8 @@
+ 	result_ref: string | null;
+ 	result_digest: string | null;
+ 	expected_incarnation: string;
++	expected_identity: string;
++	expected_controller_class: string;
+ 	epoch: number;
+ 	deadline: number;
+ 	outcome_policy: string;
+@@ -620,15 +686,18 @@
+ 	return listUnresolvedWriters(sql).length > 0;
+ }
+ 
++export type ProcessEvidenceMatch = {
++	identity: string;
++	incarnation: string;
++	lifecycleGeneration: number;
++	epoch: number;
++	className?: string;
++	replacementIdentity?: string;
++};
++
+ export function isolationEvidencePresent(
+ 	sql: CoordinatorSql,
+-	match?: {
+-		identity: string;
+-		incarnation: string;
+-		lifecycleGeneration: number;
+-		epoch: number;
+-		replacementIdentity?: string;
+-	},
++	match?: ProcessEvidenceMatch,
+ ): boolean {
+ 	if (!match) return false;
+ 	return (
+@@ -639,11 +708,14 @@
+ 			   AND incarnation = ?
+ 			   AND lifecycle_generation = ?
+ 			   AND observed_run_epoch = ?
++			   AND (? IS NULL OR class = ?)
+ 			   AND (? IS NULL OR replacement_identity = ?)`,
+ 			match.identity,
+ 			match.incarnation,
+ 			match.lifecycleGeneration,
+ 			match.epoch,
++			match.className ?? null,
++			match.className ?? null,
+ 			match.replacementIdentity ?? null,
+ 			match.replacementIdentity ?? null,
+ 		)[0]?.n ?? 0) > 0
+@@ -652,26 +724,25 @@
+ 
+ export function terminationEvidencePresent(
+ 	sql: CoordinatorSql,
+-	match?: {
+-		identity: string;
+-		incarnation: string;
+-		lifecycleGeneration: number;
+-		epoch: number;
+-	},
++	match?: ProcessEvidenceMatch,
+ ): boolean {
+ 	if (!match) return false;
+ 	return (
+ 		(sql.query<{ n: number }>(
+ 			`SELECT count(*) AS n FROM process_observations
+-			 WHERE termination_result IS NOT NULL AND termination_result != ''
++			 WHERE termination_result = ?
+ 			   AND identity = ?
+ 			   AND incarnation = ?
+ 			   AND lifecycle_generation = ?
+-			   AND observed_run_epoch = ?`,
++			   AND observed_run_epoch = ?
++			   AND (? IS NULL OR class = ?)`,
++			SUCCESSFUL_TERMINATION_RESULT,
+ 			match.identity,
+ 			match.incarnation,
+ 			match.lifecycleGeneration,
+ 			match.epoch,
++			match.className ?? null,
++			match.className ?? null,
+ 		)[0]?.n ?? 0) > 0
+ 	);
+ }
+@@ -710,15 +781,19 @@
+ 		candidates.push(Number(recovery.deadline_at));
+ 	const effect = one(
+ 		sql.query<{ deadline_at: number }>(
+-			`SELECT MIN(deadline) AS deadline_at FROM effects
+-			 WHERE state IN ('prepared', 'admitted')`,
++			`SELECT MIN(e.deadline) AS deadline_at FROM effects e
++			 LEFT JOIN runs r ON r.run_id = e.run_id
++			 WHERE e.state IN ('prepared', 'admitted')
++			   AND (r.state IS NULL OR r.state NOT IN ('stopping', 'complete', 'failed', 'canceled'))`,
+ 		),
+ 	);
+ 	if (effect?.deadline_at != null) candidates.push(Number(effect.deadline_at));
+ 	if (pendingProjectionCount(sql) > 0) {
+ 		candidates.push(now + WORK_RETRY_MS);
+ 	}
+-	return candidates.length === 0 ? null : Math.min(...candidates);
++	if (candidates.length === 0) return null;
++	const soonest = Math.min(...candidates);
++	return soonest > now ? soonest : now + WORK_RETRY_MS;
+ }
+ 
+ function futureWakeupExists(
+@@ -801,9 +876,10 @@
+ 	sql.query(
+ 		`INSERT INTO effects (
+ 			run_id, assistant_entry_id, tool_call_id, attempt, state, args_ciphertext,
+-			result_ciphertext, result_ref, result_digest, expected_incarnation, epoch,
+-			deadline, outcome_policy, lifecycle_generation
+-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
++			result_ciphertext, result_ref, result_digest, expected_incarnation,
++			expected_identity, expected_controller_class, epoch, deadline,
++			outcome_policy, lifecycle_generation
++		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+ 		row.run_id,
+ 		row.assistant_entry_id,
+ 		row.tool_call_id,
+@@ -814,6 +890,8 @@
+ 		row.result_ref,
+ 		row.result_digest,
+ 		row.expected_incarnation,
++		row.expected_identity,
++		row.expected_controller_class,
+ 		row.epoch,
+ 		row.deadline,
+ 		row.outcome_policy,
+@@ -1149,13 +1227,18 @@
+ 	now: number,
+ 	limit: number,
+ ): EffectRow[] {
++	const bounded = boundedIntentLimit(limit);
++	if (bounded <= 0) return [];
+ 	return sql.query<EffectRow>(
+-		`SELECT * FROM effects
+-		 WHERE state IN ('prepared', 'admitted') AND deadline <= ?
+-		 ORDER BY deadline ASC
++		`SELECT e.* FROM effects e
++		 INNER JOIN runs r ON r.run_id = e.run_id
++		 WHERE e.state IN ('prepared', 'admitted')
++		   AND e.deadline <= ?
++		   AND r.state NOT IN ('complete', 'failed', 'canceled', 'stopping')
++		 ORDER BY e.deadline ASC, e.run_id ASC, e.tool_call_id ASC
+ 		 LIMIT ?`,
+ 		now,
+-		limit,
++		bounded,
+ 	);
+ }
+ 
+--- before/apps/runtime/src/reconcile.ts
++++ after/apps/runtime/src/reconcile.ts
+@@ -1,11 +1,10 @@
+ import {
+ 	type CoordinatorSql,
+-	getRun,
+ 	isFatalLatched,
+ 	listDueExpiredEffects,
++	listDueExpiredRuns,
+ 	listDueWakeups,
+ 	listPendingProjections,
+-	listRuns,
+ 	markProjection,
+ 	markWakeup,
+ 	nextWorkDeadline,
+@@ -32,9 +31,9 @@
+ 
+ export type ReconcileHooks = {
+ 	consumeReadyCommands: (now: number, max: number, stopAt: number) => number;
+-	settleExpiredRuns: (now: number, max: number) => number;
+-	settleExpiredEffects: (now: number, max: number) => number;
+-	settleStoppingRuns: (now: number, max: number) => number;
++	settleExpiredRuns: (now: number, max: number, stopAt: number) => number;
++	settleExpiredEffects: (now: number, max: number, stopAt: number) => number;
++	settleStoppingRuns: (now: number, max: number, stopAt: number) => number;
+ };
+ 
+ export type ReconcileResult = {
+@@ -68,28 +67,28 @@
+ 	const started = options.clock.now();
+ 	const maxIntents = options.maxIntents ?? RECONCILE_MAX_INTENTS;
+ 	const maxMs = options.maxMs ?? RECONCILE_MAX_MS;
++	const stopAt = started + maxMs;
+ 	let processed = 0;
+ 
+ 	processed += options.sql.transaction(() => {
+-		if (options.clock.now() - started >= maxMs) return 0;
+-		const consumed = options.hooks.consumeReadyCommands(
++		if (options.clock.now() >= stopAt) return 0;
++		let used = 0;
++		used += options.hooks.consumeReadyCommands(started, maxIntents, stopAt);
++		if (options.clock.now() >= stopAt || used >= maxIntents) return used;
++		used += options.hooks.settleExpiredRuns(started, maxIntents - used, stopAt);
++		if (options.clock.now() >= stopAt || used >= maxIntents) return used;
++		used += options.hooks.settleExpiredEffects(
+ 			started,
+-			maxIntents,
+-			started + maxMs,
++			maxIntents - used,
++			stopAt,
+ 		);
+-		let remaining = Math.max(0, maxIntents - consumed);
+-		const settledRuns = options.hooks.settleExpiredRuns(started, remaining);
+-		remaining = Math.max(0, remaining - settledRuns);
+-		const settledEffects = options.hooks.settleExpiredEffects(
++		if (options.clock.now() >= stopAt || used >= maxIntents) return used;
++		used += options.hooks.settleStoppingRuns(
+ 			started,
+-			remaining,
++			maxIntents - used,
++			stopAt,
+ 		);
+-		remaining = Math.max(0, remaining - settledEffects);
+-		const settledStopping = options.hooks.settleStoppingRuns(
+-			started,
+-			remaining,
+-		);
+-		return consumed + settledRuns + settledEffects + settledStopping;
++		return used;
+ 	});
+ 
+ 	const wakeupBudget = Math.max(0, maxIntents - processed);
+@@ -207,26 +206,22 @@
+ 	sql: CoordinatorSql,
+ 	now: number,
+ 	onTerminal: (runId: string) => void,
+-	max = Number.POSITIVE_INFINITY,
++	max = RECONCILE_MAX_INTENTS,
++	clock?: () => number,
++	stopAt?: number,
+ ): number {
++	if (stopAt != null && clock != null && clock() >= stopAt) return 0;
+ 	let settled = 0;
+-	for (const run of listRuns(sql)) {
++	for (const run of listDueExpiredRuns(sql, now, max)) {
++		if (stopAt != null && clock != null && clock() >= stopAt) break;
+ 		if (settled >= max) break;
+-		if (
+-			run.recovery_deadline_at != null &&
+-			Number(run.recovery_deadline_at) <= now &&
+-			run.state !== "complete" &&
+-			run.state !== "failed" &&
+-			run.state !== "canceled"
+-		) {
+-			updateRunState(sql, run.run_id, {
+-				state: "failed",
+-				updatedAt: now,
+-				blockedReviewReason: "recovery_deadline_expired",
+-			});
+-			onTerminal(run.run_id);
+-			settled += 1;
+-		}
++		updateRunState(sql, run.run_id, {
++			state: "failed",
++			updatedAt: now,
++			blockedReviewReason: "recovery_deadline_expired",
++		});
++		onTerminal(run.run_id);
++		settled += 1;
+ 	}
+ 	return settled;
+ }
+@@ -240,13 +235,15 @@
+ 		toolCallId: string;
+ 		attempt: number;
+ 	}) => void,
+-	max = Number.POSITIVE_INFINITY,
++	max = RECONCILE_MAX_INTENTS,
++	clock?: () => number,
++	stopAt?: number,
+ ): number {
++	if (stopAt != null && clock != null && clock() >= stopAt) return 0;
+ 	let settled = 0;
+ 	for (const effect of listDueExpiredEffects(sql, now, max)) {
++		if (stopAt != null && clock != null && clock() >= stopAt) break;
+ 		if (settled >= max) break;
+-		const run = getRun(sql, effect.run_id);
+-		if (run?.state === "stopping") continue;
+ 		updateEffectState(
+ 			sql,
+ 			{
+--- before/apps/runtime/src/session-runtime.ts
++++ after/apps/runtime/src/session-runtime.ts
+@@ -5,11 +5,13 @@
+ } from "../../../packages/runtime-contracts/src/runtime.js";
+ import {
+ 	type CoordinatorSql,
++	clearStoppingScanCursor,
+ 	commitLargeRecordChunks,
+ 	consumedOrdinarySeq,
+ 	continuationPosition,
+ 	createDurableObjectSqlAdapter,
+ 	currentEpoch,
++	type EffectRow,
+ 	getCommand,
+ 	getCommandBySeq,
+ 	getEffect,
+@@ -37,16 +39,21 @@
+ 	metaValue,
+ 	nextCoordinatorSeq,
+ 	nextWorkDeadline,
++	type ProcessEvidenceMatch,
+ 	pendingProjectionCount,
++	persistFutureCoordinatorWork,
++	RECONCILE_MAX_INTENTS,
+ 	RECOVERY_DEADLINE_MS,
+ 	type RunState,
+ 	readCommittedLargeRecord,
++	readStoppingScanCursor,
+ 	recordConstructorObservation,
+ 	setCommandConsumption,
+ 	setMeta,
+ 	terminationEvidencePresent,
+ 	updateEffectState,
+ 	updateRunState,
++	writeStoppingScanCursor,
+ } from "./journal.js";
+ import type {
+ 	ProjectionApplyResult,
+@@ -645,7 +652,7 @@
+ 		try {
+ 			const markIncomplete = async (): Promise<never> => {
+ 				this.canonicalRestore = "incomplete";
+-				await this.repairSchedule(this.clock.now() + 1_000);
++				await this.tryArmSchedule(this.clock.now() + 1_000);
+ 				this.deny("canonical_restore_failed", "unavailable");
+ 			};
+ 			const restorePages = async <T>(input: {
+@@ -914,7 +921,7 @@
+ 			getCommand(this.sql, command.commandId),
+ 		);
+ 		if (existing) {
+-			await this.repairSchedule();
++			await this.tryArmSchedule();
+ 			return {
+ 				version: 1,
+ 				commandId: existing.command_id,
+@@ -1020,7 +1027,7 @@
+ 				};
+ 			}),
+ 		);
+-		await this.repairSchedule();
++		await this.tryArmSchedule();
+ 		logAllowlisted(this.log, {
+ 			event: "command_accepted",
+ 			commandId: ack.commandId,
+@@ -1122,6 +1129,10 @@
+ 		) {
+ 			this.deny("execution_gate", "forbidden");
+ 		}
++		if (!prerequisites) this.deny("execution_gate", "forbidden");
++		const expectedIdentity = prerequisites.executor.identityId;
++		const expectedControllerClass =
++			prerequisites.executor.controllerClass ?? "";
+ 		const existing = this.sql.transaction(() =>
+ 			getEffect(this.sql, {
+ 				runId: effect.runId,
+@@ -1237,6 +1248,8 @@
+ 					result_ref: null,
+ 					result_digest: null,
+ 					expected_incarnation: effect.executorIncarnationId,
++					expected_identity: expectedIdentity,
++					expected_controller_class: expectedControllerClass,
+ 					epoch: effect.runEpoch,
+ 					deadline: effect.deadline,
+ 					outcome_policy: effect.outcomePolicy,
+@@ -1266,7 +1279,7 @@
+ 			});
+ 			if (admitted.dispatched) {
+ 				this.dispatchHooks?.onTrustedAdmit?.(effect);
+-				await this.repairSchedule(effect.deadline);
++				await this.tryArmSchedule(effect.deadline);
+ 			}
+ 			return { state: admitted.state };
+ 		} catch (error) {
+@@ -1528,8 +1541,13 @@
+ 		);
+ 		this.consumeOwnerVersion = authority.runtimeOwnerVersion;
+ 		this.consumeSessionStatus = authority.sessionStatus;
++		let result: {
++			processed: number;
++			projectionLag: number;
++			nextDeadlineAt: number | null;
++		};
+ 		try {
+-			const result = await processReconcilePass({
++			result = await processReconcilePass({
+ 				sql: this.sql,
+ 				adapters: this.adapters,
+ 				hooks: {
+@@ -1540,7 +1558,7 @@
+ 							this.consumeOwnerVersion ?? undefined,
+ 							stopAt,
+ 						),
+-					settleExpiredEffects: (now, max) =>
++					settleExpiredEffects: (now, max, stopAt) =>
+ 						settleExpiredEffectsNow(
+ 							this.sql,
+ 							now,
+@@ -1551,8 +1569,10 @@
+ 									"effect_deadline_expired",
+ 								),
+ 							max,
++							() => this.clock.now(),
++							stopAt,
+ 						),
+-					settleExpiredRuns: (now, max) =>
++					settleExpiredRuns: (now, max, stopAt) =>
+ 						settleExpiredRunsNow(
+ 							this.sql,
+ 							now,
+@@ -1563,22 +1583,14 @@
+ 									"recovery_deadline_expired",
+ 								),
+ 							max,
++							() => this.clock.now(),
++							stopAt,
+ 						),
+-					settleStoppingRuns: (now, max) =>
+-						this.settleStoppingRunsNow(now, max),
++					settleStoppingRuns: (now, max, stopAt) =>
++						this.settleStoppingRunsNow(now, max, stopAt),
+ 				},
+ 				clock: this.clock,
+ 			});
+-			await this.repairSchedule(result.nextDeadlineAt);
+-			logAllowlisted(this.log, {
+-				event: "reconcile",
+-				sessionId: this.identity.workspaceSessionId,
+-				processed: result.processed,
+-				projectionLag: result.projectionLag,
+-				intentCount: result.processed,
+-				category: "ok",
+-			});
+-			return result;
+ 		} catch (error) {
+ 			if (error instanceof CoordinatorError) throw error;
+ 			this.latchFatalMemoryAndStore();
+@@ -1587,13 +1599,20 @@
+ 				sessionId: this.identity.workspaceSessionId,
+ 				category: "reconcile_failed",
+ 			});
+-			try {
+-				await this.repairSchedule(this.clock.now());
+-			} catch {
+-				// Admission is already memory-latched if schedule repair fails.
+-			}
++			await this.tryArmSchedule(this.clock.now());
+ 			this.deny("fatal_latch", "unavailable");
+ 		}
++		logAllowlisted(this.log, {
++			event: "reconcile",
++			sessionId: this.identity.workspaceSessionId,
++			processed: result.processed,
++			projectionLag: result.projectionLag,
++			intentCount: result.processed,
++			category: "ok",
++		});
++		const armed = await this.tryArmSchedule(result.nextDeadlineAt);
++		if (!armed) this.deny("schedule_unavailable", "unavailable");
++		return result;
+ 	}
+ 
+ 	async repairSchedule(nextDeadlineAt?: number | null): Promise<void> {
+@@ -1609,6 +1628,25 @@
+ 		});
+ 	}
+ 
++	private async tryArmSchedule(
++		nextDeadlineAt?: number | null,
++	): Promise<boolean> {
++		try {
++			await this.repairSchedule(nextDeadlineAt);
++			return true;
++		} catch (error) {
++			if (error instanceof CoordinatorError) throw error;
++			try {
++				this.sql.transaction(() => {
++					persistFutureCoordinatorWork(this.sql, this.clock.now());
++				});
++			} catch {
++				// Retain in-memory retry without poisoning a healthy journal.
++			}
++			return false;
++		}
++	}
++
+ 	forceFatalLatch(): void {
+ 		this.latchFatalMemoryAndStore();
+ 	}
+@@ -1624,25 +1662,28 @@
+ 				return next;
+ 			}),
+ 		);
+-		await this.scheduler.schedule(
+-			new Date(marked.recoveryDeadlineAt),
+-			"reconcileWakeup",
+-			{ reason: "recovery_deadline" },
+-		);
++		await this.tryArmSchedule(marked.recoveryDeadlineAt);
+ 		return marked;
+ 	}
+ 
+-	private writerHasStopEvidence(writer: {
+-		expected_incarnation: string;
+-		lifecycle_generation: number;
+-		epoch: number;
+-	}): boolean {
+-		const match = {
+-			identity: writer.expected_incarnation,
++	private writerEvidenceMatch(
++		writer: EffectRow,
++	): ProcessEvidenceMatch | undefined {
++		const identity = writer.expected_identity;
++		const className = writer.expected_controller_class;
++		if (!identity || !className) return undefined;
++		return {
++			identity,
++			className,
+ 			incarnation: writer.expected_incarnation,
+ 			lifecycleGeneration: Number(writer.lifecycle_generation),
+ 			epoch: Number(writer.epoch),
+ 		};
++	}
++
++	private writerHasStopEvidence(writer: EffectRow): boolean {
++		const match = this.writerEvidenceMatch(writer);
++		if (!match) return false;
+ 		return (
+ 			isolationEvidencePresent(this.sql, match) ||
+ 			terminationEvidencePresent(this.sql, match)
+@@ -1672,15 +1713,34 @@
+ 		return true;
+ 	}
+ 
+-	private settleStoppingRunsNow(now: number, max: number): number {
+-		let settled = 0;
+-		for (const run of listStoppingRuns(this.sql, max)) {
+-			if (settled >= max) break;
+-			if (this.settleStoppingRunIfAccounted(run.run_id, now)) {
+-				settled += 1;
+-			}
+-		}
+-		return settled;
++	private settleStoppingRunsNow(
++		now: number,
++		max: number,
++		stopAt?: number,
++	): number {
++		if (stopAt != null && this.clock.now() >= stopAt) return 0;
++		const limit = Math.min(
++			Number.isFinite(max)
++				? Math.max(0, Math.floor(max))
++				: RECONCILE_MAX_INTENTS,
++			RECONCILE_MAX_INTENTS,
++		);
++		if (limit <= 0) return 0;
++		const after = readStoppingScanCursor(this.sql);
++		let rows = listStoppingRuns(this.sql, limit, after);
++		if (rows.length === 0 && after) {
++			clearStoppingScanCursor(this.sql);
++			rows = listStoppingRuns(this.sql, limit);
++		}
++		let inspected = 0;
++		for (const run of rows) {
++			if (stopAt != null && this.clock.now() >= stopAt) break;
++			if (inspected >= limit) break;
++			this.settleStoppingRunIfAccounted(run.run_id, now);
++			inspected += 1;
++			writeStoppingScanCursor(this.sql, run);
++		}
++		return inspected;
+ 	}
+ 
+ 	private enqueueWakeup(reason: string, deadlineAt: number): void {
+@@ -1840,14 +1900,10 @@
+ 			const writers = listUnresolvedWriters(this.sql);
+ 			const isolated =
+ 				writers.length > 0 &&
+-				writers.every((writer) =>
+-					isolationEvidencePresent(this.sql, {
+-						identity: writer.expected_incarnation,
+-						incarnation: writer.expected_incarnation,
+-						lifecycleGeneration: Number(writer.lifecycle_generation),
+-						epoch: Number(writer.epoch),
+-					}),
+-				);
++				writers.every((writer) => {
++					const match = this.writerEvidenceMatch(writer);
++					return match != null && isolationEvidencePresent(this.sql, match);
++				});
+ 			if (!isolated) {
+ 				this.enqueueWakeup("unresolved_writer", now + 1000);
+ 				return false;
+--- before/apps/web/src/lib/session-runtime-control.test.ts
++++ after/apps/web/src/lib/session-runtime-control.test.ts
+@@ -4,6 +4,10 @@
+ 	sessionRuntimeRouteHarness,
+ } from "#/test/session-runtime-fixture";
+ import type { SnapshotV1 } from "../../../../packages/runtime-contracts/src/runtime.js";
++import {
++	type CoordinatorSql,
++	terminationEvidencePresent,
++} from "../../../runtime/src/journal.js";
+ 
+ vi.mock("cloudflare:workers", () => ({
+ 	env: {},
+@@ -73,6 +77,75 @@
+ 	};
+ }
+ 
++function effectBody(
++	created: ReturnType<typeof createSessionRuntimeFixture>,
++	runId: string,
++) {
++	return {
++		version: 1 as const,
++		runId,
++		assistantEntryId: (
++			created.observeReceipt(runId) as { assistantMessageId: string }
++		).assistantMessageId,
++		toolCallId: "tool-1",
++		attempt: 1,
++		executorIncarnationId: "synthetic-exec-1",
++		runEpoch: 1,
++		lifecycleGeneration: 1,
++		deadline: created.now() + 60_000,
++		arguments: { operation: "synthetic" },
++		outcomePolicy: "never_retry" as const,
++		state: "prepared" as const,
++	};
++}
++
++function insertStopObservation(
++	coord: { sql: CoordinatorSql },
++	created: ReturnType<typeof createSessionRuntimeFixture>,
++	patch: {
++		id?: string;
++		identity?: string;
++		className?: string;
++		incarnation?: string;
++		generation?: number;
++		epoch?: number;
++		result?: string;
++	} = {},
++) {
++	const row = {
++		id: "synthetic-stop-observation",
++		source: "platform",
++		identity: "identity-sess-1",
++		className: "Sandbox",
++		incarnation: "synthetic-exec-1",
++		generation: 1,
++		epoch: 1,
++		result: "terminated",
++		...patch,
++	};
++	coord.sql.query(
++		`INSERT INTO process_observations (
++			observation_id, source, identity, class, incarnation, lifecycle_generation,
++			observed_run_epoch, observed_at, termination_result
++		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
++		row.id,
++		row.source,
++		row.identity,
++		row.className,
++		row.incarnation,
++		row.generation,
++		row.epoch,
++		created.now(),
++		row.result,
++	);
++	return {
++		identity: row.identity,
++		incarnation: row.incarnation,
++		lifecycleGeneration: row.generation,
++		epoch: row.epoch,
++	};
++}
++
+ const fixtures: ReturnType<typeof createSessionRuntimeFixture>[] = [];
+ 
+ function fixture() {
+@@ -494,4 +567,142 @@
+ 		expect(state).toBe("canceled");
+ 		expect(assistants.every((status) => status !== "pending")).toBe(true);
+ 	});
++
++	it("timeout and failed observations are not successful stop evidence", async () => {
++		const created = fixture();
++		created.seedTrustedExecutionEvidence({
++			executorIncarnationId: "synthetic-exec-1",
++		});
++		await created.asUser("user-1").command(promptBody());
++		await created.deliver();
++		const coord = created.coordinator("sess-1");
++		for (const result of ["timeout", "failed"] as const) {
++			const match = insertStopObservation(coord, created, {
++				id: `synthetic-${result}`,
++				result,
++			});
++			expect(terminationEvidencePresent(coord.sql, match)).toBe(false);
++		}
++		expect(coord.readSnapshot().runStates[0]?.status).toBe("queued");
++	});
++
++	it("exact stable executor identity termination settles Stop and keeps canceled", async () => {
++		let now = 1_700_000_000_000;
++		const created = createSessionRuntimeFixture({ now: () => now });
++		fixtures.push(created);
++		created.seedTrustedSession();
++		created.seedTrustedExecutionEvidence({
++			executorIncarnationId: "synthetic-exec-1",
++		});
++		const admitted = await created.asUser("user-1").command(promptBody());
++		const runId = (admitted.body as { commandId: string }).commandId;
++		await created.deliver();
++		const coord = created.coordinator("sess-1");
++		await coord.admitEffect(effectBody(created, runId));
++		await created.asUser("user-1").command({
++			version: 1,
++			idempotencyKey: "stop-1",
++			kind: "stop",
++			projectId: "proj-1",
++			sessionId: "sess-1",
++			targetRunId: runId,
++		});
++		await created.deliver();
++		const match = insertStopObservation(coord, created);
++		expect(terminationEvidencePresent(coord.sql, match)).toBe(true);
++		await coord.reconcile();
++		const assistants = (
++			created.observeMessages("sess-1") as {
++				role: string;
++				status: string;
++			}[]
++		)
++			.filter((message) => message.role === "assistant")
++			.map((message) => message.status);
++		expect(
++			coord.readSnapshot().runStates.find((row) => row.id === runId)?.status,
++		).toBe("canceled");
++		expect(assistants.every((status) => status !== "pending")).toBe(true);
++		expect(
++			coord.sql.query<{ state: string }>(
++				"SELECT state FROM effects WHERE run_id = ?",
++				runId,
++			)[0]?.state,
++		).toBe("admitted");
++		now += 61_000;
++		await coord.reconcile();
++		expect(
++			coord.readSnapshot().runStates.find((row) => row.id === runId)?.status,
++		).toBe("canceled");
++	});
++
++	it("wrong identity or controller class cannot settle Stop", async () => {
++		const created = fixture();
++		created.seedTrustedExecutionEvidence({
++			executorIncarnationId: "synthetic-exec-1",
++		});
++		const admitted = await created.asUser("user-1").command(promptBody());
++		const runId = (admitted.body as { commandId: string }).commandId;
++		await created.deliver();
++		const coord = created.coordinator("sess-1");
++		await coord.admitEffect(effectBody(created, runId));
++		await created.asUser("user-1").command({
++			version: 1,
++			idempotencyKey: "stop-1",
++			kind: "stop",
++			projectId: "proj-1",
++			sessionId: "sess-1",
++			targetRunId: runId,
++		});
++		await created.deliver();
++		insertStopObservation(coord, created, {
++			id: "wrong-identity",
++			identity: "other-identity",
++		});
++		insertStopObservation(coord, created, {
++			id: "wrong-class",
++			className: "SessionRuntime",
++		});
++		await coord.reconcile();
++		expect(
++			coord.readSnapshot().runStates.find((row) => row.id === runId)?.status,
++		).toBe("stopping");
++	});
++
++	it("unresolved Stop retries stay in the future after the effect deadline", async () => {
++		let now = 1_700_000_000_000;
++		const created = createSessionRuntimeFixture({ now: () => now });
++		fixtures.push(created);
++		created.seedTrustedSession();
++		created.seedTrustedExecutionEvidence({
++			executorIncarnationId: "synthetic-exec-1",
++		});
++		const admitted = await created.asUser("user-1").command(promptBody());
++		const runId = (admitted.body as { commandId: string }).commandId;
++		await created.deliver();
++		const coord = created.coordinator("sess-1");
++		await coord.admitEffect(effectBody(created, runId));
++		await created.asUser("user-1").command({
++			version: 1,
++			idempotencyKey: "stop-1",
++			kind: "stop",
++			projectId: "proj-1",
++			sessionId: "sess-1",
++			targetRunId: runId,
++		});
++		await created.deliver();
++		now += 61_000;
++		const deltas: Array<number | null> = [];
++		for (let index = 0; index < 3; index += 1) {
++			const result = await coord.reconcile();
++			deltas.push(
++				result.nextDeadlineAt === null ? null : result.nextDeadlineAt - now,
++			);
++			now += 100;
++		}
++		expect(
++			coord.readSnapshot().runStates.find((row) => row.id === runId)?.status,
++		).toBe("stopping");
++		expect(deltas.every((delta) => delta !== null && delta > 0)).toBe(true);
++	});
+ });
+--- before/apps/web/src/lib/session-runtime-journal.test.ts
++++ after/apps/web/src/lib/session-runtime-journal.test.ts
+@@ -1405,4 +1405,122 @@
+ 		});
+ 		expect(restored.canonicalRestore).toBe("incomplete");
+ 	});
++
++	it("reconciliation does not start another transition after its time budget", async () => {
++		let now = 1_700_000_000_000;
++		const created = createSessionRuntimeFixture({ now: () => now });
++		fixtures.push(created);
++		created.seedTrustedSession();
++		created.seedTrustedExecutionEvidence({
++			executorIncarnationId: "synthetic-exec-1",
++		});
++		const admitted = await created.asUser("user-1").command(promptBody());
++		const runId = (admitted.body as { commandId: string }).commandId;
++		await created.deliver();
++		const coord = created.coordinator("sess-1");
++		await coord.recordInterruption(runId);
++		now += 900_001;
++		const consume = (
++			coord as unknown as {
++				consumeReadyCommands: (...args: never[]) => number;
++			}
++		).consumeReadyCommands.bind(coord);
++		(
++			coord as unknown as {
++				consumeReadyCommands: (...args: never[]) => number;
++			}
++		).consumeReadyCommands = (...args: never[]) => {
++			const result = consume(...args);
++			now += 6_000;
++			return result;
++		};
++		await coord.reconcile();
++		expect(
++			coord.readSnapshot().runStates.find((row) => row.id === runId)?.status,
++		).toBe("queued");
++	});
++
++	it("reconciliation bounds run rows scanned, not only successful settlements", async () => {
++		const created = fixture();
++		for (let index = 0; index < 61; index += 1) {
++			await created.asUser("user-1").command(
++				promptBody({
++					idempotencyKey: `synthetic-scan-${index}`,
++					text: `scan ${index}`,
++				}),
++			);
++			await created.deliver();
++		}
++		const coord = created.coordinator("sess-1");
++		const query = coord.sql.query.bind(coord.sql);
++		let maxRows = 0;
++		coord.sql.query = ((sql: string, ...args: never[]) => {
++			const rows = query(sql, ...args);
++			if (/SELECT.*FROM runs/i.test(sql)) {
++				maxRows = Math.max(maxRows, rows.length);
++			}
++			return rows;
++		}) as typeof coord.sql.query;
++		await coord.reconcile();
++		expect(maxRows).toBeLessThanOrEqual(25);
++	});
++
++	it("transient schedule failure does not permanently fatal-latch a healthy journal", async () => {
++		const created = fixture();
++		created.seedTrustedExecutionEvidence({
++			executorIncarnationId: "synthetic-exec-1",
++		});
++		const admitted = await created.asUser("user-1").command(promptBody());
++		const runId = (admitted.body as { commandId: string }).commandId;
++		await created.deliver();
++		const coord = created.coordinator("sess-1");
++		await coord.recordInterruption(runId);
++		const scheduler = (
++			coord as unknown as {
++				scheduler: {
++					schedule: (
++						when: Date,
++						callback: string,
++						payload?: unknown,
++					) => Promise<unknown>;
++				};
++			}
++		).scheduler;
++		const schedule = scheduler.schedule.bind(scheduler);
++		let hit = false;
++		scheduler.schedule = async (
++			when: Date,
++			callback: string,
++			payload?: unknown,
++		) => {
++			if (!hit) {
++				hit = true;
++				throw new Error("synthetic transient schedule failure");
++			}
++			return schedule(when, callback, payload);
++		};
++		await expect(coord.reconcile()).rejects.toMatchObject({
++			code: "schedule_unavailable",
++		});
++		await coord.reconcile();
++		await expect(
++			coord.admitEffect({
++				version: 1,
++				runId,
++				assistantEntryId: (
++					created.observeReceipt(runId) as { assistantMessageId: string }
++				).assistantMessageId,
++				toolCallId: "tool-1",
++				attempt: 1,
++				executorIncarnationId: "synthetic-exec-1",
++				runEpoch: 1,
++				lifecycleGeneration: 1,
++				deadline: created.now() + 60_000,
++				arguments: { path: "x" },
++				outcomePolicy: "never_retry",
++				state: "prepared",
++			}),
++		).resolves.toMatchObject({ state: "admitted" });
++		expect(hit).toBe(true);
++	});
+ });

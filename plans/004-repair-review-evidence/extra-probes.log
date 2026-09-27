@@ -1,0 +1,29 @@
+{"name":"P01 real ProductEntrypoint reconstructs an admitted persisted command","result":"FAIL","observed":{"reconstructed":false}}
+{"name":"P02 positive control: current fixture reaches effect and identical result dedupe","result":"PASS","observed":{"admission":"admitted","first":"result_recorded","duplicate":"result_recorded"}}
+{"name":"P03 legacy lease alone does not replace brain capacity and initial-pair prerequisites","result":"FAIL","observed":{"admitted":true}}
+{"name":"P04 execution rejects identity role project_seed","result":"FAIL","observed":{"admitted":true}}
+{"name":"P04 execution rejects identity role trusted_brain","result":"FAIL","observed":{"admitted":true}}
+{"name":"P05 identity lease must match exact execution identity","result":"FAIL","observed":{"admitted":true}}
+{"name":"P06 different tools serialize across one workspace","result":"FAIL","observed":{"secondAdmitted":true}}
+{"name":"P07 unknown effect blocks a distinct replacement run too","result":"FAIL","observed":{"replacementAdmitted":true,"oldEffectState":"outcome_unknown"}}
+{"name":"P08 unrelated isolation reference never authorizes a replacement writer","result":"FAIL","observed":{"replacementAdmitted":true,"oldRunState":"stopping"}}
+{"name":"P09 actual effect INSERT failure latches every subsequent effect","result":"FAIL","observed":{"faultHit":true,"firstAdmitted":false,"nextAdmitted":true}}
+{"name":"P10 effect assistant identity must belong to its exact run","result":"FAIL","observed":{"foreignRunAssistantAccepted":true}}
+{"name":"P11 stopped A cannot write a continuation by implicitly borrowing queued B","result":"FAIL","observed":{"staleCommitAccepted":true}}
+{"name":"P12 continuation checks the latest authority after encryption","result":"FAIL","observed":{"reads":2,"staleCommitAccepted":true}}
+{"name":"P13 revoked authority cannot obtain decrypted canonical continuation","result":"FAIL","observed":{"plaintextReturned":true}}
+{"name":"P14 positive control: inline continuation round-trips","result":"PASS","observed":{"roundTrip":true}}
+{"name":"P15 large committed continuation round-trips and survives restart","result":"FAIL","observed":{"readable":false,"category":"continuation_missing"}}
+{"name":"P16 corrupt retained large chunks block admission after restart","result":"FAIL","observed":{"effectAdmitted":true}}
+{"name":"P17 corrupt retained effect result blocks admission after restart","result":"FAIL","observed":{"effectAdmitted":true}}
+{"name":"P18 repeated identical command projection is acknowledged idempotently","result":"FAIL","observed":{"first":"applied","duplicate":"blocked_membership"}}
+{"name":"P19 real command membership cannot be reassigned to a different run","result":"FAIL","observed":{"unrelatedAssistantStatus":"failed","classifications":["applied","applied"]}}
+{"name":"P20 unauthorized envelope cannot advance cursor of an already-terminal target","result":"FAIL","observed":{"cursorOwner":99,"cursorSequence":999,"classification":"immutable_completed"}}
+{"name":"P21 declared session projection is not silently acknowledged without target logic","result":"FAIL","observed":{"classification":"already_applied"}}
+{"name":"P22 positive control: successful final content projection is non-vacuous","result":"PASS","observed":{"status":"complete","contentBytes":22,"classification":"applied"}}
+{"name":"P23 interruption itself schedules the persisted recovery deadline","result":"FAIL","observed":{"schedulerCalls":0}}
+{"name":"P24 expired admitted effect is reconciled rather than scheduled forever in the past","result":"FAIL","observed":{"state":"admitted","nextInPast":true}}
+{"name":"P25 missing predecessor uses future backoff, not immediate reschedule","result":"FAIL","observed":{"nextDeadlineDelta":0}}
+{"name":"P26 snapshot settles follow-up assistants consistently with D1","result":"FAIL","observed":{"snapshotStatus":"pending","d1Status":"failed"}}
+{"name":"P27 active effect result after Stop eventually completes stopping reconciliation","result":"PASS","observed":{"runState":"stopping","pendingWakeups":1,"hasNext":true}}
+{"checks":28,"failures":24}
