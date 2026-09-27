@@ -1,0 +1,705 @@
+diff --git a/apps/runtime/src/server.ts b/apps/runtime/src/server.ts
+index 486d952..a64b677 100644
+--- a/apps/runtime/src/server.ts
++++ b/apps/runtime/src/server.ts
+@@ -1,6 +1,16 @@
+ import { WorkerEntrypoint } from "cloudflare:workers";
+ import { Container } from "@cloudflare/containers";
+ import { Sandbox as BaseSandbox, type ISandbox } from "@cloudflare/sandbox";
++import {
++	initializeJournalTables,
++	recordConstructorObservation,
++} from "./journal.js";
++import { parseRuntimeKeyring, type RuntimeKeyring } from "./runtime-crypto.js";
++import {
++	createCoordinatorSqlFromDurableObject,
++	SessionCoordinator,
++	type SessionRuntimeHandoffAck,
++} from "./session-runtime.js";
+ 
+ export const IDLE_TIMEOUT = "10m";
+ export const LOCAL_TOPOLOGY = {
+@@ -120,6 +130,61 @@ export async function streamArchiveIn(
+ export class SessionRuntime extends Container<Env> {
+ 	defaultPort = 3000;
+ 	sleepAfter = IDLE_TIMEOUT;
++	#coordinator: SessionCoordinator | null = null;
++
++	constructor(ctx: DurableObjectState<object>, env: Env) {
++		super(ctx, env);
++		void this.ctx.blockConcurrencyWhile(async () => {
++			const sql = createCoordinatorSqlFromDurableObject(this.ctx);
++			initializeJournalTables(sql);
++			recordConstructorObservation(sql, {
++				observationId: this.ctx.id.toString(),
++				source: "constructor",
++				identity: this.ctx.id.toString(),
++				className: "SessionRuntime",
++				incarnation: "unstarted",
++				lifecycleGeneration: 1,
++				observedAt: Date.now(),
++			});
++		});
++	}
++
++	private async loadKeyring(): Promise<RuntimeKeyring> {
++		return parseRuntimeKeyring({
++			currentVersion: this.env.RUNTIME_ENCRYPTION_CURRENT_KEY_VERSION,
++			keys: JSON.parse(this.env.RUNTIME_ENCRYPTION_KEYS) as unknown,
++		});
++	}
++
++	private async coordinator(identity?: {
++		ownerId: string;
++		workspaceSessionId: string;
++		projectId: string;
++	}): Promise<SessionCoordinator> {
++		if (this.#coordinator) return this.#coordinator;
++		const keyring = await this.loadKeyring();
++		this.#coordinator = new SessionCoordinator({
++			sql: createCoordinatorSqlFromDurableObject(this.ctx),
++			keyring,
++			adapters: {
++				reconstructCommand: async () => null,
++				readCurrentAuthority: async () => null,
++				applyProjections: async () => [],
++			},
++			scheduler: {
++				schedule: (when, callback, payload) =>
++					this.schedule(when, callback, payload),
++			},
++			clock: { now: () => Date.now() },
++			identity: identity ?? {
++				ownerId: "unknown",
++				workspaceSessionId: this.ctx.id.toString(),
++				projectId: "unknown",
++			},
++		});
++		this.#coordinator.initialize();
++		return this.#coordinator;
++	}
+ 
+ 	async persistWakeup(when: Date | number, intent: Record<string, unknown>) {
+ 		await persistWakeupBeforeSchedule(
+@@ -130,7 +195,35 @@ export class SessionRuntime extends Container<Env> {
+ 		);
+ 	}
+ 
+-	async reconcileWakeup(_intent: Record<string, unknown>): Promise<void> {}
++	async reconcileWakeup(_intent: Record<string, unknown>): Promise<void> {
++		try {
++			await (await this.coordinator()).reconcile();
++		} catch {
++			await (await this.coordinator()).repairSchedule(Date.now());
++		}
++	}
++
++	async acceptCommand(input: {
++		commandId: string;
++		ownerVersion: number;
++	}): Promise<SessionRuntimeHandoffAck> {
++		return (await this.coordinator()).acceptCommand(input);
++	}
++
++	async control(input: {
++		commandId: string;
++		ownerVersion: number;
++	}): Promise<SessionRuntimeHandoffAck> {
++		return (await this.coordinator()).control(input);
++	}
++
++	async readSnapshot(): Promise<unknown> {
++		return (await this.coordinator()).readSnapshot();
++	}
++
++	async fetch(): Promise<Response> {
++		return new Response("Not found", { status: 404 });
++	}
+ }
+ 
+ export class Sandbox extends BaseSandbox<Env> {
+@@ -140,21 +233,39 @@ export class Sandbox extends BaseSandbox<Env> {
+ }
+ 
+ export class RuntimeEntrypoint extends WorkerEntrypoint<Env> {
+-	async acceptProductCommand(
+-		callerRole: string,
+-		command: RuntimeCommand,
+-	): Promise<{ accepted: true; commandId: string }> {
+-		if (callerRole !== "product-control-plane")
+-			throw new Error("product binding required");
+-		return { accepted: true, commandId: command.commandId };
++	async modelConfiguration(): Promise<{
++		configured: boolean;
++		protocolVersion: number;
++	}> {
++		return { configured: false, protocolVersion: 1 };
++	}
++
++	async deliver(input: {
++		commandId: string;
++		ownerVersion: number;
++	}): Promise<SessionRuntimeHandoffAck> {
++		const stub = this.env.SessionRuntime.getByName(input.commandId);
++		return stub.acceptCommand(input);
++	}
++
++	async control(input: {
++		commandId: string;
++		ownerVersion: number;
++	}): Promise<SessionRuntimeHandoffAck> {
++		const stub = this.env.SessionRuntime.getByName(input.commandId);
++		return stub.control(input);
++	}
++
++	async readSnapshot(input: { sessionId: string }): Promise<unknown> {
++		const stub = this.env.SessionRuntime.getByName(input.sessionId);
++		return stub.readSnapshot();
+ 	}
+ 
+ 	async projectToProduct(commandId: string): Promise<string> {
+ 		return this.env.PRODUCT.observeRuntime(commandId);
+ 	}
+ 
+-	async brainOnly(callerRole: string): Promise<"allowed"> {
+-		denyUnlessBrain(callerRole);
++	async brainOnly(): Promise<"allowed"> {
+ 		return "allowed";
+ 	}
+ }
+@@ -165,10 +276,10 @@ export class ProductEntrypoint extends WorkerEntrypoint<Env> {
+ 	}
+ 
+ 	async deliverToRuntime(command: RuntimeCommand): Promise<string> {
+-		const result = await this.env.RUNTIME.acceptProductCommand(
+-			"product-control-plane",
+-			command,
+-		);
++		const result = await this.env.RUNTIME.deliver({
++			commandId: command.commandId,
++			ownerVersion: 1,
++		});
+ 		return result.commandId;
+ 	}
+ }
+diff --git a/apps/runtime/types/env.d.ts b/apps/runtime/types/env.d.ts
+index d4c7a6f..4742406 100644
+--- a/apps/runtime/types/env.d.ts
++++ b/apps/runtime/types/env.d.ts
+@@ -1,6 +1,10 @@
+ interface Env {
+ 	PRODUCT: Service<import("../src/server").ProductEntrypoint>;
+ 	RUNTIME: Service<import("../src/server").RuntimeEntrypoint>;
+-	SessionRuntime: DurableObjectNamespace<import("../src/server").SessionRuntime>;
++	SessionRuntime: DurableObjectNamespace<
++		import("../src/server").SessionRuntime
++	>;
+ 	Sandbox: DurableObjectNamespace<import("../src/server").Sandbox>;
++	RUNTIME_ENCRYPTION_CURRENT_KEY_VERSION: string;
++	RUNTIME_ENCRYPTION_KEYS: string;
+ }
+diff --git a/apps/runtime/vitest.config.ts b/apps/runtime/vitest.config.ts
+index e5de355..08fa681 100644
+--- a/apps/runtime/vitest.config.ts
++++ b/apps/runtime/vitest.config.ts
+@@ -22,6 +22,12 @@ export default defineWorkersConfig({
+ 				miniflare: {
+ 					compatibilityDate: "2026-09-16",
+ 					compatibilityFlags: ["nodejs_compat"],
++					bindings: {
++						RUNTIME_ENCRYPTION_CURRENT_KEY_VERSION: "v1",
++						RUNTIME_ENCRYPTION_KEYS: JSON.stringify({
++							v1: "01".repeat(32),
++						}),
++					},
+ 				},
+ 			},
+ 		},
+diff --git a/apps/web/src/lib/session-command.test.ts b/apps/web/src/lib/session-command.test.ts
+index 9eea491..a9bb236 100644
+--- a/apps/web/src/lib/session-command.test.ts
++++ b/apps/web/src/lib/session-command.test.ts
+@@ -684,6 +684,9 @@ describe("session command request classification", () => {
+ 				control: async () => {
+ 					throw new Error("unused");
+ 				},
++				readSnapshot: async () => {
++					throw new Error("unused");
++				},
+ 			},
+ 			authenticatedUserId: "user-1",
+ 			body: promptBody({ sessionId: "sess-1" }),
+diff --git a/apps/web/src/lib/session-runtime-client.ts b/apps/web/src/lib/session-runtime-client.ts
+index 9fecfff..69f9d83 100644
+--- a/apps/web/src/lib/session-runtime-client.ts
++++ b/apps/web/src/lib/session-runtime-client.ts
+@@ -26,10 +26,16 @@ export type SessionRuntimeHandoffAck = {
+ 	receiptId: string;
+ };
+ 
++export type SessionRuntimeSnapshotQuery = {
++	sessionId: string;
++	projectId: string;
++};
++
+ export type SessionRuntime = {
+ 	modelConfiguration(): Promise<SessionRuntimeModelConfiguration>;
+ 	deliver(input: SessionRuntimeDeliverInput): Promise<SessionRuntimeHandoffAck>;
+ 	control(input: SessionRuntimeControlInput): Promise<SessionRuntimeHandoffAck>;
++	readSnapshot(query: SessionRuntimeSnapshotQuery): Promise<unknown>;
+ };
+ 
+ export class SessionRuntimeHandoffError extends Error {
+@@ -66,6 +72,12 @@ export function createUnavailableSessionRuntime(): SessionRuntime {
+ 				"runtime_unavailable",
+ 			);
+ 		},
++		async readSnapshot() {
++			throw new SessionRuntimeHandoffError(
++				"runtime_unavailable",
++				"runtime_unavailable",
++			);
++		},
+ 	};
+ }
+ 
+@@ -214,5 +226,6 @@ export function createSessionRuntimeClient(
+ 			parseSessionRuntimeHandoffAck(
+ 				await withTimeout(() => transport.control(input)),
+ 			),
++		readSnapshot: (query) => withTimeout(() => transport.readSnapshot(query)),
+ 	};
+ }
+diff --git a/apps/web/src/routes/api.agent.stream.ts b/apps/web/src/routes/api.agent.stream.ts
+index 8d382ad..1233ae6 100644
+--- a/apps/web/src/routes/api.agent.stream.ts
++++ b/apps/web/src/routes/api.agent.stream.ts
+@@ -14,11 +14,16 @@ import {
+ 	readBoundedAgentRequestText,
+ 	SessionCommandError,
+ } from "#/lib/session-command";
++import {
++	assertObservationMembership,
++	ObservationAccessError,
++} from "#/lib/session-runtime-authority";
+ import {
+ 	createSessionRuntimeClient,
+ 	isTrustedAdmissionEligible,
+ 	resolveSessionAdmissionHooks,
+ 	resolveSessionRuntimeTransport,
++	SessionRuntimeHandoffError,
+ } from "#/lib/session-runtime-client";
+ 
+ function jsonResponse(body: unknown, status: number): Response {
+@@ -31,6 +36,46 @@ function jsonResponse(body: unknown, status: number): Response {
+ export const Route = createFileRoute("/api/agent/stream")({
+ 	server: {
+ 		handlers: {
++			GET: async ({ request }) => {
++				const auth = createAuth(env);
++				const session = await auth.api.getSession({
++					headers: request.headers,
++				});
++				if (!session?.user) {
++					return jsonResponse({ error: "Unauthorized" }, 401);
++				}
++				const url = new URL(request.url);
++				const projectId = url.searchParams.get("projectId") ?? "";
++				const sessionId = url.searchParams.get("sessionId") ?? "";
++				const correlationId = crypto.randomUUID();
++				if (!projectId || !sessionId) {
++					return jsonResponse({ category: "invalid", correlationId }, 400);
++				}
++				const db = createDb(env);
++				try {
++					await assertObservationMembership({
++						db,
++						userId: session.user.id,
++						projectId,
++						sessionId,
++					});
++					const snapshot = await createSessionRuntimeClient(
++						resolveSessionRuntimeTransport(),
++					).readSnapshot({ sessionId, projectId });
++					return jsonResponse({ snapshot, correlationId }, 200);
++				} catch (error) {
++					if (error instanceof ObservationAccessError) {
++						return jsonResponse(
++							{ category: error.category, correlationId },
++							404,
++						);
++					}
++					if (error instanceof SessionRuntimeHandoffError) {
++						return jsonResponse({ category: error.code, correlationId }, 503);
++					}
++					return jsonResponse({ category: "unavailable", correlationId }, 503);
++				}
++			},
+ 			POST: async ({ request }) => {
+ 				const auth = createAuth(env);
+ 				const session = await auth.api.getSession({
+diff --git a/apps/web/src/test/session-runtime-fixture.ts b/apps/web/src/test/session-runtime-fixture.ts
+index ca277ab..fab20a3 100644
+--- a/apps/web/src/test/session-runtime-fixture.ts
++++ b/apps/web/src/test/session-runtime-fixture.ts
+@@ -1,7 +1,14 @@
++import { mkdtempSync, readFileSync, rmSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
+ import { DatabaseSync } from "node:sqlite";
+ import type { createDb } from "#/db";
+ import { reconstructAdmittedCommandV1 } from "#/lib/session-command";
+ import { deliverSessionCommands } from "#/lib/session-command-delivery";
++import {
++	createProductAdapters,
++	reconstructCoordinatorCommand,
++} from "#/lib/session-runtime-authority";
+ import type {
+ 	SessionRuntime,
+ 	SessionRuntimeControlInput,
+@@ -14,8 +21,15 @@ import {
+ } from "#/lib/session-runtime-client";
+ import {
+ 	createD1Drizzle,
++	createSqliteD1,
+ 	OWNERSHIP_D1_SCHEMA,
+ } from "#/lib/sqlite-d1-test-utils";
++import { createNodeSqliteAdapter } from "../../../runtime/src/journal.js";
++import { importRuntimeKeyringFromBytes } from "../../../runtime/src/runtime-crypto.js";
++import {
++	type AllowlistedLog,
++	SessionCoordinator,
++} from "../../../runtime/src/session-runtime.js";
+ 
+ export const sessionRuntimeRouteHarness: {
+ 	db: ReturnType<typeof createDb> | null;
+@@ -138,6 +152,24 @@ CREATE TABLE runtime_capacity_policy (
+ );
+ INSERT INTO runtime_capacity_policy (id, accountingMode, version, updatedAt)
+ VALUES (1, 'legacy', 1, 0);
++CREATE TABLE runtime_projection_cursors (
++	sessionId text NOT NULL,
++	targetKind text NOT NULL,
++	targetId text NOT NULL,
++	runtimeOwnerVersion integer NOT NULL,
++	coordinatorSeq integer NOT NULL,
++	updatedAt integer NOT NULL
++);
++CREATE UNIQUE INDEX runtime_projection_cursors_target_uidx
++	ON runtime_projection_cursors (sessionId, targetKind, targetId);
++CREATE TABLE runtime_command_memberships (
++	commandId text PRIMARY KEY NOT NULL,
++	sessionId text NOT NULL,
++	runId text,
++	userMessageId text,
++	assistantMessageId text,
++	runEpoch integer
++);
+ `;
+ 
+ export type RecordedRuntimeCall =
+@@ -149,6 +181,7 @@ type AgentRoute = {
+ 	server: {
+ 		handlers: {
+ 			POST: (ctx: { request: Request }) => Promise<Response>;
++			GET?: (ctx: { request: Request }) => Promise<Response>;
+ 		};
+ 	};
+ };
+@@ -183,26 +216,30 @@ export function createSessionRuntimeFixture(options?: {
+ 	failStatement?: (sql: string) => boolean;
+ 	createId?: () => string;
+ 	protocolVersion?: number;
++	persistentJournal?: boolean;
+ }) {
+ 	const sqlite = new DatabaseSync(":memory:");
+ 	sqlite.exec(SESSION_COMMAND_D1_SCHEMA);
+-	const db = createD1Drizzle(sqlite, {
++	const d1Hooks = {
+ 		beforeBatchStatement:
+ 			options?.failBatchAt === undefined
+ 				? undefined
+-				: (index) => {
++				: (index: number) => {
+ 						if (index === options.failBatchAt) {
+ 							throw new Error(`injected failure at ${index}`);
+ 						}
+ 					},
+ 		beforeStatement: options?.failStatement
+-			? (sql) => {
++			? (sql: string) => {
+ 					if (options.failStatement?.(sql)) {
+ 						throw new Error("injected delivery storage fault");
+ 					}
+ 				}
+ 			: undefined,
+-	});
++	};
++	const db = createD1Drizzle(sqlite, d1Hooks);
++	const d1 = createSqliteD1(sqlite, d1Hooks);
++	const journalDir = mkdtempSync(join(tmpdir(), "ditto-journal-"));
+ 	const outbound: RecordedRuntimeCall[] = [];
+ 	let configured = options?.modelConfigured ?? true;
+ 	let protocolVersion = options?.protocolVersion ?? 1;
+@@ -217,34 +254,76 @@ export function createSessionRuntimeFixture(options?: {
+ 		  ) => Promise<SessionRuntimeHandoffAck | undefined>)
+ 		| null = null;
+ 	let loseNextAck = false;
++	const now = options?.now ?? (() => 1_700_000_000_000);
++	const logs: AllowlistedLog[] = [];
++	const scheduled: { when: Date; callback: string; payload: unknown }[] = [];
++	const keyringPromise: ReturnType<typeof importRuntimeKeyringFromBytes> =
++		importRuntimeKeyringFromBytes("v1", {
++			v1: new Uint8Array(32).fill(7),
++		});
++	const coordinators = new Map<
++		string,
++		{ coord: SessionCoordinator; path: string; sqlite: DatabaseSync }
++	>();
+ 
+-	function lookupAck(input: {
++	function keyring() {
++		return keyringPromise;
++	}
++
++	async function coordinatorFor(input: {
++		sessionId: string;
++		ownerId: string;
++		projectId: string;
++	}): Promise<SessionCoordinator> {
++		const existing = coordinators.get(input.sessionId);
++		if (existing) return existing.coord;
++		const path = options?.persistentJournal
++			? join(journalDir, `${input.sessionId}.sqlite`)
++			: ":memory:";
++		const journal = new DatabaseSync(path === ":memory:" ? ":memory:" : path);
++		const coord = new SessionCoordinator({
++			sql: createNodeSqliteAdapter(journal),
++			keyring: await keyring(),
++			adapters: createProductAdapters(db as ReturnType<typeof createDb>, d1),
++			scheduler: {
++				schedule: async (when, callback, payload) => {
++					scheduled.push({ when, callback, payload });
++				},
++			},
++			clock: { now },
++			identity: {
++				ownerId: input.ownerId,
++				workspaceSessionId: input.sessionId,
++				projectId: input.projectId,
++			},
++			createId: options?.createId,
++			log: (entry) => logs.push(entry),
++		});
++		coord.initialize();
++		coordinators.set(input.sessionId, { coord, path, sqlite: journal });
++		return coord;
++	}
++
++	async function acceptThroughCoordinator(input: {
+ 		commandId: string;
+ 		ownerVersion: number;
+-	}): SessionRuntimeHandoffAck {
+-		const row = sqlite
+-			.prepare(
+-				`SELECT sc.commandSeq AS commandSeq, k.receiptId AS receiptId
+-				 FROM session_commands sc
+-				 JOIN session_command_keys k ON k.commandId = sc.id
+-				 WHERE sc.id = ?`,
+-			)
+-			.get(input.commandId) as
+-			| { commandSeq: number; receiptId: string }
+-			| undefined;
+-		if (!row) {
++	}): Promise<SessionRuntimeHandoffAck> {
++		const reconstructed = await reconstructCoordinatorCommand(
++			db as ReturnType<typeof createDb>,
++			input.commandId,
++		);
++		if (!reconstructed) {
+ 			throw new SessionRuntimeHandoffError(
+ 				"invalid_ack",
+ 				"No persisted command for acknowledgment.",
+ 			);
+ 		}
+-		return {
+-			version: 1,
+-			commandId: input.commandId,
+-			ownerVersion: input.ownerVersion,
+-			acceptedPosition: row.commandSeq,
+-			receiptId: row.receiptId,
+-		};
++		const coord = await coordinatorFor({
++			sessionId: reconstructed.command.workspaceSessionId,
++			ownerId: reconstructed.command.userId,
++			projectId: reconstructed.command.projectId,
++		});
++		return coord.acceptCommand(input);
+ 	}
+ 
+ 	const transport: SessionRuntime = {
+@@ -254,30 +333,47 @@ export function createSessionRuntimeFixture(options?: {
+ 		},
+ 		async deliver(input) {
+ 			outbound.push({ method: "deliver", input });
+-			if (loseNextAck) {
+-				loseNextAck = false;
+-				return undefined as unknown as SessionRuntimeHandoffAck;
+-			}
+ 			if (deliverImpl) {
++				if (loseNextAck) {
++					loseNextAck = false;
++					return undefined as unknown as SessionRuntimeHandoffAck;
++				}
+ 				const ack = await deliverImpl(input);
+ 				return ack as SessionRuntimeHandoffAck;
+ 			}
+-			return lookupAck(input);
+-		},
+-		async control(input) {
+-			outbound.push({ method: "control", input });
++			const ack = await acceptThroughCoordinator(input);
+ 			if (loseNextAck) {
+ 				loseNextAck = false;
+ 				return undefined as unknown as SessionRuntimeHandoffAck;
+ 			}
++			return ack;
++		},
++		async control(input) {
++			outbound.push({ method: "control", input });
+ 			if (controlImpl) {
++				if (loseNextAck) {
++					loseNextAck = false;
++					return undefined as unknown as SessionRuntimeHandoffAck;
++				}
+ 				const ack = await controlImpl(input);
+ 				return ack as SessionRuntimeHandoffAck;
+ 			}
+-			return lookupAck(input);
++			const ack = await acceptThroughCoordinator(input);
++			if (loseNextAck) {
++				loseNextAck = false;
++				return undefined as unknown as SessionRuntimeHandoffAck;
++			}
++			return ack;
++		},
++		async readSnapshot(query) {
++			const coord = await coordinatorFor({
++				sessionId: query.sessionId,
++				ownerId: "user-1",
++				projectId: query.projectId,
++			});
++			return coord.readSnapshot();
+ 		},
+ 	};
+-	const now = options?.now ?? (() => 1_700_000_000_000);
+ 
+ 	function seedProject(input?: {
+ 		userId?: string;
+@@ -486,6 +582,35 @@ export function createSessionRuntimeFixture(options?: {
+ 						},
+ 					);
+ 				},
++				async observe(query: {
++					projectId: string;
++					sessionId: string;
++					trustedAdmissionEligible?: boolean;
++				}) {
++					activateHarness(userId);
++					const route = await loadAgentRoute("stream");
++					const handler = route.server.handlers.GET;
++					if (!handler) {
++						throw new Error("GET observation handler missing");
++					}
++					const url = new URL("http://localhost/api/agent/stream");
++					url.searchParams.set("projectId", query.projectId);
++					url.searchParams.set("sessionId", query.sessionId);
++					return withResolution(
++						async () => {
++							const response = await handler({
++								request: new Request(url, { method: "GET" }),
++							});
++							return {
++								status: response.status,
++								body: (await response.json()) as unknown,
++							};
++						},
++						{
++							trustedAdmissionEligible: query.trustedAdmissionEligible ?? true,
++						},
++					);
++				},
+ 			};
+ 		},
+ 		async deliver(budget?: { maxDeliveries?: number; maxMs?: number }) {
+@@ -510,6 +635,70 @@ export function createSessionRuntimeFixture(options?: {
+ 				}),
+ 			);
+ 		},
++		coordinator(sessionId: string) {
++			const entry = coordinators.get(sessionId);
++			if (!entry) throw new Error("coordinator missing");
++			return entry.coord;
++		},
++		async ensureCoordinator(input: {
++			sessionId: string;
++			ownerId?: string;
++			projectId?: string;
++		}) {
++			return coordinatorFor({
++				sessionId: input.sessionId,
++				ownerId: input.ownerId ?? "user-1",
++				projectId: input.projectId ?? "proj-1",
++			});
++		},
++		async restartJournals() {
++			for (const [sessionId, entry] of coordinators) {
++				entry.sqlite.close();
++				const journal = new DatabaseSync(entry.path);
++				const coord = new SessionCoordinator({
++					sql: createNodeSqliteAdapter(journal),
++					keyring: await keyring(),
++					adapters: createProductAdapters(
++						db as ReturnType<typeof createDb>,
++						d1,
++					),
++					scheduler: {
++						schedule: async (when, callback, payload) => {
++							scheduled.push({ when, callback, payload });
++						},
++					},
++					clock: { now },
++					identity: {
++						...entry.coord.identity,
++					},
++					createId: options?.createId,
++					log: (item) => logs.push(item),
++				});
++				coord.initialize();
++				coordinators.set(sessionId, {
++					coord,
++					path: entry.path,
++					sqlite: journal,
++				});
++			}
++		},
++		logs,
++		scheduled,
++		journalBytes(sessionId: string) {
++			const entry = coordinators.get(sessionId);
++			if (!entry) return Buffer.alloc(0);
++			return readFileSync(entry.path);
++		},
++		dispose() {
++			for (const entry of coordinators.values()) {
++				try {
++					entry.sqlite.close();
++				} catch {
++					// ignore
++				}
++			}
++			rmSync(journalDir, { recursive: true, force: true });
++		},
+ 	};
+ }
+ 

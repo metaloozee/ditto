@@ -1,0 +1,44 @@
+{
+  "base": "9db8c3846e3033fe08ea947fdd999ff51b3cfb82",
+  "branch": "grok/plan-004-coordinator",
+  "root": "/home/ayan/ditto-worktrees/plan-004-grok",
+  "sourceModified": [
+    "apps/runtime/src/server.ts",
+    "apps/runtime/types/env.d.ts",
+    "apps/runtime/vitest.config.ts",
+    "apps/web/src/lib/session-command.test.ts",
+    "apps/web/src/lib/session-runtime-client.ts",
+    "apps/web/src/routes/api.agent.stream.ts",
+    "apps/web/src/test/session-runtime-fixture.ts"
+  ],
+  "sourceAdded": [
+    "apps/runtime/src/journal.ts",
+    "apps/runtime/src/product-projector.ts",
+    "apps/runtime/src/reconcile.ts",
+    "apps/runtime/src/runtime-crypto.test.ts",
+    "apps/runtime/src/runtime-crypto.ts",
+    "apps/runtime/src/session-runtime.ts",
+    "apps/web/src/lib/session-runtime-authority.ts",
+    "apps/web/src/lib/session-runtime-control.test.ts",
+    "apps/web/src/lib/session-runtime-journal.test.ts"
+  ],
+  "sha256": {
+    "apps/runtime/src/server.ts": "baa5e92ddd25539b0d0ef00f1dd771e3f9e6e04205f976cf08fe89130cbed5f3",
+    "apps/runtime/types/env.d.ts": "5803bb3ace5dd574617bc84437428b75f6a5f40a0195b00edce2d26861432fcf",
+    "apps/runtime/vitest.config.ts": "3ecc855c6d649bd238d785d812109e9e0fcafb60364824e1cf34ee80ba893dc5",
+    "apps/web/src/lib/session-command.test.ts": "959ee2a5ec5f8c098f4810aefc980bbfc66b3e6d8b3b04ccd37f7a6d4720d6a0",
+    "apps/web/src/lib/session-runtime-client.ts": "28716a14ee95a9c8e110e5f759c42fee4c38395089a0a53c6e65bbde73c3d485",
+    "apps/web/src/routes/api.agent.stream.ts": "65064e7278d98df00e5621bcaf4357304f521a4d96b50fefc20a66d31ca8ca71",
+    "apps/web/src/test/session-runtime-fixture.ts": "3c2e96832189d1866810be66c80c5bd6aed2bd2f170400e643531297b6f3632a",
+    "apps/runtime/src/journal.ts": "e8ed56e87e5695fd61e469a381f93ec87af7817f49fb92fd8448eb25ef3811b1",
+    "apps/runtime/src/product-projector.ts": "0b12bde93dd4067bf39431f941315bf0715be579fecfbcf6f23a6050f1f055cd",
+    "apps/runtime/src/reconcile.ts": "1be1c431867c9228023d9ce99ff2ae908128f7a959016db49ebf512aa3456774",
+    "apps/runtime/src/runtime-crypto.test.ts": "78e577a4925212e53823d4e4f74185e4a2d092db2158b7cb6302d90aa2358e30",
+    "apps/runtime/src/runtime-crypto.ts": "962da43d720e1ef8647f8fed6b5f1b7a9401fe44c24d4c5737d09be1d3f5499b",
+    "apps/runtime/src/session-runtime.ts": "4e9f2169dc32b5a0e5f260b6ef2ae016d5dc4da8e20ba76ff2e9519f8acd6dd3",
+    "apps/web/src/lib/session-runtime-authority.ts": "1123dc0488c4fd590e58a72caa6d2720d72921c13e13677efa436bc9cd9ff0a3",
+    "apps/web/src/lib/session-runtime-control.test.ts": "79fb9c504386dda4c99a82eb5f699ab1778e943f0945ba375d27109ede0b59fd",
+    "apps/web/src/lib/session-runtime-journal.test.ts": "31c768471d1f5f838dce87662983a2ed829c6c5b4461bd55d144fd7189f1d47e"
+  },
+  "stagedFiles": []
+}
