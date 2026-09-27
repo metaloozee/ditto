@@ -684,6 +684,9 @@ describe("session command request classification", () => {
 				control: async () => {
 					throw new Error("unused");
 				},
+				readSnapshot: async () => {
+					throw new Error("unused");
+				},
 			},
 			authenticatedUserId: "user-1",
 			body: promptBody({ sessionId: "sess-1" }),

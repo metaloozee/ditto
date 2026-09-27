@@ -1,7 +1,14 @@
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { createDb } from "#/db";
 import { reconstructAdmittedCommandV1 } from "#/lib/session-command";
 import { deliverSessionCommands } from "#/lib/session-command-delivery";
+import {
+	createProductAdapters,
+	reconstructCoordinatorCommand,
+} from "#/lib/session-runtime-authority";
 import type {
 	SessionRuntime,
 	SessionRuntimeControlInput,
@@ -14,8 +21,18 @@ import {
 } from "#/lib/session-runtime-client";
 import {
 	createD1Drizzle,
+	createSqliteD1,
 	OWNERSHIP_D1_SCHEMA,
 } from "#/lib/sqlite-d1-test-utils";
+import type { EffectV1 } from "../../../../packages/runtime-contracts/src/runtime.js";
+import { createNodeSqliteAdapter } from "../../../runtime/src/journal.js";
+import { importRuntimeKeyringFromBytes } from "../../../runtime/src/runtime-crypto.js";
+import {
+	type AllowlistedLog,
+	type ExecutionPrerequisites,
+	type ProductAdapters,
+	SessionCoordinator,
+} from "../../../runtime/src/session-runtime.js";
 
 export const sessionRuntimeRouteHarness: {
 	db: ReturnType<typeof createDb> | null;
@@ -138,6 +155,41 @@ CREATE TABLE runtime_capacity_policy (
 );
 INSERT INTO runtime_capacity_policy (id, accountingMode, version, updatedAt)
 VALUES (1, 'legacy', 1, 0);
+CREATE TABLE runtime_projection_cursors (
+	sessionId text NOT NULL,
+	targetKind text NOT NULL,
+	targetId text NOT NULL,
+	runtimeOwnerVersion integer NOT NULL,
+	coordinatorSeq integer NOT NULL,
+	updatedAt integer NOT NULL
+);
+CREATE UNIQUE INDEX runtime_projection_cursors_target_uidx
+	ON runtime_projection_cursors (sessionId, targetKind, targetId);
+CREATE TABLE runtime_command_memberships (
+	commandId text PRIMARY KEY NOT NULL,
+	sessionId text NOT NULL,
+	runId text,
+	userMessageId text,
+	assistantMessageId text,
+	runEpoch integer
+);
+CREATE TABLE runtime_checkpoint_pointers (
+	sessionId text PRIMARY KEY NOT NULL,
+	runtimeOwnerVersion integer NOT NULL,
+	currentPairId text,
+	previousPairId text,
+	mutationGeneration integer NOT NULL,
+	updatedAt integer NOT NULL
+);
+CREATE TABLE runtime_trusted_prerequisites (
+	sessionId text PRIMARY KEY NOT NULL,
+	brainIdentityId text NOT NULL,
+	executorIdentityId text NOT NULL,
+	brainIncarnationId text NOT NULL,
+	executorIncarnationId text NOT NULL,
+	brainReservationExpiresAt integer NOT NULL,
+	pairEpoch integer NOT NULL
+);
 `;
 
 export type RecordedRuntimeCall =
@@ -149,6 +201,7 @@ type AgentRoute = {
 	server: {
 		handlers: {
 			POST: (ctx: { request: Request }) => Promise<Response>;
+			GET?: (ctx: { request: Request }) => Promise<Response>;
 		};
 	};
 };
@@ -183,26 +236,30 @@ export function createSessionRuntimeFixture(options?: {
 	failStatement?: (sql: string) => boolean;
 	createId?: () => string;
 	protocolVersion?: number;
+	persistentJournal?: boolean;
 }) {
 	const sqlite = new DatabaseSync(":memory:");
 	sqlite.exec(SESSION_COMMAND_D1_SCHEMA);
-	const db = createD1Drizzle(sqlite, {
+	const d1Hooks = {
 		beforeBatchStatement:
 			options?.failBatchAt === undefined
 				? undefined
-				: (index) => {
+				: (index: number) => {
 						if (index === options.failBatchAt) {
 							throw new Error(`injected failure at ${index}`);
 						}
 					},
 		beforeStatement: options?.failStatement
-			? (sql) => {
+			? (sql: string) => {
 					if (options.failStatement?.(sql)) {
 						throw new Error("injected delivery storage fault");
 					}
 				}
 			: undefined,
-	});
+	};
+	const db = createD1Drizzle(sqlite, d1Hooks);
+	const d1 = createSqliteD1(sqlite, d1Hooks);
+	const journalDir = mkdtempSync(join(tmpdir(), "ditto-journal-"));
 	const outbound: RecordedRuntimeCall[] = [];
 	let configured = options?.modelConfigured ?? true;
 	let protocolVersion = options?.protocolVersion ?? 1;
@@ -217,34 +274,164 @@ export function createSessionRuntimeFixture(options?: {
 		  ) => Promise<SessionRuntimeHandoffAck | undefined>)
 		| null = null;
 	let loseNextAck = false;
+	const now = options?.now ?? (() => 1_700_000_000_000);
+	const logs: AllowlistedLog[] = [];
+	const scheduled: { when: Date; callback: string; payload: unknown }[] = [];
+	const dispatchBoundary: { admits: EffectV1[]; containerStarts: number } = {
+		admits: [],
+		containerStarts: 0,
+	};
+	const keyringPromise: ReturnType<typeof importRuntimeKeyringFromBytes> =
+		importRuntimeKeyringFromBytes("v1", {
+			v1: new Uint8Array(32).fill(7),
+		});
+	const coordinators = new Map<
+		string,
+		{ coord: SessionCoordinator; path: string; sqlite: DatabaseSync }
+	>();
 
-	function lookupAck(input: {
-		commandId: string;
-		ownerVersion: number;
-	}): SessionRuntimeHandoffAck {
+	function keyring() {
+		return keyringPromise;
+	}
+
+	function readSeededPrerequisites(input: {
+		workspaceSessionId: string;
+		userId: string;
+		projectId: string;
+	}): ExecutionPrerequisites | null {
 		const row = sqlite
 			.prepare(
-				`SELECT sc.commandSeq AS commandSeq, k.receiptId AS receiptId
-				 FROM session_commands sc
-				 JOIN session_command_keys k ON k.commandId = sc.id
-				 WHERE sc.id = ?`,
+				`SELECT brainIdentityId, executorIdentityId, brainIncarnationId,
+				        executorIncarnationId, brainReservationExpiresAt, pairEpoch
+				 FROM runtime_trusted_prerequisites WHERE sessionId = ?`,
 			)
-			.get(input.commandId) as
-			| { commandSeq: number; receiptId: string }
+			.get(input.workspaceSessionId) as
+			| {
+					brainIdentityId: string;
+					executorIdentityId: string;
+					brainIncarnationId: string;
+					executorIncarnationId: string;
+					brainReservationExpiresAt: number;
+					pairEpoch: number;
+			  }
 			| undefined;
-		if (!row) {
+		if (!row) return null;
+		const identities = sqlite
+			.prepare(
+				`SELECT id, kind, incarnationId, lifecycleGeneration, state, controllerClass
+				 FROM sandbox_identities WHERE workspaceSessionId = ?`,
+			)
+			.all(input.workspaceSessionId) as {
+			id: string;
+			kind: string;
+			incarnationId: string;
+			lifecycleGeneration: number;
+			state: string;
+			controllerClass: string | null;
+		}[];
+		const executor = identities.find(
+			(identity) => identity.id === row.executorIdentityId,
+		);
+		const brain = identities.find(
+			(identity) => identity.id === row.brainIdentityId,
+		);
+		if (!executor || !brain) return null;
+		return {
+			executor: {
+				identityId: executor.id,
+				kind: executor.kind,
+				incarnationId: executor.incarnationId,
+				lifecycleGeneration: executor.lifecycleGeneration,
+				state: executor.state,
+				controllerClass: executor.controllerClass,
+			},
+			brain: {
+				identityId: brain.id,
+				kind: brain.kind,
+				incarnationId: brain.incarnationId,
+				lifecycleGeneration: brain.lifecycleGeneration,
+				state: brain.state,
+				controllerClass: brain.controllerClass,
+			},
+			brainReservationExpiresAt: Number(row.brainReservationExpiresAt),
+			initialPair: {
+				brainIdentityId: row.brainIdentityId,
+				executorIdentityId: row.executorIdentityId,
+			},
+		};
+	}
+
+	function productAdapters(): ProductAdapters {
+		const base = createProductAdapters(db as ReturnType<typeof createDb>, d1);
+		return {
+			...base,
+			readExecutionPrerequisites: async (input) =>
+				readSeededPrerequisites(input),
+		};
+	}
+
+	async function coordinatorFor(input: {
+		sessionId: string;
+		ownerId: string;
+		projectId: string;
+	}): Promise<SessionCoordinator> {
+		const existing = coordinators.get(input.sessionId);
+		if (existing) return existing.coord;
+		const path = options?.persistentJournal
+			? join(journalDir, `${input.sessionId}.sqlite`)
+			: ":memory:";
+		const journal = new DatabaseSync(path === ":memory:" ? ":memory:" : path);
+		const coord = new SessionCoordinator({
+			sql: createNodeSqliteAdapter(journal),
+			keyring: await keyring(),
+			adapters: productAdapters(),
+			scheduler: {
+				schedule: async (when, callback, payload) => {
+					scheduled.push({ when, callback, payload });
+				},
+			},
+			clock: { now },
+			identity: {
+				ownerId: input.ownerId,
+				workspaceSessionId: input.sessionId,
+				projectId: input.projectId,
+			},
+			createId: options?.createId,
+			log: (entry) => logs.push(entry),
+			dispatchHooks: {
+				onTrustedAdmit: (effect) => {
+					dispatchBoundary.admits.push(effect);
+				},
+				onContainerStart: () => {
+					dispatchBoundary.containerStarts += 1;
+				},
+			},
+		});
+		coord.initialize();
+		coordinators.set(input.sessionId, { coord, path, sqlite: journal });
+		return coord;
+	}
+
+	async function acceptThroughCoordinator(input: {
+		commandId: string;
+		ownerVersion: number;
+	}): Promise<SessionRuntimeHandoffAck> {
+		const reconstructed = await reconstructCoordinatorCommand(
+			db as ReturnType<typeof createDb>,
+			input.commandId,
+		);
+		if (!reconstructed) {
 			throw new SessionRuntimeHandoffError(
 				"invalid_ack",
 				"No persisted command for acknowledgment.",
 			);
 		}
-		return {
-			version: 1,
-			commandId: input.commandId,
-			ownerVersion: input.ownerVersion,
-			acceptedPosition: row.commandSeq,
-			receiptId: row.receiptId,
-		};
+		const coord = await coordinatorFor({
+			sessionId: reconstructed.command.workspaceSessionId,
+			ownerId: reconstructed.command.userId,
+			projectId: reconstructed.command.projectId,
+		});
+		return coord.acceptCommand(input);
 	}
 
 	const transport: SessionRuntime = {
@@ -254,30 +441,47 @@ export function createSessionRuntimeFixture(options?: {
 		},
 		async deliver(input) {
 			outbound.push({ method: "deliver", input });
-			if (loseNextAck) {
-				loseNextAck = false;
-				return undefined as unknown as SessionRuntimeHandoffAck;
-			}
 			if (deliverImpl) {
+				if (loseNextAck) {
+					loseNextAck = false;
+					return undefined as unknown as SessionRuntimeHandoffAck;
+				}
 				const ack = await deliverImpl(input);
 				return ack as SessionRuntimeHandoffAck;
 			}
-			return lookupAck(input);
-		},
-		async control(input) {
-			outbound.push({ method: "control", input });
+			const ack = await acceptThroughCoordinator(input);
 			if (loseNextAck) {
 				loseNextAck = false;
 				return undefined as unknown as SessionRuntimeHandoffAck;
 			}
+			return ack;
+		},
+		async control(input) {
+			outbound.push({ method: "control", input });
 			if (controlImpl) {
+				if (loseNextAck) {
+					loseNextAck = false;
+					return undefined as unknown as SessionRuntimeHandoffAck;
+				}
 				const ack = await controlImpl(input);
 				return ack as SessionRuntimeHandoffAck;
 			}
-			return lookupAck(input);
+			const ack = await acceptThroughCoordinator(input);
+			if (loseNextAck) {
+				loseNextAck = false;
+				return undefined as unknown as SessionRuntimeHandoffAck;
+			}
+			return ack;
+		},
+		async readSnapshot(query) {
+			const coord = await coordinatorFor({
+				sessionId: query.sessionId,
+				ownerId: "user-1",
+				projectId: query.projectId,
+			});
+			return coord.readSnapshot();
 		},
 	};
-	const now = options?.now ?? (() => 1_700_000_000_000);
 
 	function seedProject(input?: {
 		userId?: string;
@@ -295,6 +499,121 @@ export function createSessionRuntimeFixture(options?: {
 			)
 			.run(projectId, "Demo", userId, input?.status ?? "ready");
 		return { userId, projectId };
+	}
+
+	function seedExecutorIdentity(input?: {
+		userId?: string;
+		projectId?: string;
+		sessionId?: string;
+		incarnationId?: string;
+		lifecycleGeneration?: number;
+	}) {
+		const userId = input?.userId ?? "user-1";
+		const projectId = input?.projectId ?? "proj-1";
+		const sessionId = input?.sessionId ?? "sess-1";
+		const incarnationId = input?.incarnationId ?? "synthetic-exec-1";
+		const lifecycleGeneration = input?.lifecycleGeneration ?? 1;
+		sqlite
+			.prepare(
+				`INSERT OR REPLACE INTO sandbox_identities (
+					id, kind, sandboxId, containerId, userId, projectId, workspaceSessionId,
+					controllerClass, incarnationId, lifecycleGeneration, state
+				) VALUES (?, 'workspace_session', ?, ?, ?, ?, ?, 'Sandbox', ?, ?, 'ready')`,
+			)
+			.run(
+				`identity-${sessionId}`,
+				`sandbox-${sessionId}`,
+				`container-${sessionId}`,
+				userId,
+				projectId,
+				sessionId,
+				incarnationId,
+				lifecycleGeneration,
+			);
+		const expiresAt = Math.floor(now() / 1000) + 24 * 3600;
+		sqlite
+			.prepare(
+				`INSERT OR REPLACE INTO workspace_capacity_leases (
+					id, sessionId, userId, identityId, leaseToken, expiresAt
+				) VALUES (?, ?, ?, ?, ?, ?)`,
+			)
+			.run(
+				`lease-${sessionId}`,
+				sessionId,
+				userId,
+				`identity-${sessionId}`,
+				`lease-token-${sessionId}`,
+				expiresAt,
+			);
+		return { userId, projectId, sessionId, incarnationId, lifecycleGeneration };
+	}
+
+	function seedTrustedExecutionEvidence(input?: {
+		userId?: string;
+		projectId?: string;
+		sessionId?: string;
+		executorIncarnationId?: string;
+		brainIncarnationId?: string;
+		lifecycleGeneration?: number;
+	}) {
+		const executor = seedExecutorIdentity({
+			userId: input?.userId,
+			projectId: input?.projectId,
+			sessionId: input?.sessionId,
+			incarnationId: input?.executorIncarnationId ?? "synthetic-exec-1",
+			lifecycleGeneration: input?.lifecycleGeneration,
+		});
+		const brainIncarnationId = input?.brainIncarnationId ?? "synthetic-brain-1";
+		const brainIdentityId = `brain-${executor.sessionId}`;
+		sqlite
+			.prepare(
+				`INSERT OR REPLACE INTO sandbox_identities (
+					id, kind, sandboxId, containerId, userId, projectId, workspaceSessionId,
+					controllerClass, incarnationId, lifecycleGeneration, state
+				) VALUES (?, 'trusted_brain', ?, ?, ?, ?, ?, 'SessionRuntime', ?, ?, 'ready')`,
+			)
+			.run(
+				brainIdentityId,
+				`brain-sandbox-${executor.sessionId}`,
+				`brain-container-${executor.sessionId}`,
+				executor.userId,
+				executor.projectId,
+				executor.sessionId,
+				brainIncarnationId,
+				executor.lifecycleGeneration,
+			);
+		const expiresAt = now() + 24 * 3600 * 1000;
+		sqlite
+			.prepare(
+				`INSERT OR REPLACE INTO runtime_trusted_prerequisites (
+					sessionId, brainIdentityId, executorIdentityId, brainIncarnationId,
+					executorIncarnationId, brainReservationExpiresAt, pairEpoch
+				) VALUES (?, ?, ?, ?, ?, ?, 1)`,
+			)
+			.run(
+				executor.sessionId,
+				brainIdentityId,
+				`identity-${executor.sessionId}`,
+				brainIncarnationId,
+				executor.incarnationId,
+				expiresAt,
+			);
+		sqlite
+			.prepare(
+				`UPDATE workspace_sessions
+				 SET brainIdentityId = ?, sandboxIdentityId = ?
+				 WHERE id = ?`,
+			)
+			.run(
+				brainIdentityId,
+				`identity-${executor.sessionId}`,
+				executor.sessionId,
+			);
+		return {
+			...executor,
+			brainIdentityId,
+			brainIncarnationId,
+		};
 	}
 
 	function seedTrustedSession(input?: {
@@ -391,6 +710,9 @@ export function createSessionRuntimeFixture(options?: {
 		counts,
 		seedProject,
 		seedTrustedSession,
+		seedExecutorIdentity,
+		seedTrustedExecutionEvidence,
+		dispatchBoundary,
 		setModelConfigured(value: boolean) {
 			configured = value;
 		},
@@ -486,6 +808,35 @@ export function createSessionRuntimeFixture(options?: {
 						},
 					);
 				},
+				async observe(query: {
+					projectId: string;
+					sessionId: string;
+					trustedAdmissionEligible?: boolean;
+				}) {
+					activateHarness(userId);
+					const route = await loadAgentRoute("stream");
+					const handler = route.server.handlers.GET;
+					if (!handler) {
+						throw new Error("GET observation handler missing");
+					}
+					const url = new URL("http://localhost/api/agent/stream");
+					url.searchParams.set("projectId", query.projectId);
+					url.searchParams.set("sessionId", query.sessionId);
+					return withResolution(
+						async () => {
+							const response = await handler({
+								request: new Request(url, { method: "GET" }),
+							});
+							return {
+								status: response.status,
+								body: (await response.json()) as unknown,
+							};
+						},
+						{
+							trustedAdmissionEligible: query.trustedAdmissionEligible ?? true,
+						},
+					);
+				},
 			};
 		},
 		async deliver(budget?: { maxDeliveries?: number; maxMs?: number }) {
@@ -509,6 +860,67 @@ export function createSessionRuntimeFixture(options?: {
 					createId: options?.createId,
 				}),
 			);
+		},
+		coordinator(sessionId: string) {
+			const entry = coordinators.get(sessionId);
+			if (!entry) throw new Error("coordinator missing");
+			return entry.coord;
+		},
+		async ensureCoordinator(input: {
+			sessionId: string;
+			ownerId?: string;
+			projectId?: string;
+		}) {
+			return coordinatorFor({
+				sessionId: input.sessionId,
+				ownerId: input.ownerId ?? "user-1",
+				projectId: input.projectId ?? "proj-1",
+			});
+		},
+		async restartJournals() {
+			for (const [sessionId, entry] of coordinators) {
+				entry.sqlite.close();
+				const journal = new DatabaseSync(entry.path);
+				const coord = new SessionCoordinator({
+					sql: createNodeSqliteAdapter(journal),
+					keyring: await keyring(),
+					adapters: productAdapters(),
+					scheduler: {
+						schedule: async (when, callback, payload) => {
+							scheduled.push({ when, callback, payload });
+						},
+					},
+					clock: { now },
+					identity: {
+						...entry.coord.identity,
+					},
+					createId: options?.createId,
+					log: (item) => logs.push(item),
+				});
+				coord.initialize();
+				coordinators.set(sessionId, {
+					coord,
+					path: entry.path,
+					sqlite: journal,
+				});
+			}
+		},
+		logs,
+		scheduled,
+		journalBytes(sessionId: string) {
+			const entry = coordinators.get(sessionId);
+			if (!entry) return Buffer.alloc(0);
+			return readFileSync(entry.path);
+		},
+		dispose() {
+			for (const entry of coordinators.values()) {
+				try {
+					entry.sqlite.close();
+				} catch {
+					// ignore
+				}
+			}
+			rmSync(journalDir, { recursive: true, force: true });
 		},
 	};
 }

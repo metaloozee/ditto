@@ -15,10 +15,15 @@ import {
 	SessionCommandError,
 } from "#/lib/session-command";
 import {
+	assertObservationMembership,
+	ObservationAccessError,
+} from "#/lib/session-runtime-authority";
+import {
 	createSessionRuntimeClient,
 	isTrustedAdmissionEligible,
 	resolveSessionAdmissionHooks,
 	resolveSessionRuntimeTransport,
+	SessionRuntimeHandoffError,
 } from "#/lib/session-runtime-client";
 
 function jsonResponse(body: unknown, status: number): Response {
@@ -31,6 +36,46 @@ function jsonResponse(body: unknown, status: number): Response {
 export const Route = createFileRoute("/api/agent/stream")({
 	server: {
 		handlers: {
+			GET: async ({ request }) => {
+				const auth = createAuth(env);
+				const session = await auth.api.getSession({
+					headers: request.headers,
+				});
+				if (!session?.user) {
+					return jsonResponse({ error: "Unauthorized" }, 401);
+				}
+				const url = new URL(request.url);
+				const projectId = url.searchParams.get("projectId") ?? "";
+				const sessionId = url.searchParams.get("sessionId") ?? "";
+				const correlationId = crypto.randomUUID();
+				if (!projectId || !sessionId) {
+					return jsonResponse({ category: "invalid", correlationId }, 400);
+				}
+				const db = createDb(env);
+				try {
+					await assertObservationMembership({
+						db,
+						userId: session.user.id,
+						projectId,
+						sessionId,
+					});
+					const snapshot = await createSessionRuntimeClient(
+						resolveSessionRuntimeTransport(),
+					).readSnapshot({ sessionId, projectId });
+					return jsonResponse({ snapshot, correlationId }, 200);
+				} catch (error) {
+					if (error instanceof ObservationAccessError) {
+						return jsonResponse(
+							{ category: error.category, correlationId },
+							404,
+						);
+					}
+					if (error instanceof SessionRuntimeHandoffError) {
+						return jsonResponse({ category: error.code, correlationId }, 503);
+					}
+					return jsonResponse({ category: "unavailable", correlationId }, 503);
+				}
+			},
 			POST: async ({ request }) => {
 				const auth = createAuth(env);
 				const session = await auth.api.getSession({

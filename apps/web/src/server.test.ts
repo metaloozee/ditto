@@ -49,6 +49,17 @@ vi.mock("#/lib/sandbox-egress-broker", () => ({
 	handleOutbound: handleOutboundMock,
 }));
 
+vi.mock("cloudflare:workers", () => ({
+	WorkerEntrypoint: class WorkerEntrypoint {
+		ctx: unknown;
+		env: unknown;
+		constructor(ctx: unknown, env: unknown) {
+			this.ctx = ctx;
+			this.env = env;
+		}
+	},
+}));
+
 const serverModule = await import("./server");
 const { default: server, Sandbox, ContainerProxy } = serverModule;
 

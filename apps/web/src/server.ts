@@ -7,6 +7,8 @@ import {
 import handler from "@tanstack/react-start/server-entry";
 import { handleOutbound } from "#/lib/sandbox-egress-broker";
 
+export { ProductEntrypoint } from "#/lib/session-runtime-product";
+
 const PREVIEW_LAST_TRAFFIC_STORAGE_KEY = "ditto.previewLastTrafficAt";
 
 export class Sandbox extends BaseSandbox {
