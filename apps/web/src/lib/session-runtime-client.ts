@@ -26,10 +26,16 @@ export type SessionRuntimeHandoffAck = {
 	receiptId: string;
 };
 
+export type SessionRuntimeSnapshotQuery = {
+	sessionId: string;
+	projectId: string;
+};
+
 export type SessionRuntime = {
 	modelConfiguration(): Promise<SessionRuntimeModelConfiguration>;
 	deliver(input: SessionRuntimeDeliverInput): Promise<SessionRuntimeHandoffAck>;
 	control(input: SessionRuntimeControlInput): Promise<SessionRuntimeHandoffAck>;
+	readSnapshot(query: SessionRuntimeSnapshotQuery): Promise<unknown>;
 };
 
 export class SessionRuntimeHandoffError extends Error {
@@ -61,6 +67,12 @@ export function createUnavailableSessionRuntime(): SessionRuntime {
 			);
 		},
 		async control() {
+			throw new SessionRuntimeHandoffError(
+				"runtime_unavailable",
+				"runtime_unavailable",
+			);
+		},
+		async readSnapshot() {
 			throw new SessionRuntimeHandoffError(
 				"runtime_unavailable",
 				"runtime_unavailable",
@@ -214,5 +226,6 @@ export function createSessionRuntimeClient(
 			parseSessionRuntimeHandoffAck(
 				await withTimeout(() => transport.control(input)),
 			),
+		readSnapshot: (query) => withTimeout(() => transport.readSnapshot(query)),
 	};
 }

@@ -22,6 +22,12 @@ export default defineWorkersConfig({
 				miniflare: {
 					compatibilityDate: "2026-09-16",
 					compatibilityFlags: ["nodejs_compat"],
+					bindings: {
+						RUNTIME_ENCRYPTION_CURRENT_KEY_VERSION: "v1",
+						RUNTIME_ENCRYPTION_KEYS: JSON.stringify({
+							v1: "01".repeat(32),
+						}),
+					},
 				},
 			},
 		},
