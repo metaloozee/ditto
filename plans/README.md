@@ -1,12 +1,12 @@
 # Trusted workspace-session runtime implementation plans
 
-001 local feasibility and 002 landed on `brain` at merge `693a334`. 003 is accepted and landed on local `brain` at merge `162e134`. **004 is READY FOR LOCAL EXECUTION, NOT STARTED.** Paid topology, restart and incarnation-lifetime evidence remain NOT RUN and block real-user trusted-runtime enablement.
+001 local feasibility and 002 landed on `brain` at merge `693a334`. 003 is accepted and landed on local `brain` at merge `162e134`. **004 is ACCEPTED LOCALLY after seven Grok repair rounds and independent verification. Its source remains uncommitted in the isolated worktree.** Paid topology, restart and incarnation-lifetime evidence remain NOT RUN and block real-user trusted-runtime enablement.
 
 003 execution and repair used `xai/grok-4.6` in `/home/ayan/ditto-worktrees/plan-003-grok`, originally detached at `d18bf57`. The user subsequently authorized source commits and a local merge. Source commits `237affb` and `03af7f0` preserve all 17 accepted file hashes. Post-merge verification passed 23 probes, 757 web tests, 79 runner tests, 20 runtime tests, 43 brain tests, contracts/freshness checks and build/typecheck gates. See the [003 acceptance review](003-repair-review.md), [probes](003-repair-probes.cjs), and [integration record](003-repair-evidence/integration/README.md). The [initial rejection](003-execution-review.md) is historical.
 
 The earlier 001/002 reconciliation at `a5c1185` confirmed the source from `4e2bad8`. The [002 acceptance review](002-expanded-repair-review.md) still governs its approved R5 adjustment. The current 004 handoff uses the merged 003 baseline, not that older checkout.
 
-Canonical requirements: [trusted-session-runtime.md](../docs/specs/trusted-session-runtime.md). Current source wins for implemented behavior; the spec wins for the target. Local acceptance of 001-003 is not completion of the trusted runtime or permission to deploy it.
+Canonical requirements: [trusted-session-runtime.md](../docs/specs/trusted-session-runtime.md). Current source wins for implemented behavior; the spec wins for the target. Local acceptance of 001-004 is not completion of the trusted runtime or permission to deploy it.
 
 ## Implemented baseline for 004
 
@@ -14,11 +14,11 @@ Canonical requirements: [trusted-session-runtime.md](../docs/specs/trusted-sessi
 - 002 delivered strict runtime contracts, additive migration `0020`, identity/ownership and delivery schema, legacy-owner fences, shared lease policy with product-only adapters, and contracts-consumer freshness checks. 003 now uses the sequence schema for durable allocation; unified capacity allocation still belongs to 008.
 - 003 implements authenticated durable admission, idempotent receipts, transactional sequence/message/outbox writes, durable controls and bounded retrying delivery. It does not launch Pi or implement 004's coordinator, execution deduplication or sequence consumption. Existing/default sessions remain on the fenced legacy path. Trusted eligibility remains closed by default.
 
-Start with [004](004-coordinator-and-encrypted-journal.md), [003's acceptance review](003-repair-review.md), and the accepted 002 review. The prepared executor is `/home/ayan/ditto-worktrees/plan-004-grok`, branch `grok/plan-004-coordinator`, based on current local `brain` with these committed plans. Dependencies are installed; all three inherited gates and the 23 repair probes pass there. Recheck status before execution and preserve historical worktrees and unrelated work. The recorded executor preference is `xai/grok-4.6`, unless the next execution request overrides it. Preparation did not implement or start 004.
+004's [acceptance review](004-repair-round-7-review.md) governs the next handoff. The accepted nineteen source files remain uncommitted in `/home/ayan/ditto-worktrees/plan-004-grok`, branch `grok/plan-004-coordinator`, base `9db8c38`. Final independent verification passes 129 behavioral checks, 808 web tests, 79 runner tests, 25 runtime tests and 43 brain tests, plus build/typecheck gates. [Accepted hashes and logs](004-repair-review-evidence/round-7/) identify the exact source. The initial rejection and six earlier repair rejections remain historical evidence in the [repair record](004-repair-review-evidence/README.md). The 004 implementation prerequisite for 005 is satisfied locally; source integration awaits separate authorization and 005 has not started. Preserve the worktree and unrelated work. The executor preference remains `xai/grok-4.6` unless a later request overrides it.
 
 ## Plan and evidence map
 
-There is one implementation plan per numbered phase. The extra 002/003 review and evidence files record successive candidates, not additional work items.
+There is one implementation plan per numbered phase. The extra 002/003/004 review and evidence files record candidates, not additional work items.
 
 | Artifact | Role |
 |---|---|
@@ -32,12 +32,22 @@ There is one implementation plan per numbered phase. The extra 002/003 review an
 | [003-repair-probes.cjs](003-repair-probes.cjs) | Accepted 23-check reproducer; pass the candidate root explicitly |
 | [003-repair-evidence/integration/](003-repair-evidence/integration/) | Landed source commits, hash comparison and post-merge verification |
 | [003-execution-evidence/](003-execution-evidence/), [003-repair-execution-evidence/](003-repair-execution-evidence/) | Historical executor logs, including failed intermediate attempts; final acceptance supersedes early summaries |
+| [004-execution-review.md](004-execution-review.md) | REJECTED candidate; R1-R10 and required repair boundaries |
+| [004-review-probes.cjs](004-review-probes.cjs), [004-review-evidence/](004-review-evidence/) | Independent 30-check reproducer, gate logs, full candidate diffs and source hashes |
+| [004-repair-round-1-review.md](004-repair-round-1-review.md), [004-repair-extra-probes.cjs](004-repair-extra-probes.cjs) | Round-one rejection, C1-C11 handoff and 28 deeper behavioral checks |
+| [004-repair-round-2-review.md](004-repair-round-2-review.md), [004-repair-round-2-probes.cjs](004-repair-round-2-probes.cjs) | Round-two rejection, D1-D6 handoff and 14 further behavioral checks |
+| [004-repair-round-3-review.md](004-repair-round-3-review.md), [004-repair-round-3-probes.cjs](004-repair-round-3-probes.cjs) | Round-three rejection, E1-E6 handoff and thirteen further behavioral checks |
+| [004-repair-round-4-review.md](004-repair-round-4-review.md), [004-repair-round-4-probes.cjs](004-repair-round-4-probes.cjs) | Round-four rejection, F1-F4 handoff and eight further behavioral checks |
+| [004-repair-round-5-review.md](004-repair-round-5-review.md), [004-repair-round-5-probes.cjs](004-repair-round-5-probes.cjs) | Round-five rejection, G1-G4 handoff and five further behavioral checks |
+| [004-repair-round-6-review.md](004-repair-round-6-review.md), [004-repair-round-6-probes.cjs](004-repair-round-6-probes.cjs) | Round-six rejection, H1/H2 handoff and four further behavioral checks |
+| [004-repair-round-7-review.md](004-repair-round-7-review.md), [004-repair-round-7-probes.cjs](004-repair-round-7-probes.cjs) | Final local acceptance, original-requirement mapping and four completion checks |
+| [004-repair-review-evidence/](004-repair-review-evidence/) | Historical repair evidence plus round-seven accepted source hashes and independent verification |
 
 Pass the candidate root explicitly when running probes. The historical 002 probes default to an old worktree; follow that acceptance review's prerequisites and optional modes. Its repair probe's npm modes create disposable fixtures and run install/build commands; they are not read-only document checks. Some 002 before-edit manifests remain outside this checkout. Their availability was not rechecked; historical summaries do not establish that every old comparison is reproducible from a fresh clone. The 003 acceptance manifest and before-copies are committed under `003-repair-evidence/`.
 
 ## Scope and safety
 
-Accepted 001-003 source is committed on local `brain`. Old reviews refer to retained evidence and stale plan copies in executor and `/tmp` worktrees; those are provenance, not execution targets. Starting 004 requires its own execution request.
+Accepted 001-003 source is committed on local `brain`. Old reviews refer to retained evidence and stale plan copies in executor and `/tmp` worktrees; those are provenance, not execution targets. The user's local execution request for 004 ran through `xai/grok-4.6`, agent `0caa8fd9-c49b-4aa`, in the isolated worktree checked clean at `9db8c38`. The source remains uncommitted. Independent review rejected the initial candidate despite passing inherited gates, then accepted the round-seven source. Read the final 004 acceptance review and preserve its hashes before integration or downstream execution.
 
 Plans are tracked. The old dirty `apps/web/src/lib/sandbox-egress-broker.test.ts` and untracked-plans notes are historical. Always inspect actual status and preserve unrelated work. Do not reset, stage or overwrite it. The historical 001 worktree still contains untracked evidence; 003 integration left it untouched.
 
@@ -70,8 +80,8 @@ The historical cold-review revisions were documentation-only. Read-only document
 | 001 | [Feasibility](001-feasibility.md) | none | Pi 0.85.1 recovery-adapter/barrier proof and two-Worker/two-image topology evidence | Local PASS, landed on `brain`; paid F NOT RUN | L / high |
 | 002 | [Contracts and identity](002-contracts-and-identity.md) | 001 local feasibility | Versioned wire contracts, additive D1 schema, ownership fence | ACCEPTED, landed on `brain`; no shared D1 migration | M / high |
 | 003 | [Command admission and delivery](003-command-admission-and-delivery.md) | 002 | Durable idempotent receipts and retrying delivery, no request-owned run | ACCEPTED, landed on local `brain` at `162e134` | L / high |
-| 004 | [Coordinator and encrypted journal](004-coordinator-and-encrypted-journal.md) | 003 | Durable execution decisions, epochs, journal, encrypted storage and projections | READY for local execution; not started | L / high |
-| 005 | [Privileged transport and remote execution](005-privileged-transport-and-remote-execution.md) | 004 | Private bridge, split credential broker, remote executor, Git/environment policy | BLOCKED 004 | L / high |
+| 004 | [Coordinator and encrypted journal](004-coordinator-and-encrypted-journal.md) | 003 | Durable execution decisions, epochs, journal, encrypted storage and projections | ACCEPTED LOCALLY; source uncommitted, integration not authorized | L / high |
+| 005 | [Privileged transport and remote execution](005-privileged-transport-and-remote-execution.md) | 004 | Private bridge, split credential broker, remote executor, Git/environment policy | 004 accepted locally; waiting source integration, not started | L / high |
 | 006 | [Trusted Pi continuation](006-trusted-pi-continuation.md) | 005 | Full Pi running remotely with awaited persistence and safe process recovery | BLOCKED 005 | L / high |
 | 007 | [Paired recovery and seeds](007-paired-recovery-and-seeds.md) | 006 | Initial baseline, immutable pair publication, verified fallback, builder relocation | BLOCKED 006 | L / high |
 | 008 | [Capacity and preview supervision](008-capacity-and-preview-supervision.md) | 007 | Both pools, lifecycle scheduling, bounded preview deferral and cold preview | BLOCKED 007 | L / high |

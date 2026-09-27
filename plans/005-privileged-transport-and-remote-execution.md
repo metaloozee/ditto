@@ -1,6 +1,6 @@
 # 005: Split privileged transport and route every repository operation remotely
 
-Status: BLOCKED on 004. Base HEAD: `c963890`, branch `brain`. Effort: L, 5-8 days. Risk: high security boundary change.
+Status: 004 PREREQUISITE ACCEPTED LOCALLY; WAITING SOURCE INTEGRATION, NOT STARTED. Read the [004 acceptance review](004-repair-round-7-review.md) and preserve its nineteen source hashes. The accepted code is uncommitted in `/home/ayan/ditto-worktrees/plan-004-grok`, base `9db8c38`; it has not landed on `brain`. Integration and 005 execution require separate authorization. Original drafting base `c963890` is historical, not an execution checkout target. Effort: L, 5-8 days. Risk: high security boundary change.
 
 ## Goal and prerequisites
 
