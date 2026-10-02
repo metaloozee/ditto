@@ -1,0 +1,40 @@
+Warning: Route file "/home/ayan/ditto-worktrees/plan-005-codex/apps/web/src/routes/project.$projectId.test.tsx" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-005-codex/apps/web/src/routes/-project.$projectId.test.tsx" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-worktrees/plan-005-codex/apps/web/src/routes/api.agent.control.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-005-codex/apps/web/src/routes/-api.agent.control.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-worktrees/plan-005-codex/apps/web/src/routes/api.agent.stream.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-005-codex/apps/web/src/routes/-api.agent.stream.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+
+ RUN  v4.1.10 /home/ayan/ditto-worktrees/plan-005-codex/apps/web
+
+Sourcemap for "/home/ayan/ditto-worktrees/plan-005-codex/node_modules/.pnpm/@cloudflare+containers@0.3.7/node_modules/@cloudflare/containers/dist/index.js" points to missing source files
+Sourcemap for "/home/ayan/ditto-worktrees/plan-005-codex/node_modules/.pnpm/@cloudflare+containers@0.3.7/node_modules/@cloudflare/containers/dist/lib/container.js" points to missing source files
+Sourcemap for "/home/ayan/ditto-worktrees/plan-005-codex/node_modules/.pnpm/@cloudflare+containers@0.3.7/node_modules/@cloudflare/containers/dist/lib/helpers.js" points to missing source files
+Sourcemap for "/home/ayan/ditto-worktrees/plan-005-codex/node_modules/.pnpm/@cloudflare+containers@0.3.7/node_modules/@cloudflare/containers/dist/lib/utils.js" points to missing source files
+
+ Test Files  1 passed (1)
+      Tests  32 passed (32)
+   Start at  20:36:09
+   Duration  2.22s (transform 865ms, setup 0ms, import 1.47s, tests 602ms, environment 0ms)
+

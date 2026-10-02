@@ -1,0 +1,334 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { BrainRequest } from "../../../runtime/src/brain-transport";
+import {
+	handleRuntimeOutbound,
+	type PlatformOutboundContext,
+	type RuntimeSource,
+} from "../../../runtime/src/runtime-egress";
+import {
+	createSessionRuntimeFixture,
+	type SessionRuntimeFixture,
+} from "../test/session-runtime-fixture";
+import productPublic, { ProductEntrypoint } from "./runtime-product-worker";
+import { handleSessionCommandRequest } from "./session-command";
+import { createSqliteD1 } from "./sqlite-d1-test-utils";
+
+vi.mock("cloudflare:workers", () => ({
+	env: {},
+	WorkerEntrypoint: class {
+		constructor(
+			readonly ctx: unknown,
+			readonly env: unknown,
+		) {}
+	},
+}));
+const fixtures: SessionRuntimeFixture[] = [];
+afterEach(() => {
+	for (const f of fixtures.splice(0)) f.dispose();
+	vi.restoreAllMocks();
+});
+
+async function setup() {
+	const f = createSessionRuntimeFixture();
+	fixtures.push(f);
+	f.seedTrustedSession();
+	f.seedTrustedExecutionEvidence();
+	const admission = await handleSessionCommandRequest({
+		db: f.db,
+		runtime: f.runtime,
+		authenticatedUserId: "user-1",
+		body: {
+			version: 1,
+			kind: "prompt",
+			projectId: "proj-1",
+			sessionId: "sess-1",
+			idempotencyKey: "transport",
+			text: "hello",
+		},
+	});
+	expect(admission.status).toBe(202);
+	await f.deliver();
+	const coordinator = f.coordinator("sess-1");
+	await coordinator.reconcile();
+	const snapshot = await coordinator.readSnapshot();
+	const runId = snapshot.runStates[0].id;
+	const command = f.sqlite.prepare("SELECT id FROM session_commands").get() as {
+		id: string;
+	};
+	f.sqlite.exec(`UPDATE sandbox_identities SET controllerNamespace = 'runtime';
+		CREATE TABLE privileged_operations (
+			id text PRIMARY KEY, identityId text, family text, type text, contractVersion integer,
+			closedAt integer, expiresAt integer, lifecycleGeneration integer, incarnationId text,
+			runtimeOwnerVersion integer, runId text, runEpoch integer, admissionReference text
+		);`);
+	f.sqlite
+		.prepare(
+			`INSERT INTO privileged_operations VALUES ('transport-operation', 'brain-sess-1', 'ditto_action', 'brain_transport', 1, NULL, ?, 1, 'synthetic-brain-1', 1, ?, 1, ?)`,
+		)
+		.run(Math.floor(Date.now() / 1000) + 60, runId, command.id);
+	const env = {
+		DB: createSqliteD1(f.sqlite),
+		RUNTIME_CONTROLLER_NAMESPACE: "runtime",
+	};
+	const ctx: PlatformOutboundContext = {
+		containerId: "brain-container-sess-1",
+		className: "SessionRuntime",
+		params: { incarnation: "synthetic-brain-1", lifecycleGeneration: 1 },
+	};
+	const body: BrainRequest = {
+		version: 1,
+		kind: "continuation",
+		brainIdentityId: "brain-sess-1",
+		brainIncarnationId: "synthetic-brain-1",
+		runId,
+		attempt: 1,
+		runEpoch: 1,
+		operationId: "transport-operation",
+		expectedCommittedPosition: 0,
+		payload: { entries: [] },
+		ownerVersion: 1,
+		lifecycleGeneration: 1,
+		deadline: Date.now() + 30_000,
+	};
+	const network = vi.fn<typeof fetch>(
+		async () => new Response("public", { status: 200 }),
+	);
+	const dispatch = vi.fn(async (source: RuntimeSource, parsed: BrainRequest) =>
+		coordinator.commitContinuation({
+			expectedPosition: parsed.expectedCommittedPosition,
+			snapshot: parsed.payload,
+			runId: parsed.runId,
+			brainIncarnationId: source.incarnation,
+			lifecycleGeneration: source.lifecycleGeneration,
+			ownerVersion: source.ownerVersion,
+			runEpoch: parsed.runEpoch,
+		}),
+	);
+	const request = (
+		overrides: Partial<BrainRequest> = {},
+		headers: HeadersInit = { "content-type": "application/json" },
+	) =>
+		new Request("http://ditto.internal/v1/continuation", {
+			method: "POST",
+			headers,
+			body: JSON.stringify({ ...body, ...overrides }),
+		});
+	const send = (req = request(), context = ctx) =>
+		handleRuntimeOutbound(req, env, context, dispatch, network);
+	return {
+		f,
+		coordinator,
+		env,
+		ctx,
+		body,
+		network,
+		dispatch,
+		request,
+		send,
+		command,
+	};
+}
+
+describe("local runtime transport, real D1 and coordinator, no platform RPC claim", () => {
+	it("T27 valid brain transport commits real encrypted continuation with no public fallback", async () => {
+		const s = await setup();
+		const response = await s.send();
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ position: 1 });
+		expect(
+			await s.coordinator.readCanonicalContinuation(1, {
+				brainIncarnationId: "synthetic-brain-1",
+			}),
+		).toEqual({ entries: [] });
+		expect(s.network).not.toHaveBeenCalled();
+	});
+	it("B06 expiry during awaited authority lookup prevents dispatch", async () => {
+		const s = await setup();
+		let now = Date.now();
+		vi.spyOn(Date, "now").mockImplementation(() => now);
+		const prepare = s.env.DB.prepare.bind(s.env.DB);
+		vi.spyOn(s.env.DB, "prepare").mockImplementation((query) => {
+			const statement = prepare(query);
+			if (query.includes("SELECT o.id")) {
+				const bind = statement.bind.bind(statement);
+				vi.spyOn(statement, "bind").mockImplementation((...values) => {
+					const bound = bind(...values);
+					const first = bound.first.bind(bound);
+					vi.spyOn(bound, "first").mockImplementation(async () => {
+						const row = await first();
+						now = s.body.deadline + 1;
+						return row;
+					});
+					return bound;
+				});
+			}
+			return statement;
+		});
+		expect((await s.send()).status).toBe(403);
+		expect(s.dispatch).not.toHaveBeenCalled();
+		expect(s.network).not.toHaveBeenCalled();
+	});
+	it("T27 executor source cannot acquire brain authority from a forged envelope", async () => {
+		const s = await setup();
+		const row = s.f.sqlite
+			.prepare(
+				"SELECT containerId, incarnationId FROM sandbox_identities WHERE kind = 'workspace_session'",
+			)
+			.get() as { containerId: string; incarnationId: string };
+		const response = await s.send(s.request(), {
+			containerId: row.containerId,
+			className: "Sandbox",
+			params: { incarnation: row.incarnationId, lifecycleGeneration: 1 },
+		});
+		expect(response.status).toBe(403);
+		expect(s.dispatch).not.toHaveBeenCalled();
+		expect(s.network).not.toHaveBeenCalled();
+	});
+	it.each([
+		"UPDATE sandbox_identities SET retiredAt = 1 WHERE kind = 'trusted_brain'",
+		"UPDATE sandbox_identities SET incarnationId = 'new' WHERE kind = 'trusted_brain'",
+		"UPDATE sandbox_identities SET controllerClass = 'Sandbox' WHERE kind = 'trusted_brain'",
+		"UPDATE sandbox_identities SET kind = 'workspace_session' WHERE kind = 'trusted_brain'",
+		"UPDATE workspace_sessions SET runtimeOwnerVersion = 2",
+		"UPDATE projects SET status = 'deleting'",
+		"UPDATE privileged_operations SET expiresAt = 1",
+		"UPDATE privileged_operations SET runEpoch = 2",
+		"UPDATE privileged_operations SET admissionReference = 'fabricated'",
+		"UPDATE privileged_operations SET closedAt = 1",
+	])("T28 fresh authority denial never falls through after %s", async (change) => {
+		const s = await setup();
+		s.f.sqlite.exec(change);
+		expect((await s.send()).status).toBe(403);
+		expect(s.dispatch).not.toHaveBeenCalled();
+		expect(s.network).not.toHaveBeenCalled();
+	});
+	it.each([
+		["authorization", "forged"],
+		["proxy-authorization", "forged"],
+		["x-ditto-caller", "runtime"],
+		["content-encoding", "gzip"],
+	])("T28 unexpected authorization, proxy, caller, and encoding headers are final denials", async (name, value) => {
+		const s = await setup();
+		expect(
+			(
+				await s.send(
+					s.request({}, { "content-type": "application/json", [name]: value }),
+				)
+			).status,
+		).toBe(403);
+		expect(s.dispatch).not.toHaveBeenCalled();
+		expect(s.network).not.toHaveBeenCalled();
+	});
+	it("T28 duplicate fields, wrong method, oversized bodies, and invalid UTF-8 fail closed", async () => {
+		const s = await setup();
+		const raw = JSON.stringify(s.body).replace(
+			'"version":1',
+			'"version":1,"version":1',
+		);
+		const malformed = [
+			new Request("http://ditto.internal/v1/continuation", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: raw,
+			}),
+			new Request("http://ditto.internal/v1/continuation"),
+			s.request({ payload: "x".repeat(256 * 1024) }),
+			new Request("http://ditto.internal/v1/continuation", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: new Uint8Array([0xc0, 0xaf]),
+			}),
+		];
+		for (const request of malformed)
+			expect((await s.send(request)).status).toBe(403);
+		expect(s.dispatch).not.toHaveBeenCalled();
+		expect(s.network).not.toHaveBeenCalled();
+	});
+	it("T28 public executor egress has a positive control, rejects redirects and private destinations", async () => {
+		const s = await setup();
+		const executorRow = s.f.sqlite
+			.prepare(
+				"SELECT containerId, incarnationId FROM sandbox_identities WHERE kind = 'workspace_session'",
+			)
+			.get() as { containerId: string; incarnationId: string };
+		const executor = {
+			containerId: executorRow.containerId,
+			className: "Sandbox",
+			params: {
+				incarnation: executorRow.incarnationId,
+				lifecycleGeneration: 1,
+			},
+		};
+		expect(
+			(
+				await s.send(
+					new Request("https://registry.npmjs.org/package"),
+					executor,
+				)
+			).status,
+		).toBe(200);
+		expect(s.network).toHaveBeenCalledTimes(1);
+		s.network.mockClear();
+		for (const url of [
+			"http://127.1",
+			"http://2130706433",
+			"http://localhost",
+			"http://metadata.google.internal",
+			"https://example.com.",
+			"https://user:pass@example.com",
+			"https://opencode.ai/zen/v1/chat/completions",
+		]) {
+			const request = new Request("https://example.com");
+			Object.defineProperty(request, "url", { value: url });
+			expect((await s.send(request, executor)).status).toBe(403);
+		}
+		expect(s.network).not.toHaveBeenCalled();
+		s.network.mockResolvedValueOnce(
+			new Response(null, {
+				status: 302,
+				headers: { location: "http://localhost" },
+			}),
+		);
+		expect(
+			(
+				await s.send(
+					new Request("https://registry.npmjs.org/package"),
+					executor,
+				)
+			).status,
+		).toBe(502);
+		expect(s.network).toHaveBeenCalledTimes(1);
+	});
+	it("T28 brain has no general-purpose public egress", async () => {
+		const s = await setup();
+		expect(
+			(await s.send(new Request("https://registry.npmjs.org/package"))).status,
+		).toBe(403);
+		expect(s.network).not.toHaveBeenCalled();
+	});
+	it("T28 product default public handler never invokes private methods or trusts caller headers", async () => {
+		const s = await setup();
+		const binding = new ProductEntrypoint({} as ExecutionContext, {
+			DB: s.env.DB,
+		});
+		expect(
+			(await binding.reconstructCommand(s.command.id))?.command.commandId,
+		).toBe(s.command.id);
+		const spy = vi.spyOn(ProductEntrypoint.prototype, "reconstructCommand");
+		for (const path of [
+			"/internal/reconstructCommand",
+			"/rpc/readCurrentAuthority",
+			"/v1/continuation",
+		]) {
+			const request = new Request(`https://product.example${path}`, {
+				method: "POST",
+				headers: { "x-ditto-caller": "runtime", authorization: "forged" },
+				body: "{}",
+			});
+			expect(
+				Reflect.apply(productPublic.fetch, productPublic, [request]).status,
+			).toBe(404);
+		}
+		expect(spy).not.toHaveBeenCalled();
+	});
+});

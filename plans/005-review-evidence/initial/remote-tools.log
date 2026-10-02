@@ -1,0 +1,12 @@
+npm notice run test
+npm notice run vitest run src/remote-tool.test.ts
+
+ RUN  v3.2.7 /home/ayan/ditto-worktrees/plan-005-codex/packages/sandbox-runner
+
+ ✓ src/remote-tool.test.ts (15 tests) 301ms
+
+ Test Files  1 passed (1)
+      Tests  15 passed (15)
+   Start at  13:46:32
+   Duration  1.93s (transform 87ms, setup 0ms, collect 1.41s, tests 301ms, environment 0ms, prepare 81ms)
+

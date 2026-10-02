@@ -1,0 +1,5 @@
+{"name":"S01 explicit expected brain cannot authorize a different identity","result":"FAIL"}
+{"name":"S00 valid paired startup reserves both roles","result":"PASS"}
+{"name":"S02 reserve denies incompatible reservation ownerKind","result":"FAIL"}
+{"name":"S03 release denies foreign reservation ownerId","result":"FAIL"}
+{"name":"S04 released retry rechecks reservation target owner","result":"FAIL"}

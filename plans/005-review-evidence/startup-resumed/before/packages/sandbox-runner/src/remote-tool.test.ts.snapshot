@@ -1,0 +1,424 @@
+import { spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import {
+	mkdir,
+	mkdtemp,
+	readFile,
+	rm,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
+import path from "node:path";
+import { deflateSync } from "node:zlib";
+import type { RemoteArguments, RemoteToolV1 } from "@ditto/runtime-contracts";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+	closedShellEnvironment,
+	contentDigest,
+	executeRemoteTool,
+	type RemoteExecutorOptions,
+} from "./remote-tool.js";
+
+function pngFixture(): Buffer {
+	function chunk(type: string, data: Buffer): Buffer {
+		const payload = Buffer.concat([Buffer.from(type), data]);
+		let crc = 0xffffffff;
+		for (const byte of payload) {
+			crc ^= byte;
+			for (let bit = 0; bit < 8; bit++)
+				crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+		}
+		const header = Buffer.alloc(4);
+		header.writeUInt32BE(data.length);
+		const trailer = Buffer.alloc(4);
+		trailer.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
+		return Buffer.concat([header, payload, trailer]);
+	}
+	const ihdr = Buffer.alloc(13);
+	ihdr.writeUInt32BE(1, 0);
+	ihdr.writeUInt32BE(1, 4);
+	ihdr[8] = 8;
+	ihdr[9] = 6;
+	return Buffer.concat([
+		Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+		chunk("IHDR", ihdr),
+		chunk("IDAT", deflateSync(Buffer.from([0, 255, 0, 0, 255]))),
+		chunk("IEND", Buffer.alloc(0)),
+	]);
+}
+
+let workspace: string;
+const incarnation = "executor-test-incarnation";
+function job(
+	tool: RemoteArguments,
+	extra: Partial<RemoteToolV1> = {},
+): RemoteToolV1 {
+	return {
+		version: 1,
+		runId: "run",
+		assistantEntryId: "assistant",
+		toolCallId: "call",
+		attempt: 1,
+		executorIncarnationId: incarnation,
+		runEpoch: 1,
+		lifecycleGeneration: 1,
+		deadline: Date.now() + 30_000,
+		outcomePolicy: "never_retry",
+		tool,
+		...extra,
+	};
+}
+function execute(
+	input: RemoteToolV1,
+	extra: Omit<RemoteExecutorOptions, "workspace" | "incarnation"> = {},
+) {
+	return executeRemoteTool(input, { workspace, incarnation, ...extra });
+}
+async function exists(target: string): Promise<boolean> {
+	try {
+		await readFile(target);
+		return true;
+	} catch {
+		return false;
+	}
+}
+beforeEach(async () => {
+	workspace = await mkdtemp(path.join(process.cwd(), ".remote-test-"));
+	await writeFile(path.join(workspace, "source.txt"), "hello\nworld\n");
+});
+afterEach(async () => {
+	await rm(workspace, { recursive: true, force: true });
+});
+
+describe("remote executor tools", () => {
+	it("G03 hostile regex remains bounded by the executor deadline", async () => {
+		await writeFile(
+			path.join(workspace, "hostile.txt"),
+			`${"a".repeat(32)}!\n`,
+		);
+		const input = job({ name: "grep", pattern: "(a+)+$" });
+		const child = spawnSync(
+			process.execPath,
+			[
+				"--input-type=module",
+				"-e",
+				`import { executeRemoteTool } from './dist/remote-tool.js'; const job = ${JSON.stringify(input)}; job.deadline = Date.now() + 50; try { await executeRemoteTool(job, ${JSON.stringify({ workspace, incarnation })}); } catch {} console.log('settled');`,
+			],
+			{
+				cwd: process.cwd(),
+				encoding: "utf8",
+				timeout: 1500,
+				killSignal: "SIGKILL",
+			},
+		);
+		expect(child.error?.code === "ETIMEDOUT").toBe(false);
+		expect(child.stdout.includes("settled")).toBe(true);
+	});
+	it("G02 directory grep skips binary files while explicit text reads still reject invalid UTF-8", async () => {
+		await writeFile(
+			path.join(workspace, "binary.bin"),
+			Buffer.from([255, 254, 0]),
+		);
+		const result = await execute(job({ name: "grep", pattern: "hello" }));
+		expect(JSON.stringify(result).includes("hello")).toBe(true);
+		await expect(
+			execute(job({ name: "read", path: "binary.bin" })),
+		).rejects.toThrow("utf8");
+	});
+	it("G08 respects ignore negation, nested ignore rules, explicit files, and match limits independent of context", async () => {
+		await mkdir(path.join(workspace, ".git"));
+		await mkdir(path.join(workspace, "nested"));
+		await writeFile(path.join(workspace, ".gitignore"), "*.log\n!keep.log\n");
+		await writeFile(path.join(workspace, "nested/.gitignore"), "blocked.txt\n");
+		for (const file of [
+			"ignored.log",
+			"keep.log",
+			"nested/blocked.txt",
+			"nested/open.txt",
+		])
+			await writeFile(
+				path.join(workspace, file),
+				"before\ntarget\nafter\ntarget\nlast\n",
+			);
+		const result = await execute(
+			job({ name: "grep", pattern: "target", context: 1, limit: 2 }),
+		);
+		const text = JSON.stringify(result);
+		expect(text.includes("ignored.log")).toBe(false);
+		expect(text.includes("blocked.txt")).toBe(false);
+		expect(text.includes("keep.log:2:")).toBe(true);
+		expect(text.includes("keep.log:4:")).toBe(true);
+		expect(text.includes("keep.log-5-")).toBe(true);
+		const explicit = await execute(
+			job({ name: "grep", path: "ignored.log", pattern: "target" }),
+		);
+		expect(JSON.stringify(explicit).includes("ignored.log:2:")).toBe(true);
+	});
+	it("T29 executes all seven tools in the executor workspace and preserves edit diff and patch", async () => {
+		const read = await execute(
+			job({ name: "read", path: "source.txt", offset: 2, limit: 1 }),
+		);
+		expect(
+			read.content.some(
+				(item) => item.type === "text" && item.text.includes("world"),
+			),
+		).toBe(true);
+		await execute(
+			job({
+				name: "write",
+				path: "new.txt",
+				content: "new",
+				expected: { absent: true },
+			}),
+		);
+		const edit = await execute(
+			job({
+				name: "edit",
+				path: "source.txt",
+				expected: { sha256: contentDigest(Buffer.from("hello\nworld\n")) },
+				edits: [{ oldText: "hello", newText: "changed" }],
+			}),
+		);
+		expect(edit.details).toMatchObject({
+			diff: expect.stringContaining("changed"),
+			patch: expect.stringContaining("changed"),
+		});
+		expect(await readFile(path.join(workspace, "source.txt"), "utf8")).toBe(
+			"changed\nworld\n",
+		);
+		for (const tool of [
+			{ name: "find", pattern: "*.txt" },
+			{ name: "grep", pattern: "changed", literal: true },
+			{ name: "ls" },
+		] satisfies RemoteArguments[]) {
+			const result = await execute(job(tool));
+			expect(
+				result.content.some(
+					(item) => item.type === "text" && item.text.includes("source.txt"),
+				),
+			).toBe(true);
+		}
+		const shell = await execute(
+			job({ name: "bash", command: "printf shell > shell.txt" }),
+		);
+		expect(shell.isError).toBe(false);
+		expect(await readFile(path.join(workspace, "shell.txt"), "utf8")).toBe(
+			"shell",
+		);
+	});
+	it("T29 rejects writes without a precondition and mismatched expected content without changing the file", async () => {
+		await expect(
+			executeRemoteTool(
+				{
+					...job({
+						name: "write",
+						path: "source.txt",
+						content: "bad",
+						expected: { absent: true },
+					}),
+					tool: { name: "write", path: "source.txt", content: "bad" },
+				},
+				{ workspace, incarnation },
+			),
+		).rejects.toThrow();
+		await expect(
+			execute(
+				job({
+					name: "write",
+					path: "source.txt",
+					content: "bad",
+					expected: { sha256: "0".repeat(64) },
+				}),
+			),
+		).rejects.toThrow("expected_content");
+		await expect(
+			execute(
+				job({
+					name: "write",
+					path: "source.txt",
+					content: "bad",
+					expected: { absent: true },
+				}),
+			),
+		).rejects.toThrow("expected_content");
+		expect(await readFile(path.join(workspace, "source.txt"), "utf8")).toBe(
+			"hello\nworld\n",
+		);
+	});
+	it("T29 edits match the original snapshot, reject overlap, and preserve the file on conflict", async () => {
+		const expected = { sha256: contentDigest(Buffer.from("hello\nworld\n")) };
+		await expect(
+			execute(
+				job({
+					name: "edit",
+					path: "source.txt",
+					expected,
+					edits: [
+						{ oldText: "hello", newText: "one" },
+						{ oldText: "ello", newText: "two" },
+					],
+				}),
+			),
+		).rejects.toThrow();
+		expect(await readFile(path.join(workspace, "source.txt"), "utf8")).toBe(
+			"hello\nworld\n",
+		);
+	});
+	it.each([
+		"../outside",
+		"/etc/passwd",
+		"~/source",
+		"x\u0000y",
+	])("T29 rejects escaping path %s", async (file) => {
+		await expect(execute(job({ name: "read", path: file }))).rejects.toThrow(
+			"path",
+		);
+	});
+	it("T29 refuses file and ancestor symlinks even when the target is readable", async () => {
+		await symlink(
+			path.join(workspace, "source.txt"),
+			path.join(workspace, "link"),
+		);
+		await symlink(workspace, path.join(workspace, "linked-dir"));
+		for (const file of ["link", "linked-dir/source.txt"])
+			await expect(execute(job({ name: "read", path: file }))).rejects.toThrow(
+				"symlink",
+			);
+	});
+	it("T29 bounds text size and rejects invalid UTF-8 before returning tool content", async () => {
+		await writeFile(path.join(workspace, "bad.txt"), Buffer.from([0xc0, 0xaf]));
+		await expect(
+			execute(job({ name: "read", path: "bad.txt" })),
+		).rejects.toThrow("utf8");
+		await writeFile(
+			path.join(workspace, "large.txt"),
+			Buffer.alloc(1024 * 1024 + 1),
+		);
+		await expect(
+			execute(job({ name: "read", path: "large.txt" })),
+		).rejects.toThrow("file_limit");
+	});
+	it("T29 image reading is bounded and serialized in the executor", async () => {
+		await writeFile(path.join(workspace, "image.png"), pngFixture());
+		const result = await execute(job({ name: "read", path: "image.png" }));
+		expect(
+			result.content.some(
+				(item) => item.type === "image" && item.mimeType === "image/png",
+			),
+		).toBe(true);
+	});
+	it("T29 repository-owned extensions and packages cannot replace image tool implementations", async () => {
+		await mkdir(path.join(workspace, ".pi/extensions"), { recursive: true });
+		await mkdir(
+			path.join(workspace, "node_modules/@earendil-works/pi-coding-agent"),
+			{ recursive: true },
+		);
+		const source = "throw new Error('repository resource executed');";
+		await writeFile(path.join(workspace, ".pi/extensions/evil.js"), source);
+		await writeFile(
+			path.join(
+				workspace,
+				"node_modules/@earendil-works/pi-coding-agent/index.js",
+			),
+			source,
+		);
+		const result = await execute(job({ name: "read", path: "source.txt" }));
+		expect(
+			result.content.some(
+				(item) => item.type === "text" && item.text.includes("hello"),
+			),
+		).toBe(true);
+	});
+	it("T29 preserves partial stdout and stderr and bounds large shell output", async () => {
+		const result = await execute(
+			job({
+				name: "bash",
+				command: "printf partial; printf diagnostic >&2; exit 7",
+			}),
+		);
+		expect(result.details).toMatchObject({
+			stdout: "partial",
+			stderr: "diagnostic",
+			exitCode: 7,
+		});
+		expect(result.isError).toBe(true);
+		const large = await execute(
+			job({
+				name: "bash",
+				command: "/usr/bin/head -c 400000 /dev/zero | /usr/bin/tr '\\0' x",
+			}),
+		);
+		expect(large.details).toMatchObject({ truncated: true });
+		expect(JSON.stringify(large).length).toBeLessThan(300_000);
+	});
+	it("T29 deadlines and cancellation prevent a delayed shell mutation", async () => {
+		await expect(
+			execute(
+				job(
+					{
+						name: "write",
+						path: "late.txt",
+						content: "late",
+						expected: { absent: true },
+					},
+					{ deadline: Date.now() - 1 },
+				),
+			),
+		).rejects.toThrow("deadline");
+		const signal = AbortSignal.timeout(20);
+		const result = await execute(
+			job({ name: "bash", command: "sleep 1; printf late > late.txt" }),
+			{ signal },
+		);
+		expect(result.details).toMatchObject({ canceled: true });
+		expect(await exists(path.join(workspace, "late.txt"))).toBe(false);
+	});
+	it("T29 wrong incarnation and duplicate JSON fields fail before any mutation", async () => {
+		await expect(
+			execute(
+				job(
+					{ name: "bash", command: "printf bad > bad.txt" },
+					{ executorIncarnationId: "stale" },
+				),
+			),
+		).rejects.toThrow("incarnation");
+		const raw = JSON.stringify(
+			job({ name: "bash", command: "printf bad > bad.txt" }),
+		).replace('"version":1', '"version":1,"version":1');
+		await expect(
+			executeRemoteTool(raw, { workspace, incarnation }),
+		).rejects.toThrow();
+		expect(await exists(path.join(workspace, "bad.txt"))).toBe(false);
+	});
+	it("T30 project values enter only an authorized shell, never the serialized job or filesystem tools", async () => {
+		const platform = randomBytes(32).toString("hex");
+		const project = randomBytes(32).toString("hex");
+		const inheritedKey = `DITTO_TEST_${randomBytes(12).toString("hex")}`;
+		process.env[inheritedKey] = platform;
+		try {
+			const command = job({
+				name: "bash",
+				command: `test -n "$PROJECT_VALUE" && test -z "$${inheritedKey}" && test -z "$OPENCODE_API_KEY" && printf authorized`,
+			});
+			expect(JSON.stringify(command).includes(project)).toBe(false);
+			expect(
+				Object.values(
+					closedShellEnvironment({ PROJECT_VALUE: project }),
+				).includes(platform),
+			).toBe(false);
+			const result = await execute(command, {
+				projectValues: { PROJECT_VALUE: project },
+			});
+			expect(result.isError).toBe(false);
+			expect(JSON.stringify(result).includes(project)).toBe(false);
+			expect(JSON.stringify(result).includes(platform)).toBe(false);
+			await expect(
+				execute(job({ name: "read", path: "source.txt" }), {
+					projectValues: { PROJECT_VALUE: project },
+				}),
+			).rejects.toThrow("environment_forbidden");
+		} finally {
+			delete process.env[inheritedKey];
+		}
+	});
+});

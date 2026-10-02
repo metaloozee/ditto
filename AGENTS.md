@@ -4,13 +4,13 @@
 
 Ditto is a web-based AI coding workspace for GitHub repositories. A user imports a repository, works with an agent in an isolated project workspace, previews the result, and exports changes through Git.
 
-The web app runs on Cloudflare. It keeps durable product state in D1 and stores workspace recovery backups in R2. Running code still executes the agent inside an untrusted sandbox. The accepted target splits a trusted brain from that execution sandbox. See `docs/specs/trusted-session-runtime.md`.
+The web app runs on Cloudflare. It keeps durable product state in D1 and stores workspace recovery backups in R2. Running code still executes the agent inside an untrusted sandbox. For runtime design, planning, or implementation, read `docs/specs/pi-durable-session-runtime.md`: the authoritative target places Pi Durable in a workspace-session DO with a separate execution sandbox. Local feasibility gates and open decisions still apply.
 
 ## Repository map
 
 - `apps/web` contains the TanStack Start UI, Worker routes, domain services, D1 schema, and migrations.
 - `packages/sandbox-runner` contains the independent Node.js runner baked into the sandbox image. It uses npm, not the pnpm workspace.
-- `docs/architecture` explains the accepted target system and its trust boundaries. Pages are pending implementation until cutover.
+- `docs/architecture` contains architecture summaries with explicit status. Historical Node-target pages do not override the Pi Durable specification.
 - `docs/adr` records architectural decisions that remain in force.
 - `docs/specs` contains behavioral requirements and proposed changes. Read each spec's status before treating it as implemented.
 - `CONTEXT.md` defines Ditto's domain terms.
@@ -20,7 +20,7 @@ The web app runs on Cloudflare. It keeps durable product state in D1 and stores 
 - Product intent: `PRODUCT.md`
 - Domain terminology: `CONTEXT.md`
 - Current behavior: source code, tests, and `apps/web/src/db/schema.ts`
-- Target architecture: `docs/architecture/` and `CONTEXT.md`, pending cutover
+- Target architecture: `docs/specs/pi-durable-session-runtime.md`; `CONTEXT.md` supplies terms, and architecture summaries carry their own historical/current status
 - Decisions: `docs/adr/`
 - Behavioral requirements: `docs/specs/`
 

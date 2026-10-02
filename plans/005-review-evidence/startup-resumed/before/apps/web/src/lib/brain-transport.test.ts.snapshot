@@ -1,0 +1,72 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+	parseBrainRequest,
+	readTransportBody,
+} from "../../../runtime/src/brain-transport";
+
+const base = 1_900_000_000_000;
+function envelope() {
+	return {
+		version: 1,
+		kind: "continuation",
+		ownerVersion: 1,
+		lifecycleGeneration: 1,
+		deadline: base + 100,
+		brainIdentityId: "brain",
+		brainIncarnationId: "incarnation",
+		runId: "run",
+		attempt: 1,
+		runEpoch: 1,
+		operationId: "operation",
+		expectedCommittedPosition: 0,
+		payload: { entries: [] },
+	};
+}
+function request(body: ReadableStream<Uint8Array>) {
+	return new Request("http://ditto.internal/v1/continuation", {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body,
+		// Node's Request requires duplex for streaming input.
+		...{ duplex: "half" },
+	});
+}
+afterEach(() => vi.useRealTimers());
+describe("brain transport elapsed-time bounds", () => {
+	it("B03 rejects an envelope that expires during body consumption", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(base);
+		const stream = new ReadableStream<Uint8Array>({
+			pull(controller) {
+				vi.setSystemTime(base + 200);
+				controller.enqueue(
+					new TextEncoder().encode(JSON.stringify(envelope())),
+				);
+				controller.close();
+			},
+		});
+		await expect(parseBrainRequest(request(stream), base)).rejects.toThrow(
+			"deadline",
+		);
+	});
+	it("B04 cancels a stalled body within a finite bound", async () => {
+		vi.useFakeTimers();
+		const cancel = vi.fn();
+		const pending = readTransportBody(request(new ReadableStream({ cancel })));
+		const assertion = expect(pending).rejects.toThrow("body_timeout");
+		await vi.advanceTimersByTimeAsync(5001);
+		await assertion;
+		expect(cancel).toHaveBeenCalledTimes(1);
+	});
+	it("B05 observes request cancellation without waiting for a body", async () => {
+		const abort = new AbortController();
+		const cancel = vi.fn();
+		const original = request(new ReadableStream({ cancel }));
+		const pending = readTransportBody(
+			new Request(original, { signal: abort.signal }),
+		);
+		abort.abort();
+		await expect(pending).rejects.toThrow("body_canceled");
+		expect(cancel).toHaveBeenCalledTimes(1);
+	});
+});

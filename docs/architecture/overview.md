@@ -1,6 +1,6 @@
 # System architecture
 
-Status: target architecture. Implementation and validation pending. Requirements live in [trusted-session-runtime.md](../specs/trusted-session-runtime.md). Running code still uses the one-sandbox harness until cutover.
+Status: historical Node-based target summary. New runtime plans and agents must follow [Pi Durable workspace-session runtime](../specs/pi-durable-session-runtime.md). The body below preserves the previous design and is not authoritative for the replacement. Running code still uses the one-sandbox harness until cutover.
 
 ## Goal
 

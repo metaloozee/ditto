@@ -1,0 +1,59 @@
+import type { ExecutionEnvironmentReference } from "../../../runtime/src/executor-dispatch.js";
+import { decryptEnvVars } from "./project-env-vars.js";
+
+export async function executionEnvironment(
+	input: ExecutionEnvironmentReference,
+	deps: {
+		db: D1Database;
+		secret: string | undefined;
+		currentExecution: (
+			input: ExecutionEnvironmentReference,
+		) => Promise<boolean>;
+		now?: () => number;
+	},
+): Promise<Record<string, string>> {
+	const now = deps.now ?? Date.now;
+	const resolve = () =>
+		deps.db
+			.prepare(`SELECT p.envVars, a.deadline FROM runtime_execution_admissions a
+		JOIN sandbox_identities i ON i.id = a.identityId AND i.userId = a.userId AND i.projectId = a.projectId AND i.workspaceSessionId = a.sessionId
+		JOIN workspace_sessions s ON s.id = a.sessionId AND s.userId = a.userId AND s.projectId = a.projectId
+		JOIN projects p ON p.id = a.projectId AND p.userId = a.userId
+		JOIN runtime_command_memberships m ON m.sessionId = a.sessionId AND m.runId = a.runId AND m.runEpoch = a.runEpoch AND m.assistantMessageId = a.assistantEntryId
+		JOIN session_commands c ON c.id = m.commandId AND c.sessionId = a.sessionId AND c.userId = a.userId AND c.projectId = a.projectId
+		WHERE a.effectId = ? AND a.identityId = ? AND a.incarnationId = ? AND a.ownerVersion = ? AND a.toolName = 'bash'
+		AND a.closedAt IS NULL AND a.deadline > ? AND i.kind = 'workspace_session' AND i.controllerClass = 'Sandbox' AND i.state = 'ready' AND i.retiredAt IS NULL
+		AND i.incarnationId = a.incarnationId AND i.lifecycleGeneration = a.lifecycleGeneration
+		AND s.sandboxIdentityId = a.identityId AND s.runtimeOwner = 'trusted_v1' AND s.runtimeOwnerVersion = a.ownerVersion AND s.status = 'active'
+		AND p.status != 'deleting' AND NOT EXISTS (SELECT 1 FROM runtime_deleted_target_fences f WHERE
+			(f.targetKind = 'project' AND f.targetId = p.id) OR (f.targetKind = 'workspace_session' AND f.targetId = s.id))`)
+			.bind(
+				input.effectId,
+				input.identityId,
+				input.incarnation,
+				input.ownerVersion,
+				now(),
+			)
+			.first<{ envVars: string | null; deadline: number }>();
+	const admitted = await resolve();
+	if (!admitted || !(await deps.currentExecution(input)))
+		throw new Error("execution_environment_denied");
+	if (admitted.envVars && !deps.secret)
+		throw new Error("execution_environment_unavailable");
+	const values = await decryptEnvVars(admitted.envVars, deps.secret ?? "");
+	if (!(await deps.currentExecution(input)))
+		throw new Error("execution_environment_denied");
+	const current = await resolve();
+	if (
+		!current ||
+		current.envVars !== admitted.envVars ||
+		current.deadline <= now()
+	)
+		throw new Error("execution_environment_denied");
+	const result = Object.fromEntries(
+		values.map(({ key, value }) => [key, value]),
+	);
+	if (new TextEncoder().encode(JSON.stringify(result)).byteLength > 256 * 1024)
+		throw new Error("execution_environment_limit");
+	return result;
+}

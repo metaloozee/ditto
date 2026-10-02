@@ -1,0 +1,13 @@
+npm notice run test
+npm notice run vitest run src/remote-tool.test.ts
+
+ RUN  v3.2.7 /home/ayan/ditto-worktrees/plan-005-codex/packages/sandbox-runner
+
+ ✓ src/remote-tool.test.ts (18 tests) 1435ms
+   ✓ remote executor tools > G03 hostile regex remains bounded by the executor deadline  1093ms
+
+ Test Files  1 passed (1)
+      Tests  18 passed (18)
+   Start at  16:42:28
+   Duration  2.98s (transform 138ms, setup 0ms, collect 1.15s, tests 1.43s, environment 0ms, prepare 107ms)
+

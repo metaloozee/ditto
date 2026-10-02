@@ -1,0 +1,463 @@
+import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { constants } from "node:fs";
+import { lstat, mkdir, open, readdir, realpath } from "node:fs/promises";
+import path from "node:path";
+import {
+	type ExpectedContent,
+	parseRemoteToolResult,
+	parseRemoteToolV1,
+	REMOTE_FILE_BYTES,
+	type RemoteToolResult,
+	type RemoteToolV1,
+} from "@ditto/runtime-contracts";
+import {
+	createEditTool,
+	createReadTool,
+} from "@earendil-works/pi-coding-agent";
+
+import { remoteSearch } from "./remote-search.js";
+
+export type { RemoteToolResult } from "@ditto/runtime-contracts";
+export type RemoteExecutorOptions = {
+	workspace: string;
+	incarnation: string;
+	signal?: AbortSignal;
+	projectValues?: Readonly<Record<string, string>>;
+	now?: () => number;
+};
+
+class RemoteToolError extends Error {
+	constructor(readonly code: string) {
+		super(code);
+	}
+}
+const OUTPUT_BYTES = 128 * 1024;
+export function contentDigest(value: Uint8Array): string {
+	return createHash("sha256").update(value).digest("hex");
+}
+function checkSignal(signal: AbortSignal): void {
+	if (signal.aborted) throw new RemoteToolError("canceled");
+}
+function isInside(root: string, target: string): boolean {
+	return target === root || target.startsWith(`${root}${path.sep}`);
+}
+
+async function workspacePath(
+	root: string,
+	input: string,
+	createParents = false,
+): Promise<string> {
+	if (
+		!input ||
+		input.includes("\0") ||
+		input.startsWith("~") ||
+		input.split(/[\\/]/).includes("..")
+	)
+		throw new RemoteToolError("path");
+	const target = path.resolve(root, input);
+	if (!isInside(root, target)) throw new RemoteToolError("path");
+	const relative = path.relative(root, target);
+	let current = root;
+	for (const [index, part] of relative.split(path.sep).entries()) {
+		if (!part) continue;
+		current = path.join(current, part);
+		try {
+			const stat = await lstat(current);
+			if (stat.isSymbolicLink()) throw new RemoteToolError("symlink");
+			if (index < relative.split(path.sep).length - 1 && !stat.isDirectory())
+				throw new RemoteToolError("path");
+		} catch (error) {
+			if (
+				!(error instanceof Error) ||
+				!("code" in error) ||
+				error.code !== "ENOENT"
+			)
+				throw error;
+			if (createParents && current !== target) await mkdir(current);
+		}
+	}
+	return target;
+}
+async function boundedRead(root: string, input: string): Promise<Buffer> {
+	const target = await workspacePath(root, input);
+	const handle = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW);
+	try {
+		const stat = await handle.stat();
+		if (!stat.isFile() || stat.size > REMOTE_FILE_BYTES)
+			throw new RemoteToolError("file_limit");
+		if (!isInside(root, await realpath(`/proc/self/fd/${handle.fd}`)))
+			throw new RemoteToolError("path");
+		const buffer = Buffer.alloc(REMOTE_FILE_BYTES + 1);
+		let size = 0;
+		while (size < buffer.length) {
+			const read = await handle.read(buffer, size, buffer.length - size, size);
+			if (read.bytesRead === 0) break;
+			size += read.bytesRead;
+		}
+		if (size > REMOTE_FILE_BYTES) throw new RemoteToolError("file_limit");
+		return buffer.subarray(0, size);
+	} finally {
+		await handle.close();
+	}
+}
+function decodeText(buffer: Uint8Array): string {
+	try {
+		return new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+	} catch {
+		throw new RemoteToolError("utf8");
+	}
+}
+function imageMime(buffer: Buffer): string | null {
+	if (
+		buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+	)
+		return "image/png";
+	if (buffer[0] === 255 && buffer[1] === 216 && buffer[2] === 255)
+		return "image/jpeg";
+	if (["GIF87a", "GIF89a"].includes(buffer.subarray(0, 6).toString("ascii")))
+		return "image/gif";
+	if (
+		buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+		buffer.subarray(8, 12).toString("ascii") === "WEBP"
+	)
+		return "image/webp";
+	return null;
+}
+function validateImageDimensions(buffer: Buffer, mime: string): void {
+	let width = 0;
+	let height = 0;
+	if (mime === "image/png" && buffer.length >= 24) {
+		width = buffer.readUInt32BE(16);
+		height = buffer.readUInt32BE(20);
+	} else if (mime === "image/gif" && buffer.length >= 10) {
+		width = buffer.readUInt16LE(6);
+		height = buffer.readUInt16LE(8);
+	} else if (mime === "image/jpeg") {
+		let offset = 2;
+		while (offset + 9 < buffer.length) {
+			if (buffer[offset] !== 255) break;
+			const marker = buffer[offset + 1];
+			const length = buffer.readUInt16BE(offset + 2);
+			if ([0xc0, 0xc1, 0xc2].includes(marker)) {
+				height = buffer.readUInt16BE(offset + 5);
+				width = buffer.readUInt16BE(offset + 7);
+				break;
+			}
+			if (length < 2) break;
+			offset += length + 2;
+		}
+	} else if (mime === "image/webp" && buffer.length >= 30) {
+		const format = buffer.subarray(12, 16).toString("ascii");
+		if (format === "VP8X") {
+			width = 1 + buffer.readUIntLE(24, 3);
+			height = 1 + buffer.readUIntLE(27, 3);
+		} else if (format === "VP8 ") {
+			width = buffer.readUInt16LE(26) & 0x3fff;
+			height = buffer.readUInt16LE(28) & 0x3fff;
+		} else if (format === "VP8L" && buffer[20] === 0x2f) {
+			const bits = buffer.readUInt32LE(21);
+			width = 1 + (bits & 0x3fff);
+			height = 1 + ((bits >>> 14) & 0x3fff);
+		}
+	}
+	if (
+		width < 1 ||
+		height < 1 ||
+		width > 4096 ||
+		height > 4096 ||
+		width * height > 16_000_000
+	)
+		throw new RemoteToolError("image_limit");
+}
+async function conditionalWrite(
+	root: string,
+	input: string,
+	content: string,
+	expected: ExpectedContent,
+	signal: AbortSignal,
+): Promise<void> {
+	if (Buffer.byteLength(content) > REMOTE_FILE_BYTES)
+		throw new RemoteToolError("file_limit");
+	const target = await workspacePath(root, input, "absent" in expected);
+	checkSignal(signal);
+	const flags =
+		constants.O_NOFOLLOW |
+		constants.O_RDWR |
+		("absent" in expected ? constants.O_CREAT | constants.O_EXCL : 0);
+	let handle: Awaited<ReturnType<typeof open>>;
+	try {
+		handle = await open(target, flags, 0o600);
+	} catch {
+		throw new RemoteToolError("expected_content");
+	}
+	try {
+		const stat = await handle.stat();
+		if (
+			!stat.isFile() ||
+			stat.size > REMOTE_FILE_BYTES ||
+			!isInside(root, await realpath(`/proc/self/fd/${handle.fd}`))
+		)
+			throw new RemoteToolError("path");
+		if ("sha256" in expected) {
+			const current = Buffer.alloc(REMOTE_FILE_BYTES + 1);
+			let size = 0;
+			while (size < current.length) {
+				const next = await handle.read(
+					current,
+					size,
+					current.length - size,
+					size,
+				);
+				if (next.bytesRead === 0) break;
+				size += next.bytesRead;
+			}
+			if (
+				size > REMOTE_FILE_BYTES ||
+				contentDigest(current.subarray(0, size)) !== expected.sha256
+			)
+				throw new RemoteToolError("expected_content");
+		}
+		checkSignal(signal);
+		await handle.truncate(0);
+		await handle.writeFile(content, "utf8");
+		await handle.sync();
+	} finally {
+		await handle.close();
+	}
+}
+export function closedShellEnvironment(
+	projectValues: Readonly<Record<string, string>> = {},
+): Record<string, string> {
+	const env: Record<string, string> = {};
+	const reserved = new Set([
+		"PATH",
+		"HOME",
+		"SHELL",
+		"ENV",
+		"BASH_ENV",
+		"NODE_OPTIONS",
+		"LD_PRELOAD",
+		"LD_LIBRARY_PATH",
+	]);
+	for (const [key, value] of Object.entries(projectValues)) {
+		if (
+			!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) ||
+			reserved.has(key) ||
+			key.startsWith("DITTO_") ||
+			key.startsWith("PI_") ||
+			key.startsWith("GIT_")
+		)
+			throw new RemoteToolError("environment_key");
+		if (Buffer.byteLength(value) > 64 * 1024)
+			throw new RemoteToolError("environment_limit");
+		Object.defineProperty(env, key, {
+			value,
+			enumerable: true,
+			writable: true,
+		});
+	}
+	return {
+		...env,
+		PATH: "/usr/local/bin:/usr/bin:/bin",
+		HOME: "/tmp",
+		LANG: "C.UTF-8",
+		LC_ALL: "C.UTF-8",
+	};
+}
+async function shell(
+	job: Extract<RemoteToolV1["tool"], { name: "bash" }>,
+	root: string,
+	env: Record<string, string>,
+	signal: AbortSignal,
+): Promise<RemoteToolResult> {
+	return new Promise((resolve, reject) => {
+		checkSignal(signal);
+		const child = spawn(
+			"/bin/bash",
+			["--noprofile", "--norc", "-c", job.command],
+			{ cwd: root, env, detached: true, stdio: ["ignore", "pipe", "pipe"] },
+		);
+		const stdout: Buffer[] = [];
+		const stderr: Buffer[] = [];
+		let outBytes = 0;
+		let errBytes = 0;
+		let truncated = false;
+		let killTimer: ReturnType<typeof setTimeout> | undefined;
+		let killPending = false;
+		let closedResult: RemoteToolResult | undefined;
+		const finish = () => {
+			if (closedResult && !killPending) resolve(closedResult);
+		};
+		const abort = () => {
+			if (!child.pid) return;
+			try {
+				process.kill(-child.pid, "SIGTERM");
+			} catch {
+				/* Process may already be gone. */
+			}
+			killPending = true;
+			killTimer ??= setTimeout(() => {
+				try {
+					if (child.pid) process.kill(-child.pid, "SIGKILL");
+				} catch {
+					/* Process may already be gone. */
+				}
+				killPending = false;
+				finish();
+			}, 100);
+		};
+		signal.addEventListener("abort", abort, { once: true });
+		const collect = (chunk: Buffer, list: Buffer[], seen: number) => {
+			const take = Math.max(0, Math.min(chunk.length, OUTPUT_BYTES - seen));
+			if (take) list.push(chunk.subarray(0, take));
+			if (take < chunk.length) truncated = true;
+			return seen + take;
+		};
+		child.stdout.on("data", (chunk: Buffer) => {
+			outBytes = collect(chunk, stdout, outBytes);
+		});
+		child.stderr.on("data", (chunk: Buffer) => {
+			errBytes = collect(chunk, stderr, errBytes);
+		});
+		child.once("error", (error) => {
+			signal.removeEventListener("abort", abort);
+			if (killTimer) clearTimeout(killTimer);
+			reject(error);
+		});
+		child.once("close", (exitCode) => {
+			signal.removeEventListener("abort", abort);
+			const out = Buffer.concat(stdout).toString("utf8");
+			const err = Buffer.concat(stderr).toString("utf8");
+			closedResult = {
+				content: [
+					{ type: "text", text: [out, err].filter(Boolean).join("\n") },
+				],
+				details: {
+					stdout: out,
+					stderr: err,
+					exitCode,
+					truncated,
+					canceled: signal.aborted,
+				},
+				isError: exitCode !== 0 || signal.aborted,
+			};
+			finish();
+		});
+		if (signal.aborted) abort();
+	});
+}
+function textResult(text: string): RemoteToolResult {
+	return { content: [{ type: "text", text }] };
+}
+
+export async function executeRemoteTool(
+	input: unknown,
+	options: RemoteExecutorOptions,
+): Promise<RemoteToolResult> {
+	const job = parseRemoteToolV1(input);
+	const now = options.now ?? Date.now;
+	if (job.executorIncarnationId !== options.incarnation)
+		throw new RemoteToolError("incarnation");
+	if (job.deadline <= now() || job.deadline > now() + 120_000)
+		throw new RemoteToolError("deadline");
+	if (
+		job.tool.name !== "bash" &&
+		Object.keys(options.projectValues ?? {}).length
+	)
+		throw new RemoteToolError("environment_forbidden");
+	const root = await realpath(options.workspace);
+	if (
+		root !== path.resolve(options.workspace) ||
+		(await lstat(options.workspace)).isSymbolicLink()
+	)
+		throw new RemoteToolError("workspace");
+	const timeout = Math.min(
+		job.deadline - now(),
+		job.tool.name === "bash" && job.tool.timeout
+			? job.tool.timeout * 1000
+			: 120_000,
+	);
+	const signal = AbortSignal.any([
+		AbortSignal.timeout(timeout),
+		...(options.signal ? [options.signal] : []),
+	]);
+	checkSignal(signal);
+	const tool = job.tool;
+	let result: RemoteToolResult;
+	if (tool.name === "read") {
+		const target = await workspacePath(root, tool.path);
+		const buffer = await boundedRead(root, target);
+		const mime = imageMime(buffer);
+		if (mime) validateImageDimensions(buffer, mime);
+		else decodeText(buffer);
+		result = await createReadTool(root, {
+			operations: {
+				readFile: async () => buffer,
+				access: async () => undefined,
+				detectImageMimeType: async () => mime,
+			},
+		}).execute(
+			job.toolCallId,
+			{ path: target, offset: tool.offset, limit: tool.limit },
+			signal,
+		);
+	} else if (tool.name === "write") {
+		await conditionalWrite(
+			root,
+			tool.path,
+			tool.content,
+			tool.expected,
+			signal,
+		);
+		result = textResult(`Wrote ${Buffer.byteLength(tool.content)} bytes.`);
+	} else if (tool.name === "edit") {
+		const target = await workspacePath(root, tool.path);
+		const buffer = await boundedRead(root, target);
+		if (contentDigest(buffer) !== tool.expected.sha256)
+			throw new RemoteToolError("expected_content");
+		decodeText(buffer);
+		result = await createEditTool(root, {
+			operations: {
+				access: async () => undefined,
+				readFile: async () => buffer,
+				writeFile: async (_file, content) =>
+					conditionalWrite(root, target, content, tool.expected, signal),
+			},
+		}).execute(job.toolCallId, { path: target, edits: tool.edits }, signal);
+	} else if (tool.name === "bash") {
+		result = await shell(
+			tool,
+			root,
+			closedShellEnvironment(options.projectValues),
+			signal,
+		);
+	} else {
+		const target = await workspacePath(root, tool.path ?? ".");
+		const stat = await lstat(target);
+		if (tool.name === "ls") {
+			if (!stat.isDirectory()) throw new RemoteToolError("path");
+			const entries = await readdir(target, { withFileTypes: true });
+			result = textResult(
+				entries
+					.sort((a, b) => a.name.localeCompare(b.name))
+					.slice(0, tool.limit ?? 500)
+					.map(
+						(entry) =>
+							`${entry.name}${entry.isDirectory() ? "/" : entry.isSymbolicLink() ? "@" : ""}`,
+					)
+					.join("\n"),
+			);
+		} else {
+			result = await remoteSearch(
+				tool,
+				root,
+				target,
+				stat.isDirectory(),
+				signal,
+				async (file) => decodeText(await boundedRead(root, file)),
+			);
+		}
+	}
+	return parseRemoteToolResult(result, tool.name);
+}

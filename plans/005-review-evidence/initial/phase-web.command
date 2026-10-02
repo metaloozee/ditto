@@ -1,0 +1,1 @@
+pnpm --filter @ditto/web exec vitest run src/lib/session-command.test.ts src/lib/session-runtime-security.test.ts src/lib/sandbox-authority.test.ts src/lib/open-code-contract.test.ts src/lib/git-fetch-contract.test.ts src/lib/git-push-contract.test.ts src/lib/git-receive-pack.test.ts src/lib/privileged-git.test.ts src/lib/git-secret-policy.test.ts 

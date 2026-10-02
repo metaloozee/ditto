@@ -1,0 +1,36 @@
+FROM docker.io/cloudflare/sandbox:0.12.3
+
+ADD --checksum=sha256:f84757b07f425fe5cf11d87df6644691c644a5cd2348a2c670894272999d3ba7 https://github.com/BurntSushi/ripgrep/releases/download/14.1.0/ripgrep-14.1.0-x86_64-unknown-linux-musl.tar.gz /tmp/ditto-ripgrep.tar.gz
+RUN tar -xzOf /tmp/ditto-ripgrep.tar.gz ripgrep-14.1.0-x86_64-unknown-linux-musl/rg > /usr/bin/rg \
+  && chmod 755 /usr/bin/rg
+
+COPY --chown=0:0 packages/runtime-contracts /opt/runtime-contracts
+COPY --chown=0:0 packages/sandbox-runner /opt/ditto-runner
+WORKDIR /opt/ditto-runner
+
+RUN npm install --global corepack@0.35.0 \
+  && corepack enable \
+  && corepack install --global pnpm@10.34.5 yarn@1.22.22
+
+RUN npm ci \
+  && node node_modules/typescript/bin/tsc -p /opt/runtime-contracts/tsconfig.json \
+  && npm run build \
+  && npm prune --omit=dev \
+  && test -s package.json \
+  && test -s dist/cli.js \
+  && test -s dist/git-metadata-cli.js \
+  && test -s dist/archive-cli.js \
+  && test -s dist/remote-tool-cli.js \
+  && test -x /usr/bin/rg \
+  && /usr/bin/rg --version >/dev/null \
+  && test -s dist/ditto-extension.js \
+  && node -e 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8"))' \
+  && chmod +x dist/cli.js dist/archive-cli.js dist/remote-tool-cli.js \
+  && ln -sf /opt/ditto-runner/dist/cli.js /usr/local/bin/ditto-runner \
+  && ln -sf /opt/ditto-runner/dist/archive-cli.js /usr/local/bin/ditto-archive \
+  && ln -sf /opt/ditto-runner/dist/remote-tool-cli.js /usr/local/bin/ditto-remote-tool
+
+WORKDIR /workspace
+
+# Fixed workspace-session preview port
+EXPOSE 10000

@@ -1,0 +1,19 @@
+CREATE TABLE runtime_execution_admissions (
+ effectId text PRIMARY KEY NOT NULL,
+ sessionId text NOT NULL,
+ userId text NOT NULL,
+ projectId text NOT NULL,
+ identityId text NOT NULL,
+ incarnationId text NOT NULL,
+ lifecycleGeneration integer NOT NULL CHECK (lifecycleGeneration > 0),
+ ownerVersion integer NOT NULL CHECK (ownerVersion > 0),
+ runId text NOT NULL,
+ runEpoch integer NOT NULL CHECK (runEpoch > 0),
+ assistantEntryId text NOT NULL,
+ toolCallId text NOT NULL,
+ attempt integer NOT NULL CHECK (attempt > 0),
+ toolName text NOT NULL CHECK (toolName IN ('read', 'write', 'edit', 'bash', 'grep', 'find', 'ls')),
+ deadline integer NOT NULL,
+ closedAt integer
+);
+CREATE INDEX runtime_execution_admissions_session_idx ON runtime_execution_admissions (sessionId, closedAt);

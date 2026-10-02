@@ -1,0 +1,28 @@
+$ npm run typecheck --prefix packages/sandbox-runner && npm test --prefix packages/sandbox-runner && npm run build --prefix packages/sandbox-runner
+npm notice run typecheck
+npm notice run tsc -p tsconfig.json --noEmit
+npm notice run test
+npm notice run vitest run
+
+ RUN  v3.2.7 /home/ayan/ditto-worktrees/plan-005-codex/packages/sandbox-runner
+
+ ✓ src/run-agent.test.ts (8 tests) 279ms
+ ✓ src/archive.test.ts (8 tests) 90ms
+ ✓ src/control-channel.test.ts (7 tests) 45ms
+ ✓ src/locked-resource-loader.test.ts (4 tests) 172ms
+ ✓ src/remote-tool.test.ts (15 tests) 358ms
+ ✓ src/ditto-git-tools.test.ts (4 tests) 19ms
+ ✓ src/git-metadata-job.test.ts (10 tests) 12ms
+ ✓ src/git-metadata-cli.test.ts (5 tests) 14ms
+ ✓ src/protocol.test.ts (8 tests) 5ms
+ ✓ src/run-git-metadata.test.ts (13 tests) 25ms
+ ✓ src/runner-model.test.ts (7 tests) 13ms
+ ✓ src/agent-job.test.ts (5 tests) 3ms
+
+ Test Files  12 passed (12)
+      Tests  94 passed (94)
+   Start at  13:46:43
+   Duration  2.70s (transform 426ms, setup 0ms, collect 3.82s, tests 1.04s, environment 3ms, prepare 950ms)
+
+npm notice run build
+npm notice run tsc -p tsconfig.json

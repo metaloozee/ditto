@@ -1,6 +1,6 @@
 # Pi Durable and a Cloudflare-native brain for Ditto
 
-Status: research and proposed architecture, for maintainer review. Not an accepted specification or implementation plan.
+Status: historical research and architecture proposal. The authoritative target is now [Pi Durable workspace-session runtime](../specs/pi-durable-session-runtime.md). Authority and plan-status statements below describe the research date, not current planning instructions. This report is not implementation or validation evidence.
 
 Researched on 2026-10-02 against Ditto checkout `13480bc7f4daf9489a0aa7cf7fea071a1115c8c3`, including the working-tree plan status. External documentation can change after this date. No deployment, live database access, dependency upgrade, or runtime experiment was performed for this report.
 

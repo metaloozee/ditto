@@ -1,0 +1,240 @@
+import {
+ checkRegistration, checkStartupReference, startupObject,
+ type CapacityReference, type IdentityTransitionReference, type RegisterStartup,
+ type StartupAssignment, type StartupReference, type StartupRuntime,
+} from "../../../runtime/src/startup-contract.js";
+
+type Source = {
+ sourceKind: StartupReference["sourceKind"]; sourceId: string;
+ userId: string; projectId: string; sessionId: string | null;
+ expectedOwner: string; ownerVersion: number; deadline: number;
+ brainIdentityId: string | null; sandboxIdentityId: string | null; builderIdentityId: string | null;
+};
+type Deps = { db: D1Database; namespace: string; runtime: StartupRuntime; now?: () => number };
+const liveAssignment = `SELECT a.sourceKind, a.sourceId, a.role, a.identityId, a.incarnationId,
+ a.lifecycleGeneration, a.ownerVersion, i.userId, i.projectId, i.workspaceSessionId AS sessionId,
+ i.sandboxId AS routingName, i.containerId, i.controllerClass, i.controllerNamespace
+ FROM runtime_startup_assignments a
+ JOIN runtime_startup_sources t ON t.sourceKind = a.sourceKind AND t.sourceId = a.sourceId AND t.ownerVersion = a.ownerVersion
+ JOIN sandbox_identities i ON i.id = a.identityId AND i.userId = t.userId AND i.projectId = t.projectId AND i.workspaceSessionId IS t.sessionId
+ WHERE a.sourceKind = ? AND a.sourceId = ? AND a.role = ? AND a.state = 'assigned'
+ AND t.deadline > ? AND a.controllerNamespace = ? AND i.controllerNamespace = a.controllerNamespace
+ AND i.incarnationId = a.incarnationId AND i.lifecycleGeneration = a.lifecycleGeneration AND i.kind = a.role
+ AND i.controllerClass = CASE WHEN a.role = 'trusted_brain' THEN 'SessionRuntime' ELSE 'Sandbox' END
+ AND i.retiredAt IS NULL AND i.state NOT IN ('destroyed','destroying','failed')
+ AND NOT EXISTS (SELECT 1 FROM runtime_retired_identity_fences f WHERE f.identityId = i.id)
+ AND i.id = CASE a.role WHEN 'trusted_brain' THEN t.brainIdentityId WHEN 'workspace_session' THEN t.sandboxIdentityId ELSE t.builderIdentityId END`;
+
+export function createRuntimeStartupService(deps: Deps) {
+ const now = deps.now ?? Date.now;
+ const source = (input: StartupReference) => deps.db.prepare(`SELECT * FROM runtime_startup_sources WHERE sourceKind = ? AND sourceId = ? AND deadline > ?`).bind(input.sourceKind, input.sourceId, now()).first<Source>();
+ const assignment = (input: RegisterStartup) => deps.db.prepare(liveAssignment).bind(input.sourceKind, input.sourceId, input.role, now(), deps.namespace).first<StartupAssignment>();
+
+ async function register(input: RegisterStartup): Promise<StartupAssignment> {
+  checkRegistration(input);
+  if (!deps.namespace) throw new Error("startup_unavailable");
+  const t = await source(input);
+  if (!t || (input.sourceKind === "builder" ? input.role !== "project_seed" : input.role === "project_seed")) throw new Error("startup_denied");
+  const existing = await assignment(input);
+  if (existing) return existing;
+  const prior = await deps.db.prepare(`SELECT identityId FROM runtime_startup_assignments WHERE sourceKind = ? AND sourceId = ? AND role = ?`).bind(input.sourceKind, input.sourceId, input.role).first();
+  if (prior) throw new Error("startup_denied");
+  const linked = input.role === "trusted_brain" ? t.brainIdentityId : input.role === "workspace_session" ? t.sandboxIdentityId : t.builderIdentityId;
+  const current = linked ? await deps.db.prepare(`SELECT id, sandboxId, containerId, incarnationId, lifecycleGeneration FROM sandbox_identities
+   WHERE id = ? AND userId = ? AND projectId = ? AND workspaceSessionId IS ? AND kind = ?
+   AND controllerNamespace = ? AND controllerClass = ? AND incarnationId IS NOT NULL AND retiredAt IS NULL
+   AND state NOT IN ('destroyed','destroying','failed') AND NOT EXISTS (SELECT 1 FROM runtime_retired_identity_fences f WHERE f.identityId = sandbox_identities.id)`)
+   .bind(linked, t.userId, t.projectId, t.sessionId, input.role, deps.namespace, input.role === "trusted_brain" ? "SessionRuntime" : "Sandbox")
+   .first<{ id: string; sandboxId: string; containerId: string; incarnationId: string; lifecycleGeneration: number }>() : null;
+  if (linked && !current) throw new Error("startup_denied");
+  const identityId = current?.id ?? crypto.randomUUID();
+  const incarnationId = current?.incarnationId ?? crypto.randomUUID();
+  const generation = current?.lifecycleGeneration ?? 1;
+  const routingName = current?.sandboxId ?? (input.role === "trusted_brain" ? t.sessionId : crypto.randomUUID());
+  if (!routingName) throw new Error("startup_denied");
+  const route = await deps.runtime.startupRouting({ role: input.role, routingName });
+  if (route.controllerNamespace !== deps.namespace || route.controllerClass !== (input.role === "trusted_brain" ? "SessionRuntime" : "Sandbox") || !route.containerId || (current && route.containerId !== current.containerId)) throw new Error("startup_denied");
+  // The source and old link are predicates of each write, including after routing RPC.
+  const authority = `EXISTS (SELECT 1 FROM runtime_startup_sources t WHERE t.sourceKind = ? AND t.sourceId = ? AND t.deadline > ?
+   AND t.userId = ? AND t.projectId = ? AND t.sessionId IS ? AND t.ownerVersion = ?
+   AND CASE ? WHEN 'trusted_brain' THEN t.brainIdentityId WHEN 'workspace_session' THEN t.sandboxIdentityId ELSE t.builderIdentityId END IS ?)`;
+  const auth = () => [input.sourceKind, input.sourceId, now(), t.userId, t.projectId, t.sessionId, t.ownerVersion, input.role, linked];
+  const identityPredicate = `EXISTS (SELECT 1 FROM sandbox_identities i WHERE i.id = ? AND i.kind = ? AND i.userId = ? AND i.projectId = ?
+   AND i.workspaceSessionId IS ? AND i.incarnationId = ? AND i.lifecycleGeneration = ? AND i.controllerClass = ? AND i.controllerNamespace = ? AND i.containerId = ?
+   AND i.retiredAt IS NULL AND i.state NOT IN ('destroyed','destroying','failed') AND NOT EXISTS (SELECT 1 FROM runtime_retired_identity_fences f WHERE f.identityId = i.id))`;
+  const identityAuth = [identityId, input.role, t.userId, t.projectId, t.sessionId, incarnationId, generation, route.controllerClass, deps.namespace, route.containerId];
+  const statements = [
+   deps.db.prepare(`INSERT INTO sandbox_identities (id,kind,sandboxId,containerId,userId,projectId,workspaceSessionId,controllerClass,controllerNamespace,incarnationId,lifecycleGeneration,state)
+    SELECT ?,?,?,?,?,?,?,?,?,?,?,'provisioning' WHERE ${authority} AND ? IS NULL
+    AND NOT EXISTS (SELECT 1 FROM runtime_retired_identity_fences WHERE identityId = ?)
+    AND NOT EXISTS (SELECT 1 FROM runtime_startup_assignments WHERE sourceKind = ? AND sourceId = ? AND role = ?)`)
+    .bind(identityId,input.role,routingName,route.containerId,t.userId,t.projectId,t.sessionId,route.controllerClass,deps.namespace,incarnationId,generation,...auth(),linked,identityId,input.sourceKind,input.sourceId,input.role),
+   deps.db.prepare(`INSERT INTO runtime_startup_assignments (sourceKind,sourceId,role,identityId,incarnationId,lifecycleGeneration,ownerVersion,controllerNamespace,state)
+    SELECT ?,?,?,?,?,?,?,?,'assigned' WHERE ${authority} AND ${identityPredicate}
+    ON CONFLICT(sourceKind,sourceId,role) DO NOTHING`)
+    .bind(input.sourceKind,input.sourceId,input.role,identityId,incarnationId,generation,t.ownerVersion,deps.namespace,...auth(),...identityAuth),
+  ];
+  if (input.role === "project_seed") {
+   statements.push(deps.db.prepare(`UPDATE project_seeds SET expectedIdentityId = ? WHERE id = ? AND ${authority}
+    AND EXISTS (SELECT 1 FROM runtime_startup_assignments a WHERE a.sourceKind = ? AND a.sourceId = ? AND a.role = ? AND a.identityId = ?)`)
+    .bind(identityId,input.sourceId,...auth(),input.sourceKind,input.sourceId,input.role,identityId));
+  } else {
+   const column = input.role === "trusted_brain" ? "brainIdentityId" : "sandboxIdentityId";
+   statements.push(deps.db.prepare(`UPDATE workspace_sessions SET ${column} = ? WHERE id = ? AND ${authority}
+    AND EXISTS (SELECT 1 FROM runtime_startup_assignments a WHERE a.sourceKind = ? AND a.sourceId = ? AND a.role = ? AND a.identityId = ?)`)
+    .bind(identityId,t.sessionId,...auth(),input.sourceKind,input.sourceId,input.role,identityId));
+  }
+  // A failed final predicate aborts the whole batch, not just the link update.
+  statements.push(deps.db.prepare(`UPDATE runtime_startup_assignments SET state = 'invalid' WHERE sourceKind = ? AND sourceId = ? AND role = ?
+   AND NOT EXISTS (${liveAssignment})`).bind(input.sourceKind,input.sourceId,input.role,input.sourceKind,input.sourceId,input.role,now(),deps.namespace));
+  await deps.db.batch(statements);
+  const result = await assignment(input);
+  if (!result) throw new Error("startup_denied");
+  return result;
+ }
+
+ async function reserve(input: StartupReference) {
+  checkStartupReference(input);
+  const count = input.sourceKind === "builder" ? 1 : 2;
+  const valid = `SELECT a.*, i.userId, i.workspaceSessionId AS sessionId, t.projectId,
+   CASE a.role WHEN 'trusted_brain' THEN 'brain' ELSE 'execution' END AS pool
+   FROM runtime_startup_assignments a JOIN runtime_startup_sources t ON t.sourceKind = a.sourceKind AND t.sourceId = a.sourceId AND t.ownerVersion = a.ownerVersion
+   JOIN sandbox_identities i ON i.id = a.identityId AND i.kind = a.role AND i.userId = t.userId AND i.projectId = t.projectId AND i.workspaceSessionId IS t.sessionId
+   WHERE a.sourceKind = ? AND a.sourceId = ? AND t.deadline > ? AND a.state = 'assigned' AND a.controllerNamespace = ?
+   AND i.controllerNamespace = a.controllerNamespace AND i.controllerClass = CASE a.role WHEN 'trusted_brain' THEN 'SessionRuntime' ELSE 'Sandbox' END
+   AND i.incarnationId = a.incarnationId AND i.lifecycleGeneration = a.lifecycleGeneration AND i.retiredAt IS NULL AND i.state NOT IN ('destroyed','destroying','failed')
+   AND i.id = CASE a.role WHEN 'trusted_brain' THEN t.brainIdentityId WHEN 'workspace_session' THEN t.sandboxIdentityId ELSE t.builderIdentityId END
+   AND NOT EXISTS (SELECT 1 FROM runtime_retired_identity_fences f WHERE f.identityId = i.id)`;
+  await deps.db.prepare(`WITH required AS (${valid}), missing AS (
+   SELECT q.* FROM required q WHERE NOT EXISTS (SELECT 1 FROM runtime_capacity_reservations r WHERE r.identityId = q.identityId AND r.pool = q.pool AND r.activeSlot = 'active'))
+   INSERT INTO runtime_capacity_reservations (id,pool,ownerKind,ownerId,userId,sessionId,identityId,incarnationId,reservationGroupId,observedState,expiresAt,runtimeOwnerVersion,accountingVersion,activeSlot,createdAt,updatedAt)
+   SELECT lower(hex(randomblob(16))), m.pool, CASE WHEN m.role = 'project_seed' THEN 'builder' ELSE 'workspace_session' END,
+   coalesce(m.sessionId, m.sourceId),m.userId,m.sessionId,m.identityId,m.incarnationId,?,'reserved',NULL,m.ownerVersion,p.version,'active',?,?
+   FROM missing m JOIN runtime_capacity_policy p ON p.id = 1 AND p.accountingMode = 'unified'
+   WHERE (SELECT count(*) FROM required) = ?
+   AND NOT EXISTS (SELECT 1 FROM required q JOIN runtime_capacity_reservations r ON r.identityId = q.identityId AND r.pool = q.pool AND r.activeSlot = 'active'
+    WHERE r.incarnationId IS NOT q.incarnationId OR r.runtimeOwnerVersion != q.ownerVersion OR r.userId != q.userId OR r.accountingVersion != p.version OR r.observedState = 'released')
+   AND NOT EXISTS (SELECT 1 FROM missing q WHERE
+    (SELECT count(*) FROM runtime_capacity_reservations r WHERE r.pool = q.pool AND r.activeSlot = 'active') + (SELECT count(*) FROM missing n WHERE n.pool = q.pool) > 20
+    OR (SELECT count(*) FROM runtime_capacity_reservations r WHERE r.pool = q.pool AND r.userId = q.userId AND r.activeSlot = 'active') + (SELECT count(*) FROM missing n WHERE n.pool = q.pool AND n.userId = q.userId) > 2)`)
+   .bind(input.sourceKind,input.sourceId,now(),deps.namespace,`${input.sourceKind}:${input.sourceId}`,now(),now(),count).run();
+  const rows = await deps.db.prepare(`WITH required AS (${valid}) SELECT r.id AS reservationId, q.sourceKind,q.sourceId,q.role,q.identityId,q.incarnationId,q.ownerVersion,q.lifecycleGeneration
+   FROM required q JOIN runtime_capacity_reservations r ON r.identityId = q.identityId AND r.pool = q.pool AND r.activeSlot = 'active' AND r.incarnationId = q.incarnationId AND r.runtimeOwnerVersion = q.ownerVersion AND r.userId = q.userId
+   JOIN runtime_capacity_policy p ON p.id = 1 AND p.accountingMode = 'unified' AND p.version = r.accountingVersion`).bind(input.sourceKind,input.sourceId,now(),deps.namespace).all<CapacityReference>();
+  if (rows.results.length !== count) throw new Error("capacity_denied");
+  return rows.results;
+ }
+
+ async function observe(input: CapacityReference, release = false): Promise<void> {
+  startupObject(input,["sourceKind","sourceId","role","reservationId","identityId","incarnationId","ownerVersion","lifecycleGeneration"]);
+  checkRegistration({sourceKind: input.sourceKind,sourceId: input.sourceId,role: input.role});
+  // Cleanup retains the source assignment after its startup deadline or deletion.
+  const resolve = () => deps.db.prepare(`SELECT a.sourceKind,a.sourceId,a.role,a.identityId,a.incarnationId,a.ownerVersion,a.lifecycleGeneration,
+   i.userId,i.projectId,i.workspaceSessionId AS sessionId,i.sandboxId AS routingName,i.containerId,i.controllerClass,i.controllerNamespace
+   FROM runtime_startup_assignments a JOIN sandbox_identities i ON i.id = a.identityId
+   JOIN runtime_capacity_reservations r ON r.identityId = a.identityId AND r.incarnationId = a.incarnationId AND r.runtimeOwnerVersion = a.ownerVersion
+   JOIN projects p ON p.id = i.projectId AND p.userId = i.userId
+   LEFT JOIN workspace_sessions s ON s.id = i.workspaceSessionId
+   JOIN runtime_capacity_policy cp ON cp.id = 1 AND cp.accountingMode = 'unified' AND cp.version = r.accountingVersion
+   WHERE a.sourceKind = ? AND a.sourceId = ? AND a.role = ? AND r.id = ? AND a.identityId = ? AND a.incarnationId = ? AND a.ownerVersion = ? AND a.lifecycleGeneration = ?
+   AND r.pool = CASE a.role WHEN 'trusted_brain' THEN 'brain' ELSE 'execution' END AND r.userId = i.userId AND r.sessionId IS i.workspaceSessionId
+   AND i.controllerNamespace = ? AND a.controllerNamespace = i.controllerNamespace AND i.kind = a.role
+   AND i.controllerClass = CASE a.role WHEN 'trusted_brain' THEN 'SessionRuntime' ELSE 'Sandbox' END
+   AND (i.workspaceSessionId IS NULL OR (s.userId = i.userId AND s.projectId = i.projectId AND s.runtimeOwnerVersion = a.ownerVersion))`)
+   .bind(input.sourceKind,input.sourceId,input.role,input.reservationId,input.identityId,input.incarnationId,input.ownerVersion,input.lifecycleGeneration,deps.namespace).first<StartupAssignment>();
+  const a = await resolve();
+  if (!a) throw new Error("capacity_denied");
+  const evidence = await deps.runtime.observeStartup(a);
+  if (!evidence || evidence.identityId !== a.identityId || evidence.incarnationId !== a.incarnationId || evidence.lifecycleGeneration !== a.lifecycleGeneration || evidence.containerId !== a.containerId || evidence.controllerClass !== a.controllerClass || evidence.controllerNamespace !== a.controllerNamespace || (release ? evidence.state !== "terminated" : evidence.state !== "running")) throw new Error("capacity_denied");
+  // Rechecking the same joins in the write denies an owner transfer during observation.
+  const predicate = resolve();
+  const row = await predicate;
+  if (!row) throw new Error("capacity_denied");
+  const result = await deps.db.prepare(`UPDATE runtime_capacity_reservations SET observedState = ?, activeSlot = CASE WHEN ? = 1 THEN id ELSE activeSlot END, updatedAt = ?
+   WHERE id = ? AND identityId = ? AND incarnationId = ? AND runtimeOwnerVersion = ?
+   AND observedState != 'released' AND activeSlot = 'active'
+   AND EXISTS (SELECT 1 FROM runtime_startup_assignments a JOIN sandbox_identities i ON i.id = a.identityId
+    JOIN projects p ON p.id = i.projectId AND p.userId = i.userId
+    LEFT JOIN workspace_sessions s ON s.id = i.workspaceSessionId
+    JOIN runtime_capacity_policy cp ON cp.id = 1 AND cp.accountingMode = 'unified' AND cp.version = runtime_capacity_reservations.accountingVersion
+    WHERE a.sourceKind = ? AND a.sourceId = ? AND a.role = ? AND a.identityId = runtime_capacity_reservations.identityId AND a.incarnationId = runtime_capacity_reservations.incarnationId
+    AND a.ownerVersion = runtime_capacity_reservations.runtimeOwnerVersion AND a.lifecycleGeneration = ?
+    AND a.controllerNamespace = ? AND i.controllerNamespace = a.controllerNamespace AND i.containerId = ? AND i.kind = a.role AND i.controllerClass = ?
+    AND i.userId = runtime_capacity_reservations.userId AND i.workspaceSessionId IS runtime_capacity_reservations.sessionId
+    AND (i.workspaceSessionId IS NULL OR (s.userId = i.userId AND s.projectId = i.projectId AND s.runtimeOwnerVersion = a.ownerVersion))
+    AND (? = 1 OR (i.retiredAt IS NULL AND i.incarnationId = a.incarnationId AND i.lifecycleGeneration = a.lifecycleGeneration
+     AND p.status != 'deleting' AND (i.workspaceSessionId IS NULL OR (s.status = 'active' AND s.runtimeOwner = 'trusted_v1'))
+     AND NOT EXISTS (SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind = 'project' AND f.targetId = p.id) OR (f.targetKind = 'workspace_session' AND f.targetId = s.id))))) RETURNING id`)
+   .bind(release ? "released" : "running",release ? 1 : 0,now(),input.reservationId,input.identityId,input.incarnationId,input.ownerVersion,input.sourceKind,input.sourceId,input.role,input.lifecycleGeneration,deps.namespace,a.containerId,a.controllerClass,release ? 1 : 0).first();
+  if (!result) {
+   const released = release && await deps.db.prepare(`SELECT id FROM runtime_capacity_reservations WHERE id = ? AND identityId = ? AND incarnationId = ? AND runtimeOwnerVersion = ? AND observedState = 'released'`).bind(input.reservationId,input.identityId,input.incarnationId,input.ownerVersion).first();
+   if (!released) throw new Error("capacity_denied");
+  }
+ }
+
+ async function transition(input: IdentityTransitionReference, action: "rotate" | "retire") {
+  startupObject(input,["transitionId","identityId","incarnationId","ownerVersion","lifecycleGeneration"]);
+  const receipt = await deps.db.prepare(`SELECT t.state,t.replacementIncarnationId FROM runtime_identity_transitions t
+   JOIN sandbox_identities i ON i.id = t.identityId AND i.userId = t.userId AND i.projectId = t.projectId AND i.workspaceSessionId IS t.sessionId
+   JOIN projects p ON p.id = t.projectId AND p.userId = t.userId LEFT JOIN workspace_sessions s ON s.id = t.sessionId
+   WHERE t.id = ? AND t.action = ? AND t.identityId = ? AND t.incarnationId = ? AND t.ownerVersion = ? AND t.lifecycleGeneration = ?
+   AND (t.sessionId IS NULL OR (s.userId = t.userId AND s.projectId = t.projectId AND s.runtimeOwnerVersion = t.ownerVersion))`)
+   .bind(input.transitionId,action,input.identityId,input.incarnationId,input.ownerVersion,input.lifecycleGeneration).first<{state: string; replacementIncarnationId: string | null}>();
+  if (!receipt) throw new Error("identity_transition_denied");
+  if (receipt.state === "complete") return {replacementIncarnationId: receipt.replacementIncarnationId};
+  if (action === "rotate") {
+   const a = await deps.db.prepare(`SELECT a.sourceKind,a.sourceId,a.role,a.identityId,a.incarnationId,a.ownerVersion,a.lifecycleGeneration,
+    i.userId,i.projectId,i.workspaceSessionId AS sessionId,i.sandboxId AS routingName,i.containerId,i.controllerClass,i.controllerNamespace
+    FROM runtime_startup_assignments a JOIN sandbox_identities i ON i.id = a.identityId
+    WHERE a.identityId = ? AND a.incarnationId = ? AND a.ownerVersion = ? AND a.lifecycleGeneration = ? AND i.controllerNamespace = ? LIMIT 1`)
+    .bind(input.identityId,input.incarnationId,input.ownerVersion,input.lifecycleGeneration,deps.namespace).first<StartupAssignment>();
+   if (!a) throw new Error("identity_transition_denied");
+   const evidence = await deps.runtime.observeStartup(a);
+   if (!evidence || !["terminated","isolated"].includes(evidence.state) || evidence.identityId !== a.identityId || evidence.incarnationId !== a.incarnationId || evidence.lifecycleGeneration !== a.lifecycleGeneration || evidence.containerId !== a.containerId || evidence.controllerClass !== a.controllerClass || evidence.controllerNamespace !== a.controllerNamespace) throw new Error("identity_transition_denied");
+  }
+  const replacement = crypto.randomUUID();
+  const completionToken = crypto.randomUUID();
+  const completedAt = now();
+  const predicate = `EXISTS (SELECT 1 FROM runtime_identity_transitions t JOIN projects p ON p.id = t.projectId AND p.userId = t.userId
+   LEFT JOIN workspace_sessions s ON s.id = t.sessionId
+   WHERE t.id = ? AND t.action = ? AND t.identityId = sandbox_identities.id AND t.incarnationId = ? AND t.ownerVersion = ? AND t.lifecycleGeneration = ?
+   AND t.userId = sandbox_identities.userId AND t.projectId = sandbox_identities.projectId AND t.sessionId IS sandbox_identities.workspaceSessionId
+   AND t.state = 'approved' AND t.deadline > ? AND sandbox_identities.incarnationId = t.incarnationId AND sandbox_identities.lifecycleGeneration = t.lifecycleGeneration
+   AND sandbox_identities.controllerNamespace = ? AND sandbox_identities.controllerClass = CASE sandbox_identities.kind WHEN 'trusted_brain' THEN 'SessionRuntime' ELSE 'Sandbox' END
+   AND (t.sessionId IS NULL OR (s.userId = t.userId AND s.projectId = t.projectId AND s.runtimeOwner = t.expectedOwner AND s.runtimeOwnerVersion = t.ownerVersion
+    AND sandbox_identities.id = CASE sandbox_identities.kind WHEN 'trusted_brain' THEN s.brainIdentityId ELSE s.sandboxIdentityId END))
+   AND ((t.sourceKind = 'deletion' AND t.action = 'retire' AND p.status = 'deleting' AND EXISTS (SELECT 1 FROM session_commands c WHERE c.id = t.sourceId AND c.kind = 'project_delete' AND c.projectId = p.id AND c.userId = p.userId))
+    OR (t.sourceKind IN ('recovery','lifecycle','migration') AND p.status != 'deleting' AND (t.sessionId IS NULL OR s.status = 'active')
+     AND NOT EXISTS (SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind = 'project' AND f.targetId = p.id) OR (f.targetKind = 'workspace_session' AND f.targetId = s.id)))))`;
+  const args = () => [input.transitionId,action,input.incarnationId,input.ownerVersion,input.lifecycleGeneration,now(),deps.namespace];
+  const statements = [deps.db.prepare(`UPDATE runtime_identity_transitions SET completionToken = ? WHERE id = ? AND state = 'approved'
+   AND EXISTS (SELECT 1 FROM sandbox_identities WHERE id = ? AND retiredAt IS NULL AND state NOT IN ('destroyed','destroying')
+    AND NOT EXISTS (SELECT 1 FROM runtime_retired_identity_fences f WHERE f.identityId = sandbox_identities.id) AND ${predicate})`)
+   .bind(completionToken,input.transitionId,input.identityId,...args()),
+   deps.db.prepare(`UPDATE sandbox_identities SET
+   incarnationId = CASE WHEN ? = 'rotate' THEN ? ELSE incarnationId END,
+   lifecycleGeneration = lifecycleGeneration + CASE WHEN ? = 'rotate' THEN 1 ELSE 0 END,
+   retiredAt = CASE WHEN ? = 'retire' THEN ? ELSE retiredAt END,
+   state = CASE WHEN ? = 'retire' THEN 'destroyed' ELSE 'provisioning' END
+   WHERE id = ? AND retiredAt IS NULL AND state NOT IN ('destroyed','destroying')
+   AND NOT EXISTS (SELECT 1 FROM runtime_retired_identity_fences f WHERE f.identityId = sandbox_identities.id) AND ${predicate} AND EXISTS (SELECT 1 FROM runtime_identity_transitions t WHERE t.id = ? AND t.completionToken = ?) RETURNING id`)
+   .bind(action,replacement,action,action,Math.floor(now()/1000),action,input.identityId,...args(),input.transitionId,completionToken),
+   deps.db.prepare(`UPDATE runtime_identity_transitions SET state = 'complete', replacementIncarnationId = ?, completedAt = ?, completionToken = ?
+    WHERE id = ? AND action = ? AND identityId = ? AND incarnationId = ? AND ownerVersion = ? AND lifecycleGeneration = ? AND state = 'approved' AND completionToken = ?
+    AND EXISTS (SELECT 1 FROM sandbox_identities i WHERE i.id = runtime_identity_transitions.identityId AND ((? = 'rotate' AND i.incarnationId = ? AND i.lifecycleGeneration = ? + 1) OR (? = 'retire' AND i.retiredAt IS NOT NULL AND i.incarnationId = ?)))`)
+    .bind(action === "rotate" ? replacement : null,completedAt,completionToken,input.transitionId,action,input.identityId,input.incarnationId,input.ownerVersion,input.lifecycleGeneration,completionToken,action,replacement,input.lifecycleGeneration,action,input.incarnationId),
+   deps.db.prepare(`INSERT INTO runtime_retired_identity_fences (identityId,lifecycleGeneration,retiredAt)
+    SELECT i.id,i.lifecycleGeneration,? FROM sandbox_identities i JOIN runtime_identity_transitions t ON t.identityId = i.id
+    WHERE t.id = ? AND t.completionToken = ? AND t.action = 'retire' AND t.state = 'complete' AND i.retiredAt IS NOT NULL ON CONFLICT(identityId) DO NOTHING`).bind(now(),input.transitionId,completionToken),
+   deps.db.prepare(`UPDATE runtime_startup_assignments SET state = 'retired' WHERE identityId = ? AND EXISTS (SELECT 1 FROM runtime_identity_transitions t WHERE t.id = ? AND t.identityId = ? AND t.state = 'complete' AND t.completionToken = ?)`).bind(input.identityId,input.transitionId,input.identityId,completionToken),
+   deps.db.prepare(`UPDATE privileged_operations SET closedAt = ?, closeReason = 'identity_transition', openSlot = id WHERE identityId = ? AND closedAt IS NULL
+    AND EXISTS (SELECT 1 FROM runtime_identity_transitions t WHERE t.id = ? AND t.identityId = ? AND t.state = 'complete' AND t.completionToken = ?)`).bind(Math.floor(now()/1000),input.identityId,input.transitionId,input.identityId,completionToken),
+   deps.db.prepare(`UPDATE runtime_identity_transitions SET state = 'invalid' WHERE id = ? AND completionToken = ? AND state != 'complete'`).bind(input.transitionId,completionToken),
+  ];
+  await deps.db.batch(statements);
+  const result = await deps.db.prepare(`SELECT replacementIncarnationId FROM runtime_identity_transitions WHERE id = ? AND action = ? AND identityId = ? AND incarnationId = ? AND ownerVersion = ? AND lifecycleGeneration = ? AND state = 'complete'`).bind(input.transitionId,action,input.identityId,input.incarnationId,input.ownerVersion,input.lifecycleGeneration).first<{replacementIncarnationId: string | null}>();
+  if (!result) throw new Error("identity_transition_denied");
+  return result;
+ }
+ return { register, reserve, observe: (input: CapacityReference) => observe(input), release: (input: CapacityReference) => observe(input,true), rotate: (input: IdentityTransitionReference) => transition(input,"rotate"), retire: (input: IdentityTransitionReference) => transition(input,"retire") };
+}

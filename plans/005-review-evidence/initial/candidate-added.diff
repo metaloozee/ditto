@@ -1,0 +1,2337 @@
+diff --git a/apps/runtime/src/brain-transport.ts b/apps/runtime/src/brain-transport.ts
+new file mode 100644
+index 0000000..eb1dbc2
+--- /dev/null
++++ b/apps/runtime/src/brain-transport.ts
+@@ -0,0 +1,159 @@
++import {
++	decodeContractInput,
++	integerField,
++	literalField,
++	strictRecord,
++} from "../../../packages/runtime-contracts/src/json.js";
++import {
++	type BrainEnvelopeV1,
++	parseBrainEnvelopeV1,
++} from "../../../packages/runtime-contracts/src/runtime.js";
++
++export const BRAIN_ORIGIN = "http://ditto.internal";
++export const BRAIN_BODY_LIMIT = 256 * 1024;
++export const BRAIN_METHODS = [
++	"readiness",
++	"continuation",
++	"tool",
++	"result",
++	"control",
++] as const;
++export type BrainMethod = (typeof BRAIN_METHODS)[number];
++export type BrainRequest = BrainEnvelopeV1 & {
++	kind: BrainMethod;
++	ownerVersion: number;
++	lifecycleGeneration: number;
++	deadline: number;
++};
++
++export class TransportDenied extends Error {
++	constructor(readonly code: string) {
++		super(code);
++		this.name = "TransportDenied";
++	}
++}
++
++export function transportDenial(code: string, status = 403): Response {
++	return Response.json({ error: "denied", reasonCode: code }, { status });
++}
++
++export async function readTransportBody(request: Request): Promise<string> {
++	if (
++		request.headers.get("content-type")?.toLowerCase() !== "application/json"
++	) {
++		throw new TransportDenied("content_type");
++	}
++	if (request.headers.has("content-encoding"))
++		throw new TransportDenied("encoding");
++	for (const [name] of request.headers) {
++		if (
++			![
++				"content-type",
++				"content-length",
++				"host",
++				"accept",
++				"user-agent",
++			].includes(name)
++		) {
++			throw new TransportDenied("unexpected_header");
++		}
++	}
++	const length = request.headers.get("content-length");
++	if (
++		length != null &&
++		(!/^\d+$/.test(length) || Number(length) > BRAIN_BODY_LIMIT)
++	) {
++		throw new TransportDenied("body_limit");
++	}
++	const reader = request.body?.getReader();
++	if (!reader) throw new TransportDenied("body_missing");
++	const chunks: Uint8Array[] = [];
++	let size = 0;
++	try {
++		while (true) {
++			const chunk = await reader.read();
++			if (chunk.done) break;
++			size += chunk.value.byteLength;
++			if (size > BRAIN_BODY_LIMIT) throw new TransportDenied("body_limit");
++			chunks.push(chunk.value);
++		}
++	} catch (error) {
++		await reader.cancel().catch(() => undefined);
++		throw error;
++	}
++	const bytes = new Uint8Array(size);
++	let offset = 0;
++	for (const chunk of chunks) {
++		bytes.set(chunk, offset);
++		offset += chunk.byteLength;
++	}
++	if (length != null && Number(length) !== size)
++		throw new TransportDenied("body_length");
++	try {
++		return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
++	} catch {
++		throw new TransportDenied("utf8");
++	}
++}
++
++export async function parseBrainRequest(
++	request: Request,
++	now: number,
++): Promise<BrainRequest> {
++	const url = new URL(request.url);
++	if (
++		url.origin !== BRAIN_ORIGIN ||
++		url.username ||
++		url.password ||
++		url.search ||
++		url.hash
++	) {
++		throw new TransportDenied("origin");
++	}
++	if (request.method !== "POST") throw new TransportDenied("method");
++	const raw = await readTransportBody(request);
++	const record = strictRecord(
++		decodeContractInput(raw, BRAIN_BODY_LIMIT),
++		[
++			"version",
++			"kind",
++			"ownerVersion",
++			"lifecycleGeneration",
++			"deadline",
++			"brainIdentityId",
++			"brainIncarnationId",
++			"runId",
++			"attempt",
++			"runEpoch",
++			"operationId",
++			"expectedCommittedPosition",
++			"payload",
++		],
++		"BrainRequestV1",
++	);
++	const kind = literalField(record, "kind", BRAIN_METHODS);
++	if (url.pathname !== `/v1/${kind}`) throw new TransportDenied("path");
++	const deadline = integerField(record, "deadline", { minimum: 1 });
++	if (deadline <= now || deadline > now + 120_000)
++		throw new TransportDenied("deadline");
++	const {
++		kind: _kind,
++		ownerVersion,
++		lifecycleGeneration,
++		deadline: _deadline,
++		...envelope
++	} = record;
++	return {
++		...parseBrainEnvelopeV1(envelope),
++		kind,
++		ownerVersion: integerField({ ownerVersion }, "ownerVersion", {
++			minimum: 1,
++		}),
++		lifecycleGeneration: integerField(
++			{ lifecycleGeneration },
++			"lifecycleGeneration",
++			{ minimum: 1 },
++		),
++		deadline,
++	};
++}
+diff --git a/apps/runtime/src/runtime-bindings.ts b/apps/runtime/src/runtime-bindings.ts
+new file mode 100644
+index 0000000..fddc3ce
+--- /dev/null
++++ b/apps/runtime/src/runtime-bindings.ts
+@@ -0,0 +1,16 @@
++import type { LocalRuntimeEnv } from "../../../alchemy.run";
++import type { Sandbox, SessionRuntime } from "./server";
++import type { ProductAdapters } from "./session-runtime";
++
++export type RuntimeProductService = ProductAdapters & {
++	resolveWorkspaceSessionId(commandId: string): Promise<string | null>;
++};
++
++export type RuntimeEnv = Omit<
++	LocalRuntimeEnv,
++	"PRODUCT" | "SessionRuntime" | "Sandbox"
++> & {
++	PRODUCT: RuntimeProductService;
++	SessionRuntime: DurableObjectNamespace<SessionRuntime>;
++	Sandbox: DurableObjectNamespace<Sandbox>;
++};
+diff --git a/apps/runtime/src/runtime-egress.ts b/apps/runtime/src/runtime-egress.ts
+new file mode 100644
+index 0000000..c173620
+--- /dev/null
++++ b/apps/runtime/src/runtime-egress.ts
+@@ -0,0 +1,212 @@
++import {
++	classifyDittoActionRequest,
++	isDittoSyntheticHost,
++} from "../../web/src/lib/ditto-action-contract";
++import { classifyGithubGitRequest } from "../../web/src/lib/git-fetch-contract";
++import { classifyOpenCodeRequest } from "../../web/src/lib/open-code-contract";
++import { handlePublicInternet } from "../../web/src/lib/sandbox-public-egress";
++import {
++	type BrainRequest,
++	parseBrainRequest,
++	TransportDenied,
++	transportDenial,
++} from "./brain-transport";
++
++export type RuntimeSource = {
++	identityId: string;
++	containerId: string;
++	className: string;
++	kind: "trusted_brain" | "workspace_session" | "project_seed";
++	incarnation: string;
++	lifecycleGeneration: number;
++	ownerVersion: number;
++	userId: string;
++	projectId: string;
++	workspaceSessionId: string | null;
++};
++export type PlatformOutboundContext = {
++	containerId: string;
++	className: string;
++	params?: unknown;
++};
++export type RuntimeEgressEnv = {
++	DB: D1Database;
++	RUNTIME_CONTROLLER_NAMESPACE: string;
++};
++export type BrainDispatch = (
++	source: RuntimeSource,
++	request: BrainRequest,
++) => Promise<unknown>;
++
++export async function resolveRuntimeSource(
++	env: RuntimeEgressEnv,
++	ctx: PlatformOutboundContext,
++): Promise<RuntimeSource> {
++	if (
++		!ctx.containerId ||
++		!["SessionRuntime", "Sandbox"].includes(ctx.className)
++	)
++		throw new TransportDenied("source");
++	if (
++		!ctx.params ||
++		typeof ctx.params !== "object" ||
++		Array.isArray(ctx.params)
++	)
++		throw new TransportDenied("launch_identity");
++	const params = ctx.params as Record<string, unknown>;
++	if (
++		typeof params.incarnation !== "string" ||
++		!params.incarnation ||
++		!Number.isSafeInteger(params.lifecycleGeneration)
++	)
++		throw new TransportDenied("launch_identity");
++	const row = await env.DB.prepare(`
++		SELECT i.id AS identityId, i.containerId, i.controllerClass AS className,
++			i.kind, i.incarnationId AS incarnation, i.lifecycleGeneration,
++			i.userId, i.projectId, i.workspaceSessionId,
++			coalesce(s.runtimeOwnerVersion, 1) AS ownerVersion
++		FROM sandbox_identities i JOIN projects p ON p.id = i.projectId AND p.userId = i.userId
++		LEFT JOIN workspace_sessions s ON s.id = i.workspaceSessionId
++		WHERE i.containerId = ? AND i.controllerClass = ? AND i.controllerNamespace = ?
++			AND i.incarnationId = ? AND i.lifecycleGeneration = ?
++			AND i.retiredAt IS NULL AND i.state NOT IN ('destroyed', 'destroying')
++			AND p.status != 'deleting'
++			AND NOT EXISTS (SELECT 1 FROM runtime_deleted_target_fences f WHERE
++				(f.targetKind = 'project' AND f.targetId = i.projectId) OR
++				(f.targetKind = 'workspace_session' AND f.targetId = i.workspaceSessionId))
++			AND ((i.kind = 'project_seed' AND i.workspaceSessionId IS NULL AND i.controllerClass = 'Sandbox') OR
++				(s.userId = i.userId AND s.projectId = i.projectId AND s.status = 'active' AND s.runtimeOwner = 'trusted_v1'
++				AND ((i.kind = 'trusted_brain' AND i.controllerClass = 'SessionRuntime' AND s.brainIdentityId = i.id) OR
++					(i.kind = 'workspace_session' AND i.controllerClass = 'Sandbox' AND s.sandboxIdentityId = i.id))))
++		LIMIT 2
++	`)
++		.bind(
++			ctx.containerId,
++			ctx.className,
++			env.RUNTIME_CONTROLLER_NAMESPACE,
++			params.incarnation,
++			params.lifecycleGeneration,
++		)
++		.all<RuntimeSource>();
++	if (row.results.length !== 1) throw new TransportDenied("source_authority");
++	return row.results[0];
++}
++
++export async function authorizeBrainRequest(
++	env: RuntimeEgressEnv,
++	source: RuntimeSource,
++	request: BrainRequest,
++	now: number,
++): Promise<void> {
++	if (
++		source.kind !== "trusted_brain" ||
++		source.className !== "SessionRuntime" ||
++		!source.workspaceSessionId
++	)
++		throw new TransportDenied("brain_role");
++	if (
++		request.brainIdentityId !== source.identityId ||
++		request.brainIncarnationId !== source.incarnation ||
++		request.lifecycleGeneration !== source.lifecycleGeneration ||
++		request.ownerVersion !== source.ownerVersion
++	)
++		throw new TransportDenied("source_mismatch");
++	if (request.kind === "readiness") {
++		const intent =
++			await env.DB.prepare(`SELECT w.id FROM workspace_runtime_work w
++			JOIN session_commands c ON c.id = w.commandId AND c.sessionId = w.sessionId
++			JOIN workspace_sessions s ON s.id = w.sessionId
++			JOIN projects p ON p.id = w.projectId AND p.userId = w.userId
++			WHERE w.id = ? AND w.sessionId = ? AND w.userId = ? AND w.projectId = ?
++				AND w.runtimeOwner = 'trusted_v1' AND w.runtimeOwnerVersion = ?
++				AND s.runtimeOwner = 'trusted_v1' AND s.runtimeOwnerVersion = w.runtimeOwnerVersion
++				AND s.userId = w.userId AND s.projectId = w.projectId AND s.status = 'active' AND p.status != 'deleting'
++				AND w.startupDeadline > ? AND w.status NOT IN ('complete', 'failed', 'canceled')
++				AND w.expectedIdentityId = ? AND w.startupRoles = '["trusted_brain"]'
++				AND w.startupPools = '["brain"]' AND c.kind = 'prompt'
++			LIMIT 1`)
++				.bind(
++					request.operationId,
++					source.workspaceSessionId,
++					source.userId,
++					source.projectId,
++					source.ownerVersion,
++					now,
++					source.identityId,
++				)
++				.first();
++		if (!intent) throw new TransportDenied("startup_intent");
++		return;
++	}
++	const operation =
++		await env.DB.prepare(`SELECT o.id FROM privileged_operations o
++		JOIN sandbox_identities i ON i.id = o.identityId
++		JOIN workspace_sessions s ON s.id = i.workspaceSessionId
++		JOIN projects p ON p.id = i.projectId AND p.userId = i.userId
++		WHERE o.id = ? AND o.identityId = ? AND o.family = 'ditto_action' AND o.type = 'brain_transport'
++			AND o.contractVersion = 1 AND o.closedAt IS NULL AND o.expiresAt > ?
++			AND o.lifecycleGeneration = ? AND o.incarnationId = ? AND o.runtimeOwnerVersion = ?
++			AND o.runId = ? AND o.runEpoch = ?
++			AND EXISTS (SELECT 1 FROM runtime_command_memberships m
++				JOIN session_commands c ON c.id = m.commandId
++				WHERE m.commandId = o.admissionReference AND m.sessionId = s.id
++					AND m.runId = o.runId AND m.runEpoch = o.runEpoch
++					AND c.sessionId = s.id AND c.userId = i.userId AND c.projectId = i.projectId)
++			AND i.containerId = ? AND i.retiredAt IS NULL AND i.state NOT IN ('destroyed', 'destroying')
++			AND i.incarnationId = o.incarnationId AND i.lifecycleGeneration = o.lifecycleGeneration
++			AND s.brainIdentityId = i.id AND s.userId = i.userId AND s.projectId = i.projectId
++			AND s.status = 'active' AND s.runtimeOwner = 'trusted_v1' AND s.runtimeOwnerVersion = o.runtimeOwnerVersion
++			AND p.status != 'deleting'
++			AND NOT EXISTS (SELECT 1 FROM runtime_deleted_target_fences f WHERE
++				(f.targetKind = 'project' AND f.targetId = i.projectId) OR
++				(f.targetKind = 'workspace_session' AND f.targetId = i.workspaceSessionId))
++		LIMIT 1`)
++			.bind(
++				request.operationId,
++				source.identityId,
++				Math.floor(now / 1000),
++				source.lifecycleGeneration,
++				source.incarnation,
++				source.ownerVersion,
++				request.runId,
++				request.runEpoch,
++				source.containerId,
++			)
++			.first();
++	if (!operation) throw new TransportDenied("operation_authority");
++}
++
++export async function handleRuntimeOutbound(
++	request: Request,
++	env: RuntimeEgressEnv,
++	ctx: PlatformOutboundContext,
++	dispatch: BrainDispatch,
++	fetchImpl: typeof fetch = (input, init) => globalThis.fetch(input, init),
++): Promise<Response> {
++	try {
++		const source = await resolveRuntimeSource(env, ctx);
++		const url = new URL(request.url);
++		if (url.hostname === "ditto.internal") {
++			if (source.kind !== "trusted_brain")
++				throw new TransportDenied("brain_role");
++			const parsed = await parseBrainRequest(request, Date.now());
++			await authorizeBrainRequest(env, source, parsed, Date.now());
++			return Response.json(await dispatch(source, parsed));
++		}
++		if (
++			classifyOpenCodeRequest(request).kind !== "other" ||
++			classifyGithubGitRequest(request).kind !== "other" ||
++			classifyDittoActionRequest(request).kind !== "other" ||
++			isDittoSyntheticHost(url.hostname)
++		) {
++			throw new TransportDenied("privileged_transport_unavailable");
++		}
++		if (source.kind === "trusted_brain")
++			throw new TransportDenied("brain_egress");
++		return await handlePublicInternet(request, fetchImpl);
++	} catch (error) {
++		return transportDenial(
++			error instanceof TransportDenied ? error.code : "transport_denied",
++		);
++	}
++}
+diff --git a/apps/web/src/lib/runtime-binding-graph.test.ts b/apps/web/src/lib/runtime-binding-graph.test.ts
+new file mode 100644
+index 0000000..b5cab19
+--- /dev/null
++++ b/apps/web/src/lib/runtime-binding-graph.test.ts
+@@ -0,0 +1,149 @@
++import { readFileSync } from "node:fs";
++import path from "node:path";
++import ts from "typescript";
++import { describe, expect, it } from "vitest";
++
++const root = new URL("../../../../", import.meta.url).pathname;
++const web = path.join(root, "apps/web/src");
++function source(file: string): ts.SourceFile {
++	return ts.createSourceFile(
++		file,
++		readFileSync(file, "utf8"),
++		ts.ScriptTarget.Latest,
++		true,
++	);
++}
++function properties(value: ts.Node | undefined): Map<string, ts.Expression> {
++	if (!value || !ts.isObjectLiteralExpression(value))
++		throw new Error("Expected binding object");
++	return new Map(
++		value.properties.map((property) => {
++			if (
++				!ts.isPropertyAssignment(property) &&
++				!ts.isShorthandPropertyAssignment(property)
++			)
++				throw new Error("Unexpected binding declaration");
++			const key =
++				ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)
++					? property.name.text
++					: property.name.getText();
++			return [
++				key,
++				ts.isPropertyAssignment(property)
++					? property.initializer
++					: property.name,
++			];
++		}),
++	);
++}
++function worker(name: string): Map<string, ts.Expression> {
++	let declaration: ts.CallExpression | undefined;
++	function visit(node: ts.Node): void {
++		if (
++			ts.isCallExpression(node) &&
++			ts.isIdentifier(node.expression) &&
++			node.expression.text === "Worker" &&
++			node.arguments[0] &&
++			ts.isStringLiteral(node.arguments[0]) &&
++			node.arguments[0].text === name
++		)
++			declaration = node;
++		ts.forEachChild(node, visit);
++	}
++	visit(source(path.join(root, "alchemy.run.ts")));
++	if (!declaration) throw new Error("Worker declaration missing");
++	return properties(declaration.arguments[1]);
++}
++
++describe("local target binding and runtime import graph", () => {
++	it("grants only the intended counterpart each named capability and leaves legacy deployment intact", () => {
++		const product = worker("local-product-bridge");
++		const runtime = worker("local-session-runtime");
++		expect(product.get("entrypoint")?.getText()).toBe(
++			'"apps/web/src/lib/runtime-product-worker.ts"',
++		);
++		const p = properties(product.get("bindings"));
++		const r = properties(runtime.get("bindings"));
++		expect(p.get("RUNTIME")?.getText()).toContain(
++			'Worker.experimentalEntrypoint(runtimeRef, "RuntimeEntrypoint")',
++		);
++		expect(r.get("PRODUCT")?.getText()).toContain(
++			'Worker.experimentalEntrypoint(productRef, "ProductEntrypoint")',
++		);
++		for (const key of [
++			"SessionRuntime",
++			"Sandbox",
++			"OPENCODE_API_KEY",
++			"RUNTIME_ENCRYPTION_KEYS",
++			"PRODUCT",
++		])
++			expect(p.has(key)).toBe(false);
++		for (const key of [
++			"BETTER_AUTH_SECRET",
++			"GITHUB_APP_PRIVATE_KEY",
++			"GITHUB_CLIENT_SECRET",
++			"RUNTIME",
++		])
++			expect(r.has(key)).toBe(false);
++		expect(r.has("SessionRuntime")).toBe(true);
++		expect(r.has("Sandbox")).toBe(true);
++		expect(r.has("DB") && p.has("DB")).toBe(true);
++		const alchemy = readFileSync(path.join(root, "alchemy.run.ts"), "utf8");
++		expect(
++			alchemy.includes(
++				'app.local && process.env.DITTO_LOCAL_RUNTIME_TOPOLOGY === "1"',
++			),
++		).toBe(true);
++		expect(
++			alchemy.includes('export const website = await TanStackStart("website"'),
++		).toBe(true);
++	});
++	it("runtime value imports cannot initialize product auth or mint GitHub tokens", () => {
++		const queue = [path.join(root, "apps/runtime/src/server.ts")];
++		const visited = new Set<string>();
++		while (queue.length) {
++			const file = queue.pop();
++			if (!file || visited.has(file)) continue;
++			visited.add(file);
++			expect(
++				[
++					"auth.ts",
++					"github-app.ts",
++					"runtime-product-service.ts",
++					"session-runtime-product.ts",
++				].includes(path.basename(file)),
++			).toBe(false);
++			const parsed = source(file);
++			function add(spec: string): void {
++				let candidate: string;
++				if (spec.startsWith("#/")) candidate = path.join(web, spec.slice(2));
++				else if (spec.startsWith("."))
++					candidate = path.resolve(path.dirname(file ?? ""), spec);
++				else return;
++				candidate = candidate.replace(/\.(js|ts)$/, "");
++				queue.push(`${candidate}.ts`);
++			}
++			function visit(node: ts.Node): void {
++				if (
++					ts.isImportDeclaration(node) &&
++					ts.isStringLiteral(node.moduleSpecifier) &&
++					!node.importClause?.isTypeOnly
++				)
++					add(node.moduleSpecifier.text);
++				if (
++					ts.isCallExpression(node) &&
++					node.expression.kind === ts.SyntaxKind.ImportKeyword &&
++					node.arguments[0] &&
++					ts.isStringLiteral(node.arguments[0])
++				)
++					add(node.arguments[0].text);
++				ts.forEachChild(node, visit);
++			}
++			visit(parsed);
++		}
++		expect(
++			visited.has(path.join(root, "apps/runtime/src/runtime-egress.ts")),
++		).toBe(true);
++		expect(visited.has(path.join(web, "lib/open-code-contract.ts"))).toBe(true);
++	});
++});
+diff --git a/apps/web/src/lib/runtime-product-worker.ts b/apps/web/src/lib/runtime-product-worker.ts
+new file mode 100644
+index 0000000..fd20e5b
+--- /dev/null
++++ b/apps/web/src/lib/runtime-product-worker.ts
+@@ -0,0 +1,7 @@
++export { ProductEntrypoint } from "./session-runtime-product";
++
++export default {
++	fetch(): Response {
++		return new Response("Not found", { status: 404 });
++	},
++} satisfies ExportedHandler;
+diff --git a/apps/web/src/lib/sandbox-public-egress.ts b/apps/web/src/lib/sandbox-public-egress.ts
+new file mode 100644
+index 0000000..40de7b7
+--- /dev/null
++++ b/apps/web/src/lib/sandbox-public-egress.ts
+@@ -0,0 +1,108 @@
++import { isDittoSyntheticHost } from "./ditto-action-contract";
++
++function isLiteralIpHostname(hostname: string): boolean {
++	return (
++		/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) ||
++		hostname.includes(":") ||
++		/^0x/i.test(hostname) ||
++		/^\d+$/.test(hostname)
++	);
++}
++
++function isPrivateOrSpecialHostname(hostname: string): boolean {
++	const host = hostname.toLowerCase();
++	if (
++		host === "localhost" ||
++		host.endsWith(".localhost") ||
++		host.endsWith(".local") ||
++		host === "metadata.google.internal" ||
++		host.endsWith(".internal")
++	)
++		return true;
++	if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return false;
++	const parts = host.split(".").map(Number);
++	if (parts.length !== 4 || parts.some((part) => part > 255)) return true;
++	const [a, b] = parts as [number, number, number, number];
++	return (
++		a === 10 ||
++		a === 127 ||
++		a === 0 ||
++		a === 169 ||
++		a === 224 ||
++		a >= 240 ||
++		(a === 172 && b >= 16 && b <= 31) ||
++		(a === 192 && b === 168) ||
++		(a === 100 && b >= 64 && b <= 127)
++	);
++}
++
++export function validatePublicInternetDestination(url: URL): string | null {
++	if (url.protocol !== "http:" && url.protocol !== "https:") return "non_http";
++	const expectedPort = url.protocol === "https:" ? "443" : "80";
++	if ((url.port || expectedPort) !== expectedPort) return "invalid_port";
++	if (url.username || url.password) return "embedded_credentials";
++	const host = url.hostname.toLowerCase();
++	if (!host || host.includes(" ") || host.includes("%") || host.endsWith("."))
++		return "ambiguous_host";
++	if (isLiteralIpHostname(host)) return "literal_ip";
++	if (isPrivateOrSpecialHostname(host)) return "private_destination";
++	if (isDittoSyntheticHost(host)) return "privileged_placeholder";
++	return null;
++}
++
++function denied(reasonCode: string, status = 403): Response {
++	console.info(
++		JSON.stringify({
++			type: "sandbox_egress_deny",
++			reasonCode,
++			correlationId: null,
++			family: null,
++		}),
++	);
++	return Response.json(
++		{ error: "denied", reasonCode, correlationId: null },
++		{
++			status,
++			headers: { "x-ditto-deny-reason": reasonCode },
++		},
++	);
++}
++
++export async function handlePublicInternet(
++	request: Request,
++	fetchImpl: typeof fetch,
++): Promise<Response> {
++	let url: URL;
++	try {
++		url = new URL(request.url);
++	} catch {
++		return denied("invalid_url", 400);
++	}
++	const destinationError = validatePublicInternetDestination(url);
++	if (destinationError) return denied(destinationError);
++	const headers = new Headers();
++	for (const [name, value] of request.headers) {
++		if (
++			name === "authorization" ||
++			name === "cookie" ||
++			name.startsWith("proxy-") ||
++			name.startsWith("x-forwarded-") ||
++			name === "forwarded"
++		)
++			continue;
++		headers.set(name, value);
++	}
++	const init: RequestInit & { duplex?: "half" } = {
++		method: request.method,
++		headers,
++		redirect: "manual",
++	};
++	if (request.body) {
++		init.body = request.body;
++		init.duplex = "half";
++	}
++	const upstream = await fetchImpl(new Request(url, init));
++	if (upstream.status >= 300 && upstream.status < 400)
++		return denied("redirect_denied", 502);
++	return upstream;
++}
+diff --git a/apps/web/src/lib/session-runtime-security.test.ts b/apps/web/src/lib/session-runtime-security.test.ts
+new file mode 100644
+index 0000000..6f3ff7b
+--- /dev/null
++++ b/apps/web/src/lib/session-runtime-security.test.ts
+@@ -0,0 +1,308 @@
++import { afterEach, describe, expect, it, vi } from "vitest";
++import type { BrainRequest } from "../../../runtime/src/brain-transport";
++import {
++	handleRuntimeOutbound,
++	type PlatformOutboundContext,
++	type RuntimeSource,
++} from "../../../runtime/src/runtime-egress";
++import {
++	createSessionRuntimeFixture,
++	type SessionRuntimeFixture,
++} from "../test/session-runtime-fixture";
++import productPublic, { ProductEntrypoint } from "./runtime-product-worker";
++import { handleSessionCommandRequest } from "./session-command";
++import { createSqliteD1 } from "./sqlite-d1-test-utils";
++
++vi.mock("cloudflare:workers", () => ({
++	env: {},
++	WorkerEntrypoint: class {
++		constructor(
++			readonly ctx: unknown,
++			readonly env: unknown,
++		) {}
++	},
++}));
++const fixtures: SessionRuntimeFixture[] = [];
++afterEach(() => {
++	for (const f of fixtures.splice(0)) f.dispose();
++	vi.restoreAllMocks();
++});
++
++async function setup() {
++	const f = createSessionRuntimeFixture();
++	fixtures.push(f);
++	f.seedTrustedSession();
++	f.seedTrustedExecutionEvidence();
++	const admission = await handleSessionCommandRequest({
++		db: f.db,
++		runtime: f.runtime,
++		authenticatedUserId: "user-1",
++		body: {
++			version: 1,
++			kind: "prompt",
++			projectId: "proj-1",
++			sessionId: "sess-1",
++			idempotencyKey: "transport",
++			text: "hello",
++		},
++	});
++	expect(admission.status).toBe(202);
++	await f.deliver();
++	const coordinator = f.coordinator("sess-1");
++	await coordinator.reconcile();
++	const snapshot = await coordinator.readSnapshot();
++	const runId = snapshot.runStates[0].id;
++	const command = f.sqlite.prepare("SELECT id FROM session_commands").get() as {
++		id: string;
++	};
++	f.sqlite.exec(`UPDATE sandbox_identities SET controllerNamespace = 'runtime';
++		CREATE TABLE privileged_operations (
++			id text PRIMARY KEY, identityId text, family text, type text, contractVersion integer,
++			closedAt integer, expiresAt integer, lifecycleGeneration integer, incarnationId text,
++			runtimeOwnerVersion integer, runId text, runEpoch integer, admissionReference text
++		);`);
++	f.sqlite
++		.prepare(
++			`INSERT INTO privileged_operations VALUES ('transport-operation', 'brain-sess-1', 'ditto_action', 'brain_transport', 1, NULL, ?, 1, 'synthetic-brain-1', 1, ?, 1, ?)`,
++		)
++		.run(Math.floor(Date.now() / 1000) + 60, runId, command.id);
++	const env = {
++		DB: createSqliteD1(f.sqlite),
++		RUNTIME_CONTROLLER_NAMESPACE: "runtime",
++	};
++	const ctx: PlatformOutboundContext = {
++		containerId: "brain-container-sess-1",
++		className: "SessionRuntime",
++		params: { incarnation: "synthetic-brain-1", lifecycleGeneration: 1 },
++	};
++	const body: BrainRequest = {
++		version: 1,
++		kind: "continuation",
++		brainIdentityId: "brain-sess-1",
++		brainIncarnationId: "synthetic-brain-1",
++		runId,
++		attempt: 1,
++		runEpoch: 1,
++		operationId: "transport-operation",
++		expectedCommittedPosition: 0,
++		payload: { entries: [] },
++		ownerVersion: 1,
++		lifecycleGeneration: 1,
++		deadline: Date.now() + 30_000,
++	};
++	const network = vi.fn<typeof fetch>(
++		async () => new Response("public", { status: 200 }),
++	);
++	const dispatch = vi.fn(async (source: RuntimeSource, parsed: BrainRequest) =>
++		coordinator.commitContinuation({
++			expectedPosition: parsed.expectedCommittedPosition,
++			snapshot: parsed.payload,
++			runId: parsed.runId,
++			brainIncarnationId: source.incarnation,
++			lifecycleGeneration: source.lifecycleGeneration,
++			ownerVersion: source.ownerVersion,
++			runEpoch: parsed.runEpoch,
++		}),
++	);
++	const request = (
++		overrides: Partial<BrainRequest> = {},
++		headers: HeadersInit = { "content-type": "application/json" },
++	) =>
++		new Request("http://ditto.internal/v1/continuation", {
++			method: "POST",
++			headers,
++			body: JSON.stringify({ ...body, ...overrides }),
++		});
++	const send = (req = request(), context = ctx) =>
++		handleRuntimeOutbound(req, env, context, dispatch, network);
++	return {
++		f,
++		coordinator,
++		env,
++		ctx,
++		body,
++		network,
++		dispatch,
++		request,
++		send,
++		command,
++	};
++}
++
++describe("local runtime transport, real D1 and coordinator, no platform RPC claim", () => {
++	it("T27 valid brain transport commits real encrypted continuation with no public fallback", async () => {
++		const s = await setup();
++		const response = await s.send();
++		expect(response.status).toBe(200);
++		expect(await response.json()).toEqual({ position: 1 });
++		expect(
++			await s.coordinator.readCanonicalContinuation(1, {
++				brainIncarnationId: "synthetic-brain-1",
++			}),
++		).toEqual({ entries: [] });
++		expect(s.network).not.toHaveBeenCalled();
++	});
++	it("T27 executor source cannot acquire brain authority from a forged envelope", async () => {
++		const s = await setup();
++		const row = s.f.sqlite
++			.prepare(
++				"SELECT containerId, incarnationId FROM sandbox_identities WHERE kind = 'workspace_session'",
++			)
++			.get() as { containerId: string; incarnationId: string };
++		const response = await s.send(s.request(), {
++			containerId: row.containerId,
++			className: "Sandbox",
++			params: { incarnation: row.incarnationId, lifecycleGeneration: 1 },
++		});
++		expect(response.status).toBe(403);
++		expect(s.dispatch).not.toHaveBeenCalled();
++		expect(s.network).not.toHaveBeenCalled();
++	});
++	it.each([
++		"UPDATE sandbox_identities SET retiredAt = 1 WHERE kind = 'trusted_brain'",
++		"UPDATE sandbox_identities SET incarnationId = 'new' WHERE kind = 'trusted_brain'",
++		"UPDATE sandbox_identities SET controllerClass = 'Sandbox' WHERE kind = 'trusted_brain'",
++		"UPDATE sandbox_identities SET kind = 'workspace_session' WHERE kind = 'trusted_brain'",
++		"UPDATE workspace_sessions SET runtimeOwnerVersion = 2",
++		"UPDATE projects SET status = 'deleting'",
++		"UPDATE privileged_operations SET expiresAt = 1",
++		"UPDATE privileged_operations SET runEpoch = 2",
++		"UPDATE privileged_operations SET admissionReference = 'fabricated'",
++		"UPDATE privileged_operations SET closedAt = 1",
++	])("T28 fresh authority denial never falls through after %s", async (change) => {
++		const s = await setup();
++		s.f.sqlite.exec(change);
++		expect((await s.send()).status).toBe(403);
++		expect(s.dispatch).not.toHaveBeenCalled();
++		expect(s.network).not.toHaveBeenCalled();
++	});
++	it.each([
++		["authorization", "forged"],
++		["proxy-authorization", "forged"],
++		["x-ditto-caller", "runtime"],
++		["content-encoding", "gzip"],
++	])("T28 unexpected authorization, proxy, caller, and encoding headers are final denials", async (name, value) => {
++		const s = await setup();
++		expect(
++			(
++				await s.send(
++					s.request({}, { "content-type": "application/json", [name]: value }),
++				)
++			).status,
++		).toBe(403);
++		expect(s.dispatch).not.toHaveBeenCalled();
++		expect(s.network).not.toHaveBeenCalled();
++	});
++	it("T28 duplicate fields, wrong method, oversized bodies, and invalid UTF-8 fail closed", async () => {
++		const s = await setup();
++		const raw = JSON.stringify(s.body).replace(
++			'"version":1',
++			'"version":1,"version":1',
++		);
++		const malformed = [
++			new Request("http://ditto.internal/v1/continuation", {
++				method: "POST",
++				headers: { "content-type": "application/json" },
++				body: raw,
++			}),
++			new Request("http://ditto.internal/v1/continuation"),
++			s.request({ payload: "x".repeat(256 * 1024) }),
++			new Request("http://ditto.internal/v1/continuation", {
++				method: "POST",
++				headers: { "content-type": "application/json" },
++				body: new Uint8Array([0xc0, 0xaf]),
++			}),
++		];
++		for (const request of malformed)
++			expect((await s.send(request)).status).toBe(403);
++		expect(s.dispatch).not.toHaveBeenCalled();
++		expect(s.network).not.toHaveBeenCalled();
++	});
++	it("T28 public executor egress has a positive control, rejects redirects and private destinations", async () => {
++		const s = await setup();
++		const executorRow = s.f.sqlite
++			.prepare(
++				"SELECT containerId, incarnationId FROM sandbox_identities WHERE kind = 'workspace_session'",
++			)
++			.get() as { containerId: string; incarnationId: string };
++		const executor = {
++			containerId: executorRow.containerId,
++			className: "Sandbox",
++			params: {
++				incarnation: executorRow.incarnationId,
++				lifecycleGeneration: 1,
++			},
++		};
++		expect(
++			(
++				await s.send(
++					new Request("https://registry.npmjs.org/package"),
++					executor,
++				)
++			).status,
++		).toBe(200);
++		expect(s.network).toHaveBeenCalledTimes(1);
++		s.network.mockClear();
++		for (const url of [
++			"http://127.1",
++			"http://2130706433",
++			"http://localhost",
++			"http://metadata.google.internal",
++			"https://example.com.",
++			"https://user:pass@example.com",
++			"https://opencode.ai/zen/v1/chat/completions",
++		]) {
++			const request = new Request("https://example.com");
++			Object.defineProperty(request, "url", { value: url });
++			expect((await s.send(request, executor)).status).toBe(403);
++		}
++		expect(s.network).not.toHaveBeenCalled();
++		s.network.mockResolvedValueOnce(
++			new Response(null, {
++				status: 302,
++				headers: { location: "http://localhost" },
++			}),
++		);
++		expect(
++			(
++				await s.send(
++					new Request("https://registry.npmjs.org/package"),
++					executor,
++				)
++			).status,
++		).toBe(502);
++		expect(s.network).toHaveBeenCalledTimes(1);
++	});
++	it("T28 brain has no general-purpose public egress", async () => {
++		const s = await setup();
++		expect(
++			(await s.send(new Request("https://registry.npmjs.org/package"))).status,
++		).toBe(403);
++		expect(s.network).not.toHaveBeenCalled();
++	});
++	it("T28 product default public handler never invokes private methods or trusts caller headers", async () => {
++		const s = await setup();
++		const binding = new ProductEntrypoint({} as ExecutionContext, {
++			DB: s.env.DB,
++		});
++		expect(
++			(await binding.reconstructCommand(s.command.id))?.command.commandId,
++		).toBe(s.command.id);
++		const spy = vi.spyOn(ProductEntrypoint.prototype, "reconstructCommand");
++		for (const path of [
++			"/internal/reconstructCommand",
++			"/rpc/readCurrentAuthority",
++			"/v1/continuation",
++		]) {
++			const request = new Request(`https://product.example${path}`, {
++				method: "POST",
++				headers: { "x-ditto-caller": "runtime", authorization: "forged" },
++				body: "{}",
++			});
++			expect(
++				Reflect.apply(productPublic.fetch, productPublic, [request]).status,
++			).toBe(404);
++		}
++		expect(spy).not.toHaveBeenCalled();
++	});
++});
+diff --git a/packages/runtime-contracts/src/remote-tool.test.ts b/packages/runtime-contracts/src/remote-tool.test.ts
+new file mode 100644
+index 0000000..8d20c42
+--- /dev/null
++++ b/packages/runtime-contracts/src/remote-tool.test.ts
+@@ -0,0 +1,61 @@
++import { describe, expect, it } from "vitest";
++import { parseRemoteToolV1, type RemoteToolV1 } from "./remote-tool.js";
++
++const job: RemoteToolV1 = {
++	version: 1,
++	runId: "run",
++	assistantEntryId: "assistant",
++	toolCallId: "call",
++	attempt: 1,
++	executorIncarnationId: "executor",
++	runEpoch: 1,
++	lifecycleGeneration: 1,
++	deadline: 1000,
++	outcomePolicy: "never_retry",
++	tool: {
++		name: "write",
++		path: "source",
++		content: "",
++		expected: { absent: true },
++	},
++};
++
++describe("RemoteToolV1", () => {
++	it("permits empty-file creation with an absent-file precondition", () => {
++		expect(parseRemoteToolV1(JSON.stringify(job))).toEqual(job);
++	});
++	it("rejects duplicate authority fields in raw JSON", () => {
++		expect(() =>
++			parseRemoteToolV1(
++				JSON.stringify(job).replace('"attempt":1', '"attempt":1,"attempt":2'),
++			),
++		).toThrow();
++	});
++	it.each([
++		null,
++		{},
++		{ sha256: "bad" },
++		{ absent: true, sha256: "0".repeat(64) },
++	])("requires one exact write precondition", (expected) => {
++		expect(() =>
++			parseRemoteToolV1({ ...job, tool: { ...job.tool, expected } }),
++		).toThrow();
++	});
++	it("rejects arbitrary shells declared retry-safe", () => {
++		expect(() =>
++			parseRemoteToolV1({
++				...job,
++				outcomePolicy: "retry_safe",
++				tool: { name: "bash", command: "echo command" },
++			}),
++		).toThrow();
++	});
++	it("rejects fractional deadlines, extra arguments and unbounded commands", () => {
++		for (const candidate of [
++			{ ...job, deadline: 1.5 },
++			{ ...job, tool: { ...job.tool, env: {} } },
++			{ ...job, tool: { name: "bash", command: "x".repeat(128 * 1024 + 1) } },
++		])
++			expect(() => parseRemoteToolV1(candidate)).toThrow();
++	});
++});
+diff --git a/packages/runtime-contracts/src/remote-tool.ts b/packages/runtime-contracts/src/remote-tool.ts
+new file mode 100644
+index 0000000..dec6c4d
+--- /dev/null
++++ b/packages/runtime-contracts/src/remote-tool.ts
+@@ -0,0 +1,279 @@
++import {
++	ContractParseError,
++	decodeContractInput,
++	integerField,
++	literalField,
++	strictRecord,
++	stringField,
++} from "./json.js";
++
++export const REMOTE_TOOL_NAMES = [
++	"read",
++	"write",
++	"edit",
++	"bash",
++	"grep",
++	"find",
++	"ls",
++] as const;
++export type RemoteToolName = (typeof REMOTE_TOOL_NAMES)[number];
++export const REMOTE_JOB_BYTES = 2 * 1024 * 1024;
++export const REMOTE_RESULT_BYTES = 2 * 1024 * 1024;
++export const REMOTE_FILE_BYTES = 1024 * 1024;
++export type ExpectedContent = { absent: true } | { sha256: string };
++export type RemoteArguments =
++	| { name: "read"; path: string; offset?: number; limit?: number }
++	| { name: "write"; path: string; content: string; expected: ExpectedContent }
++	| {
++			name: "edit";
++			path: string;
++			edits: { oldText: string; newText: string }[];
++			expected: { sha256: string };
++	  }
++	| { name: "bash"; command: string; timeout?: number }
++	| {
++			name: "grep";
++			pattern: string;
++			path?: string;
++			glob?: string;
++			ignoreCase?: boolean;
++			literal?: boolean;
++			context?: number;
++			limit?: number;
++	  }
++	| { name: "find"; pattern: string; path?: string; limit?: number }
++	| { name: "ls"; path?: string; limit?: number };
++export type RemoteToolV1 = {
++	version: 1;
++	runId: string;
++	assistantEntryId: string;
++	toolCallId: string;
++	attempt: number;
++	executorIncarnationId: string;
++	runEpoch: number;
++	lifecycleGeneration: number;
++	deadline: number;
++	outcomePolicy: "retry_safe" | "reconcile" | "never_retry";
++	tool: RemoteArguments;
++};
++
++function text(
++	record: Record<string, unknown>,
++	key: string,
++	maxBytes = REMOTE_FILE_BYTES,
++): string {
++	return stringField(record, key, { maxBytes });
++}
++function emptyText(record: Record<string, unknown>, key: string): string {
++	if (record[key] === "") return "";
++	return text(record, key);
++}
++function optionalNumber(
++	record: Record<string, unknown>,
++	key: string,
++	max: number,
++	minimum = 1,
++): number | undefined {
++	if (record[key] === undefined) return undefined;
++	const value = integerField(record, key, { minimum });
++	if (value > max)
++		throw new ContractParseError("invalid_field", `${key} exceeds its limit.`);
++	return value;
++}
++function optionalText(
++	record: Record<string, unknown>,
++	key: string,
++): string | undefined {
++	return stringField(record, key, { optional: true, maxBytes: 4096 });
++}
++function optionalBoolean(
++	record: Record<string, unknown>,
++	key: string,
++): boolean | undefined {
++	if (record[key] === undefined) return undefined;
++	if (typeof record[key] !== "boolean")
++		throw new ContractParseError("invalid_field", `${key} must be Boolean.`);
++	return record[key];
++}
++function expected(value: unknown, allowAbsent: boolean): ExpectedContent {
++	const record = strictRecord(value, ["absent", "sha256"], "ExpectedContent");
++	if (allowAbsent && record.absent === true && record.sha256 === undefined)
++		return { absent: true };
++	if (
++		record.absent !== undefined ||
++		typeof record.sha256 !== "string" ||
++		!/^[a-f0-9]{64}$/.test(record.sha256)
++	) {
++		throw new ContractParseError(
++			"invalid_field",
++			"Expected-content precondition is required.",
++		);
++	}
++	return { sha256: record.sha256 };
++}
++export function parseRemoteArguments(value: unknown): RemoteArguments {
++	const discovered = strictRecord(
++		value,
++		[
++			"name",
++			"path",
++			"offset",
++			"limit",
++			"content",
++			"expected",
++			"edits",
++			"command",
++			"timeout",
++			"pattern",
++			"glob",
++			"ignoreCase",
++			"literal",
++			"context",
++		],
++		"RemoteArguments",
++	);
++	const name = literalField(discovered, "name", REMOTE_TOOL_NAMES);
++	if (name === "read") {
++		const r = strictRecord(value, ["name", "path", "offset", "limit"], name);
++		return {
++			name,
++			path: text(r, "path", 4096),
++			offset: optionalNumber(r, "offset", 1_000_000),
++			limit: optionalNumber(r, "limit", 10_000),
++		};
++	}
++	if (name === "write") {
++		const r = strictRecord(
++			value,
++			["name", "path", "content", "expected"],
++			name,
++		);
++		return {
++			name,
++			path: text(r, "path", 4096),
++			content: emptyText(r, "content"),
++			expected: expected(r.expected, true),
++		};
++	}
++	if (name === "edit") {
++		const r = strictRecord(value, ["name", "path", "edits", "expected"], name);
++		if (!Array.isArray(r.edits) || r.edits.length < 1 || r.edits.length > 100)
++			throw new ContractParseError("invalid_field", "edits must be bounded.");
++		const condition = expected(r.expected, false);
++		if (!("sha256" in condition))
++			throw new ContractParseError("invalid_field", "edit requires a digest.");
++		return {
++			name,
++			path: text(r, "path", 4096),
++			expected: condition,
++			edits: r.edits.map((item) => {
++				const edit = strictRecord(item, ["oldText", "newText"], "edit");
++				return {
++					oldText: text(edit, "oldText"),
++					newText: emptyText(edit, "newText"),
++				};
++			}),
++		};
++	}
++	if (name === "bash") {
++		const r = strictRecord(value, ["name", "command", "timeout"], name);
++		return {
++			name,
++			command: text(r, "command", 128 * 1024),
++			timeout: optionalNumber(r, "timeout", 120),
++		};
++	}
++	if (name === "grep") {
++		const r = strictRecord(
++			value,
++			[
++				"name",
++				"pattern",
++				"path",
++				"glob",
++				"ignoreCase",
++				"literal",
++				"context",
++				"limit",
++			],
++			name,
++		);
++		return {
++			name,
++			pattern: text(r, "pattern", 4096),
++			path: optionalText(r, "path"),
++			glob: optionalText(r, "glob"),
++			ignoreCase: optionalBoolean(r, "ignoreCase"),
++			literal: optionalBoolean(r, "literal"),
++			context: optionalNumber(r, "context", 20, 0),
++			limit: optionalNumber(r, "limit", 1000),
++		};
++	}
++	if (name === "find") {
++		const r = strictRecord(value, ["name", "pattern", "path", "limit"], name);
++		return {
++			name,
++			pattern: text(r, "pattern", 4096),
++			path: optionalText(r, "path"),
++			limit: optionalNumber(r, "limit", 1000),
++		};
++	}
++	const r = strictRecord(value, ["name", "path", "limit"], name);
++	return {
++		name,
++		path: optionalText(r, "path"),
++		limit: optionalNumber(r, "limit", 1000),
++	};
++}
++
++export function parseRemoteToolV1(value: unknown): RemoteToolV1 {
++	const r = strictRecord(
++		decodeContractInput(value, REMOTE_JOB_BYTES),
++		[
++			"version",
++			"runId",
++			"assistantEntryId",
++			"toolCallId",
++			"attempt",
++			"executorIncarnationId",
++			"runEpoch",
++			"lifecycleGeneration",
++			"deadline",
++			"outcomePolicy",
++			"tool",
++		],
++		"RemoteToolV1",
++	);
++	const tool = parseRemoteArguments(r.tool);
++	const outcomePolicy = literalField(r, "outcomePolicy", [
++		"retry_safe",
++		"reconcile",
++		"never_retry",
++	]);
++	if (tool.name === "bash" && outcomePolicy !== "never_retry")
++		throw new ContractParseError(
++			"invalid_field",
++			"Shell effects cannot be replayed.",
++		);
++	if (
++		(tool.name === "write" || tool.name === "edit") &&
++		outcomePolicy === "retry_safe"
++	)
++		throw new ContractParseError(
++			"invalid_field",
++			"Mutations require reconciliation.",
++		);
++	return {
++		version: literalField(r, "version", [1]),
++		runId: text(r, "runId", 256),
++		assistantEntryId: text(r, "assistantEntryId", 256),
++		toolCallId: text(r, "toolCallId", 256),
++		attempt: integerField(r, "attempt", { minimum: 1 }),
++		executorIncarnationId: text(r, "executorIncarnationId", 256),
++		runEpoch: integerField(r, "runEpoch", { minimum: 1 }),
++		lifecycleGeneration: integerField(r, "lifecycleGeneration", { minimum: 1 }),
++		deadline: integerField(r, "deadline", { minimum: 1 }),
++		outcomePolicy,
++		tool,
++	};
++}
+diff --git a/packages/sandbox-runner/src/remote-tool-cli.ts b/packages/sandbox-runner/src/remote-tool-cli.ts
+new file mode 100644
+index 0000000..72cc4bd
+--- /dev/null
++++ b/packages/sandbox-runner/src/remote-tool-cli.ts
+@@ -0,0 +1,69 @@
++#!/usr/bin/env node
++import { constants } from "node:fs";
++import { open } from "node:fs/promises";
++import { parseRemoteToolV1, REMOTE_JOB_BYTES } from "@ditto/runtime-contracts";
++import { executeRemoteTool } from "./remote-tool.js";
++
++async function main(): Promise<void> {
++	const [jobPath, incarnation] = process.argv.slice(2);
++	if (
++		!jobPath ||
++		!/^\/tmp\/ditto-remote-jobs\/[a-f0-9-]{36}\.json$/.test(jobPath) ||
++		!incarnation ||
++		process.argv.length !== 4
++	)
++		throw new Error("protocol");
++	const handle = await open(jobPath, constants.O_RDONLY | constants.O_NOFOLLOW);
++	let raw: string;
++	try {
++		const stat = await handle.stat();
++		if (!stat.isFile() || stat.size > REMOTE_JOB_BYTES)
++			throw new Error("job_limit");
++		const buffer = Buffer.alloc(REMOTE_JOB_BYTES + 1);
++		let size = 0;
++		while (size < buffer.length) {
++			const next = await handle.read(buffer, size, buffer.length - size, size);
++			if (next.bytesRead === 0) break;
++			size += next.bytesRead;
++		}
++		if (size > REMOTE_JOB_BYTES) throw new Error("job_limit");
++		raw = new TextDecoder("utf-8", { fatal: true }).decode(
++			buffer.subarray(0, size),
++		);
++	} finally {
++		await handle.close();
++	}
++	const job = parseRemoteToolV1(raw);
++	const materialized = process.env.DITTO_EXECUTION_ENV;
++	delete process.env.DITTO_EXECUTION_ENV;
++	let projectValues: Record<string, string> = {};
++	if (materialized) {
++		if (
++			job.tool.name !== "bash" ||
++			Buffer.byteLength(materialized) > 256 * 1024
++		)
++			throw new Error("environment");
++		const value: unknown = JSON.parse(materialized);
++		if (
++			!value ||
++			typeof value !== "object" ||
++			Array.isArray(value) ||
++			!Object.values(value).every((item) => typeof item === "string")
++		)
++			throw new Error("environment");
++		projectValues = value as Record<string, string>;
++	}
++	const result = await executeRemoteTool(job, {
++		workspace: "/workspace",
++		incarnation,
++		projectValues,
++	});
++	process.stdout.write(`${JSON.stringify({ version: 1, result })}\n`);
++}
++
++void main().catch(() => {
++	process.stdout.write(
++		`${JSON.stringify({ version: 1, error: "remote_tool_failed" })}\n`,
++	);
++	process.exitCode = 1;
++});
+diff --git a/packages/sandbox-runner/src/remote-tool.test.ts b/packages/sandbox-runner/src/remote-tool.test.ts
+new file mode 100644
+index 0000000..500b219
+--- /dev/null
++++ b/packages/sandbox-runner/src/remote-tool.test.ts
+@@ -0,0 +1,360 @@
++import { randomBytes } from "node:crypto";
++import {
++	mkdir,
++	mkdtemp,
++	readFile,
++	rm,
++	symlink,
++	writeFile,
++} from "node:fs/promises";
++import path from "node:path";
++import { deflateSync } from "node:zlib";
++import type { RemoteArguments, RemoteToolV1 } from "@ditto/runtime-contracts";
++import { afterEach, beforeEach, describe, expect, it } from "vitest";
++import {
++	closedShellEnvironment,
++	contentDigest,
++	executeRemoteTool,
++	type RemoteExecutorOptions,
++} from "./remote-tool.js";
++
++function pngFixture(): Buffer {
++	function chunk(type: string, data: Buffer): Buffer {
++		const payload = Buffer.concat([Buffer.from(type), data]);
++		let crc = 0xffffffff;
++		for (const byte of payload) {
++			crc ^= byte;
++			for (let bit = 0; bit < 8; bit++)
++				crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
++		}
++		const header = Buffer.alloc(4);
++		header.writeUInt32BE(data.length);
++		const trailer = Buffer.alloc(4);
++		trailer.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
++		return Buffer.concat([header, payload, trailer]);
++	}
++	const ihdr = Buffer.alloc(13);
++	ihdr.writeUInt32BE(1, 0);
++	ihdr.writeUInt32BE(1, 4);
++	ihdr[8] = 8;
++	ihdr[9] = 6;
++	return Buffer.concat([
++		Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
++		chunk("IHDR", ihdr),
++		chunk("IDAT", deflateSync(Buffer.from([0, 255, 0, 0, 255]))),
++		chunk("IEND", Buffer.alloc(0)),
++	]);
++}
++
++let workspace: string;
++const incarnation = "executor-test-incarnation";
++function job(
++	tool: RemoteArguments,
++	extra: Partial<RemoteToolV1> = {},
++): RemoteToolV1 {
++	return {
++		version: 1,
++		runId: "run",
++		assistantEntryId: "assistant",
++		toolCallId: "call",
++		attempt: 1,
++		executorIncarnationId: incarnation,
++		runEpoch: 1,
++		lifecycleGeneration: 1,
++		deadline: Date.now() + 30_000,
++		outcomePolicy: "never_retry",
++		tool,
++		...extra,
++	};
++}
++function execute(
++	input: RemoteToolV1,
++	extra: Omit<RemoteExecutorOptions, "workspace" | "incarnation"> = {},
++) {
++	return executeRemoteTool(input, { workspace, incarnation, ...extra });
++}
++async function exists(target: string): Promise<boolean> {
++	try {
++		await readFile(target);
++		return true;
++	} catch {
++		return false;
++	}
++}
++beforeEach(async () => {
++	workspace = await mkdtemp(path.join(process.cwd(), ".remote-test-"));
++	await writeFile(path.join(workspace, "source.txt"), "hello\nworld\n");
++});
++afterEach(async () => {
++	await rm(workspace, { recursive: true, force: true });
++});
++
++describe("remote executor tools", () => {
++	it("T29 executes all seven tools in the executor workspace and preserves edit diff and patch", async () => {
++		const read = await execute(
++			job({ name: "read", path: "source.txt", offset: 2, limit: 1 }),
++		);
++		expect(
++			read.content.some(
++				(item) => item.type === "text" && item.text.includes("world"),
++			),
++		).toBe(true);
++		await execute(
++			job({
++				name: "write",
++				path: "new.txt",
++				content: "new",
++				expected: { absent: true },
++			}),
++		);
++		const edit = await execute(
++			job({
++				name: "edit",
++				path: "source.txt",
++				expected: { sha256: contentDigest(Buffer.from("hello\nworld\n")) },
++				edits: [{ oldText: "hello", newText: "changed" }],
++			}),
++		);
++		expect(edit.details).toMatchObject({
++			diff: expect.stringContaining("changed"),
++			patch: expect.stringContaining("changed"),
++		});
++		expect(await readFile(path.join(workspace, "source.txt"), "utf8")).toBe(
++			"changed\nworld\n",
++		);
++		for (const tool of [
++			{ name: "find", pattern: "*.txt" },
++			{ name: "grep", pattern: "changed", literal: true },
++			{ name: "ls" },
++		] satisfies RemoteArguments[]) {
++			const result = await execute(job(tool));
++			expect(
++				result.content.some(
++					(item) => item.type === "text" && item.text.includes("source.txt"),
++				),
++			).toBe(true);
++		}
++		const shell = await execute(
++			job({ name: "bash", command: "printf shell > shell.txt" }),
++		);
++		expect(shell.isError).toBe(false);
++		expect(await readFile(path.join(workspace, "shell.txt"), "utf8")).toBe(
++			"shell",
++		);
++	});
++	it("T29 rejects writes without a precondition and mismatched expected content without changing the file", async () => {
++		await expect(
++			executeRemoteTool(
++				{
++					...job({
++						name: "write",
++						path: "source.txt",
++						content: "bad",
++						expected: { absent: true },
++					}),
++					tool: { name: "write", path: "source.txt", content: "bad" },
++				},
++				{ workspace, incarnation },
++			),
++		).rejects.toThrow();
++		await expect(
++			execute(
++				job({
++					name: "write",
++					path: "source.txt",
++					content: "bad",
++					expected: { sha256: "0".repeat(64) },
++				}),
++			),
++		).rejects.toThrow("expected_content");
++		await expect(
++			execute(
++				job({
++					name: "write",
++					path: "source.txt",
++					content: "bad",
++					expected: { absent: true },
++				}),
++			),
++		).rejects.toThrow("expected_content");
++		expect(await readFile(path.join(workspace, "source.txt"), "utf8")).toBe(
++			"hello\nworld\n",
++		);
++	});
++	it("T29 edits match the original snapshot, reject overlap, and preserve the file on conflict", async () => {
++		const expected = { sha256: contentDigest(Buffer.from("hello\nworld\n")) };
++		await expect(
++			execute(
++				job({
++					name: "edit",
++					path: "source.txt",
++					expected,
++					edits: [
++						{ oldText: "hello", newText: "one" },
++						{ oldText: "ello", newText: "two" },
++					],
++				}),
++			),
++		).rejects.toThrow();
++		expect(await readFile(path.join(workspace, "source.txt"), "utf8")).toBe(
++			"hello\nworld\n",
++		);
++	});
++	it.each([
++		"../outside",
++		"/etc/passwd",
++		"~/source",
++		"x\u0000y",
++	])("T29 rejects escaping path %s", async (file) => {
++		await expect(execute(job({ name: "read", path: file }))).rejects.toThrow(
++			"path",
++		);
++	});
++	it("T29 refuses file and ancestor symlinks even when the target is readable", async () => {
++		await symlink(
++			path.join(workspace, "source.txt"),
++			path.join(workspace, "link"),
++		);
++		await symlink(workspace, path.join(workspace, "linked-dir"));
++		for (const file of ["link", "linked-dir/source.txt"])
++			await expect(execute(job({ name: "read", path: file }))).rejects.toThrow(
++				"symlink",
++			);
++	});
++	it("T29 bounds text size and rejects invalid UTF-8 before returning tool content", async () => {
++		await writeFile(path.join(workspace, "bad.txt"), Buffer.from([0xc0, 0xaf]));
++		await expect(
++			execute(job({ name: "read", path: "bad.txt" })),
++		).rejects.toThrow("utf8");
++		await writeFile(
++			path.join(workspace, "large.txt"),
++			Buffer.alloc(1024 * 1024 + 1),
++		);
++		await expect(
++			execute(job({ name: "read", path: "large.txt" })),
++		).rejects.toThrow("file_limit");
++	});
++	it("T29 image reading is bounded and serialized in the executor", async () => {
++		await writeFile(path.join(workspace, "image.png"), pngFixture());
++		const result = await execute(job({ name: "read", path: "image.png" }));
++		expect(
++			result.content.some(
++				(item) => item.type === "image" && item.mimeType === "image/png",
++			),
++		).toBe(true);
++	});
++	it("T29 repository-owned extensions and packages cannot replace image tool implementations", async () => {
++		await mkdir(path.join(workspace, ".pi/extensions"), { recursive: true });
++		await mkdir(
++			path.join(workspace, "node_modules/@earendil-works/pi-coding-agent"),
++			{ recursive: true },
++		);
++		const source = "throw new Error('repository resource executed');";
++		await writeFile(path.join(workspace, ".pi/extensions/evil.js"), source);
++		await writeFile(
++			path.join(
++				workspace,
++				"node_modules/@earendil-works/pi-coding-agent/index.js",
++			),
++			source,
++		);
++		const result = await execute(job({ name: "read", path: "source.txt" }));
++		expect(
++			result.content.some(
++				(item) => item.type === "text" && item.text.includes("hello"),
++			),
++		).toBe(true);
++	});
++	it("T29 preserves partial stdout and stderr and bounds large shell output", async () => {
++		const result = await execute(
++			job({
++				name: "bash",
++				command: "printf partial; printf diagnostic >&2; exit 7",
++			}),
++		);
++		expect(result.details).toMatchObject({
++			stdout: "partial",
++			stderr: "diagnostic",
++			exitCode: 7,
++		});
++		expect(result.isError).toBe(true);
++		const large = await execute(
++			job({
++				name: "bash",
++				command: "/usr/bin/head -c 400000 /dev/zero | /usr/bin/tr '\\0' x",
++			}),
++		);
++		expect(large.details).toMatchObject({ truncated: true });
++		expect(JSON.stringify(large).length).toBeLessThan(300_000);
++	});
++	it("T29 deadlines and cancellation prevent a delayed shell mutation", async () => {
++		await expect(
++			execute(
++				job(
++					{
++						name: "write",
++						path: "late.txt",
++						content: "late",
++						expected: { absent: true },
++					},
++					{ deadline: Date.now() - 1 },
++				),
++			),
++		).rejects.toThrow("deadline");
++		const signal = AbortSignal.timeout(20);
++		const result = await execute(
++			job({ name: "bash", command: "sleep 1; printf late > late.txt" }),
++			{ signal },
++		);
++		expect(result.details).toMatchObject({ canceled: true });
++		expect(await exists(path.join(workspace, "late.txt"))).toBe(false);
++	});
++	it("T29 wrong incarnation and duplicate JSON fields fail before any mutation", async () => {
++		await expect(
++			execute(
++				job(
++					{ name: "bash", command: "printf bad > bad.txt" },
++					{ executorIncarnationId: "stale" },
++				),
++			),
++		).rejects.toThrow("incarnation");
++		const raw = JSON.stringify(
++			job({ name: "bash", command: "printf bad > bad.txt" }),
++		).replace('"version":1', '"version":1,"version":1');
++		await expect(
++			executeRemoteTool(raw, { workspace, incarnation }),
++		).rejects.toThrow();
++		expect(await exists(path.join(workspace, "bad.txt"))).toBe(false);
++	});
++	it("T30 project values enter only an authorized shell, never the serialized job or filesystem tools", async () => {
++		const platform = randomBytes(32).toString("hex");
++		const project = randomBytes(32).toString("hex");
++		const inheritedKey = `DITTO_TEST_${randomBytes(12).toString("hex")}`;
++		process.env[inheritedKey] = platform;
++		try {
++			const command = job({
++				name: "bash",
++				command: `test -n "$PROJECT_VALUE" && test -z "$${inheritedKey}" && test -z "$OPENCODE_API_KEY" && printf authorized`,
++			});
++			expect(JSON.stringify(command).includes(project)).toBe(false);
++			expect(
++				Object.values(
++					closedShellEnvironment({ PROJECT_VALUE: project }),
++				).includes(platform),
++			).toBe(false);
++			const result = await execute(command, {
++				projectValues: { PROJECT_VALUE: project },
++			});
++			expect(result.isError).toBe(false);
++			expect(JSON.stringify(result).includes(project)).toBe(false);
++			expect(JSON.stringify(result).includes(platform)).toBe(false);
++			await expect(
++				execute(job({ name: "read", path: "source.txt" }), {
++					projectValues: { PROJECT_VALUE: project },
++				}),
++			).rejects.toThrow("environment_forbidden");
++		} finally {
++			delete process.env[inheritedKey];
++		}
++	});
++});
+diff --git a/packages/sandbox-runner/src/remote-tool.ts b/packages/sandbox-runner/src/remote-tool.ts
+new file mode 100644
+index 0000000..98845c5
+--- /dev/null
++++ b/packages/sandbox-runner/src/remote-tool.ts
+@@ -0,0 +1,537 @@
++import { spawn } from "node:child_process";
++import { createHash } from "node:crypto";
++import { constants } from "node:fs";
++import { lstat, mkdir, open, readdir, realpath } from "node:fs/promises";
++import path from "node:path";
++import {
++	type ExpectedContent,
++	parseRemoteToolV1,
++	REMOTE_FILE_BYTES,
++	REMOTE_RESULT_BYTES,
++	type RemoteToolV1,
++} from "@ditto/runtime-contracts";
++import {
++	createEditTool,
++	createReadTool,
++} from "@earendil-works/pi-coding-agent";
++
++export type RemoteToolResult = {
++	content: (
++		| { type: "text"; text: string }
++		| { type: "image"; data: string; mimeType: string }
++	)[];
++	details?: unknown;
++	isError?: boolean;
++};
++export type RemoteExecutorOptions = {
++	workspace: string;
++	incarnation: string;
++	signal?: AbortSignal;
++	projectValues?: Readonly<Record<string, string>>;
++	now?: () => number;
++};
++
++class RemoteToolError extends Error {
++	constructor(readonly code: string) {
++		super(code);
++	}
++}
++const OUTPUT_BYTES = 128 * 1024;
++const WALK_LIMIT = 10_000;
++export function contentDigest(value: Uint8Array): string {
++	return createHash("sha256").update(value).digest("hex");
++}
++function checkSignal(signal: AbortSignal): void {
++	if (signal.aborted) throw new RemoteToolError("canceled");
++}
++function isInside(root: string, target: string): boolean {
++	return target === root || target.startsWith(`${root}${path.sep}`);
++}
++
++async function workspacePath(
++	root: string,
++	input: string,
++	createParents = false,
++): Promise<string> {
++	if (
++		!input ||
++		input.includes("\0") ||
++		input.startsWith("~") ||
++		input.split(/[\\/]/).includes("..")
++	)
++		throw new RemoteToolError("path");
++	const target = path.resolve(root, input);
++	if (!isInside(root, target)) throw new RemoteToolError("path");
++	const relative = path.relative(root, target);
++	let current = root;
++	for (const [index, part] of relative.split(path.sep).entries()) {
++		if (!part) continue;
++		current = path.join(current, part);
++		try {
++			const stat = await lstat(current);
++			if (stat.isSymbolicLink()) throw new RemoteToolError("symlink");
++			if (index < relative.split(path.sep).length - 1 && !stat.isDirectory())
++				throw new RemoteToolError("path");
++		} catch (error) {
++			if (
++				!(error instanceof Error) ||
++				!("code" in error) ||
++				error.code !== "ENOENT"
++			)
++				throw error;
++			if (createParents && current !== target) await mkdir(current);
++		}
++	}
++	return target;
++}
++async function boundedRead(root: string, input: string): Promise<Buffer> {
++	const target = await workspacePath(root, input);
++	const handle = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW);
++	try {
++		const stat = await handle.stat();
++		if (!stat.isFile() || stat.size > REMOTE_FILE_BYTES)
++			throw new RemoteToolError("file_limit");
++		if (!isInside(root, await realpath(`/proc/self/fd/${handle.fd}`)))
++			throw new RemoteToolError("path");
++		const buffer = Buffer.alloc(REMOTE_FILE_BYTES + 1);
++		let size = 0;
++		while (size < buffer.length) {
++			const read = await handle.read(buffer, size, buffer.length - size, size);
++			if (read.bytesRead === 0) break;
++			size += read.bytesRead;
++		}
++		if (size > REMOTE_FILE_BYTES) throw new RemoteToolError("file_limit");
++		return buffer.subarray(0, size);
++	} finally {
++		await handle.close();
++	}
++}
++function decodeText(buffer: Uint8Array): string {
++	try {
++		return new TextDecoder("utf-8", { fatal: true }).decode(buffer);
++	} catch {
++		throw new RemoteToolError("utf8");
++	}
++}
++function imageMime(buffer: Buffer): string | null {
++	if (
++		buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
++	)
++		return "image/png";
++	if (buffer[0] === 255 && buffer[1] === 216 && buffer[2] === 255)
++		return "image/jpeg";
++	if (["GIF87a", "GIF89a"].includes(buffer.subarray(0, 6).toString("ascii")))
++		return "image/gif";
++	if (
++		buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
++		buffer.subarray(8, 12).toString("ascii") === "WEBP"
++	)
++		return "image/webp";
++	return null;
++}
++function validateImageDimensions(buffer: Buffer, mime: string): void {
++	let width = 0;
++	let height = 0;
++	if (mime === "image/png" && buffer.length >= 24) {
++		width = buffer.readUInt32BE(16);
++		height = buffer.readUInt32BE(20);
++	} else if (mime === "image/gif" && buffer.length >= 10) {
++		width = buffer.readUInt16LE(6);
++		height = buffer.readUInt16LE(8);
++	} else if (mime === "image/jpeg") {
++		let offset = 2;
++		while (offset + 9 < buffer.length) {
++			if (buffer[offset] !== 255) break;
++			const marker = buffer[offset + 1];
++			const length = buffer.readUInt16BE(offset + 2);
++			if ([0xc0, 0xc1, 0xc2].includes(marker)) {
++				height = buffer.readUInt16BE(offset + 5);
++				width = buffer.readUInt16BE(offset + 7);
++				break;
++			}
++			if (length < 2) break;
++			offset += length + 2;
++		}
++	} else if (mime === "image/webp" && buffer.length >= 30) {
++		const format = buffer.subarray(12, 16).toString("ascii");
++		if (format === "VP8X") {
++			width = 1 + buffer.readUIntLE(24, 3);
++			height = 1 + buffer.readUIntLE(27, 3);
++		} else if (format === "VP8 ") {
++			width = buffer.readUInt16LE(26) & 0x3fff;
++			height = buffer.readUInt16LE(28) & 0x3fff;
++		} else if (format === "VP8L" && buffer[20] === 0x2f) {
++			const bits = buffer.readUInt32LE(21);
++			width = 1 + (bits & 0x3fff);
++			height = 1 + ((bits >>> 14) & 0x3fff);
++		}
++	}
++	if (
++		width < 1 ||
++		height < 1 ||
++		width > 4096 ||
++		height > 4096 ||
++		width * height > 16_000_000
++	)
++		throw new RemoteToolError("image_limit");
++}
++async function conditionalWrite(
++	root: string,
++	input: string,
++	content: string,
++	expected: ExpectedContent,
++	signal: AbortSignal,
++): Promise<void> {
++	if (Buffer.byteLength(content) > REMOTE_FILE_BYTES)
++		throw new RemoteToolError("file_limit");
++	const target = await workspacePath(root, input, "absent" in expected);
++	checkSignal(signal);
++	const flags =
++		constants.O_NOFOLLOW |
++		constants.O_RDWR |
++		("absent" in expected ? constants.O_CREAT | constants.O_EXCL : 0);
++	let handle: Awaited<ReturnType<typeof open>>;
++	try {
++		handle = await open(target, flags, 0o600);
++	} catch {
++		throw new RemoteToolError("expected_content");
++	}
++	try {
++		const stat = await handle.stat();
++		if (
++			!stat.isFile() ||
++			stat.size > REMOTE_FILE_BYTES ||
++			!isInside(root, await realpath(`/proc/self/fd/${handle.fd}`))
++		)
++			throw new RemoteToolError("path");
++		if ("sha256" in expected) {
++			const current = Buffer.alloc(REMOTE_FILE_BYTES + 1);
++			let size = 0;
++			while (size < current.length) {
++				const next = await handle.read(
++					current,
++					size,
++					current.length - size,
++					size,
++				);
++				if (next.bytesRead === 0) break;
++				size += next.bytesRead;
++			}
++			if (
++				size > REMOTE_FILE_BYTES ||
++				contentDigest(current.subarray(0, size)) !== expected.sha256
++			)
++				throw new RemoteToolError("expected_content");
++		}
++		checkSignal(signal);
++		await handle.truncate(0);
++		await handle.writeFile(content, "utf8");
++		await handle.sync();
++	} finally {
++		await handle.close();
++	}
++}
++export function closedShellEnvironment(
++	projectValues: Readonly<Record<string, string>> = {},
++): Record<string, string> {
++	const env: Record<string, string> = {};
++	const reserved = new Set([
++		"PATH",
++		"HOME",
++		"SHELL",
++		"ENV",
++		"BASH_ENV",
++		"NODE_OPTIONS",
++		"LD_PRELOAD",
++		"LD_LIBRARY_PATH",
++	]);
++	for (const [key, value] of Object.entries(projectValues)) {
++		if (
++			!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) ||
++			reserved.has(key) ||
++			key.startsWith("DITTO_") ||
++			key.startsWith("PI_") ||
++			key.startsWith("GIT_")
++		)
++			throw new RemoteToolError("environment_key");
++		if (Buffer.byteLength(value) > 64 * 1024)
++			throw new RemoteToolError("environment_limit");
++		Object.defineProperty(env, key, {
++			value,
++			enumerable: true,
++			writable: true,
++		});
++	}
++	return {
++		...env,
++		PATH: "/usr/local/bin:/usr/bin:/bin",
++		HOME: "/tmp",
++		LANG: "C.UTF-8",
++		LC_ALL: "C.UTF-8",
++	};
++}
++async function shell(
++	job: Extract<RemoteToolV1["tool"], { name: "bash" }>,
++	root: string,
++	env: Record<string, string>,
++	signal: AbortSignal,
++): Promise<RemoteToolResult> {
++	return new Promise((resolve, reject) => {
++		checkSignal(signal);
++		const child = spawn(
++			"/bin/bash",
++			["--noprofile", "--norc", "-c", job.command],
++			{ cwd: root, env, detached: true, stdio: ["ignore", "pipe", "pipe"] },
++		);
++		const stdout: Buffer[] = [];
++		const stderr: Buffer[] = [];
++		let outBytes = 0;
++		let errBytes = 0;
++		let truncated = false;
++		let killTimer: ReturnType<typeof setTimeout> | undefined;
++		let killPending = false;
++		let closedResult: RemoteToolResult | undefined;
++		const finish = () => {
++			if (closedResult && !killPending) resolve(closedResult);
++		};
++		const abort = () => {
++			if (!child.pid) return;
++			try {
++				process.kill(-child.pid, "SIGTERM");
++			} catch {
++				/* Process may already be gone. */
++			}
++			killPending = true;
++			killTimer ??= setTimeout(() => {
++				try {
++					if (child.pid) process.kill(-child.pid, "SIGKILL");
++				} catch {
++					/* Process may already be gone. */
++				}
++				killPending = false;
++				finish();
++			}, 100);
++		};
++		signal.addEventListener("abort", abort, { once: true });
++		const collect = (chunk: Buffer, list: Buffer[], seen: number) => {
++			const take = Math.max(0, Math.min(chunk.length, OUTPUT_BYTES - seen));
++			if (take) list.push(chunk.subarray(0, take));
++			if (take < chunk.length) truncated = true;
++			return seen + take;
++		};
++		child.stdout.on("data", (chunk: Buffer) => {
++			outBytes = collect(chunk, stdout, outBytes);
++		});
++		child.stderr.on("data", (chunk: Buffer) => {
++			errBytes = collect(chunk, stderr, errBytes);
++		});
++		child.once("error", (error) => {
++			signal.removeEventListener("abort", abort);
++			if (killTimer) clearTimeout(killTimer);
++			reject(error);
++		});
++		child.once("close", (exitCode) => {
++			signal.removeEventListener("abort", abort);
++			const out = Buffer.concat(stdout).toString("utf8");
++			const err = Buffer.concat(stderr).toString("utf8");
++			closedResult = {
++				content: [
++					{ type: "text", text: [out, err].filter(Boolean).join("\n") },
++				],
++				details: {
++					stdout: out,
++					stderr: err,
++					exitCode,
++					truncated,
++					canceled: signal.aborted,
++				},
++				isError: exitCode !== 0 || signal.aborted,
++			};
++			finish();
++		});
++		if (signal.aborted) abort();
++	});
++}
++async function walk(
++	root: string,
++	target: string,
++	signal: AbortSignal,
++): Promise<string[]> {
++	const files: string[] = [];
++	const queue = [target];
++	let seen = 0;
++	while (queue.length) {
++		checkSignal(signal);
++		const directory = queue.shift();
++		if (!directory) break;
++		for (const entry of (
++			await readdir(directory, { withFileTypes: true })
++		).sort((a, b) => a.name.localeCompare(b.name))) {
++			if (++seen > WALK_LIMIT) throw new RemoteToolError("walk_limit");
++			if (
++				entry.name === ".git" ||
++				entry.name === "node_modules" ||
++				entry.isSymbolicLink()
++			)
++				continue;
++			const file = await workspacePath(root, path.join(directory, entry.name));
++			if (entry.isDirectory()) queue.push(file);
++			else if (entry.isFile()) files.push(file);
++		}
++	}
++	return files;
++}
++function textResult(text: string): RemoteToolResult {
++	return { content: [{ type: "text", text }] };
++}
++
++export async function executeRemoteTool(
++	input: unknown,
++	options: RemoteExecutorOptions,
++): Promise<RemoteToolResult> {
++	const job = parseRemoteToolV1(input);
++	const now = options.now ?? Date.now;
++	if (job.executorIncarnationId !== options.incarnation)
++		throw new RemoteToolError("incarnation");
++	if (job.deadline <= now() || job.deadline > now() + 120_000)
++		throw new RemoteToolError("deadline");
++	if (
++		job.tool.name !== "bash" &&
++		Object.keys(options.projectValues ?? {}).length
++	)
++		throw new RemoteToolError("environment_forbidden");
++	const root = await realpath(options.workspace);
++	if (
++		root !== path.resolve(options.workspace) ||
++		(await lstat(options.workspace)).isSymbolicLink()
++	)
++		throw new RemoteToolError("workspace");
++	const timeout = Math.min(
++		job.deadline - now(),
++		job.tool.name === "bash" && job.tool.timeout
++			? job.tool.timeout * 1000
++			: 120_000,
++	);
++	const signal = AbortSignal.any([
++		AbortSignal.timeout(timeout),
++		...(options.signal ? [options.signal] : []),
++	]);
++	checkSignal(signal);
++	const tool = job.tool;
++	let result: RemoteToolResult;
++	if (tool.name === "read") {
++		const target = await workspacePath(root, tool.path);
++		const buffer = await boundedRead(root, target);
++		const mime = imageMime(buffer);
++		if (mime) validateImageDimensions(buffer, mime);
++		else decodeText(buffer);
++		result = await createReadTool(root, {
++			operations: {
++				readFile: async () => buffer,
++				access: async () => undefined,
++				detectImageMimeType: async () => mime,
++			},
++		}).execute(
++			job.toolCallId,
++			{ path: target, offset: tool.offset, limit: tool.limit },
++			signal,
++		);
++	} else if (tool.name === "write") {
++		await conditionalWrite(
++			root,
++			tool.path,
++			tool.content,
++			tool.expected,
++			signal,
++		);
++		result = textResult(`Wrote ${Buffer.byteLength(tool.content)} bytes.`);
++	} else if (tool.name === "edit") {
++		const target = await workspacePath(root, tool.path);
++		const buffer = await boundedRead(root, target);
++		if (contentDigest(buffer) !== tool.expected.sha256)
++			throw new RemoteToolError("expected_content");
++		decodeText(buffer);
++		result = await createEditTool(root, {
++			operations: {
++				access: async () => undefined,
++				readFile: async () => buffer,
++				writeFile: async (_file, content) =>
++					conditionalWrite(root, target, content, tool.expected, signal),
++			},
++		}).execute(job.toolCallId, { path: target, edits: tool.edits }, signal);
++	} else if (tool.name === "bash") {
++		result = await shell(
++			tool,
++			root,
++			closedShellEnvironment(options.projectValues),
++			signal,
++		);
++	} else {
++		const target = await workspacePath(root, tool.path ?? ".");
++		const stat = await lstat(target);
++		if (tool.name === "ls") {
++			if (!stat.isDirectory()) throw new RemoteToolError("path");
++			const entries = await readdir(target, { withFileTypes: true });
++			result = textResult(
++				entries
++					.sort((a, b) => a.name.localeCompare(b.name))
++					.slice(0, tool.limit ?? 500)
++					.map(
++						(entry) =>
++							`${entry.name}${entry.isDirectory() ? "/" : entry.isSymbolicLink() ? "@" : ""}`,
++					)
++					.join("\n"),
++			);
++		} else {
++			const files = stat.isDirectory()
++				? await walk(root, target, signal)
++				: [target];
++			if (tool.name === "find") {
++				result = textResult(
++					files
++						.filter((file) =>
++							path.matchesGlob(path.relative(target, file), tool.pattern),
++						)
++						.slice(0, tool.limit ?? 1000)
++						.map((file) => path.relative(root, file))
++						.join("\n"),
++				);
++			} else {
++				const regex = tool.literal
++					? null
++					: new RegExp(tool.pattern, tool.ignoreCase ? "i" : "");
++				const matches: string[] = [];
++				for (const file of files) {
++					checkSignal(signal);
++					if (
++						tool.glob &&
++						!path.matchesGlob(path.relative(target, file), tool.glob)
++					)
++						continue;
++					const lines = decodeText(await boundedRead(root, file)).split("\n");
++					for (const [index, line] of lines.entries()) {
++						const literalMatch = tool.ignoreCase
++							? line.toLowerCase().includes(tool.pattern.toLowerCase())
++							: line.includes(tool.pattern);
++						if (!(regex ? regex.test(line) : literalMatch)) continue;
++						const context = tool.context ?? 0;
++						for (
++							let i = Math.max(0, index - context);
++							i <= Math.min(lines.length - 1, index + context);
++							i++
++						)
++							matches.push(
++								`${path.relative(root, file)}:${i + 1}:${lines[i].slice(0, 500)}`,
++							);
++						if (matches.length >= (tool.limit ?? 100)) break;
++					}
++					if (matches.length >= (tool.limit ?? 100)) break;
++				}
++				result = textResult(matches.slice(0, tool.limit ?? 100).join("\n"));
++			}
++		}
++	}
++	if (Buffer.byteLength(JSON.stringify(result)) > REMOTE_RESULT_BYTES)
++		throw new RemoteToolError("result_limit");
++	return result;
++}

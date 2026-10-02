@@ -15,7 +15,7 @@ Use this index to find the document that owns a claim. Current architecture, pro
 | [Security boundaries](architecture/security.md) | Current trust model, credential paths, redaction, Git policy, and known gaps |
 | [Repository map](architecture/repository-map.md) | Source ownership and change routing |
 
-Current source code, tests, and `apps/web/src/db/schema.ts` define implemented behavior. When a current architecture page disagrees with code, update the page in the same change.
+Current source code, tests, and `apps/web/src/db/schema.ts` define implemented behavior. The [Pi Durable workspace-session runtime specification](specs/pi-durable-session-runtime.md) defines the authoritative target for runtime plans and agents. Its feasibility gates and open decisions remain binding. Architecture pages marked historical describe the previous Node target, not current behavior or requirements to carry into new plans.
 
 ## Decisions, specifications, and research
 
@@ -25,7 +25,7 @@ Current source code, tests, and `apps/web/src/db/schema.ts` define implemented b
 | `docs/specs/` | Proposed or required behavior. Read the status block before treating a spec as implemented. |
 | `docs/research/` | Historical evidence and platform investigation. Research does not define current behavior. |
 
-The [platform credential broker spec](specs/platform-credential-broker.md) is gated and needs revision. Its implementation audit separates completed supporting work from the security guarantees that remain absent.
+The [Pi Durable specification](specs/pi-durable-session-runtime.md) owns runtime module contracts, state ownership, the local implementation sequence, and acceptance tests. The [Node-based runtime spec](specs/trusted-session-runtime.md) and [platform credential broker spec](specs/platform-credential-broker.md) are historical. Their local evidence does not establish that the Pi Durable target works.
 
 ## Reading paths
 

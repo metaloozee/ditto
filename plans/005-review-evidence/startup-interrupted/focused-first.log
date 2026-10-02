@@ -1,0 +1,63 @@
+Warning: Route file "/home/ayan/ditto-worktrees/plan-005-codex/apps/web/src/routes/api.agent.control.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-005-codex/apps/web/src/routes/-api.agent.control.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-worktrees/plan-005-codex/apps/web/src/routes/project.$projectId.test.tsx" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-005-codex/apps/web/src/routes/-project.$projectId.test.tsx" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-worktrees/plan-005-codex/apps/web/src/routes/api.agent.stream.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-worktrees/plan-005-codex/apps/web/src/routes/-api.agent.stream.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+
+ RUN  v4.1.10 /home/ayan/ditto-worktrees/plan-005-codex/apps/web
+
+Sourcemap for "/home/ayan/ditto-worktrees/plan-005-codex/node_modules/.pnpm/@cloudflare+containers@0.3.7/node_modules/@cloudflare/containers/dist/index.js" points to missing source files
+Sourcemap for "/home/ayan/ditto-worktrees/plan-005-codex/node_modules/.pnpm/@cloudflare+containers@0.3.7/node_modules/@cloudflare/containers/dist/lib/container.js" points to missing source files
+Sourcemap for "/home/ayan/ditto-worktrees/plan-005-codex/node_modules/.pnpm/@cloudflare+containers@0.3.7/node_modules/@cloudflare/containers/dist/lib/helpers.js" points to missing source files
+ ❯ src/lib/runtime-startup-service.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/lib/runtime-startup-service.test.ts [ src/lib/runtime-startup-service.test.ts ]
+Error: [vitest] No "DurableObject" export is defined on the "cloudflare:workers" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("cloudflare:workers"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ ../../node_modules/.pnpm/@cloudflare+containers@0.3.7/node_modules/@cloudflare/containers/src/lib/container.ts:439:3
+ ❯ ../../node_modules/.pnpm/@cloudflare+containers@0.3.7/node_modules/@cloudflare/containers/src/index.ts:1:1
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  no tests
+   Start at  20:35:30
+   Duration  506ms (transform 321ms, setup 0ms, import 0ms, tests 0ms, environment 0ms)
+
+undefined
+/home/ayan/ditto-worktrees/plan-005-codex/apps/web:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/lib/runtime-startup-service.test.ts

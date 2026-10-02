@@ -1,0 +1,36 @@
+import type { LocalRuntimeEnv } from "../../../alchemy.run";
+import type { ExecutionEnvironmentReference } from "./executor-dispatch";
+import type { Sandbox, SessionRuntime } from "./server";
+import type { ProductAdapters } from "./session-runtime";
+import type { CapacityReference, IdentityTransitionReference, RegisterStartup, StartupAssignment, StartupReference } from "./startup-contract";
+
+export const IDLE_TIMEOUT = "10m";
+export const LOCAL_TOPOLOGY = {
+	runtimeClasses: ["SessionRuntime", "Sandbox"],
+	brainImage: "packages/session-brain/Dockerfile",
+	executorImage: "Dockerfile",
+	runtimeEntrypoint: "RuntimeEntrypoint",
+	productEntrypoint: "ProductEntrypoint",
+} as const;
+
+export type RuntimeProductService = ProductAdapters & {
+	registerStartup(input: RegisterStartup): Promise<StartupAssignment>;
+	reserveStartup(input: StartupReference): Promise<CapacityReference[]>;
+	observeCapacity(input: CapacityReference): Promise<void>;
+	releaseCapacity(input: CapacityReference): Promise<void>;
+	rotateIdentity(input: IdentityTransitionReference): Promise<{ replacementIncarnationId: string | null }>;
+	retireIdentity(input: IdentityTransitionReference): Promise<{ replacementIncarnationId: string | null }>;
+	resolveWorkspaceSessionId(commandId: string): Promise<string | null>;
+	executionEnvironment(
+		input: ExecutionEnvironmentReference,
+	): Promise<Record<string, string>>;
+};
+
+export type RuntimeEnv = Omit<
+	LocalRuntimeEnv,
+	"PRODUCT" | "SessionRuntime" | "Sandbox"
+> & {
+	PRODUCT: RuntimeProductService;
+	SessionRuntime: DurableObjectNamespace<SessionRuntime>;
+	Sandbox: DurableObjectNamespace<Sandbox>;
+};

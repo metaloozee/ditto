@@ -1,0 +1,66 @@
+export type StartupRole = "trusted_brain" | "workspace_session" | "project_seed";
+export type StartupReference = {
+ sourceKind: "command" | "builder" | "migration";
+ sourceId: string;
+};
+export type RegisterStartup = StartupReference & { role: StartupRole };
+export type StartupAssignment = RegisterStartup & {
+ identityId: string;
+ incarnationId: string;
+ lifecycleGeneration: number;
+ ownerVersion: number;
+ userId: string;
+ projectId: string;
+ sessionId: string | null;
+ routingName: string;
+ containerId: string;
+ controllerClass: "SessionRuntime" | "Sandbox";
+ controllerNamespace: string;
+};
+export type CapacityReference = RegisterStartup & {
+ reservationId: string;
+ identityId: string;
+ incarnationId: string;
+ ownerVersion: number;
+ lifecycleGeneration: number;
+};
+export type RuntimeLiveness = {
+ identityId: string;
+ incarnationId: string;
+ lifecycleGeneration: number;
+ containerId: string;
+ controllerClass: "SessionRuntime" | "Sandbox";
+ controllerNamespace: string;
+ state: "running" | "terminated" | "isolated";
+};
+export type IdentityTransitionReference = {
+ transitionId: string;
+ identityId: string;
+ incarnationId: string;
+ ownerVersion: number;
+ lifecycleGeneration: number;
+};
+export type StartupRuntime = {
+ startupRouting(input: { role: StartupRole; routingName: string }): Promise<{
+  containerId: string;
+  controllerClass: "SessionRuntime" | "Sandbox";
+  controllerNamespace: string;
+ }>;
+ observeStartup(input: StartupAssignment): Promise<RuntimeLiveness | null>;
+};
+
+export function startupObject(input: unknown, keys: readonly string[]): asserts input is Record<string, unknown> {
+ if (!input || typeof input !== "object" || Array.isArray(input) ||
+ Object.keys(input).some(key => !keys.includes(key)) ||
+ keys.some(key => !(key in input))) throw new Error("startup_denied");
+}
+export function checkStartupReference(input: StartupReference): void {
+ startupObject(input, ["sourceKind", "sourceId"]);
+ if (!["command", "builder", "migration"].includes(String(input.sourceKind)) ||
+ typeof input.sourceId !== "string" || !input.sourceId || input.sourceId.length > 256) throw new Error("startup_denied");
+}
+export function checkRegistration(input: RegisterStartup): void {
+ startupObject(input, ["sourceKind", "sourceId", "role"]);
+ checkStartupReference({ sourceKind: input.sourceKind, sourceId: input.sourceId });
+ if (!["trusted_brain", "workspace_session", "project_seed"].includes(String(input.role))) throw new Error("startup_denied");
+}

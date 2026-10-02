@@ -1,6 +1,6 @@
 # Repository map
 
-Status: target architecture. Implementation and validation pending. Requirements live in [trusted-session-runtime.md](../specs/trusted-session-runtime.md). Paths below are the current tree. The second Worker service and trusted brain image are not in the tree until cutover.
+Status: historical repository map and Node-based target summary. Check current source for actual paths; this map predates the runtime foundations now in the tree. New runtime plans and agents must follow [Pi Durable workspace-session runtime](../specs/pi-durable-session-runtime.md), not the second-image design below.
 
 This reference maps stable areas of the repository to their responsibilities. It does not list every file.
 

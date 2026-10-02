@@ -1,6 +1,6 @@
 # Frontend architecture
 
-Status: target architecture. Implementation and validation pending. Requirements live in [trusted-session-runtime.md](../specs/trusted-session-runtime.md). Running code still uses the one-sandbox harness until cutover. Component paths below are the current UI; command receipts, durable follow-ups, and reconnect are the shipped behavior for this spec.
+Status: frontend reference with historical Node-target runtime assumptions. Current source determines shipped UI behavior. For command receipts, durable follow-ups, reconnect, and runtime interactions, new plans and agents must follow [Pi Durable workspace-session runtime](../specs/pi-durable-session-runtime.md). Those target behaviors are not made implemented by this reference.
 
 ## Goal
 

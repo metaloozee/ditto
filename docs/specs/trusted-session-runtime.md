@@ -1,12 +1,12 @@
 # Trusted workspace-session runtime
 
-Status: accepted target architecture; implementation and validation pending.
+Status: superseded by [Pi Durable workspace-session runtime](pi-durable-session-runtime.md). Historical Node-based requirements and implementation evidence; not the target for new plans.
 
 Decision date: 2026-09-06. The maintainer approved the primary testing boundary before this specification was written.
 
-This is the canonical specification for Ditto's target agent architecture. It supersedes [Platform credential broker and workspace-session sandbox isolation](platform-credential-broker.md). That document remains historical implementation evidence, including its uncompleted validation gates.
+This was the canonical specification for Ditto's Node-based target. It previously superseded [Platform credential broker and workspace-session sandbox isolation](platform-credential-broker.md). Both documents now remain historical implementation evidence, including uncompleted validation gates. New runtime plans and agents must follow the Pi Durable specification linked above.
 
-The requirements below describe the target, not current behavior. Research explains the decisions but does not override this specification. Acceptance of the architecture does not authorize deployment, data deletion, staging, or commits.
+The requirements below describe the previous target, not current behavior or additional requirements for the replacement. Preserve them as provenance; the replacement spec decides which policies carry forward. No deployment, data deletion, staging, or commits are authorized by this historical document.
 
 ## Problem statement
 

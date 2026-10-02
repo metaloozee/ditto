@@ -1,0 +1,267 @@
+import {
+	classifyDittoActionRequest,
+	isDittoSyntheticHost,
+} from "../../web/src/lib/ditto-action-contract";
+import { classifyGithubGitRequest } from "../../web/src/lib/git-fetch-contract";
+import { classifyOpenCodeRequest } from "../../web/src/lib/open-code-contract";
+import { handlePublicInternet } from "../../web/src/lib/sandbox-public-egress";
+import {
+	type BrainRequest,
+	parseBrainRequest,
+	TransportDenied,
+	transportDenial,
+} from "./brain-transport";
+
+export type RuntimeSource = {
+	identityId: string;
+	containerId: string;
+	className: string;
+	kind: "trusted_brain" | "workspace_session" | "project_seed";
+	incarnation: string;
+	lifecycleGeneration: number;
+	ownerVersion: number;
+	userId: string;
+	projectId: string;
+	workspaceSessionId: string | null;
+};
+export type PlatformOutboundContext = {
+	containerId: string;
+	className: string;
+	params?: unknown;
+};
+export type RuntimeEgressEnv = {
+	DB: D1Database;
+	RUNTIME_CONTROLLER_NAMESPACE: string;
+};
+export type BrainDispatch = (
+	source: RuntimeSource,
+	request: BrainRequest,
+) => Promise<unknown>;
+
+export async function resolveRuntimeSource(
+	env: RuntimeEgressEnv,
+	ctx: PlatformOutboundContext,
+): Promise<RuntimeSource> {
+	if (
+		!ctx.containerId ||
+		!["SessionRuntime", "Sandbox"].includes(ctx.className)
+	)
+		throw new TransportDenied("source");
+	if (
+		!ctx.params ||
+		typeof ctx.params !== "object" ||
+		Array.isArray(ctx.params)
+	)
+		throw new TransportDenied("launch_identity");
+	const params = ctx.params as Record<string, unknown>;
+	if (
+		typeof params.incarnation !== "string" ||
+		!params.incarnation ||
+		!Number.isSafeInteger(params.lifecycleGeneration)
+	)
+		throw new TransportDenied("launch_identity");
+	const row = await env.DB.prepare(`
+		SELECT i.id AS identityId, i.containerId, i.controllerClass AS className,
+			i.kind, i.incarnationId AS incarnation, i.lifecycleGeneration,
+			i.userId, i.projectId, i.workspaceSessionId,
+			coalesce(s.runtimeOwnerVersion, 1) AS ownerVersion
+		FROM sandbox_identities i JOIN projects p ON p.id = i.projectId AND p.userId = i.userId
+		LEFT JOIN workspace_sessions s ON s.id = i.workspaceSessionId
+		WHERE i.containerId = ? AND i.controllerClass = ? AND i.controllerNamespace = ?
+			AND i.incarnationId = ? AND i.lifecycleGeneration = ?
+			AND i.retiredAt IS NULL AND i.state NOT IN ('destroyed', 'destroying')
+			AND p.status != 'deleting'
+			AND NOT EXISTS (SELECT 1 FROM runtime_deleted_target_fences f WHERE
+				(f.targetKind = 'project' AND f.targetId = i.projectId) OR
+				(f.targetKind = 'workspace_session' AND f.targetId = i.workspaceSessionId))
+			AND ((i.kind = 'project_seed' AND i.workspaceSessionId IS NULL AND i.controllerClass = 'Sandbox') OR
+				(s.userId = i.userId AND s.projectId = i.projectId AND s.status = 'active' AND s.runtimeOwner = 'trusted_v1'
+				AND ((i.kind = 'trusted_brain' AND i.controllerClass = 'SessionRuntime' AND s.brainIdentityId = i.id) OR
+					(i.kind = 'workspace_session' AND i.controllerClass = 'Sandbox' AND s.sandboxIdentityId = i.id))))
+		LIMIT 2
+	`)
+		.bind(
+			ctx.containerId,
+			ctx.className,
+			env.RUNTIME_CONTROLLER_NAMESPACE,
+			params.incarnation,
+			params.lifecycleGeneration,
+		)
+		.all<RuntimeSource>();
+	if (row.results.length !== 1) throw new TransportDenied("source_authority");
+	return row.results[0];
+}
+
+export async function authorizeBrainRequest(
+	env: RuntimeEgressEnv,
+	source: RuntimeSource,
+	request: BrainRequest,
+	now: number,
+): Promise<number> {
+	if (
+		source.kind !== "trusted_brain" ||
+		source.className !== "SessionRuntime" ||
+		!source.workspaceSessionId
+	)
+		throw new TransportDenied("brain_role");
+	if (
+		request.brainIdentityId !== source.identityId ||
+		request.brainIncarnationId !== source.incarnation ||
+		request.lifecycleGeneration !== source.lifecycleGeneration ||
+		request.ownerVersion !== source.ownerVersion
+	)
+		throw new TransportDenied("source_mismatch");
+	if (request.kind === "readiness") {
+		const intent =
+			await env.DB.prepare(`SELECT w.id, w.startupDeadline FROM workspace_runtime_work w
+			JOIN session_commands c ON c.id = w.commandId AND c.sessionId = w.sessionId
+			JOIN workspace_sessions s ON s.id = w.sessionId
+			JOIN projects p ON p.id = w.projectId AND p.userId = w.userId
+			WHERE w.id = ? AND w.sessionId = ? AND w.userId = ? AND w.projectId = ?
+				AND w.runtimeOwner = 'trusted_v1' AND w.runtimeOwnerVersion = ?
+				AND s.runtimeOwner = 'trusted_v1' AND s.runtimeOwnerVersion = w.runtimeOwnerVersion
+				AND s.userId = w.userId AND s.projectId = w.projectId AND s.status = 'active' AND p.status != 'deleting'
+				AND w.startupDeadline > ? AND w.status NOT IN ('complete', 'failed', 'canceled')
+				AND w.startupRoles = '["trusted_brain","workspace_session"]'
+				AND w.startupPools = '["brain","execution"]' AND c.kind = 'prompt'
+				AND EXISTS (SELECT 1 FROM runtime_startup_assignments a WHERE a.sourceKind = 'command' AND a.sourceId = w.id
+				 AND a.role = 'trusted_brain' AND a.identityId = ? AND a.incarnationId = ? AND a.lifecycleGeneration = ?
+				 AND a.ownerVersion = w.runtimeOwnerVersion AND a.state = 'assigned' AND a.controllerNamespace = ?)
+				AND (SELECT count(*) FROM runtime_startup_assignments a
+				 JOIN sandbox_identities i ON i.id = a.identityId AND i.kind = a.role AND i.userId = w.userId AND i.projectId = w.projectId AND i.workspaceSessionId = w.sessionId
+				 JOIN runtime_capacity_reservations r ON r.identityId = i.id AND r.incarnationId = a.incarnationId AND r.runtimeOwnerVersion = a.ownerVersion
+				 JOIN runtime_capacity_policy cp ON cp.id = 1 AND cp.accountingMode = 'unified' AND cp.version = r.accountingVersion
+				 WHERE a.sourceKind = 'command' AND a.sourceId = w.id AND a.state = 'assigned' AND a.ownerVersion = w.runtimeOwnerVersion
+				 AND i.incarnationId = a.incarnationId AND i.lifecycleGeneration = a.lifecycleGeneration AND i.retiredAt IS NULL
+				 AND i.state NOT IN ('destroyed','destroying','failed') AND i.controllerNamespace = a.controllerNamespace AND a.controllerNamespace = ?
+				 AND i.controllerClass = CASE a.role WHEN 'trusted_brain' THEN 'SessionRuntime' ELSE 'Sandbox' END
+				 AND i.id = CASE a.role WHEN 'trusted_brain' THEN s.brainIdentityId WHEN 'workspace_session' THEN s.sandboxIdentityId END
+				 AND r.pool = CASE a.role WHEN 'trusted_brain' THEN 'brain' ELSE 'execution' END AND r.userId = w.userId AND r.sessionId = w.sessionId
+				 AND r.activeSlot = 'active' AND r.observedState IN ('reserved','starting','running')
+				 AND NOT EXISTS (SELECT 1 FROM runtime_retired_identity_fences f WHERE f.identityId = i.id)) = 2
+			LIMIT 1`)
+				.bind(
+					request.operationId,
+					source.workspaceSessionId,
+					source.userId,
+					source.projectId,
+					source.ownerVersion,
+					now,
+					source.identityId,
+					source.incarnation,
+					source.lifecycleGeneration,
+					env.RUNTIME_CONTROLLER_NAMESPACE,
+					env.RUNTIME_CONTROLLER_NAMESPACE,
+				)
+				.first<{ id: string; startupDeadline: number }>();
+		if (!intent || intent.startupDeadline <= Math.max(now, Date.now()))
+			throw new TransportDenied("startup_intent");
+		return intent.startupDeadline;
+	}
+	const operation =
+		await env.DB.prepare(`SELECT o.id, o.expiresAt FROM privileged_operations o
+		JOIN sandbox_identities i ON i.id = o.identityId
+		JOIN workspace_sessions s ON s.id = i.workspaceSessionId
+		JOIN projects p ON p.id = i.projectId AND p.userId = i.userId
+		WHERE o.id = ? AND o.identityId = ? AND o.family = 'ditto_action' AND o.type = 'brain_transport'
+			AND o.contractVersion = 1 AND o.closedAt IS NULL AND o.expiresAt > ?
+			AND o.lifecycleGeneration = ? AND o.incarnationId = ? AND o.runtimeOwnerVersion = ?
+			AND o.runId = ? AND o.runEpoch = ?
+			AND EXISTS (SELECT 1 FROM runtime_command_memberships m
+				JOIN session_commands c ON c.id = m.commandId
+				WHERE m.commandId = o.admissionReference AND m.sessionId = s.id
+					AND m.runId = o.runId AND m.runEpoch = o.runEpoch
+					AND c.sessionId = s.id AND c.userId = i.userId AND c.projectId = i.projectId)
+			AND i.containerId = ? AND i.retiredAt IS NULL AND i.state NOT IN ('destroyed', 'destroying')
+			AND i.incarnationId = o.incarnationId AND i.lifecycleGeneration = o.lifecycleGeneration
+			AND s.brainIdentityId = i.id AND s.userId = i.userId AND s.projectId = i.projectId
+			AND s.status = 'active' AND s.runtimeOwner = 'trusted_v1' AND s.runtimeOwnerVersion = o.runtimeOwnerVersion
+			AND p.status != 'deleting'
+			AND NOT EXISTS (SELECT 1 FROM runtime_deleted_target_fences f WHERE
+				(f.targetKind = 'project' AND f.targetId = i.projectId) OR
+				(f.targetKind = 'workspace_session' AND f.targetId = i.workspaceSessionId))
+		LIMIT 1`)
+			.bind(
+				request.operationId,
+				source.identityId,
+				Math.floor(now / 1000),
+				source.lifecycleGeneration,
+				source.incarnation,
+				source.ownerVersion,
+				request.runId,
+				request.runEpoch,
+				source.containerId,
+			)
+			.first<{ id: string; expiresAt: number }>();
+	if (!operation || operation.expiresAt * 1000 <= Math.max(now, Date.now()))
+		throw new TransportDenied("operation_authority");
+	return operation.expiresAt * 1000;
+}
+
+export async function handleRuntimeOutbound(
+	request: Request,
+	env: RuntimeEgressEnv,
+	ctx: PlatformOutboundContext,
+	dispatch: BrainDispatch,
+	fetchImpl: typeof fetch = (input, init) => globalThis.fetch(input, init),
+): Promise<Response> {
+	try {
+		const source = await resolveRuntimeSource(env, ctx);
+		const url = new URL(request.url);
+		if (url.hostname === "ditto.internal") {
+			if (source.kind !== "trusted_brain")
+				throw new TransportDenied("brain_role");
+			const parsed = await parseBrainRequest(request, Date.now);
+			await authorizeBrainRequest(env, source, parsed, Date.now());
+			const current = await resolveRuntimeSource(env, ctx);
+			if (
+				current.identityId !== source.identityId ||
+				current.incarnation !== source.incarnation ||
+				current.ownerVersion !== source.ownerVersion ||
+				current.lifecycleGeneration !== source.lifecycleGeneration
+			)
+				throw new TransportDenied("source_mismatch");
+			const authorityDeadline = await authorizeBrainRequest(
+				env,
+				current,
+				parsed,
+				Date.now(),
+			);
+			if (parsed.deadline <= Date.now() || authorityDeadline <= Date.now())
+				throw new TransportDenied("deadline");
+			const result = await dispatch(current, parsed);
+			const deliverySource = await resolveRuntimeSource(env, ctx);
+			if (
+				deliverySource.identityId !== current.identityId ||
+				deliverySource.incarnation !== current.incarnation ||
+				deliverySource.ownerVersion !== current.ownerVersion ||
+				deliverySource.lifecycleGeneration !== current.lifecycleGeneration
+			)
+				throw new TransportDenied("source_mismatch");
+			const deliveryDeadline = await authorizeBrainRequest(
+				env,
+				deliverySource,
+				parsed,
+				Date.now(),
+			);
+			if (parsed.deadline <= Date.now() || deliveryDeadline <= Date.now())
+				throw new TransportDenied("deadline");
+			return Response.json(result);
+		}
+		if (
+			classifyOpenCodeRequest(request).kind !== "other" ||
+			classifyGithubGitRequest(request).kind !== "other" ||
+			classifyDittoActionRequest(request).kind !== "other" ||
+			isDittoSyntheticHost(url.hostname)
+		) {
+			throw new TransportDenied("privileged_transport_unavailable");
+		}
+		if (source.kind === "trusted_brain")
+			throw new TransportDenied("brain_egress");
+		return await handlePublicInternet(request, fetchImpl);
+	} catch (error) {
+		return transportDenial(
+			error instanceof TransportDenied ? error.code : "transport_denied",
+		);
+	}
+}

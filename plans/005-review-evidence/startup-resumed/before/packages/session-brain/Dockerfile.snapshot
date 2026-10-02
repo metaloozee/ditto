@@ -1,0 +1,8 @@
+FROM node:22-bookworm-slim
+COPY packages/runtime-contracts /opt/runtime-contracts
+WORKDIR /opt/ditto-session-brain
+COPY packages/session-brain/package.json packages/session-brain/package-lock.json packages/session-brain/tsconfig.json ./
+RUN npm ci && node node_modules/typescript/bin/tsc -p /opt/runtime-contracts/tsconfig.json
+COPY packages/session-brain/src ./src
+RUN npm run build && npm prune --omit=dev
+CMD ["node", "-e", "import('./dist/main.js').then(() => { console.log('brain-process-started'); console.log('barrier-enforcers object'); })"]

@@ -1,0 +1,4603 @@
+diff --git a/apps/runtime/src/brain-dispatch.ts b/apps/runtime/src/brain-dispatch.ts
+new file mode 100644
+index 0000000..7d53681
+--- /dev/null
++++ b/apps/runtime/src/brain-dispatch.ts
+@@ -0,0 +1,61 @@
++import { strictRecord } from "../../../packages/runtime-contracts/src/json.js";
++import { parseRemoteToolV1 } from "../../../packages/runtime-contracts/src/remote-tool.js";
++import type { BrainRequest } from "./brain-transport.js";
++import { TransportDenied } from "./brain-transport.js";
++import { continuationPosition } from "./journal.js";
++import type { RuntimeSource } from "./runtime-egress.js";
++import type { SessionCoordinator } from "./session-runtime.js";
++
++export async function dispatchBrainRequest(
++	coordinator: SessionCoordinator,
++	source: RuntimeSource,
++	request: BrainRequest,
++): Promise<unknown> {
++	if (
++		coordinator.identity.workspaceSessionId !== source.workspaceSessionId ||
++		coordinator.identity.ownerId !== source.userId ||
++		coordinator.identity.projectId !== source.projectId ||
++		request.deadline <= coordinator.clock.now()
++	)
++		throw new TransportDenied("coordinator_identity");
++	if (request.kind === "readiness") return { ready: true, terminal: false };
++	if (request.kind === "continuation")
++		return coordinator.commitContinuation({
++			expectedPosition: request.expectedCommittedPosition,
++			snapshot: request.payload,
++			runId: request.runId,
++			brainIncarnationId: source.incarnation,
++			lifecycleGeneration: source.lifecycleGeneration,
++			ownerVersion: source.ownerVersion,
++			runEpoch: request.runEpoch,
++		});
++	if (request.kind === "tool" || request.kind === "result") {
++		const job = parseRemoteToolV1(request.payload);
++		if (
++			job.runId !== request.runId ||
++			job.runEpoch !== request.runEpoch ||
++			job.attempt !== request.attempt ||
++			job.lifecycleGeneration !== source.lifecycleGeneration ||
++			job.deadline > request.deadline
++		)
++			throw new TransportDenied("effect_envelope");
++		if (
++			request.expectedCommittedPosition < 1 ||
++			request.expectedCommittedPosition !==
++				continuationPosition(coordinator.sql)
++		)
++			throw new TransportDenied("continuation_position");
++		if (request.kind === "tool") {
++			const { tool, ...identity } = job;
++			await coordinator.admitEffect({
++				...identity,
++				arguments: tool,
++				state: "prepared",
++			});
++		}
++		return coordinator.readEffectResult(job);
++	}
++	const control = strictRecord(request.payload, ["action"], "BrainControl");
++	if (control.action === "read_snapshot") return coordinator.readSnapshot();
++	throw new TransportDenied("control_action");
++}
+diff --git a/apps/runtime/src/brain-transport.ts b/apps/runtime/src/brain-transport.ts
+new file mode 100644
+index 0000000..7f67ac4
+--- /dev/null
++++ b/apps/runtime/src/brain-transport.ts
+@@ -0,0 +1,181 @@
++import {
++	decodeContractInput,
++	integerField,
++	literalField,
++	strictRecord,
++} from "../../../packages/runtime-contracts/src/json.js";
++import {
++	type BrainEnvelopeV1,
++	parseBrainEnvelopeV1,
++} from "../../../packages/runtime-contracts/src/runtime.js";
++
++export const BRAIN_ORIGIN = "http://ditto.internal";
++export const BRAIN_BODY_LIMIT = 256 * 1024;
++export const BRAIN_READ_TIMEOUT_MS = 5_000;
++export const BRAIN_METHODS = [
++	"readiness",
++	"continuation",
++	"tool",
++	"result",
++	"control",
++] as const;
++export type BrainMethod = (typeof BRAIN_METHODS)[number];
++export type BrainRequest = BrainEnvelopeV1 & {
++	kind: BrainMethod;
++	ownerVersion: number;
++	lifecycleGeneration: number;
++	deadline: number;
++};
++
++export class TransportDenied extends Error {
++	constructor(readonly code: string) {
++		super(code);
++		this.name = "TransportDenied";
++	}
++}
++
++export function transportDenial(code: string, status = 403): Response {
++	return Response.json({ error: "denied", reasonCode: code }, { status });
++}
++
++export async function readTransportBody(request: Request): Promise<string> {
++	if (
++		request.headers.get("content-type")?.toLowerCase() !== "application/json"
++	) {
++		throw new TransportDenied("content_type");
++	}
++	if (request.headers.has("content-encoding"))
++		throw new TransportDenied("encoding");
++	for (const [name] of request.headers) {
++		if (
++			![
++				"content-type",
++				"content-length",
++				"host",
++				"accept",
++				"user-agent",
++			].includes(name)
++		) {
++			throw new TransportDenied("unexpected_header");
++		}
++	}
++	const length = request.headers.get("content-length");
++	if (
++		length != null &&
++		(!/^\d+$/.test(length) || Number(length) > BRAIN_BODY_LIMIT)
++	) {
++		throw new TransportDenied("body_limit");
++	}
++	const reader = request.body?.getReader();
++	if (!reader) throw new TransportDenied("body_missing");
++	const chunks: Uint8Array[] = [];
++	let size = 0;
++	let cancelBody: () => void = () => undefined;
++	const interrupted = new Promise<never>((_resolve, reject) => {
++		cancelBody = () => reject(new TransportDenied("body_canceled"));
++	});
++	const timer = setTimeout(() => {
++		cancelTimeout(new TransportDenied("body_timeout"));
++		void reader.cancel().catch(() => undefined);
++	}, BRAIN_READ_TIMEOUT_MS);
++	let cancelTimeout: (error: Error) => void = () => undefined;
++	const expired = new Promise<never>((_resolve, reject) => {
++		cancelTimeout = reject;
++	});
++	request.signal.addEventListener("abort", cancelBody, { once: true });
++	if (request.signal.aborted) cancelBody();
++	try {
++		while (true) {
++			const chunk = await Promise.race([reader.read(), interrupted, expired]);
++			if (chunk.done) break;
++			size += chunk.value.byteLength;
++			if (size > BRAIN_BODY_LIMIT) throw new TransportDenied("body_limit");
++			chunks.push(chunk.value);
++		}
++	} catch (error) {
++		void reader.cancel().catch(() => undefined);
++		throw error;
++	} finally {
++		clearTimeout(timer);
++		request.signal.removeEventListener("abort", cancelBody);
++		reader.releaseLock();
++	}
++	const bytes = new Uint8Array(size);
++	let offset = 0;
++	for (const chunk of chunks) {
++		bytes.set(chunk, offset);
++		offset += chunk.byteLength;
++	}
++	if (length != null && Number(length) !== size)
++		throw new TransportDenied("body_length");
++	try {
++		return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
++	} catch {
++		throw new TransportDenied("utf8");
++	}
++}
++
++export async function parseBrainRequest(
++	request: Request,
++	now: number | (() => number) = Date.now,
++): Promise<BrainRequest> {
++	const clock =
++		typeof now === "function" ? now : () => Math.max(now, Date.now());
++	const startedAt = typeof now === "function" ? now() : now;
++	const url = new URL(request.url);
++	if (
++		url.origin !== BRAIN_ORIGIN ||
++		url.username ||
++		url.password ||
++		url.search ||
++		url.hash
++	) {
++		throw new TransportDenied("origin");
++	}
++	if (request.method !== "POST") throw new TransportDenied("method");
++	const raw = await readTransportBody(request);
++	const record = strictRecord(
++		decodeContractInput(raw, BRAIN_BODY_LIMIT),
++		[
++			"version",
++			"kind",
++			"ownerVersion",
++			"lifecycleGeneration",
++			"deadline",
++			"brainIdentityId",
++			"brainIncarnationId",
++			"runId",
++			"attempt",
++			"runEpoch",
++			"operationId",
++			"expectedCommittedPosition",
++			"payload",
++		],
++		"BrainRequestV1",
++	);
++	const kind = literalField(record, "kind", BRAIN_METHODS);
++	if (url.pathname !== `/v1/${kind}`) throw new TransportDenied("path");
++	const deadline = integerField(record, "deadline", { minimum: 1 });
++	if (deadline <= clock() || deadline > startedAt + 120_000)
++		throw new TransportDenied("deadline");
++	const {
++		kind: _kind,
++		ownerVersion,
++		lifecycleGeneration,
++		deadline: _deadline,
++		...envelope
++	} = record;
++	return {
++		...parseBrainEnvelopeV1(envelope),
++		kind,
++		ownerVersion: integerField({ ownerVersion }, "ownerVersion", {
++			minimum: 1,
++		}),
++		lifecycleGeneration: integerField(
++			{ lifecycleGeneration },
++			"lifecycleGeneration",
++			{ minimum: 1 },
++		),
++		deadline,
++	};
++}
+diff --git a/apps/runtime/src/executor-dispatch.ts b/apps/runtime/src/executor-dispatch.ts
+new file mode 100644
+index 0000000..12b3243
+--- /dev/null
++++ b/apps/runtime/src/executor-dispatch.ts
+@@ -0,0 +1,198 @@
++import type { ExecOptions } from "@cloudflare/sandbox";
++import {
++	decodeContractInput,
++	strictRecord,
++} from "../../../packages/runtime-contracts/src/json.js";
++import {
++	parseRemoteToolResult,
++	parseRemoteToolV1,
++	REMOTE_RESULT_BYTES,
++} from "../../../packages/runtime-contracts/src/remote-tool.js";
++import { redactSecrets } from "../../web/src/lib/secret-redaction.js";
++import type { EffectExecutor } from "./session-runtime.js";
++
++export type ExecutorRpc = {
++	mkdir(path: string, options: { recursive: boolean }): Promise<unknown>;
++	writeFile(path: string, content: string): Promise<unknown>;
++	exec(
++		command: string,
++		options: ExecOptions,
++	): Promise<{ stdout: string; exitCode: number }>;
++};
++export type ExecutionEnvironmentReference = {
++	effectId: string;
++	identityId: string;
++	incarnation: string;
++	ownerVersion: number;
++};
++export async function effectReference(input: {
++	runId: string;
++	assistantEntryId: string;
++	toolCallId: string;
++	attempt: number;
++}): Promise<string> {
++	const bytes = new TextEncoder().encode(
++		JSON.stringify([
++			input.runId,
++			input.assistantEntryId,
++			input.toolCallId,
++			input.attempt,
++		]),
++	);
++	return [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
++		.map((byte) => byte.toString(16).padStart(2, "0"))
++		.join("");
++}
++function quote(value: string): string {
++	return `'${value.replaceAll("'", "'\\''")}'`;
++}
++
++function redactResult(value: unknown, secrets: readonly string[]): unknown {
++	if (typeof value === "string") return redactSecrets(value, secrets);
++	if (Array.isArray(value))
++		return value.map((item) => redactResult(item, secrets));
++	if (value === null || typeof value !== "object") return value;
++	const result: Record<string, unknown> = {};
++	for (const [key, item] of Object.entries(value)) {
++		const redactedKey = redactSecrets(key, secrets);
++		if (Object.hasOwn(result, redactedKey))
++			throw new Error("result_key_conflict");
++		Object.defineProperty(result, redactedKey, {
++			value: redactResult(item, secrets),
++			enumerable: true,
++			writable: true,
++		});
++	}
++	return result;
++}
++
++export function createEffectExecutor(deps: {
++	db: D1Database;
++	controllerNamespace: string;
++	identity: { ownerId: string; workspaceSessionId: string; projectId: string };
++	resolveSandbox: (sandboxId: string) => ExecutorRpc;
++	executionEnvironment: (
++		input: ExecutionEnvironmentReference,
++	) => Promise<Record<string, string>>;
++	now?: () => number;
++}): EffectExecutor {
++	return async ({ effect, executorIdentityId, ownerVersion, revalidate }) => {
++		const now = deps.now ?? Date.now;
++		const { state: _state, arguments: tool, ...identity } = effect;
++		const job = parseRemoteToolV1({ ...identity, tool });
++		const effectId = await effectReference(effect);
++		await revalidate();
++		const resolveTarget = () =>
++			deps.db
++				.prepare(`SELECT i.sandboxId FROM sandbox_identities i
++			JOIN workspace_sessions s ON s.id = i.workspaceSessionId AND s.userId = i.userId AND s.projectId = i.projectId
++			JOIN projects p ON p.id = i.projectId AND p.userId = i.userId
++			WHERE i.id = ? AND i.incarnationId = ? AND i.lifecycleGeneration = ? AND i.controllerClass = 'Sandbox'
++			AND i.controllerNamespace = ? AND i.kind = 'workspace_session' AND i.retiredAt IS NULL AND i.state = 'ready'
++			AND s.id = ? AND s.userId = ? AND s.projectId = ? AND s.sandboxIdentityId = i.id
++			AND s.runtimeOwner = 'trusted_v1' AND s.runtimeOwnerVersion = ? AND s.status = 'active' AND p.status != 'deleting'
++			AND NOT EXISTS (SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind = 'project' AND f.targetId = p.id)
++				OR (f.targetKind = 'workspace_session' AND f.targetId = s.id))`)
++				.bind(
++					executorIdentityId,
++					effect.executorIncarnationId,
++					effect.lifecycleGeneration,
++					deps.controllerNamespace,
++					deps.identity.workspaceSessionId,
++					deps.identity.ownerId,
++					deps.identity.projectId,
++					ownerVersion,
++				)
++				.first<{ sandboxId: string }>();
++		const target = await resolveTarget();
++		if (!target || job.deadline <= now())
++			throw new Error("execution_authority");
++		const guard = async () => {
++			await revalidate();
++			const current = await resolveTarget();
++			if (
++				!current ||
++				current.sandboxId !== target.sandboxId ||
++				job.deadline <= now()
++			)
++				throw new Error("execution_authority");
++		};
++		await deps.db
++			.prepare(`INSERT INTO runtime_execution_admissions
++			(effectId, sessionId, userId, projectId, identityId, incarnationId, lifecycleGeneration, ownerVersion, runId, runEpoch,
++			assistantEntryId, toolCallId, attempt, toolName, deadline, closedAt)
++			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`)
++			.bind(
++				effectId,
++				deps.identity.workspaceSessionId,
++				deps.identity.ownerId,
++				deps.identity.projectId,
++				executorIdentityId,
++				effect.executorIncarnationId,
++				effect.lifecycleGeneration,
++				ownerVersion,
++				effect.runId,
++				effect.runEpoch,
++				effect.assistantEntryId,
++				effect.toolCallId,
++				effect.attempt,
++				job.tool.name,
++				job.deadline,
++			)
++			.run();
++		try {
++			const sandbox = deps.resolveSandbox(target.sandboxId);
++			const jobPath = `/tmp/ditto-remote-jobs/${crypto.randomUUID()}.json`;
++			await guard();
++			await sandbox.mkdir("/tmp/ditto-remote-jobs", { recursive: true });
++			await guard();
++			await sandbox.writeFile(jobPath, JSON.stringify(job));
++			await guard();
++			const reference = {
++				effectId,
++				identityId: executorIdentityId,
++				incarnation: effect.executorIncarnationId,
++				ownerVersion,
++			};
++			let values: Record<string, string> = {};
++			if (job.tool.name === "bash")
++				values = await deps.executionEnvironment(reference);
++			await guard();
++			const command = `/usr/bin/env -i PATH=/usr/local/bin:/usr/bin:/bin HOME=/tmp LANG=C.UTF-8 DITTO_EXECUTION_ENV="$DITTO_EXECUTION_ENV" /usr/local/bin/node /opt/ditto-runner/dist/remote-tool-cli.js ${quote(jobPath)} ${quote(job.executorIncarnationId)}`;
++			// One RPC only. An ambiguous acknowledgement never retries the command.
++			const response = await sandbox.exec(command, {
++				cwd: "/workspace",
++				timeout: Math.max(1, job.deadline - now()),
++				env:
++					job.tool.name === "bash"
++						? { DITTO_EXECUTION_ENV: JSON.stringify(values) }
++						: {},
++				origin: "internal",
++			});
++			const parsed = strictRecord(
++				decodeContractInput(response.stdout, REMOTE_RESULT_BYTES + 1024),
++				["version", "result", "error"],
++				"ExecutorResult",
++			);
++			if (
++				parsed.version !== 1 ||
++				response.exitCode !== 0 ||
++				parsed.error !== undefined ||
++				parsed.result === undefined
++			)
++				throw new Error("executor_acknowledgement");
++			const result = parseRemoteToolResult(parsed.result, job.tool.name);
++			return parseRemoteToolResult(
++				redactResult(result, Object.values(values)),
++				job.tool.name,
++			);
++		} finally {
++			await deps.db
++				.prepare(
++					"UPDATE runtime_execution_admissions SET closedAt = ? WHERE effectId = ? AND closedAt IS NULL",
++				)
++				.bind(now(), effectId)
++				.run();
++		}
++	};
++}
+diff --git a/apps/runtime/src/runtime-bindings.ts b/apps/runtime/src/runtime-bindings.ts
+new file mode 100644
+index 0000000..f99b448
+--- /dev/null
++++ b/apps/runtime/src/runtime-bindings.ts
+@@ -0,0 +1,36 @@
++import type { LocalRuntimeEnv } from "../../../alchemy.run";
++import type { ExecutionEnvironmentReference } from "./executor-dispatch";
++import type { Sandbox, SessionRuntime } from "./server";
++import type { ProductAdapters } from "./session-runtime";
++import type { CapacityReference, IdentityTransitionReference, RegisterStartup, StartupAssignment, StartupReference } from "./startup-contract";
++
++export const IDLE_TIMEOUT = "10m";
++export const LOCAL_TOPOLOGY = {
++	runtimeClasses: ["SessionRuntime", "Sandbox"],
++	brainImage: "packages/session-brain/Dockerfile",
++	executorImage: "Dockerfile",
++	runtimeEntrypoint: "RuntimeEntrypoint",
++	productEntrypoint: "ProductEntrypoint",
++} as const;
++
++export type RuntimeProductService = ProductAdapters & {
++	registerStartup(input: RegisterStartup): Promise<StartupAssignment>;
++	reserveStartup(input: StartupReference): Promise<CapacityReference[]>;
++	observeCapacity(input: CapacityReference): Promise<void>;
++	releaseCapacity(input: CapacityReference): Promise<void>;
++	rotateIdentity(input: IdentityTransitionReference): Promise<{ replacementIncarnationId: string | null }>;
++	retireIdentity(input: IdentityTransitionReference): Promise<{ replacementIncarnationId: string | null }>;
++	resolveWorkspaceSessionId(commandId: string): Promise<string | null>;
++	executionEnvironment(
++		input: ExecutionEnvironmentReference,
++	): Promise<Record<string, string>>;
++};
++
++export type RuntimeEnv = Omit<
++	LocalRuntimeEnv,
++	"PRODUCT" | "SessionRuntime" | "Sandbox"
++> & {
++	PRODUCT: RuntimeProductService;
++	SessionRuntime: DurableObjectNamespace<SessionRuntime>;
++	Sandbox: DurableObjectNamespace<Sandbox>;
++};
+diff --git a/apps/runtime/src/runtime-egress.ts b/apps/runtime/src/runtime-egress.ts
+new file mode 100644
+index 0000000..dde4ee8
+--- /dev/null
++++ b/apps/runtime/src/runtime-egress.ts
+@@ -0,0 +1,267 @@
++import {
++	classifyDittoActionRequest,
++	isDittoSyntheticHost,
++} from "../../web/src/lib/ditto-action-contract";
++import { classifyGithubGitRequest } from "../../web/src/lib/git-fetch-contract";
++import { classifyOpenCodeRequest } from "../../web/src/lib/open-code-contract";
++import { handlePublicInternet } from "../../web/src/lib/sandbox-public-egress";
++import {
++	type BrainRequest,
++	parseBrainRequest,
++	TransportDenied,
++	transportDenial,
++} from "./brain-transport";
++
++export type RuntimeSource = {
++	identityId: string;
++	containerId: string;
++	className: string;
++	kind: "trusted_brain" | "workspace_session" | "project_seed";
++	incarnation: string;
++	lifecycleGeneration: number;
++	ownerVersion: number;
++	userId: string;
++	projectId: string;
++	workspaceSessionId: string | null;
++};
++export type PlatformOutboundContext = {
++	containerId: string;
++	className: string;
++	params?: unknown;
++};
++export type RuntimeEgressEnv = {
++	DB: D1Database;
++	RUNTIME_CONTROLLER_NAMESPACE: string;
++};
++export type BrainDispatch = (
++	source: RuntimeSource,
++	request: BrainRequest,
++) => Promise<unknown>;
++
++export async function resolveRuntimeSource(
++	env: RuntimeEgressEnv,
++	ctx: PlatformOutboundContext,
++): Promise<RuntimeSource> {
++	if (
++		!ctx.containerId ||
++		!["SessionRuntime", "Sandbox"].includes(ctx.className)
++	)
++		throw new TransportDenied("source");
++	if (
++		!ctx.params ||
++		typeof ctx.params !== "object" ||
++		Array.isArray(ctx.params)
++	)
++		throw new TransportDenied("launch_identity");
++	const params = ctx.params as Record<string, unknown>;
++	if (
++		typeof params.incarnation !== "string" ||
++		!params.incarnation ||
++		!Number.isSafeInteger(params.lifecycleGeneration)
++	)
++		throw new TransportDenied("launch_identity");
++	const row = await env.DB.prepare(`
++		SELECT i.id AS identityId, i.containerId, i.controllerClass AS className,
++			i.kind, i.incarnationId AS incarnation, i.lifecycleGeneration,
++			i.userId, i.projectId, i.workspaceSessionId,
++			coalesce(s.runtimeOwnerVersion, 1) AS ownerVersion
++		FROM sandbox_identities i JOIN projects p ON p.id = i.projectId AND p.userId = i.userId
++		LEFT JOIN workspace_sessions s ON s.id = i.workspaceSessionId
++		WHERE i.containerId = ? AND i.controllerClass = ? AND i.controllerNamespace = ?
++			AND i.incarnationId = ? AND i.lifecycleGeneration = ?
++			AND i.retiredAt IS NULL AND i.state NOT IN ('destroyed', 'destroying')
++			AND p.status != 'deleting'
++			AND NOT EXISTS (SELECT 1 FROM runtime_deleted_target_fences f WHERE
++				(f.targetKind = 'project' AND f.targetId = i.projectId) OR
++				(f.targetKind = 'workspace_session' AND f.targetId = i.workspaceSessionId))
++			AND ((i.kind = 'project_seed' AND i.workspaceSessionId IS NULL AND i.controllerClass = 'Sandbox') OR
++				(s.userId = i.userId AND s.projectId = i.projectId AND s.status = 'active' AND s.runtimeOwner = 'trusted_v1'
++				AND ((i.kind = 'trusted_brain' AND i.controllerClass = 'SessionRuntime' AND s.brainIdentityId = i.id) OR
++					(i.kind = 'workspace_session' AND i.controllerClass = 'Sandbox' AND s.sandboxIdentityId = i.id))))
++		LIMIT 2
++	`)
++		.bind(
++			ctx.containerId,
++			ctx.className,
++			env.RUNTIME_CONTROLLER_NAMESPACE,
++			params.incarnation,
++			params.lifecycleGeneration,
++		)
++		.all<RuntimeSource>();
++	if (row.results.length !== 1) throw new TransportDenied("source_authority");
++	return row.results[0];
++}
++
++export async function authorizeBrainRequest(
++	env: RuntimeEgressEnv,
++	source: RuntimeSource,
++	request: BrainRequest,
++	now: number,
++): Promise<number> {
++	if (
++		source.kind !== "trusted_brain" ||
++		source.className !== "SessionRuntime" ||
++		!source.workspaceSessionId
++	)
++		throw new TransportDenied("brain_role");
++	if (
++		request.brainIdentityId !== source.identityId ||
++		request.brainIncarnationId !== source.incarnation ||
++		request.lifecycleGeneration !== source.lifecycleGeneration ||
++		request.ownerVersion !== source.ownerVersion
++	)
++		throw new TransportDenied("source_mismatch");
++	if (request.kind === "readiness") {
++		const intent =
++			await env.DB.prepare(`SELECT w.id, w.startupDeadline FROM workspace_runtime_work w
++			JOIN session_commands c ON c.id = w.commandId AND c.sessionId = w.sessionId
++			JOIN workspace_sessions s ON s.id = w.sessionId
++			JOIN projects p ON p.id = w.projectId AND p.userId = w.userId
++			WHERE w.id = ? AND w.sessionId = ? AND w.userId = ? AND w.projectId = ?
++				AND w.runtimeOwner = 'trusted_v1' AND w.runtimeOwnerVersion = ?
++				AND s.runtimeOwner = 'trusted_v1' AND s.runtimeOwnerVersion = w.runtimeOwnerVersion
++				AND s.userId = w.userId AND s.projectId = w.projectId AND s.status = 'active' AND p.status != 'deleting'
++				AND w.startupDeadline > ? AND w.status NOT IN ('complete', 'failed', 'canceled')
++				AND w.startupRoles = '["trusted_brain","workspace_session"]'
++				AND w.startupPools = '["brain","execution"]' AND c.kind = 'prompt'
++				AND EXISTS (SELECT 1 FROM runtime_startup_assignments a WHERE a.sourceKind = 'command' AND a.sourceId = w.id
++				 AND a.role = 'trusted_brain' AND a.identityId = ? AND a.incarnationId = ? AND a.lifecycleGeneration = ?
++				 AND a.ownerVersion = w.runtimeOwnerVersion AND a.state = 'assigned' AND a.controllerNamespace = ?)
++				AND (SELECT count(*) FROM runtime_startup_assignments a
++				 JOIN sandbox_identities i ON i.id = a.identityId AND i.kind = a.role AND i.userId = w.userId AND i.projectId = w.projectId AND i.workspaceSessionId = w.sessionId
++				 JOIN runtime_capacity_reservations r ON r.identityId = i.id AND r.incarnationId = a.incarnationId AND r.runtimeOwnerVersion = a.ownerVersion
++				 JOIN runtime_capacity_policy cp ON cp.id = 1 AND cp.accountingMode = 'unified' AND cp.version = r.accountingVersion
++				 WHERE a.sourceKind = 'command' AND a.sourceId = w.id AND a.state = 'assigned' AND a.ownerVersion = w.runtimeOwnerVersion
++				 AND i.incarnationId = a.incarnationId AND i.lifecycleGeneration = a.lifecycleGeneration AND i.retiredAt IS NULL
++				 AND i.state NOT IN ('destroyed','destroying','failed') AND i.controllerNamespace = a.controllerNamespace AND a.controllerNamespace = ?
++				 AND i.controllerClass = CASE a.role WHEN 'trusted_brain' THEN 'SessionRuntime' ELSE 'Sandbox' END
++				 AND i.id = CASE a.role WHEN 'trusted_brain' THEN s.brainIdentityId WHEN 'workspace_session' THEN s.sandboxIdentityId END
++				 AND r.pool = CASE a.role WHEN 'trusted_brain' THEN 'brain' ELSE 'execution' END AND r.userId = w.userId AND r.sessionId = w.sessionId
++				 AND r.activeSlot = 'active' AND r.observedState IN ('reserved','starting','running')
++				 AND NOT EXISTS (SELECT 1 FROM runtime_retired_identity_fences f WHERE f.identityId = i.id)) = 2
++			LIMIT 1`)
++				.bind(
++					request.operationId,
++					source.workspaceSessionId,
++					source.userId,
++					source.projectId,
++					source.ownerVersion,
++					now,
++					source.identityId,
++					source.incarnation,
++					source.lifecycleGeneration,
++					env.RUNTIME_CONTROLLER_NAMESPACE,
++					env.RUNTIME_CONTROLLER_NAMESPACE,
++				)
++				.first<{ id: string; startupDeadline: number }>();
++		if (!intent || intent.startupDeadline <= Math.max(now, Date.now()))
++			throw new TransportDenied("startup_intent");
++		return intent.startupDeadline;
++	}
++	const operation =
++		await env.DB.prepare(`SELECT o.id, o.expiresAt FROM privileged_operations o
++		JOIN sandbox_identities i ON i.id = o.identityId
++		JOIN workspace_sessions s ON s.id = i.workspaceSessionId
++		JOIN projects p ON p.id = i.projectId AND p.userId = i.userId
++		WHERE o.id = ? AND o.identityId = ? AND o.family = 'ditto_action' AND o.type = 'brain_transport'
++			AND o.contractVersion = 1 AND o.closedAt IS NULL AND o.expiresAt > ?
++			AND o.lifecycleGeneration = ? AND o.incarnationId = ? AND o.runtimeOwnerVersion = ?
++			AND o.runId = ? AND o.runEpoch = ?
++			AND EXISTS (SELECT 1 FROM runtime_command_memberships m
++				JOIN session_commands c ON c.id = m.commandId
++				WHERE m.commandId = o.admissionReference AND m.sessionId = s.id
++					AND m.runId = o.runId AND m.runEpoch = o.runEpoch
++					AND c.sessionId = s.id AND c.userId = i.userId AND c.projectId = i.projectId)
++			AND i.containerId = ? AND i.retiredAt IS NULL AND i.state NOT IN ('destroyed', 'destroying')
++			AND i.incarnationId = o.incarnationId AND i.lifecycleGeneration = o.lifecycleGeneration
++			AND s.brainIdentityId = i.id AND s.userId = i.userId AND s.projectId = i.projectId
++			AND s.status = 'active' AND s.runtimeOwner = 'trusted_v1' AND s.runtimeOwnerVersion = o.runtimeOwnerVersion
++			AND p.status != 'deleting'
++			AND NOT EXISTS (SELECT 1 FROM runtime_deleted_target_fences f WHERE
++				(f.targetKind = 'project' AND f.targetId = i.projectId) OR
++				(f.targetKind = 'workspace_session' AND f.targetId = i.workspaceSessionId))
++		LIMIT 1`)
++			.bind(
++				request.operationId,
++				source.identityId,
++				Math.floor(now / 1000),
++				source.lifecycleGeneration,
++				source.incarnation,
++				source.ownerVersion,
++				request.runId,
++				request.runEpoch,
++				source.containerId,
++			)
++			.first<{ id: string; expiresAt: number }>();
++	if (!operation || operation.expiresAt * 1000 <= Math.max(now, Date.now()))
++		throw new TransportDenied("operation_authority");
++	return operation.expiresAt * 1000;
++}
++
++export async function handleRuntimeOutbound(
++	request: Request,
++	env: RuntimeEgressEnv,
++	ctx: PlatformOutboundContext,
++	dispatch: BrainDispatch,
++	fetchImpl: typeof fetch = (input, init) => globalThis.fetch(input, init),
++): Promise<Response> {
++	try {
++		const source = await resolveRuntimeSource(env, ctx);
++		const url = new URL(request.url);
++		if (url.hostname === "ditto.internal") {
++			if (source.kind !== "trusted_brain")
++				throw new TransportDenied("brain_role");
++			const parsed = await parseBrainRequest(request, Date.now);
++			await authorizeBrainRequest(env, source, parsed, Date.now());
++			const current = await resolveRuntimeSource(env, ctx);
++			if (
++				current.identityId !== source.identityId ||
++				current.incarnation !== source.incarnation ||
++				current.ownerVersion !== source.ownerVersion ||
++				current.lifecycleGeneration !== source.lifecycleGeneration
++			)
++				throw new TransportDenied("source_mismatch");
++			const authorityDeadline = await authorizeBrainRequest(
++				env,
++				current,
++				parsed,
++				Date.now(),
++			);
++			if (parsed.deadline <= Date.now() || authorityDeadline <= Date.now())
++				throw new TransportDenied("deadline");
++			const result = await dispatch(current, parsed);
++			const deliverySource = await resolveRuntimeSource(env, ctx);
++			if (
++				deliverySource.identityId !== current.identityId ||
++				deliverySource.incarnation !== current.incarnation ||
++				deliverySource.ownerVersion !== current.ownerVersion ||
++				deliverySource.lifecycleGeneration !== current.lifecycleGeneration
++			)
++				throw new TransportDenied("source_mismatch");
++			const deliveryDeadline = await authorizeBrainRequest(
++				env,
++				deliverySource,
++				parsed,
++				Date.now(),
++			);
++			if (parsed.deadline <= Date.now() || deliveryDeadline <= Date.now())
++				throw new TransportDenied("deadline");
++			return Response.json(result);
++		}
++		if (
++			classifyOpenCodeRequest(request).kind !== "other" ||
++			classifyGithubGitRequest(request).kind !== "other" ||
++			classifyDittoActionRequest(request).kind !== "other" ||
++			isDittoSyntheticHost(url.hostname)
++		) {
++			throw new TransportDenied("privileged_transport_unavailable");
++		}
++		if (source.kind === "trusted_brain")
++			throw new TransportDenied("brain_egress");
++		return await handlePublicInternet(request, fetchImpl);
++	} catch (error) {
++		return transportDenial(
++			error instanceof TransportDenied ? error.code : "transport_denied",
++		);
++	}
++}
+diff --git a/apps/runtime/src/startup-contract.ts b/apps/runtime/src/startup-contract.ts
+new file mode 100644
+index 0000000..8a97c05
+--- /dev/null
++++ b/apps/runtime/src/startup-contract.ts
+@@ -0,0 +1,66 @@
++export type StartupRole = "trusted_brain" | "workspace_session" | "project_seed";
++export type StartupReference = {
++ sourceKind: "command" | "builder" | "migration";
++ sourceId: string;
++};
++export type RegisterStartup = StartupReference & { role: StartupRole };
++export type StartupAssignment = RegisterStartup & {
++ identityId: string;
++ incarnationId: string;
++ lifecycleGeneration: number;
++ ownerVersion: number;
++ userId: string;
++ projectId: string;
++ sessionId: string | null;
++ routingName: string;
++ containerId: string;
++ controllerClass: "SessionRuntime" | "Sandbox";
++ controllerNamespace: string;
++};
++export type CapacityReference = RegisterStartup & {
++ reservationId: string;
++ identityId: string;
++ incarnationId: string;
++ ownerVersion: number;
++ lifecycleGeneration: number;
++};
++export type RuntimeLiveness = {
++ identityId: string;
++ incarnationId: string;
++ lifecycleGeneration: number;
++ containerId: string;
++ controllerClass: "SessionRuntime" | "Sandbox";
++ controllerNamespace: string;
++ state: "running" | "terminated" | "isolated";
++};
++export type IdentityTransitionReference = {
++ transitionId: string;
++ identityId: string;
++ incarnationId: string;
++ ownerVersion: number;
++ lifecycleGeneration: number;
++};
++export type StartupRuntime = {
++ startupRouting(input: { role: StartupRole; routingName: string }): Promise<{
++  containerId: string;
++  controllerClass: "SessionRuntime" | "Sandbox";
++  controllerNamespace: string;
++ }>;
++ observeStartup(input: StartupAssignment): Promise<RuntimeLiveness | null>;
++};
++
++export function startupObject(input: unknown, keys: readonly string[]): asserts input is Record<string, unknown> {
++ if (!input || typeof input !== "object" || Array.isArray(input) ||
++ Object.keys(input).some(key => !keys.includes(key)) ||
++ keys.some(key => !(key in input))) throw new Error("startup_denied");
++}
++export function checkStartupReference(input: StartupReference): void {
++ startupObject(input, ["sourceKind", "sourceId"]);
++ if (!["command", "builder", "migration"].includes(String(input.sourceKind)) ||
++ typeof input.sourceId !== "string" || !input.sourceId || input.sourceId.length > 256) throw new Error("startup_denied");
++}
++export function checkRegistration(input: RegisterStartup): void {
++ startupObject(input, ["sourceKind", "sourceId", "role"]);
++ checkStartupReference({ sourceKind: input.sourceKind, sourceId: input.sourceId });
++ if (!["trusted_brain", "workspace_session", "project_seed"].includes(String(input.role))) throw new Error("startup_denied");
++}
+diff --git a/apps/runtime/src/startup-platform.ts b/apps/runtime/src/startup-platform.ts
+new file mode 100644
+index 0000000..7af9368
+--- /dev/null
++++ b/apps/runtime/src/startup-platform.ts
+@@ -0,0 +1,25 @@
++import type { RuntimeLiveness, StartupAssignment } from "./startup-contract.js";
++
++export type RuntimeLaunchRecord = Pick<RuntimeLiveness,
++ "identityId" | "incarnationId" | "lifecycleGeneration" | "containerId" | "controllerClass" | "controllerNamespace">;
++
++export async function observeRuntimeLaunch(
++ input: StartupAssignment,
++ platform: {
++  containerId: string;
++  controllerClass: "SessionRuntime" | "Sandbox";
++  controllerNamespace: string;
++  readLaunch: () => Promise<RuntimeLaunchRecord | undefined>;
++  running: () => boolean | undefined;
++ },
++): Promise<RuntimeLiveness | null> {
++ const launch = await platform.readLaunch();
++ if (!launch || launch.identityId !== input.identityId || launch.incarnationId !== input.incarnationId ||
++ launch.lifecycleGeneration !== input.lifecycleGeneration || launch.containerId !== platform.containerId ||
++ input.containerId !== platform.containerId || launch.controllerClass !== platform.controllerClass ||
++ input.controllerClass !== platform.controllerClass || launch.controllerNamespace !== platform.controllerNamespace ||
++ input.controllerNamespace !== platform.controllerNamespace) return null;
++ const running = platform.running();
++ if (typeof running !== "boolean") return null;
++ return { ...launch, state: running ? "running" : "terminated" };
++}
+diff --git a/apps/web/migrations/0021_runtime_execution_admissions.sql b/apps/web/migrations/0021_runtime_execution_admissions.sql
+new file mode 100644
+index 0000000..09a3c73
+--- /dev/null
++++ b/apps/web/migrations/0021_runtime_execution_admissions.sql
+@@ -0,0 +1,19 @@
++CREATE TABLE runtime_execution_admissions (
++ effectId text PRIMARY KEY NOT NULL,
++ sessionId text NOT NULL,
++ userId text NOT NULL,
++ projectId text NOT NULL,
++ identityId text NOT NULL,
++ incarnationId text NOT NULL,
++ lifecycleGeneration integer NOT NULL CHECK (lifecycleGeneration > 0),
++ ownerVersion integer NOT NULL CHECK (ownerVersion > 0),
++ runId text NOT NULL,
++ runEpoch integer NOT NULL CHECK (runEpoch > 0),
++ assistantEntryId text NOT NULL,
++ toolCallId text NOT NULL,
++ attempt integer NOT NULL CHECK (attempt > 0),
++ toolName text NOT NULL CHECK (toolName IN ('read', 'write', 'edit', 'bash', 'grep', 'find', 'ls')),
++ deadline integer NOT NULL,
++ closedAt integer
++);
++CREATE INDEX runtime_execution_admissions_session_idx ON runtime_execution_admissions (sessionId, closedAt);
+diff --git a/apps/web/migrations/0022_runtime_startup_assignments.sql b/apps/web/migrations/0022_runtime_startup_assignments.sql
+new file mode 100644
+index 0000000..2a94a5d
+--- /dev/null
++++ b/apps/web/migrations/0022_runtime_startup_assignments.sql
+@@ -0,0 +1,70 @@
++ALTER TABLE project_seeds ADD startupUserId text;
++--> statement-breakpoint
++ALTER TABLE runtime_migrations ADD startupUserId text;
++--> statement-breakpoint
++CREATE TABLE runtime_startup_assignments (
++ sourceKind text NOT NULL CHECK(sourceKind IN ('command','builder','migration')),
++ sourceId text NOT NULL,
++ role text NOT NULL CHECK(role IN ('trusted_brain','workspace_session','project_seed')),
++ identityId text NOT NULL,
++ incarnationId text NOT NULL,
++ lifecycleGeneration integer NOT NULL CHECK(lifecycleGeneration > 0),
++ ownerVersion integer NOT NULL CHECK(ownerVersion > 0),
++ controllerNamespace text NOT NULL,
++ state text NOT NULL CHECK(state IN ('assigned','retired')),
++ PRIMARY KEY(sourceKind, sourceId, role)
++);
++--> statement-breakpoint
++CREATE UNIQUE INDEX runtime_startup_assignments_source_role_uidx ON runtime_startup_assignments(sourceKind,sourceId,role);
++--> statement-breakpoint
++CREATE TABLE runtime_identity_transitions (
++ id text PRIMARY KEY NOT NULL,
++ sourceKind text NOT NULL CHECK(sourceKind IN ('recovery','lifecycle','migration','deletion')),
++ sourceId text NOT NULL,
++ action text NOT NULL CHECK(action IN ('rotate','retire')),
++ identityId text NOT NULL,
++ userId text NOT NULL,
++ projectId text NOT NULL,
++ sessionId text,
++ expectedOwner text NOT NULL,
++ ownerVersion integer NOT NULL,
++ lifecycleGeneration integer NOT NULL,
++ incarnationId text NOT NULL,
++ deadline integer NOT NULL,
++ state text NOT NULL CHECK(state IN ('approved','complete')),
++ replacementIncarnationId text,
++ completionToken text,
++ completedAt integer
++);
++--> statement-breakpoint
++CREATE VIEW runtime_startup_sources AS
++ SELECT 'command' AS sourceKind, w.id AS sourceId, w.userId, w.projectId, w.sessionId,
++ w.runtimeOwner AS expectedOwner, w.runtimeOwnerVersion AS ownerVersion,
++ w.startupRoles AS roles, w.startupPools AS pools, w.startupDeadline AS deadline,
++ s.brainIdentityId, s.sandboxIdentityId, NULL AS builderIdentityId
++ FROM workspace_runtime_work w
++ JOIN session_commands c ON c.id = w.commandId AND c.sessionId = w.sessionId AND c.userId = w.userId AND c.projectId = w.projectId
++ JOIN workspace_sessions s ON s.id = w.sessionId AND s.userId = w.userId AND s.projectId = w.projectId
++ JOIN projects p ON p.id = w.projectId AND p.userId = w.userId
++ WHERE c.kind = 'prompt' AND w.intent = 'agent_run' AND w.runtimeOwner = 'trusted_v1'
++ AND s.runtimeOwner = w.runtimeOwner AND s.runtimeOwnerVersion = w.runtimeOwnerVersion AND s.status = 'active'
++ AND w.status IN ('queued','leased','running') AND w.startupRoles = '["trusted_brain","workspace_session"]' AND w.startupPools = '["brain","execution"]'
++ AND p.status != 'deleting' AND NOT EXISTS (SELECT 1 FROM runtime_deleted_target_fences f WHERE
++ (f.targetKind = 'project' AND f.targetId = p.id) OR (f.targetKind = 'workspace_session' AND f.targetId = s.id))
++ UNION ALL
++ SELECT 'builder', b.id, b.startupUserId, b.projectId, NULL, 'trusted_v1', b.expectedRuntimeOwnerVersion,
++ b.startupRoles, b.startupPools, b.startupDeadline, NULL, NULL, b.expectedIdentityId
++ FROM project_seeds b JOIN projects p ON p.id = b.projectId AND p.userId = b.startupUserId
++ WHERE b.buildState = 'pending' AND b.expectedRuntimeOwnerVersion = 1
++ AND b.startupRoles = '["project_seed"]' AND b.startupPools = '["execution"]'
++ AND p.status != 'deleting' AND NOT EXISTS (SELECT 1 FROM runtime_deleted_target_fences f WHERE f.targetKind = 'project' AND f.targetId = p.id)
++ UNION ALL
++ SELECT 'migration', m.id, m.startupUserId, s.projectId, s.id, m.expectedOwner, m.expectedOwnerVersion,
++ m.startupRoles, m.startupPools, m.startupDeadline, s.brainIdentityId, s.sandboxIdentityId, NULL
++ FROM runtime_migrations m JOIN workspace_sessions s ON s.id = m.sessionId AND s.userId = m.startupUserId
++ JOIN projects p ON p.id = s.projectId AND p.userId = m.startupUserId
++ WHERE m.state = 'pending' AND m.expectedOwner = 'migrating' AND s.runtimeOwner = m.expectedOwner AND s.runtimeOwnerVersion = m.expectedOwnerVersion
++ AND s.status = 'active' AND p.status != 'deleting'
++ AND m.startupRoles = '["trusted_brain","workspace_session"]' AND m.startupPools = '["brain","execution"]'
++ AND NOT EXISTS (SELECT 1 FROM runtime_deleted_target_fences f WHERE
++ (f.targetKind = 'project' AND f.targetId = p.id) OR (f.targetKind = 'workspace_session' AND f.targetId = s.id));
+diff --git a/apps/web/src/lib/brain-transport.test.ts b/apps/web/src/lib/brain-transport.test.ts
+new file mode 100644
+index 0000000..72f1b9b
+--- /dev/null
++++ b/apps/web/src/lib/brain-transport.test.ts
+@@ -0,0 +1,72 @@
++import { afterEach, describe, expect, it, vi } from "vitest";
++import {
++	parseBrainRequest,
++	readTransportBody,
++} from "../../../runtime/src/brain-transport";
++
++const base = 1_900_000_000_000;
++function envelope() {
++	return {
++		version: 1,
++		kind: "continuation",
++		ownerVersion: 1,
++		lifecycleGeneration: 1,
++		deadline: base + 100,
++		brainIdentityId: "brain",
++		brainIncarnationId: "incarnation",
++		runId: "run",
++		attempt: 1,
++		runEpoch: 1,
++		operationId: "operation",
++		expectedCommittedPosition: 0,
++		payload: { entries: [] },
++	};
++}
++function request(body: ReadableStream<Uint8Array>) {
++	return new Request("http://ditto.internal/v1/continuation", {
++		method: "POST",
++		headers: { "content-type": "application/json" },
++		body,
++		// Node's Request requires duplex for streaming input.
++		...{ duplex: "half" },
++	});
++}
++afterEach(() => vi.useRealTimers());
++describe("brain transport elapsed-time bounds", () => {
++	it("B03 rejects an envelope that expires during body consumption", async () => {
++		vi.useFakeTimers();
++		vi.setSystemTime(base);
++		const stream = new ReadableStream<Uint8Array>({
++			pull(controller) {
++				vi.setSystemTime(base + 200);
++				controller.enqueue(
++					new TextEncoder().encode(JSON.stringify(envelope())),
++				);
++				controller.close();
++			},
++		});
++		await expect(parseBrainRequest(request(stream), base)).rejects.toThrow(
++			"deadline",
++		);
++	});
++	it("B04 cancels a stalled body within a finite bound", async () => {
++		vi.useFakeTimers();
++		const cancel = vi.fn();
++		const pending = readTransportBody(request(new ReadableStream({ cancel })));
++		const assertion = expect(pending).rejects.toThrow("body_timeout");
++		await vi.advanceTimersByTimeAsync(5001);
++		await assertion;
++		expect(cancel).toHaveBeenCalledTimes(1);
++	});
++	it("B05 observes request cancellation without waiting for a body", async () => {
++		const abort = new AbortController();
++		const cancel = vi.fn();
++		const original = request(new ReadableStream({ cancel }));
++		const pending = readTransportBody(
++			new Request(original, { signal: abort.signal }),
++		);
++		abort.abort();
++		await expect(pending).rejects.toThrow("body_canceled");
++		expect(cancel).toHaveBeenCalledTimes(1);
++	});
++});
+diff --git a/apps/web/src/lib/executor-dispatch.test.ts b/apps/web/src/lib/executor-dispatch.test.ts
+new file mode 100644
+index 0000000..d4ea879
+--- /dev/null
++++ b/apps/web/src/lib/executor-dispatch.test.ts
+@@ -0,0 +1,669 @@
++import { randomBytes } from "node:crypto";
++import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
++import { tmpdir } from "node:os";
++import path from "node:path";
++import { afterEach, describe, expect, it, vi } from "vitest";
++import type { RemoteToolV1 } from "../../../../packages/runtime-contracts/src/remote-tool";
++import { executeRemoteTool } from "../../../../packages/sandbox-runner/src/remote-tool";
++import { dispatchBrainRequest } from "../../../runtime/src/brain-dispatch";
++import type { BrainRequest } from "../../../runtime/src/brain-transport";
++import {
++	createEffectExecutor,
++	type ExecutionEnvironmentReference,
++} from "../../../runtime/src/executor-dispatch";
++import {
++	handleRuntimeOutbound,
++	type RuntimeSource,
++} from "../../../runtime/src/runtime-egress";
++import {
++	createSessionRuntimeFixture,
++	type SessionRuntimeFixture,
++} from "../test/session-runtime-fixture";
++import { encryptEnvVars } from "./project-env-vars";
++import { executionEnvironment } from "./runtime-product-service";
++import { handleSessionCommandRequest } from "./session-command";
++import { createSqliteD1 } from "./sqlite-d1-test-utils";
++
++const fixtures: SessionRuntimeFixture[] = [];
++const workspaces: string[] = [];
++afterEach(async () => {
++	for (const f of fixtures.splice(0)) f.dispose();
++	for (const w of workspaces.splice(0))
++		await rm(w, { recursive: true, force: true });
++	vi.restoreAllMocks();
++});
++async function setup() {
++	const now = Date.now();
++	const workspace = await mkdtemp(path.join(tmpdir(), "ditto-executor-"));
++	workspaces.push(workspace);
++	await writeFile(path.join(workspace, "source.txt"), "sandbox-only");
++	let f: SessionRuntimeFixture;
++	let serializedJob = "";
++	let capturedEnv: Record<string, string> = {};
++	let failAck = false;
++	let environmentRace: (() => Promise<void>) | undefined;
++	const secret = randomBytes(32).toString("hex");
++	const project = randomBytes(32).toString("hex");
++	const launch = { brain: {}, executor: {} };
++	const rpc = {
++		mkdir: vi.fn(async () => undefined),
++		writeFile: vi.fn(async (_file: string, content: string) => {
++			serializedJob = content;
++		}),
++		exec: vi.fn(
++			async (_command: string, options: { env?: Record<string, string> }) => {
++				capturedEnv = options.env ?? {};
++				const job = JSON.parse(serializedJob) as RemoteToolV1;
++				const result = await executeRemoteTool(job, {
++					workspace,
++					incarnation: "synthetic-executor-1",
++					projectValues: capturedEnv.DITTO_EXECUTION_ENV
++						? (JSON.parse(capturedEnv.DITTO_EXECUTION_ENV) as Record<
++								string,
++								string
++							>)
++						: {},
++				});
++				if (failAck) throw new Error("ack_lost");
++				return { stdout: JSON.stringify({ version: 1, result }), exitCode: 0 };
++			},
++		),
++	};
++	const productEnvironment = vi.fn(
++		async (reference: ExecutionEnvironmentReference) => {
++			const values = await executionEnvironment(reference, {
++				db: createSqliteD1(f.sqlite),
++				secret,
++				currentExecution: async (ref) => {
++					const row = f.sqlite
++						.prepare(
++							"SELECT * FROM runtime_execution_admissions WHERE effectId = ?",
++						)
++						.get(ref.effectId) as {
++						runId: string;
++						assistantEntryId: string;
++						toolCallId: string;
++						attempt: number;
++					};
++					return f.coordinator("sess-1").currentExecution({ ...row, ...ref });
++				},
++			});
++			await environmentRace?.();
++			return values;
++		},
++	);
++	f = createSessionRuntimeFixture({
++		now: () => Date.now(),
++		executeEffect: (input) =>
++			createEffectExecutor({
++				db: createSqliteD1(f.sqlite),
++				controllerNamespace: "runtime",
++				identity: {
++					ownerId: "user-1",
++					workspaceSessionId: "sess-1",
++					projectId: "proj-1",
++				},
++				resolveSandbox: () => rpc,
++				executionEnvironment: productEnvironment,
++			})(input),
++	});
++	fixtures.push(f);
++	f.seedTrustedSession();
++	f.seedTrustedExecutionEvidence({
++		executorIncarnationId: "synthetic-executor-1",
++	});
++	f.sqlite.exec(
++		await readFile(
++			path.resolve(
++				process.cwd(),
++				"migrations/0021_runtime_execution_admissions.sql",
++			),
++			"utf8",
++		),
++	);
++	f.sqlite.exec(`UPDATE sandbox_identities SET controllerNamespace = 'runtime';
++	CREATE TABLE privileged_operations (id text PRIMARY KEY, identityId text, family text, type text, contractVersion integer,
++	 closedAt integer, expiresAt integer, lifecycleGeneration integer, incarnationId text, runtimeOwnerVersion integer,
++	 runId text, runEpoch integer, admissionReference text);`);
++	f.sqlite
++		.prepare("UPDATE projects SET envVars = ?")
++		.run(
++			await encryptEnvVars([{ key: "PROJECT_VALUE", value: project }], secret),
++		);
++	await handleSessionCommandRequest({
++		db: f.db,
++		runtime: f.runtime,
++		authenticatedUserId: "user-1",
++		body: {
++			version: 1,
++			kind: "prompt",
++			projectId: "proj-1",
++			sessionId: "sess-1",
++			idempotencyKey: "dispatch",
++			text: "fake provider",
++		},
++	});
++	await f.deliver();
++	await f.coordinator("sess-1").reconcile();
++	const command = f.sqlite
++		.prepare("SELECT id, assistantMessageId FROM session_commands")
++		.get() as { id: string; assistantMessageId: string };
++	f.sqlite
++		.prepare(
++			`INSERT INTO privileged_operations VALUES ('bridge', 'brain-sess-1', 'ditto_action', 'brain_transport', 1, NULL, ?, 1, 'synthetic-brain-1', 1, ?, 1, ?)`,
++		)
++		.run(Math.floor(now / 1000) + 120, command.id, command.id);
++	const source: RuntimeSource = {
++		identityId: "brain-sess-1",
++		containerId: "brain-container-sess-1",
++		className: "SessionRuntime",
++		kind: "trusted_brain",
++		incarnation: "synthetic-brain-1",
++		lifecycleGeneration: 1,
++		ownerVersion: 1,
++		userId: "user-1",
++		projectId: "proj-1",
++		workspaceSessionId: "sess-1",
++	};
++	const base: BrainRequest = {
++		version: 1,
++		kind: "continuation",
++		brainIdentityId: source.identityId,
++		brainIncarnationId: source.incarnation,
++		runId: command.id,
++		attempt: 1,
++		runEpoch: 1,
++		operationId: "bridge",
++		expectedCommittedPosition: 0,
++		payload: { providerResponse: { toolCallId: "call" } },
++		ownerVersion: 1,
++		lifecycleGeneration: 1,
++		deadline: now + 30_000,
++	};
++	const network = vi.fn<typeof fetch>();
++	const send = (
++		kind: BrainRequest["kind"],
++		payload: BrainRequest["payload"],
++		position = 1,
++	) =>
++		handleRuntimeOutbound(
++			new Request(`http://ditto.internal/v1/${kind}`, {
++				method: "POST",
++				headers: { "content-type": "application/json" },
++				body: JSON.stringify({
++					...base,
++					kind,
++					payload,
++					expectedCommittedPosition: position,
++				}),
++			}),
++			{ DB: createSqliteD1(f.sqlite), RUNTIME_CONTROLLER_NAMESPACE: "runtime" },
++			{
++				containerId: source.containerId,
++				className: source.className,
++				params: { incarnation: source.incarnation, lifecycleGeneration: 1 },
++			},
++			(s, request) => dispatchBrainRequest(f.coordinator("sess-1"), s, request),
++			network,
++		);
++	expect((await send("continuation", base.payload, 0)).status).toBe(200);
++	const job = (tool: RemoteToolV1["tool"], id = "call"): RemoteToolV1 => ({
++		version: 1,
++		runId: command.id,
++		assistantEntryId: command.assistantMessageId,
++		toolCallId: id,
++		attempt: 1,
++		executorIncarnationId: "synthetic-executor-1",
++		runEpoch: 1,
++		lifecycleGeneration: 1,
++		deadline: base.deadline,
++		outcomePolicy: tool.name === "bash" ? "never_retry" : "reconcile",
++		tool,
++	});
++	return {
++		f,
++		workspace,
++		rpc,
++		send,
++		job,
++		project,
++		secret,
++		launch,
++		network,
++		productEnvironment,
++		serializedJob: () => serializedJob,
++		capturedEnv: () => capturedEnv,
++		failAck: () => {
++			failAck = true;
++		},
++		race: (callback: () => Promise<void>) => {
++			environmentRace = callback;
++		},
++		command,
++	};
++}
++
++describe("authenticated fake-provider bridge and real coordinator/dispatch, executor RPC fixture", () => {
++	it("R1 commits encrypted remote results before delivery and deduplicates completed dispatch", async () => {
++		const s = await setup();
++		const job = s.job({ name: "read", path: "source.txt" });
++		const first = await s.send("tool", job);
++		expect(first.status).toBe(200);
++		expect(JSON.stringify(await first.json()).includes("sandbox-only")).toBe(
++			true,
++		);
++		expect((await s.send("tool", job)).status).toBe(200);
++		expect(s.rpc.exec).toHaveBeenCalledTimes(1);
++		const journal = s.f
++			.coordinator("sess-1")
++			.sql.query<{ state: string; result_ciphertext: string }>(
++				"SELECT state, result_ciphertext FROM effects",
++			)[0];
++		expect(journal.state).toBe("result_recorded");
++		expect(journal.result_ciphertext.includes("sandbox-only")).toBe(false);
++		expect(s.network).not.toHaveBeenCalled();
++		expect(s.productEnvironment).not.toHaveBeenCalled();
++	});
++	it("T30 decrypts only for admitted shell, keeps values out of launch/jobs and redacts before encrypted commit", async () => {
++		const s = await setup();
++		const job = s.job({
++			name: "bash",
++			command: 'printf "%s" "$PROJECT_VALUE"',
++		});
++		const response = await s.send("tool", job);
++		expect(response.status).toBe(200);
++		expect(JSON.stringify(await response.json()).includes(s.project)).toBe(
++			false,
++		);
++		expect(s.serializedJob().includes(s.project)).toBe(false);
++		expect(JSON.stringify(s.launch).includes(s.project)).toBe(false);
++		expect(JSON.stringify(s.launch).includes(s.secret)).toBe(false);
++		expect(JSON.stringify(s.capturedEnv()).includes(s.secret)).toBe(false);
++		expect(JSON.stringify(s.capturedEnv()).includes(s.project)).toBe(true);
++		expect(s.productEnvironment).toHaveBeenCalledTimes(1);
++		expect(
++			s.f.sqlite
++				.prepare("SELECT closedAt FROM runtime_execution_admissions")
++				.get(),
++		).toMatchObject({ closedAt: expect.any(Number) });
++	});
++	it.each([
++		null,
++		{ content: [{ type: "text", text: 42 }] },
++		{ content: [{ type: "text", text: "ok", authority: "fabricated" }] },
++		{ content: [{ type: "image", mimeType: "text/html", data: "invalid" }] },
++		{ content: [], isError: "false" },
++		{ content: [], unexpected: "field" },
++	])("R1 malformed executor result never crosses the encrypted-result barrier", async (result) => {
++		const s = await setup();
++		s.rpc.exec.mockResolvedValueOnce({
++			stdout: JSON.stringify({ version: 1, result }),
++			exitCode: 0,
++		});
++		const job = s.job({ name: "read", path: "source.txt" });
++		expect((await s.send("tool", job)).status).toBe(403);
++		expect((await s.send("tool", job)).status).toBe(403);
++		expect(s.rpc.exec).toHaveBeenCalledTimes(1);
++		expect(s.f.coordinator("sess-1").readSnapshot().runStates).toContainEqual(
++			expect.objectContaining({
++				status: "failed",
++				reasonCode: "outcome_unknown",
++			}),
++		);
++	});
++	it("T30 Worker redacts project values in content, stderr, errors and result detail keys", async () => {
++		const s = await setup();
++		s.rpc.exec.mockResolvedValueOnce({
++			stdout: JSON.stringify({
++				version: 1,
++				result: {
++					content: [{ type: "text", text: s.project }],
++					details: { [s.project]: { stderr: s.project, error: s.project } },
++					isError: true,
++				},
++			}),
++			exitCode: 0,
++		});
++		const response = await s.send(
++			"tool",
++			s.job({ name: "bash", command: "printf fixture" }),
++		);
++		expect(response.status).toBe(200);
++		expect(JSON.stringify(await response.json()).includes(s.project)).toBe(
++			false,
++		);
++		const result = await s.f.coordinator("sess-1").readEffectResult({
++			runId: s.command.id,
++			assistantEntryId: s.command.assistantMessageId,
++			toolCallId: "call",
++			attempt: 1,
++		});
++		expect(JSON.stringify(result).includes(s.project)).toBe(false);
++	});
++	it("T30 a shell cannot return an image-shaped secret channel", async () => {
++		const s = await setup();
++		s.rpc.exec.mockResolvedValueOnce({
++			stdout: JSON.stringify({
++				version: 1,
++				result: {
++					content: [
++						{
++							type: "image",
++							mimeType: "image/png",
++							data: Buffer.from(s.project).toString("base64"),
++						},
++					],
++				},
++			}),
++			exitCode: 0,
++		});
++		expect(
++			(await s.send("tool", s.job({ name: "bash", command: "printf fixture" })))
++				.status,
++		).toBe(403);
++		expect(s.rpc.exec).toHaveBeenCalledTimes(1);
++	});
++	it("R1 lost shell acknowledgement becomes unknown without automatic redispatch", async () => {
++		const s = await setup();
++		s.failAck();
++		const job = s.job({ name: "bash", command: "printf once >> outcome.txt" });
++		expect((await s.send("tool", job)).status).toBe(403);
++		expect((await s.send("tool", job)).status).toBe(403);
++		expect(s.rpc.exec).toHaveBeenCalledTimes(1);
++		expect(await readFile(path.join(s.workspace, "outcome.txt"), "utf8")).toBe(
++			"once",
++		);
++		expect(s.f.coordinator("sess-1").readSnapshot().runStates).toContainEqual(
++			expect.objectContaining({
++				status: "failed",
++				reasonCode: "outcome_unknown",
++			}),
++		);
++	});
++	it.each([
++		"UPDATE sandbox_identities SET retiredAt = 1 WHERE kind = 'trusted_brain'",
++		"UPDATE sandbox_identities SET incarnationId = 'replacement' WHERE kind = 'trusted_brain'",
++		"UPDATE workspace_sessions SET status = 'archived'",
++		"UPDATE privileged_operations SET closedAt = 1",
++		"UPDATE privileged_operations SET expiresAt = 1",
++		"UPDATE privileged_operations SET runEpoch = 2",
++	])("R1 revoked brain cannot receive an in-flight result, but its outcome remains committed: %s", async (change) => {
++		const s = await setup();
++		const original = s.rpc.exec.getMockImplementation();
++		if (!original) throw new Error("fixture_rpc_missing");
++		s.rpc.exec.mockImplementationOnce(async (...args) => {
++			const response = await original(...args);
++			s.f.sqlite.exec(change);
++			return response;
++		});
++		const job = s.job({ name: "bash", command: "printf once >> revoked.txt" });
++		expect((await s.send("tool", job)).status).toBe(403);
++		expect((await s.send("tool", job)).status).toBe(403);
++		expect(s.rpc.exec).toHaveBeenCalledTimes(1);
++		expect(await readFile(path.join(s.workspace, "revoked.txt"), "utf8")).toBe(
++			"once",
++		);
++		expect(
++			s.f
++				.coordinator("sess-1")
++				.sql.query<{ state: string }>("SELECT state FROM effects")[0].state,
++		).toBe("result_recorded");
++	});
++	it("R1 overlapping delivery and a later tool cannot redispatch an in-flight operation", async () => {
++		const s = await setup();
++		const original = s.rpc.exec.getMockImplementation();
++		if (!original) throw new Error("fixture_rpc_missing");
++		let release = () => {};
++		let entered = () => {};
++		const pending = new Promise<void>((resolve) => {
++			release = resolve;
++		});
++		const dispatched = new Promise<void>((resolve) => {
++			entered = resolve;
++		});
++		s.rpc.exec.mockImplementationOnce(async (...args) => {
++			entered();
++			await pending;
++			return original(...args);
++		});
++		const job = s.job({
++			name: "bash",
++			command: "printf once >> concurrent.txt",
++		});
++		const first = s.send("tool", job);
++		await dispatched;
++		try {
++			expect((await s.send("tool", job)).status).toBe(403);
++			expect(
++				(
++					await s.send(
++						"tool",
++						s.job({ name: "read", path: "source.txt" }, "later"),
++					)
++				).status,
++			).toBe(403);
++			expect(s.rpc.exec).toHaveBeenCalledTimes(1);
++		} finally {
++			release();
++		}
++		expect((await first).status).toBe(200);
++		expect((await s.send("tool", job)).status).toBe(200);
++		expect(s.rpc.exec).toHaveBeenCalledTimes(1);
++		expect(
++			await readFile(path.join(s.workspace, "concurrent.txt"), "utf8"),
++		).toBe("once");
++	});
++	it.each([
++		"UPDATE projects SET status = 'deleting'",
++		"UPDATE projects SET userId = 'foreign'",
++		"UPDATE workspace_sessions SET runtimeOwnerVersion = 2",
++		"UPDATE workspace_sessions SET runtimeOwner = 'blocked'",
++		"UPDATE sandbox_identities SET retiredAt = 1 WHERE kind = 'workspace_session'",
++		"UPDATE sandbox_identities SET incarnationId = 'new' WHERE kind = 'workspace_session'",
++		"UPDATE sandbox_identities SET lifecycleGeneration = 2 WHERE kind = 'workspace_session'",
++	])("R1 authority changing during job preparation prevents execution: %s", async (change) => {
++		const s = await setup();
++		s.rpc.mkdir.mockImplementationOnce(async () => {
++			s.f.sqlite.exec(change);
++		});
++		expect(
++			(
++				await s.send(
++					"tool",
++					s.job({ name: "bash", command: "printf late > late.txt" }),
++				)
++			).status,
++		).toBe(403);
++		expect(s.rpc.exec).not.toHaveBeenCalled();
++		expect(s.productEnvironment).not.toHaveBeenCalled();
++	});
++	it("R1 failure closing D1 admission after execution blocks result delivery and future work", async () => {
++		const s = await setup();
++		s.f.sqlite.exec(`CREATE TRIGGER fail_admission_close BEFORE UPDATE OF closedAt ON runtime_execution_admissions
++			BEGIN SELECT RAISE(ABORT, 'fixture_persistence_fault'); END;`);
++		const job = s.job({
++			name: "bash",
++			command: "printf once >> close-fault.txt",
++		});
++		expect((await s.send("tool", job)).status).toBe(403);
++		expect((await s.send("tool", job)).status).toBe(403);
++		expect(s.rpc.exec).toHaveBeenCalledTimes(1);
++		expect(
++			await readFile(path.join(s.workspace, "close-fault.txt"), "utf8"),
++		).toBe("once");
++		expect(s.f.coordinator("sess-1").readSnapshot().runStates).toContainEqual(
++			expect.objectContaining({
++				status: "failed",
++				reasonCode: "outcome_unknown",
++			}),
++		);
++	});
++	it("R1 persistence failure never delivers the result or admits another effect", async () => {
++		const s = await setup();
++		const coord = s.f.coordinator("sess-1");
++		const original = coord.sql.query.bind(coord.sql);
++		vi.spyOn(coord.sql, "query").mockImplementation((query, ...args) => {
++			if (query.includes("UPDATE effects") && args[0] === "result_recorded")
++				throw new Error("disk_fault");
++			return original(query, ...args);
++		});
++		expect(
++			(await s.send("tool", s.job({ name: "read", path: "source.txt" })))
++				.status,
++		).toBe(403);
++		expect(
++			(
++				await s.send(
++					"tool",
++					s.job({ name: "read", path: "source.txt" }, "later"),
++				)
++			).status,
++		).toBe(403);
++		expect(s.rpc.exec).toHaveBeenCalledTimes(1);
++	});
++	it("R2 prompt acceptance persists bounded startup intent without admitting an execution effect", async () => {
++		const s = await setup();
++		const intent = s.f.sqlite
++			.prepare(
++				"SELECT startupRoles, startupPools, expectedIdentityId, startupDeadline, runtimeOwnerVersion FROM workspace_runtime_work",
++			)
++			.get();
++		expect(intent).toMatchObject({
++			startupRoles: '["trusted_brain","workspace_session"]',
++			startupPools: '["brain","execution"]',
++			expectedIdentityId: "brain-sess-1",
++			runtimeOwnerVersion: 1,
++			startupDeadline: expect.any(Number),
++		});
++		expect(s.rpc.exec).not.toHaveBeenCalled();
++		expect(
++			s.f.sqlite
++				.prepare("SELECT count(*) AS n FROM runtime_execution_admissions")
++				.get(),
++		).toMatchObject({ n: 0 });
++	});
++	it("T30 fabricated, expired, wrong-owner, incarnation, closed and replayed references never materialize values", async () => {
++		const s = await setup();
++		expect(
++			(
++				await s.send(
++					"tool",
++					s.job({ name: "bash", command: "printf authorized" }),
++				)
++			).status,
++		).toBe(200);
++		const row = s.f.sqlite
++			.prepare(
++				"SELECT effectId, identityId, incarnationId, ownerVersion FROM runtime_execution_admissions",
++			)
++			.get() as {
++			effectId: string;
++			identityId: string;
++			incarnationId: string;
++			ownerVersion: number;
++		};
++		const reference = {
++			effectId: row.effectId,
++			identityId: row.identityId,
++			incarnation: row.incarnationId,
++			ownerVersion: row.ownerVersion,
++		};
++		const currentExecution = vi.fn(async () => true);
++		for (const input of [
++			reference,
++			{ ...reference, effectId: "fabricated" },
++			{ ...reference, identityId: "foreign" },
++			{ ...reference, incarnation: "retired" },
++			{ ...reference, ownerVersion: 2 },
++		]) {
++			await expect(
++				executionEnvironment(input, {
++					db: createSqliteD1(s.f.sqlite),
++					secret: s.secret,
++					currentExecution,
++				}),
++			).rejects.toThrow("execution_environment_denied");
++		}
++		expect(currentExecution).not.toHaveBeenCalled();
++		s.f.sqlite.exec(
++			"UPDATE runtime_execution_admissions SET closedAt = NULL, deadline = 1",
++		);
++		await expect(
++			executionEnvironment(reference, {
++				db: createSqliteD1(s.f.sqlite),
++				secret: s.secret,
++				currentExecution,
++			}),
++		).rejects.toThrow("execution_environment_denied");
++		expect(currentExecution).not.toHaveBeenCalled();
++	});
++	it.each([
++		"UPDATE projects SET status = 'deleting'",
++		"UPDATE projects SET userId = 'foreign'",
++		"UPDATE workspace_sessions SET runtimeOwnerVersion = 2",
++		"UPDATE sandbox_identities SET retiredAt = 1 WHERE kind = 'workspace_session'",
++		"UPDATE sandbox_identities SET incarnationId = 'new' WHERE kind = 'workspace_session'",
++		"UPDATE runtime_execution_admissions SET closedAt = 1",
++		"UPDATE runtime_execution_admissions SET deadline = 1",
++	])("T30 final coordinator callback cannot race fresh product authority: %s", async (change) => {
++		const s = await setup();
++		expect(
++			(await s.send("tool", s.job({ name: "bash", command: "printf fixture" })))
++				.status,
++		).toBe(200);
++		s.f.sqlite.exec("UPDATE runtime_execution_admissions SET closedAt = NULL");
++		const row = s.f.sqlite
++			.prepare(
++				"SELECT effectId, identityId, incarnationId, ownerVersion FROM runtime_execution_admissions",
++			)
++			.get() as {
++			effectId: string;
++			identityId: string;
++			incarnationId: string;
++			ownerVersion: number;
++		};
++		let calls = 0;
++		const operation = executionEnvironment(
++			{ ...row, incarnation: row.incarnationId },
++			{
++				db: createSqliteD1(s.f.sqlite),
++				secret: s.secret,
++				currentExecution: async () => {
++					if (++calls === 2) s.f.sqlite.exec(change);
++					return true;
++				},
++			},
++		);
++		await expect(operation.then(() => true)).rejects.toThrow(
++			"execution_environment_denied",
++		);
++	});
++	it("T30 Stop racing environment materialization prevents the authorized child from starting", async () => {
++		const s = await setup();
++		s.race(async () => {
++			await handleSessionCommandRequest({
++				db: s.f.db,
++				runtime: s.f.runtime,
++				authenticatedUserId: "user-1",
++				body: {
++					version: 1,
++					kind: "stop",
++					projectId: "proj-1",
++					sessionId: "sess-1",
++					idempotencyKey: "stop-race",
++					targetRunId: s.command.id,
++				},
++			});
++			await s.f.deliver();
++		});
++		expect(
++			(
++				await s.send(
++					"tool",
++					s.job({ name: "bash", command: "printf late > late.txt" }),
++				)
++			).status,
++		).toBe(403);
++		expect(s.rpc.exec).not.toHaveBeenCalled();
++	});
++});
+diff --git a/apps/web/src/lib/runtime-binding-graph.test.ts b/apps/web/src/lib/runtime-binding-graph.test.ts
+new file mode 100644
+index 0000000..b5cab19
+--- /dev/null
++++ b/apps/web/src/lib/runtime-binding-graph.test.ts
+@@ -0,0 +1,149 @@
++import { readFileSync } from "node:fs";
++import path from "node:path";
++import ts from "typescript";
++import { describe, expect, it } from "vitest";
++
++const root = new URL("../../../../", import.meta.url).pathname;
++const web = path.join(root, "apps/web/src");
++function source(file: string): ts.SourceFile {
++	return ts.createSourceFile(
++		file,
++		readFileSync(file, "utf8"),
++		ts.ScriptTarget.Latest,
++		true,
++	);
++}
++function properties(value: ts.Node | undefined): Map<string, ts.Expression> {
++	if (!value || !ts.isObjectLiteralExpression(value))
++		throw new Error("Expected binding object");
++	return new Map(
++		value.properties.map((property) => {
++			if (
++				!ts.isPropertyAssignment(property) &&
++				!ts.isShorthandPropertyAssignment(property)
++			)
++				throw new Error("Unexpected binding declaration");
++			const key =
++				ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)
++					? property.name.text
++					: property.name.getText();
++			return [
++				key,
++				ts.isPropertyAssignment(property)
++					? property.initializer
++					: property.name,
++			];
++		}),
++	);
++}
++function worker(name: string): Map<string, ts.Expression> {
++	let declaration: ts.CallExpression | undefined;
++	function visit(node: ts.Node): void {
++		if (
++			ts.isCallExpression(node) &&
++			ts.isIdentifier(node.expression) &&
++			node.expression.text === "Worker" &&
++			node.arguments[0] &&
++			ts.isStringLiteral(node.arguments[0]) &&
++			node.arguments[0].text === name
++		)
++			declaration = node;
++		ts.forEachChild(node, visit);
++	}
++	visit(source(path.join(root, "alchemy.run.ts")));
++	if (!declaration) throw new Error("Worker declaration missing");
++	return properties(declaration.arguments[1]);
++}
++
++describe("local target binding and runtime import graph", () => {
++	it("grants only the intended counterpart each named capability and leaves legacy deployment intact", () => {
++		const product = worker("local-product-bridge");
++		const runtime = worker("local-session-runtime");
++		expect(product.get("entrypoint")?.getText()).toBe(
++			'"apps/web/src/lib/runtime-product-worker.ts"',
++		);
++		const p = properties(product.get("bindings"));
++		const r = properties(runtime.get("bindings"));
++		expect(p.get("RUNTIME")?.getText()).toContain(
++			'Worker.experimentalEntrypoint(runtimeRef, "RuntimeEntrypoint")',
++		);
++		expect(r.get("PRODUCT")?.getText()).toContain(
++			'Worker.experimentalEntrypoint(productRef, "ProductEntrypoint")',
++		);
++		for (const key of [
++			"SessionRuntime",
++			"Sandbox",
++			"OPENCODE_API_KEY",
++			"RUNTIME_ENCRYPTION_KEYS",
++			"PRODUCT",
++		])
++			expect(p.has(key)).toBe(false);
++		for (const key of [
++			"BETTER_AUTH_SECRET",
++			"GITHUB_APP_PRIVATE_KEY",
++			"GITHUB_CLIENT_SECRET",
++			"RUNTIME",
++		])
++			expect(r.has(key)).toBe(false);
++		expect(r.has("SessionRuntime")).toBe(true);
++		expect(r.has("Sandbox")).toBe(true);
++		expect(r.has("DB") && p.has("DB")).toBe(true);
++		const alchemy = readFileSync(path.join(root, "alchemy.run.ts"), "utf8");
++		expect(
++			alchemy.includes(
++				'app.local && process.env.DITTO_LOCAL_RUNTIME_TOPOLOGY === "1"',
++			),
++		).toBe(true);
++		expect(
++			alchemy.includes('export const website = await TanStackStart("website"'),
++		).toBe(true);
++	});
++	it("runtime value imports cannot initialize product auth or mint GitHub tokens", () => {
++		const queue = [path.join(root, "apps/runtime/src/server.ts")];
++		const visited = new Set<string>();
++		while (queue.length) {
++			const file = queue.pop();
++			if (!file || visited.has(file)) continue;
++			visited.add(file);
++			expect(
++				[
++					"auth.ts",
++					"github-app.ts",
++					"runtime-product-service.ts",
++					"session-runtime-product.ts",
++				].includes(path.basename(file)),
++			).toBe(false);
++			const parsed = source(file);
++			function add(spec: string): void {
++				let candidate: string;
++				if (spec.startsWith("#/")) candidate = path.join(web, spec.slice(2));
++				else if (spec.startsWith("."))
++					candidate = path.resolve(path.dirname(file ?? ""), spec);
++				else return;
++				candidate = candidate.replace(/\.(js|ts)$/, "");
++				queue.push(`${candidate}.ts`);
++			}
++			function visit(node: ts.Node): void {
++				if (
++					ts.isImportDeclaration(node) &&
++					ts.isStringLiteral(node.moduleSpecifier) &&
++					!node.importClause?.isTypeOnly
++				)
++					add(node.moduleSpecifier.text);
++				if (
++					ts.isCallExpression(node) &&
++					node.expression.kind === ts.SyntaxKind.ImportKeyword &&
++					node.arguments[0] &&
++					ts.isStringLiteral(node.arguments[0])
++				)
++					add(node.arguments[0].text);
++				ts.forEachChild(node, visit);
++			}
++			visit(parsed);
++		}
++		expect(
++			visited.has(path.join(root, "apps/runtime/src/runtime-egress.ts")),
++		).toBe(true);
++		expect(visited.has(path.join(web, "lib/open-code-contract.ts"))).toBe(true);
++	});
++});
+diff --git a/apps/web/src/lib/runtime-product-service.ts b/apps/web/src/lib/runtime-product-service.ts
+new file mode 100644
+index 0000000..91f2422
+--- /dev/null
++++ b/apps/web/src/lib/runtime-product-service.ts
+@@ -0,0 +1,59 @@
++import type { ExecutionEnvironmentReference } from "../../../runtime/src/executor-dispatch.js";
++import { decryptEnvVars } from "./project-env-vars.js";
++
++export async function executionEnvironment(
++	input: ExecutionEnvironmentReference,
++	deps: {
++		db: D1Database;
++		secret: string | undefined;
++		currentExecution: (
++			input: ExecutionEnvironmentReference,
++		) => Promise<boolean>;
++		now?: () => number;
++	},
++): Promise<Record<string, string>> {
++	const now = deps.now ?? Date.now;
++	const resolve = () =>
++		deps.db
++			.prepare(`SELECT p.envVars, a.deadline FROM runtime_execution_admissions a
++		JOIN sandbox_identities i ON i.id = a.identityId AND i.userId = a.userId AND i.projectId = a.projectId AND i.workspaceSessionId = a.sessionId
++		JOIN workspace_sessions s ON s.id = a.sessionId AND s.userId = a.userId AND s.projectId = a.projectId
++		JOIN projects p ON p.id = a.projectId AND p.userId = a.userId
++		JOIN runtime_command_memberships m ON m.sessionId = a.sessionId AND m.runId = a.runId AND m.runEpoch = a.runEpoch AND m.assistantMessageId = a.assistantEntryId
++		JOIN session_commands c ON c.id = m.commandId AND c.sessionId = a.sessionId AND c.userId = a.userId AND c.projectId = a.projectId
++		WHERE a.effectId = ? AND a.identityId = ? AND a.incarnationId = ? AND a.ownerVersion = ? AND a.toolName = 'bash'
++		AND a.closedAt IS NULL AND a.deadline > ? AND i.kind = 'workspace_session' AND i.controllerClass = 'Sandbox' AND i.state = 'ready' AND i.retiredAt IS NULL
++		AND i.incarnationId = a.incarnationId AND i.lifecycleGeneration = a.lifecycleGeneration
++		AND s.sandboxIdentityId = a.identityId AND s.runtimeOwner = 'trusted_v1' AND s.runtimeOwnerVersion = a.ownerVersion AND s.status = 'active'
++		AND p.status != 'deleting' AND NOT EXISTS (SELECT 1 FROM runtime_deleted_target_fences f WHERE
++			(f.targetKind = 'project' AND f.targetId = p.id) OR (f.targetKind = 'workspace_session' AND f.targetId = s.id))`)
++			.bind(
++				input.effectId,
++				input.identityId,
++				input.incarnation,
++				input.ownerVersion,
++				now(),
++			)
++			.first<{ envVars: string | null; deadline: number }>();
++	const admitted = await resolve();
++	if (!admitted || !(await deps.currentExecution(input)))
++		throw new Error("execution_environment_denied");
++	if (admitted.envVars && !deps.secret)
++		throw new Error("execution_environment_unavailable");
++	const values = await decryptEnvVars(admitted.envVars, deps.secret ?? "");
++	if (!(await deps.currentExecution(input)))
++		throw new Error("execution_environment_denied");
++	const current = await resolve();
++	if (
++		!current ||
++		current.envVars !== admitted.envVars ||
++		current.deadline <= now()
++	)
++		throw new Error("execution_environment_denied");
++	const result = Object.fromEntries(
++		values.map(({ key, value }) => [key, value]),
++	);
++	if (new TextEncoder().encode(JSON.stringify(result)).byteLength > 256 * 1024)
++		throw new Error("execution_environment_limit");
++	return result;
++}
+diff --git a/apps/web/src/lib/runtime-product-worker.ts b/apps/web/src/lib/runtime-product-worker.ts
+new file mode 100644
+index 0000000..fd20e5b
+--- /dev/null
++++ b/apps/web/src/lib/runtime-product-worker.ts
+@@ -0,0 +1,7 @@
++export { ProductEntrypoint } from "./session-runtime-product";
++
++export default {
++	fetch(): Response {
++		return new Response("Not found", { status: 404 });
++	},
++} satisfies ExportedHandler;
+diff --git a/apps/web/src/lib/runtime-startup-service.test.ts b/apps/web/src/lib/runtime-startup-service.test.ts
+new file mode 100644
+index 0000000..baf345a
+--- /dev/null
++++ b/apps/web/src/lib/runtime-startup-service.test.ts
+@@ -0,0 +1,203 @@
++import { readFileSync } from "node:fs";
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { authorizeBrainRequest, resolveRuntimeSource } from "../../../runtime/src/runtime-egress";
++import type { BrainRequest } from "../../../runtime/src/brain-transport";
++import type { IdentityTransitionReference, StartupAssignment, StartupReference } from "../../../runtime/src/startup-contract";
++import { RuntimeEntrypoint, Sandbox, SessionRuntime } from "../../../runtime/src/server";
++import { createSessionRuntimeFixture, type SessionRuntimeFixture } from "../test/session-runtime-fixture";
++import { ProductEntrypoint } from "./session-runtime-product";
++import { handleSessionCommandRequest } from "./session-command";
++import { createSqliteD1 } from "./sqlite-d1-test-utils";
++
++vi.mock("cloudflare:workers", () => ({
++ env: {}, DurableObject: class {}, WorkerEntrypoint: class { constructor(readonly ctx: unknown, readonly env: unknown) {} },
++}));
++vi.mock("@cloudflare/containers", () => ({ Container: class {}, ContainerProxy: class {} }));
++vi.mock("@cloudflare/sandbox", () => ({ Sandbox: class {}, getSandbox: vi.fn() }));
++const fixtures: SessionRuntimeFixture[] = [];
++afterEach(() => { fixtures.splice(0).forEach(f => f.dispose()); vi.restoreAllMocks(); });
++const migration = readFileSync(new URL("../../migrations/0022_runtime_startup_assignments.sql",import.meta.url),"utf8").replaceAll("--> statement-breakpoint", "");
++const priorMigration = readFileSync(new URL("../../migrations/0020_trusted_runtime_additive.sql",import.meta.url),"utf8");
++
++async function setup() {
++ const f = createSessionRuntimeFixture(); fixtures.push(f); f.seedTrustedSession();
++ f.sqlite.exec(`DELETE FROM sandbox_identities; DELETE FROM workspace_capacity_leases;
++ UPDATE workspace_sessions SET brainIdentityId = NULL, sandboxIdentityId = NULL;
++ CREATE TABLE project_seeds (id text PRIMARY KEY,projectId text,buildState text,startupRoles text,startupPools text,expectedRuntimeOwnerVersion integer,expectedIdentityId text,startupDeadline integer);
++ CREATE TABLE privileged_operations (id text PRIMARY KEY,identityId text,closedAt integer,closeReason text,openSlot text);
++ CREATE TABLE runtime_retired_identity_fences (identityId text PRIMARY KEY,lifecycleGeneration integer,retiredAt integer);`);
++ for (const table of ["runtime_capacity_reservations","runtime_migrations"]) {
++  const sql = priorMigration.split("--> statement-breakpoint").find(s => s.trimStart().startsWith(`CREATE TABLE \`${table}\``));
++  if (!sql) throw new Error("fixture_schema"); f.sqlite.exec(sql);
++ }
++ f.sqlite.exec(`CREATE UNIQUE INDEX runtime_capacity_reservations_identity_pool_active_uidx ON runtime_capacity_reservations(identityId,pool,activeSlot);`);
++ f.sqlite.exec(migration);
++ let now = Date.now();
++ const launches = new Map<string, { assignment: StartupAssignment; running: boolean }>();
++ const brainNamespace = {
++  idFromName: (name: string) => ({ toString: () => `brain:${name}` }),
++  idFromString: (id: string) => ({ toString: () => id }),
++  get(id: { toString(): string }) { return observer(id.toString(), SessionRuntime.prototype, "SessionRuntime"); },
++ };
++ const sandboxNamespace = {
++  idFromName: (name: string) => ({ toString: () => `execution:${name}` }),
++  idFromString: (id: string) => ({ toString: () => id }),
++  get(id: { toString(): string }) { return observer(id.toString(), Sandbox.prototype, "Sandbox"); },
++ };
++ function observer(id: string, prototype: object, controllerClass: "SessionRuntime" | "Sandbox") {
++  const value = Object.create(prototype);
++  Object.assign(value, { env: {RUNTIME_CONTROLLER_NAMESPACE: "runtime"}, ctx: {
++   id: {toString: () => id}, storage: { get: async () => {
++    const launch = launches.get(id)?.assignment;
++    return launch ? {identityId: launch.identityId,incarnationId: launch.incarnationId,lifecycleGeneration: launch.lifecycleGeneration,containerId: id,controllerClass,controllerNamespace: "runtime"} : undefined;
++   } }, container: {get running() { return launches.get(id)?.running; }},
++  } });
++  return value as {observeStartup: RuntimeEntrypoint["observeStartup"]};
++ }
++ const runtime = Object.create(RuntimeEntrypoint.prototype) as RuntimeEntrypoint;
++ const db = createSqliteD1(f.sqlite);
++ const runtimeEnv = {DB: db, RUNTIME_CONTROLLER_NAMESPACE: "runtime", SessionRuntime: brainNamespace, Sandbox: sandboxNamespace, PRODUCT: {} };
++ Object.assign(runtime, { env: runtimeEnv });
++ const product = new ProductEntrypoint({} as ExecutionContext,{DB: db, RUNTIME_CONTROLLER_NAMESPACE: "runtime", RUNTIME: {
++  startupRouting: input => runtime.startupRouting(input), observeStartup: input => runtime.observeStartup(input), currentExecution: async () => false,
++ } });
++ runtimeEnv.PRODUCT = product;
++ const admission = await handleSessionCommandRequest({ db: f.db, runtime: f.runtime, authenticatedUserId: "user-1", body: {
++  version:1,kind:"prompt",projectId:"proj-1",sessionId:"sess-1",idempotencyKey:"startup",text:"hello",
++ } });
++ expect(admission.status).toBe(202);
++ const work = f.sqlite.prepare("SELECT id FROM workspace_runtime_work").get() as {id:string};
++ const ref: StartupReference = {sourceKind:"command",sourceId:work.id};
++ const effects = () => ({identities:f.sqlite.prepare("SELECT * FROM sandbox_identities ORDER BY id").all(), assignments:f.sqlite.prepare("SELECT * FROM runtime_startup_assignments ORDER BY sourceId,role").all(), reservations:f.sqlite.prepare("SELECT * FROM runtime_capacity_reservations ORDER BY id").all(), operations:f.sqlite.prepare("SELECT * FROM privileged_operations ORDER BY id").all()});
++ const unified = () => f.sqlite.exec("UPDATE runtime_capacity_policy SET accountingMode = 'unified'");
++ const pair = async () => { unified(); return runtime.prepareStartup(ref); };
++ return {f,ref,product,runtime,runtimeEnv,db,launches,now:()=>now,setNow:(value:number)=>{now=value;},effects,unified,pair};
++}
++
++function transition(s: Awaited<ReturnType<typeof setup>>, a: StartupAssignment, action: "rotate" | "retire", kind = "lifecycle"): IdentityTransitionReference {
++ const id = crypto.randomUUID();
++ s.f.sqlite.prepare(`INSERT INTO runtime_identity_transitions (id,sourceKind,sourceId,action,identityId,userId,projectId,sessionId,expectedOwner,ownerVersion,lifecycleGeneration,incarnationId,deadline,state) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'approved')`)
++ .run(id,kind,"approved-policy-fixture",action,a.identityId,a.userId,a.projectId,a.sessionId,"trusted_v1",a.ownerVersion,a.lifecycleGeneration,a.incarnationId,Date.now()+60_000);
++ return {transitionId:id,identityId:a.identityId,incarnationId:a.incarnationId,ownerVersion:a.ownerVersion,lifecycleGeneration:a.lifecycleGeneration};
++}
++
++describe("R2 actual product and runtime named methods, SQLite writes, platform DI only", () => {
++ it("accepted command -> durable pair assignment -> atomic reservations -> readiness before any window", async () => {
++  const s = await setup();
++  const work = s.f.sqlite.prepare("SELECT * FROM workspace_runtime_work").get();
++  expect(work).toMatchObject({startupRoles:'["trusted_brain","workspace_session"]',startupPools:'["brain","execution"]',runtimeOwnerVersion:1});
++  const result = await s.pair(); expect(result.assignments).toHaveLength(2); expect(result.reservations).toHaveLength(2);
++  expect(s.effects().operations).toEqual([]);
++  const a = result.assignments.find(a=>a.role === "trusted_brain")!;
++  const env = {DB:s.db,RUNTIME_CONTROLLER_NAMESPACE:"runtime"};
++  const source = await resolveRuntimeSource(env,{containerId:a.containerId,className:a.controllerClass,params:{incarnation:a.incarnationId,lifecycleGeneration:a.lifecycleGeneration}});
++  const request: BrainRequest = {version:1,kind:"readiness",operationId:s.ref.sourceId,brainIdentityId:a.identityId,brainIncarnationId:a.incarnationId,ownerVersion:a.ownerVersion,lifecycleGeneration:a.lifecycleGeneration,runId:"startup",runEpoch:1,attempt:1,expectedCommittedPosition:0,payload:{},deadline:Date.now()+30_000};
++  expect(await authorizeBrainRequest(env,source,request,Date.now())).toBeGreaterThan(Date.now());
++  const before = s.effects(); expect(await s.runtime.prepareStartup(s.ref)).toEqual(result); expect(s.effects()).toEqual(before);
++  expect(await s.product.readExecutionPrerequisites({workspaceSessionId:"sess-1",projectId:"proj-1",userId:"user-1"})).toBeNull();
++ });
++ it("production legacy accounting stays closed and never partially reserves",async()=>{
++  const s=await setup(); await s.product.registerStartup({...s.ref,role:"trusted_brain"}); await s.product.registerStartup({...s.ref,role:"workspace_session"});
++  await expect(s.product.reserveStartup(s.ref)).rejects.toThrow("capacity_denied"); expect(s.effects().reservations).toEqual([]);
++  expect(s.f.sqlite.prepare("SELECT accountingMode FROM runtime_capacity_policy").get()).toEqual({accountingMode:"legacy"});
++ });
++ it.each(["fabricated","expired","foreign","superseded","deleted","role","pool","bodyIdentity"])("%s startup references cannot create or enlarge authority",async(mode)=>{
++  const s=await setup(); const ref={...s.ref};
++  if(mode==="fabricated") ref.sourceId="fabricated";
++  if(mode==="expired") s.f.sqlite.exec("UPDATE workspace_runtime_work SET startupDeadline = 1");
++  if(mode==="foreign") s.f.sqlite.exec("UPDATE workspace_runtime_work SET sessionId = 'other'");
++  if(mode==="superseded") s.f.sqlite.exec("UPDATE workspace_sessions SET runtimeOwnerVersion = 2");
++  if(mode==="deleted") s.f.sqlite.exec("UPDATE projects SET status = 'deleting'");
++  if(mode==="pool") s.f.sqlite.exec(`UPDATE workspace_runtime_work SET startupPools = '["brain","execution","extra"]'`);
++  const input={...ref,role:mode==="role" ? "project_seed" as const : "trusted_brain" as const};
++  const before=s.effects();
++  const request = mode==="bodyIdentity"?{...input,identityId:"caller"}:input;
++  await expect(s.product.registerStartup(request)).rejects.toThrow("startup_denied");
++  expect(s.effects()).toEqual(before);
++ });
++ it("routing await and write-time deletion rechecks leave no assignment or identity",async()=>{
++  const s=await setup();
++  const original=s.runtime.startupRouting.bind(s.runtime);
++  vi.spyOn(s.runtime,"startupRouting").mockImplementation(async input=>{const route=await original(input);s.f.sqlite.exec("UPDATE projects SET status = 'deleting'");return route;});
++  await expect(s.product.registerStartup({...s.ref,role:"trusted_brain"})).rejects.toThrow("startup_denied"); expect(s.effects().identities).toEqual([]); expect(s.effects().assignments).toEqual([]);
++ });
++ it.each(["controllerClass","controllerNamespace","incarnationId","retiredAt","link"])("conflicting retry %s has no effects",async(field)=>{
++  const s=await setup(); const a=await s.product.registerStartup({...s.ref,role:"trusted_brain"});
++  if(field==="link") s.f.sqlite.exec("UPDATE workspace_sessions SET brainIdentityId = 'different'");
++  else s.f.sqlite.prepare(`UPDATE sandbox_identities SET ${field} = ? WHERE id = ?`).run(field==="retiredAt"?1:"different",a.identityId);
++  const before=s.effects();await expect(s.product.registerStartup({...s.ref,role:"trusted_brain"})).rejects.toThrow("startup_denied");expect(s.effects()).toEqual(before);
++ });
++ it("overlapping identical registration uses one random identity and incarnation",async()=>{
++  const s=await setup();const [a,b]=await Promise.all([s.product.registerStartup({...s.ref,role:"trusted_brain"}),s.product.registerStartup({...s.ref,role:"trusted_brain"})]);
++  expect(a).toEqual(b);expect(s.effects().identities).toHaveLength(1);
++ });
++ it("an occupied execution pool denies the whole pair, without a brain-only claim",async()=>{
++  const s=await setup();s.unified();await s.product.registerStartup({...s.ref,role:"trusted_brain"});await s.product.registerStartup({...s.ref,role:"workspace_session"});
++  for(let n=0;n<2;n++) s.f.sqlite.prepare(`INSERT INTO runtime_capacity_reservations VALUES (?,'execution','workspace_session',?,'user-1',NULL,?,?,'other','running',1,1,1,'active',0,0)`).run(`r${n}`,`s${n}`,`i${n}`,`inc${n}`);
++  const before=s.effects();await expect(s.product.reserveStartup(s.ref)).rejects.toThrow("capacity_denied");expect(s.effects()).toEqual(before);
++ });
++ it("body pool lists and stale incarnation reservations are denied without writes",async()=>{
++  const s=await setup();const result=await s.pair();const before=s.effects();
++  const expanded = {...s.ref,requiredPools:["brain","execution"]};
++  await expect(s.product.reserveStartup(expanded)).rejects.toThrow("startup_denied");
++  const r=result.reservations[0];await expect(s.product.observeCapacity({...r,incarnationId:"stale"})).rejects.toThrow("capacity_denied");expect(s.effects()).toEqual(before);
++ });
++ it("trusted launch observation works; expiry and isolation do not free running slots, termination does",async()=>{
++  const s=await setup();const result=await s.pair();const a=result.assignments[0],r=result.reservations.find(r=>r.identityId===a.identityId)!;
++  s.launches.set(a.containerId,{assignment:a,running:true});await s.product.observeCapacity(r);
++  s.f.sqlite.exec("UPDATE runtime_capacity_reservations SET expiresAt = 1; UPDATE workspace_runtime_work SET startupDeadline = 1");
++  const before=s.effects();await expect(s.product.releaseCapacity(r)).rejects.toThrow("capacity_denied");expect(s.effects()).toEqual(before);
++  const observe=vi.spyOn(s.runtime,"observeStartup").mockResolvedValue({...a,state:"isolated"});
++  await expect(s.product.releaseCapacity(r)).rejects.toThrow("capacity_denied");expect(s.effects()).toEqual(before);observe.mockRestore();
++  s.launches.set(a.containerId,{assignment:a,running:false});await s.product.releaseCapacity(r);await s.product.releaseCapacity(r);
++  expect(s.f.sqlite.prepare("SELECT observedState, activeSlot FROM runtime_capacity_reservations WHERE id = ?").get(r.reservationId)).toEqual({observedState:"released",activeSlot:r.reservationId});
++ });
++ it.each(["identityId","incarnationId","lifecycleGeneration","containerId","controllerClass","controllerNamespace"])("platform evidence mismatch %s cannot release",async(field)=>{
++  const s=await setup();const result=await s.pair();const a=result.assignments[0],r=result.reservations[0];
++  vi.spyOn(s.runtime,"observeStartup").mockResolvedValue({...a,state:"terminated",[field]:field==="lifecycleGeneration"?2:"wrong"});const before=s.effects();
++  await expect(s.product.releaseCapacity(r)).rejects.toThrow("capacity_denied");expect(s.effects()).toEqual(before);
++ });
++ it("an unknown platform launch or changed owner during observation cannot free a slot",async()=>{
++  const s=await setup();const result=await s.pair();const a=result.assignments[0],r=result.reservations.find(r=>r.identityId===a.identityId)!;
++  await expect(s.product.releaseCapacity(r)).rejects.toThrow("capacity_denied");
++  s.launches.set(a.containerId,{assignment:a,running:false});const original=s.runtime.observeStartup.bind(s.runtime);
++  vi.spyOn(s.runtime,"observeStartup").mockImplementation(async input=>{const result=await original(input);s.f.sqlite.exec("UPDATE workspace_sessions SET runtimeOwnerVersion = 2");return result;});
++  const before=s.effects();await expect(s.product.releaseCapacity(r)).rejects.toThrow("capacity_denied");expect(s.effects()).toEqual(before);
++ });
++ it("persisted builder authority permits only a seed Sandbox and execution pool, never a brain",async()=>{
++  const s=await setup();s.unified();s.f.sqlite.prepare(`INSERT INTO project_seeds (id,projectId,buildState,startupRoles,startupPools,expectedRuntimeOwnerVersion,startupDeadline,startupUserId) VALUES ('seed','proj-1','pending','["project_seed"]','["execution"]',1,?,'user-1')`).run(Date.now()+60_000);
++  const ref:StartupReference={sourceKind:"builder",sourceId:"seed"};const before=s.effects();await expect(s.product.registerStartup({...ref,role:"trusted_brain"})).rejects.toThrow("startup_denied");expect(s.effects()).toEqual(before);
++  const result=await s.runtime.prepareStartup(ref);expect(result.assignments).toHaveLength(1);expect(result.assignments[0]).toMatchObject({role:"project_seed",controllerClass:"Sandbox",sessionId:null});expect(result.reservations).toHaveLength(1);expect(s.effects().operations).toEqual([]);
++ });
++ it("only an existing approved migration source registers; ownership switch invalidates callbacks",async()=>{
++  const s=await setup();s.unified();s.f.sqlite.exec("UPDATE workspace_sessions SET runtimeOwner = 'migrating'");
++  s.f.sqlite.prepare(`INSERT INTO runtime_migrations (id,sessionId,expectedOwner,expectedOwnerVersion,startupRoles,startupPools,startupDeadline,state,createdAt,startupUserId) VALUES ('migration','sess-1','migrating',1,'["trusted_brain","workspace_session"]','["brain","execution"]',?,'pending',0,'user-1')`).run(Date.now()+60_000);
++  const ref:StartupReference={sourceKind:"migration",sourceId:"migration"};const result=await s.runtime.prepareStartup(ref);expect(result.reservations).toHaveLength(2);
++  s.f.sqlite.exec("UPDATE workspace_sessions SET runtimeOwnerVersion = 2");const before=s.effects();await expect(s.product.registerStartup({...ref,role:"trusted_brain"})).rejects.toThrow("startup_denied");expect(s.effects()).toEqual(before);
++ });
++ it("approved retirement tombstones never reopen and occupied capacity stays until trusted termination",async()=>{
++  const s=await setup();const result=await s.pair();const a=result.assignments[0],r=result.reservations.find(r=>r.identityId===a.identityId)!;
++  await expect(s.product.retireIdentity({transitionId:"fabricated",identityId:a.identityId,incarnationId:a.incarnationId,ownerVersion:a.ownerVersion,lifecycleGeneration:a.lifecycleGeneration})).rejects.toThrow("identity_transition_denied");
++  const ref=transition(s,a,"retire");await s.product.retireIdentity(ref);await s.product.retireIdentity(ref);
++  expect(s.f.sqlite.prepare("SELECT identityId FROM runtime_retired_identity_fences").get()).toEqual({identityId:a.identityId});
++  const before=s.effects();await expect(s.product.registerStartup({...s.ref,role:a.role})).rejects.toThrow("startup_denied");expect(s.effects()).toEqual(before);
++  expect(s.effects().reservations.every(r=>r.activeSlot === "active")).toBe(true);
++  s.launches.set(a.containerId,{assignment:a,running:false});await s.product.releaseCapacity(r);
++ });
++ it("rotation needs persisted exact authority and cannot resurrect retired IDs",async()=>{
++  const s=await setup();const result=await s.pair();const a=result.assignments[0];const ref=transition(s,a,"rotate");const before=s.effects();
++  await expect(s.product.rotateIdentity({...ref,incarnationId:"stale"})).rejects.toThrow("identity_transition_denied");expect(s.effects()).toEqual(before);
++  s.launches.set(a.containerId,{assignment:a,running:false});
++  const rotated=await s.product.rotateIdentity(ref);expect(rotated.replacementIncarnationId).not.toBe(a.incarnationId);
++  expect(s.f.sqlite.prepare("SELECT lifecycleGeneration FROM sandbox_identities WHERE id = ?").get(a.identityId)).toEqual({lifecycleGeneration:2});
++  expect(s.effects().reservations.every(r=>r.activeSlot === "active")).toBe(true);
++ });
++ it("deleting cleanup can retire from an approved deletion command, never rotate",async()=>{
++  const s=await setup();const result=await s.pair();const a=result.assignments[0];const ref=transition(s,a,"retire","deletion");
++  s.f.sqlite.exec("UPDATE projects SET status = 'deleting'");
++  s.f.sqlite.prepare(`INSERT INTO session_commands (id,userId,targetKind,targetId,projectId,kind,payloadVersion,payloadDigest,acceptedAt,deadlineAt) VALUES ('deletion','user-1','project','proj-1','proj-1','project_delete',1,'d',0,9999999999999)`).run();
++  s.f.sqlite.prepare("UPDATE runtime_identity_transitions SET sourceId = 'deletion' WHERE id = ?").run(ref.transitionId);
++  await s.product.retireIdentity(ref);expect(s.effects().identities.find(i=>i.id===a.identityId)?.retiredAt).not.toBeNull();
++  await expect(s.product.rotateIdentity(ref)).rejects.toThrow("identity_transition_denied");
++ });
++});
+diff --git a/apps/web/src/lib/runtime-startup-service.ts b/apps/web/src/lib/runtime-startup-service.ts
+new file mode 100644
+index 0000000..c7bda2f
+--- /dev/null
++++ b/apps/web/src/lib/runtime-startup-service.ts
+@@ -0,0 +1,240 @@
++import {
++ checkRegistration, checkStartupReference, startupObject,
++ type CapacityReference, type IdentityTransitionReference, type RegisterStartup,
++ type StartupAssignment, type StartupReference, type StartupRuntime,
++} from "../../../runtime/src/startup-contract.js";
++
++type Source = {
++ sourceKind: StartupReference["sourceKind"]; sourceId: string;
++ userId: string; projectId: string; sessionId: string | null;
++ expectedOwner: string; ownerVersion: number; deadline: number;
++ brainIdentityId: string | null; sandboxIdentityId: string | null; builderIdentityId: string | null;
++};
++type Deps = { db: D1Database; namespace: string; runtime: StartupRuntime; now?: () => number };
++const liveAssignment = `SELECT a.sourceKind, a.sourceId, a.role, a.identityId, a.incarnationId,
++ a.lifecycleGeneration, a.ownerVersion, i.userId, i.projectId, i.workspaceSessionId AS sessionId,
++ i.sandboxId AS routingName, i.containerId, i.controllerClass, i.controllerNamespace
++ FROM runtime_startup_assignments a
++ JOIN runtime_startup_sources t ON t.sourceKind = a.sourceKind AND t.sourceId = a.sourceId AND t.ownerVersion = a.ownerVersion
++ JOIN sandbox_identities i ON i.id = a.identityId AND i.userId = t.userId AND i.projectId = t.projectId AND i.workspaceSessionId IS t.sessionId
++ WHERE a.sourceKind = ? AND a.sourceId = ? AND a.role = ? AND a.state = 'assigned'
++ AND t.deadline > ? AND a.controllerNamespace = ? AND i.controllerNamespace = a.controllerNamespace
++ AND i.incarnationId = a.incarnationId AND i.lifecycleGeneration = a.lifecycleGeneration AND i.kind = a.role
++ AND i.controllerClass = CASE WHEN a.role = 'trusted_brain' THEN 'SessionRuntime' ELSE 'Sandbox' END
++ AND i.retiredAt IS NULL AND i.state NOT IN ('destroyed','destroying','failed')
++ AND NOT EXISTS (SELECT 1 FROM runtime_retired_identity_fences f WHERE f.identityId = i.id)
++ AND i.id = CASE a.role WHEN 'trusted_brain' THEN t.brainIdentityId WHEN 'workspace_session' THEN t.sandboxIdentityId ELSE t.builderIdentityId END`;
++
++export function createRuntimeStartupService(deps: Deps) {
++ const now = deps.now ?? Date.now;
++ const source = (input: StartupReference) => deps.db.prepare(`SELECT * FROM runtime_startup_sources WHERE sourceKind = ? AND sourceId = ? AND deadline > ?`).bind(input.sourceKind, input.sourceId, now()).first<Source>();
++ const assignment = (input: RegisterStartup) => deps.db.prepare(liveAssignment).bind(input.sourceKind, input.sourceId, input.role, now(), deps.namespace).first<StartupAssignment>();
++
++ async function register(input: RegisterStartup): Promise<StartupAssignment> {
++  checkRegistration(input);
++  if (!deps.namespace) throw new Error("startup_unavailable");
++  const t = await source(input);
++  if (!t || (input.sourceKind === "builder" ? input.role !== "project_seed" : input.role === "project_seed")) throw new Error("startup_denied");
++  const existing = await assignment(input);
++  if (existing) return existing;
++  const prior = await deps.db.prepare(`SELECT identityId FROM runtime_startup_assignments WHERE sourceKind = ? AND sourceId = ? AND role = ?`).bind(input.sourceKind, input.sourceId, input.role).first();
++  if (prior) throw new Error("startup_denied");
++  const linked = input.role === "trusted_brain" ? t.brainIdentityId : input.role === "workspace_session" ? t.sandboxIdentityId : t.builderIdentityId;
++  const current = linked ? await deps.db.prepare(`SELECT id, sandboxId, containerId, incarnationId, lifecycleGeneration FROM sandbox_identities
++   WHERE id = ? AND userId = ? AND projectId = ? AND workspaceSessionId IS ? AND kind = ?
++   AND controllerNamespace = ? AND controllerClass = ? AND incarnationId IS NOT NULL AND retiredAt IS NULL
++   AND state NOT IN ('destroyed','destroying','failed') AND NOT EXISTS (SELECT 1 FROM runtime_retired_identity_fences f WHERE f.identityId = sandbox_identities.id)`)
++   .bind(linked, t.userId, t.projectId, t.sessionId, input.role, deps.namespace, input.role === "trusted_brain" ? "SessionRuntime" : "Sandbox")
++   .first<{ id: string; sandboxId: string; containerId: string; incarnationId: string; lifecycleGeneration: number }>() : null;
++  if (linked && !current) throw new Error("startup_denied");
++  const identityId = current?.id ?? crypto.randomUUID();
++  const incarnationId = current?.incarnationId ?? crypto.randomUUID();
++  const generation = current?.lifecycleGeneration ?? 1;
++  const routingName = current?.sandboxId ?? (input.role === "trusted_brain" ? t.sessionId : crypto.randomUUID());
++  if (!routingName) throw new Error("startup_denied");
++  const route = await deps.runtime.startupRouting({ role: input.role, routingName });
++  if (route.controllerNamespace !== deps.namespace || route.controllerClass !== (input.role === "trusted_brain" ? "SessionRuntime" : "Sandbox") || !route.containerId || (current && route.containerId !== current.containerId)) throw new Error("startup_denied");
++  // The source and old link are predicates of each write, including after routing RPC.
++  const authority = `EXISTS (SELECT 1 FROM runtime_startup_sources t WHERE t.sourceKind = ? AND t.sourceId = ? AND t.deadline > ?
++   AND t.userId = ? AND t.projectId = ? AND t.sessionId IS ? AND t.ownerVersion = ?
++   AND CASE ? WHEN 'trusted_brain' THEN t.brainIdentityId WHEN 'workspace_session' THEN t.sandboxIdentityId ELSE t.builderIdentityId END IS ?)`;
++  const auth = () => [input.sourceKind, input.sourceId, now(), t.userId, t.projectId, t.sessionId, t.ownerVersion, input.role, linked];
++  const identityPredicate = `EXISTS (SELECT 1 FROM sandbox_identities i WHERE i.id = ? AND i.kind = ? AND i.userId = ? AND i.projectId = ?
++   AND i.workspaceSessionId IS ? AND i.incarnationId = ? AND i.lifecycleGeneration = ? AND i.controllerClass = ? AND i.controllerNamespace = ? AND i.containerId = ?
++   AND i.retiredAt IS NULL AND i.state NOT IN ('destroyed','destroying','failed') AND NOT EXISTS (SELECT 1 FROM runtime_retired_identity_fences f WHERE f.identityId = i.id))`;
++  const identityAuth = [identityId, input.role, t.userId, t.projectId, t.sessionId, incarnationId, generation, route.controllerClass, deps.namespace, route.containerId];
++  const statements = [
++   deps.db.prepare(`INSERT INTO sandbox_identities (id,kind,sandboxId,containerId,userId,projectId,workspaceSessionId,controllerClass,controllerNamespace,incarnationId,lifecycleGeneration,state)
++    SELECT ?,?,?,?,?,?,?,?,?,?,?,'provisioning' WHERE ${authority} AND ? IS NULL
++    AND NOT EXISTS (SELECT 1 FROM runtime_retired_identity_fences WHERE identityId = ?)
++    AND NOT EXISTS (SELECT 1 FROM runtime_startup_assignments WHERE sourceKind = ? AND sourceId = ? AND role = ?)`)
++    .bind(identityId,input.role,routingName,route.containerId,t.userId,t.projectId,t.sessionId,route.controllerClass,deps.namespace,incarnationId,generation,...auth(),linked,identityId,input.sourceKind,input.sourceId,input.role),
++   deps.db.prepare(`INSERT INTO runtime_startup_assignments (sourceKind,sourceId,role,identityId,incarnationId,lifecycleGeneration,ownerVersion,controllerNamespace,state)
++    SELECT ?,?,?,?,?,?,?,?,'assigned' WHERE ${authority} AND ${identityPredicate}
++    ON CONFLICT(sourceKind,sourceId,role) DO NOTHING`)
++    .bind(input.sourceKind,input.sourceId,input.role,identityId,incarnationId,generation,t.ownerVersion,deps.namespace,...auth(),...identityAuth),
++  ];
++  if (input.role === "project_seed") {
++   statements.push(deps.db.prepare(`UPDATE project_seeds SET expectedIdentityId = ? WHERE id = ? AND ${authority}
++    AND EXISTS (SELECT 1 FROM runtime_startup_assignments a WHERE a.sourceKind = ? AND a.sourceId = ? AND a.role = ? AND a.identityId = ?)`)
++    .bind(identityId,input.sourceId,...auth(),input.sourceKind,input.sourceId,input.role,identityId));
++  } else {
++   const column = input.role === "trusted_brain" ? "brainIdentityId" : "sandboxIdentityId";
++   statements.push(deps.db.prepare(`UPDATE workspace_sessions SET ${column} = ? WHERE id = ? AND ${authority}
++    AND EXISTS (SELECT 1 FROM runtime_startup_assignments a WHERE a.sourceKind = ? AND a.sourceId = ? AND a.role = ? AND a.identityId = ?)`)
++    .bind(identityId,t.sessionId,...auth(),input.sourceKind,input.sourceId,input.role,identityId));
++  }
++  // A failed final predicate aborts the whole batch, not just the link update.
++  statements.push(deps.db.prepare(`UPDATE runtime_startup_assignments SET state = 'invalid' WHERE sourceKind = ? AND sourceId = ? AND role = ?
++   AND NOT EXISTS (${liveAssignment})`).bind(input.sourceKind,input.sourceId,input.role,input.sourceKind,input.sourceId,input.role,now(),deps.namespace));
++  await deps.db.batch(statements);
++  const result = await assignment(input);
++  if (!result) throw new Error("startup_denied");
++  return result;
++ }
++
++ async function reserve(input: StartupReference) {
++  checkStartupReference(input);
++  const count = input.sourceKind === "builder" ? 1 : 2;
++  const valid = `SELECT a.*, i.userId, i.workspaceSessionId AS sessionId, t.projectId,
++   CASE a.role WHEN 'trusted_brain' THEN 'brain' ELSE 'execution' END AS pool
++   FROM runtime_startup_assignments a JOIN runtime_startup_sources t ON t.sourceKind = a.sourceKind AND t.sourceId = a.sourceId AND t.ownerVersion = a.ownerVersion
++   JOIN sandbox_identities i ON i.id = a.identityId AND i.kind = a.role AND i.userId = t.userId AND i.projectId = t.projectId AND i.workspaceSessionId IS t.sessionId
++   WHERE a.sourceKind = ? AND a.sourceId = ? AND t.deadline > ? AND a.state = 'assigned' AND a.controllerNamespace = ?
++   AND i.controllerNamespace = a.controllerNamespace AND i.controllerClass = CASE a.role WHEN 'trusted_brain' THEN 'SessionRuntime' ELSE 'Sandbox' END
++   AND i.incarnationId = a.incarnationId AND i.lifecycleGeneration = a.lifecycleGeneration AND i.retiredAt IS NULL AND i.state NOT IN ('destroyed','destroying','failed')
++   AND i.id = CASE a.role WHEN 'trusted_brain' THEN t.brainIdentityId WHEN 'workspace_session' THEN t.sandboxIdentityId ELSE t.builderIdentityId END
++   AND NOT EXISTS (SELECT 1 FROM runtime_retired_identity_fences f WHERE f.identityId = i.id)`;
++  await deps.db.prepare(`WITH required AS (${valid}), missing AS (
++   SELECT q.* FROM required q WHERE NOT EXISTS (SELECT 1 FROM runtime_capacity_reservations r WHERE r.identityId = q.identityId AND r.pool = q.pool AND r.activeSlot = 'active'))
++   INSERT INTO runtime_capacity_reservations (id,pool,ownerKind,ownerId,userId,sessionId,identityId,incarnationId,reservationGroupId,observedState,expiresAt,runtimeOwnerVersion,accountingVersion,activeSlot,createdAt,updatedAt)
++   SELECT lower(hex(randomblob(16))), m.pool, CASE WHEN m.role = 'project_seed' THEN 'builder' ELSE 'workspace_session' END,
++   coalesce(m.sessionId, m.sourceId),m.userId,m.sessionId,m.identityId,m.incarnationId,?,'reserved',NULL,m.ownerVersion,p.version,'active',?,?
++   FROM missing m JOIN runtime_capacity_policy p ON p.id = 1 AND p.accountingMode = 'unified'
++   WHERE (SELECT count(*) FROM required) = ?
++   AND NOT EXISTS (SELECT 1 FROM required q JOIN runtime_capacity_reservations r ON r.identityId = q.identityId AND r.pool = q.pool AND r.activeSlot = 'active'
++    WHERE r.incarnationId IS NOT q.incarnationId OR r.runtimeOwnerVersion != q.ownerVersion OR r.userId != q.userId OR r.accountingVersion != p.version OR r.observedState = 'released')
++   AND NOT EXISTS (SELECT 1 FROM missing q WHERE
++    (SELECT count(*) FROM runtime_capacity_reservations r WHERE r.pool = q.pool AND r.activeSlot = 'active') + (SELECT count(*) FROM missing n WHERE n.pool = q.pool) > 20
++    OR (SELECT count(*) FROM runtime_capacity_reservations r WHERE r.pool = q.pool AND r.userId = q.userId AND r.activeSlot = 'active') + (SELECT count(*) FROM missing n WHERE n.pool = q.pool AND n.userId = q.userId) > 2)`)
++   .bind(input.sourceKind,input.sourceId,now(),deps.namespace,`${input.sourceKind}:${input.sourceId}`,now(),now(),count).run();
++  const rows = await deps.db.prepare(`WITH required AS (${valid}) SELECT r.id AS reservationId, q.sourceKind,q.sourceId,q.role,q.identityId,q.incarnationId,q.ownerVersion,q.lifecycleGeneration
++   FROM required q JOIN runtime_capacity_reservations r ON r.identityId = q.identityId AND r.pool = q.pool AND r.activeSlot = 'active' AND r.incarnationId = q.incarnationId AND r.runtimeOwnerVersion = q.ownerVersion AND r.userId = q.userId
++   JOIN runtime_capacity_policy p ON p.id = 1 AND p.accountingMode = 'unified' AND p.version = r.accountingVersion`).bind(input.sourceKind,input.sourceId,now(),deps.namespace).all<CapacityReference>();
++  if (rows.results.length !== count) throw new Error("capacity_denied");
++  return rows.results;
++ }
++
++ async function observe(input: CapacityReference, release = false): Promise<void> {
++  startupObject(input,["sourceKind","sourceId","role","reservationId","identityId","incarnationId","ownerVersion","lifecycleGeneration"]);
++  checkRegistration({sourceKind: input.sourceKind,sourceId: input.sourceId,role: input.role});
++  // Cleanup retains the source assignment after its startup deadline or deletion.
++  const resolve = () => deps.db.prepare(`SELECT a.sourceKind,a.sourceId,a.role,a.identityId,a.incarnationId,a.ownerVersion,a.lifecycleGeneration,
++   i.userId,i.projectId,i.workspaceSessionId AS sessionId,i.sandboxId AS routingName,i.containerId,i.controllerClass,i.controllerNamespace
++   FROM runtime_startup_assignments a JOIN sandbox_identities i ON i.id = a.identityId
++   JOIN runtime_capacity_reservations r ON r.identityId = a.identityId AND r.incarnationId = a.incarnationId AND r.runtimeOwnerVersion = a.ownerVersion
++   JOIN projects p ON p.id = i.projectId AND p.userId = i.userId
++   LEFT JOIN workspace_sessions s ON s.id = i.workspaceSessionId
++   JOIN runtime_capacity_policy cp ON cp.id = 1 AND cp.accountingMode = 'unified' AND cp.version = r.accountingVersion
++   WHERE a.sourceKind = ? AND a.sourceId = ? AND a.role = ? AND r.id = ? AND a.identityId = ? AND a.incarnationId = ? AND a.ownerVersion = ? AND a.lifecycleGeneration = ?
++   AND r.pool = CASE a.role WHEN 'trusted_brain' THEN 'brain' ELSE 'execution' END AND r.userId = i.userId AND r.sessionId IS i.workspaceSessionId
++   AND i.controllerNamespace = ? AND a.controllerNamespace = i.controllerNamespace AND i.kind = a.role
++   AND i.controllerClass = CASE a.role WHEN 'trusted_brain' THEN 'SessionRuntime' ELSE 'Sandbox' END
++   AND (i.workspaceSessionId IS NULL OR (s.userId = i.userId AND s.projectId = i.projectId AND s.runtimeOwnerVersion = a.ownerVersion))`)
++   .bind(input.sourceKind,input.sourceId,input.role,input.reservationId,input.identityId,input.incarnationId,input.ownerVersion,input.lifecycleGeneration,deps.namespace).first<StartupAssignment>();
++  const a = await resolve();
++  if (!a) throw new Error("capacity_denied");
++  const evidence = await deps.runtime.observeStartup(a);
++  if (!evidence || evidence.identityId !== a.identityId || evidence.incarnationId !== a.incarnationId || evidence.lifecycleGeneration !== a.lifecycleGeneration || evidence.containerId !== a.containerId || evidence.controllerClass !== a.controllerClass || evidence.controllerNamespace !== a.controllerNamespace || (release ? evidence.state !== "terminated" : evidence.state !== "running")) throw new Error("capacity_denied");
++  // Rechecking the same joins in the write denies an owner transfer during observation.
++  const predicate = resolve();
++  const row = await predicate;
++  if (!row) throw new Error("capacity_denied");
++  const result = await deps.db.prepare(`UPDATE runtime_capacity_reservations SET observedState = ?, activeSlot = CASE WHEN ? = 1 THEN id ELSE activeSlot END, updatedAt = ?
++   WHERE id = ? AND identityId = ? AND incarnationId = ? AND runtimeOwnerVersion = ?
++   AND observedState != 'released' AND activeSlot = 'active'
++   AND EXISTS (SELECT 1 FROM runtime_startup_assignments a JOIN sandbox_identities i ON i.id = a.identityId
++    JOIN projects p ON p.id = i.projectId AND p.userId = i.userId
++    LEFT JOIN workspace_sessions s ON s.id = i.workspaceSessionId
++    JOIN runtime_capacity_policy cp ON cp.id = 1 AND cp.accountingMode = 'unified' AND cp.version = runtime_capacity_reservations.accountingVersion
++    WHERE a.sourceKind = ? AND a.sourceId = ? AND a.role = ? AND a.identityId = runtime_capacity_reservations.identityId AND a.incarnationId = runtime_capacity_reservations.incarnationId
++    AND a.ownerVersion = runtime_capacity_reservations.runtimeOwnerVersion AND a.lifecycleGeneration = ?
++    AND a.controllerNamespace = ? AND i.controllerNamespace = a.controllerNamespace AND i.containerId = ? AND i.kind = a.role AND i.controllerClass = ?
++    AND i.userId = runtime_capacity_reservations.userId AND i.workspaceSessionId IS runtime_capacity_reservations.sessionId
++    AND (i.workspaceSessionId IS NULL OR (s.userId = i.userId AND s.projectId = i.projectId AND s.runtimeOwnerVersion = a.ownerVersion))
++    AND (? = 1 OR (i.retiredAt IS NULL AND i.incarnationId = a.incarnationId AND i.lifecycleGeneration = a.lifecycleGeneration
++     AND p.status != 'deleting' AND (i.workspaceSessionId IS NULL OR (s.status = 'active' AND s.runtimeOwner = 'trusted_v1'))
++     AND NOT EXISTS (SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind = 'project' AND f.targetId = p.id) OR (f.targetKind = 'workspace_session' AND f.targetId = s.id))))) RETURNING id`)
++   .bind(release ? "released" : "running",release ? 1 : 0,now(),input.reservationId,input.identityId,input.incarnationId,input.ownerVersion,input.sourceKind,input.sourceId,input.role,input.lifecycleGeneration,deps.namespace,a.containerId,a.controllerClass,release ? 1 : 0).first();
++  if (!result) {
++   const released = release && await deps.db.prepare(`SELECT id FROM runtime_capacity_reservations WHERE id = ? AND identityId = ? AND incarnationId = ? AND runtimeOwnerVersion = ? AND observedState = 'released'`).bind(input.reservationId,input.identityId,input.incarnationId,input.ownerVersion).first();
++   if (!released) throw new Error("capacity_denied");
++  }
++ }
++
++ async function transition(input: IdentityTransitionReference, action: "rotate" | "retire") {
++  startupObject(input,["transitionId","identityId","incarnationId","ownerVersion","lifecycleGeneration"]);
++  const receipt = await deps.db.prepare(`SELECT t.state,t.replacementIncarnationId FROM runtime_identity_transitions t
++   JOIN sandbox_identities i ON i.id = t.identityId AND i.userId = t.userId AND i.projectId = t.projectId AND i.workspaceSessionId IS t.sessionId
++   JOIN projects p ON p.id = t.projectId AND p.userId = t.userId LEFT JOIN workspace_sessions s ON s.id = t.sessionId
++   WHERE t.id = ? AND t.action = ? AND t.identityId = ? AND t.incarnationId = ? AND t.ownerVersion = ? AND t.lifecycleGeneration = ?
++   AND (t.sessionId IS NULL OR (s.userId = t.userId AND s.projectId = t.projectId AND s.runtimeOwnerVersion = t.ownerVersion))`)
++   .bind(input.transitionId,action,input.identityId,input.incarnationId,input.ownerVersion,input.lifecycleGeneration).first<{state: string; replacementIncarnationId: string | null}>();
++  if (!receipt) throw new Error("identity_transition_denied");
++  if (receipt.state === "complete") return {replacementIncarnationId: receipt.replacementIncarnationId};
++  if (action === "rotate") {
++   const a = await deps.db.prepare(`SELECT a.sourceKind,a.sourceId,a.role,a.identityId,a.incarnationId,a.ownerVersion,a.lifecycleGeneration,
++    i.userId,i.projectId,i.workspaceSessionId AS sessionId,i.sandboxId AS routingName,i.containerId,i.controllerClass,i.controllerNamespace
++    FROM runtime_startup_assignments a JOIN sandbox_identities i ON i.id = a.identityId
++    WHERE a.identityId = ? AND a.incarnationId = ? AND a.ownerVersion = ? AND a.lifecycleGeneration = ? AND i.controllerNamespace = ? LIMIT 1`)
++    .bind(input.identityId,input.incarnationId,input.ownerVersion,input.lifecycleGeneration,deps.namespace).first<StartupAssignment>();
++   if (!a) throw new Error("identity_transition_denied");
++   const evidence = await deps.runtime.observeStartup(a);
++   if (!evidence || !["terminated","isolated"].includes(evidence.state) || evidence.identityId !== a.identityId || evidence.incarnationId !== a.incarnationId || evidence.lifecycleGeneration !== a.lifecycleGeneration || evidence.containerId !== a.containerId || evidence.controllerClass !== a.controllerClass || evidence.controllerNamespace !== a.controllerNamespace) throw new Error("identity_transition_denied");
++  }
++  const replacement = crypto.randomUUID();
++  const completionToken = crypto.randomUUID();
++  const completedAt = now();
++  const predicate = `EXISTS (SELECT 1 FROM runtime_identity_transitions t JOIN projects p ON p.id = t.projectId AND p.userId = t.userId
++   LEFT JOIN workspace_sessions s ON s.id = t.sessionId
++   WHERE t.id = ? AND t.action = ? AND t.identityId = sandbox_identities.id AND t.incarnationId = ? AND t.ownerVersion = ? AND t.lifecycleGeneration = ?
++   AND t.userId = sandbox_identities.userId AND t.projectId = sandbox_identities.projectId AND t.sessionId IS sandbox_identities.workspaceSessionId
++   AND t.state = 'approved' AND t.deadline > ? AND sandbox_identities.incarnationId = t.incarnationId AND sandbox_identities.lifecycleGeneration = t.lifecycleGeneration
++   AND sandbox_identities.controllerNamespace = ? AND sandbox_identities.controllerClass = CASE sandbox_identities.kind WHEN 'trusted_brain' THEN 'SessionRuntime' ELSE 'Sandbox' END
++   AND (t.sessionId IS NULL OR (s.userId = t.userId AND s.projectId = t.projectId AND s.runtimeOwner = t.expectedOwner AND s.runtimeOwnerVersion = t.ownerVersion
++    AND sandbox_identities.id = CASE sandbox_identities.kind WHEN 'trusted_brain' THEN s.brainIdentityId ELSE s.sandboxIdentityId END))
++   AND ((t.sourceKind = 'deletion' AND t.action = 'retire' AND p.status = 'deleting' AND EXISTS (SELECT 1 FROM session_commands c WHERE c.id = t.sourceId AND c.kind = 'project_delete' AND c.projectId = p.id AND c.userId = p.userId))
++    OR (t.sourceKind IN ('recovery','lifecycle','migration') AND p.status != 'deleting' AND (t.sessionId IS NULL OR s.status = 'active')
++     AND NOT EXISTS (SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind = 'project' AND f.targetId = p.id) OR (f.targetKind = 'workspace_session' AND f.targetId = s.id)))))`;
++  const args = () => [input.transitionId,action,input.incarnationId,input.ownerVersion,input.lifecycleGeneration,now(),deps.namespace];
++  const statements = [deps.db.prepare(`UPDATE runtime_identity_transitions SET completionToken = ? WHERE id = ? AND state = 'approved'
++   AND EXISTS (SELECT 1 FROM sandbox_identities WHERE id = ? AND retiredAt IS NULL AND state NOT IN ('destroyed','destroying')
++    AND NOT EXISTS (SELECT 1 FROM runtime_retired_identity_fences f WHERE f.identityId = sandbox_identities.id) AND ${predicate})`)
++   .bind(completionToken,input.transitionId,input.identityId,...args()),
++   deps.db.prepare(`UPDATE sandbox_identities SET
++   incarnationId = CASE WHEN ? = 'rotate' THEN ? ELSE incarnationId END,
++   lifecycleGeneration = lifecycleGeneration + CASE WHEN ? = 'rotate' THEN 1 ELSE 0 END,
++   retiredAt = CASE WHEN ? = 'retire' THEN ? ELSE retiredAt END,
++   state = CASE WHEN ? = 'retire' THEN 'destroyed' ELSE 'provisioning' END
++   WHERE id = ? AND retiredAt IS NULL AND state NOT IN ('destroyed','destroying')
++   AND NOT EXISTS (SELECT 1 FROM runtime_retired_identity_fences f WHERE f.identityId = sandbox_identities.id) AND ${predicate} AND EXISTS (SELECT 1 FROM runtime_identity_transitions t WHERE t.id = ? AND t.completionToken = ?) RETURNING id`)
++   .bind(action,replacement,action,action,Math.floor(now()/1000),action,input.identityId,...args(),input.transitionId,completionToken),
++   deps.db.prepare(`UPDATE runtime_identity_transitions SET state = 'complete', replacementIncarnationId = ?, completedAt = ?, completionToken = ?
++    WHERE id = ? AND action = ? AND identityId = ? AND incarnationId = ? AND ownerVersion = ? AND lifecycleGeneration = ? AND state = 'approved' AND completionToken = ?
++    AND EXISTS (SELECT 1 FROM sandbox_identities i WHERE i.id = runtime_identity_transitions.identityId AND ((? = 'rotate' AND i.incarnationId = ? AND i.lifecycleGeneration = ? + 1) OR (? = 'retire' AND i.retiredAt IS NOT NULL AND i.incarnationId = ?)))`)
++    .bind(action === "rotate" ? replacement : null,completedAt,completionToken,input.transitionId,action,input.identityId,input.incarnationId,input.ownerVersion,input.lifecycleGeneration,completionToken,action,replacement,input.lifecycleGeneration,action,input.incarnationId),
++   deps.db.prepare(`INSERT INTO runtime_retired_identity_fences (identityId,lifecycleGeneration,retiredAt)
++    SELECT i.id,i.lifecycleGeneration,? FROM sandbox_identities i JOIN runtime_identity_transitions t ON t.identityId = i.id
++    WHERE t.id = ? AND t.completionToken = ? AND t.action = 'retire' AND t.state = 'complete' AND i.retiredAt IS NOT NULL ON CONFLICT(identityId) DO NOTHING`).bind(now(),input.transitionId,completionToken),
++   deps.db.prepare(`UPDATE runtime_startup_assignments SET state = 'retired' WHERE identityId = ? AND EXISTS (SELECT 1 FROM runtime_identity_transitions t WHERE t.id = ? AND t.identityId = ? AND t.state = 'complete' AND t.completionToken = ?)`).bind(input.identityId,input.transitionId,input.identityId,completionToken),
++   deps.db.prepare(`UPDATE privileged_operations SET closedAt = ?, closeReason = 'identity_transition', openSlot = id WHERE identityId = ? AND closedAt IS NULL
++    AND EXISTS (SELECT 1 FROM runtime_identity_transitions t WHERE t.id = ? AND t.identityId = ? AND t.state = 'complete' AND t.completionToken = ?)`).bind(Math.floor(now()/1000),input.identityId,input.transitionId,input.identityId,completionToken),
++   deps.db.prepare(`UPDATE runtime_identity_transitions SET state = 'invalid' WHERE id = ? AND completionToken = ? AND state != 'complete'`).bind(input.transitionId,completionToken),
++  ];
++  await deps.db.batch(statements);
++  const result = await deps.db.prepare(`SELECT replacementIncarnationId FROM runtime_identity_transitions WHERE id = ? AND action = ? AND identityId = ? AND incarnationId = ? AND ownerVersion = ? AND lifecycleGeneration = ? AND state = 'complete'`).bind(input.transitionId,action,input.identityId,input.incarnationId,input.ownerVersion,input.lifecycleGeneration).first<{replacementIncarnationId: string | null}>();
++  if (!result) throw new Error("identity_transition_denied");
++  return result;
++ }
++ return { register, reserve, observe: (input: CapacityReference) => observe(input), release: (input: CapacityReference) => observe(input,true), rotate: (input: IdentityTransitionReference) => transition(input,"rotate"), retire: (input: IdentityTransitionReference) => transition(input,"retire") };
++}
+diff --git a/apps/web/src/lib/sandbox-public-egress.ts b/apps/web/src/lib/sandbox-public-egress.ts
+new file mode 100644
+index 0000000..40de7b7
+--- /dev/null
++++ b/apps/web/src/lib/sandbox-public-egress.ts
+@@ -0,0 +1,108 @@
++import { isDittoSyntheticHost } from "./ditto-action-contract";
++
++function isLiteralIpHostname(hostname: string): boolean {
++	return (
++		/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) ||
++		hostname.includes(":") ||
++		/^0x/i.test(hostname) ||
++		/^\d+$/.test(hostname)
++	);
++}
++
++function isPrivateOrSpecialHostname(hostname: string): boolean {
++	const host = hostname.toLowerCase();
++	if (
++		host === "localhost" ||
++		host.endsWith(".localhost") ||
++		host.endsWith(".local") ||
++		host === "metadata.google.internal" ||
++		host.endsWith(".internal")
++	)
++		return true;
++	if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return false;
++	const parts = host.split(".").map(Number);
++	if (parts.length !== 4 || parts.some((part) => part > 255)) return true;
++	const [a, b] = parts as [number, number, number, number];
++	return (
++		a === 10 ||
++		a === 127 ||
++		a === 0 ||
++		a === 169 ||
++		a === 224 ||
++		a >= 240 ||
++		(a === 172 && b >= 16 && b <= 31) ||
++		(a === 192 && b === 168) ||
++		(a === 100 && b >= 64 && b <= 127)
++	);
++}
++
++export function validatePublicInternetDestination(url: URL): string | null {
++	if (url.protocol !== "http:" && url.protocol !== "https:") return "non_http";
++	const expectedPort = url.protocol === "https:" ? "443" : "80";
++	if ((url.port || expectedPort) !== expectedPort) return "invalid_port";
++	if (url.username || url.password) return "embedded_credentials";
++	const host = url.hostname.toLowerCase();
++	if (!host || host.includes(" ") || host.includes("%") || host.endsWith("."))
++		return "ambiguous_host";
++	if (isLiteralIpHostname(host)) return "literal_ip";
++	if (isPrivateOrSpecialHostname(host)) return "private_destination";
++	if (isDittoSyntheticHost(host)) return "privileged_placeholder";
++	return null;
++}
++
++function denied(reasonCode: string, status = 403): Response {
++	console.info(
++		JSON.stringify({
++			type: "sandbox_egress_deny",
++			reasonCode,
++			correlationId: null,
++			family: null,
++		}),
++	);
++	return Response.json(
++		{ error: "denied", reasonCode, correlationId: null },
++		{
++			status,
++			headers: { "x-ditto-deny-reason": reasonCode },
++		},
++	);
++}
++
++export async function handlePublicInternet(
++	request: Request,
++	fetchImpl: typeof fetch,
++): Promise<Response> {
++	let url: URL;
++	try {
++		url = new URL(request.url);
++	} catch {
++		return denied("invalid_url", 400);
++	}
++	const destinationError = validatePublicInternetDestination(url);
++	if (destinationError) return denied(destinationError);
++	const headers = new Headers();
++	for (const [name, value] of request.headers) {
++		if (
++			name === "authorization" ||
++			name === "cookie" ||
++			name.startsWith("proxy-") ||
++			name.startsWith("x-forwarded-") ||
++			name === "forwarded"
++		)
++			continue;
++		headers.set(name, value);
++	}
++	const init: RequestInit & { duplex?: "half" } = {
++		method: request.method,
++		headers,
++		redirect: "manual",
++	};
++	if (request.body) {
++		init.body = request.body;
++		init.duplex = "half";
++	}
++	const upstream = await fetchImpl(new Request(url, init));
++	if (upstream.status >= 300 && upstream.status < 400)
++		return denied("redirect_denied", 502);
++	return upstream;
++}
+diff --git a/apps/web/src/lib/session-runtime-security.test.ts b/apps/web/src/lib/session-runtime-security.test.ts
+new file mode 100644
+index 0000000..1c1fc08
+--- /dev/null
++++ b/apps/web/src/lib/session-runtime-security.test.ts
+@@ -0,0 +1,334 @@
++import { afterEach, describe, expect, it, vi } from "vitest";
++import type { BrainRequest } from "../../../runtime/src/brain-transport";
++import {
++	handleRuntimeOutbound,
++	type PlatformOutboundContext,
++	type RuntimeSource,
++} from "../../../runtime/src/runtime-egress";
++import {
++	createSessionRuntimeFixture,
++	type SessionRuntimeFixture,
++} from "../test/session-runtime-fixture";
++import productPublic, { ProductEntrypoint } from "./runtime-product-worker";
++import { handleSessionCommandRequest } from "./session-command";
++import { createSqliteD1 } from "./sqlite-d1-test-utils";
++
++vi.mock("cloudflare:workers", () => ({
++	env: {},
++	WorkerEntrypoint: class {
++		constructor(
++			readonly ctx: unknown,
++			readonly env: unknown,
++		) {}
++	},
++}));
++const fixtures: SessionRuntimeFixture[] = [];
++afterEach(() => {
++	for (const f of fixtures.splice(0)) f.dispose();
++	vi.restoreAllMocks();
++});
++
++async function setup() {
++	const f = createSessionRuntimeFixture();
++	fixtures.push(f);
++	f.seedTrustedSession();
++	f.seedTrustedExecutionEvidence();
++	const admission = await handleSessionCommandRequest({
++		db: f.db,
++		runtime: f.runtime,
++		authenticatedUserId: "user-1",
++		body: {
++			version: 1,
++			kind: "prompt",
++			projectId: "proj-1",
++			sessionId: "sess-1",
++			idempotencyKey: "transport",
++			text: "hello",
++		},
++	});
++	expect(admission.status).toBe(202);
++	await f.deliver();
++	const coordinator = f.coordinator("sess-1");
++	await coordinator.reconcile();
++	const snapshot = await coordinator.readSnapshot();
++	const runId = snapshot.runStates[0].id;
++	const command = f.sqlite.prepare("SELECT id FROM session_commands").get() as {
++		id: string;
++	};
++	f.sqlite.exec(`UPDATE sandbox_identities SET controllerNamespace = 'runtime';
++		CREATE TABLE privileged_operations (
++			id text PRIMARY KEY, identityId text, family text, type text, contractVersion integer,
++			closedAt integer, expiresAt integer, lifecycleGeneration integer, incarnationId text,
++			runtimeOwnerVersion integer, runId text, runEpoch integer, admissionReference text
++		);`);
++	f.sqlite
++		.prepare(
++			`INSERT INTO privileged_operations VALUES ('transport-operation', 'brain-sess-1', 'ditto_action', 'brain_transport', 1, NULL, ?, 1, 'synthetic-brain-1', 1, ?, 1, ?)`,
++		)
++		.run(Math.floor(Date.now() / 1000) + 60, runId, command.id);
++	const env = {
++		DB: createSqliteD1(f.sqlite),
++		RUNTIME_CONTROLLER_NAMESPACE: "runtime",
++	};
++	const ctx: PlatformOutboundContext = {
++		containerId: "brain-container-sess-1",
++		className: "SessionRuntime",
++		params: { incarnation: "synthetic-brain-1", lifecycleGeneration: 1 },
++	};
++	const body: BrainRequest = {
++		version: 1,
++		kind: "continuation",
++		brainIdentityId: "brain-sess-1",
++		brainIncarnationId: "synthetic-brain-1",
++		runId,
++		attempt: 1,
++		runEpoch: 1,
++		operationId: "transport-operation",
++		expectedCommittedPosition: 0,
++		payload: { entries: [] },
++		ownerVersion: 1,
++		lifecycleGeneration: 1,
++		deadline: Date.now() + 30_000,
++	};
++	const network = vi.fn<typeof fetch>(
++		async () => new Response("public", { status: 200 }),
++	);
++	const dispatch = vi.fn(async (source: RuntimeSource, parsed: BrainRequest) =>
++		coordinator.commitContinuation({
++			expectedPosition: parsed.expectedCommittedPosition,
++			snapshot: parsed.payload,
++			runId: parsed.runId,
++			brainIncarnationId: source.incarnation,
++			lifecycleGeneration: source.lifecycleGeneration,
++			ownerVersion: source.ownerVersion,
++			runEpoch: parsed.runEpoch,
++		}),
++	);
++	const request = (
++		overrides: Partial<BrainRequest> = {},
++		headers: HeadersInit = { "content-type": "application/json" },
++	) =>
++		new Request("http://ditto.internal/v1/continuation", {
++			method: "POST",
++			headers,
++			body: JSON.stringify({ ...body, ...overrides }),
++		});
++	const send = (req = request(), context = ctx) =>
++		handleRuntimeOutbound(req, env, context, dispatch, network);
++	return {
++		f,
++		coordinator,
++		env,
++		ctx,
++		body,
++		network,
++		dispatch,
++		request,
++		send,
++		command,
++	};
++}
++
++describe("local runtime transport, real D1 and coordinator, no platform RPC claim", () => {
++	it("T27 valid brain transport commits real encrypted continuation with no public fallback", async () => {
++		const s = await setup();
++		const response = await s.send();
++		expect(response.status).toBe(200);
++		expect(await response.json()).toEqual({ position: 1 });
++		expect(
++			await s.coordinator.readCanonicalContinuation(1, {
++				brainIncarnationId: "synthetic-brain-1",
++			}),
++		).toEqual({ entries: [] });
++		expect(s.network).not.toHaveBeenCalled();
++	});
++	it("B06 expiry during awaited authority lookup prevents dispatch", async () => {
++		const s = await setup();
++		let now = Date.now();
++		vi.spyOn(Date, "now").mockImplementation(() => now);
++		const prepare = s.env.DB.prepare.bind(s.env.DB);
++		vi.spyOn(s.env.DB, "prepare").mockImplementation((query) => {
++			const statement = prepare(query);
++			if (query.includes("SELECT o.id")) {
++				const bind = statement.bind.bind(statement);
++				vi.spyOn(statement, "bind").mockImplementation((...values) => {
++					const bound = bind(...values);
++					const first = bound.first.bind(bound);
++					vi.spyOn(bound, "first").mockImplementation(async () => {
++						const row = await first();
++						now = s.body.deadline + 1;
++						return row;
++					});
++					return bound;
++				});
++			}
++			return statement;
++		});
++		expect((await s.send()).status).toBe(403);
++		expect(s.dispatch).not.toHaveBeenCalled();
++		expect(s.network).not.toHaveBeenCalled();
++	});
++	it("T27 executor source cannot acquire brain authority from a forged envelope", async () => {
++		const s = await setup();
++		const row = s.f.sqlite
++			.prepare(
++				"SELECT containerId, incarnationId FROM sandbox_identities WHERE kind = 'workspace_session'",
++			)
++			.get() as { containerId: string; incarnationId: string };
++		const response = await s.send(s.request(), {
++			containerId: row.containerId,
++			className: "Sandbox",
++			params: { incarnation: row.incarnationId, lifecycleGeneration: 1 },
++		});
++		expect(response.status).toBe(403);
++		expect(s.dispatch).not.toHaveBeenCalled();
++		expect(s.network).not.toHaveBeenCalled();
++	});
++	it.each([
++		"UPDATE sandbox_identities SET retiredAt = 1 WHERE kind = 'trusted_brain'",
++		"UPDATE sandbox_identities SET incarnationId = 'new' WHERE kind = 'trusted_brain'",
++		"UPDATE sandbox_identities SET controllerClass = 'Sandbox' WHERE kind = 'trusted_brain'",
++		"UPDATE sandbox_identities SET kind = 'workspace_session' WHERE kind = 'trusted_brain'",
++		"UPDATE workspace_sessions SET runtimeOwnerVersion = 2",
++		"UPDATE projects SET status = 'deleting'",
++		"UPDATE privileged_operations SET expiresAt = 1",
++		"UPDATE privileged_operations SET runEpoch = 2",
++		"UPDATE privileged_operations SET admissionReference = 'fabricated'",
++		"UPDATE privileged_operations SET closedAt = 1",
++	])("T28 fresh authority denial never falls through after %s", async (change) => {
++		const s = await setup();
++		s.f.sqlite.exec(change);
++		expect((await s.send()).status).toBe(403);
++		expect(s.dispatch).not.toHaveBeenCalled();
++		expect(s.network).not.toHaveBeenCalled();
++	});
++	it.each([
++		["authorization", "forged"],
++		["proxy-authorization", "forged"],
++		["x-ditto-caller", "runtime"],
++		["content-encoding", "gzip"],
++	])("T28 unexpected authorization, proxy, caller, and encoding headers are final denials", async (name, value) => {
++		const s = await setup();
++		expect(
++			(
++				await s.send(
++					s.request({}, { "content-type": "application/json", [name]: value }),
++				)
++			).status,
++		).toBe(403);
++		expect(s.dispatch).not.toHaveBeenCalled();
++		expect(s.network).not.toHaveBeenCalled();
++	});
++	it("T28 duplicate fields, wrong method, oversized bodies, and invalid UTF-8 fail closed", async () => {
++		const s = await setup();
++		const raw = JSON.stringify(s.body).replace(
++			'"version":1',
++			'"version":1,"version":1',
++		);
++		const malformed = [
++			new Request("http://ditto.internal/v1/continuation", {
++				method: "POST",
++				headers: { "content-type": "application/json" },
++				body: raw,
++			}),
++			new Request("http://ditto.internal/v1/continuation"),
++			s.request({ payload: "x".repeat(256 * 1024) }),
++			new Request("http://ditto.internal/v1/continuation", {
++				method: "POST",
++				headers: { "content-type": "application/json" },
++				body: new Uint8Array([0xc0, 0xaf]),
++			}),
++		];
++		for (const request of malformed)
++			expect((await s.send(request)).status).toBe(403);
++		expect(s.dispatch).not.toHaveBeenCalled();
++		expect(s.network).not.toHaveBeenCalled();
++	});
++	it("T28 public executor egress has a positive control, rejects redirects and private destinations", async () => {
++		const s = await setup();
++		const executorRow = s.f.sqlite
++			.prepare(
++				"SELECT containerId, incarnationId FROM sandbox_identities WHERE kind = 'workspace_session'",
++			)
++			.get() as { containerId: string; incarnationId: string };
++		const executor = {
++			containerId: executorRow.containerId,
++			className: "Sandbox",
++			params: {
++				incarnation: executorRow.incarnationId,
++				lifecycleGeneration: 1,
++			},
++		};
++		expect(
++			(
++				await s.send(
++					new Request("https://registry.npmjs.org/package"),
++					executor,
++				)
++			).status,
++		).toBe(200);
++		expect(s.network).toHaveBeenCalledTimes(1);
++		s.network.mockClear();
++		for (const url of [
++			"http://127.1",
++			"http://2130706433",
++			"http://localhost",
++			"http://metadata.google.internal",
++			"https://example.com.",
++			"https://user:pass@example.com",
++			"https://opencode.ai/zen/v1/chat/completions",
++		]) {
++			const request = new Request("https://example.com");
++			Object.defineProperty(request, "url", { value: url });
++			expect((await s.send(request, executor)).status).toBe(403);
++		}
++		expect(s.network).not.toHaveBeenCalled();
++		s.network.mockResolvedValueOnce(
++			new Response(null, {
++				status: 302,
++				headers: { location: "http://localhost" },
++			}),
++		);
++		expect(
++			(
++				await s.send(
++					new Request("https://registry.npmjs.org/package"),
++					executor,
++				)
++			).status,
++		).toBe(502);
++		expect(s.network).toHaveBeenCalledTimes(1);
++	});
++	it("T28 brain has no general-purpose public egress", async () => {
++		const s = await setup();
++		expect(
++			(await s.send(new Request("https://registry.npmjs.org/package"))).status,
++		).toBe(403);
++		expect(s.network).not.toHaveBeenCalled();
++	});
++	it("T28 product default public handler never invokes private methods or trusts caller headers", async () => {
++		const s = await setup();
++		const binding = new ProductEntrypoint({} as ExecutionContext, {
++			DB: s.env.DB,
++		});
++		expect(
++			(await binding.reconstructCommand(s.command.id))?.command.commandId,
++		).toBe(s.command.id);
++		const spy = vi.spyOn(ProductEntrypoint.prototype, "reconstructCommand");
++		for (const path of [
++			"/internal/reconstructCommand",
++			"/rpc/readCurrentAuthority",
++			"/v1/continuation",
++		]) {
++			const request = new Request(`https://product.example${path}`, {
++				method: "POST",
++				headers: { "x-ditto-caller": "runtime", authorization: "forged" },
++				body: "{}",
++			});
++			expect(
++				Reflect.apply(productPublic.fetch, productPublic, [request]).status,
++			).toBe(404);
++		}
++		expect(spy).not.toHaveBeenCalled();
++	});
++});
+diff --git a/packages/runtime-contracts/src/remote-tool.test.ts b/packages/runtime-contracts/src/remote-tool.test.ts
+new file mode 100644
+index 0000000..845c370
+--- /dev/null
++++ b/packages/runtime-contracts/src/remote-tool.test.ts
+@@ -0,0 +1,119 @@
++import { describe, expect, it } from "vitest";
++import {
++	parseRemoteToolResult,
++	parseRemoteToolV1,
++	REMOTE_RESULT_BYTES,
++	type RemoteToolV1,
++} from "./remote-tool.js";
++
++const job: RemoteToolV1 = {
++	version: 1,
++	runId: "run",
++	assistantEntryId: "assistant",
++	toolCallId: "call",
++	attempt: 1,
++	executorIncarnationId: "executor",
++	runEpoch: 1,
++	lifecycleGeneration: 1,
++	deadline: 1000,
++	outcomePolicy: "never_retry",
++	tool: {
++		name: "write",
++		path: "source",
++		content: "",
++		expected: { absent: true },
++	},
++};
++
++describe("RemoteToolResult", () => {
++	it("preserves empty text, error flags and edit diff/patch details", () => {
++		const result = {
++			content: [{ type: "text", text: "" }],
++			details: {
++				diff: "-before\n+after",
++				patch: { path: "source", lines: [1, 2] },
++			},
++			isError: false,
++		};
++		expect(parseRemoteToolResult(JSON.stringify(result), "edit")).toEqual(
++			result,
++		);
++	});
++	it.each([
++		"image/png",
++		"image/jpeg",
++		"image/gif",
++		"image/webp",
++	])("preserves bounded %s image reads", (mimeType) => {
++		const result = { content: [{ type: "image", data: "AQIDBA==", mimeType }] };
++		expect(parseRemoteToolResult(result, "read")).toEqual(result);
++		expect(() => parseRemoteToolResult(result, "bash")).toThrow();
++	});
++	it("rejects duplicate fields and unsupported content variants", () => {
++		expect(() =>
++			parseRemoteToolResult('{"content":[],"content":[]}', "read"),
++		).toThrow();
++		for (const content of [
++			[],
++			[{ type: "tool", text: "unexpected" }],
++			[{ type: "text", text: 1 }],
++			[{ type: "image", data: "not base64", mimeType: "image/png" }],
++		])
++			expect(() => parseRemoteToolResult({ content }, "read")).toThrow();
++	});
++	it("rejects oversized results, content count and deeply nested details", () => {
++		let details: unknown = "leaf";
++		for (let i = 0; i < 70; i++) details = { child: details };
++		for (const result of [
++			{ content: [{ type: "text", text: "x".repeat(REMOTE_RESULT_BYTES) }] },
++			{
++				content: Array.from({ length: 65 }, () => ({
++					type: "text",
++					text: "x",
++				})),
++			},
++			{ content: [{ type: "text", text: "ok" }], details },
++		])
++			expect(() => parseRemoteToolResult(result, "read")).toThrow();
++	});
++});
++
++describe("RemoteToolV1", () => {
++	it("permits empty-file creation with an absent-file precondition", () => {
++		expect(parseRemoteToolV1(JSON.stringify(job))).toEqual(job);
++	});
++	it("rejects duplicate authority fields in raw JSON", () => {
++		expect(() =>
++			parseRemoteToolV1(
++				JSON.stringify(job).replace('"attempt":1', '"attempt":1,"attempt":2'),
++			),
++		).toThrow();
++	});
++	it.each([
++		null,
++		{},
++		{ sha256: "bad" },
++		{ absent: true, sha256: "0".repeat(64) },
++	])("requires one exact write precondition", (expected) => {
++		expect(() =>
++			parseRemoteToolV1({ ...job, tool: { ...job.tool, expected } }),
++		).toThrow();
++	});
++	it("rejects arbitrary shells declared retry-safe", () => {
++		expect(() =>
++			parseRemoteToolV1({
++				...job,
++				outcomePolicy: "retry_safe",
++				tool: { name: "bash", command: "echo command" },
++			}),
++		).toThrow();
++	});
++	it("rejects fractional deadlines, extra arguments and unbounded commands", () => {
++		for (const candidate of [
++			{ ...job, deadline: 1.5 },
++			{ ...job, tool: { ...job.tool, env: {} } },
++			{ ...job, tool: { name: "bash", command: "x".repeat(128 * 1024 + 1) } },
++		])
++			expect(() => parseRemoteToolV1(candidate)).toThrow();
++	});
++});
+diff --git a/packages/runtime-contracts/src/remote-tool.ts b/packages/runtime-contracts/src/remote-tool.ts
+new file mode 100644
+index 0000000..024a67f
+--- /dev/null
++++ b/packages/runtime-contracts/src/remote-tool.ts
+@@ -0,0 +1,362 @@
++import {
++	ContractParseError,
++	decodeContractInput,
++	encodedBytes,
++	integerField,
++	literalField,
++	strictRecord,
++	stringField,
++} from "./json.js";
++
++export const REMOTE_TOOL_NAMES = [
++	"read",
++	"write",
++	"edit",
++	"bash",
++	"grep",
++	"find",
++	"ls",
++] as const;
++export type RemoteToolName = (typeof REMOTE_TOOL_NAMES)[number];
++export const REMOTE_JOB_BYTES = 2 * 1024 * 1024;
++export const REMOTE_RESULT_BYTES = 2 * 1024 * 1024;
++export const REMOTE_FILE_BYTES = 1024 * 1024;
++export type ExpectedContent = { absent: true } | { sha256: string };
++export type RemoteArguments =
++	| { name: "read"; path: string; offset?: number; limit?: number }
++	| { name: "write"; path: string; content: string; expected: ExpectedContent }
++	| {
++			name: "edit";
++			path: string;
++			edits: { oldText: string; newText: string }[];
++			expected: { sha256: string };
++	  }
++	| { name: "bash"; command: string; timeout?: number }
++	| {
++			name: "grep";
++			pattern: string;
++			path?: string;
++			glob?: string;
++			ignoreCase?: boolean;
++			literal?: boolean;
++			context?: number;
++			limit?: number;
++	  }
++	| { name: "find"; pattern: string; path?: string; limit?: number }
++	| { name: "ls"; path?: string; limit?: number };
++export type RemoteToolResult = {
++	content: (
++		| { type: "text"; text: string }
++		| { type: "image"; data: string; mimeType: string }
++	)[];
++	details?: unknown;
++	isError?: boolean;
++};
++
++export function parseRemoteToolResult(
++	value: unknown,
++	tool: RemoteToolName,
++): RemoteToolResult {
++	const r = strictRecord(
++		decodeContractInput(value, REMOTE_RESULT_BYTES),
++		["content", "details", "isError"],
++		"RemoteToolResult",
++	);
++	if (
++		!Array.isArray(r.content) ||
++		r.content.length < 1 ||
++		r.content.length > 64
++	)
++		throw new ContractParseError(
++			"invalid_field",
++			"Result content must be bounded.",
++		);
++	const content: RemoteToolResult["content"] = r.content.map((value) => {
++		const item = strictRecord(
++			value,
++			["type", "text", "data", "mimeType"],
++			"ResultContent",
++		);
++		if (item.type === "text") {
++			strictRecord(item, ["type", "text"], "TextContent");
++			if (typeof item.text !== "string")
++				throw new ContractParseError(
++					"invalid_field",
++					"Result text must be a string.",
++				);
++			return { type: "text", text: item.text };
++		}
++		strictRecord(item, ["type", "data", "mimeType"], "ImageContent");
++		if (
++			tool !== "read" ||
++			item.type !== "image" ||
++			typeof item.mimeType !== "string" ||
++			!["image/png", "image/jpeg", "image/gif", "image/webp"].includes(
++				item.mimeType,
++			) ||
++			typeof item.data !== "string" ||
++			item.data.length === 0 ||
++			item.data.length % 4 !== 0 ||
++			!/^[A-Za-z0-9+/]+={0,2}$/.test(item.data)
++		)
++			throw new ContractParseError(
++				"invalid_field",
++				"Result image is not allowed.",
++			);
++		return { type: "image", data: item.data, mimeType: item.mimeType };
++	});
++	if (r.isError !== undefined && typeof r.isError !== "boolean")
++		throw new ContractParseError(
++			"invalid_field",
++			"Result error flag must be Boolean.",
++		);
++	if (r.details !== undefined) {
++		if (encodedBytes(r.details) > REMOTE_FILE_BYTES)
++			throw new ContractParseError(
++				"contract_too_large",
++				"Result details exceed their byte limit.",
++			);
++		// Reparse details to enforce the wire nesting bound on runner results.
++		decodeContractInput(JSON.stringify(r.details), REMOTE_FILE_BYTES);
++	}
++	return {
++		content,
++		...(r.details === undefined ? {} : { details: r.details }),
++		...(r.isError === undefined ? {} : { isError: r.isError }),
++	};
++}
++
++export type RemoteToolV1 = {
++	version: 1;
++	runId: string;
++	assistantEntryId: string;
++	toolCallId: string;
++	attempt: number;
++	executorIncarnationId: string;
++	runEpoch: number;
++	lifecycleGeneration: number;
++	deadline: number;
++	outcomePolicy: "retry_safe" | "reconcile" | "never_retry";
++	tool: RemoteArguments;
++};
++
++function text(
++	record: Record<string, unknown>,
++	key: string,
++	maxBytes = REMOTE_FILE_BYTES,
++): string {
++	return stringField(record, key, { maxBytes });
++}
++function emptyText(record: Record<string, unknown>, key: string): string {
++	if (record[key] === "") return "";
++	return text(record, key);
++}
++function optionalNumber(
++	record: Record<string, unknown>,
++	key: string,
++	max: number,
++	minimum = 1,
++): number | undefined {
++	if (record[key] === undefined) return undefined;
++	const value = integerField(record, key, { minimum });
++	if (value > max)
++		throw new ContractParseError("invalid_field", `${key} exceeds its limit.`);
++	return value;
++}
++function optionalText(
++	record: Record<string, unknown>,
++	key: string,
++): string | undefined {
++	return stringField(record, key, { optional: true, maxBytes: 4096 });
++}
++function optionalBoolean(
++	record: Record<string, unknown>,
++	key: string,
++): boolean | undefined {
++	if (record[key] === undefined) return undefined;
++	if (typeof record[key] !== "boolean")
++		throw new ContractParseError("invalid_field", `${key} must be Boolean.`);
++	return record[key];
++}
++function expected(value: unknown, allowAbsent: boolean): ExpectedContent {
++	const record = strictRecord(value, ["absent", "sha256"], "ExpectedContent");
++	if (allowAbsent && record.absent === true && record.sha256 === undefined)
++		return { absent: true };
++	if (
++		record.absent !== undefined ||
++		typeof record.sha256 !== "string" ||
++		!/^[a-f0-9]{64}$/.test(record.sha256)
++	) {
++		throw new ContractParseError(
++			"invalid_field",
++			"Expected-content precondition is required.",
++		);
++	}
++	return { sha256: record.sha256 };
++}
++export function parseRemoteArguments(value: unknown): RemoteArguments {
++	const discovered = strictRecord(
++		value,
++		[
++			"name",
++			"path",
++			"offset",
++			"limit",
++			"content",
++			"expected",
++			"edits",
++			"command",
++			"timeout",
++			"pattern",
++			"glob",
++			"ignoreCase",
++			"literal",
++			"context",
++		],
++		"RemoteArguments",
++	);
++	const name = literalField(discovered, "name", REMOTE_TOOL_NAMES);
++	if (name === "read") {
++		const r = strictRecord(value, ["name", "path", "offset", "limit"], name);
++		return {
++			name,
++			path: text(r, "path", 4096),
++			offset: optionalNumber(r, "offset", 1_000_000),
++			limit: optionalNumber(r, "limit", 10_000),
++		};
++	}
++	if (name === "write") {
++		const r = strictRecord(
++			value,
++			["name", "path", "content", "expected"],
++			name,
++		);
++		return {
++			name,
++			path: text(r, "path", 4096),
++			content: emptyText(r, "content"),
++			expected: expected(r.expected, true),
++		};
++	}
++	if (name === "edit") {
++		const r = strictRecord(value, ["name", "path", "edits", "expected"], name);
++		if (!Array.isArray(r.edits) || r.edits.length < 1 || r.edits.length > 100)
++			throw new ContractParseError("invalid_field", "edits must be bounded.");
++		const condition = expected(r.expected, false);
++		if (!("sha256" in condition))
++			throw new ContractParseError("invalid_field", "edit requires a digest.");
++		return {
++			name,
++			path: text(r, "path", 4096),
++			expected: condition,
++			edits: r.edits.map((item) => {
++				const edit = strictRecord(item, ["oldText", "newText"], "edit");
++				return {
++					oldText: text(edit, "oldText"),
++					newText: emptyText(edit, "newText"),
++				};
++			}),
++		};
++	}
++	if (name === "bash") {
++		const r = strictRecord(value, ["name", "command", "timeout"], name);
++		return {
++			name,
++			command: text(r, "command", 128 * 1024),
++			timeout: optionalNumber(r, "timeout", 120),
++		};
++	}
++	if (name === "grep") {
++		const r = strictRecord(
++			value,
++			[
++				"name",
++				"pattern",
++				"path",
++				"glob",
++				"ignoreCase",
++				"literal",
++				"context",
++				"limit",
++			],
++			name,
++		);
++		return {
++			name,
++			pattern: text(r, "pattern", 4096),
++			path: optionalText(r, "path"),
++			glob: optionalText(r, "glob"),
++			ignoreCase: optionalBoolean(r, "ignoreCase"),
++			literal: optionalBoolean(r, "literal"),
++			context: optionalNumber(r, "context", 20, 0),
++			limit: optionalNumber(r, "limit", 1000),
++		};
++	}
++	if (name === "find") {
++		const r = strictRecord(value, ["name", "pattern", "path", "limit"], name);
++		return {
++			name,
++			pattern: text(r, "pattern", 4096),
++			path: optionalText(r, "path"),
++			limit: optionalNumber(r, "limit", 1000),
++		};
++	}
++	const r = strictRecord(value, ["name", "path", "limit"], name);
++	return {
++		name,
++		path: optionalText(r, "path"),
++		limit: optionalNumber(r, "limit", 1000),
++	};
++}
++
++export function parseRemoteToolV1(value: unknown): RemoteToolV1 {
++	const r = strictRecord(
++		decodeContractInput(value, REMOTE_JOB_BYTES),
++		[
++			"version",
++			"runId",
++			"assistantEntryId",
++			"toolCallId",
++			"attempt",
++			"executorIncarnationId",
++			"runEpoch",
++			"lifecycleGeneration",
++			"deadline",
++			"outcomePolicy",
++			"tool",
++		],
++		"RemoteToolV1",
++	);
++	const tool = parseRemoteArguments(r.tool);
++	const outcomePolicy = literalField(r, "outcomePolicy", [
++		"retry_safe",
++		"reconcile",
++		"never_retry",
++	]);
++	if (tool.name === "bash" && outcomePolicy !== "never_retry")
++		throw new ContractParseError(
++			"invalid_field",
++			"Shell effects cannot be replayed.",
++		);
++	if (
++		(tool.name === "write" || tool.name === "edit") &&
++		outcomePolicy === "retry_safe"
++	)
++		throw new ContractParseError(
++			"invalid_field",
++			"Mutations require reconciliation.",
++		);
++	return {
++		version: literalField(r, "version", [1]),
++		runId: text(r, "runId", 256),
++		assistantEntryId: text(r, "assistantEntryId", 256),
++		toolCallId: text(r, "toolCallId", 256),
++		attempt: integerField(r, "attempt", { minimum: 1 }),
++		executorIncarnationId: text(r, "executorIncarnationId", 256),
++		runEpoch: integerField(r, "runEpoch", { minimum: 1 }),
++		lifecycleGeneration: integerField(r, "lifecycleGeneration", { minimum: 1 }),
++		deadline: integerField(r, "deadline", { minimum: 1 }),
++		outcomePolicy,
++		tool,
++	};
++}
+diff --git a/packages/sandbox-runner/src/remote-search.ts b/packages/sandbox-runner/src/remote-search.ts
+new file mode 100644
+index 0000000..ed784a4
+--- /dev/null
++++ b/packages/sandbox-runner/src/remote-search.ts
+@@ -0,0 +1,258 @@
++import { spawn } from "node:child_process";
++import path from "node:path";
++import type { RemoteArguments } from "@ditto/runtime-contracts";
++import { truncateHead, truncateLine } from "@earendil-works/pi-coding-agent";
++import type { RemoteToolResult } from "./remote-tool.js";
++
++// Default Rust regex engine only. No PATH lookup, PCRE2, config file or downloads.
++export const SEARCH_EXECUTABLE = "/usr/bin/rg";
++const RECORD_BYTES = 2 * 1024 * 1024;
++const SEARCH_OUTPUT_BYTES = 50 * 1024;
++
++type Match = { file: string; line: number; text: string };
++function recordMatch(line: string): Match | null {
++	const event: unknown = JSON.parse(line);
++	if (
++		!event ||
++		typeof event !== "object" ||
++		!("type" in event) ||
++		event.type !== "match" ||
++		!("data" in event) ||
++		!event.data ||
++		typeof event.data !== "object"
++	)
++		return null;
++	const data = event.data;
++	if (
++		!("path" in data) ||
++		!data.path ||
++		typeof data.path !== "object" ||
++		!("text" in data.path) ||
++		typeof data.path.text !== "string" ||
++		!("line_number" in data) ||
++		typeof data.line_number !== "number" ||
++		!("lines" in data) ||
++		!data.lines ||
++		typeof data.lines !== "object" ||
++		!("text" in data.lines) ||
++		typeof data.lines.text !== "string"
++	)
++		return null;
++	return {
++		file: data.path.text,
++		line: data.line_number,
++		text: data.lines.text,
++	};
++}
++
++async function runSearch(
++	args: string[],
++	root: string,
++	signal: AbortSignal,
++	onLine: (line: string) => boolean,
++): Promise<void> {
++	if (signal.aborted) throw new Error("canceled");
++	await new Promise<void>((resolve, reject) => {
++		const child = spawn(SEARCH_EXECUTABLE, ["--no-config", ...args], {
++			cwd: root,
++			env: {
++				PATH: "/usr/bin:/bin",
++				HOME: "/tmp",
++				LANG: "C.UTF-8",
++				LC_ALL: "C.UTF-8",
++			},
++			stdio: ["ignore", "pipe", "pipe"],
++		});
++		let buffer = "";
++		let stopped = false;
++		let failure: Error | undefined;
++		const stop = () => {
++			stopped = true;
++			child.kill("SIGKILL");
++		};
++		const abort = () => {
++			failure = new Error("canceled");
++			stop();
++		};
++		signal.addEventListener("abort", abort, { once: true });
++		child.stdout.on("data", (chunk: Buffer) => {
++			if (stopped) return;
++			buffer += chunk.toString("utf8");
++			if (Buffer.byteLength(buffer) > RECORD_BYTES) {
++				failure = new Error("search_record_limit");
++				stop();
++				return;
++			}
++			let newline = buffer.indexOf("\n");
++			try {
++				while (newline >= 0 && !stopped) {
++					const line = buffer.slice(0, newline);
++					buffer = buffer.slice(newline + 1);
++					if (!onLine(line)) stop();
++					newline = buffer.indexOf("\n");
++				}
++			} catch {
++				failure = new Error("search_protocol");
++				stop();
++			}
++		});
++		// Never include repository-controlled stderr in protocol errors.
++		child.stderr.on("data", () => undefined);
++		child.once("error", () => {
++			failure = new Error("search_unavailable");
++		});
++		child.once("close", (code) => {
++			signal.removeEventListener("abort", abort);
++			if (failure) reject(failure);
++			else if (!stopped && code !== 0 && code !== 1)
++				reject(new Error("search_pattern"));
++			else resolve();
++		});
++		if (signal.aborted) abort();
++	});
++}
++
++export async function remoteSearch(
++	tool: Extract<RemoteArguments, { name: "grep" | "find" }>,
++	root: string,
++	target: string,
++	directory: boolean,
++	signal: AbortSignal,
++	read: (file: string) => Promise<string>,
++): Promise<RemoteToolResult> {
++	const limit = tool.limit ?? (tool.name === "grep" ? 100 : 1000);
++	const common = [
++		"--color=never",
++		"--hidden",
++		"--sort=path",
++		"--no-ignore-global",
++		"--max-filesize=1M",
++	];
++	const lines: string[] = [];
++	let limited = false;
++	let linesTruncated = false;
++	if (tool.name === "find") {
++		await runSearch(
++			[...common, "--files", "--glob", tool.pattern, "--", target],
++			root,
++			signal,
++			(line) => {
++				lines.push(path.relative(target, line));
++				if (lines.length >= limit) {
++					limited = true;
++					return false;
++				}
++				return true;
++			},
++		);
++	} else {
++		const matches: Match[] = [];
++		const args = [...common, "--json", "--line-number"];
++		if (tool.ignoreCase) args.push("--ignore-case");
++		if (tool.literal) args.push("--fixed-strings");
++		if (tool.glob) args.push("--glob", tool.glob);
++		await runSearch(
++			[...args, "--", tool.pattern, target],
++			root,
++			signal,
++			(line) => {
++				const match = recordMatch(line);
++				if (match) matches.push(match);
++				if (matches.length >= limit) {
++					limited = true;
++					return false;
++				}
++				return true;
++			},
++		);
++		const formatPath = (file: string) =>
++			directory ? path.relative(target, file) : path.basename(file);
++		const cache = new Map<string, string[]>();
++		const format = (text: string) => {
++			const truncated = truncateLine(text.replace(/\r/g, ""));
++			linesTruncated ||= truncated.wasTruncated;
++			return truncated.text;
++		};
++		for (const match of matches) {
++			if (signal.aborted) throw new Error("canceled");
++			const file = formatPath(match.file);
++			if (!tool.context)
++				lines.push(
++					`${file}:${match.line}: ${format(match.text.replace(/\r\n/g, "\n").replace(/\n$/, ""))}`,
++				);
++			else {
++				let content = cache.get(match.file);
++				if (!content) {
++					try {
++						content = (await read(match.file))
++							.replace(/\r\n/g, "\n")
++							.replace(/\r/g, "\n")
++							.split("\n");
++					} catch {
++						content = [];
++					}
++					cache.set(match.file, content);
++				}
++				if (!content.length)
++					lines.push(`${file}:${match.line}: (unable to read file)`);
++				for (
++					let n = Math.max(1, match.line - tool.context);
++					n <= Math.min(content.length, match.line + tool.context);
++					n++
++				)
++					lines.push(
++						n === match.line
++							? `${file}:${n}: ${format(content[n - 1])}`
++							: `${file}-${n}- ${format(content[n - 1])}`,
++					);
++			}
++			if (Buffer.byteLength(lines.join("\n")) > SEARCH_OUTPUT_BYTES) break;
++		}
++	}
++	if (!lines.length)
++		return {
++			content: [
++				{
++					type: "text",
++					text:
++						tool.name === "grep"
++							? "No matches found"
++							: "No files found matching pattern",
++				},
++			],
++		};
++	const truncation = truncateHead(lines.join("\n"), {
++		maxLines: Number.MAX_SAFE_INTEGER,
++		maxBytes: SEARCH_OUTPUT_BYTES,
++	});
++	const details: Record<string, unknown> = {};
++	const notices: string[] = [];
++	if (limited) {
++		details[tool.name === "grep" ? "matchLimitReached" : "resultLimitReached"] =
++			limit;
++		notices.push(
++			`${limit} ${tool.name === "grep" ? "matches" : "results"} limit reached`,
++		);
++	}
++	if (truncation.truncated) {
++		details.truncation = truncation;
++		notices.push("50KB limit reached");
++	}
++	if (linesTruncated) {
++		details.linesTruncated = true;
++		notices.push(
++			"Some lines truncated to 500 chars. Use read tool to see full lines",
++		);
++	}
++	return {
++		content: [
++			{
++				type: "text",
++				text:
++					truncation.content +
++					(notices.length ? `\n\n[${notices.join(". ")}]` : ""),
++			},
++		],
++		details,
++	};
++}
+diff --git a/packages/sandbox-runner/src/remote-tool-cli.ts b/packages/sandbox-runner/src/remote-tool-cli.ts
+new file mode 100644
+index 0000000..72cc4bd
+--- /dev/null
++++ b/packages/sandbox-runner/src/remote-tool-cli.ts
+@@ -0,0 +1,69 @@
++#!/usr/bin/env node
++import { constants } from "node:fs";
++import { open } from "node:fs/promises";
++import { parseRemoteToolV1, REMOTE_JOB_BYTES } from "@ditto/runtime-contracts";
++import { executeRemoteTool } from "./remote-tool.js";
++
++async function main(): Promise<void> {
++	const [jobPath, incarnation] = process.argv.slice(2);
++	if (
++		!jobPath ||
++		!/^\/tmp\/ditto-remote-jobs\/[a-f0-9-]{36}\.json$/.test(jobPath) ||
++		!incarnation ||
++		process.argv.length !== 4
++	)
++		throw new Error("protocol");
++	const handle = await open(jobPath, constants.O_RDONLY | constants.O_NOFOLLOW);
++	let raw: string;
++	try {
++		const stat = await handle.stat();
++		if (!stat.isFile() || stat.size > REMOTE_JOB_BYTES)
++			throw new Error("job_limit");
++		const buffer = Buffer.alloc(REMOTE_JOB_BYTES + 1);
++		let size = 0;
++		while (size < buffer.length) {
++			const next = await handle.read(buffer, size, buffer.length - size, size);
++			if (next.bytesRead === 0) break;
++			size += next.bytesRead;
++		}
++		if (size > REMOTE_JOB_BYTES) throw new Error("job_limit");
++		raw = new TextDecoder("utf-8", { fatal: true }).decode(
++			buffer.subarray(0, size),
++		);
++	} finally {
++		await handle.close();
++	}
++	const job = parseRemoteToolV1(raw);
++	const materialized = process.env.DITTO_EXECUTION_ENV;
++	delete process.env.DITTO_EXECUTION_ENV;
++	let projectValues: Record<string, string> = {};
++	if (materialized) {
++		if (
++			job.tool.name !== "bash" ||
++			Buffer.byteLength(materialized) > 256 * 1024
++		)
++			throw new Error("environment");
++		const value: unknown = JSON.parse(materialized);
++		if (
++			!value ||
++			typeof value !== "object" ||
++			Array.isArray(value) ||
++			!Object.values(value).every((item) => typeof item === "string")
++		)
++			throw new Error("environment");
++		projectValues = value as Record<string, string>;
++	}
++	const result = await executeRemoteTool(job, {
++		workspace: "/workspace",
++		incarnation,
++		projectValues,
++	});
++	process.stdout.write(`${JSON.stringify({ version: 1, result })}\n`);
++}
++
++void main().catch(() => {
++	process.stdout.write(
++		`${JSON.stringify({ version: 1, error: "remote_tool_failed" })}\n`,
++	);
++	process.exitCode = 1;
++});
+diff --git a/packages/sandbox-runner/src/remote-tool.test.ts b/packages/sandbox-runner/src/remote-tool.test.ts
+new file mode 100644
+index 0000000..56f22e4
+--- /dev/null
++++ b/packages/sandbox-runner/src/remote-tool.test.ts
+@@ -0,0 +1,424 @@
++import { spawnSync } from "node:child_process";
++import { randomBytes } from "node:crypto";
++import {
++	mkdir,
++	mkdtemp,
++	readFile,
++	rm,
++	symlink,
++	writeFile,
++} from "node:fs/promises";
++import path from "node:path";
++import { deflateSync } from "node:zlib";
++import type { RemoteArguments, RemoteToolV1 } from "@ditto/runtime-contracts";
++import { afterEach, beforeEach, describe, expect, it } from "vitest";
++import {
++	closedShellEnvironment,
++	contentDigest,
++	executeRemoteTool,
++	type RemoteExecutorOptions,
++} from "./remote-tool.js";
++
++function pngFixture(): Buffer {
++	function chunk(type: string, data: Buffer): Buffer {
++		const payload = Buffer.concat([Buffer.from(type), data]);
++		let crc = 0xffffffff;
++		for (const byte of payload) {
++			crc ^= byte;
++			for (let bit = 0; bit < 8; bit++)
++				crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
++		}
++		const header = Buffer.alloc(4);
++		header.writeUInt32BE(data.length);
++		const trailer = Buffer.alloc(4);
++		trailer.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
++		return Buffer.concat([header, payload, trailer]);
++	}
++	const ihdr = Buffer.alloc(13);
++	ihdr.writeUInt32BE(1, 0);
++	ihdr.writeUInt32BE(1, 4);
++	ihdr[8] = 8;
++	ihdr[9] = 6;
++	return Buffer.concat([
++		Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
++		chunk("IHDR", ihdr),
++		chunk("IDAT", deflateSync(Buffer.from([0, 255, 0, 0, 255]))),
++		chunk("IEND", Buffer.alloc(0)),
++	]);
++}
++
++let workspace: string;
++const incarnation = "executor-test-incarnation";
++function job(
++	tool: RemoteArguments,
++	extra: Partial<RemoteToolV1> = {},
++): RemoteToolV1 {
++	return {
++		version: 1,
++		runId: "run",
++		assistantEntryId: "assistant",
++		toolCallId: "call",
++		attempt: 1,
++		executorIncarnationId: incarnation,
++		runEpoch: 1,
++		lifecycleGeneration: 1,
++		deadline: Date.now() + 30_000,
++		outcomePolicy: "never_retry",
++		tool,
++		...extra,
++	};
++}
++function execute(
++	input: RemoteToolV1,
++	extra: Omit<RemoteExecutorOptions, "workspace" | "incarnation"> = {},
++) {
++	return executeRemoteTool(input, { workspace, incarnation, ...extra });
++}
++async function exists(target: string): Promise<boolean> {
++	try {
++		await readFile(target);
++		return true;
++	} catch {
++		return false;
++	}
++}
++beforeEach(async () => {
++	workspace = await mkdtemp(path.join(process.cwd(), ".remote-test-"));
++	await writeFile(path.join(workspace, "source.txt"), "hello\nworld\n");
++});
++afterEach(async () => {
++	await rm(workspace, { recursive: true, force: true });
++});
++
++describe("remote executor tools", () => {
++	it("G03 hostile regex remains bounded by the executor deadline", async () => {
++		await writeFile(
++			path.join(workspace, "hostile.txt"),
++			`${"a".repeat(32)}!\n`,
++		);
++		const input = job({ name: "grep", pattern: "(a+)+$" });
++		const child = spawnSync(
++			process.execPath,
++			[
++				"--input-type=module",
++				"-e",
++				`import { executeRemoteTool } from './dist/remote-tool.js'; const job = ${JSON.stringify(input)}; job.deadline = Date.now() + 50; try { await executeRemoteTool(job, ${JSON.stringify({ workspace, incarnation })}); } catch {} console.log('settled');`,
++			],
++			{
++				cwd: process.cwd(),
++				encoding: "utf8",
++				timeout: 1500,
++				killSignal: "SIGKILL",
++			},
++		);
++		expect(child.error?.code === "ETIMEDOUT").toBe(false);
++		expect(child.stdout.includes("settled")).toBe(true);
++	});
++	it("G02 directory grep skips binary files while explicit text reads still reject invalid UTF-8", async () => {
++		await writeFile(
++			path.join(workspace, "binary.bin"),
++			Buffer.from([255, 254, 0]),
++		);
++		const result = await execute(job({ name: "grep", pattern: "hello" }));
++		expect(JSON.stringify(result).includes("hello")).toBe(true);
++		await expect(
++			execute(job({ name: "read", path: "binary.bin" })),
++		).rejects.toThrow("utf8");
++	});
++	it("G08 respects ignore negation, nested ignore rules, explicit files, and match limits independent of context", async () => {
++		await mkdir(path.join(workspace, ".git"));
++		await mkdir(path.join(workspace, "nested"));
++		await writeFile(path.join(workspace, ".gitignore"), "*.log\n!keep.log\n");
++		await writeFile(path.join(workspace, "nested/.gitignore"), "blocked.txt\n");
++		for (const file of [
++			"ignored.log",
++			"keep.log",
++			"nested/blocked.txt",
++			"nested/open.txt",
++		])
++			await writeFile(
++				path.join(workspace, file),
++				"before\ntarget\nafter\ntarget\nlast\n",
++			);
++		const result = await execute(
++			job({ name: "grep", pattern: "target", context: 1, limit: 2 }),
++		);
++		const text = JSON.stringify(result);
++		expect(text.includes("ignored.log")).toBe(false);
++		expect(text.includes("blocked.txt")).toBe(false);
++		expect(text.includes("keep.log:2:")).toBe(true);
++		expect(text.includes("keep.log:4:")).toBe(true);
++		expect(text.includes("keep.log-5-")).toBe(true);
++		const explicit = await execute(
++			job({ name: "grep", path: "ignored.log", pattern: "target" }),
++		);
++		expect(JSON.stringify(explicit).includes("ignored.log:2:")).toBe(true);
++	});
++	it("T29 executes all seven tools in the executor workspace and preserves edit diff and patch", async () => {
++		const read = await execute(
++			job({ name: "read", path: "source.txt", offset: 2, limit: 1 }),
++		);
++		expect(
++			read.content.some(
++				(item) => item.type === "text" && item.text.includes("world"),
++			),
++		).toBe(true);
++		await execute(
++			job({
++				name: "write",
++				path: "new.txt",
++				content: "new",
++				expected: { absent: true },
++			}),
++		);
++		const edit = await execute(
++			job({
++				name: "edit",
++				path: "source.txt",
++				expected: { sha256: contentDigest(Buffer.from("hello\nworld\n")) },
++				edits: [{ oldText: "hello", newText: "changed" }],
++			}),
++		);
++		expect(edit.details).toMatchObject({
++			diff: expect.stringContaining("changed"),
++			patch: expect.stringContaining("changed"),
++		});
++		expect(await readFile(path.join(workspace, "source.txt"), "utf8")).toBe(
++			"changed\nworld\n",
++		);
++		for (const tool of [
++			{ name: "find", pattern: "*.txt" },
++			{ name: "grep", pattern: "changed", literal: true },
++			{ name: "ls" },
++		] satisfies RemoteArguments[]) {
++			const result = await execute(job(tool));
++			expect(
++				result.content.some(
++					(item) => item.type === "text" && item.text.includes("source.txt"),
++				),
++			).toBe(true);
++		}
++		const shell = await execute(
++			job({ name: "bash", command: "printf shell > shell.txt" }),
++		);
++		expect(shell.isError).toBe(false);
++		expect(await readFile(path.join(workspace, "shell.txt"), "utf8")).toBe(
++			"shell",
++		);
++	});
++	it("T29 rejects writes without a precondition and mismatched expected content without changing the file", async () => {
++		await expect(
++			executeRemoteTool(
++				{
++					...job({
++						name: "write",
++						path: "source.txt",
++						content: "bad",
++						expected: { absent: true },
++					}),
++					tool: { name: "write", path: "source.txt", content: "bad" },
++				},
++				{ workspace, incarnation },
++			),
++		).rejects.toThrow();
++		await expect(
++			execute(
++				job({
++					name: "write",
++					path: "source.txt",
++					content: "bad",
++					expected: { sha256: "0".repeat(64) },
++				}),
++			),
++		).rejects.toThrow("expected_content");
++		await expect(
++			execute(
++				job({
++					name: "write",
++					path: "source.txt",
++					content: "bad",
++					expected: { absent: true },
++				}),
++			),
++		).rejects.toThrow("expected_content");
++		expect(await readFile(path.join(workspace, "source.txt"), "utf8")).toBe(
++			"hello\nworld\n",
++		);
++	});
++	it("T29 edits match the original snapshot, reject overlap, and preserve the file on conflict", async () => {
++		const expected = { sha256: contentDigest(Buffer.from("hello\nworld\n")) };
++		await expect(
++			execute(
++				job({
++					name: "edit",
++					path: "source.txt",
++					expected,
++					edits: [
++						{ oldText: "hello", newText: "one" },
++						{ oldText: "ello", newText: "two" },
++					],
++				}),
++			),
++		).rejects.toThrow();
++		expect(await readFile(path.join(workspace, "source.txt"), "utf8")).toBe(
++			"hello\nworld\n",
++		);
++	});
++	it.each([
++		"../outside",
++		"/etc/passwd",
++		"~/source",
++		"x\u0000y",
++	])("T29 rejects escaping path %s", async (file) => {
++		await expect(execute(job({ name: "read", path: file }))).rejects.toThrow(
++			"path",
++		);
++	});
++	it("T29 refuses file and ancestor symlinks even when the target is readable", async () => {
++		await symlink(
++			path.join(workspace, "source.txt"),
++			path.join(workspace, "link"),
++		);
++		await symlink(workspace, path.join(workspace, "linked-dir"));
++		for (const file of ["link", "linked-dir/source.txt"])
++			await expect(execute(job({ name: "read", path: file }))).rejects.toThrow(
++				"symlink",
++			);
++	});
++	it("T29 bounds text size and rejects invalid UTF-8 before returning tool content", async () => {
++		await writeFile(path.join(workspace, "bad.txt"), Buffer.from([0xc0, 0xaf]));
++		await expect(
++			execute(job({ name: "read", path: "bad.txt" })),
++		).rejects.toThrow("utf8");
++		await writeFile(
++			path.join(workspace, "large.txt"),
++			Buffer.alloc(1024 * 1024 + 1),
++		);
++		await expect(
++			execute(job({ name: "read", path: "large.txt" })),
++		).rejects.toThrow("file_limit");
++	});
++	it("T29 image reading is bounded and serialized in the executor", async () => {
++		await writeFile(path.join(workspace, "image.png"), pngFixture());
++		const result = await execute(job({ name: "read", path: "image.png" }));
++		expect(
++			result.content.some(
++				(item) => item.type === "image" && item.mimeType === "image/png",
++			),
++		).toBe(true);
++	});
++	it("T29 repository-owned extensions and packages cannot replace image tool implementations", async () => {
++		await mkdir(path.join(workspace, ".pi/extensions"), { recursive: true });
++		await mkdir(
++			path.join(workspace, "node_modules/@earendil-works/pi-coding-agent"),
++			{ recursive: true },
++		);
++		const source = "throw new Error('repository resource executed');";
++		await writeFile(path.join(workspace, ".pi/extensions/evil.js"), source);
++		await writeFile(
++			path.join(
++				workspace,
++				"node_modules/@earendil-works/pi-coding-agent/index.js",
++			),
++			source,
++		);
++		const result = await execute(job({ name: "read", path: "source.txt" }));
++		expect(
++			result.content.some(
++				(item) => item.type === "text" && item.text.includes("hello"),
++			),
++		).toBe(true);
++	});
++	it("T29 preserves partial stdout and stderr and bounds large shell output", async () => {
++		const result = await execute(
++			job({
++				name: "bash",
++				command: "printf partial; printf diagnostic >&2; exit 7",
++			}),
++		);
++		expect(result.details).toMatchObject({
++			stdout: "partial",
++			stderr: "diagnostic",
++			exitCode: 7,
++		});
++		expect(result.isError).toBe(true);
++		const large = await execute(
++			job({
++				name: "bash",
++				command: "/usr/bin/head -c 400000 /dev/zero | /usr/bin/tr '\\0' x",
++			}),
++		);
++		expect(large.details).toMatchObject({ truncated: true });
++		expect(JSON.stringify(large).length).toBeLessThan(300_000);
++	});
++	it("T29 deadlines and cancellation prevent a delayed shell mutation", async () => {
++		await expect(
++			execute(
++				job(
++					{
++						name: "write",
++						path: "late.txt",
++						content: "late",
++						expected: { absent: true },
++					},
++					{ deadline: Date.now() - 1 },
++				),
++			),
++		).rejects.toThrow("deadline");
++		const signal = AbortSignal.timeout(20);
++		const result = await execute(
++			job({ name: "bash", command: "sleep 1; printf late > late.txt" }),
++			{ signal },
++		);
++		expect(result.details).toMatchObject({ canceled: true });
++		expect(await exists(path.join(workspace, "late.txt"))).toBe(false);
++	});
++	it("T29 wrong incarnation and duplicate JSON fields fail before any mutation", async () => {
++		await expect(
++			execute(
++				job(
++					{ name: "bash", command: "printf bad > bad.txt" },
++					{ executorIncarnationId: "stale" },
++				),
++			),
++		).rejects.toThrow("incarnation");
++		const raw = JSON.stringify(
++			job({ name: "bash", command: "printf bad > bad.txt" }),
++		).replace('"version":1', '"version":1,"version":1');
++		await expect(
++			executeRemoteTool(raw, { workspace, incarnation }),
++		).rejects.toThrow();
++		expect(await exists(path.join(workspace, "bad.txt"))).toBe(false);
++	});
++	it("T30 project values enter only an authorized shell, never the serialized job or filesystem tools", async () => {
++		const platform = randomBytes(32).toString("hex");
++		const project = randomBytes(32).toString("hex");
++		const inheritedKey = `DITTO_TEST_${randomBytes(12).toString("hex")}`;
++		process.env[inheritedKey] = platform;
++		try {
++			const command = job({
++				name: "bash",
++				command: `test -n "$PROJECT_VALUE" && test -z "$${inheritedKey}" && test -z "$OPENCODE_API_KEY" && printf authorized`,
++			});
++			expect(JSON.stringify(command).includes(project)).toBe(false);
++			expect(
++				Object.values(
++					closedShellEnvironment({ PROJECT_VALUE: project }),
++				).includes(platform),
++			).toBe(false);
++			const result = await execute(command, {
++				projectValues: { PROJECT_VALUE: project },
++			});
++			expect(result.isError).toBe(false);
++			expect(JSON.stringify(result).includes(project)).toBe(false);
++			expect(JSON.stringify(result).includes(platform)).toBe(false);
++			await expect(
++				execute(job({ name: "read", path: "source.txt" }), {
++					projectValues: { PROJECT_VALUE: project },
++				}),
++			).rejects.toThrow("environment_forbidden");
++		} finally {
++			delete process.env[inheritedKey];
++		}
++	});
++});
+diff --git a/packages/sandbox-runner/src/remote-tool.ts b/packages/sandbox-runner/src/remote-tool.ts
+new file mode 100644
+index 0000000..a2d1849
+--- /dev/null
++++ b/packages/sandbox-runner/src/remote-tool.ts
+@@ -0,0 +1,463 @@
++import { spawn } from "node:child_process";
++import { createHash } from "node:crypto";
++import { constants } from "node:fs";
++import { lstat, mkdir, open, readdir, realpath } from "node:fs/promises";
++import path from "node:path";
++import {
++	type ExpectedContent,
++	parseRemoteToolResult,
++	parseRemoteToolV1,
++	REMOTE_FILE_BYTES,
++	type RemoteToolResult,
++	type RemoteToolV1,
++} from "@ditto/runtime-contracts";
++import {
++	createEditTool,
++	createReadTool,
++} from "@earendil-works/pi-coding-agent";
++
++import { remoteSearch } from "./remote-search.js";
++
++export type { RemoteToolResult } from "@ditto/runtime-contracts";
++export type RemoteExecutorOptions = {
++	workspace: string;
++	incarnation: string;
++	signal?: AbortSignal;
++	projectValues?: Readonly<Record<string, string>>;
++	now?: () => number;
++};
++
++class RemoteToolError extends Error {
++	constructor(readonly code: string) {
++		super(code);
++	}
++}
++const OUTPUT_BYTES = 128 * 1024;
++export function contentDigest(value: Uint8Array): string {
++	return createHash("sha256").update(value).digest("hex");
++}
++function checkSignal(signal: AbortSignal): void {
++	if (signal.aborted) throw new RemoteToolError("canceled");
++}
++function isInside(root: string, target: string): boolean {
++	return target === root || target.startsWith(`${root}${path.sep}`);
++}
++
++async function workspacePath(
++	root: string,
++	input: string,
++	createParents = false,
++): Promise<string> {
++	if (
++		!input ||
++		input.includes("\0") ||
++		input.startsWith("~") ||
++		input.split(/[\\/]/).includes("..")
++	)
++		throw new RemoteToolError("path");
++	const target = path.resolve(root, input);
++	if (!isInside(root, target)) throw new RemoteToolError("path");
++	const relative = path.relative(root, target);
++	let current = root;
++	for (const [index, part] of relative.split(path.sep).entries()) {
++		if (!part) continue;
++		current = path.join(current, part);
++		try {
++			const stat = await lstat(current);
++			if (stat.isSymbolicLink()) throw new RemoteToolError("symlink");
++			if (index < relative.split(path.sep).length - 1 && !stat.isDirectory())
++				throw new RemoteToolError("path");
++		} catch (error) {
++			if (
++				!(error instanceof Error) ||
++				!("code" in error) ||
++				error.code !== "ENOENT"
++			)
++				throw error;
++			if (createParents && current !== target) await mkdir(current);
++		}
++	}
++	return target;
++}
++async function boundedRead(root: string, input: string): Promise<Buffer> {
++	const target = await workspacePath(root, input);
++	const handle = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW);
++	try {
++		const stat = await handle.stat();
++		if (!stat.isFile() || stat.size > REMOTE_FILE_BYTES)
++			throw new RemoteToolError("file_limit");
++		if (!isInside(root, await realpath(`/proc/self/fd/${handle.fd}`)))
++			throw new RemoteToolError("path");
++		const buffer = Buffer.alloc(REMOTE_FILE_BYTES + 1);
++		let size = 0;
++		while (size < buffer.length) {
++			const read = await handle.read(buffer, size, buffer.length - size, size);
++			if (read.bytesRead === 0) break;
++			size += read.bytesRead;
++		}
++		if (size > REMOTE_FILE_BYTES) throw new RemoteToolError("file_limit");
++		return buffer.subarray(0, size);
++	} finally {
++		await handle.close();
++	}
++}
++function decodeText(buffer: Uint8Array): string {
++	try {
++		return new TextDecoder("utf-8", { fatal: true }).decode(buffer);
++	} catch {
++		throw new RemoteToolError("utf8");
++	}
++}
++function imageMime(buffer: Buffer): string | null {
++	if (
++		buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
++	)
++		return "image/png";
++	if (buffer[0] === 255 && buffer[1] === 216 && buffer[2] === 255)
++		return "image/jpeg";
++	if (["GIF87a", "GIF89a"].includes(buffer.subarray(0, 6).toString("ascii")))
++		return "image/gif";
++	if (
++		buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
++		buffer.subarray(8, 12).toString("ascii") === "WEBP"
++	)
++		return "image/webp";
++	return null;
++}
++function validateImageDimensions(buffer: Buffer, mime: string): void {
++	let width = 0;
++	let height = 0;
++	if (mime === "image/png" && buffer.length >= 24) {
++		width = buffer.readUInt32BE(16);
++		height = buffer.readUInt32BE(20);
++	} else if (mime === "image/gif" && buffer.length >= 10) {
++		width = buffer.readUInt16LE(6);
++		height = buffer.readUInt16LE(8);
++	} else if (mime === "image/jpeg") {
++		let offset = 2;
++		while (offset + 9 < buffer.length) {
++			if (buffer[offset] !== 255) break;
++			const marker = buffer[offset + 1];
++			const length = buffer.readUInt16BE(offset + 2);
++			if ([0xc0, 0xc1, 0xc2].includes(marker)) {
++				height = buffer.readUInt16BE(offset + 5);
++				width = buffer.readUInt16BE(offset + 7);
++				break;
++			}
++			if (length < 2) break;
++			offset += length + 2;
++		}
++	} else if (mime === "image/webp" && buffer.length >= 30) {
++		const format = buffer.subarray(12, 16).toString("ascii");
++		if (format === "VP8X") {
++			width = 1 + buffer.readUIntLE(24, 3);
++			height = 1 + buffer.readUIntLE(27, 3);
++		} else if (format === "VP8 ") {
++			width = buffer.readUInt16LE(26) & 0x3fff;
++			height = buffer.readUInt16LE(28) & 0x3fff;
++		} else if (format === "VP8L" && buffer[20] === 0x2f) {
++			const bits = buffer.readUInt32LE(21);
++			width = 1 + (bits & 0x3fff);
++			height = 1 + ((bits >>> 14) & 0x3fff);
++		}
++	}
++	if (
++		width < 1 ||
++		height < 1 ||
++		width > 4096 ||
++		height > 4096 ||
++		width * height > 16_000_000
++	)
++		throw new RemoteToolError("image_limit");
++}
++async function conditionalWrite(
++	root: string,
++	input: string,
++	content: string,
++	expected: ExpectedContent,
++	signal: AbortSignal,
++): Promise<void> {
++	if (Buffer.byteLength(content) > REMOTE_FILE_BYTES)
++		throw new RemoteToolError("file_limit");
++	const target = await workspacePath(root, input, "absent" in expected);
++	checkSignal(signal);
++	const flags =
++		constants.O_NOFOLLOW |
++		constants.O_RDWR |
++		("absent" in expected ? constants.O_CREAT | constants.O_EXCL : 0);
++	let handle: Awaited<ReturnType<typeof open>>;
++	try {
++		handle = await open(target, flags, 0o600);
++	} catch {
++		throw new RemoteToolError("expected_content");
++	}
++	try {
++		const stat = await handle.stat();
++		if (
++			!stat.isFile() ||
++			stat.size > REMOTE_FILE_BYTES ||
++			!isInside(root, await realpath(`/proc/self/fd/${handle.fd}`))
++		)
++			throw new RemoteToolError("path");
++		if ("sha256" in expected) {
++			const current = Buffer.alloc(REMOTE_FILE_BYTES + 1);
++			let size = 0;
++			while (size < current.length) {
++				const next = await handle.read(
++					current,
++					size,
++					current.length - size,
++					size,
++				);
++				if (next.bytesRead === 0) break;
++				size += next.bytesRead;
++			}
++			if (
++				size > REMOTE_FILE_BYTES ||
++				contentDigest(current.subarray(0, size)) !== expected.sha256
++			)
++				throw new RemoteToolError("expected_content");
++		}
++		checkSignal(signal);
++		await handle.truncate(0);
++		await handle.writeFile(content, "utf8");
++		await handle.sync();
++	} finally {
++		await handle.close();
++	}
++}
++export function closedShellEnvironment(
++	projectValues: Readonly<Record<string, string>> = {},
++): Record<string, string> {
++	const env: Record<string, string> = {};
++	const reserved = new Set([
++		"PATH",
++		"HOME",
++		"SHELL",
++		"ENV",
++		"BASH_ENV",
++		"NODE_OPTIONS",
++		"LD_PRELOAD",
++		"LD_LIBRARY_PATH",
++	]);
++	for (const [key, value] of Object.entries(projectValues)) {
++		if (
++			!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) ||
++			reserved.has(key) ||
++			key.startsWith("DITTO_") ||
++			key.startsWith("PI_") ||
++			key.startsWith("GIT_")
++		)
++			throw new RemoteToolError("environment_key");
++		if (Buffer.byteLength(value) > 64 * 1024)
++			throw new RemoteToolError("environment_limit");
++		Object.defineProperty(env, key, {
++			value,
++			enumerable: true,
++			writable: true,
++		});
++	}
++	return {
++		...env,
++		PATH: "/usr/local/bin:/usr/bin:/bin",
++		HOME: "/tmp",
++		LANG: "C.UTF-8",
++		LC_ALL: "C.UTF-8",
++	};
++}
++async function shell(
++	job: Extract<RemoteToolV1["tool"], { name: "bash" }>,
++	root: string,
++	env: Record<string, string>,
++	signal: AbortSignal,
++): Promise<RemoteToolResult> {
++	return new Promise((resolve, reject) => {
++		checkSignal(signal);
++		const child = spawn(
++			"/bin/bash",
++			["--noprofile", "--norc", "-c", job.command],
++			{ cwd: root, env, detached: true, stdio: ["ignore", "pipe", "pipe"] },
++		);
++		const stdout: Buffer[] = [];
++		const stderr: Buffer[] = [];
++		let outBytes = 0;
++		let errBytes = 0;
++		let truncated = false;
++		let killTimer: ReturnType<typeof setTimeout> | undefined;
++		let killPending = false;
++		let closedResult: RemoteToolResult | undefined;
++		const finish = () => {
++			if (closedResult && !killPending) resolve(closedResult);
++		};
++		const abort = () => {
++			if (!child.pid) return;
++			try {
++				process.kill(-child.pid, "SIGTERM");
++			} catch {
++				/* Process may already be gone. */
++			}
++			killPending = true;
++			killTimer ??= setTimeout(() => {
++				try {
++					if (child.pid) process.kill(-child.pid, "SIGKILL");
++				} catch {
++					/* Process may already be gone. */
++				}
++				killPending = false;
++				finish();
++			}, 100);
++		};
++		signal.addEventListener("abort", abort, { once: true });
++		const collect = (chunk: Buffer, list: Buffer[], seen: number) => {
++			const take = Math.max(0, Math.min(chunk.length, OUTPUT_BYTES - seen));
++			if (take) list.push(chunk.subarray(0, take));
++			if (take < chunk.length) truncated = true;
++			return seen + take;
++		};
++		child.stdout.on("data", (chunk: Buffer) => {
++			outBytes = collect(chunk, stdout, outBytes);
++		});
++		child.stderr.on("data", (chunk: Buffer) => {
++			errBytes = collect(chunk, stderr, errBytes);
++		});
++		child.once("error", (error) => {
++			signal.removeEventListener("abort", abort);
++			if (killTimer) clearTimeout(killTimer);
++			reject(error);
++		});
++		child.once("close", (exitCode) => {
++			signal.removeEventListener("abort", abort);
++			const out = Buffer.concat(stdout).toString("utf8");
++			const err = Buffer.concat(stderr).toString("utf8");
++			closedResult = {
++				content: [
++					{ type: "text", text: [out, err].filter(Boolean).join("\n") },
++				],
++				details: {
++					stdout: out,
++					stderr: err,
++					exitCode,
++					truncated,
++					canceled: signal.aborted,
++				},
++				isError: exitCode !== 0 || signal.aborted,
++			};
++			finish();
++		});
++		if (signal.aborted) abort();
++	});
++}
++function textResult(text: string): RemoteToolResult {
++	return { content: [{ type: "text", text }] };
++}
++
++export async function executeRemoteTool(
++	input: unknown,
++	options: RemoteExecutorOptions,
++): Promise<RemoteToolResult> {
++	const job = parseRemoteToolV1(input);
++	const now = options.now ?? Date.now;
++	if (job.executorIncarnationId !== options.incarnation)
++		throw new RemoteToolError("incarnation");
++	if (job.deadline <= now() || job.deadline > now() + 120_000)
++		throw new RemoteToolError("deadline");
++	if (
++		job.tool.name !== "bash" &&
++		Object.keys(options.projectValues ?? {}).length
++	)
++		throw new RemoteToolError("environment_forbidden");
++	const root = await realpath(options.workspace);
++	if (
++		root !== path.resolve(options.workspace) ||
++		(await lstat(options.workspace)).isSymbolicLink()
++	)
++		throw new RemoteToolError("workspace");
++	const timeout = Math.min(
++		job.deadline - now(),
++		job.tool.name === "bash" && job.tool.timeout
++			? job.tool.timeout * 1000
++			: 120_000,
++	);
++	const signal = AbortSignal.any([
++		AbortSignal.timeout(timeout),
++		...(options.signal ? [options.signal] : []),
++	]);
++	checkSignal(signal);
++	const tool = job.tool;
++	let result: RemoteToolResult;
++	if (tool.name === "read") {
++		const target = await workspacePath(root, tool.path);
++		const buffer = await boundedRead(root, target);
++		const mime = imageMime(buffer);
++		if (mime) validateImageDimensions(buffer, mime);
++		else decodeText(buffer);
++		result = await createReadTool(root, {
++			operations: {
++				readFile: async () => buffer,
++				access: async () => undefined,
++				detectImageMimeType: async () => mime,
++			},
++		}).execute(
++			job.toolCallId,
++			{ path: target, offset: tool.offset, limit: tool.limit },
++			signal,
++		);
++	} else if (tool.name === "write") {
++		await conditionalWrite(
++			root,
++			tool.path,
++			tool.content,
++			tool.expected,
++			signal,
++		);
++		result = textResult(`Wrote ${Buffer.byteLength(tool.content)} bytes.`);
++	} else if (tool.name === "edit") {
++		const target = await workspacePath(root, tool.path);
++		const buffer = await boundedRead(root, target);
++		if (contentDigest(buffer) !== tool.expected.sha256)
++			throw new RemoteToolError("expected_content");
++		decodeText(buffer);
++		result = await createEditTool(root, {
++			operations: {
++				access: async () => undefined,
++				readFile: async () => buffer,
++				writeFile: async (_file, content) =>
++					conditionalWrite(root, target, content, tool.expected, signal),
++			},
++		}).execute(job.toolCallId, { path: target, edits: tool.edits }, signal);
++	} else if (tool.name === "bash") {
++		result = await shell(
++			tool,
++			root,
++			closedShellEnvironment(options.projectValues),
++			signal,
++		);
++	} else {
++		const target = await workspacePath(root, tool.path ?? ".");
++		const stat = await lstat(target);
++		if (tool.name === "ls") {
++			if (!stat.isDirectory()) throw new RemoteToolError("path");
++			const entries = await readdir(target, { withFileTypes: true });
++			result = textResult(
++				entries
++					.sort((a, b) => a.name.localeCompare(b.name))
++					.slice(0, tool.limit ?? 500)
++					.map(
++						(entry) =>
++							`${entry.name}${entry.isDirectory() ? "/" : entry.isSymbolicLink() ? "@" : ""}`,
++					)
++					.join("\n"),
++			);
++		} else {
++			result = await remoteSearch(
++				tool,
++				root,
++				target,
++				stat.isDirectory(),
++				signal,
++				async (file) => decodeText(await boundedRead(root, file)),
++			);
++		}
++	}
++	return parseRemoteToolResult(result, tool.name);
++}

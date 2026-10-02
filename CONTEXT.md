@@ -2,7 +2,7 @@
 
 Ditto uses the terms below in product discussion, specifications, architecture documents, and code. Implementation details belong in `docs/architecture/`.
 
-These terms describe the architecture the trusted workspace-session runtime ships. Until cutover, running code still uses one untrusted sandbox for both the agent and the repository.
+These terms describe the target defined by the [Pi Durable workspace-session runtime specification](docs/specs/pi-durable-session-runtime.md). Implementation and validation remain pending. Until cutover, running code still uses one untrusted sandbox for both the agent and the repository.
 
 ## People and ownership
 
@@ -36,11 +36,11 @@ Project-scoped context that remains available across workspace sessions. Project
 
 ### Sandbox identity
 
-A durable Ditto record that binds a random sandbox ID, container identity, owners, lifecycle generation, and retirement state. Distinct identity roles exist for project-seed builders, execution sandboxes, and trusted brains. Retired identities remain as permanent tombstones and never regain authority.
+A durable Ditto record that binds a random sandbox ID, container identity, owners, lifecycle generation, and retirement state. Distinct identity roles exist for project-seed builders and execution sandboxes. The trusted brain is not a sandbox identity in the target. Retired identities remain as permanent tombstones and never regain authority.
 
 ### Privileged operation
 
-A time-bounded Ditto-owned window that authorizes one contract family for an identity. Families include model requests, Git transport, and Ditto actions. The identity cannot invent or extend a window. Ditto opens a window only when it admits execution, not when it merely accepts a command.
+A time-bounded Ditto-owned window that authorizes one contract family for admitted work under current runtime or sandbox authority. Families include model requests, Git transport, and Ditto actions. Callers cannot invent or extend a window. Ditto opens a window only when it admits execution, not when it merely accepts a command.
 
 ## Conversations and execution
 
@@ -56,7 +56,7 @@ The coordinator for one workspace session. It consumes commands, supervises the 
 
 ### Trusted brain
 
-The coding-agent process for one workspace session. It owns the model loop, compaction, and continuation of that session. It does not execute repository code, install repository dependencies, or load repository-owned agent configuration.
+The trusted agent engine for one workspace session. It owns the model loop, compaction, and agent continuation within the trusted session runtime. It does not execute repository code, install repository dependencies, or load repository-owned agent configuration.
 
 ### Execution sandbox
 
@@ -92,7 +92,7 @@ A durable, serializable unit of workspace-session work, such as an agent run, Gi
 
 ### Running slot
 
-An unexpired capacity lease for a trusted brain container or an execution container that Ditto most recently observed as active. Sleeping and cold ready runtimes do not consume a running slot. The two pools are independent.
+An unexpired capacity lease for an execution container that Ditto most recently observed as active, including builder and preview execution. Sleeping and cold ready execution does not consume a running slot. Concurrent model work has separate admission limits, not a trusted-brain container pool.
 
 ### Agent event
 

@@ -1,0 +1,37 @@
+import { defineWorkersConfig } from "@cloudflare/vitest-pool-workers/config";
+
+export default defineWorkersConfig({
+	resolve: {
+		alias: { "#": new URL("../web/src", import.meta.url).pathname },
+	},
+	test: {
+		deps: {
+			optimizer: {
+				ssr: {
+					enabled: true,
+					include: ["@cloudflare/containers", "@cloudflare/sandbox"],
+				},
+			},
+		},
+		poolOptions: {
+			workers: {
+				main: "./src/server.ts",
+				additionalExports: {
+					SessionRuntime: "DurableObject",
+					Sandbox: "DurableObject",
+					RuntimeEntrypoint: "WorkerEntrypoint",
+				},
+				miniflare: {
+					compatibilityDate: "2026-09-16",
+					compatibilityFlags: ["nodejs_compat"],
+					bindings: {
+						RUNTIME_ENCRYPTION_CURRENT_KEY_VERSION: "v1",
+						RUNTIME_ENCRYPTION_KEYS: JSON.stringify({
+							v1: "01".repeat(32),
+						}),
+					},
+				},
+			},
+		},
+	},
+});

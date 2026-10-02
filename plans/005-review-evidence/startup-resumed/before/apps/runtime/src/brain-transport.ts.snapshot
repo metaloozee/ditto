@@ -1,0 +1,181 @@
+import {
+	decodeContractInput,
+	integerField,
+	literalField,
+	strictRecord,
+} from "../../../packages/runtime-contracts/src/json.js";
+import {
+	type BrainEnvelopeV1,
+	parseBrainEnvelopeV1,
+} from "../../../packages/runtime-contracts/src/runtime.js";
+
+export const BRAIN_ORIGIN = "http://ditto.internal";
+export const BRAIN_BODY_LIMIT = 256 * 1024;
+export const BRAIN_READ_TIMEOUT_MS = 5_000;
+export const BRAIN_METHODS = [
+	"readiness",
+	"continuation",
+	"tool",
+	"result",
+	"control",
+] as const;
+export type BrainMethod = (typeof BRAIN_METHODS)[number];
+export type BrainRequest = BrainEnvelopeV1 & {
+	kind: BrainMethod;
+	ownerVersion: number;
+	lifecycleGeneration: number;
+	deadline: number;
+};
+
+export class TransportDenied extends Error {
+	constructor(readonly code: string) {
+		super(code);
+		this.name = "TransportDenied";
+	}
+}
+
+export function transportDenial(code: string, status = 403): Response {
+	return Response.json({ error: "denied", reasonCode: code }, { status });
+}
+
+export async function readTransportBody(request: Request): Promise<string> {
+	if (
+		request.headers.get("content-type")?.toLowerCase() !== "application/json"
+	) {
+		throw new TransportDenied("content_type");
+	}
+	if (request.headers.has("content-encoding"))
+		throw new TransportDenied("encoding");
+	for (const [name] of request.headers) {
+		if (
+			![
+				"content-type",
+				"content-length",
+				"host",
+				"accept",
+				"user-agent",
+			].includes(name)
+		) {
+			throw new TransportDenied("unexpected_header");
+		}
+	}
+	const length = request.headers.get("content-length");
+	if (
+		length != null &&
+		(!/^\d+$/.test(length) || Number(length) > BRAIN_BODY_LIMIT)
+	) {
+		throw new TransportDenied("body_limit");
+	}
+	const reader = request.body?.getReader();
+	if (!reader) throw new TransportDenied("body_missing");
+	const chunks: Uint8Array[] = [];
+	let size = 0;
+	let cancelBody: () => void = () => undefined;
+	const interrupted = new Promise<never>((_resolve, reject) => {
+		cancelBody = () => reject(new TransportDenied("body_canceled"));
+	});
+	const timer = setTimeout(() => {
+		cancelTimeout(new TransportDenied("body_timeout"));
+		void reader.cancel().catch(() => undefined);
+	}, BRAIN_READ_TIMEOUT_MS);
+	let cancelTimeout: (error: Error) => void = () => undefined;
+	const expired = new Promise<never>((_resolve, reject) => {
+		cancelTimeout = reject;
+	});
+	request.signal.addEventListener("abort", cancelBody, { once: true });
+	if (request.signal.aborted) cancelBody();
+	try {
+		while (true) {
+			const chunk = await Promise.race([reader.read(), interrupted, expired]);
+			if (chunk.done) break;
+			size += chunk.value.byteLength;
+			if (size > BRAIN_BODY_LIMIT) throw new TransportDenied("body_limit");
+			chunks.push(chunk.value);
+		}
+	} catch (error) {
+		void reader.cancel().catch(() => undefined);
+		throw error;
+	} finally {
+		clearTimeout(timer);
+		request.signal.removeEventListener("abort", cancelBody);
+		reader.releaseLock();
+	}
+	const bytes = new Uint8Array(size);
+	let offset = 0;
+	for (const chunk of chunks) {
+		bytes.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	if (length != null && Number(length) !== size)
+		throw new TransportDenied("body_length");
+	try {
+		return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+	} catch {
+		throw new TransportDenied("utf8");
+	}
+}
+
+export async function parseBrainRequest(
+	request: Request,
+	now: number | (() => number) = Date.now,
+): Promise<BrainRequest> {
+	const clock =
+		typeof now === "function" ? now : () => Math.max(now, Date.now());
+	const startedAt = typeof now === "function" ? now() : now;
+	const url = new URL(request.url);
+	if (
+		url.origin !== BRAIN_ORIGIN ||
+		url.username ||
+		url.password ||
+		url.search ||
+		url.hash
+	) {
+		throw new TransportDenied("origin");
+	}
+	if (request.method !== "POST") throw new TransportDenied("method");
+	const raw = await readTransportBody(request);
+	const record = strictRecord(
+		decodeContractInput(raw, BRAIN_BODY_LIMIT),
+		[
+			"version",
+			"kind",
+			"ownerVersion",
+			"lifecycleGeneration",
+			"deadline",
+			"brainIdentityId",
+			"brainIncarnationId",
+			"runId",
+			"attempt",
+			"runEpoch",
+			"operationId",
+			"expectedCommittedPosition",
+			"payload",
+		],
+		"BrainRequestV1",
+	);
+	const kind = literalField(record, "kind", BRAIN_METHODS);
+	if (url.pathname !== `/v1/${kind}`) throw new TransportDenied("path");
+	const deadline = integerField(record, "deadline", { minimum: 1 });
+	if (deadline <= clock() || deadline > startedAt + 120_000)
+		throw new TransportDenied("deadline");
+	const {
+		kind: _kind,
+		ownerVersion,
+		lifecycleGeneration,
+		deadline: _deadline,
+		...envelope
+	} = record;
+	return {
+		...parseBrainEnvelopeV1(envelope),
+		kind,
+		ownerVersion: integerField({ ownerVersion }, "ownerVersion", {
+			minimum: 1,
+		}),
+		lifecycleGeneration: integerField(
+			{ lifecycleGeneration },
+			"lifecycleGeneration",
+			{ minimum: 1 },
+		),
+		deadline,
+	};
+}

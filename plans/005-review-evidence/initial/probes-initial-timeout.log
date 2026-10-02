@@ -1,0 +1,5 @@
+{"name":"B01 live bounded brain envelope has a positive control","result":"PASS","observed":{"accepted":true}}
+{"name":"B02 already expired brain envelope is rejected","result":"PASS","observed":{"accepted":false}}
+{"name":"B03 deadline is rechecked after awaited body reading","result":"FAIL","observed":{"accepted":true,"deadlineExpiredAtCompletion":true}}
+{"name":"G01 grep finds a text match without unrelated files","result":"PASS","observed":{"accepted":true}}
+{"name":"G02 unrelated binary files do not prevent finding text matches","result":"FAIL","observed":{"accepted":false,"code":"utf8"}}
