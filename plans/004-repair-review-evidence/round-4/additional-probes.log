@@ -1,9 +1,0 @@
-{"name":"U01 termination result timeout is not successful stop evidence","result":"FAIL","observed":{"terminationEvidenceAccepted":true}}
-{"name":"U01 termination result failed is not successful stop evidence","result":"FAIL","observed":{"terminationEvidenceAccepted":true}}
-{"name":"U02 exact stable executor identity termination can settle Stop","result":"FAIL","observed":{"validEvidenceRecognized":true,"runState":"stopping"}}
-{"name":"U03 unresolved Stop retries stay in the future after the effect deadline","result":"FAIL","observed":{"runState":"stopping","nextDeadlineDeltas":[-1000,-1100,-1200]}}
-{"name":"U04 reconciliation does not start another transition after its time budget","result":"FAIL","observed":{"runState":"failed","processed":1,"elapsedMs":6000}}
-{"name":"U05 reconciliation bounds run rows scanned, not only successful settlements","result":"FAIL","observed":{"largestRunQueryRows":61}}
-{"name":"U06 transient schedule failure does not permanently fatal-latch a healthy journal","result":"FAIL","observed":{"faultHit":true,"firstReconcileCode":"fatal_latch","laterEffectAdmitted":false}}
-{"name":"U07 positive: bounded restore can finish across later passes","result":"PASS","observed":{"states":["incomplete","incomplete","ok"],"decryptCalls":2,"effectAdmitted":true}}
-{"checks":8,"failures":7}

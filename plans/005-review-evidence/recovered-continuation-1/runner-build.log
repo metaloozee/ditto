@@ -1,2 +1,0 @@
-npm notice run build
-npm notice run tsc -p tsconfig.json

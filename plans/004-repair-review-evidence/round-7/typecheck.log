@@ -1,2 +1,0 @@
-$ pnpm --filter @ditto/web typecheck
-$ tsc --noEmit
