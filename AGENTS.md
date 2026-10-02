@@ -10,7 +10,7 @@ The web app runs on Cloudflare. It keeps durable product state in D1 and stores 
 
 - `apps/web` contains the TanStack Start UI, Worker routes, domain services, D1 schema, and migrations.
 - `packages/sandbox-runner` contains the independent Node.js runner baked into the sandbox image. It uses npm, not the pnpm workspace.
-- `docs/architecture` contains architecture summaries with explicit status. Historical Node-target pages do not override the Pi Durable specification.
+- `docs/specs/pi-durable-session-runtime.md` defines the runtime target. Add implementation-facing architecture summaries as its phases land; old Node-target docs and plans are preserved in Git, linked from `docs/README.md`.
 - `docs/adr` records architectural decisions that remain in force.
 - `docs/specs` contains behavioral requirements and proposed changes. Read each spec's status before treating it as implemented.
 - `CONTEXT.md` defines Ditto's domain terms.
@@ -20,7 +20,7 @@ The web app runs on Cloudflare. It keeps durable product state in D1 and stores 
 - Product intent: `PRODUCT.md`
 - Domain terminology: `CONTEXT.md`
 - Current behavior: source code, tests, and `apps/web/src/db/schema.ts`
-- Target architecture: `docs/specs/pi-durable-session-runtime.md`; `CONTEXT.md` supplies terms, and architecture summaries carry their own historical/current status
+- Target architecture: `docs/specs/pi-durable-session-runtime.md`; `CONTEXT.md` supplies terms
 - Decisions: `docs/adr/`
 - Behavioral requirements: `docs/specs/`
 

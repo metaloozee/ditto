@@ -61,7 +61,7 @@ Generate a migration after changing `apps/web/src/db/schema.ts`:
 pnpm db:generate
 ```
 
-Migrations live in `apps/web/migrations`. The plan 012 cutover migration is an explicit destructive pre-launch reset. Never apply that reset as a production deletion workflow.
+Migrations live in `apps/web/migrations`. The [Pi Durable runtime specification](docs/specs/pi-durable-session-runtime.md) requires separate, scoped authorization for any data reset or cutover. Selecting the architecture does not authorize a migration or reset.
 
 ## Commands
 

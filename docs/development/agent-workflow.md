@@ -51,12 +51,12 @@ Use these paths:
 
 The `to-tickets` skill writes one vertical slice per issue file and records blocking relationships in each file. Work on any ticket whose blockers are complete.
 
-`plans/` has a different job. The `improve` skill writes execution plans there for a fresh agent. Git ignores the directory. Plans are the maintainer's disposable copy and never override current code, `CONTEXT.md`, ADRs, or specs.
+`plans/` has a different job. The `improve` skill writes execution plans there for a fresh agent. The old runtime track and review evidence are preserved in Git, linked from [the documentation index](../README.md). New runtime plans derive from the [Pi Durable specification](../specs/pi-durable-session-runtime.md) and must respect its feasibility gates and open decisions. Plans never override current code, `CONTEXT.md`, ADRs, or specs.
 
 ## Durable documentation
 
 - Update `CONTEXT.md` when domain vocabulary or relationships change.
-- Update the narrow document under `docs/architecture/` when an implemented responsibility, flow, state owner, or trust boundary changes.
+- Add or update a narrow document under `docs/architecture/` as an implemented responsibility, flow, state owner, or trust boundary changes. Keep target requirements in the runtime specification and distinguish implementation from intent.
 - Add an ADR under `docs/adr/` only when the decision meets the ADR threshold.
 - Keep behavioral requirements under `docs/specs/` and state whether each spec is proposed, gated, implemented, or superseded.
 - Update `README.md` when setup, commands, prerequisites, or operator configuration change.

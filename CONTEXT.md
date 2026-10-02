@@ -1,6 +1,6 @@
 # Ditto domain context
 
-Ditto uses the terms below in product discussion, specifications, architecture documents, and code. Implementation details belong in `docs/architecture/`.
+Ditto uses the terms below in product discussion, specifications, architecture documents, and code. Runtime requirements and design details belong in `docs/specs/pi-durable-session-runtime.md`, not this glossary.
 
 These terms describe the target defined by the [Pi Durable workspace-session runtime specification](docs/specs/pi-durable-session-runtime.md). Implementation and validation remain pending. Until cutover, running code still uses one untrusted sandbox for both the agent and the repository.
 

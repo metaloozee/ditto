@@ -6,7 +6,7 @@ Prepared against Ditto checkout `cff52d1` from the maintainer discussion and [Pi
 
 The maintainer prefers a new architecture and plan track, accepts losing existing development data and progress, and requires local-first development without paid Cloudflare deployment checks blocking implementation. That preference does not authorize any particular reset, deployment, live database operation, staging, or commit.
 
-This document supersedes the [Node-based trusted workspace-session runtime specification](trusted-session-runtime.md) for new runtime planning and implementation. Its requirements, module contracts, feasibility gates, and unresolved-decision restrictions are authoritative. Historical plans, architecture summaries, and research must not override it. Current code and tests still determine what runs today; selecting this target does not claim it already works.
+This document supersedes the [Node-based trusted workspace-session runtime specification](https://github.com/metaloozee/ditto/blob/52c9cef3ca2c471c69dfe4a0bdb3f507a8f45e13/docs/specs/trusted-session-runtime.md) for new runtime planning and implementation. Its requirements, module contracts, feasibility gates, and unresolved-decision restrictions are authoritative. Historical plans, architecture summaries, and research must not override it. Current code and tests still determine what runs today; selecting this target does not claim it already works.
 
 Plans must cite the relevant numbered decisions, local phases, PD test IDs, and open-decision IDs. They may choose private implementation details but must not change state ownership, module interfaces, trust assumptions, or failure semantics without an explicit specification amendment. An unresolved decision is a gate on the named work, not permission for an agent to choose silently. Existing implementation evidence remains valid for its reviewed version, not proof of this engine.
 
@@ -409,7 +409,7 @@ Prefer isolated disposable local state for development rather than deleting the 
 
 Reuse command admission, delivery, ownership, Git policy, redaction, archive policy, crypto utilities, and useful regression scenarios after checking their new assumptions. Replace Node-specific continuation and transport rather than forcing compatibility. Historical passing tests do not transfer automatically.
 
-This specification is the authority for the selected replacement. Mark the old specification and topology-specific plan track historical, preserving acceptance records under their original meaning. Target summaries must link here and identify any old Node-specific content as historical until rewritten. Update implementation-facing documentation as each phase lands without describing unimplemented behavior as current.
+This specification is the authority for the selected replacement. The old specification, topology-specific plans, reviews, and acceptance records are preserved in Git at `52c9cef3ca2c471c69dfe4a0bdb3f507a8f45e13`, linked from the [documentation index](../README.md). The maintainer authorized clearing those obsolete files from the working tree after that snapshot. This is documentation cleanup, not a data reset or implementation transition. Update implementation-facing documentation as each phase lands without describing unimplemented behavior as current.
 
 A failed feasibility gate blocks dependent implementation. It does not restore the old architecture as a silent fallback, permit an agent to waive a requirement, or authorize deleting either implementation. Reopen the affected decision explicitly.
 
@@ -577,7 +577,7 @@ Existing command admission and delivery, identity and ownership policies, effect
 
 The trusted Node image, Node-to-DO bridge, coding-agent continuation recipe and brain-container capacity ledger are replaced in the selected target. Remove them only after replacement behavior is demonstrated and the implementation transition is reviewed.
 
-Topology-specific old plans should not continue as instructions for this candidate. Preserve them and their reviews as history rather than overwriting their status. A new plan track should derive detailed tickets from this spec after the affected decisions and feasibility gates are resolved.
+Topology-specific old plans should not continue as instructions for this candidate. Their original content and reviews remain in the Git snapshot linked above, not the active planning directory. A new plan track should derive detailed tickets from this spec after the affected decisions and feasibility gates are resolved.
 
 ### Publication and references
 
@@ -586,9 +586,9 @@ The issue tracker has not been configured or identified in this conversation. Th
 Relevant sources:
 
 - [Pi Durable architecture research](../research/pi-durable-cloudflare-architecture.md), including pinned upstream storage, scheduler and tool evidence.
-- [Historical Node-based specification](trusted-session-runtime.md), for prior decisions and implementation evidence. The requirements to carry forward are stated in this document.
+- [Historical Node-based specification](https://github.com/metaloozee/ditto/blob/52c9cef3ca2c471c69dfe4a0bdb3f507a8f45e13/docs/specs/trusted-session-runtime.md), for prior decisions and implementation evidence. The requirements to carry forward are stated in this document.
 - [Ditto domain context](../../CONTEXT.md) and [product brief](../../PRODUCT.md).
-- [Existing plan and evidence index](../../plans/README.md), for historical implementation status rather than new-engine acceptance.
+- [Historical plan and evidence index](https://github.com/metaloozee/ditto/blob/52c9cef3ca2c471c69dfe4a0bdb3f507a8f45e13/plans/README.md), for historical implementation status rather than new-engine acceptance.
 - [Cloudflare local container development](https://developers.cloudflare.com/containers/guides/local-dev/), including differences between local and hosted execution.
 - [Cloudflare Sandbox SDK](https://developers.cloudflare.com/sandbox/sdk/), including the hosted plan requirement.
 

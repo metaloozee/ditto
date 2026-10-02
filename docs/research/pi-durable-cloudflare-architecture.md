@@ -4,7 +4,7 @@ Status: historical research and architecture proposal. The authoritative target 
 
 Researched on 2026-10-02 against Ditto checkout `13480bc7f4daf9489a0aa7cf7fea071a1115c8c3`, including the working-tree plan status. External documentation can change after this date. No deployment, live database access, dependency upgrade, or runtime experiment was performed for this report.
 
-The [trusted workspace-session runtime specification](../specs/trusted-session-runtime.md) remains authoritative. It currently requires the full Pi coding-agent SDK in a trusted Node container and explicitly excludes a workerd-hosted loop. This report proposes reopening that decision. It does not silently supersede it, authorize data deletion, or invalidate accepted implementation evidence.
+At the research date, the [trusted workspace-session runtime specification](https://github.com/metaloozee/ditto/blob/52c9cef3ca2c471c69dfe4a0bdb3f507a8f45e13/docs/specs/trusted-session-runtime.md) was authoritative. It required the full Pi coding-agent SDK in a trusted Node container and explicitly excluded a workerd-hosted loop. This report proposed reopening that decision. The Pi Durable specification now supersedes it; the research itself authorized no data deletion and did not invalidate accepted implementation evidence.
 
 ## 1. Recommendation
 
@@ -444,7 +444,7 @@ Choose one owner for conversation/task continuation. Use another durable engine 
 
 ## 10. What happens to the existing work
 
-The checked-out repository has three distinct layers: the operational legacy chat path, locally implemented trusted-runtime foundations, and an accepted target that is not fully connected. The [plan index](../../plans/README.md) records locally accepted phases 001 through 004 and incomplete phase 005. Both `packages/sandbox-runner` and `packages/session-brain` pin Pi `0.85.1`. Agent-core is transitive, not Ditto's direct integration.
+At the research date, the checked-out repository had three distinct layers: the operational legacy chat path, locally implemented trusted-runtime foundations, and an accepted target that was not fully connected. The [historical plan index](https://github.com/metaloozee/ditto/blob/52c9cef3ca2c471c69dfe4a0bdb3f507a8f45e13/plans/README.md) records locally accepted phases 001 through 004 and incomplete phase 005. Both `packages/sandbox-runner` and `packages/session-brain` pin Pi `0.85.1`. Agent-core is transitive, not Ditto's direct integration.
 
 ### Source evidence for today's behavior
 

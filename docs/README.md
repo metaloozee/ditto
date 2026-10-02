@@ -1,40 +1,26 @@
 # Ditto documentation
 
-Use this index to find the document that owns a claim. Current architecture, proposed work, research, and local planning have different authority.
-
-## Current product and system
+## Sources of truth
 
 | Document | Purpose |
 |---|---|
-| [`PRODUCT.md`](../PRODUCT.md) | Current product, users, direction, and design principles |
-| [`CONTEXT.md`](../CONTEXT.md) | Canonical domain terms and relationships |
-| [System architecture](architecture/overview.md) | System units, primary flows, state ownership, and current limits |
-| [Frontend architecture](architecture/frontend.md) | Routes, browser state, chat, settings, and UI composition |
-| [Server and data architecture](architecture/server-and-data.md) | Worker entry points, tRPC, domain services, schema, and lifecycles |
-| [Agent harness architecture](architecture/agent-harness.md) | Agent execution, controls, worktrees, Git export, preview, and backups |
-| [Security boundaries](architecture/security.md) | Current trust model, credential paths, redaction, Git policy, and known gaps |
-| [Repository map](architecture/repository-map.md) | Source ownership and change routing |
+| [`PRODUCT.md`](../PRODUCT.md) | Product intent and design principles |
+| [`CONTEXT.md`](../CONTEXT.md) | Domain terms and relationships |
+| [Pi Durable workspace-session runtime](specs/pi-durable-session-runtime.md) | Authoritative runtime target, module contracts, local feasibility gates, acceptance tests, and unresolved decisions |
+| [Pi Durable architecture research](research/pi-durable-cloudflare-architecture.md) | Evidence behind the selected candidate, not implementation validation |
+| [Agent-assisted development](development/agent-workflow.md) | Optional planning and review workflow |
 
-Current source code, tests, and `apps/web/src/db/schema.ts` define implemented behavior. The [Pi Durable workspace-session runtime specification](specs/pi-durable-session-runtime.md) defines the authoritative target for runtime plans and agents. Its feasibility gates and open decisions remain binding. Architecture pages marked historical describe the previous Node target, not current behavior or requirements to carry into new plans.
+Source code, tests, and `apps/web/src/db/schema.ts` define current behavior. The Pi Durable target is selected but not implemented or validated. Its open decisions and feasibility gates still apply.
 
-## Decisions, specifications, and research
+New runtime plans derive from the specification, not the previous Node-container design. `plans/` has been cleared for the new track. Add implementation-facing architecture documentation as the replacement lands; do not describe target behavior as shipped.
 
-| Location | Authority |
-|---|---|
-| `docs/adr/` | Decisions that remain in force. The directory stays empty until a decision meets the ADR threshold. |
-| `docs/specs/` | Proposed or required behavior. Read the status block before treating a spec as implemented. |
-| `docs/research/` | Historical evidence and platform investigation. Research does not define current behavior. |
+## Historical work
 
-The [Pi Durable specification](specs/pi-durable-session-runtime.md) owns runtime module contracts, state ownership, the local implementation sequence, and acceptance tests. The [Node-based runtime spec](specs/trusted-session-runtime.md) and [platform credential broker spec](specs/platform-credential-broker.md) are historical. Their local evidence does not establish that the Pi Durable target works.
+The obsolete plans, reviews, evidence, architecture summaries, specifications, and research are preserved in Git at commit `52c9cef3ca2c471c69dfe4a0bdb3f507a8f45e13`, before cleanup. After that commit is pushed, the [historical docs](https://github.com/metaloozee/ditto/tree/52c9cef3ca2c471c69dfe4a0bdb3f507a8f45e13/docs) and [plan/evidence index](https://github.com/metaloozee/ditto/blob/52c9cef3ca2c471c69dfe4a0bdb3f507a8f45e13/plans/README.md) are available on GitHub. Until then, inspect them locally:
 
-## Reading paths
+```bash
+git show 52c9cef:plans/README.md
+git show 52c9cef:docs/specs/trusted-session-runtime.md
+```
 
-For a chat or agent-runtime change, read the frontend, server, harness, and security pages.
-
-For project lifecycle, persistence, or preview work, read the server, harness, and security pages.
-
-For Git or GitHub work, read the Git export section in the harness page and the Git sections in the security page.
-
-For a schema change, read the server page, edit `apps/web/src/db/schema.ts`, and generate the matching migration.
-
-The maintainer's optional planning and review process lives in [Agent-assisted development](development/agent-workflow.md). Git ignores `.scratch/` and `plans/`; neither directory is project documentation.
+Historical acceptance records apply only to their reviewed implementation. This documentation cleanup does not remove source, reset data, deploy infrastructure, or resolve the new target's open decisions.
