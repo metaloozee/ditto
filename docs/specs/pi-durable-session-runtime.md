@@ -18,7 +18,7 @@ The [maintainer decisions](#resolved-maintainer-decisions) are resolved. They se
 
 ## How to read this specification
 
-This rewrite uses a practical subset of [ASD-STE100 Simplified Technical English](https://www.asd-ste100.org/about.html). It aims for short sentences, active voice, one topic per paragraph, and consistent terms. It keeps technical names and exact contract terms where simpler words would change the meaning. It does not claim full ASD-STE100 compliance.
+
 
 The diagrams explain the written requirements. They do not replace them or add implementation guarantees. Each diagram has a PNG image, SVG export, and editable tldraw file in `docs/images/`.
 
