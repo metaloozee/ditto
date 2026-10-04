@@ -27,8 +27,10 @@ export default defineWorkersConfig({
 					compatibilityFlags: ["nodejs_compat"],
 					durableObjects: {
 						PI_FIXTURE_STORAGE: { className: "PiDurableLocalRuntime", useSQLite: true },
+						PI_HOST_STORAGE: { className: "PiDurableHostFixture", useSQLite: true },
 					},
 					bindings: {
+						PI_HOST_FIXTURE_CLOCK_OFFSET_MS: 60_000,
 						RUNTIME_ENCRYPTION_CURRENT_KEY_VERSION: "v1",
 						RUNTIME_ENCRYPTION_KEYS: JSON.stringify({
 							v1: "01".repeat(32),

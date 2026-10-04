@@ -412,9 +412,19 @@ Use one alarm policy for runnable work, retry deadlines, unresolved effects, pen
 
 Execution must fit bounded host invocations and preserve durable continuation. Infrastructure interruption is not user cancellation. Browser connections, process timers, unawaited promises, and `waitUntil` must not provide the only lifetime guarantee.
 
-The inspected framework has no proven bounded host-pump integration for this use. Closing may wait on non-cooperative invocations. The first feasibility phase must prove supported interruption and reopen behavior without overlapping owners or private scheduler changes.
+The host uses cooperative local waits through supported Pi and adapter interfaces. Deployment-owned provider and execution adapters must end their local waits under the invocation's cancellation signal or context. Request preparation, hooks, stream consumption and cleanup, and retry waits must follow the same contract. An abandoned outer wait does not conform if its trusted continuation can still dispatch effects.
 
-If supported interfaces cannot do this, stop dependent implementation. Report the required upstream change or alternative host decision. Do not hide the limitation with an endless alarm handler or a second continuation engine.
+A remote command may ignore cancellation while its trusted local adapter cooperates. Ending the local wait does not establish remote termination, rejection before dispatch, or safe replay. Retain its admitted effect, executor identity, deadline and unresolved outcome. Unknown shell outcomes must never replay automatically.
+
+Before host yield, commit a no-new-admission fence and durable interruption, effect-accounting and wakeup intent. If persistence fails, deny further effects immediately in the live instance. Recovery must deny unsafe effects from already-durable admission evidence when a new failure marker cannot commit. Deny scheduling while storage is unavailable. Then request actual Harness close. Host yield must not use user-Stop or task-abort operations. For graceful yield, require actual close completion before opening a replacement Harness. Abrupt restart requires trusted prior-host termination evidence and durable closure accounting before takeover; it does not prove graceful close. Canceling the close waiter is not proof that close completed.
+
+A replacement Harness may open passively to reconcile while remote work remains alive. This grants no effect authority. Mandatory provider and execution adapters must deny new effects while outcomes remain unresolved. Replacement mutating work still requires trusted termination or isolation of the previous executor and available capacity. Live isolated execution remains counted.
+
+Observe late remote results and failures against their original operation, attempt, epoch and executor generation. They must not dispatch more work, publish through a closed Harness, or overwrite current run state. A bounded trusted reconciliation handler may retain validated evidence. Only the runtime's guarded reconciliation decision may clear the admission fence.
+
+The first feasibility phase must prove bounded actual close through Pi's built-in model and tool phases with conforming adapters, preserved continuation, and safe reopen. It must include a remote operation that ignores cancellation. Pi is not required to forcibly terminate arbitrary trusted JavaScript that violates this adapter contract.
+
+If the conforming integration still cannot meet these requirements through supported interfaces, stop dependent implementation. Record the precise limitation and seek review of an upstream change or the host decision. Do not hide the limitation with an endless alarm handler, a private scheduler patch, a fork, or a second continuation engine.
 
 ### 8. Execution evidence and uncertainty
 
@@ -464,7 +474,7 @@ A replacement mutating run must wait for trusted termination evidence or isolati
 
 Keep the persisted 15-minute automatic recovery deadline, measured from the first interruption. Retries do not reset it. Expiry fails the run and revokes admission. Continue to track unresolved processes.
 
-Tools and model attempts have finite persisted deadlines. The old whole-run timeout is not the new agent-run lifetime limit. Compaction and background work follow the same authority and Stop rules.
+Tools and model attempts have finite persisted deadlines. Each host invocation has a durable identity, start time, and separate absolute yield and drain deadlines. Duplicate delivery or retries of that invocation must not extend its deadlines. A guarded transition may allocate a new invocation budget only after actual prior close or trusted prior-host termination, durable closure accounting, and reconciliation. A new host budget does not extend existing effect deadlines or the first-interruption recovery deadline. None of these deadlines proves remote termination or grants replacement mutation authority. Host yield preserves continuation without user cancellation; explicit Stop retains its epoch-first cancellation contract. The old whole-run timeout is not the new agent-run lifetime limit. Compaction and background work follow the same authority and Stop rules.
 
 ### 10. Encrypted storage adapter
 
@@ -716,9 +726,9 @@ Exit evidence must show no hidden Node filesystem or process dependency and no t
 
 #### L1: host lifetime and safety
 
-Use disposable synthetic storage to prove passive startup, bounded interruption and reopen, durable wakeups, Stop, and unknown-effect blocking.
+Use disposable synthetic storage to prove passive startup, bounded interruption and reopen through cooperative local adapters, durable wakeups, Stop, and unknown-effect blocking. Include a remote process that ignores cancellation while its trusted local wait ends.
 
-Exit evidence must show one owner and no unintended user cancellation. An uncertain effect must block model and tool admission, including after another restart. Failure stops dependent architecture work.
+Exit evidence must show actual Harness close within the persisted invocation deadline, no overlapping Harness admission owner, and no unintended user cancellation. Retain unresolved remote execution and capacity accounting after local close. An uncertain effect must block model and tool admission, including after another restart. Only trusted termination or isolation permits replacement mutation. Failure stops dependent architecture work.
 
 #### L2: durable private state
 
@@ -847,12 +857,12 @@ These IDs identify essential backend scenarios. They do not prescribe a number o
 | PD06 | Stop arrives with missing predecessors or exhausted capacity. | Apply the priority control. Delayed targeted work cannot start. |
 | PD07 | Browser detaches and the product Worker restarts. | Execution continues or recovers without browser-owned lifetime. |
 | PD08 | Runtime is interrupted and reopened repeatedly. | Reconcile passively before effects. Keep exactly one active owner. |
-| PD09 | Host yields within a bounded invocation during model or tool work. | Durable progress remains recoverable. Infrastructure yield is not user cancellation. |
+| PD09 | Host yields during model or tool work through a cooperative local adapter while the remote operation may ignore cancellation. | Actual Harness close finishes within the persisted invocation deadline. Durable progress remains recoverable. Infrastructure yield is not user cancellation. Unresolved effects remain accounted for and deny new admission. |
 | PD10 | Alarm scheduling is missed, wakeups duplicate, or a handler fails. | Reconcile retained wakeup intent without duplicate effects. |
 | PD11 | Crash after a completed model/tool result, during compaction, or during follow-up consumption. | Preserve original IDs, provider metadata, context, and queue position. Do not repeat completed mutations. |
 | PD12 | Shell is admitted but its result commit is missing, followed by two restarts. | Persistent uncertainty blocks every further model and tool admission. |
 | PD13 | An adapter's persistence barrier fails. | No later provider or executor effect occurs, even if Pi reports a recoverable error. |
-| PD14 | Shell ignores cancellation and a stale result arrives. | Block replacement writers until termination or isolation. Stale state cannot overwrite current work. Keep live capacity accounted for. |
+| PD14 | Shell ignores cancellation, its cooperative local wait ends, and a stale result arrives. | Ending the wait does not prove process death. Block replacement writers until trusted termination or isolation. Retain evidence under its original operation and epoch without overwriting current work. Keep live capacity accounted for. |
 | PD15 | Model retries after interruption. | Show the new attempt and possible extra spending. Make no exactly-once billing claim. |
 | PD16 | Recovery deadline expires. | Fail pending assistants. Continue to account for unresolved execution. |
 | PD17 | Storage rollback, unrelated concurrent operation, or expired transaction handle. | Backend ordering and rollback conform to the upstream contract. |
@@ -921,7 +931,7 @@ The maintainer confirmed these decisions in the specification interview and appr
 | ID | Topic | Approved decision | Implementation consequence |
 |---|---|---|---|
 | OD1 | Subscription credential trust | Start with user-provided Codex subscriptions. One product-side credential DO per connected user holds encrypted tokens and coordinates renewal outside Pi Durable. | Private authorized model requests return responses, not credentials. Tokens never enter runtime Workers or sandboxes. Supported authentication and discovery remain engineering gates, not an assumed general ban on hosted access. |
-| OD2 | Framework support | Stop and review library flaws. Seek an upstream issue or fix. No maintained fork. | Failed supported-lifecycle gates stop dependent work. No private scheduler patch or second engine. |
+| OD2 | Framework support | Stop and review library flaws. Seek an upstream issue or fix. No maintained fork. | Test supported lifecycle behavior with cooperative deployment-owned adapters before requiring upstream changes. An arbitrary trusted phase that ignores cancellation is not a conforming integration. Failure of the conforming gate stops dependent work. No private scheduler patch or second engine. |
 | OD3 | Performance and capacity | Defer benchmarks, numerical tuning, and optimization until the app is built. Keep conservative configurable safety limits. | No measured performance or cost acceptance gate. Storage bounds, deadlines, admission, queue expiry, and live-resource accounting remain mandatory. |
 | OD4 | Existing data | All existing user-level data is disposable. No legacy import, preservation, or export/backup before reset is required. | Separately authorize each reset and name its environment and resources. Preserve source, deployment credential configuration, unrelated work, and historical evidence. |
 | OD5 | Verification | Keep the authenticated command/observation interface and essential code-level tests only. No automated UI tests. | Focused storage, crypto, provider, and bounded backend-auth checks remain useful. Avoid elaborate test systems. Live provider tests need approval. Future independent browser QA provides final visual and user-level verification. |
