@@ -1,0 +1,17 @@
+Scope: all 4 workspace projects
+[ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY] Aborted removal of modules directory due to no TTY
+
+If you are running pnpm in CI, set the CI environment variable to "true", or set "confirmModulesPurge" to "false".
+[ERROR] Command failed with exit code 1: /home/ayan/.vite-plus/js_runtime/node/24.21.0/bin/node /tmp/ditto-plan-002-9KCuBv/node_modules/.plan-002-resume/home/.cache/node/corepack/v1/pnpm/11.8.0/bin/pnpm.mjs install
+
+pnpm: Command failed with exit code 1: /home/ayan/.vite-plus/js_runtime/node/24.21.0/bin/node /tmp/ditto-plan-002-9KCuBv/node_modules/.plan-002-resume/home/.cache/node/corepack/v1/pnpm/11.8.0/bin/pnpm.mjs install
+    at getFinalError (file:///tmp/ditto-plan-002-9KCuBv/node_modules/.plan-002-resume/home/.cache/node/corepack/v1/pnpm/11.8.0/dist/pnpm.mjs:34109:14)
+    at makeError (file:///tmp/ditto-plan-002-9KCuBv/node_modules/.plan-002-resume/home/.cache/node/corepack/v1/pnpm/11.8.0/dist/pnpm.mjs:36416:21)
+    at getSyncResult (file:///tmp/ditto-plan-002-9KCuBv/node_modules/.plan-002-resume/home/.cache/node/corepack/v1/pnpm/11.8.0/dist/pnpm.mjs:38260:10)
+    at spawnSubprocessSync (file:///tmp/ditto-plan-002-9KCuBv/node_modules/.plan-002-resume/home/.cache/node/corepack/v1/pnpm/11.8.0/dist/pnpm.mjs:38220:14)
+    at execaCoreSync (file:///tmp/ditto-plan-002-9KCuBv/node_modules/.plan-002-resume/home/.cache/node/corepack/v1/pnpm/11.8.0/dist/pnpm.mjs:38150:23)
+    at callBoundExeca (file:///tmp/ditto-plan-002-9KCuBv/node_modules/.plan-002-resume/home/.cache/node/corepack/v1/pnpm/11.8.0/dist/pnpm.mjs:40678:23)
+    at boundExeca (file:///tmp/ditto-plan-002-9KCuBv/node_modules/.plan-002-resume/home/.cache/node/corepack/v1/pnpm/11.8.0/dist/pnpm.mjs:40655:49)
+    at sync (file:///tmp/ditto-plan-002-9KCuBv/node_modules/.plan-002-resume/home/.cache/node/corepack/v1/pnpm/11.8.0/dist/pnpm.mjs:40814:10)
+    at runPnpmCli (file:///tmp/ditto-plan-002-9KCuBv/node_modules/.plan-002-resume/home/.cache/node/corepack/v1/pnpm/11.8.0/dist/pnpm.mjs:246476:5)
+    at runDepsStatusCheck (file:///tmp/ditto-plan-002-9KCuBv/node_modules/.plan-002-resume/home/.cache/node/corepack/v1/pnpm/11.8.0/dist/pnpm.mjs:248210:7)
