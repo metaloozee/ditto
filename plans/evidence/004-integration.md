@@ -41,6 +41,8 @@ Overlapping plan and review text was copied from the committed main versions bef
 
 ## Cleanup and next step
 
-Cleanup of `/tmp/ditto-plan-004-vO7JVp` and `work/plan-004-encrypted-storage` is authorized and not yet performed. This section will be updated with the actual outcome before those names are treated as removed.
+`git worktree remove --force /tmp/ditto-plan-004-vO7JVp` completed. The path is absent. `git worktree list` shows only `/home/ayan/ditto` on `feat/pi-durable`. `--force` was required because ignored dependency directories remained; every nonignored worktree file was already committed and merged, and the worktree evidence archive existed.
+
+`git branch -d work/plan-004-encrypted-storage` deleted the temporary branch at `e125e45`. `brain`, `feat/pi-durable` and both existing stashes were not modified. Nothing was pushed.
 
 005 awaits a brief refresh and separate execution. It is not accepted. Complete L2 remains pending. No push, pull request, deployment, data reset, live provider request or credential read occurred.
