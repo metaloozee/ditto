@@ -4,11 +4,17 @@ import {
 	awaitWithContext,
 	BACKGROUND_CONTEXT,
 } from "@earendil-works/chord/context";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
+	type CommitPublication,
 	Harness,
 	type HarnessOptions,
+	type HookApi,
+	ROOT_CONVERSATION_ID,
 	type Storage,
 	type TaskId,
+	type TaskRecord,
+	type ToolExecutionResult,
 } from "@earendil-works/pi-durable";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
 import { cooperativeFixture } from "./pi-durable-cooperative-fixture.ts";
@@ -33,8 +39,11 @@ type Effect = {
 	epoch: number;
 	attempt: number;
 	executor: number;
+	// Retained 002 invocation endpoint; correlated effects use operation_deadline.
 	deadline: number;
+	operation_deadline?: number | null;
 	state: "admitted" | "result-recorded" | "pi-committed";
+	correlation?: string | null;
 };
 export type HostFault =
 	| "read"
@@ -52,9 +61,183 @@ export type LocalAuthority = {
 	generation: number;
 	executor: number;
 	liveExecutors?: number;
+	expectedContentWrites?: boolean;
 	priorTerminated?: string;
 };
+class EffectDenied extends Error {
+	constructor(
+		readonly reason: "reservation" | "recovery-deadline" | "authority",
+		readonly run?: string,
+	) {
+		super(
+			reason === "reservation"
+				? "Unresolved effect blocks admission: competing reservation"
+				: reason === "recovery-deadline"
+					? "Run recovery deadline expired"
+					: "Run authority revoked",
+		);
+	}
+}
+type PublicTask = TaskRecord<unknown, unknown, unknown>;
+type Run = {
+	id: string;
+	epoch: number;
+	state:
+		| "queued"
+		| "running"
+		| "recovering"
+		| "stopping"
+		| "complete"
+		| "failed"
+		| "canceled";
+	interrupted_at: number | null;
+	recovery_at: number | null;
+};
+type Command = {
+	id: string;
+	run: string;
+	user: string;
+	assistant: string;
+	sequence: number;
+	submission: number | null;
+	state: "accepted" | "submitted" | "settled";
+};
+type TaskMapping = {
+	task: number;
+	kind: string;
+	conversation: number;
+	owner: string;
+	command: string;
+	selection: string;
+	prepared: string | null;
+	digest: string | null;
+};
+export type ModelRequest = {
+	model: { provider: string; id: string };
+	transcript: unknown;
+	options: Record<string, unknown>;
+};
+export type ToolRequest = {
+	task: TaskId;
+	conversation: number;
+	call: string;
+	name: "cooperative_remote";
+	arguments: Record<string, unknown>;
+	operation:
+		| { kind: "shell" }
+		| { kind: "read"; newObservation: boolean }
+		| { kind: "write"; expectedContent: string };
+	replay: "never" | "new-observation" | "expected-content";
+};
+export type EffectCorrelation = {
+	version: 1;
+	command: string;
+	run: string;
+	user: string;
+	assistant: string;
+	submission: number;
+	task: number;
+	call: string | null;
+	operation: string;
+	piAttempt: number;
+	arguments: string;
+	replay: "never" | "new-observation" | "expected-content" | "pi-retry";
+	generation: number;
+	taskInput: string;
+	prepared: string;
+	digest: string;
+};
+
+function record(value: unknown): Record<string, unknown> {
+	if (!value || typeof value !== "object" || Array.isArray(value))
+		throw new Error("Invalid public record");
+	return value as Record<string, unknown>;
+}
+export function canonical(value: unknown): string {
+	if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+	if (value && typeof value === "object")
+		return `{${Object.entries(value)
+			.filter(([, v]) => v !== undefined)
+			.sort(([a], [b]) => a.localeCompare(b))
+			.map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`)
+			.join(",")}}`;
+	return JSON.stringify(value) ?? "undefined";
+}
+export async function requestDigest(value: unknown) {
+	const text = canonical(value);
+	if (new TextEncoder().encode(text).byteLength > 128_000)
+		throw new Error("Oversized synthetic request");
+	const hash = await crypto.subtle.digest(
+		"SHA-256",
+		new TextEncoder().encode(text),
+	);
+	return [...new Uint8Array(hash)]
+		.map((n) => n.toString(16).padStart(2, "0"))
+		.join("");
+}
+export function semanticTranscript(value: unknown) {
+	const context = record(value);
+	if (!Array.isArray(context.messages)) throw new Error("Missing messages");
+	return {
+		...context,
+		messages: context.messages.map((message) => {
+			const { timestamp: _timestamp, ...rest } = record(message);
+			return rest;
+		}),
+	};
+}
+function preparedTask(task: PublicTask) {
+	const cp = record(task.state.checkpoint);
+	if (
+		task.version !== 1 ||
+		task.background ||
+		task.abortRequested ||
+		task.conversationId !== ROOT_CONVERSATION_ID ||
+		task.state.status !== "running"
+	)
+		throw new Error("Incompatible producer");
+	if (!Number.isSafeInteger(cp.attempt) || Number(cp.attempt) <= 0)
+		throw new Error("Invalid Pi attempt");
+	if (task.kind === "pi.generation") {
+		if (
+			cp.phase !== "request" ||
+			!Number.isSafeInteger(cp.cutoff) ||
+			Number(cp.cutoff) <= 0
+		)
+			throw new Error("Missing generation checkpoint");
+	} else if (task.kind === "pi.compaction") {
+		if (
+			cp.phase !== "summarize" ||
+			!Number.isSafeInteger(cp.firstKept) ||
+			Number(cp.firstKept) <= 0 ||
+			!Number.isSafeInteger(cp.tail) ||
+			Number(cp.tail) < Number(cp.firstKept) ||
+			!Number.isSafeInteger(cp.maxTokens) ||
+			Number(cp.maxTokens) <= 0
+		)
+			throw new Error("Invalid compaction checkpoint");
+	} else throw new Error("Unsupported producer");
+	const { phase: _phase, attempt: _attempt, until: _until, ...tuple } = cp;
+	return canonical(tuple);
+}
+
 export type HostGuard = {
+	bindGeneration(api: HookApi, digest: string, context: Context): Promise<void>;
+	bindCompaction(
+		api: HookApi,
+		selection: { firstKept: number; entries: number[]; digest: string },
+		context: Context,
+	): Promise<void>;
+	model(
+		request: ModelRequest,
+		context: Context,
+		start: () => Promise<AssistantMessage>,
+	): Promise<{ effect: string; response: Promise<AssistantMessage> }>;
+	tool(
+		request: ToolRequest,
+		context: Context,
+		start: () => Promise<ToolExecutionResult>,
+	): Promise<{ effect: string; response: Promise<ToolExecutionResult> }>;
 	admit(
 		kind: Effect["kind"],
 		operation: string,
@@ -69,6 +252,8 @@ export type HostFixtureDependencies = {
 	piStorage?(storage: Storage): Storage;
 	fault?(point: HostFault): void;
 	budgets?: { workMs: number; drainMs: number };
+	operationMs?: { model: number; tool: number };
+	prepareModel?(context: Context): Promise<void>;
 	wakeup?: {
 		getAlarm(): Promise<number | null>;
 		setAlarm(deadline: number): Promise<void>;
@@ -78,12 +263,20 @@ export type HostFixtureDependencies = {
 /** Disposable L1 host candidate. Plaintext and local authority are not product contracts. */
 export class PiDurableHost {
 	private harness!: Harness;
+	private piRecords!: Storage;
 	private denied = false;
 	private sealed = false;
 	private closing: Promise<void> | undefined;
 	private timer: ReturnType<typeof setTimeout> | undefined;
 	private active: Invocation | undefined;
 	private failure: unknown;
+	private providerQueue = Promise.resolve();
+	private providerCallbacks = 0;
+	private bindings = new WeakMap<
+		AbortSignal,
+		{ task: number; digest?: string }
+	>();
+	private storageBarrier = false;
 
 	private constructor(
 		private storage: DurableObjectStorage,
@@ -115,6 +308,42 @@ export class PiDurableHost {
 			storage.sql.exec(
 				"CREATE TABLE IF NOT EXISTS host_wakeups (id TEXT PRIMARY KEY, deadline INTEGER)",
 			);
+			storage.sql.exec(
+				"CREATE TABLE IF NOT EXISTS host_runs (id TEXT PRIMARY KEY, epoch INTEGER, state TEXT, interrupted_at INTEGER, recovery_at INTEGER)",
+			);
+			storage.sql.exec(
+				"CREATE TABLE IF NOT EXISTS host_commands (id TEXT PRIMARY KEY, run TEXT, user TEXT UNIQUE, assistant TEXT UNIQUE, sequence INTEGER UNIQUE, submission INTEGER, state TEXT)",
+			);
+			storage.sql.exec(
+				"CREATE TABLE IF NOT EXISTS host_members (assistant TEXT PRIMARY KEY, run TEXT, state TEXT)",
+			);
+			storage.sql.exec(
+				"CREATE TABLE IF NOT EXISTS host_projections (assistant TEXT PRIMARY KEY, run TEXT, state TEXT, version INTEGER)",
+			);
+			storage.sql.exec(
+				"CREATE TABLE IF NOT EXISTS host_tasks (task INTEGER PRIMARY KEY, kind TEXT, conversation INTEGER, owner TEXT, command TEXT, selection TEXT, prepared TEXT, digest TEXT)",
+			);
+			storage.sql.exec(
+				"CREATE TABLE IF NOT EXISTS host_controls (id TEXT PRIMARY KEY, run TEXT, state TEXT)",
+			);
+			storage.sql.exec(
+				"CREATE TABLE IF NOT EXISTS host_safety (id INTEGER PRIMARY KEY, reason TEXT)",
+			);
+			const columns = storage.sql
+				.exec<{ name: string }>("PRAGMA table_info(host_effects)")
+				.toArray();
+			if (!columns.some((column) => column.name === "correlation"))
+				storage.sql.exec(
+					"ALTER TABLE host_effects ADD COLUMN correlation TEXT",
+				);
+			if (!columns.some((column) => column.name === "retry_evidence"))
+				storage.sql.exec(
+					"ALTER TABLE host_effects ADD COLUMN retry_evidence TEXT",
+				);
+			if (!columns.some((column) => column.name === "operation_deadline"))
+				storage.sql.exec(
+					"ALTER TABLE host_effects ADD COLUMN operation_deadline INTEGER",
+				);
 		});
 		await host.durable();
 		host.read(() => {
@@ -137,6 +366,8 @@ export class PiDurableHost {
 				throw new Error("Prior host termination required");
 			host.transition("account", () => {
 				storage.sql.exec("UPDATE host_meta SET fenced = 1");
+				// Without an exact trusted termination time, start is the durable lower bound.
+				host.interruptRuns(previous.started);
 				storage.sql.exec(
 					"UPDATE host_invocations SET state = 'closed' WHERE id = ?",
 					previous.id,
@@ -149,9 +380,16 @@ export class PiDurableHost {
 			await host.durable();
 		}
 		const piStorage = await SqliteStorage.open(fixtureDatabase(storage));
+		host.piRecords = dependencies.piStorage?.(piStorage) ?? piStorage;
 		host.harness = await Harness.open(
-			dependencies.piStorage?.(piStorage) ?? piStorage,
+			host.piRecords,
 			dependencies.options({
+				bindGeneration: (api, digest, context) =>
+					host.bindTask("pi.generation", api, {}, digest, context),
+				bindCompaction: (api, selection, context) =>
+					host.bindTask("pi.compaction", api, selection, undefined, context),
+				model: (request, context, start) => host.model(request, context, start),
+				tool: (request, context, start) => host.tool(request, context, start),
 				admit: (kind, operation, context) =>
 					host.admit(kind, operation, context),
 				result: (effect, context, evidence) =>
@@ -159,7 +397,11 @@ export class PiDurableHost {
 			}),
 			BACKGROUND_CONTEXT,
 		);
+		host.harness.subscribeCommits((publication) =>
+			host.captureRetry(publication),
+		);
 		try {
+			await host.reconcileSafety();
 			await host.repairWakeup();
 		} catch (error) {
 			await host.harness.close(BACKGROUND_CONTEXT);
@@ -168,12 +410,32 @@ export class PiDurableHost {
 		return host;
 	}
 
+	private persistenceFailed() {
+		this.denied = true;
+		this.storageBarrier = true;
+		try {
+			this.dependencies.fault?.("fence");
+			this.storage.transactionSync(() => {
+				this.storage.sql.exec(
+					"INSERT OR IGNORE INTO host_safety VALUES (1, 'storage-failure')",
+				);
+				for (const effect of this.storage.sql
+					.exec<{ correlation: string }>(
+						"SELECT correlation FROM host_effects WHERE state = 'admitted' AND correlation IS NOT NULL",
+					)
+					.toArray())
+					this.terminal(this.correlation(effect.correlation).run, "failed");
+			});
+		} catch {
+			/* Live denial does not depend on the marker committing. */
+		}
+	}
 	private read<T>(operation: () => T): T {
 		try {
 			this.dependencies.fault?.("read");
 			return operation();
 		} catch (error) {
-			this.denied = true;
+			this.persistenceFailed();
 			throw error;
 		}
 	}
@@ -182,7 +444,8 @@ export class PiDurableHost {
 			this.dependencies.fault?.(point);
 			return this.storage.transactionSync(operation);
 		} catch (error) {
-			this.denied = true;
+			if (error instanceof EffectDenied) throw error;
+			this.persistenceFailed();
 			throw error;
 		}
 	}
@@ -192,7 +455,7 @@ export class PiDurableHost {
 			await awaitWithContext(this.storage.sync(), context);
 			context.abortSignal?.throwIfAborted();
 		} catch (error) {
-			this.denied = true;
+			this.persistenceFailed();
 			throw error;
 		}
 	}
@@ -210,13 +473,14 @@ export class PiDurableHost {
 		return this.read(() =>
 			this.storage.sql
 				.exec<Effect>(
-					"SELECT * FROM host_effects WHERE state = 'admitted' OR (kind = 'tool' AND state = 'result-recorded')",
+					"SELECT * FROM host_effects WHERE state = 'admitted' OR (state = 'result-recorded' AND (kind = 'tool' OR correlation IS NOT NULL))",
 				)
 				.toArray(),
 		);
 	}
 	private assertLive() {
-		if (this.denied || this.sealed) throw new Error("Host admission denied");
+		if (this.denied || this.sealed || this.storageBarrier)
+			throw new Error("Host admission denied");
 	}
 	private async check(
 		authority: LocalAuthority,
@@ -224,18 +488,25 @@ export class PiDurableHost {
 	) {
 		context.abortSignal?.throwIfAborted();
 		if (this.denied || this.sealed || !authority.current)
-			throw new Error("Host admission denied");
+			throw new Error(
+				this.unresolved().length
+					? "Host admission denied: Unresolved effect blocks admission"
+					: "Host admission denied",
+			);
 		if (authority.executor !== 1 || (authority.liveExecutors ?? 1) !== 1)
 			throw new Error("Executor generation/capacity denied");
 		this.read(() => {
+			if (this.storage.sql.exec("SELECT id FROM host_safety").toArray().length)
+				throw new Error("Unresolved effect or storage review block");
 			if (
 				this.storage.sql.exec("SELECT version FROM host_meta").one().version !==
 				VERSION
 			)
 				throw new Error("Incompatible host state");
 		});
+		await this.receipts(context);
 		for (const effect of this.unresolved()) {
-			if (effect.state !== "result-recorded") continue;
+			if (effect.state !== "result-recorded" || effect.correlation) continue;
 			const operation = effect.id.slice(effect.invocation.length + 1);
 			const taskNumber = Number(operation.split(":")[0]);
 			if (!Number.isSafeInteger(taskNumber) || taskNumber <= 0)
@@ -268,8 +539,7 @@ export class PiDurableHost {
 			}
 		}
 		this.assertLive();
-		if (this.unresolved().length)
-			throw new Error("Unresolved effect blocks admission");
+		if (this.unresolved().length) throw new EffectDenied("reservation");
 		if (
 			this.active &&
 			(authority.generation !== this.active.generation ||
@@ -278,9 +548,1334 @@ export class PiDurableHost {
 			throw new Error("Invocation authority expired");
 	}
 
+	private command(id: string) {
+		return this.read(() =>
+			this.storage.sql
+				.exec<Command>("SELECT * FROM host_commands WHERE id = ?", id)
+				.one(),
+		);
+	}
+	private run(id: string) {
+		return this.read(() =>
+			this.storage.sql
+				.exec<Run>("SELECT * FROM host_runs WHERE id = ?", id)
+				.one(),
+		);
+	}
+	private mapping(task: number) {
+		return this.read(
+			() =>
+				this.storage.sql
+					.exec<TaskMapping>("SELECT * FROM host_tasks WHERE task = ?", task)
+					.toArray()[0],
+		);
+	}
+	private terminal(run: string, state: "complete" | "failed" | "canceled") {
+		const current = this.storage.sql
+			.exec<Run>("SELECT * FROM host_runs WHERE id = ?", run)
+			.one();
+		if (["complete", "failed", "canceled"].includes(current.state)) return;
+		this.storage.sql.exec(
+			"UPDATE host_runs SET state = ?, epoch = epoch + 1 WHERE id = ?",
+			state,
+			run,
+		);
+		this.storage.sql.exec(
+			"INSERT OR REPLACE INTO host_projections SELECT assistant, run, ?, COALESCE((SELECT version + 1 FROM host_projections p WHERE p.assistant = m.assistant), 1) FROM host_members m WHERE run = ? AND state = 'pending'",
+			state === "complete" ? "complete" : "failed",
+			run,
+		);
+		this.storage.sql.exec(
+			"UPDATE host_members SET state = ? WHERE run = ? AND state = 'pending'",
+			state === "complete" ? "complete" : "failed",
+			run,
+		);
+		this.storage.sql.exec(
+			"UPDATE host_commands SET state = 'settled' WHERE run = ?",
+			run,
+		);
+		this.storage.sql.exec(
+			"DELETE FROM host_wakeups WHERE id = ?",
+			`recovery:${run}`,
+		);
+	}
+	private block(reason: string, run?: string) {
+		this.denied = true;
+		this.transition("fence", () => {
+			this.storage.sql.exec(
+				"INSERT OR REPLACE INTO host_safety VALUES (1, ?)",
+				reason,
+			);
+			this.storage.sql.exec("UPDATE host_meta SET fenced = 1");
+			if (run) this.terminal(run, "failed");
+		});
+	}
+	private async reconcileSafety() {
+		const unknown = this.read(() =>
+			this.storage.sql
+				.exec<Effect & { correlation: string | null }>(
+					"SELECT * FROM host_effects WHERE state = 'admitted'",
+				)
+				.toArray(),
+		);
+		for (const effect of unknown) {
+			if (effect.correlation) {
+				const correlation = this.correlation(effect.correlation);
+				this.block("outcome-unknown", correlation.run);
+			}
+		}
+		await this.expire();
+		await this.durable();
+	}
+	private correlation(text: string): EffectCorrelation {
+		const value = record(JSON.parse(text));
+		if (value.version !== 1)
+			throw new Error("Incompatible correlation version");
+		for (const key of [
+			"command",
+			"run",
+			"user",
+			"assistant",
+			"operation",
+			"arguments",
+			"replay",
+			"taskInput",
+			"prepared",
+			"digest",
+		])
+			if (typeof value[key] !== "string")
+				throw new Error("Invalid correlation");
+		for (const key of ["submission", "task", "piAttempt", "generation"])
+			if (!Number.isSafeInteger(value[key]) || Number(value[key]) <= 0)
+				throw new Error("Invalid correlation identity");
+		if (value.call !== null && typeof value.call !== "string")
+			throw new Error("Invalid call identity");
+		if (
+			!["never", "new-observation", "expected-content", "pi-retry"].includes(
+				String(value.replay),
+			)
+		)
+			throw new Error("Invalid replay policy");
+		if (new TextEncoder().encode(text).byteLength > 128_000)
+			throw new Error("Oversized correlation");
+		return value as EffectCorrelation;
+	}
+	private async liveInputs(context: Context) {
+		const root = await awaitWithContext(this.harness.root(context), context);
+		const view = await awaitWithContext(root.viewState(context), context);
+		try {
+			const run = view.value.docs["pi.live"]?.run;
+			if (!run) return undefined;
+			const value = record(run);
+			if (!Number.isSafeInteger(value.taskId) || !Array.isArray(value.inputs))
+				throw new Error("Invalid Pi run membership");
+			return {
+				task: Number(value.taskId),
+				inputs: value.inputs.map((id) => {
+					if (!Number.isSafeInteger(id)) throw new Error("Invalid submission");
+					return Number(id);
+				}),
+			};
+		} finally {
+			view.dispose();
+		}
+	}
+	private async mappedCommand(
+		task: PublicTask,
+		context: Context,
+	): Promise<Command> {
+		const existing = this.mapping(Number(task.id));
+		if (existing) return this.command(existing.command);
+		const live = await this.liveInputs(context);
+		let owner: PublicTask = task;
+		for (let depth = 0; owner.owner !== undefined && depth < 8; depth++) {
+			const parent = await awaitWithContext(
+				this.harness.getTask(owner.owner, context),
+				context,
+			);
+			if (
+				!parent ||
+				parent.conversationId !== task.conversationId ||
+				parent.version !== 1 ||
+				parent.background
+			)
+				throw new Error("Foreign owner");
+			owner = parent;
+		}
+		if (!live || live.task !== Number(owner.id) || live.inputs.length !== 1)
+			throw new Error("Missing trusted submission membership");
+		const submission = await awaitWithContext(
+			this.harness.submission(
+				live.inputs[0] as import("@earendil-works/pi-durable").SubmissionId,
+				context,
+			),
+			context,
+		);
+		const status = await submission?.status(context);
+		if (
+			!status ||
+			status.type !== "input" ||
+			status.status !== "placed" ||
+			!status.requestId
+		)
+			throw new Error("Missing placed command");
+		const command = this.command(status.requestId);
+		if (command.submission !== null && command.submission !== Number(status.id))
+			throw new Error("Submission conflict");
+		this.transition("intent", () => {
+			this.storage.sql.exec(
+				"UPDATE host_commands SET submission = ?, state = 'submitted' WHERE id = ?",
+				Number(status.id),
+				command.id,
+			);
+			this.storage.sql.exec(
+				"UPDATE host_inbox SET submission = ?, state = 'submitted' WHERE id = ?",
+				Number(status.id),
+				command.id,
+			);
+		});
+		await this.durable(context);
+		return this.command(command.id);
+	}
+	private async bindTask(
+		kind: string,
+		api: HookApi,
+		selection: unknown,
+		digest: string | undefined,
+		context: Context,
+	) {
+		try {
+			context.abortSignal?.throwIfAborted();
+			this.assertLive();
+			const task = await awaitWithContext(
+				this.harness.getTask(api.taskId, context),
+				context,
+			);
+			if (
+				!task ||
+				task.kind !== kind ||
+				task.version !== 1 ||
+				task.background ||
+				task.abortRequested ||
+				task.conversationId !== ROOT_CONVERSATION_ID ||
+				task.conversationId !== api.conversationId
+			)
+				throw new Error("Untrusted hook mapping");
+			const command = await this.mappedCommand(task, context);
+			const run = this.run(command.run);
+			if (!["running", "recovering"].includes(run.state))
+				throw new Error("Terminal run cannot bind");
+			const old = this.mapping(Number(task.id));
+			const mapping = {
+				task: Number(task.id),
+				kind,
+				conversation: Number(task.conversationId),
+				owner: canonical(task.owner ?? null),
+				command: command.id,
+				selection: canonical(selection),
+			};
+			if (
+				old &&
+				(old.kind !== kind ||
+					old.owner !== mapping.owner ||
+					old.command !== command.id ||
+					(old.selection !== "pending" && old.selection !== mapping.selection))
+			)
+				throw new Error("Changed trusted task mapping");
+			this.transition("intent", () =>
+				this.storage.sql.exec(
+					"INSERT OR IGNORE INTO host_tasks (task,kind,conversation,owner,command,selection) VALUES (?,?,?,?,?,?)",
+					mapping.task,
+					kind,
+					mapping.conversation,
+					mapping.owner,
+					command.id,
+					mapping.selection,
+				),
+			);
+			if (old?.selection === "pending")
+				this.transition("intent", () =>
+					this.storage.sql.exec(
+						"UPDATE host_tasks SET selection = ? WHERE task = ?",
+						mapping.selection,
+						mapping.task,
+					),
+				);
+			await this.durable(context);
+			context.abortSignal?.throwIfAborted();
+			this.assertLive();
+			if (!context.abortSignal) throw new Error("Missing invocation signal");
+			this.bindings.set(context.abortSignal, { task: Number(task.id), digest });
+		} catch (error) {
+			this.denied = true;
+			throw error;
+		}
+	}
+	private async eligible(context: Context) {
+		const inspection = await awaitWithContext(
+			this.harness.inspect(context),
+			context,
+		);
+		const candidates = inspection.tasks.filter((item) => {
+			const task = item.record;
+			if (
+				task.state.status === "waiting" ||
+				task.state.status === "terminal" ||
+				!task.state.checkpoint
+			)
+				return false;
+			const cp = record(task.state.checkpoint);
+			return (
+				(task.kind === "pi.generation" && cp.phase === "request") ||
+				(task.kind === "pi.compaction" && cp.phase === "summarize")
+			);
+		});
+		if (candidates.length !== 1)
+			throw new Error("Competing or missing model producers");
+		const task = await awaitWithContext(
+			this.harness.getTask(candidates[0]!.record.id, context),
+			context,
+		);
+		if (!task) throw new Error("Missing producer");
+		preparedTask(task);
+		return task;
+	}
+	private exactAuthority(correlation: EffectCorrelation, epoch: number) {
+		if (this.denied || this.sealed || this.storageBarrier)
+			throw new EffectDenied("authority");
+		const run = this.run(correlation.run);
+		if (run.recovery_at !== null && this.dependencies.now() >= run.recovery_at)
+			throw new EffectDenied("recovery-deadline", run.id);
+		const command = this.command(correlation.command);
+		if (
+			!["running", "recovering"].includes(run.state) ||
+			run.epoch !== epoch ||
+			command.submission !== correlation.submission ||
+			command.assistant !== correlation.assistant ||
+			command.user !== correlation.user ||
+			command.run !== correlation.run
+		)
+			throw new EffectDenied("authority");
+		if (
+			this.storage.sql.exec("SELECT fenced FROM host_meta").one().fenced !==
+				0 ||
+			this.storage.sql.exec("SELECT id FROM host_safety").toArray().length
+		)
+			throw new EffectDenied("authority");
+	}
+	private dispatchPermit(
+		effect: string,
+		correlation: EffectCorrelation,
+		epoch: number,
+		authority: LocalAuthority,
+	) {
+		this.exactAuthority(correlation, epoch);
+		if (
+			!authority.current ||
+			authority.generation !== correlation.generation ||
+			authority.executor !== 1 ||
+			(authority.liveExecutors ?? 1) !== 1 ||
+			!this.active ||
+			this.dependencies.now() >= this.active.yield_at
+		)
+			throw new Error("Final dispatch authority denied");
+		const row = this.read(() =>
+			this.storage.sql
+				.exec<{
+					state: string;
+					epoch: number;
+					correlation: string;
+					operation_deadline: number;
+				}>(
+					"SELECT state,epoch,correlation,operation_deadline FROM host_effects WHERE id = ?",
+					effect,
+				)
+				.one(),
+		);
+		if (this.unresolved().some((row) => row.id !== effect))
+			throw new EffectDenied("reservation");
+		if (
+			row.state !== "admitted" ||
+			row.epoch !== epoch ||
+			row.correlation !== canonical(correlation) ||
+			this.dependencies.now() >= row.operation_deadline
+		)
+			throw new Error("Final effect receipt denied");
+	}
+	private async admitExact(
+		kind: "model" | "tool",
+		correlation: EffectCorrelation,
+		task: PublicTask,
+		context: Context,
+	) {
+		context.abortSignal?.throwIfAborted();
+		const authority = await awaitWithContext(
+			this.dependencies.authority(),
+			context,
+		);
+		await this.check(authority, context);
+		const invocation = this.active;
+		if (!invocation || authority.generation !== invocation.generation)
+			throw new Error("No current budget");
+		const run = this.run(correlation.run);
+		this.exactAuthority(correlation, run.epoch);
+		const rows = this.read(() =>
+			this.storage.sql
+				.exec<Effect & { correlation: string; evidence: string }>(
+					"SELECT * FROM host_effects WHERE json_extract(correlation, '$.operation') = ? ORDER BY attempt",
+					correlation.operation,
+				)
+				.toArray(),
+		);
+		const prior = rows.at(-1);
+		if (prior) {
+			const original = this.correlation(prior.correlation);
+			const cp = record(task.state.checkpoint);
+			const evidence = record(JSON.parse(prior.evidence));
+			if (
+				kind !== "model" ||
+				prior.state !== "pi-committed" ||
+				evidence.stopReason !== "error" ||
+				correlation.piAttempt !== original.piAttempt + 1 ||
+				cp.attempt !== correlation.piAttempt ||
+				original.prepared !== correlation.prepared ||
+				original.digest !== correlation.digest
+			)
+				throw new Error("Replay denied");
+		}
+		const attempt = (prior?.attempt ?? 0) + 1;
+		const id = `${correlation.operation}/attempt/${attempt}`;
+		const duration = this.dependencies.operationMs?.[kind] ?? 60_000;
+		if (
+			!Number.isSafeInteger(duration) ||
+			duration <= 0 ||
+			duration > 15 * 60_000
+		)
+			throw new Error("Invalid operation deadline");
+		this.transition("admission", () => {
+			this.exactAuthority(correlation, run.epoch);
+			if (this.unresolved().length) throw new EffectDenied("reservation");
+			this.storage.sql.exec(
+				"INSERT INTO host_effects (id,kind,invocation,epoch,attempt,executor,deadline,state,evidence,correlation,operation_deadline) VALUES (?,?,?,?,?,?,?,'admitted',NULL,?,?)",
+				id,
+				kind,
+				invocation.id,
+				run.epoch,
+				attempt,
+				kind === "tool" ? authority.executor : 0,
+				invocation.end_at,
+				canonical(correlation),
+				this.dependencies.now() + duration,
+			);
+		});
+		await this.durable(context);
+		const fresh = await awaitWithContext(
+			this.dependencies.authority(),
+			context,
+		);
+		context.abortSignal?.throwIfAborted();
+		if (
+			!fresh.current ||
+			fresh.generation !== invocation.generation ||
+			fresh.executor !== 1 ||
+			(fresh.liveExecutors ?? 1) !== 1 ||
+			this.dependencies.now() >= invocation.yield_at
+		)
+			throw new Error("Admission revoked during preparation");
+		this.exactAuthority(correlation, run.epoch);
+		return { id, epoch: run.epoch };
+	}
+	private model(
+		request: ModelRequest,
+		context: Context,
+		start: () => Promise<AssistantMessage>,
+	) {
+		this.providerCallbacks++;
+		const previous = this.providerQueue;
+		let release!: () => void;
+		this.providerQueue = previous.then(
+			() =>
+				new Promise<void>((resolve) => {
+					release = resolve;
+				}),
+		);
+		return (async () => {
+			try {
+				await awaitWithContext(previous, context);
+				// Resolve the lane's release function before any preparation can suspend.
+				await Promise.resolve();
+				await this.receipts(context);
+				this.assertLive();
+				if (this.unresolved().length)
+					throw new Error("Unresolved effect blocks admission");
+				if (!context.abortSignal || this.providerCallbacks !== 1)
+					throw new Error("Competing adapter callbacks");
+				const transcriptDigest = await requestDigest(
+					semanticTranscript(request.transcript),
+				);
+				const task = await this.eligible(context);
+				const binding = this.bindings.get(context.abortSignal);
+				const mapping = this.mapping(Number(task.id));
+				if (
+					!mapping ||
+					mapping.kind !== task.kind ||
+					mapping.owner !== canonical(task.owner ?? null) ||
+					mapping.conversation !== Number(task.conversationId)
+				)
+					throw new Error("Missing trusted task mapping");
+				if (binding && binding.task !== Number(task.id))
+					throw new Error("Hook producer mismatch");
+				if (
+					task.kind === "pi.generation" &&
+					(!binding || binding.digest !== transcriptDigest)
+				)
+					throw new Error("Missing generation binding");
+				const tuple = preparedTask(task),
+					cp = record(task.state.checkpoint);
+				if (
+					task.kind === "pi.compaction" &&
+					record(JSON.parse(mapping.selection)).firstKept !== cp.firstKept
+				)
+					throw new Error("Range mismatch");
+				if (
+					!binding &&
+					(task.kind !== "pi.compaction" ||
+						mapping.prepared !== tuple ||
+						mapping.digest !== transcriptDigest)
+				)
+					throw new Error("Missing first summary association");
+				const model = record(cp.model),
+					options = record(cp.streamOptions);
+				if (
+					request.model.provider !== model.provider ||
+					request.model.id !== model.modelId ||
+					canonical(request.options.reasoning) !==
+						canonical(cp.thinkingLevel === "off" ? undefined : cp.thinkingLevel)
+				)
+					throw new Error("Model configuration mismatch");
+				const allowedOptions = new Set([
+					...Object.keys(options),
+					"signal",
+					"reasoning",
+					"apiKey",
+					"headers",
+					"env",
+					...(task.kind === "pi.compaction"
+						? ["maxTokens", "cacheRetention"]
+						: []),
+				]);
+				if (
+					["apiKey", "headers", "env"].some(
+						(key) => request.options[key] !== undefined,
+					)
+				)
+					throw new Error(
+						"Credential-bearing options forbidden in synthetic fixture",
+					);
+				if (
+					Object.keys(request.options).some((key) => !allowedOptions.has(key))
+				)
+					throw new Error(
+						`Unexpected provider request option: ${Object.keys(request.options)
+							.filter((key) => !allowedOptions.has(key))
+							.join(",")}`,
+					);
+				for (const [key, value] of Object.entries(options))
+					if (
+						key === "deferred" ||
+						canonical(request.options[key]) !== canonical(value)
+					)
+						throw new Error("Unsupported request configuration");
+				if (
+					task.kind === "pi.compaction" &&
+					(request.options.maxTokens !== cp.maxTokens ||
+						request.options.cacheRetention !== "none")
+				)
+					throw new Error("Summary configuration mismatch");
+				const command = this.command(mapping.command),
+					run = this.run(command.run);
+				if (!command.submission) throw new Error("Missing submission mapping");
+				const correlation: EffectCorrelation = {
+					version: 1,
+					command: command.id,
+					run: command.run,
+					user: command.user,
+					assistant: command.assistant,
+					submission: command.submission,
+					task: Number(task.id),
+					call: null,
+					operation: `${task.kind}/${task.id}/${await requestDigest(JSON.parse(tuple))}`,
+					piAttempt: Number(cp.attempt),
+					arguments: canonical({
+						model: request.model,
+						transcriptDigest,
+						options: Object.fromEntries(
+							Object.entries(request.options).filter(
+								([key]) =>
+									!["signal", "apiKey", "headers", "env"].includes(key),
+							),
+						),
+					}),
+					replay: "pi-retry",
+					generation: this.active?.generation ?? 0,
+					taskInput: canonical(task.input),
+					prepared: tuple,
+					digest: transcriptDigest,
+				};
+				if (this.dependencies.prepareModel)
+					await awaitWithContext(
+						this.dependencies.prepareModel(context),
+						context,
+					);
+				if (
+					canonical(await this.eligible(context)) !== canonical(task) ||
+					canonical(this.mapping(Number(task.id))) !== canonical(mapping) ||
+					this.providerCallbacks !== 1
+				)
+					throw new Error("Association changed during preparation");
+				this.exactAuthority(correlation, run.epoch);
+				const admitted = await this.admitExact(
+					"model",
+					correlation,
+					task,
+					context,
+				);
+				this.transition("intent", () => {
+					this.exactAuthority(correlation, run.epoch);
+					this.storage.sql.exec(
+						"UPDATE host_tasks SET prepared = ?, digest = ? WHERE task = ?",
+						tuple,
+						transcriptDigest,
+						Number(task.id),
+					);
+				});
+				await this.durable(context);
+				const finalAuthority = await awaitWithContext(
+					this.dependencies.authority(),
+					context,
+				);
+				if (
+					canonical(await this.eligible(context)) !== canonical(task) ||
+					canonical(this.mapping(Number(task.id))) !==
+						canonical({
+							...mapping,
+							prepared: tuple,
+							digest: transcriptDigest,
+						}) ||
+					this.providerCallbacks !== 1
+				)
+					throw new Error("Association revoked before dispatch");
+				context.abortSignal.throwIfAborted();
+				this.dispatchPermit(
+					admitted.id,
+					correlation,
+					admitted.epoch,
+					finalAuthority,
+				);
+				return { effect: admitted.id, response: start() };
+			} catch (error) {
+				if (
+					error instanceof EffectDenied &&
+					error.reason === "recovery-deadline"
+				)
+					await this.expire();
+				if (!(error instanceof EffectDenied && error.reason === "reservation"))
+					this.denied = true;
+				throw error;
+			} finally {
+				this.providerCallbacks--;
+				release?.();
+			}
+		})();
+	}
+	private async tool(
+		request: ToolRequest,
+		context: Context,
+		start: () => Promise<ToolExecutionResult>,
+	) {
+		try {
+			await this.receipts(context);
+			this.assertLive();
+			const task = await awaitWithContext(
+				this.harness.getTask(request.task, context),
+				context,
+			);
+			if (
+				!task ||
+				task.kind !== "pi.tool" ||
+				task.version !== 1 ||
+				task.background ||
+				task.abortRequested ||
+				task.state.status !== "running" ||
+				task.conversationId !== request.conversation ||
+				task.conversationId !== ROOT_CONVERSATION_ID
+			)
+				throw new Error("Invalid tool task");
+			const input = record(task.input),
+				cp = record(task.state.checkpoint);
+			if (
+				input.callId !== request.call ||
+				cp.phase !== "execute" ||
+				canonical(cp.arguments) !== canonical(request.arguments) ||
+				cp.replay !== "unsafe"
+			)
+				throw new Error("Tool input mismatch");
+			const entry = (
+				await this.piRecords.entry(
+					ROOT_CONVERSATION_ID,
+					Number(
+						input.assistant,
+					) as import("@earendil-works/pi-durable").EntryId,
+					context,
+				)
+			)?.entry;
+			const message = entry?.model?.[0];
+			if (
+				message?.role !== "assistant" ||
+				!message.content.some(
+					(part) =>
+						part.type === "toolCall" &&
+						part.id === request.call &&
+						part.name === request.name,
+				)
+			)
+				throw new Error("Original tool call missing");
+			if (request.operation.kind === "shell" && request.replay !== "never")
+				throw new Error("Arbitrary shell replay forbidden");
+			if (
+				request.operation.kind === "read" &&
+				(request.replay !== "new-observation" ||
+					!request.operation.newObservation)
+			)
+				throw new Error("Explicit new observation required");
+			if (request.operation.kind === "write") {
+				const authority = await awaitWithContext(
+					this.dependencies.authority(),
+					context,
+				);
+				if (
+					request.replay !== "expected-content" ||
+					!authority.expectedContentWrites ||
+					typeof request.arguments.expectedContent !== "string" ||
+					request.arguments.expectedContent !==
+						request.operation.expectedContent
+				)
+					throw new Error("Expected-content support required");
+			}
+			const command = await this.mappedCommand(task, context);
+			if (!command.submission) throw new Error("Missing tool membership");
+			const correlation: EffectCorrelation = {
+				version: 1,
+				command: command.id,
+				run: command.run,
+				user: command.user,
+				assistant: command.assistant,
+				submission: command.submission,
+				task: Number(task.id),
+				call: request.call,
+				operation: `pi.tool/${task.id}/${request.call}`,
+				piAttempt: 1,
+				arguments: canonical({
+					arguments: request.arguments,
+					operation: request.operation,
+				}),
+				replay: request.replay,
+				generation: this.active?.generation ?? 0,
+				taskInput: canonical(task.input),
+				prepared: canonical(cp),
+				digest: await requestDigest(request.arguments),
+			};
+			const admitted = await this.admitExact(
+				"tool",
+				correlation,
+				task,
+				context,
+			);
+			const finalAuthority = await awaitWithContext(
+				this.dependencies.authority(),
+				context,
+			);
+			if (
+				request.operation.kind === "write" &&
+				!finalAuthority.expectedContentWrites
+			)
+				throw new Error("Expected-content authority revoked");
+			if (
+				canonical(await this.harness.getTask(request.task, context)) !==
+				canonical(task)
+			)
+				throw new Error("Stale tool callback");
+			context.abortSignal?.throwIfAborted();
+			this.dispatchPermit(
+				admitted.id,
+				correlation,
+				admitted.epoch,
+				finalAuthority,
+			);
+			return { effect: admitted.id, response: start() };
+		} catch (error) {
+			if (error instanceof EffectDenied && error.reason === "recovery-deadline")
+				await this.expire();
+			if (!(error instanceof EffectDenied && error.reason === "reservation"))
+				this.denied = true;
+			throw error;
+		}
+	}
+	private captureRetry(publication: CommitPublication) {
+		try {
+			for (const change of publication.changes) {
+				if (
+					change.type !== "task" ||
+					!["pi.generation", "pi.compaction"].includes(change.value.kind) ||
+					change.value.version !== 1 ||
+					change.value.conversationId !== ROOT_CONVERSATION_ID ||
+					change.value.background ||
+					change.value.abortRequested
+				)
+					continue;
+				const task = change.value,
+					cp = task.state.checkpoint
+						? record(task.state.checkpoint)
+						: undefined;
+				if (cp?.phase !== "retry") continue;
+				const live = publication.changes.find(
+					(value) =>
+						value.type === "document" &&
+						value.record.kind === "pi.live" &&
+						value.conversationId === ROOT_CONVERSATION_ID,
+				);
+				if (!live || live.type !== "document" || !live.value) continue;
+				const retry =
+					task.kind === "pi.generation"
+						? record(record(live.value.generation).retry)
+						: Array.isArray(live.value.compactions)
+							? live.value.compactions
+									.map(record)
+									.find((row) => row.taskId === task.id)?.retry
+							: undefined;
+				if (
+					!retry ||
+					record(retry).at !== cp.until ||
+					typeof record(retry).error !== "string"
+				)
+					continue;
+				const effects = this.storage.sql
+					.exec<{ id: string; correlation: string; evidence: string }>(
+						"SELECT id,correlation,evidence FROM host_effects WHERE state = 'result-recorded' AND kind = 'model' AND json_extract(correlation,'$.task') = ?",
+						Number(task.id),
+					)
+					.toArray();
+				for (const effect of effects) {
+					const correlation = this.correlation(effect.correlation),
+						result = record(JSON.parse(effect.evidence));
+					if (
+						correlation.piAttempt !== cp.attempt ||
+						correlation.taskInput !== canonical(task.input) ||
+						result.stopReason !== "error" ||
+						result.errorMessage !== record(retry).error
+					)
+						continue;
+					this.transition("result", () =>
+						this.storage.sql.exec(
+							"UPDATE host_effects SET retry_evidence = ? WHERE id = ?",
+							canonical({
+								seq: Number(publication.seq),
+								task: Number(task.id),
+								attempt: cp.attempt,
+								until: cp.until,
+								error: record(retry).error,
+							}),
+							effect.id,
+						),
+					);
+				}
+			}
+			if (
+				publication.changes.some(
+					(change) =>
+						(change.type === "task" &&
+							change.value.state.status === "terminal") ||
+						(change.type === "submission" &&
+							["done", "unanswered"].includes(change.value.status)),
+				) &&
+				this.storage.sql
+					.exec(
+						"SELECT id FROM host_effects WHERE correlation IS NOT NULL LIMIT 1",
+					)
+					.toArray().length
+			) {
+				this.transition("intent", () =>
+					this.storage.sql.exec(
+						"INSERT OR REPLACE INTO host_wakeups VALUES ('settlement',?)",
+						this.dependencies.now(),
+					),
+				);
+			}
+		} catch {
+			this.persistenceFailed();
+		}
+	}
+	private async receipts(context: Context) {
+		const effects = this.read(() =>
+			this.storage.sql
+				.exec<
+					Effect & {
+						correlation: string | null;
+						evidence: string;
+						retry_evidence: string | null;
+					}
+				>(
+					"SELECT * FROM host_effects WHERE state = 'result-recorded' AND correlation IS NOT NULL",
+				)
+				.toArray(),
+		);
+		for (const effect of effects) {
+			const correlation = this.correlation(effect.correlation!);
+			const task = await awaitWithContext(
+				this.harness.getTask(correlation.task as TaskId, context),
+				context,
+			);
+			if (
+				!task ||
+				task.version !== 1 ||
+				canonical(task.input) !== correlation.taskInput ||
+				task.conversationId !== ROOT_CONVERSATION_ID
+			)
+				throw new Error("Original task receipt mismatch");
+			let matches = false,
+				failedCompaction = false;
+			const evidence = record(JSON.parse(effect.evidence));
+			if (
+				effect.kind === "model" &&
+				task.kind === "pi.compaction" &&
+				!task.background &&
+				!task.abortRequested &&
+				task.state.status === "terminal" &&
+				task.state.outcome.status === "failed" &&
+				evidence.stopReason === "error" &&
+				typeof evidence.errorMessage === "string"
+			) {
+				const error = record(task.state.outcome.error),
+					detail = record(error.detail ?? {}),
+					prepared = record(JSON.parse(correlation.prepared)),
+					model = record(prepared.model),
+					mapping = this.mapping(Number(task.id));
+				const latest = this.storage.sql
+					.exec<{ id: string }>(
+						"SELECT id FROM host_effects WHERE json_extract(correlation,'$.operation') = ? ORDER BY attempt DESC LIMIT 1",
+						correlation.operation,
+					)
+					.one();
+				failedCompaction =
+					detail.reason === "model_error" &&
+					error.message === `Summarization failed: ${evidence.errorMessage}` &&
+					evidence.role === "assistant" &&
+					evidence.provider === model.provider &&
+					evidence.model === model.modelId &&
+					Number.isSafeInteger(prepared.firstKept) &&
+					Number(prepared.firstKept) > 0 &&
+					Number.isSafeInteger(prepared.tail) &&
+					Number(prepared.tail) >= Number(prepared.firstKept) &&
+					mapping?.kind === task.kind &&
+					mapping.command === correlation.command &&
+					mapping.owner === canonical(task.owner ?? null) &&
+					mapping.prepared === correlation.prepared &&
+					mapping.digest === correlation.digest &&
+					latest.id === effect.id &&
+					correlation.operation ===
+						`${task.kind}/${task.id}/${await requestDigest(prepared)}`;
+			}
+			if (
+				effect.kind === "tool" &&
+				task.kind === "pi.tool" &&
+				task.state.status === "terminal" &&
+				task.state.outcome.status === "completed"
+			) {
+				const receipt = record(task.state.outcome.result);
+				const entry = (
+					await this.piRecords.entry(
+						ROOT_CONVERSATION_ID,
+						Number(
+							receipt.entryId,
+						) as import("@earendil-works/pi-durable").EntryId,
+						context,
+					)
+				)?.entry;
+				const message = entry?.model?.[0];
+				matches =
+					entry?.byTaskId === task.id &&
+					message?.role === "toolResult" &&
+					message.toolCallId === correlation.call &&
+					!message.isError &&
+					canonical(message.content) === canonical(evidence.content);
+			} else if (effect.kind === "model") {
+				const cp = task.state.checkpoint
+					? record(task.state.checkpoint)
+					: undefined;
+				if (
+					evidence.stopReason === "error" &&
+					cp?.phase === "retry" &&
+					cp.attempt === correlation.piAttempt
+				) {
+					const root = await this.harness.root(context),
+						view = await root.viewState(context);
+					try {
+						const live = view.value.docs["pi.live"];
+						const retry =
+							task.kind === "pi.generation"
+								? record(record(live?.generation).retry)
+								: Array.isArray(live?.compactions)
+									? live.compactions
+											.map(record)
+											.find((row) => row.taskId === task.id)?.retry
+									: undefined;
+						matches =
+							!!retry &&
+							record(retry).error === evidence.errorMessage &&
+							record(retry).at === cp.until;
+					} finally {
+						view.dispose();
+					}
+				} else if (
+					evidence.stopReason === "error" &&
+					effect.retry_evidence &&
+					cp?.attempt === correlation.piAttempt + 1 &&
+					preparedTask(task) === correlation.prepared
+				) {
+					const receipt = record(JSON.parse(effect.retry_evidence));
+					matches =
+						receipt.task === Number(task.id) &&
+						receipt.attempt === correlation.piAttempt &&
+						receipt.error === evidence.errorMessage &&
+						Number.isSafeInteger(receipt.seq) &&
+						Number(receipt.seq) > 0 &&
+						Number.isFinite(receipt.until);
+				} else {
+					const history = await (await this.harness.root(context)).entries(
+						{},
+						100,
+						undefined,
+						context,
+					);
+					matches = history.items.some(
+						(entry) =>
+							entry.byTaskId === task.id &&
+							entry.model?.some(
+								(message) => canonical(message) === canonical(evidence),
+							),
+					);
+					if (
+						task.kind === "pi.compaction" &&
+						task.state.status === "terminal" &&
+						task.state.outcome.status === "completed"
+					) {
+						const result = record(task.state.outcome.result);
+						const submission = result.submissionId
+							? await this.piRecords.submission(
+									Number(
+										result.submissionId,
+									) as import("@earendil-works/pi-durable").SubmissionId,
+									context,
+								)
+							: undefined;
+						const entryId =
+							result.entryId ??
+							(submission?.status === "done" ? submission.entry : undefined);
+						const receiptEntry = entryId
+							? (
+									await this.piRecords.entry(
+										ROOT_CONVERSATION_ID,
+										Number(
+											entryId,
+										) as import("@earendil-works/pi-durable").EntryId,
+										context,
+									)
+								)?.entry
+							: undefined;
+						const content = Array.isArray(evidence.content)
+							? evidence.content
+									.map(record)
+									.filter((part) => part.type === "text")
+									.map((part) => part.text)
+									.join("\n")
+									.trim()
+							: undefined;
+						const message = receiptEntry?.model?.[0];
+						matches =
+							!!receiptEntry &&
+							receiptEntry.kind === "pi.compaction" &&
+							receiptEntry.head ===
+								record(JSON.parse(correlation.prepared)).firstKept &&
+							message?.role === "user" &&
+							canonical(message.content) ===
+								canonical([
+									{
+										type: "text",
+										text: `The conversation history before this point was compacted into the following summary:\n\n<summary>\n${content}\n</summary>`,
+									},
+								]) &&
+							(!submission ||
+								(submission.type === "write" &&
+									submission.requestId === `compaction:${task.id}`));
+					}
+				}
+			}
+			if (matches || failedCompaction) {
+				this.transition("result", () => {
+					this.storage.sql.exec(
+						"UPDATE host_effects SET state = 'pi-committed' WHERE id = ?",
+						effect.id,
+					);
+					if (failedCompaction) this.terminal(correlation.run, "failed");
+				});
+				await this.durable(context);
+			}
+		}
+	}
 	async inspect() {
 		return this.harness.inspect(BACKGROUND_CONTEXT);
 	}
+	async task(id: TaskId) {
+		return this.harness.getTask(id, BACKGROUND_CONTEXT);
+	}
+	async waitIdle() {
+		this.assertLive();
+		await this.harness.waitForIdle(BACKGROUND_CONTEXT);
+		await this.reconcile();
+	}
+	async compact(commandId: string) {
+		await this.check(await this.dependencies.authority());
+		const command = this.command(commandId);
+		if (this.run(command.run).state !== "running")
+			throw new Error("Compaction requires live run");
+		const task = await (await this.harness.root(BACKGROUND_CONTEXT)).compact(
+			undefined,
+			BACKGROUND_CONTEXT,
+		);
+		const record = await this.harness.getTask(task, BACKGROUND_CONTEXT);
+		if (!record) throw new Error("Missing compaction");
+		this.transition("intent", () =>
+			this.storage.sql.exec(
+				"INSERT INTO host_tasks (task,kind,conversation,owner,command,selection) VALUES (?,?,?,?,?,'pending')",
+				Number(task),
+				record.kind,
+				Number(record.conversationId),
+				canonical(record.owner ?? null),
+				command.id,
+			),
+		);
+		await this.durable();
+		return task;
+	}
+	async stop(controlId: string, runId: string) {
+		const target = this.run(runId);
+		this.transition("fence", () => {
+			const old = this.storage.sql
+				.exec<{ run: string }>(
+					"SELECT run FROM host_controls WHERE id = ?",
+					controlId,
+				)
+				.toArray()[0];
+			if (old && old.run !== runId) throw new Error("Conflicting Stop");
+			this.storage.sql.exec(
+				"INSERT OR IGNORE INTO host_controls VALUES (?,?,'applied')",
+				controlId,
+				runId,
+			);
+			if (
+				!["complete", "failed", "canceled", "stopping"].includes(target.state)
+			)
+				this.storage.sql.exec(
+					"UPDATE host_runs SET epoch = epoch + 1, state = 'stopping' WHERE id = ?",
+					runId,
+				);
+		});
+		await this.durable();
+		if (["complete", "failed", "canceled"].includes(target.state)) return;
+		const live = await this.liveInputs(BACKGROUND_CONTEXT);
+		if (
+			live &&
+			live.inputs.length &&
+			live.inputs.every((id) =>
+				this.read(
+					() =>
+						this.storage.sql
+							.exec(
+								"SELECT id FROM host_commands WHERE submission = ? AND run = ?",
+								id,
+								runId,
+							)
+							.toArray().length === 1,
+				),
+			)
+		)
+			await this.harness.abortTask(live.task as TaskId, BACKGROUND_CONTEXT);
+		const mappings = this.read(() =>
+			this.storage.sql
+				.exec<{ task: number }>(
+					"SELECT task FROM host_tasks WHERE command IN (SELECT id FROM host_commands WHERE run = ?)",
+					runId,
+				)
+				.toArray(),
+		);
+		for (const mapping of mappings)
+			await this.harness.abortTask(mapping.task as TaskId, BACKGROUND_CONTEXT);
+		for (const command of this.read(() =>
+			this.storage.sql
+				.exec<Command>("SELECT * FROM host_commands WHERE run = ?", runId)
+				.toArray(),
+		)) {
+			if (command.submission)
+				await this.harness.abortSubmission(
+					command.submission as import("@earendil-works/pi-durable").SubmissionId,
+					BACKGROUND_CONTEXT,
+				);
+		}
+		await this.reconcile();
+	}
+	async expire() {
+		const overdue = this.read(() =>
+			this.storage.sql
+				.exec<Effect & { correlation: string | null }>(
+					"SELECT * FROM host_effects WHERE operation_deadline <= ? AND state = 'admitted' AND correlation IS NOT NULL",
+					this.dependencies.now(),
+				)
+				.toArray(),
+		);
+		for (const effect of overdue)
+			this.block(
+				"operation-deadline",
+				this.correlation(effect.correlation!).run,
+			);
+		const expired = this.read(() =>
+			this.storage.sql
+				.exec<Run>(
+					"SELECT * FROM host_runs WHERE recovery_at <= ? AND state NOT IN ('complete','failed','canceled')",
+					this.dependencies.now(),
+				)
+				.toArray(),
+		);
+		for (const run of expired)
+			this.transition("account", () => {
+				this.terminal(run.id, "failed");
+				if (
+					this.storage.sql
+						.exec(
+							"SELECT id FROM host_effects WHERE json_extract(correlation,'$.run') = ? AND state = 'admitted'",
+							run.id,
+						)
+						.toArray().length
+				)
+					this.storage.sql.exec(
+						"INSERT OR REPLACE INTO host_safety VALUES (1,'recovery-deadline')",
+					);
+			});
+		if (expired.length) await this.durable();
+	}
+	async reconcileStorage() {
+		const authority = await this.dependencies.authority();
+		if (
+			!authority.current ||
+			authority.executor !== 1 ||
+			(authority.liveExecutors ?? 1) !== 1 ||
+			(this.active && authority.generation !== this.active.generation)
+		)
+			throw new Error("Reconciliation authority denied");
+		const marker = this.read(
+			() =>
+				this.storage.sql
+					.exec<{ reason: string }>("SELECT reason FROM host_safety")
+					.toArray()[0],
+		);
+		if (marker && marker.reason !== "storage-failure")
+			throw new Error("Permanent review block");
+		await this.receipts(BACKGROUND_CONTEXT);
+		if (this.unresolved().length)
+			throw new Error("Unresolved effect disposition required");
+		await this.durable();
+		const fresh = await this.dependencies.authority();
+		if (
+			!fresh.current ||
+			fresh.generation !== authority.generation ||
+			fresh.executor !== authority.executor ||
+			(fresh.liveExecutors ?? 1) !== 1 ||
+			this.unresolved().length
+		)
+			throw new Error("Reconciliation changed before commit");
+		this.transition("account", () =>
+			this.storage.sql.exec(
+				"DELETE FROM host_safety WHERE reason = 'storage-failure'",
+			),
+		);
+		await this.durable();
+		this.storageBarrier = false;
+		this.denied = false;
+	}
+	async reconcile() {
+		await this.receipts(BACKGROUND_CONTEXT);
+		await this.expire();
+		const runs = this.read(() =>
+			this.storage.sql
+				.exec<Run>(
+					"SELECT * FROM host_runs WHERE state NOT IN ('complete','failed','canceled')",
+				)
+				.toArray(),
+		);
+		for (const run of runs) {
+			const effects = this.read(() =>
+				this.storage.sql
+					.exec<Effect>(
+						"SELECT * FROM host_effects WHERE json_extract(correlation,'$.run') = ? AND state != 'pi-committed'",
+						run.id,
+					)
+					.toArray(),
+			);
+			if (effects.length) continue;
+			if (run.state === "stopping") {
+				this.transition("account", () => this.terminal(run.id, "canceled"));
+				continue;
+			}
+			const commands = this.read(() =>
+				this.storage.sql
+					.exec<Command>("SELECT * FROM host_commands WHERE run = ?", run.id)
+					.toArray(),
+			);
+			let settled = commands.length > 0,
+				failed = false;
+			for (const command of commands) {
+				if (!command.submission) {
+					settled = false;
+					continue;
+				}
+				const submission = await this.harness.submission(
+					command.submission as import("@earendil-works/pi-durable").SubmissionId,
+					BACKGROUND_CONTEXT,
+				);
+				const status = await submission?.status(BACKGROUND_CONTEXT);
+				if (!status || !["done", "unanswered"].includes(status.status))
+					settled = false;
+				else if (status.status === "unanswered") failed = true;
+				else
+					this.transition("account", () => {
+						this.storage.sql.exec(
+							"UPDATE host_members SET state = 'complete' WHERE assistant = ? AND state = 'pending'",
+							command.assistant,
+						);
+						this.storage.sql.exec(
+							"INSERT OR IGNORE INTO host_projections VALUES (?,?,'complete',1)",
+							command.assistant,
+							run.id,
+						);
+					});
+			}
+			if (settled)
+				this.transition("account", () =>
+					this.terminal(run.id, failed ? "failed" : "complete"),
+				);
+		}
+		await this.durable();
+	}
+
 	async history() {
 		const root = await this.harness.root(BACKGROUND_CONTEXT);
 		return root.entries({}, 20, undefined, BACKGROUND_CONTEXT);
@@ -294,8 +1889,19 @@ export class PiDurableHost {
 		await graph.stop();
 	}
 
-	async accept(id: string, content: string) {
+	async accept(
+		id: string,
+		content: string,
+		membership?: {
+			run: string;
+			user: string;
+			assistant: string;
+			sequence: number;
+		},
+	) {
 		if (this.sealed) throw new Error("Host sealed");
+		if (!id || !content || new TextEncoder().encode(content).byteLength > 8192)
+			throw new Error("Invalid synthetic command");
 		this.transition("intent", () => {
 			const existing = this.storage.sql
 				.exec<{ content: string }>(
@@ -305,6 +1911,60 @@ export class PiDurableHost {
 				.toArray()[0];
 			if (existing && existing.content !== content)
 				throw new Error("Conflicting input");
+			const prior = this.storage.sql
+				.exec<Command>("SELECT * FROM host_commands WHERE id = ?", id)
+				.toArray()[0];
+			const member = membership ?? {
+				run: id,
+				user: `${id}:user`,
+				assistant: `${id}:assistant`,
+				sequence:
+					prior?.sequence ??
+					Number(
+						this.storage.sql
+							.exec(
+								"SELECT COALESCE(MAX(sequence),0)+1 AS n FROM host_commands",
+							)
+							.one().n,
+					),
+			};
+			if (
+				!member.run ||
+				!member.user ||
+				!member.assistant ||
+				!Number.isSafeInteger(member.sequence) ||
+				member.sequence <= 0 ||
+				(prior &&
+					(prior.run !== member.run ||
+						prior.user !== member.user ||
+						prior.assistant !== member.assistant ||
+						prior.sequence !== member.sequence))
+			)
+				throw new Error("Conflicting membership");
+			this.storage.sql.exec(
+				"INSERT OR IGNORE INTO host_runs VALUES (?,1,'queued',NULL,NULL)",
+				member.run,
+			);
+			if (
+				["complete", "failed", "canceled", "stopping"].includes(
+					this.run(member.run).state,
+				) &&
+				membership
+			)
+				throw new Error("Follow-up requires nonterminal accepted run");
+			this.storage.sql.exec(
+				"INSERT OR IGNORE INTO host_commands (id,run,user,assistant,sequence,submission,state) VALUES (?,?,?,?,?,NULL,'accepted')",
+				id,
+				member.run,
+				member.user,
+				member.assistant,
+				member.sequence,
+			);
+			this.storage.sql.exec(
+				"INSERT OR IGNORE INTO host_members VALUES (?,?,'pending')",
+				member.assistant,
+				member.run,
+			);
 			this.storage.sql.exec(
 				"INSERT OR IGNORE INTO host_inbox VALUES (?, ?, 'accepted', NULL)",
 				id,
@@ -321,12 +1981,69 @@ export class PiDurableHost {
 		return { id };
 	}
 
+	private assertSchedule(run: string, epoch: number) {
+		this.assertLive();
+		const current = this.run(run);
+		if (
+			!["queued", "running", "recovering"].includes(current.state) ||
+			current.epoch !== epoch
+		)
+			throw new Error("Targeted scheduling revoked");
+	}
 	async schedule(id: string, duplicateInvocation?: string) {
 		if (duplicateInvocation) {
 			const previous = this.latest();
 			if (previous?.id !== duplicateInvocation)
 				throw new Error("Stale invocation delivery");
 			return previous;
+		}
+		await this.expire();
+		const command = this.command(id),
+			run = this.run(command.run);
+		if (["complete", "failed", "canceled", "stopping"].includes(run.state))
+			throw new Error(
+				this.unresolved().length
+					? "Unresolved effect blocks admission"
+					: "Terminal or stopped run cannot schedule",
+			);
+		const predecessor = this.read(() =>
+			this.storage.sql
+				.exec(
+					"SELECT id FROM host_commands WHERE sequence < ? AND state NOT IN ('submitted','settled')",
+					command.sequence,
+				)
+				.toArray(),
+		);
+		if (
+			command.sequence > 1 &&
+			(predecessor.length ||
+				!this.read(
+					() =>
+						this.storage.sql
+							.exec(
+								"SELECT id FROM host_commands WHERE sequence = ?",
+								command.sequence - 1,
+							)
+							.toArray().length,
+				))
+		)
+			throw new Error("Missing predecessor");
+		const priorCommands = this.read(() =>
+			this.storage.sql
+				.exec<Command>(
+					"SELECT * FROM host_commands WHERE sequence < ? AND state = 'submitted'",
+					command.sequence,
+				)
+				.toArray(),
+		);
+		for (const prior of priorCommands) {
+			if (!prior.submission) throw new Error("Missing predecessor submission");
+			const submission = await this.piRecords.submission(
+				prior.submission as import("@earendil-works/pi-durable").SubmissionId,
+				BACKGROUND_CONTEXT,
+			);
+			if (!submission || !["done", "unanswered"].includes(submission.status))
+				throw new Error("Supported turn boundary required");
 		}
 		let authority = await this.dependencies.authority();
 		await this.check(authority);
@@ -340,7 +2057,7 @@ export class PiDurableHost {
 		await this.check(authority);
 		if (!this.active) {
 			this.active = this.transition("intent", () => {
-				this.assertLive();
+				this.assertSchedule(command.run, run.epoch);
 				const prior = this.latest();
 				if (prior && prior.state !== "closed")
 					throw new Error("Prior invocation not accounted");
@@ -394,12 +2111,20 @@ export class PiDurableHost {
 		const root = await this.harness.root(BACKGROUND_CONTEXT);
 		if ((await root.agent(BACKGROUND_CONTEXT)).model === undefined) {
 			await this.check(await this.dependencies.authority());
-			this.assertLive();
+			this.assertSchedule(command.run, run.epoch);
 			await root.configure(
 				{ model: { provider: "faux", modelId: "faux-1" } },
 				BACKGROUND_CONTEXT,
 			);
 		}
+		this.transition("intent", () => {
+			if (["queued", "recovering"].includes(this.run(command.run).state))
+				this.storage.sql.exec(
+					"UPDATE host_runs SET state = 'running' WHERE id = ?",
+					command.run,
+				);
+		});
+		await this.durable();
 		const input = this.read(() =>
 			this.storage.sql
 				.exec<{ content: string; state: string }>(
@@ -408,7 +2133,29 @@ export class PiDurableHost {
 				)
 				.one(),
 		);
-		if (input.state !== "submitted") {
+		const retained = await this.piRecords.submissionByRequest(
+			ROOT_CONVERSATION_ID,
+			id,
+			BACKGROUND_CONTEXT,
+		);
+		if (retained) {
+			if (retained.type !== "input")
+				throw new Error("Incompatible retained submission");
+			this.transition("intent", () => {
+				this.storage.sql.exec(
+					"UPDATE host_commands SET submission = ?, state = 'submitted' WHERE id = ?",
+					Number(retained.id),
+					id,
+				);
+				this.storage.sql.exec(
+					"UPDATE host_inbox SET submission = ?, state = 'submitted' WHERE id = ?",
+					Number(retained.id),
+					id,
+				);
+			});
+			await this.durable();
+		}
+		if (input.state !== "submitted" && !retained) {
 			this.transition("intent", () =>
 				this.storage.sql.exec(
 					"UPDATE host_inbox SET state = 'submitting' WHERE id = ?",
@@ -419,7 +2166,7 @@ export class PiDurableHost {
 			await this.check(await this.dependencies.authority());
 			try {
 				this.dependencies.fault?.("before-submit");
-				this.assertLive();
+				this.assertSchedule(command.run, run.epoch);
 				const submission = await root.submit(
 					{ type: "input", content: input.content, requestId: id },
 					BACKGROUND_CONTEXT,
@@ -429,6 +2176,11 @@ export class PiDurableHost {
 					this.storage.sql.exec(
 						"UPDATE host_inbox SET state = 'submitted', submission = ? WHERE id = ?",
 						submission.id,
+						id,
+					);
+					this.storage.sql.exec(
+						"UPDATE host_commands SET state = 'submitted', submission = ? WHERE id = ?",
+						Number(submission.id),
 						id,
 					);
 					this.storage.sql.exec(
@@ -443,7 +2195,7 @@ export class PiDurableHost {
 			}
 		} else {
 			await this.check(await this.dependencies.authority());
-			this.assertLive();
+			this.assertSchedule(command.run, run.epoch);
 			this.harness.resume();
 		}
 		return invocation;
@@ -478,7 +2230,7 @@ export class PiDurableHost {
 				.exec<{ epoch: number }>("SELECT epoch FROM host_meta")
 				.one().epoch;
 			this.storage.sql.exec(
-				"INSERT INTO host_effects VALUES (?, ?, ?, ?, 1, ?, ?, 'admitted', NULL)",
+				"INSERT INTO host_effects (id,kind,invocation,epoch,attempt,executor,deadline,state,evidence) VALUES (?, ?, ?, ?, 1, ?, ?, 'admitted', NULL)",
 				id,
 				kind,
 				invocation.id,
@@ -509,27 +2261,137 @@ export class PiDurableHost {
 		return id;
 	}
 	async result(effect: string, context: Context, evidence: string) {
+		try {
+			await this.recordResult(effect, context, evidence);
+		} catch (error) {
+			if (error instanceof EffectDenied && error.reason === "recovery-deadline")
+				await this.expire();
+			throw error;
+		}
+	}
+	private async recordResult(
+		effect: string,
+		context: Context,
+		evidence: string,
+	) {
 		context.abortSignal?.throwIfAborted();
 		if (new TextEncoder().encode(evidence).byteLength > 8192) {
 			this.denied = true;
 			throw new Error("Oversized synthetic result evidence");
 		}
-		const parsed: unknown = JSON.parse(evidence);
-		if (parsed === undefined)
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(evidence);
+		} catch (error) {
+			this.persistenceFailed();
+			throw error;
+		}
+		if (parsed === undefined) {
+			this.persistenceFailed();
 			throw new Error("Missing synthetic result evidence");
+		}
+		const existing = this.read(() =>
+			this.storage.sql
+				.exec<Effect & { evidence: string | null; correlation: string | null }>(
+					"SELECT * FROM host_effects WHERE id = ?",
+					effect,
+				)
+				.one(),
+		);
+		if (existing.evidence !== null) {
+			if (canonical(JSON.parse(existing.evidence)) === canonical(parsed))
+				return;
+			this.block(
+				"conflicting-result",
+				existing.correlation
+					? this.correlation(existing.correlation).run
+					: undefined,
+			);
+			await this.durable();
+			throw new Error("Conflicting effect result");
+		}
 		if (this.denied || this.sealed) throw new Error("Host result denied");
+		if (existing.correlation) {
+			const correlation = this.correlation(existing.correlation);
+			const value = record(parsed);
+			if (
+				!Array.isArray(value.content) ||
+				value.content.some((part) => {
+					const content = record(part);
+					return !["text", "thinking", "toolCall"].includes(
+						String(content.type),
+					);
+				})
+			) {
+				this.block("result-schema", correlation.run);
+				throw new Error("Invalid synthetic result content");
+			}
+			if (existing.kind === "model") {
+				const model = record(record(JSON.parse(correlation.prepared)).model);
+				if (
+					value.role !== "assistant" ||
+					value.provider !== model.provider ||
+					value.model !== model.modelId ||
+					!["stop", "error", "aborted", "toolUse", "length"].includes(
+						String(value.stopReason),
+					) ||
+					!Number.isFinite(value.timestamp)
+				) {
+					this.block("result-schema", correlation.run);
+					throw new Error("Invalid synthetic model result");
+				}
+			}
+			const task = await awaitWithContext(
+				this.harness.getTask(correlation.task as TaskId, context),
+				context,
+			);
+			if (
+				!task ||
+				task.version !== 1 ||
+				canonical(task.input) !== correlation.taskInput ||
+				task.conversationId !== ROOT_CONVERSATION_ID ||
+				(existing.kind === "tool"
+					? canonical(task.state.checkpoint) !== correlation.prepared
+					: preparedTask(task) !== correlation.prepared)
+			) {
+				this.block("result-identity", correlation.run);
+				throw new Error("Original result identity mismatch");
+			}
+			this.exactAuthority(correlation, existing.epoch);
+		}
 		this.transition("result", () => {
+			if (existing.correlation)
+				this.exactAuthority(
+					this.correlation(existing.correlation),
+					existing.epoch,
+				);
 			this.storage.sql
 				.exec(
-					"UPDATE host_effects SET state = 'result-recorded', evidence = ? WHERE id = ? AND invocation = ? AND epoch = (SELECT epoch FROM host_meta) AND state = 'admitted' RETURNING id",
+					"UPDATE host_effects SET state = 'result-recorded', evidence = ? WHERE id = ? AND invocation = ? AND (correlation IS NOT NULL OR epoch = (SELECT epoch FROM host_meta)) AND state = 'admitted' RETURNING id",
 					evidence,
 					effect,
 					this.active?.id ?? "",
 				)
 				.one();
+			if (
+				existing.correlation &&
+				existing.operation_deadline &&
+				this.dependencies.now() >= existing.operation_deadline
+			) {
+				this.storage.sql.exec(
+					"INSERT OR REPLACE INTO host_safety VALUES (1,'operation-deadline')",
+				);
+				this.terminal(this.correlation(existing.correlation).run, "failed");
+				this.denied = true;
+			}
 		});
 		await this.durable(context);
 		context.abortSignal?.throwIfAborted();
+		if (existing.correlation)
+			this.exactAuthority(
+				this.correlation(existing.correlation),
+				existing.epoch,
+			);
 		if (this.denied || this.sealed) throw new Error("Host result sealed");
 	}
 
@@ -539,6 +2401,25 @@ export class PiDurableHost {
 		clearTimeout(this.timer);
 		this.closing = this.closeAndAccount();
 		return this.closing;
+	}
+	private interruptRuns(interrupted: number) {
+		for (const run of this.storage.sql
+			.exec<Run>(
+				"SELECT * FROM host_runs WHERE state IN ('running','recovering','stopping')",
+			)
+			.toArray()) {
+			this.storage.sql.exec(
+				"UPDATE host_runs SET interrupted_at=COALESCE(interrupted_at,?), recovery_at=COALESCE(recovery_at,?), state=CASE WHEN state='running' THEN 'recovering' ELSE state END WHERE id=?",
+				interrupted,
+				interrupted + 15 * 60000,
+				run.id,
+			);
+			this.storage.sql.exec(
+				"INSERT OR IGNORE INTO host_wakeups VALUES (?,?)",
+				`recovery:${run.id}`,
+				run.recovery_at ?? interrupted + 15 * 60000,
+			);
+		}
 	}
 	private async closeAndAccount() {
 		let fenceError: unknown;
@@ -555,6 +2436,7 @@ export class PiDurableHost {
 						"UPDATE host_invocations SET state = 'draining' WHERE id = ?",
 						this.active.id,
 					);
+				this.interruptRuns(interrupted);
 				this.storage.sql.exec("DELETE FROM host_wakeups WHERE id = 'yield'");
 				this.storage.sql.exec(
 					"INSERT OR REPLACE INTO host_wakeups VALUES ('reconcile', ?)",
@@ -595,7 +2477,31 @@ export class PiDurableHost {
 		});
 		await this.durable();
 	}
-	async repairWakeup() {
+	private consumeWakeups(serviced: boolean) {
+		return this.transition("account", () => {
+			this.storage.sql.exec(
+				"DELETE FROM host_wakeups WHERE id LIKE 'inbox:%' AND substr(id,7) IN (SELECT id FROM host_inbox WHERE state='submitted' UNION SELECT id FROM host_commands WHERE state IN ('submitted','settled'))",
+			);
+			const noWork =
+				this.storage.sql
+					.exec("SELECT id FROM host_commands WHERE state!='settled' LIMIT 1")
+					.toArray().length === 0;
+			const blocked =
+				this.denied ||
+				this.storage.sql.exec("SELECT id FROM host_safety").toArray().length >
+					0;
+			if (!serviced && !noWork && !blocked) return [];
+			return this.storage.sql
+				.exec<{ deadline: number }>(
+					"DELETE FROM host_wakeups WHERE id IN ('reconcile','pi-retry','settlement') AND deadline <= ? RETURNING deadline",
+					this.dependencies.now(),
+				)
+				.toArray()
+				.map((row) => row.deadline);
+		});
+	}
+	async repairWakeup(serviced: number[] = []) {
+		const consumed = [...serviced, ...this.consumeWakeups(false)];
 		const next = this.read(
 			() =>
 				this.storage.sql
@@ -604,11 +2510,21 @@ export class PiDurableHost {
 					)
 					.one().deadline,
 		);
-		if (next == null) return;
-		this.dependencies.fault?.("alarm");
 		const wakeup = this.dependencies.wakeup ?? this.storage;
 		const existing = await wakeup.getAlarm();
-		if (existing === null || next < existing) await wakeup.setAlarm(next);
+		if (next == null) {
+			if (
+				existing !== null &&
+				consumed.includes(existing) &&
+				!this.dependencies.wakeup
+			)
+				await this.storage.deleteAlarm();
+			return;
+		}
+		this.dependencies.fault?.("alarm");
+		// Opening may have rearmed an intent that this handler subsequently consumed.
+		if (existing === null || next < existing || consumed.includes(existing))
+			await wakeup.setAlarm(next);
 	}
 	async reserveWakeup(
 		kind: "retry" | "effect" | "projection" | "checkpoint",
@@ -625,28 +2541,44 @@ export class PiDurableHost {
 		await this.repairWakeup();
 	}
 	async alarm() {
+		const serviced = this.consumeWakeups(true);
+		await this.durable();
+		await this.expire();
+		if (!this.sealed && !this.denied) {
+			await this.reconcile();
+			this.transition("account", () =>
+				this.storage.sql.exec(
+					"DELETE FROM host_wakeups WHERE id = 'settlement'",
+				),
+			);
+			await this.durable();
+		}
 		if (
 			this.sealed ||
 			this.denied ||
 			(!this.active && this.unresolved().length)
-		)
+		) {
+			await this.repairWakeup(serviced);
 			return;
+		}
 		if (this.active) {
 			if (this.dependencies.now() >= this.active.yield_at) await this.yield();
 			else await this.repairWakeup();
 			return;
 		}
-		await this.repairWakeup();
 		if (this.sealed || this.denied || this.unresolved().length) return;
 		const input = this.read(
 			() =>
 				this.storage.sql
 					.exec<{ id: string; state: string }>(
-						"SELECT id, state FROM host_inbox ORDER BY rowid LIMIT 1",
+						"SELECT i.id, i.state FROM host_inbox i JOIN host_commands c ON c.id = i.id WHERE c.state != 'settled' ORDER BY i.rowid LIMIT 1",
 					)
 					.toArray()[0],
 		);
-		if (!input) return;
+		if (!input) {
+			await this.repairWakeup(serviced);
+			return;
+		}
 		const tasks = (await this.inspect()).tasks;
 		this.assertLive();
 		// Pi owns the retry checkpoint; this only reserves its next host wakeup.
@@ -675,8 +2607,14 @@ export class PiDurableHost {
 			future.length === tasks.length
 				? Math.min(...future)
 				: undefined;
-		this.transition("intent", () => {
+		const consumed = this.transition("intent", () => {
 			this.assertLive();
+			const old = this.storage.sql
+				.exec<{ deadline: number }>(
+					"SELECT deadline FROM host_wakeups WHERE id IN ('reconcile','pi-retry')",
+				)
+				.toArray()
+				.map((row) => row.deadline);
 			this.storage.sql.exec(
 				"DELETE FROM host_wakeups WHERE id IN ('reconcile', 'pi-retry')",
 			);
@@ -685,10 +2623,11 @@ export class PiDurableHost {
 					"INSERT INTO host_wakeups VALUES ('pi-retry', ?)",
 					retryAt,
 				);
+			return old;
 		});
 		await this.durable();
 		if (retryAt !== undefined) {
-			await this.repairWakeup();
+			await this.repairWakeup([...serviced, ...consumed]);
 			return;
 		}
 		await this.schedule(input.id);
@@ -740,6 +2679,7 @@ export class PiDurableHostFixture extends DurableObject<{
 					"request",
 					(kind, id, context) => guard.admit(kind, id, context),
 					(id, context, evidence) => guard.result(id, context, evidence),
+					guard,
 				);
 				this.fixtures.push(fixture);
 				return {
