@@ -1,0 +1,1016 @@
+diff --git a/apps/runtime/src/pi-durable-host.test.ts b/apps/runtime/src/pi-durable-host.test.ts
+index ad09070..8f8f44f 100644
+--- a/apps/runtime/src/pi-durable-host.test.ts
++++ b/apps/runtime/src/pi-durable-host.test.ts
+@@ -31,6 +31,8 @@ import {
+ 	PiDurableHostFixture,
+ } from "./pi-durable-host.ts";
+ import { fixtureDatabase } from "./pi-durable-local.ts";
++import { EncryptedPiStorage } from "./pi-durable-storage.ts";
++import { importRuntimeKeyringFromBytes } from "./runtime-crypto.ts";
+ 
+ declare module "cloudflare:test" {
+ 	interface ProvidedEnv {
+@@ -898,6 +900,167 @@ describe("Guarded local host with real DO SQLite", () => {
+ 		});
+ 	}, 10_000);
+ 
++	it.each([
++		"safety-result-missing",
++		"pi-result-missing",
++	] as const)("encrypted adapter blocks recovery across two reopens after %s", async (order) => {
++		const stub = env.PI_HOST_STORAGE.getByName(`encrypted-handoff-${order}`);
++		await runInDurableObject(stub, async (instance, state) => {
++			const composition = hostComposition("tool");
++			const retained = {
++				ownerId: "owner-004",
++				workspaceSessionId: "session-004",
++				keyring: await importRuntimeKeyringFromBytes("v1", {
++					v1: new Uint8Array(32).fill(7),
++				}),
++			};
++			let rejectPiResult = false;
++			let rejectedCommits = 0;
++			const dependencies = {
++				...composition.dependencies,
++				retained,
++				piStorage: (storage: Storage): Storage =>
++					new Proxy(storage, {
++						get(target, key) {
++							if (key === "commit")
++								return (
++									writes: Parameters<Storage["commit"]>[0],
++									context: Parameters<Storage["commit"]>[1],
++								) => {
++									if (
++										rejectPiResult &&
++										writes.some(
++											(write) =>
++												write.type === "task" &&
++												write.value.kind === "pi.tool" &&
++												write.value.state.status === "terminal" &&
++												write.value.state.outcome.status === "completed",
++										)
++									) {
++										rejectedCommits++;
++										throw new Error(
++											"Synthetic public Storage tool-result commit lost",
++										);
++									}
++									return target.commit(writes, context);
++								};
++							const value: unknown = Reflect.get(target, key, target);
++							return typeof value === "function" ? value.bind(target) : value;
++						},
++					}),
++			};
++			let host = await PiDurableHost.open(state.storage, dependencies);
++			instance.host = host;
++			await host.accept("handoff", "Synthetic public Pi result handoff");
++			const invocation = await host.schedule("handoff");
++			const fixture = composition.fixtures[0];
++			if (!fixture) throw new Error("Missing fixture");
++			await fixture.entered.promise;
++			if (order === "safety-result-missing") composition.fault = "result";
++			else rejectPiResult = true;
++			fixture.remote.resolve();
++			await fixture.localEnded.promise;
++			if (order === "pi-result-missing")
++				await expect.poll(() => rejectedCommits).toBeGreaterThan(0);
++			else
++				await expect
++					.poll(() => fixture.providerAttempts)
++					.toBeGreaterThanOrEqual(2);
++			await host.yield();
++			const effects = state.storage.sql
++				.exec(
++					"SELECT id, kind, invocation, attempt, executor, state FROM host_effects ORDER BY id",
++				)
++				.toArray();
++			const original = effects.find((effect) => effect.kind === "tool");
++			expect(original).toMatchObject({
++				id: expect.any(String),
++				invocation: invocation.id,
++				attempt: 1,
++				executor: 1,
++				state:
++					order === "safety-result-missing" ? "admitted" : "result-recorded",
++			});
++			expect(fixture.providerCalls).toBe(1);
++			expect(fixture.executionCalls).toBe(1);
++			const raw = [
++				...state.storage.sql
++					.exec<{ record: string }>("SELECT record FROM entries")
++					.toArray(),
++				...state.storage.sql
++					.exec<{ record: string }>("SELECT record FROM tasks")
++					.toArray(),
++				...state.storage.sql
++					.exec<{ record: string }>("SELECT content AS record FROM host_inbox")
++					.toArray(),
++				...state.storage.sql
++					.exec<{ record: string }>(
++						"SELECT evidence AS record FROM host_effects WHERE evidence IS NOT NULL",
++					)
++					.toArray(),
++			]
++				.map((row) => row.record)
++				.join("\n");
++			expect(raw).not.toContain("Synthetic public Pi result handoff");
++			expect(raw).not.toContain("Synthetic remote result");
++			if (order === "pi-result-missing") {
++				const stored = await EncryptedPiStorage.open(state.storage, retained);
++				const tasks = await stored.scanTasks(
++					{},
++					20,
++					undefined,
++					BACKGROUND_CONTEXT,
++				);
++				expect(
++					tasks.items.some(
++						(task) => phaseOf(task.state.checkpoint) === "execute",
++					),
++				).toBe(true);
++				await stored.close(BACKGROUND_CONTEXT);
++			}
++			composition.fault = undefined;
++			rejectPiResult = false;
++			for (let reopen = 0; reopen < 2; reopen++) {
++				host = await PiDurableHost.open(state.storage, dependencies);
++				instance.host = host;
++				await expect(host.schedule("handoff")).rejects.toThrow(
++					"Unresolved effect",
++				);
++				await expect(
++					host.admit("tool", "replay", BACKGROUND_CONTEXT),
++				).rejects.toThrow("Unresolved effect");
++				const probe: unknown = Reflect.get(host, "harness");
++				if (!isRecoveryProbe(probe))
++					throw new Error("Missing isolated recovery Harness");
++				const recovered = composition.fixtures[reopen + 1];
++				if (!recovered) throw new Error("Missing recovery fixture");
++				probe.resume();
++				if (reopen === 1 || order === "safety-result-missing") {
++					const root = await probe.root(BACKGROUND_CONTEXT);
++					await root.submit(
++						{
++							type: "input",
++							content: "Guarded subsequent model request",
++							requestId: `recovery-defense-${reopen}`,
++						},
++						BACKGROUND_CONTEXT,
++					);
++				}
++				await expect.poll(() => recovered.providerAttempts).toBeGreaterThan(0);
++				expect(recovered.providerCalls).toBe(0);
++				expect(recovered.executionCalls).toBe(0);
++				await host.yield();
++				expect(
++					state.storage.sql
++						.exec(
++							"SELECT id, kind, invocation, attempt, executor, state FROM host_effects ORDER BY id",
++						)
++						.toArray(),
++				).toEqual(effects);
++			}
++		});
++	}, 15_000);
++
+ 	it.each([
+ 		["request", "revoked"],
+ 		["request", "generation"],
+diff --git a/apps/runtime/src/pi-durable-host.ts b/apps/runtime/src/pi-durable-host.ts
+index ffdfbaa..ff55348 100644
+--- a/apps/runtime/src/pi-durable-host.ts
++++ b/apps/runtime/src/pi-durable-host.ts
+@@ -17,8 +17,24 @@ import {
+ 	type ToolExecutionResult,
+ } from "@earendil-works/pi-durable";
+ import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
++import {
++	digestText,
++	isRuntimeCiphertext,
++	openHostField,
++	type RetainedStorageBinding,
++	sealHostField,
++} from "./host-private.ts";
+ import { cooperativeFixture } from "./pi-durable-cooperative-fixture.ts";
+ import { fixtureDatabase } from "./pi-durable-local.ts";
++import {
++	ADAPTER_COMPAT,
++	ENGINE_COMPAT,
++	EncryptedPiStorage,
++	EncryptedStorageError,
++	PROVIDER_COMPAT,
++	TASK_COMPAT,
++	TOOL_COMPAT,
++} from "./pi-durable-storage.ts";
+ 
+ const WORK_MS = 1000;
+ const DRAIN_MS = 1000;
+@@ -258,6 +274,7 @@ export type HostFixtureDependencies = {
+ 		getAlarm(): Promise<number | null>;
+ 		setAlarm(deadline: number): Promise<void>;
+ 	};
++	retained?: RetainedStorageBinding;
+ };
+ 
+ /** Disposable L1 host candidate. Plaintext and local authority are not product contracts. */
+@@ -277,6 +294,9 @@ export class PiDurableHost {
+ 		{ task: number; digest?: string }
+ 	>();
+ 	private storageBarrier = false;
++	private privatePlain = new Map<string, string>();
++	private privateDigest = new Map<string, string>();
++	private privateQueue: Promise<void> = Promise.resolve();
+ 
+ 	private constructor(
+ 		private storage: DurableObjectStorage,
+@@ -379,8 +399,17 @@ export class PiDurableHost {
+ 			});
+ 			await host.durable();
+ 		}
+-		const piStorage = await SqliteStorage.open(fixtureDatabase(storage));
+-		host.piRecords = dependencies.piStorage?.(piStorage) ?? piStorage;
++		await host.assertRetainedGate();
++		const piStorage = dependencies.retained
++			? await EncryptedPiStorage.open(storage, dependencies.retained)
++			: await SqliteStorage.open(fixtureDatabase(storage));
++		try {
++			host.piRecords = dependencies.piStorage?.(piStorage) ?? piStorage;
++			if (dependencies.retained) await host.revealPrivate();
++		} catch (error) {
++			await piStorage.close(BACKGROUND_CONTEXT);
++			throw error;
++		}
+ 		host.harness = await Harness.open(
+ 			host.piRecords,
+ 			dependencies.options({
+@@ -410,6 +439,171 @@ export class PiDurableHost {
+ 		return host;
+ 	}
+ 
++	private async assertRetainedGate() {
++		const meta = this.storage.sql
++			.exec<{ name: string }>(
++				"SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'host_retained_meta'",
++			)
++			.toArray();
++		if (!this.dependencies.retained) {
++			if (meta.length > 0)
++				throw new Error("Retained storage requires encryption binding");
++			return;
++		}
++		this.storage.sql.exec(
++			"CREATE TABLE IF NOT EXISTS host_retained_meta (id INTEGER PRIMARY KEY CHECK (id = 1), format_version INTEGER NOT NULL, engine_compat TEXT NOT NULL, task_compat TEXT NOT NULL, tool_compat TEXT NOT NULL, provider_compat TEXT NOT NULL, adapter_compat TEXT NOT NULL)",
++		);
++		this.storage.sql.exec(
++			"CREATE TABLE IF NOT EXISTS host_effect_route (id TEXT PRIMARY KEY, run TEXT NOT NULL, operation TEXT NOT NULL, task INTEGER NOT NULL)",
++		);
++		this.storage.sql.exec(
++			"CREATE TABLE IF NOT EXISTS host_seal (record_id TEXT PRIMARY KEY, digest TEXT NOT NULL)",
++		);
++		const row = this.storage.sql
++			.exec<{
++				format_version: number;
++				engine_compat: string;
++				task_compat: string;
++				tool_compat: string;
++				provider_compat: string;
++				adapter_compat: string;
++			}>(
++				"SELECT format_version, engine_compat, task_compat, tool_compat, provider_compat, adapter_compat FROM host_retained_meta WHERE id = 1",
++			)
++			.toArray()[0];
++		if (!row) {
++			this.assertNoPlaintextPrivate();
++			this.storage.sql.exec(
++				"INSERT INTO host_retained_meta VALUES (1, 1, ?, ?, ?, ?, ?)",
++				ENGINE_COMPAT,
++				TASK_COMPAT,
++				TOOL_COMPAT,
++				PROVIDER_COMPAT,
++				ADAPTER_COMPAT,
++			);
++			return;
++		}
++		if (
++			row.format_version !== 1 ||
++			row.engine_compat !== ENGINE_COMPAT ||
++			row.task_compat !== TASK_COMPAT ||
++			row.tool_compat !== TOOL_COMPAT ||
++			row.provider_compat !== PROVIDER_COMPAT ||
++			row.adapter_compat !== ADAPTER_COMPAT
++		)
++			throw new Error("Incompatible retained storage");
++	}
++	private assertNoPlaintextPrivate() {
++		const statements = [
++			"SELECT content AS value FROM host_inbox",
++			"SELECT correlation AS value FROM host_effects WHERE correlation IS NOT NULL",
++			"SELECT evidence AS value FROM host_effects WHERE evidence IS NOT NULL",
++			"SELECT retry_evidence AS value FROM host_effects WHERE retry_evidence IS NOT NULL",
++			"SELECT selection AS value FROM host_tasks WHERE selection != 'pending'",
++			"SELECT prepared AS value FROM host_tasks WHERE prepared IS NOT NULL",
++		];
++		for (const statement of statements) {
++			for (const row of this.storage.sql
++				.exec<{ value: string }>(statement)
++				.toArray()) {
++				if (!isRuntimeCiphertext(row.value))
++					throw new Error("Plaintext retained payload");
++			}
++		}
++	}
++	private async revealPrivate() {
++		const binding = this.dependencies.retained;
++		if (!binding) return;
++		const fields = [
++			...this.storage.sql
++				.exec<{ record_id: string; value: string }>(
++					"SELECT 'inbox:' || id || ':content' AS record_id, content AS value FROM host_inbox",
++				)
++				.toArray(),
++			...this.storage.sql
++				.exec<{ record_id: string; value: string }>(
++					"SELECT 'effect:' || id || ':correlation' AS record_id, correlation AS value FROM host_effects WHERE correlation IS NOT NULL",
++				)
++				.toArray(),
++			...this.storage.sql
++				.exec<{ record_id: string; value: string }>(
++					"SELECT 'effect:' || id || ':evidence' AS record_id, evidence AS value FROM host_effects WHERE evidence IS NOT NULL",
++				)
++				.toArray(),
++			...this.storage.sql
++				.exec<{ record_id: string; value: string }>(
++					"SELECT 'effect:' || id || ':retry_evidence' AS record_id, retry_evidence AS value FROM host_effects WHERE retry_evidence IS NOT NULL",
++				)
++				.toArray(),
++			...this.storage.sql
++				.exec<{ record_id: string; value: string }>(
++					"SELECT 'task:' || task || ':selection' AS record_id, selection AS value FROM host_tasks WHERE selection != 'pending'",
++				)
++				.toArray(),
++			...this.storage.sql
++				.exec<{ record_id: string; value: string }>(
++					"SELECT 'task:' || task || ':prepared' AS record_id, prepared AS value FROM host_tasks WHERE prepared IS NOT NULL",
++				)
++				.toArray(),
++		];
++		for (const field of fields) {
++			try {
++				const plain = await openHostField(
++					binding,
++					field.record_id,
++					field.value,
++				);
++				this.privatePlain.set(field.record_id, plain);
++				this.privateDigest.set(field.record_id, await digestText(plain));
++				this.privateDigest.set(plain, await digestText(plain));
++			} catch (error) {
++				if (error instanceof EncryptedStorageError) throw error;
++				throw new EncryptedStorageError(
++					"integrity",
++					"Storage integrity failure",
++				);
++			}
++		}
++	}
++	private opened(recordId: string, stored: string | null): string | null {
++		if (!this.dependencies.retained || stored == null) return stored;
++		return this.requiredPlain(recordId);
++	}
++	private rememberPlain(recordId: string, plaintext: string, digest: string) {
++		this.privatePlain.set(recordId, plaintext);
++		this.privateDigest.set(recordId, digest);
++		this.privateDigest.set(plaintext, digest);
++	}
++	private requiredPlain(recordId: string): string {
++		const plain = this.privatePlain.get(recordId);
++		if (plain === undefined)
++			throw new EncryptedStorageError(
++				"integrity",
++				"Private payload was not revealed",
++			);
++		return plain;
++	}
++	private async seal(
++		recordId: string,
++		plaintext: string,
++	): Promise<{ ciphertext: string; digest: string }> {
++		const binding = this.dependencies.retained;
++		if (!binding) return { ciphertext: plaintext, digest: "" };
++		return sealHostField(binding, recordId, plaintext);
++	}
++	private rememberSeal(recordId: string, digest: string) {
++		if (!this.dependencies.retained) return;
++		this.storage.sql.exec(
++			"INSERT OR REPLACE INTO host_seal VALUES (?, ?)",
++			recordId,
++			digest,
++		);
++	}
++	private routeSql(column: "run" | "operation" | "task"): string {
++		return this.dependencies.retained
++			? `id IN (SELECT id FROM host_effect_route WHERE ${column} = ?)`
++			: `json_extract(correlation, '$.${column}') = ?`;
++	}
+ 	private persistenceFailed() {
+ 		this.denied = true;
+ 		this.storageBarrier = true;
+@@ -419,12 +613,20 @@ export class PiDurableHost {
+ 				this.storage.sql.exec(
+ 					"INSERT OR IGNORE INTO host_safety VALUES (1, 'storage-failure')",
+ 				);
+-				for (const effect of this.storage.sql
+-					.exec<{ correlation: string }>(
+-						"SELECT correlation FROM host_effects WHERE state = 'admitted' AND correlation IS NOT NULL",
+-					)
+-					.toArray())
+-					this.terminal(this.correlation(effect.correlation).run, "failed");
++				const runs = this.dependencies.retained
++					? this.storage.sql
++							.exec<{ run: string }>(
++								"SELECT run FROM host_effect_route WHERE id IN (SELECT id FROM host_effects WHERE state = 'admitted' AND correlation IS NOT NULL)",
++							)
++							.toArray()
++							.map((row) => row.run)
++					: this.storage.sql
++							.exec<{ correlation: string }>(
++								"SELECT correlation FROM host_effects WHERE state = 'admitted' AND correlation IS NOT NULL",
++							)
++							.toArray()
++							.map((row) => this.correlation(row.correlation).run);
++				for (const run of runs) this.terminal(run, "failed");
+ 			});
+ 		} catch {
+ 			/* Live denial does not depend on the marker committing. */
+@@ -452,6 +654,7 @@ export class PiDurableHost {
+ 	private async durable(context: Context = BACKGROUND_CONTEXT) {
+ 		try {
+ 			context.abortSignal?.throwIfAborted();
++			await this.privateQueue;
+ 			await awaitWithContext(this.storage.sync(), context);
+ 			context.abortSignal?.throwIfAborted();
+ 		} catch (error) {
+@@ -563,12 +766,24 @@ export class PiDurableHost {
+ 		);
+ 	}
+ 	private mapping(task: number) {
+-		return this.read(
++		const row = this.read(
+ 			() =>
+ 				this.storage.sql
+ 					.exec<TaskMapping>("SELECT * FROM host_tasks WHERE task = ?", task)
+ 					.toArray()[0],
+ 		);
++		if (!row || !this.dependencies.retained) return row;
++		return {
++			...row,
++			selection:
++				row.selection === "pending"
++					? row.selection
++					: this.requiredPlain(`task:${task}:selection`),
++			prepared:
++				row.prepared == null
++					? null
++					: this.requiredPlain(`task:${task}:prepared`),
++		};
+ 	}
+ 	private terminal(run: string, state: "complete" | "failed" | "canceled") {
+ 		const current = this.storage.sql
+@@ -620,7 +835,9 @@ export class PiDurableHost {
+ 		);
+ 		for (const effect of unknown) {
+ 			if (effect.correlation) {
+-				const correlation = this.correlation(effect.correlation);
++				const correlation = this.correlation(
++					this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
++				);
+ 				this.block("outcome-unknown", correlation.run);
+ 			}
+ 		}
+@@ -782,7 +999,9 @@ export class PiDurableHost {
+ 					(old.selection !== "pending" && old.selection !== mapping.selection))
+ 			)
+ 				throw new Error("Changed trusted task mapping");
+-			this.transition("intent", () =>
++			const selectionId = `task:${mapping.task}:selection`;
++			const sealedSelection = await this.seal(selectionId, mapping.selection);
++			this.transition("intent", () => {
+ 				this.storage.sql.exec(
+ 					"INSERT OR IGNORE INTO host_tasks (task,kind,conversation,owner,command,selection) VALUES (?,?,?,?,?,?)",
+ 					mapping.task,
+@@ -790,17 +1009,24 @@ export class PiDurableHost {
+ 					mapping.conversation,
+ 					mapping.owner,
+ 					command.id,
+-					mapping.selection,
+-				),
+-			);
++					sealedSelection.ciphertext,
++				);
++				this.rememberSeal(selectionId, sealedSelection.digest);
++			});
+ 			if (old?.selection === "pending")
+-				this.transition("intent", () =>
++				this.transition("intent", () => {
+ 					this.storage.sql.exec(
+ 						"UPDATE host_tasks SET selection = ? WHERE task = ?",
+-						mapping.selection,
++						sealedSelection.ciphertext,
+ 						mapping.task,
+-					),
+-				);
++					);
++					this.rememberSeal(selectionId, sealedSelection.digest);
++				});
++			this.rememberPlain(
++				selectionId,
++				mapping.selection,
++				sealedSelection.digest,
++			);
+ 			await this.durable(context);
+ 			context.abortSignal?.throwIfAborted();
+ 			this.assertLive();
+@@ -897,7 +1123,20 @@ export class PiDurableHost {
+ 		if (
+ 			row.state !== "admitted" ||
+ 			row.epoch !== epoch ||
+-			row.correlation !== canonical(correlation) ||
++			(this.dependencies.retained
++				? this.read(
++						() =>
++							this.storage.sql
++								.exec<{ digest: string }>(
++									"SELECT digest FROM host_seal WHERE record_id = ?",
++									`effect:${effect}:correlation`,
++								)
++								.one().digest,
++					)
++				: row.correlation) !==
++				(this.dependencies.retained
++					? this.privateDigest.get(canonical(correlation))
++					: canonical(correlation)) ||
+ 			this.dependencies.now() >= row.operation_deadline
+ 		)
+ 			throw new Error("Final effect receipt denied");
+@@ -922,16 +1161,20 @@ export class PiDurableHost {
+ 		const rows = this.read(() =>
+ 			this.storage.sql
+ 				.exec<Effect & { correlation: string; evidence: string }>(
+-					"SELECT * FROM host_effects WHERE json_extract(correlation, '$.operation') = ? ORDER BY attempt",
++					`SELECT * FROM host_effects WHERE ${this.routeSql("operation")} ORDER BY attempt`,
+ 					correlation.operation,
+ 				)
+ 				.toArray(),
+ 		);
+ 		const prior = rows.at(-1);
+ 		if (prior) {
+-			const original = this.correlation(prior.correlation);
++			const original = this.correlation(
++				this.opened(`effect:${prior.id}:correlation`, prior.correlation)!,
++			);
+ 			const cp = record(task.state.checkpoint);
+-			const evidence = record(JSON.parse(prior.evidence));
++			const evidence = record(
++				JSON.parse(this.opened(`effect:${prior.id}:evidence`, prior.evidence)!),
++			);
+ 			if (
+ 				kind !== "model" ||
+ 				prior.state !== "pi-committed" ||
+@@ -952,6 +1195,11 @@ export class PiDurableHost {
+ 			duration > 15 * 60_000
+ 		)
+ 			throw new Error("Invalid operation deadline");
++		const correlationPlain = canonical(correlation);
++		const sealedCorrelation = await this.seal(
++			`effect:${id}:correlation`,
++			correlationPlain,
++		);
+ 		this.transition("admission", () => {
+ 			this.exactAuthority(correlation, run.epoch);
+ 			if (this.unresolved().length) throw new EffectDenied("reservation");
+@@ -964,10 +1212,25 @@ export class PiDurableHost {
+ 				attempt,
+ 				kind === "tool" ? authority.executor : 0,
+ 				invocation.end_at,
+-				canonical(correlation),
++				sealedCorrelation.ciphertext,
+ 				this.dependencies.now() + duration,
+ 			);
++			this.rememberSeal(`effect:${id}:correlation`, sealedCorrelation.digest);
++			if (this.dependencies.retained)
++				this.storage.sql.exec(
++					"INSERT INTO host_effect_route VALUES (?, ?, ?, ?)",
++					id,
++					correlation.run,
++					correlation.operation,
++					correlation.task,
++				);
+ 		});
++		this.rememberPlain(id, correlationPlain, sealedCorrelation.digest);
++		this.rememberPlain(
++			`effect:${id}:correlation`,
++			correlationPlain,
++			sealedCorrelation.digest,
++		);
+ 		await this.durable(context);
+ 		const fresh = await awaitWithContext(
+ 			this.dependencies.authority(),
+@@ -1140,15 +1403,19 @@ export class PiDurableHost {
+ 					task,
+ 					context,
+ 				);
++				const preparedId = `task:${Number(task.id)}:prepared`;
++				const sealedPrepared = await this.seal(preparedId, tuple);
+ 				this.transition("intent", () => {
+ 					this.exactAuthority(correlation, run.epoch);
+ 					this.storage.sql.exec(
+ 						"UPDATE host_tasks SET prepared = ?, digest = ? WHERE task = ?",
+-						tuple,
++						sealedPrepared.ciphertext,
+ 						transcriptDigest,
+ 						Number(task.id),
+ 					);
++					this.rememberSeal(preparedId, sealedPrepared.digest);
+ 				});
++				this.rememberPlain(preparedId, tuple, sealedPrepared.digest);
+ 				await this.durable(context);
+ 				const finalAuthority = await awaitWithContext(
+ 					this.dependencies.authority(),
+@@ -1361,13 +1628,22 @@ export class PiDurableHost {
+ 					continue;
+ 				const effects = this.storage.sql
+ 					.exec<{ id: string; correlation: string; evidence: string }>(
+-						"SELECT id,correlation,evidence FROM host_effects WHERE state = 'result-recorded' AND kind = 'model' AND json_extract(correlation,'$.task') = ?",
++						`SELECT id,correlation,evidence FROM host_effects WHERE state = 'result-recorded' AND kind = 'model' AND ${this.routeSql("task")}`,
+ 						Number(task.id),
+ 					)
+ 					.toArray();
+ 				for (const effect of effects) {
+-					const correlation = this.correlation(effect.correlation),
+-						result = record(JSON.parse(effect.evidence));
++					const correlationText = this.opened(
++						`effect:${effect.id}:correlation`,
++						effect.correlation,
++					);
++					const evidenceText = this.opened(
++						`effect:${effect.id}:evidence`,
++						effect.evidence,
++					);
++					if (!correlationText || !evidenceText) continue;
++					const correlation = this.correlation(correlationText),
++						result = record(JSON.parse(evidenceText));
+ 					if (
+ 						correlation.piAttempt !== cp.attempt ||
+ 						correlation.taskInput !== canonical(task.input) ||
+@@ -1375,19 +1651,44 @@ export class PiDurableHost {
+ 						result.errorMessage !== record(retry).error
+ 					)
+ 						continue;
+-					this.transition("result", () =>
+-						this.storage.sql.exec(
+-							"UPDATE host_effects SET retry_evidence = ? WHERE id = ?",
+-							canonical({
+-								seq: Number(publication.seq),
+-								task: Number(task.id),
+-								attempt: cp.attempt,
+-								until: cp.until,
+-								error: record(retry).error,
+-							}),
+-							effect.id,
+-						),
+-					);
++					const retryPlain = canonical({
++						seq: Number(publication.seq),
++						task: Number(task.id),
++						attempt: cp.attempt,
++						until: cp.until,
++						error: record(retry).error,
++					});
++					if (!this.dependencies.retained) {
++						this.transition("result", () =>
++							this.storage.sql.exec(
++								"UPDATE host_effects SET retry_evidence = ? WHERE id = ?",
++								retryPlain,
++								effect.id,
++							),
++						);
++						continue;
++					}
++					const effectId = effect.id;
++					this.privateQueue = this.privateQueue.then(async () => {
++						const recordId = `effect:${effectId}:retry_evidence`;
++						const sealed = await this.seal(recordId, retryPlain);
++						this.transition("result", () => {
++							const current = this.storage.sql
++								.exec<{ state: string }>(
++									"SELECT state FROM host_effects WHERE id = ?",
++									effectId,
++								)
++								.toArray()[0];
++							if (current?.state !== "result-recorded") return;
++							this.storage.sql.exec(
++								"UPDATE host_effects SET retry_evidence = ? WHERE id = ?",
++								sealed.ciphertext,
++								effectId,
++							);
++							this.rememberSeal(recordId, sealed.digest);
++						});
++						this.rememberPlain(recordId, retryPlain, sealed.digest);
++					});
+ 				}
+ 			}
+ 			if (
+@@ -1416,6 +1717,7 @@ export class PiDurableHost {
+ 		}
+ 	}
+ 	private async receipts(context: Context) {
++		await this.privateQueue;
+ 		const effects = this.read(() =>
+ 			this.storage.sql
+ 				.exec<
+@@ -1430,7 +1732,9 @@ export class PiDurableHost {
+ 				.toArray(),
+ 		);
+ 		for (const effect of effects) {
+-			const correlation = this.correlation(effect.correlation!);
++			const correlation = this.correlation(
++				this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
++			);
+ 			const task = await awaitWithContext(
+ 				this.harness.getTask(correlation.task as TaskId, context),
+ 				context,
+@@ -1444,7 +1748,11 @@ export class PiDurableHost {
+ 				throw new Error("Original task receipt mismatch");
+ 			let matches = false,
+ 				failedCompaction = false;
+-			const evidence = record(JSON.parse(effect.evidence));
++			const evidence = record(
++				JSON.parse(
++					this.opened(`effect:${effect.id}:evidence`, effect.evidence)!,
++				),
++			);
+ 			if (
+ 				effect.kind === "model" &&
+ 				task.kind === "pi.compaction" &&
+@@ -1462,7 +1770,7 @@ export class PiDurableHost {
+ 					mapping = this.mapping(Number(task.id));
+ 				const latest = this.storage.sql
+ 					.exec<{ id: string }>(
+-						"SELECT id FROM host_effects WHERE json_extract(correlation,'$.operation') = ? ORDER BY attempt DESC LIMIT 1",
++						`SELECT id FROM host_effects WHERE ${this.routeSql("operation")} ORDER BY attempt DESC LIMIT 1`,
+ 						correlation.operation,
+ 					)
+ 					.one();
+@@ -1542,7 +1850,14 @@ export class PiDurableHost {
+ 					cp?.attempt === correlation.piAttempt + 1 &&
+ 					preparedTask(task) === correlation.prepared
+ 				) {
+-					const receipt = record(JSON.parse(effect.retry_evidence));
++					const receipt = record(
++						JSON.parse(
++							this.opened(
++								`effect:${effect.id}:retry_evidence`,
++								effect.retry_evidence,
++							)!,
++						),
++					);
+ 					matches =
+ 						receipt.task === Number(task.id) &&
+ 						receipt.attempt === correlation.piAttempt &&
+@@ -1745,7 +2060,9 @@ export class PiDurableHost {
+ 		for (const effect of overdue)
+ 			this.block(
+ 				"operation-deadline",
+-				this.correlation(effect.correlation!).run,
++				this.correlation(
++					this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
++				).run,
+ 			);
+ 		const expired = this.read(() =>
+ 			this.storage.sql
+@@ -1761,7 +2078,7 @@ export class PiDurableHost {
+ 				if (
+ 					this.storage.sql
+ 						.exec(
+-							"SELECT id FROM host_effects WHERE json_extract(correlation,'$.run') = ? AND state = 'admitted'",
++							`SELECT id FROM host_effects WHERE ${this.routeSql("run")} AND state = 'admitted'`,
+ 							run.id,
+ 						)
+ 						.toArray().length
+@@ -1825,7 +2142,7 @@ export class PiDurableHost {
+ 			const effects = this.read(() =>
+ 				this.storage.sql
+ 					.exec<Effect>(
+-						"SELECT * FROM host_effects WHERE json_extract(correlation,'$.run') = ? AND state != 'pi-committed'",
++						`SELECT * FROM host_effects WHERE ${this.routeSql("run")} AND state != 'pi-committed'`,
+ 						run.id,
+ 					)
+ 					.toArray(),
+@@ -1902,6 +2219,8 @@ export class PiDurableHost {
+ 		if (this.sealed) throw new Error("Host sealed");
+ 		if (!id || !content || new TextEncoder().encode(content).byteLength > 8192)
+ 			throw new Error("Invalid synthetic command");
++		const inboxId = `inbox:${id}:content`;
++		const sealedContent = await this.seal(inboxId, content);
+ 		this.transition("intent", () => {
+ 			const existing = this.storage.sql
+ 				.exec<{ content: string }>(
+@@ -1909,8 +2228,20 @@ export class PiDurableHost {
+ 					id,
+ 				)
+ 				.toArray()[0];
+-			if (existing && existing.content !== content)
+-				throw new Error("Conflicting input");
++			if (existing) {
++				const storedDigest = this.dependencies.retained
++					? this.storage.sql
++							.exec<{ digest: string }>(
++								"SELECT digest FROM host_seal WHERE record_id = ?",
++								inboxId,
++							)
++							.toArray()[0]?.digest
++					: existing.content;
++				const expected = this.dependencies.retained
++					? sealedContent.digest
++					: content;
++				if (storedDigest !== expected) throw new Error("Conflicting input");
++			}
+ 			const prior = this.storage.sql
+ 				.exec<Command>("SELECT * FROM host_commands WHERE id = ?", id)
+ 				.toArray()[0];
+@@ -1968,14 +2299,16 @@ export class PiDurableHost {
+ 			this.storage.sql.exec(
+ 				"INSERT OR IGNORE INTO host_inbox VALUES (?, ?, 'accepted', NULL)",
+ 				id,
+-				content,
++				sealedContent.ciphertext,
+ 			);
++			this.rememberSeal(inboxId, sealedContent.digest);
+ 			this.storage.sql.exec(
+ 				"INSERT OR IGNORE INTO host_wakeups VALUES (?, ?)",
+ 				`inbox:${id}`,
+ 				this.dependencies.now(),
+ 			);
+ 		});
++		this.rememberPlain(inboxId, content, sealedContent.digest);
+ 		await this.durable();
+ 		await this.repairWakeup();
+ 		return { id };
+@@ -2168,7 +2501,13 @@ export class PiDurableHost {
+ 				this.dependencies.fault?.("before-submit");
+ 				this.assertSchedule(command.run, run.epoch);
+ 				const submission = await root.submit(
+-					{ type: "input", content: input.content, requestId: id },
++					{
++						type: "input",
++						content:
++							this.opened(`inbox:${id}:content`, input.content) ??
++							input.content,
++						requestId: id,
++					},
+ 					BACKGROUND_CONTEXT,
+ 				);
+ 				this.dependencies.fault?.("after-submit");
+@@ -2298,21 +2637,26 @@ export class PiDurableHost {
+ 				)
+ 				.one(),
+ 		);
++		const correlation = existing.correlation
++			? this.correlation(
++					this.opened(`effect:${effect}:correlation`, existing.correlation)!,
++				)
++			: undefined;
+ 		if (existing.evidence !== null) {
+-			if (canonical(JSON.parse(existing.evidence)) === canonical(parsed))
++			if (
++				canonical(
++					JSON.parse(
++						this.opened(`effect:${effect}:evidence`, existing.evidence)!,
++					),
++				) === canonical(parsed)
++			)
+ 				return;
+-			this.block(
+-				"conflicting-result",
+-				existing.correlation
+-					? this.correlation(existing.correlation).run
+-					: undefined,
+-			);
++			this.block("conflicting-result", correlation?.run);
+ 			await this.durable();
+ 			throw new Error("Conflicting effect result");
+ 		}
+ 		if (this.denied || this.sealed) throw new Error("Host result denied");
+-		if (existing.correlation) {
+-			const correlation = this.correlation(existing.correlation);
++		if (correlation) {
+ 			const value = record(parsed);
+ 			if (
+ 				!Array.isArray(value.content) ||
+@@ -2359,39 +2703,35 @@ export class PiDurableHost {
+ 			}
+ 			this.exactAuthority(correlation, existing.epoch);
+ 		}
++		const evidenceId = `effect:${effect}:evidence`;
++		const sealedEvidence = await this.seal(evidenceId, evidence);
+ 		this.transition("result", () => {
+-			if (existing.correlation)
+-				this.exactAuthority(
+-					this.correlation(existing.correlation),
+-					existing.epoch,
+-				);
++			if (correlation) this.exactAuthority(correlation, existing.epoch);
+ 			this.storage.sql
+ 				.exec(
+ 					"UPDATE host_effects SET state = 'result-recorded', evidence = ? WHERE id = ? AND invocation = ? AND (correlation IS NOT NULL OR epoch = (SELECT epoch FROM host_meta)) AND state = 'admitted' RETURNING id",
+-					evidence,
++					sealedEvidence.ciphertext,
+ 					effect,
+ 					this.active?.id ?? "",
+ 				)
+ 				.one();
++			this.rememberSeal(evidenceId, sealedEvidence.digest);
+ 			if (
+-				existing.correlation &&
++				correlation &&
+ 				existing.operation_deadline &&
+ 				this.dependencies.now() >= existing.operation_deadline
+ 			) {
+ 				this.storage.sql.exec(
+ 					"INSERT OR REPLACE INTO host_safety VALUES (1,'operation-deadline')",
+ 				);
+-				this.terminal(this.correlation(existing.correlation).run, "failed");
++				this.terminal(correlation.run, "failed");
+ 				this.denied = true;
+ 			}
+ 		});
++		this.rememberPlain(evidenceId, evidence, sealedEvidence.digest);
+ 		await this.durable(context);
+ 		context.abortSignal?.throwIfAborted();
+-		if (existing.correlation)
+-			this.exactAuthority(
+-				this.correlation(existing.correlation),
+-				existing.epoch,
+-			);
++		if (correlation) this.exactAuthority(correlation, existing.epoch);
+ 		if (this.denied || this.sealed) throw new Error("Host result sealed");
+ 	}
+ 
+@@ -2422,6 +2762,7 @@ export class PiDurableHost {
+ 		}
+ 	}
+ 	private async closeAndAccount() {
++		await this.privateQueue;
+ 		let fenceError: unknown;
+ 		try {
+ 			this.transition("fence", () => {
+diff --git a/apps/runtime/vitest.config.ts b/apps/runtime/vitest.config.ts
+index 985be21..2e0207a 100644
+--- a/apps/runtime/vitest.config.ts
++++ b/apps/runtime/vitest.config.ts
+@@ -8,7 +8,7 @@ export default defineWorkersConfig({
+ 			optimizer: {
+ 				ssr: {
+ 					enabled: true,
+-					include: ["@cloudflare/containers", "@cloudflare/sandbox", "@earendil-works/pi-durable", "@earendil-works/pi-durable/storage/sqlite", "@earendil-works/pi-ai/models", "@earendil-works/pi-ai/providers/faux", "@earendil-works/chord/context", "typebox"],
++					include: ["@cloudflare/containers", "@cloudflare/sandbox", "@earendil-works/pi-durable", "@earendil-works/pi-durable/storage/sqlite", "@earendil-works/pi-durable/testing", "@earendil-works/pi-ai/models", "@earendil-works/pi-ai/providers/faux", "@earendil-works/chord/context", "@earendil-works/chord/delta", "typebox"],
+ 				},
+ 			},
+ 		},
+diff --git a/plans/004-encrypted-storage-core.md b/plans/004-encrypted-storage-core.md
+index 2b11304..087caaa 100644
+--- a/plans/004-encrypted-storage-core.md
++++ b/plans/004-encrypted-storage-core.md
+@@ -1,7 +1,14 @@
+ # 004: Implement encrypted Pi storage and transactions
+ 
+-Status: BLOCKED on passed L1, plans 002 and 003. Base: `bcce03e`. Phase: L2, core storage.
+-Spec: `docs/specs/pi-durable-session-runtime.md`, decisions 3.4, 4, 6, 10, 17–18; PD13, PD17–PD19, PD36; OD2, OD3, OD5.
++Status: candidate execution against integrated L1. Not accepted. Base: `46bec8519ce7e5bd2cd9dd1880f71dbc20d21d17`. Phase: L2, core storage.
++Historical status before this refresh: BLOCKED on passed L1, plans 002 and 003. Base then: `bcce03e`. 001, 002 and 003 are accepted and integrated at the stamped base. This refresh is not acceptance of 004.
++Spec: `docs/specs/pi-durable-session-runtime.md`, decisions 3.4, 4, 6, 10, 17-18; PD13, PD17-PD19, PD36; OD2, OD3, OD5.
++
++## Refreshed 1.0.1 contract
++
++Installed `@earendil-works/pi-durable@1.0.1` exports `./testing`. `registerStorageConformance` is present at `dist/testing/index.d.ts`. The public `Storage` methods used here are `commit`, `mintId`, `conversation`, `scanConversations`, `entry`, `findLatestHeadMarker`, `scanEntries`, `task`, `scanTasks`, `submission`, `scanSubmissions`, `submissionByRequest`, `findDocument`, `document`, `scanDocuments` and `close`. DO SQL uses `storage.transaction` for async callbacks. `transactionSync` stays synchronous. No manual `BEGIN` or `SAVEPOINT`.
++
++Plaintext `fixtureDatabase` plus stock `SqliteStorage` remains only the explicit L0/L1 fixture path. A retained binding opens `EncryptedPiStorage` and seals host private columns. Structural effect routing lives in `host_effect_route`, not in ciphertext, because expiry and reconcile must keep filtering by run, operation and task.
+ 
+ ## Outcome and scope
+ 
+diff --git a/plans/README.md b/plans/README.md
+index 13e13b4..12cd345 100644
+--- a/plans/README.md
++++ b/plans/README.md
+@@ -31,7 +31,7 @@ Historical 001 disposition before the approved directory exclusions, after suppo
+ | [001](001-pi-durable-local-compatibility.md) | Pinned imports, real local workerd and Docker tool | L0 | None | DONE in reviewed execution worktree |
+ | [002](002-bounded-host-lifecycle.md) | Cooperative local waits, actual bounded close/reopen, wakeups | L1 | 001 | DONE and integrated at `0d9c73c`; [acceptance](evidence/002-advisor-final-review.md), [integration](evidence/002-integration.md) |
+ | [003](003-effect-admission-and-stop.md) | Effect evidence, uncertainty, Stop, deadlines | L1 | 002 | DONE and integrated at `2efce11`; [acceptance](evidence/003-advisor-final-review.md), [integration](evidence/003-integration.md) |
+-| [004](004-encrypted-storage-core.md) | Encrypted storage and real SQLite transactions | L2 | 003, complete L1 | BLOCKED pending brief refresh against integrated 003; not executed |
++| [004](004-encrypted-storage-core.md) | Encrypted storage and real SQLite transactions | L2 | 003, complete L1 | Refreshed at `46bec85`; candidate execution only, not accepted |
+ | [005](005-storage-history-and-large-records.md) | Exact history, size handling, references and key retention | L2 | 004 | BLOCKED |
+ | [006](006-codex-connection-and-renewal.md) | Supported Codex flow, credential DO and renewal | L3 | 005, complete L2 | BLOCKED |
+ | [007](007-codex-requests-and-model-configuration.md) | Exact provider contract and account-backed configuration | L3 | 006 | BLOCKED |
