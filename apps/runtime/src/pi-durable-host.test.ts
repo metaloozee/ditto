@@ -31,6 +31,8 @@ import {
 	PiDurableHostFixture,
 } from "./pi-durable-host.ts";
 import { fixtureDatabase } from "./pi-durable-local.ts";
+import { EncryptedPiStorage } from "./pi-durable-storage.ts";
+import { importRuntimeKeyringFromBytes } from "./runtime-crypto.ts";
 
 declare module "cloudflare:test" {
 	interface ProvidedEnv {
@@ -897,6 +899,167 @@ describe("Guarded local host with real DO SQLite", () => {
 			}
 		});
 	}, 10_000);
+
+	it.each([
+		"safety-result-missing",
+		"pi-result-missing",
+	] as const)("encrypted adapter blocks recovery across two reopens after %s", async (order) => {
+		const stub = env.PI_HOST_STORAGE.getByName(`encrypted-handoff-${order}`);
+		await runInDurableObject(stub, async (instance, state) => {
+			const composition = hostComposition("tool");
+			const retained = {
+				ownerId: "owner-004",
+				workspaceSessionId: "session-004",
+				keyring: await importRuntimeKeyringFromBytes("v1", {
+					v1: new Uint8Array(32).fill(7),
+				}),
+			};
+			let rejectPiResult = false;
+			let rejectedCommits = 0;
+			const dependencies = {
+				...composition.dependencies,
+				retained,
+				piStorage: (storage: Storage): Storage =>
+					new Proxy(storage, {
+						get(target, key) {
+							if (key === "commit")
+								return (
+									writes: Parameters<Storage["commit"]>[0],
+									context: Parameters<Storage["commit"]>[1],
+								) => {
+									if (
+										rejectPiResult &&
+										writes.some(
+											(write) =>
+												write.type === "task" &&
+												write.value.kind === "pi.tool" &&
+												write.value.state.status === "terminal" &&
+												write.value.state.outcome.status === "completed",
+										)
+									) {
+										rejectedCommits++;
+										throw new Error(
+											"Synthetic public Storage tool-result commit lost",
+										);
+									}
+									return target.commit(writes, context);
+								};
+							const value: unknown = Reflect.get(target, key, target);
+							return typeof value === "function" ? value.bind(target) : value;
+						},
+					}),
+			};
+			let host = await PiDurableHost.open(state.storage, dependencies);
+			instance.host = host;
+			await host.accept("handoff", "Synthetic public Pi result handoff");
+			const invocation = await host.schedule("handoff");
+			const fixture = composition.fixtures[0];
+			if (!fixture) throw new Error("Missing fixture");
+			await fixture.entered.promise;
+			if (order === "safety-result-missing") composition.fault = "result";
+			else rejectPiResult = true;
+			fixture.remote.resolve();
+			await fixture.localEnded.promise;
+			if (order === "pi-result-missing")
+				await expect.poll(() => rejectedCommits).toBeGreaterThan(0);
+			else
+				await expect
+					.poll(() => fixture.providerAttempts)
+					.toBeGreaterThanOrEqual(2);
+			await host.yield();
+			const effects = state.storage.sql
+				.exec(
+					"SELECT id, kind, invocation, attempt, executor, state FROM host_effects ORDER BY id",
+				)
+				.toArray();
+			const original = effects.find((effect) => effect.kind === "tool");
+			expect(original).toMatchObject({
+				id: expect.any(String),
+				invocation: invocation.id,
+				attempt: 1,
+				executor: 1,
+				state:
+					order === "safety-result-missing" ? "admitted" : "result-recorded",
+			});
+			expect(fixture.providerCalls).toBe(1);
+			expect(fixture.executionCalls).toBe(1);
+			const raw = [
+				...state.storage.sql
+					.exec<{ record: string }>("SELECT record FROM entries")
+					.toArray(),
+				...state.storage.sql
+					.exec<{ record: string }>("SELECT record FROM tasks")
+					.toArray(),
+				...state.storage.sql
+					.exec<{ record: string }>("SELECT content AS record FROM host_inbox")
+					.toArray(),
+				...state.storage.sql
+					.exec<{ record: string }>(
+						"SELECT evidence AS record FROM host_effects WHERE evidence IS NOT NULL",
+					)
+					.toArray(),
+			]
+				.map((row) => row.record)
+				.join("\n");
+			expect(raw).not.toContain("Synthetic public Pi result handoff");
+			expect(raw).not.toContain("Synthetic remote result");
+			if (order === "pi-result-missing") {
+				const stored = await EncryptedPiStorage.open(state.storage, retained);
+				const tasks = await stored.scanTasks(
+					{},
+					20,
+					undefined,
+					BACKGROUND_CONTEXT,
+				);
+				expect(
+					tasks.items.some(
+						(task) => phaseOf(task.state.checkpoint) === "execute",
+					),
+				).toBe(true);
+				await stored.close(BACKGROUND_CONTEXT);
+			}
+			composition.fault = undefined;
+			rejectPiResult = false;
+			for (let reopen = 0; reopen < 2; reopen++) {
+				host = await PiDurableHost.open(state.storage, dependencies);
+				instance.host = host;
+				await expect(host.schedule("handoff")).rejects.toThrow(
+					"Unresolved effect",
+				);
+				await expect(
+					host.admit("tool", "replay", BACKGROUND_CONTEXT),
+				).rejects.toThrow("Unresolved effect");
+				const probe: unknown = Reflect.get(host, "harness");
+				if (!isRecoveryProbe(probe))
+					throw new Error("Missing isolated recovery Harness");
+				const recovered = composition.fixtures[reopen + 1];
+				if (!recovered) throw new Error("Missing recovery fixture");
+				probe.resume();
+				if (reopen === 1 || order === "safety-result-missing") {
+					const root = await probe.root(BACKGROUND_CONTEXT);
+					await root.submit(
+						{
+							type: "input",
+							content: "Guarded subsequent model request",
+							requestId: `recovery-defense-${reopen}`,
+						},
+						BACKGROUND_CONTEXT,
+					);
+				}
+				await expect.poll(() => recovered.providerAttempts).toBeGreaterThan(0);
+				expect(recovered.providerCalls).toBe(0);
+				expect(recovered.executionCalls).toBe(0);
+				await host.yield();
+				expect(
+					state.storage.sql
+						.exec(
+							"SELECT id, kind, invocation, attempt, executor, state FROM host_effects ORDER BY id",
+						)
+						.toArray(),
+				).toEqual(effects);
+			}
+		});
+	}, 15_000);
 
 	it.each([
 		["request", "revoked"],
