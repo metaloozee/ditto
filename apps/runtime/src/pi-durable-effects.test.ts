@@ -7,6 +7,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import type { Harness, Storage } from "@earendil-works/pi-durable";
 import { expect, it } from "vitest";
+import { sealHostField } from "./host-private.ts";
 import {
 	cooperativeFixture,
 	type FixturePhase,
@@ -20,6 +21,7 @@ import {
 	PiDurableHost,
 	type PiDurableHostFixture,
 } from "./pi-durable-host.ts";
+import { importRuntimeKeyringFromBytes } from "./runtime-crypto.ts";
 
 declare module "cloudflare:test" {
 	interface ProvidedEnv {
@@ -46,12 +48,17 @@ async function until(predicate: () => boolean | Promise<boolean>) {
 	}
 	throw new Error("Synthetic observation deadline");
 }
-function composition(storage: DurableObjectStorage, phase: FixturePhase) {
+function composition(
+	storage: DurableObjectStorage,
+	phase: FixturePhase,
+	retained?: HostFixtureDependencies["retained"],
+) {
 	let now = Date.now() + 60_000,
 		authority: LocalAuthority = { current: true, generation: 1, executor: 1 };
 	let fault: HostFault | undefined,
 		unavailable = false,
 		prepare: ReturnType<typeof pendingRemote<void>> | undefined;
+	let authorityHook: (() => Promise<unknown>) | undefined;
 	let piStorage: HostFixtureDependencies["piStorage"];
 	let automaticCompaction = false;
 	let adapters = (guard: HostGuard): HostGuard => guard;
@@ -59,7 +66,10 @@ function composition(storage: DurableObjectStorage, phase: FixturePhase) {
 	const fixtures: ReturnType<typeof cooperativeFixture>[] = [];
 	const dependencies: HostFixtureDependencies = {
 		now: () => now,
-		authority: async () => authority,
+		authority: async () => {
+			await authorityHook?.();
+			return authority;
+		},
 		budgets: { workMs: 10_000, drainMs: 1000 },
 		operationMs: { model: 60_000, tool: 90_000 },
 		wakeup: { getAlarm: async () => null, setAlarm: async () => {} },
@@ -71,6 +81,7 @@ function composition(storage: DurableObjectStorage, phase: FixturePhase) {
 			if (prepare) await prepare.promise;
 		},
 		piStorage: (storage) => piStorage?.(storage) ?? storage,
+		retained,
 		options: (guard) => {
 			const fixture = cooperativeFixture(
 				phase,
@@ -131,6 +142,9 @@ function composition(storage: DurableObjectStorage, phase: FixturePhase) {
 		},
 		set prepare(value: typeof prepare) {
 			prepare = value;
+		},
+		set authorityHook(value: typeof authorityHook) {
+			authorityHook = value;
 		},
 		set piStorage(value: typeof piStorage) {
 			piStorage = value;
@@ -1297,3 +1311,476 @@ it("correction: trusted abrupt takeover fixes recovery from the prior durable bo
 		).toBe("failed");
 		expect((await f.host.task(task))?.state.status).not.toBe("running");
 	}));
+
+async function encryptedBinding() {
+	return {
+		ownerId: "owner-encrypted-l1",
+		workspaceSessionId: "session-encrypted-l1",
+		keyring: await importRuntimeKeyringFromBytes("v1", {
+			v1: new Uint8Array(32).fill(4),
+		}),
+	};
+}
+
+async function runEncrypted(
+	name: string,
+	phase: FixturePhase,
+	test: (
+		fixture: ReturnType<typeof composition>,
+		state: DurableObjectState,
+	) => Promise<void>,
+) {
+	await runInDurableObject(
+		env.PI_HOST_STORAGE.getByName(`004-encrypted-l1-${name}`),
+		async (_instance, state) => {
+			const fixture = composition(
+				state.storage,
+				phase,
+				await encryptedBinding(),
+			);
+			await fixture.open();
+			try {
+				await test(fixture, state);
+			} finally {
+				await fixture.dispose();
+			}
+		},
+	);
+}
+
+async function plainCorrelation(
+	storage: DurableObjectStorage,
+	id: string,
+): Promise<Record<string, unknown>> {
+	const row = storage.sql
+		.exec<{ correlation: string }>(
+			"SELECT correlation FROM host_effects WHERE id = ?",
+			id,
+		)
+		.one();
+	return JSON.parse(
+		await (await import("./host-private.ts")).openHostField(
+			await encryptedBinding(),
+			`effect:${id}:correlation`,
+			row.correlation,
+		),
+	) as Record<string, unknown>;
+}
+
+it("encrypted L1: guarded model and tool settle without a false integrity failure", async () =>
+	runEncrypted("model-tool", "tool", async (f) => {
+		await f.start();
+		await f.fixture.entered.promise;
+		expect(f.fixture.providerCalls).toBe(1);
+		expect(f.fixture.executionCalls).toBe(1);
+		await expect(f.host.expire()).resolves.toBeUndefined();
+		f.fixture.remote.resolve();
+		await f.harness.waitForIdle(BACKGROUND_CONTEXT);
+		await f.host.reconcile();
+		expect(f.effects().length).toBeGreaterThanOrEqual(2);
+		expect(f.effects().every((row) => row.state === "pi-committed")).toBe(true);
+		const raw = f
+			.effects()
+			.map((row) => String(row.correlation) + String(row.evidence))
+			.join("\n");
+		expect(raw).not.toContain("Synthetic remote result");
+		expect(raw).toContain("aes-256-gcm");
+	}));
+
+it("encrypted L1: compaction, retry, and follow-up keep distinct IDs and context order", async () =>
+	runEncrypted("follow-compaction", "tool", async (f, state) => {
+		await f.start();
+		await f.fixture.entered.promise;
+		await f.host.accept("follow", "Synthetic encrypted follow-up", {
+			run: "command",
+			user: "follow-user",
+			assistant: "follow-assistant",
+			sequence: 2,
+		});
+		f.fixture.remote.resolve();
+		await f.harness.waitForIdle(BACKGROUND_CONTEXT);
+		await f.host.reconcile();
+		const before = (await f.host.history()).items.map((entry) => entry.id);
+		expect(before).toEqual([...before].sort((left, right) => right - left));
+		f.fixture.phase = "answer";
+		f.fixture.summary = "error-once";
+		const task = await f.host.compact("command");
+		await until(async () => {
+			const record = await f.host.task(task);
+			const checkpoint = record?.state.checkpoint;
+			return (
+				!!checkpoint &&
+				typeof checkpoint === "object" &&
+				"phase" in checkpoint &&
+				checkpoint.phase === "retry"
+			);
+		});
+		f.now += 1000;
+		await f.harness.waitForTask(task, BACKGROUND_CONTEXT);
+		await f.host.reconcile();
+		const correlations = [];
+		for (const row of f.effects())
+			if (row.correlation)
+				correlations.push(
+					await plainCorrelation(state.storage, String(row.id)),
+				);
+		const summaryAttempts = correlations.filter(
+			(row) => row.task === Number(task),
+		);
+		expect(summaryAttempts.map((row) => row.piAttempt)).toEqual([1, 2]);
+		expect(summaryAttempts[1]?.operation).toBe(summaryAttempts[0]?.operation);
+		expect(summaryAttempts[1]?.prepared).toBe(summaryAttempts[0]?.prepared);
+		await f.host.schedule("follow");
+		await f.host.waitIdle();
+		const after = (await f.host.history()).items.map((entry) => entry.id);
+		expect(new Set(after).size).toBe(after.length);
+		expect(after).toEqual([...after].sort((left, right) => right - left));
+		expect(after.length).toBeGreaterThan(before.length);
+		expect(
+			state.storage.sql
+				.exec(
+					"SELECT state FROM host_members WHERE assistant = 'follow-assistant'",
+				)
+				.one().state,
+		).toBe("complete");
+		expect(summaryAttempts).toHaveLength(2);
+	}));
+
+it("encrypted L1: Stop during held preparation, active tool, and stale target does not dispatch", async () =>
+	runEncrypted("stop", "tool", async (f) => {
+		const preparation = pendingRemote<void>();
+		f.prepare = preparation;
+		await f.start();
+		await until(() => f.fixture.providerAttempts === 1);
+		await f.host.stop("stop-prep", "command");
+		preparation.resolve();
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(f.fixture.providerCalls).toBe(0);
+		expect(f.effects()).toHaveLength(0);
+		expect(f.runs()[0]?.state).toBe("canceled");
+	}));
+
+it("encrypted L1: stale Stop does not cancel a later completed run", async () =>
+	runEncrypted("stale-stop", "answer", async (f) => {
+		await f.start("old");
+		await f.host.waitIdle();
+		await f.start("later");
+		await f.host.stop("late-control", "old");
+		await f.host.waitIdle();
+		expect(f.runs().map((row) => row.state)).toEqual(["complete", "complete"]);
+		expect(f.fixture.providerCalls).toBe(2);
+	}));
+
+it("encrypted L1: active uncooperative tool Stop stays stopping and reopens blocked", async () =>
+	runEncrypted("stop-tool", "tool", async (f) => {
+		await f.start();
+		await f.fixture.entered.promise;
+		await f.host.stop("stop-tool", "command");
+		expect(f.runs()[0]?.state).toBe("stopping");
+		expect(f.fixture.remote.settled).toBe(false);
+		await f.host.yield();
+		await f.open();
+		await expect(f.host.schedule("command")).rejects.toThrow();
+		expect(f.fixture.executionCalls).toBe(0);
+	}));
+
+it("encrypted L1: operation and recovery deadlines fail closed after awaits", async () =>
+	runEncrypted("deadlines", "tool", async (f, state) => {
+		await f.start();
+		await f.fixture.entered.promise;
+		const tool = f.effects().find((row) => row.kind === "tool");
+		if (!tool) throw new Error("missing tool effect");
+		const deadline = Number(tool.operation_deadline);
+		await f.host.yield();
+		f.now = deadline;
+		await f.host.expire();
+		expect(f.runs()[0]?.state).toBe("failed");
+		expect(
+			state.storage.sql
+				.exec("SELECT reason FROM host_safety")
+				.toArray()
+				.map((row) => row.reason),
+		).toContain("operation-deadline");
+		const recovery = Number(f.runs()[0]?.recovery_at);
+		await f.open();
+		expect(f.runs()[0]?.recovery_at).toBe(recovery);
+		f.now = recovery;
+		await f.host.expire();
+		await expect(f.host.schedule("command")).rejects.toThrow();
+	}));
+
+it("encrypted L1: close cancels a held authority wait and reopen stays fenced", async () =>
+	runEncrypted("close-reopen", "request", async (f, state) => {
+		const preparation = pendingRemote<void>();
+		f.prepare = preparation;
+		const started = f.start();
+		await until(() => f.fixture.providerAttempts === 1);
+		const close = f.host.yield();
+		preparation.resolve();
+		await started.catch(() => undefined);
+		await close;
+		expect(f.fixture.providerCalls).toBe(0);
+		expect(
+			state.storage.sql.exec("SELECT fenced FROM host_meta").one().fenced,
+		).toBe(1);
+		const closed = state.storage.sql
+			.exec<{ id: string; state: string }>(
+				"SELECT id, state FROM host_invocations",
+			)
+			.one();
+		expect(closed.state).toBe("closed");
+		await f.open();
+		expect(f.fixture.providerCalls).toBe(0);
+		expect(
+			state.storage.sql.exec("SELECT state FROM host_invocations").one().state,
+		).toBe("closed");
+	}));
+
+it("encrypted L1: result loss and Pi commit loss both block two reopens", async () => {
+	await runEncrypted("lost-result", "tool", async (f) => {
+		await f.start();
+		await f.fixture.entered.promise;
+		f.fault = "result";
+		f.fixture.remote.resolve();
+		await until(() => f.fixture.executionAttempts >= 2);
+		expect(f.fixture.executionCalls).toBe(1);
+		f.fault = undefined;
+		for (let n = 0; n < 2; n++) {
+			await f.host.yield();
+			await f.open();
+			await expect(f.host.schedule("command")).rejects.toThrow();
+			expect(f.fixture.providerCalls).toBe(0);
+		}
+		expect(f.effects().some((row) => row.state === "admitted")).toBe(true);
+	});
+	await runEncrypted("lost-pi-commit", "tool", async (f, state) => {
+		f.piStorage = (storage) =>
+			new Proxy(storage, {
+				get(target, key) {
+					if (key === "commit")
+						return async (...args: Parameters<Storage["commit"]>) => {
+							if (
+								args[0].some(
+									(write) =>
+										write.type === "task" &&
+										write.value.kind === "pi.tool" &&
+										write.value.state.status === "terminal",
+								)
+							)
+								throw new Error("Synthetic Pi result commit");
+							return target.commit(...args);
+						};
+					const value: unknown = Reflect.get(target, key);
+					return typeof value === "function" ? value.bind(target) : value;
+				},
+			});
+		await f.host.yield();
+		await f.open();
+		await f.start();
+		await f.fixture.entered.promise;
+		f.fixture.remote.resolve();
+		await until(() =>
+			f
+				.effects()
+				.some((row) => row.kind === "tool" && row.state === "result-recorded"),
+		);
+		await f.host.yield();
+		f.piStorage = undefined;
+		for (let n = 0; n < 2; n++) {
+			await f.open();
+			await expect(f.host.schedule("command")).rejects.toThrow();
+			await f.host.yield();
+		}
+		expect(
+			state.storage.sql
+				.exec("SELECT state FROM host_effects WHERE kind = 'tool'")
+				.one().state,
+		).toBe("result-recorded");
+	});
+});
+
+it("encrypted L1: persistence barrier and unknown shell block two reopens", async () =>
+	runEncrypted("barrier", "tool", async (f) => {
+		await f.start();
+		await f.fixture.entered.promise;
+		f.fault = "result";
+		f.unavailable = true;
+		f.fixture.remote.resolve();
+		await until(() => f.fixture.executionAttempts >= 2);
+		f.fault = undefined;
+		f.unavailable = false;
+		for (let n = 0; n < 2; n++) {
+			await f.host.yield().catch(() => undefined);
+			await f.open();
+			await f.host.accept(`new-${n}`, "Synthetic encrypted defense");
+			await expect(f.host.schedule(`new-${n}`)).rejects.toThrow();
+			expect(f.fixture.providerCalls).toBe(0);
+			expect(f.fixtures[0]?.executionCalls).toBe(1);
+		}
+	}));
+
+it("encrypted L1: changed host envelopes fail before provider I/O", async () =>
+	runEncrypted("envelope-swap", "request", async (f, state) => {
+		const retained = await encryptedBinding();
+		let swapped = false;
+		f.authorityHook = async () => {
+			const effect = state.storage.sql
+				.exec<{ id: string }>(
+					"SELECT id FROM host_effects WHERE correlation IS NOT NULL LIMIT 1",
+				)
+				.toArray()[0];
+			if (effect && !swapped) {
+				const recordId = `effect:${effect.id}:correlation`;
+				const replacement = await sealHostField(
+					retained,
+					recordId,
+					'{"swapped":true}',
+				);
+				state.storage.sql.exec(
+					"UPDATE host_effects SET correlation = ? WHERE id = ?",
+					replacement.ciphertext,
+					effect.id,
+				);
+				const selection = state.storage.sql
+					.exec<{ task: number }>("SELECT task FROM host_tasks LIMIT 1")
+					.toArray()[0];
+				if (selection) {
+					const selectionId = `task:${selection.task}:selection`;
+					const swappedSelection = await sealHostField(
+						retained,
+						selectionId,
+						'{"swapped":true}',
+					);
+					state.storage.sql.exec(
+						"UPDATE host_tasks SET selection = ? WHERE task = ?",
+						swappedSelection.ciphertext,
+						selection.task,
+					);
+				}
+				swapped = true;
+			}
+			return { current: true, generation: 1, executor: 1 };
+		};
+		const started = f.start();
+		await until(() => swapped || f.fixture.providerCalls > 0);
+		await started;
+		expect(swapped).toBe(true);
+		expect(f.fixture.providerCalls).toBe(0);
+		await expect(f.host.expire()).rejects.toThrow(/integrity/);
+	}));
+
+it("encrypted L1: corrupt result and retry envelopes fail closed", async () =>
+	runEncrypted("corrupt-evidence", "answer", async (f, state) => {
+		await f.start();
+		await f.host.waitIdle();
+		const effect = f.effects()[0];
+		if (!effect) throw new Error("missing effect");
+		state.storage.sql.exec(
+			"UPDATE host_effects SET evidence = 'corrupt' WHERE id = ?",
+			effect.id,
+		);
+		await expect(f.host.reconcile()).rejects.toThrow(/integrity/);
+		state.storage.sql.exec(
+			"UPDATE host_effects SET retry_evidence = 'corrupt' WHERE id = ?",
+			effect.id,
+		);
+		await f.host.yield().catch(() => undefined);
+		await expect(f.open()).rejects.toThrow(/integrity/);
+	}));
+
+it("encrypted L1: retry seal failure fences before close and survives both orders", async () => {
+	await runEncrypted("retry-fence-first", "answer", async (f, state) => {
+		await f.start();
+		await f.harness.waitForIdle(BACKGROUND_CONTEXT);
+		const held = pendingRemote<void>();
+		held.promise.catch(() => undefined);
+		f.dependencies.beforeRetrySeal = async () => {
+			await held.promise;
+			return "synthetic retry seal failure";
+		};
+		f.fixture.summary = "error-once";
+		const compacting = f.host.compact("command");
+		compacting.catch(() => undefined);
+		await until(
+			() =>
+				state.storage.sql
+					.exec(
+						"SELECT effect_id FROM host_retry_intent WHERE state = 'pending'",
+					)
+					.toArray().length === 1,
+		);
+		const closing = f.host.yield();
+		await until(
+			() =>
+				state.storage.sql.exec("SELECT fenced FROM host_meta").one().fenced ===
+				1,
+		);
+		expect(
+			state.storage.sql.exec("SELECT state FROM host_retry_intent").one().state,
+		).toBe("pending");
+		held.resolve();
+		await closing;
+		expect(
+			state.storage.sql.exec("SELECT fenced FROM host_meta").one().fenced,
+		).toBe(1);
+		expect(
+			state.storage.sql
+				.exec(
+					"SELECT retry_evidence FROM host_effects WHERE retry_evidence IS NOT NULL",
+				)
+				.toArray(),
+		).toEqual([]);
+		await expect(f.host.schedule("command")).rejects.toThrow();
+		await compacting.catch(() => undefined);
+		state.storage.sql.exec("UPDATE host_invocations SET state = 'closed'");
+		await expect(f.open()).rejects.toThrow(/Missing retry evidence/);
+	});
+	await runEncrypted("retry-fail-first", "answer", async (f, state) => {
+		await f.start();
+		await f.harness.waitForIdle(BACKGROUND_CONTEXT);
+		f.dependencies.beforeRetrySeal = async () => "synthetic retry seal failure";
+		f.fixture.summary = "error-once";
+		await f.host.compact("command").catch(() => undefined);
+		await until(
+			() =>
+				state.storage.sql
+					.exec("SELECT effect_id FROM host_retry_intent")
+					.toArray().length === 1,
+		);
+		await f.host.yield();
+		expect(
+			state.storage.sql.exec("SELECT fenced FROM host_meta").one().fenced,
+		).toBe(1);
+		expect(
+			state.storage.sql.exec("SELECT state FROM host_retry_intent").one().state,
+		).toBe("pending");
+		await expect(f.host.schedule("command")).rejects.toThrow();
+		state.storage.sql.exec("UPDATE host_invocations SET state = 'closed'");
+		await expect(f.open()).rejects.toThrow(/Missing retry evidence/);
+	});
+});
+
+it("encrypted L1: native alarm reopens with the retained binding and does not repeat the invocation", async () => {
+	const stub = env.PI_HOST_STORAGE.getByName("004-encrypted-l1-alarm");
+	const retained = await encryptedBinding();
+	await runInDurableObject(stub, async (instance, state) => {
+		instance.retained = retained;
+		const host = await instance.activate();
+		await host.accept("alarm-input", "Synthetic encrypted wakeup");
+		expect(await state.storage.getAlarm()).not.toBeNull();
+		await host.yield();
+	});
+	expect(await runDurableObjectAlarm(stub)).toBe(true);
+	await runInDurableObject(stub, async (instance, state) => {
+		const host = instance.host;
+		if (!host) throw new Error("Missing encrypted alarm host");
+		await instance.fixtures.at(-1)?.entered.promise;
+		expect(instance.fixtures.at(-1)?.providerCalls).toBe(1);
+		expect(
+			state.storage.sql
+				.exec("SELECT COUNT(*) AS count FROM host_invocations")
+				.one().count,
+		).toBe(1);
+		await host.yield();
+	});
+});
