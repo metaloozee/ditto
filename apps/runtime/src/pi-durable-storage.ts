@@ -36,23 +36,38 @@ import {
 	parseRuntimeCiphertextV1,
 	parseRuntimeManifest,
 	RUNTIME_CRYPTO_FORMAT_VERSION,
+	type RuntimeChunkManifestV1,
 	serializeRuntimeCiphertext,
-	serializeRuntimeManifest,
 } from "./runtime-crypto.ts";
 
 export type { RetainedStorageBinding } from "./host-private.ts";
 
-export const ENCRYPTED_STORAGE_FORMAT = 3;
+export const ENCRYPTED_STORAGE_FORMAT = 4;
 export const ENGINE_COMPAT = "pi-durable-1.0.1";
 export const TASK_COMPAT = "pi-task-v1";
 export const TOOL_COMPAT = "pi-tool-v1";
 export const PROVIDER_COMPAT = "provider-request-v1";
-export const ADAPTER_COMPAT = "ditto-encrypted-storage-3";
+export const ADAPTER_COMPAT = "ditto-encrypted-storage-4";
+export const STORAGE_ROW_BYTES = 64 * 1024;
+const MAX_RECORD_BYTES = 8 * 1024 * 1024;
+const MAX_BATCH_BYTES = 16 * 1024 * 1024;
+const MAX_NODES = 100_000;
+const MAX_DEPTH = 64;
+const MAX_WRITES = 1024;
+const MAX_REVISIONS = 4096;
+const MAX_CHUNKS = 4096;
+const MAX_BACKING_BYTES = 16 * 1024 * 1024;
+
+type SplitReference = {
+	kind: "split";
+	manifest: Omit<RuntimeChunkManifestV1, "chunks">;
+};
 const COUNTER_PLACEHOLDER = '{"kind":"unauthenticated-counter"}';
 
 export class EncryptedStorageError extends Error {
 	constructor(
 		readonly code:
+			| "size_limit"
 			| "incompatible"
 			| "plaintext_retained"
 			| "integrity"
@@ -168,6 +183,13 @@ type DocumentAction = {
 };
 
 const SCHEMA = [
+	`CREATE TABLE private_chunks (
+		write_id TEXT NOT NULL,
+		ordinal INTEGER NOT NULL,
+		record_id TEXT NOT NULL,
+		content TEXT NOT NULL CHECK (json_valid(content) AND length(CAST(content AS BLOB)) <= ${STORAGE_ROW_BYTES}),
+		PRIMARY KEY (write_id, ordinal)
+	) STRICT`,
 	`CREATE TABLE durable_metadata (
 		singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
 		next_id TEXT NOT NULL,
@@ -308,12 +330,10 @@ function maxSql(db: Query, sql: string): number | null {
 	return integer(row, "n");
 }
 
-function encodeJson(value: unknown): string {
-	return JSON.stringify(value);
-}
-
 function encodeIndexedString(value: string): string {
-	return JSON.stringify(value);
+	const encoded = JSON.stringify(value);
+	if (new TextEncoder().encode(encoded).byteLength > 1024) sizeDenied();
+	return encoded;
 }
 
 function cursorId(cursor: Cursor | undefined): number | undefined {
@@ -471,7 +491,71 @@ function query(storage: DurableObjectStorage, isActive: () => boolean): Query {
 export type EncryptedStorageOpenOptions = {
 	inlineMaxBytes?: number;
 	chunkBytes?: number;
+	maxRecordBytes?: number;
+	maxBatchBytes?: number;
+	maxNodes?: number;
+	maxDepth?: number;
+	maxWrites?: number;
+	maxRevisions?: number;
+	maxBackingBytes?: number;
 };
+
+function sizeDenied(): never {
+	throw new EncryptedStorageError(
+		"size_limit",
+		"Private storage size limit exceeded",
+	);
+}
+
+function ceiling(value: number | undefined, fallback: number): number {
+	const selected = value ?? fallback;
+	if (!Number.isSafeInteger(selected) || selected < 1 || selected > fallback)
+		return sizeDenied();
+	return selected;
+}
+
+function boundedJson(
+	value: unknown,
+	options: EncryptedStorageOpenOptions,
+): string {
+	const maxNodes = ceiling(options.maxNodes, MAX_NODES);
+	const maxDepth = ceiling(options.maxDepth, MAX_DEPTH);
+	const maxBytes = ceiling(options.maxRecordBytes, MAX_RECORD_BYTES);
+	let stringBytes = 0;
+	let nodes = 0;
+	const ancestors = new Set<object>();
+	function visit(current: unknown, depth: number): void {
+		if (++nodes > maxNodes || depth > maxDepth) sizeDenied();
+		if (typeof current === "string") {
+			if (current.length > maxBytes) sizeDenied();
+			stringBytes += new TextEncoder().encode(current).byteLength;
+			if (stringBytes > maxBytes) sizeDenied();
+		}
+		if (current === null || typeof current !== "object") return;
+		if (Array.isArray(current) && current.length > maxNodes - nodes)
+			sizeDenied();
+		if (ancestors.has(current)) sizeDenied();
+		ancestors.add(current);
+		if (Array.isArray(current)) {
+			for (const child of current) visit(child, depth + 1);
+		} else {
+			for (const [key, child] of Object.entries(current)) {
+				visit(key, depth + 1);
+				visit(child, depth + 1);
+			}
+		}
+		ancestors.delete(current);
+	}
+	visit(value, 0);
+	const serialized = JSON.stringify(value);
+	if (
+		typeof serialized !== "string" ||
+		new TextEncoder().encode(serialized).byteLength >
+			ceiling(options.maxRecordBytes, MAX_RECORD_BYTES)
+	)
+		sizeDenied();
+	return serialized;
+}
 
 /** Public Pi Storage over DO SQLite. Private record and revision bodies are encrypted before SQL. */
 export class EncryptedPiStorage implements Storage {
@@ -500,9 +584,24 @@ export class EncryptedPiStorage implements Storage {
 		binding: RetainedStorageBinding,
 		options: EncryptedStorageOpenOptions = {},
 	): Promise<EncryptedPiStorage> {
-		const created = await ensureSchema(storage);
-		const opened = new EncryptedPiStorage(storage, binding, 0, options);
-		if (created) await opened.sealInitialCounters();
+		ceiling(options.inlineMaxBytes, 32 * 1024);
+		ceiling(options.chunkBytes, 16 * 1024);
+		ceiling(options.maxRecordBytes, MAX_RECORD_BYTES);
+		ceiling(options.maxBatchBytes, MAX_BATCH_BYTES);
+		ceiling(options.maxNodes, MAX_NODES);
+		ceiling(options.maxDepth, MAX_DEPTH);
+		ceiling(options.maxWrites, MAX_WRITES);
+		ceiling(options.maxRevisions, MAX_REVISIONS);
+		ceiling(options.maxBackingBytes, MAX_BACKING_BYTES);
+		const opened = new EncryptedPiStorage(storage, binding, 0, { ...options });
+		let initialCounters:
+			| Awaited<ReturnType<typeof encryptRuntimePayload>>
+			| undefined;
+		const created = await ensureSchema(storage, async () => {
+			initialCounters = await opened.prepareInitialCounters();
+		});
+		if (created && initialCounters)
+			await opened.sealInitialCounters(initialCounters);
 		await opened.verifyAll();
 		return opened;
 	}
@@ -511,7 +610,18 @@ export class EncryptedPiStorage implements Storage {
 		writes: readonly StorageWrite[],
 		_context: Context,
 	): Promise<Seq> {
-		return this.admit(() => this.commitIsolated(writes));
+		// Snapshot caller-owned values before the first asynchronous preparation.
+		if (writes.length > ceiling(this.options.maxWrites, MAX_WRITES))
+			sizeDenied();
+		let total = 0;
+		const detached = writes.map((write) => {
+			const serialized = boundedJson(write, this.options);
+			total += new TextEncoder().encode(serialized).byteLength;
+			if (total > ceiling(this.options.maxBatchBytes, MAX_BATCH_BYTES))
+				sizeDenied();
+			return JSON.parse(serialized) as StorageWrite;
+		});
+		return this.admit(() => this.commitIsolated(detached));
 	}
 
 	private async commitIsolated(writes: readonly StorageWrite[]): Promise<Seq> {
@@ -542,6 +652,7 @@ export class EncryptedPiStorage implements Storage {
 					return undefined;
 				for (const statement of prepared.statements)
 					this.storage.sql.exec(statement.sql, ...statement.params);
+				this.assertBackingBounds();
 				return seqFromNumber(snapshot.nextSeq);
 			});
 			if (seq === undefined) continue;
@@ -1435,6 +1546,23 @@ export class EncryptedPiStorage implements Storage {
 				);
 			}
 			if (content !== undefined) {
+				const previous = documents.get(id);
+				if (
+					(previous?.revisions.length ?? 0) + 1 >
+						ceiling(this.options.maxRevisions, MAX_REVISIONS) &&
+					!(content.kind === "base" && isCurrentOnly(record))
+				)
+					sizeDenied();
+				if (content.kind === "delta") {
+					const before = await this.materializeCaptured(
+						previous,
+						idFromNumber<DocumentId>(id),
+						"current",
+					);
+					if (before === undefined)
+						throw new Error("Document delta has no base");
+					boundedJson(apply(before.value, content.ops as Op[]), this.options);
+				} else boundedJson(content.value, this.options);
 				if (content.kind === "base" && isCurrentOnly(record))
 					statements.push({
 						sql: "DELETE FROM document_revisions WHERE document_id = ?",
@@ -1493,6 +1621,11 @@ export class EncryptedPiStorage implements Storage {
 			throw new Error(`Document ${id} does not retain historical content`);
 		if (!isAliveAt(record, at)) return undefined;
 		const upper = at === "current" ? Number.MAX_SAFE_INTEGER : at;
+		if (
+			captured.revisions.length >
+			ceiling(this.options.maxRevisions, MAX_REVISIONS)
+		)
+			sizeDenied();
 		const visible = captured.revisions.filter(
 			(revision) => revision.seq <= upper,
 		);
@@ -1522,9 +1655,11 @@ export class EncryptedPiStorage implements Storage {
 			if (!Array.isArray(revision.payload))
 				throw new EncryptedStorageError("integrity", "Invalid document delta");
 			value = apply(value, revision.payload as Op[]);
+			boundedJson(value, this.options);
 		}
 		if (typeof value !== "object" || value === null || Array.isArray(value))
 			throw new EncryptedStorageError("integrity", "Invalid document value");
+		boundedJson(value, this.options);
 		return {
 			record,
 			version: base.version,
@@ -1745,7 +1880,11 @@ export class EncryptedPiStorage implements Storage {
 				"integrity",
 				"Durable SQLite metadata is missing",
 			);
+		this.assertBackingBounds();
 		return JSON.stringify({
+			chunks: db.all(
+				"SELECT write_id, ordinal, record_id, content FROM private_chunks ORDER BY write_id, ordinal",
+			),
 			counters: [
 				text(counters, "next_id"),
 				integer(counters, "next_seq"),
@@ -1999,7 +2138,7 @@ export class EncryptedPiStorage implements Storage {
 		commitSeq: Seq,
 	): Promise<string> {
 		return this.encodeText(
-			encodeJson({ commitSeq, entry: value }),
+			boundedJson({ commitSeq, entry: value }, this.options),
 			`entries/${value.id}/commit/${commitSeq}`,
 		);
 	}
@@ -2038,7 +2177,7 @@ export class EncryptedPiStorage implements Storage {
 		payload: unknown,
 	): Promise<string> {
 		return this.encodeText(
-			encodeJson({ seq, kind, version, payload }),
+			boundedJson({ seq, kind, version, payload }, this.options),
 			`document_revisions/${id}/${seq}/${kind}/${version}`,
 		);
 	}
@@ -2085,22 +2224,60 @@ export class EncryptedPiStorage implements Storage {
 		value: unknown,
 		recordId: string,
 	): Promise<string> {
-		return this.encodeText(encodeJson(value), recordId);
+		return this.encodeText(boundedJson(value, this.options), recordId);
 	}
 
 	private async encodeText(
 		plaintext: string,
 		recordId: string,
+		prepared?: Awaited<ReturnType<typeof encryptRuntimePayload>>,
 	): Promise<string> {
-		const sealed = await encryptRuntimePayload(
-			new TextEncoder().encode(plaintext),
-			this.binding.keyring,
-			this.aad(recordId),
-			this.options,
-		);
-		return sealed.kind === "inline"
-			? serializeRuntimeCiphertext(sealed.envelope)
-			: serializeRuntimeManifest(sealed.manifest);
+		const bytes = new TextEncoder().encode(plaintext);
+		if (
+			bytes.byteLength > ceiling(this.options.maxRecordBytes, MAX_RECORD_BYTES)
+		)
+			sizeDenied();
+		const sealed =
+			prepared ??
+			(await encryptRuntimePayload(
+				bytes,
+				this.binding.keyring,
+				this.aad(recordId),
+				this.options,
+			));
+		if (sealed.kind === "inline") {
+			const encoded = serializeRuntimeCiphertext(sealed.envelope);
+			if (new TextEncoder().encode(encoded).byteLength > STORAGE_ROW_BYTES)
+				sizeDenied();
+			return encoded;
+		}
+		const { chunks, ...manifest } = sealed.manifest;
+		for (let ordinal = 0; ordinal < chunks.length; ordinal++) {
+			const encoded = serializeRuntimeCiphertext(chunks[ordinal]);
+			if (new TextEncoder().encode(encoded).byteLength > STORAGE_ROW_BYTES)
+				sizeDenied();
+			if (this.indexToken() !== this.verifiedIndex)
+				throw new EncryptedStorageError(
+					"integrity",
+					"Storage integrity failure",
+				);
+			this.assertBackingBounds(new TextEncoder().encode(encoded).byteLength, 1);
+			this.storage.sql.exec(
+				"INSERT INTO private_chunks (write_id, ordinal, record_id, content) VALUES (?, ?, ?, ?)",
+				manifest.writeId,
+				ordinal,
+				recordId,
+				encoded,
+			);
+			this.verifiedIndex = this.indexToken();
+		}
+		const reference: SplitReference = { kind: "split", manifest };
+		const encoded = JSON.stringify(reference);
+		if (new TextEncoder().encode(encoded).byteLength > STORAGE_ROW_BYTES)
+			sizeDenied();
+		// A reference is prepared only after reading and authenticating its persisted bytes.
+		await this.decodePlaintext(encoded, recordId);
+		return encoded;
 	}
 
 	private async decodeRecord<T>(stored: string, recordId: string): Promise<T> {
@@ -2114,6 +2291,8 @@ export class EncryptedPiStorage implements Storage {
 	): Promise<string> {
 		let parsed: unknown;
 		try {
+			if (new TextEncoder().encode(stored).byteLength > STORAGE_ROW_BYTES)
+				sizeDenied();
 			parsed = JSON.parse(stored) as unknown;
 		} catch {
 			throw new EncryptedStorageError("integrity", "Storage integrity failure");
@@ -2124,18 +2303,31 @@ export class EncryptedPiStorage implements Storage {
 				"Unresolved external record reference",
 			);
 		try {
-			const bytes = isManifest(parsed)
-				? await decryptRuntimePayload(
-						{ kind: "chunked", manifest: parseRuntimeManifest(parsed) },
-						this.binding.keyring,
-						this.aad(recordId),
-					)
-				: await decryptRuntimePayload(
-						{ kind: "inline", envelope: parseRuntimeCiphertextV1(parsed) },
-						this.binding.keyring,
-						this.aad(recordId),
-					);
-			return new TextDecoder().decode(bytes);
+			const split = this.readSplit(parsed, recordId);
+			const bytes =
+				split !== undefined
+					? await decryptRuntimePayload(
+							{ kind: "chunked", manifest: split },
+							this.binding.keyring,
+							this.aad(recordId),
+						)
+					: isManifest(parsed)
+						? await decryptRuntimePayload(
+								{ kind: "chunked", manifest: parseRuntimeManifest(parsed) },
+								this.binding.keyring,
+								this.aad(recordId),
+							)
+						: await decryptRuntimePayload(
+								{ kind: "inline", envelope: parseRuntimeCiphertextV1(parsed) },
+								this.binding.keyring,
+								this.aad(recordId),
+							);
+			if (
+				bytes.byteLength >
+				ceiling(this.options.maxRecordBytes, MAX_RECORD_BYTES)
+			)
+				sizeDenied();
+			return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
 		} catch (error) {
 			if (error instanceof EncryptedStorageError) throw error;
 			throw new EncryptedStorageError("integrity", "Storage integrity failure");
@@ -2144,13 +2336,150 @@ export class EncryptedPiStorage implements Storage {
 
 	private async decodeJson(stored: string, recordId: string): Promise<unknown> {
 		try {
-			return JSON.parse(
+			const value: unknown = JSON.parse(
 				await this.decodePlaintext(stored, recordId),
-			) as unknown;
+			);
+			boundedJson(value, this.options);
+			return value;
 		} catch (error) {
 			if (error instanceof EncryptedStorageError) throw error;
 			throw new EncryptedStorageError("integrity", "Storage integrity failure");
 		}
+	}
+
+	private readSplit(
+		value: unknown,
+		recordId: string,
+	): RuntimeChunkManifestV1 | undefined {
+		if (
+			typeof value !== "object" ||
+			value === null ||
+			!("kind" in value) ||
+			value.kind !== "split"
+		)
+			return undefined;
+		if (
+			!("manifest" in value) ||
+			typeof value.manifest !== "object" ||
+			value.manifest === null ||
+			Array.isArray(value.manifest)
+		)
+			throw new EncryptedStorageError("integrity", "Invalid private reference");
+		const manifest = value.manifest as Record<string, unknown>;
+		if (
+			manifest.version !== 1 ||
+			manifest.recordId !== recordId ||
+			typeof manifest.writeId !== "string" ||
+			!/^[0-9a-f]{32}$/.test(manifest.writeId) ||
+			typeof manifest.digest !== "string" ||
+			!/^[0-9a-f]{64}$/.test(manifest.digest) ||
+			manifest.formatVersion !== RUNTIME_CRYPTO_FORMAT_VERSION ||
+			typeof manifest.chunkCount !== "number" ||
+			!Number.isSafeInteger(manifest.chunkCount) ||
+			manifest.chunkCount < 1 ||
+			manifest.chunkCount > MAX_CHUNKS ||
+			typeof manifest.totalLength !== "number" ||
+			!Number.isSafeInteger(manifest.totalLength) ||
+			manifest.totalLength < 1 ||
+			manifest.totalLength >
+				ceiling(this.options.maxRecordBytes, MAX_RECORD_BYTES) ||
+			"chunks" in manifest
+		)
+			throw new EncryptedStorageError("integrity", "Invalid private reference");
+		const rows = direct(this.storage).all(
+			"SELECT ordinal, record_id, content FROM private_chunks WHERE write_id = ? ORDER BY ordinal",
+			manifest.writeId,
+		);
+		if (rows.length !== manifest.chunkCount)
+			throw new EncryptedStorageError("integrity", "Missing private chunks");
+		const chunks = rows.map((row, ordinal) => {
+			if (
+				integer(row, "ordinal") !== ordinal ||
+				text(row, "record_id") !== recordId ||
+				new TextEncoder().encode(text(row, "content")).byteLength >
+					STORAGE_ROW_BYTES
+			)
+				throw new EncryptedStorageError("integrity", "Invalid private chunk");
+			return parseRuntimeCiphertextV1(text(row, "content"));
+		});
+		return parseRuntimeManifest({ ...manifest, chunks });
+	}
+
+	private assertBackingBounds(extraBytes = 0, extraRows = 0): void {
+		const db = direct(this.storage);
+		let total = extraBytes;
+		let count = extraRows;
+		for (const [table, column] of [
+			["conversations", "record"],
+			["entries", "record"],
+			["tasks", "record"],
+			["submissions", "record"],
+			["documents", "record"],
+			["document_revisions", "content"],
+			["private_chunks", "content"],
+			["durable_metadata", "counter_record"],
+		]) {
+			const row = db.get(
+				`SELECT COUNT(*) AS n, COALESCE(SUM(length(CAST(${column} AS BLOB))), 0) AS bytes, COALESCE(MAX(length(CAST(${column} AS BLOB))), 0) AS largest FROM ${table}`,
+			);
+			if (row === undefined)
+				throw new EncryptedStorageError(
+					"integrity",
+					"Storage integrity failure",
+				);
+			total += integer(row, "bytes");
+			count += integer(row, "n");
+			if (integer(row, "largest") > STORAGE_ROW_BYTES) sizeDenied();
+		}
+		// Include a conservative allowance for routing columns and per-row SQLite overhead.
+		if (
+			total + count * 4096 >
+				ceiling(this.options.maxBackingBytes, MAX_BACKING_BYTES) ||
+			count > MAX_NODES
+		)
+			sizeDenied();
+	}
+
+	/** All committed references, including canonical history. Prepared orphan chunks are excluded; nothing is deleted. */
+	enumerateCommittedReferences(): Promise<
+		readonly Omit<RuntimeChunkManifestV1, "chunks">[]
+	> {
+		return this.admit(async () => {
+			const references = new Map<
+				string,
+				Omit<RuntimeChunkManifestV1, "chunks">
+			>();
+			for (const [table, column] of [
+				["conversations", "record"],
+				["entries", "record"],
+				["tasks", "record"],
+				["submissions", "record"],
+				["documents", "record"],
+				["document_revisions", "content"],
+				["durable_metadata", "counter_record"],
+			]) {
+				for (const row of direct(this.storage).all(
+					`SELECT ${column} AS body FROM ${table}`,
+				)) {
+					const value: unknown = JSON.parse(text(row, "body"));
+					if (
+						typeof value === "object" &&
+						value !== null &&
+						"kind" in value &&
+						value.kind === "split" &&
+						"manifest" in value
+					) {
+						const manifest = value.manifest as Omit<
+							RuntimeChunkManifestV1,
+							"chunks"
+						>;
+						this.readSplit(value, manifest.recordId);
+						references.set(manifest.writeId, manifest);
+					}
+				}
+			}
+			return [...references.values()];
+		});
 	}
 
 	private aad(recordId: string) {
@@ -2178,11 +2507,48 @@ export class EncryptedPiStorage implements Storage {
 		return row;
 	}
 
-	private async sealInitialCounters(): Promise<void> {
+	private async prepareInitialCounters() {
+		const bytes = new TextEncoder().encode(canonicalCounterPlaintext(2, 1));
+		if (
+			bytes.byteLength > ceiling(this.options.maxRecordBytes, MAX_RECORD_BYTES)
+		)
+			sizeDenied();
+		const sealed = await encryptRuntimePayload(
+			bytes,
+			this.binding.keyring,
+			this.aad(counterRecordId(2, 1)),
+			this.options,
+		);
+		const bodies: string[] = [];
+		if (sealed.kind === "inline") {
+			bodies.push(serializeRuntimeCiphertext(sealed.envelope));
+		} else {
+			const { chunks, ...manifest } = sealed.manifest;
+			if (chunks.length > MAX_CHUNKS) sizeDenied();
+			bodies.push(JSON.stringify({ kind: "split", manifest }));
+			for (const chunk of chunks)
+				bodies.push(serializeRuntimeCiphertext(chunk));
+		}
+		let backingBytes = bodies.length * 4096;
+		for (const body of bodies) {
+			const length = new TextEncoder().encode(body).byteLength;
+			if (length > STORAGE_ROW_BYTES) sizeDenied();
+			backingBytes += length;
+		}
+		if (backingBytes > ceiling(this.options.maxBackingBytes, MAX_BACKING_BYTES))
+			sizeDenied();
+		return sealed;
+	}
+
+	private async sealInitialCounters(
+		prepared: Awaited<ReturnType<typeof encryptRuntimePayload>>,
+	): Promise<void> {
+		this.verifiedIndex = this.indexToken();
 		const parsed = parseCounterColumns("2", 1);
 		const envelope = await this.encodeText(
 			canonicalCounterPlaintext(parsed.nextId, parsed.nextSeq),
 			counterRecordId(parsed.nextId, parsed.nextSeq),
+			prepared,
 		);
 		this.storage.transactionSync(() => {
 			const row = this.readCounterRow();
@@ -2330,7 +2696,10 @@ function isManifest(value: unknown): boolean {
 	);
 }
 
-async function ensureSchema(storage: DurableObjectStorage): Promise<boolean> {
+async function ensureSchema(
+	storage: DurableObjectStorage,
+	prepareInitialCounters: () => Promise<void>,
+): Promise<boolean> {
 	const existing = storage.sql
 		.exec<{ name: string }>(
 			"SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ditto_storage_meta'",
@@ -2347,6 +2716,7 @@ async function ensureSchema(storage: DurableObjectStorage): Promise<boolean> {
 				"plaintext_retained",
 				"Plaintext storage cannot be opened as retained",
 			);
+		await prepareInitialCounters();
 		storage.transactionSync(() => {
 			for (const statement of SCHEMA) storage.sql.exec(statement);
 		});
