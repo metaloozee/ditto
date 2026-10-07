@@ -1,0 +1,11 @@
+bd62574e6a9c8f283c24261a70817b73d1973576efb3e43ccbac9e23d35ae3ff  apps/runtime/src/pi-durable-storage.ts
+5cdf347498d007e43d5a2050600e1883009b23d3d9a898901609452b822538c5  apps/runtime/src/host-private.ts
+c35c0802056fe7cce4dc22c84708735f16a112611878435b72e3c1c6201a2fe9  apps/runtime/src/pi-durable-history.test.ts
+9878d45010635519bf892c63540c27ead0d91b6bb220a60cb4f623b3d58bb0dc  apps/runtime/src/pi-durable-host.ts
+66ef05fb3f6e4f4ac28b66bacc3866bbba013e8859b7f4b8ea331e3558f70fbe  apps/runtime/src/pi-durable-effects.test.ts
+37924b487447831595e5b6c56cbfe112f748d370d2442e17a788cc4bf06c9f2f  apps/runtime/src/pi-durable-host.test.ts
+941b90325c01cf436b73d600b4428f64e849b2bbd1124aea41d614600c43a232  apps/runtime/src/pi-durable-encrypted-corrections.test.ts
+81e76951b42137107d8ba54d967676ed8a74019637c561b4e22b9140346f4073  apps/runtime/src/runtime-crypto.ts
+ce0b66f21cf492e1607dd41d30b99ec2692d3b418ba84acd37d6c470d3713b50  apps/runtime/vitest.config.ts
+7256c70f697143daecece386fb57dc690cb0b739a353ad349c9fcb802bef9a57  plans/evidence/005-advisor-probes.test.ts
+1f4b5624cfb60b58087d1a41063032614d35ce895022f86f3d23c856f62752a2  plans/evidence/005-advisor-probes.config.ts
