@@ -11,6 +11,7 @@ import {
 	WorkerRef,
 } from "alchemy/cloudflare";
 import { config } from "dotenv";
+import type { CodexCredential } from "./apps/web/src/lib/codex-credential-do.ts";
 import {
 	fixtureWorkerAuth,
 	loadFixtureHostAuth,
@@ -144,6 +145,16 @@ async function createWebsite() {
 		bindings: {
 			DB: database,
 			Sandbox: sandbox,
+			CodexCredential: DurableObjectNamespace<CodexCredential>(
+				"codex-credential",
+				{
+					className: "CodexCredential",
+					sqlite: true,
+				},
+			),
+			CODEX_CREDENTIAL_CURRENT_KEY_VERSION:
+				process.env.CODEX_CREDENTIAL_CURRENT_KEY_VERSION ?? "",
+			CODEX_CREDENTIAL_KEYS: alchemy.secret(process.env.CODEX_CREDENTIAL_KEYS),
 			BACKUP_BUCKET: sandboxBackups,
 			CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID ?? "",
 			BETTER_AUTH_SECRET: alchemy.secret(process.env.BETTER_AUTH_SECRET),
@@ -185,9 +196,16 @@ async function createWebsite() {
 							class_name: "Sandbox",
 							name: "Sandbox",
 						},
+						{
+							class_name: "CodexCredential",
+							name: "CodexCredential",
+						},
 					],
 				},
-				migrations: [{ new_sqlite_classes: ["Sandbox"], tag: "v1" }],
+				migrations: [
+					{ new_sqlite_classes: ["Sandbox"], tag: "v1" },
+					{ new_sqlite_classes: ["CodexCredential"], tag: "v2" },
+				],
 			}),
 		},
 	});

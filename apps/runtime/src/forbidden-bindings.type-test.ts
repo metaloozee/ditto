@@ -17,6 +17,11 @@ import {
 } from "../../web/src/lib/workspace-runtime-policy.ts";
 
 type ProductSecretBinding =
+	| "CodexCredential"
+	| "CODEX_CREDENTIAL_KEYS"
+	| "CODEX_CREDENTIAL_CURRENT_KEY_VERSION"
+	| "CODEX_ACCESS_TOKEN"
+	| "CODEX_REFRESH_TOKEN"
 	| "OPENCODE_API_KEY"
 	| "BETTER_AUTH_SECRET"
 	| "GITHUB_APP_PRIVATE_KEY"
