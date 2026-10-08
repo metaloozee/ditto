@@ -18,6 +18,10 @@ const roots = [
 ];
 
 const forbidden = [
+	"codex-credential-do",
+	"codex-credential-crypto",
+	"codex-connection-product",
+	"codex-connection.functions",
 	"github-app",
 	"auth.ts",
 	"auth.client",

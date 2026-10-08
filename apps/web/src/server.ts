@@ -7,6 +7,7 @@ import {
 import handler from "@tanstack/react-start/server-entry";
 import { handleOutbound } from "#/lib/sandbox-egress-broker";
 
+export { CodexCredential } from "#/lib/codex-credential-do";
 export { ProductEntrypoint } from "#/lib/session-runtime-product";
 
 const PREVIEW_LAST_TRAFFIC_STORAGE_KEY = "ditto.previewLastTrafficAt";

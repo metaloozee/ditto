@@ -50,6 +50,7 @@ vi.mock("#/lib/sandbox-egress-broker", () => ({
 }));
 
 vi.mock("cloudflare:workers", () => ({
+	DurableObject: class DurableObject {},
 	WorkerEntrypoint: class WorkerEntrypoint {
 		ctx: unknown;
 		env: unknown;

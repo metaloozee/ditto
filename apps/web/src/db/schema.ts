@@ -31,6 +31,30 @@ export const user = sqliteTable("user", {
 	updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull(),
 });
 
+export const codexConnections = sqliteTable(
+	"codex_connections",
+	{
+		userId: text("user_id")
+			.primaryKey()
+			.references(() => user.id, { onDelete: "cascade" }),
+		generation: integer("generation").notNull(),
+		revoked: integer("revoked", { mode: "boolean" }).notNull().default(false),
+		status: text("status", {
+			enum: ["connected", "renewing", "reconnect_required", "disconnected"],
+		}).notNull(),
+		projectionVersion: integer("projection_version").notNull().default(0),
+		updatedAt: integer("updated_at").notNull(),
+	},
+	(table) => [
+		check("codex_generation", sql`${table.generation} > 0`),
+		check(
+			"codex_status",
+			sql`${table.status} IN ('connected','renewing','reconnect_required','disconnected')`,
+		),
+		check("codex_revoked", sql`${table.revoked} IN (0,1)`),
+	],
+);
+
 export const projects = sqliteTable(
 	"projects",
 	{
