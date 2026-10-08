@@ -1,8 +1,8 @@
 # 006: Establish Codex connection support and credential ownership
 
-Status: READY for separately requested fixture-backed execution. L2 is accepted and plans 004/005 are integrated. Readiness base: `432e332bbcb9a9361612e30a052c479604e621a8`. Historical planning base: `bcce03e`. Phase: L3, privileged access.
+Status: DONE for the [independently accepted fixture-backed local scope](evidence/006-advisor-final-review.md) at `ef172ef`. The requested correction fixes all three initial review blockers. Accepted source remains uncommitted and unintegrated in `/tmp/ditto-plan-006-o6dok7`; no integration is authorized. Historical readiness base: `432e332bbcb9a9361612e30a052c479604e621a8`. Historical planning base: `bcce03e`. Phase: L3, privileged access.
 
-The [005 integration](evidence/005-integration.md) supplies the accepted format-4 private-storage gate. Existing product entrypoint and Alchemy composition paths below were rechecked at the readiness base. Step 1 must still establish the supported authentication/discovery contract before implementing live connection endpoints. The web package uses Vitest 4 while the accepted Workers pool uses Vitest 3; step 3's compatibility gate remains mandatory. No Codex implementation, live-provider validation or deployment is authorized by this status update.
+The [005 integration](evidence/005-integration.md) supplies accepted L2. The [Codex contract](evidence/006-codex-contract.md) documents public-source evidence and unresolved Ditto hosted support. Live connection and renewal remain disabled; PD38 is `not run`. The separate product Workers test package resolves the Vitest 4/3 compatibility gate without changing existing resolutions. Independent credential, runtime and repository checks pass, including revision substitution and bounded-denial regressions. This acceptance does not complete L3 or authorize live-provider use, existing-environment migrations, deployment, staging or commit.
 Spec: `docs/specs/pi-durable-session-runtime.md`, decisions 1, 3.1–3.2, 4, 6, 12, 17–18; PD01, PD28, PD41; OD1, OD5–OD7.
 
 ## Outcome

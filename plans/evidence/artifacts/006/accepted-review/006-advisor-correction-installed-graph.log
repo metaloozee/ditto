@@ -1,0 +1,5 @@
+{"consumer":"web","vitest":"4.1.10","vite":"8.1.5","esbuild":"0.28.1"}
+{"consumer":"runtime","vitest":"3.2.7","vite":"7.3.6","esbuild":"0.28.1"}
+{"consumer":"credential-tests","vitest":"3.2.7","vite":"7.3.6","esbuild":"0.28.1"}
+{"consumer":"tsx","dependency":"esbuild","version":"0.28.1"}
+{"consumer":"@dotenvx/dotenvx","dependency":"undici","version":"7.28.0"}

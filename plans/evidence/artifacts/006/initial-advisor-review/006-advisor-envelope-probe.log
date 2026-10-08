@@ -1,0 +1,2 @@
+{"case":"plain","tokenBytes":8192,"envelopeChars":49371,"sealingAccepted":true,"opens":true,"errorCode":"none"}
+{"case":"json-expanded","tokenBytes":8192,"envelopeChars":295131,"sealingAccepted":true,"opens":false,"errorCode":"credential_integrity"}

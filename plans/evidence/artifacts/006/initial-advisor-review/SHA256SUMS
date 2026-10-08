@@ -1,0 +1,9 @@
+02b9f9d0bcc13e2ad3d67a14bbd5b11aeb05480d39087f34499af66bb484bca7  ./006-advisor-credentials-verify.log
+4d32a51b34e9bc16d2c48fe537849425bd9f1005fd7c04dbab1f1b14f3861ef0  ./006-advisor-envelope-probe.log
+ef22eac4968e5960ed36787c657bf908665713dade94f528d8b3dc6ab58f1a79  ./006-advisor-envelope-probe.mjs
+87ada8359899f690d5264219b9d5edb66bc5406c66618c8f8db5411ae5c61580  ./006-advisor-envelope-regression.log
+3abb513c5eee2396fda9656f049e3173b7857c7c75461adc7662a2bec2270516  ./006-advisor-record-revision-probe.mjs
+5d925636f5e7f59294d6bfc633fce63fe41a75c5d5ba81bde4f1c610fb62e24c  ./006-advisor-record-revision-regression.log
+3d41af23f1917a66bd3c86d2434911d7faba7340670e490908c8a29e6904fb64  ./006-advisor-runtime-verify.log
+e69cae95fcdc56081ccaf92485a8b0c17a8262a1e3a479416a5f2ad1fe0a3399  ./006-advisor-source.sha256
+8670f424206db8a784a74799042f85f5e4ff8e25d40a1bbe898c235e5f673de9  ./006-advisor-verify.log

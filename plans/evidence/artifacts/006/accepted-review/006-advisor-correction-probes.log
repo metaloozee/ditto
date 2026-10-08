@@ -1,0 +1,12 @@
+{"metadataUnchangedBeforeRead":true,"refreshDispatches":1,"status":"reconnect_required"}
+✔ replacing ciphertext alone cannot dispatch a previously spent fixture refresh (397.795753ms)
+✔ maximum plain token set still roundtrips within the persisted bound (12.540045ms)
+✔ JSON-expanded synthetic token sets are denied before a persistable envelope is returned (28.102941ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 614.466846

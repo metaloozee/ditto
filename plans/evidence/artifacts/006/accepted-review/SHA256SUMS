@@ -1,0 +1,9 @@
+f3b10e1960ce146c8e6d30f437f77c8e13a3bafddf739b20a4ff4586285535d8  ./006-advisor-accepted-source.sha256
+ee73680c667dca7b94b6c44249245187bea579b855fc43d7382999e84e9280f0  ./006-advisor-correction-credentials-verify.log
+c074899792cbfde4cf37729311f3d1824c46d732dc34635ff566b97ab8555820  ./006-advisor-correction-installed-graph.log
+7d976ff785888ade1e59cd2d0c8b30f462fa3201747867ebc1cc88f1b197b00d  ./006-advisor-correction-lock-preservation.log
+abbcf2b58b171340d1783aa1966f4a2fff6fff0ecf5157c5b79aef61a8b04bd4  ./006-advisor-correction-preservation.log
+c6d082f6412312df069a93db0f24cd25158120dc3d9b210688a644eeef62c7ed  ./006-advisor-correction-probes.log
+b0f916e905822b870b5f8fb719d6f0b9984156e1fd5565a2a6073cc0bbb7b98a  ./006-advisor-correction-runtime-verify.log
+5d09c29e5b0e04c558b5623f6832af562a2c55b6c1b2c6120befd93366258a05  ./006-advisor-correction-verify.log
+bf3759b07bfa93592edd453016478a13c4c2b9b48fd5bc35455a3874859d9faa  ./006-correction-envelope-bound-probe.mjs

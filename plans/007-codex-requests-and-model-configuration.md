@@ -1,6 +1,6 @@
 # 007: Guard Codex requests and conversation model changes
 
-Status: BLOCKED on 006 and passed L2. Base: `bcce03e`. Phase: L3.
+Status: BLOCKED pending 006 source integration and refresh against its [accepted fixture interfaces](evidence/006-advisor-final-review.md). L2 and 006's reviewed local fixture scope are accepted; 006 source remains uncommitted/unintegrated. Live authentication, account-capability and transport support remain unresolved. Historical base: `bcce03e`. Phase: L3.
 Spec: `docs/specs/pi-durable-session-runtime.md`, decisions 3, 5–6, 8–9, 12; PD01, PD13, PD15, PD28, PD38, PD41–PD42; OD1, OD5–OD7.
 
 ## Outcome and owner

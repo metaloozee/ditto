@@ -1,0 +1,414 @@
+$ pnpm check && pnpm typecheck && pnpm credentials:verify && pnpm test && pnpm build && pnpm runner:verify
+$ biome check
+apps/runtime/src/pi-durable-cooperative-fixture.ts:71:40 lint/suspicious/noConfusingVoidType  FIXABLE  ━━━━━━━━━━
+
+  ! void is confusing inside a union type.
+  
+    69 │ 		id: string,
+    70 │ 		context: Context,
+  > 71 │ 	) => void | string | Promise<string | void>,
+       │ 	                                      ^^^^
+    72 │ 	result: (
+    73 │ 		effect: string,
+  
+  i Unsafe fix: Use undefined instead.
+  
+     69  69 │   		id: string,
+     70  70 │   		context: Context,
+     71     │ - → )·=>·void·|·string·|·Promise<string·|·void>,
+         71 │ + → )·=>·void·|·string·|·Promise<string·|·undefined>,
+     72  72 │   	result: (
+     73  73 │   		effect: string,
+  
+
+apps/runtime/src/pi-durable-cooperative-fixture.ts:171:26 lint/suspicious/noConfusingVoidType  FIXABLE  ━━━━━━━━━━
+
+  ! void is confusing inside a union type.
+  
+    169 │ 					return message;
+    170 │ 				};
+  > 171 │ 				let effect: string | void;
+        │ 				                     ^^^^
+    172 │ 				let message: AssistantMessage;
+    173 │ 				if (guard) {
+  
+  i Unsafe fix: Use undefined instead.
+  
+    169 169 │   					return message;
+    170 170 │   				};
+    171     │ - → → → → let·effect:·string·|·void;
+        171 │ + → → → → let·effect:·string·|·undefined;
+    172 172 │   				let message: AssistantMessage;
+    173 173 │   				if (guard) {
+  
+
+apps/runtime/src/pi-durable-cooperative-fixture.ts:249:25 lint/suspicious/noConfusingVoidType  FIXABLE  ━━━━━━━━━━
+
+  ! void is confusing inside a union type.
+  
+    247 │ 				};
+    248 │ 			};
+  > 249 │ 			let effect: string | void;
+        │ 			                     ^^^^
+    250 │ 			let value: import("@earendil-works/pi-durable").ToolExecutionResult;
+    251 │ 			if (guard) {
+  
+  i Unsafe fix: Use undefined instead.
+  
+    247 247 │   				};
+    248 248 │   			};
+    249     │ - → → → let·effect:·string·|·void;
+        249 │ + → → → let·effect:·string·|·undefined;
+    250 250 │   			let value: import("@earendil-works/pi-durable").ToolExecutionResult;
+    251 251 │   			if (guard) {
+  
+
+apps/runtime/src/pi-durable-effects.test.ts:123:11 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    121 │ 		},
+    122 │ 		get fixture() {
+  > 123 │ 			return fixtures.at(-1)!;
+        │ 			       ^^^^^^^^^^^^^^^^
+    124 │ 		},
+    125 │ 		get harness() {
+  
+
+apps/runtime/src/pi-durable-effects.test.ts:235:20 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    233 │ 		await f.start();
+    234 │ 		await f.fixture.entered.promise;
+  > 235 │ 		const original = f.effects().find((row) => row.kind === "tool")!;
+        │ 		                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    236 │ 		const remote = f.fixture.remote;
+    237 │ 		await f.host.yield();
+  
+
+apps/runtime/src/pi-durable-effects.test.ts:395:21 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    393 │ 			f.fault = undefined;
+    394 │ 			f.unavailable = false;
+  > 395 │ 			const original = f.effects().find((row) => row.kind === "tool")!;
+        │ 			                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    396 │ 			for (let n = 0; n < 2; n++) {
+    397 │ 				await f.host.yield();
+  
+
+apps/runtime/src/pi-durable-effects.test.ts:592:20 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    590 │ 		await f.start();
+    591 │ 		await f.fixture.entered.promise;
+  > 592 │ 		const original = f.effects().find((row) => row.kind === "tool")!;
+        │ 		                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    593 │ 		await f.host.stop("stop", "command");
+    594 │ 		expect(f.runs()[0]?.state).toBe("stopping");
+  
+
+apps/runtime/src/pi-durable-effects.test.ts:621:17 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    619 │ 		await f.fixture.entered.promise;
+    620 │ 		await f.host.yield();
+  > 621 │ 		const first = f.runs()[0]!;
+        │ 		              ^^^^^^^^^^^^
+    622 │ 		expect(first.recovery_at).toBe(Number(first.interrupted_at) + 900_000);
+    623 │ 		f.now += 100;
+  
+
+apps/runtime/src/pi-durable-effects.test.ts:827:19 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    825 │ 		const effects = f.effects();
+    826 │ 		expect(f.fixture.providerCalls).toBe(3);
+  > 827 │ 		const summary = effects.find((row) =>
+        │ 		                ^^^^^^^^^^^^^^^^^^^^^
+  > 828 │ 			JSON.parse(String(row.correlation)).operation.startsWith(
+  > 829 │ 				"pi.compaction/",
+  > 830 │ 			),
+  > 831 │ 		)!;
+        │ 		^^
+    832 │ 		expect(JSON.parse(String(summary.correlation))).toMatchObject({
+    833 │ 			command: "follow",
+  
+
+apps/runtime/src/pi-durable-effects.test.ts:868:20 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    866 │ 		const task = await f.host.compact("command");
+    867 │ 		await f.fixture.entered.promise;
+  > 868 │ 		const original = f
+        │ 		                 ^
+  > 869 │ 			.effects()
+  > 870 │ 			.find(
+  > 871 │ 				(row) => JSON.parse(String(row.correlation)).task === Number(task),
+  > 872 │ 			)!;
+        │ 			^^
+    873 │ 		for (let n = 0; n < 2; n++) {
+    874 │ 			await f.host.yield();
+  
+
+apps/runtime/src/pi-durable-effects.test.ts:927:20 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    925 │ 		await f.start();
+    926 │ 		await f.fixture.entered.promise;
+  > 927 │ 		const original = f.effects().find((row) => row.kind === "tool")!;
+        │ 		                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    928 │ 		await f.host.yield();
+    929 │ 		f.now = Number(original.operation_deadline);
+  
+
+apps/runtime/src/pi-durable-effects.test.ts:944:18 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    942 │ 		await f.host.reconcile();
+    943 │ 		expect(f.fixture.providerCalls).toBe(2);
+  > 944 │ 		const effect = f
+        │ 		               ^
+  > 945 │ 			.effects()
+  > 946 │ 			.find(
+  > 947 │ 				(row) => JSON.parse(String(row.correlation)).task === Number(task),
+  > 948 │ 			)!;
+        │ 			^^
+    949 │ 		expect(effect.state).toBe("pi-committed");
+    950 │ 		const correlation = JSON.parse(String(effect.correlation));
+  
+
+apps/runtime/src/pi-durable-host.ts:1000:6 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+     998 │ 			if (effect.correlation) {
+     999 │ 				const correlation = this.correlation(
+  > 1000 │ 					this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
+         │ 					^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1001 │ 				);
+    1002 │ 				this.block("outcome-unknown", correlation.run);
+  
+
+apps/runtime/src/pi-durable-host.ts:1270:25 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1268 │ 			throw new Error("Competing or missing model producers");
+    1269 │ 		const task = await awaitWithContext(
+  > 1270 │ 			this.harness.getTask(candidates[0]!.record.id, context),
+         │ 			                     ^^^^^^^^^^^^^^
+    1271 │ 			context,
+    1272 │ 		);
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    1268 1268 │   			throw new Error("Competing or missing model producers");
+    1269 1269 │   		const task = await awaitWithContext(
+    1270      │ - → → → this.harness.getTask(candidates[0]!.record.id,·context),
+         1270 │ + → → → this.harness.getTask(candidates[0]?.record.id,·context),
+    1271 1271 │   			context,
+    1272 1272 │   		);
+  
+
+apps/runtime/src/pi-durable-host.ts:1403:5 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1401 │ 		if (prior) {
+    1402 │ 			const original = this.correlation(
+  > 1403 │ 				this.opened(`effect:${prior.id}:correlation`, prior.correlation)!,
+         │ 				^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1404 │ 			);
+    1405 │ 			const cp = record(task.state.checkpoint);
+  
+
+apps/runtime/src/pi-durable-host.ts:1407:16 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1405 │ 			const cp = record(task.state.checkpoint);
+    1406 │ 			const evidence = record(
+  > 1407 │ 				JSON.parse(this.opened(`effect:${prior.id}:evidence`, prior.evidence)!),
+         │ 				           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1408 │ 			);
+    1409 │ 			if (
+  
+
+apps/runtime/src/pi-durable-host.ts:2005:5 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    2003 │ 		for (const effect of effects) {
+    2004 │ 			const correlation = this.correlation(
+  > 2005 │ 				this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
+         │ 				^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2006 │ 			);
+    2007 │ 			const task = await awaitWithContext(
+  
+
+apps/runtime/src/pi-durable-host.ts:2022:6 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    2020 │ 			const evidence = record(
+    2021 │ 				JSON.parse(
+  > 2022 │ 					this.opened(`effect:${effect.id}:evidence`, effect.evidence)!,
+         │ 					^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2023 │ 				),
+    2024 │ 			);
+  
+
+biome.json:20:4 lint/suspicious/useBiomeIgnoreFolder  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Incorrect usage of ignore a folder found.
+  
+    18 │ 			"!**/src/routeTree.gen.ts",
+    19 │ 			"!**/src/styles.css",
+  > 20 │ 			"!plans/**",
+       │ 			^^^^^^^^^^^
+    21 │ 			"!docs/**"
+    22 │ 		]
+  
+  i Since version 2.2.0, ignoring folders doesn't require the use the trailing /**. This is a bug that affects version prior v2.2.0.
+  
+  i Safe fix: If you want to ignore a folder, use the following pattern instead: !plans.
+  
+    20 │ → → → "!plans/**",
+       │              ---  
+
+biome.json:21:4 lint/suspicious/useBiomeIgnoreFolder  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Incorrect usage of ignore a folder found.
+  
+    19 │ 			"!**/src/styles.css",
+    20 │ 			"!plans/**",
+  > 21 │ 			"!docs/**"
+       │ 			^^^^^^^^^^
+    22 │ 		]
+    23 │ 	},
+  
+  i Since version 2.2.0, ignoring folders doesn't require the use the trailing /**. This is a bug that affects version prior v2.2.0.
+  
+  i Safe fix: If you want to ignore a folder, use the following pattern instead: !docs.
+  
+    21 │ → → → "!docs/**"
+       │             --- 
+
+The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
+Diagnostics not shown: 17.
+Checked 296 files in 548ms. No fixes applied.
+Found 36 warnings.
+Found 1 info.
+$ pnpm --filter @ditto/web typecheck
+$ tsc --noEmit
+$ pnpm --filter @ditto/credential-tests typecheck && pnpm --filter @ditto/credential-tests exec vitest run src/codex-credential-do.worker.test.ts && pnpm --filter @ditto/credential-tests exec node --test crash.test.mjs
+$ tsc --noEmit
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/tmp/ditto-plan-006-o6dok7/apps/credential-tests[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+ [32m✓[39m src/codex-credential-do.worker.test.ts [2m([22m[2m16 tests[22m[2m)[22m[33m 2625[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m16 passed[39m[22m[90m (16)[39m
+[2m   Start at [22m 20:11:44
+[2m   Duration [22m 3.68s[2m (transform 60ms, setup 0ms, collect 81ms, tests 2.63s, environment 0ms, prepare 118ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+✔ credential imports and bindings remain product-only (8.283535ms)
+✔ actual workerd abort after upstream rotation survives two reactivations without redispatch (560.832642ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 819.556513
+$ pnpm --filter @ditto/web test
+$ vitest run
+Warning: Route file "/tmp/ditto-plan-006-o6dok7/apps/web/src/routes/project.$projectId.test.tsx" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/tmp/ditto-plan-006-o6dok7/apps/web/src/routes/-project.$projectId.test.tsx" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/tmp/ditto-plan-006-o6dok7/apps/web/src/routes/api.agent.control.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/tmp/ditto-plan-006-o6dok7/apps/web/src/routes/-api.agent.control.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/tmp/ditto-plan-006-o6dok7/apps/web/src/routes/api.agent.stream.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/tmp/ditto-plan-006-o6dok7/apps/web/src/routes/-api.agent.stream.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+
+ RUN  v4.1.10 /tmp/ditto-plan-006-o6dok7/apps/web
+
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+ ❯ src/server.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/server.test.ts [ src/server.test.ts ]
+Error: [vitest] No "DurableObject" export is defined on the "cloudflare:workers" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("cloudflare:workers"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ src/lib/codex-credential-do.ts:6:45
+      5|  openCredentials,
+      6|  sealCredentials,
+      7| } from "./codex-credential-crypto";
+       |                           ^
+      8|
+      9| export type ConnectionStatus =
+ ❯ src/server.ts:10:1
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 72 passed (73)
+      Tests  804 passed (804)
+   Start at  20:11:52
+   Duration  32.76s (transform 14.44s, setup 0ms, import 43.22s, tests 31.67s, environment 7.22s)
+
+/tmp/ditto-plan-006-o6dok7/apps/web:
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @ditto/web@ test: `vitest run`
+Exit status 1
+[ELIFECYCLE] Test failed. See above for more details.
+[ELIFECYCLE] Command failed with exit code 1.

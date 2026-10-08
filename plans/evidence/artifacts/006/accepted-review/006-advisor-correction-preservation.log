@@ -1,0 +1,8 @@
+historical probe unchanged: 006-advisor-envelope-probe.mjs
+historical probe unchanged: 006-advisor-record-revision-probe.mjs
+correction changed only expected five source/config/test files:
+pnpm-lock.yaml
+apps/credential-tests/src/codex-credential-do.worker.test.ts
+apps/web/src/lib/codex-connection.test.ts
+apps/web/src/lib/codex-credential-crypto.ts
+apps/web/src/lib/codex-credential-do.ts
