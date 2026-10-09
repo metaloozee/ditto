@@ -1,0 +1,10 @@
+$ pnpm --filter @ditto/web typecheck
+$ tsc --noEmit
+src/lib/codex-request-contract.test.ts(75,72): error TS2345: Argument of type '{ location: string; "content-encoding"?: undefined; "content-type"?: undefined; } | { "content-encoding": string; location?: undefined; "content-type"?: undefined; } | { "content-type": string; location?: undefined; "content-encoding"?: undefined; }' is not assignable to parameter of type 'Record<string, string> | undefined'.
+  Type '{ location: string; "content-encoding"?: undefined; "content-type"?: undefined; }' is not assignable to type 'Record<string, string>'.
+    Property '"content-encoding"' is incompatible with index signature.
+      Type 'undefined' is not assignable to type 'string'.
+/home/ayan/ditto-execution/plan-007-recovery/apps/web:
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @ditto/web@ typecheck: `tsc --noEmit`
+Exit status 2
+[ELIFECYCLE] Command failed with exit code 2.

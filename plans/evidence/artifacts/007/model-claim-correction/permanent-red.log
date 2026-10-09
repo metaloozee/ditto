@@ -1,0 +1,115 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/apps/runtime[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies authority during held flush, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"flush-authority","encrypted":false,"claimed":1,"receiptState":"absent","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies authority during held flush, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"flush-authority","encrypted":true,"claimed":1,"receiptState":"absent","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+ [31m❯[39m src/pi-durable-models.test.ts [2m([22m[2m26 tests[22m[2m | [22m[31m4 failed[39m[2m | [22m[33m22 skipped[39m[2m)[22m[33m 836[2mms[22m[39m
+[31m   [31m×[31m a rewound live claim cannot acknowledge consumption again, encrypted=false[39m[32m 231[2mms[22m[39m
+[31m     → promise resolved "undefined" instead of rejecting[39m
+   [2m[90m↓[39m[22m claim denies authority during held task, encrypted=false
+   [2m[90m↓[39m[22m claim denies Stop during held task, encrypted=false
+[31m   [31m×[31m claim denies authority during held flush, encrypted=false[39m[32m 181[2mms[22m[39m
+[31m     → promise resolved "undefined" instead of rejecting[39m
+   [2m[90m↓[39m[22m claim denies Stop during held flush, encrypted=false
+   [2m[90m↓[39m[22m concurrent exact claims reserve only once, encrypted=false
+   [2m[90m↓[39m[22m lost claim acknowledgment retains consumption across two reopens, encrypted=false
+   [2m[90m↓[39m[22m dispatch digest substitution denies before consumption, encrypted=false
+   [2m[90m↓[39m[22m a claimed exact attempt starts once and Stop retains its admitted work, encrypted=false
+   [2m[90m↓[39m[22m host model claim denies Stop while transport check is held, encrypted=false
+   [2m[90m↓[39m[22m host model claim rechecks local revocation after a held check, encrypted=false
+   [2m[90m↓[39m[22m host model claim denies an expired admitted attempt, encrypted=false
+   [2m[90m↓[39m[22m exact claim is one-shot and independent of the waiting provider lane, encrypted=false
+[31m   [31m×[31m a rewound live claim cannot acknowledge consumption again, encrypted=true[39m[32m 187[2mms[22m[39m
+[31m     → promise resolved "undefined" instead of rejecting[39m
+   [2m[90m↓[39m[22m claim denies authority during held task, encrypted=true
+   [2m[90m↓[39m[22m claim denies Stop during held task, encrypted=true
+[31m   [31m×[31m claim denies authority during held flush, encrypted=true[39m[32m 162[2mms[22m[39m
+[31m     → promise resolved "undefined" instead of rejecting[39m
+   [2m[90m↓[39m[22m claim denies Stop during held flush, encrypted=true
+   [2m[90m↓[39m[22m concurrent exact claims reserve only once, encrypted=true
+   [2m[90m↓[39m[22m lost claim acknowledgment retains consumption across two reopens, encrypted=true
+   [2m[90m↓[39m[22m dispatch digest substitution denies before consumption, encrypted=true
+   [2m[90m↓[39m[22m a claimed exact attempt starts once and Stop retains its admitted work, encrypted=true
+   [2m[90m↓[39m[22m host model claim denies Stop while transport check is held, encrypted=true
+   [2m[90m↓[39m[22m host model claim rechecks local revocation after a held check, encrypted=true
+   [2m[90m↓[39m[22m host model claim denies an expired admitted attempt, encrypted=true
+   [2m[90m↓[39m[22m exact claim is one-shot and independent of the waiting provider lane, encrypted=true
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 4 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/pi-durable-models.test.ts[2m > [22ma rewound live claim cannot acknowledge consumption again, encrypted=false
+[41m[1m FAIL [22m[49m src/pi-durable-models.test.ts[2m > [22ma rewound live claim cannot acknowledge consumption again, encrypted=true
+[31m[1mAssertionError[22m: promise resolved "undefined" instead of rejecting[39m
+
+- Expected: 
+Error {
+  "message": "rejected promise",
+}
+
++ Received: 
+undefined
+
+[90m [2m❯[22m Assertion.propertyGetter home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/vitest___@vitest_expect___chai.js:[2m1482:27[22m[39m
+[90m [2m❯[22m Object.proxyGetter [as get] home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/vitest___@vitest_expect___chai.js:[2m1564:22[22m[39m
+[36m [2m❯[22m src/pi-durable-models.test.ts:[2m226:53[22m[39m
+    [90m224| [39m   [35mawait[39m f[33m.[39mdispatch[33m.[39m[34mclaim[39m(f[33m.[39mdispatch[33m.[39mattempt)[33m;[39m
+    [90m225| [39m   f[33m.[39mstorage[33m.[39msql[33m.[39m[34mexec[39m([32m"UPDATE host_model_dispatch SET claimed=0"[39m)[33m;[39m
+    [90m226| [39m   await expect(f.dispatch.claim(f.dispatch.attempt)).rejects.toThrow(…
+    [90m   | [39m                                                    [31m^[39m
+    [90m227| [39m   expect(await f.snapshot()).toMatchObject({ receiptState: "consumed"…
+    [90m228| [39m  }))[33m;[39m
+[90m [2m❯[22m src/pi-durable-models.test.ts:[2m162:4[22m[39m
+[90m [2m❯[22m maybeHandleRunRequest home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260702.1_@vitest+_25b5cb7e5ac90ba1c82363cf73fabbe1/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:[2m198:20[22m[39m
+[90m [2m❯[22m DurableObject.Wrapper.fetch home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260702.1_@vitest+_25b5cb7e5ac90ba1c82363cf73fabbe1/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:[2m563:22[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/pi-durable-models.test.ts[2m > [22mclaim denies authority during held flush, encrypted=false
+[41m[1m FAIL [22m[49m src/pi-durable-models.test.ts[2m > [22mclaim denies authority during held flush, encrypted=true
+[31m[1mAssertionError[22m: promise resolved "undefined" instead of rejecting[39m
+
+- Expected: 
+Error {
+  "message": "rejected promise",
+}
+
++ Received: 
+undefined
+
+[90m [2m❯[22m Assertion.propertyGetter home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/vitest___@vitest_expect___chai.js:[2m1482:27[22m[39m
+[90m [2m❯[22m Object.proxyGetter [as get] home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/vitest___@vitest_expect___chai.js:[2m1564:22[22m[39m
+[36m [2m❯[22m src/pi-durable-models.test.ts:[2m237:33[22m[39m
+    [90m235| [39m     [35mconst[39m claim [33m=[39m f[33m.[39mdispatch[33m.[39m[34mclaim[39m(f[33m.[39mdispatch[33m.[39mattempt)[33m;[39m
+    [90m236| [39m     // Observe rejection immediately so cancellation never becomes an…
+    [90m237| [39m     [35mconst[39m denied [33m=[39m [34mexpect[39m(claim)[33m.[39mrejects[33m.[39m[34mtoThrow[39m()[33m;[39m
+    [90m   | [39m                                [31m^[39m
+    [90m238| [39m     [35mawait[39m hold[33m.[39mentered[33m;[39m
+    [90m239| [39m     [35mconst[39m before [33m=[39m [35mawait[39m f[33m.[39m[34msnapshot[39m()[33m;[39m
+[90m [2m❯[22m src/pi-durable-models.test.ts:[2m162:10[22m[39m
+[90m [2m❯[22m maybeHandleRunRequest home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260702.1_@vitest+_25b5cb7e5ac90ba1c82363cf73fabbe1/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:[2m198:20[22m[39m
+[90m [2m❯[22m DurableObject.Wrapper.fetch home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260702.1_@vitest+_25b5cb7e5ac90ba1c82363cf73fabbe1/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:[2m563:22[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m4 failed[39m[22m[2m | [22m[33m22 skipped[39m[90m (26)[39m
+[2m   Start at [22m 18:50:07
+[2m   Duration [22m 2.86s[2m (transform 321ms, setup 0ms, collect 818ms, tests 836ms, environment 1ms, prepare 155ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-007-recovery/apps/runtime:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/pi-durable-models.test.ts -t 'rewound live|claim denies authority during held flush'

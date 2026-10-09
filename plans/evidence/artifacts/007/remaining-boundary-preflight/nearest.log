@@ -1,0 +1,132 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/apps/runtime[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[90mstdout[2m | src/pi-durable-model-preparation.gate.test.ts[2m > [22m[2m007 initial gate: prepared compaction must resume through the integrated mandatory guard after reopen before first admission
+[22m[39m007 compaction gate evidence {"task":11,"before":{"phase":"select"},"after":{"status":"terminal","outcome":{"status":"completed","result":{"submissionId":13}}},"attempts":2,"dispatched":2,"requests":[{"model":"faux-1"},{"model":"faux-1","thinking":"low","maxTokens":1024},{"model":"faux-2","thinking":"high"}]}
+
+ [32m✓[39m src/pi-durable-model-preparation.gate.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 728[2mms[22m[39m
+   [33m[2m✓[22m[39m 007 initial gate: prepared compaction must resume through the integrated mandatory guard after reopen before first admission [33m 532[2mms[22m[39m
+ [32m✓[39m src/pi-durable-effects.test.ts [2m([22m[2m62 tests[22m[2m)[22m[33m 25602[2mms[22m[39m
+   [33m[2m✓[22m[39m actual Pi unsafe recovery attempts the next tool and model but neither dispatches through two reopens [33m 543[2mms[22m[39m
+   [33m[2m✓[22m[39m completed synthetic mutations and follow-up membership survive reopen without repetition [33m 642[2mms[22m[39m
+   [33m[2m✓[22m[39m healthy later writes cannot clear a storage barrier but current trusted reconciliation can account for an undispatched admission [33m 362[2mms[22m[39m
+   [33m[2m✓[22m[39m actual generation and unsafe tool persist structured exact membership before dispatch [33m 405[2mms[22m[39m
+   [33m[2m✓[22m[39m lost shell result commit denies actual tool/model callbacks across two SQLite reopens, unavailable=false [33m 567[2mms[22m[39m
+   [33m[2m✓[22m[39m lost shell result commit denies actual tool/model callbacks across two SQLite reopens, unavailable=true [33m 513[2mms[22m[39m
+   [33m[2m✓[22m[39m unavailable failure marker is unnecessary for reopen denial from durable admitted shell [33m 440[2mms[22m[39m
+   [33m[2m✓[22m[39m safety result before failed Pi commit is not original successful tool receipt [33m 461[2mms[22m[39m
+   [33m[2m✓[22m[39m shell-replay is denied on actual registered tool before executor I/O [33m 404[2mms[22m[39m
+   [33m[2m✓[22m[39m implicit-read is denied on actual registered tool before executor I/O [33m 370[2mms[22m[39m
+   [33m[2m✓[22m[39m unsupported-write is denied on actual registered tool before executor I/O [33m 388[2mms[22m[39m
+   [33m[2m✓[22m[39m read repeats are explicit new observations on distinct original calls, never replay of an unresolved call [33m 494[2mms[22m[39m
+   [33m[2m✓[22m[39m uncooperative shell Stop is stopping, cancellation receipt is not termination [33m 355[2mms[22m[39m
+   [33m[2m✓[22m[39m delayed old-run Stop never cancels later run or revives terminal completion [33m 402[2mms[22m[39m
+   [33m[2m✓[22m[39m first interruption recovery deadline is fixed across two real reopens and expiry settles pending membership atomically [33m 329[2mms[22m[39m
+   [33m[2m✓[22m[39m public committed retry evidence authorizes a separate summary attempt without reopening or guessing current task [33m 653[2mms[22m[39m
+   [33m[2m✓[22m[39m known completed summary error retries after reopen with retained logical request and separately recorded spending [33m 439[2mms[22m[39m
+   [33m[2m✓[22m[39m validated first summary preparation survives close without admitting an effect [33m 365[2mms[22m[39m
+   [33m[2m✓[22m[39m missing first summary association after close denies the sole retained producer [33m 348[2mms[22m[39m
+   [33m[2m✓[22m[39m corrupt first summary association after close denies the sole retained producer [33m 360[2mms[22m[39m
+   [33m[2m✓[22m[39m selection handoff interrupted before Pi summarize commit remains exact or fails closed [33m 376[2mms[22m[39m
+   [33m[2m✓[22m[39m selection handoff interrupted after Pi summarize commit remains exact or fails closed [33m 352[2mms[22m[39m
+   [33m[2m✓[22m[39m owned blocking compaction excludes its actual waiting generation parent and preserves command membership [33m 457[2mms[22m[39m
+   [33m[2m✓[22m[39m mixed actual generation and compaction producers deny both under one lane [33m 350[2mms[22m[39m
+   [33m[2m✓[22m[39m unknown admitted summary blocks actual recovered requests through two SQLite reopens [33m 592[2mms[22m[39m
+   [33m[2m✓[22m[39m mapping during summary preparation denies actual dispatch [33m 303[2mms[22m[39m
+   [33m[2m✓[22m[39m competition during summary preparation denies actual dispatch [33m 350[2mms[22m[39m
+   [33m[2m✓[22m[39m normal compaction establishes hook-bound tuple and preserves completed summary across reopen [33m 402[2mms[22m[39m
+   [33m[2m✓[22m[39m correction: native settled no-work alarms consume serviced reconciliation without past rearm [33m 3298[2mms[22m[39m
+   [33m[2m✓[22m[39m correction: known final compaction error settles original run, retryable=false [33m 354[2mms[22m[39m
+   [33m[2m✓[22m[39m correction: known final compaction error settles original run, retryable=true [33m 685[2mms[22m[39m
+   [33m[2m✓[22m[39m correction: actual tool/manual-summary race reserves at most one operation and dispatch [33m 506[2mms[22m[39m
+   [33m[2m✓[22m[39m correction: fixed recovery expiry is enforced after held preparation [33m 416[2mms[22m[39m
+   [33m[2m✓[22m[39m correction: response-only recovery expiry rejects result before Pi consumes it [33m 405[2mms[22m[39m
+   [33m[2m✓[22m[39m correction: trusted abrupt takeover fixes recovery from the prior durable bound [33m 338[2mms[22m[39m
+   [33m[2m✓[22m[39m encrypted L1: guarded model and tool settle without a false integrity failure [33m 342[2mms[22m[39m
+   [33m[2m✓[22m[39m encrypted L1: compaction, retry, and follow-up keep distinct IDs and context order [33m 844[2mms[22m[39m
+   [33m[2m✓[22m[39m encrypted L1: result loss and Pi commit loss both block two reopens [33m 526[2mms[22m[39m
+   [33m[2m✓[22m[39m encrypted L1: persistence barrier and unknown shell block two reopens [33m 304[2mms[22m[39m
+   [33m[2m✓[22m[39m encrypted L1: retry seal failure fences before close and survives both orders [33m 496[2mms[22m[39m
+[90mstdout[2m | src/pi-durable-summary.test.ts[2m > [22m[2mconfiguration authority wait joins close by admitted deadline, external cancellation=false, encrypted=false
+[22m[39m007 configuration-close advisor probe {"encrypted":false,"externallyCanceled":false,"invocation":{"id":"cb18d9b0-8de4-4090-8aca-c3ca52cea203","started":1791473579452,"yield_at":1791473589452,"end_at":1791473590452},"observedAt":1791473590504,"elapsedMs":1052,"configuration":{"state":"failed","at":1791473589452,"error":"The operation was aborted"},"close":{"state":"complete","at":1791473589462},"remoteSettled":false,"joinedConfiguration":{"state":"failed","at":1791473589452,"error":"The operation was aborted"},"joinedClose":{"state":"complete","at":1791473589462}}
+
+[90mstdout[2m | src/pi-durable-summary.test.ts[2m > [22m[2mconfiguration authority wait joins close by admitted deadline, external cancellation=true, encrypted=false
+[22m[39m007 configuration-close advisor probe {"encrypted":false,"externallyCanceled":true,"invocation":{"id":"41169c23-0cfc-4354-b971-76ec91e3b598","started":1791473580657,"yield_at":1791473590657,"end_at":1791473591657},"observedAt":1791473591708,"elapsedMs":1051,"configuration":{"state":"failed","at":1791473590657,"error":"The operation was aborted"},"close":{"state":"complete","at":1791473590667},"remoteSettled":false,"joinedConfiguration":{"state":"failed","at":1791473590657,"error":"The operation was aborted"},"joinedClose":{"state":"complete","at":1791473590667}}
+
+[90mstdout[2m | src/pi-durable-summary.test.ts[2m > [22m[2mconfiguration authority wait joins close by admitted deadline, external cancellation=false, encrypted=true
+[22m[39m007 configuration-close advisor probe {"encrypted":true,"externallyCanceled":false,"invocation":{"id":"0eaeb191-f48f-475e-ad4d-76949434a975","started":1791473581856,"yield_at":1791473591856,"end_at":1791473592856},"observedAt":1791473592908,"elapsedMs":1052,"configuration":{"state":"failed","at":1791473591856,"error":"The operation was aborted"},"close":{"state":"complete","at":1791473591866},"remoteSettled":false,"joinedConfiguration":{"state":"failed","at":1791473591856,"error":"The operation was aborted"},"joinedClose":{"state":"complete","at":1791473591866}}
+
+[90mstdout[2m | src/pi-durable-summary.test.ts[2m > [22m[2mconfiguration authority wait joins close by admitted deadline, external cancellation=true, encrypted=true
+[22m[39m007 configuration-close advisor probe {"encrypted":true,"externallyCanceled":true,"invocation":{"id":"7e714b26-1957-4ebe-970c-86b84c10b497","started":1791473583040,"yield_at":1791473593040,"end_at":1791473594040},"observedAt":1791473594092,"elapsedMs":1052,"configuration":{"state":"failed","at":1791473593040,"error":"The operation was aborted"},"close":{"state":"complete","at":1791473593051},"remoteSettled":false,"joinedConfiguration":{"state":"failed","at":1791473593040,"error":"The operation was aborted"},"joinedClose":{"state":"complete","at":1791473593051}}
+
+ [32m✓[39m src/pi-durable-summary.test.ts [2m([22m[2m118 tests[22m[2m)[22m[33m 37549[2mms[22m[39m
+   [33m[2m✓[22m[39m custom summary places a real manual Pi receipt, encrypted=false [33m 363[2mms[22m[39m
+   [33m[2m✓[22m[39m custom summary places a real automatic Pi receipt, encrypted=false [33m 473[2mms[22m[39m
+   [33m[2m✓[22m[39m recorded success survives close before hook return and is accounted once, encrypted=false [33m 377[2mms[22m[39m
+   [33m[2m✓[22m[39m unknown admitted custom summary blocks two reopens without a second attempt, encrypted=false [33m 369[2mms[22m[39m
+   [33m[2m✓[22m[39m custom preparation-write persistence failure fences every later effect, encrypted=false [33m 301[2mms[22m[39m
+   [33m[2m✓[22m[39m custom result persistence failure fences every later effect, encrypted=false [33m 330[2mms[22m[39m
+   [33m[2m✓[22m[39m custom summary-result-write persistence failure fences every later effect, encrypted=false [33m 317[2mms[22m[39m
+   [33m[2m✓[22m[39m custom summary-result-flush persistence failure fences every later effect, encrypted=false [33m 329[2mms[22m[39m
+   [33m[2m✓[22m[39m custom summary places a real automatic Pi receipt, encrypted=true [33m 382[2mms[22m[39m
+   [33m[2m✓[22m[39m recorded success survives close before hook return and is accounted once, encrypted=true [33m 317[2mms[22m[39m
+   [33m[2m✓[22m[39m known custom failure error/0 settles the run with one nonrefundable attempt, encrypted=false [33m 328[2mms[22m[39m
+   [33m[2m✓[22m[39m known custom failure aborted/0 settles the run with one nonrefundable attempt, encrypted=false [33m 325[2mms[22m[39m
+   [33m[2m✓[22m[39m known custom failure stop/1 settles the run with one nonrefundable attempt, encrypted=false [33m 328[2mms[22m[39m
+   [33m[2m✓[22m[39m known custom failure toolUse/1 settles the run with one nonrefundable attempt, encrypted=false [33m 331[2mms[22m[39m
+   [33m[2m✓[22m[39m known custom failure stop/1 settles the run with one nonrefundable attempt, encrypted=false [33m 338[2mms[22m[39m
+   [33m[2m✓[22m[39m known custom failure error/0 settles the run with one nonrefundable attempt, encrypted=true [33m 332[2mms[22m[39m
+   [33m[2m✓[22m[39m custom summary stop after preparation dispatches nothing [33m 317[2mms[22m[39m
+   [33m[2m✓[22m[39m custom summary task after preparation dispatches nothing [33m 301[2mms[22m[39m
+   [33m[2m✓[22m[39m custom summary conversation after preparation dispatches nothing [33m 302[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration at before custom preparation survives reopen, encrypted=false [33m 517[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration at after custom preparation survives reopen, encrypted=false [33m 498[2mms[22m[39m
+   [33m[2m✓[22m[39m success at before actual Pi placement storage commit resumes without redispatch, encrypted=false [33m 382[2mms[22m[39m
+   [33m[2m✓[22m[39m success at after actual Pi placement storage commit resumes without redispatch, encrypted=false [33m 519[2mms[22m[39m
+   [33m[2m✓[22m[39m custom response provider schema violation never places a summary, encrypted=false [33m 333[2mms[22m[39m
+   [33m[2m✓[22m[39m custom response model schema violation never places a summary, encrypted=false [33m 329[2mms[22m[39m
+   [33m[2m✓[22m[39m custom response usage schema violation never places a summary, encrypted=false [33m 385[2mms[22m[39m
+   [33m[2m✓[22m[39m custom response timestamp schema violation never places a summary, encrypted=false [33m 333[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration at before custom preparation survives reopen, encrypted=true [33m 325[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration at after custom preparation survives reopen, encrypted=true [33m 307[2mms[22m[39m
+   [33m[2m✓[22m[39m transport interruption retains uncertainty with one reservation, encrypted=false [33m 338[2mms[22m[39m
+   [33m[2m✓[22m[39m forced configuration-winning transition holds asynchronous preparation, encrypted=false [33m 602[2mms[22m[39m
+   [33m[2m✓[22m[39m forced preparation-winning transition holds asynchronous preparation, encrypted=false [33m 619[2mms[22m[39m
+   [33m[2m✓[22m[39m forced configuration-winning transition holds asynchronous preparation, encrypted=true [33m 485[2mms[22m[39m
+   [33m[2m✓[22m[39m forced preparation-winning transition holds asynchronous preparation, encrypted=true [33m 518[2mms[22m[39m
+   [33m[2m✓[22m[39m owning transition releases after cancel-configuration during asynchronous preparation, encrypted=false [33m 389[2mms[22m[39m
+   [33m[2m✓[22m[39m owning transition releases after stop during asynchronous preparation, encrypted=false [33m 386[2mms[22m[39m
+   [33m[2m✓[22m[39m owning transition releases after stop during asynchronous preparation, encrypted=true [33m 303[2mms[22m[39m
+   [33m[2m✓[22m[39m automatic waiting parent recovers at before-preparation, encrypted=false [33m 488[2mms[22m[39m
+   [33m[2m✓[22m[39m automatic waiting parent recovers at prepared, encrypted=false [33m 501[2mms[22m[39m
+   [33m[2m✓[22m[39m automatic waiting parent recovers at unknown, encrypted=false [33m 439[2mms[22m[39m
+   [33m[2m✓[22m[39m automatic waiting parent recovers at result, encrypted=false [33m 507[2mms[22m[39m
+   [33m[2m✓[22m[39m automatic waiting parent recovers at before-placement, encrypted=false [33m 354[2mms[22m[39m
+   [33m[2m✓[22m[39m automatic waiting parent recovers at after-placement, encrypted=false [33m 307[2mms[22m[39m
+   [33m[2m✓[22m[39m automatic waiting parent recovers at before-preparation, encrypted=true [33m 308[2mms[22m[39m
+   [33m[2m✓[22m[39m automatic waiting parent recovers at prepared, encrypted=true [33m 308[2mms[22m[39m
+   [33m[2m✓[22m[39m automatic waiting parent recovers at result, encrypted=true [33m 310[2mms[22m[39m
+   [33m[2m✓[22m[39m automatic waiting parent recovers at before-placement, encrypted=true [33m 325[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration authority wait joins close by admitted deadline, external cancellation=false, encrypted=false [33m 1200[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration authority wait joins close by admitted deadline, external cancellation=true, encrypted=false [33m 1198[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration authority wait joins close by admitted deadline, external cancellation=false, encrypted=true [33m 1185[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration authority wait joins close by admitted deadline, external cancellation=true, encrypted=true [33m 1183[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[32m182 passed[39m[22m[90m (182)[39m
+[2m   Start at [22m 17:31:24
+[2m   Duration [22m 39.51s[2m (transform 411ms, setup 0ms, collect 1.73s, tests 63.88s, environment 1ms, prepare 438ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

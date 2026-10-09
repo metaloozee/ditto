@@ -1,0 +1,120 @@
+{
+  "contracts": {
+    "vitestPassed": [
+      25
+    ],
+    "nodeTests": [],
+    "nodeFailures": [],
+    "vitestSkips": []
+  },
+  "brain": {
+    "vitestPassed": [
+      25,
+      3,
+      43
+    ],
+    "nodeTests": [],
+    "nodeFailures": [],
+    "vitestSkips": [
+      3
+    ]
+  },
+  "credentials": {
+    "vitestPassed": [
+      136
+    ],
+    "nodeTests": [
+      3
+    ],
+    "nodeFailures": [
+      0
+    ],
+    "vitestSkips": []
+  },
+  "runtime": {
+    "vitestPassed": [
+      387
+    ],
+    "nodeTests": [
+      6
+    ],
+    "nodeFailures": [
+      0
+    ],
+    "vitestSkips": []
+  },
+  "repository": {
+    "vitestPassed": [
+      136,
+      848,
+      79
+    ],
+    "nodeTests": [
+      3
+    ],
+    "nodeFailures": [
+      0
+    ],
+    "vitestSkips": []
+  },
+  "credentials-nearest-final": {
+    "vitestPassed": [
+      114
+    ],
+    "nodeTests": [],
+    "nodeFailures": [],
+    "vitestSkips": []
+  },
+  "runtime-nearest": {
+    "vitestPassed": [
+      232
+    ],
+    "nodeTests": [],
+    "nodeFailures": [],
+    "vitestSkips": []
+  },
+  "web-policy-nearest": {
+    "vitestPassed": [
+      45
+    ],
+    "nodeTests": [],
+    "nodeFailures": [],
+    "vitestSkips": []
+  },
+  "advisor-original-final": {
+    "vitestPassed": [
+      4
+    ],
+    "nodeTests": [],
+    "nodeFailures": [],
+    "vitestSkips": []
+  },
+  "advisor-host-product-final": {
+    "vitestPassed": [
+      3
+    ],
+    "nodeTests": [],
+    "nodeFailures": [],
+    "vitestSkips": []
+  },
+  "advisor-d1-final-rerun": {
+    "vitestPassed": [
+      2
+    ],
+    "nodeTests": [],
+    "nodeFailures": [],
+    "vitestSkips": [
+      114
+    ]
+  },
+  "original-configuration-close-final": {
+    "vitestPassed": [
+      4
+    ],
+    "nodeTests": [],
+    "nodeFailures": [],
+    "vitestSkips": [
+      114
+    ]
+  }
+}

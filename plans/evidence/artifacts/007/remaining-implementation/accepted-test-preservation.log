@@ -1,0 +1,2 @@
+apps/runtime/src/pi-durable-summary.test.ts exact adapter-only replacement: True
+apps/runtime/src/pi-durable-model-preparation.gate.test.ts exact adapter-only replacement: True

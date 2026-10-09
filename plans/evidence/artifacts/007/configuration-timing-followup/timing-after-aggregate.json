@@ -1,0 +1,8522 @@
+[
+  {
+    "test": "configuration correction: final product hold rechecks local current, encrypted=false",
+    "totalMs": 1107,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 706,
+        "max": 706
+      },
+      "host.durable": {
+        "count": 6,
+        "ms": 20,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 18,
+        "ms": 96,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 8,
+        "ms": 43,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 6,
+        "ms": 1,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 10,
+        "ms": 230,
+        "max": 25
+      },
+      "host.configurationAllowed": {
+        "count": 4,
+        "ms": 276,
+        "max": 87
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 97,
+        "max": 97
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 124,
+        "max": 124
+      },
+      "host.configurationIdentity": {
+        "count": 3,
+        "ms": 1,
+        "max": 1
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 2,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 201,
+        "max": 201
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 15,
+        "max": 15
+      }
+    }
+  },
+  {
+    "test": "configuration correction: final product hold rechecks local executor, encrypted=false",
+    "totalMs": 1079,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 702,
+        "max": 702
+      },
+      "host.durable": {
+        "count": 6,
+        "ms": 18,
+        "max": 9
+      },
+      "local.productD1": {
+        "count": 18,
+        "ms": 96,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 8,
+        "ms": 42,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 6,
+        "ms": 1,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 10,
+        "ms": 238,
+        "max": 27
+      },
+      "host.configurationAllowed": {
+        "count": 4,
+        "ms": 277,
+        "max": 83
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 90,
+        "max": 90
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 110,
+        "max": 110
+      },
+      "host.configurationIdentity": {
+        "count": 3,
+        "ms": 1,
+        "max": 1
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 206,
+        "max": 206
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      }
+    }
+  },
+  {
+    "test": "configuration correction: final product hold rechecks local generation, encrypted=false",
+    "totalMs": 1278,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 683,
+        "max": 683
+      },
+      "host.durable": {
+        "count": 16,
+        "ms": 92,
+        "max": 26
+      },
+      "local.productD1": {
+        "count": 24,
+        "ms": 131,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 14,
+        "ms": 76,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 10,
+        "ms": 246,
+        "max": 29
+      },
+      "host.configurationAllowed": {
+        "count": 4,
+        "ms": 285,
+        "max": 85
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 92,
+        "max": 92
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 115,
+        "max": 115
+      },
+      "host.seal": {
+        "count": 7,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 3,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 209,
+        "max": 209
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 15,
+        "max": 15
+      }
+    }
+  },
+  {
+    "test": "configuration correction: close cancels final product callback, encrypted=false",
+    "totalMs": 1109,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 687,
+        "max": 687
+      },
+      "host.durable": {
+        "count": 9,
+        "ms": 21,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 22,
+        "ms": 113,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 10,
+        "ms": 52,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 10,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 12,
+        "ms": 299,
+        "max": 46
+      },
+      "host.configurationAllowed": {
+        "count": 6,
+        "ms": 319,
+        "max": 79
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 2,
+        "ms": 90,
+        "max": 83
+      },
+      "host.open": {
+        "count": 2,
+        "ms": 120,
+        "max": 106
+      },
+      "host.configurationIdentity": {
+        "count": 8,
+        "ms": 0,
+        "max": 0
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 2,
+        "ms": 216,
+        "max": 187
+      },
+      "host.yield": {
+        "count": 3,
+        "ms": 13,
+        "max": 7
+      },
+      "host.configurationEvidence": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "host.piConfiguration": {
+        "count": 2,
+        "ms": 1,
+        "max": 1
+      }
+    }
+  },
+  {
+    "test": "owned configuration commits scoped duplicate/conflict outcomes and lost acknowledgments, encrypted=false",
+    "totalMs": 1484,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 680,
+        "max": 680
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 34,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 43,
+        "ms": 227,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 20,
+        "ms": 110,
+        "max": 7
+      },
+      "host.configurationLedger": {
+        "count": 23,
+        "ms": 8,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 23,
+        "ms": 563,
+        "max": 28
+      },
+      "host.configurationAllowed": {
+        "count": 13,
+        "ms": 668,
+        "max": 90
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 2,
+        "ms": 97,
+        "max": 96
+      },
+      "host.open": {
+        "count": 2,
+        "ms": 128,
+        "max": 120
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 36,
+        "ms": 2,
+        "max": 1
+      },
+      "host.configurationEvidence": {
+        "count": 30,
+        "ms": 5,
+        "max": 1
+      },
+      "pi.configure": {
+        "count": 2,
+        "ms": 11,
+        "max": 6
+      },
+      "host.piConfiguration": {
+        "count": 4,
+        "ms": 2,
+        "max": 1
+      },
+      "host.configureOwned": {
+        "count": 6,
+        "ms": 771,
+        "max": 248
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 12,
+        "max": 6
+      }
+    }
+  },
+  {
+    "test": "configuration crash at configuration-intent never reapplies an older choice, encrypted=false",
+    "totalMs": 1313,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 683,
+        "max": 683
+      },
+      "host.durable": {
+        "count": 13,
+        "ms": 35,
+        "max": 9
+      },
+      "local.productD1": {
+        "count": 32,
+        "ms": 164,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 15,
+        "ms": 75,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 16,
+        "ms": 2,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 17,
+        "ms": 440,
+        "max": 29
+      },
+      "host.configurationAllowed": {
+        "count": 9,
+        "ms": 507,
+        "max": 93
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 2,
+        "ms": 98,
+        "max": 92
+      },
+      "host.open": {
+        "count": 2,
+        "ms": 128,
+        "max": 115
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 22,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 4,
+        "ms": 410,
+        "max": 220
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 12,
+        "max": 7
+      },
+      "host.configurationEvidence": {
+        "count": 18,
+        "ms": 1,
+        "max": 1
+      },
+      "host.piConfiguration": {
+        "count": 3,
+        "ms": 1,
+        "max": 1
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "configuration crash at configuration-applied never reapplies an older choice, encrypted=false",
+    "totalMs": 1422,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 681,
+        "max": 681
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 39,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 37,
+        "ms": 199,
+        "max": 15
+      },
+      "local.authority": {
+        "count": 17,
+        "ms": 99,
+        "max": 15
+      },
+      "host.configurationLedger": {
+        "count": 17,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 20,
+        "ms": 515,
+        "max": 30
+      },
+      "host.configurationAllowed": {
+        "count": 10,
+        "ms": 605,
+        "max": 98
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 2,
+        "ms": 103,
+        "max": 97
+      },
+      "host.open": {
+        "count": 2,
+        "ms": 131,
+        "max": 118
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 23,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configurationEvidence": {
+        "count": 19,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 2,
+        "ms": 12,
+        "max": 6
+      },
+      "host.configureOwned": {
+        "count": 4,
+        "ms": 519,
+        "max": 244
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 12,
+        "max": 6
+      },
+      "host.piConfiguration": {
+        "count": 3,
+        "ms": 1,
+        "max": 1
+      }
+    }
+  },
+  {
+    "test": "configuration crash at configuration-outcome never reapplies an older choice, encrypted=false",
+    "totalMs": 1456,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 688,
+        "max": 688
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 32,
+        "max": 9
+      },
+      "local.productD1": {
+        "count": 37,
+        "ms": 194,
+        "max": 8
+      },
+      "local.authority": {
+        "count": 17,
+        "ms": 89,
+        "max": 7
+      },
+      "host.configurationLedger": {
+        "count": 17,
+        "ms": 4,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 20,
+        "ms": 559,
+        "max": 34
+      },
+      "host.configurationAllowed": {
+        "count": 10,
+        "ms": 643,
+        "max": 97
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 2,
+        "ms": 102,
+        "max": 102
+      },
+      "host.open": {
+        "count": 2,
+        "ms": 133,
+        "max": 126
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 23,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 19,
+        "ms": 3,
+        "max": 1
+      },
+      "pi.configure": {
+        "count": 2,
+        "ms": 10,
+        "max": 5
+      },
+      "host.piConfiguration": {
+        "count": 3,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 4,
+        "ms": 546,
+        "max": 240
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 11,
+        "max": 6
+      }
+    }
+  },
+  {
+    "test": "configuration correction: final product hold rechecks local current, encrypted=true",
+    "totalMs": 1123,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 686,
+        "max": 686
+      },
+      "host.durable": {
+        "count": 6,
+        "ms": 24,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 18,
+        "ms": 94,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 8,
+        "ms": 43,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 6,
+        "ms": 1,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 10,
+        "ms": 297,
+        "max": 40
+      },
+      "host.configurationAllowed": {
+        "count": 4,
+        "ms": 336,
+        "max": 101
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 111,
+        "max": 111
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 133,
+        "max": 133
+      },
+      "host.configurationIdentity": {
+        "count": 3,
+        "ms": 0,
+        "max": 0
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 2,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 246,
+        "max": 246
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "configuration correction: final product hold rechecks local executor, encrypted=true",
+    "totalMs": 1142,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 697,
+        "max": 697
+      },
+      "host.durable": {
+        "count": 6,
+        "ms": 26,
+        "max": 14
+      },
+      "local.productD1": {
+        "count": 18,
+        "ms": 95,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 8,
+        "ms": 42,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 6,
+        "ms": 1,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 10,
+        "ms": 305,
+        "max": 36
+      },
+      "host.configurationAllowed": {
+        "count": 4,
+        "ms": 343,
+        "max": 105
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 112,
+        "max": 112
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 135,
+        "max": 135
+      },
+      "host.configurationIdentity": {
+        "count": 3,
+        "ms": 0,
+        "max": 0
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configurationEvidence": {
+        "count": 2,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 250,
+        "max": 250
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "configuration correction: final product hold rechecks local generation, encrypted=true",
+    "totalMs": 1317,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 678,
+        "max": 678
+      },
+      "host.durable": {
+        "count": 16,
+        "ms": 89,
+        "max": 12
+      },
+      "local.productD1": {
+        "count": 24,
+        "ms": 125,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 14,
+        "ms": 73,
+        "max": 7
+      },
+      "host.configurationLedger": {
+        "count": 6,
+        "ms": 2,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 10,
+        "ms": 301,
+        "max": 38
+      },
+      "host.configurationAllowed": {
+        "count": 4,
+        "ms": 338,
+        "max": 103
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 111,
+        "max": 111
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 129,
+        "max": 129
+      },
+      "host.seal": {
+        "count": 7,
+        "ms": 2,
+        "max": 1
+      },
+      "host.configurationIdentity": {
+        "count": 3,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 2,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 245,
+        "max": 245
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 16,
+        "max": 16
+      }
+    }
+  },
+  {
+    "test": "configuration correction: close cancels final product callback, encrypted=true",
+    "totalMs": 1246,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 709,
+        "max": 709
+      },
+      "host.durable": {
+        "count": 9,
+        "ms": 24,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 22,
+        "ms": 125,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 10,
+        "ms": 59,
+        "max": 7
+      },
+      "host.configurationLedger": {
+        "count": 10,
+        "ms": 2,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 12,
+        "ms": 415,
+        "max": 62
+      },
+      "host.configurationAllowed": {
+        "count": 6,
+        "ms": 436,
+        "max": 114
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 2,
+        "ms": 128,
+        "max": 122
+      },
+      "host.open": {
+        "count": 2,
+        "ms": 157,
+        "max": 141
+      },
+      "host.configurationIdentity": {
+        "count": 8,
+        "ms": 0,
+        "max": 0
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 2,
+        "ms": 289,
+        "max": 250
+      },
+      "host.yield": {
+        "count": 3,
+        "ms": 10,
+        "max": 5
+      },
+      "host.configurationEvidence": {
+        "count": 6,
+        "ms": 1,
+        "max": 1
+      },
+      "host.piConfiguration": {
+        "count": 2,
+        "ms": 1,
+        "max": 1
+      }
+    }
+  },
+  {
+    "test": "owned configuration commits scoped duplicate/conflict outcomes and lost acknowledgments, encrypted=true",
+    "totalMs": 1743,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 718,
+        "max": 718
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 49,
+        "max": 11
+      },
+      "local.productD1": {
+        "count": 43,
+        "ms": 232,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 20,
+        "ms": 106,
+        "max": 7
+      },
+      "host.configurationLedger": {
+        "count": 23,
+        "ms": 8,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 23,
+        "ms": 789,
+        "max": 36
+      },
+      "host.configurationAllowed": {
+        "count": 13,
+        "ms": 888,
+        "max": 117
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 2,
+        "ms": 125,
+        "max": 124
+      },
+      "host.open": {
+        "count": 2,
+        "ms": 154,
+        "max": 146
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 36,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configurationEvidence": {
+        "count": 30,
+        "ms": 6,
+        "max": 1
+      },
+      "pi.configure": {
+        "count": 2,
+        "ms": 2,
+        "max": 1
+      },
+      "host.piConfiguration": {
+        "count": 4,
+        "ms": 2,
+        "max": 1
+      },
+      "host.configureOwned": {
+        "count": 6,
+        "ms": 1007,
+        "max": 320
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 11,
+        "max": 6
+      }
+    }
+  },
+  {
+    "test": "configuration crash at configuration-intent never reapplies an older choice, encrypted=true",
+    "totalMs": 1499,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 697,
+        "max": 697
+      },
+      "host.durable": {
+        "count": 13,
+        "ms": 46,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 32,
+        "ms": 164,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 15,
+        "ms": 78,
+        "max": 7
+      },
+      "host.configurationLedger": {
+        "count": 16,
+        "ms": 2,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 17,
+        "ms": 607,
+        "max": 40
+      },
+      "host.configurationAllowed": {
+        "count": 9,
+        "ms": 679,
+        "max": 120
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 2,
+        "ms": 132,
+        "max": 126
+      },
+      "host.open": {
+        "count": 2,
+        "ms": 157,
+        "max": 144
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 22,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configureOwned": {
+        "count": 4,
+        "ms": 543,
+        "max": 295
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 10,
+        "max": 5
+      },
+      "host.configurationEvidence": {
+        "count": 18,
+        "ms": 4,
+        "max": 1
+      },
+      "host.piConfiguration": {
+        "count": 3,
+        "ms": 1,
+        "max": 1
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      }
+    }
+  },
+  {
+    "test": "configuration crash at configuration-applied never reapplies an older choice, encrypted=true",
+    "totalMs": 3190,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 687,
+        "max": 687
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 51,
+        "max": 11
+      },
+      "local.productD1": {
+        "count": 37,
+        "ms": 1044,
+        "max": 840
+      },
+      "local.authority": {
+        "count": 17,
+        "ms": 938,
+        "max": 840
+      },
+      "host.configurationLedger": {
+        "count": 17,
+        "ms": 6,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 20,
+        "ms": 1433,
+        "max": 709
+      },
+      "host.configurationAllowed": {
+        "count": 10,
+        "ms": 2370,
+        "max": 954
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 2,
+        "ms": 819,
+        "max": 811
+      },
+      "host.open": {
+        "count": 2,
+        "ms": 846,
+        "max": 831
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 23,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configurationEvidence": {
+        "count": 19,
+        "ms": 6,
+        "max": 1
+      },
+      "pi.configure": {
+        "count": 2,
+        "ms": 3,
+        "max": 2
+      },
+      "host.configureOwned": {
+        "count": 4,
+        "ms": 1551,
+        "max": 1134
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 11,
+        "max": 6
+      },
+      "host.piConfiguration": {
+        "count": 3,
+        "ms": 2,
+        "max": 1
+      }
+    }
+  },
+  {
+    "test": "configuration crash at configuration-outcome never reapplies an older choice, encrypted=true",
+    "totalMs": 1750,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 695,
+        "max": 695
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 47,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 37,
+        "ms": 201,
+        "max": 9
+      },
+      "local.authority": {
+        "count": 17,
+        "ms": 92,
+        "max": 7
+      },
+      "host.configurationLedger": {
+        "count": 17,
+        "ms": 2,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 20,
+        "ms": 839,
+        "max": 56
+      },
+      "host.configurationAllowed": {
+        "count": 10,
+        "ms": 924,
+        "max": 153
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 2,
+        "ms": 148,
+        "max": 148
+      },
+      "host.open": {
+        "count": 2,
+        "ms": 177,
+        "max": 168
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 23,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configurationEvidence": {
+        "count": 19,
+        "ms": 3,
+        "max": 1
+      },
+      "pi.configure": {
+        "count": 2,
+        "ms": 2,
+        "max": 1
+      },
+      "host.piConfiguration": {
+        "count": 3,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configureOwned": {
+        "count": 4,
+        "ms": 770,
+        "max": 341
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 10,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "owned configuration rejects wrong-user after actual D1 revocation with unchanged Pi state",
+    "totalMs": 1021,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 691,
+        "max": 691
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 13,
+        "max": 8
+      },
+      "local.productD1": {
+        "count": 10,
+        "ms": 54,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 5,
+        "ms": 28,
+        "max": 7
+      },
+      "host.configurationLedger": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 5,
+        "ms": 215,
+        "max": 46
+      },
+      "host.configurationAllowed": {
+        "count": 3,
+        "ms": 236,
+        "max": 137
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 143,
+        "max": 143
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 166,
+        "max": 166
+      },
+      "host.seal": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 52,
+        "max": 52
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      }
+    }
+  },
+  {
+    "test": "owned configuration rejects wrong-project-owner after actual D1 revocation with unchanged Pi state",
+    "totalMs": 1013,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 688,
+        "max": 688
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 14,
+        "max": 9
+      },
+      "local.productD1": {
+        "count": 10,
+        "ms": 53,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 5,
+        "ms": 26,
+        "max": 7
+      },
+      "host.configurationLedger": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 5,
+        "ms": 213,
+        "max": 44
+      },
+      "host.configurationAllowed": {
+        "count": 3,
+        "ms": 234,
+        "max": 139
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 146,
+        "max": 146
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 169,
+        "max": 169
+      },
+      "host.seal": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 47,
+        "max": 47
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "owned configuration rejects wrong-project after actual D1 revocation with unchanged Pi state",
+    "totalMs": 1026,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 693,
+        "max": 693
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 13,
+        "max": 8
+      },
+      "local.productD1": {
+        "count": 10,
+        "ms": 55,
+        "max": 8
+      },
+      "local.authority": {
+        "count": 5,
+        "ms": 29,
+        "max": 8
+      },
+      "host.configurationLedger": {
+        "count": 5,
+        "ms": 1,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 5,
+        "ms": 222,
+        "max": 48
+      },
+      "host.configurationAllowed": {
+        "count": 3,
+        "ms": 244,
+        "max": 145
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 151,
+        "max": 151
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 174,
+        "max": 174
+      },
+      "host.seal": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 52,
+        "max": 52
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "owned configuration rejects archived after actual D1 revocation with unchanged Pi state",
+    "totalMs": 1021,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 685,
+        "max": 685
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 13,
+        "max": 9
+      },
+      "local.productD1": {
+        "count": 10,
+        "ms": 53,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 5,
+        "ms": 25,
+        "max": 5
+      },
+      "host.configurationLedger": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 5,
+        "ms": 223,
+        "max": 48
+      },
+      "host.configurationAllowed": {
+        "count": 3,
+        "ms": 244,
+        "max": 142
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 147,
+        "max": 147
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 168,
+        "max": 168
+      },
+      "host.seal": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 49,
+        "max": 49
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "owned configuration rejects deleting after actual D1 revocation with unchanged Pi state",
+    "totalMs": 1006,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 673,
+        "max": 673
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 14,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 10,
+        "ms": 54,
+        "max": 8
+      },
+      "local.authority": {
+        "count": 5,
+        "ms": 27,
+        "max": 8
+      },
+      "host.configurationLedger": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 5,
+        "ms": 218,
+        "max": 45
+      },
+      "host.configurationAllowed": {
+        "count": 3,
+        "ms": 240,
+        "max": 145
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 150,
+        "max": 150
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 175,
+        "max": 175
+      },
+      "host.seal": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 48,
+        "max": 48
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "owned configuration rejects owner-version after actual D1 revocation with unchanged Pi state",
+    "totalMs": 1017,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 682,
+        "max": 682
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 15,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 10,
+        "ms": 49,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 5,
+        "ms": 24,
+        "max": 5
+      },
+      "host.configurationLedger": {
+        "count": 5,
+        "ms": 1,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 5,
+        "ms": 225,
+        "max": 47
+      },
+      "host.configurationAllowed": {
+        "count": 3,
+        "ms": 247,
+        "max": 143
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 149,
+        "max": 149
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 170,
+        "max": 170
+      },
+      "host.seal": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 52,
+        "max": 52
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      }
+    }
+  },
+  {
+    "test": "owned configuration rejects stale-identity after actual D1 revocation with unchanged Pi state",
+    "totalMs": 1034,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 688,
+        "max": 688
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 15,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 10,
+        "ms": 51,
+        "max": 8
+      },
+      "local.authority": {
+        "count": 5,
+        "ms": 24,
+        "max": 5
+      },
+      "host.configurationLedger": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 5,
+        "ms": 236,
+        "max": 49
+      },
+      "host.configurationAllowed": {
+        "count": 3,
+        "ms": 258,
+        "max": 152
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 158,
+        "max": 158
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 179,
+        "max": 179
+      },
+      "host.seal": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 53,
+        "max": 53
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "owned configuration rejects wrong-role after actual D1 revocation with unchanged Pi state",
+    "totalMs": 1037,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 692,
+        "max": 692
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 15,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 10,
+        "ms": 51,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 5,
+        "ms": 26,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 5,
+        "ms": 236,
+        "max": 49
+      },
+      "host.configurationAllowed": {
+        "count": 3,
+        "ms": 256,
+        "max": 152
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 158,
+        "max": 158
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 181,
+        "max": 181
+      },
+      "host.seal": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 52,
+        "max": 52
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "owned configuration rejects retired after actual D1 revocation with unchanged Pi state",
+    "totalMs": 1127,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 687,
+        "max": 687
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 30,
+        "max": 24
+      },
+      "local.productD1": {
+        "count": 10,
+        "ms": 76,
+        "max": 14
+      },
+      "local.authority": {
+        "count": 5,
+        "ms": 42,
+        "max": 14
+      },
+      "host.configurationLedger": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 5,
+        "ms": 286,
+        "max": 78
+      },
+      "host.configurationAllowed": {
+        "count": 3,
+        "ms": 315,
+        "max": 206
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 214,
+        "max": 214
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 266,
+        "max": 266
+      },
+      "host.seal": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 55,
+        "max": 55
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      }
+    }
+  },
+  {
+    "test": "owned configuration rejects lifecycle after actual D1 revocation with unchanged Pi state",
+    "totalMs": 1042,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 681,
+        "max": 681
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 15,
+        "max": 9
+      },
+      "local.productD1": {
+        "count": 10,
+        "ms": 53,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 5,
+        "ms": 26,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 5,
+        "ms": 249,
+        "max": 56
+      },
+      "host.configurationAllowed": {
+        "count": 3,
+        "ms": 269,
+        "max": 162
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 169,
+        "max": 169
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 190,
+        "max": 190
+      },
+      "host.seal": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 53,
+        "max": 53
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "owned configuration rejects revoked after actual D1 revocation with unchanged Pi state",
+    "totalMs": 1053,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 672,
+        "max": 672
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 14,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 10,
+        "ms": 52,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 5,
+        "ms": 26,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 6,
+        "ms": 270,
+        "max": 50
+      },
+      "host.configurationAllowed": {
+        "count": 4,
+        "ms": 290,
+        "max": 155
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 160,
+        "max": 160
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 184,
+        "max": 184
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 80,
+        "max": 80
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      }
+    }
+  },
+  {
+    "test": "owned configuration rejects disconnected after actual D1 revocation with unchanged Pi state",
+    "totalMs": 1107,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 686,
+        "max": 686
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 13,
+        "max": 8
+      },
+      "local.productD1": {
+        "count": 11,
+        "ms": 60,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 5,
+        "ms": 27,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 6,
+        "ms": 309,
+        "max": 53
+      },
+      "host.configurationAllowed": {
+        "count": 4,
+        "ms": 332,
+        "max": 169
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 175,
+        "max": 175
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 196,
+        "max": 196
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 106,
+        "max": 106
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "owned configuration rejects connection-generation after actual D1 revocation with unchanged Pi state",
+    "totalMs": 1072,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 665,
+        "max": 665
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 15,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 10,
+        "ms": 55,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 5,
+        "ms": 27,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 6,
+        "ms": 293,
+        "max": 60
+      },
+      "host.configurationAllowed": {
+        "count": 4,
+        "ms": 316,
+        "max": 172
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 177,
+        "max": 177
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 199,
+        "max": 199
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 82,
+        "max": 82
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "owned configuration rejects capability-revision after actual D1 revocation with unchanged Pi state",
+    "totalMs": 1115,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 684,
+        "max": 684
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 13,
+        "max": 9
+      },
+      "local.productD1": {
+        "count": 11,
+        "ms": 57,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 5,
+        "ms": 27,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 6,
+        "ms": 1,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 6,
+        "ms": 319,
+        "max": 56
+      },
+      "host.configurationAllowed": {
+        "count": 4,
+        "ms": 340,
+        "max": 172
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 178,
+        "max": 178
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 201,
+        "max": 201
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 107,
+        "max": 107
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      }
+    }
+  },
+  {
+    "test": "owned selection denies unavailable without a request",
+    "totalMs": 1068,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 689,
+        "max": 689
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 17,
+        "max": 11
+      },
+      "local.productD1": {
+        "count": 9,
+        "ms": 50,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 4,
+        "ms": 24,
+        "max": 7
+      },
+      "host.configurationLedger": {
+        "count": 4,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 5,
+        "ms": 271,
+        "max": 56
+      },
+      "host.configurationAllowed": {
+        "count": 3,
+        "ms": 289,
+        "max": 173
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 180,
+        "max": 180
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 205,
+        "max": 205
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 116,
+        "max": 116
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "owned selection denies revoked without a request",
+    "totalMs": 1089,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 703,
+        "max": 703
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 15,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 9,
+        "ms": 55,
+        "max": 10
+      },
+      "local.authority": {
+        "count": 4,
+        "ms": 26,
+        "max": 10
+      },
+      "host.configurationLedger": {
+        "count": 4,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 5,
+        "ms": 277,
+        "max": 58
+      },
+      "host.configurationAllowed": {
+        "count": 3,
+        "ms": 298,
+        "max": 182
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 188,
+        "max": 188
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 211,
+        "max": 211
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 116,
+        "max": 116
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      }
+    }
+  },
+  {
+    "test": "owned selection denies unsupported-model without a request",
+    "totalMs": 1061,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 683,
+        "max": 683
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 14,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 9,
+        "ms": 52,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 4,
+        "ms": 23,
+        "max": 7
+      },
+      "host.configurationLedger": {
+        "count": 4,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 5,
+        "ms": 280,
+        "max": 58
+      },
+      "host.configurationAllowed": {
+        "count": 3,
+        "ms": 296,
+        "max": 181
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 187,
+        "max": 187
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 211,
+        "max": 211
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 115,
+        "max": 115
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 4,
+        "max": 4
+      }
+    }
+  },
+  {
+    "test": "owned selection denies unsupported-thinking without a request",
+    "totalMs": 1079,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 688,
+        "max": 688
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 14,
+        "max": 9
+      },
+      "local.productD1": {
+        "count": 9,
+        "ms": 48,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 4,
+        "ms": 21,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 4,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 5,
+        "ms": 283,
+        "max": 59
+      },
+      "host.configurationAllowed": {
+        "count": 3,
+        "ms": 300,
+        "max": 179
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 185,
+        "max": 185
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 208,
+        "max": 208
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 121,
+        "max": 121
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "caller fields cannot authenticate or select another owned scope",
+    "totalMs": 1024,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 701,
+        "max": 701
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 14,
+        "max": 9
+      },
+      "local.productD1": {
+        "count": 6,
+        "ms": 33,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 3,
+        "ms": 17,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 3,
+        "ms": 173,
+        "max": 60
+      },
+      "host.configurationAllowed": {
+        "count": 4,
+        "ms": 185,
+        "max": 185
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 192,
+        "max": 192
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 216,
+        "max": 216
+      },
+      "host.seal": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 4,
+        "ms": 0,
+        "max": 0
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      }
+    }
+  },
+  {
+    "test": "a held actual D1 configuration authority result cannot survive capability revocation",
+    "totalMs": 1076,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 688,
+        "max": 688
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 15,
+        "max": 9
+      },
+      "local.productD1": {
+        "count": 9,
+        "ms": 47,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 4,
+        "ms": 21,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 4,
+        "ms": 2,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 5,
+        "ms": 290,
+        "max": 62
+      },
+      "host.configurationAllowed": {
+        "count": 3,
+        "ms": 309,
+        "max": 184
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 190,
+        "max": 190
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 210,
+        "max": 210
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 125,
+        "max": 125
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "owned configuration is reflected in an actual mandatory credential request",
+    "totalMs": 1860,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 661,
+        "max": 661
+      },
+      "host.durable": {
+        "count": 21,
+        "ms": 102,
+        "max": 23
+      },
+      "local.productD1": {
+        "count": 26,
+        "ms": 137,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 16,
+        "ms": 83,
+        "max": 7
+      },
+      "host.configurationLedger": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 10,
+        "ms": 597,
+        "max": 62
+      },
+      "host.configurationAllowed": {
+        "count": 4,
+        "ms": 635,
+        "max": 192
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 198,
+        "max": 198
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 219,
+        "max": 219
+      },
+      "host.seal": {
+        "count": 9,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 3,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 4,
+        "max": 4
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 457,
+        "max": 457
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 12,
+        "max": 12
+      }
+    }
+  },
+  {
+    "test": "a valid first default grants no later request admission after capability revocation",
+    "totalMs": 1271,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 686,
+        "max": 686
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 71,
+        "max": 20
+      },
+      "local.productD1": {
+        "count": 14,
+        "ms": 76,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 10,
+        "ms": 54,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 4,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 4,
+        "ms": 241,
+        "max": 61
+      },
+      "host.configurationAllowed": {
+        "count": 2,
+        "ms": 257,
+        "max": 193
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 198,
+        "max": 198
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 221,
+        "max": 221
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 11,
+        "max": 11
+      }
+    }
+  },
+  {
+    "test": "first owned conversation validates defaults without prompt membership, valid",
+    "totalMs": 1040,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 682,
+        "max": 682
+      },
+      "host.durable": {
+        "count": 4,
+        "ms": 11,
+        "max": 11
+      },
+      "local.productD1": {
+        "count": 8,
+        "ms": 46,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 4,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationAllowed": {
+        "count": 2,
+        "ms": 273,
+        "max": 205
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 211,
+        "max": 211
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 234,
+        "max": 234
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      }
+    }
+  },
+  {
+    "test": "first owned conversation validates defaults without prompt membership, unsupported-model",
+    "totalMs": 829,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 672,
+        "max": 672
+      },
+      "host.durable": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 2,
+        "ms": 12,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationAllowed": {
+        "count": 1,
+        "ms": 63,
+        "max": 63
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 63,
+        "max": 63
+      }
+    }
+  },
+  {
+    "test": "first owned conversation validates defaults without prompt membership, unsupported-thinking",
+    "totalMs": 830,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 684,
+        "max": 684
+      },
+      "host.durable": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 2,
+        "ms": 12,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationAllowed": {
+        "count": 1,
+        "ms": 63,
+        "max": 63
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 63,
+        "max": 63
+      }
+    }
+  },
+  {
+    "test": "first owned conversation validates defaults without prompt membership, unavailable",
+    "totalMs": 2321,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 2178,
+        "max": 2178
+      },
+      "host.durable": {
+        "count": 1,
+        "ms": 11,
+        "max": 11
+      },
+      "local.productD1": {
+        "count": 2,
+        "ms": 11,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationAllowed": {
+        "count": 1,
+        "ms": 63,
+        "max": 63
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 63,
+        "max": 63
+      }
+    }
+  },
+  {
+    "test": "first owned conversation validates defaults without prompt membership, revoked",
+    "totalMs": 826,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 690,
+        "max": 690
+      },
+      "host.durable": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 2,
+        "ms": 10,
+        "max": 5
+      },
+      "host.configurationLedger": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationAllowed": {
+        "count": 1,
+        "ms": 63,
+        "max": 63
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 63,
+        "max": 63
+      }
+    }
+  },
+  {
+    "test": "first owned conversation validates defaults without prompt membership, disconnected",
+    "totalMs": 811,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 687,
+        "max": 687
+      },
+      "host.durable": {
+        "count": 1,
+        "ms": 8,
+        "max": 8
+      },
+      "local.productD1": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationAllowed": {
+        "count": 1,
+        "ms": 47,
+        "max": 47
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 47,
+        "max": 47
+      }
+    }
+  },
+  {
+    "test": "first owned conversation validates defaults without prompt membership, local-current",
+    "totalMs": 954,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 680,
+        "max": 680
+      },
+      "host.durable": {
+        "count": 1,
+        "ms": 8,
+        "max": 8
+      },
+      "local.productD1": {
+        "count": 6,
+        "ms": 31,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationAllowed": {
+        "count": 1,
+        "ms": 204,
+        "max": 204
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 204,
+        "max": 204
+      }
+    }
+  },
+  {
+    "test": "first owned conversation validates defaults without prompt membership, local-executor",
+    "totalMs": 958,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 674,
+        "max": 674
+      },
+      "host.durable": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      },
+      "local.productD1": {
+        "count": 6,
+        "ms": 33,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationAllowed": {
+        "count": 1,
+        "ms": 211,
+        "max": 211
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 211,
+        "max": 211
+      }
+    }
+  },
+  {
+    "test": "local credential disconnect denies configuration before its D1 projection catches up",
+    "totalMs": 1115,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 710,
+        "max": 710
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 15,
+        "max": 9
+      },
+      "local.productD1": {
+        "count": 8,
+        "ms": 43,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 4,
+        "ms": 21,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 4,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 5,
+        "ms": 303,
+        "max": 68
+      },
+      "host.configurationAllowed": {
+        "count": 3,
+        "ms": 319,
+        "max": 208
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 214,
+        "max": 214
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 235,
+        "max": 235
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 111,
+        "max": 111
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      }
+    }
+  },
+  {
+    "test": "configuration in flight keeps the prepared request and changes the separately prepared summary",
+    "totalMs": 2498,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 682,
+        "max": 682
+      },
+      "host.durable": {
+        "count": 29,
+        "ms": 145,
+        "max": 23
+      },
+      "local.productD1": {
+        "count": 34,
+        "ms": 196,
+        "max": 25
+      },
+      "local.authority": {
+        "count": 23,
+        "ms": 134,
+        "max": 25
+      },
+      "host.configurationLedger": {
+        "count": 8,
+        "ms": 2,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 11,
+        "ms": 750,
+        "max": 70
+      },
+      "host.configurationAllowed": {
+        "count": 5,
+        "ms": 812,
+        "max": 236
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 222,
+        "max": 222
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 245,
+        "max": 245
+      },
+      "host.seal": {
+        "count": 16,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 4,
+        "ms": 2,
+        "max": 1
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.piConfiguration": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 537,
+        "max": 537
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "held host authority revocation rejects configuration without changing durable Pi state",
+    "totalMs": 1336,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 700,
+        "max": 700
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 15,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 14,
+        "ms": 77,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 7,
+        "ms": 40,
+        "max": 7
+      },
+      "host.configurationLedger": {
+        "count": 8,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 7,
+        "ms": 511,
+        "max": 74
+      },
+      "host.configurationAllowed": {
+        "count": 5,
+        "ms": 545,
+        "max": 232
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 239,
+        "max": 239
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 263,
+        "max": 263
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.piConfiguration": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 158,
+        "max": 158
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 7,
+        "max": 7
+      }
+    }
+  },
+  {
+    "test": "same key with concurrent changed payload has one durable winner",
+    "totalMs": 1713,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 690,
+        "max": 690
+      },
+      "host.durable": {
+        "count": 8,
+        "ms": 24,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 22,
+        "ms": 115,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 10,
+        "ms": 50,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 10,
+        "ms": 4,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 12,
+        "ms": 870,
+        "max": 78
+      },
+      "host.configurationAllowed": {
+        "count": 6,
+        "ms": 919,
+        "max": 235
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 231,
+        "max": 231
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 255,
+        "max": 255
+      },
+      "host.seal": {
+        "count": 3,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 8,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 6,
+        "ms": 2,
+        "max": 1
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.piConfiguration": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 2,
+        "ms": 1188,
+        "max": 633
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 7,
+        "max": 7
+      }
+    }
+  },
+  {
+    "test": "two actual owned sessions retain independent durable Pi selections",
+    "totalMs": 2700,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 696,
+        "max": 696
+      },
+      "host.durable": {
+        "count": 15,
+        "ms": 44,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 40,
+        "ms": 207,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 45,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 16,
+        "ms": 2,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 11,
+        "ms": 846,
+        "max": 83
+      },
+      "host.configurationAllowed": {
+        "count": 11,
+        "ms": 1820,
+        "max": 258
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 2,
+        "ms": 500,
+        "max": 254
+      },
+      "host.open": {
+        "count": 2,
+        "ms": 547,
+        "max": 276
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 10,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configurationEvidence": {
+        "count": 8,
+        "ms": 1,
+        "max": 1
+      },
+      "pi.configure": {
+        "count": 2,
+        "ms": 10,
+        "max": 5
+      },
+      "host.piConfiguration": {
+        "count": 4,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 3,
+        "ms": 1192,
+        "max": 612
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 10,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "owned configuration close cancels held authority and joins the owner lane",
+    "totalMs": 1208,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 697,
+        "max": 697
+      },
+      "host.durable": {
+        "count": 8,
+        "ms": 15,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 10,
+        "ms": 54,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 5,
+        "ms": 28,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 5,
+        "ms": 469,
+        "max": 147
+      },
+      "host.configurationAllowed": {
+        "count": 3,
+        "ms": 420,
+        "max": 250
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 2,
+        "ms": 256,
+        "max": 256
+      },
+      "host.open": {
+        "count": 2,
+        "ms": 286,
+        "max": 280
+      },
+      "host.seal": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 82,
+        "max": 82
+      },
+      "host.yield": {
+        "count": 3,
+        "ms": 12,
+        "max": 6
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      }
+    }
+  },
+  {
+    "test": "queued follow-up preparation uses the owned change, not acceptance-time selection",
+    "totalMs": 2602,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 666,
+        "max": 666
+      },
+      "host.durable": {
+        "count": 34,
+        "ms": 170,
+        "max": 20
+      },
+      "local.productD1": {
+        "count": 34,
+        "ms": 179,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 24,
+        "ms": 127,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 10,
+        "ms": 819,
+        "max": 84
+      },
+      "host.configurationAllowed": {
+        "count": 4,
+        "ms": 858,
+        "max": 260
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 258,
+        "max": 258
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 279,
+        "max": 279
+      },
+      "host.seal": {
+        "count": 16,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 3,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configurationEvidence": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 623,
+        "max": 623
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "owned configuration leaves retries separately admitted with new preparation-time selection",
+    "totalMs": 2609,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 680,
+        "max": 680
+      },
+      "host.durable": {
+        "count": 28,
+        "ms": 129,
+        "max": 20
+      },
+      "local.productD1": {
+        "count": 31,
+        "ms": 164,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 21,
+        "ms": 111,
+        "max": 7
+      },
+      "host.configurationLedger": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 10,
+        "ms": 857,
+        "max": 90
+      },
+      "host.configurationAllowed": {
+        "count": 4,
+        "ms": 896,
+        "max": 272
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 278,
+        "max": 278
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 302,
+        "max": 302
+      },
+      "host.seal": {
+        "count": 15,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 3,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 4,
+        "max": 4
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 639,
+        "max": 639
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "actual generation preparation survives close/reopen with an owned selection change",
+    "totalMs": 2400,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 668,
+        "max": 668
+      },
+      "host.durable": {
+        "count": 29,
+        "ms": 140,
+        "max": 11
+      },
+      "local.productD1": {
+        "count": 32,
+        "ms": 175,
+        "max": 11
+      },
+      "local.authority": {
+        "count": 21,
+        "ms": 116,
+        "max": 11
+      },
+      "host.configurationLedger": {
+        "count": 9,
+        "ms": 1,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 11,
+        "ms": 989,
+        "max": 94
+      },
+      "host.configurationAllowed": {
+        "count": 5,
+        "ms": 1032,
+        "max": 283
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 2,
+        "ms": 285,
+        "max": 285
+      },
+      "host.open": {
+        "count": 2,
+        "ms": 319,
+        "max": 304
+      },
+      "host.seal": {
+        "count": 11,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configurationIdentity": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 2,
+        "max": 2
+      },
+      "host.piConfiguration": {
+        "count": 2,
+        "ms": 2,
+        "max": 1
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 681,
+        "max": 681
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 23,
+        "max": 12
+      }
+    }
+  },
+  {
+    "test": "actual custom_summary preparation survives close/reopen with an owned selection change",
+    "totalMs": 2934,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 701,
+        "max": 701
+      },
+      "host.durable": {
+        "count": 36,
+        "ms": 172,
+        "max": 11
+      },
+      "local.productD1": {
+        "count": 38,
+        "ms": 206,
+        "max": 9
+      },
+      "local.authority": {
+        "count": 27,
+        "ms": 147,
+        "max": 9
+      },
+      "host.configurationLedger": {
+        "count": 9,
+        "ms": 1,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 11,
+        "ms": 1035,
+        "max": 98
+      },
+      "host.configurationAllowed": {
+        "count": 5,
+        "ms": 1078,
+        "max": 297
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 2,
+        "ms": 298,
+        "max": 298
+      },
+      "host.open": {
+        "count": 2,
+        "ms": 331,
+        "max": 317
+      },
+      "host.seal": {
+        "count": 17,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 5,
+        "ms": 1,
+        "max": 1
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.piConfiguration": {
+        "count": 2,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 705,
+        "max": 705
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 20,
+        "max": 10
+      }
+    }
+  },
+  {
+    "test": "lost acknowledgment retry remains an owned receipt, not new entitlement or selection",
+    "totalMs": 2164,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 683,
+        "max": 683
+      },
+      "host.durable": {
+        "count": 8,
+        "ms": 32,
+        "max": 8
+      },
+      "local.productD1": {
+        "count": 24,
+        "ms": 130,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 11,
+        "ms": 59,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 12,
+        "ms": 1,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 14,
+        "ms": 1320,
+        "max": 102
+      },
+      "host.configurationAllowed": {
+        "count": 8,
+        "ms": 1375,
+        "max": 304
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 310,
+        "max": 310
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 328,
+        "max": 328
+      },
+      "host.seal": {
+        "count": 4,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 11,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 8,
+        "ms": 1,
+        "max": 1
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.piConfiguration": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 3,
+        "ms": 998,
+        "max": 728
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "encrypted configuration evidence rejects payload_digest tampering without changing Pi",
+    "totalMs": 1956,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 696,
+        "max": 696
+      },
+      "host.durable": {
+        "count": 8,
+        "ms": 33,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 19,
+        "ms": 108,
+        "max": 12
+      },
+      "local.authority": {
+        "count": 8,
+        "ms": 50,
+        "max": 12
+      },
+      "host.configurationLedger": {
+        "count": 7,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 11,
+        "ms": 1117,
+        "max": 108
+      },
+      "host.configurationAllowed": {
+        "count": 5,
+        "ms": 1161,
+        "max": 315
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 322,
+        "max": 322
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 341,
+        "max": 341
+      },
+      "host.seal": {
+        "count": 3,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configurationIdentity": {
+        "count": 4,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 3,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configureOwned": {
+        "count": 2,
+        "ms": 861,
+        "max": 753
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "encrypted configuration evidence rejects state tampering without changing Pi",
+    "totalMs": 3478,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 671,
+        "max": 671
+      },
+      "host.durable": {
+        "count": 8,
+        "ms": 33,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 19,
+        "ms": 103,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 8,
+        "ms": 41,
+        "max": 7
+      },
+      "host.configurationLedger": {
+        "count": 7,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 11,
+        "ms": 2666,
+        "max": 938
+      },
+      "host.configurationAllowed": {
+        "count": 5,
+        "ms": 2702,
+        "max": 1835
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 1842,
+        "max": 1842
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 1860,
+        "max": 1860
+      },
+      "host.seal": {
+        "count": 3,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 4,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 3,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configureOwned": {
+        "count": 2,
+        "ms": 884,
+        "max": 773
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "encrypted configuration evidence rejects outcome tampering without changing Pi",
+    "totalMs": 2051,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 701,
+        "max": 701
+      },
+      "host.durable": {
+        "count": 8,
+        "ms": 32,
+        "max": 9
+      },
+      "local.productD1": {
+        "count": 19,
+        "ms": 105,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 8,
+        "ms": 44,
+        "max": 7
+      },
+      "host.configurationLedger": {
+        "count": 7,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 11,
+        "ms": 1210,
+        "max": 115
+      },
+      "host.configurationAllowed": {
+        "count": 5,
+        "ms": 1248,
+        "max": 344
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 351,
+        "max": 351
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 371,
+        "max": 371
+      },
+      "host.seal": {
+        "count": 3,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationIdentity": {
+        "count": 3,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 3,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 2,
+        "ms": 920,
+        "max": 805
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      }
+    }
+  },
+  {
+    "test": "configuration correction: authenticates pending state before new-intent",
+    "totalMs": 1681,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 686,
+        "max": 686
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 18,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 14,
+        "ms": 75,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 6,
+        "ms": 32,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 6,
+        "ms": 1,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 8,
+        "ms": 885,
+        "max": 115
+      },
+      "host.configurationAllowed": {
+        "count": 4,
+        "ms": 914,
+        "max": 347
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 355,
+        "max": 355
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 373,
+        "max": 373
+      },
+      "host.configurationIdentity": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.seal": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 2,
+        "ms": 572,
+        "max": 458
+      },
+      "host.configurationEvidence": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "configuration correction: authenticates pending payload_digest before new-intent",
+    "totalMs": 1717,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 687,
+        "max": 687
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 20,
+        "max": 9
+      },
+      "local.productD1": {
+        "count": 14,
+        "ms": 73,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 6,
+        "ms": 32,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 6,
+        "ms": 1,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 8,
+        "ms": 923,
+        "max": 128
+      },
+      "host.configurationAllowed": {
+        "count": 4,
+        "ms": 952,
+        "max": 352
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 360,
+        "max": 360
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 377,
+        "max": 377
+      },
+      "host.configurationIdentity": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.seal": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configureOwned": {
+        "count": 2,
+        "ms": 606,
+        "max": 477
+      },
+      "host.configurationEvidence": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      }
+    }
+  },
+  {
+    "test": "configuration correction: authenticates pending id before new-intent",
+    "totalMs": 1741,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 674,
+        "max": 674
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 19,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 14,
+        "ms": 75,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 6,
+        "ms": 33,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 6,
+        "ms": 1,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 8,
+        "ms": 957,
+        "max": 137
+      },
+      "host.configurationAllowed": {
+        "count": 4,
+        "ms": 985,
+        "max": 365
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 372,
+        "max": 372
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 391,
+        "max": 391
+      },
+      "host.configurationIdentity": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.seal": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 2,
+        "ms": 625,
+        "max": 488
+      },
+      "host.configurationEvidence": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "configuration correction: authenticates pending outcome before new-intent",
+    "totalMs": 1746,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 686,
+        "max": 686
+      },
+      "host.durable": {
+        "count": 5,
+        "ms": 19,
+        "max": 9
+      },
+      "local.productD1": {
+        "count": 14,
+        "ms": 71,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 6,
+        "ms": 30,
+        "max": 5
+      },
+      "host.configurationLedger": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 8,
+        "ms": 954,
+        "max": 127
+      },
+      "host.configurationAllowed": {
+        "count": 4,
+        "ms": 981,
+        "max": 369
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 377,
+        "max": 377
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 394,
+        "max": 394
+      },
+      "host.configurationIdentity": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.seal": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 2,
+        "ms": 618,
+        "max": 491
+      },
+      "host.configurationEvidence": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 4,
+        "max": 4
+      }
+    }
+  },
+  {
+    "test": "configuration correction: authenticates pending state before reopen",
+    "totalMs": 1652,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 672,
+        "max": 672
+      },
+      "host.durable": {
+        "count": 6,
+        "ms": 20,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 14,
+        "ms": 79,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 7,
+        "ms": 39,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 6,
+        "ms": 1,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 7,
+        "ms": 861,
+        "max": 127
+      },
+      "host.configurationAllowed": {
+        "count": 3,
+        "ms": 889,
+        "max": 385
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 2,
+        "ms": 393,
+        "max": 392
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 410,
+        "max": 410
+      },
+      "host.configurationIdentity": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.seal": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 509,
+        "max": 509
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 6,
+        "max": 6
+      },
+      "host.configurationEvidence": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      }
+    }
+  },
+  {
+    "test": "configuration correction: authenticates pending payload_digest before reopen",
+    "totalMs": 1662,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 678,
+        "max": 678
+      },
+      "host.durable": {
+        "count": 6,
+        "ms": 23,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 14,
+        "ms": 73,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 7,
+        "ms": 37,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 7,
+        "ms": 864,
+        "max": 127
+      },
+      "host.configurationAllowed": {
+        "count": 3,
+        "ms": 890,
+        "max": 383
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 2,
+        "ms": 386,
+        "max": 386
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 404,
+        "max": 404
+      },
+      "host.configurationIdentity": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.seal": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 521,
+        "max": 521
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 5,
+        "max": 5
+      },
+      "host.configurationEvidence": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      }
+    }
+  },
+  {
+    "test": "configuration correction: authenticates pending id before reopen",
+    "totalMs": 1703,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 680,
+        "max": 680
+      },
+      "host.durable": {
+        "count": 6,
+        "ms": 18,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 14,
+        "ms": 76,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 7,
+        "ms": 39,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 7,
+        "ms": 904,
+        "max": 134
+      },
+      "host.configurationAllowed": {
+        "count": 3,
+        "ms": 931,
+        "max": 397
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 404,
+        "max": 404
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 425,
+        "max": 425
+      },
+      "host.configurationIdentity": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.seal": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 538,
+        "max": 538
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "configuration correction: authenticates pending outcome before reopen",
+    "totalMs": 1683,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 667,
+        "max": 667
+      },
+      "host.durable": {
+        "count": 6,
+        "ms": 19,
+        "max": 9
+      },
+      "local.productD1": {
+        "count": 14,
+        "ms": 80,
+        "max": 9
+      },
+      "local.authority": {
+        "count": 7,
+        "ms": 38,
+        "max": 7
+      },
+      "host.configurationLedger": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 7,
+        "ms": 904,
+        "max": 136
+      },
+      "host.configurationAllowed": {
+        "count": 3,
+        "ms": 932,
+        "max": 396
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 401,
+        "max": 401
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 417,
+        "max": 417
+      },
+      "host.configurationIdentity": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.seal": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 545,
+        "max": 545
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "configuration correction: authenticates complete state before new-intent",
+    "totalMs": 2289,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 708,
+        "max": 708
+      },
+      "host.durable": {
+        "count": 7,
+        "ms": 27,
+        "max": 11
+      },
+      "local.productD1": {
+        "count": 19,
+        "ms": 110,
+        "max": 15
+      },
+      "local.authority": {
+        "count": 8,
+        "ms": 51,
+        "max": 15
+      },
+      "host.configurationLedger": {
+        "count": 7,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 11,
+        "ms": 1435,
+        "max": 136
+      },
+      "host.configurationAllowed": {
+        "count": 5,
+        "ms": 1481,
+        "max": 413
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 415,
+        "max": 415
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 437,
+        "max": 437
+      },
+      "host.configurationIdentity": {
+        "count": 4,
+        "ms": 1,
+        "max": 1
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 3,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 2,
+        "max": 2
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configureOwned": {
+        "count": 2,
+        "ms": 1089,
+        "max": 956
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "configuration correction: authenticates complete payload_digest before new-intent",
+    "totalMs": 2286,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 686,
+        "max": 686
+      },
+      "host.durable": {
+        "count": 7,
+        "ms": 27,
+        "max": 9
+      },
+      "local.productD1": {
+        "count": 19,
+        "ms": 101,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 8,
+        "ms": 41,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 7,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 11,
+        "ms": 1476,
+        "max": 139
+      },
+      "host.configurationAllowed": {
+        "count": 5,
+        "ms": 1513,
+        "max": 414
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 421,
+        "max": 421
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 439,
+        "max": 439
+      },
+      "host.configurationIdentity": {
+        "count": 4,
+        "ms": 0,
+        "max": 0
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 3,
+        "ms": 1,
+        "max": 1
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 2,
+        "ms": 1114,
+        "max": 977
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      }
+    }
+  },
+  {
+    "test": "configuration correction: authenticates complete id before new-intent",
+    "totalMs": 2320,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 671,
+        "max": 671
+      },
+      "host.durable": {
+        "count": 7,
+        "ms": 28,
+        "max": 9
+      },
+      "local.productD1": {
+        "count": 19,
+        "ms": 97,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 8,
+        "ms": 42,
+        "max": 7
+      },
+      "host.configurationLedger": {
+        "count": 7,
+        "ms": 2,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 11,
+        "ms": 1520,
+        "max": 141
+      },
+      "host.configurationAllowed": {
+        "count": 5,
+        "ms": 1558,
+        "max": 431
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 438,
+        "max": 438
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 458,
+        "max": 458
+      },
+      "host.configurationIdentity": {
+        "count": 3,
+        "ms": 0,
+        "max": 0
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 3,
+        "ms": 1,
+        "max": 1
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configureOwned": {
+        "count": 2,
+        "ms": 1143,
+        "max": 1003
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "configuration correction: authenticates complete outcome before new-intent",
+    "totalMs": 2379,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 689,
+        "max": 689
+      },
+      "host.durable": {
+        "count": 7,
+        "ms": 27,
+        "max": 9
+      },
+      "local.productD1": {
+        "count": 19,
+        "ms": 99,
+        "max": 6
+      },
+      "local.authority": {
+        "count": 8,
+        "ms": 43,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 7,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 11,
+        "ms": 1561,
+        "max": 148
+      },
+      "host.configurationAllowed": {
+        "count": 5,
+        "ms": 1599,
+        "max": 441
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 449,
+        "max": 449
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 468,
+        "max": 468
+      },
+      "host.configurationIdentity": {
+        "count": 3,
+        "ms": 1,
+        "max": 1
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 3,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 2,
+        "ms": 1175,
+        "max": 1031
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "configuration correction: authenticates complete state before reopen",
+    "totalMs": 2312,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 686,
+        "max": 686
+      },
+      "host.durable": {
+        "count": 8,
+        "ms": 28,
+        "max": 9
+      },
+      "local.productD1": {
+        "count": 19,
+        "ms": 109,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 52,
+        "max": 7
+      },
+      "host.configurationLedger": {
+        "count": 7,
+        "ms": 1,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 10,
+        "ms": 1486,
+        "max": 169
+      },
+      "host.configurationAllowed": {
+        "count": 4,
+        "ms": 1526,
+        "max": 452
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 2,
+        "ms": 455,
+        "max": 454
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 471,
+        "max": 471
+      },
+      "host.configurationIdentity": {
+        "count": 4,
+        "ms": 0,
+        "max": 0
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configurationEvidence": {
+        "count": 3,
+        "ms": 1,
+        "max": 1
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 1096,
+        "max": 1096
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 6,
+        "max": 6
+      }
+    }
+  },
+  {
+    "test": "configuration correction: authenticates complete payload_digest before reopen",
+    "totalMs": 3881,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 703,
+        "max": 703
+      },
+      "host.durable": {
+        "count": 8,
+        "ms": 28,
+        "max": 9
+      },
+      "local.productD1": {
+        "count": 19,
+        "ms": 936,
+        "max": 840
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 51,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 7,
+        "ms": 1,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 10,
+        "ms": 3037,
+        "max": 1693
+      },
+      "host.configurationAllowed": {
+        "count": 4,
+        "ms": 3080,
+        "max": 2002
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 2,
+        "ms": 477,
+        "max": 476
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 494,
+        "max": 494
+      },
+      "host.configurationIdentity": {
+        "count": 4,
+        "ms": 0,
+        "max": 0
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 3,
+        "ms": 1,
+        "max": 1
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 2628,
+        "max": 2628
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "configuration correction: authenticates complete id before reopen",
+    "totalMs": 2472,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 700,
+        "max": 700
+      },
+      "host.durable": {
+        "count": 8,
+        "ms": 33,
+        "max": 9
+      },
+      "local.productD1": {
+        "count": 19,
+        "ms": 135,
+        "max": 13
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 60,
+        "max": 13
+      },
+      "host.configurationLedger": {
+        "count": 6,
+        "ms": 1,
+        "max": 1
+      },
+      "product.configurationRPC": {
+        "count": 10,
+        "ms": 1617,
+        "max": 186
+      },
+      "host.configurationAllowed": {
+        "count": 4,
+        "ms": 1671,
+        "max": 573
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 479,
+        "max": 479
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 495,
+        "max": 495
+      },
+      "host.configurationIdentity": {
+        "count": 3,
+        "ms": 0,
+        "max": 0
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 1222,
+        "max": 1222
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 6,
+        "max": 6
+      }
+    }
+  },
+  {
+    "test": "configuration correction: authenticates complete outcome before reopen",
+    "totalMs": 2373,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 674,
+        "max": 674
+      },
+      "host.durable": {
+        "count": 8,
+        "ms": 29,
+        "max": 10
+      },
+      "local.productD1": {
+        "count": 19,
+        "ms": 101,
+        "max": 7
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 44,
+        "max": 6
+      },
+      "host.configurationLedger": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "product.configurationRPC": {
+        "count": 10,
+        "ms": 1570,
+        "max": 159
+      },
+      "host.configurationAllowed": {
+        "count": 4,
+        "ms": 1606,
+        "max": 483
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 488,
+        "max": 488
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 506,
+        "max": 506
+      },
+      "host.configurationIdentity": {
+        "count": 3,
+        "ms": 0,
+        "max": 0
+      },
+      "host.seal": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "host.configurationEvidence": {
+        "count": 2,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.piConfiguration": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.configureOwned": {
+        "count": 1,
+        "ms": 1141,
+        "max": 1141
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 5,
+        "max": 5
+      }
+    }
+  },
+  {
+    "test": "the mandatory adapter constructs an exact credential-owned request and bounded stream through private RPC",
+    "totalMs": 1505,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 677,
+        "max": 677
+      },
+      "host.durable": {
+        "count": 18,
+        "ms": 92,
+        "max": 21
+      },
+      "local.authority": {
+        "count": 11,
+        "ms": 121,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 29,
+        "max": 29
+      },
+      "host.seal": {
+        "count": 7,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "invalid or differently bound request dispatches zero calls: (request) => ({ ...request, method: \"GET\" })",
+    "totalMs": 1125,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 690,
+        "max": 690
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 78,
+        "max": 24
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 95,
+        "max": 11
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 27,
+        "max": 27
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      }
+    }
+  },
+  {
+    "test": "invalid or differently bound request dispatches zero calls: (request) => ({\n    ...request,\n    url: `${request.url}?proxy=1`\n  })",
+    "totalMs": 1124,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 680,
+        "max": 680
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 73,
+        "max": 21
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 99,
+        "max": 13
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 27,
+        "max": 27
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "invalid or differently bound request dispatches zero calls: (request) => ({\n    ...request,\n    headers: [...request.headers, [\"authorization\", \"caller\"]]\n  })",
+    "totalMs": 1152,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 707,
+        "max": 707
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 74,
+        "max": 21
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 105,
+        "max": 15
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 30,
+        "max": 30
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      }
+    }
+  },
+  {
+    "test": "invalid or differently bound request dispatches zero calls: (request) => ({\n    ...request,\n    body: request.body.replace('\"version\":1', '\"version\":1,\"version\":1')\n  })",
+    "totalMs": 1113,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 686,
+        "max": 686
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 71,
+        "max": 22
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 94,
+        "max": 11
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 28,
+        "max": 28
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "invalid or differently bound request dispatches zero calls: (request) => ({\n    ...request,\n    body: JSON.stringify({ ...JSON.parse(request.body), thinking: \"high\" })\n  })",
+    "totalMs": 1120,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 687,
+        "max": 687
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 70,
+        "max": 21
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 95,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 29,
+        "max": 29
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held authority prevents attachment: UPDATE projects SET userId='foreign'",
+    "totalMs": 1092,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 674,
+        "max": 674
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 70,
+        "max": 19
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 92,
+        "max": 11
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 27,
+        "max": 27
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held authority prevents attachment: UPDATE workspace_sessions SET status='archived'",
+    "totalMs": 1105,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 695,
+        "max": 695
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 69,
+        "max": 20
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 95,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 28,
+        "max": 28
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held authority prevents attachment: UPDATE workspace_sessions SET runtimeOwnerVersion=2",
+    "totalMs": 1100,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 671,
+        "max": 671
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 71,
+        "max": 20
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 98,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 29,
+        "max": 29
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held authority prevents attachment: UPDATE workspace_sessions SET runtimeOwner='legacy'",
+    "totalMs": 1136,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 699,
+        "max": 699
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 91,
+        "max": 37
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 94,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 31,
+        "max": 31
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET kind='project_seed'",
+    "totalMs": 1108,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 692,
+        "max": 692
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 74,
+        "max": 20
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 98,
+        "max": 13
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 29,
+        "max": 29
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET retiredAt=1",
+    "totalMs": 1089,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 680,
+        "max": 680
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 72,
+        "max": 21
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 90,
+        "max": 11
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 26,
+        "max": 26
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET lifecycleGeneration=2",
+    "totalMs": 1105,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 688,
+        "max": 688
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 71,
+        "max": 19
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 96,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 27,
+        "max": 27
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET incarnationId='replacement'",
+    "totalMs": 1114,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 692,
+        "max": 692
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 76,
+        "max": 21
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 95,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 30,
+        "max": 30
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET controllerNamespace='foreign'",
+    "totalMs": 1101,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 674,
+        "max": 674
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 72,
+        "max": 20
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 98,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 29,
+        "max": 29
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held authority prevents attachment: UPDATE codex_connections SET revoked=1,generation=2",
+    "totalMs": 1111,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 680,
+        "max": 680
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 78,
+        "max": 22
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 96,
+        "max": 13
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 31,
+        "max": 31
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 11,
+        "max": 11
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held authority prevents attachment: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))",
+    "totalMs": 1096,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 677,
+        "max": 677
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 71,
+        "max": 20
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 95,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 27,
+        "max": 27
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held credentials prevents attachment: UPDATE projects SET userId='foreign'",
+    "totalMs": 1186,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 675,
+        "max": 675
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 70,
+        "max": 19
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 100,
+        "max": 13
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 29,
+        "max": 29
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held credentials prevents attachment: UPDATE workspace_sessions SET status='archived'",
+    "totalMs": 1254,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 676,
+        "max": 676
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 74,
+        "max": 21
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 164,
+        "max": 72
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 29,
+        "max": 29
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 13,
+        "max": 13
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held credentials prevents attachment: UPDATE workspace_sessions SET runtimeOwnerVersion=2",
+    "totalMs": 1190,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 692,
+        "max": 692
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 69,
+        "max": 21
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 93,
+        "max": 11
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 28,
+        "max": 28
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 4,
+        "max": 4
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 8,
+        "max": 8
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held credentials prevents attachment: UPDATE workspace_sessions SET runtimeOwner='legacy'",
+    "totalMs": 1174,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 671,
+        "max": 671
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 75,
+        "max": 20
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 91,
+        "max": 11
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 28,
+        "max": 28
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET kind='project_seed'",
+    "totalMs": 2670,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 2169,
+        "max": 2169
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 70,
+        "max": 19
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 95,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 28,
+        "max": 28
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 11,
+        "max": 11
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET retiredAt=1",
+    "totalMs": 1212,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 695,
+        "max": 695
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 76,
+        "max": 21
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 97,
+        "max": 13
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 27,
+        "max": 27
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET lifecycleGeneration=2",
+    "totalMs": 1231,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 699,
+        "max": 699
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 72,
+        "max": 20
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 102,
+        "max": 13
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 29,
+        "max": 29
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET incarnationId='replacement'",
+    "totalMs": 1176,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 674,
+        "max": 674
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 71,
+        "max": 20
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 93,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 28,
+        "max": 28
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 7,
+        "max": 7
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET controllerNamespace='foreign'",
+    "totalMs": 1201,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 690,
+        "max": 690
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 74,
+        "max": 20
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 103,
+        "max": 13
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 30,
+        "max": 30
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 11,
+        "max": 11
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held credentials prevents attachment: UPDATE codex_connections SET revoked=1,generation=2",
+    "totalMs": 1219,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 702,
+        "max": 702
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 73,
+        "max": 19
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 102,
+        "max": 15
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 31,
+        "max": 31
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 11,
+        "max": 11
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held credentials prevents attachment: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))",
+    "totalMs": 1220,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 698,
+        "max": 698
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 80,
+        "max": 22
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 99,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 30,
+        "max": 30
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held claim prevents attachment: UPDATE projects SET userId='foreign'",
+    "totalMs": 1225,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 692,
+        "max": 692
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 73,
+        "max": 20
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 97,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 29,
+        "max": 29
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held claim prevents attachment: UPDATE workspace_sessions SET status='archived'",
+    "totalMs": 1195,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 683,
+        "max": 683
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 72,
+        "max": 21
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 94,
+        "max": 11
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 26,
+        "max": 26
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 4,
+        "max": 4
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held claim prevents attachment: UPDATE workspace_sessions SET runtimeOwnerVersion=2",
+    "totalMs": 1219,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 702,
+        "max": 702
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 73,
+        "max": 20
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 102,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 29,
+        "max": 29
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held claim prevents attachment: UPDATE workspace_sessions SET runtimeOwner='legacy'",
+    "totalMs": 1234,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 672,
+        "max": 672
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 83,
+        "max": 20
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 93,
+        "max": 13
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 39,
+        "max": 39
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET kind='project_seed'",
+    "totalMs": 1224,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 704,
+        "max": 704
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 72,
+        "max": 21
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 99,
+        "max": 13
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 27,
+        "max": 27
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET retiredAt=1",
+    "totalMs": 1223,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 691,
+        "max": 691
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 74,
+        "max": 19
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 96,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 29,
+        "max": 29
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET lifecycleGeneration=2",
+    "totalMs": 1188,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 670,
+        "max": 670
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 74,
+        "max": 21
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 101,
+        "max": 15
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 31,
+        "max": 31
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET incarnationId='replacement'",
+    "totalMs": 1203,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 673,
+        "max": 673
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 70,
+        "max": 18
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 95,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 31,
+        "max": 31
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET controllerNamespace='foreign'",
+    "totalMs": 1229,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 701,
+        "max": 701
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 76,
+        "max": 21
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 100,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 26,
+        "max": 26
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held claim prevents attachment: UPDATE codex_connections SET revoked=1,generation=2",
+    "totalMs": 1217,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 694,
+        "max": 694
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 74,
+        "max": 20
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 93,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 28,
+        "max": 28
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 11,
+        "max": 11
+      }
+    }
+  },
+  {
+    "test": "fresh D1 revocation after held claim prevents attachment: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))",
+    "totalMs": 1196,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 676,
+        "max": 676
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 77,
+        "max": 25
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 98,
+        "max": 14
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 26,
+        "max": 26
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 4,
+        "max": 4
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      }
+    }
+  },
+  {
+    "test": "Stop wins during credential preparation before the host acknowledgment, with zero fetches",
+    "totalMs": 1225,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 682,
+        "max": 682
+      },
+      "host.durable": {
+        "count": 16,
+        "ms": 82,
+        "max": 22
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 96,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 26,
+        "max": 26
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      }
+    }
+  },
+  {
+    "test": "a model capability revoked while the actual claim flush is held is freshly denied after that flush",
+    "totalMs": 1363,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 663,
+        "max": 663
+      },
+      "host.durable": {
+        "count": 15,
+        "ms": 87,
+        "max": 24
+      },
+      "local.authority": {
+        "count": 10,
+        "ms": 106,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 26,
+        "max": 26
+      },
+      "host.seal": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "three contract denials durably close the window, record review and halt the exact run without reentry",
+    "totalMs": 1500,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 677,
+        "max": 677
+      },
+      "host.durable": {
+        "count": 15,
+        "ms": 76,
+        "max": 20
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 94,
+        "max": 13
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 28,
+        "max": 28
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 11,
+        "max": 11
+      }
+    }
+  },
+  {
+    "test": "concurrent private requests cannot consume an exact window or live claim twice",
+    "totalMs": 1745,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 690,
+        "max": 690
+      },
+      "host.durable": {
+        "count": 18,
+        "ms": 93,
+        "max": 20
+      },
+      "local.authority": {
+        "count": 11,
+        "ms": 119,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 28,
+        "max": 28
+      },
+      "host.seal": {
+        "count": 7,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "identical local effect IDs remain independently scoped to owned workspace identities",
+    "totalMs": 822,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 673,
+        "max": 673
+      }
+    }
+  },
+  {
+    "test": "window expiry during credential preparation denies before host claim and fetch",
+    "totalMs": 1201,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 676,
+        "max": 676
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 72,
+        "max": 20
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 92,
+        "max": 11
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 27,
+        "max": 27
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "production credentials remain unavailable even with connected fixture records",
+    "totalMs": 2214,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 2194,
+        "max": 2194
+      }
+    }
+  },
+  {
+    "test": "a known faux-1 generation failure retries as a separate admitted attempt",
+    "totalMs": 2194,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 688,
+        "max": 688
+      },
+      "host.durable": {
+        "count": 25,
+        "ms": 127,
+        "max": 21
+      },
+      "local.authority": {
+        "count": 15,
+        "ms": 161,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 1,
+        "max": 1
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 28,
+        "max": 28
+      },
+      "host.seal": {
+        "count": 13,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      }
+    }
+  },
+  {
+    "test": "a known faux-2 generation failure retries as a separate admitted attempt",
+    "totalMs": 2187,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 694,
+        "max": 694
+      },
+      "host.durable": {
+        "count": 25,
+        "ms": 122,
+        "max": 20
+      },
+      "local.authority": {
+        "count": 15,
+        "ms": 158,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 29,
+        "max": 29
+      },
+      "host.seal": {
+        "count": 13,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "Git metadata's reserved attempt is never refunded after a known failure",
+    "totalMs": 1742,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 669,
+        "max": 669
+      },
+      "host.durable": {
+        "count": 21,
+        "ms": 98,
+        "max": 19
+      },
+      "local.authority": {
+        "count": 14,
+        "ms": 150,
+        "max": 13
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 28,
+        "max": 28
+      },
+      "host.seal": {
+        "count": 11,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 13,
+        "max": 13
+      }
+    }
+  },
+  {
+    "test": "Stop after host acknowledgment retains the credential-bearing start and late product evidence",
+    "totalMs": 1534,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 688,
+        "max": 688
+      },
+      "host.durable": {
+        "count": 17,
+        "ms": 88,
+        "max": 21
+      },
+      "local.authority": {
+        "count": 11,
+        "ms": 117,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 28,
+        "max": 28
+      },
+      "host.seal": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      }
+    }
+  },
+  {
+    "test": "accepted custom summaries use the same private transport and exactly one fresh association",
+    "totalMs": 2317,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 690,
+        "max": 690
+      },
+      "host.durable": {
+        "count": 26,
+        "ms": 158,
+        "max": 23
+      },
+      "local.authority": {
+        "count": 17,
+        "ms": 172,
+        "max": 11
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 27,
+        "max": 27
+      },
+      "host.seal": {
+        "count": 14,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 26,
+        "max": 26
+      }
+    }
+  },
+  {
+    "test": "a known faux-1 custom summary failure spends its one attempt without an automatic retry",
+    "totalMs": 2240,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 676,
+        "max": 676
+      },
+      "host.durable": {
+        "count": 26,
+        "ms": 130,
+        "max": 20
+      },
+      "local.authority": {
+        "count": 16,
+        "ms": 167,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 29,
+        "max": 29
+      },
+      "host.seal": {
+        "count": 14,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 10,
+        "max": 10
+      }
+    }
+  },
+  {
+    "test": "a known faux-2 custom summary failure spends its one attempt without an automatic retry",
+    "totalMs": 2215,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 689,
+        "max": 689
+      },
+      "host.durable": {
+        "count": 26,
+        "ms": 122,
+        "max": 21
+      },
+      "local.authority": {
+        "count": 16,
+        "ms": 168,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 29,
+        "max": 29
+      },
+      "host.seal": {
+        "count": 14,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "disconnect of the local credential record while preparation is held prevents fetch even before a D1 projection",
+    "totalMs": 1224,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 689,
+        "max": 689
+      },
+      "host.durable": {
+        "count": 14,
+        "ms": 73,
+        "max": 19
+      },
+      "local.authority": {
+        "count": 9,
+        "ms": 93,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 28,
+        "max": 28
+      },
+      "host.seal": {
+        "count": 5,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "real epoch-first Stop during the claim durability flush prevents fetch without refunding consumption",
+    "totalMs": 1259,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 682,
+        "max": 682
+      },
+      "host.durable": {
+        "count": 17,
+        "ms": 93,
+        "max": 20
+      },
+      "local.authority": {
+        "count": 10,
+        "ms": 121,
+        "max": 27
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 27,
+        "max": 27
+      },
+      "host.seal": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "product revocation during the final host authority await is rechecked before fetch",
+    "totalMs": 1430,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 660,
+        "max": 660
+      },
+      "host.durable": {
+        "count": 15,
+        "ms": 72,
+        "max": 20
+      },
+      "local.authority": {
+        "count": 11,
+        "ms": 123,
+        "max": 18
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 28,
+        "max": 28
+      },
+      "host.seal": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 4,
+        "max": 4
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "actual transport after host reopen uses invocation generation 2 and D1 identity lifecycle 1",
+    "totalMs": 1649,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 685,
+        "max": 685
+      },
+      "host.durable": {
+        "count": 24,
+        "ms": 106,
+        "max": 20
+      },
+      "local.authority": {
+        "count": 15,
+        "ms": 154,
+        "max": 11
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 2,
+        "ms": 1,
+        "max": 1
+      },
+      "host.open": {
+        "count": 2,
+        "ms": 39,
+        "max": 28
+      },
+      "host.seal": {
+        "count": 7,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 20,
+        "max": 11
+      }
+    }
+  },
+  {
+    "test": "held actual D1 capability query expires command with valid host deadline and zero fetches",
+    "totalMs": 1276,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 695,
+        "max": 695
+      },
+      "host.durable": {
+        "count": 15,
+        "ms": 73,
+        "max": 19
+      },
+      "local.authority": {
+        "count": 10,
+        "ms": 107,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 27,
+        "max": 27
+      },
+      "host.seal": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "held actual D1 capability query expires window with valid host deadline and zero fetches",
+    "totalMs": 1273,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 687,
+        "max": 687
+      },
+      "host.durable": {
+        "count": 15,
+        "ms": 78,
+        "max": 22
+      },
+      "local.authority": {
+        "count": 10,
+        "ms": 103,
+        "max": 11
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 28,
+        "max": 28
+      },
+      "host.seal": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 9,
+        "max": 9
+      }
+    }
+  },
+  {
+    "test": "held actual D1 permit query expires command with valid host deadline and zero fetches",
+    "totalMs": 1296,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 706,
+        "max": 706
+      },
+      "host.durable": {
+        "count": 15,
+        "ms": 81,
+        "max": 22
+      },
+      "local.authority": {
+        "count": 10,
+        "ms": 110,
+        "max": 13
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 31,
+        "max": 31
+      },
+      "host.seal": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      }
+    }
+  },
+  {
+    "test": "held actual D1 permit query expires window with valid host deadline and zero fetches",
+    "totalMs": 1274,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 685,
+        "max": 685
+      },
+      "host.durable": {
+        "count": 15,
+        "ms": 78,
+        "max": 19
+      },
+      "local.authority": {
+        "count": 10,
+        "ms": 107,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 29,
+        "max": 29
+      },
+      "host.seal": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 6,
+        "max": 6
+      },
+      "host.yield": {
+        "count": 1,
+        "ms": 10,
+        "max": 10
+      }
+    }
+  },
+  {
+    "test": "malformed upstream outcomes retain uncertain admission without redispatch",
+    "totalMs": 1547,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 676,
+        "max": 676
+      },
+      "host.durable": {
+        "count": 15,
+        "ms": 82,
+        "max": 21
+      },
+      "local.authority": {
+        "count": 11,
+        "ms": 118,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 32,
+        "max": 32
+      },
+      "host.seal": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 23,
+        "max": 23
+      }
+    }
+  },
+  {
+    "test": "malformed upstream outcomes retain uncertain admission without redispatch",
+    "totalMs": 1573,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 700,
+        "max": 700
+      },
+      "host.durable": {
+        "count": 15,
+        "ms": 76,
+        "max": 20
+      },
+      "local.authority": {
+        "count": 11,
+        "ms": 118,
+        "max": 13
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 30,
+        "max": 30
+      },
+      "host.seal": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 21,
+        "max": 21
+      }
+    }
+  },
+  {
+    "test": "malformed upstream outcomes retain uncertain admission without redispatch",
+    "totalMs": 2224,
+    "measured": {
+      "fixture.setup": {
+        "count": 1,
+        "ms": 691,
+        "max": 691
+      },
+      "host.durable": {
+        "count": 15,
+        "ms": 76,
+        "max": 21
+      },
+      "local.authority": {
+        "count": 11,
+        "ms": 115,
+        "max": 12
+      },
+      "host.initializeOwnedConfiguration": {
+        "count": 1,
+        "ms": 0,
+        "max": 0
+      },
+      "host.open": {
+        "count": 1,
+        "ms": 28,
+        "max": 28
+      },
+      "host.seal": {
+        "count": 6,
+        "ms": 0,
+        "max": 0
+      },
+      "pi.configure": {
+        "count": 1,
+        "ms": 5,
+        "max": 5
+      },
+      "host.yield": {
+        "count": 2,
+        "ms": 20,
+        "max": 20
+      }
+    }
+  }
+]

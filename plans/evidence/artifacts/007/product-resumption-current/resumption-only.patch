@@ -1,0 +1,3171 @@
+--- a/apps/credential-tests/src/codex-request-contract.worker.test.ts
++++ b/apps/credential-tests/src/codex-request-contract.worker.test.ts
+@@ -1,5 +1,20 @@
+ import { env, fetchMock, runInDurableObject, SELF } from "cloudflare:test";
+ import { afterEach, beforeEach, expect, it } from "vitest";
++import {
++	type ModelSubjectV1,
++	type ModelTransportDescriptorV1,
++	parseSyntheticModelBodyV1,
++	parseSyntheticModelRequestV1,
++	type SyntheticModelRequestV1,
++} from "../../../packages/runtime-contracts/src/model.js";
++import {
++	PiDurableHost,
++	type PiDurableHostFixture,
++} from "../../runtime/src/pi-durable-host.ts";
++import {
++	createPrivateModelAdapter,
++	type PrivateModelTransport,
++} from "../../runtime/src/pi-durable-models.ts";
+ import m0 from "../../web/migrations/0000_wet_giant_girl.sql?raw";
+ import m1 from "../../web/migrations/0001_jazzy_firelord.sql?raw";
+ import m2 from "../../web/migrations/0002_sparkling_agent_zero.sql?raw";
+@@ -12,325 +27,924 @@
+ import m20 from "../../web/migrations/0020_trusted_runtime_additive.sql?raw";
+ import m21 from "../../web/migrations/0021_first_lilandra.sql?raw";
+ import m22 from "../../web/migrations/0022_synthetic_model_transport.sql?raw";
+-import { parseSyntheticModelBodyV1, parseSyntheticModelRequestV1, type ModelSubjectV1, type ModelTransportDescriptorV1, type SyntheticModelRequestV1 } from "../../../packages/runtime-contracts/src/model.js";
+-import { PiDurableHost, type PiDurableHostFixture } from "../../runtime/src/pi-durable-host.ts";
+-import { createPrivateModelAdapter, type PrivateModelTransport } from "../../runtime/src/pi-durable-models.ts";
++import { CodexCredential } from "../../web/src/lib/codex-credential-do";
+ import { ModelProductAuthority } from "../../web/src/lib/model-product-authority";
+-import { CodexCredential } from "../../web/src/lib/codex-credential-do";
+-import type { FixtureCredential, FixtureProduct } from "./entry";
+-
+-declare module "cloudflare:test" { interface ProvidedEnv {
+-	PI_MODEL_HOST: DurableObjectNamespace<PiDurableHostFixture>;
+-	DB: D1Database;
+-	CodexCredential: DurableObjectNamespace<FixtureCredential>;
+-	CODEX_CREDENTIAL_CURRENT_KEY_VERSION: string;
+-	CODEX_CREDENTIAL_KEYS: string;
+-} }
++import type { FixtureCredential } from "./entry";
++import type { FixtureProduct } from "./model-entry";
++
++declare module "cloudflare:test" {
++	interface ProvidedEnv {
++		PI_MODEL_HOST: DurableObjectNamespace<PiDurableHostFixture>;
++		DB: D1Database;
++		CodexCredential: DurableObjectNamespace<FixtureCredential>;
++		CODEX_CREDENTIAL_CURRENT_KEY_VERSION: string;
++		CODEX_CREDENTIAL_KEYS: string;
++	}
++}
+ const product = SELF as Service<FixtureProduct>;
+ const credential = {
+-	holdModel: (phase: "authority" | "credentials" | "claim") => env.CodexCredential.getByName("owner").holdModel(phase),
++	holdModel: (phase: "authority" | "credentials" | "claim") =>
++		env.CodexCredential.getByName("owner").holdModel(phase),
+ 	waitModel: () => env.CodexCredential.getByName("owner").waitModel(),
+ 	releaseModel: () => env.CodexCredential.getByName("owner").releaseModel(),
+ };
+-const subject: ModelSubjectV1 = { version: 1, userId: "owner", projectId: "project", workspaceSessionId: "session", identityId: "executor", incarnationId: "incarnation", controllerNamespace: "fixture-execution-v1", lifecycleGeneration: 1, runtimeOwnerVersion: 1, connectionGeneration: 1, capabilityRevision: 1 };
+-const account = { version: 1, status: "available", generation: 1, revision: 1, models: [{ id: "faux-1", thinking: ["off", "low", "high", "max"] }, { id: "faux-2", thinking: ["off", "low", "high", "max"] }] };
+-const syntheticTokens = { access: "synthetic-request-access", refresh: "synthetic-request-refresh", expiresAt: 4102444800000 };
+-const frames = [{ version: 1, type: "delta", text: "Synthetic answer ".repeat(50) }, { version: 1, type: "done", stopReason: "stop", inputTokens: 4, outputTokens: 6 }];
+-const encodedFrames = frames.map((frame) => JSON.stringify(frame)).join("\n") + "\n";
+-let calls: { body: ReturnType<typeof parseSyntheticModelBodyV1>; headerNames: string[] }[];
++const subject: ModelSubjectV1 = {
++	version: 1,
++	userId: "owner",
++	projectId: "project",
++	workspaceSessionId: "session",
++	identityId: "executor",
++	incarnationId: "incarnation",
++	controllerNamespace: "fixture-execution-v1",
++	lifecycleGeneration: 1,
++	runtimeOwnerVersion: 1,
++	connectionGeneration: 1,
++	capabilityRevision: 1,
++};
++const account = {
++	version: 1,
++	status: "available",
++	generation: 1,
++	revision: 1,
++	models: [
++		{ id: "faux-1", thinking: ["off", "low", "high", "max"] },
++		{ id: "faux-2", thinking: ["off", "low", "high", "max"] },
++	],
++};
++const syntheticTokens = {
++	access: "synthetic-request-access",
++	refresh: "synthetic-request-refresh",
++	expiresAt: 4102444800000,
++};
++const frames = [
++	{ version: 1, type: "delta", text: "Synthetic answer ".repeat(50) },
++	{
++		version: 1,
++		type: "done",
++		stopReason: "stop",
++		inputTokens: 4,
++		outputTokens: 6,
++	},
++];
++const encodedFrames =
++	frames.map((frame) => JSON.stringify(frame)).join("\n") + "\n";
++let calls: {
++	body: ReturnType<typeof parseSyntheticModelBodyV1>;
++	headerNames: string[];
++}[];
+ let installed = false;
+ let responses: { status: number; response: string }[] = [];
+ let defaultResponse = { status: 200, response: encodedFrames };
+ function upstream(status = 200, response = encodedFrames, times?: number) {
+-	if (times) responses.push(...Array.from({ length: times }, () => ({ status, response })));
++	if (times)
++		responses.push(
++			...Array.from({ length: times }, () => ({ status, response })),
++		);
+ 	else defaultResponse = { status, response };
+ }
+ function installTrap() {
+ 	if (installed) return;
+ 	installed = true;
+-	fetchMock.get("https://codex-model-fixture.invalid").intercept({ path: "/v1/stream", method: "POST" }).reply((options) => {
+-		expect(typeof options.body).toBe("string");
+-		const body = parseSyntheticModelBodyV1(options.body);
+-		const headers = options.headers;
+-		expect(headers).toMatchObject({ "content-type": "application/json", accept: "application/x-ndjson", authorization: `Bearer ${syntheticTokens.access}` });
+-		calls.push({ body, headerNames: Object.keys(headers ?? {}).sort() });
+-		const selected = responses.shift() ?? defaultResponse;
+-		return { statusCode: selected.status, data: selected.response, responseOptions: { headers: { "content-type": "application/x-ndjson" } } };
+-	}).persist().delay(100);
++	fetchMock
++		.get("https://codex-model-fixture.invalid")
++		.intercept({ path: "/v1/stream", method: "POST" })
++		.reply((options) => {
++			expect(typeof options.body).toBe("string");
++			const body = parseSyntheticModelBodyV1(options.body);
++			const headers = options.headers;
++			expect(headers).toMatchObject({
++				"content-type": "application/json",
++				accept: "application/x-ndjson",
++				authorization: `Bearer ${syntheticTokens.access}`,
++			});
++			calls.push({ body, headerNames: Object.keys(headers ?? {}).sort() });
++			const selected = responses.shift() ?? defaultResponse;
++			return {
++				statusCode: selected.status,
++				data: selected.response,
++				responseOptions: {
++					headers: { "content-type": "application/x-ndjson" },
++				},
++			};
++		})
++		.persist()
++		.delay(100);
+ }
+ function deferred() {
+ 	let resolve!: () => void;
+-	const promise = new Promise<void>((r) => { resolve = r; });
++	const promise = new Promise<void>((r) => {
++		resolve = r;
++	});
+ 	return { promise, resolve };
+ }
+ async function bounded<T>(promise: Promise<T>): Promise<T> {
+ 	let timer: ReturnType<typeof setTimeout> | undefined;
+-	try { return await Promise.race([promise, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Fixture bounded wait expired")), 3000); })]); }
+-	finally { clearTimeout(timer); }
++	try {
++		return await Promise.race([
++			promise,
++			new Promise<never>((_, reject) => {
++				timer = setTimeout(
++					() => reject(new Error("Fixture bounded wait expired")),
++					3000,
++				);
++			}),
++		]);
++	} finally {
++		clearTimeout(timer);
++	}
+ }
+ async function until(check: () => boolean | Promise<boolean>) {
+ 	const deadline = Date.now() + 3000;
+ 	while (!(await check())) {
+-		if (Date.now() >= deadline) throw new Error("Fixture bounded observation expired");
++		if (Date.now() >= deadline)
++			throw new Error("Fixture bounded observation expired");
+ 		await new Promise<void>((r) => setTimeout(r, 1));
+ 	}
+ }
+ beforeEach(async () => {
+-	calls = []; responses = []; defaultResponse = { status: 200, response: encodedFrames };
+-	fetchMock.activate(); fetchMock.disableNetConnect(); installTrap();
+-	for (const migration of [m0, m1, m2, m13, m14, m15, m16, m17, m18, m20, m21, m22])
++	calls = [];
++	responses = [];
++	defaultResponse = { status: 200, response: encodedFrames };
++	fetchMock.activate();
++	fetchMock.disableNetConnect();
++	installTrap();
++	for (const migration of [
++		m0,
++		m1,
++		m2,
++		m13,
++		m14,
++		m15,
++		m16,
++		m17,
++		m18,
++		m20,
++		m21,
++		m22,
++	])
+ 		for (const statement of migration.split("--> statement-breakpoint"))
+ 			if (statement.trim()) await env.DB.exec(statement.replaceAll("\n", " "));
+ 	await env.DB.batch([
+-		env.DB.prepare("INSERT INTO user(id,name,email,createdAt,updatedAt) VALUES('owner','Synthetic owner','owner@example.invalid',0,0)"),
+-		env.DB.prepare("INSERT INTO projects(id,name,userId,status) VALUES('project','Synthetic project','owner','ready')"),
+-		env.DB.prepare("INSERT INTO workspace_sessions(id,projectId,userId,status,sandboxIdentityId,runtimeOwner,runtimeOwnerVersion) VALUES('session','project','owner','active','executor','trusted_v1',1)"),
+-		env.DB.prepare("INSERT INTO sandbox_identities(id,kind,sandboxId,containerId,userId,projectId,workspaceSessionId,state,controllerClass,controllerNamespace,incarnationId) VALUES('executor','workspace_session','sandbox','container','owner','project','session','ready','Sandbox','fixture-execution-v1','incarnation')"),
+-		env.DB.prepare("INSERT INTO codex_connections VALUES('owner',1,0,'connected',0,0)"),
+-		env.DB.prepare("INSERT INTO codex_fixture_capabilities VALUES('owner',1,1,?)").bind(JSON.stringify(account)),
+-		env.DB.prepare("INSERT INTO session_commands(id,userId,targetKind,targetId,projectId,sessionId,kind,commandSeq,payloadVersion,userMessageId,assistantMessageId,payloadDigest,acceptedAt,deadlineAt) VALUES('command','owner','workspace_session','session','project','session','prompt',1,1,'user-message','assistant','fixture-digest',0,?)").bind(Date.now() + 600000),
+-		env.DB.prepare("INSERT INTO runtime_command_memberships(commandId,sessionId,runId,userMessageId,assistantMessageId,runEpoch) VALUES('command','session','run','user-message','assistant',1)"),
++		env.DB.prepare(
++			"INSERT INTO user(id,name,email,createdAt,updatedAt) VALUES('owner','Synthetic owner','owner@example.invalid',0,0)",
++		),
++		env.DB.prepare(
++			"INSERT INTO projects(id,name,userId,status) VALUES('project','Synthetic project','owner','ready')",
++		),
++		env.DB.prepare(
++			"INSERT INTO workspace_sessions(id,projectId,userId,status,sandboxIdentityId,runtimeOwner,runtimeOwnerVersion) VALUES('session','project','owner','active','executor','trusted_v1',1)",
++		),
++		env.DB.prepare(
++			"INSERT INTO sandbox_identities(id,kind,sandboxId,containerId,userId,projectId,workspaceSessionId,state,controllerClass,controllerNamespace,incarnationId) VALUES('executor','workspace_session','sandbox','container','owner','project','session','ready','Sandbox','fixture-execution-v1','incarnation')",
++		),
++		env.DB.prepare(
++			"INSERT INTO codex_connections VALUES('owner',1,0,'connected',0,0)",
++		),
++		env.DB.prepare(
++			"INSERT INTO codex_fixture_capabilities VALUES('owner',1,1,?)",
++		).bind(JSON.stringify(account)),
++		env.DB.prepare(
++			"INSERT INTO session_commands(id,userId,targetKind,targetId,projectId,sessionId,kind,commandSeq,payloadVersion,userMessageId,assistantMessageId,payloadDigest,acceptedAt,deadlineAt) VALUES('command','owner','workspace_session','session','project','session','prompt',1,1,'user-message','assistant','fixture-digest',0,?)",
++		).bind(Date.now() + 600000),
++		env.DB.prepare(
++			"INSERT INTO runtime_command_memberships(commandId,sessionId,runId,userMessageId,assistantMessageId,runEpoch) VALUES('command','session','run','user-message','assistant',1)",
++		),
+ 	]);
+-	expect((await env.CodexCredential.getByName("owner").install("owner", 1, syntheticTokens)).status).toBe("connected");
++	expect(
++		(
++			await env.CodexCredential.getByName("owner").install(
++				"owner",
++				1,
++				syntheticTokens,
++			)
++		).status,
++	).toBe("connected");
+ });
+ afterEach(() => {
+ 	// Denial tests deliberately leave the fixed-destination credential-bearing trap unused.
+ 	for (const pending of fetchMock.pendingInterceptors())
+-		expect(pending).toMatchObject({ origin: "https://codex-model-fixture.invalid", path: "/v1/stream", method: "POST", persist: true });
++		expect(pending).toMatchObject({
++			origin: "https://codex-model-fixture.invalid",
++			path: "/v1/stream",
++			method: "POST",
++			persist: true,
++		});
+ 	fetchMock.deactivate();
+ });
+ 
+-async function gate(name: string, test: (f: { host: PiDurableHost; storage: DurableObjectStorage; start(): Promise<void>; settled: Promise<void>; snapshot(): Promise<unknown>; claimFlush(): { entered: Promise<void>; release(): void } }) => Promise<void>, options: { transform?: (request: SyntheticModelRequestV1) => unknown; threeDenials?: boolean; retry?: boolean; purpose?: "generation" | "git_metadata" } = {}) {
+-	await runInDurableObject(env.PI_MODEL_HOST.getByName(name), async (_instance, state) => {
+-		const finished = deferred();
+-		const probe: ModelTransportDescriptorV1 = { version: 1, subject, requestDigest: "0".repeat(64), attempt: { version: 1, effectId: "check", operationId: "check", runId: "run", commandId: "command", assistantId: "assistant", taskId: 1, epoch: 1, attempt: 1, generation: 1, deadlineAt: Date.now() + 600000, requestDigest: "0".repeat(64), kind: "generation" } };
+-		let hold: { entered: ReturnType<typeof deferred>; released: ReturnType<typeof deferred> } | undefined;
+-		const storage = new Proxy(state.storage, { get(target, key) {
+-			if (key === "sync") return async () => {
+-				if (hold && state.storage.sql.exec("SELECT 1 FROM host_model_dispatch WHERE claimed=1").toArray().length) {
+-					const waiting = hold; hold = undefined; waiting.entered.resolve(); await waiting.released.promise;
+-				}
+-				await target.sync();
++async function gate(
++	name: string,
++	test: (f: {
++		host: PiDurableHost;
++		storage: DurableObjectStorage;
++		start(): Promise<void>;
++		settled: Promise<void>;
++		snapshot(): Promise<unknown>;
++		claimFlush(): { entered: Promise<void>; release(): void };
++	}) => Promise<void>,
++	options: {
++		transform?: (request: SyntheticModelRequestV1) => unknown;
++		threeDenials?: boolean;
++		duplicate?: boolean;
++		retry?: boolean;
++		purpose?: "generation" | "git_metadata";
++	} = {},
++) {
++	await runInDurableObject(
++		env.PI_MODEL_HOST.getByName(name),
++		async (_instance, state) => {
++			const finished = deferred();
++			const probe: ModelTransportDescriptorV1 = {
++				version: 1,
++				subject,
++				requestDigest: "0".repeat(64),
++				attempt: {
++					version: 1,
++					effectId: "check",
++					operationId: "check",
++					runId: "run",
++					commandId: "command",
++					assistantId: "assistant",
++					taskId: 1,
++					epoch: 1,
++					attempt: 1,
++					generation: 1,
++					deadlineAt: Date.now() + 600000,
++					requestDigest: "0".repeat(64),
++					kind: "generation",
++				},
+ 			};
+-			const value: unknown = Reflect.get(target, key, target);
+-			return typeof value === "function" ? value.bind(target) : value;
+-		} });
+-		const transport: PrivateModelTransport = {
+-			readModelPermit: (request, descriptor) => product.readModelPermit(request, descriptor),
+-			requestModel: async (input, capability) => {
+-				try {
+-					const request = parseSyntheticModelRequestV1(input);
+-					if (options.threeDenials) {
+-						for (let count = 0; count < 3; count++) expect((await product.requestModel({ ...request, method: "GET" }, capability)).status).toBe("denied");
+-						return { version: 1, status: "denied" };
++			let hold:
++				| {
++						entered: ReturnType<typeof deferred>;
++						released: ReturnType<typeof deferred>;
++				  }
++				| undefined;
++			const storage = new Proxy(state.storage, {
++				get(target, key) {
++					if (key === "sync")
++						return async () => {
++							if (
++								hold &&
++								state.storage.sql
++									.exec("SELECT 1 FROM host_model_dispatch WHERE claimed=1")
++									.toArray().length
++							) {
++								const waiting = hold;
++								hold = undefined;
++								waiting.entered.resolve();
++								await waiting.released.promise;
++							}
++							await target.sync();
++						};
++					const value: unknown = Reflect.get(target, key, target);
++					return typeof value === "function" ? value.bind(target) : value;
++				},
++			});
++			const transport: PrivateModelTransport = {
++				readModelPermit: (request, descriptor) =>
++					product.readModelPermit(request, descriptor),
++				requestModel: async (input, capability) => {
++					try {
++						const request = parseSyntheticModelRequestV1(input);
++						if (options.threeDenials) {
++							for (let count = 0; count < 3; count++)
++								expect(
++									(
++										await product.requestModel(
++											{ ...request, method: "GET" },
++											capability,
++										)
++									).status,
++								).toBe("denied");
++							return { version: 1, status: "denied" };
++						}
++						if (options.duplicate) {
++							const outcomes = await Promise.all([
++								product.requestModel(request, capability),
++								product.requestModel(request, capability),
++							]);
++							expect(outcomes.map((result) => result.status).sort()).toEqual([
++								"complete",
++								"denied",
++							]);
++							return outcomes.find((result) => result.status === "complete")!;
++						}
++						return await product.requestModel(
++							options.transform ? options.transform(request) : request,
++							capability,
++						);
++					} finally {
++						finished.resolve();
+ 					}
+-					return await product.requestModel(options.transform ? options.transform(request) : request, capability);
+-				} finally { finished.resolve(); }
+-			},
+-		};
+-		const host = await PiDurableHost.open(storage, {
+-			now: Date.now, authority: async () => ({ current: await new ModelProductAuthority(env.DB).current(probe), generation: 1, executor: 1 }),
+-			budgets: { workMs: 10000, drainMs: 1000 }, operationMs: { model: 10000, tool: 10000 },
+-			wakeup: { getAlarm: async () => null, setAlarm: async () => {} },
+-			options: (guard) => {
+-				const adapter = createPrivateModelAdapter(guard, transport, subject, options.purpose ?? "generation");
+-				return { models: adapter.models, registry: adapter.registry, settings: { extensions: [adapter.extension], retry: { enabled: options.retry ?? false, maxRetries: 1, baseDelayMs: 1 }, compaction: { enabled: false, reserveTokens: 64, keepRecentTokens: 1, backgroundTokens: 0 } } };
+-			},
+-		});
+-		try {
+-			await host.accept("command", "Synthetic request", { run: "run", user: "user-message", assistant: "assistant", sequence: 1 });
+-			await test({ host, storage: state.storage, start: async () => { await host.schedule("command"); }, settled: finished.promise,
+-				claimFlush: () => { const entered = deferred(), released = deferred(); hold = { entered, released }; return { entered: entered.promise, release: released.resolve }; },
+-				snapshot: async () => ({ calls: calls.length, windows: (await env.DB.prepare("SELECT consumedRequests,contractDenials,closeReason,openSlot FROM privileged_operations").all()).results,
+-					admissions: (await env.DB.prepare("SELECT effectId,purpose,state,requestDigest FROM model_request_admissions").all()).results,
+-					claims: state.storage.sql.exec("SELECT claimed FROM host_model_dispatch").toArray(), runs: state.storage.sql.exec("SELECT state,epoch FROM host_runs").toArray() }),
+-			});
+-		} finally {
+-			hold?.released.resolve();
+-			await credential.releaseModel();
+-			await host.yield();
+-			await state.storage.deleteAlarm();
+-			await state.storage.sync();
+-		}
+-	});
++				},
++			};
++			const host = await PiDurableHost.open(storage, {
++				now: Date.now,
++				authority: async () => ({
++					current: await new ModelProductAuthority(env.DB).current(probe),
++					generation: 1,
++					executor: 1,
++				}),
++				budgets: { workMs: 10000, drainMs: 1000 },
++				operationMs: { model: 10000, tool: 10000 },
++				wakeup: { getAlarm: async () => null, setAlarm: async () => {} },
++				options: (guard) => {
++					const adapter = createPrivateModelAdapter(
++						guard,
++						transport,
++						subject,
++						options.purpose ?? "generation",
++					);
++					return {
++						models: adapter.models,
++						registry: adapter.registry,
++						settings: {
++							extensions: [adapter.extension],
++							retry: {
++								enabled: options.retry ?? false,
++								maxRetries: 1,
++								baseDelayMs: 1,
++							},
++							compaction: {
++								enabled: false,
++								reserveTokens: 64,
++								keepRecentTokens: 1,
++								backgroundTokens: 0,
++							},
++						},
++					};
++				},
++			});
++			try {
++				await host.accept("command", "Synthetic request", {
++					run: "run",
++					user: "user-message",
++					assistant: "assistant",
++					sequence: 1,
++				});
++				await test({
++					host,
++					storage: state.storage,
++					start: async () => {
++						await host.schedule("command");
++					},
++					settled: finished.promise,
++					claimFlush: () => {
++						const entered = deferred(),
++							released = deferred();
++						hold = { entered, released };
++						return { entered: entered.promise, release: released.resolve };
++					},
++					snapshot: async () => ({
++						calls: calls.length,
++						windows: (
++							await env.DB.prepare(
++								"SELECT consumedRequests,contractDenials,closeReason,openSlot FROM privileged_operations",
++							).all()
++						).results,
++						admissions: (
++							await env.DB.prepare(
++								"SELECT effectId,purpose,state,requestDigest FROM model_request_admissions",
++							).all()
++						).results,
++						claims: state.storage.sql
++							.exec("SELECT claimed FROM host_model_dispatch")
++							.toArray(),
++						runs: state.storage.sql
++							.exec("SELECT state,epoch FROM host_runs")
++							.toArray(),
++					}),
++				});
++			} finally {
++				hold?.released.resolve();
++				await credential.releaseModel();
++				await host.yield();
++				await state.storage.deleteAlarm();
++				await state.storage.sync();
++			}
++		},
++	);
+ }
+ 
+ it("the mandatory adapter constructs an exact credential-owned request and bounded stream through private RPC", async () => {
+ 	upstream();
+ 	await gate("valid", async (f) => {
+-		await f.start(); await bounded(f.settled); await f.host.waitIdle();
++		await f.start();
++		await bounded(f.settled);
++		await f.host.waitIdle();
+ 		expect(calls).toHaveLength(1);
+-		expect(calls[0].body).toMatchObject({ version: 1, protocol: "ditto-synthetic-ndjson-1", purpose: "generation", model: "faux-1", thinking: "off", options: { maxTokens: 4096 } });
++		expect(calls[0].body).toMatchObject({
++			version: 1,
++			protocol: "ditto-synthetic-ndjson-1",
++			purpose: "generation",
++			model: "faux-1",
++			thinking: "off",
++			options: { maxTokens: 4096 },
++		});
+ 		expect(calls[0].body.transcript).toContain("Synthetic request");
+-		expect(calls[0].headerNames).toEqual(["accept", "authorization", "content-type"]);
+-		expect(await f.snapshot()).toMatchObject({ calls: 1, windows: [{ consumedRequests: 1, contractDenials: 0 }], admissions: [{ state: "complete" }], claims: [{ claimed: 1 }], runs: [{ state: "complete" }] });
+-		console.log("[007-product-constructed]", JSON.stringify({ ...calls[0], frames, snapshot: await f.snapshot() }));
++		expect(calls[0].headerNames).toEqual([
++			"accept",
++			"authorization",
++			"content-type",
++		]);
++		expect(await f.snapshot()).toMatchObject({
++			calls: 1,
++			windows: [{ consumedRequests: 1, contractDenials: 0 }],
++			admissions: [{ state: "complete" }],
++			claims: [{ claimed: 1 }],
++			runs: [{ state: "complete" }],
++		});
++		console.log(
++			"[007-product-constructed]",
++			JSON.stringify({ ...calls[0], frames, snapshot: await f.snapshot() }),
++		);
+ 	});
+ });
+ 
+ for (const transform of [
+ 	(request: SyntheticModelRequestV1) => ({ ...request, method: "GET" }),
+-	(request: SyntheticModelRequestV1) => ({ ...request, url: `${request.url}?proxy=1` }),
+-	(request: SyntheticModelRequestV1) => ({ ...request, headers: [...request.headers, ["authorization", "caller"]] }),
+-	(request: SyntheticModelRequestV1) => ({ ...request, body: request.body.replace('"version":1', '"version":1,"version":1') }),
+-	(request: SyntheticModelRequestV1) => ({ ...request, body: JSON.stringify({ ...JSON.parse(request.body), thinking: "high" }) }),
+-]) it(`invalid or differently bound request dispatches zero calls: ${transform.toString()}`, async () => {
+-	upstream();
+-	await gate("request-denial", async (f) => {
+-		await f.start(); await bounded(f.settled);
+-		expect(calls).toHaveLength(0);
+-		expect(await f.snapshot()).toMatchObject({ windows: [{ consumedRequests: 0, contractDenials: 1 }], admissions: [], claims: [{ claimed: 0 }] });
+-	}, { transform });
+-});
++	(request: SyntheticModelRequestV1) => ({
++		...request,
++		url: `${request.url}?proxy=1`,
++	}),
++	(request: SyntheticModelRequestV1) => ({
++		...request,
++		headers: [...request.headers, ["authorization", "caller"]],
++	}),
++	(request: SyntheticModelRequestV1) => ({
++		...request,
++		body: request.body.replace('"version":1', '"version":1,"version":1'),
++	}),
++	(request: SyntheticModelRequestV1) => ({
++		...request,
++		body: JSON.stringify({ ...JSON.parse(request.body), thinking: "high" }),
++	}),
++])
++	it(`invalid or differently bound request dispatches zero calls: ${transform.toString()}`, async () => {
++		upstream();
++		await gate(
++			"request-denial",
++			async (f) => {
++				await f.start();
++				await bounded(f.settled);
++				expect(calls).toHaveLength(0);
++				expect(await f.snapshot()).toMatchObject({
++					windows: [{ consumedRequests: 0, contractDenials: 1 }],
++					admissions: [],
++					claims: [{ claimed: 0 }],
++				});
++			},
++			{ transform },
++		);
++	});
+ 
+ const revocations = [
+-	"UPDATE projects SET userId='foreign'", "UPDATE workspace_sessions SET status='archived'",
+-	"UPDATE workspace_sessions SET runtimeOwnerVersion=2", "UPDATE workspace_sessions SET runtimeOwner='legacy'",
+-	"UPDATE sandbox_identities SET kind='project_seed'", "UPDATE sandbox_identities SET retiredAt=1",
+-	"UPDATE sandbox_identities SET lifecycleGeneration=2", "UPDATE sandbox_identities SET incarnationId='replacement'",
+-	"UPDATE sandbox_identities SET controllerNamespace='foreign'", "UPDATE codex_connections SET revoked=1,generation=2",
++	"UPDATE projects SET userId='foreign'",
++	"UPDATE workspace_sessions SET status='archived'",
++	"UPDATE workspace_sessions SET runtimeOwnerVersion=2",
++	"UPDATE workspace_sessions SET runtimeOwner='legacy'",
++	"UPDATE sandbox_identities SET kind='project_seed'",
++	"UPDATE sandbox_identities SET retiredAt=1",
++	"UPDATE sandbox_identities SET lifecycleGeneration=2",
++	"UPDATE sandbox_identities SET incarnationId='replacement'",
++	"UPDATE sandbox_identities SET controllerNamespace='foreign'",
++	"UPDATE codex_connections SET revoked=1,generation=2",
+ 	"UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))",
+ ];
+ for (const phase of ["authority", "credentials", "claim"] as const)
+-	for (const sql of revocations) it(`fresh D1 revocation after held ${phase} prevents attachment: ${sql}`, async () => {
+-		upstream();
+-		await credential.holdModel(phase);
+-		await gate(`race-${phase}`, async (f) => {
+-			await f.start(); await bounded(credential.waitModel());
+-			// Foreign membership fixtures change the owner without creating an authorized replacement.
+-			if (sql.includes("userId='foreign'")) await env.DB.prepare("INSERT INTO user(id,name,email,createdAt,updatedAt) VALUES('foreign','Foreign','foreign@example.invalid',0,0)").run();
+-			await env.DB.prepare(sql).run();
+-			await credential.releaseModel(); await bounded(f.settled);
++	for (const sql of revocations)
++		it(`fresh D1 revocation after held ${phase} prevents attachment: ${sql}`, async () => {
++			upstream();
++			await credential.holdModel(phase);
++			await gate(`race-${phase}`, async (f) => {
++				await f.start();
++				await bounded(credential.waitModel());
++				// Foreign membership fixtures change the owner without creating an authorized replacement.
++				if (sql.includes("userId='foreign'"))
++					await env.DB.prepare(
++						"INSERT INTO user(id,name,email,createdAt,updatedAt) VALUES('foreign','Foreign','foreign@example.invalid',0,0)",
++					).run();
++				await env.DB.prepare(sql).run();
++				await credential.releaseModel();
++				await bounded(f.settled);
++				expect(calls).toHaveLength(0);
++				expect(
++					f.storage.sql.exec("SELECT claimed FROM host_model_dispatch").one()
++						.claimed,
++				).toBe(0);
++			});
++		});
++
++it("Stop wins during credential preparation before the host acknowledgment, with zero fetches", async () => {
++	upstream();
++	await credential.holdModel("credentials");
++	await gate("stop-preparation", async (f) => {
++		await f.start();
++		await bounded(credential.waitModel());
++		await f.host.stop("stop", "run");
++		await credential.releaseModel();
++		await bounded(f.settled);
++		expect(calls).toHaveLength(0);
++		expect(await f.snapshot()).toMatchObject({
++			windows: [{ consumedRequests: 1 }],
++			admissions: [{ state: "failed_known" }],
++			claims: [{ claimed: 0 }],
++		});
++	});
++});
++
++it("a model capability revoked while the actual claim flush is held is freshly denied after that flush", async () => {
++	upstream();
++	await gate("claim-flush-revoke", async (f) => {
++		const hold = f.claimFlush();
++		await f.start();
++		await bounded(hold.entered);
++		await env.DB.prepare(
++			"UPDATE codex_fixture_capabilities SET revision=2",
++		).run();
++		hold.release();
++		await bounded(f.settled);
++		expect(calls).toHaveLength(0);
++		expect(await f.snapshot()).toMatchObject({
++			windows: [{ consumedRequests: 1 }],
++			admissions: [{ state: "failed_known" }],
++			claims: [{ claimed: 1 }],
++		});
++	});
++});
++
++it("three contract denials durably close the window, record review and halt the exact run without reentry", async () => {
++	upstream();
++	await gate(
++		"three-denials",
++		async (f) => {
++			await f.start();
++			await bounded(f.settled);
+ 			expect(calls).toHaveLength(0);
+-			expect(f.storage.sql.exec("SELECT claimed FROM host_model_dispatch").one().claimed).toBe(0);
+-		});
+-	});
+-
+-it("Stop wins during credential preparation before the host acknowledgment, with zero fetches", async () => {
+-	upstream(); await credential.holdModel("credentials");
+-	await gate("stop-preparation", async (f) => {
+-		await f.start(); await bounded(credential.waitModel());
+-		await f.host.stop("stop", "run"); await credential.releaseModel(); await bounded(f.settled);
+-		expect(calls).toHaveLength(0);
+-		expect(await f.snapshot()).toMatchObject({ windows: [{ consumedRequests: 1 }], admissions: [{ state: "failed_known" }], claims: [{ claimed: 0 }] });
+-	});
+-});
+-
+-it("a model capability revoked while the actual claim flush is held is freshly denied after that flush", async () => {
+-	upstream();
+-	await gate("claim-flush-revoke", async (f) => {
+-		const hold = f.claimFlush(); await f.start(); await bounded(hold.entered);
+-		await env.DB.prepare("UPDATE codex_fixture_capabilities SET revision=2").run(); hold.release(); await bounded(f.settled);
+-		expect(calls).toHaveLength(0);
+-		expect(await f.snapshot()).toMatchObject({ windows: [{ consumedRequests: 1 }], admissions: [{ state: "failed_known" }], claims: [{ claimed: 1 }] });
+-	});
+-});
+-
+-it("three contract denials durably close the window, record review and halt the exact run without reentry", async () => {
+-	upstream();
+-	await gate("three-denials", async (f) => {
+-		await f.start(); await bounded(f.settled);
+-		expect(calls).toHaveLength(0);
+-		expect(await f.snapshot()).toMatchObject({ windows: [{ consumedRequests: 0, contractDenials: 3, closeReason: "contract_denials" }], runs: [{ state: "failed" }], claims: [{ claimed: 0 }] });
+-		expect(await env.DB.prepare("SELECT runtimeFailureReasonCode FROM workspace_sessions").first()).toEqual({ runtimeFailureReasonCode: "model_contract_review" });
+-	}, { threeDenials: true });
++			expect(await f.snapshot()).toMatchObject({
++				windows: [
++					{
++						consumedRequests: 0,
++						contractDenials: 3,
++						closeReason: "contract_denials",
++					},
++				],
++				runs: [{ state: "failed" }],
++				claims: [{ claimed: 0 }],
++			});
++			expect(
++				await env.DB.prepare(
++					"SELECT runtimeFailureReasonCode FROM workspace_sessions",
++				).first(),
++			).toEqual({ runtimeFailureReasonCode: "model_contract_review" });
++		},
++		{ threeDenials: true },
++	);
++});
++
++it("concurrent private requests cannot consume an exact window or live claim twice", async () => {
++	upstream();
++	await gate(
++		"duplicate-request",
++		async (f) => {
++			await f.start();
++			await bounded(f.settled);
++			await f.host.waitIdle();
++			expect(await f.snapshot()).toMatchObject({
++				calls: 1,
++				windows: [{ consumedRequests: 1 }],
++				admissions: [{ state: "complete" }],
++				claims: [{ claimed: 1 }],
++			});
++		},
++		{ duplicate: true },
++	);
++});
++
++it("identical local effect IDs remain independently scoped to owned workspace identities", async () => {
++	await env.DB.batch([
++		env.DB.prepare(
++			"INSERT INTO workspace_sessions(id,projectId,userId,status,sandboxIdentityId,runtimeOwner,runtimeOwnerVersion) VALUES('session-2','project','owner','active','executor-2','trusted_v1',1)",
++		),
++		env.DB.prepare(
++			"INSERT INTO sandbox_identities(id,kind,sandboxId,containerId,userId,projectId,workspaceSessionId,state,controllerClass,controllerNamespace,incarnationId) VALUES('executor-2','workspace_session','sandbox-2','container-2','owner','project','session-2','ready','Sandbox','fixture-execution-v1','incarnation-2')",
++		),
++		env.DB.prepare(
++			"INSERT INTO session_commands(id,userId,targetKind,targetId,projectId,sessionId,kind,commandSeq,payloadVersion,userMessageId,assistantMessageId,payloadDigest,acceptedAt,deadlineAt) VALUES('command-2','owner','workspace_session','session-2','project','session-2','prompt',1,1,'user-message-2','assistant-2','fixture-digest',0,?)",
++		).bind(Date.now() + 600000),
++		env.DB.prepare(
++			"INSERT INTO runtime_command_memberships(commandId,sessionId,runId,userMessageId,assistantMessageId,runEpoch) VALUES('command-2','session-2','run','user-message-2','assistant-2',1)",
++		),
++	]);
++	const policy = new ModelProductAuthority(env.DB);
++	const descriptor: ModelTransportDescriptorV1 = {
++		version: 1,
++		subject,
++		requestDigest: "0".repeat(64),
++		attempt: {
++			version: 1,
++			effectId: "local-effect",
++			operationId: "local-operation",
++			runId: "run",
++			commandId: "command",
++			assistantId: "assistant",
++			taskId: 1,
++			epoch: 1,
++			attempt: 1,
++			generation: 1,
++			deadlineAt: Date.now() + 10000,
++			requestDigest: "0".repeat(64),
++			kind: "generation",
++		},
++	};
++	const second: ModelTransportDescriptorV1 = {
++		...descriptor,
++		subject: {
++			...subject,
++			workspaceSessionId: "session-2",
++			identityId: "executor-2",
++			incarnationId: "incarnation-2",
++		},
++		attempt: {
++			...descriptor.attempt,
++			commandId: "command-2",
++			assistantId: "assistant-2",
++		},
++	};
++	const body = parseSyntheticModelBodyV1({
++		version: 1,
++		protocol: "ditto-synthetic-ndjson-1",
++		purpose: "generation",
++		model: "faux-1",
++		thinking: "off",
++		transcript: "Synthetic policy fixture",
++		options: { maxTokens: 128 },
++	});
++	expect(await policy.reserve(descriptor, body)).not.toBeNull();
++	expect(await policy.reserve(second, body)).not.toBeNull();
++	expect(await policy.reserve(descriptor, body)).toBeNull();
++	expect(
++		(
++			await env.DB.prepare(
++				"SELECT effectId,windowId FROM model_request_admissions",
++			).all()
++		).results,
++	).toHaveLength(2);
++	expect(calls).toHaveLength(0);
++});
++
++it("window expiry during credential preparation denies before host claim and fetch", async () => {
++	upstream();
++	await credential.holdModel("credentials");
++	await gate("expired-window", async (f) => {
++		await f.start();
++		await bounded(credential.waitModel());
++		await env.DB.prepare("UPDATE privileged_operations SET expiresAt=1").run();
++		await credential.releaseModel();
++		await bounded(f.settled);
++		expect(await f.snapshot()).toMatchObject({
++			calls: 0,
++			windows: [{ consumedRequests: 1 }],
++			admissions: [{ state: "failed_known" }],
++			claims: [{ claimed: 0 }],
++		});
++	});
+ });
+ 
+ it("production credentials remain unavailable even with connected fixture records", async () => {
+ 	const stub = env.CodexCredential.getByName("owner");
+ 	await runInDurableObject(stub, async (_instance, state) => {
+ 		const production = new CodexCredential(state, env);
+-		expect(await production.requestModel({}, { describe: async () => { throw new Error("must not inspect"); }, claim: async () => ({ status: "admitted" }), halt: async () => ({ status: "halted" }) })).toEqual({ version: 1, status: "unavailable" });
++		expect(
++			await production.requestModel(
++				{},
++				{
++					describe: async () => {
++						throw new Error("must not inspect");
++					},
++					claim: async () => ({ status: "admitted" }),
++					halt: async () => ({ status: "halted" }),
++				},
++			),
++		).toEqual({ version: 1, status: "unavailable" });
+ 	});
+ 	expect(calls).toHaveLength(0);
+ });
+ 
+ it("a known generation failure retries as a separate admitted attempt", async () => {
+-	upstream(503, "", 1); upstream();
+-	await gate("generation-retry", async (f) => {
+-		await f.start(); await until(() => calls.length === 2); await f.host.waitIdle();
+-		expect(await f.snapshot()).toMatchObject({ calls: 2, windows: [{ consumedRequests: 1, closeReason: "failed_known" }, { consumedRequests: 1, closeReason: "complete" }], admissions: [{ state: "failed_known" }, { state: "complete" }], claims: [{ claimed: 1 }, { claimed: 1 }] });
+-	}, { retry: true });
++	upstream(503, "", 1);
++	upstream();
++	await gate(
++		"generation-retry",
++		async (f) => {
++			await f.start();
++			await until(() => calls.length === 2);
++			await f.host.waitIdle();
++			expect(await f.snapshot()).toMatchObject({
++				calls: 2,
++				windows: [
++					{ consumedRequests: 1, closeReason: "failed_known" },
++					{ consumedRequests: 1, closeReason: "complete" },
++				],
++				admissions: [{ state: "failed_known" }, { state: "complete" }],
++				claims: [{ claimed: 1 }, { claimed: 1 }],
++			});
++		},
++		{ retry: true },
++	);
+ });
+ 
+ it("Git metadata's reserved attempt is never refunded after a known failure", async () => {
+-	upstream(503, "", 1); upstream();
+-	await gate("metadata-reservation", async (f) => {
+-		await f.start(); await until(() => f.storage.sql.exec("SELECT id FROM host_effects").toArray().length === 2);
+-		await bounded(f.settled); await f.host.yield();
++	upstream(503, "", 1);
++	upstream();
++	await gate(
++		"metadata-reservation",
++		async (f) => {
++			await f.start();
++			await until(
++				() =>
++					f.storage.sql.exec("SELECT id FROM host_effects").toArray().length ===
++					2,
++			);
++			await bounded(f.settled);
++			await f.host.yield();
++			expect(calls).toHaveLength(1);
++			expect(await f.snapshot()).toMatchObject({
++				windows: [{ consumedRequests: 1 }],
++				admissions: [{ purpose: "git_metadata", state: "failed_known" }],
++			});
++		},
++		{ retry: true, purpose: "git_metadata" },
++	);
++});
++
++it("Stop after host acknowledgment retains the credential-bearing start and late product evidence", async () => {
++	upstream();
++	await gate("stop-after-admission", async (f) => {
++		await f.start();
++		await until(() => calls.length === 1);
++		await f.host.stop("stop", "run");
++		await bounded(f.settled);
+ 		expect(calls).toHaveLength(1);
+-		expect(await f.snapshot()).toMatchObject({ windows: [{ consumedRequests: 1 }], admissions: [{ purpose: "git_metadata", state: "failed_known" }] });
+-	}, { retry: true, purpose: "git_metadata" });
+-});
+-
+-it("Stop after host acknowledgment retains the credential-bearing start and late product evidence", async () => {
+-	upstream();
+-	await gate("stop-after-admission", async (f) => {
+-		await f.start(); await until(() => calls.length === 1);
+-		await f.host.stop("stop", "run"); await bounded(f.settled);
+-		expect(calls).toHaveLength(1);
+-		expect(await f.snapshot()).toMatchObject({ admissions: [{ state: "complete" }], claims: [{ claimed: 1 }] });
+-		expect(f.storage.sql.exec("SELECT state FROM host_effects").one().state).toBe("admitted");
++		expect(await f.snapshot()).toMatchObject({
++			admissions: [{ state: "complete" }],
++			claims: [{ claimed: 1 }],
++		});
++		expect(
++			f.storage.sql.exec("SELECT state FROM host_effects").one().state,
++		).toBe("admitted");
+ 		console.log("[007-product-stop-after]", JSON.stringify(await f.snapshot()));
+ 	});
+ });
+ 
+ it("accepted custom summaries use the same private transport and exactly one fresh association", async () => {
+ 	upstream();
+-	await gate("custom-summary", async (f) => {
++	await gate(
++		"custom-summary",
++		async (f) => {
++			await f.start();
++			await until(async () => {
++				const row = f.storage.sql
++					.exec<{ task: number }>(
++						"SELECT task FROM host_tasks WHERE kind='pi.generation'",
++					)
++					.toArray()[0];
++				return (
++					!!row &&
++					(await f.host.task(row.task as Parameters<typeof f.host.task>[0]))
++						?.state.status === "terminal"
++				);
++			});
++			await f.host.compact("command");
++			await until(() => calls.length === 2);
++			await f.host.waitIdle();
++			expect(calls.map((call) => call.body.purpose)).toEqual([
++				"generation",
++				"custom_summary",
++			]);
++			expect(calls[1].body.transcript).toContain("Synthetic request");
++			expect(await f.snapshot()).toMatchObject({
++				admissions: [
++					{ purpose: "generation", state: "complete" },
++					{ purpose: "custom_summary", state: "complete" },
++				],
++				claims: [{ claimed: 1 }, { claimed: 1 }],
++			});
++			console.log(
++				"[007-product-summary]",
++				JSON.stringify({
++					body: calls[1].body,
++					frames,
++					snapshot: await f.snapshot(),
++				}),
++			);
++		},
++		{ retry: true },
++	);
++});
++
++it("a known custom summary failure spends its one attempt without an automatic retry", async () => {
++	upstream(200, encodedFrames, 1);
++	upstream(503, "");
++	await gate(
++		"custom-summary-failure",
++		async (f) => {
++			await f.start();
++			await until(async () => {
++				const row = f.storage.sql
++					.exec<{ task: number }>(
++						"SELECT task FROM host_tasks WHERE kind='pi.generation'",
++					)
++					.toArray()[0];
++				return (
++					!!row &&
++					(await f.host.task(row.task as Parameters<typeof f.host.task>[0]))
++						?.state.status === "terminal"
++				);
++			});
++			await f.host.compact("command");
++			await until(() => calls.length === 2);
++			await until(
++				async () =>
++					!!(await env.DB.prepare(
++						"SELECT 1 FROM model_request_admissions WHERE purpose='custom_summary' AND state='failed_known'",
++					).first()),
++			);
++			await f.host.waitIdle();
++			await f.host.yield();
++			expect(calls.map((call) => call.body.purpose)).toEqual([
++				"generation",
++				"custom_summary",
++			]);
++			expect(await f.snapshot()).toMatchObject({
++				admissions: [
++					{ state: "complete" },
++					{ purpose: "custom_summary", state: "failed_known" },
++				],
++				claims: [{ claimed: 1 }, { claimed: 1 }],
++				runs: [{ state: "failed" }],
++			});
++		},
++		{ retry: true },
++	);
++});
++
++it("disconnect of the local credential record while preparation is held prevents fetch even before a D1 projection", async () => {
++	upstream();
++	await credential.holdModel("credentials");
++	await gate("local-disconnect", async (f) => {
+ 		await f.start();
+-		await until(async () => (await f.host.inspect()).tasks.some((t) => t.record.kind === "pi.generation" && t.record.state.status === "terminal"));
+-		await f.host.compact("command");
+-		await until(() => calls.length === 2);
+-		await f.host.waitIdle();
+-		expect(calls.map((call) => call.body.purpose)).toEqual(["generation", "custom_summary"]);
+-		expect(calls[1].body.transcript).toContain("Synthetic request");
+-		expect(await f.snapshot()).toMatchObject({ admissions: [{ purpose: "generation", state: "complete" }, { purpose: "custom_summary", state: "complete" }], claims: [{ claimed: 1 }, { claimed: 1 }] });
+-		console.log("[007-product-summary]", JSON.stringify({ body: calls[1].body, frames, snapshot: await f.snapshot() }));
+-	}, { retry: true });
+-});
+-
+-it("a known custom summary failure spends its one attempt without an automatic retry", async () => {
+-	upstream(200, encodedFrames, 1); upstream(503, "");
+-	await gate("custom-summary-failure", async (f) => {
++		await bounded(credential.waitModel());
++		await env.CodexCredential.getByName("owner").revoke("owner", 2);
++		await credential.releaseModel();
++		await bounded(f.settled);
++		expect(calls).toHaveLength(0);
++		expect(await f.snapshot()).toMatchObject({
++			admissions: [{ state: "failed_known" }],
++			claims: [{ claimed: 0 }],
++		});
++	});
++});
++
++it("real epoch-first Stop during the claim durability flush prevents fetch without refunding consumption", async () => {
++	upstream();
++	await gate("claim-flush-stop", async (f) => {
++		const hold = f.claimFlush();
+ 		await f.start();
+-		await until(async () => (await f.host.inspect()).tasks.some((t) => t.record.kind === "pi.generation" && t.record.state.status === "terminal"));
+-		await f.host.compact("command");
+-		await until(() => calls.length === 2);
+-		await f.host.yield();
+-		expect(calls.map((call) => call.body.purpose)).toEqual(["generation", "custom_summary"]);
+-		expect(await f.snapshot()).toMatchObject({ admissions: [{ state: "complete" }, { purpose: "custom_summary", state: "failed_known" }], claims: [{ claimed: 1 }, { claimed: 1 }] });
+-	}, { retry: true });
+-});
+-
+-it("disconnect of the local credential record while preparation is held prevents fetch even before a D1 projection", async () => {
+-	upstream(); await credential.holdModel("credentials");
+-	await gate("local-disconnect", async (f) => {
+-		await f.start(); await bounded(credential.waitModel());
+-		await env.CodexCredential.getByName("owner").revoke("owner", 2);
+-		await credential.releaseModel(); await bounded(f.settled);
++		await bounded(hold.entered);
++		const stopped = f.host.stop("stop", "run");
++		expect(
++			f.storage.sql.exec("SELECT epoch FROM host_runs WHERE id='run'").one()
++				.epoch,
++		).toBe(2);
++		hold.release();
++		await bounded(stopped);
++		await bounded(f.settled);
+ 		expect(calls).toHaveLength(0);
+-		expect(await f.snapshot()).toMatchObject({ admissions: [{ state: "failed_known" }], claims: [{ claimed: 0 }] });
+-	});
+-});
+-
+-it("real epoch-first Stop during the claim durability flush prevents fetch without refunding consumption", async () => {
+-	upstream();
+-	await gate("claim-flush-stop", async (f) => {
+-		const hold = f.claimFlush(); await f.start(); await bounded(hold.entered);
+-		const stopped = f.host.stop("stop", "run");
+-		expect(f.storage.sql.exec("SELECT epoch FROM host_runs WHERE id='run'").one().epoch).toBe(2);
+-		hold.release(); await bounded(stopped); await bounded(f.settled);
+-		expect(calls).toHaveLength(0);
+-		expect(await f.snapshot()).toMatchObject({ admissions: [{ state: "failed_known" }], claims: [{ claimed: 1 }] });
+-	});
+-});
+-
+-for (const response of ["truncated", `${JSON.stringify(frames[1])}\n{}\n`, "x".repeat(131073)])
++		expect(await f.snapshot()).toMatchObject({
++			admissions: [{ state: "failed_known" }],
++			claims: [{ claimed: 1 }],
++		});
++	});
++});
++
++for (const response of [
++	"truncated",
++	`${JSON.stringify(frames[1])}\n{}\n`,
++	"x".repeat(131073),
++])
+ 	it("malformed upstream outcomes retain uncertain admission without redispatch", async () => {
+ 		upstream(200, response);
+ 		await gate("unknown-upstream", async (f) => {
+-			await f.start(); await bounded(f.settled); await f.host.yield();
+-			expect(await f.snapshot()).toMatchObject({ calls: 1, windows: [{ consumedRequests: 1 }], admissions: [{ state: "outcome_unknown" }], claims: [{ claimed: 1 }] });
+-		});
+-	});
++			await f.start();
++			await bounded(f.settled);
++			await f.host.yield();
++			expect(await f.snapshot()).toMatchObject({
++				calls: 1,
++				windows: [{ consumedRequests: 1 }],
++				admissions: [{ state: "outcome_unknown" }],
++				claims: [{ claimed: 1 }],
++			});
++		});
++	});
+--- a/apps/credential-tests/src/entry.ts
++++ b/apps/credential-tests/src/entry.ts
+@@ -1,8 +1,3 @@
+-import { WorkerEntrypoint } from "cloudflare:workers";
+-import type { ModelTransportDescriptorV1 } from "../../../packages/runtime-contracts/src/model.js";
+-import type { ModelClaimRpc } from "../../web/src/lib/model-product-authority";
+-import { performPrivateModelRequest, readPrivateModelPermit, type ModelProductBindings } from "../../web/src/lib/model-product-transport";
+-export { PiDurableHostFixture } from "../../runtime/src/pi-durable-host.ts";
+ import type { CodexTokens } from "../../web/src/lib/codex-credential-crypto";
+ import { CodexCredential } from "../../web/src/lib/codex-credential-do";
+ 
+@@ -31,15 +26,38 @@
+ 	waitForRotation() {
+ 		return this.rotation;
+ 	}
+-	private modelWait: { phase: string; entered: Promise<void>; mark(): void; released: Promise<void>; release(): void } | undefined;
++	private modelWait:
++		| {
++				phase: string;
++				entered: Promise<void>;
++				mark(): void;
++				released: Promise<void>;
++				release(): void;
++		  }
++		| undefined;
+ 	holdModel(phase: "authority" | "credentials" | "claim") {
+ 		let mark!: () => void, release!: () => void;
+-		this.modelWait = { phase, entered: new Promise<void>((r) => { mark = r; }), mark: () => mark(),
+-			released: new Promise<void>((r) => { release = r; }), release: () => release() };
++		this.modelWait = {
++			phase,
++			entered: new Promise<void>((r) => {
++				mark = r;
++			}),
++			mark: () => mark(),
++			released: new Promise<void>((r) => {
++				release = r;
++			}),
++			release: () => release(),
++		};
+ 	}
+-	waitModel() { return this.modelWait?.entered; }
+-	releaseModel() { this.modelWait?.release(); }
+-	protected requestAvailable() { return true; }
++	waitModel() {
++		return this.modelWait?.entered;
++	}
++	releaseModel() {
++		this.modelWait?.release();
++	}
++	protected requestAvailable() {
++		return true;
++	}
+ 	protected async modelPhase(phase: "authority" | "credentials" | "claim") {
+ 		const wait = this.modelWait;
+ 		if (wait?.phase !== phase) return;
+@@ -81,9 +99,4 @@
+ 		this.resume?.();
+ 	}
+ }
+-export class FixtureProduct extends WorkerEntrypoint<ModelProductBindings> {
+-	requestModel(input: unknown, capability: ModelClaimRpc) { return performPrivateModelRequest(this.env, input, capability, true); }
+-	readModelPermit(input: unknown, descriptor: ModelTransportDescriptorV1) { return readPrivateModelPermit(this.env.DB, input, descriptor, true); }
+-	fetch() { return new Response("Not found", { status: 404 }); }
+-}
+-export default FixtureProduct;
++export default { fetch: () => new Response("Not found", { status: 404 }) };
+--- a/apps/credential-tests/src/model-entry.ts
++++ b/apps/credential-tests/src/model-entry.ts
+@@ -0,0 +1,24 @@
++import { WorkerEntrypoint } from "cloudflare:workers";
++import type { ModelTransportDescriptorV1 } from "../../../packages/runtime-contracts/src/model.js";
++import type { ModelClaimRpc } from "../../web/src/lib/model-product-authority";
++import {
++	type ModelProductBindings,
++	performPrivateModelRequest,
++	readPrivateModelPermit,
++} from "../../web/src/lib/model-product-transport";
++
++export { PiDurableHostFixture } from "../../runtime/src/pi-durable-host.ts";
++export { CodexCredential, FixtureCredential } from "./entry";
++
++export class FixtureProduct extends WorkerEntrypoint<ModelProductBindings> {
++	requestModel(input: unknown, capability: ModelClaimRpc) {
++		return performPrivateModelRequest(this.env, input, capability, true);
++	}
++	readModelPermit(input: unknown, descriptor: ModelTransportDescriptorV1) {
++		return readPrivateModelPermit(this.env.DB, input, descriptor, true);
++	}
++	fetch() {
++		return new Response("Not found", { status: 404 });
++	}
++}
++export default FixtureProduct;
+--- a/apps/credential-tests/vitest.config.ts
++++ b/apps/credential-tests/vitest.config.ts
+@@ -12,7 +12,7 @@
+ 		deps: { optimizer: { ssr: { enabled: true, include: ["@cloudflare/containers", "@cloudflare/sandbox", "@earendil-works/pi-durable", "@earendil-works/pi-durable/storage/sqlite", "@earendil-works/pi-ai/models", "@earendil-works/pi-ai/providers/faux", "@earendil-works/chord/context", "@earendil-works/chord/delta", "typebox"] } } },
+ 		poolOptions: {
+ 			workers: {
+-				main: "./src/entry.ts",
++				main: "./src/model-entry.ts",
+ 				miniflare: {
+ 					compatibilityDate: "2026-03-10",
+ 					compatibilityFlags: ["nodejs_compat"],
+--- a/apps/runtime/src/pi-durable-host.ts
++++ b/apps/runtime/src/pi-durable-host.ts
+@@ -1973,9 +1973,14 @@
+ 				productCheck = check;
+ 			},
+ 			halt: async () => {
+-				if (!["running", "recovering", "stopping"].includes(this.run(correlation.run).state)) return;
++				if (
++					!["running", "recovering", "stopping"].includes(
++						this.run(correlation.run).state,
++					)
++				)
++					return;
+ 				this.block("model-contract-denials", correlation.run);
+-				await this.durable();
++				await this.durable(context);
+ 			},
+ 			claim: async (input: unknown) => {
+ 				const supplied = parseModelAttemptV1(input);
+--- a/apps/runtime/src/pi-durable-models.ts
++++ b/apps/runtime/src/pi-durable-models.ts
+@@ -1,12 +1,40 @@
+ import { RpcTarget } from "cloudflare:workers";
+-import { parseModelAttemptV1, parseModelSubjectV1, parseSyntheticModelBodyV1, parseSyntheticModelRequestV1, syntheticModelRequestDigest, SYNTHETIC_MODEL_URL, type ModelSubjectV1, type ModelTransportDescriptorV1, type SyntheticModelOutcomeV1 } from "../../../packages/runtime-contracts/src/model.js";
+-import { awaitWithContext, BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
++import {
++	awaitWithContext,
++	BACKGROUND_CONTEXT,
++	withAbortSignal,
++} from "@earendil-works/chord/context";
+ import { createModels } from "@earendil-works/pi-ai/models";
+-import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai/providers/faux";
++import {
++	fauxAssistantMessage,
++	fauxProvider,
++} from "@earendil-works/pi-ai/providers/faux";
+ import { createAssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
+ import { normalizeContext } from "@earendil-works/pi-ai/utils/transcript";
+-import { CompactionTask, GenerationTask, createRegistry, defineExtension, hook } from "@earendil-works/pi-durable";
+-import { requestDigest, semanticTranscript, type HostGuard, type ModelDispatch } from "./pi-durable-host.ts";
++import {
++	CompactionTask,
++	createRegistry,
++	defineExtension,
++	GenerationTask,
++	hook,
++} from "@earendil-works/pi-durable";
++import {
++	type ModelSubjectV1,
++	type ModelTransportDescriptorV1,
++	parseModelAttemptV1,
++	parseModelSubjectV1,
++	parseSyntheticModelBodyV1,
++	parseSyntheticModelRequestV1,
++	SYNTHETIC_MODEL_URL,
++	type SyntheticModelOutcomeV1,
++	syntheticModelRequestDigest,
++} from "../../../packages/runtime-contracts/src/model.js";
++import {
++	type HostGuard,
++	type ModelDispatch,
++	requestDigest,
++	semanticTranscript,
++} from "./pi-durable-host.ts";
+ 
+ export type OwnedModelRequest = {
+ 	userId: string;
+@@ -22,31 +50,55 @@
+ 	#used = false;
+ 	#descriptor: ModelTransportDescriptorV1 | undefined;
+ 
+-	static async forRequest(dispatch: ModelDispatch, subject: ModelSubjectV1, request: unknown, product: PrivateModelTransport) {
++	static async forRequest(
++		dispatch: ModelDispatch,
++		subject: ModelSubjectV1,
++		request: unknown,
++		product: PrivateModelTransport,
++	) {
+ 		const narrowed = parseSyntheticModelRequestV1(request);
+ 		const scope = parseModelSubjectV1(subject);
+ 		const digest = await syntheticModelRequestDigest(narrowed);
+-		const target = new ExactModelClaim(dispatch, { userId: scope.userId, projectId: scope.projectId, workspaceSessionId: scope.workspaceSessionId, requestDigest: digest });
+-		const descriptor: ModelTransportDescriptorV1 = { version: 1, subject: scope, attempt: dispatch.attempt, requestDigest: digest };
++		const target = new ExactModelClaim(dispatch, {
++			userId: scope.userId,
++			projectId: scope.projectId,
++			workspaceSessionId: scope.workspaceSessionId,
++			requestDigest: digest,
++		});
++		const descriptor: ModelTransportDescriptorV1 = {
++			version: 1,
++			subject: scope,
++			attempt: dispatch.attempt,
++			requestDigest: digest,
++		};
+ 		target.#descriptor = descriptor;
+ 		dispatch.bindProductAuthority(async () => {
+ 			const result = await product.readModelPermit(narrowed, descriptor);
+-			if (result.status !== "current") throw new Error("Fresh product authority denied");
++			if (result.status !== "current")
++				throw new Error("Fresh product authority denied");
+ 		});
+ 		return target;
+ 	}
+ 
+ 	async describe(): Promise<ModelTransportDescriptorV1> {
+-		if (!this.#descriptor) throw new Error("Test-only unbound claim has no product descriptor");
++		if (!this.#descriptor)
++			throw new Error("Test-only unbound claim has no product descriptor");
+ 		return structuredClone(this.#descriptor);
+ 	}
+ 
+ 	async halt(attempt: unknown): Promise<{ status: "halted" | "denied" }> {
+ 		try {
+-			if (!this.#descriptor || JSON.stringify(parseModelAttemptV1(attempt)) !== JSON.stringify(this.#dispatch.attempt)) return { status: "denied" };
++			if (
++				!this.#descriptor ||
++				JSON.stringify(parseModelAttemptV1(attempt)) !==
++					JSON.stringify(this.#dispatch.attempt)
++			)
++				return { status: "denied" };
+ 			await this.#dispatch.halt();
+ 			return { status: "halted" };
+-		} catch { return { status: "denied" }; }
++		} catch {
++			return { status: "denied" };
++		}
+ 	}
+ 
+ 	constructor(dispatch: ModelDispatch, owned: OwnedModelRequest) {
+@@ -92,65 +144,169 @@
+ }
+ 
+ export interface PrivateModelTransport {
+-	requestModel(request: unknown, capability: ExactModelClaim): Promise<SyntheticModelOutcomeV1>;
+-	readModelPermit(request: unknown, descriptor: ModelTransportDescriptorV1): Promise<{ status: "current" | "denied" }>;
++	requestModel(
++		request: unknown,
++		capability: ExactModelClaim,
++	): Promise<SyntheticModelOutcomeV1>;
++	readModelPermit(
++		request: unknown,
++		descriptor: ModelTransportDescriptorV1,
++	): Promise<{ status: "current" | "denied" }>;
+ }
+ 
+ /** Mandatory guarded composition for the synthetic private product protocol, never live Codex. */
+-export function createPrivateModelAdapter(guard: HostGuard, product: PrivateModelTransport, owned: ModelSubjectV1, generationPurpose: "generation" | "git_metadata" = "generation") {
++export function createPrivateModelAdapter(
++	guard: HostGuard,
++	product: PrivateModelTransport,
++	owned: ModelSubjectV1,
++	generationPurpose: "generation" | "git_metadata" = "generation",
++) {
+ 	const subject = Object.freeze(parseModelSubjectV1(owned));
+ 	const faux = fauxProvider({ tokensPerSecond: 0 });
+ 	const stream: typeof faux.provider.stream = (model, transcript, options) => {
+ 		const events = createAssistantMessageEventStream();
+-		const context = options?.signal ? withAbortSignal(options.signal, BACKGROUND_CONTEXT) : BACKGROUND_CONTEXT;
++		const context = options?.signal
++			? withAbortSignal(options.signal, BACKGROUND_CONTEXT)
++			: BACKGROUND_CONTEXT;
+ 		void (async () => {
+ 			try {
+ 				context.abortSignal?.throwIfAborted();
+-				const admitted = await guard.model({ model: { provider: model.provider, id: model.id }, transcript, options: { ...options } }, context,
++				const admitted = await guard.model(
++					{
++						model: { provider: model.provider, id: model.id },
++						transcript,
++						options: { ...options },
++					},
++					context,
+ 					async (dispatch) => {
+-						const body = parseSyntheticModelBodyV1({ version: 1, protocol: "ditto-synthetic-ndjson-1",
+-							purpose: dispatch.attempt.kind === "custom_summary" ? "custom_summary" : generationPurpose,
+-							model: model.id, thinking: options && "reasoning" in options ? options.reasoning ?? "off" : "off", transcript: JSON.stringify(semanticTranscript(transcript)),
+-							options: { maxTokens: options?.maxTokens ?? 4096 } });
+-						const request = parseSyntheticModelRequestV1({ version: 1, method: "POST", url: SYNTHETIC_MODEL_URL,
+-							headers: [["content-type", "application/json"], ["accept", "application/x-ndjson"]], body: JSON.stringify(body) });
+-						const claim = await awaitWithContext(ExactModelClaim.forRequest(dispatch, subject, request, product), context);
+-						const outcome = await awaitWithContext(product.requestModel(request, claim), context);
++						const body = parseSyntheticModelBodyV1({
++							version: 1,
++							protocol: "ditto-synthetic-ndjson-1",
++							purpose:
++								dispatch.attempt.kind === "custom_summary"
++									? "custom_summary"
++									: generationPurpose,
++							model: model.id,
++							thinking:
++								options && "reasoning" in options
++									? (options.reasoning ?? "off")
++									: "off",
++							transcript: JSON.stringify(semanticTranscript(transcript)),
++							options: { maxTokens: options?.maxTokens ?? 4096 },
++						});
++						const request = parseSyntheticModelRequestV1({
++							version: 1,
++							method: "POST",
++							url: SYNTHETIC_MODEL_URL,
++							headers: [
++								["content-type", "application/json"],
++								["accept", "application/x-ndjson"],
++							],
++							body: JSON.stringify(body),
++						});
++						const claim = await awaitWithContext(
++							ExactModelClaim.forRequest(dispatch, subject, request, product),
++							context,
++						);
++						const outcome = await awaitWithContext(
++							product.requestModel(request, claim),
++							context,
++						);
+ 						context.abortSignal?.throwIfAborted();
+-						if (outcome.version !== 1 || !["complete", "failed_known"].includes(outcome.status)) throw new Error("Private model transport denied or uncertain");
+-						if (outcome.status === "failed_known") return fauxAssistantMessage([], { stopReason: "error", errorMessage: "503 Synthetic known model rejection" });
+-						if (outcome.status !== "complete") throw new Error("Private model outcome denied");
++						if (
++							outcome.version !== 1 ||
++							!["complete", "failed_known"].includes(outcome.status)
++						)
++							throw new Error("Private model transport denied or uncertain");
++						if (outcome.status === "failed_known")
++							return fauxAssistantMessage([], {
++								stopReason: "error",
++								errorMessage: "503 Synthetic known model rejection",
++							});
++						if (outcome.status !== "complete")
++							throw new Error("Private model outcome denied");
+ 						const final = outcome.frames.at(-1);
+-						if (!final || final.type !== "done") throw new Error("Missing synthetic completion");
+-						const text = outcome.frames.flatMap((frame) => frame.type === "delta" ? [frame.text] : []).join("");
+-						const response = fauxAssistantMessage(text, { stopReason: final.stopReason, ...(final.stopReason === "error" ? { errorMessage: "503 Synthetic known model rejection" } : {}) });
++						if (!final || final.type !== "done")
++							throw new Error("Missing synthetic completion");
++						const text = outcome.frames
++							.flatMap((frame) => (frame.type === "delta" ? [frame.text] : []))
++							.join("");
++						const response = fauxAssistantMessage(text, {
++							stopReason: final.stopReason,
++							...(final.stopReason === "error"
++								? { errorMessage: "503 Synthetic known model rejection" }
++								: {}),
++						});
+ 						response.model = model.id;
+ 						response.provider = model.provider;
+-						response.usage = { ...response.usage, input: final.inputTokens, output: final.outputTokens, totalTokens: final.inputTokens + final.outputTokens };
++						response.usage = {
++							...response.usage,
++							input: final.inputTokens,
++							output: final.outputTokens,
++							totalTokens: final.inputTokens + final.outputTokens,
++						};
+ 						return response;
+-					});
++					},
++				);
+ 				const message = await admitted.response;
+ 				await guard.result(admitted.effect, context, JSON.stringify(message));
+ 				context.abortSignal?.throwIfAborted();
+-				if (message.stopReason === "error") events.push({ type: "error", reason: "error", error: message });
++				if (message.stopReason === "error")
++					events.push({ type: "error", reason: "error", error: message });
+ 				else events.push({ type: "done", reason: "stop", message });
+ 			} catch {
+-				const error = fauxAssistantMessage([], { stopReason: context.abortSignal?.aborted ? "aborted" : "error", errorMessage: "Private model operation unavailable" });
+-				events.push({ type: "error", reason: error.stopReason === "aborted" ? "aborted" : "error", error });
+-			} finally { events.end(); }
++				const error = fauxAssistantMessage([], {
++					stopReason: context.abortSignal?.aborted ? "aborted" : "error",
++					errorMessage: "Private model operation unavailable",
++				});
++				events.push({
++					type: "error",
++					reason: error.stopReason === "aborted" ? "aborted" : "error",
++					error,
++				});
++			} finally {
++				events.end();
++			}
+ 		})();
+ 		return events;
+ 	};
+-	const models = createModels({ authContext: { env: async () => undefined, fileExists: async () => false } });
+-	models.setProvider({ id: faux.provider.id, name: "Private synthetic product transport", auth: faux.provider.auth,
+-		getModels: () => faux.provider.getModels().filter((model) => ["faux-1", "faux-2"].includes(model.id)), stream, streamSimple: stream });
+-	const extension = defineExtension({ name: "ditto-private-model-transport-v1", hooks: [
+-		hook(GenerationTask, { beforeRequest: async (request, api, context) => {
+-			await guard.bindGeneration(api, await requestDigest(semanticTranscript(normalizeContext({ messages: [...request.messages] }))), context);
+-			return undefined;
+-		} }),
+-		hook(CompactionTask, { beforeCompact: (selection, api, context) => guard.summarize(api, selection, context) }),
+-	] });
++	const models = createModels({
++		authContext: { env: async () => undefined, fileExists: async () => false },
++	});
++	models.setProvider({
++		id: faux.provider.id,
++		name: "Private synthetic product transport",
++		auth: faux.provider.auth,
++		getModels: () =>
++			faux.provider
++				.getModels()
++				.filter((model) => ["faux-1", "faux-2"].includes(model.id)),
++		stream,
++		streamSimple: stream,
++	});
++	const extension = defineExtension({
++		name: "ditto-private-model-transport-v1",
++		hooks: [
++			hook(GenerationTask, {
++				beforeRequest: async (request, api, context) => {
++					await guard.bindGeneration(
++						api,
++						await requestDigest(
++							semanticTranscript(
++								normalizeContext({ messages: [...request.messages] }),
++							),
++						),
++						context,
++					);
++					return undefined;
++				},
++			}),
++			hook(CompactionTask, {
++				beforeCompact: (selection, api, context) =>
++					guard.summarize(api, selection, context),
++			}),
++		],
++	});
+ 	const registry = createRegistry();
+ 	registry.install(extension);
+ 	return { models, registry, extension };
+--- a/apps/web/migrations/0022_synthetic_model_transport.sql
++++ b/apps/web/migrations/0022_synthetic_model_transport.sql
+@@ -6,8 +6,8 @@
+ );
+ --> statement-breakpoint
+ CREATE TABLE model_request_admissions (
+- effectId TEXT PRIMARY KEY NOT NULL,
+- windowId TEXT NOT NULL,
++ effectId TEXT NOT NULL,
++ windowId TEXT PRIMARY KEY NOT NULL,
+  requestDigest TEXT NOT NULL CHECK(length(requestDigest) = 64),
+  purpose TEXT NOT NULL CHECK(purpose IN ('generation','custom_summary','git_metadata')),
+  state TEXT NOT NULL CHECK(state IN ('reserved','admitted','complete','failed_known','outcome_unknown')),
+--- a/apps/web/src/db/schema.ts
++++ b/apps/web/src/db/schema.ts
+@@ -55,26 +55,44 @@
+ 	],
+ );
+ 
+-export const codexFixtureCapabilities = sqliteTable("codex_fixture_capabilities", {
+-	userId: text("userId").primaryKey(),
+-	generation: integer("generation").notNull(),
+-	revision: integer("revision").notNull(),
+-	snapshot: text("snapshot").notNull(),
+-}, (table) => [
+-	check("fixture_generation", sql`${table.generation} > 0`),
+-	check("fixture_revision", sql`${table.revision} > 0`),
+-	check("fixture_snapshot_bound", sql`length(${table.snapshot}) <= 4096`),
+-]);
+-
+-export const modelRequestAdmissions = sqliteTable("model_request_admissions", {
+-	effectId: text("effectId").primaryKey(),
+-	windowId: text("windowId").notNull(),
+-	requestDigest: text("requestDigest").notNull(),
+-	purpose: text("purpose", { enum: ["generation", "custom_summary", "git_metadata"] }).notNull(),
+-	state: text("state", { enum: ["reserved", "admitted", "complete", "failed_known", "outcome_unknown"] }).notNull(),
+-	createdAt: integer("createdAt").notNull(),
+-	updatedAt: integer("updatedAt").notNull(),
+-}, (table) => [index("model_request_admissions_window_idx").on(table.windowId)]);
++export const codexFixtureCapabilities = sqliteTable(
++	"codex_fixture_capabilities",
++	{
++		userId: text("userId").primaryKey(),
++		generation: integer("generation").notNull(),
++		revision: integer("revision").notNull(),
++		snapshot: text("snapshot").notNull(),
++	},
++	(table) => [
++		check("fixture_generation", sql`${table.generation} > 0`),
++		check("fixture_revision", sql`${table.revision} > 0`),
++		check("fixture_snapshot_bound", sql`length(${table.snapshot}) <= 4096`),
++	],
++);
++
++export const modelRequestAdmissions = sqliteTable(
++	"model_request_admissions",
++	{
++		effectId: text("effectId").notNull(),
++		windowId: text("windowId").primaryKey(),
++		requestDigest: text("requestDigest").notNull(),
++		purpose: text("purpose", {
++			enum: ["generation", "custom_summary", "git_metadata"],
++		}).notNull(),
++		state: text("state", {
++			enum: [
++				"reserved",
++				"admitted",
++				"complete",
++				"failed_known",
++				"outcome_unknown",
++			],
++		}).notNull(),
++		createdAt: integer("createdAt").notNull(),
++		updatedAt: integer("updatedAt").notNull(),
++	},
++	(table) => [index("model_request_admissions_window_idx").on(table.windowId)],
++);
+ 
+ export const projects = sqliteTable(
+ 	"projects",
+--- a/apps/web/src/lib/codex-credential-do.ts
++++ b/apps/web/src/lib/codex-credential-do.ts
+@@ -1,18 +1,26 @@
+ import { DurableObject } from "cloudflare:workers";
+ import {
++	type ModelTransportDescriptorV1,
+ 	parseModelTransportDescriptorV1,
+ 	SYNTHETIC_MODEL_LIMITS,
+-	type ModelTransportDescriptorV1,
+ 	type SyntheticModelOutcomeV1,
+ } from "../../../../packages/runtime-contracts/src/model.js";
+-import { awaitSynthetic, readSyntheticStream, reconstructSyntheticRequest, syntheticRequestDigest } from "./codex-request-contract";
+-import { ModelProductAuthority, type ModelClaimRpc } from "./model-product-authority";
+ import {
+ 	type CodexTokens,
+ 	type CredentialKeyring,
+ 	openCredentials,
+ 	sealCredentials,
+ } from "./codex-credential-crypto";
++import {
++	awaitSynthetic,
++	readSyntheticStream,
++	reconstructSyntheticRequest,
++	syntheticRequestDigest,
++} from "./codex-request-contract";
++import {
++	type ModelClaimRpc,
++	ModelProductAuthority,
++} from "./model-product-authority";
+ 
+ export type ConnectionStatus =
+ 	| "disconnected"
+@@ -183,33 +191,58 @@
+ 		);
+ 		await this.ctx.storage.sync();
+ 	}
+-	protected requestAvailable(): boolean { return false; }
+-	protected async modelPhase(_phase: "authority" | "credentials" | "claim"): Promise<void> {}
++	protected requestAvailable(): boolean {
++		return false;
++	}
++	protected async modelPhase(
++		_phase: "authority" | "credentials" | "claim",
++	): Promise<void> {}
+ 
+-	async requestModel(input: unknown, capability: ModelClaimRpc): Promise<SyntheticModelOutcomeV1> {
++	async requestModel(
++		input: unknown,
++		capability: ModelClaimRpc,
++	): Promise<SyntheticModelOutcomeV1> {
+ 		if (!this.requestAvailable()) return { version: 1, status: "unavailable" };
+ 		const policy = new ModelProductAuthority(this.env.DB);
+ 		const overall = AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs);
+ 		let descriptor: ModelTransportDescriptorV1;
+ 		try {
+-			descriptor = parseModelTransportDescriptorV1(await awaitSynthetic(capability.describe(), overall));
+-			if (!this.#owned(descriptor.subject.userId)) return { version: 1, status: "denied" };
+-		} catch { return { version: 1, status: "denied" }; }
++			descriptor = parseModelTransportDescriptorV1(
++				await awaitSynthetic(capability.describe(), overall),
++			);
++			if (!this.#owned(descriptor.subject.userId))
++				return { version: 1, status: "denied" };
++		} catch {
++			return { version: 1, status: "denied" };
++		}
+ 		let reconstructed: ReturnType<typeof reconstructSyntheticRequest>;
+ 		try {
+ 			reconstructed = reconstructSyntheticRequest(input);
+-			if (await awaitSynthetic(syntheticRequestDigest(reconstructed.request), overall) !== descriptor.requestDigest)
++			if (
++				(await awaitSynthetic(
++					syntheticRequestDigest(reconstructed.request),
++					overall,
++				)) !== descriptor.requestDigest
++			)
+ 				throw new Error("request_association");
+ 		} catch {
+ 			try {
+-				if (await awaitSynthetic(policy.denial(descriptor), overall)) await awaitSynthetic(capability.halt(descriptor.attempt), overall);
+-			} catch { /* A failed denial acknowledgment never admits model work. */ }
++				if (await awaitSynthetic(policy.denial(descriptor), overall))
++					await awaitSynthetic(capability.halt(descriptor.attempt), overall);
++			} catch {
++				/* A failed denial acknowledgment never admits model work. */
++			}
+ 			return { version: 1, status: "denied" };
+ 		}
+-		const { request, body } = reconstructed, owner = descriptor.subject.userId;
+-		let reserved = false, dispatched = false;
++		const { request, body } = reconstructed,
++			owner = descriptor.subject.userId;
++		let reserved = false,
++			dispatched = false;
+ 		const controller = new AbortController();
+-		const duration = Math.min(SYNTHETIC_MODEL_LIMITS.deadlineMs, descriptor.attempt.deadlineAt - Date.now());
++		const duration = Math.min(
++			SYNTHETIC_MODEL_LIMITS.deadlineMs,
++			descriptor.attempt.deadlineAt - Date.now(),
++		);
+ 		if (duration <= 0) return { version: 1, status: "denied" };
+ 		const timeout = setTimeout(() => controller.abort(), duration);
+ 		const signal = AbortSignal.any([overall, controller.signal]);
+@@ -218,53 +251,106 @@
+ 		try {
+ 			await wait(this.modelPhase("authority"));
+ 			controller.signal.throwIfAborted();
+-			if (!(await wait(policy.current(descriptor, body)))) return { version: 1, status: "denied" };
++			if (!(await wait(policy.current(descriptor, body))))
++				return { version: 1, status: "denied" };
+ 			const fresh = await wait(this.ensureFresh(owner));
+-			if (fresh.status !== "connected" || fresh.generation !== descriptor.subject.connectionGeneration)
++			if (
++				fresh.status !== "connected" ||
++				fresh.generation !== descriptor.subject.connectionGeneration
++			)
+ 				return { version: 1, status: "denied" };
+ 			const state = this.#read();
+-			if (!state || !state.sealed || state.status !== "connected" || state.generation !== descriptor.subject.connectionGeneration)
++			if (
++				!state ||
++				!state.sealed ||
++				state.status !== "connected" ||
++				state.generation !== descriptor.subject.connectionGeneration
++			)
+ 				return { version: 1, status: "denied" };
+-			if (!(await wait(policy.reserve(descriptor, body)))) return { version: 1, status: "denied" };
++			if (!(await wait(policy.reserve(descriptor, body))))
++				return { version: 1, status: "denied" };
+ 			reserved = true;
+ 			if (!this.#same(state)) throw new Error("connection_changed");
+-			const tokens = await wait(openCredentials(state.sealed, owner, state.generation, this.#keyring(), state.version));
+-			if (!this.#same(state) || tokens.expiresAt <= Date.now() + 60000) throw new Error("connection_changed");
++			const tokens = await wait(
++				openCredentials(
++					state.sealed,
++					owner,
++					state.generation,
++					this.#keyring(),
++					state.version,
++				),
++			);
++			if (!this.#same(state) || tokens.expiresAt <= Date.now() + 60000)
++				throw new Error("connection_changed");
+ 			await wait(this.modelPhase("credentials"));
+-			if (!(await wait(policy.permit(descriptor, body))) || !this.#same(state)) throw new Error("authority_changed");
++			if (!(await wait(policy.permit(descriptor, body))) || !this.#same(state))
++				throw new Error("authority_changed");
+ 			await wait(this.modelPhase("claim"));
+ 			signal.throwIfAborted();
+-			if (!(await wait(policy.permit(descriptor, body))) || !this.#same(state)) throw new Error("authority_changed");
+-			const admitted = await wait(capability.claim(descriptor.attempt, {
+-				userId: descriptor.subject.userId, projectId: descriptor.subject.projectId,
+-				workspaceSessionId: descriptor.subject.workspaceSessionId, requestDigest: descriptor.requestDigest,
+-			}));
++			if (!(await wait(policy.permit(descriptor, body))) || !this.#same(state))
++				throw new Error("authority_changed");
++			const admitted = await wait(
++				capability.claim(descriptor.attempt, {
++					userId: descriptor.subject.userId,
++					projectId: descriptor.subject.projectId,
++					workspaceSessionId: descriptor.subject.workspaceSessionId,
++					requestDigest: descriptor.requestDigest,
++				}),
++			);
+ 			signal.throwIfAborted();
+-			if (admitted.status !== "admitted" || !this.#same(state)) throw new Error("claim_denied");
++			if (admitted.status !== "admitted" || !this.#same(state))
++				throw new Error("claim_denied");
+ 			// No awaited preparation follows the exact host acknowledgment before fetch starts.
+ 			dispatched = true;
+-			fetching = fetch(request.url, { method: "POST", redirect: "manual", signal,
+-				headers: { "content-type": "application/json", "accept": "application/x-ndjson", "authorization": `Bearer ${tokens.access}` },
+-				body: request.body });
++			fetching = fetch(request.url, {
++				method: "POST",
++				redirect: "manual",
++				signal,
++				headers: {
++					"content-type": "application/json",
++					accept: "application/x-ndjson",
++					authorization: `Bearer ${tokens.access}`,
++				},
++				body: request.body,
++			});
+ 			void fetching.catch(() => {});
+ 			await wait(policy.record(descriptor, "admitted"));
+ 			const response = await wait(fetching);
+-			if ([400, 401, 403, 429, 503].includes(response.status) && !response.headers.has("location")) {
++			if (
++				[400, 401, 403, 429, 503].includes(response.status) &&
++				!response.headers.has("location")
++			) {
+ 				if (response.body) await wait(response.body.cancel());
+ 				await wait(policy.record(descriptor, "failed_known"));
+ 				return { version: 1, status: "failed_known" };
+ 			}
+-			const frames = await wait(readSyntheticStream(response, signal, [tokens.access, tokens.refresh, tokens.identity ?? ""]));
++			const frames = await wait(
++				readSyntheticStream(response, signal, [
++					tokens.access,
++					tokens.refresh,
++					tokens.identity ?? "",
++				]),
++			);
+ 			await wait(policy.record(descriptor, "complete"));
+ 			return { version: 1, status: "complete", frames };
+ 		} catch {
+ 			const status = dispatched ? "outcome_unknown" : "denied";
+-			if (reserved) await awaitSynthetic(policy.record(descriptor, dispatched ? "outcome_unknown" : "failed_known"), AbortSignal.timeout(1000)).catch(() => {});
++			if (reserved)
++				await awaitSynthetic(
++					policy.record(
++						descriptor,
++						dispatched ? "outcome_unknown" : "failed_known",
++					),
++					AbortSignal.timeout(1000),
++				).catch(() => {});
+ 			return { version: 1, status };
+ 		} finally {
+ 			clearTimeout(timeout);
+ 			controller.abort();
+-			if (fetching) await awaitSynthetic(fetching, AbortSignal.timeout(1000)).catch(() => {});
++			if (fetching)
++				await awaitSynthetic(fetching, AbortSignal.timeout(1000)).catch(
++					() => {},
++				);
+ 		}
+ 	}
+ 
+--- a/apps/web/src/lib/codex-request-contract.test.ts
++++ b/apps/web/src/lib/codex-request-contract.test.ts
+@@ -3,84 +3,226 @@
+ 	parseSyntheticAccountV1,
+ 	SYNTHETIC_MODEL_URL,
+ } from "../../../../packages/runtime-contracts/src/model.js";
+-import { readSyntheticStream, reconstructSyntheticRequest, syntheticRequestDigest } from "./codex-request-contract";
++import {
++	readSyntheticStream,
++	reconstructSyntheticRequest,
++	syntheticRequestDigest,
++} from "./codex-request-contract";
+ 
+-const body = { version: 1, protocol: "ditto-synthetic-ndjson-1", purpose: "generation", model: "faux-1", thinking: "off", transcript: "Synthetic transcript", options: { maxTokens: 128 } };
+-const request = { version: 1, method: "POST", url: SYNTHETIC_MODEL_URL,
+-	headers: [["content-type", "application/json"], ["accept", "application/x-ndjson"]], body: JSON.stringify(body) };
+-const end = { version: 1, type: "done", stopReason: "stop", inputTokens: 2, outputTokens: 3 };
+-const stream = (text: string, headers: Record<string, string> = {}) => new Response(text, { headers: { "content-type": "application/x-ndjson", ...headers } });
++const body = {
++	version: 1,
++	protocol: "ditto-synthetic-ndjson-1",
++	purpose: "generation",
++	model: "faux-1",
++	thinking: "off",
++	transcript: "Synthetic transcript",
++	options: { maxTokens: 128 },
++};
++const request = {
++	version: 1,
++	method: "POST",
++	url: SYNTHETIC_MODEL_URL,
++	headers: [
++		["content-type", "application/json"],
++		["accept", "application/x-ndjson"],
++	],
++	body: JSON.stringify(body),
++};
++const end = {
++	version: 1,
++	type: "done",
++	stopReason: "stop",
++	inputTokens: 2,
++	outputTokens: 3,
++};
++const stream = (text: string, headers: Record<string, string> = {}) =>
++	new Response(text, {
++		headers: { "content-type": "application/x-ndjson", ...headers },
++	});
+ 
+ describe("strict synthetic request reconstruction", () => {
+ 	it("reconstructs canonical body and headers rather than forwarding caller order or whitespace", async () => {
+-		const changed = { ...request, headers: [...request.headers].reverse(), body: JSON.stringify(body, null, 2) };
++		const changed = {
++			...request,
++			headers: [...request.headers].reverse(),
++			body: JSON.stringify(body, null, 2),
++		};
+ 		expect(reconstructSyntheticRequest(changed).request).toEqual(request);
+-		expect(await syntheticRequestDigest(changed)).toBe(await syntheticRequestDigest(request));
+-		expect(await syntheticRequestDigest({ ...request, body: JSON.stringify({ ...body, thinking: "high" }) })).not.toBe(await syntheticRequestDigest(request));
++		expect(await syntheticRequestDigest(changed)).toBe(
++			await syntheticRequestDigest(request),
++		);
++		expect(
++			await syntheticRequestDigest({
++				...request,
++				body: JSON.stringify({ ...body, thinking: "high" }),
++			}),
++		).not.toBe(await syntheticRequestDigest(request));
+ 	});
+ 	for (const changed of [
+-		{ method: "GET" }, { url: `${SYNTHETIC_MODEL_URL}?x=1` },
++		{ method: "GET" },
++		{ url: `${SYNTHETIC_MODEL_URL}?x=1` },
+ 		{ url: SYNTHETIC_MODEL_URL.replace(".invalid", ".invalid:443") },
+ 		{ url: SYNTHETIC_MODEL_URL.replace("/v1/", "/%76%31/") },
+ 		{ url: SYNTHETIC_MODEL_URL.replace("https://", "https://user@") },
+ 		{ url: SYNTHETIC_MODEL_URL.replace("https://", "http://") },
+ 		{ headers: [...request.headers, ["authorization", "caller"]] },
+ 		{ headers: [...request.headers, ["proxy-authorization", "caller"]] },
+-		{ headers: [["content-type", "application/json"], ["content-type", "application/json"]] },
+-		{ headers: [["content-type", "application/json; charset=utf-8"], request.headers[1]] },
++		{
++			headers: [
++				["content-type", "application/json"],
++				["content-type", "application/json"],
++			],
++		},
++		{
++			headers: [
++				["content-type", "application/json; charset=utf-8"],
++				request.headers[1],
++			],
++		},
+ 		{ headers: [["Content-Type", "application/json"], request.headers[1]] },
+ 		{ body: JSON.stringify({ ...body, unknown: 1 }) },
+-		{ body: JSON.stringify({ ...body, options: { maxTokens: 128, apiKey: "caller" } }) },
++		{
++			body: JSON.stringify({
++				...body,
++				options: { maxTokens: 128, apiKey: "caller" },
++			}),
++		},
+ 		{ body: JSON.stringify({ ...body, transcript: "x".repeat(98305) }) },
+ 		{ body: JSON.stringify({ ...body, model: "real-provider-model" }) },
+ 		{ body: JSON.stringify({ ...body, thinking: "unsupported" }) },
+ 		{ body: JSON.stringify({ ...body, options: { maxTokens: 0 } }) },
+-		{ body: JSON.stringify(body).replace('"version":1', '"version":1,"version":1') },
++		{
++			body: JSON.stringify(body).replace(
++				'"version":1',
++				'"version":1,"version":1',
++			),
++		},
+ 		{ encoding: "gzip" },
+-	]) it(`rejects request variant ${JSON.stringify(changed).slice(0, 100)}`, () => {
+-		expect(() => reconstructSyntheticRequest({ ...request, ...changed })).toThrow();
+-	});
++	])
++		it(`rejects request variant ${JSON.stringify(changed).slice(0, 100)}`, () => {
++			expect(() =>
++				reconstructSyntheticRequest({ ...request, ...changed }),
++			).toThrow();
++		});
+ 	it("rejects duplicate envelope fields and total encoded request overflow", () => {
+-		expect(() => reconstructSyntheticRequest(JSON.stringify(request).replace('"version":1', '"version":1,"version":1'))).toThrow();
+-		expect(() => reconstructSyntheticRequest({ ...request, body: JSON.stringify({ ...body, transcript: "\\".repeat(60000) }) })).toThrow();
++		expect(() =>
++			reconstructSyntheticRequest(
++				JSON.stringify(request).replace(
++					'"version":1',
++					'"version":1,"version":1',
++				),
++			),
++		).toThrow();
++		expect(() =>
++			reconstructSyntheticRequest({
++				...request,
++				body: JSON.stringify({ ...body, transcript: "\\".repeat(60000) }),
++			}),
++		).toThrow();
+ 	});
+ 	it("account capability parsing is bounded, strict and does not infer entitlement from a catalogue", () => {
+-		const account = { version: 1, status: "available", generation: 1, revision: 1, models: [{ id: "faux-1", thinking: ["off", "high"] }] };
++		const account = {
++			version: 1,
++			status: "available",
++			generation: 1,
++			revision: 1,
++			models: [{ id: "faux-1", thinking: ["off", "high"] }],
++		};
+ 		expect(parseSyntheticAccountV1(account)).toEqual(account);
+-		for (const changed of [{ models: [...account.models, ...account.models] }, { status: "revoked" }, { models: [{ id: "faux-1", thinking: ["off", "off"] }] }, { catalogue: true }])
+-			expect(() => parseSyntheticAccountV1({ ...account, ...changed })).toThrow();
++		for (const changed of [
++			{ models: [...account.models, ...account.models] },
++			{ status: "revoked" },
++			{ models: [{ id: "faux-1", thinking: ["off", "off"] }] },
++			{ catalogue: true },
++		])
++			expect(() =>
++				parseSyntheticAccountV1({ ...account, ...changed }),
++			).toThrow();
+ 	});
+ });
+ 
+ describe("bounded synthetic stream reconstruction", () => {
+ 	it("retains exact validated frames across arbitrary chunk boundaries", async () => {
+-		const frames = [{ version: 1, type: "delta", text: "Synthetic answer" }, end];
+-		const encoded = frames.map((frame) => JSON.stringify(frame)).join("\n") + "\n";
++		const frames = [
++			{ version: 1, type: "delta", text: "Synthetic answer" },
++			end,
++		];
++		const encoded =
++			frames.map((frame) => JSON.stringify(frame)).join("\n") + "\n";
+ 		const bytes = new TextEncoder().encode(encoded);
+-		const response = new Response(new ReadableStream({ start(controller) {
+-			for (const byte of bytes) controller.enqueue(new Uint8Array([byte]));
+-			controller.close();
+-		} }), { headers: { "content-type": "application/x-ndjson" } });
+-		expect(await readSyntheticStream(response, new AbortController().signal)).toEqual(frames);
+-	});
+-	for (const text of ["", JSON.stringify(end), `${JSON.stringify(end)}\n{}\n`, '{"version":1,"version":1,"type":"done"}\n',
++		const response = new Response(
++			new ReadableStream({
++				start(controller) {
++					for (const byte of bytes) controller.enqueue(new Uint8Array([byte]));
++					controller.close();
++				},
++			}),
++			{ headers: { "content-type": "application/x-ndjson" } },
++		);
++		expect(
++			await readSyntheticStream(response, new AbortController().signal),
++		).toEqual(frames);
++	});
++	for (const text of [
++		"",
++		JSON.stringify(end),
++		`${JSON.stringify(end)}\n{}\n`,
++		'{"version":1,"version":1,"type":"done"}\n',
+ 		`${JSON.stringify({ version: 1, type: "delta", text: "x".repeat(8193) })}\n`,
+-		Array.from({ length: 129 }, () => JSON.stringify({ version: 1, type: "delta", text: "x" })).join("\n") + "\n",
+-		Array.from({ length: 9 }, () => JSON.stringify({ version: 1, type: "delta", text: "x".repeat(8192) })).join("\n") + "\n",
+-	]) it(`rejects malformed or truncated stream of ${text.length} bytes`, async () => {
+-		await expect(readSyntheticStream(stream(text), new AbortController().signal)).rejects.toThrow();
+-	});
++		Array.from({ length: 129 }, () =>
++			JSON.stringify({ version: 1, type: "delta", text: "x" }),
++		).join("\n") + "\n",
++		Array.from({ length: 9 }, () =>
++			JSON.stringify({ version: 1, type: "delta", text: "x".repeat(8192) }),
++		).join("\n") + "\n",
++	])
++		it(`rejects malformed or truncated stream of ${text.length} bytes`, async () => {
++			await expect(
++				readSyntheticStream(stream(text), new AbortController().signal),
++			).rejects.toThrow();
++		});
+ 	it("rejects redirects, encodings, extra fields and credential echoes including split frames", async () => {
+-		for (const headers of [{ location: "https://elsewhere.invalid" }, { "content-encoding": "gzip" }, { "content-type": "text/event-stream" }])
+-			await expect(readSyntheticStream(stream(`${JSON.stringify(end)}\n`, headers), new AbortController().signal)).rejects.toThrow();
+-		const text = ["private-", "marker"].map((text) => JSON.stringify({ version: 1, type: "delta", text })).join("\n") + `\n${JSON.stringify(end)}\n`;
+-		await expect(readSyntheticStream(stream(text), new AbortController().signal, ["private-marker"])).rejects.toThrow();
+-	});
+-	it("cancellation ends a locally held stream read", async () => {
++		const rejectedHeaders: Record<string, string>[] = [
++			{ location: "https://elsewhere.invalid" },
++			{ "content-encoding": "gzip" },
++			{ "content-type": "text/event-stream" },
++		];
++		for (const headers of rejectedHeaders)
++			await expect(
++				readSyntheticStream(
++					stream(`${JSON.stringify(end)}\n`, headers),
++					new AbortController().signal,
++				),
++			).rejects.toThrow();
++		const text =
++			["private-", "marker"]
++				.map((text) => JSON.stringify({ version: 1, type: "delta", text }))
++				.join("\n") + `\n${JSON.stringify(end)}\n`;
++		await expect(
++			readSyntheticStream(stream(text), new AbortController().signal, [
++				"private-marker",
++			]),
++		).rejects.toThrow();
++	});
++	it("cancellation remains bounded when upstream stream cleanup never acknowledges", async () => {
+ 		const controller = new AbortController();
+-		const response = new Response(new ReadableStream(), { headers: { "content-type": "application/x-ndjson" } });
++		const response = new Response(
++			new ReadableStream({ cancel: () => new Promise<void>(() => {}) }),
++			{ headers: { "content-type": "application/x-ndjson" } },
++		);
++		const started = Date.now();
+ 		const reading = readSyntheticStream(response, controller.signal);
+ 		controller.abort();
+ 		await expect(reading).rejects.toThrow();
++		expect(Date.now() - started).toBeLessThan(1500);
++	});
++	it("cancellation ends a locally held stream read", async () => {
++		const controller = new AbortController();
++		const response = new Response(new ReadableStream(), {
++			headers: { "content-type": "application/x-ndjson" },
++		});
++		const reading = readSyntheticStream(response, controller.signal);
++		controller.abort();
++		await expect(reading).rejects.toThrow();
+ 	});
+ });
+--- a/apps/web/src/lib/codex-request-contract.ts
++++ b/apps/web/src/lib/codex-request-contract.ts
+@@ -19,7 +19,10 @@
+ 		version: 1,
+ 		method: "POST",
+ 		url: SYNTHETIC_MODEL_URL,
+-		headers: [["content-type", "application/json"], ["accept", "application/x-ndjson"]],
++		headers: [
++			["content-type", "application/json"],
++			["accept", "application/x-ndjson"],
++		],
+ 		body: JSON.stringify(body),
+ 	};
+ 	parseSyntheticModelRequestV1(request);
+@@ -30,18 +33,34 @@
+ 	const { request } = reconstructSyntheticRequest(input);
+ 	const bytes = new TextEncoder().encode(JSON.stringify(request));
+ 	const hash = await crypto.subtle.digest("SHA-256", bytes);
+-	return Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("");
++	return Array.from(new Uint8Array(hash), (byte) =>
++		byte.toString(16).padStart(2, "0"),
++	).join("");
+ }
+ 
+-export function awaitSynthetic<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
++export function awaitSynthetic<T>(
++	pending: Promise<T>,
++	signal: AbortSignal,
++): Promise<T> {
+ 	return new Promise<T>((resolve, reject) => {
+ 		const abort = () => reject(new Error("synthetic_deadline"));
+-		if (signal.aborted) { void pending.catch(() => {}); abort(); return; }
++		if (signal.aborted) {
++			void pending.catch(() => {});
++			abort();
++			return;
++		}
+ 		signal.addEventListener("abort", abort, { once: true });
+-		void pending.then((value) => {
+-			signal.removeEventListener("abort", abort);
+-			if (signal.aborted) abort(); else resolve(value);
+-		}, () => { signal.removeEventListener("abort", abort); reject(new Error("synthetic_operation_failed")); });
++		void pending.then(
++			(value) => {
++				signal.removeEventListener("abort", abort);
++				if (signal.aborted) abort();
++				else resolve(value);
++			},
++			() => {
++				signal.removeEventListener("abort", abort);
++				reject(new Error("synthetic_operation_failed"));
++			},
++		);
+ 	});
+ }
+ 
+@@ -50,40 +69,59 @@
+ 	signal: AbortSignal,
+ 	privateValues: readonly string[] = [],
+ ): Promise<SyntheticFrameV1[]> {
+-	if (response.status !== 200 || response.headers.get("location") !== null ||
++	if (
++		response.status !== 200 ||
++		response.headers.get("location") !== null ||
+ 		response.headers.get("content-type") !== "application/x-ndjson" ||
+-		response.headers.has("content-encoding") || !response.body)
++		response.headers.has("content-encoding") ||
++		!response.body
++	)
+ 		throw new Error("synthetic_upstream_contract");
+ 	const reader = response.body.getReader();
+ 	const decoder = new TextDecoder("utf-8", { fatal: true });
+ 	const encoder = new TextEncoder();
+ 	const frames: SyntheticFrameV1[] = [];
+-	let pending = "", total = 0, output = "", done = false;
+-	const abort = () => { void reader.cancel().catch(() => {}); };
++	let pending = "",
++		total = 0,
++		output = "",
++		done = false;
++	const abort = () => {
++		void reader.cancel().catch(() => {});
++	};
+ 	signal.addEventListener("abort", abort, { once: true });
+ 	try {
+ 		for (;;) {
+ 			signal.throwIfAborted();
+-			const chunk = await reader.read();
++			const chunk = await awaitSynthetic(reader.read(), signal);
+ 			signal.throwIfAborted();
+ 			if (chunk.done) break;
+ 			total += chunk.value.byteLength;
+-			if (total > SYNTHETIC_MODEL_LIMITS.responseBytes) throw new Error("synthetic_response_bound");
++			if (total > SYNTHETIC_MODEL_LIMITS.responseBytes)
++				throw new Error("synthetic_response_bound");
+ 			pending += decoder.decode(chunk.value, { stream: true });
+-			let index: number;
+-			while ((index = pending.indexOf("\n")) !== -1) {
+-				if (done || frames.length >= SYNTHETIC_MODEL_LIMITS.frames) throw new Error("synthetic_frame_bound");
++			for (;;) {
++				const index = pending.indexOf("\n");
++				if (index === -1) break;
++				if (done || frames.length >= SYNTHETIC_MODEL_LIMITS.frames)
++					throw new Error("synthetic_frame_bound");
+ 				const frame = parseSyntheticFrameV1(pending.slice(0, index));
+ 				pending = pending.slice(index + 1);
+ 				if (frame.type === "delta") {
+ 					output += frame.text;
+-					if (encoder.encode(output).byteLength > SYNTHETIC_MODEL_LIMITS.outputBytes ||
+-						privateValues.some((value) => value.length > 0 && output.includes(value)))
++					if (
++						encoder.encode(output).byteLength >
++							SYNTHETIC_MODEL_LIMITS.outputBytes ||
++						privateValues.some(
++							(value) => value.length > 0 && output.includes(value),
++						)
++					)
+ 						throw new Error("synthetic_output_bound");
+ 				} else done = true;
+ 				frames.push(frame);
+ 			}
+-			if (encoder.encode(pending).byteLength > SYNTHETIC_MODEL_LIMITS.frameBytes)
++			if (
++				encoder.encode(pending).byteLength > SYNTHETIC_MODEL_LIMITS.frameBytes
++			)
+ 				throw new Error("synthetic_frame_bound");
+ 		}
+ 		pending += decoder.decode();
+@@ -91,7 +129,9 @@
+ 		return frames;
+ 	} finally {
+ 		signal.removeEventListener("abort", abort);
+-		await reader.cancel().catch(() => {});
++		await awaitSynthetic(reader.cancel(), AbortSignal.timeout(1000)).catch(
++			() => {},
++		);
+ 		reader.releaseLock();
+ 	}
+ }
+--- a/apps/web/src/lib/model-product-authority.ts
++++ b/apps/web/src/lib/model-product-authority.ts
+@@ -1,29 +1,55 @@
+ import {
++	type ModelTransportDescriptorV1,
+ 	parseSyntheticAccountV1,
+-	type ModelTransportDescriptorV1,
+ 	type SyntheticModelBodyV1,
+ } from "../../../../packages/runtime-contracts/src/model.js";
+ 
+ export interface ModelClaimRpc {
+ 	describe(): Promise<ModelTransportDescriptorV1>;
+-	claim(attempt: unknown, binding: unknown): Promise<{ status: "admitted" | "denied" }>;
++	claim(
++		attempt: unknown,
++		binding: unknown,
++	): Promise<{ status: "admitted" | "denied" }>;
+ 	halt(attempt: unknown): Promise<{ status: "halted" | "denied" }>;
+ }
+ 
+ export class ModelProductAuthority {
+-	constructor(private db: D1Database, private now: () => number = Date.now) {}
+-
+-	private async facts(d: ModelTransportDescriptorV1, body?: SyntheticModelBodyV1) {
+-		const s = d.subject, a = d.attempt, now = this.now();
+-		if (a.generation !== s.lifecycleGeneration || now >= a.deadlineAt) return null;
+-		const row = await this.db.prepare("SELECT snapshot FROM codex_fixture_capabilities WHERE userId=? AND generation=? AND revision=?")
+-			.bind(s.userId, s.connectionGeneration, s.capabilityRevision).first<{ snapshot: string }>();
++	constructor(
++		private db: D1Database,
++		private now: () => number = Date.now,
++	) {}
++
++	private async facts(
++		d: ModelTransportDescriptorV1,
++		body?: SyntheticModelBodyV1,
++	) {
++		const s = d.subject,
++			a = d.attempt,
++			now = this.now();
++		if (a.generation !== s.lifecycleGeneration || now >= a.deadlineAt)
++			return null;
++		const row = await this.db
++			.prepare(
++				"SELECT snapshot FROM codex_fixture_capabilities WHERE userId=? AND generation=? AND revision=?",
++			)
++			.bind(s.userId, s.connectionGeneration, s.capabilityRevision)
++			.first<{ snapshot: string }>();
+ 		if (!row) return null;
+ 		try {
+ 			const account = parseSyntheticAccountV1(row.snapshot);
+-			if (account.status !== "available" || account.generation !== s.connectionGeneration || account.revision !== s.capabilityRevision ||
+-				(body && !account.models.some((m) => m.id === body.model && m.thinking.includes(body.thinking)))) return null;
+-		} catch { return null; }
++			if (
++				account.status !== "available" ||
++				account.generation !== s.connectionGeneration ||
++				account.revision !== s.capabilityRevision ||
++				(body &&
++					!account.models.some(
++						(m) => m.id === body.model && m.thinking.includes(body.thinking),
++					))
++			)
++				return null;
++		} catch {
++			return null;
++		}
+ 		const sql = `EXISTS(SELECT 1 FROM session_commands c
+ JOIN workspace_sessions s ON s.id=c.sessionId
+ JOIN projects p ON p.id=s.projectId JOIN user u ON u.id=s.userId
+@@ -44,59 +70,164 @@
+ AND e.generation=k.generation AND e.revision=? AND e.snapshot=?
+ AND NOT EXISTS(SELECT 1 FROM runtime_retired_identity_fences f WHERE f.identityId=i.id)
+ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind='project' AND f.targetId=p.id) OR (f.targetKind='workspace_session' AND f.targetId=s.id)))`;
+-		const params = [a.commandId, a.assistantId, now, a.runId, s.workspaceSessionId, s.userId, s.projectId, s.runtimeOwnerVersion,
+-			s.identityId, s.controllerNamespace, s.incarnationId, s.lifecycleGeneration, s.connectionGeneration, s.capabilityRevision, row.snapshot];
++		const params = [
++			a.commandId,
++			a.assistantId,
++			now,
++			a.runId,
++			s.workspaceSessionId,
++			s.userId,
++			s.projectId,
++			s.runtimeOwnerVersion,
++			s.identityId,
++			s.controllerNamespace,
++			s.incarnationId,
++			s.lifecycleGeneration,
++			s.connectionGeneration,
++			s.capabilityRevision,
++			row.snapshot,
++		];
+ 		return { sql, params, now };
+ 	}
+ 
+-	async current(d: ModelTransportDescriptorV1, body?: SyntheticModelBodyV1): Promise<boolean> {
++	async current(
++		d: ModelTransportDescriptorV1,
++		body?: SyntheticModelBodyV1,
++	): Promise<boolean> {
+ 		const f = await this.facts(d, body);
+-		return !!f && !!await this.db.prepare(`SELECT 1 AS ok WHERE ${f.sql}`).bind(...f.params).first();
++		return (
++			!!f &&
++			!!(await this.db
++				.prepare(`SELECT 1 AS ok WHERE ${f.sql}`)
++				.bind(...f.params)
++				.first())
++		);
+ 	}
+ 
+ 	async windowId(d: ModelTransportDescriptorV1): Promise<string> {
+-		const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify([d.subject.identityId, d.attempt.runId, d.attempt.epoch, d.attempt.effectId])));
++		const hash = await crypto.subtle.digest(
++			"SHA-256",
++			new TextEncoder().encode(
++				JSON.stringify([
++					d.subject.identityId,
++					d.attempt.runId,
++					d.attempt.epoch,
++					d.attempt.effectId,
++				]),
++			),
++		);
+ 		return `model/${Array.from(new Uint8Array(hash), (x) => x.toString(16).padStart(2, "0")).join("")}`;
+ 	}
+ 
+ 	async open(d: ModelTransportDescriptorV1): Promise<string | null> {
+-		const id = await this.windowId(d), f = await this.facts(d);
++		const id = await this.windowId(d),
++			f = await this.facts(d);
+ 		if (!f) return null;
+-		const s = d.subject, a = d.attempt;
+-		await this.db.prepare("UPDATE privileged_operations SET openSlot=id,closedAt=?,closeReason='expired' WHERE identityId=? AND family='model' AND openSlot='open' AND expiresAt<=?").bind(f.now, s.identityId, f.now).run();
+-		await this.db.prepare(`INSERT OR IGNORE INTO privileged_operations
++		const s = d.subject,
++			a = d.attempt;
++		await this.db
++			.prepare(
++				"UPDATE privileged_operations SET openSlot=id,closedAt=?,closeReason='expired' WHERE identityId=? AND family='model' AND openSlot='open' AND expiresAt<=?",
++			)
++			.bind(f.now, s.identityId, f.now)
++			.run();
++		await this.db
++			.prepare(`INSERT OR IGNORE INTO privileged_operations
+ (id,identityId,lifecycleGeneration,family,type,contractVersion,runtimeOwnerVersion,runId,runEpoch,incarnationId,admissionReference,maxRequests,openedAt,expiresAt,correlationId,openSlot,contractState)
+ SELECT ?,?,?,'model','ditto_synthetic_model_v1',1,?,?,?,?,?,1,?,?,?,'open','{}' WHERE ${f.sql}
+ AND NOT EXISTS(SELECT 1 FROM model_request_admissions r JOIN privileged_operations w ON w.id=r.windowId WHERE w.identityId=? AND r.state IN ('reserved','admitted','outcome_unknown'))`)
+-			.bind(id, s.identityId, s.lifecycleGeneration, s.runtimeOwnerVersion, a.runId, a.epoch, s.incarnationId, a.commandId,
+-				f.now, Math.min(a.deadlineAt, f.now + 30000), crypto.randomUUID(), ...f.params, s.identityId).run();
+-		const row = await this.db.prepare("SELECT id FROM privileged_operations WHERE id=? AND openSlot='open' AND closedAt IS NULL AND expiresAt>?").bind(id, this.now()).first();
++			.bind(
++				id,
++				s.identityId,
++				s.lifecycleGeneration,
++				s.runtimeOwnerVersion,
++				a.runId,
++				a.epoch,
++				s.incarnationId,
++				a.commandId,
++				f.now,
++				Math.min(a.deadlineAt, f.now + 30000),
++				crypto.randomUUID(),
++				...f.params,
++				s.identityId,
++			)
++			.run();
++		const row = await this.db
++			.prepare(
++				`SELECT id FROM privileged_operations WHERE id=? AND openSlot='open' AND closedAt IS NULL AND expiresAt>? AND ${f.sql}`,
++			)
++			.bind(id, this.now(), ...f.params)
++			.first();
+ 		return row ? id : null;
+ 	}
+ 
+-	async reserve(d: ModelTransportDescriptorV1, body: SyntheticModelBodyV1): Promise<string | null> {
+-		if ((d.attempt.kind === "custom_summary") !== (body.purpose === "custom_summary")) return null;
+-		if (body.purpose === "git_metadata" && await this.db.prepare("SELECT 1 FROM model_request_admissions r JOIN privileged_operations w ON w.id=r.windowId WHERE w.identityId=? AND w.runId=? AND w.runEpoch=? AND r.purpose='git_metadata'").bind(d.subject.identityId, d.attempt.runId, d.attempt.epoch).first()) return null;
+-		const id = await this.open(d), f = await this.facts(d, body);
++	async reserve(
++		d: ModelTransportDescriptorV1,
++		body: SyntheticModelBodyV1,
++	): Promise<string | null> {
++		if (
++			(d.attempt.kind === "custom_summary") !==
++			(body.purpose === "custom_summary")
++		)
++			return null;
++		if (
++			body.purpose === "git_metadata" &&
++			(await this.db
++				.prepare(
++					"SELECT 1 FROM model_request_admissions r JOIN privileged_operations w ON w.id=r.windowId WHERE w.identityId=? AND w.runId=? AND w.runEpoch=? AND r.purpose='git_metadata'",
++				)
++				.bind(d.subject.identityId, d.attempt.runId, d.attempt.epoch)
++				.first())
++		)
++			return null;
++		const id = await this.open(d),
++			f = await this.facts(d, body);
+ 		if (!id || !f) return null;
+-		const insert = this.db.prepare(`INSERT OR IGNORE INTO model_request_admissions(effectId,windowId,requestDigest,purpose,state,createdAt,updatedAt)
++		const insert = this.db
++			.prepare(`INSERT OR IGNORE INTO model_request_admissions(effectId,windowId,requestDigest,purpose,state,createdAt,updatedAt)
+ SELECT ?,?,?,?,'reserved',?,? FROM privileged_operations w
+ WHERE w.id=? AND w.openSlot='open' AND w.closedAt IS NULL AND w.expiresAt>? AND w.contractDenials<3
+ AND w.consumedRequests<w.maxRequests AND ${f.sql}
+ AND NOT EXISTS(SELECT 1 FROM model_request_admissions r WHERE r.windowId=w.id AND r.state IN ('reserved','admitted','outcome_unknown'))
+ AND (?!='git_metadata' OR NOT EXISTS(SELECT 1 FROM model_request_admissions r JOIN privileged_operations prior ON prior.id=r.windowId WHERE prior.identityId=w.identityId AND prior.runId=w.runId AND prior.runEpoch=w.runEpoch AND r.purpose='git_metadata'))`)
+-			.bind(d.attempt.effectId, id, d.requestDigest, body.purpose, f.now, f.now, id, f.now, ...f.params, body.purpose);
+-		const increment = this.db.prepare("UPDATE privileged_operations SET consumedRequests=consumedRequests+1 WHERE id=? AND changes()=1").bind(id);
++			.bind(
++				d.attempt.effectId,
++				id,
++				d.requestDigest,
++				body.purpose,
++				f.now,
++				f.now,
++				id,
++				f.now,
++				...f.params,
++				body.purpose,
++			);
++		const increment = this.db
++			.prepare(
++				"UPDATE privileged_operations SET consumedRequests=consumedRequests+1 WHERE id=? AND changes()=1",
++			)
++			.bind(id);
+ 		const results = await this.db.batch([insert, increment]);
+-		return results[0].meta.changes === 1 && results[1].meta.changes === 1 ? id : null;
+-	}
+-
+-	async permit(d: ModelTransportDescriptorV1, body: SyntheticModelBodyV1): Promise<boolean> {
+-		const id = await this.windowId(d), f = await this.facts(d, body);
+-		return !!f && !!await this.db.prepare(`SELECT 1 AS ok FROM privileged_operations w JOIN model_request_admissions r ON r.windowId=w.id
++		return results[0].meta.changes === 1 && results[1].meta.changes === 1
++			? id
++			: null;
++	}
++
++	async permit(
++		d: ModelTransportDescriptorV1,
++		body: SyntheticModelBodyV1,
++	): Promise<boolean> {
++		const id = await this.windowId(d),
++			f = await this.facts(d, body);
++		return (
++			!!f &&
++			!!(await this.db
++				.prepare(`SELECT 1 AS ok FROM privileged_operations w JOIN model_request_admissions r ON r.windowId=w.id
+ WHERE w.id=? AND r.effectId=? AND r.requestDigest=? AND r.state='reserved'
+ AND w.openSlot='open' AND w.closedAt IS NULL AND w.expiresAt>? AND w.contractDenials<3 AND ${f.sql}`)
+-			.bind(id, d.attempt.effectId, d.requestDigest, f.now, ...f.params).first();
++				.bind(id, d.attempt.effectId, d.requestDigest, f.now, ...f.params)
++				.first())
++		);
+ 	}
+ 
+ 	async denial(d: ModelTransportDescriptorV1): Promise<boolean> {
+@@ -104,25 +235,47 @@
+ 		if (!id) return false;
+ 		const now = this.now();
+ 		const results = await this.db.batch([
+-			this.db.prepare(`UPDATE privileged_operations SET contractDenials=contractDenials+1,
++			this.db
++				.prepare(`UPDATE privileged_operations SET contractDenials=contractDenials+1,
+ closedAt=CASE WHEN contractDenials+1>=3 THEN ? ELSE closedAt END,
+ closeReason=CASE WHEN contractDenials+1>=3 THEN 'contract_denials' ELSE closeReason END,
+ openSlot=CASE WHEN contractDenials+1>=3 THEN id ELSE openSlot END
+-WHERE id=? AND openSlot='open' AND closedAt IS NULL AND expiresAt>? RETURNING contractDenials`).bind(now, id, now),
+-			this.db.prepare(`UPDATE workspace_sessions SET runtimeFailureReasonCode='model_contract_review'
++WHERE id=? AND openSlot='open' AND closedAt IS NULL AND expiresAt>? RETURNING contractDenials`)
++				.bind(now, id, now),
++			this.db
++				.prepare(`UPDATE workspace_sessions SET runtimeFailureReasonCode='model_contract_review'
+ WHERE id=? AND runtimeOwner='trusted_v1' AND runtimeOwnerVersion=?
+ AND EXISTS(SELECT 1 FROM privileged_operations WHERE id=? AND contractDenials=3 AND closeReason='contract_denials')`)
+ 				.bind(d.subject.workspaceSessionId, d.subject.runtimeOwnerVersion, id),
+ 		]);
+-		return results[0].results.some((row) => !!row && typeof row === "object" && "contractDenials" in row && row.contractDenials === 3);
+-	}
+-
+-	async record(d: ModelTransportDescriptorV1, state: "admitted" | "complete" | "failed_known" | "outcome_unknown"): Promise<void> {
++		return results[0].results.some(
++			(row) =>
++				!!row &&
++				typeof row === "object" &&
++				"contractDenials" in row &&
++				row.contractDenials === 3,
++		);
++	}
++
++	async record(
++		d: ModelTransportDescriptorV1,
++		state: "admitted" | "complete" | "failed_known" | "outcome_unknown",
++	): Promise<void> {
+ 		const id = await this.windowId(d);
+-		const update = this.db.prepare("UPDATE model_request_admissions SET state=?,updatedAt=? WHERE effectId=? AND windowId=? AND requestDigest=? AND state IN ('reserved','admitted')")
++		const update = this.db
++			.prepare(
++				"UPDATE model_request_admissions SET state=?,updatedAt=? WHERE effectId=? AND windowId=? AND requestDigest=? AND state IN ('reserved','admitted')",
++			)
+ 			.bind(state, this.now(), d.attempt.effectId, id, d.requestDigest);
+ 		if (state === "complete" || state === "failed_known") {
+-			await this.db.batch([update, this.db.prepare("UPDATE privileged_operations SET openSlot=id,closedAt=?,closeReason=? WHERE id=? AND changes()=1 AND closedAt IS NULL").bind(this.now(), state, id)]);
++			await this.db.batch([
++				update,
++				this.db
++					.prepare(
++						"UPDATE privileged_operations SET openSlot=id,closedAt=?,closeReason=? WHERE id=? AND changes()=1 AND closedAt IS NULL",
++					)
++					.bind(this.now(), state, id),
++			]);
+ 		} else await update.run();
+ 	}
+ }
+--- a/apps/web/src/lib/model-product-transport.ts
++++ b/apps/web/src/lib/model-product-transport.ts
+@@ -1,30 +1,72 @@
+ import {
++	type ModelTransportDescriptorV1,
+ 	parseModelTransportDescriptorV1,
+-	type ModelTransportDescriptorV1,
++	SYNTHETIC_MODEL_LIMITS,
+ 	type SyntheticModelOutcomeV1,
+ } from "../../../../packages/runtime-contracts/src/model.js";
+-import { reconstructSyntheticRequest, syntheticRequestDigest } from "./codex-request-contract";
+-import { ModelProductAuthority, type ModelClaimRpc } from "./model-product-authority";
++import {
++	awaitSynthetic,
++	reconstructSyntheticRequest,
++	syntheticRequestDigest,
++} from "./codex-request-contract";
++import {
++	type ModelClaimRpc,
++	ModelProductAuthority,
++} from "./model-product-authority";
+ 
+ export type ModelProductBindings = {
+ 	DB: D1Database;
+-	CodexCredential: { getByName(owner: string): { requestModel(input: unknown, capability: ModelClaimRpc): Promise<SyntheticModelOutcomeV1> } };
++	CodexCredential: {
++		getByName(owner: string): {
++			requestModel(
++				input: unknown,
++				capability: ModelClaimRpc,
++			): Promise<SyntheticModelOutcomeV1>;
++		};
++	};
+ };
+ 
+-export async function performPrivateModelRequest(env: ModelProductBindings, input: unknown, capability: ModelClaimRpc, fixtureAvailable: boolean): Promise<SyntheticModelOutcomeV1> {
++export async function performPrivateModelRequest(
++	env: ModelProductBindings,
++	input: unknown,
++	capability: ModelClaimRpc,
++	fixtureAvailable: boolean,
++): Promise<SyntheticModelOutcomeV1> {
+ 	if (!fixtureAvailable) return { version: 1, status: "unavailable" };
+ 	try {
+-		const d = parseModelTransportDescriptorV1(await capability.describe());
+-		return await env.CodexCredential.getByName(d.subject.userId).requestModel(input, capability);
+-	} catch { return { version: 1, status: "denied" }; }
++		const d = parseModelTransportDescriptorV1(
++			await awaitSynthetic(
++				capability.describe(),
++				AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
++			),
++		);
++		return await env.CodexCredential.getByName(d.subject.userId).requestModel(
++			input,
++			capability,
++		);
++	} catch {
++		return { version: 1, status: "denied" };
++	}
+ }
+ 
+-export async function readPrivateModelPermit(db: D1Database, input: unknown, descriptor: ModelTransportDescriptorV1, fixtureAvailable: boolean): Promise<{ status: "current" | "denied" }> {
++export async function readPrivateModelPermit(
++	db: D1Database,
++	input: unknown,
++	descriptor: ModelTransportDescriptorV1,
++	fixtureAvailable: boolean,
++): Promise<{ status: "current" | "denied" }> {
+ 	if (!fixtureAvailable) return { status: "denied" };
+ 	try {
+ 		const d = parseModelTransportDescriptorV1(descriptor);
+ 		const { body, request } = reconstructSyntheticRequest(input);
+-		if (await syntheticRequestDigest(request) !== d.requestDigest) return { status: "denied" };
+-		return { status: await new ModelProductAuthority(db).permit(d, body) ? "current" : "denied" };
+-	} catch { return { status: "denied" }; }
++		if ((await syntheticRequestDigest(request)) !== d.requestDigest)
++			return { status: "denied" };
++		return {
++			status: (await new ModelProductAuthority(db).permit(d, body))
++				? "current"
++				: "denied",
++		};
++	} catch {
++		return { status: "denied" };
++	}
+ }
+--- a/apps/web/src/lib/session-runtime-product.ts
++++ b/apps/web/src/lib/session-runtime-product.ts
+@@ -1,9 +1,10 @@
+ import { WorkerEntrypoint } from "cloudflare:workers";
+ import { createDb } from "#/db";
+ import { createProductAdapters } from "#/lib/session-runtime-authority";
+-import type { ModelTransportDescriptorV1, SyntheticModelOutcomeV1 } from "../../../../packages/runtime-contracts/src/model.js";
+-import type { ModelClaimRpc } from "./model-product-authority";
+-import { performPrivateModelRequest, readPrivateModelPermit } from "./model-product-transport";
++import type {
++	ModelTransportDescriptorV1,
++	SyntheticModelOutcomeV1,
++} from "../../../../packages/runtime-contracts/src/model.js";
+ import type {
+ 	ProjectionApplyResult,
+ 	ProjectionPayload,
+@@ -12,6 +13,11 @@
+ 	CurrentAuthority,
+ 	ReconstructedAdmission,
+ } from "../../../runtime/src/session-runtime.js";
++import type { ModelClaimRpc } from "./model-product-authority";
++import {
++	performPrivateModelRequest,
++	readPrivateModelPermit,
++} from "./model-product-transport";
+ 
+ function productEnv(env: Env): { DB: D1Database } | null {
+ 	if (!env || typeof env !== "object" || !("DB" in env) || !env.DB) {
+@@ -21,14 +27,26 @@
+ }
+ 
+ export class ProductEntrypoint extends WorkerEntrypoint<Env> {
+-	async requestModel(input: unknown, capability: ModelClaimRpc): Promise<SyntheticModelOutcomeV1> {
++	async requestModel(
++		input: unknown,
++		capability: ModelClaimRpc,
++	): Promise<SyntheticModelOutcomeV1> {
+ 		return performPrivateModelRequest(this.env, input, capability, false);
+ 	}
+-	async readModelPermit(input: unknown, descriptor: ModelTransportDescriptorV1) {
++	async readModelPermit(
++		input: unknown,
++		descriptor: ModelTransportDescriptorV1,
++	) {
+ 		return readPrivateModelPermit(this.env.DB, input, descriptor, false);
+ 	}
+-	async discoverModels(commandId: string): Promise<{ version: 1; status: "unavailable" | "revoked" }> {
+-		const row = await this.env.DB.prepare("SELECT k.revoked FROM session_commands c JOIN codex_connections k ON k.user_id=c.userId WHERE c.id=?").bind(commandId).first<{ revoked: number }>();
++	async discoverModels(
++		commandId: string,
++	): Promise<{ version: 1; status: "unavailable" | "revoked" }> {
++		const row = await this.env.DB.prepare(
++			"SELECT k.revoked FROM session_commands c JOIN codex_connections k ON k.user_id=c.userId WHERE c.id=?",
++		)
++			.bind(commandId)
++			.first<{ revoked: number }>();
+ 		return { version: 1, status: row?.revoked ? "revoked" : "unavailable" };
+ 	}
+ 	private adapters() {
+--- a/docs/specs/pi-durable-session-runtime.md
++++ b/docs/specs/pi-durable-session-runtime.md
+@@ -622,6 +622,20 @@
+ 
+ Keep the credential-free execution network policy. Reject private, internal, and metadata destinations, and malformed authorities. Validate redirects and keep non-HTTP traffic disabled. Container egress interception does not restrict arbitrary `fetch` calls by trusted Worker code. Do not claim that it does.
+ 
++#### Local synthetic model transport implementation
++
++The fixture-only 007 increment implements a separately versioned request at `https://codex-model-fixture.invalid/v1/stream`. This is not a Codex protocol or a live subscription integration. `ProductEntrypoint` request and permit methods remain unavailable in production composition. Discovery returns `unavailable` or `revoked`, never catalogue entitlement. Only the disposable credential-test subclass enables request dispatch and synthetic account capabilities.
++
++`createPrivateModelAdapter` requires a host guard and private product transport. Generation, separately accounted retries, accepted custom summaries and Git-metadata requests use the same path. A deployment-owned `ExactModelClaim` RPC target binds the host-minted exact attempt to the owned subject and canonical reconstructed request digest. JSON attempt fields alone cannot claim admission. Existing standalone cooperative providers remain synthetic test fixtures, not this mandatory adapter.
++
++Product D1 policy checks command/run membership, user/project/session ownership and status, trusted runtime owner version, exact execution identity role/controller/incarnation/lifecycle/retirement, connection generation and synthetic capability revision/model/thinking. Conditional SQL opens one identity/model-family window and reserves one nonrefundable request. Admission records are keyed by the identity-scoped window, since runtime-local effect IDs can recur in other sessions. Git metadata reserves at most one attempt per identity/run/epoch. Three contract denials close the window, persist session review and invoke the exact capability's local host halt without entering a public runtime command or provider/configuration lane.
++
++The credential DO validates and reconstructs the complete request before decrypting credentials. After preparation, it rechecks D1 policy and its local credential revision. Host claim consumption flushes the protected effect receipt, rereads authority and the exact product permit, then synchronously checks epoch, Stop, fences, uncertainty and deadlines before acknowledgment. This final host acknowledgment is the local irrevocable admission point. Credential attachment and fixed-destination `fetch` follow without awaited preparation. Stop winning before acknowledgment prevents fetch; Stop after acknowledgment cannot undo admitted work. D1, runtime SQLite and provider dispatch do not form a distributed transaction, and this protocol makes no exactly-once billing claim.
++
++Requests and responses are bounded to 131072 encoded bytes. Transcript content is bounded to 98304 bytes; responses contain at most 128 strict NDJSON frames, each at most 16384 bytes, with at most 65536 output bytes. Only the exact POST URL and reconstructed JSON/NDJSON headers are accepted. Redirects, encoding variants, duplicate/unknown fields, arbitrary destinations and caller authorization/proxy headers deny. The DO owns credentials, finite stream cancellation and credential-echo rejection. Malformed/truncated responses retain uncertain admitted evidence and cannot redispatch automatically. No credential enters the runtime or execution sandbox.
++
++These are local fixture behaviors awaiting independent review, not hosted acceptance. Authenticated configuration intents, snapshots and pre-conversation default validation remain the next 007 phase. Live discovery/transport and PD38 remain `not run`.
++
+ ### 13. Git, seeds, archives, and project values
+ 
+ Keep owned-repository and workspace-branch policies. Preserve closed, credential-free Git child environments, disabled hooks and credential helpers, fixed trust configuration, no redirects, and secret preflight checks. UI Git and agent Git use the same policy and mutation serialization.
+--- a/package.json
++++ b/package.json
+@@ -18,7 +18,7 @@
+     "brain:verify": "pnpm contracts:verify && npm run contracts:check --prefix packages/session-brain && npm run typecheck --prefix packages/session-brain && npm test --prefix packages/session-brain && npm run build --prefix packages/session-brain",
+     "runtime:verify": "pnpm --filter @ditto/runtime typecheck && node --test apps/runtime/src/pi-durable-imports.test.mjs scripts/pi-durable-host-auth.test.mjs && pnpm --filter @ditto/runtime exec vitest run",
+     "runtime:local:verify": "node scripts/verify-pi-durable-local.mjs",
+-    "credentials:verify": "pnpm --filter @ditto/credential-tests typecheck && pnpm --filter @ditto/credential-tests exec vitest run src/codex-credential-do.worker.test.ts && pnpm --filter @ditto/credential-tests exec node --test crash.test.mjs",
++    "credentials:verify": "pnpm --filter @ditto/credential-tests typecheck && pnpm --filter @ditto/credential-tests exec vitest run src/codex-credential-do.worker.test.ts src/codex-request-contract.worker.test.ts && pnpm --filter @ditto/credential-tests exec node --test crash.test.mjs",
+     "verify": "pnpm check && pnpm typecheck && pnpm credentials:verify && pnpm test && pnpm build && pnpm runner:verify",
+     "deploy": "alchemy deploy",
+     "destroy": "alchemy destroy",
+--- a/packages/runtime-contracts/src/model.ts
++++ b/packages/runtime-contracts/src/model.ts
+@@ -65,7 +65,8 @@
+ 	};
+ }
+ 
+-export const SYNTHETIC_MODEL_URL = "https://codex-model-fixture.invalid/v1/stream";
++export const SYNTHETIC_MODEL_URL =
++	"https://codex-model-fixture.invalid/v1/stream";
+ export const SYNTHETIC_MODEL_LIMITS = {
+ 	requestBytes: 131072,
+ 	transcriptBytes: 98304,
+@@ -102,40 +103,86 @@
+ };
+ export type SyntheticFrameV1 =
+ 	| { version: 1; type: "delta"; text: string }
+-	| { version: 1; type: "done"; stopReason: "stop" | "error"; inputTokens: number; outputTokens: number };
+-
+-export function parseSyntheticModelBodyV1(input: unknown): SyntheticModelBodyV1 {
+-	const r = strictRecord(decodeContractInput(input, SYNTHETIC_MODEL_LIMITS.requestBytes),
+-		["version", "protocol", "purpose", "model", "thinking", "transcript", "options"], "synthetic model body");
++	| {
++			version: 1;
++			type: "done";
++			stopReason: "stop" | "error";
++			inputTokens: number;
++			outputTokens: number;
++	  };
++
++export function parseSyntheticModelBodyV1(
++	input: unknown,
++): SyntheticModelBodyV1 {
++	const r = strictRecord(
++		decodeContractInput(input, SYNTHETIC_MODEL_LIMITS.requestBytes),
++		[
++			"version",
++			"protocol",
++			"purpose",
++			"model",
++			"thinking",
++			"transcript",
++			"options",
++		],
++		"synthetic model body",
++	);
+ 	const o = strictRecord(r.options, ["maxTokens"], "synthetic options");
+ 	return {
+ 		version: literalField(r, "version", [1]),
+ 		protocol: literalField(r, "protocol", ["ditto-synthetic-ndjson-1"]),
+-		purpose: literalField(r, "purpose", ["generation", "custom_summary", "git_metadata"]),
++		purpose: literalField(r, "purpose", [
++			"generation",
++			"custom_summary",
++			"git_metadata",
++		]),
+ 		model: literalField(r, "model", ["faux-1", "faux-2"]),
+ 		thinking: literalField(r, "thinking", ["off", "low", "high", "max"]),
+-		transcript: stringField(r, "transcript", { maxBytes: SYNTHETIC_MODEL_LIMITS.transcriptBytes }),
+-		options: { maxTokens: integerField(o, "maxTokens", { minimum: 1, maximum: 8192 }) },
+-	};
+-}
+-
+-export function parseSyntheticModelRequestV1(input: unknown): SyntheticModelRequestV1 {
+-	const r = strictRecord(decodeContractInput(input, SYNTHETIC_MODEL_LIMITS.requestBytes),
+-		["version", "method", "url", "headers", "body"], "synthetic model request");
++		transcript: stringField(r, "transcript", {
++			maxBytes: SYNTHETIC_MODEL_LIMITS.transcriptBytes,
++		}),
++		options: {
++			maxTokens: integerField(o, "maxTokens", { minimum: 1, maximum: 8192 }),
++		},
++	};
++}
++
++export function parseSyntheticModelRequestV1(
++	input: unknown,
++): SyntheticModelRequestV1 {
++	const r = strictRecord(
++		decodeContractInput(input, SYNTHETIC_MODEL_LIMITS.requestBytes),
++		["version", "method", "url", "headers", "body"],
++		"synthetic model request",
++	);
+ 	if (!Array.isArray(r.headers) || r.headers.length !== 2)
+-		throw new ContractParseError("invalid_headers", "Exact synthetic headers required.");
++		throw new ContractParseError(
++			"invalid_headers",
++			"Exact synthetic headers required.",
++		);
+ 	const seen = new Set<string>();
+ 	const headers: [string, string][] = r.headers.map((entry: unknown) => {
+-		if (!Array.isArray(entry) || entry.length !== 2 ||
+-			typeof entry[0] !== "string" || typeof entry[1] !== "string" ||
++		if (
++			!Array.isArray(entry) ||
++			entry.length !== 2 ||
++			typeof entry[0] !== "string" ||
++			typeof entry[1] !== "string" ||
+ 			seen.has(entry[0]) ||
+-			!((entry[0] === "content-type" && entry[1] === "application/json") ||
+-			(entry[0] === "accept" && entry[1] === "application/x-ndjson")))
+-			throw new ContractParseError("invalid_headers", "Invalid synthetic headers.");
++			!(
++				(entry[0] === "content-type" && entry[1] === "application/json") ||
++				(entry[0] === "accept" && entry[1] === "application/x-ndjson")
++			)
++		)
++			throw new ContractParseError(
++				"invalid_headers",
++				"Invalid synthetic headers.",
++			);
+ 		seen.add(entry[0]);
+ 		return [entry[0], entry[1]];
+ 	});
+-	const body = parseSyntheticModelBodyV1(stringField(r, "body", { maxBytes: SYNTHETIC_MODEL_LIMITS.requestBytes }));
++	const body = parseSyntheticModelBodyV1(
++		stringField(r, "body", { maxBytes: SYNTHETIC_MODEL_LIMITS.requestBytes }),
++	);
+ 	return {
+ 		version: literalField(r, "version", [1]),
+ 		method: literalField(r, "method", ["POST"]),
+@@ -146,40 +193,95 @@
+ }
+ 
+ export function parseSyntheticAccountV1(input: unknown): SyntheticAccountV1 {
+-	const r = strictRecord(decodeContractInput(input, 4096), ["version", "status", "generation", "revision", "models"], "synthetic account");
+-	const status = literalField(r, "status", ["available", "unavailable", "revoked"]);
+-	if (!Array.isArray(r.models) || r.models.length > 2 || (status !== "available" && r.models.length !== 0))
++	const r = strictRecord(
++		decodeContractInput(input, 4096),
++		["version", "status", "generation", "revision", "models"],
++		"synthetic account",
++	);
++	const status = literalField(r, "status", [
++		"available",
++		"unavailable",
++		"revoked",
++	]);
++	if (
++		!Array.isArray(r.models) ||
++		r.models.length > 2 ||
++		(status !== "available" && r.models.length !== 0)
++	)
+ 		throw new ContractParseError("invalid_models", "Invalid account models.");
+ 	const ids = new Set<string>();
+ 	const models = r.models.map((input: unknown) => {
+ 		const m = strictRecord(input, ["id", "thinking"], "synthetic capability");
+ 		const id = literalField(m, "id", ["faux-1", "faux-2"]);
+-		if (ids.has(id) || !Array.isArray(m.thinking) || m.thinking.length < 1 || m.thinking.length > 4)
+-			throw new ContractParseError("invalid_models", "Invalid account capability.");
++		if (
++			ids.has(id) ||
++			!Array.isArray(m.thinking) ||
++			m.thinking.length < 1 ||
++			m.thinking.length > 4
++		)
++			throw new ContractParseError(
++				"invalid_models",
++				"Invalid account capability.",
++			);
+ 		ids.add(id);
+-		const thinking = m.thinking.map((level: unknown) => literalField<SyntheticThinking>({ level }, "level", ["off", "low", "high", "max"]));
++		const thinking = m.thinking.map((level: unknown) =>
++			literalField<SyntheticThinking>({ level }, "level", [
++				"off",
++				"low",
++				"high",
++				"max",
++			]),
++		);
+ 		if (new Set(thinking).size !== thinking.length)
+-			throw new ContractParseError("invalid_models", "Duplicate thinking capability.");
++			throw new ContractParseError(
++				"invalid_models",
++				"Duplicate thinking capability.",
++			);
+ 		return { id, thinking };
+ 	});
+-	return { version: literalField(r, "version", [1]), status,
++	return {
++		version: literalField(r, "version", [1]),
++		status,
+ 		generation: integerField(r, "generation", { minimum: 1 }),
+-		revision: integerField(r, "revision", { minimum: 1 }), models };
++		revision: integerField(r, "revision", { minimum: 1 }),
++		models,
++	};
+ }
+ 
+ export function parseSyntheticFrameV1(input: unknown): SyntheticFrameV1 {
+ 	const decoded = decodeContractInput(input, SYNTHETIC_MODEL_LIMITS.frameBytes);
+-	const r = strictRecord(decoded, ["version", "type", "text", "stopReason", "inputTokens", "outputTokens"], "synthetic frame");
++	const r = strictRecord(
++		decoded,
++		["version", "type", "text", "stopReason", "inputTokens", "outputTokens"],
++		"synthetic frame",
++	);
+ 	literalField(r, "version", [1]);
+ 	if (r.type === "delta") {
+ 		strictRecord(r, ["version", "type", "text"], "synthetic delta");
+-		return { version: 1, type: "delta", text: stringField(r, "text", { maxBytes: 8192 }) };
++		return {
++			version: 1,
++			type: "delta",
++			text: stringField(r, "text", { maxBytes: 8192 }),
++		};
+ 	}
+-	strictRecord(r, ["version", "type", "stopReason", "inputTokens", "outputTokens"], "synthetic completion");
+-	return { version: 1, type: literalField(r, "type", ["done"]),
++	strictRecord(
++		r,
++		["version", "type", "stopReason", "inputTokens", "outputTokens"],
++		"synthetic completion",
++	);
++	return {
++		version: 1,
++		type: literalField(r, "type", ["done"]),
+ 		stopReason: literalField(r, "stopReason", ["stop", "error"]),
+-		inputTokens: integerField(r, "inputTokens", { minimum: 0, maximum: 1000000 }),
+-		outputTokens: integerField(r, "outputTokens", { minimum: 0, maximum: 8192 }) };
++		inputTokens: integerField(r, "inputTokens", {
++			minimum: 0,
++			maximum: 1000000,
++		}),
++		outputTokens: integerField(r, "outputTokens", {
++			minimum: 0,
++			maximum: 8192,
++		}),
++	};
+ }
+ 
+ export type ModelSubjectV1 = {
+@@ -196,25 +298,83 @@
+ 	capabilityRevision: number;
+ };
+ export function parseModelSubjectV1(input: unknown): ModelSubjectV1 {
+-	const r = strictRecord(decodeContractInput(input, 4096), ["version", "userId", "projectId", "workspaceSessionId", "identityId", "incarnationId", "controllerNamespace", "lifecycleGeneration", "runtimeOwnerVersion", "connectionGeneration", "capabilityRevision"], "model subject");
++	const r = strictRecord(
++		decodeContractInput(input, 4096),
++		[
++			"version",
++			"userId",
++			"projectId",
++			"workspaceSessionId",
++			"identityId",
++			"incarnationId",
++			"controllerNamespace",
++			"lifecycleGeneration",
++			"runtimeOwnerVersion",
++			"connectionGeneration",
++			"capabilityRevision",
++		],
++		"model subject",
++	);
+ 	const id = (key: string) => stringField(r, key, { maxBytes: 256 });
+ 	const n = (key: string) => integerField(r, key, { minimum: 1 });
+-	return { version: literalField(r, "version", [1]), userId: id("userId"), projectId: id("projectId"), workspaceSessionId: id("workspaceSessionId"), identityId: id("identityId"), incarnationId: id("incarnationId"), controllerNamespace: id("controllerNamespace"), lifecycleGeneration: n("lifecycleGeneration"), runtimeOwnerVersion: n("runtimeOwnerVersion"), connectionGeneration: n("connectionGeneration"), capabilityRevision: n("capabilityRevision") };
+-}
+-export type ModelTransportDescriptorV1 = { version: 1; subject: ModelSubjectV1; attempt: ModelAttemptV1; requestDigest: string };
+-export function parseModelTransportDescriptorV1(input: unknown): ModelTransportDescriptorV1 {
+-	const r = strictRecord(decodeContractInput(input, 12288), ["version", "subject", "attempt", "requestDigest"], "model transport descriptor");
++	return {
++		version: literalField(r, "version", [1]),
++		userId: id("userId"),
++		projectId: id("projectId"),
++		workspaceSessionId: id("workspaceSessionId"),
++		identityId: id("identityId"),
++		incarnationId: id("incarnationId"),
++		controllerNamespace: id("controllerNamespace"),
++		lifecycleGeneration: n("lifecycleGeneration"),
++		runtimeOwnerVersion: n("runtimeOwnerVersion"),
++		connectionGeneration: n("connectionGeneration"),
++		capabilityRevision: n("capabilityRevision"),
++	};
++}
++export type ModelTransportDescriptorV1 = {
++	version: 1;
++	subject: ModelSubjectV1;
++	attempt: ModelAttemptV1;
++	requestDigest: string;
++};
++export function parseModelTransportDescriptorV1(
++	input: unknown,
++): ModelTransportDescriptorV1 {
++	const r = strictRecord(
++		decodeContractInput(input, 12288),
++		["version", "subject", "attempt", "requestDigest"],
++		"model transport descriptor",
++	);
+ 	const requestDigest = stringField(r, "requestDigest", { maxBytes: 64 });
+-	if (!/^[a-f0-9]{64}$/.test(requestDigest)) throw new ContractParseError("invalid_digest", "Invalid transport digest.");
+-	return { version: literalField(r, "version", [1]), subject: parseModelSubjectV1(r.subject), attempt: parseModelAttemptV1(r.attempt), requestDigest };
++	if (!/^[a-f0-9]{64}$/.test(requestDigest))
++		throw new ContractParseError("invalid_digest", "Invalid transport digest.");
++	return {
++		version: literalField(r, "version", [1]),
++		subject: parseModelSubjectV1(r.subject),
++		attempt: parseModelAttemptV1(r.attempt),
++		requestDigest,
++	};
+ }
+ export type SyntheticModelOutcomeV1 =
+ 	| { version: 1; status: "complete"; frames: SyntheticFrameV1[] }
+-	| { version: 1; status: "unavailable" | "denied" | "failed_known" | "outcome_unknown" };
+-
+-export async function syntheticModelRequestDigest(input: unknown): Promise<string> {
++	| {
++			version: 1;
++			status: "unavailable" | "denied" | "failed_known" | "outcome_unknown";
++	  };
++
++export async function syntheticModelRequestDigest(
++	input: unknown,
++): Promise<string> {
+ 	const request = parseSyntheticModelRequestV1(input);
+-	request.headers = [["content-type", "application/json"], ["accept", "application/x-ndjson"]];
+-	const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(request)));
+-	return Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("");
+-}
++	request.headers = [
++		["content-type", "application/json"],
++		["accept", "application/x-ndjson"],
++	];
++	const hash = await crypto.subtle.digest(
++		"SHA-256",
++		new TextEncoder().encode(JSON.stringify(request)),
++	);
++	return Array.from(new Uint8Array(hash), (byte) =>
++		byte.toString(16).padStart(2, "0"),
++	).join("");
++}

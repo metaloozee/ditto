@@ -1,0 +1,139 @@
+$ pnpm --filter @ditto/runtime typecheck && node --test apps/runtime/src/pi-durable-imports.test.mjs scripts/pi-durable-host-auth.test.mjs && pnpm --filter @ditto/runtime exec vitest run
+$ tsc --noEmit && tsc --noEmit -p tsconfig.forbidden-bindings.json
+✔ audits the candidate's static imports, variable importer and closed auth path (309.736245ms)
+✔ rejects filesystem and process execution imports, including variable specifiers (1412.24993ms)
+✔ rejects omitted closed auth, escaped default auth and additional Models callers (1130.530359ms)
+[96mAlchemy[0m (v0.93.12)
+App: synthetic-auth
+Phase: up
+Stage: dev
+✔ selects only host auth keys without exporting dotenv values (56.981506ms)
+✔ invalid credentials and split logs cannot expose selected values (6.761839ms)
+✔ public resource auth keeps inherited Docker child environment credential-free (175.004092ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3604.680475
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/tmp/ditto-plan-007-3oi7vl/apps/runtime[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+ [32m✓[39m src/forbidden-import-graph.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 97[2mms[22m[39m
+ [32m✓[39m src/runtime-crypto.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 260[2mms[22m[39m
+ [32m✓[39m src/feasibility.test.ts [2m([22m[2m19 tests[22m[2m)[22m[33m 405[2mms[22m[39m
+ [32m✓[39m src/pi-durable-compatibility.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 2658[2mms[22m[39m
+   [33m[2m✓[22m[39m Pi Durable synthetic compatibility in workerd[2m > [22mfails without an executor and never calls a read fallback [33m 2281[2mms[22m[39m
+ [32m✓[39m src/pi-durable-encrypted-corrections.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 2724[2mms[22m[39m
+   [33m[2m✓[22m[39m rejects a plaintext selection downgrade before scheduling [33m 949[2mms[22m[39m
+   [33m[2m✓[22m[39m keeps a Stop control when a Pi encryption failure follows it [33m 1372[2mms[22m[39m
+[90mstdout[2m | src/pi-durable-model-preparation.gate.test.ts[2m > [22m[2m007 initial gate: prepared compaction must resume through the integrated mandatory guard after reopen before first admission
+[22m[39m007 compaction gate evidence {"task":11,"before":{"phase":"summarize","attempt":1,"model":{"provider":"faux","modelId":"faux-1"},"thinkingLevel":"low","streamOptions":{},"maxTokens":51,"tail":10,"firstKept":10},"after":{"status":"terminal","outcome":{"status":"completed","result":{"submissionId":13}}},"attempts":2,"dispatched":2,"requests":[{"model":"faux-1"},{"model":"faux-1","thinking":"low","maxTokens":51},{"model":"faux-2","thinking":"high"}]}
+
+ [32m✓[39m src/pi-durable-model-preparation.gate.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 2871[2mms[22m[39m
+   [33m[2m✓[22m[39m 007 initial gate: prepared compaction must resume through the integrated mandatory guard after reopen before first admission [33m 2629[2mms[22m[39m
+[90mstdout[2m | src/pi-durable-host.test.ts[2m > [22m[2mGuarded local host with real DO SQLite[2m > [22m[2mactually closes with request authority read 1 still pending
+[22m[39m[002-authority-close] {"phase":"request","blockedRead":1,"id":"ee19b00c-fa14-4f6a-b72e-edfa647a8551","generation":1,"started":1791450386215,"yield_at":1791450387215,"end_at":1791450388215,"state":"active","closedAt":1791450386331,"preparationPending":true}
+
+ [32m✓[39m src/pi-durable-history.test.ts [2m([22m[2m26 tests[22m[2m)[22m[33m 4626[2mms[22m[39m
+   [33m[2m✓[22m[39m honest small limits initialize and retain authenticated counters [33m 912[2mms[22m[39m
+   [33m[2m✓[22m[39m exact bounded encrypted history[2m > [22mmaterializes bases, deltas, version boundaries, copies, retirement and scans at committed positions [33m 1378[2mms[22m[39m
+   [33m[2m✓[22m[39m exact bounded encrypted history[2m > [22mreopens a compacted conversation with completed tools and queued followup and sends the exact next prepared provider request [33m 346[2mms[22m[39m
+[90mstdout[2m | src/pi-durable-host.test.ts[2m > [22m[2mGuarded local host with real DO SQLite[2m > [22m[2mactually closes with request authority read 2 still pending
+[22m[39m[002-authority-close] {"phase":"request","blockedRead":2,"id":"734bc44d-ce05-45d8-aa58-2e92a122be25","generation":1,"started":1791450386428,"yield_at":1791450387428,"end_at":1791450388428,"state":"active","closedAt":1791450386540,"preparationPending":true}
+
+[90mstdout[2m | src/pi-durable-host.test.ts[2m > [22m[2mGuarded local host with real DO SQLite[2m > [22m[2mactually closes with tool authority read 1 still pending
+[22m[39m[002-authority-close] {"phase":"tool","blockedRead":1,"id":"124028d8-47c4-41d3-8a0b-84fcf1460e19","generation":1,"started":1791450386638,"yield_at":1791450387638,"end_at":1791450388638,"state":"active","closedAt":1791450386792,"preparationPending":true}
+
+[90mstdout[2m | src/pi-durable-host.test.ts[2m > [22m[2mGuarded local host with real DO SQLite[2m > [22m[2mactually closes with tool authority read 2 still pending
+[22m[39m[002-authority-close] {"phase":"tool","blockedRead":2,"id":"5f49b289-e30b-436b-8d39-682dbbde2357","generation":1,"started":1791450386886,"yield_at":1791450387886,"end_at":1791450388886,"state":"active","closedAt":1791450387042,"preparationPending":true}
+
+ [32m✓[39m src/pi-durable-storage.test.ts [2m([22m[2m41 tests[22m[2m)[22m[33m 8072[2mms[22m[39m
+   [33m[2m✓[22m[39m encrypted DO SQLite[2m > [22mdetaches prototype-like JSON keys without changing object prototypes [33m 921[2mms[22m[39m
+   [33m[2m✓[22m[39m encrypted DO SQLite[2m > [22mindexes entries committed out of ID order [33m 1304[2mms[22m[39m
+   [33m[2m✓[22m[39m encrypted DO SQLite[2m > [22mstreams long document tails across root replacement deltas [33m 2215[2mms[22m[39m
+   [33m[2m✓[22m[39m encrypted storage transactions and integrity[2m > [22mrejects each compatibility field and a keyring that lacks the historical key [33m 303[2mms[22m[39m
+   [33m[2m✓[22m[39m authenticated durable counters[2m > [22mrejects malformed, negative, noncanonical, and unsafe counter values [33m 492[2mms[22m[39m
+[90mstdout[2m | src/pi-durable-host.test.ts[2m > [22m[2mGuarded local host with real DO SQLite[2m > [22m[2mcombines wall-clock yield and native alarms with joined event resources
+[22m[39m[002-native-close] {"id":"abef5dd2-35e9-4576-8e10-07c797aa8895","generation":1,"started":1791450394170,"yield_at":1791450395170,"end_at":1791450396170,"state":"active","closedAt":1791450395180,"remotePending":true}
+
+ [32m✓[39m src/pi-durable-host.test.ts [2m([22m[2m55 tests[22m[2m)[22m[33m 18356[2mms[22m[39m
+   [33m[2m✓[22m[39m Pi built-in cooperative host-yield gate[2m > [22mactually closes during request while remote work stays pending [33m 990[2mms[22m[39m
+   [33m[2m✓[22m[39m Pi built-in cooperative host-yield gate[2m > [22mactually closes during stream while remote work stays pending [33m 1379[2mms[22m[39m
+   [33m[2m✓[22m[39m Guarded local host with real DO SQLite[2m > [22mdenies effects after result persistence fails, continuing unavailability=false [33m 421[2mms[22m[39m
+   [33m[2m✓[22m[39m Guarded local host with real DO SQLite[2m > [22mdenies effects after result persistence fails, continuing unavailability=true [33m 365[2mms[22m[39m
+   [33m[2m✓[22m[39m Guarded local host with real DO SQLite[2m > [22mblocks recovery across two reopens after safety-result-missing [33m 491[2mms[22m[39m
+   [33m[2m✓[22m[39m Guarded local host with real DO SQLite[2m > [22mblocks recovery across two reopens after pi-result-missing [33m 506[2mms[22m[39m
+   [33m[2m✓[22m[39m Guarded local host with real DO SQLite[2m > [22mencrypted adapter blocks recovery across two reopens after safety-result-missing [33m 377[2mms[22m[39m
+   [33m[2m✓[22m[39m Guarded local host with real DO SQLite[2m > [22mencrypted adapter blocks recovery across two reopens after pi-result-missing [33m 380[2mms[22m[39m
+   [33m[2m✓[22m[39m Guarded local host with real DO SQLite[2m > [22mrechecks tool admission after fresh authority changes to revoked [33m 358[2mms[22m[39m
+   [33m[2m✓[22m[39m Guarded local host with real DO SQLite[2m > [22mrechecks tool admission after fresh authority changes to generation [33m 333[2mms[22m[39m
+   [33m[2m✓[22m[39m Guarded local host with real DO SQLite[2m > [22mrechecks tool admission after fresh authority changes to executor [33m 332[2mms[22m[39m
+   [33m[2m✓[22m[39m Guarded local host with real DO SQLite[2m > [22mrechecks tool admission after fresh authority changes to capacity [33m 339[2mms[22m[39m
+   [33m[2m✓[22m[39m Guarded local host with real DO SQLite[2m > [22mconsumes a safety result only after Pi's public terminal tool receipt [33m 374[2mms[22m[39m
+   [33m[2m✓[22m[39m Guarded local host with real DO SQLite[2m > [22mretains a live unknown shell while real Pi recovery and subsequent requests deny effects across two reopens [33m 426[2mms[22m[39m
+   [33m[2m✓[22m[39m Guarded local host with real DO SQLite[2m > [22mautomatic yield awaits actual close before the absolute 2000 ms end deadline [33m 1066[2mms[22m[39m
+   [33m[2m✓[22m[39m Guarded local host with real DO SQLite[2m > [22mcombines wall-clock yield and native alarms with joined event resources [33m 1135[2mms[22m[39m
+   [33m[2m✓[22m[39m Guarded local host with real DO SQLite[2m > [22malarm-reactivates real Pi retry on the same surviving DO without retire [33m 1881[2mms[22m[39m
+   [33m[2m✓[22m[39m Guarded local host with real DO SQLite[2m > [22mnever abandons actual close when a public Storage cleanup fault overruns its deadline [33m 465[2mms[22m[39m
+ [32m✓[39m src/pi-durable-effects.test.ts [2m([22m[2m62 tests[22m[2m)[22m[33m 23254[2mms[22m[39m
+   [33m[2m✓[22m[39m identical durable result delivery is idempotent [33m 1157[2mms[22m[39m
+   [33m[2m✓[22m[39m actual Pi unsafe recovery attempts the next tool and model but neither dispatches through two reopens [33m 1820[2mms[22m[39m
+   [33m[2m✓[22m[39m completed synthetic mutations and follow-up membership survive reopen without repetition [33m 724[2mms[22m[39m
+   [33m[2m✓[22m[39m conflicting result persists review block across reopen and new command [33m 309[2mms[22m[39m
+   [33m[2m✓[22m[39m healthy later writes cannot clear a storage barrier but current trusted reconciliation can account for an undispatched admission [33m 365[2mms[22m[39m
+   [33m[2m✓[22m[39m actual generation and unsafe tool persist structured exact membership before dispatch [33m 414[2mms[22m[39m
+   [33m[2m✓[22m[39m lost shell result commit denies actual tool/model callbacks across two SQLite reopens, unavailable=false [33m 608[2mms[22m[39m
+   [33m[2m✓[22m[39m lost shell result commit denies actual tool/model callbacks across two SQLite reopens, unavailable=true [33m 568[2mms[22m[39m
+   [33m[2m✓[22m[39m unavailable failure marker is unnecessary for reopen denial from durable admitted shell [33m 447[2mms[22m[39m
+   [33m[2m✓[22m[39m safety result before failed Pi commit is not original successful tool receipt [33m 502[2mms[22m[39m
+   [33m[2m✓[22m[39m shell-replay is denied on actual registered tool before executor I/O [33m 379[2mms[22m[39m
+   [33m[2m✓[22m[39m implicit-read is denied on actual registered tool before executor I/O [33m 393[2mms[22m[39m
+   [33m[2m✓[22m[39m unsupported-write is denied on actual registered tool before executor I/O [33m 403[2mms[22m[39m
+   [33m[2m✓[22m[39m read repeats are explicit new observations on distinct original calls, never replay of an unresolved call [33m 462[2mms[22m[39m
+   [33m[2m✓[22m[39m uncooperative shell Stop is stopping, cancellation receipt is not termination [33m 357[2mms[22m[39m
+   [33m[2m✓[22m[39m delayed old-run Stop never cancels later run or revives terminal completion [33m 385[2mms[22m[39m
+   [33m[2m✓[22m[39m public committed retry evidence authorizes a separate summary attempt without reopening or guessing current task [33m 618[2mms[22m[39m
+   [33m[2m✓[22m[39m selection handoff interrupted before Pi summarize commit remains exact or fails closed [33m 355[2mms[22m[39m
+   [33m[2m✓[22m[39m unknown admitted summary blocks actual recovered requests through two SQLite reopens [33m 341[2mms[22m[39m
+   [33m[2m✓[22m[39m correction: native settled no-work alarms consume serviced reconciliation without past rearm [33m 3267[2mms[22m[39m
+   [33m[2m✓[22m[39m correction: known final compaction error settles original run, retryable=true [33m 618[2mms[22m[39m
+   [33m[2m✓[22m[39m correction: actual tool/manual-summary race reserves at most one operation and dispatch [33m 314[2mms[22m[39m
+   [33m[2m✓[22m[39m encrypted L1: compaction, retry, and follow-up keep distinct IDs and context order [33m 682[2mms[22m[39m
+   [33m[2m✓[22m[39m encrypted L1: result loss and Pi commit loss both block two reopens [33m 358[2mms[22m[39m
+   [33m[2m✓[22m[39m encrypted L1: retry seal failure fences before close and survives both orders [33m 324[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m10 passed[39m[22m[90m (10)[39m
+[2m      Tests [22m [1m[32m219 passed[39m[22m[90m (219)[39m
+[2m   Start at [22m 11:06:18
+[2m   Duration [22m 24.33s[2m (transform 820ms, setup 0ms, collect 6.45s, tests 63.32s, environment 1ms, prepare 2.69s)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

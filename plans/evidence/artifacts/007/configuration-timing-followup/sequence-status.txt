@@ -1,0 +1,10 @@
+contracts:verify start
+contracts:verify exit=0
+brain:verify start
+brain:verify exit=0
+credentials:verify start
+credentials:verify exit=0
+runtime:verify start
+runtime:verify exit=0
+verify start
+verify exit=0

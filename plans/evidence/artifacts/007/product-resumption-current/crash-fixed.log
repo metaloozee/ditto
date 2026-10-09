@@ -1,0 +1,11 @@
+✔ credential imports and bindings remain product-only (12.884659ms)
+✔ production RPC cannot return private keyring or enable fixture token installation (507.445094ms)
+✔ actual workerd abort after upstream rotation survives two reactivations without redispatch (794.951494ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1702.219403

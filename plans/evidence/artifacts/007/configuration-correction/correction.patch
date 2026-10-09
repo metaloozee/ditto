@@ -1,0 +1,488 @@
+--- a/apps/credential-tests/src/codex-request-contract.worker.test.ts
++++ b/apps/credential-tests/src/codex-request-contract.worker.test.ts
+@@ -281,6 +281,7 @@
+ 		reopen(): Promise<PiDurableHost>;
+ 	}) => Promise<void>,
+ 	options: {
++		acceptCommand?: boolean;
+ 		owned?: boolean;
+ 		prepareModel?: HostFixtureDependencies["prepareModel"];
+ 		encrypted?: boolean;
+@@ -484,12 +485,13 @@
+ 			};
+ 			let host = await PiDurableHost.open(storage, dependencies);
+ 			try {
+-				await host.accept("command", "Synthetic request", {
+-					run: "run",
+-					user: "user-message",
+-					assistant: "assistant",
+-					sequence: 1,
+-				});
++				if (options.acceptCommand !== false)
++					await host.accept("command", "Synthetic request", {
++						run: "run",
++						user: "user-message",
++						assistant: "assistant",
++						sequence: 1,
++					});
+ 				if (options.reopen) {
+ 					await expect(host.schedule("command")).rejects.toThrow(
+ 						"Synthetic interruption",
+@@ -553,6 +555,118 @@
+ }
+ 
+ for (const encrypted of [false, true]) {
++	for (const change of ["current", "executor", "generation"] as const)
++		it(`configuration correction: final product hold rechecks local ${change}, encrypted=${encrypted}`, async () => {
++			let configured = false,
++				selectionCalls = 0,
++				revoked = false;
++			const entered = deferred(),
++				released = deferred();
++			await gate(
++				"configuration-correction",
++				async (f) => {
++					if (change === "generation") {
++						await credential.holdModel("credentials");
++						await f.start();
++						await bounded(credential.waitModel());
++					}
++					const before = await piState(f.storage);
++					configured = true;
++					const pending = f.host.configureOwned(selectionIntent());
++					try {
++						await bounded(entered.promise);
++						revoked = true;
++					} finally {
++						released.resolve();
++					}
++					const ack = await bounded(pending);
++					expect(ack.status).toBe("denied");
++					expect(await piState(f.storage)).toBe(before);
++					expect(calls).toEqual([]);
++					console.log(
++						"[007-correction-authority]",
++						JSON.stringify({
++							change,
++							encrypted,
++							revoked,
++							status: ack.status,
++							piUnchanged: true,
++							snapshot: await f.snapshot(),
++						}),
++					);
++				},
++				{
++					owned: true,
++					encrypted,
++					acceptCommand: change === "generation",
++					localAuthority: async (current, generation) => ({
++						current: current && !(revoked && change === "current"),
++						generation:
++							generation + (revoked && change === "generation" ? 1 : 0),
++						executor: revoked && change === "executor" ? 2 : 1,
++					}),
++					configurationAuthority: async (query, selection) => {
++						const result = await product.readConfigurationAuthority(
++							query,
++							selection,
++						);
++						if (configured && selection && ++selectionCalls === 6) {
++							entered.resolve();
++							await released.promise;
++						}
++						return result;
++					},
++				},
++			);
++		});
++	it(`configuration correction: close cancels final product callback, encrypted=${encrypted}`, async () => {
++		let configured = false,
++			selectionCalls = 0;
++		const entered = deferred(),
++			released = deferred();
++		await gate(
++			"configuration-correction",
++			async (f) => {
++				const before = await piState(f.storage);
++				configured = true;
++				const pending = f.host.configureOwned(selectionIntent());
++				const rejected = expect(pending).rejects.toThrow();
++				try {
++					await bounded(entered.promise);
++					await bounded(f.host.yield());
++					await rejected;
++					expect(await piState(f.storage)).toBe(before);
++				} finally {
++					released.resolve();
++				}
++				const reopened = await f.reopen();
++				expect((await reopened.configureOwned(selectionIntent())).status).toBe(
++					"outcome_unknown",
++				);
++				expect(
++					(await reopened.readOwnedConfiguration(configurationQuery))
++						?.selection,
++				).toEqual({ model: "faux-1", thinking: "off" });
++				expect(calls).toEqual([]);
++			},
++			{
++				owned: true,
++				encrypted,
++				acceptCommand: false,
++				configurationAuthority: async (query, selection) => {
++					const result = await product.readConfigurationAuthority(
++						query,
++						selection,
++					);
++					if (configured && selection && ++selectionCalls === 6) {
++						entered.resolve();
++						await released.promise;
++					}
++					return result;
++				},
++			},
++		);
++	});
+ 	it(`owned configuration commits scoped duplicate/conflict outcomes and lost acknowledgments, encrypted=${encrypted}`, async () => {
+ 		await gate(
+ 			`owned-idempotency-${encrypted}`,
+@@ -839,6 +953,8 @@
+ 	"unavailable",
+ 	"revoked",
+ 	"disconnected",
++	"local-current",
++	"local-executor",
+ ] as const)
+ 	it(`first owned conversation validates defaults without prompt membership, ${reason}`, async () => {
+ 		const invalid = reason !== "valid";
+@@ -846,7 +962,7 @@
+ 		await env.DB.prepare("DELETE FROM session_commands").run();
+ 		if (reason === "disconnected")
+ 			await env.CodexCredential.getByName("owner").revoke("owner", 2);
+-		else if (invalid) {
++		else if (invalid && !reason.startsWith("local-")) {
+ 			const changed =
+ 				reason === "unavailable" || reason === "revoked"
+ 					? { ...account, status: reason, models: [] }
+@@ -870,21 +986,30 @@
+ 					model: "faux-2",
+ 					thinking: "low",
+ 				};
++				let selectionCalls = 0,
++					revoked = false;
+ 				const dependencies: HostFixtureDependencies = {
+ 					now: Date.now,
+ 					authority: async () => ({
+-						current: await new ModelProductAuthority(env.DB).ownedConfiguration(
+-							subject,
+-							configurationQuery,
+-						),
++						current:
++							(await new ModelProductAuthority(env.DB).ownedConfiguration(
++								subject,
++								configurationQuery,
++							)) && !(revoked && reason === "local-current"),
+ 						generation: 1,
+-						executor: 1,
++						executor: revoked && reason === "local-executor" ? 2 : 1,
+ 					}),
+ 					configuration: {
+ 						subject,
+ 						defaultSelection: selected,
+-						authorize: (query, selection) =>
+-							product.readConfigurationAuthority(query, selection),
++						authorize: async (query, selection) => {
++							const result = await product.readConfigurationAuthority(
++								query,
++								selection,
++							);
++							if (selection && ++selectionCalls === 3) revoked = true;
++							return result;
++						},
+ 					},
+ 					wakeup: { getAlarm: async () => null, setAlarm: async () => {} },
+ 					options: (guard) => {
+@@ -1399,6 +1524,89 @@
+ 			{ owned: true, encrypted: true },
+ 		);
+ 	});
++
++for (const phase of ["pending", "complete"] as const)
++	for (const path of ["new-intent", "reopen"] as const)
++		for (const field of ["state", "payload_digest", "id", "outcome"] as const)
++			it(`configuration correction: authenticates ${phase} ${field} before ${path}`, async () => {
++				let crashed = false;
++				await gate(
++					"configuration-correction",
++					async (f) => {
++						if (phase === "pending")
++							await expect(
++								f.host.configureOwned(selectionIntent("interrupted")),
++							).rejects.toThrow("Correction pending crash");
++						else
++							expect(
++								(await f.host.configureOwned(selectionIntent("completed")))
++									.status,
++							).toBe("applied");
++						const before = await piState(f.storage);
++						const original = f.storage.sql
++							.exec<{
++								id: string;
++								payload_digest: string;
++								state: string;
++								outcome: string;
++							}>("SELECT * FROM host_configuration_intents")
++							.one();
++						f.storage.sql.exec(
++							`UPDATE host_configuration_intents SET ${field}=?`,
++							field === "state"
++								? phase === "pending"
++									? "complete"
++									: "pending"
++								: field === "outcome"
++									? original.outcome + "changed"
++									: "0".repeat(64),
++						);
++						const corrupt = f.storage.sql
++							.exec("SELECT * FROM host_configuration_intents")
++							.toArray();
++						await expect(
++							path === "reopen"
++								? f.reopen()
++								: f.host.configureOwned(
++										selectionIntent("newer", "faux-1", "high"),
++									),
++						).rejects.toThrow();
++						expect(await piState(f.storage)).toBe(before);
++						expect(
++							f.storage.sql
++								.exec("SELECT * FROM host_configuration_intents")
++								.toArray(),
++						).toEqual(corrupt);
++						expect(calls).toEqual([]);
++						console.log(
++							"[007-correction-integrity]",
++							JSON.stringify({
++								phase,
++								path,
++								field,
++								piUnchanged: true,
++								evidenceUnchanged: true,
++								calls: calls.length,
++							}),
++						);
++					},
++					{
++						owned: true,
++						encrypted: true,
++						acceptCommand: false,
++						configurationFault: (point) => {
++							if (
++								phase === "pending" &&
++								!crashed &&
++								point === "configuration-intent"
++							) {
++								crashed = true;
++								throw new Error("Correction pending crash");
++							}
++						},
++					},
++				);
++			});
+ 
+ it("the mandatory adapter constructs an exact credential-owned request and bounded stream through private RPC", async () => {
+ 	upstream();
+--- a/apps/runtime/src/pi-durable-host.ts
++++ b/apps/runtime/src/pi-durable-host.ts
+@@ -359,6 +359,10 @@
+ 	private failure: unknown;
+ 	private providerQueue = Promise.resolve();
+ 	private ownerQueue: Promise<void> = Promise.resolve();
++	private configurationHashes = new Map<
++		string,
++		{ key: string; payload: string }
++	>();
+ 	private ownerAbort = new AbortController();
+ 	private providerCallbacks = 0;
+ 	private bindings = new WeakMap<
+@@ -1522,12 +1526,15 @@
+ 			canonical(fresh.subject) !== canonical(c.subject)
+ 		)
+ 			return false;
++		const finalProduct = parseConfigurationAuthorityV1(
++			await awaitWithContext(c.authorize(query, selection), context),
++		);
++		await this.configurationLedger(context);
++		// Ordered admission: product and evidence work finish before the final host
++		// read and synchronous guards. This admits the Pi call, not an atomic D1/Pi commit.
+ 		const local = await awaitWithContext(
+ 			this.dependencies.authority(),
+ 			context,
+-		);
+-		const finalProduct = parseConfigurationAuthorityV1(
+-			await awaitWithContext(c.authorize(query, selection), context),
+ 		);
+ 		context.abortSignal?.throwIfAborted();
+ 		return (
+@@ -1589,14 +1596,11 @@
+ 				BACKGROUND_CONTEXT,
+ 			),
+ 			async (context) => {
++				const evidence = await this.configurationLedger(context);
+ 				if (await this.harness.conversation(ROOT_CONVERSATION_ID, context)) {
+ 					// Pi and host intent commits are separate. Reopen observes Pi; it never replays a pending selection.
+-					for (const row of this.storage.sql
+-						.exec<{ id: string }>(
+-							"SELECT id FROM host_configuration_intents WHERE state='pending'",
+-						)
+-						.toArray()) {
+-						const { ack } = await this.configurationEvidence(row.id, context);
++					for (const row of evidence.filter((row) => row.state === "pending")) {
++						const { ack } = row;
+ 						const snapshot = await this.piConfiguration(
+ 							this.configurationScope(),
+ 							context,
+@@ -1642,6 +1646,7 @@
+ 		return this.ownerTransition(context, async (context) => {
+ 			if (!(await this.configurationAllowed(query, undefined, context)))
+ 				return null;
++			await this.configurationLedger(context);
+ 			return this.piConfiguration(query, context);
+ 		});
+ 	}
+@@ -1672,30 +1677,16 @@
+ 		return this.ownerTransition(context, async (context) => {
+ 			if (!(await this.configurationAllowed(query, undefined, context)))
+ 				return deny("denied");
+-			const identity = await awaitWithContext(
+-				configurationIdentity(this.dependencies.configuration!.subject, intent),
+-				context,
+-			);
++			const identity = await this.configurationIdentity(intent, context);
+ 			const recordId = `configuration:${identity.key}`;
+-			const old = this.storage.sql
+-				.exec<{ payload_digest: string; outcome: string; state: string }>(
+-					"SELECT payload_digest,outcome,state FROM host_configuration_intents WHERE id=?",
+-					identity.key,
+-				)
+-				.toArray()[0];
++			const evidence = await this.configurationLedger(context);
++			const old = evidence.find((row) => row.id === identity.key);
+ 			if (old) {
+-				const { ack } = await this.configurationEvidence(identity.key, context);
+-				if (old.payload_digest !== identity.payload) return deny("conflict");
+-				if (old.state === "complete") return ack;
++				if (old.payload !== identity.payload) return deny("conflict");
++				if (old.state === "complete") return old.ack;
+ 				return deny("outcome_unknown");
+ 			}
+-			if (
+-				this.storage.sql
+-					.exec(
+-						"SELECT 1 FROM host_configuration_intents WHERE state='pending' LIMIT 1",
+-					)
+-					.toArray().length
+-			)
++			if (evidence.some((row) => row.state === "pending"))
+ 				return deny("outcome_unknown");
+ 			const ack: ConfigurationAckV1 = {
+ 				version: 1,
+@@ -1760,10 +1751,65 @@
+ 			return { ...ack, snapshot };
+ 		});
+ 	}
++	private async configurationIdentity(
++		intent: ConfigurationIntentV1,
++		context: Context,
++	) {
++		const subject = this.dependencies.configuration!.subject;
++		const input = canonical({ subject, intent });
++		const cached = this.configurationHashes.get(input);
++		if (cached) return cached;
++		const identity = await awaitWithContext(
++			configurationIdentity(subject, intent),
++			context,
++		);
++		if (this.configurationHashes.size >= 128) this.configurationHashes.clear();
++		this.configurationHashes.set(input, identity);
++		return identity;
++	}
++	private async configurationLedger(context: Context) {
++		// Queryable fields are only hints until every row has authenticated evidence.
++		const rows = this.storage.sql
++			.exec<{
++				id: string;
++				payload_digest: string;
++				outcome: string;
++				state: string;
++			}>("SELECT * FROM host_configuration_intents ORDER BY id")
++			.toArray();
++		try {
++			const evidence = [];
++			for (const row of rows)
++				evidence.push({
++					id: row.id,
++					...(await this.configurationEvidence(row.id, context)),
++				});
++			if (
++				canonical(rows) !==
++				canonical(
++					this.storage.sql
++						.exec("SELECT * FROM host_configuration_intents ORDER BY id")
++						.toArray(),
++				)
++			)
++				throw new Error(
++					"Configuration evidence integrity changed during validation",
++				);
++			return evidence;
++		} catch (error) {
++			this.denied = true;
++			throw error;
++		}
++	}
+ 	private async configurationEvidence(
+ 		key: string,
+ 		context: Context,
+-	): Promise<{ intent: ConfigurationIntentV1; ack: ConfigurationAckV1 }> {
++	): Promise<{
++		intent: ConfigurationIntentV1;
++		ack: ConfigurationAckV1;
++		state: "pending" | "complete";
++		payload: string;
++	}> {
+ 		this.assertSeals();
+ 		const row = this.storage.sql
+ 			.exec<{ payload_digest: string; outcome: string; state: string }>(
+@@ -1783,11 +1829,17 @@
+ 		const state = literalField(e, "state", ["pending", "complete"]);
+ 		const intent = parseConfigurationIntentV1(e.intent),
+ 			ack = parseConfigurationAckV1(e.ack);
+-		const identity = await awaitWithContext(
+-			configurationIdentity(this.dependencies.configuration!.subject, intent),
+-			context,
+-		);
++		const identity = await this.configurationIdentity(intent, context);
+ 		if (
++			canonical(row) !==
++				canonical(
++					this.storage.sql
++						.exec<{ payload_digest: string; outcome: string; state: string }>(
++							"SELECT payload_digest,outcome,state FROM host_configuration_intents WHERE id=?",
++							key,
++						)
++						.toArray()[0] ?? null,
++				) ||
+ 			identity.key !== key ||
+ 			identity.payload !== row.payload_digest ||
+ 			state !== row.state ||
+@@ -1803,7 +1855,7 @@
+ 					}))
+ 		)
+ 			throw new Error("Configuration evidence integrity failure");
+-		return { intent, ack };
++		return { intent, ack, state, payload: identity.payload };
+ 	}
+ 	private async finishConfiguration(
+ 		key: string,

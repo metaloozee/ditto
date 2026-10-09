@@ -1,0 +1,69 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mthe mandatory adapter constructs an exact credential-owned request and bounded stream through private RPC
+[22m[39m[007-product-constructed] {"body":{"version":1,"protocol":"ditto-synthetic-ndjson-1","purpose":"generation","model":"faux-1","thinking":"off","transcript":"{\"messages\":[{\"role\":\"user\",\"content\":\"Synthetic request\"}]}","options":{"maxTokens":4096}},"headerNames":["accept","authorization","content-type"],"frames":[{"version":1,"type":"delta","text":"Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer "},{"version":1,"type":"done","stopReason":"stop","inputTokens":4,"outputTokens":6}],"snapshot":{"calls":1,"windows":[{"consumedRequests":1,"contractDenials":0,"closeReason":null,"openSlot":"open"}],"admissions":[{"effectId":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","purpose":"generation","state":"complete","requestDigest":"48616251f62080b3cc13adc9f24f521ca2337810a7d8f68db7b6023778a5abf7"}],"claims":[{"claimed":1}],"runs":[{"state":"complete","epoch":2}]}}
+
+An RPC result was not disposed properly. One of the RPC calls you made expects you to call dispose() on the return value, but you didn't do so. You cannot rely on the garbage collector for this because it may take arbitrarily long before actually collecting unreachable objects.
+ [32m✓[39m src/codex-request-contract.worker.test.ts [2m([22m[2m48 tests[22m[2m)[22m[33m 63027[2mms[22m[39m
+   [33m[2m✓[22m[39m the mandatory adapter constructs an exact credential-owned request and bounded stream through private RPC [33m 1473[2mms[22m[39m
+   [33m[2m✓[22m[39m invalid or differently bound request dispatches zero calls: (request) => ({ ...request, method: "GET" }) [33m 1226[2mms[22m[39m
+   [33m[2m✓[22m[39m invalid or differently bound request dispatches zero calls: (request) => ({ ...request, url: `${request.url}?proxy=1` }) [33m 1239[2mms[22m[39m
+   [33m[2m✓[22m[39m invalid or differently bound request dispatches zero calls: (request) => ({ ...request, headers: [...request.headers, ["authorization", "caller"]] }) [33m 1228[2mms[22m[39m
+   [33m[2m✓[22m[39m invalid or differently bound request dispatches zero calls: (request) => ({ ...request, body: request.body.replace('"version":1', '"version":1,"version":1') }) [33m 1243[2mms[22m[39m
+   [33m[2m✓[22m[39m invalid or differently bound request dispatches zero calls: (request) => ({ ...request, body: JSON.stringify({ ...JSON.parse(request.body), thinking: "high" }) }) [33m 1293[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held authority prevents attachment: UPDATE projects SET userId='foreign' [33m 1175[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held authority prevents attachment: UPDATE workspace_sessions SET status='archived' [33m 1195[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held authority prevents attachment: UPDATE workspace_sessions SET runtimeOwnerVersion=2 [33m 2067[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held authority prevents attachment: UPDATE workspace_sessions SET runtimeOwner='legacy' [33m 1160[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET kind='project_seed' [33m 1180[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET retiredAt=1 [33m 1436[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET lifecycleGeneration=2 [33m 1179[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET incarnationId='replacement' [33m 1177[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET controllerNamespace='foreign' [33m 1206[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held authority prevents attachment: UPDATE codex_connections SET revoked=1,generation=2 [33m 1187[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held authority prevents attachment: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]')) [33m 1175[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held credentials prevents attachment: UPDATE projects SET userId='foreign' [33m 1263[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held credentials prevents attachment: UPDATE workspace_sessions SET status='archived' [33m 1303[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held credentials prevents attachment: UPDATE workspace_sessions SET runtimeOwnerVersion=2 [33m 1253[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held credentials prevents attachment: UPDATE workspace_sessions SET runtimeOwner='legacy' [33m 1218[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET kind='project_seed' [33m 1501[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET retiredAt=1 [33m 1255[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET lifecycleGeneration=2 [33m 1235[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET incarnationId='replacement' [33m 1241[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET controllerNamespace='foreign' [33m 1267[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held credentials prevents attachment: UPDATE codex_connections SET revoked=1,generation=2 [33m 1289[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held credentials prevents attachment: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]')) [33m 1252[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held claim prevents attachment: UPDATE projects SET userId='foreign' [33m 1312[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held claim prevents attachment: UPDATE workspace_sessions SET status='archived' [33m 1268[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held claim prevents attachment: UPDATE workspace_sessions SET runtimeOwnerVersion=2 [33m 1273[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held claim prevents attachment: UPDATE workspace_sessions SET runtimeOwner='legacy' [33m 1857[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET kind='project_seed' [33m 1724[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET retiredAt=1 [33m 1250[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET lifecycleGeneration=2 [33m 1275[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET incarnationId='replacement' [33m 1271[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET controllerNamespace='foreign' [33m 1334[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held claim prevents attachment: UPDATE codex_connections SET revoked=1,generation=2 [33m 1315[2mms[22m[39m
+   [33m[2m✓[22m[39m fresh D1 revocation after held claim prevents attachment: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]')) [33m 1256[2mms[22m[39m
+   [33m[2m✓[22m[39m Stop wins during credential preparation before the host acknowledgment, with zero fetches [33m 1276[2mms[22m[39m
+   [33m[2m✓[22m[39m a model capability revoked while the actual claim flush is held is freshly denied after that flush [33m 1585[2mms[22m[39m
+   [33m[2m✓[22m[39m three contract denials durably close the window, record review and halt the exact run without reentry [33m 1263[2mms[22m[39m
+   [33m[2m✓[22m[39m production credentials remain unavailable even with connected fixture records [33m 825[2mms[22m[39m
+   [33m[2m✓[22m[39m a known generation failure retries as a separate admitted attempt [33m 1582[2mms[22m[39m
+   [33m[2m✓[22m[39m Git metadata's reserved attempt is never refunded after a known failure [33m 1407[2mms[22m[39m
+   [33m[2m✓[22m[39m malformed upstream outcomes retain uncertain admission without redispatch [33m 1300[2mms[22m[39m
+   [33m[2m✓[22m[39m malformed upstream outcomes retain uncertain admission without redispatch [33m 1353[2mms[22m[39m
+   [33m[2m✓[22m[39m malformed upstream outcomes retain uncertain admission without redispatch [33m 1382[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m48 passed[39m[22m[90m (48)[39m
+[2m   Start at [22m 20:06:22
+[2m   Duration [22m 63.74s[2m (transform 376ms, setup 0ms, collect 706ms, tests 63.03s, environment 1ms, prepare 169ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

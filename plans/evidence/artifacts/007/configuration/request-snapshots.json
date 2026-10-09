@@ -1,0 +1,180 @@
+[
+  {
+    "tag": "[007-configuration-preparation]",
+    "snapshot": {
+      "requests": [
+        {
+          "model": "faux-1",
+          "thinking": "off",
+          "purpose": "generation"
+        },
+        {
+          "model": "faux-2",
+          "thinking": "low",
+          "purpose": "custom_summary"
+        }
+      ],
+      "configuration": {
+        "version": 1,
+        "projectId": "project",
+        "workspaceSessionId": "session",
+        "ownerVersion": 1,
+        "selection": {
+          "model": "faux-2",
+          "thinking": "low"
+        }
+      },
+      "snapshot": {
+        "calls": 2,
+        "windows": [
+          {
+            "consumedRequests": 1,
+            "contractDenials": 0,
+            "closeReason": "complete",
+            "openSlot": "model/7fc15e36b1f4e89b6ae80b94334e10211f28b9cf8baf26a143e207aef7e7bfae"
+          },
+          {
+            "consumedRequests": 1,
+            "contractDenials": 0,
+            "closeReason": "complete",
+            "openSlot": "model/b97f92fc342af5d53b005bf68250980292cfacf74089bbf37650943a4b1f7f6b"
+          }
+        ],
+        "admissions": [
+          {
+            "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "purpose": "generation",
+            "state": "complete",
+            "requestDigest": "48616251f62080b3cc13adc9f24f521ca2337810a7d8f68db7b6023778a5abf7"
+          },
+          {
+            "effectId": "ditto-summary-1/10/attempt/1",
+            "purpose": "custom_summary",
+            "state": "complete",
+            "requestDigest": "dac494b3a9e326b812b027209da521edc7b49a9a0f641fafdae75e172c2ba090"
+          }
+        ],
+        "claims": [
+          {
+            "claimed": 1
+          },
+          {
+            "claimed": 1
+          }
+        ],
+        "runs": [
+          {
+            "state": "complete",
+            "epoch": 2
+          }
+        ]
+      }
+    }
+  },
+  {
+    "tag": "[007-configuration-retained]",
+    "snapshot": {
+      "purpose": "generation",
+      "requests": [
+        {
+          "model": "faux-1",
+          "thinking": "off",
+          "purpose": "generation"
+        }
+      ],
+      "snapshot": {
+        "calls": 1,
+        "windows": [
+          {
+            "consumedRequests": 1,
+            "contractDenials": 0,
+            "closeReason": "complete",
+            "openSlot": "model/7fc15e36b1f4e89b6ae80b94334e10211f28b9cf8baf26a143e207aef7e7bfae"
+          }
+        ],
+        "admissions": [
+          {
+            "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "purpose": "generation",
+            "state": "complete",
+            "requestDigest": "48616251f62080b3cc13adc9f24f521ca2337810a7d8f68db7b6023778a5abf7"
+          }
+        ],
+        "claims": [
+          {
+            "claimed": 1
+          }
+        ],
+        "runs": [
+          {
+            "state": "complete",
+            "epoch": 2
+          }
+        ]
+      }
+    }
+  },
+  {
+    "tag": "[007-configuration-retained]",
+    "snapshot": {
+      "purpose": "custom_summary",
+      "requests": [
+        {
+          "model": "faux-1",
+          "thinking": "off",
+          "purpose": "generation"
+        },
+        {
+          "model": "faux-1",
+          "thinking": "off",
+          "purpose": "custom_summary"
+        }
+      ],
+      "snapshot": {
+        "calls": 2,
+        "windows": [
+          {
+            "consumedRequests": 1,
+            "contractDenials": 0,
+            "closeReason": "complete",
+            "openSlot": "model/7fc15e36b1f4e89b6ae80b94334e10211f28b9cf8baf26a143e207aef7e7bfae"
+          },
+          {
+            "consumedRequests": 1,
+            "contractDenials": 0,
+            "closeReason": "complete",
+            "openSlot": "model/b97f92fc342af5d53b005bf68250980292cfacf74089bbf37650943a4b1f7f6b"
+          }
+        ],
+        "admissions": [
+          {
+            "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "purpose": "generation",
+            "state": "complete",
+            "requestDigest": "48616251f62080b3cc13adc9f24f521ca2337810a7d8f68db7b6023778a5abf7"
+          },
+          {
+            "effectId": "ditto-summary-1/10/attempt/1",
+            "purpose": "custom_summary",
+            "state": "complete",
+            "requestDigest": "77072bea8d0b06a82f2022e5f7e82584f1e0eac838aaea6228b041b2b7608708"
+          }
+        ],
+        "claims": [
+          {
+            "claimed": 1
+          },
+          {
+            "claimed": 1
+          }
+        ],
+        "runs": [
+          {
+            "state": "complete",
+            "epoch": 2
+          }
+        ]
+      }
+    }
+  }
+]

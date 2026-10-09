@@ -1,0 +1,100 @@
+{
+  "hash": "3000c994",
+  "configHash": "fcc6089e",
+  "lockfileHash": "5ec796bd",
+  "browserHash": "e3f1ea9a",
+  "optimized": {
+    "@cloudflare/containers": {
+      "src": "../../../../../../../../../node_modules/.pnpm/@cloudflare+containers@0.3.7/node_modules/@cloudflare/containers/dist/index.js",
+      "file": "@cloudflare_containers.js",
+      "fileHash": "f4d1cfdd",
+      "needsInterop": false
+    },
+    "@cloudflare/sandbox": {
+      "src": "../../../../../../../../../node_modules/.pnpm/@cloudflare+sandbox@0.12.3/node_modules/@cloudflare/sandbox/dist/index.js",
+      "file": "@cloudflare_sandbox.js",
+      "fileHash": "040e3807",
+      "needsInterop": false
+    },
+    "@earendil-works/pi-durable": {
+      "src": "../../../../../../../../../node_modules/.pnpm/@earendil-works+pi-durable@1.0.1_@aws-sdk+credential-provider-node@3.972.84_@modelconte_867545391487edcd36123475ad2fe1d0/node_modules/@earendil-works/pi-durable/dist/index.js",
+      "file": "@earendil-works_pi-durable.js",
+      "fileHash": "240f53d1",
+      "needsInterop": false
+    },
+    "@earendil-works/pi-durable/storage/sqlite": {
+      "src": "../../../../../../../../../node_modules/.pnpm/@earendil-works+pi-durable@1.0.1_@aws-sdk+credential-provider-node@3.972.84_@modelconte_867545391487edcd36123475ad2fe1d0/node_modules/@earendil-works/pi-durable/dist/storage/sqlite/index.js",
+      "file": "@earendil-works_pi-durable_storage_sqlite.js",
+      "fileHash": "51e8c662",
+      "needsInterop": false
+    },
+    "@earendil-works/pi-ai/models": {
+      "src": "../../../../../../../../../node_modules/.pnpm/@earendil-works+pi-ai@1.0.1_@aws-sdk+credential-provider-node@3.972.84_@modelcontextpro_284929f414f75b7f77d6867259ed136d/node_modules/@earendil-works/pi-ai/dist/models.js",
+      "file": "@earendil-works_pi-ai_models.js",
+      "fileHash": "5278608e",
+      "needsInterop": false
+    },
+    "@earendil-works/pi-ai/providers/faux": {
+      "src": "../../../../../../../../../node_modules/.pnpm/@earendil-works+pi-ai@1.0.1_@aws-sdk+credential-provider-node@3.972.84_@modelcontextpro_284929f414f75b7f77d6867259ed136d/node_modules/@earendil-works/pi-ai/dist/providers/faux.js",
+      "file": "@earendil-works_pi-ai_providers_faux.js",
+      "fileHash": "5286549b",
+      "needsInterop": false
+    },
+    "@earendil-works/chord/context": {
+      "src": "../../../../../../../../../node_modules/.pnpm/@earendil-works+chord@1.0.1/node_modules/@earendil-works/chord/dist/context/index.js",
+      "file": "@earendil-works_chord_context.js",
+      "fileHash": "b99cee3b",
+      "needsInterop": false
+    },
+    "@earendil-works/chord/delta": {
+      "src": "../../../../../../../../../node_modules/.pnpm/@earendil-works+chord@1.0.1/node_modules/@earendil-works/chord/dist/delta/index.js",
+      "file": "@earendil-works_chord_delta.js",
+      "fileHash": "b64d79f5",
+      "needsInterop": false
+    },
+    "typebox": {
+      "src": "../../../../../../../../../node_modules/.pnpm/typebox@1.3.27/node_modules/typebox/build/index.mjs",
+      "file": "typebox.js",
+      "fileHash": "fe586571",
+      "needsInterop": false
+    },
+    "vitest > @vitest/snapshot > magic-string": {
+      "src": "../../../../../../../../../node_modules/.pnpm/magic-string@0.30.21/node_modules/magic-string/dist/magic-string.es.mjs",
+      "file": "vitest___@vitest_snapshot___magic-string.js",
+      "fileHash": "d44f2d68",
+      "needsInterop": false
+    },
+    "vitest > @vitest/expect > chai": {
+      "src": "../../../../../../../../../node_modules/.pnpm/chai@5.3.3/node_modules/chai/index.js",
+      "file": "vitest___@vitest_expect___chai.js",
+      "fileHash": "cc3f8260",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "chunk-SSUJQZQA": {
+      "file": "chunk-SSUJQZQA.js"
+    },
+    "chunk-7KYW7EK3": {
+      "file": "chunk-7KYW7EK3.js"
+    },
+    "chunk-XWH7TXR6": {
+      "file": "chunk-XWH7TXR6.js"
+    },
+    "chunk-EOP7IIM4": {
+      "file": "chunk-EOP7IIM4.js"
+    },
+    "chunk-E62EHYRK": {
+      "file": "chunk-E62EHYRK.js"
+    },
+    "chunk-BONGBIOZ": {
+      "file": "chunk-BONGBIOZ.js"
+    },
+    "chunk-47T7GGRX": {
+      "file": "chunk-47T7GGRX.js"
+    },
+    "chunk-PZ5AY32C": {
+      "file": "chunk-PZ5AY32C.js"
+    }
+  }
+}

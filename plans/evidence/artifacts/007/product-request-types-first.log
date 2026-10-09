@@ -1,0 +1,19 @@
+$ tsc --noEmit
+src/codex-request-contract.worker.test.ts(16,58): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+src/codex-request-contract.worker.test.ts(17,71): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+src/codex-request-contract.worker.test.ts(142,60): error TS2322: Type 'Promise<Invocation>' is not assignable to type 'Promise<void>'.
+  Type 'Invocation' is not assignable to type 'void'.
+src/entry.ts(5,38): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+../runtime/src/host-private.ts(8,8): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+../runtime/src/pi-durable-cooperative-fixture.ts(30,8): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+../runtime/src/pi-durable-host.ts(34,8): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+../runtime/src/pi-durable-host.ts(35,36): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+../runtime/src/pi-durable-host.ts(36,33): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+../runtime/src/pi-durable-host.ts(45,8): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+../runtime/src/pi-durable-host.ts(54,8): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+../runtime/src/pi-durable-models.ts(9,87): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+../runtime/src/pi-durable-storage.ts(41,8): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+../web/src/lib/model-product-authority.ts(114,43): error TS18046: 'row' is of type 'unknown'.
+/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @ditto/credential-tests@ typecheck: `tsc --noEmit`
+Exit status 2

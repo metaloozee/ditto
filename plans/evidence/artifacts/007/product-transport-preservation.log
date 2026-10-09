@@ -1,0 +1,12 @@
+apps/runtime/src/pi-durable-host.ts: OK
+apps/runtime/src/pi-durable-models.test.ts: FAILED
+apps/runtime/src/pi-durable-summary.test.ts: OK
+apps/runtime/src/pi-durable-model-preparation.gate.test.ts: OK
+apps/runtime/src/pi-durable-summary.ts: OK
+apps/runtime/src/pi-durable-cooperative-fixture.ts: OK
+apps/runtime/src/pi-durable-effects.test.ts: OK
+packages/runtime-contracts/src/index.ts: OK
+packages/runtime-contracts/src/model.ts: OK
+packages/runtime-contracts/src/model.test.ts: OK
+docs/specs/pi-durable-session-runtime.md: OK
+sha256sum: WARNING: 1 computed checksum did NOT match

@@ -1,0 +1,1278 @@
+[
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "change": "current",
+      "encrypted": false,
+      "revoked": true,
+      "status": "denied",
+      "piUnchanged": true,
+      "snapshot": {
+        "calls": 0,
+        "windows": [],
+        "admissions": [],
+        "claims": [],
+        "runs": []
+      }
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "change": "executor",
+      "encrypted": false,
+      "revoked": true,
+      "status": "denied",
+      "piUnchanged": true,
+      "snapshot": {
+        "calls": 0,
+        "windows": [],
+        "admissions": [],
+        "claims": [],
+        "runs": []
+      }
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "change": "generation",
+      "encrypted": false,
+      "revoked": true,
+      "status": "denied",
+      "piUnchanged": true,
+      "snapshot": {
+        "calls": 0,
+        "windows": [
+          {
+            "consumedRequests": 1,
+            "contractDenials": 0,
+            "closeReason": null,
+            "openSlot": "open"
+          }
+        ],
+        "admissions": [
+          {
+            "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "purpose": "generation",
+            "state": "reserved",
+            "requestDigest": "48616251f62080b3cc13adc9f24f521ca2337810a7d8f68db7b6023778a5abf7"
+          }
+        ],
+        "claims": [
+          {
+            "claimed": 0
+          }
+        ],
+        "runs": [
+          {
+            "state": "running",
+            "epoch": 1
+          }
+        ]
+      }
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "change": "current",
+      "encrypted": true,
+      "revoked": true,
+      "status": "denied",
+      "piUnchanged": true,
+      "snapshot": {
+        "calls": 0,
+        "windows": [],
+        "admissions": [],
+        "claims": [],
+        "runs": []
+      }
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "change": "executor",
+      "encrypted": true,
+      "revoked": true,
+      "status": "denied",
+      "piUnchanged": true,
+      "snapshot": {
+        "calls": 0,
+        "windows": [],
+        "admissions": [],
+        "claims": [],
+        "runs": []
+      }
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "change": "generation",
+      "encrypted": true,
+      "revoked": true,
+      "status": "denied",
+      "piUnchanged": true,
+      "snapshot": {
+        "calls": 0,
+        "windows": [
+          {
+            "consumedRequests": 1,
+            "contractDenials": 0,
+            "closeReason": null,
+            "openSlot": "open"
+          }
+        ],
+        "admissions": [
+          {
+            "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "purpose": "generation",
+            "state": "reserved",
+            "requestDigest": "48616251f62080b3cc13adc9f24f521ca2337810a7d8f68db7b6023778a5abf7"
+          }
+        ],
+        "claims": [
+          {
+            "claimed": 0
+          }
+        ],
+        "runs": [
+          {
+            "state": "running",
+            "epoch": 1
+          }
+        ]
+      }
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "requests": [
+        {
+          "model": "faux-1",
+          "thinking": "off",
+          "purpose": "generation"
+        },
+        {
+          "model": "faux-2",
+          "thinking": "low",
+          "purpose": "custom_summary"
+        }
+      ],
+      "configuration": {
+        "version": 1,
+        "projectId": "project",
+        "workspaceSessionId": "session",
+        "ownerVersion": 1,
+        "selection": {
+          "model": "faux-2",
+          "thinking": "low"
+        }
+      },
+      "snapshot": {
+        "calls": 2,
+        "windows": [
+          {
+            "consumedRequests": 1,
+            "contractDenials": 0,
+            "closeReason": "complete",
+            "openSlot": "model/7fc15e36b1f4e89b6ae80b94334e10211f28b9cf8baf26a143e207aef7e7bfae"
+          },
+          {
+            "consumedRequests": 1,
+            "contractDenials": 0,
+            "closeReason": "complete",
+            "openSlot": "model/b97f92fc342af5d53b005bf68250980292cfacf74089bbf37650943a4b1f7f6b"
+          }
+        ],
+        "admissions": [
+          {
+            "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "purpose": "generation",
+            "state": "complete",
+            "requestDigest": "48616251f62080b3cc13adc9f24f521ca2337810a7d8f68db7b6023778a5abf7"
+          },
+          {
+            "effectId": "ditto-summary-1/10/attempt/1",
+            "purpose": "custom_summary",
+            "state": "complete",
+            "requestDigest": "1c743cf454f3da2eb2c2e49aa65f75120b4b4f451431318c2cda7e475e033173"
+          }
+        ],
+        "claims": [
+          {
+            "claimed": 1
+          },
+          {
+            "claimed": 1
+          }
+        ],
+        "runs": [
+          {
+            "state": "complete",
+            "epoch": 2
+          }
+        ]
+      }
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "purpose": "generation",
+      "requests": [
+        {
+          "model": "faux-1",
+          "thinking": "off",
+          "purpose": "generation"
+        }
+      ],
+      "snapshot": {
+        "calls": 1,
+        "windows": [
+          {
+            "consumedRequests": 1,
+            "contractDenials": 0,
+            "closeReason": "complete",
+            "openSlot": "model/7fc15e36b1f4e89b6ae80b94334e10211f28b9cf8baf26a143e207aef7e7bfae"
+          }
+        ],
+        "admissions": [
+          {
+            "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "purpose": "generation",
+            "state": "complete",
+            "requestDigest": "48616251f62080b3cc13adc9f24f521ca2337810a7d8f68db7b6023778a5abf7"
+          }
+        ],
+        "claims": [
+          {
+            "claimed": 1
+          }
+        ],
+        "runs": [
+          {
+            "state": "complete",
+            "epoch": 2
+          }
+        ]
+      }
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "purpose": "custom_summary",
+      "requests": [
+        {
+          "model": "faux-1",
+          "thinking": "off",
+          "purpose": "generation"
+        },
+        {
+          "model": "faux-1",
+          "thinking": "off",
+          "purpose": "custom_summary"
+        }
+      ],
+      "snapshot": {
+        "calls": 2,
+        "windows": [
+          {
+            "consumedRequests": 1,
+            "contractDenials": 0,
+            "closeReason": "complete",
+            "openSlot": "model/7fc15e36b1f4e89b6ae80b94334e10211f28b9cf8baf26a143e207aef7e7bfae"
+          },
+          {
+            "consumedRequests": 1,
+            "contractDenials": 0,
+            "closeReason": "complete",
+            "openSlot": "model/b97f92fc342af5d53b005bf68250980292cfacf74089bbf37650943a4b1f7f6b"
+          }
+        ],
+        "admissions": [
+          {
+            "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "purpose": "generation",
+            "state": "complete",
+            "requestDigest": "48616251f62080b3cc13adc9f24f521ca2337810a7d8f68db7b6023778a5abf7"
+          },
+          {
+            "effectId": "ditto-summary-1/10/attempt/1",
+            "purpose": "custom_summary",
+            "state": "complete",
+            "requestDigest": "8d577bc36c8c02c80aa44053ea4d4abf3838245b0ff4cf3f00095c9e65a4a415"
+          }
+        ],
+        "claims": [
+          {
+            "claimed": 1
+          },
+          {
+            "claimed": 1
+          }
+        ],
+        "runs": [
+          {
+            "state": "complete",
+            "epoch": 2
+          }
+        ]
+      }
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "phase": "pending",
+      "path": "new-intent",
+      "field": "state",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "phase": "pending",
+      "path": "new-intent",
+      "field": "payload_digest",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "phase": "pending",
+      "path": "new-intent",
+      "field": "id",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "phase": "pending",
+      "path": "new-intent",
+      "field": "outcome",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "phase": "pending",
+      "path": "reopen",
+      "field": "state",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "phase": "pending",
+      "path": "reopen",
+      "field": "payload_digest",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "phase": "pending",
+      "path": "reopen",
+      "field": "id",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "phase": "pending",
+      "path": "reopen",
+      "field": "outcome",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "phase": "complete",
+      "path": "new-intent",
+      "field": "state",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "phase": "complete",
+      "path": "new-intent",
+      "field": "payload_digest",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "phase": "complete",
+      "path": "new-intent",
+      "field": "id",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "phase": "complete",
+      "path": "new-intent",
+      "field": "outcome",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "phase": "complete",
+      "path": "reopen",
+      "field": "state",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "phase": "complete",
+      "path": "reopen",
+      "field": "payload_digest",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "phase": "complete",
+      "path": "reopen",
+      "field": "id",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "phase": "complete",
+      "path": "reopen",
+      "field": "outcome",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "credentials-verify-fourth",
+    "capture": {
+      "body": {
+        "version": 1,
+        "protocol": "ditto-synthetic-ndjson-1",
+        "purpose": "generation",
+        "model": "faux-1",
+        "thinking": "off",
+        "transcript": "{\"messages\":[{\"role\":\"user\",\"content\":\"Synthetic request\"}]}",
+        "options": {
+          "maxTokens": 4096
+        }
+      },
+      "headerNames": [
+        "accept",
+        "authorization",
+        "content-type"
+      ],
+      "frames": [
+        {
+          "version": 1,
+          "type": "delta",
+          "text": "Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer "
+        },
+        {
+          "version": 1,
+          "type": "done",
+          "stopReason": "stop",
+          "inputTokens": 4,
+          "outputTokens": 6
+        }
+      ],
+      "snapshot": {
+        "calls": 1,
+        "windows": [
+          {
+            "consumedRequests": 1,
+            "contractDenials": 0,
+            "closeReason": "complete",
+            "openSlot": "model/7fc15e36b1f4e89b6ae80b94334e10211f28b9cf8baf26a143e207aef7e7bfae"
+          }
+        ],
+        "admissions": [
+          {
+            "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "purpose": "generation",
+            "state": "complete",
+            "requestDigest": "48616251f62080b3cc13adc9f24f521ca2337810a7d8f68db7b6023778a5abf7"
+          }
+        ],
+        "claims": [
+          {
+            "claimed": 1
+          }
+        ],
+        "runs": [
+          {
+            "state": "complete",
+            "epoch": 2
+          }
+        ]
+      }
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "change": "current",
+      "encrypted": false,
+      "revoked": true,
+      "status": "denied",
+      "piUnchanged": true,
+      "snapshot": {
+        "calls": 0,
+        "windows": [],
+        "admissions": [],
+        "claims": [],
+        "runs": []
+      }
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "change": "executor",
+      "encrypted": false,
+      "revoked": true,
+      "status": "denied",
+      "piUnchanged": true,
+      "snapshot": {
+        "calls": 0,
+        "windows": [],
+        "admissions": [],
+        "claims": [],
+        "runs": []
+      }
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "change": "generation",
+      "encrypted": false,
+      "revoked": true,
+      "status": "denied",
+      "piUnchanged": true,
+      "snapshot": {
+        "calls": 0,
+        "windows": [
+          {
+            "consumedRequests": 1,
+            "contractDenials": 0,
+            "closeReason": null,
+            "openSlot": "open"
+          }
+        ],
+        "admissions": [
+          {
+            "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "purpose": "generation",
+            "state": "reserved",
+            "requestDigest": "48616251f62080b3cc13adc9f24f521ca2337810a7d8f68db7b6023778a5abf7"
+          }
+        ],
+        "claims": [
+          {
+            "claimed": 0
+          }
+        ],
+        "runs": [
+          {
+            "state": "running",
+            "epoch": 1
+          }
+        ]
+      }
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "change": "current",
+      "encrypted": true,
+      "revoked": true,
+      "status": "denied",
+      "piUnchanged": true,
+      "snapshot": {
+        "calls": 0,
+        "windows": [],
+        "admissions": [],
+        "claims": [],
+        "runs": []
+      }
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "change": "executor",
+      "encrypted": true,
+      "revoked": true,
+      "status": "denied",
+      "piUnchanged": true,
+      "snapshot": {
+        "calls": 0,
+        "windows": [],
+        "admissions": [],
+        "claims": [],
+        "runs": []
+      }
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "change": "generation",
+      "encrypted": true,
+      "revoked": true,
+      "status": "denied",
+      "piUnchanged": true,
+      "snapshot": {
+        "calls": 0,
+        "windows": [
+          {
+            "consumedRequests": 1,
+            "contractDenials": 0,
+            "closeReason": null,
+            "openSlot": "open"
+          }
+        ],
+        "admissions": [
+          {
+            "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "purpose": "generation",
+            "state": "reserved",
+            "requestDigest": "48616251f62080b3cc13adc9f24f521ca2337810a7d8f68db7b6023778a5abf7"
+          }
+        ],
+        "claims": [
+          {
+            "claimed": 0
+          }
+        ],
+        "runs": [
+          {
+            "state": "running",
+            "epoch": 1
+          }
+        ]
+      }
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "requests": [
+        {
+          "model": "faux-1",
+          "thinking": "off",
+          "purpose": "generation"
+        },
+        {
+          "model": "faux-2",
+          "thinking": "low",
+          "purpose": "custom_summary"
+        }
+      ],
+      "configuration": {
+        "version": 1,
+        "projectId": "project",
+        "workspaceSessionId": "session",
+        "ownerVersion": 1,
+        "selection": {
+          "model": "faux-2",
+          "thinking": "low"
+        }
+      },
+      "snapshot": {
+        "calls": 2,
+        "windows": [
+          {
+            "consumedRequests": 1,
+            "contractDenials": 0,
+            "closeReason": "complete",
+            "openSlot": "model/7fc15e36b1f4e89b6ae80b94334e10211f28b9cf8baf26a143e207aef7e7bfae"
+          },
+          {
+            "consumedRequests": 1,
+            "contractDenials": 0,
+            "closeReason": "complete",
+            "openSlot": "model/b97f92fc342af5d53b005bf68250980292cfacf74089bbf37650943a4b1f7f6b"
+          }
+        ],
+        "admissions": [
+          {
+            "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "purpose": "generation",
+            "state": "complete",
+            "requestDigest": "48616251f62080b3cc13adc9f24f521ca2337810a7d8f68db7b6023778a5abf7"
+          },
+          {
+            "effectId": "ditto-summary-1/10/attempt/1",
+            "purpose": "custom_summary",
+            "state": "complete",
+            "requestDigest": "10d42b51ec57d18756ba19904d6acda2d61bc87ca09f738a5fc786ac9b55c849"
+          }
+        ],
+        "claims": [
+          {
+            "claimed": 1
+          },
+          {
+            "claimed": 1
+          }
+        ],
+        "runs": [
+          {
+            "state": "complete",
+            "epoch": 2
+          }
+        ]
+      }
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "purpose": "generation",
+      "requests": [
+        {
+          "model": "faux-1",
+          "thinking": "off",
+          "purpose": "generation"
+        }
+      ],
+      "snapshot": {
+        "calls": 1,
+        "windows": [
+          {
+            "consumedRequests": 1,
+            "contractDenials": 0,
+            "closeReason": "complete",
+            "openSlot": "model/7fc15e36b1f4e89b6ae80b94334e10211f28b9cf8baf26a143e207aef7e7bfae"
+          }
+        ],
+        "admissions": [
+          {
+            "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "purpose": "generation",
+            "state": "complete",
+            "requestDigest": "48616251f62080b3cc13adc9f24f521ca2337810a7d8f68db7b6023778a5abf7"
+          }
+        ],
+        "claims": [
+          {
+            "claimed": 1
+          }
+        ],
+        "runs": [
+          {
+            "state": "complete",
+            "epoch": 2
+          }
+        ]
+      }
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "purpose": "custom_summary",
+      "requests": [
+        {
+          "model": "faux-1",
+          "thinking": "off",
+          "purpose": "generation"
+        },
+        {
+          "model": "faux-1",
+          "thinking": "off",
+          "purpose": "custom_summary"
+        }
+      ],
+      "snapshot": {
+        "calls": 2,
+        "windows": [
+          {
+            "consumedRequests": 1,
+            "contractDenials": 0,
+            "closeReason": "complete",
+            "openSlot": "model/7fc15e36b1f4e89b6ae80b94334e10211f28b9cf8baf26a143e207aef7e7bfae"
+          },
+          {
+            "consumedRequests": 1,
+            "contractDenials": 0,
+            "closeReason": "complete",
+            "openSlot": "model/b97f92fc342af5d53b005bf68250980292cfacf74089bbf37650943a4b1f7f6b"
+          }
+        ],
+        "admissions": [
+          {
+            "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "purpose": "generation",
+            "state": "complete",
+            "requestDigest": "48616251f62080b3cc13adc9f24f521ca2337810a7d8f68db7b6023778a5abf7"
+          },
+          {
+            "effectId": "ditto-summary-1/10/attempt/1",
+            "purpose": "custom_summary",
+            "state": "complete",
+            "requestDigest": "02dbc92c37e801e31e6b68ee2c7255313a7ca62fe23ecf1b04a8ea213b9c64fa"
+          }
+        ],
+        "claims": [
+          {
+            "claimed": 1
+          },
+          {
+            "claimed": 1
+          }
+        ],
+        "runs": [
+          {
+            "state": "complete",
+            "epoch": 2
+          }
+        ]
+      }
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "phase": "pending",
+      "path": "new-intent",
+      "field": "state",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "phase": "pending",
+      "path": "new-intent",
+      "field": "payload_digest",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "phase": "pending",
+      "path": "new-intent",
+      "field": "id",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "phase": "pending",
+      "path": "new-intent",
+      "field": "outcome",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "phase": "pending",
+      "path": "reopen",
+      "field": "state",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "phase": "pending",
+      "path": "reopen",
+      "field": "payload_digest",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "phase": "pending",
+      "path": "reopen",
+      "field": "id",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "phase": "pending",
+      "path": "reopen",
+      "field": "outcome",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "phase": "complete",
+      "path": "new-intent",
+      "field": "state",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "phase": "complete",
+      "path": "new-intent",
+      "field": "payload_digest",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "phase": "complete",
+      "path": "new-intent",
+      "field": "id",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "phase": "complete",
+      "path": "new-intent",
+      "field": "outcome",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "phase": "complete",
+      "path": "reopen",
+      "field": "state",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "phase": "complete",
+      "path": "reopen",
+      "field": "payload_digest",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "phase": "complete",
+      "path": "reopen",
+      "field": "id",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "phase": "complete",
+      "path": "reopen",
+      "field": "outcome",
+      "piUnchanged": true,
+      "evidenceUnchanged": true,
+      "calls": 0
+    }
+  },
+  {
+    "log": "verify-fourth",
+    "capture": {
+      "body": {
+        "version": 1,
+        "protocol": "ditto-synthetic-ndjson-1",
+        "purpose": "generation",
+        "model": "faux-1",
+        "thinking": "off",
+        "transcript": "{\"messages\":[{\"role\":\"user\",\"content\":\"Synthetic request\"}]}",
+        "options": {
+          "maxTokens": 4096
+        }
+      },
+      "headerNames": [
+        "accept",
+        "authorization",
+        "content-type"
+      ],
+      "frames": [
+        {
+          "version": 1,
+          "type": "delta",
+          "text": "Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer Synthetic answer "
+        },
+        {
+          "version": 1,
+          "type": "done",
+          "stopReason": "stop",
+          "inputTokens": 4,
+          "outputTokens": 6
+        }
+      ],
+      "snapshot": {
+        "calls": 1,
+        "windows": [
+          {
+            "consumedRequests": 1,
+            "contractDenials": 0,
+            "closeReason": "complete",
+            "openSlot": "model/7fc15e36b1f4e89b6ae80b94334e10211f28b9cf8baf26a143e207aef7e7bfae"
+          }
+        ],
+        "admissions": [
+          {
+            "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "purpose": "generation",
+            "state": "complete",
+            "requestDigest": "48616251f62080b3cc13adc9f24f521ca2337810a7d8f68db7b6023778a5abf7"
+          }
+        ],
+        "claims": [
+          {
+            "claimed": 1
+          }
+        ],
+        "runs": [
+          {
+            "state": "complete",
+            "epoch": 2
+          }
+        ]
+      }
+    }
+  },
+  {
+    "kind": "authority",
+    "encrypted": false,
+    "reads": [
+      {
+        "current": true,
+        "generation": 1,
+        "executor": 1
+      },
+      {
+        "current": true,
+        "generation": 1,
+        "executor": 1
+      },
+      {
+        "current": true,
+        "generation": 1,
+        "executor": 1
+      },
+      {
+        "current": true,
+        "generation": 1,
+        "executor": 1
+      },
+      {
+        "current": true,
+        "generation": 1,
+        "executor": 1
+      },
+      {
+        "current": false,
+        "generation": 1,
+        "executor": 1
+      }
+    ],
+    "ack": {
+      "version": 1,
+      "intentId": "choice-1",
+      "status": "denied",
+      "snapshot": null
+    },
+    "piBefore": "5c2be5eb08916f95bcdb07237bc09e8e55a5b84cb1a7779bf1edb937d6a81d0f",
+    "piAfter": "5c2be5eb08916f95bcdb07237bc09e8e55a5b84cb1a7779bf1edb937d6a81d0f",
+    "product": {
+      "calls": 0,
+      "windows": [],
+      "admissions": [],
+      "claims": [],
+      "runs": [
+        {
+          "state": "queued",
+          "epoch": 1
+        }
+      ]
+    }
+  },
+  {
+    "kind": "authority",
+    "encrypted": true,
+    "reads": [
+      {
+        "current": true,
+        "generation": 1,
+        "executor": 1
+      },
+      {
+        "current": true,
+        "generation": 1,
+        "executor": 1
+      },
+      {
+        "current": true,
+        "generation": 1,
+        "executor": 1
+      },
+      {
+        "current": true,
+        "generation": 1,
+        "executor": 1
+      },
+      {
+        "current": true,
+        "generation": 1,
+        "executor": 1
+      },
+      {
+        "current": false,
+        "generation": 1,
+        "executor": 1
+      }
+    ],
+    "ack": {
+      "version": 1,
+      "intentId": "choice-1",
+      "status": "denied",
+      "snapshot": null
+    },
+    "piBefore": "12e44be782f273c1928b98bbc88676f99f4bc26217c59dfa74639a8ca61c52de",
+    "piAfter": "12e44be782f273c1928b98bbc88676f99f4bc26217c59dfa74639a8ca61c52de",
+    "product": {
+      "calls": 0,
+      "windows": [],
+      "admissions": [],
+      "claims": [],
+      "runs": [
+        {
+          "state": "queued",
+          "epoch": 1
+        }
+      ]
+    }
+  },
+  {
+    "kind": "integrity",
+    "original": {
+      "id": "e8da8819e575583f3d448c0c863392b74b82a8c4baf8c5b7dc77f83b9a177b5d",
+      "payload_digest": "87c413d222386098b8659f66acff268a9b3de90649645c2a3dfb828209e9b256",
+      "state": "pending",
+      "ciphertextDigest": "3d58f1f9767915bb97b29698d1f89995f3bf079fa0399f78237177dd9f8bbf52"
+    },
+    "corrupted": {
+      "id": "e8da8819e575583f3d448c0c863392b74b82a8c4baf8c5b7dc77f83b9a177b5d",
+      "payload_digest": "87c413d222386098b8659f66acff268a9b3de90649645c2a3dfb828209e9b256",
+      "state": "complete",
+      "ciphertextDigest": "3d58f1f9767915bb97b29698d1f89995f3bf079fa0399f78237177dd9f8bbf52"
+    },
+    "reopen": "integrity_rejected",
+    "piBefore": "6a915a858e8b8ca91872e94c7935be90d5d11163421ef3178eed6ad174184543",
+    "piAfter": "6a915a858e8b8ca91872e94c7935be90d5d11163421ef3178eed6ad174184543",
+    "product": {
+      "calls": 0,
+      "windows": [],
+      "admissions": [],
+      "claims": [],
+      "runs": [
+        {
+          "state": "queued",
+          "epoch": 1
+        }
+      ]
+    }
+  }
+]

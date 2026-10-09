@@ -1,0 +1,160 @@
+--- candidate/apps/runtime/src/pi-durable-summary.test.ts
++++ probe/apps/runtime/src/pi-durable-summary.test.ts
+@@ -1679,6 +1679,157 @@
+ 						.toArray(),
+ 				).toHaveLength(0);
+ 			}));
++for (const encrypted of [false, true])
++	for (const externallyCanceled of [false, true])
++		it(`configuration authority wait joins close by admitted deadline, external cancellation=${externallyCanceled}, encrypted=${encrypted}`, async () => {
++			type Outcome = {
++				state: "pending" | "complete" | "failed";
++				at?: number;
++				error?: string;
++			};
++			let observation:
++				| {
++						invocation: {
++							id: string;
++							started: number;
++							yield_at: number;
++							end_at: number;
++						};
++						observedAt: number;
++						elapsedMs: number;
++						configuration: Outcome;
++						close: Outcome;
++						remoteSettled: boolean;
++						joinedConfiguration: Outcome;
++						joinedClose: Outcome;
++				  }
++				| undefined;
++			let cleanupError: unknown;
++			try {
++				await gate(
++					`configuration-close-probe-${externallyCanceled}`,
++					encrypted,
++					async (f, state) => {
++						await f.start();
++						const invocation = state.storage.sql
++							.exec<{
++								id: string;
++								started: number;
++								yield_at: number;
++								end_at: number;
++							}>(
++								"SELECT id,started,yield_at,end_at FROM host_invocations ORDER BY rowid DESC LIMIT 1",
++							)
++							.one();
++						const authority = f.dependencies.authority;
++						const remote =
++							pendingRemote<Awaited<ReturnType<typeof authority>>>();
++						const entered = pendingRemote<void>();
++						f.dependencies.authority = () => {
++							entered.resolve();
++							return remote.promise;
++						};
++						const controller = new AbortController();
++						let configuration: Outcome = { state: "pending" },
++							close: Outcome = { state: "pending" };
++						const change = (
++							externallyCanceled
++								? f.host.configure(
++										{ thinkingLevel: "high" },
++										withAbortSignal(controller.signal, BACKGROUND_CONTEXT),
++									)
++								: f.host.configure({ thinkingLevel: "high" })
++						).then(
++							() => {
++								configuration = { state: "complete", at: f.dependencies.now() };
++							},
++							(error: unknown) => {
++								configuration = {
++									state: "failed",
++									at: f.dependencies.now(),
++									error:
++										error instanceof Error
++											? error.message
++											: "non-Error rejection",
++								};
++							},
++						);
++						let closing: Promise<void> | undefined;
++						try {
++							await entered.promise;
++							const wallStart = performance.now();
++							f.dependencies.now = () =>
++								invocation.yield_at + Math.floor(performance.now() - wallStart);
++							if (externallyCanceled) controller.abort();
++							closing = f.host.yield().then(
++								() => {
++									close = { state: "complete", at: f.dependencies.now() };
++								},
++								(error: unknown) => {
++									close = {
++										state: "failed",
++										at: f.dependencies.now(),
++										error:
++											error instanceof Error
++												? error.message
++												: "non-Error rejection",
++									};
++								},
++							);
++							const remaining = invocation.end_at - f.dependencies.now();
++							await new Promise((resolve) =>
++								setTimeout(resolve, Math.max(0, remaining) + 50),
++							);
++							observation = {
++								invocation,
++								observedAt: f.dependencies.now(),
++								elapsedMs: Math.floor(performance.now() - wallStart),
++								configuration: { ...configuration },
++								close: { ...close },
++								remoteSettled: remote.settled,
++								joinedConfiguration: { state: "pending" },
++								joinedClose: { state: "pending" },
++							};
++						} finally {
++							f.dependencies.authority = authority;
++							remote.resolve(await authority());
++							await change;
++							await closing;
++							if (observation) {
++								observation.joinedConfiguration = { ...configuration };
++								observation.joinedClose = { ...close };
++								console.log(
++									"007 configuration-close advisor probe",
++									JSON.stringify({
++										encrypted,
++										externallyCanceled,
++										...observation,
++									}),
++								);
++							}
++						}
++					},
++				);
++			} catch (error) {
++				cleanupError = error;
++			}
++			expect(observation).toBeDefined();
++			if (!observation)
++				throw new Error("Missing configuration-close deadline observation");
++			expect(observation.observedAt).toBeGreaterThan(
++				observation.invocation.end_at,
++			);
++			expect(observation.elapsedMs).toBeGreaterThanOrEqual(
++				observation.invocation.end_at - observation.invocation.yield_at,
++			);
++			expect(observation.remoteSettled).toBe(false);
++			expect(observation.close.state).toBe("complete");
++			expect(observation.close.at).toBeLessThanOrEqual(
++				observation.invocation.end_at,
++			);
++			expect(observation.configuration.state).toBe("failed");
++			expect(cleanupError).toBeUndefined();
++		});
+ it("policy parser rejects old/custom meanings and malformed usage", () => {
+ 	expect(() => preparedSummary({ policy: "ditto-summary-0" })).toThrow();
+ 	expect(() =>

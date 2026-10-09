@@ -1,0 +1,302 @@
+apps/credential-tests/src/codex-request-contract.worker.test.ts:112:2 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    110 │ ];
+    111 │ const encodedFrames =
+  > 112 │ 	frames.map((frame) => JSON.stringify(frame)).join("\n") + "\n";
+        │ 	^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    113 │ let calls: {
+    114 │ 	body: ReturnType<typeof parseSyntheticModelBodyV1>;
+  
+  i Unsafe fix: Use a template literal.
+  
+     110  110 │   ];
+     111  111 │   const encodedFrames =
+     112      │ - → frames.map((frame)·=>·JSON.stringify(frame)).join("\n")·+·"\n";
+          112 │ + → `${frames.map((frame)·=>·JSON.stringify(frame)).join("\n")}\n`;
+     113  113 │   let calls: {
+     114  114 │   	body: ReturnType<typeof parseSyntheticModelBodyV1>;
+  
+
+apps/credential-tests/src/codex-request-contract.worker.test.ts:1380:10 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    1378 │ 						? "pending"
+    1379 │ 						: field === "outcome"
+  > 1380 │ 							? original.outcome + "changed"
+         │ 							  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1381 │ 							: "0".repeat(64),
+    1382 │ 				);
+  
+  i Unsafe fix: Use a template literal.
+  
+    1378 1378 │   						? "pending"
+    1379 1379 │   						: field === "outcome"
+    1380      │ - → → → → → → → ?·original.outcome·+·"changed"
+         1380 │ + → → → → → → → ?·`${original.outcome}changed`
+    1381 1381 │   							: "0".repeat(64),
+    1382 1382 │   				);
+  
+
+apps/credential-tests/src/codex-request-contract.worker.test.ts:393:15 lint/style/noNonNullAssertion ━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    391 │ 								"denied",
+    392 │ 							]);
+  > 393 │ 							return outcomes.find((result) => result.status === "complete")!;
+        │ 							       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    394 │ 						}
+    395 │ 						return await product.requestModel(
+  
+
+apps/runtime/src/pi-durable-host.ts:1033:18 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1031 │ 		const effects = this.unresolved();
+    1032 │ 		if (effects.length !== 1) return false;
+  > 1033 │ 		const effect = effects[0]!;
+         │ 		               ^^^^^^^^^^^
+    1034 │ 		if (effect.state !== "result-recorded" || !effect.correlation) return false;
+    1035 │ 		const correlation = this.correlation(
+  
+
+apps/runtime/src/pi-durable-host.ts:1036:4 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1034 │ 		if (effect.state !== "result-recorded" || !effect.correlation) return false;
+    1035 │ 		const correlation = this.correlation(
+  > 1036 │ 			this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
+         │ 			^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1037 │ 		);
+    1038 │ 		if (correlation.version !== 2) return false;
+  
+
+apps/runtime/src/pi-durable-host.ts:1052:5 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1050 │ 		try {
+    1051 │ 			const evidence: unknown = JSON.parse(
+  > 1052 │ 				this.opened(`effect:${effect.id}:evidence`, row.evidence)!,
+         │ 				^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1053 │ 			);
+    1054 │ 			validateSummaryResponse(
+  
+
+apps/runtime/src/pi-durable-host.ts:1155:6 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1153 │ 			if (effect.correlation) {
+    1154 │ 				const correlation = this.correlation(
+  > 1155 │ 					this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
+         │ 					^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1156 │ 				);
+    1157 │ 				this.block("outcome-unknown", correlation.run);
+  
+
+apps/runtime/src/pi-durable-host.ts:1485:13 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1483 │ 	}
+    1484 │ 	private configurationScope(): ConfigurationReadV1 {
+  > 1485 │ 		const s = this.dependencies.configuration!.subject;
+         │ 		          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1486 │ 		return {
+    1487 │ 			version: 1,
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    1483 1483 │   	}
+    1484 1484 │   	private configurationScope(): ConfigurationReadV1 {
+    1485      │ - → → const·s·=·this.dependencies.configuration!.subject;
+         1485 │ + → → const·s·=·this.dependencies.configuration?.subject;
+    1486 1486 │   		return {
+    1487 1487 │   			version: 1,
+  
+
+apps/runtime/src/pi-durable-host.ts:1676:27 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1674 │ 				return deny("denied");
+    1675 │ 			const identity = await awaitWithContext(
+  > 1676 │ 				configurationIdentity(this.dependencies.configuration!.subject, intent),
+         │ 				                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1677 │ 				context,
+    1678 │ 			);
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    1674 1674 │   				return deny("denied");
+    1675 1675 │   			const identity = await awaitWithContext(
+    1676      │ - → → → → configurationIdentity(this.dependencies.configuration!.subject,·intent),
+         1676 │ + → → → → configurationIdentity(this.dependencies.configuration?.subject,·intent),
+    1677 1677 │   				context,
+    1678 1678 │   			);
+  
+
+apps/runtime/src/pi-durable-host.ts:1787:26 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1785 │ 			ack = parseConfigurationAckV1(e.ack);
+    1786 │ 		const identity = await awaitWithContext(
+  > 1787 │ 			configurationIdentity(this.dependencies.configuration!.subject, intent),
+         │ 			                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1788 │ 			context,
+    1789 │ 		);
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    1785 1785 │   			ack = parseConfigurationAckV1(e.ack);
+    1786 1786 │   		const identity = await awaitWithContext(
+    1787      │ - → → → configurationIdentity(this.dependencies.configuration!.subject,·intent),
+         1787 │ + → → → configurationIdentity(this.dependencies.configuration?.subject,·intent),
+    1788 1788 │   			context,
+    1789 1789 │   		);
+  
+
+apps/runtime/src/pi-durable-host.ts:1851:17 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1849 │ 		)
+    1850 │ 			throw new Error("Custom summary requires trusted selection phase");
+  > 1851 │ 		let mapping = this.mapping(Number(api.taskId))!;
+         │ 		              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1852 │ 		const command = this.command(mapping.command),
+    1853 │ 			run = this.run(command.run);
+  
+
+apps/runtime/src/pi-durable-host.ts:1856:15 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1854 │ 		if (mapping.prepared === null)
+    1855 │ 			await this.ownerTransition(context, async (context) => {
+  > 1856 │ 				mapping = this.mapping(Number(api.taskId))!;
+         │ 				          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1857 │ 				if (mapping.prepared !== null) return;
+    1858 │ 				const agent = await (await this.harness.root(context)).agent(context);
+  
+
+apps/runtime/src/pi-durable-host.ts:1913:15 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1911 │ 				this.rememberPlain(recordId, plain, sealed.digest, sealed.ciphertext);
+    1912 │ 				await this.durable(context, "preparation-flush");
+  > 1913 │ 				mapping = this.mapping(Number(api.taskId))!;
+         │ 				          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1914 │ 			});
+    1915 │ 		const prepared = preparedSummary(JSON.parse(mapping.prepared!));
+  
+
+apps/runtime/src/pi-durable-host.ts:1915:47 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1913 │ 				mapping = this.mapping(Number(api.taskId))!;
+    1914 │ 			});
+  > 1915 │ 		const prepared = preparedSummary(JSON.parse(mapping.prepared!));
+         │ 		                                            ^^^^^^^^^^^^^^^^^
+    1916 │ 		if (
+    1917 │ 			prepared.policy !== SUMMARY_POLICY ||
+  
+
+apps/runtime/src/pi-durable-host.ts:1940:20 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1938 │ 				if (rows.length !== 1)
+    1939 │ 					throw new Error("Custom summary attempt conflict");
+  > 1940 │ 				const effect = rows[0]!,
+         │ 				               ^^^^^^^^
+    1941 │ 					correlation = this.correlation(
+    1942 │ 						this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
+  
+
+apps/runtime/src/pi-durable-host.ts:1942:7 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1940 │ 				const effect = rows[0]!,
+    1941 │ 					correlation = this.correlation(
+  > 1942 │ 						this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
+         │ 						^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1943 │ 					);
+    1944 │ 				if (
+  
+
+apps/runtime/src/pi-durable-host.ts:1965:6 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1963 │ 					throw new Error("Custom result reuse authority denied");
+    1964 │ 				const message: unknown = JSON.parse(
+  > 1965 │ 					this.opened(`effect:${effect.id}:evidence`, effect.evidence)!,
+         │ 					^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1966 │ 				);
+    1967 │ 				this.assertSeals();
+  
+
+apps/runtime/src/pi-durable-host.ts:2001:7 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1999 │ 				canonical(
+    2000 │ 					JSON.parse(
+  > 2001 │ 						this.opened(`effect:${effect.id}:evidence`, effect.evidence)!,
+         │ 						^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2002 │ 					),
+    2003 │ 				) !== canonical(message)
+  
+
+apps/runtime/src/pi-durable-host.ts:2096:4 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    2094 │ 			return;
+    2095 │ 		const evidence: unknown = JSON.parse(
+  > 2096 │ 			this.opened(`effect:${effect.id}:evidence`, effect.evidence)!,
+         │ 			^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2097 │ 		);
+    2098 │ 		validateSummaryResponse(
+  
+
+apps/runtime/src/pi-durable-host.ts:2186:25 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    2184 │ 			throw new Error("Competing or missing model producers");
+    2185 │ 		const task = await awaitWithContext(
+  > 2186 │ 			this.harness.getTask(candidates[0]!.record.id, context),
+         │ 			                     ^^^^^^^^^^^^^^
+    2187 │ 			context,
+    2188 │ 		);
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    2184 2184 │   			throw new Error("Competing or missing model producers");
+    2185 2185 │   		const task = await awaitWithContext(
+    2186      │ - → → → this.harness.getTask(candidates[0]!.record.id,·context),
+         2186 │ + → → → this.harness.getTask(candidates[0]?.record.id,·context),
+    2187 2187 │   			context,
+    2188 2188 │   		);
+  
+
+Skipped 7 suggested fixes.
+If you wish to apply the suggested (unsafe) fixes, use the command biome check --write --unsafe
+
+The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
+Diagnostics not shown: 10.
+Checked 12 files in 223ms. Fixed 2 files.
+Found 28 warnings.
+Found 2 infos.

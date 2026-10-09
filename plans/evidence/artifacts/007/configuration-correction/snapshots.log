@@ -1,0 +1,29 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for ../../plans/evidence/artifacts/007/configuration-correction/snapshots.config.ts...
+[90mstdout[2m | ../../plans/evidence/artifacts/007/configuration-correction/snapshots.worker.test.ts[2m > [22m[2mcorrection snapshots: final local authority, encrypted=false
+[22m[39m[007-correction-snapshot] {"kind":"authority","encrypted":false,"reads":[{"current":true,"generation":1,"executor":1},{"current":true,"generation":1,"executor":1},{"current":true,"generation":1,"executor":1},{"current":true,"generation":1,"executor":1},{"current":true,"generation":1,"executor":1},{"current":false,"generation":1,"executor":1}],"ack":{"version":1,"intentId":"choice-1","status":"denied","snapshot":null},"piBefore":"5c2be5eb08916f95bcdb07237bc09e8e55a5b84cb1a7779bf1edb937d6a81d0f","piAfter":"5c2be5eb08916f95bcdb07237bc09e8e55a5b84cb1a7779bf1edb937d6a81d0f","product":{"calls":0,"windows":[],"admissions":[],"claims":[],"runs":[{"state":"queued","epoch":1}]}}
+
+[90mstdout[2m | ../../plans/evidence/artifacts/007/configuration-correction/snapshots.worker.test.ts[2m > [22m[2mcorrection snapshots: final local authority, encrypted=true
+[22m[39m[007-correction-snapshot] {"kind":"authority","encrypted":true,"reads":[{"current":true,"generation":1,"executor":1},{"current":true,"generation":1,"executor":1},{"current":true,"generation":1,"executor":1},{"current":true,"generation":1,"executor":1},{"current":true,"generation":1,"executor":1},{"current":false,"generation":1,"executor":1}],"ack":{"version":1,"intentId":"choice-1","status":"denied","snapshot":null},"piBefore":"12e44be782f273c1928b98bbc88676f99f4bc26217c59dfa74639a8ca61c52de","piAfter":"12e44be782f273c1928b98bbc88676f99f4bc26217c59dfa74639a8ca61c52de","product":{"calls":0,"windows":[],"admissions":[],"claims":[],"runs":[{"state":"queued","epoch":1}]}}
+
+[90mstdout[2m | ../../plans/evidence/artifacts/007/configuration-correction/snapshots.worker.test.ts[2m > [22m[2mcorrection snapshots: encrypted pending phase metadata
+[22m[39m[007-correction-snapshot] {"kind":"integrity","original":{"id":"e8da8819e575583f3d448c0c863392b74b82a8c4baf8c5b7dc77f83b9a177b5d","payload_digest":"87c413d222386098b8659f66acff268a9b3de90649645c2a3dfb828209e9b256","state":"pending","ciphertextDigest":"3d58f1f9767915bb97b29698d1f89995f3bf079fa0399f78237177dd9f8bbf52"},"corrupted":{"id":"e8da8819e575583f3d448c0c863392b74b82a8c4baf8c5b7dc77f83b9a177b5d","payload_digest":"87c413d222386098b8659f66acff268a9b3de90649645c2a3dfb828209e9b256","state":"complete","ciphertextDigest":"3d58f1f9767915bb97b29698d1f89995f3bf079fa0399f78237177dd9f8bbf52"},"reopen":"integrity_rejected","piBefore":"6a915a858e8b8ca91872e94c7935be90d5d11163421ef3178eed6ad174184543","piAfter":"6a915a858e8b8ca91872e94c7935be90d5d11163421ef3178eed6ad174184543","product":{"calls":0,"windows":[],"admissions":[],"claims":[],"runs":[{"state":"queued","epoch":1}]}}
+
+ [32m✓[39m ../../plans/evidence/artifacts/007/configuration-correction/snapshots.worker.test.ts [2m([22m[2m117 tests[22m[2m | [22m[33m114 skipped[39m[2m)[22m[33m 3301[2mms[22m[39m
+   [33m[2m✓[22m[39m correction snapshots: final local authority, encrypted=false [33m 1147[2mms[22m[39m
+   [33m[2m✓[22m[39m correction snapshots: final local authority, encrypted=true [33m 1110[2mms[22m[39m
+   [33m[2m✓[22m[39m correction snapshots: encrypted pending phase metadata [33m 1043[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m3 passed[39m[22m[2m | [22m[33m114 skipped[39m[90m (117)[39m
+[2m   Start at [22m 08:33:29
+[2m   Duration [22m 5.52s[2m (transform 700ms, setup 0ms, collect 1.28s, tests 3.30s, environment 0ms, prepare 97ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

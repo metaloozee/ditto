@@ -1,0 +1,4 @@
+34 archived baseline source identities match original source.sha256. Only two source files changed. Six graph identities match current and HEAD. Whitespace check passed. Empty staging. 389 original artifact identities unchanged.
+Vitest automatically updated two generated result-cache files, not probes, configs, red logs, archives or source. Not repaired or deleted:
+plans/evidence/artifacts/007/configuration-advisor/acceptance-cache/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/results.json
+plans/evidence/artifacts/007/configuration-advisor/cache/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/results.json

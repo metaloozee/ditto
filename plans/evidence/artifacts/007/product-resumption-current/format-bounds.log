@@ -1,0 +1,260 @@
+apps/runtime/src/pi-durable-host.ts:982:18 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    980 │ 		const effects = this.unresolved();
+    981 │ 		if (effects.length !== 1) return false;
+  > 982 │ 		const effect = effects[0]!;
+        │ 		               ^^^^^^^^^^^
+    983 │ 		if (effect.state !== "result-recorded" || !effect.correlation) return false;
+    984 │ 		const correlation = this.correlation(
+  
+
+apps/runtime/src/pi-durable-host.ts:985:4 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    983 │ 		if (effect.state !== "result-recorded" || !effect.correlation) return false;
+    984 │ 		const correlation = this.correlation(
+  > 985 │ 			this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
+        │ 			^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    986 │ 		);
+    987 │ 		if (correlation.version !== 2) return false;
+  
+
+apps/runtime/src/pi-durable-host.ts:1001:5 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+     999 │ 		try {
+    1000 │ 			const evidence: unknown = JSON.parse(
+  > 1001 │ 				this.opened(`effect:${effect.id}:evidence`, row.evidence)!,
+         │ 				^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1002 │ 			);
+    1003 │ 			validateSummaryResponse(
+  
+
+apps/runtime/src/pi-durable-host.ts:1104:6 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1102 │ 			if (effect.correlation) {
+    1103 │ 				const correlation = this.correlation(
+  > 1104 │ 					this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
+         │ 					^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1105 │ 				);
+    1106 │ 				this.block("outcome-unknown", correlation.run);
+  
+
+apps/runtime/src/pi-durable-host.ts:1454:17 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1452 │ 		)
+    1453 │ 			throw new Error("Custom summary requires trusted selection phase");
+  > 1454 │ 		let mapping = this.mapping(Number(api.taskId))!;
+         │ 		              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1455 │ 		const command = this.command(mapping.command),
+    1456 │ 			run = this.run(command.run);
+  
+
+apps/runtime/src/pi-durable-host.ts:1459:15 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1457 │ 		if (mapping.prepared === null)
+    1458 │ 			await this.ownerTransition(context, async (context) => {
+  > 1459 │ 				mapping = this.mapping(Number(api.taskId))!;
+         │ 				          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1460 │ 				if (mapping.prepared !== null) return;
+    1461 │ 				const agent = await (await this.harness.root(context)).agent(context);
+  
+
+apps/runtime/src/pi-durable-host.ts:1516:15 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1514 │ 				this.rememberPlain(recordId, plain, sealed.digest, sealed.ciphertext);
+    1515 │ 				await this.durable(context, "preparation-flush");
+  > 1516 │ 				mapping = this.mapping(Number(api.taskId))!;
+         │ 				          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1517 │ 			});
+    1518 │ 		const prepared = preparedSummary(JSON.parse(mapping.prepared!));
+  
+
+apps/runtime/src/pi-durable-host.ts:1518:47 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1516 │ 				mapping = this.mapping(Number(api.taskId))!;
+    1517 │ 			});
+  > 1518 │ 		const prepared = preparedSummary(JSON.parse(mapping.prepared!));
+         │ 		                                            ^^^^^^^^^^^^^^^^^
+    1519 │ 		if (
+    1520 │ 			prepared.policy !== SUMMARY_POLICY ||
+  
+
+apps/runtime/src/pi-durable-host.ts:1543:20 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1541 │ 				if (rows.length !== 1)
+    1542 │ 					throw new Error("Custom summary attempt conflict");
+  > 1543 │ 				const effect = rows[0]!,
+         │ 				               ^^^^^^^^
+    1544 │ 					correlation = this.correlation(
+    1545 │ 						this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
+  
+
+apps/runtime/src/pi-durable-host.ts:1545:7 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1543 │ 				const effect = rows[0]!,
+    1544 │ 					correlation = this.correlation(
+  > 1545 │ 						this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
+         │ 						^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1546 │ 					);
+    1547 │ 				if (
+  
+
+apps/runtime/src/pi-durable-host.ts:1568:6 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1566 │ 					throw new Error("Custom result reuse authority denied");
+    1567 │ 				const message: unknown = JSON.parse(
+  > 1568 │ 					this.opened(`effect:${effect.id}:evidence`, effect.evidence)!,
+         │ 					^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1569 │ 				);
+    1570 │ 				this.assertSeals();
+  
+
+apps/runtime/src/pi-durable-host.ts:1604:7 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1602 │ 				canonical(
+    1603 │ 					JSON.parse(
+  > 1604 │ 						this.opened(`effect:${effect.id}:evidence`, effect.evidence)!,
+         │ 						^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1605 │ 					),
+    1606 │ 				) !== canonical(message)
+  
+
+apps/runtime/src/pi-durable-host.ts:1699:4 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1697 │ 			return;
+    1698 │ 		const evidence: unknown = JSON.parse(
+  > 1699 │ 			this.opened(`effect:${effect.id}:evidence`, effect.evidence)!,
+         │ 			^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1700 │ 		);
+    1701 │ 		validateSummaryResponse(
+  
+
+apps/runtime/src/pi-durable-host.ts:1789:25 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1787 │ 			throw new Error("Competing or missing model producers");
+    1788 │ 		const task = await awaitWithContext(
+  > 1789 │ 			this.harness.getTask(candidates[0]!.record.id, context),
+         │ 			                     ^^^^^^^^^^^^^^
+    1790 │ 			context,
+    1791 │ 		);
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    1787 1787 │   			throw new Error("Competing or missing model producers");
+    1788 1788 │   		const task = await awaitWithContext(
+    1789      │ - → → → this.harness.getTask(candidates[0]!.record.id,·context),
+         1789 │ + → → → this.harness.getTask(candidates[0]?.record.id,·context),
+    1790 1790 │   			context,
+    1791 1791 │   		);
+  
+
+apps/runtime/src/pi-durable-host.ts:2086:5 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    2084 │ 				throw new Error("Custom summary attempt already reserved");
+    2085 │ 			const original = this.correlation(
+  > 2086 │ 				this.opened(`effect:${prior.id}:correlation`, prior.correlation)!,
+         │ 				^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2087 │ 			);
+    2088 │ 			const cp = record(task.state.checkpoint);
+  
+
+apps/runtime/src/pi-durable-host.ts:2090:16 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    2088 │ 			const cp = record(task.state.checkpoint);
+    2089 │ 			const evidence = record(
+  > 2090 │ 				JSON.parse(this.opened(`effect:${prior.id}:evidence`, prior.evidence)!),
+         │ 				           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2091 │ 			);
+    2092 │ 			if (
+  
+
+apps/runtime/src/pi-durable-host.ts:2193:44 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    2191 │ 					semanticTranscript(request.transcript),
+    2192 │ 				);
+  > 2193 │ 				const custom = this.customBindings.get(context.abortSignal!);
+         │ 				                                       ^^^^^^^^^^^^^^^^^^^^
+    2194 │ 				if (custom)
+    2195 │ 					return await this.customModel(
+  
+
+apps/runtime/src/pi-durable-host.ts:2717:5 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    2715 │ 		for (const effect of effects) {
+    2716 │ 			const correlation = this.correlation(
+  > 2717 │ 				this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
+         │ 				^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2718 │ 			);
+    2719 │ 			const task = await awaitWithContext(
+  
+
+apps/runtime/src/pi-durable-host.ts:2738:6 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    2736 │ 			const evidence = record(
+    2737 │ 				JSON.parse(
+  > 2738 │ 					this.opened(`effect:${effect.id}:evidence`, effect.evidence)!,
+         │ 					^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2739 │ 				),
+    2740 │ 			);
+  
+
+apps/runtime/src/pi-durable-host.ts:2840:8 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    2838 │ 					const receipt = record(
+    2839 │ 						JSON.parse(
+  > 2840 │ 							this.opened(
+         │ 							^^^^^^^^^^^^
+  > 2841 │ 								`effect:${effect.id}:retry_evidence`,
+  > 2842 │ 								effect.retry_evidence,
+  > 2843 │ 							)!,
+         │ 							^^
+    2844 │ 						),
+    2845 │ 					);
+  
+
+Skipped 2 suggested fixes.
+If you wish to apply the suggested (unsafe) fixes, use the command biome check --write --unsafe
+
+The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
+Diagnostics not shown: 4.
+Checked 3 files in 214ms. Fixed 1 file.
+Found 24 warnings.

@@ -1,0 +1,46 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for ../../plans/evidence/artifacts/007/configuration-advisor/product-authority-review.config.ts...
+ [32m✓[39m ../../plans/evidence/artifacts/007/configuration-advisor/product-authority-review.worker.test.ts [2m([22m[2m129 tests[22m[2m | [22m[33m100 skipped[39m[2m)[22m[33m 39193[2mms[22m[39m
+   [33m[2m✓[22m[39m owned configuration rejects wrong-user after actual D1 revocation with unchanged Pi state [33m 1516[2mms[22m[39m
+   [33m[2m✓[22m[39m owned configuration rejects wrong-project-owner after actual D1 revocation with unchanged Pi state [33m 1190[2mms[22m[39m
+   [33m[2m✓[22m[39m owned configuration rejects wrong-project after actual D1 revocation with unchanged Pi state [33m 1181[2mms[22m[39m
+   [33m[2m✓[22m[39m owned configuration rejects archived after actual D1 revocation with unchanged Pi state [33m 1472[2mms[22m[39m
+   [33m[2m✓[22m[39m owned configuration rejects deleting after actual D1 revocation with unchanged Pi state [33m 1143[2mms[22m[39m
+   [33m[2m✓[22m[39m owned configuration rejects owner-version after actual D1 revocation with unchanged Pi state [33m 1175[2mms[22m[39m
+   [33m[2m✓[22m[39m owned configuration rejects stale-identity after actual D1 revocation with unchanged Pi state [33m 1313[2mms[22m[39m
+   [33m[2m✓[22m[39m owned configuration rejects wrong-role after actual D1 revocation with unchanged Pi state [33m 1341[2mms[22m[39m
+   [33m[2m✓[22m[39m owned configuration rejects retired after actual D1 revocation with unchanged Pi state [33m 1134[2mms[22m[39m
+   [33m[2m✓[22m[39m owned configuration rejects lifecycle after actual D1 revocation with unchanged Pi state [33m 1167[2mms[22m[39m
+   [33m[2m✓[22m[39m owned configuration rejects revoked after actual D1 revocation with unchanged Pi state [33m 1424[2mms[22m[39m
+   [33m[2m✓[22m[39m owned configuration rejects disconnected after actual D1 revocation with unchanged Pi state [33m 2497[2mms[22m[39m
+   [33m[2m✓[22m[39m owned configuration rejects connection-generation after actual D1 revocation with unchanged Pi state [33m 1139[2mms[22m[39m
+   [33m[2m✓[22m[39m owned configuration rejects capability-revision after actual D1 revocation with unchanged Pi state [33m 1317[2mms[22m[39m
+   [33m[2m✓[22m[39m owned selection denies unavailable without a request [33m 1367[2mms[22m[39m
+   [33m[2m✓[22m[39m owned selection denies revoked without a request [33m 1147[2mms[22m[39m
+   [33m[2m✓[22m[39m owned selection denies unsupported-model without a request [33m 1326[2mms[22m[39m
+   [33m[2m✓[22m[39m owned selection denies unsupported-thinking without a request [33m 1345[2mms[22m[39m
+   [33m[2m✓[22m[39m caller fields cannot authenticate or select another owned scope [33m 1048[2mms[22m[39m
+   [33m[2m✓[22m[39m a held actual D1 configuration authority result cannot survive capability revocation [33m 1381[2mms[22m[39m
+   [33m[2m✓[22m[39m a valid first default grants no later request admission after capability revocation [33m 1526[2mms[22m[39m
+   [33m[2m✓[22m[39m first owned conversation validates defaults without prompt membership, valid [33m 1120[2mms[22m[39m
+   [33m[2m✓[22m[39m first owned conversation validates defaults without prompt membership, unsupported-model [33m 1311[2mms[22m[39m
+   [33m[2m✓[22m[39m first owned conversation validates defaults without prompt membership, unsupported-thinking [33m 1137[2mms[22m[39m
+   [33m[2m✓[22m[39m first owned conversation validates defaults without prompt membership, unavailable [33m 1316[2mms[22m[39m
+   [33m[2m✓[22m[39m first owned conversation validates defaults without prompt membership, revoked [33m 1221[2mms[22m[39m
+   [33m[2m✓[22m[39m first owned conversation validates defaults without prompt membership, disconnected [33m 1221[2mms[22m[39m
+   [33m[2m✓[22m[39m local credential disconnect denies configuration before its D1 projection catches up [33m 1502[2mms[22m[39m
+   [33m[2m✓[22m[39m lost acknowledgment retry remains an owned receipt, not new entitlement or selection [33m 2215[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m29 passed[39m[22m[2m | [22m[33m100 skipped[39m[90m (129)[39m
+[2m   Start at [22m 07:17:48
+[2m   Duration [22m 39.43s[2m (transform 321ms, setup 0ms, collect 516ms, tests 39.19s, environment 0ms, prepare 95ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

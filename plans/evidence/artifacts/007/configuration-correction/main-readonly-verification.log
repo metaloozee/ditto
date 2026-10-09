@@ -1,0 +1,34 @@
+apps/credential-tests/src/codex-request-contract.worker.test.ts: FAILED open or read
+apps/credential-tests/src/entry.ts: FAILED
+apps/credential-tests/src/model-entry.ts: FAILED open or read
+apps/credential-tests/tsconfig.json: FAILED
+apps/credential-tests/vitest.config.ts: FAILED
+apps/runtime/src/pi-durable-cooperative-fixture.ts: FAILED
+apps/runtime/src/pi-durable-effects.test.ts: FAILED
+apps/runtime/src/pi-durable-host.ts: FAILED
+apps/runtime/src/pi-durable-model-preparation.gate.test.ts: FAILED open or read
+apps/runtime/src/pi-durable-models.test.ts: FAILED open or read
+apps/runtime/src/pi-durable-models.ts: FAILED open or read
+apps/runtime/src/pi-durable-summary.test.ts: FAILED open or read
+apps/runtime/src/pi-durable-summary.ts: FAILED open or read
+apps/runtime/vitest.config.ts: FAILED
+apps/web/migrations/0022_synthetic_model_transport.sql: FAILED open or read
+apps/web/src/db/schema.ts: FAILED
+apps/web/src/lib/codex-credential-do.ts: FAILED
+apps/web/src/lib/codex-request-contract.test.ts: FAILED open or read
+apps/web/src/lib/codex-request-contract.ts: FAILED open or read
+apps/web/src/lib/model-product-authority.ts: FAILED open or read
+apps/web/src/lib/model-product-transport.ts: FAILED open or read
+apps/web/src/lib/session-runtime-product.ts: FAILED
+docs/specs/pi-durable-session-runtime.md: FAILED
+package.json: FAILED
+packages/runtime-contracts/src/index.ts: FAILED
+packages/runtime-contracts/src/model.test.ts: FAILED open or read
+packages/runtime-contracts/src/model.ts: FAILED open or read
+apps/web/src/lib/session-runtime-client.ts: FAILED
+apps/runtime/src/server.ts: FAILED
+packages/runtime-contracts/src/runtime.ts: OK
+packages/runtime-contracts/src/command.ts: OK
+packages/runtime-contracts/src/configuration.ts: FAILED open or read
+packages/runtime-contracts/src/configuration.test.ts: FAILED open or read
+apps/web/src/lib/configuration-product-authority.ts: FAILED open or read

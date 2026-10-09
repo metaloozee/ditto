@@ -1,0 +1,1079 @@
+--- baseline/apps/runtime/src/pi-durable-host.ts
++++ corrected/apps/runtime/src/pi-durable-host.ts
+@@ -6,6 +6,7 @@
+ } from "@earendil-works/chord/context";
+ import type { AssistantMessage } from "@earendil-works/pi-ai";
+ import {
++	type AgentChange,
+ 	type CommitPublication,
+ 	Harness,
+ 	type HarnessOptions,
+@@ -312,6 +313,7 @@
+ 	private active: Invocation | undefined;
+ 	private failure: unknown;
+ 	private providerQueue = Promise.resolve();
++	private ownerQueue: Promise<void> = Promise.resolve();
+ 	private providerCallbacks = 0;
+ 	private bindings = new WeakMap<
+ 		AbortSignal,
+@@ -802,13 +804,13 @@
+ 				const runs = this.dependencies.retained
+ 					? this.storage.sql
+ 							.exec<{ run: string }>(
+-								"SELECT run FROM host_effect_route WHERE id IN (SELECT id FROM host_effects WHERE state = 'admitted' AND correlation IS NOT NULL)",
++								"SELECT run FROM host_effect_route WHERE id IN (SELECT id FROM host_effects WHERE state IN ('admitted','result-recorded') AND correlation IS NOT NULL)",
+ 							)
+ 							.toArray()
+ 							.map((row) => row.run)
+ 					: this.storage.sql
+ 							.exec<{ correlation: string }>(
+-								"SELECT correlation FROM host_effects WHERE state = 'admitted' AND correlation IS NOT NULL",
++								"SELECT correlation FROM host_effects WHERE state IN ('admitted','result-recorded') AND correlation IS NOT NULL",
+ 							)
+ 							.toArray()
+ 							.map((row) => this.correlation(row.correlation).run);
+@@ -1360,6 +1362,42 @@
+ 			canonical(task.input) === correlation.taskInput
+ 		);
+ 	}
++	private ownerTransition<T>(
++		context: Context,
++		operation: () => Promise<T>,
++	): Promise<T> {
++		const pending = this.ownerQueue.then(async () => {
++			context.abortSignal?.throwIfAborted();
++			this.assertLive();
++			return operation();
++		});
++		this.ownerQueue = pending.then(
++			() => undefined,
++			() => undefined,
++		);
++		return awaitWithContext(pending, context);
++	}
++	async configure(
++		change: Pick<AgentChange, "model" | "thinkingLevel">,
++		context: Context = BACKGROUND_CONTEXT,
++	): Promise<void> {
++		return this.ownerTransition(context, async () => {
++			await this.check(
++				await awaitWithContext(this.dependencies.authority(), context),
++				context,
++				true,
++			);
++			const root = await this.harness.root(context);
++			this.assertLive();
++			try {
++				await root.configure(change, context);
++				await this.durable(context);
++			} catch (error) {
++				if (!context.abortSignal?.aborted) this.persistenceFailed();
++				throw error;
++			}
++		});
++	}
+ 	private async summarize(
+ 		api: HookApi,
+ 		selection: SummarySelection,
+@@ -1386,59 +1424,64 @@
+ 		let mapping = this.mapping(Number(api.taskId))!;
+ 		const command = this.command(mapping.command),
+ 			run = this.run(command.run);
+-		if (mapping.prepared === null) {
+-			const agent = await (await this.harness.root(context)).agent(context);
+-			if (!agent.model) throw new Error("Missing custom summary model");
+-			const model = this.options.models.getModel(
+-				agent.model.provider,
+-				agent.model.modelId,
+-			);
+-			if (!model) throw new Error("Unavailable custom summary model");
+-			const stream = this.options.settings?.stream ?? {};
+-			if (stream.headers || stream.deferred)
+-				throw new Error("Unsupported custom summary options");
+-			const prepared: PreparedSummary = {
+-				policy: SUMMARY_POLICY,
+-				task: Number(api.taskId),
+-				conversation: Number(api.conversationId),
+-				selection: mapping.selection,
+-				model: agent.model,
+-				thinkingLevel: agent.thinkingLevel,
+-				options: {
+-					...stream,
+-					cacheRetention: "none",
+-					maxRetries: 0,
+-					maxTokens: Math.min(1024, model.maxTokens),
+-					...(agent.thinkingLevel === "off"
+-						? {}
+-						: { reasoning: agent.thinkingLevel }),
+-				},
+-				transcript: summaryTranscript(selection),
+-			};
+-			const plain = canonical(prepared),
+-				digest = await requestDigest(semanticTranscript(prepared.transcript));
+-			const recordId = `task:${Number(api.taskId)}:prepared`,
+-				sealed = await this.seal(recordId, plain);
+-			this.transition("preparation", () => {
+-				if (
+-					canonical(this.mapping(Number(api.taskId))) !== canonical(mapping) ||
+-					this.run(command.run).epoch !== run.epoch
+-				)
+-					throw new Error("Custom preparation changed");
+-				this.assertLive();
+-				this.storage.sql.exec(
+-					"UPDATE host_tasks SET prepared = ?, digest = ? WHERE task = ? AND prepared IS NULL",
+-					sealed.ciphertext,
+-					digest,
+-					Number(api.taskId),
+-				);
+-				this.rememberSeal(recordId, sealed.digest);
+-				this.dependencies.fault?.("preparation-write");
++		if (mapping.prepared === null)
++			await this.ownerTransition(context, async () => {
++				mapping = this.mapping(Number(api.taskId))!;
++				if (mapping.prepared !== null) return;
++				const agent = await (await this.harness.root(context)).agent(context);
++				if (!agent.model) throw new Error("Missing custom summary model");
++				const model = this.options.models.getModel(
++					agent.model.provider,
++					agent.model.modelId,
++				);
++				if (!model) throw new Error("Unavailable custom summary model");
++				const stream = this.options.settings?.stream ?? {};
++				if (stream.headers || stream.deferred)
++					throw new Error("Unsupported custom summary options");
++				const prepared: PreparedSummary = {
++					policy: SUMMARY_POLICY,
++					task: Number(api.taskId),
++					conversation: Number(api.conversationId),
++					selection: mapping.selection,
++					model: agent.model,
++					thinkingLevel: agent.thinkingLevel,
++					options: {
++						...stream,
++						cacheRetention: "none",
++						maxRetries: 0,
++						maxTokens: Math.min(1024, model.maxTokens),
++						...(agent.thinkingLevel === "off"
++							? {}
++							: { reasoning: agent.thinkingLevel }),
++					},
++					transcript: summaryTranscript(selection),
++				};
++				const plain = canonical(prepared),
++					digest = await requestDigest(semanticTranscript(prepared.transcript));
++				const recordId = `task:${Number(api.taskId)}:prepared`,
++					sealed = await this.seal(recordId, plain);
++				context.abortSignal?.throwIfAborted();
++				this.transition("preparation", () => {
++					if (
++						canonical(this.mapping(Number(api.taskId))) !==
++							canonical(mapping) ||
++						this.run(command.run).epoch !== run.epoch
++					)
++						throw new Error("Custom preparation changed");
++					this.assertLive();
++					this.storage.sql.exec(
++						"UPDATE host_tasks SET prepared = ?, digest = ? WHERE task = ? AND prepared IS NULL",
++						sealed.ciphertext,
++						digest,
++						Number(api.taskId),
++					);
++					this.rememberSeal(recordId, sealed.digest);
++					this.dependencies.fault?.("preparation-write");
++				});
++				this.rememberPlain(recordId, plain, sealed.digest, sealed.ciphertext);
++				await this.durable(context, "preparation-flush");
++				mapping = this.mapping(Number(api.taskId))!;
+ 			});
+-			this.rememberPlain(recordId, plain, sealed.digest, sealed.ciphertext);
+-			await this.durable(context, "preparation-flush");
+-			mapping = this.mapping(Number(api.taskId))!;
+-		}
+ 		const prepared = preparedSummary(JSON.parse(mapping.prepared!));
+ 		if (
+ 			prepared.policy !== SUMMARY_POLICY ||
+@@ -3232,7 +3275,7 @@
+ 		if ((await root.agent(BACKGROUND_CONTEXT)).model === undefined) {
+ 			await this.check(await this.dependencies.authority());
+ 			this.assertSchedule(command.run, run.epoch);
+-			await root.configure(
++			await this.configure(
+ 				{ model: { provider: "faux", modelId: "faux-1" } },
+ 				BACKGROUND_CONTEXT,
+ 			);
+@@ -3639,6 +3682,7 @@
+ 			fenceError = error;
+ 		}
+ 		await this.harness.close(BACKGROUND_CONTEXT);
++		await this.ownerQueue;
+ 		if (fenceError) throw fenceError;
+ 		try {
+ 			this.dependencies.fault?.("after-close");
+--- baseline/apps/runtime/src/pi-durable-model-preparation.gate.test.ts
++++ corrected/apps/runtime/src/pi-durable-model-preparation.gate.test.ts
+@@ -286,8 +286,7 @@
+ 			throw new Error("Missing test-only public Harness");
+ 		const harness = activeHarness as PublicHarness;
+ 		await harness.waitForIdle(BACKGROUND_CONTEXT);
+-		const root = await harness.root(BACKGROUND_CONTEXT);
+-		await root.configure({ thinkingLevel: "low" }, BACKGROUND_CONTEXT);
++		await host.configure({ thinkingLevel: "low" }, BACKGROUND_CONTEXT);
+ 		hold = true;
+ 		const taskId = await host.compact("007-command");
+ 		await entered.promise;
+@@ -328,7 +327,7 @@
+ 			state.storage.sql.exec("SELECT id FROM host_effects").toArray(),
+ 		).toHaveLength(1);
+ 		expect(fixture.providerCalls).toBe(1);
+-		await root.configure(
++		await host.configure(
+ 			{ model: { provider: "faux", modelId: "faux-2" }, thinkingLevel: "high" },
+ 			BACKGROUND_CONTEXT,
+ 		);
+--- baseline/apps/runtime/src/pi-durable-summary.test.ts
++++ corrected/apps/runtime/src/pi-durable-summary.test.ts
+@@ -9,8 +9,8 @@
+ 	fauxAssistantMessage,
+ 	fauxToolCall,
+ } from "@earendil-works/pi-ai/providers/faux";
+-import type { Harness, Storage } from "@earendil-works/pi-durable";
+-import { expect, it } from "vitest";
++import type { AgentChange, Harness, Storage } from "@earendil-works/pi-durable";
++import { expect, it, vi } from "vitest";
+ import { openHostField } from "./host-private.ts";
+ import {
+ 	cooperativeFixture,
+@@ -86,6 +86,7 @@
+ 	let summaryPolicy: "custom" | "absent-custom-hook" = "custom";
+ 	let transportFailure = false;
+ 	let piStorage: HostFixtureDependencies["piStorage"];
++	let records!: Storage;
+ 	const requests: ModelRequest[] = [],
+ 		fixtures: ReturnType<typeof cooperativeFixture>[] = [];
+ 	const dependencies: HostFixtureDependencies = {
+@@ -109,7 +110,10 @@
+ 		prepareModel: async () => {
+ 			if (prepare) await prepare.promise;
+ 		},
+-		piStorage: (storage) => piStorage?.(storage) ?? storage,
++		piStorage: (storage) => {
++			records = storage;
++			return piStorage?.(storage) ?? storage;
++		},
+ 		options: (guard) => {
+ 			const adapter: HostGuard = {
+ 				...guard,
+@@ -181,6 +185,9 @@
+ 	return {
+ 		fixtures,
+ 		requests,
++		get records() {
++			return records;
++		},
+ 		dependencies,
+ 		get host() {
+ 			return host;
+@@ -235,6 +242,9 @@
+ 		},
+ 		async open() {
+ 			host = await PiDurableHost.open(storage, dependencies);
++		},
++		async configure(change: Pick<AgentChange, "model" | "thinkingLevel">) {
++			await host.configure(change, BACKGROUND_CONTEXT);
+ 		},
+ 		async start() {
+ 			await host.accept("initial", "Synthetic summary context ".repeat(40));
+@@ -604,8 +614,7 @@
+ 		it(`configuration at ${prepared ? "after" : "before"} custom preparation survives reopen, encrypted=${encrypted}`, async () =>
+ 			gate(`config-${prepared}`, encrypted, async (f, state) => {
+ 				await f.start();
+-				const root = await f.harness.root(BACKGROUND_CONTEXT);
+-				await root.configure({ thinkingLevel: "low" }, BACKGROUND_CONTEXT);
++				await f.host.configure({ thinkingLevel: "low" }, BACKGROUND_CONTEXT);
+ 				const hold = pendingRemote<void>();
+ 				if (prepared) f.prepare = hold;
+ 				else f.beforePreparation = hold;
+@@ -624,7 +633,7 @@
+ 					.exec("SELECT prepared FROM host_tasks WHERE task=?", Number(task))
+ 					.one().prepared;
+ 				expect(before === null).toBe(!prepared);
+-				await root.configure(
++				await f.host.configure(
+ 					{
+ 						model: { provider: "faux", modelId: "faux-2" },
+ 						thinkingLevel: "high",
+@@ -961,69 +970,715 @@
+ 			).toHaveLength(0);
+ 		}));
+ }
+-it("custom preparation retains the configuration committed at its preparation transition", async () =>
+-	gate("preparation-config-race", true, async (f, state) => {
+-		await f.start();
+-		const root = await f.harness.root(BACKGROUND_CONTEXT);
+-		await root.configure({ thinkingLevel: "low" }, BACKGROUND_CONTEXT);
+-		const models = f.fixtures.at(-1)?.models;
+-		if (!models) throw new Error("Missing fixture models");
+-		const provider = models.getProvider("faux");
+-		if (!provider) throw new Error("Missing fixture provider");
+-		let lookups = 0,
+-			committed = false,
+-			committedBeforePreparation = false;
+-		const fault = f.dependencies.fault;
+-		f.dependencies.fault = (point) => {
+-			if (point === "preparation") committedBeforePreparation = committed;
+-			fault?.(point);
+-		};
+-		let change: Promise<void> | undefined;
+-		models.setProvider({
+-			...provider,
+-			getModels: () => {
+-				lookups++;
+-				if (lookups === 2)
+-					change = root
++for (const encrypted of [false, true])
++	for (const order of ["configuration", "preparation"] as const)
++		it(`forced ${order}-winning transition holds asynchronous preparation, encrypted=${encrypted}`, async () =>
++			gate(`forced-order-${order}`, encrypted, async (f, state) => {
++				await f.start();
++				await f.configure({ thinkingLevel: "low" });
++				const hold = pendingRemote<void>(),
++					entered = pendingRemote<void>();
++				let signal: AbortSignal | undefined;
++				f.mutate = (guard) => ({
++					...guard,
++					summarize: (api, selection, context) => {
++						signal = context.abortSignal;
++						return guard.summarize(api, selection, context);
++					},
++				});
++				await f.host.yield();
++				await f.open();
++				await f.host.schedule("initial");
++				const commits: string[] = [];
++				const fault = f.dependencies.fault;
++				f.dependencies.fault = (point) => {
++					if (point === "preparation") commits.push("preparation");
++					fault?.(point);
++				};
++				const changed = {
++					model: { provider: "faux", modelId: "faux-2" },
++					thinkingLevel: "high",
++				} as const;
++				const configurationHold = pendingRemote<void>(),
++					configurationEntered = pendingRemote<void>();
++				const sync = state.storage.sync.bind(state.storage);
++				const syncSpy = vi
++					.spyOn(state.storage, "sync")
++					.mockImplementation(async () => {
++						if (order === "configuration" && !configurationEntered.settled) {
++							configurationEntered.resolve();
++							await configurationHold.promise;
++						}
++						return sync();
++					});
++				const digest = crypto.subtle.digest.bind(crypto.subtle);
++				const encrypt = crypto.subtle.encrypt.bind(crypto.subtle);
++				const wait = async (data: BufferSource) => {
++					if (
++						new TextDecoder().decode(data).includes("Ditto summary policy 1") &&
++						!entered.settled
++					) {
++						entered.resolve();
++						await awaitWithContext(
++							hold.promise,
++							signal
++								? withAbortSignal(signal, BACKGROUND_CONTEXT)
++								: BACKGROUND_CONTEXT,
++						);
++					}
++				};
++				const spy = encrypted
++					? vi
++							.spyOn(crypto.subtle, "encrypt")
++							.mockImplementation(async (algorithm, key, data) => {
++								await wait(data);
++								return encrypt(algorithm, key, data);
++							})
++					: vi
++							.spyOn(crypto.subtle, "digest")
++							.mockImplementation(async (algorithm, data) => {
++								await wait(data);
++								return digest(algorithm, data);
++							});
++				let change: Promise<void> | undefined;
++				try {
++					f.prepare = pendingRemote<void>();
++					if (order === "configuration") {
++						change = f.configure(changed).then(() => {
++							commits.push("configuration");
++						});
++						await configurationEntered.promise;
++					}
++					const task = await f.host.compact("initial");
++					if (order === "configuration") {
++						await new Promise((resolve) => setTimeout(resolve, 20));
++						expect(entered.settled).toBe(false);
++						expect(commits).toEqual([]);
++						configurationHold.resolve();
++						await change;
++					}
++					await entered.promise;
++					expect(
++						state.storage.sql
++							.exec(
++								"SELECT prepared FROM host_tasks WHERE task=?",
++								Number(task),
++							)
++							.one().prepared,
++					).toBeNull();
++					let resolved = false;
++					if (order === "preparation") {
++						change = f.configure(changed).then(() => {
++							resolved = true;
++							commits.push("configuration");
++						});
++						await new Promise((resolve) => setTimeout(resolve, 20));
++						expect(resolved).toBe(false);
++						expect(
++							(
++								await (
++									await f.harness.root(BACKGROUND_CONTEXT)
++								).agent(BACKGROUND_CONTEXT)
++							).model?.modelId,
++						).toBe("faux-1");
++					}
++					hold.resolve();
++					await until(
++						() =>
++							state.storage.sql
++								.exec(
++									"SELECT prepared FROM host_tasks WHERE task=?",
++									Number(task),
++								)
++								.one().prepared !== null,
++					);
++					await change;
++					expect(commits).toEqual(
++						order === "configuration"
++							? ["configuration", "preparation"]
++							: ["preparation", "configuration"],
++					);
++					const raw = state.storage.sql
++						.exec<{ prepared: string }>(
++							"SELECT prepared FROM host_tasks WHERE task=?",
++							Number(task),
++						)
++						.one().prepared;
++					const prepared = preparedSummary(
++						JSON.parse(
++							encrypted
++								? await openHostField(
++										f.dependencies.retained!,
++										`task:${Number(task)}:prepared`,
++										raw,
++									)
++								: raw,
++						),
++					);
++					expect(prepared).toMatchObject({
++						model: { modelId: order === "configuration" ? "faux-2" : "faux-1" },
++						thinkingLevel: order === "configuration" ? "high" : "low",
++					});
++					await f.host.yield();
++					f.prepare = undefined;
++					spy.mockRestore();
++					await f.open();
++					await f.host.schedule("initial");
++					await f.harness.waitForTask(task, BACKGROUND_CONTEXT);
++					expect(
++						f.requests.filter(
++							(request) => request.options.maxTokens !== undefined,
++						),
++					).toMatchObject([
++						{
++							model: { id: prepared.model.modelId },
++							options: { reasoning: prepared.thinkingLevel, maxRetries: 0 },
++						},
++					]);
++					const captured = f.requests.find(
++						(request) => request.options.maxTokens !== undefined,
++					)!;
++					expect(captured.transcript).toEqual(prepared.transcript);
++					expect(captured.options).toEqual(prepared.options);
++					await f.follow();
++					await f.harness.waitForIdle(BACKGROUND_CONTEXT);
++					const next = await f.host.compact("initial");
++					await f.harness.waitForTask(next, BACKGROUND_CONTEXT);
++					expect(
++						f.requests.filter(
++							(request) => request.options.maxTokens !== undefined,
++						),
++					).toMatchObject([
++						{ model: { id: prepared.model.modelId } },
++						{ model: { id: "faux-2" }, options: { reasoning: "high" } },
++					]);
++				} finally {
++					hold.resolve();
++					configurationHold.resolve();
++					spy.mockRestore();
++					syncSpy.mockRestore();
++					await change;
++				}
++			}));
++for (const encrypted of [false, true])
++	for (const control of [
++		"cancel-configuration",
++		"stop",
++		"preparation-failure",
++	] as const)
++		it(`owning transition releases after ${control} during asynchronous preparation, encrypted=${encrypted}`, async () =>
++			gate(`owner-control-${control}`, encrypted, async (f) => {
++				await f.start();
++				await f.configure({ thinkingLevel: "low" });
++				const hold = pendingRemote<void>(),
++					entered = pendingRemote<void>();
++				let signal: AbortSignal | undefined;
++				f.mutate = (guard) => ({
++					...guard,
++					summarize: (api, selection, context) => {
++						signal = context.abortSignal;
++						return guard.summarize(api, selection, context);
++					},
++				});
++				await f.host.yield();
++				await f.open();
++				await f.host.schedule("initial");
++				const digest = crypto.subtle.digest.bind(crypto.subtle),
++					encrypt = crypto.subtle.encrypt.bind(crypto.subtle);
++				const wait = async (data: BufferSource) => {
++					if (
++						new TextDecoder().decode(data).includes("Ditto summary policy 1") &&
++						!entered.settled
++					) {
++						entered.resolve();
++						await awaitWithContext(
++							hold.promise,
++							signal
++								? withAbortSignal(signal, BACKGROUND_CONTEXT)
++								: BACKGROUND_CONTEXT,
++						);
++					}
++				};
++				const spy = encrypted
++					? vi
++							.spyOn(crypto.subtle, "encrypt")
++							.mockImplementation(async (algorithm, key, data) => {
++								await wait(data);
++								return encrypt(algorithm, key, data);
++							})
++					: vi
++							.spyOn(crypto.subtle, "digest")
++							.mockImplementation(async (algorithm, data) => {
++								await wait(data);
++								return digest(algorithm, data);
++							});
++				try {
++					const task = await f.host.compact("initial");
++					await entered.promise;
++					const controller = new AbortController();
++					let settled = false;
++					const change = f.host
+ 						.configure(
+-							{
+-								model: { provider: "faux", modelId: "faux-2" },
+-								thinkingLevel: "high",
++							{ thinkingLevel: "high" },
++							withAbortSignal(controller.signal, BACKGROUND_CONTEXT),
++						)
++						.then(
++							() => {
++								settled = true;
++								return "committed";
+ 							},
+-							BACKGROUND_CONTEXT,
++							() => {
++								settled = true;
++								return "denied";
++							},
++						);
++					await new Promise((resolve) => setTimeout(resolve, 20));
++					expect(settled).toBe(false);
++					if (control === "cancel-configuration") controller.abort();
++					if (control === "stop") {
++						controller.abort();
++						await f.host.stop("owner-stop", "initial");
++					}
++					if (control === "preparation-failure") f.fault = "preparation-write";
++					hold.resolve();
++					expect(await change).toBe("denied");
++					await f.harness.waitForTask(task, BACKGROUND_CONTEXT);
++					if (control === "cancel-configuration") {
++						await f.configure({ thinkingLevel: "high" });
++						expect(
++							f.requests.filter(
++								(request) => request.options.maxTokens !== undefined,
++							),
++						).toMatchObject([{ options: { reasoning: "low" } }]);
++					} else {
++						expect(f.requests).toHaveLength(1);
++						await expect(f.host.schedule("initial")).rejects.toThrow();
++					}
++					f.fault = undefined;
++					await f.host.yield();
++					await f.open();
++					if (control !== "cancel-configuration")
++						await expect(f.host.schedule("initial")).rejects.toThrow();
++				} finally {
++					hold.resolve();
++					spy.mockRestore();
++				}
++			}));
++for (const encrypted of [false, true])
++	it(`configuration persistence failure releases and fences the owner lane, encrypted=${encrypted}`, async () =>
++		gate("configuration-failure", encrypted, async (f, state) => {
++			await f.start();
++			const spy = vi
++				.spyOn(state.storage, "sync")
++				.mockRejectedValueOnce(
++					new Error("Synthetic configuration sync failure"),
++				);
++			try {
++				await expect(f.configure({ thinkingLevel: "high" })).rejects.toThrow(
++					"Synthetic configuration sync failure",
++				);
++				await expect(f.configure({ thinkingLevel: "low" })).rejects.toThrow();
++				await expect(
++					f.host.admit("model", "configuration-failed", BACKGROUND_CONTEXT),
++				).rejects.toThrow();
++			} finally {
++				spy.mockRestore();
++			}
++			await f.host.yield();
++			await f.open();
++			await expect(f.host.schedule("initial")).rejects.toThrow();
++			expect(f.requests).toHaveLength(1);
++		}));
++async function waitingAutomatic(
++	f: Awaited<ReturnType<typeof fixture>>,
++	placement = false,
++) {
++	if (placement) {
++		const summary = (
++			await f.records.scanTasks(
++				{ kind: "pi.compaction" },
++				100,
++				undefined,
++				BACKGROUND_CONTEXT,
++			)
++		).items[0];
++		if (!summary || summary.owner === undefined)
++			throw new Error("Missing owned automatic compaction");
++		const parent = await f.records.task(summary.owner, BACKGROUND_CONTEXT);
++		expect(parent?.kind).toBe("pi.generation");
++		expect(parent?.state).toMatchObject({
++			status: "waiting",
++			on: [summary.id],
++		});
++		return { summary, parent: parent! };
++	}
++	const inspection = await f.harness.inspect(BACKGROUND_CONTEXT);
++	const summary = inspection.tasks.find(
++		(task) => task.record.kind === "pi.compaction",
++	);
++	if (!summary) throw new Error("Missing automatic compaction");
++	const owner = summary.record.owner;
++	if (owner === undefined)
++		throw new Error("Automatic compaction must be generation-owned");
++	const parent = inspection.tasks.find((task) => task.record.id === owner);
++	expect(parent?.record.kind).toBe("pi.generation");
++	expect(parent?.state).toMatchObject({
++		kind: "waiting",
++		on: [summary.record.id],
++	});
++	return { summary: summary.record, parent: parent!.record };
++}
++for (const encrypted of [false, true])
++	for (const boundary of [
++		"before-preparation",
++		"prepared",
++		"unknown",
++		"result",
++		"before-placement",
++		"after-placement",
++	] as const)
++		it(`automatic waiting parent recovers at ${boundary}, encrypted=${encrypted}`, async () =>
++			gate(`automatic-${boundary}`, encrypted, async (f, state) => {
++				const entered = pendingRemote<void>(),
++					release = pendingRemote<void>();
++				let signal: AbortSignal | undefined;
++				if (boundary.endsWith("placement")) {
++					f.mutate = (guard) => ({
++						...guard,
++						summarize: (api, selection, context) => {
++							signal = context.abortSignal;
++							return guard.summarize(api, selection, context);
++						},
++					});
++					f.piStorage = (storage) =>
++						new Proxy(storage, {
++							get(target, key) {
++								if (key === "commit")
++									return async (...args: Parameters<Storage["commit"]>) => {
++										const placement = args[0].some(
++											(write) =>
++												write.type === "task" &&
++												write.value.kind === "pi.compaction" &&
++												write.value.state.status === "terminal",
++										);
++										if (!placement) return target.commit(...args);
++										if (boundary === "before-placement") {
++											entered.resolve();
++											await awaitWithContext(
++												release.promise,
++												signal
++													? withAbortSignal(signal, BACKGROUND_CONTEXT)
++													: args[1],
++											);
++											return target.commit(...args);
++										}
++										const seq = await target.commit(...args);
++										entered.resolve();
++										await release.promise;
++										return seq;
++									};
++								const value: unknown = Reflect.get(target, key);
++								return typeof value === "function" ? value.bind(target) : value;
++							},
++						});
++					await f.host.yield();
++					await f.open();
++				}
++				try {
++					await f.start();
++					f.automatic = true;
++					if (boundary === "before-preparation") f.beforePreparation = release;
++					if (boundary === "prepared") f.prepare = release;
++					if (boundary === "result") f.returning = release;
++					if (boundary === "unknown") f.fixtures.at(-1)!.summary = "pending";
++					await f.follow();
++					if (boundary.endsWith("placement")) await entered.promise;
++					else if (boundary === "unknown")
++						await f.fixtures.at(-1)!.entered.promise;
++					else
++						await until(async () => {
++							const summary = (
++								await f.harness.inspect(BACKGROUND_CONTEXT)
++							).tasks.find((task) => task.record.kind === "pi.compaction");
++							if (!summary) return false;
++							if (boundary === "before-preparation")
++								return summary.record.state.status === "running";
++							if (boundary === "prepared")
++								return (
++									state.storage.sql
++										.exec(
++											"SELECT prepared FROM host_tasks WHERE task=?",
++											Number(summary.record.id),
++										)
++										.toArray()[0]?.prepared != null
++								);
++							return (await f.effects()).some(
++								(row) =>
++									row.correlation.version === 2 &&
++									row.state === "result-recorded",
++							);
++						});
++					const { summary, parent } = await waitingAutomatic(
++						f,
++						boundary.endsWith("placement"),
++					);
++					const original = (await f.effects()).find(
++						(row) => row.correlation.version === 2,
++					);
++					const preparedBefore = state.storage.sql
++						.exec<{ prepared: string | null }>(
++							"SELECT prepared FROM host_tasks WHERE task=?",
++							Number(summary.id),
+ 						)
+-						.then(() => {
+-							committed = true;
++						.toArray()[0]?.prepared;
++					expect(
++						f.requests.filter(
++							(request) => request.options.maxTokens === undefined,
++						),
++					).toHaveLength(1);
++					if (boundary === "before-preparation" || boundary === "prepared")
++						expect(original).toBeUndefined();
++					else
++						expect(original).toMatchObject({
++							attempt: 1,
++							state: boundary === "unknown" ? "admitted" : "result-recorded",
+ 						});
+-				return provider.getModels();
+-			},
+-		});
+-		f.prepare = pendingRemote<void>();
+-		const task = await f.host.compact("initial");
+-		await until(
+-			() =>
+-				state.storage.sql
+-					.exec("SELECT prepared FROM host_tasks WHERE task=?", Number(task))
+-					.one().prepared !== null,
+-		);
+-		await change;
+-		expect(committed).toBe(true);
+-		const prepared = state.storage.sql
+-			.exec<{ prepared: string }>(
+-				"SELECT prepared FROM host_tasks WHERE task=?",
+-				Number(task),
+-			)
+-			.one().prepared;
+-		const binding = f.dependencies.retained;
+-		if (!binding) throw new Error("Missing encrypted fixture binding");
+-		const retained = JSON.parse(
+-			await openHostField(binding, `task:${Number(task)}:prepared`, prepared),
+-		);
+-		expect(retained).toMatchObject({
+-			model: { modelId: committedBeforePreparation ? "faux-2" : "faux-1" },
+-			thinkingLevel: committedBeforePreparation ? "high" : "low",
+-		});
+-	}));
++					const closing = f.host.yield();
++					if (boundary === "after-placement") {
++						let closed = false;
++						void closing.then(() => {
++							closed = true;
++						});
++						await until(() => signal?.aborted === true);
++						expect(closed).toBe(false);
++						release.resolve();
++					}
++					await closing;
++					f.beforePreparation = undefined;
++					f.prepare = undefined;
++					f.returning = undefined;
++					f.piStorage = undefined;
++					f.mutate = undefined;
++					await f.open();
++					if (boundary === "unknown") {
++						for (let n = 0; n < 2; n++) {
++							await expect(f.host.schedule("follow")).rejects.toThrow();
++							await expect(
++								f.host.admit(
++									"tool",
++									`automatic-unknown-${n}`,
++									BACKGROUND_CONTEXT,
++								),
++							).rejects.toThrow();
++							f.harness.resume();
++							await f.harness.waitForIdle(BACKGROUND_CONTEXT);
++							expect(
++								(await f.effects()).find((row) => row.id === original!.id),
++							).toEqual(original);
++							expect(f.requests).toHaveLength(2);
++							expect(f.providerCalls).toBe(2);
++							expect(
++								state.storage.sql
++									.exec("SELECT state FROM host_runs WHERE id='initial'")
++									.one().state,
++							).toBe("failed");
++							expect(
++								state.storage.sql
++									.exec("SELECT * FROM host_members WHERE state='pending'")
++									.toArray(),
++							).toHaveLength(0);
++							if (n === 0) {
++								await f.host.yield();
++								await f.open();
++							}
++						}
++						return;
++					}
++					await f.host.schedule("follow");
++					await f.harness.waitForTask(parent.id, BACKGROUND_CONTEXT);
++					await f.harness.waitForIdle(BACKGROUND_CONTEXT);
++					await f.host.reconcile();
++					expect((await f.host.task(parent.id))?.state).toMatchObject({
++						status: "terminal",
++						outcome: { status: "completed" },
++					});
++					const summaries = (await f.effects()).filter(
++						(row) => row.correlation.version === 2,
++					);
++					expect(summaries).toHaveLength(1);
++					expect(summaries[0]).toMatchObject({
++						attempt: 1,
++						state: "pi-committed",
++						correlation: { task: Number(summary.id) },
++					});
++					if (original)
++						expect(summaries[0]).toMatchObject({
++							id: original.id,
++							evidence: original.evidence,
++						});
++					if (preparedBefore)
++						expect(
++							state.storage.sql
++								.exec(
++									"SELECT prepared FROM host_tasks WHERE task=?",
++									Number(summary.id),
++								)
++								.one().prepared,
++						).toBe(preparedBefore);
++					expect(
++						f.requests.filter(
++							(request) => request.options.maxTokens !== undefined,
++						),
++					).toHaveLength(1);
++					expect(
++						f.requests.filter(
++							(request) => request.options.maxTokens === undefined,
++						),
++					).toHaveLength(2);
++					expect(f.providerCalls).toBe(3);
++					const placements = (await f.host.history()).items.filter(
++						(entry) => entry.kind === "pi.compaction",
++					);
++					expect(placements).toHaveLength(1);
++					expect((await f.host.task(summary.id))?.state).toMatchObject({
++						status: "terminal",
++						outcome: {
++							status: "completed",
++							result: { entryId: placements[0]!.id },
++						},
++					});
++					expect(
++						state.storage.sql
++							.exec(
++								"SELECT state FROM host_members WHERE assistant='follow-assistant'",
++							)
++							.one().state,
++					).toBe("complete");
++					expect(
++						state.storage.sql
++							.exec("SELECT * FROM host_members WHERE state='pending'")
++							.toArray(),
++					).toHaveLength(0);
++					expect(
++						state.storage.sql
++							.exec("SELECT id FROM host_commands ORDER BY sequence")
++							.toArray(),
++					).toEqual([{ id: "initial" }, { id: "follow" }]);
++					await f.host.yield();
++					await f.open();
++					await f.host.reconcile();
++					expect(f.requests).toHaveLength(3);
++					expect(
++						(await f.effects()).filter((row) => row.correlation.version === 2),
++					).toEqual(summaries);
++				} finally {
++					release.resolve();
++				}
++			}));
++for (const encrypted of [false, true])
++	for (const fault of [
++		"known-failure",
++		"stop",
++		"epoch",
++		"authority",
++		"preparation-write",
++		"preparation-flush",
++		"summary-result-write",
++		"summary-result-flush",
++	] as const)
++		it(`automatic waiting parent is fenced after ${fault}, encrypted=${encrypted}`, async () =>
++			gate(`automatic-fault-${fault}`, encrypted, async (f, state) => {
++				await f.start();
++				f.automatic = true;
++				const hold = pendingRemote<void>();
++				const afterPreparation = ["stop", "epoch", "authority"].includes(fault);
++				if (afterPreparation) f.prepare = hold;
++				else f.beforePreparation = hold;
++				await f.follow();
++				await until(async () => {
++					const task = (await f.harness.inspect(BACKGROUND_CONTEXT)).tasks.find(
++						(task) => task.record.kind === "pi.compaction",
++					);
++					return (
++						task !== undefined &&
++						(!afterPreparation ||
++							state.storage.sql
++								.exec(
++									"SELECT prepared FROM host_tasks WHERE task=?",
++									Number(task.record.id),
++								)
++								.toArray()[0]?.prepared != null)
++					);
++				});
++				const { summary, parent } = await waitingAutomatic(f);
++				if (fault === "known-failure")
++					f.result = fauxAssistantMessage([], {
++						stopReason: "error",
++						errorMessage: "503 Synthetic automatic failure",
++					});
++				else if (fault === "stop")
++					await f.host.stop("automatic-stop", "initial");
++				else if (fault === "epoch")
++					state.storage.sql.exec(
++						"UPDATE host_runs SET epoch=epoch+1 WHERE id='initial'",
++					);
++				else if (fault === "authority") f.current = false;
++				else f.fault = fault;
++				hold.resolve();
++				await f.harness.waitForTask(parent.id, BACKGROUND_CONTEXT);
++				await f.host.reconcile();
++				expect(
++					f.requests.filter(
++						(request) => request.options.maxTokens === undefined,
++					),
++				).toHaveLength(1);
++				expect(
++					f.requests.filter(
++						(request) => request.options.maxTokens !== undefined,
++					),
++				).toHaveLength(
++					fault.startsWith("summary-result") || fault === "known-failure"
++						? 1
++						: 0,
++				);
++				expect(
++					(await f.host.history()).items.filter(
++						(entry) => entry.kind === "pi.compaction",
++					),
++				).toHaveLength(0);
++				if (fault === "known-failure") {
++					expect(
++						state.storage.sql
++							.exec("SELECT state FROM host_runs WHERE id='initial'")
++							.one().state,
++					).toBe("failed");
++					expect(
++						(await f.effects()).filter((row) => row.correlation.version === 2),
++					).toMatchObject([
++						{ attempt: 1, correlation: { task: Number(summary.id) } },
++					]);
++				}
++				await f.host.yield();
++				f.fault = undefined;
++				f.current = true;
++				f.beforePreparation = undefined;
++				f.prepare = undefined;
++				await f.open();
++				await expect(f.host.schedule("follow")).rejects.toThrow();
++				await expect(
++					f.host.admit("tool", `automatic-fault-${fault}`, BACKGROUND_CONTEXT),
++				).rejects.toThrow();
++				expect(
++					f.requests.filter(
++						(request) => request.options.maxTokens === undefined,
++					),
++				).toHaveLength(1);
++				expect(
++					state.storage.sql
++						.exec("SELECT * FROM host_members WHERE state='pending'")
++						.toArray(),
++				).toHaveLength(0);
++			}));
+ it("policy parser rejects old/custom meanings and malformed usage", () => {
+ 	expect(() => preparedSummary({ policy: "ditto-summary-0" })).toThrow();
+ 	expect(() =>

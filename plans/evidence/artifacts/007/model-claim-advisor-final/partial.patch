@@ -1,0 +1,235 @@
+--- accepted/apps/runtime/src/pi-durable-host.ts
++++ candidate/apps/runtime/src/pi-durable-host.ts
+@@ -19,6 +19,10 @@
+ 	type ToolExecutionResult,
+ } from "@earendil-works/pi-durable";
+ import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
++import {
++	type ModelAttemptV1,
++	parseModelAttemptV1,
++} from "../../../packages/runtime-contracts/src/model.js";
+ import {
+ 	digestText,
+ 	isRuntimeCiphertext,
+@@ -255,6 +259,11 @@
+ 	return canonical(tuple);
+ }
+ 
++export type ModelDispatch = {
++	readonly attempt: Readonly<ModelAttemptV1>;
++	claim(attempt: unknown): Promise<void>;
++};
++
+ export type HostGuard = {
+ 	summarize(
+ 		api: HookApi,
+@@ -270,7 +279,7 @@
+ 	model(
+ 		request: ModelRequest,
+ 		context: Context,
+-		start: () => Promise<AssistantMessage>,
++		start: (dispatch: ModelDispatch) => Promise<AssistantMessage>,
+ 	): Promise<{ effect: string; response: Promise<AssistantMessage> }>;
+ 	tool(
+ 		request: ToolRequest,
+@@ -351,6 +360,9 @@
+ 			);
+ 			storage.sql.exec(
+ 				"CREATE TABLE IF NOT EXISTS host_effects (id TEXT PRIMARY KEY, kind TEXT, invocation TEXT, epoch INTEGER, attempt INTEGER, executor INTEGER, deadline INTEGER, state TEXT, evidence TEXT)",
++			);
++			storage.sql.exec(
++				"CREATE TABLE IF NOT EXISTS host_model_dispatch (effect TEXT PRIMARY KEY, request_digest TEXT NOT NULL, claimed INTEGER NOT NULL DEFAULT 0 CHECK(claimed IN (0,1)))",
+ 			);
+ 			storage.sql.exec(
+ 				"CREATE TABLE IF NOT EXISTS host_inbox (id TEXT PRIMARY KEY, content TEXT, state TEXT, submission TEXT)",
+@@ -1592,7 +1604,7 @@
+ 		request: ModelRequest,
+ 		digest: string,
+ 		context: Context,
+-		start: () => Promise<AssistantMessage>,
++		start: (dispatch: ModelDispatch) => Promise<AssistantMessage>,
+ 	) {
+ 		const task = await this.harness.getTask(prepared.task as TaskId, context),
+ 			mapping = this.mapping(prepared.task);
+@@ -1641,6 +1653,7 @@
+ 		)
+ 			throw new Error("Custom summary current binding mismatch");
+ 		const admitted = await this.admitExact("model", correlation, task, context);
++		const dispatch = await this.modelDispatch(admitted, correlation, context);
+ 		const authority = await awaitWithContext(
+ 			this.dependencies.authority(),
+ 			context,
+@@ -1654,7 +1667,7 @@
+ 			throw new Error("Custom summary binding revoked");
+ 		context.abortSignal?.throwIfAborted();
+ 		this.dispatchPermit(admitted.id, correlation, admitted.epoch, authority);
+-		return { effect: admitted.id, response: start() };
++		return { effect: admitted.id, response: start(dispatch) };
+ 	}
+ 	private async customReceipt(
+ 		effect: Effect & { evidence: string },
+@@ -1863,6 +1876,96 @@
+ 				taskRow.prepared,
+ 			);
+ 	}
++	private async modelDispatch(
++		admitted: { id: string; epoch: number },
++		correlation: EffectCorrelation,
++		context: Context,
++	): Promise<ModelDispatch> {
++		const digest = await requestDigest(JSON.parse(correlation.arguments));
++		const effect = this.read(() =>
++			this.storage.sql
++				.exec<Effect>("SELECT * FROM host_effects WHERE id = ?", admitted.id)
++				.one(),
++		);
++		const attempt = Object.freeze(
++			parseModelAttemptV1({
++				version: 1,
++				effectId: admitted.id,
++				operationId: correlation.operation,
++				runId: correlation.run,
++				commandId: correlation.command,
++				assistantId: correlation.assistant,
++				taskId: correlation.task,
++				epoch: admitted.epoch,
++				attempt: effect.attempt,
++				generation: correlation.generation,
++				deadlineAt: effect.operation_deadline,
++				requestDigest: digest,
++				kind: correlation.version === 2 ? "custom_summary" : "generation",
++			}),
++		);
++		this.transition("admission", () => {
++			this.exactAuthority(correlation, admitted.epoch);
++			this.storage.sql.exec(
++				"INSERT INTO host_model_dispatch(effect,request_digest) VALUES (?,?)",
++				admitted.id,
++				digest,
++			);
++		});
++		await this.durable(context);
++		return {
++			attempt,
++			claim: async (input: unknown) => {
++				const supplied = parseModelAttemptV1(input);
++				if (canonical(supplied) !== canonical(attempt))
++					throw new Error("Exact model attempt mismatch");
++				context.abortSignal?.throwIfAborted();
++				const authority = await awaitWithContext(
++					this.dependencies.authority(),
++					context,
++				);
++				const task = await awaitWithContext(
++					this.harness.getTask(correlation.task as TaskId, context),
++					context,
++				);
++				if (
++					!task ||
++					canonical(task.input) !== correlation.taskInput ||
++					(correlation.version === 2
++						? !this.customTaskMatches(task, correlation)
++						: preparedTask(task) !== correlation.prepared ||
++							Number(record(task.state.checkpoint).attempt) !==
++								correlation.piAttempt)
++				)
++					throw new EffectDenied("authority");
++				// This transition never waits on the provider or configuration owner lane.
++				this.transition("admission", () => {
++					this.dispatchPermit(
++						admitted.id,
++						correlation,
++						admitted.epoch,
++						authority,
++					);
++					const claimed = this.storage.sql
++						.exec(
++							"UPDATE host_model_dispatch SET claimed=1 WHERE effect=? AND request_digest=? AND claimed=0 RETURNING effect",
++							admitted.id,
++							digest,
++						)
++						.toArray();
++					if (claimed.length !== 1) throw new EffectDenied("reservation");
++				});
++				await this.durable(context);
++				context.abortSignal?.throwIfAborted();
++				this.dispatchPermit(
++					admitted.id,
++					correlation,
++					admitted.epoch,
++					authority,
++				);
++			},
++		};
++	}
+ 	private async admitExact(
+ 		kind: "model" | "tool",
+ 		correlation: EffectCorrelation,
+@@ -1976,7 +2079,7 @@
+ 	private model(
+ 		request: ModelRequest,
+ 		context: Context,
+-		start: () => Promise<AssistantMessage>,
++		start: (dispatch: ModelDispatch) => Promise<AssistantMessage>,
+ 	) {
+ 		this.providerCallbacks++;
+ 		const previous = this.providerQueue;
+@@ -2175,6 +2278,11 @@
+ 					task,
+ 					context,
+ 				);
++				const dispatch = await this.modelDispatch(
++					admitted,
++					correlation,
++					context,
++				);
+ 				const finalAuthority = await awaitWithContext(
+ 					this.dependencies.authority(),
+ 					context,
+@@ -2193,7 +2301,7 @@
+ 					admitted.epoch,
+ 					finalAuthority,
+ 				);
+-				return { effect: admitted.id, response: start() };
++				return { effect: admitted.id, response: start(dispatch) };
+ 			} catch (error) {
+ 				if (
+ 					error instanceof EffectDenied &&
+--- accepted/apps/runtime/src/pi-durable-summary.test.ts
++++ candidate/apps/runtime/src/pi-durable-summary.test.ts
+@@ -123,7 +123,7 @@
+ 					return guard.summarize(api, selection, context);
+ 				},
+ 				model: (request, context, start) =>
+-					guard.model(request, context, () => {
++					guard.model(request, context, (dispatch) => {
+ 						requests.push({
+ 							...request,
+ 							options: Object.fromEntries(
+@@ -136,7 +136,7 @@
+ 							? Promise.reject(new Error("Synthetic transport outcome unknown"))
+ 							: request.options.maxTokens !== undefined && result
+ 								? Promise.resolve(result)
+-								: start();
++								: start(dispatch);
+ 					}),
+ 				result: async (id, context, evidence) => {
+ 					await guard.result(id, context, evidence);
+--- accepted/apps/runtime/src/pi-durable-model-preparation.gate.test.ts
++++ candidate/apps/runtime/src/pi-durable-model-preparation.gate.test.ts
+@@ -233,13 +233,13 @@
+ 					{
+ 						...guard,
+ 						model: (request, context, start) =>
+-							guard.model(request, context, () => {
++							guard.model(request, context, (dispatch) => {
+ 								dispatched.push({
+ 									model: request.model.id,
+ 									thinking: request.options.reasoning,
+ 									maxTokens: request.options.maxTokens,
+ 								});
+-								return start();
++								return start(dispatch);
+ 							}),
+ 					},
+ 				);

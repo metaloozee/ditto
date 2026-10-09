@@ -1,0 +1,28 @@
+diff --git a/apps/runtime/vitest.config.ts b/apps/runtime/vitest.config.ts
+index 2e0207a..b29cbac 100644
+--- a/apps/runtime/vitest.config.ts
++++ b/apps/runtime/vitest.config.ts
+@@ -25,6 +25,23 @@ export default defineWorkersConfig({
+ 				miniflare: {
+ 					compatibilityDate: "2026-09-16",
+ 					compatibilityFlags: ["nodejs_compat"],
++					serviceBindings: { MODEL_CLAIM_RELAY: "model-claim-relay" },
++					workers: [{
++						name: "model-claim-relay",
++						compatibilityDate: "2026-03-10",
++						modules: [{
++							type: "ESModule",
++							path: new URL("./relay.mjs", import.meta.url).pathname,
++							contents: `import { WorkerEntrypoint } from "cloudflare:workers";
++export default class extends WorkerEntrypoint {
++ async forward(attempt, owned, capability) {
++  if (!capability || typeof capability.claim !== "function") return { status: "denied" };
++  return await capability.claim(attempt, owned);
++ }
++ async fetch() { return new Response("Not found", { status: 404 }); }
++}`,
++						}],
++					}],
+ 					durableObjects: {
+ 						PI_FIXTURE_STORAGE: { className: "PiDurableLocalRuntime", useSQLite: true },
+ 						PI_HOST_STORAGE: { className: "PiDurableHostFixture", useSQLite: true },

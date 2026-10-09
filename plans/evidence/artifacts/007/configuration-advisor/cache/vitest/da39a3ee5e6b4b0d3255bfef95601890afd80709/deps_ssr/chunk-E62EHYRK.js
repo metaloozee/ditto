@@ -1,0 +1,98 @@
+// ../../node_modules/.pnpm/@earendil-works+chord@1.0.1/node_modules/@earendil-works/chord/dist/context/index.js
+var ABORT_SIGNAL_CONTEXT_KEY = Object.freeze({
+  token: /* @__PURE__ */ Symbol("chord.abortSignal")
+});
+var BaseContext = class {
+  get abortSignal() {
+    return this.value(ABORT_SIGNAL_CONTEXT_KEY);
+  }
+};
+var EmptyContext = class extends BaseContext {
+  #name;
+  constructor(name) {
+    super();
+    this.#name = name;
+  }
+  value(_key) {
+    return void 0;
+  }
+  toString() {
+    return this.#name;
+  }
+};
+var ContextValue = class extends BaseContext {
+  #parent;
+  #key;
+  #value;
+  constructor(parent, key, value) {
+    super();
+    this.#parent = parent;
+    this.#key = key;
+    this.#value = value;
+  }
+  value(key) {
+    if (key.token === this.#key.token)
+      return this.#value;
+    return this.#parent.value(key);
+  }
+  toString() {
+    return `${this.#parent}.WithValue(${this.#key.token.description ?? "anonymous"})`;
+  }
+};
+var BACKGROUND_CONTEXT = new EmptyContext("[Context BACKGROUND_CONTEXT]");
+var TODO_CONTEXT = new EmptyContext("[Context TODO_CONTEXT]");
+function createContextKey(description) {
+  return Object.freeze({ token: Symbol(description) });
+}
+function withContextValue(key, value, parent) {
+  return new ContextValue(parent, key, value);
+}
+function withAbortSignal(signal, context) {
+  const parentSignal = context.abortSignal;
+  const combined = parentSignal === void 0 ? signal : AbortSignal.any([parentSignal, signal]);
+  return withContextValue(ABORT_SIGNAL_CONTEXT_KEY, combined, context);
+}
+function withoutAbortSignal(context) {
+  return withContextValue(ABORT_SIGNAL_CONTEXT_KEY, void 0, context);
+}
+function withCancel(context) {
+  const controller = new AbortController();
+  return {
+    context: withAbortSignal(controller.signal, context),
+    cancel: (reason) => controller.abort(reason)
+  };
+}
+function awaitWithContext(promise, context) {
+  const signal = context.abortSignal;
+  if (signal === void 0)
+    return promise;
+  if (signal.aborted)
+    return Promise.reject(abortError(signal));
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(abortError(signal));
+    signal.addEventListener("abort", onAbort, { once: true });
+    void promise.then((value) => {
+      signal.removeEventListener("abort", onAbort);
+      resolve(value);
+    }, (error) => {
+      signal.removeEventListener("abort", onAbort);
+      reject(error);
+    });
+  });
+}
+function abortError(signal) {
+  const reason = signal.reason;
+  return reason instanceof Error ? reason : new DOMException("The operation was aborted", "AbortError");
+}
+
+export {
+  BACKGROUND_CONTEXT,
+  TODO_CONTEXT,
+  createContextKey,
+  withContextValue,
+  withAbortSignal,
+  withoutAbortSignal,
+  withCancel,
+  awaitWithContext
+};
+//# sourceMappingURL=chunk-E62EHYRK.js.map

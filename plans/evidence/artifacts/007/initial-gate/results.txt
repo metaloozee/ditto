@@ -1,0 +1,4 @@
+preparation exit=1
+inherited-denial exit=0
+typecheck exit=0
+biome exit=0

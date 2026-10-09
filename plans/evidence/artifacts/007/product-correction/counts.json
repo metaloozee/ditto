@@ -1,0 +1,25 @@
+{
+  "status": "READY FOR REVIEW",
+  "independentAcceptance": false,
+  "full007Done": false,
+  "environment": "env -i PATH=\"$PATH\" HOME=\"$PWD/node_modules/.verification-home\" CI=true",
+  "baseline": { "sourceHashesMatched": 27, "runtimeAdvisorFailed": 3, "policyAdvisorFailed": 2, "policyFilteredSkips": 56 },
+  "final": {
+    "advisorRuntime": { "passed": 3, "exit": 0 },
+    "advisorPolicy": { "passed": 2, "filteredSkips": 64, "exit": 0 },
+    "originalHostProbes": { "passed": 4, "exit": 0 },
+    "originalConfigurationProbes": { "passed": 4, "filteredSkips": 114, "exit": 0 },
+    "runtimeNearest": { "passed": 232, "models": 50, "effects": 62, "summary": 118, "preparation": 2, "exit": 0 },
+    "credentialNearest": { "passed": 86, "credential": 22, "request": 64, "exit": 0 },
+    "webNearest": { "passed": 45, "exit": 0 },
+    "contractsVerify": { "passed": 16, "exit": 0 },
+    "brainVerify": { "contractsPassed": 16, "feasibilityPassed": 3, "feasibilityFilteredSkips": 3, "brainPassed": 43, "exit": 0 },
+    "credentialsVerify": { "workerPassed": 86, "nodePassed": 3, "exit": 0 },
+    "runtimeVerify": { "workerPassed": 387, "nodePassed": 6, "exit": 0 },
+    "repositoryVerify": { "credentialWorkerPassed": 86, "credentialNodePassed": 3, "webPassed": 848, "runnerPassed": 79, "exit": 0 }
+  },
+  "sequentialGateOrder": ["contracts:verify", "brain:verify", "credentials:verify", "runtime:verify", "verify"],
+  "preservation": { "candidateFiles": 27, "changed": 7, "unchanged": 20, "graphFilesUnchanged": 6, "advisorArtifactIdentities": 33, "stagingEmpty": true },
+  "limits": { "requestBytes": 131072, "responseBytes": 131072, "transcriptBytes": 98304, "frames": 128, "frameBytes": 16384, "outputBytes": 65536, "testBudgetsChanged": false },
+  "pd38": "not run"
+}

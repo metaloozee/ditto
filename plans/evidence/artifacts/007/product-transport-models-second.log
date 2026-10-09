@@ -1,0 +1,163 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/apps/runtime[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2ma rewound live claim cannot acknowledge consumption again, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"rewound","encrypted":false,"claimed":0,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies authority during held task, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"task-authority","encrypted":false,"claimed":0,"receiptState":"reserved","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies authority during held task, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"task-authority","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies Stop during held task, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"task-Stop","encrypted":false,"claimed":0,"receiptState":"reserved","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies Stop during held task, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"task-Stop","encrypted":false,"claimed":0,"receiptState":"reserved","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies authority during held flush, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"flush-authority","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies authority during held flush, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"flush-authority","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies Stop during held flush, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"flush-Stop","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies Stop during held flush, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"flush-Stop","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":3,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mconcurrent exact claims reserve only once, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"concurrent","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mactual joined close cancels a held claim flush without refund, encrypted=false
+[22m[39m[007-model-claim-close] {"encrypted":false,"elapsedMs":17}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mactual joined close cancels a held claim flush without refund, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"close-held-flush","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mactual joined close cancels a held claim flush without refund, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"close-held-flush","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mlost claim acknowledgment retains consumption across two reopens, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"lost-ack","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mlost claim acknowledgment retains consumption across two reopens, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"lost-ack","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mlost claim acknowledgment retains consumption across two reopens, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"lost-ack","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2man older reserved receipt cannot refund an uncertain effect across reopens, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"reserved-rollback","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2man older reserved receipt cannot refund an uncertain effect across reopens, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"reserved-rollback","encrypted":false,"claimed":0,"receiptState":"reserved","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2man older reserved receipt cannot refund an uncertain effect across reopens, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"reserved-rollback","encrypted":false,"claimed":0,"receiptState":"reserved","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mdispatch digest substitution denies before consumption, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"digest-substitution","encrypted":false,"claimed":0,"receiptState":"reserved","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2ma rewound live claim cannot acknowledge consumption again, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"rewound","encrypted":true,"claimed":0,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies authority during held task, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"task-authority","encrypted":true,"claimed":0,"receiptState":"reserved","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies authority during held task, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"task-authority","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies Stop during held task, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"task-Stop","encrypted":true,"claimed":0,"receiptState":"reserved","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies Stop during held task, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"task-Stop","encrypted":true,"claimed":0,"receiptState":"reserved","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies authority during held flush, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"flush-authority","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies authority during held flush, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"flush-authority","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies Stop during held flush, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"flush-Stop","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies Stop during held flush, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"flush-Stop","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":3,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mconcurrent exact claims reserve only once, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"concurrent","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mactual joined close cancels a held claim flush without refund, encrypted=true
+[22m[39m[007-model-claim-close] {"encrypted":true,"elapsedMs":12}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mactual joined close cancels a held claim flush without refund, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"close-held-flush","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mactual joined close cancels a held claim flush without refund, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"close-held-flush","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mlost claim acknowledgment retains consumption across two reopens, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"lost-ack","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mlost claim acknowledgment retains consumption across two reopens, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"lost-ack","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mlost claim acknowledgment retains consumption across two reopens, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"lost-ack","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2man older reserved receipt cannot refund an uncertain effect across reopens, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"reserved-rollback","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2man older reserved receipt cannot refund an uncertain effect across reopens, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"reserved-rollback","encrypted":true,"claimed":0,"receiptState":"reserved","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2man older reserved receipt cannot refund an uncertain effect across reopens, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"reserved-rollback","encrypted":true,"claimed":0,"receiptState":"reserved","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mdispatch digest substitution denies before consumption, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"digest-substitution","encrypted":true,"claimed":0,"receiptState":"reserved","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mprivate Worker RPC carries the live exact claim and admits one start, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"rpc-admit","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":1}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mreal epoch-first Stop wins before a private RPC acknowledgment, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"rpc-stop-first","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":3,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mStop after a private RPC acknowledgment retains the admitted start, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"rpc-stop-after","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":1}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mprivate RPC rejects foreign owned context and a JSON-only association, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"rpc-foreign","encrypted":false,"claimed":0,"receiptState":"reserved","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mprivate Worker RPC carries the live exact claim and admits one start, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"rpc-admit","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":1}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mreal epoch-first Stop wins before a private RPC acknowledgment, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"rpc-stop-first","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":3,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mStop after a private RPC acknowledgment retains the admitted start, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"rpc-stop-after","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":1}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mprivate RPC rejects foreign owned context and a JSON-only association, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"rpc-foreign","encrypted":true,"claimed":0,"receiptState":"reserved","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+ [32m✓[39m src/pi-durable-models.test.ts [2m([22m[2m42 tests[22m[2m)[22m[33m 8006[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m42 passed[39m[22m[90m (42)[39m
+[2m   Start at [22m 19:23:52
+[2m   Duration [22m 10.17s[2m (transform 363ms, setup 0ms, collect 697ms, tests 8.01s, environment 0ms, prepare 149ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

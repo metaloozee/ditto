@@ -1,0 +1,17 @@
+[31mfailed to load config from /home/ayan/ditto-execution/plan-007-recovery/plans/evidence/artifacts/007/configuration-advisor/vitest.config.ts[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Startup Error [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯⎯[39m
+Error: Dynamic require of "node:assert" is not supported
+    at file:///home/ayan/ditto-execution/plan-007-recovery/node_modules/.vite-temp/vitest.config.ts.timestamp-1791523186931-53d46ce8a347d.mjs:11:9
+    at ../../node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/config/index.cjs (file:///home/ayan/ditto-execution/plan-007-recovery/node_modules/.vite-temp/vitest.config.ts.timestamp-1791523186931-53d46ce8a347d.mjs:77:39)
+    at __require2 (file:///home/ayan/ditto-execution/plan-007-recovery/node_modules/.vite-temp/vitest.config.ts.timestamp-1791523186931-53d46ce8a347d.mjs:15:52)
+    at file:///home/ayan/ditto-execution/plan-007-recovery/node_modules/.vite-temp/vitest.config.ts.timestamp-1791523186931-53d46ce8a347d.mjs:252:30
+    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)
+    at async node:internal/modules/esm/loader:647:26
+    at async loadConfigFromBundledFile (file:///home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/vite@7.3.6_@types+node@22.20.1_jiti@2.7.0_lightningcss@1.33.0_tsx@4.23.1_yaml@2.9.0/node_modules/vite/dist/node/chunks/config.js:35996:12)
+    at async bundleAndLoadConfigFile (file:///home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/vite@7.3.6_@types+node@22.20.1_jiti@2.7.0_lightningcss@1.33.0_tsx@4.23.1_yaml@2.9.0/node_modules/vite/dist/node/chunks/config.js:35884:17)
+    at async loadConfigFromFile (file:///home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/vite@7.3.6_@types+node@22.20.1_jiti@2.7.0_lightningcss@1.33.0_tsx@4.23.1_yaml@2.9.0/node_modules/vite/dist/node/chunks/config.js:35851:42)
+    at async resolveConfig (file:///home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/vite@7.3.6_@types+node@22.20.1_jiti@2.7.0_lightningcss@1.33.0_tsx@4.23.1_yaml@2.9.0/node_modules/vite/dist/node/chunks/config.js:35500:22)
+
+
+

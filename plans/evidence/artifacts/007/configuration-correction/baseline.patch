@@ -1,0 +1,2656 @@
+diff --git a/apps/credential-tests/src/entry.ts b/apps/credential-tests/src/entry.ts
+index 48407dd..0d2291a 100644
+--- a/apps/credential-tests/src/entry.ts
++++ b/apps/credential-tests/src/entry.ts
+@@ -26,6 +26,45 @@ export class FixtureCredential extends CodexCredential {
+ 	waitForRotation() {
+ 		return this.rotation;
+ 	}
++	private modelWait:
++		| {
++				phase: string;
++				entered: Promise<void>;
++				mark(): void;
++				released: Promise<void>;
++				release(): void;
++		  }
++		| undefined;
++	holdModel(phase: "authority" | "credentials" | "claim") {
++		let mark!: () => void, release!: () => void;
++		this.modelWait = {
++			phase,
++			entered: new Promise<void>((r) => {
++				mark = r;
++			}),
++			mark: () => mark(),
++			released: new Promise<void>((r) => {
++				release = r;
++			}),
++			release: () => release(),
++		};
++	}
++	waitModel() {
++		return this.modelWait?.entered;
++	}
++	releaseModel() {
++		this.modelWait?.release();
++	}
++	protected requestAvailable() {
++		return true;
++	}
++	protected async modelPhase(phase: "authority" | "credentials" | "claim") {
++		const wait = this.modelWait;
++		if (wait?.phase !== phase) return;
++		wait.mark();
++		await wait.released;
++		this.modelWait = undefined;
++	}
+ 	protected fixtureAvailable() {
+ 		return true;
+ 	}
+diff --git a/apps/credential-tests/tsconfig.json b/apps/credential-tests/tsconfig.json
+index ee4a14a..8a5fb60 100644
+--- a/apps/credential-tests/tsconfig.json
++++ b/apps/credential-tests/tsconfig.json
+@@ -5,6 +5,7 @@
+     "moduleResolution": "Bundler",
+     "strict": true,
+     "noEmit": true,
++    "allowImportingTsExtensions": true,
+     "skipLibCheck": true,
+     "types": ["@cloudflare/workers-types", "@cloudflare/vitest-pool-workers"]
+   },
+diff --git a/apps/credential-tests/vitest.config.ts b/apps/credential-tests/vitest.config.ts
+index 6ee1a51..6bcb586 100644
+--- a/apps/credential-tests/vitest.config.ts
++++ b/apps/credential-tests/vitest.config.ts
+@@ -1,16 +1,26 @@
+ import { defineWorkersConfig } from "@cloudflare/vitest-pool-workers/config";
++const runtimeImporter = new URL("../runtime/src/pi-durable-models.ts", import.meta.url).pathname;
+ 
+ export default defineWorkersConfig({
++	resolve: { alias: [
++		{ find: "@earendil-works", replacement: "@earendil-works", customResolver(id) { return this.resolve(id, runtimeImporter, { skipSelf: true }); } },
++		{ find: "typebox", replacement: "typebox", customResolver(id) { return this.resolve(id, runtimeImporter, { skipSelf: true }); } },
++		{ find: "@cloudflare", replacement: "@cloudflare", customResolver(id) { return this.resolve(id, runtimeImporter, { skipSelf: true }); } },
++	] },
+ 	test: {
+ 		include: ["src/**/*.worker.test.ts"],
++		deps: { optimizer: { ssr: { enabled: true, include: ["@cloudflare/containers", "@cloudflare/sandbox", "@earendil-works/pi-durable", "@earendil-works/pi-durable/storage/sqlite", "@earendil-works/pi-ai/models", "@earendil-works/pi-ai/providers/faux", "@earendil-works/chord/context", "@earendil-works/chord/delta", "typebox"] } } },
+ 		poolOptions: {
+ 			workers: {
+-				main: "./src/entry.ts",
++				main: "./src/model-entry.ts",
+ 				miniflare: {
+ 					compatibilityDate: "2026-03-10",
+ 					compatibilityFlags: ["nodejs_compat"],
+ 					d1Databases: ["DB"],
+-					durableObjects: { CodexCredential: { className: "FixtureCredential", useSQLite: true } },
++					durableObjects: {
++						CodexCredential: { className: "FixtureCredential", useSQLite: true },
++						PI_MODEL_HOST: { className: "PiDurableHostFixture", useSQLite: true },
++					},
+ 					bindings: {
+ 						CODEX_CREDENTIAL_CURRENT_KEY_VERSION: "fixture-v1",
+ 						CODEX_CREDENTIAL_KEYS: JSON.stringify({ "fixture-v1": "01".repeat(32) }),
+diff --git a/apps/runtime/src/pi-durable-cooperative-fixture.ts b/apps/runtime/src/pi-durable-cooperative-fixture.ts
+index 18ec270..eab72ee 100644
+--- a/apps/runtime/src/pi-durable-cooperative-fixture.ts
++++ b/apps/runtime/src/pi-durable-cooperative-fixture.ts
+@@ -75,6 +75,10 @@ export function cooperativeFixture(
+ 		evidence: string,
+ 	) => Promise<void> = async () => {},
+ 	guard?: HostGuard,
++	summaryPolicy:
++		| "custom"
++		| "stock-Pi-control"
++		| "absent-custom-hook" = "custom",
+ ) {
+ 	const remote = pendingRemote<void>();
+ 	const entered = pendingRemote<void>();
+@@ -122,13 +126,21 @@ export function cooperativeFixture(
+ 								errorMessage: "503 Synthetic known summary error",
+ 							});
+ 						}
+-						return fauxAssistantMessage("Synthetic durable summary");
++						return {
++							...fauxAssistantMessage("Synthetic durable summary"),
++							model: model.id,
++							provider: model.provider,
++						};
+ 					}
+ 					if (
+ 						phase === "answer" ||
+ 						(guard && phase === "tool" && providerCalls > 1)
+ 					)
+-						return fauxAssistantMessage("Synthetic answer ".repeat(50));
++						return {
++							...fauxAssistantMessage("Synthetic answer ".repeat(50)),
++							model: model.id,
++							provider: model.provider,
++						};
+ 					return produce();
+ 				};
+ 				const produce = async (): Promise<AssistantMessage> => {
+@@ -294,6 +306,9 @@ export function cooperativeFixture(
+ 					}),
+ 					hook(CompactionTask, {
+ 						beforeCompact: async (selection, api, context) => {
++							if (summaryPolicy === "absent-custom-hook") return undefined;
++							if (summaryPolicy === "custom")
++								return guard.summarize(api, selection, context);
+ 							await guard.bindCompaction(
+ 								api,
+ 								{
+diff --git a/apps/runtime/src/pi-durable-effects.test.ts b/apps/runtime/src/pi-durable-effects.test.ts
+index 6f316a1..6a4c6c7 100644
+--- a/apps/runtime/src/pi-durable-effects.test.ts
++++ b/apps/runtime/src/pi-durable-effects.test.ts
+@@ -3,7 +3,10 @@ import {
+ 	runDurableObjectAlarm,
+ 	runInDurableObject,
+ } from "cloudflare:test";
+-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
++import {
++	awaitWithContext,
++	BACKGROUND_CONTEXT,
++} from "@earendil-works/chord/context";
+ import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
+ import type { Harness, Storage } from "@earendil-works/pi-durable";
+ import { expect, it } from "vitest";
+@@ -88,6 +91,7 @@ function composition(
+ 				(kind, id, context) => guard.admit(kind, id, context),
+ 				(id, context, evidence) => guard.result(id, context, evidence),
+ 				adapters(guard),
++				"stock-Pi-control",
+ 			);
+ 			fixtures.push(fixture);
+ 			return {
+@@ -790,25 +794,178 @@ it("known completed summary error retries after reopen with retained logical req
+ 			"pi-committed",
+ 		]);
+ 	}));
+-it("first summary association missing after close is denied rather than inferred from a sole retained producer", async () =>
+-	run("summary-no-first", "answer", async (f) => {
++it("validated first summary preparation survives close without admitting an effect", async () =>
++	run("summary-first-prepared", "answer", async (f, state) => {
+ 		await f.start();
+ 		await f.harness.waitForIdle(BACKGROUND_CONTEXT);
+ 		const gate = pendingRemote<void>();
+ 		f.prepare = gate;
+ 		const task = await f.host.compact("command");
+-		await until(() => f.fixture.providerAttempts === 2);
++		await until(
++			() =>
++				state.storage.sql
++					.exec("SELECT prepared FROM host_tasks WHERE task = ?", Number(task))
++					.one().prepared !== null,
++		);
++		expect(f.effects()).toHaveLength(1);
+ 		await f.host.yield();
+ 		expect(gate.settled).toBe(false);
+ 		f.prepare = undefined;
+ 		await f.open();
+ 		await f.host.schedule("command");
+-		await f.harness.waitForTask(task, BACKGROUND_CONTEXT);
++		const after = await f.harness.waitForTask(task, BACKGROUND_CONTEXT);
++		expect(after.state.outcome?.status).toBe("completed");
+ 		expect(f.fixture.providerAttempts).toBe(1);
+-		expect(f.fixture.providerCalls).toBe(0);
+-		expect(f.effects()).toHaveLength(1);
++		expect(f.fixture.providerCalls).toBe(1);
++		expect(f.effects()).toHaveLength(2);
+ 		gate.resolve();
+ 	}));
++for (const association of ["missing", "corrupt"] as const)
++	it(`${association} first summary association after close denies the sole retained producer`, async () =>
++		run(`summary-association-${association}`, "answer", async (f, state) => {
++			await f.start();
++			await f.harness.waitForIdle(BACKGROUND_CONTEXT);
++			const gate = pendingRemote<void>();
++			f.prepare = gate;
++			const task = await f.host.compact("command");
++			await until(
++				() =>
++					state.storage.sql
++						.exec(
++							"SELECT prepared FROM host_tasks WHERE task = ?",
++							Number(task),
++						)
++						.one().prepared !== null,
++			);
++			await f.host.yield();
++			state.storage.sql.exec(
++				"UPDATE host_tasks SET prepared = ?, digest = ? WHERE task = ?",
++				association === "missing" ? null : "{}",
++				association === "missing" ? null : "corrupt-digest",
++				Number(task),
++			);
++			f.prepare = undefined;
++			await f.open();
++			await f.host.schedule("command");
++			const after = await f.harness.waitForTask(task, BACKGROUND_CONTEXT);
++			expect(after.state.outcome).toMatchObject({
++				status: "failed",
++				error: {
++					message: "Summarization failed: Missing first summary association",
++				},
++			});
++			expect(f.fixture.providerAttempts).toBe(1);
++			expect(f.fixture.providerCalls).toBe(0);
++			expect(f.effects()).toHaveLength(1);
++			gate.resolve();
++		}));
++for (const ordering of ["before", "after"] as const)
++	it(`selection handoff interrupted ${ordering} Pi summarize commit remains exact or fails closed`, async () =>
++		run(`summary-selection-${ordering}`, "answer", async (f, state) => {
++			const entered = pendingRemote<void>();
++			const release = pendingRemote<void>();
++			let invocationSignal: AbortSignal | undefined;
++			f.adapters = (guard) => ({
++				...guard,
++				bindCompaction: async (api, selection, context) => {
++					await guard.bindCompaction(api, selection, context);
++					invocationSignal = context.abortSignal;
++					if (ordering === "before") {
++						entered.resolve();
++						await awaitWithContext(release.promise, context);
++					}
++				},
++			});
++			if (ordering === "after")
++				f.piStorage = (storage) =>
++					new Proxy(storage, {
++						get(target, key) {
++							if (key === "commit")
++								return async (...args: Parameters<Storage["commit"]>) => {
++									const summary = args[0].some(
++										(write) =>
++											write.type === "task" &&
++											write.value.kind === "pi.compaction" &&
++											write.value.state.checkpoint &&
++											typeof write.value.state.checkpoint === "object" &&
++											"phase" in write.value.state.checkpoint &&
++											write.value.state.checkpoint.phase === "summarize",
++									);
++									if (!summary) return target.commit(...args);
++									const seq = await target.commit(...args);
++									entered.resolve();
++									await awaitWithContext(release.promise, args[1]);
++									return seq;
++								};
++							const value: unknown = Reflect.get(target, key);
++							return typeof value === "function" ? value.bind(target) : value;
++						},
++					});
++			await f.host.yield();
++			await f.open();
++			await f.start();
++			await f.harness.waitForIdle(BACKGROUND_CONTEXT);
++			const task = await f.host.compact("command");
++			await entered.promise;
++			expect(
++				state.storage.sql
++					.exec(
++						"SELECT prepared, digest FROM host_tasks WHERE task = ?",
++						Number(task),
++					)
++					.one(),
++			).toEqual({ prepared: null, digest: null });
++			expect(f.fixture.providerAttempts).toBe(1);
++			expect(f.effects()).toHaveLength(1);
++			const closing = f.host.yield();
++			if (ordering === "after") {
++				await until(() => invocationSignal?.aborted === true);
++				release.resolve();
++			}
++			await closing;
++			f.piStorage = undefined;
++			f.adapters = (guard) => guard;
++			await f.open();
++			await f.host.schedule("command");
++			const after = await f.harness.waitForTask(task, BACKGROUND_CONTEXT);
++			if (ordering === "before") {
++				expect(after.state.outcome?.status).toBe("completed");
++				expect(f.fixture.providerCalls).toBe(1);
++			} else {
++				expect(after.state.outcome).toMatchObject({
++					status: "failed",
++					error: {
++						message: "Summarization failed: Missing first summary association",
++					},
++				});
++				expect(f.fixture.providerCalls).toBe(0);
++				expect(f.effects()).toHaveLength(1);
++			}
++			release.resolve();
++		}));
++
++it("stale epoch after validated summary preparation cannot admit an effect", async () =>
++	run("summary-prepared-epoch", "answer", async (f, state) => {
++		await f.start();
++		await f.harness.waitForIdle(BACKGROUND_CONTEXT);
++		const gate = pendingRemote<void>();
++		const entered = pendingRemote<void>();
++		f.dependencies.prepareModel = async () => {
++			entered.resolve();
++			await gate.promise;
++		};
++		const task = await f.host.compact("command");
++		await entered.promise;
++		state.storage.sql.exec(
++			"UPDATE host_runs SET epoch = epoch + 1 WHERE id = 'command'",
++		);
++		gate.resolve();
++		const after = await f.harness.waitForTask(task, BACKGROUND_CONTEXT);
++		expect(after.state.outcome?.status).toBe("failed");
++		expect(f.fixture.providerCalls).toBe(1);
++		expect(f.effects()).toHaveLength(1);
++	}));
++
+ it("owned blocking compaction excludes its actual waiting generation parent and preserves command membership", async () =>
+ 	run("owned-summary", "answer", async (f) => {
+ 		await f.start();
+@@ -1367,6 +1524,89 @@ async function plainCorrelation(
+ 	) as Record<string, unknown>;
+ }
+ 
++for (const fault of ["preparation-write", "preparation-flush"] as const)
++	it(`encrypted preparation ${fault} failure fences without admitting a summary`, async () =>
++		runEncrypted(`summary-${fault}`, "answer", async (f, state) => {
++			await f.start();
++			await f.harness.waitForIdle(BACKGROUND_CONTEXT);
++			f.fault = fault;
++			const task = await f.host.compact("command");
++			await f.harness.waitForTask(task, BACKGROUND_CONTEXT);
++			const row = state.storage.sql
++				.exec(
++					"SELECT prepared, digest FROM host_tasks WHERE task = ?",
++					Number(task),
++				)
++				.one();
++			if (fault === "preparation-write")
++				expect(row).toEqual({ prepared: null, digest: null });
++			else {
++				expect(String(row.prepared)).toContain("aes-256-gcm");
++				expect(row.digest).toBeTypeOf("string");
++			}
++			expect(f.fixture.providerCalls).toBe(1);
++			expect(f.effects()).toHaveLength(1);
++			expect(
++				state.storage.sql.exec("SELECT reason FROM host_safety").one().reason,
++			).toBe("storage-failure");
++			f.fault = undefined;
++			await f.host.yield();
++			await f.open();
++			await expect(f.host.schedule("command")).rejects.toThrow();
++			expect(f.fixture.providerCalls).toBe(0);
++			expect(f.effects()).toHaveLength(1);
++		}));
++
++it("encrypted validated summary preparation reopens with exact ciphertext provenance and no prior admission", async () =>
++	runEncrypted("summary-prepared-reopen", "answer", async (f, state) => {
++		await f.start();
++		await f.harness.waitForIdle(BACKGROUND_CONTEXT);
++		const gate = pendingRemote<void>();
++		const entered = pendingRemote<void>();
++		f.dependencies.prepareModel = async () => {
++			entered.resolve();
++			await gate.promise;
++		};
++		const task = await f.host.compact("command");
++		await entered.promise;
++		const row = state.storage.sql
++			.exec<{ prepared: string; digest: string }>(
++				"SELECT prepared, digest FROM host_tasks WHERE task = ?",
++				Number(task),
++			)
++			.one();
++		expect(row.prepared).toContain("aes-256-gcm");
++		expect(row.prepared).not.toContain("faux-1");
++		const plain = await (await import("./host-private.ts")).openHostField(
++			await encryptedBinding(),
++			`task:${Number(task)}:prepared`,
++			row.prepared,
++		);
++		expect(JSON.parse(plain)).toMatchObject({
++			model: { provider: "faux", modelId: "faux-1" },
++			firstKept: expect.any(Number),
++		});
++		expect(f.effects()).toHaveLength(1);
++		await f.host.yield();
++		f.dependencies.prepareModel = undefined;
++		await f.open();
++		await f.host.schedule("command");
++		const after = await f.harness.waitForTask(task, BACKGROUND_CONTEXT);
++		expect(after.state.outcome?.status).toBe("completed");
++		expect(f.fixture.providerCalls).toBe(1);
++		expect(f.effects()).toHaveLength(2);
++		gate.resolve();
++	}));
++
++it("host-1 preparation meanings are not silently reinterpreted", async () =>
++	run("old-preparation-version", "answer", async (f, state) => {
++		await f.host.yield();
++		state.storage.sql.exec(
++			"UPDATE host_meta SET version = 'pi-1.0.1/ditto-host-1'",
++		);
++		await expect(f.open()).rejects.toThrow("Incompatible host state");
++	}));
++
+ it("encrypted L1: guarded model and tool settle without a false integrity failure", async () =>
+ 	runEncrypted("model-tool", "tool", async (f) => {
+ 		await f.start();
+diff --git a/apps/runtime/src/pi-durable-host.ts b/apps/runtime/src/pi-durable-host.ts
+index ca484aa..53396a6 100644
+--- a/apps/runtime/src/pi-durable-host.ts
++++ b/apps/runtime/src/pi-durable-host.ts
+@@ -3,9 +3,11 @@ import type { Context } from "@earendil-works/chord";
+ import {
+ 	awaitWithContext,
+ 	BACKGROUND_CONTEXT,
++	withAbortSignal,
+ } from "@earendil-works/chord/context";
+ import type { AssistantMessage } from "@earendil-works/pi-ai";
+ import {
++	type AgentChange,
+ 	type CommitPublication,
+ 	Harness,
+ 	type HarnessOptions,
+@@ -17,6 +19,31 @@ import {
+ 	type ToolExecutionResult,
+ } from "@earendil-works/pi-durable";
+ import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
++import {
++	type ConfigurationAckV1,
++	type ConfigurationAuthorityV1,
++	type ConfigurationIntentV1,
++	type ConfigurationReadV1,
++	type ConfigurationSelectionV1,
++	type ConfigurationSnapshotV1,
++	configurationIdentity,
++	parseConfigurationAckV1,
++	parseConfigurationAuthorityV1,
++	parseConfigurationIntentV1,
++	parseConfigurationReadV1,
++	parseConfigurationSelectionV1,
++} from "../../../packages/runtime-contracts/src/configuration.js";
++import {
++	decodeContractInput,
++	literalField,
++	strictRecord,
++} from "../../../packages/runtime-contracts/src/json.js";
++import type { ModelSubjectV1 } from "../../../packages/runtime-contracts/src/model.js";
++import {
++	type ModelAttemptV1,
++	parseModelAttemptV1,
++	SYNTHETIC_MODEL_LIMITS,
++} from "../../../packages/runtime-contracts/src/model.js";
+ import {
+ 	digestText,
+ 	isRuntimeCiphertext,
+@@ -37,10 +64,19 @@ import {
+ 	TASK_COMPAT,
+ 	TOOL_COMPAT,
+ } from "./pi-durable-storage.ts";
++import {
++	type PreparedSummary,
++	preparedSummary,
++	SUMMARY_POLICY,
++	type SummarySelection,
++	summaryText,
++	summaryTranscript,
++	validateSummaryResponse,
++} from "./pi-durable-summary.ts";
+ 
+ const WORK_MS = 1000;
+ const DRAIN_MS = 1000;
+-const VERSION = "pi-1.0.1/ditto-host-1";
++const VERSION = "pi-1.0.1/ditto-host-3";
+ 
+ type Invocation = {
+ 	id: string;
+@@ -62,18 +98,27 @@ type Effect = {
+ 	operation_deadline?: number | null;
+ 	state: "admitted" | "result-recorded" | "pi-committed";
+ 	correlation?: string | null;
++	model_dispatch?: string | null;
+ };
+ export type HostFault =
+ 	| "read"
+ 	| "intent"
+ 	| "admission"
++	| "preparation"
++	| "preparation-write"
++	| "preparation-flush"
+ 	| "result"
++	| "summary-result-write"
++	| "summary-result-flush"
+ 	| "fence"
+ 	| "account"
+ 	| "before-submit"
+ 	| "after-submit"
+ 	| "after-close"
+-	| "alarm";
++	| "alarm"
++	| "configuration-intent"
++	| "configuration-applied"
++	| "configuration-outcome";
+ export type LocalAuthority = {
+ 	current: boolean;
+ 	generation: number;
+@@ -148,7 +193,7 @@ export type ToolRequest = {
+ 	replay: "never" | "new-observation" | "expected-content";
+ };
+ export type EffectCorrelation = {
+-	version: 1;
++	version: 1 | 2;
+ 	command: string;
+ 	run: string;
+ 	user: string;
+@@ -239,7 +284,19 @@ function preparedTask(task: PublicTask) {
+ 	return canonical(tuple);
+ }
+ 
++export type ModelDispatch = {
++	readonly attempt: Readonly<ModelAttemptV1>;
++	claim(attempt: unknown): Promise<void>;
++	bindProductAuthority(check: () => Promise<void>): void;
++	halt(): Promise<void>;
++};
++
+ export type HostGuard = {
++	summarize(
++		api: HookApi,
++		selection: SummarySelection,
++		context: Context,
++	): Promise<{ summary: string } | { decline: true }>;
+ 	bindGeneration(api: HookApi, digest: string, context: Context): Promise<void>;
+ 	bindCompaction(
+ 		api: HookApi,
+@@ -249,7 +306,7 @@ export type HostGuard = {
+ 	model(
+ 		request: ModelRequest,
+ 		context: Context,
+-		start: () => Promise<AssistantMessage>,
++		start: (dispatch: ModelDispatch) => Promise<AssistantMessage>,
+ 	): Promise<{ effect: string; response: Promise<AssistantMessage> }>;
+ 	tool(
+ 		request: ToolRequest,
+@@ -278,11 +335,21 @@ export type HostFixtureDependencies = {
+ 		setAlarm(deadline: number): Promise<void>;
+ 	};
+ 	retained?: RetainedStorageBinding;
++	configuration?: {
++		subject: ModelSubjectV1;
++		defaultSelection: ConfigurationSelectionV1;
++		authorize(
++			query: ConfigurationReadV1,
++			selection?: ConfigurationSelectionV1,
++		): Promise<ConfigurationAuthorityV1>;
++	};
+ };
+ 
+ /** Disposable L1 host candidate. Plaintext and local authority are not product contracts. */
+ export class PiDurableHost {
+ 	private harness!: Harness;
++	private options!: HarnessOptions;
++	private customBindings = new WeakMap<AbortSignal, PreparedSummary>();
+ 	private piRecords!: Storage;
+ 	private denied = false;
+ 	private sealed = false;
+@@ -291,10 +358,12 @@ export class PiDurableHost {
+ 	private active: Invocation | undefined;
+ 	private failure: unknown;
+ 	private providerQueue = Promise.resolve();
++	private ownerQueue: Promise<void> = Promise.resolve();
++	private ownerAbort = new AbortController();
+ 	private providerCallbacks = 0;
+ 	private bindings = new WeakMap<
+ 		AbortSignal,
+-		{ task: number; digest?: string }
++		{ task: number; digest?: string; stock?: true }
+ 	>();
+ 	private storageBarrier = false;
+ 	private privatePlain = new Map<string, string>();
+@@ -327,6 +396,9 @@ export class PiDurableHost {
+ 			storage.sql.exec(
+ 				"CREATE TABLE IF NOT EXISTS host_effects (id TEXT PRIMARY KEY, kind TEXT, invocation TEXT, epoch INTEGER, attempt INTEGER, executor INTEGER, deadline INTEGER, state TEXT, evidence TEXT)",
+ 			);
++			storage.sql.exec(
++				"CREATE TABLE IF NOT EXISTS host_model_dispatch (effect TEXT PRIMARY KEY, request_digest TEXT NOT NULL, claimed INTEGER NOT NULL DEFAULT 0 CHECK(claimed IN (0,1)))",
++			);
+ 			storage.sql.exec(
+ 				"CREATE TABLE IF NOT EXISTS host_inbox (id TEXT PRIMARY KEY, content TEXT, state TEXT, submission TEXT)",
+ 			);
+@@ -354,6 +426,9 @@ export class PiDurableHost {
+ 			storage.sql.exec(
+ 				"CREATE TABLE IF NOT EXISTS host_safety (id INTEGER PRIMARY KEY, reason TEXT)",
+ 			);
++			storage.sql.exec(
++				"CREATE TABLE IF NOT EXISTS host_configuration_intents (id TEXT PRIMARY KEY, payload_digest TEXT NOT NULL, outcome TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('pending','complete')))",
++			);
+ 			const columns = storage.sql
+ 				.exec<{ name: string }>("PRAGMA table_info(host_effects)")
+ 				.toArray();
+@@ -369,6 +444,10 @@ export class PiDurableHost {
+ 				storage.sql.exec(
+ 					"ALTER TABLE host_effects ADD COLUMN operation_deadline INTEGER",
+ 				);
++			if (!columns.some((column) => column.name === "model_dispatch"))
++				storage.sql.exec(
++					"ALTER TABLE host_effects ADD COLUMN model_dispatch TEXT",
++				);
+ 		});
+ 		await host.durable();
+ 		host.read(() => {
+@@ -415,26 +494,36 @@ export class PiDurableHost {
+ 			await piStorage.close(BACKGROUND_CONTEXT);
+ 			throw error;
+ 		}
++		host.options = dependencies.options({
++			summarize: (api, selection, context) =>
++				host.summarize(api, selection, context),
++			bindGeneration: (api, digest, context) =>
++				host.bindTask("pi.generation", api, {}, digest, context),
++			bindCompaction: (api, selection, context) =>
++				host.bindTask(
++					"pi.compaction",
++					api,
++					selection,
++					undefined,
++					context,
++					true,
++				),
++			model: (request, context, start) => host.model(request, context, start),
++			tool: (request, context, start) => host.tool(request, context, start),
++			admit: (kind, operation, context) => host.admit(kind, operation, context),
++			result: (effect, context, evidence) =>
++				host.result(effect, context, evidence),
++		});
+ 		host.harness = await Harness.open(
+ 			host.piRecords,
+-			dependencies.options({
+-				bindGeneration: (api, digest, context) =>
+-					host.bindTask("pi.generation", api, {}, digest, context),
+-				bindCompaction: (api, selection, context) =>
+-					host.bindTask("pi.compaction", api, selection, undefined, context),
+-				model: (request, context, start) => host.model(request, context, start),
+-				tool: (request, context, start) => host.tool(request, context, start),
+-				admit: (kind, operation, context) =>
+-					host.admit(kind, operation, context),
+-				result: (effect, context, evidence) =>
+-					host.result(effect, context, evidence),
+-			}),
++			host.options,
+ 			BACKGROUND_CONTEXT,
+ 		);
+ 		host.harness.subscribeCommits((publication) =>
+ 			host.captureRetry(publication),
+ 		);
+ 		try {
++			await host.initializeOwnedConfiguration();
+ 			await host.reconcileSafety();
+ 			await host.repairWakeup();
+ 		} catch (error) {
+@@ -503,10 +592,12 @@ export class PiDurableHost {
+ 	}
+ 	private assertNoPlaintextPrivate() {
+ 		const statements = [
++			"SELECT outcome AS value FROM host_configuration_intents",
+ 			"SELECT content AS value FROM host_inbox",
+ 			"SELECT correlation AS value FROM host_effects WHERE correlation IS NOT NULL",
+ 			"SELECT evidence AS value FROM host_effects WHERE evidence IS NOT NULL",
+ 			"SELECT retry_evidence AS value FROM host_effects WHERE retry_evidence IS NOT NULL",
++			"SELECT model_dispatch AS value FROM host_effects WHERE model_dispatch IS NOT NULL",
+ 			"SELECT selection AS value FROM host_tasks WHERE selection IS NOT NULL",
+ 			"SELECT prepared AS value FROM host_tasks WHERE prepared IS NOT NULL",
+ 		];
+@@ -523,6 +614,11 @@ export class PiDurableHost {
+ 		const binding = this.dependencies.retained;
+ 		if (!binding) return;
+ 		const fields = [
++			...this.storage.sql
++				.exec<{ record_id: string; value: string }>(
++					"SELECT 'configuration:' || id AS record_id, outcome AS value FROM host_configuration_intents",
++				)
++				.toArray(),
+ 			...this.storage.sql
+ 				.exec<{ record_id: string; value: string }>(
+ 					"SELECT 'inbox:' || id || ':content' AS record_id, content AS value FROM host_inbox",
+@@ -543,6 +639,11 @@ export class PiDurableHost {
+ 					"SELECT 'effect:' || id || ':retry_evidence' AS record_id, retry_evidence AS value FROM host_effects WHERE retry_evidence IS NOT NULL",
+ 				)
+ 				.toArray(),
++			...this.storage.sql
++				.exec<{ record_id: string; value: string }>(
++					"SELECT 'effect:' || id || ':model_dispatch' AS record_id, model_dispatch AS value FROM host_effects WHERE model_dispatch IS NOT NULL",
++				)
++				.toArray(),
+ 			...this.storage.sql
+ 				.exec<{ record_id: string; value: string }>(
+ 					"SELECT 'task:' || task || ':selection' AS record_id, selection AS value FROM host_tasks WHERE selection IS NOT NULL",
+@@ -676,9 +777,10 @@ export class PiDurableHost {
+ 				.toArray()[0];
+ 			return row?.content ?? null;
+ 		}
+-		const effect = /^effect:(.+):(correlation|evidence|retry_evidence)$/.exec(
+-			recordId,
+-		);
++		const effect =
++			/^effect:(.+):(correlation|evidence|retry_evidence|model_dispatch)$/.exec(
++				recordId,
++			);
+ 		if (effect) {
+ 			const column = effect[2];
+ 			const row = this.storage.sql
+@@ -700,6 +802,15 @@ export class PiDurableHost {
+ 				.toArray()[0];
+ 			return row?.value ?? null;
+ 		}
++		if (recordId.startsWith("configuration:"))
++			return (
++				this.storage.sql
++					.exec<{ value: string }>(
++						"SELECT outcome AS value FROM host_configuration_intents WHERE id=?",
++						recordId.slice("configuration:".length),
++					)
++					.toArray()[0]?.value ?? null
++			);
+ 		return null;
+ 	}
+ 	private assertCachedEnvelope(recordId: string, stored: string | null) {
+@@ -772,13 +883,13 @@ export class PiDurableHost {
+ 				const runs = this.dependencies.retained
+ 					? this.storage.sql
+ 							.exec<{ run: string }>(
+-								"SELECT run FROM host_effect_route WHERE id IN (SELECT id FROM host_effects WHERE state = 'admitted' AND correlation IS NOT NULL)",
++								"SELECT run FROM host_effect_route WHERE id IN (SELECT id FROM host_effects WHERE state IN ('admitted','result-recorded') AND correlation IS NOT NULL)",
+ 							)
+ 							.toArray()
+ 							.map((row) => row.run)
+ 					: this.storage.sql
+ 							.exec<{ correlation: string }>(
+-								"SELECT correlation FROM host_effects WHERE state = 'admitted' AND correlation IS NOT NULL",
++								"SELECT correlation FROM host_effects WHERE state IN ('admitted','result-recorded') AND correlation IS NOT NULL",
+ 							)
+ 							.toArray()
+ 							.map((row) => this.correlation(row.correlation).run);
+@@ -807,8 +918,12 @@ export class PiDurableHost {
+ 			throw error;
+ 		}
+ 	}
+-	private async durable(context: Context = BACKGROUND_CONTEXT) {
++	private async durable(
++		context: Context = BACKGROUND_CONTEXT,
++		point?: HostFault,
++	) {
+ 		try {
++			if (point) this.dependencies.fault?.(point);
+ 			context.abortSignal?.throwIfAborted();
+ 			await this.privateQueue;
+ 			await awaitWithContext(this.storage.sync(), context);
+@@ -844,6 +959,7 @@ export class PiDurableHost {
+ 	private async check(
+ 		authority: LocalAuthority,
+ 		context: Context = BACKGROUND_CONTEXT,
++		reuseSummary = false,
+ 	) {
+ 		context.abortSignal?.throwIfAborted();
+ 		if (this.denied || this.sealed || !authority.current)
+@@ -898,7 +1014,11 @@ export class PiDurableHost {
+ 			}
+ 		}
+ 		this.assertLive();
+-		if (this.unresolved().length) throw new EffectDenied("reservation");
++		if (
++			this.unresolved().length &&
++			!(reuseSummary && (await this.onlyReusableSummary(context)))
++		)
++			throw new EffectDenied("reservation");
+ 		if (
+ 			this.active &&
+ 			(authority.generation !== this.active.generation ||
+@@ -907,6 +1027,41 @@ export class PiDurableHost {
+ 			throw new Error("Invocation authority expired");
+ 	}
+ 
++	private async onlyReusableSummary(context: Context): Promise<boolean> {
++		const effects = this.unresolved();
++		if (effects.length !== 1) return false;
++		const effect = effects[0]!;
++		if (effect.state !== "result-recorded" || !effect.correlation) return false;
++		const correlation = this.correlation(
++			this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
++		);
++		if (correlation.version !== 2) return false;
++		const task = await this.harness.getTask(
++			correlation.task as TaskId,
++			context,
++		);
++		if (!task || !this.customTaskMatches(task, correlation, true)) return false;
++		const row = this.storage.sql
++			.exec<{ evidence: string }>(
++				"SELECT evidence FROM host_effects WHERE id = ?",
++				effect.id,
++			)
++			.one();
++		try {
++			const evidence: unknown = JSON.parse(
++				this.opened(`effect:${effect.id}:evidence`, row.evidence)!,
++			);
++			validateSummaryResponse(
++				evidence,
++				preparedSummary(JSON.parse(correlation.prepared)),
++			);
++			summaryText(evidence);
++		} catch {
++			return false;
++		}
++		this.assertSeals();
++		return this.run(correlation.run).epoch === effect.epoch;
++	}
+ 	private command(id: string) {
+ 		return this.read(() =>
+ 			this.storage.sql
+@@ -1007,8 +1162,15 @@ export class PiDurableHost {
+ 	}
+ 	private correlation(text: string): EffectCorrelation {
+ 		const value = record(JSON.parse(text));
+-		if (value.version !== 1)
++		if (value.version !== 1 && value.version !== 2)
+ 			throw new Error("Incompatible correlation version");
++		if (
++			value.version === 2 &&
++			(!String(value.operation).startsWith("ditto-summary-1/") ||
++				value.replay !== "never" ||
++				value.piAttempt !== 1)
++		)
++			throw new Error("Invalid custom summary correlation");
+ 		for (const key of [
+ 			"command",
+ 			"run",
+@@ -1121,6 +1283,7 @@ export class PiDurableHost {
+ 		selection: unknown,
+ 		digest: string | undefined,
+ 		context: Context,
++		stock = false,
+ 	) {
+ 		try {
+ 			context.abortSignal?.throwIfAborted();
+@@ -1239,12 +1402,765 @@ export class PiDurableHost {
+ 			context.abortSignal?.throwIfAborted();
+ 			this.assertLive();
+ 			if (!context.abortSignal) throw new Error("Missing invocation signal");
+-			this.bindings.set(context.abortSignal, { task: Number(task.id), digest });
++			this.bindings.set(context.abortSignal, {
++				task: Number(task.id),
++				digest,
++				...(stock ? { stock: true as const } : {}),
++			});
+ 		} catch (error) {
+ 			this.denied = true;
+ 			throw error;
+ 		}
+ 	}
++	private customTaskMatches(
++		task: PublicTask,
++		correlation: EffectCorrelation,
++		passive = false,
++	): boolean {
++		const mapping = this.mapping(Number(task.id));
++		const prepared = preparedSummary(JSON.parse(correlation.prepared));
++		return (
++			correlation.version === 2 &&
++			correlation.call === null &&
++			correlation.operation === `${SUMMARY_POLICY}/${task.id}` &&
++			prepared.policy === SUMMARY_POLICY &&
++			prepared.task === Number(task.id) &&
++			prepared.conversation === Number(task.conversationId) &&
++			task.kind === "pi.compaction" &&
++			task.version === 1 &&
++			!task.background &&
++			!task.abortRequested &&
++			(task.state.status === "running" ||
++				(passive && task.state.status === "pending")) &&
++			record(task.state.checkpoint).phase === "select" &&
++			mapping?.prepared === correlation.prepared &&
++			mapping.digest === correlation.digest &&
++			mapping.selection === prepared.selection &&
++			mapping.command === correlation.command &&
++			mapping.owner === canonical(task.owner ?? null) &&
++			canonical(task.input) === correlation.taskInput
++		);
++	}
++	private ownerTransition<T>(
++		context: Context,
++		operation: (context: Context) => Promise<T>,
++	): Promise<T> {
++		context = withAbortSignal(this.ownerAbort.signal, context);
++		const pending = this.ownerQueue.then(async () => {
++			context.abortSignal?.throwIfAborted();
++			this.assertLive();
++			return operation(context);
++		});
++		this.ownerQueue = pending.then(
++			() => undefined,
++			() => undefined,
++		);
++		return awaitWithContext(pending, context);
++	}
++	async configure(
++		change: Pick<AgentChange, "model" | "thinkingLevel">,
++		context: Context = BACKGROUND_CONTEXT,
++	): Promise<void> {
++		if (this.dependencies.configuration)
++			throw new Error("Owned configuration requires an intent");
++		return this.ownerTransition(context, async (context) => {
++			await this.check(
++				await awaitWithContext(this.dependencies.authority(), context),
++				context,
++				true,
++			);
++			const root = await this.harness.root(context);
++			this.assertLive();
++			try {
++				await root.configure(change, context);
++				context.abortSignal?.throwIfAborted();
++				await this.durable(context);
++			} catch (error) {
++				if (!context.abortSignal?.aborted) this.persistenceFailed();
++				throw error;
++			}
++		});
++	}
++	private configurationScope(): ConfigurationReadV1 {
++		const s = this.dependencies.configuration!.subject;
++		return {
++			version: 1,
++			projectId: s.projectId,
++			workspaceSessionId: s.workspaceSessionId,
++			ownerVersion: s.runtimeOwnerVersion,
++		};
++	}
++	private async configurationAllowed(
++		query: ConfigurationReadV1,
++		selection: ConfigurationSelectionV1 | undefined,
++		context: Context,
++	): Promise<boolean> {
++		const c = this.dependencies.configuration;
++		if (!c || canonical(query) !== canonical(this.configurationScope()))
++			return false;
++		const authorized = parseConfigurationAuthorityV1(
++			await awaitWithContext(c.authorize(query, selection), context),
++		);
++		if (
++			authorized.status !== "current" ||
++			canonical(authorized.subject) !== canonical(c.subject)
++		)
++			return false;
++		const initial = await awaitWithContext(
++			this.dependencies.authority(),
++			context,
++		);
++		if (!this.configurationLocal(initial)) return false;
++		const epoch = this.storage.sql
++			.exec<{ epoch: number }>("SELECT epoch FROM host_meta")
++			.one().epoch;
++		const fresh = parseConfigurationAuthorityV1(
++			await awaitWithContext(c.authorize(query, selection), context),
++		);
++		if (
++			fresh.status !== "current" ||
++			canonical(fresh.subject) !== canonical(c.subject)
++		)
++			return false;
++		const local = await awaitWithContext(
++			this.dependencies.authority(),
++			context,
++		);
++		const finalProduct = parseConfigurationAuthorityV1(
++			await awaitWithContext(c.authorize(query, selection), context),
++		);
++		context.abortSignal?.throwIfAborted();
++		return (
++			finalProduct.status === "current" &&
++			canonical(finalProduct.subject) === canonical(c.subject) &&
++			this.configurationLocal(local) &&
++			this.storage.sql
++				.exec<{ epoch: number }>("SELECT epoch FROM host_meta")
++				.one().epoch === epoch
++		);
++	}
++	private configurationLocal(authority: LocalAuthority): boolean {
++		if (
++			this.denied ||
++			this.sealed ||
++			this.storageBarrier ||
++			!authority.current ||
++			authority.executor !== 1 ||
++			(authority.liveExecutors ?? 1) !== 1
++		)
++			return false;
++		if (this.storage.sql.exec("SELECT id FROM host_safety").toArray().length)
++			return false;
++		if (
++			this.active &&
++			(authority.generation !== this.active.generation ||
++				this.dependencies.now() >= this.active.yield_at ||
++				this.storage.sql
++					.exec("SELECT 1 FROM host_runs WHERE state='stopping'")
++					.toArray().length)
++		)
++			return false;
++		return true;
++	}
++	private async piConfiguration(
++		query: ConfigurationReadV1,
++		context: Context,
++	): Promise<ConfigurationSnapshotV1> {
++		const root = await this.harness.conversation(ROOT_CONVERSATION_ID, context);
++		if (!root) return { ...query, selection: null };
++		const agent = await root.agent(context);
++		if (!agent.model) return { ...query, selection: null };
++		if (agent.model.provider !== "faux")
++			throw new Error("Unsupported configuration provider");
++		return {
++			...query,
++			selection: parseConfigurationSelectionV1({
++				model: agent.model.modelId,
++				thinking: agent.thinkingLevel,
++			}),
++		};
++	}
++	private async initializeOwnedConfiguration() {
++		const c = this.dependencies.configuration;
++		if (!c) return;
++		await this.ownerTransition(
++			withAbortSignal(
++				AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
++				BACKGROUND_CONTEXT,
++			),
++			async (context) => {
++				if (await this.harness.conversation(ROOT_CONVERSATION_ID, context)) {
++					// Pi and host intent commits are separate. Reopen observes Pi; it never replays a pending selection.
++					for (const row of this.storage.sql
++						.exec<{ id: string }>(
++							"SELECT id FROM host_configuration_intents WHERE state='pending'",
++						)
++						.toArray()) {
++						const { ack } = await this.configurationEvidence(row.id, context);
++						const snapshot = await this.piConfiguration(
++							this.configurationScope(),
++							context,
++						);
++						await this.finishConfiguration(
++							row.id,
++							canonical(snapshot) === canonical(ack.snapshot)
++								? ack
++								: { ...ack, status: "outcome_unknown", snapshot: null },
++							context,
++						);
++					}
++					return;
++				}
++				const selection = parseConfigurationSelectionV1(c.defaultSelection);
++				if (
++					!(await this.configurationAllowed(
++						this.configurationScope(),
++						selection,
++						context,
++					))
++				)
++					throw new Error("Default configuration denied");
++				await this.harness.root(context, {
++					agent: {
++						model: { provider: "faux", modelId: selection.model },
++						thinkingLevel: selection.thinking,
++					},
++				});
++				await this.durable(context);
++			},
++		);
++	}
++	async readOwnedConfiguration(
++		input: unknown,
++		context: Context = BACKGROUND_CONTEXT,
++	): Promise<ConfigurationSnapshotV1 | null> {
++		const query = parseConfigurationReadV1(input);
++		context = withAbortSignal(
++			AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
++			context,
++		);
++		return this.ownerTransition(context, async (context) => {
++			if (!(await this.configurationAllowed(query, undefined, context)))
++				return null;
++			return this.piConfiguration(query, context);
++		});
++	}
++	async configureOwned(
++		input: unknown,
++		context: Context = BACKGROUND_CONTEXT,
++	): Promise<ConfigurationAckV1> {
++		const intent = parseConfigurationIntentV1(input);
++		context = withAbortSignal(
++			AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
++			context,
++		);
++		const query = parseConfigurationReadV1({
++			version: 1,
++			projectId: intent.projectId,
++			workspaceSessionId: intent.workspaceSessionId,
++			ownerVersion: intent.ownerVersion,
++		});
++		const deny = (
++			status: ConfigurationAckV1["status"],
++		): ConfigurationAckV1 => ({
++			version: 1,
++			intentId: intent.intentId,
++			status,
++			snapshot: null,
++		});
++		if (!this.dependencies.configuration) return deny("unavailable");
++		return this.ownerTransition(context, async (context) => {
++			if (!(await this.configurationAllowed(query, undefined, context)))
++				return deny("denied");
++			const identity = await awaitWithContext(
++				configurationIdentity(this.dependencies.configuration!.subject, intent),
++				context,
++			);
++			const recordId = `configuration:${identity.key}`;
++			const old = this.storage.sql
++				.exec<{ payload_digest: string; outcome: string; state: string }>(
++					"SELECT payload_digest,outcome,state FROM host_configuration_intents WHERE id=?",
++					identity.key,
++				)
++				.toArray()[0];
++			if (old) {
++				const { ack } = await this.configurationEvidence(identity.key, context);
++				if (old.payload_digest !== identity.payload) return deny("conflict");
++				if (old.state === "complete") return ack;
++				return deny("outcome_unknown");
++			}
++			if (
++				this.storage.sql
++					.exec(
++						"SELECT 1 FROM host_configuration_intents WHERE state='pending' LIMIT 1",
++					)
++					.toArray().length
++			)
++				return deny("outcome_unknown");
++			const ack: ConfigurationAckV1 = {
++				version: 1,
++				intentId: intent.intentId,
++				status: "applied",
++				snapshot: { ...query, selection: intent.selection },
++			};
++			const plain = JSON.stringify({
++				version: 1,
++				intent,
++				ack,
++				state: "pending",
++			});
++			const sealed = await awaitWithContext(
++				this.seal(recordId, plain),
++				context,
++			);
++			if (!(await this.configurationAllowed(query, intent.selection, context)))
++				return deny("denied");
++			this.transition("intent", () => {
++				this.storage.sql.exec(
++					"INSERT INTO host_configuration_intents VALUES (?,?,?,'pending')",
++					identity.key,
++					identity.payload,
++					sealed.ciphertext,
++				);
++				this.rememberSeal(recordId, sealed.digest);
++			});
++			this.rememberPlain(recordId, plain, sealed.digest, sealed.ciphertext);
++			await this.durable(context);
++			this.dependencies.fault?.("configuration-intent");
++			const root = await this.harness.conversation(
++				ROOT_CONVERSATION_ID,
++				context,
++			);
++			if (!root) throw new Error("Missing owned conversation");
++			if (
++				!(await this.configurationAllowed(query, intent.selection, context))
++			) {
++				const denied = deny("denied");
++				await this.finishConfiguration(identity.key, denied, context);
++				return denied;
++			}
++			await root.configure(
++				{
++					model: { provider: "faux", modelId: intent.selection.model },
++					thinkingLevel: intent.selection.thinking,
++				},
++				context,
++			);
++			await this.durable(context);
++			this.dependencies.fault?.("configuration-applied");
++			const snapshot = await this.piConfiguration(query, context);
++			if (canonical(snapshot) !== canonical(ack.snapshot))
++				throw new Error("Configuration persistence mismatch");
++			await this.finishConfiguration(
++				identity.key,
++				{ ...ack, snapshot },
++				context,
++			);
++			this.dependencies.fault?.("configuration-outcome");
++			return { ...ack, snapshot };
++		});
++	}
++	private async configurationEvidence(
++		key: string,
++		context: Context,
++	): Promise<{ intent: ConfigurationIntentV1; ack: ConfigurationAckV1 }> {
++		this.assertSeals();
++		const row = this.storage.sql
++			.exec<{ payload_digest: string; outcome: string; state: string }>(
++				"SELECT payload_digest,outcome,state FROM host_configuration_intents WHERE id=?",
++				key,
++			)
++			.one();
++		const e = strictRecord(
++			decodeContractInput(
++				this.opened(`configuration:${key}`, row.outcome),
++				8192,
++			),
++			["version", "intent", "ack", "state"],
++			"configuration evidence",
++		);
++		literalField(e, "version", [1]);
++		const state = literalField(e, "state", ["pending", "complete"]);
++		const intent = parseConfigurationIntentV1(e.intent),
++			ack = parseConfigurationAckV1(e.ack);
++		const identity = await awaitWithContext(
++			configurationIdentity(this.dependencies.configuration!.subject, intent),
++			context,
++		);
++		if (
++			identity.key !== key ||
++			identity.payload !== row.payload_digest ||
++			state !== row.state ||
++			ack.intentId !== intent.intentId ||
++			(ack.status === "applied" &&
++				canonical(ack.snapshot) !==
++					canonical({
++						version: 1,
++						projectId: intent.projectId,
++						workspaceSessionId: intent.workspaceSessionId,
++						ownerVersion: intent.ownerVersion,
++						selection: intent.selection,
++					}))
++		)
++			throw new Error("Configuration evidence integrity failure");
++		return { intent, ack };
++	}
++	private async finishConfiguration(
++		key: string,
++		ack: ConfigurationAckV1,
++		context: Context,
++	) {
++		const { intent } = await this.configurationEvidence(key, context);
++		const recordId = `configuration:${key}`,
++			plain = JSON.stringify({ version: 1, intent, ack, state: "complete" });
++		const sealed = await awaitWithContext(this.seal(recordId, plain), context);
++		this.transition("intent", () => {
++			this.storage.sql.exec(
++				"UPDATE host_configuration_intents SET outcome=?,state='complete' WHERE id=?",
++				sealed.ciphertext,
++				key,
++			);
++			this.rememberSeal(recordId, sealed.digest);
++		});
++		this.rememberPlain(recordId, plain, sealed.digest, sealed.ciphertext);
++		await this.durable(context);
++	}
++	private async summarize(
++		api: HookApi,
++		selection: SummarySelection,
++		context: Context,
++	): Promise<{ summary: string } | { decline: true }> {
++		await this.bindTask(
++			"pi.compaction",
++			api,
++			{
++				firstKept: Number(selection.firstKept),
++				entries: selection.entries.map((entry) => Number(entry.id)),
++				digest: await requestDigest(selection.messages),
++			},
++			undefined,
++			context,
++		);
++		const task = await this.harness.getTask(api.taskId, context);
++		if (
++			!task ||
++			task.state.status !== "running" ||
++			record(task.state.checkpoint).phase !== "select"
++		)
++			throw new Error("Custom summary requires trusted selection phase");
++		let mapping = this.mapping(Number(api.taskId))!;
++		const command = this.command(mapping.command),
++			run = this.run(command.run);
++		if (mapping.prepared === null)
++			await this.ownerTransition(context, async (context) => {
++				mapping = this.mapping(Number(api.taskId))!;
++				if (mapping.prepared !== null) return;
++				const agent = await (await this.harness.root(context)).agent(context);
++				if (!agent.model) throw new Error("Missing custom summary model");
++				const model = this.options.models.getModel(
++					agent.model.provider,
++					agent.model.modelId,
++				);
++				if (!model) throw new Error("Unavailable custom summary model");
++				const stream = this.options.settings?.stream ?? {};
++				if (stream.headers || stream.deferred)
++					throw new Error("Unsupported custom summary options");
++				const prepared: PreparedSummary = {
++					policy: SUMMARY_POLICY,
++					task: Number(api.taskId),
++					conversation: Number(api.conversationId),
++					selection: mapping.selection,
++					model: agent.model,
++					thinkingLevel: agent.thinkingLevel,
++					options: {
++						...stream,
++						cacheRetention: "none",
++						maxRetries: 0,
++						maxTokens: Math.min(1024, model.maxTokens),
++						...(agent.thinkingLevel === "off"
++							? {}
++							: { reasoning: agent.thinkingLevel }),
++					},
++					transcript: summaryTranscript(selection),
++				};
++				const plain = canonical(prepared),
++					digest = await awaitWithContext(
++						requestDigest(semanticTranscript(prepared.transcript)),
++						context,
++					);
++				const recordId = `task:${Number(api.taskId)}:prepared`,
++					sealed = await awaitWithContext(this.seal(recordId, plain), context);
++				context.abortSignal?.throwIfAborted();
++				this.transition("preparation", () => {
++					if (
++						canonical(this.mapping(Number(api.taskId))) !==
++							canonical(mapping) ||
++						this.run(command.run).epoch !== run.epoch
++					)
++						throw new Error("Custom preparation changed");
++					this.assertLive();
++					this.storage.sql.exec(
++						"UPDATE host_tasks SET prepared = ?, digest = ? WHERE task = ? AND prepared IS NULL",
++						sealed.ciphertext,
++						digest,
++						Number(api.taskId),
++					);
++					this.rememberSeal(recordId, sealed.digest);
++					this.dependencies.fault?.("preparation-write");
++				});
++				this.rememberPlain(recordId, plain, sealed.digest, sealed.ciphertext);
++				await this.durable(context, "preparation-flush");
++				mapping = this.mapping(Number(api.taskId))!;
++			});
++		const prepared = preparedSummary(JSON.parse(mapping.prepared!));
++		if (
++			prepared.policy !== SUMMARY_POLICY ||
++			prepared.task !== Number(api.taskId) ||
++			prepared.conversation !== Number(api.conversationId) ||
++			prepared.selection !== mapping.selection ||
++			canonical(prepared.transcript) !==
++				canonical(summaryTranscript(selection)) ||
++			(await requestDigest(semanticTranscript(prepared.transcript))) !==
++				mapping.digest
++		)
++			throw new Error("Custom summary preparation mismatch");
++		if (!context.abortSignal)
++			throw new Error("Missing custom summary invocation signal");
++		this.customBindings.set(context.abortSignal, prepared);
++		try {
++			const rows = this.storage.sql
++				.exec<Effect & { correlation: string; evidence: string | null }>(
++					`SELECT * FROM host_effects WHERE ${this.routeSql("task")}`,
++					Number(api.taskId),
++				)
++				.toArray();
++			if (rows.length) {
++				if (rows.length !== 1)
++					throw new Error("Custom summary attempt conflict");
++				const effect = rows[0]!,
++					correlation = this.correlation(
++						this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
++					);
++				if (
++					!this.customTaskMatches(task, correlation) ||
++					effect.state !== "result-recorded" ||
++					!effect.evidence
++				)
++					throw new Error("Custom summary unresolved attempt");
++				const authority = await awaitWithContext(
++					this.dependencies.authority(),
++					context,
++				);
++				this.exactAuthority(correlation, effect.epoch);
++				if (
++					!authority.current ||
++					authority.executor !== 1 ||
++					(authority.liveExecutors ?? 1) !== 1 ||
++					authority.generation !== this.active?.generation ||
++					this.dependencies.now() >= this.active.yield_at ||
++					this.unresolved().some((row) => row.id !== effect.id)
++				)
++					throw new Error("Custom result reuse authority denied");
++				const message: unknown = JSON.parse(
++					this.opened(`effect:${effect.id}:evidence`, effect.evidence)!,
++				);
++				this.assertSeals();
++				validateSummaryResponse(message, prepared);
++				return { summary: summaryText(message) };
++			}
++			if (this.dependencies.prepareModel)
++				await awaitWithContext(
++					this.dependencies.prepareModel(context),
++					context,
++				);
++			context.abortSignal.throwIfAborted();
++			if (this.run(command.run).epoch !== run.epoch)
++				throw new Error("Stale custom summary epoch");
++			const model = this.options.models.getModel(
++				prepared.model.provider,
++				prepared.model.modelId,
++			);
++			if (!model) throw new Error("Unavailable prepared summary model");
++			const message = await this.options.models.completeSimple(
++				model,
++				prepared.transcript,
++				{ ...prepared.options, signal: context.abortSignal },
++			);
++			context.abortSignal.throwIfAborted();
++			const effect = this.storage.sql
++				.exec<{ id: string; state: string; evidence: string }>(
++					`SELECT id,state,evidence FROM host_effects WHERE ${this.routeSql("task")}`,
++					Number(api.taskId),
++				)
++				.toArray()[0];
++			if (!effect || effect.state !== "result-recorded")
++				throw new Error("Custom summary result was not persisted");
++			if (
++				canonical(
++					JSON.parse(
++						this.opened(`effect:${effect.id}:evidence`, effect.evidence)!,
++					),
++				) !== canonical(message)
++			)
++				throw new Error("Custom summary consumed result mismatch");
++			if (this.run(command.run).state === "failed") return { decline: true };
++			this.assertLive();
++			return { summary: summaryText(message) };
++		} finally {
++			this.customBindings.delete(context.abortSignal);
++		}
++	}
++	private async customModel(
++		prepared: PreparedSummary,
++		request: ModelRequest,
++		digest: string,
++		context: Context,
++		start: (dispatch: ModelDispatch) => Promise<AssistantMessage>,
++	) {
++		const task = await this.harness.getTask(prepared.task as TaskId, context),
++			mapping = this.mapping(prepared.task);
++		if (
++			!task ||
++			!mapping ||
++			mapping.prepared !== canonical(prepared) ||
++			mapping.digest !== digest ||
++			request.model.provider !== prepared.model.provider ||
++			request.model.id !== prepared.model.modelId ||
++			canonical(request.transcript) !== canonical(prepared.transcript) ||
++			canonical(
++				Object.fromEntries(
++					Object.entries(request.options).filter(([key]) => key !== "signal"),
++				),
++			) !== canonical(prepared.options)
++		)
++			throw new Error("Custom summary exact request mismatch");
++		const command = this.command(mapping.command);
++		if (!command.submission) throw new Error("Missing summary submission");
++		const correlation: EffectCorrelation = {
++			version: 2,
++			command: command.id,
++			run: command.run,
++			user: command.user,
++			assistant: command.assistant,
++			submission: command.submission,
++			task: prepared.task,
++			call: null,
++			operation: `${SUMMARY_POLICY}/${prepared.task}`,
++			piAttempt: 1,
++			arguments: canonical({
++				model: request.model,
++				options: prepared.options,
++				transcriptDigest: digest,
++			}),
++			replay: "never",
++			generation: this.active?.generation ?? 0,
++			taskInput: canonical(task.input),
++			prepared: canonical(prepared),
++			digest,
++		};
++		if (
++			!this.customTaskMatches(task, correlation) ||
++			this.providerCallbacks !== 1
++		)
++			throw new Error("Custom summary current binding mismatch");
++		const admitted = await this.admitExact("model", correlation, task, context);
++		const dispatch = await this.modelDispatch(admitted, correlation, context);
++		const authority = await awaitWithContext(
++			this.dependencies.authority(),
++			context,
++		);
++		const current = await this.harness.getTask(task.id, context);
++		if (
++			!current ||
++			!this.customTaskMatches(current, correlation) ||
++			this.providerCallbacks !== 1
++		)
++			throw new Error("Custom summary binding revoked");
++		context.abortSignal?.throwIfAborted();
++		this.dispatchPermit(admitted.id, correlation, admitted.epoch, authority);
++		return { effect: admitted.id, response: start(dispatch) };
++	}
++	private async customReceipt(
++		effect: Effect & { evidence: string },
++		correlation: EffectCorrelation,
++		task: PublicTask,
++		context: Context,
++	) {
++		if (
++			task.kind !== "pi.compaction" ||
++			task.state.status !== "terminal" ||
++			task.state.outcome.status !== "completed"
++		)
++			return;
++		const evidence: unknown = JSON.parse(
++			this.opened(`effect:${effect.id}:evidence`, effect.evidence)!,
++		);
++		validateSummaryResponse(
++			evidence,
++			preparedSummary(JSON.parse(correlation.prepared)),
++		);
++		const result = record(task.state.outcome.result),
++			prepared = record(JSON.parse(correlation.prepared));
++		if (
++			prepared.policy !== SUMMARY_POLICY ||
++			this.mapping(correlation.task)?.prepared !== correlation.prepared
++		)
++			throw new Error("Custom receipt policy mismatch");
++		let valid = false;
++		let text: string | undefined;
++		try {
++			text = summaryText(evidence);
++		} catch {
++			valid =
++				this.run(correlation.run).state === "failed" &&
++				canonical(result) === "{}";
++		}
++		if (text !== undefined) {
++			const submission = result.submissionId
++				? await this.piRecords.submission(
++						Number(
++							result.submissionId,
++						) as import("@earendil-works/pi-durable").SubmissionId,
++						context,
++					)
++				: undefined;
++			const entryId =
++				result.entryId ??
++				(submission?.status === "done" ? submission.entry : undefined);
++			const entry = entryId
++				? (
++						await this.piRecords.entry(
++							ROOT_CONVERSATION_ID,
++							Number(entryId) as import("@earendil-works/pi-durable").EntryId,
++							context,
++						)
++					)?.entry
++				: undefined;
++			valid =
++				entry?.kind === "pi.compaction" &&
++				entry.head ===
++					record(JSON.parse(String(prepared.selection))).firstKept &&
++				canonical(entry.model?.[0]?.content) ===
++					canonical([
++						{
++							type: "text",
++							text: `The conversation history before this point was compacted into the following summary:\n\n<summary>\n${text}\n</summary>`,
++						},
++					]) &&
++				(!submission ||
++					(submission.type === "write" &&
++						submission.requestId === `compaction:${task.id}`));
++		}
++		if (valid) {
++			this.transition("result", () =>
++				this.storage.sql.exec(
++					"UPDATE host_effects SET state = 'pi-committed' WHERE id = ? AND state = 'result-recorded'",
++					effect.id,
++				),
++			);
++			await this.durable(context);
++		}
++	}
+ 	private async eligible(context: Context) {
+ 		const inspection = await awaitWithContext(
+ 			this.harness.inspect(context),
+@@ -1371,6 +2287,170 @@ export class PiDurableHost {
+ 				taskRow.prepared,
+ 			);
+ 	}
++	private async modelDispatch(
++		admitted: { id: string; epoch: number },
++		correlation: EffectCorrelation,
++		context: Context,
++	): Promise<ModelDispatch> {
++		const digest = await requestDigest(JSON.parse(correlation.arguments));
++		const effect = this.read(() =>
++			this.storage.sql
++				.exec<Effect>("SELECT * FROM host_effects WHERE id = ?", admitted.id)
++				.one(),
++		);
++		const attempt = Object.freeze(
++			parseModelAttemptV1({
++				version: 1,
++				effectId: admitted.id,
++				operationId: correlation.operation,
++				runId: correlation.run,
++				commandId: correlation.command,
++				assistantId: correlation.assistant,
++				taskId: correlation.task,
++				epoch: admitted.epoch,
++				attempt: effect.attempt,
++				generation: correlation.generation,
++				deadlineAt: effect.operation_deadline,
++				requestDigest: digest,
++				kind: correlation.version === 2 ? "custom_summary" : "generation",
++			}),
++		);
++		const receiptId = `effect:${admitted.id}:model_dispatch`;
++		const reserved = canonical({ version: 1, attempt, state: "reserved" });
++		const consumed = canonical({ version: 1, attempt, state: "consumed" });
++		const sealed = await this.seal(receiptId, reserved);
++		this.transition("admission", () => {
++			this.exactAuthority(correlation, admitted.epoch);
++			this.storage.sql.exec(
++				"INSERT INTO host_model_dispatch(effect,request_digest) VALUES (?,?)",
++				admitted.id,
++				digest,
++			);
++			const rows = this.storage.sql
++				.exec(
++					"UPDATE host_effects SET model_dispatch=? WHERE id=? AND state='admitted' AND model_dispatch IS NULL RETURNING id",
++					sealed.ciphertext,
++					admitted.id,
++				)
++				.toArray();
++			if (rows.length !== 1) throw new EffectDenied("reservation");
++			this.rememberSeal(receiptId, sealed.digest);
++		});
++		this.rememberPlain(receiptId, reserved, sealed.digest, sealed.ciphertext);
++		await this.durable(context);
++		const assertReceipt = (expected: string, claimed: number) =>
++			this.read(() => {
++				this.assertSeals();
++				const row = this.storage.sql
++					.exec<{
++						receipt: string | null;
++						claimed: number;
++						request_digest: string;
++					}>(
++						"SELECT e.model_dispatch AS receipt,d.claimed,d.request_digest FROM host_effects e JOIN host_model_dispatch d ON d.effect=e.id WHERE e.id=?",
++						admitted.id,
++					)
++					.one();
++				if (
++					row.claimed !== claimed ||
++					row.request_digest !== digest ||
++					this.opened(receiptId, row.receipt) !== expected
++				)
++					throw new EncryptedStorageError(
++						"integrity",
++						"Model dispatch receipt denied",
++					);
++			});
++		let used = false;
++		let productCheck: (() => Promise<void>) | undefined;
++		return {
++			attempt,
++			bindProductAuthority: (check) => {
++				if (used || productCheck) throw new EffectDenied("reservation");
++				productCheck = check;
++			},
++			halt: async () => {
++				if (
++					!["running", "recovering", "stopping"].includes(
++						this.run(correlation.run).state,
++					)
++				)
++					return;
++				this.block("model-contract-denials", correlation.run);
++				await this.durable(context);
++			},
++			claim: async (input: unknown) => {
++				const supplied = parseModelAttemptV1(input);
++				if (canonical(supplied) !== canonical(attempt))
++					throw new Error("Exact model attempt mismatch");
++				if (used) throw new EffectDenied("reservation");
++				context.abortSignal?.throwIfAborted();
++				// A live capability never refunds consumption after suspension or failed acknowledgment.
++				used = true;
++				assertReceipt(reserved, 0);
++				const authority = await awaitWithContext(
++					this.dependencies.authority(),
++					context,
++				);
++				const task = await awaitWithContext(
++					this.harness.getTask(correlation.task as TaskId, context),
++					context,
++				);
++				if (
++					!task ||
++					canonical(task.input) !== correlation.taskInput ||
++					(correlation.version === 2
++						? !this.customTaskMatches(task, correlation)
++						: preparedTask(task) !== correlation.prepared ||
++							Number(record(task.state.checkpoint).attempt) !==
++								correlation.piAttempt)
++				)
++					throw new EffectDenied("authority");
++				const sealedConsumption = await this.seal(receiptId, consumed);
++				// This transition never waits on the provider or configuration owner lane.
++				this.transition("admission", () => {
++					assertReceipt(reserved, 0);
++					this.dispatchPermit(
++						admitted.id,
++						correlation,
++						admitted.epoch,
++						authority,
++					);
++					const claimed = this.storage.sql
++						.exec(
++							"UPDATE host_model_dispatch SET claimed=1 WHERE effect=? AND request_digest=? AND claimed=0 RETURNING effect",
++							admitted.id,
++							digest,
++						)
++						.toArray();
++					if (claimed.length !== 1) throw new EffectDenied("reservation");
++					this.storage.sql.exec(
++						"UPDATE host_effects SET model_dispatch=? WHERE id=?",
++						sealedConsumption.ciphertext,
++						admitted.id,
++					);
++					this.rememberSeal(receiptId, sealedConsumption.digest);
++				});
++				this.rememberPlain(
++					receiptId,
++					consumed,
++					sealedConsumption.digest,
++					sealedConsumption.ciphertext,
++				);
++				await this.durable(context);
++				if (productCheck) await awaitWithContext(productCheck(), context);
++				// The product callback can suspend. Only the subsequent authority read
++				// may feed the final synchronous host acknowledgment.
++				const fresh = await awaitWithContext(
++					this.dependencies.authority(),
++					context,
++				);
++				context.abortSignal?.throwIfAborted();
++				assertReceipt(consumed, 1);
++				this.dispatchPermit(admitted.id, correlation, admitted.epoch, fresh);
++			},
++		};
++	}
+ 	private async admitExact(
+ 		kind: "model" | "tool",
+ 		correlation: EffectCorrelation,
+@@ -1399,6 +2479,8 @@ export class PiDurableHost {
+ 		);
+ 		const prior = rows.at(-1);
+ 		if (prior) {
++			if (correlation.version === 2)
++				throw new Error("Custom summary attempt already reserved");
+ 			const original = this.correlation(
+ 				this.opened(`effect:${prior.id}:correlation`, prior.correlation)!,
+ 			);
+@@ -1482,7 +2564,7 @@ export class PiDurableHost {
+ 	private model(
+ 		request: ModelRequest,
+ 		context: Context,
+-		start: () => Promise<AssistantMessage>,
++		start: (dispatch: ModelDispatch) => Promise<AssistantMessage>,
+ 	) {
+ 		this.providerCallbacks++;
+ 		const previous = this.providerQueue;
+@@ -1507,6 +2589,15 @@ export class PiDurableHost {
+ 				const transcriptDigest = await requestDigest(
+ 					semanticTranscript(request.transcript),
+ 				);
++				const custom = this.customBindings.get(context.abortSignal!);
++				if (custom)
++					return await this.customModel(
++						custom,
++						request,
++						transcriptDigest,
++						context,
++						start,
++					);
+ 				const task = await this.eligible(context);
+ 				const binding = this.bindings.get(context.abortSignal);
+ 				const mapping = this.mapping(Number(task.id));
+@@ -1517,6 +2608,13 @@ export class PiDurableHost {
+ 					mapping.conversation !== Number(task.conversationId)
+ 				)
+ 					throw new Error("Missing trusted task mapping");
++				if (
++					task.kind === "pi.compaction" &&
++					((mapping.prepared &&
++						record(JSON.parse(mapping.prepared)).policy !== undefined) ||
++						(binding && !binding.stock))
++				)
++					throw new Error("Stock summary fallback denied");
+ 				if (binding && binding.task !== Number(task.id))
+ 					throw new Error("Hook producer mismatch");
+ 				if (
+@@ -1616,6 +2714,36 @@ export class PiDurableHost {
+ 					prepared: tuple,
+ 					digest: transcriptDigest,
+ 				};
++				const preparedMapping = {
++					...mapping,
++					prepared: tuple,
++					digest: transcriptDigest,
++				};
++				const preparedId = `task:${Number(task.id)}:prepared`;
++				const sealedPrepared = await this.seal(preparedId, tuple);
++				this.transition("preparation", () => {
++					this.exactAuthority(correlation, run.epoch);
++					if (
++						canonical(this.mapping(Number(task.id))) !== canonical(mapping) ||
++						this.providerCallbacks !== 1
++					)
++						throw new Error("Association changed before preparation commit");
++					this.storage.sql.exec(
++						"UPDATE host_tasks SET prepared = ?, digest = ? WHERE task = ?",
++						sealedPrepared.ciphertext,
++						transcriptDigest,
++						Number(task.id),
++					);
++					this.rememberSeal(preparedId, sealedPrepared.digest);
++					this.dependencies.fault?.("preparation-write");
++				});
++				this.rememberPlain(
++					preparedId,
++					tuple,
++					sealedPrepared.digest,
++					sealedPrepared.ciphertext,
++				);
++				await this.durable(context, "preparation-flush");
+ 				if (this.dependencies.prepareModel)
+ 					await awaitWithContext(
+ 						this.dependencies.prepareModel(context),
+@@ -1623,7 +2751,8 @@ export class PiDurableHost {
+ 					);
+ 				if (
+ 					canonical(await this.eligible(context)) !== canonical(task) ||
+-					canonical(this.mapping(Number(task.id))) !== canonical(mapping) ||
++					canonical(this.mapping(Number(task.id))) !==
++						canonical(preparedMapping) ||
+ 					this.providerCallbacks !== 1
+ 				)
+ 					throw new Error("Association changed during preparation");
+@@ -1634,25 +2763,11 @@ export class PiDurableHost {
+ 					task,
+ 					context,
+ 				);
+-				const preparedId = `task:${Number(task.id)}:prepared`;
+-				const sealedPrepared = await this.seal(preparedId, tuple);
+-				this.transition("intent", () => {
+-					this.exactAuthority(correlation, run.epoch);
+-					this.storage.sql.exec(
+-						"UPDATE host_tasks SET prepared = ?, digest = ? WHERE task = ?",
+-						sealedPrepared.ciphertext,
+-						transcriptDigest,
+-						Number(task.id),
+-					);
+-					this.rememberSeal(preparedId, sealedPrepared.digest);
+-				});
+-				this.rememberPlain(
+-					preparedId,
+-					tuple,
+-					sealedPrepared.digest,
+-					sealedPrepared.ciphertext,
++				const dispatch = await this.modelDispatch(
++					admitted,
++					correlation,
++					context,
+ 				);
+-				await this.durable(context);
+ 				const finalAuthority = await awaitWithContext(
+ 					this.dependencies.authority(),
+ 					context,
+@@ -1660,11 +2775,7 @@ export class PiDurableHost {
+ 				if (
+ 					canonical(await this.eligible(context)) !== canonical(task) ||
+ 					canonical(this.mapping(Number(task.id))) !==
+-						canonical({
+-							...mapping,
+-							prepared: tuple,
+-							digest: transcriptDigest,
+-						}) ||
++						canonical(preparedMapping) ||
+ 					this.providerCallbacks !== 1
+ 				)
+ 					throw new Error("Association revoked before dispatch");
+@@ -1675,7 +2786,7 @@ export class PiDurableHost {
+ 					admitted.epoch,
+ 					finalAuthority,
+ 				);
+-				return { effect: admitted.id, response: start() };
++				return { effect: admitted.id, response: start(dispatch) };
+ 			} catch (error) {
+ 				if (
+ 					error instanceof EffectDenied &&
+@@ -2015,6 +3126,10 @@ export class PiDurableHost {
+ 				task.conversationId !== ROOT_CONVERSATION_ID
+ 			)
+ 				throw new Error("Original task receipt mismatch");
++			if (correlation.version === 2) {
++				await this.customReceipt(effect, correlation, task, context);
++				continue;
++			}
+ 			let matches = false,
+ 				failedCompaction = false;
+ 			const evidence = record(
+@@ -2694,7 +3809,7 @@ export class PiDurableHost {
+ 				throw new Error("Supported turn boundary required");
+ 		}
+ 		let authority = await this.dependencies.authority();
+-		await this.check(authority);
++		await this.check(authority, BACKGROUND_CONTEXT, true);
+ 		if (
+ 			(await this.harness.inspect(BACKGROUND_CONTEXT)).tasks.some(
+ 				(task) => task.state.kind === "blocked",
+@@ -2702,7 +3817,7 @@ export class PiDurableHost {
+ 		)
+ 			throw new Error("Incompatible Pi task state");
+ 		authority = await this.dependencies.authority();
+-		await this.check(authority);
++		await this.check(authority, BACKGROUND_CONTEXT, true);
+ 		if (!this.active) {
+ 			this.active = this.transition("intent", () => {
+ 				this.assertSchedule(command.run, run.epoch);
+@@ -2760,7 +3875,7 @@ export class PiDurableHost {
+ 		if ((await root.agent(BACKGROUND_CONTEXT)).model === undefined) {
+ 			await this.check(await this.dependencies.authority());
+ 			this.assertSchedule(command.run, run.epoch);
+-			await root.configure(
++			await this.configure(
+ 				{ model: { provider: "faux", modelId: "faux-1" } },
+ 				BACKGROUND_CONTEXT,
+ 			);
+@@ -2862,7 +3977,11 @@ export class PiDurableHost {
+ 				throw error;
+ 			}
+ 		} else {
+-			await this.check(await this.dependencies.authority());
++			await this.check(
++				await this.dependencies.authority(),
++				BACKGROUND_CONTEXT,
++				true,
++			);
+ 			this.assertSchedule(command.run, run.epoch);
+ 			this.harness.resume();
+ 		}
+@@ -2987,19 +4106,32 @@ export class PiDurableHost {
+ 		if (this.denied || this.sealed) throw new Error("Host result denied");
+ 		if (correlation) {
+ 			const value = record(parsed);
+-			if (
+-				!Array.isArray(value.content) ||
+-				value.content.some((part) => {
+-					const content = record(part);
+-					return !["text", "thinking", "toolCall"].includes(
+-						String(content.type),
++			if (correlation.version === 2) {
++				try {
++					validateSummaryResponse(
++						parsed,
++						preparedSummary(JSON.parse(correlation.prepared)),
+ 					);
+-				})
++				} catch (error) {
++					this.block("result-schema", correlation.run);
++					await this.durable();
++					throw error;
++				}
++			}
++			if (
++				correlation.version !== 2 &&
++				(!Array.isArray(value.content) ||
++					value.content.some((part) => {
++						const content = record(part);
++						return !["text", "thinking", "toolCall"].includes(
++							String(content.type),
++						);
++					}))
+ 			) {
+ 				this.block("result-schema", correlation.run);
+ 				throw new Error("Invalid synthetic result content");
+ 			}
+-			if (existing.kind === "model") {
++			if (existing.kind === "model" && correlation.version !== 2) {
+ 				const model = record(record(JSON.parse(correlation.prepared)).model);
+ 				if (
+ 					value.role !== "assistant" ||
+@@ -3025,7 +4157,9 @@ export class PiDurableHost {
+ 				task.conversationId !== ROOT_CONVERSATION_ID ||
+ 				(existing.kind === "tool"
+ 					? canonical(task.state.checkpoint) !== correlation.prepared
+-					: preparedTask(task) !== correlation.prepared)
++					: correlation.version === 2
++						? !this.customTaskMatches(task, correlation)
++						: preparedTask(task) !== correlation.prepared)
+ 			) {
+ 				this.block("result-identity", correlation.run);
+ 				throw new Error("Original result identity mismatch");
+@@ -3045,6 +4179,14 @@ export class PiDurableHost {
+ 				)
+ 				.one();
+ 			this.rememberSeal(evidenceId, sealedEvidence.digest);
++			if (correlation?.version === 2) {
++				this.dependencies.fault?.("summary-result-write");
++				try {
++					summaryText(parsed);
++				} catch {
++					this.terminal(correlation.run, "failed");
++				}
++			}
+ 			if (
+ 				correlation &&
+ 				existing.operation_deadline &&
+@@ -3063,15 +4205,26 @@ export class PiDurableHost {
+ 			sealedEvidence.digest,
+ 			sealedEvidence.ciphertext,
+ 		);
+-		await this.durable(context);
++		await this.durable(
++			context,
++			correlation?.version === 2 ? "summary-result-flush" : undefined,
++		);
+ 		context.abortSignal?.throwIfAborted();
+-		if (correlation) this.exactAuthority(correlation, existing.epoch);
++		if (
++			correlation &&
++			!(
++				correlation.version === 2 &&
++				this.run(correlation.run).state === "failed"
++			)
++		)
++			this.exactAuthority(correlation, existing.epoch);
+ 		if (this.denied || this.sealed) throw new Error("Host result sealed");
+ 	}
+ 
+ 	async yield() {
+ 		if (this.closing) return this.closing;
+ 		this.sealed = true;
++		this.ownerAbort.abort();
+ 		clearTimeout(this.timer);
+ 		this.closing = this.closeAndAccount();
+ 		return this.closing;
+@@ -3130,6 +4283,7 @@ export class PiDurableHost {
+ 			fenceError = error;
+ 		}
+ 		await this.harness.close(BACKGROUND_CONTEXT);
++		await this.ownerQueue;
+ 		if (fenceError) throw fenceError;
+ 		try {
+ 			this.dependencies.fault?.("after-close");
+diff --git a/apps/runtime/src/server.ts b/apps/runtime/src/server.ts
+index 2b7bd65..8e464ea 100644
+--- a/apps/runtime/src/server.ts
++++ b/apps/runtime/src/server.ts
+@@ -341,6 +341,30 @@ export class Sandbox extends BaseSandbox<Env> {
+ }
+ 
+ export class RuntimeEntrypoint extends WorkerEntrypoint<Env> {
++	async configureOwned(
++		input: unknown,
++	): Promise<
++		import("../../../packages/runtime-contracts/src/configuration.js").ConfigurationAckV1
++	> {
++		const { parseConfigurationIntentV1 } = await import(
++			"../../../packages/runtime-contracts/src/configuration.js"
++		);
++		const intent = parseConfigurationIntentV1(input);
++		return {
++			version: 1,
++			intentId: intent.intentId,
++			status: "unavailable",
++			snapshot: null,
++		};
++	}
++	async readOwnedConfiguration(
++		_input: unknown,
++	): Promise<
++		| import("../../../packages/runtime-contracts/src/configuration.js").ConfigurationSnapshotV1
++		| null
++	> {
++		return null;
++	}
+ 	async modelConfiguration(): Promise<{
+ 		configured: boolean;
+ 		protocolVersion: number;
+diff --git a/apps/runtime/vitest.config.ts b/apps/runtime/vitest.config.ts
+index 2e0207a..b29cbac 100644
+--- a/apps/runtime/vitest.config.ts
++++ b/apps/runtime/vitest.config.ts
+@@ -25,6 +25,23 @@ export default defineWorkersConfig({
+ 				miniflare: {
+ 					compatibilityDate: "2026-09-16",
+ 					compatibilityFlags: ["nodejs_compat"],
++					serviceBindings: { MODEL_CLAIM_RELAY: "model-claim-relay" },
++					workers: [{
++						name: "model-claim-relay",
++						compatibilityDate: "2026-03-10",
++						modules: [{
++							type: "ESModule",
++							path: new URL("./relay.mjs", import.meta.url).pathname,
++							contents: `import { WorkerEntrypoint } from "cloudflare:workers";
++export default class extends WorkerEntrypoint {
++ async forward(attempt, owned, capability) {
++  if (!capability || typeof capability.claim !== "function") return { status: "denied" };
++  return await capability.claim(attempt, owned);
++ }
++ async fetch() { return new Response("Not found", { status: 404 }); }
++}`,
++						}],
++					}],
+ 					durableObjects: {
+ 						PI_FIXTURE_STORAGE: { className: "PiDurableLocalRuntime", useSQLite: true },
+ 						PI_HOST_STORAGE: { className: "PiDurableHostFixture", useSQLite: true },
+diff --git a/apps/web/src/db/schema.ts b/apps/web/src/db/schema.ts
+index 405998f..78c55a7 100644
+--- a/apps/web/src/db/schema.ts
++++ b/apps/web/src/db/schema.ts
+@@ -55,6 +55,45 @@ export const codexConnections = sqliteTable(
+ 	],
+ );
+ 
++export const codexFixtureCapabilities = sqliteTable(
++	"codex_fixture_capabilities",
++	{
++		userId: text("userId").primaryKey(),
++		generation: integer("generation").notNull(),
++		revision: integer("revision").notNull(),
++		snapshot: text("snapshot").notNull(),
++	},
++	(table) => [
++		check("fixture_generation", sql`${table.generation} > 0`),
++		check("fixture_revision", sql`${table.revision} > 0`),
++		check("fixture_snapshot_bound", sql`length(${table.snapshot}) <= 4096`),
++	],
++);
++
++export const modelRequestAdmissions = sqliteTable(
++	"model_request_admissions",
++	{
++		effectId: text("effectId").notNull(),
++		windowId: text("windowId").primaryKey(),
++		requestDigest: text("requestDigest").notNull(),
++		purpose: text("purpose", {
++			enum: ["generation", "custom_summary", "git_metadata"],
++		}).notNull(),
++		state: text("state", {
++			enum: [
++				"reserved",
++				"admitted",
++				"complete",
++				"failed_known",
++				"outcome_unknown",
++			],
++		}).notNull(),
++		createdAt: integer("createdAt").notNull(),
++		updatedAt: integer("updatedAt").notNull(),
++	},
++	(table) => [index("model_request_admissions_window_idx").on(table.windowId)],
++);
++
+ export const projects = sqliteTable(
+ 	"projects",
+ 	{
+diff --git a/apps/web/src/lib/codex-credential-do.ts b/apps/web/src/lib/codex-credential-do.ts
+index fc3695d..cdff4ce 100644
+--- a/apps/web/src/lib/codex-credential-do.ts
++++ b/apps/web/src/lib/codex-credential-do.ts
+@@ -1,10 +1,26 @@
+ import { DurableObject } from "cloudflare:workers";
++import {
++	type ModelTransportDescriptorV1,
++	parseModelTransportDescriptorV1,
++	SYNTHETIC_MODEL_LIMITS,
++	type SyntheticModelOutcomeV1,
++} from "../../../../packages/runtime-contracts/src/model.js";
+ import {
+ 	type CodexTokens,
+ 	type CredentialKeyring,
+ 	openCredentials,
+ 	sealCredentials,
+ } from "./codex-credential-crypto";
++import {
++	awaitSynthetic,
++	readSyntheticStream,
++	reconstructSyntheticRequest,
++	syntheticRequestDigest,
++} from "./codex-request-contract";
++import {
++	type ModelClaimRpc,
++	ModelProductAuthority,
++} from "./model-product-authority";
+ 
+ export type ConnectionStatus =
+ 	| "disconnected"
+@@ -175,6 +191,173 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
+ 		);
+ 		await this.ctx.storage.sync();
+ 	}
++	protected requestAvailable(): boolean {
++		return false;
++	}
++	protected async modelPhase(
++		_phase: "authority" | "credentials" | "claim",
++	): Promise<void> {}
++
++	async requestModel(
++		input: unknown,
++		capability: ModelClaimRpc,
++	): Promise<SyntheticModelOutcomeV1> {
++		if (!this.requestAvailable()) return { version: 1, status: "unavailable" };
++		const policy = new ModelProductAuthority(this.env.DB);
++		const overall = AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs);
++		let descriptor: ModelTransportDescriptorV1;
++		try {
++			descriptor = parseModelTransportDescriptorV1(
++				await awaitSynthetic(capability.describe(), overall),
++			);
++			if (!this.#owned(descriptor.subject.userId))
++				return { version: 1, status: "denied" };
++		} catch {
++			return { version: 1, status: "denied" };
++		}
++		let reconstructed: ReturnType<typeof reconstructSyntheticRequest>;
++		try {
++			reconstructed = reconstructSyntheticRequest(input);
++			if (
++				(await awaitSynthetic(
++					syntheticRequestDigest(reconstructed.request),
++					overall,
++				)) !== descriptor.requestDigest
++			)
++				throw new Error("request_association");
++		} catch {
++			try {
++				if (await awaitSynthetic(policy.denial(descriptor), overall))
++					await awaitSynthetic(capability.halt(descriptor.attempt), overall);
++			} catch {
++				/* A failed denial acknowledgment never admits model work. */
++			}
++			return { version: 1, status: "denied" };
++		}
++		const { request, body } = reconstructed,
++			owner = descriptor.subject.userId;
++		let reserved = false,
++			dispatched = false;
++		const controller = new AbortController();
++		const duration = Math.min(
++			SYNTHETIC_MODEL_LIMITS.deadlineMs,
++			descriptor.attempt.deadlineAt - Date.now(),
++		);
++		if (duration <= 0) return { version: 1, status: "denied" };
++		const timeout = setTimeout(() => controller.abort(), duration);
++		const signal = AbortSignal.any([overall, controller.signal]);
++		const wait = <T>(pending: Promise<T>) => awaitSynthetic(pending, signal);
++		let fetching: Promise<Response> | undefined;
++		try {
++			await wait(this.modelPhase("authority"));
++			controller.signal.throwIfAborted();
++			if (!(await wait(policy.current(descriptor, body))))
++				return { version: 1, status: "denied" };
++			const fresh = await wait(this.ensureFresh(owner));
++			if (
++				fresh.status !== "connected" ||
++				fresh.generation !== descriptor.subject.connectionGeneration
++			)
++				return { version: 1, status: "denied" };
++			const state = this.#read();
++			if (
++				!state ||
++				!state.sealed ||
++				state.status !== "connected" ||
++				state.generation !== descriptor.subject.connectionGeneration
++			)
++				return { version: 1, status: "denied" };
++			if (!(await wait(policy.reserve(descriptor, body))))
++				return { version: 1, status: "denied" };
++			reserved = true;
++			if (!this.#same(state)) throw new Error("connection_changed");
++			const tokens = await wait(
++				openCredentials(
++					state.sealed,
++					owner,
++					state.generation,
++					this.#keyring(),
++					state.version,
++				),
++			);
++			if (!this.#same(state) || tokens.expiresAt <= Date.now() + 60000)
++				throw new Error("connection_changed");
++			await wait(this.modelPhase("credentials"));
++			if (!(await wait(policy.permit(descriptor, body))) || !this.#same(state))
++				throw new Error("authority_changed");
++			await wait(this.modelPhase("claim"));
++			signal.throwIfAborted();
++			if (!(await wait(policy.permit(descriptor, body))) || !this.#same(state))
++				throw new Error("authority_changed");
++			const admitted = await wait(
++				capability.claim(descriptor.attempt, {
++					userId: descriptor.subject.userId,
++					projectId: descriptor.subject.projectId,
++					workspaceSessionId: descriptor.subject.workspaceSessionId,
++					requestDigest: descriptor.requestDigest,
++				}),
++			);
++			signal.throwIfAborted();
++			if (admitted.status !== "admitted" || !this.#same(state))
++				throw new Error("claim_denied");
++			// The host rereads its authority after the bound product check. Recheck
++			// product policy here so that host-authority I/O cannot extend a product permit.
++			if (!(await wait(policy.permit(descriptor, body))) || !this.#same(state))
++				throw new Error("authority_changed");
++			signal.throwIfAborted();
++			dispatched = true;
++			fetching = fetch(request.url, {
++				method: "POST",
++				redirect: "manual",
++				signal,
++				headers: {
++					"content-type": "application/json",
++					accept: "application/x-ndjson",
++					authorization: `Bearer ${tokens.access}`,
++				},
++				body: request.body,
++			});
++			void fetching.catch(() => {});
++			await wait(policy.record(descriptor, "admitted"));
++			const response = await wait(fetching);
++			if (
++				[400, 401, 403, 429, 503].includes(response.status) &&
++				!response.headers.has("location")
++			) {
++				if (response.body) await wait(response.body.cancel());
++				await wait(policy.record(descriptor, "failed_known"));
++				return { version: 1, status: "failed_known" };
++			}
++			const frames = await wait(
++				readSyntheticStream(response, signal, [
++					tokens.access,
++					tokens.refresh,
++					tokens.identity ?? "",
++				]),
++			);
++			await wait(policy.record(descriptor, "complete"));
++			return { version: 1, status: "complete", frames };
++		} catch {
++			const status = dispatched ? "outcome_unknown" : "denied";
++			if (reserved)
++				await awaitSynthetic(
++					policy.record(
++						descriptor,
++						dispatched ? "outcome_unknown" : "failed_known",
++					),
++					AbortSignal.timeout(1000),
++				).catch(() => {});
++			return { version: 1, status };
++		} finally {
++			clearTimeout(timeout);
++			controller.abort();
++			if (fetching)
++				await awaitSynthetic(fetching, AbortSignal.timeout(1000)).catch(
++					() => {},
++				);
++		}
++	}
++
+ 	protected renewalAvailable(): boolean {
+ 		return false;
+ 	}
+diff --git a/apps/web/src/lib/session-runtime-client.ts b/apps/web/src/lib/session-runtime-client.ts
+index 69f9d83..31c0598 100644
+--- a/apps/web/src/lib/session-runtime-client.ts
++++ b/apps/web/src/lib/session-runtime-client.ts
+@@ -31,6 +31,20 @@ export type SessionRuntimeSnapshotQuery = {
+ 	projectId: string;
+ };
+ 
++export type OwnedConfigurationRuntime = {
++	configureOwned(
++		input: import("../../../../packages/runtime-contracts/src/configuration.js").ConfigurationIntentV1,
++	): Promise<
++		import("../../../../packages/runtime-contracts/src/configuration.js").ConfigurationAckV1
++	>;
++	readOwnedConfiguration(
++		input: import("../../../../packages/runtime-contracts/src/configuration.js").ConfigurationReadV1,
++	): Promise<
++		| import("../../../../packages/runtime-contracts/src/configuration.js").ConfigurationSnapshotV1
++		| null
++	>;
++};
++
+ export type SessionRuntime = {
+ 	modelConfiguration(): Promise<SessionRuntimeModelConfiguration>;
+ 	deliver(input: SessionRuntimeDeliverInput): Promise<SessionRuntimeHandoffAck>;
+diff --git a/apps/web/src/lib/session-runtime-product.ts b/apps/web/src/lib/session-runtime-product.ts
+index 254fd76..33545a6 100644
+--- a/apps/web/src/lib/session-runtime-product.ts
++++ b/apps/web/src/lib/session-runtime-product.ts
+@@ -1,6 +1,10 @@
+ import { WorkerEntrypoint } from "cloudflare:workers";
+ import { createDb } from "#/db";
+ import { createProductAdapters } from "#/lib/session-runtime-authority";
++import type {
++	ModelTransportDescriptorV1,
++	SyntheticModelOutcomeV1,
++} from "../../../../packages/runtime-contracts/src/model.js";
+ import type {
+ 	ProjectionApplyResult,
+ 	ProjectionPayload,
+@@ -9,6 +13,11 @@ import type {
+ 	CurrentAuthority,
+ 	ReconstructedAdmission,
+ } from "../../../runtime/src/session-runtime.js";
++import type { ModelClaimRpc } from "./model-product-authority";
++import {
++	performPrivateModelRequest,
++	readPrivateModelPermit,
++} from "./model-product-transport";
+ 
+ function productEnv(env: Env): { DB: D1Database } | null {
+ 	if (!env || typeof env !== "object" || !("DB" in env) || !env.DB) {
+@@ -18,6 +27,36 @@ function productEnv(env: Env): { DB: D1Database } | null {
+ }
+ 
+ export class ProductEntrypoint extends WorkerEntrypoint<Env> {
++	async readConfigurationAuthority(
++		_input: unknown,
++		_selection?: unknown,
++	): Promise<
++		import("../../../../packages/runtime-contracts/src/configuration.js").ConfigurationAuthorityV1
++	> {
++		return { version: 1, status: "unavailable" };
++	}
++	async requestModel(
++		input: unknown,
++		capability: ModelClaimRpc,
++	): Promise<SyntheticModelOutcomeV1> {
++		return performPrivateModelRequest(this.env, input, capability, false);
++	}
++	async readModelPermit(
++		input: unknown,
++		descriptor: ModelTransportDescriptorV1,
++	) {
++		return readPrivateModelPermit(this.env.DB, input, descriptor, false);
++	}
++	async discoverModels(
++		commandId: string,
++	): Promise<{ version: 1; status: "unavailable" | "revoked" }> {
++		const row = await this.env.DB.prepare(
++			"SELECT k.revoked FROM session_commands c JOIN codex_connections k ON k.user_id=c.userId WHERE c.id=?",
++		)
++			.bind(commandId)
++			.first<{ revoked: number }>();
++		return { version: 1, status: row?.revoked ? "revoked" : "unavailable" };
++	}
+ 	private adapters() {
+ 		const bindings = productEnv(this.env);
+ 		if (!bindings) return null;
+diff --git a/docs/specs/pi-durable-session-runtime.md b/docs/specs/pi-durable-session-runtime.md
+index db0f116..a5dd1ed 100644
+--- a/docs/specs/pi-durable-session-runtime.md
++++ b/docs/specs/pi-durable-session-runtime.md
+@@ -383,7 +383,7 @@ A bundled provider catalogue does not prove account entitlement. Establish a sup
+ 
+ Remember model and thinking configuration per workspace conversation. Authenticated configuration intents go through the runtime owner. The UI must not access Pi directly.
+ 
+-Use Pi Durable's default change behavior:
++Use Pi Durable's default change behavior for generation requests. Custom summary requests use the explicit preparation contract below:
+ 
+ | Request state | Configuration to use |
+ |---|---|
+@@ -395,6 +395,18 @@ Do not pin a model to an entire command at admission. Do not add a separate mode
+ 
+ Validate actual request construction for selected models and supported thinking options. Cover normal turns, retries, follow-ups, compaction, cancellation, and Git metadata. A successful turn with another provider or a deterministic fixture does not prove the Codex subscription contract.
+ 
++Use application-owned summarization through Pi's supported beforeCompact summary override. It is an internal runtime operation, not a tool that the model may choose to skip. Pi continues to own range selection, conversation/task continuation, summary placement and task settlement. Do not copy private summary prompts, replace built-in tasks, patch the scheduler, or introduce a second continuation engine.
++
++The runtime owns a versioned, bounded summary prompt and request policy. Before admission, persist the exact request, model/thinking/options, originating task/conversation, selected range/source digest and policy version through supported encrypted persistence. Committing this request is the custom summary preparation point. A prepared request retains its configuration on reopen. A newly prepared request resolves current conversation configuration. Do not pin a whole command or add a model-switch scheduler.
++
++On hook re-entry, validate trusted task and selection provenance against the retained request. Reuse an already-recorded successful result without another provider call, including interruption before hook return or Pi summary placement. A changed source/range, conflicting result or incompatible policy must not silently place a summary or authorize a fresh request.
++
++Every custom summary request passes mandatory exact effect admission with current ownership, connection/model authority, epoch, deadline, Stop, storage and uncertainty checks. Preparation grants no authority. Reserve one provider attempt per summary task atomically at admission. Disable automatic provider retries for custom summaries. Failure does not refund that attempt. A known failed summary stops the affected run visibly; an uncertain admitted outcome keeps the persistent reconciliation/review block and never automatically redispatches. An explicit new user action uses fresh admission rather than reviving the failed summary task.
++
++Persist the validated summary result and its usage in runtime effect evidence before allowing Pi to consume the summary. Custom-summary accounting belongs to the runtime because the override skips Pi's built-in summary usage commit. Count each admitted attempt once; result reuse must not add spending. Do not claim that Pi's usage total includes this work unless a supported, independently tested integration records it. Generation accounting and retry behavior remain unchanged.
++
++Hook failure must not enable an unguarded built-in summary fallback. The mandatory provider adapter still denies any request without the exact trusted association. Custom hooks and model waits must cooperate with host cancellation. Prove recovery before preparation, before and after admission, after result persistence, and before and after Pi placement using actual local Worker/SQLite and encrypted retained fixtures. Completed results must survive without repeat dispatch; unresolved outcomes must block every later model and tool effect.
++
+ ### 7. Durable host lifecycle
+ 
+ Keep one open Pi Harness per owning DO instance. Serialize state transitions. Do not hold a global concurrency block across a model call, sandbox call, or entire run.
+@@ -610,6 +622,30 @@ Git requests first pass runtime-side validation. The product side then performs
+ 
+ Keep the credential-free execution network policy. Reject private, internal, and metadata destinations, and malformed authorities. Validate redirects and keep non-HTTP traffic disabled. Container egress interception does not restrict arbitrary `fetch` calls by trusted Worker code. Do not claim that it does.
+ 
++#### Local synthetic model transport implementation
++
++The fixture-only 007 increment implements a separately versioned request at `https://codex-model-fixture.invalid/v1/stream`. This is not a Codex protocol or a live subscription integration. `ProductEntrypoint` request and permit methods remain unavailable in production composition. Discovery returns `unavailable` or `revoked`, never catalogue entitlement. Only the disposable credential-test subclass enables request dispatch and synthetic account capabilities.
++
++`createPrivateModelAdapter` requires a host guard and private product transport. Generation, separately accounted retries, accepted custom summaries and Git-metadata requests use the same path. A deployment-owned `ExactModelClaim` RPC target binds the host-minted exact attempt to the owned subject and canonical reconstructed request digest. JSON attempt fields alone cannot claim admission. Existing standalone cooperative providers remain synthetic test fixtures, not this mandatory adapter.
++
++Product D1 policy checks command/run membership, user/project/session ownership and status, trusted runtime owner version, exact execution identity role/controller/incarnation/lifecycle/retirement, connection generation and synthetic capability revision/model/thinking. Execution-identity lifecycle generation and host invocation/takeover generation are separate authorities, not equal counters. Deadline predicates use the current clock when binding SQL; permit results also check command, window and effect expiry after awaited queries. Conditional SQL opens one identity/model-family window and reserves one nonrefundable request. Admission records are keyed by the identity-scoped window, since runtime-local effect IDs can recur in other sessions. Git metadata reserves at most one attempt per identity/run/epoch. Three contract denials close the window, persist session review and invoke the exact capability's local host halt without entering a public runtime command or provider/configuration lane.
++
++The credential DO validates and reconstructs the complete request before decrypting credentials. After preparation, it rechecks D1 policy and its local credential revision. Host claim consumption flushes the protected effect receipt, awaits the exact product permit, then rereads host authority and synchronously checks epoch, Stop, fences, uncertainty and deadlines before acknowledgment. No awaited work follows that final host check inside the claim. This final host acknowledgment is the local irrevocable admission point. The credential DO rechecks the exact product permit after acknowledgment so the host-authority await cannot extend product authority. It then checks cancellation and the local credential revision synchronously before credential attachment and fixed-destination `fetch`. A product denial after host acknowledgment retains consumed evidence and never refunds the host attempt. Stop winning before acknowledgment prevents fetch; Stop after acknowledgment cannot undo admitted work. D1, runtime SQLite and provider dispatch do not form a distributed transaction, and this protocol makes no exactly-once billing claim.
++
++Requests and responses are bounded to 131072 encoded bytes. Transcript content is bounded to 98304 bytes; responses contain at most 128 strict NDJSON frames, each at most 16384 bytes, with at most 65536 output bytes. Only the exact POST URL and reconstructed JSON/NDJSON headers are accepted. Redirects, encoding variants, duplicate/unknown fields, arbitrary destinations and caller authorization/proxy headers deny. The DO owns credentials, finite stream cancellation and credential-echo rejection. Malformed/truncated responses retain uncertain admitted evidence and cannot redispatch automatically. Known failures and adapter terminal errors retain the prepared model/provider identity, including the explicitly synthetic supported `faux-2` model. That fixture catalogue is not live account entitlement. No credential enters the runtime or execution sandbox.
++
++The synthetic product transport phase has independent local acceptance. The subsequent configuration candidate still requires independent review. Neither phase establishes hosted acceptance. Live discovery/transport and PD38 remain `not run`.
++
++The fixture configuration candidate adds separate strict V1 configuration intents, acknowledgments and snapshots. Historical CommandV1 and SnapshotV1 schemas retain their meanings. The modelConfiguration readiness query remains unchanged. Production configuration and discovery remain unavailable.
++
++Deployment-owned subject context, not intent fields, authenticates configuration through private product Worker RPC. A separate D1 owned-session policy checks current user/project/session ownership, trusted runtime owner version, exact execution identity and retirement/deletion fences without inventing a prompt or model attempt. New selections additionally require the current credential DO connection and exact synthetic connection/capability generation, revision, model and thinking entitlement. Owned configuration reads and duplicate receipts need no new model entitlement. Each provider attempt still performs its independent mandatory admission checks.
++
++The runtime serializes configuration with its existing owner lane and applies it through supported Pi configuration. Intent identities bind the authenticated owner, project, session, owner version and intent ID. Canonical payload digests detect changed-payload conflicts. Runtime intent outcomes are encrypted under the same retained-state owner/session binding as other private host evidence. D1 stores no model selection authority.
++
++A durable pending intent precedes Pi configuration. An acknowledgment follows Pi durability and a persisted-state snapshot. These commits are not a distributed transaction. Reopen never reapplies a pending choice: an exact persisted Pi match completes its original acknowledgment; otherwise its outcome becomes unknown. A pending intent prevents a later selection in that live owner until reopen accounts for it. Older duplicates return their retained outcome, including after a newer selection, without rolling Pi state backward. Current snapshots read persisted Pi agent state, not the intent ledger.
++
++Before creating the first owned Pi root conversation, the runtime validates the explicit default through current product and local authority. Rejection creates no conversation. Standalone synthetic fixtures retain their explicit fixture initialization. Configuration does not grant scheduling or provider authority, and changing selection does not alter already-prepared generation or custom-summary requests. Actual private-adapter fixtures exercise encrypted close/reopen retention, new preparation on retry/follow-up/summary, held authority revocation, and bounded configuration close.
++
+ ### 13. Git, seeds, archives, and project values
+ 
+ Keep owned-repository and workspace-branch policies. Preserve closed, credential-free Git child environments, disabled hooks and credential helpers, fixed trust configuration, no redirects, and secret preflight checks. UI Git and agent Git use the same policy and mutation serialization.
+@@ -936,7 +972,7 @@ The maintainer confirmed these decisions in the specification interview and appr
+ | OD4 | Existing data | All existing user-level data is disposable. No legacy import, preservation, or export/backup before reset is required. | Separately authorize each reset and name its environment and resources. Preserve source, deployment credential configuration, unrelated work, and historical evidence. |
+ | OD5 | Verification | Keep the authenticated command/observation interface and essential code-level tests only. No automated UI tests. | Focused storage, crypto, provider, and bounded backend-auth checks remain useful. Avoid elaborate test systems. Live provider tests need approval. Future independent browser QA provides final visual and user-level verification. |
+ | OD6 | Runtime ownership | One runtime DO and one execution sandbox per workspace session, reused across its runs. | Do not share a user-level Pi Harness across workspace conversations. The credential DO shares credential management only, not runtime ownership. |
+-| OD7 | Model behavior | Remember subscription-backed model selection per workspace conversation. Offer supported thinking options and use Pi Durable's default change behavior. | Prepared requests retain configuration. The next request uses changes, even within a running instruction. Do not pin queued work at command admission. No automatic API-billing fallback. |
++| OD7 | Model behavior | Remember subscription-backed model selection per workspace conversation. Offer supported thinking options. Use Pi Durable's default generation behavior and the approved one-attempt custom-summary preparation policy. | Prepared requests retain configuration. The next prepared request uses changes, even within a running instruction. Custom summaries persist exact request/result provenance through the supported override and fail visibly without automatic retries. Do not pin queued work at command admission. No automatic API-billing fallback. |
+ 
+ Unknown-effect blocking, encrypted canonical state, paired recovery, one execution owner, and local-first development remain requirements from the previous design.
+ 
+diff --git a/package.json b/package.json
+index cf721b6..deccba5 100644
+--- a/package.json
++++ b/package.json
+@@ -18,7 +18,7 @@
+     "brain:verify": "pnpm contracts:verify && npm run contracts:check --prefix packages/session-brain && npm run typecheck --prefix packages/session-brain && npm test --prefix packages/session-brain && npm run build --prefix packages/session-brain",
+     "runtime:verify": "pnpm --filter @ditto/runtime typecheck && node --test apps/runtime/src/pi-durable-imports.test.mjs scripts/pi-durable-host-auth.test.mjs && pnpm --filter @ditto/runtime exec vitest run",
+     "runtime:local:verify": "node scripts/verify-pi-durable-local.mjs",
+-    "credentials:verify": "pnpm --filter @ditto/credential-tests typecheck && pnpm --filter @ditto/credential-tests exec vitest run src/codex-credential-do.worker.test.ts && pnpm --filter @ditto/credential-tests exec node --test crash.test.mjs",
++    "credentials:verify": "pnpm --filter @ditto/credential-tests typecheck && pnpm --filter @ditto/credential-tests exec vitest run src/codex-credential-do.worker.test.ts src/codex-request-contract.worker.test.ts && pnpm --filter @ditto/credential-tests exec node --test crash.test.mjs",
+     "verify": "pnpm check && pnpm typecheck && pnpm credentials:verify && pnpm test && pnpm build && pnpm runner:verify",
+     "deploy": "alchemy deploy",
+     "destroy": "alchemy destroy",
+diff --git a/packages/runtime-contracts/src/index.ts b/packages/runtime-contracts/src/index.ts
+index 5c32f03..74287ac 100644
+--- a/packages/runtime-contracts/src/index.ts
++++ b/packages/runtime-contracts/src/index.ts
+@@ -1,3 +1,5 @@
+ export * from "./command.js";
++export * from "./configuration.js";
+ export * from "./limits.js";
++export * from "./model.js";
+ export * from "./runtime.js";
+diff --git a/plans/007-codex-requests-and-model-configuration.md b/plans/007-codex-requests-and-model-configuration.md
+index 0030e19..faff173 100644
+--- a/plans/007-codex-requests-and-model-configuration.md
++++ b/plans/007-codex-requests-and-model-configuration.md
+@@ -1,11 +1,11 @@
+ # 007: Guard Codex requests and conversation model changes
+ 
+-Status: READY for separately requested fixture-only, feasibility-first execution. Readiness base: `e43d2609cab0e3580043d8f365b4e34cc690d40c`. L2 and 006's [reviewed local fixture scope](evidence/006-advisor-final-review.md) are accepted and integrated; see [006 integration](evidence/006-integration.md). Live authentication, account-capability and provider transport support remain unresolved and unavailable. Historical planning base: `bcce03e`. Phase: L3.
++Status: EXECUTING the [custom-summary correction](decisions/007-custom-summary-correction-handoff.md) in `/home/ayan/ditto-execution/plan-007-recovery` on `openai/gpt-6.1-sol` with medium reasoning. The previous retry returned BLOCKED despite reported aggregate passes. The advisor independently observed 69 passing summary tests, but broader verification was interrupted. Configuration/preparation ordering and the automatic-compaction crash matrix remain prerequisites. The old temporary worktree is missing; the correction executor must restore and verify every preserved candidate hash before editing. See [current advisor review and exact recovery](evidence/007-custom-summary-advisor-review.md). Remaining 007 adapters are BLOCKED pending independent acceptance; no integration or commit is authorized. Historical attempts and decisions follow. Historical stock-Pi compaction recovery gate remains failed. Execution base: `0ccc5b20c25a4e63017b3eebf6608dba62253479`. See [executor evidence](evidence/007-codex-model-policy.md) and [initial advisor review](evidence/007-advisor-initial-review.md). Generation retention and next-preparation configuration pass. The requested [handoff correction](evidence/007-preparation-handoff-correction.md) now recovers the original asynchronous-preparation interruption, preserves changed configuration timing and independently passes `runtime:verify` with 219 Worker tests plus 6 Node checks. The earlier post-Pi-checkpoint/pre-first-provider-callback interruption still lacks a durable summary association and safely denies recovery. See [correction advisor review](evidence/007-preparation-correction-advisor-review.md); passing safe-denial tests do not complete this gate. The correction remains uncommitted and unintegrated. No dependent adapters were implemented. The [supported-API review](evidence/007-supported-summary-provenance-review.md) found no reviewed handoff under pinned 1.0.1; published 1.1.0 still lacks a per-attempt summary-request hook. The maintainer has selected [application-owned summarization](decisions/007-custom-summary-direction.md) through the supported `beforeCompact` override instead of pursuing an upstream feature. The maintainer approved the one-attempt custom-summary policy and [exact narrow spec amendment](decisions/007-custom-summary-direction.md). The amended custom-summary executor was [interrupted by the model usage limit](evidence/007-custom-summary-interruption.md), leaving an unreviewed partial candidate. The maintainer requested Continue; a fresh executor has been dispatched on the same `openai/gpt-6.1-sol` model with medium reasoning. Successful result reuse, accounting and every recovery handoff remain mandatory; partial preparation passes are not gate acceptance. No upstream issue or upgrade is required or authorized. Dependent adapters remain BLOCKED until independent review verifies the amended gate. Prior readiness base: `e43d2609cab0e3580043d8f365b4e34cc690d40c`. L2 and 006's [reviewed local fixture scope](evidence/006-advisor-final-review.md) are accepted and integrated; see [006 integration](evidence/006-integration.md). Live authentication, account-capability and provider transport support remain unresolved and unavailable. Historical planning base: `bcce03e`. Phase: L3.
+ Spec: `docs/specs/pi-durable-session-runtime.md`, decisions 3, 5–6, 8–9, 12; PD01, PD13, PD15, PD28, PD38, PD41–PD42; OD1, OD5–OD7.
+ 
+ ## Outcome and owner
+ 
+-Privileged access performs exact authorized subscription-backed requests. The runtime owns per-conversation model/thinking configuration and effect admission; Pi's default prepared-request semantics determine when a change applies. D1 may project configuration but is not a second authority. No command-wide model pin or model-switch scheduler.
++Privileged access performs exact authorized subscription-backed requests. The runtime owns per-conversation model/thinking configuration and effect admission. Pi's default prepared-request semantics govern generation; the [approved custom-summary amendment](decisions/007-custom-summary-direction.md) defines summary preparation, one-attempt failure policy, durable result reuse and runtime usage accounting. D1 may project configuration but is not a second authority. No command-wide model pin or model-switch scheduler.
+ 
+ ## Current state and scope
+ 
+@@ -25,13 +25,13 @@ Scope: fixture-backed Codex request validation/product credential transport, run
+ - `apps/web/src/lib/codex-credential-do.ts` owns the product-only credential record, connection authority and serialized renewal. It exposes safe status/freshness results, not tokens, inference or account-capability APIs. Its format-2 encryption authenticates the expected persisted record revision and enforces the complete 60,000-character envelope limit. Preserve revision, crash and disconnect guarantees when adding request operations. Production `fixtureAvailable()` and `renewalAvailable()` remain false.
+ - `apps/credential-tests/src/entry.ts` supplies the test-only credential subclass; `vitest.config.ts` uses actual Worker/SQLite with synthetic keys and mocked outbound networking. Extend this product seam for credential-bearing fixture requests. Do not move the DO into the runtime or enable the fixture subclass in product composition. Web retains Vitest 4; this isolated suite and runtime use pinned Vitest 3.
+ - `apps/runtime/src/pi-durable-cooperative-fixture.ts` registers a provider through `createModels().setProvider()` with both `stream` and `streamSimple`, and closes environmental/file authentication discovery. Its optional guard path is synthetic prior art, not an acceptable optional production admission check. The new adapter must require `HostGuard.model()` or the reviewed owning admission boundary on every attempt, including compaction and retry.
+-- `apps/runtime/src/pi-durable-host.ts` currently associates generation/compaction checkpoints with model, thinking, stream options, transcript digest, task, epoch and attempt before dispatch. It invokes `root.configure({ model }, context)` to initialize `faux-1`. These existing synthetic seams do not prove conversation model-change timing. Before dependent implementation, inspect the pinned Pi 1.0.1 APIs and prove prepared generation and compaction retention across reopen, plus next-prepared-request configuration changes inside an active instruction. Do not patch private schedulers or infer support from a selected-model variable.
++- `apps/runtime/src/pi-durable-host.ts` currently associates generation/compaction checkpoints with model, thinking, stream options, transcript digest, task, epoch and attempt before dispatch. It invokes `root.configure({ model }, context)` to initialize `faux-1`. These existing synthetic seams do not prove conversation model-change timing. Before dependent implementation, execute the [approved custom-summary prerequisite](decisions/007-custom-summary-direction.md) on pinned Pi 1.0.1 and prove prepared generation/custom-summary retention across reopen, plus next-prepared-request configuration changes inside an active instruction. Apply its exact spec edits in the isolated worktree and preserve the earlier failed stock-summary evidence. Do not patch private schedulers or infer support from a selected-model variable.
+ - Use explicitly synthetic provider/account identities and a fixed mocked `.invalid` destination for local requests until a supported Ditto live contract is established. Keep synthetic request/stream schemas distinguishable from any future live-provider contract. Fixtures prove validation, admission, response accounting and configuration behavior; they do not prove actual subscription access or account entitlement. Do not copy another application's client identity or combine legacy Codex backend transport with the newer OSS Responses flow by assumption.
+ - Prepare matching frozen dependencies with lifecycle scripts disabled in a new isolated execution worktree. Main-checkout dependency repair is not authorized by this plan. Stop and report if supported API behavior, bounded request/stream reconstruction or mandatory admission cannot pass its initial local gate.
+ 
+ ## Steps and verification
+ 
+-1. Recheck the integrated interfaces above, 006's authentication/discovery evidence and the pinned provider/configuration APIs. Record the exact fixture request/stream contract and prove the initial prepared-generation/compaction timing gate before implementing dependent adapters. Define bounded account model/capability results with stable unavailable/revoked outcomes. A generic bundled catalogue is not an entitlement check. If 006 cannot establish a supported discovery/validation method, real discovery returns stable `unavailable`; never probe a guessed model URL. Deterministic fixtures may exercise the contract but cannot populate a live entitled picker. Define a new/versioned authenticated configuration intent and snapshot fields without exposing Pi types. Document how first conversation defaults are validated before creation and how mutable entitlement is rechecked at request admission.
++1. Recheck the integrated interfaces above, 006's authentication/discovery evidence and the pinned provider/configuration APIs. First independently verify the approved custom-summary prerequisite before continuing this step. Record the exact fixture request/stream contract and prove prepared generation/custom-summary timing under the amended contract before implementing dependent adapters. Define bounded account model/capability results with stable unavailable/revoked outcomes. A generic bundled catalogue is not an entitlement check. If 006 cannot establish a supported discovery/validation method, real discovery returns stable `unavailable`; never probe a guessed model URL. Deterministic fixtures may exercise the contract but cannot populate a live entitled picker. Define a new/versioned authenticated configuration intent and snapshot fields without exposing Pi types. Document how first conversation defaults are validated before creation and how mutable entitlement is rechecked at request admission.
+    Run `pnpm --filter @ditto/web exec vitest run src/lib/agent-models.test.ts` and `pnpm contracts:verify` after contract changes. Existing fixed-model assertions need owner-aware replacement, not deletion without coverage.
+ 2. Implement reconstruction of the exact allowed fixture request in the product credential DO, after narrow product-side validation if useful. Keep live request dispatch unavailable unless a supported Ditto authentication/provider contract is separately established; do not represent the synthetic request schema as verified provider support. Credentials and credential-bearing fetch stay in that DO, never the runtime. Validate exact method, destination/path/port/query, content type/encoding, streaming protocol, complete bounded body, operation type and contract version. Reject duplicate/malformed authority fields, redirects, unexpected authorization/proxy headers and arbitrary destinations. Attach credentials only after fresh ownership, connection, lifecycle, epoch and operation-window checks. Never forward the original unvalidated body/headers.
+    Add pure validation coverage in `apps/web/src/lib/codex-request-contract.test.ts`; run `pnpm --filter @ditto/web exec vitest run src/lib/codex-request-contract.test.ts src/lib/codex-connection.test.ts`. Add credential-bearing request/denial/race coverage in `apps/credential-tests/src/codex-request-contract.worker.test.ts`; run `pnpm --filter @ditto/credential-tests exec vitest run src/codex-credential-do.worker.test.ts src/codex-request-contract.worker.test.ts`. Assert no outbound credential-bearing call for each denial, using disposable D1/DO SQLite and no live network.

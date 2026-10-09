@@ -1,0 +1,1 @@
+configuration-close independent regression exit=1

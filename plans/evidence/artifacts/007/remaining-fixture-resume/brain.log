@@ -1,0 +1,60 @@
+$ pnpm contracts:verify && npm run contracts:check --prefix packages/session-brain && npm run typecheck --prefix packages/session-brain && npm test --prefix packages/session-brain && npm run build --prefix packages/session-brain
+$ pnpm --filter @ditto/runtime-contracts typecheck && pnpm --filter @ditto/runtime-contracts exec vitest run && pnpm --filter @ditto/runtime-contracts build
+$ tsc --noEmit
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/packages/runtime-contracts[39m
+
+ [32m✓[39m src/contracts.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m14 passed[39m[22m[90m (14)[39m
+[2m   Start at [22m 17:41:30
+[2m   Duration [22m 248ms[2m (transform 81ms, setup 0ms, collect 87ms, tests 9ms, environment 0ms, prepare 51ms)[22m
+
+$ tsc -p tsconfig.json
+npm notice run contracts:check
+npm notice run vitest run src/pi-feasibility.test.ts -t contracts-consumer-freshness
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/packages/session-brain[39m
+
+ [31m❯[39m src/pi-feasibility.test.ts [2m([22m[2m6 tests[22m[2m | [22m[31m1 failed[39m[2m | [22m[33m3 skipped[39m[2m)[22m[33m 922[2mms[22m[39m
+   [2m[90m↓[39m[22m Pi 0.85.1 continuation characterization[2m > [22mdoes not treat an assistant tool request without results as a continuable user turn
+   [2m[90m↓[39m[22m Pi 0.85.1 continuation characterization[2m > [22mdoes not synthesize a missing sibling result when one result is appended
+   [2m[90m↓[39m[22m Pi 0.85.1 continuation characterization[2m > [22mnormal tool batches preserve both call IDs and corresponding result IDs
+   [33m[2m✓[22m[39m contracts-consumer-freshness[2m > [22mcontracts-consumer-freshness: imported emitted JS/declarations match a fresh contracts build [33m 578[2mms[22m[39m
+[31m   [31m×[31m contracts-consumer-freshness[2m > [22mcontracts-consumer-freshness: isolated npm copy is stale until the documented npm refresh recipe[39m[32m 289[2mms[22m[39m
+[31m     → npm install --ignore-scripts
+
+npm error code ENOTCACHED
+npm error request to https://registry.npmjs.org/vitest failed: cache mode is 'only-if-cached' but no cached response is available.
+npm error A complete log of this run can be found in: /home/ayan/ditto-execution/plan-007-recovery/node_modules/.verification-home/.npm/_logs/2026-10-08T15_41_33_477Z-debug-0.log
+[39m
+   [32m✓[39m contracts-consumer-freshness[2m > [22mcontracts-consumer-freshness: refresh refuses a consumer symlink to an external sentinel[32m 54[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/pi-feasibility.test.ts[2m > [22mcontracts-consumer-freshness[2m > [22mcontracts-consumer-freshness: isolated npm copy is stale until the documented npm refresh recipe
+[31m[1mError[22m: npm install --ignore-scripts
+
+npm error code ENOTCACHED
+npm error request to https://registry.npmjs.org/vitest failed: cache mode is 'only-if-cached' but no cached response is available.
+npm error A complete log of this run can be found in: /home/ayan/ditto-execution/plan-007-recovery/node_modules/.verification-home/.npm/_logs/2026-10-08T15_41_33_477Z-debug-0.log
+[39m
+[36m [2m❯[22m runNpm src/pi-feasibility.test.ts:[2m185:11[22m[39m
+    [90m183| [39m   } [35mcatch[39m (error) {
+    [90m184| [39m    [35mconst[39m err [33m=[39m error [35mas[39m { stderr[33m?[39m[33m:[39m string[33m;[39m stdout[33m?[39m[33m:[39m string }[33m;[39m
+    [90m185| [39m    [35mthrow[39m [35mnew[39m [33mError[39m(
+    [90m   | [39m          [31m^[39m
+    [90m186| [39m     [32m`npm [39m[36m${[39margs[33m.[39m[34mjoin[39m([32m" "[39m)[36m}[39m[32m\n[39m[36m${[39merr[33m.[39mstdout [33m??[39m [32m""[39m[36m}[39m[32m\n[39m[36m${[39merr[33m.[39mstderr [33m??[39m [32m""[39m[36m}[39m[32m`[39m[33m,[39m
+    [90m187| [39m    )[33m;[39m
+[90m [2m❯[22m src/pi-feasibility.test.ts:[2m231:4[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m2 passed[39m[22m[2m | [22m[33m3 skipped[39m[90m (6)[39m
+[2m   Start at [22m 17:41:31
+[2m   Duration [22m 1.90s[2m (transform 94ms, setup 0ms, collect 795ms, tests 922ms, environment 0ms, prepare 49ms)[22m
+
+[ELIFECYCLE] Command failed with exit code 1.

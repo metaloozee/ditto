@@ -1,0 +1,395 @@
+--- a/apps/credential-tests/src/codex-request-contract.worker.test.ts
++++ b/apps/credential-tests/src/codex-request-contract.worker.test.ts
+@@ -832,21 +832,39 @@
+ 	);
+ });
+ 
+-for (const invalid of [false, true])
+-	it(`first owned conversation validates defaults without prompt membership, invalid=${invalid}`, async () => {
++for (const reason of [
++	"valid",
++	"unsupported-model",
++	"unsupported-thinking",
++	"unavailable",
++	"revoked",
++	"disconnected",
++] as const)
++	it(`first owned conversation validates defaults without prompt membership, ${reason}`, async () => {
++		const invalid = reason !== "valid";
+ 		await env.DB.prepare("DELETE FROM runtime_command_memberships").run();
+ 		await env.DB.prepare("DELETE FROM session_commands").run();
+-		if (invalid)
++		if (reason === "disconnected")
++			await env.CodexCredential.getByName("owner").revoke("owner", 2);
++		else if (invalid) {
++			const changed =
++				reason === "unavailable" || reason === "revoked"
++					? { ...account, status: reason, models: [] }
++					: {
++							...account,
++							models: [
++								{
++									id: reason === "unsupported-model" ? "faux-1" : "faux-2",
++									thinking: ["off"],
++								},
++							],
++						};
+ 			await env.DB.prepare("UPDATE codex_fixture_capabilities SET snapshot=?")
+-				.bind(
+-					JSON.stringify({
+-						...account,
+-						models: [{ id: "faux-1", thinking: ["off"] }],
+-					}),
+-				)
++				.bind(JSON.stringify(changed))
+ 				.run();
++		}
+ 		await runInDurableObject(
+-			env.PI_MODEL_HOST.getByName(`owned-default-${invalid}`),
++			env.PI_MODEL_HOST.getByName(`owned-default-${reason}`),
+ 			async (_instance, state) => {
+ 				const selected: ConfigurationSelectionV1 = {
+ 					model: "faux-2",
+@@ -1318,6 +1336,67 @@
+ 					}
+ 				},
+ 			},
++		);
++	});
++
++it("lost acknowledgment retry remains an owned receipt, not new entitlement or selection", async () => {
++	await gate(
++		"owned-receipt-revocation",
++		async (f) => {
++			const ack = await f.host.configureOwned(selectionIntent());
++			await env.CodexCredential.getByName("owner").revoke("owner", 2);
++			expect(await f.host.configureOwned(selectionIntent())).toEqual(ack);
++			expect((await f.host.configureOwned(selectionIntent("new"))).status).toBe(
++				"denied",
++			);
++			expect(
++				(await f.host.readOwnedConfiguration(configurationQuery))?.selection,
++			).toEqual(selectionIntent().selection);
++			expect(calls).toEqual([]);
++		},
++		{ owned: true, encrypted: true },
++	);
++});
++for (const field of ["payload_digest", "state", "outcome"] as const)
++	it(`encrypted configuration evidence rejects ${field} tampering without changing Pi`, async () => {
++		await gate(
++			`owned-tamper-${field}`,
++			async (f) => {
++				await f.host.configureOwned(selectionIntent());
++				const original = f.storage.sql
++					.exec<{
++						id: string;
++						payload_digest: string;
++						state: string;
++						outcome: string;
++					}>("SELECT * FROM host_configuration_intents")
++					.one();
++				const persisted = await piState(f.storage);
++				f.storage.sql.exec(
++					`UPDATE host_configuration_intents SET ${field}=?`,
++					field === "state"
++						? "pending"
++						: field === "outcome"
++							? original.outcome + "changed"
++							: "0".repeat(64),
++				);
++				try {
++					await expect(
++						f.host.configureOwned(selectionIntent()),
++					).rejects.toThrow();
++					expect(await piState(f.storage)).toBe(persisted);
++					expect(calls).toEqual([]);
++				} finally {
++					f.storage.sql.exec(
++						"UPDATE host_configuration_intents SET payload_digest=?,state=?,outcome=? WHERE id=?",
++						original.payload_digest,
++						original.state,
++						original.outcome,
++						original.id,
++					);
++				}
++			},
++			{ owned: true, encrypted: true },
+ 		);
+ 	});
+ 
+--- a/apps/runtime/src/pi-durable-host.ts
++++ b/apps/runtime/src/pi-durable-host.ts
+@@ -22,6 +22,7 @@
+ import {
+ 	type ConfigurationAckV1,
+ 	type ConfigurationAuthorityV1,
++	type ConfigurationIntentV1,
+ 	type ConfigurationReadV1,
+ 	type ConfigurationSelectionV1,
+ 	type ConfigurationSnapshotV1,
+@@ -32,10 +33,16 @@
+ 	parseConfigurationReadV1,
+ 	parseConfigurationSelectionV1,
+ } from "../../../packages/runtime-contracts/src/configuration.js";
++import {
++	decodeContractInput,
++	literalField,
++	strictRecord,
++} from "../../../packages/runtime-contracts/src/json.js";
+ import type { ModelSubjectV1 } from "../../../packages/runtime-contracts/src/model.js";
+ import {
+ 	type ModelAttemptV1,
+ 	parseModelAttemptV1,
++	SYNTHETIC_MODEL_LIMITS,
+ } from "../../../packages/runtime-contracts/src/model.js";
+ import {
+ 	digestText,
+@@ -1519,8 +1526,13 @@
+ 			this.dependencies.authority(),
+ 			context,
+ 		);
++		const finalProduct = parseConfigurationAuthorityV1(
++			await awaitWithContext(c.authorize(query, selection), context),
++		);
+ 		context.abortSignal?.throwIfAborted();
+ 		return (
++			finalProduct.status === "current" &&
++			canonical(finalProduct.subject) === canonical(c.subject) &&
+ 			this.configurationLocal(local) &&
+ 			this.storage.sql
+ 				.exec<{ epoch: number }>("SELECT epoch FROM host_meta")
+@@ -1571,54 +1583,62 @@
+ 	private async initializeOwnedConfiguration() {
+ 		const c = this.dependencies.configuration;
+ 		if (!c) return;
+-		await this.ownerTransition(BACKGROUND_CONTEXT, async (context) => {
+-			if (await this.harness.conversation(ROOT_CONVERSATION_ID, context)) {
+-				// Pi and host intent commits are separate. Reopen observes Pi; it never replays a pending selection.
+-				for (const row of this.storage.sql
+-					.exec<{ id: string; outcome: string }>(
+-						"SELECT id,outcome FROM host_configuration_intents WHERE state='pending'",
+-					)
+-					.toArray()) {
+-					const ack = parseConfigurationAckV1(
+-						this.opened(`configuration:${row.id}`, row.outcome)!,
+-					);
+-					const snapshot = await this.piConfiguration(
++		await this.ownerTransition(
++			withAbortSignal(
++				AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
++				BACKGROUND_CONTEXT,
++			),
++			async (context) => {
++				if (await this.harness.conversation(ROOT_CONVERSATION_ID, context)) {
++					// Pi and host intent commits are separate. Reopen observes Pi; it never replays a pending selection.
++					for (const row of this.storage.sql
++						.exec<{ id: string }>(
++							"SELECT id FROM host_configuration_intents WHERE state='pending'",
++						)
++						.toArray()) {
++						const { ack } = await this.configurationEvidence(row.id, context);
++						const snapshot = await this.piConfiguration(
++							this.configurationScope(),
++							context,
++						);
++						await this.finishConfiguration(
++							row.id,
++							canonical(snapshot) === canonical(ack.snapshot)
++								? ack
++								: { ...ack, status: "outcome_unknown", snapshot: null },
++							context,
++						);
++					}
++					return;
++				}
++				const selection = parseConfigurationSelectionV1(c.defaultSelection);
++				if (
++					!(await this.configurationAllowed(
+ 						this.configurationScope(),
++						selection,
+ 						context,
+-					);
+-					await this.finishConfiguration(
+-						row.id,
+-						canonical(snapshot) === canonical(ack.snapshot)
+-							? ack
+-							: { ...ack, status: "outcome_unknown", snapshot: null },
+-						context,
+-					);
+-				}
+-				return;
+-			}
+-			const selection = parseConfigurationSelectionV1(c.defaultSelection);
+-			if (
+-				!(await this.configurationAllowed(
+-					this.configurationScope(),
+-					selection,
+-					context,
+-				))
+-			)
+-				throw new Error("Default configuration denied");
+-			await this.harness.root(context, {
+-				agent: {
+-					model: { provider: "faux", modelId: selection.model },
+-					thinkingLevel: selection.thinking,
+-				},
+-			});
+-			await this.durable(context);
+-		});
++					))
++				)
++					throw new Error("Default configuration denied");
++				await this.harness.root(context, {
++					agent: {
++						model: { provider: "faux", modelId: selection.model },
++						thinkingLevel: selection.thinking,
++					},
++				});
++				await this.durable(context);
++			},
++		);
+ 	}
+ 	async readOwnedConfiguration(
+ 		input: unknown,
+ 		context: Context = BACKGROUND_CONTEXT,
+ 	): Promise<ConfigurationSnapshotV1 | null> {
+ 		const query = parseConfigurationReadV1(input);
++		context = withAbortSignal(
++			AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
++			context,
++		);
+ 		return this.ownerTransition(context, async (context) => {
+ 			if (!(await this.configurationAllowed(query, undefined, context)))
+ 				return null;
+@@ -1630,6 +1650,10 @@
+ 		context: Context = BACKGROUND_CONTEXT,
+ 	): Promise<ConfigurationAckV1> {
+ 		const intent = parseConfigurationIntentV1(input);
++		context = withAbortSignal(
++			AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
++			context,
++		);
+ 		const query = parseConfigurationReadV1({
+ 			version: 1,
+ 			projectId: intent.projectId,
+@@ -1660,10 +1684,8 @@
+ 				)
+ 				.toArray()[0];
+ 			if (old) {
++				const { ack } = await this.configurationEvidence(identity.key, context);
+ 				if (old.payload_digest !== identity.payload) return deny("conflict");
+-				const ack = parseConfigurationAckV1(
+-					this.opened(recordId, old.outcome)!,
+-				);
+ 				if (old.state === "complete") return ack;
+ 				return deny("outcome_unknown");
+ 			}
+@@ -1681,7 +1703,12 @@
+ 				status: "applied",
+ 				snapshot: { ...query, selection: intent.selection },
+ 			};
+-			const plain = JSON.stringify(ack);
++			const plain = JSON.stringify({
++				version: 1,
++				intent,
++				ack,
++				state: "pending",
++			});
+ 			const sealed = await awaitWithContext(
+ 				this.seal(recordId, plain),
+ 				context,
+@@ -1700,7 +1727,10 @@
+ 			this.rememberPlain(recordId, plain, sealed.digest, sealed.ciphertext);
+ 			await this.durable(context);
+ 			this.dependencies.fault?.("configuration-intent");
+-			const root = await this.harness.conversation(ROOT_CONVERSATION_ID, context);
++			const root = await this.harness.conversation(
++				ROOT_CONVERSATION_ID,
++				context,
++			);
+ 			if (!root) throw new Error("Missing owned conversation");
+ 			if (
+ 				!(await this.configurationAllowed(query, intent.selection, context))
+@@ -1730,13 +1760,59 @@
+ 			return { ...ack, snapshot };
+ 		});
+ 	}
++	private async configurationEvidence(
++		key: string,
++		context: Context,
++	): Promise<{ intent: ConfigurationIntentV1; ack: ConfigurationAckV1 }> {
++		this.assertSeals();
++		const row = this.storage.sql
++			.exec<{ payload_digest: string; outcome: string; state: string }>(
++				"SELECT payload_digest,outcome,state FROM host_configuration_intents WHERE id=?",
++				key,
++			)
++			.one();
++		const e = strictRecord(
++			decodeContractInput(
++				this.opened(`configuration:${key}`, row.outcome),
++				8192,
++			),
++			["version", "intent", "ack", "state"],
++			"configuration evidence",
++		);
++		literalField(e, "version", [1]);
++		const state = literalField(e, "state", ["pending", "complete"]);
++		const intent = parseConfigurationIntentV1(e.intent),
++			ack = parseConfigurationAckV1(e.ack);
++		const identity = await awaitWithContext(
++			configurationIdentity(this.dependencies.configuration!.subject, intent),
++			context,
++		);
++		if (
++			identity.key !== key ||
++			identity.payload !== row.payload_digest ||
++			state !== row.state ||
++			ack.intentId !== intent.intentId ||
++			(ack.status === "applied" &&
++				canonical(ack.snapshot) !==
++					canonical({
++						version: 1,
++						projectId: intent.projectId,
++						workspaceSessionId: intent.workspaceSessionId,
++						ownerVersion: intent.ownerVersion,
++						selection: intent.selection,
++					}))
++		)
++			throw new Error("Configuration evidence integrity failure");
++		return { intent, ack };
++	}
+ 	private async finishConfiguration(
+ 		key: string,
+ 		ack: ConfigurationAckV1,
+ 		context: Context,
+ 	) {
++		const { intent } = await this.configurationEvidence(key, context);
+ 		const recordId = `configuration:${key}`,
+-			plain = JSON.stringify(ack);
++			plain = JSON.stringify({ version: 1, intent, ack, state: "complete" });
+ 		const sealed = await awaitWithContext(this.seal(recordId, plain), context);
+ 		this.transition("intent", () => {
+ 			this.storage.sql.exec(
+--- a/docs/specs/pi-durable-session-runtime.md
++++ b/docs/specs/pi-durable-session-runtime.md
+@@ -634,7 +634,17 @@
+ 
+ Requests and responses are bounded to 131072 encoded bytes. Transcript content is bounded to 98304 bytes; responses contain at most 128 strict NDJSON frames, each at most 16384 bytes, with at most 65536 output bytes. Only the exact POST URL and reconstructed JSON/NDJSON headers are accepted. Redirects, encoding variants, duplicate/unknown fields, arbitrary destinations and caller authorization/proxy headers deny. The DO owns credentials, finite stream cancellation and credential-echo rejection. Malformed/truncated responses retain uncertain admitted evidence and cannot redispatch automatically. Known failures and adapter terminal errors retain the prepared model/provider identity, including the explicitly synthetic supported `faux-2` model. That fixture catalogue is not live account entitlement. No credential enters the runtime or execution sandbox.
+ 
+-These are local fixture behaviors awaiting independent review, not hosted acceptance. Authenticated configuration intents, snapshots and pre-conversation default validation remain the next 007 phase. Live discovery/transport and PD38 remain `not run`.
++The synthetic product transport phase has independent local acceptance. The subsequent configuration candidate still requires independent review. Neither phase establishes hosted acceptance. Live discovery/transport and PD38 remain `not run`.
++
++The fixture configuration candidate adds separate strict V1 configuration intents, acknowledgments and snapshots. Historical CommandV1 and SnapshotV1 schemas retain their meanings. The modelConfiguration readiness query remains unchanged. Production configuration and discovery remain unavailable.
++
++Deployment-owned subject context, not intent fields, authenticates configuration through private product Worker RPC. A separate D1 owned-session policy checks current user/project/session ownership, trusted runtime owner version, exact execution identity and retirement/deletion fences without inventing a prompt or model attempt. New selections additionally require the current credential DO connection and exact synthetic connection/capability generation, revision, model and thinking entitlement. Owned configuration reads and duplicate receipts need no new model entitlement. Each provider attempt still performs its independent mandatory admission checks.
++
++The runtime serializes configuration with its existing owner lane and applies it through supported Pi configuration. Intent identities bind the authenticated owner, project, session, owner version and intent ID. Canonical payload digests detect changed-payload conflicts. Runtime intent outcomes are encrypted under the same retained-state owner/session binding as other private host evidence. D1 stores no model selection authority.
++
++A durable pending intent precedes Pi configuration. An acknowledgment follows Pi durability and a persisted-state snapshot. These commits are not a distributed transaction. Reopen never reapplies a pending choice: an exact persisted Pi match completes its original acknowledgment; otherwise its outcome becomes unknown. A pending intent prevents a later selection in that live owner until reopen accounts for it. Older duplicates return their retained outcome, including after a newer selection, without rolling Pi state backward. Current snapshots read persisted Pi agent state, not the intent ledger.
++
++Before creating the first owned Pi root conversation, the runtime validates the explicit default through current product and local authority. Rejection creates no conversation. Standalone synthetic fixtures retain their explicit fixture initialization. Configuration does not grant scheduling or provider authority, and changing selection does not alter already-prepared generation or custom-summary requests. Actual private-adapter fixtures exercise encrypted close/reopen retention, new preparation on retry/follow-up/summary, held authority revocation, and bounded configuration close.
+ 
+ ### 13. Git, seeds, archives, and project values
+ 

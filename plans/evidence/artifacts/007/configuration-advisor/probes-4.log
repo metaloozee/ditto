@@ -1,0 +1,49 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for ../../plans/evidence/artifacts/007/configuration-advisor/vitest.config.ts...
+Error running worker: Error: Failed to load url ../../../../../../packages/runtime-contracts/src/model.js (resolved id: ../../../../../../packages/runtime-contracts/src/model.js) in /home/ayan/ditto-execution/plan-007-recovery/plans/evidence/artifacts/007/configuration-advisor/fixture-copy.ts. Does the file exist?
+    at loadAndTransform (file:///home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/vite@7.3.6_@types+node@22.20.1_jiti@2.7.0_lightningcss@1.33.0_tsx@4.23.1_yaml@2.9.0/node_modules/vite/dist/node/chunks/config.js:22739:33)
+
+[31m⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Suites 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m ../../plans/evidence/artifacts/007/configuration-advisor/probes.worker.test.ts[2m [ ../../plans/evidence/artifacts/007/configuration-advisor/probes.worker.test.ts ][22m
+[31m[1mError[22m: Cannot find module '../../../../../../packages/runtime-contracts/src/model.js' imported from '/home/ayan/ditto-execution/plan-007-recovery/plans/evidence/artifacts/007/configuration-advisor/fixture-copy.ts'[39m
+[36m [2m❯[22m ../../plans/evidence/artifacts/007/configuration-advisor/fixture-copy.ts:[2m9:1[22m[39m
+    [90m  7| [39m [33mConfigurationSelectionV1[39m[33m,[39m
+    [90m  8| [39m} from "../../../../../../packages/runtime-contracts/src/configuration…
+    [90m  9| [39m[35mimport[39m {
+    [90m   | [39m[31m^[39m
+    [90m 10| [39m type [33mModelSubjectV1[39m[33m,[39m
+    [90m 11| [39m type [33mModelTransportDescriptorV1[39m[33m,[39m
+[90m [2m❯[22m ../../plans/evidence/artifacts/007/configuration-advisor/probes.worker.test.ts:[2m2:1[22m[39m
+
+[31m[1mCaused by: Error[22m: Failed to load url ../../../../../../packages/runtime-contracts/src/model.js (resolved id: ../../../../../../packages/runtime-contracts/src/model.js) in /home/ayan/ditto-execution/plan-007-recovery/plans/evidence/artifacts/007/configuration-advisor/fixture-copy.ts. Does the file exist?[39m
+[90m [2m❯[22m loadAndTransform ../../node_modules/.pnpm/vite@7.3.6_@types+node@22.20.1_jiti@2.7.0_lightningcss@1.33.0_tsx@4.23.1_yaml@2.9.0/node_modules/vite/dist/node/chunks/config.js:[2m22739:33[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯[39m[1m[41m Unhandled Errors [49m[22m[31m⎯⎯⎯⎯⎯⎯[39m
+[31m[1m
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯[39m[1m[41m Unhandled Error [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+[31m[1mError[22m: Failed to load url ../../../../../../packages/runtime-contracts/src/model.js (resolved id: ../../../../../../packages/runtime-contracts/src/model.js) in /home/ayan/ditto-execution/plan-007-recovery/plans/evidence/artifacts/007/configuration-advisor/fixture-copy.ts. Does the file exist?[39m
+[90m [2m❯[22m loadAndTransform ../../node_modules/.pnpm/vite@7.3.6_@types+node@22.20.1_jiti@2.7.0_lightningcss@1.33.0_tsx@4.23.1_yaml@2.9.0/node_modules/vite/dist/node/chunks/config.js:[2m22739:33[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [2mno tests[22m
+[2m     Errors [22m [1m[31m1 error[39m[22m
+[2m   Start at [22m 07:20:15
+[2m   Duration [22m 2.40s[2m (transform 813ms, setup 0ms, collect 0ms, tests 0ms, environment 0ms, prepare 106ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

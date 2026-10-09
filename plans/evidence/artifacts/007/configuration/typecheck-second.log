@@ -1,0 +1,5 @@
+$ tsc --noEmit
+src/codex-request-contract.worker.test.ts(647,48): error TS2551: Property 'disconnect' does not exist on type 'DurableObjectStub<FixtureCredential>'. Did you mean 'connect'?
+/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @ditto/credential-tests@ typecheck: `tsc --noEmit`
+Exit status 2

@@ -1,0 +1,22 @@
+apps/credential-tests/src/codex-request-contract.worker.test.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+     935  935 │   				encrypted: true,
+     936  936 │   				configurationAuthority: async (query, selection) => {
+     937      │ - → → → → → const·result·=·await·product.readConfigurationAuthority(query,·selection);
+          937 │ + → → → → → const·result·=·await·product.readConfigurationAuthority(
+          938 │ + → → → → → → query,
+          939 │ + → → → → → → selection,
+          940 │ + → → → → → );
+     938  941 │   					if (reading && selection === undefined) {
+     939  942 │   						entered.resolve();
+  
+
+Checked 2 files in 33ms. No fixes applied.
+Found 1 error.
+format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.
+  
+

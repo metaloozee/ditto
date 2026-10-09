@@ -1,0 +1,35 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/apps/runtime[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[90mstdout[2m | src/pi-durable-summary.test.ts[2m > [22m[2mconfiguration authority wait joins close by admitted deadline, external cancellation=false, encrypted=false
+[22m[39m007 configuration-close advisor probe {"encrypted":false,"externallyCanceled":false,"invocation":{"id":"fc4ffda8-431f-44cc-b1e1-8bf27b1646ce","started":1791465818812,"yield_at":1791465828812,"end_at":1791465829812},"observedAt":1791465829864,"elapsedMs":1052,"configuration":{"state":"failed","at":1791465828813,"error":"The operation was aborted"},"close":{"state":"complete","at":1791465828828},"remoteSettled":false,"joinedConfiguration":{"state":"failed","at":1791465828813,"error":"The operation was aborted"},"joinedClose":{"state":"complete","at":1791465828828}}
+
+[90mstdout[2m | src/pi-durable-summary.test.ts[2m > [22m[2mconfiguration authority wait joins close by admitted deadline, external cancellation=true, encrypted=false
+[22m[39m007 configuration-close advisor probe {"encrypted":false,"externallyCanceled":true,"invocation":{"id":"6c1cb3ae-6965-4eeb-9588-6924553588ab","started":1791465820031,"yield_at":1791465830031,"end_at":1791465831031},"observedAt":1791465831083,"elapsedMs":1052,"configuration":{"state":"failed","at":1791465830036,"error":"The operation was aborted"},"close":{"state":"complete","at":1791465830048},"remoteSettled":false,"joinedConfiguration":{"state":"failed","at":1791465830036,"error":"The operation was aborted"},"joinedClose":{"state":"complete","at":1791465830048}}
+
+[90mstdout[2m | src/pi-durable-summary.test.ts[2m > [22m[2mconfiguration authority wait joins close by admitted deadline, external cancellation=false, encrypted=true
+[22m[39m007 configuration-close advisor probe {"encrypted":true,"externallyCanceled":false,"invocation":{"id":"33714d98-9880-47e5-bb4a-55260e45e879","started":1791465821236,"yield_at":1791465831236,"end_at":1791465832236},"observedAt":1791465832287,"elapsedMs":1051,"configuration":{"state":"failed","at":1791465831236,"error":"The operation was aborted"},"close":{"state":"complete","at":1791465831247},"remoteSettled":false,"joinedConfiguration":{"state":"failed","at":1791465831236,"error":"The operation was aborted"},"joinedClose":{"state":"complete","at":1791465831247}}
+
+[90mstdout[2m | src/pi-durable-summary.test.ts[2m > [22m[2mconfiguration authority wait joins close by admitted deadline, external cancellation=true, encrypted=true
+[22m[39m007 configuration-close advisor probe {"encrypted":true,"externallyCanceled":true,"invocation":{"id":"baca2662-5c75-4d2b-9874-2d4eea2f5d4a","started":1791465822438,"yield_at":1791465832438,"end_at":1791465833438},"observedAt":1791465833491,"elapsedMs":1053,"configuration":{"state":"failed","at":1791465832439,"error":"The operation was aborted"},"close":{"state":"complete","at":1791465832449},"remoteSettled":false,"joinedConfiguration":{"state":"failed","at":1791465832439,"error":"The operation was aborted"},"joinedClose":{"state":"complete","at":1791465832449}}
+
+ [32m✓[39m src/pi-durable-summary.test.ts [2m([22m[2m118 tests[22m[2m | [22m[33m114 skipped[39m[2m)[22m[33m 4881[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration authority wait joins close by admitted deadline, external cancellation=false, encrypted=false [33m 1231[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration authority wait joins close by admitted deadline, external cancellation=true, encrypted=false [33m 1197[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration authority wait joins close by admitted deadline, external cancellation=false, encrypted=true [33m 1206[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration authority wait joins close by admitted deadline, external cancellation=true, encrypted=true [33m 1244[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m4 passed[39m[22m[2m | [22m[33m114 skipped[39m[90m (118)[39m
+[2m   Start at [22m 15:22:37
+[2m   Duration [22m 6.24s[2m (transform 255ms, setup 0ms, collect 465ms, tests 4.88s, environment 0ms, prepare 95ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

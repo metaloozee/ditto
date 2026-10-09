@@ -1,0 +1,292 @@
+apps/runtime/src/pi-durable-effects.test.ts:126:11 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    124 │ 		},
+    125 │ 		get fixture() {
+  > 126 │ 			return fixtures.at(-1)!;
+        │ 			       ^^^^^^^^^^^^^^^^
+    127 │ 		},
+    128 │ 		get harness() {
+  
+
+apps/runtime/src/pi-durable-effects.test.ts:238:20 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    236 │ 		await f.start();
+    237 │ 		await f.fixture.entered.promise;
+  > 238 │ 		const original = f.effects().find((row) => row.kind === "tool")!;
+        │ 		                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    239 │ 		const remote = f.fixture.remote;
+    240 │ 		await f.host.yield();
+  
+
+apps/runtime/src/pi-durable-effects.test.ts:398:21 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    396 │ 			f.fault = undefined;
+    397 │ 			f.unavailable = false;
+  > 398 │ 			const original = f.effects().find((row) => row.kind === "tool")!;
+        │ 			                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    399 │ 			for (let n = 0; n < 2; n++) {
+    400 │ 				await f.host.yield();
+  
+
+apps/runtime/src/pi-durable-effects.test.ts:595:20 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    593 │ 		await f.start();
+    594 │ 		await f.fixture.entered.promise;
+  > 595 │ 		const original = f.effects().find((row) => row.kind === "tool")!;
+        │ 		                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    596 │ 		await f.host.stop("stop", "command");
+    597 │ 		expect(f.runs()[0]?.state).toBe("stopping");
+  
+
+apps/runtime/src/pi-durable-effects.test.ts:624:17 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    622 │ 		await f.fixture.entered.promise;
+    623 │ 		await f.host.yield();
+  > 624 │ 		const first = f.runs()[0]!;
+        │ 		              ^^^^^^^^^^^^
+    625 │ 		expect(first.recovery_at).toBe(Number(first.interrupted_at) + 900_000);
+    626 │ 		f.now += 100;
+  
+
+apps/runtime/src/pi-durable-effects.test.ts:983:19 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    981 │ 		const effects = f.effects();
+    982 │ 		expect(f.fixture.providerCalls).toBe(3);
+  > 983 │ 		const summary = effects.find((row) =>
+        │ 		                ^^^^^^^^^^^^^^^^^^^^^
+  > 984 │ 			JSON.parse(String(row.correlation)).operation.startsWith(
+  > 985 │ 				"pi.compaction/",
+  > 986 │ 			),
+  > 987 │ 		)!;
+        │ 		^^
+    988 │ 		expect(JSON.parse(String(summary.correlation))).toMatchObject({
+    989 │ 			command: "follow",
+  
+
+apps/runtime/src/pi-durable-effects.test.ts:1024:20 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1022 │ 		const task = await f.host.compact("command");
+    1023 │ 		await f.fixture.entered.promise;
+  > 1024 │ 		const original = f
+         │ 		                 ^
+  > 1025 │ 			.effects()
+  > 1026 │ 			.find(
+  > 1027 │ 				(row) => JSON.parse(String(row.correlation)).task === Number(task),
+  > 1028 │ 			)!;
+         │ 			^^
+    1029 │ 		for (let n = 0; n < 2; n++) {
+    1030 │ 			await f.host.yield();
+  
+
+apps/runtime/src/pi-durable-effects.test.ts:1083:20 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1081 │ 		await f.start();
+    1082 │ 		await f.fixture.entered.promise;
+  > 1083 │ 		const original = f.effects().find((row) => row.kind === "tool")!;
+         │ 		                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1084 │ 		await f.host.yield();
+    1085 │ 		f.now = Number(original.operation_deadline);
+  
+
+apps/runtime/src/pi-durable-effects.test.ts:1100:18 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1098 │ 		await f.host.reconcile();
+    1099 │ 		expect(f.fixture.providerCalls).toBe(2);
+  > 1100 │ 		const effect = f
+         │ 		               ^
+  > 1101 │ 			.effects()
+  > 1102 │ 			.find(
+  > 1103 │ 				(row) => JSON.parse(String(row.correlation)).task === Number(task),
+  > 1104 │ 			)!;
+         │ 			^^
+    1105 │ 		expect(effect.state).toBe("pi-committed");
+    1106 │ 		const correlation = JSON.parse(String(effect.correlation));
+  
+
+apps/runtime/src/pi-durable-host.ts:1007:6 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1005 │ 			if (effect.correlation) {
+    1006 │ 				const correlation = this.correlation(
+  > 1007 │ 					this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
+         │ 					^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1008 │ 				);
+    1009 │ 				this.block("outcome-unknown", correlation.run);
+  
+
+apps/runtime/src/pi-durable-host.ts:1277:25 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1275 │ 			throw new Error("Competing or missing model producers");
+    1276 │ 		const task = await awaitWithContext(
+  > 1277 │ 			this.harness.getTask(candidates[0]!.record.id, context),
+         │ 			                     ^^^^^^^^^^^^^^
+    1278 │ 			context,
+    1279 │ 		);
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    1275 1275 │   			throw new Error("Competing or missing model producers");
+    1276 1276 │   		const task = await awaitWithContext(
+    1277      │ - → → → this.harness.getTask(candidates[0]!.record.id,·context),
+         1277 │ + → → → this.harness.getTask(candidates[0]?.record.id,·context),
+    1278 1278 │   			context,
+    1279 1279 │   		);
+  
+
+apps/runtime/src/pi-durable-host.ts:1410:5 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1408 │ 		if (prior) {
+    1409 │ 			const original = this.correlation(
+  > 1410 │ 				this.opened(`effect:${prior.id}:correlation`, prior.correlation)!,
+         │ 				^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1411 │ 			);
+    1412 │ 			const cp = record(task.state.checkpoint);
+  
+
+apps/runtime/src/pi-durable-host.ts:1414:16 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1412 │ 			const cp = record(task.state.checkpoint);
+    1413 │ 			const evidence = record(
+  > 1414 │ 				JSON.parse(this.opened(`effect:${prior.id}:evidence`, prior.evidence)!),
+         │ 				           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1415 │ 			);
+    1416 │ 			if (
+  
+
+apps/runtime/src/pi-durable-host.ts:2020:5 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    2018 │ 		for (const effect of effects) {
+    2019 │ 			const correlation = this.correlation(
+  > 2020 │ 				this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
+         │ 				^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2021 │ 			);
+    2022 │ 			const task = await awaitWithContext(
+  
+
+apps/runtime/src/pi-durable-host.ts:2037:6 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    2035 │ 			const evidence = record(
+    2036 │ 				JSON.parse(
+  > 2037 │ 					this.opened(`effect:${effect.id}:evidence`, effect.evidence)!,
+         │ 					^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2038 │ 				),
+    2039 │ 			);
+  
+
+apps/runtime/src/pi-durable-model-preparation.gate.test.ts:105:9 lint/style/noNonNullAssertion ━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    103 │ 				...faux.provider.getModels(),
+    104 │ 				{
+  > 105 │ 					...faux.provider.getModels()[0]!,
+        │ 					   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    106 │ 					id: "faux-2",
+    107 │ 					name: "Synthetic second model",
+  
+
+apps/runtime/src/pi-durable-model-preparation.gate.test.ts:155:18 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    153 │ 		);
+    154 │ 		await entered.promise;
+  > 155 │ 		const before = (await harness.inspect(BACKGROUND_CONTEXT)).tasks.find(
+        │ 		               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 156 │ 			(task) => task.record.kind === "pi.generation",
+  > 157 │ 		)!.record;
+        │ 		^^
+    158 │ 		expect(before.state.checkpoint).toMatchObject({
+    159 │ 			phase: "request",
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    155 155 │   		const before = (await harness.inspect(BACKGROUND_CONTEXT)).tasks.find(
+    156 156 │   			(task) => task.record.kind === "pi.generation",
+    157     │ - → → )!.record;
+        157 │ + → → )?.record;
+    158 158 │   		expect(before.state.checkpoint).toMatchObject({
+    159 159 │   			phase: "request",
+  
+
+apps/runtime/src/pi-durable-model-preparation.gate.test.ts:176:20 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    174 │ 		);
+    175 │ 		root = await harness.root(BACKGROUND_CONTEXT);
+  > 176 │ 		const reopened = (await harness.inspect(BACKGROUND_CONTEXT)).tasks.find(
+        │ 		                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 177 │ 			(task) => task.record.kind === "pi.generation",
+  > 178 │ 		)!.record;
+        │ 		^^
+    179 │ 		expect(reopened.state.checkpoint).toEqual(before.state.checkpoint);
+    180 │ 		await root.waitForIdle(BACKGROUND_CONTEXT);
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    176 176 │   		const reopened = (await harness.inspect(BACKGROUND_CONTEXT)).tasks.find(
+    177 177 │   			(task) => task.record.kind === "pi.generation",
+    178     │ - → → )!.record;
+        178 │ + → → )?.record;
+    179 179 │   		expect(reopened.state.checkpoint).toEqual(before.state.checkpoint);
+    180 180 │   		await root.waitForIdle(BACKGROUND_CONTEXT);
+  
+
+apps/runtime/src/pi-durable-model-preparation.gate.test.ts:246:22 lint/style/noNonNullAssertion ━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    244 │ 					},
+    245 │ 				);
+  > 246 │ 				const provider = fixture.models.getProvider("faux")!;
+        │ 				                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    247 │ 				fixture.models.setProvider({
+    248 │ 					...provider,
+  
+
+apps/runtime/src/pi-durable-model-preparation.gate.test.ts:252:11 lint/style/noNonNullAssertion ━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    250 │ 						...provider.getModels(),
+    251 │ 						{
+  > 252 │ 							...provider.getModels()[0]!,
+        │ 							   ^^^^^^^^^^^^^^^^^^^^^^^^
+    253 │ 							id: "faux-2",
+    254 │ 							name: "Synthetic second model",
+  
+
+The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
+Diagnostics not shown: 5.
+Checked 3 files in 55ms. No fixes applied.
+Found 25 warnings.

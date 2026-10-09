@@ -1,0 +1,55 @@
+ M apps/credential-tests/src/entry.ts
+ M apps/credential-tests/tsconfig.json
+ M apps/credential-tests/vitest.config.ts
+ M apps/runtime/src/pi-durable-cooperative-fixture.ts
+ M apps/runtime/src/pi-durable-effects.test.ts
+ M apps/runtime/src/pi-durable-host.ts
+ M apps/runtime/src/server.ts
+ M apps/runtime/vitest.config.ts
+ M apps/web/src/db/schema.ts
+ M apps/web/src/lib/codex-credential-do.ts
+ M apps/web/src/lib/session-runtime-client.ts
+ M apps/web/src/lib/session-runtime-product.ts
+ M docs/specs/pi-durable-session-runtime.md
+ M package.json
+ M packages/runtime-contracts/src/index.ts
+ M plans/007-codex-requests-and-model-configuration.md
+?? apps/credential-tests/src/codex-request-contract.worker.test.ts
+?? apps/credential-tests/src/model-entry.ts
+?? apps/runtime/src/pi-durable-model-preparation.gate.test.ts
+?? apps/runtime/src/pi-durable-models.test.ts
+?? apps/runtime/src/pi-durable-models.ts
+?? apps/runtime/src/pi-durable-summary.test.ts
+?? apps/runtime/src/pi-durable-summary.ts
+?? apps/web/migrations/0022_synthetic_model_transport.sql
+?? apps/web/src/lib/codex-request-contract.test.ts
+?? apps/web/src/lib/codex-request-contract.ts
+?? apps/web/src/lib/configuration-product-authority.ts
+?? apps/web/src/lib/model-product-authority.ts
+?? apps/web/src/lib/model-product-transport.ts
+?? packages/runtime-contracts/src/configuration.test.ts
+?? packages/runtime-contracts/src/configuration.ts
+?? packages/runtime-contracts/src/model.test.ts
+?? packages/runtime-contracts/src/model.ts
+?? plans/decisions/007-configuration-close-repair-handoff.md
+?? plans/decisions/007-custom-summary-correction-handoff.md
+?? plans/decisions/007-custom-summary-direction.md
+?? plans/evidence/007-configuration-fixture-ready.md
+?? plans/evidence/007-custom-summary-advisor-review.md
+?? plans/evidence/007-custom-summary-configuration-close-probe.md
+?? plans/evidence/007-custom-summary-configuration-close-repair.md
+?? plans/evidence/007-custom-summary-correction-continuation-gate.md
+?? plans/evidence/007-custom-summary-correction-gate.md
+?? plans/evidence/007-custom-summary-gate.md
+?? plans/evidence/007-custom-summary-restoration-stop.md
+?? plans/evidence/007-host-admission-correction.md
+?? plans/evidence/007-preparation-correction-advisor-review.md
+?? plans/evidence/007-preparation-handoff-correction.md
+?? plans/evidence/007-product-transport-correction-ready.md
+?? plans/evidence/007-product-transport-execution.md
+?? plans/evidence/007-product-transport-phase-ready.md
+?? plans/evidence/007-remaining-fixture-install-block.md
+?? plans/evidence/007-remaining-fixture-preflight-block.md
+?? plans/evidence/007-remaining-host-admission-partial.md
+?? plans/evidence/007-supported-summary-provenance-review.md
+?? plans/evidence/artifacts/007/

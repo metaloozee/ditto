@@ -1,0 +1,5 @@
+$ tsc --noEmit
+src/codex-request-contract.worker.test.ts(3,34): error TS2307: Cannot find module '@earendil-works/chord/context' or its corresponding type declarations.
+/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @ditto/credential-tests@ typecheck: `tsc --noEmit`
+Exit status 2

@@ -1,0 +1,8 @@
+Independent complete spec equality: exactly three approved replacements, passed.
+Independent reviewed archive identity: apps/runtime/src/pi-durable-host.ts passed
+Independent reviewed archive identity: apps/runtime/src/pi-durable-cooperative-fixture.ts passed
+Independent reviewed archive identity: apps/runtime/src/pi-durable-effects.test.ts passed
+Independent reviewed archive identity: apps/runtime/src/pi-durable-model-preparation.gate.test.ts passed
+Independent reviewed archive identity: apps/runtime/src/pi-durable-summary.ts passed
+Independent reviewed archive identity: apps/runtime/src/pi-durable-summary.test.ts passed
+Independent reviewed archive identity: docs/specs/pi-durable-session-runtime.md passed

@@ -1,0 +1,89 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+ [31m❯[39m src/codex-request-contract.worker.test.ts [2m([22m[2m48 tests[22m[2m | [22m[31m1 failed[39m[2m | [22m[33m47 skipped[39m[2m)[22m[33m 733[2mms[22m[39m
+[31m   [31m×[31m the mandatory adapter constructs an exact credential-owned request and bounded stream through private RPC[39m[33m 712[2mms[22m[39m
+[31m     → D1_EXEC_ERROR: Error in line 1: ALTER TABLE `workspace_runtime_work` ADD `protocolVersion` integer;: no such table: workspace_runtime_work: SQLITE_ERROR[39m
+   [2m[90m↓[39m[22m invalid or differently bound request dispatches zero calls: (request) => ({ ...request, method: "GET" })
+   [2m[90m↓[39m[22m invalid or differently bound request dispatches zero calls: (request) => ({ ...request, url: `${request.url}?proxy=1` })
+   [2m[90m↓[39m[22m invalid or differently bound request dispatches zero calls: (request) => ({ ...request, headers: [...request.headers, ["authorization", "caller"]] })
+   [2m[90m↓[39m[22m invalid or differently bound request dispatches zero calls: (request) => ({ ...request, body: request.body.replace('"version":1', '"version":1,"version":1') })
+   [2m[90m↓[39m[22m invalid or differently bound request dispatches zero calls: (request) => ({ ...request, body: JSON.stringify({ ...JSON.parse(request.body), thinking: "high" }) })
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE projects SET userId='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE workspace_sessions SET status='archived'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE workspace_sessions SET runtimeOwnerVersion=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE workspace_sessions SET runtimeOwner='legacy'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET kind='project_seed'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET retiredAt=1
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET lifecycleGeneration=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET incarnationId='replacement'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET controllerNamespace='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE codex_connections SET revoked=1,generation=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE projects SET userId='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE workspace_sessions SET status='archived'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE workspace_sessions SET runtimeOwnerVersion=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE workspace_sessions SET runtimeOwner='legacy'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET kind='project_seed'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET retiredAt=1
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET lifecycleGeneration=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET incarnationId='replacement'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET controllerNamespace='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE codex_connections SET revoked=1,generation=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE projects SET userId='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE workspace_sessions SET status='archived'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE workspace_sessions SET runtimeOwnerVersion=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE workspace_sessions SET runtimeOwner='legacy'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET kind='project_seed'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET retiredAt=1
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET lifecycleGeneration=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET incarnationId='replacement'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET controllerNamespace='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE codex_connections SET revoked=1,generation=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))
+   [2m[90m↓[39m[22m Stop wins during credential preparation before the host acknowledgment, with zero fetches
+   [2m[90m↓[39m[22m a model capability revoked while the actual claim flush is held is freshly denied after that flush
+   [2m[90m↓[39m[22m three contract denials durably close the window, record review and halt the exact run without reentry
+   [2m[90m↓[39m[22m production credentials remain unavailable even with connected fixture records
+   [2m[90m↓[39m[22m a known generation failure retries as a separate admitted attempt
+   [2m[90m↓[39m[22m Git metadata's reserved attempt is never refunded after a known failure
+   [2m[90m↓[39m[22m malformed upstream outcomes retain uncertain admission without redispatch
+   [2m[90m↓[39m[22m malformed upstream outcomes retain uncertain admission without redispatch
+   [2m[90m↓[39m[22m malformed upstream outcomes retain uncertain admission without redispatch
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/codex-request-contract.worker.test.ts[2m > [22mthe mandatory adapter constructs an exact credential-owned request and bounded stream through private RPC
+[31m[1mError[22m: D1_EXEC_ERROR: Error in line 1: ALTER TABLE `workspace_runtime_work` ADD `protocolVersion` integer;: no such table: workspace_runtime_work: SQLITE_ERROR[39m
+[90m [2m❯[22m cloudflare-internal:d1-api:[2m226:27[22m[39m
+[36m [2m❯[22m src/codex-request-contract.worker.test.ts:[2m68:26[22m[39m
+    [90m 66| [39m for (const migration of [m0, m1, m2, m13, m14, m15, m16, m17, m20, m2…
+    [90m 67| [39m  [35mfor[39m ([35mconst[39m statement [35mof[39m migration[33m.[39m[34msplit[39m([32m"--> statement-breakpoint"[39m))
+    [90m 68| [39m   if (statement.trim()) await env.DB.exec(statement.replaceAll("\n", …
+    [90m   | [39m                         [31m^[39m
+    [90m 69| [39m [35mawait[39m env[33m.[39m[33mDB[39m[33m.[39m[34mbatch[39m([
+    [90m 70| [39m  env.DB.prepare("INSERT INTO user(id,name,email,createdAt,updatedAt) …
+
+[31m[1mCaused by: Error[22m: Error in line 1: ALTER TABLE `workspace_runtime_work` ADD `protocolVersion` integer;: no such table: workspace_runtime_work: SQLITE_ERROR[39m
+[90m [2m❯[22m cloudflare-internal:d1-api:[2m227:32[22m[39m
+[36m [2m❯[22m src/codex-request-contract.worker.test.ts:[2m68:26[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[33m47 skipped[39m[90m (48)[39m
+[2m   Start at [22m 20:01:51
+[2m   Duration [22m 2.94s[2m (transform 369ms, setup 0ms, collect 669ms, tests 733ms, environment 0ms, prepare 163ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/codex-request-contract.worker.test.ts -t 'mandatory adapter constructs'

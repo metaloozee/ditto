@@ -1,0 +1,63 @@
+{
+  "contracts-verify-fourth": [
+    "Test Files  3 passed (3)",
+    "Tests  25 passed (25)"
+  ],
+  "brain-verify-fourth": [
+    "Test Files  3 passed (3)",
+    "Tests  25 passed (25)",
+    "Test Files  1 passed (1)",
+    "Tests  3 passed | 3 skipped (6)",
+    "Test Files  3 passed (3)",
+    "Tests  43 passed (43)"
+  ],
+  "credentials-verify-fourth": [
+    "Test Files  2 passed (2)",
+    "Tests  162 passed (162)",
+    "\u2139 tests 3",
+    "\u2139 pass 3",
+    "\u2139 fail 0"
+  ],
+  "runtime-verify-fourth": [
+    "Test Files  12 passed (12)",
+    "Tests  387 passed (387)",
+    "\u2139 tests 6",
+    "\u2139 pass 6",
+    "\u2139 fail 0"
+  ],
+  "verify-fourth": [
+    "Test Files  2 passed (2)",
+    "Tests  162 passed (162)",
+    "Test Files  74 passed (74)",
+    "Tests  848 passed (848)",
+    "Test Files  11 passed (11)",
+    "Tests  79 passed (79)",
+    "\u2139 tests 3",
+    "\u2139 pass 3",
+    "\u2139 fail 0"
+  ],
+  "acceptance-final": [
+    "Test Files  1 passed (1)",
+    "Tests  5 passed | 114 skipped (119)"
+  ],
+  "advisor-model-claim.config.ts-final": [
+    "Test Files  1 passed (1)",
+    "Tests  4 passed (4)"
+  ],
+  "product-advisor-review-post-product-check.config.ts-final": [
+    "Test Files  1 passed (1)",
+    "Tests  3 passed (3)"
+  ],
+  "advisor-d1-final": [
+    "Test Files  1 passed (1)",
+    "Tests  2 passed | 140 skipped (142)"
+  ],
+  "original-close-final": [
+    "Test Files  1 passed (1)",
+    "Tests  4 passed | 114 skipped (118)"
+  ],
+  "snapshots": [
+    "Test Files  1 passed (1)",
+    "Tests  3 passed | 114 skipped (117)"
+  ]
+}

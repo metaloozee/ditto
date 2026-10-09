@@ -1,0 +1,118 @@
+Cannot optimize dependency: [36m@earendil-works/pi-durable/storage/sqlite[39m, present in ssr 'optimizeDeps.include'
+Cannot optimize dependency: [36m@earendil-works/pi-ai/models[39m, present in ssr 'optimizeDeps.include'
+Cannot optimize dependency: [36m@earendil-works/pi-ai/providers/faux[39m, present in ssr 'optimizeDeps.include'
+Cannot optimize dependency: [36m@earendil-works/chord/context[39m, present in ssr 'optimizeDeps.include'
+Cannot optimize dependency: [36m@earendil-works/chord/delta[39m, present in ssr 'optimizeDeps.include'
+Cannot optimize dependency: [36m@earendil-works/pi-durable/storage/sqlite[39m, present in ssr 'optimizeDeps.include'
+Cannot optimize dependency: [36m@earendil-works/pi-ai/models[39m, present in ssr 'optimizeDeps.include'
+Cannot optimize dependency: [36m@earendil-works/pi-ai/providers/faux[39m, present in ssr 'optimizeDeps.include'
+Cannot optimize dependency: [36m@earendil-works/chord/context[39m, present in ssr 'optimizeDeps.include'
+Cannot optimize dependency: [36m@earendil-works/chord/delta[39m, present in ssr 'optimizeDeps.include'
+✘ [ERROR] Cannot read file: /home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/@earendil-works/chord/context
+
+    ../../node_modules/.pnpm/@earendil-works+pi-durable@1.0.1_@aws-sdk+credential-provider-node@3.972.84_@modelconte_867545391487edcd36123475ad2fe1d0/node_modules/@earendil-works/pi-durable/dist/session/observation.js:1:35:
+      1 │ import { withoutAbortSignal } from "@earendil-works/chord/context";
+        ╵                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+✘ [ERROR] Cannot read file: /home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/@earendil-works/pi-ai/utils/estimate
+
+    ../../node_modules/.pnpm/@earendil-works+pi-durable@1.0.1_@aws-sdk+credential-provider-node@3.972.84_@modelconte_867545391487edcd36123475ad2fe1d0/node_modules/@earendil-works/pi-durable/dist/harness/compaction.js:1:62:
+      1 │ ...stimateMessageTokens } from "@earendil-works/pi-ai/utils/estimate";
+        ╵                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+✘ [ERROR] Cannot read file: /home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/@earendil-works/pi-ai/utils/retry
+
+    ../../node_modules/.pnpm/@earendil-works+pi-durable@1.0.1_@aws-sdk+credential-provider-node@3.972.84_@modelconte_867545391487edcd36123475ad2fe1d0/node_modules/@earendil-works/pi-durable/dist/harness/compaction.js:2:56:
+      2 │ ...tantError, retryDelayMs } from "@earendil-works/pi-ai/utils/retry";
+        ╵                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+✘ [ERROR] Cannot read file: /home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/@earendil-works/pi-ai/utils/validation
+
+    ../../node_modules/.pnpm/@earendil-works+pi-durable@1.0.1_@aws-sdk+credential-provider-node@3.972.84_@modelconte_867545391487edcd36123475ad2fe1d0/node_modules/@earendil-works/pi-durable/dist/harness/tool.js:4:38:
+      4 │ ...idateToolArguments } from "@earendil-works/pi-ai/utils/validation";
+        ╵                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+✘ [ERROR] Cannot read file: /home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/@earendil-works/chord/delta
+
+    ../../node_modules/.pnpm/@earendil-works+pi-durable@1.0.1_@aws-sdk+credential-provider-node@3.972.84_@modelconte_867545391487edcd36123475ad2fe1d0/node_modules/@earendil-works/pi-durable/dist/harness/tool.js:3:24:
+      3 │ import { overlap } from "@earendil-works/chord/delta";
+        ╵                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+✘ [ERROR] Cannot read file: /home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/@earendil-works/pi-ai/utils/overflow
+
+    ../../node_modules/.pnpm/@earendil-works+pi-durable@1.0.1_@aws-sdk+credential-provider-node@3.972.84_@modelconte_867545391487edcd36123475ad2fe1d0/node_modules/@earendil-works/pi-durable/dist/harness/generation.js:2:34:
+      2 │ ... { isContextOverflow } from "@earendil-works/pi-ai/utils/overflow";
+        ╵                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+✘ [ERROR] Cannot read file: /home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/@earendil-works/pi-ai/utils/transcript
+
+    ../../node_modules/.pnpm/@earendil-works+pi-durable@1.0.1_@aws-sdk+credential-provider-node@3.972.84_@modelconte_867545391487edcd36123475ad2fe1d0/node_modules/@earendil-works/pi-durable/dist/harness/generation.js:4:32:
+      4 │ ... { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
+        ╵                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Startup Error [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯⎯[39m
+Error: [31mError during dependency optimization:
+
+[39m[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mCannot read file: /home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/@earendil-works/pi-ai/utils/estimate[0m
+
+    ../../node_modules/.pnpm/@earendil-works+pi-durable@1.0.1_@aws-sdk+credential-provider-node@3.972.84_@modelconte_867545391487edcd36123475ad2fe1d0/node_modules/@earendil-works/pi-durable/dist/harness/compaction.js:1:62:
+[37m      1 │ ...stimateMessageTokens } from [32m"@earendil-works/pi-ai/utils/estimate"[37m;
+        ╵                                [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mCannot read file: /home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/@earendil-works/pi-ai/utils/retry[0m
+
+    ../../node_modules/.pnpm/@earendil-works+pi-durable@1.0.1_@aws-sdk+credential-provider-node@3.972.84_@modelconte_867545391487edcd36123475ad2fe1d0/node_modules/@earendil-works/pi-durable/dist/harness/compaction.js:2:56:
+[37m      2 │ ...tantError, retryDelayMs } from [32m"@earendil-works/pi-ai/utils/retry"[37m;
+        ╵                                   [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mCannot read file: /home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/@earendil-works/pi-ai/utils/overflow[0m
+
+    ../../node_modules/.pnpm/@earendil-works+pi-durable@1.0.1_@aws-sdk+credential-provider-node@3.972.84_@modelconte_867545391487edcd36123475ad2fe1d0/node_modules/@earendil-works/pi-durable/dist/harness/generation.js:2:34:
+[37m      2 │ ... { isContextOverflow } from [32m"@earendil-works/pi-ai/utils/overflow"[37m;
+        ╵                                [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mCannot read file: /home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/@earendil-works/pi-ai/utils/transcript[0m
+
+    ../../node_modules/.pnpm/@earendil-works+pi-durable@1.0.1_@aws-sdk+credential-provider-node@3.972.84_@modelconte_867545391487edcd36123475ad2fe1d0/node_modules/@earendil-works/pi-durable/dist/harness/generation.js:4:32:
+[37m      4 │ ... { getCurrentTools } from [32m"@earendil-works/pi-ai/utils/transcript"[37m;
+        ╵                              [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mCannot read file: /home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/@earendil-works/chord/delta[0m
+
+    ../../node_modules/.pnpm/@earendil-works+pi-durable@1.0.1_@aws-sdk+credential-provider-node@3.972.84_@modelconte_867545391487edcd36123475ad2fe1d0/node_modules/@earendil-works/pi-durable/dist/harness/tool.js:3:24:
+[37m      3 │ import { overlap } from [32m"@earendil-works/chord/delta"[37m;
+        ╵                         [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mCannot read file: /home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/@earendil-works/pi-ai/utils/validation[0m
+
+    ../../node_modules/.pnpm/@earendil-works+pi-durable@1.0.1_@aws-sdk+credential-provider-node@3.972.84_@modelconte_867545391487edcd36123475ad2fe1d0/node_modules/@earendil-works/pi-durable/dist/harness/tool.js:4:38:
+[37m      4 │ ...idateToolArguments } from [32m"@earendil-works/pi-ai/utils/validation"[37m;
+        ╵                              [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mCannot read file: /home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/@earendil-works/chord/context[0m
+
+    ../../node_modules/.pnpm/@earendil-works+pi-durable@1.0.1_@aws-sdk+credential-provider-node@3.972.84_@modelconte_867545391487edcd36123475ad2fe1d0/node_modules/@earendil-works/pi-durable/dist/session/observation.js:1:35:
+[37m      1 │ import { withoutAbortSignal } from [32m"@earendil-works/chord/context"[37m;
+        ╵                                    [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+    at failureErrorWithLog (/home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/esbuild@0.28.1/node_modules/esbuild/lib/main.js:1748:15)
+    at /home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/esbuild@0.28.1/node_modules/esbuild/lib/main.js:1207:25
+    at /home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/esbuild@0.28.1/node_modules/esbuild/lib/main.js:1626:9
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {
+  errors: [Getter/Setter],
+  warnings: [Getter/Setter]
+}
+
+
+
+undefined
+/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/codex-request-contract.worker.test.ts -t 'mandatory adapter constructs'

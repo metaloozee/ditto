@@ -1,0 +1,2096 @@
+--- a/apps/credential-tests/src/codex-request-contract.worker.test.ts
++++ b/apps/credential-tests/src/codex-request-contract.worker.test.ts
+@@ -1,5 +1,11 @@
+ import { env, fetchMock, runInDurableObject, SELF } from "cloudflare:test";
+ import { afterEach, beforeEach, expect, it } from "vitest";
++import type {
++	ConfigurationAuthorityV1,
++	ConfigurationIntentV1,
++	ConfigurationReadV1,
++	ConfigurationSelectionV1,
++} from "../../../packages/runtime-contracts/src/configuration.js";
+ import {
+ 	type ModelSubjectV1,
+ 	type ModelTransportDescriptorV1,
+@@ -11,11 +17,13 @@
+ 	type HostFixtureDependencies,
+ 	PiDurableHost,
+ 	type PiDurableHostFixture,
++	requestDigest,
+ } from "../../runtime/src/pi-durable-host.ts";
+ import {
+ 	createPrivateModelAdapter,
+ 	type PrivateModelTransport,
+ } from "../../runtime/src/pi-durable-models.ts";
++import { importRuntimeKeyringFromBytes } from "../../runtime/src/runtime-crypto.ts";
+ import m0 from "../../web/migrations/0000_wet_giant_girl.sql?raw";
+ import m1 from "../../web/migrations/0001_jazzy_firelord.sql?raw";
+ import m2 from "../../web/migrations/0002_sparkling_agent_zero.sql?raw";
+@@ -43,6 +51,19 @@
+ 	}
+ }
+ const product = SELF as Service<FixtureProduct>;
++const configurationQuery: ConfigurationReadV1 = {
++	version: 1,
++	projectId: "project",
++	workspaceSessionId: "session",
++	ownerVersion: 1,
++};
++function selectionIntent(
++	intentId = "choice-1",
++	model: "faux-1" | "faux-2" = "faux-2",
++	thinking: "off" | "low" | "high" | "max" = "low",
++): ConfigurationIntentV1 {
++	return { ...configurationQuery, intentId, selection: { model, thinking } };
++}
+ const credential = {
+ 	holdModel: (phase: "authority" | "credentials" | "claim") =>
+ 		env.CodexCredential.getByName("owner").holdModel(phase),
+@@ -130,6 +151,21 @@
+ 		})
+ 		.persist()
+ 		.delay(100);
++}
++async function piState(storage: DurableObjectStorage): Promise<string> {
++	const names = storage.sql
++		.exec<{ name: string }>(
++			"SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'host_%' AND name NOT LIKE 'sqlite_%' ORDER BY name",
++		)
++		.toArray();
++	return requestDigest(
++		names.map(({ name }) => ({
++			name,
++			rows: storage.sql
++				.exec(`SELECT * FROM "${name.replaceAll('"', '""')}" ORDER BY rowid`)
++				.toArray(),
++		})),
++	);
+ }
+ function deferred() {
+ 	let resolve!: () => void;
+@@ -242,8 +278,21 @@
+ 		settled: Promise<void>;
+ 		snapshot(): Promise<unknown>;
+ 		claimFlush(): { entered: Promise<void>; release(): void };
++		reopen(): Promise<PiDurableHost>;
+ 	}) => Promise<void>,
+ 	options: {
++		owned?: boolean;
++		prepareModel?: HostFixtureDependencies["prepareModel"];
++		encrypted?: boolean;
++		configurationFault?: (point: string) => void;
++		localAuthority?: (
++			current: boolean,
++			generation: number,
++		) => Promise<{ current: boolean; generation: number; executor: number }>;
++		configurationAuthority?: (
++			query: ConfigurationReadV1,
++			selection?: ConfigurationSelectionV1,
++		) => Promise<ConfigurationAuthorityV1>;
+ 		transform?: (request: SyntheticModelRequestV1) => unknown;
+ 		threeDenials?: boolean;
+ 		duplicate?: boolean;
+@@ -355,7 +404,28 @@
+ 			let generation = 1;
+ 			let interrupt = options.reopen ?? false;
+ 			const dependencies: HostFixtureDependencies = {
++				prepareModel: options.prepareModel,
++				retained: options.encrypted
++					? {
++							ownerId: subject.userId,
++							workspaceSessionId: subject.workspaceSessionId,
++							keyring: await importRuntimeKeyringFromBytes("v1", {
++								v1: new Uint8Array(32).fill(19),
++							}),
++						}
++					: undefined,
++				configuration: options.owned
++					? {
++							subject,
++							defaultSelection: { model: "faux-1", thinking: "off" },
++							authorize:
++								options.configurationAuthority ??
++								((query, selection) =>
++									product.readConfigurationAuthority(query, selection)),
++						}
++					: undefined,
+ 				fault: (point) => {
++					options.configurationFault?.(point);
+ 					if (interrupt && point === "before-submit") {
+ 						interrupt = false;
+ 						throw new Error("Synthetic interruption before submission");
+@@ -363,9 +433,12 @@
+ 				},
+ 				now: Date.now,
+ 				authority: async () => {
+-					const current = await new ModelProductAuthority(env.DB).current(
+-						probe,
+-					);
++					const current = options.owned
++						? await new ModelProductAuthority(env.DB).ownedConfiguration(
++								subject,
++								configurationQuery,
++							)
++						: await new ModelProductAuthority(env.DB).current(probe);
+ 					if (
+ 						options.finalAuthorityHold &&
+ 						state.storage.sql
+@@ -375,7 +448,9 @@
+ 						options.finalAuthorityHold.entered.resolve();
+ 						await options.finalAuthorityHold.released.promise;
+ 					}
+-					return { current, generation, executor: 1 };
++					return options.localAuthority
++						? options.localAuthority(current, generation)
++						: { current, generation, executor: 1 };
+ 				},
+ 				budgets: { workMs: 10000, drainMs: 1000 },
+ 				operationMs: { model: 10000, tool: 10000 },
+@@ -434,6 +509,12 @@
+ 						await host.schedule("command");
+ 					},
+ 					settled: finished.promise,
++					reopen: async () => {
++						await host.yield();
++						generation++;
++						host = await PiDurableHost.open(storage, dependencies);
++						return host;
++					},
+ 					claimFlush: () => {
+ 						const entered = deferred(),
+ 							released = deferred();
+@@ -470,6 +551,854 @@
+ 		},
+ 	);
+ }
++
++for (const encrypted of [false, true]) {
++	it(`owned configuration commits scoped duplicate/conflict outcomes and lost acknowledgments, encrypted=${encrypted}`, async () => {
++		await gate(
++			`owned-idempotency-${encrypted}`,
++			async (f) => {
++				const intent = selectionIntent();
++				const outcomes = await Promise.all([
++					f.host.configureOwned(intent),
++					f.host.configureOwned(intent),
++				]);
++				expect(outcomes[0]).toEqual(outcomes[1]);
++				expect(outcomes[0].status).toBe("applied");
++				expect(
++					(
++						await f.host.configureOwned({
++							...intent,
++							selection: { model: "faux-1", thinking: "off" },
++						})
++					).status,
++				).toBe("conflict");
++				const next = selectionIntent("choice-2", "faux-1", "high");
++				expect((await f.host.configureOwned(next)).status).toBe("applied");
++				expect(await f.host.configureOwned(intent)).toEqual(outcomes[0]);
++				expect(
++					(await f.host.readOwnedConfiguration(configurationQuery))?.selection,
++				).toEqual(next.selection);
++				const host = await f.reopen();
++				expect(await host.configureOwned(intent)).toEqual(outcomes[0]);
++				expect(
++					(await host.readOwnedConfiguration(configurationQuery))?.selection,
++				).toEqual(next.selection);
++				expect(
++					f.storage.sql
++						.exec("SELECT state FROM host_configuration_intents")
++						.toArray(),
++				).toEqual([{ state: "complete" }, { state: "complete" }]);
++				if (encrypted)
++					for (const row of f.storage.sql
++						.exec<{ outcome: string }>(
++							"SELECT outcome FROM host_configuration_intents",
++						)
++						.toArray()) {
++						expect(row.outcome).not.toContain("faux-");
++						expect(row.outcome).not.toContain("thinking");
++					}
++				expect(calls).toEqual([]);
++			},
++			{ owned: true, encrypted },
++		);
++	});
++	for (const phase of [
++		"configuration-intent",
++		"configuration-applied",
++		"configuration-outcome",
++	])
++		it(`configuration crash at ${phase} never reapplies an older choice, encrypted=${encrypted}`, async () => {
++			let crash = true;
++			await gate(
++				`owned-crash-${phase}-${encrypted}`,
++				async (f) => {
++					await expect(
++						f.host.configureOwned(selectionIntent()),
++					).rejects.toThrow("Synthetic configuration crash");
++					const host = await f.reopen();
++					const first = await host.configureOwned(selectionIntent());
++					expect(first.status).toBe(
++						phase === "configuration-intent" ? "outcome_unknown" : "applied",
++					);
++					const next = selectionIntent("newer", "faux-1", "high");
++					expect((await host.configureOwned(next)).status).toBe("applied");
++					expect(await host.configureOwned(selectionIntent())).toEqual(first);
++					expect(
++						(await host.readOwnedConfiguration(configurationQuery))?.selection,
++					).toEqual(next.selection);
++					expect(calls).toEqual([]);
++				},
++				{
++					owned: true,
++					encrypted,
++					configurationFault: (point) => {
++						if (crash && point === phase) {
++							crash = false;
++							throw new Error("Synthetic configuration crash");
++						}
++					},
++				},
++			);
++		});
++}
++for (const [name, sql] of [
++	["wrong-user", "UPDATE workspace_sessions SET userId='foreign'"],
++	["wrong-project-owner", "UPDATE projects SET userId='foreign'"],
++	["wrong-project", "UPDATE workspace_sessions SET projectId='foreign'"],
++	["archived", "UPDATE workspace_sessions SET status='archived'"],
++	["deleting", "UPDATE projects SET status='deleting'"],
++	["owner-version", "UPDATE workspace_sessions SET runtimeOwnerVersion=2"],
++	["stale-identity", "UPDATE sandbox_identities SET incarnationId='stale'"],
++	["wrong-role", "UPDATE sandbox_identities SET kind='project_seed'"],
++	["retired", "UPDATE sandbox_identities SET retiredAt=1"],
++	["lifecycle", "UPDATE sandbox_identities SET lifecycleGeneration=2"],
++	["revoked", "UPDATE codex_connections SET revoked=1"],
++	["disconnected", "UPDATE codex_connections SET status='disconnected'"],
++	["connection-generation", "UPDATE codex_connections SET generation=2"],
++	["capability-revision", "UPDATE codex_fixture_capabilities SET revision=2"],
++] as const)
++	it(`owned configuration rejects ${name} after actual D1 revocation with unchanged Pi state`, async () => {
++		await gate(
++			`owned-denial-${name}`,
++			async (f) => {
++				const initial = await f.host.readOwnedConfiguration(configurationQuery);
++				const persisted = await piState(f.storage);
++				await env.DB.batch([
++					env.DB.prepare(
++						"INSERT INTO user(id,name,email,createdAt,updatedAt) VALUES('foreign','Synthetic foreign','foreign@example.invalid',0,0)",
++					),
++					env.DB.prepare(
++						"INSERT INTO projects(id,name,userId,status) VALUES('foreign','Foreign project','foreign','ready')",
++					),
++				]);
++				await env.DB.prepare(sql).run();
++				expect((await f.host.configureOwned(selectionIntent())).status).toBe(
++					"denied",
++				);
++				expect(
++					f.storage.sql
++						.exec("SELECT id FROM host_configuration_intents")
++						.toArray(),
++				).toEqual([]);
++				expect(calls).toEqual([]);
++				expect(await piState(f.storage)).toBe(persisted);
++				expect(initial?.selection).toEqual({
++					model: "faux-1",
++					thinking: "off",
++				});
++			},
++			{ owned: true },
++		);
++	});
++for (const reason of [
++	"unavailable",
++	"revoked",
++	"unsupported-model",
++	"unsupported-thinking",
++] as const)
++	it(`owned selection denies ${reason} without a request`, async () => {
++		await gate(
++			`owned-capability-${reason}`,
++			async (f) => {
++				const persisted = await piState(f.storage);
++				const changed =
++					reason === "unavailable" || reason === "revoked"
++						? { ...account, status: reason, models: [] }
++						: { ...account, models: [{ id: "faux-1", thinking: ["off"] }] };
++				await env.DB.prepare("UPDATE codex_fixture_capabilities SET snapshot=?")
++					.bind(JSON.stringify(changed))
++					.run();
++				expect(
++					(
++						await f.host.configureOwned(
++							reason === "unsupported-thinking"
++								? selectionIntent("choice", "faux-1", "high")
++								: selectionIntent(),
++						)
++					).status,
++				).toBe("denied");
++				expect(await piState(f.storage)).toBe(persisted);
++				expect(
++					f.storage.sql
++						.exec("SELECT id FROM host_configuration_intents")
++						.toArray(),
++				).toEqual([]);
++				expect(calls).toEqual([]);
++			},
++			{ owned: true },
++		);
++	});
++it("caller fields cannot authenticate or select another owned scope", async () => {
++	await gate(
++		"owned-input",
++		async (f) => {
++			for (const patch of [
++				{ workspaceSessionId: "foreign" },
++				{ projectId: "foreign" },
++				{ ownerVersion: 2 },
++			])
++				expect(
++					(await f.host.configureOwned({ ...selectionIntent(), ...patch }))
++						.status,
++				).toBe("denied");
++			await expect(
++				f.host.configureOwned({ ...selectionIntent(), userId: "owner" }),
++			).rejects.toThrow();
++			expect(
++				await product.readConfigurationAuthority(
++					{ ...configurationQuery, userId: "owner" },
++					{ model: "faux-1", thinking: "off" },
++				),
++			).toEqual({ version: 1, status: "denied" });
++			expect(calls).toEqual([]);
++		},
++		{ owned: true },
++	);
++});
++it("a held actual D1 configuration authority result cannot survive capability revocation", async () => {
++	let hold = false;
++	const entered = deferred(),
++		released = deferred();
++	await gate(
++		"owned-held-authority",
++		async (f) => {
++			hold = true;
++			const changing = f.host.configureOwned(selectionIntent());
++			await bounded(entered.promise);
++			await env.DB.prepare(
++				"UPDATE codex_fixture_capabilities SET revision=2",
++			).run();
++			released.resolve();
++			expect((await changing).status).toBe("denied");
++			expect(
++				f.storage.sql
++					.exec("SELECT id FROM host_configuration_intents")
++					.toArray(),
++			).toEqual([]);
++			expect(calls).toEqual([]);
++		},
++		{
++			owned: true,
++			configurationAuthority: async (query, selected) => {
++				const result = await product.readConfigurationAuthority(
++					query,
++					selected,
++				);
++				if (hold) {
++					hold = false;
++					entered.resolve();
++					await released.promise;
++				}
++				return result;
++			},
++		},
++	);
++});
++it("owned configuration is reflected in an actual mandatory credential request", async () => {
++	await gate(
++		"owned-request",
++		async (f) => {
++			expect((await f.host.configureOwned(selectionIntent())).status).toBe(
++				"applied",
++			);
++			await f.start();
++			await bounded(f.settled);
++			await f.host.waitIdle();
++			expect(calls.map((c) => [c.body.model, c.body.thinking])).toEqual([
++				["faux-2", "low"],
++			]);
++		},
++		{ owned: true },
++	);
++});
++it("a valid first default grants no later request admission after capability revocation", async () => {
++	await gate(
++		"owned-default-revocation",
++		async (f) => {
++			expect(
++				(await f.host.readOwnedConfiguration(configurationQuery))?.selection,
++			).toEqual({ model: "faux-1", thinking: "off" });
++			await credential.holdModel("credentials");
++			await f.start();
++			await bounded(credential.waitModel());
++			await env.DB.prepare("UPDATE codex_fixture_capabilities SET snapshot=?")
++				.bind(JSON.stringify({ ...account, status: "revoked", models: [] }))
++				.run();
++			await credential.releaseModel();
++			await bounded(f.settled);
++			expect(calls).toEqual([]);
++		},
++		{ owned: true },
++	);
++});
++
++for (const reason of [
++	"valid",
++	"unsupported-model",
++	"unsupported-thinking",
++	"unavailable",
++	"revoked",
++	"disconnected",
++] as const)
++	it(`first owned conversation validates defaults without prompt membership, ${reason}`, async () => {
++		const invalid = reason !== "valid";
++		await env.DB.prepare("DELETE FROM runtime_command_memberships").run();
++		await env.DB.prepare("DELETE FROM session_commands").run();
++		if (reason === "disconnected")
++			await env.CodexCredential.getByName("owner").revoke("owner", 2);
++		else if (invalid) {
++			const changed =
++				reason === "unavailable" || reason === "revoked"
++					? { ...account, status: reason, models: [] }
++					: {
++							...account,
++							models: [
++								{
++									id: reason === "unsupported-model" ? "faux-1" : "faux-2",
++									thinking: ["off"],
++								},
++							],
++						};
++			await env.DB.prepare("UPDATE codex_fixture_capabilities SET snapshot=?")
++				.bind(JSON.stringify(changed))
++				.run();
++		}
++		await runInDurableObject(
++			env.PI_MODEL_HOST.getByName(`owned-default-${reason}`),
++			async (_instance, state) => {
++				const selected: ConfigurationSelectionV1 = {
++					model: "faux-2",
++					thinking: "low",
++				};
++				const dependencies: HostFixtureDependencies = {
++					now: Date.now,
++					authority: async () => ({
++						current: await new ModelProductAuthority(env.DB).ownedConfiguration(
++							subject,
++							configurationQuery,
++						),
++						generation: 1,
++						executor: 1,
++					}),
++					configuration: {
++						subject,
++						defaultSelection: selected,
++						authorize: (query, selection) =>
++							product.readConfigurationAuthority(query, selection),
++					},
++					wakeup: { getAlarm: async () => null, setAlarm: async () => {} },
++					options: (guard) => {
++						const adapter = createPrivateModelAdapter(
++							guard,
++							{
++								requestModel: (input, capability) =>
++									product.requestModel(input, capability),
++								readModelPermit: (input, descriptor) =>
++									product.readModelPermit(input, descriptor),
++							},
++							subject,
++						);
++						return {
++							models: adapter.models,
++							registry: adapter.registry,
++							settings: { extensions: [adapter.extension] },
++						};
++					},
++				};
++				if (invalid) {
++					await expect(
++						PiDurableHost.open(state.storage, dependencies),
++					).rejects.toThrow("Default configuration denied");
++					expect(
++						state.storage.sql
++							.exec<{ n: number }>("SELECT COUNT(*) AS n FROM conversations")
++							.one().n,
++					).toBe(0);
++				} else {
++					const host = await PiDurableHost.open(state.storage, dependencies);
++					try {
++						expect(
++							(await host.readOwnedConfiguration(configurationQuery))
++								?.selection,
++						).toEqual(selected);
++					} finally {
++						await host.yield();
++					}
++					expect(
++						state.storage.sql
++							.exec<{ n: number }>("SELECT COUNT(*) AS n FROM conversations")
++							.one().n,
++					).toBe(1);
++				}
++				expect(calls).toEqual([]);
++				await state.storage.deleteAlarm();
++			},
++		);
++	});
++it("local credential disconnect denies configuration before its D1 projection catches up", async () => {
++	await gate(
++		"owned-local-disconnect",
++		async (f) => {
++			await env.CodexCredential.getByName("owner").revoke("owner", 2);
++			expect((await f.host.configureOwned(selectionIntent())).status).toBe(
++				"denied",
++			);
++			expect(
++				f.storage.sql
++					.exec("SELECT id FROM host_configuration_intents")
++					.toArray(),
++			).toEqual([]);
++			expect(calls).toEqual([]);
++		},
++		{ owned: true },
++	);
++});
++it("configuration in flight keeps the prepared request and changes the separately prepared summary", async () => {
++	await gate(
++		"owned-in-flight-summary",
++		async (f) => {
++			await credential.holdModel("credentials");
++			await f.start();
++			await bounded(credential.waitModel());
++			expect((await f.host.configureOwned(selectionIntent())).status).toBe(
++				"applied",
++			);
++			await credential.releaseModel();
++			await bounded(f.settled);
++			await until(async () => {
++				const row = f.storage.sql
++					.exec<{ task: number }>(
++						"SELECT task FROM host_tasks WHERE kind='pi.generation'",
++					)
++					.toArray()[0];
++				return (
++					!!row &&
++					(await f.host.task(row.task as Parameters<typeof f.host.task>[0]))
++						?.state.status === "terminal"
++				);
++			});
++			expect(calls.map((c) => [c.body.model, c.body.thinking])).toEqual([
++				["faux-1", "off"],
++			]);
++			await f.host.compact("command");
++			await until(() => calls.length === 2);
++			await f.host.waitIdle();
++			expect(calls[1].body).toMatchObject({
++				purpose: "custom_summary",
++				model: "faux-2",
++				thinking: "low",
++			});
++			expect(await f.snapshot()).toMatchObject({
++				windows: [{ consumedRequests: 1 }, { consumedRequests: 1 }],
++			});
++			console.log(
++				"[007-configuration-preparation]",
++				JSON.stringify({
++					requests: calls.map((c) => ({
++						model: c.body.model,
++						thinking: c.body.thinking,
++						purpose: c.body.purpose,
++					})),
++					configuration:
++						await f.host.readOwnedConfiguration(configurationQuery),
++					snapshot: await f.snapshot(),
++				}),
++			);
++		},
++		{ owned: true },
++	);
++});
++
++it("held host authority revocation rejects configuration without changing durable Pi state", async () => {
++	let held = false,
++		current = true;
++	const entered = deferred(),
++		released = deferred();
++	await gate(
++		"owned-host-revocation",
++		async (f) => {
++			const before = await f.host.readOwnedConfiguration(configurationQuery);
++			held = true;
++			const configuring = f.host.configureOwned(selectionIntent());
++			await bounded(entered.promise);
++			current = false;
++			released.resolve();
++			expect((await configuring).status).toBe("denied");
++			current = true;
++			expect(await f.host.readOwnedConfiguration(configurationQuery)).toEqual(
++				before,
++			);
++			expect(calls).toEqual([]);
++		},
++		{
++			owned: true,
++			localAuthority: async (productCurrent, generation) => {
++				const captured = current;
++				if (held) {
++					held = false;
++					entered.resolve();
++					await released.promise;
++				}
++				return { current: captured && productCurrent, generation, executor: 1 };
++			},
++		},
++	);
++});
++it("same key with concurrent changed payload has one durable winner", async () => {
++	await gate(
++		"owned-concurrent-conflict",
++		async (f) => {
++			const [first, changed] = await Promise.all([
++				f.host.configureOwned(selectionIntent()),
++				f.host.configureOwned(selectionIntent("choice-1", "faux-1", "high")),
++			]);
++			expect(first.status).toBe("applied");
++			expect(changed.status).toBe("conflict");
++			expect(
++				(await f.host.readOwnedConfiguration(configurationQuery))?.selection,
++			).toEqual(selectionIntent().selection);
++			expect(calls).toEqual([]);
++		},
++		{ owned: true },
++	);
++});
++it("two actual owned sessions retain independent durable Pi selections", async () => {
++	await env.DB.batch([
++		env.DB.prepare(
++			"INSERT INTO workspace_sessions(id,projectId,userId,status,sandboxIdentityId,runtimeOwner,runtimeOwnerVersion) VALUES('session-2','project','owner','active','executor-2','trusted_v1',1)",
++		),
++		env.DB.prepare(
++			"INSERT INTO sandbox_identities(id,kind,sandboxId,containerId,userId,projectId,workspaceSessionId,state,controllerClass,controllerNamespace,incarnationId) VALUES('executor-2','workspace_session','sandbox-2','container-2','owner','project','session-2','ready','Sandbox','fixture-execution-v1','incarnation-2')",
++		),
++	]);
++	await gate(
++		"owned-isolation-1",
++		async (f) => {
++			expect((await f.host.configureOwned(selectionIntent())).status).toBe(
++				"applied",
++			);
++			const second = {
++				...subject,
++				workspaceSessionId: "session-2",
++				identityId: "executor-2",
++				incarnationId: "incarnation-2",
++			};
++			const query = { ...configurationQuery, workspaceSessionId: "session-2" };
++			await runInDurableObject(
++				env.PI_MODEL_HOST.getByName("owned-isolation-2"),
++				async (_instance, state) => {
++					const host = await PiDurableHost.open(state.storage, {
++						now: Date.now,
++						authority: async () => ({
++							current: await new ModelProductAuthority(
++								env.DB,
++							).ownedConfiguration(second, query),
++							generation: 1,
++							executor: 1,
++						}),
++						configuration: {
++							subject: second,
++							defaultSelection: { model: "faux-1", thinking: "off" },
++							authorize: (query, selection) =>
++								product.readSecondConfigurationAuthority(query, selection),
++						},
++						wakeup: { getAlarm: async () => null, setAlarm: async () => {} },
++						options: (guard) => {
++							const adapter = createPrivateModelAdapter(
++								guard,
++								{
++									requestModel: (input, capability) =>
++										product.requestModel(input, capability),
++									readModelPermit: (input, descriptor) =>
++										product.readModelPermit(input, descriptor),
++								},
++								second,
++							);
++							return {
++								models: adapter.models,
++								registry: adapter.registry,
++								settings: { extensions: [adapter.extension] },
++							};
++						},
++					});
++					try {
++						expect(
++							(
++								await host.configureOwned({
++									...selectionIntent(),
++									workspaceSessionId: "session-2",
++									selection: { model: "faux-1", thinking: "high" },
++								})
++							).status,
++						).toBe("applied");
++						expect(
++							(await host.readOwnedConfiguration(query))?.selection,
++						).toEqual({ model: "faux-1", thinking: "high" });
++						await expect(
++							host.configureOwned(selectionIntent()),
++						).resolves.toMatchObject({ status: "denied" });
++					} finally {
++						await host.yield();
++						await state.storage.deleteAlarm();
++					}
++				},
++			);
++			expect(
++				(await f.host.readOwnedConfiguration(configurationQuery))?.selection,
++			).toEqual({ model: "faux-2", thinking: "low" });
++			expect(calls).toEqual([]);
++		},
++		{ owned: true },
++	);
++});
++
++it("owned configuration close cancels held authority and joins the owner lane", async () => {
++	let held = false;
++	const entered = deferred(),
++		released = deferred();
++	await gate(
++		"owned-close",
++		async (f) => {
++			held = true;
++			const pending = f.host.configureOwned(selectionIntent());
++			const rejected = expect(pending).rejects.toThrow();
++			await bounded(entered.promise);
++			await bounded(f.host.yield());
++			await rejected;
++			released.resolve();
++			const host = await f.reopen();
++			expect(
++				(await host.readOwnedConfiguration(configurationQuery))?.selection,
++			).toEqual({ model: "faux-1", thinking: "off" });
++			expect(calls).toEqual([]);
++		},
++		{
++			owned: true,
++			configurationAuthority: async (query, selected) => {
++				const result = await product.readConfigurationAuthority(
++					query,
++					selected,
++				);
++				if (held) {
++					held = false;
++					entered.resolve();
++					await released.promise;
++				}
++				return result;
++			},
++		},
++	);
++});
++it("queued follow-up preparation uses the owned change, not acceptance-time selection", async () => {
++	await gate(
++		"owned-follow-up",
++		async (f) => {
++			await credential.holdModel("credentials");
++			await f.start();
++			await bounded(credential.waitModel());
++			await env.DB.batch([
++				env.DB.prepare(
++					"INSERT INTO session_commands(id,userId,targetKind,targetId,projectId,sessionId,kind,commandSeq,targetRunId,payloadVersion,userMessageId,assistantMessageId,payloadDigest,acceptedAt,deadlineAt) VALUES('follow','owner','workspace_session','session','project','session','follow_up',2,'run',1,'follow-user','follow-assistant','fixture-follow',0,?)",
++				).bind(Date.now() + 600000),
++				env.DB.prepare(
++					"INSERT INTO runtime_command_memberships(commandId,sessionId,runId,userMessageId,assistantMessageId,runEpoch) VALUES('follow','session','run','follow-user','follow-assistant',1)",
++				),
++			]);
++			await f.host.accept("follow", "Synthetic follow-up", {
++				run: "run",
++				user: "follow-user",
++				assistant: "follow-assistant",
++				sequence: 2,
++			});
++			await expect(f.host.schedule("follow")).rejects.toThrow("boundary");
++			expect((await f.host.configureOwned(selectionIntent())).status).toBe(
++				"applied",
++			);
++			await credential.releaseModel();
++			await bounded(f.settled);
++			await f.host.waitIdle();
++			await f.host.schedule("follow");
++			await f.host.waitIdle();
++			expect(calls.map((c) => [c.body.model, c.body.thinking])).toEqual([
++				["faux-1", "off"],
++				["faux-2", "low"],
++			]);
++		},
++		{ owned: true },
++	);
++});
++it("owned configuration leaves retries separately admitted with new preparation-time selection", async () => {
++	upstream(503, "Synthetic known failure", 1);
++	await gate(
++		"owned-retry",
++		async (f) => {
++			await credential.holdModel("credentials");
++			await f.start();
++			await bounded(credential.waitModel());
++			expect((await f.host.configureOwned(selectionIntent())).status).toBe(
++				"applied",
++			);
++			await credential.releaseModel();
++			await bounded(f.settled);
++			await f.host.waitIdle();
++			expect(calls.map((c) => [c.body.model, c.body.thinking])).toEqual([
++				["faux-1", "off"],
++				["faux-2", "low"],
++			]);
++			expect(await f.snapshot()).toMatchObject({
++				windows: [{ consumedRequests: 1 }, { consumedRequests: 1 }],
++				admissions: [{ state: "failed_known" }, { state: "complete" }],
++			});
++		},
++		{ owned: true, retry: true },
++	);
++});
++
++for (const purpose of ["generation", "custom_summary"] as const)
++	it(`actual ${purpose} preparation survives close/reopen with an owned selection change`, async () => {
++		let pause = purpose === "generation";
++		const entered = deferred(),
++			remote = deferred();
++		await gate(
++			`owned-prepared-${purpose}`,
++			async (f) => {
++				await f.start();
++				if (purpose === "custom_summary") {
++					await bounded(f.settled);
++					await until(async () => {
++						const row = f.storage.sql
++							.exec<{ task: number }>(
++								"SELECT task FROM host_tasks WHERE kind='pi.generation'",
++							)
++							.toArray()[0];
++						return (
++							!!row &&
++							(await f.host.task(row.task as Parameters<typeof f.host.task>[0]))
++								?.state.status === "terminal"
++						);
++					});
++					pause = true;
++					await f.host.compact("command");
++				}
++				await bounded(entered.promise);
++				const before = calls.length;
++				expect((await f.host.configureOwned(selectionIntent())).status).toBe(
++					"applied",
++				);
++				const host = await f.reopen();
++				expect(calls.length).toBe(before);
++				pause = false;
++				remote.resolve();
++				await host.schedule("command");
++				await host.waitIdle();
++				expect(calls.at(-1)?.body).toMatchObject({
++					purpose,
++					model: "faux-1",
++					thinking: "off",
++				});
++				expect(
++					(await host.readOwnedConfiguration(configurationQuery))?.selection,
++				).toEqual({ model: "faux-2", thinking: "low" });
++				console.log(
++					"[007-configuration-retained]",
++					JSON.stringify({
++						purpose,
++						requests: calls.map((c) => ({
++							model: c.body.model,
++							thinking: c.body.thinking,
++							purpose: c.body.purpose,
++						})),
++						snapshot: await f.snapshot(),
++					}),
++				);
++			},
++			{
++				owned: true,
++				encrypted: true,
++				prepareModel: async (context) => {
++					if (pause) {
++						entered.resolve();
++						const signal = context.abortSignal;
++						signal?.throwIfAborted();
++						let abort: (() => void) | undefined;
++						try {
++							await Promise.race([
++								remote.promise,
++								new Promise<never>((_, reject) => {
++									abort = () =>
++										reject(new Error("Synthetic preparation cancelled"));
++									signal?.addEventListener("abort", abort, { once: true });
++								}),
++							]);
++						} finally {
++							if (abort) signal?.removeEventListener("abort", abort);
++						}
++					}
++				},
++			},
++		);
++	});
++
++it("lost acknowledgment retry remains an owned receipt, not new entitlement or selection", async () => {
++	await gate(
++		"owned-receipt-revocation",
++		async (f) => {
++			const ack = await f.host.configureOwned(selectionIntent());
++			await env.CodexCredential.getByName("owner").revoke("owner", 2);
++			expect(await f.host.configureOwned(selectionIntent())).toEqual(ack);
++			expect((await f.host.configureOwned(selectionIntent("new"))).status).toBe(
++				"denied",
++			);
++			expect(
++				(await f.host.readOwnedConfiguration(configurationQuery))?.selection,
++			).toEqual(selectionIntent().selection);
++			expect(calls).toEqual([]);
++		},
++		{ owned: true, encrypted: true },
++	);
++});
++for (const field of ["payload_digest", "state", "outcome"] as const)
++	it(`encrypted configuration evidence rejects ${field} tampering without changing Pi`, async () => {
++		await gate(
++			`owned-tamper-${field}`,
++			async (f) => {
++				await f.host.configureOwned(selectionIntent());
++				const original = f.storage.sql
++					.exec<{
++						id: string;
++						payload_digest: string;
++						state: string;
++						outcome: string;
++					}>("SELECT * FROM host_configuration_intents")
++					.one();
++				const persisted = await piState(f.storage);
++				f.storage.sql.exec(
++					`UPDATE host_configuration_intents SET ${field}=?`,
++					field === "state"
++						? "pending"
++						: field === "outcome"
++							? original.outcome + "changed"
++							: "0".repeat(64),
++				);
++				try {
++					await expect(
++						f.host.configureOwned(selectionIntent()),
++					).rejects.toThrow();
++					expect(await piState(f.storage)).toBe(persisted);
++					expect(calls).toEqual([]);
++				} finally {
++					f.storage.sql.exec(
++						"UPDATE host_configuration_intents SET payload_digest=?,state=?,outcome=? WHERE id=?",
++						original.payload_digest,
++						original.state,
++						original.outcome,
++						original.id,
++					);
++				}
++			},
++			{ owned: true, encrypted: true },
++		);
++	});
+ 
+ it("the mandatory adapter constructs an exact credential-owned request and bounded stream through private RPC", async () => {
+ 	upstream();
+--- a/apps/credential-tests/src/model-entry.ts
++++ b/apps/credential-tests/src/model-entry.ts
+@@ -10,7 +10,65 @@
+ export { PiDurableHostFixture } from "../../runtime/src/pi-durable-host.ts";
+ export { CodexCredential, FixtureCredential } from "./entry";
+ 
++import { readOwnedConfigurationAuthority } from "../../web/src/lib/configuration-product-authority";
++
+ export class FixtureProduct extends WorkerEntrypoint<ModelProductBindings> {
++	async readConfigurationAuthority(input: unknown, selection?: unknown) {
++		const credential =
++			await this.env.CodexCredential.getByName("owner").status("owner");
++		if (
++			selection !== undefined &&
++			(credential.status !== "connected" || credential.generation !== 1)
++		)
++			return { version: 1 as const, status: "denied" as const };
++		return readOwnedConfigurationAuthority(
++			this.env.DB,
++			{
++				version: 1,
++				userId: "owner",
++				projectId: "project",
++				workspaceSessionId: "session",
++				identityId: "executor",
++				incarnationId: "incarnation",
++				controllerNamespace: "fixture-execution-v1",
++				lifecycleGeneration: 1,
++				runtimeOwnerVersion: 1,
++				connectionGeneration: 1,
++				capabilityRevision: 1,
++			},
++			input,
++			selection,
++			true,
++		);
++	}
++	async readSecondConfigurationAuthority(input: unknown, selection?: unknown) {
++		const credential =
++			await this.env.CodexCredential.getByName("owner").status("owner");
++		if (
++			selection !== undefined &&
++			(credential.status !== "connected" || credential.generation !== 1)
++		)
++			return { version: 1 as const, status: "denied" as const };
++		return readOwnedConfigurationAuthority(
++			this.env.DB,
++			{
++				version: 1,
++				userId: "owner",
++				projectId: "project",
++				workspaceSessionId: "session-2",
++				identityId: "executor-2",
++				incarnationId: "incarnation-2",
++				controllerNamespace: "fixture-execution-v1",
++				lifecycleGeneration: 1,
++				runtimeOwnerVersion: 1,
++				connectionGeneration: 1,
++				capabilityRevision: 1,
++			},
++			input,
++			selection,
++			true,
++		);
++	}
+ 	requestModel(input: unknown, capability: ModelClaimRpc) {
+ 		return performPrivateModelRequest(this.env, input, capability, true);
+ 	}
+--- a/apps/runtime/src/pi-durable-host.ts
++++ b/apps/runtime/src/pi-durable-host.ts
+@@ -20,8 +20,29 @@
+ } from "@earendil-works/pi-durable";
+ import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
+ import {
++	type ConfigurationAckV1,
++	type ConfigurationAuthorityV1,
++	type ConfigurationIntentV1,
++	type ConfigurationReadV1,
++	type ConfigurationSelectionV1,
++	type ConfigurationSnapshotV1,
++	configurationIdentity,
++	parseConfigurationAckV1,
++	parseConfigurationAuthorityV1,
++	parseConfigurationIntentV1,
++	parseConfigurationReadV1,
++	parseConfigurationSelectionV1,
++} from "../../../packages/runtime-contracts/src/configuration.js";
++import {
++	decodeContractInput,
++	literalField,
++	strictRecord,
++} from "../../../packages/runtime-contracts/src/json.js";
++import type { ModelSubjectV1 } from "../../../packages/runtime-contracts/src/model.js";
++import {
+ 	type ModelAttemptV1,
+ 	parseModelAttemptV1,
++	SYNTHETIC_MODEL_LIMITS,
+ } from "../../../packages/runtime-contracts/src/model.js";
+ import {
+ 	digestText,
+@@ -94,7 +115,10 @@
+ 	| "before-submit"
+ 	| "after-submit"
+ 	| "after-close"
+-	| "alarm";
++	| "alarm"
++	| "configuration-intent"
++	| "configuration-applied"
++	| "configuration-outcome";
+ export type LocalAuthority = {
+ 	current: boolean;
+ 	generation: number;
+@@ -311,6 +335,14 @@
+ 		setAlarm(deadline: number): Promise<void>;
+ 	};
+ 	retained?: RetainedStorageBinding;
++	configuration?: {
++		subject: ModelSubjectV1;
++		defaultSelection: ConfigurationSelectionV1;
++		authorize(
++			query: ConfigurationReadV1,
++			selection?: ConfigurationSelectionV1,
++		): Promise<ConfigurationAuthorityV1>;
++	};
+ };
+ 
+ /** Disposable L1 host candidate. Plaintext and local authority are not product contracts. */
+@@ -394,6 +426,9 @@
+ 			storage.sql.exec(
+ 				"CREATE TABLE IF NOT EXISTS host_safety (id INTEGER PRIMARY KEY, reason TEXT)",
+ 			);
++			storage.sql.exec(
++				"CREATE TABLE IF NOT EXISTS host_configuration_intents (id TEXT PRIMARY KEY, payload_digest TEXT NOT NULL, outcome TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('pending','complete')))",
++			);
+ 			const columns = storage.sql
+ 				.exec<{ name: string }>("PRAGMA table_info(host_effects)")
+ 				.toArray();
+@@ -488,6 +523,7 @@
+ 			host.captureRetry(publication),
+ 		);
+ 		try {
++			await host.initializeOwnedConfiguration();
+ 			await host.reconcileSafety();
+ 			await host.repairWakeup();
+ 		} catch (error) {
+@@ -556,6 +592,7 @@
+ 	}
+ 	private assertNoPlaintextPrivate() {
+ 		const statements = [
++			"SELECT outcome AS value FROM host_configuration_intents",
+ 			"SELECT content AS value FROM host_inbox",
+ 			"SELECT correlation AS value FROM host_effects WHERE correlation IS NOT NULL",
+ 			"SELECT evidence AS value FROM host_effects WHERE evidence IS NOT NULL",
+@@ -577,6 +614,11 @@
+ 		const binding = this.dependencies.retained;
+ 		if (!binding) return;
+ 		const fields = [
++			...this.storage.sql
++				.exec<{ record_id: string; value: string }>(
++					"SELECT 'configuration:' || id AS record_id, outcome AS value FROM host_configuration_intents",
++				)
++				.toArray(),
+ 			...this.storage.sql
+ 				.exec<{ record_id: string; value: string }>(
+ 					"SELECT 'inbox:' || id || ':content' AS record_id, content AS value FROM host_inbox",
+@@ -760,6 +802,15 @@
+ 				.toArray()[0];
+ 			return row?.value ?? null;
+ 		}
++		if (recordId.startsWith("configuration:"))
++			return (
++				this.storage.sql
++					.exec<{ value: string }>(
++						"SELECT outcome AS value FROM host_configuration_intents WHERE id=?",
++						recordId.slice("configuration:".length),
++					)
++					.toArray()[0]?.value ?? null
++			);
+ 		return null;
+ 	}
+ 	private assertCachedEnvelope(recordId: string, stored: string | null) {
+@@ -1410,6 +1461,8 @@
+ 		change: Pick<AgentChange, "model" | "thinkingLevel">,
+ 		context: Context = BACKGROUND_CONTEXT,
+ 	): Promise<void> {
++		if (this.dependencies.configuration)
++			throw new Error("Owned configuration requires an intent");
+ 		return this.ownerTransition(context, async (context) => {
+ 			await this.check(
+ 				await awaitWithContext(this.dependencies.authority(), context),
+@@ -1427,6 +1480,350 @@
+ 				throw error;
+ 			}
+ 		});
++	}
++	private configurationScope(): ConfigurationReadV1 {
++		const s = this.dependencies.configuration!.subject;
++		return {
++			version: 1,
++			projectId: s.projectId,
++			workspaceSessionId: s.workspaceSessionId,
++			ownerVersion: s.runtimeOwnerVersion,
++		};
++	}
++	private async configurationAllowed(
++		query: ConfigurationReadV1,
++		selection: ConfigurationSelectionV1 | undefined,
++		context: Context,
++	): Promise<boolean> {
++		const c = this.dependencies.configuration;
++		if (!c || canonical(query) !== canonical(this.configurationScope()))
++			return false;
++		const authorized = parseConfigurationAuthorityV1(
++			await awaitWithContext(c.authorize(query, selection), context),
++		);
++		if (
++			authorized.status !== "current" ||
++			canonical(authorized.subject) !== canonical(c.subject)
++		)
++			return false;
++		const initial = await awaitWithContext(
++			this.dependencies.authority(),
++			context,
++		);
++		if (!this.configurationLocal(initial)) return false;
++		const epoch = this.storage.sql
++			.exec<{ epoch: number }>("SELECT epoch FROM host_meta")
++			.one().epoch;
++		const fresh = parseConfigurationAuthorityV1(
++			await awaitWithContext(c.authorize(query, selection), context),
++		);
++		if (
++			fresh.status !== "current" ||
++			canonical(fresh.subject) !== canonical(c.subject)
++		)
++			return false;
++		const local = await awaitWithContext(
++			this.dependencies.authority(),
++			context,
++		);
++		const finalProduct = parseConfigurationAuthorityV1(
++			await awaitWithContext(c.authorize(query, selection), context),
++		);
++		context.abortSignal?.throwIfAborted();
++		return (
++			finalProduct.status === "current" &&
++			canonical(finalProduct.subject) === canonical(c.subject) &&
++			this.configurationLocal(local) &&
++			this.storage.sql
++				.exec<{ epoch: number }>("SELECT epoch FROM host_meta")
++				.one().epoch === epoch
++		);
++	}
++	private configurationLocal(authority: LocalAuthority): boolean {
++		if (
++			this.denied ||
++			this.sealed ||
++			this.storageBarrier ||
++			!authority.current ||
++			authority.executor !== 1 ||
++			(authority.liveExecutors ?? 1) !== 1
++		)
++			return false;
++		if (this.storage.sql.exec("SELECT id FROM host_safety").toArray().length)
++			return false;
++		if (
++			this.active &&
++			(authority.generation !== this.active.generation ||
++				this.dependencies.now() >= this.active.yield_at ||
++				this.storage.sql
++					.exec("SELECT 1 FROM host_runs WHERE state='stopping'")
++					.toArray().length)
++		)
++			return false;
++		return true;
++	}
++	private async piConfiguration(
++		query: ConfigurationReadV1,
++		context: Context,
++	): Promise<ConfigurationSnapshotV1> {
++		const root = await this.harness.conversation(ROOT_CONVERSATION_ID, context);
++		if (!root) return { ...query, selection: null };
++		const agent = await root.agent(context);
++		if (!agent.model) return { ...query, selection: null };
++		if (agent.model.provider !== "faux")
++			throw new Error("Unsupported configuration provider");
++		return {
++			...query,
++			selection: parseConfigurationSelectionV1({
++				model: agent.model.modelId,
++				thinking: agent.thinkingLevel,
++			}),
++		};
++	}
++	private async initializeOwnedConfiguration() {
++		const c = this.dependencies.configuration;
++		if (!c) return;
++		await this.ownerTransition(
++			withAbortSignal(
++				AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
++				BACKGROUND_CONTEXT,
++			),
++			async (context) => {
++				if (await this.harness.conversation(ROOT_CONVERSATION_ID, context)) {
++					// Pi and host intent commits are separate. Reopen observes Pi; it never replays a pending selection.
++					for (const row of this.storage.sql
++						.exec<{ id: string }>(
++							"SELECT id FROM host_configuration_intents WHERE state='pending'",
++						)
++						.toArray()) {
++						const { ack } = await this.configurationEvidence(row.id, context);
++						const snapshot = await this.piConfiguration(
++							this.configurationScope(),
++							context,
++						);
++						await this.finishConfiguration(
++							row.id,
++							canonical(snapshot) === canonical(ack.snapshot)
++								? ack
++								: { ...ack, status: "outcome_unknown", snapshot: null },
++							context,
++						);
++					}
++					return;
++				}
++				const selection = parseConfigurationSelectionV1(c.defaultSelection);
++				if (
++					!(await this.configurationAllowed(
++						this.configurationScope(),
++						selection,
++						context,
++					))
++				)
++					throw new Error("Default configuration denied");
++				await this.harness.root(context, {
++					agent: {
++						model: { provider: "faux", modelId: selection.model },
++						thinkingLevel: selection.thinking,
++					},
++				});
++				await this.durable(context);
++			},
++		);
++	}
++	async readOwnedConfiguration(
++		input: unknown,
++		context: Context = BACKGROUND_CONTEXT,
++	): Promise<ConfigurationSnapshotV1 | null> {
++		const query = parseConfigurationReadV1(input);
++		context = withAbortSignal(
++			AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
++			context,
++		);
++		return this.ownerTransition(context, async (context) => {
++			if (!(await this.configurationAllowed(query, undefined, context)))
++				return null;
++			return this.piConfiguration(query, context);
++		});
++	}
++	async configureOwned(
++		input: unknown,
++		context: Context = BACKGROUND_CONTEXT,
++	): Promise<ConfigurationAckV1> {
++		const intent = parseConfigurationIntentV1(input);
++		context = withAbortSignal(
++			AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
++			context,
++		);
++		const query = parseConfigurationReadV1({
++			version: 1,
++			projectId: intent.projectId,
++			workspaceSessionId: intent.workspaceSessionId,
++			ownerVersion: intent.ownerVersion,
++		});
++		const deny = (
++			status: ConfigurationAckV1["status"],
++		): ConfigurationAckV1 => ({
++			version: 1,
++			intentId: intent.intentId,
++			status,
++			snapshot: null,
++		});
++		if (!this.dependencies.configuration) return deny("unavailable");
++		return this.ownerTransition(context, async (context) => {
++			if (!(await this.configurationAllowed(query, undefined, context)))
++				return deny("denied");
++			const identity = await awaitWithContext(
++				configurationIdentity(this.dependencies.configuration!.subject, intent),
++				context,
++			);
++			const recordId = `configuration:${identity.key}`;
++			const old = this.storage.sql
++				.exec<{ payload_digest: string; outcome: string; state: string }>(
++					"SELECT payload_digest,outcome,state FROM host_configuration_intents WHERE id=?",
++					identity.key,
++				)
++				.toArray()[0];
++			if (old) {
++				const { ack } = await this.configurationEvidence(identity.key, context);
++				if (old.payload_digest !== identity.payload) return deny("conflict");
++				if (old.state === "complete") return ack;
++				return deny("outcome_unknown");
++			}
++			if (
++				this.storage.sql
++					.exec(
++						"SELECT 1 FROM host_configuration_intents WHERE state='pending' LIMIT 1",
++					)
++					.toArray().length
++			)
++				return deny("outcome_unknown");
++			const ack: ConfigurationAckV1 = {
++				version: 1,
++				intentId: intent.intentId,
++				status: "applied",
++				snapshot: { ...query, selection: intent.selection },
++			};
++			const plain = JSON.stringify({
++				version: 1,
++				intent,
++				ack,
++				state: "pending",
++			});
++			const sealed = await awaitWithContext(
++				this.seal(recordId, plain),
++				context,
++			);
++			if (!(await this.configurationAllowed(query, intent.selection, context)))
++				return deny("denied");
++			this.transition("intent", () => {
++				this.storage.sql.exec(
++					"INSERT INTO host_configuration_intents VALUES (?,?,?,'pending')",
++					identity.key,
++					identity.payload,
++					sealed.ciphertext,
++				);
++				this.rememberSeal(recordId, sealed.digest);
++			});
++			this.rememberPlain(recordId, plain, sealed.digest, sealed.ciphertext);
++			await this.durable(context);
++			this.dependencies.fault?.("configuration-intent");
++			const root = await this.harness.conversation(
++				ROOT_CONVERSATION_ID,
++				context,
++			);
++			if (!root) throw new Error("Missing owned conversation");
++			if (
++				!(await this.configurationAllowed(query, intent.selection, context))
++			) {
++				const denied = deny("denied");
++				await this.finishConfiguration(identity.key, denied, context);
++				return denied;
++			}
++			await root.configure(
++				{
++					model: { provider: "faux", modelId: intent.selection.model },
++					thinkingLevel: intent.selection.thinking,
++				},
++				context,
++			);
++			await this.durable(context);
++			this.dependencies.fault?.("configuration-applied");
++			const snapshot = await this.piConfiguration(query, context);
++			if (canonical(snapshot) !== canonical(ack.snapshot))
++				throw new Error("Configuration persistence mismatch");
++			await this.finishConfiguration(
++				identity.key,
++				{ ...ack, snapshot },
++				context,
++			);
++			this.dependencies.fault?.("configuration-outcome");
++			return { ...ack, snapshot };
++		});
++	}
++	private async configurationEvidence(
++		key: string,
++		context: Context,
++	): Promise<{ intent: ConfigurationIntentV1; ack: ConfigurationAckV1 }> {
++		this.assertSeals();
++		const row = this.storage.sql
++			.exec<{ payload_digest: string; outcome: string; state: string }>(
++				"SELECT payload_digest,outcome,state FROM host_configuration_intents WHERE id=?",
++				key,
++			)
++			.one();
++		const e = strictRecord(
++			decodeContractInput(
++				this.opened(`configuration:${key}`, row.outcome),
++				8192,
++			),
++			["version", "intent", "ack", "state"],
++			"configuration evidence",
++		);
++		literalField(e, "version", [1]);
++		const state = literalField(e, "state", ["pending", "complete"]);
++		const intent = parseConfigurationIntentV1(e.intent),
++			ack = parseConfigurationAckV1(e.ack);
++		const identity = await awaitWithContext(
++			configurationIdentity(this.dependencies.configuration!.subject, intent),
++			context,
++		);
++		if (
++			identity.key !== key ||
++			identity.payload !== row.payload_digest ||
++			state !== row.state ||
++			ack.intentId !== intent.intentId ||
++			(ack.status === "applied" &&
++				canonical(ack.snapshot) !==
++					canonical({
++						version: 1,
++						projectId: intent.projectId,
++						workspaceSessionId: intent.workspaceSessionId,
++						ownerVersion: intent.ownerVersion,
++						selection: intent.selection,
++					}))
++		)
++			throw new Error("Configuration evidence integrity failure");
++		return { intent, ack };
++	}
++	private async finishConfiguration(
++		key: string,
++		ack: ConfigurationAckV1,
++		context: Context,
++	) {
++		const { intent } = await this.configurationEvidence(key, context);
++		const recordId = `configuration:${key}`,
++			plain = JSON.stringify({ version: 1, intent, ack, state: "complete" });
++		const sealed = await awaitWithContext(this.seal(recordId, plain), context);
++		this.transition("intent", () => {
++			this.storage.sql.exec(
++				"UPDATE host_configuration_intents SET outcome=?,state='complete' WHERE id=?",
++				sealed.ciphertext,
++				key,
++			);
++			this.rememberSeal(recordId, sealed.digest);
++		});
++		this.rememberPlain(recordId, plain, sealed.digest, sealed.ciphertext);
++		await this.durable(context);
+ 	}
+ 	private async summarize(
+ 		api: HookApi,
+--- a/apps/web/src/lib/model-product-authority.ts
++++ b/apps/web/src/lib/model-product-authority.ts
+@@ -1,5 +1,11 @@
++import type {
++	ConfigurationReadV1,
++	ConfigurationSelectionV1,
++} from "../../../../packages/runtime-contracts/src/configuration.js";
+ import {
++	type ModelSubjectV1,
+ 	type ModelTransportDescriptorV1,
++	parseModelSubjectV1,
+ 	parseSyntheticAccountV1,
+ 	type SyntheticModelBodyV1,
+ } from "../../../../packages/runtime-contracts/src/model.js";
+@@ -18,6 +24,67 @@
+ 		private db: D1Database,
+ 		private now: () => number = Date.now,
+ 	) {}
++
++	async ownedConfiguration(
++		authenticated: ModelSubjectV1,
++		query: ConfigurationReadV1,
++		selection?: ConfigurationSelectionV1,
++	): Promise<boolean> {
++		const s = parseModelSubjectV1(authenticated);
++		if (
++			query.projectId !== s.projectId ||
++			query.workspaceSessionId !== s.workspaceSessionId ||
++			query.ownerVersion !== s.runtimeOwnerVersion
++		)
++			return false;
++		const row = await this.db
++			.prepare(`SELECT e.snapshot FROM workspace_sessions s
++JOIN projects p ON p.id=s.projectId JOIN user u ON u.id=s.userId
++JOIN sandbox_identities i ON i.id=s.sandboxIdentityId
++LEFT JOIN codex_connections k ON k.user_id=u.id
++LEFT JOIN codex_fixture_capabilities e ON e.userId=u.id
++WHERE s.id=? AND s.userId=? AND s.projectId=? AND p.userId=u.id
++AND s.status='active' AND p.status='ready' AND s.runtimeOwner='trusted_v1' AND s.runtimeOwnerVersion=?
++AND s.runtimeFailureReasonCode IS NULL
++AND i.id=? AND i.kind='workspace_session' AND i.userId=u.id AND i.projectId=p.id AND i.workspaceSessionId=s.id
++AND i.controllerClass='Sandbox' AND i.controllerNamespace=? AND i.incarnationId=?
++AND i.lifecycleGeneration=? AND i.state='ready' AND i.retiredAt IS NULL
++AND (?=0 OR (k.generation=? AND k.revoked=0 AND k.status='connected' AND e.generation=k.generation AND e.revision=?))
++AND NOT EXISTS(SELECT 1 FROM runtime_retired_identity_fences f WHERE f.identityId=i.id)
++AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind='project' AND f.targetId=p.id) OR (f.targetKind='workspace_session' AND f.targetId=s.id))`)
++			.bind(
++				s.workspaceSessionId,
++				s.userId,
++				s.projectId,
++				s.runtimeOwnerVersion,
++				s.identityId,
++				s.controllerNamespace,
++				s.incarnationId,
++				s.lifecycleGeneration,
++				selection ? 1 : 0,
++				s.connectionGeneration,
++				s.capabilityRevision,
++			)
++			.first<{ snapshot: string }>();
++		if (!row) return false;
++		if (!selection) return true;
++		try {
++			const account = parseSyntheticAccountV1(row.snapshot);
++			return (
++				account.status === "available" &&
++				account.generation === s.connectionGeneration &&
++				account.revision === s.capabilityRevision &&
++				(!selection ||
++					account.models.some(
++						(m) =>
++							m.id === selection.model &&
++							m.thinking.includes(selection.thinking),
++					))
++			);
++		} catch {
++			return false;
++		}
++	}
+ 
+ 	private async facts(
+ 		d: ModelTransportDescriptorV1,
+--- a/apps/web/src/lib/model-product-transport.ts
++++ b/apps/web/src/lib/model-product-transport.ts
+@@ -18,6 +18,7 @@
+ 	DB: D1Database;
+ 	CodexCredential: {
+ 		getByName(owner: string): {
++			status(owner: string): Promise<{ status: string; generation: number }>;
+ 			requestModel(
+ 				input: unknown,
+ 				capability: ModelClaimRpc,
+--- a/apps/web/src/lib/session-runtime-product.ts
++++ b/apps/web/src/lib/session-runtime-product.ts
+@@ -27,6 +27,14 @@
+ }
+ 
+ export class ProductEntrypoint extends WorkerEntrypoint<Env> {
++	async readConfigurationAuthority(
++		_input: unknown,
++		_selection?: unknown,
++	): Promise<
++		import("../../../../packages/runtime-contracts/src/configuration.js").ConfigurationAuthorityV1
++	> {
++		return { version: 1, status: "unavailable" };
++	}
+ 	async requestModel(
+ 		input: unknown,
+ 		capability: ModelClaimRpc,
+--- a/docs/specs/pi-durable-session-runtime.md
++++ b/docs/specs/pi-durable-session-runtime.md
+@@ -634,7 +634,17 @@
+ 
+ Requests and responses are bounded to 131072 encoded bytes. Transcript content is bounded to 98304 bytes; responses contain at most 128 strict NDJSON frames, each at most 16384 bytes, with at most 65536 output bytes. Only the exact POST URL and reconstructed JSON/NDJSON headers are accepted. Redirects, encoding variants, duplicate/unknown fields, arbitrary destinations and caller authorization/proxy headers deny. The DO owns credentials, finite stream cancellation and credential-echo rejection. Malformed/truncated responses retain uncertain admitted evidence and cannot redispatch automatically. Known failures and adapter terminal errors retain the prepared model/provider identity, including the explicitly synthetic supported `faux-2` model. That fixture catalogue is not live account entitlement. No credential enters the runtime or execution sandbox.
+ 
+-These are local fixture behaviors awaiting independent review, not hosted acceptance. Authenticated configuration intents, snapshots and pre-conversation default validation remain the next 007 phase. Live discovery/transport and PD38 remain `not run`.
++The synthetic product transport phase has independent local acceptance. The subsequent configuration candidate still requires independent review. Neither phase establishes hosted acceptance. Live discovery/transport and PD38 remain `not run`.
++
++The fixture configuration candidate adds separate strict V1 configuration intents, acknowledgments and snapshots. Historical CommandV1 and SnapshotV1 schemas retain their meanings. The modelConfiguration readiness query remains unchanged. Production configuration and discovery remain unavailable.
++
++Deployment-owned subject context, not intent fields, authenticates configuration through private product Worker RPC. A separate D1 owned-session policy checks current user/project/session ownership, trusted runtime owner version, exact execution identity and retirement/deletion fences without inventing a prompt or model attempt. New selections additionally require the current credential DO connection and exact synthetic connection/capability generation, revision, model and thinking entitlement. Owned configuration reads and duplicate receipts need no new model entitlement. Each provider attempt still performs its independent mandatory admission checks.
++
++The runtime serializes configuration with its existing owner lane and applies it through supported Pi configuration. Intent identities bind the authenticated owner, project, session, owner version and intent ID. Canonical payload digests detect changed-payload conflicts. Runtime intent outcomes are encrypted under the same retained-state owner/session binding as other private host evidence. D1 stores no model selection authority.
++
++A durable pending intent precedes Pi configuration. An acknowledgment follows Pi durability and a persisted-state snapshot. These commits are not a distributed transaction. Reopen never reapplies a pending choice: an exact persisted Pi match completes its original acknowledgment; otherwise its outcome becomes unknown. A pending intent prevents a later selection in that live owner until reopen accounts for it. Older duplicates return their retained outcome, including after a newer selection, without rolling Pi state backward. Current snapshots read persisted Pi agent state, not the intent ledger.
++
++Before creating the first owned Pi root conversation, the runtime validates the explicit default through current product and local authority. Rejection creates no conversation. Standalone synthetic fixtures retain their explicit fixture initialization. Configuration does not grant scheduling or provider authority, and changing selection does not alter already-prepared generation or custom-summary requests. Actual private-adapter fixtures exercise encrypted close/reopen retention, new preparation on retry/follow-up/summary, held authority revocation, and bounded configuration close.
+ 
+ ### 13. Git, seeds, archives, and project values
+ 
+--- a/packages/runtime-contracts/src/index.ts
++++ b/packages/runtime-contracts/src/index.ts
+@@ -1,4 +1,5 @@
+ export * from "./command.js";
++export * from "./configuration.js";
+ export * from "./limits.js";
+ export * from "./model.js";
+ export * from "./runtime.js";
+--- a/apps/web/src/lib/session-runtime-client.ts
++++ b/apps/web/src/lib/session-runtime-client.ts
+@@ -29,6 +29,20 @@
+ export type SessionRuntimeSnapshotQuery = {
+ 	sessionId: string;
+ 	projectId: string;
++};
++
++export type OwnedConfigurationRuntime = {
++	configureOwned(
++		input: import("../../../../packages/runtime-contracts/src/configuration.js").ConfigurationIntentV1,
++	): Promise<
++		import("../../../../packages/runtime-contracts/src/configuration.js").ConfigurationAckV1
++	>;
++	readOwnedConfiguration(
++		input: import("../../../../packages/runtime-contracts/src/configuration.js").ConfigurationReadV1,
++	): Promise<
++		| import("../../../../packages/runtime-contracts/src/configuration.js").ConfigurationSnapshotV1
++		| null
++	>;
+ };
+ 
+ export type SessionRuntime = {
+--- a/apps/runtime/src/server.ts
++++ b/apps/runtime/src/server.ts
+@@ -341,6 +341,30 @@
+ }
+ 
+ export class RuntimeEntrypoint extends WorkerEntrypoint<Env> {
++	async configureOwned(
++		input: unknown,
++	): Promise<
++		import("../../../packages/runtime-contracts/src/configuration.js").ConfigurationAckV1
++	> {
++		const { parseConfigurationIntentV1 } = await import(
++			"../../../packages/runtime-contracts/src/configuration.js"
++		);
++		const intent = parseConfigurationIntentV1(input);
++		return {
++			version: 1,
++			intentId: intent.intentId,
++			status: "unavailable",
++			snapshot: null,
++		};
++	}
++	async readOwnedConfiguration(
++		_input: unknown,
++	): Promise<
++		| import("../../../packages/runtime-contracts/src/configuration.js").ConfigurationSnapshotV1
++		| null
++	> {
++		return null;
++	}
+ 	async modelConfiguration(): Promise<{
+ 		configured: boolean;
+ 		protocolVersion: number;
+--- /dev/null
++++ b/packages/runtime-contracts/src/configuration.ts
+@@ -0,0 +1,194 @@
++import {
++	ContractParseError,
++	decodeContractInput,
++	integerField,
++	literalField,
++	strictRecord,
++	stringField,
++} from "./json.js";
++import {
++	type ModelSubjectV1,
++	parseModelSubjectV1,
++	type SyntheticModelId,
++	type SyntheticThinking,
++} from "./model.js";
++
++export type ConfigurationSelectionV1 = {
++	model: SyntheticModelId;
++	thinking: SyntheticThinking;
++};
++export type ConfigurationIntentV1 = {
++	version: 1;
++	intentId: string;
++	projectId: string;
++	workspaceSessionId: string;
++	ownerVersion: number;
++	selection: ConfigurationSelectionV1;
++};
++export type ConfigurationReadV1 = Pick<
++	ConfigurationIntentV1,
++	"version" | "projectId" | "workspaceSessionId" | "ownerVersion"
++>;
++export type ConfigurationSnapshotV1 = ConfigurationReadV1 & {
++	selection: ConfigurationSelectionV1 | null;
++};
++export type ConfigurationAckV1 = {
++	version: 1;
++	intentId: string;
++	status: "applied" | "denied" | "conflict" | "unavailable" | "outcome_unknown";
++	snapshot: ConfigurationSnapshotV1 | null;
++};
++export type ConfigurationAuthorityV1 =
++	| { version: 1; status: "current"; subject: ModelSubjectV1 }
++	| { version: 1; status: "denied" | "unavailable" };
++
++export function parseConfigurationSelectionV1(
++	input: unknown,
++): ConfigurationSelectionV1 {
++	const r = strictRecord(
++		input,
++		["model", "thinking"],
++		"configuration selection",
++	);
++	return {
++		model: literalField(r, "model", ["faux-1", "faux-2"]),
++		thinking: literalField(r, "thinking", ["off", "low", "high", "max"]),
++	};
++}
++function scope(r: Record<string, unknown>): ConfigurationReadV1 {
++	return {
++		version: literalField(r, "version", [1]),
++		projectId: stringField(r, "projectId", { maxBytes: 256 }),
++		workspaceSessionId: stringField(r, "workspaceSessionId", { maxBytes: 256 }),
++		ownerVersion: integerField(r, "ownerVersion", { minimum: 1 }),
++	};
++}
++export function parseConfigurationIntentV1(
++	input: unknown,
++): ConfigurationIntentV1 {
++	const r = strictRecord(
++		decodeContractInput(input, 2048),
++		[
++			"version",
++			"intentId",
++			"projectId",
++			"workspaceSessionId",
++			"ownerVersion",
++			"selection",
++		],
++		"configuration intent",
++	);
++	return {
++		...scope(r),
++		intentId: stringField(r, "intentId", { maxBytes: 256 }),
++		selection: parseConfigurationSelectionV1(r.selection),
++	};
++}
++export function parseConfigurationReadV1(input: unknown): ConfigurationReadV1 {
++	return scope(
++		strictRecord(
++			decodeContractInput(input, 1024),
++			["version", "projectId", "workspaceSessionId", "ownerVersion"],
++			"configuration read",
++		),
++	);
++}
++export function parseConfigurationSnapshotV1(
++	input: unknown,
++): ConfigurationSnapshotV1 {
++	const r = strictRecord(
++		decodeContractInput(input, 2048),
++		["version", "projectId", "workspaceSessionId", "ownerVersion", "selection"],
++		"configuration snapshot",
++	);
++	return {
++		...scope(r),
++		selection:
++			r.selection === null ? null : parseConfigurationSelectionV1(r.selection),
++	};
++}
++export function parseConfigurationAckV1(input: unknown): ConfigurationAckV1 {
++	const r = strictRecord(
++		decodeContractInput(input, 4096),
++		["version", "intentId", "status", "snapshot"],
++		"configuration acknowledgment",
++	);
++	const status = literalField(r, "status", [
++		"applied",
++		"denied",
++		"conflict",
++		"unavailable",
++		"outcome_unknown",
++	]);
++	const snapshot =
++		r.snapshot === null ? null : parseConfigurationSnapshotV1(r.snapshot);
++	if (
++		(status === "applied" && !snapshot?.selection) ||
++		(status !== "applied" && snapshot !== null)
++	)
++		throw new ContractParseError(
++			"invalid_configuration_ack",
++			"Inconsistent configuration outcome.",
++		);
++	return {
++		version: literalField(r, "version", [1]),
++		intentId: stringField(r, "intentId", { maxBytes: 256 }),
++		status,
++		snapshot,
++	};
++}
++export function parseConfigurationAuthorityV1(
++	input: unknown,
++): ConfigurationAuthorityV1 {
++	const r = strictRecord(
++		decodeContractInput(input, 4096),
++		["version", "status", "subject"],
++		"configuration authority",
++	);
++	const version = literalField(r, "version", [1]);
++	if (r.status === "current")
++		return {
++			version,
++			status: "current",
++			subject: parseModelSubjectV1(r.subject),
++		};
++	strictRecord(r, ["version", "status"], "configuration denial");
++	return {
++		version,
++		status: literalField(r, "status", ["denied", "unavailable"]),
++	};
++}
++export async function configurationIdentity(
++	subject: ModelSubjectV1,
++	input: unknown,
++): Promise<{ key: string; payload: string }> {
++	const i = parseConfigurationIntentV1(input);
++	const hash = async (v: unknown) =>
++		Array.from(
++			new Uint8Array(
++				await crypto.subtle.digest(
++					"SHA-256",
++					new TextEncoder().encode(JSON.stringify(v)),
++				),
++			),
++			(x) => x.toString(16).padStart(2, "0"),
++		).join("");
++	return {
++		key: await hash([
++			1,
++			subject.userId,
++			i.projectId,
++			i.workspaceSessionId,
++			i.ownerVersion,
++			i.intentId,
++		]),
++		payload: await hash([
++			1,
++			i.projectId,
++			i.workspaceSessionId,
++			i.ownerVersion,
++			i.selection.model,
++			i.selection.thinking,
++		]),
++	};
++}
+--- /dev/null
++++ b/packages/runtime-contracts/src/configuration.test.ts
+@@ -0,0 +1,108 @@
++import { expect, it } from "vitest";
++import {
++	configurationIdentity,
++	parseConfigurationAckV1,
++	parseConfigurationIntentV1,
++	parseConfigurationReadV1,
++	parseConfigurationSnapshotV1,
++} from "./configuration.js";
++import type { ModelSubjectV1 } from "./model.js";
++
++const intent = {
++	version: 1,
++	intentId: "selection-1",
++	projectId: "project",
++	workspaceSessionId: "session",
++	ownerVersion: 1,
++	selection: { model: "faux-2", thinking: "low" },
++};
++const subject: ModelSubjectV1 = {
++	version: 1,
++	userId: "owner",
++	projectId: "project",
++	workspaceSessionId: "session",
++	identityId: "identity",
++	incarnationId: "incarnation",
++	controllerNamespace: "fixture",
++	lifecycleGeneration: 1,
++	runtimeOwnerVersion: 1,
++	connectionGeneration: 1,
++	capabilityRevision: 1,
++};
++it("configuration identity is canonical and owner/session/payload scoped", async () => {
++	const original = await configurationIdentity(subject, intent);
++	expect(
++		await configurationIdentity(
++			subject,
++			JSON.stringify({
++				selection: { thinking: "low", model: "faux-2" },
++				ownerVersion: 1,
++				workspaceSessionId: "session",
++				projectId: "project",
++				intentId: "selection-1",
++				version: 1,
++			}),
++		),
++	).toEqual(original);
++	expect(
++		(await configurationIdentity({ ...subject, userId: "other" }, intent)).key,
++	).not.toBe(original.key);
++	expect(
++		(
++			await configurationIdentity(subject, {
++				...intent,
++				workspaceSessionId: "other",
++			})
++		).key,
++	).not.toBe(original.key);
++	const changed = await configurationIdentity(subject, {
++		...intent,
++		selection: { model: "faux-1", thinking: "off" },
++	});
++	expect(changed.key).toBe(original.key);
++	expect(changed.payload).not.toBe(original.payload);
++});
++for (const invalid of [
++	{ ...intent, userId: "owner" },
++	{ ...intent, ownerVersion: 0 },
++	{ ...intent, intentId: "x".repeat(257) },
++	{ ...intent, selection: { model: "arbitrary", thinking: "off" } },
++	{ ...intent, selection: { model: "faux-1", thinking: "medium" } },
++	{ ...intent, selection: { ...intent.selection, extra: true } },
++	JSON.stringify(intent).replace('"version":1', '"version":1,"version":1'),
++])
++	it("strict configuration intents reject malformed authority and values", () =>
++		expect(() => parseConfigurationIntentV1(invalid)).toThrow());
++it("separate snapshots and acknowledgments stay strict", () => {
++	const query = {
++		version: 1,
++		projectId: "project",
++		workspaceSessionId: "session",
++		ownerVersion: 1,
++	};
++	const snapshot = { ...query, selection: intent.selection };
++	expect(parseConfigurationSnapshotV1(snapshot)).toEqual(snapshot);
++	expect(() =>
++		parseConfigurationReadV1({ ...query, selectedModel: "faux-1" }),
++	).toThrow();
++	expect(() =>
++		parseConfigurationSnapshotV1({ ...snapshot, extra: true }),
++	).toThrow();
++	expect(
++		parseConfigurationAckV1({
++			version: 1,
++			intentId: "selection-1",
++			status: "applied",
++			snapshot,
++		}),
++	).toMatchObject({ status: "applied", snapshot });
++	expect(() =>
++		parseConfigurationAckV1({
++			version: 1,
++			intentId: "selection-1",
++			status: "applied",
++			snapshot,
++			extra: true,
++		}),
++	).toThrow();
++});
+--- /dev/null
++++ b/apps/web/src/lib/configuration-product-authority.ts
+@@ -0,0 +1,34 @@
++import {
++	type ConfigurationAuthorityV1,
++	parseConfigurationReadV1,
++	parseConfigurationSelectionV1,
++} from "../../../../packages/runtime-contracts/src/configuration.js";
++import type { ModelSubjectV1 } from "../../../../packages/runtime-contracts/src/model.js";
++import { ModelProductAuthority } from "./model-product-authority";
++
++// The subject is bound by deployment composition, never taken from the RPC payload.
++export async function readOwnedConfigurationAuthority(
++	db: D1Database,
++	authenticated: ModelSubjectV1,
++	input: unknown,
++	selection: unknown,
++	fixtureAvailable: boolean,
++): Promise<ConfigurationAuthorityV1> {
++	if (!fixtureAvailable) return { version: 1, status: "unavailable" };
++	try {
++		const query = parseConfigurationReadV1(input);
++		const value =
++			selection === undefined
++				? undefined
++				: parseConfigurationSelectionV1(selection);
++		return (await new ModelProductAuthority(db).ownedConfiguration(
++			authenticated,
++			query,
++			value,
++		))
++			? { version: 1, status: "current", subject: authenticated }
++			: { version: 1, status: "denied" };
++	} catch {
++		return { version: 1, status: "denied" };
++	}
++}

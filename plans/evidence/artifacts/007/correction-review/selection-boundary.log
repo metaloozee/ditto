@@ -1,0 +1,80 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/tmp/ditto-plan-007-3oi7vl/apps/runtime[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22midentical durable result delivery is idempotent
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mactual Pi unsafe recovery attempts the next tool and model but neither dispatches through two reopens
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mcompleted synthetic mutations and follow-up membership survive reopen without repetition
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mconflicting result persists review block across reopen and new command
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mhealthy later writes cannot clear a storage barrier but current trusted reconciliation can account for an undispatched admission
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mactual generation and unsafe tool persist structured exact membership before dispatch
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mlost shell result commit denies actual tool/model callbacks across two SQLite reopens, unavailable=false
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mlost shell result commit denies actual tool/model callbacks across two SQLite reopens, unavailable=true
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22munavailable failure marker is unnecessary for reopen denial from durable admitted shell
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22msafety result before failed Pi commit is not original successful tool receipt
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mshell-replay is denied on actual registered tool before executor I/O
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mimplicit-read is denied on actual registered tool before executor I/O
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22munsupported-write is denied on actual registered tool before executor I/O
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mread repeats are explicit new observations on distinct original calls, never replay of an unresolved call
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mpriority exact-run Stop bypasses missing predecessor and exhausted ordinary executor capacity
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mStop during async model preparation commits revocation before cancellation and stale release dispatches nothing
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22muncooperative shell Stop is stopping, cancellation receipt is not termination
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mdelayed old-run Stop never cancels later run or revives terminal completion
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mfirst interruption recovery deadline is fixed across two real reopens and expiry settles pending membership atomically
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mlost submit acknowledgment resolves public dedupe without duplicate spending
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22malarm settles committed submissions and pending projection intent without allocating another invocation or repeating I/O
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mcompleted model IDs and context survive close/reopen without repeating completed command
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mpublic committed retry evidence authorizes a separate summary attempt without reopening or guessing current task
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mknown completed summary error retries after reopen with retained logical request and separately recorded spending
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mvalidated first summary preparation survives close without admitting an effect
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mmissing first summary association after close denies the sole retained producer
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mcorrupt first summary association after close denies the sole retained producer
+ [32m✓[39m src/pi-durable-effects.test.ts[2m > [22mselection handoff interrupted before Pi summarize commit remains exact or fails closed[32m 264[2mms[22m[39m
+ [32m✓[39m src/pi-durable-effects.test.ts[2m > [22mselection handoff interrupted after Pi summarize commit remains exact or fails closed[32m 206[2mms[22m[39m
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mstale epoch after validated summary preparation cannot admit an effect
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mowned blocking compaction excludes its actual waiting generation parent and preserves command membership
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mmixed actual generation and compaction producers deny both under one lane
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22munknown admitted summary blocks actual recovered requests through two SQLite reopens
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mauthority during summary preparation denies actual dispatch
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mmapping during summary preparation denies actual dispatch
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mcompetition during summary preparation denies actual dispatch
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mfinite operation expiry fails run but retains original executor and deadline
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mnormal compaction establishes hook-bound tuple and preserves completed summary across reopen
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mcorrection: native settled no-work alarms consume serviced reconciliation without past rearm
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mcorrection: known final compaction error settles original run, retryable=false
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mcorrection: known final compaction error settles original run, retryable=true
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mcorrection: actual tool/manual-summary race reserves at most one operation and dispatch
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mcorrection: fixed recovery expiry is enforced after held preparation
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mcorrection: response-only recovery expiry rejects result before Pi consumes it
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mcorrection: trusted abrupt takeover fixes recovery from the prior durable bound
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mencrypted preparation preparation-write failure fences without admitting a summary
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mencrypted preparation preparation-flush failure fences without admitting a summary
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mencrypted validated summary preparation reopens with exact ciphertext provenance and no prior admission
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mhost-1 preparation meanings are not silently reinterpreted
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mencrypted L1: guarded model and tool settle without a false integrity failure
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mencrypted L1: compaction, retry, and follow-up keep distinct IDs and context order
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mencrypted L1: Stop during held preparation, active tool, and stale target does not dispatch
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mencrypted L1: stale Stop does not cancel a later completed run
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mencrypted L1: active uncooperative tool Stop stays stopping and reopens blocked
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mencrypted L1: operation and recovery deadlines fail closed after awaits
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mencrypted L1: close cancels a held authority wait and reopen stays fenced
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mencrypted L1: result loss and Pi commit loss both block two reopens
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mencrypted L1: persistence barrier and unknown shell block two reopens
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mencrypted L1: changed host envelopes fail before provider I/O
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mencrypted L1: corrupt result and retry envelopes fail closed
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mencrypted L1: retry seal failure fences before close and survives both orders
+ [2m[90m↓[39m[22m src/pi-durable-effects.test.ts[2m > [22mencrypted L1: native alarm reopens with the retained binding and does not repeat the invocation
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m2 passed[39m[22m[2m | [22m[33m60 skipped[39m[90m (62)[39m
+[2m   Start at [22m 11:07:32
+[2m   Duration [22m 2.14s[2m (transform 277ms, setup 0ms, collect 479ms, tests 472ms, environment 0ms, prepare 109ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

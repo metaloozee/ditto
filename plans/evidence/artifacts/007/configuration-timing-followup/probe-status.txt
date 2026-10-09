@@ -1,0 +1,4 @@
+acceptance exit=0
+original-host exit=0
+original-product-host exit=0
+original-d1 exit=0

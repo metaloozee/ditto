@@ -1,0 +1,110 @@
+--- a/apps/credential-tests/src/codex-request-contract.worker.test.ts
++++ b/apps/credential-tests/src/codex-request-contract.worker.test.ts
+@@ -908,6 +908,51 @@
+ 		},
+ 	);
+ });
++for (const change of ["current", "executor"] as const)
++	it(`selection-free configuration read rechecks local ${change} after held product authority`, async () => {
++		let reading = false,
++			revoked = false;
++		const entered = deferred(),
++			released = deferred();
++		await gate(
++			`owned-read-final-${change}`,
++			async (f) => {
++				const before = await piState(f.storage);
++				reading = true;
++				const pending = f.host.readOwnedConfiguration(configurationQuery);
++				try {
++					await bounded(entered.promise);
++					revoked = true;
++				} finally {
++					released.resolve();
++				}
++				expect(await bounded(pending)).toBeNull();
++				expect(await piState(f.storage)).toBe(before);
++				expect(calls).toEqual([]);
++			},
++			{
++				owned: true,
++				encrypted: true,
++				configurationAuthority: async (query, selection) => {
++					const result = await product.readConfigurationAuthority(
++						query,
++						selection,
++					);
++					if (reading && selection === undefined) {
++						entered.resolve();
++						await released.promise;
++					}
++					return result;
++				},
++				localAuthority: async (current, generation) => ({
++					current: current && !(revoked && change === "current"),
++					generation,
++					executor: revoked && change === "executor" ? 2 : 1,
++				}),
++			},
++		);
++	});
++
+ it("owned configuration is reflected in an actual mandatory credential request", async () => {
+ 	await gate(
+ 		"owned-request",
+--- a/apps/runtime/src/pi-durable-host.ts
++++ b/apps/runtime/src/pi-durable-host.ts
+@@ -1502,30 +1502,32 @@
+ 		const c = this.dependencies.configuration;
+ 		if (!c || canonical(query) !== canonical(this.configurationScope()))
+ 			return false;
+-		const authorized = parseConfigurationAuthorityV1(
+-			await awaitWithContext(c.authorize(query, selection), context),
+-		);
+-		if (
+-			authorized.status !== "current" ||
+-			canonical(authorized.subject) !== canonical(c.subject)
+-		)
+-			return false;
+-		const initial = await awaitWithContext(
+-			this.dependencies.authority(),
+-			context,
+-		);
+-		if (!this.configurationLocal(initial)) return false;
+ 		const epoch = this.storage.sql
+ 			.exec<{ epoch: number }>("SELECT epoch FROM host_meta")
+ 			.one().epoch;
+-		const fresh = parseConfigurationAuthorityV1(
+-			await awaitWithContext(c.authorize(query, selection), context),
+-		);
+-		if (
+-			fresh.status !== "current" ||
+-			canonical(fresh.subject) !== canonical(c.subject)
+-		)
+-			return false;
++		if (selection !== undefined) {
++			const authorized = parseConfigurationAuthorityV1(
++				await awaitWithContext(c.authorize(query, selection), context),
++			);
++			if (
++				authorized.status !== "current" ||
++				canonical(authorized.subject) !== canonical(c.subject)
++			)
++				return false;
++			const initial = await awaitWithContext(
++				this.dependencies.authority(),
++				context,
++			);
++			if (!this.configurationLocal(initial)) return false;
++			const fresh = parseConfigurationAuthorityV1(
++				await awaitWithContext(c.authorize(query, selection), context),
++			);
++			if (
++				fresh.status !== "current" ||
++				canonical(fresh.subject) !== canonical(c.subject)
++			)
++				return false;
++		}
+ 		const finalProduct = parseConfigurationAuthorityV1(
+ 			await awaitWithContext(c.authorize(query, selection), context),
+ 		);

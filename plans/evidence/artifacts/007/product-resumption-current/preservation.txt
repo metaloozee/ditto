@@ -1,0 +1,13 @@
+HEAD 0ccc5b20c25a4e63017b3eebf6608dba62253479
+Manifest/lock files match HEAD. Staging empty.
+Unchanged since resumption archive:
+apps/credential-tests/tsconfig.json
+apps/runtime/src/pi-durable-cooperative-fixture.ts
+apps/runtime/src/pi-durable-effects.test.ts
+apps/runtime/src/pi-durable-model-preparation.gate.test.ts
+apps/runtime/src/pi-durable-models.test.ts
+apps/runtime/src/pi-durable-summary.test.ts
+apps/runtime/src/pi-durable-summary.ts
+apps/runtime/vitest.config.ts
+packages/runtime-contracts/src/index.ts
+packages/runtime-contracts/src/model.test.ts

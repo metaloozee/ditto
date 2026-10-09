@@ -1,0 +1,168 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/apps/runtime[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[90mstdout[2m | src/pi-durable-summary.test.ts[2m > [22m[2mconfiguration authority wait joins close by admitted deadline, external cancellation=false, encrypted=false
+[22m[39m007 configuration-close advisor probe {"encrypted":false,"externallyCanceled":false,"invocation":{"id":"6be36bc9-fae5-42ce-bd2e-1d6680f0ac72","started":1791464905263,"yield_at":1791464915263,"end_at":1791464916263},"observedAt":1791464916314,"elapsedMs":1051,"configuration":{"state":"pending"},"close":{"state":"pending"},"remoteSettled":false,"joinedConfiguration":{"state":"failed","at":1791464916315,"error":"Host admission denied: Unresolved effect blocks admission"},"joinedClose":{"state":"failed","at":1791464916324,"error":"Actual close exceeded end deadline"}}
+
+[90mstdout[2m | src/pi-durable-summary.test.ts[2m > [22m[2mconfiguration authority wait joins close by admitted deadline, external cancellation=true, encrypted=false
+[22m[39m007 configuration-close advisor probe {"encrypted":false,"externallyCanceled":true,"invocation":{"id":"45f35967-2627-49f7-9fe8-14436f04cbcf","started":1791464906491,"yield_at":1791464916491,"end_at":1791464917491},"observedAt":1791464917543,"elapsedMs":1052,"configuration":{"state":"failed","at":1791464916491,"error":"The operation was aborted"},"close":{"state":"complete","at":1791464916501},"remoteSettled":false,"joinedConfiguration":{"state":"failed","at":1791464916491,"error":"The operation was aborted"},"joinedClose":{"state":"complete","at":1791464916501}}
+
+[90mstdout[2m | src/pi-durable-summary.test.ts[2m > [22m[2mconfiguration authority wait joins close by admitted deadline, external cancellation=false, encrypted=true
+[22m[39m007 configuration-close advisor probe {"encrypted":true,"externallyCanceled":false,"invocation":{"id":"5cc0beb9-0a27-413b-b598-833fdf925b52","started":1791464907692,"yield_at":1791464917692,"end_at":1791464918692},"observedAt":1791464918743,"elapsedMs":1051,"configuration":{"state":"pending"},"close":{"state":"pending"},"remoteSettled":false,"joinedConfiguration":{"state":"failed","at":1791464918744,"error":"Host admission denied: Unresolved effect blocks admission"},"joinedClose":{"state":"failed","at":1791464918753,"error":"Actual close exceeded end deadline"}}
+
+[90mstdout[2m | src/pi-durable-summary.test.ts[2m > [22m[2mconfiguration authority wait joins close by admitted deadline, external cancellation=true, encrypted=true
+[22m[39m007 configuration-close advisor probe {"encrypted":true,"externallyCanceled":true,"invocation":{"id":"d666e867-92ab-40e5-828f-bd296297071c","started":1791464908896,"yield_at":1791464918896,"end_at":1791464919896},"observedAt":1791464919947,"elapsedMs":1051,"configuration":{"state":"failed","at":1791464918896,"error":"The operation was aborted"},"close":{"state":"complete","at":1791464918906},"remoteSettled":false,"joinedConfiguration":{"state":"failed","at":1791464918896,"error":"The operation was aborted"},"joinedClose":{"state":"complete","at":1791464918906}}
+
+ [31m❯[39m src/pi-durable-summary.test.ts [2m([22m[2m112 tests[22m[2m | [22m[31m2 failed[39m[2m | [22m[33m108 skipped[39m[2m)[22m[33m 4828[2mms[22m[39m
+   [2m[90m↓[39m[22m custom summary places a real manual Pi receipt, encrypted=false
+   [2m[90m↓[39m[22m custom summary places a real automatic Pi receipt, encrypted=false
+   [2m[90m↓[39m[22m recorded success survives close before hook return and is accounted once, encrypted=false
+   [2m[90m↓[39m[22m unknown admitted custom summary blocks two reopens without a second attempt, encrypted=false
+   [2m[90m↓[39m[22m custom preparation-write persistence failure fences every later effect, encrypted=false
+   [2m[90m↓[39m[22m custom preparation-flush persistence failure fences every later effect, encrypted=false
+   [2m[90m↓[39m[22m custom result persistence failure fences every later effect, encrypted=false
+   [2m[90m↓[39m[22m custom summary-result-write persistence failure fences every later effect, encrypted=false
+   [2m[90m↓[39m[22m custom summary-result-flush persistence failure fences every later effect, encrypted=false
+   [2m[90m↓[39m[22m custom summary places a real manual Pi receipt, encrypted=true
+   [2m[90m↓[39m[22m custom summary places a real automatic Pi receipt, encrypted=true
+   [2m[90m↓[39m[22m recorded success survives close before hook return and is accounted once, encrypted=true
+   [2m[90m↓[39m[22m unknown admitted custom summary blocks two reopens without a second attempt, encrypted=true
+   [2m[90m↓[39m[22m custom preparation-write persistence failure fences every later effect, encrypted=true
+   [2m[90m↓[39m[22m custom preparation-flush persistence failure fences every later effect, encrypted=true
+   [2m[90m↓[39m[22m custom result persistence failure fences every later effect, encrypted=true
+   [2m[90m↓[39m[22m custom summary-result-write persistence failure fences every later effect, encrypted=true
+   [2m[90m↓[39m[22m custom summary-result-flush persistence failure fences every later effect, encrypted=true
+   [2m[90m↓[39m[22m known custom failure error/0 settles the run with one nonrefundable attempt, encrypted=false
+   [2m[90m↓[39m[22m known custom failure aborted/0 settles the run with one nonrefundable attempt, encrypted=false
+   [2m[90m↓[39m[22m known custom failure stop/1 settles the run with one nonrefundable attempt, encrypted=false
+   [2m[90m↓[39m[22m known custom failure toolUse/1 settles the run with one nonrefundable attempt, encrypted=false
+   [2m[90m↓[39m[22m known custom failure stop/1 settles the run with one nonrefundable attempt, encrypted=false
+   [2m[90m↓[39m[22m known custom failure error/0 settles the run with one nonrefundable attempt, encrypted=true
+   [2m[90m↓[39m[22m known custom failure aborted/0 settles the run with one nonrefundable attempt, encrypted=true
+   [2m[90m↓[39m[22m known custom failure stop/1 settles the run with one nonrefundable attempt, encrypted=true
+   [2m[90m↓[39m[22m known custom failure toolUse/1 settles the run with one nonrefundable attempt, encrypted=true
+   [2m[90m↓[39m[22m known custom failure stop/1 settles the run with one nonrefundable attempt, encrypted=true
+   [2m[90m↓[39m[22m custom summary range after preparation dispatches nothing
+   [2m[90m↓[39m[22m custom summary policy after preparation dispatches nothing
+   [2m[90m↓[39m[22m custom summary epoch after preparation dispatches nothing
+   [2m[90m↓[39m[22m custom summary authority after preparation dispatches nothing
+   [2m[90m↓[39m[22m custom summary stop after preparation dispatches nothing
+   [2m[90m↓[39m[22m custom summary digest after preparation dispatches nothing
+   [2m[90m↓[39m[22m custom summary task after preparation dispatches nothing
+   [2m[90m↓[39m[22m custom summary conversation after preparation dispatches nothing
+   [2m[90m↓[39m[22m configuration at before custom preparation survives reopen, encrypted=false
+   [2m[90m↓[39m[22m configuration at after custom preparation survives reopen, encrypted=false
+   [2m[90m↓[39m[22m success at before actual Pi placement storage commit resumes without redispatch, encrypted=false
+   [2m[90m↓[39m[22m success at after actual Pi placement storage commit resumes without redispatch, encrypted=false
+   [2m[90m↓[39m[22m absent custom hook cannot dispatch stock fallback, encrypted=false
+   [2m[90m↓[39m[22m throwing custom hook cannot dispatch stock fallback, encrypted=false
+   [2m[90m↓[39m[22m custom response provider schema violation never places a summary, encrypted=false
+   [2m[90m↓[39m[22m custom response model schema violation never places a summary, encrypted=false
+   [2m[90m↓[39m[22m custom response usage schema violation never places a summary, encrypted=false
+   [2m[90m↓[39m[22m custom response timestamp schema violation never places a summary, encrypted=false
+   [2m[90m↓[39m[22m configuration at before custom preparation survives reopen, encrypted=true
+   [2m[90m↓[39m[22m configuration at after custom preparation survives reopen, encrypted=true
+   [2m[90m↓[39m[22m success at before actual Pi placement storage commit resumes without redispatch, encrypted=true
+   [2m[90m↓[39m[22m success at after actual Pi placement storage commit resumes without redispatch, encrypted=true
+   [2m[90m↓[39m[22m absent custom hook cannot dispatch stock fallback, encrypted=true
+   [2m[90m↓[39m[22m throwing custom hook cannot dispatch stock fallback, encrypted=true
+   [2m[90m↓[39m[22m custom response provider schema violation never places a summary, encrypted=true
+   [2m[90m↓[39m[22m custom response model schema violation never places a summary, encrypted=true
+   [2m[90m↓[39m[22m custom response usage schema violation never places a summary, encrypted=true
+   [2m[90m↓[39m[22m custom response timestamp schema violation never places a summary, encrypted=true
+   [2m[90m↓[39m[22m encrypted custom prepared tampering rejects reopen
+   [2m[90m↓[39m[22m encrypted custom evidence tampering rejects reopen
+   [2m[90m↓[39m[22m actual custom callback options must equal persisted payload
+   [2m[90m↓[39m[22m actual custom callback transcript must equal persisted payload
+   [2m[90m↓[39m[22m host-2 custom summary meanings require explicit compatibility rejection
+   [2m[90m↓[39m[22m oversized public summary source is rejected without truncation, encrypted=false
+   [2m[90m↓[39m[22m transport interruption retains uncertainty with one reservation, encrypted=false
+   [2m[90m↓[39m[22m custom preparation grants no extended invocation deadline, encrypted=false
+   [2m[90m↓[39m[22m oversized public summary source is rejected without truncation, encrypted=true
+   [2m[90m↓[39m[22m transport interruption retains uncertainty with one reservation, encrypted=true
+   [2m[90m↓[39m[22m custom preparation grants no extended invocation deadline, encrypted=true
+   [2m[90m↓[39m[22m forced configuration-winning transition holds asynchronous preparation, encrypted=false
+   [2m[90m↓[39m[22m forced preparation-winning transition holds asynchronous preparation, encrypted=false
+   [2m[90m↓[39m[22m forced configuration-winning transition holds asynchronous preparation, encrypted=true
+   [2m[90m↓[39m[22m forced preparation-winning transition holds asynchronous preparation, encrypted=true
+   [2m[90m↓[39m[22m owning transition releases after cancel-configuration during asynchronous preparation, encrypted=false
+   [2m[90m↓[39m[22m owning transition releases after stop during asynchronous preparation, encrypted=false
+   [2m[90m↓[39m[22m owning transition releases after preparation-failure during asynchronous preparation, encrypted=false
+   [2m[90m↓[39m[22m owning transition releases after cancel-configuration during asynchronous preparation, encrypted=true
+   [2m[90m↓[39m[22m owning transition releases after stop during asynchronous preparation, encrypted=true
+   [2m[90m↓[39m[22m owning transition releases after preparation-failure during asynchronous preparation, encrypted=true
+   [2m[90m↓[39m[22m configuration persistence failure releases and fences the owner lane, encrypted=false
+   [2m[90m↓[39m[22m configuration persistence failure releases and fences the owner lane, encrypted=true
+   [2m[90m↓[39m[22m automatic waiting parent recovers at before-preparation, encrypted=false
+   [2m[90m↓[39m[22m automatic waiting parent recovers at prepared, encrypted=false
+   [2m[90m↓[39m[22m automatic waiting parent recovers at unknown, encrypted=false
+   [2m[90m↓[39m[22m automatic waiting parent recovers at result, encrypted=false
+   [2m[90m↓[39m[22m automatic waiting parent recovers at before-placement, encrypted=false
+   [2m[90m↓[39m[22m automatic waiting parent recovers at after-placement, encrypted=false
+   [2m[90m↓[39m[22m automatic waiting parent recovers at before-preparation, encrypted=true
+   [2m[90m↓[39m[22m automatic waiting parent recovers at prepared, encrypted=true
+   [2m[90m↓[39m[22m automatic waiting parent recovers at unknown, encrypted=true
+   [2m[90m↓[39m[22m automatic waiting parent recovers at result, encrypted=true
+   [2m[90m↓[39m[22m automatic waiting parent recovers at before-placement, encrypted=true
+   [2m[90m↓[39m[22m automatic waiting parent recovers at after-placement, encrypted=true
+   [2m[90m↓[39m[22m automatic waiting parent is fenced after known-failure, encrypted=false
+   [2m[90m↓[39m[22m automatic waiting parent is fenced after stop, encrypted=false
+   [2m[90m↓[39m[22m automatic waiting parent is fenced after epoch, encrypted=false
+   [2m[90m↓[39m[22m automatic waiting parent is fenced after authority, encrypted=false
+   [2m[90m↓[39m[22m automatic waiting parent is fenced after preparation-write, encrypted=false
+   [2m[90m↓[39m[22m automatic waiting parent is fenced after preparation-flush, encrypted=false
+   [2m[90m↓[39m[22m automatic waiting parent is fenced after summary-result-write, encrypted=false
+   [2m[90m↓[39m[22m automatic waiting parent is fenced after summary-result-flush, encrypted=false
+   [2m[90m↓[39m[22m automatic waiting parent is fenced after known-failure, encrypted=true
+   [2m[90m↓[39m[22m automatic waiting parent is fenced after stop, encrypted=true
+   [2m[90m↓[39m[22m automatic waiting parent is fenced after epoch, encrypted=true
+   [2m[90m↓[39m[22m automatic waiting parent is fenced after authority, encrypted=true
+   [2m[90m↓[39m[22m automatic waiting parent is fenced after preparation-write, encrypted=true
+   [2m[90m↓[39m[22m automatic waiting parent is fenced after preparation-flush, encrypted=true
+   [2m[90m↓[39m[22m automatic waiting parent is fenced after summary-result-write, encrypted=true
+   [2m[90m↓[39m[22m automatic waiting parent is fenced after summary-result-flush, encrypted=true
+[31m   [31m×[31m configuration authority wait joins close by admitted deadline, external cancellation=false, encrypted=false[39m[33m 1218[2mms[22m[39m
+[31m     → expected 'pending' to be 'complete' // Object.is equality[39m
+   [33m[2m✓[22m[39m configuration authority wait joins close by admitted deadline, external cancellation=true, encrypted=false [33m 1191[2mms[22m[39m
+[31m   [31m×[31m configuration authority wait joins close by admitted deadline, external cancellation=false, encrypted=true[39m[33m 1196[2mms[22m[39m
+[31m     → expected 'pending' to be 'complete' // Object.is equality[39m
+   [33m[2m✓[22m[39m configuration authority wait joins close by admitted deadline, external cancellation=true, encrypted=true [33m 1188[2mms[22m[39m
+   [2m[90m↓[39m[22m policy parser rejects old/custom meanings and malformed usage
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 2 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/pi-durable-summary.test.ts[2m > [22mconfiguration authority wait joins close by admitted deadline, external cancellation=false, encrypted=false
+[41m[1m FAIL [22m[49m src/pi-durable-summary.test.ts[2m > [22mconfiguration authority wait joins close by admitted deadline, external cancellation=false, encrypted=true
+[31m[1mAssertionError[22m: expected 'pending' to be 'complete' // Object.is equality[39m
+
+Expected: "complete"
+Received: "pending"
+
+[36m [2m❯[22m src/pi-durable-summary.test.ts:[2m1826:36[22m[39m
+    [90m1824| [39m   )[33m;[39m
+    [90m1825| [39m   [34mexpect[39m(observation[33m.[39mremoteSettled)[33m.[39m[34mtoBe[39m([35mfalse[39m)[33m;[39m
+    [90m1826| [39m   [34mexpect[39m(observation[33m.[39mclose[33m.[39mstate)[33m.[39m[34mtoBe[39m([32m"complete"[39m)[33m;[39m
+    [90m   | [39m                                   [31m^[39m
+    [90m1827| [39m   [34mexpect[39m(observation[33m.[39mclose[33m.[39mat)[33m.[39m[34mtoBeLessThanOrEqual[39m(
+    [90m1828| [39m    observation[33m.[39minvocation[33m.[39mend_at[33m,[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m2 passed[39m[22m[2m | [22m[33m108 skipped[39m[90m (112)[39m
+[2m   Start at [22m 15:07:23
+[2m   Duration [22m 6.22s[2m (transform 228ms, setup 0ms, collect 435ms, tests 4.83s, environment 0ms, prepare 93ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-007-recovery/apps/runtime:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/pi-durable-summary.test.ts -t 'configuration authority wait joins close by admitted deadline'

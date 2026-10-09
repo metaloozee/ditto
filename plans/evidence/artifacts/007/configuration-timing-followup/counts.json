@@ -1,0 +1,325 @@
+{
+  "acceptance.log": {
+    "summaries": [
+      "Test Files  1 passed (1)",
+      "Tests  5 passed | 114 skipped (119)",
+      "Duration  7.40s (transform 697ms, setup 0ms, collect 1.12s, tests 6.84s, environment 0ms, prepare 100ms)"
+    ],
+    "failures": [],
+    "failedCaseTimings": [],
+    "nodeSummaries": []
+  },
+  "after-credentials-unfiltered.log": {
+    "summaries": [
+      "Test Files  2 passed (2)",
+      "Tests  164 passed (164)",
+      "Duration  203.90s (transform 262ms, setup 0ms, collect 834ms, tests 218.36s, environment 1ms, prepare 244ms)"
+    ],
+    "failures": [],
+    "failedCaseTimings": [
+      "\u2713 actual custom_summary preparation survives close/reopen with an owned selection change  2922ms",
+      "\u2713 configuration correction: authenticates complete payload_digest before new-intent  3841ms",
+      "\u2713 configuration correction: authenticates complete outcome before new-intent  2419ms"
+    ],
+    "nodeSummaries": [
+      "\u2139 tests 3",
+      "\u2139 pass 3",
+      "\u2139 fail 0",
+      "\u2139 duration_ms 1052.585823"
+    ]
+  },
+  "after-focused.log": {
+    "summaries": [
+      "Test Files  1 passed (1)",
+      "Tests  5 passed | 137 skipped (142)",
+      "Duration  7.29s (transform 272ms, setup 0ms, collect 494ms, tests 5.86s, environment 0ms, prepare 94ms)"
+    ],
+    "failures": [],
+    "failedCaseTimings": [
+      "\u2713 actual custom_summary preparation survives close/reopen with an owned selection change  1889ms",
+      "\u2713 configuration correction: authenticates complete payload_digest before new-intent  1080ms",
+      "\u2713 configuration correction: authenticates complete outcome before new-intent  1080ms"
+    ],
+    "nodeSummaries": []
+  },
+  "baseline-credentials.log": {
+    "summaries": [
+      "Test Files  1 failed | 1 passed (2)",
+      "Tests  2 failed | 160 passed (162)",
+      "Duration  296.34s (transform 297ms, setup 0ms, collect 914ms, tests 314.52s, environment 0ms, prepare 235ms)"
+    ],
+    "failures": [
+      "FAIL  src/codex-request-contract.worker.test.ts > actual custom_summary preparation survives close/reopen with an owned selection change",
+      "FAIL  src/codex-request-contract.worker.test.ts > configuration correction: authenticates complete outcome before new-intent"
+    ],
+    "failedCaseTimings": [
+      "\u00d7 actual custom_summary preparation survives close/reopen with an owned selection change 6243ms",
+      "\u2713 configuration correction: authenticates complete payload_digest before new-intent  4567ms",
+      "\u00d7 configuration correction: authenticates complete outcome before new-intent 6155ms"
+    ],
+    "nodeSummaries": []
+  },
+  "format-check.log": {
+    "summaries": [],
+    "failures": [],
+    "failedCaseTimings": [],
+    "nodeSummaries": []
+  },
+  "original-d1.log": {
+    "summaries": [
+      "Test Files  1 passed (1)",
+      "Tests  2 passed | 142 skipped (144)",
+      "Duration  2.82s (transform 288ms, setup 0ms, collect 482ms, tests 1.48s, environment 0ms, prepare 93ms)"
+    ],
+    "failures": [],
+    "failedCaseTimings": [],
+    "nodeSummaries": []
+  },
+  "original-host.log": {
+    "summaries": [
+      "Test Files  1 passed (1)",
+      "Tests  4 passed (4)",
+      "Duration  1.89s (transform 217ms, setup 0ms, collect 408ms, tests 615ms, environment 0ms, prepare 86ms)"
+    ],
+    "failures": [],
+    "failedCaseTimings": [],
+    "nodeSummaries": []
+  },
+  "original-product-host.log": {
+    "summaries": [
+      "Test Files  1 passed (1)",
+      "Tests  3 passed (3)",
+      "Duration  1.70s (transform 237ms, setup 0ms, collect 438ms, tests 359ms, environment 0ms, prepare 92ms)"
+    ],
+    "failures": [],
+    "failedCaseTimings": [],
+    "nodeSummaries": []
+  },
+  "outcome-alone.log": {
+    "summaries": [
+      "Test Files  1 passed (1)",
+      "Tests  1 passed | 141 skipped (142)",
+      "Duration  2.46s (transform 264ms, setup 0ms, collect 1.30s, tests 1.13s, environment 0ms, prepare 787ms)"
+    ],
+    "failures": [],
+    "failedCaseTimings": [
+      "\u2713 configuration correction: authenticates complete outcome before new-intent  1130ms"
+    ],
+    "nodeSummaries": []
+  },
+  "payload-alone.log": {
+    "summaries": [
+      "Test Files  1 passed (1)",
+      "Tests  1 passed | 141 skipped (142)",
+      "Duration  2.58s (transform 282ms, setup 0ms, collect 493ms, tests 1.14s, environment 0ms, prepare 96ms)"
+    ],
+    "failures": [],
+    "failedCaseTimings": [
+      "\u2713 configuration correction: authenticates complete payload_digest before new-intent  1137ms"
+    ],
+    "nodeSummaries": []
+  },
+  "sequence-brain-verify.log": {
+    "summaries": [
+      "Test Files  3 passed (3)",
+      "Tests  25 passed (25)",
+      "Duration  291ms (transform 185ms, setup 0ms, collect 284ms, tests 25ms, environment 0ms, prepare 155ms)",
+      "Test Files  1 passed (1)",
+      "Tests  3 passed | 3 skipped (6)",
+      "Duration  7.75s (transform 114ms, setup 0ms, collect 1.02s, tests 6.57s, environment 0ms, prepare 55ms)",
+      "Test Files  3 passed (3)",
+      "Tests  43 passed (43)",
+      "Duration  18.10s (transform 158ms, setup 0ms, collect 2.41s, tests 31.59s, environment 0ms, prepare 140ms)"
+    ],
+    "failures": [],
+    "failedCaseTimings": [],
+    "nodeSummaries": []
+  },
+  "sequence-contracts-verify.log": {
+    "summaries": [
+      "Test Files  3 passed (3)",
+      "Tests  25 passed (25)",
+      "Duration  270ms (transform 175ms, setup 0ms, collect 272ms, tests 21ms, environment 0ms, prepare 156ms)"
+    ],
+    "failures": [],
+    "failedCaseTimings": [],
+    "nodeSummaries": []
+  },
+  "sequence-credentials-verify.log": {
+    "summaries": [
+      "Test Files  2 passed (2)",
+      "Tests  164 passed (164)",
+      "Duration  204.43s (transform 281ms, setup 0ms, collect 858ms, tests 219.67s, environment 0ms, prepare 250ms)"
+    ],
+    "failures": [],
+    "failedCaseTimings": [
+      "\u2713 actual custom_summary preparation survives close/reopen with an owned selection change  2968ms",
+      "\u2713 configuration correction: authenticates complete payload_digest before new-intent  2362ms",
+      "\u2713 configuration correction: authenticates complete outcome before new-intent  2443ms"
+    ],
+    "nodeSummaries": [
+      "\u2139 tests 3",
+      "\u2139 pass 3",
+      "\u2139 fail 0",
+      "\u2139 duration_ms 1049.700188"
+    ]
+  },
+  "sequence-runtime-verify.log": {
+    "summaries": [
+      "Test Files  12 passed (12)",
+      "Tests  387 passed (387)",
+      "Duration  44.05s (transform 1.16s, setup 0ms, collect 12.02s, tests 113.62s, environment 2ms, prepare 3.98s)"
+    ],
+    "failures": [],
+    "failedCaseTimings": [],
+    "nodeSummaries": [
+      "\u2139 tests 6",
+      "\u2139 pass 6",
+      "\u2139 fail 0",
+      "\u2139 duration_ms 3791.175111"
+    ]
+  },
+  "sequence-verify.log": {
+    "summaries": [
+      "Test Files  2 passed (2)",
+      "Tests  164 passed (164)",
+      "Duration  203.80s (transform 276ms, setup 0ms, collect 860ms, tests 216.81s, environment 0ms, prepare 265ms)",
+      "Test Files  74 passed (74)",
+      "Tests  848 passed (848)",
+      "Duration  20.99s (transform 8.91s, setup 0ms, import 27.56s, tests 21.53s, environment 4.37s)",
+      "Test Files  11 passed (11)",
+      "Tests  79 passed (79)",
+      "Duration  1.30s (transform 292ms, setup 0ms, collect 1.73s, tests 454ms, environment 1ms, prepare 551ms)"
+    ],
+    "failures": [],
+    "failedCaseTimings": [
+      "\u2713 actual custom_summary preparation survives close/reopen with an owned selection change  2976ms",
+      "\u2713 configuration correction: authenticates complete payload_digest before new-intent  2373ms",
+      "\u2713 configuration correction: authenticates complete outcome before new-intent  2437ms"
+    ],
+    "nodeSummaries": [
+      "\u2139 tests 3",
+      "\u2139 pass 3",
+      "\u2139 fail 0",
+      "\u2139 duration_ms 1047.852127"
+    ]
+  },
+  "summary-alone.log": {
+    "summaries": [
+      "Test Files  1 passed (1)",
+      "Tests  1 passed | 141 skipped (142)",
+      "Duration  3.31s (transform 273ms, setup 0ms, collect 477ms, tests 1.92s, environment 0ms, prepare 90ms)"
+    ],
+    "failures": [],
+    "failedCaseTimings": [
+      "\u2713 actual custom_summary preparation survives close/reopen with an owned selection change  1922ms"
+    ],
+    "nodeSummaries": []
+  },
+  "timing-after-aggregate.log": {
+    "summaries": [
+      "Test Files  1 passed (1)",
+      "Tests  140 passed (140)",
+      "Duration  201.42s (transform 762ms, setup 0ms, collect 1.23s, tests 208.96s, environment 0ms, prepare 95ms)"
+    ],
+    "failures": [],
+    "failedCaseTimings": [
+      "\u2713 actual custom_summary preparation survives close/reopen with an owned selection change  2936ms",
+      "\u2713 configuration correction: authenticates complete payload_digest before new-intent  2289ms",
+      "\u2713 configuration correction: authenticates complete outcome before new-intent  2381ms"
+    ],
+    "nodeSummaries": []
+  },
+  "timing-before-aggregate.log": {
+    "summaries": [
+      "Test Files  1 failed (1)",
+      "Tests  2 failed | 138 passed (140)",
+      "Duration  289.94s (transform 951ms, setup 0ms, collect 1.51s, tests 302.02s, environment 0ms, prepare 104ms)"
+    ],
+    "failures": [
+      "FAIL  ../../plans/evidence/artifacts/007/configuration-timing-followup/timing.worker.test.ts > configuration correction: authenticates complete state before new-intent",
+      "FAIL  ../../plans/evidence/artifacts/007/configuration-timing-followup/timing.worker.test.ts > configuration correction: authenticates complete outcome before reopen"
+    ],
+    "failedCaseTimings": [
+      "\u2713 actual custom_summary preparation survives close/reopen with an owned selection change  4675ms",
+      "\u2713 configuration correction: authenticates complete payload_digest before new-intent  4537ms",
+      "\u2713 configuration correction: authenticates complete outcome before new-intent  5192ms"
+    ],
+    "nodeSummaries": []
+  },
+  "timing-before-focused.log": {
+    "summaries": [
+      "Test Files  1 passed (1)",
+      "Tests  3 passed | 137 skipped (140)",
+      "Duration  7.55s (transform 821ms, setup 0ms, collect 2.78s, tests 4.94s, environment 0ms, prepare 128ms)"
+    ],
+    "failures": [],
+    "failedCaseTimings": [
+      "\u2713 actual custom_summary preparation survives close/reopen with an owned selection change  2192ms",
+      "\u2713 configuration correction: authenticates complete payload_digest before new-intent  1503ms",
+      "\u2713 configuration correction: authenticates complete outcome before new-intent  1248ms"
+    ],
+    "nodeSummaries": []
+  },
+  "timing-product-before.log": {
+    "summaries": [
+      "Test Files   (1)",
+      "Tests  1 failed | 50 passed (140)",
+      "Duration  95.07s (transform 652ms, setup 0ms, collect 2.50s, tests 0ms, environment 0ms, prepare 110ms)"
+    ],
+    "failures": [
+      "FAIL  ../../plans/evidence/artifacts/007/configuration-timing-followup/timing.worker.test.ts > two actual owned sessions retain independent durable Pi selections"
+    ],
+    "failedCaseTimings": [],
+    "nodeSummaries": []
+  },
+  "timing-product-focused.log": {
+    "summaries": [
+      "Test Files  1 passed (1)",
+      "Tests  3 passed | 137 skipped (140)",
+      "Duration  7.47s (transform 804ms, setup 0ms, collect 1.27s, tests 6.74s, environment 0ms, prepare 99ms)"
+    ],
+    "failures": [],
+    "failedCaseTimings": [
+      "\u2713 actual custom_summary preparation survives close/reopen with an owned selection change  2435ms",
+      "\u2713 configuration correction: authenticates complete payload_digest before new-intent  2869ms",
+      "\u2713 configuration correction: authenticates complete outcome before new-intent  1438ms"
+    ],
+    "nodeSummaries": []
+  },
+  "timing-product-quiet-before.log": {
+    "summaries": [
+      "Test Files  1 failed (1)",
+      "Tests  2 failed | 138 passed (140)",
+      "Duration  337.55s (transform 895ms, setup 0ms, collect 1.43s, tests 351.37s, environment 1ms, prepare 134ms)"
+    ],
+    "failures": [
+      "FAIL  ../../plans/evidence/artifacts/007/configuration-timing-followup/timing-product-quiet.worker.test.ts > lost acknowledgment retry remains an owned receipt, not new entitlement or selection",
+      "FAIL  ../../plans/evidence/artifacts/007/configuration-timing-followup/timing-product-quiet.worker.test.ts > configuration correction: authenticates complete id before new-intent"
+    ],
+    "failedCaseTimings": [
+      "\u2713 actual custom_summary preparation survives close/reopen with an owned selection change  5242ms",
+      "\u2713 configuration correction: authenticates complete payload_digest before new-intent  5304ms",
+      "\u2713 configuration correction: authenticates complete outcome before new-intent  5641ms"
+    ],
+    "nodeSummaries": []
+  },
+  "timing-storage-only-experiment.log": {
+    "summaries": [
+      "Test Files  1 failed (1)",
+      "Tests  3 failed | 137 passed (140)",
+      "Duration  325.38s (transform 920ms, setup 0ms, collect 1.43s, tests 339.28s, environment 0ms, prepare 115ms)"
+    ],
+    "failures": [
+      "FAIL  ../../plans/evidence/artifacts/007/configuration-timing-followup/timing-product-quiet.worker.test.ts > actual generation preparation survives close/reopen with an owned selection change",
+      "FAIL  ../../plans/evidence/artifacts/007/configuration-timing-followup/timing-product-quiet.worker.test.ts > configuration correction: authenticates complete payload_digest before new-intent",
+      "FAIL  ../../plans/evidence/artifacts/007/configuration-timing-followup/timing-product-quiet.worker.test.ts > configuration correction: authenticates complete outcome before reopen"
+    ],
+    "failedCaseTimings": [
+      "\u2713 actual custom_summary preparation survives close/reopen with an owned selection change  5163ms",
+      "\u00d7 configuration correction: authenticates complete payload_digest before new-intent 6741ms",
+      "\u2713 configuration correction: authenticates complete outcome before new-intent  5504ms"
+    ],
+    "nodeSummaries": []
+  }
+}

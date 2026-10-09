@@ -1,0 +1,74 @@
+$ pnpm contracts:verify && npm run contracts:check --prefix packages/session-brain && npm run typecheck --prefix packages/session-brain && npm test --prefix packages/session-brain && npm run build --prefix packages/session-brain
+$ pnpm --filter @ditto/runtime-contracts typecheck && pnpm --filter @ditto/runtime-contracts exec vitest run && pnpm --filter @ditto/runtime-contracts build
+$ tsc --noEmit
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/packages/runtime-contracts[39m
+
+ [32m✓[39m src/model.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m src/configuration.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m src/contracts.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[32m25 passed[39m[22m[90m (25)[39m
+[2m   Start at [22m 09:39:05
+[2m   Duration [22m 291ms[2m (transform 185ms, setup 0ms, collect 284ms, tests 25ms, environment 0ms, prepare 155ms)[22m
+
+$ tsc -p tsconfig.json
+npm notice run contracts:check
+npm notice run vitest run src/pi-feasibility.test.ts -t contracts-consumer-freshness
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/packages/session-brain[39m
+
+ [32m✓[39m src/pi-feasibility.test.ts [2m([22m[2m6 tests[22m[2m | [22m[33m3 skipped[39m[2m)[22m[33m 6568[2mms[22m[39m
+   [33m[2m✓[22m[39m contracts-consumer-freshness[2m > [22mcontracts-consumer-freshness: imported emitted JS/declarations match a fresh contracts build [33m 557[2mms[22m[39m
+   [33m[2m✓[22m[39m contracts-consumer-freshness[2m > [22mcontracts-consumer-freshness: isolated npm copy is stale until the documented npm refresh recipe [33m 5949[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m3 passed[39m[22m[2m | [22m[33m3 skipped[39m[90m (6)[39m
+[2m   Start at [22m 09:39:07
+[2m   Duration [22m 7.75s[2m (transform 114ms, setup 0ms, collect 1.02s, tests 6.57s, environment 0ms, prepare 55ms)[22m
+
+npm notice run typecheck
+npm notice run tsc -p tsconfig.json --noEmit
+npm notice run test
+npm notice run vitest run
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/packages/session-brain[39m
+
+ [32m✓[39m src/pi-restoration.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/pi-feasibility.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 14437[2mms[22m[39m
+   [33m[2m✓[22m[39m contracts-consumer-freshness[2m > [22mcontracts-consumer-freshness: imported emitted JS/declarations match a fresh contracts build [33m 553[2mms[22m[39m
+   [33m[2m✓[22m[39m contracts-consumer-freshness[2m > [22mcontracts-consumer-freshness: isolated npm copy is stale until the documented npm refresh recipe [33m 13692[2mms[22m[39m
+ [32m✓[39m src/pi-recovery.test.ts [2m([22m[2m34 tests[22m[2m)[22m[33m 17147[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22minitial-command: SIGKILL before-persist and restart [33m 3578[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22minitial-command: SIGKILL after-persist-before-ack and restart [33m 3778[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22minitial-command: SIGKILL after-ack-before-next and restart [33m 3249[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22mfollow-up: SIGKILL before-persist and restart [33m 3558[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22mfollow-up: SIGKILL after-persist-before-ack and restart [33m 3455[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22mfollow-up: SIGKILL after-ack-before-next and restart [33m 3552[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22massistant-tools: SIGKILL before-persist and restart [33m 3557[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22massistant-tools: SIGKILL after-persist-before-ack and restart [33m 3608[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22massistant-tools: SIGKILL after-ack-before-next and restart [33m 3347[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22mtool-result: SIGKILL before-persist and restart [33m 3181[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22mtool-result: SIGKILL after-persist-before-ack and restart [33m 3892[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22mtool-result: SIGKILL after-ack-before-next and restart [33m 3653[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22mfinal-answer: SIGKILL before-persist and restart [33m 3567[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22mfinal-answer: SIGKILL after-persist-before-ack and restart [33m 3603[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22mfinal-answer: SIGKILL after-ack-before-next and restart [33m 3334[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22mcompaction: SIGKILL before-persist and restart [33m 3273[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22mcompaction: SIGKILL after-persist-before-ack and restart [33m 3428[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22mcompaction: SIGKILL after-ack-before-next and restart [33m 3441[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22mextension-state: SIGKILL before-persist and restart [33m 3805[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22mextension-state: SIGKILL after-persist-before-ack and restart [33m 3835[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22mextension-state: SIGKILL after-ack-before-next and restart [33m 2393[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22mspending-attempt: SIGKILL before-persist and restart [33m 2303[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22mspending-attempt: SIGKILL after-persist-before-ack and restart [33m 2299[2mms[22m[39m
+   [33m[2m✓[22m[39m awaited durability barriers[2m > [22mspending-attempt: SIGKILL after-ack-before-next and restart [33m 2136[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[32m43 passed[39m[22m[90m (43)[39m
+[2m   Start at [22m 09:39:18
+[2m   Duration [22m 18.10s[2m (transform 158ms, setup 0ms, collect 2.41s, tests 31.59s, environment 0ms, prepare 140ms)[22m
+
+npm notice run build
+npm notice run tsc -p tsconfig.json

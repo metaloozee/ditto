@@ -1,0 +1,11 @@
+$ tsc --noEmit && tsc --noEmit -p tsconfig.forbidden-bindings.json
+src/pi-durable-models.ts(113,44): error TS2339: Property 'reasoning' does not exist on type '(StreamOptions & Record<string, unknown>) | OpenAICompletionsOptions | MistralOptions | OpenAIResponsesOptions | ... 6 more ... | PiMessagesOptions'.
+  Property 'reasoning' does not exist on type 'OpenAICompletionsOptions'.
+../../packages/runtime-contracts/src/model.ts(167,58): error TS2322: Type '{ id: "faux-1" | "faux-2"; thinking: string[]; }[]' is not assignable to type '{ id: SyntheticModelId; thinking: SyntheticThinking[]; }[]'.
+  Type '{ id: "faux-1" | "faux-2"; thinking: string[]; }' is not assignable to type '{ id: SyntheticModelId; thinking: SyntheticThinking[]; }'.
+    Types of property 'thinking' are incompatible.
+      Type 'string[]' is not assignable to type 'SyntheticThinking[]'.
+        Type 'string' is not assignable to type 'SyntheticThinking'.
+/home/ayan/ditto-execution/plan-007-recovery/apps/runtime:
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @ditto/runtime@ typecheck: `tsc --noEmit && tsc --noEmit -p tsconfig.forbidden-bindings.json`
+Exit status 2

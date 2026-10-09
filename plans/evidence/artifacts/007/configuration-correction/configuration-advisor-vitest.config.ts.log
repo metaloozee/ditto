@@ -1,0 +1,197 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for ../../plans/evidence/artifacts/007/configuration-advisor/vitest.config.ts...
+[90mstdout[2m | ../../plans/evidence/artifacts/007/configuration-advisor/probes.worker.test.ts[2m > [22m[2madvisor: equal current choice falsely completes an unapplied pending intent encrypted=false
+[22m[39m[advisor-equal] {"encrypted":false,"piUnchangedBeforeReopen":true,"ack":{"version":1,"intentId":"never-applied","status":"applied","snapshot":{"version":1,"projectId":"project","workspaceSessionId":"session","ownerVersion":1,"selection":{"model":"faux-1","thinking":"off"}}}}
+
+[90mstdout[2m | ../../plans/evidence/artifacts/007/configuration-advisor/probes.worker.test.ts[2m > [22m[2madvisor: equal current choice falsely completes an unapplied pending intent encrypted=true
+[22m[39m[advisor-equal] {"encrypted":true,"piUnchangedBeforeReopen":true,"ack":{"version":1,"intentId":"never-applied","status":"applied","snapshot":{"version":1,"projectId":"project","workspaceSessionId":"session","ownerVersion":1,"selection":{"model":"faux-1","thinking":"off"}}}}
+
+[90mstdout[2m | ../../plans/evidence/artifacts/007/configuration-advisor/probes.worker.test.ts[2m > [22m[2madvisor: stale local authority survives final awaited product check
+[22m[39m[advisor-local] {"localCurrent":false,"ack":{"version":1,"intentId":"choice-1","status":"denied","snapshot":null}}
+
+ [31m❯[39m ../../plans/evidence/artifacts/007/configuration-advisor/probes.worker.test.ts [2m([22m[2m118 tests[22m[2m | [22m[31m2 failed[39m[2m | [22m[33m114 skipped[39m[2m)[22m[33m 4496[2mms[22m[39m
+   [2m[90m↓[39m[22m owned configuration commits scoped duplicate/conflict outcomes and lost acknowledgments, encrypted=false
+   [2m[90m↓[39m[22m configuration crash at configuration-intent never reapplies an older choice, encrypted=false
+   [2m[90m↓[39m[22m configuration crash at configuration-applied never reapplies an older choice, encrypted=false
+   [2m[90m↓[39m[22m configuration crash at configuration-outcome never reapplies an older choice, encrypted=false
+   [2m[90m↓[39m[22m owned configuration commits scoped duplicate/conflict outcomes and lost acknowledgments, encrypted=true
+   [2m[90m↓[39m[22m configuration crash at configuration-intent never reapplies an older choice, encrypted=true
+   [2m[90m↓[39m[22m configuration crash at configuration-applied never reapplies an older choice, encrypted=true
+   [2m[90m↓[39m[22m configuration crash at configuration-outcome never reapplies an older choice, encrypted=true
+   [2m[90m↓[39m[22m owned configuration rejects wrong-user after actual D1 revocation with unchanged Pi state
+   [2m[90m↓[39m[22m owned configuration rejects wrong-project-owner after actual D1 revocation with unchanged Pi state
+   [2m[90m↓[39m[22m owned configuration rejects wrong-project after actual D1 revocation with unchanged Pi state
+   [2m[90m↓[39m[22m owned configuration rejects archived after actual D1 revocation with unchanged Pi state
+   [2m[90m↓[39m[22m owned configuration rejects deleting after actual D1 revocation with unchanged Pi state
+   [2m[90m↓[39m[22m owned configuration rejects owner-version after actual D1 revocation with unchanged Pi state
+   [2m[90m↓[39m[22m owned configuration rejects stale-identity after actual D1 revocation with unchanged Pi state
+   [2m[90m↓[39m[22m owned configuration rejects wrong-role after actual D1 revocation with unchanged Pi state
+   [2m[90m↓[39m[22m owned configuration rejects retired after actual D1 revocation with unchanged Pi state
+   [2m[90m↓[39m[22m owned configuration rejects lifecycle after actual D1 revocation with unchanged Pi state
+   [2m[90m↓[39m[22m owned configuration rejects revoked after actual D1 revocation with unchanged Pi state
+   [2m[90m↓[39m[22m owned configuration rejects disconnected after actual D1 revocation with unchanged Pi state
+   [2m[90m↓[39m[22m owned configuration rejects connection-generation after actual D1 revocation with unchanged Pi state
+   [2m[90m↓[39m[22m owned configuration rejects capability-revision after actual D1 revocation with unchanged Pi state
+   [2m[90m↓[39m[22m owned selection denies unavailable without a request
+   [2m[90m↓[39m[22m owned selection denies revoked without a request
+   [2m[90m↓[39m[22m owned selection denies unsupported-model without a request
+   [2m[90m↓[39m[22m owned selection denies unsupported-thinking without a request
+   [2m[90m↓[39m[22m caller fields cannot authenticate or select another owned scope
+   [2m[90m↓[39m[22m a held actual D1 configuration authority result cannot survive capability revocation
+   [2m[90m↓[39m[22m owned configuration is reflected in an actual mandatory credential request
+   [2m[90m↓[39m[22m a valid first default grants no later request admission after capability revocation
+   [2m[90m↓[39m[22m first owned conversation validates defaults without prompt membership, valid
+   [2m[90m↓[39m[22m first owned conversation validates defaults without prompt membership, unsupported-model
+   [2m[90m↓[39m[22m first owned conversation validates defaults without prompt membership, unsupported-thinking
+   [2m[90m↓[39m[22m first owned conversation validates defaults without prompt membership, unavailable
+   [2m[90m↓[39m[22m first owned conversation validates defaults without prompt membership, revoked
+   [2m[90m↓[39m[22m first owned conversation validates defaults without prompt membership, disconnected
+   [2m[90m↓[39m[22m local credential disconnect denies configuration before its D1 projection catches up
+   [2m[90m↓[39m[22m configuration in flight keeps the prepared request and changes the separately prepared summary
+   [2m[90m↓[39m[22m held host authority revocation rejects configuration without changing durable Pi state
+   [2m[90m↓[39m[22m same key with concurrent changed payload has one durable winner
+   [2m[90m↓[39m[22m two actual owned sessions retain independent durable Pi selections
+   [2m[90m↓[39m[22m owned configuration close cancels held authority and joins the owner lane
+   [2m[90m↓[39m[22m queued follow-up preparation uses the owned change, not acceptance-time selection
+   [2m[90m↓[39m[22m owned configuration leaves retries separately admitted with new preparation-time selection
+   [2m[90m↓[39m[22m actual generation preparation survives close/reopen with an owned selection change
+   [2m[90m↓[39m[22m actual custom_summary preparation survives close/reopen with an owned selection change
+   [2m[90m↓[39m[22m lost acknowledgment retry remains an owned receipt, not new entitlement or selection
+   [2m[90m↓[39m[22m encrypted configuration evidence rejects payload_digest tampering without changing Pi
+   [2m[90m↓[39m[22m encrypted configuration evidence rejects state tampering without changing Pi
+   [2m[90m↓[39m[22m encrypted configuration evidence rejects outcome tampering without changing Pi
+   [2m[90m↓[39m[22m the mandatory adapter constructs an exact credential-owned request and bounded stream through private RPC
+   [2m[90m↓[39m[22m invalid or differently bound request dispatches zero calls: (request) => ({ ...request, method: "GET" })
+   [2m[90m↓[39m[22m invalid or differently bound request dispatches zero calls: (request) => ({
+    ...request,
+    url: `${request.url}?proxy=1`
+  })
+   [2m[90m↓[39m[22m invalid or differently bound request dispatches zero calls: (request) => ({
+    ...request,
+    headers: [...request.headers, ["authorization", "caller"]]
+  })
+   [2m[90m↓[39m[22m invalid or differently bound request dispatches zero calls: (request) => ({
+    ...request,
+    body: request.body.replace('"version":1', '"version":1,"version":1')
+  })
+   [2m[90m↓[39m[22m invalid or differently bound request dispatches zero calls: (request) => ({
+    ...request,
+    body: JSON.stringify({ ...JSON.parse(request.body), thinking: "high" })
+  })
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE projects SET userId='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE workspace_sessions SET status='archived'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE workspace_sessions SET runtimeOwnerVersion=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE workspace_sessions SET runtimeOwner='legacy'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET kind='project_seed'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET retiredAt=1
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET lifecycleGeneration=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET incarnationId='replacement'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET controllerNamespace='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE codex_connections SET revoked=1,generation=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE projects SET userId='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE workspace_sessions SET status='archived'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE workspace_sessions SET runtimeOwnerVersion=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE workspace_sessions SET runtimeOwner='legacy'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET kind='project_seed'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET retiredAt=1
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET lifecycleGeneration=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET incarnationId='replacement'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET controllerNamespace='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE codex_connections SET revoked=1,generation=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE projects SET userId='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE workspace_sessions SET status='archived'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE workspace_sessions SET runtimeOwnerVersion=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE workspace_sessions SET runtimeOwner='legacy'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET kind='project_seed'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET retiredAt=1
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET lifecycleGeneration=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET incarnationId='replacement'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET controllerNamespace='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE codex_connections SET revoked=1,generation=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))
+   [2m[90m↓[39m[22m Stop wins during credential preparation before the host acknowledgment, with zero fetches
+   [2m[90m↓[39m[22m a model capability revoked while the actual claim flush is held is freshly denied after that flush
+   [2m[90m↓[39m[22m three contract denials durably close the window, record review and halt the exact run without reentry
+   [2m[90m↓[39m[22m concurrent private requests cannot consume an exact window or live claim twice
+   [2m[90m↓[39m[22m identical local effect IDs remain independently scoped to owned workspace identities
+   [2m[90m↓[39m[22m window expiry during credential preparation denies before host claim and fetch
+   [2m[90m↓[39m[22m production credentials remain unavailable even with connected fixture records
+   [2m[90m↓[39m[22m a known faux-1 generation failure retries as a separate admitted attempt
+   [2m[90m↓[39m[22m a known faux-2 generation failure retries as a separate admitted attempt
+   [2m[90m↓[39m[22m Git metadata's reserved attempt is never refunded after a known failure
+   [2m[90m↓[39m[22m Stop after host acknowledgment retains the credential-bearing start and late product evidence
+   [2m[90m↓[39m[22m accepted custom summaries use the same private transport and exactly one fresh association
+   [2m[90m↓[39m[22m a known faux-1 custom summary failure spends its one attempt without an automatic retry
+   [2m[90m↓[39m[22m a known faux-2 custom summary failure spends its one attempt without an automatic retry
+   [2m[90m↓[39m[22m disconnect of the local credential record while preparation is held prevents fetch even before a D1 projection
+   [2m[90m↓[39m[22m real epoch-first Stop during the claim durability flush prevents fetch without refunding consumption
+   [2m[90m↓[39m[22m product revocation during the final host authority await is rechecked before fetch
+   [2m[90m↓[39m[22m actual transport after host reopen uses invocation generation 2 and D1 identity lifecycle 1
+   [2m[90m↓[39m[22m held actual D1 capability query expires command with valid host deadline and zero fetches
+   [2m[90m↓[39m[22m held actual D1 capability query expires window with valid host deadline and zero fetches
+   [2m[90m↓[39m[22m held actual D1 permit query expires command with valid host deadline and zero fetches
+   [2m[90m↓[39m[22m held actual D1 permit query expires window with valid host deadline and zero fetches
+   [2m[90m↓[39m[22m malformed upstream outcomes retain uncertain admission without redispatch
+   [2m[90m↓[39m[22m malformed upstream outcomes retain uncertain admission without redispatch
+   [2m[90m↓[39m[22m malformed upstream outcomes retain uncertain admission without redispatch
+   [33m[2m✓[22m[39m advisor: equal current choice falsely completes an unapplied pending intent encrypted=false [33m 1170[2mms[22m[39m
+   [33m[2m✓[22m[39m advisor: equal current choice falsely completes an unapplied pending intent encrypted=true [33m 1141[2mms[22m[39m
+[31m   [31m×[31m advisor: encrypted pending metadata can skip integrity validation on reopen[39m[33m 1026[2mms[22m[39m
+[31m     → Configuration evidence integrity failure[39m
+[31m   [31m×[31m advisor: stale local authority survives final awaited product check[39m[33m 1106[2mms[22m[39m
+[31m     → expected 'denied' to be 'applied' // Object.is equality[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 2 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m ../../plans/evidence/artifacts/007/configuration-advisor/probes.worker.test.ts[2m > [22madvisor: encrypted pending metadata can skip integrity validation on reopen
+[31m[1mError[22m: Configuration evidence integrity failure[39m
+[36m [2m❯[22m PiDurableHost.configurationEvidence ../runtime/src/pi-durable-host.ts:[2m1843:10[22m[39m
+    [90m1841| [39m     }))
+    [90m1842| [39m  )
+    [90m1843| [39m   throw new Error("Configuration evidence integrity failure");
+    [90m   | [39m         [31m^[39m
+    [90m1844| [39m  return { intent, ack, state, payload: identity.payload };
+    [90m1845| [39m }
+[90m [2m❯[22m PiDurableHost.configurationLedger ../runtime/src/pi-durable-host.ts:[2m1768:10[22m[39m
+[90m [2m❯[22m ../runtime/src/pi-durable-host.ts:[2m1595:22[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m ../../plans/evidence/artifacts/007/configuration-advisor/probes.worker.test.ts[2m > [22madvisor: stale local authority survives final awaited product check
+[31m[1mAssertionError[22m: expected 'denied' to be 'applied' // Object.is equality[39m
+
+Expected: "applied"
+Received: "denied"
+
+[36m [2m❯[22m owned ../../plans/evidence/artifacts/007/configuration-advisor/probes.worker.test.ts:[2m51:22[22m[39m
+    [90m 49| [39m  [35mconst[39m ack [33m=[39m [35mawait[39m [34mbounded[39m(pending)[33m;[39m
+    [90m 50| [39m  console[33m.[39m[34mlog[39m([32m"[advisor-local]"[39m[33m,[39m [33mJSON[39m[33m.[39m[34mstringify[39m({localCurrent[33m,[39m ack}))[33m;[39m
+    [90m 51| [39m  [34mexpect[39m(ack[33m.[39mstatus)[33m.[39m[34mtoBe[39m([32m"applied"[39m)[33m;[39m
+    [90m   | [39m                     [31m^[39m
+    [90m 52| [39m  localCurrent [33m=[39m [35mtrue[39m[33m;[39m
+    [90m 53| [39m  expect((await f.host.readOwnedConfiguration(configurationQuery))?.se…
+[90m [2m❯[22m ../../plans/evidence/artifacts/007/configuration-advisor/fixture-copy.ts:[2m505:5[22m[39m
+[90m [2m❯[22m maybeHandleRunRequest home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:[2m198:20[22m[39m
+[90m [2m❯[22m DurableObject.Wrapper.fetch home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:[2m563:22[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m2 passed[39m[22m[2m | [22m[33m114 skipped[39m[90m (118)[39m
+[2m   Start at [22m 07:44:22
+[2m   Duration [22m 6.45s[2m (transform 643ms, setup 0ms, collect 1.05s, tests 4.50s, environment 0ms, prepare 87ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run --config /home/ayan/ditto-execution/plan-007-recovery/plans/evidence/artifacts/007/configuration-advisor/vitest.config.ts -t '^advisor'

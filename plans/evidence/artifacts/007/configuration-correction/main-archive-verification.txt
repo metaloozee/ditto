@@ -1,0 +1,1 @@
+Read-only main archive matches the original 34 configuration candidate identities and SHA-256 782495f72e34ee81b546ccfbef72c5e091cced8b71dd41431fdb8efe2b19e442. Main source is not the execution candidate; the attempted direct main-source check is not a valid preservation check and is not counted. No main source writes occurred.

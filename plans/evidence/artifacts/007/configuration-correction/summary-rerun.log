@@ -1,0 +1,21 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mactual custom_summary preparation survives close/reopen with an owned selection change
+[22m[39m[007-configuration-retained] {"purpose":"custom_summary","requests":[{"model":"faux-1","thinking":"off","purpose":"generation"},{"model":"faux-1","thinking":"off","purpose":"custom_summary"}],"snapshot":{"calls":2,"windows":[{"consumedRequests":1,"contractDenials":0,"closeReason":"complete","openSlot":"model/7fc15e36b1f4e89b6ae80b94334e10211f28b9cf8baf26a143e207aef7e7bfae"},{"consumedRequests":1,"contractDenials":0,"closeReason":"complete","openSlot":"model/b97f92fc342af5d53b005bf68250980292cfacf74089bbf37650943a4b1f7f6b"}],"admissions":[{"effectId":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","purpose":"generation","state":"complete","requestDigest":"48616251f62080b3cc13adc9f24f521ca2337810a7d8f68db7b6023778a5abf7"},{"effectId":"ditto-summary-1/10/attempt/1","purpose":"custom_summary","state":"complete","requestDigest":"e0c7202d8279c2ab6bdae4470f273cafab9a9e85c7ed4f149cfe96a81695ce4f"}],"claims":[{"claimed":1},{"claimed":1}],"runs":[{"state":"complete","epoch":2}]}}
+
+ [32m✓[39m src/codex-request-contract.worker.test.ts [2m([22m[2m140 tests[22m[2m | [22m[33m139 skipped[39m[2m)[22m[33m 3426[2mms[22m[39m
+   [33m[2m✓[22m[39m actual custom_summary preparation survives close/reopen with an owned selection change [33m 3425[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m1 passed[39m[22m[2m | [22m[33m139 skipped[39m[90m (140)[39m
+[2m   Start at [22m 07:43:36
+[2m   Duration [22m 3.50s[2m (transform 282ms, setup 0ms, collect 486ms, tests 3.43s, environment 0ms, prepare 94ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

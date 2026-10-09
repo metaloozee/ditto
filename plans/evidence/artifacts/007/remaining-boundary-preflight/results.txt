@@ -1,0 +1,9 @@
+contracts:verify exit=0
+brain:verify exit=1
+credentials:verify exit=0
+runtime:verify exit=0
+verify exit=0
+agent-models exit=0
+request-web exit=0
+request-worker exit=0
+request-runtime exit=0

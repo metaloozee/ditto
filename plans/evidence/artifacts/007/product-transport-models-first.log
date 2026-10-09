@@ -1,0 +1,341 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/apps/runtime[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2ma rewound live claim cannot acknowledge consumption again, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"rewound","encrypted":false,"claimed":0,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies authority during held task, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"task-authority","encrypted":false,"claimed":0,"receiptState":"reserved","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies authority during held task, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"task-authority","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies Stop during held task, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"task-Stop","encrypted":false,"claimed":0,"receiptState":"reserved","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies Stop during held task, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"task-Stop","encrypted":false,"claimed":0,"receiptState":"reserved","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies authority during held flush, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"flush-authority","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies authority during held flush, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"flush-authority","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies Stop during held flush, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"flush-Stop","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies Stop during held flush, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"flush-Stop","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":3,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mconcurrent exact claims reserve only once, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"concurrent","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mactual joined close cancels a held claim flush without refund, encrypted=false
+[22m[39m[007-model-claim-close] {"encrypted":false,"elapsedMs":12}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mactual joined close cancels a held claim flush without refund, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"close-held-flush","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mactual joined close cancels a held claim flush without refund, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"close-held-flush","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mlost claim acknowledgment retains consumption across two reopens, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"lost-ack","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mlost claim acknowledgment retains consumption across two reopens, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"lost-ack","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mlost claim acknowledgment retains consumption across two reopens, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"lost-ack","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2man older reserved receipt cannot refund an uncertain effect across reopens, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"reserved-rollback","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2man older reserved receipt cannot refund an uncertain effect across reopens, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"reserved-rollback","encrypted":false,"claimed":0,"receiptState":"reserved","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2man older reserved receipt cannot refund an uncertain effect across reopens, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"reserved-rollback","encrypted":false,"claimed":0,"receiptState":"reserved","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mdispatch digest substitution denies before consumption, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"digest-substitution","encrypted":false,"claimed":0,"receiptState":"reserved","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2ma rewound live claim cannot acknowledge consumption again, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"rewound","encrypted":true,"claimed":0,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies authority during held task, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"task-authority","encrypted":true,"claimed":0,"receiptState":"reserved","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies authority during held task, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"task-authority","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies Stop during held task, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"task-Stop","encrypted":true,"claimed":0,"receiptState":"reserved","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies Stop during held task, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"task-Stop","encrypted":true,"claimed":0,"receiptState":"reserved","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies authority during held flush, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"flush-authority","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies authority during held flush, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"flush-authority","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies Stop during held flush, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"flush-Stop","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mclaim denies Stop during held flush, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"flush-Stop","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":3,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mconcurrent exact claims reserve only once, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"concurrent","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mactual joined close cancels a held claim flush without refund, encrypted=true
+[22m[39m[007-model-claim-close] {"encrypted":true,"elapsedMs":12}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mactual joined close cancels a held claim flush without refund, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"close-held-flush","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mactual joined close cancels a held claim flush without refund, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"close-held-flush","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mlost claim acknowledgment retains consumption across two reopens, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"lost-ack","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mlost claim acknowledgment retains consumption across two reopens, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"lost-ack","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mlost claim acknowledgment retains consumption across two reopens, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"lost-ack","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2man older reserved receipt cannot refund an uncertain effect across reopens, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"reserved-rollback","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2man older reserved receipt cannot refund an uncertain effect across reopens, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"reserved-rollback","encrypted":true,"claimed":0,"receiptState":"reserved","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2man older reserved receipt cannot refund an uncertain effect across reopens, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"reserved-rollback","encrypted":true,"claimed":0,"receiptState":"reserved","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mdispatch digest substitution denies before consumption, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"digest-substitution","encrypted":true,"claimed":0,"receiptState":"reserved","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mprivate Worker RPC carries the live exact claim and admits one start, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"rpc-admit","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":1}
+
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Unresolved effect blocks admission: competing reservation
+    at Object.claim (/home/ayan/ditto-execution/plan-007-recovery/apps/runtime/src/pi-durable-host.ts:1972:21)
+    at ExactModelClaim.claim (/home/ayan/ditto-execution/plan-007-recovery/apps/runtime/src/pi-durable-models.ts:46:24)
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Unresolved effect blocks admission: competing reservation
+    at async default.forward (file:///home/ayan/ditto-execution/plan-007-recovery/apps/runtime/relay.mjs:3:46)
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = AbortError: The operation was aborted
+    at TaskScheduler.#observe (home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/@earendil-works_pi-durable.js:10135:33)
+    at home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/@earendil-works_pi-durable.js:9990:66
+    at HarnessImpl.#publish (home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/@earendil-works_pi-durable.js:9748:7)
+    at HarnessImpl.#runCommit (home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/@earendil-works_pi-durable.js:9728:18)
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = AbortError: The operation was aborted
+    at async default.forward (file:///home/ayan/ditto-execution/plan-007-recovery/apps/runtime/relay.mjs:3:46)
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mreal epoch-first Stop wins before a private RPC acknowledgment, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"rpc-stop-first","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":3,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mStop after a private RPC acknowledgment retains the admitted start, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"rpc-stop-after","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":1}
+
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Exact private model claim denied
+    at ExactModelClaim.claim (/home/ayan/ditto-execution/plan-007-recovery/apps/runtime/src/pi-durable-models.ts:44:10)
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Exact private model claim denied
+    at async default.forward (file:///home/ayan/ditto-execution/plan-007-recovery/apps/runtime/relay.mjs:3:46)
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = TypeError: capability.claim is not a function
+    at default.forward (file:///home/ayan/ditto-execution/plan-007-recovery/apps/runtime/relay.mjs:3:63)
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mprivate RPC rejects foreign owned context and a JSON-only association, encrypted=false
+[22m[39m[007-model-claim-snapshot] {"name":"rpc-foreign","encrypted":false,"claimed":0,"receiptState":"reserved","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Unresolved effect blocks admission: competing reservation
+    at Object.claim (/home/ayan/ditto-execution/plan-007-recovery/apps/runtime/src/pi-durable-host.ts:1972:21)
+    at ExactModelClaim.claim (/home/ayan/ditto-execution/plan-007-recovery/apps/runtime/src/pi-durable-models.ts:46:24)
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Unresolved effect blocks admission: competing reservation
+    at async default.forward (file:///home/ayan/ditto-execution/plan-007-recovery/apps/runtime/relay.mjs:3:46)
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mprivate Worker RPC carries the live exact claim and admits one start, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"rpc-admit","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":1}
+
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = AbortError: The operation was aborted
+    at TaskScheduler.#observe (home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/@earendil-works_pi-durable.js:10135:33)
+    at home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/@earendil-works_pi-durable.js:9990:66
+    at HarnessImpl.#publish (home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/@earendil-works_pi-durable.js:9748:7)
+    at HarnessImpl.#runCommit (home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/@earendil-works_pi-durable.js:9728:18)
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = AbortError: The operation was aborted
+    at async default.forward (file:///home/ayan/ditto-execution/plan-007-recovery/apps/runtime/relay.mjs:3:46)
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mreal epoch-first Stop wins before a private RPC acknowledgment, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"rpc-stop-first","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":3,"calls":0}
+
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mStop after a private RPC acknowledgment retains the admitted start, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"rpc-stop-after","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":1}
+
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Exact private model claim denied
+    at ExactModelClaim.claim (/home/ayan/ditto-execution/plan-007-recovery/apps/runtime/src/pi-durable-models.ts:44:10)
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Exact private model claim denied
+    at async default.forward (file:///home/ayan/ditto-execution/plan-007-recovery/apps/runtime/relay.mjs:3:46)
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = TypeError: capability.claim is not a function
+    at default.forward (file:///home/ayan/ditto-execution/plan-007-recovery/apps/runtime/relay.mjs:3:63)
+[90mstdout[2m | src/pi-durable-models.test.ts[2m > [22m[2mprivate RPC rejects foreign owned context and a JSON-only association, encrypted=true
+[22m[39m[007-model-claim-snapshot] {"name":"rpc-foreign","encrypted":true,"claimed":0,"receiptState":"reserved","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+ [31m❯[39m src/pi-durable-models.test.ts [2m([22m[2m42 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[33m 7680[2mms[22m[39m
+   [32m✓[39m a rewound live claim cannot acknowledge consumption again, encrypted=false[32m 245[2mms[22m[39m
+   [32m✓[39m claim denies authority during held task, encrypted=false[32m 196[2mms[22m[39m
+   [32m✓[39m claim denies Stop during held task, encrypted=false[32m 222[2mms[22m[39m
+   [32m✓[39m claim denies authority during held flush, encrypted=false[32m 193[2mms[22m[39m
+   [32m✓[39m claim denies Stop during held flush, encrypted=false[32m 198[2mms[22m[39m
+   [32m✓[39m concurrent exact claims reserve only once, encrypted=false[32m 180[2mms[22m[39m
+   [32m✓[39m actual joined close cancels a held claim flush without refund, encrypted=false[32m 188[2mms[22m[39m
+   [32m✓[39m lost claim acknowledgment retains consumption across two reopens, encrypted=false[32m 216[2mms[22m[39m
+   [32m✓[39m dispatch receipt corrupt substitution denies live and reopened admission, encrypted=false[32m 188[2mms[22m[39m
+   [32m✓[39m dispatch receipt foreign-record substitution denies live and reopened admission, encrypted=false[32m 181[2mms[22m[39m
+   [32m✓[39m an older reserved receipt cannot refund an uncertain effect across reopens, encrypted=false[32m 205[2mms[22m[39m
+   [32m✓[39m dispatch digest substitution denies before consumption, encrypted=false[32m 177[2mms[22m[39m
+   [32m✓[39m a claimed exact attempt starts once and Stop retains its admitted work, encrypted=false[32m 197[2mms[22m[39m
+   [32m✓[39m host model claim denies Stop while transport check is held, encrypted=false[32m 194[2mms[22m[39m
+   [32m✓[39m host model claim rechecks local revocation after a held check, encrypted=false[32m 176[2mms[22m[39m
+   [32m✓[39m host model claim denies an expired admitted attempt, encrypted=false[32m 179[2mms[22m[39m
+   [32m✓[39m exact claim is one-shot and independent of the waiting provider lane, encrypted=false[32m 192[2mms[22m[39m
+   [32m✓[39m a rewound live claim cannot acknowledge consumption again, encrypted=true[32m 183[2mms[22m[39m
+   [32m✓[39m claim denies authority during held task, encrypted=true[32m 178[2mms[22m[39m
+   [32m✓[39m claim denies Stop during held task, encrypted=true[32m 175[2mms[22m[39m
+   [32m✓[39m claim denies authority during held flush, encrypted=true[32m 175[2mms[22m[39m
+   [32m✓[39m claim denies Stop during held flush, encrypted=true[32m 196[2mms[22m[39m
+   [32m✓[39m concurrent exact claims reserve only once, encrypted=true[32m 180[2mms[22m[39m
+   [32m✓[39m actual joined close cancels a held claim flush without refund, encrypted=true[32m 184[2mms[22m[39m
+   [32m✓[39m lost claim acknowledgment retains consumption across two reopens, encrypted=true[32m 226[2mms[22m[39m
+   [32m✓[39m dispatch receipt corrupt substitution denies live and reopened admission, encrypted=true[32m 166[2mms[22m[39m
+   [32m✓[39m dispatch receipt foreign-record substitution denies live and reopened admission, encrypted=true[32m 143[2mms[22m[39m
+   [32m✓[39m an older reserved receipt cannot refund an uncertain effect across reopens, encrypted=true[32m 181[2mms[22m[39m
+   [32m✓[39m dispatch digest substitution denies before consumption, encrypted=true[32m 137[2mms[22m[39m
+   [32m✓[39m a claimed exact attempt starts once and Stop retains its admitted work, encrypted=true[32m 154[2mms[22m[39m
+   [32m✓[39m host model claim denies Stop while transport check is held, encrypted=true[32m 152[2mms[22m[39m
+   [32m✓[39m host model claim rechecks local revocation after a held check, encrypted=true[32m 142[2mms[22m[39m
+   [32m✓[39m host model claim denies an expired admitted attempt, encrypted=true[32m 143[2mms[22m[39m
+   [32m✓[39m exact claim is one-shot and independent of the waiting provider lane, encrypted=true[32m 144[2mms[22m[39m
+   [32m✓[39m private Worker RPC carries the live exact claim and admits one start, encrypted=false[32m 170[2mms[22m[39m
+[31m   [31m×[31m real epoch-first Stop wins before a private RPC acknowledgment, encrypted=false[39m[32m 171[2mms[22m[39m
+[31m     → expected { claimed: 1, …(5) } to match object { epoch: 2, …(2) }
+(3 matching properties omitted from actual)[39m
+   [32m✓[39m Stop after a private RPC acknowledgment retains the admitted start, encrypted=false[32m 188[2mms[22m[39m
+   [32m✓[39m private RPC rejects foreign owned context and a JSON-only association, encrypted=false[32m 174[2mms[22m[39m
+   [32m✓[39m private Worker RPC carries the live exact claim and admits one start, encrypted=true[32m 171[2mms[22m[39m
+[31m   [31m×[31m real epoch-first Stop wins before a private RPC acknowledgment, encrypted=true[39m[32m 167[2mms[22m[39m
+[31m     → expected { claimed: 1, …(5) } to match object { epoch: 2, …(2) }
+(3 matching properties omitted from actual)[39m
+   [32m✓[39m Stop after a private RPC acknowledgment retains the admitted start, encrypted=true[32m 191[2mms[22m[39m
+   [32m✓[39m private RPC rejects foreign owned context and a JSON-only association, encrypted=true[32m 226[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 2 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/pi-durable-models.test.ts[2m > [22mreal epoch-first Stop wins before a private RPC acknowledgment, encrypted=false
+[41m[1m FAIL [22m[49m src/pi-durable-models.test.ts[2m > [22mreal epoch-first Stop wins before a private RPC acknowledgment, encrypted=true
+[31m[1mAssertionError[22m: expected { claimed: 1, …(5) } to match object { epoch: 2, …(2) }
+(3 matching properties omitted from actual)[39m
+
+- Expected
++ Received
+
+  {
+    "effectState": "admitted",
+-   "epoch": 2,
++   "epoch": 3,
+    "receiptState": "consumed",
+  }
+
+[90m [2m❯[22m Proxy.methodWrapper home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/vitest___@vitest_expect___chai.js:[2m1603:25[22m[39m
+[36m [2m❯[22m src/pi-durable-models.test.ts:[2m646:31[22m[39m
+    [90m644| [39m   [35mawait[39m f[33m.[39msettled[33m;[39m
+    [90m645| [39m   [34mexpect[39m(f[33m.[39m[34mcalls[39m())[33m.[39m[34mtoBe[39m([34m0[39m)[33m;[39m
+    [90m646| [39m   [34mexpect[39m([35mawait[39m f[33m.[39m[34msnapshot[39m())[33m.[39m[34mtoMatchObject[39m({
+    [90m   | [39m                              [31m^[39m
+    [90m647| [39m    epoch[33m:[39m [34m2[39m[33m,[39m
+    [90m648| [39m    receiptState[33m:[39m [32m"consumed"[39m[33m,[39m
+[90m [2m❯[22m src/pi-durable-models.test.ts:[2m174:4[22m[39m
+[90m [2m❯[22m maybeHandleRunRequest home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260702.1_@vitest+_25b5cb7e5ac90ba1c82363cf73fabbe1/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:[2m198:20[22m[39m
+[90m [2m❯[22m DurableObject.Wrapper.fetch home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260702.1_@vitest+_25b5cb7e5ac90ba1c82363cf73fabbe1/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:[2m563:22[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯[39m[1m[41m Unhandled Errors [49m[22m[31m⎯⎯⎯⎯⎯⎯[39m
+[31m[1m
+Vitest caught 6 unhandled errors during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.[22m[39m
+
+[31m⎯⎯⎯⎯[39m[1m[41m Unhandled Rejection [49m[22m[31m⎯⎯⎯⎯⎯[39m
+[31m[1mError[22m: Unresolved effect blocks admission: competing reservation[39m
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22m[39m
+[31m[1mSerialized Error:[22m[39m [90m{ remote: true }[39m
+[31mThis error originated in "[1msrc/pi-durable-models.test.ts[22m" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.[39m
+[31mThe latest test that might've caused the error is "[1mprivate Worker RPC carries the live exact claim and admits one start, encrypted=false[22m". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.[39m
+
+[31m⎯⎯⎯⎯[39m[1m[41m Unhandled Rejection [49m[22m[31m⎯⎯⎯⎯⎯[39m
+[31m[1mError[22m: Exact private model claim denied[39m
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22m[39m
+[31m[1mSerialized Error:[22m[39m [90m{ remote: true }[39m
+[31mThis error originated in "[1msrc/pi-durable-models.test.ts[22m" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.[39m
+[31mThe latest test that might've caused the error is "[1mprivate RPC rejects foreign owned context and a JSON-only association, encrypted=false[22m". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.[39m
+
+[31m⎯⎯⎯⎯[39m[1m[41m Unhandled Rejection [49m[22m[31m⎯⎯⎯⎯⎯[39m
+[31m[1mTypeError[22m: capability.claim is not a function[39m
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22m[39m
+[31m[1mSerialized Error:[22m[39m [90m{ remote: true }[39m
+[31mThis error originated in "[1msrc/pi-durable-models.test.ts[22m" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.[39m
+[31mThe latest test that might've caused the error is "[1mprivate RPC rejects foreign owned context and a JSON-only association, encrypted=false[22m". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.[39m
+
+[31m⎯⎯⎯⎯[39m[1m[41m Unhandled Rejection [49m[22m[31m⎯⎯⎯⎯⎯[39m
+[31m[1mError[22m: Unresolved effect blocks admission: competing reservation[39m
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22m[39m
+[31m[1mSerialized Error:[22m[39m [90m{ remote: true }[39m
+[31mThis error originated in "[1msrc/pi-durable-models.test.ts[22m" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.[39m
+[31mThe latest test that might've caused the error is "[1mprivate Worker RPC carries the live exact claim and admits one start, encrypted=true[22m". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.[39m
+
+[31m⎯⎯⎯⎯[39m[1m[41m Unhandled Rejection [49m[22m[31m⎯⎯⎯⎯⎯[39m
+[31m[1mError[22m: Exact private model claim denied[39m
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22m[39m
+[31m[1mSerialized Error:[22m[39m [90m{ remote: true }[39m
+[31mThis error originated in "[1msrc/pi-durable-models.test.ts[22m" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.[39m
+[31mThe latest test that might've caused the error is "[1mprivate RPC rejects foreign owned context and a JSON-only association, encrypted=true[22m". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.[39m
+
+[31m⎯⎯⎯⎯[39m[1m[41m Unhandled Rejection [49m[22m[31m⎯⎯⎯⎯⎯[39m
+[31m[1mTypeError[22m: capability.claim is not a function[39m
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22m[39m
+[31m[1mSerialized Error:[22m[39m [90m{ remote: true }[39m
+[31mThis error originated in "[1msrc/pi-durable-models.test.ts[22m" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.[39m
+[31mThe latest test that might've caused the error is "[1mprivate RPC rejects foreign owned context and a JSON-only association, encrypted=true[22m". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.[39m
+[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m40 passed[39m[22m[90m (42)[39m
+[2m     Errors [22m [1m[31m6 errors[39m[22m
+[2m   Start at [22m 19:22:16
+[2m   Duration [22m 9.88s[2m (transform 360ms, setup 0ms, collect 676ms, tests 7.68s, environment 0ms, prepare 148ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-007-recovery/apps/runtime:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/pi-durable-models.test.ts

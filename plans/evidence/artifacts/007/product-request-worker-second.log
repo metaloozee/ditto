@@ -1,0 +1,21 @@
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Startup Error [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯⎯[39m
+Error [ERR_PACKAGE_PATH_NOT_EXPORTED]: Package subpath './models' is not defined by "exports" in /home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/@earendil-works/pi-ai/package.json
+    at exportsNotFound (node:internal/modules/esm/resolve:315:10)
+    at packageExportsResolve (node:internal/modules/esm/resolve:606:13)
+    at resolveExports (node:internal/modules/cjs/loader:754:36)
+    at Module._findPath (node:internal/modules/cjs/loader:821:31)
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1557:27)
+    at wrapResolveFilename (node:internal/modules/cjs/loader:1118:27)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1169:12)
+    at require.resolve (node:internal/modules/helpers:175:31)
+    at ResolveIdContext.customResolver (file:///home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests/node_modules/.vite-temp/vitest.config.ts.timestamp-1791482397714-3bf1fbce73b1c.mjs:8:103)
+    at ResolveIdContext.resolveId (file:///home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/vite@7.3.6_@types+node@22.20.1_jiti@2.7.0_lightningcss@1.33.0_tsx@4.23.1_yaml@2.9.0/node_modules/vite/dist/node/chunks/config.js:8161:76) {
+  code: 'ERR_PACKAGE_PATH_NOT_EXPORTED'
+}
+
+
+
+undefined
+/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/codex-request-contract.worker.test.ts -t 'mandatory adapter constructs'

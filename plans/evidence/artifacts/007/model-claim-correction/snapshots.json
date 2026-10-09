@@ -1,0 +1,390 @@
+[
+  {
+    "name": "rewound",
+    "encrypted": false,
+    "claimed": 0,
+    "receiptState": "consumed",
+    "encryptedReceipt": false,
+    "effectState": "admitted",
+    "epoch": 1,
+    "calls": 0
+  },
+  {
+    "name": "task-authority",
+    "encrypted": false,
+    "claimed": 0,
+    "receiptState": "reserved",
+    "encryptedReceipt": false,
+    "effectState": "admitted",
+    "epoch": 1,
+    "calls": 0
+  },
+  {
+    "name": "task-authority",
+    "encrypted": false,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": false,
+    "effectState": "admitted",
+    "epoch": 1,
+    "calls": 0
+  },
+  {
+    "name": "task-Stop",
+    "encrypted": false,
+    "claimed": 0,
+    "receiptState": "reserved",
+    "encryptedReceipt": false,
+    "effectState": "admitted",
+    "epoch": 1,
+    "calls": 0
+  },
+  {
+    "name": "task-Stop",
+    "encrypted": false,
+    "claimed": 0,
+    "receiptState": "reserved",
+    "encryptedReceipt": false,
+    "effectState": "admitted",
+    "epoch": 2,
+    "calls": 0
+  },
+  {
+    "name": "flush-authority",
+    "encrypted": false,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": false,
+    "effectState": "admitted",
+    "epoch": 1,
+    "calls": 0
+  },
+  {
+    "name": "flush-authority",
+    "encrypted": false,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": false,
+    "effectState": "admitted",
+    "epoch": 1,
+    "calls": 0
+  },
+  {
+    "name": "flush-Stop",
+    "encrypted": false,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": false,
+    "effectState": "admitted",
+    "epoch": 1,
+    "calls": 0
+  },
+  {
+    "name": "flush-Stop",
+    "encrypted": false,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": false,
+    "effectState": "admitted",
+    "epoch": 3,
+    "calls": 0
+  },
+  {
+    "name": "concurrent",
+    "encrypted": false,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": false,
+    "effectState": "admitted",
+    "epoch": 1,
+    "calls": 0
+  },
+  {
+    "encrypted": false,
+    "elapsedMs": 22
+  },
+  {
+    "name": "close-held-flush",
+    "encrypted": false,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": false,
+    "effectState": "admitted",
+    "epoch": 2,
+    "calls": 0
+  },
+  {
+    "name": "close-held-flush",
+    "encrypted": false,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": false,
+    "effectState": "admitted",
+    "epoch": 2,
+    "calls": 0
+  },
+  {
+    "name": "lost-ack",
+    "encrypted": false,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": false,
+    "effectState": "admitted",
+    "epoch": 2,
+    "calls": 0
+  },
+  {
+    "name": "lost-ack",
+    "encrypted": false,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": false,
+    "effectState": "admitted",
+    "epoch": 2,
+    "calls": 0
+  },
+  {
+    "name": "lost-ack",
+    "encrypted": false,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": false,
+    "effectState": "admitted",
+    "epoch": 2,
+    "calls": 0
+  },
+  {
+    "name": "reserved-rollback",
+    "encrypted": false,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": false,
+    "effectState": "admitted",
+    "epoch": 1,
+    "calls": 0
+  },
+  {
+    "name": "reserved-rollback",
+    "encrypted": false,
+    "claimed": 0,
+    "receiptState": "reserved",
+    "encryptedReceipt": false,
+    "effectState": "admitted",
+    "epoch": 2,
+    "calls": 0
+  },
+  {
+    "name": "reserved-rollback",
+    "encrypted": false,
+    "claimed": 0,
+    "receiptState": "reserved",
+    "encryptedReceipt": false,
+    "effectState": "admitted",
+    "epoch": 2,
+    "calls": 0
+  },
+  {
+    "name": "digest-substitution",
+    "encrypted": false,
+    "claimed": 0,
+    "receiptState": "reserved",
+    "encryptedReceipt": false,
+    "effectState": "admitted",
+    "epoch": 2,
+    "calls": 0
+  },
+  {
+    "name": "rewound",
+    "encrypted": true,
+    "claimed": 0,
+    "receiptState": "consumed",
+    "encryptedReceipt": true,
+    "effectState": "admitted",
+    "epoch": 1,
+    "calls": 0
+  },
+  {
+    "name": "task-authority",
+    "encrypted": true,
+    "claimed": 0,
+    "receiptState": "reserved",
+    "encryptedReceipt": true,
+    "effectState": "admitted",
+    "epoch": 1,
+    "calls": 0
+  },
+  {
+    "name": "task-authority",
+    "encrypted": true,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": true,
+    "effectState": "admitted",
+    "epoch": 1,
+    "calls": 0
+  },
+  {
+    "name": "task-Stop",
+    "encrypted": true,
+    "claimed": 0,
+    "receiptState": "reserved",
+    "encryptedReceipt": true,
+    "effectState": "admitted",
+    "epoch": 1,
+    "calls": 0
+  },
+  {
+    "name": "task-Stop",
+    "encrypted": true,
+    "claimed": 0,
+    "receiptState": "reserved",
+    "encryptedReceipt": true,
+    "effectState": "admitted",
+    "epoch": 2,
+    "calls": 0
+  },
+  {
+    "name": "flush-authority",
+    "encrypted": true,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": true,
+    "effectState": "admitted",
+    "epoch": 1,
+    "calls": 0
+  },
+  {
+    "name": "flush-authority",
+    "encrypted": true,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": true,
+    "effectState": "admitted",
+    "epoch": 1,
+    "calls": 0
+  },
+  {
+    "name": "flush-Stop",
+    "encrypted": true,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": true,
+    "effectState": "admitted",
+    "epoch": 1,
+    "calls": 0
+  },
+  {
+    "name": "flush-Stop",
+    "encrypted": true,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": true,
+    "effectState": "admitted",
+    "epoch": 3,
+    "calls": 0
+  },
+  {
+    "name": "concurrent",
+    "encrypted": true,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": true,
+    "effectState": "admitted",
+    "epoch": 1,
+    "calls": 0
+  },
+  {
+    "encrypted": true,
+    "elapsedMs": 16
+  },
+  {
+    "name": "close-held-flush",
+    "encrypted": true,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": true,
+    "effectState": "admitted",
+    "epoch": 2,
+    "calls": 0
+  },
+  {
+    "name": "close-held-flush",
+    "encrypted": true,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": true,
+    "effectState": "admitted",
+    "epoch": 2,
+    "calls": 0
+  },
+  {
+    "name": "lost-ack",
+    "encrypted": true,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": true,
+    "effectState": "admitted",
+    "epoch": 2,
+    "calls": 0
+  },
+  {
+    "name": "lost-ack",
+    "encrypted": true,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": true,
+    "effectState": "admitted",
+    "epoch": 2,
+    "calls": 0
+  },
+  {
+    "name": "lost-ack",
+    "encrypted": true,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": true,
+    "effectState": "admitted",
+    "epoch": 2,
+    "calls": 0
+  },
+  {
+    "name": "reserved-rollback",
+    "encrypted": true,
+    "claimed": 1,
+    "receiptState": "consumed",
+    "encryptedReceipt": true,
+    "effectState": "admitted",
+    "epoch": 1,
+    "calls": 0
+  },
+  {
+    "name": "reserved-rollback",
+    "encrypted": true,
+    "claimed": 0,
+    "receiptState": "reserved",
+    "encryptedReceipt": true,
+    "effectState": "admitted",
+    "epoch": 2,
+    "calls": 0
+  },
+  {
+    "name": "reserved-rollback",
+    "encrypted": true,
+    "claimed": 0,
+    "receiptState": "reserved",
+    "encryptedReceipt": true,
+    "effectState": "admitted",
+    "epoch": 2,
+    "calls": 0
+  },
+  {
+    "name": "digest-substitution",
+    "encrypted": true,
+    "claimed": 0,
+    "receiptState": "reserved",
+    "encryptedReceipt": true,
+    "effectState": "admitted",
+    "epoch": 2,
+    "calls": 0
+  }
+]

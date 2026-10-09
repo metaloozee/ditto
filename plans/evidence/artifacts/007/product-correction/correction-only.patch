@@ -1,0 +1,727 @@
+--- advisor-candidate/apps/credential-tests/src/codex-request-contract.worker.test.ts
++++ correction/apps/credential-tests/src/codex-request-contract.worker.test.ts
+@@ -8,6 +8,7 @@
+ 	type SyntheticModelRequestV1,
+ } from "../../../packages/runtime-contracts/src/model.js";
+ import {
++	type HostFixtureDependencies,
+ 	PiDurableHost,
+ 	type PiDurableHostFixture,
+ } from "../../runtime/src/pi-durable-host.ts";
+@@ -248,6 +249,16 @@
+ 		duplicate?: boolean;
+ 		retry?: boolean;
+ 		purpose?: "generation" | "git_metadata";
++		model?: "faux-1" | "faux-2";
++		reopen?: boolean;
++		finalAuthorityHold?: {
++			entered: ReturnType<typeof deferred>;
++			released: ReturnType<typeof deferred>;
++		};
++		permit?: (
++			request: unknown,
++			descriptor: ModelTransportDescriptorV1,
++		) => Promise<{ status: "current" | "denied" }>;
+ 	} = {},
+ ) {
+ 	await runInDurableObject(
+@@ -302,8 +313,10 @@
+ 				},
+ 			});
+ 			const transport: PrivateModelTransport = {
+-				readModelPermit: (request, descriptor) =>
+-					product.readModelPermit(request, descriptor),
++				readModelPermit:
++					options.permit ??
++					((request, descriptor) =>
++						product.readModelPermit(request, descriptor)),
+ 				requestModel: async (input, capability) => {
+ 					try {
+ 						const request = parseSyntheticModelRequestV1(input);
+@@ -339,13 +352,31 @@
+ 					}
+ 				},
+ 			};
+-			const host = await PiDurableHost.open(storage, {
++			let generation = 1;
++			let interrupt = options.reopen ?? false;
++			const dependencies: HostFixtureDependencies = {
++				fault: (point) => {
++					if (interrupt && point === "before-submit") {
++						interrupt = false;
++						throw new Error("Synthetic interruption before submission");
++					}
++				},
+ 				now: Date.now,
+-				authority: async () => ({
+-					current: await new ModelProductAuthority(env.DB).current(probe),
+-					generation: 1,
+-					executor: 1,
+-				}),
++				authority: async () => {
++					const current = await new ModelProductAuthority(env.DB).current(
++						probe,
++					);
++					if (
++						options.finalAuthorityHold &&
++						state.storage.sql
++							.exec("SELECT 1 FROM host_model_dispatch WHERE claimed=1")
++							.toArray().length
++					) {
++						options.finalAuthorityHold.entered.resolve();
++						await options.finalAuthorityHold.released.promise;
++					}
++					return { current, generation, executor: 1 };
++				},
+ 				budgets: { workMs: 10000, drainMs: 1000 },
+ 				operationMs: { model: 10000, tool: 10000 },
+ 				wakeup: { getAlarm: async () => null, setAlarm: async () => {} },
+@@ -375,7 +406,8 @@
+ 						},
+ 					};
+ 				},
+-			});
++			};
++			let host = await PiDurableHost.open(storage, dependencies);
+ 			try {
+ 				await host.accept("command", "Synthetic request", {
+ 					run: "run",
+@@ -383,6 +415,18 @@
+ 					assistant: "assistant",
+ 					sequence: 1,
+ 				});
++				if (options.reopen) {
++					await expect(host.schedule("command")).rejects.toThrow(
++						"Synthetic interruption",
++					);
++					await host.yield();
++					generation = 2;
++					host = await PiDurableHost.open(storage, dependencies);
++				}
++				if (options.model)
++					await host.configure({
++						model: { provider: "faux", modelId: options.model },
++					});
+ 				await test({
+ 					host,
+ 					storage: state.storage,
+@@ -732,7 +776,10 @@
+ 	expect(calls).toHaveLength(0);
+ });
+ 
+-it("a known generation failure retries as a separate admitted attempt", async () => {
++it.each([
++	"faux-1",
++	"faux-2",
++] as const)("a known %s generation failure retries as a separate admitted attempt", async (model) => {
+ 	upstream(503, "", 1);
+ 	upstream();
+ 	await gate(
+@@ -741,6 +788,13 @@
+ 			await f.start();
+ 			await until(() => calls.length === 2);
+ 			await f.host.waitIdle();
++			expect(calls.map((call) => call.body.model)).toEqual([model, model]);
++			expect(
++				f.storage.sql
++					.exec("SELECT state FROM host_effects")
++					.toArray()
++					.every((row) => row.state === "pi-committed"),
++			).toBe(true);
+ 			expect(await f.snapshot()).toMatchObject({
+ 				calls: 2,
+ 				windows: [
+@@ -751,7 +805,7 @@
+ 				claims: [{ claimed: 1 }, { claimed: 1 }],
+ 			});
+ 		},
+-		{ retry: true },
++		{ retry: true, model },
+ 	);
+ });
+ 
+@@ -844,7 +898,10 @@
+ 	);
+ });
+ 
+-it("a known custom summary failure spends its one attempt without an automatic retry", async () => {
++it.each([
++	"faux-1",
++	"faux-2",
++] as const)("a known %s custom summary failure spends its one attempt without an automatic retry", async (model) => {
+ 	upstream(200, encodedFrames, 1);
+ 	upstream(503, "");
+ 	await gate(
+@@ -873,6 +930,13 @@
+ 			);
+ 			await f.host.waitIdle();
+ 			await f.host.yield();
++			expect(calls.map((call) => call.body.model)).toEqual([model, model]);
++			expect(
++				f.storage.sql
++					.exec("SELECT state FROM host_effects WHERE kind='model'")
++					.toArray()
++					.every((row) => row.state !== "admitted"),
++			).toBe(true);
+ 			expect(calls.map((call) => call.body.purpose)).toEqual([
+ 				"generation",
+ 				"custom_summary",
+@@ -886,7 +950,7 @@
+ 				runs: [{ state: "failed" }],
+ 			});
+ 		},
+-		{ retry: true },
++		{ retry: true, model },
+ 	);
+ });
+ 
+@@ -929,6 +993,175 @@
+ 	});
+ });
+ 
++it("product revocation during the final host authority await is rechecked before fetch", async () => {
++	const entered = deferred(),
++		released = deferred();
++	await gate(
++		"final-host-read-product-revoke",
++		async (f) => {
++			try {
++				await f.start();
++				await bounded(entered.promise);
++				await env.DB.prepare(
++					"UPDATE codex_fixture_capabilities SET revision=2",
++				).run();
++			} finally {
++				released.resolve();
++			}
++			await bounded(f.settled);
++			expect(await f.snapshot()).toMatchObject({
++				calls: 0,
++				windows: [{ consumedRequests: 1 }],
++				admissions: [{ state: "failed_known" }],
++				claims: [{ claimed: 1 }],
++			});
++			console.log(
++				"[007-correction-final-product]",
++				JSON.stringify(await f.snapshot()),
++			);
++		},
++		{ finalAuthorityHold: { entered, released } },
++	);
++});
++
++it("actual transport after host reopen uses invocation generation 2 and D1 identity lifecycle 1", async () => {
++	await gate(
++		"unequal-generations",
++		async (f) => {
++			await f.start();
++			await bounded(f.settled);
++			await f.host.waitIdle();
++			expect(calls).toHaveLength(1);
++			expect(
++				f.storage.sql
++					.exec("SELECT generation,state FROM host_invocations ORDER BY rowid")
++					.toArray(),
++			).toEqual([
++				{ generation: 1, state: "closed" },
++				{ generation: 2, state: "active" },
++			]);
++			expect(
++				await env.DB.prepare(
++					"SELECT lifecycleGeneration FROM sandbox_identities",
++				).first(),
++			).toEqual({ lifecycleGeneration: 1 });
++			expect(await f.snapshot()).toMatchObject({
++				admissions: [{ state: "complete" }],
++				claims: [{ claimed: 1 }],
++				runs: [{ state: "complete" }],
++			});
++			console.log(
++				"[007-correction-reopen]",
++				JSON.stringify(await f.snapshot()),
++			);
++		},
++		{ reopen: true },
++	);
++});
++
++for (const phase of ["capability", "permit"] as const)
++	for (const expiry of ["command", "window"] as const)
++		it(`held actual D1 ${phase} query expires ${expiry} with valid host deadline and zero fetches`, async () => {
++			const entered = deferred(),
++				released = deferred();
++			let now = Date.now();
++			let descriptor: ModelTransportDescriptorV1 | undefined;
++			const db = new Proxy(env.DB, {
++				get(target, key) {
++					if (key === "prepare")
++						return (sql: string) => {
++							const statement = target.prepare(sql);
++							const match =
++								phase === "capability"
++									? sql.startsWith(
++											"SELECT snapshot FROM codex_fixture_capabilities",
++										)
++									: sql.includes(
++											"FROM privileged_operations w JOIN model_request_admissions",
++										);
++							if (!match) return statement;
++							const wrap = (inner: D1PreparedStatement): D1PreparedStatement =>
++								new Proxy(inner, {
++									get(item, property) {
++										if (property === "bind")
++											return (...args: unknown[]) => wrap(item.bind(...args));
++										if (property === "first")
++											return async (
++												...args: Parameters<D1PreparedStatement["first"]>
++											) => {
++												const row = await item.first(...args);
++												entered.resolve();
++												await released.promise;
++												return row;
++											};
++										const value: unknown = Reflect.get(item, property, item);
++										return typeof value === "function"
++											? value.bind(item)
++											: value;
++									},
++								});
++							return wrap(statement);
++						};
++					const value: unknown = Reflect.get(target, key, target);
++					return typeof value === "function" ? value.bind(target) : value;
++				},
++			});
++			await gate(
++				`query-${phase}-${expiry}`,
++				async (f) => {
++					try {
++						await f.start();
++						await bounded(entered.promise);
++						now += 100;
++						if (!descriptor) throw new Error("Missing held-query descriptor");
++						expect(now).toBeLessThan(descriptor.attempt.deadlineAt);
++					} finally {
++						released.resolve();
++					}
++					await bounded(f.settled);
++					expect(await f.snapshot()).toMatchObject({
++						calls: 0,
++						windows: [{ consumedRequests: 1 }],
++						claims: [{ claimed: 1 }],
++					});
++					console.log(
++						"[007-correction-expiry]",
++						JSON.stringify({
++							phase,
++							expiry,
++							hostDeadlineValid:
++								!!descriptor && now < descriptor.attempt.deadlineAt,
++							snapshot: await f.snapshot(),
++						}),
++					);
++				},
++				{
++					permit: async (request, d) => {
++						descriptor = d;
++						now = Date.now();
++						await env.DB.prepare(
++							expiry === "command"
++								? "UPDATE session_commands SET deadlineAt=?"
++								: "UPDATE privileged_operations SET expiresAt=?",
++						)
++							.bind(now + 50)
++							.run();
++						const body = parseSyntheticModelBodyV1(
++							parseSyntheticModelRequestV1(request).body,
++						);
++						return {
++							status: (await new ModelProductAuthority(db, () => now).permit(
++								d,
++								body,
++							))
++								? "current"
++								: "denied",
++						};
++					},
++				},
++			);
++		});
++
+ for (const response of [
+ 	"truncated",
+ 	`${JSON.stringify(frames[1])}\n{}\n`,
+--- advisor-candidate/apps/runtime/src/pi-durable-host.ts
++++ correction/apps/runtime/src/pi-durable-host.ts
+@@ -2041,11 +2041,13 @@
+ 					sealedConsumption.ciphertext,
+ 				);
+ 				await this.durable(context);
++				if (productCheck) await awaitWithContext(productCheck(), context);
++				// The product callback can suspend. Only the subsequent authority read
++				// may feed the final synchronous host acknowledgment.
+ 				const fresh = await awaitWithContext(
+ 					this.dependencies.authority(),
+ 					context,
+ 				);
+-				if (productCheck) await awaitWithContext(productCheck(), context);
+ 				context.abortSignal?.throwIfAborted();
+ 				assertReceipt(consumed, 1);
+ 				this.dispatchPermit(admitted.id, correlation, admitted.epoch, fresh);
+--- advisor-candidate/apps/runtime/src/pi-durable-models.test.ts
++++ correction/apps/runtime/src/pi-durable-models.test.ts
+@@ -9,12 +9,14 @@
+ } from "./pi-durable-cooperative-fixture.ts";
+ import {
+ 	type HostFixtureDependencies,
++	type HostGuard,
+ 	type LocalAuthority,
+ 	type ModelDispatch,
+ 	PiDurableHost,
+ 	type PiDurableHostFixture,
+ } from "./pi-durable-host.ts";
+ import {
++	createPrivateModelAdapter,
+ 	ExactModelClaim,
+ 	type OwnedModelRequest,
+ } from "./pi-durable-models.ts";
+@@ -45,6 +47,7 @@
+ 		started: Promise<void>;
+ 		calls(): number;
+ 		revoke(): void;
++		changeAuthority(change: Partial<LocalAuthority>): void;
+ 		expire(): void;
+ 		hold(phase: "task" | "flush"): { entered: Promise<void>; release(): void };
+ 		failFlush(): void;
+@@ -192,6 +195,9 @@
+ 				revoke: () => {
+ 					authority = { ...authority, current: false };
+ 				},
++				changeAuthority: (change) => {
++					authority = { ...authority, ...change };
++				},
+ 				expire: () => {
+ 					now += 1001;
+ 				},
+@@ -270,6 +276,33 @@
+ }
+ 
+ for (const encrypted of [false, true]) {
++	for (const change of [{ current: false }, { executor: 2 }, { generation: 2 }])
++		it(`held product callback denies changed host authority ${JSON.stringify(change)}, encrypted=${encrypted}`, async () =>
++			boundary(`product-${JSON.stringify(change)}`, encrypted, async (f) => {
++				const entered = pendingRemote<void>(),
++					released = pendingRemote<void>();
++				f.dispatch.bindProductAuthority(async () => {
++					entered.resolve();
++					await released.promise;
++				});
++				const claim = f.dispatch.claim(f.dispatch.attempt);
++				const denied = expect(claim).rejects.toThrow();
++				try {
++					await entered.promise;
++					f.changeAuthority(change);
++				} finally {
++					released.resolve();
++				}
++				await denied;
++				expect(await f.snapshot()).toMatchObject({
++					claimed: 1,
++					receiptState: "consumed",
++					effectState: "admitted",
++					calls: 0,
++				});
++				await expect(f.dispatch.claim(f.dispatch.attempt)).rejects.toThrow();
++			}));
++
+ 	it(`a rewound live claim cannot acknowledge consumption again, encrypted=${encrypted}`, async () =>
+ 		boundary("rewound", encrypted, async (f) => {
+ 			await f.dispatch.claim(f.dispatch.attempt);
+@@ -612,6 +645,57 @@
+ 		}));
+ }
+ 
++for (const aborted of [false, true])
++	it(`registered adapter terminal error retains faux-2 identity, aborted=${aborted}`, async () => {
++		const controller = new AbortController();
++		const unavailable = async (): Promise<never> => {
++			if (aborted) controller.abort();
++			throw new Error("Synthetic pre-dispatch denial");
++		};
++		const guard: HostGuard = {
++			summarize: unavailable,
++			bindGeneration: unavailable,
++			bindCompaction: unavailable,
++			model: unavailable,
++			tool: unavailable,
++			admit: unavailable,
++			result: unavailable,
++		};
++		const adapter = createPrivateModelAdapter(
++			guard,
++			{ requestModel: unavailable, readModelPermit: unavailable },
++			{
++				version: 1,
++				userId: "owner",
++				projectId: "project",
++				workspaceSessionId: "session",
++				identityId: "executor",
++				incarnationId: "incarnation",
++				controllerNamespace: "fixture-execution-v1",
++				lifecycleGeneration: 1,
++				runtimeOwnerVersion: 1,
++				connectionGeneration: 1,
++				capabilityRevision: 1,
++			},
++		);
++		const model = adapter.models.getModel("faux", "faux-2");
++		if (!model) throw new Error("Missing synthetic supported faux-2");
++		const response = await adapter.models.completeSimple(
++			model,
++			{
++				messages: [
++					{ role: "user", content: "Synthetic request", timestamp: 0 },
++				],
++			},
++			{ signal: controller.signal },
++		);
++		expect(response).toMatchObject({
++			provider: "faux",
++			model: "faux-2",
++			stopReason: aborted ? "aborted" : "error",
++		});
++	});
++
+ const ownedRpcRequest: OwnedModelRequest = {
+ 	userId: "synthetic-owner",
+ 	projectId: "synthetic-project",
+--- advisor-candidate/apps/runtime/src/pi-durable-models.ts
++++ correction/apps/runtime/src/pi-durable-models.ts
+@@ -219,10 +219,14 @@
+ 						)
+ 							throw new Error("Private model transport denied or uncertain");
+ 						if (outcome.status === "failed_known")
+-							return fauxAssistantMessage([], {
+-								stopReason: "error",
+-								errorMessage: "503 Synthetic known model rejection",
+-							});
++							return {
++								...fauxAssistantMessage([], {
++									stopReason: "error",
++									errorMessage: "503 Synthetic known model rejection",
++								}),
++								model: model.id,
++								provider: model.provider,
++							};
+ 						if (outcome.status !== "complete")
+ 							throw new Error("Private model outcome denied");
+ 						const final = outcome.frames.at(-1);
+@@ -255,10 +259,14 @@
+ 					events.push({ type: "error", reason: "error", error: message });
+ 				else events.push({ type: "done", reason: "stop", message });
+ 			} catch {
+-				const error = fauxAssistantMessage([], {
+-					stopReason: context.abortSignal?.aborted ? "aborted" : "error",
+-					errorMessage: "Private model operation unavailable",
+-				});
++				const error = {
++					...fauxAssistantMessage([], {
++						stopReason: context.abortSignal?.aborted ? "aborted" : "error",
++						errorMessage: "Private model operation unavailable",
++					}),
++					model: model.id,
++					provider: model.provider,
++				};
+ 				events.push({
+ 					type: "error",
+ 					reason: error.stopReason === "aborted" ? "aborted" : "error",
+@@ -277,10 +285,14 @@
+ 		id: faux.provider.id,
+ 		name: "Private synthetic product transport",
+ 		auth: faux.provider.auth,
+-		getModels: () =>
+-			faux.provider
++		getModels: () => {
++			const first = faux.provider
+ 				.getModels()
+-				.filter((model) => ["faux-1", "faux-2"].includes(model.id)),
++				.find((model) => model.id === "faux-1");
++			return first
++				? [first, { ...first, id: "faux-2", name: "Synthetic faux-2" }]
++				: [];
++		},
+ 		stream,
+ 		streamSimple: stream,
+ 	});
+--- advisor-candidate/apps/web/src/lib/codex-credential-do.ts
++++ correction/apps/web/src/lib/codex-credential-do.ts
+@@ -300,7 +300,11 @@
+ 			signal.throwIfAborted();
+ 			if (admitted.status !== "admitted" || !this.#same(state))
+ 				throw new Error("claim_denied");
+-			// No awaited preparation follows the exact host acknowledgment before fetch starts.
++			// The host rereads its authority after the bound product check. Recheck
++			// product policy here so that host-authority I/O cannot extend a product permit.
++			if (!(await wait(policy.permit(descriptor, body))) || !this.#same(state))
++				throw new Error("authority_changed");
++			signal.throwIfAborted();
+ 			dispatched = true;
+ 			fetching = fetch(request.url, {
+ 				method: "POST",
+--- advisor-candidate/apps/web/src/lib/model-product-authority.ts
++++ correction/apps/web/src/lib/model-product-authority.ts
+@@ -24,10 +24,8 @@
+ 		body?: SyntheticModelBodyV1,
+ 	) {
+ 		const s = d.subject,
+-			a = d.attempt,
+-			now = this.now();
+-		if (a.generation !== s.lifecycleGeneration || now >= a.deadlineAt)
+-			return null;
++			a = d.attempt;
++		if (this.now() >= a.deadlineAt) return null;
+ 		const row = await this.db
+ 			.prepare(
+ 				"SELECT snapshot FROM codex_fixture_capabilities WHERE userId=? AND generation=? AND revision=?",
+@@ -68,12 +66,13 @@
+ AND i.lifecycleGeneration=? AND i.state='ready' AND i.retiredAt IS NULL
+ AND k.generation=? AND k.revoked=0 AND k.status='connected'
+ AND e.generation=k.generation AND e.revision=? AND e.snapshot=?
++AND ?>?
+ AND NOT EXISTS(SELECT 1 FROM runtime_retired_identity_fences f WHERE f.identityId=i.id)
+ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind='project' AND f.targetId=p.id) OR (f.targetKind='workspace_session' AND f.targetId=s.id)))`;
+ 		const params = [
+ 			a.commandId,
+ 			a.assistantId,
+-			now,
++			this.now(),
+ 			a.runId,
+ 			s.workspaceSessionId,
+ 			s.userId,
+@@ -86,8 +85,22 @@
+ 			s.connectionGeneration,
+ 			s.capabilityRevision,
+ 			row.snapshot,
++			a.deadlineAt,
++			this.now(),
+ 		];
+-		return { sql, params, now };
++		const clock = this.now;
++		return {
++			sql,
++			get params() {
++				const now = clock();
++				return params.map((value, index) =>
++					index === 2 || index === params.length - 1 ? now : value,
++				);
++			},
++			get now() {
++				return clock();
++			},
++		};
+ 	}
+ 
+ 	async current(
+@@ -95,13 +108,14 @@
+ 		body?: SyntheticModelBodyV1,
+ 	): Promise<boolean> {
+ 		const f = await this.facts(d, body);
+-		return (
+-			!!f &&
+-			!!(await this.db
+-				.prepare(`SELECT 1 AS ok WHERE ${f.sql}`)
+-				.bind(...f.params)
+-				.first())
+-		);
++		if (!f) return false;
++		const row = await this.db
++			.prepare(
++				`SELECT deadlineAt FROM session_commands WHERE id=? AND ${f.sql}`,
++			)
++			.bind(d.attempt.commandId, ...f.params)
++			.first<{ deadlineAt: number }>();
++		return !!row && this.now() < Math.min(row.deadlineAt, d.attempt.deadlineAt);
+ 	}
+ 
+ 	async windowId(d: ModelTransportDescriptorV1): Promise<string> {
+@@ -154,11 +168,14 @@
+ 			.run();
+ 		const row = await this.db
+ 			.prepare(
+-				`SELECT id FROM privileged_operations WHERE id=? AND openSlot='open' AND closedAt IS NULL AND expiresAt>? AND ${f.sql}`,
+-			)
+-			.bind(id, this.now(), ...f.params)
+-			.first();
+-		return row ? id : null;
++				`SELECT expiresAt,(SELECT deadlineAt FROM session_commands WHERE id=?) AS deadlineAt FROM privileged_operations WHERE id=? AND openSlot='open' AND closedAt IS NULL AND expiresAt>? AND ${f.sql}`,
++			)
++			.bind(a.commandId, id, this.now(), ...f.params)
++			.first<{ expiresAt: number; deadlineAt: number }>();
++		return row &&
++			this.now() < Math.min(row.expiresAt, row.deadlineAt, a.deadlineAt)
++			? id
++			: null;
+ 	}
+ 
+ 	async reserve(
+@@ -208,7 +225,9 @@
+ 			)
+ 			.bind(id);
+ 		const results = await this.db.batch([insert, increment]);
+-		return results[0].meta.changes === 1 && results[1].meta.changes === 1
++		return results[0].meta.changes === 1 &&
++			results[1].meta.changes === 1 &&
++			(await this.permit(d, body))
+ 			? id
+ 			: null;
+ 	}
+@@ -219,14 +238,24 @@
+ 	): Promise<boolean> {
+ 		const id = await this.windowId(d),
+ 			f = await this.facts(d, body);
+-		return (
+-			!!f &&
+-			!!(await this.db
+-				.prepare(`SELECT 1 AS ok FROM privileged_operations w JOIN model_request_admissions r ON r.windowId=w.id
++		if (!f) return false;
++		const row = await this.db
++			.prepare(`SELECT w.expiresAt,(SELECT deadlineAt FROM session_commands WHERE id=?) AS deadlineAt FROM privileged_operations w JOIN model_request_admissions r ON r.windowId=w.id
+ WHERE w.id=? AND r.effectId=? AND r.requestDigest=? AND r.state='reserved'
+ AND w.openSlot='open' AND w.closedAt IS NULL AND w.expiresAt>? AND w.contractDenials<3 AND ${f.sql}`)
+-				.bind(id, d.attempt.effectId, d.requestDigest, f.now, ...f.params)
+-				.first())
++			.bind(
++				d.attempt.commandId,
++				id,
++				d.attempt.effectId,
++				d.requestDigest,
++				f.now,
++				...f.params,
++			)
++			.first<{ expiresAt: number; deadlineAt: number }>();
++		// A query may finish after the deadlines it tested at statement submission.
++		return (
++			!!row &&
++			this.now() < Math.min(row.expiresAt, row.deadlineAt, d.attempt.deadlineAt)
+ 		);
+ 	}
+ 
+--- advisor-candidate/docs/specs/pi-durable-session-runtime.md
++++ correction/docs/specs/pi-durable-session-runtime.md
+@@ -628,11 +628,11 @@
+ 
+ `createPrivateModelAdapter` requires a host guard and private product transport. Generation, separately accounted retries, accepted custom summaries and Git-metadata requests use the same path. A deployment-owned `ExactModelClaim` RPC target binds the host-minted exact attempt to the owned subject and canonical reconstructed request digest. JSON attempt fields alone cannot claim admission. Existing standalone cooperative providers remain synthetic test fixtures, not this mandatory adapter.
+ 
+-Product D1 policy checks command/run membership, user/project/session ownership and status, trusted runtime owner version, exact execution identity role/controller/incarnation/lifecycle/retirement, connection generation and synthetic capability revision/model/thinking. Conditional SQL opens one identity/model-family window and reserves one nonrefundable request. Admission records are keyed by the identity-scoped window, since runtime-local effect IDs can recur in other sessions. Git metadata reserves at most one attempt per identity/run/epoch. Three contract denials close the window, persist session review and invoke the exact capability's local host halt without entering a public runtime command or provider/configuration lane.
+-
+-The credential DO validates and reconstructs the complete request before decrypting credentials. After preparation, it rechecks D1 policy and its local credential revision. Host claim consumption flushes the protected effect receipt, rereads authority and the exact product permit, then synchronously checks epoch, Stop, fences, uncertainty and deadlines before acknowledgment. This final host acknowledgment is the local irrevocable admission point. Credential attachment and fixed-destination `fetch` follow without awaited preparation. Stop winning before acknowledgment prevents fetch; Stop after acknowledgment cannot undo admitted work. D1, runtime SQLite and provider dispatch do not form a distributed transaction, and this protocol makes no exactly-once billing claim.
+-
+-Requests and responses are bounded to 131072 encoded bytes. Transcript content is bounded to 98304 bytes; responses contain at most 128 strict NDJSON frames, each at most 16384 bytes, with at most 65536 output bytes. Only the exact POST URL and reconstructed JSON/NDJSON headers are accepted. Redirects, encoding variants, duplicate/unknown fields, arbitrary destinations and caller authorization/proxy headers deny. The DO owns credentials, finite stream cancellation and credential-echo rejection. Malformed/truncated responses retain uncertain admitted evidence and cannot redispatch automatically. No credential enters the runtime or execution sandbox.
++Product D1 policy checks command/run membership, user/project/session ownership and status, trusted runtime owner version, exact execution identity role/controller/incarnation/lifecycle/retirement, connection generation and synthetic capability revision/model/thinking. Execution-identity lifecycle generation and host invocation/takeover generation are separate authorities, not equal counters. Deadline predicates use the current clock when binding SQL; permit results also check command, window and effect expiry after awaited queries. Conditional SQL opens one identity/model-family window and reserves one nonrefundable request. Admission records are keyed by the identity-scoped window, since runtime-local effect IDs can recur in other sessions. Git metadata reserves at most one attempt per identity/run/epoch. Three contract denials close the window, persist session review and invoke the exact capability's local host halt without entering a public runtime command or provider/configuration lane.
++
++The credential DO validates and reconstructs the complete request before decrypting credentials. After preparation, it rechecks D1 policy and its local credential revision. Host claim consumption flushes the protected effect receipt, awaits the exact product permit, then rereads host authority and synchronously checks epoch, Stop, fences, uncertainty and deadlines before acknowledgment. No awaited work follows that final host check inside the claim. This final host acknowledgment is the local irrevocable admission point. The credential DO rechecks the exact product permit after acknowledgment so the host-authority await cannot extend product authority. It then checks cancellation and the local credential revision synchronously before credential attachment and fixed-destination `fetch`. A product denial after host acknowledgment retains consumed evidence and never refunds the host attempt. Stop winning before acknowledgment prevents fetch; Stop after acknowledgment cannot undo admitted work. D1, runtime SQLite and provider dispatch do not form a distributed transaction, and this protocol makes no exactly-once billing claim.
++
++Requests and responses are bounded to 131072 encoded bytes. Transcript content is bounded to 98304 bytes; responses contain at most 128 strict NDJSON frames, each at most 16384 bytes, with at most 65536 output bytes. Only the exact POST URL and reconstructed JSON/NDJSON headers are accepted. Redirects, encoding variants, duplicate/unknown fields, arbitrary destinations and caller authorization/proxy headers deny. The DO owns credentials, finite stream cancellation and credential-echo rejection. Malformed/truncated responses retain uncertain admitted evidence and cannot redispatch automatically. Known failures and adapter terminal errors retain the prepared model/provider identity, including the explicitly synthetic supported `faux-2` model. That fixture catalogue is not live account entitlement. No credential enters the runtime or execution sandbox.
+ 
+ These are local fixture behaviors awaiting independent review, not hosted acceptance. Authenticated configuration intents, snapshots and pre-conversation default validation remain the next 007 phase. Live discovery/transport and PD38 remain `not run`.
+ 

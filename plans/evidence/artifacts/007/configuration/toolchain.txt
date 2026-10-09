@@ -1,0 +1,5 @@
+HEAD 0ccc5b20c25a4e63017b3eebf6608dba62253479
+node v24.21.0
+pnpm 11.8.0
+Execution environment: env -i PATH="$PATH" HOME="$PWD/node_modules/.verification-home" CI=true
+Required selected model/reasoning verified before edits: gpt-6.1-sol / medium. No fallback.

@@ -1,0 +1,231 @@
+--- baseline/apps/runtime/src/pi-durable-host.ts
++++ repaired/apps/runtime/src/pi-durable-host.ts
+@@ -3,6 +3,7 @@
+ import {
+ 	awaitWithContext,
+ 	BACKGROUND_CONTEXT,
++	withAbortSignal,
+ } from "@earendil-works/chord/context";
+ import type { AssistantMessage } from "@earendil-works/pi-ai";
+ import {
+@@ -314,6 +315,7 @@
+ 	private failure: unknown;
+ 	private providerQueue = Promise.resolve();
+ 	private ownerQueue: Promise<void> = Promise.resolve();
++	private ownerAbort = new AbortController();
+ 	private providerCallbacks = 0;
+ 	private bindings = new WeakMap<
+ 		AbortSignal,
+@@ -1364,12 +1366,13 @@
+ 	}
+ 	private ownerTransition<T>(
+ 		context: Context,
+-		operation: () => Promise<T>,
++		operation: (context: Context) => Promise<T>,
+ 	): Promise<T> {
++		context = withAbortSignal(this.ownerAbort.signal, context);
+ 		const pending = this.ownerQueue.then(async () => {
+ 			context.abortSignal?.throwIfAborted();
+ 			this.assertLive();
+-			return operation();
++			return operation(context);
+ 		});
+ 		this.ownerQueue = pending.then(
+ 			() => undefined,
+@@ -1381,7 +1384,7 @@
+ 		change: Pick<AgentChange, "model" | "thinkingLevel">,
+ 		context: Context = BACKGROUND_CONTEXT,
+ 	): Promise<void> {
+-		return this.ownerTransition(context, async () => {
++		return this.ownerTransition(context, async (context) => {
+ 			await this.check(
+ 				await awaitWithContext(this.dependencies.authority(), context),
+ 				context,
+@@ -1391,6 +1394,7 @@
+ 			this.assertLive();
+ 			try {
+ 				await root.configure(change, context);
++				context.abortSignal?.throwIfAborted();
+ 				await this.durable(context);
+ 			} catch (error) {
+ 				if (!context.abortSignal?.aborted) this.persistenceFailed();
+@@ -1425,7 +1429,7 @@
+ 		const command = this.command(mapping.command),
+ 			run = this.run(command.run);
+ 		if (mapping.prepared === null)
+-			await this.ownerTransition(context, async () => {
++			await this.ownerTransition(context, async (context) => {
+ 				mapping = this.mapping(Number(api.taskId))!;
+ 				if (mapping.prepared !== null) return;
+ 				const agent = await (await this.harness.root(context)).agent(context);
+@@ -1457,9 +1461,12 @@
+ 					transcript: summaryTranscript(selection),
+ 				};
+ 				const plain = canonical(prepared),
+-					digest = await requestDigest(semanticTranscript(prepared.transcript));
++					digest = await awaitWithContext(
++						requestDigest(semanticTranscript(prepared.transcript)),
++						context,
++					);
+ 				const recordId = `task:${Number(api.taskId)}:prepared`,
+-					sealed = await this.seal(recordId, plain);
++					sealed = await awaitWithContext(this.seal(recordId, plain), context);
+ 				context.abortSignal?.throwIfAborted();
+ 				this.transition("preparation", () => {
+ 					if (
+@@ -3624,6 +3631,7 @@
+ 	async yield() {
+ 		if (this.closing) return this.closing;
+ 		this.sealed = true;
++		this.ownerAbort.abort();
+ 		clearTimeout(this.timer);
+ 		this.closing = this.closeAndAccount();
+ 		return this.closing;
+--- baseline/apps/runtime/src/pi-durable-summary.test.ts
++++ repaired/apps/runtime/src/pi-durable-summary.test.ts
+@@ -1679,6 +1679,145 @@
+ 						.toArray(),
+ 				).toHaveLength(0);
+ 			}));
++for (const encrypted of [false, true]) {
++	it(`yield cancels all queued owner changes without late commits, encrypted=${encrypted}`, async () =>
++		gate("owner-queued-yield", encrypted, async (f) => {
++			await f.start();
++			const before = await (await f.harness.root(BACKGROUND_CONTEXT)).agent(
++				BACKGROUND_CONTEXT,
++			);
++			const authority = f.dependencies.authority;
++			const remote = pendingRemote<Awaited<ReturnType<typeof authority>>>(),
++				entered = pendingRemote<void>();
++			f.dependencies.authority = () => {
++				entered.resolve();
++				return remote.promise;
++			};
++			const changes = [
++				f.host.configure({ thinkingLevel: "high" }),
++				f.host.configure({ model: { provider: "faux", modelId: "faux-2" } }),
++				f.host.configure({ thinkingLevel: "low" }),
++			].map((change) =>
++				change.then(
++					() => "committed",
++					() => "rejected",
++				),
++			);
++			try {
++				await entered.promise;
++				await f.host.yield();
++				expect(await Promise.all(changes)).toEqual([
++					"rejected",
++					"rejected",
++					"rejected",
++				]);
++				expect(remote.settled).toBe(false);
++				f.dependencies.authority = authority;
++				remote.resolve(await authority());
++				await f.open();
++				const reopened = await (await f.harness.root(BACKGROUND_CONTEXT)).agent(
++					BACKGROUND_CONTEXT,
++				);
++				expect(reopened.model).toEqual(before.model);
++				expect(reopened.thinkingLevel).toBe(before.thinkingLevel);
++				expect(f.providerCalls).toBe(1);
++				await f.host.configure({ thinkingLevel: "high" });
++				expect(
++					(
++						await (
++							await f.harness.root(BACKGROUND_CONTEXT)
++						).agent(BACKGROUND_CONTEXT)
++					).thinkingLevel,
++				).toBe("high");
++			} finally {
++				f.dependencies.authority = authority;
++				remote.resolve(await authority());
++				await Promise.all(changes);
++			}
++		}));
++	for (const boundary of ["before-storage", "after-storage"] as const)
++		it(`yield joins admitted configuration ${boundary} settlement, encrypted=${encrypted}`, async () =>
++			gate(
++				`configuration-settlement-${boundary}`,
++				encrypted,
++				async (f, state) => {
++					const entered = pendingRemote<void>(),
++						release = pendingRemote<void>();
++					let armed = false;
++					f.piStorage = (storage) =>
++						new Proxy(storage, {
++							get(target, key) {
++								if (key === "commit")
++									return async (...args: Parameters<Storage["commit"]>) => {
++										if (
++											!armed ||
++											!args[0].some((write) => write.type === "document.change")
++										)
++											return target.commit(...args);
++										armed = false;
++										expect(args[1].abortSignal).toBeUndefined();
++										if (boundary === "before-storage") {
++											entered.resolve();
++											await release.promise;
++											return target.commit(...args);
++										}
++										const seq = await target.commit(...args);
++										entered.resolve();
++										await release.promise;
++										return seq;
++									};
++								const value: unknown = Reflect.get(target, key);
++								return typeof value === "function" ? value.bind(target) : value;
++							},
++						});
++					await f.host.yield();
++					await f.open();
++					await f.start();
++					armed = true;
++					const change = f.host.configure({ thinkingLevel: "high" }).then(
++						() => "committed",
++						() => "rejected",
++					);
++					let closing: Promise<void> | undefined;
++					try {
++						await entered.promise;
++						let joined = false;
++						closing = f.host.yield().then(() => {
++							joined = true;
++						});
++						await new Promise((resolve) => setTimeout(resolve, 20));
++						expect(joined).toBe(false);
++						release.resolve();
++						await closing;
++						expect(await change).toBe("rejected");
++						expect(
++							state.storage.sql
++								.exec(
++									"SELECT state FROM host_invocations ORDER BY rowid DESC LIMIT 1",
++								)
++								.one().state,
++						).toBe("closed");
++						f.piStorage = undefined;
++						await f.open();
++						expect(
++							(
++								await (
++									await f.harness.root(BACKGROUND_CONTEXT)
++								).agent(BACKGROUND_CONTEXT)
++							).thinkingLevel,
++						).toBe("high");
++						expect(
++							state.storage.sql.exec("SELECT * FROM host_safety").toArray(),
++						).toHaveLength(0);
++						expect(f.providerCalls).toBe(1);
++					} finally {
++						release.resolve();
++						await change;
++						await closing;
++					}
++				},
++			));
++}
+ for (const encrypted of [false, true])
+ 	for (const externallyCanceled of [false, true])
+ 		it(`configuration authority wait joins close by admitted deadline, external cancellation=${externallyCanceled}, encrypted=${encrypted}`, async () => {

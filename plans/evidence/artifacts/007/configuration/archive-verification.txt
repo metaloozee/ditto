@@ -1,0 +1,1 @@
+Baseline archive verifies all 27 accepted source identities; full baseline captures 31 files. Final archive verifies all 34 candidate identities, including the three new source files. Old CommandV1 and SnapshotV1 files remain identical to baseline. All source increments retain their own hashes and diffs.

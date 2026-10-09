@@ -1,0 +1,39 @@
+apps/credential-tests/src/codex-request-contract.worker.test.ts:90:2 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    88 │ ];
+    89 │ const encodedFrames =
+  > 90 │ 	frames.map((frame) => JSON.stringify(frame)).join("\n") + "\n";
+       │ 	^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    91 │ let calls: {
+    92 │ 	body: ReturnType<typeof parseSyntheticModelBodyV1>;
+  
+  i Unsafe fix: Use a template literal.
+  
+     88  88 │   ];
+     89  89 │   const encodedFrames =
+     90     │ - → frames.map((frame)·=>·JSON.stringify(frame)).join("\n")·+·"\n";
+         90 │ + → `${frames.map((frame)·=>·JSON.stringify(frame)).join("\n")}\n`;
+     91  91 │   let calls: {
+     92  92 │   	body: ReturnType<typeof parseSyntheticModelBodyV1>;
+  
+
+apps/credential-tests/src/codex-request-contract.worker.test.ts:331:15 lint/style/noNonNullAssertion ━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    329 │ 								"denied",
+    330 │ 							]);
+  > 331 │ 							return outcomes.find((result) => result.status === "complete")!;
+        │ 							       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    332 │ 						}
+    333 │ 						return await product.requestModel(
+  
+
+Skipped 1 suggested fixes.
+If you wish to apply the suggested (unsafe) fixes, use the command biome check --write --unsafe
+
+Checked 2 files in 44ms. No fixes applied.
+Found 1 warning.
+Found 1 info.

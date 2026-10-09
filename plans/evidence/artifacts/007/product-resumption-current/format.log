@@ -1,0 +1,320 @@
+apps/credential-tests/src/codex-request-contract.worker.test.ts:89:2 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    87 │ ];
+    88 │ const encodedFrames =
+  > 89 │ 	frames.map((frame) => JSON.stringify(frame)).join("\n") + "\n";
+       │ 	^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    90 │ let calls: {
+    91 │ 	body: ReturnType<typeof parseSyntheticModelBodyV1>;
+  
+  i Unsafe fix: Use a template literal.
+  
+     87  87 │   ];
+     88  88 │   const encodedFrames =
+     89     │ - → frames.map((frame)·=>·JSON.stringify(frame)).join("\n")·+·"\n";
+         89 │ + → `${frames.map((frame)·=>·JSON.stringify(frame)).join("\n")}\n`;
+     90  90 │   let calls: {
+     91  91 │   	body: ReturnType<typeof parseSyntheticModelBodyV1>;
+  
+
+apps/web/src/lib/codex-request-contract.test.ts:151:4 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    149 │ 		];
+    150 │ 		const encoded =
+  > 151 │ 			frames.map((frame) => JSON.stringify(frame)).join("\n") + "\n";
+        │ 			^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    152 │ 		const bytes = new TextEncoder().encode(encoded);
+    153 │ 		const response = new Response(
+  
+  i Unsafe fix: Use a template literal.
+  
+    149 149 │   		];
+    150 150 │   		const encoded =
+    151     │ - → → → frames.map((frame)·=>·JSON.stringify(frame)).join("\n")·+·"\n";
+        151 │ + → → → `${frames.map((frame)·=>·JSON.stringify(frame)).join("\n")}\n`;
+    152 152 │   		const bytes = new TextEncoder().encode(encoded);
+    153 153 │   		const response = new Response(
+  
+
+apps/web/src/lib/codex-request-contract.test.ts:172:3 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    170 │ 		'{"version":1,"version":1,"type":"done"}\n',
+    171 │ 		`${JSON.stringify({ version: 1, type: "delta", text: "x".repeat(8193) })}\n`,
+  > 172 │ 		Array.from({ length: 129 }, () =>
+        │ 		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 173 │ 			JSON.stringify({ version: 1, type: "delta", text: "x" }),
+  > 174 │ 		).join("\n") + "\n",
+        │ 		^^^^^^^^^^^^^^^^^^^
+    175 │ 		Array.from({ length: 9 }, () =>
+    176 │ 			JSON.stringify({ version: 1, type: "delta", text: "x".repeat(8192) }),
+  
+  i Unsafe fix: Use a template literal.
+  
+    170 170 │   		'{"version":1,"version":1,"type":"done"}\n',
+    171 171 │   		`${JSON.stringify({ version: 1, type: "delta", text: "x".repeat(8193) })}\n`,
+    172     │ - → → Array.from({·length:·129·},·()·=>
+        172 │ + → → `${Array.from({·length:·129·},·()·=>
+    173 173 │   			JSON.stringify({ version: 1, type: "delta", text: "x" }),
+    174     │ - → → ).join("\n")·+·"\n",
+        174 │ + → → ).join("\n")}\n`,
+    175 175 │   		Array.from({ length: 9 }, () =>
+    176 176 │   			JSON.stringify({ version: 1, type: "delta", text: "x".repeat(8192) }),
+  
+
+apps/web/src/lib/codex-request-contract.test.ts:175:3 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    173 │ 			JSON.stringify({ version: 1, type: "delta", text: "x" }),
+    174 │ 		).join("\n") + "\n",
+  > 175 │ 		Array.from({ length: 9 }, () =>
+        │ 		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 176 │ 			JSON.stringify({ version: 1, type: "delta", text: "x".repeat(8192) }),
+  > 177 │ 		).join("\n") + "\n",
+        │ 		^^^^^^^^^^^^^^^^^^^
+    178 │ 	])
+    179 │ 		it(`rejects malformed or truncated stream of ${text.length} bytes`, async () => {
+  
+  i Unsafe fix: Use a template literal.
+  
+    173 173 │   			JSON.stringify({ version: 1, type: "delta", text: "x" }),
+    174 174 │   		).join("\n") + "\n",
+    175     │ - → → Array.from({·length:·9·},·()·=>
+        175 │ + → → `${Array.from({·length:·9·},·()·=>
+    176 176 │   			JSON.stringify({ version: 1, type: "delta", text: "x".repeat(8192) }),
+    177     │ - → → ).join("\n")·+·"\n",
+        177 │ + → → ).join("\n")}\n`,
+    178 178 │   	])
+    179 179 │   		it(`rejects malformed or truncated stream of ${text.length} bytes`, async () => {
+  
+
+apps/web/src/lib/codex-request-contract.test.ts:198:4 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    196 │ 			).rejects.toThrow();
+    197 │ 		const text =
+  > 198 │ 			["private-", "marker"]
+        │ 			^^^^^^^^^^^^^^^^^^^^^^
+  > 199 │ 				.map((text) => JSON.stringify({ version: 1, type: "delta", text }))
+  > 200 │ 				.join("\n") + `\n${JSON.stringify(end)}\n`;
+        │ 				^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    201 │ 		await expect(
+    202 │ 			readSyntheticStream(stream(text), new AbortController().signal, [
+  
+  i Unsafe fix: Use a template literal.
+  
+    196 196 │   			).rejects.toThrow();
+    197 197 │   		const text =
+    198     │ - → → → ["private-",·"marker"]
+        198 │ + → → → `${["private-",·"marker"]
+    199 199 │   				.map((text) => JSON.stringify({ version: 1, type: "delta", text }))
+    200     │ - → → → → .join("\n")·+·`\n${JSON.stringify(end)}\n`;
+        200 │ + → → → → .join("\n")}\n${JSON.stringify(end)}\n`;
+    201 201 │   		await expect(
+    202 202 │   			readSyntheticStream(stream(text), new AbortController().signal, [
+  
+
+apps/credential-tests/src/codex-request-contract.worker.test.ts:330:15 lint/style/noNonNullAssertion ━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    328 │ 								"denied",
+    329 │ 							]);
+  > 330 │ 							return outcomes.find((result) => result.status === "complete")!;
+        │ 							       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    331 │ 						}
+    332 │ 						return await product.requestModel(
+  
+
+apps/runtime/src/pi-durable-host.ts:982:18 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    980 │ 		const effects = this.unresolved();
+    981 │ 		if (effects.length !== 1) return false;
+  > 982 │ 		const effect = effects[0]!;
+        │ 		               ^^^^^^^^^^^
+    983 │ 		if (effect.state !== "result-recorded" || !effect.correlation) return false;
+    984 │ 		const correlation = this.correlation(
+  
+
+apps/runtime/src/pi-durable-host.ts:985:4 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    983 │ 		if (effect.state !== "result-recorded" || !effect.correlation) return false;
+    984 │ 		const correlation = this.correlation(
+  > 985 │ 			this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
+        │ 			^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    986 │ 		);
+    987 │ 		if (correlation.version !== 2) return false;
+  
+
+apps/runtime/src/pi-durable-host.ts:1001:5 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+     999 │ 		try {
+    1000 │ 			const evidence: unknown = JSON.parse(
+  > 1001 │ 				this.opened(`effect:${effect.id}:evidence`, row.evidence)!,
+         │ 				^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1002 │ 			);
+    1003 │ 			validateSummaryResponse(
+  
+
+apps/runtime/src/pi-durable-host.ts:1104:6 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1102 │ 			if (effect.correlation) {
+    1103 │ 				const correlation = this.correlation(
+  > 1104 │ 					this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
+         │ 					^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1105 │ 				);
+    1106 │ 				this.block("outcome-unknown", correlation.run);
+  
+
+apps/runtime/src/pi-durable-host.ts:1454:17 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1452 │ 		)
+    1453 │ 			throw new Error("Custom summary requires trusted selection phase");
+  > 1454 │ 		let mapping = this.mapping(Number(api.taskId))!;
+         │ 		              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1455 │ 		const command = this.command(mapping.command),
+    1456 │ 			run = this.run(command.run);
+  
+
+apps/runtime/src/pi-durable-host.ts:1459:15 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1457 │ 		if (mapping.prepared === null)
+    1458 │ 			await this.ownerTransition(context, async (context) => {
+  > 1459 │ 				mapping = this.mapping(Number(api.taskId))!;
+         │ 				          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1460 │ 				if (mapping.prepared !== null) return;
+    1461 │ 				const agent = await (await this.harness.root(context)).agent(context);
+  
+
+apps/runtime/src/pi-durable-host.ts:1516:15 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1514 │ 				this.rememberPlain(recordId, plain, sealed.digest, sealed.ciphertext);
+    1515 │ 				await this.durable(context, "preparation-flush");
+  > 1516 │ 				mapping = this.mapping(Number(api.taskId))!;
+         │ 				          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1517 │ 			});
+    1518 │ 		const prepared = preparedSummary(JSON.parse(mapping.prepared!));
+  
+
+apps/runtime/src/pi-durable-host.ts:1518:47 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1516 │ 				mapping = this.mapping(Number(api.taskId))!;
+    1517 │ 			});
+  > 1518 │ 		const prepared = preparedSummary(JSON.parse(mapping.prepared!));
+         │ 		                                            ^^^^^^^^^^^^^^^^^
+    1519 │ 		if (
+    1520 │ 			prepared.policy !== SUMMARY_POLICY ||
+  
+
+apps/runtime/src/pi-durable-host.ts:1543:20 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1541 │ 				if (rows.length !== 1)
+    1542 │ 					throw new Error("Custom summary attempt conflict");
+  > 1543 │ 				const effect = rows[0]!,
+         │ 				               ^^^^^^^^
+    1544 │ 					correlation = this.correlation(
+    1545 │ 						this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
+  
+
+apps/runtime/src/pi-durable-host.ts:1545:7 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1543 │ 				const effect = rows[0]!,
+    1544 │ 					correlation = this.correlation(
+  > 1545 │ 						this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
+         │ 						^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1546 │ 					);
+    1547 │ 				if (
+  
+
+apps/runtime/src/pi-durable-host.ts:1568:6 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1566 │ 					throw new Error("Custom result reuse authority denied");
+    1567 │ 				const message: unknown = JSON.parse(
+  > 1568 │ 					this.opened(`effect:${effect.id}:evidence`, effect.evidence)!,
+         │ 					^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1569 │ 				);
+    1570 │ 				this.assertSeals();
+  
+
+apps/runtime/src/pi-durable-host.ts:1604:7 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1602 │ 				canonical(
+    1603 │ 					JSON.parse(
+  > 1604 │ 						this.opened(`effect:${effect.id}:evidence`, effect.evidence)!,
+         │ 						^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1605 │ 					),
+    1606 │ 				) !== canonical(message)
+  
+
+apps/runtime/src/pi-durable-host.ts:1699:4 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    1697 │ 			return;
+    1698 │ 		const evidence: unknown = JSON.parse(
+  > 1699 │ 			this.opened(`effect:${effect.id}:evidence`, effect.evidence)!,
+         │ 			^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1700 │ 		);
+    1701 │ 		validateSummaryResponse(
+  
+
+apps/web/src/lib/codex-request-contract.ts:103:12 lint/suspicious/noAssignInExpressions ━━━━━━━━━━━━
+
+  × The assignment should not be in an expression.
+  
+    101 │ 			pending += decoder.decode(chunk.value, { stream: true });
+    102 │ 			let index: number;
+  > 103 │ 			while ((index = pending.indexOf("\n")) !== -1) {
+        │ 			        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    104 │ 				if (done || frames.length >= SYNTHETIC_MODEL_LIMITS.frames)
+    105 │ 					throw new Error("synthetic_frame_bound");
+  
+  i The use of assignments in expressions is confusing.
+    Expressions are often considered as side-effect free.
+  
+
+Skipped 7 suggested fixes.
+If you wish to apply the suggested (unsafe) fixes, use the command biome check --write --unsafe
+
+The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
+Diagnostics not shown: 11.
+Checked 12 files in 248ms. Fixed 12 files.
+Found 1 error.
+Found 25 warnings.
+Found 5 infos.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while applying fixes.
+  
+

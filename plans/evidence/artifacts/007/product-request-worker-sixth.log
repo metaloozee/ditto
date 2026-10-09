@@ -1,0 +1,98 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+ [31m❯[39m src/codex-request-contract.worker.test.ts [2m([22m[2m48 tests[22m[2m | [22m[31m1 failed[39m[2m | [22m[33m47 skipped[39m[2m)[22m[33m 915[2mms[22m[39m
+[31m   [31m×[31m the mandatory adapter constructs an exact credential-owned request and bounded stream through private RPC[39m[33m 889[2mms[22m[39m
+[31m     → reply.persist(...).optional is not a function[39m
+[31m     → 1 interceptor is pending:
+
+- POST https://codex-model-fixture.invalid/v1/stream 200 { persist: [33mtrue[31m, invoked: [33m0[31m, remaining: [33mInfinity[31m }[39m
+   [2m[90m↓[39m[22m invalid or differently bound request dispatches zero calls: (request) => ({ ...request, method: "GET" })
+   [2m[90m↓[39m[22m invalid or differently bound request dispatches zero calls: (request) => ({ ...request, url: `${request.url}?proxy=1` })
+   [2m[90m↓[39m[22m invalid or differently bound request dispatches zero calls: (request) => ({ ...request, headers: [...request.headers, ["authorization", "caller"]] })
+   [2m[90m↓[39m[22m invalid or differently bound request dispatches zero calls: (request) => ({ ...request, body: request.body.replace('"version":1', '"version":1,"version":1') })
+   [2m[90m↓[39m[22m invalid or differently bound request dispatches zero calls: (request) => ({ ...request, body: JSON.stringify({ ...JSON.parse(request.body), thinking: "high" }) })
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE projects SET userId='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE workspace_sessions SET status='archived'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE workspace_sessions SET runtimeOwnerVersion=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE workspace_sessions SET runtimeOwner='legacy'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET kind='project_seed'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET retiredAt=1
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET lifecycleGeneration=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET incarnationId='replacement'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET controllerNamespace='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE codex_connections SET revoked=1,generation=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE projects SET userId='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE workspace_sessions SET status='archived'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE workspace_sessions SET runtimeOwnerVersion=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE workspace_sessions SET runtimeOwner='legacy'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET kind='project_seed'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET retiredAt=1
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET lifecycleGeneration=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET incarnationId='replacement'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET controllerNamespace='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE codex_connections SET revoked=1,generation=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE projects SET userId='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE workspace_sessions SET status='archived'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE workspace_sessions SET runtimeOwnerVersion=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE workspace_sessions SET runtimeOwner='legacy'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET kind='project_seed'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET retiredAt=1
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET lifecycleGeneration=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET incarnationId='replacement'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET controllerNamespace='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE codex_connections SET revoked=1,generation=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))
+   [2m[90m↓[39m[22m Stop wins during credential preparation before the host acknowledgment, with zero fetches
+   [2m[90m↓[39m[22m a model capability revoked while the actual claim flush is held is freshly denied after that flush
+   [2m[90m↓[39m[22m three contract denials durably close the window, record review and halt the exact run without reentry
+   [2m[90m↓[39m[22m production credentials remain unavailable even with connected fixture records
+   [2m[90m↓[39m[22m a known generation failure retries as a separate admitted attempt
+   [2m[90m↓[39m[22m Git metadata's reserved attempt is never refunded after a known failure
+   [2m[90m↓[39m[22m malformed upstream outcomes retain uncertain admission without redispatch
+   [2m[90m↓[39m[22m malformed upstream outcomes retain uncertain admission without redispatch
+   [2m[90m↓[39m[22m malformed upstream outcomes retain uncertain admission without redispatch
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/codex-request-contract.worker.test.ts[2m > [22mthe mandatory adapter constructs an exact credential-owned request and bounded stream through private RPC
+[31m[1mTypeError[22m: reply.persist(...).optional is not a function[39m
+[36m [2m❯[22m upstream src/codex-request-contract.worker.test.ts:[2m45:54[22m[39m
+    [90m 43| [39m  [35mreturn[39m response[33m;[39m
+    [90m 44| [39m }[33m,[39m { headers[33m:[39m { [32m"content-type"[39m[33m:[39m [32m"application/x-ndjson"[39m } })[33m;[39m
+    [90m 45| [39m [35mif[39m (times) reply[33m.[39m[34mtimes[39m(times)[33m;[39m [35melse[39m reply[33m.[39m[34mpersist[39m()[33m.[39m[34moptional[39m()[33m;[39m
+    [90m   | [39m                                                     [31m^[39m
+    [90m 46| [39m}
+    [90m 47| [39m[35mfunction[39m [34mdeferred[39m() {
+[90m [2m❯[22m src/codex-request-contract.worker.test.ts:[2m141:2[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/codex-request-contract.worker.test.ts[2m > [22mthe mandatory adapter constructs an exact credential-owned request and bounded stream through private RPC
+[31m[1mUndiciError[22m: 1 interceptor is pending:
+
+- POST https://codex-model-fixture.invalid/v1/stream 200 { persist: [33mtrue[31m, invoked: [33m0[31m, remaining: [33mInfinity[31m }[39m
+[90m [2m❯[22m MockAgent2.assertNoPendingInterceptors home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/mock-agent.cjs?mf_vitest_no_cjs_esm_shim:[2m3396:15[22m[39m
+[36m [2m❯[22m src/codex-request-contract.worker.test.ts:[2m82:29[22m[39m
+
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[33m47 skipped[39m[90m (48)[39m
+[2m   Start at [22m 20:02:17
+[2m   Duration [22m 3.07s[2m (transform 363ms, setup 0ms, collect 680ms, tests 915ms, environment 0ms, prepare 149ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/codex-request-contract.worker.test.ts -t 'mandatory adapter constructs'

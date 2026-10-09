@@ -1,0 +1,112 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for ../../plans/evidence/artifacts/007/product-advisor-review/generation-domain.config.ts...
+ [31m❯[39m ../../plans/evidence/artifacts/007/product-advisor-review/generation-domain.probe.test.ts [2m([22m[2m57 tests[22m[2m | [22m[31m1 failed[39m[2m | [22m[33m56 skipped[39m[2m)[22m[33m 990[2mms[22m[39m
+   [2m[90m↓[39m[22m the mandatory adapter constructs an exact credential-owned request and bounded stream through private RPC
+   [2m[90m↓[39m[22m invalid or differently bound request dispatches zero calls: (request) => ({ ...request, method: "GET" })
+   [2m[90m↓[39m[22m invalid or differently bound request dispatches zero calls: (request) => ({
+    ...request,
+    url: `${request.url}?proxy=1`
+  })
+   [2m[90m↓[39m[22m invalid or differently bound request dispatches zero calls: (request) => ({
+    ...request,
+    headers: [...request.headers, ["authorization", "caller"]]
+  })
+   [2m[90m↓[39m[22m invalid or differently bound request dispatches zero calls: (request) => ({
+    ...request,
+    body: request.body.replace('"version":1', '"version":1,"version":1')
+  })
+   [2m[90m↓[39m[22m invalid or differently bound request dispatches zero calls: (request) => ({
+    ...request,
+    body: JSON.stringify({ ...JSON.parse(request.body), thinking: "high" })
+  })
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE projects SET userId='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE workspace_sessions SET status='archived'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE workspace_sessions SET runtimeOwnerVersion=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE workspace_sessions SET runtimeOwner='legacy'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET kind='project_seed'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET retiredAt=1
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET lifecycleGeneration=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET incarnationId='replacement'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET controllerNamespace='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE codex_connections SET revoked=1,generation=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held authority prevents attachment: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE projects SET userId='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE workspace_sessions SET status='archived'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE workspace_sessions SET runtimeOwnerVersion=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE workspace_sessions SET runtimeOwner='legacy'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET kind='project_seed'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET retiredAt=1
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET lifecycleGeneration=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET incarnationId='replacement'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET controllerNamespace='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE codex_connections SET revoked=1,generation=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held credentials prevents attachment: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE projects SET userId='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE workspace_sessions SET status='archived'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE workspace_sessions SET runtimeOwnerVersion=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE workspace_sessions SET runtimeOwner='legacy'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET kind='project_seed'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET retiredAt=1
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET lifecycleGeneration=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET incarnationId='replacement'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET controllerNamespace='foreign'
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE codex_connections SET revoked=1,generation=2
+   [2m[90m↓[39m[22m fresh D1 revocation after held claim prevents attachment: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))
+   [2m[90m↓[39m[22m Stop wins during credential preparation before the host acknowledgment, with zero fetches
+   [2m[90m↓[39m[22m a model capability revoked while the actual claim flush is held is freshly denied after that flush
+   [2m[90m↓[39m[22m three contract denials durably close the window, record review and halt the exact run without reentry
+   [2m[90m↓[39m[22m concurrent private requests cannot consume an exact window or live claim twice
+   [2m[90m↓[39m[22m identical local effect IDs remain independently scoped to owned workspace identities
+   [2m[90m↓[39m[22m window expiry during credential preparation denies before host claim and fetch
+   [2m[90m↓[39m[22m production credentials remain unavailable even with connected fixture records
+   [2m[90m↓[39m[22m a known generation failure retries as a separate admitted attempt
+   [2m[90m↓[39m[22m Git metadata's reserved attempt is never refunded after a known failure
+   [2m[90m↓[39m[22m Stop after host acknowledgment retains the credential-bearing start and late product evidence
+   [2m[90m↓[39m[22m accepted custom summaries use the same private transport and exactly one fresh association
+   [2m[90m↓[39m[22m a known custom summary failure spends its one attempt without an automatic retry
+   [2m[90m↓[39m[22m disconnect of the local credential record while preparation is held prevents fetch even before a D1 projection
+   [2m[90m↓[39m[22m real epoch-first Stop during the claim durability flush prevents fetch without refunding consumption
+   [2m[90m↓[39m[22m malformed upstream outcomes retain uncertain admission without redispatch
+   [2m[90m↓[39m[22m malformed upstream outcomes retain uncertain admission without redispatch
+   [2m[90m↓[39m[22m malformed upstream outcomes retain uncertain admission without redispatch
+[31m   [31m×[31m advisor: current host invocation generation is independent of identity lifecycle generation[39m[33m 962[2mms[22m[39m
+[31m     → expected false to be true // Object.is equality[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m ../../plans/evidence/artifacts/007/product-advisor-review/generation-domain.probe.test.ts[2m > [22madvisor: current host invocation generation is independent of identity lifecycle generation
+[31m[1mAssertionError[22m: expected false to be true // Object.is equality[39m
+
+- Expected
++ Received
+
+- true
++ false
+
+[36m [2m❯[22m ../../plans/evidence/artifacts/007/product-advisor-review/generation-domain.probe.test.ts:[2m15:43[22m[39m
+    [90m 13| [39m [35mconst[39m policy [33m=[39m [35mnew[39m [33mModelProductAuthority[39m(env[33m.[39m[33mDB[39m)[33m;[39m
+    [90m 14| [39m expect(await policy.current({ ...descriptor, attempt: { ...descriptor…
+    [90m 15| [39m [34mexpect[39m([35mawait[39m policy[33m.[39m[34mcurrent[39m(descriptor))[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m   | [39m                                          [31m^[39m
+    [90m 16| [39m})[33m;[39m
+    [90m 17| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[33m56 skipped[39m[90m (57)[39m
+[2m   Start at [22m 21:28:23
+[2m   Duration [22m 3.17s[2m (transform 372ms, setup 0ms, collect 698ms, tests 990ms, environment 0ms, prepare 155ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run --config ../../plans/evidence/artifacts/007/product-advisor-review/generation-domain.config.ts -t 'advisor: current host invocation generation'

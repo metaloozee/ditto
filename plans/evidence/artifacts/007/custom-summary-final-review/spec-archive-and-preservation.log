@@ -1,0 +1,14 @@
+Independent full specification equality: exactly three approved replacements, passed.
+Final archived and current source identity: apps/runtime/src/pi-durable-host.ts passed
+Final archived and current source identity: apps/runtime/src/pi-durable-cooperative-fixture.ts passed
+Final archived and current source identity: apps/runtime/src/pi-durable-effects.test.ts passed
+Final archived and current source identity: apps/runtime/src/pi-durable-model-preparation.gate.test.ts passed
+Final archived and current source identity: apps/runtime/src/pi-durable-summary.ts passed
+Final archived and current source identity: apps/runtime/src/pi-durable-summary.test.ts passed
+Final archived and current source identity: docs/specs/pi-durable-session-runtime.md passed
+Complete original four deadline regressions and their assertions byte-identical: passed.
+Other candidate source unchanged by narrow lifecycle repair: apps/runtime/src/pi-durable-cooperative-fixture.ts passed
+Other candidate source unchanged by narrow lifecycle repair: apps/runtime/src/pi-durable-effects.test.ts passed
+Other candidate source unchanged by narrow lifecycle repair: apps/runtime/src/pi-durable-model-preparation.gate.test.ts passed
+Other candidate source unchanged by narrow lifecycle repair: apps/runtime/src/pi-durable-summary.ts passed
+Other candidate source unchanged by narrow lifecycle repair: docs/specs/pi-durable-session-runtime.md passed

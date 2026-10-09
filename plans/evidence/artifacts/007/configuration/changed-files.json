@@ -1,0 +1,67 @@
+[
+  {
+    "path": "apps/credential-tests/src/codex-request-contract.worker.test.ts",
+    "baselineSha256": "b0d4fb74125bfb63d950451079016ef00bffafea7578ca8bf6cc3ea048b5b786",
+    "currentSha256": "d82b949eeb8e26ee6daf13c00b738efd218f842f03573b327f9739e133f46701"
+  },
+  {
+    "path": "apps/credential-tests/src/model-entry.ts",
+    "baselineSha256": "867cc14672b4281bfd910f1478ded0338fe07eb2796747a7f201120330928387",
+    "currentSha256": "e3274600cc65e6e7580c773c4368a928e90dab90a9e4d98b01265b9296cb04eb"
+  },
+  {
+    "path": "apps/runtime/src/pi-durable-host.ts",
+    "baselineSha256": "4695f7bc31d7e84c84da7ea8cb3efd51f3261bf125ac9d4312a512ea5765da83",
+    "currentSha256": "96af1f6c1e5ce86539c1b7b04d3b3a865617b7cc309358400204b918704b7f4f"
+  },
+  {
+    "path": "apps/web/src/lib/model-product-authority.ts",
+    "baselineSha256": "8503e8ab0b15f0d09ce1ecd3953bbf690263d6d24aab72a6ba35d747820c87bd",
+    "currentSha256": "88a6d9b69f1ff34f9f588e2b18c1e5c83ad4338a49aec102d8750fe39eff163e"
+  },
+  {
+    "path": "apps/web/src/lib/model-product-transport.ts",
+    "baselineSha256": "46181fac6e2ee84b93e4fa8ccf3832e3cad65acbda49cfe96fff815d34734f8c",
+    "currentSha256": "2fd1e196d2820a7ed89ad680262dd70f5f6a95e8e0875ce5b82a7e476d9ae987"
+  },
+  {
+    "path": "apps/web/src/lib/session-runtime-product.ts",
+    "baselineSha256": "f90621111931a9797b25d0eb7c1324e04d388473c59cf65ae2df7575dcb698fc",
+    "currentSha256": "f54eb3590a7082e644db9a9053ad77e0f994d45d4d7323d16a27ed7f77ef3d1c"
+  },
+  {
+    "path": "docs/specs/pi-durable-session-runtime.md",
+    "baselineSha256": "56ae00345948447be5e99f934e188383f9285649b36a4647c2ca02379027a897",
+    "currentSha256": "31b0d4727590d7bb547ff1145745f7915ddd6fcebecc94228d97b5953ad83a03"
+  },
+  {
+    "path": "packages/runtime-contracts/src/index.ts",
+    "baselineSha256": "2ad4e068c0b117c92cd38e2dfc7a02aefe985231fca5dee3ab737a5d98f1906d",
+    "currentSha256": "73e761659969fc09ff0f0a963b12cbc51969bdaf42383c6770dcdb7be06db6c1"
+  },
+  {
+    "path": "apps/web/src/lib/session-runtime-client.ts",
+    "baselineSha256": "28716a14ee95a9c8e110e5f759c42fee4c38395089a0a53c6e65bbde73c3d485",
+    "currentSha256": "178189a4a059b0af8f76fec5512ab4b56fd2da84900c32bb0098b1a2ef8d9e8f"
+  },
+  {
+    "path": "apps/runtime/src/server.ts",
+    "baselineSha256": "425049a0ebae4ab1865ee1b63fee7f502fd3386b54121d3f50181a21ad5686f5",
+    "currentSha256": "8708e0f5d1d6998f5bfadeadd7aadf9ac7f9e211695c97c947c851784bcdeacb"
+  },
+  {
+    "path": "packages/runtime-contracts/src/configuration.ts",
+    "baselineSha256": null,
+    "currentSha256": "d0bed5d3696fdbd57e178f88294998eb5d533bd8cf7564323f0c1f2d191515a5"
+  },
+  {
+    "path": "packages/runtime-contracts/src/configuration.test.ts",
+    "baselineSha256": null,
+    "currentSha256": "da2915859c44fc7f6c76778eda87e32d70b6f63d4737929c3f8f507b69fa29af"
+  },
+  {
+    "path": "apps/web/src/lib/configuration-product-authority.ts",
+    "baselineSha256": null,
+    "currentSha256": "d59392a7e2f37730e5a68b5dc383bb82b11108c6a25e83dbcefcc0a42bdcdd65"
+  }
+]

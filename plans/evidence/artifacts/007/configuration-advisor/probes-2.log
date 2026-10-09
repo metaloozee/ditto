@@ -1,0 +1,27 @@
+✘ [ERROR] Could not resolve "/home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/@cloudflare/vitest-pool-workers/config"
+
+    ../../plans/evidence/artifacts/007/configuration-advisor/vitest.config.ts:1:503:
+      1 │ ...fig } from "/home/ayan/ditto-execution/plan-007-recovery/apps/ru...
+        ╵               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+[31mfailed to load config from /home/ayan/ditto-execution/plan-007-recovery/plans/evidence/artifacts/007/configuration-advisor/vitest.config.ts[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Startup Error [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯⎯[39m
+Error: Build failed with 1 error:
+../../plans/evidence/artifacts/007/configuration-advisor/vitest.config.ts:1:503: ERROR: Could not resolve "/home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/@cloudflare/vitest-pool-workers/config"
+    at failureErrorWithLog (/home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/esbuild@0.28.1/node_modules/esbuild/lib/main.js:1748:15)
+    at /home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/esbuild@0.28.1/node_modules/esbuild/lib/main.js:1207:25
+    at runOnEndCallbacks (/home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/esbuild@0.28.1/node_modules/esbuild/lib/main.js:1588:45)
+    at buildResponseToResult (/home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/esbuild@0.28.1/node_modules/esbuild/lib/main.js:1205:7)
+    at /home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/esbuild@0.28.1/node_modules/esbuild/lib/main.js:1232:16
+    at responseCallbacks.<computed> (/home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/esbuild@0.28.1/node_modules/esbuild/lib/main.js:884:9)
+    at handleIncomingPacket (/home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/esbuild@0.28.1/node_modules/esbuild/lib/main.js:939:12)
+    at Socket.readFromStdout (/home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/esbuild@0.28.1/node_modules/esbuild/lib/main.js:862:7)
+    at Socket.emit (node:events:514:28)
+    at addChunk (node:internal/streams/readable:568:12) {
+  errors: [Getter/Setter],
+  warnings: [Getter/Setter]
+}
+
+
+

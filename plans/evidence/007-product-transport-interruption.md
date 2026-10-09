@@ -1,0 +1,9 @@
+# 007 product transport implementation interruption
+
+Status: unreviewed partial implementation preserved in the existing detached `/home/ayan/ditto-execution/plan-007-recovery`. The previous executor hit the `openai-codex/gpt-6.1-sol` usage limit; it supplied no final result. The maintainer requested Continue. A fresh executor on that same model with medium reasoning was dispatched in the same worktree, with full handoffs and current failure details.
+
+The advisor inspected status, the latest runtime adapter, the credential tsconfig diff and latest recorded test/typecheck logs. New interrupted work includes synthetic schemas, product policy/transport modules, migration 0022 and schema additions, credential request operations and tests, product entrypoint methods, mandatory synthetic runtime adapter and host product-authority/halt callbacks. These are not independently reviewed or accepted. The previous report `007-product-transport-execution.md` predates these changes and must not be used as current implementation inventory.
+
+Recorded last new request Worker run: 48 passed. Recorded last credential typecheck failed on `.ts` import settings, a test callback returning `Invocation` rather than void and unknown-row narrowing. The import setting was subsequently added; no passing rerun or final aggregate result is claimed. Staging remains empty.
+
+The fresh executor must preserve/archive partial source before editing, reproduce/fix current failures, complete the product phase, register suites and run all required gates. The earlier accepted local host primitive and reviewed RPC increment remain reference baselines; later modifications to them require renewed review. Authenticated configuration remains a subsequent mandatory phase. Full 007 is not DONE. No model/billing fallback, live request, integration or commit is authorized.

@@ -1,0 +1,62 @@
+apps/runtime/src/pi-durable-model-preparation.gate.test.ts:104:9 lint/style/noNonNullAssertion ━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    102 │ 				...faux.provider.getModels(),
+    103 │ 				{
+  > 104 │ 					...faux.provider.getModels()[0]!,
+        │ 					   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    105 │ 					id: "faux-2",
+    106 │ 					name: "Synthetic second model",
+  
+
+apps/runtime/src/pi-durable-model-preparation.gate.test.ts:154:18 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    152 │ 		);
+    153 │ 		await entered.promise;
+  > 154 │ 		const before = (await harness.inspect(BACKGROUND_CONTEXT)).tasks.find(
+        │ 		               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 155 │ 			(task) => task.record.kind === "pi.generation",
+  > 156 │ 		)!.record;
+        │ 		^^
+    157 │ 		expect(before.state.checkpoint).toMatchObject({
+    158 │ 			phase: "request",
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    154 154 │   		const before = (await harness.inspect(BACKGROUND_CONTEXT)).tasks.find(
+    155 155 │   			(task) => task.record.kind === "pi.generation",
+    156     │ - → → )!.record;
+        156 │ + → → )?.record;
+    157 157 │   		expect(before.state.checkpoint).toMatchObject({
+    158 158 │   			phase: "request",
+  
+
+apps/runtime/src/pi-durable-model-preparation.gate.test.ts:175:20 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    173 │ 		);
+    174 │ 		root = await harness.root(BACKGROUND_CONTEXT);
+  > 175 │ 		const reopened = (await harness.inspect(BACKGROUND_CONTEXT)).tasks.find(
+        │ 		                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 176 │ 			(task) => task.record.kind === "pi.generation",
+  > 177 │ 		)!.record;
+        │ 		^^
+    178 │ 		expect(reopened.state.checkpoint).toEqual(before.state.checkpoint);
+    179 │ 		await root.waitForIdle(BACKGROUND_CONTEXT);
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    175 175 │   		const reopened = (await harness.inspect(BACKGROUND_CONTEXT)).tasks.find(
+    176 176 │   			(task) => task.record.kind === "pi.generation",
+    177     │ - → → )!.record;
+        177 │ + → → )?.record;
+    178 178 │   		expect(reopened.state.checkpoint).toEqual(before.state.checkpoint);
+    179 179 │   		await root.waitForIdle(BACKGROUND_CONTEXT);
+  
+
+Checked 1 file in 8ms. No fixes applied.
+Found 3 warnings.

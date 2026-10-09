@@ -1,0 +1,3 @@
+contracts:verify 0
+brain:verify 0
+credentials:verify 1

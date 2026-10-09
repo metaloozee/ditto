@@ -1,0 +1,60 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/tmp/ditto-plan-007-3oi7vl/apps/runtime[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[90mstdout[2m | src/pi-durable-model-preparation.gate.test.ts[2m > [22m[2m007 initial gate: prepared compaction must resume through the integrated mandatory guard after reopen before first admission
+[22m[39m007 compaction gate evidence {"task":11,"before":{"phase":"summarize","attempt":1,"model":{"provider":"faux","modelId":"faux-1"},"thinkingLevel":"off","streamOptions":{},"maxTokens":51,"tail":10,"firstKept":10},"after":{"status":"terminal","outcome":{"status":"failed","error":{"message":"Summarization failed: Missing first summary association","detail":{"reason":"model_error"}}}},"attempts":1,"dispatched":0}
+
+ [31m❯[39m src/pi-durable-model-preparation.gate.test.ts [2m([22m[2m2 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 381[2mms[22m[39m
+   [32m✓[39m 007 initial gate: prepared generation survives close/reopen and the next request changes within one instruction[32m 142[2mms[22m[39m
+[31m   [31m×[31m 007 initial gate: prepared compaction must resume through the integrated mandatory guard after reopen before first admission[39m[32m 227[2mms[22m[39m
+[31m     → expected { status: 'terminal', …(1) } to match object { status: 'terminal', …(1) }
+(3 matching properties omitted from actual)[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/pi-durable-model-preparation.gate.test.ts[2m > [22m007 initial gate: prepared compaction must resume through the integrated mandatory guard after reopen before first admission
+[31m[1mAssertionError[22m: expected { status: 'terminal', …(1) } to match object { status: 'terminal', …(1) }
+(3 matching properties omitted from actual)[39m
+
+- Expected
++ Received
+
+  {
+    "outcome": {
+-     "status": "completed",
++     "status": "failed",
+    },
+    "status": "terminal",
+  }
+
+[90m [2m❯[22m Proxy.methodWrapper tmp/ditto-plan-007-3oi7vl/apps/runtime/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/vitest___@vitest_expect___chai.js:[2m1603:25[22m[39m
+[36m [2m❯[22m src/pi-durable-model-preparation.gate.test.ts:[2m298:24[22m[39m
+    [90m296| [39m  [35mawait[39m host[33m.[39m[35myield[39m()[33m;[39m
+    [90m297| [39m  release[33m.[39m[34mresolve[39m()[33m;[39m
+    [90m298| [39m  [34mexpect[39m(after[33m?.[39mstate)[33m.[39m[34mtoMatchObject[39m({
+    [90m   | [39m                       [31m^[39m
+    [90m299| [39m   status[33m:[39m [32m"terminal"[39m[33m,[39m
+    [90m300| [39m   outcome[33m:[39m { status[33m:[39m [32m"completed"[39m }[33m,[39m
+[90m [2m❯[22m maybeHandleRunRequest tmp/ditto-plan-007-3oi7vl/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260702.1_@vitest+_25b5cb7e5ac90ba1c82363cf73fabbe1/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:[2m198:20[22m[39m
+[90m [2m❯[22m DurableObject.Wrapper.fetch tmp/ditto-plan-007-3oi7vl/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260702.1_@vitest+_25b5cb7e5ac90ba1c82363cf73fabbe1/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:[2m563:22[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m1 passed[39m[22m[90m (2)[39m
+[2m   Start at [22m 10:14:50
+[2m   Duration [22m 1.85s[2m (transform 223ms, setup 0ms, collect 434ms, tests 381ms, environment 0ms, prepare 123ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/tmp/ditto-plan-007-3oi7vl/apps/runtime:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/pi-durable-model-preparation.gate.test.ts

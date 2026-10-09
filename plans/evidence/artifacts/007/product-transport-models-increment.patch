@@ -1,0 +1,151 @@
+--- /dev/fd/63	2026-10-08 19:31:58.466989072 +0200
++++ apps/runtime/src/pi-durable-models.test.ts	2026-10-08 19:29:55.679144488 +0200
+@@ -14,11 +14,22 @@
+ 	PiDurableHost,
+ 	type PiDurableHostFixture,
+ } from "./pi-durable-host.ts";
++import {
++	ExactModelClaim,
++	type OwnedModelRequest,
++} from "./pi-durable-models.ts";
+ import { importRuntimeKeyringFromBytes } from "./runtime-crypto.ts";
+ 
+ declare module "cloudflare:test" {
+ 	interface ProvidedEnv {
+ 		PI_HOST_STORAGE: DurableObjectNamespace<PiDurableHostFixture>;
++		MODEL_CLAIM_RELAY: {
++			forward(
++				attempt: unknown,
++				owned: unknown,
++				capability: unknown,
++			): Promise<{ status: "admitted" | "denied" }>;
++		};
+ 	}
+ }
+ 
+@@ -47,6 +58,8 @@
+ 			calls: number;
+ 		}>;
+ 	}) => Promise<void>,
++	claim: (dispatch: ModelDispatch) => Promise<void> = (dispatch) =>
++		dispatch.claim(dispatch.attempt),
+ ) {
+ 	const stub = env.PI_HOST_STORAGE.getByName(
+ 		`model-claim-${name}-${encrypted}`,
+@@ -134,7 +147,7 @@
+ 								entered.resolve(dispatch);
+ 								try {
+ 									await awaitWithContext(productCheck.promise, context);
+-									await dispatch.claim(dispatch.attempt);
++									await claim(dispatch);
+ 									return await start(dispatch);
+ 								} finally {
+ 									settled.resolve();
+@@ -598,3 +611,107 @@
+ 			expect(f.calls()).toBe(0);
+ 		}));
+ }
++
++const ownedRpcRequest: OwnedModelRequest = {
++	userId: "synthetic-owner",
++	projectId: "synthetic-project",
++	workspaceSessionId: "synthetic-session",
++	requestDigest: "a".repeat(64),
++};
++const rpcAdmission = (dispatch: ModelDispatch) =>
++	env.MODEL_CLAIM_RELAY.forward(
++		dispatch.attempt,
++		ownedRpcRequest,
++		new ExactModelClaim(dispatch, ownedRpcRequest),
++	);
++const rpcClaim = async (dispatch: ModelDispatch) => {
++	const result = await rpcAdmission(dispatch);
++	if (result.status !== "admitted")
++		throw new Error("Private RPC admission denied");
++};
++
++for (const encrypted of [false, true]) {
++	it(`private Worker RPC carries the live exact claim and admits one start, encrypted=${encrypted}`, async () =>
++		boundary(
++			"rpc-admit",
++			encrypted,
++			async (f) => {
++				f.release();
++				await f.started;
++				expect(f.calls()).toBe(1);
++				expect(await f.snapshot()).toMatchObject({
++					claimed: 1,
++					receiptState: "consumed",
++					effectState: "admitted",
++				});
++				expect(await rpcAdmission(f.dispatch)).toEqual({ status: "denied" });
++				expect(f.calls()).toBe(1);
++			},
++			rpcClaim,
++		));
++
++	it(`real epoch-first Stop wins before a private RPC acknowledgment, encrypted=${encrypted}`, async () =>
++		boundary(
++			"rpc-stop-first",
++			encrypted,
++			async (f) => {
++				const hold = f.hold("flush");
++				f.release();
++				await hold.entered;
++				const stopped = f.host.stop("rpc-stop", "run");
++				expect(
++					f.storage.sql.exec("SELECT epoch FROM host_runs WHERE id='run'").one()
++						.epoch,
++				).toBe(2);
++				hold.release();
++				await stopped;
++				await f.settled;
++				expect(f.calls()).toBe(0);
++				expect(await f.snapshot()).toMatchObject({
++					epoch: 3,
++					receiptState: "consumed",
++					effectState: "admitted",
++				});
++			},
++			rpcClaim,
++		));
++
++	it(`Stop after a private RPC acknowledgment retains the admitted start, encrypted=${encrypted}`, async () =>
++		boundary(
++			"rpc-stop-after",
++			encrypted,
++			async (f) => {
++				f.release();
++				await f.started;
++				await f.host.stop("rpc-stop", "run");
++				expect(f.calls()).toBe(1);
++				expect(await f.snapshot()).toMatchObject({
++					epoch: 2,
++					claimed: 1,
++					receiptState: "consumed",
++					effectState: "admitted",
++				});
++			},
++			rpcClaim,
++		));
++
++	it(`private RPC rejects foreign owned context and a JSON-only association, encrypted=${encrypted}`, async () =>
++		boundary("rpc-foreign", encrypted, async (f) => {
++			const target = new ExactModelClaim(f.dispatch, ownedRpcRequest);
++			expect(
++				await env.MODEL_CLAIM_RELAY.forward(
++					f.dispatch.attempt,
++					{ ...ownedRpcRequest, workspaceSessionId: "foreign-session" },
++					target,
++				),
++			).toEqual({ status: "denied" });
++			expect(
++				await env.MODEL_CLAIM_RELAY.forward(
++					f.dispatch.attempt,
++					ownedRpcRequest,
++					{ attempt: f.dispatch.attempt },
++				),
++			).toEqual({ status: "denied" });
++			expect(await f.snapshot()).toMatchObject({ claimed: 0, calls: 0 });
++		}));
++}

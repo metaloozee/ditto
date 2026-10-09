@@ -1,0 +1,5342 @@
+[
+  {
+    "test": "configuration correction: final product hold rechecks local current, encrypted=false",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 8
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 8
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: final product hold rechecks local executor, encrypted=false",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: final product hold rechecks local generation, encrypted=false",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 9
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: close cancels final product callback, encrypted=false",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 15,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 14,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 4
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "owned configuration commits scoped duplicate/conflict outcomes and lost acknowledgments, encrypted=false",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 8
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 25,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "configuration crash at configuration-intent never reapplies an older choice, encrypted=false",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 40,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 4
+      },
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 15,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "configuration crash at configuration-applied never reapplies an older choice, encrypted=false",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 15,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 25,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "configuration crash at configuration-outcome never reapplies an older choice, encrypted=false",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 37,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 4
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 4
+      },
+      {
+        "selection": false,
+        "credentialMs": 15,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 4
+      },
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: final product hold rechecks local current, encrypted=true",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 4
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: final product hold rechecks local executor, encrypted=true",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: final product hold rechecks local generation, encrypted=true",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: close cancels final product callback, encrypted=true",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 4
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "owned configuration commits scoped duplicate/conflict outcomes and lost acknowledgments, encrypted=true",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 22,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 4
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 15,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "configuration crash at configuration-intent never reapplies an older choice, encrypted=true",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "configuration crash at configuration-applied never reapplies an older choice, encrypted=true",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 16,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 679,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 6
+      }
+    ]
+  },
+  {
+    "test": "configuration crash at configuration-outcome never reapplies an older choice, encrypted=true",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 4
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 24,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "owned configuration rejects wrong-user after actual D1 revocation with unchanged Pi state",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 4
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "owned configuration rejects wrong-project-owner after actual D1 revocation with unchanged Pi state",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      }
+    ]
+  },
+  {
+    "test": "owned configuration rejects wrong-project after actual D1 revocation with unchanged Pi state",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "owned configuration rejects archived after actual D1 revocation with unchanged Pi state",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 23,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 22,
+        "policyMs": 7
+      }
+    ]
+  },
+  {
+    "test": "owned configuration rejects deleting after actual D1 revocation with unchanged Pi state",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 22,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "owned configuration rejects owner-version after actual D1 revocation with unchanged Pi state",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "owned configuration rejects stale-identity after actual D1 revocation with unchanged Pi state",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 4
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 7
+      }
+    ]
+  },
+  {
+    "test": "owned configuration rejects wrong-role after actual D1 revocation with unchanged Pi state",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "owned configuration rejects retired after actual D1 revocation with unchanged Pi state",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "owned configuration rejects lifecycle after actual D1 revocation with unchanged Pi state",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "owned configuration rejects revoked after actual D1 revocation with unchanged Pi state",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 26,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 23,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 7,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 10,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 10,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "owned configuration rejects disconnected after actual D1 revocation with unchanged Pi state",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 24,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "owned configuration rejects connection-generation after actual D1 revocation with unchanged Pi state",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 4
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 10,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 9,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 8,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "owned configuration rejects capability-revision after actual D1 revocation with unchanged Pi state",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 7
+      }
+    ]
+  },
+  {
+    "test": "owned selection denies unavailable without a request",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 4
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 23,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "owned selection denies revoked without a request",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 4
+      }
+    ]
+  },
+  {
+    "test": "owned selection denies unsupported-model without a request",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 9
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "owned selection denies unsupported-thinking without a request",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "caller fields cannot authenticate or select another owned scope",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 25,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 0
+      }
+    ]
+  },
+  {
+    "test": "a held actual D1 configuration authority result cannot survive capability revocation",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 4
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "owned configuration is reflected in an actual mandatory credential request",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 4
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 25,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 23,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      }
+    ]
+  },
+  {
+    "test": "a valid first default grants no later request admission after capability revocation",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "first owned conversation validates defaults without prompt membership, valid",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 9
+      }
+    ]
+  },
+  {
+    "test": "first owned conversation validates defaults without prompt membership, unsupported-model",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      }
+    ]
+  },
+  {
+    "test": "first owned conversation validates defaults without prompt membership, unsupported-thinking",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      }
+    ]
+  },
+  {
+    "test": "first owned conversation validates defaults without prompt membership, unavailable",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 6
+      }
+    ]
+  },
+  {
+    "test": "first owned conversation validates defaults without prompt membership, revoked",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "first owned conversation validates defaults without prompt membership, disconnected",
+    "components": []
+  },
+  {
+    "test": "first owned conversation validates defaults without prompt membership, local-current",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 26,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 23,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "first owned conversation validates defaults without prompt membership, local-executor",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 23,
+        "policyMs": 6
+      }
+    ]
+  },
+  {
+    "test": "local credential disconnect denies configuration before its D1 projection catches up",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 24,
+        "policyMs": 8
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 10
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 9,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 8,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 9,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "configuration in flight keeps the prepared request and changes the separately prepared summary",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 32,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 26,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 23,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 29,
+        "policyMs": 11
+      },
+      {
+        "selection": false,
+        "credentialMs": 23,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "held host authority revocation rejects configuration without changing durable Pi state",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 4
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 24,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 26,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 24,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "same key with concurrent changed payload has one durable winner",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 24,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 11
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 22,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 9
+      },
+      {
+        "selection": false,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "two actual owned sessions retain independent durable Pi selections",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 22,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 23,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 4
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "owned configuration close cancels held authority and joins the owner lane",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 23,
+        "policyMs": 6
+      }
+    ]
+  },
+  {
+    "test": "queued follow-up preparation uses the owned change, not acceptance-time selection",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      }
+    ]
+  },
+  {
+    "test": "owned configuration leaves retries separately admitted with new preparation-time selection",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 23,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 13
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 6
+      }
+    ]
+  },
+  {
+    "test": "actual generation preparation survives close/reopen with an owned selection change",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 12
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 24,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 4
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 6
+      }
+    ]
+  },
+  {
+    "test": "actual custom_summary preparation survives close/reopen with an owned selection change",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "lost acknowledgment retry remains an owned receipt, not new entitlement or selection",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 8
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 23,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 26,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 26,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 11,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 10,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 16,
+        "policyMs": 12
+      },
+      {
+        "selection": false,
+        "credentialMs": 9,
+        "policyMs": 9
+      },
+      {
+        "selection": false,
+        "credentialMs": 12,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 9,
+        "policyMs": 8
+      },
+      {
+        "selection": false,
+        "credentialMs": 12,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 10,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 12,
+        "policyMs": 8
+      }
+    ]
+  },
+  {
+    "test": "encrypted configuration evidence rejects payload_digest tampering without changing Pi",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 30,
+        "policyMs": 10
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 27,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 24,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "encrypted configuration evidence rejects state tampering without changing Pi",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 4
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 37,
+        "policyMs": 9
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "encrypted configuration evidence rejects outcome tampering without changing Pi",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 23,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: authenticates pending state before new-intent",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 23,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 38,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 25,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 23,
+        "policyMs": 11
+      },
+      {
+        "selection": true,
+        "credentialMs": 23,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 36,
+        "policyMs": 8
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 28,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 23,
+        "policyMs": 6
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: authenticates pending payload_digest before new-intent",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 33,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 24,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 27,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 22,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 7
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: authenticates pending id before new-intent",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 23,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 29,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 25,
+        "policyMs": 8
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 8
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 45,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: authenticates pending outcome before new-intent",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 6
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: authenticates pending state before reopen",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 23,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 22,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: authenticates pending payload_digest before reopen",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: authenticates pending id before reopen",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 4
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: authenticates pending outcome before reopen",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 26,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 7
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: authenticates complete state before new-intent",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 8
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: authenticates complete payload_digest before new-intent",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 23,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 23,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: authenticates complete id before new-intent",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 23,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 7
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: authenticates complete outcome before new-intent",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 23,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 24,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 18,
+        "policyMs": 6
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: authenticates complete state before reopen",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 23,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 22,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 4
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: authenticates complete payload_digest before reopen",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 22,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 17,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 9
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 42,
+        "policyMs": 13
+      },
+      {
+        "selection": true,
+        "credentialMs": 24,
+        "policyMs": 10
+      },
+      {
+        "selection": true,
+        "credentialMs": 34,
+        "policyMs": 11
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: authenticates complete id before reopen",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 23,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 17,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 22,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 18,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 6
+      }
+    ]
+  },
+  {
+    "test": "configuration correction: authenticates complete outcome before reopen",
+    "components": [
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 7
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 20,
+        "policyMs": 5
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": false,
+        "credentialMs": 19,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 22,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 26,
+        "policyMs": 5
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 6
+      },
+      {
+        "selection": true,
+        "credentialMs": 21,
+        "policyMs": 5
+      }
+    ]
+  },
+  {
+    "test": "the mandatory adapter constructs an exact credential-owned request and bounded stream through private RPC",
+    "components": []
+  },
+  {
+    "test": "invalid or differently bound request dispatches zero calls: (request) => ({ ...request, method: \"GET\" })",
+    "components": []
+  },
+  {
+    "test": "invalid or differently bound request dispatches zero calls: (request) => ({\n    ...request,\n    url: `${request.url}?proxy=1`\n  })",
+    "components": []
+  },
+  {
+    "test": "invalid or differently bound request dispatches zero calls: (request) => ({\n    ...request,\n    headers: [...request.headers, [\"authorization\", \"caller\"]]\n  })",
+    "components": []
+  },
+  {
+    "test": "invalid or differently bound request dispatches zero calls: (request) => ({\n    ...request,\n    body: request.body.replace('\"version\":1', '\"version\":1,\"version\":1')\n  })",
+    "components": []
+  },
+  {
+    "test": "invalid or differently bound request dispatches zero calls: (request) => ({\n    ...request,\n    body: JSON.stringify({ ...JSON.parse(request.body), thinking: \"high\" })\n  })",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held authority prevents attachment: UPDATE projects SET userId='foreign'",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held authority prevents attachment: UPDATE workspace_sessions SET status='archived'",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held authority prevents attachment: UPDATE workspace_sessions SET runtimeOwnerVersion=2",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held authority prevents attachment: UPDATE workspace_sessions SET runtimeOwner='legacy'",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET kind='project_seed'",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET retiredAt=1",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET lifecycleGeneration=2",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET incarnationId='replacement'",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held authority prevents attachment: UPDATE sandbox_identities SET controllerNamespace='foreign'",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held authority prevents attachment: UPDATE codex_connections SET revoked=1,generation=2",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held authority prevents attachment: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held credentials prevents attachment: UPDATE projects SET userId='foreign'",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held credentials prevents attachment: UPDATE workspace_sessions SET status='archived'",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held credentials prevents attachment: UPDATE workspace_sessions SET runtimeOwnerVersion=2",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held credentials prevents attachment: UPDATE workspace_sessions SET runtimeOwner='legacy'",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET kind='project_seed'",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET retiredAt=1",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET lifecycleGeneration=2",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET incarnationId='replacement'",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held credentials prevents attachment: UPDATE sandbox_identities SET controllerNamespace='foreign'",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held credentials prevents attachment: UPDATE codex_connections SET revoked=1,generation=2",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held credentials prevents attachment: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held claim prevents attachment: UPDATE projects SET userId='foreign'",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held claim prevents attachment: UPDATE workspace_sessions SET status='archived'",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held claim prevents attachment: UPDATE workspace_sessions SET runtimeOwnerVersion=2",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held claim prevents attachment: UPDATE workspace_sessions SET runtimeOwner='legacy'",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET kind='project_seed'",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET retiredAt=1",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET lifecycleGeneration=2",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET incarnationId='replacement'",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held claim prevents attachment: UPDATE sandbox_identities SET controllerNamespace='foreign'",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held claim prevents attachment: UPDATE codex_connections SET revoked=1,generation=2",
+    "components": []
+  },
+  {
+    "test": "fresh D1 revocation after held claim prevents attachment: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))",
+    "components": []
+  },
+  {
+    "test": "Stop wins during credential preparation before the host acknowledgment, with zero fetches",
+    "components": []
+  },
+  {
+    "test": "a model capability revoked while the actual claim flush is held is freshly denied after that flush",
+    "components": []
+  },
+  {
+    "test": "three contract denials durably close the window, record review and halt the exact run without reentry",
+    "components": []
+  },
+  {
+    "test": "concurrent private requests cannot consume an exact window or live claim twice",
+    "components": []
+  },
+  {
+    "test": "identical local effect IDs remain independently scoped to owned workspace identities",
+    "components": []
+  },
+  {
+    "test": "window expiry during credential preparation denies before host claim and fetch",
+    "components": []
+  },
+  {
+    "test": "production credentials remain unavailable even with connected fixture records",
+    "components": []
+  },
+  {
+    "test": "a known faux-1 generation failure retries as a separate admitted attempt",
+    "components": []
+  },
+  {
+    "test": "a known faux-2 generation failure retries as a separate admitted attempt",
+    "components": []
+  },
+  {
+    "test": "Git metadata's reserved attempt is never refunded after a known failure",
+    "components": []
+  },
+  {
+    "test": "Stop after host acknowledgment retains the credential-bearing start and late product evidence",
+    "components": []
+  },
+  {
+    "test": "accepted custom summaries use the same private transport and exactly one fresh association",
+    "components": []
+  },
+  {
+    "test": "a known faux-1 custom summary failure spends its one attempt without an automatic retry",
+    "components": []
+  },
+  {
+    "test": "a known faux-2 custom summary failure spends its one attempt without an automatic retry",
+    "components": []
+  },
+  {
+    "test": "disconnect of the local credential record while preparation is held prevents fetch even before a D1 projection",
+    "components": []
+  },
+  {
+    "test": "real epoch-first Stop during the claim durability flush prevents fetch without refunding consumption",
+    "components": []
+  },
+  {
+    "test": "product revocation during the final host authority await is rechecked before fetch",
+    "components": []
+  },
+  {
+    "test": "actual transport after host reopen uses invocation generation 2 and D1 identity lifecycle 1",
+    "components": []
+  },
+  {
+    "test": "held actual D1 capability query expires command with valid host deadline and zero fetches",
+    "components": []
+  },
+  {
+    "test": "held actual D1 capability query expires window with valid host deadline and zero fetches",
+    "components": []
+  },
+  {
+    "test": "held actual D1 permit query expires command with valid host deadline and zero fetches",
+    "components": []
+  },
+  {
+    "test": "held actual D1 permit query expires window with valid host deadline and zero fetches",
+    "components": []
+  },
+  {
+    "test": "malformed upstream outcomes retain uncertain admission without redispatch",
+    "components": []
+  },
+  {
+    "test": "malformed upstream outcomes retain uncertain admission without redispatch",
+    "components": []
+  },
+  {
+    "test": "malformed upstream outcomes retain uncertain admission without redispatch",
+    "components": []
+  }
+]

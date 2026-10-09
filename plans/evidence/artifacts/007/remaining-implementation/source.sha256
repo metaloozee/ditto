@@ -1,0 +1,7 @@
+b2f69c3dbacbe555e41b793a561a7c2992f928e75376d1a65c2e2d3608fc2eaf  apps/runtime/src/pi-durable-host.ts
+e0916b0946c0d96ad5c771c4781d572e757b293728a8bb6de5a7447577a3f35a  apps/runtime/src/pi-durable-models.test.ts
+14102aa878ebb67e998f978a30d14fd2ac2167fad2a7c2d3e83d1407768462c1  apps/runtime/src/pi-durable-summary.test.ts
+b967c1a417241a4b2fe213652c2bd5c85af1cbeefaa32f6281a6236297419229  apps/runtime/src/pi-durable-model-preparation.gate.test.ts
+2ad4e068c0b117c92cd38e2dfc7a02aefe985231fca5dee3ab737a5d98f1906d  packages/runtime-contracts/src/index.ts
+446770ff211ba2c8db4b743c423839cc551f53a492bc94b492ad1a63d447143e  packages/runtime-contracts/src/model.ts
+81973ca5ff5fd71945abdf9b4b7d924d5e55ee199fa1a44e146855da7dd64428  packages/runtime-contracts/src/model.test.ts

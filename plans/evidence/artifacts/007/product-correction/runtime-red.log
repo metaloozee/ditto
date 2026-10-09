@@ -1,0 +1,73 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/apps/runtime[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for ../../plans/evidence/artifacts/007/product-advisor-review/post-product-check.config.ts...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+ [31m❯[39m ../../plans/evidence/artifacts/007/product-advisor-review/post-product-check.probe.test.ts [2m([22m[2m3 tests[22m[2m | [22m[31m3 failed[39m[2m)[22m[33m 655[2mms[22m[39m
+[31m   [31m×[31m advisor: known transport failure preserves the selected model identity[39m[32m 23[2mms[22m[39m
+[31m     → expected 'faux-1' to be 'faux-2' // Object.is equality[39m
+[31m   [31m×[31m advisor: revocation-during-product-check must deny, encrypted=false[39m[33m 317[2mms[22m[39m
+[31m     → promise resolved "undefined" instead of rejecting[39m
+[31m   [31m×[31m advisor: revocation-during-product-check must deny, encrypted=true[39m[32m 251[2mms[22m[39m
+[31m     → promise resolved "undefined" instead of rejecting[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 3 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m ../../plans/evidence/artifacts/007/product-advisor-review/post-product-check.probe.test.ts[2m > [22madvisor: known transport failure preserves the selected model identity
+[31m[1mAssertionError[22m: expected 'faux-1' to be 'faux-2' // Object.is equality[39m
+
+Expected: "faux-2"
+Received: "faux-1"
+
+[36m [2m❯[22m ../../plans/evidence/artifacts/007/product-advisor-review/post-product-check.probe.test.ts:[2m26:23[22m[39m
+    [90m 24| [39m const result = await adapter.models.completeSimple(model, { messages:…
+    [90m 25| [39m [34mexpect[39m(result[33m.[39mstopReason)[33m.[39m[34mtoBe[39m([32m"error"[39m)[33m;[39m
+    [90m 26| [39m [34mexpect[39m(result[33m.[39mmodel)[33m.[39m[34mtoBe[39m([32m"faux-2"[39m)[33m;[39m
+    [90m   | [39m                      [31m^[39m
+    [90m 27| [39m})[33m;[39m
+    [90m 28| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m ../../plans/evidence/artifacts/007/product-advisor-review/post-product-check.probe.test.ts[2m > [22madvisor: revocation-during-product-check must deny, encrypted=false
+[41m[1m FAIL [22m[49m ../../plans/evidence/artifacts/007/product-advisor-review/post-product-check.probe.test.ts[2m > [22madvisor: revocation-during-product-check must deny, encrypted=true
+[31m[1mAssertionError[22m: promise resolved "undefined" instead of rejecting[39m
+
+- Expected: 
+Error {
+  "message": "rejected promise",
+}
+
++ Received: 
+undefined
+
+[90m [2m❯[22m Assertion.propertyGetter home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/vitest___@vitest_expect___chai.js:[2m1482:27[22m[39m
+[90m [2m❯[22m Object.proxyGetter [as get] home/ayan/ditto-execution/plan-007-recovery/apps/runtime/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/vitest___@vitest_expect___chai.js:[2m1564:22[22m[39m
+[36m [2m❯[22m ../../plans/evidence/artifacts/007/product-advisor-review/post-product-check.probe.test.ts:[2m88:25[22m[39m
+    [90m 86| [39m      holdFlush [33m=[39m [35mfalse[39m[33m;[39m
+    [90m 87| [39m      flushRelease[33m.[39m[34mresolve[39m()[33m;[39m
+    [90m 88| [39m      [35mawait[39m [34mexpect[39m(claim)[33m.[39mrejects[33m.[39m[34mtoThrow[39m()[33m;[39m
+    [90m   | [39m                        [31m^[39m
+    [90m 89| [39m     }
+    [90m 90| [39m    } [35mfinally[39m {
+[90m [2m❯[22m maybeHandleRunRequest home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260702.1_@vitest+_25b5cb7e5ac90ba1c82363cf73fabbe1/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:[2m198:20[22m[39m
+[90m [2m❯[22m DurableObject.Wrapper.fetch home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260702.1_@vitest+_25b5cb7e5ac90ba1c82363cf73fabbe1/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:[2m563:22[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m3 failed[39m[22m[90m (3)[39m
+[2m   Start at [22m 21:35:08
+[2m   Duration [22m 3.27s[2m (transform 487ms, setup 0ms, collect 926ms, tests 655ms, environment 0ms, prepare 172ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-007-recovery/apps/runtime:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run --config ../../plans/evidence/artifacts/007/product-advisor-review/post-product-check.config.ts

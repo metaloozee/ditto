@@ -1,0 +1,3 @@
+payload-alone exit=0
+outcome-alone exit=0
+summary-alone exit=0

@@ -1,0 +1,7 @@
+0ad55b789d079aa1958a2480e1474403285ca730216dca4f5262f37c40206f90  apps/runtime/src/pi-durable-host.ts
+0c3be1d55af771e3644cc1c600288ec94444ccd992dc0c20ea36c2dd90c730b7  apps/runtime/src/pi-durable-cooperative-fixture.ts
+f2bb4b1d5c8ed22ec234ca15df8754b2ef240bf4dee3aa453c216fcc228d9c4c  apps/runtime/src/pi-durable-effects.test.ts
+a166c5e618021bc463de672581f342779156a269128285974541ac5aac4734af  apps/runtime/src/pi-durable-model-preparation.gate.test.ts
+51a15d8da1551f917e8a09b7d98da2b49d9bd430782a9e96085fff6465a5e239  apps/runtime/src/pi-durable-summary.ts
+ede9ab52cd1f826f12622bca869744a119157b67abd1489c94f01948a25db6aa  apps/runtime/src/pi-durable-summary.test.ts
+a185f222019cbf7e7225411c8c00751dfa2209e34b0ca0e228af31b571c238ed  docs/specs/pi-durable-session-runtime.md

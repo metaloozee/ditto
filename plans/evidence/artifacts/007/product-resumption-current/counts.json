@@ -1,0 +1,55 @@
+{
+  "contracts-verify-candidate.log": [
+    " Test Files  2 passed (2)",
+    "      Tests  16 passed (16)"
+  ],
+  "brain-verify-candidate.log": [
+    " Test Files  2 passed (2)",
+    "      Tests  16 passed (16)",
+    " Test Files  1 passed (1)",
+    "      Tests  3 passed | 3 skipped (6)",
+    " Test Files  3 passed (3)",
+    "      Tests  43 passed (43)"
+  ],
+  "credentials-verify-candidate.log": [
+    " Test Files  2 passed (2)",
+    "      Tests  78 passed (78)",
+    "\u2139 tests 3",
+    "\u2139 pass 3",
+    "\u2139 fail 0"
+  ],
+  "runtime-verify-candidate.log": [
+    "\u2139 tests 6",
+    "\u2139 pass 6",
+    "\u2139 fail 0",
+    " Test Files  12 passed (12)",
+    "      Tests  379 passed (379)"
+  ],
+  "verify-candidate.log": [
+    " Test Files  2 passed (2)",
+    "      Tests  78 passed (78)",
+    "\u2139 tests 3",
+    "\u2139 pass 3",
+    "\u2139 fail 0",
+    " Test Files  74 passed (74)",
+    "      Tests  848 passed (848)",
+    " Test Files  11 passed (11)",
+    "      Tests  79 passed (79)"
+  ],
+  "web-nearest-candidate.log": [
+    " Test Files  3 passed (3)",
+    "      Tests  45 passed (45)"
+  ],
+  "runtime-nearest-candidate.log": [
+    " Test Files  4 passed (4)",
+    "      Tests  224 passed (224)"
+  ],
+  "advisor-host-probes-candidate.log": [
+    " Test Files  1 passed (1)",
+    "      Tests  4 passed (4)"
+  ],
+  "advisor-config-probes-candidate.log": [
+    " Test Files  1 passed (1)",
+    "      Tests  4 passed | 114 skipped (118)"
+  ]
+}

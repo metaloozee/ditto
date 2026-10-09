@@ -1,0 +1,6 @@
+pnpm-lock.yaml: OK
+apps/web/package.json: OK
+apps/runtime/package.json: OK
+apps/credential-tests/package.json: OK
+packages/session-brain/package.json: OK
+packages/session-brain/package-lock.json: OK

@@ -1,0 +1,37 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for ../../plans/evidence/artifacts/007/configuration-advisor/acceptance-probes.config.ts...
+[90mstdout[2m | ../../plans/evidence/artifacts/007/configuration-advisor/acceptance-probes.worker.test.ts[2m > [22m[2madvisor acceptance: final product hold cannot reuse old local current, encrypted=false
+[22m[39m[advisor-configuration-final-local] {"change":"current","encrypted":false,"revoked":true,"status":"denied","piUnchanged":true}
+
+[90mstdout[2m | ../../plans/evidence/artifacts/007/configuration-advisor/acceptance-probes.worker.test.ts[2m > [22m[2madvisor acceptance: final product hold cannot reuse old local executor, encrypted=false
+[22m[39m[advisor-configuration-final-local] {"change":"executor","encrypted":false,"revoked":true,"status":"denied","piUnchanged":true}
+
+[90mstdout[2m | ../../plans/evidence/artifacts/007/configuration-advisor/acceptance-probes.worker.test.ts[2m > [22m[2madvisor acceptance: final product hold cannot reuse old local current, encrypted=true
+[22m[39m[advisor-configuration-final-local] {"change":"current","encrypted":true,"revoked":true,"status":"denied","piUnchanged":true}
+
+[90mstdout[2m | ../../plans/evidence/artifacts/007/configuration-advisor/acceptance-probes.worker.test.ts[2m > [22m[2madvisor acceptance: final product hold cannot reuse old local executor, encrypted=true
+[22m[39m[advisor-configuration-final-local] {"change":"executor","encrypted":true,"revoked":true,"status":"denied","piUnchanged":true}
+
+[90mstdout[2m | ../../plans/evidence/artifacts/007/configuration-advisor/acceptance-probes.worker.test.ts[2m > [22m[2madvisor acceptance: phase metadata cannot bypass pending accounting after encrypted reopen
+[22m[39m[advisor-configuration-phase] {"nextStatus":"reopen_rejected","piUnchanged":true}
+
+ [32m✓[39m ../../plans/evidence/artifacts/007/configuration-advisor/acceptance-probes.worker.test.ts [2m([22m[2m119 tests[22m[2m | [22m[33m114 skipped[39m[2m)[22m[33m 5331[2mms[22m[39m
+   [33m[2m✓[22m[39m advisor acceptance: final product hold cannot reuse old local current, encrypted=false [33m 1159[2mms[22m[39m
+   [33m[2m✓[22m[39m advisor acceptance: final product hold cannot reuse old local executor, encrypted=false [33m 1054[2mms[22m[39m
+   [33m[2m✓[22m[39m advisor acceptance: final product hold cannot reuse old local current, encrypted=true [33m 1052[2mms[22m[39m
+   [33m[2m✓[22m[39m advisor acceptance: final product hold cannot reuse old local executor, encrypted=true [33m 1088[2mms[22m[39m
+   [33m[2m✓[22m[39m advisor acceptance: phase metadata cannot bypass pending accounting after encrypted reopen [33m 976[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m5 passed[39m[22m[2m | [22m[33m114 skipped[39m[90m (119)[39m
+[2m   Start at [22m 09:56:28
+[2m   Duration [22m 7.33s[2m (transform 655ms, setup 0ms, collect 1.07s, tests 5.33s, environment 0ms, prepare 96ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

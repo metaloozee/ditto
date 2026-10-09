@@ -1,0 +1,115 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mconfiguration correction: final product hold rechecks local current, encrypted=false
+[22m[39m[007-correction-authority] {"change":"current","encrypted":false,"revoked":true,"status":"denied","piUnchanged":true,"snapshot":{"calls":0,"windows":[],"admissions":[],"claims":[],"runs":[{"state":"queued","epoch":1}]}}
+
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mconfiguration correction: final product hold rechecks local executor, encrypted=false
+[22m[39m[007-correction-authority] {"change":"executor","encrypted":false,"revoked":true,"status":"denied","piUnchanged":true,"snapshot":{"calls":0,"windows":[],"admissions":[],"claims":[],"runs":[{"state":"queued","epoch":1}]}}
+
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mconfiguration correction: final product hold rechecks local generation, encrypted=false
+[22m[39m[007-correction-authority] {"change":"generation","encrypted":false,"revoked":true,"status":"denied","piUnchanged":true,"snapshot":{"calls":0,"windows":[{"consumedRequests":1,"contractDenials":0,"closeReason":null,"openSlot":"open"}],"admissions":[{"effectId":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","purpose":"generation","state":"reserved","requestDigest":"48616251f62080b3cc13adc9f24f521ca2337810a7d8f68db7b6023778a5abf7"}],"claims":[{"claimed":0}],"runs":[{"state":"running","epoch":1}]}}
+
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mconfiguration correction: final product hold rechecks local current, encrypted=true
+[22m[39m[007-correction-authority] {"change":"current","encrypted":true,"revoked":true,"status":"denied","piUnchanged":true,"snapshot":{"calls":0,"windows":[],"admissions":[],"claims":[],"runs":[{"state":"queued","epoch":1}]}}
+
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mconfiguration correction: final product hold rechecks local executor, encrypted=true
+[22m[39m[007-correction-authority] {"change":"executor","encrypted":true,"revoked":true,"status":"denied","piUnchanged":true,"snapshot":{"calls":0,"windows":[],"admissions":[],"claims":[],"runs":[{"state":"queued","epoch":1}]}}
+
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mconfiguration correction: final product hold rechecks local generation, encrypted=true
+[22m[39m[007-correction-authority] {"change":"generation","encrypted":true,"revoked":true,"status":"denied","piUnchanged":true,"snapshot":{"calls":0,"windows":[{"consumedRequests":1,"contractDenials":0,"closeReason":null,"openSlot":"open"}],"admissions":[{"effectId":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","purpose":"generation","state":"reserved","requestDigest":"48616251f62080b3cc13adc9f24f521ca2337810a7d8f68db7b6023778a5abf7"}],"claims":[{"claimed":0}],"runs":[{"state":"running","epoch":1}]}}
+
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mconfiguration correction: authenticates pending state before new-intent
+[22m[39m[007-correction-integrity] {"phase":"pending","path":"new-intent","field":"state","piUnchanged":true,"evidenceUnchanged":true,"calls":0}
+
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mconfiguration correction: authenticates pending payload_digest before new-intent
+[22m[39m[007-correction-integrity] {"phase":"pending","path":"new-intent","field":"payload_digest","piUnchanged":true,"evidenceUnchanged":true,"calls":0}
+
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mconfiguration correction: authenticates pending id before new-intent
+[22m[39m[007-correction-integrity] {"phase":"pending","path":"new-intent","field":"id","piUnchanged":true,"evidenceUnchanged":true,"calls":0}
+
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mconfiguration correction: authenticates pending outcome before new-intent
+[22m[39m[007-correction-integrity] {"phase":"pending","path":"new-intent","field":"outcome","piUnchanged":true,"evidenceUnchanged":true,"calls":0}
+
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mconfiguration correction: authenticates pending state before reopen
+[22m[39m[007-correction-integrity] {"phase":"pending","path":"reopen","field":"state","piUnchanged":true,"evidenceUnchanged":true,"calls":0}
+
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mconfiguration correction: authenticates pending payload_digest before reopen
+[22m[39m[007-correction-integrity] {"phase":"pending","path":"reopen","field":"payload_digest","piUnchanged":true,"evidenceUnchanged":true,"calls":0}
+
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mconfiguration correction: authenticates pending id before reopen
+[22m[39m[007-correction-integrity] {"phase":"pending","path":"reopen","field":"id","piUnchanged":true,"evidenceUnchanged":true,"calls":0}
+
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mconfiguration correction: authenticates pending outcome before reopen
+[22m[39m[007-correction-integrity] {"phase":"pending","path":"reopen","field":"outcome","piUnchanged":true,"evidenceUnchanged":true,"calls":0}
+
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mconfiguration correction: authenticates complete state before new-intent
+[22m[39m[007-correction-integrity] {"phase":"complete","path":"new-intent","field":"state","piUnchanged":true,"evidenceUnchanged":true,"calls":0}
+
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mconfiguration correction: authenticates complete payload_digest before new-intent
+[22m[39m[007-correction-integrity] {"phase":"complete","path":"new-intent","field":"payload_digest","piUnchanged":true,"evidenceUnchanged":true,"calls":0}
+
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mconfiguration correction: authenticates complete id before new-intent
+[22m[39m[007-correction-integrity] {"phase":"complete","path":"new-intent","field":"id","piUnchanged":true,"evidenceUnchanged":true,"calls":0}
+
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mconfiguration correction: authenticates complete outcome before new-intent
+[22m[39m[007-correction-integrity] {"phase":"complete","path":"new-intent","field":"outcome","piUnchanged":true,"evidenceUnchanged":true,"calls":0}
+
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mconfiguration correction: authenticates complete state before reopen
+[22m[39m[007-correction-integrity] {"phase":"complete","path":"reopen","field":"state","piUnchanged":true,"evidenceUnchanged":true,"calls":0}
+
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mconfiguration correction: authenticates complete payload_digest before reopen
+[22m[39m[007-correction-integrity] {"phase":"complete","path":"reopen","field":"payload_digest","piUnchanged":true,"evidenceUnchanged":true,"calls":0}
+
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mconfiguration correction: authenticates complete id before reopen
+[22m[39m[007-correction-integrity] {"phase":"complete","path":"reopen","field":"id","piUnchanged":true,"evidenceUnchanged":true,"calls":0}
+
+[90mstdout[2m | src/codex-request-contract.worker.test.ts[2m > [22m[2mconfiguration correction: authenticates complete outcome before reopen
+[22m[39m[007-correction-integrity] {"phase":"complete","path":"reopen","field":"outcome","piUnchanged":true,"evidenceUnchanged":true,"calls":0}
+
+ [32m✓[39m src/codex-request-contract.worker.test.ts [2m([22m[2m140 tests[22m[2m | [22m[33m108 skipped[39m[2m)[22m[33m 40676[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: final product hold rechecks local current, encrypted=false [33m 1236[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: final product hold rechecks local executor, encrypted=false [33m 1182[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: final product hold rechecks local generation, encrypted=false [33m 1374[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: close cancels final product callback, encrypted=false [33m 1448[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: final product hold rechecks local current, encrypted=true [33m 1151[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: final product hold rechecks local executor, encrypted=true [33m 1143[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: final product hold rechecks local generation, encrypted=true [33m 1351[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: close cancels final product callback, encrypted=true [33m 1359[2mms[22m[39m
+   [33m[2m✓[22m[39m first owned conversation validates defaults without prompt membership, valid [33m 968[2mms[22m[39m
+   [33m[2m✓[22m[39m first owned conversation validates defaults without prompt membership, unsupported-model [33m 799[2mms[22m[39m
+   [33m[2m✓[22m[39m first owned conversation validates defaults without prompt membership, unsupported-thinking [33m 811[2mms[22m[39m
+   [33m[2m✓[22m[39m first owned conversation validates defaults without prompt membership, unavailable [33m 804[2mms[22m[39m
+   [33m[2m✓[22m[39m first owned conversation validates defaults without prompt membership, revoked [33m 795[2mms[22m[39m
+   [33m[2m✓[22m[39m first owned conversation validates defaults without prompt membership, disconnected [33m 836[2mms[22m[39m
+   [33m[2m✓[22m[39m first owned conversation validates defaults without prompt membership, local-current [33m 881[2mms[22m[39m
+   [33m[2m✓[22m[39m first owned conversation validates defaults without prompt membership, local-executor [33m 908[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: authenticates pending state before new-intent [33m 1244[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: authenticates pending payload_digest before new-intent [33m 1199[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: authenticates pending id before new-intent [33m 2491[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: authenticates pending outcome before new-intent [33m 1382[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: authenticates pending state before reopen [33m 1169[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: authenticates pending payload_digest before reopen [33m 1188[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: authenticates pending id before reopen [33m 1309[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: authenticates pending outcome before reopen [33m 1244[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: authenticates complete state before new-intent [33m 1530[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: authenticates complete payload_digest before new-intent [33m 1537[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: authenticates complete id before new-intent [33m 1646[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: authenticates complete outcome before new-intent [33m 1691[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: authenticates complete state before reopen [33m 1542[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: authenticates complete payload_digest before reopen [33m 1478[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: authenticates complete id before reopen [33m 1478[2mms[22m[39m
+   [33m[2m✓[22m[39m configuration correction: authenticates complete outcome before reopen [33m 1500[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m32 passed[39m[22m[2m | [22m[33m108 skipped[39m[90m (140)[39m
+[2m   Start at [22m 07:35:58
+[2m   Duration [22m 40.94s[2m (transform 345ms, setup 0ms, collect 598ms, tests 40.68s, environment 0ms, prepare 94ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

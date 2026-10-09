@@ -1,0 +1,32 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for ../../plans/evidence/artifacts/007/configuration-advisor/product-authority-review.config.ts...
+ [32m✓[39m ../../plans/evidence/artifacts/007/configuration-advisor/product-authority-review.worker.test.ts [2m([22m[2m129 tests[22m[2m | [22m[33m114 skipped[39m[2m)[22m[33m 17434[2mms[22m[39m
+   [33m[2m✓[22m[39m advisor configuration product denies session identity reference at actual Worker/D1 seam [33m 1184[2mms[22m[39m
+   [33m[2m✓[22m[39m advisor configuration product denies runtime owner at actual Worker/D1 seam [33m 1192[2mms[22m[39m
+   [33m[2m✓[22m[39m advisor configuration product denies failure reason at actual Worker/D1 seam [33m 1107[2mms[22m[39m
+   [33m[2m✓[22m[39m advisor configuration product denies identity user at actual Worker/D1 seam [33m 1203[2mms[22m[39m
+   [33m[2m✓[22m[39m advisor configuration product denies identity project at actual Worker/D1 seam [33m 1176[2mms[22m[39m
+   [33m[2m✓[22m[39m advisor configuration product denies identity session at actual Worker/D1 seam [33m 1181[2mms[22m[39m
+   [33m[2m✓[22m[39m advisor configuration product denies controller class at actual Worker/D1 seam [33m 1209[2mms[22m[39m
+   [33m[2m✓[22m[39m advisor configuration product denies controller namespace at actual Worker/D1 seam [33m 1157[2mms[22m[39m
+   [33m[2m✓[22m[39m advisor configuration product denies identity state at actual Worker/D1 seam [33m 1099[2mms[22m[39m
+   [33m[2m✓[22m[39m advisor configuration product denies retirement fence at actual Worker/D1 seam [33m 1032[2mms[22m[39m
+   [33m[2m✓[22m[39m advisor configuration product denies project deletion fence at actual Worker/D1 seam [33m 1257[2mms[22m[39m
+   [33m[2m✓[22m[39m advisor configuration product denies session deletion fence at actual Worker/D1 seam [33m 1067[2mms[22m[39m
+   [33m[2m✓[22m[39m advisor configuration read receipts do not require current entitlement [33m 1205[2mms[22m[39m
+   [33m[2m✓[22m[39m advisor configuration rejects forged and foreign request scopes over Worker RPC [33m 1122[2mms[22m[39m
+   [33m[2m✓[22m[39m advisor configuration public fetch is not an authentication path [33m 1241[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m15 passed[39m[22m[2m | [22m[33m114 skipped[39m[90m (129)[39m
+[2m   Start at [22m 07:17:09
+[2m   Duration [22m 18.92s[2m (transform 272ms, setup 0ms, collect 478ms, tests 17.43s, environment 0ms, prepare 99ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

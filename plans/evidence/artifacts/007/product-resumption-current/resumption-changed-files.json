@@ -1,0 +1,19 @@
+[
+  "apps/credential-tests/src/codex-request-contract.worker.test.ts",
+  "apps/credential-tests/src/entry.ts",
+  "apps/credential-tests/src/model-entry.ts",
+  "apps/credential-tests/vitest.config.ts",
+  "apps/runtime/src/pi-durable-host.ts",
+  "apps/runtime/src/pi-durable-models.ts",
+  "apps/web/migrations/0022_synthetic_model_transport.sql",
+  "apps/web/src/db/schema.ts",
+  "apps/web/src/lib/codex-credential-do.ts",
+  "apps/web/src/lib/codex-request-contract.test.ts",
+  "apps/web/src/lib/codex-request-contract.ts",
+  "apps/web/src/lib/model-product-authority.ts",
+  "apps/web/src/lib/model-product-transport.ts",
+  "apps/web/src/lib/session-runtime-product.ts",
+  "docs/specs/pi-durable-session-runtime.md",
+  "package.json",
+  "packages/runtime-contracts/src/model.ts"
+]

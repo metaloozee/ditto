@@ -1,0 +1,29 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests[39m
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+[vitest-pool-workers] Failed to import "/home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/@cloudflare+containers@0.3.7/node_modules/@cloudflare/containers/dist/index.js" from "/home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/@cloudflare+sandbox@0.12.3/node_modules/@cloudflare/sandbox/dist/sandbox-DI6suZAc.js". To resolve this, try bundling the relevant dependency with Vite. For more details, refer to https://developers.cloudflare.com/workers/testing/vitest-integration/known-issues/#module-resolution
+workerd/server/fallback-service.c++:223: error: Fallback service failed to fetch module; payload = ; spec = /?specifier=%2Fhome%2Fayan%2Fditto-execution%2Fplan-007-recovery%2Fnode_modules%2F.pnpm%2F%40cloudflare%2Bcontainers%400.3.7%2Fnode_modules%2F%40cloudflare%2Fcontainers%2Fdist%2Findex.js&referrer=%2Fhome%2Fayan%2Fditto-execution%2Fplan-007-recovery%2Fnode_modules%2F.pnpm%2F%40cloudflare%2Bsandbox%400.12.3%2Fnode_modules%2F%40cloudflare%2Fsandbox%2Fdist%2Fsandbox-DI6suZAc.js&rawSpecifier=%40cloudflare%2Fcontainers
+
+[31m⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Suites 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/codex-request-contract.worker.test.ts[2m [ src/codex-request-contract.worker.test.ts ][22m
+[31m[1mError[22m: No such module "home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/@cloudflare+sandbox@0.12.3/node_modules/@cloudflare/sandbox/dist/@cloudflare/containers".
+  imported from "home/ayan/ditto-execution/plan-007-recovery/node_modules/.pnpm/@cloudflare+sandbox@0.12.3/node_modules/@cloudflare/sandbox/dist/sandbox-DI6suZAc.js"[39m
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [2mno tests[22m
+[2m   Start at [22m 20:00:32
+[2m   Duration [22m 1.92s[2m (transform 272ms, setup 0ms, collect 0ms, tests 0ms, environment 0ms, prepare 150ms)[22m
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-007-recovery/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/codex-request-contract.worker.test.ts -t 'mandatory adapter constructs'
