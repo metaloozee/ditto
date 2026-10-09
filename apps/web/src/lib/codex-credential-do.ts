@@ -1,10 +1,26 @@
 import { DurableObject } from "cloudflare:workers";
 import {
+	type ModelTransportDescriptorV1,
+	parseModelTransportDescriptorV1,
+	SYNTHETIC_MODEL_LIMITS,
+	type SyntheticModelOutcomeV1,
+} from "../../../../packages/runtime-contracts/src/model.js";
+import {
 	type CodexTokens,
 	type CredentialKeyring,
 	openCredentials,
 	sealCredentials,
 } from "./codex-credential-crypto";
+import {
+	awaitSynthetic,
+	readSyntheticStream,
+	reconstructSyntheticRequest,
+	syntheticRequestDigest,
+} from "./codex-request-contract";
+import {
+	type ModelClaimRpc,
+	ModelProductAuthority,
+} from "./model-product-authority";
 
 export type ConnectionStatus =
 	| "disconnected"
@@ -175,6 +191,173 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 		);
 		await this.ctx.storage.sync();
 	}
+	protected requestAvailable(): boolean {
+		return false;
+	}
+	protected async modelPhase(
+		_phase: "authority" | "credentials" | "claim",
+	): Promise<void> {}
+
+	async requestModel(
+		input: unknown,
+		capability: ModelClaimRpc,
+	): Promise<SyntheticModelOutcomeV1> {
+		if (!this.requestAvailable()) return { version: 1, status: "unavailable" };
+		const policy = new ModelProductAuthority(this.env.DB);
+		const overall = AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs);
+		let descriptor: ModelTransportDescriptorV1;
+		try {
+			descriptor = parseModelTransportDescriptorV1(
+				await awaitSynthetic(capability.describe(), overall),
+			);
+			if (!this.#owned(descriptor.subject.userId))
+				return { version: 1, status: "denied" };
+		} catch {
+			return { version: 1, status: "denied" };
+		}
+		let reconstructed: ReturnType<typeof reconstructSyntheticRequest>;
+		try {
+			reconstructed = reconstructSyntheticRequest(input);
+			if (
+				(await awaitSynthetic(
+					syntheticRequestDigest(reconstructed.request),
+					overall,
+				)) !== descriptor.requestDigest
+			)
+				throw new Error("request_association");
+		} catch {
+			try {
+				if (await awaitSynthetic(policy.denial(descriptor), overall))
+					await awaitSynthetic(capability.halt(descriptor.attempt), overall);
+			} catch {
+				/* A failed denial acknowledgment never admits model work. */
+			}
+			return { version: 1, status: "denied" };
+		}
+		const { request, body } = reconstructed,
+			owner = descriptor.subject.userId;
+		let reserved = false,
+			dispatched = false;
+		const controller = new AbortController();
+		const duration = Math.min(
+			SYNTHETIC_MODEL_LIMITS.deadlineMs,
+			descriptor.attempt.deadlineAt - Date.now(),
+		);
+		if (duration <= 0) return { version: 1, status: "denied" };
+		const timeout = setTimeout(() => controller.abort(), duration);
+		const signal = AbortSignal.any([overall, controller.signal]);
+		const wait = <T>(pending: Promise<T>) => awaitSynthetic(pending, signal);
+		let fetching: Promise<Response> | undefined;
+		try {
+			await wait(this.modelPhase("authority"));
+			controller.signal.throwIfAborted();
+			if (!(await wait(policy.current(descriptor, body))))
+				return { version: 1, status: "denied" };
+			const fresh = await wait(this.ensureFresh(owner));
+			if (
+				fresh.status !== "connected" ||
+				fresh.generation !== descriptor.subject.connectionGeneration
+			)
+				return { version: 1, status: "denied" };
+			const state = this.#read();
+			if (
+				!state ||
+				!state.sealed ||
+				state.status !== "connected" ||
+				state.generation !== descriptor.subject.connectionGeneration
+			)
+				return { version: 1, status: "denied" };
+			if (!(await wait(policy.reserve(descriptor, body))))
+				return { version: 1, status: "denied" };
+			reserved = true;
+			if (!this.#same(state)) throw new Error("connection_changed");
+			const tokens = await wait(
+				openCredentials(
+					state.sealed,
+					owner,
+					state.generation,
+					this.#keyring(),
+					state.version,
+				),
+			);
+			if (!this.#same(state) || tokens.expiresAt <= Date.now() + 60000)
+				throw new Error("connection_changed");
+			await wait(this.modelPhase("credentials"));
+			if (!(await wait(policy.permit(descriptor, body))) || !this.#same(state))
+				throw new Error("authority_changed");
+			await wait(this.modelPhase("claim"));
+			signal.throwIfAborted();
+			if (!(await wait(policy.permit(descriptor, body))) || !this.#same(state))
+				throw new Error("authority_changed");
+			const admitted = await wait(
+				capability.claim(descriptor.attempt, {
+					userId: descriptor.subject.userId,
+					projectId: descriptor.subject.projectId,
+					workspaceSessionId: descriptor.subject.workspaceSessionId,
+					requestDigest: descriptor.requestDigest,
+				}),
+			);
+			signal.throwIfAborted();
+			if (admitted.status !== "admitted" || !this.#same(state))
+				throw new Error("claim_denied");
+			// The host rereads its authority after the bound product check. Recheck
+			// product policy here so that host-authority I/O cannot extend a product permit.
+			if (!(await wait(policy.permit(descriptor, body))) || !this.#same(state))
+				throw new Error("authority_changed");
+			signal.throwIfAborted();
+			dispatched = true;
+			fetching = fetch(request.url, {
+				method: "POST",
+				redirect: "manual",
+				signal,
+				headers: {
+					"content-type": "application/json",
+					accept: "application/x-ndjson",
+					authorization: `Bearer ${tokens.access}`,
+				},
+				body: request.body,
+			});
+			void fetching.catch(() => {});
+			await wait(policy.record(descriptor, "admitted"));
+			const response = await wait(fetching);
+			if (
+				[400, 401, 403, 429, 503].includes(response.status) &&
+				!response.headers.has("location")
+			) {
+				if (response.body) await wait(response.body.cancel());
+				await wait(policy.record(descriptor, "failed_known"));
+				return { version: 1, status: "failed_known" };
+			}
+			const frames = await wait(
+				readSyntheticStream(response, signal, [
+					tokens.access,
+					tokens.refresh,
+					tokens.identity ?? "",
+				]),
+			);
+			await wait(policy.record(descriptor, "complete"));
+			return { version: 1, status: "complete", frames };
+		} catch {
+			const status = dispatched ? "outcome_unknown" : "denied";
+			if (reserved)
+				await awaitSynthetic(
+					policy.record(
+						descriptor,
+						dispatched ? "outcome_unknown" : "failed_known",
+					),
+					AbortSignal.timeout(1000),
+				).catch(() => {});
+			return { version: 1, status };
+		} finally {
+			clearTimeout(timeout);
+			controller.abort();
+			if (fetching)
+				await awaitSynthetic(fetching, AbortSignal.timeout(1000)).catch(
+					() => {},
+				);
+		}
+	}
+
 	protected renewalAvailable(): boolean {
 		return false;
 	}

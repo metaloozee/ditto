@@ -26,6 +26,45 @@ export class FixtureCredential extends CodexCredential {
 	waitForRotation() {
 		return this.rotation;
 	}
+	private modelWait:
+		| {
+				phase: string;
+				entered: Promise<void>;
+				mark(): void;
+				released: Promise<void>;
+				release(): void;
+		  }
+		| undefined;
+	holdModel(phase: "authority" | "credentials" | "claim") {
+		let mark!: () => void, release!: () => void;
+		this.modelWait = {
+			phase,
+			entered: new Promise<void>((r) => {
+				mark = r;
+			}),
+			mark: () => mark(),
+			released: new Promise<void>((r) => {
+				release = r;
+			}),
+			release: () => release(),
+		};
+	}
+	waitModel() {
+		return this.modelWait?.entered;
+	}
+	releaseModel() {
+		this.modelWait?.release();
+	}
+	protected requestAvailable() {
+		return true;
+	}
+	protected async modelPhase(phase: "authority" | "credentials" | "claim") {
+		const wait = this.modelWait;
+		if (wait?.phase !== phase) return;
+		wait.mark();
+		await wait.released;
+		this.modelWait = undefined;
+	}
 	protected fixtureAvailable() {
 		return true;
 	}

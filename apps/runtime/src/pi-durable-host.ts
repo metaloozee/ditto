@@ -3,9 +3,11 @@ import type { Context } from "@earendil-works/chord";
 import {
 	awaitWithContext,
 	BACKGROUND_CONTEXT,
+	withAbortSignal,
 } from "@earendil-works/chord/context";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
+	type AgentChange,
 	type CommitPublication,
 	Harness,
 	type HarnessOptions,
@@ -17,6 +19,31 @@ import {
 	type ToolExecutionResult,
 } from "@earendil-works/pi-durable";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
+import {
+	type ConfigurationAckV1,
+	type ConfigurationAuthorityV1,
+	type ConfigurationIntentV1,
+	type ConfigurationReadV1,
+	type ConfigurationSelectionV1,
+	type ConfigurationSnapshotV1,
+	configurationIdentity,
+	parseConfigurationAckV1,
+	parseConfigurationAuthorityV1,
+	parseConfigurationIntentV1,
+	parseConfigurationReadV1,
+	parseConfigurationSelectionV1,
+} from "../../../packages/runtime-contracts/src/configuration.js";
+import {
+	decodeContractInput,
+	literalField,
+	strictRecord,
+} from "../../../packages/runtime-contracts/src/json.js";
+import type { ModelSubjectV1 } from "../../../packages/runtime-contracts/src/model.js";
+import {
+	type ModelAttemptV1,
+	parseModelAttemptV1,
+	SYNTHETIC_MODEL_LIMITS,
+} from "../../../packages/runtime-contracts/src/model.js";
 import {
 	digestText,
 	isRuntimeCiphertext,
@@ -37,10 +64,19 @@ import {
 	TASK_COMPAT,
 	TOOL_COMPAT,
 } from "./pi-durable-storage.ts";
+import {
+	type PreparedSummary,
+	preparedSummary,
+	SUMMARY_POLICY,
+	type SummarySelection,
+	summaryText,
+	summaryTranscript,
+	validateSummaryResponse,
+} from "./pi-durable-summary.ts";
 
 const WORK_MS = 1000;
 const DRAIN_MS = 1000;
-const VERSION = "pi-1.0.1/ditto-host-1";
+const VERSION = "pi-1.0.1/ditto-host-3";
 
 type Invocation = {
 	id: string;
@@ -62,18 +98,27 @@ type Effect = {
 	operation_deadline?: number | null;
 	state: "admitted" | "result-recorded" | "pi-committed";
 	correlation?: string | null;
+	model_dispatch?: string | null;
 };
 export type HostFault =
 	| "read"
 	| "intent"
 	| "admission"
+	| "preparation"
+	| "preparation-write"
+	| "preparation-flush"
 	| "result"
+	| "summary-result-write"
+	| "summary-result-flush"
 	| "fence"
 	| "account"
 	| "before-submit"
 	| "after-submit"
 	| "after-close"
-	| "alarm";
+	| "alarm"
+	| "configuration-intent"
+	| "configuration-applied"
+	| "configuration-outcome";
 export type LocalAuthority = {
 	current: boolean;
 	generation: number;
@@ -148,7 +193,7 @@ export type ToolRequest = {
 	replay: "never" | "new-observation" | "expected-content";
 };
 export type EffectCorrelation = {
-	version: 1;
+	version: 1 | 2;
 	command: string;
 	run: string;
 	user: string;
@@ -239,7 +284,19 @@ function preparedTask(task: PublicTask) {
 	return canonical(tuple);
 }
 
+export type ModelDispatch = {
+	readonly attempt: Readonly<ModelAttemptV1>;
+	claim(attempt: unknown): Promise<void>;
+	bindProductAuthority(check: () => Promise<void>): void;
+	halt(): Promise<void>;
+};
+
 export type HostGuard = {
+	summarize(
+		api: HookApi,
+		selection: SummarySelection,
+		context: Context,
+	): Promise<{ summary: string } | { decline: true }>;
 	bindGeneration(api: HookApi, digest: string, context: Context): Promise<void>;
 	bindCompaction(
 		api: HookApi,
@@ -249,7 +306,7 @@ export type HostGuard = {
 	model(
 		request: ModelRequest,
 		context: Context,
-		start: () => Promise<AssistantMessage>,
+		start: (dispatch: ModelDispatch) => Promise<AssistantMessage>,
 	): Promise<{ effect: string; response: Promise<AssistantMessage> }>;
 	tool(
 		request: ToolRequest,
@@ -278,11 +335,21 @@ export type HostFixtureDependencies = {
 		setAlarm(deadline: number): Promise<void>;
 	};
 	retained?: RetainedStorageBinding;
+	configuration?: {
+		subject: ModelSubjectV1;
+		defaultSelection: ConfigurationSelectionV1;
+		authorize(
+			query: ConfigurationReadV1,
+			selection?: ConfigurationSelectionV1,
+		): Promise<ConfigurationAuthorityV1>;
+	};
 };
 
 /** Disposable L1 host candidate. Plaintext and local authority are not product contracts. */
 export class PiDurableHost {
 	private harness!: Harness;
+	private options!: HarnessOptions;
+	private customBindings = new WeakMap<AbortSignal, PreparedSummary>();
 	private piRecords!: Storage;
 	private denied = false;
 	private sealed = false;
@@ -291,10 +358,16 @@ export class PiDurableHost {
 	private active: Invocation | undefined;
 	private failure: unknown;
 	private providerQueue = Promise.resolve();
+	private ownerQueue: Promise<void> = Promise.resolve();
+	private configurationHashes = new Map<
+		string,
+		{ key: string; payload: string }
+	>();
+	private ownerAbort = new AbortController();
 	private providerCallbacks = 0;
 	private bindings = new WeakMap<
 		AbortSignal,
-		{ task: number; digest?: string }
+		{ task: number; digest?: string; stock?: true }
 	>();
 	private storageBarrier = false;
 	private privatePlain = new Map<string, string>();
@@ -328,6 +401,9 @@ export class PiDurableHost {
 				"CREATE TABLE IF NOT EXISTS host_effects (id TEXT PRIMARY KEY, kind TEXT, invocation TEXT, epoch INTEGER, attempt INTEGER, executor INTEGER, deadline INTEGER, state TEXT, evidence TEXT)",
 			);
 			storage.sql.exec(
+				"CREATE TABLE IF NOT EXISTS host_model_dispatch (effect TEXT PRIMARY KEY, request_digest TEXT NOT NULL, claimed INTEGER NOT NULL DEFAULT 0 CHECK(claimed IN (0,1)))",
+			);
+			storage.sql.exec(
 				"CREATE TABLE IF NOT EXISTS host_inbox (id TEXT PRIMARY KEY, content TEXT, state TEXT, submission TEXT)",
 			);
 			storage.sql.exec(
@@ -354,6 +430,9 @@ export class PiDurableHost {
 			storage.sql.exec(
 				"CREATE TABLE IF NOT EXISTS host_safety (id INTEGER PRIMARY KEY, reason TEXT)",
 			);
+			storage.sql.exec(
+				"CREATE TABLE IF NOT EXISTS host_configuration_intents (id TEXT PRIMARY KEY, payload_digest TEXT NOT NULL, outcome TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('pending','complete')))",
+			);
 			const columns = storage.sql
 				.exec<{ name: string }>("PRAGMA table_info(host_effects)")
 				.toArray();
@@ -368,6 +447,10 @@ export class PiDurableHost {
 			if (!columns.some((column) => column.name === "operation_deadline"))
 				storage.sql.exec(
 					"ALTER TABLE host_effects ADD COLUMN operation_deadline INTEGER",
+				);
+			if (!columns.some((column) => column.name === "model_dispatch"))
+				storage.sql.exec(
+					"ALTER TABLE host_effects ADD COLUMN model_dispatch TEXT",
 				);
 		});
 		await host.durable();
@@ -415,26 +498,36 @@ export class PiDurableHost {
 			await piStorage.close(BACKGROUND_CONTEXT);
 			throw error;
 		}
+		host.options = dependencies.options({
+			summarize: (api, selection, context) =>
+				host.summarize(api, selection, context),
+			bindGeneration: (api, digest, context) =>
+				host.bindTask("pi.generation", api, {}, digest, context),
+			bindCompaction: (api, selection, context) =>
+				host.bindTask(
+					"pi.compaction",
+					api,
+					selection,
+					undefined,
+					context,
+					true,
+				),
+			model: (request, context, start) => host.model(request, context, start),
+			tool: (request, context, start) => host.tool(request, context, start),
+			admit: (kind, operation, context) => host.admit(kind, operation, context),
+			result: (effect, context, evidence) =>
+				host.result(effect, context, evidence),
+		});
 		host.harness = await Harness.open(
 			host.piRecords,
-			dependencies.options({
-				bindGeneration: (api, digest, context) =>
-					host.bindTask("pi.generation", api, {}, digest, context),
-				bindCompaction: (api, selection, context) =>
-					host.bindTask("pi.compaction", api, selection, undefined, context),
-				model: (request, context, start) => host.model(request, context, start),
-				tool: (request, context, start) => host.tool(request, context, start),
-				admit: (kind, operation, context) =>
-					host.admit(kind, operation, context),
-				result: (effect, context, evidence) =>
-					host.result(effect, context, evidence),
-			}),
+			host.options,
 			BACKGROUND_CONTEXT,
 		);
 		host.harness.subscribeCommits((publication) =>
 			host.captureRetry(publication),
 		);
 		try {
+			await host.initializeOwnedConfiguration();
 			await host.reconcileSafety();
 			await host.repairWakeup();
 		} catch (error) {
@@ -503,10 +596,12 @@ export class PiDurableHost {
 	}
 	private assertNoPlaintextPrivate() {
 		const statements = [
+			"SELECT outcome AS value FROM host_configuration_intents",
 			"SELECT content AS value FROM host_inbox",
 			"SELECT correlation AS value FROM host_effects WHERE correlation IS NOT NULL",
 			"SELECT evidence AS value FROM host_effects WHERE evidence IS NOT NULL",
 			"SELECT retry_evidence AS value FROM host_effects WHERE retry_evidence IS NOT NULL",
+			"SELECT model_dispatch AS value FROM host_effects WHERE model_dispatch IS NOT NULL",
 			"SELECT selection AS value FROM host_tasks WHERE selection IS NOT NULL",
 			"SELECT prepared AS value FROM host_tasks WHERE prepared IS NOT NULL",
 		];
@@ -525,6 +620,11 @@ export class PiDurableHost {
 		const fields = [
 			...this.storage.sql
 				.exec<{ record_id: string; value: string }>(
+					"SELECT 'configuration:' || id AS record_id, outcome AS value FROM host_configuration_intents",
+				)
+				.toArray(),
+			...this.storage.sql
+				.exec<{ record_id: string; value: string }>(
 					"SELECT 'inbox:' || id || ':content' AS record_id, content AS value FROM host_inbox",
 				)
 				.toArray(),
@@ -541,6 +641,11 @@ export class PiDurableHost {
 			...this.storage.sql
 				.exec<{ record_id: string; value: string }>(
 					"SELECT 'effect:' || id || ':retry_evidence' AS record_id, retry_evidence AS value FROM host_effects WHERE retry_evidence IS NOT NULL",
+				)
+				.toArray(),
+			...this.storage.sql
+				.exec<{ record_id: string; value: string }>(
+					"SELECT 'effect:' || id || ':model_dispatch' AS record_id, model_dispatch AS value FROM host_effects WHERE model_dispatch IS NOT NULL",
 				)
 				.toArray(),
 			...this.storage.sql
@@ -676,9 +781,10 @@ export class PiDurableHost {
 				.toArray()[0];
 			return row?.content ?? null;
 		}
-		const effect = /^effect:(.+):(correlation|evidence|retry_evidence)$/.exec(
-			recordId,
-		);
+		const effect =
+			/^effect:(.+):(correlation|evidence|retry_evidence|model_dispatch)$/.exec(
+				recordId,
+			);
 		if (effect) {
 			const column = effect[2];
 			const row = this.storage.sql
@@ -700,6 +806,15 @@ export class PiDurableHost {
 				.toArray()[0];
 			return row?.value ?? null;
 		}
+		if (recordId.startsWith("configuration:"))
+			return (
+				this.storage.sql
+					.exec<{ value: string }>(
+						"SELECT outcome AS value FROM host_configuration_intents WHERE id=?",
+						recordId.slice("configuration:".length),
+					)
+					.toArray()[0]?.value ?? null
+			);
 		return null;
 	}
 	private assertCachedEnvelope(recordId: string, stored: string | null) {
@@ -772,13 +887,13 @@ export class PiDurableHost {
 				const runs = this.dependencies.retained
 					? this.storage.sql
 							.exec<{ run: string }>(
-								"SELECT run FROM host_effect_route WHERE id IN (SELECT id FROM host_effects WHERE state = 'admitted' AND correlation IS NOT NULL)",
+								"SELECT run FROM host_effect_route WHERE id IN (SELECT id FROM host_effects WHERE state IN ('admitted','result-recorded') AND correlation IS NOT NULL)",
 							)
 							.toArray()
 							.map((row) => row.run)
 					: this.storage.sql
 							.exec<{ correlation: string }>(
-								"SELECT correlation FROM host_effects WHERE state = 'admitted' AND correlation IS NOT NULL",
+								"SELECT correlation FROM host_effects WHERE state IN ('admitted','result-recorded') AND correlation IS NOT NULL",
 							)
 							.toArray()
 							.map((row) => this.correlation(row.correlation).run);
@@ -807,8 +922,12 @@ export class PiDurableHost {
 			throw error;
 		}
 	}
-	private async durable(context: Context = BACKGROUND_CONTEXT) {
+	private async durable(
+		context: Context = BACKGROUND_CONTEXT,
+		point?: HostFault,
+	) {
 		try {
+			if (point) this.dependencies.fault?.(point);
 			context.abortSignal?.throwIfAborted();
 			await this.privateQueue;
 			await awaitWithContext(this.storage.sync(), context);
@@ -844,6 +963,7 @@ export class PiDurableHost {
 	private async check(
 		authority: LocalAuthority,
 		context: Context = BACKGROUND_CONTEXT,
+		reuseSummary = false,
 	) {
 		context.abortSignal?.throwIfAborted();
 		if (this.denied || this.sealed || !authority.current)
@@ -898,7 +1018,11 @@ export class PiDurableHost {
 			}
 		}
 		this.assertLive();
-		if (this.unresolved().length) throw new EffectDenied("reservation");
+		if (
+			this.unresolved().length &&
+			!(reuseSummary && (await this.onlyReusableSummary(context)))
+		)
+			throw new EffectDenied("reservation");
 		if (
 			this.active &&
 			(authority.generation !== this.active.generation ||
@@ -907,6 +1031,41 @@ export class PiDurableHost {
 			throw new Error("Invocation authority expired");
 	}
 
+	private async onlyReusableSummary(context: Context): Promise<boolean> {
+		const effects = this.unresolved();
+		if (effects.length !== 1) return false;
+		const effect = effects[0]!;
+		if (effect.state !== "result-recorded" || !effect.correlation) return false;
+		const correlation = this.correlation(
+			this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
+		);
+		if (correlation.version !== 2) return false;
+		const task = await this.harness.getTask(
+			correlation.task as TaskId,
+			context,
+		);
+		if (!task || !this.customTaskMatches(task, correlation, true)) return false;
+		const row = this.storage.sql
+			.exec<{ evidence: string }>(
+				"SELECT evidence FROM host_effects WHERE id = ?",
+				effect.id,
+			)
+			.one();
+		try {
+			const evidence: unknown = JSON.parse(
+				this.opened(`effect:${effect.id}:evidence`, row.evidence)!,
+			);
+			validateSummaryResponse(
+				evidence,
+				preparedSummary(JSON.parse(correlation.prepared)),
+			);
+			summaryText(evidence);
+		} catch {
+			return false;
+		}
+		this.assertSeals();
+		return this.run(correlation.run).epoch === effect.epoch;
+	}
 	private command(id: string) {
 		return this.read(() =>
 			this.storage.sql
@@ -1007,8 +1166,15 @@ export class PiDurableHost {
 	}
 	private correlation(text: string): EffectCorrelation {
 		const value = record(JSON.parse(text));
-		if (value.version !== 1)
+		if (value.version !== 1 && value.version !== 2)
 			throw new Error("Incompatible correlation version");
+		if (
+			value.version === 2 &&
+			(!String(value.operation).startsWith("ditto-summary-1/") ||
+				value.replay !== "never" ||
+				value.piAttempt !== 1)
+		)
+			throw new Error("Invalid custom summary correlation");
 		for (const key of [
 			"command",
 			"run",
@@ -1121,6 +1287,7 @@ export class PiDurableHost {
 		selection: unknown,
 		digest: string | undefined,
 		context: Context,
+		stock = false,
 	) {
 		try {
 			context.abortSignal?.throwIfAborted();
@@ -1239,10 +1406,813 @@ export class PiDurableHost {
 			context.abortSignal?.throwIfAborted();
 			this.assertLive();
 			if (!context.abortSignal) throw new Error("Missing invocation signal");
-			this.bindings.set(context.abortSignal, { task: Number(task.id), digest });
+			this.bindings.set(context.abortSignal, {
+				task: Number(task.id),
+				digest,
+				...(stock ? { stock: true as const } : {}),
+			});
 		} catch (error) {
 			this.denied = true;
 			throw error;
+		}
+	}
+	private customTaskMatches(
+		task: PublicTask,
+		correlation: EffectCorrelation,
+		passive = false,
+	): boolean {
+		const mapping = this.mapping(Number(task.id));
+		const prepared = preparedSummary(JSON.parse(correlation.prepared));
+		return (
+			correlation.version === 2 &&
+			correlation.call === null &&
+			correlation.operation === `${SUMMARY_POLICY}/${task.id}` &&
+			prepared.policy === SUMMARY_POLICY &&
+			prepared.task === Number(task.id) &&
+			prepared.conversation === Number(task.conversationId) &&
+			task.kind === "pi.compaction" &&
+			task.version === 1 &&
+			!task.background &&
+			!task.abortRequested &&
+			(task.state.status === "running" ||
+				(passive && task.state.status === "pending")) &&
+			record(task.state.checkpoint).phase === "select" &&
+			mapping?.prepared === correlation.prepared &&
+			mapping.digest === correlation.digest &&
+			mapping.selection === prepared.selection &&
+			mapping.command === correlation.command &&
+			mapping.owner === canonical(task.owner ?? null) &&
+			canonical(task.input) === correlation.taskInput
+		);
+	}
+	private ownerTransition<T>(
+		context: Context,
+		operation: (context: Context) => Promise<T>,
+	): Promise<T> {
+		context = withAbortSignal(this.ownerAbort.signal, context);
+		const pending = this.ownerQueue.then(async () => {
+			context.abortSignal?.throwIfAborted();
+			this.assertLive();
+			return operation(context);
+		});
+		this.ownerQueue = pending.then(
+			() => undefined,
+			() => undefined,
+		);
+		return awaitWithContext(pending, context);
+	}
+	async configure(
+		change: Pick<AgentChange, "model" | "thinkingLevel">,
+		context: Context = BACKGROUND_CONTEXT,
+	): Promise<void> {
+		if (this.dependencies.configuration)
+			throw new Error("Owned configuration requires an intent");
+		return this.ownerTransition(context, async (context) => {
+			await this.check(
+				await awaitWithContext(this.dependencies.authority(), context),
+				context,
+				true,
+			);
+			const root = await this.harness.root(context);
+			this.assertLive();
+			try {
+				await root.configure(change, context);
+				context.abortSignal?.throwIfAborted();
+				await this.durable(context);
+			} catch (error) {
+				if (!context.abortSignal?.aborted) this.persistenceFailed();
+				throw error;
+			}
+		});
+	}
+	private configurationScope(): ConfigurationReadV1 {
+		const s = this.dependencies.configuration!.subject;
+		return {
+			version: 1,
+			projectId: s.projectId,
+			workspaceSessionId: s.workspaceSessionId,
+			ownerVersion: s.runtimeOwnerVersion,
+		};
+	}
+	private async configurationAllowed(
+		query: ConfigurationReadV1,
+		selection: ConfigurationSelectionV1 | undefined,
+		context: Context,
+	): Promise<boolean> {
+		const c = this.dependencies.configuration;
+		if (!c || canonical(query) !== canonical(this.configurationScope()))
+			return false;
+		const epoch = this.storage.sql
+			.exec<{ epoch: number }>("SELECT epoch FROM host_meta")
+			.one().epoch;
+		if (selection !== undefined) {
+			const authorized = parseConfigurationAuthorityV1(
+				await awaitWithContext(c.authorize(query, selection), context),
+			);
+			if (
+				authorized.status !== "current" ||
+				canonical(authorized.subject) !== canonical(c.subject)
+			)
+				return false;
+			const initial = await awaitWithContext(
+				this.dependencies.authority(),
+				context,
+			);
+			if (!this.configurationLocal(initial)) return false;
+			const fresh = parseConfigurationAuthorityV1(
+				await awaitWithContext(c.authorize(query, selection), context),
+			);
+			if (
+				fresh.status !== "current" ||
+				canonical(fresh.subject) !== canonical(c.subject)
+			)
+				return false;
+		}
+		const finalProduct = parseConfigurationAuthorityV1(
+			await awaitWithContext(c.authorize(query, selection), context),
+		);
+		await this.configurationLedger(context);
+		// Ordered admission: product and evidence work finish before the final host
+		// read and synchronous guards. This admits the Pi call, not an atomic D1/Pi commit.
+		const local = await awaitWithContext(
+			this.dependencies.authority(),
+			context,
+		);
+		context.abortSignal?.throwIfAborted();
+		return (
+			finalProduct.status === "current" &&
+			canonical(finalProduct.subject) === canonical(c.subject) &&
+			this.configurationLocal(local) &&
+			this.storage.sql
+				.exec<{ epoch: number }>("SELECT epoch FROM host_meta")
+				.one().epoch === epoch
+		);
+	}
+	private configurationLocal(authority: LocalAuthority): boolean {
+		if (
+			this.denied ||
+			this.sealed ||
+			this.storageBarrier ||
+			!authority.current ||
+			authority.executor !== 1 ||
+			(authority.liveExecutors ?? 1) !== 1
+		)
+			return false;
+		if (this.storage.sql.exec("SELECT id FROM host_safety").toArray().length)
+			return false;
+		if (
+			this.active &&
+			(authority.generation !== this.active.generation ||
+				this.dependencies.now() >= this.active.yield_at ||
+				this.storage.sql
+					.exec("SELECT 1 FROM host_runs WHERE state='stopping'")
+					.toArray().length)
+		)
+			return false;
+		return true;
+	}
+	private async piConfiguration(
+		query: ConfigurationReadV1,
+		context: Context,
+	): Promise<ConfigurationSnapshotV1> {
+		const root = await this.harness.conversation(ROOT_CONVERSATION_ID, context);
+		if (!root) return { ...query, selection: null };
+		const agent = await root.agent(context);
+		if (!agent.model) return { ...query, selection: null };
+		if (agent.model.provider !== "faux")
+			throw new Error("Unsupported configuration provider");
+		return {
+			...query,
+			selection: parseConfigurationSelectionV1({
+				model: agent.model.modelId,
+				thinking: agent.thinkingLevel,
+			}),
+		};
+	}
+	private async initializeOwnedConfiguration() {
+		const c = this.dependencies.configuration;
+		if (!c) return;
+		await this.ownerTransition(
+			withAbortSignal(
+				AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
+				BACKGROUND_CONTEXT,
+			),
+			async (context) => {
+				const evidence = await this.configurationLedger(context);
+				if (await this.harness.conversation(ROOT_CONVERSATION_ID, context)) {
+					// Pi and host intent commits are separate. Reopen observes Pi; it never replays a pending selection.
+					for (const row of evidence.filter((row) => row.state === "pending")) {
+						const { ack } = row;
+						const snapshot = await this.piConfiguration(
+							this.configurationScope(),
+							context,
+						);
+						await this.finishConfiguration(
+							row.id,
+							canonical(snapshot) === canonical(ack.snapshot)
+								? ack
+								: { ...ack, status: "outcome_unknown", snapshot: null },
+							context,
+						);
+					}
+					return;
+				}
+				const selection = parseConfigurationSelectionV1(c.defaultSelection);
+				if (
+					!(await this.configurationAllowed(
+						this.configurationScope(),
+						selection,
+						context,
+					))
+				)
+					throw new Error("Default configuration denied");
+				await this.harness.root(context, {
+					agent: {
+						model: { provider: "faux", modelId: selection.model },
+						thinkingLevel: selection.thinking,
+					},
+				});
+				await this.durable(context);
+			},
+		);
+	}
+	async readOwnedConfiguration(
+		input: unknown,
+		context: Context = BACKGROUND_CONTEXT,
+	): Promise<ConfigurationSnapshotV1 | null> {
+		const query = parseConfigurationReadV1(input);
+		context = withAbortSignal(
+			AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
+			context,
+		);
+		return this.ownerTransition(context, async (context) => {
+			if (!(await this.configurationAllowed(query, undefined, context)))
+				return null;
+			await this.configurationLedger(context);
+			return this.piConfiguration(query, context);
+		});
+	}
+	async configureOwned(
+		input: unknown,
+		context: Context = BACKGROUND_CONTEXT,
+	): Promise<ConfigurationAckV1> {
+		const intent = parseConfigurationIntentV1(input);
+		context = withAbortSignal(
+			AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
+			context,
+		);
+		const query = parseConfigurationReadV1({
+			version: 1,
+			projectId: intent.projectId,
+			workspaceSessionId: intent.workspaceSessionId,
+			ownerVersion: intent.ownerVersion,
+		});
+		const deny = (
+			status: ConfigurationAckV1["status"],
+		): ConfigurationAckV1 => ({
+			version: 1,
+			intentId: intent.intentId,
+			status,
+			snapshot: null,
+		});
+		if (!this.dependencies.configuration) return deny("unavailable");
+		return this.ownerTransition(context, async (context) => {
+			if (!(await this.configurationAllowed(query, undefined, context)))
+				return deny("denied");
+			const identity = await this.configurationIdentity(intent, context);
+			const recordId = `configuration:${identity.key}`;
+			const evidence = await this.configurationLedger(context);
+			const old = evidence.find((row) => row.id === identity.key);
+			if (old) {
+				if (old.payload !== identity.payload) return deny("conflict");
+				if (old.state === "complete") return old.ack;
+				return deny("outcome_unknown");
+			}
+			if (evidence.some((row) => row.state === "pending"))
+				return deny("outcome_unknown");
+			const ack: ConfigurationAckV1 = {
+				version: 1,
+				intentId: intent.intentId,
+				status: "applied",
+				snapshot: { ...query, selection: intent.selection },
+			};
+			const plain = JSON.stringify({
+				version: 1,
+				intent,
+				ack,
+				state: "pending",
+			});
+			const sealed = await awaitWithContext(
+				this.seal(recordId, plain),
+				context,
+			);
+			if (!(await this.configurationAllowed(query, intent.selection, context)))
+				return deny("denied");
+			this.transition("intent", () => {
+				this.storage.sql.exec(
+					"INSERT INTO host_configuration_intents VALUES (?,?,?,'pending')",
+					identity.key,
+					identity.payload,
+					sealed.ciphertext,
+				);
+				this.rememberSeal(recordId, sealed.digest);
+			});
+			this.rememberPlain(recordId, plain, sealed.digest, sealed.ciphertext);
+			await this.durable(context);
+			this.dependencies.fault?.("configuration-intent");
+			const root = await this.harness.conversation(
+				ROOT_CONVERSATION_ID,
+				context,
+			);
+			if (!root) throw new Error("Missing owned conversation");
+			if (
+				!(await this.configurationAllowed(query, intent.selection, context))
+			) {
+				const denied = deny("denied");
+				await this.finishConfiguration(identity.key, denied, context);
+				return denied;
+			}
+			await root.configure(
+				{
+					model: { provider: "faux", modelId: intent.selection.model },
+					thinkingLevel: intent.selection.thinking,
+				},
+				context,
+			);
+			await this.durable(context);
+			this.dependencies.fault?.("configuration-applied");
+			const snapshot = await this.piConfiguration(query, context);
+			if (canonical(snapshot) !== canonical(ack.snapshot))
+				throw new Error("Configuration persistence mismatch");
+			await this.finishConfiguration(
+				identity.key,
+				{ ...ack, snapshot },
+				context,
+			);
+			this.dependencies.fault?.("configuration-outcome");
+			return { ...ack, snapshot };
+		});
+	}
+	private async configurationIdentity(
+		intent: ConfigurationIntentV1,
+		context: Context,
+	) {
+		const subject = this.dependencies.configuration!.subject;
+		const input = canonical({ subject, intent });
+		const cached = this.configurationHashes.get(input);
+		if (cached) return cached;
+		const identity = await awaitWithContext(
+			configurationIdentity(subject, intent),
+			context,
+		);
+		if (this.configurationHashes.size >= 128) this.configurationHashes.clear();
+		this.configurationHashes.set(input, identity);
+		return identity;
+	}
+	private async configurationLedger(context: Context) {
+		// Queryable fields are only hints until every row has authenticated evidence.
+		const rows = this.storage.sql
+			.exec<{
+				id: string;
+				payload_digest: string;
+				outcome: string;
+				state: string;
+			}>("SELECT * FROM host_configuration_intents ORDER BY id")
+			.toArray();
+		try {
+			const evidence = [];
+			for (const row of rows)
+				evidence.push({
+					id: row.id,
+					...(await this.configurationEvidence(row.id, context)),
+				});
+			if (
+				canonical(rows) !==
+				canonical(
+					this.storage.sql
+						.exec("SELECT * FROM host_configuration_intents ORDER BY id")
+						.toArray(),
+				)
+			)
+				throw new Error(
+					"Configuration evidence integrity changed during validation",
+				);
+			return evidence;
+		} catch (error) {
+			this.denied = true;
+			throw error;
+		}
+	}
+	private async configurationEvidence(
+		key: string,
+		context: Context,
+	): Promise<{
+		intent: ConfigurationIntentV1;
+		ack: ConfigurationAckV1;
+		state: "pending" | "complete";
+		payload: string;
+	}> {
+		this.assertSeals();
+		const row = this.storage.sql
+			.exec<{ payload_digest: string; outcome: string; state: string }>(
+				"SELECT payload_digest,outcome,state FROM host_configuration_intents WHERE id=?",
+				key,
+			)
+			.one();
+		const e = strictRecord(
+			decodeContractInput(
+				this.opened(`configuration:${key}`, row.outcome),
+				8192,
+			),
+			["version", "intent", "ack", "state"],
+			"configuration evidence",
+		);
+		literalField(e, "version", [1]);
+		const state = literalField(e, "state", ["pending", "complete"]);
+		const intent = parseConfigurationIntentV1(e.intent),
+			ack = parseConfigurationAckV1(e.ack);
+		const identity = await this.configurationIdentity(intent, context);
+		if (
+			canonical(row) !==
+				canonical(
+					this.storage.sql
+						.exec<{ payload_digest: string; outcome: string; state: string }>(
+							"SELECT payload_digest,outcome,state FROM host_configuration_intents WHERE id=?",
+							key,
+						)
+						.toArray()[0] ?? null,
+				) ||
+			identity.key !== key ||
+			identity.payload !== row.payload_digest ||
+			state !== row.state ||
+			ack.intentId !== intent.intentId ||
+			(ack.status === "applied" &&
+				canonical(ack.snapshot) !==
+					canonical({
+						version: 1,
+						projectId: intent.projectId,
+						workspaceSessionId: intent.workspaceSessionId,
+						ownerVersion: intent.ownerVersion,
+						selection: intent.selection,
+					}))
+		)
+			throw new Error("Configuration evidence integrity failure");
+		return { intent, ack, state, payload: identity.payload };
+	}
+	private async finishConfiguration(
+		key: string,
+		ack: ConfigurationAckV1,
+		context: Context,
+	) {
+		const { intent } = await this.configurationEvidence(key, context);
+		const recordId = `configuration:${key}`,
+			plain = JSON.stringify({ version: 1, intent, ack, state: "complete" });
+		const sealed = await awaitWithContext(this.seal(recordId, plain), context);
+		this.transition("intent", () => {
+			this.storage.sql.exec(
+				"UPDATE host_configuration_intents SET outcome=?,state='complete' WHERE id=?",
+				sealed.ciphertext,
+				key,
+			);
+			this.rememberSeal(recordId, sealed.digest);
+		});
+		this.rememberPlain(recordId, plain, sealed.digest, sealed.ciphertext);
+		await this.durable(context);
+	}
+	private async summarize(
+		api: HookApi,
+		selection: SummarySelection,
+		context: Context,
+	): Promise<{ summary: string } | { decline: true }> {
+		await this.bindTask(
+			"pi.compaction",
+			api,
+			{
+				firstKept: Number(selection.firstKept),
+				entries: selection.entries.map((entry) => Number(entry.id)),
+				digest: await requestDigest(selection.messages),
+			},
+			undefined,
+			context,
+		);
+		const task = await this.harness.getTask(api.taskId, context);
+		if (
+			!task ||
+			task.state.status !== "running" ||
+			record(task.state.checkpoint).phase !== "select"
+		)
+			throw new Error("Custom summary requires trusted selection phase");
+		let mapping = this.mapping(Number(api.taskId))!;
+		const command = this.command(mapping.command),
+			run = this.run(command.run);
+		if (mapping.prepared === null)
+			await this.ownerTransition(context, async (context) => {
+				mapping = this.mapping(Number(api.taskId))!;
+				if (mapping.prepared !== null) return;
+				const agent = await (await this.harness.root(context)).agent(context);
+				if (!agent.model) throw new Error("Missing custom summary model");
+				const model = this.options.models.getModel(
+					agent.model.provider,
+					agent.model.modelId,
+				);
+				if (!model) throw new Error("Unavailable custom summary model");
+				const stream = this.options.settings?.stream ?? {};
+				if (stream.headers || stream.deferred)
+					throw new Error("Unsupported custom summary options");
+				const prepared: PreparedSummary = {
+					policy: SUMMARY_POLICY,
+					task: Number(api.taskId),
+					conversation: Number(api.conversationId),
+					selection: mapping.selection,
+					model: agent.model,
+					thinkingLevel: agent.thinkingLevel,
+					options: {
+						...stream,
+						cacheRetention: "none",
+						maxRetries: 0,
+						maxTokens: Math.min(1024, model.maxTokens),
+						...(agent.thinkingLevel === "off"
+							? {}
+							: { reasoning: agent.thinkingLevel }),
+					},
+					transcript: summaryTranscript(selection),
+				};
+				const plain = canonical(prepared),
+					digest = await awaitWithContext(
+						requestDigest(semanticTranscript(prepared.transcript)),
+						context,
+					);
+				const recordId = `task:${Number(api.taskId)}:prepared`,
+					sealed = await awaitWithContext(this.seal(recordId, plain), context);
+				context.abortSignal?.throwIfAborted();
+				this.transition("preparation", () => {
+					if (
+						canonical(this.mapping(Number(api.taskId))) !==
+							canonical(mapping) ||
+						this.run(command.run).epoch !== run.epoch
+					)
+						throw new Error("Custom preparation changed");
+					this.assertLive();
+					this.storage.sql.exec(
+						"UPDATE host_tasks SET prepared = ?, digest = ? WHERE task = ? AND prepared IS NULL",
+						sealed.ciphertext,
+						digest,
+						Number(api.taskId),
+					);
+					this.rememberSeal(recordId, sealed.digest);
+					this.dependencies.fault?.("preparation-write");
+				});
+				this.rememberPlain(recordId, plain, sealed.digest, sealed.ciphertext);
+				await this.durable(context, "preparation-flush");
+				mapping = this.mapping(Number(api.taskId))!;
+			});
+		const prepared = preparedSummary(JSON.parse(mapping.prepared!));
+		if (
+			prepared.policy !== SUMMARY_POLICY ||
+			prepared.task !== Number(api.taskId) ||
+			prepared.conversation !== Number(api.conversationId) ||
+			prepared.selection !== mapping.selection ||
+			canonical(prepared.transcript) !==
+				canonical(summaryTranscript(selection)) ||
+			(await requestDigest(semanticTranscript(prepared.transcript))) !==
+				mapping.digest
+		)
+			throw new Error("Custom summary preparation mismatch");
+		if (!context.abortSignal)
+			throw new Error("Missing custom summary invocation signal");
+		this.customBindings.set(context.abortSignal, prepared);
+		try {
+			const rows = this.storage.sql
+				.exec<Effect & { correlation: string; evidence: string | null }>(
+					`SELECT * FROM host_effects WHERE ${this.routeSql("task")}`,
+					Number(api.taskId),
+				)
+				.toArray();
+			if (rows.length) {
+				if (rows.length !== 1)
+					throw new Error("Custom summary attempt conflict");
+				const effect = rows[0]!,
+					correlation = this.correlation(
+						this.opened(`effect:${effect.id}:correlation`, effect.correlation)!,
+					);
+				if (
+					!this.customTaskMatches(task, correlation) ||
+					effect.state !== "result-recorded" ||
+					!effect.evidence
+				)
+					throw new Error("Custom summary unresolved attempt");
+				const authority = await awaitWithContext(
+					this.dependencies.authority(),
+					context,
+				);
+				this.exactAuthority(correlation, effect.epoch);
+				if (
+					!authority.current ||
+					authority.executor !== 1 ||
+					(authority.liveExecutors ?? 1) !== 1 ||
+					authority.generation !== this.active?.generation ||
+					this.dependencies.now() >= this.active.yield_at ||
+					this.unresolved().some((row) => row.id !== effect.id)
+				)
+					throw new Error("Custom result reuse authority denied");
+				const message: unknown = JSON.parse(
+					this.opened(`effect:${effect.id}:evidence`, effect.evidence)!,
+				);
+				this.assertSeals();
+				validateSummaryResponse(message, prepared);
+				return { summary: summaryText(message) };
+			}
+			if (this.dependencies.prepareModel)
+				await awaitWithContext(
+					this.dependencies.prepareModel(context),
+					context,
+				);
+			context.abortSignal.throwIfAborted();
+			if (this.run(command.run).epoch !== run.epoch)
+				throw new Error("Stale custom summary epoch");
+			const model = this.options.models.getModel(
+				prepared.model.provider,
+				prepared.model.modelId,
+			);
+			if (!model) throw new Error("Unavailable prepared summary model");
+			const message = await this.options.models.completeSimple(
+				model,
+				prepared.transcript,
+				{ ...prepared.options, signal: context.abortSignal },
+			);
+			context.abortSignal.throwIfAborted();
+			const effect = this.storage.sql
+				.exec<{ id: string; state: string; evidence: string }>(
+					`SELECT id,state,evidence FROM host_effects WHERE ${this.routeSql("task")}`,
+					Number(api.taskId),
+				)
+				.toArray()[0];
+			if (!effect || effect.state !== "result-recorded")
+				throw new Error("Custom summary result was not persisted");
+			if (
+				canonical(
+					JSON.parse(
+						this.opened(`effect:${effect.id}:evidence`, effect.evidence)!,
+					),
+				) !== canonical(message)
+			)
+				throw new Error("Custom summary consumed result mismatch");
+			if (this.run(command.run).state === "failed") return { decline: true };
+			this.assertLive();
+			return { summary: summaryText(message) };
+		} finally {
+			this.customBindings.delete(context.abortSignal);
+		}
+	}
+	private async customModel(
+		prepared: PreparedSummary,
+		request: ModelRequest,
+		digest: string,
+		context: Context,
+		start: (dispatch: ModelDispatch) => Promise<AssistantMessage>,
+	) {
+		const task = await this.harness.getTask(prepared.task as TaskId, context),
+			mapping = this.mapping(prepared.task);
+		if (
+			!task ||
+			!mapping ||
+			mapping.prepared !== canonical(prepared) ||
+			mapping.digest !== digest ||
+			request.model.provider !== prepared.model.provider ||
+			request.model.id !== prepared.model.modelId ||
+			canonical(request.transcript) !== canonical(prepared.transcript) ||
+			canonical(
+				Object.fromEntries(
+					Object.entries(request.options).filter(([key]) => key !== "signal"),
+				),
+			) !== canonical(prepared.options)
+		)
+			throw new Error("Custom summary exact request mismatch");
+		const command = this.command(mapping.command);
+		if (!command.submission) throw new Error("Missing summary submission");
+		const correlation: EffectCorrelation = {
+			version: 2,
+			command: command.id,
+			run: command.run,
+			user: command.user,
+			assistant: command.assistant,
+			submission: command.submission,
+			task: prepared.task,
+			call: null,
+			operation: `${SUMMARY_POLICY}/${prepared.task}`,
+			piAttempt: 1,
+			arguments: canonical({
+				model: request.model,
+				options: prepared.options,
+				transcriptDigest: digest,
+			}),
+			replay: "never",
+			generation: this.active?.generation ?? 0,
+			taskInput: canonical(task.input),
+			prepared: canonical(prepared),
+			digest,
+		};
+		if (
+			!this.customTaskMatches(task, correlation) ||
+			this.providerCallbacks !== 1
+		)
+			throw new Error("Custom summary current binding mismatch");
+		const admitted = await this.admitExact("model", correlation, task, context);
+		const dispatch = await this.modelDispatch(admitted, correlation, context);
+		const authority = await awaitWithContext(
+			this.dependencies.authority(),
+			context,
+		);
+		const current = await this.harness.getTask(task.id, context);
+		if (
+			!current ||
+			!this.customTaskMatches(current, correlation) ||
+			this.providerCallbacks !== 1
+		)
+			throw new Error("Custom summary binding revoked");
+		context.abortSignal?.throwIfAborted();
+		this.dispatchPermit(admitted.id, correlation, admitted.epoch, authority);
+		return { effect: admitted.id, response: start(dispatch) };
+	}
+	private async customReceipt(
+		effect: Effect & { evidence: string },
+		correlation: EffectCorrelation,
+		task: PublicTask,
+		context: Context,
+	) {
+		if (
+			task.kind !== "pi.compaction" ||
+			task.state.status !== "terminal" ||
+			task.state.outcome.status !== "completed"
+		)
+			return;
+		const evidence: unknown = JSON.parse(
+			this.opened(`effect:${effect.id}:evidence`, effect.evidence)!,
+		);
+		validateSummaryResponse(
+			evidence,
+			preparedSummary(JSON.parse(correlation.prepared)),
+		);
+		const result = record(task.state.outcome.result),
+			prepared = record(JSON.parse(correlation.prepared));
+		if (
+			prepared.policy !== SUMMARY_POLICY ||
+			this.mapping(correlation.task)?.prepared !== correlation.prepared
+		)
+			throw new Error("Custom receipt policy mismatch");
+		let valid = false;
+		let text: string | undefined;
+		try {
+			text = summaryText(evidence);
+		} catch {
+			valid =
+				this.run(correlation.run).state === "failed" &&
+				canonical(result) === "{}";
+		}
+		if (text !== undefined) {
+			const submission = result.submissionId
+				? await this.piRecords.submission(
+						Number(
+							result.submissionId,
+						) as import("@earendil-works/pi-durable").SubmissionId,
+						context,
+					)
+				: undefined;
+			const entryId =
+				result.entryId ??
+				(submission?.status === "done" ? submission.entry : undefined);
+			const entry = entryId
+				? (
+						await this.piRecords.entry(
+							ROOT_CONVERSATION_ID,
+							Number(entryId) as import("@earendil-works/pi-durable").EntryId,
+							context,
+						)
+					)?.entry
+				: undefined;
+			valid =
+				entry?.kind === "pi.compaction" &&
+				entry.head ===
+					record(JSON.parse(String(prepared.selection))).firstKept &&
+				canonical(entry.model?.[0]?.content) ===
+					canonical([
+						{
+							type: "text",
+							text: `The conversation history before this point was compacted into the following summary:\n\n<summary>\n${text}\n</summary>`,
+						},
+					]) &&
+				(!submission ||
+					(submission.type === "write" &&
+						submission.requestId === `compaction:${task.id}`));
+		}
+		if (valid) {
+			this.transition("result", () =>
+				this.storage.sql.exec(
+					"UPDATE host_effects SET state = 'pi-committed' WHERE id = ? AND state = 'result-recorded'",
+					effect.id,
+				),
+			);
+			await this.durable(context);
 		}
 	}
 	private async eligible(context: Context) {
@@ -1371,6 +2341,170 @@ export class PiDurableHost {
 				taskRow.prepared,
 			);
 	}
+	private async modelDispatch(
+		admitted: { id: string; epoch: number },
+		correlation: EffectCorrelation,
+		context: Context,
+	): Promise<ModelDispatch> {
+		const digest = await requestDigest(JSON.parse(correlation.arguments));
+		const effect = this.read(() =>
+			this.storage.sql
+				.exec<Effect>("SELECT * FROM host_effects WHERE id = ?", admitted.id)
+				.one(),
+		);
+		const attempt = Object.freeze(
+			parseModelAttemptV1({
+				version: 1,
+				effectId: admitted.id,
+				operationId: correlation.operation,
+				runId: correlation.run,
+				commandId: correlation.command,
+				assistantId: correlation.assistant,
+				taskId: correlation.task,
+				epoch: admitted.epoch,
+				attempt: effect.attempt,
+				generation: correlation.generation,
+				deadlineAt: effect.operation_deadline,
+				requestDigest: digest,
+				kind: correlation.version === 2 ? "custom_summary" : "generation",
+			}),
+		);
+		const receiptId = `effect:${admitted.id}:model_dispatch`;
+		const reserved = canonical({ version: 1, attempt, state: "reserved" });
+		const consumed = canonical({ version: 1, attempt, state: "consumed" });
+		const sealed = await this.seal(receiptId, reserved);
+		this.transition("admission", () => {
+			this.exactAuthority(correlation, admitted.epoch);
+			this.storage.sql.exec(
+				"INSERT INTO host_model_dispatch(effect,request_digest) VALUES (?,?)",
+				admitted.id,
+				digest,
+			);
+			const rows = this.storage.sql
+				.exec(
+					"UPDATE host_effects SET model_dispatch=? WHERE id=? AND state='admitted' AND model_dispatch IS NULL RETURNING id",
+					sealed.ciphertext,
+					admitted.id,
+				)
+				.toArray();
+			if (rows.length !== 1) throw new EffectDenied("reservation");
+			this.rememberSeal(receiptId, sealed.digest);
+		});
+		this.rememberPlain(receiptId, reserved, sealed.digest, sealed.ciphertext);
+		await this.durable(context);
+		const assertReceipt = (expected: string, claimed: number) =>
+			this.read(() => {
+				this.assertSeals();
+				const row = this.storage.sql
+					.exec<{
+						receipt: string | null;
+						claimed: number;
+						request_digest: string;
+					}>(
+						"SELECT e.model_dispatch AS receipt,d.claimed,d.request_digest FROM host_effects e JOIN host_model_dispatch d ON d.effect=e.id WHERE e.id=?",
+						admitted.id,
+					)
+					.one();
+				if (
+					row.claimed !== claimed ||
+					row.request_digest !== digest ||
+					this.opened(receiptId, row.receipt) !== expected
+				)
+					throw new EncryptedStorageError(
+						"integrity",
+						"Model dispatch receipt denied",
+					);
+			});
+		let used = false;
+		let productCheck: (() => Promise<void>) | undefined;
+		return {
+			attempt,
+			bindProductAuthority: (check) => {
+				if (used || productCheck) throw new EffectDenied("reservation");
+				productCheck = check;
+			},
+			halt: async () => {
+				if (
+					!["running", "recovering", "stopping"].includes(
+						this.run(correlation.run).state,
+					)
+				)
+					return;
+				this.block("model-contract-denials", correlation.run);
+				await this.durable(context);
+			},
+			claim: async (input: unknown) => {
+				const supplied = parseModelAttemptV1(input);
+				if (canonical(supplied) !== canonical(attempt))
+					throw new Error("Exact model attempt mismatch");
+				if (used) throw new EffectDenied("reservation");
+				context.abortSignal?.throwIfAborted();
+				// A live capability never refunds consumption after suspension or failed acknowledgment.
+				used = true;
+				assertReceipt(reserved, 0);
+				const authority = await awaitWithContext(
+					this.dependencies.authority(),
+					context,
+				);
+				const task = await awaitWithContext(
+					this.harness.getTask(correlation.task as TaskId, context),
+					context,
+				);
+				if (
+					!task ||
+					canonical(task.input) !== correlation.taskInput ||
+					(correlation.version === 2
+						? !this.customTaskMatches(task, correlation)
+						: preparedTask(task) !== correlation.prepared ||
+							Number(record(task.state.checkpoint).attempt) !==
+								correlation.piAttempt)
+				)
+					throw new EffectDenied("authority");
+				const sealedConsumption = await this.seal(receiptId, consumed);
+				// This transition never waits on the provider or configuration owner lane.
+				this.transition("admission", () => {
+					assertReceipt(reserved, 0);
+					this.dispatchPermit(
+						admitted.id,
+						correlation,
+						admitted.epoch,
+						authority,
+					);
+					const claimed = this.storage.sql
+						.exec(
+							"UPDATE host_model_dispatch SET claimed=1 WHERE effect=? AND request_digest=? AND claimed=0 RETURNING effect",
+							admitted.id,
+							digest,
+						)
+						.toArray();
+					if (claimed.length !== 1) throw new EffectDenied("reservation");
+					this.storage.sql.exec(
+						"UPDATE host_effects SET model_dispatch=? WHERE id=?",
+						sealedConsumption.ciphertext,
+						admitted.id,
+					);
+					this.rememberSeal(receiptId, sealedConsumption.digest);
+				});
+				this.rememberPlain(
+					receiptId,
+					consumed,
+					sealedConsumption.digest,
+					sealedConsumption.ciphertext,
+				);
+				await this.durable(context);
+				if (productCheck) await awaitWithContext(productCheck(), context);
+				// The product callback can suspend. Only the subsequent authority read
+				// may feed the final synchronous host acknowledgment.
+				const fresh = await awaitWithContext(
+					this.dependencies.authority(),
+					context,
+				);
+				context.abortSignal?.throwIfAborted();
+				assertReceipt(consumed, 1);
+				this.dispatchPermit(admitted.id, correlation, admitted.epoch, fresh);
+			},
+		};
+	}
 	private async admitExact(
 		kind: "model" | "tool",
 		correlation: EffectCorrelation,
@@ -1399,6 +2533,8 @@ export class PiDurableHost {
 		);
 		const prior = rows.at(-1);
 		if (prior) {
+			if (correlation.version === 2)
+				throw new Error("Custom summary attempt already reserved");
 			const original = this.correlation(
 				this.opened(`effect:${prior.id}:correlation`, prior.correlation)!,
 			);
@@ -1482,7 +2618,7 @@ export class PiDurableHost {
 	private model(
 		request: ModelRequest,
 		context: Context,
-		start: () => Promise<AssistantMessage>,
+		start: (dispatch: ModelDispatch) => Promise<AssistantMessage>,
 	) {
 		this.providerCallbacks++;
 		const previous = this.providerQueue;
@@ -1507,6 +2643,15 @@ export class PiDurableHost {
 				const transcriptDigest = await requestDigest(
 					semanticTranscript(request.transcript),
 				);
+				const custom = this.customBindings.get(context.abortSignal!);
+				if (custom)
+					return await this.customModel(
+						custom,
+						request,
+						transcriptDigest,
+						context,
+						start,
+					);
 				const task = await this.eligible(context);
 				const binding = this.bindings.get(context.abortSignal);
 				const mapping = this.mapping(Number(task.id));
@@ -1517,6 +2662,13 @@ export class PiDurableHost {
 					mapping.conversation !== Number(task.conversationId)
 				)
 					throw new Error("Missing trusted task mapping");
+				if (
+					task.kind === "pi.compaction" &&
+					((mapping.prepared &&
+						record(JSON.parse(mapping.prepared)).policy !== undefined) ||
+						(binding && !binding.stock))
+				)
+					throw new Error("Stock summary fallback denied");
 				if (binding && binding.task !== Number(task.id))
 					throw new Error("Hook producer mismatch");
 				if (
@@ -1616,6 +2768,36 @@ export class PiDurableHost {
 					prepared: tuple,
 					digest: transcriptDigest,
 				};
+				const preparedMapping = {
+					...mapping,
+					prepared: tuple,
+					digest: transcriptDigest,
+				};
+				const preparedId = `task:${Number(task.id)}:prepared`;
+				const sealedPrepared = await this.seal(preparedId, tuple);
+				this.transition("preparation", () => {
+					this.exactAuthority(correlation, run.epoch);
+					if (
+						canonical(this.mapping(Number(task.id))) !== canonical(mapping) ||
+						this.providerCallbacks !== 1
+					)
+						throw new Error("Association changed before preparation commit");
+					this.storage.sql.exec(
+						"UPDATE host_tasks SET prepared = ?, digest = ? WHERE task = ?",
+						sealedPrepared.ciphertext,
+						transcriptDigest,
+						Number(task.id),
+					);
+					this.rememberSeal(preparedId, sealedPrepared.digest);
+					this.dependencies.fault?.("preparation-write");
+				});
+				this.rememberPlain(
+					preparedId,
+					tuple,
+					sealedPrepared.digest,
+					sealedPrepared.ciphertext,
+				);
+				await this.durable(context, "preparation-flush");
 				if (this.dependencies.prepareModel)
 					await awaitWithContext(
 						this.dependencies.prepareModel(context),
@@ -1623,7 +2805,8 @@ export class PiDurableHost {
 					);
 				if (
 					canonical(await this.eligible(context)) !== canonical(task) ||
-					canonical(this.mapping(Number(task.id))) !== canonical(mapping) ||
+					canonical(this.mapping(Number(task.id))) !==
+						canonical(preparedMapping) ||
 					this.providerCallbacks !== 1
 				)
 					throw new Error("Association changed during preparation");
@@ -1634,25 +2817,11 @@ export class PiDurableHost {
 					task,
 					context,
 				);
-				const preparedId = `task:${Number(task.id)}:prepared`;
-				const sealedPrepared = await this.seal(preparedId, tuple);
-				this.transition("intent", () => {
-					this.exactAuthority(correlation, run.epoch);
-					this.storage.sql.exec(
-						"UPDATE host_tasks SET prepared = ?, digest = ? WHERE task = ?",
-						sealedPrepared.ciphertext,
-						transcriptDigest,
-						Number(task.id),
-					);
-					this.rememberSeal(preparedId, sealedPrepared.digest);
-				});
-				this.rememberPlain(
-					preparedId,
-					tuple,
-					sealedPrepared.digest,
-					sealedPrepared.ciphertext,
+				const dispatch = await this.modelDispatch(
+					admitted,
+					correlation,
+					context,
 				);
-				await this.durable(context);
 				const finalAuthority = await awaitWithContext(
 					this.dependencies.authority(),
 					context,
@@ -1660,11 +2829,7 @@ export class PiDurableHost {
 				if (
 					canonical(await this.eligible(context)) !== canonical(task) ||
 					canonical(this.mapping(Number(task.id))) !==
-						canonical({
-							...mapping,
-							prepared: tuple,
-							digest: transcriptDigest,
-						}) ||
+						canonical(preparedMapping) ||
 					this.providerCallbacks !== 1
 				)
 					throw new Error("Association revoked before dispatch");
@@ -1675,7 +2840,7 @@ export class PiDurableHost {
 					admitted.epoch,
 					finalAuthority,
 				);
-				return { effect: admitted.id, response: start() };
+				return { effect: admitted.id, response: start(dispatch) };
 			} catch (error) {
 				if (
 					error instanceof EffectDenied &&
@@ -2015,6 +3180,10 @@ export class PiDurableHost {
 				task.conversationId !== ROOT_CONVERSATION_ID
 			)
 				throw new Error("Original task receipt mismatch");
+			if (correlation.version === 2) {
+				await this.customReceipt(effect, correlation, task, context);
+				continue;
+			}
 			let matches = false,
 				failedCompaction = false;
 			const evidence = record(
@@ -2694,7 +3863,7 @@ export class PiDurableHost {
 				throw new Error("Supported turn boundary required");
 		}
 		let authority = await this.dependencies.authority();
-		await this.check(authority);
+		await this.check(authority, BACKGROUND_CONTEXT, true);
 		if (
 			(await this.harness.inspect(BACKGROUND_CONTEXT)).tasks.some(
 				(task) => task.state.kind === "blocked",
@@ -2702,7 +3871,7 @@ export class PiDurableHost {
 		)
 			throw new Error("Incompatible Pi task state");
 		authority = await this.dependencies.authority();
-		await this.check(authority);
+		await this.check(authority, BACKGROUND_CONTEXT, true);
 		if (!this.active) {
 			this.active = this.transition("intent", () => {
 				this.assertSchedule(command.run, run.epoch);
@@ -2760,7 +3929,7 @@ export class PiDurableHost {
 		if ((await root.agent(BACKGROUND_CONTEXT)).model === undefined) {
 			await this.check(await this.dependencies.authority());
 			this.assertSchedule(command.run, run.epoch);
-			await root.configure(
+			await this.configure(
 				{ model: { provider: "faux", modelId: "faux-1" } },
 				BACKGROUND_CONTEXT,
 			);
@@ -2862,7 +4031,11 @@ export class PiDurableHost {
 				throw error;
 			}
 		} else {
-			await this.check(await this.dependencies.authority());
+			await this.check(
+				await this.dependencies.authority(),
+				BACKGROUND_CONTEXT,
+				true,
+			);
 			this.assertSchedule(command.run, run.epoch);
 			this.harness.resume();
 		}
@@ -2987,19 +4160,32 @@ export class PiDurableHost {
 		if (this.denied || this.sealed) throw new Error("Host result denied");
 		if (correlation) {
 			const value = record(parsed);
-			if (
-				!Array.isArray(value.content) ||
-				value.content.some((part) => {
-					const content = record(part);
-					return !["text", "thinking", "toolCall"].includes(
-						String(content.type),
+			if (correlation.version === 2) {
+				try {
+					validateSummaryResponse(
+						parsed,
+						preparedSummary(JSON.parse(correlation.prepared)),
 					);
-				})
+				} catch (error) {
+					this.block("result-schema", correlation.run);
+					await this.durable();
+					throw error;
+				}
+			}
+			if (
+				correlation.version !== 2 &&
+				(!Array.isArray(value.content) ||
+					value.content.some((part) => {
+						const content = record(part);
+						return !["text", "thinking", "toolCall"].includes(
+							String(content.type),
+						);
+					}))
 			) {
 				this.block("result-schema", correlation.run);
 				throw new Error("Invalid synthetic result content");
 			}
-			if (existing.kind === "model") {
+			if (existing.kind === "model" && correlation.version !== 2) {
 				const model = record(record(JSON.parse(correlation.prepared)).model);
 				if (
 					value.role !== "assistant" ||
@@ -3025,7 +4211,9 @@ export class PiDurableHost {
 				task.conversationId !== ROOT_CONVERSATION_ID ||
 				(existing.kind === "tool"
 					? canonical(task.state.checkpoint) !== correlation.prepared
-					: preparedTask(task) !== correlation.prepared)
+					: correlation.version === 2
+						? !this.customTaskMatches(task, correlation)
+						: preparedTask(task) !== correlation.prepared)
 			) {
 				this.block("result-identity", correlation.run);
 				throw new Error("Original result identity mismatch");
@@ -3045,6 +4233,14 @@ export class PiDurableHost {
 				)
 				.one();
 			this.rememberSeal(evidenceId, sealedEvidence.digest);
+			if (correlation?.version === 2) {
+				this.dependencies.fault?.("summary-result-write");
+				try {
+					summaryText(parsed);
+				} catch {
+					this.terminal(correlation.run, "failed");
+				}
+			}
 			if (
 				correlation &&
 				existing.operation_deadline &&
@@ -3063,15 +4259,26 @@ export class PiDurableHost {
 			sealedEvidence.digest,
 			sealedEvidence.ciphertext,
 		);
-		await this.durable(context);
+		await this.durable(
+			context,
+			correlation?.version === 2 ? "summary-result-flush" : undefined,
+		);
 		context.abortSignal?.throwIfAborted();
-		if (correlation) this.exactAuthority(correlation, existing.epoch);
+		if (
+			correlation &&
+			!(
+				correlation.version === 2 &&
+				this.run(correlation.run).state === "failed"
+			)
+		)
+			this.exactAuthority(correlation, existing.epoch);
 		if (this.denied || this.sealed) throw new Error("Host result sealed");
 	}
 
 	async yield() {
 		if (this.closing) return this.closing;
 		this.sealed = true;
+		this.ownerAbort.abort();
 		clearTimeout(this.timer);
 		this.closing = this.closeAndAccount();
 		return this.closing;
@@ -3130,6 +4337,7 @@ export class PiDurableHost {
 			fenceError = error;
 		}
 		await this.harness.close(BACKGROUND_CONTEXT);
+		await this.ownerQueue;
 		if (fenceError) throw fenceError;
 		try {
 			this.dependencies.fault?.("after-close");

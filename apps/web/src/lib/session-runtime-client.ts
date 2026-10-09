@@ -31,6 +31,20 @@ export type SessionRuntimeSnapshotQuery = {
 	projectId: string;
 };
 
+export type OwnedConfigurationRuntime = {
+	configureOwned(
+		input: import("../../../../packages/runtime-contracts/src/configuration.js").ConfigurationIntentV1,
+	): Promise<
+		import("../../../../packages/runtime-contracts/src/configuration.js").ConfigurationAckV1
+	>;
+	readOwnedConfiguration(
+		input: import("../../../../packages/runtime-contracts/src/configuration.js").ConfigurationReadV1,
+	): Promise<
+		| import("../../../../packages/runtime-contracts/src/configuration.js").ConfigurationSnapshotV1
+		| null
+	>;
+};
+
 export type SessionRuntime = {
 	modelConfiguration(): Promise<SessionRuntimeModelConfiguration>;
 	deliver(input: SessionRuntimeDeliverInput): Promise<SessionRuntimeHandoffAck>;

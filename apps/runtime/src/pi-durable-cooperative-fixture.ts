@@ -75,6 +75,10 @@ export function cooperativeFixture(
 		evidence: string,
 	) => Promise<void> = async () => {},
 	guard?: HostGuard,
+	summaryPolicy:
+		| "custom"
+		| "stock-Pi-control"
+		| "absent-custom-hook" = "custom",
 ) {
 	const remote = pendingRemote<void>();
 	const entered = pendingRemote<void>();
@@ -122,13 +126,21 @@ export function cooperativeFixture(
 								errorMessage: "503 Synthetic known summary error",
 							});
 						}
-						return fauxAssistantMessage("Synthetic durable summary");
+						return {
+							...fauxAssistantMessage("Synthetic durable summary"),
+							model: model.id,
+							provider: model.provider,
+						};
 					}
 					if (
 						phase === "answer" ||
 						(guard && phase === "tool" && providerCalls > 1)
 					)
-						return fauxAssistantMessage("Synthetic answer ".repeat(50));
+						return {
+							...fauxAssistantMessage("Synthetic answer ".repeat(50)),
+							model: model.id,
+							provider: model.provider,
+						};
 					return produce();
 				};
 				const produce = async (): Promise<AssistantMessage> => {
@@ -294,6 +306,9 @@ export function cooperativeFixture(
 					}),
 					hook(CompactionTask, {
 						beforeCompact: async (selection, api, context) => {
+							if (summaryPolicy === "absent-custom-hook") return undefined;
+							if (summaryPolicy === "custom")
+								return guard.summarize(api, selection, context);
 							await guard.bindCompaction(
 								api,
 								{

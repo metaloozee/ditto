@@ -3,7 +3,10 @@ import {
 	runDurableObjectAlarm,
 	runInDurableObject,
 } from "cloudflare:test";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import {
+	awaitWithContext,
+	BACKGROUND_CONTEXT,
+} from "@earendil-works/chord/context";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import type { Harness, Storage } from "@earendil-works/pi-durable";
 import { expect, it } from "vitest";
@@ -88,6 +91,7 @@ function composition(
 				(kind, id, context) => guard.admit(kind, id, context),
 				(id, context, evidence) => guard.result(id, context, evidence),
 				adapters(guard),
+				"stock-Pi-control",
 			);
 			fixtures.push(fixture);
 			return {
@@ -790,25 +794,178 @@ it("known completed summary error retries after reopen with retained logical req
 			"pi-committed",
 		]);
 	}));
-it("first summary association missing after close is denied rather than inferred from a sole retained producer", async () =>
-	run("summary-no-first", "answer", async (f) => {
+it("validated first summary preparation survives close without admitting an effect", async () =>
+	run("summary-first-prepared", "answer", async (f, state) => {
 		await f.start();
 		await f.harness.waitForIdle(BACKGROUND_CONTEXT);
 		const gate = pendingRemote<void>();
 		f.prepare = gate;
 		const task = await f.host.compact("command");
-		await until(() => f.fixture.providerAttempts === 2);
+		await until(
+			() =>
+				state.storage.sql
+					.exec("SELECT prepared FROM host_tasks WHERE task = ?", Number(task))
+					.one().prepared !== null,
+		);
+		expect(f.effects()).toHaveLength(1);
 		await f.host.yield();
 		expect(gate.settled).toBe(false);
 		f.prepare = undefined;
 		await f.open();
 		await f.host.schedule("command");
-		await f.harness.waitForTask(task, BACKGROUND_CONTEXT);
+		const after = await f.harness.waitForTask(task, BACKGROUND_CONTEXT);
+		expect(after.state.outcome?.status).toBe("completed");
 		expect(f.fixture.providerAttempts).toBe(1);
-		expect(f.fixture.providerCalls).toBe(0);
-		expect(f.effects()).toHaveLength(1);
+		expect(f.fixture.providerCalls).toBe(1);
+		expect(f.effects()).toHaveLength(2);
 		gate.resolve();
 	}));
+for (const association of ["missing", "corrupt"] as const)
+	it(`${association} first summary association after close denies the sole retained producer`, async () =>
+		run(`summary-association-${association}`, "answer", async (f, state) => {
+			await f.start();
+			await f.harness.waitForIdle(BACKGROUND_CONTEXT);
+			const gate = pendingRemote<void>();
+			f.prepare = gate;
+			const task = await f.host.compact("command");
+			await until(
+				() =>
+					state.storage.sql
+						.exec(
+							"SELECT prepared FROM host_tasks WHERE task = ?",
+							Number(task),
+						)
+						.one().prepared !== null,
+			);
+			await f.host.yield();
+			state.storage.sql.exec(
+				"UPDATE host_tasks SET prepared = ?, digest = ? WHERE task = ?",
+				association === "missing" ? null : "{}",
+				association === "missing" ? null : "corrupt-digest",
+				Number(task),
+			);
+			f.prepare = undefined;
+			await f.open();
+			await f.host.schedule("command");
+			const after = await f.harness.waitForTask(task, BACKGROUND_CONTEXT);
+			expect(after.state.outcome).toMatchObject({
+				status: "failed",
+				error: {
+					message: "Summarization failed: Missing first summary association",
+				},
+			});
+			expect(f.fixture.providerAttempts).toBe(1);
+			expect(f.fixture.providerCalls).toBe(0);
+			expect(f.effects()).toHaveLength(1);
+			gate.resolve();
+		}));
+for (const ordering of ["before", "after"] as const)
+	it(`selection handoff interrupted ${ordering} Pi summarize commit remains exact or fails closed`, async () =>
+		run(`summary-selection-${ordering}`, "answer", async (f, state) => {
+			const entered = pendingRemote<void>();
+			const release = pendingRemote<void>();
+			let invocationSignal: AbortSignal | undefined;
+			f.adapters = (guard) => ({
+				...guard,
+				bindCompaction: async (api, selection, context) => {
+					await guard.bindCompaction(api, selection, context);
+					invocationSignal = context.abortSignal;
+					if (ordering === "before") {
+						entered.resolve();
+						await awaitWithContext(release.promise, context);
+					}
+				},
+			});
+			if (ordering === "after")
+				f.piStorage = (storage) =>
+					new Proxy(storage, {
+						get(target, key) {
+							if (key === "commit")
+								return async (...args: Parameters<Storage["commit"]>) => {
+									const summary = args[0].some(
+										(write) =>
+											write.type === "task" &&
+											write.value.kind === "pi.compaction" &&
+											write.value.state.checkpoint &&
+											typeof write.value.state.checkpoint === "object" &&
+											"phase" in write.value.state.checkpoint &&
+											write.value.state.checkpoint.phase === "summarize",
+									);
+									if (!summary) return target.commit(...args);
+									const seq = await target.commit(...args);
+									entered.resolve();
+									await awaitWithContext(release.promise, args[1]);
+									return seq;
+								};
+							const value: unknown = Reflect.get(target, key);
+							return typeof value === "function" ? value.bind(target) : value;
+						},
+					});
+			await f.host.yield();
+			await f.open();
+			await f.start();
+			await f.harness.waitForIdle(BACKGROUND_CONTEXT);
+			const task = await f.host.compact("command");
+			await entered.promise;
+			expect(
+				state.storage.sql
+					.exec(
+						"SELECT prepared, digest FROM host_tasks WHERE task = ?",
+						Number(task),
+					)
+					.one(),
+			).toEqual({ prepared: null, digest: null });
+			expect(f.fixture.providerAttempts).toBe(1);
+			expect(f.effects()).toHaveLength(1);
+			const closing = f.host.yield();
+			if (ordering === "after") {
+				await until(() => invocationSignal?.aborted === true);
+				release.resolve();
+			}
+			await closing;
+			f.piStorage = undefined;
+			f.adapters = (guard) => guard;
+			await f.open();
+			await f.host.schedule("command");
+			const after = await f.harness.waitForTask(task, BACKGROUND_CONTEXT);
+			if (ordering === "before") {
+				expect(after.state.outcome?.status).toBe("completed");
+				expect(f.fixture.providerCalls).toBe(1);
+			} else {
+				expect(after.state.outcome).toMatchObject({
+					status: "failed",
+					error: {
+						message: "Summarization failed: Missing first summary association",
+					},
+				});
+				expect(f.fixture.providerCalls).toBe(0);
+				expect(f.effects()).toHaveLength(1);
+			}
+			release.resolve();
+		}));
+
+it("stale epoch after validated summary preparation cannot admit an effect", async () =>
+	run("summary-prepared-epoch", "answer", async (f, state) => {
+		await f.start();
+		await f.harness.waitForIdle(BACKGROUND_CONTEXT);
+		const gate = pendingRemote<void>();
+		const entered = pendingRemote<void>();
+		f.dependencies.prepareModel = async () => {
+			entered.resolve();
+			await gate.promise;
+		};
+		const task = await f.host.compact("command");
+		await entered.promise;
+		state.storage.sql.exec(
+			"UPDATE host_runs SET epoch = epoch + 1 WHERE id = 'command'",
+		);
+		gate.resolve();
+		const after = await f.harness.waitForTask(task, BACKGROUND_CONTEXT);
+		expect(after.state.outcome?.status).toBe("failed");
+		expect(f.fixture.providerCalls).toBe(1);
+		expect(f.effects()).toHaveLength(1);
+	}));
+
 it("owned blocking compaction excludes its actual waiting generation parent and preserves command membership", async () =>
 	run("owned-summary", "answer", async (f) => {
 		await f.start();
@@ -1366,6 +1523,89 @@ async function plainCorrelation(
 		),
 	) as Record<string, unknown>;
 }
+
+for (const fault of ["preparation-write", "preparation-flush"] as const)
+	it(`encrypted preparation ${fault} failure fences without admitting a summary`, async () =>
+		runEncrypted(`summary-${fault}`, "answer", async (f, state) => {
+			await f.start();
+			await f.harness.waitForIdle(BACKGROUND_CONTEXT);
+			f.fault = fault;
+			const task = await f.host.compact("command");
+			await f.harness.waitForTask(task, BACKGROUND_CONTEXT);
+			const row = state.storage.sql
+				.exec(
+					"SELECT prepared, digest FROM host_tasks WHERE task = ?",
+					Number(task),
+				)
+				.one();
+			if (fault === "preparation-write")
+				expect(row).toEqual({ prepared: null, digest: null });
+			else {
+				expect(String(row.prepared)).toContain("aes-256-gcm");
+				expect(row.digest).toBeTypeOf("string");
+			}
+			expect(f.fixture.providerCalls).toBe(1);
+			expect(f.effects()).toHaveLength(1);
+			expect(
+				state.storage.sql.exec("SELECT reason FROM host_safety").one().reason,
+			).toBe("storage-failure");
+			f.fault = undefined;
+			await f.host.yield();
+			await f.open();
+			await expect(f.host.schedule("command")).rejects.toThrow();
+			expect(f.fixture.providerCalls).toBe(0);
+			expect(f.effects()).toHaveLength(1);
+		}));
+
+it("encrypted validated summary preparation reopens with exact ciphertext provenance and no prior admission", async () =>
+	runEncrypted("summary-prepared-reopen", "answer", async (f, state) => {
+		await f.start();
+		await f.harness.waitForIdle(BACKGROUND_CONTEXT);
+		const gate = pendingRemote<void>();
+		const entered = pendingRemote<void>();
+		f.dependencies.prepareModel = async () => {
+			entered.resolve();
+			await gate.promise;
+		};
+		const task = await f.host.compact("command");
+		await entered.promise;
+		const row = state.storage.sql
+			.exec<{ prepared: string; digest: string }>(
+				"SELECT prepared, digest FROM host_tasks WHERE task = ?",
+				Number(task),
+			)
+			.one();
+		expect(row.prepared).toContain("aes-256-gcm");
+		expect(row.prepared).not.toContain("faux-1");
+		const plain = await (await import("./host-private.ts")).openHostField(
+			await encryptedBinding(),
+			`task:${Number(task)}:prepared`,
+			row.prepared,
+		);
+		expect(JSON.parse(plain)).toMatchObject({
+			model: { provider: "faux", modelId: "faux-1" },
+			firstKept: expect.any(Number),
+		});
+		expect(f.effects()).toHaveLength(1);
+		await f.host.yield();
+		f.dependencies.prepareModel = undefined;
+		await f.open();
+		await f.host.schedule("command");
+		const after = await f.harness.waitForTask(task, BACKGROUND_CONTEXT);
+		expect(after.state.outcome?.status).toBe("completed");
+		expect(f.fixture.providerCalls).toBe(1);
+		expect(f.effects()).toHaveLength(2);
+		gate.resolve();
+	}));
+
+it("host-1 preparation meanings are not silently reinterpreted", async () =>
+	run("old-preparation-version", "answer", async (f, state) => {
+		await f.host.yield();
+		state.storage.sql.exec(
+			"UPDATE host_meta SET version = 'pi-1.0.1/ditto-host-1'",
+		);
+		await expect(f.open()).rejects.toThrow("Incompatible host state");
+	}));
 
 it("encrypted L1: guarded model and tool settle without a false integrity failure", async () =>
 	runEncrypted("model-tool", "tool", async (f) => {

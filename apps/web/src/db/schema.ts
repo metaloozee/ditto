@@ -55,6 +55,45 @@ export const codexConnections = sqliteTable(
 	],
 );
 
+export const codexFixtureCapabilities = sqliteTable(
+	"codex_fixture_capabilities",
+	{
+		userId: text("userId").primaryKey(),
+		generation: integer("generation").notNull(),
+		revision: integer("revision").notNull(),
+		snapshot: text("snapshot").notNull(),
+	},
+	(table) => [
+		check("fixture_generation", sql`${table.generation} > 0`),
+		check("fixture_revision", sql`${table.revision} > 0`),
+		check("fixture_snapshot_bound", sql`length(${table.snapshot}) <= 4096`),
+	],
+);
+
+export const modelRequestAdmissions = sqliteTable(
+	"model_request_admissions",
+	{
+		effectId: text("effectId").notNull(),
+		windowId: text("windowId").primaryKey(),
+		requestDigest: text("requestDigest").notNull(),
+		purpose: text("purpose", {
+			enum: ["generation", "custom_summary", "git_metadata"],
+		}).notNull(),
+		state: text("state", {
+			enum: [
+				"reserved",
+				"admitted",
+				"complete",
+				"failed_known",
+				"outcome_unknown",
+			],
+		}).notNull(),
+		createdAt: integer("createdAt").notNull(),
+		updatedAt: integer("updatedAt").notNull(),
+	},
+	(table) => [index("model_request_admissions_window_idx").on(table.windowId)],
+);
+
 export const projects = sqliteTable(
 	"projects",
 	{

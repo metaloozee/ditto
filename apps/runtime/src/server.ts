@@ -341,6 +341,30 @@ export class Sandbox extends BaseSandbox<Env> {
 }
 
 export class RuntimeEntrypoint extends WorkerEntrypoint<Env> {
+	async configureOwned(
+		input: unknown,
+	): Promise<
+		import("../../../packages/runtime-contracts/src/configuration.js").ConfigurationAckV1
+	> {
+		const { parseConfigurationIntentV1 } = await import(
+			"../../../packages/runtime-contracts/src/configuration.js"
+		);
+		const intent = parseConfigurationIntentV1(input);
+		return {
+			version: 1,
+			intentId: intent.intentId,
+			status: "unavailable",
+			snapshot: null,
+		};
+	}
+	async readOwnedConfiguration(
+		_input: unknown,
+	): Promise<
+		| import("../../../packages/runtime-contracts/src/configuration.js").ConfigurationSnapshotV1
+		| null
+	> {
+		return null;
+	}
 	async modelConfiguration(): Promise<{
 		configured: boolean;
 		protocolVersion: number;
