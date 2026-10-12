@@ -1,0 +1,46 @@
+npm warn Unknown env config "store-dir". This will error in a future major version of npm. See `npm help npmrc` for supported config options.
+npm notice run test
+npm notice run vitest run --run src/pi-feasibility.test.ts -t contracts-consumer-freshness
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/packages/session-brain
+
+ ❯ src/pi-feasibility.test.ts (6 tests | 1 failed | 3 skipped) 1376ms
+   ↓ Pi 0.85.1 continuation characterization > does not treat an assistant tool request without results as a continuable user turn
+   ↓ Pi 0.85.1 continuation characterization > does not synthesize a missing sibling result when one result is appended
+   ↓ Pi 0.85.1 continuation characterization > normal tool batches preserve both call IDs and corresponding result IDs
+   ✓ contracts-consumer-freshness > contracts-consumer-freshness: imported emitted JS/declarations match a fresh contracts build  823ms
+   × contracts-consumer-freshness > contracts-consumer-freshness: isolated npm copy is stale until the documented npm refresh recipe 475ms
+     → npm install --ignore-scripts
+
+npm error code ENOTCACHED
+npm error request to https://registry.npmjs.org/vitest failed: cache mode is 'only-if-cached' but no cached response is available.
+npm error A complete log of this run can be found in: /home/ayan/ditto-execution/plan-008-4WXvNW/.execution-008/home/.npm/_logs/2026-10-11T09_21_24_819Z-debug-0.log
+
+   ✓ contracts-consumer-freshness > contracts-consumer-freshness: refresh refuses a consumer symlink to an external sentinel 77ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/pi-feasibility.test.ts > contracts-consumer-freshness > contracts-consumer-freshness: isolated npm copy is stale until the documented npm refresh recipe
+Error: npm install --ignore-scripts
+
+npm error code ENOTCACHED
+npm error request to https://registry.npmjs.org/vitest failed: cache mode is 'only-if-cached' but no cached response is available.
+npm error A complete log of this run can be found in: /home/ayan/ditto-execution/plan-008-4WXvNW/.execution-008/home/.npm/_logs/2026-10-11T09_21_24_819Z-debug-0.log
+
+ ❯ runNpm src/pi-feasibility.test.ts:185:11
+    183|    } catch (error) {
+    184|     const err = error as { stderr?: string; stdout?: string };
+    185|     throw new Error(
+       |           ^
+    186|      `npm ${args.join(" ")}\n${err.stdout ?? ""}\n${err.stderr ?? ""}`,
+    187|     );
+ ❯ src/pi-feasibility.test.ts:231:4
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 passed | 3 skipped (6)
+   Start at  11:21:21
+   Duration  3.64s (transform 225ms, setup 0ms, collect 1.88s, tests 1.38s, environment 0ms, prepare 120ms)
+

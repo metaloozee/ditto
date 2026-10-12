@@ -1,0 +1,112 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-ba28d676-9619-456d-8486-8821c03a4a7f
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-922dfc23-0780-4473-b08f-332f937f9b5f
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Prior host termination required
+    at PiDurableHost.open (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-host.ts:531:11)
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/jsg/_virtual_includes/iterator/workerd/jsg/value.h:1480: failed: jsg.Error: Prior host termination required
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-c8610d43-4026-4154-a604-c6de558a8b1b
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-closed-successor-replacement
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbb00 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbe50 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfca8e /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f03c2a /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0c760 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0cd90
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-39f22ea4-55d2-4081-a98d-1cef7b145417
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+stdout | src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+[DEBUG-008-successor] begin 0
+
+stdout | src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+[DEBUG-008-successor] first-complete 2297
+
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-b7e48c1a-4473-4098-b14c-e868ecc112ad
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+stdout | src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+[DEBUG-008-successor] first-reset 2545
+
+stdout | src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+[DEBUG-008-successor] first-recovered 3121
+
+stdout | src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+[DEBUG-008-successor] second-admitted 3301
+
+stdout | src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+[DEBUG-008-successor] second-delivered 3450
+
+
+================================================================================
+Failed to pop isolated storage stack frame in src/product-commands.worker.test.ts's test "an unclosed successor needs its own reset proof and cannot reuse the older witness".
+In particular, we were unable to pop Durable Objects storage.
+This usually means your Worker tried to access storage outside of a test, or some resources have not been disposed of properly.
+Ensure you "await" all Promises that read or write to these services, and make sure you use the "using" keyword when passing data across JSRPC.
+See https://developers.cloudflare.com/workers/testing/vitest-integration/known-issues/#isolated-storage for more details.
+[2m
+- AssertionError [ERR_ASSERTION]: Expected .sqlite, got /home/ayan/ditto-execution/plan-008-4WXvNW/.execution-008/tmp/miniflare-630eece0b8fc26cd4582f22bbb899a7e/do/vitest-pool-workers-runner--CandidateFixtureCredential/00ae15680231b21ccf0ce34e5c9f4b12a77f42f4d916fb8a16ec174e946763d2.sqlite-shm
+[22m================================================================================
+
+Error running worker: AssertionError [ERR_ASSERTION]: Isolated storage failed. There should be additional logs above.
+    at new AssertionError (node-internal:internal_assertionerror:427:15)
+    at assert.strictEqual (node-internal:internal_assert:196:11)
+    at WorkersTestRunner.updateStackedStorage (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:133:12)
+    at WorkersTestRunner.onAfterRunSuite (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:171:5)
+    at runSuite (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1763:3)
+    at runFiles (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)
+    at startTests (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1820:3)
+    at home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:117:26
+    at withEnv (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:84:3)
+    at run (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:109:2)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/product-commands.worker.test.ts:1696:1
+    1694| });
+    1695| 
+    1696| it("an unclosed successor needs its own reset proof and cannot reuse t…
+       | ^
+    1697|  const debugStarted = Date.now();
+    1698|  const debug = (stage: string) => console.log("[DEBUG-008-successor]",…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: Isolated storage failed. There should be additional logs above.
+ ❯ new AssertionError node-internal:internal_assertionerror:427:15
+ ❯ assert.strictEqual node-internal:internal_assert:196:11
+ ❯ WorkersTestRunner.updateStackedStorage home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:133:12
+ ❯ WorkersTestRunner.onAfterRunSuite home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:171:5
+ ❯ runSuite home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1763:3
+ ❯ runFiles home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3
+ ❯ startTests home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1820:3
+ ❯ home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:117:26
+ ❯ withEnv home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:84:3
+ ❯ run home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:109:2
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files   (1)
+      Tests  1 failed | 7 passed | 45 skipped (53)
+     Errors  1 error
+   Start at  14:24:13
+   Duration  33.53s (transform 358ms, setup 0ms, collect 607ms, tests 0ms, environment 0ms, prepare 90ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/product-commands.worker.test.ts -t 'native alarms drain|lost delivery acknowledgment|cold Stop after disconnect|private fixture reset preserves|private fixture recovery activates|private recovery scans|unclosed successor needs'

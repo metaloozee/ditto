@@ -1,0 +1,22 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-a56f09c1-b354-4e25-b275-6e5a8c0edd2c
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-closed-successor-replacement
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbb00 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbe50 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfca8e /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f03c2a /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0c760 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0cd90
+ ✓ src/product-commands.worker.test.ts (39 tests | 38 skipped) 4387ms
+   ✓ private fixture recovery activates only the exact current successor and a valid old descriptor stays denied  4386ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 38 skipped (39)
+   Start at  11:54:06
+   Duration  5.79s (transform 321ms, setup 0ms, collect 562ms, tests 4.39s, environment 0ms, prepare 96ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

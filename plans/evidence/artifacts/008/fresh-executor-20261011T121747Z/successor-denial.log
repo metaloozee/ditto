@@ -1,0 +1,49 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+stdout | src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+[DEBUG-008-successor] begin 0
+
+stdout | src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+[DEBUG-008-successor] first-complete 1208
+
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-97f36cc1-e53d-406b-989f-4a32e46973db
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+stdout | src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+[DEBUG-008-successor] first-reset 1418
+
+stdout | src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+[DEBUG-008-successor] first-recovered 1618
+
+stdout | src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+[DEBUG-008-successor] second-claim-held 2322
+
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-unobserved-successor
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-unobserved-successor
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbb00 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbe50 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfca8e /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f03c2a /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0c760 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0cd90
+stdout | src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+[DEBUG-008-successor] second-aborted 2377
+
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Prior host termination required
+    at PiDurableHost.open (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-host.ts:531:11)
+    at CandidateFixtureSession.activate (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-product-session.ts:118:16)
+    at /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests/src/model-entry.ts:570:17
+    at CandidateFixtureSession.alarm (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests/src/model-entry.ts:579:3)
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/jsg/_virtual_includes/iterator/workerd/jsg/value.h:1480: failed: jsg.Error: Prior host termination required
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+ ✓ src/product-commands.worker.test.ts (53 tests | 52 skipped) 3707ms
+   ✓ an unclosed successor needs its own reset proof and cannot reuse the older witness  3705ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 52 skipped (53)
+   Start at  14:21:12
+   Duration  5.16s (transform 351ms, setup 0ms, collect 596ms, tests 3.71s, environment 0ms, prepare 97ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

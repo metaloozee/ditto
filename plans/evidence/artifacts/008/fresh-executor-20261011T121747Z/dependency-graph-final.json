@@ -1,0 +1,16 @@
+{
+  "baselineMatches": {
+    "package.json": false,
+    "pnpm-lock.yaml": true,
+    "pnpm-workspace.yaml": true,
+    "apps/web/package.json": true,
+    "apps/runtime/package.json": true,
+    "apps/credential-tests/package.json": true,
+    "packages/runtime-contracts/package.json": true,
+    "packages/session-brain/package.json": true,
+    "packages/session-brain/package-lock.json": true,
+    "packages/sandbox-runner/package.json": true,
+    "packages/sandbox-runner/package-lock.json": true
+  },
+  "rootMetadataExcludingScriptsMatchesHEAD": true
+}

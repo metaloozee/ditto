@@ -1,0 +1,37 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-credential-fence-replacement
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbb00 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbe50 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfca8e /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f03c2a /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0c760 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0cd90
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-b0150922-a98d-4b34-b580-d92b8a71b6f5
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-aa235f27-a358-40e1-8d85-c3df8e41c70c
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-97d5a546-3614-4bef-88d7-99664f92a0a0
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-closed-successor-replacement
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-closed-successor-replacement
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbb00 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbe50 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfca8e /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f03c2a /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0c760 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0cd90
+ ✓ src/product-commands.worker.test.ts (54 tests | 46 skipped) 25736ms
+   ✓ settles final-hold preparation false when a real preclaim hold crosses the original host yield  3443ms
+   ✓ credential-local acknowledged barrier denies a held real positive final permit after host claim  2448ms
+   ✓ credential-local lost-ack barrier denies a held real positive final permit after host claim  2443ms
+   ✓ credential-local replacement barrier denies a held real positive final permit after host claim  2629ms
+   ✓ private fixture reset preserves immutable host origin and discarded observation=false  2766ms
+   ✓ private fixture reset preserves immutable host origin and discarded observation=true  2870ms
+   ✓ private fixture recovery activates only the exact current successor and a valid old descriptor stays denied  5470ms
+   ✓ credential-local final gate preserves the original positive permit window across a held response  3666ms
+
+ Test Files  1 passed (1)
+      Tests  8 passed | 46 skipped (54)
+   Start at  12:52:13
+   Duration  27.13s (transform 363ms, setup 0ms, collect 618ms, tests 25.74s, environment 0ms, prepare 106ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

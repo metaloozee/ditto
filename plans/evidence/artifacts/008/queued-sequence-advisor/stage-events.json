@@ -1,0 +1,2272 @@
+[
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805603982,
+    "elapsed_ms": 0,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "alarm",
+    "boundary": "alarmHost.before",
+    "time_ms": 1791805603984,
+    "elapsed_ms": 2,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805603984,
+    "elapsed_ms": 2,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "alarm",
+    "boundary": "alarmHost.after",
+    "time_ms": 1791805604011,
+    "elapsed_ms": 29,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "alarm",
+    "boundary": "host.alarm.before",
+    "time_ms": 1791805604011,
+    "elapsed_ms": 29,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "alarm",
+    "boundary": "host.alarm.after",
+    "time_ms": 1791805604642,
+    "elapsed_ms": 660,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "alarm",
+    "boundary": "joinInvocation.before",
+    "time_ms": 1791805604642,
+    "elapsed_ms": 660,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "alarm",
+    "boundary": "joinInvocation.after",
+    "time_ms": 1791805605579,
+    "elapsed_ms": 1597,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.after",
+    "time_ms": 1791805605580,
+    "elapsed_ms": 1598,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805605584,
+    "elapsed_ms": 0,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "alarm",
+    "boundary": "alarmHost.before",
+    "time_ms": 1791805605584,
+    "elapsed_ms": 0,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805605584,
+    "elapsed_ms": 0,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "alarm",
+    "boundary": "alarmHost.after",
+    "time_ms": 1791805605645,
+    "elapsed_ms": 61,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "alarm",
+    "boundary": "host.alarm.before",
+    "time_ms": 1791805605645,
+    "elapsed_ms": 61,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "alarm",
+    "boundary": "host.alarm.after",
+    "time_ms": 1791805605654,
+    "elapsed_ms": 70,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "alarm",
+    "boundary": "joinInvocation.before",
+    "time_ms": 1791805605655,
+    "elapsed_ms": 71,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "alarm",
+    "boundary": "joinInvocation.after",
+    "time_ms": 1791805605655,
+    "elapsed_ms": 71,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.after",
+    "time_ms": 1791805605655,
+    "elapsed_ms": 71,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "retire",
+    "boundary": "enter",
+    "time_ms": 1791805606217,
+    "elapsed_ms": 0,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "retire",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805606217,
+    "elapsed_ms": 0,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "retire",
+    "boundary": "alarmCompletion.after",
+    "time_ms": 1791805606218,
+    "elapsed_ms": 1,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "retire",
+    "boundary": "yield.before",
+    "time_ms": 1791805606218,
+    "elapsed_ms": 1,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "retire",
+    "boundary": "yield.after",
+    "time_ms": 1791805606226,
+    "elapsed_ms": 9,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "retire",
+    "boundary": "closure.before",
+    "time_ms": 1791805606226,
+    "elapsed_ms": 9,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "retire",
+    "boundary": "closure.after",
+    "time_ms": 1791805606227,
+    "elapsed_ms": 10,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "retire",
+    "boundary": "deleteAlarm.before",
+    "time_ms": 1791805606227,
+    "elapsed_ms": 10,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "retire",
+    "boundary": "deleteAlarm.after",
+    "time_ms": 1791805606227,
+    "elapsed_ms": 10,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "retire",
+    "boundary": "sync.before",
+    "time_ms": 1791805606227,
+    "elapsed_ms": 10,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "settles final-hold preparation false when a real preclaim hold crosses the original host yield",
+    "scope": "retire",
+    "boundary": "sync.after",
+    "time_ms": 1791805606235,
+    "elapsed_ms": 18,
+    "boot": "bf9b4d9b-f76a-4f23-965a-fe00df5d0b49",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805608585,
+    "elapsed_ms": 0,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmHost.before",
+    "time_ms": 1791805608586,
+    "elapsed_ms": 1,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805608586,
+    "elapsed_ms": 1,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmHost.after",
+    "time_ms": 1791805608608,
+    "elapsed_ms": 23,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "host.alarm.before",
+    "time_ms": 1791805608608,
+    "elapsed_ms": 23,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "host.alarm.after",
+    "time_ms": 1791805609177,
+    "elapsed_ms": 592,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "joinInvocation.before",
+    "time_ms": 1791805609177,
+    "elapsed_ms": 592,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "joinInvocation.after",
+    "time_ms": 1791805609678,
+    "elapsed_ms": 1093,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.after",
+    "time_ms": 1791805609678,
+    "elapsed_ms": 1093,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805609682,
+    "elapsed_ms": 0,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmHost.before",
+    "time_ms": 1791805609682,
+    "elapsed_ms": 0,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805609682,
+    "elapsed_ms": 0,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "enter",
+    "time_ms": 1791805609685,
+    "elapsed_ms": 0,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805609685,
+    "elapsed_ms": 0,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmHost.after",
+    "time_ms": 1791805609728,
+    "elapsed_ms": 46,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "host.alarm.before",
+    "time_ms": 1791805609728,
+    "elapsed_ms": 46,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "host.alarm.after",
+    "time_ms": 1791805609735,
+    "elapsed_ms": 53,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "joinInvocation.before",
+    "time_ms": 1791805609735,
+    "elapsed_ms": 53,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "joinInvocation.after",
+    "time_ms": 1791805609736,
+    "elapsed_ms": 54,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.after",
+    "time_ms": 1791805609736,
+    "elapsed_ms": 54,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "alarmCompletion.after",
+    "time_ms": 1791805609736,
+    "elapsed_ms": 51,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "yield.before",
+    "time_ms": 1791805609736,
+    "elapsed_ms": 51,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "yield.after",
+    "time_ms": 1791805609750,
+    "elapsed_ms": 65,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "closure.before",
+    "time_ms": 1791805609751,
+    "elapsed_ms": 66,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "closure.after",
+    "time_ms": 1791805609751,
+    "elapsed_ms": 66,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "deleteAlarm.before",
+    "time_ms": 1791805609751,
+    "elapsed_ms": 66,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "deleteAlarm.after",
+    "time_ms": 1791805609752,
+    "elapsed_ms": 67,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "sync.before",
+    "time_ms": 1791805609752,
+    "elapsed_ms": 67,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "credential-local acknowledged barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "sync.after",
+    "time_ms": 1791805609760,
+    "elapsed_ms": 75,
+    "boot": "9bd54bf0-c8f0-451b-8425-1e5860b1cb35",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805611878,
+    "elapsed_ms": 0,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmHost.before",
+    "time_ms": 1791805611878,
+    "elapsed_ms": 0,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805611878,
+    "elapsed_ms": 0,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmHost.after",
+    "time_ms": 1791805611906,
+    "elapsed_ms": 28,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "host.alarm.before",
+    "time_ms": 1791805611906,
+    "elapsed_ms": 28,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "host.alarm.after",
+    "time_ms": 1791805612935,
+    "elapsed_ms": 1057,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "joinInvocation.before",
+    "time_ms": 1791805612935,
+    "elapsed_ms": 1057,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "joinInvocation.after",
+    "time_ms": 1791805613518,
+    "elapsed_ms": 1640,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.after",
+    "time_ms": 1791805613519,
+    "elapsed_ms": 1641,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805613525,
+    "elapsed_ms": 0,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmHost.before",
+    "time_ms": 1791805613525,
+    "elapsed_ms": 0,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805613525,
+    "elapsed_ms": 0,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "enter",
+    "time_ms": 1791805613530,
+    "elapsed_ms": 0,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805613530,
+    "elapsed_ms": 0,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmHost.after",
+    "time_ms": 1791805613615,
+    "elapsed_ms": 90,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "host.alarm.before",
+    "time_ms": 1791805613616,
+    "elapsed_ms": 91,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "host.alarm.after",
+    "time_ms": 1791805613628,
+    "elapsed_ms": 103,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "joinInvocation.before",
+    "time_ms": 1791805613628,
+    "elapsed_ms": 103,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "joinInvocation.after",
+    "time_ms": 1791805613629,
+    "elapsed_ms": 104,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.after",
+    "time_ms": 1791805613629,
+    "elapsed_ms": 104,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "alarmCompletion.after",
+    "time_ms": 1791805613629,
+    "elapsed_ms": 99,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "yield.before",
+    "time_ms": 1791805613629,
+    "elapsed_ms": 99,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "yield.after",
+    "time_ms": 1791805613650,
+    "elapsed_ms": 120,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "closure.before",
+    "time_ms": 1791805613650,
+    "elapsed_ms": 120,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "closure.after",
+    "time_ms": 1791805613651,
+    "elapsed_ms": 121,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "deleteAlarm.before",
+    "time_ms": 1791805613651,
+    "elapsed_ms": 121,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "deleteAlarm.after",
+    "time_ms": 1791805613651,
+    "elapsed_ms": 121,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "sync.before",
+    "time_ms": 1791805613651,
+    "elapsed_ms": 121,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "credential-local lost-ack barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "sync.after",
+    "time_ms": 1791805613661,
+    "elapsed_ms": 131,
+    "boot": "d4e06977-2fdb-453a-bdb0-a218df73a319",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805615925,
+    "elapsed_ms": 0,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmHost.before",
+    "time_ms": 1791805615925,
+    "elapsed_ms": 0,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805615925,
+    "elapsed_ms": 0,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmHost.after",
+    "time_ms": 1791805615954,
+    "elapsed_ms": 29,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "host.alarm.before",
+    "time_ms": 1791805615954,
+    "elapsed_ms": 29,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "host.alarm.after",
+    "time_ms": 1791805616585,
+    "elapsed_ms": 660,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "joinInvocation.before",
+    "time_ms": 1791805616585,
+    "elapsed_ms": 660,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "joinInvocation.after",
+    "time_ms": 1791805617146,
+    "elapsed_ms": 1221,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.after",
+    "time_ms": 1791805617146,
+    "elapsed_ms": 1221,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805617162,
+    "elapsed_ms": 0,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmHost.before",
+    "time_ms": 1791805617162,
+    "elapsed_ms": 0,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805617162,
+    "elapsed_ms": 0,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmHost.after",
+    "time_ms": 1791805617254,
+    "elapsed_ms": 92,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "host.alarm.before",
+    "time_ms": 1791805617254,
+    "elapsed_ms": 92,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "host.alarm.after",
+    "time_ms": 1791805617262,
+    "elapsed_ms": 100,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "joinInvocation.before",
+    "time_ms": 1791805617262,
+    "elapsed_ms": 100,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "joinInvocation.after",
+    "time_ms": 1791805617263,
+    "elapsed_ms": 101,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.after",
+    "time_ms": 1791805617263,
+    "elapsed_ms": 101,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "enter",
+    "time_ms": 1791805617265,
+    "elapsed_ms": 0,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805617265,
+    "elapsed_ms": 0,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "alarmCompletion.after",
+    "time_ms": 1791805617265,
+    "elapsed_ms": 0,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "yield.before",
+    "time_ms": 1791805617265,
+    "elapsed_ms": 0,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "yield.after",
+    "time_ms": 1791805617279,
+    "elapsed_ms": 14,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "closure.before",
+    "time_ms": 1791805617279,
+    "elapsed_ms": 14,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "closure.after",
+    "time_ms": 1791805617279,
+    "elapsed_ms": 14,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "deleteAlarm.before",
+    "time_ms": 1791805617279,
+    "elapsed_ms": 14,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "deleteAlarm.after",
+    "time_ms": 1791805617279,
+    "elapsed_ms": 14,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "sync.before",
+    "time_ms": 1791805617279,
+    "elapsed_ms": 14,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "credential-local replacement barrier denies a held real positive final permit after host claim",
+    "scope": "retire",
+    "boundary": "sync.after",
+    "time_ms": 1791805617285,
+    "elapsed_ms": 20,
+    "boot": "154cb73b-26cb-432d-92ca-d147ec36af05",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=false",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805619776,
+    "elapsed_ms": 0,
+    "boot": "5bef61f3-ee0b-4760-9471-09cf82b6b282",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=false",
+    "scope": "alarm",
+    "boundary": "alarmHost.before",
+    "time_ms": 1791805619776,
+    "elapsed_ms": 0,
+    "boot": "5bef61f3-ee0b-4760-9471-09cf82b6b282",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=false",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805619776,
+    "elapsed_ms": 0,
+    "boot": "5bef61f3-ee0b-4760-9471-09cf82b6b282",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=false",
+    "scope": "alarm",
+    "boundary": "alarmHost.after",
+    "time_ms": 1791805619808,
+    "elapsed_ms": 32,
+    "boot": "5bef61f3-ee0b-4760-9471-09cf82b6b282",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=false",
+    "scope": "alarm",
+    "boundary": "host.alarm.before",
+    "time_ms": 1791805619808,
+    "elapsed_ms": 32,
+    "boot": "5bef61f3-ee0b-4760-9471-09cf82b6b282",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=false",
+    "scope": "alarm",
+    "boundary": "host.alarm.after",
+    "time_ms": 1791805620467,
+    "elapsed_ms": 691,
+    "boot": "5bef61f3-ee0b-4760-9471-09cf82b6b282",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=false",
+    "scope": "alarm",
+    "boundary": "joinHold.before",
+    "time_ms": 1791805620467,
+    "elapsed_ms": 691,
+    "boot": "5bef61f3-ee0b-4760-9471-09cf82b6b282",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=false",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805621175,
+    "elapsed_ms": 0,
+    "boot": "2772620f-b7d5-45fe-8c87-2f48534c823c",
+    "host": false,
+    "retired": false
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=false",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805621486,
+    "elapsed_ms": 0,
+    "boot": "2772620f-b7d5-45fe-8c87-2f48534c823c",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=false",
+    "scope": "retire",
+    "boundary": "enter",
+    "time_ms": 1791805621562,
+    "elapsed_ms": 0,
+    "boot": "2772620f-b7d5-45fe-8c87-2f48534c823c",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=false",
+    "scope": "retire",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805621562,
+    "elapsed_ms": 0,
+    "boot": "2772620f-b7d5-45fe-8c87-2f48534c823c",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=false",
+    "scope": "retire",
+    "boundary": "alarmCompletion.after",
+    "time_ms": 1791805621562,
+    "elapsed_ms": 0,
+    "boot": "2772620f-b7d5-45fe-8c87-2f48534c823c",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=false",
+    "scope": "retire",
+    "boundary": "yield.before",
+    "time_ms": 1791805621562,
+    "elapsed_ms": 0,
+    "boot": "2772620f-b7d5-45fe-8c87-2f48534c823c",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=false",
+    "scope": "retire",
+    "boundary": "yield.after",
+    "time_ms": 1791805621580,
+    "elapsed_ms": 18,
+    "boot": "2772620f-b7d5-45fe-8c87-2f48534c823c",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=false",
+    "scope": "retire",
+    "boundary": "closure.before",
+    "time_ms": 1791805621581,
+    "elapsed_ms": 19,
+    "boot": "2772620f-b7d5-45fe-8c87-2f48534c823c",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=false",
+    "scope": "retire",
+    "boundary": "closure.after",
+    "time_ms": 1791805621581,
+    "elapsed_ms": 19,
+    "boot": "2772620f-b7d5-45fe-8c87-2f48534c823c",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=false",
+    "scope": "retire",
+    "boundary": "deleteAlarm.before",
+    "time_ms": 1791805621581,
+    "elapsed_ms": 19,
+    "boot": "2772620f-b7d5-45fe-8c87-2f48534c823c",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=false",
+    "scope": "retire",
+    "boundary": "deleteAlarm.after",
+    "time_ms": 1791805621581,
+    "elapsed_ms": 19,
+    "boot": "2772620f-b7d5-45fe-8c87-2f48534c823c",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=false",
+    "scope": "retire",
+    "boundary": "sync.before",
+    "time_ms": 1791805621581,
+    "elapsed_ms": 19,
+    "boot": "2772620f-b7d5-45fe-8c87-2f48534c823c",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=false",
+    "scope": "retire",
+    "boundary": "sync.after",
+    "time_ms": 1791805621588,
+    "elapsed_ms": 26,
+    "boot": "2772620f-b7d5-45fe-8c87-2f48534c823c",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=true",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805623984,
+    "elapsed_ms": 0,
+    "boot": "97dd9852-76a2-4d97-9461-7e5d2e6f2fa1",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=true",
+    "scope": "alarm",
+    "boundary": "alarmHost.before",
+    "time_ms": 1791805623984,
+    "elapsed_ms": 0,
+    "boot": "97dd9852-76a2-4d97-9461-7e5d2e6f2fa1",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=true",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805623984,
+    "elapsed_ms": 0,
+    "boot": "97dd9852-76a2-4d97-9461-7e5d2e6f2fa1",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=true",
+    "scope": "alarm",
+    "boundary": "alarmHost.after",
+    "time_ms": 1791805624032,
+    "elapsed_ms": 48,
+    "boot": "97dd9852-76a2-4d97-9461-7e5d2e6f2fa1",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=true",
+    "scope": "alarm",
+    "boundary": "host.alarm.before",
+    "time_ms": 1791805624032,
+    "elapsed_ms": 48,
+    "boot": "97dd9852-76a2-4d97-9461-7e5d2e6f2fa1",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=true",
+    "scope": "alarm",
+    "boundary": "host.alarm.after",
+    "time_ms": 1791805624712,
+    "elapsed_ms": 728,
+    "boot": "97dd9852-76a2-4d97-9461-7e5d2e6f2fa1",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=true",
+    "scope": "alarm",
+    "boundary": "joinHold.before",
+    "time_ms": 1791805624712,
+    "elapsed_ms": 728,
+    "boot": "97dd9852-76a2-4d97-9461-7e5d2e6f2fa1",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=true",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805625342,
+    "elapsed_ms": 0,
+    "boot": "782ff1a9-56c1-4075-b6b0-ab3f14924090",
+    "host": false,
+    "retired": false
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=true",
+    "scope": "retire",
+    "boundary": "enter",
+    "time_ms": 1791805625469,
+    "elapsed_ms": 0,
+    "boot": "782ff1a9-56c1-4075-b6b0-ab3f14924090",
+    "host": false,
+    "retired": false
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=true",
+    "scope": "retire",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805625470,
+    "elapsed_ms": 1,
+    "boot": "782ff1a9-56c1-4075-b6b0-ab3f14924090",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=true",
+    "scope": "retire",
+    "boundary": "alarmCompletion.after",
+    "time_ms": 1791805625470,
+    "elapsed_ms": 1,
+    "boot": "782ff1a9-56c1-4075-b6b0-ab3f14924090",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=true",
+    "scope": "retire",
+    "boundary": "deleteAlarm.before",
+    "time_ms": 1791805625470,
+    "elapsed_ms": 1,
+    "boot": "782ff1a9-56c1-4075-b6b0-ab3f14924090",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=true",
+    "scope": "retire",
+    "boundary": "deleteAlarm.after",
+    "time_ms": 1791805625470,
+    "elapsed_ms": 1,
+    "boot": "782ff1a9-56c1-4075-b6b0-ab3f14924090",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=true",
+    "scope": "retire",
+    "boundary": "sync.before",
+    "time_ms": 1791805625470,
+    "elapsed_ms": 1,
+    "boot": "782ff1a9-56c1-4075-b6b0-ab3f14924090",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "private fixture reset preserves immutable host origin and discarded observation=true",
+    "scope": "retire",
+    "boundary": "sync.after",
+    "time_ms": 1791805625470,
+    "elapsed_ms": 1,
+    "boot": "782ff1a9-56c1-4075-b6b0-ab3f14924090",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805627683,
+    "elapsed_ms": 0,
+    "boot": "30a964d4-0e2e-4814-ba52-495767e97fe1",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "alarmHost.before",
+    "time_ms": 1791805627684,
+    "elapsed_ms": 1,
+    "boot": "30a964d4-0e2e-4814-ba52-495767e97fe1",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805627684,
+    "elapsed_ms": 1,
+    "boot": "30a964d4-0e2e-4814-ba52-495767e97fe1",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "alarmHost.after",
+    "time_ms": 1791805627736,
+    "elapsed_ms": 53,
+    "boot": "30a964d4-0e2e-4814-ba52-495767e97fe1",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "host.alarm.before",
+    "time_ms": 1791805627737,
+    "elapsed_ms": 54,
+    "boot": "30a964d4-0e2e-4814-ba52-495767e97fe1",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "host.alarm.after",
+    "time_ms": 1791805628778,
+    "elapsed_ms": 1095,
+    "boot": "30a964d4-0e2e-4814-ba52-495767e97fe1",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "joinHold.before",
+    "time_ms": 1791805628778,
+    "elapsed_ms": 1095,
+    "boot": "30a964d4-0e2e-4814-ba52-495767e97fe1",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805629616,
+    "elapsed_ms": 0,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": false,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805629833,
+    "elapsed_ms": 0,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805629993,
+    "elapsed_ms": 0,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "alarmHost.before",
+    "time_ms": 1791805629993,
+    "elapsed_ms": 0,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805629993,
+    "elapsed_ms": 0,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "alarmHost.after",
+    "time_ms": 1791805630112,
+    "elapsed_ms": 119,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "host.alarm.before",
+    "time_ms": 1791805630112,
+    "elapsed_ms": 119,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "host.alarm.after",
+    "time_ms": 1791805630123,
+    "elapsed_ms": 130,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "joinInvocation.before",
+    "time_ms": 1791805630123,
+    "elapsed_ms": 130,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "joinInvocation.after",
+    "time_ms": 1791805630123,
+    "elapsed_ms": 130,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.after",
+    "time_ms": 1791805630124,
+    "elapsed_ms": 131,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805630174,
+    "elapsed_ms": 0,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "alarmHost.before",
+    "time_ms": 1791805630175,
+    "elapsed_ms": 1,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805630175,
+    "elapsed_ms": 1,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "alarmHost.after",
+    "time_ms": 1791805630364,
+    "elapsed_ms": 190,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "host.alarm.before",
+    "time_ms": 1791805630364,
+    "elapsed_ms": 190,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "host.alarm.after",
+    "time_ms": 1791805630367,
+    "elapsed_ms": 193,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "joinInvocation.before",
+    "time_ms": 1791805630368,
+    "elapsed_ms": 194,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "joinInvocation.after",
+    "time_ms": 1791805630368,
+    "elapsed_ms": 194,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.after",
+    "time_ms": 1791805630368,
+    "elapsed_ms": 194,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805630455,
+    "elapsed_ms": 0,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "alarmHost.before",
+    "time_ms": 1791805630455,
+    "elapsed_ms": 0,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805630455,
+    "elapsed_ms": 0,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "alarmHost.after",
+    "time_ms": 1791805630552,
+    "elapsed_ms": 97,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "host.alarm.before",
+    "time_ms": 1791805630552,
+    "elapsed_ms": 97,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "host.alarm.after",
+    "time_ms": 1791805630959,
+    "elapsed_ms": 504,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "joinInvocation.before",
+    "time_ms": 1791805630959,
+    "elapsed_ms": 504,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "joinInvocation.after",
+    "time_ms": 1791805631586,
+    "elapsed_ms": 1131,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.after",
+    "time_ms": 1791805631586,
+    "elapsed_ms": 1131,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805631591,
+    "elapsed_ms": 0,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "alarmHost.before",
+    "time_ms": 1791805631591,
+    "elapsed_ms": 0,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805631591,
+    "elapsed_ms": 0,
+    "boot": "02e99134-ab55-4141-b58c-2504f893da05",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "retire",
+    "boundary": "enter",
+    "time_ms": 1791805632093,
+    "elapsed_ms": 0,
+    "boot": "8d344bac-b110-481d-be60-156580c1be4f",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "retire",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805632093,
+    "elapsed_ms": 0,
+    "boot": "8d344bac-b110-481d-be60-156580c1be4f",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "retire",
+    "boundary": "alarmCompletion.after",
+    "time_ms": 1791805632093,
+    "elapsed_ms": 0,
+    "boot": "8d344bac-b110-481d-be60-156580c1be4f",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "retire",
+    "boundary": "yield.before",
+    "time_ms": 1791805632093,
+    "elapsed_ms": 0,
+    "boot": "8d344bac-b110-481d-be60-156580c1be4f",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "retire",
+    "boundary": "yield.after",
+    "time_ms": 1791805632101,
+    "elapsed_ms": 8,
+    "boot": "8d344bac-b110-481d-be60-156580c1be4f",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "retire",
+    "boundary": "closure.before",
+    "time_ms": 1791805632101,
+    "elapsed_ms": 8,
+    "boot": "8d344bac-b110-481d-be60-156580c1be4f",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "retire",
+    "boundary": "closure.after",
+    "time_ms": 1791805632101,
+    "elapsed_ms": 8,
+    "boot": "8d344bac-b110-481d-be60-156580c1be4f",
+    "host": true,
+    "retired": true
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "retire",
+    "boundary": "deleteAlarm.before",
+    "time_ms": 1791805632101,
+    "elapsed_ms": 8,
+    "boot": "8d344bac-b110-481d-be60-156580c1be4f",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "retire",
+    "boundary": "deleteAlarm.after",
+    "time_ms": 1791805632102,
+    "elapsed_ms": 9,
+    "boot": "8d344bac-b110-481d-be60-156580c1be4f",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "retire",
+    "boundary": "sync.before",
+    "time_ms": 1791805632102,
+    "elapsed_ms": 9,
+    "boot": "8d344bac-b110-481d-be60-156580c1be4f",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "private fixture recovery activates only the exact current successor and a valid old descriptor stays denied",
+    "scope": "retire",
+    "boundary": "sync.after",
+    "time_ms": 1791805632110,
+    "elapsed_ms": 17,
+    "boot": "8d344bac-b110-481d-be60-156580c1be4f",
+    "host": false,
+    "retired": true
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805634664,
+    "elapsed_ms": 0,
+    "boot": "03d1ca47-5919-45e7-b7c5-08fb4692abd1",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "alarmHost.before",
+    "time_ms": 1791805634664,
+    "elapsed_ms": 0,
+    "boot": "03d1ca47-5919-45e7-b7c5-08fb4692abd1",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805634664,
+    "elapsed_ms": 0,
+    "boot": "03d1ca47-5919-45e7-b7c5-08fb4692abd1",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "alarmHost.after",
+    "time_ms": 1791805634748,
+    "elapsed_ms": 84,
+    "boot": "03d1ca47-5919-45e7-b7c5-08fb4692abd1",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "host.alarm.before",
+    "time_ms": 1791805634748,
+    "elapsed_ms": 84,
+    "boot": "03d1ca47-5919-45e7-b7c5-08fb4692abd1",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "host.alarm.after",
+    "time_ms": 1791805635634,
+    "elapsed_ms": 970,
+    "boot": "03d1ca47-5919-45e7-b7c5-08fb4692abd1",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "joinHold.before",
+    "time_ms": 1791805635634,
+    "elapsed_ms": 970,
+    "boot": "03d1ca47-5919-45e7-b7c5-08fb4692abd1",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805636795,
+    "elapsed_ms": 0,
+    "boot": "af6c089a-1a2e-4e05-97f0-2bc9c09d13d9",
+    "host": false,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805637624,
+    "elapsed_ms": 0,
+    "boot": "af6c089a-1a2e-4e05-97f0-2bc9c09d13d9",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "alarmHost.before",
+    "time_ms": 1791805637624,
+    "elapsed_ms": 0,
+    "boot": "af6c089a-1a2e-4e05-97f0-2bc9c09d13d9",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805637624,
+    "elapsed_ms": 0,
+    "boot": "af6c089a-1a2e-4e05-97f0-2bc9c09d13d9",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "alarmHost.after",
+    "time_ms": 1791805637760,
+    "elapsed_ms": 136,
+    "boot": "af6c089a-1a2e-4e05-97f0-2bc9c09d13d9",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "host.alarm.before",
+    "time_ms": 1791805637760,
+    "elapsed_ms": 136,
+    "boot": "af6c089a-1a2e-4e05-97f0-2bc9c09d13d9",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "host.alarm.after",
+    "time_ms": 1791805638305,
+    "elapsed_ms": 681,
+    "boot": "af6c089a-1a2e-4e05-97f0-2bc9c09d13d9",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "joinInvocation.before",
+    "time_ms": 1791805638305,
+    "elapsed_ms": 681,
+    "boot": "af6c089a-1a2e-4e05-97f0-2bc9c09d13d9",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "joinInvocation.after",
+    "time_ms": 1791805638678,
+    "elapsed_ms": 1054,
+    "boot": "af6c089a-1a2e-4e05-97f0-2bc9c09d13d9",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.after",
+    "time_ms": 1791805638679,
+    "elapsed_ms": 1055,
+    "boot": "af6c089a-1a2e-4e05-97f0-2bc9c09d13d9",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "enter",
+    "time_ms": 1791805638684,
+    "elapsed_ms": 0,
+    "boot": "af6c089a-1a2e-4e05-97f0-2bc9c09d13d9",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "alarmHost.before",
+    "time_ms": 1791805638684,
+    "elapsed_ms": 0,
+    "boot": "af6c089a-1a2e-4e05-97f0-2bc9c09d13d9",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.before",
+    "time_ms": 1791805638684,
+    "elapsed_ms": 0,
+    "boot": "af6c089a-1a2e-4e05-97f0-2bc9c09d13d9",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "alarmHost.after",
+    "time_ms": 1791805639250,
+    "elapsed_ms": 566,
+    "boot": "af6c089a-1a2e-4e05-97f0-2bc9c09d13d9",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "host.alarm.before",
+    "time_ms": 1791805639250,
+    "elapsed_ms": 566,
+    "boot": "af6c089a-1a2e-4e05-97f0-2bc9c09d13d9",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "host.alarm.after",
+    "time_ms": 1791805639258,
+    "elapsed_ms": 574,
+    "boot": "af6c089a-1a2e-4e05-97f0-2bc9c09d13d9",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "joinInvocation.before",
+    "time_ms": 1791805639258,
+    "elapsed_ms": 574,
+    "boot": "af6c089a-1a2e-4e05-97f0-2bc9c09d13d9",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "joinInvocation.after",
+    "time_ms": 1791805639258,
+    "elapsed_ms": 574,
+    "boot": "af6c089a-1a2e-4e05-97f0-2bc9c09d13d9",
+    "host": true,
+    "retired": false
+  },
+  {
+    "test": "generation-2 admission denies a missing credential fence without fallback or effect refund",
+    "scope": "alarm",
+    "boundary": "alarmCompletion.after",
+    "time_ms": 1791805639258,
+    "elapsed_ms": 574,
+    "boot": "af6c089a-1a2e-4e05-97f0-2bc9c09d13d9",
+    "host": true,
+    "retired": false
+  }
+]

@@ -1,0 +1,142 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = CandidateCommandError: model_unconfigured
+    at reject (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/web/src/lib/session-command-candidate.ts:71:8)
+    at CandidateProductCommands.admit (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/web/src/lib/session-command-candidate.ts:255:39)
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = CandidateCommandError: model_unconfigured
+    at reject (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/web/src/lib/session-command-candidate.ts:71:8)
+    at CandidateProductCommands.admit (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/web/src/lib/session-command-candidate.ts:255:39)
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-0e1057fd-f563-4500-8000-a22616f4f3c6
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-ad083a08-875e-4d02-bd56-50f942797554
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-3143dc2a-7915-4843-a23b-fb1cb11f6993
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-closed-successor-replacement
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-closed-successor-replacement
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbb00 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbe50 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfca8e /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f03c2a /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0c760 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0cd90
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-8f51ffe8-f8de-4d7e-a91f-97358627c92c
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/actor-sqlite.c++:926: warning: NOSENTRY SQLite alarm overdue, running despite AlarmManager mismatch; scheduledTime = 1791804445.812s; localAlarmTime = 1791804445.834s; currentTime = 1791804445.846246505s; actorId = 0494890ea4a8e1d986e39f45511761e03ac0eb1590199b03f11a3e18f80fc7e2
+ ❯ src/product-commands.worker.test.ts (57 tests | 3 failed | 50 skipped) 19715ms
+   × owned authority works before the reset table exists 1563ms
+     → CandidateCommandError: model_unconfigured
+   × owned authority is fresh with a present reset table and no reset 1390ms
+     → CandidateCommandError: model_unconfigured
+   ↓ runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+   ↓ settles final-hold preparation false when a real preclaim hold crosses the original host yield
+   ↓ admits concurrent identical first prompts with one receipt, identity, capacity claim and message pair
+   ↓ keeps one lifetime workspace claim for concurrent distinct first prompts
+   ↓ rejects current readiness before all admission writes: UPDATE projects SET status='deleting'
+   ↓ rejects current readiness before all admission writes: UPDATE projects SET status='pending'
+   ↓ rejects current readiness before all admission writes: UPDATE codex_connections SET revoked=1
+   ↓ rejects current readiness before all admission writes: UPDATE codex_fixture_capabilities SET revision=2
+   ↓ rejects current readiness before all admission writes: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))
+   ↓ rejects current readiness before all admission writes: INSERT INTO runtime_deleted_target_fences VALUES('project','project',1,0)
+   ↓ denies caller authority, byte overflow and foreign ownership without rows
+   ↓ rejects terminal and foreign targets but admits cold Stop after capability removal
+   ↓ rolls back first admission at D1 batch boundary 0 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 1 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 2 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 3 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 4 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 5 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 6 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 7 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 8 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 9 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 10 without leaking capacity or identity
+   ↓ fails trusted reconstruction when admitted text or outbox membership changes
+   ↓ reconciles the exact started outcome idempotently and never accepts the opposite fate
+   ↓ reconciles the exact expired outcome idempotently and never accepts the opposite fate
+   ↓ native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+   ↓ lost delivery acknowledgment and new product invocation retain the receipt and one Pi submission
+   ↓ cold Stop after disconnect beats delivery gaps and retains multiple late message memberships across reopen
+   ↓ a follow-up admitted before completion but delivered afterward fails its own assistant without reopening the completed run
+   ↓ priority Stop fences a held credential claim without ordinary capacity or a second provider dispatch
+   ↓ real delivery expires an admitted but unstarted instruction without creating a Pi root or provider effect
+   ↓ product cancellation reconstructs a missing follow-up and closes its sequence without skipping the initial prompt
+   ↓ credential-local acknowledged barrier denies a held real positive final permit after host claim
+   ↓ credential-local lost-ack barrier denies a held real positive final permit after host claim
+   ↓ credential-local replacement barrier denies a held real positive final permit after host claim
+   ✓ private fixture reset preserves immutable host origin and discarded observation=false  2846ms
+   ✓ private fixture reset preserves immutable host origin and discarded observation=true  2673ms
+   ✓ private fixture recovery activates only the exact current successor and a valid old descriptor stays denied  4035ms
+   × generation-2 admission denies a missing credential fence without fallback or effect refund 3827ms
+     → expected 'complete' to be 'denied' // Object.is equality
+   ✓ credential-local final gate preserves the original positive permit window across a held response  3278ms
+   ↓ priority Stop through transport beats held default configuration without creating a root
+   ↓ queued configuration uses the next selection across a sequence gap and preserves committed preparation
+   ↓ three real candidate contract denials persist review and halt the exact admitted host without fetch
+   ↓ real D1 lost started acknowledgment retains one fate and the original queue deadline
+   ↓ real D1 lost expired acknowledgment retains one fate and the original queue deadline
+   ↓ real admitted Stop repairs candidate-control-intent interruption and retains its epoch and projection
+   ↓ real admitted Stop repairs candidate-control-outcome interruption and retains its epoch and projection
+   ↓ transport cancellation after start is too late and delayed old Stop cannot revoke a newer run
+   ↓ fresh mutable authority denies a prepared real request: UPDATE sandbox_identities SET incarnationId='changed'
+   ↓ fresh mutable authority denies a prepared real request: UPDATE workspace_sessions SET runtimeProtocolVersion=1
+   ↓ fresh mutable authority denies a prepared real request: INSERT INTO runtime_deleted_target_fences VALUES('project','project',1,0)
+   ↓ a natural replacement cannot certify the original host invocation or close an unrelated scope
+   ↓ private recovery scans every control through the cutoff and repairs an already delivered partial Stop
+   ↓ an unclosed successor needs its own reset proof and cannot reuse the older witness
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/product-commands.worker.test.ts > owned authority works before the reset table exists
+Error: CandidateCommandError: model_unconfigured
+ ❯ src/product-commands.worker.test.ts:210:16
+    208| 
+    209| it("owned authority works before the reset table exists", async () => {
+    210|  const first = await env.CandidateProduct.admitOwned("owner", prompt);
+       |                ^
+    211|  expect(await env.DB.prepare(
+    212|   "SELECT name FROM sqlite_master WHERE name='candidate_fixture_resets…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  src/product-commands.worker.test.ts > owned authority is fresh with a present reset table and no reset
+Error: CandidateCommandError: model_unconfigured
+ ❯ src/product-commands.worker.test.ts:224:16
+    222| 
+    223| it("owned authority is fresh with a present reset table and no reset",…
+    224|  const first = await env.CandidateProduct.admitOwned("owner", prompt);
+       |                ^
+    225|  const scope = {
+    226|   version: 2 as const, userId: "owner", projectId: "project",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+AssertionError: expected 'complete' to be 'denied' // Object.is equality
+
+Expected: "denied"
+Received: "complete"
+
+ ❯ src/product-commands.worker.test.ts:1272:61
+    1270|   });
+    1271|   await env.CandidateProduct.drain();
+    1272|   expect((await credential.waitCandidateOutcome())?.status).toBe("deni…
+       |                                                             ^
+    1273|   await expect.poll(async () => (await runtime.candidateSnapshot()).me…
+    1274|    row => row.assistant === next.assistantMessageId,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 4 passed | 50 skipped (57)
+   Start at  13:27:08
+   Duration  21.51s (transform 416ms, setup 0ms, collect 710ms, tests 19.71s, environment 0ms, prepare 130ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/product-commands.worker.test.ts -t 'owned authority|private fixture reset preserves|private fixture recovery activates|generation-2 admission|credential-local final gate'

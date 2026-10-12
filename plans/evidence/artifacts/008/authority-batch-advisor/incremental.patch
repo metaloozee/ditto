@@ -1,0 +1,420 @@
+--- a/apps/credential-tests/src/model-entry.ts
++++ b/apps/credential-tests/src/model-entry.ts
+@@ -41,7 +41,12 @@
+ 	CANDIDATE_MODEL_POLICY,
+ 	ModelProductAuthority,
+ } from "../../web/src/lib/model-product-authority";
+-import { CandidateProductCommands } from "../../web/src/lib/session-command-candidate";
++import {
++	type CandidateAuthorityRow,
++	CandidateProductCommands,
++	prepareCandidateRuntimeAuthority,
++	validateCandidateRuntimeAuthority,
++} from "../../web/src/lib/session-command-candidate";
+ import {
+ 	CANDIDATE_FIXTURE_RESET_SCHEMA,
+ 	type CandidateFixtureCredential,
+@@ -1098,14 +1103,31 @@
+ 		value: CandidateRuntimeScope,
+ 	): Promise<LocalAuthority> {
+ 		const scope = parseCandidateRuntimeScope(value);
+-		const reset = await this.latestReset(scope.workspaceSessionId);
++		if (!(await candidateFixtureResetTableExists(this.env.DB)))
++			return this.commands().runtimeAuthority(
++				scope.userId,
++				scope.projectId,
++				scope.workspaceSessionId,
++			);
++		const [resets, owned] = await this.env.DB.batch<
++			FixtureResetRow | CandidateAuthorityRow
++		>([
++			this.env.DB.prepare(
++				"SELECT * FROM candidate_fixture_resets WHERE sessionId=? ORDER BY generation DESC LIMIT 1",
++			).bind(scope.workspaceSessionId),
++			prepareCandidateRuntimeAuthority(
++				this.env.DB,
++				scope.userId,
++				scope.projectId,
++				scope.workspaceSessionId,
++			),
++		]);
++		const reset = (resets.results[0] as FixtureResetRow | undefined) ?? null;
+ 		const subject = reset?.intent
+ 			? fixtureResetSubject(reset.intent)
+ 			: undefined;
+-		const authority = await this.commands().runtimeAuthority(
+-			scope.userId,
+-			scope.projectId,
+-			scope.workspaceSessionId,
++		const authority = validateCandidateRuntimeAuthority(
++			(owned.results[0] as CandidateAuthorityRow | undefined) ?? null,
+ 			subject,
+ 		);
+ 		if (!authority.current || !reset) return authority;
+--- a/apps/credential-tests/src/product-commands.worker.test.ts
++++ b/apps/credential-tests/src/product-commands.worker.test.ts
+@@ -36,6 +36,7 @@
+ 
+ import {
+ 	CANDIDATE_FIXTURE_RESET_SCHEMA,
++	candidateDispatchScope,
+ 	type CandidateFixtureCredential,
+ } from "./entry";
+ import type {
+@@ -141,7 +142,7 @@
+ 		),
+ 	);
+ }
+-beforeEach(async () => {
++beforeEach(async ({ task }) => {
+ 	modelCalls = 0;
+ 	terminal = false;
+ 	fetchMock.activate();
+@@ -177,7 +178,8 @@
+ 				await env.DB.exec(
+ 					statement.replace(/^\s*--[^\n]*$/gm, "").replaceAll("\n", " "),
+ 				);
+-	await env.DB.exec(CANDIDATE_FIXTURE_RESET_SCHEMA);
++	if (task.name !== "owned authority works before the reset table exists")
++		await env.DB.exec(CANDIDATE_FIXTURE_RESET_SCHEMA);
+ 	await env.DB.batch([
+ 		env.DB.prepare(
+ 			"INSERT INTO user(id,name,email,createdAt,updatedAt) VALUES('owner','Synthetic owner','owner@example.invalid',0,0)",
+@@ -203,6 +205,61 @@
+ 	).toBe("connected");
+ });
+ afterEach(() => fetchMock.deactivate());
++
++it("owned authority works before the reset table exists", async () => {
++	await candidateCredential();
++	const first = await env.CandidateProduct.admitOwned("owner", prompt);
++	expect(
++		await env.DB.prepare(
++			"SELECT name FROM sqlite_master WHERE name='candidate_fixture_resets'",
++		).first(),
++	).toBeNull();
++	expect(
++		await env.CandidateProduct.readRuntimeAuthority({
++			version: 2,
++			userId: "owner",
++			projectId: "project",
++			workspaceSessionId: first.workspaceSessionId,
++			ownerVersion: 1,
++		}),
++	).toEqual({ current: true, generation: 1, executor: 1, liveExecutors: 1 });
++});
++
++it("owned authority is fresh with a present reset table and no reset", async () => {
++	await candidateCredential();
++	const first = await env.CandidateProduct.admitOwned("owner", prompt);
++	const scope = {
++		version: 2 as const,
++		userId: "owner",
++		projectId: "project",
++		workspaceSessionId: first.workspaceSessionId,
++		ownerVersion: 1 as const,
++	};
++	expect(await env.CandidateProduct.readRuntimeAuthority(scope)).toEqual({
++		current: true,
++		generation: 1,
++		executor: 1,
++		liveExecutors: 1,
++	});
++	await env.DB.exec(
++		"UPDATE workspace_sessions SET runtimeFailureReasonCode='review'",
++	);
++	expect((await env.CandidateProduct.readRuntimeAuthority(scope)).current).toBe(
++		false,
++	);
++	await env.DB.exec(
++		"UPDATE workspace_sessions SET runtimeFailureReasonCode=NULL",
++	);
++	expect((await env.CandidateProduct.readRuntimeAuthority(scope)).current).toBe(
++		true,
++	);
++	await env.DB.exec(
++		"INSERT INTO runtime_deleted_target_fences VALUES('project','project',1,0)",
++	);
++	expect((await env.CandidateProduct.readRuntimeAuthority(scope)).current).toBe(
++		false,
++	);
++});
+ 
+ it("runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path", async () => {
+ 	await env.CandidateCredential.getByName("owner").install("owner", 1, {
+@@ -1042,6 +1099,64 @@
+ 				await state.storage.sync();
+ 			});
+ 		} else {
++			expect(authority.current).toBe(true);
++			const retained = await env.DB.prepare(
++				"SELECT observation FROM candidate_fixture_resets WHERE resetId=?",
++			)
++				.bind(reset.resetId)
++				.first<{ observation: string }>();
++			if (!retained) throw new Error("missing_reset_observation");
++			await env.DB.prepare(
++				"UPDATE candidate_fixture_resets SET observation=NULL WHERE resetId=?",
++			)
++				.bind(reset.resetId)
++				.run();
++			const missing = await env.CandidateProduct.readRuntimeAuthority(
++				before.scope,
++			);
++			expect(missing.generation).toBe(1);
++			expect(missing.priorTerminated).toBeUndefined();
++			await env.DB.prepare(
++				"UPDATE candidate_fixture_resets SET observation=? WHERE resetId=?",
++			)
++				.bind(
++					JSON.stringify({
++						...JSON.parse(retained.observation),
++						predecessor: "wrong",
++					}),
++					reset.resetId,
++				)
++				.run();
++			expect(
++				(await env.CandidateProduct.readRuntimeAuthority(before.scope)).current,
++			).toBe(false);
++			await env.DB.prepare(
++				"UPDATE candidate_fixture_resets SET observation=? WHERE resetId=?",
++			)
++				.bind(retained.observation, reset.resetId)
++				.run();
++			const identity = await env.DB.prepare(
++				"SELECT incarnationId FROM sandbox_identities WHERE workspaceSessionId=?",
++			)
++				.bind(receipt.workspaceSessionId)
++				.first<{ incarnationId: string }>();
++			if (!identity) throw new Error("missing_owned_executor");
++			await env.DB.prepare(
++				"UPDATE sandbox_identities SET incarnationId='changed' WHERE workspaceSessionId=?",
++			)
++				.bind(receipt.workspaceSessionId)
++				.run();
++			expect(
++				(await env.CandidateProduct.readRuntimeAuthority(before.scope)).current,
++			).toBe(false);
++			await env.DB.prepare(
++				"UPDATE sandbox_identities SET incarnationId=? WHERE workspaceSessionId=?",
++			)
++				.bind(identity.incarnationId, receipt.workspaceSessionId)
++				.run();
++			expect(
++				(await env.CandidateProduct.readRuntimeAuthority(before.scope)).current,
++			).toBe(true);
+ 			expect(
+ 				await env.CandidateProduct.recoverCandidate(reset.resetId),
+ 			).toMatchObject({ generation: 2, phase: "fenced" });
+@@ -1165,6 +1280,114 @@
+ 			await env.CandidateProduct.recoverCandidate(reset.resetId),
+ 		).toMatchObject({ phase: "active", generation: 2 });
+ 		expect(calls()).toBe(2);
++	} finally {
++		await credential.releaseCandidateFinal();
++		await runtime.releaseFixtureJoin();
++		await runtime.retireFixture();
++	}
++});
++
++it("generation-2 admission denies a missing credential fence without fallback or effect refund", async () => {
++	const credential = await candidateCredential();
++	const calls = modelReplies();
++	await credential.armCandidateFinal();
++	const first = await env.CandidateProduct.admitOwned("owner", prompt);
++	let runtime = env.CandidateSessions.getByName(first.workspaceSessionId);
++	await runtime.holdFixtureJoin();
++	await env.CandidateProduct.reserveCandidateReset(first.commandId);
++	try {
++		await env.CandidateProduct.drain();
++		await runtime.waitFixtureJoin();
++		expect(await credential.waitCandidateFinal()).toBe(true);
++		const descriptor = await credential.candidateFinalDescriptor();
++		if (!descriptor) throw new Error("missing_final_descriptor");
++		await credential.releaseCandidateFinal();
++		expect((await credential.waitCandidateOutcome())?.status).toBe("complete");
++		await expect
++			.poll(
++				async () => {
++					await runtime.reconcileFixture();
++					return (await runtime.candidateSnapshot()).members[0]?.state;
++				},
++				{ timeout: 1000 },
++			)
++			.toBe("complete");
++		const reset = await env.CandidateProduct.resetCandidate(first.commandId);
++		expect(reset.phase).toBe("issued");
++		runtime = env.CandidateSessions.getByName(first.workspaceSessionId);
++		expect(
++			await env.CandidateProduct.recoverCandidate(reset.resetId),
++		).toMatchObject({ phase: "active", generation: 2 });
++		const scope = candidateDispatchScope(descriptor.subject);
++		await runInDurableObject(credential, async (_instance, state) => {
++			expect(
++				state.storage.sql
++					.exec(
++						"SELECT generation,phase FROM candidate_dispatch_fences WHERE scope=?",
++						scope,
++					)
++					.one(),
++			).toMatchObject({ generation: 2, phase: "active" });
++			state.storage.sql.exec(
++				"DELETE FROM candidate_dispatch_fences WHERE scope=? AND generation=2",
++				scope,
++			);
++			await state.storage.sync();
++		});
++		const beforeCalls = calls();
++		expect(beforeCalls).toBe(1);
++		await credential.armCandidateFinal();
++		const next = await env.CandidateProduct.admitOwned("owner", {
++			...prompt,
++			sessionId: first.workspaceSessionId,
++			idempotencyKey: "missing-generation-2-fence",
++			text: "Synthetic successor denial",
++		});
++		await env.CandidateProduct.drain();
++		expect(await credential.waitCandidateFinal()).toBe(false);
++		expect((await credential.waitCandidateOutcome())?.status).toBe("denied");
++		await expect
++			.poll(
++				async () =>
++					(await runtime.candidateSnapshot()).members.find(
++						(row) => row.assistant === next.assistantMessageId,
++					)?.state,
++				{ timeout: 3000 },
++			)
++			.toBe("failed");
++		expect(calls()).toBe(beforeCalls);
++		expect((await runtime.fixtureProof()).predecessor.generation).toBe(2);
++		expect(
++			await runInDurableObject(credential, (_instance, state) =>
++				state.storage.sql
++					.exec(
++						"SELECT generation FROM candidate_dispatch_fences WHERE scope=?",
++						scope,
++					)
++					.toArray(),
++			),
++		).toEqual([]);
++		const occupied = await runInDurableObject(runtime, (_instance, state) =>
++			state.storage.sql
++				.exec(
++					"SELECT e.id,e.state,d.claimed FROM host_effects e JOIN host_model_dispatch d ON d.effect=e.id JOIN host_effect_route r ON r.id=e.id WHERE r.run=?",
++					next.commandId,
++				)
++				.toArray(),
++		);
++		expect(occupied).toHaveLength(1);
++		expect(occupied[0]).toMatchObject({ state: "admitted", claimed: 0 });
++		await runtime.reconcileFixture();
++		expect(
++			await runInDurableObject(runtime, (_instance, state) =>
++				state.storage.sql
++					.exec(
++						"SELECT e.id,e.state,d.claimed FROM host_effects e JOIN host_model_dispatch d ON d.effect=e.id JOIN host_effect_route r ON r.id=e.id WHERE r.run=?",
++						next.commandId,
++					)
++					.toArray(),
++			),
++		).toEqual(occupied);
+ 	} finally {
+ 		await credential.releaseCandidateFinal();
+ 		await runtime.releaseFixtureJoin();
+--- a/apps/web/src/lib/session-command-candidate.ts
++++ b/apps/web/src/lib/session-command-candidate.ts
+@@ -114,6 +114,52 @@
+ AND i.lifecycleGeneration=1 AND i.state='ready' AND i.retiredAt IS NULL
+ AND NOT EXISTS(SELECT 1 FROM runtime_retired_identity_fences f WHERE f.identityId=i.id)
+ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind='project' AND f.targetId=p.id) OR (f.targetKind='workspace_session' AND f.targetId=s.id))`;
++
++export type CandidateAuthorityRow = {
++	identityId: string;
++	incarnationId: string;
++	lifecycleGeneration: number;
++	controllerNamespace: string;
++	liveExecutors: number;
++};
++type CandidateExpectedExecutor = Pick<
++	ModelSubjectV1,
++	"identityId" | "incarnationId" | "controllerNamespace" | "lifecycleGeneration"
++>;
++
++export function prepareCandidateRuntimeAuthority(
++	db: D1Database,
++	userId: string,
++	projectId: string,
++	sessionId: string,
++) {
++	const query = ownedSessionSql.replace(
++		"SELECT s.*,i.id AS identityId,i.incarnationId,i.lifecycleGeneration,i.controllerNamespace",
++		"SELECT i.id AS identityId,i.incarnationId,i.lifecycleGeneration,i.controllerNamespace,(SELECT count(*) FROM sandbox_identities WHERE kind='workspace_session' AND controllerClass='Sandbox' AND controllerNamespace='fixture-pi-durable-execution-v1' AND state='ready' AND retiredAt IS NULL) AS liveExecutors",
++	);
++	return db
++		.prepare(`${query} AND s.runtimeFailureReasonCode IS NULL`)
++		.bind(sessionId, userId, projectId);
++}
++
++export function validateCandidateRuntimeAuthority(
++	row: CandidateAuthorityRow | null,
++	expected?: CandidateExpectedExecutor,
++) {
++	return {
++		current:
++			!!row &&
++			row.liveExecutors === 1 &&
++			(!expected ||
++				(row.identityId === expected.identityId &&
++					row.incarnationId === expected.incarnationId &&
++					row.controllerNamespace === expected.controllerNamespace &&
++					row.lifecycleGeneration === expected.lifecycleGeneration)),
++		generation: 1,
++		executor: row?.lifecycleGeneration ?? 1,
++		liveExecutors: row?.liveExecutors ?? 0,
++	};
++}
+ 
+ export class CandidateProductCommands {
+ 	private policy: ModelProductAuthority;
+@@ -523,33 +569,13 @@
+ 		>,
+ 	) {
+ 		try {
+-			const query = ownedSessionSql.replace(
+-				"SELECT s.*,i.id AS identityId,i.incarnationId,i.lifecycleGeneration,i.controllerNamespace",
+-				"SELECT i.id AS identityId,i.incarnationId,i.lifecycleGeneration,i.controllerNamespace,(SELECT count(*) FROM sandbox_identities WHERE kind='workspace_session' AND controllerClass='Sandbox' AND controllerNamespace='fixture-pi-durable-execution-v1' AND state='ready' AND retiredAt IS NULL) AS liveExecutors",
+-			);
+-			const row = await this.db
+-				.prepare(`${query} AND s.runtimeFailureReasonCode IS NULL`)
+-				.bind(sessionId, userId, projectId)
+-				.first<{
+-					identityId: string;
+-					incarnationId: string;
+-					lifecycleGeneration: number;
+-					controllerNamespace: string;
+-					liveExecutors: number;
+-				}>();
+-			return {
+-				current:
+-					!!row &&
+-					row.liveExecutors === 1 &&
+-					(!expected ||
+-						(row.identityId === expected.identityId &&
+-							row.incarnationId === expected.incarnationId &&
+-							row.controllerNamespace === expected.controllerNamespace &&
+-							row.lifecycleGeneration === expected.lifecycleGeneration)),
+-				generation: 1,
+-				executor: row?.lifecycleGeneration ?? 1,
+-				liveExecutors: row?.liveExecutors ?? 0,
+-			};
++			const row = await prepareCandidateRuntimeAuthority(
++				this.db,
++				userId,
++				projectId,
++				sessionId,
++			).first<CandidateAuthorityRow>();
++			return validateCandidateRuntimeAuthority(row, expected);
+ 		} catch {
+ 			return { current: false, generation: 1, executor: 1, liveExecutors: 0 };
+ 		}

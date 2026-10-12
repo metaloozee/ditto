@@ -1,0 +1,13 @@
+{
+  "exactTakeoverGuardInBaseAndCandidate": true,
+  "lockfilesChangedThisExecutor": false,
+  "mainProbeComparison": {
+    "runtime-probes.config.ts": true,
+    "runtime-probes.test.ts": true,
+    "runtime-probes.log": true
+  },
+  "interruptedCopiedArtifactComparison": {
+    "matchedNamesChecked": 75,
+    "mismatches": []
+  }
+}

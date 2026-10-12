@@ -1,0 +1,21 @@
+{
+  "baselineSourceFiles": 37,
+  "sourceChanged": [],
+  "originalArtifactsCompared": 17,
+  "originalArtifactsChanged": [],
+  "reportAppendOnly": true,
+  "firstReportSha256": "e71c7e8e0196bb7f8784e7f16114a186ad8f3f4af3f60bdd65690db2bee8029e",
+  "copiedContinuationFiles": [
+    "a-continuation-advisor-probes.log",
+    "a-continuation-before.json",
+    "a-continuation-entry.ts",
+    "a-continuation-observations.json",
+    "a-continuation-preservation.json",
+    "a-continuation-run-1.log",
+    "a-continuation-sha256.json",
+    "a-continuation.config.ts",
+    "a-continuation.worker.test.ts"
+  ],
+  "AIndependentExecution": "not run; failed executor continuation inspected",
+  "ALostOutcomeControl": "not run; stopped by teardown failure"
+}

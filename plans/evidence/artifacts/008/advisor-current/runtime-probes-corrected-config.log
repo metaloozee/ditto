@@ -1,0 +1,113 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.config.ts...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+stdout | ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts > advisor: concurrent identical stop receipts do not poison persistent safety
+advisor-duplicate {"kind":"stop","statuses":["fulfilled","rejected"],"blockCount":1}
+
+stdout | ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts > advisor: concurrent identical cancel receipts do not poison persistent safety
+advisor-duplicate {"kind":"cancel","statuses":["fulfilled","rejected"],"blockCount":1}
+
+stdout | ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts > advisor: a deadline crossed at the start commit becomes expiry, not storage failure
+advisor-deadline {"result":"Candidate start deadline lost","blockCount":1,"member":"pending"}
+
+stdout | ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts > advisor: yield cancels a held candidate product callback within the existing drain budget
+advisor-callback {"result":"pending"}
+
+ ❯ ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts (4 tests | 4 failed) 1612ms
+   × advisor: concurrent identical stop receipts do not poison persistent safety 92ms
+     → expected [ 'fulfilled', 'rejected' ] to deeply equal [ 'fulfilled', 'fulfilled' ]
+   × advisor: concurrent identical cancel receipts do not poison persistent safety 74ms
+     → expected [ 'fulfilled', 'rejected' ] to deeply equal [ 'fulfilled', 'fulfilled' ]
+   × advisor: a deadline crossed at the start commit becomes expiry, not storage failure 63ms
+     → expected [ Array(1) ] to have a length of +0 but got 1
+   × advisor: yield cancels a held candidate product callback within the existing drain budget 1327ms
+     → expected 'pending' to be 'closed' // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts > advisor: concurrent identical stop receipts do not poison persistent safety
+ FAIL  ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts > advisor: concurrent identical cancel receipts do not poison persistent safety
+AssertionError: expected [ 'fulfilled', 'rejected' ] to deeply equal [ 'fulfilled', 'fulfilled' ]
+
+- Expected
++ Received
+
+  [
+    "fulfilled",
+-   "fulfilled",
++   "rejected",
+  ]
+
+ ❯ ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts:42:20
+     40|   const blocks=storage.sql.exec("SELECT * FROM host_safety").toArray();
+     41|   console.log("advisor-duplicate",JSON.stringify({kind,statuses,blockC…
+     42|   expect(statuses).toEqual(["fulfilled","fulfilled"]);
+       |                    ^
+     43|   expect(blocks).toHaveLength(0);
+     44|   if(results[0].status==="fulfilled"&&results[1].status==="fulfilled")…
+ ❯ ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts:32:7
+ ❯ maybeHandleRunRequest home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260702.1_@vitest+_25b5cb7e5ac90ba1c82363cf73fabbe1/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:198:20
+ ❯ DurableObject.Wrapper.fetch home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260702.1_@vitest+_25b5cb7e5ac90ba1c82363cf73fabbe1/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:563:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts > advisor: a deadline crossed at the start commit becomes expiry, not storage failure
+AssertionError: expected [ Array(1) ] to have a length of +0 but got 1
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ Proxy.methodWrapper home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/vitest___@vitest_expect___chai.js:1603:25
+ ❯ ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts:54:18
+     52|   const member=storage.sql.exec("SELECT state FROM host_members").one(…
+     53|   console.log("advisor-deadline",JSON.stringify({result,blockCount:blo…
+     54|   expect(blocks).toHaveLength(0);
+       |                  ^
+     55|   expect(member).toBe("failed");
+     56|  });
+ ❯ ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts:32:7
+ ❯ maybeHandleRunRequest home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260702.1_@vitest+_25b5cb7e5ac90ba1c82363cf73fabbe1/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:198:20
+ ❯ DurableObject.Wrapper.fetch home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260702.1_@vitest+_25b5cb7e5ac90ba1c82363cf73fabbe1/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:563:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts > advisor: yield cancels a held candidate product callback within the existing drain budget
+AssertionError: expected 'pending' to be 'closed' // Object.is equality
+
+Expected: "closed"
+Received: "pending"
+
+ ❯ ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts:69:18
+     67|   console.log("advisor-callback",JSON.stringify({result}));
+     68|   state.release();await alarm;await closing.catch(()=>{});
+     69|   expect(result).toBe("closed");
+       |                  ^
+     70|  });
+     71| });
+ ❯ ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts:32:7
+ ❯ maybeHandleRunRequest home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260702.1_@vitest+_25b5cb7e5ac90ba1c82363cf73fabbe1/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:198:20
+ ❯ DurableObject.Wrapper.fetch home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260702.1_@vitest+_25b5cb7e5ac90ba1c82363cf73fabbe1/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:563:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed (4)
+   Start at  07:08:27
+   Duration  3.05s (transform 256ms, setup 0ms, collect 471ms, tests 1.61s, environment 0ms, prepare 120ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run --config ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.config.ts

@@ -1,0 +1,31 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.config.ts...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+stdout | ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts > advisor: concurrent identical stop receipts do not poison persistent safety
+advisor-duplicate {"kind":"stop","statuses":["fulfilled","fulfilled"],"blockCount":0}
+
+stdout | ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts > advisor: concurrent identical cancel receipts do not poison persistent safety
+advisor-duplicate {"kind":"cancel","statuses":["fulfilled","fulfilled"],"blockCount":0}
+
+stdout | ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts > advisor: a deadline crossed at the start commit becomes expiry, not storage failure
+advisor-deadline {"result":"resolved","blockCount":0,"member":"failed"}
+
+stdout | ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts > advisor: yield cancels a held candidate product callback within the existing drain budget
+advisor-callback {"result":"closed"}
+
+ ✓ ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts (4 tests) 432ms
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  09:01:09
+   Duration  2.01s (transform 284ms, setup 0ms, collect 503ms, tests 432ms, environment 0ms, prepare 103ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

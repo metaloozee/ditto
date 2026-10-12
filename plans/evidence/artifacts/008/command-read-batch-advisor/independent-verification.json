@@ -1,0 +1,19 @@
+{
+  "sourceHashesMatched": 37,
+  "archiveBytesMatched": 37,
+  "changed": [
+    "apps/credential-tests/src/product-commands.worker.test.ts",
+    "apps/web/src/lib/session-command-candidate.ts"
+  ],
+  "unchanged": 35,
+  "incrementalPatchMatched": true,
+  "ownedSqlMatched": true,
+  "preparedSqlLiteralMultisetsMatched": true,
+  "allExecutorResponseSelections": [
+    [
+      "openai-codex",
+      "gpt-6.1-sol",
+      "medium"
+    ]
+  ]
+}

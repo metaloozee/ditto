@@ -1,0 +1,64 @@
+$ pnpm contracts:verify && npm run contracts:check --prefix packages/session-brain && npm run typecheck --prefix packages/session-brain && npm test --prefix packages/session-brain && npm run build --prefix packages/session-brain
+$ pnpm --filter @ditto/runtime-contracts typecheck && pnpm --filter @ditto/runtime-contracts exec vitest run && pnpm --filter @ditto/runtime-contracts build
+$ tsc --noEmit
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/packages/runtime-contracts
+
+ ✓ src/configuration.test.ts (9 tests) 8ms
+ ✓ src/product-command.test.ts (24 tests) 11ms
+ ✓ src/contracts.test.ts (14 tests) 11ms
+ ✓ src/model.test.ts (2 tests) 8ms
+
+ Test Files  4 passed (4)
+      Tests  49 passed (49)
+   Start at  10:26:23
+   Duration  445ms (transform 219ms, setup 0ms, collect 353ms, tests 38ms, environment 0ms, prepare 188ms)
+
+$ tsc -p tsconfig.json
+npm warn Unknown env config "store-dir". This will error in a future major version of npm. See `npm help npmrc` for supported config options.
+npm notice run contracts:check
+npm notice run vitest run src/pi-feasibility.test.ts -t contracts-consumer-freshness
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/packages/session-brain
+
+ ❯ src/pi-feasibility.test.ts (6 tests | 1 failed | 3 skipped) 1140ms
+   ↓ Pi 0.85.1 continuation characterization > does not treat an assistant tool request without results as a continuable user turn
+   ↓ Pi 0.85.1 continuation characterization > does not synthesize a missing sibling result when one result is appended
+   ↓ Pi 0.85.1 continuation characterization > normal tool batches preserve both call IDs and corresponding result IDs
+   ✓ contracts-consumer-freshness > contracts-consumer-freshness: imported emitted JS/declarations match a fresh contracts build  664ms
+   × contracts-consumer-freshness > contracts-consumer-freshness: isolated npm copy is stale until the documented npm refresh recipe 412ms
+     → npm install --ignore-scripts
+
+npm error code ENOTCACHED
+npm error request to https://registry.npmjs.org/vitest failed: cache mode is 'only-if-cached' but no cached response is available.
+npm error A complete log of this run can be found in: /home/ayan/ditto-execution/plan-008-4WXvNW/.execution-008/home/.npm/_logs/2026-10-11T08_26_28_188Z-debug-0.log
+
+   ✓ contracts-consumer-freshness > contracts-consumer-freshness: refresh refuses a consumer symlink to an external sentinel 63ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/pi-feasibility.test.ts > contracts-consumer-freshness > contracts-consumer-freshness: isolated npm copy is stale until the documented npm refresh recipe
+Error: npm install --ignore-scripts
+
+npm error code ENOTCACHED
+npm error request to https://registry.npmjs.org/vitest failed: cache mode is 'only-if-cached' but no cached response is available.
+npm error A complete log of this run can be found in: /home/ayan/ditto-execution/plan-008-4WXvNW/.execution-008/home/.npm/_logs/2026-10-11T08_26_28_188Z-debug-0.log
+
+ ❯ runNpm src/pi-feasibility.test.ts:185:11
+    183|    } catch (error) {
+    184|     const err = error as { stderr?: string; stdout?: string };
+    185|     throw new Error(
+       |           ^
+    186|      `npm ${args.join(" ")}\n${err.stdout ?? ""}\n${err.stderr ?? ""}`,
+    187|     );
+ ❯ src/pi-feasibility.test.ts:231:4
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 passed | 3 skipped (6)
+   Start at  10:26:25
+   Duration  3.09s (transform 136ms, setup 0ms, collect 1.78s, tests 1.14s, environment 0ms, prepare 69ms)
+
+[ELIFECYCLE] Command failed with exit code 1.

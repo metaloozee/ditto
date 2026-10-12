@@ -1,0 +1,115 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+stdout | src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":865,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59963}
+
+stdout | src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+[DEBUG-008-bound] credential-claim {"elapsed":170,"operationRemaining":59738,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+[DEBUG-008-bound] host-claim-enter {"aborted":false,"active":true,"yieldRemaining":638,"operationRemaining":59737}
+
+stdout | src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":620,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59719}
+
+stdout | src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":576,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59675}
+
+stdout | src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+[DEBUG-008-bound] exact-claim-admitted
+
+stdout | src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+[DEBUG-008-bound] credential-fetch {"elapsed":252,"operationRemaining":59656,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":874,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59959}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+[DEBUG-008-bound] credential-claim {"elapsed":150,"operationRemaining":59763,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+[DEBUG-008-bound] host-claim-enter {"aborted":false,"active":true,"yieldRemaining":678,"operationRemaining":59763}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":661,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59746}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":621,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59706}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+[DEBUG-008-bound] exact-claim-admitted
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+[DEBUG-008-bound] credential-fetch {"elapsed":222,"operationRemaining":59691,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":873,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59963}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+[DEBUG-008-bound] credential-claim {"elapsed":246,"operationRemaining":59672,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+[DEBUG-008-bound] host-claim-enter {"aborted":false,"active":true,"yieldRemaining":581,"operationRemaining":59671}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":566,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59656}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":523,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59613}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+[DEBUG-008-bound] exact-claim-admitted
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+[DEBUG-008-bound] credential-fetch {"elapsed":322,"operationRemaining":59596,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":796,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59958}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+[DEBUG-008-bound] credential-claim {"elapsed":405,"operationRemaining":59503,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+[DEBUG-008-bound] host-claim-enter {"aborted":false,"active":true,"yieldRemaining":340,"operationRemaining":59502}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":319,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59481}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":266,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59428}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+[DEBUG-008-bound] exact-claim-admitted
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+[DEBUG-008-bound] credential-fetch {"elapsed":501,"operationRemaining":59407,"aborted":false}
+
+ ✓ src/product-commands.worker.test.ts (53 tests | 51 skipped) 7449ms
+   ✓ runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path  2665ms
+   ✓ native alarms drain delivery order 3,1,2 through individual model turns without client scheduling  4782ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed | 51 skipped (53)
+   Start at  12:26:44
+   Duration  8.95s (transform 446ms, setup 0ms, collect 785ms, tests 7.45s, environment 0ms, prepare 108ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

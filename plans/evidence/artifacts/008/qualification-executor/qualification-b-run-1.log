@@ -1,0 +1,58 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for ../../plans/evidence/artifacts/008/qualification-executor/qualification.config.ts...
+stdout | ../../plans/evidence/artifacts/008/qualification-executor/qualification.worker.test.ts > B safety counterexample 1 rejects dispatch after a held positive final policy result is revoked
+QUALIFICATION_B {"receipt":{"version":2,"receiptId":"19927fed-c696-4fde-93ee-754ef10fbe23","commandId":"60ceca37-182d-474e-8fab-904838743358","workspaceSessionId":"287dcd3a-a52d-40ae-bc00-bb1fc4d9acd4","commandSeq":1,"ownerVersion":1,"queueDeadlineAt":1791700890131,"userMessageId":"15be4c98-a5c3-4dfc-9523-c07b2a50e926","assistantMessageId":"29792f61-989e-476f-9714-3084987985ae"},"observations":[{"call":1,"positive":true,"effectId":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","generation":1,"deadlineAt":1791700050975},{"call":2,"positive":true,"effectId":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","generation":1,"deadlineAt":1791700050975},{"call":3,"positive":true,"effectId":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","generation":1,"deadlineAt":1791700050975},{"call":4,"positive":true,"effectId":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","generation":1,"deadlineAt":1791700050975}],"claims":[{"effect":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","request_digest":"5acf6b59b78e0ffa9b5bd96d031198389b640916c7a9b7991fbeac9bc262c76c","claimed":1}],"admissions":[{"effectId":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","state":"complete"}],"windows":[{"consumedRequests":1,"maxRequests":1,"closeReason":"complete"}],"calls":1,"safetyExpectedCalls":0}
+
+stdout | ../../plans/evidence/artifacts/008/qualification-executor/qualification.worker.test.ts > B safety counterexample 2 rejects dispatch after a held positive final policy result is revoked
+QUALIFICATION_B {"receipt":{"version":2,"receiptId":"87c4e912-c9a3-4335-9dfb-28782ee3c0f3","commandId":"293526cf-b6f0-4c26-afa0-71f53cd47b47","workspaceSessionId":"fe5b4cf4-6cc9-4cf5-8c18-706d3b5aed21","commandSeq":1,"ownerVersion":1,"queueDeadlineAt":1791700892867,"userMessageId":"21f461ee-bc69-4f5a-8559-b312bada77ca","assistantMessageId":"08ea38fd-9fec-4741-a914-1111bcb391c4"},"observations":[{"call":1,"positive":true,"effectId":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","generation":1,"deadlineAt":1791700053649},{"call":2,"positive":true,"effectId":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","generation":1,"deadlineAt":1791700053649},{"call":3,"positive":true,"effectId":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","generation":1,"deadlineAt":1791700053649},{"call":4,"positive":true,"effectId":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","generation":1,"deadlineAt":1791700053649}],"claims":[{"effect":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","request_digest":"5acf6b59b78e0ffa9b5bd96d031198389b640916c7a9b7991fbeac9bc262c76c","claimed":1}],"admissions":[{"effectId":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","state":"complete"}],"windows":[{"consumedRequests":1,"maxRequests":1,"closeReason":"complete"}],"calls":1,"safetyExpectedCalls":0}
+
+stdout | ../../plans/evidence/artifacts/008/qualification-executor/qualification.worker.test.ts > B non-held revoked final query denies after the real claim
+QUALIFICATION_B_CONTROL {"observations":[{"call":1,"positive":true,"effectId":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","generation":1,"deadlineAt":1791700056061},{"call":2,"positive":true,"effectId":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","generation":1,"deadlineAt":1791700056061},{"call":3,"positive":true,"effectId":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","generation":1,"deadlineAt":1791700056061},{"call":4,"positive":false,"effectId":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","generation":1,"deadlineAt":1791700056061}],"calls":0}
+
+ ❯ ../../plans/evidence/artifacts/008/qualification-executor/qualification.worker.test.ts (4 tests | 2 failed | 1 skipped) 7784ms
+   ↓ A characterizes exact abort on admitted active candidate work without granting takeover
+   × B safety counterexample 1 rejects dispatch after a held positive final policy result is revoked 2709ms
+     → expected 1 to be +0 // Object.is equality
+   × B safety counterexample 2 rejects dispatch after a held positive final policy result is revoked 2642ms
+     → expected 1 to be +0 // Object.is equality
+   ✓ B non-held revoked final query denies after the real claim  2349ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  ../../plans/evidence/artifacts/008/qualification-executor/qualification.worker.test.ts > B safety counterexample 1 rejects dispatch after a held positive final policy result is revoked
+ FAIL  ../../plans/evidence/artifacts/008/qualification-executor/qualification.worker.test.ts > B safety counterexample 2 rejects dispatch after a held positive final policy result is revoked
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ ../../plans/evidence/artifacts/008/qualification-executor/qualification.worker.test.ts:103:17
+    101|   const windows = (await env.DB.prepare("SELECT consumedRequests,maxRe…
+    102|   console.log("QUALIFICATION_B", JSON.stringify({ receipt, observation…
+    103|   expect(calls).toBe(0);
+       |                 ^
+    104|  } finally { await c.releaseFinal(); await s.retireFixture(); }
+    105| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed | 1 skipped (4)
+   Start at  08:26:27
+   Duration  9.37s (transform 335ms, setup 0ms, collect 597ms, tests 7.78s, environment 1ms, prepare 96ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run --config ../../plans/evidence/artifacts/008/qualification-executor/qualification.config.ts -t 'B '

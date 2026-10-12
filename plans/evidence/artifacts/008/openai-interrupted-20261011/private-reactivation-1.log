@@ -1,0 +1,32 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-2946ba2a-7959-4a92-9ece-50ddeadfd0fb
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Candidate recovery-only admission
+    at PiDurableHost.assertLive (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-host.ts:1026:10)
+    at /home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-host.ts:4188:9
+    at /home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-host.ts:1529:11
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/jsg/_virtual_includes/iterator/workerd/jsg/value.h:1480: failed: jsg.Error: Candidate recovery-only admission
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Candidate recovery-only admission
+    at PiDurableHost.assertLive (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-host.ts:1026:10)
+    at /home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-host.ts:4188:9
+    at /home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-host.ts:1529:11
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/jsg/_virtual_includes/iterator/workerd/jsg/value.h:1480: failed: jsg.Error: Candidate recovery-only admission
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+ ✓ src/product-commands.worker.test.ts (38 tests | 37 skipped) 6195ms
+   ✓ private fixture recovery activates only the exact current successor and a valid old descriptor stays denied  6194ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 37 skipped (38)
+   Start at  11:46:11
+   Duration  7.61s (transform 323ms, setup 0ms, collect 564ms, tests 6.20s, environment 1ms, prepare 103ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

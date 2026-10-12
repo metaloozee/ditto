@@ -1,0 +1,11 @@
+{
+  "baselineFiles": 37,
+  "sourceChanged": [],
+  "archiveManifestMatch": true,
+  "archiveSha256": "fa9408ba99b23d8256832feee587a2358c221a9f943ae0f2c5e87ec3c80a5b30",
+  "independentBExit": 1,
+  "independentBFailures": 2,
+  "independentBControlPassed": 1,
+  "AIndependentRerun": "not run; inspected failed executor experiment",
+  "unchangedAdvisorProbesExit": 0
+}

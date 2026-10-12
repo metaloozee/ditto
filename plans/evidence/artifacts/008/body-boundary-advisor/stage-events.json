@@ -1,0 +1,432 @@
+[
+  {
+    "body": "generation-2",
+    "boundary": "credential.before",
+    "elapsed_ms": 0
+  },
+  {
+    "body": "generation-2",
+    "boundary": "credential.after",
+    "elapsed_ms": 59
+  },
+  {
+    "body": "generation-2",
+    "boundary": "arm.first.before",
+    "elapsed_ms": 60
+  },
+  {
+    "body": "generation-2",
+    "boundary": "arm.first.after",
+    "elapsed_ms": 61
+  },
+  {
+    "body": "generation-2",
+    "boundary": "admit.first.before",
+    "elapsed_ms": 61
+  },
+  {
+    "body": "generation-2",
+    "boundary": "admit.first.after",
+    "elapsed_ms": 127
+  },
+  {
+    "body": "generation-2",
+    "boundary": "hold.join.before",
+    "elapsed_ms": 127
+  },
+  {
+    "body": "generation-2",
+    "boundary": "hold.join.after",
+    "elapsed_ms": 153
+  },
+  {
+    "body": "generation-2",
+    "boundary": "reserve.reset.before",
+    "elapsed_ms": 153
+  },
+  {
+    "body": "generation-2",
+    "boundary": "reserve.reset.after",
+    "elapsed_ms": 266
+  },
+  {
+    "body": "generation-2",
+    "boundary": "drain.first.before",
+    "elapsed_ms": 266
+  },
+  {
+    "body": "generation-2",
+    "boundary": "drain.first.after",
+    "elapsed_ms": 480
+  },
+  {
+    "body": "generation-2",
+    "boundary": "join.first.before",
+    "elapsed_ms": 480
+  },
+  {
+    "body": "generation-2",
+    "boundary": "join.first.after",
+    "elapsed_ms": 1329
+  },
+  {
+    "body": "generation-2",
+    "boundary": "final.positive.before",
+    "elapsed_ms": 1329
+  },
+  {
+    "body": "generation-2",
+    "boundary": "final.positive.after",
+    "elapsed_ms": 1845
+  },
+  {
+    "body": "generation-2",
+    "boundary": "descriptor.before",
+    "elapsed_ms": 1845
+  },
+  {
+    "body": "generation-2",
+    "boundary": "descriptor.after",
+    "elapsed_ms": 1847
+  },
+  {
+    "body": "generation-2",
+    "boundary": "release.first.before",
+    "elapsed_ms": 1847
+  },
+  {
+    "body": "generation-2",
+    "boundary": "release.first.after",
+    "elapsed_ms": 1848
+  },
+  {
+    "body": "generation-2",
+    "boundary": "outcome.first.before",
+    "elapsed_ms": 1848
+  },
+  {
+    "body": "generation-2",
+    "boundary": "outcome.first.after",
+    "elapsed_ms": 1887
+  },
+  {
+    "body": "generation-2",
+    "boundary": "poll.predecessor.before",
+    "elapsed_ms": 1887
+  },
+  {
+    "body": "generation-2",
+    "boundary": "poll.predecessor.after",
+    "elapsed_ms": 1903
+  },
+  {
+    "body": "generation-2",
+    "boundary": "reset.before",
+    "elapsed_ms": 1903
+  },
+  {
+    "body": "generation-2",
+    "boundary": "reset.after",
+    "elapsed_ms": 2098
+  },
+  {
+    "body": "generation-2",
+    "boundary": "recover.before",
+    "elapsed_ms": 2098
+  },
+  {
+    "body": "generation-2",
+    "boundary": "recover.after",
+    "elapsed_ms": 2478
+  },
+  {
+    "body": "generation-2",
+    "boundary": "fence.delete.before",
+    "elapsed_ms": 2478
+  },
+  {
+    "body": "generation-2",
+    "boundary": "fence.delete.after",
+    "elapsed_ms": 2485
+  },
+  {
+    "body": "generation-2",
+    "boundary": "arm.next.before",
+    "elapsed_ms": 2485
+  },
+  {
+    "body": "generation-2",
+    "boundary": "arm.next.after",
+    "elapsed_ms": 2516
+  },
+  {
+    "body": "generation-2",
+    "boundary": "admit.next.before",
+    "elapsed_ms": 2516
+  },
+  {
+    "body": "generation-2",
+    "boundary": "admit.next.after",
+    "elapsed_ms": 2751
+  },
+  {
+    "body": "generation-2",
+    "boundary": "drain.next.before",
+    "elapsed_ms": 2751
+  },
+  {
+    "body": "generation-2",
+    "boundary": "drain.next.after",
+    "elapsed_ms": 3039
+  },
+  {
+    "body": "generation-2",
+    "boundary": "final.negative.before",
+    "elapsed_ms": 3039
+  },
+  {
+    "body": "generation-2",
+    "boundary": "final.negative.after",
+    "elapsed_ms": 3752
+  },
+  {
+    "body": "generation-2",
+    "boundary": "outcome.next.before",
+    "elapsed_ms": 3752
+  },
+  {
+    "body": "generation-2",
+    "boundary": "outcome.next.after",
+    "elapsed_ms": 3781
+  },
+  {
+    "body": "generation-2",
+    "boundary": "poll.failed.before",
+    "elapsed_ms": 3781
+  },
+  {
+    "body": "generation-2",
+    "boundary": "poll.failed.after",
+    "elapsed_ms": 3784
+  },
+  {
+    "body": "generation-2",
+    "boundary": "proof.before",
+    "elapsed_ms": 3784
+  },
+  {
+    "body": "generation-2",
+    "boundary": "proof.after",
+    "elapsed_ms": 3819
+  },
+  {
+    "body": "generation-2",
+    "boundary": "fence.read.before",
+    "elapsed_ms": 3819
+  },
+  {
+    "body": "generation-2",
+    "boundary": "fence.read.after",
+    "elapsed_ms": 3861
+  },
+  {
+    "body": "generation-2",
+    "boundary": "occupancy.read.before",
+    "elapsed_ms": 3861
+  },
+  {
+    "body": "generation-2",
+    "boundary": "occupancy.read.after",
+    "elapsed_ms": 3903
+  },
+  {
+    "body": "generation-2",
+    "boundary": "reconcile.before",
+    "elapsed_ms": 3904
+  },
+  {
+    "body": "generation-2",
+    "boundary": "reconcile.after",
+    "elapsed_ms": 3925
+  },
+  {
+    "body": "generation-2",
+    "boundary": "occupancy.compare.before",
+    "elapsed_ms": 3925
+  },
+  {
+    "body": "generation-2",
+    "boundary": "occupancy.compare.after",
+    "elapsed_ms": 3926
+  },
+  {
+    "body": "generation-2",
+    "boundary": "cleanup.final.before",
+    "elapsed_ms": 3926
+  },
+  {
+    "body": "generation-2",
+    "boundary": "cleanup.final.after",
+    "elapsed_ms": 3927
+  },
+  {
+    "body": "generation-2",
+    "boundary": "cleanup.join.before",
+    "elapsed_ms": 3927
+  },
+  {
+    "body": "generation-2",
+    "boundary": "cleanup.join.after",
+    "elapsed_ms": 3928
+  },
+  {
+    "body": "generation-2",
+    "boundary": "cleanup.retire.before",
+    "elapsed_ms": 3928
+  },
+  {
+    "body": "generation-2",
+    "boundary": "cleanup.retire.after",
+    "elapsed_ms": 3945
+  },
+  {
+    "body": "queued",
+    "boundary": "credential.before",
+    "elapsed_ms": 0
+  },
+  {
+    "body": "queued",
+    "boundary": "credential.after",
+    "elapsed_ms": 57
+  },
+  {
+    "body": "queued",
+    "boundary": "capability.before",
+    "elapsed_ms": 57
+  },
+  {
+    "body": "queued",
+    "boundary": "capability.after",
+    "elapsed_ms": 62
+  },
+  {
+    "body": "queued",
+    "boundary": "admit.first.before",
+    "elapsed_ms": 62
+  },
+  {
+    "body": "queued",
+    "boundary": "admit.first.after",
+    "elapsed_ms": 158
+  },
+  {
+    "body": "queued",
+    "boundary": "admit.second.before",
+    "elapsed_ms": 158
+  },
+  {
+    "body": "queued",
+    "boundary": "admit.second.after",
+    "elapsed_ms": 498
+  },
+  {
+    "body": "queued",
+    "boundary": "admit.third.before",
+    "elapsed_ms": 498
+  },
+  {
+    "body": "queued",
+    "boundary": "admit.third.after",
+    "elapsed_ms": 726
+  },
+  {
+    "body": "queued",
+    "boundary": "deliver.third.before",
+    "elapsed_ms": 727
+  },
+  {
+    "body": "queued",
+    "boundary": "deliver.third.after",
+    "elapsed_ms": 994
+  },
+  {
+    "body": "queued",
+    "boundary": "deliver.first.before",
+    "elapsed_ms": 994
+  },
+  {
+    "body": "queued",
+    "boundary": "deliver.first.after",
+    "elapsed_ms": 1240
+  },
+  {
+    "body": "queued",
+    "boundary": "poll.first.before",
+    "elapsed_ms": 1240
+  },
+  {
+    "body": "queued",
+    "boundary": "poll.first.after",
+    "elapsed_ms": 3015
+  },
+  {
+    "body": "queued",
+    "boundary": "request.first.before",
+    "elapsed_ms": 3015
+  },
+  {
+    "body": "queued",
+    "boundary": "request.first.after",
+    "elapsed_ms": 3017
+  },
+  {
+    "body": "queued",
+    "boundary": "task.read.before",
+    "elapsed_ms": 3017
+  },
+  {
+    "body": "queued",
+    "boundary": "task.read.after",
+    "elapsed_ms": 3072
+  },
+  {
+    "body": "queued",
+    "boundary": "reopen.before",
+    "elapsed_ms": 3072
+  },
+  {
+    "body": "queued",
+    "boundary": "reopen.after",
+    "elapsed_ms": 3423
+  },
+  {
+    "body": "queued",
+    "boundary": "configure.before",
+    "elapsed_ms": 3423
+  },
+  {
+    "body": "queued",
+    "boundary": "configure.after",
+    "elapsed_ms": 5010
+  },
+  {
+    "body": "queued",
+    "boundary": "task.compare.before",
+    "elapsed_ms": 5010
+  },
+  {
+    "body": "queued",
+    "boundary": "task.compare.after",
+    "elapsed_ms": 5026
+  },
+  {
+    "body": "queued",
+    "boundary": "deliver.second.before",
+    "elapsed_ms": 5026
+  },
+  {
+    "body": "queued",
+    "boundary": "cleanup.retire.before",
+    "elapsed_ms": 5130
+  }
+]

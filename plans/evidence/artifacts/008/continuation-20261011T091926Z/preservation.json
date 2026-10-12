@@ -1,0 +1,25 @@
+{
+  "head": "2487d56291fb6196672b36cd9f9c632ef2dfa9c5",
+  "sourceAndTargetedEvidenceMatch": true,
+  "comparedFiles": 40,
+  "trackedPatchIdentical": true,
+  "patchSha256": "fd56d053cb28989d0423fa4f6bae65aaf80e0585b0439a56b50ba878a248afa3",
+  "graphHashes": {
+    "apps/credential-tests/package.json": "a40df52aa15a530bddc9bea9a750f4d66448d99352ad090fbde3fd7754e0f4df",
+    "apps/runtime/package.json": "07eb04a9371aa1d49e780536cdc0d55cff7a6b637bb04bef850bec9975edb3ba",
+    "apps/web/package.json": "44896f0de9312c5ae18b9c42d75bb7420d3591e88b1a8b91accdca3967cf153e",
+    "package.json": "c9ce956646b3a27e859088df1ad9a18bf691fe7bf8fdec85dac4f413bcf3aa89",
+    "packages/runtime-contracts/package.json": "0392c0df7603c9ea830bbad704d05ff1fa33f7c05077289339f6b0e534af80f7",
+    "packages/sandbox-runner/package-lock.json": "1161e4788dc96a9a1b2ec8659bc2d7693c155a965d2d356d922a08297578fdc9",
+    "packages/sandbox-runner/package.json": "36534489b0df6c59e4844c7201b261ae6552850dca0cf6085b9157bea980f937",
+    "packages/session-brain/package-lock.json": "ff3709491f18ad55294511d36c5a72d7c21a3eca345025df9c4c7aeffedaf320",
+    "packages/session-brain/package.json": "902fa2068fc706023a3f1cae1075da5fece28307fdc67a28ad4632fab44de36d",
+    "plans/evidence/artifacts/007/configuration-advisor/acceptance-cache/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/package.json": "3ca9d4afd21425087cf31893b8f9f63c81b0b8408db5e343ca76e5f8aa26ab9a",
+    "plans/evidence/artifacts/007/configuration-advisor/cache/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/package.json": "3ca9d4afd21425087cf31893b8f9f63c81b0b8408db5e343ca76e5f8aa26ab9a",
+    "plans/evidence/artifacts/007/configuration-correction/snapshot-cache/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/package.json": "3ca9d4afd21425087cf31893b8f9f63c81b0b8408db5e343ca76e5f8aa26ab9a",
+    "plans/evidence/artifacts/007/configuration-timing-followup/cache/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/package.json": "3ca9d4afd21425087cf31893b8f9f63c81b0b8408db5e343ca76e5f8aa26ab9a",
+    "pnpm-lock.yaml": "66846c99c052aad263b936415ca0a0f9f9f9c107d285d884e3c9ed40d0465d49",
+    "pnpm-workspace.yaml": "60c425fd3f7d3cf2f661bd4041a6a55b1c9c1626a8626ca0d91d2488cca4ac5b"
+  },
+  "staged": ""
+}

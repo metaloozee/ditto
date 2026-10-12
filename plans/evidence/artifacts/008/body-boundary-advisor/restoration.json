@@ -1,0 +1,8 @@
+{
+  "all_37_current_hashes_equal_entry": true,
+  "all_37_archive_bytes_equal_current": true,
+  "model_entry_and_all_runtime_unchanged_at_instrumented_and_final_checkpoints": true,
+  "only_test_file_temporarily_changed": true,
+  "all_probes_removed": true,
+  "exact_inverse_replacements": 54
+}

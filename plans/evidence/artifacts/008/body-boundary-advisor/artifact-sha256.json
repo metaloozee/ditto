@@ -1,0 +1,19 @@
+{
+  "command-result.json": "12929315337df5eb555836edf870153d4d861e256a96eac917787aad3d283c6d",
+  "commands.md": "45b61d49226fb18dd9492f0a95bf921130e83c44de4d9acbaf533f4b3d291fe2",
+  "diagnostic-only.patch": "91a296fd6abe04dc5f338bc772048a8573f8b2b4de2aeee3b62884f7a71d0b82",
+  "entry-evidence.tar": "9a38b5529acc6afce4ca4cea6489f6f32112482588d8d5f661e0a75b5f1827cd",
+  "entry-source-sha256.json": "92b6976e839a23921ee2e195eaad231c09f11d952ed62848b4ceb70c6f2079fd",
+  "entry-source.tar": "be1e63301e73b87583bc21ef5a52de4a96ebc3a874bf0996ee075699aca85617",
+  "entry-status.txt": "6e325ae0ad472186865d2af6ead14b36f698cbb81b7f141e8ed2c138baed752e",
+  "final-source-inventory.json": "d664e981948730292c48d89e58aa243b86526df9feef0e50a5846c60778cdc80",
+  "final-source-sha256.json": "92b6976e839a23921ee2e195eaad231c09f11d952ed62848b4ceb70c6f2079fd",
+  "final-source.patch": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "final-status.txt": "2f6742de896aeb3a4f7270a37285d1fe930a413b9a2d096819ec809a26c00abd",
+  "instrumented-source-sha256.json": "6ee58f7f7a6bcc61f3a7ca51e40d2ac3e52c38923c53967013b60d8d53c51ec1",
+  "inverse-edits.json": "6f45f2d80339a8b23276d4f42b65f7f065699a1ca07934362f9124c99660f3a9",
+  "original-order-sequence.log": "c3cfb9634dfc878c36251a9b824d072bd74ba805065e3fff2ab693d11b2b5a6d",
+  "report.md": "ed7c9618c62f833e4b578455b7a92fe640850405c5c6f5304a272a11b7b823b8",
+  "restoration.json": "01adc1546711db89c57b4fdef696fec71a2c169627ced9a8fb8b652d82eaaa59",
+  "stage-events.json": "d0b9775d4ac6fb984331850111b6cced7046ff4adbaae808e1f51a0edffb41a2"
+}

@@ -1,0 +1,54 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-authority-resource] start 0
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-authority-resource] admitted 381
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-authority-resource] third-delivered 436
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-authority-resource] first-delivered 492
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-authority-resource] first-complete 1331
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-authority-resource] reopen-enter 1342
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-authority-resource] reopen-complete 1548
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-authority-resource] configured 2088
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-authority-resource] second-deliver-enter 2090
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-authority-resource] second-delivered 2140
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-authority-resource] retire-enter 3432
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-authority-resource] retire-complete 3488
+
+ ✓ src/product-commands.worker.test.ts (57 tests | 56 skipped) 4828ms
+   ✓ queued configuration uses the next selection across a sequence gap and preserves committed preparation  4826ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 56 skipped (57)
+   Start at  13:33:16
+   Duration  6.77s (transform 455ms, setup 0ms, collect 837ms, tests 4.83s, environment 0ms, prepare 112ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

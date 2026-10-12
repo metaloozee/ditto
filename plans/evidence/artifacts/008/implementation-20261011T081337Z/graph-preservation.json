@@ -1,0 +1,49 @@
+{
+  "files": {
+    "package.json": {
+      "sha256": "c9ce956646b3a27e859088df1ad9a18bf691fe7bf8fdec85dac4f413bcf3aa89",
+      "matches_initial": false
+    },
+    "pnpm-lock.yaml": {
+      "sha256": "66846c99c052aad263b936415ca0a0f9f9f9c107d285d884e3c9ed40d0465d49",
+      "matches_initial": true
+    },
+    "pnpm-workspace.yaml": {
+      "sha256": "60c425fd3f7d3cf2f661bd4041a6a55b1c9c1626a8626ca0d91d2488cca4ac5b",
+      "matches_initial": true
+    },
+    "apps/web/package.json": {
+      "sha256": "44896f0de9312c5ae18b9c42d75bb7420d3591e88b1a8b91accdca3967cf153e",
+      "matches_initial": true
+    },
+    "apps/runtime/package.json": {
+      "sha256": "07eb04a9371aa1d49e780536cdc0d55cff7a6b637bb04bef850bec9975edb3ba",
+      "matches_initial": true
+    },
+    "apps/credential-tests/package.json": {
+      "sha256": "a40df52aa15a530bddc9bea9a750f4d66448d99352ad090fbde3fd7754e0f4df",
+      "matches_initial": true
+    },
+    "packages/runtime-contracts/package.json": {
+      "sha256": "0392c0df7603c9ea830bbad704d05ff1fa33f7c05077289339f6b0e534af80f7",
+      "matches_initial": true
+    },
+    "packages/session-brain/package.json": {
+      "sha256": "902fa2068fc706023a3f1cae1075da5fece28307fdc67a28ad4632fab44de36d",
+      "matches_initial": true
+    },
+    "packages/session-brain/package-lock.json": {
+      "sha256": "ff3709491f18ad55294511d36c5a72d7c21a3eca345025df9c4c7aeffedaf320",
+      "matches_initial": true
+    },
+    "packages/sandbox-runner/package.json": {
+      "sha256": "36534489b0df6c59e4844c7201b261ae6552850dca0cf6085b9157bea980f937",
+      "matches_initial": true
+    },
+    "packages/sandbox-runner/package-lock.json": {
+      "sha256": "1161e4788dc96a9a1b2ec8659bc2d7693c155a965d2d356d922a08297578fdc9",
+      "matches_initial": true
+    }
+  },
+  "root_non_script_metadata_matches_HEAD": true
+}

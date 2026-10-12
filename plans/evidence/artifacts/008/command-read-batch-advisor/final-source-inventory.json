@@ -1,0 +1,187 @@
+[
+  {
+    "path": "apps/credential-tests/src/entry.ts",
+    "sha256": "be5cf472de1b9cc3989a46167f9cd093cd204fe4b02fba0b2655e32bdeb3cfa0",
+    "untracked": false
+  },
+  {
+    "path": "apps/credential-tests/src/model-entry.ts",
+    "sha256": "df729eec8248883187fd936fae6a8316d1ecc2a2b8ae89542dc991f473d5d880",
+    "untracked": false
+  },
+  {
+    "path": "apps/credential-tests/src/product-commands.worker.test.ts",
+    "sha256": "ce2a2148124828d4121274e47cf6233897ee2670110ec741c1a0337bdea387e4",
+    "untracked": true
+  },
+  {
+    "path": "apps/credential-tests/vitest.config.ts",
+    "sha256": "182a32fff071432bf3854fa02c79164761dfc1c6bb832cd2976b10e8ba647201",
+    "untracked": false
+  },
+  {
+    "path": "apps/runtime/src/pi-durable-commands.test.ts",
+    "sha256": "098239609ff0a018aa4e6cec568652bf5f90aa204006cf045c01371abed143f7",
+    "untracked": true
+  },
+  {
+    "path": "apps/runtime/src/pi-durable-host.ts",
+    "sha256": "0e32d9fba479a77249a415651e55f5869592405999fe4d71b49bf2b61dae60dc",
+    "untracked": false
+  },
+  {
+    "path": "apps/runtime/src/pi-durable-models.ts",
+    "sha256": "73ec0d62a245cd9f39fe32b998c79677f8a101dd2c13e8759a12be3cc2c9142b",
+    "untracked": false
+  },
+  {
+    "path": "apps/runtime/src/pi-durable-product-session.ts",
+    "sha256": "e1c53b78e6dfa6b63231c78babdf2f1e8b4b57f71948a2dd7e6d7e798a1192ee",
+    "untracked": true
+  },
+  {
+    "path": "apps/web/migrations/0023_candidate_product_commands.sql",
+    "sha256": "a9e203c784de24c94e33a9f9a14d6f779b420ded2f494134c70159bab9822a41",
+    "untracked": true
+  },
+  {
+    "path": "apps/web/migrations/meta/_journal.json",
+    "sha256": "573d5b95d275fa1b7b572828ba6dc6b9a592369c2ad4bbee7a55b65015c4a6c8",
+    "untracked": false
+  },
+  {
+    "path": "apps/web/src/db/schema.ts",
+    "sha256": "123492352101f85c606e025629e9760c1cc166a24fa6a2fe2044bfd3937759ed",
+    "untracked": false
+  },
+  {
+    "path": "apps/web/src/db/trusted-runtime-migration.test.ts",
+    "sha256": "5f063c2a41a5476129dbc362e531dfad76fd403a38f4383b11bf19f1796600ab",
+    "untracked": false
+  },
+  {
+    "path": "apps/web/src/lib/agent-control-service.test.ts",
+    "sha256": "c6fda4ea9484cb35503e6741ab98ca73d20a6753772303a4fe87ec9cc12b092a",
+    "untracked": false
+  },
+  {
+    "path": "apps/web/src/lib/agent-run-service.test.ts",
+    "sha256": "8ab3ec275b6383a56f0fa80ea94d3cb8cae62d5d90e99069d4aa2338bb395b07",
+    "untracked": false
+  },
+  {
+    "path": "apps/web/src/lib/codex-credential-do.ts",
+    "sha256": "86e07567e01fb49e5f62e49ee52922f9a06973f3f0d4b67accba4cc9feaac48d",
+    "untracked": false
+  },
+  {
+    "path": "apps/web/src/lib/configuration-product-authority.ts",
+    "sha256": "f66c0011de167a1636bbcaf9c3c35bbd99c014bd70a5ad27b9086e7141552e35",
+    "untracked": false
+  },
+  {
+    "path": "apps/web/src/lib/model-product-authority.ts",
+    "sha256": "7713a80c6d3dd9f9c251e0e6158aef9a74912d5ca69710b42ea8eb3912c83816",
+    "untracked": false
+  },
+  {
+    "path": "apps/web/src/lib/model-product-transport.ts",
+    "sha256": "801cee76e6ab0d5ae391887acee79b46f8e8fa55d635947640bd40aacfcab655",
+    "untracked": false
+  },
+  {
+    "path": "apps/web/src/lib/session-command-candidate.ts",
+    "sha256": "fc870988206bbacc2b002ef700554c992ea07dd3333e747174d8d128cce32210",
+    "untracked": true
+  },
+  {
+    "path": "apps/web/src/lib/session-command.test.ts",
+    "sha256": "c3ee5fdb06b0dba3e0463668bdb3ae3ad8d39383bc491ac6da6356150a2568af",
+    "untracked": false
+  },
+  {
+    "path": "apps/web/src/lib/session-command.ts",
+    "sha256": "f3148a7175e4a20d819e0dec4b10a427e17031cd4b0915a744099a2259b4b9e1",
+    "untracked": false
+  },
+  {
+    "path": "apps/web/src/lib/session-runtime-authority.ts",
+    "sha256": "0831738f5c9e508f0795e9b60152ada76d089a455587f29b18bfffb9ced0a138",
+    "untracked": false
+  },
+  {
+    "path": "apps/web/src/lib/session-runtime-client.ts",
+    "sha256": "7d0af30b93fba56cc402d6584d37e396d3bd79c58f5c8850ae3eae35e031d123",
+    "untracked": false
+  },
+  {
+    "path": "apps/web/src/lib/session-runtime-ownership.test.ts",
+    "sha256": "c153ea50265fe0eb354c2a179cd6bd049f1633addd283b83f6604a38586ff99b",
+    "untracked": false
+  },
+  {
+    "path": "apps/web/src/lib/session-runtime-ownership.ts",
+    "sha256": "d3bd2e0f158c31385df6435a8dc6d5ca321ba890c6f1e4754e699a2c574789f5",
+    "untracked": false
+  },
+  {
+    "path": "apps/web/src/lib/workspace-runtime.ts",
+    "sha256": "f0f09bf2a0ce66e72a1878dfb267a6e46fefd3de78d1d1015b4d09553128af1d",
+    "untracked": false
+  },
+  {
+    "path": "apps/web/src/routes/api.agent.control.ts",
+    "sha256": "d96aea820426289f539c6923ac1ac9ec51aa8d97de745aa688c7ec0bcdb7279e",
+    "untracked": false
+  },
+  {
+    "path": "apps/web/src/routes/api.agent.stream.ts",
+    "sha256": "d8f3884137fad69414d9c586ecd2803afd66768494639b5c76d4d09f5df6c47c",
+    "untracked": false
+  },
+  {
+    "path": "apps/web/src/server.test.ts",
+    "sha256": "f5fd4b099e306769e7807ec95e1bf52666dc80e5915157bf21e7f39a1253974b",
+    "untracked": false
+  },
+  {
+    "path": "apps/web/src/server.ts",
+    "sha256": "44e1e66d873e4167e1e8ba62183ac3fd4f8996c964adf2d0d9cb99b1d5c9b1da",
+    "untracked": false
+  },
+  {
+    "path": "apps/web/src/test/session-runtime-fixture.ts",
+    "sha256": "92a65ef88e442314abbcb9790cea92dd50ccf0d19928e48aae7fbde4c2306360",
+    "untracked": false
+  },
+  {
+    "path": "apps/web/types/env.d.ts",
+    "sha256": "16b338c577bd8f4ace835691aa26be6bf0bd866ee8a24374f8a341850fba3123",
+    "untracked": false
+  },
+  {
+    "path": "package.json",
+    "sha256": "c9ce956646b3a27e859088df1ad9a18bf691fe7bf8fdec85dac4f413bcf3aa89",
+    "untracked": false
+  },
+  {
+    "path": "packages/runtime-contracts/src/index.ts",
+    "sha256": "9310cbd33572357fca8ee4d8cae5413baa63f7f3dc61af8120105009ee095be9",
+    "untracked": false
+  },
+  {
+    "path": "packages/runtime-contracts/src/product-command.test.ts",
+    "sha256": "067c4324c1f316bfe95db8b5124d065b3f66472981370f9c9c59b2f3d9b00e88",
+    "untracked": true
+  },
+  {
+    "path": "packages/runtime-contracts/src/product-command.ts",
+    "sha256": "3577d5140ecdc21f44430878ddbf9df1291f6a8bd9aad1d5326a38024a6e7411",
+    "untracked": true
+  },
+  {
+    "path": "packages/sandbox-runner/src/control-channel.test.ts",
+    "sha256": "d3dcf3a81c838d5874271eb0cd93985c41a64f3dfd05a8c9238cb3bbcb0785aa",
+    "untracked": false
+  }
+]

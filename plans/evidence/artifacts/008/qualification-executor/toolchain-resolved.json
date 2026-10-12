@@ -1,0 +1,24 @@
+{
+  "node": "v24.21.0",
+  "vitest": {
+    "version": "3.2.7",
+    "path": "/home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/package.json"
+  },
+  "pool": {
+    "version": "0.12.21",
+    "path": "/home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/package.json"
+  },
+  "miniflare": {
+    "version": "4.20260310.0",
+    "path": "/home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/miniflare@4.20260310.0/node_modules/miniflare/package.json"
+  },
+  "workerd": {
+    "version": "1.20260310.1",
+    "path": "/home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/workerd@1.20260310.1/node_modules/workerd/package.json"
+  },
+  "workersTypes": "4.20260605.1",
+  "runtime": {
+    "version": "1.0.1",
+    "path": "/home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@earendil-works+pi-durable@1.0.1_@aws-sdk+credential-provider-node@3.972.84_@modelconte_867545391487edcd36123475ad2fe1d0/node_modules/@earendil-works/pi-durable/package.json"
+  }
+}

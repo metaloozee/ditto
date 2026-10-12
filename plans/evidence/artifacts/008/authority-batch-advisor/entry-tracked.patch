@@ -1,0 +1,4796 @@
+diff --git a/apps/credential-tests/src/entry.ts b/apps/credential-tests/src/entry.ts
+index 0d2291a..b05900c 100644
+--- a/apps/credential-tests/src/entry.ts
++++ b/apps/credential-tests/src/entry.ts
+@@ -1,5 +1,24 @@
++import {
++	decodeContractInput,
++	strictRecord,
++} from "../../../packages/runtime-contracts/src/json.js";
++import {
++	type ModelSubjectV1,
++	type ModelTransportDescriptorV1,
++	parseModelSubjectV1,
++} from "../../../packages/runtime-contracts/src/model.js";
+ import type { CodexTokens } from "../../web/src/lib/codex-credential-crypto";
+-import { CodexCredential } from "../../web/src/lib/codex-credential-do";
++import {
++	type CandidateModelPreparation,
++	CodexCredential,
++	type CodexCredentialEnv,
++} from "../../web/src/lib/codex-credential-do";
++
++import {
++	CANDIDATE_MODEL_POLICY,
++	type ModelClaimRpc,
++	ModelProductAuthority,
++} from "../../web/src/lib/model-product-authority";
+ 
+ export { CodexCredential };
+ 
+@@ -99,4 +118,463 @@ export class FixtureCredential extends CodexCredential {
+ 		this.resume?.();
+ 	}
+ }
++export function candidateDispatchScope(subject: ModelSubjectV1): string {
++	return JSON.stringify([
++		"pi_durable_v1",
++		1,
++		2,
++		"CandidateSessions",
++		subject.workspaceSessionId,
++		subject.userId,
++		subject.projectId,
++		subject.runtimeOwnerVersion,
++		subject.identityId,
++		subject.controllerNamespace,
++		subject.incarnationId,
++		subject.lifecycleGeneration,
++	]);
++}
++
++export function fixtureResetSubject(value: string) {
++	const row = strictRecord(
++		decodeContractInput(value, 16000),
++		[
++			"resetId",
++			"label",
++			"commandId",
++			"scope",
++			"subject",
++			"predecessor",
++			"origin",
++			"doId",
++			"cutoff",
++		],
++		"Fixture reset",
++	);
++	return parseModelSubjectV1(row.subject);
++}
++
++export const CANDIDATE_FIXTURE_RESET_SCHEMA =
++	"CREATE TABLE IF NOT EXISTS candidate_fixture_resets(resetId TEXT PRIMARY KEY,sessionId TEXT NOT NULL,previousGeneration INTEGER NOT NULL,generation INTEGER NOT NULL,phase TEXT NOT NULL,intent TEXT,observation TEXT,boot TEXT,cutoff INTEGER,predecessor TEXT,UNIQUE(sessionId,previousGeneration),UNIQUE(sessionId,predecessor))";
++const fixtureDatabases = new WeakSet<D1Database>();
++export async function candidateFixtureResetTableExists(db: D1Database) {
++	if (fixtureDatabases.has(db)) return true;
++	const exists = await db
++		.prepare(
++			"SELECT name FROM sqlite_master WHERE type='table' AND name='candidate_fixture_resets'",
++		)
++		.first();
++	if (exists) fixtureDatabases.add(db);
++	return !!exists;
++}
++
++export function candidateModelPolicy(db: D1Database) {
++	return {
++		...CANDIDATE_MODEL_POLICY,
++		attemptAuthority: async (descriptor: ModelTransportDescriptorV1) => {
++			if (!(await candidateFixtureResetTableExists(db)))
++				return descriptor.attempt.generation === 1;
++			const reset = await db
++				.prepare(
++					"SELECT generation,previousGeneration,phase,intent FROM candidate_fixture_resets WHERE sessionId=? ORDER BY generation DESC LIMIT 1",
++				)
++				.bind(descriptor.subject.workspaceSessionId)
++				.first<{
++					generation: number;
++					previousGeneration: number;
++					phase: string;
++					intent: string | null;
++				}>();
++			if (!reset) return descriptor.attempt.generation === 1;
++			if (
++				!reset.intent ||
++				!["active", "reserved"].includes(reset.phase) ||
++				(reset.phase === "reserved"
++					? reset.previousGeneration
++					: reset.generation) !== descriptor.attempt.generation
++			)
++				return false;
++			return (
++				candidateDispatchScope(fixtureResetSubject(reset.intent)) ===
++				candidateDispatchScope(descriptor.subject)
++			);
++		},
++	};
++}
++
++type DispatchFence = Record<string, SqlStorageValue> & {
++	scope: string;
++	generation: number;
++	phase: string;
++	resetId: string | null;
++};
++
++export class CandidateFixtureCredential extends FixtureCredential {
++	private finalWait:
++		| {
++				entered: Promise<boolean>;
++				mark(reached: boolean): void;
++				released: Promise<void>;
++				release(): void;
++		  }
++		| undefined;
++	private lostDecision: string | undefined;
++	loseDecisionAck(commandId: string) {
++		this.lostDecision = commandId;
++	}
++	consumeLostDecisionAck(commandId: string) {
++		if (this.lostDecision !== commandId) return false;
++		this.lostDecision = undefined;
++		return true;
++	}
++	private configurationWait:
++		| {
++				entered: Promise<void>;
++				mark(): void;
++				released: Promise<void>;
++				release(): void;
++		  }
++		| undefined;
++	holdCandidateConfiguration() {
++		let mark!: () => void, release!: () => void;
++		this.configurationWait = {
++			entered: new Promise<void>((resolve) => {
++				mark = resolve;
++			}),
++			mark: () => mark(),
++			released: new Promise<void>((resolve) => {
++				release = resolve;
++			}),
++			release: () => release(),
++		};
++	}
++	waitCandidateConfiguration() {
++		return this.configurationWait?.entered;
++	}
++	releaseCandidateConfiguration() {
++		this.configurationWait?.release();
++	}
++	async candidateConfigurationPermission() {
++		const held = this.configurationWait;
++		if (held) {
++			held.mark();
++			await held.released;
++		}
++	}
++	private finalDescriptor: ModelTransportDescriptorV1 | undefined;
++	private finalRequest: unknown;
++	private requestOutcome:
++		| ReturnType<CodexCredential["requestModel"]>
++		| undefined;
++	private claimAckWait:
++		| {
++				entered: Promise<boolean>;
++				mark(admitted: boolean): void;
++				released: Promise<void>;
++				release(): void;
++		  }
++		| undefined;
++	armClaimAck() {
++		let mark!: (admitted: boolean) => void, release!: () => void;
++		this.claimAckWait = {
++			entered: new Promise<boolean>((resolve) => {
++				mark = resolve;
++			}),
++			mark: (admitted) => mark(admitted),
++			released: new Promise<void>((resolve) => {
++				release = resolve;
++			}),
++			release: () => release(),
++		};
++	}
++	waitClaimAck() {
++		return this.claimAckWait?.entered;
++	}
++	releaseClaimAck() {
++		this.claimAckWait?.release();
++		this.claimAckWait = undefined;
++	}
++	private forceDenials = false;
++	armCandidateDenials() {
++		this.forceDenials = true;
++	}
++	async requestModel(input: unknown, capability: ModelClaimRpc) {
++		this.finalRequest = structuredClone(input);
++		const forced = this.forceDenials;
++		this.forceDenials = false;
++		const held = this.claimAckWait;
++		const finalHeld = this.finalWait;
++		const actual: ModelClaimRpc = held
++			? {
++					describe: () => capability.describe(),
++					halt: (attempt) => capability.halt(attempt),
++					claim: async (attempt, binding) => {
++						const result = await capability.claim(attempt, binding);
++						if (result.status === "admitted") {
++							held.mark(true);
++							await held.released;
++						}
++						return result;
++					},
++				}
++			: capability;
++		this.requestOutcome = (async () => {
++			if (!forced) return super.requestModel(input, actual);
++			if (!input || typeof input !== "object" || Array.isArray(input))
++				throw new Error("fixture_request_missing");
++			const invalid = { ...input, method: "GET" };
++			await super.requestModel(invalid, capability);
++			await super.requestModel(invalid, capability);
++			return super.requestModel(invalid, capability);
++		})().finally(() => {
++			held?.mark(false);
++			finalHeld?.mark(false);
++		});
++		return this.requestOutcome;
++	}
++	waitCandidateOutcome() {
++		return this.requestOutcome;
++	}
++	candidateFinalRequest() {
++		return structuredClone(this.finalRequest);
++	}
++	armCandidateFinal() {
++		let mark!: (reached: boolean) => void, release!: () => void;
++		this.finalDescriptor = undefined;
++		this.finalWait = {
++			entered: new Promise<boolean>((r) => {
++				mark = r;
++			}),
++			mark: (reached) => mark(reached),
++			released: new Promise<void>((r) => {
++				release = r;
++			}),
++			release: () => release(),
++		};
++	}
++	waitCandidateFinal() {
++		return this.finalWait?.entered;
++	}
++	releaseCandidateFinal() {
++		this.finalWait?.release();
++	}
++	candidateFinalDescriptor() {
++		return this.finalDescriptor;
++	}
++	constructor(
++		ctx: DurableObjectState,
++		env: CodexCredentialEnv & { CandidateCredential: DurableObjectNamespace },
++	) {
++		super(ctx, { ...env, CodexCredential: env.CandidateCredential });
++		ctx.storage.sql.exec(
++			"CREATE TABLE IF NOT EXISTS candidate_dispatch_fences(scope TEXT PRIMARY KEY,generation INTEGER NOT NULL,phase TEXT NOT NULL,resetId TEXT)",
++		);
++	}
++	private dispatchFence(scope: string) {
++		return this.ctx.storage.sql
++			.exec<DispatchFence>(
++				"SELECT scope,generation,phase,resetId FROM candidate_dispatch_fences WHERE scope=?",
++				scope,
++			)
++			.toArray()[0];
++	}
++	protected async prepareModelDispatch(descriptor: ModelTransportDescriptorV1) {
++		Object.freeze(descriptor.subject);
++		Object.freeze(descriptor.attempt);
++		Object.freeze(descriptor);
++		const preparation = Object.freeze({
++			scope: candidateDispatchScope(descriptor.subject),
++			generation: descriptor.attempt.generation,
++			binding: JSON.stringify(descriptor),
++		});
++		if (!(await this.modelProductAuthority().current(descriptor)))
++			throw new Error("candidate_dispatch_denied");
++		if (preparation.generation === 1)
++			this.ctx.storage.sql.exec(
++				"INSERT OR IGNORE INTO candidate_dispatch_fences VALUES(?,?,'active',NULL)",
++				preparation.scope,
++				preparation.generation,
++			);
++		await this.ctx.storage.sync();
++		const fence = this.dispatchFence(preparation.scope);
++		if (
++			!fence ||
++			fence.generation !== preparation.generation ||
++			fence.phase !== "active"
++		)
++			throw new Error("candidate_dispatch_closed");
++		return preparation;
++	}
++	protected finalModelDispatch(
++		preparation: CandidateModelPreparation | null,
++		descriptor: ModelTransportDescriptorV1,
++	): boolean {
++		if (
++			!preparation ||
++			preparation.binding !== JSON.stringify(descriptor) ||
++			preparation.scope !== candidateDispatchScope(descriptor.subject) ||
++			preparation.generation !== descriptor.attempt.generation
++		)
++			return false;
++		const fence = this.dispatchFence(preparation.scope);
++		return (
++			!!fence &&
++			fence.phase === "active" &&
++			fence.resetId === null &&
++			fence.generation === preparation.generation
++		);
++	}
++	async closeCandidateDispatch(
++		value: unknown,
++		generation: number,
++		resetId: string,
++	) {
++		const subject = parseModelSubjectV1(value);
++		if (
++			!this.env.CodexCredential.idFromName(subject.userId).equals(
++				this.ctx.id,
++			) ||
++			!Number.isSafeInteger(generation) ||
++			generation < 1 ||
++			typeof resetId !== "string" ||
++			resetId.length < 1 ||
++			resetId.length > 256 ||
++			!(await this.modelProductAuthority().ownedConfiguration(subject, {
++				version: 1,
++				projectId: subject.projectId,
++				workspaceSessionId: subject.workspaceSessionId,
++				ownerVersion: subject.runtimeOwnerVersion,
++			}))
++		)
++			throw new Error("candidate_dispatch_denied");
++		const scope = candidateDispatchScope(subject);
++		this.ctx.storage.transactionSync(() => {
++			const fence = this.dispatchFence(scope);
++			if (
++				!fence ||
++				fence.generation !== generation ||
++				(fence.phase !== "active" &&
++					(fence.phase !== "closed" || fence.resetId !== resetId))
++			)
++				throw new Error("candidate_dispatch_conflict");
++			this.ctx.storage.sql.exec(
++				"UPDATE candidate_dispatch_fences SET phase='closed',resetId=? WHERE scope=? AND generation=?",
++				resetId,
++				scope,
++				generation,
++			);
++		});
++		await this.ctx.storage.sync();
++		const fence = this.dispatchFence(scope);
++		if (
++			!fence ||
++			fence.generation !== generation ||
++			fence.phase !== "closed" ||
++			fence.resetId !== resetId
++		)
++			throw new Error("candidate_dispatch_conflict");
++		return { scope, generation, resetId, phase: "closed" as const };
++	}
++	async reactivateCandidateDispatch(
++		value: unknown,
++		previousGeneration: number,
++		generation: number,
++		resetId: string,
++		boot: string,
++	) {
++		const subject = parseModelSubjectV1(value);
++		const row = await this.env.DB.prepare(
++			"SELECT intent FROM candidate_fixture_resets WHERE resetId=? AND sessionId=? AND previousGeneration=? AND generation=? AND boot=? AND phase='active'",
++		)
++			.bind(
++				resetId,
++				subject.workspaceSessionId,
++				previousGeneration,
++				generation,
++				boot,
++			)
++			.first<{ intent: string }>();
++		if (
++			!row ||
++			generation !== previousGeneration + 1 ||
++			!this.env.CodexCredential.idFromName(subject.userId).equals(
++				this.ctx.id,
++			) ||
++			!(await this.modelProductAuthority().ownedConfiguration(subject, {
++				version: 1,
++				projectId: subject.projectId,
++				workspaceSessionId: subject.workspaceSessionId,
++				ownerVersion: subject.runtimeOwnerVersion,
++			}))
++		)
++			throw new Error("candidate_reactivation_denied");
++		if (
++			candidateDispatchScope(fixtureResetSubject(row.intent)) !==
++			candidateDispatchScope(subject)
++		)
++			throw new Error("candidate_reactivation_denied");
++		const product = (
++			this.env as CodexCredentialEnv & {
++				CandidateProduct: {
++					fixtureDispatchActivation(
++						resetId: string,
++						generation: number,
++						boot: string,
++					): Promise<boolean>;
++				};
++			}
++		).CandidateProduct;
++		if (!(await product.fixtureDispatchActivation(resetId, generation, boot)))
++			throw new Error("candidate_reactivation_denied");
++		const scope = candidateDispatchScope(subject);
++		this.ctx.storage.transactionSync(() => {
++			const fence = this.dispatchFence(scope);
++			if (
++				fence?.generation === generation &&
++				fence.phase === "active" &&
++				fence.resetId === null
++			)
++				return;
++			if (
++				!fence ||
++				fence.generation !== previousGeneration ||
++				fence.phase !== "closed" ||
++				fence.resetId !== resetId
++			)
++				throw new Error("candidate_reactivation_conflict");
++			this.ctx.storage.sql.exec(
++				"UPDATE candidate_dispatch_fences SET generation=?,phase='active',resetId=NULL WHERE scope=? AND generation=? AND phase='closed' AND resetId=?",
++				generation,
++				scope,
++				previousGeneration,
++				resetId,
++			);
++		});
++		await this.ctx.storage.sync();
++		const fence = this.dispatchFence(scope);
++		if (
++			fence?.generation !== generation ||
++			fence.phase !== "active" ||
++			fence.resetId !== null
++		)
++			throw new Error("candidate_reactivation_conflict");
++		return { scope, generation, phase: "active" };
++	}
++	protected modelProductAuthority() {
++		const fixture = this;
++		const finalHeld = this.finalWait;
++		let calls = 0;
++		return new (class extends ModelProductAuthority {
++			async permit(...args: Parameters<ModelProductAuthority["permit"]>) {
++				const positive = await super.permit(...args);
++				if (++calls === 4 && positive && finalHeld) {
++					fixture.finalDescriptor = args[0];
++					finalHeld.mark(true);
++					await finalHeld.released;
++				}
++				return positive;
++			}
++		})(this.env.DB, Date.now, candidateModelPolicy(this.env.DB));
++	}
++}
+ export default { fetch: () => new Response("Not found", { status: 404 }) };
+diff --git a/apps/credential-tests/src/model-entry.ts b/apps/credential-tests/src/model-entry.ts
+index 6feb0b5..522bc62 100644
+--- a/apps/credential-tests/src/model-entry.ts
++++ b/apps/credential-tests/src/model-entry.ts
+@@ -1,5 +1,20 @@
+ import { WorkerEntrypoint } from "cloudflare:workers";
+-import type { ModelTransportDescriptorV1 } from "../../../packages/runtime-contracts/src/model.js";
++import {
++	decodeContractInput,
++	integerField,
++	literalField,
++	strictRecord,
++	stringField,
++} from "../../../packages/runtime-contracts/src/json.js";
++import {
++	type ModelSubjectV1,
++	type ModelTransportDescriptorV1,
++	parseModelSubjectV1,
++} from "../../../packages/runtime-contracts/src/model.js";
++import type {
++	HostFault,
++	LocalAuthority,
++} from "../../runtime/src/pi-durable-host.ts";
+ import type { ModelClaimRpc } from "../../web/src/lib/model-product-authority";
+ import {
+ 	type ModelProductBindings,
+@@ -8,9 +23,32 @@ import {
+ } from "../../web/src/lib/model-product-transport";
+ 
+ export { PiDurableHostFixture } from "../../runtime/src/pi-durable-host.ts";
+-export { CodexCredential, FixtureCredential } from "./entry";
++export {
++	CandidateFixtureCredential,
++	CodexCredential,
++	FixtureCredential,
++} from "./entry";
+ 
++import type { QueueDecisionV2 } from "../../../packages/runtime-contracts/src/product-command.js";
++import {
++	type CandidateRuntimeScope,
++	type CandidateSessionBindings,
++	PiDurableProductSession,
++	parseCandidateRuntimeScope,
++} from "../../runtime/src/pi-durable-product-session.ts";
+ import { readOwnedConfigurationAuthority } from "../../web/src/lib/configuration-product-authority";
++import {
++	CANDIDATE_MODEL_POLICY,
++	ModelProductAuthority,
++} from "../../web/src/lib/model-product-authority";
++import { CandidateProductCommands } from "../../web/src/lib/session-command-candidate";
++import {
++	CANDIDATE_FIXTURE_RESET_SCHEMA,
++	type CandidateFixtureCredential,
++	candidateFixtureResetTableExists,
++	candidateModelPolicy,
++	fixtureResetSubject,
++} from "./entry";
+ 
+ export class FixtureProduct extends WorkerEntrypoint<ModelProductBindings> {
+ 	async readConfigurationAuthority(input: unknown, selection?: unknown) {
+@@ -79,4 +117,1103 @@ export class FixtureProduct extends WorkerEntrypoint<ModelProductBindings> {
+ 		return new Response("Not found", { status: 404 });
+ 	}
+ }
++type CandidateFixtureBindings = Omit<
++	CandidateSessionBindings,
++	"CandidateSessions"
++> & {
++	CandidateSessions: DurableObjectNamespace<CandidateFixtureSession>;
++	DB: D1Database;
++	CandidateCredential: DurableObjectNamespace<CandidateFixtureCredential>;
++};
++
++type FixturePredecessor = {
++	id: string;
++	generation: number;
++	started: number;
++	yield_at: number;
++	end_at: number;
++	state: string;
++};
++type FixtureReset = {
++	resetId: string;
++	label: string;
++	commandId: string;
++	scope: CandidateRuntimeScope;
++	subject: ModelSubjectV1;
++	predecessor: FixturePredecessor;
++	origin: string;
++	doId: string;
++	cutoff: number;
++};
++
++function parseFixtureReset(value: unknown): FixtureReset {
++	const row = strictRecord(
++		decodeContractInput(value, 16000),
++		[
++			"resetId",
++			"label",
++			"commandId",
++			"scope",
++			"subject",
++			"predecessor",
++			"origin",
++			"doId",
++			"cutoff",
++		],
++		"Fixture reset",
++	);
++	const predecessor = strictRecord(
++		row.predecessor,
++		["id", "generation", "started", "yield_at", "end_at", "state"],
++		"Fixture predecessor",
++	);
++	const parsed: FixtureReset = {
++		resetId: stringField(row, "resetId", { maxBytes: 256 }),
++		label: stringField(row, "label", { maxBytes: 256 }),
++		commandId: stringField(row, "commandId"),
++		scope: parseCandidateRuntimeScope(row.scope),
++		subject: parseModelSubjectV1(row.subject),
++		origin: stringField(row, "origin", { maxBytes: 256 }),
++		doId: stringField(row, "doId", { maxBytes: 256 }),
++		cutoff: integerField(row, "cutoff", { minimum: 1 }),
++		predecessor: {
++			id: stringField(predecessor, "id", { maxBytes: 256 }),
++			generation: integerField(predecessor, "generation", { minimum: 1 }),
++			started: integerField(predecessor, "started", { minimum: 0 }),
++			yield_at: integerField(predecessor, "yield_at", { minimum: 1 }),
++			end_at: integerField(predecessor, "end_at", { minimum: 1 }),
++			state: literalField(predecessor, "state", [
++				"active",
++				"draining",
++				"closed",
++			]),
++		},
++	};
++	if (
++		parsed.subject.userId !== parsed.scope.userId ||
++		parsed.subject.projectId !== parsed.scope.projectId ||
++		parsed.subject.workspaceSessionId !== parsed.scope.workspaceSessionId ||
++		parsed.subject.runtimeOwnerVersion !== parsed.scope.ownerVersion ||
++		parsed.predecessor.yield_at <= parsed.predecessor.started ||
++		parsed.predecessor.end_at <= parsed.predecessor.yield_at
++	)
++		throw new Error("fixture_reset_binding_denied");
++	return parsed;
++}
++
++type FixtureResetRequest = Omit<
++	FixtureReset,
++	"predecessor" | "origin" | "doId"
++>;
++function sameFixturePredecessor(
++	actual: FixturePredecessor,
++	retained: FixturePredecessor,
++) {
++	return (
++		actual.id === retained.id &&
++		actual.generation === retained.generation &&
++		actual.started === retained.started &&
++		actual.yield_at === retained.yield_at &&
++		actual.end_at === retained.end_at &&
++		["active", "draining", "closed"].includes(actual.state) &&
++		["active", "draining", "closed"].includes(retained.state)
++	);
++}
++
++function parseFixtureResetRequest(value: unknown): FixtureResetRequest {
++	const row = strictRecord(
++		decodeContractInput(value, 16000),
++		["resetId", "label", "commandId", "scope", "subject", "cutoff"],
++		"Fixture reset reservation",
++	);
++	const parsed = {
++		resetId: stringField(row, "resetId", { maxBytes: 256 }),
++		label: stringField(row, "label", { maxBytes: 256 }),
++		commandId: stringField(row, "commandId", { maxBytes: 256 }),
++		scope: parseCandidateRuntimeScope(row.scope),
++		subject: parseModelSubjectV1(row.subject),
++		cutoff: integerField(row, "cutoff", { minimum: 1 }),
++	};
++	if (
++		parsed.subject.userId !== parsed.scope.userId ||
++		parsed.subject.projectId !== parsed.scope.projectId ||
++		parsed.subject.workspaceSessionId !== parsed.scope.workspaceSessionId ||
++		parsed.subject.runtimeOwnerVersion !== parsed.scope.ownerVersion
++	)
++		throw new Error("fixture_reset_binding_denied");
++	return parsed;
++}
++
++export class CandidateFixtureSession extends PiDurableProductSession {
++	constructor(ctx: DurableObjectState, env: CandidateSessionBindings) {
++		super(ctx, env);
++		ctx.storage.sql.exec(
++			"CREATE TABLE IF NOT EXISTS candidate_fixture_gate(id INTEGER PRIMARY KEY CHECK(id=1),resetId TEXT NOT NULL,generation INTEGER NOT NULL,boot TEXT NOT NULL,phase TEXT NOT NULL,cutoff INTEGER NOT NULL,accounted TEXT)",
++		);
++	}
++	private faultPoint: HostFault | undefined;
++	armControlFault(
++		point: "candidate-control-intent" | "candidate-control-outcome",
++	) {
++		this.faultPoint = point;
++	}
++	protected hostFault(point: HostFault) {
++		if (this.faultPoint === point) {
++			this.faultPoint = undefined;
++			throw new Error(`fixture_${point}`);
++		}
++	}
++	protected ordinaryAllowed() {
++		const gate = this.ctx.storage.sql
++			.exec(
++				"SELECT boot,phase,accounted FROM candidate_fixture_gate WHERE id=1",
++			)
++			.toArray()[0];
++		if (!gate) {
++			const predecessor = this.ctx.storage.sql
++				.exec(
++					"SELECT i.state,o.origin FROM host_invocations i LEFT JOIN host_candidate_invocation_origins o ON o.invocation=i.id ORDER BY i.rowid DESC LIMIT 1",
++				)
++				.toArray()[0];
++			return (
++				!predecessor ||
++				predecessor.state === "closed" ||
++				predecessor.origin === this.candidateBoot
++			);
++		}
++		return (
++			gate.boot === this.candidateBoot &&
++			gate.phase === "active" &&
++			typeof gate.accounted === "string" &&
++			this.ctx.storage.sql
++				.exec(
++					"SELECT id FROM host_invocations WHERE id=? AND state='closed'",
++					gate.accounted,
++				)
++				.toArray().length === 1
++		);
++	}
++	async fixtureProof(invocationId?: string) {
++		const scope = parseCandidateRuntimeScope(
++			await this.ctx.storage.get("candidate-scope-v2"),
++		);
++		const latest = this.ctx.storage.sql
++			.exec<FixturePredecessor & Record<string, SqlStorageValue>>(
++				"SELECT * FROM host_invocations ORDER BY rowid DESC LIMIT 1",
++			)
++			.toArray()[0];
++		const requested = invocationId
++			? this.ctx.storage.sql
++					.exec<FixturePredecessor & Record<string, SqlStorageValue>>(
++						"SELECT * FROM host_invocations WHERE id=?",
++						invocationId,
++					)
++					.toArray()[0]
++			: latest;
++		const predecessor =
++			requested &&
++			latest &&
++			requested.id !== latest.id &&
++			(requested.state !== "closed" || latest.state !== "closed")
++				? latest
++				: requested;
++		if (!predecessor) throw new Error("fixture_missing_predecessor");
++		const origin = this.ctx.storage.sql
++			.exec<{ origin: string }>(
++				"SELECT origin FROM host_candidate_invocation_origins WHERE invocation=?",
++				predecessor.id,
++			)
++			.toArray()[0]?.origin;
++		if (!origin) throw new Error("fixture_missing_origin");
++		const gate =
++			this.ctx.storage.sql
++				.exec("SELECT * FROM candidate_fixture_gate WHERE id=1")
++				.toArray()[0] ?? null;
++		return {
++			scope,
++			predecessor,
++			origin,
++			boot: this.candidateBoot,
++			doId: this.ctx.id.toString(),
++			gate,
++		};
++	}
++	async prepareFixtureReset(
++		reset: Omit<FixtureReset, "predecessor" | "origin" | "doId">,
++		generation: number,
++	) {
++		const product = this.env
++			.CandidateProduct as Service<CandidateFixtureProduct>;
++		const authority = await product.readRuntimeAuthority(reset.scope);
++		if (!authority.current || authority.generation !== generation)
++			return { denied: true as const };
++		this.ctx.storage.transactionSync(() => {
++			const prior = this.ctx.storage.sql
++				.exec(
++					"SELECT resetId,generation FROM candidate_fixture_gate WHERE id=1",
++				)
++				.toArray()[0];
++			if (
++				prior &&
++				prior.resetId !== reset.resetId &&
++				prior.generation !== generation
++			)
++				throw new Error("fixture_reset_conflict");
++			this.ctx.storage.sql.exec(
++				"INSERT OR REPLACE INTO candidate_fixture_gate VALUES(1,?,?,?,'blocked',?,NULL)",
++				reset.resetId,
++				generation,
++				this.candidateBoot,
++				reset.cutoff,
++			);
++		});
++		const proof = await this.fixtureProof();
++		if (
++			proof.origin !== this.candidateBoot ||
++			proof.predecessor.generation !== generation ||
++			!["active", "draining", "closed"].includes(proof.predecessor.state) ||
++			JSON.stringify(proof.scope) !== JSON.stringify(reset.scope)
++		)
++			return { denied: true as const };
++		const intent = parseFixtureReset({
++			...reset,
++			predecessor: proof.predecessor,
++			origin: proof.origin,
++			doId: proof.doId,
++		});
++		const retained = await this.ctx.storage.get<unknown>(
++			"candidate-fixture-reset",
++		);
++		const old =
++			retained === undefined ? undefined : parseFixtureReset(retained);
++		if (
++			old?.resetId === intent.resetId &&
++			JSON.stringify(old) !== JSON.stringify(intent)
++		)
++			throw new Error("fixture_reset_conflict");
++		await this.ctx.storage.put("candidate-fixture-reset", intent);
++		await this.ctx.storage.sync();
++		return intent;
++	}
++	async abortFixtureReset(resetId: string) {
++		const retained = await this.ctx.storage.get<unknown>(
++			"candidate-fixture-reset",
++		);
++		const intent =
++			retained === undefined ? undefined : parseFixtureReset(retained);
++		if (!intent || intent.resetId !== resetId) return { denied: true as const };
++		const proof = await this.fixtureProof();
++		if (
++			intent.origin !== this.candidateBoot ||
++			proof.origin !== this.candidateBoot ||
++			!sameFixturePredecessor(proof.predecessor, intent.predecessor) ||
++			JSON.stringify(proof.scope) !== JSON.stringify(intent.scope) ||
++			proof.doId !== intent.doId ||
++			this.ordinaryAllowed()
++		)
++			return { denied: true as const };
++		const authority = await this.env.CandidateProduct.readRuntimeAuthority(
++			intent.scope,
++		);
++		if (
++			!authority.current ||
++			authority.generation !== intent.predecessor.generation
++		)
++			return { denied: true as const };
++		await this.ctx.storage.put("candidate-fixture-reset-executed", {
++			resetId,
++			origin: intent.origin,
++			predecessor: intent.predecessor.id,
++			label: intent.label,
++		});
++		await this.ctx.storage.sync();
++		const final = await this.fixtureProof();
++		if (
++			!sameFixturePredecessor(final.predecessor, intent.predecessor) ||
++			final.origin !== this.candidateBoot ||
++			this.ordinaryAllowed()
++		)
++			return { denied: true as const };
++		this.ctx.abort(intent.label);
++	}
++	async recoverFixtureReset(intent: FixtureReset, generation: number) {
++		const proof = await this.fixtureProof(intent.predecessor.id);
++		if (
++			proof.predecessor.id !== intent.predecessor.id ||
++			proof.origin !== intent.origin ||
++			proof.boot === intent.origin ||
++			proof.doId !== intent.doId ||
++			JSON.stringify(proof.scope) !== JSON.stringify(intent.scope) ||
++			generation !== intent.predecessor.generation + 1
++		)
++			throw new Error("fixture_recovery_proof_denied");
++		this.ctx.storage.sql.exec(
++			"INSERT OR REPLACE INTO candidate_fixture_gate VALUES(1,?,?,?,'blocked',?,NULL)",
++			intent.resetId,
++			generation,
++			this.candidateBoot,
++			intent.cutoff,
++		);
++		await this.ctx.storage.sync();
++		await this.activate(intent.scope);
++		const product = this.env
++			.CandidateProduct as Service<CandidateFixtureProduct>;
++		let after = 0;
++		for (;;) {
++			const page = await product.fixtureControls(
++				intent.scope,
++				intent.cutoff,
++				after,
++			);
++			for (const commandId of page.commandIds)
++				await this.deliverCommand(commandId, 1);
++			if (page.end) break;
++			if (page.after <= after) throw new Error("fixture_recovery_scan_denied");
++			after = page.after;
++		}
++		const final = await this.fixtureProof(intent.predecessor.id);
++		if (
++			final.predecessor.id !== intent.predecessor.id ||
++			final.predecessor.state !== "closed" ||
++			final.origin !== intent.origin ||
++			final.boot !== this.candidateBoot
++		)
++			throw new Error("fixture_recovery_accounting_denied");
++		this.ctx.storage.sql.exec(
++			"UPDATE candidate_fixture_gate SET phase='ready',cutoff=?,accounted=? WHERE id=1 AND resetId=? AND generation=? AND boot=? AND phase='blocked'",
++			intent.cutoff,
++			intent.predecessor.id,
++			intent.resetId,
++			generation,
++			this.candidateBoot,
++		);
++		await this.ctx.storage.sync();
++		const unresolved =
++			this.ctx.storage.sql
++				.exec(
++					"SELECT id FROM host_effects WHERE state='admitted' OR (state='result-recorded' AND (kind='tool' OR correlation IS NOT NULL)) LIMIT 1",
++				)
++				.toArray().length > 0;
++		const review =
++			this.ctx.storage.sql.exec("SELECT id FROM host_safety LIMIT 1").toArray()
++				.length > 0;
++		return {
++			boot: this.candidateBoot,
++			generation,
++			resetId: intent.resetId,
++			cutoff: intent.cutoff,
++			eligible: !unresolved && !review,
++		};
++	}
++	async acknowledgeFixtureRecovery(
++		resetId: string,
++		generation: number,
++		boot: string,
++	) {
++		if (boot !== this.candidateBoot)
++			throw new Error("fixture_recovery_boot_denied");
++		const product = this.env
++			.CandidateProduct as Service<CandidateFixtureProduct>;
++		if (!(await product.fixtureRecoveryAcknowledged(resetId, generation, boot)))
++			throw new Error("fixture_recovery_ack_denied");
++		const unresolved = this.ctx.storage.sql
++			.exec(
++				"SELECT id FROM host_effects WHERE state='admitted' OR (state='result-recorded' AND (kind='tool' OR correlation IS NOT NULL)) LIMIT 1",
++			)
++			.toArray();
++		if (
++			unresolved.length ||
++			this.ctx.storage.sql.exec("SELECT id FROM host_safety LIMIT 1").toArray()
++				.length
++		)
++			return false;
++		const changed = this.ctx.storage.sql
++			.exec(
++				"UPDATE candidate_fixture_gate SET phase='active' WHERE id=1 AND resetId=? AND generation=? AND boot=? AND phase IN ('ready','active') RETURNING id",
++				resetId,
++				generation,
++				boot,
++			)
++			.toArray();
++		if (changed.length !== 1) throw new Error("fixture_recovery_ack_denied");
++		await this.ctx.storage.sync();
++		await this.host?.repairWakeup();
++		return this.ordinaryAllowed();
++	}
++	private retired = false;
++	private alarmCompletion: Promise<void> | undefined;
++	private joinHold:
++		| {
++				entered: Promise<void>;
++				mark(): void;
++				released: Promise<void>;
++				release(): void;
++		  }
++		| undefined;
++	holdFixtureJoin() {
++		let mark!: () => void, release!: () => void;
++		this.joinHold = {
++			entered: new Promise<void>((resolve) => {
++				mark = resolve;
++			}),
++			mark: () => mark(),
++			released: new Promise<void>((resolve) => {
++				release = resolve;
++			}),
++			release: () => release(),
++		};
++	}
++	waitFixtureJoin() {
++		return this.joinHold?.entered;
++	}
++	releaseFixtureJoin() {
++		this.joinHold?.release();
++	}
++	async reconcileFixture() {
++		await this.host?.reconcile();
++	}
++	async configureFixture(input: unknown, commandId: string) {
++		return (await this.activate()).configureCandidate(commandId, input);
++	}
++	async alarm() {
++		if (this.retired || !this.ordinaryAllowed()) return;
++		this.alarmCompletion = (async () => {
++			const host = await this.alarmHost();
++			if (!host) return;
++			await host.alarm();
++			if (
++				this.joinHold &&
++				this.ctx.storage.sql
++					.exec(
++						"SELECT i.id FROM host_invocations i JOIN host_candidate_invocation_origins o ON o.invocation=i.id WHERE i.state='active' AND o.origin=? LIMIT 1",
++						this.candidateBoot,
++					)
++					.toArray().length === 1
++			) {
++				this.joinHold.mark();
++				await this.joinHold.released;
++			}
++			await host.joinInvocation();
++		})();
++		await this.alarmCompletion;
++	}
++	async retireFixture() {
++		this.retired = true;
++		await this.alarmCompletion;
++		if (this.host) {
++			await this.host.yield();
++			await this.host.awaitClosure();
++			this.host = undefined;
++		}
++		await this.ctx.storage.deleteAlarm();
++		await this.ctx.storage.sync();
++	}
++	async reopenFixture() {
++		this.retired = true;
++		try {
++			await this.alarmCompletion;
++			if (this.host) {
++				await this.host.yield();
++				await this.host.awaitClosure();
++				this.host = undefined;
++			}
++			await this.activate();
++		} finally {
++			this.retired = false;
++		}
++		await (await this.activate()).repairWakeup();
++	}
++	async candidateSnapshot() {
++		if (!this.host) await this.activate();
++		return {
++			conversations: this.ctx.storage.sql
++				.exec("SELECT count(*) AS count FROM conversations")
++				.one().count,
++			submissions: this.ctx.storage.sql
++				.exec("SELECT * FROM submissions")
++				.toArray(),
++			commands: this.ctx.storage.sql
++				.exec(
++					"SELECT id,run,state,sequence,submission FROM host_commands ORDER BY sequence",
++				)
++				.toArray(),
++			runs: this.ctx.storage.sql.exec("SELECT * FROM host_runs").toArray(),
++			members: this.ctx.storage.sql
++				.exec(
++					"SELECT m.* FROM host_members m JOIN host_commands c ON c.assistant=m.assistant ORDER BY c.sequence",
++				)
++				.toArray(),
++			projections: this.ctx.storage.sql
++				.exec("SELECT * FROM host_projections")
++				.toArray(),
++			effects: this.ctx.storage.sql
++				.exec("SELECT id,state,epoch FROM host_effects")
++				.toArray(),
++			safety: this.ctx.storage.sql
++				.exec("SELECT reason FROM host_safety")
++				.toArray(),
++			retained: this.ctx.storage.sql
++				.exec(
++					"SELECT p.payload,i.content FROM host_product_commands p LEFT JOIN host_inbox i ON i.id=p.id",
++				)
++				.toArray(),
++			invocations: this.ctx.storage.sql
++				.exec("SELECT * FROM host_invocations")
++				.toArray(),
++		};
++	}
++}
++
++type FixtureResetRow = {
++	resetId: string;
++	sessionId: string;
++	previousGeneration: number;
++	generation: number;
++	phase: string;
++	intent: string | null;
++	observation: string | null;
++	boot: string | null;
++	cutoff: number | null;
++	predecessor: string | null;
++};
++
++export class CandidateFixtureProduct extends WorkerEntrypoint<CandidateFixtureBindings> {
++	private fixtureSession(sessionId: string) {
++		return this.env.CandidateSessions.getByName(sessionId);
++	}
++	private fixtureOwnedSubject(subject: ModelSubjectV1) {
++		return new ModelProductAuthority(
++			this.env.DB,
++			Date.now,
++			CANDIDATE_MODEL_POLICY,
++		).ownedConfiguration(subject, {
++			version: 1,
++			projectId: subject.projectId,
++			workspaceSessionId: subject.workspaceSessionId,
++			ownerVersion: subject.runtimeOwnerVersion,
++		});
++	}
++	private fixtureObserved(row: FixtureResetRow, intent: FixtureReset) {
++		if (
++			!row.observation ||
++			row.resetId !== intent.resetId ||
++			row.sessionId !== intent.scope.workspaceSessionId ||
++			row.predecessor !== intent.predecessor.id ||
++			row.previousGeneration !== intent.predecessor.generation ||
++			row.generation !== row.previousGeneration + 1
++		)
++			return false;
++		const observation = strictRecord(
++			decodeContractInput(row.observation, 4096),
++			["resetId", "label", "predecessor", "origin", "doId"],
++			"Fixture reset observation",
++		);
++		return (
++			observation.resetId === intent.resetId &&
++			observation.label === intent.label &&
++			observation.predecessor === intent.predecessor.id &&
++			observation.origin === intent.origin &&
++			observation.doId === intent.doId
++		);
++	}
++	private async latestReset(sessionId: string) {
++		if (!(await candidateFixtureResetTableExists(this.env.DB))) return null;
++		return this.env.DB.prepare(
++			"SELECT * FROM candidate_fixture_resets WHERE sessionId=? ORDER BY generation DESC LIMIT 1",
++		)
++			.bind(sessionId)
++			.first<FixtureResetRow>();
++	}
++	async reserveCandidateReset(commandId: string) {
++		if (await candidateFixtureResetTableExists(this.env.DB)) {
++			const reserved = await this.env.DB.prepare(
++				"SELECT * FROM candidate_fixture_resets WHERE json_extract(intent,'$.commandId')=? AND phase='reserved' ORDER BY generation DESC LIMIT 1",
++			)
++				.bind(commandId)
++				.first<FixtureResetRow>();
++			if (reserved) return reserved;
++		}
++		const command = await this.reconstructCommand(commandId, 1);
++		const subject = await this.readCandidateSubject(commandId, 1);
++		if (!command || !subject) throw new Error("fixture_reset_owned_denied");
++		const scope: CandidateRuntimeScope = {
++			version: 2,
++			userId: command.userId,
++			projectId: command.projectId,
++			workspaceSessionId: command.workspaceSessionId,
++			ownerVersion: 1,
++		};
++		const authority = await this.readRuntimeAuthority(scope);
++		if (!authority.current) throw new Error("fixture_reset_owned_denied");
++		if (!(await candidateFixtureResetTableExists(this.env.DB)))
++			await this.env.DB.exec(CANDIDATE_FIXTURE_RESET_SCHEMA);
++		let row = await this.latestReset(scope.workspaceSessionId);
++		if (row && row.phase !== "active") return row;
++		const resetId = crypto.randomUUID();
++		const label = `008-private-reset-${crypto.randomUUID()}`;
++		const cutoff = (
++			await this.env.DB.prepare(
++				"SELECT max(commandSeq) AS cutoff FROM session_commands WHERE sessionId=? AND userId=? AND projectId=? AND payloadVersion=2",
++			)
++				.bind(scope.workspaceSessionId, scope.userId, scope.projectId)
++				.first<{ cutoff: number }>()
++		)?.cutoff;
++		if (!cutoff) throw new Error("fixture_reset_cutoff_denied");
++		await this.env.DB.prepare(
++			"INSERT OR IGNORE INTO candidate_fixture_resets(resetId,sessionId,previousGeneration,generation,phase,intent) VALUES(?,?,?,?,'reserved',?)",
++		)
++			.bind(
++				resetId,
++				scope.workspaceSessionId,
++				authority.generation,
++				authority.generation + 1,
++				JSON.stringify({ resetId, label, commandId, scope, subject, cutoff }),
++			)
++			.run();
++		row = await this.latestReset(scope.workspaceSessionId);
++		if (row?.resetId !== resetId) throw new Error("fixture_reset_conflict");
++		return row;
++	}
++	async resetCandidate(commandId: string, discardObservation = false) {
++		const row = await this.reserveCandidateReset(commandId);
++		if (row.phase !== "reserved" || !row.intent)
++			return { resetId: row.resetId, phase: row.phase };
++		const request = parseFixtureResetRequest(row.intent);
++		const { resetId, label, scope, subject } = request;
++		if (
++			request.commandId !== commandId ||
++			!(await this.fixtureOwnedSubject(subject))
++		)
++			return { resetId, phase: "denied" };
++		const begin = await this.env.DB.prepare(
++			"UPDATE candidate_fixture_resets SET phase='intent' WHERE resetId=? AND phase='reserved' AND intent=?",
++		)
++			.bind(resetId, row.intent)
++			.run();
++		if (begin.meta.changes !== 1) return { resetId, phase: "denied" };
++		await this.env.CandidateCredential.getByName(
++			scope.userId,
++		).closeCandidateDispatch(subject, row.previousGeneration, resetId);
++		const intent = await this.fixtureSession(
++			scope.workspaceSessionId,
++		).prepareFixtureReset(request, row.previousGeneration);
++		if ("denied" in intent) return { resetId, phase: "denied" };
++		await this.env.DB.prepare(
++			"UPDATE candidate_fixture_resets SET intent=?,predecessor=?,cutoff=? WHERE resetId=? AND phase='intent' AND intent=?",
++		)
++			.bind(
++				JSON.stringify(intent),
++				intent.predecessor.id,
++				intent.cutoff,
++				resetId,
++				row.intent,
++			)
++			.run();
++		let observed = false;
++		try {
++			await this.fixtureSession(scope.workspaceSessionId).abortFixtureReset(
++				resetId,
++			);
++		} catch (error) {
++			if (
++				error &&
++				typeof error === "object" &&
++				"message" in error &&
++				"durableObjectReset" in error &&
++				error.message === label &&
++				error.durableObjectReset === true
++			)
++				observed = true;
++		}
++		if (!observed || discardObservation) return { resetId, phase: "intent" };
++		const observation = JSON.stringify({
++			resetId,
++			label,
++			predecessor: intent.predecessor.id,
++			origin: intent.origin,
++			doId: intent.doId,
++		});
++		await this.env.DB.prepare(
++			"UPDATE candidate_fixture_resets SET observation=?,phase='observed' WHERE resetId=? AND phase='intent' AND intent=? AND observation IS NULL",
++		)
++			.bind(observation, resetId, JSON.stringify(intent))
++			.run();
++		const proof = await this.fixtureSession(
++			scope.workspaceSessionId,
++		).fixtureProof();
++		const fresh = await this.commands().runtimeAuthority(
++			scope.userId,
++			scope.projectId,
++			scope.workspaceSessionId,
++		);
++		if (
++			!fresh.current ||
++			!(await this.fixtureOwnedSubject(intent.subject)) ||
++			proof.boot === intent.origin ||
++			proof.origin !== intent.origin ||
++			proof.doId !== intent.doId ||
++			JSON.stringify(proof.scope) !== JSON.stringify(scope) ||
++			!sameFixturePredecessor(proof.predecessor, intent.predecessor)
++		)
++			throw new Error("fixture_reset_proof_denied");
++		const issued = await this.env.DB.prepare(
++			"UPDATE candidate_fixture_resets SET phase='issued',boot=? WHERE resetId=? AND phase='observed' AND intent=? AND observation=? AND previousGeneration=? AND generation=?",
++		)
++			.bind(
++				proof.boot,
++				resetId,
++				JSON.stringify(intent),
++				observation,
++				intent.predecessor.generation,
++				intent.predecessor.generation + 1,
++			)
++			.run();
++		if (issued.meta.changes !== 1)
++			throw new Error("fixture_reset_issue_denied");
++		return { resetId, phase: "issued" };
++	}
++	async fixtureControls(
++		scope: CandidateRuntimeScope,
++		cutoff: number,
++		after: number,
++	) {
++		if (
++			!(
++				await this.commands().runtimeAuthority(
++					scope.userId,
++					scope.projectId,
++					scope.workspaceSessionId,
++				)
++			).current ||
++			!Number.isSafeInteger(cutoff) ||
++			!Number.isSafeInteger(after) ||
++			after < 0 ||
++			cutoff < after
++		)
++			throw new Error("fixture_controls_denied");
++		const rows = (
++			await this.env.DB.prepare(
++				"SELECT id,commandSeq FROM session_commands WHERE sessionId=? AND userId=? AND projectId=? AND payloadVersion=2 AND kind IN ('stop','cancel') AND commandSeq>? AND commandSeq<=? ORDER BY commandSeq LIMIT 2",
++			)
++				.bind(
++					scope.workspaceSessionId,
++					scope.userId,
++					scope.projectId,
++					after,
++					cutoff,
++				)
++				.all<{ id: string; commandSeq: number }>()
++		).results;
++		return {
++			commandIds: rows.map((row) => row.id),
++			after: rows.at(-1)?.commandSeq ?? after,
++			end: rows.length < 2,
++		};
++	}
++	async fixtureRecoveryAcknowledged(
++		resetId: string,
++		generation: number,
++		boot: string,
++	) {
++		const row = await this.env.DB.prepare(
++			"SELECT * FROM candidate_fixture_resets WHERE resetId=? AND generation=? AND boot=? AND phase='active'",
++		)
++			.bind(resetId, generation, boot)
++			.first<FixtureResetRow>();
++		if (!row?.intent) return false;
++		const intent = parseFixtureReset(row.intent);
++		if (
++			!this.fixtureObserved(row, intent) ||
++			(await this.latestReset(row.sessionId))?.resetId !== resetId
++		)
++			return false;
++		return (
++			(
++				await this.commands().runtimeAuthority(
++					intent.scope.userId,
++					intent.scope.projectId,
++					intent.scope.workspaceSessionId,
++				)
++			).current && (await this.fixtureOwnedSubject(intent.subject))
++		);
++	}
++	async recoverCandidate(resetId: string) {
++		const row = await this.env.DB.prepare(
++			"SELECT * FROM candidate_fixture_resets WHERE resetId=?",
++		)
++			.bind(resetId)
++			.first<FixtureResetRow>();
++		if (
++			!row?.intent ||
++			!row.observation ||
++			!["issued", "recovery_ready", "active"].includes(row.phase)
++		)
++			return { resetId, phase: "denied" };
++		const intent = parseFixtureReset(row.intent);
++		if (
++			!this.fixtureObserved(row, intent) ||
++			(await this.latestReset(row.sessionId))?.resetId !== resetId
++		)
++			return { resetId, phase: "denied" };
++		let proof: Awaited<ReturnType<CandidateFixtureSession["fixtureProof"]>>;
++		try {
++			proof = await this.fixtureSession(row.sessionId).fixtureProof(
++				intent.predecessor.id,
++			);
++		} catch (error) {
++			if (
++				error &&
++				typeof error === "object" &&
++				"message" in error &&
++				error.message === "fixture_new_successor_proof_required"
++			)
++				return { resetId, phase: "denied" };
++			throw error;
++		}
++		const owned = await this.commands().runtimeAuthority(
++			intent.scope.userId,
++			intent.scope.projectId,
++			row.sessionId,
++		);
++		if (
++			!owned.current ||
++			!(await this.fixtureOwnedSubject(intent.subject)) ||
++			proof.predecessor.id !== intent.predecessor.id ||
++			proof.origin !== intent.origin ||
++			proof.boot === intent.origin
++		)
++			return { resetId, phase: "denied" };
++		const cutoff = (
++			await this.env.DB.prepare(
++				"SELECT max(commandSeq) AS cutoff FROM session_commands WHERE sessionId=? AND payloadVersion=2",
++			)
++				.bind(row.sessionId)
++				.first<{ cutoff: number }>()
++		)?.cutoff;
++		if (!cutoff || cutoff < intent.cutoff)
++			throw new Error("fixture_recovery_cutoff_denied");
++		const recovery = await this.fixtureSession(
++			row.sessionId,
++		).recoverFixtureReset({ ...intent, cutoff }, row.generation);
++		if (recovery.boot !== proof.boot)
++			throw new Error("fixture_recovery_boot_denied");
++		await this.env.DB.prepare(
++			"UPDATE candidate_fixture_resets SET phase='recovery_ready',boot=?,cutoff=? WHERE resetId=? AND generation=? AND phase IN ('issued','recovery_ready','active')",
++		)
++			.bind(recovery.boot, recovery.cutoff, resetId, row.generation)
++			.run();
++		if (
++			!(
++				await this.commands().runtimeAuthority(
++					intent.scope.userId,
++					intent.scope.projectId,
++					row.sessionId,
++				)
++			).current
++		)
++			throw new Error("fixture_recovery_owned_denied");
++		if (!recovery.eligible)
++			return { resetId, generation: row.generation, phase: "fenced" };
++		await this.env.DB.prepare(
++			"UPDATE candidate_fixture_resets SET phase='active' WHERE resetId=? AND generation=? AND boot=? AND phase='recovery_ready'",
++		)
++			.bind(resetId, row.generation, recovery.boot)
++			.run();
++		await this.env.CandidateCredential.getByName(
++			intent.scope.userId,
++		).reactivateCandidateDispatch(
++			intent.subject,
++			row.previousGeneration,
++			row.generation,
++			resetId,
++			recovery.boot,
++		);
++		const active = await this.fixtureSession(
++			row.sessionId,
++		).acknowledgeFixtureRecovery(resetId, row.generation, recovery.boot);
++		if (!active) throw new Error("fixture_recovery_ack_denied");
++		return { resetId, generation: row.generation, phase: "active" };
++	}
++	async fixtureDispatchActivation(
++		resetId: string,
++		generation: number,
++		boot: string,
++	) {
++		if (!(await this.fixtureRecoveryAcknowledged(resetId, generation, boot)))
++			return false;
++		const row = await this.env.DB.prepare(
++			"SELECT sessionId,intent,cutoff FROM candidate_fixture_resets WHERE resetId=?",
++		)
++			.bind(resetId)
++			.first<{ sessionId: string; intent: string; cutoff: number }>();
++		if (!row) return false;
++		const intent = parseFixtureReset(row.intent);
++		const proof = await this.fixtureSession(row.sessionId).fixtureProof(
++			intent.predecessor.id,
++		);
++		return (
++			proof.boot === boot &&
++			proof.origin === intent.origin &&
++			proof.predecessor.id === intent.predecessor.id &&
++			proof.predecessor.state === "closed" &&
++			proof.gate?.resetId === resetId &&
++			proof.gate.generation === generation &&
++			proof.gate.boot === boot &&
++			["ready", "active"].includes(String(proof.gate.phase)) &&
++			proof.gate.cutoff === row.cutoff &&
++			proof.gate.accounted === intent.predecessor.id
++		);
++	}
++	private commands() {
++		return new CandidateProductCommands(
++			this.env.DB,
++			{
++				readSelection: (subject) =>
++					this.env.CandidateSessions.getByName(
++						subject.workspaceSessionId,
++					).readSelection(subject),
++				targetStatus: (subject, runId) =>
++					this.env.CandidateSessions.getByName(
++						subject.workspaceSessionId,
++					).targetStatus(subject, runId),
++			},
++			(owner) => this.env.CandidateCredential.getByName(owner),
++		);
++	}
++	admitOwned(userId: string, input: unknown) {
++		return this.commands().admit(userId, input);
++	}
++	drain() {
++		return this.commands().drain((sessionId, commandId, ownerVersion) =>
++			this.env.CandidateSessions.getByName(sessionId).deliverCommand(
++				commandId,
++				ownerVersion,
++			),
++		);
++	}
++	reconstructCommand(commandId: string, ownerVersion: number) {
++		return this.commands().reconstruct(commandId, ownerVersion);
++	}
++	async readRuntimeAuthority(
++		value: CandidateRuntimeScope,
++	): Promise<LocalAuthority> {
++		const scope = parseCandidateRuntimeScope(value);
++		const reset = await this.latestReset(scope.workspaceSessionId);
++		const subject = reset?.intent
++			? fixtureResetSubject(reset.intent)
++			: undefined;
++		const authority = await this.commands().runtimeAuthority(
++			scope.userId,
++			scope.projectId,
++			scope.workspaceSessionId,
++			subject,
++		);
++		if (!authority.current || !reset) return authority;
++		if (
++			!subject ||
++			subject.userId !== scope.userId ||
++			subject.projectId !== scope.projectId ||
++			subject.workspaceSessionId !== scope.workspaceSessionId ||
++			subject.runtimeOwnerVersion !== scope.ownerVersion
++		)
++			return { ...authority, current: false };
++		if (
++			!reset.intent ||
++			!reset.observation ||
++			!["issued", "recovery_ready", "active"].includes(reset.phase)
++		)
++			return { ...authority, generation: reset.previousGeneration };
++		const intent = parseFixtureReset(reset.intent);
++		if (
++			JSON.stringify(intent.scope) !== JSON.stringify(scope) ||
++			intent.predecessor.generation !== reset.previousGeneration ||
++			reset.generation !== reset.previousGeneration + 1 ||
++			!this.fixtureObserved(reset, intent)
++		)
++			return { ...authority, current: false };
++		return {
++			...authority,
++			generation: reset.generation,
++			priorTerminated: intent.predecessor.id,
++		};
++	}
++	async readCandidateSubject(commandId: string, ownerVersion: number) {
++		try {
++			return await this.commands().subjectForCommand(commandId, ownerVersion);
++		} catch {
++			return null;
++		}
++	}
++	async reconcileCandidateDecision(decision: QueueDecisionV2) {
++		const accepted = await this.commands().reconcileDecision(
++			decision.commandId,
++			decision.ownerVersion,
++			decision,
++		);
++		if (accepted) {
++			const subject = await this.readCandidateSubject(
++				decision.commandId,
++				decision.ownerVersion,
++			);
++			if (
++				subject &&
++				(await this.env.CandidateCredential.getByName(
++					subject.userId,
++				).consumeLostDecisionAck(decision.commandId))
++			)
++				return false;
++		}
++		return accepted;
++	}
++	async readCandidateConfigurationAuthority(
++		commandId: string,
++		input: unknown,
++		selection?: unknown,
++	) {
++		const subject = await this.readCandidateSubject(commandId, 1);
++		if (!subject) return { version: 1 as const, status: "denied" as const };
++		if (selection !== undefined)
++			await this.env.CandidateCredential.getByName(
++				subject.userId,
++			).candidateConfigurationPermission();
++		const status = await this.env.CandidateCredential.getByName(
++			subject.userId,
++		).status(subject.userId);
++		if (
++			selection !== undefined &&
++			(status.status !== "connected" ||
++				status.generation !== subject.connectionGeneration)
++		)
++			return { version: 1 as const, status: "denied" as const };
++		return readOwnedConfigurationAuthority(
++			this.env.DB,
++			subject,
++			input,
++			selection,
++			true,
++			CANDIDATE_MODEL_POLICY,
++		);
++	}
++	requestModel(input: unknown, capability: ModelClaimRpc) {
++		return performPrivateModelRequest(
++			{ DB: this.env.DB, CodexCredential: this.env.CandidateCredential },
++			input,
++			capability,
++			true,
++		);
++	}
++	readModelPermit(input: unknown, descriptor: ModelTransportDescriptorV1) {
++		return readPrivateModelPermit(
++			this.env.DB,
++			input,
++			descriptor,
++			true,
++			candidateModelPolicy(this.env.DB),
++		);
++	}
++	fetch() {
++		return new Response("Not found", { status: 404 });
++	}
++}
++
+ export default FixtureProduct;
+diff --git a/apps/credential-tests/vitest.config.ts b/apps/credential-tests/vitest.config.ts
+index 6bcb586..641c07c 100644
+--- a/apps/credential-tests/vitest.config.ts
++++ b/apps/credential-tests/vitest.config.ts
+@@ -1,4 +1,12 @@
+-import { defineWorkersConfig } from "@cloudflare/vitest-pool-workers/config";
++import { defineWorkersConfig, type WorkersUserConfig } from "@cloudflare/vitest-pool-workers/config";
++import { createRequire } from "node:module";
++type Pool = NonNullable<NonNullable<WorkersUserConfig<{}>["test"]>["poolOptions"]>;
++type Worker = Exclude<NonNullable<Pool["workers"]>, (...args: never[]) => unknown>;
++type CurrentWorker = Extract<NonNullable<NonNullable<Worker["miniflare"]>["serviceBindings"]>[string], symbol>;
++const require = createRequire(import.meta.url);
++const miniflare: unknown = require(require.resolve("miniflare", { paths: [require.resolve("@cloudflare/vitest-pool-workers/config")] }));
++if (!miniflare || typeof miniflare !== "object" || !("kCurrentWorker" in miniflare) || typeof miniflare.kCurrentWorker !== "symbol") throw new Error("Missing installed Miniflare loopback support");
++const currentWorker = miniflare.kCurrentWorker as CurrentWorker;
+ const runtimeImporter = new URL("../runtime/src/pi-durable-models.ts", import.meta.url).pathname;
+ 
+ export default defineWorkersConfig({
+@@ -17,11 +25,16 @@ export default defineWorkersConfig({
+ 					compatibilityDate: "2026-03-10",
+ 					compatibilityFlags: ["nodejs_compat"],
+ 					d1Databases: ["DB"],
++					serviceBindings: { CandidateProduct: { name: currentWorker, entrypoint: "CandidateFixtureProduct" } },
+ 					durableObjects: {
+ 						CodexCredential: { className: "FixtureCredential", useSQLite: true },
+ 						PI_MODEL_HOST: { className: "PiDurableHostFixture", useSQLite: true },
++						CandidateSessions: { className: "CandidateFixtureSession", useSQLite: true },
++						CandidateCredential: { className: "CandidateFixtureCredential", useSQLite: true },
+ 					},
+ 					bindings: {
++						CANDIDATE_DISPOSABLE: "008-synthetic",
++						CANDIDATE_RUNTIME_KEYS: JSON.stringify({ currentVersion: "fixture-v1", keys: { "fixture-v1": "01".repeat(32) } }),
+ 						CODEX_CREDENTIAL_CURRENT_KEY_VERSION: "fixture-v1",
+ 						CODEX_CREDENTIAL_KEYS: JSON.stringify({ "fixture-v1": "01".repeat(32) }),
+ 					},
+diff --git a/apps/runtime/src/pi-durable-host.ts b/apps/runtime/src/pi-durable-host.ts
+index 73cad7e..a9c8d2d 100644
+--- a/apps/runtime/src/pi-durable-host.ts
++++ b/apps/runtime/src/pi-durable-host.ts
+@@ -44,6 +44,13 @@ import {
+ 	parseModelAttemptV1,
+ 	SYNTHETIC_MODEL_LIMITS,
+ } from "../../../packages/runtime-contracts/src/model.js";
++import {
++	type CommandHandoffAckV2,
++	type CommandV2,
++	parseCommandV2,
++	parseQueueDecisionV2,
++	type QueueDecisionV2,
++} from "../../../packages/runtime-contracts/src/product-command.js";
+ import {
+ 	digestText,
+ 	isRuntimeCiphertext,
+@@ -118,7 +125,9 @@ export type HostFault =
+ 	| "alarm"
+ 	| "configuration-intent"
+ 	| "configuration-applied"
+-	| "configuration-outcome";
++	| "configuration-outcome"
++	| "candidate-control-intent"
++	| "candidate-control-outcome";
+ export type LocalAuthority = {
+ 	current: boolean;
+ 	generation: number;
+@@ -330,11 +339,24 @@ export type HostFixtureDependencies = {
+ 	operationMs?: { model: number; tool: number };
+ 	prepareModel?(context: Context): Promise<void>;
+ 	beforeRetrySeal?: () => Promise<unknown>;
++	afterSubmission?: () => Promise<void>;
+ 	wakeup?: {
+ 		getAlarm(): Promise<number | null>;
+ 		setAlarm(deadline: number): Promise<void>;
+ 	};
+ 	retained?: RetainedStorageBinding;
++	candidate?: {
++		origin?: string;
++		ordinaryAllowed?(): boolean;
++		userId: string;
++		projectId: string;
++		workspaceSessionId: string;
++		ownerVersion: 1;
++		reconcileDecision(decision: QueueDecisionV2): Promise<boolean>;
++		configuration(
++			commandId: string,
++		): Promise<NonNullable<HostFixtureDependencies["configuration"]>>;
++	};
+ 	configuration?: {
+ 		subject: ModelSubjectV1;
+ 		defaultSelection: ConfigurationSelectionV1;
+@@ -356,6 +378,7 @@ export class PiDurableHost {
+ 	private closing: Promise<void> | undefined;
+ 	private timer: ReturnType<typeof setTimeout> | undefined;
+ 	private active: Invocation | undefined;
++	private readonly candidateOrigin = crypto.randomUUID();
+ 	private failure: unknown;
+ 	private providerQueue = Promise.resolve();
+ 	private ownerQueue: Promise<void> = Promise.resolve();
+@@ -427,6 +450,40 @@ export class PiDurableHost {
+ 			storage.sql.exec(
+ 				"CREATE TABLE IF NOT EXISTS host_controls (id TEXT PRIMARY KEY, run TEXT, state TEXT)",
+ 			);
++			storage.sql.exec(
++				"CREATE TABLE IF NOT EXISTS host_product_commands (id TEXT PRIMARY KEY, sequence INTEGER UNIQUE NOT NULL, run TEXT NOT NULL, payload TEXT NOT NULL)",
++			);
++			storage.sql.exec(
++				"CREATE TABLE IF NOT EXISTS host_product_cursor (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL CHECK(version=2), nextSequence INTEGER NOT NULL CHECK(nextSequence>0))",
++			);
++			if (dependencies.candidate) {
++				const origin = dependencies.candidate.origin ?? host.candidateOrigin;
++				if (
++					typeof origin !== "string" ||
++					origin.length < 1 ||
++					origin.length > 256
++				)
++					throw new Error("Invalid candidate invocation origin");
++				storage.sql.exec(
++					"CREATE TABLE IF NOT EXISTS host_candidate_invocation_origins(invocation TEXT PRIMARY KEY REFERENCES host_invocations(id),origin TEXT NOT NULL CHECK(length(origin) BETWEEN 1 AND 256))",
++				);
++				if (!dependencies.retained)
++					throw new Error("Candidate requires encrypted storage");
++				if (
++					storage.sql
++						.exec(
++							"SELECT id FROM host_commands WHERE id NOT IN (SELECT id FROM host_product_commands)",
++						)
++						.toArray().length
++				)
++					throw new Error("Incompatible retained command protocol");
++				storage.sql.exec(
++					"INSERT OR IGNORE INTO host_product_cursor VALUES(1,2,1)",
++				);
++			} else if (
++				storage.sql.exec("SELECT id FROM host_product_cursor").toArray().length
++			)
++				throw new Error("Candidate owner composition required");
+ 			storage.sql.exec(
+ 				"CREATE TABLE IF NOT EXISTS host_safety (id INTEGER PRIMARY KEY, reason TEXT)",
+ 			);
+@@ -527,7 +584,7 @@ export class PiDurableHost {
+ 			host.captureRetry(publication),
+ 		);
+ 		try {
+-			await host.initializeOwnedConfiguration();
++			if (!dependencies.candidate) await host.initializeOwnedConfiguration();
+ 			await host.reconcileSafety();
+ 			await host.repairWakeup();
+ 		} catch (error) {
+@@ -618,6 +675,11 @@ export class PiDurableHost {
+ 		const binding = this.dependencies.retained;
+ 		if (!binding) return;
+ 		const fields = [
++			...this.storage.sql
++				.exec<{ record_id: string; value: string }>(
++					"SELECT 'product:' || id AS record_id,payload AS value FROM host_product_commands",
++				)
++				.toArray(),
+ 			...this.storage.sql
+ 				.exec<{ record_id: string; value: string }>(
+ 					"SELECT 'configuration:' || id AS record_id, outcome AS value FROM host_configuration_intents",
+@@ -771,6 +833,15 @@ export class PiDurableHost {
+ 		this.assertRetainedRoutes();
+ 	}
+ 	private storedEnvelope(recordId: string): string | null {
++		if (recordId.startsWith("product:"))
++			return (
++				this.storage.sql
++					.exec<{ payload: string }>(
++						"SELECT payload FROM host_product_commands WHERE id=?",
++						recordId.slice(8),
++					)
++					.toArray()[0]?.payload ?? null
++			);
+ 		const inbox = /^inbox:(.+):content$/.exec(recordId);
+ 		if (inbox) {
+ 			const row = this.storage.sql
+@@ -956,7 +1027,9 @@ export class PiDurableHost {
+ 				.toArray(),
+ 		);
+ 	}
+-	private assertLive() {
++	private assertLive(ordinary = true) {
++		if (ordinary && this.dependencies.candidate?.ordinaryAllowed?.() === false)
++			throw new Error("Candidate recovery-only admission");
+ 		if (this.denied || this.sealed || this.storageBarrier)
+ 			throw new Error("Host admission denied");
+ 	}
+@@ -1111,8 +1184,9 @@ export class PiDurableHost {
+ 			.one();
+ 		if (["complete", "failed", "canceled"].includes(current.state)) return;
+ 		this.storage.sql.exec(
+-			"UPDATE host_runs SET state = ?, epoch = epoch + 1 WHERE id = ?",
++			"UPDATE host_runs SET state = ?, epoch = epoch + ? WHERE id = ?",
+ 			state,
++			this.dependencies.candidate && current.state === "stopping" ? 0 : 1,
+ 			run,
+ 		);
+ 		this.storage.sql.exec(
+@@ -1205,7 +1279,11 @@ export class PiDurableHost {
+ 		return value as EffectCorrelation;
+ 	}
+ 	private async liveInputs(context: Context) {
+-		const root = await awaitWithContext(this.harness.root(context), context);
++		const root = await awaitWithContext(
++			this.harness.conversation(ROOT_CONVERSATION_ID, context),
++			context,
++		);
++		if (!root) return undefined;
+ 		const view = await awaitWithContext(root.viewState(context), context);
+ 		try {
+ 			const run = view.value.docs["pi.live"]?.run;
+@@ -1264,6 +1342,8 @@ export class PiDurableHost {
+ 		)
+ 			throw new Error("Missing placed command");
+ 		const command = this.command(status.requestId);
++		if (this.dependencies.candidate)
++			await this.validateCandidateSubmission(command, status, context);
+ 		if (command.submission !== null && command.submission !== Number(status.id))
+ 			throw new Error("Submission conflict");
+ 		this.transition("intent", () => {
+@@ -1448,11 +1528,16 @@ export class PiDurableHost {
+ 	private ownerTransition<T>(
+ 		context: Context,
+ 		operation: (context: Context) => Promise<T>,
++		control = false,
+ 	): Promise<T> {
+ 		context = withAbortSignal(this.ownerAbort.signal, context);
+ 		const pending = this.ownerQueue.then(async () => {
+ 			context.abortSignal?.throwIfAborted();
+-			this.assertLive();
++			if (control) {
++				if (this.sealed || this.storageBarrier)
++					throw new Error("Host control denied");
++				this.assertSeals();
++			} else this.assertLive(false);
+ 			return operation(context);
+ 		});
+ 		this.ownerQueue = pending.then(
+@@ -1590,52 +1675,61 @@ export class PiDurableHost {
+ 		};
+ 	}
+ 	private async initializeOwnedConfiguration() {
+-		const c = this.dependencies.configuration;
+-		if (!c) return;
++		if (!this.dependencies.configuration) return;
+ 		await this.ownerTransition(
+ 			withAbortSignal(
+ 				AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
+ 				BACKGROUND_CONTEXT,
+ 			),
+-			async (context) => {
+-				const evidence = await this.configurationLedger(context);
+-				if (await this.harness.conversation(ROOT_CONVERSATION_ID, context)) {
+-					// Pi and host intent commits are separate. Reopen observes Pi; it never replays a pending selection.
+-					for (const row of evidence.filter((row) => row.state === "pending")) {
+-						const { ack } = row;
+-						const snapshot = await this.piConfiguration(
+-							this.configurationScope(),
+-							context,
+-						);
+-						await this.finishConfiguration(
+-							row.id,
+-							canonical(snapshot) === canonical(ack.snapshot)
+-								? ack
+-								: { ...ack, status: "outcome_unknown", snapshot: null },
+-							context,
+-						);
+-					}
+-					return;
+-				}
+-				const selection = parseConfigurationSelectionV1(c.defaultSelection);
+-				if (
+-					!(await this.configurationAllowed(
+-						this.configurationScope(),
+-						selection,
+-						context,
+-					))
+-				)
+-					throw new Error("Default configuration denied");
+-				await this.harness.root(context, {
+-					agent: {
+-						model: { provider: "faux", modelId: selection.model },
+-						thinkingLevel: selection.thinking,
+-					},
+-				});
+-				await this.durable(context);
+-			},
++			(context) => this.initializeConfigurationInOwnerLane(context),
+ 		);
+ 	}
++	private async initializeConfigurationInOwnerLane(
++		context: Context,
++		target?: { run: string; epoch: number },
++	) {
++		this.assertLive();
++		const c = this.dependencies.configuration;
++		if (!c) throw new Error("Owned configuration unavailable");
++		const evidence = await this.configurationLedger(context);
++		if (await this.harness.conversation(ROOT_CONVERSATION_ID, context)) {
++			// Reopen observes Pi configuration; it never replays a pending selection.
++			for (const row of evidence.filter((row) => row.state === "pending")) {
++				const { ack } = row;
++				const snapshot = await this.piConfiguration(
++					this.configurationScope(),
++					context,
++				);
++				await this.finishConfiguration(
++					row.id,
++					canonical(snapshot) === canonical(ack.snapshot)
++						? ack
++						: { ...ack, status: "outcome_unknown", snapshot: null },
++					context,
++				);
++			}
++			return;
++		}
++		const selection = parseConfigurationSelectionV1(c.defaultSelection);
++		if (target) this.assertSchedule(target.run, target.epoch);
++		if (
++			!(await this.configurationAllowed(
++				this.configurationScope(),
++				selection,
++				context,
++			))
++		)
++			throw new Error("Default configuration denied");
++		this.assertLive();
++		if (target) this.assertSchedule(target.run, target.epoch);
++		await this.harness.root(context, {
++			agent: {
++				model: { provider: "faux", modelId: selection.model },
++				thinkingLevel: selection.thinking,
++			},
++		});
++		await this.durable(context);
++	}
+ 	async readOwnedConfiguration(
+ 		input: unknown,
+ 		context: Context = BACKGROUND_CONTEXT,
+@@ -1709,6 +1803,7 @@ export class PiDurableHost {
+ 			if (!(await this.configurationAllowed(query, intent.selection, context)))
+ 				return deny("denied");
+ 			this.transition("intent", () => {
++				this.assertLive();
+ 				this.storage.sql.exec(
+ 					"INSERT INTO host_configuration_intents VALUES (?,?,?,'pending')",
+ 					identity.key,
+@@ -1732,6 +1827,7 @@ export class PiDurableHost {
+ 				await this.finishConfiguration(identity.key, denied, context);
+ 				return denied;
+ 			}
++			this.assertLive();
+ 			await root.configure(
+ 				{
+ 					model: { provider: "faux", modelId: intent.selection.model },
+@@ -3602,6 +3698,7 @@ export class PiDurableHost {
+ 				this.transition("account", () => this.terminal(run.id, "canceled"));
+ 				continue;
+ 			}
++			if (this.dependencies.candidate && !this.productRecord(run.id)) continue;
+ 			const commands = this.read(() =>
+ 				this.storage.sql
+ 					.exec<Command>("SELECT * FROM host_commands WHERE run = ?", run.id)
+@@ -3610,6 +3707,14 @@ export class PiDurableHost {
+ 			let settled = commands.length > 0,
+ 				failed = false;
+ 			for (const command of commands) {
++				if (this.dependencies.candidate) {
++					const retained = this.productRecord(command.id);
++					if (
++						retained?.disposition &&
++						!["submitted", "done"].includes(retained.disposition)
++					)
++						continue;
++				}
+ 				if (!command.submission) {
+ 					settled = false;
+ 					continue;
+@@ -3635,7 +3740,7 @@ export class PiDurableHost {
+ 						);
+ 					});
+ 			}
+-			if (settled)
++			if (settled || (failed && this.dependencies.candidate))
+ 				this.transition("account", () =>
+ 					this.terminal(run.id, failed ? "failed" : "complete"),
+ 				);
+@@ -3656,6 +3761,775 @@ export class PiDurableHost {
+ 		await graph.stop();
+ 	}
+ 
++	private candidateScope(command: CommandV2) {
++		const scope = this.dependencies.candidate;
++		if (
++			!scope ||
++			command.userId !== scope.userId ||
++			command.projectId !== scope.projectId ||
++			command.workspaceSessionId !== scope.workspaceSessionId ||
++			command.runtimeOwnerVersion !== scope.ownerVersion
++		)
++			throw new Error("Candidate owner mismatch");
++	}
++
++	private productRecord(id: string) {
++		this.assertSeals();
++		const row = this.storage.sql
++			.exec<{ id: string; sequence: number; run: string; payload: string }>(
++				"SELECT * FROM host_product_commands WHERE id=?",
++				id,
++			)
++			.toArray()[0];
++		if (!row) return undefined;
++		const value = strictRecord(
++			JSON.parse(this.requiredPlain(`product:${id}`)),
++			["command", "disposition", "decision"],
++			"Candidate retained command",
++		);
++		const metadata = strictRecord(
++			value.command,
++			[
++				"version",
++				"kind",
++				"commandId",
++				"commandSeq",
++				"userId",
++				"projectId",
++				"workspaceSessionId",
++				"runtimeOwnerVersion",
++				"receiptId",
++				"acceptedAt",
++				"deadlineAt",
++				"payloadDigest",
++				"targetRunId",
++				"targetCommandId",
++				"userMessageId",
++				"assistantMessageId",
++			],
++			"Candidate command metadata",
++		);
++		const ordinary =
++			metadata.kind === "prompt" || metadata.kind === "follow_up";
++		const inbox = ordinary
++			? this.storage.sql
++					.exec<{ content: string }>(
++						"SELECT content FROM host_inbox WHERE id=?",
++						id,
++					)
++					.toArray()[0]
++			: undefined;
++		if (ordinary && !inbox) throw new Error("Missing candidate inbox payload");
++		const command = parseCommandV2({
++			...metadata,
++			...(ordinary ? { text: this.requiredPlain(`inbox:${id}:content`) } : {}),
++		});
++		this.candidateScope(command);
++		const run =
++			command.kind === "prompt"
++				? command.commandId
++				: command.kind === "cancel"
++					? row.run
++					: command.targetRunId;
++		if (
++			command.commandId !== row.id ||
++			command.commandSeq !== row.sequence ||
++			run !== row.run
++		)
++			throw new Error("Candidate routing integrity failure");
++		const disposition =
++			value.disposition === null
++				? null
++				: literalField(value, "disposition", [
++						"submitted",
++						"done",
++						"failed",
++						"canceled",
++						"expired",
++						"stopped",
++						"target_run_terminal",
++						"too_late",
++						"applied",
++					]);
++		const decision =
++			value.decision === null ? null : parseQueueDecisionV2(value.decision);
++		if (
++			decision &&
++			(decision.commandId !== id ||
++				decision.ownerVersion !== command.runtimeOwnerVersion ||
++				decision.payloadDigest !== command.payloadDigest ||
++				decision.runId !== run ||
++				decision.queueDeadlineAt !== command.deadlineAt)
++		)
++			throw new Error("Candidate decision integrity failure");
++		return { command, run, disposition, decision, envelope: row.payload };
++	}
++
++	private async prepareProduct(
++		command: CommandV2,
++		disposition: string | null = null,
++		decision: QueueDecisionV2 | null = null,
++	) {
++		const metadata: Record<string, unknown> = { ...command };
++		delete metadata.text;
++		const plain = JSON.stringify({ command: metadata, disposition, decision });
++		return {
++			plain,
++			sealed: await this.seal(`product:${command.commandId}`, plain),
++		};
++	}
++
++	private storeProduct(
++		command: CommandV2,
++		run: string,
++		prepared: Awaited<ReturnType<PiDurableHost["prepareProduct"]>>,
++		prior?: string,
++	) {
++		const live = this.storage.sql
++			.exec<{ payload: string }>(
++				"SELECT payload FROM host_product_commands WHERE id=?",
++				command.commandId,
++			)
++			.toArray()[0];
++		if ((live?.payload ?? undefined) !== prior)
++			throw new Error("Candidate command transition conflict");
++		this.storage.sql.exec(
++			"INSERT INTO host_product_commands VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
++			command.commandId,
++			command.commandSeq,
++			run,
++			prepared.sealed.ciphertext,
++		);
++		this.rememberSeal(`product:${command.commandId}`, prepared.sealed.digest);
++	}
++
++	private rememberProduct(
++		command: CommandV2,
++		prepared: Awaited<ReturnType<PiDurableHost["prepareProduct"]>>,
++	) {
++		this.rememberPlain(
++			`product:${command.commandId}`,
++			prepared.plain,
++			prepared.sealed.digest,
++			prepared.sealed.ciphertext,
++		);
++	}
++
++	private repairProductCursor() {
++		const rows = this.storage.sql
++			.exec<{ id: string; sequence: number }>(
++				"SELECT id,sequence FROM host_product_commands ORDER BY sequence",
++			)
++			.toArray();
++		let next = 1;
++		for (const row of rows) {
++			const record = this.productRecord(row.id)!;
++			if (row.sequence !== next || record.disposition === null) break;
++			next++;
++		}
++		const current = Number(
++			this.storage.sql
++				.exec("SELECT nextSequence FROM host_product_cursor WHERE id=1")
++				.one().nextSequence,
++		);
++		if (current > next) throw new Error("Candidate cursor integrity failure");
++		if (current < next)
++			this.transition("account", () =>
++				this.storage.sql.exec(
++					"UPDATE host_product_cursor SET nextSequence=? WHERE id=1",
++					next,
++				),
++			);
++		return next;
++	}
++
++	private failCandidateMember(command: CommandV2) {
++		if (command.kind !== "prompt" && command.kind !== "follow_up") return;
++		this.storage.sql.exec(
++			"UPDATE host_members SET state='failed' WHERE assistant=? AND state='pending'",
++			command.assistantMessageId,
++		);
++		this.storage.sql.exec(
++			"INSERT OR IGNORE INTO host_projections SELECT assistant,run,'failed',1 FROM host_members WHERE assistant=? AND state='failed'",
++			command.assistantMessageId,
++		);
++		this.storage.sql.exec(
++			"UPDATE host_commands SET state='settled' WHERE id=?",
++			command.commandId,
++		);
++		this.storage.sql.exec(
++			"DELETE FROM host_wakeups WHERE id=?",
++			`inbox:${command.commandId}`,
++		);
++	}
++
++	async acceptCandidate(
++		input: unknown,
++		target?: unknown,
++	): Promise<CommandHandoffAckV2> {
++		const command = parseCommandV2(input);
++		this.candidateScope(command);
++		const prior = this.productRecord(command.commandId);
++		if (prior) {
++			if (canonical(prior.command) !== canonical(command))
++				throw new Error("Conflicting candidate delivery");
++			if (command.kind === "stop")
++				await this.stop(command.commandId, command.targetRunId);
++			await this.repairWakeup();
++			return {
++				version: 2,
++				commandId: command.commandId,
++				ownerVersion: command.runtimeOwnerVersion,
++				acceptedPosition: command.commandSeq,
++				receiptId: command.receiptId,
++			};
++		}
++		if (command.kind === "prompt" || command.kind === "follow_up") {
++			await this.ownerTransition(BACKGROUND_CONTEXT, async (context) => {
++				context.abortSignal?.throwIfAborted();
++				const retained = this.productRecord(command.commandId);
++				if (retained) {
++					if (canonical(retained.command) !== canonical(command))
++						throw new Error("Conflicting candidate delivery");
++					return;
++				}
++				await this.accept(
++					command.commandId,
++					command.text,
++					{
++						run:
++							command.kind === "prompt"
++								? command.commandId
++								: command.targetRunId,
++						user: command.userMessageId,
++						assistant: command.assistantMessageId,
++						sequence: command.commandSeq,
++					},
++					command,
++				);
++			});
++		} else {
++			const ownedTarget = parseCommandV2(target);
++			this.candidateScope(ownedTarget);
++			if (ownedTarget.kind !== "prompt" && ownedTarget.kind !== "follow_up")
++				throw new Error("Invalid candidate control target");
++			const run =
++				ownedTarget.kind === "prompt"
++					? ownedTarget.commandId
++					: ownedTarget.targetRunId;
++			if (
++				command.kind === "stop" &&
++				(ownedTarget.kind !== "prompt" || run !== command.targetRunId)
++			)
++				throw new Error("Invalid targeted Stop");
++			if (
++				command.kind === "cancel" &&
++				ownedTarget.commandId !== command.targetCommandId
++			)
++				throw new Error("Invalid targeted cancellation");
++			if (command.kind === "cancel") {
++				await this.ownerTransition(
++					BACKGROUND_CONTEXT,
++					async (context) => {
++						const retained = this.productRecord(command.commandId);
++						if (retained) {
++							if (canonical(retained.command) !== canonical(command))
++								throw new Error("Conflicting candidate delivery");
++							return;
++						}
++						let targetRecord = this.productRecord(ownedTarget.commandId);
++						if (!targetRecord) {
++							await this.accept(
++								ownedTarget.commandId,
++								ownedTarget.text,
++								{
++									run,
++									user: ownedTarget.userMessageId,
++									assistant: ownedTarget.assistantMessageId,
++									sequence: ownedTarget.commandSeq,
++								},
++								ownedTarget,
++							);
++							targetRecord = this.productRecord(ownedTarget.commandId)!;
++						}
++						const tooLate =
++							targetRecord.decision?.decision === "started" ||
++							targetRecord.disposition === "submitted" ||
++							targetRecord.disposition === "done";
++						if (!tooLate && targetRecord.disposition === null)
++							await this.disposeCandidate(ownedTarget.commandId, "canceled");
++						const prepared = await this.prepareProduct(
++							command,
++							tooLate ? "too_late" : "applied",
++						);
++						context.abortSignal?.throwIfAborted();
++						const committed = this.transition("intent", () => {
++							const retained = this.productRecord(command.commandId);
++							if (retained) {
++								if (canonical(retained.command) !== canonical(command))
++									throw new EffectDenied("authority");
++								return false;
++							}
++							this.storeProduct(command, run, prepared);
++							return true;
++						});
++						if (committed) this.rememberProduct(command, prepared);
++						await this.durable(context);
++					},
++					true,
++				);
++			} else {
++				const prepared = await this.prepareProduct(command, "applied");
++				const committed = this.transition("fence", () => {
++					const retained = this.productRecord(command.commandId);
++					if (retained) {
++						if (canonical(retained.command) !== canonical(command))
++							throw new EffectDenied("authority");
++						return false;
++					}
++					this.storeProduct(command, run, prepared);
++					this.storage.sql.exec(
++						"INSERT OR IGNORE INTO host_runs VALUES(?,1,'queued',NULL,NULL)",
++						run,
++					);
++					this.storage.sql.exec(
++						"UPDATE host_runs SET epoch=epoch+1,state='stopping' WHERE id=? AND state NOT IN ('complete','failed','canceled','stopping')",
++						run,
++					);
++					return true;
++				});
++				if (committed) {
++					this.rememberProduct(command, prepared);
++					await this.durable();
++					this.dependencies.fault?.("candidate-control-intent");
++					await this.stop(command.commandId, run);
++					this.dependencies.fault?.("candidate-control-outcome");
++				}
++			}
++		}
++		this.repairProductCursor();
++		this.transition("intent", () =>
++			this.storage.sql.exec(
++				"INSERT OR REPLACE INTO host_wakeups VALUES('product',?)",
++				this.dependencies.now(),
++			),
++		);
++		await this.durable();
++		await this.repairWakeup();
++		return {
++			version: 2,
++			commandId: command.commandId,
++			ownerVersion: command.runtimeOwnerVersion,
++			acceptedPosition: command.commandSeq,
++			receiptId: command.receiptId,
++		};
++	}
++
++	private async disposeCandidate(
++		id: string,
++		disposition:
++			| "canceled"
++			| "expired"
++			| "stopped"
++			| "target_run_terminal"
++			| "submitted"
++			| "done"
++			| "failed",
++		decision?: QueueDecisionV2,
++		context: Context = BACKGROUND_CONTEXT,
++	) {
++		context.abortSignal?.throwIfAborted();
++		const record = this.productRecord(id);
++		if (!record) throw new Error("Missing accepted candidate command");
++		const prepared = await this.prepareProduct(
++			record.command,
++			disposition,
++			decision ?? record.decision,
++		);
++		context.abortSignal?.throwIfAborted();
++		this.transition("account", () => {
++			this.storeProduct(record.command, record.run, prepared, record.envelope);
++			if (!["submitted", "done"].includes(disposition))
++				this.failCandidateMember(record.command);
++			if (
++				record.command.kind === "prompt" &&
++				["canceled", "expired"].includes(disposition)
++			)
++				this.terminal(
++					record.run,
++					disposition === "canceled" ? "canceled" : "failed",
++				);
++		});
++		this.rememberProduct(record.command, prepared);
++		this.repairProductCursor();
++		await this.durable(context);
++	}
++
++	async configureCandidate(commandId: string, input: unknown) {
++		this.assertLive();
++		const scope = this.dependencies.candidate;
++		const command = this.productRecord(commandId)?.command;
++		if (
++			!scope ||
++			!command ||
++			(command.kind !== "prompt" && command.kind !== "follow_up")
++		)
++			throw new Error("Candidate configuration unavailable");
++		this.candidateScope(command);
++		const configuration = await scope.configuration(commandId);
++		this.assertLive();
++		this.dependencies.configuration = configuration;
++		return this.configureOwned(input);
++	}
++
++	async readCandidateSelection() {
++		const scope = this.dependencies.candidate;
++		if (!scope) throw new Error("Candidate owner required");
++		return this.ownerTransition(BACKGROUND_CONTEXT, async (context) => {
++			this.assertSeals();
++			return (
++				await this.piConfiguration(
++					{
++						version: 1,
++						projectId: scope.projectId,
++						workspaceSessionId: scope.workspaceSessionId,
++						ownerVersion: scope.ownerVersion,
++					},
++					context,
++				)
++			).selection;
++		});
++	}
++
++	candidateTargetStatus(runId: string) {
++		if (!this.dependencies.candidate)
++			throw new Error("Candidate owner required");
++		this.assertSeals();
++		const run = this.storage.sql
++			.exec<Run>("SELECT * FROM host_runs WHERE id=?", runId)
++			.toArray()[0];
++		return {
++			ownerVersion: 1,
++			runId,
++			state: run
++				? ["complete", "failed", "canceled", "stopping"].includes(run.state)
++					? ("terminal" as const)
++					: ("nonterminal" as const)
++				: ("not_delivered" as const),
++		};
++	}
++
++	private async consumeCandidate() {
++		const scope = this.dependencies.candidate;
++		if (!scope) return;
++		await this.ownerTransition(BACKGROUND_CONTEXT, async (context) => {
++			this.assertLive();
++			context = withAbortSignal(
++				AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
++				context,
++			);
++			const records = this.storage.sql
++				.exec<{ id: string }>(
++					"SELECT id FROM host_product_commands ORDER BY sequence",
++				)
++				.toArray()
++				.map((row) => this.productRecord(row.id)!);
++			for (const record of records) {
++				if (
++					record.command.kind !== "prompt" &&
++					record.command.kind !== "follow_up"
++				)
++					continue;
++				if (record.disposition === "submitted") {
++					const mapped = this.command(record.command.commandId);
++					const submitted = mapped.submission
++						? await this.piRecords.submission(
++								mapped.submission as import("@earendil-works/pi-durable").SubmissionId,
++								context,
++							)
++						: undefined;
++					context.abortSignal?.throwIfAborted();
++					if (submitted?.status === "done")
++						await this.disposeCandidate(mapped.id, "done", undefined, context);
++					else if (submitted?.status === "unanswered")
++						await this.disposeCandidate(
++							mapped.id,
++							"failed",
++							undefined,
++							context,
++						);
++					else if (
++						!this.active &&
++						["queued", "running", "recovering"].includes(
++							this.run(record.run).state,
++						)
++					)
++						await this.schedule(mapped.id, undefined, context);
++					continue;
++				}
++				if (record.disposition !== null) continue;
++				const run = this.run(record.run);
++				if (
++					["complete", "failed", "canceled", "stopping"].includes(run.state)
++				) {
++					await this.disposeCandidate(
++						record.command.commandId,
++						"target_run_terminal",
++						undefined,
++						context,
++					);
++					continue;
++				}
++				if (
++					record.decision?.decision === "expired" ||
++					(!record.decision &&
++						this.dependencies.now() >= record.command.deadlineAt)
++				) {
++					const decision: QueueDecisionV2 = record.decision ?? {
++						version: 2,
++						commandId: record.command.commandId,
++						ownerVersion: 1,
++						runId: record.run,
++						runEpoch: run.epoch,
++						decision: "expired",
++						decidedAt: this.dependencies.now(),
++						queueDeadlineAt: record.command.deadlineAt,
++						payloadDigest: record.command.payloadDigest,
++					};
++					if (!record.decision) {
++						const prepared = await this.prepareProduct(
++							record.command,
++							null,
++							decision,
++						);
++						context.abortSignal?.throwIfAborted();
++						this.transition("intent", () => {
++							this.storeProduct(
++								record.command,
++								record.run,
++								prepared,
++								record.envelope,
++							);
++							this.failCandidateMember(record.command);
++						});
++						this.rememberProduct(record.command, prepared);
++						await this.durable(context);
++					}
++					if (
++						await awaitWithContext(scope.reconcileDecision(decision), context)
++					)
++						await this.disposeCandidate(
++							record.command.commandId,
++							"expired",
++							decision,
++							context,
++						);
++				}
++			}
++			const next = this.repairProductCursor();
++			const row = this.storage.sql
++				.exec<{ id: string }>(
++					"SELECT id FROM host_product_commands WHERE sequence=?",
++					next,
++				)
++				.toArray()[0];
++			if (row && !this.active && !this.unresolved().length) {
++				const record = this.productRecord(row.id)!;
++				if (
++					record.command.kind === "prompt" ||
++					record.command.kind === "follow_up"
++				) {
++					const prior = this.storage.sql
++						.exec<{ id: string }>(
++							"SELECT id FROM host_product_commands WHERE sequence<? ORDER BY sequence",
++							next,
++						)
++						.toArray()
++						.map((row) => this.productRecord(row.id)!);
++					if (
++						prior.every(
++							(p) => p.disposition !== null && p.disposition !== "submitted",
++						)
++					) {
++						const run = this.run(record.run);
++						if (
++							!record.decision &&
++							this.dependencies.now() < record.command.deadlineAt &&
++							["queued", "running", "recovering"].includes(run.state)
++						) {
++							const decision: QueueDecisionV2 = {
++								version: 2,
++								commandId: record.command.commandId,
++								ownerVersion: 1,
++								runId: record.run,
++								runEpoch: run.epoch,
++								decision: "started",
++								decidedAt: this.dependencies.now(),
++								queueDeadlineAt: record.command.deadlineAt,
++								payloadDigest: record.command.payloadDigest,
++							};
++							const prepared = await this.prepareProduct(
++								record.command,
++								null,
++								decision,
++							);
++							context.abortSignal?.throwIfAborted();
++							const committed = this.transition("intent", () => {
++								const current = this.run(record.run);
++								if (
++									current.epoch !== run.epoch ||
++									!["queued", "running", "recovering"].includes(current.state)
++								)
++									return "revoked";
++								if (this.dependencies.now() >= record.command.deadlineAt)
++									return "expired";
++								this.assertSchedule(record.run, run.epoch);
++								this.storeProduct(
++									record.command,
++									record.run,
++									prepared,
++									record.envelope,
++								);
++								return "started";
++							});
++							if (committed === "started") {
++								this.rememberProduct(record.command, prepared);
++								await this.durable(context);
++							} else if (committed === "expired") {
++								const expired: QueueDecisionV2 = {
++									...decision,
++									decision: "expired",
++									decidedAt: this.dependencies.now(),
++								};
++								const expiry = await this.prepareProduct(
++									record.command,
++									null,
++									expired,
++								);
++								context.abortSignal?.throwIfAborted();
++								this.transition("intent", () => {
++									this.storeProduct(
++										record.command,
++										record.run,
++										expiry,
++										record.envelope,
++									);
++									this.failCandidateMember(record.command);
++								});
++								this.rememberProduct(record.command, expiry);
++								await this.durable(context);
++								if (
++									await awaitWithContext(
++										scope.reconcileDecision(expired),
++										context,
++									)
++								) {
++									context.abortSignal?.throwIfAborted();
++									await this.disposeCandidate(
++										row.id,
++										"expired",
++										expired,
++										context,
++									);
++								}
++							} else {
++								await this.disposeCandidate(
++									row.id,
++									"target_run_terminal",
++									undefined,
++									context,
++								);
++							}
++						}
++						const started = this.productRecord(row.id)!;
++						if (
++							started.decision?.decision === "started" &&
++							(await awaitWithContext(
++								scope.reconcileDecision(started.decision),
++								context,
++							))
++						) {
++							if (
++								["queued", "running", "recovering"].includes(
++									this.run(record.run).state,
++								)
++							) {
++								context.abortSignal?.throwIfAborted();
++								try {
++									await this.schedule(row.id, undefined, context);
++								} catch (error) {
++									context.abortSignal?.throwIfAborted();
++									if (
++										error instanceof Error &&
++										error.message === "Candidate recovery-only admission" &&
++										scope.ordinaryAllowed?.() === false
++									)
++										return;
++									const target = this.run(record.run);
++									if (
++										!(error instanceof Error) ||
++										![
++											"Targeted scheduling revoked",
++											"Terminal or stopped run cannot schedule",
++										].includes(error.message) ||
++										!["stopping", "complete", "failed", "canceled"].includes(
++											target.state,
++										)
++									)
++										throw error;
++									await this.disposeCandidate(
++										row.id,
++										target.state === "stopping"
++											? "stopped"
++											: "target_run_terminal",
++										started.decision,
++										context,
++									);
++								}
++								if (this.productRecord(row.id)?.disposition === null)
++									await this.disposeCandidate(
++										row.id,
++										"submitted",
++										started.decision,
++										context,
++									);
++							} else
++								await this.disposeCandidate(
++									row.id,
++									"target_run_terminal",
++									started.decision,
++									context,
++								);
++						}
++					}
++				}
++			}
++			context.abortSignal?.throwIfAborted();
++			const pending = this.storage.sql
++				.exec<{ id: string }>("SELECT id FROM host_product_commands")
++				.toArray()
++				.map((row) => this.productRecord(row.id)!)
++				.filter((r) => r.disposition === null);
++			this.transition("intent", () => {
++				this.storage.sql.exec(
++					"DELETE FROM host_wakeups WHERE id='product' OR id LIKE 'inbox:%'",
++				);
++				if (pending.length)
++					this.storage.sql.exec(
++						"INSERT INTO host_wakeups VALUES('product',?)",
++						Math.min(
++							...pending.map((r) =>
++								r.decision
++									? this.dependencies.now() + 1000
++									: r.command.deadlineAt,
++							),
++						),
++					);
++			});
++			await this.durable(context);
++		});
++	}
++
+ 	async accept(
+ 		id: string,
+ 		content: string,
+@@ -3665,12 +4539,20 @@ export class PiDurableHost {
+ 			assistant: string;
+ 			sequence: number;
+ 		},
++		product?: CommandV2,
+ 	) {
+ 		if (this.sealed) throw new Error("Host sealed");
+ 		if (!id || !content || new TextEncoder().encode(content).byteLength > 8192)
+ 			throw new Error("Invalid synthetic command");
+ 		const inboxId = `inbox:${id}:content`;
+ 		const sealedContent = await this.seal(inboxId, content);
++		const productPrepared = product
++			? await this.prepareProduct(product)
++			: undefined;
++		const latePrepared = product
++			? await this.prepareProduct(product, "target_run_terminal")
++			: undefined;
++		let committedProduct = productPrepared;
+ 		const existing = this.read(
+ 			() =>
+ 				this.storage.sql
+@@ -3754,7 +4636,8 @@ export class PiDurableHost {
+ 				["complete", "failed", "canceled", "stopping"].includes(
+ 					this.run(member.run).state,
+ 				) &&
+-				membership
++				membership &&
++				!product
+ 			)
+ 				throw new Error("Follow-up requires nonterminal accepted run");
+ 			this.storage.sql.exec(
+@@ -3776,6 +4659,14 @@ export class PiDurableHost {
+ 				sealedContent.ciphertext,
+ 			);
+ 			this.rememberSeal(inboxId, sealedContent.digest);
++			if (product && productPrepared && latePrepared) {
++				const late = ["complete", "failed", "canceled", "stopping"].includes(
++					this.run(member.run).state,
++				);
++				committedProduct = late ? latePrepared : productPrepared;
++				this.storeProduct(product, member.run, committedProduct);
++				if (late) this.failCandidateMember(product);
++			}
+ 			this.storage.sql.exec(
+ 				"INSERT OR IGNORE INTO host_wakeups VALUES (?, ?)",
+ 				`inbox:${id}`,
+@@ -3792,6 +4683,8 @@ export class PiDurableHost {
+ 				? (existing?.content ?? sealedContent.ciphertext)
+ 				: undefined,
+ 		);
++		if (product && committedProduct)
++			this.rememberProduct(product, committedProduct);
+ 		await this.durable();
+ 		await this.repairWakeup();
+ 		return { id };
+@@ -3806,7 +4699,70 @@ export class PiDurableHost {
+ 		)
+ 			throw new Error("Targeted scheduling revoked");
+ 	}
+-	async schedule(id: string, duplicateInvocation?: string) {
++	private async validateCandidateSubmission(
++		command: Command,
++		submission: import("@earendil-works/pi-durable").SubmissionRecord,
++		context: Context,
++	) {
++		const accepted = this.productRecord(command.id);
++		if (
++			!accepted ||
++			(accepted.command.kind !== "prompt" &&
++				accepted.command.kind !== "follow_up")
++		)
++			throw new Error("Candidate submission has no ordinary command");
++		if (
++			submission.conversationId !== ROOT_CONVERSATION_ID ||
++			submission.type !== "input" ||
++			submission.requestId !== command.id
++		)
++			throw new Error("Candidate Pi identity mismatch");
++		if (submission.status === "queued") {
++			const root = await this.harness.conversation(
++				ROOT_CONVERSATION_ID,
++				context,
++			);
++			if (!root) throw new Error("Candidate Pi root missing");
++			const view = await root.viewState(context);
++			try {
++				const items = record(view.value.docs["pi.inbox"]).items;
++				const item = Array.isArray(items)
++					? items.map(record).find((item) => item.id === submission.id)
++					: undefined;
++				if (
++					!item ||
++					item.mode !== "followUp" ||
++					canonical(item.content) !== canonical(accepted.command.text)
++				)
++					throw new Error("Candidate queued payload mismatch");
++			} finally {
++				view.dispose();
++			}
++		} else {
++			const entry = submission.entry
++				? (await this.piRecords.entry(submission.entry, context))?.entry
++				: undefined;
++			const message = entry?.model?.[0];
++			if (
++				!entry ||
++				entry.conversationId !== ROOT_CONVERSATION_ID ||
++				entry.kind !== "pi.user" ||
++				entry.model?.length !== 1 ||
++				message?.role !== "user" ||
++				![
++					canonical(accepted.command.text),
++					canonical([{ type: "text", text: accepted.command.text }]),
++				].includes(canonical(message.content))
++			)
++				throw new Error("Candidate placed payload mismatch");
++		}
++	}
++
++	async schedule(
++		id: string,
++		duplicateInvocation?: string,
++		context: Context = BACKGROUND_CONTEXT,
++	) {
+ 		this.assertSeals();
+ 		if (duplicateInvocation) {
+ 			const previous = this.latest();
+@@ -3814,7 +4770,11 @@ export class PiDurableHost {
+ 				throw new Error("Stale invocation delivery");
+ 			return previous;
+ 		}
++		if (this.dependencies.candidate)
++			context = withAbortSignal(this.ownerAbort.signal, context);
++		context.abortSignal?.throwIfAborted();
+ 		await this.expire();
++		context.abortSignal?.throwIfAborted();
+ 		const command = this.command(id),
+ 			run = this.run(command.run);
+ 		if (["complete", "failed", "canceled", "stopping"].includes(run.state))
+@@ -3823,6 +4783,15 @@ export class PiDurableHost {
+ 					? "Unresolved effect blocks admission"
+ 					: "Terminal or stopped run cannot schedule",
+ 			);
++		if (this.dependencies.candidate) {
++			const record = this.productRecord(id);
++			if (
++				record?.decision?.decision !== "started" ||
++				record.decision.runEpoch !== run.epoch ||
++				(record.disposition !== null && record.disposition !== "submitted")
++			)
++				throw new Error("Candidate start decision required");
++		}
+ 		const predecessor = this.read(() =>
+ 			this.storage.sql
+ 				.exec(
+@@ -3832,6 +4801,7 @@ export class PiDurableHost {
+ 				.toArray(),
+ 		);
+ 		if (
++			!this.dependencies.candidate &&
+ 			command.sequence > 1 &&
+ 			(predecessor.length ||
+ 				!this.read(
+@@ -3857,21 +4827,52 @@ export class PiDurableHost {
+ 			if (!prior.submission) throw new Error("Missing predecessor submission");
+ 			const submission = await this.piRecords.submission(
+ 				prior.submission as import("@earendil-works/pi-durable").SubmissionId,
+-				BACKGROUND_CONTEXT,
++				context,
+ 			);
+-			if (!submission || !["done", "unanswered"].includes(submission.status))
++			if (
++				!submission ||
++				(submission.status !== "done" &&
++					(this.dependencies.candidate || submission.status !== "unanswered"))
++			)
+ 				throw new Error("Supported turn boundary required");
+ 		}
+-		let authority = await this.dependencies.authority();
+-		await this.check(authority, BACKGROUND_CONTEXT, true);
++		let authority = await awaitWithContext(
++			this.dependencies.authority(),
++			context,
++		);
++		await this.check(authority, context, true);
+ 		if (
+-			(await this.harness.inspect(BACKGROUND_CONTEXT)).tasks.some(
++			(await this.harness.inspect(context)).tasks.some(
+ 				(task) => task.state.kind === "blocked",
+ 			)
+ 		)
+ 			throw new Error("Incompatible Pi task state");
+-		authority = await this.dependencies.authority();
+-		await this.check(authority, BACKGROUND_CONTEXT, true);
++		authority = await awaitWithContext(this.dependencies.authority(), context);
++		await this.check(authority, context, true);
++		if (this.dependencies.candidate) {
++			context = withAbortSignal(
++				AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
++				context,
++			);
++			const configuration = await awaitWithContext(
++				this.dependencies.candidate.configuration(id),
++				context,
++			);
++			context.abortSignal?.throwIfAborted();
++			this.dependencies.configuration = configuration;
++			this.assertSchedule(command.run, run.epoch);
++			await this.initializeConfigurationInOwnerLane(context, {
++				run: command.run,
++				epoch: run.epoch,
++			});
++			authority = await awaitWithContext(
++				this.dependencies.authority(),
++				context,
++			);
++			await this.check(authority, context, true);
++			this.assertSchedule(command.run, run.epoch);
++		}
++		context.abortSignal?.throwIfAborted();
+ 		if (!this.active) {
+ 			this.active = this.transition("intent", () => {
+ 				this.assertSchedule(command.run, run.epoch);
+@@ -3905,6 +4906,12 @@ export class PiDurableHost {
+ 					invocation.end_at,
+ 					invocation.state,
+ 				);
++				if (this.dependencies.candidate)
++					this.storage.sql.exec(
++						"INSERT INTO host_candidate_invocation_origins VALUES(?,?)",
++						invocation.id,
++						this.dependencies.candidate.origin ?? this.candidateOrigin,
++					);
+ 				this.storage.sql.exec("UPDATE host_meta SET fenced = 0");
+ 				this.storage.sql.exec(
+ 					"INSERT OR REPLACE INTO host_wakeups VALUES ('yield', ?)",
+@@ -3912,7 +4919,7 @@ export class PiDurableHost {
+ 				);
+ 				return invocation;
+ 			});
+-			await this.durable();
++			await this.durable(context);
+ 			this.timer = setTimeout(
+ 				() => {
+ 					void this.yield().catch((error: unknown) => {
+@@ -3924,16 +4931,21 @@ export class PiDurableHost {
+ 			);
+ 		}
+ 		const invocation = this.active;
+-		await this.repairWakeup();
+-		const root = await this.harness.root(BACKGROUND_CONTEXT);
+-		if ((await root.agent(BACKGROUND_CONTEXT)).model === undefined) {
+-			await this.check(await this.dependencies.authority());
++		await awaitWithContext(this.repairWakeup(), context);
++		context.abortSignal?.throwIfAborted();
++		const root = await this.harness.root(context);
++		if ((await root.agent(context)).model === undefined) {
++			await this.check(
++				await awaitWithContext(this.dependencies.authority(), context),
++				context,
++			);
+ 			this.assertSchedule(command.run, run.epoch);
+ 			await this.configure(
+ 				{ model: { provider: "faux", modelId: "faux-1" } },
+-				BACKGROUND_CONTEXT,
++				context,
+ 			);
+ 		}
++		context.abortSignal?.throwIfAborted();
+ 		this.transition("intent", () => {
+ 			if (["queued", "recovering"].includes(this.run(command.run).state))
+ 				this.storage.sql.exec(
+@@ -3941,7 +4953,7 @@ export class PiDurableHost {
+ 					command.run,
+ 				);
+ 		});
+-		await this.durable();
++		await this.durable(context);
+ 		const input = this.read(() =>
+ 			this.storage.sql
+ 				.exec<{ content: string; state: string }>(
+@@ -3953,11 +4965,15 @@ export class PiDurableHost {
+ 		const retained = await this.piRecords.submissionByRequest(
+ 			ROOT_CONVERSATION_ID,
+ 			id,
+-			BACKGROUND_CONTEXT,
++			context,
+ 		);
++		context.abortSignal?.throwIfAborted();
+ 		if (retained) {
++			if (this.dependencies.candidate)
++				await this.validateCandidateSubmission(command, retained, context);
+ 			if (retained.type !== "input")
+ 				throw new Error("Incompatible retained submission");
++			context.abortSignal?.throwIfAborted();
+ 			this.transition("intent", () => {
+ 				this.storage.sql.exec(
+ 					"UPDATE host_commands SET submission = ?, state = 'submitted' WHERE id = ?",
+@@ -3970,7 +4986,7 @@ export class PiDurableHost {
+ 					id,
+ 				);
+ 			});
+-			await this.durable();
++			await this.durable(context);
+ 		}
+ 		if (input.state !== "submitted" && !retained) {
+ 			this.transition("intent", () =>
+@@ -3979,9 +4995,13 @@ export class PiDurableHost {
+ 					id,
+ 				),
+ 			);
+-			await this.durable();
+-			await this.check(await this.dependencies.authority());
++			await this.durable(context);
++			await this.check(
++				await awaitWithContext(this.dependencies.authority(), context),
++				context,
++			);
+ 			try {
++				context.abortSignal?.throwIfAborted();
+ 				this.dependencies.fault?.("before-submit");
+ 				this.assertSchedule(command.run, run.epoch);
+ 				this.assertSeals();
+@@ -3998,6 +5018,8 @@ export class PiDurableHost {
+ 							"Storage integrity failure",
+ 						);
+ 				}
++				context.abortSignal?.throwIfAborted();
++				this.assertSchedule(command.run, run.epoch);
+ 				const submission = await root.submit(
+ 					{
+ 						type: "input",
+@@ -4006,9 +5028,18 @@ export class PiDurableHost {
+ 							input.content,
+ 						requestId: id,
+ 					},
+-					BACKGROUND_CONTEXT,
++					context,
+ 				);
+ 				this.dependencies.fault?.("after-submit");
++				if (this.dependencies.afterSubmission)
++					await awaitWithContext(
++						this.dependencies.afterSubmission(),
++						withAbortSignal(
++							AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
++							context,
++						),
++					);
++				context.abortSignal?.throwIfAborted();
+ 				this.transition("intent", () => {
+ 					this.storage.sql.exec(
+ 						"UPDATE host_inbox SET state = 'submitted', submission = ? WHERE id = ?",
+@@ -4025,17 +5056,18 @@ export class PiDurableHost {
+ 						`inbox:${id}`,
+ 					);
+ 				});
+-				await this.durable();
++				await this.durable(context);
+ 			} catch (error) {
+ 				this.denied = true;
+ 				throw error;
+ 			}
+ 		} else {
+ 			await this.check(
+-				await this.dependencies.authority(),
+-				BACKGROUND_CONTEXT,
++				await awaitWithContext(this.dependencies.authority(), context),
++				context,
+ 				true,
+ 			);
++			context.abortSignal?.throwIfAborted();
+ 			this.assertSchedule(command.run, run.epoch);
+ 			this.harness.resume();
+ 		}
+@@ -4442,6 +5474,7 @@ export class PiDurableHost {
+ 			);
+ 			await this.durable();
+ 		}
++		if (this.dependencies.candidate?.ordinaryAllowed?.() === false) return;
+ 		if (
+ 			this.sealed ||
+ 			this.denied ||
+@@ -4451,11 +5484,21 @@ export class PiDurableHost {
+ 			return;
+ 		}
+ 		if (this.active) {
++			if (
++				this.dependencies.candidate &&
++				this.dependencies.now() < this.active.yield_at
++			)
++				await this.consumeCandidate();
+ 			if (this.dependencies.now() >= this.active.yield_at) await this.yield();
+ 			else await this.repairWakeup();
+ 			return;
+ 		}
+ 		if (this.sealed || this.denied || this.unresolved().length) return;
++		if (this.dependencies.candidate) {
++			await this.consumeCandidate();
++			await this.repairWakeup(serviced);
++			return;
++		}
+ 		const input = this.read(
+ 			() =>
+ 				this.storage.sql
+@@ -4521,6 +5564,55 @@ export class PiDurableHost {
+ 		}
+ 		await this.schedule(input.id);
+ 	}
++	async joinInvocation() {
++		const invocation = this.active;
++		if (!invocation) return;
++		if (
++			!this.sealed &&
++			!this.denied &&
++			this.dependencies.now() < invocation.yield_at
++		) {
++			const context = withAbortSignal(
++				AbortSignal.timeout(
++					Math.max(1, invocation.yield_at - this.dependencies.now()),
++				),
++				BACKGROUND_CONTEXT,
++			);
++			try {
++				const root = await this.harness.conversation(
++					ROOT_CONVERSATION_ID,
++					context,
++				);
++				if (root) {
++					await root.waitForIdle(context);
++					await this.alarm();
++				}
++			} catch (error) {
++				if (!context.abortSignal?.aborted && !this.sealed) throw error;
++			}
++		}
++		await this.yield();
++		await this.awaitClosure();
++		if (this.dependencies.candidate && !this.unresolved().length) {
++			const next = this.repairProductCursor();
++			const row = this.storage.sql
++				.exec<{ id: string }>(
++					"SELECT id FROM host_product_commands WHERE sequence=?",
++					next,
++				)
++				.toArray()[0];
++			if (row && this.productRecord(row.id)?.disposition === null) {
++				this.transition("intent", () =>
++					this.storage.sql.exec(
++						"INSERT OR REPLACE INTO host_wakeups VALUES('product',?)",
++						this.dependencies.now(),
++					),
++				);
++				await this.durable();
++				await this.repairWakeup();
++			}
++		}
++	}
+ 	async awaitClosure() {
+ 		if (!this.closing) return false;
+ 		await this.closing;
+diff --git a/apps/runtime/src/pi-durable-models.ts b/apps/runtime/src/pi-durable-models.ts
+index ffcbf0d..9f6f24a 100644
+--- a/apps/runtime/src/pi-durable-models.ts
++++ b/apps/runtime/src/pi-durable-models.ts
+@@ -19,6 +19,7 @@ import {
+ 	hook,
+ } from "@earendil-works/pi-durable";
+ import {
++	type ModelAttemptV1,
+ 	type ModelSubjectV1,
+ 	type ModelTransportDescriptorV1,
+ 	parseModelAttemptV1,
+@@ -158,10 +159,15 @@ export interface PrivateModelTransport {
+ export function createPrivateModelAdapter(
+ 	guard: HostGuard,
+ 	product: PrivateModelTransport,
+-	owned: ModelSubjectV1,
++	owned:
++		| ModelSubjectV1
++		| ((attempt: ModelAttemptV1) => Promise<ModelSubjectV1>),
+ 	generationPurpose: "generation" | "git_metadata" = "generation",
+ ) {
+-	const subject = Object.freeze(parseModelSubjectV1(owned));
++	const subject =
++		typeof owned === "function"
++			? undefined
++			: Object.freeze(parseModelSubjectV1(owned));
+ 	const faux = fauxProvider({ tokensPerSecond: 0 });
+ 	const stream: typeof faux.provider.stream = (model, transcript, options) => {
+ 		const events = createAssistantMessageEventStream();
+@@ -204,8 +210,26 @@ export function createPrivateModelAdapter(
+ 							],
+ 							body: JSON.stringify(body),
+ 						});
++						const currentSubject =
++							subject ??
++							parseModelSubjectV1(
++								await awaitWithContext(
++									(
++										owned as (
++											attempt: ModelAttemptV1,
++										) => Promise<ModelSubjectV1>
++									)(dispatch.attempt),
++									context,
++								),
++							);
++						context.abortSignal?.throwIfAborted();
+ 						const claim = await awaitWithContext(
+-							ExactModelClaim.forRequest(dispatch, subject, request, product),
++							ExactModelClaim.forRequest(
++								dispatch,
++								currentSubject,
++								request,
++								product,
++							),
+ 							context,
+ 						);
+ 						const outcome = await awaitWithContext(
+diff --git a/apps/web/migrations/meta/_journal.json b/apps/web/migrations/meta/_journal.json
+index c24ba8e..e108a68 100644
+--- a/apps/web/migrations/meta/_journal.json
++++ b/apps/web/migrations/meta/_journal.json
+@@ -155,6 +155,20 @@
+       "when": 1791395080341,
+       "tag": "0021_first_lilandra",
+       "breakpoints": true
++    },
++    {
++      "idx": 22,
++      "version": "6",
++      "when": 1791395080342,
++      "tag": "0022_synthetic_model_transport",
++      "breakpoints": true
++    },
++    {
++      "idx": 23,
++      "version": "6",
++      "when": 1791395080343,
++      "tag": "0023_candidate_product_commands",
++      "breakpoints": true
+     }
+   ]
+ }
+\ No newline at end of file
+diff --git a/apps/web/src/db/schema.ts b/apps/web/src/db/schema.ts
+index 78c55a7..1dbba5a 100644
+--- a/apps/web/src/db/schema.ts
++++ b/apps/web/src/db/schema.ts
+@@ -147,7 +147,7 @@ export const workspaceSessions = sqliteTable(
+ 		}),
+ 		runtimeFailureReasonCode: text("runtimeFailureReasonCode"),
+ 		runtimeOwner: text("runtimeOwner", {
+-			enum: ["legacy", "migrating", "trusted_v1", "blocked"],
++			enum: ["legacy", "migrating", "trusted_v1", "pi_durable_v1", "blocked"],
+ 		})
+ 			.notNull()
+ 			.default("legacy"),
+@@ -878,6 +878,45 @@ export const runtimeCommandMemberships = sqliteTable(
+ 	},
+ );
+ 
++export const candidateWorkspaceClaims = sqliteTable(
++	"candidate_workspace_claims",
++	{
++		id: integer("id").primaryKey().notNull(),
++		sessionId: text("sessionId").notNull().unique(),
++		identityId: text("identityId").notNull().unique(),
++		userId: text("userId").notNull(),
++		projectId: text("projectId").notNull(),
++		createdAt: integer("createdAt").notNull(),
++	},
++	(table) => [check("candidate_workspace_singleton", sql`${table.id}=1`)],
++);
++
++export const candidateCommandDecisions = sqliteTable(
++	"candidate_command_decisions",
++	{
++		commandId: text("commandId").primaryKey().notNull(),
++		sessionId: text("sessionId").notNull(),
++		ownerVersion: integer("ownerVersion").notNull(),
++		identityId: text("identityId").notNull(),
++		runId: text("runId").notNull(),
++		runEpoch: integer("runEpoch").notNull(),
++		payloadDigest: text("payloadDigest").notNull(),
++		queueDeadlineAt: integer("queueDeadlineAt").notNull(),
++		decision: text("decision", { enum: ["started", "expired"] }).notNull(),
++		decidedAt: integer("decidedAt").notNull(),
++	},
++	(table) => [
++		check(
++			"candidate_decision_owner",
++			sql`${table.ownerVersion}=1 AND ${table.runEpoch}>0 AND length(${table.payloadDigest})=64`,
++		),
++		check(
++			"candidate_decision_time",
++			sql`(${table.decision}='started' AND ${table.decidedAt}<${table.queueDeadlineAt}) OR (${table.decision}='expired' AND ${table.decidedAt}>=${table.queueDeadlineAt})`,
++		),
++	],
++);
++
+ export const runtimeMigrations = sqliteTable("runtime_migrations", {
+ 	id: text("id").primaryKey(),
+ 	sessionId: text("sessionId").notNull(),
+diff --git a/apps/web/src/db/trusted-runtime-migration.test.ts b/apps/web/src/db/trusted-runtime-migration.test.ts
+index 37cb8f0..a6d4e02 100644
+--- a/apps/web/src/db/trusted-runtime-migration.test.ts
++++ b/apps/web/src/db/trusted-runtime-migration.test.ts
+@@ -57,6 +57,108 @@ function counts(db: DatabaseSync) {
+ 	};
+ }
+ 
++describe("0023 candidate product command migration", () => {
++	it("preserves retained records and enforces a lifetime singleton and exclusive start/expiry evidence", () => {
++		const db = legacyDatabase();
++		db.exec(migration);
++		const before = counts(db);
++		db.exec(
++			readFileSync(
++				new URL(
++					"../../migrations/0023_candidate_product_commands.sql",
++					import.meta.url,
++				),
++				"utf8",
++			).replaceAll("--> statement-breakpoint", ""),
++		);
++		expect(counts(db)).toEqual(before);
++		db.prepare(
++			"INSERT INTO candidate_workspace_claims VALUES(1,'candidate','executor','u','p',0)",
++		).run();
++		expect(() =>
++			db
++				.prepare(
++					"INSERT INTO candidate_workspace_claims VALUES(1,'other','other','u','p',1)",
++				)
++				.run(),
++		).toThrow(/UNIQUE/);
++		expect(() =>
++			db
++				.prepare(
++					"INSERT INTO candidate_workspace_claims VALUES(2,'other','other','u','p',1)",
++				)
++				.run(),
++		).toThrow(/CHECK/);
++		const decision =
++			"INSERT INTO candidate_command_decisions VALUES(?,?,?,?,?,?,?,?,?,?)";
++		expect(() =>
++			db
++				.prepare(decision)
++				.run(
++					"c",
++					"candidate",
++					1,
++					"executor",
++					"c",
++					1,
++					"a".repeat(64),
++					100,
++					"started",
++					100,
++				),
++		).toThrow(/CHECK/);
++		expect(() =>
++			db
++				.prepare(decision)
++				.run(
++					"c",
++					"candidate",
++					1,
++					"executor",
++					"c",
++					1,
++					"a".repeat(64),
++					100,
++					"expired",
++					99,
++				),
++		).toThrow(/CHECK/);
++		db.prepare(decision).run(
++			"c",
++			"candidate",
++			1,
++			"executor",
++			"c",
++			1,
++			"a".repeat(64),
++			100,
++			"started",
++			99,
++		);
++		expect(() =>
++			db
++				.prepare(decision)
++				.run(
++					"c",
++					"candidate",
++					1,
++					"executor",
++					"c",
++					1,
++					"a".repeat(64),
++					100,
++					"expired",
++					100,
++				),
++		).toThrow(/UNIQUE/);
++		expect(
++			db
++				.prepare("SELECT runtimeOwner FROM workspace_sessions WHERE id='s'")
++				.get(),
++		).toEqual({ runtimeOwner: "legacy" });
++	});
++});
++
+ describe("0020 trusted runtime additive migration", () => {
+ 	it("preserves retained rows and interprets every existing session as legacy", () => {
+ 		const db = legacyDatabase();
+diff --git a/apps/web/src/lib/agent-control-service.test.ts b/apps/web/src/lib/agent-control-service.test.ts
+index 7c7b2ee..bc58575 100644
+--- a/apps/web/src/lib/agent-control-service.test.ts
++++ b/apps/web/src/lib/agent-control-service.test.ts
+@@ -105,6 +105,35 @@ const followUp = {
+ describe("agent control service", () => {
+ 	beforeEach(() => vi.clearAllMocks());
+ 
++	it.each([
++		"trusted_v1",
++		"pi_durable_v1",
++	])("denies unversioned controls for %s before any execution", async (runtimeOwner) => {
++		const harness = makeHarness();
++		harness.deps.loadOwnedActiveSession.mockResolvedValue({
++			id: "session-1",
++			projectId: "project-1",
++			userId: "user-1",
++			status: "active",
++			runtimeOwner,
++			runtimeOwnerVersion: 1,
++		});
++		const result = await controlAgentRun({
++			db: {} as never,
++			env: {} as Env,
++			userId: "user-1",
++			input: followUp,
++			deps: harness.deps as never,
++		});
++		expect(result).toMatchObject({
++			status: 409,
++			body: { category: "upgrade_recovery" },
++		});
++		expect(harness.deps.withWorkspaceRuntimeLease).not.toHaveBeenCalled();
++		expect(harness.exec).not.toHaveBeenCalled();
++		expect(harness.writeFile).not.toHaveBeenCalled();
++	});
++
+ 	it("checks ownership before touching the sandbox", async () => {
+ 		const harness = makeHarness();
+ 		harness.deps.loadProjectForUser.mockResolvedValue(null);
+diff --git a/apps/web/src/lib/agent-run-service.test.ts b/apps/web/src/lib/agent-run-service.test.ts
+index 4fa5a2f..ef209bf 100644
+--- a/apps/web/src/lib/agent-run-service.test.ts
++++ b/apps/web/src/lib/agent-run-service.test.ts
+@@ -649,7 +649,11 @@ describe("prepareAgentRun", () => {
+ 		}
+ 	});
+ 
+-	it("rejects a non-legacy session before message inserts", async () => {
++	it.each([
++		"migrating",
++		"trusted_v1",
++		"pi_durable_v1",
++	] as const)("rejects a %s session before message inserts", async (runtimeOwner) => {
+ 		const { db, batch, insert } = createMockDb();
+ 		const result = await prepareAgentRun({
+ 			db,
+@@ -665,7 +669,7 @@ describe("prepareAgentRun", () => {
+ 					kind: "existing",
+ 					session: {
+ 						...activeSession,
+-						runtimeOwner: "migrating",
++						runtimeOwner,
+ 						runtimeOwnerVersion: 2,
+ 					},
+ 				}),
+diff --git a/apps/web/src/lib/codex-credential-do.ts b/apps/web/src/lib/codex-credential-do.ts
+index cdff4ce..fd38f02 100644
+--- a/apps/web/src/lib/codex-credential-do.ts
++++ b/apps/web/src/lib/codex-credential-do.ts
+@@ -19,6 +19,7 @@ import {
+ } from "./codex-request-contract";
+ import {
+ 	type ModelClaimRpc,
++	type ModelPermitBounds,
+ 	ModelProductAuthority,
+ } from "./model-product-authority";
+ 
+@@ -38,6 +39,12 @@ export interface CodexCredentialEnv {
+ 	CODEX_CREDENTIAL_CURRENT_KEY_VERSION: string;
+ 	CODEX_CREDENTIAL_KEYS: string;
+ }
++export type CandidateModelPreparation = Readonly<{
++	scope: string;
++	generation: number;
++	binding: string;
++}>;
++
+ interface State extends Record<string, SqlStorageValue> {
+ 	owner: string;
+ 	generation: number;
+@@ -197,21 +204,41 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
+ 	protected async modelPhase(
+ 		_phase: "authority" | "credentials" | "claim",
+ 	): Promise<void> {}
++	protected modelProductAuthority(): ModelProductAuthority {
++		return new ModelProductAuthority(this.env.DB);
++	}
++
++	protected prepareModelDispatch(
++		_descriptor: ModelTransportDescriptorV1,
++	): Promise<CandidateModelPreparation> | null {
++		return null;
++	}
++	protected finalModelDispatch(
++		preparation: CandidateModelPreparation | null,
++		_descriptor: ModelTransportDescriptorV1,
++		_bounds: ModelPermitBounds | undefined,
++	): boolean {
++		return preparation === null;
++	}
+ 
+ 	async requestModel(
+ 		input: unknown,
+ 		capability: ModelClaimRpc,
+ 	): Promise<SyntheticModelOutcomeV1> {
+ 		if (!this.requestAvailable()) return { version: 1, status: "unavailable" };
+-		const policy = new ModelProductAuthority(this.env.DB);
++		const policy = this.modelProductAuthority();
+ 		const overall = AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs);
+ 		let descriptor: ModelTransportDescriptorV1;
++		let preparation: CandidateModelPreparation | null = null;
+ 		try {
+ 			descriptor = parseModelTransportDescriptorV1(
+ 				await awaitSynthetic(capability.describe(), overall),
+ 			);
+ 			if (!this.#owned(descriptor.subject.userId))
+ 				return { version: 1, status: "denied" };
++			const preparing = this.prepareModelDispatch(descriptor);
++			if (preparing !== null)
++				preparation = Object.freeze(await awaitSynthetic(preparing, overall));
+ 		} catch {
+ 			return { version: 1, status: "denied" };
+ 		}
+@@ -305,6 +332,21 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
+ 			if (!(await wait(policy.permit(descriptor, body))) || !this.#same(state))
+ 				throw new Error("authority_changed");
+ 			signal.throwIfAborted();
++			const bounds = policy.validatedPermitBounds(descriptor);
++			if (
++				!this.#same(state) ||
++				(preparation !== null &&
++					(!bounds ||
++						Date.now() >=
++							Math.min(
++								bounds.windowExpiresAt,
++								bounds.commandDeadlineAt,
++								bounds.effectDeadlineAt,
++								descriptor.attempt.deadlineAt,
++							))) ||
++				!this.finalModelDispatch(preparation, descriptor, bounds)
++			)
++				throw new Error("dispatch_fenced");
+ 			dispatched = true;
+ 			fetching = fetch(request.url, {
+ 				method: "POST",
+diff --git a/apps/web/src/lib/configuration-product-authority.ts b/apps/web/src/lib/configuration-product-authority.ts
+index ecbca2d..9d1dd7a 100644
+--- a/apps/web/src/lib/configuration-product-authority.ts
++++ b/apps/web/src/lib/configuration-product-authority.ts
+@@ -4,7 +4,10 @@ import {
+ 	parseConfigurationSelectionV1,
+ } from "../../../../packages/runtime-contracts/src/configuration.js";
+ import type { ModelSubjectV1 } from "../../../../packages/runtime-contracts/src/model.js";
+-import { ModelProductAuthority } from "./model-product-authority";
++import {
++	type CANDIDATE_MODEL_POLICY,
++	ModelProductAuthority,
++} from "./model-product-authority";
+ 
+ // The subject is bound by deployment composition, never taken from the RPC payload.
+ export async function readOwnedConfigurationAuthority(
+@@ -13,6 +16,7 @@ export async function readOwnedConfigurationAuthority(
+ 	input: unknown,
+ 	selection: unknown,
+ 	fixtureAvailable: boolean,
++	candidatePolicy?: typeof CANDIDATE_MODEL_POLICY,
+ ): Promise<ConfigurationAuthorityV1> {
+ 	if (!fixtureAvailable) return { version: 1, status: "unavailable" };
+ 	try {
+@@ -21,11 +25,11 @@ export async function readOwnedConfigurationAuthority(
+ 			selection === undefined
+ 				? undefined
+ 				: parseConfigurationSelectionV1(selection);
+-		return (await new ModelProductAuthority(db).ownedConfiguration(
+-			authenticated,
+-			query,
+-			value,
+-		))
++		return (await new ModelProductAuthority(
++			db,
++			Date.now,
++			candidatePolicy,
++		).ownedConfiguration(authenticated, query, value))
+ 			? { version: 1, status: "current", subject: authenticated }
+ 			: { version: 1, status: "denied" };
+ 	} catch {
+diff --git a/apps/web/src/lib/model-product-authority.ts b/apps/web/src/lib/model-product-authority.ts
+index 795b24d..499fde0 100644
+--- a/apps/web/src/lib/model-product-authority.ts
++++ b/apps/web/src/lib/model-product-authority.ts
+@@ -19,11 +19,86 @@ export interface ModelClaimRpc {
+ 	halt(attempt: unknown): Promise<{ status: "halted" | "denied" }>;
+ }
+ 
++export const CANDIDATE_MODEL_POLICY = Object.freeze({
++	owner: "pi_durable_v1" as const,
++	controllerNamespace: "fixture-pi-durable-execution-v1" as const,
++});
++type CandidateModelPolicy = typeof CANDIDATE_MODEL_POLICY & {
++	attemptAuthority?(descriptor: ModelTransportDescriptorV1): Promise<boolean>;
++};
++
++export type ModelPermitBounds = Readonly<{
++	windowExpiresAt: number;
++	commandDeadlineAt: number;
++	effectDeadlineAt: number;
++}>;
++
+ export class ModelProductAuthority {
++	private permitBounds = new WeakMap<
++		ModelTransportDescriptorV1,
++		ModelPermitBounds
++	>();
++
++	validatedPermitBounds(
++		d: ModelTransportDescriptorV1,
++	): ModelPermitBounds | undefined {
++		return this.permitBounds.get(d);
++	}
+ 	constructor(
+ 		private db: D1Database,
+ 		private now: () => number = Date.now,
+-	) {}
++		private candidate?: CandidateModelPolicy,
++	) {
++		if (
++			candidate &&
++			(candidate.owner !== CANDIDATE_MODEL_POLICY.owner ||
++				candidate.controllerNamespace !==
++					CANDIDATE_MODEL_POLICY.controllerNamespace)
++		)
++			throw new Error("invalid_candidate_policy");
++	}
++
++	private get owner() {
++		return this.candidate ? "pi_durable_v1" : "trusted_v1";
++	}
++
++	async preSessionReadiness(
++		userId: string,
++		projectId: string,
++		selection: ConfigurationSelectionV1 = { model: "faux-1", thinking: "off" },
++	) {
++		if (!this.candidate) return null;
++		const row = await this.db
++			.prepare(`SELECT e.snapshot,e.generation,e.revision FROM projects p
++JOIN user u ON u.id=p.userId JOIN codex_connections k ON k.user_id=u.id
++JOIN codex_fixture_capabilities e ON e.userId=u.id
++WHERE p.id=? AND p.userId=? AND p.status='ready'
++AND k.revoked=0 AND k.status='connected' AND e.generation=k.generation
++AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE f.targetKind='project' AND f.targetId=p.id)`)
++			.bind(projectId, userId)
++			.first<{ snapshot: string; generation: number; revision: number }>();
++		if (!row) return null;
++		try {
++			const account = parseSyntheticAccountV1(row.snapshot);
++			if (
++				account.status !== "available" ||
++				account.generation !== row.generation ||
++				account.revision !== row.revision ||
++				!account.models.some(
++					(m) =>
++						m.id === selection.model && m.thinking.includes(selection.thinking),
++				)
++			)
++				return null;
++			return {
++				generation: account.generation,
++				revision: account.revision,
++				snapshot: row.snapshot,
++			};
++		} catch {
++			return null;
++		}
++	}
+ 
+ 	async ownedConfiguration(
+ 		authenticated: ModelSubjectV1,
+@@ -31,6 +106,11 @@ export class ModelProductAuthority {
+ 		selection?: ConfigurationSelectionV1,
+ 	): Promise<boolean> {
+ 		const s = parseModelSubjectV1(authenticated);
++		if (
++			this.candidate &&
++			s.controllerNamespace !== this.candidate.controllerNamespace
++		)
++			return false;
+ 		if (
+ 			query.projectId !== s.projectId ||
+ 			query.workspaceSessionId !== s.workspaceSessionId ||
+@@ -44,8 +124,9 @@ JOIN sandbox_identities i ON i.id=s.sandboxIdentityId
+ LEFT JOIN codex_connections k ON k.user_id=u.id
+ LEFT JOIN codex_fixture_capabilities e ON e.userId=u.id
+ WHERE s.id=? AND s.userId=? AND s.projectId=? AND p.userId=u.id
+-AND s.status='active' AND p.status='ready' AND s.runtimeOwner='trusted_v1' AND s.runtimeOwnerVersion=?
++AND s.status='active' AND p.status='ready' AND s.runtimeOwner='${this.owner}' AND s.runtimeOwnerVersion=?
+ AND s.runtimeFailureReasonCode IS NULL
++${this.candidate ? "AND s.runtimeProtocolVersion=2 AND s.brainIdentityId IS NULL AND EXISTS(SELECT 1 FROM candidate_workspace_claims q WHERE q.sessionId=s.id AND q.identityId=i.id AND q.userId=s.userId AND q.projectId=s.projectId)" : ""}
+ AND i.id=? AND i.kind='workspace_session' AND i.userId=u.id AND i.projectId=p.id AND i.workspaceSessionId=s.id
+ AND i.controllerClass='Sandbox' AND i.controllerNamespace=? AND i.incarnationId=?
+ AND i.lifecycleGeneration=? AND i.state='ready' AND i.retiredAt IS NULL
+@@ -92,6 +173,18 @@ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind
+ 	) {
+ 		const s = d.subject,
+ 			a = d.attempt;
++		if (
++			this.candidate &&
++			!(this.candidate.attemptAuthority
++				? await this.candidate.attemptAuthority(d)
++				: a.generation === 1)
++		)
++			return null;
++		if (
++			this.candidate &&
++			s.controllerNamespace !== this.candidate.controllerNamespace
++		)
++			return null;
+ 		if (this.now() >= a.deadlineAt) return null;
+ 		const row = await this.db
+ 			.prepare(
+@@ -122,20 +215,21 @@ JOIN sandbox_identities i ON i.id=s.sandboxIdentityId
+ JOIN codex_connections k ON k.user_id=u.id
+ JOIN codex_fixture_capabilities e ON e.userId=u.id
+ JOIN runtime_command_memberships m ON m.commandId=c.id
+-WHERE c.id=? AND c.userId=u.id AND c.projectId=p.id AND c.targetId=s.id AND c.targetKind='workspace_session'
+-AND c.kind IN ('prompt','follow_up') AND c.assistantMessageId=? AND c.deadlineAt>?
+-AND m.sessionId=s.id AND m.runId=? AND m.assistantMessageId=c.assistantMessageId
++WHERE (c.id=? AND c.userId=u.id AND c.projectId=p.id AND c.targetId=s.id AND c.targetKind='workspace_session'
++AND c.kind IN ('prompt','follow_up') AND c.assistantMessageId=?) AND (${this.candidate ? `c.payloadVersion=2 AND EXISTS(SELECT 1 FROM candidate_command_decisions q WHERE q.commandId=c.id AND q.sessionId=s.id AND q.ownerVersion=s.runtimeOwnerVersion AND q.runId=m.runId AND q.runEpoch=m.runEpoch AND q.runEpoch=${a.epoch} AND q.payloadDigest=c.payloadDigest AND q.identityId=i.id AND q.decision='started' AND q.queueDeadlineAt=c.deadlineAt AND q.decidedAt<c.deadlineAt AND q.decidedAt<=?)` : "c.deadlineAt>?"})
++AND (m.sessionId=s.id AND m.runId=? AND m.assistantMessageId=c.assistantMessageId
+ AND s.id=? AND s.userId=? AND s.projectId=? AND p.userId=u.id
+-AND s.status='active' AND p.status='ready' AND s.runtimeOwner='trusted_v1' AND s.runtimeOwnerVersion=?
++AND s.status='active' AND p.status='ready' AND s.runtimeOwner='${this.owner}' AND s.runtimeOwnerVersion=?
+ AND s.runtimeFailureReasonCode IS NULL
+-AND i.id=? AND i.kind='workspace_session' AND i.userId=u.id AND i.projectId=p.id AND i.workspaceSessionId=s.id
++${this.candidate ? "AND s.runtimeProtocolVersion=2 AND s.brainIdentityId IS NULL AND m.userMessageId=c.userMessageId AND EXISTS(SELECT 1 FROM candidate_workspace_claims q WHERE q.sessionId=s.id AND q.identityId=i.id AND q.userId=s.userId AND q.projectId=s.projectId)" : ""})
++AND (i.id=? AND i.kind='workspace_session' AND i.userId=u.id AND i.projectId=p.id AND i.workspaceSessionId=s.id
+ AND i.controllerClass='Sandbox' AND i.controllerNamespace=? AND i.incarnationId=?
+ AND i.lifecycleGeneration=? AND i.state='ready' AND i.retiredAt IS NULL
+ AND k.generation=? AND k.revoked=0 AND k.status='connected'
+-AND e.generation=k.generation AND e.revision=? AND e.snapshot=?
+-AND ?>?
++AND e.generation=k.generation AND e.revision=? AND e.snapshot=?)
++AND (?>?
+ AND NOT EXISTS(SELECT 1 FROM runtime_retired_identity_fences f WHERE f.identityId=i.id)
+-AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind='project' AND f.targetId=p.id) OR (f.targetKind='workspace_session' AND f.targetId=s.id)))`;
++AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind='project' AND f.targetId=p.id) OR (f.targetKind='workspace_session' AND f.targetId=s.id))))`;
+ 		const params = [
+ 			a.commandId,
+ 			a.assistantId,
+@@ -178,9 +272,13 @@ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind
+ 		if (!f) return false;
+ 		const row = await this.db
+ 			.prepare(
+-				`SELECT deadlineAt FROM session_commands WHERE id=? AND ${f.sql}`,
++				`SELECT ${this.candidate ? "?" : "deadlineAt"} AS deadlineAt FROM session_commands WHERE id=? AND ${f.sql}`,
++			)
++			.bind(
++				...(this.candidate ? [d.attempt.deadlineAt] : []),
++				d.attempt.commandId,
++				...f.params,
+ 			)
+-			.bind(d.attempt.commandId, ...f.params)
+ 			.first<{ deadlineAt: number }>();
+ 		return !!row && this.now() < Math.min(row.deadlineAt, d.attempt.deadlineAt);
+ 	}
+@@ -235,9 +333,14 @@ AND NOT EXISTS(SELECT 1 FROM model_request_admissions r JOIN privileged_operatio
+ 			.run();
+ 		const row = await this.db
+ 			.prepare(
+-				`SELECT expiresAt,(SELECT deadlineAt FROM session_commands WHERE id=?) AS deadlineAt FROM privileged_operations WHERE id=? AND openSlot='open' AND closedAt IS NULL AND expiresAt>? AND ${f.sql}`,
++				`SELECT expiresAt,${this.candidate ? "?" : "(SELECT deadlineAt FROM session_commands WHERE id=?)"} AS deadlineAt FROM privileged_operations WHERE id=? AND openSlot='open' AND closedAt IS NULL AND expiresAt>? AND ${f.sql}`,
++			)
++			.bind(
++				this.candidate ? a.deadlineAt : a.commandId,
++				id,
++				this.now(),
++				...f.params,
+ 			)
+-			.bind(a.commandId, id, this.now(), ...f.params)
+ 			.first<{ expiresAt: number; deadlineAt: number }>();
+ 		return row &&
+ 			this.now() < Math.min(row.expiresAt, row.deadlineAt, a.deadlineAt)
+@@ -303,15 +406,16 @@ AND (?!='git_metadata' OR NOT EXISTS(SELECT 1 FROM model_request_admissions r JO
+ 		d: ModelTransportDescriptorV1,
+ 		body: SyntheticModelBodyV1,
+ 	): Promise<boolean> {
++		this.permitBounds.delete(d);
+ 		const id = await this.windowId(d),
+ 			f = await this.facts(d, body);
+ 		if (!f) return false;
+ 		const row = await this.db
+-			.prepare(`SELECT w.expiresAt,(SELECT deadlineAt FROM session_commands WHERE id=?) AS deadlineAt FROM privileged_operations w JOIN model_request_admissions r ON r.windowId=w.id
++			.prepare(`SELECT w.expiresAt,${this.candidate ? "?" : "(SELECT deadlineAt FROM session_commands WHERE id=?)"} AS deadlineAt FROM privileged_operations w JOIN model_request_admissions r ON r.windowId=w.id
+ WHERE w.id=? AND r.effectId=? AND r.requestDigest=? AND r.state='reserved'
+ AND w.openSlot='open' AND w.closedAt IS NULL AND w.expiresAt>? AND w.contractDenials<3 AND ${f.sql}`)
+ 			.bind(
+-				d.attempt.commandId,
++				this.candidate ? d.attempt.deadlineAt : d.attempt.commandId,
+ 				id,
+ 				d.attempt.effectId,
+ 				d.requestDigest,
+@@ -320,10 +424,21 @@ AND w.openSlot='open' AND w.closedAt IS NULL AND w.expiresAt>? AND w.contractDen
+ 			)
+ 			.first<{ expiresAt: number; deadlineAt: number }>();
+ 		// A query may finish after the deadlines it tested at statement submission.
+-		return (
+-			!!row &&
+-			this.now() < Math.min(row.expiresAt, row.deadlineAt, d.attempt.deadlineAt)
++		if (
++			!row ||
++			this.now() >=
++				Math.min(row.expiresAt, row.deadlineAt, d.attempt.deadlineAt)
++		)
++			return false;
++		this.permitBounds.set(
++			d,
++			Object.freeze({
++				windowExpiresAt: row.expiresAt,
++				commandDeadlineAt: row.deadlineAt,
++				effectDeadlineAt: d.attempt.deadlineAt,
++			}),
+ 		);
++		return true;
+ 	}
+ 
+ 	async denial(d: ModelTransportDescriptorV1): Promise<boolean> {
+@@ -340,7 +455,7 @@ WHERE id=? AND openSlot='open' AND closedAt IS NULL AND expiresAt>? RETURNING co
+ 				.bind(now, id, now),
+ 			this.db
+ 				.prepare(`UPDATE workspace_sessions SET runtimeFailureReasonCode='model_contract_review'
+-WHERE id=? AND runtimeOwner='trusted_v1' AND runtimeOwnerVersion=?
++WHERE id=? AND runtimeOwner='${this.owner}' AND runtimeOwnerVersion=?
+ AND EXISTS(SELECT 1 FROM privileged_operations WHERE id=? AND contractDenials=3 AND closeReason='contract_denials')`)
+ 				.bind(d.subject.workspaceSessionId, d.subject.runtimeOwnerVersion, id),
+ 		]);
+diff --git a/apps/web/src/lib/model-product-transport.ts b/apps/web/src/lib/model-product-transport.ts
+index ef04476..690c621 100644
+--- a/apps/web/src/lib/model-product-transport.ts
++++ b/apps/web/src/lib/model-product-transport.ts
+@@ -10,6 +10,7 @@ import {
+ 	syntheticRequestDigest,
+ } from "./codex-request-contract";
+ import {
++	type CANDIDATE_MODEL_POLICY,
+ 	type ModelClaimRpc,
+ 	ModelProductAuthority,
+ } from "./model-product-authority";
+@@ -55,6 +56,7 @@ export async function readPrivateModelPermit(
+ 	input: unknown,
+ 	descriptor: ModelTransportDescriptorV1,
+ 	fixtureAvailable: boolean,
++	candidatePolicy?: typeof CANDIDATE_MODEL_POLICY,
+ ): Promise<{ status: "current" | "denied" }> {
+ 	if (!fixtureAvailable) return { status: "denied" };
+ 	try {
+@@ -63,7 +65,11 @@ export async function readPrivateModelPermit(
+ 		if ((await syntheticRequestDigest(request)) !== d.requestDigest)
+ 			return { status: "denied" };
+ 		return {
+-			status: (await new ModelProductAuthority(db).permit(d, body))
++			status: (await new ModelProductAuthority(
++				db,
++				Date.now,
++				candidatePolicy,
++			).permit(d, body))
+ 				? "current"
+ 				: "denied",
+ 		};
+diff --git a/apps/web/src/lib/session-command.test.ts b/apps/web/src/lib/session-command.test.ts
+index a9bb236..356f84d 100644
+--- a/apps/web/src/lib/session-command.test.ts
++++ b/apps/web/src/lib/session-command.test.ts
+@@ -1,3 +1,4 @@
++import { readFileSync } from "node:fs";
+ import { describe, expect, it, vi } from "vitest";
+ import { handleSessionCommandRequest } from "#/lib/session-command";
+ import {
+@@ -5,6 +6,8 @@ import {
+ 	sessionRuntimeRouteHarness,
+ } from "#/test/session-runtime-fixture";
+ import { RUNTIME_LIMITS } from "../../../../packages/runtime-contracts/src/limits.js";
++import { CandidateProductCommands } from "./session-command-candidate";
++import { createSqliteD1 } from "./sqlite-d1-test-utils";
+ 
+ vi.mock("cloudflare:workers", () => ({ env: {} }));
+ vi.mock("@tanstack/react-router", () => ({
+@@ -97,6 +100,102 @@ const recoveryBodies: Record<string, Record<string, unknown>> = {
+ };
+ 
+ describe("session command admission", () => {
++	it.each([
++		"stream",
++		"control",
++	] as const)("admits V2 through the captured authenticated %s POST without legacy execution", async (path) => {
++		const fixture = createSessionRuntimeFixture();
++		fixture.seedProject();
++		fixture.sqlite.exec(
++			readFileSync(
++				new URL(
++					"../../migrations/0023_candidate_product_commands.sql",
++					import.meta.url,
++				),
++				"utf8",
++			).replaceAll("--> statement-breakpoint", ""),
++		);
++		fixture.sqlite.exec(
++			`CREATE TABLE runtime_retired_identity_fences(identityId TEXT PRIMARY KEY,lifecycleGeneration INTEGER NOT NULL,retiredAt INTEGER NOT NULL); CREATE TABLE codex_connections(user_id TEXT PRIMARY KEY,generation INTEGER,revoked INTEGER,status TEXT); CREATE TABLE codex_fixture_capabilities(userId TEXT PRIMARY KEY,generation INTEGER,revision INTEGER,snapshot TEXT); INSERT INTO codex_connections VALUES('user-1',1,0,'connected')`,
++		);
++		fixture.sqlite
++			.prepare("INSERT INTO codex_fixture_capabilities VALUES('user-1',1,1,?)")
++			.run(
++				JSON.stringify({
++					version: 1,
++					status: "available",
++					generation: 1,
++					revision: 1,
++					models: [{ id: "faux-1", thinking: ["off"] }],
++				}),
++			);
++		const commands = new CandidateProductCommands(
++			createSqliteD1(fixture.sqlite),
++			{
++				readSelection: async () => null,
++				targetStatus: async (_subject, runId) => ({
++					ownerVersion: 1,
++					runId,
++					state: "not_delivered",
++				}),
++			},
++			() => ({ status: async () => ({ status: "connected", generation: 1 }) }),
++		);
++		let admissionError: unknown;
++		const candidateCommands = {
++			admitOwned: async (userId: string, body: unknown) => {
++				try {
++					return await commands.admit(userId, body);
++				} catch (error) {
++					admissionError = error;
++					throw error;
++				}
++			},
++			drain: async () => {},
++		};
++		const body = promptBody({ version: 2 });
++		const first = await fixture
++			.asUser("user-1")
++			.command(body, { path, candidateCommands });
++		if (first.status === 503) throw admissionError;
++		expect(first.status).toBe(202);
++		expect(first.body).toMatchObject({
++			version: 2,
++			ownerVersion: 1,
++			commandSeq: 1,
++		});
++		expect(
++			await fixture.asUser("user-1").command(body, { path, candidateCommands }),
++		).toEqual(first);
++		expect(fixture.counts()).toEqual({
++			sessions: 1,
++			messages: 2,
++			commands: 1,
++			keys: 1,
++			work: 1,
++		});
++		expect(
++			(
++				await fixture
++					.asUser("user-1")
++					.command({ ...body, text: "Changed" }, { path, candidateCommands })
++			).status,
++		).toBe(409);
++		expect(
++			(
++				await fixture
++					.asUser("user-1")
++					.command(
++						{ ...body, idempotencyKey: "overflow", text: "😀".repeat(2049) },
++						{ path, candidateCommands },
++					)
++			).status,
++		).toBe(400);
++		expect(
++			(await fixture.asUser("user-1").command(body, { path })).body,
++		).toMatchObject({ code: "candidate_admission_ineligible" });
++		fixture.dispose();
++	});
+ 	it("T01 mocked-auth captured handler rejects unowned, archived, migrating, blocked, and deleting targets with no rows or upstream work", async () => {
+ 		const unowned = createSessionRuntimeFixture();
+ 		unowned.seedProject({ userId: "owner-1" });
+diff --git a/apps/web/src/lib/session-command.ts b/apps/web/src/lib/session-command.ts
+index e475859..30bc3bd 100644
+--- a/apps/web/src/lib/session-command.ts
++++ b/apps/web/src/lib/session-command.ts
+@@ -1361,6 +1361,45 @@ export async function admitSessionCommand(options: {
+ 	);
+ }
+ 
++export async function handleCandidateCommandRequest(options: {
++	service:
++		| import("./session-runtime-client").CandidateProductCommandService
++		| undefined;
++	authenticatedUserId: string;
++	body: unknown;
++}): Promise<{ status: number; body: unknown }> {
++	if (!options.service)
++		return { status: 400, body: { code: "candidate_admission_ineligible" } };
++	try {
++		return {
++			status: 202,
++			body: await options.service.admitOwned(
++				options.authenticatedUserId,
++				options.body,
++			),
++		};
++	} catch (error) {
++		const { CandidateCommandError } = await import(
++			"./session-command-candidate"
++		);
++		if (error instanceof CandidateCommandError)
++			return { status: error.status, body: { code: error.code } };
++		if (error instanceof ContractParseError)
++			return { status: 400, body: { code: error.code } };
++		return { status: 503, body: { code: "runtime_unavailable" } };
++	}
++}
++
++export function isCandidateCommandBody(body: unknown): boolean {
++	return (
++		typeof body === "object" &&
++		body !== null &&
++		!Array.isArray(body) &&
++		"version" in body &&
++		body.version === 2
++	);
++}
++
+ export async function handleSessionCommandRequest(options: {
+ 	db: Db;
+ 	runtime: SessionRuntime;
+diff --git a/apps/web/src/lib/session-runtime-authority.ts b/apps/web/src/lib/session-runtime-authority.ts
+index cf23ea0..e7231c4 100644
+--- a/apps/web/src/lib/session-runtime-authority.ts
++++ b/apps/web/src/lib/session-runtime-authority.ts
+@@ -46,6 +46,7 @@ export async function readCurrentTrustedAuthority(
+ 		.limit(1);
+ 	if (
+ 		!session ||
++		session.runtimeOwner === "pi_durable_v1" ||
+ 		session.userId !== input.userId ||
+ 		session.projectId !== input.projectId
+ 	) {
+diff --git a/apps/web/src/lib/session-runtime-client.ts b/apps/web/src/lib/session-runtime-client.ts
+index 31c0598..5226e5e 100644
+--- a/apps/web/src/lib/session-runtime-client.ts
++++ b/apps/web/src/lib/session-runtime-client.ts
+@@ -190,7 +190,24 @@ export async function withSessionRuntimeCallTimeout<T>(
+ 	}
+ }
+ 
++export interface CandidateProductCommandService {
++	admitOwned(
++		userId: string,
++		body: unknown,
++	): Promise<
++		import("../../../../packages/runtime-contracts/src/product-command.js").ReceiptV2
++	>;
++	drain(): Promise<void>;
++}
++
++export function resolveCandidateProductCommands():
++	| CandidateProductCommandService
++	| undefined {
++	return resolution.getStore()?.candidateCommands;
++}
++
+ type SessionRuntimeResolution = {
++	candidateCommands?: CandidateProductCommandService;
+ 	transport?: SessionRuntime;
+ 	trustedAdmissionEligible?: boolean;
+ 	now?: () => number;
+diff --git a/apps/web/src/lib/session-runtime-ownership.test.ts b/apps/web/src/lib/session-runtime-ownership.test.ts
+index 620c088..45c2490 100644
+--- a/apps/web/src/lib/session-runtime-ownership.test.ts
++++ b/apps/web/src/lib/session-runtime-ownership.test.ts
+@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
+ import { drizzle } from "drizzle-orm/sqlite-proxy";
+ import { describe, expect, it } from "vitest";
+ import type { createDb } from "#/db";
++import { readCurrentTrustedAuthority } from "./session-runtime-authority";
+ import {
+ 	assertRuntimeOwner,
+ 	RuntimeOwnershipError,
+@@ -12,7 +13,7 @@ type Db = ReturnType<typeof createDb>;
+ function fixture() {
+ 	const sqlite = new DatabaseSync(":memory:");
+ 	sqlite.exec(
+-		"CREATE TABLE workspace_sessions (id TEXT PRIMARY KEY, runtimeOwner TEXT NOT NULL DEFAULT 'legacy', runtimeOwnerVersion INTEGER NOT NULL DEFAULT 1, updated_at INTEGER)",
++		"CREATE TABLE workspace_sessions (id TEXT PRIMARY KEY, runtimeOwner TEXT NOT NULL DEFAULT 'legacy', runtimeOwnerVersion INTEGER NOT NULL DEFAULT 1, updated_at INTEGER, userId TEXT DEFAULT 'owner', projectId TEXT DEFAULT 'project', status TEXT DEFAULT 'active', brainIdentityId TEXT, sandboxIdentityId TEXT)",
+ 	);
+ 	sqlite.prepare("INSERT INTO workspace_sessions (id) VALUES ('s')").run();
+ 	const db = drizzle(async (query, params, method) => {
+@@ -59,6 +60,89 @@ describe("session runtime ownership", () => {
+ 			}),
+ 		).toThrow(RuntimeOwnershipError);
+ 	});
++	it("requires the exact candidate owner and version without granting legacy authority", () => {
++		const session = {
++			id: "s",
++			runtimeOwner: "pi_durable_v1" as const,
++			runtimeOwnerVersion: 1,
++		};
++		expect(() =>
++			assertRuntimeOwner({
++				session,
++				expectedOwner: "pi_durable_v1",
++				ownerVersion: 1,
++			}),
++		).not.toThrow();
++		for (const expectedOwner of ["legacy", "trusted_v1"] as const) {
++			expect(() =>
++				assertRuntimeOwner({ session, expectedOwner, ownerVersion: 1 }),
++			).toThrow(RuntimeOwnershipError);
++		}
++		expect(() =>
++			assertRuntimeOwner({
++				session,
++				expectedOwner: "pi_durable_v1",
++				ownerVersion: 2,
++			}),
++		).toThrow(RuntimeOwnershipError);
++	});
++	it("never migrates an existing owner into or out of the candidate", async () => {
++		const { db, sqlite } = fixture();
++		for (const from of [
++			"legacy",
++			"migrating",
++			"trusted_v1",
++			"blocked",
++		] as const) {
++			await expect(
++				transitionRuntimeOwner({
++					db,
++					sessionId: "s",
++					from,
++					fromVersion: 1,
++					to: "pi_durable_v1",
++				}),
++			).rejects.toMatchObject({ code: "runtime_owner_transition_conflict" });
++		}
++		for (const to of [
++			"legacy",
++			"migrating",
++			"trusted_v1",
++			"blocked",
++		] as const) {
++			await expect(
++				transitionRuntimeOwner({
++					db,
++					sessionId: "s",
++					from: "pi_durable_v1",
++					fromVersion: 1,
++					to,
++				}),
++			).rejects.toMatchObject({ code: "runtime_owner_transition_conflict" });
++		}
++		expect(
++			sqlite
++				.prepare(
++					"SELECT runtimeOwner,runtimeOwnerVersion FROM workspace_sessions WHERE id='s'",
++				)
++				.get(),
++		).toMatchObject({ runtimeOwner: "legacy", runtimeOwnerVersion: 1 });
++	});
++	it("denies candidate sessions before the old coordinator reads identities or capacity", async () => {
++		const { db, sqlite } = fixture();
++		sqlite
++			.prepare(
++				"UPDATE workspace_sessions SET runtimeOwner='pi_durable_v1' WHERE id='s'",
++			)
++			.run();
++		await expect(
++			readCurrentTrustedAuthority(db, {
++				workspaceSessionId: "s",
++				userId: "owner",
++				projectId: "project",
++			}),
++		).resolves.toBeNull();
++	});
+ 	it("moves through migrating with a SQL compare-and-set", async () => {
+ 		const { db } = fixture();
+ 		await expect(
+diff --git a/apps/web/src/lib/session-runtime-ownership.ts b/apps/web/src/lib/session-runtime-ownership.ts
+index 7a7b2bb..35c1f18 100644
+--- a/apps/web/src/lib/session-runtime-ownership.ts
++++ b/apps/web/src/lib/session-runtime-ownership.ts
+@@ -6,6 +6,7 @@ export const RUNTIME_OWNERS = [
+ 	"legacy",
+ 	"migrating",
+ 	"trusted_v1",
++	"pi_durable_v1",
+ 	"blocked",
+ ] as const;
+ export type RuntimeOwner = (typeof RUNTIME_OWNERS)[number];
+@@ -29,7 +30,7 @@ export class RuntimeOwnershipError extends Error {
+ 
+ export function assertRuntimeOwner(options: {
+ 	session: RuntimeOwnedSession;
+-	expectedOwner: "legacy" | "trusted_v1";
++	expectedOwner: "legacy" | "trusted_v1" | "pi_durable_v1";
+ 	ownerVersion: number;
+ }): void {
+ 	if (
+@@ -47,6 +48,7 @@ const transitions: Record<RuntimeOwner, readonly RuntimeOwner[]> = {
+ 	legacy: ["migrating"],
+ 	migrating: ["legacy", "trusted_v1", "blocked"],
+ 	trusted_v1: ["migrating", "blocked"],
++	pi_durable_v1: [],
+ 	blocked: ["migrating"],
+ };
+ 
+diff --git a/apps/web/src/lib/workspace-runtime.ts b/apps/web/src/lib/workspace-runtime.ts
+index 97b80c8..8adbdae 100644
+--- a/apps/web/src/lib/workspace-runtime.ts
++++ b/apps/web/src/lib/workspace-runtime.ts
+@@ -1194,6 +1194,18 @@ async function reclaimSleepingCapacity(options: {
+ 		if (!identity.workspaceSessionId) {
+ 			continue;
+ 		}
++		const [session] = await options.db
++			.select({
++				id: workspaceSessions.id,
++				previewStartedAt: workspaceSessions.previewStartedAt,
++				runtimeOwner: workspaceSessions.runtimeOwner,
++			})
++			.from(workspaceSessions)
++			.where(eq(workspaceSessions.id, identity.workspaceSessionId))
++			.limit(1);
++		if (session?.runtimeOwner !== "legacy") {
++			continue;
++		}
+ 		let liveStatus: string | null = null;
+ 		try {
+ 			const live = await getProjectSandboxState(
+@@ -1205,18 +1217,6 @@ async function reclaimSleepingCapacity(options: {
+ 			liveStatus = "stopped";
+ 		}
+ 		if (liveStatus && INACTIVE_SANDBOX_STATUSES.has(liveStatus)) {
+-			const [session] = await options.db
+-				.select({
+-					id: workspaceSessions.id,
+-					previewStartedAt: workspaceSessions.previewStartedAt,
+-					runtimeOwner: workspaceSessions.runtimeOwner,
+-				})
+-				.from(workspaceSessions)
+-				.where(eq(workspaceSessions.id, identity.workspaceSessionId))
+-				.limit(1);
+-			if (session?.runtimeOwner !== "legacy") {
+-				continue;
+-			}
+ 			const [recovery] = await options.db
+ 				.select({
+ 					pendingGeneration: workspaceSessionRecoveries.pendingGeneration,
+diff --git a/apps/web/src/routes/api.agent.control.ts b/apps/web/src/routes/api.agent.control.ts
+index 47ba89d..516b67e 100644
+--- a/apps/web/src/routes/api.agent.control.ts
++++ b/apps/web/src/routes/api.agent.control.ts
+@@ -8,13 +8,16 @@ import {
+ import { createAuth } from "#/lib/auth";
+ import {
+ 	classifyAgentRequestBody,
++	handleCandidateCommandRequest,
+ 	handleSessionCommandRequest,
++	isCandidateCommandBody,
+ 	readBoundedAgentRequestText,
+ 	SessionCommandError,
+ } from "#/lib/session-command";
+ import {
+ 	createSessionRuntimeClient,
+ 	isTrustedAdmissionEligible,
++	resolveCandidateProductCommands,
+ 	resolveSessionAdmissionHooks,
+ 	resolveSessionRuntimeTransport,
+ } from "#/lib/session-runtime-client";
+@@ -58,6 +61,14 @@ export const Route = createFileRoute("/api/agent/control")({
+ 
+ 				const db = createDb(env);
+ 				if (classified.mode === "versioned") {
++					if (isCandidateCommandBody(classified.decoded)) {
++						const result = await handleCandidateCommandRequest({
++							service: resolveCandidateProductCommands(),
++							authenticatedUserId: session.user.id,
++							body: raw,
++						});
++						return jsonResponse(result.body, result.status);
++					}
+ 					if (!isTrustedAdmissionEligible()) {
+ 						return jsonResponse(
+ 							{
+diff --git a/apps/web/src/routes/api.agent.stream.ts b/apps/web/src/routes/api.agent.stream.ts
+index 1233ae6..c501065 100644
+--- a/apps/web/src/routes/api.agent.stream.ts
++++ b/apps/web/src/routes/api.agent.stream.ts
+@@ -10,7 +10,9 @@ import { encodeSseEvent } from "#/lib/agent-stream-protocol";
+ import { createAuth } from "#/lib/auth";
+ import {
+ 	classifyAgentRequestBody,
++	handleCandidateCommandRequest,
+ 	handleSessionCommandRequest,
++	isCandidateCommandBody,
+ 	readBoundedAgentRequestText,
+ 	SessionCommandError,
+ } from "#/lib/session-command";
+@@ -21,6 +23,7 @@ import {
+ import {
+ 	createSessionRuntimeClient,
+ 	isTrustedAdmissionEligible,
++	resolveCandidateProductCommands,
+ 	resolveSessionAdmissionHooks,
+ 	resolveSessionRuntimeTransport,
+ 	SessionRuntimeHandoffError,
+@@ -109,6 +112,14 @@ export const Route = createFileRoute("/api/agent/stream")({
+ 
+ 				const db = createDb(env);
+ 				if (classified.mode === "versioned") {
++					if (isCandidateCommandBody(classified.decoded)) {
++						const result = await handleCandidateCommandRequest({
++							service: resolveCandidateProductCommands(),
++							authenticatedUserId: session.user.id,
++							body: raw,
++						});
++						return jsonResponse(result.body, result.status);
++					}
+ 					if (!isTrustedAdmissionEligible()) {
+ 						return jsonResponse(
+ 							{
+diff --git a/apps/web/src/server.test.ts b/apps/web/src/server.test.ts
+index da35199..0dbffa2 100644
+--- a/apps/web/src/server.test.ts
++++ b/apps/web/src/server.test.ts
+@@ -3,6 +3,39 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
+ const proxyToSandboxMock = vi.hoisted(() => vi.fn());
+ const handlerFetchMock = vi.hoisted(() => vi.fn());
+ const handleOutboundMock = vi.hoisted(() => vi.fn());
++const legacyDrainMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
++const scheduledDb = vi.hoisted(() => ({ current: {} as unknown }));
++const legacySandboxStateMock = vi.hoisted(() => vi.fn());
++const lowerMaintenanceMock = vi.hoisted(() =>
++	vi.fn().mockResolvedValue(undefined),
++);
++vi.mock("#/db", () => ({ createDb: () => scheduledDb.current }));
++vi.mock("#/lib/sandbox-bootstrap", () => ({
++	getProjectSandboxState: legacySandboxStateMock,
++	getProjectSandbox: vi.fn(),
++	configureDittoGitIdentity: vi.fn(),
++}));
++vi.mock("#/lib/workspace-recovery", () => ({
++	enqueueDuePreviewCheckpoints: lowerMaintenanceMock,
++	hasRecoveryArchives: vi.fn(),
++	restore: vi.fn(),
++}));
++vi.mock("#/lib/sandbox-archive", () => ({
++	retryArchiveCleanup: lowerMaintenanceMock,
++	restoreArchive: vi.fn(),
++}));
++vi.mock("#/lib/session-command-delivery", () => ({
++	deliverSessionCommands: lowerMaintenanceMock,
++}));
++vi.mock("#/lib/workspace-runtime-capacity", async (importOriginal) => ({
++	...(await importOriginal<
++		typeof import("#/lib/workspace-runtime-capacity")
++	>()),
++	drainWorkspaceRuntimeQueue: lowerMaintenanceMock,
++}));
++vi.mock("#/lib/workspace-runtime", () => ({
++	drainWorkspaceRuntime: legacyDrainMock,
++}));
+ 
+ const outboundHandlersRegistry = vi.hoisted(() => {
+ 	const registry = new Map<string, Record<string, unknown>>();
+@@ -159,6 +192,110 @@ describe("server fetch routing", () => {
+ 	});
+ });
+ 
++describe("candidate entrypoint composition", () => {
++	it("resolves only the deployment binding during fetch and independently during scheduled", async () => {
++		const { resolveCandidateProductCommands } = await import(
++			"#/lib/session-runtime-client"
++		);
++		const candidate = {
++			admitOwned: vi.fn(),
++			drain: vi.fn().mockResolvedValue(undefined),
++		};
++		const fixtureEnv = {
++			...env,
++			PI_DURABLE_PRODUCT_COMMANDS: candidate,
++		} as Env;
++		proxyToSandboxMock.mockResolvedValue(null);
++		handlerFetchMock.mockImplementation(
++			async () =>
++				new Response(
++					resolveCandidateProductCommands() === candidate
++						? "candidate"
++						: "unavailable",
++				),
++		);
++		expect(
++			await (
++				await server.fetch(new Request("http://localhost/"), fixtureEnv)
++			).text(),
++		).toBe("candidate");
++		expect(resolveCandidateProductCommands()).toBeUndefined();
++		expect(
++			await (await server.fetch(new Request("http://localhost/"), env)).text(),
++		).toBe("unavailable");
++		const waitUntil = vi.fn();
++		await server.scheduled({} as ScheduledController, fixtureEnv, {
++			waitUntil,
++		} as unknown as ExecutionContext);
++		expect(candidate.drain).toHaveBeenCalledOnce();
++		expect(waitUntil).toHaveBeenCalledWith(
++			candidate.drain.mock.results[0].value,
++		);
++		expect(legacyDrainMock).toHaveBeenCalled();
++	});
++	it("does not contact the legacy Sandbox namespace for a ready candidate identity during real scheduled maintenance", async () => {
++		const { sandboxIdentities, workspaceSessions } = await import(
++			"#/db/schema"
++		);
++		const actual = await vi.importActual<
++			typeof import("#/lib/workspace-runtime")
++		>("#/lib/workspace-runtime");
++		const identity = {
++			workspaceSessionId: "candidate-session",
++			sandboxId: "synthetic-executor",
++		};
++		const rows = (table: unknown) =>
++			table === sandboxIdentities
++				? [identity]
++				: table === workspaceSessions
++					? [
++							{
++								id: identity.workspaceSessionId,
++								runtimeOwner: "pi_durable_v1",
++								previewStartedAt: null,
++							},
++						]
++					: [];
++		scheduledDb.current = {
++			select: () => ({
++				from: (table: unknown) => ({
++					where: () => {
++						const result = rows(table);
++						return Object.assign(Promise.resolve(result), {
++							limit: async () => result,
++						});
++					},
++				}),
++			}),
++		};
++		legacySandboxStateMock.mockClear();
++		lowerMaintenanceMock.mockClear();
++		legacyDrainMock.mockImplementationOnce(actual.drainWorkspaceRuntime);
++		const joined: Promise<unknown>[] = [];
++		await server.scheduled({} as ScheduledController, env, {
++			waitUntil: (promise: Promise<unknown>) => joined.push(promise),
++		} as unknown as ExecutionContext);
++		await Promise.all(joined);
++		expect(legacySandboxStateMock).not.toHaveBeenCalled();
++		expect(lowerMaintenanceMock).toHaveBeenCalledTimes(4);
++		scheduledDb.current = {};
++	});
++	it("joins candidate scheduled delivery rather than relying only on waitUntil", async () => {
++		const error = new Error("candidate drain failed");
++		const candidate = {
++			admitOwned: vi.fn(),
++			drain: vi.fn().mockRejectedValue(error),
++		};
++		await expect(
++			server.scheduled(
++				{} as ScheduledController,
++				{ ...env, PI_DURABLE_PRODUCT_COMMANDS: candidate } as Env,
++				{ waitUntil: vi.fn() } as unknown as ExecutionContext,
++			),
++		).rejects.toBe(error);
++	});
++});
++
+ describe("Sandbox subclass exports", () => {
+ 	it("exports ContainerProxy from the Worker entrypoint", () => {
+ 		expect(ContainerProxy).toBeTypeOf("function");
+diff --git a/apps/web/src/server.ts b/apps/web/src/server.ts
+index 805a1d4..939e559 100644
+--- a/apps/web/src/server.ts
++++ b/apps/web/src/server.ts
+@@ -6,6 +6,7 @@ import {
+ } from "@cloudflare/sandbox";
+ import handler from "@tanstack/react-start/server-entry";
+ import { handleOutbound } from "#/lib/sandbox-egress-broker";
++import { withSessionRuntimeResolution } from "#/lib/session-runtime-client";
+ 
+ export { CodexCredential } from "#/lib/codex-credential-do";
+ export { ProductEntrypoint } from "#/lib/session-runtime-product";
+@@ -155,7 +156,10 @@ export default {
+ 			return new Response("Not Found", { status: 404 });
+ 		}
+ 
+-		return handler.fetch(request);
++		return withSessionRuntimeResolution(
++			{ candidateCommands: env.PI_DURABLE_PRODUCT_COMMANDS },
++			() => handler.fetch(request),
++		);
+ 	},
+ 
+ 	async scheduled(
+@@ -165,6 +169,11 @@ export default {
+ 	): Promise<void> {
+ 		const { createDb } = await import("#/db");
+ 		const { drainWorkspaceRuntime } = await import("#/lib/workspace-runtime");
++		const candidate = env.PI_DURABLE_PRODUCT_COMMANDS?.drain();
++		if (candidate) {
++			ctx.waitUntil(candidate);
++			await candidate;
++		}
+ 		const drain = drainWorkspaceRuntime({
+ 			env,
+ 			db: createDb(env),
+diff --git a/apps/web/src/test/session-runtime-fixture.ts b/apps/web/src/test/session-runtime-fixture.ts
+index 6f79f64..65786dd 100644
+--- a/apps/web/src/test/session-runtime-fixture.ts
++++ b/apps/web/src/test/session-runtime-fixture.ts
+@@ -688,11 +688,15 @@ export function createSessionRuntimeFixture(options?: {
+ 
+ 	function withResolution<T>(
+ 		run: () => T,
+-		overrides?: { trustedAdmissionEligible?: boolean },
++		overrides?: {
++			trustedAdmissionEligible?: boolean;
++			candidateCommands?: import("#/lib/session-runtime-client").CandidateProductCommandService;
++		},
+ 	): T {
+ 		return withSessionRuntimeResolution(
+ 			{
+ 				transport,
++				candidateCommands: overrides?.candidateCommands,
+ 				trustedAdmissionEligible: overrides?.trustedAdmissionEligible ?? true,
+ 				now,
+ 				createId: options?.createId,
+@@ -781,6 +785,7 @@ export function createSessionRuntimeFixture(options?: {
+ 						raw?: string;
+ 						bytes?: Uint8Array;
+ 						path?: "stream" | "control";
++						candidateCommands?: import("#/lib/session-runtime-client").CandidateProductCommandService;
+ 						trustedAdmissionEligible?: boolean;
+ 					} = {},
+ 				) {
+@@ -803,6 +808,7 @@ export function createSessionRuntimeFixture(options?: {
+ 							};
+ 						},
+ 						{
++							candidateCommands: request.candidateCommands,
+ 							trustedAdmissionEligible:
+ 								request.trustedAdmissionEligible ?? true,
+ 						},
+diff --git a/apps/web/types/env.d.ts b/apps/web/types/env.d.ts
+index 529892e..fa1491e 100644
+--- a/apps/web/types/env.d.ts
++++ b/apps/web/types/env.d.ts
+@@ -3,7 +3,9 @@
+ 
+ import type { website } from "../../../alchemy.run.ts"
+ 
+-export type CloudflareEnv = typeof website.Env
++export type CloudflareEnv = typeof website.Env & {
++	PI_DURABLE_PRODUCT_COMMANDS?: import("../src/lib/session-runtime-client").CandidateProductCommandService
++}
+ 
+ declare global {
+ 	type Env = CloudflareEnv
+diff --git a/package.json b/package.json
+index deccba5..b233585 100644
+--- a/package.json
++++ b/package.json
+@@ -18,7 +18,7 @@
+     "brain:verify": "pnpm contracts:verify && npm run contracts:check --prefix packages/session-brain && npm run typecheck --prefix packages/session-brain && npm test --prefix packages/session-brain && npm run build --prefix packages/session-brain",
+     "runtime:verify": "pnpm --filter @ditto/runtime typecheck && node --test apps/runtime/src/pi-durable-imports.test.mjs scripts/pi-durable-host-auth.test.mjs && pnpm --filter @ditto/runtime exec vitest run",
+     "runtime:local:verify": "node scripts/verify-pi-durable-local.mjs",
+-    "credentials:verify": "pnpm --filter @ditto/credential-tests typecheck && pnpm --filter @ditto/credential-tests exec vitest run src/codex-credential-do.worker.test.ts src/codex-request-contract.worker.test.ts && pnpm --filter @ditto/credential-tests exec node --test crash.test.mjs",
++    "credentials:verify": "pnpm --filter @ditto/credential-tests typecheck && pnpm --filter @ditto/credential-tests exec vitest run src/codex-credential-do.worker.test.ts src/codex-request-contract.worker.test.ts src/product-commands.worker.test.ts && pnpm --filter @ditto/credential-tests exec node --test crash.test.mjs",
+     "verify": "pnpm check && pnpm typecheck && pnpm credentials:verify && pnpm test && pnpm build && pnpm runner:verify",
+     "deploy": "alchemy deploy",
+     "destroy": "alchemy destroy",
+diff --git a/packages/runtime-contracts/src/index.ts b/packages/runtime-contracts/src/index.ts
+index 74287ac..f756599 100644
+--- a/packages/runtime-contracts/src/index.ts
++++ b/packages/runtime-contracts/src/index.ts
+@@ -2,4 +2,5 @@ export * from "./command.js";
+ export * from "./configuration.js";
+ export * from "./limits.js";
+ export * from "./model.js";
++export * from "./product-command.js";
+ export * from "./runtime.js";
+diff --git a/packages/sandbox-runner/src/control-channel.test.ts b/packages/sandbox-runner/src/control-channel.test.ts
+index 3ad900f..1097e5a 100644
+--- a/packages/sandbox-runner/src/control-channel.test.ts
++++ b/packages/sandbox-runner/src/control-channel.test.ts
+@@ -26,7 +26,9 @@ const followUp = (overrides: Partial<ControlRequest> = {}) =>
+ 
+ describe("runner control channel", () => {
+ 	it("round-trips a follow-up over a Unix socket", async () => {
++		const socketPath = path.join(os.tmpdir(), `rt-${process.pid}.sock`);
+ 		const server = await startControlServer({
++			socketPath,
+ 			runId: "run-1",
+ 			sessionId: "session-1",
+ 			handle: async (request) => ({
+@@ -40,7 +42,9 @@ describe("runner control channel", () => {
+ 			}),
+ 		});
+ 		try {
+-			await expect(sendControlRequest(followUp())).resolves.toMatchObject({
++			await expect(
++				sendControlRequest(followUp(), { socketPath }),
++			).resolves.toMatchObject({
+ 				accepted: true,
+ 				action: "follow_up",
+ 				requestId: "req-1",
+@@ -51,8 +55,10 @@ describe("runner control channel", () => {
+ 	});
+ 
+ 	it("serializes concurrent commands in arrival order", async () => {
++		const socketPath = path.join(os.tmpdir(), `seq-${process.pid}.sock`);
+ 		const order: string[] = [];
+ 		const server = await startControlServer({
++			socketPath,
+ 			runId: "run-1",
+ 			sessionId: "session-1",
+ 			handle: async (request) => {
+@@ -72,8 +78,8 @@ describe("runner control channel", () => {
+ 		});
+ 		try {
+ 			await Promise.all([
+-				sendControlRequest(followUp({ requestId: "first" })),
+-				sendControlRequest(followUp({ requestId: "second" })),
++				sendControlRequest(followUp({ requestId: "first" }), { socketPath }),
++				sendControlRequest(followUp({ requestId: "second" }), { socketPath }),
+ 			]);
+ 			expect(order).toEqual([
+ 				"start:first",

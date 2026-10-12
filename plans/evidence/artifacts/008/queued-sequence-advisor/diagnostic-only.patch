@@ -1,0 +1,220 @@
+--- a/apps/credential-tests/src/model-entry.ts
++++ b/apps/credential-tests/src/model-entry.ts
+@@ -581,11 +581,18 @@
+ 		return (await this.activate()).configureCandidate(commandId, input);
+ 	}
+ 	async alarm() {
++		const start = Date.now();
++		const trace = (boundary: string) => console.log("[008-queued-sequence]", "alarm", boundary, Date.now(), Date.now() - start, this.candidateBoot, !!this.host, this.retired);
++		trace("enter");
+ 		if (this.retired || !this.ordinaryAllowed()) return;
+ 		this.alarmCompletion = (async () => {
++			trace("alarmHost.before");
+ 			const host = await this.alarmHost();
++			trace("alarmHost.after");
+ 			if (!host) return;
++			trace("host.alarm.before");
+ 			await host.alarm();
++			trace("host.alarm.after");
+ 			if (
+ 				this.joinHold &&
+ 				this.ctx.storage.sql
+@@ -596,37 +603,72 @@
+ 					.toArray().length === 1
+ 			) {
+ 				this.joinHold.mark();
++				trace("joinHold.before");
+ 				await this.joinHold.released;
++				trace("joinHold.after");
+ 			}
++			trace("joinInvocation.before");
+ 			await host.joinInvocation();
++			trace("joinInvocation.after");
+ 		})();
++		trace("alarmCompletion.before");
+ 		await this.alarmCompletion;
++		trace("alarmCompletion.after");
+ 	}
+ 	async retireFixture() {
++		const start = Date.now();
++		const trace = (boundary: string) => console.log("[008-queued-sequence]", "retire", boundary, Date.now(), Date.now() - start, this.candidateBoot, !!this.host, this.retired);
++		trace("enter");
+ 		this.retired = true;
++		trace("alarmCompletion.before");
+ 		await this.alarmCompletion;
++		trace("alarmCompletion.after");
+ 		if (this.host) {
++			trace("yield.before");
+ 			await this.host.yield();
++			trace("yield.after");
++			trace("closure.before");
+ 			await this.host.awaitClosure();
++			trace("closure.after");
+ 			this.host = undefined;
+ 		}
++		trace("deleteAlarm.before");
+ 		await this.ctx.storage.deleteAlarm();
++		trace("deleteAlarm.after");
++		trace("sync.before");
+ 		await this.ctx.storage.sync();
++		trace("sync.after");
+ 	}
+ 	async reopenFixture() {
++		const start = Date.now();
++		const trace = (boundary: string) => console.log("[008-queued-sequence]", "reopen", boundary, Date.now(), Date.now() - start, this.candidateBoot, !!this.host, this.retired);
++		trace("enter");
+ 		this.retired = true;
+ 		try {
++			trace("alarmCompletion.before");
+ 			await this.alarmCompletion;
++			trace("alarmCompletion.after");
+ 			if (this.host) {
++				trace("yield.before");
+ 				await this.host.yield();
++				trace("yield.after");
++				trace("closure.before");
+ 				await this.host.awaitClosure();
++				trace("closure.after");
+ 				this.host = undefined;
+ 			}
++			trace("activate.before");
+ 			await this.activate();
++			trace("activate.after");
+ 		} finally {
+ 			this.retired = false;
+ 		}
+-		await (await this.activate()).repairWakeup();
++		trace("activate.repair.before");
++		const host = await this.activate();
++		trace("activate.repair.after");
++		trace("repairWakeup.before");
++		await host.repairWakeup();
++		trace("repairWakeup.after");
+ 	}
+ 	async candidateSnapshot() {
+ 		if (!this.host) await this.activate();
+--- a/apps/credential-tests/src/product-commands.worker.test.ts
++++ b/apps/credential-tests/src/product-commands.worker.test.ts
+@@ -1464,7 +1464,12 @@
+ });
+ 
+ it("queued configuration uses the next selection across a sequence gap and preserves committed preparation", async () => {
++	const traceStart = Date.now();
++	const trace = (boundary: string) => console.log("[008-queued-sequence]", "test", boundary, Date.now(), Date.now() - traceStart);
++	trace("credential.before");
+ 	const credential = await candidateCredential();
++	trace("credential.after");
++	trace("capability.before");
+ 	await env.DB.prepare(
+ 		"UPDATE codex_fixture_capabilities SET snapshot=? WHERE userId='owner'",
+ 	)
+@@ -1478,8 +1483,12 @@
+ 			}),
+ 		)
+ 		.run();
+-	const calls = modelReplies();
++	trace("capability.after");
++	const calls = modelReplies();
++	trace("admit.first.before");
+ 	const first = await env.CandidateProduct.admitOwned("owner", prompt);
++	trace("admit.first.after");
++	trace("admit.second.before");
+ 	const second = await env.CandidateProduct.admitOwned("owner", {
+ 		version: 2,
+ 		kind: "follow_up",
+@@ -1489,6 +1498,8 @@
+ 		idempotencyKey: "queued-config-second",
+ 		text: "Synthetic queued second",
+ 	});
++	trace("admit.second.after");
++	trace("admit.third.before");
+ 	const third = await env.CandidateProduct.admitOwned("owner", {
+ 		version: 2,
+ 		kind: "follow_up",
+@@ -1498,10 +1509,16 @@
+ 		idempotencyKey: "queued-config-third",
+ 		text: "Synthetic queued third",
+ 	});
++	trace("admit.third.after");
+ 	const runtime = env.CandidateSessions.getByName(first.workspaceSessionId);
+ 	try {
++		trace("deliver.third.before");
+ 		await runtime.deliverCommand(third.commandId, 1);
++		trace("deliver.third.after");
++		trace("deliver.first.before");
+ 		await runtime.deliverCommand(first.commandId, 1);
++		trace("deliver.first.after");
++		trace("poll.first.before");
+ 		await expect
+ 			.poll(
+ 				async () =>
+@@ -1509,16 +1526,24 @@
+ 				{ timeout: 3000 },
+ 			)
+ 			.toEqual(["complete", "pending"]);
++		trace("poll.first.after");
++		trace("request.first.before");
+ 		const prepared = parseSyntheticModelRequestV1(
+ 			await credential.candidateFinalRequest(),
+ 		);
++		trace("request.first.after");
+ 		expect(JSON.parse(prepared.body)).toMatchObject({ model: "faux-1" });
++		trace("task.read.before");
+ 		const task = await runInDurableObject(runtime, (_instance, state) =>
+ 			state.storage.sql
+ 				.exec("SELECT task,prepared,selection FROM host_tasks ORDER BY task")
+ 				.toArray(),
+ 		);
++		trace("task.read.after");
++		trace("reopen.before");
+ 		await runtime.reopenFixture();
++		trace("reopen.after");
++		trace("configure.before");
+ 		expect(
+ 			await runtime.configureFixture(
+ 				{
+@@ -1532,6 +1557,8 @@
+ 				first.commandId,
+ 			),
+ 		).toMatchObject({ status: "applied" });
++		trace("configure.after");
++		trace("task.compare.before");
+ 		expect(
+ 			await runInDurableObject(runtime, (_instance, state) =>
+ 				state.storage.sql
+@@ -1539,7 +1566,11 @@
+ 					.toArray(),
+ 			),
+ 		).toEqual(task);
++		trace("task.compare.after");
++		trace("deliver.second.before");
+ 		await runtime.deliverCommand(second.commandId, 1);
++		trace("deliver.second.after");
++		trace("poll.final.before");
+ 		await expect
+ 			.poll(
+ 				async () =>
+@@ -1547,15 +1578,21 @@
+ 				{ timeout: 3000 },
+ 			)
+ 			.toEqual(["complete", "complete", "complete"]);
++		trace("poll.final.after");
++		trace("request.final.before");
+ 		expect(
+ 			JSON.parse(
+ 				parseSyntheticModelRequestV1(await credential.candidateFinalRequest())
+ 					.body,
+ 			),
+ 		).toMatchObject({ model: "faux-2" });
++		trace("request.final.after");
+ 		expect(calls()).toBe(3);
+-	} finally {
+-		await runtime.retireFixture();
++		trace("assertions.complete");
++	} finally {
++		trace("retire.before");
++		await runtime.retireFixture();
++		trace("retire.after");
+ 	}
+ });
+ 

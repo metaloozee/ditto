@@ -1,0 +1,30 @@
+{
+  "head": "2487d56291fb6196672b36cd9f9c632ef2dfa9c5",
+  "staged": [],
+  "sourceFiles": 37,
+  "changedThisExecutor": [
+    "apps/credential-tests/src/entry.ts",
+    "apps/credential-tests/src/model-entry.ts",
+    "apps/credential-tests/src/product-commands.worker.test.ts"
+  ],
+  "untouchedSourceFiles": 34,
+  "archivedEntryEvidenceCompared": 15,
+  "entryEvidenceMismatches": [],
+  "priorEvidenceCurrentFiles": 215,
+  "advisorProbes": {
+    "plans/evidence/artifacts/008/advisor-current/runtime-probes.config.ts": "caf81499a02150b0418ea9efbf0e179ffa31fba3209c0c76dc9006c046c4370d",
+    "plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts": "850985d962933b008e40bdaf300981fdd90cd7dff9b285bddc2ac74bfc4f1ef5",
+    "plans/evidence/artifacts/008/advisor-current/runtime-probes.log": "a170f54efff5f4a86a1659795491b8fcad0c48c4c15efa536cae9de3ae1e3c69"
+  },
+  "archives": {
+    "final-intended-source.tar.gz": "0a92bede0e0b3f8d216c8d9ecf1e3b9c1d5e492236865684bcd1ff0c41781d49",
+    "preserved-source-evidence.tar.gz": "b5b914689f075e14270511c293a7d082ef797495edc994a1c79ae6ef82f59d7a"
+  },
+  "intentionalEvidenceDocumentUpdates": [
+    {
+      "path": "plans/evidence/008-product-commands.md",
+      "entryPrefixByteIdentical": true,
+      "change": "chronological evidence appended"
+    }
+  ]
+}

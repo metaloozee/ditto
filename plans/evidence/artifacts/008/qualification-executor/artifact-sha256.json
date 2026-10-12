@@ -1,0 +1,19 @@
+{
+  "plans/evidence/artifacts/008/qualification-executor/advisor-probes.log": "fa52a1e8f0939d8d94012d16962eab157f7b34822467ba82b1faaeff1dc10eed",
+  "plans/evidence/artifacts/008/qualification-executor/baseline-meta.json": "ca0282278156b944c1d0cde62d08e2b565b6d07934c425f663e6be52da5c3729",
+  "plans/evidence/artifacts/008/qualification-executor/baseline-sha256.json": "4cd12861b244a4ec2fa2da8bbecfcfe62d705a7e462ebdb0a5b1e0ba7a1dcdcf",
+  "plans/evidence/artifacts/008/qualification-executor/baseline-source.tar.gz": "fa9408ba99b23d8256832feee587a2358c221a9f943ae0f2c5e87ec3c80a5b30",
+  "plans/evidence/artifacts/008/qualification-executor/baseline.patch": "e10122ef806eba4d571f39099ce7c2b68bcfc44ff726f7dbec7f9d6674aa64f6",
+  "plans/evidence/artifacts/008/qualification-executor/observations.json": "44c066d422c708aaebc259cca84f64fa3759ddd11df18d5b9a9cd95dd77fd718",
+  "plans/evidence/artifacts/008/qualification-executor/preserved-evidence-sha256.json": "dcacd6c23e305be2a3a6ae0d9ad0b4e7b56b88e6363992836205a8971bdfd2cb",
+  "plans/evidence/artifacts/008/qualification-executor/qualification-b-run-1.log": "836e1af21384f33684bfe85c369b7ed71c6b3fe12589fc24816bc7f99f8158b8",
+  "plans/evidence/artifacts/008/qualification-executor/qualification-entry.ts": "7f8e5b01e73f19eb37639de376e00839b0aaee94b24d435e472e3ccf56f0dae5",
+  "plans/evidence/artifacts/008/qualification-executor/qualification-run-1.log": "dc4422097ba69e23f2591926153b7c8ccbd3cd703d742dcc821fb4a9e3cc6c6b",
+  "plans/evidence/artifacts/008/qualification-executor/qualification.config.ts": "9b0fa9eb7e4ac04993808788a80b756488b147804819dfafd6bc5441b17a117c",
+  "plans/evidence/artifacts/008/qualification-executor/qualification.worker.test.ts": "98433855f6a4bc6d531195f07a5d45a101730cc86a463934fdea2ac2e73b7eed",
+  "plans/evidence/artifacts/008/qualification-executor/source-preservation.json": "7ed788ca058add44cfd8e7c342a011c36a0f7bd478a4d6f4de86cabb8e7ac05f",
+  "plans/evidence/artifacts/008/qualification-executor/toolchain-resolved.json": "6f37038761d9cd61b6c8a916fb893db0153fff05e899e3d5ef064f47766e3256",
+  "plans/evidence/artifacts/008/qualification-executor/toolchain.cjs": "bb441fde3ffac57ff6225f4627c61e745f3d4d3bc32ec3baaa0e0a24de6e8839",
+  "plans/evidence/artifacts/008/qualification-executor/toolchain.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "plans/evidence/008-fixture-reset-qualification.md": "e71c7e8e0196bb7f8784e7f16114a186ad8f3f4af3f60bdd65690db2bee8029e"
+}

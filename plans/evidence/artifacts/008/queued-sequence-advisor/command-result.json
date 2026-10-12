@@ -1,0 +1,18 @@
+{
+  "cwd": "/home/ayan/ditto-execution/plan-008-4WXvNW",
+  "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts -t 'owned authority|settles final-hold|credential-local .*barrier|private fixture reset preserves|private fixture recovery activates|generation-2 admission|credential-local final gate|priority Stop through transport beats held default|queued configuration|real D1 lost started|real admitted Stop repairs candidate-control-intent'",
+  "exit_code": 1,
+  "run_count": 1,
+  "outer_timeout_seconds": 180,
+  "test_timeout_ms": 5000,
+  "reported_start": "13:46:35",
+  "reported_duration_seconds": 43.75,
+  "passed": 9,
+  "failed": 1,
+  "filtered": 42,
+  "selected_unreached": 5,
+  "isolation_errors": 1,
+  "queued_stage_events": 0,
+  "additional_runs": 0,
+  "typechecks_or_aggregates": 0
+}

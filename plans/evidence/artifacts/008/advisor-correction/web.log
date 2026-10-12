@@ -1,0 +1,38 @@
+Warning: Route file "/home/ayan/ditto-execution/plan-008-4WXvNW/apps/web/src/routes/project.$projectId.test.tsx" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-execution/plan-008-4WXvNW/apps/web/src/routes/-project.$projectId.test.tsx" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-execution/plan-008-4WXvNW/apps/web/src/routes/api.agent.control.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-execution/plan-008-4WXvNW/apps/web/src/routes/-api.agent.control.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+Warning: Route file "/home/ayan/ditto-execution/plan-008-4WXvNW/apps/web/src/routes/api.agent.stream.test.ts" does not export a Route. This file will not be included in the route tree.
+
+If this file is not intended to be a route, you can exclude it using one of these options:
+  1. Rename the file to "/home/ayan/ditto-execution/plan-008-4WXvNW/apps/web/src/routes/-api.agent.stream.test.ts" (prefix with "-")
+  2. Use 'routeFileIgnorePattern' in your config to match this file
+
+Current configuration:
+  routeFileIgnorePrefix: "-"
+  routeFileIgnorePattern: undefined
+
+ RUN  v4.1.10 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/web
+
+ ✓ src/lib/workspace-runtime.test.ts (14 tests) 31ms
+ ✓ src/server.test.ts (14 tests) 179ms
+
+ Test Files  2 passed (2)
+      Tests  28 passed (28)
+   Start at  07:27:29
+   Duration  1.01s (transform 726ms, setup 0ms, import 1.45s, tests 210ms, environment 0ms)
+

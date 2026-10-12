@@ -1,0 +1,599 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+stdout | src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+TEMP-008-substage {"boundary":"entry","completed":"entry","claimed":null,"yieldRemaining":670,"operationRemaining":59768,"aborted":false}
+TEMP-008-substage {"boundary":"beforeAuthority","completed":"reservedReceipt","claimed":0,"yieldRemaining":669,"operationRemaining":59767,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+TEMP-008-substage {"boundary":"afterAuthority/beforeGetTask","completed":"authority","claimed":0,"yieldRemaining":655,"operationRemaining":59753,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+TEMP-008-substage {"boundary":"afterGetTask","completed":"getTask","claimed":0,"yieldRemaining":655,"operationRemaining":59753,"aborted":false}
+TEMP-008-substage {"boundary":"beforeSealConsumption","completed":"getTask","claimed":0,"yieldRemaining":655,"operationRemaining":59753,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+TEMP-008-substage {"boundary":"afterSealConsumption/beforeFirstPermit","completed":"sealConsumption","claimed":0,"yieldRemaining":655,"operationRemaining":59753,"aborted":false}
+TEMP-008-substage {"boundary":"afterFirstPermit/beforeConsumption","completed":"firstDispatchPermit","claimed":0,"yieldRemaining":654,"operationRemaining":59752,"aborted":false}
+TEMP-008-substage {"boundary":"afterConsumption","completed":"consumedTransition","claimed":1,"yieldRemaining":654,"operationRemaining":59752,"aborted":false}
+TEMP-008-substage {"boundary":"beforeDurable","completed":"consumedTransition","claimed":1,"yieldRemaining":654,"operationRemaining":59752,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+TEMP-008-substage {"boundary":"afterDurable/beforeProductCheck","completed":"durable","claimed":1,"yieldRemaining":649,"operationRemaining":59747,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+TEMP-008-substage {"boundary":"afterProductCheck/beforeFreshAuthority","completed":"boundProductCheck","claimed":1,"yieldRemaining":632,"operationRemaining":59730,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+TEMP-008-substage {"boundary":"afterFreshAuthority","completed":"freshAuthority","claimed":1,"yieldRemaining":619,"operationRemaining":59717,"aborted":false}
+TEMP-008-substage {"boundary":"beforeFinalPermit","completed":"freshAuthority","claimed":1,"yieldRemaining":619,"operationRemaining":59717,"aborted":false}
+TEMP-008-substage {"boundary":"afterFinalPermit","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":619,"operationRemaining":59717,"aborted":false}
+TEMP-008-substage {"boundary":"settled","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":619,"operationRemaining":59717,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > settles final-hold preparation false when a real preclaim hold crosses the original host yield
+TEMP-008-substage {"boundary":"entry","completed":"entry","claimed":null,"yieldRemaining":-439,"operationRemaining":58645,"aborted":true}
+TEMP-008-substage {"boundary":"settled","completed":"entry","claimed":null,"yieldRemaining":-439,"operationRemaining":58645,"aborted":true}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+TEMP-008-substage {"boundary":"entry","completed":"entry","claimed":null,"yieldRemaining":503,"operationRemaining":59588,"aborted":false}
+TEMP-008-substage {"boundary":"beforeAuthority","completed":"reservedReceipt","claimed":0,"yieldRemaining":503,"operationRemaining":59588,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+TEMP-008-substage {"boundary":"afterAuthority/beforeGetTask","completed":"authority","claimed":0,"yieldRemaining":484,"operationRemaining":59569,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+TEMP-008-substage {"boundary":"afterGetTask","completed":"getTask","claimed":0,"yieldRemaining":483,"operationRemaining":59568,"aborted":false}
+TEMP-008-substage {"boundary":"beforeSealConsumption","completed":"getTask","claimed":0,"yieldRemaining":483,"operationRemaining":59568,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+TEMP-008-substage {"boundary":"afterSealConsumption/beforeFirstPermit","completed":"sealConsumption","claimed":0,"yieldRemaining":483,"operationRemaining":59568,"aborted":false}
+TEMP-008-substage {"boundary":"afterFirstPermit/beforeConsumption","completed":"firstDispatchPermit","claimed":0,"yieldRemaining":483,"operationRemaining":59568,"aborted":false}
+TEMP-008-substage {"boundary":"afterConsumption","completed":"consumedTransition","claimed":1,"yieldRemaining":482,"operationRemaining":59567,"aborted":false}
+TEMP-008-substage {"boundary":"beforeDurable","completed":"consumedTransition","claimed":1,"yieldRemaining":482,"operationRemaining":59567,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+TEMP-008-substage {"boundary":"afterDurable/beforeProductCheck","completed":"durable","claimed":1,"yieldRemaining":476,"operationRemaining":59561,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+TEMP-008-substage {"boundary":"afterProductCheck/beforeFreshAuthority","completed":"boundProductCheck","claimed":1,"yieldRemaining":455,"operationRemaining":59540,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+TEMP-008-substage {"boundary":"afterFreshAuthority","completed":"freshAuthority","claimed":1,"yieldRemaining":438,"operationRemaining":59523,"aborted":false}
+TEMP-008-substage {"boundary":"beforeFinalPermit","completed":"freshAuthority","claimed":1,"yieldRemaining":438,"operationRemaining":59523,"aborted":false}
+TEMP-008-substage {"boundary":"afterFinalPermit","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":438,"operationRemaining":59523,"aborted":false}
+TEMP-008-substage {"boundary":"settled","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":438,"operationRemaining":59523,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+TEMP-008-substage {"boundary":"entry","completed":"entry","claimed":null,"yieldRemaining":667,"operationRemaining":59760,"aborted":false}
+TEMP-008-substage {"boundary":"beforeAuthority","completed":"reservedReceipt","claimed":0,"yieldRemaining":667,"operationRemaining":59760,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+TEMP-008-substage {"boundary":"afterAuthority/beforeGetTask","completed":"authority","claimed":0,"yieldRemaining":647,"operationRemaining":59740,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+TEMP-008-substage {"boundary":"afterGetTask","completed":"getTask","claimed":0,"yieldRemaining":646,"operationRemaining":59739,"aborted":false}
+TEMP-008-substage {"boundary":"beforeSealConsumption","completed":"getTask","claimed":0,"yieldRemaining":646,"operationRemaining":59739,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+TEMP-008-substage {"boundary":"afterSealConsumption/beforeFirstPermit","completed":"sealConsumption","claimed":0,"yieldRemaining":646,"operationRemaining":59739,"aborted":false}
+TEMP-008-substage {"boundary":"afterFirstPermit/beforeConsumption","completed":"firstDispatchPermit","claimed":0,"yieldRemaining":645,"operationRemaining":59738,"aborted":false}
+TEMP-008-substage {"boundary":"afterConsumption","completed":"consumedTransition","claimed":1,"yieldRemaining":645,"operationRemaining":59738,"aborted":false}
+TEMP-008-substage {"boundary":"beforeDurable","completed":"consumedTransition","claimed":1,"yieldRemaining":645,"operationRemaining":59738,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+TEMP-008-substage {"boundary":"afterDurable/beforeProductCheck","completed":"durable","claimed":1,"yieldRemaining":639,"operationRemaining":59732,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+TEMP-008-substage {"boundary":"afterProductCheck/beforeFreshAuthority","completed":"boundProductCheck","claimed":1,"yieldRemaining":615,"operationRemaining":59708,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+TEMP-008-substage {"boundary":"afterFreshAuthority","completed":"freshAuthority","claimed":1,"yieldRemaining":598,"operationRemaining":59691,"aborted":false}
+TEMP-008-substage {"boundary":"beforeFinalPermit","completed":"freshAuthority","claimed":1,"yieldRemaining":598,"operationRemaining":59691,"aborted":false}
+TEMP-008-substage {"boundary":"afterFinalPermit","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":597,"operationRemaining":59690,"aborted":false}
+TEMP-008-substage {"boundary":"settled","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":597,"operationRemaining":59690,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+TEMP-008-substage {"boundary":"entry","completed":"entry","claimed":null,"yieldRemaining":640,"operationRemaining":59737,"aborted":false}
+TEMP-008-substage {"boundary":"beforeAuthority","completed":"reservedReceipt","claimed":0,"yieldRemaining":640,"operationRemaining":59737,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+TEMP-008-substage {"boundary":"afterAuthority/beforeGetTask","completed":"authority","claimed":0,"yieldRemaining":618,"operationRemaining":59715,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+TEMP-008-substage {"boundary":"afterGetTask","completed":"getTask","claimed":0,"yieldRemaining":617,"operationRemaining":59714,"aborted":false}
+TEMP-008-substage {"boundary":"beforeSealConsumption","completed":"getTask","claimed":0,"yieldRemaining":617,"operationRemaining":59714,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+TEMP-008-substage {"boundary":"afterSealConsumption/beforeFirstPermit","completed":"sealConsumption","claimed":0,"yieldRemaining":617,"operationRemaining":59714,"aborted":false}
+TEMP-008-substage {"boundary":"afterFirstPermit/beforeConsumption","completed":"firstDispatchPermit","claimed":0,"yieldRemaining":616,"operationRemaining":59713,"aborted":false}
+TEMP-008-substage {"boundary":"afterConsumption","completed":"consumedTransition","claimed":1,"yieldRemaining":616,"operationRemaining":59713,"aborted":false}
+TEMP-008-substage {"boundary":"beforeDurable","completed":"consumedTransition","claimed":1,"yieldRemaining":616,"operationRemaining":59713,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+TEMP-008-substage {"boundary":"afterDurable/beforeProductCheck","completed":"durable","claimed":1,"yieldRemaining":609,"operationRemaining":59706,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+TEMP-008-substage {"boundary":"afterProductCheck/beforeFreshAuthority","completed":"boundProductCheck","claimed":1,"yieldRemaining":586,"operationRemaining":59683,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+TEMP-008-substage {"boundary":"afterFreshAuthority","completed":"freshAuthority","claimed":1,"yieldRemaining":570,"operationRemaining":59667,"aborted":false}
+TEMP-008-substage {"boundary":"beforeFinalPermit","completed":"freshAuthority","claimed":1,"yieldRemaining":570,"operationRemaining":59667,"aborted":false}
+TEMP-008-substage {"boundary":"afterFinalPermit","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":569,"operationRemaining":59666,"aborted":false}
+TEMP-008-substage {"boundary":"settled","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":569,"operationRemaining":59666,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > lost delivery acknowledgment and new product invocation retain the receipt and one Pi submission
+TEMP-008-substage {"boundary":"entry","completed":"entry","claimed":null,"yieldRemaining":649,"operationRemaining":59749,"aborted":false}
+TEMP-008-substage {"boundary":"beforeAuthority","completed":"reservedReceipt","claimed":0,"yieldRemaining":649,"operationRemaining":59749,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > lost delivery acknowledgment and new product invocation retain the receipt and one Pi submission
+TEMP-008-substage {"boundary":"afterAuthority/beforeGetTask","completed":"authority","claimed":0,"yieldRemaining":623,"operationRemaining":59723,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > lost delivery acknowledgment and new product invocation retain the receipt and one Pi submission
+TEMP-008-substage {"boundary":"afterGetTask","completed":"getTask","claimed":0,"yieldRemaining":622,"operationRemaining":59722,"aborted":false}
+TEMP-008-substage {"boundary":"beforeSealConsumption","completed":"getTask","claimed":0,"yieldRemaining":622,"operationRemaining":59722,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > lost delivery acknowledgment and new product invocation retain the receipt and one Pi submission
+TEMP-008-substage {"boundary":"afterSealConsumption/beforeFirstPermit","completed":"sealConsumption","claimed":0,"yieldRemaining":622,"operationRemaining":59722,"aborted":false}
+TEMP-008-substage {"boundary":"afterFirstPermit/beforeConsumption","completed":"firstDispatchPermit","claimed":0,"yieldRemaining":622,"operationRemaining":59722,"aborted":false}
+TEMP-008-substage {"boundary":"afterConsumption","completed":"consumedTransition","claimed":1,"yieldRemaining":622,"operationRemaining":59722,"aborted":false}
+TEMP-008-substage {"boundary":"beforeDurable","completed":"consumedTransition","claimed":1,"yieldRemaining":622,"operationRemaining":59722,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > lost delivery acknowledgment and new product invocation retain the receipt and one Pi submission
+TEMP-008-substage {"boundary":"afterDurable/beforeProductCheck","completed":"durable","claimed":1,"yieldRemaining":616,"operationRemaining":59716,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > lost delivery acknowledgment and new product invocation retain the receipt and one Pi submission
+TEMP-008-substage {"boundary":"afterProductCheck/beforeFreshAuthority","completed":"boundProductCheck","claimed":1,"yieldRemaining":591,"operationRemaining":59691,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > lost delivery acknowledgment and new product invocation retain the receipt and one Pi submission
+TEMP-008-substage {"boundary":"afterFreshAuthority","completed":"freshAuthority","claimed":1,"yieldRemaining":572,"operationRemaining":59672,"aborted":false}
+TEMP-008-substage {"boundary":"beforeFinalPermit","completed":"freshAuthority","claimed":1,"yieldRemaining":572,"operationRemaining":59672,"aborted":false}
+TEMP-008-substage {"boundary":"afterFinalPermit","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":572,"operationRemaining":59672,"aborted":false}
+TEMP-008-substage {"boundary":"settled","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":572,"operationRemaining":59672,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > a follow-up admitted before completion but delivered afterward fails its own assistant without reopening the completed run
+TEMP-008-substage {"boundary":"entry","completed":"entry","claimed":null,"yieldRemaining":429,"operationRemaining":59545,"aborted":false}
+TEMP-008-substage {"boundary":"beforeAuthority","completed":"reservedReceipt","claimed":0,"yieldRemaining":428,"operationRemaining":59544,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > a follow-up admitted before completion but delivered afterward fails its own assistant without reopening the completed run
+TEMP-008-substage {"boundary":"afterAuthority/beforeGetTask","completed":"authority","claimed":0,"yieldRemaining":394,"operationRemaining":59510,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > a follow-up admitted before completion but delivered afterward fails its own assistant without reopening the completed run
+TEMP-008-substage {"boundary":"afterGetTask","completed":"getTask","claimed":0,"yieldRemaining":393,"operationRemaining":59509,"aborted":false}
+TEMP-008-substage {"boundary":"beforeSealConsumption","completed":"getTask","claimed":0,"yieldRemaining":393,"operationRemaining":59509,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > a follow-up admitted before completion but delivered afterward fails its own assistant without reopening the completed run
+TEMP-008-substage {"boundary":"afterSealConsumption/beforeFirstPermit","completed":"sealConsumption","claimed":0,"yieldRemaining":393,"operationRemaining":59509,"aborted":false}
+TEMP-008-substage {"boundary":"afterFirstPermit/beforeConsumption","completed":"firstDispatchPermit","claimed":0,"yieldRemaining":393,"operationRemaining":59509,"aborted":false}
+TEMP-008-substage {"boundary":"afterConsumption","completed":"consumedTransition","claimed":1,"yieldRemaining":393,"operationRemaining":59509,"aborted":false}
+TEMP-008-substage {"boundary":"beforeDurable","completed":"consumedTransition","claimed":1,"yieldRemaining":393,"operationRemaining":59509,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > a follow-up admitted before completion but delivered afterward fails its own assistant without reopening the completed run
+TEMP-008-substage {"boundary":"afterDurable/beforeProductCheck","completed":"durable","claimed":1,"yieldRemaining":387,"operationRemaining":59503,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > a follow-up admitted before completion but delivered afterward fails its own assistant without reopening the completed run
+TEMP-008-substage {"boundary":"afterProductCheck/beforeFreshAuthority","completed":"boundProductCheck","claimed":1,"yieldRemaining":345,"operationRemaining":59461,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > a follow-up admitted before completion but delivered afterward fails its own assistant without reopening the completed run
+TEMP-008-substage {"boundary":"afterFreshAuthority","completed":"freshAuthority","claimed":1,"yieldRemaining":312,"operationRemaining":59428,"aborted":false}
+TEMP-008-substage {"boundary":"beforeFinalPermit","completed":"freshAuthority","claimed":1,"yieldRemaining":312,"operationRemaining":59428,"aborted":false}
+TEMP-008-substage {"boundary":"afterFinalPermit","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":311,"operationRemaining":59427,"aborted":false}
+TEMP-008-substage {"boundary":"settled","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":311,"operationRemaining":59427,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > priority Stop fences a held credential claim without ordinary capacity or a second provider dispatch
+TEMP-008-substage {"boundary":"entry","completed":"entry","claimed":null,"yieldRemaining":216,"operationRemaining":59358,"aborted":true}
+TEMP-008-substage {"boundary":"settled","completed":"entry","claimed":null,"yieldRemaining":216,"operationRemaining":59358,"aborted":true}
+
+stdout | src/product-commands.worker.test.ts > product cancellation reconstructs a missing follow-up and closes its sequence without skipping the initial prompt
+TEMP-008-substage {"boundary":"entry","completed":"entry","claimed":null,"yieldRemaining":503,"operationRemaining":59646,"aborted":false}
+TEMP-008-substage {"boundary":"beforeAuthority","completed":"reservedReceipt","claimed":0,"yieldRemaining":502,"operationRemaining":59645,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > product cancellation reconstructs a missing follow-up and closes its sequence without skipping the initial prompt
+TEMP-008-substage {"boundary":"afterAuthority/beforeGetTask","completed":"authority","claimed":0,"yieldRemaining":457,"operationRemaining":59600,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > product cancellation reconstructs a missing follow-up and closes its sequence without skipping the initial prompt
+TEMP-008-substage {"boundary":"afterGetTask","completed":"getTask","claimed":0,"yieldRemaining":457,"operationRemaining":59600,"aborted":false}
+TEMP-008-substage {"boundary":"beforeSealConsumption","completed":"getTask","claimed":0,"yieldRemaining":457,"operationRemaining":59600,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > product cancellation reconstructs a missing follow-up and closes its sequence without skipping the initial prompt
+TEMP-008-substage {"boundary":"afterSealConsumption/beforeFirstPermit","completed":"sealConsumption","claimed":0,"yieldRemaining":456,"operationRemaining":59599,"aborted":false}
+TEMP-008-substage {"boundary":"afterFirstPermit/beforeConsumption","completed":"firstDispatchPermit","claimed":0,"yieldRemaining":456,"operationRemaining":59599,"aborted":false}
+TEMP-008-substage {"boundary":"afterConsumption","completed":"consumedTransition","claimed":1,"yieldRemaining":456,"operationRemaining":59599,"aborted":false}
+TEMP-008-substage {"boundary":"beforeDurable","completed":"consumedTransition","claimed":1,"yieldRemaining":456,"operationRemaining":59599,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > product cancellation reconstructs a missing follow-up and closes its sequence without skipping the initial prompt
+TEMP-008-substage {"boundary":"afterDurable/beforeProductCheck","completed":"durable","claimed":1,"yieldRemaining":451,"operationRemaining":59594,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > product cancellation reconstructs a missing follow-up and closes its sequence without skipping the initial prompt
+TEMP-008-substage {"boundary":"afterProductCheck/beforeFreshAuthority","completed":"boundProductCheck","claimed":1,"yieldRemaining":400,"operationRemaining":59543,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > product cancellation reconstructs a missing follow-up and closes its sequence without skipping the initial prompt
+TEMP-008-substage {"boundary":"afterFreshAuthority","completed":"freshAuthority","claimed":1,"yieldRemaining":355,"operationRemaining":59498,"aborted":false}
+TEMP-008-substage {"boundary":"beforeFinalPermit","completed":"freshAuthority","claimed":1,"yieldRemaining":355,"operationRemaining":59498,"aborted":false}
+TEMP-008-substage {"boundary":"afterFinalPermit","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":354,"operationRemaining":59497,"aborted":false}
+TEMP-008-substage {"boundary":"settled","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":354,"operationRemaining":59497,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local acknowledged barrier denies a held real positive final permit after host claim
+TEMP-008-substage {"boundary":"entry","completed":"entry","claimed":null,"yieldRemaining":434,"operationRemaining":59598,"aborted":false}
+TEMP-008-substage {"boundary":"beforeAuthority","completed":"reservedReceipt","claimed":0,"yieldRemaining":434,"operationRemaining":59598,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local acknowledged barrier denies a held real positive final permit after host claim
+TEMP-008-substage {"boundary":"afterAuthority/beforeGetTask","completed":"authority","claimed":0,"yieldRemaining":380,"operationRemaining":59544,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local acknowledged barrier denies a held real positive final permit after host claim
+TEMP-008-substage {"boundary":"afterGetTask","completed":"getTask","claimed":0,"yieldRemaining":380,"operationRemaining":59544,"aborted":false}
+TEMP-008-substage {"boundary":"beforeSealConsumption","completed":"getTask","claimed":0,"yieldRemaining":379,"operationRemaining":59543,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local acknowledged barrier denies a held real positive final permit after host claim
+TEMP-008-substage {"boundary":"afterSealConsumption/beforeFirstPermit","completed":"sealConsumption","claimed":0,"yieldRemaining":379,"operationRemaining":59543,"aborted":false}
+TEMP-008-substage {"boundary":"afterFirstPermit/beforeConsumption","completed":"firstDispatchPermit","claimed":0,"yieldRemaining":379,"operationRemaining":59543,"aborted":false}
+TEMP-008-substage {"boundary":"afterConsumption","completed":"consumedTransition","claimed":1,"yieldRemaining":379,"operationRemaining":59543,"aborted":false}
+TEMP-008-substage {"boundary":"beforeDurable","completed":"consumedTransition","claimed":1,"yieldRemaining":379,"operationRemaining":59543,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local acknowledged barrier denies a held real positive final permit after host claim
+TEMP-008-substage {"boundary":"afterDurable/beforeProductCheck","completed":"durable","claimed":1,"yieldRemaining":373,"operationRemaining":59537,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local acknowledged barrier denies a held real positive final permit after host claim
+TEMP-008-substage {"boundary":"afterProductCheck/beforeFreshAuthority","completed":"boundProductCheck","claimed":1,"yieldRemaining":314,"operationRemaining":59478,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local acknowledged barrier denies a held real positive final permit after host claim
+TEMP-008-substage {"boundary":"afterFreshAuthority","completed":"freshAuthority","claimed":1,"yieldRemaining":263,"operationRemaining":59427,"aborted":false}
+TEMP-008-substage {"boundary":"beforeFinalPermit","completed":"freshAuthority","claimed":1,"yieldRemaining":262,"operationRemaining":59426,"aborted":false}
+TEMP-008-substage {"boundary":"afterFinalPermit","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":262,"operationRemaining":59426,"aborted":false}
+TEMP-008-substage {"boundary":"settled","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":262,"operationRemaining":59426,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local lost-ack barrier denies a held real positive final permit after host claim
+TEMP-008-substage {"boundary":"entry","completed":"entry","claimed":null,"yieldRemaining":411,"operationRemaining":59584,"aborted":false}
+TEMP-008-substage {"boundary":"beforeAuthority","completed":"reservedReceipt","claimed":0,"yieldRemaining":411,"operationRemaining":59584,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local lost-ack barrier denies a held real positive final permit after host claim
+TEMP-008-substage {"boundary":"afterAuthority/beforeGetTask","completed":"authority","claimed":0,"yieldRemaining":352,"operationRemaining":59525,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local lost-ack barrier denies a held real positive final permit after host claim
+TEMP-008-substage {"boundary":"afterGetTask","completed":"getTask","claimed":0,"yieldRemaining":351,"operationRemaining":59524,"aborted":false}
+TEMP-008-substage {"boundary":"beforeSealConsumption","completed":"getTask","claimed":0,"yieldRemaining":351,"operationRemaining":59524,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local lost-ack barrier denies a held real positive final permit after host claim
+TEMP-008-substage {"boundary":"afterSealConsumption/beforeFirstPermit","completed":"sealConsumption","claimed":0,"yieldRemaining":351,"operationRemaining":59524,"aborted":false}
+TEMP-008-substage {"boundary":"afterFirstPermit/beforeConsumption","completed":"firstDispatchPermit","claimed":0,"yieldRemaining":351,"operationRemaining":59524,"aborted":false}
+TEMP-008-substage {"boundary":"afterConsumption","completed":"consumedTransition","claimed":1,"yieldRemaining":350,"operationRemaining":59523,"aborted":false}
+TEMP-008-substage {"boundary":"beforeDurable","completed":"consumedTransition","claimed":1,"yieldRemaining":350,"operationRemaining":59523,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local lost-ack barrier denies a held real positive final permit after host claim
+TEMP-008-substage {"boundary":"afterDurable/beforeProductCheck","completed":"durable","claimed":1,"yieldRemaining":345,"operationRemaining":59518,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local lost-ack barrier denies a held real positive final permit after host claim
+TEMP-008-substage {"boundary":"afterProductCheck/beforeFreshAuthority","completed":"boundProductCheck","claimed":1,"yieldRemaining":276,"operationRemaining":59449,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local lost-ack barrier denies a held real positive final permit after host claim
+TEMP-008-substage {"boundary":"afterFreshAuthority","completed":"freshAuthority","claimed":1,"yieldRemaining":216,"operationRemaining":59389,"aborted":false}
+TEMP-008-substage {"boundary":"beforeFinalPermit","completed":"freshAuthority","claimed":1,"yieldRemaining":215,"operationRemaining":59388,"aborted":false}
+TEMP-008-substage {"boundary":"afterFinalPermit","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":215,"operationRemaining":59388,"aborted":false}
+TEMP-008-substage {"boundary":"settled","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":215,"operationRemaining":59388,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+TEMP-008-substage {"boundary":"entry","completed":"entry","claimed":null,"yieldRemaining":387,"operationRemaining":59574,"aborted":false}
+TEMP-008-substage {"boundary":"beforeAuthority","completed":"reservedReceipt","claimed":0,"yieldRemaining":387,"operationRemaining":59574,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+TEMP-008-substage {"boundary":"afterAuthority/beforeGetTask","completed":"authority","claimed":0,"yieldRemaining":322,"operationRemaining":59509,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+TEMP-008-substage {"boundary":"afterGetTask","completed":"getTask","claimed":0,"yieldRemaining":321,"operationRemaining":59508,"aborted":false}
+TEMP-008-substage {"boundary":"beforeSealConsumption","completed":"getTask","claimed":0,"yieldRemaining":321,"operationRemaining":59508,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+TEMP-008-substage {"boundary":"afterSealConsumption/beforeFirstPermit","completed":"sealConsumption","claimed":0,"yieldRemaining":321,"operationRemaining":59508,"aborted":false}
+TEMP-008-substage {"boundary":"afterFirstPermit/beforeConsumption","completed":"firstDispatchPermit","claimed":0,"yieldRemaining":321,"operationRemaining":59508,"aborted":false}
+TEMP-008-substage {"boundary":"afterConsumption","completed":"consumedTransition","claimed":1,"yieldRemaining":320,"operationRemaining":59507,"aborted":false}
+TEMP-008-substage {"boundary":"beforeDurable","completed":"consumedTransition","claimed":1,"yieldRemaining":320,"operationRemaining":59507,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+TEMP-008-substage {"boundary":"afterDurable/beforeProductCheck","completed":"durable","claimed":1,"yieldRemaining":315,"operationRemaining":59502,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+TEMP-008-substage {"boundary":"afterProductCheck/beforeFreshAuthority","completed":"boundProductCheck","claimed":1,"yieldRemaining":244,"operationRemaining":59431,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+TEMP-008-substage {"boundary":"afterFreshAuthority","completed":"freshAuthority","claimed":1,"yieldRemaining":179,"operationRemaining":59366,"aborted":false}
+TEMP-008-substage {"boundary":"beforeFinalPermit","completed":"freshAuthority","claimed":1,"yieldRemaining":179,"operationRemaining":59366,"aborted":false}
+TEMP-008-substage {"boundary":"afterFinalPermit","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":178,"operationRemaining":59365,"aborted":false}
+TEMP-008-substage {"boundary":"settled","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":178,"operationRemaining":59365,"aborted":false}
+
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-credential-fence-replacement
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbb00 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbe50 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfca8e /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f03c2a /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0c760 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0cd90
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+TEMP-008-substage {"boundary":"entry","completed":"entry","claimed":null,"yieldRemaining":213,"operationRemaining":59404,"aborted":false}
+TEMP-008-substage {"boundary":"beforeAuthority","completed":"reservedReceipt","claimed":0,"yieldRemaining":213,"operationRemaining":59404,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+TEMP-008-substage {"boundary":"afterAuthority/beforeGetTask","completed":"authority","claimed":0,"yieldRemaining":124,"operationRemaining":59315,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+TEMP-008-substage {"boundary":"afterGetTask","completed":"getTask","claimed":0,"yieldRemaining":123,"operationRemaining":59314,"aborted":false}
+TEMP-008-substage {"boundary":"beforeSealConsumption","completed":"getTask","claimed":0,"yieldRemaining":123,"operationRemaining":59314,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+TEMP-008-substage {"boundary":"afterSealConsumption/beforeFirstPermit","completed":"sealConsumption","claimed":0,"yieldRemaining":122,"operationRemaining":59313,"aborted":false}
+TEMP-008-substage {"boundary":"afterFirstPermit/beforeConsumption","completed":"firstDispatchPermit","claimed":0,"yieldRemaining":122,"operationRemaining":59313,"aborted":false}
+TEMP-008-substage {"boundary":"afterConsumption","completed":"consumedTransition","claimed":1,"yieldRemaining":122,"operationRemaining":59313,"aborted":false}
+TEMP-008-substage {"boundary":"beforeDurable","completed":"consumedTransition","claimed":1,"yieldRemaining":122,"operationRemaining":59313,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+TEMP-008-substage {"boundary":"afterDurable/beforeProductCheck","completed":"durable","claimed":1,"yieldRemaining":117,"operationRemaining":59308,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+TEMP-008-substage {"boundary":"afterProductCheck/beforeFreshAuthority","completed":"boundProductCheck","claimed":1,"yieldRemaining":29,"operationRemaining":59220,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+TEMP-008-substage {"boundary":"settled","completed":"boundProductCheck","claimed":1,"yieldRemaining":-42,"operationRemaining":59149,"aborted":true}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+TEMP-008-substage {"boundary":"entry","completed":"entry","claimed":null,"yieldRemaining":260,"operationRemaining":59485,"aborted":false}
+TEMP-008-substage {"boundary":"beforeAuthority","completed":"reservedReceipt","claimed":0,"yieldRemaining":259,"operationRemaining":59484,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+TEMP-008-substage {"boundary":"afterAuthority/beforeGetTask","completed":"authority","claimed":0,"yieldRemaining":172,"operationRemaining":59397,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+TEMP-008-substage {"boundary":"afterGetTask","completed":"getTask","claimed":0,"yieldRemaining":171,"operationRemaining":59396,"aborted":false}
+TEMP-008-substage {"boundary":"beforeSealConsumption","completed":"getTask","claimed":0,"yieldRemaining":171,"operationRemaining":59396,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+TEMP-008-substage {"boundary":"afterSealConsumption/beforeFirstPermit","completed":"sealConsumption","claimed":0,"yieldRemaining":171,"operationRemaining":59396,"aborted":false}
+TEMP-008-substage {"boundary":"afterFirstPermit/beforeConsumption","completed":"firstDispatchPermit","claimed":0,"yieldRemaining":171,"operationRemaining":59396,"aborted":false}
+TEMP-008-substage {"boundary":"afterConsumption","completed":"consumedTransition","claimed":1,"yieldRemaining":170,"operationRemaining":59395,"aborted":false}
+TEMP-008-substage {"boundary":"beforeDurable","completed":"consumedTransition","claimed":1,"yieldRemaining":170,"operationRemaining":59395,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+TEMP-008-substage {"boundary":"afterDurable/beforeProductCheck","completed":"durable","claimed":1,"yieldRemaining":165,"operationRemaining":59390,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+TEMP-008-substage {"boundary":"afterProductCheck/beforeFreshAuthority","completed":"boundProductCheck","claimed":1,"yieldRemaining":76,"operationRemaining":59301,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+TEMP-008-substage {"boundary":"afterFreshAuthority","completed":"freshAuthority","claimed":1,"yieldRemaining":-10,"operationRemaining":59215,"aborted":false}
+TEMP-008-substage {"boundary":"beforeFinalPermit","completed":"freshAuthority","claimed":1,"yieldRemaining":-11,"operationRemaining":59214,"aborted":false}
+TEMP-008-substage {"boundary":"settled","completed":"freshAuthority","claimed":1,"yieldRemaining":-11,"operationRemaining":59214,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+TEMP-008-substage {"boundary":"entry","completed":"entry","claimed":null,"yieldRemaining":211,"operationRemaining":59452,"aborted":false}
+TEMP-008-substage {"boundary":"beforeAuthority","completed":"reservedReceipt","claimed":0,"yieldRemaining":211,"operationRemaining":59452,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+TEMP-008-substage {"boundary":"afterAuthority/beforeGetTask","completed":"authority","claimed":0,"yieldRemaining":118,"operationRemaining":59359,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+TEMP-008-substage {"boundary":"afterGetTask","completed":"getTask","claimed":0,"yieldRemaining":117,"operationRemaining":59358,"aborted":false}
+TEMP-008-substage {"boundary":"beforeSealConsumption","completed":"getTask","claimed":0,"yieldRemaining":117,"operationRemaining":59358,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+TEMP-008-substage {"boundary":"afterSealConsumption/beforeFirstPermit","completed":"sealConsumption","claimed":0,"yieldRemaining":117,"operationRemaining":59358,"aborted":false}
+TEMP-008-substage {"boundary":"afterFirstPermit/beforeConsumption","completed":"firstDispatchPermit","claimed":0,"yieldRemaining":117,"operationRemaining":59358,"aborted":false}
+TEMP-008-substage {"boundary":"afterConsumption","completed":"consumedTransition","claimed":1,"yieldRemaining":117,"operationRemaining":59358,"aborted":false}
+TEMP-008-substage {"boundary":"beforeDurable","completed":"consumedTransition","claimed":1,"yieldRemaining":117,"operationRemaining":59358,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+TEMP-008-substage {"boundary":"afterDurable/beforeProductCheck","completed":"durable","claimed":1,"yieldRemaining":112,"operationRemaining":59353,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+TEMP-008-substage {"boundary":"afterProductCheck/beforeFreshAuthority","completed":"boundProductCheck","claimed":1,"yieldRemaining":17,"operationRemaining":59258,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+TEMP-008-substage {"boundary":"settled","completed":"boundProductCheck","claimed":1,"yieldRemaining":-65,"operationRemaining":59176,"aborted":true}
+
+stdout | src/product-commands.worker.test.ts > credential-local final gate preserves the original positive permit window across a held response
+TEMP-008-substage {"boundary":"entry","completed":"entry","claimed":null,"yieldRemaining":194,"operationRemaining":59442,"aborted":false}
+TEMP-008-substage {"boundary":"beforeAuthority","completed":"reservedReceipt","claimed":0,"yieldRemaining":193,"operationRemaining":59441,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local final gate preserves the original positive permit window across a held response
+TEMP-008-substage {"boundary":"afterAuthority/beforeGetTask","completed":"authority","claimed":0,"yieldRemaining":89,"operationRemaining":59337,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local final gate preserves the original positive permit window across a held response
+TEMP-008-substage {"boundary":"afterGetTask","completed":"getTask","claimed":0,"yieldRemaining":88,"operationRemaining":59336,"aborted":false}
+TEMP-008-substage {"boundary":"beforeSealConsumption","completed":"getTask","claimed":0,"yieldRemaining":88,"operationRemaining":59336,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local final gate preserves the original positive permit window across a held response
+TEMP-008-substage {"boundary":"afterSealConsumption/beforeFirstPermit","completed":"sealConsumption","claimed":0,"yieldRemaining":88,"operationRemaining":59336,"aborted":false}
+TEMP-008-substage {"boundary":"afterFirstPermit/beforeConsumption","completed":"firstDispatchPermit","claimed":0,"yieldRemaining":88,"operationRemaining":59336,"aborted":false}
+TEMP-008-substage {"boundary":"afterConsumption","completed":"consumedTransition","claimed":1,"yieldRemaining":88,"operationRemaining":59336,"aborted":false}
+TEMP-008-substage {"boundary":"beforeDurable","completed":"consumedTransition","claimed":1,"yieldRemaining":88,"operationRemaining":59336,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local final gate preserves the original positive permit window across a held response
+TEMP-008-substage {"boundary":"afterDurable/beforeProductCheck","completed":"durable","claimed":1,"yieldRemaining":82,"operationRemaining":59330,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local final gate preserves the original positive permit window across a held response
+TEMP-008-substage {"boundary":"afterProductCheck/beforeFreshAuthority","completed":"boundProductCheck","claimed":1,"yieldRemaining":-18,"operationRemaining":59230,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > credential-local final gate preserves the original positive permit window across a held response
+TEMP-008-substage {"boundary":"settled","completed":"boundProductCheck","claimed":1,"yieldRemaining":-105,"operationRemaining":59143,"aborted":true}
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+TEMP-008-substage {"boundary":"entry","completed":"entry","claimed":null,"yieldRemaining":89,"operationRemaining":59365,"aborted":false}
+TEMP-008-substage {"boundary":"beforeAuthority","completed":"reservedReceipt","claimed":0,"yieldRemaining":89,"operationRemaining":59365,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+TEMP-008-substage {"boundary":"settled","completed":"reservedReceipt","claimed":0,"yieldRemaining":-19,"operationRemaining":59257,"aborted":true}
+
+stdout | src/product-commands.worker.test.ts > real D1 lost started acknowledgment retains one fate and the original queue deadline
+TEMP-008-substage {"boundary":"entry","completed":"entry","claimed":null,"yieldRemaining":-66,"operationRemaining":59267,"aborted":false}
+TEMP-008-substage {"boundary":"beforeAuthority","completed":"reservedReceipt","claimed":0,"yieldRemaining":-67,"operationRemaining":59266,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > real D1 lost started acknowledgment retains one fate and the original queue deadline
+TEMP-008-substage {"boundary":"settled","completed":"reservedReceipt","claimed":0,"yieldRemaining":-197,"operationRemaining":59136,"aborted":true}
+
+
+================================================================================
+Failed to pop isolated storage stack frame in src/product-commands.worker.test.ts's test "real admitted Stop repairs candidate-control-intent interruption and retains its epoch and projection".
+In particular, we were unable to pop D1 and Durable Objects storage.
+This usually means your Worker tried to access storage outside of a test, or some resources have not been disposed of properly.
+Ensure you "await" all Promises that read or write to these services, and make sure you use the "using" keyword when passing data across JSRPC.
+See https://developers.cloudflare.com/workers/testing/vitest-integration/known-issues/#isolated-storage for more details.
+[2m
+- AssertionError [ERR_ASSERTION]: Expected .sqlite, got /home/ayan/ditto-execution/plan-008-4WXvNW/.execution-008/tmp/miniflare-dce9bb15ff6c62b83b7749fdad2b3433/d1/miniflare-D1DatabaseObject/e7352547963de7050bd7d94658afc4fe78b61811b7815da12d90be8e863abf4d.sqlite-shm
+- AssertionError [ERR_ASSERTION]: Expected .sqlite, got /home/ayan/ditto-execution/plan-008-4WXvNW/.execution-008/tmp/miniflare-dce9bb15ff6c62b83b7749fdad2b3433/do/vitest-pool-workers-runner--CandidateFixtureCredential/00ae15680231b21ccf0ce34e5c9f4b12a77f42f4d916fb8a16ec174e946763d2.sqlite-shm
+[22m================================================================================
+
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Application called abortAllDurableObjects().
+    at PiDurableHost.assertRetainedGate (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-host.ts:608:20)
+    at PiDurableHost.open (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-host.ts:547:14)
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/jsg/_virtual_includes/iterator/workerd/jsg/value.h:1480: failed: jsg.Error: Application called abortAllDurableObjects().
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+Error running worker: AssertionError [ERR_ASSERTION]: Isolated storage failed. There should be additional logs above.
+    at new AssertionError (node-internal:internal_assertionerror:427:15)
+    at assert.strictEqual (node-internal:internal_assert:196:11)
+    at WorkersTestRunner.updateStackedStorage (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:133:12)
+    at WorkersTestRunner.onAfterRunSuite (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:171:5)
+    at runSuite (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1763:3)
+    at runFiles (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)
+    at startTests (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1820:3)
+    at home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:117:26
+    at withEnv (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:84:3)
+    at run (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:109:2)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+ FAIL  src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/product-commands.worker.test.ts:981:43
+    979|  try {
+    980|   await env.CandidateProduct.drain();
+    981|   expect(await credential.waitClaimAck()).toBe(true);
+       |                                           ^
+    982|   const before = await runtime.fixtureProof();
+    983|   expect(["active", "draining", "closed"]).toContain(
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/product-commands.worker.test.ts:1076:49
+    1074|   await env.CandidateProduct.drain();
+    1075|   await runtime.waitFixtureJoin();
+    1076|   expect(await credential.waitCandidateFinal()).toBe(true);
+       |                                                 ^
+    1077|   const descriptor = await credential.candidateFinalDescriptor();
+    1078|   const validRequest = await credential.candidateFinalRequest();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  src/product-commands.worker.test.ts > credential-local final gate preserves the original positive permit window across a held response
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/product-commands.worker.test.ts:1181:49
+    1179|    .run();
+    1180|   await credential.releaseModel();
+    1181|   expect(await credential.waitCandidateFinal()).toBe(true);
+       |                                                 ^
+    1182|   expect(await credential.candidateFinalDescriptor()).toBeDefined();
+    1183|   await new Promise((resolve) =>
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ FAIL  src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+Error: Matcher did not succeed in time.
+ ❯ src/product-commands.worker.test.ts:1277:5
+    1275|     { timeout: 3000 },
+    1276|    )
+    1277|    .toEqual(["complete", "pending"]);
+       |     ^
+    1278|   const prepared = parseSyntheticModelRequestV1(
+    1279|    await credential.candidateFinalRequest(),
+
+Caused by: AssertionError: expected [ 'failed', 'failed' ] to deeply equal [ 'complete', 'pending' ]
+
+- Expected
++ Received
+
+  [
+-   "complete",
+-   "pending",
++   "failed",
++   "failed",
+  ]
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯
+
+ FAIL  src/product-commands.worker.test.ts > real D1 lost started acknowledgment retains one fate and the original queue deadline
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/product-commands.worker.test.ts:1378:11
+    1376|  "started",
+    1377|  "expired",
+    1378| ] as const)("real D1 lost %s acknowledgment retains one fate and the o…
+       |           ^
+    1379|  const credential = await candidateCredential();
+    1380|  const calls = modelReplies();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/7]⎯
+
+ FAIL  src/product-commands.worker.test.ts > real admitted Stop repairs candidate-control-intent interruption and retains its epoch and projection
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/product-commands.worker.test.ts:1432:11
+    1430|  "candidate-control-intent",
+    1431|  "candidate-control-outcome",
+    1432| ] as const)("real admitted Stop repairs %s interruption and retains it…
+       |           ^
+    1433|  const credential = await candidateCredential();
+    1434|  const calls = modelReplies();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/7]⎯
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: Isolated storage failed. There should be additional logs above.
+ ❯ new AssertionError node-internal:internal_assertionerror:427:15
+ ❯ assert.strictEqual node-internal:internal_assert:196:11
+ ❯ WorkersTestRunner.updateStackedStorage home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:133:12
+ ❯ WorkersTestRunner.onAfterRunSuite home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:171:5
+ ❯ runSuite home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1763:3
+ ❯ runFiles home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3
+ ❯ startTests home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1820:3
+ ❯ home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:117:26
+ ❯ withEnv home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:84:3
+ ❯ run home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:109:2
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files   (1)
+      Tests  7 failed | 39 passed (54)
+     Errors  1 error
+   Start at  12:48:40
+   Duration  124.23s (transform 372ms, setup 0ms, collect 695ms, tests 0ms, environment 0ms, prepare 99ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/product-commands.worker.test.ts

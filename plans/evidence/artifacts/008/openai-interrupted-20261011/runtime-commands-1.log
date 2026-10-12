@@ -1,0 +1,22 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+ ✓ src/pi-durable-commands.test.ts (14 tests) 3711ms
+   ✓ stores future sequence receipts immediately, waits on gaps, then consumes one supported done boundary at a time  865ms
+   ✓ cancels a missing command durably without skipping an unrelated unknown predecessor  361ms
+   ✓ reopens before-submit with original request identity and at most one logical submission  330ms
+
+ Test Files  1 passed (1)
+      Tests  14 passed (14)
+   Start at  12:35:15
+   Duration  5.17s (transform 255ms, setup 0ms, collect 481ms, tests 3.71s, environment 1ms, prepare 105ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

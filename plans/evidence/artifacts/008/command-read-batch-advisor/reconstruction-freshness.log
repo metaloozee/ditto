@@ -1,0 +1,105 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+ ❯ src/product-commands.worker.test.ts (62 tests | 1 failed | 56 skipped) 8783ms
+   ↓ owned authority works before the reset table exists
+   ↓ owned authority is fresh with a present reset table and no reset
+   ↓ runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+   ↓ settles final-hold preparation false when a real preclaim hold crosses the original host yield
+   ↓ admits concurrent identical first prompts with one receipt, identity, capacity claim and message pair
+   ↓ keeps one lifetime workspace claim for concurrent distinct first prompts
+   ↓ rejects current readiness before all admission writes: UPDATE projects SET status='deleting'
+   ↓ rejects current readiness before all admission writes: UPDATE projects SET status='pending'
+   ↓ rejects current readiness before all admission writes: UPDATE codex_connections SET revoked=1
+   ↓ rejects current readiness before all admission writes: UPDATE codex_fixture_capabilities SET revision=2
+   ↓ rejects current readiness before all admission writes: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))
+   ↓ rejects current readiness before all admission writes: INSERT INTO runtime_deleted_target_fences VALUES('project','project',1,0)
+   ↓ denies caller authority, byte overflow and foreign ownership without rows
+   ↓ rejects terminal and foreign targets but admits cold Stop after capability removal
+   ↓ rolls back first admission at D1 batch boundary 0 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 1 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 2 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 3 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 4 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 5 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 6 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 7 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 8 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 9 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 10 without leaking capacity or identity
+   ✓ fails trusted reconstruction when admitted text or outbox membership changes  1453ms
+   ✓ batched reconstruction denies admitted association tamper: UPDATE session_command_keys SET userId='foreign' WHERE commandId=?  1450ms
+   ✓ batched reconstruction denies admitted association tamper: DELETE FROM session_command_keys WHERE commandId=?  1633ms
+   × batched reconstruction denies admitted association tamper: UPDATE messages SET userId='foreign' WHERE id=(SELECT assistantMessageId FROM session_commands WHERE id=?) 1334ms
+     → D1_ERROR: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT
+   ✓ batched reconstruction denies admitted association tamper: UPDATE workspace_runtime_work SET userId='foreign' WHERE commandId=?  1486ms
+   ✓ batched command subject rereads capability revision and deletion authority  1393ms
+   ↓ reconciles the exact started outcome idempotently and never accepts the opposite fate
+   ↓ reconciles the exact expired outcome idempotently and never accepts the opposite fate
+   ↓ native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+   ↓ lost delivery acknowledgment and new product invocation retain the receipt and one Pi submission
+   ↓ cold Stop after disconnect beats delivery gaps and retains multiple late message memberships across reopen
+   ↓ a follow-up admitted before completion but delivered afterward fails its own assistant without reopening the completed run
+   ↓ priority Stop fences a held credential claim without ordinary capacity or a second provider dispatch
+   ↓ real delivery expires an admitted but unstarted instruction without creating a Pi root or provider effect
+   ↓ product cancellation reconstructs a missing follow-up and closes its sequence without skipping the initial prompt
+   ↓ credential-local acknowledged barrier denies a held real positive final permit after host claim
+   ↓ credential-local lost-ack barrier denies a held real positive final permit after host claim
+   ↓ credential-local replacement barrier denies a held real positive final permit after host claim
+   ↓ private fixture reset preserves immutable host origin and discarded observation=false
+   ↓ private fixture reset preserves immutable host origin and discarded observation=true
+   ↓ private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+   ↓ generation-2 admission denies a missing credential fence without fallback or effect refund
+   ↓ credential-local final gate preserves the original positive permit window across a held response
+   ↓ priority Stop through transport beats held default configuration without creating a root
+   ↓ queued configuration uses the next selection across a sequence gap and preserves committed preparation
+   ↓ three real candidate contract denials persist review and halt the exact admitted host without fetch
+   ↓ real D1 lost started acknowledgment retains one fate and the original queue deadline
+   ↓ real D1 lost expired acknowledgment retains one fate and the original queue deadline
+   ↓ real admitted Stop repairs candidate-control-intent interruption and retains its epoch and projection
+   ↓ real admitted Stop repairs candidate-control-outcome interruption and retains its epoch and projection
+   ↓ transport cancellation after start is too late and delayed old Stop cannot revoke a newer run
+   ↓ fresh mutable authority denies a prepared real request: UPDATE sandbox_identities SET incarnationId='changed'
+   ↓ fresh mutable authority denies a prepared real request: UPDATE workspace_sessions SET runtimeProtocolVersion=1
+   ↓ fresh mutable authority denies a prepared real request: INSERT INTO runtime_deleted_target_fences VALUES('project','project',1,0)
+   ↓ a natural replacement cannot certify the original host invocation or close an unrelated scope
+   ↓ private recovery scans every control through the cutoff and repairs an already delivered partial Stop
+   ↓ an unclosed successor needs its own reset proof and cannot reuse the older witness
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/product-commands.worker.test.ts > batched reconstruction denies admitted association tamper: UPDATE messages SET userId='foreign' WHERE id=(SELECT assistantMessageId FROM session_commands WHERE id=?)
+Error: D1_ERROR: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT
+ ❯ D1DatabaseSessionAlwaysPrimary._sendOrThrow cloudflare-internal:d1-api:139:19
+ ❯ cloudflare-internal:d1-api:353:41
+ ❯ src/product-commands.worker.test.ts:512:2
+    510|  const first = await product.admit("owner", prompt);
+    511|  expect(await product.reconstruct(first.commandId, 1)).not.toBeNull();
+    512|  await env.DB.prepare(mutation).bind(first.commandId).run();
+       |  ^
+    513|  expect(await product.reconstruct(first.commandId, 1)).toBeNull();
+    514| });
+
+Caused by: Error: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT
+ ❯ D1DatabaseSessionAlwaysPrimary._sendOrThrow cloudflare-internal:d1-api:140:24
+ ❯ cloudflare-internal:d1-api:353:41
+ ❯ src/product-commands.worker.test.ts:512:2
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 5 passed | 56 skipped (62)
+   Start at  14:10:54
+   Duration  10.95s (transform 488ms, setup 0ms, collect 829ms, tests 8.78s, environment 0ms, prepare 155ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/product-commands.worker.test.ts -t 'fails trusted reconstruction|batched reconstruction|batched command subject'

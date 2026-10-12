@@ -1,0 +1,280 @@
+--- a/apps/credential-tests/src/entry.ts
++++ b/apps/credential-tests/src/entry.ts
+@@ -268,19 +268,19 @@
+ 		| undefined;
+ 	private claimAckWait:
+ 		| {
+-				entered: Promise<void>;
+-				mark(): void;
++				entered: Promise<boolean>;
++				mark(admitted: boolean): void;
+ 				released: Promise<void>;
+ 				release(): void;
+ 		  }
+ 		| undefined;
+ 	armClaimAck() {
+-		let mark!: () => void, release!: () => void;
++		let mark!: (admitted: boolean) => void, release!: () => void;
+ 		this.claimAckWait = {
+-			entered: new Promise<void>((resolve) => {
++			entered: new Promise<boolean>((resolve) => {
+ 				mark = resolve;
+ 			}),
+-			mark: () => mark(),
++			mark: (admitted) => mark(admitted),
+ 			released: new Promise<void>((resolve) => {
+ 				release = resolve;
+ 			}),
+@@ -310,7 +310,7 @@
+ 					claim: async (attempt, binding) => {
+ 						const result = await capability.claim(attempt, binding);
+ 						if (result.status === "admitted") {
+-							held.mark();
++							held.mark(true);
+ 							await held.released;
+ 						}
+ 						return result;
+@@ -325,7 +325,7 @@
+ 			await super.requestModel(invalid, capability);
+ 			await super.requestModel(invalid, capability);
+ 			return super.requestModel(invalid, capability);
+-		})();
++		})().finally(() => held?.mark(false));
+ 		return this.requestOutcome;
+ 	}
+ 	waitCandidateOutcome() {
+@@ -385,11 +385,12 @@
+ 		});
+ 		if (!(await this.modelProductAuthority().current(descriptor)))
+ 			throw new Error("candidate_dispatch_denied");
+-		this.ctx.storage.sql.exec(
+-			"INSERT OR IGNORE INTO candidate_dispatch_fences VALUES(?,?,'active',NULL)",
+-			preparation.scope,
+-			preparation.generation,
+-		);
++		if (preparation.generation === 1)
++			this.ctx.storage.sql.exec(
++				"INSERT OR IGNORE INTO candidate_dispatch_fences VALUES(?,?,'active',NULL)",
++				preparation.scope,
++				preparation.generation,
++			);
+ 		await this.ctx.storage.sync();
+ 		const fence = this.dispatchFence(preparation.scope);
+ 		if (
+--- a/apps/credential-tests/src/model-entry.ts
++++ b/apps/credential-tests/src/model-entry.ts
+@@ -269,17 +269,28 @@
+ 				"SELECT boot,phase,accounted FROM candidate_fixture_gate WHERE id=1",
+ 			)
+ 			.toArray()[0];
++		if (!gate) {
++			const predecessor = this.ctx.storage.sql
++				.exec(
++					"SELECT i.state,o.origin FROM host_invocations i LEFT JOIN host_candidate_invocation_origins o ON o.invocation=i.id ORDER BY i.rowid DESC LIMIT 1",
++				)
++				.toArray()[0];
++			return (
++				!predecessor ||
++				predecessor.state === "closed" ||
++				predecessor.origin === this.candidateBoot
++			);
++		}
+ 		return (
+-			!gate ||
+-			(gate.boot === this.candidateBoot &&
+-				gate.phase === "active" &&
+-				typeof gate.accounted === "string" &&
+-				this.ctx.storage.sql
+-					.exec(
+-						"SELECT id FROM host_invocations WHERE id=? AND state='closed'",
+-						gate.accounted,
+-					)
+-					.toArray().length === 1)
++			gate.boot === this.candidateBoot &&
++			gate.phase === "active" &&
++			typeof gate.accounted === "string" &&
++			this.ctx.storage.sql
++				.exec(
++					"SELECT id FROM host_invocations WHERE id=? AND state='closed'",
++					gate.accounted,
++				)
++				.toArray().length === 1
+ 		);
+ 	}
+ 	async fixtureProof(invocationId?: string) {
+@@ -565,12 +576,20 @@
+ 		return (await this.activate()).configureCandidate(commandId, input);
+ 	}
+ 	async alarm() {
+-		if (this.retired) return;
++		if (this.retired || !this.ordinaryAllowed()) return;
+ 		this.alarmCompletion = (async () => {
+ 			const host = await this.alarmHost();
+ 			if (!host) return;
+ 			await host.alarm();
+-			if (this.joinHold) {
++			if (
++				this.joinHold &&
++				this.ctx.storage.sql
++					.exec(
++						"SELECT i.id FROM host_invocations i JOIN host_candidate_invocation_origins o ON o.invocation=i.id WHERE i.state='active' AND o.origin=? LIMIT 1",
++						this.candidateBoot,
++					)
++					.toArray().length === 1
++			) {
+ 				this.joinHold.mark();
+ 				await this.joinHold.released;
+ 			}
+@@ -587,6 +606,7 @@
+ 			this.host = undefined;
+ 		}
+ 		await this.ctx.storage.deleteAlarm();
++		await this.ctx.storage.sync();
+ 	}
+ 	async reopenFixture() {
+ 		this.retired = true;
+@@ -962,7 +982,7 @@
+ 			proof.origin !== intent.origin ||
+ 			proof.boot === intent.origin
+ 		)
+-			throw new Error("fixture_recovery_proof_denied");
++			return { resetId, phase: "denied" };
+ 		const cutoff = (
+ 			await this.env.DB.prepare(
+ 				"SELECT max(commandSeq) AS cutoff FROM session_commands WHERE sessionId=? AND payloadVersion=2",
+--- a/apps/credential-tests/src/product-commands.worker.test.ts
++++ b/apps/credential-tests/src/product-commands.worker.test.ts
+@@ -938,14 +938,16 @@
+ 	let runtime = env.CandidateSessions.getByName(receipt.workspaceSessionId);
+ 	await runtime.holdFixtureJoin();
+ 	await env.CandidateProduct.reserveCandidateReset(receipt.commandId);
+-	await env.CandidateProduct.drain();
+-	await credential.waitClaimAck();
+-	const before = await runtime.fixtureProof();
+-	expect(["active", "draining", "closed"]).toContain(before.predecessor.state);
+-	expect(before.origin).toBe(before.boot);
+-	expect(before.predecessor.generation).toBe(1);
+-	expect(calls()).toBe(0);
+-	try {
++	try {
++		await env.CandidateProduct.drain();
++		expect(await credential.waitClaimAck()).toBe(true);
++		const before = await runtime.fixtureProof();
++		expect(["active", "draining", "closed"]).toContain(
++			before.predecessor.state,
++		);
++		expect(before.origin).toBe(before.boot);
++		expect(before.predecessor.generation).toBe(1);
++		expect(calls()).toBe(0);
+ 		const reset = await env.CandidateProduct.resetCandidate(
+ 			receipt.commandId,
+ 			discard,
+@@ -1014,7 +1016,7 @@
+ 		await credential.releaseClaimAck();
+ 		expect((await credential.waitCandidateOutcome())?.status).toBe("denied");
+ 		await runtime.releaseFixtureJoin();
+-		if (!discard) await runtime.retireFixture();
++		await runtime.retireFixture();
+ 		await runInDurableObject(runtime, async (_instance, state) => {
+ 			await state.storage.deleteAlarm();
+ 			await state.storage.sync();
+@@ -1547,15 +1549,15 @@
+ 	let runtime = env.CandidateSessions.getByName(first.workspaceSessionId);
+ 	await runtime.holdFixtureJoin();
+ 	await env.CandidateProduct.reserveCandidateReset(first.commandId);
+-	await env.CandidateProduct.drain();
+-	await credential.waitClaimAck();
+-	const subject = await env.CandidateProduct.readCandidateSubject(
+-		first.commandId,
+-		1,
+-	);
+-	if (!subject) throw new Error("missing_owned_subject");
+-	const original = await runtime.fixtureProof();
+-	try {
++	try {
++		await env.CandidateProduct.drain();
++		expect(await credential.waitClaimAck()).toBe(true);
++		const subject = await env.CandidateProduct.readCandidateSubject(
++			first.commandId,
++			1,
++		);
++		if (!subject) throw new Error("missing_owned_subject");
++		const original = await runtime.fixtureProof();
+ 		await expect(
+ 			runInDurableObject(credential, (instance) =>
+ 				instance.closeCandidateDispatch(
+@@ -1593,6 +1595,8 @@
+ 	} finally {
+ 		await credential.releaseClaimAck();
+ 		await credential.waitCandidateOutcome();
++		await runtime.releaseFixtureJoin();
++		await runtime.retireFixture();
+ 		await runInDurableObject(runtime, async (_instance, state) => {
+ 			await state.storage.deleteAlarm();
+ 			await state.storage.sync();
+@@ -1643,7 +1647,7 @@
+ 		await runtime.holdFixtureJoin();
+ 		await env.CandidateProduct.reserveCandidateReset(first.commandId);
+ 		await runtime.deliverCommand(first.commandId, 1);
+-		await credential.waitClaimAck();
++		expect(await credential.waitClaimAck()).toBe(true);
+ 		await runtime.armControlFault("candidate-control-intent");
+ 		await expect(
+ 			runInDurableObject(runtime, (instance) =>
+@@ -1657,21 +1661,22 @@
+ 		expect(
+ 			await env.CandidateProduct.recoverCandidate(reset.resetId),
+ 		).toMatchObject({ generation: 2, phase: "fenced" });
+-		const firstPage = await env.CandidateProduct.fixtureControls(
+-			old.scope,
+-			laterStop.commandSeq,
+-			0,
+-		);
+-		expect(firstPage.commandIds).toEqual([stop.commandId, cancel.commandId]);
+-		expect(firstPage.end).toBe(false);
+-		expect(
+-			await env.CandidateProduct.fixtureControls(
++		const [firstPage, finalPage, snapshot] = await Promise.all([
++			env.CandidateProduct.fixtureControls(old.scope, laterStop.commandSeq, 0),
++			env.CandidateProduct.fixtureControls(
+ 				old.scope,
+ 				laterStop.commandSeq,
+-				firstPage.after,
++				cancel.commandSeq,
+ 			),
+-		).toMatchObject({ commandIds: [laterStop.commandId], end: true });
+-		const snapshot = await runtime.candidateSnapshot();
++			runtime.candidateSnapshot(),
++		]);
++		expect(firstPage.commandIds).toEqual([stop.commandId, cancel.commandId]);
++		expect(firstPage.after).toBe(cancel.commandSeq);
++		expect(firstPage.end).toBe(false);
++		expect(finalPage).toMatchObject({
++			commandIds: [laterStop.commandId],
++			end: true,
++		});
+ 		expect(snapshot.runs[0]?.epoch).toBe(2);
+ 		expect(snapshot.members.map((row) => row.state)).toEqual([
+ 			"failed",
+@@ -1702,7 +1707,7 @@
+ 	await runtime.holdFixtureJoin();
+ 	await env.CandidateProduct.reserveCandidateReset(first.commandId);
+ 	try {
+-		await env.CandidateProduct.drain();
++		await runtime.deliverCommand(first.commandId, 1);
+ 		await runtime.waitFixtureJoin();
+ 		await credential.waitCandidateFinal();
+ 		await credential.releaseCandidateFinal();
+@@ -1730,9 +1735,10 @@
+ 			sessionId: first.workspaceSessionId,
+ 			idempotencyKey: "unclosed-successor",
+ 		});
+-		await env.CandidateProduct.drain();
+-		await credential.waitClaimAck();
++		await runtime.deliverCommand(next.commandId, 1);
++		await runtime.waitFixtureJoin();
+ 		const successor = await runtime.fixtureProof();
++		expect(successor.predecessor.state).toBe("active");
+ 		const subject = await env.CandidateProduct.readCandidateSubject(
+ 			next.commandId,
+ 			1,

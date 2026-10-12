@@ -1,0 +1,16 @@
+{
+  "plans/evidence/artifacts/008/advisor-current/brain.log": "d1f41743424b84fded65f2ca2637e38f4626f259061458b237630eae989f1a28",
+  "plans/evidence/artifacts/008/advisor-current/credentials.log": "1fb919a95e120c8abeb9c33d2fe109ac4b535d146e85fd098817ba70132bf4a5",
+  "plans/evidence/artifacts/008/advisor-current/partial-source.tar.gz": "607027dbf90792faecba158a42be33f2bad33ffcaab988ca566727e81dd5fa44",
+  "plans/evidence/artifacts/008/advisor-current/runtime-probes-corrected-config.log": "f6cd8f5744b39a44c4881d774b1fb876c18ae967dc126a79fe57592d2961673e",
+  "plans/evidence/artifacts/008/advisor-current/runtime-probes.config.ts": "caf81499a02150b0418ea9efbf0e179ffa31fba3209c0c76dc9006c046c4370d",
+  "plans/evidence/artifacts/008/advisor-current/runtime-probes.log": "a170f54efff5f4a86a1659795491b8fcad0c48c4c15efa536cae9de3ae1e3c69",
+  "plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts": "850985d962933b008e40bdaf300981fdd90cd7dff9b285bddc2ac74bfc4f1ef5",
+  "plans/evidence/artifacts/008/advisor-current/runtime.log": "ffac04a2d49c725e8f22994bb3527ae0747c5e11e0dc8a17f3f10c0d93e3d507",
+  "plans/evidence/artifacts/008/advisor-current/source-hashes.json": "dee0aa7ec9394cbba3c5c58d4c695a81437067cf158c8cca414b57856816127a",
+  "plans/evidence/artifacts/008/advisor-current/verify.log": "6612ada448e20a1a12bbc2b767036d4c75639d7b1e92c773eec7d4a2ca7c37f1",
+  "plans/evidence/artifacts/008/correction-executor/source-diff.patch": "84cb7a00577c56cd27d105d6d2be44f0e8f84aaae55dbaf89a8ece3319396325",
+  "plans/evidence/artifacts/008/correction-executor/source-hashes.json": "bd02d0fe44d26fdb945ee4d181252f405860d5bc34da6bbfa4b88301d86f9482",
+  "plans/evidence/artifacts/008/correction-executor/termination-seam.config.ts": "127eefd37152358bb7206ae520afc633e4d3a333499d0c4ab9e0e520efd0b93b",
+  "plans/evidence/artifacts/008/correction-executor/termination-seam.test.ts": "9db95883e1d847687b2d73bc96b2b146b98d3a978dbc4651236cce9333dec19e"
+}

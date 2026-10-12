@@ -1,0 +1,17 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/minimal-return.config.ts...
+ ✓ ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/minimal-return.worker.test.ts (1 test) 42ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  09:00:32
+   Duration  1.10s (transform 31ms, setup 0ms, collect 38ms, tests 42ms, environment 0ms, prepare 115ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

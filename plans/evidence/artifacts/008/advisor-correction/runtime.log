@@ -1,0 +1,274 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+stdout | src/pi-durable-models.test.ts > held product callback denies changed host authority {"current":false}, encrypted=false
+[007-model-claim-snapshot] {"name":"product-{\"current\":false}","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > held product callback denies changed host authority {"executor":2}, encrypted=false
+[007-model-claim-snapshot] {"name":"product-{\"executor\":2}","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > held product callback denies changed host authority {"generation":2}, encrypted=false
+[007-model-claim-snapshot] {"name":"product-{\"generation\":2}","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > a rewound live claim cannot acknowledge consumption again, encrypted=false
+[007-model-claim-snapshot] {"name":"rewound","encrypted":false,"claimed":0,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > claim denies authority during held task, encrypted=false
+[007-model-claim-snapshot] {"name":"task-authority","encrypted":false,"claimed":0,"receiptState":"reserved","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > claim denies authority during held task, encrypted=false
+[007-model-claim-snapshot] {"name":"task-authority","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > claim denies Stop during held task, encrypted=false
+[007-model-claim-snapshot] {"name":"task-Stop","encrypted":false,"claimed":0,"receiptState":"reserved","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > claim denies Stop during held task, encrypted=false
+[007-model-claim-snapshot] {"name":"task-Stop","encrypted":false,"claimed":0,"receiptState":"reserved","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > claim denies authority during held flush, encrypted=false
+[007-model-claim-snapshot] {"name":"flush-authority","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > claim denies authority during held flush, encrypted=false
+[007-model-claim-snapshot] {"name":"flush-authority","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > claim denies Stop during held flush, encrypted=false
+[007-model-claim-snapshot] {"name":"flush-Stop","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > claim denies Stop during held flush, encrypted=false
+[007-model-claim-snapshot] {"name":"flush-Stop","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":3,"calls":0}
+
+stdout | src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > actually closes with request authority read 1 still pending
+[002-authority-close] {"phase":"request","blockedRead":1,"id":"f0d4acdf-ef89-41d7-a9b4-f1b7daa68bed","generation":1,"started":1791696425454,"yield_at":1791696426454,"end_at":1791696427454,"state":"active","closedAt":1791696425580,"preparationPending":true}
+
+stdout | src/pi-durable-models.test.ts > concurrent exact claims reserve only once, encrypted=false
+[007-model-claim-snapshot] {"name":"concurrent","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > actually closes with request authority read 2 still pending
+[002-authority-close] {"phase":"request","blockedRead":2,"id":"f752a79c-0687-4e2e-b914-e7625db27963","generation":1,"started":1791696425710,"yield_at":1791696426710,"end_at":1791696427710,"state":"active","closedAt":1791696425882,"preparationPending":true}
+
+stdout | src/pi-durable-models.test.ts > actual joined close cancels a held claim flush without refund, encrypted=false
+[007-model-claim-close] {"encrypted":false,"elapsedMs":19}
+
+stdout | src/pi-durable-models.test.ts > actual joined close cancels a held claim flush without refund, encrypted=false
+[007-model-claim-snapshot] {"name":"close-held-flush","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > actual joined close cancels a held claim flush without refund, encrypted=false
+[007-model-claim-snapshot] {"name":"close-held-flush","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+stdout | src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > actually closes with tool authority read 1 still pending
+[002-authority-close] {"phase":"tool","blockedRead":1,"id":"d5eaecd6-3896-41d7-9d14-2bc7045c7b16","generation":1,"started":1791696426032,"yield_at":1791696427032,"end_at":1791696428032,"state":"active","closedAt":1791696426182,"preparationPending":true}
+
+stdout | src/pi-durable-models.test.ts > lost claim acknowledgment retains consumption across two reopens, encrypted=false
+[007-model-claim-snapshot] {"name":"lost-ack","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > lost claim acknowledgment retains consumption across two reopens, encrypted=false
+[007-model-claim-snapshot] {"name":"lost-ack","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > lost claim acknowledgment retains consumption across two reopens, encrypted=false
+[007-model-claim-snapshot] {"name":"lost-ack","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+stdout | src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > actually closes with tool authority read 2 still pending
+[002-authority-close] {"phase":"tool","blockedRead":2,"id":"b40ea8a0-2efe-435f-82b9-0f64c930b94c","generation":1,"started":1791696426298,"yield_at":1791696427298,"end_at":1791696428298,"state":"active","closedAt":1791696426466,"preparationPending":true}
+
+stdout | src/pi-durable-models.test.ts > an older reserved receipt cannot refund an uncertain effect across reopens, encrypted=false
+[007-model-claim-snapshot] {"name":"reserved-rollback","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > an older reserved receipt cannot refund an uncertain effect across reopens, encrypted=false
+[007-model-claim-snapshot] {"name":"reserved-rollback","encrypted":false,"claimed":0,"receiptState":"reserved","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > an older reserved receipt cannot refund an uncertain effect across reopens, encrypted=false
+[007-model-claim-snapshot] {"name":"reserved-rollback","encrypted":false,"claimed":0,"receiptState":"reserved","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+ ✓ src/pi-durable-commands.test.ts (14 tests) 4572ms
+   ✓ stores future sequence receipts immediately, waits on gaps, then consumes one supported done boundary at a time  946ms
+   ✓ cancels a missing command durably without skipping an unrelated unknown predecessor  377ms
+   ✓ recovers a lost started product acknowledgment across close/reopen with one immutable decision  326ms
+   ✓ reopens before-submit with original request identity and at most one logical submission  653ms
+   ✓ reopens after-submit with original request identity and at most one logical submission  331ms
+   ✓ repairs exact numeric membership in an immediate provider callback before submit returns  366ms
+stdout | src/pi-durable-models.test.ts > dispatch digest substitution denies before consumption, encrypted=false
+[007-model-claim-snapshot] {"name":"digest-substitution","encrypted":false,"claimed":0,"receiptState":"reserved","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > held product callback denies changed host authority {"current":false}, encrypted=true
+[007-model-claim-snapshot] {"name":"product-{\"current\":false}","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > held product callback denies changed host authority {"executor":2}, encrypted=true
+[007-model-claim-snapshot] {"name":"product-{\"executor\":2}","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > held product callback denies changed host authority {"generation":2}, encrypted=true
+[007-model-claim-snapshot] {"name":"product-{\"generation\":2}","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > a rewound live claim cannot acknowledge consumption again, encrypted=true
+[007-model-claim-snapshot] {"name":"rewound","encrypted":true,"claimed":0,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > claim denies authority during held task, encrypted=true
+[007-model-claim-snapshot] {"name":"task-authority","encrypted":true,"claimed":0,"receiptState":"reserved","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > claim denies authority during held task, encrypted=true
+[007-model-claim-snapshot] {"name":"task-authority","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > claim denies Stop during held task, encrypted=true
+[007-model-claim-snapshot] {"name":"task-Stop","encrypted":true,"claimed":0,"receiptState":"reserved","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > claim denies Stop during held task, encrypted=true
+[007-model-claim-snapshot] {"name":"task-Stop","encrypted":true,"claimed":0,"receiptState":"reserved","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > claim denies authority during held flush, encrypted=true
+[007-model-claim-snapshot] {"name":"flush-authority","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > claim denies authority during held flush, encrypted=true
+[007-model-claim-snapshot] {"name":"flush-authority","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > claim denies Stop during held flush, encrypted=true
+[007-model-claim-snapshot] {"name":"flush-Stop","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > claim denies Stop during held flush, encrypted=true
+[007-model-claim-snapshot] {"name":"flush-Stop","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":3,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > concurrent exact claims reserve only once, encrypted=true
+[007-model-claim-snapshot] {"name":"concurrent","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > actual joined close cancels a held claim flush without refund, encrypted=true
+[007-model-claim-close] {"encrypted":true,"elapsedMs":18}
+
+stdout | src/pi-durable-models.test.ts > actual joined close cancels a held claim flush without refund, encrypted=true
+[007-model-claim-snapshot] {"name":"close-held-flush","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > actual joined close cancels a held claim flush without refund, encrypted=true
+[007-model-claim-snapshot] {"name":"close-held-flush","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > lost claim acknowledgment retains consumption across two reopens, encrypted=true
+[007-model-claim-snapshot] {"name":"lost-ack","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > lost claim acknowledgment retains consumption across two reopens, encrypted=true
+[007-model-claim-snapshot] {"name":"lost-ack","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > lost claim acknowledgment retains consumption across two reopens, encrypted=true
+[007-model-claim-snapshot] {"name":"lost-ack","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > an older reserved receipt cannot refund an uncertain effect across reopens, encrypted=true
+[007-model-claim-snapshot] {"name":"reserved-rollback","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > an older reserved receipt cannot refund an uncertain effect across reopens, encrypted=true
+[007-model-claim-snapshot] {"name":"reserved-rollback","encrypted":true,"claimed":0,"receiptState":"reserved","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > an older reserved receipt cannot refund an uncertain effect across reopens, encrypted=true
+[007-model-claim-snapshot] {"name":"reserved-rollback","encrypted":true,"claimed":0,"receiptState":"reserved","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > dispatch digest substitution denies before consumption, encrypted=true
+[007-model-claim-snapshot] {"name":"digest-substitution","encrypted":true,"claimed":0,"receiptState":"reserved","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > private Worker RPC carries the live exact claim and admits one start, encrypted=false
+[007-model-claim-snapshot] {"name":"rpc-admit","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":1}
+
+stdout | src/pi-durable-models.test.ts > real epoch-first Stop wins before a private RPC acknowledgment, encrypted=false
+[007-model-claim-snapshot] {"name":"rpc-stop-first","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":3,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > Stop after a private RPC acknowledgment retains the admitted start, encrypted=false
+[007-model-claim-snapshot] {"name":"rpc-stop-after","encrypted":false,"claimed":1,"receiptState":"consumed","encryptedReceipt":false,"effectState":"admitted","epoch":2,"calls":1}
+
+stdout | src/pi-durable-models.test.ts > private RPC rejects foreign owned context and a JSON-only association, encrypted=false
+[007-model-claim-snapshot] {"name":"rpc-foreign","encrypted":false,"claimed":0,"receiptState":"reserved","encryptedReceipt":false,"effectState":"admitted","epoch":1,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > private Worker RPC carries the live exact claim and admits one start, encrypted=true
+[007-model-claim-snapshot] {"name":"rpc-admit","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":1}
+
+stdout | src/pi-durable-models.test.ts > real epoch-first Stop wins before a private RPC acknowledgment, encrypted=true
+[007-model-claim-snapshot] {"name":"rpc-stop-first","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":3,"calls":0}
+
+stdout | src/pi-durable-models.test.ts > Stop after a private RPC acknowledgment retains the admitted start, encrypted=true
+[007-model-claim-snapshot] {"name":"rpc-stop-after","encrypted":true,"claimed":1,"receiptState":"consumed","encryptedReceipt":true,"effectState":"admitted","epoch":2,"calls":1}
+
+stdout | src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > combines wall-clock yield and native alarms with joined event resources
+[002-native-close] {"id":"6b933827-af1f-4be6-9b57-882de76f3db0","generation":1,"started":1791696434436,"yield_at":1791696435436,"end_at":1791696436436,"state":"active","closedAt":1791696435453,"remotePending":true}
+
+stdout | src/pi-durable-models.test.ts > private RPC rejects foreign owned context and a JSON-only association, encrypted=true
+[007-model-claim-snapshot] {"name":"rpc-foreign","encrypted":true,"claimed":0,"receiptState":"reserved","encryptedReceipt":true,"effectState":"admitted","epoch":1,"calls":0}
+
+ ✓ src/pi-durable-models.test.ts (50 tests) 12847ms
+   ✓ held product callback denies changed host authority {"current":false}, encrypted=false  321ms
+   ✓ a rewound live claim cannot acknowledge consumption again, encrypted=false  361ms
+   ✓ claim denies authority during held flush, encrypted=false  302ms
+   ✓ claim denies Stop during held flush, encrypted=false  605ms
+   ✓ concurrent exact claims reserve only once, encrypted=false  311ms
+   ✓ actual joined close cancels a held claim flush without refund, encrypted=false  348ms
+   ✓ lost claim acknowledgment retains consumption across two reopens, encrypted=false  321ms
+   ✓ an older reserved receipt cannot refund an uncertain effect across reopens, encrypted=false  322ms
+   ✓ exact claim is one-shot and independent of the waiting provider lane, encrypted=false  366ms
+   ✓ real epoch-first Stop wins before a private RPC acknowledgment, encrypted=false  360ms
+ ✓ src/pi-durable-host.test.ts (55 tests) 18420ms
+   ✓ Guarded local host with real DO SQLite > fences stream, accounts actual close, retains effects across two passive reopens  317ms
+   ✓ Guarded local host with real DO SQLite > denies effects after result persistence fails, continuing unavailability=false  422ms
+   ✓ Guarded local host with real DO SQLite > denies effects after result persistence fails, continuing unavailability=true  726ms
+   ✓ Guarded local host with real DO SQLite > actually closes with request authority read 2 still pending  313ms
+   ✓ Guarded local host with real DO SQLite > blocks recovery across two reopens after safety-result-missing  537ms
+   ✓ Guarded local host with real DO SQLite > blocks recovery across two reopens after pi-result-missing  534ms
+   ✓ Guarded local host with real DO SQLite > encrypted adapter blocks recovery across two reopens after safety-result-missing  398ms
+   ✓ Guarded local host with real DO SQLite > encrypted adapter blocks recovery across two reopens after pi-result-missing  384ms
+   ✓ Guarded local host with real DO SQLite > rechecks request admission after fresh authority changes to generation  313ms
+   ✓ Guarded local host with real DO SQLite > rechecks tool admission after fresh authority changes to revoked  451ms
+   ✓ Guarded local host with real DO SQLite > rechecks tool admission after fresh authority changes to generation  376ms
+   ✓ Guarded local host with real DO SQLite > rechecks tool admission after fresh authority changes to executor  384ms
+   ✓ Guarded local host with real DO SQLite > rechecks tool admission after fresh authority changes to capacity  383ms
+   ✓ Guarded local host with real DO SQLite > consumes a safety result only after Pi's public terminal tool receipt  391ms
+   ✓ Guarded local host with real DO SQLite > retains a live unknown shell while real Pi recovery and subsequent requests deny effects across two reopens  465ms
+   ✓ Guarded local host with real DO SQLite > closes the real built-in retry sleep and allocates one new budget only after accounted close  324ms
+   ✓ Guarded local host with real DO SQLite > automatic yield awaits actual close before the absolute 2000 ms end deadline  1116ms
+   ✓ Guarded local host with real DO SQLite > combines wall-clock yield and native alarms with joined event resources  1162ms
+   ✓ Guarded local host with real DO SQLite > alarm-reactivates real Pi retry on the same surviving DO without retire  1944ms
+   ✓ Guarded local host with real DO SQLite > alarm-reconciles unknown tool on the same surviving DO without retire  313ms
+   ✓ Guarded local host with real DO SQLite > never abandons actual close when a public Storage cleanup fault overruns its deadline  466ms
+ ✓ src/pi-durable-effects.test.ts (62 tests) 24911ms
+   ✓ identical durable result delivery is idempotent  344ms
+   ✓ actual Pi unsafe recovery attempts the next tool and model but neither dispatches through two reopens  601ms
+   ✓ completed synthetic mutations and follow-up membership survive reopen without repetition  835ms
+   ✓ conflicting result persists review block across reopen and new command  353ms
+   ✓ healthy later writes cannot clear a storage barrier but current trusted reconciliation can account for an undispatched admission  731ms
+   ✓ actual generation and unsafe tool persist structured exact membership before dispatch  550ms
+   ✓ lost shell result commit denies actual tool/model callbacks across two SQLite reopens, unavailable=false  643ms
+   ✓ lost shell result commit denies actual tool/model callbacks across two SQLite reopens, unavailable=true  630ms
+   ✓ unavailable failure marker is unnecessary for reopen denial from durable admitted shell  497ms
+   ✓ safety result before failed Pi commit is not original successful tool receipt  528ms
+   ✓ shell-replay is denied on actual registered tool before executor I/O  516ms
+   ✓ implicit-read is denied on actual registered tool before executor I/O  433ms
+   ✓ unsupported-write is denied on actual registered tool before executor I/O  530ms
+   ✓ read repeats are explicit new observations on distinct original calls, never replay of an unresolved call  574ms
+   ✓ uncooperative shell Stop is stopping, cancellation receipt is not termination  399ms
+   ✓ delayed old-run Stop never cancels later run or revives terminal completion  438ms
+   ✓ public committed retry evidence authorizes a separate summary attempt without reopening or guessing current task  711ms
+   ✓ known completed summary error retries after reopen with retained logical request and separately recorded spending  573ms
+   ✓ validated first summary preparation survives close without admitting an effect  407ms
+   ✓ missing first summary association after close denies the sole retained producer  382ms
+   ✓ corrupt first summary association after close denies the sole retained producer  421ms
+   ✓ selection handoff interrupted before Pi summarize commit remains exact or fails closed  405ms
+   ✓ owned blocking compaction excludes its actual waiting generation parent and preserves command membership  307ms
+   ✓ unknown admitted summary blocks actual recovered requests through two SQLite reopens  302ms
+   ✓ competition during summary preparation denies actual dispatch  342ms
+   ✓ normal compaction establishes hook-bound tuple and preserves completed summary across reopen  355ms
+   ✓ correction: native settled no-work alarms consume serviced reconciliation without past rearm  3278ms
+   ✓ correction: known final compaction error settles original run, retryable=true  561ms
+   ✓ correction: actual tool/manual-summary race reserves at most one operation and dispatch  361ms
+   ✓ encrypted L1: compaction, retry, and follow-up keep distinct IDs and context order  730ms
+   ✓ encrypted L1: result loss and Pi commit loss both block two reopens  408ms
+   ✓ encrypted L1: retry seal failure fences before close and survives both orders  369ms
+
+ Test Files  4 passed (4)
+      Tests  181 passed (181)
+   Start at  07:27:00
+   Duration  27.15s (transform 528ms, setup 0ms, collect 2.59s, tests 60.75s, environment 1ms, prepare 665ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

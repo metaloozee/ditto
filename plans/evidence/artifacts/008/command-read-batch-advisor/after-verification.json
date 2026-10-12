@@ -1,0 +1,19 @@
+{
+  "sourceFilesStillMatched": 37,
+  "unchangedAdvisorProbeHashes": {
+    "plans/evidence/artifacts/008/advisor-current/runtime-probes.test.ts": "850985d962933b008e40bdaf300981fdd90cd7dff9b285bddc2ac74bfc4f1ef5",
+    "plans/evidence/artifacts/008/advisor-current/runtime-probes.config.ts": "caf81499a02150b0418ea9efbf0e179ffa31fba3209c0c76dc9006c046c4370d"
+  },
+  "executionBaseUnchanged": true,
+  "executionStagingEmpty": true,
+  "completeProductSuite": "not run, bounded sequence red",
+  "fiveFinalAggregates": "not run, bounded sequence red",
+  "independentResults": {
+    "reconstructionFreshness": "6 passed, 56 filtered",
+    "originalProbes": "4 passed",
+    "credentialTypecheck": "passed",
+    "runtimeTypecheck": "passed",
+    "webTypecheck": "passed",
+    "boundedSequence": "12 passed, queued configuration timeout at 5000ms, 1 isolation error, 47 filtered, 2 selected cases unreached"
+  }
+}

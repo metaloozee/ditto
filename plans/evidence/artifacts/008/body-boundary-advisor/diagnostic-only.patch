@@ -1,0 +1,279 @@
+--- a/apps/credential-tests/src/product-commands.worker.test.ts
++++ b/apps/credential-tests/src/product-commands.worker.test.ts
+@@ -1288,21 +1288,46 @@
+ });
+ 
+ it("generation-2 admission denies a missing credential fence without fallback or effect refund", async () => {
++	const boundaryStart = Date.now();
++	const boundary = (stage: string) => console.log("[008-body-boundary]", "generation-2", stage, Date.now() - boundaryStart);
++	boundary("credential.before");
+ 	const credential = await candidateCredential();
+-	const calls = modelReplies();
++	boundary("credential.after");
++	const calls = modelReplies();
++	boundary("arm.first.before");
+ 	await credential.armCandidateFinal();
++	boundary("arm.first.after");
++	boundary("admit.first.before");
+ 	const first = await env.CandidateProduct.admitOwned("owner", prompt);
++	boundary("admit.first.after");
+ 	let runtime = env.CandidateSessions.getByName(first.workspaceSessionId);
++	boundary("hold.join.before");
+ 	await runtime.holdFixtureJoin();
++	boundary("hold.join.after");
++	boundary("reserve.reset.before");
+ 	await env.CandidateProduct.reserveCandidateReset(first.commandId);
+-	try {
++	boundary("reserve.reset.after");
++	try {
++		boundary("drain.first.before");
+ 		await env.CandidateProduct.drain();
++		boundary("drain.first.after");
++		boundary("join.first.before");
+ 		await runtime.waitFixtureJoin();
++		boundary("join.first.after");
++		boundary("final.positive.before");
+ 		expect(await credential.waitCandidateFinal()).toBe(true);
++		boundary("final.positive.after");
++		boundary("descriptor.before");
+ 		const descriptor = await credential.candidateFinalDescriptor();
++		boundary("descriptor.after");
+ 		if (!descriptor) throw new Error("missing_final_descriptor");
++		boundary("release.first.before");
+ 		await credential.releaseCandidateFinal();
++		boundary("release.first.after");
++		boundary("outcome.first.before");
+ 		expect((await credential.waitCandidateOutcome())?.status).toBe("complete");
++		boundary("outcome.first.after");
++		boundary("poll.predecessor.before");
+ 		await expect
+ 			.poll(
+ 				async () => {
+@@ -1312,13 +1337,19 @@
+ 				{ timeout: 1000 },
+ 			)
+ 			.toBe("complete");
++		boundary("poll.predecessor.after");
++		boundary("reset.before");
+ 		const reset = await env.CandidateProduct.resetCandidate(first.commandId);
++		boundary("reset.after");
+ 		expect(reset.phase).toBe("issued");
+ 		runtime = env.CandidateSessions.getByName(first.workspaceSessionId);
++		boundary("recover.before");
+ 		expect(
+ 			await env.CandidateProduct.recoverCandidate(reset.resetId),
+ 		).toMatchObject({ phase: "active", generation: 2 });
++		boundary("recover.after");
+ 		const scope = candidateDispatchScope(descriptor.subject);
++		boundary("fence.delete.before");
+ 		await runInDurableObject(credential, async (_instance, state) => {
+ 			expect(
+ 				state.storage.sql
+@@ -1334,18 +1365,30 @@
+ 			);
+ 			await state.storage.sync();
+ 		});
++		boundary("fence.delete.after");
+ 		const beforeCalls = calls();
+ 		expect(beforeCalls).toBe(1);
++		boundary("arm.next.before");
+ 		await credential.armCandidateFinal();
++		boundary("arm.next.after");
++		boundary("admit.next.before");
+ 		const next = await env.CandidateProduct.admitOwned("owner", {
+ 			...prompt,
+ 			sessionId: first.workspaceSessionId,
+ 			idempotencyKey: "missing-generation-2-fence",
+ 			text: "Synthetic successor denial",
+ 		});
++		boundary("admit.next.after");
++		boundary("drain.next.before");
+ 		await env.CandidateProduct.drain();
++		boundary("drain.next.after");
++		boundary("final.negative.before");
+ 		expect(await credential.waitCandidateFinal()).toBe(false);
++		boundary("final.negative.after");
++		boundary("outcome.next.before");
+ 		expect((await credential.waitCandidateOutcome())?.status).toBe("denied");
++		boundary("outcome.next.after");
++		boundary("poll.failed.before");
+ 		await expect
+ 			.poll(
+ 				async () =>
+@@ -1355,8 +1398,12 @@
+ 				{ timeout: 3000 },
+ 			)
+ 			.toBe("failed");
++		boundary("poll.failed.after");
+ 		expect(calls()).toBe(beforeCalls);
++		boundary("proof.before");
+ 		expect((await runtime.fixtureProof()).predecessor.generation).toBe(2);
++		boundary("proof.after");
++		boundary("fence.read.before");
+ 		expect(
+ 			await runInDurableObject(credential, (_instance, state) =>
+ 				state.storage.sql
+@@ -1367,6 +1414,8 @@
+ 					.toArray(),
+ 			),
+ 		).toEqual([]);
++		boundary("fence.read.after");
++		boundary("occupancy.read.before");
+ 		const occupied = await runInDurableObject(runtime, (_instance, state) =>
+ 			state.storage.sql
+ 				.exec(
+@@ -1375,9 +1424,13 @@
+ 				)
+ 				.toArray(),
+ 		);
++		boundary("occupancy.read.after");
+ 		expect(occupied).toHaveLength(1);
+ 		expect(occupied[0]).toMatchObject({ state: "admitted", claimed: 0 });
++		boundary("reconcile.before");
+ 		await runtime.reconcileFixture();
++		boundary("reconcile.after");
++		boundary("occupancy.compare.before");
+ 		expect(
+ 			await runInDurableObject(runtime, (_instance, state) =>
+ 				state.storage.sql
+@@ -1388,10 +1441,17 @@
+ 					.toArray(),
+ 			),
+ 		).toEqual(occupied);
+-	} finally {
++		boundary("occupancy.compare.after");
++	} finally {
++		boundary("cleanup.final.before");
+ 		await credential.releaseCandidateFinal();
++		boundary("cleanup.final.after");
++		boundary("cleanup.join.before");
+ 		await runtime.releaseFixtureJoin();
+-		await runtime.retireFixture();
++		boundary("cleanup.join.after");
++		boundary("cleanup.retire.before");
++		await runtime.retireFixture();
++		boundary("cleanup.retire.after");
+ 	}
+ });
+ 
+@@ -1464,7 +1524,12 @@
+ });
+ 
+ it("queued configuration uses the next selection across a sequence gap and preserves committed preparation", async () => {
++	const boundaryStart = Date.now();
++	const boundary = (stage: string) => console.log("[008-body-boundary]", "queued", stage, Date.now() - boundaryStart);
++	boundary("credential.before");
+ 	const credential = await candidateCredential();
++	boundary("credential.after");
++	boundary("capability.before");
+ 	await env.DB.prepare(
+ 		"UPDATE codex_fixture_capabilities SET snapshot=? WHERE userId='owner'",
+ 	)
+@@ -1478,8 +1543,12 @@
+ 			}),
+ 		)
+ 		.run();
+-	const calls = modelReplies();
++	boundary("capability.after");
++	const calls = modelReplies();
++	boundary("admit.first.before");
+ 	const first = await env.CandidateProduct.admitOwned("owner", prompt);
++	boundary("admit.first.after");
++	boundary("admit.second.before");
+ 	const second = await env.CandidateProduct.admitOwned("owner", {
+ 		version: 2,
+ 		kind: "follow_up",
+@@ -1489,6 +1558,8 @@
+ 		idempotencyKey: "queued-config-second",
+ 		text: "Synthetic queued second",
+ 	});
++	boundary("admit.second.after");
++	boundary("admit.third.before");
+ 	const third = await env.CandidateProduct.admitOwned("owner", {
+ 		version: 2,
+ 		kind: "follow_up",
+@@ -1498,10 +1569,16 @@
+ 		idempotencyKey: "queued-config-third",
+ 		text: "Synthetic queued third",
+ 	});
++	boundary("admit.third.after");
+ 	const runtime = env.CandidateSessions.getByName(first.workspaceSessionId);
+ 	try {
++		boundary("deliver.third.before");
+ 		await runtime.deliverCommand(third.commandId, 1);
++		boundary("deliver.third.after");
++		boundary("deliver.first.before");
+ 		await runtime.deliverCommand(first.commandId, 1);
++		boundary("deliver.first.after");
++		boundary("poll.first.before");
+ 		await expect
+ 			.poll(
+ 				async () =>
+@@ -1509,16 +1586,24 @@
+ 				{ timeout: 3000 },
+ 			)
+ 			.toEqual(["complete", "pending"]);
++		boundary("poll.first.after");
++		boundary("request.first.before");
+ 		const prepared = parseSyntheticModelRequestV1(
+ 			await credential.candidateFinalRequest(),
+ 		);
++		boundary("request.first.after");
+ 		expect(JSON.parse(prepared.body)).toMatchObject({ model: "faux-1" });
++		boundary("task.read.before");
+ 		const task = await runInDurableObject(runtime, (_instance, state) =>
+ 			state.storage.sql
+ 				.exec("SELECT task,prepared,selection FROM host_tasks ORDER BY task")
+ 				.toArray(),
+ 		);
++		boundary("task.read.after");
++		boundary("reopen.before");
+ 		await runtime.reopenFixture();
++		boundary("reopen.after");
++		boundary("configure.before");
+ 		expect(
+ 			await runtime.configureFixture(
+ 				{
+@@ -1532,6 +1617,8 @@
+ 				first.commandId,
+ 			),
+ 		).toMatchObject({ status: "applied" });
++		boundary("configure.after");
++		boundary("task.compare.before");
+ 		expect(
+ 			await runInDurableObject(runtime, (_instance, state) =>
+ 				state.storage.sql
+@@ -1539,7 +1626,11 @@
+ 					.toArray(),
+ 			),
+ 		).toEqual(task);
++		boundary("task.compare.after");
++		boundary("deliver.second.before");
+ 		await runtime.deliverCommand(second.commandId, 1);
++		boundary("deliver.second.after");
++		boundary("poll.final.before");
+ 		await expect
+ 			.poll(
+ 				async () =>
+@@ -1547,15 +1638,20 @@
+ 				{ timeout: 3000 },
+ 			)
+ 			.toEqual(["complete", "complete", "complete"]);
++		boundary("poll.final.after");
++		boundary("request.final.before");
+ 		expect(
+ 			JSON.parse(
+ 				parseSyntheticModelRequestV1(await credential.candidateFinalRequest())
+ 					.body,
+ 			),
+ 		).toMatchObject({ model: "faux-2" });
++		boundary("request.final.after");
+ 		expect(calls()).toBe(3);
+ 	} finally {
+-		await runtime.retireFixture();
++		boundary("cleanup.retire.before");
++		await runtime.retireFixture();
++		boundary("cleanup.retire.after");
+ 	}
+ });
+ 

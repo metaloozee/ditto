@@ -1,0 +1,282 @@
+[
+  {
+    "log": "qualification-run-1.log",
+    "tag": "QUALIFICATION_A",
+    "evidence": {
+      "receipt": {
+        "version": 2,
+        "receiptId": "c76aea17-b2fc-4d36-bc1f-c890f4a1c460",
+        "commandId": "f9c7e79b-994b-47e2-ad99-e9044f93d3b5",
+        "workspaceSessionId": "8301b15f-9840-451b-8da6-4c7c180d89fc",
+        "commandSeq": 1,
+        "ownerVersion": 1,
+        "queueDeadlineAt": 1791700863199,
+        "userMessageId": "d9c03d2b-1699-4678-85ad-c29805d693b6",
+        "assistantMessageId": "2e9dc997-6b6e-4f54-a151-735e1db4cd18"
+      },
+      "captured": {
+        "boot": "9e4a172d-c11c-4378-8a52-76632dc6d206",
+        "doId": "c56d1961c093a6ff5324b65ac857a4e9149a138ec5a23dd17a00497bef182bfc",
+        "invocation": {
+          "id": "1b1b48c4-d409-4abb-9b0f-f2ba9abf3f22",
+          "generation": 1,
+          "started": 1791699963774,
+          "yield_at": 1791699964774,
+          "end_at": 1791699965774,
+          "state": "active"
+        },
+        "scope": {
+          "version": 2,
+          "userId": "owner",
+          "projectId": "project",
+          "workspaceSessionId": "8301b15f-9840-451b-8da6-4c7c180d89fc",
+          "ownerVersion": 1
+        },
+        "encryptedDigest": "7327f5e8b489e739caad98cc2188049a6d9fc4393d2da9c403b5987905c8e964"
+      },
+      "ordinary": {
+        "returned": false,
+        "name": "Error",
+        "message": "008-qualification-opaque-abort",
+        "code": null,
+        "remote": null,
+        "retryable": null,
+        "durableObjectReset": null
+      },
+      "uninvoked": {
+        "returned": false,
+        "name": "Error",
+        "message": "008-qualification-opaque-abort",
+        "code": null,
+        "remote": null,
+        "retryable": null,
+        "durableObjectReset": null
+      },
+      "aborted": {
+        "returned": false,
+        "name": "Error",
+        "message": "008-qualification-opaque-abort",
+        "code": null,
+        "remote": true,
+        "retryable": null,
+        "durableObjectReset": true
+      },
+      "oldStub": {
+        "returned": false,
+        "name": "Error",
+        "message": "008-qualification-opaque-abort",
+        "code": null,
+        "remote": null,
+        "retryable": null,
+        "durableObjectReset": true
+      },
+      "passive": {
+        "boot": "b3b2a758-0731-4593-902c-f06f85820de5",
+        "scope": {
+          "version": 2,
+          "userId": "owner",
+          "projectId": "project",
+          "workspaceSessionId": "8301b15f-9840-451b-8da6-4c7c180d89fc",
+          "ownerVersion": 1
+        },
+        "invocation": {
+          "id": "1b1b48c4-d409-4abb-9b0f-f2ba9abf3f22",
+          "generation": 1,
+          "started": 1791699963774,
+          "yield_at": 1791699964774,
+          "end_at": 1791699965774,
+          "state": "active"
+        },
+        "roots": 1
+      },
+      "activation": {
+        "returned": false,
+        "name": "Error",
+        "message": "Prior host termination required",
+        "code": null,
+        "remote": true,
+        "retryable": null,
+        "durableObjectReset": null
+      },
+      "lostObservation": "deliberately unrecorded outcome cannot qualify",
+      "calls": 0,
+      "authorityGeneration": 1,
+      "witness": null
+    }
+  },
+  {
+    "log": "qualification-b-run-1.log",
+    "tag": "QUALIFICATION_B",
+    "evidence": {
+      "receipt": {
+        "version": 2,
+        "receiptId": "19927fed-c696-4fde-93ee-754ef10fbe23",
+        "commandId": "60ceca37-182d-474e-8fab-904838743358",
+        "workspaceSessionId": "287dcd3a-a52d-40ae-bc00-bb1fc4d9acd4",
+        "commandSeq": 1,
+        "ownerVersion": 1,
+        "queueDeadlineAt": 1791700890131,
+        "userMessageId": "15be4c98-a5c3-4dfc-9523-c07b2a50e926",
+        "assistantMessageId": "29792f61-989e-476f-9714-3084987985ae"
+      },
+      "observations": [
+        {
+          "call": 1,
+          "positive": true,
+          "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "generation": 1,
+          "deadlineAt": 1791700050975
+        },
+        {
+          "call": 2,
+          "positive": true,
+          "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "generation": 1,
+          "deadlineAt": 1791700050975
+        },
+        {
+          "call": 3,
+          "positive": true,
+          "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "generation": 1,
+          "deadlineAt": 1791700050975
+        },
+        {
+          "call": 4,
+          "positive": true,
+          "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "generation": 1,
+          "deadlineAt": 1791700050975
+        }
+      ],
+      "claims": [
+        {
+          "effect": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "request_digest": "5acf6b59b78e0ffa9b5bd96d031198389b640916c7a9b7991fbeac9bc262c76c",
+          "claimed": 1
+        }
+      ],
+      "admissions": [
+        {
+          "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "state": "complete"
+        }
+      ],
+      "windows": [
+        {
+          "consumedRequests": 1,
+          "maxRequests": 1,
+          "closeReason": "complete"
+        }
+      ],
+      "calls": 1,
+      "safetyExpectedCalls": 0
+    }
+  },
+  {
+    "log": "qualification-b-run-1.log",
+    "tag": "QUALIFICATION_B",
+    "evidence": {
+      "receipt": {
+        "version": 2,
+        "receiptId": "87c4e912-c9a3-4335-9dfb-28782ee3c0f3",
+        "commandId": "293526cf-b6f0-4c26-afa0-71f53cd47b47",
+        "workspaceSessionId": "fe5b4cf4-6cc9-4cf5-8c18-706d3b5aed21",
+        "commandSeq": 1,
+        "ownerVersion": 1,
+        "queueDeadlineAt": 1791700892867,
+        "userMessageId": "21f461ee-bc69-4f5a-8559-b312bada77ca",
+        "assistantMessageId": "08ea38fd-9fec-4741-a914-1111bcb391c4"
+      },
+      "observations": [
+        {
+          "call": 1,
+          "positive": true,
+          "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "generation": 1,
+          "deadlineAt": 1791700053649
+        },
+        {
+          "call": 2,
+          "positive": true,
+          "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "generation": 1,
+          "deadlineAt": 1791700053649
+        },
+        {
+          "call": 3,
+          "positive": true,
+          "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "generation": 1,
+          "deadlineAt": 1791700053649
+        },
+        {
+          "call": 4,
+          "positive": true,
+          "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "generation": 1,
+          "deadlineAt": 1791700053649
+        }
+      ],
+      "claims": [
+        {
+          "effect": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "request_digest": "5acf6b59b78e0ffa9b5bd96d031198389b640916c7a9b7991fbeac9bc262c76c",
+          "claimed": 1
+        }
+      ],
+      "admissions": [
+        {
+          "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "state": "complete"
+        }
+      ],
+      "windows": [
+        {
+          "consumedRequests": 1,
+          "maxRequests": 1,
+          "closeReason": "complete"
+        }
+      ],
+      "calls": 1,
+      "safetyExpectedCalls": 0
+    }
+  },
+  {
+    "log": "qualification-b-run-1.log",
+    "tag": "QUALIFICATION_B_CONTROL",
+    "evidence": {
+      "observations": [
+        {
+          "call": 1,
+          "positive": true,
+          "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "generation": 1,
+          "deadlineAt": 1791700056061
+        },
+        {
+          "call": 2,
+          "positive": true,
+          "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "generation": 1,
+          "deadlineAt": 1791700056061
+        },
+        {
+          "call": 3,
+          "positive": true,
+          "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "generation": 1,
+          "deadlineAt": 1791700056061
+        },
+        {
+          "call": 4,
+          "positive": false,
+          "effectId": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "generation": 1,
+          "deadlineAt": 1791700056061
+        }
+      ],
+      "calls": 0
+    }
+  }
+]

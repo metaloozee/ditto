@@ -1,0 +1,183 @@
+--- a/apps/credential-tests/src/product-commands.worker.test.ts
++++ b/apps/credential-tests/src/product-commands.worker.test.ts
+@@ -498,6 +498,44 @@
+ 		.bind(first.userMessageId)
+ 		.run();
+ 	expect(await commands().reconstruct(first.commandId, 1)).toBeNull();
++});
++
++it.each([
++	"UPDATE session_command_keys SET userId='foreign' WHERE commandId=?",
++	"DELETE FROM session_command_keys WHERE commandId=?",
++	"UPDATE messages SET userId='foreign' WHERE id=(SELECT assistantMessageId FROM session_commands WHERE id=?)",
++	"UPDATE workspace_runtime_work SET userId='foreign' WHERE commandId=?",
++])("batched reconstruction denies admitted association tamper: %s", async (mutation) => {
++	await env.DB.exec(
++		"INSERT INTO user(id,name,email,createdAt,updatedAt) VALUES('foreign','Synthetic foreign owner','foreign@example.invalid',0,0)",
++	);
++	const product = commands();
++	const first = await product.admit("owner", prompt);
++	expect(await product.reconstruct(first.commandId, 1)).not.toBeNull();
++	await env.DB.prepare(mutation).bind(first.commandId).run();
++	expect(await product.reconstruct(first.commandId, 1)).toBeNull();
++});
++
++it("batched command subject rereads capability revision and deletion authority", async () => {
++	const product = commands();
++	const first = await product.admit("owner", prompt);
++	const subject = await product.subjectForCommand(first.commandId, 1);
++	expect(subject).toMatchObject({ capabilityRevision: 1 });
++	await env.DB.prepare(
++		"UPDATE codex_fixture_capabilities SET revision=2,snapshot=? WHERE userId='owner'",
++	)
++		.bind(JSON.stringify({ ...account, revision: 2 }))
++		.run();
++	expect(await product.subjectForCommand(first.commandId, 1)).toEqual({
++		...subject,
++		capabilityRevision: 2,
++	});
++	await env.DB.prepare(
++		"INSERT INTO runtime_deleted_target_fences VALUES('workspace_session',?,1,0)",
++	)
++		.bind(first.workspaceSessionId)
++		.run();
++	expect(await product.subjectForCommand(first.commandId, 1)).toBeNull();
+ });
+ 
+ it.each([
+--- a/apps/web/src/lib/session-command-candidate.ts
++++ b/apps/web/src/lib/session-command-candidate.ts
+@@ -161,6 +161,13 @@
+ 	};
+ }
+ 
++type CandidateOwnedRow = {
++	identityId: string;
++	incarnationId: string;
++	lifecycleGeneration: number;
++	controllerNamespace: string;
++};
++
+ export class CandidateProductCommands {
+ 	private policy: ModelProductAuthority;
+ 	constructor(
+@@ -184,16 +191,15 @@
+ 			)
+ 			.first<Row>();
+ 	}
++	private prepareOwned(userId: string, projectId: string, sessionId: string) {
++		return this.db.prepare(ownedSessionSql).bind(sessionId, userId, projectId);
++	}
+ 	private async owned(userId: string, projectId: string, sessionId: string) {
+-		const row = await this.db
+-			.prepare(ownedSessionSql)
+-			.bind(sessionId, userId, projectId)
+-			.first<{
+-				identityId: string;
+-				incarnationId: string;
+-				lifecycleGeneration: number;
+-				controllerNamespace: string;
+-			}>();
++		const row = await this.prepareOwned(
++			userId,
++			projectId,
++			sessionId,
++		).first<CandidateOwnedRow>();
+ 		if (!row) reject("runtime_owner_mismatch");
+ 		return row;
+ 	}
+@@ -202,11 +208,17 @@
+ 		projectId: string,
+ 		sessionId: string,
+ 	): Promise<ModelSubjectV1> {
+-		const row = await this.owned(userId, projectId, sessionId);
+-		const cap = await this.db
+-			.prepare("SELECT snapshot FROM codex_fixture_capabilities WHERE userId=?")
+-			.bind(userId)
+-			.first<{ snapshot: string }>();
++		const [owned, capabilities] = await this.db.batch<unknown>([
++			this.prepareOwned(userId, projectId, sessionId),
++			this.db
++				.prepare(
++					"SELECT snapshot FROM codex_fixture_capabilities WHERE userId=?",
++				)
++				.bind(userId),
++		]);
++		const row = owned.results[0] as CandidateOwnedRow | undefined;
++		if (!row) reject("runtime_owner_mismatch");
++		const cap = capabilities.results[0] as { snapshot: string } | undefined;
+ 		if (!cap) reject("model_unconfigured");
+ 		const account = parseSyntheticAccountV1(cap.snapshot);
+ 		return {
+@@ -686,33 +698,48 @@
+ 			.first<Row>();
+ 		if (!row) return null;
+ 		try {
+-			await this.owned(row.userId, row.projectId, row.sessionId);
++			const ordinary = row.kind === "prompt" || row.kind === "follow_up";
++			const statements = [
++				this.prepareOwned(row.userId, row.projectId, row.sessionId),
++			];
++			if (ordinary) {
++				statements.push(
++					this.db
++						.prepare(`SELECT u.content FROM messages u JOIN messages a ON a.id=? WHERE u.id=? AND u.sessionId=? AND a.sessionId=u.sessionId
++AND u.userId=? AND a.userId=u.userId AND u.projectId=? AND a.projectId=u.projectId AND u.role='user' AND a.role='assistant'`)
++						.bind(
++							row.assistantMessageId,
++							row.userMessageId,
++							row.sessionId,
++							row.userId,
++							row.projectId,
++						),
++				);
++			}
++			statements.push(
++				this.db
++					.prepare(
++						"SELECT idempotencyKey,targetKind,targetId FROM session_command_keys WHERE commandId=? AND receiptId=? AND userId=?",
++					)
++					.bind(row.id, row.receiptId, row.userId),
++			);
++			const results = await this.db.batch<unknown>(statements);
++			if (!results[0].results[0]) reject("runtime_owner_mismatch");
+ 			let text: string | undefined;
+-			if (row.kind === "prompt" || row.kind === "follow_up") {
+-				const message = await this.db
+-					.prepare(`SELECT u.content FROM messages u JOIN messages a ON a.id=? WHERE u.id=? AND u.sessionId=? AND a.sessionId=u.sessionId
+-AND u.userId=? AND a.userId=u.userId AND u.projectId=? AND a.projectId=u.projectId AND u.role='user' AND a.role='assistant'`)
+-					.bind(
+-						row.assistantMessageId,
+-						row.userMessageId,
+-						row.sessionId,
+-						row.userId,
+-						row.projectId,
+-					)
+-					.first<{ content: string }>();
++			if (ordinary) {
++				const message = results[1].results[0] as
++					| { content: string }
++					| undefined;
+ 				if (!message) return null;
+ 				text = message.content;
+ 			}
+-			const key = await this.db
+-				.prepare(
+-					"SELECT idempotencyKey,targetKind,targetId FROM session_command_keys WHERE commandId=? AND receiptId=? AND userId=?",
+-				)
+-				.bind(row.id, row.receiptId, row.userId)
+-				.first<{
+-					idempotencyKey: string;
+-					targetKind: string;
+-					targetId: string;
+-				}>();
++			const key = results[ordinary ? 2 : 1].results[0] as
++				| {
++						idempotencyKey: string;
++						targetKind: string;
++						targetId: string;
++				  }
++				| undefined;
+ 			if (!key) return null;
+ 			const browser = parseBrowserCommandV2({
+ 				version: 2,

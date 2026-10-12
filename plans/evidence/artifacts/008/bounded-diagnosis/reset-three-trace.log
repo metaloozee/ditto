@@ -1,0 +1,166 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":756,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59849}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+[DEBUG-008-bound] credential-claim {"elapsed":161,"operationRemaining":59645,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+[DEBUG-008-bound] host-claim-enter {"aborted":false,"active":true,"yieldRemaining":550,"operationRemaining":59644}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":537,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59631}
+[DEBUG-008-bound] host-claim-consumed {"aborted":false,"yieldRemaining":536}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+[DEBUG-008-bound] host-claim-durable {"aborted":false,"yieldRemaining":531}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+[DEBUG-008-bound] host-claim-product {"aborted":false,"yieldRemaining":512}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":500,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59594}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+[DEBUG-008-bound] exact-claim-admitted
+
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-835260d9-4f57-41e3-9ed9-cc123f6ddaf1
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+[DEBUG-008-bound] credential-catch {"stage":"claim","elapsed":464,"operationRemaining":59342,"aborted":false,"decision":"authority_changed"}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+[DEBUG-008-bound] host-yield {"closing":false,"yieldRemaining":null}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":875,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59959}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+[DEBUG-008-bound] credential-claim {"elapsed":163,"operationRemaining":59757,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+[DEBUG-008-bound] host-claim-enter {"aborted":false,"active":true,"yieldRemaining":671,"operationRemaining":59756}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":651,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59736}
+[DEBUG-008-bound] host-claim-consumed {"aborted":false,"yieldRemaining":650}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+[DEBUG-008-bound] host-claim-durable {"aborted":false,"yieldRemaining":645}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+[DEBUG-008-bound] host-claim-product {"aborted":false,"yieldRemaining":625}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":604,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59688}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+[DEBUG-008-bound] exact-claim-admitted
+
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-ba6caf24-fc80-4263-b08a-2cc894788437
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+[DEBUG-008-bound] credential-catch {"stage":"claim","elapsed":401,"operationRemaining":59519,"aborted":false,"decision":"authority_changed"}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":871,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59956}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[DEBUG-008-bound] credential-claim {"elapsed":167,"operationRemaining":59749,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[DEBUG-008-bound] host-claim-enter {"aborted":false,"active":true,"yieldRemaining":664,"operationRemaining":59749}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":644,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59729}
+[DEBUG-008-bound] host-claim-consumed {"aborted":false,"yieldRemaining":644}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[DEBUG-008-bound] host-claim-durable {"aborted":false,"yieldRemaining":638}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[DEBUG-008-bound] host-claim-product {"aborted":false,"yieldRemaining":617}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":601,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59686}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[DEBUG-008-bound] exact-claim-admitted
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[DEBUG-008-bound] credential-fetch {"elapsed":247,"operationRemaining":59669,"aborted":false}
+
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-9a9924e1-95b1-42e8-a46a-27c4690afd8d
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[DEBUG-008-bound] credential-early-catch {"stage":"prepare","elapsed":5,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":855,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59956}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[DEBUG-008-bound] credential-claim {"elapsed":143,"operationRemaining":59765,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[DEBUG-008-bound] host-claim-enter {"aborted":false,"active":true,"yieldRemaining":664,"operationRemaining":59765}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":647,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59748}
+[DEBUG-008-bound] host-claim-consumed {"aborted":false,"yieldRemaining":647}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[DEBUG-008-bound] host-claim-durable {"aborted":false,"yieldRemaining":642}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[DEBUG-008-bound] host-claim-product {"aborted":false,"yieldRemaining":617}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":596,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59697}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[DEBUG-008-bound] exact-claim-admitted
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[DEBUG-008-bound] credential-fetch {"elapsed":228,"operationRemaining":59680,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[DEBUG-008-bound] host-yield {"closing":false,"yieldRemaining":535}
+
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-closed-successor-replacement
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-closed-successor-replacement
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbb00 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbe50 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfca8e /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f03c2a /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0c760 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0cd90
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[DEBUG-008-bound] host-yield {"closing":false,"yieldRemaining":null}
+
+ ✓ src/product-commands.worker.test.ts (53 tests | 50 skipped) 9585ms
+   ✓ private fixture reset preserves immutable host origin and discarded observation=false  2843ms
+   ✓ private fixture reset preserves immutable host origin and discarded observation=true  2637ms
+   ✓ private fixture recovery activates only the exact current successor and a valid old descriptor stays denied  4105ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed | 50 skipped (53)
+   Start at  12:29:38
+   Duration  11.23s (transform 392ms, setup 0ms, collect 678ms, tests 9.59s, environment 0ms, prepare 155ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

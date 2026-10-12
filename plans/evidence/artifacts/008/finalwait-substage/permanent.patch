@@ -1,0 +1,163 @@
+--- a/apps/credential-tests/src/entry.ts
++++ b/apps/credential-tests/src/entry.ts
+@@ -212,8 +212,8 @@
+ export class CandidateFixtureCredential extends FixtureCredential {
+ 	private finalWait:
+ 		| {
+-				entered: Promise<void>;
+-				mark(): void;
++				entered: Promise<boolean>;
++				mark(reached: boolean): void;
+ 				released: Promise<void>;
+ 				release(): void;
+ 		  }
+@@ -303,6 +303,7 @@
+ 		const forced = this.forceDenials;
+ 		this.forceDenials = false;
+ 		const held = this.claimAckWait;
++		const finalHeld = this.finalWait;
+ 		const actual: ModelClaimRpc = held
+ 			? {
+ 					describe: () => capability.describe(),
+@@ -325,7 +326,10 @@
+ 			await super.requestModel(invalid, capability);
+ 			await super.requestModel(invalid, capability);
+ 			return super.requestModel(invalid, capability);
+-		})().finally(() => held?.mark(false));
++		})().finally(() => {
++			held?.mark(false);
++			finalHeld?.mark(false);
++		});
+ 		return this.requestOutcome;
+ 	}
+ 	waitCandidateOutcome() {
+@@ -335,13 +339,13 @@
+ 		return structuredClone(this.finalRequest);
+ 	}
+ 	armCandidateFinal() {
+-		let mark!: () => void, release!: () => void;
++		let mark!: (reached: boolean) => void, release!: () => void;
+ 		this.finalDescriptor = undefined;
+ 		this.finalWait = {
+-			entered: new Promise<void>((r) => {
++			entered: new Promise<boolean>((r) => {
+ 				mark = r;
+ 			}),
+-			mark: () => mark(),
++			mark: (reached) => mark(reached),
+ 			released: new Promise<void>((r) => {
+ 				release = r;
+ 			}),
+@@ -558,14 +562,15 @@
+ 	}
+ 	protected modelProductAuthority() {
+ 		const fixture = this;
++		const finalHeld = this.finalWait;
+ 		let calls = 0;
+ 		return new (class extends ModelProductAuthority {
+ 			async permit(...args: Parameters<ModelProductAuthority["permit"]>) {
+ 				const positive = await super.permit(...args);
+-				if (++calls === 4 && positive && fixture.finalWait) {
++				if (++calls === 4 && positive && finalHeld) {
+ 					fixture.finalDescriptor = args[0];
+-					fixture.finalWait.mark();
+-					await fixture.finalWait.released;
++					finalHeld.mark(true);
++					await finalHeld.released;
+ 				}
+ 				return positive;
+ 			}
+--- a/apps/credential-tests/src/product-commands.worker.test.ts
++++ b/apps/credential-tests/src/product-commands.worker.test.ts
+@@ -262,6 +262,55 @@
+ 	}
+ });
+ 
++it("settles final-hold preparation false when a real preclaim hold crosses the original host yield", async () => {
++	const credential = await candidateCredential();
++	const calls = modelReplies();
++	await credential.holdModel("claim");
++	await credential.armCandidateFinal();
++	const receipt = await env.CandidateProduct.admitOwned("owner", prompt);
++	const runtime = env.CandidateSessions.getByName(receipt.workspaceSessionId);
++	try {
++		await env.CandidateProduct.drain();
++		await credential.waitModel();
++		await new Promise((resolve) => setTimeout(resolve, 1100));
++		await credential.releaseModel();
++		expect(await credential.waitCandidateFinal()).toBe(false);
++		expect((await credential.waitCandidateOutcome())?.status).toBe("denied");
++		await expect
++			.poll(async () => (await runtime.candidateSnapshot()).members[0]?.state, {
++				timeout: 3000,
++			})
++			.toBe("failed");
++		const snapshot = await runtime.candidateSnapshot();
++		expect(snapshot.projections).toMatchObject([{ state: "failed" }]);
++		expect(snapshot.runs).toMatchObject([{ state: "failed" }]);
++		expect(snapshot.effects).toMatchObject([{ state: "admitted" }]);
++		expect(snapshot.effects).toHaveLength(1);
++		expect(
++			await runInDurableObject(runtime, (_instance, state) =>
++				state.storage.sql
++					.exec("SELECT claimed FROM host_model_dispatch")
++					.toArray(),
++			),
++		).toEqual([{ claimed: 0 }]);
++		expect(snapshot.invocations).toMatchObject([{ state: "closed" }]);
++		expect(calls()).toBe(0);
++		expect(
++			(
++				await env.DB.prepare(
++					"SELECT deliveryState FROM workspace_runtime_work WHERE commandId=?",
++				)
++					.bind(receipt.commandId)
++					.first()
++			)?.deliveryState,
++		).toBe("delivered");
++	} finally {
++		await credential.releaseModel();
++		await credential.releaseCandidateFinal();
++		await runtime.retireFixture();
++	}
++});
++
+ it("admits concurrent identical first prompts with one receipt, identity, capacity claim and message pair", async () => {
+ 	const [a, b] = await Promise.all([
+ 		commands().admit("owner", prompt),
+@@ -854,7 +903,7 @@
+ 	const runtime = env.CandidateSessions.getByName(receipt.workspaceSessionId);
+ 	try {
+ 		await env.CandidateProduct.drain();
+-		await credential.waitCandidateFinal();
++		expect(await credential.waitCandidateFinal()).toBe(true);
+ 		const descriptor = await credential.candidateFinalDescriptor();
+ 		const validRequest = await credential.candidateFinalRequest();
+ 		expect(descriptor).toBeDefined();
+@@ -1035,7 +1084,7 @@
+ 	try {
+ 		await env.CandidateProduct.drain();
+ 		await runtime.waitFixtureJoin();
+-		await credential.waitCandidateFinal();
++		expect(await credential.waitCandidateFinal()).toBe(true);
+ 		const descriptor = await credential.candidateFinalDescriptor();
+ 		const validRequest = await credential.candidateFinalRequest();
+ 		if (!descriptor) throw new Error("missing_final_descriptor");
+@@ -1140,7 +1189,7 @@
+ 			.bind(expiry)
+ 			.run();
+ 		await credential.releaseModel();
+-		await credential.waitCandidateFinal();
++		expect(await credential.waitCandidateFinal()).toBe(true);
+ 		expect(await credential.candidateFinalDescriptor()).toBeDefined();
+ 		await new Promise((resolve) =>
+ 			setTimeout(resolve, Math.max(0, expiry - Date.now()) + 25),
+@@ -1709,7 +1758,7 @@
+ 	try {
+ 		await runtime.deliverCommand(first.commandId, 1);
+ 		await runtime.waitFixtureJoin();
+-		await credential.waitCandidateFinal();
++		expect(await credential.waitCandidateFinal()).toBe(true);
+ 		await credential.releaseCandidateFinal();
+ 		await credential.waitCandidateOutcome();
+ 		await expect

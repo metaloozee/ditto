@@ -1,0 +1,951 @@
+--- advisor-current/apps/runtime/src/pi-durable-commands.test.ts
++++ correction/apps/runtime/src/pi-durable-commands.test.ts
+@@ -64,6 +64,9 @@
+ 		state: {
+ 			now: number;
+ 			fault?: HostFault;
++			beforeTransition?: (point: HostFault) => void;
++			reconcile?: () => Promise<void>;
++			configuration?: () => Promise<void>;
+ 			afterSubmission?: () => Promise<void>;
+ 			loseDecision: boolean;
+ 			decisions: Map<string, QueueDecisionV2>;
+@@ -81,6 +84,9 @@
+ 			const control = {
+ 				now: Date.now() + 60000,
+ 				fault: undefined as HostFault | undefined,
++				beforeTransition: undefined as ((point: HostFault) => void) | undefined,
++				reconcile: undefined as (() => Promise<void>) | undefined,
++				configuration: undefined as (() => Promise<void>) | undefined,
+ 				afterSubmission: undefined as (() => Promise<void>) | undefined,
+ 				loseDecision: false,
+ 				decisions: new Map<string, QueueDecisionV2>(),
+@@ -101,6 +107,7 @@
+ 					liveExecutors: 1,
+ 				}),
+ 				fault: (point) => {
++					control.beforeTransition?.(point);
+ 					if (point === control.fault) throw new Error(`Injected ${point}`);
+ 				},
+ 				afterSubmission: async () => {
+@@ -112,6 +119,7 @@
+ 					workspaceSessionId: "workspace",
+ 					ownerVersion: 1,
+ 					reconcileDecision: async (decision) => {
++						await control.reconcile?.();
+ 						const prior = control.decisions.get(decision.commandId);
+ 						if (prior && JSON.stringify(prior) !== JSON.stringify(decision))
+ 							return false;
+@@ -120,11 +128,18 @@
+ 							throw new Error("Lost decision acknowledgment");
+ 						return true;
+ 					},
+-					configuration: async () => ({
+-						subject,
+-						defaultSelection: { model: "faux-1", thinking: "off" },
+-						authorize: async () => ({ version: 1, status: "current", subject }),
+-					}),
++					configuration: async () => {
++						await control.configuration?.();
++						return {
++							subject,
++							defaultSelection: { model: "faux-1", thinking: "off" },
++							authorize: async () => ({
++								version: 1,
++								status: "current",
++								subject,
++							}),
++						};
++					},
+ 				},
+ 				options: (guard) => {
+ 					const fixture = cooperativeFixture(
+@@ -155,6 +170,7 @@
+ 				await run(state.storage, open, control);
+ 			} finally {
+ 				control.fault = undefined;
++				control.beforeTransition = undefined;
+ 				control.loseDecision = false;
+ 				await host?.yield();
+ 				await host?.awaitClosure();
+@@ -325,6 +341,14 @@
+ 			expect(submissions(storage)).toBe(0);
+ 			const decision = control.decisions.get(input.commandId);
+ 			expect(decision?.decision).toBe(fate);
++			if (fate === "expired") {
++				expect(
++					storage.sql.exec("SELECT state FROM host_members").one().state,
++				).toBe("failed");
++				expect(
++					storage.sql.exec("SELECT state FROM host_projections").one().state,
++				).toBe("failed");
++			}
+ 			control.loseDecision = false;
+ 			await host.yield();
+ 			await host.awaitClosure();
+@@ -451,3 +475,138 @@
+ 		expect(submissions(storage)).toBe(1);
+ 	});
+ });
++it.each([
++	"stop",
++	"cancel",
++] as const)("returns the original concurrent identical %s acknowledgment without poisoning storage", async (kind) => {
++	await fixture(
++		`candidate-concurrent-${kind}`,
++		async (storage, open, control) => {
++			const host = await open();
++			const target = command(1, control.now);
++			const input = parseCommandV2({
++				version: 2,
++				userId: "owner",
++				projectId: "project",
++				workspaceSessionId: "workspace",
++				runtimeOwnerVersion: 1,
++				acceptedAt: target.acceptedAt,
++				deadlineAt: target.deadlineAt,
++				kind,
++				commandId: kind,
++				commandSeq: 2,
++				receiptId: `${kind}-receipt`,
++				payloadDigest: "b".repeat(64),
++				...(kind === "stop"
++					? { targetRunId: target.commandId }
++					: { targetCommandId: target.commandId }),
++			});
++			const acknowledgments = await Promise.all([
++				host.acceptCandidate(input, target),
++				host.acceptCandidate(input, target),
++			]);
++			expect(acknowledgments[0]).toEqual(acknowledgments[1]);
++			const epoch = storage.sql.exec("SELECT epoch FROM host_runs").one().epoch;
++			expect(await host.acceptCandidate(input, target)).toEqual(
++				acknowledgments[0],
++			);
++			expect(storage.sql.exec("SELECT epoch FROM host_runs").one().epoch).toBe(
++				epoch,
++			);
++			expect(
++				storage.sql.exec("SELECT * FROM host_safety").toArray(),
++			).toHaveLength(0);
++			expect(submissions(storage)).toBe(0);
++		},
++	);
++});
++it("retains exact expiry and failed projection when encrypted start preparation crosses the queue deadline", async () => {
++	await fixture(
++		"candidate-preparation-expiry",
++		async (storage, open, control) => {
++			let host = await open();
++			const input = command(1, control.now);
++			await host.acceptCandidate(input);
++			control.beforeTransition = (point) => {
++				if (point === "intent") {
++					control.beforeTransition = undefined;
++					control.now = input.deadlineAt;
++				}
++			};
++			await host.alarm();
++			const fate = control.decisions.get(input.commandId);
++			expect(fate).toMatchObject({
++				decision: "expired",
++				queueDeadlineAt: input.deadlineAt,
++				payloadDigest: input.payloadDigest,
++			});
++			expect(
++				storage.sql.exec("SELECT state FROM host_members").one().state,
++			).toBe("failed");
++			expect(
++				storage.sql.exec("SELECT state FROM host_projections").one().state,
++			).toBe("failed");
++			expect(
++				storage.sql.exec("SELECT * FROM host_safety").toArray(),
++			).toHaveLength(0);
++			expect(submissions(storage)).toBe(0);
++			expect(control.calls()).toBe(0);
++			await host.yield();
++			await host.awaitClosure();
++			host = await open();
++			await host.alarm();
++			expect(control.decisions.get(input.commandId)).toEqual(fate);
++			expect(submissions(storage)).toBe(0);
++		},
++	);
++});
++it.each([
++	"reconcile",
++	"configuration",
++] as const)("actually closes while candidate %s is held and denies the released continuation", async (phase) => {
++	await fixture(
++		`candidate-canceled-${phase}`,
++		async (storage, open, control) => {
++			const host = await open();
++			const input = command(1, control.now);
++			await host.acceptCandidate(input);
++			if (phase === "reconcile") control.now = input.deadlineAt;
++			let entered = false;
++			let release = () => {};
++			const held = new Promise<void>((resolve) => {
++				release = resolve;
++			});
++			control[phase] = async () => {
++				entered = true;
++				await held;
++			};
++			const alarm = host.alarm().catch(() => {});
++			try {
++				await expect.poll(() => entered).toBe(true);
++				const close = host.yield();
++				let timer: ReturnType<typeof setTimeout> | undefined;
++				try {
++					expect(
++						await Promise.race([
++							close.then(() => "closed"),
++							new Promise<string>((resolve) => {
++								timer = setTimeout(() => resolve("pending"), 1200);
++							}),
++						]),
++					).toBe("closed");
++				} finally {
++					clearTimeout(timer);
++				}
++				await host.awaitClosure();
++			} finally {
++				release();
++				await alarm;
++			}
++			expect(submissions(storage)).toBe(0);
++			expect(control.calls()).toBe(0);
++			expect(
++				storage.sql.exec("SELECT * FROM host_safety").toArray(),
++			).toHaveLength(0);
++		},
++	);
++});
+--- advisor-current/apps/runtime/src/pi-durable-host.ts
++++ correction/apps/runtime/src/pi-durable-host.ts
+@@ -3956,8 +3956,14 @@
+ 			};
+ 		}
+ 		if (command.kind === "prompt" || command.kind === "follow_up") {
+-			await this.ownerTransition(BACKGROUND_CONTEXT, async () => {
+-				if (this.productRecord(command.commandId)) return;
++			await this.ownerTransition(BACKGROUND_CONTEXT, async (context) => {
++				context.abortSignal?.throwIfAborted();
++				const retained = this.productRecord(command.commandId);
++				if (retained) {
++					if (canonical(retained.command) !== canonical(command))
++						throw new Error("Conflicting candidate delivery");
++					return;
++				}
+ 				await this.accept(
+ 					command.commandId,
+ 					command.text,
+@@ -3993,7 +3999,13 @@
+ 			)
+ 				throw new Error("Invalid targeted cancellation");
+ 			if (command.kind === "cancel") {
+-				await this.ownerTransition(BACKGROUND_CONTEXT, async () => {
++				await this.ownerTransition(BACKGROUND_CONTEXT, async (context) => {
++					const retained = this.productRecord(command.commandId);
++					if (retained) {
++						if (canonical(retained.command) !== canonical(command))
++							throw new Error("Conflicting candidate delivery");
++						return;
++					}
+ 					let targetRecord = this.productRecord(ownedTarget.commandId);
+ 					if (!targetRecord) {
+ 						await this.accept(
+@@ -4019,15 +4031,29 @@
+ 						command,
+ 						tooLate ? "too_late" : "applied",
+ 					);
+-					this.transition("intent", () =>
+-						this.storeProduct(command, run, prepared),
+-					);
+-					this.rememberProduct(command, prepared);
+-					await this.durable();
++					context.abortSignal?.throwIfAborted();
++					const committed = this.transition("intent", () => {
++						const retained = this.productRecord(command.commandId);
++						if (retained) {
++							if (canonical(retained.command) !== canonical(command))
++								throw new EffectDenied("authority");
++							return false;
++						}
++						this.storeProduct(command, run, prepared);
++						return true;
++					});
++					if (committed) this.rememberProduct(command, prepared);
++					await this.durable(context);
+ 				});
+ 			} else {
+ 				const prepared = await this.prepareProduct(command, "applied");
+-				this.transition("fence", () => {
++				const committed = this.transition("fence", () => {
++					const retained = this.productRecord(command.commandId);
++					if (retained) {
++						if (canonical(retained.command) !== canonical(command))
++							throw new EffectDenied("authority");
++						return false;
++					}
+ 					this.storeProduct(command, run, prepared);
+ 					this.storage.sql.exec(
+ 						"INSERT OR IGNORE INTO host_runs VALUES(?,1,'queued',NULL,NULL)",
+@@ -4037,10 +4063,13 @@
+ 						"UPDATE host_runs SET epoch=epoch+1,state='stopping' WHERE id=? AND state NOT IN ('complete','failed','canceled','stopping')",
+ 						run,
+ 					);
++					return true;
+ 				});
+-				this.rememberProduct(command, prepared);
+-				await this.durable();
+-				await this.stop(command.commandId, run);
++				if (committed) {
++					this.rememberProduct(command, prepared);
++					await this.durable();
++					await this.stop(command.commandId, run);
++				}
+ 			}
+ 		}
+ 		this.repairProductCursor();
+@@ -4072,7 +4101,9 @@
+ 			| "done"
+ 			| "failed",
+ 		decision?: QueueDecisionV2,
++		context: Context = BACKGROUND_CONTEXT,
+ 	) {
++		context.abortSignal?.throwIfAborted();
+ 		const record = this.productRecord(id);
+ 		if (!record) throw new Error("Missing accepted candidate command");
+ 		const prepared = await this.prepareProduct(
+@@ -4080,6 +4111,7 @@
+ 			disposition,
+ 			decision ?? record.decision,
+ 		);
++		context.abortSignal?.throwIfAborted();
+ 		this.transition("account", () => {
+ 			this.storeProduct(record.command, record.run, prepared, record.envelope);
+ 			if (!["submitted", "done"].includes(disposition))
+@@ -4095,13 +4127,13 @@
+ 		});
+ 		this.rememberProduct(record.command, prepared);
+ 		this.repairProductCursor();
+-		await this.durable();
++		await this.durable(context);
+ 	}
+ 
+ 	async readCandidateSelection() {
+ 		const scope = this.dependencies.candidate;
+ 		if (!scope) throw new Error("Candidate owner required");
+-		return this.ownerTransition(BACKGROUND_CONTEXT, async () => {
++		return this.ownerTransition(BACKGROUND_CONTEXT, async (context) => {
+ 			this.assertSeals();
+ 			return (
+ 				await this.piConfiguration(
+@@ -4111,7 +4143,7 @@
+ 						workspaceSessionId: scope.workspaceSessionId,
+ 						ownerVersion: scope.ownerVersion,
+ 					},
+-					BACKGROUND_CONTEXT,
++					context,
+ 				)
+ 			).selection;
+ 		});
+@@ -4138,7 +4170,11 @@
+ 	private async consumeCandidate() {
+ 		const scope = this.dependencies.candidate;
+ 		if (!scope) return;
+-		await this.ownerTransition(BACKGROUND_CONTEXT, async () => {
++		await this.ownerTransition(BACKGROUND_CONTEXT, async (context) => {
++			context = withAbortSignal(
++				AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
++				context,
++			);
+ 			const records = this.storage.sql
+ 				.exec<{ id: string }>(
+ 					"SELECT id FROM host_product_commands ORDER BY sequence",
+@@ -4156,20 +4192,26 @@
+ 					const submitted = mapped.submission
+ 						? await this.piRecords.submission(
+ 								mapped.submission as import("@earendil-works/pi-durable").SubmissionId,
+-								BACKGROUND_CONTEXT,
++								context,
+ 							)
+ 						: undefined;
++					context.abortSignal?.throwIfAborted();
+ 					if (submitted?.status === "done")
+-						await this.disposeCandidate(mapped.id, "done");
++						await this.disposeCandidate(mapped.id, "done", undefined, context);
+ 					else if (submitted?.status === "unanswered")
+-						await this.disposeCandidate(mapped.id, "failed");
++						await this.disposeCandidate(
++							mapped.id,
++							"failed",
++							undefined,
++							context,
++						);
+ 					else if (
+ 						!this.active &&
+ 						["queued", "running", "recovering"].includes(
+ 							this.run(record.run).state,
+ 						)
+ 					)
+-						await this.schedule(mapped.id);
++						await this.schedule(mapped.id, undefined, context);
+ 					continue;
+ 				}
+ 				if (record.disposition !== null) continue;
+@@ -4180,6 +4222,8 @@
+ 					await this.disposeCandidate(
+ 						record.command.commandId,
+ 						"target_run_terminal",
++						undefined,
++						context,
+ 					);
+ 					continue;
+ 				}
+@@ -4205,30 +4249,27 @@
+ 							null,
+ 							decision,
+ 						);
+-						this.transition("intent", () =>
++						context.abortSignal?.throwIfAborted();
++						this.transition("intent", () => {
+ 							this.storeProduct(
+ 								record.command,
+ 								record.run,
+ 								prepared,
+ 								record.envelope,
+-							),
+-						);
++							);
++							this.failCandidateMember(record.command);
++						});
+ 						this.rememberProduct(record.command, prepared);
+-						await this.durable();
++						await this.durable(context);
+ 					}
+ 					if (
+-						await awaitWithContext(
+-							scope.reconcileDecision(decision),
+-							withAbortSignal(
+-								AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
+-								BACKGROUND_CONTEXT,
+-							),
+-						)
++						await awaitWithContext(scope.reconcileDecision(decision), context)
+ 					)
+ 						await this.disposeCandidate(
+ 							record.command.commandId,
+ 							"expired",
+ 							decision,
++							context,
+ 						);
+ 				}
+ 			}
+@@ -4279,29 +4320,80 @@
+ 								null,
+ 								decision,
+ 							);
+-							this.transition("intent", () => {
++							context.abortSignal?.throwIfAborted();
++							const committed = this.transition("intent", () => {
++								const current = this.run(record.run);
++								if (
++									current.epoch !== run.epoch ||
++									!["queued", "running", "recovering"].includes(current.state)
++								)
++									return "revoked";
++								if (this.dependencies.now() >= record.command.deadlineAt)
++									return "expired";
+ 								this.assertSchedule(record.run, run.epoch);
+-								if (this.dependencies.now() >= record.command.deadlineAt)
+-									throw new Error("Candidate start deadline lost");
+ 								this.storeProduct(
+ 									record.command,
+ 									record.run,
+ 									prepared,
+ 									record.envelope,
+ 								);
++								return "started";
+ 							});
+-							this.rememberProduct(record.command, prepared);
+-							await this.durable();
++							if (committed === "started") {
++								this.rememberProduct(record.command, prepared);
++								await this.durable(context);
++							} else if (committed === "expired") {
++								const expired: QueueDecisionV2 = {
++									...decision,
++									decision: "expired",
++									decidedAt: this.dependencies.now(),
++								};
++								const expiry = await this.prepareProduct(
++									record.command,
++									null,
++									expired,
++								);
++								context.abortSignal?.throwIfAborted();
++								this.transition("intent", () => {
++									this.storeProduct(
++										record.command,
++										record.run,
++										expiry,
++										record.envelope,
++									);
++									this.failCandidateMember(record.command);
++								});
++								this.rememberProduct(record.command, expiry);
++								await this.durable(context);
++								if (
++									await awaitWithContext(
++										scope.reconcileDecision(expired),
++										context,
++									)
++								) {
++									context.abortSignal?.throwIfAborted();
++									await this.disposeCandidate(
++										row.id,
++										"expired",
++										expired,
++										context,
++									);
++								}
++							} else {
++								await this.disposeCandidate(
++									row.id,
++									"target_run_terminal",
++									undefined,
++									context,
++								);
++							}
+ 						}
+ 						const started = this.productRecord(row.id)!;
+ 						if (
+ 							started.decision?.decision === "started" &&
+ 							(await awaitWithContext(
+ 								scope.reconcileDecision(started.decision),
+-								withAbortSignal(
+-									AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
+-									BACKGROUND_CONTEXT,
+-								),
++								context,
+ 							))
+ 						) {
+ 							if (
+@@ -4309,22 +4401,26 @@
+ 									this.run(record.run).state,
+ 								)
+ 							) {
+-								await this.schedule(row.id);
++								context.abortSignal?.throwIfAborted();
++								await this.schedule(row.id, undefined, context);
+ 								await this.disposeCandidate(
+ 									row.id,
+ 									"submitted",
+ 									started.decision,
++									context,
+ 								);
+ 							} else
+ 								await this.disposeCandidate(
+ 									row.id,
+ 									"target_run_terminal",
+ 									started.decision,
++									context,
+ 								);
+ 						}
+ 					}
+ 				}
+ 			}
++			context.abortSignal?.throwIfAborted();
+ 			const pending = this.storage.sql
+ 				.exec<{ id: string }>("SELECT id FROM host_product_commands")
+ 				.toArray()
+@@ -4346,7 +4442,7 @@
+ 						),
+ 					);
+ 			});
+-			await this.durable();
++			await this.durable(context);
+ 		});
+ 	}
+ 
+@@ -4578,7 +4674,11 @@
+ 		}
+ 	}
+ 
+-	async schedule(id: string, duplicateInvocation?: string) {
++	async schedule(
++		id: string,
++		duplicateInvocation?: string,
++		context: Context = BACKGROUND_CONTEXT,
++	) {
+ 		this.assertSeals();
+ 		if (duplicateInvocation) {
+ 			const previous = this.latest();
+@@ -4586,7 +4686,11 @@
+ 				throw new Error("Stale invocation delivery");
+ 			return previous;
+ 		}
++		if (this.dependencies.candidate)
++			context = withAbortSignal(this.ownerAbort.signal, context);
++		context.abortSignal?.throwIfAborted();
+ 		await this.expire();
++		context.abortSignal?.throwIfAborted();
+ 		const command = this.command(id),
+ 			run = this.run(command.run);
+ 		if (["complete", "failed", "canceled", "stopping"].includes(run.state))
+@@ -4639,7 +4743,7 @@
+ 			if (!prior.submission) throw new Error("Missing predecessor submission");
+ 			const submission = await this.piRecords.submission(
+ 				prior.submission as import("@earendil-works/pi-durable").SubmissionId,
+-				BACKGROUND_CONTEXT,
++				context,
+ 			);
+ 			if (
+ 				!submission ||
+@@ -4648,36 +4752,43 @@
+ 			)
+ 				throw new Error("Supported turn boundary required");
+ 		}
+-		let authority = await this.dependencies.authority();
+-		await this.check(authority, BACKGROUND_CONTEXT, true);
++		let authority = await awaitWithContext(
++			this.dependencies.authority(),
++			context,
++		);
++		await this.check(authority, context, true);
+ 		if (
+-			(await this.harness.inspect(BACKGROUND_CONTEXT)).tasks.some(
++			(await this.harness.inspect(context)).tasks.some(
+ 				(task) => task.state.kind === "blocked",
+ 			)
+ 		)
+ 			throw new Error("Incompatible Pi task state");
+-		authority = await this.dependencies.authority();
+-		await this.check(authority, BACKGROUND_CONTEXT, true);
++		authority = await awaitWithContext(this.dependencies.authority(), context);
++		await this.check(authority, context, true);
+ 		if (this.dependencies.candidate) {
+-			this.dependencies.configuration = await awaitWithContext(
++			context = withAbortSignal(
++				AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
++				context,
++			);
++			const configuration = await awaitWithContext(
+ 				this.dependencies.candidate.configuration(id),
+-				withAbortSignal(
+-					AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
+-					BACKGROUND_CONTEXT,
+-				),
+-			);
++				context,
++			);
++			context.abortSignal?.throwIfAborted();
++			this.dependencies.configuration = configuration;
+ 			this.assertSchedule(command.run, run.epoch);
+-			await this.initializeConfigurationInOwnerLane(
+-				withAbortSignal(
+-					AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
+-					BACKGROUND_CONTEXT,
+-				),
+-				{ run: command.run, epoch: run.epoch },
+-			);
+-			authority = await this.dependencies.authority();
+-			await this.check(authority, BACKGROUND_CONTEXT, true);
++			await this.initializeConfigurationInOwnerLane(context, {
++				run: command.run,
++				epoch: run.epoch,
++			});
++			authority = await awaitWithContext(
++				this.dependencies.authority(),
++				context,
++			);
++			await this.check(authority, context, true);
+ 			this.assertSchedule(command.run, run.epoch);
+ 		}
++		context.abortSignal?.throwIfAborted();
+ 		if (!this.active) {
+ 			this.active = this.transition("intent", () => {
+ 				this.assertSchedule(command.run, run.epoch);
+@@ -4718,7 +4829,7 @@
+ 				);
+ 				return invocation;
+ 			});
+-			await this.durable();
++			await this.durable(context);
+ 			this.timer = setTimeout(
+ 				() => {
+ 					void this.yield().catch((error: unknown) => {
+@@ -4730,16 +4841,21 @@
+ 			);
+ 		}
+ 		const invocation = this.active;
+-		await this.repairWakeup();
+-		const root = await this.harness.root(BACKGROUND_CONTEXT);
+-		if ((await root.agent(BACKGROUND_CONTEXT)).model === undefined) {
+-			await this.check(await this.dependencies.authority());
++		await awaitWithContext(this.repairWakeup(), context);
++		context.abortSignal?.throwIfAborted();
++		const root = await this.harness.root(context);
++		if ((await root.agent(context)).model === undefined) {
++			await this.check(
++				await awaitWithContext(this.dependencies.authority(), context),
++				context,
++			);
+ 			this.assertSchedule(command.run, run.epoch);
+ 			await this.configure(
+ 				{ model: { provider: "faux", modelId: "faux-1" } },
+-				BACKGROUND_CONTEXT,
+-			);
+-		}
++				context,
++			);
++		}
++		context.abortSignal?.throwIfAborted();
+ 		this.transition("intent", () => {
+ 			if (["queued", "recovering"].includes(this.run(command.run).state))
+ 				this.storage.sql.exec(
+@@ -4747,7 +4863,7 @@
+ 					command.run,
+ 				);
+ 		});
+-		await this.durable();
++		await this.durable(context);
+ 		const input = this.read(() =>
+ 			this.storage.sql
+ 				.exec<{ content: string; state: string }>(
+@@ -4759,17 +4875,15 @@
+ 		const retained = await this.piRecords.submissionByRequest(
+ 			ROOT_CONVERSATION_ID,
+ 			id,
+-			BACKGROUND_CONTEXT,
+-		);
++			context,
++		);
++		context.abortSignal?.throwIfAborted();
+ 		if (retained) {
+ 			if (this.dependencies.candidate)
+-				await this.validateCandidateSubmission(
+-					command,
+-					retained,
+-					BACKGROUND_CONTEXT,
+-				);
++				await this.validateCandidateSubmission(command, retained, context);
+ 			if (retained.type !== "input")
+ 				throw new Error("Incompatible retained submission");
++			context.abortSignal?.throwIfAborted();
+ 			this.transition("intent", () => {
+ 				this.storage.sql.exec(
+ 					"UPDATE host_commands SET submission = ?, state = 'submitted' WHERE id = ?",
+@@ -4782,7 +4896,7 @@
+ 					id,
+ 				);
+ 			});
+-			await this.durable();
++			await this.durable(context);
+ 		}
+ 		if (input.state !== "submitted" && !retained) {
+ 			this.transition("intent", () =>
+@@ -4791,9 +4905,13 @@
+ 					id,
+ 				),
+ 			);
+-			await this.durable();
+-			await this.check(await this.dependencies.authority());
++			await this.durable(context);
++			await this.check(
++				await awaitWithContext(this.dependencies.authority(), context),
++				context,
++			);
+ 			try {
++				context.abortSignal?.throwIfAborted();
+ 				this.dependencies.fault?.("before-submit");
+ 				this.assertSchedule(command.run, run.epoch);
+ 				this.assertSeals();
+@@ -4810,6 +4928,8 @@
+ 							"Storage integrity failure",
+ 						);
+ 				}
++				context.abortSignal?.throwIfAborted();
++				this.assertSchedule(command.run, run.epoch);
+ 				const submission = await root.submit(
+ 					{
+ 						type: "input",
+@@ -4818,7 +4938,7 @@
+ 							input.content,
+ 						requestId: id,
+ 					},
+-					BACKGROUND_CONTEXT,
++					context,
+ 				);
+ 				this.dependencies.fault?.("after-submit");
+ 				if (this.dependencies.afterSubmission)
+@@ -4826,9 +4946,10 @@
+ 						this.dependencies.afterSubmission(),
+ 						withAbortSignal(
+ 							AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
+-							BACKGROUND_CONTEXT,
++							context,
+ 						),
+ 					);
++				context.abortSignal?.throwIfAborted();
+ 				this.transition("intent", () => {
+ 					this.storage.sql.exec(
+ 						"UPDATE host_inbox SET state = 'submitted', submission = ? WHERE id = ?",
+@@ -4845,17 +4966,18 @@
+ 						`inbox:${id}`,
+ 					);
+ 				});
+-				await this.durable();
++				await this.durable(context);
+ 			} catch (error) {
+ 				this.denied = true;
+ 				throw error;
+ 			}
+ 		} else {
+ 			await this.check(
+-				await this.dependencies.authority(),
+-				BACKGROUND_CONTEXT,
++				await awaitWithContext(this.dependencies.authority(), context),
++				context,
+ 				true,
+ 			);
++			context.abortSignal?.throwIfAborted();
+ 			this.assertSchedule(command.run, run.epoch);
+ 			this.harness.resume();
+ 		}
+--- advisor-current/apps/web/src/server.test.ts
++++ correction/apps/web/src/server.test.ts
+@@ -4,7 +4,35 @@
+ const handlerFetchMock = vi.hoisted(() => vi.fn());
+ const handleOutboundMock = vi.hoisted(() => vi.fn());
+ const legacyDrainMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+-vi.mock("#/db", () => ({ createDb: () => ({}) }));
++const scheduledDb = vi.hoisted(() => ({ current: {} as unknown }));
++const legacySandboxStateMock = vi.hoisted(() => vi.fn());
++const lowerMaintenanceMock = vi.hoisted(() =>
++	vi.fn().mockResolvedValue(undefined),
++);
++vi.mock("#/db", () => ({ createDb: () => scheduledDb.current }));
++vi.mock("#/lib/sandbox-bootstrap", () => ({
++	getProjectSandboxState: legacySandboxStateMock,
++	getProjectSandbox: vi.fn(),
++	configureDittoGitIdentity: vi.fn(),
++}));
++vi.mock("#/lib/workspace-recovery", () => ({
++	enqueueDuePreviewCheckpoints: lowerMaintenanceMock,
++	hasRecoveryArchives: vi.fn(),
++	restore: vi.fn(),
++}));
++vi.mock("#/lib/sandbox-archive", () => ({
++	retryArchiveCleanup: lowerMaintenanceMock,
++	restoreArchive: vi.fn(),
++}));
++vi.mock("#/lib/session-command-delivery", () => ({
++	deliverSessionCommands: lowerMaintenanceMock,
++}));
++vi.mock("#/lib/workspace-runtime-capacity", async (importOriginal) => ({
++	...(await importOriginal<
++		typeof import("#/lib/workspace-runtime-capacity")
++	>()),
++	drainWorkspaceRuntimeQueue: lowerMaintenanceMock,
++}));
+ vi.mock("#/lib/workspace-runtime", () => ({
+ 	drainWorkspaceRuntime: legacyDrainMock,
+ }));
+@@ -205,6 +233,53 @@
+ 		);
+ 		expect(legacyDrainMock).toHaveBeenCalled();
+ 	});
++	it("does not contact the legacy Sandbox namespace for a ready candidate identity during real scheduled maintenance", async () => {
++		const { sandboxIdentities, workspaceSessions } = await import(
++			"#/db/schema"
++		);
++		const actual = await vi.importActual<
++			typeof import("#/lib/workspace-runtime")
++		>("#/lib/workspace-runtime");
++		const identity = {
++			workspaceSessionId: "candidate-session",
++			sandboxId: "synthetic-executor",
++		};
++		const rows = (table: unknown) =>
++			table === sandboxIdentities
++				? [identity]
++				: table === workspaceSessions
++					? [
++							{
++								id: identity.workspaceSessionId,
++								runtimeOwner: "pi_durable_v1",
++								previewStartedAt: null,
++							},
++						]
++					: [];
++		scheduledDb.current = {
++			select: () => ({
++				from: (table: unknown) => ({
++					where: () => {
++						const result = rows(table);
++						return Object.assign(Promise.resolve(result), {
++							limit: async () => result,
++						});
++					},
++				}),
++			}),
++		};
++		legacySandboxStateMock.mockClear();
++		lowerMaintenanceMock.mockClear();
++		legacyDrainMock.mockImplementationOnce(actual.drainWorkspaceRuntime);
++		const joined: Promise<unknown>[] = [];
++		await server.scheduled({} as ScheduledController, env, {
++			waitUntil: (promise: Promise<unknown>) => joined.push(promise),
++		} as unknown as ExecutionContext);
++		await Promise.all(joined);
++		expect(legacySandboxStateMock).not.toHaveBeenCalled();
++		expect(lowerMaintenanceMock).toHaveBeenCalledTimes(4);
++		scheduledDb.current = {};
++	});
+ 	it("joins candidate scheduled delivery rather than relying only on waitUntil", async () => {
+ 		const error = new Error("candidate drain failed");
+ 		const candidate = {
+--- base/apps/web/src/lib/workspace-runtime.ts
++++ correction/apps/web/src/lib/workspace-runtime.ts
+@@ -1194,6 +1194,18 @@
+ 		if (!identity.workspaceSessionId) {
+ 			continue;
+ 		}
++		const [session] = await options.db
++			.select({
++				id: workspaceSessions.id,
++				previewStartedAt: workspaceSessions.previewStartedAt,
++				runtimeOwner: workspaceSessions.runtimeOwner,
++			})
++			.from(workspaceSessions)
++			.where(eq(workspaceSessions.id, identity.workspaceSessionId))
++			.limit(1);
++		if (session?.runtimeOwner !== "legacy") {
++			continue;
++		}
+ 		let liveStatus: string | null = null;
+ 		try {
+ 			const live = await getProjectSandboxState(
+@@ -1205,18 +1217,6 @@
+ 			liveStatus = "stopped";
+ 		}
+ 		if (liveStatus && INACTIVE_SANDBOX_STATUSES.has(liveStatus)) {
+-			const [session] = await options.db
+-				.select({
+-					id: workspaceSessions.id,
+-					previewStartedAt: workspaceSessions.previewStartedAt,
+-					runtimeOwner: workspaceSessions.runtimeOwner,
+-				})
+-				.from(workspaceSessions)
+-				.where(eq(workspaceSessions.id, identity.workspaceSessionId))
+-				.limit(1);
+-			if (session?.runtimeOwner !== "legacy") {
+-				continue;
+-			}
+ 			const [recovery] = await options.db
+ 				.select({
+ 					pendingGeneration: workspaceSessionRecoveries.pendingGeneration,

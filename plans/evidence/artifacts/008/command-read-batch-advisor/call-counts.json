@@ -1,0 +1,21 @@
+{
+  "ordinary_reconstruct": {
+    "before": 4,
+    "after": 2
+  },
+  "control_reconstruct": {
+    "before": 3,
+    "after": 2
+  },
+  "subject": {
+    "before": 2,
+    "after": 1
+  },
+  "ordinary_subjectForCommand": {
+    "before": 6,
+    "after": 3
+  },
+  "basis": "prepared statement dispatch paths, not latency measurement",
+  "fresh_reconstruct_then_subject_retained": true,
+  "cache_added": false
+}

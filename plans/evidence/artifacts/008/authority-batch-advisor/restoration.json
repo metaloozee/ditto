@@ -1,0 +1,10 @@
+{
+  "verified": 37,
+  "changed": [
+    "apps/credential-tests/src/model-entry.ts",
+    "apps/credential-tests/src/product-commands.worker.test.ts",
+    "apps/web/src/lib/session-command-candidate.ts"
+  ],
+  "unchanged": 34,
+  "entry_ts_unchanged": true
+}

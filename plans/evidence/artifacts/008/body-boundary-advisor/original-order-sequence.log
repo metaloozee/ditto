@@ -1,0 +1,355 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-credential-fence-replacement
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbb00 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbe50 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfca8e /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f03c2a /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0c760 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0cd90
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-2e95d065-57c9-496a-8fe7-54a4307d34e9
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-f5bf6479-9c73-4576-9046-985ac01a5aeb
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-88e53eea-5739-4969-9e18-694c3f1aed9e
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/actor-sqlite.c++:926: warning: NOSENTRY SQLite alarm overdue, running despite AlarmManager mismatch; scheduledTime = 1791806283.501s; localAlarmTime = 1791806283.527s; currentTime = 1791806283.5387236s; actorId = 449856c1fb87d911f8917433fd1214912bdece3ac2b12fe92de51ac06cc82a7d
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-closed-successor-replacement
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-closed-successor-replacement
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbb00 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbe50 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfca8e /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f03c2a /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0c760 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0cd90
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 credential.before 0
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 credential.after 59
+[008-body-boundary] generation-2 arm.first.before 60
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 arm.first.after 61
+[008-body-boundary] generation-2 admit.first.before 61
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 admit.first.after 127
+[008-body-boundary] generation-2 hold.join.before 127
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 hold.join.after 153
+[008-body-boundary] generation-2 reserve.reset.before 153
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 reserve.reset.after 266
+[008-body-boundary] generation-2 drain.first.before 266
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 drain.first.after 480
+[008-body-boundary] generation-2 join.first.before 480
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 join.first.after 1329
+[008-body-boundary] generation-2 final.positive.before 1329
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 final.positive.after 1845
+[008-body-boundary] generation-2 descriptor.before 1845
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 descriptor.after 1847
+[008-body-boundary] generation-2 release.first.before 1847
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 release.first.after 1848
+[008-body-boundary] generation-2 outcome.first.before 1848
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 outcome.first.after 1887
+[008-body-boundary] generation-2 poll.predecessor.before 1887
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 poll.predecessor.after 1903
+[008-body-boundary] generation-2 reset.before 1903
+
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-9c9ba349-d963-4fa7-892e-5755a54a31c0
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 reset.after 2098
+[008-body-boundary] generation-2 recover.before 2098
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 recover.after 2478
+[008-body-boundary] generation-2 fence.delete.before 2478
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 fence.delete.after 2485
+[008-body-boundary] generation-2 arm.next.before 2485
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 arm.next.after 2516
+[008-body-boundary] generation-2 admit.next.before 2516
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 admit.next.after 2751
+[008-body-boundary] generation-2 drain.next.before 2751
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 drain.next.after 3039
+[008-body-boundary] generation-2 final.negative.before 3039
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 final.negative.after 3752
+[008-body-boundary] generation-2 outcome.next.before 3752
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 outcome.next.after 3781
+[008-body-boundary] generation-2 poll.failed.before 3781
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 poll.failed.after 3784
+[008-body-boundary] generation-2 proof.before 3784
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 proof.after 3819
+[008-body-boundary] generation-2 fence.read.before 3819
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 fence.read.after 3861
+[008-body-boundary] generation-2 occupancy.read.before 3861
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 occupancy.read.after 3903
+[008-body-boundary] generation-2 reconcile.before 3904
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 reconcile.after 3925
+[008-body-boundary] generation-2 occupancy.compare.before 3925
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 occupancy.compare.after 3926
+[008-body-boundary] generation-2 cleanup.final.before 3926
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 cleanup.final.after 3927
+[008-body-boundary] generation-2 cleanup.join.before 3927
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 cleanup.join.after 3928
+[008-body-boundary] generation-2 cleanup.retire.before 3928
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-body-boundary] generation-2 cleanup.retire.after 3945
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-body-boundary] queued credential.before 0
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-body-boundary] queued credential.after 57
+[008-body-boundary] queued capability.before 57
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-body-boundary] queued capability.after 62
+[008-body-boundary] queued admit.first.before 62
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-body-boundary] queued admit.first.after 158
+[008-body-boundary] queued admit.second.before 158
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-body-boundary] queued admit.second.after 498
+[008-body-boundary] queued admit.third.before 498
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-body-boundary] queued admit.third.after 726
+[008-body-boundary] queued deliver.third.before 727
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-body-boundary] queued deliver.third.after 994
+[008-body-boundary] queued deliver.first.before 994
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-body-boundary] queued deliver.first.after 1240
+[008-body-boundary] queued poll.first.before 1240
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-body-boundary] queued poll.first.after 3015
+[008-body-boundary] queued request.first.before 3015
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-body-boundary] queued request.first.after 3017
+[008-body-boundary] queued task.read.before 3017
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-body-boundary] queued task.read.after 3072
+[008-body-boundary] queued reopen.before 3072
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-body-boundary] queued reopen.after 3423
+[008-body-boundary] queued configure.before 3423
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-body-boundary] queued configure.after 5010
+[008-body-boundary] queued task.compare.before 5010
+
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-body-boundary] queued task.compare.after 5026
+[008-body-boundary] queued deliver.second.before 5026
+
+
+================================================================================
+Failed to pop isolated storage stack frame in src/product-commands.worker.test.ts's test "queued configuration uses the next selection across a sequence gap and preserves committed preparation".
+In particular, we were unable to pop Durable Objects storage.
+This usually means your Worker tried to access storage outside of a test, or some resources have not been disposed of properly.
+Ensure you "await" all Promises that read or write to these services, and make sure you use the "using" keyword when passing data across JSRPC.
+See https://developers.cloudflare.com/workers/testing/vitest-integration/known-issues/#isolated-storage for more details.
+[2m
+- AssertionError [ERR_ASSERTION]: Expected .sqlite, got /home/ayan/ditto-execution/plan-008-4WXvNW/.execution-008/tmp/miniflare-4d554364bc124aef6ef96613b3df2f16/do/vitest-pool-workers-runner--CandidateFixtureSession/35d52b893c741ca5ed24b4aae83594704c850bb088d2dca027f5fea3052088ed.sqlite-shm
+[22m================================================================================
+
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: D1_ERROR: no such table: session_commands: SQLITE_ERROR
+    at D1DatabaseSessionAlwaysPrimary._sendOrThrow (cloudflare-internal:d1-api:139:19)
+    at cloudflare-internal:d1-api:323:39
+    at CandidateProductCommands.reconstruct (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/web/src/lib/session-command-candidate.ts:680:15)
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: D1_ERROR: no such table: session_commands: SQLITE_ERROR
+    at CandidateFixtureSession.deliverCommand (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-product-session.ts:203:25)
+stdout | src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+[008-body-boundary] queued cleanup.retire.before 5130
+
+ ❯ src/product-commands.worker.test.ts (57 tests | 1 failed | 42 skipped) 42676ms
+   ✓ owned authority works before the reset table exists  1621ms
+   ✓ owned authority is fresh with a present reset table and no reset  1343ms
+   ↓ runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+   ✓ settles final-hold preparation false when a real preclaim hold crosses the original host yield  3305ms
+   ↓ admits concurrent identical first prompts with one receipt, identity, capacity claim and message pair
+   ↓ keeps one lifetime workspace claim for concurrent distinct first prompts
+   ↓ rejects current readiness before all admission writes: UPDATE projects SET status='deleting'
+   ↓ rejects current readiness before all admission writes: UPDATE projects SET status='pending'
+   ↓ rejects current readiness before all admission writes: UPDATE codex_connections SET revoked=1
+   ↓ rejects current readiness before all admission writes: UPDATE codex_fixture_capabilities SET revision=2
+   ↓ rejects current readiness before all admission writes: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))
+   ↓ rejects current readiness before all admission writes: INSERT INTO runtime_deleted_target_fences VALUES('project','project',1,0)
+   ↓ denies caller authority, byte overflow and foreign ownership without rows
+   ↓ rejects terminal and foreign targets but admits cold Stop after capability removal
+   ↓ rolls back first admission at D1 batch boundary 0 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 1 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 2 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 3 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 4 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 5 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 6 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 7 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 8 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 9 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 10 without leaking capacity or identity
+   ↓ fails trusted reconstruction when admitted text or outbox membership changes
+   ↓ reconciles the exact started outcome idempotently and never accepts the opposite fate
+   ↓ reconciles the exact expired outcome idempotently and never accepts the opposite fate
+   ↓ native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+   ↓ lost delivery acknowledgment and new product invocation retain the receipt and one Pi submission
+   ↓ cold Stop after disconnect beats delivery gaps and retains multiple late message memberships across reopen
+   ↓ a follow-up admitted before completion but delivered afterward fails its own assistant without reopening the completed run
+   ↓ priority Stop fences a held credential claim without ordinary capacity or a second provider dispatch
+   ↓ real delivery expires an admitted but unstarted instruction without creating a Pi root or provider effect
+   ↓ product cancellation reconstructs a missing follow-up and closes its sequence without skipping the initial prompt
+   ✓ credential-local acknowledged barrier denies a held real positive final permit after host claim  2394ms
+   ✓ credential-local lost-ack barrier denies a held real positive final permit after host claim  2509ms
+   ✓ credential-local replacement barrier denies a held real positive final permit after host claim  2435ms
+   ✓ private fixture reset preserves immutable host origin and discarded observation=false  3021ms
+   ✓ private fixture reset preserves immutable host origin and discarded observation=true  2874ms
+   ✓ private fixture recovery activates only the exact current successor and a valid old descriptor stays denied  4957ms
+   ✓ generation-2 admission denies a missing credential fence without fallback or effect refund  5149ms
+   ✓ credential-local final gate preserves the original positive permit window across a held response  3718ms
+   ✓ priority Stop through transport beats held default configuration without creating a root  2967ms
+   × queued configuration uses the next selection across a sequence gap and preserves committed preparation 6297ms
+     → Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+   ↓ three real candidate contract denials persist review and halt the exact admitted host without fetch
+   · real D1 lost started acknowledgment retains one fate and the original queue deadline
+   ↓ real D1 lost expired acknowledgment retains one fate and the original queue deadline
+   · real admitted Stop repairs candidate-control-intent interruption and retains its epoch and projection
+   ↓ real admitted Stop repairs candidate-control-outcome interruption and retains its epoch and projection
+   ↓ transport cancellation after start is too late and delayed old Stop cannot revoke a newer run
+   ↓ fresh mutable authority denies a prepared real request: UPDATE sandbox_identities SET incarnationId='changed'
+   ↓ fresh mutable authority denies a prepared real request: UPDATE workspace_sessions SET runtimeProtocolVersion=1
+   ↓ fresh mutable authority denies a prepared real request: INSERT INTO runtime_deleted_target_fences VALUES('project','project',1,0)
+   ↓ a natural replacement cannot certify the original host invocation or close an unrelated scope
+   ↓ private recovery scans every control through the cutoff and repairs an already delivered partial Stop
+   ↓ an unclosed successor needs its own reset proof and cannot reuse the older witness
+Error running worker: AssertionError [ERR_ASSERTION]: Isolated storage failed. There should be additional logs above.
+    at new AssertionError (node-internal:internal_assertionerror:427:15)
+    at assert.strictEqual (node-internal:internal_assert:196:11)
+    at WorkersTestRunner.updateStackedStorage (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:133:12)
+    at WorkersTestRunner.onAfterRunSuite (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:171:5)
+    at runSuite (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1763:3)
+    at runFiles (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)
+    at startTests (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1820:3)
+    at home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:117:26
+    at withEnv (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:84:3)
+    at run (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:109:2)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/product-commands.worker.test.ts [ src/product-commands.worker.test.ts ]
+AssertionError: Isolated storage failed. There should be additional logs above.
+
+- Expected
++ Received
+
+- 204
++ 500
+
+ ❯ new AssertionError node-internal:internal_assertionerror:427:15
+ ❯ assert.strictEqual node-internal:internal_assert:196:11
+ ❯ WorkersTestRunner.updateStackedStorage home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:133:12
+ ❯ WorkersTestRunner.ensurePoppedActiveTryStorage home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:183:7
+ ❯ WorkersTestRunner.onAfterRunTask home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:213:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/product-commands.worker.test.ts > queued configuration uses the next selection across a sequence gap and preserves committed preparation
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/product-commands.worker.test.ts:1526:1
+    1524| });
+    1525| 
+    1526| it("queued configuration uses the next selection across a sequence gap…
+       | ^
+    1527|  const boundaryStart = Date.now();
+    1528|  const boundary = (stage: string) => console.log("[008-body-boundary]"…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: Isolated storage failed. There should be additional logs above.
+ ❯ new AssertionError node-internal:internal_assertionerror:427:15
+ ❯ assert.strictEqual node-internal:internal_assert:196:11
+ ❯ WorkersTestRunner.updateStackedStorage home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:133:12
+ ❯ WorkersTestRunner.onAfterRunSuite home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:171:5
+ ❯ runSuite home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1763:3
+ ❯ runFiles home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3
+ ❯ startTests home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1820:3
+ ❯ home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:117:26
+ ❯ withEnv home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:84:3
+ ❯ run home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:109:2
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 12 passed | 42 skipped (57)
+     Errors  1 error
+   Start at  13:57:38
+   Duration  44.18s (transform 445ms, setup 0ms, collect 751ms, tests 42.68s, environment 0ms, prepare 122ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/product-commands.worker.test.ts -t 'owned authority|settles final-hold|credential-local .*barrier|private fixture reset preserves|private fixture recovery activates|generation-2 admission|credential-local final gate|priority Stop through transport beats held default|queued configuration|real D1 lost started|real admitted Stop repairs candidate-control-intent'

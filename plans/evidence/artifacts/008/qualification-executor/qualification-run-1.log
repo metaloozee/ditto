@@ -1,0 +1,87 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for ../../plans/evidence/artifacts/008/qualification-executor/qualification.config.ts...
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-qualification-opaque-abort
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-qualification-opaque-abort
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbb00 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbe50 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfca8e /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f03c2a /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0c760 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0cd90
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Prior host termination required
+    at PiDurableHost.open (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-host.ts:516:11)
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Prior host termination required
+    at PiDurableHost.open (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-host.ts:516:11)
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/jsg/_virtual_includes/iterator/workerd/jsg/value.h:1480: failed: jsg.Error: Prior host termination required
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+stdout | ../../plans/evidence/artifacts/008/qualification-executor/qualification.worker.test.ts > A characterizes exact abort on admitted active candidate work without granting takeover
+QUALIFICATION_A {"receipt":{"version":2,"receiptId":"c76aea17-b2fc-4d36-bc1f-c890f4a1c460","commandId":"f9c7e79b-994b-47e2-ad99-e9044f93d3b5","workspaceSessionId":"8301b15f-9840-451b-8da6-4c7c180d89fc","commandSeq":1,"ownerVersion":1,"queueDeadlineAt":1791700863199,"userMessageId":"d9c03d2b-1699-4678-85ad-c29805d693b6","assistantMessageId":"2e9dc997-6b6e-4f54-a151-735e1db4cd18"},"captured":{"boot":"9e4a172d-c11c-4378-8a52-76632dc6d206","doId":"c56d1961c093a6ff5324b65ac857a4e9149a138ec5a23dd17a00497bef182bfc","invocation":{"id":"1b1b48c4-d409-4abb-9b0f-f2ba9abf3f22","generation":1,"started":1791699963774,"yield_at":1791699964774,"end_at":1791699965774,"state":"active"},"scope":{"version":2,"userId":"owner","projectId":"project","workspaceSessionId":"8301b15f-9840-451b-8da6-4c7c180d89fc","ownerVersion":1},"encryptedDigest":"7327f5e8b489e739caad98cc2188049a6d9fc4393d2da9c403b5987905c8e964"},"ordinary":{"returned":false,"name":"Error","message":"008-qualification-opaque-abort","code":null,"remote":null,"retryable":null,"durableObjectReset":null},"uninvoked":{"returned":false,"name":"Error","message":"008-qualification-opaque-abort","code":null,"remote":null,"retryable":null,"durableObjectReset":null},"aborted":{"returned":false,"name":"Error","message":"008-qualification-opaque-abort","code":null,"remote":true,"retryable":null,"durableObjectReset":true},"oldStub":{"returned":false,"name":"Error","message":"008-qualification-opaque-abort","code":null,"remote":null,"retryable":null,"durableObjectReset":true},"passive":{"boot":"b3b2a758-0731-4593-902c-f06f85820de5","scope":{"version":2,"userId":"owner","projectId":"project","workspaceSessionId":"8301b15f-9840-451b-8da6-4c7c180d89fc","ownerVersion":1},"invocation":{"id":"1b1b48c4-d409-4abb-9b0f-f2ba9abf3f22","generation":1,"started":1791699963774,"yield_at":1791699964774,"end_at":1791699965774,"state":"active"},"roots":1},"activation":{"returned":false,"name":"Error","message":"Prior host termination required","code":null,"remote":true,"retryable":null,"durableObjectReset":null},"lostObservation":"deliberately unrecorded outcome cannot qualify","calls":0,"authorityGeneration":1,"witness":null}
+
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Prior host termination required
+    at PiDurableHost.open (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-host.ts:516:11)
+
+================================================================================
+Failed to pop isolated storage stack frame in ../../plans/evidence/artifacts/008/qualification-executor/qualification.worker.test.ts's test "A characterizes exact abort on admitted active candidate work without granting takeover".
+In particular, we were unable to pop Durable Objects storage.
+This usually means your Worker tried to access storage outside of a test, or some resources have not been disposed of properly.
+Ensure you "await" all Promises that read or write to these services, and make sure you use the "using" keyword when passing data across JSRPC.
+See https://developers.cloudflare.com/workers/testing/vitest-integration/known-issues/#isolated-storage for more details.
+[2m
+- AssertionError [ERR_ASSERTION]: Expected .sqlite, got /home/ayan/ditto-execution/plan-008-4WXvNW/.execution-008/tmp/miniflare-dae6b706819421199b94ca68d5950afa/do/vitest-pool-workers-runner--QualificationSession/c56d1961c093a6ff5324b65ac857a4e9149a138ec5a23dd17a00497bef182bfc.sqlite-shm
+[22m================================================================================
+
+Error running worker: AssertionError [ERR_ASSERTION]: Isolated storage failed. There should be additional logs above.
+    at new AssertionError (node-internal:internal_assertionerror:427:15)
+    at assert.strictEqual (node-internal:internal_assert:196:11)
+    at WorkersTestRunner.updateStackedStorage (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:133:12)
+    at WorkersTestRunner.onAfterRunSuite (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:171:5)
+    at runSuite (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1763:3)
+    at runFiles (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)
+    at startTests (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1820:3)
+    at home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:117:26
+    at withEnv (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:84:3)
+    at run (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:109:2)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  ../../plans/evidence/artifacts/008/qualification-executor/qualification.worker.test.ts > A characterizes exact abort on admitted active candidate work without granting takeover
+Error: Prior host termination required
+ ❯ ../../plans/evidence/artifacts/008/qualification-executor/qualification.worker.test.ts:86:2
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: Isolated storage failed. There should be additional logs above.
+ ❯ new AssertionError node-internal:internal_assertionerror:427:15
+ ❯ assert.strictEqual node-internal:internal_assert:196:11
+ ❯ WorkersTestRunner.updateStackedStorage home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:133:12
+ ❯ WorkersTestRunner.onAfterRunSuite home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:171:5
+ ❯ runSuite home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1763:3
+ ❯ runFiles home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3
+ ❯ startTests home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1820:3
+ ❯ home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:117:26
+ ❯ withEnv home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:84:3
+ ❯ run home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:109:2
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files   (1)
+      Tests  1 failed (4)
+     Errors  1 error
+   Start at  08:25:59
+   Duration  4.10s (transform 367ms, setup 0ms, collect 626ms, tests 0ms, environment 0ms, prepare 124ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run --config ../../plans/evidence/artifacts/008/qualification-executor/qualification.config.ts

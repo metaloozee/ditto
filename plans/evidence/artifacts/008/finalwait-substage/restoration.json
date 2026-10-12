@@ -1,0 +1,8 @@
+{
+  "unchanged": 35,
+  "changed": [
+    "apps/credential-tests/src/entry.ts",
+    "apps/credential-tests/src/product-commands.worker.test.ts"
+  ],
+  "runtime_restored": "0e32d9fba479a77249a415651e55f5869592405999fe4d71b49bf2b61dae60dc"
+}

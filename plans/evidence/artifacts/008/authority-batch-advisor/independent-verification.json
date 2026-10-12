@@ -1,0 +1,16 @@
+{
+  "sourceHashesMatched": 37,
+  "archivedSourceBytesMatched": 37,
+  "independentIncrementalPatchMatched": true,
+  "changed": [
+    "apps/credential-tests/src/model-entry.ts",
+    "apps/credential-tests/src/product-commands.worker.test.ts",
+    "apps/web/src/lib/session-command-candidate.ts"
+  ],
+  "unchanged": 34,
+  "ownedSqlExactParity": true,
+  "provider": "openai-codex",
+  "model": "gpt-6.1-sol",
+  "reasoning": "medium",
+  "providerEvidence": "executor transcript actual response metadata and first PI selection tool result"
+}

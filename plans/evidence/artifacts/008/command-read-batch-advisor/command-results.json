@@ -1,0 +1,43 @@
+{
+  "format": {
+    "exit": 0
+  },
+  "nearest_initial": {
+    "exit": 1,
+    "passed": 5,
+    "failed": 1,
+    "filtered": 56,
+    "cause": "test mutation rejected by foreign-user FK"
+  },
+  "nearest_single_corrected_rerun": {
+    "exit": 0,
+    "passed": 6,
+    "filtered": 56,
+    "clean_teardown": true
+  },
+  "credential_typecheck": {
+    "exit": 0
+  },
+  "runtime_typecheck": {
+    "exit": 0
+  },
+  "web_typecheck": {
+    "exit": 0
+  },
+  "affected_sequence": {
+    "exit": 1,
+    "runs": 1,
+    "selected": 15,
+    "passed": 12,
+    "failed": 1,
+    "isolation_errors": 1,
+    "filtered": 47,
+    "selected_unreached": 2,
+    "test_timeout_ms": 5000
+  },
+  "full_product_suite": "not run: affected sequence red",
+  "aggregates": "not run: affected sequence red",
+  "diff_check": {
+    "exit": 0
+  }
+}

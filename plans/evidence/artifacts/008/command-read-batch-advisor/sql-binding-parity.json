@@ -1,0 +1,52 @@
+{
+  "owned_sql_byte_identical": true,
+  "owned_sql_sha256": "8b2f2b44ef6ddc6432762c1cd903216966edd32adb444e05fe506a1bee7545ed",
+  "all_prepared_sql_literal_multisets_identical": true,
+  "all_bind_argument_multisets_identical_after_whitespace_normalization": true,
+  "initial_reconstruction_query_and_error_boundary_byte_identical": true,
+  "reconstruction_parser_digest_and_catch_tail_byte_identical": true,
+  "subject_parser_and_return_tuple_byte_identical": true,
+  "subjectForCommand_reconstruct_then_fresh_subject_byte_identical": true,
+  "owned_bind_order": [
+    "sessionId",
+    "userId",
+    "projectId"
+  ],
+  "subject_capability_bind_order": [
+    "userId"
+  ],
+  "message_bind_order": [
+    "row.assistantMessageId",
+    "row.userMessageId",
+    "row.sessionId",
+    "row.userId",
+    "row.projectId"
+  ],
+  "key_bind_order": [
+    "row.id",
+    "row.receiptId",
+    "row.userId"
+  ],
+  "per_statement_sql_binding_association": {
+    "capability": {
+      "sql_sha256": "ca2ebceaa805a24710eb7383caf9c77d5e34a9bf76c317684441113cbcb9ca91",
+      "normalized_bind_arguments": "userId",
+      "associated_sql_and_bind_unchanged": true
+    },
+    "message": {
+      "sql_sha256": "bddf940b0774c5cb12d4e3d7ac93f0c39719bead444cbe18ebaf9fbed65412c1",
+      "normalized_bind_arguments": "row.assistantMessageId,row.userMessageId,row.sessionId,row.userId,row.projectId,",
+      "associated_sql_and_bind_unchanged": true
+    },
+    "key": {
+      "sql_sha256": "5c8f55ae41d9d2b1e90a84a2abdee70b74925565d8bf04c7d7bb758f8e314764",
+      "normalized_bind_arguments": "row.id,row.receiptId,row.userId",
+      "associated_sql_and_bind_unchanged": true
+    },
+    "initial_command": {
+      "sql_sha256": "dc871097a213a1f6ad96939342a411fa6b3109b48f9a5c21e4f1921cc9d2a4a8",
+      "normalized_bind_arguments": "commandId",
+      "associated_sql_and_bind_unchanged": true
+    }
+  }
+}

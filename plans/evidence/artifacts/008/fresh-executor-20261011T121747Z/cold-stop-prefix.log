@@ -1,0 +1,45 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+ ✓ src/product-commands.worker.test.ts (53 tests | 25 skipped) 56483ms
+   ✓ runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path  3085ms
+   ✓ admits concurrent identical first prompts with one receipt, identity, capacity claim and message pair  1655ms
+   ✓ keeps one lifetime workspace claim for concurrent distinct first prompts  1439ms
+   ✓ rejects current readiness before all admission writes: UPDATE projects SET status='deleting'  1347ms
+   ✓ rejects current readiness before all admission writes: UPDATE projects SET status='pending'  1620ms
+   ✓ rejects current readiness before all admission writes: UPDATE codex_connections SET revoked=1  2188ms
+   ✓ rejects current readiness before all admission writes: UPDATE codex_fixture_capabilities SET revision=2  2091ms
+   ✓ rejects current readiness before all admission writes: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))  1729ms
+   ✓ rejects current readiness before all admission writes: INSERT INTO runtime_deleted_target_fences VALUES('project','project',1,0)  1666ms
+   ✓ denies caller authority, byte overflow and foreign ownership without rows  1551ms
+   ✓ rejects terminal and foreign targets but admits cold Stop after capability removal  2606ms
+   ✓ rolls back first admission at D1 batch boundary 0 without leaking capacity or identity  1501ms
+   ✓ rolls back first admission at D1 batch boundary 1 without leaking capacity or identity  1527ms
+   ✓ rolls back first admission at D1 batch boundary 2 without leaking capacity or identity  1704ms
+   ✓ rolls back first admission at D1 batch boundary 3 without leaking capacity or identity  1539ms
+   ✓ rolls back first admission at D1 batch boundary 4 without leaking capacity or identity  1525ms
+   ✓ rolls back first admission at D1 batch boundary 5 without leaking capacity or identity  1671ms
+   ✓ rolls back first admission at D1 batch boundary 6 without leaking capacity or identity  1520ms
+   ✓ rolls back first admission at D1 batch boundary 7 without leaking capacity or identity  1524ms
+   ✓ rolls back first admission at D1 batch boundary 8 without leaking capacity or identity  1662ms
+   ✓ rolls back first admission at D1 batch boundary 9 without leaking capacity or identity  1516ms
+   ✓ rolls back first admission at D1 batch boundary 10 without leaking capacity or identity  1521ms
+   ✓ fails trusted reconstruction when admitted text or outbox membership changes  1645ms
+   ✓ reconciles the exact started outcome idempotently and never accepts the opposite fate  2071ms
+   ✓ reconciles the exact expired outcome idempotently and never accepts the opposite fate  1934ms
+   ✓ native alarms drain delivery order 3,1,2 through individual model turns without client scheduling  5220ms
+   ✓ lost delivery acknowledgment and new product invocation retain the receipt and one Pi submission  4091ms
+   ✓ cold Stop after disconnect beats delivery gaps and retains multiple late message memberships across reopen  3334ms
+
+ Test Files  1 passed (1)
+      Tests  28 passed | 25 skipped (53)
+   Start at  14:28:33
+   Duration  56.55s (transform 363ms, setup 0ms, collect 626ms, tests 56.48s, environment 0ms, prepare 100ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

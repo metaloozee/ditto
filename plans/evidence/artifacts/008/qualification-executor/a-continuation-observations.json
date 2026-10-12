@@ -1,0 +1,252 @@
+[
+  {
+    "tag": "A_CONTINUATION_OBSERVED",
+    "evidence": {
+      "receipt": {
+        "version": 2,
+        "receiptId": "e7bedb63-1842-45b6-bf26-d328d2145614",
+        "commandId": "e1d31cd1-f3c1-429b-bbe2-d4a36243f8e3",
+        "workspaceSessionId": "048cfb21-9c18-427a-a272-492285cd3e53",
+        "commandSeq": 1,
+        "ownerVersion": 1,
+        "queueDeadlineAt": 1791701475320,
+        "userMessageId": "f8b3eddf-d393-45d6-8a45-3e993f714ec7",
+        "assistantMessageId": "de2847c0-58e4-441f-98e6-b00b5ee4fbd1"
+      },
+      "captured": {
+        "boot": "0e536176-ca13-430f-b85c-c5559f4b36d6",
+        "doId": "78dc10afb989320e6fe4486224e406e66a92542da583845d11be6ba35c66cbd6",
+        "scope": {
+          "version": 2,
+          "userId": "owner",
+          "projectId": "project",
+          "workspaceSessionId": "048cfb21-9c18-427a-a272-492285cd3e53",
+          "ownerVersion": 1
+        },
+        "failedDeliveryExecuted": null,
+        "invocation": {
+          "id": "a6b637b4-aebf-4217-b7c7-ff5dd8940203",
+          "generation": 1,
+          "started": 1791700575993,
+          "yield_at": 1791700576993,
+          "end_at": 1791700577993,
+          "state": "active"
+        },
+        "invocations": 1,
+        "roots": 1,
+        "submissions": 1,
+        "effects": [
+          {
+            "id": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "invocation": "a6b637b4-aebf-4217-b7c7-ff5dd8940203",
+            "state": "admitted",
+            "deadline": 1791700577993
+          }
+        ],
+        "claims": [
+          {
+            "effect": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "claimed": 0
+          }
+        ],
+        "encryptedDigest": "9a029919036e2edb8d6fbc90810347f0a7e4e205163df0282b00e3575f46ac11"
+      },
+      "ordinaryCallback": {
+        "returned": false,
+        "name": "Error",
+        "message": "008-a-continuation-opaque",
+        "code": null,
+        "remote": null,
+        "retryable": null,
+        "durableObjectReset": null
+      },
+      "spoofedCallback": {
+        "returned": false,
+        "name": "Error",
+        "message": "008-a-continuation-opaque",
+        "code": null,
+        "remote": true,
+        "retryable": null,
+        "durableObjectReset": true
+      },
+      "ordinaryRpc": {
+        "returned": false,
+        "name": "Error",
+        "message": "008-a-continuation-opaque",
+        "code": null,
+        "remote": true,
+        "retryable": null,
+        "durableObjectReset": null
+      },
+      "spoofedRpc": {
+        "returned": false,
+        "name": "Error",
+        "message": "008-a-continuation-opaque",
+        "code": null,
+        "remote": true,
+        "retryable": null,
+        "durableObjectReset": null
+      },
+      "observedAbort": {
+        "returned": false,
+        "name": "Error",
+        "message": "008-a-continuation-opaque",
+        "code": null,
+        "remote": true,
+        "retryable": null,
+        "durableObjectReset": true
+      },
+      "failedDelivery": {
+        "returned": false,
+        "name": "Error",
+        "message": "008-a-continuation-opaque",
+        "code": null,
+        "remote": null,
+        "retryable": null,
+        "durableObjectReset": true
+      },
+      "oldStubReplay": {
+        "returned": false,
+        "name": "Error",
+        "message": "008-a-continuation-opaque",
+        "code": null,
+        "remote": null,
+        "retryable": null,
+        "durableObjectReset": true
+      },
+      "replacement": {
+        "boot": "c81d02c5-8da4-42a3-8bc7-f07b1508ee01",
+        "doId": "78dc10afb989320e6fe4486224e406e66a92542da583845d11be6ba35c66cbd6",
+        "scope": {
+          "version": 2,
+          "userId": "owner",
+          "projectId": "project",
+          "workspaceSessionId": "048cfb21-9c18-427a-a272-492285cd3e53",
+          "ownerVersion": 1
+        },
+        "intent": {
+          "resetId": "e4352103-125a-4d98-b65d-068fcd0674fe",
+          "label": "008-a-continuation-opaque",
+          "diagnosticOnly": true,
+          "owner": "owner",
+          "workspaceSessionId": "048cfb21-9c18-427a-a272-492285cd3e53",
+          "boot": "0e536176-ca13-430f-b85c-c5559f4b36d6",
+          "doId": "78dc10afb989320e6fe4486224e406e66a92542da583845d11be6ba35c66cbd6",
+          "invocation": {
+            "id": "a6b637b4-aebf-4217-b7c7-ff5dd8940203",
+            "generation": 1,
+            "started": 1791700575993,
+            "yield_at": 1791700576993,
+            "end_at": 1791700577993,
+            "state": "active"
+          }
+        },
+        "failedDeliveryExecuted": null,
+        "invocation": {
+          "id": "a6b637b4-aebf-4217-b7c7-ff5dd8940203",
+          "generation": 1,
+          "started": 1791700575993,
+          "yield_at": 1791700576993,
+          "end_at": 1791700577993,
+          "state": "active"
+        },
+        "invocations": 1,
+        "roots": 1,
+        "submissions": 1,
+        "effects": [
+          {
+            "id": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "invocation": "a6b637b4-aebf-4217-b7c7-ff5dd8940203",
+            "state": "admitted",
+            "deadline": 1791700577993
+          }
+        ],
+        "claims": [
+          {
+            "effect": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "claimed": 0
+          }
+        ],
+        "encryptedDigest": "9a029919036e2edb8d6fbc90810347f0a7e4e205163df0282b00e3575f46ac11"
+      },
+      "cleanup": {
+        "denied": {
+          "returned": false,
+          "name": "Error",
+          "message": "Prior host termination required",
+          "code": null,
+          "remote": true,
+          "retryable": null,
+          "durableObjectReset": null
+        },
+        "outcome": {
+          "status": "denied"
+        },
+        "final": {
+          "boot": "c81d02c5-8da4-42a3-8bc7-f07b1508ee01",
+          "doId": "78dc10afb989320e6fe4486224e406e66a92542da583845d11be6ba35c66cbd6",
+          "scope": {
+            "version": 2,
+            "userId": "owner",
+            "projectId": "project",
+            "workspaceSessionId": "048cfb21-9c18-427a-a272-492285cd3e53",
+            "ownerVersion": 1
+          },
+          "intent": {
+            "resetId": "e4352103-125a-4d98-b65d-068fcd0674fe",
+            "label": "008-a-continuation-opaque",
+            "diagnosticOnly": true,
+            "owner": "owner",
+            "workspaceSessionId": "048cfb21-9c18-427a-a272-492285cd3e53",
+            "boot": "0e536176-ca13-430f-b85c-c5559f4b36d6",
+            "doId": "78dc10afb989320e6fe4486224e406e66a92542da583845d11be6ba35c66cbd6",
+            "invocation": {
+              "id": "a6b637b4-aebf-4217-b7c7-ff5dd8940203",
+              "generation": 1,
+              "started": 1791700575993,
+              "yield_at": 1791700576993,
+              "end_at": 1791700577993,
+              "state": "active"
+            }
+          },
+          "failedDeliveryExecuted": null,
+          "invocation": {
+            "id": "a6b637b4-aebf-4217-b7c7-ff5dd8940203",
+            "generation": 1,
+            "started": 1791700575993,
+            "yield_at": 1791700576993,
+            "end_at": 1791700577993,
+            "state": "active"
+          },
+          "invocations": 1,
+          "roots": 1,
+          "submissions": 1,
+          "effects": [
+            {
+              "id": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+              "invocation": "a6b637b4-aebf-4217-b7c7-ff5dd8940203",
+              "state": "admitted",
+              "deadline": 1791700577993
+            }
+          ],
+          "claims": [
+            {
+              "effect": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+              "claimed": 0
+            }
+          ],
+          "encryptedDigest": "9a029919036e2edb8d6fbc90810347f0a7e4e205163df0282b00e3575f46ac11"
+        },
+        "authority": {
+          "current": true,
+          "generation": 1,
+          "executor": 1,
+          "liveExecutors": 1
+        },
+        "calls": 0
+      },
+      "classification": "NOT QUALIFIED: flags are not an exclusive exact-abort completion classifier",
+      "witness": null
+    }
+  }
+]

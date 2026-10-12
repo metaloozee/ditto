@@ -1,0 +1,112 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-unobserved-origin
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-unobserved-origin
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbb00 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbe50 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfca8e /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f03c2a /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0c760 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0cd90
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Prior host termination required
+    at PiDurableHost.open (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-host.ts:527:11)
+    at CandidateFixtureSession.activate (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-product-session.ts:112:16)
+    at /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests/src/model-entry.ts:217:17
+    at CandidateFixtureSession.alarm (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests/src/model-entry.ts:223:3)
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/jsg/_virtual_includes/iterator/workerd/jsg/value.h:1480: failed: jsg.Error: Prior host termination required
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: fixture_reset_origin_denied
+    at CandidateFixtureSession.prepareFixtureReset (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests/src/model-entry.ts:145:200)
+ ❯ src/product-commands.worker.test.ts (51 tests | 1 failed | 46 skipped) 14333ms
+   ↓ runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+   ↓ admits concurrent identical first prompts with one receipt, identity, capacity claim and message pair
+   ↓ keeps one lifetime workspace claim for concurrent distinct first prompts
+   ↓ rejects current readiness before all admission writes: UPDATE projects SET status='deleting'
+   ↓ rejects current readiness before all admission writes: UPDATE projects SET status='pending'
+   ↓ rejects current readiness before all admission writes: UPDATE codex_connections SET revoked=1
+   ↓ rejects current readiness before all admission writes: UPDATE codex_fixture_capabilities SET revision=2
+   ↓ rejects current readiness before all admission writes: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))
+   ↓ rejects current readiness before all admission writes: INSERT INTO runtime_deleted_target_fences VALUES('project','project',1,0)
+   ↓ denies caller authority, byte overflow and foreign ownership without rows
+   ↓ rejects terminal and foreign targets but admits cold Stop after capability removal
+   ↓ rolls back first admission at D1 batch boundary 0 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 1 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 2 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 3 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 4 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 5 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 6 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 7 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 8 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 9 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 10 without leaking capacity or identity
+   ↓ fails trusted reconstruction when admitted text or outbox membership changes
+   ↓ reconciles the exact started outcome idempotently and never accepts the opposite fate
+   ↓ reconciles the exact expired outcome idempotently and never accepts the opposite fate
+   ↓ native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+   ↓ lost delivery acknowledgment and new product invocation retain the receipt and one Pi submission
+   ↓ cold Stop after disconnect beats delivery gaps and retains multiple late message memberships across reopen
+   ↓ a follow-up admitted before completion but delivered afterward fails its own assistant without reopening the completed run
+   ↓ priority Stop fences a held credential claim without ordinary capacity or a second provider dispatch
+   ↓ real delivery expires an admitted but unstarted instruction without creating a Pi root or provider effect
+   ↓ product cancellation reconstructs a missing follow-up and closes its sequence without skipping the initial prompt
+   ↓ credential-local acknowledged barrier denies a held real positive final permit after host claim
+   ↓ credential-local lost-ack barrier denies a held real positive final permit after host claim
+   ↓ credential-local replacement barrier denies a held real positive final permit after host claim
+   ↓ private fixture reset preserves immutable host origin and discarded observation=false
+   ↓ private fixture reset preserves immutable host origin and discarded observation=true
+   ↓ private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+   ↓ credential-local final gate preserves the original positive permit window across a held response
+   ↓ priority Stop through transport beats held default configuration without creating a root
+   ↓ queued configuration uses the next selection across a sequence gap and preserves committed preparation
+   ↓ three real candidate contract denials persist review and halt the exact admitted host without fetch
+   ↓ real D1 lost started acknowledgment retains one fate and the original queue deadline
+   ↓ real D1 lost expired acknowledgment retains one fate and the original queue deadline
+   ↓ real admitted Stop repairs candidate-control-intent interruption and retains its epoch and projection
+   ↓ real admitted Stop repairs candidate-control-outcome interruption and retains its epoch and projection
+   ✓ transport cancellation after start is too late and delayed old Stop cannot revoke a newer run  4059ms
+   ✓ fresh mutable authority denies a prepared real request: UPDATE sandbox_identities SET incarnationId='changed'  2460ms
+   ✓ fresh mutable authority denies a prepared real request: UPDATE workspace_sessions SET runtimeProtocolVersion=1  2306ms
+   ✓ fresh mutable authority denies a prepared real request: INSERT INTO runtime_deleted_target_fences VALUES('project','project',1,0)  2451ms
+   × a natural replacement cannot certify the original host invocation or close an unrelated scope 3024ms
+     → expected { Object (current, generation, ...) } to match object { generation: 1, …(1) }
+(3 matching properties omitted from actual)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/product-commands.worker.test.ts > a natural replacement cannot certify the original host invocation or close an unrelated scope
+AssertionError: expected { Object (current, generation, ...) } to match object { generation: 1, …(1) }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "generation": 1,
+-   "priorTerminated": undefined,
+  }
+
+ ❯ Proxy.methodWrapper home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/vitest___@vitest_expect___chai.js:1603:25
+ ❯ src/product-commands.worker.test.ts:1226:75
+    1224|   expect(replacement.origin).toBe(original.origin);
+    1225|   expect(await env.CandidateProduct.resetCandidate(first.commandId)).t…
+    1226|   expect(await env.CandidateProduct.readRuntimeAuthority(original.scop…
+       |                                                                           ^
+    1227|   await expect(runInDurableObject(runtime, instance => instance.candid…
+    1228|   expect(calls()).toBe(0);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 passed | 46 skipped (51)
+   Start at  12:15:38
+   Duration  15.90s (transform 392ms, setup 0ms, collect 687ms, tests 14.33s, environment 0ms, prepare 102ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/product-commands.worker.test.ts -t 'transport cancellation after start|fresh mutable authority|natural replacement cannot'

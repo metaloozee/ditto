@@ -1,0 +1,120 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-credential-fence-replacement
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbb00 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbe50 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfca8e /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f03c2a /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0c760 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0cd90
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-5054bd64-7398-451b-8cbe-8a1dc892563b
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: fixture_claim_not_admitted
+    at CandidateFixtureCredential.waitClaimAck (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests/src/entry.ts:292:10)
+
+================================================================================
+Failed to pop isolated storage stack frame in src/product-commands.worker.test.ts's test "private fixture reset preserves immutable host origin and discarded observation=true".
+In particular, we were unable to pop Durable Objects storage.
+This usually means your Worker tried to access storage outside of a test, or some resources have not been disposed of properly.
+Ensure you "await" all Promises that read or write to these services, and make sure you use the "using" keyword when passing data across JSRPC.
+See https://developers.cloudflare.com/workers/testing/vitest-integration/known-issues/#isolated-storage for more details.
+[2m
+- AssertionError [ERR_ASSERTION]: Expected .sqlite, got /home/ayan/ditto-execution/plan-008-4WXvNW/.execution-008/tmp/miniflare-094c065c1aa3c51ad65f7c7f75105f7b/do/vitest-pool-workers-runner--CandidateFixtureSession/044792fdd64f9deabc1cf7551c65fce892a5b43a140bfc6fbd8030a95b190a99.sqlite-shm
+[22m================================================================================
+
+Error running worker: AssertionError [ERR_ASSERTION]: Isolated storage failed. There should be additional logs above.
+    at new AssertionError (node-internal:internal_assertionerror:427:15)
+    at assert.strictEqual (node-internal:internal_assert:196:11)
+    at WorkersTestRunner.updateStackedStorage (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:133:12)
+    at WorkersTestRunner.onAfterRunSuite (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:171:5)
+    at runSuite (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1763:3)
+    at runFiles (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)
+    at startTests (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1820:3)
+    at home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:117:26
+    at withEnv (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:84:3)
+    at run (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:109:2)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/product-commands.worker.test.ts > native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+Error: Matcher did not succeed in time.
+ ❯ src/product-commands.worker.test.ts:550:5
+    548|     { timeout: 3000 },
+    549|    )
+    550|    .toBe(3);
+       |     ^
+    551|   const snapshot = await runtime.candidateSnapshot();
+    552|   expect(calls()).toBe(3);
+
+Caused by: AssertionError: expected 2 to be 3 // Object.is equality
+
+- Expected
++ Received
+
+- 3
++ 2
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  src/product-commands.worker.test.ts > lost delivery acknowledgment and new product invocation retain the receipt and one Pi submission
+Error: Matcher did not succeed in time.
+ ❯ src/product-commands.worker.test.ts:591:5
+    589|     timeout: 3000,
+    590|    })
+    591|    .toBe("complete");
+       |     ^
+    592|   await runtime.reopenFixture();
+    593|   now += 1001;
+
+Caused by: AssertionError: expected 'failed' to be 'complete' // Object.is equality
+
+Expected: "complete"
+Received: "failed"
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+Error: fixture_claim_not_admitted
+ ❯ src/product-commands.worker.test.ts:942:2
+    940|  await env.CandidateProduct.reserveCandidateReset(receipt.commandId);
+    941|  await env.CandidateProduct.drain();
+    942|  await credential.waitClaimAck();
+       |  ^
+    943|  const before = await runtime.fixtureProof();
+    944|  expect(["active", "draining", "closed"]).toContain(before.predecessor…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: Isolated storage failed. There should be additional logs above.
+ ❯ new AssertionError node-internal:internal_assertionerror:427:15
+ ❯ assert.strictEqual node-internal:internal_assert:196:11
+ ❯ WorkersTestRunner.updateStackedStorage home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:133:12
+ ❯ WorkersTestRunner.onAfterRunSuite home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:171:5
+ ❯ runSuite home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1763:3
+ ❯ runFiles home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3
+ ❯ startTests home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1820:3
+ ❯ home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:117:26
+ ❯ withEnv home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:84:3
+ ❯ run home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:109:2
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files   (1)
+      Tests  3 failed | 34 passed (53)
+     Errors  1 error
+   Start at  14:46:38
+   Duration  103.36s (transform 585ms, setup 0ms, collect 1.01s, tests 0ms, environment 0ms, prepare 146ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/product-commands.worker.test.ts --testTimeout 15000

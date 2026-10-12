@@ -1,0 +1,177 @@
+[
+  {
+    "log": "cold-stop-entry.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts -t 'cold Stop after disconnect'",
+    "exit": 0
+  },
+  {
+    "log": "affected-entry.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts -t 'native alarms drain|lost delivery acknowledgment|cold Stop after disconnect|private fixture reset preserves|private fixture recovery activates|private recovery scans|unclosed successor needs'",
+    "exit": 1
+  },
+  {
+    "log": "successor-trace.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts -t 'unclosed successor needs'",
+    "exit": 1
+  },
+  {
+    "log": "successor-denial.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts -t 'unclosed successor needs'",
+    "exit": 0
+  },
+  {
+    "log": "affected-denial-fixed.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts -t 'native alarms drain|lost delivery acknowledgment|cold Stop after disconnect|private fixture reset preserves|private fixture recovery activates|private recovery scans|unclosed successor needs'",
+    "exit": 1
+  },
+  {
+    "log": "affected-trace.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts -t 'native alarms drain|lost delivery acknowledgment|cold Stop after disconnect|private fixture reset preserves|private fixture recovery activates|private recovery scans|unclosed successor needs'",
+    "exit": 1
+  },
+  {
+    "log": "successor-transport-trace.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts -t 'private recovery scans|unclosed successor needs'",
+    "exit": 0
+  },
+  {
+    "log": "affected-direct-transport.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts -t 'native alarms drain|lost delivery acknowledgment|cold Stop after disconnect|private fixture reset preserves|private fixture recovery activates|private recovery scans|unclosed successor needs'",
+    "exit": 1
+  },
+  {
+    "log": "affected-successor-join.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts -t 'native alarms drain|lost delivery acknowledgment|cold Stop after disconnect|private fixture reset preserves|private fixture recovery activates|private recovery scans|unclosed successor needs'",
+    "exit": 1
+  },
+  {
+    "log": "affected-minimal-successor.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts -t 'native alarms drain|lost delivery acknowledgment|cold Stop after disconnect|private fixture reset preserves|private fixture recovery activates|private recovery scans|unclosed successor needs'",
+    "exit": 1
+  },
+  {
+    "log": "cold-stop-prefix.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts -t 'runs an actually|admits concurrent|keeps one lifetime|rejects current readiness|denies caller authority|rejects terminal and foreign|rolls back first admission|fails trusted reconstruction|reconciles the exact|native alarms drain|lost delivery acknowledgment|cold Stop after disconnect'",
+    "exit": 0
+  },
+  {
+    "log": "reset-minimal-final.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts -t 'private fixture reset preserves|private fixture recovery activates|private recovery scans|unclosed successor needs'",
+    "exit": 1
+  },
+  {
+    "log": "reset-owned-join.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts -t 'private fixture reset preserves|private fixture recovery activates|private recovery scans|unclosed successor needs'",
+    "exit": 0
+  },
+  {
+    "log": "affected-owned-join.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts -t 'native alarms drain|lost delivery acknowledgment|cold Stop after disconnect|private fixture reset preserves|private fixture recovery activates|private recovery scans|unclosed successor needs'",
+    "exit": 1
+  },
+  {
+    "log": "affected-outer-budget.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts -t 'native alarms drain|lost delivery acknowledgment|cold Stop after disconnect|private fixture reset preserves|private fixture recovery activates|private recovery scans|unclosed successor needs' --testTimeout 15000",
+    "exit": 1
+  },
+  {
+    "log": "affected-blocked-alarms.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts -t 'native alarms drain|lost delivery acknowledgment|cold Stop after disconnect|private fixture reset preserves|private fixture recovery activates|private recovery scans|unclosed successor needs' --testTimeout 15000",
+    "exit": 0
+  },
+  {
+    "log": "product-full-default-1.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts",
+    "exit": 1
+  },
+  {
+    "log": "product-cold-retirement-trace.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts",
+    "exit": 1
+  },
+  {
+    "log": "product-retirement-sync-outer.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts --testTimeout 15000",
+    "exit": 1
+  },
+  {
+    "log": "credential-typecheck-final.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec tsc --noEmit",
+    "exit": 0
+  },
+  {
+    "log": "web-typecheck-final.log",
+    "command": "sh .execution-008/clean-run.sh pnpm typecheck",
+    "exit": 0
+  },
+  {
+    "log": "scoped-format-final.log",
+    "command": "sh .execution-008/clean-run.sh pnpm exec biome check --write apps/credential-tests/src/entry.ts apps/credential-tests/src/model-entry.ts apps/credential-tests/src/product-commands.worker.test.ts",
+    "exit": 0
+  },
+  {
+    "log": "dispatch-reset-final.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts -t 'credential-local|private fixture reset preserves|private fixture recovery activates|private recovery scans|unclosed successor needs' --testTimeout 15000",
+    "exit": 0
+  },
+  {
+    "log": "product-claim-signal-final.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts --testTimeout 15000",
+    "exit": 1
+  },
+  {
+    "log": "dispatch-reset-cleanup-final.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts -t 'credential-local|private fixture reset preserves|private fixture recovery activates|private recovery scans|unclosed successor needs|natural replacement' --testTimeout 15000",
+    "exit": 1
+  },
+  {
+    "log": "dispatch-reset-origin-barrier.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts -t 'credential-local|private fixture reset preserves|private fixture recovery activates|private recovery scans|unclosed successor needs|natural replacement' --testTimeout 15000",
+    "exit": 0
+  },
+  {
+    "log": "product-origin-barrier-full.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts --testTimeout 15000",
+    "exit": 1
+  },
+  {
+    "log": "scoped-format-handoff.log",
+    "command": "sh .execution-008/clean-run.sh pnpm exec biome check --write apps/credential-tests/src/entry.ts apps/credential-tests/src/model-entry.ts apps/credential-tests/src/product-commands.worker.test.ts",
+    "exit": 0
+  },
+  {
+    "log": "credential-typecheck-handoff.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec tsc --noEmit",
+    "exit": 0
+  },
+  {
+    "log": "web-typecheck-handoff.log",
+    "command": "sh .execution-008/clean-run.sh pnpm typecheck",
+    "exit": 0
+  },
+  {
+    "log": "advisor-probes-handoff.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/runtime exec vitest run --config ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.config.ts",
+    "exit": 0
+  },
+  {
+    "log": "dispatch-reset-handoff.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts -t 'credential-local|private fixture reset preserves|private fixture recovery activates|private recovery scans|unclosed successor needs|natural replacement' --testTimeout 15000",
+    "exit": 1
+  },
+  {
+    "log": "product-boolean-claim-final.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec vitest run src/product-commands.worker.test.ts --testTimeout 15000",
+    "exit": 1
+  },
+  {
+    "log": "credential-typecheck-final-bytes.log",
+    "command": "sh .execution-008/clean-run.sh pnpm --filter @ditto/credential-tests exec tsc --noEmit",
+    "exit": 0
+  },
+  {
+    "log": "diff-check-final.log",
+    "command": "sh .execution-008/clean-run.sh git diff --check",
+    "exit": 0
+  }
+]

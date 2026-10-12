@@ -1,0 +1,19 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+ ✓ src/product-commands.worker.test.ts (53 tests | 51 skipped) 7702ms
+   ✓ runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path  2765ms
+   ✓ native alarms drain delivery order 3,1,2 through individual model turns without client scheduling  4936ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed | 51 skipped (53)
+   Start at  12:17:23
+   Duration  9.72s (transform 427ms, setup 0ms, collect 722ms, tests 7.70s, environment 0ms, prepare 129ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

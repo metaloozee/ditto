@@ -1,0 +1,9 @@
+{
+  "entry_hashes_verified": 37,
+  "changed": [
+    "apps/credential-tests/src/product-commands.worker.test.ts",
+    "apps/web/src/lib/session-command-candidate.ts"
+  ],
+  "unchanged": 35,
+  "all_runtime_fixture_credential_manifests_unchanged": true
+}

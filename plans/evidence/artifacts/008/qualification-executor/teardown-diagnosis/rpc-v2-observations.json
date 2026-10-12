@@ -1,0 +1,534 @@
+{
+  "A_CONTINUATION_OBSERVED": {
+    "receipt": {
+      "version": 2,
+      "receiptId": "e64f4c92-f2b3-47b1-aea5-e63bb759ad8f",
+      "commandId": "9f0736d2-d340-44ad-9e35-9e8dc6db76da",
+      "workspaceSessionId": "98ed4c82-13f4-43d0-ad5d-b2a4026c7deb",
+      "commandSeq": 1,
+      "ownerVersion": 1,
+      "queueDeadlineAt": 1791702740290,
+      "userMessageId": "90e442fc-2a36-451f-b9a9-97f6d95f6cb4",
+      "assistantMessageId": "e11e3cc0-8384-4901-961d-68b71df8afba"
+    },
+    "captured": {
+      "boot": "d838b2d9-4ad0-44f1-86aa-f68ee9ad952f",
+      "doId": "5281619dfb402f9994c3c76230dd225e49408298aaa82a79907508ba6caeefbf",
+      "scope": {
+        "version": 2,
+        "userId": "owner",
+        "projectId": "project",
+        "workspaceSessionId": "98ed4c82-13f4-43d0-ad5d-b2a4026c7deb",
+        "ownerVersion": 1
+      },
+      "rpcExecuted": null,
+      "failedDeliveryExecuted": null,
+      "invocation": {
+        "id": "30db6d12-57c1-4634-940b-b49f118b0ed3",
+        "generation": 1,
+        "started": 1791701840821,
+        "yield_at": 1791701841821,
+        "end_at": 1791701842821,
+        "state": "active"
+      },
+      "invocations": 1,
+      "roots": 1,
+      "submissions": 1,
+      "effects": [
+        {
+          "id": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "invocation": "30db6d12-57c1-4634-940b-b49f118b0ed3",
+          "state": "admitted",
+          "deadline": 1791701842821
+        }
+      ],
+      "claims": [
+        {
+          "effect": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "claimed": 0
+        }
+      ],
+      "encryptedDigest": "a2be1f127d8351b9871a39235a7d527a347b1e9f70f295bf523a94a7943f4681"
+    },
+    "wrongRequest": {
+      "returned": false,
+      "name": "Error",
+      "message": "008-rpc-request-mismatch",
+      "code": null,
+      "remote": true,
+      "retryable": null,
+      "durableObjectReset": null
+    },
+    "wrongOrigin": {
+      "returned": false,
+      "name": "Error",
+      "message": "008-rpc-origin-mismatch",
+      "code": null,
+      "remote": true,
+      "retryable": null,
+      "durableObjectReset": null
+    },
+    "ordinaryCallback": {
+      "returned": false,
+      "name": "Error",
+      "message": "008-rpc-opaque-16cdb36d-ebce-48c1-b8ca-a060f53b5967",
+      "code": null,
+      "remote": null,
+      "retryable": null,
+      "durableObjectReset": null
+    },
+    "spoofedCallback": {
+      "returned": false,
+      "name": "Error",
+      "message": "008-rpc-opaque-16cdb36d-ebce-48c1-b8ca-a060f53b5967",
+      "code": null,
+      "remote": true,
+      "retryable": null,
+      "durableObjectReset": true
+    },
+    "ordinaryRpc": {
+      "returned": false,
+      "name": "Error",
+      "message": "008-rpc-opaque-16cdb36d-ebce-48c1-b8ca-a060f53b5967",
+      "code": null,
+      "remote": true,
+      "retryable": null,
+      "durableObjectReset": null
+    },
+    "spoofedRpc": {
+      "returned": false,
+      "name": "Error",
+      "message": "008-rpc-opaque-16cdb36d-ebce-48c1-b8ca-a060f53b5967",
+      "code": null,
+      "remote": true,
+      "retryable": null,
+      "durableObjectReset": null
+    },
+    "observedAbort": {
+      "returned": false,
+      "name": "Error",
+      "message": "008-rpc-opaque-16cdb36d-ebce-48c1-b8ca-a060f53b5967",
+      "code": null,
+      "remote": null,
+      "retryable": null,
+      "durableObjectReset": true
+    },
+    "failedDelivery": {
+      "returned": false,
+      "name": "Error",
+      "message": "008-rpc-opaque-16cdb36d-ebce-48c1-b8ca-a060f53b5967",
+      "code": null,
+      "remote": null,
+      "retryable": null,
+      "durableObjectReset": true
+    },
+    "oldStubReplay": {
+      "returned": false,
+      "name": "Error",
+      "message": "008-rpc-opaque-16cdb36d-ebce-48c1-b8ca-a060f53b5967",
+      "code": null,
+      "remote": null,
+      "retryable": null,
+      "durableObjectReset": true
+    },
+    "replacement": {
+      "boot": "1c96828d-1eb4-45ee-9e1a-27c92d97e336",
+      "doId": "5281619dfb402f9994c3c76230dd225e49408298aaa82a79907508ba6caeefbf",
+      "scope": {
+        "version": 2,
+        "userId": "owner",
+        "projectId": "project",
+        "workspaceSessionId": "98ed4c82-13f4-43d0-ad5d-b2a4026c7deb",
+        "ownerVersion": 1
+      },
+      "intent": {
+        "resetId": "39193bd8-c1c6-4fc0-9b29-8c092ec4bc4f",
+        "label": "008-rpc-opaque-16cdb36d-ebce-48c1-b8ca-a060f53b5967",
+        "diagnosticOnly": true,
+        "owner": "owner",
+        "workspaceSessionId": "98ed4c82-13f4-43d0-ad5d-b2a4026c7deb",
+        "boot": "d838b2d9-4ad0-44f1-86aa-f68ee9ad952f",
+        "doId": "5281619dfb402f9994c3c76230dd225e49408298aaa82a79907508ba6caeefbf",
+        "scope": {
+          "version": 2,
+          "userId": "owner",
+          "projectId": "project",
+          "workspaceSessionId": "98ed4c82-13f4-43d0-ad5d-b2a4026c7deb",
+          "ownerVersion": 1
+        },
+        "invocation": {
+          "id": "30db6d12-57c1-4634-940b-b49f118b0ed3",
+          "generation": 1,
+          "started": 1791701840821,
+          "yield_at": 1791701841821,
+          "end_at": 1791701842821,
+          "state": "active"
+        }
+      },
+      "rpcExecuted": {
+        "requestKey": "39193bd8-c1c6-4fc0-9b29-8c092ec4bc4f",
+        "boot": "d838b2d9-4ad0-44f1-86aa-f68ee9ad952f",
+        "doId": "5281619dfb402f9994c3c76230dd225e49408298aaa82a79907508ba6caeefbf",
+        "invocation": "30db6d12-57c1-4634-940b-b49f118b0ed3",
+        "label": "008-rpc-opaque-16cdb36d-ebce-48c1-b8ca-a060f53b5967"
+      },
+      "failedDeliveryExecuted": null,
+      "invocation": {
+        "id": "30db6d12-57c1-4634-940b-b49f118b0ed3",
+        "generation": 1,
+        "started": 1791701840821,
+        "yield_at": 1791701841821,
+        "end_at": 1791701842821,
+        "state": "active"
+      },
+      "invocations": 1,
+      "roots": 1,
+      "submissions": 1,
+      "effects": [
+        {
+          "id": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "invocation": "30db6d12-57c1-4634-940b-b49f118b0ed3",
+          "state": "admitted",
+          "deadline": 1791701842821
+        }
+      ],
+      "claims": [
+        {
+          "effect": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "claimed": 0
+        }
+      ],
+      "encryptedDigest": "a2be1f127d8351b9871a39235a7d527a347b1e9f70f295bf523a94a7943f4681"
+    },
+    "cleanup": {
+      "denied": {
+        "returned": false,
+        "name": "Error",
+        "message": "Prior host termination required",
+        "code": null,
+        "remote": null,
+        "retryable": null,
+        "durableObjectReset": null
+      },
+      "outcome": {
+        "status": "denied"
+      },
+      "final": {
+        "boot": "1c96828d-1eb4-45ee-9e1a-27c92d97e336",
+        "doId": "5281619dfb402f9994c3c76230dd225e49408298aaa82a79907508ba6caeefbf",
+        "scope": {
+          "version": 2,
+          "userId": "owner",
+          "projectId": "project",
+          "workspaceSessionId": "98ed4c82-13f4-43d0-ad5d-b2a4026c7deb",
+          "ownerVersion": 1
+        },
+        "intent": {
+          "resetId": "39193bd8-c1c6-4fc0-9b29-8c092ec4bc4f",
+          "label": "008-rpc-opaque-16cdb36d-ebce-48c1-b8ca-a060f53b5967",
+          "diagnosticOnly": true,
+          "owner": "owner",
+          "workspaceSessionId": "98ed4c82-13f4-43d0-ad5d-b2a4026c7deb",
+          "boot": "d838b2d9-4ad0-44f1-86aa-f68ee9ad952f",
+          "doId": "5281619dfb402f9994c3c76230dd225e49408298aaa82a79907508ba6caeefbf",
+          "scope": {
+            "version": 2,
+            "userId": "owner",
+            "projectId": "project",
+            "workspaceSessionId": "98ed4c82-13f4-43d0-ad5d-b2a4026c7deb",
+            "ownerVersion": 1
+          },
+          "invocation": {
+            "id": "30db6d12-57c1-4634-940b-b49f118b0ed3",
+            "generation": 1,
+            "started": 1791701840821,
+            "yield_at": 1791701841821,
+            "end_at": 1791701842821,
+            "state": "active"
+          }
+        },
+        "rpcExecuted": {
+          "requestKey": "39193bd8-c1c6-4fc0-9b29-8c092ec4bc4f",
+          "boot": "d838b2d9-4ad0-44f1-86aa-f68ee9ad952f",
+          "doId": "5281619dfb402f9994c3c76230dd225e49408298aaa82a79907508ba6caeefbf",
+          "invocation": "30db6d12-57c1-4634-940b-b49f118b0ed3",
+          "label": "008-rpc-opaque-16cdb36d-ebce-48c1-b8ca-a060f53b5967"
+        },
+        "failedDeliveryExecuted": null,
+        "invocation": {
+          "id": "30db6d12-57c1-4634-940b-b49f118b0ed3",
+          "generation": 1,
+          "started": 1791701840821,
+          "yield_at": 1791701841821,
+          "end_at": 1791701842821,
+          "state": "active"
+        },
+        "invocations": 1,
+        "roots": 1,
+        "submissions": 1,
+        "effects": [
+          {
+            "id": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "invocation": "30db6d12-57c1-4634-940b-b49f118b0ed3",
+            "state": "admitted",
+            "deadline": 1791701842821
+          }
+        ],
+        "claims": [
+          {
+            "effect": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "claimed": 0
+          }
+        ],
+        "encryptedDigest": "a2be1f127d8351b9871a39235a7d527a347b1e9f70f295bf523a94a7943f4681"
+      },
+      "authority": {
+        "current": true,
+        "generation": 1,
+        "executor": 1,
+        "liveExecutors": 1
+      },
+      "calls": 0
+    },
+    "classification": "NOT QUALIFIED pending independent RPC classifier review; no witness issued",
+    "witness": null
+  },
+  "A_CONTINUATION_DISCARDED": {
+    "receipt": {
+      "version": 2,
+      "receiptId": "98fd4fd5-03b1-4617-bb9f-633ac94a20e4",
+      "commandId": "948df20e-85b5-4b83-8f56-4d4b60201d0f",
+      "workspaceSessionId": "72fd7d33-bcec-4ebc-abe1-effca8ed40a6",
+      "commandSeq": 1,
+      "ownerVersion": 1,
+      "queueDeadlineAt": 1791702742602,
+      "userMessageId": "d214e4bb-1a3b-44a4-bb85-46501ac12508",
+      "assistantMessageId": "f4cc671f-1e8a-4109-9ef2-b31313a53e34"
+    },
+    "captured": {
+      "boot": "44434b67-6326-4fa5-b2c9-43e7f4b10417",
+      "doId": "b2c36d0695c1be21a084f08b966dcc2bddc83ee4c114846abf5ab43860161007",
+      "scope": {
+        "version": 2,
+        "userId": "owner",
+        "projectId": "project",
+        "workspaceSessionId": "72fd7d33-bcec-4ebc-abe1-effca8ed40a6",
+        "ownerVersion": 1
+      },
+      "rpcExecuted": null,
+      "failedDeliveryExecuted": null,
+      "invocation": {
+        "id": "26516993-a8ac-4c6b-93b7-d1010c579961",
+        "generation": 1,
+        "started": 1791701843094,
+        "yield_at": 1791701844094,
+        "end_at": 1791701845094,
+        "state": "active"
+      },
+      "invocations": 1,
+      "roots": 1,
+      "submissions": 1,
+      "effects": [
+        {
+          "id": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "invocation": "26516993-a8ac-4c6b-93b7-d1010c579961",
+          "state": "admitted",
+          "deadline": 1791701845094
+        }
+      ],
+      "claims": [
+        {
+          "effect": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "claimed": 0
+        }
+      ],
+      "encryptedDigest": "9906242bebf1dfc2e2131cf06758550bc06817cb73afe6ee0a5646b81ce9f853"
+    },
+    "intent": {
+      "resetId": "2d024090-758f-4098-8d5f-d4e4800a9c17",
+      "label": "008-rpc-discarded-56750c04-3ef0-47f9-87b2-6615027ff229",
+      "diagnosticOnly": true,
+      "owner": "owner",
+      "workspaceSessionId": "72fd7d33-bcec-4ebc-abe1-effca8ed40a6",
+      "boot": "44434b67-6326-4fa5-b2c9-43e7f4b10417",
+      "doId": "b2c36d0695c1be21a084f08b966dcc2bddc83ee4c114846abf5ab43860161007",
+      "scope": {
+        "version": 2,
+        "userId": "owner",
+        "projectId": "project",
+        "workspaceSessionId": "72fd7d33-bcec-4ebc-abe1-effca8ed40a6",
+        "ownerVersion": 1
+      },
+      "invocation": {
+        "id": "26516993-a8ac-4c6b-93b7-d1010c579961",
+        "generation": 1,
+        "started": 1791701843094,
+        "yield_at": 1791701844094,
+        "end_at": 1791701845094,
+        "state": "active"
+      }
+    },
+    "replacement": {
+      "boot": "00b34e20-43d0-410d-a5f4-bb0456b9f9dd",
+      "doId": "b2c36d0695c1be21a084f08b966dcc2bddc83ee4c114846abf5ab43860161007",
+      "scope": {
+        "version": 2,
+        "userId": "owner",
+        "projectId": "project",
+        "workspaceSessionId": "72fd7d33-bcec-4ebc-abe1-effca8ed40a6",
+        "ownerVersion": 1
+      },
+      "intent": {
+        "resetId": "2d024090-758f-4098-8d5f-d4e4800a9c17",
+        "label": "008-rpc-discarded-56750c04-3ef0-47f9-87b2-6615027ff229",
+        "diagnosticOnly": true,
+        "owner": "owner",
+        "workspaceSessionId": "72fd7d33-bcec-4ebc-abe1-effca8ed40a6",
+        "boot": "44434b67-6326-4fa5-b2c9-43e7f4b10417",
+        "doId": "b2c36d0695c1be21a084f08b966dcc2bddc83ee4c114846abf5ab43860161007",
+        "scope": {
+          "version": 2,
+          "userId": "owner",
+          "projectId": "project",
+          "workspaceSessionId": "72fd7d33-bcec-4ebc-abe1-effca8ed40a6",
+          "ownerVersion": 1
+        },
+        "invocation": {
+          "id": "26516993-a8ac-4c6b-93b7-d1010c579961",
+          "generation": 1,
+          "started": 1791701843094,
+          "yield_at": 1791701844094,
+          "end_at": 1791701845094,
+          "state": "active"
+        }
+      },
+      "rpcExecuted": {
+        "requestKey": "2d024090-758f-4098-8d5f-d4e4800a9c17",
+        "boot": "44434b67-6326-4fa5-b2c9-43e7f4b10417",
+        "doId": "b2c36d0695c1be21a084f08b966dcc2bddc83ee4c114846abf5ab43860161007",
+        "invocation": "26516993-a8ac-4c6b-93b7-d1010c579961",
+        "label": "008-rpc-discarded-56750c04-3ef0-47f9-87b2-6615027ff229"
+      },
+      "failedDeliveryExecuted": null,
+      "invocation": {
+        "id": "26516993-a8ac-4c6b-93b7-d1010c579961",
+        "generation": 1,
+        "started": 1791701843094,
+        "yield_at": 1791701844094,
+        "end_at": 1791701845094,
+        "state": "active"
+      },
+      "invocations": 1,
+      "roots": 1,
+      "submissions": 1,
+      "effects": [
+        {
+          "id": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "invocation": "26516993-a8ac-4c6b-93b7-d1010c579961",
+          "state": "admitted",
+          "deadline": 1791701845094
+        }
+      ],
+      "claims": [
+        {
+          "effect": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+          "claimed": 0
+        }
+      ],
+      "encryptedDigest": "9906242bebf1dfc2e2131cf06758550bc06817cb73afe6ee0a5646b81ce9f853"
+    },
+    "recordedOutsideObservation": null,
+    "disposition": "NOT QUALIFIED",
+    "witness": null,
+    "cleanup": {
+      "denied": {
+        "returned": false,
+        "name": "Error",
+        "message": "Prior host termination required",
+        "code": null,
+        "remote": null,
+        "retryable": null,
+        "durableObjectReset": null
+      },
+      "outcome": {
+        "status": "denied"
+      },
+      "final": {
+        "boot": "00b34e20-43d0-410d-a5f4-bb0456b9f9dd",
+        "doId": "b2c36d0695c1be21a084f08b966dcc2bddc83ee4c114846abf5ab43860161007",
+        "scope": {
+          "version": 2,
+          "userId": "owner",
+          "projectId": "project",
+          "workspaceSessionId": "72fd7d33-bcec-4ebc-abe1-effca8ed40a6",
+          "ownerVersion": 1
+        },
+        "intent": {
+          "resetId": "2d024090-758f-4098-8d5f-d4e4800a9c17",
+          "label": "008-rpc-discarded-56750c04-3ef0-47f9-87b2-6615027ff229",
+          "diagnosticOnly": true,
+          "owner": "owner",
+          "workspaceSessionId": "72fd7d33-bcec-4ebc-abe1-effca8ed40a6",
+          "boot": "44434b67-6326-4fa5-b2c9-43e7f4b10417",
+          "doId": "b2c36d0695c1be21a084f08b966dcc2bddc83ee4c114846abf5ab43860161007",
+          "scope": {
+            "version": 2,
+            "userId": "owner",
+            "projectId": "project",
+            "workspaceSessionId": "72fd7d33-bcec-4ebc-abe1-effca8ed40a6",
+            "ownerVersion": 1
+          },
+          "invocation": {
+            "id": "26516993-a8ac-4c6b-93b7-d1010c579961",
+            "generation": 1,
+            "started": 1791701843094,
+            "yield_at": 1791701844094,
+            "end_at": 1791701845094,
+            "state": "active"
+          }
+        },
+        "rpcExecuted": {
+          "requestKey": "2d024090-758f-4098-8d5f-d4e4800a9c17",
+          "boot": "44434b67-6326-4fa5-b2c9-43e7f4b10417",
+          "doId": "b2c36d0695c1be21a084f08b966dcc2bddc83ee4c114846abf5ab43860161007",
+          "invocation": "26516993-a8ac-4c6b-93b7-d1010c579961",
+          "label": "008-rpc-discarded-56750c04-3ef0-47f9-87b2-6615027ff229"
+        },
+        "failedDeliveryExecuted": null,
+        "invocation": {
+          "id": "26516993-a8ac-4c6b-93b7-d1010c579961",
+          "generation": 1,
+          "started": 1791701843094,
+          "yield_at": 1791701844094,
+          "end_at": 1791701845094,
+          "state": "active"
+        },
+        "invocations": 1,
+        "roots": 1,
+        "submissions": 1,
+        "effects": [
+          {
+            "id": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "invocation": "26516993-a8ac-4c6b-93b7-d1010c579961",
+            "state": "admitted",
+            "deadline": 1791701845094
+          }
+        ],
+        "claims": [
+          {
+            "effect": "pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1",
+            "claimed": 0
+          }
+        ],
+        "encryptedDigest": "9906242bebf1dfc2e2131cf06758550bc06817cb73afe6ee0a5646b81ce9f853"
+      },
+      "authority": {
+        "current": true,
+        "generation": 1,
+        "executor": 1,
+        "liveExecutors": 1
+      },
+      "calls": 0
+    }
+  }
+}

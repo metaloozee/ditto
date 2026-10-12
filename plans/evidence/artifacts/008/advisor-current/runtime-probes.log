@@ -1,0 +1,40 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:warn] Failed to statically analyze the exports of the main Worker entry-point "./src/pi-durable-test-entry.ts"
+[vpw:warn] More details: Error: Build failed with 1 error:
+[vpw:warn] error: Could not resolve "/home/ayan/ditto-execution/plan-008-4WXvNW/plans/evidence/artifacts/008/advisor-current/src/pi-durable-test-entry.ts"
+[vpw:info] Starting isolated runtimes for ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.config.ts...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[vitest-pool-workers] Failed to import "/home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/node_modules/vitest/dist/index.js/execute" from "/home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260702.1_@vitest+_25b5cb7e5ac90ba1c82363cf73fabbe1/node_modules/@cloudflare/vitest-pool-workers/dist/worker/index.mjs". To resolve this, try bundling the relevant dependency with Vite. For more details, refer to https://developers.cloudflare.com/workers/testing/vitest-integration/known-issues/#module-resolution
+workerd/server/fallback-service.c++:223: error: Fallback service failed to fetch module; payload = ; spec = /?specifier=%2Fhome%2Fayan%2Fditto-execution%2Fplan-008-4WXvNW%2Fapps%2Fruntime%2Fnode_modules%2Fvitest%2Fdist%2Findex.js%2Fexecute&referrer=%2Fhome%2Fayan%2Fditto-execution%2Fplan-008-4WXvNW%2Fnode_modules%2F.pnpm%2F%40cloudflare%2Bvitest-pool-workers%400.12.21_%40cloudflare%2Bworkers-types%404.20260702.1_%40vitest%2B_25b5cb7e5ac90ba1c82363cf73fabbe1%2Fnode_modules%2F%40cloudflare%2Fvitest-pool-workers%2Fdist%2Fworker%2Findex.mjs&rawSpecifier=vitest%2Fexecute
+Error initialising worker: Error: No such module "home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260702.1_@vitest+_25b5cb7e5ac90ba1c82363cf73fabbe1/node_modules/@cloudflare/vitest-pool-workers/dist/worker/vitest/execute".
+    at __VITEST_POOL_WORKERS_RUNNER_DURABLE_OBJECT__.handleVitestRunRequest (file:///home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260702.1_@vitest+_25b5cb7e5ac90ba1c82363cf73fabbe1/node_modules/@cloudflare/vitest-pool-workers/dist/worker/index.mjs:917:34)
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: No such module "home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260702.1_@vitest+_25b5cb7e5ac90ba1c82363cf73fabbe1/node_modules/@cloudflare/vitest-pool-workers/dist/worker/vitest/execute".
+ ❯ __VITEST_POOL_WORKERS_RUNNER_DURABLE_OBJECT__.handleVitestRunRequest ../../node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260702.1_@vitest+_25b5cb7e5ac90ba1c82363cf73fabbe1/node_modules/@cloudflare/vitest-pool-workers/src/worker/index.ts:281:31
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files   (1)
+      Tests  no tests
+     Errors  1 error
+   Start at  07:08:08
+   Duration  931ms (transform 0ms, setup 0ms, collect 0ms, tests 0ms, environment 0ms, prepare 0ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run --config ../../plans/evidence/artifacts/008/advisor-current/runtime-probes.config.ts

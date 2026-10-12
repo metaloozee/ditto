@@ -1,0 +1,63 @@
+apps/credential-tests/src/product-commands.worker.test.ts:83:7 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    81 │ 					statusCode: 200,
+    82 │ 					data:
+  > 83 │ 						[
+       │ 						^
+  > 84 │ 							{ version: 1, type: "delta", text: "Synthetic product result" },
+        ...
+  > 93 │ 							.map((value) => JSON.stringify(value))
+  > 94 │ 							.join("\n") + "\n",
+       │ 							^^^^^^^^^^^^^^^^^^
+    95 │ 					responseOptions: {
+    96 │ 						headers: { "content-type": "application/x-ndjson" },
+  
+  i Unsafe fix: Use a template literal.
+  
+      81   81 │   					statusCode: 200,
+      82   82 │   					data:
+      83      │ - → → → → → → [
+           83 │ + → → → → → → `${[
+      84   84 │   							{ version: 1, type: "delta", text: "Synthetic product result" },
+      85   85 │   							{
+    ········· │ 
+      92   92 │   						]
+      93   93 │   							.map((value) => JSON.stringify(value))
+      94      │ - → → → → → → → .join("\n")·+·"\n",
+           94 │ + → → → → → → → .join("\n")}\n`,
+      95   95 │   					responseOptions: {
+      96   96 │   						headers: { "content-type": "application/x-ndjson" },
+  
+
+apps/credential-tests/src/product-commands.worker.test.ts:138:5 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    136 │ 		].map(
+    137 │ 			async (table) =>
+  > 138 │ 				(await env.DB.prepare(`SELECT count(*) AS n FROM ${table}`).first<{
+        │ 				^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 139 │ 					n: number;
+  > 140 │ 				}>())!.n,
+        │ 				^^^^^^
+    141 │ 		),
+    142 │ 	);
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+     138  138 │   				(await env.DB.prepare(`SELECT count(*) AS n FROM ${table}`).first<{
+     139  139 │   					n: number;
+     140      │ - → → → → }>())!.n,
+          140 │ + → → → → }>())?.n,
+     141  141 │   		),
+     142  142 │   	);
+  
+
+Skipped 2 suggested fixes.
+If you wish to apply the suggested (unsafe) fixes, use the command biome check --write --unsafe
+
+Checked 3 files in 64ms. Fixed 2 files.
+Found 1 warning.
+Found 1 info.

@@ -1,0 +1,146 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+TEMP-008-substage {"boundary":"entry","completed":"entry","claimed":null,"yieldRemaining":657,"operationRemaining":59751,"aborted":false}
+TEMP-008-substage {"boundary":"beforeAuthority","completed":"reservedReceipt","claimed":0,"yieldRemaining":656,"operationRemaining":59750,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+TEMP-008-substage {"boundary":"afterAuthority/beforeGetTask","completed":"authority","claimed":0,"yieldRemaining":643,"operationRemaining":59737,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+TEMP-008-substage {"boundary":"afterGetTask","completed":"getTask","claimed":0,"yieldRemaining":642,"operationRemaining":59736,"aborted":false}
+TEMP-008-substage {"boundary":"beforeSealConsumption","completed":"getTask","claimed":0,"yieldRemaining":642,"operationRemaining":59736,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+TEMP-008-substage {"boundary":"afterSealConsumption/beforeFirstPermit","completed":"sealConsumption","claimed":0,"yieldRemaining":642,"operationRemaining":59736,"aborted":false}
+TEMP-008-substage {"boundary":"afterFirstPermit/beforeConsumption","completed":"firstDispatchPermit","claimed":0,"yieldRemaining":641,"operationRemaining":59735,"aborted":false}
+TEMP-008-substage {"boundary":"afterConsumption","completed":"consumedTransition","claimed":1,"yieldRemaining":641,"operationRemaining":59735,"aborted":false}
+TEMP-008-substage {"boundary":"beforeDurable","completed":"consumedTransition","claimed":1,"yieldRemaining":641,"operationRemaining":59735,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+TEMP-008-substage {"boundary":"afterDurable/beforeProductCheck","completed":"durable","claimed":1,"yieldRemaining":636,"operationRemaining":59730,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+TEMP-008-substage {"boundary":"afterProductCheck/beforeFreshAuthority","completed":"boundProductCheck","claimed":1,"yieldRemaining":615,"operationRemaining":59709,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+TEMP-008-substage {"boundary":"afterFreshAuthority","completed":"freshAuthority","claimed":1,"yieldRemaining":600,"operationRemaining":59694,"aborted":false}
+TEMP-008-substage {"boundary":"beforeFinalPermit","completed":"freshAuthority","claimed":1,"yieldRemaining":600,"operationRemaining":59694,"aborted":false}
+TEMP-008-substage {"boundary":"afterFinalPermit","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":600,"operationRemaining":59694,"aborted":false}
+TEMP-008-substage {"boundary":"settled","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":600,"operationRemaining":59694,"aborted":false}
+
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-d1e87480-0b70-4eaa-9c51-ceb88668d695
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+TEMP-008-substage {"boundary":"entry","completed":"entry","claimed":null,"yieldRemaining":575,"operationRemaining":59676,"aborted":false}
+TEMP-008-substage {"boundary":"beforeAuthority","completed":"reservedReceipt","claimed":0,"yieldRemaining":575,"operationRemaining":59676,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+TEMP-008-substage {"boundary":"afterAuthority/beforeGetTask","completed":"authority","claimed":0,"yieldRemaining":552,"operationRemaining":59653,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+TEMP-008-substage {"boundary":"afterGetTask","completed":"getTask","claimed":0,"yieldRemaining":551,"operationRemaining":59652,"aborted":false}
+TEMP-008-substage {"boundary":"beforeSealConsumption","completed":"getTask","claimed":0,"yieldRemaining":551,"operationRemaining":59652,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+TEMP-008-substage {"boundary":"afterSealConsumption/beforeFirstPermit","completed":"sealConsumption","claimed":0,"yieldRemaining":551,"operationRemaining":59652,"aborted":false}
+TEMP-008-substage {"boundary":"afterFirstPermit/beforeConsumption","completed":"firstDispatchPermit","claimed":0,"yieldRemaining":550,"operationRemaining":59651,"aborted":false}
+TEMP-008-substage {"boundary":"afterConsumption","completed":"consumedTransition","claimed":1,"yieldRemaining":550,"operationRemaining":59651,"aborted":false}
+TEMP-008-substage {"boundary":"beforeDurable","completed":"consumedTransition","claimed":1,"yieldRemaining":550,"operationRemaining":59651,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+TEMP-008-substage {"boundary":"afterDurable/beforeProductCheck","completed":"durable","claimed":1,"yieldRemaining":541,"operationRemaining":59642,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+TEMP-008-substage {"boundary":"afterProductCheck/beforeFreshAuthority","completed":"boundProductCheck","claimed":1,"yieldRemaining":516,"operationRemaining":59617,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+TEMP-008-substage {"boundary":"afterFreshAuthority","completed":"freshAuthority","claimed":1,"yieldRemaining":501,"operationRemaining":59602,"aborted":false}
+TEMP-008-substage {"boundary":"beforeFinalPermit","completed":"freshAuthority","claimed":1,"yieldRemaining":501,"operationRemaining":59602,"aborted":false}
+TEMP-008-substage {"boundary":"afterFinalPermit","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":501,"operationRemaining":59602,"aborted":false}
+TEMP-008-substage {"boundary":"settled","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":501,"operationRemaining":59602,"aborted":false}
+
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-908344fd-438c-40c2-bc85-49b5a6214b93
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+TEMP-008-substage {"boundary":"entry","completed":"entry","claimed":null,"yieldRemaining":530,"operationRemaining":59656,"aborted":false}
+TEMP-008-substage {"boundary":"beforeAuthority","completed":"reservedReceipt","claimed":0,"yieldRemaining":529,"operationRemaining":59655,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+TEMP-008-substage {"boundary":"afterAuthority/beforeGetTask","completed":"authority","claimed":0,"yieldRemaining":505,"operationRemaining":59631,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+TEMP-008-substage {"boundary":"afterGetTask","completed":"getTask","claimed":0,"yieldRemaining":504,"operationRemaining":59630,"aborted":false}
+TEMP-008-substage {"boundary":"beforeSealConsumption","completed":"getTask","claimed":0,"yieldRemaining":504,"operationRemaining":59630,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+TEMP-008-substage {"boundary":"afterSealConsumption/beforeFirstPermit","completed":"sealConsumption","claimed":0,"yieldRemaining":504,"operationRemaining":59630,"aborted":false}
+TEMP-008-substage {"boundary":"afterFirstPermit/beforeConsumption","completed":"firstDispatchPermit","claimed":0,"yieldRemaining":503,"operationRemaining":59629,"aborted":false}
+TEMP-008-substage {"boundary":"afterConsumption","completed":"consumedTransition","claimed":1,"yieldRemaining":503,"operationRemaining":59629,"aborted":false}
+TEMP-008-substage {"boundary":"beforeDurable","completed":"consumedTransition","claimed":1,"yieldRemaining":503,"operationRemaining":59629,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+TEMP-008-substage {"boundary":"afterDurable/beforeProductCheck","completed":"durable","claimed":1,"yieldRemaining":495,"operationRemaining":59621,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+TEMP-008-substage {"boundary":"afterProductCheck/beforeFreshAuthority","completed":"boundProductCheck","claimed":1,"yieldRemaining":467,"operationRemaining":59593,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+TEMP-008-substage {"boundary":"afterFreshAuthority","completed":"freshAuthority","claimed":1,"yieldRemaining":448,"operationRemaining":59574,"aborted":false}
+TEMP-008-substage {"boundary":"beforeFinalPermit","completed":"freshAuthority","claimed":1,"yieldRemaining":447,"operationRemaining":59573,"aborted":false}
+TEMP-008-substage {"boundary":"afterFinalPermit","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":447,"operationRemaining":59573,"aborted":false}
+TEMP-008-substage {"boundary":"settled","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":447,"operationRemaining":59573,"aborted":false}
+
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-1b32e75c-32d5-431c-a547-79305b7e0fce
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+TEMP-008-substage {"boundary":"entry","completed":"entry","claimed":null,"yieldRemaining":601,"operationRemaining":59712,"aborted":false}
+TEMP-008-substage {"boundary":"beforeAuthority","completed":"reservedReceipt","claimed":0,"yieldRemaining":600,"operationRemaining":59711,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+TEMP-008-substage {"boundary":"afterAuthority/beforeGetTask","completed":"authority","claimed":0,"yieldRemaining":581,"operationRemaining":59692,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+TEMP-008-substage {"boundary":"afterGetTask","completed":"getTask","claimed":0,"yieldRemaining":580,"operationRemaining":59691,"aborted":false}
+TEMP-008-substage {"boundary":"beforeSealConsumption","completed":"getTask","claimed":0,"yieldRemaining":580,"operationRemaining":59691,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+TEMP-008-substage {"boundary":"afterSealConsumption/beforeFirstPermit","completed":"sealConsumption","claimed":0,"yieldRemaining":580,"operationRemaining":59691,"aborted":false}
+TEMP-008-substage {"boundary":"afterFirstPermit/beforeConsumption","completed":"firstDispatchPermit","claimed":0,"yieldRemaining":580,"operationRemaining":59691,"aborted":false}
+TEMP-008-substage {"boundary":"afterConsumption","completed":"consumedTransition","claimed":1,"yieldRemaining":580,"operationRemaining":59691,"aborted":false}
+TEMP-008-substage {"boundary":"beforeDurable","completed":"consumedTransition","claimed":1,"yieldRemaining":580,"operationRemaining":59691,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+TEMP-008-substage {"boundary":"afterDurable/beforeProductCheck","completed":"durable","claimed":1,"yieldRemaining":574,"operationRemaining":59685,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+TEMP-008-substage {"boundary":"afterProductCheck/beforeFreshAuthority","completed":"boundProductCheck","claimed":1,"yieldRemaining":546,"operationRemaining":59657,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+TEMP-008-substage {"boundary":"afterFreshAuthority","completed":"freshAuthority","claimed":1,"yieldRemaining":445,"operationRemaining":59556,"aborted":false}
+TEMP-008-substage {"boundary":"beforeFinalPermit","completed":"freshAuthority","claimed":1,"yieldRemaining":445,"operationRemaining":59556,"aborted":false}
+TEMP-008-substage {"boundary":"afterFinalPermit","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":445,"operationRemaining":59556,"aborted":false}
+TEMP-008-substage {"boundary":"settled","completed":"finalDispatchPermit","claimed":1,"yieldRemaining":445,"operationRemaining":59556,"aborted":false}
+
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-closed-successor-replacement
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-closed-successor-replacement
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbb00 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbe50 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfca8e /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f03c2a /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0c760 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0cd90
+ ✓ src/product-commands.worker.test.ts (54 tests | 51 skipped) 10963ms
+   ✓ private fixture reset preserves immutable host origin and discarded observation=false  2998ms
+   ✓ private fixture reset preserves immutable host origin and discarded observation=true  2736ms
+   ✓ private fixture recovery activates only the exact current successor and a valid old descriptor stays denied  5228ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed | 51 skipped (54)
+   Start at  12:48:07
+   Duration  12.50s (transform 359ms, setup 0ms, collect 634ms, tests 10.96s, environment 0ms, prepare 106ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

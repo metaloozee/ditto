@@ -1,0 +1,11 @@
+{
+  "plans/evidence/artifacts/008/qualification-executor/a-continuation-advisor-probes.log": "43a46fbee28af7cbbde2ea549b3c0855d9216b94502f39d70496c334fab109d0",
+  "plans/evidence/artifacts/008/qualification-executor/a-continuation-before.json": "9096f71dc0c62d23bc9af413d68193abb9d96cf116fe19f29929fd517d3de7e6",
+  "plans/evidence/artifacts/008/qualification-executor/a-continuation-entry.ts": "4073c15cfe17b4aace01db9e7737c00c6240381e029421484e07cc912f25ca93",
+  "plans/evidence/artifacts/008/qualification-executor/a-continuation-observations.json": "0f9c4831036f6219c194b14cdbe91d89862ee57ec823363909a66b406b4ecdc0",
+  "plans/evidence/artifacts/008/qualification-executor/a-continuation-preservation.json": "7dfc0d0670fa4d70e4d0cd24c877f684bac10270bf0eaf9afafa2062d3651e94",
+  "plans/evidence/artifacts/008/qualification-executor/a-continuation-run-1.log": "e1f7e0a365e5faf08697a31b7654fe2b4ea4f9e5ba6890a8799e7f8ca6dcd617",
+  "plans/evidence/artifacts/008/qualification-executor/a-continuation.config.ts": "56861fccbaad53aac614ad7c215dacf82c98edf611bb7311e3bbc86bafbee457",
+  "plans/evidence/artifacts/008/qualification-executor/a-continuation.worker.test.ts": "6aa794b80315193a1b50d9a9561b336c51cd17e4f8e7d7168ffba5694dea9e59",
+  "plans/evidence/008-fixture-reset-qualification.md": "ca9683b0f59c9a5b62ba718e4f7a72241e53568e83d82a03aea98dffe6f69a86"
+}

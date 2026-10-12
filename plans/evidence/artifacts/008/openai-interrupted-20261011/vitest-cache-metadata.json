@@ -1,0 +1,48 @@
+{
+  "key": "make-fetch-happen:request-cache:https://registry.npmjs.org/vitest",
+  "integrity": "sha512-tJEQOC2v6FrphdWs3nIigWvIOMob4niv6GLRPTm6lu4aMzIbZ2MMgrhBx3iYzlRglo6Vf+VUqDvssr2Bc9q/GA==",
+  "path": "/home/ayan/ditto-execution/plan-008-4WXvNW/.execution-008/home/.npm/content-v2/sha512/b4/91/10382dafe85ae985d5acde7222816bc838ca1be278afe862d13d39ba96ee1a33321b67630c82b841c77898ce5460968e957fe554a83becb2bd8173dabf18",
+  "size": 1289576,
+  "time": 1791710435969,
+  "metadata": {
+    "time": 1791710435675,
+    "url": "https://registry.npmjs.org/vitest",
+    "reqHeaders": {
+      "accept": "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*"
+    },
+    "resHeaders": {
+      "cache-control": "public, max-age=300",
+      "content-encoding": "gzip",
+      "content-type": "application/vnd.npm.install-v1+json",
+      "date": "Sun, 11 Oct 2026 09:20:35 GMT",
+      "etag": "W/\"5b724f4d206e8bba0350d4ce980b984c\"",
+      "last-modified": "Wed, 30 Sep 2026 11:30:45 GMT",
+      "vary": "accept-encoding, accept"
+    },
+    "options": {
+      "compress": true
+    }
+  }
+}
+{
+  "key": "make-fetch-happen:request-cache:https://registry.npmjs.org/vitest/-/vitest-3.2.7.tgz",
+  "integrity": "sha512-KrxIJ62Fd89gfysR4WotlgZABiz2dqFPgqGzX7s+CwsqLFomRH7777ZcrOD6+WVAh7khPQP41A+BKbpcJFrdEg==",
+  "path": "/home/ayan/ditto-execution/plan-008-4WXvNW/.execution-008/home/.npm/content-v2/sha512/2a/bc/4827ad8577cf607f2b11e16a2d960640062cf676a14f82a1b35fbb3e0b0b2a2c5a26447efbefb65cace0faf9654087b9213d03f8d40f8129ba5c245add12",
+  "size": 335123,
+  "time": 1791710436331,
+  "metadata": {
+    "time": 1791710436035,
+    "url": "https://registry.npmjs.org/vitest/-/vitest-3.2.7.tgz",
+    "reqHeaders": {},
+    "resHeaders": {
+      "cache-control": "public, immutable, max-age=31557600",
+      "content-type": "application/octet-stream",
+      "date": "Sun, 11 Oct 2026 09:20:36 GMT",
+      "etag": "\"3b07fffd80a9f31d09875fbef0db4261\"",
+      "last-modified": "Mon, 06 Jul 2026 06:36:24 GMT"
+    },
+    "options": {
+      "compress": true
+    }
+  }
+}

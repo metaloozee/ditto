@@ -1,0 +1,155 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-2ebcf5b4-6d82-409f-8a28-503a4c0c1f0f
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-c5909af1-726e-4437-b6fe-790bbd2bf610
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Prior host termination required
+    at PiDurableHost.open (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-host.ts:531:11)
+    at CandidateFixtureSession.activate (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-product-session.ts:118:16)
+    at /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests/src/model-entry.ts:570:17
+    at CandidateFixtureSession.alarm (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests/src/model-entry.ts:579:3)
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/jsg/_virtual_includes/iterator/workerd/jsg/value.h:1480: failed: jsg.Error: Prior host termination required
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-a2201b9a-ce97-4266-815a-34033ff70a27
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-closed-successor-replacement
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-closed-successor-replacement
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbb00 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbe50 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfca8e /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f03c2a /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0c760 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0cd90
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-9b20b96f-b1f1-4e1b-aa30-5990b5f34848
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+stdout | src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+[DEBUG-008-successor] begin 0
+
+stdout | src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+[DEBUG-008-successor] first-complete 2344
+
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-9e59c8af-3e8c-4329-9474-711d24007b48
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+stdout | src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+[DEBUG-008-successor] first-reset 2587
+
+stdout | src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+[DEBUG-008-successor] first-recovered 3234
+
+stdout | src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+[DEBUG-008-successor] second-admitted 3407
+
+stdout | src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+[DEBUG-008-successor] second-delivered 3553
+
+stdout | src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+[DEBUG-008-successor] second-join-held 4207
+
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-unobserved-successor
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-unobserved-successor
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbb00 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbe50 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfca8e /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f03c2a /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0c760 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0cd90
+stdout | src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+[DEBUG-008-successor] second-aborted 4646
+
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Prior host termination required
+    at PiDurableHost.open (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-host.ts:531:11)
+    at CandidateFixtureSession.activate (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-product-session.ts:118:16)
+    at /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests/src/model-entry.ts:570:17
+    at CandidateFixtureSession.alarm (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests/src/model-entry.ts:579:3)
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/jsg/_virtual_includes/iterator/workerd/jsg/value.h:1480: failed: jsg.Error: Prior host termination required
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Application called abortAllDurableObjects().
+    at CandidateFixtureSession.fixtureProof (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests/src/model-entry.ts:287:27)
+    at DurableObject.fn (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:388:14)
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Application called abortAllDurableObjects().
+    at CandidateFixtureProduct.recoverCandidate (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests/src/model-entry.ts:940:12)
+stdout | src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+[DEBUG-008-successor] cleanup 5059
+
+ ❯ src/product-commands.worker.test.ts (53 tests | 1 failed | 45 skipped) 32582ms
+   ↓ runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+   ↓ admits concurrent identical first prompts with one receipt, identity, capacity claim and message pair
+   ↓ keeps one lifetime workspace claim for concurrent distinct first prompts
+   ↓ rejects current readiness before all admission writes: UPDATE projects SET status='deleting'
+   ↓ rejects current readiness before all admission writes: UPDATE projects SET status='pending'
+   ↓ rejects current readiness before all admission writes: UPDATE codex_connections SET revoked=1
+   ↓ rejects current readiness before all admission writes: UPDATE codex_fixture_capabilities SET revision=2
+   ↓ rejects current readiness before all admission writes: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))
+   ↓ rejects current readiness before all admission writes: INSERT INTO runtime_deleted_target_fences VALUES('project','project',1,0)
+   ↓ denies caller authority, byte overflow and foreign ownership without rows
+   ↓ rejects terminal and foreign targets but admits cold Stop after capability removal
+   ↓ rolls back first admission at D1 batch boundary 0 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 1 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 2 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 3 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 4 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 5 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 6 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 7 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 8 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 9 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 10 without leaking capacity or identity
+   ↓ fails trusted reconstruction when admitted text or outbox membership changes
+   ↓ reconciles the exact started outcome idempotently and never accepts the opposite fate
+   ↓ reconciles the exact expired outcome idempotently and never accepts the opposite fate
+   ✓ native alarms drain delivery order 3,1,2 through individual model turns without client scheduling  4003ms
+   ✓ lost delivery acknowledgment and new product invocation retain the receipt and one Pi submission  2514ms
+   ✓ cold Stop after disconnect beats delivery gaps and retains multiple late message memberships across reopen  2367ms
+   ↓ a follow-up admitted before completion but delivered afterward fails its own assistant without reopening the completed run
+   ↓ priority Stop fences a held credential claim without ordinary capacity or a second provider dispatch
+   ↓ real delivery expires an admitted but unstarted instruction without creating a Pi root or provider effect
+   ↓ product cancellation reconstructs a missing follow-up and closes its sequence without skipping the initial prompt
+   ↓ credential-local acknowledged barrier denies a held real positive final permit after host claim
+   ↓ credential-local lost-ack barrier denies a held real positive final permit after host claim
+   ↓ credential-local replacement barrier denies a held real positive final permit after host claim
+   ✓ private fixture reset preserves immutable host origin and discarded observation=false  2911ms
+   ✓ private fixture reset preserves immutable host origin and discarded observation=true  2971ms
+   ✓ private fixture recovery activates only the exact current successor and a valid old descriptor stays denied  6128ms
+   ↓ credential-local final gate preserves the original positive permit window across a held response
+   ↓ priority Stop through transport beats held default configuration without creating a root
+   ↓ queued configuration uses the next selection across a sequence gap and preserves committed preparation
+   ↓ three real candidate contract denials persist review and halt the exact admitted host without fetch
+   ↓ real D1 lost started acknowledgment retains one fate and the original queue deadline
+   ↓ real D1 lost expired acknowledgment retains one fate and the original queue deadline
+   ↓ real admitted Stop repairs candidate-control-intent interruption and retains its epoch and projection
+   ↓ real admitted Stop repairs candidate-control-outcome interruption and retains its epoch and projection
+   ↓ transport cancellation after start is too late and delayed old Stop cannot revoke a newer run
+   ↓ fresh mutable authority denies a prepared real request: UPDATE sandbox_identities SET incarnationId='changed'
+   ↓ fresh mutable authority denies a prepared real request: UPDATE workspace_sessions SET runtimeProtocolVersion=1
+   ↓ fresh mutable authority denies a prepared real request: INSERT INTO runtime_deleted_target_fences VALUES('project','project',1,0)
+   ↓ a natural replacement cannot certify the original host invocation or close an unrelated scope
+   ✓ private recovery scans every control through the cutoff and repairs an already delivered partial Stop  5520ms
+   × an unclosed successor needs its own reset proof and cannot reuse the older witness 6116ms
+     → Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/product-commands.worker.test.ts > an unclosed successor needs its own reset proof and cannot reuse the older witness
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/product-commands.worker.test.ts:1696:1
+    1694| });
+    1695| 
+    1696| it("an unclosed successor needs its own reset proof and cannot reuse t…
+       | ^
+    1697|  const debugStarted = Date.now();
+    1698|  const debug = (stage: string) => console.log("[DEBUG-008-successor]",…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 7 passed | 45 skipped (53)
+   Start at  14:25:27
+   Duration  33.21s (transform 351ms, setup 0ms, collect 598ms, tests 32.58s, environment 0ms, prepare 93ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/product-commands.worker.test.ts -t 'native alarms drain|lost delivery acknowledgment|cold Stop after disconnect|private fixture reset preserves|private fixture recovery activates|private recovery scans|unclosed successor needs'

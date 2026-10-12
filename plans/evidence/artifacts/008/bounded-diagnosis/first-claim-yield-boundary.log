@@ -1,0 +1,121 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+stdout | src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+[DEBUG-008-bound] permit-entry {"active":true,"yieldRemaining":838,"current":true,"generationMatch":true,"executorMatch":true,"liveMatch":true}
+[DEBUG-008-bound] receipt {"stateAdmitted":true,"epochMatch":true,"operationRemaining":59957}
+
+stdout | src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+[DEBUG-008-bound] host-yield {"closing":false,"yieldRemaining":0}
+
+stdout | src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+[DEBUG-008-bound] adapter-catch {"aborted":true}
+
+stdout | src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+[DEBUG-008-bound] credential-claim {"elapsed":1282,"operationRemaining":58628,"aborted":false}
+
+stdout | src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+[DEBUG-008-bound] host-claim-enter {"aborted":true,"active":true,"yieldRemaining":-493,"operationRemaining":58627}
+
+stdout | src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+[DEBUG-008-bound] exact-claim-catch {"decision":"opaque","aborted":true}
+
+stdout | src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+[DEBUG-008-bound] credential-catch {"stage":"claim","elapsed":1284,"operationRemaining":58626,"aborted":false,"decision":"claim_denied"}
+
+stdout | src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+[DEBUG-008-bound] host-yield {"closing":false,"yieldRemaining":null}
+
+ ❯ src/product-commands.worker.test.ts (53 tests | 1 failed | 52 skipped) 3729ms
+   × runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path 3692ms
+     → expected +0 to be 1 // Object.is equality
+   ↓ admits concurrent identical first prompts with one receipt, identity, capacity claim and message pair
+   ↓ keeps one lifetime workspace claim for concurrent distinct first prompts
+   ↓ rejects current readiness before all admission writes: UPDATE projects SET status='deleting'
+   ↓ rejects current readiness before all admission writes: UPDATE projects SET status='pending'
+   ↓ rejects current readiness before all admission writes: UPDATE codex_connections SET revoked=1
+   ↓ rejects current readiness before all admission writes: UPDATE codex_fixture_capabilities SET revision=2
+   ↓ rejects current readiness before all admission writes: UPDATE codex_fixture_capabilities SET snapshot=json_set(snapshot,'$.models',json('[]'))
+   ↓ rejects current readiness before all admission writes: INSERT INTO runtime_deleted_target_fences VALUES('project','project',1,0)
+   ↓ denies caller authority, byte overflow and foreign ownership without rows
+   ↓ rejects terminal and foreign targets but admits cold Stop after capability removal
+   ↓ rolls back first admission at D1 batch boundary 0 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 1 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 2 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 3 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 4 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 5 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 6 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 7 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 8 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 9 without leaking capacity or identity
+   ↓ rolls back first admission at D1 batch boundary 10 without leaking capacity or identity
+   ↓ fails trusted reconstruction when admitted text or outbox membership changes
+   ↓ reconciles the exact started outcome idempotently and never accepts the opposite fate
+   ↓ reconciles the exact expired outcome idempotently and never accepts the opposite fate
+   ↓ native alarms drain delivery order 3,1,2 through individual model turns without client scheduling
+   ↓ lost delivery acknowledgment and new product invocation retain the receipt and one Pi submission
+   ↓ cold Stop after disconnect beats delivery gaps and retains multiple late message memberships across reopen
+   ↓ a follow-up admitted before completion but delivered afterward fails its own assistant without reopening the completed run
+   ↓ priority Stop fences a held credential claim without ordinary capacity or a second provider dispatch
+   ↓ real delivery expires an admitted but unstarted instruction without creating a Pi root or provider effect
+   ↓ product cancellation reconstructs a missing follow-up and closes its sequence without skipping the initial prompt
+   ↓ credential-local acknowledged barrier denies a held real positive final permit after host claim
+   ↓ credential-local lost-ack barrier denies a held real positive final permit after host claim
+   ↓ credential-local replacement barrier denies a held real positive final permit after host claim
+   ↓ private fixture reset preserves immutable host origin and discarded observation=false
+   ↓ private fixture reset preserves immutable host origin and discarded observation=true
+   ↓ private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+   ↓ credential-local final gate preserves the original positive permit window across a held response
+   ↓ priority Stop through transport beats held default configuration without creating a root
+   ↓ queued configuration uses the next selection across a sequence gap and preserves committed preparation
+   ↓ three real candidate contract denials persist review and halt the exact admitted host without fetch
+   ↓ real D1 lost started acknowledgment retains one fate and the original queue deadline
+   ↓ real D1 lost expired acknowledgment retains one fate and the original queue deadline
+   ↓ real admitted Stop repairs candidate-control-intent interruption and retains its epoch and projection
+   ↓ real admitted Stop repairs candidate-control-outcome interruption and retains its epoch and projection
+   ↓ transport cancellation after start is too late and delayed old Stop cannot revoke a newer run
+   ↓ fresh mutable authority denies a prepared real request: UPDATE sandbox_identities SET incarnationId='changed'
+   ↓ fresh mutable authority denies a prepared real request: UPDATE workspace_sessions SET runtimeProtocolVersion=1
+   ↓ fresh mutable authority denies a prepared real request: INSERT INTO runtime_deleted_target_fences VALUES('project','project',1,0)
+   ↓ a natural replacement cannot certify the original host invocation or close an unrelated scope
+   ↓ private recovery scans every control through the cutoff and repairs an already delivered partial Stop
+   ↓ an unclosed successor needs its own reset proof and cannot reuse the older witness
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/product-commands.worker.test.ts > runs an actually admitted prompt through leased delivery, native DO alarm, Pi and the candidate credential claim path
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ src/product-commands.worker.test.ts:242:19
+    240|    .toBe(0);
+    241|   const snapshot = await runtime.candidateSnapshot();
+    242|   expect(calls()).toBe(1);
+       |                   ^
+    243|   expect(snapshot.conversations).toBe(1);
+    244|   expect(snapshot.submissions).toHaveLength(1);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 52 skipped (53)
+   Start at  12:31:11
+   Duration  5.27s (transform 388ms, setup 0ms, collect 666ms, tests 3.73s, environment 0ms, prepare 101ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/product-commands.worker.test.ts -t 'runs an actually admitted prompt'

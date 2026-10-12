@@ -1,0 +1,18 @@
+{
+  "sourceFilesVerified": 37,
+  "changedSinceQualification": [
+    "apps/credential-tests/src/entry.ts",
+    "apps/credential-tests/src/product-commands.worker.test.ts",
+    "apps/web/src/lib/codex-credential-do.ts",
+    "apps/web/src/lib/model-product-authority.ts"
+  ],
+  "archiveBaselineMatches": true,
+  "independentBarrierTestsPassed": 3,
+  "independentBarrierCasesSkippedByExplicitFilter": 32,
+  "independentUnchangedProbesPassed": 4,
+  "notCopiedFromExecutor": [
+    "baseline-and-prior-artifacts.tar.gz",
+    "baseline-hashes.json"
+  ],
+  "notCopiedReason": "Incomplete 94MB compression and 17MB generated-cache hash inventory stay preserved in execution; complete source/prior archive and source hashes copied."
+}

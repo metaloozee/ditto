@@ -1,0 +1,563 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+stdout | src/product-commands.worker.test.ts > settles final-hold preparation false when a real preclaim hold crosses the original host yield
+[008-queued-sequence] alarm enter 1791805603982 0 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true false
+[008-queued-sequence] alarm alarmHost.before 1791805603984 2 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true false
+[008-queued-sequence] alarm alarmCompletion.before 1791805603984 2 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true false
+
+stdout | src/product-commands.worker.test.ts > settles final-hold preparation false when a real preclaim hold crosses the original host yield
+[008-queued-sequence] alarm alarmHost.after 1791805604011 29 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true false
+[008-queued-sequence] alarm host.alarm.before 1791805604011 29 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true false
+
+stdout | src/product-commands.worker.test.ts > settles final-hold preparation false when a real preclaim hold crosses the original host yield
+[008-queued-sequence] alarm host.alarm.after 1791805604642 660 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true false
+[008-queued-sequence] alarm joinInvocation.before 1791805604642 660 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true false
+
+stdout | src/product-commands.worker.test.ts > settles final-hold preparation false when a real preclaim hold crosses the original host yield
+[008-queued-sequence] alarm joinInvocation.after 1791805605579 1597 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true false
+
+stdout | src/product-commands.worker.test.ts > settles final-hold preparation false when a real preclaim hold crosses the original host yield
+[008-queued-sequence] alarm alarmCompletion.after 1791805605580 1598 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true false
+
+stdout | src/product-commands.worker.test.ts > settles final-hold preparation false when a real preclaim hold crosses the original host yield
+[008-queued-sequence] alarm enter 1791805605584 0 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true false
+[008-queued-sequence] alarm alarmHost.before 1791805605584 0 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true false
+[008-queued-sequence] alarm alarmCompletion.before 1791805605584 0 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true false
+
+stdout | src/product-commands.worker.test.ts > settles final-hold preparation false when a real preclaim hold crosses the original host yield
+[008-queued-sequence] alarm alarmHost.after 1791805605645 61 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true false
+[008-queued-sequence] alarm host.alarm.before 1791805605645 61 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true false
+
+stdout | src/product-commands.worker.test.ts > settles final-hold preparation false when a real preclaim hold crosses the original host yield
+[008-queued-sequence] alarm host.alarm.after 1791805605654 70 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true false
+[008-queued-sequence] alarm joinInvocation.before 1791805605655 71 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true false
+
+stdout | src/product-commands.worker.test.ts > settles final-hold preparation false when a real preclaim hold crosses the original host yield
+[008-queued-sequence] alarm joinInvocation.after 1791805605655 71 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true false
+
+stdout | src/product-commands.worker.test.ts > settles final-hold preparation false when a real preclaim hold crosses the original host yield
+[008-queued-sequence] alarm alarmCompletion.after 1791805605655 71 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true false
+
+stdout | src/product-commands.worker.test.ts > settles final-hold preparation false when a real preclaim hold crosses the original host yield
+[008-queued-sequence] retire enter 1791805606217 0 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true false
+[008-queued-sequence] retire alarmCompletion.before 1791805606217 0 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true true
+
+stdout | src/product-commands.worker.test.ts > settles final-hold preparation false when a real preclaim hold crosses the original host yield
+[008-queued-sequence] retire alarmCompletion.after 1791805606218 1 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true true
+[008-queued-sequence] retire yield.before 1791805606218 1 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true true
+
+stdout | src/product-commands.worker.test.ts > settles final-hold preparation false when a real preclaim hold crosses the original host yield
+[008-queued-sequence] retire yield.after 1791805606226 9 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true true
+[008-queued-sequence] retire closure.before 1791805606226 9 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true true
+
+stdout | src/product-commands.worker.test.ts > settles final-hold preparation false when a real preclaim hold crosses the original host yield
+[008-queued-sequence] retire closure.after 1791805606227 10 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 true true
+[008-queued-sequence] retire deleteAlarm.before 1791805606227 10 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 false true
+
+stdout | src/product-commands.worker.test.ts > settles final-hold preparation false when a real preclaim hold crosses the original host yield
+[008-queued-sequence] retire deleteAlarm.after 1791805606227 10 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 false true
+[008-queued-sequence] retire sync.before 1791805606227 10 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 false true
+
+stdout | src/product-commands.worker.test.ts > settles final-hold preparation false when a real preclaim hold crosses the original host yield
+[008-queued-sequence] retire sync.after 1791805606235 18 bf9b4d9b-f76a-4f23-965a-fe00df5d0b49 false true
+
+stdout | src/product-commands.worker.test.ts > credential-local acknowledged barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm enter 1791805608585 0 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true false
+[008-queued-sequence] alarm alarmHost.before 1791805608586 1 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true false
+[008-queued-sequence] alarm alarmCompletion.before 1791805608586 1 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true false
+
+stdout | src/product-commands.worker.test.ts > credential-local acknowledged barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm alarmHost.after 1791805608608 23 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true false
+[008-queued-sequence] alarm host.alarm.before 1791805608608 23 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true false
+
+stdout | src/product-commands.worker.test.ts > credential-local acknowledged barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm host.alarm.after 1791805609177 592 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true false
+[008-queued-sequence] alarm joinInvocation.before 1791805609177 592 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true false
+
+stdout | src/product-commands.worker.test.ts > credential-local acknowledged barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm joinInvocation.after 1791805609678 1093 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true false
+
+stdout | src/product-commands.worker.test.ts > credential-local acknowledged barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm alarmCompletion.after 1791805609678 1093 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true false
+
+stdout | src/product-commands.worker.test.ts > credential-local acknowledged barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm enter 1791805609682 0 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true false
+[008-queued-sequence] alarm alarmHost.before 1791805609682 0 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true false
+[008-queued-sequence] alarm alarmCompletion.before 1791805609682 0 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true false
+
+stdout | src/product-commands.worker.test.ts > credential-local acknowledged barrier denies a held real positive final permit after host claim
+[008-queued-sequence] retire enter 1791805609685 0 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true false
+[008-queued-sequence] retire alarmCompletion.before 1791805609685 0 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true true
+
+stdout | src/product-commands.worker.test.ts > credential-local acknowledged barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm alarmHost.after 1791805609728 46 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true true
+[008-queued-sequence] alarm host.alarm.before 1791805609728 46 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true true
+
+stdout | src/product-commands.worker.test.ts > credential-local acknowledged barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm host.alarm.after 1791805609735 53 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true true
+[008-queued-sequence] alarm joinInvocation.before 1791805609735 53 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true true
+
+stdout | src/product-commands.worker.test.ts > credential-local acknowledged barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm joinInvocation.after 1791805609736 54 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true true
+
+stdout | src/product-commands.worker.test.ts > credential-local acknowledged barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm alarmCompletion.after 1791805609736 54 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true true
+[008-queued-sequence] retire alarmCompletion.after 1791805609736 51 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true true
+[008-queued-sequence] retire yield.before 1791805609736 51 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true true
+
+stdout | src/product-commands.worker.test.ts > credential-local acknowledged barrier denies a held real positive final permit after host claim
+[008-queued-sequence] retire yield.after 1791805609750 65 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true true
+[008-queued-sequence] retire closure.before 1791805609751 66 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true true
+
+stdout | src/product-commands.worker.test.ts > credential-local acknowledged barrier denies a held real positive final permit after host claim
+[008-queued-sequence] retire closure.after 1791805609751 66 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 true true
+[008-queued-sequence] retire deleteAlarm.before 1791805609751 66 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 false true
+
+stdout | src/product-commands.worker.test.ts > credential-local acknowledged barrier denies a held real positive final permit after host claim
+[008-queued-sequence] retire deleteAlarm.after 1791805609752 67 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 false true
+[008-queued-sequence] retire sync.before 1791805609752 67 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 false true
+
+stdout | src/product-commands.worker.test.ts > credential-local acknowledged barrier denies a held real positive final permit after host claim
+[008-queued-sequence] retire sync.after 1791805609760 75 9bd54bf0-c8f0-451b-8425-1e5860b1cb35 false true
+
+stdout | src/product-commands.worker.test.ts > credential-local lost-ack barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm enter 1791805611878 0 d4e06977-2fdb-453a-bdb0-a218df73a319 true false
+[008-queued-sequence] alarm alarmHost.before 1791805611878 0 d4e06977-2fdb-453a-bdb0-a218df73a319 true false
+[008-queued-sequence] alarm alarmCompletion.before 1791805611878 0 d4e06977-2fdb-453a-bdb0-a218df73a319 true false
+
+stdout | src/product-commands.worker.test.ts > credential-local lost-ack barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm alarmHost.after 1791805611906 28 d4e06977-2fdb-453a-bdb0-a218df73a319 true false
+[008-queued-sequence] alarm host.alarm.before 1791805611906 28 d4e06977-2fdb-453a-bdb0-a218df73a319 true false
+
+stdout | src/product-commands.worker.test.ts > credential-local lost-ack barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm host.alarm.after 1791805612935 1057 d4e06977-2fdb-453a-bdb0-a218df73a319 true false
+[008-queued-sequence] alarm joinInvocation.before 1791805612935 1057 d4e06977-2fdb-453a-bdb0-a218df73a319 true false
+
+stdout | src/product-commands.worker.test.ts > credential-local lost-ack barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm joinInvocation.after 1791805613518 1640 d4e06977-2fdb-453a-bdb0-a218df73a319 true false
+
+stdout | src/product-commands.worker.test.ts > credential-local lost-ack barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm alarmCompletion.after 1791805613519 1641 d4e06977-2fdb-453a-bdb0-a218df73a319 true false
+
+stdout | src/product-commands.worker.test.ts > credential-local lost-ack barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm enter 1791805613525 0 d4e06977-2fdb-453a-bdb0-a218df73a319 true false
+[008-queued-sequence] alarm alarmHost.before 1791805613525 0 d4e06977-2fdb-453a-bdb0-a218df73a319 true false
+[008-queued-sequence] alarm alarmCompletion.before 1791805613525 0 d4e06977-2fdb-453a-bdb0-a218df73a319 true false
+
+stdout | src/product-commands.worker.test.ts > credential-local lost-ack barrier denies a held real positive final permit after host claim
+[008-queued-sequence] retire enter 1791805613530 0 d4e06977-2fdb-453a-bdb0-a218df73a319 true false
+[008-queued-sequence] retire alarmCompletion.before 1791805613530 0 d4e06977-2fdb-453a-bdb0-a218df73a319 true true
+
+stdout | src/product-commands.worker.test.ts > credential-local lost-ack barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm alarmHost.after 1791805613615 90 d4e06977-2fdb-453a-bdb0-a218df73a319 true true
+[008-queued-sequence] alarm host.alarm.before 1791805613616 91 d4e06977-2fdb-453a-bdb0-a218df73a319 true true
+
+stdout | src/product-commands.worker.test.ts > credential-local lost-ack barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm host.alarm.after 1791805613628 103 d4e06977-2fdb-453a-bdb0-a218df73a319 true true
+[008-queued-sequence] alarm joinInvocation.before 1791805613628 103 d4e06977-2fdb-453a-bdb0-a218df73a319 true true
+
+stdout | src/product-commands.worker.test.ts > credential-local lost-ack barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm joinInvocation.after 1791805613629 104 d4e06977-2fdb-453a-bdb0-a218df73a319 true true
+
+stdout | src/product-commands.worker.test.ts > credential-local lost-ack barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm alarmCompletion.after 1791805613629 104 d4e06977-2fdb-453a-bdb0-a218df73a319 true true
+[008-queued-sequence] retire alarmCompletion.after 1791805613629 99 d4e06977-2fdb-453a-bdb0-a218df73a319 true true
+[008-queued-sequence] retire yield.before 1791805613629 99 d4e06977-2fdb-453a-bdb0-a218df73a319 true true
+
+stdout | src/product-commands.worker.test.ts > credential-local lost-ack barrier denies a held real positive final permit after host claim
+[008-queued-sequence] retire yield.after 1791805613650 120 d4e06977-2fdb-453a-bdb0-a218df73a319 true true
+[008-queued-sequence] retire closure.before 1791805613650 120 d4e06977-2fdb-453a-bdb0-a218df73a319 true true
+
+stdout | src/product-commands.worker.test.ts > credential-local lost-ack barrier denies a held real positive final permit after host claim
+[008-queued-sequence] retire closure.after 1791805613651 121 d4e06977-2fdb-453a-bdb0-a218df73a319 true true
+[008-queued-sequence] retire deleteAlarm.before 1791805613651 121 d4e06977-2fdb-453a-bdb0-a218df73a319 false true
+
+stdout | src/product-commands.worker.test.ts > credential-local lost-ack barrier denies a held real positive final permit after host claim
+[008-queued-sequence] retire deleteAlarm.after 1791805613651 121 d4e06977-2fdb-453a-bdb0-a218df73a319 false true
+[008-queued-sequence] retire sync.before 1791805613651 121 d4e06977-2fdb-453a-bdb0-a218df73a319 false true
+
+stdout | src/product-commands.worker.test.ts > credential-local lost-ack barrier denies a held real positive final permit after host claim
+[008-queued-sequence] retire sync.after 1791805613661 131 d4e06977-2fdb-453a-bdb0-a218df73a319 false true
+
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm enter 1791805615925 0 154cb73b-26cb-432d-92ca-d147ec36af05 true false
+[008-queued-sequence] alarm alarmHost.before 1791805615925 0 154cb73b-26cb-432d-92ca-d147ec36af05 true false
+[008-queued-sequence] alarm alarmCompletion.before 1791805615925 0 154cb73b-26cb-432d-92ca-d147ec36af05 true false
+
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm alarmHost.after 1791805615954 29 154cb73b-26cb-432d-92ca-d147ec36af05 true false
+[008-queued-sequence] alarm host.alarm.before 1791805615954 29 154cb73b-26cb-432d-92ca-d147ec36af05 true false
+
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm host.alarm.after 1791805616585 660 154cb73b-26cb-432d-92ca-d147ec36af05 true false
+[008-queued-sequence] alarm joinInvocation.before 1791805616585 660 154cb73b-26cb-432d-92ca-d147ec36af05 true false
+
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm joinInvocation.after 1791805617146 1221 154cb73b-26cb-432d-92ca-d147ec36af05 true false
+
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm alarmCompletion.after 1791805617146 1221 154cb73b-26cb-432d-92ca-d147ec36af05 true false
+
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-credential-fence-replacement
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbb00 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbe50 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfca8e /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f03c2a /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0c760 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0cd90
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm enter 1791805617162 0 154cb73b-26cb-432d-92ca-d147ec36af05 true false
+[008-queued-sequence] alarm alarmHost.before 1791805617162 0 154cb73b-26cb-432d-92ca-d147ec36af05 true false
+[008-queued-sequence] alarm alarmCompletion.before 1791805617162 0 154cb73b-26cb-432d-92ca-d147ec36af05 true false
+
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm alarmHost.after 1791805617254 92 154cb73b-26cb-432d-92ca-d147ec36af05 true false
+[008-queued-sequence] alarm host.alarm.before 1791805617254 92 154cb73b-26cb-432d-92ca-d147ec36af05 true false
+
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm host.alarm.after 1791805617262 100 154cb73b-26cb-432d-92ca-d147ec36af05 true false
+[008-queued-sequence] alarm joinInvocation.before 1791805617262 100 154cb73b-26cb-432d-92ca-d147ec36af05 true false
+
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm joinInvocation.after 1791805617263 101 154cb73b-26cb-432d-92ca-d147ec36af05 true false
+
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+[008-queued-sequence] alarm alarmCompletion.after 1791805617263 101 154cb73b-26cb-432d-92ca-d147ec36af05 true false
+
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+[008-queued-sequence] retire enter 1791805617265 0 154cb73b-26cb-432d-92ca-d147ec36af05 true false
+[008-queued-sequence] retire alarmCompletion.before 1791805617265 0 154cb73b-26cb-432d-92ca-d147ec36af05 true true
+
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+[008-queued-sequence] retire alarmCompletion.after 1791805617265 0 154cb73b-26cb-432d-92ca-d147ec36af05 true true
+[008-queued-sequence] retire yield.before 1791805617265 0 154cb73b-26cb-432d-92ca-d147ec36af05 true true
+
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+[008-queued-sequence] retire yield.after 1791805617279 14 154cb73b-26cb-432d-92ca-d147ec36af05 true true
+[008-queued-sequence] retire closure.before 1791805617279 14 154cb73b-26cb-432d-92ca-d147ec36af05 true true
+
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+[008-queued-sequence] retire closure.after 1791805617279 14 154cb73b-26cb-432d-92ca-d147ec36af05 true true
+[008-queued-sequence] retire deleteAlarm.before 1791805617279 14 154cb73b-26cb-432d-92ca-d147ec36af05 false true
+
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+[008-queued-sequence] retire deleteAlarm.after 1791805617279 14 154cb73b-26cb-432d-92ca-d147ec36af05 false true
+[008-queued-sequence] retire sync.before 1791805617279 14 154cb73b-26cb-432d-92ca-d147ec36af05 false true
+
+stdout | src/product-commands.worker.test.ts > credential-local replacement barrier denies a held real positive final permit after host claim
+[008-queued-sequence] retire sync.after 1791805617285 20 154cb73b-26cb-432d-92ca-d147ec36af05 false true
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+[008-queued-sequence] alarm enter 1791805619776 0 5bef61f3-ee0b-4760-9471-09cf82b6b282 true false
+[008-queued-sequence] alarm alarmHost.before 1791805619776 0 5bef61f3-ee0b-4760-9471-09cf82b6b282 true false
+[008-queued-sequence] alarm alarmCompletion.before 1791805619776 0 5bef61f3-ee0b-4760-9471-09cf82b6b282 true false
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+[008-queued-sequence] alarm alarmHost.after 1791805619808 32 5bef61f3-ee0b-4760-9471-09cf82b6b282 true false
+[008-queued-sequence] alarm host.alarm.before 1791805619808 32 5bef61f3-ee0b-4760-9471-09cf82b6b282 true false
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+[008-queued-sequence] alarm host.alarm.after 1791805620467 691 5bef61f3-ee0b-4760-9471-09cf82b6b282 true false
+[008-queued-sequence] alarm joinHold.before 1791805620467 691 5bef61f3-ee0b-4760-9471-09cf82b6b282 true false
+
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-cafe215c-6959-4f54-8d2b-c763569c3421
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+[008-queued-sequence] alarm enter 1791805621175 0 2772620f-b7d5-45fe-8c87-2f48534c823c false false
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+[008-queued-sequence] alarm enter 1791805621486 0 2772620f-b7d5-45fe-8c87-2f48534c823c true false
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+[008-queued-sequence] retire enter 1791805621562 0 2772620f-b7d5-45fe-8c87-2f48534c823c true false
+[008-queued-sequence] retire alarmCompletion.before 1791805621562 0 2772620f-b7d5-45fe-8c87-2f48534c823c true true
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+[008-queued-sequence] retire alarmCompletion.after 1791805621562 0 2772620f-b7d5-45fe-8c87-2f48534c823c true true
+[008-queued-sequence] retire yield.before 1791805621562 0 2772620f-b7d5-45fe-8c87-2f48534c823c true true
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+[008-queued-sequence] retire yield.after 1791805621580 18 2772620f-b7d5-45fe-8c87-2f48534c823c true true
+[008-queued-sequence] retire closure.before 1791805621581 19 2772620f-b7d5-45fe-8c87-2f48534c823c true true
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+[008-queued-sequence] retire closure.after 1791805621581 19 2772620f-b7d5-45fe-8c87-2f48534c823c true true
+[008-queued-sequence] retire deleteAlarm.before 1791805621581 19 2772620f-b7d5-45fe-8c87-2f48534c823c false true
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+[008-queued-sequence] retire deleteAlarm.after 1791805621581 19 2772620f-b7d5-45fe-8c87-2f48534c823c false true
+[008-queued-sequence] retire sync.before 1791805621581 19 2772620f-b7d5-45fe-8c87-2f48534c823c false true
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=false
+[008-queued-sequence] retire sync.after 1791805621588 26 2772620f-b7d5-45fe-8c87-2f48534c823c false true
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+[008-queued-sequence] alarm enter 1791805623984 0 97dd9852-76a2-4d97-9461-7e5d2e6f2fa1 true false
+[008-queued-sequence] alarm alarmHost.before 1791805623984 0 97dd9852-76a2-4d97-9461-7e5d2e6f2fa1 true false
+[008-queued-sequence] alarm alarmCompletion.before 1791805623984 0 97dd9852-76a2-4d97-9461-7e5d2e6f2fa1 true false
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+[008-queued-sequence] alarm alarmHost.after 1791805624032 48 97dd9852-76a2-4d97-9461-7e5d2e6f2fa1 true false
+[008-queued-sequence] alarm host.alarm.before 1791805624032 48 97dd9852-76a2-4d97-9461-7e5d2e6f2fa1 true false
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+[008-queued-sequence] alarm host.alarm.after 1791805624712 728 97dd9852-76a2-4d97-9461-7e5d2e6f2fa1 true false
+[008-queued-sequence] alarm joinHold.before 1791805624712 728 97dd9852-76a2-4d97-9461-7e5d2e6f2fa1 true false
+
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-7ca1c14a-d208-4e37-89eb-ba0ebc177cc6
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+[008-queued-sequence] alarm enter 1791805625342 0 782ff1a9-56c1-4075-b6b0-ab3f14924090 false false
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+[008-queued-sequence] retire enter 1791805625469 0 782ff1a9-56c1-4075-b6b0-ab3f14924090 false false
+[008-queued-sequence] retire alarmCompletion.before 1791805625470 1 782ff1a9-56c1-4075-b6b0-ab3f14924090 false true
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+[008-queued-sequence] retire alarmCompletion.after 1791805625470 1 782ff1a9-56c1-4075-b6b0-ab3f14924090 false true
+[008-queued-sequence] retire deleteAlarm.before 1791805625470 1 782ff1a9-56c1-4075-b6b0-ab3f14924090 false true
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+[008-queued-sequence] retire deleteAlarm.after 1791805625470 1 782ff1a9-56c1-4075-b6b0-ab3f14924090 false true
+[008-queued-sequence] retire sync.before 1791805625470 1 782ff1a9-56c1-4075-b6b0-ab3f14924090 false true
+
+stdout | src/product-commands.worker.test.ts > private fixture reset preserves immutable host origin and discarded observation=true
+[008-queued-sequence] retire sync.after 1791805625470 1 782ff1a9-56c1-4075-b6b0-ab3f14924090 false true
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] alarm enter 1791805627683 0 30a964d4-0e2e-4814-ba52-495767e97fe1 true false
+[008-queued-sequence] alarm alarmHost.before 1791805627684 1 30a964d4-0e2e-4814-ba52-495767e97fe1 true false
+[008-queued-sequence] alarm alarmCompletion.before 1791805627684 1 30a964d4-0e2e-4814-ba52-495767e97fe1 true false
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] alarm alarmHost.after 1791805627736 53 30a964d4-0e2e-4814-ba52-495767e97fe1 true false
+[008-queued-sequence] alarm host.alarm.before 1791805627737 54 30a964d4-0e2e-4814-ba52-495767e97fe1 true false
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] alarm host.alarm.after 1791805628778 1095 30a964d4-0e2e-4814-ba52-495767e97fe1 true false
+[008-queued-sequence] alarm joinHold.before 1791805628778 1095 30a964d4-0e2e-4814-ba52-495767e97fe1 true false
+
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-894f08e4-0a91-410f-b143-575ce224847d
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] alarm enter 1791805629616 0 02e99134-ab55-4141-b58c-2504f893da05 false false
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] alarm enter 1791805629833 0 02e99134-ab55-4141-b58c-2504f893da05 true false
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] alarm enter 1791805629993 0 02e99134-ab55-4141-b58c-2504f893da05 true false
+[008-queued-sequence] alarm alarmHost.before 1791805629993 0 02e99134-ab55-4141-b58c-2504f893da05 true false
+[008-queued-sequence] alarm alarmCompletion.before 1791805629993 0 02e99134-ab55-4141-b58c-2504f893da05 true false
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] alarm alarmHost.after 1791805630112 119 02e99134-ab55-4141-b58c-2504f893da05 true false
+[008-queued-sequence] alarm host.alarm.before 1791805630112 119 02e99134-ab55-4141-b58c-2504f893da05 true false
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] alarm host.alarm.after 1791805630123 130 02e99134-ab55-4141-b58c-2504f893da05 true false
+[008-queued-sequence] alarm joinInvocation.before 1791805630123 130 02e99134-ab55-4141-b58c-2504f893da05 true false
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] alarm joinInvocation.after 1791805630123 130 02e99134-ab55-4141-b58c-2504f893da05 true false
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] alarm alarmCompletion.after 1791805630124 131 02e99134-ab55-4141-b58c-2504f893da05 true false
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] alarm enter 1791805630174 0 02e99134-ab55-4141-b58c-2504f893da05 true false
+[008-queued-sequence] alarm alarmHost.before 1791805630175 1 02e99134-ab55-4141-b58c-2504f893da05 true false
+[008-queued-sequence] alarm alarmCompletion.before 1791805630175 1 02e99134-ab55-4141-b58c-2504f893da05 true false
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] alarm alarmHost.after 1791805630364 190 02e99134-ab55-4141-b58c-2504f893da05 true false
+[008-queued-sequence] alarm host.alarm.before 1791805630364 190 02e99134-ab55-4141-b58c-2504f893da05 true false
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] alarm host.alarm.after 1791805630367 193 02e99134-ab55-4141-b58c-2504f893da05 true false
+[008-queued-sequence] alarm joinInvocation.before 1791805630368 194 02e99134-ab55-4141-b58c-2504f893da05 true false
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] alarm joinInvocation.after 1791805630368 194 02e99134-ab55-4141-b58c-2504f893da05 true false
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] alarm alarmCompletion.after 1791805630368 194 02e99134-ab55-4141-b58c-2504f893da05 true false
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] alarm enter 1791805630455 0 02e99134-ab55-4141-b58c-2504f893da05 true false
+[008-queued-sequence] alarm alarmHost.before 1791805630455 0 02e99134-ab55-4141-b58c-2504f893da05 true false
+[008-queued-sequence] alarm alarmCompletion.before 1791805630455 0 02e99134-ab55-4141-b58c-2504f893da05 true false
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] alarm alarmHost.after 1791805630552 97 02e99134-ab55-4141-b58c-2504f893da05 true false
+[008-queued-sequence] alarm host.alarm.before 1791805630552 97 02e99134-ab55-4141-b58c-2504f893da05 true false
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] alarm host.alarm.after 1791805630959 504 02e99134-ab55-4141-b58c-2504f893da05 true false
+[008-queued-sequence] alarm joinInvocation.before 1791805630959 504 02e99134-ab55-4141-b58c-2504f893da05 true false
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] alarm joinInvocation.after 1791805631586 1131 02e99134-ab55-4141-b58c-2504f893da05 true false
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] alarm alarmCompletion.after 1791805631586 1131 02e99134-ab55-4141-b58c-2504f893da05 true false
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] alarm enter 1791805631591 0 02e99134-ab55-4141-b58c-2504f893da05 true false
+[008-queued-sequence] alarm alarmHost.before 1791805631591 0 02e99134-ab55-4141-b58c-2504f893da05 true false
+[008-queued-sequence] alarm alarmCompletion.before 1791805631591 0 02e99134-ab55-4141-b58c-2504f893da05 true false
+
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-closed-successor-replacement
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-closed-successor-replacement
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbb00 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbe50 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfca8e /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f03c2a /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0c760 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0cd90
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] retire enter 1791805632093 0 8d344bac-b110-481d-be60-156580c1be4f true false
+[008-queued-sequence] retire alarmCompletion.before 1791805632093 0 8d344bac-b110-481d-be60-156580c1be4f true true
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] retire alarmCompletion.after 1791805632093 0 8d344bac-b110-481d-be60-156580c1be4f true true
+[008-queued-sequence] retire yield.before 1791805632093 0 8d344bac-b110-481d-be60-156580c1be4f true true
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] retire yield.after 1791805632101 8 8d344bac-b110-481d-be60-156580c1be4f true true
+[008-queued-sequence] retire closure.before 1791805632101 8 8d344bac-b110-481d-be60-156580c1be4f true true
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] retire closure.after 1791805632101 8 8d344bac-b110-481d-be60-156580c1be4f true true
+[008-queued-sequence] retire deleteAlarm.before 1791805632101 8 8d344bac-b110-481d-be60-156580c1be4f false true
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] retire deleteAlarm.after 1791805632102 9 8d344bac-b110-481d-be60-156580c1be4f false true
+[008-queued-sequence] retire sync.before 1791805632102 9 8d344bac-b110-481d-be60-156580c1be4f false true
+
+stdout | src/product-commands.worker.test.ts > private fixture recovery activates only the exact current successor and a valid old descriptor stays denied
+[008-queued-sequence] retire sync.after 1791805632110 17 8d344bac-b110-481d-be60-156580c1be4f false true
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-queued-sequence] alarm enter 1791805634664 0 03d1ca47-5919-45e7-b7c5-08fb4692abd1 true false
+[008-queued-sequence] alarm alarmHost.before 1791805634664 0 03d1ca47-5919-45e7-b7c5-08fb4692abd1 true false
+[008-queued-sequence] alarm alarmCompletion.before 1791805634664 0 03d1ca47-5919-45e7-b7c5-08fb4692abd1 true false
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-queued-sequence] alarm alarmHost.after 1791805634748 84 03d1ca47-5919-45e7-b7c5-08fb4692abd1 true false
+[008-queued-sequence] alarm host.alarm.before 1791805634748 84 03d1ca47-5919-45e7-b7c5-08fb4692abd1 true false
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-queued-sequence] alarm host.alarm.after 1791805635634 970 03d1ca47-5919-45e7-b7c5-08fb4692abd1 true false
+[008-queued-sequence] alarm joinHold.before 1791805635634 970 03d1ca47-5919-45e7-b7c5-08fb4692abd1 true false
+
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-private-reset-0613b5f0-ab81-4448-b4a7-85db5a8cd566
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-queued-sequence] alarm enter 1791805636795 0 af6c089a-1a2e-4e05-97f0-2bc9c09d13d9 false false
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-queued-sequence] alarm enter 1791805637624 0 af6c089a-1a2e-4e05-97f0-2bc9c09d13d9 true false
+[008-queued-sequence] alarm alarmHost.before 1791805637624 0 af6c089a-1a2e-4e05-97f0-2bc9c09d13d9 true false
+[008-queued-sequence] alarm alarmCompletion.before 1791805637624 0 af6c089a-1a2e-4e05-97f0-2bc9c09d13d9 true false
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-queued-sequence] alarm alarmHost.after 1791805637760 136 af6c089a-1a2e-4e05-97f0-2bc9c09d13d9 true false
+[008-queued-sequence] alarm host.alarm.before 1791805637760 136 af6c089a-1a2e-4e05-97f0-2bc9c09d13d9 true false
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-queued-sequence] alarm host.alarm.after 1791805638305 681 af6c089a-1a2e-4e05-97f0-2bc9c09d13d9 true false
+[008-queued-sequence] alarm joinInvocation.before 1791805638305 681 af6c089a-1a2e-4e05-97f0-2bc9c09d13d9 true false
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-queued-sequence] alarm joinInvocation.after 1791805638678 1054 af6c089a-1a2e-4e05-97f0-2bc9c09d13d9 true false
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-queued-sequence] alarm alarmCompletion.after 1791805638679 1055 af6c089a-1a2e-4e05-97f0-2bc9c09d13d9 true false
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-queued-sequence] alarm enter 1791805638684 0 af6c089a-1a2e-4e05-97f0-2bc9c09d13d9 true false
+[008-queued-sequence] alarm alarmHost.before 1791805638684 0 af6c089a-1a2e-4e05-97f0-2bc9c09d13d9 true false
+[008-queued-sequence] alarm alarmCompletion.before 1791805638684 0 af6c089a-1a2e-4e05-97f0-2bc9c09d13d9 true false
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-queued-sequence] alarm alarmHost.after 1791805639250 566 af6c089a-1a2e-4e05-97f0-2bc9c09d13d9 true false
+[008-queued-sequence] alarm host.alarm.before 1791805639250 566 af6c089a-1a2e-4e05-97f0-2bc9c09d13d9 true false
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-queued-sequence] alarm host.alarm.after 1791805639258 574 af6c089a-1a2e-4e05-97f0-2bc9c09d13d9 true false
+[008-queued-sequence] alarm joinInvocation.before 1791805639258 574 af6c089a-1a2e-4e05-97f0-2bc9c09d13d9 true false
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-queued-sequence] alarm joinInvocation.after 1791805639258 574 af6c089a-1a2e-4e05-97f0-2bc9c09d13d9 true false
+
+stdout | src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+[008-queued-sequence] alarm alarmCompletion.after 1791805639258 574 af6c089a-1a2e-4e05-97f0-2bc9c09d13d9 true false
+
+
+================================================================================
+Failed to pop isolated storage stack frame in src/product-commands.worker.test.ts's test "generation-2 admission denies a missing credential fence without fallback or effect refund".
+In particular, we were unable to pop Durable Objects storage.
+This usually means your Worker tried to access storage outside of a test, or some resources have not been disposed of properly.
+Ensure you "await" all Promises that read or write to these services, and make sure you use the "using" keyword when passing data across JSRPC.
+See https://developers.cloudflare.com/workers/testing/vitest-integration/known-issues/#isolated-storage for more details.
+[2m
+- AssertionError [ERR_ASSERTION]: Expected .sqlite, got /home/ayan/ditto-execution/plan-008-4WXvNW/.execution-008/tmp/miniflare-9b1925ab7c44ac1574de0d0e790b4c3f/do/vitest-pool-workers-runner--CandidateFixtureSession/742f169053280e2cc228682c82e083c7d0d54eea977a87593437a3cf94d2ea1c.sqlite-shm
+[22m================================================================================
+
+Error running worker: AssertionError [ERR_ASSERTION]: Isolated storage failed. There should be additional logs above.
+    at new AssertionError (node-internal:internal_assertionerror:427:15)
+    at assert.strictEqual (node-internal:internal_assert:196:11)
+    at WorkersTestRunner.updateStackedStorage (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:133:12)
+    at WorkersTestRunner.onAfterRunSuite (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:171:5)
+    at runSuite (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1763:3)
+    at runFiles (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)
+    at startTests (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1820:3)
+    at home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:117:26
+    at withEnv (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:84:3)
+    at run (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:109:2)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/product-commands.worker.test.ts > generation-2 admission denies a missing credential fence without fallback or effect refund
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/product-commands.worker.test.ts:1290:1
+    1288| });
+    1289| 
+    1290| it("generation-2 admission denies a missing credential fence without f…
+       | ^
+    1291|  const credential = await candidateCredential();
+    1292|  const calls = modelReplies();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: Isolated storage failed. There should be additional logs above.
+ ❯ new AssertionError node-internal:internal_assertionerror:427:15
+ ❯ assert.strictEqual node-internal:internal_assert:196:11
+ ❯ WorkersTestRunner.updateStackedStorage home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:133:12
+ ❯ WorkersTestRunner.onAfterRunSuite home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:171:5
+ ❯ runSuite home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1763:3
+ ❯ runFiles home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3
+ ❯ startTests home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1820:3
+ ❯ home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:117:26
+ ❯ withEnv home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:84:3
+ ❯ run home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:109:2
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files   (1)
+      Tests  1 failed | 9 passed | 42 skipped (57)
+     Errors  1 error
+   Start at  13:46:35
+   Duration  43.75s (transform 622ms, setup 0ms, collect 1.11s, tests 0ms, environment 1ms, prepare 176ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/product-commands.worker.test.ts -t 'owned authority|settles final-hold|credential-local .*barrier|private fixture reset preserves|private fixture recovery activates|generation-2 admission|credential-local final gate|priority Stop through transport beats held default|queued configuration|real D1 lost started|real admitted Stop repairs candidate-control-intent'

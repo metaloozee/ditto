@@ -1,0 +1,23 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+ ✓ src/product-commands.worker.test.ts (62 tests | 56 skipped) 10904ms
+   ✓ fails trusted reconstruction when admitted text or outbox membership changes  1884ms
+   ✓ batched reconstruction denies admitted association tamper: UPDATE session_command_keys SET userId='foreign' WHERE commandId=?  1769ms
+   ✓ batched reconstruction denies admitted association tamper: DELETE FROM session_command_keys WHERE commandId=?  1487ms
+   ✓ batched reconstruction denies admitted association tamper: UPDATE messages SET userId='foreign' WHERE id=(SELECT assistantMessageId FROM session_commands WHERE id=?)  1317ms
+   ✓ batched reconstruction denies admitted association tamper: UPDATE workspace_runtime_work SET userId='foreign' WHERE commandId=?  2590ms
+   ✓ batched command subject rereads capability revision and deletion authority  1855ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed | 56 skipped (62)
+   Start at  14:11:48
+   Duration  12.83s (transform 501ms, setup 0ms, collect 869ms, tests 10.90s, environment 0ms, prepare 129ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...

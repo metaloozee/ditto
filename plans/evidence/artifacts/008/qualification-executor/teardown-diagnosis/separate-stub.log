@@ -1,0 +1,99 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/separate-stub.config.ts...
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: 008-a-continuation-opaque
+    at AContinuationSession.throwOrdinary (/home/ayan/ditto-execution/plan-008-4WXvNW/plans/evidence/artifacts/008/qualification-executor/a-continuation-entry.ts:14:39)
+    at DurableObject.fn (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:388:14)
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: 008-a-continuation-opaque
+    at AContinuationSession.throwSpoofed (/home/ayan/ditto-execution/plan-008-4WXvNW/plans/evidence/artifacts/008/qualification-executor/a-continuation-entry.ts:16:23)
+    at DurableObject.fn (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:388:14)
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-a-continuation-opaque
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-a-continuation-opaque
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbb00 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbe50 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfca8e /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f03c2a /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0c760 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0cd90
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Prior host termination required
+    at PiDurableHost.open (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-host.ts:516:11)
+    at AContinuationSession.activate (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/runtime/src/pi-durable-product-session.ts:109:16)
+    at AContinuationSession.candidateSnapshot (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests/src/model-entry.ts:135:19)
+stdout | ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/separate-stub.worker.test.ts > A continuation executes same-label and spoofed-error controls then exact admitted-work abort with clean cleanup
+A_CONTINUATION_OBSERVED {"receipt":{"version":2,"receiptId":"86dfd8d9-54c5-47e9-9201-9dd07ddee47f","commandId":"b56c66fd-0c63-4c60-be01-4541707fbb81","workspaceSessionId":"9f5c0be7-c1c3-457a-b480-43fe2cfbb042","commandSeq":1,"ownerVersion":1,"queueDeadlineAt":1791702638467,"userMessageId":"cde84cfc-6d2a-4145-837d-d404f11845df","assistantMessageId":"9acdd5e1-0ac8-4554-82a9-5e3e4aa86617"},"captured":{"boot":"1b38e37a-88c7-4d0d-82c8-9d2a54776392","doId":"b987193f8ae7e811521d8364f7632786a9a2b8560bed0b2cb25a96b3c76f5bc8","scope":{"version":2,"userId":"owner","projectId":"project","workspaceSessionId":"9f5c0be7-c1c3-457a-b480-43fe2cfbb042","ownerVersion":1},"failedDeliveryExecuted":null,"invocation":{"id":"26fc0419-ce45-4622-a08c-d191fe4ec4b1","generation":1,"started":1791701739172,"yield_at":1791701740172,"end_at":1791701741172,"state":"active"},"invocations":1,"roots":1,"submissions":1,"effects":[{"id":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","invocation":"26fc0419-ce45-4622-a08c-d191fe4ec4b1","state":"admitted","deadline":1791701741172}],"claims":[{"effect":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","claimed":0}],"encryptedDigest":"6128cd3db3f40c757fc448b18a660e42c2a9b2f902c5c20f4f6de88b841c1ffe"},"ordinaryCallback":{"returned":false,"name":"Error","message":"008-a-continuation-opaque","code":null,"remote":null,"retryable":null,"durableObjectReset":null},"spoofedCallback":{"returned":false,"name":"Error","message":"008-a-continuation-opaque","code":null,"remote":true,"retryable":null,"durableObjectReset":true},"ordinaryRpc":{"returned":false,"name":"Error","message":"008-a-continuation-opaque","code":null,"remote":true,"retryable":null,"durableObjectReset":null},"spoofedRpc":{"returned":false,"name":"Error","message":"008-a-continuation-opaque","code":null,"remote":true,"retryable":null,"durableObjectReset":null},"observedAbort":{"returned":false,"name":"Error","message":"008-a-continuation-opaque","code":null,"remote":true,"retryable":null,"durableObjectReset":true},"failedDelivery":{"returned":false,"name":"Error","message":"008-a-continuation-opaque","code":null,"remote":null,"retryable":null,"durableObjectReset":true},"oldStubReplay":{"returned":false,"name":"Error","message":"008-a-continuation-opaque","code":null,"remote":null,"retryable":null,"durableObjectReset":true},"replacement":{"boot":"6ab5e6a6-c867-42a3-87ae-ae8b4944a84d","doId":"b987193f8ae7e811521d8364f7632786a9a2b8560bed0b2cb25a96b3c76f5bc8","scope":{"version":2,"userId":"owner","projectId":"project","workspaceSessionId":"9f5c0be7-c1c3-457a-b480-43fe2cfbb042","ownerVersion":1},"intent":{"resetId":"f1e30d06-dde0-408b-9a68-fbd9c13c74d4","label":"008-a-continuation-opaque","diagnosticOnly":true,"owner":"owner","workspaceSessionId":"9f5c0be7-c1c3-457a-b480-43fe2cfbb042","boot":"1b38e37a-88c7-4d0d-82c8-9d2a54776392","doId":"b987193f8ae7e811521d8364f7632786a9a2b8560bed0b2cb25a96b3c76f5bc8","invocation":{"id":"26fc0419-ce45-4622-a08c-d191fe4ec4b1","generation":1,"started":1791701739172,"yield_at":1791701740172,"end_at":1791701741172,"state":"active"}},"failedDeliveryExecuted":null,"invocation":{"id":"26fc0419-ce45-4622-a08c-d191fe4ec4b1","generation":1,"started":1791701739172,"yield_at":1791701740172,"end_at":1791701741172,"state":"active"},"invocations":1,"roots":1,"submissions":1,"effects":[{"id":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","invocation":"26fc0419-ce45-4622-a08c-d191fe4ec4b1","state":"admitted","deadline":1791701741172}],"claims":[{"effect":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","claimed":0}],"encryptedDigest":"6128cd3db3f40c757fc448b18a660e42c2a9b2f902c5c20f4f6de88b841c1ffe"},"cleanup":{"denied":{"returned":false,"name":"Error","message":"Prior host termination required","code":null,"remote":true,"retryable":null,"durableObjectReset":null},"outcome":{"status":"denied"},"final":{"boot":"6ab5e6a6-c867-42a3-87ae-ae8b4944a84d","doId":"b987193f8ae7e811521d8364f7632786a9a2b8560bed0b2cb25a96b3c76f5bc8","scope":{"version":2,"userId":"owner","projectId":"project","workspaceSessionId":"9f5c0be7-c1c3-457a-b480-43fe2cfbb042","ownerVersion":1},"intent":{"resetId":"f1e30d06-dde0-408b-9a68-fbd9c13c74d4","label":"008-a-continuation-opaque","diagnosticOnly":true,"owner":"owner","workspaceSessionId":"9f5c0be7-c1c3-457a-b480-43fe2cfbb042","boot":"1b38e37a-88c7-4d0d-82c8-9d2a54776392","doId":"b987193f8ae7e811521d8364f7632786a9a2b8560bed0b2cb25a96b3c76f5bc8","invocation":{"id":"26fc0419-ce45-4622-a08c-d191fe4ec4b1","generation":1,"started":1791701739172,"yield_at":1791701740172,"end_at":1791701741172,"state":"active"}},"failedDeliveryExecuted":null,"invocation":{"id":"26fc0419-ce45-4622-a08c-d191fe4ec4b1","generation":1,"started":1791701739172,"yield_at":1791701740172,"end_at":1791701741172,"state":"active"},"invocations":1,"roots":1,"submissions":1,"effects":[{"id":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","invocation":"26fc0419-ce45-4622-a08c-d191fe4ec4b1","state":"admitted","deadline":1791701741172}],"claims":[{"effect":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","claimed":0}],"encryptedDigest":"6128cd3db3f40c757fc448b18a660e42c2a9b2f902c5c20f4f6de88b841c1ffe"},"authority":{"current":true,"generation":1,"executor":1,"liveExecutors":1},"calls":0},"classification":"NOT QUALIFIED: flags are not an exclusive exact-abort completion classifier","witness":null}
+
+
+================================================================================
+Failed to pop isolated storage stack frame in ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/separate-stub.worker.test.ts's test "A continuation executes same-label and spoofed-error controls then exact admitted-work abort with clean cleanup".
+In particular, we were unable to pop Durable Objects storage.
+This usually means your Worker tried to access storage outside of a test, or some resources have not been disposed of properly.
+Ensure you "await" all Promises that read or write to these services, and make sure you use the "using" keyword when passing data across JSRPC.
+See https://developers.cloudflare.com/workers/testing/vitest-integration/known-issues/#isolated-storage for more details.
+[2m
+- AssertionError [ERR_ASSERTION]: Expected .sqlite, got /home/ayan/ditto-execution/plan-008-4WXvNW/.execution-008/tmp/miniflare-30925baa45ad99c1b93486085ccf3f64/do/vitest-pool-workers-runner--AContinuationSession/b987193f8ae7e811521d8364f7632786a9a2b8560bed0b2cb25a96b3c76f5bc8.sqlite-shm
+[22m================================================================================
+
+Error running worker: AssertionError [ERR_ASSERTION]: Isolated storage failed. There should be additional logs above.
+    at new AssertionError (node-internal:internal_assertionerror:427:15)
+    at assert.strictEqual (node-internal:internal_assert:196:11)
+    at WorkersTestRunner.updateStackedStorage (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:133:12)
+    at WorkersTestRunner.onAfterRunSuite (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:171:5)
+    at runSuite (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1763:3)
+    at runFiles (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)
+    at startTests (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1820:3)
+    at home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:117:26
+    at withEnv (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:84:3)
+    at run (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:109:2)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/separate-stub.worker.test.ts > A continuation executes same-label and spoofed-error controls then exact admitted-work abort with clean cleanup
+AssertionError: Isolated storage failed. There should be additional logs above.
+
+- Expected
++ Received
+
+- 204
++ 500
+
+ ❯ new AssertionError node-internal:internal_assertionerror:427:15
+ ❯ assert.strictEqual node-internal:internal_assert:196:11
+ ❯ WorkersTestRunner.updateStackedStorage home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:133:12
+ ❯ WorkersTestRunner.ensurePoppedActiveTryStorage home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:183:7
+ ❯ WorkersTestRunner.onAfterTryTask home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:238:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: Isolated storage failed. There should be additional logs above.
+ ❯ new AssertionError node-internal:internal_assertionerror:427:15
+ ❯ assert.strictEqual node-internal:internal_assert:196:11
+ ❯ WorkersTestRunner.updateStackedStorage home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:133:12
+ ❯ WorkersTestRunner.onAfterRunSuite home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-runner.mjs:171:5
+ ❯ runSuite home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1763:3
+ ❯ runFiles home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3
+ ❯ startTests home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:1820:3
+ ❯ home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:117:26
+ ❯ withEnv home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:84:3
+ ❯ run home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:109:2
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files   (1)
+      Tests  1 failed (2)
+     Errors  1 error
+   Start at  08:55:35
+   Duration  3.82s (transform 323ms, setup 0ms, collect 567ms, tests 0ms, environment 0ms, prepare 101ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run --config ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/separate-stub.config.ts

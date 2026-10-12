@@ -1,0 +1,221 @@
+{
+  "path": "/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests/src/product-commands.worker.test.ts",
+  "edits": [
+    {
+      "oldText": "\tconst boundaryStart = Date.now();\n\tconst boundary = (stage: string) => console.log(\"[008-body-boundary]\", \"generation-2\", stage, Date.now() - boundaryStart);\n\tboundary(\"credential.before\");\n\tconst credential = await candidateCredential();\n\tboundary(\"credential.after\");\n\tconst calls = modelReplies();\n\tboundary(\"arm.first.before\");\n",
+      "newText": "\tconst credential = await candidateCredential();\n\tconst calls = modelReplies();\n"
+    },
+    {
+      "oldText": "\tboundary(\"arm.first.after\");\n\tboundary(\"admit.first.before\");\n\tconst first = await env.CandidateProduct.admitOwned(\"owner\", prompt);\n\tboundary(\"admit.first.after\");\n\tlet runtime = env.CandidateSessions.getByName(first.workspaceSessionId);\n\tboundary(\"hold.join.before\");\n",
+      "newText": "\tconst first = await env.CandidateProduct.admitOwned(\"owner\", prompt);\n\tlet runtime = env.CandidateSessions.getByName(first.workspaceSessionId);\n"
+    },
+    {
+      "oldText": "\tboundary(\"hold.join.after\");\n\tboundary(\"reserve.reset.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\tboundary(\"reserve.reset.after\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"drain.first.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"drain.first.after\");\n\t\tboundary(\"join.first.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"join.first.after\");\n\t\tboundary(\"final.positive.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"final.positive.after\");\n\t\tboundary(\"descriptor.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"descriptor.after\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"release.first.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"release.first.after\");\n\t\tboundary(\"outcome.first.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"outcome.first.after\");\n\t\tboundary(\"poll.predecessor.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"poll.predecessor.after\");\n\t\tboundary(\"reset.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"reset.after\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"recover.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"recover.after\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"fence.delete.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"fence.delete.after\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"arm.next.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"arm.next.after\");\n\t\tboundary(\"admit.next.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"admit.next.after\");\n\t\tboundary(\"drain.next.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"drain.next.after\");\n\t\tboundary(\"final.negative.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"final.negative.after\");\n\t\tboundary(\"outcome.next.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"outcome.next.after\");\n\t\tboundary(\"poll.failed.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"poll.failed.after\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"proof.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"proof.after\");\n\t\tboundary(\"fence.read.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"fence.read.after\");\n\t\tboundary(\"occupancy.read.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"occupancy.read.after\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"reconcile.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"reconcile.after\");\n\t\tboundary(\"occupancy.compare.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"occupancy.compare.after\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"cleanup.final.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"cleanup.final.after\");\n\t\tboundary(\"cleanup.join.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"cleanup.join.after\");\n\t\tboundary(\"cleanup.retire.before\");\n\t\tawait runtime.retireFixture();\n\t\tboundary(\"cleanup.retire.after\");\n\t}\n});\n\n",
+      "newText": "\t\tawait runtime.retireFixture();\n\t}\n});\n\n"
+    },
+    {
+      "oldText": "\tconst boundaryStart = Date.now();\n\tconst boundary = (stage: string) => console.log(\"[008-body-boundary]\", \"queued\", stage, Date.now() - boundaryStart);\n\tboundary(\"credential.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\tboundary(\"credential.after\");\n\tboundary(\"capability.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\tboundary(\"capability.after\");\n\tconst calls = modelReplies();\n\tboundary(\"admit.first.before\");\n\tconst first = await env.CandidateProduct.admitOwned(\"owner\", prompt);\n\tboundary(\"admit.first.after\");\n\tboundary(\"admit.second.before\");\n",
+      "newText": "\tconst calls = modelReplies();\n\tconst first = await env.CandidateProduct.admitOwned(\"owner\", prompt);\n"
+    },
+    {
+      "oldText": "\tboundary(\"admit.second.after\");\n\tboundary(\"admit.third.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\tboundary(\"admit.third.after\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"deliver.third.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"deliver.third.after\");\n\t\tboundary(\"deliver.first.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"deliver.first.after\");\n\t\tboundary(\"poll.first.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"poll.first.after\");\n\t\tboundary(\"request.first.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"request.first.after\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"task.read.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"task.read.after\");\n\t\tboundary(\"reopen.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"reopen.after\");\n\t\tboundary(\"configure.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"configure.after\");\n\t\tboundary(\"task.compare.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"task.compare.after\");\n\t\tboundary(\"deliver.second.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"deliver.second.after\");\n\t\tboundary(\"poll.final.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"poll.final.after\");\n\t\tboundary(\"request.final.before\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t\tboundary(\"request.final.after\");\n",
+      "newText": ""
+    },
+    {
+      "oldText": "\t} finally {\n\t\tboundary(\"cleanup.retire.before\");\n\t\tawait runtime.retireFixture();\n\t\tboundary(\"cleanup.retire.after\");\n\t}\n});\n\n",
+      "newText": "\t} finally {\n\t\tawait runtime.retireFixture();\n\t}\n});\n\n"
+    }
+  ]
+}

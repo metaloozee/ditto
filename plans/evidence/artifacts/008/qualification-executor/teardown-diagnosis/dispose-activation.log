@@ -1,0 +1,73 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/dispose-activation.config.ts...
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: 008-a-continuation-opaque
+    at AContinuationSession.throwOrdinary (/home/ayan/ditto-execution/plan-008-4WXvNW/plans/evidence/artifacts/008/qualification-executor/a-continuation-entry.ts:14:39)
+    at DurableObject.fn (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:388:14)
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: 008-a-continuation-opaque
+    at AContinuationSession.throwSpoofed (/home/ayan/ditto-execution/plan-008-4WXvNW/plans/evidence/artifacts/008/qualification-executor/a-continuation-entry.ts:16:23)
+    at DurableObject.fn (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:388:14)
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-a-continuation-opaque
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-a-continuation-opaque
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbb00 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbe50 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfca8e /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f03c2a /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0c760 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0cd90
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-a-continuation-discarded
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-a-continuation-discarded
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbb00 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfbe50 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cfca8e /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f03c2a /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0c760 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b0cd90
+ ❯ ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/dispose-activation.worker.test.ts (2 tests | 2 failed) 4592ms
+   × A continuation executes same-label and spoofed-error controls then exact admitted-work abort with clean cleanup 2414ms
+     → Object not disposable
+   × A continuation discards an actual admitted-work abort outcome and controller restart remains unqualified 2101ms
+     → Object not disposable
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/dispose-activation.worker.test.ts > A continuation executes same-label and spoofed-error controls then exact admitted-work abort with clean cleanup
+TypeError: Object not disposable
+ ❯ __typeError ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/dispose-activation.worker.test.ts:29:9
+     27|  }
+     28|  for (const path of Object.keys(migrations).sort())
+     29|   for (const statement of migrations[path].split("--> statement-breakp…
+       |         ^
+     30|    if (statement.trim()) await env.DB.exec(statement.replace(/^\s*--[^…
+     31|  await env.DB.batch([
+ ❯ __using ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/dispose-activation.worker.test.ts:40:40
+ ❯ ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/dispose-activation.worker.test.ts:118:17
+ ❯ finish ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/dispose-activation.worker.test.ts:120:2
+ ❯ ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/dispose-activation.worker.test.ts:159:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/dispose-activation.worker.test.ts > A continuation discards an actual admitted-work abort outcome and controller restart remains unqualified
+TypeError: Object not disposable
+ ❯ __typeError ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/dispose-activation.worker.test.ts:29:9
+     27|  }
+     28|  for (const path of Object.keys(migrations).sort())
+     29|   for (const statement of migrations[path].split("--> statement-breakp…
+       |         ^
+     30|    if (statement.trim()) await env.DB.exec(statement.replace(/^\s*--[^…
+     31|  await env.DB.batch([
+ ❯ __using ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/dispose-activation.worker.test.ts:40:40
+ ❯ ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/dispose-activation.worker.test.ts:118:17
+ ❯ finish ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/dispose-activation.worker.test.ts:120:2
+ ❯ ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/dispose-activation.worker.test.ts:188:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  08:52:43
+   Duration  6.19s (transform 362ms, setup 0ms, collect 639ms, tests 4.59s, environment 0ms, prepare 108ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run --config ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/dispose-activation.config.ts

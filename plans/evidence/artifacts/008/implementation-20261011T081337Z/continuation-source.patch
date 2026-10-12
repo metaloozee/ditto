@@ -1,0 +1,451 @@
+--- baseline/apps/credential-tests/src/entry.ts
++++ current/apps/credential-tests/src/entry.ts
+@@ -1,5 +1,11 @@
++import {
++	type ModelSubjectV1,
++	type ModelTransportDescriptorV1,
++	parseModelSubjectV1,
++} from "../../../packages/runtime-contracts/src/model.js";
+ import type { CodexTokens } from "../../web/src/lib/codex-credential-crypto";
+ import {
++	type CandidateModelPreparation,
+ 	CodexCredential,
+ 	type CodexCredentialEnv,
+ } from "../../web/src/lib/codex-credential-do";
+@@ -107,19 +113,191 @@
+ 		this.resume?.();
+ 	}
+ }
++export function candidateDispatchScope(subject: ModelSubjectV1): string {
++	return JSON.stringify([
++		"pi_durable_v1",
++		1,
++		2,
++		"CandidateSessions",
++		subject.workspaceSessionId,
++		subject.userId,
++		subject.projectId,
++		subject.runtimeOwnerVersion,
++		subject.identityId,
++		subject.controllerNamespace,
++		subject.incarnationId,
++		subject.lifecycleGeneration,
++	]);
++}
++
++type DispatchFence = Record<string, SqlStorageValue> & {
++	scope: string;
++	generation: number;
++	phase: string;
++	resetId: string | null;
++};
++
+ export class CandidateFixtureCredential extends FixtureCredential {
++	private finalWait:
++		| {
++				entered: Promise<void>;
++				mark(): void;
++				released: Promise<void>;
++				release(): void;
++		  }
++		| undefined;
++	private finalDescriptor: ModelTransportDescriptorV1 | undefined;
++	armCandidateFinal() {
++		let mark!: () => void, release!: () => void;
++		this.finalDescriptor = undefined;
++		this.finalWait = {
++			entered: new Promise<void>((r) => {
++				mark = r;
++			}),
++			mark: () => mark(),
++			released: new Promise<void>((r) => {
++				release = r;
++			}),
++			release: () => release(),
++		};
++	}
++	waitCandidateFinal() {
++		return this.finalWait?.entered;
++	}
++	releaseCandidateFinal() {
++		this.finalWait?.release();
++	}
++	candidateFinalDescriptor() {
++		return this.finalDescriptor;
++	}
+ 	constructor(
+ 		ctx: DurableObjectState,
+ 		env: CodexCredentialEnv & { CandidateCredential: DurableObjectNamespace },
+ 	) {
+ 		super(ctx, { ...env, CodexCredential: env.CandidateCredential });
++		ctx.storage.sql.exec(
++			"CREATE TABLE IF NOT EXISTS candidate_dispatch_fences(scope TEXT PRIMARY KEY,generation INTEGER NOT NULL,phase TEXT NOT NULL,resetId TEXT)",
++		);
++	}
++	private dispatchFence(scope: string) {
++		return this.ctx.storage.sql
++			.exec<DispatchFence>(
++				"SELECT scope,generation,phase,resetId FROM candidate_dispatch_fences WHERE scope=?",
++				scope,
++			)
++			.toArray()[0];
++	}
++	protected async prepareModelDispatch(descriptor: ModelTransportDescriptorV1) {
++		Object.freeze(descriptor.subject);
++		Object.freeze(descriptor.attempt);
++		Object.freeze(descriptor);
++		const preparation = Object.freeze({
++			scope: candidateDispatchScope(descriptor.subject),
++			generation: descriptor.attempt.generation,
++			binding: JSON.stringify(descriptor),
++		});
++		// No takeover issuer exists on this default fixture path.
++		if (
++			preparation.generation !== 1 ||
++			!(await this.modelProductAuthority().current(descriptor))
++		)
++			throw new Error("candidate_dispatch_denied");
++		this.ctx.storage.sql.exec(
++			"INSERT OR IGNORE INTO candidate_dispatch_fences VALUES(?,1,'active',NULL)",
++			preparation.scope,
++		);
++		await this.ctx.storage.sync();
++		const fence = this.dispatchFence(preparation.scope);
++		if (
++			!fence ||
++			fence.generation !== preparation.generation ||
++			fence.phase !== "active"
++		)
++			throw new Error("candidate_dispatch_closed");
++		return preparation;
++	}
++	protected finalModelDispatch(
++		preparation: CandidateModelPreparation | null,
++		descriptor: ModelTransportDescriptorV1,
++	): boolean {
++		if (
++			!preparation ||
++			preparation.binding !== JSON.stringify(descriptor) ||
++			preparation.scope !== candidateDispatchScope(descriptor.subject) ||
++			preparation.generation !== descriptor.attempt.generation
++		)
++			return false;
++		const fence = this.dispatchFence(preparation.scope);
++		return (
++			!!fence &&
++			fence.phase === "active" &&
++			fence.resetId === null &&
++			fence.generation === preparation.generation
++		);
++	}
++	async closeCandidateDispatch(
++		value: unknown,
++		generation: number,
++		resetId: string,
++	) {
++		const subject = parseModelSubjectV1(value);
++		if (
++			!this.env.CodexCredential.idFromName(subject.userId).equals(this.ctx.id) ||
++			!Number.isSafeInteger(generation) ||
++			generation < 1 ||
++			typeof resetId !== "string" ||
++			resetId.length < 1 ||
++			resetId.length > 256 ||
++			!(await this.modelProductAuthority().ownedConfiguration(subject, {
++				version: 1,
++				projectId: subject.projectId,
++				workspaceSessionId: subject.workspaceSessionId,
++				ownerVersion: subject.runtimeOwnerVersion,
++			}))
++		)
++			throw new Error("candidate_dispatch_denied");
++		const scope = candidateDispatchScope(subject);
++		this.ctx.storage.transactionSync(() => {
++			const fence = this.dispatchFence(scope);
++			if (
++				!fence ||
++				fence.generation !== generation ||
++				(fence.phase !== "active" &&
++					(fence.phase !== "closed" || fence.resetId !== resetId))
++			)
++				throw new Error("candidate_dispatch_conflict");
++			this.ctx.storage.sql.exec(
++				"UPDATE candidate_dispatch_fences SET phase='closed',resetId=? WHERE scope=? AND generation=?",
++				resetId,
++				scope,
++				generation,
++			);
++		});
++		await this.ctx.storage.sync();
++		const fence = this.dispatchFence(scope);
++		if (
++			!fence ||
++			fence.generation !== generation ||
++			fence.phase !== "closed" ||
++			fence.resetId !== resetId
++		)
++			throw new Error("candidate_dispatch_conflict");
++		return { scope, generation, resetId, phase: "closed" as const };
+ 	}
+ 	protected modelProductAuthority() {
+-		return new ModelProductAuthority(
+-			this.env.DB,
+-			Date.now,
+-			CANDIDATE_MODEL_POLICY,
+-		);
++		const fixture = this;
++		let calls = 0;
++		return new (class extends ModelProductAuthority {
++			async permit(...args: Parameters<ModelProductAuthority["permit"]>) {
++				const positive = await super.permit(...args);
++				if (++calls === 4 && positive && fixture.finalWait) {
++					fixture.finalDescriptor = args[0];
++					fixture.finalWait.mark();
++					await fixture.finalWait.released;
++				}
++				return positive;
++			}
++		})(this.env.DB, Date.now, CANDIDATE_MODEL_POLICY);
+ 	}
+ }
+ export default { fetch: () => new Response("Not found", { status: 404 }) };
+--- baseline/apps/credential-tests/src/product-commands.worker.test.ts
++++ current/apps/credential-tests/src/product-commands.worker.test.ts
+@@ -1,4 +1,4 @@
+-import { env, fetchMock } from "cloudflare:test";
++import { env, fetchMock, runInDurableObject } from "cloudflare:test";
+ import { afterEach, beforeEach, expect, it } from "vitest";
+ import type { ModelTransportDescriptorV1 } from "../../../packages/runtime-contracts/src/model.js";
+ import m0 from "../../web/migrations/0000_wet_giant_girl.sql?raw";
+@@ -834,3 +834,90 @@
+ 		await runtime.retireFixture();
+ 	}
+ });
++
++it.each([
++	"acknowledged",
++	"lost-ack",
++	"replacement",
++])("credential-local %s barrier denies a held real positive final permit after host claim", async (mode) => {
++	const credential = await candidateCredential();
++	const calls = modelReplies();
++	await credential.armCandidateFinal();
++	const receipt = await env.CandidateProduct.admitOwned("owner", prompt);
++	const runtime = env.CandidateSessions.getByName(receipt.workspaceSessionId);
++	try {
++		await env.CandidateProduct.drain();
++		await credential.waitCandidateFinal();
++		const descriptor = await credential.candidateFinalDescriptor();
++		expect(descriptor).toBeDefined();
++		if (!descriptor) throw new Error("missing_final_descriptor");
++		const claims = await runInDurableObject(runtime, (_instance, state) =>
++			state.storage.sql
++				.exec("SELECT effect,claimed FROM host_model_dispatch")
++				.toArray(),
++		);
++		expect(claims).toEqual([
++			{ effect: descriptor.attempt.effectId, claimed: 1 },
++		]);
++		expect(calls()).toBe(0);
++		const resetId = crypto.randomUUID();
++		const close = () =>
++			credential.closeCandidateDispatch(
++				descriptor.subject,
++				descriptor.attempt.generation,
++				resetId,
++			);
++		if (mode === "lost-ack") await close().then(() => undefined);
++		const receiptOfClosure = await close();
++		expect(receiptOfClosure).toMatchObject({
++			generation: 1,
++			resetId,
++			phase: "closed",
++		});
++		expect(await close()).toEqual(receiptOfClosure);
++		await credential.releaseCandidateFinal();
++		await expect
++			.poll(async () => (await runtime.candidateSnapshot()).members[0]?.state, {
++				timeout: 3000,
++			})
++			.not.toBe("pending");
++		expect(calls()).toBe(0);
++		if (mode === "replacement") {
++			await expect(
++				runInDurableObject(credential, async (_instance, state) => {
++					await state.storage.sync();
++					state.abort("008-credential-fence-replacement");
++				}),
++			).rejects.toMatchObject({
++				message: "008-credential-fence-replacement",
++				durableObjectReset: true,
++			});
++			const replacement = env.CandidateCredential.getByName("owner");
++			expect(
++				await replacement.closeCandidateDispatch(
++					descriptor.subject,
++					1,
++					resetId,
++				),
++			).toEqual(receiptOfClosure);
++			expect(
++				await runInDurableObject(replacement, async (instance) =>
++					instance.requestModel(
++						{},
++						{
++							describe: async () => descriptor,
++							claim: async () => {
++								throw new Error("closed_preparation_claimed");
++							},
++							halt: async () => ({ status: "denied" as const }),
++						},
++					),
++				),
++			).toEqual({ version: 1, status: "denied" });
++			expect(calls()).toBe(0);
++		}
++	} finally {
++		await env.CandidateCredential.getByName("owner").releaseCandidateFinal();
++		await runtime.retireFixture();
++	}
++});
+--- baseline/apps/web/src/lib/codex-credential-do.ts
++++ current/apps/web/src/lib/codex-credential-do.ts
+@@ -19,6 +19,7 @@
+ } from "./codex-request-contract";
+ import {
+ 	type ModelClaimRpc,
++	type ModelPermitBounds,
+ 	ModelProductAuthority,
+ } from "./model-product-authority";
+ 
+@@ -38,6 +39,12 @@
+ 	CODEX_CREDENTIAL_CURRENT_KEY_VERSION: string;
+ 	CODEX_CREDENTIAL_KEYS: string;
+ }
++export type CandidateModelPreparation = Readonly<{
++	scope: string;
++	generation: number;
++	binding: string;
++}>;
++
+ interface State extends Record<string, SqlStorageValue> {
+ 	owner: string;
+ 	generation: number;
+@@ -201,6 +208,19 @@
+ 		return new ModelProductAuthority(this.env.DB);
+ 	}
+ 
++	protected prepareModelDispatch(
++		_descriptor: ModelTransportDescriptorV1,
++	): Promise<CandidateModelPreparation> | null {
++		return null;
++	}
++	protected finalModelDispatch(
++		preparation: CandidateModelPreparation | null,
++		_descriptor: ModelTransportDescriptorV1,
++		_bounds: ModelPermitBounds | undefined,
++	): boolean {
++		return preparation === null;
++	}
++
+ 	async requestModel(
+ 		input: unknown,
+ 		capability: ModelClaimRpc,
+@@ -209,12 +229,16 @@
+ 		const policy = this.modelProductAuthority();
+ 		const overall = AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs);
+ 		let descriptor: ModelTransportDescriptorV1;
++		let preparation: CandidateModelPreparation | null = null;
+ 		try {
+ 			descriptor = parseModelTransportDescriptorV1(
+ 				await awaitSynthetic(capability.describe(), overall),
+ 			);
+ 			if (!this.#owned(descriptor.subject.userId))
+ 				return { version: 1, status: "denied" };
++			const preparing = this.prepareModelDispatch(descriptor);
++			if (preparing !== null)
++				preparation = Object.freeze(await awaitSynthetic(preparing, overall));
+ 		} catch {
+ 			return { version: 1, status: "denied" };
+ 		}
+@@ -308,6 +332,21 @@
+ 			if (!(await wait(policy.permit(descriptor, body))) || !this.#same(state))
+ 				throw new Error("authority_changed");
+ 			signal.throwIfAborted();
++			const bounds = policy.validatedPermitBounds(descriptor);
++			if (
++				!this.#same(state) ||
++				(preparation !== null &&
++					(!bounds ||
++						Date.now() >=
++							Math.min(
++								bounds.windowExpiresAt,
++								bounds.commandDeadlineAt,
++								bounds.effectDeadlineAt,
++								descriptor.attempt.deadlineAt,
++							))) ||
++				!this.finalModelDispatch(preparation, descriptor, bounds)
++			)
++				throw new Error("dispatch_fenced");
+ 			dispatched = true;
+ 			fetching = fetch(request.url, {
+ 				method: "POST",
+--- baseline/apps/web/src/lib/model-product-authority.ts
++++ current/apps/web/src/lib/model-product-authority.ts
+@@ -25,7 +25,23 @@
+ });
+ type CandidateModelPolicy = typeof CANDIDATE_MODEL_POLICY;
+ 
++export type ModelPermitBounds = Readonly<{
++	windowExpiresAt: number;
++	commandDeadlineAt: number;
++	effectDeadlineAt: number;
++}>;
++
+ export class ModelProductAuthority {
++	private permitBounds = new WeakMap<
++		ModelTransportDescriptorV1,
++		ModelPermitBounds
++	>();
++
++	validatedPermitBounds(
++		d: ModelTransportDescriptorV1,
++	): ModelPermitBounds | undefined {
++		return this.permitBounds.get(d);
++	}
+ 	constructor(
+ 		private db: D1Database,
+ 		private now: () => number = Date.now,
+@@ -381,6 +397,7 @@
+ 		d: ModelTransportDescriptorV1,
+ 		body: SyntheticModelBodyV1,
+ 	): Promise<boolean> {
++		this.permitBounds.delete(d);
+ 		const id = await this.windowId(d),
+ 			f = await this.facts(d, body);
+ 		if (!f) return false;
+@@ -398,10 +415,21 @@
+ 			)
+ 			.first<{ expiresAt: number; deadlineAt: number }>();
+ 		// A query may finish after the deadlines it tested at statement submission.
+-		return (
+-			!!row &&
+-			this.now() < Math.min(row.expiresAt, row.deadlineAt, d.attempt.deadlineAt)
++		if (
++			!row ||
++			this.now() >=
++				Math.min(row.expiresAt, row.deadlineAt, d.attempt.deadlineAt)
++		)
++			return false;
++		this.permitBounds.set(
++			d,
++			Object.freeze({
++				windowExpiresAt: row.expiresAt,
++				commandDeadlineAt: row.deadlineAt,
++				effectDeadlineAt: d.attempt.deadlineAt,
++			}),
+ 		);
++		return true;
+ 	}
+ 
+ 	async denial(d: ModelTransportDescriptorV1): Promise<boolean> {

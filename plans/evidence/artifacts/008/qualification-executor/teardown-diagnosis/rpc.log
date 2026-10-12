@@ -1,0 +1,75 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/rpc.config.ts...
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: 008-a-continuation-opaque
+    at RpcQualificationSession.throwOrdinary (/home/ayan/ditto-execution/plan-008-4WXvNW/plans/evidence/artifacts/008/qualification-executor/a-continuation-entry.ts:14:39)
+    at DurableObject.fn (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:388:14)
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: 008-a-continuation-opaque
+    at RpcQualificationSession.throwSpoofed (/home/ayan/ditto-execution/plan-008-4WXvNW/plans/evidence/artifacts/008/qualification-executor/a-continuation-entry.ts:16:23)
+    at DurableObject.fn (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:388:14)
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: 008-rpc-request-mismatch
+    at RpcQualificationSession.diagnosticAbort (/home/ayan/ditto-execution/plan-008-4WXvNW/plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/rpc-entry.ts:10:44)
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: 008-rpc-origin-mismatch
+    at RpcQualificationSession.diagnosticAbort (/home/ayan/ditto-execution/plan-008-4WXvNW/plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/rpc-entry.ts:13:53)
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-a-continuation-opaque-4284e63e-af32-4be3-8ed2-2057644844ca
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = Error: Application called abortAllDurableObjects().
+    at RpcQualificationSession.alarm (/home/ayan/ditto-execution/plan-008-4WXvNW/plans/evidence/artifacts/008/qualification-executor/a-continuation-entry.ts:11:30)
+    at DurableObject.Wrapper.<computed> (home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:581:24)
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/jsg/_virtual_includes/iterator/workerd/jsg/value.h:1480: failed: jsg.Error: Application called abortAllDurableObjects().
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+workerd/io/io-context.c++:435: info: uncaught exception; exception = workerd/api/actor-state.c++:1110: failed: broken.outputGateBroken; jsg.Error: 008-rpc-discarded-56c1492c-6782-4081-bc1a-917197111c36
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1fa82b0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cff120 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2cffa00
+stdout | ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/rpc.worker.test.ts > A continuation discards an actual admitted-work abort outcome and controller restart remains unqualified
+A_CONTINUATION_DISCARDED {"receipt":{"version":2,"receiptId":"d469da73-156d-491c-b8b3-1e4b6785508a","commandId":"7f59eb95-891e-44bc-a269-d8252650a136","workspaceSessionId":"b45e4ed8-ab31-49b8-befb-e6e34ae17ed0","commandSeq":1,"ownerVersion":1,"queueDeadlineAt":1791702702677,"userMessageId":"7d3b031a-be52-4b14-bbf9-a8b14ed6bd7b","assistantMessageId":"6f102126-9400-4b8c-9ad5-4ee2e5b5787b"},"captured":{"boot":"0a274573-a87c-4350-8513-200afb289775","doId":"ed7a8fe9c67db71fc45666c8db051ebe45cb23c42b3d97c0d2172bd0884f955f","scope":{"version":2,"userId":"owner","projectId":"project","workspaceSessionId":"b45e4ed8-ab31-49b8-befb-e6e34ae17ed0","ownerVersion":1},"rpcExecuted":null,"failedDeliveryExecuted":null,"invocation":{"id":"d52d026b-9f04-4efc-ac87-950129435189","generation":1,"started":1791701803167,"yield_at":1791701804167,"end_at":1791701805167,"state":"active"},"invocations":1,"roots":1,"submissions":1,"effects":[{"id":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","invocation":"d52d026b-9f04-4efc-ac87-950129435189","state":"admitted","deadline":1791701805167}],"claims":[{"effect":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","claimed":0}],"encryptedDigest":"90fae58a306c296c86c056e7842b64a4d3e555cc724c0e9ff35cad36df6da39a"},"intent":{"resetId":"bdfb87fe-173a-4cb4-9ca2-8678bad4c9eb","label":"008-rpc-discarded-56c1492c-6782-4081-bc1a-917197111c36","diagnosticOnly":true,"owner":"owner","workspaceSessionId":"b45e4ed8-ab31-49b8-befb-e6e34ae17ed0","boot":"0a274573-a87c-4350-8513-200afb289775","doId":"ed7a8fe9c67db71fc45666c8db051ebe45cb23c42b3d97c0d2172bd0884f955f","invocation":{"id":"d52d026b-9f04-4efc-ac87-950129435189","generation":1,"started":1791701803167,"yield_at":1791701804167,"end_at":1791701805167,"state":"active"}},"replacement":{"boot":"e3d2751e-4187-46e1-a2ec-cd913fc18326","doId":"ed7a8fe9c67db71fc45666c8db051ebe45cb23c42b3d97c0d2172bd0884f955f","scope":{"version":2,"userId":"owner","projectId":"project","workspaceSessionId":"b45e4ed8-ab31-49b8-befb-e6e34ae17ed0","ownerVersion":1},"intent":{"resetId":"bdfb87fe-173a-4cb4-9ca2-8678bad4c9eb","label":"008-rpc-discarded-56c1492c-6782-4081-bc1a-917197111c36","diagnosticOnly":true,"owner":"owner","workspaceSessionId":"b45e4ed8-ab31-49b8-befb-e6e34ae17ed0","boot":"0a274573-a87c-4350-8513-200afb289775","doId":"ed7a8fe9c67db71fc45666c8db051ebe45cb23c42b3d97c0d2172bd0884f955f","invocation":{"id":"d52d026b-9f04-4efc-ac87-950129435189","generation":1,"started":1791701803167,"yield_at":1791701804167,"end_at":1791701805167,"state":"active"}},"rpcExecuted":{"requestKey":"bdfb87fe-173a-4cb4-9ca2-8678bad4c9eb","boot":"0a274573-a87c-4350-8513-200afb289775","doId":"ed7a8fe9c67db71fc45666c8db051ebe45cb23c42b3d97c0d2172bd0884f955f","invocation":"d52d026b-9f04-4efc-ac87-950129435189","label":"008-rpc-discarded-56c1492c-6782-4081-bc1a-917197111c36"},"failedDeliveryExecuted":null,"invocation":{"id":"d52d026b-9f04-4efc-ac87-950129435189","generation":1,"started":1791701803167,"yield_at":1791701804167,"end_at":1791701805167,"state":"active"},"invocations":1,"roots":1,"submissions":1,"effects":[{"id":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","invocation":"d52d026b-9f04-4efc-ac87-950129435189","state":"admitted","deadline":1791701805167}],"claims":[{"effect":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","claimed":0}],"encryptedDigest":"90fae58a306c296c86c056e7842b64a4d3e555cc724c0e9ff35cad36df6da39a"},"recordedOutsideObservation":null,"disposition":"NOT QUALIFIED","witness":null,"cleanup":{"denied":{"returned":false,"name":"Error","message":"Prior host termination required","code":null,"remote":null,"retryable":null,"durableObjectReset":null},"outcome":{"status":"denied"},"final":{"boot":"e3d2751e-4187-46e1-a2ec-cd913fc18326","doId":"ed7a8fe9c67db71fc45666c8db051ebe45cb23c42b3d97c0d2172bd0884f955f","scope":{"version":2,"userId":"owner","projectId":"project","workspaceSessionId":"b45e4ed8-ab31-49b8-befb-e6e34ae17ed0","ownerVersion":1},"intent":{"resetId":"bdfb87fe-173a-4cb4-9ca2-8678bad4c9eb","label":"008-rpc-discarded-56c1492c-6782-4081-bc1a-917197111c36","diagnosticOnly":true,"owner":"owner","workspaceSessionId":"b45e4ed8-ab31-49b8-befb-e6e34ae17ed0","boot":"0a274573-a87c-4350-8513-200afb289775","doId":"ed7a8fe9c67db71fc45666c8db051ebe45cb23c42b3d97c0d2172bd0884f955f","invocation":{"id":"d52d026b-9f04-4efc-ac87-950129435189","generation":1,"started":1791701803167,"yield_at":1791701804167,"end_at":1791701805167,"state":"active"}},"rpcExecuted":{"requestKey":"bdfb87fe-173a-4cb4-9ca2-8678bad4c9eb","boot":"0a274573-a87c-4350-8513-200afb289775","doId":"ed7a8fe9c67db71fc45666c8db051ebe45cb23c42b3d97c0d2172bd0884f955f","invocation":"d52d026b-9f04-4efc-ac87-950129435189","label":"008-rpc-discarded-56c1492c-6782-4081-bc1a-917197111c36"},"failedDeliveryExecuted":null,"invocation":{"id":"d52d026b-9f04-4efc-ac87-950129435189","generation":1,"started":1791701803167,"yield_at":1791701804167,"end_at":1791701805167,"state":"active"},"invocations":1,"roots":1,"submissions":1,"effects":[{"id":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","invocation":"d52d026b-9f04-4efc-ac87-950129435189","state":"admitted","deadline":1791701805167}],"claims":[{"effect":"pi.generation/8/d3a2034ebfcd7363f7c1345eb83828c176ce66919bcd050dfc5348269219cfe2/attempt/1","claimed":0}],"encryptedDigest":"90fae58a306c296c86c056e7842b64a4d3e555cc724c0e9ff35cad36df6da39a"},"authority":{"current":true,"generation":1,"executor":1,"liveExecutors":1},"calls":0}}
+
+ ❯ ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/rpc.worker.test.ts (2 tests | 1 failed) 4250ms
+   × A continuation executes same-label and spoofed-error controls then exact admitted-work abort with clean cleanup 2164ms
+     → expected { Object (returned, name, ...) } to match object { returned: false, …(3) }
+(3 matching properties omitted from actual)
+   ✓ A continuation discards an actual admitted-work abort outcome and controller restart remains unqualified  2061ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/rpc.worker.test.ts > A continuation executes same-label and spoofed-error controls then exact admitted-work abort with clean cleanup
+AssertionError: expected { Object (returned, name, ...) } to match object { returned: false, …(3) }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "durableObjectReset": true,
+    "message": "008-a-continuation-opaque-4284e63e-af32-4be3-8ed2-2057644844ca",
+-   "remote": true,
++   "remote": null,
+    "returned": false,
+  }
+
+ ❯ Proxy.methodWrapper home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/vitest___@vitest_expect___chai.js:1603:25
+ ❯ ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/rpc.worker.test.ts:153:24
+    151|  await runInDurableObject(work.s, async (_i, state) => { await state.s…
+    152|  const observedAbort = await observation(abort(work, label));
+    153|  expect(observedAbort).toMatchObject({ returned: false, message: inten…
+       |                        ^
+    154|  const failedDelivery = await observation(work.s.diagnosticAbort("008-…
+    155|  expect(failedDelivery).toMatchObject({ returned: false, message: inte…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  08:56:38
+   Duration  5.60s (transform 306ms, setup 0ms, collect 537ms, tests 4.25s, environment 1ms, prepare 93ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run --config ../../plans/evidence/artifacts/008/qualification-executor/teardown-diagnosis/rpc.config.ts
