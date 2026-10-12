@@ -1,0 +1,17 @@
+# 008 fresh executor advisor checkpoint
+
+Status: BLOCKED. Not complete, accepted or integrated. Executor `0ce38a9e-f68c-4cf` has stopped.
+
+The advisor read the complete [executor checkpoint](008-fresh-executor-checkpoint.md), its three-file incremental patch and final product-suite log. All 37 current source hashes independently match the final inventory and archived source bytes. Exactly the three reported fixture files changed during this executor. This does not constitute a complete cumulative implementation review.
+
+The patch adds generation-1-only missing-row fence initialization, origin-bound active join-hold acknowledgment, blocked ordinary alarm admission, bounded recovery-proof denial, retirement durability sync and cleanup/claim-hold diagnostics. It does not edit `PiDurableHost.open` or increase persisted runtime deadlines. A dedicated missing-row-at-generation-2 regression remains missing.
+
+The final unfiltered product run remains red: 34 passed, four failed, one unhandled isolated-storage error, and not all 53 declared tests completed. This run used diagnostic `--testTimeout 15000`; it is not an original-deadline aggregate pass. Failures were initial prompt zero model fetches, only two of three native-alarm turns, discarded-observation preparation without an admitted claim, and successor recovery preparation timing out. Resource/timing/authority causality remains unproven. The log also warns of an undisposed RPC result; that is an investigation lead, not a proven cause.
+
+The advisor independently reran the four byte-unchanged probes on final source through the clean launcher. All four passed, exit 0, clean teardown. Log: `artifacts/008/fresh-advisor/unchanged-probes.log`. These narrow passes do not offset the product-suite failures. Credential typecheck success is inspected executor evidence, not an independent rerun.
+
+The complete executor report, source archive, patch, matrix, command ledger, graph checks and failures are preserved in main `plans/evidence/artifacts/008/fresh-executor-20261011T121747Z/`. The five final aggregates were correctly not run against this red candidate. No acceptance review of a completed slice is possible yet.
+
+Next work must establish one causal reproduction for the denied first model claim/native progress failure, including exact scalar deadline, signal and authority outcomes, and dispose or rule out the reported RPC resource leak. Resolve the nearest failing sequence before another full-suite run. Do not claim a pinned framework impossibility without a minimized counterexample, retry broad suites blindly, raise runtime deadlines, suppress isolation or weaken admitted-work assertions. Existing source remains preserved in the execution worktree. No integration, commit or deployment occurred.
+
+The maintainer then requested continuation. The advisor independently ran the original-deadline first-prompt/native-alarm pair, which passed both cases with 51 unrelated cases filtered and clean teardown. Log: `artifacts/008/causal-advisor/progress-entry.log`. Timings were 2765ms and 4936ms. This establishes a pass/fail contrast, not a cause or full acceptance. The old executor handle expired before resume without new work. Fresh bounded diagnostic agent `5511e007-075f-4b9` is running on `openai-codex/gpt-6.1-sol`, medium reasoning, to obtain scalar causal traces, minimize the failing sequence and return specific proposed changes for advisor synthesis. No permanent behavior change is delegated in this diagnostic phase.
