@@ -10,7 +10,9 @@ import { encodeSseEvent } from "#/lib/agent-stream-protocol";
 import { createAuth } from "#/lib/auth";
 import {
 	classifyAgentRequestBody,
+	handleCandidateCommandRequest,
 	handleSessionCommandRequest,
+	isCandidateCommandBody,
 	readBoundedAgentRequestText,
 	SessionCommandError,
 } from "#/lib/session-command";
@@ -21,6 +23,7 @@ import {
 import {
 	createSessionRuntimeClient,
 	isTrustedAdmissionEligible,
+	resolveCandidateProductCommands,
 	resolveSessionAdmissionHooks,
 	resolveSessionRuntimeTransport,
 	SessionRuntimeHandoffError,
@@ -109,6 +112,14 @@ export const Route = createFileRoute("/api/agent/stream")({
 
 				const db = createDb(env);
 				if (classified.mode === "versioned") {
+					if (isCandidateCommandBody(classified.decoded)) {
+						const result = await handleCandidateCommandRequest({
+							service: resolveCandidateProductCommands(),
+							authenticatedUserId: session.user.id,
+							body: raw,
+						});
+						return jsonResponse(result.body, result.status);
+					}
 					if (!isTrustedAdmissionEligible()) {
 						return jsonResponse(
 							{

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { handleSessionCommandRequest } from "#/lib/session-command";
 import {
@@ -5,6 +6,8 @@ import {
 	sessionRuntimeRouteHarness,
 } from "#/test/session-runtime-fixture";
 import { RUNTIME_LIMITS } from "../../../../packages/runtime-contracts/src/limits.js";
+import { CandidateProductCommands } from "./session-command-candidate";
+import { createSqliteD1 } from "./sqlite-d1-test-utils";
 
 vi.mock("cloudflare:workers", () => ({ env: {} }));
 vi.mock("@tanstack/react-router", () => ({
@@ -97,6 +100,102 @@ const recoveryBodies: Record<string, Record<string, unknown>> = {
 };
 
 describe("session command admission", () => {
+	it.each([
+		"stream",
+		"control",
+	] as const)("admits V2 through the captured authenticated %s POST without legacy execution", async (path) => {
+		const fixture = createSessionRuntimeFixture();
+		fixture.seedProject();
+		fixture.sqlite.exec(
+			readFileSync(
+				new URL(
+					"../../migrations/0023_candidate_product_commands.sql",
+					import.meta.url,
+				),
+				"utf8",
+			).replaceAll("--> statement-breakpoint", ""),
+		);
+		fixture.sqlite.exec(
+			`CREATE TABLE runtime_retired_identity_fences(identityId TEXT PRIMARY KEY,lifecycleGeneration INTEGER NOT NULL,retiredAt INTEGER NOT NULL); CREATE TABLE codex_connections(user_id TEXT PRIMARY KEY,generation INTEGER,revoked INTEGER,status TEXT); CREATE TABLE codex_fixture_capabilities(userId TEXT PRIMARY KEY,generation INTEGER,revision INTEGER,snapshot TEXT); INSERT INTO codex_connections VALUES('user-1',1,0,'connected')`,
+		);
+		fixture.sqlite
+			.prepare("INSERT INTO codex_fixture_capabilities VALUES('user-1',1,1,?)")
+			.run(
+				JSON.stringify({
+					version: 1,
+					status: "available",
+					generation: 1,
+					revision: 1,
+					models: [{ id: "faux-1", thinking: ["off"] }],
+				}),
+			);
+		const commands = new CandidateProductCommands(
+			createSqliteD1(fixture.sqlite),
+			{
+				readSelection: async () => null,
+				targetStatus: async (_subject, runId) => ({
+					ownerVersion: 1,
+					runId,
+					state: "not_delivered",
+				}),
+			},
+			() => ({ status: async () => ({ status: "connected", generation: 1 }) }),
+		);
+		let admissionError: unknown;
+		const candidateCommands = {
+			admitOwned: async (userId: string, body: unknown) => {
+				try {
+					return await commands.admit(userId, body);
+				} catch (error) {
+					admissionError = error;
+					throw error;
+				}
+			},
+			drain: async () => {},
+		};
+		const body = promptBody({ version: 2 });
+		const first = await fixture
+			.asUser("user-1")
+			.command(body, { path, candidateCommands });
+		if (first.status === 503) throw admissionError;
+		expect(first.status).toBe(202);
+		expect(first.body).toMatchObject({
+			version: 2,
+			ownerVersion: 1,
+			commandSeq: 1,
+		});
+		expect(
+			await fixture.asUser("user-1").command(body, { path, candidateCommands }),
+		).toEqual(first);
+		expect(fixture.counts()).toEqual({
+			sessions: 1,
+			messages: 2,
+			commands: 1,
+			keys: 1,
+			work: 1,
+		});
+		expect(
+			(
+				await fixture
+					.asUser("user-1")
+					.command({ ...body, text: "Changed" }, { path, candidateCommands })
+			).status,
+		).toBe(409);
+		expect(
+			(
+				await fixture
+					.asUser("user-1")
+					.command(
+						{ ...body, idempotencyKey: "overflow", text: "😀".repeat(2049) },
+						{ path, candidateCommands },
+					)
+			).status,
+		).toBe(400);
+		expect(
+			(await fixture.asUser("user-1").command(body, { path })).body,
+		).toMatchObject({ code: "candidate_admission_ineligible" });
+		fixture.dispose();
+	});
 	it("T01 mocked-auth captured handler rejects unowned, archived, migrating, blocked, and deleting targets with no rows or upstream work", async () => {
 		const unowned = createSessionRuntimeFixture();
 		unowned.seedProject({ userId: "owner-1" });

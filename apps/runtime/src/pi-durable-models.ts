@@ -19,6 +19,7 @@ import {
 	hook,
 } from "@earendil-works/pi-durable";
 import {
+	type ModelAttemptV1,
 	type ModelSubjectV1,
 	type ModelTransportDescriptorV1,
 	parseModelAttemptV1,
@@ -158,10 +159,15 @@ export interface PrivateModelTransport {
 export function createPrivateModelAdapter(
 	guard: HostGuard,
 	product: PrivateModelTransport,
-	owned: ModelSubjectV1,
+	owned:
+		| ModelSubjectV1
+		| ((attempt: ModelAttemptV1) => Promise<ModelSubjectV1>),
 	generationPurpose: "generation" | "git_metadata" = "generation",
 ) {
-	const subject = Object.freeze(parseModelSubjectV1(owned));
+	const subject =
+		typeof owned === "function"
+			? undefined
+			: Object.freeze(parseModelSubjectV1(owned));
 	const faux = fauxProvider({ tokensPerSecond: 0 });
 	const stream: typeof faux.provider.stream = (model, transcript, options) => {
 		const events = createAssistantMessageEventStream();
@@ -204,8 +210,26 @@ export function createPrivateModelAdapter(
 							],
 							body: JSON.stringify(body),
 						});
+						const currentSubject =
+							subject ??
+							parseModelSubjectV1(
+								await awaitWithContext(
+									(
+										owned as (
+											attempt: ModelAttemptV1,
+										) => Promise<ModelSubjectV1>
+									)(dispatch.attempt),
+									context,
+								),
+							);
+						context.abortSignal?.throwIfAborted();
 						const claim = await awaitWithContext(
-							ExactModelClaim.forRequest(dispatch, subject, request, product),
+							ExactModelClaim.forRequest(
+								dispatch,
+								currentSubject,
+								request,
+								product,
+							),
 							context,
 						);
 						const outcome = await awaitWithContext(

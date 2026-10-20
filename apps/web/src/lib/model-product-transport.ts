@@ -10,6 +10,7 @@ import {
 	syntheticRequestDigest,
 } from "./codex-request-contract";
 import {
+	type CANDIDATE_MODEL_POLICY,
 	type ModelClaimRpc,
 	ModelProductAuthority,
 } from "./model-product-authority";
@@ -55,6 +56,7 @@ export async function readPrivateModelPermit(
 	input: unknown,
 	descriptor: ModelTransportDescriptorV1,
 	fixtureAvailable: boolean,
+	candidatePolicy?: typeof CANDIDATE_MODEL_POLICY,
 ): Promise<{ status: "current" | "denied" }> {
 	if (!fixtureAvailable) return { status: "denied" };
 	try {
@@ -63,7 +65,11 @@ export async function readPrivateModelPermit(
 		if ((await syntheticRequestDigest(request)) !== d.requestDigest)
 			return { status: "denied" };
 		return {
-			status: (await new ModelProductAuthority(db).permit(d, body))
+			status: (await new ModelProductAuthority(
+				db,
+				Date.now,
+				candidatePolicy,
+			).permit(d, body))
 				? "current"
 				: "denied",
 		};

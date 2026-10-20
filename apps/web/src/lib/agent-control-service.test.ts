@@ -105,6 +105,35 @@ const followUp = {
 describe("agent control service", () => {
 	beforeEach(() => vi.clearAllMocks());
 
+	it.each([
+		"trusted_v1",
+		"pi_durable_v1",
+	])("denies unversioned controls for %s before any execution", async (runtimeOwner) => {
+		const harness = makeHarness();
+		harness.deps.loadOwnedActiveSession.mockResolvedValue({
+			id: "session-1",
+			projectId: "project-1",
+			userId: "user-1",
+			status: "active",
+			runtimeOwner,
+			runtimeOwnerVersion: 1,
+		});
+		const result = await controlAgentRun({
+			db: {} as never,
+			env: {} as Env,
+			userId: "user-1",
+			input: followUp,
+			deps: harness.deps as never,
+		});
+		expect(result).toMatchObject({
+			status: 409,
+			body: { category: "upgrade_recovery" },
+		});
+		expect(harness.deps.withWorkspaceRuntimeLease).not.toHaveBeenCalled();
+		expect(harness.exec).not.toHaveBeenCalled();
+		expect(harness.writeFile).not.toHaveBeenCalled();
+	});
+
 	it("checks ownership before touching the sandbox", async () => {
 		const harness = makeHarness();
 		harness.deps.loadProjectForUser.mockResolvedValue(null);

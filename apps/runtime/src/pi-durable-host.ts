@@ -45,6 +45,13 @@ import {
 	SYNTHETIC_MODEL_LIMITS,
 } from "../../../packages/runtime-contracts/src/model.js";
 import {
+	type CommandHandoffAckV2,
+	type CommandV2,
+	parseCommandV2,
+	parseQueueDecisionV2,
+	type QueueDecisionV2,
+} from "../../../packages/runtime-contracts/src/product-command.js";
+import {
 	digestText,
 	isRuntimeCiphertext,
 	isUnboundSelection,
@@ -118,7 +125,9 @@ export type HostFault =
 	| "alarm"
 	| "configuration-intent"
 	| "configuration-applied"
-	| "configuration-outcome";
+	| "configuration-outcome"
+	| "candidate-control-intent"
+	| "candidate-control-outcome";
 export type LocalAuthority = {
 	current: boolean;
 	generation: number;
@@ -330,11 +339,24 @@ export type HostFixtureDependencies = {
 	operationMs?: { model: number; tool: number };
 	prepareModel?(context: Context): Promise<void>;
 	beforeRetrySeal?: () => Promise<unknown>;
+	afterSubmission?: () => Promise<void>;
 	wakeup?: {
 		getAlarm(): Promise<number | null>;
 		setAlarm(deadline: number): Promise<void>;
 	};
 	retained?: RetainedStorageBinding;
+	candidate?: {
+		origin?: string;
+		ordinaryAllowed?(): boolean;
+		userId: string;
+		projectId: string;
+		workspaceSessionId: string;
+		ownerVersion: 1;
+		reconcileDecision(decision: QueueDecisionV2): Promise<boolean>;
+		configuration(
+			commandId: string,
+		): Promise<NonNullable<HostFixtureDependencies["configuration"]>>;
+	};
 	configuration?: {
 		subject: ModelSubjectV1;
 		defaultSelection: ConfigurationSelectionV1;
@@ -356,6 +378,7 @@ export class PiDurableHost {
 	private closing: Promise<void> | undefined;
 	private timer: ReturnType<typeof setTimeout> | undefined;
 	private active: Invocation | undefined;
+	private readonly candidateOrigin = crypto.randomUUID();
 	private failure: unknown;
 	private providerQueue = Promise.resolve();
 	private ownerQueue: Promise<void> = Promise.resolve();
@@ -427,6 +450,40 @@ export class PiDurableHost {
 			storage.sql.exec(
 				"CREATE TABLE IF NOT EXISTS host_controls (id TEXT PRIMARY KEY, run TEXT, state TEXT)",
 			);
+			storage.sql.exec(
+				"CREATE TABLE IF NOT EXISTS host_product_commands (id TEXT PRIMARY KEY, sequence INTEGER UNIQUE NOT NULL, run TEXT NOT NULL, payload TEXT NOT NULL)",
+			);
+			storage.sql.exec(
+				"CREATE TABLE IF NOT EXISTS host_product_cursor (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL CHECK(version=2), nextSequence INTEGER NOT NULL CHECK(nextSequence>0))",
+			);
+			if (dependencies.candidate) {
+				const origin = dependencies.candidate.origin ?? host.candidateOrigin;
+				if (
+					typeof origin !== "string" ||
+					origin.length < 1 ||
+					origin.length > 256
+				)
+					throw new Error("Invalid candidate invocation origin");
+				storage.sql.exec(
+					"CREATE TABLE IF NOT EXISTS host_candidate_invocation_origins(invocation TEXT PRIMARY KEY REFERENCES host_invocations(id),origin TEXT NOT NULL CHECK(length(origin) BETWEEN 1 AND 256))",
+				);
+				if (!dependencies.retained)
+					throw new Error("Candidate requires encrypted storage");
+				if (
+					storage.sql
+						.exec(
+							"SELECT id FROM host_commands WHERE id NOT IN (SELECT id FROM host_product_commands)",
+						)
+						.toArray().length
+				)
+					throw new Error("Incompatible retained command protocol");
+				storage.sql.exec(
+					"INSERT OR IGNORE INTO host_product_cursor VALUES(1,2,1)",
+				);
+			} else if (
+				storage.sql.exec("SELECT id FROM host_product_cursor").toArray().length
+			)
+				throw new Error("Candidate owner composition required");
 			storage.sql.exec(
 				"CREATE TABLE IF NOT EXISTS host_safety (id INTEGER PRIMARY KEY, reason TEXT)",
 			);
@@ -527,7 +584,7 @@ export class PiDurableHost {
 			host.captureRetry(publication),
 		);
 		try {
-			await host.initializeOwnedConfiguration();
+			if (!dependencies.candidate) await host.initializeOwnedConfiguration();
 			await host.reconcileSafety();
 			await host.repairWakeup();
 		} catch (error) {
@@ -618,6 +675,11 @@ export class PiDurableHost {
 		const binding = this.dependencies.retained;
 		if (!binding) return;
 		const fields = [
+			...this.storage.sql
+				.exec<{ record_id: string; value: string }>(
+					"SELECT 'product:' || id AS record_id,payload AS value FROM host_product_commands",
+				)
+				.toArray(),
 			...this.storage.sql
 				.exec<{ record_id: string; value: string }>(
 					"SELECT 'configuration:' || id AS record_id, outcome AS value FROM host_configuration_intents",
@@ -771,6 +833,15 @@ export class PiDurableHost {
 		this.assertRetainedRoutes();
 	}
 	private storedEnvelope(recordId: string): string | null {
+		if (recordId.startsWith("product:"))
+			return (
+				this.storage.sql
+					.exec<{ payload: string }>(
+						"SELECT payload FROM host_product_commands WHERE id=?",
+						recordId.slice(8),
+					)
+					.toArray()[0]?.payload ?? null
+			);
 		const inbox = /^inbox:(.+):content$/.exec(recordId);
 		if (inbox) {
 			const row = this.storage.sql
@@ -956,7 +1027,9 @@ export class PiDurableHost {
 				.toArray(),
 		);
 	}
-	private assertLive() {
+	private assertLive(ordinary = true) {
+		if (ordinary && this.dependencies.candidate?.ordinaryAllowed?.() === false)
+			throw new Error("Candidate recovery-only admission");
 		if (this.denied || this.sealed || this.storageBarrier)
 			throw new Error("Host admission denied");
 	}
@@ -1111,8 +1184,9 @@ export class PiDurableHost {
 			.one();
 		if (["complete", "failed", "canceled"].includes(current.state)) return;
 		this.storage.sql.exec(
-			"UPDATE host_runs SET state = ?, epoch = epoch + 1 WHERE id = ?",
+			"UPDATE host_runs SET state = ?, epoch = epoch + ? WHERE id = ?",
 			state,
+			this.dependencies.candidate && current.state === "stopping" ? 0 : 1,
 			run,
 		);
 		this.storage.sql.exec(
@@ -1205,7 +1279,11 @@ export class PiDurableHost {
 		return value as EffectCorrelation;
 	}
 	private async liveInputs(context: Context) {
-		const root = await awaitWithContext(this.harness.root(context), context);
+		const root = await awaitWithContext(
+			this.harness.conversation(ROOT_CONVERSATION_ID, context),
+			context,
+		);
+		if (!root) return undefined;
 		const view = await awaitWithContext(root.viewState(context), context);
 		try {
 			const run = view.value.docs["pi.live"]?.run;
@@ -1264,6 +1342,8 @@ export class PiDurableHost {
 		)
 			throw new Error("Missing placed command");
 		const command = this.command(status.requestId);
+		if (this.dependencies.candidate)
+			await this.validateCandidateSubmission(command, status, context);
 		if (command.submission !== null && command.submission !== Number(status.id))
 			throw new Error("Submission conflict");
 		this.transition("intent", () => {
@@ -1448,11 +1528,16 @@ export class PiDurableHost {
 	private ownerTransition<T>(
 		context: Context,
 		operation: (context: Context) => Promise<T>,
+		control = false,
 	): Promise<T> {
 		context = withAbortSignal(this.ownerAbort.signal, context);
 		const pending = this.ownerQueue.then(async () => {
 			context.abortSignal?.throwIfAborted();
-			this.assertLive();
+			if (control) {
+				if (this.sealed || this.storageBarrier)
+					throw new Error("Host control denied");
+				this.assertSeals();
+			} else this.assertLive(false);
 			return operation(context);
 		});
 		this.ownerQueue = pending.then(
@@ -1590,51 +1675,60 @@ export class PiDurableHost {
 		};
 	}
 	private async initializeOwnedConfiguration() {
-		const c = this.dependencies.configuration;
-		if (!c) return;
+		if (!this.dependencies.configuration) return;
 		await this.ownerTransition(
 			withAbortSignal(
 				AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
 				BACKGROUND_CONTEXT,
 			),
-			async (context) => {
-				const evidence = await this.configurationLedger(context);
-				if (await this.harness.conversation(ROOT_CONVERSATION_ID, context)) {
-					// Pi and host intent commits are separate. Reopen observes Pi; it never replays a pending selection.
-					for (const row of evidence.filter((row) => row.state === "pending")) {
-						const { ack } = row;
-						const snapshot = await this.piConfiguration(
-							this.configurationScope(),
-							context,
-						);
-						await this.finishConfiguration(
-							row.id,
-							canonical(snapshot) === canonical(ack.snapshot)
-								? ack
-								: { ...ack, status: "outcome_unknown", snapshot: null },
-							context,
-						);
-					}
-					return;
-				}
-				const selection = parseConfigurationSelectionV1(c.defaultSelection);
-				if (
-					!(await this.configurationAllowed(
-						this.configurationScope(),
-						selection,
-						context,
-					))
-				)
-					throw new Error("Default configuration denied");
-				await this.harness.root(context, {
-					agent: {
-						model: { provider: "faux", modelId: selection.model },
-						thinkingLevel: selection.thinking,
-					},
-				});
-				await this.durable(context);
-			},
+			(context) => this.initializeConfigurationInOwnerLane(context),
 		);
+	}
+	private async initializeConfigurationInOwnerLane(
+		context: Context,
+		target?: { run: string; epoch: number },
+	) {
+		this.assertLive();
+		const c = this.dependencies.configuration;
+		if (!c) throw new Error("Owned configuration unavailable");
+		const evidence = await this.configurationLedger(context);
+		if (await this.harness.conversation(ROOT_CONVERSATION_ID, context)) {
+			// Reopen observes Pi configuration; it never replays a pending selection.
+			for (const row of evidence.filter((row) => row.state === "pending")) {
+				const { ack } = row;
+				const snapshot = await this.piConfiguration(
+					this.configurationScope(),
+					context,
+				);
+				await this.finishConfiguration(
+					row.id,
+					canonical(snapshot) === canonical(ack.snapshot)
+						? ack
+						: { ...ack, status: "outcome_unknown", snapshot: null },
+					context,
+				);
+			}
+			return;
+		}
+		const selection = parseConfigurationSelectionV1(c.defaultSelection);
+		if (target) this.assertSchedule(target.run, target.epoch);
+		if (
+			!(await this.configurationAllowed(
+				this.configurationScope(),
+				selection,
+				context,
+			))
+		)
+			throw new Error("Default configuration denied");
+		this.assertLive();
+		if (target) this.assertSchedule(target.run, target.epoch);
+		await this.harness.root(context, {
+			agent: {
+				model: { provider: "faux", modelId: selection.model },
+				thinkingLevel: selection.thinking,
+			},
+		});
+		await this.durable(context);
 	}
 	async readOwnedConfiguration(
 		input: unknown,
@@ -1709,6 +1803,7 @@ export class PiDurableHost {
 			if (!(await this.configurationAllowed(query, intent.selection, context)))
 				return deny("denied");
 			this.transition("intent", () => {
+				this.assertLive();
 				this.storage.sql.exec(
 					"INSERT INTO host_configuration_intents VALUES (?,?,?,'pending')",
 					identity.key,
@@ -1732,6 +1827,7 @@ export class PiDurableHost {
 				await this.finishConfiguration(identity.key, denied, context);
 				return denied;
 			}
+			this.assertLive();
 			await root.configure(
 				{
 					model: { provider: "faux", modelId: intent.selection.model },
@@ -3602,6 +3698,7 @@ export class PiDurableHost {
 				this.transition("account", () => this.terminal(run.id, "canceled"));
 				continue;
 			}
+			if (this.dependencies.candidate && !this.productRecord(run.id)) continue;
 			const commands = this.read(() =>
 				this.storage.sql
 					.exec<Command>("SELECT * FROM host_commands WHERE run = ?", run.id)
@@ -3610,6 +3707,14 @@ export class PiDurableHost {
 			let settled = commands.length > 0,
 				failed = false;
 			for (const command of commands) {
+				if (this.dependencies.candidate) {
+					const retained = this.productRecord(command.id);
+					if (
+						retained?.disposition &&
+						!["submitted", "done"].includes(retained.disposition)
+					)
+						continue;
+				}
 				if (!command.submission) {
 					settled = false;
 					continue;
@@ -3635,7 +3740,7 @@ export class PiDurableHost {
 						);
 					});
 			}
-			if (settled)
+			if (settled || (failed && this.dependencies.candidate))
 				this.transition("account", () =>
 					this.terminal(run.id, failed ? "failed" : "complete"),
 				);
@@ -3656,6 +3761,775 @@ export class PiDurableHost {
 		await graph.stop();
 	}
 
+	private candidateScope(command: CommandV2) {
+		const scope = this.dependencies.candidate;
+		if (
+			!scope ||
+			command.userId !== scope.userId ||
+			command.projectId !== scope.projectId ||
+			command.workspaceSessionId !== scope.workspaceSessionId ||
+			command.runtimeOwnerVersion !== scope.ownerVersion
+		)
+			throw new Error("Candidate owner mismatch");
+	}
+
+	private productRecord(id: string) {
+		this.assertSeals();
+		const row = this.storage.sql
+			.exec<{ id: string; sequence: number; run: string; payload: string }>(
+				"SELECT * FROM host_product_commands WHERE id=?",
+				id,
+			)
+			.toArray()[0];
+		if (!row) return undefined;
+		const value = strictRecord(
+			JSON.parse(this.requiredPlain(`product:${id}`)),
+			["command", "disposition", "decision"],
+			"Candidate retained command",
+		);
+		const metadata = strictRecord(
+			value.command,
+			[
+				"version",
+				"kind",
+				"commandId",
+				"commandSeq",
+				"userId",
+				"projectId",
+				"workspaceSessionId",
+				"runtimeOwnerVersion",
+				"receiptId",
+				"acceptedAt",
+				"deadlineAt",
+				"payloadDigest",
+				"targetRunId",
+				"targetCommandId",
+				"userMessageId",
+				"assistantMessageId",
+			],
+			"Candidate command metadata",
+		);
+		const ordinary =
+			metadata.kind === "prompt" || metadata.kind === "follow_up";
+		const inbox = ordinary
+			? this.storage.sql
+					.exec<{ content: string }>(
+						"SELECT content FROM host_inbox WHERE id=?",
+						id,
+					)
+					.toArray()[0]
+			: undefined;
+		if (ordinary && !inbox) throw new Error("Missing candidate inbox payload");
+		const command = parseCommandV2({
+			...metadata,
+			...(ordinary ? { text: this.requiredPlain(`inbox:${id}:content`) } : {}),
+		});
+		this.candidateScope(command);
+		const run =
+			command.kind === "prompt"
+				? command.commandId
+				: command.kind === "cancel"
+					? row.run
+					: command.targetRunId;
+		if (
+			command.commandId !== row.id ||
+			command.commandSeq !== row.sequence ||
+			run !== row.run
+		)
+			throw new Error("Candidate routing integrity failure");
+		const disposition =
+			value.disposition === null
+				? null
+				: literalField(value, "disposition", [
+						"submitted",
+						"done",
+						"failed",
+						"canceled",
+						"expired",
+						"stopped",
+						"target_run_terminal",
+						"too_late",
+						"applied",
+					]);
+		const decision =
+			value.decision === null ? null : parseQueueDecisionV2(value.decision);
+		if (
+			decision &&
+			(decision.commandId !== id ||
+				decision.ownerVersion !== command.runtimeOwnerVersion ||
+				decision.payloadDigest !== command.payloadDigest ||
+				decision.runId !== run ||
+				decision.queueDeadlineAt !== command.deadlineAt)
+		)
+			throw new Error("Candidate decision integrity failure");
+		return { command, run, disposition, decision, envelope: row.payload };
+	}
+
+	private async prepareProduct(
+		command: CommandV2,
+		disposition: string | null = null,
+		decision: QueueDecisionV2 | null = null,
+	) {
+		const metadata: Record<string, unknown> = { ...command };
+		delete metadata.text;
+		const plain = JSON.stringify({ command: metadata, disposition, decision });
+		return {
+			plain,
+			sealed: await this.seal(`product:${command.commandId}`, plain),
+		};
+	}
+
+	private storeProduct(
+		command: CommandV2,
+		run: string,
+		prepared: Awaited<ReturnType<PiDurableHost["prepareProduct"]>>,
+		prior?: string,
+	) {
+		const live = this.storage.sql
+			.exec<{ payload: string }>(
+				"SELECT payload FROM host_product_commands WHERE id=?",
+				command.commandId,
+			)
+			.toArray()[0];
+		if ((live?.payload ?? undefined) !== prior)
+			throw new Error("Candidate command transition conflict");
+		this.storage.sql.exec(
+			"INSERT INTO host_product_commands VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
+			command.commandId,
+			command.commandSeq,
+			run,
+			prepared.sealed.ciphertext,
+		);
+		this.rememberSeal(`product:${command.commandId}`, prepared.sealed.digest);
+	}
+
+	private rememberProduct(
+		command: CommandV2,
+		prepared: Awaited<ReturnType<PiDurableHost["prepareProduct"]>>,
+	) {
+		this.rememberPlain(
+			`product:${command.commandId}`,
+			prepared.plain,
+			prepared.sealed.digest,
+			prepared.sealed.ciphertext,
+		);
+	}
+
+	private repairProductCursor() {
+		const rows = this.storage.sql
+			.exec<{ id: string; sequence: number }>(
+				"SELECT id,sequence FROM host_product_commands ORDER BY sequence",
+			)
+			.toArray();
+		let next = 1;
+		for (const row of rows) {
+			const record = this.productRecord(row.id)!;
+			if (row.sequence !== next || record.disposition === null) break;
+			next++;
+		}
+		const current = Number(
+			this.storage.sql
+				.exec("SELECT nextSequence FROM host_product_cursor WHERE id=1")
+				.one().nextSequence,
+		);
+		if (current > next) throw new Error("Candidate cursor integrity failure");
+		if (current < next)
+			this.transition("account", () =>
+				this.storage.sql.exec(
+					"UPDATE host_product_cursor SET nextSequence=? WHERE id=1",
+					next,
+				),
+			);
+		return next;
+	}
+
+	private failCandidateMember(command: CommandV2) {
+		if (command.kind !== "prompt" && command.kind !== "follow_up") return;
+		this.storage.sql.exec(
+			"UPDATE host_members SET state='failed' WHERE assistant=? AND state='pending'",
+			command.assistantMessageId,
+		);
+		this.storage.sql.exec(
+			"INSERT OR IGNORE INTO host_projections SELECT assistant,run,'failed',1 FROM host_members WHERE assistant=? AND state='failed'",
+			command.assistantMessageId,
+		);
+		this.storage.sql.exec(
+			"UPDATE host_commands SET state='settled' WHERE id=?",
+			command.commandId,
+		);
+		this.storage.sql.exec(
+			"DELETE FROM host_wakeups WHERE id=?",
+			`inbox:${command.commandId}`,
+		);
+	}
+
+	async acceptCandidate(
+		input: unknown,
+		target?: unknown,
+	): Promise<CommandHandoffAckV2> {
+		const command = parseCommandV2(input);
+		this.candidateScope(command);
+		const prior = this.productRecord(command.commandId);
+		if (prior) {
+			if (canonical(prior.command) !== canonical(command))
+				throw new Error("Conflicting candidate delivery");
+			if (command.kind === "stop")
+				await this.stop(command.commandId, command.targetRunId);
+			await this.repairWakeup();
+			return {
+				version: 2,
+				commandId: command.commandId,
+				ownerVersion: command.runtimeOwnerVersion,
+				acceptedPosition: command.commandSeq,
+				receiptId: command.receiptId,
+			};
+		}
+		if (command.kind === "prompt" || command.kind === "follow_up") {
+			await this.ownerTransition(BACKGROUND_CONTEXT, async (context) => {
+				context.abortSignal?.throwIfAborted();
+				const retained = this.productRecord(command.commandId);
+				if (retained) {
+					if (canonical(retained.command) !== canonical(command))
+						throw new Error("Conflicting candidate delivery");
+					return;
+				}
+				await this.accept(
+					command.commandId,
+					command.text,
+					{
+						run:
+							command.kind === "prompt"
+								? command.commandId
+								: command.targetRunId,
+						user: command.userMessageId,
+						assistant: command.assistantMessageId,
+						sequence: command.commandSeq,
+					},
+					command,
+				);
+			});
+		} else {
+			const ownedTarget = parseCommandV2(target);
+			this.candidateScope(ownedTarget);
+			if (ownedTarget.kind !== "prompt" && ownedTarget.kind !== "follow_up")
+				throw new Error("Invalid candidate control target");
+			const run =
+				ownedTarget.kind === "prompt"
+					? ownedTarget.commandId
+					: ownedTarget.targetRunId;
+			if (
+				command.kind === "stop" &&
+				(ownedTarget.kind !== "prompt" || run !== command.targetRunId)
+			)
+				throw new Error("Invalid targeted Stop");
+			if (
+				command.kind === "cancel" &&
+				ownedTarget.commandId !== command.targetCommandId
+			)
+				throw new Error("Invalid targeted cancellation");
+			if (command.kind === "cancel") {
+				await this.ownerTransition(
+					BACKGROUND_CONTEXT,
+					async (context) => {
+						const retained = this.productRecord(command.commandId);
+						if (retained) {
+							if (canonical(retained.command) !== canonical(command))
+								throw new Error("Conflicting candidate delivery");
+							return;
+						}
+						let targetRecord = this.productRecord(ownedTarget.commandId);
+						if (!targetRecord) {
+							await this.accept(
+								ownedTarget.commandId,
+								ownedTarget.text,
+								{
+									run,
+									user: ownedTarget.userMessageId,
+									assistant: ownedTarget.assistantMessageId,
+									sequence: ownedTarget.commandSeq,
+								},
+								ownedTarget,
+							);
+							targetRecord = this.productRecord(ownedTarget.commandId)!;
+						}
+						const tooLate =
+							targetRecord.decision?.decision === "started" ||
+							targetRecord.disposition === "submitted" ||
+							targetRecord.disposition === "done";
+						if (!tooLate && targetRecord.disposition === null)
+							await this.disposeCandidate(ownedTarget.commandId, "canceled");
+						const prepared = await this.prepareProduct(
+							command,
+							tooLate ? "too_late" : "applied",
+						);
+						context.abortSignal?.throwIfAborted();
+						const committed = this.transition("intent", () => {
+							const retained = this.productRecord(command.commandId);
+							if (retained) {
+								if (canonical(retained.command) !== canonical(command))
+									throw new EffectDenied("authority");
+								return false;
+							}
+							this.storeProduct(command, run, prepared);
+							return true;
+						});
+						if (committed) this.rememberProduct(command, prepared);
+						await this.durable(context);
+					},
+					true,
+				);
+			} else {
+				const prepared = await this.prepareProduct(command, "applied");
+				const committed = this.transition("fence", () => {
+					const retained = this.productRecord(command.commandId);
+					if (retained) {
+						if (canonical(retained.command) !== canonical(command))
+							throw new EffectDenied("authority");
+						return false;
+					}
+					this.storeProduct(command, run, prepared);
+					this.storage.sql.exec(
+						"INSERT OR IGNORE INTO host_runs VALUES(?,1,'queued',NULL,NULL)",
+						run,
+					);
+					this.storage.sql.exec(
+						"UPDATE host_runs SET epoch=epoch+1,state='stopping' WHERE id=? AND state NOT IN ('complete','failed','canceled','stopping')",
+						run,
+					);
+					return true;
+				});
+				if (committed) {
+					this.rememberProduct(command, prepared);
+					await this.durable();
+					this.dependencies.fault?.("candidate-control-intent");
+					await this.stop(command.commandId, run);
+					this.dependencies.fault?.("candidate-control-outcome");
+				}
+			}
+		}
+		this.repairProductCursor();
+		this.transition("intent", () =>
+			this.storage.sql.exec(
+				"INSERT OR REPLACE INTO host_wakeups VALUES('product',?)",
+				this.dependencies.now(),
+			),
+		);
+		await this.durable();
+		await this.repairWakeup();
+		return {
+			version: 2,
+			commandId: command.commandId,
+			ownerVersion: command.runtimeOwnerVersion,
+			acceptedPosition: command.commandSeq,
+			receiptId: command.receiptId,
+		};
+	}
+
+	private async disposeCandidate(
+		id: string,
+		disposition:
+			| "canceled"
+			| "expired"
+			| "stopped"
+			| "target_run_terminal"
+			| "submitted"
+			| "done"
+			| "failed",
+		decision?: QueueDecisionV2,
+		context: Context = BACKGROUND_CONTEXT,
+	) {
+		context.abortSignal?.throwIfAborted();
+		const record = this.productRecord(id);
+		if (!record) throw new Error("Missing accepted candidate command");
+		const prepared = await this.prepareProduct(
+			record.command,
+			disposition,
+			decision ?? record.decision,
+		);
+		context.abortSignal?.throwIfAborted();
+		this.transition("account", () => {
+			this.storeProduct(record.command, record.run, prepared, record.envelope);
+			if (!["submitted", "done"].includes(disposition))
+				this.failCandidateMember(record.command);
+			if (
+				record.command.kind === "prompt" &&
+				["canceled", "expired"].includes(disposition)
+			)
+				this.terminal(
+					record.run,
+					disposition === "canceled" ? "canceled" : "failed",
+				);
+		});
+		this.rememberProduct(record.command, prepared);
+		this.repairProductCursor();
+		await this.durable(context);
+	}
+
+	async configureCandidate(commandId: string, input: unknown) {
+		this.assertLive();
+		const scope = this.dependencies.candidate;
+		const command = this.productRecord(commandId)?.command;
+		if (
+			!scope ||
+			!command ||
+			(command.kind !== "prompt" && command.kind !== "follow_up")
+		)
+			throw new Error("Candidate configuration unavailable");
+		this.candidateScope(command);
+		const configuration = await scope.configuration(commandId);
+		this.assertLive();
+		this.dependencies.configuration = configuration;
+		return this.configureOwned(input);
+	}
+
+	async readCandidateSelection() {
+		const scope = this.dependencies.candidate;
+		if (!scope) throw new Error("Candidate owner required");
+		return this.ownerTransition(BACKGROUND_CONTEXT, async (context) => {
+			this.assertSeals();
+			return (
+				await this.piConfiguration(
+					{
+						version: 1,
+						projectId: scope.projectId,
+						workspaceSessionId: scope.workspaceSessionId,
+						ownerVersion: scope.ownerVersion,
+					},
+					context,
+				)
+			).selection;
+		});
+	}
+
+	candidateTargetStatus(runId: string) {
+		if (!this.dependencies.candidate)
+			throw new Error("Candidate owner required");
+		this.assertSeals();
+		const run = this.storage.sql
+			.exec<Run>("SELECT * FROM host_runs WHERE id=?", runId)
+			.toArray()[0];
+		return {
+			ownerVersion: 1,
+			runId,
+			state: run
+				? ["complete", "failed", "canceled", "stopping"].includes(run.state)
+					? ("terminal" as const)
+					: ("nonterminal" as const)
+				: ("not_delivered" as const),
+		};
+	}
+
+	private async consumeCandidate() {
+		const scope = this.dependencies.candidate;
+		if (!scope) return;
+		await this.ownerTransition(BACKGROUND_CONTEXT, async (context) => {
+			this.assertLive();
+			context = withAbortSignal(
+				AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
+				context,
+			);
+			const records = this.storage.sql
+				.exec<{ id: string }>(
+					"SELECT id FROM host_product_commands ORDER BY sequence",
+				)
+				.toArray()
+				.map((row) => this.productRecord(row.id)!);
+			for (const record of records) {
+				if (
+					record.command.kind !== "prompt" &&
+					record.command.kind !== "follow_up"
+				)
+					continue;
+				if (record.disposition === "submitted") {
+					const mapped = this.command(record.command.commandId);
+					const submitted = mapped.submission
+						? await this.piRecords.submission(
+								mapped.submission as import("@earendil-works/pi-durable").SubmissionId,
+								context,
+							)
+						: undefined;
+					context.abortSignal?.throwIfAborted();
+					if (submitted?.status === "done")
+						await this.disposeCandidate(mapped.id, "done", undefined, context);
+					else if (submitted?.status === "unanswered")
+						await this.disposeCandidate(
+							mapped.id,
+							"failed",
+							undefined,
+							context,
+						);
+					else if (
+						!this.active &&
+						["queued", "running", "recovering"].includes(
+							this.run(record.run).state,
+						)
+					)
+						await this.schedule(mapped.id, undefined, context);
+					continue;
+				}
+				if (record.disposition !== null) continue;
+				const run = this.run(record.run);
+				if (
+					["complete", "failed", "canceled", "stopping"].includes(run.state)
+				) {
+					await this.disposeCandidate(
+						record.command.commandId,
+						"target_run_terminal",
+						undefined,
+						context,
+					);
+					continue;
+				}
+				if (
+					record.decision?.decision === "expired" ||
+					(!record.decision &&
+						this.dependencies.now() >= record.command.deadlineAt)
+				) {
+					const decision: QueueDecisionV2 = record.decision ?? {
+						version: 2,
+						commandId: record.command.commandId,
+						ownerVersion: 1,
+						runId: record.run,
+						runEpoch: run.epoch,
+						decision: "expired",
+						decidedAt: this.dependencies.now(),
+						queueDeadlineAt: record.command.deadlineAt,
+						payloadDigest: record.command.payloadDigest,
+					};
+					if (!record.decision) {
+						const prepared = await this.prepareProduct(
+							record.command,
+							null,
+							decision,
+						);
+						context.abortSignal?.throwIfAborted();
+						this.transition("intent", () => {
+							this.storeProduct(
+								record.command,
+								record.run,
+								prepared,
+								record.envelope,
+							);
+							this.failCandidateMember(record.command);
+						});
+						this.rememberProduct(record.command, prepared);
+						await this.durable(context);
+					}
+					if (
+						await awaitWithContext(scope.reconcileDecision(decision), context)
+					)
+						await this.disposeCandidate(
+							record.command.commandId,
+							"expired",
+							decision,
+							context,
+						);
+				}
+			}
+			const next = this.repairProductCursor();
+			const row = this.storage.sql
+				.exec<{ id: string }>(
+					"SELECT id FROM host_product_commands WHERE sequence=?",
+					next,
+				)
+				.toArray()[0];
+			if (row && !this.active && !this.unresolved().length) {
+				const record = this.productRecord(row.id)!;
+				if (
+					record.command.kind === "prompt" ||
+					record.command.kind === "follow_up"
+				) {
+					const prior = this.storage.sql
+						.exec<{ id: string }>(
+							"SELECT id FROM host_product_commands WHERE sequence<? ORDER BY sequence",
+							next,
+						)
+						.toArray()
+						.map((row) => this.productRecord(row.id)!);
+					if (
+						prior.every(
+							(p) => p.disposition !== null && p.disposition !== "submitted",
+						)
+					) {
+						const run = this.run(record.run);
+						if (
+							!record.decision &&
+							this.dependencies.now() < record.command.deadlineAt &&
+							["queued", "running", "recovering"].includes(run.state)
+						) {
+							const decision: QueueDecisionV2 = {
+								version: 2,
+								commandId: record.command.commandId,
+								ownerVersion: 1,
+								runId: record.run,
+								runEpoch: run.epoch,
+								decision: "started",
+								decidedAt: this.dependencies.now(),
+								queueDeadlineAt: record.command.deadlineAt,
+								payloadDigest: record.command.payloadDigest,
+							};
+							const prepared = await this.prepareProduct(
+								record.command,
+								null,
+								decision,
+							);
+							context.abortSignal?.throwIfAborted();
+							const committed = this.transition("intent", () => {
+								const current = this.run(record.run);
+								if (
+									current.epoch !== run.epoch ||
+									!["queued", "running", "recovering"].includes(current.state)
+								)
+									return "revoked";
+								if (this.dependencies.now() >= record.command.deadlineAt)
+									return "expired";
+								this.assertSchedule(record.run, run.epoch);
+								this.storeProduct(
+									record.command,
+									record.run,
+									prepared,
+									record.envelope,
+								);
+								return "started";
+							});
+							if (committed === "started") {
+								this.rememberProduct(record.command, prepared);
+								await this.durable(context);
+							} else if (committed === "expired") {
+								const expired: QueueDecisionV2 = {
+									...decision,
+									decision: "expired",
+									decidedAt: this.dependencies.now(),
+								};
+								const expiry = await this.prepareProduct(
+									record.command,
+									null,
+									expired,
+								);
+								context.abortSignal?.throwIfAborted();
+								this.transition("intent", () => {
+									this.storeProduct(
+										record.command,
+										record.run,
+										expiry,
+										record.envelope,
+									);
+									this.failCandidateMember(record.command);
+								});
+								this.rememberProduct(record.command, expiry);
+								await this.durable(context);
+								if (
+									await awaitWithContext(
+										scope.reconcileDecision(expired),
+										context,
+									)
+								) {
+									context.abortSignal?.throwIfAborted();
+									await this.disposeCandidate(
+										row.id,
+										"expired",
+										expired,
+										context,
+									);
+								}
+							} else {
+								await this.disposeCandidate(
+									row.id,
+									"target_run_terminal",
+									undefined,
+									context,
+								);
+							}
+						}
+						const started = this.productRecord(row.id)!;
+						if (
+							started.decision?.decision === "started" &&
+							(await awaitWithContext(
+								scope.reconcileDecision(started.decision),
+								context,
+							))
+						) {
+							if (
+								["queued", "running", "recovering"].includes(
+									this.run(record.run).state,
+								)
+							) {
+								context.abortSignal?.throwIfAborted();
+								try {
+									await this.schedule(row.id, undefined, context);
+								} catch (error) {
+									context.abortSignal?.throwIfAborted();
+									if (
+										error instanceof Error &&
+										error.message === "Candidate recovery-only admission" &&
+										scope.ordinaryAllowed?.() === false
+									)
+										return;
+									const target = this.run(record.run);
+									if (
+										!(error instanceof Error) ||
+										![
+											"Targeted scheduling revoked",
+											"Terminal or stopped run cannot schedule",
+										].includes(error.message) ||
+										!["stopping", "complete", "failed", "canceled"].includes(
+											target.state,
+										)
+									)
+										throw error;
+									await this.disposeCandidate(
+										row.id,
+										target.state === "stopping"
+											? "stopped"
+											: "target_run_terminal",
+										started.decision,
+										context,
+									);
+								}
+								if (this.productRecord(row.id)?.disposition === null)
+									await this.disposeCandidate(
+										row.id,
+										"submitted",
+										started.decision,
+										context,
+									);
+							} else
+								await this.disposeCandidate(
+									row.id,
+									"target_run_terminal",
+									started.decision,
+									context,
+								);
+						}
+					}
+				}
+			}
+			context.abortSignal?.throwIfAborted();
+			const pending = this.storage.sql
+				.exec<{ id: string }>("SELECT id FROM host_product_commands")
+				.toArray()
+				.map((row) => this.productRecord(row.id)!)
+				.filter((r) => r.disposition === null);
+			this.transition("intent", () => {
+				this.storage.sql.exec(
+					"DELETE FROM host_wakeups WHERE id='product' OR id LIKE 'inbox:%'",
+				);
+				if (pending.length)
+					this.storage.sql.exec(
+						"INSERT INTO host_wakeups VALUES('product',?)",
+						Math.min(
+							...pending.map((r) =>
+								r.decision
+									? this.dependencies.now() + 1000
+									: r.command.deadlineAt,
+							),
+						),
+					);
+			});
+			await this.durable(context);
+		});
+	}
+
 	async accept(
 		id: string,
 		content: string,
@@ -3665,12 +4539,20 @@ export class PiDurableHost {
 			assistant: string;
 			sequence: number;
 		},
+		product?: CommandV2,
 	) {
 		if (this.sealed) throw new Error("Host sealed");
 		if (!id || !content || new TextEncoder().encode(content).byteLength > 8192)
 			throw new Error("Invalid synthetic command");
 		const inboxId = `inbox:${id}:content`;
 		const sealedContent = await this.seal(inboxId, content);
+		const productPrepared = product
+			? await this.prepareProduct(product)
+			: undefined;
+		const latePrepared = product
+			? await this.prepareProduct(product, "target_run_terminal")
+			: undefined;
+		let committedProduct = productPrepared;
 		const existing = this.read(
 			() =>
 				this.storage.sql
@@ -3754,7 +4636,8 @@ export class PiDurableHost {
 				["complete", "failed", "canceled", "stopping"].includes(
 					this.run(member.run).state,
 				) &&
-				membership
+				membership &&
+				!product
 			)
 				throw new Error("Follow-up requires nonterminal accepted run");
 			this.storage.sql.exec(
@@ -3776,6 +4659,14 @@ export class PiDurableHost {
 				sealedContent.ciphertext,
 			);
 			this.rememberSeal(inboxId, sealedContent.digest);
+			if (product && productPrepared && latePrepared) {
+				const late = ["complete", "failed", "canceled", "stopping"].includes(
+					this.run(member.run).state,
+				);
+				committedProduct = late ? latePrepared : productPrepared;
+				this.storeProduct(product, member.run, committedProduct);
+				if (late) this.failCandidateMember(product);
+			}
 			this.storage.sql.exec(
 				"INSERT OR IGNORE INTO host_wakeups VALUES (?, ?)",
 				`inbox:${id}`,
@@ -3792,6 +4683,8 @@ export class PiDurableHost {
 				? (existing?.content ?? sealedContent.ciphertext)
 				: undefined,
 		);
+		if (product && committedProduct)
+			this.rememberProduct(product, committedProduct);
 		await this.durable();
 		await this.repairWakeup();
 		return { id };
@@ -3806,7 +4699,70 @@ export class PiDurableHost {
 		)
 			throw new Error("Targeted scheduling revoked");
 	}
-	async schedule(id: string, duplicateInvocation?: string) {
+	private async validateCandidateSubmission(
+		command: Command,
+		submission: import("@earendil-works/pi-durable").SubmissionRecord,
+		context: Context,
+	) {
+		const accepted = this.productRecord(command.id);
+		if (
+			!accepted ||
+			(accepted.command.kind !== "prompt" &&
+				accepted.command.kind !== "follow_up")
+		)
+			throw new Error("Candidate submission has no ordinary command");
+		if (
+			submission.conversationId !== ROOT_CONVERSATION_ID ||
+			submission.type !== "input" ||
+			submission.requestId !== command.id
+		)
+			throw new Error("Candidate Pi identity mismatch");
+		if (submission.status === "queued") {
+			const root = await this.harness.conversation(
+				ROOT_CONVERSATION_ID,
+				context,
+			);
+			if (!root) throw new Error("Candidate Pi root missing");
+			const view = await root.viewState(context);
+			try {
+				const items = record(view.value.docs["pi.inbox"]).items;
+				const item = Array.isArray(items)
+					? items.map(record).find((item) => item.id === submission.id)
+					: undefined;
+				if (
+					!item ||
+					item.mode !== "followUp" ||
+					canonical(item.content) !== canonical(accepted.command.text)
+				)
+					throw new Error("Candidate queued payload mismatch");
+			} finally {
+				view.dispose();
+			}
+		} else {
+			const entry = submission.entry
+				? (await this.piRecords.entry(submission.entry, context))?.entry
+				: undefined;
+			const message = entry?.model?.[0];
+			if (
+				!entry ||
+				entry.conversationId !== ROOT_CONVERSATION_ID ||
+				entry.kind !== "pi.user" ||
+				entry.model?.length !== 1 ||
+				message?.role !== "user" ||
+				![
+					canonical(accepted.command.text),
+					canonical([{ type: "text", text: accepted.command.text }]),
+				].includes(canonical(message.content))
+			)
+				throw new Error("Candidate placed payload mismatch");
+		}
+	}
+
+	async schedule(
+		id: string,
+		duplicateInvocation?: string,
+		context: Context = BACKGROUND_CONTEXT,
+	) {
 		this.assertSeals();
 		if (duplicateInvocation) {
 			const previous = this.latest();
@@ -3814,7 +4770,11 @@ export class PiDurableHost {
 				throw new Error("Stale invocation delivery");
 			return previous;
 		}
+		if (this.dependencies.candidate)
+			context = withAbortSignal(this.ownerAbort.signal, context);
+		context.abortSignal?.throwIfAborted();
 		await this.expire();
+		context.abortSignal?.throwIfAborted();
 		const command = this.command(id),
 			run = this.run(command.run);
 		if (["complete", "failed", "canceled", "stopping"].includes(run.state))
@@ -3823,6 +4783,15 @@ export class PiDurableHost {
 					? "Unresolved effect blocks admission"
 					: "Terminal or stopped run cannot schedule",
 			);
+		if (this.dependencies.candidate) {
+			const record = this.productRecord(id);
+			if (
+				record?.decision?.decision !== "started" ||
+				record.decision.runEpoch !== run.epoch ||
+				(record.disposition !== null && record.disposition !== "submitted")
+			)
+				throw new Error("Candidate start decision required");
+		}
 		const predecessor = this.read(() =>
 			this.storage.sql
 				.exec(
@@ -3832,6 +4801,7 @@ export class PiDurableHost {
 				.toArray(),
 		);
 		if (
+			!this.dependencies.candidate &&
 			command.sequence > 1 &&
 			(predecessor.length ||
 				!this.read(
@@ -3857,21 +4827,52 @@ export class PiDurableHost {
 			if (!prior.submission) throw new Error("Missing predecessor submission");
 			const submission = await this.piRecords.submission(
 				prior.submission as import("@earendil-works/pi-durable").SubmissionId,
-				BACKGROUND_CONTEXT,
+				context,
 			);
-			if (!submission || !["done", "unanswered"].includes(submission.status))
+			if (
+				!submission ||
+				(submission.status !== "done" &&
+					(this.dependencies.candidate || submission.status !== "unanswered"))
+			)
 				throw new Error("Supported turn boundary required");
 		}
-		let authority = await this.dependencies.authority();
-		await this.check(authority, BACKGROUND_CONTEXT, true);
+		let authority = await awaitWithContext(
+			this.dependencies.authority(),
+			context,
+		);
+		await this.check(authority, context, true);
 		if (
-			(await this.harness.inspect(BACKGROUND_CONTEXT)).tasks.some(
+			(await this.harness.inspect(context)).tasks.some(
 				(task) => task.state.kind === "blocked",
 			)
 		)
 			throw new Error("Incompatible Pi task state");
-		authority = await this.dependencies.authority();
-		await this.check(authority, BACKGROUND_CONTEXT, true);
+		authority = await awaitWithContext(this.dependencies.authority(), context);
+		await this.check(authority, context, true);
+		if (this.dependencies.candidate) {
+			context = withAbortSignal(
+				AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
+				context,
+			);
+			const configuration = await awaitWithContext(
+				this.dependencies.candidate.configuration(id),
+				context,
+			);
+			context.abortSignal?.throwIfAborted();
+			this.dependencies.configuration = configuration;
+			this.assertSchedule(command.run, run.epoch);
+			await this.initializeConfigurationInOwnerLane(context, {
+				run: command.run,
+				epoch: run.epoch,
+			});
+			authority = await awaitWithContext(
+				this.dependencies.authority(),
+				context,
+			);
+			await this.check(authority, context, true);
+			this.assertSchedule(command.run, run.epoch);
+		}
+		context.abortSignal?.throwIfAborted();
 		if (!this.active) {
 			this.active = this.transition("intent", () => {
 				this.assertSchedule(command.run, run.epoch);
@@ -3905,6 +4906,12 @@ export class PiDurableHost {
 					invocation.end_at,
 					invocation.state,
 				);
+				if (this.dependencies.candidate)
+					this.storage.sql.exec(
+						"INSERT INTO host_candidate_invocation_origins VALUES(?,?)",
+						invocation.id,
+						this.dependencies.candidate.origin ?? this.candidateOrigin,
+					);
 				this.storage.sql.exec("UPDATE host_meta SET fenced = 0");
 				this.storage.sql.exec(
 					"INSERT OR REPLACE INTO host_wakeups VALUES ('yield', ?)",
@@ -3912,7 +4919,7 @@ export class PiDurableHost {
 				);
 				return invocation;
 			});
-			await this.durable();
+			await this.durable(context);
 			this.timer = setTimeout(
 				() => {
 					void this.yield().catch((error: unknown) => {
@@ -3924,16 +4931,21 @@ export class PiDurableHost {
 			);
 		}
 		const invocation = this.active;
-		await this.repairWakeup();
-		const root = await this.harness.root(BACKGROUND_CONTEXT);
-		if ((await root.agent(BACKGROUND_CONTEXT)).model === undefined) {
-			await this.check(await this.dependencies.authority());
+		await awaitWithContext(this.repairWakeup(), context);
+		context.abortSignal?.throwIfAborted();
+		const root = await this.harness.root(context);
+		if ((await root.agent(context)).model === undefined) {
+			await this.check(
+				await awaitWithContext(this.dependencies.authority(), context),
+				context,
+			);
 			this.assertSchedule(command.run, run.epoch);
 			await this.configure(
 				{ model: { provider: "faux", modelId: "faux-1" } },
-				BACKGROUND_CONTEXT,
+				context,
 			);
 		}
+		context.abortSignal?.throwIfAborted();
 		this.transition("intent", () => {
 			if (["queued", "recovering"].includes(this.run(command.run).state))
 				this.storage.sql.exec(
@@ -3941,7 +4953,7 @@ export class PiDurableHost {
 					command.run,
 				);
 		});
-		await this.durable();
+		await this.durable(context);
 		const input = this.read(() =>
 			this.storage.sql
 				.exec<{ content: string; state: string }>(
@@ -3953,11 +4965,15 @@ export class PiDurableHost {
 		const retained = await this.piRecords.submissionByRequest(
 			ROOT_CONVERSATION_ID,
 			id,
-			BACKGROUND_CONTEXT,
+			context,
 		);
+		context.abortSignal?.throwIfAborted();
 		if (retained) {
+			if (this.dependencies.candidate)
+				await this.validateCandidateSubmission(command, retained, context);
 			if (retained.type !== "input")
 				throw new Error("Incompatible retained submission");
+			context.abortSignal?.throwIfAborted();
 			this.transition("intent", () => {
 				this.storage.sql.exec(
 					"UPDATE host_commands SET submission = ?, state = 'submitted' WHERE id = ?",
@@ -3970,7 +4986,7 @@ export class PiDurableHost {
 					id,
 				);
 			});
-			await this.durable();
+			await this.durable(context);
 		}
 		if (input.state !== "submitted" && !retained) {
 			this.transition("intent", () =>
@@ -3979,9 +4995,13 @@ export class PiDurableHost {
 					id,
 				),
 			);
-			await this.durable();
-			await this.check(await this.dependencies.authority());
+			await this.durable(context);
+			await this.check(
+				await awaitWithContext(this.dependencies.authority(), context),
+				context,
+			);
 			try {
+				context.abortSignal?.throwIfAborted();
 				this.dependencies.fault?.("before-submit");
 				this.assertSchedule(command.run, run.epoch);
 				this.assertSeals();
@@ -3998,6 +5018,8 @@ export class PiDurableHost {
 							"Storage integrity failure",
 						);
 				}
+				context.abortSignal?.throwIfAborted();
+				this.assertSchedule(command.run, run.epoch);
 				const submission = await root.submit(
 					{
 						type: "input",
@@ -4006,9 +5028,18 @@ export class PiDurableHost {
 							input.content,
 						requestId: id,
 					},
-					BACKGROUND_CONTEXT,
+					context,
 				);
 				this.dependencies.fault?.("after-submit");
+				if (this.dependencies.afterSubmission)
+					await awaitWithContext(
+						this.dependencies.afterSubmission(),
+						withAbortSignal(
+							AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
+							context,
+						),
+					);
+				context.abortSignal?.throwIfAborted();
 				this.transition("intent", () => {
 					this.storage.sql.exec(
 						"UPDATE host_inbox SET state = 'submitted', submission = ? WHERE id = ?",
@@ -4025,17 +5056,18 @@ export class PiDurableHost {
 						`inbox:${id}`,
 					);
 				});
-				await this.durable();
+				await this.durable(context);
 			} catch (error) {
 				this.denied = true;
 				throw error;
 			}
 		} else {
 			await this.check(
-				await this.dependencies.authority(),
-				BACKGROUND_CONTEXT,
+				await awaitWithContext(this.dependencies.authority(), context),
+				context,
 				true,
 			);
+			context.abortSignal?.throwIfAborted();
 			this.assertSchedule(command.run, run.epoch);
 			this.harness.resume();
 		}
@@ -4442,6 +5474,7 @@ export class PiDurableHost {
 			);
 			await this.durable();
 		}
+		if (this.dependencies.candidate?.ordinaryAllowed?.() === false) return;
 		if (
 			this.sealed ||
 			this.denied ||
@@ -4451,11 +5484,21 @@ export class PiDurableHost {
 			return;
 		}
 		if (this.active) {
+			if (
+				this.dependencies.candidate &&
+				this.dependencies.now() < this.active.yield_at
+			)
+				await this.consumeCandidate();
 			if (this.dependencies.now() >= this.active.yield_at) await this.yield();
 			else await this.repairWakeup();
 			return;
 		}
 		if (this.sealed || this.denied || this.unresolved().length) return;
+		if (this.dependencies.candidate) {
+			await this.consumeCandidate();
+			await this.repairWakeup(serviced);
+			return;
+		}
 		const input = this.read(
 			() =>
 				this.storage.sql
@@ -4520,6 +5563,55 @@ export class PiDurableHost {
 			return;
 		}
 		await this.schedule(input.id);
+	}
+	async joinInvocation() {
+		const invocation = this.active;
+		if (!invocation) return;
+		if (
+			!this.sealed &&
+			!this.denied &&
+			this.dependencies.now() < invocation.yield_at
+		) {
+			const context = withAbortSignal(
+				AbortSignal.timeout(
+					Math.max(1, invocation.yield_at - this.dependencies.now()),
+				),
+				BACKGROUND_CONTEXT,
+			);
+			try {
+				const root = await this.harness.conversation(
+					ROOT_CONVERSATION_ID,
+					context,
+				);
+				if (root) {
+					await root.waitForIdle(context);
+					await this.alarm();
+				}
+			} catch (error) {
+				if (!context.abortSignal?.aborted && !this.sealed) throw error;
+			}
+		}
+		await this.yield();
+		await this.awaitClosure();
+		if (this.dependencies.candidate && !this.unresolved().length) {
+			const next = this.repairProductCursor();
+			const row = this.storage.sql
+				.exec<{ id: string }>(
+					"SELECT id FROM host_product_commands WHERE sequence=?",
+					next,
+				)
+				.toArray()[0];
+			if (row && this.productRecord(row.id)?.disposition === null) {
+				this.transition("intent", () =>
+					this.storage.sql.exec(
+						"INSERT OR REPLACE INTO host_wakeups VALUES('product',?)",
+						this.dependencies.now(),
+					),
+				);
+				await this.durable();
+				await this.repairWakeup();
+			}
+		}
 	}
 	async awaitClosure() {
 		if (!this.closing) return false;

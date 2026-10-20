@@ -57,6 +57,108 @@ function counts(db: DatabaseSync) {
 	};
 }
 
+describe("0023 candidate product command migration", () => {
+	it("preserves retained records and enforces a lifetime singleton and exclusive start/expiry evidence", () => {
+		const db = legacyDatabase();
+		db.exec(migration);
+		const before = counts(db);
+		db.exec(
+			readFileSync(
+				new URL(
+					"../../migrations/0023_candidate_product_commands.sql",
+					import.meta.url,
+				),
+				"utf8",
+			).replaceAll("--> statement-breakpoint", ""),
+		);
+		expect(counts(db)).toEqual(before);
+		db.prepare(
+			"INSERT INTO candidate_workspace_claims VALUES(1,'candidate','executor','u','p',0)",
+		).run();
+		expect(() =>
+			db
+				.prepare(
+					"INSERT INTO candidate_workspace_claims VALUES(1,'other','other','u','p',1)",
+				)
+				.run(),
+		).toThrow(/UNIQUE/);
+		expect(() =>
+			db
+				.prepare(
+					"INSERT INTO candidate_workspace_claims VALUES(2,'other','other','u','p',1)",
+				)
+				.run(),
+		).toThrow(/CHECK/);
+		const decision =
+			"INSERT INTO candidate_command_decisions VALUES(?,?,?,?,?,?,?,?,?,?)";
+		expect(() =>
+			db
+				.prepare(decision)
+				.run(
+					"c",
+					"candidate",
+					1,
+					"executor",
+					"c",
+					1,
+					"a".repeat(64),
+					100,
+					"started",
+					100,
+				),
+		).toThrow(/CHECK/);
+		expect(() =>
+			db
+				.prepare(decision)
+				.run(
+					"c",
+					"candidate",
+					1,
+					"executor",
+					"c",
+					1,
+					"a".repeat(64),
+					100,
+					"expired",
+					99,
+				),
+		).toThrow(/CHECK/);
+		db.prepare(decision).run(
+			"c",
+			"candidate",
+			1,
+			"executor",
+			"c",
+			1,
+			"a".repeat(64),
+			100,
+			"started",
+			99,
+		);
+		expect(() =>
+			db
+				.prepare(decision)
+				.run(
+					"c",
+					"candidate",
+					1,
+					"executor",
+					"c",
+					1,
+					"a".repeat(64),
+					100,
+					"expired",
+					100,
+				),
+		).toThrow(/UNIQUE/);
+		expect(
+			db
+				.prepare("SELECT runtimeOwner FROM workspace_sessions WHERE id='s'")
+				.get(),
+		).toEqual({ runtimeOwner: "legacy" });
+	});
+});
+
 describe("0020 trusted runtime additive migration", () => {
 	it("preserves retained rows and interprets every existing session as legacy", () => {
 		const db = legacyDatabase();

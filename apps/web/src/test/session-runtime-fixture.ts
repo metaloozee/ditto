@@ -688,11 +688,15 @@ export function createSessionRuntimeFixture(options?: {
 
 	function withResolution<T>(
 		run: () => T,
-		overrides?: { trustedAdmissionEligible?: boolean },
+		overrides?: {
+			trustedAdmissionEligible?: boolean;
+			candidateCommands?: import("#/lib/session-runtime-client").CandidateProductCommandService;
+		},
 	): T {
 		return withSessionRuntimeResolution(
 			{
 				transport,
+				candidateCommands: overrides?.candidateCommands,
 				trustedAdmissionEligible: overrides?.trustedAdmissionEligible ?? true,
 				now,
 				createId: options?.createId,
@@ -781,6 +785,7 @@ export function createSessionRuntimeFixture(options?: {
 						raw?: string;
 						bytes?: Uint8Array;
 						path?: "stream" | "control";
+						candidateCommands?: import("#/lib/session-runtime-client").CandidateProductCommandService;
 						trustedAdmissionEligible?: boolean;
 					} = {},
 				) {
@@ -803,6 +808,7 @@ export function createSessionRuntimeFixture(options?: {
 							};
 						},
 						{
+							candidateCommands: request.candidateCommands,
 							trustedAdmissionEligible:
 								request.trustedAdmissionEligible ?? true,
 						},

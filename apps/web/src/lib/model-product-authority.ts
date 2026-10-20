@@ -19,11 +19,86 @@ export interface ModelClaimRpc {
 	halt(attempt: unknown): Promise<{ status: "halted" | "denied" }>;
 }
 
+export const CANDIDATE_MODEL_POLICY = Object.freeze({
+	owner: "pi_durable_v1" as const,
+	controllerNamespace: "fixture-pi-durable-execution-v1" as const,
+});
+type CandidateModelPolicy = typeof CANDIDATE_MODEL_POLICY & {
+	attemptAuthority?(descriptor: ModelTransportDescriptorV1): Promise<boolean>;
+};
+
+export type ModelPermitBounds = Readonly<{
+	windowExpiresAt: number;
+	commandDeadlineAt: number;
+	effectDeadlineAt: number;
+}>;
+
 export class ModelProductAuthority {
+	private permitBounds = new WeakMap<
+		ModelTransportDescriptorV1,
+		ModelPermitBounds
+	>();
+
+	validatedPermitBounds(
+		d: ModelTransportDescriptorV1,
+	): ModelPermitBounds | undefined {
+		return this.permitBounds.get(d);
+	}
 	constructor(
 		private db: D1Database,
 		private now: () => number = Date.now,
-	) {}
+		private candidate?: CandidateModelPolicy,
+	) {
+		if (
+			candidate &&
+			(candidate.owner !== CANDIDATE_MODEL_POLICY.owner ||
+				candidate.controllerNamespace !==
+					CANDIDATE_MODEL_POLICY.controllerNamespace)
+		)
+			throw new Error("invalid_candidate_policy");
+	}
+
+	private get owner() {
+		return this.candidate ? "pi_durable_v1" : "trusted_v1";
+	}
+
+	async preSessionReadiness(
+		userId: string,
+		projectId: string,
+		selection: ConfigurationSelectionV1 = { model: "faux-1", thinking: "off" },
+	) {
+		if (!this.candidate) return null;
+		const row = await this.db
+			.prepare(`SELECT e.snapshot,e.generation,e.revision FROM projects p
+JOIN user u ON u.id=p.userId JOIN codex_connections k ON k.user_id=u.id
+JOIN codex_fixture_capabilities e ON e.userId=u.id
+WHERE p.id=? AND p.userId=? AND p.status='ready'
+AND k.revoked=0 AND k.status='connected' AND e.generation=k.generation
+AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE f.targetKind='project' AND f.targetId=p.id)`)
+			.bind(projectId, userId)
+			.first<{ snapshot: string; generation: number; revision: number }>();
+		if (!row) return null;
+		try {
+			const account = parseSyntheticAccountV1(row.snapshot);
+			if (
+				account.status !== "available" ||
+				account.generation !== row.generation ||
+				account.revision !== row.revision ||
+				!account.models.some(
+					(m) =>
+						m.id === selection.model && m.thinking.includes(selection.thinking),
+				)
+			)
+				return null;
+			return {
+				generation: account.generation,
+				revision: account.revision,
+				snapshot: row.snapshot,
+			};
+		} catch {
+			return null;
+		}
+	}
 
 	async ownedConfiguration(
 		authenticated: ModelSubjectV1,
@@ -31,6 +106,11 @@ export class ModelProductAuthority {
 		selection?: ConfigurationSelectionV1,
 	): Promise<boolean> {
 		const s = parseModelSubjectV1(authenticated);
+		if (
+			this.candidate &&
+			s.controllerNamespace !== this.candidate.controllerNamespace
+		)
+			return false;
 		if (
 			query.projectId !== s.projectId ||
 			query.workspaceSessionId !== s.workspaceSessionId ||
@@ -44,8 +124,9 @@ JOIN sandbox_identities i ON i.id=s.sandboxIdentityId
 LEFT JOIN codex_connections k ON k.user_id=u.id
 LEFT JOIN codex_fixture_capabilities e ON e.userId=u.id
 WHERE s.id=? AND s.userId=? AND s.projectId=? AND p.userId=u.id
-AND s.status='active' AND p.status='ready' AND s.runtimeOwner='trusted_v1' AND s.runtimeOwnerVersion=?
+AND s.status='active' AND p.status='ready' AND s.runtimeOwner='${this.owner}' AND s.runtimeOwnerVersion=?
 AND s.runtimeFailureReasonCode IS NULL
+${this.candidate ? "AND s.runtimeProtocolVersion=2 AND s.brainIdentityId IS NULL AND EXISTS(SELECT 1 FROM candidate_workspace_claims q WHERE q.sessionId=s.id AND q.identityId=i.id AND q.userId=s.userId AND q.projectId=s.projectId)" : ""}
 AND i.id=? AND i.kind='workspace_session' AND i.userId=u.id AND i.projectId=p.id AND i.workspaceSessionId=s.id
 AND i.controllerClass='Sandbox' AND i.controllerNamespace=? AND i.incarnationId=?
 AND i.lifecycleGeneration=? AND i.state='ready' AND i.retiredAt IS NULL
@@ -92,6 +173,18 @@ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind
 	) {
 		const s = d.subject,
 			a = d.attempt;
+		if (
+			this.candidate &&
+			!(this.candidate.attemptAuthority
+				? await this.candidate.attemptAuthority(d)
+				: a.generation === 1)
+		)
+			return null;
+		if (
+			this.candidate &&
+			s.controllerNamespace !== this.candidate.controllerNamespace
+		)
+			return null;
 		if (this.now() >= a.deadlineAt) return null;
 		const row = await this.db
 			.prepare(
@@ -122,20 +215,21 @@ JOIN sandbox_identities i ON i.id=s.sandboxIdentityId
 JOIN codex_connections k ON k.user_id=u.id
 JOIN codex_fixture_capabilities e ON e.userId=u.id
 JOIN runtime_command_memberships m ON m.commandId=c.id
-WHERE c.id=? AND c.userId=u.id AND c.projectId=p.id AND c.targetId=s.id AND c.targetKind='workspace_session'
-AND c.kind IN ('prompt','follow_up') AND c.assistantMessageId=? AND c.deadlineAt>?
-AND m.sessionId=s.id AND m.runId=? AND m.assistantMessageId=c.assistantMessageId
+WHERE (c.id=? AND c.userId=u.id AND c.projectId=p.id AND c.targetId=s.id AND c.targetKind='workspace_session'
+AND c.kind IN ('prompt','follow_up') AND c.assistantMessageId=?) AND (${this.candidate ? `c.payloadVersion=2 AND EXISTS(SELECT 1 FROM candidate_command_decisions q WHERE q.commandId=c.id AND q.sessionId=s.id AND q.ownerVersion=s.runtimeOwnerVersion AND q.runId=m.runId AND q.runEpoch=m.runEpoch AND q.runEpoch=${a.epoch} AND q.payloadDigest=c.payloadDigest AND q.identityId=i.id AND q.decision='started' AND q.queueDeadlineAt=c.deadlineAt AND q.decidedAt<c.deadlineAt AND q.decidedAt<=?)` : "c.deadlineAt>?"})
+AND (m.sessionId=s.id AND m.runId=? AND m.assistantMessageId=c.assistantMessageId
 AND s.id=? AND s.userId=? AND s.projectId=? AND p.userId=u.id
-AND s.status='active' AND p.status='ready' AND s.runtimeOwner='trusted_v1' AND s.runtimeOwnerVersion=?
+AND s.status='active' AND p.status='ready' AND s.runtimeOwner='${this.owner}' AND s.runtimeOwnerVersion=?
 AND s.runtimeFailureReasonCode IS NULL
-AND i.id=? AND i.kind='workspace_session' AND i.userId=u.id AND i.projectId=p.id AND i.workspaceSessionId=s.id
+${this.candidate ? "AND s.runtimeProtocolVersion=2 AND s.brainIdentityId IS NULL AND m.userMessageId=c.userMessageId AND EXISTS(SELECT 1 FROM candidate_workspace_claims q WHERE q.sessionId=s.id AND q.identityId=i.id AND q.userId=s.userId AND q.projectId=s.projectId)" : ""})
+AND (i.id=? AND i.kind='workspace_session' AND i.userId=u.id AND i.projectId=p.id AND i.workspaceSessionId=s.id
 AND i.controllerClass='Sandbox' AND i.controllerNamespace=? AND i.incarnationId=?
 AND i.lifecycleGeneration=? AND i.state='ready' AND i.retiredAt IS NULL
 AND k.generation=? AND k.revoked=0 AND k.status='connected'
-AND e.generation=k.generation AND e.revision=? AND e.snapshot=?
-AND ?>?
+AND e.generation=k.generation AND e.revision=? AND e.snapshot=?)
+AND (?>?
 AND NOT EXISTS(SELECT 1 FROM runtime_retired_identity_fences f WHERE f.identityId=i.id)
-AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind='project' AND f.targetId=p.id) OR (f.targetKind='workspace_session' AND f.targetId=s.id)))`;
+AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind='project' AND f.targetId=p.id) OR (f.targetKind='workspace_session' AND f.targetId=s.id))))`;
 		const params = [
 			a.commandId,
 			a.assistantId,
@@ -178,9 +272,13 @@ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind
 		if (!f) return false;
 		const row = await this.db
 			.prepare(
-				`SELECT deadlineAt FROM session_commands WHERE id=? AND ${f.sql}`,
+				`SELECT ${this.candidate ? "?" : "deadlineAt"} AS deadlineAt FROM session_commands WHERE id=? AND ${f.sql}`,
 			)
-			.bind(d.attempt.commandId, ...f.params)
+			.bind(
+				...(this.candidate ? [d.attempt.deadlineAt] : []),
+				d.attempt.commandId,
+				...f.params,
+			)
 			.first<{ deadlineAt: number }>();
 		return !!row && this.now() < Math.min(row.deadlineAt, d.attempt.deadlineAt);
 	}
@@ -235,9 +333,14 @@ AND NOT EXISTS(SELECT 1 FROM model_request_admissions r JOIN privileged_operatio
 			.run();
 		const row = await this.db
 			.prepare(
-				`SELECT expiresAt,(SELECT deadlineAt FROM session_commands WHERE id=?) AS deadlineAt FROM privileged_operations WHERE id=? AND openSlot='open' AND closedAt IS NULL AND expiresAt>? AND ${f.sql}`,
+				`SELECT expiresAt,${this.candidate ? "?" : "(SELECT deadlineAt FROM session_commands WHERE id=?)"} AS deadlineAt FROM privileged_operations WHERE id=? AND openSlot='open' AND closedAt IS NULL AND expiresAt>? AND ${f.sql}`,
 			)
-			.bind(a.commandId, id, this.now(), ...f.params)
+			.bind(
+				this.candidate ? a.deadlineAt : a.commandId,
+				id,
+				this.now(),
+				...f.params,
+			)
 			.first<{ expiresAt: number; deadlineAt: number }>();
 		return row &&
 			this.now() < Math.min(row.expiresAt, row.deadlineAt, a.deadlineAt)
@@ -303,15 +406,16 @@ AND (?!='git_metadata' OR NOT EXISTS(SELECT 1 FROM model_request_admissions r JO
 		d: ModelTransportDescriptorV1,
 		body: SyntheticModelBodyV1,
 	): Promise<boolean> {
+		this.permitBounds.delete(d);
 		const id = await this.windowId(d),
 			f = await this.facts(d, body);
 		if (!f) return false;
 		const row = await this.db
-			.prepare(`SELECT w.expiresAt,(SELECT deadlineAt FROM session_commands WHERE id=?) AS deadlineAt FROM privileged_operations w JOIN model_request_admissions r ON r.windowId=w.id
+			.prepare(`SELECT w.expiresAt,${this.candidate ? "?" : "(SELECT deadlineAt FROM session_commands WHERE id=?)"} AS deadlineAt FROM privileged_operations w JOIN model_request_admissions r ON r.windowId=w.id
 WHERE w.id=? AND r.effectId=? AND r.requestDigest=? AND r.state='reserved'
 AND w.openSlot='open' AND w.closedAt IS NULL AND w.expiresAt>? AND w.contractDenials<3 AND ${f.sql}`)
 			.bind(
-				d.attempt.commandId,
+				this.candidate ? d.attempt.deadlineAt : d.attempt.commandId,
 				id,
 				d.attempt.effectId,
 				d.requestDigest,
@@ -320,10 +424,21 @@ AND w.openSlot='open' AND w.closedAt IS NULL AND w.expiresAt>? AND w.contractDen
 			)
 			.first<{ expiresAt: number; deadlineAt: number }>();
 		// A query may finish after the deadlines it tested at statement submission.
-		return (
-			!!row &&
-			this.now() < Math.min(row.expiresAt, row.deadlineAt, d.attempt.deadlineAt)
+		if (
+			!row ||
+			this.now() >=
+				Math.min(row.expiresAt, row.deadlineAt, d.attempt.deadlineAt)
+		)
+			return false;
+		this.permitBounds.set(
+			d,
+			Object.freeze({
+				windowExpiresAt: row.expiresAt,
+				commandDeadlineAt: row.deadlineAt,
+				effectDeadlineAt: d.attempt.deadlineAt,
+			}),
 		);
+		return true;
 	}
 
 	async denial(d: ModelTransportDescriptorV1): Promise<boolean> {
@@ -340,7 +455,7 @@ WHERE id=? AND openSlot='open' AND closedAt IS NULL AND expiresAt>? RETURNING co
 				.bind(now, id, now),
 			this.db
 				.prepare(`UPDATE workspace_sessions SET runtimeFailureReasonCode='model_contract_review'
-WHERE id=? AND runtimeOwner='trusted_v1' AND runtimeOwnerVersion=?
+WHERE id=? AND runtimeOwner='${this.owner}' AND runtimeOwnerVersion=?
 AND EXISTS(SELECT 1 FROM privileged_operations WHERE id=? AND contractDenials=3 AND closeReason='contract_denials')`)
 				.bind(d.subject.workspaceSessionId, d.subject.runtimeOwnerVersion, id),
 		]);

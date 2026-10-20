@@ -3,6 +3,39 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const proxyToSandboxMock = vi.hoisted(() => vi.fn());
 const handlerFetchMock = vi.hoisted(() => vi.fn());
 const handleOutboundMock = vi.hoisted(() => vi.fn());
+const legacyDrainMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const scheduledDb = vi.hoisted(() => ({ current: {} as unknown }));
+const legacySandboxStateMock = vi.hoisted(() => vi.fn());
+const lowerMaintenanceMock = vi.hoisted(() =>
+	vi.fn().mockResolvedValue(undefined),
+);
+vi.mock("#/db", () => ({ createDb: () => scheduledDb.current }));
+vi.mock("#/lib/sandbox-bootstrap", () => ({
+	getProjectSandboxState: legacySandboxStateMock,
+	getProjectSandbox: vi.fn(),
+	configureDittoGitIdentity: vi.fn(),
+}));
+vi.mock("#/lib/workspace-recovery", () => ({
+	enqueueDuePreviewCheckpoints: lowerMaintenanceMock,
+	hasRecoveryArchives: vi.fn(),
+	restore: vi.fn(),
+}));
+vi.mock("#/lib/sandbox-archive", () => ({
+	retryArchiveCleanup: lowerMaintenanceMock,
+	restoreArchive: vi.fn(),
+}));
+vi.mock("#/lib/session-command-delivery", () => ({
+	deliverSessionCommands: lowerMaintenanceMock,
+}));
+vi.mock("#/lib/workspace-runtime-capacity", async (importOriginal) => ({
+	...(await importOriginal<
+		typeof import("#/lib/workspace-runtime-capacity")
+	>()),
+	drainWorkspaceRuntimeQueue: lowerMaintenanceMock,
+}));
+vi.mock("#/lib/workspace-runtime", () => ({
+	drainWorkspaceRuntime: legacyDrainMock,
+}));
 
 const outboundHandlersRegistry = vi.hoisted(() => {
 	const registry = new Map<string, Record<string, unknown>>();
@@ -156,6 +189,110 @@ describe("server fetch routing", () => {
 
 		expect(await response.text()).toBe("app");
 		expect(handlerFetchMock).toHaveBeenCalledOnce();
+	});
+});
+
+describe("candidate entrypoint composition", () => {
+	it("resolves only the deployment binding during fetch and independently during scheduled", async () => {
+		const { resolveCandidateProductCommands } = await import(
+			"#/lib/session-runtime-client"
+		);
+		const candidate = {
+			admitOwned: vi.fn(),
+			drain: vi.fn().mockResolvedValue(undefined),
+		};
+		const fixtureEnv = {
+			...env,
+			PI_DURABLE_PRODUCT_COMMANDS: candidate,
+		} as Env;
+		proxyToSandboxMock.mockResolvedValue(null);
+		handlerFetchMock.mockImplementation(
+			async () =>
+				new Response(
+					resolveCandidateProductCommands() === candidate
+						? "candidate"
+						: "unavailable",
+				),
+		);
+		expect(
+			await (
+				await server.fetch(new Request("http://localhost/"), fixtureEnv)
+			).text(),
+		).toBe("candidate");
+		expect(resolveCandidateProductCommands()).toBeUndefined();
+		expect(
+			await (await server.fetch(new Request("http://localhost/"), env)).text(),
+		).toBe("unavailable");
+		const waitUntil = vi.fn();
+		await server.scheduled({} as ScheduledController, fixtureEnv, {
+			waitUntil,
+		} as unknown as ExecutionContext);
+		expect(candidate.drain).toHaveBeenCalledOnce();
+		expect(waitUntil).toHaveBeenCalledWith(
+			candidate.drain.mock.results[0].value,
+		);
+		expect(legacyDrainMock).toHaveBeenCalled();
+	});
+	it("does not contact the legacy Sandbox namespace for a ready candidate identity during real scheduled maintenance", async () => {
+		const { sandboxIdentities, workspaceSessions } = await import(
+			"#/db/schema"
+		);
+		const actual = await vi.importActual<
+			typeof import("#/lib/workspace-runtime")
+		>("#/lib/workspace-runtime");
+		const identity = {
+			workspaceSessionId: "candidate-session",
+			sandboxId: "synthetic-executor",
+		};
+		const rows = (table: unknown) =>
+			table === sandboxIdentities
+				? [identity]
+				: table === workspaceSessions
+					? [
+							{
+								id: identity.workspaceSessionId,
+								runtimeOwner: "pi_durable_v1",
+								previewStartedAt: null,
+							},
+						]
+					: [];
+		scheduledDb.current = {
+			select: () => ({
+				from: (table: unknown) => ({
+					where: () => {
+						const result = rows(table);
+						return Object.assign(Promise.resolve(result), {
+							limit: async () => result,
+						});
+					},
+				}),
+			}),
+		};
+		legacySandboxStateMock.mockClear();
+		lowerMaintenanceMock.mockClear();
+		legacyDrainMock.mockImplementationOnce(actual.drainWorkspaceRuntime);
+		const joined: Promise<unknown>[] = [];
+		await server.scheduled({} as ScheduledController, env, {
+			waitUntil: (promise: Promise<unknown>) => joined.push(promise),
+		} as unknown as ExecutionContext);
+		await Promise.all(joined);
+		expect(legacySandboxStateMock).not.toHaveBeenCalled();
+		expect(lowerMaintenanceMock).toHaveBeenCalledTimes(4);
+		scheduledDb.current = {};
+	});
+	it("joins candidate scheduled delivery rather than relying only on waitUntil", async () => {
+		const error = new Error("candidate drain failed");
+		const candidate = {
+			admitOwned: vi.fn(),
+			drain: vi.fn().mockRejectedValue(error),
+		};
+		await expect(
+			server.scheduled(
+				{} as ScheduledController,
+				{ ...env, PI_DURABLE_PRODUCT_COMMANDS: candidate } as Env,
+				{ waitUntil: vi.fn() } as unknown as ExecutionContext,
+			),
+		).rejects.toBe(error);
 	});
 });
 

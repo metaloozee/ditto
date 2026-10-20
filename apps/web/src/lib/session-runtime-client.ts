@@ -190,7 +190,24 @@ export async function withSessionRuntimeCallTimeout<T>(
 	}
 }
 
+export interface CandidateProductCommandService {
+	admitOwned(
+		userId: string,
+		body: unknown,
+	): Promise<
+		import("../../../../packages/runtime-contracts/src/product-command.js").ReceiptV2
+	>;
+	drain(): Promise<void>;
+}
+
+export function resolveCandidateProductCommands():
+	| CandidateProductCommandService
+	| undefined {
+	return resolution.getStore()?.candidateCommands;
+}
+
 type SessionRuntimeResolution = {
+	candidateCommands?: CandidateProductCommandService;
 	transport?: SessionRuntime;
 	trustedAdmissionEligible?: boolean;
 	now?: () => number;

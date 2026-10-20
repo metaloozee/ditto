@@ -46,6 +46,7 @@ export async function readCurrentTrustedAuthority(
 		.limit(1);
 	if (
 		!session ||
+		session.runtimeOwner === "pi_durable_v1" ||
 		session.userId !== input.userId ||
 		session.projectId !== input.projectId
 	) {

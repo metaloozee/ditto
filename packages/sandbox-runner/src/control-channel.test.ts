@@ -26,7 +26,9 @@ const followUp = (overrides: Partial<ControlRequest> = {}) =>
 
 describe("runner control channel", () => {
 	it("round-trips a follow-up over a Unix socket", async () => {
+		const socketPath = path.join(os.tmpdir(), `rt-${process.pid}.sock`);
 		const server = await startControlServer({
+			socketPath,
 			runId: "run-1",
 			sessionId: "session-1",
 			handle: async (request) => ({
@@ -40,7 +42,9 @@ describe("runner control channel", () => {
 			}),
 		});
 		try {
-			await expect(sendControlRequest(followUp())).resolves.toMatchObject({
+			await expect(
+				sendControlRequest(followUp(), { socketPath }),
+			).resolves.toMatchObject({
 				accepted: true,
 				action: "follow_up",
 				requestId: "req-1",
@@ -51,8 +55,10 @@ describe("runner control channel", () => {
 	});
 
 	it("serializes concurrent commands in arrival order", async () => {
+		const socketPath = path.join(os.tmpdir(), `seq-${process.pid}.sock`);
 		const order: string[] = [];
 		const server = await startControlServer({
+			socketPath,
 			runId: "run-1",
 			sessionId: "session-1",
 			handle: async (request) => {
@@ -72,8 +78,8 @@ describe("runner control channel", () => {
 		});
 		try {
 			await Promise.all([
-				sendControlRequest(followUp({ requestId: "first" })),
-				sendControlRequest(followUp({ requestId: "second" })),
+				sendControlRequest(followUp({ requestId: "first" }), { socketPath }),
+				sendControlRequest(followUp({ requestId: "second" }), { socketPath }),
 			]);
 			expect(order).toEqual([
 				"start:first",

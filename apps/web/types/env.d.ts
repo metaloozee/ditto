@@ -3,7 +3,9 @@
 
 import type { website } from "../../../alchemy.run.ts"
 
-export type CloudflareEnv = typeof website.Env
+export type CloudflareEnv = typeof website.Env & {
+	PI_DURABLE_PRODUCT_COMMANDS?: import("../src/lib/session-runtime-client").CandidateProductCommandService
+}
 
 declare global {
 	type Env = CloudflareEnv

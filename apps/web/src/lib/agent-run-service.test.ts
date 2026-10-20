@@ -649,7 +649,11 @@ describe("prepareAgentRun", () => {
 		}
 	});
 
-	it("rejects a non-legacy session before message inserts", async () => {
+	it.each([
+		"migrating",
+		"trusted_v1",
+		"pi_durable_v1",
+	] as const)("rejects a %s session before message inserts", async (runtimeOwner) => {
 		const { db, batch, insert } = createMockDb();
 		const result = await prepareAgentRun({
 			db,
@@ -665,7 +669,7 @@ describe("prepareAgentRun", () => {
 					kind: "existing",
 					session: {
 						...activeSession,
-						runtimeOwner: "migrating",
+						runtimeOwner,
 						runtimeOwnerVersion: 2,
 					},
 				}),

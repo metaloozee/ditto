@@ -1,4 +1,12 @@
-import { defineWorkersConfig } from "@cloudflare/vitest-pool-workers/config";
+import { defineWorkersConfig, type WorkersUserConfig } from "@cloudflare/vitest-pool-workers/config";
+import { createRequire } from "node:module";
+type Pool = NonNullable<NonNullable<WorkersUserConfig<{}>["test"]>["poolOptions"]>;
+type Worker = Exclude<NonNullable<Pool["workers"]>, (...args: never[]) => unknown>;
+type CurrentWorker = Extract<NonNullable<NonNullable<Worker["miniflare"]>["serviceBindings"]>[string], symbol>;
+const require = createRequire(import.meta.url);
+const miniflare: unknown = require(require.resolve("miniflare", { paths: [require.resolve("@cloudflare/vitest-pool-workers/config")] }));
+if (!miniflare || typeof miniflare !== "object" || !("kCurrentWorker" in miniflare) || typeof miniflare.kCurrentWorker !== "symbol") throw new Error("Missing installed Miniflare loopback support");
+const currentWorker = miniflare.kCurrentWorker as CurrentWorker;
 const runtimeImporter = new URL("../runtime/src/pi-durable-models.ts", import.meta.url).pathname;
 
 export default defineWorkersConfig({
@@ -17,11 +25,16 @@ export default defineWorkersConfig({
 					compatibilityDate: "2026-03-10",
 					compatibilityFlags: ["nodejs_compat"],
 					d1Databases: ["DB"],
+					serviceBindings: { CandidateProduct: { name: currentWorker, entrypoint: "CandidateFixtureProduct" } },
 					durableObjects: {
 						CodexCredential: { className: "FixtureCredential", useSQLite: true },
 						PI_MODEL_HOST: { className: "PiDurableHostFixture", useSQLite: true },
+						CandidateSessions: { className: "CandidateFixtureSession", useSQLite: true },
+						CandidateCredential: { className: "CandidateFixtureCredential", useSQLite: true },
 					},
 					bindings: {
+						CANDIDATE_DISPOSABLE: "008-synthetic",
+						CANDIDATE_RUNTIME_KEYS: JSON.stringify({ currentVersion: "fixture-v1", keys: { "fixture-v1": "01".repeat(32) } }),
 						CODEX_CREDENTIAL_CURRENT_KEY_VERSION: "fixture-v1",
 						CODEX_CREDENTIAL_KEYS: JSON.stringify({ "fixture-v1": "01".repeat(32) }),
 					},

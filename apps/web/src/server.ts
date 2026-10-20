@@ -6,6 +6,7 @@ import {
 } from "@cloudflare/sandbox";
 import handler from "@tanstack/react-start/server-entry";
 import { handleOutbound } from "#/lib/sandbox-egress-broker";
+import { withSessionRuntimeResolution } from "#/lib/session-runtime-client";
 
 export { CodexCredential } from "#/lib/codex-credential-do";
 export { ProductEntrypoint } from "#/lib/session-runtime-product";
@@ -155,7 +156,10 @@ export default {
 			return new Response("Not Found", { status: 404 });
 		}
 
-		return handler.fetch(request);
+		return withSessionRuntimeResolution(
+			{ candidateCommands: env.PI_DURABLE_PRODUCT_COMMANDS },
+			() => handler.fetch(request),
+		);
 	},
 
 	async scheduled(
@@ -165,6 +169,11 @@ export default {
 	): Promise<void> {
 		const { createDb } = await import("#/db");
 		const { drainWorkspaceRuntime } = await import("#/lib/workspace-runtime");
+		const candidate = env.PI_DURABLE_PRODUCT_COMMANDS?.drain();
+		if (candidate) {
+			ctx.waitUntil(candidate);
+			await candidate;
+		}
 		const drain = drainWorkspaceRuntime({
 			env,
 			db: createDb(env),

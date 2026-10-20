@@ -8,13 +8,16 @@ import {
 import { createAuth } from "#/lib/auth";
 import {
 	classifyAgentRequestBody,
+	handleCandidateCommandRequest,
 	handleSessionCommandRequest,
+	isCandidateCommandBody,
 	readBoundedAgentRequestText,
 	SessionCommandError,
 } from "#/lib/session-command";
 import {
 	createSessionRuntimeClient,
 	isTrustedAdmissionEligible,
+	resolveCandidateProductCommands,
 	resolveSessionAdmissionHooks,
 	resolveSessionRuntimeTransport,
 } from "#/lib/session-runtime-client";
@@ -58,6 +61,14 @@ export const Route = createFileRoute("/api/agent/control")({
 
 				const db = createDb(env);
 				if (classified.mode === "versioned") {
+					if (isCandidateCommandBody(classified.decoded)) {
+						const result = await handleCandidateCommandRequest({
+							service: resolveCandidateProductCommands(),
+							authenticatedUserId: session.user.id,
+							body: raw,
+						});
+						return jsonResponse(result.body, result.status);
+					}
 					if (!isTrustedAdmissionEligible()) {
 						return jsonResponse(
 							{

@@ -147,7 +147,7 @@ export const workspaceSessions = sqliteTable(
 		}),
 		runtimeFailureReasonCode: text("runtimeFailureReasonCode"),
 		runtimeOwner: text("runtimeOwner", {
-			enum: ["legacy", "migrating", "trusted_v1", "blocked"],
+			enum: ["legacy", "migrating", "trusted_v1", "pi_durable_v1", "blocked"],
 		})
 			.notNull()
 			.default("legacy"),
@@ -876,6 +876,45 @@ export const runtimeCommandMemberships = sqliteTable(
 		assistantMessageId: text("assistantMessageId"),
 		runEpoch: integer("runEpoch"),
 	},
+);
+
+export const candidateWorkspaceClaims = sqliteTable(
+	"candidate_workspace_claims",
+	{
+		id: integer("id").primaryKey().notNull(),
+		sessionId: text("sessionId").notNull().unique(),
+		identityId: text("identityId").notNull().unique(),
+		userId: text("userId").notNull(),
+		projectId: text("projectId").notNull(),
+		createdAt: integer("createdAt").notNull(),
+	},
+	(table) => [check("candidate_workspace_singleton", sql`${table.id}=1`)],
+);
+
+export const candidateCommandDecisions = sqliteTable(
+	"candidate_command_decisions",
+	{
+		commandId: text("commandId").primaryKey().notNull(),
+		sessionId: text("sessionId").notNull(),
+		ownerVersion: integer("ownerVersion").notNull(),
+		identityId: text("identityId").notNull(),
+		runId: text("runId").notNull(),
+		runEpoch: integer("runEpoch").notNull(),
+		payloadDigest: text("payloadDigest").notNull(),
+		queueDeadlineAt: integer("queueDeadlineAt").notNull(),
+		decision: text("decision", { enum: ["started", "expired"] }).notNull(),
+		decidedAt: integer("decidedAt").notNull(),
+	},
+	(table) => [
+		check(
+			"candidate_decision_owner",
+			sql`${table.ownerVersion}=1 AND ${table.runEpoch}>0 AND length(${table.payloadDigest})=64`,
+		),
+		check(
+			"candidate_decision_time",
+			sql`(${table.decision}='started' AND ${table.decidedAt}<${table.queueDeadlineAt}) OR (${table.decision}='expired' AND ${table.decidedAt}>=${table.queueDeadlineAt})`,
+		),
+	],
 );
 
 export const runtimeMigrations = sqliteTable("runtime_migrations", {

@@ -6,6 +6,7 @@ export const RUNTIME_OWNERS = [
 	"legacy",
 	"migrating",
 	"trusted_v1",
+	"pi_durable_v1",
 	"blocked",
 ] as const;
 export type RuntimeOwner = (typeof RUNTIME_OWNERS)[number];
@@ -29,7 +30,7 @@ export class RuntimeOwnershipError extends Error {
 
 export function assertRuntimeOwner(options: {
 	session: RuntimeOwnedSession;
-	expectedOwner: "legacy" | "trusted_v1";
+	expectedOwner: "legacy" | "trusted_v1" | "pi_durable_v1";
 	ownerVersion: number;
 }): void {
 	if (
@@ -47,6 +48,7 @@ const transitions: Record<RuntimeOwner, readonly RuntimeOwner[]> = {
 	legacy: ["migrating"],
 	migrating: ["legacy", "trusted_v1", "blocked"],
 	trusted_v1: ["migrating", "blocked"],
+	pi_durable_v1: [],
 	blocked: ["migrating"],
 };
 

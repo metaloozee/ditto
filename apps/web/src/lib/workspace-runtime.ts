@@ -1194,6 +1194,18 @@ async function reclaimSleepingCapacity(options: {
 		if (!identity.workspaceSessionId) {
 			continue;
 		}
+		const [session] = await options.db
+			.select({
+				id: workspaceSessions.id,
+				previewStartedAt: workspaceSessions.previewStartedAt,
+				runtimeOwner: workspaceSessions.runtimeOwner,
+			})
+			.from(workspaceSessions)
+			.where(eq(workspaceSessions.id, identity.workspaceSessionId))
+			.limit(1);
+		if (session?.runtimeOwner !== "legacy") {
+			continue;
+		}
 		let liveStatus: string | null = null;
 		try {
 			const live = await getProjectSandboxState(
@@ -1205,18 +1217,6 @@ async function reclaimSleepingCapacity(options: {
 			liveStatus = "stopped";
 		}
 		if (liveStatus && INACTIVE_SANDBOX_STATUSES.has(liveStatus)) {
-			const [session] = await options.db
-				.select({
-					id: workspaceSessions.id,
-					previewStartedAt: workspaceSessions.previewStartedAt,
-					runtimeOwner: workspaceSessions.runtimeOwner,
-				})
-				.from(workspaceSessions)
-				.where(eq(workspaceSessions.id, identity.workspaceSessionId))
-				.limit(1);
-			if (session?.runtimeOwner !== "legacy") {
-				continue;
-			}
 			const [recovery] = await options.db
 				.select({
 					pendingGeneration: workspaceSessionRecoveries.pendingGeneration,

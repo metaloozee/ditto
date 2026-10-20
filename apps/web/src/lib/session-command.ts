@@ -1361,6 +1361,45 @@ export async function admitSessionCommand(options: {
 	);
 }
 
+export async function handleCandidateCommandRequest(options: {
+	service:
+		| import("./session-runtime-client").CandidateProductCommandService
+		| undefined;
+	authenticatedUserId: string;
+	body: unknown;
+}): Promise<{ status: number; body: unknown }> {
+	if (!options.service)
+		return { status: 400, body: { code: "candidate_admission_ineligible" } };
+	try {
+		return {
+			status: 202,
+			body: await options.service.admitOwned(
+				options.authenticatedUserId,
+				options.body,
+			),
+		};
+	} catch (error) {
+		const { CandidateCommandError } = await import(
+			"./session-command-candidate"
+		);
+		if (error instanceof CandidateCommandError)
+			return { status: error.status, body: { code: error.code } };
+		if (error instanceof ContractParseError)
+			return { status: 400, body: { code: error.code } };
+		return { status: 503, body: { code: "runtime_unavailable" } };
+	}
+}
+
+export function isCandidateCommandBody(body: unknown): boolean {
+	return (
+		typeof body === "object" &&
+		body !== null &&
+		!Array.isArray(body) &&
+		"version" in body &&
+		body.version === 2
+	);
+}
+
 export async function handleSessionCommandRequest(options: {
 	db: Db;
 	runtime: SessionRuntime;

@@ -19,6 +19,7 @@ import {
 } from "./codex-request-contract";
 import {
 	type ModelClaimRpc,
+	type ModelPermitBounds,
 	ModelProductAuthority,
 } from "./model-product-authority";
 
@@ -38,6 +39,12 @@ export interface CodexCredentialEnv {
 	CODEX_CREDENTIAL_CURRENT_KEY_VERSION: string;
 	CODEX_CREDENTIAL_KEYS: string;
 }
+export type CandidateModelPreparation = Readonly<{
+	scope: string;
+	generation: number;
+	binding: string;
+}>;
+
 interface State extends Record<string, SqlStorageValue> {
 	owner: string;
 	generation: number;
@@ -197,21 +204,41 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 	protected async modelPhase(
 		_phase: "authority" | "credentials" | "claim",
 	): Promise<void> {}
+	protected modelProductAuthority(): ModelProductAuthority {
+		return new ModelProductAuthority(this.env.DB);
+	}
+
+	protected prepareModelDispatch(
+		_descriptor: ModelTransportDescriptorV1,
+	): Promise<CandidateModelPreparation> | null {
+		return null;
+	}
+	protected finalModelDispatch(
+		preparation: CandidateModelPreparation | null,
+		_descriptor: ModelTransportDescriptorV1,
+		_bounds: ModelPermitBounds | undefined,
+	): boolean {
+		return preparation === null;
+	}
 
 	async requestModel(
 		input: unknown,
 		capability: ModelClaimRpc,
 	): Promise<SyntheticModelOutcomeV1> {
 		if (!this.requestAvailable()) return { version: 1, status: "unavailable" };
-		const policy = new ModelProductAuthority(this.env.DB);
+		const policy = this.modelProductAuthority();
 		const overall = AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs);
 		let descriptor: ModelTransportDescriptorV1;
+		let preparation: CandidateModelPreparation | null = null;
 		try {
 			descriptor = parseModelTransportDescriptorV1(
 				await awaitSynthetic(capability.describe(), overall),
 			);
 			if (!this.#owned(descriptor.subject.userId))
 				return { version: 1, status: "denied" };
+			const preparing = this.prepareModelDispatch(descriptor);
+			if (preparing !== null)
+				preparation = Object.freeze(await awaitSynthetic(preparing, overall));
 		} catch {
 			return { version: 1, status: "denied" };
 		}
@@ -305,6 +332,21 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 			if (!(await wait(policy.permit(descriptor, body))) || !this.#same(state))
 				throw new Error("authority_changed");
 			signal.throwIfAborted();
+			const bounds = policy.validatedPermitBounds(descriptor);
+			if (
+				!this.#same(state) ||
+				(preparation !== null &&
+					(!bounds ||
+						Date.now() >=
+							Math.min(
+								bounds.windowExpiresAt,
+								bounds.commandDeadlineAt,
+								bounds.effectDeadlineAt,
+								descriptor.attempt.deadlineAt,
+							))) ||
+				!this.finalModelDispatch(preparation, descriptor, bounds)
+			)
+				throw new Error("dispatch_fenced");
 			dispatched = true;
 			fetching = fetch(request.url, {
 				method: "POST",
