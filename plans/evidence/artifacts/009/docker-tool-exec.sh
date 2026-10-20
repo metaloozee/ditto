@@ -34,11 +34,24 @@ run read '{"path":"src/app.ts"}' stale-generation 0 || true
 inside "ditto-exec init session 2"
 run read '{"path":"src/app.ts"}' old-generation 1
 echo "init older generation:"; inside "ditto-exec init session 1" || echo "refused (exit $?)"
-echo "SIGKILL executor during shell:"
-(run bash '{"command":"sleep 20; echo late >> killed.txt"}' killed-shell 2 || true) &
-sleep 2
-inside "pkill -9 -f '[d]itto-exec run'; pkill -9 -f '[s]leep 20'" || true
+echo "file tools cannot reach executor state:"
+run write '{"path":"/var/lib/ditto-exec/executor.json","content":"{}"}' forge-state 2
+inside "cat /var/lib/ditto-exec/executor.json; echo"
+echo "container environment stays readable through /proc (limit, not a guarantee):"
+run bash '{"command":"grep -c DITTO_SYNTHETIC_SECRET /proc/1/environ || true"}' proc-env 2
+echo "overlapping requests for one shell operation:"
+printf '%s' "{\"version\":1,\"operationId\":\"overlap\",\"workspaceSessionId\":\"session\",\"executorGeneration\":2,\"epoch\":1,\"deadlineAt\":$deadline,\"tool\":\"bash\",\"arguments\":{\"command\":\"sleep 1; echo x >> overlap.txt\"}}" \
+	| docker exec -i "$cid" sh -c "cat > /var/lib/ditto-exec/requests/overlap.json"
+for i in 1 2 3; do inside "ditto-exec run /var/lib/ditto-exec/requests/overlap.json" & done
 wait
-run bash '{"command":"sleep 20; echo late >> killed.txt"}' killed-shell 2
-inside "test ! -e /workspace/killed.txt && echo 'killed.txt absent'"
+inside "wc -l < /workspace/overlap.txt"
+echo "SIGKILL executor during shell:"
+(run bash '{"command":"sleep 6; echo late >> killed.txt"}' killed-shell 2 || true) &
+sleep 3
+inside "pkill -9 -f '[d]itto-exec run'" || true
+wait
+run bash '{"command":"sleep 6; echo late >> killed.txt"}' killed-shell 2
+echo "killed.txt before the detached shell finishes:"; inside "cat /workspace/killed.txt 2>/dev/null || echo absent"
+sleep 8
+echo "detached shell after executor kill:"; inside "cat /workspace/killed.txt 2>/dev/null || echo 'killed.txt absent'"
 echo "files:"; inside "cat /workspace/src/app.ts /workspace/count.txt"

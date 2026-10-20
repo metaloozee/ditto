@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -247,6 +247,103 @@ describe("remote tool executor interruption", () => {
 			JSON.stringify({ ...journal, pid: process.ppid }),
 		);
 		expect(await exec(operation)).toMatchObject({ status: "pending" });
+	});
+
+	it("runs overlapping requests for one operation at most once", async () => {
+		const operation = op("bash", { command: "echo x >> overlap" });
+		const outcomes = await Promise.all([
+			exec(operation),
+			exec(operation),
+			exec(operation),
+		]);
+		expect(fs.readFileSync(path.join(root, "overlap"), "utf8")).toBe("x\n");
+		expect(
+			outcomes.filter((outcome) => outcome.status === "completed").length,
+		).toBeGreaterThanOrEqual(1);
+		for (const outcome of outcomes)
+			expect(["completed", "pending", "unknown"]).toContain(outcome.status);
+	});
+
+	it("treats a claim held by a live process before its start record as pending", async () => {
+		const operation = op("bash", { command: "echo ran >> claimed" });
+		const base = journalFile(operation).replace(/\.json$/, "");
+		const holder = spawn("sleep", ["10"]);
+		try {
+			fs.writeFileSync(`${base}.1.claim`, String(holder.pid));
+			expect(await exec(operation)).toMatchObject({ status: "pending" });
+			expect(fs.existsSync(path.join(root, "claimed"))).toBe(false);
+		} finally {
+			holder.kill("SIGKILL");
+		}
+		// A claimant that died before its start record never ran the operation.
+		fs.writeFileSync(`${base}.1.claim`, String(deadPid()));
+		expect(await exec(operation)).toMatchObject({ status: "completed" });
+		expect(fs.readFileSync(path.join(root, "claimed"), "utf8")).toBe("ran\n");
+		expect(
+			JSON.parse(fs.readFileSync(journalFile(operation), "utf8")).attempt,
+		).toBe(2);
+	});
+
+	it("reports prior work for an operation even after the executor generation moves", async () => {
+		const done = op("bash", { command: "echo done >> moved" });
+		const first = await exec(done);
+		const interrupted = op("bash", { command: "echo ran >> moved" });
+		await expect(
+			exec(interrupted, () => {
+				throw new Error("Synthetic crash");
+			}),
+		).rejects.toThrow();
+		const journal = JSON.parse(
+			fs.readFileSync(journalFile(interrupted), "utf8"),
+		);
+		fs.writeFileSync(
+			journalFile(interrupted),
+			JSON.stringify({ ...journal, pid: deadPid() }),
+		);
+		await initializeExecutor(stateDir, {
+			workspaceSessionId: "session",
+			generation: 3,
+		});
+		expect(await exec(done)).toEqual(first);
+		expect(await exec(interrupted)).toMatchObject({ status: "unknown" });
+		expect(await exec(op("ls", {}))).toMatchObject({
+			status: "rejected",
+			reason: "generation",
+		});
+	});
+
+	it("keeps executor state out of reach of the file tools", async () => {
+		fs.symlinkSync(stateDir, path.join(root, "state-link"));
+		for (const target of [
+			path.join(stateDir, "executor.json"),
+			"state-link/executor.json",
+			"state-link/operations/forged.json",
+		]) {
+			expect(await exec(op("read", { path: target }))).toMatchObject({
+				isError: true,
+				text: expect.stringMatching(/executor state is not accessible/),
+			});
+			expect(
+				await exec(op("write", { path: target, content: "{}" })),
+			).toMatchObject({
+				isError: true,
+				text: expect.stringMatching(/executor state is not accessible/),
+			});
+		}
+		expect(
+			await exec(
+				op("edit", {
+					path: "state-link/executor.json",
+					edits: [{ oldText: "session", newText: "other" }],
+				}),
+			),
+		).toMatchObject({ isError: true });
+		expect(
+			JSON.parse(fs.readFileSync(path.join(stateDir, "executor.json"), "utf8")),
+		).toEqual({ workspaceSessionId: "session", generation: 2 });
+		expect(
+			fs.existsSync(path.join(stateDir, "operations", "forged.json")),
+		).toBe(false);
 	});
 
 	it("applies interrupted structured writes only while the expected content still holds", async () => {

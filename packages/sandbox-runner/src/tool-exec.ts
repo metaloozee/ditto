@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -81,6 +81,7 @@ export type ExecutorState = { workspaceSessionId: string; generation: number };
 type Journal = {
 	digest: string;
 	pid: number;
+	attempt?: number;
 	state: "started" | "completed";
 	mutation?: { path: string; before: string; after: string };
 	outcome?: ToolOutcome;
@@ -276,65 +277,80 @@ export async function executeToolOperation(
 		return reject(id, "invalid", "Malformed tool operation");
 	}
 	const id = operation.operationId;
-	const state = await readExecutorState(options.stateDir);
-	if (!state || state.workspaceSessionId !== operation.workspaceSessionId)
-		return reject(id, "invalid", "Executor workspace mismatch");
-	if (state.generation !== operation.executorGeneration)
-		return reject(id, "generation", "Executor generation mismatch");
-	const journalFile = path.join(
-		options.stateDir,
-		"operations",
-		`${digest(id)}.json`,
-	);
+	const base = path.join(options.stateDir, "operations", digest(id));
+	const journalFile = `${base}.json`;
 	const operationDigest = digest(canonical(operation));
 	const now = options.now ?? Date.now;
-	let journal: Journal | undefined;
-	try {
-		journal = JSON.parse(await fsp.readFile(journalFile, "utf8")) as Journal;
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT")
-			return unknown(id, "Unreadable operation journal");
-	}
-	if (journal) {
-		if (journal.digest !== operationDigest)
-			return reject(
-				id,
-				"conflict",
-				"Operation identity reused for other input",
-			);
-		if (journal.state === "completed" && journal.outcome)
-			return journal.outcome;
-		if (alive(journal.pid))
-			return {
-				version: 1,
-				operationId: id,
-				status: "pending",
-				message: "Operation still running",
-			};
-		const recovered = await recover(operation, journal, options.root);
-		if (recovered !== "rerun") {
-			if (recovered.status === "completed")
-				await writeDurable(
-					journalFile,
-					JSON.stringify({
-						...journal,
-						state: "completed",
-						outcome: recovered,
-					}),
-				);
-			return recovered;
+	let attempt = 0;
+	// Journal first: a reconciliation must see prior work even after the
+	// executor moved to another generation.
+	for (let round = 0; round < 16; round++) {
+		let journal: Journal | undefined;
+		try {
+			journal = JSON.parse(await fsp.readFile(journalFile, "utf8")) as Journal;
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+				return unknown(id, "Unreadable operation journal");
 		}
+		if (journal) {
+			if (journal.digest !== operationDigest)
+				return reject(
+					id,
+					"conflict",
+					"Operation identity reused for other input",
+				);
+			if (journal.state === "completed" && journal.outcome)
+				return journal.outcome;
+			if (alive(journal.pid)) return pending(id);
+			const recovered = await recover(operation, journal, options.root);
+			if (recovered !== "rerun") {
+				if (recovered.status === "completed")
+					await writeDurable(
+						journalFile,
+						JSON.stringify({
+							...journal,
+							state: "completed",
+							outcome: recovered,
+						}),
+					);
+				return recovered;
+			}
+			attempt = Math.max(attempt, journal.attempt ?? 1);
+		}
+		const state = await readExecutorState(options.stateDir);
+		if (!state || state.workspaceSessionId !== operation.workspaceSessionId)
+			return reject(id, "invalid", "Executor workspace mismatch");
+		if (state.generation !== operation.executorGeneration)
+			return reject(id, "generation", "Executor generation mismatch");
+		if (now() >= operation.deadlineAt)
+			return reject(id, "expired", "Operation deadline passed before dispatch");
+		// Each attempt is claimed exclusively, so overlapping requests for one
+		// operation never run it twice.
+		const next = attempt + 1;
+		const claimed = await claim(`${base}.${next}.claim`);
+		if (claimed === "claimed") {
+			attempt = next;
+			break;
+		}
+		if (claimed === "held") return pending(id);
+		// The claimant died. If it never wrote its start record the attempt did
+		// not run; otherwise the journal above now describes it.
+		const after = await fsp
+			.readFile(journalFile, "utf8")
+			.then((text) => JSON.parse(text) as Journal)
+			.catch(() => undefined);
+		if (!after || (after.attempt ?? 1) < next) attempt = next;
+		if (round === 15) return pending(id);
 	}
-	if (now() >= operation.deadlineAt)
-		return reject(id, "expired", "Operation deadline passed before dispatch");
 	const started: Journal = {
 		digest: operationDigest,
 		pid: process.pid,
+		attempt,
 		state: "started",
 	};
 	await writeDurable(journalFile, JSON.stringify(started));
 	await options.afterStart?.(operation);
-	const outcome = await run(operation, options.root, now, async (mutation) => {
+	const outcome = await run(operation, options, now, async (mutation) => {
 		started.mutation = mutation;
 		await writeDurable(journalFile, JSON.stringify(started));
 	});
@@ -343,6 +359,22 @@ export async function executeToolOperation(
 		JSON.stringify({ ...started, state: "completed", outcome }),
 	);
 	return outcome;
+}
+
+/** Exclusive create with the claimant's pid already inside (link never replaces). */
+async function claim(file: string): Promise<"claimed" | "held" | "dead"> {
+	const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
+	await fsp.writeFile(temporary, String(process.pid), { mode: 0o600 });
+	try {
+		await fsp.link(temporary, file);
+		return "claimed";
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+		const holder = Number(await fsp.readFile(file, "utf8"));
+		return holder === process.pid || alive(holder) ? "held" : "dead";
+	} finally {
+		await fsp.rm(temporary, { force: true });
+	}
 }
 
 async function recover(
@@ -373,15 +405,36 @@ async function recover(
 	);
 }
 
+/** Resolves symlinks through the nearest existing ancestor. */
+async function realTarget(file: string): Promise<string> {
+	try {
+		return await fsp.realpath(file);
+	} catch {
+		const parent = path.dirname(file);
+		if (parent === file) return file;
+		return path.join(await realTarget(parent), path.basename(file));
+	}
+}
+
 async function run(
 	operation: ToolOperation,
-	root: string,
+	options: ExecutorOptions,
 	now: () => number,
 	recordMutation: (mutation: Journal["mutation"] & {}) => Promise<void>,
 ): Promise<ToolOutcome> {
 	const id = operation.operationId;
+	const root = options.root;
+	const stateRoot = await realTarget(path.resolve(options.stateDir));
+	// File tools never touch executor state; the journal is the outcome record.
+	const allowed = async (file: string) => {
+		const target = await realTarget(path.resolve(root, file));
+		if (target === stateRoot || target.startsWith(`${stateRoot}${path.sep}`))
+			throw new Error(`EACCES: executor state is not accessible: ${file}`);
+		return file;
+	};
 	const signal = AbortSignal.timeout(Math.max(1, operation.deadlineAt - now()));
 	const mutate = async (file: string, content: string) => {
+		await allowed(file);
 		await recordMutation({
 			path: file,
 			before: await fileDigest(file),
@@ -399,8 +452,9 @@ async function run(
 		case "read":
 			tool = createReadToolDefinition(root, {
 				operations: {
-					readFile: (file) => fsp.readFile(file),
-					access: (file) => fsp.access(file, fs.constants.R_OK),
+					readFile: async (file) => fsp.readFile(await allowed(file)),
+					access: async (file) =>
+						fsp.access(await allowed(file), fs.constants.R_OK),
 					detectImageMimeType: async (file) => {
 						if (await isImage(file)) throw new Error(IMAGE_UNSUPPORTED);
 						return undefined;
@@ -413,7 +467,7 @@ async function run(
 				operations: {
 					writeFile: mutate,
 					mkdir: async (dir) => {
-						await fsp.mkdir(dir, { recursive: true });
+						await fsp.mkdir(await allowed(dir), { recursive: true });
 					},
 				},
 			});
@@ -421,10 +475,13 @@ async function run(
 		case "edit":
 			tool = createEditToolDefinition(root, {
 				operations: {
-					readFile: (file) => fsp.readFile(file),
+					readFile: async (file) => fsp.readFile(await allowed(file)),
 					writeFile: mutate,
-					access: (file) =>
-						fsp.access(file, fs.constants.R_OK | fs.constants.W_OK),
+					access: async (file) =>
+						fsp.access(
+							await allowed(file),
+							fs.constants.R_OK | fs.constants.W_OK,
+						),
 				},
 			});
 			break;
@@ -514,6 +571,14 @@ function reject(
 		status: "rejected",
 		reason,
 		message: bounded(message, MAX_MESSAGE_BYTES).text,
+	};
+}
+function pending(operationId: string): ToolOutcome {
+	return {
+		version: 1,
+		operationId,
+		status: "pending",
+		message: "Operation still running",
 	};
 }
 function unknown(operationId: string, message: string): ToolOutcome {

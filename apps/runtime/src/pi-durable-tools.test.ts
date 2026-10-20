@@ -455,32 +455,43 @@ it("reconciles a lost response with the same operation instead of replaying it",
 		);
 });
 
-it("leaves unknown shell and lost outcomes unresolved and blocks later model and tool calls across reopen", async () => {
-	for (const scenario of ["unknown-shell", "lost-transport"] as const)
+it("leaves unknown shell and lost outcomes unresolved and blocks later model and tool calls across two reopens", async () => {
+	for (const scenario of ["unknown-shell", "lost-write", "lost-read"] as const)
 		await run(
 			scenario,
 			[
 				calls(
 					scenario === "unknown-shell"
 						? ["bash", { command: "rm -rf build" }]
-						: ["write", { path: "a", content: "x" }],
+						: scenario === "lost-write"
+							? ["write", { path: "a", content: "x" }]
+							: ["read", { path: "a" }],
 				),
 				() => fauxAssistantMessage("Must not run", { timestamp: 2 }),
 			],
 			async (f) => {
-				if (scenario === "lost-transport") f.remote.loseResponse = "always";
+				// A failed remote read or write has no local fallback: nothing else
+				// receives the operation and the effect stays unresolved.
+				if (scenario !== "unknown-shell") f.remote.loseResponse = "always";
 				await f.run();
 				const tool = f.effects().find((row) => row.kind === "tool")!;
 				expect(tool.state).toBe("admitted");
 				expect(f.providerCalls).toBe(1);
+				expect(f.remote.files.size).toBe(0);
 				const dispatches = f.remote.dispatched.length;
-				await f.host.yield();
-				await f.open();
-				await expect(f.run("second")).rejects.toThrow(/Unresolved effect/);
+				// The same command is retried after each of two restarts.
+				for (let restart = 0; restart < 2; restart++) {
+					await f.host.yield();
+					await f.open();
+					await expect(f.run("second")).rejects.toThrow(/Unresolved effect/);
+				}
 				expect(f.providerCalls).toBe(1);
 				expect(f.remote.dispatched).toHaveLength(dispatches);
 				expect(f.effects().filter((row) => row.kind === "tool")).toHaveLength(
 					1,
+				);
+				expect(f.effects().find((row) => row.kind === "tool")?.state).toBe(
+					"admitted",
 				);
 			},
 		);

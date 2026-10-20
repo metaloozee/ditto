@@ -1,6 +1,6 @@
 # 009: Complete guarded remote coding tools
 
-Status: BLOCKED on 008. Base: `bcce03e`. Phase: L3.
+Status: DONE for the local fixture scope, accepted with limits; see [evidence](evidence/009-tool-parity.md). Base: `bcce03e`. Phase: L3.
 Spec: `docs/specs/pi-durable-session-runtime.md`, decisions 3, 6, 8–9, 12–13, 17; PD11–PD14, PD28–PD31; OD2, OD5–OD6.
 
 ## Outcome and scope

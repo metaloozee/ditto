@@ -19,9 +19,22 @@ read old-generation => {"version":1,"operationId":"old-generation","status":"rej
 init older generation:
 Executor generation is newer
 refused (exit 1)
+file tools cannot reach executor state:
+write forge-state => {"version":1,"operationId":"forge-state","status":"completed","isError":true,"text":"EACCES: executor state is not accessible: /var/lib/ditto-exec","truncated":false}
+{"workspaceSessionId":"session","generation":2}
+container environment stays readable through /proc (limit, not a guarantee):
+bash proc-env => {"version":1,"operationId":"proc-env","status":"completed","isError":false,"text":"1\n","truncated":false}
+overlapping requests for one shell operation:
+{"version":1,"operationId":"overlap","status":"pending","message":"Operation still running"}
+{"version":1,"operationId":"overlap","status":"pending","message":"Operation still running"}
+{"version":1,"operationId":"overlap","status":"completed","isError":false,"text":"(no output)","truncated":false}
+1
 SIGKILL executor during shell:
 bash killed-shell => bash killed-shell => {"version":1,"operationId":"killed-shell","status":"unknown","message":"Shell dispatch was interrupted; outcome unknown"}
-killed.txt absent
+killed.txt before the detached shell finishes:
+absent
+detached shell after executor kill:
+late
 files:
 export const answer = 42;
 once
