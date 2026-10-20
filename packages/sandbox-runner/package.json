@@ -4,7 +4,8 @@
   "type": "module",
   "bin": {
     "ditto-runner": "./dist/cli.js",
-    "ditto-archive": "./dist/archive-cli.js"
+    "ditto-archive": "./dist/archive-cli.js",
+    "ditto-exec": "./dist/tool-exec-cli.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

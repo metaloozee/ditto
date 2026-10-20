@@ -51,6 +51,7 @@ import {
 	parseQueueDecisionV2,
 	type QueueDecisionV2,
 } from "../../../packages/runtime-contracts/src/product-command.js";
+import type { RemoteToolName } from "../../../packages/runtime-contracts/src/tool-execution.js";
 import {
 	digestText,
 	isRuntimeCiphertext,
@@ -193,13 +194,22 @@ export type ToolRequest = {
 	task: TaskId;
 	conversation: number;
 	call: string;
-	name: "cooperative_remote";
+	name: "cooperative_remote" | RemoteToolName;
 	arguments: Record<string, unknown>;
 	operation:
 		| { kind: "shell" }
+		| { kind: "mutation" }
 		| { kind: "read"; newObservation: boolean }
 		| { kind: "write"; expectedContent: string };
 	replay: "never" | "new-observation" | "expected-content";
+};
+/** Exact admitted identity handed to remote execution after the final permit. */
+export type ToolPermit = {
+	effect: string;
+	operation: string;
+	epoch: number;
+	generation: number;
+	deadlineAt: number;
 };
 export type EffectCorrelation = {
 	version: 1 | 2;
@@ -320,7 +330,7 @@ export type HostGuard = {
 	tool(
 		request: ToolRequest,
 		context: Context,
-		start: () => Promise<ToolExecutionResult>,
+		start: (permit: ToolPermit) => Promise<ToolExecutionResult>,
 	): Promise<{ effect: string; response: Promise<ToolExecutionResult> }>;
 	admit(
 		kind: Effect["kind"],
@@ -2414,7 +2424,7 @@ export class PiDurableHost {
 			this.dependencies.now() >= row.operation_deadline
 		)
 			throw new Error("Final effect receipt denied");
-		if (!this.dependencies.retained) return;
+		if (!this.dependencies.retained) return row.operation_deadline;
 		this.assertSeals();
 		this.assertCachedEnvelope(`effect:${effect}:correlation`, row.correlation);
 		const taskRow = this.read(
@@ -2426,7 +2436,7 @@ export class PiDurableHost {
 					)
 					.toArray()[0],
 		);
-		if (!taskRow) return;
+		if (!taskRow) return row.operation_deadline;
 		this.assertCachedEnvelope(
 			`task:${correlation.task}:selection`,
 			taskRow.selection,
@@ -2436,6 +2446,7 @@ export class PiDurableHost {
 				`task:${correlation.task}:prepared`,
 				taskRow.prepared,
 			);
+		return row.operation_deadline;
 	}
 	private async modelDispatch(
 		admitted: { id: string; epoch: number },
@@ -2659,6 +2670,8 @@ export class PiDurableHost {
 		)
 			throw new Error("Invalid operation deadline");
 		const correlationPlain = canonical(correlation);
+		if (new TextEncoder().encode(correlationPlain).byteLength > 128_000)
+			throw new Error("Oversized correlation");
 		const sealedCorrelation = await this.seal(
 			`effect:${id}:correlation`,
 			correlationPlain,
@@ -2955,7 +2968,7 @@ export class PiDurableHost {
 	private async tool(
 		request: ToolRequest,
 		context: Context,
-		start: () => Promise<ToolExecutionResult>,
+		start: (permit: ToolPermit) => Promise<ToolExecutionResult>,
 	) {
 		try {
 			await this.receipts(context);
@@ -3004,7 +3017,11 @@ export class PiDurableHost {
 				)
 			)
 				throw new Error("Original tool call missing");
-			if (request.operation.kind === "shell" && request.replay !== "never")
+			if (
+				(request.operation.kind === "shell" ||
+					request.operation.kind === "mutation") &&
+				request.replay !== "never"
+			)
 				throw new Error("Arbitrary shell replay forbidden");
 			if (
 				request.operation.kind === "read" &&
@@ -3070,13 +3087,22 @@ export class PiDurableHost {
 			)
 				throw new Error("Stale tool callback");
 			context.abortSignal?.throwIfAborted();
-			this.dispatchPermit(
+			const deadlineAt = this.dispatchPermit(
 				admitted.id,
 				correlation,
 				admitted.epoch,
 				finalAuthority,
 			);
-			return { effect: admitted.id, response: start() };
+			return {
+				effect: admitted.id,
+				response: start({
+					effect: admitted.id,
+					operation: correlation.operation,
+					epoch: admitted.epoch,
+					generation: correlation.generation,
+					deadlineAt,
+				}),
+			};
 		} catch (error) {
 			if (error instanceof EffectDenied && error.reason === "recovery-deadline")
 				await this.expire();
@@ -3344,12 +3370,15 @@ export class PiDurableHost {
 					)
 				)?.entry;
 				const message = entry?.model?.[0];
+				// Remote tool evidence carries a digest so outputs beyond the evidence bound stay exact.
 				matches =
 					entry?.byTaskId === task.id &&
 					message?.role === "toolResult" &&
 					message.toolCallId === correlation.call &&
-					!message.isError &&
-					canonical(message.content) === canonical(evidence.content);
+					message.isError === (evidence.isError === true) &&
+					(typeof evidence.contentDigest === "string"
+						? evidence.contentDigest === (await requestDigest(message.content))
+						: canonical(message.content) === canonical(evidence.content));
 			} else if (effect.kind === "model") {
 				const cp = task.state.checkpoint
 					? record(task.state.checkpoint)

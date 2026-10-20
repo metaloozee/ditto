@@ -23,6 +23,7 @@ import {
 	createPrivateModelAdapter,
 	type PrivateModelTransport,
 } from "./pi-durable-models.ts";
+import { createRemoteTools, type RemoteExecutor } from "./pi-durable-tools.ts";
 import { parseRuntimeKeyring } from "./runtime-crypto.ts";
 
 export type CandidateRuntimeScope = {
@@ -79,6 +80,10 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 		return true;
 	}
 	protected hostFault(_point: HostFault) {}
+	/** Deployment composition supplies the session's sandbox; none means tools fail before admission. */
+	protected remoteExecutor(): RemoteExecutor | undefined {
+		return undefined;
+	}
 	private opening: Promise<PiDurableHost> | undefined;
 	private async scope(value?: unknown) {
 		if (this.env.CANDIDATE_DISPOSABLE !== "008-synthetic")
@@ -184,12 +189,17 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 						return subject;
 					},
 				);
+				const remote = createRemoteTools(guard, {
+					workspaceSessionId: scope.workspaceSessionId,
+					executor: () => this.remoteExecutor(),
+				});
+				adapter.registry.install(remote.extension);
 				return {
 					now: Date.now,
 					models: adapter.models,
 					registry: adapter.registry,
 					settings: {
-						extensions: [adapter.extension],
+						extensions: [adapter.extension, remote.extension],
 						toolExecution: "sequential",
 						retry: { enabled: false },
 						compaction: { enabled: false, backgroundTokens: 0 },

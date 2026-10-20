@@ -57,3 +57,24 @@ test("rejects omitted closed auth, escaped default auth and additional Models ca
 			assertCandidateBundle(changed(`${original}\n${injected}`)),
 		);
 });
+
+test("remote tool module has no trusted-host file, process or stock coding-tool fallback", async () => {
+	const { readFile } = await import("node:fs/promises");
+	const source = await readFile(
+		new URL("./pi-durable-tools.ts", import.meta.url),
+		"utf8",
+	);
+	for (const name of [
+		"node:fs",
+		"node:child_process",
+		"@earendil-works/pi-durable/tools",
+		"@earendil-works/pi-durable/env",
+		"CodingTools",
+		"createBashTool",
+	])
+		assert.equal(
+			source.includes(name),
+			false,
+			`pi-durable-tools references ${name}`,
+		);
+});

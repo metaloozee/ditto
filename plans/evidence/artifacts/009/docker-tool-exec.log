@@ -1,0 +1,27 @@
+ripgrep 13.0.0
+fd 8.3.1
+v22.23.1
+{"workspaceSessionId":"session","generation":1}
+write op-1 => {"version":1,"operationId":"op-1","status":"completed","isError":false,"text":"Successfully wrote to src/app.ts","truncated":false}
+read op-2 => {"version":1,"operationId":"op-2","status":"completed","isError":false,"text":"export const answer = 41;\n","truncated":false}
+edit op-3 => {"version":1,"operationId":"op-3","status":"completed","isError":false,"text":"Successfully replaced 1 block(s) in src/app.ts.","truncated":false}
+edit op-4 => {"version":1,"operationId":"op-4","status":"completed","isError":true,"text":"Could not find the exact text in src/app.ts. The old text must match exactly including all whitespace and newlines.","truncated":false}
+grep op-5 => {"version":1,"operationId":"op-5","status":"completed","isError":false,"text":"src/app.ts:1: export const answer = 42;","truncated":false}
+find op-6 => {"version":1,"operationId":"op-6","status":"completed","isError":false,"text":"src/app.ts","truncated":false}
+ls op-7 => {"version":1,"operationId":"op-7","status":"completed","isError":false,"text":".git/\n.gitignore\nignored.txt\nsrc/","truncated":false}
+bash op-8 => {"version":1,"operationId":"op-8","status":"completed","isError":false,"text":"export const answer = 42;\nabsent","truncated":false}
+bash dup-shell => {"version":1,"operationId":"dup-shell","status":"completed","isError":false,"text":"1\n","truncated":false}
+bash dup-shell => {"version":1,"operationId":"dup-shell","status":"completed","isError":false,"text":"1\n","truncated":false}
+bash dup-shell => {"version":1,"operationId":"dup-shell","status":"rejected","reason":"conflict","message":"Operation identity reused for other input"}
+read stale-generation => {"version":1,"operationId":"stale-generation","status":"rejected","reason":"invalid","message":"Malformed tool operation"}
+{"workspaceSessionId":"session","generation":2}
+read old-generation => {"version":1,"operationId":"old-generation","status":"rejected","reason":"generation","message":"Executor generation mismatch"}
+init older generation:
+Executor generation is newer
+refused (exit 1)
+SIGKILL executor during shell:
+bash killed-shell => bash killed-shell => {"version":1,"operationId":"killed-shell","status":"unknown","message":"Shell dispatch was interrupted; outcome unknown"}
+killed.txt absent
+files:
+export const answer = 42;
+once

@@ -1,5 +1,12 @@
 FROM docker.io/cloudflare/sandbox:0.12.3
 
+# Remote grep/find use the image's rg/fd; executors never download helper binaries.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ripgrep fd-find \
+  && rm -rf /var/lib/apt/lists/* \
+  && rg --version \
+  && fdfind --version
+
 COPY --chown=0:0 packages/sandbox-runner /opt/ditto-runner
 WORKDIR /opt/ditto-runner
 
@@ -14,11 +21,13 @@ RUN npm ci \
   && test -s dist/cli.js \
   && test -s dist/git-metadata-cli.js \
   && test -s dist/archive-cli.js \
+  && test -s dist/tool-exec-cli.js \
   && test -s dist/ditto-extension.js \
   && node -e 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8"))' \
-  && chmod +x dist/cli.js dist/archive-cli.js \
+  && chmod +x dist/cli.js dist/archive-cli.js dist/tool-exec-cli.js \
   && ln -sf /opt/ditto-runner/dist/cli.js /usr/local/bin/ditto-runner \
-  && ln -sf /opt/ditto-runner/dist/archive-cli.js /usr/local/bin/ditto-archive
+  && ln -sf /opt/ditto-runner/dist/archive-cli.js /usr/local/bin/ditto-archive \
+  && ln -sf /opt/ditto-runner/dist/tool-exec-cli.js /usr/local/bin/ditto-exec
 
 WORKDIR /workspace
 
