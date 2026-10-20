@@ -1,6 +1,6 @@
 # 008: Connect durable product commands to Pi submissions
 
-Status: READY for a separately authorized, disposable fixture implementation, subject to the preflight below. Not implemented.
+Status: DONE for the accepted disposable local fixture scope. Integrated at `e9e3684` and `12fb71a`. See [completion and acceptance](evidence/008-completion.md).
 Reviewed base: `3fe7b48` on `feat/pi-durable`. Phase: part of L3, not L3 completion.
 Prerequisites: 001–007 accepted and integrated. Local L2 passed in 004/005. 007 source is integrated at `5a33d81` and `3bdf90a`.
 Spec: `docs/specs/pi-durable-session-runtime.md`, decisions 2–9, 12, 15–18; PD01–PD11, PD16, PD32–PD33, PD42; OD1–OD7. Coverage limits are listed below.
