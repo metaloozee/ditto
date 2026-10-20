@@ -47,8 +47,8 @@ import {
 	prepareCandidateRuntimeAuthority,
 	validateCandidateRuntimeAuthority,
 } from "../../web/src/lib/session-command-candidate";
+import { CANDIDATE_FIXTURE_RESET_SCHEMA } from "./candidate-fixture-schema";
 import {
-	CANDIDATE_FIXTURE_RESET_SCHEMA,
 	type CandidateFixtureCredential,
 	candidateFixtureResetTableExists,
 	candidateModelPolicy,

@@ -154,8 +154,6 @@ export function fixtureResetSubject(value: string) {
 	return parseModelSubjectV1(row.subject);
 }
 
-export const CANDIDATE_FIXTURE_RESET_SCHEMA =
-	"CREATE TABLE IF NOT EXISTS candidate_fixture_resets(resetId TEXT PRIMARY KEY,sessionId TEXT NOT NULL,previousGeneration INTEGER NOT NULL,generation INTEGER NOT NULL,phase TEXT NOT NULL,intent TEXT,observation TEXT,boot TEXT,cutoff INTEGER,predecessor TEXT,UNIQUE(sessionId,previousGeneration),UNIQUE(sessionId,predecessor))";
 const fixtureDatabases = new WeakSet<D1Database>();
 export async function candidateFixtureResetTableExists(db: D1Database) {
 	if (fixtureDatabases.has(db)) return true;

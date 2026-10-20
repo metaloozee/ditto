@@ -34,10 +34,10 @@ import {
 } from "../../web/src/lib/model-product-authority";
 import { CandidateProductCommands } from "../../web/src/lib/session-command-candidate";
 
+import { CANDIDATE_FIXTURE_RESET_SCHEMA } from "./candidate-fixture-schema";
 import {
-	CANDIDATE_FIXTURE_RESET_SCHEMA,
-	candidateDispatchScope,
 	type CandidateFixtureCredential,
+	candidateDispatchScope,
 } from "./entry";
 import type {
 	CandidateFixtureProduct,
