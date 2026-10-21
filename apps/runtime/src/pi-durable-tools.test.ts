@@ -22,6 +22,7 @@ import {
 	hook,
 } from "@earendil-works/pi-durable";
 import { expect, it } from "vitest";
+import type { ProjectValueRequestV1 } from "../../../packages/runtime-contracts/src/project-values.js";
 import type { ToolOperationV1 } from "../../../packages/runtime-contracts/src/tool-execution.js";
 import {
 	type HostFixtureDependencies,
@@ -32,6 +33,8 @@ import {
 } from "./pi-durable-host.ts";
 import {
 	createRemoteTools,
+	EXEC_VALUES_ENV,
+	type ProjectValues,
 	type RemoteExecutor,
 	sandboxExecutor,
 } from "./pi-durable-tools.ts";
@@ -45,13 +48,15 @@ function fakeExecutor() {
 	let generation = 1;
 	let loseResponse: "before" | "after" | "always" | undefined;
 	const dispatched: ToolOperationV1[] = [];
+	const values: (ProjectValues | undefined)[] = [];
 	const executor: RemoteExecutor = {
-		async dispatch(operation) {
+		async dispatch(operation, _signal, granted) {
 			if (loseResponse === "before" || loseResponse === "always") {
 				if (loseResponse === "before") loseResponse = undefined;
 				throw new Error("Synthetic transport loss before dispatch");
 			}
 			dispatched.push(operation);
+			values.push(granted);
 			const key = JSON.stringify(operation);
 			const prior = journal.get(operation.operationId);
 			if (prior) {
@@ -93,6 +98,15 @@ function fakeExecutor() {
 					value === undefined
 						? done(`ENOENT: ${operation.arguments.path}`, true)
 						: done(value);
+			} else if (
+				operation.tool === "bash" &&
+				operation.arguments.command === "printenv"
+			) {
+				const text = (granted ?? [])
+					.map((v) => `${v.key}=${v.value}`)
+					.join("\n");
+				files.set("left-behind", text);
+				outcome = done(text);
 			} else if (operation.tool === "bash")
 				outcome = {
 					version: 1,
@@ -113,6 +127,7 @@ function fakeExecutor() {
 		executor,
 		files,
 		dispatched,
+		values,
 		set generation(value: number) {
 			generation = value;
 		},
@@ -127,6 +142,11 @@ function composition(storage: DurableObjectStorage, steps: Step[]) {
 	let executorAvailable = true;
 	let authority: LocalAuthority = { current: true, generation: 1, executor: 1 };
 	let providerCalls = 0;
+	let projectValues:
+		| ((request: ProjectValueRequestV1) => Promise<unknown>)
+		| undefined;
+	const valueRequests: ProjectValueRequestV1[] = [];
+	let skew = 0;
 	const faux = fauxProvider({ tokensPerSecond: 0 });
 	const dependencies: HostFixtureDependencies = {
 		now: () => Date.now(),
@@ -199,6 +219,18 @@ function composition(storage: DurableObjectStorage, steps: Step[]) {
 			const remoteTools = createRemoteTools(guard, {
 				workspaceSessionId: "session",
 				executor: () => (executorAvailable ? remote.executor : undefined),
+				projectValues: async (request: ProjectValueRequestV1) => {
+					valueRequests.push(request);
+					return projectValues
+						? projectValues(request)
+						: {
+								version: 1,
+								operationId: request.operationId,
+								status: "granted",
+								values: [],
+							};
+				},
+				now: () => Date.now() + skew,
 			});
 			const binding = defineExtension({
 				name: "ditto-test-generation",
@@ -250,6 +282,14 @@ function composition(storage: DurableObjectStorage, steps: Step[]) {
 		set executorAvailable(value: boolean) {
 			executorAvailable = value;
 		},
+		set projectValues(value: typeof projectValues) {
+			projectValues = value;
+		},
+		set skew(value: number) {
+			skew = value;
+		},
+		valueRequests,
+		storage,
 		async open() {
 			host = await PiDurableHost.open(storage, dependencies);
 			return host;
@@ -570,4 +610,220 @@ it("sends the exact operation through the sandbox command transport", async () =
 	await expect(
 		executor.dispatch({ ...operation, workspaceSessionId: "other" }),
 	).rejects.toThrow(/mismatch/);
+});
+
+const SYNTHETIC = "synthetic-project-value-015";
+function grant(request: ProjectValueRequestV1) {
+	return {
+		version: 1,
+		operationId: request.operationId,
+		status: "granted",
+		values: [
+			{ key: "API_TOKEN", value: SYNTHETIC },
+			{ key: "MODE", value: "dev" },
+		],
+	};
+}
+/** Every row of every table in the host's storage, as text. */
+function storedText(storage: DurableObjectStorage) {
+	return storage.sql
+		.exec<{ name: string }>(
+			"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%'",
+		)
+		.toArray()
+		.map(({ name }) =>
+			JSON.stringify(storage.sql.exec(`SELECT * FROM "${name}"`).toArray()),
+		)
+		.join("\n");
+}
+
+it("delivers project values only to the admitted shell dispatch and redacts them from the result", async () => {
+	let seen: ReturnType<typeof toolResults> = [];
+	await run(
+		"values-delivered",
+		[
+			calls(
+				["bash", { command: "printenv" }],
+				["write", { path: "a", content: "x" }],
+				["ls", {}],
+			),
+			// A later tool shows a value the command left in a file.
+			calls(["read", { path: "left-behind" }]),
+			(context) => {
+				seen = toolResults(context);
+				return fauxAssistantMessage("Done", { timestamp: 2 });
+			},
+		],
+		async (f) => {
+			f.projectValues = async (request) => grant(request);
+			await f.run();
+			const [shell] = f.remote.dispatched;
+			expect(f.valueRequests).toEqual([
+				{
+					version: 1,
+					role: "repository_command",
+					workspaceSessionId: "session",
+					operationId: shell!.operationId,
+					executorGeneration: shell!.executorGeneration,
+					epoch: shell!.epoch,
+					deadlineAt: shell!.deadlineAt,
+				},
+			]);
+			expect(f.remote.dispatched.map((op) => op.tool)).toEqual([
+				"bash",
+				"write",
+				"ls",
+				"read",
+			]);
+			expect(f.remote.values).toEqual([
+				grant(shell as unknown as ProjectValueRequestV1).values,
+				undefined,
+				undefined,
+				undefined,
+			]);
+			expect(seen.at(-1)).toEqual({
+				name: "read",
+				isError: false,
+				text: "API_TOKEN=[REDACTED]\nMODE=dev",
+			});
+			expect(seen[0]).toEqual({
+				name: "bash",
+				isError: false,
+				text: "API_TOKEN=[REDACTED]\nMODE=dev",
+			});
+			expect(JSON.stringify(f.remote.dispatched)).not.toContain(SYNTHETIC);
+			expect(storedText(f.storage)).not.toContain(SYNTHETIC);
+			expect(
+				f
+					.effects()
+					.filter((row) => row.kind === "tool")
+					.map((row) => row.state),
+			).toEqual([
+				"pi-committed",
+				"pi-committed",
+				"pi-committed",
+				"pi-committed",
+			]);
+		},
+	);
+});
+
+it("refuses a shell command before dispatch when its values are denied, unavailable, mismatched or late", async () => {
+	const scenarios: [
+		string,
+		(request: ProjectValueRequestV1) => Promise<unknown>,
+		string,
+	][] = [
+		[
+			"denied",
+			async (request) => ({
+				version: 1,
+				operationId: request.operationId,
+				status: "denied",
+				reason: "authority",
+			}),
+			"Project values are unavailable for this command",
+		],
+		[
+			"failed",
+			async () => {
+				throw new Error("product unavailable");
+			},
+			"Project values are unavailable for this command",
+		],
+		[
+			"mismatched",
+			async (request) => grant({ ...request, operationId: "other" }),
+			"Project values are unavailable for this command",
+		],
+		[
+			"late",
+			async (request) => grant(request),
+			"Operation deadline passed before dispatch",
+		],
+	];
+	for (const [name, handler, message] of scenarios) {
+		let seen: ReturnType<typeof toolResults> = [];
+		await run(
+			`values-refused-${name}`,
+			[
+				calls(["bash", { command: "printenv" }]),
+				(context) => {
+					seen = toolResults(context);
+					return fauxAssistantMessage("Done", { timestamp: 2 });
+				},
+			],
+			async (f) => {
+				f.projectValues = async (request) => {
+					if (name === "late") f.skew = 120_000;
+					return handler(request);
+				};
+				await f.run();
+				expect(f.remote.dispatched).toHaveLength(0);
+				expect(seen).toEqual([{ name: "bash", isError: true, text: message }]);
+				// The refusal is known before dispatch, so later work continues.
+				expect(f.providerCalls).toBe(2);
+				expect(
+					f
+						.effects()
+						.filter((row) => row.kind === "tool")
+						.map((row) => row.state),
+				).toEqual(["pi-committed"]);
+			},
+		);
+	}
+});
+
+it("passes values to one sandbox run through its environment, never the request file", async () => {
+	const runs: { command: string; env?: Record<string, string> }[] = [];
+	const writes: string[] = [];
+	const executor = sandboxExecutor(
+		{
+			async writeFile(_path, content) {
+				writes.push(content);
+			},
+			async exec(command, options) {
+				runs.push({ command, ...(options?.env ? { env: options.env } : {}) });
+				return {
+					exitCode: 0,
+					stdout: command.startsWith("ditto-exec init")
+						? "{}"
+						: JSON.stringify({
+								version: 1,
+								operationId: "op",
+								status: "completed",
+								isError: false,
+								text: "ok",
+								truncated: false,
+							}),
+				};
+			},
+		},
+		{ workspaceSessionId: "session" },
+	);
+	const operation: ToolOperationV1 = {
+		version: 1,
+		operationId: "op",
+		workspaceSessionId: "session",
+		executorGeneration: 1,
+		epoch: 1,
+		deadlineAt: Date.now() + 1000,
+		tool: "bash",
+		arguments: { command: "printenv" },
+	};
+	await executor.dispatch(operation, undefined, [
+		{ key: "API_TOKEN", value: SYNTHETIC },
+	]);
+	await executor.dispatch(operation);
+	expect(runs.map((entry) => entry.env)).toEqual([
+		undefined,
+		{ [EXEC_VALUES_ENV]: JSON.stringify({ API_TOKEN: SYNTHETIC }) },
+		undefined,
+	]);
+	expect(writes.join("")).not.toContain(SYNTHETIC);
+	await expect(
+		executor.dispatch({ ...operation, tool: "ls", arguments: {} }, undefined, [
+			{ key: "API_TOKEN", value: SYNTHETIC },
+		]),
+	).rejects.toThrow(/only for shell/);
 });

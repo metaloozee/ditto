@@ -8,6 +8,11 @@ import {
 import { Type } from "typebox";
 import { encodedBytes } from "../../../packages/runtime-contracts/src/json.js";
 import {
+	type ProjectValueRequestV1,
+	parseProjectValueGrantV1,
+	redactProjectValues,
+} from "../../../packages/runtime-contracts/src/project-values.js";
+import {
 	parseRemoteToolArguments,
 	parseToolOutcomeV1,
 	type RemoteToolName,
@@ -22,13 +27,25 @@ import {
 	type ToolRequest,
 } from "./pi-durable-host.ts";
 
+/** Project values for one shell dispatch; never part of the operation or its journal. */
+export type ProjectValues = { key: string; value: string }[];
 /** The only path from Pi tools to repository files and processes. */
 export interface RemoteExecutor {
-	dispatch(operation: ToolOperationV1, signal?: AbortSignal): Promise<unknown>;
+	dispatch(
+		operation: ToolOperationV1,
+		signal?: AbortSignal,
+		values?: ProjectValues,
+	): Promise<unknown>;
 }
 export type RemoteToolBinding = {
 	workspaceSessionId: string;
 	executor(): RemoteExecutor | undefined;
+	/**
+	 * Product delivery of project values for one admitted shell operation.
+	 * Absent means shell commands run without project values.
+	 */
+	projectValues?(request: ProjectValueRequestV1): Promise<unknown>;
+	now?: () => number;
 };
 
 /** Arguments are bound into a 128 KB effect correlation, so bound their encoding too. */
@@ -188,12 +205,13 @@ async function dispatchExact(
 	executor: RemoteExecutor,
 	operation: ToolOperationV1,
 	context: Context,
+	values?: ProjectValues,
 ): Promise<ToolOutcomeV1 | undefined> {
 	for (let attempt = 0; attempt < 2; attempt++) {
 		context.abortSignal?.throwIfAborted();
 		try {
 			const raw = await awaitWithContext(
-				executor.dispatch(operation, context.abortSignal),
+				executor.dispatch(operation, context.abortSignal, values),
 				context,
 			);
 			return parseToolOutcomeV1(raw, operation.operationId);
@@ -225,6 +243,65 @@ export function createRemoteTools(
 	guard: HostGuard,
 	binding: RemoteToolBinding,
 ) {
+	/**
+	 * Fetches values for exactly this admitted shell operation, then rechecks
+	 * cancellation and the deadline. Any refusal is known before dispatch, so
+	 * the command never runs without the values it was granted.
+	 */
+	const shellValues = async (
+		permit: ToolPermit,
+		context: Context,
+	): Promise<
+		| ProjectValues
+		| {
+				refused: {
+					reason: "values" | "expired";
+					message: string;
+				};
+		  }
+	> => {
+		if (!binding.projectValues) return [];
+		let grant: ReturnType<typeof parseProjectValueGrantV1> | undefined;
+		try {
+			grant = parseProjectValueGrantV1(
+				await awaitWithContext(
+					binding.projectValues({
+						version: 1,
+						role: "repository_command",
+						workspaceSessionId: binding.workspaceSessionId,
+						operationId: permit.operation,
+						executorGeneration: permit.generation,
+						epoch: permit.epoch,
+						deadlineAt: permit.deadlineAt,
+					}),
+					context,
+				),
+				permit.operation,
+			);
+		} catch (error) {
+			if (context.abortSignal?.aborted) throw error;
+		}
+		context.abortSignal?.throwIfAborted();
+		if ((binding.now ?? Date.now)() >= permit.deadlineAt)
+			return {
+				refused: {
+					reason: "expired",
+					message: "Operation deadline passed before dispatch",
+				},
+			};
+		if (grant?.status !== "granted")
+			return {
+				refused: {
+					reason: "values",
+					message: "Project values are unavailable for this command",
+				},
+			};
+		return grant.values;
+	};
+	// A value can outlive its command: a background child or a file the
+	// command wrote can show it to a later tool. Every result is redacted
+	// with all values granted since this composition opened.
+	const granted = new Set<string>();
 	const tools = (Object.keys(SPECS) as RemoteToolName[]).map((name) =>
 		defineTool({
 			name,
@@ -242,6 +319,18 @@ export function createRemoteTools(
 				if (!executor) throw new Error("Remote executor unavailable");
 				let outcome: ToolOutcomeV1 | undefined;
 				const start = async (permit: ToolPermit) => {
+					const values =
+						name === "bash" ? await shellValues(permit, context) : undefined;
+					if (values && "refused" in values) {
+						outcome = {
+							version: 1,
+							operationId: permit.operation,
+							status: "rejected",
+							...values.refused,
+						};
+						return { content: [] };
+					}
+					for (const entry of values ?? []) granted.add(entry.value);
 					outcome = await dispatchExact(
 						executor,
 						{
@@ -255,6 +344,7 @@ export function createRemoteTools(
 							arguments: parsed,
 						} as ToolOperationV1,
 						context,
+						values?.length ? values : undefined,
 					);
 					return { content: [] };
 				};
@@ -278,8 +368,17 @@ export function createRemoteTools(
 						known ?? { status: "transport" },
 						known?.message ?? "Remote tool outcome unknown",
 					);
+				const settled = known as Extract<
+					ToolOutcomeV1,
+					{ status: "completed" | "rejected" }
+				>;
 				const value = result(
-					known as Extract<ToolOutcomeV1, { status: "completed" | "rejected" }>,
+					settled.status === "completed"
+						? {
+								...settled,
+								text: redactProjectValues(settled.text, [...granted]),
+							}
+						: settled,
 				);
 				await guard.result(
 					admitted.effect,
@@ -306,9 +405,11 @@ export type SandboxProcess = {
 	writeFile(path: string, content: string): Promise<unknown>;
 	exec(
 		command: string,
-		options?: { signal?: AbortSignal },
+		options?: { signal?: AbortSignal; env?: Record<string, string> },
 	): Promise<{ exitCode: number; stdout: string }>;
 };
+/** The runner reads and removes this before any tool runs; only the shell child receives the values. */
+export const EXEC_VALUES_ENV = "DITTO_EXEC_VALUES";
 export function sandboxExecutor(
 	sandbox: SandboxProcess,
 	identity: { workspaceSessionId: string },
@@ -316,7 +417,9 @@ export function sandboxExecutor(
 	const ready = new Set<number>();
 	const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 	return {
-		async dispatch(operation, signal) {
+		async dispatch(operation, signal, values) {
+			if (values?.length && operation.tool !== "bash")
+				throw new Error("Project values are only for shell commands");
 			if (operation.workspaceSessionId !== identity.workspaceSessionId)
 				throw new Error("Executor workspace mismatch");
 			if (!ready.has(operation.executorGeneration)) {
@@ -330,8 +433,21 @@ export function sandboxExecutor(
 			}
 			const file = `/var/lib/ditto-exec/requests/${await requestDigest(operation.operationId)}.json`;
 			await sandbox.writeFile(file, JSON.stringify(operation));
+			// Values travel in the process environment of this one run, never in
+			// the request file the executor journals.
 			const result = await sandbox.exec(`ditto-exec run ${quote(file)}`, {
 				signal,
+				...(values?.length
+					? {
+							env: {
+								[EXEC_VALUES_ENV]: JSON.stringify(
+									Object.fromEntries(
+										values.map((entry) => [entry.key, entry.value]),
+									),
+								),
+							},
+						}
+					: {}),
 			});
 			if (result.exitCode !== 0) throw new Error("Executor transport failed");
 			return JSON.parse(result.stdout) as unknown;

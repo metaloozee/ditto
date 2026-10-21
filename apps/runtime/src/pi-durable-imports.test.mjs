@@ -71,6 +71,11 @@ test("remote tool module has no trusted-host file, process or stock coding-tool 
 		"@earendil-works/pi-durable/env",
 		"CodingTools",
 		"createBashTool",
+		"project-env-vars",
+		"candidate-project-values",
+		"lib/crypto",
+		"decryptText",
+		"BETTER_AUTH_SECRET",
 	])
 		assert.equal(
 			source.includes(name),
@@ -89,4 +94,16 @@ test("execution never imports recovery and recovery imports no product module", 
 	assert.deepEqual(imports, [
 		"../../../packages/runtime-contracts/src/artifacts.js",
 	]);
+});
+
+test("the runtime bundle holds no project-value decryption or product secret", () => {
+	const text = bundle.outputFiles[0].text;
+	for (const name of [
+		"decryptText",
+		"decryptEnvVars",
+		"PBKDF2",
+		"BETTER_AUTH_SECRET",
+		"CANDIDATE_PROJECT_VALUES_SECRET",
+	])
+		assert.equal(text.includes(name), false, `runtime bundle contains ${name}`);
 });

@@ -29,6 +29,8 @@ import m21 from "../../web/migrations/0021_first_lilandra.sql?raw";
 import m22 from "../../web/migrations/0022_synthetic_model_transport.sql?raw";
 import m23 from "../../web/migrations/0023_candidate_product_commands.sql?raw";
 import m24 from "../../web/migrations/0024_candidate_restore_barrier.sql?raw";
+import m25 from "../../web/migrations/0025_candidate_capacity.sql?raw";
+import { encryptText } from "../../web/src/lib/crypto";
 import {
 	CANDIDATE_MODEL_POLICY,
 	ModelProductAuthority,
@@ -178,6 +180,7 @@ beforeEach(async ({ task }) => {
 		m22,
 		m23,
 		m24,
+		m25,
 	])
 		for (const statement of migration.split("--> statement-breakpoint"))
 			if (statement.trim())
@@ -912,7 +915,7 @@ it("priority Stop fences a held credential claim without ordinary capacity or a 
 it("real delivery expires an admitted but unstarted instruction without creating a Pi root or provider effect", async () => {
 	await candidateCredential();
 	const calls = modelReplies();
-	const first = await commands(() => Date.now() - 900001).admit(
+	const first = await commands(() => Date.now() - 906001).admit(
 		"owner",
 		prompt,
 	);
@@ -2820,4 +2823,407 @@ it("routes owned UI workspace actions to the runtime owner and refuses foreign, 
 		code: "restore_in_progress",
 	});
 	expect(calls).toHaveLength(1);
+});
+
+async function fillExecutionPool(except = 0) {
+	const capacity = commands().capacity;
+	for (let n = 0; n < 20 - except; n++)
+		expect(
+			await capacity.acquire("builder", `other-${n}`, `other-${n >> 1}`),
+		).toMatchObject({ status: "claimed" });
+}
+const executorClaims = () =>
+	env.DB.prepare(
+		"SELECT kind,ownerKey,userId,state FROM candidate_capacity_claims WHERE kind='executor'",
+	)
+		.all()
+		.then((rows) => rows.results);
+const work = (commandId: string) =>
+	env.DB.prepare(
+		"SELECT deliveryState,deliveryAttempts FROM workspace_runtime_work WHERE commandId=?",
+	)
+		.bind(commandId)
+		.first();
+
+it("claims one executor slot before the first delivery and keeps it for later commands of the session", async () => {
+	await candidateCredential();
+	modelReplies();
+	const first = await env.CandidateProduct.admitOwned("owner", prompt);
+	const runtime = env.CandidateSessions.getByName(first.workspaceSessionId);
+	try {
+		await env.CandidateProduct.drain();
+		const identity = await env.DB.prepare(
+			"SELECT id,incarnationId FROM sandbox_identities WHERE workspaceSessionId=?",
+		)
+			.bind(first.workspaceSessionId)
+			.first<{ id: string; incarnationId: string }>();
+		expect(await executorClaims()).toEqual([
+			{
+				kind: "executor",
+				ownerKey: `${identity?.id}:${identity?.incarnationId}`,
+				userId: "owner",
+				state: "live",
+			},
+		]);
+		expect(await work(first.commandId)).toMatchObject({
+			deliveryState: "delivered",
+		});
+		await expect
+			.poll(async () => (await message(first.assistantMessageId))?.status, {
+				timeout: 5000,
+			})
+			.toBe("complete");
+		// The session's executor is still live: the next prompt needs no new slot.
+		await fillExecutionPool(1);
+		const next = await env.CandidateProduct.admitOwned("owner", {
+			...prompt,
+			idempotencyKey: "next",
+			sessionId: first.workspaceSessionId,
+		});
+		await env.CandidateProduct.drain();
+		expect(await work(next.commandId)).toMatchObject({
+			deliveryState: "delivered",
+		});
+		expect(await executorClaims()).toHaveLength(1);
+	} finally {
+		await runtime.retireFixture();
+	}
+});
+
+it("holds ordinary work in the queue while the pool is full and admits it once termination evidence frees a slot", async () => {
+	await candidateCredential();
+	const calls = modelReplies();
+	await fillExecutionPool();
+	const first = await env.CandidateProduct.admitOwned("owner", prompt);
+	const runtime = env.CandidateSessions.getByName(first.workspaceSessionId);
+	try {
+		await env.CandidateProduct.drain();
+		await env.CandidateProduct.drain();
+		expect(await work(first.commandId)).toEqual({
+			deliveryState: "pending",
+			deliveryAttempts: 0,
+		});
+		expect(await executorClaims()).toEqual([]);
+		expect(calls()).toBe(0);
+		// A lease-like timeout frees nothing; only termination evidence does.
+		await expect(
+			commands().capacity.release("builder", "other-0", { expired: true }),
+		).rejects.toThrow();
+		expect(
+			await commands().capacity.release("builder", "other-0", {
+				terminated: true,
+				source: "builder_destroyed",
+			}),
+		).toBe("released");
+		await env.CandidateProduct.drain();
+		expect(await work(first.commandId)).toMatchObject({
+			deliveryState: "delivered",
+		});
+		expect(await executorClaims()).toHaveLength(1);
+		await expect
+			.poll(async () => (await message(first.assistantMessageId))?.status, {
+				timeout: 5000,
+			})
+			.toBe("complete");
+	} finally {
+		await runtime.retireFixture();
+	}
+});
+
+it("delivers Stop while capacity is exhausted, before the waiting prompt it targets", async () => {
+	await candidateCredential();
+	const calls = modelReplies();
+	await fillExecutionPool();
+	const first = await env.CandidateProduct.admitOwned("owner", prompt);
+	const runtime = env.CandidateSessions.getByName(first.workspaceSessionId);
+	try {
+		const stop = await env.CandidateProduct.admitOwned("owner", {
+			version: 2,
+			kind: "stop",
+			projectId: "project",
+			sessionId: first.workspaceSessionId,
+			targetRunId: first.commandId,
+			idempotencyKey: "stop-full",
+		});
+		await env.CandidateProduct.drain();
+		expect(await work(stop.commandId)).toMatchObject({
+			deliveryState: "delivered",
+		});
+		expect(await work(first.commandId)).toMatchObject({
+			deliveryState: "pending",
+		});
+		expect(await executorClaims()).toEqual([]);
+		expect(calls()).toBe(0);
+	} finally {
+		await runtime.retireFixture();
+	}
+});
+
+it("lets the runtime settle queue expiry for work that waited for capacity, without taking a slot", async () => {
+	await candidateCredential();
+	const calls = modelReplies();
+	await fillExecutionPool();
+	const first = await commands(() => Date.now() - 901000).admit(
+		"owner",
+		prompt,
+	);
+	const runtime = env.CandidateSessions.getByName(first.workspaceSessionId);
+	try {
+		// Just past the deadline, the runtime's clock may not agree yet: the
+		// work keeps waiting rather than reach the runtime without a slot.
+		await env.CandidateProduct.drain();
+		expect(
+			await env.DB.prepare(
+				"SELECT deliveryState FROM workspace_runtime_work WHERE commandId=?",
+			)
+				.bind(first.commandId)
+				.first("deliveryState"),
+		).toBe("pending");
+		await commands(() => Date.now() + 5000).drain((sessionId, commandId, v) =>
+			env.CandidateSessions.getByName(sessionId).deliverCommand(commandId, v),
+		);
+		await expect
+			.poll(async () => (await runtime.candidateSnapshot()).members[0]?.state, {
+				timeout: 3000,
+			})
+			.toBe("failed");
+		expect(
+			(
+				await env.DB.prepare(
+					"SELECT decision FROM candidate_command_decisions WHERE commandId=?",
+				)
+					.bind(first.commandId)
+					.first()
+			)?.decision,
+		).toBe("expired");
+		expect(await executorClaims()).toEqual([]);
+		expect(calls()).toBe(0);
+	} finally {
+		await runtime.retireFixture();
+	}
+});
+
+const modelClaims = () =>
+	env.DB.prepare(
+		"SELECT userId,state,evidence FROM candidate_capacity_claims WHERE kind='model'",
+	)
+		.all()
+		.then((rows) => rows.results);
+
+it("holds a model slot from before the reservation until the provider fetch settles", async () => {
+	const credential = await candidateCredential();
+	const calls = modelReplies();
+	const first = await env.CandidateProduct.admitOwned("owner", prompt);
+	const runtime = env.CandidateSessions.getByName(first.workspaceSessionId);
+	await credential.holdModel("claim");
+	try {
+		await runtime.deliverCommand(first.commandId, 1);
+		await credential.waitModel();
+		expect(await modelClaims()).toEqual([
+			{ userId: "owner", state: "live", evidence: null },
+		]);
+		await credential.releaseModel();
+		await expect
+			.poll(async () => (await message(first.assistantMessageId))?.status, {
+				timeout: 5000,
+			})
+			.toBe("complete");
+		expect(calls()).toBe(1);
+		await expect
+			.poll(async () => (await modelClaims())[0]?.state)
+			.toBe("released");
+		expect(JSON.parse(String((await modelClaims())[0]?.evidence))).toEqual({
+			terminated: true,
+			source: "model_fetch_settled",
+		});
+	} finally {
+		await credential.releaseModel();
+		await runtime.retireFixture();
+	}
+});
+
+it("releases the model slot when a request is denied before any fetch", async () => {
+	const credential = await candidateCredential();
+	const calls = modelReplies();
+	const first = await env.CandidateProduct.admitOwned("owner", prompt);
+	const runtime = env.CandidateSessions.getByName(first.workspaceSessionId);
+	await credential.holdModel("authority");
+	try {
+		await runtime.deliverCommand(first.commandId, 1);
+		await credential.waitModel();
+		expect(await modelClaims()).toEqual([
+			{ userId: "owner", state: "live", evidence: null },
+		]);
+		// Authority is revoked while the request waits, so it never fetches.
+		await env.DB.exec(
+			"UPDATE workspace_sessions SET runtimeFailureReasonCode='review'",
+		);
+		await credential.releaseModel();
+		await expect
+			.poll(async () => (await modelClaims())[0]?.state, { timeout: 5000 })
+			.toBe("released");
+		expect(calls()).toBe(0);
+		expect(JSON.parse(String((await modelClaims())[0]?.evidence))).toEqual({
+			terminated: true,
+			source: "model_fetch_settled",
+		});
+	} finally {
+		await credential.releaseModel();
+		await runtime.retireFixture();
+	}
+});
+
+it("fails a model request known and unbilled when the model pool is full, without consuming an attempt", async () => {
+	const credential = await candidateCredential();
+	const calls = modelReplies();
+	await credential.setModelCapacity({
+		execution: { global: 20, perUser: 2 },
+		model: { global: 1, perUser: 1 },
+	});
+	await commands().capacity.acquire("model", "elsewhere:effect", "other");
+	const first = await env.CandidateProduct.admitOwned("owner", prompt);
+	const runtime = env.CandidateSessions.getByName(first.workspaceSessionId);
+	try {
+		await runtime.deliverCommand(first.commandId, 1);
+		await expect
+			.poll(async () => (await message(first.assistantMessageId))?.status, {
+				timeout: 5000,
+			})
+			.toBe("failed");
+		expect(calls()).toBe(0);
+		expect(
+			(
+				await env.DB.prepare(
+					"SELECT count(*) AS n FROM model_request_admissions",
+				).first<{ n: number }>()
+			)?.n,
+		).toBe(0);
+		expect(await modelClaims()).toEqual([
+			{ userId: "other", state: "live", evidence: null },
+		]);
+		// A known failure is not an unknown outcome: the session is not blocked.
+		await runtime.retireFixture();
+		expect(
+			(
+				await env.CandidateProduct.observeOwned(
+					"owner",
+					"project",
+					first.workspaceSessionId,
+				)
+			).snapshot?.health,
+		).toMatchObject({ safetyStopped: false });
+	} finally {
+		await runtime.retireFixture();
+	}
+});
+
+it("charges a preview start to the session's executor slot and refuses it when the pool is full", async () => {
+	await candidateCredential();
+	const first = await commands().admit("owner", prompt);
+	const sessionId = first.workspaceSessionId;
+	const calls: unknown[] = [];
+	const routed = () =>
+		new CandidateProductCommands(
+			env.DB,
+			{
+				readSelection: async () => null,
+				targetStatus: async () => {
+					throw new Error("unused");
+				},
+				workspaceAction: async (_subject, action) => {
+					calls.push(action.kind);
+					return { status: "preview_running", generation: 1 };
+				},
+			},
+			(owner) => env.CodexCredential.getByName(owner),
+		);
+	const start = {
+		version: 1,
+		kind: "preview_start",
+		projectId: "project",
+		sessionId,
+	};
+	await fillExecutionPool();
+	expect(await routed().workspaceAction("owner", start)).toEqual({
+		status: "denied",
+		reason: "capacity",
+	});
+	// Status and stop never need a slot.
+	expect(
+		await routed().workspaceAction("owner", { ...start, kind: "preview_stop" }),
+	).toMatchObject({ status: "preview_running" });
+	expect(calls).toEqual(["preview_stop"]);
+	await commands().capacity.release("builder", "other-0", {
+		terminated: true,
+		source: "builder_destroyed",
+	});
+	expect(await routed().workspaceAction("owner", start)).toMatchObject({
+		status: "preview_running",
+	});
+	expect(await executorClaims()).toHaveLength(1);
+	// A second start reuses the same executor slot.
+	expect(await routed().workspaceAction("owner", start)).toMatchObject({
+		status: "preview_running",
+	});
+	expect(await executorClaims()).toHaveLength(1);
+});
+
+it("decrypts project values only for a repository command of the owned, current session", async () => {
+	await candidateCredential();
+	const first = await env.CandidateProduct.admitOwned("owner", prompt);
+	const values = [{ key: "API_TOKEN", value: "synthetic-project-value-015" }];
+	await env.DB.prepare("UPDATE projects SET envVars=? WHERE id='project'")
+		.bind(
+			await encryptText(JSON.stringify(values), "synthetic-015-project-values"),
+		)
+		.run();
+	const scope = {
+		version: 2 as const,
+		userId: "owner",
+		projectId: "project",
+		workspaceSessionId: first.workspaceSessionId,
+		ownerVersion: 1 as const,
+	};
+	const request = {
+		version: 1,
+		role: "repository_command",
+		workspaceSessionId: first.workspaceSessionId,
+		operationId: "pi.tool/op",
+		executorGeneration: 1,
+		epoch: 1,
+		deadlineAt: Date.now() + 60_000,
+	};
+	const read = (overrides: Record<string, unknown> = {}, at = scope) =>
+		env.CandidateProduct.readCandidateProjectValues(at, {
+			...request,
+			...overrides,
+		});
+	expect(await read()).toEqual({
+		version: 1,
+		operationId: "pi.tool/op",
+		status: "granted",
+		values,
+	});
+	const denied = async (
+		reason: string,
+		overrides: Record<string, unknown> = {},
+		at = scope,
+	) =>
+		expect(await read(overrides, at)).toEqual({
+			version: 1,
+			operationId: "pi.tool/op",
+			status: "denied",
+			reason,
+		});
+	for (const role of ["builder", "preview", "git", "archive"])
+		await denied("role", { role });
+	await denied("authority", { executorGeneration: 2 });
+	await denied("expired", { deadlineAt: Date.now() - 1 });
+	await denied("scope", { workspaceSessionId: "other-session" });
+	await denied("authority", {}, { ...scope, userId: "mallory" });
+	await denied("authority", {}, { ...scope, projectId: "other-project" });
+	await env.DB.exec(
+		"UPDATE workspace_sessions SET runtimeFailureReasonCode='review'",
+	);
+	await denied("authority");
 });

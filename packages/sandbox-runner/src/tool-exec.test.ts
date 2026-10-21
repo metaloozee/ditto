@@ -18,9 +18,12 @@ import {
 	REMOTE_TOOL_NAMES,
 } from "../../runtime-contracts/src/tool-execution.js";
 import {
+	EXEC_VALUES_ENV,
 	executeToolOperation,
 	initializeExecutor,
 	type ToolOperation,
+	takeExecValues,
+	valueRedactor,
 } from "./tool-exec.js";
 
 let root: string;
@@ -157,6 +160,122 @@ describe("remote tool executor parity", () => {
 		} finally {
 			delete process.env.DITTO_SYNTHETIC_SECRET;
 		}
+	});
+});
+
+describe("execution-only project values", () => {
+	const SYNTHETIC = "synthetic-project-value-015";
+	const values = { API_TOKEN: SYNTHETIC, MODE: "dev" };
+	const withValues = (operation: unknown, granted: Record<string, string>) =>
+		executeToolOperation(operation, { root, stateDir, values: granted });
+
+	it("gives values only to the shell child and redacts them from output, split chunks and errors", async () => {
+		const operation = op("bash", {
+			command: [
+				`printf '%s' "$API_TOKEN" > received`,
+				`printf '%s|%s|' "$API_TOKEN" "$MODE"`,
+				`printf '%s' "\${API_TOKEN:0:9}"`,
+				"sleep 0.1",
+				`printf '%s\n' "\${API_TOKEN:9}"`,
+				`echo "$API_TOKEN" >&2`,
+				"exit 4",
+			].join("; "),
+		});
+		const result = await withValues(operation, values);
+		expect(fs.readFileSync(path.join(root, "received"), "utf8")).toBe(
+			SYNTHETIC,
+		);
+		expect(result).toMatchObject({ status: "completed", isError: true });
+		const text = (result as { text: string }).text;
+		expect(text).toContain("[REDACTED]|dev|[REDACTED]");
+		expect(text).not.toContain(SYNTHETIC);
+		expect(text).not.toContain(SYNTHETIC.slice(9));
+		expect(fs.readFileSync(journalFile(operation), "utf8")).not.toContain(
+			SYNTHETIC,
+		);
+		expect(process.env.API_TOKEN).toBeUndefined();
+		// A replayed request returns the journaled, already redacted outcome.
+		expect(await withValues(operation, values)).toEqual(result);
+	});
+
+	it("redacts values from truncated output and the spilled full output", async () => {
+		const result = await withValues(
+			op("bash", {
+				command: `printf '%s\n' "$API_TOKEN"; seq 1 3000; printf '%s\n' "$API_TOKEN"`,
+			}),
+			values,
+		);
+		const text = (result as { text: string }).text;
+		expect(text).toContain("[REDACTED]");
+		expect(text).not.toContain(SYNTHETIC);
+		const spill = text.match(/Full output: (\S+?)\]/)?.[1];
+		expect(spill).toBeTruthy();
+		const full = fs.readFileSync(spill!, "utf8");
+		expect(full.startsWith("[REDACTED]\n1\n")).toBe(true);
+		expect(full).not.toContain(SYNTHETIC);
+	});
+
+	it("never lets a value set an image shell variable and refuses values for any other tool", async () => {
+		const saved = process.env.TZ;
+		delete process.env.TZ;
+		try {
+			const shell = await withValues(
+				op("bash", {
+					command: 'printf "%s|%s" "$PATH" "${TZ:-unset}"',
+				}),
+				{ PATH: "/nowhere", HOME: "/elsewhere", TZ: "Synthetic/Zone" },
+			);
+			expect(shell).toMatchObject({ text: `${process.env.PATH}|unset` });
+		} finally {
+			if (saved !== undefined) process.env.TZ = saved;
+		}
+		for (const tool of [
+			"read",
+			"write",
+			"edit",
+			"grep",
+			"find",
+			"ls",
+		] as const) {
+			const operation = op(tool, { path: "x", content: "x", pattern: "x" });
+			expect(await withValues(operation, values)).toMatchObject({
+				status: "rejected",
+				reason: "invalid",
+				message: "Project values are only for shell commands",
+			});
+			expect(fs.existsSync(journalFile(operation))).toBe(false);
+		}
+	});
+
+	it("takes the transport variable out of the process environment before parsing it", () => {
+		const env: NodeJS.ProcessEnv = {
+			[EXEC_VALUES_ENV]: JSON.stringify(values),
+			PATH: "/bin",
+		};
+		expect(takeExecValues(env)).toEqual(values);
+		expect(env).toEqual({ PATH: "/bin" });
+		expect(takeExecValues(env)).toBeUndefined();
+		for (const raw of ["[]", '{"1A":"x"}', '{"A":1}', "nope"]) {
+			const bad: NodeJS.ProcessEnv = { [EXEC_VALUES_ENV]: raw };
+			expect(() => takeExecValues(bad)).toThrow();
+			expect(bad[EXEC_VALUES_ENV]).toBeUndefined();
+		}
+	});
+
+	it("holds a possible value prefix across chunks and leaves short values alone", () => {
+		const redactor = valueRedactor([SYNTHETIC, "dev"]);
+		const parts = ["a=synth", "etic-project-", "value-015 b=dev", " c=synthe"];
+		const out =
+			parts.map((part) => redactor.push(Buffer.from(part))).join("") +
+			redactor.flush();
+		expect(out).toBe("a=[REDACTED] b=dev c=synthe");
+		const bytes = Buffer.from("é");
+		const split = valueRedactor([]);
+		expect(
+			split.push(bytes.subarray(0, 1)) +
+				split.push(bytes.subarray(1)) +
+				split.flush(),
+		).toBe("é");
 	});
 });
 

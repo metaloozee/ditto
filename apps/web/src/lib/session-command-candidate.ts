@@ -37,6 +37,11 @@ import {
 	type ProjectionPayload,
 } from "../../../runtime/src/product-projector.js";
 import {
+	CANDIDATE_CAPACITY_POLICY,
+	CandidateCapacity,
+	type CandidateCapacityPolicy,
+} from "./candidate-capacity";
+import {
 	CANDIDATE_MODEL_POLICY,
 	ModelProductAuthority,
 } from "./model-product-authority";
@@ -206,16 +211,36 @@ type CandidateOwnedRow = {
 	controllerNamespace: string;
 };
 
+type CandidateDrainRow = {
+	id: string;
+	commandId: string;
+	deliveryAttempts: number;
+	deadlineAt: number;
+	userId: string;
+	kind: string;
+	identityId: string;
+	incarnationId: string;
+};
+/** Clock margin before work that waited for capacity is handed over for expiry only. */
+const QUEUE_EXPIRY_MARGIN_MS = 5000;
+
+/** One executor incarnation holds one execution slot until it is proven ended. */
+export const executorOwnerKey = (identityId: string, incarnationId: string) =>
+	`${identityId}:${incarnationId}`;
+
 export class CandidateProductCommands {
 	private policy: ModelProductAuthority;
+	readonly capacity: CandidateCapacity;
 	constructor(
 		private db: D1Database,
 		private runtime: CandidateAdmissionRuntime,
 		private credential: (owner: string) => CandidateCredentialStatus,
 		private now: () => number = Date.now,
 		private createId: () => string = () => crypto.randomUUID(),
+		capacityPolicy: CandidateCapacityPolicy = CANDIDATE_CAPACITY_POLICY,
 	) {
 		this.policy = new ModelProductAuthority(db, now, CANDIDATE_MODEL_POLICY);
+		this.capacity = new CandidateCapacity(db, capacityPolicy, now, createId);
 	}
 	private key(userId: string, input: BrowserCommandV2) {
 		return this.db
@@ -673,14 +698,42 @@ SELECT ?,coalesce((SELECT max(fifoSeq) FROM workspace_runtime_work),0)+1,?,sessi
 		) => Promise<unknown>,
 	) {
 		const started = this.now();
-		const rows = await this.db
-			.prepare(`SELECT w.id,w.commandId,w.deliveryAttempts FROM workspace_runtime_work w JOIN session_commands c ON c.id=w.commandId
+		// Ordinary work waits in FIFO order for its session's executor slot.
+		// A full pool blocks every later newcomer; a full user blocks only that
+		// user's. Stop and cancel never wait for capacity. Rows left waiting
+		// stay at the head, so later pages skip past them.
+		const full = { global: false, users: new Set<string>() };
+		let waiting = 0;
+		for (let page = 0; this.now() - started < 20000; page++) {
+			const rows = await this.db
+				.prepare(`SELECT w.id,w.commandId,w.deliveryAttempts,c.deadlineAt,w.userId,c.kind,i.id AS identityId,i.incarnationId
+FROM workspace_runtime_work w JOIN session_commands c ON c.id=w.commandId JOIN sandbox_identities i ON i.id=w.identityId
 WHERE w.runtimeOwner='pi_durable_v1' AND w.runtimeOwnerVersion=1 AND w.protocolVersion=2 AND w.deliveryState IN ('pending','leased') AND (w.deliveryLeaseExpiresAt IS NULL OR w.deliveryLeaseExpiresAt<=?)
-ORDER BY CASE WHEN c.kind IN ('stop','cancel') THEN 0 ELSE 1 END,c.commandSeq LIMIT 25`)
-			.bind(started)
-			.all<{ id: string; commandId: string; deliveryAttempts: number }>();
-		for (const row of rows.results) {
-			if (this.now() - started >= 20000) break;
+ORDER BY CASE WHEN c.kind IN ('stop','cancel') THEN 0 ELSE 1 END,w.fifoSeq LIMIT 25 OFFSET ?`)
+				.bind(started, waiting)
+				.all<CandidateDrainRow>();
+			if (rows.results.length === 0) break;
+			for (const row of rows.results) {
+				if (this.now() - started >= 20000) break;
+				if (!(await this.executorAdmitted(row, full))) {
+					waiting++;
+					continue;
+				}
+				await this.deliverRow(row, started, deliver);
+			}
+		}
+	}
+
+	private async deliverRow(
+		row: CandidateDrainRow,
+		started: number,
+		deliver: (
+			sessionId: string,
+			commandId: string,
+			ownerVersion: number,
+		) => Promise<unknown>,
+	) {
+		{
 			const token = this.createId();
 			const leased = await this.db
 				.prepare(
@@ -693,7 +746,7 @@ ORDER BY CASE WHEN c.kind IN ('stop','cancel') THEN 0 ELSE 1 END,c.commandSeq LI
 					this.now(),
 				)
 				.run();
-			if (leased.meta.changes !== 1) continue;
+			if (leased.meta.changes !== 1) return;
 			try {
 				const command = await this.reconstruct(row.commandId, 1);
 				if (!command) throw new Error("Candidate command unavailable");
@@ -735,6 +788,31 @@ ORDER BY CASE WHEN c.kind IN ('stop','cancel') THEN 0 ELSE 1 END,c.commandSeq LI
 					.run();
 			}
 		}
+	}
+
+	/**
+	 * True when the row may be delivered now. Controls bypass capacity. Work
+	 * whose queue time ran out is delivered without a slot so that the runtime,
+	 * which alone knows whether it started, records the expiry.
+	 */
+	private async executorAdmitted(
+		row: CandidateDrainRow,
+		full: { global: boolean; users: Set<string> },
+	): Promise<boolean> {
+		if (row.kind === "stop" || row.kind === "cancel") return true;
+		const owner = executorOwnerKey(row.identityId, row.incarnationId);
+		if (await this.capacity.live("executor", owner)) return true;
+		// Only once the runtime's own deadline has surely passed, so the
+		// runtime can record nothing but the expiry.
+		if (this.now() >= row.deadlineAt + QUEUE_EXPIRY_MARGIN_MS) return true;
+		if (full.global || full.users.has(row.userId)) return false;
+		const claim = await this.capacity.acquire("executor", owner, row.userId);
+		if (claim.status === "claimed") return true;
+		if (claim.status === "full") {
+			if (claim.scope === "global") full.global = true;
+			else full.users.add(row.userId);
+		}
+		return false;
 	}
 
 	async runtimeAuthority(
@@ -1083,6 +1161,17 @@ WHERE c.sessionId=candidate_restore_barriers.sessionId AND c.commandSeq<=candida
 		const subject = await this.subject(userId, projectId, sessionId);
 		await this.assertNoRestore(sessionId);
 		if (!this.runtime.workspaceAction) reject("runtime_unavailable", 503);
+		// Preview-only work runs on the session's executor, so it joins the
+		// same execution accounting as agent work.
+		if (action.kind === "preview_start") {
+			const claim = await this.capacity.acquire(
+				"executor",
+				executorOwnerKey(subject.identityId, subject.incarnationId),
+				userId,
+			);
+			if (claim.status !== "claimed")
+				return { status: "denied", reason: "capacity" };
+		}
 		return this.runtime.workspaceAction(subject, action);
 	}
 

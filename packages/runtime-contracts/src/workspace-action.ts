@@ -51,6 +51,8 @@ export const WORKSPACE_ACTION_DENIALS = [
 	"blocked",
 	/** No execution is composed for this session. */
 	"unavailable",
+	/** No execution slot is free for a preview that needs the executor. */
+	"capacity",
 ] as const;
 export type WorkspaceActionDenial = (typeof WORKSPACE_ACTION_DENIALS)[number];
 

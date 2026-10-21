@@ -109,6 +109,7 @@ describe("session command admission", () => {
 		for (const migration of [
 			"0023_candidate_product_commands.sql",
 			"0024_candidate_restore_barrier.sql",
+			"0025_candidate_capacity.sql",
 		])
 			fixture.sqlite.exec(
 				readFileSync(

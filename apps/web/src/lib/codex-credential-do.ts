@@ -5,6 +5,7 @@ import {
 	SYNTHETIC_MODEL_LIMITS,
 	type SyntheticModelOutcomeV1,
 } from "../../../../packages/runtime-contracts/src/model.js";
+import type { CandidateCapacity } from "./candidate-capacity";
 import {
 	type CodexTokens,
 	type CredentialKeyring,
@@ -274,6 +275,42 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 		const timeout = setTimeout(() => controller.abort(), duration);
 		const signal = AbortSignal.any([overall, controller.signal]);
 		const wait = <T>(pending: Promise<T>) => awaitSynthetic(pending, signal);
+		// A model slot is taken before the nonrefundable reservation, so a full
+		// pool consumes no attempt. Releasing it never refunds an attempt.
+		const capacity = this.modelCapacity();
+		const slot = `${descriptor.subject.identityId}:${descriptor.attempt.effectId}`;
+		if (capacity) {
+			let claimed: Awaited<ReturnType<CandidateCapacity["acquire"]>>;
+			const claimId = crypto.randomUUID();
+			try {
+				claimed = await awaitSynthetic(
+					capacity.acquire("model", slot, owner, claimId),
+					signal,
+				);
+			} catch {
+				clearTimeout(timeout);
+				// This call's claim may have committed after the wait ended. No
+				// fetch exists yet, so its termination is already proven.
+				await capacity
+					.releaseClaim("model", slot, claimId, {
+						terminated: true,
+						source: "model_not_dispatched",
+					})
+					.catch(() => undefined);
+				return { version: 1, status: "denied" };
+			}
+			if (claimed.status !== "claimed" || claimed.duplicate) {
+				clearTimeout(timeout);
+				return { version: 1, status: "failed_known" };
+			}
+		}
+		const releaseSlot = () =>
+			capacity
+				?.release("model", slot, {
+					terminated: true,
+					source: "model_fetch_settled",
+				})
+				.catch(() => undefined);
 		let fetching: Promise<Response> | undefined;
 		try {
 			await wait(this.modelPhase("authority"));
@@ -393,11 +430,27 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 		} finally {
 			clearTimeout(timeout);
 			controller.abort();
-			if (fetching)
-				await awaitSynthetic(fetching, AbortSignal.timeout(1000)).catch(
-					() => {},
+			if (fetching) {
+				let settled = false;
+				const done = fetching.then(
+					() => {
+						settled = true;
+					},
+					() => {
+						settled = true;
+					},
 				);
+				await awaitSynthetic(done, AbortSignal.timeout(1000)).catch(() => {});
+				// The slot counts until the aborted fetch has actually settled.
+				if (settled) await releaseSlot();
+				else void done.then(releaseSlot);
+			} else await releaseSlot();
 		}
+	}
+
+	/** Composition supplies model admission; none leaves model work unbounded here. */
+	protected modelCapacity(): CandidateCapacity | undefined {
+		return undefined;
 	}
 
 	protected renewalAvailable(): boolean {

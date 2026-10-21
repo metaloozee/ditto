@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import {
 	createBashToolDefinition,
 	createEditToolDefinition,
@@ -92,7 +93,89 @@ export type ExecutorOptions = {
 	now?: () => number;
 	/** Test seam: called after the durable start record, before the tool runs. */
 	afterStart?: (operation: ToolOperation) => Promise<void> | void;
+	/** Project values for this one shell command; never journaled. */
+	values?: Record<string, string>;
+	/** The values transport was malformed; the operation is refused, not run. */
+	malformedValues?: boolean;
 };
+
+/** Environment variable that carries one run's project values to this process. */
+export const EXEC_VALUES_ENV = "DITTO_EXEC_VALUES";
+const VALUE_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const REDACTION = "[REDACTED]";
+/** Shorter values are delivered but not redacted, so ordinary output survives. */
+const REDACT_MIN = 8;
+
+/**
+ * Removes this run's project values from the process environment before any
+ * tool code runs, so only the shell child receives them.
+ */
+export function takeExecValues(
+	env: NodeJS.ProcessEnv,
+): Record<string, string> | undefined {
+	const raw = env[EXEC_VALUES_ENV];
+	delete env[EXEC_VALUES_ENV];
+	if (raw === undefined) return undefined;
+	const parsed = JSON.parse(raw) as unknown;
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+		throw new Error("Malformed project values");
+	const values: Record<string, string> = {};
+	for (const [key, value] of Object.entries(parsed)) {
+		if (
+			!VALUE_KEY.test(key) ||
+			typeof value !== "string" ||
+			value.includes("\0")
+		)
+			throw new Error("Malformed project values");
+		values[key] = value;
+	}
+	return values;
+}
+
+function redactValues(text: string, secrets: readonly string[]) {
+	let out = text;
+	for (const secret of secrets) out = out.split(secret).join(REDACTION);
+	return out;
+}
+
+/**
+ * Redacts values across output chunks: a suffix that could begin a value is
+ * held until the next chunk shows whether it does.
+ */
+export function valueRedactor(values: readonly string[]) {
+	const secrets = values.filter((value) => value.length >= REDACT_MIN);
+	const decoder = new StringDecoder("utf8");
+	let buffer = "";
+	const holdFrom = (text: string) => {
+		let from = text.length;
+		for (const secret of secrets)
+			for (
+				let length = Math.min(text.length, secret.length - 1);
+				length >= 1;
+				length--
+			)
+				if (text.endsWith(secret.slice(0, length))) {
+					from = Math.min(from, text.length - length);
+					break;
+				}
+		return from;
+	};
+	return {
+		secrets,
+		push(chunk: Buffer): string {
+			buffer = redactValues(buffer + decoder.write(chunk), secrets);
+			const from = holdFrom(buffer);
+			const out = buffer.slice(0, from);
+			buffer = buffer.slice(from);
+			return out;
+		},
+		flush(): string {
+			const out = redactValues(buffer + decoder.end(), secrets);
+			buffer = "";
+			return out;
+		},
+	};
+}
 
 const IMAGE_UNSUPPORTED =
 	"Image and binary attachments are not supported in remote tool results.";
@@ -277,6 +360,10 @@ export async function executeToolOperation(
 		return reject(id, "invalid", "Malformed tool operation");
 	}
 	const id = operation.operationId;
+	if (options.malformedValues)
+		return reject(id, "invalid", "Malformed project values");
+	if (options.values && operation.tool !== "bash")
+		return reject(id, "invalid", "Project values are only for shell commands");
 	const base = path.join(options.stateDir, "operations", digest(id));
 	const journalFile = `${base}.json`;
 	const operationDigest = digest(canonical(operation));
@@ -433,6 +520,8 @@ async function run(
 		return file;
 	};
 	const signal = AbortSignal.timeout(Math.max(1, operation.deadlineAt - now()));
+	const secrets = valueRedactor(Object.values(options.values ?? {})).secrets;
+	const redact = (text: string) => redactValues(text, secrets);
 	const mutate = async (file: string, content: string) => {
 		await allowed(file);
 		await recordMutation({
@@ -485,20 +574,47 @@ async function run(
 				},
 			});
 			break;
-		case "bash":
+		case "bash": {
+			const local = createLocalBashOperations();
+			const values = options.values ?? {};
 			tool = createBashToolDefinition(root, {
 				exposeSessionEnvironment: false,
-				operations: createLocalBashOperations(),
+				operations: {
+					// Output is redacted before the tool buffers, truncates or spills it.
+					exec: async (command, cwd, execOptions) => {
+						const redactor = valueRedactor(Object.values(values));
+						const emit = (text: string) => {
+							if (text) execOptions.onData(Buffer.from(text, "utf8"));
+						};
+						try {
+							return await local.exec(command, cwd, {
+								...execOptions,
+								onData: (data) => emit(redactor.push(data)),
+							});
+						} finally {
+							emit(redactor.flush());
+						}
+					},
+				},
 				spawnHook: (context) => ({
 					...context,
-					env: Object.fromEntries(
-						SHELL_ENV_KEYS.flatMap((key) =>
-							process.env[key] === undefined ? [] : [[key, process.env[key]]],
+					// Image defaults win, so a project value cannot redirect PATH or HOME.
+					env: {
+						...Object.fromEntries(
+							Object.entries(values).filter(
+								([key]) => !SHELL_ENV_KEYS.includes(key),
+							),
 						),
-					) as NodeJS.ProcessEnv,
+						...Object.fromEntries(
+							SHELL_ENV_KEYS.flatMap((key) =>
+								process.env[key] === undefined ? [] : [[key, process.env[key]]],
+							),
+						),
+					} as NodeJS.ProcessEnv,
 				}),
 			});
 			break;
+		}
 		case "grep":
 			tool = createGrepToolDefinition(root);
 			break;
@@ -527,7 +643,7 @@ async function run(
 		};
 		if (result.content.some((part) => part.type !== "text"))
 			return completed(id, true, IMAGE_UNSUPPORTED, false);
-		const text = result.content.map((part) => part.text ?? "").join("");
+		const text = redact(result.content.map((part) => part.text ?? "").join(""));
 		const details = result.details as
 			| { truncation?: { truncated?: boolean } }
 			| undefined;
@@ -539,7 +655,9 @@ async function run(
 			cut.cut || details?.truncation?.truncated === true,
 		);
 	} catch (error) {
-		const message = error instanceof Error ? error.message : "Tool failed";
+		const message = redact(
+			error instanceof Error ? error.message : "Tool failed",
+		);
 		const cut = bounded(message, MAX_TEXT_BYTES);
 		return completed(id, true, cut.text, cut.cut);
 	}

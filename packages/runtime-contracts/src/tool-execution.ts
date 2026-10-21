@@ -82,7 +82,9 @@ export type ToolRejectionReason =
 	| "invalid"
 	| "generation"
 	| "expired"
-	| "conflict";
+	| "conflict"
+	/** The runtime refused before dispatch because project values were denied. */
+	| "values";
 export type ToolOutcomeV1 =
 	| {
 			version: 1;

@@ -1,6 +1,6 @@
 # 015: Complete resource admission and execution-only project values
 
-Status: BLOCKED on passed L4, plans 011–014. Base: `bcce03e`. Phase: L5.
+Status: DONE for the local fixture scope ([evidence](evidence/015-resource-and-value-policy.md)). Was: BLOCKED on passed L4, plans 011–014. Base: `bcce03e`. Phase: L5.
 Spec: `docs/specs/pi-durable-session-runtime.md`, decisions 3, 9, 12–15, 17; PD01, PD06, PD14, PD16, PD28, PD30, PD32–PD33; OD1, OD3, OD5–OD6.
 
 ## Outcome

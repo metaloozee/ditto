@@ -36,6 +36,10 @@ import {
 	PiDurableProductSession,
 	parseCandidateRuntimeScope,
 } from "../../runtime/src/pi-durable-product-session.ts";
+import {
+	candidateProjectCiphertext,
+	deliverCandidateProjectValues,
+} from "../../web/src/lib/candidate-project-values";
 import { readOwnedConfigurationAuthority } from "../../web/src/lib/configuration-product-authority";
 import {
 	CANDIDATE_MODEL_POLICY,
@@ -134,6 +138,7 @@ type CandidateFixtureBindings = Omit<
 	CandidateSessions: DurableObjectNamespace<CandidateFixtureSession>;
 	DB: D1Database;
 	CandidateCredential: DurableObjectNamespace<CandidateFixtureCredential>;
+	CANDIDATE_PROJECT_VALUES_SECRET: string;
 };
 
 type FixturePredecessor = {
@@ -1226,6 +1231,19 @@ export class CandidateFixtureProduct extends WorkerEntrypoint<CandidateFixtureBi
 			generation: reset.generation,
 			priorTerminated: intent.predecessor.id,
 		};
+	}
+	async readCandidateProjectValues(
+		value: CandidateRuntimeScope,
+		request: unknown,
+	) {
+		const scope = parseCandidateRuntimeScope(value);
+		return deliverCandidateProjectValues({
+			workspaceSessionId: scope.workspaceSessionId,
+			request,
+			authority: () => this.readRuntimeAuthority(scope),
+			ciphertext: candidateProjectCiphertext(this.env.DB, scope),
+			secret: this.env.CANDIDATE_PROJECT_VALUES_SECRET,
+		});
 	}
 	async readCandidateSubject(commandId: string, ownerVersion: number) {
 		try {

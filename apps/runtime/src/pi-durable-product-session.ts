@@ -19,6 +19,7 @@ import type {
 	QueueDecisionV2,
 } from "../../../packages/runtime-contracts/src/product-command.js";
 import { parseCommandV2 } from "../../../packages/runtime-contracts/src/product-command.js";
+import type { ProjectValueRequestV1 } from "../../../packages/runtime-contracts/src/project-values.js";
 import type {
 	ProjectionIntentV1,
 	RuntimeObservationV1,
@@ -95,6 +96,11 @@ export interface CandidatePrivateProduct extends PrivateModelTransport {
 		input: unknown,
 		selection?: unknown,
 	): Promise<ConfigurationAuthorityV1>;
+	/** Decrypts project values for one admitted shell operation after fresh authority. */
+	readCandidateProjectValues(
+		scope: CandidateRuntimeScope,
+		request: ProjectValueRequestV1,
+	): Promise<unknown>;
 }
 export type CandidateSessionBindings = {
 	CANDIDATE_DISPOSABLE: "008-synthetic";
@@ -254,6 +260,8 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 				const remote = createRemoteTools(guard, {
 					workspaceSessionId: scope.workspaceSessionId,
 					executor: () => this.remoteExecutor(),
+					projectValues: (request) =>
+						product.readCandidateProjectValues(scope, request),
 				});
 				adapter.registry.install(remote.extension);
 				return {

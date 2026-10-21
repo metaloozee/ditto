@@ -7,6 +7,11 @@ import {
 	type ModelTransportDescriptorV1,
 	parseModelSubjectV1,
 } from "../../../packages/runtime-contracts/src/model.js";
+import {
+	CANDIDATE_CAPACITY_POLICY,
+	CandidateCapacity,
+	type CandidateCapacityPolicy,
+} from "../../web/src/lib/candidate-capacity";
 import type { CodexTokens } from "../../web/src/lib/codex-credential-crypto";
 import {
 	type CandidateModelPreparation,
@@ -208,6 +213,13 @@ type DispatchFence = Record<string, SqlStorageValue> & {
 };
 
 export class CandidateFixtureCredential extends FixtureCredential {
+	private capacityPolicy: CandidateCapacityPolicy = CANDIDATE_CAPACITY_POLICY;
+	setModelCapacity(policy: CandidateCapacityPolicy) {
+		this.capacityPolicy = policy;
+	}
+	protected modelCapacity() {
+		return new CandidateCapacity(this.env.DB, this.capacityPolicy);
+	}
 	private finalWait:
 		| {
 				entered: Promise<boolean>;

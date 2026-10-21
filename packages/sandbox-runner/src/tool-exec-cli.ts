@@ -5,10 +5,19 @@ import {
 	executeToolOperation,
 	initializeExecutor,
 	MAX_OPERATION_BYTES,
+	takeExecValues,
 } from "./tool-exec.js";
 
 // Executors never fetch helper binaries at run time; grep/find use the image's rg/fd.
 process.env.PI_OFFLINE = "1";
+// Taken first so no tool, helper or later child inherits the values.
+let values: Record<string, string> | undefined;
+let malformedValues = false;
+try {
+	values = takeExecValues(process.env);
+} catch {
+	malformedValues = true;
+}
 
 const root = process.env.DITTO_EXEC_ROOT ?? "/workspace";
 const stateDir = process.env.DITTO_EXEC_STATE ?? "/var/lib/ditto-exec";
@@ -37,7 +46,12 @@ async function main(argv: string[]): Promise<number> {
 		} catch {
 			input = undefined;
 		}
-		const outcome = await executeToolOperation(input, { root, stateDir });
+		const outcome = await executeToolOperation(input, {
+			root,
+			stateDir,
+			...(values ? { values } : {}),
+			...(malformedValues ? { malformedValues } : {}),
+		});
 		process.stdout.write(`${JSON.stringify(outcome)}\n`);
 		return 0;
 	}
