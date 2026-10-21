@@ -1,5 +1,7 @@
 import {
+	type ArchiveCompletionResultV1,
 	type CheckpointProjectionResultV1,
+	parseArchiveCompletionV1,
 	parseCheckpointProjectionsV1,
 	parseRestoreOutcomeV1,
 	type RestoreCompletionResultV1,
@@ -76,8 +78,15 @@ export interface CandidateAdmissionRuntime {
 		subject: ModelSubjectV1,
 		cursor?: number,
 	): Promise<RuntimeObservationV1>;
+	/** Committed history of an archived session; never activates its host or executor. */
+	observeHistory?(
+		scope: { userId: string; projectId: string; workspaceSessionId: string },
+		cursor?: number,
+	): Promise<RuntimeObservationV1>;
 	/** Set only by a composition whose runtime can finish a restore; a closed barrier needs one. */
 	restoreAvailable?: boolean;
+	/** Set only by a composition whose runtime can finish an archive; a closed archive needs one. */
+	archiveAvailable?: boolean;
 	workspaceAction?(
 		subject: ModelSubjectV1,
 		action: WorkspaceActionV1,
@@ -266,6 +275,23 @@ WHERE k.userId=? AND k.targetKind=? AND k.targetId=? AND k.idempotencyKey=?`)
 		if (!row) reject("runtime_owner_mismatch");
 		return row;
 	}
+	/** A duplicate key keeps its receipt for an owned session, archived ones included, until deletion. */
+	private async ownedReceipt(
+		userId: string,
+		projectId: string,
+		sessionId: string,
+	) {
+		const row = await this.db
+			.prepare(
+				`SELECT 1 FROM workspace_sessions s JOIN projects p ON p.id=s.projectId
+WHERE s.id=? AND s.userId=? AND s.projectId=? AND p.userId=s.userId AND p.status='ready'
+AND s.status IN ('active','archived') AND s.runtimeOwner='pi_durable_v1' AND s.runtimeOwnerVersion=1
+AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind='project' AND f.targetId=p.id) OR (f.targetKind='workspace_session' AND f.targetId=s.id))`,
+			)
+			.bind(sessionId, userId, projectId)
+			.first();
+		if (!row) reject("runtime_owner_mismatch");
+	}
 	private async subject(
 		userId: string,
 		projectId: string,
@@ -303,7 +329,7 @@ WHERE k.userId=? AND k.targetKind=? AND k.targetId=? AND k.idempotencyKey=?`)
 			hash = await digest(canonical(input));
 		const existing = await this.key(userId, input);
 		if (existing) {
-			await this.owned(userId, input.projectId, existing.sessionId);
+			await this.ownedReceipt(userId, input.projectId, existing.sessionId);
 			if (
 				existing.payloadVersion !== 2 ||
 				existing.canonicalPayloadHash !== hash
@@ -313,7 +339,10 @@ WHERE k.userId=? AND k.targetKind=? AND k.targetId=? AND k.idempotencyKey=?`)
 		}
 		if (input.kind === "restore_checkpoint_acknowledging_loss")
 			return this.admitRestore(userId, input, hash);
+		if (input.kind === "archive_session")
+			return this.admitArchive(userId, input, hash);
 		const ordinary = input.kind === "prompt" || input.kind === "follow_up";
+		if (input.sessionId) await this.assertOpen(input.sessionId);
 		if (input.sessionId && ordinary)
 			await this.assertNoRestore(input.sessionId);
 		const first = input.kind === "prompt" && !input.sessionId;
@@ -462,7 +491,9 @@ SELECT identityId,'workspace_session',identityId,identityId,userId,projectId,ses
 				`INSERT INTO session_commands(id,userId,targetKind,targetId,projectId,sessionId,kind,commandSeq,targetRunId,targetCommandId,payloadVersion,userMessageId,assistantMessageId,payloadDigest,acceptedAt,deadlineAt)
 SELECT ?,?,'workspace_session',?,?,?, ?,nextSequence,?,?,2,?,?,?,?,? FROM session_command_sequences WHERE sessionId=? AND EXISTS(${gate})
 AND (?=0 OR EXISTS(SELECT 1 FROM codex_connections k JOIN codex_fixture_capabilities e ON e.userId=k.user_id WHERE k.user_id=? AND k.status='connected' AND k.revoked=0 AND k.generation=? AND e.generation=k.generation AND e.revision=? AND e.snapshot=?))
-AND (?=0 OR NOT EXISTS(SELECT 1 FROM candidate_restore_barriers b WHERE b.sessionId=? AND b.state='closed'))`,
+AND (?=0 OR NOT EXISTS(SELECT 1 FROM candidate_restore_barriers b WHERE b.sessionId=? AND b.state='closed'))
+AND NOT EXISTS(SELECT 1 FROM candidate_archives a WHERE a.sessionId=?)
+AND NOT EXISTS(SELECT 1 FROM candidate_continuations n WHERE n.destinationSessionId=? AND n.state!='ready')`,
 				commandId,
 				userId,
 				sessionId,
@@ -488,6 +519,8 @@ AND (?=0 OR NOT EXISTS(SELECT 1 FROM candidate_restore_barriers b WHERE b.sessio
 				readiness?.revision ?? 0,
 				readiness?.snapshot ?? "",
 				ordinary ? 1 : 0,
+				sessionId,
+				sessionId,
 				sessionId,
 			),
 		);
@@ -545,7 +578,7 @@ SELECT ?,coalesce((SELECT max(fifoSeq) FROM workspace_runtime_work),0)+1,?,sessi
 		} catch (error) {
 			const raced = await this.key(userId, input);
 			if (raced) {
-				await this.owned(userId, input.projectId, raced.sessionId);
+				await this.ownedReceipt(userId, input.projectId, raced.sessionId);
 				if (raced.payloadVersion !== 2 || raced.canonicalPayloadHash !== hash)
 					reject("conflict");
 				return receipt(raced);
@@ -561,11 +594,126 @@ SELECT ?,coalesce((SELECT max(fifoSeq) FROM workspace_runtime_work),0)+1,?,sessi
 		}
 		const row = await this.key(userId, input);
 		if (!row) {
+			if (input.sessionId) await this.assertOpen(input.sessionId);
 			if (input.sessionId && ordinary)
 				await this.assertNoRestore(input.sessionId);
 			reject("runtime_owner_mismatch");
 		}
 		return receipt(row);
+	}
+
+	/**
+	 * An archive closes every kind of admission from its intent, and a
+	 * continuation admits nothing until its context is in place.
+	 */
+	private async assertOpen(sessionId: string) {
+		const [archive, continuation] = await this.db.batch([
+			this.db
+				.prepare("SELECT 1 FROM candidate_archives WHERE sessionId=?")
+				.bind(sessionId),
+			this.db
+				.prepare(
+					"SELECT 1 FROM candidate_continuations WHERE destinationSessionId=? AND state!='ready'",
+				)
+				.bind(sessionId),
+		]);
+		if (archive.results.length) reject("session_archived");
+		if (continuation.results.length) reject("continuation_pending");
+	}
+
+	/**
+	 * Archive intent, the admission barrier and the cutoff commit in one
+	 * batch. Every command accepted before the archive is its cutoff; nothing
+	 * is admitted after it.
+	 */
+	private async admitArchive(
+		userId: string,
+		input: Extract<BrowserCommandV2, { kind: "archive_session" }>,
+		hash: string,
+	): Promise<ReceiptV2> {
+		const identity = await this.owned(userId, input.projectId, input.sessionId);
+		if (!this.runtime.archiveAvailable) reject("archive_unavailable");
+		await this.assertOpen(input.sessionId);
+		await this.assertNoRestore(input.sessionId);
+		const commandId = this.createId(),
+			receiptId = this.createId(),
+			acceptedAt = this.now(),
+			deadlineAt = acceptedAt + CANDIDATE_QUEUE_TTL_MS;
+		const q = (sql: string, ...args: (string | number | null)[]) =>
+			this.db.prepare(sql).bind(...args);
+		const gate = ownedSessionSql.replace(
+			"SELECT s.*,i.id AS identityId,i.incarnationId,i.lifecycleGeneration,i.controllerNamespace",
+			"SELECT 1",
+		);
+		try {
+			await this.db.batch([
+				q(
+					`INSERT INTO session_commands(id,userId,targetKind,targetId,projectId,sessionId,kind,commandSeq,targetRunId,targetCommandId,payloadVersion,userMessageId,assistantMessageId,payloadDigest,acceptedAt,deadlineAt)
+SELECT ?,?,'workspace_session',?,?,?,'archive_session',nextSequence,NULL,NULL,2,NULL,NULL,?,?,? FROM session_command_sequences
+WHERE sessionId=? AND EXISTS(${gate})
+AND NOT EXISTS(SELECT 1 FROM candidate_restore_barriers b WHERE b.sessionId=? AND b.state='closed')
+AND NOT EXISTS(SELECT 1 FROM candidate_archives a WHERE a.sessionId=?)
+AND NOT EXISTS(SELECT 1 FROM candidate_continuations n WHERE n.destinationSessionId=? AND n.state!='ready')`,
+					commandId,
+					userId,
+					input.sessionId,
+					input.projectId,
+					input.sessionId,
+					hash,
+					acceptedAt,
+					deadlineAt,
+					input.sessionId,
+					input.sessionId,
+					userId,
+					input.projectId,
+					input.sessionId,
+					input.sessionId,
+					input.sessionId,
+				),
+				q(
+					"INSERT INTO candidate_archives(archiveCommandId,sessionId,ownerVersion,cutoffSeq,state,openedAt) SELECT id,sessionId,1,commandSeq-1,'closed',acceptedAt FROM session_commands WHERE id=?",
+					commandId,
+				),
+				q(
+					"UPDATE session_command_sequences SET nextSequence=nextSequence+1,updatedAt=? WHERE sessionId=? AND EXISTS(SELECT 1 FROM session_commands WHERE id=?)",
+					acceptedAt,
+					input.sessionId,
+					commandId,
+				),
+				q(
+					"INSERT INTO session_command_keys(id,userId,targetKind,targetId,idempotencyKey,commandKind,canonicalPayloadHash,commandId,receiptId,createdAt) SELECT ?,userId,'workspace_session',?,?,kind,?,id,?,acceptedAt FROM session_commands WHERE id=?",
+					this.createId(),
+					input.sessionId,
+					input.idempotencyKey,
+					hash,
+					receiptId,
+					commandId,
+				),
+				q(
+					`INSERT INTO workspace_runtime_work(id,fifoSeq,identityId,sessionId,projectId,userId,intent,payload,status,queueExpiresAt,userMessageId,assistantMessageId,protocolVersion,runtimeOwner,runtimeOwnerVersion,commandId,deliveryState)
+SELECT ?,coalesce((SELECT max(fifoSeq) FROM workspace_runtime_work),0)+1,?,sessionId,projectId,userId,'agent_run',?,'queued',?,NULL,NULL,2,'pi_durable_v1',1,id,'pending' FROM session_commands WHERE id=?`,
+					this.createId(),
+					identity.identityId,
+					JSON.stringify({ commandKind: input.kind }),
+					Math.floor(deadlineAt / 1000),
+					commandId,
+				),
+			]);
+		} catch (error) {
+			const raced = await this.key(userId, input);
+			if (raced) {
+				if (raced.payloadVersion !== 2 || raced.canonicalPayloadHash !== hash)
+					reject("conflict");
+				return receipt(raced);
+			}
+			await this.assertOpen(input.sessionId);
+			throw error;
+		}
+		const row = await this.key(userId, input);
+		if (row) return receipt(row);
+		await this.assertOpen(input.sessionId);
+		await this.assertNoRestore(input.sessionId);
+		reject("runtime_owner_mismatch");
 	}
 
 	/** Ordinary admission stays closed from restore intent until its exact completion. */
@@ -596,6 +744,7 @@ SELECT ?,coalesce((SELECT max(fifoSeq) FROM workspace_runtime_work),0)+1,?,sessi
 	): Promise<ReceiptV2> {
 		const identity = await this.owned(userId, input.projectId, input.sessionId);
 		if (!this.runtime.restoreAvailable) reject("restore_unavailable");
+		await this.assertOpen(input.sessionId);
 		await this.assertNoRestore(input.sessionId);
 		const commandId = this.createId(),
 			receiptId = this.createId(),
@@ -614,7 +763,8 @@ SELECT ?,coalesce((SELECT max(fifoSeq) FROM workspace_runtime_work),0)+1,?,sessi
 SELECT ?,?,'workspace_session',?,?,?,'restore_checkpoint_acknowledging_loss',nextSequence,NULL,NULL,2,NULL,NULL,?,?,? FROM session_command_sequences
 WHERE sessionId=? AND nextSequence-1=? AND EXISTS(${gate})
 AND EXISTS(SELECT 1 FROM runtime_checkpoint_pointers p WHERE p.sessionId=? AND p.runtimeOwnerVersion=1 AND p.currentPairId=? AND p.mutationGeneration=?)
-AND NOT EXISTS(SELECT 1 FROM candidate_restore_barriers b WHERE b.sessionId=? AND b.state='closed')`,
+AND NOT EXISTS(SELECT 1 FROM candidate_restore_barriers b WHERE b.sessionId=? AND b.state='closed')
+AND NOT EXISTS(SELECT 1 FROM candidate_archives a WHERE a.sessionId=?)`,
 					commandId,
 					userId,
 					input.sessionId,
@@ -631,6 +781,7 @@ AND NOT EXISTS(SELECT 1 FROM candidate_restore_barriers b WHERE b.sessionId=? AN
 					input.sessionId,
 					input.committedPairId,
 					input.expectedMutationGeneration,
+					input.sessionId,
 					input.sessionId,
 				),
 				q(
@@ -1149,6 +1300,118 @@ WHERE c.sessionId=candidate_restore_barriers.sessionId AND c.commandSeq<=candida
 	}
 
 	/**
+	 * Exact archive completion retires the session: it becomes archived
+	 * history, its executor identity is retired and fenced, its workspace
+	 * claim is freed and its executor teardown becomes a durable cleanup
+	 * job, all in one batch. The final pair must be the product pointer and
+	 * every assistant through the cutoff must be settled.
+	 */
+	async applyArchiveCompletion(
+		scope: { userId: string; projectId: string; workspaceSessionId: string },
+		value: unknown,
+	): Promise<ArchiveCompletionResultV1> {
+		const completion = parseArchiveCompletionV1(value);
+		const result = (outcome: ArchiveCompletionResultV1["outcome"]) => ({
+			archiveCommandId: completion.archiveCommandId,
+			outcome,
+		});
+		const row = await this.db
+			.prepare(
+				`SELECT a.*,s.sandboxIdentityId AS identityId FROM candidate_archives a JOIN workspace_sessions s ON s.id=a.sessionId
+WHERE a.archiveCommandId=? AND a.sessionId=? AND s.userId=? AND s.projectId=? AND s.runtimeOwner='pi_durable_v1'`,
+			)
+			.bind(
+				completion.archiveCommandId,
+				scope.workspaceSessionId,
+				scope.userId,
+				scope.projectId,
+			)
+			.first<{
+				cutoffSeq: number;
+				state: string;
+				finalPairId: string | null;
+				mutationGeneration: number | null;
+				conversationGeneration: number | null;
+				identityId: string | null;
+			}>();
+		if (!row || row.cutoffSeq !== completion.cutoffSeq || !row.identityId)
+			return result("blocked_membership");
+		if (row.state === "complete")
+			return result(
+				row.finalPairId === completion.finalPairId &&
+					row.mutationGeneration === completion.mutationGeneration &&
+					row.conversationGeneration === completion.conversationGeneration
+					? "already_applied"
+					: "blocked_membership",
+			);
+		const pointer = await this.db
+			.prepare(
+				"SELECT currentPairId,mutationGeneration FROM runtime_checkpoint_pointers WHERE sessionId=? AND runtimeOwnerVersion=1",
+			)
+			.bind(scope.workspaceSessionId)
+			.first<{ currentPairId: string | null; mutationGeneration: number }>();
+		if (
+			pointer?.currentPairId !== completion.finalPairId ||
+			pointer.mutationGeneration !== completion.mutationGeneration
+		)
+			return result("blocked_membership");
+		const now = this.now();
+		const complete =
+			"EXISTS(SELECT 1 FROM candidate_archives WHERE archiveCommandId=? AND state='complete')";
+		const q = (sql: string, ...args: (string | number | null)[]) =>
+			this.db.prepare(sql).bind(...args);
+		await this.db.batch([
+			q(
+				`UPDATE candidate_archives SET state='complete',finalPairId=?,mutationGeneration=?,conversationGeneration=?,completedAt=?
+WHERE archiveCommandId=? AND state='closed'
+AND EXISTS(SELECT 1 FROM runtime_checkpoint_pointers p WHERE p.sessionId=candidate_archives.sessionId AND p.currentPairId=? AND p.mutationGeneration=?)
+AND NOT EXISTS(SELECT 1 FROM session_commands c JOIN messages m ON m.id=c.assistantMessageId
+WHERE c.sessionId=candidate_archives.sessionId AND c.commandSeq<=candidate_archives.cutoffSeq AND c.kind IN ('prompt','follow_up') AND m.status NOT IN ('complete','failed'))`,
+				completion.finalPairId,
+				completion.mutationGeneration,
+				completion.conversationGeneration,
+				now,
+				completion.archiveCommandId,
+				completion.finalPairId,
+				completion.mutationGeneration,
+			),
+			q(
+				`UPDATE workspace_sessions SET status='archived',updated_at=unixepoch() WHERE id=? AND status='active' AND ${complete}`,
+				scope.workspaceSessionId,
+				completion.archiveCommandId,
+			),
+			q(
+				`UPDATE sandbox_identities SET state='destroying',retiredAt=unixepoch(),updated_at=unixepoch() WHERE id=? AND retiredAt IS NULL AND ${complete}`,
+				row.identityId,
+				completion.archiveCommandId,
+			),
+			q(
+				`INSERT OR IGNORE INTO runtime_retired_identity_fences(identityId,lifecycleGeneration,retiredAt) SELECT id,lifecycleGeneration,? FROM sandbox_identities WHERE id=? AND ${complete}`,
+				now,
+				row.identityId,
+				completion.archiveCommandId,
+			),
+			q(
+				`DELETE FROM candidate_workspace_claims WHERE sessionId=? AND ${complete}`,
+				scope.workspaceSessionId,
+				completion.archiveCommandId,
+			),
+			q(
+				`INSERT OR IGNORE INTO runtime_cleanup_jobs(id,targetKind,targetId,state,retryAt,attempts,createdAt) SELECT 'executor:'||?,'workspace_session',?,'pending',NULL,0,? WHERE ${complete}`,
+				scope.workspaceSessionId,
+				scope.workspaceSessionId,
+				now,
+				completion.archiveCommandId,
+			),
+		]);
+		const after = await this.db
+			.prepare("SELECT state FROM candidate_archives WHERE archiveCommandId=?")
+			.bind(completion.archiveCommandId)
+			.first<{ state: string }>();
+		return result(after?.state === "complete" ? "applied" : "retry");
+	}
+
+	/**
 	 * Owned UI Git or preview action. The runtime owner admits it under its
 	 * one mutation scope; the product never touches the workspace directly.
 	 */
@@ -1159,6 +1422,7 @@ WHERE c.sessionId=candidate_restore_barriers.sessionId AND c.commandSeq<=candida
 		const { projectId, sessionId, ...action } =
 			parseBrowserWorkspaceActionV1(value);
 		const subject = await this.subject(userId, projectId, sessionId);
+		await this.assertOpen(sessionId);
 		await this.assertNoRestore(sessionId);
 		if (!this.runtime.workspaceAction) reject("runtime_unavailable", 503);
 		// Preview-only work runs on the session's executor, so it joins the
@@ -1182,9 +1446,26 @@ WHERE c.sessionId=candidate_restore_barriers.sessionId AND c.commandSeq<=candida
 		sessionId: string,
 		cursor?: number,
 	): Promise<RuntimeObservationV1> {
-		const subject = await this.subject(userId, projectId, sessionId);
-		if (!this.runtime.observe) reject("runtime_unavailable", 503);
-		const observation = await this.runtime.observe(subject, cursor);
+		const archived = await this.db
+			.prepare(
+				`SELECT 1 FROM workspace_sessions s JOIN projects p ON p.id=s.projectId JOIN candidate_archives a ON a.sessionId=s.id AND a.state='complete'
+WHERE s.id=? AND s.userId=? AND s.projectId=? AND p.userId=s.userId AND p.status='ready' AND s.status='archived' AND s.runtimeOwner='pi_durable_v1'
+AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind='project' AND f.targetId=p.id) OR (f.targetKind='workspace_session' AND f.targetId=s.id))`,
+			)
+			.bind(sessionId, userId, projectId)
+			.first();
+		let observation: RuntimeObservationV1;
+		if (archived) {
+			if (!this.runtime.observeHistory) reject("runtime_unavailable", 503);
+			observation = await this.runtime.observeHistory(
+				{ userId, projectId, workspaceSessionId: sessionId },
+				cursor,
+			);
+		} else {
+			const subject = await this.subject(userId, projectId, sessionId);
+			if (!this.runtime.observe) reject("runtime_unavailable", 503);
+			observation = await this.runtime.observe(subject, cursor);
+		}
 		if (
 			new TextEncoder().encode(JSON.stringify(observation)).byteLength >
 			PROJECTION_LIMITS.observationBytes

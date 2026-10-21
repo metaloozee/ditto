@@ -5,7 +5,7 @@ import {
 	BACKGROUND_CONTEXT,
 	withAbortSignal,
 } from "@earendil-works/chord/context";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import {
 	type AgentChange,
 	type CommitPublication,
@@ -21,7 +21,9 @@ import {
 } from "@earendil-works/pi-durable";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
 import {
+	type ArchiveCompletionV1,
 	type CheckpointProjectionV1,
+	parseArchiveCompletionResultV1,
 	parseRestoreCompletionResultV1,
 	type RestoreCompletionV1,
 	type RestoreRefusalV1,
@@ -45,6 +47,12 @@ import {
 	literalField,
 	strictRecord,
 } from "../../../packages/runtime-contracts/src/json.js";
+import {
+	CONTINUATION_SEED_BYTES,
+	type ContinuationImportV1,
+	type ContinuationSeedV1,
+	parseContinuationSeedV1,
+} from "../../../packages/runtime-contracts/src/lifecycle.js";
 import type { ModelSubjectV1 } from "../../../packages/runtime-contracts/src/model.js";
 import {
 	type ModelAttemptV1,
@@ -89,6 +97,7 @@ import {
 	checkpointAdmission,
 	checkpointHealth,
 	deliverCheckpointProjections,
+	manifestRow,
 	recoverCheckpointState,
 } from "./pi-durable-checkpoints.ts";
 import { cooperativeFixture } from "./pi-durable-cooperative-fixture.ts";
@@ -115,6 +124,20 @@ import type {
 	WorkspaceController,
 	WorkspaceHostPort,
 } from "./pi-durable-workspace.ts";
+import {
+	decryptRuntimeText,
+	encryptRuntimeText,
+	RUNTIME_CRYPTO_FORMAT_VERSION,
+} from "./runtime-crypto.ts";
+
+/** Entry kind that heads a continuation's context with the archived messages. */
+const CONTINUATION_ENTRY = "ditto.continuation";
+const continuationAad = (binding: RetainedStorageBinding) => ({
+	ownerId: binding.ownerId,
+	workspaceSessionId: binding.workspaceSessionId,
+	recordId: "archive/continuation-seed",
+	formatVersion: RUNTIME_CRYPTO_FORMAT_VERSION,
+});
 
 const WORK_MS = 1000;
 const DRAIN_MS = 1000;
@@ -412,6 +435,8 @@ export type HostFixtureDependencies = {
 		): Promise<unknown>;
 		/** The files half of a restore, composed with the session's execution and store. */
 		restorer?(port: CheckpointHostPort): CheckpointRestorer | undefined;
+		/** Product application of a durable archive completion; only an exact acknowledgment retires the session. */
+		completeArchive?(completion: ArchiveCompletionV1): Promise<unknown>;
 		/** UI Git, preview and backup scheduling under the same mutation ownership. */
 		workspace?(port: WorkspaceHostPort): WorkspaceController | undefined;
 	};
@@ -612,6 +637,14 @@ export class PiDurableHost {
 			);
 			storage.sql.exec(
 				"CREATE TABLE IF NOT EXISTS host_restores (command TEXT PRIMARY KEY, sequence INTEGER UNIQUE NOT NULL, cutoff INTEGER NOT NULL, pair TEXT NOT NULL, state TEXT NOT NULL CHECK (state IN ('fenced','retired','restored','complete','blocked','refusing','refused')), restored_pair TEXT, fallback INTEGER, generation INTEGER, evidence TEXT)",
+			);
+			// One archive per session; after it completes the host is history only.
+			storage.sql.exec(
+				"CREATE TABLE IF NOT EXISTS host_archives (id INTEGER PRIMARY KEY CHECK (id = 1), command TEXT UNIQUE NOT NULL, sequence INTEGER NOT NULL, cutoff INTEGER NOT NULL, state TEXT NOT NULL CHECK (state IN ('fenced','retired','final','complete','blocked')), pair TEXT, mutation_generation INTEGER, generation INTEGER, seed TEXT, seed_digest TEXT, evidence TEXT)",
+			);
+			// A continuation's imported context; set once, before any command.
+			storage.sql.exec(
+				"CREATE TABLE IF NOT EXISTS host_continuation (id INTEGER PRIMARY KEY CHECK (id = 1), source_session TEXT NOT NULL, source_pair TEXT NOT NULL, digest TEXT NOT NULL, messages INTEGER NOT NULL)",
 			);
 			const columns = storage.sql
 				.exec<{ name: string }>("PRAGMA table_info(host_effects)")
@@ -1187,13 +1220,14 @@ export class PiDurableHost {
 	private ordinaryAllowed() {
 		if (this.dependencies.candidate?.ordinaryAllowed?.() === false)
 			return false;
-		// A restore keeps ordinary work closed from acceptance to completion.
+		// A restore keeps ordinary work closed from acceptance to completion;
+		// an archive closes it for good.
 		if (
 			this.read(
 				() =>
 					this.storage.sql
 						.exec(
-							"SELECT 1 FROM host_restores WHERE state NOT IN ('complete','refusing','refused')",
+							"SELECT 1 FROM host_restores WHERE state NOT IN ('complete','refusing','refused') UNION ALL SELECT 1 FROM host_archives",
 						)
 						.toArray().length,
 			)
@@ -4056,7 +4090,8 @@ export class PiDurableHost {
 		this.candidateScope(command);
 		const run =
 			command.kind === "prompt" ||
-			command.kind === "restore_checkpoint_acknowledging_loss"
+			command.kind === "restore_checkpoint_acknowledging_loss" ||
+			command.kind === "archive_session"
 				? command.commandId
 				: command.kind === "cancel"
 					? row.run
@@ -4082,6 +4117,7 @@ export class PiDurableHost {
 						"applied",
 						"restored",
 						"refused",
+						"archived",
 					]);
 		const decision =
 			value.decision === null ? null : parseQueueDecisionV2(value.decision);
@@ -4472,6 +4508,16 @@ export class PiDurableHost {
 				receiptId: command.receiptId,
 			};
 		}
+		if (command.kind === "archive_session") {
+			await this.acceptArchive(command);
+			return {
+				version: 2,
+				commandId: command.commandId,
+				ownerVersion: command.runtimeOwnerVersion,
+				acceptedPosition: command.commandSeq,
+				receiptId: command.receiptId,
+			};
+		}
 		if (command.kind === "restore_checkpoint_acknowledging_loss") {
 			await this.acceptRestore(command);
 			return {
@@ -4629,6 +4675,7 @@ export class PiDurableHost {
 		id: string,
 		disposition:
 			| "restored"
+			| "archived"
 			| "refused"
 			| "applied"
 			| "canceled"
@@ -4657,15 +4704,17 @@ export class PiDurableHost {
 					record.command,
 					disposition === "restored"
 						? "checkpoint_restored"
-						: disposition === "canceled"
-							? "command_canceled"
-							: disposition === "expired"
-								? "command_expired"
-								: disposition === "stopped"
-									? "run_stopped"
-									: disposition === "target_run_terminal"
-										? "target_run_terminal"
-										: "command_failed",
+						: disposition === "archived"
+							? "session_archived"
+							: disposition === "canceled"
+								? "command_canceled"
+								: disposition === "expired"
+									? "command_expired"
+									: disposition === "stopped"
+										? "run_stopped"
+										: disposition === "target_run_terminal"
+											? "target_run_terminal"
+											: "command_failed",
 				);
 			if (
 				record.command.kind === "prompt" &&
@@ -4823,6 +4872,25 @@ export class PiDurableHost {
 	 * command through the cutoff has been delivered.
 	 */
 	private async retireForRestore(row: { command: string; cutoff: number }) {
+		return this.retireThrough(row.cutoff, "restored", () =>
+			this.storage.sql.exec(
+				"UPDATE host_restores SET state = 'retired' WHERE command = ? AND state = 'fenced'",
+				row.command,
+			),
+		);
+	}
+
+	/**
+	 * Aborts the active conversation with its background tasks and gives
+	 * every accepted command through the cutoff its fate; `mark` records the
+	 * step in the same transaction that ends the remaining runs.
+	 */
+	private async retireThrough(
+		cutoff: number,
+		fate: "restored" | "archived",
+		mark: () => void,
+	) {
+		const row = { cutoff };
 		const delivered = this.read(() =>
 			Number(
 				this.storage.sql
@@ -4883,7 +4951,7 @@ export class PiDurableHost {
 					this.queueProjection();
 				});
 				await this.disposeCandidate(id, "done");
-			} else await this.disposeCandidate(id, "restored");
+			} else await this.disposeCandidate(id, fate);
 			this.dependencies.fault?.("restore-disposition");
 		}
 		this.transition("account", () => {
@@ -4898,10 +4966,7 @@ export class PiDurableHost {
 				"UPDATE host_runs SET state = 'canceled' WHERE state = 'stopping' AND id NOT IN (SELECT run FROM host_product_commands WHERE sequence > ? AND id = run)",
 				row.cutoff,
 			);
-			this.storage.sql.exec(
-				"UPDATE host_restores SET state = 'retired' WHERE command = ? AND state = 'fenced'",
-				row.command,
-			);
+			mark();
 		});
 		await this.durable();
 		// The product learns each fate now, even while files wait for quiescence.
@@ -5116,6 +5181,438 @@ export class PiDurableHost {
 		});
 		await this.durable();
 		return true;
+	}
+
+	/**
+	 * The product delivers an archive only after its barrier and cutoff are
+	 * durable in D1. Acceptance closes ordinary admission for good and
+	 * advances the runtime epoch before any archive I/O.
+	 */
+	private async acceptArchive(
+		command: Extract<CommandV2, { kind: "archive_session" }>,
+	) {
+		// Refuse before the fence: a fenced archive must be able to finish.
+		if (
+			!this.workspace() ||
+			!this.dependencies.checkpoints?.completeArchive ||
+			!this.dependencies.retained
+		)
+			throw new Error("Archive requires a workspace");
+		const prepared = await this.prepareProduct(command);
+		const committed = this.transition("fence", () => {
+			const retained = this.productRecord(command.commandId);
+			if (retained) {
+				if (canonical(retained.command) !== canonical(command))
+					throw new EffectDenied("authority");
+				return false;
+			}
+			if (this.storage.sql.exec("SELECT 1 FROM host_archives").toArray().length)
+				throw new Error("Session is already archived");
+			this.storeProduct(command, command.commandId, prepared);
+			// Nothing is admitted after an archive, so it directly follows its cutoff.
+			this.storage.sql.exec(
+				"INSERT INTO host_archives (id, command, sequence, cutoff, state) VALUES (1, ?, ?, ?, 'fenced')",
+				command.commandId,
+				command.commandSeq,
+				command.commandSeq - 1,
+			);
+			this.storage.sql.exec("UPDATE host_meta SET epoch = epoch + 1");
+			this.storage.sql.exec(
+				"INSERT OR REPLACE INTO host_wakeups VALUES ('archive', ?)",
+				this.dependencies.now(),
+			);
+			return true;
+		});
+		if (committed) this.rememberProduct(command, prepared);
+		await this.durable();
+		await this.repairWakeup();
+	}
+
+	private archiveRow() {
+		return this.read(
+			() =>
+				this.storage.sql
+					.exec<{
+						command: string;
+						sequence: number;
+						cutoff: number;
+						state: "fenced" | "retired" | "final" | "complete" | "blocked";
+						pair: string | null;
+						mutation_generation: number | null;
+						generation: number | null;
+					}>(
+						"SELECT command, sequence, cutoff, state, pair, mutation_generation, generation FROM host_archives WHERE id = 1",
+					)
+					.toArray()[0],
+		);
+	}
+
+	/** Advances an unfinished archive one durable step at a time; every step is safe to repeat. */
+	private async advanceArchive() {
+		const pending = (row = this.archiveRow()) =>
+			row && row.state !== "complete" && row.state !== "blocked"
+				? row
+				: undefined;
+		if (!pending()) return;
+		let retry = true;
+		try {
+			for (;;) {
+				const row = pending();
+				if (!row) {
+					retry = false;
+					break;
+				}
+				// An earlier restore finishes first; its fates precede the archive's.
+				if (this.restoreRow()) break;
+				const step =
+					row.state === "fenced"
+						? await this.retireThrough(row.cutoff, "archived", () =>
+								this.storage.sql.exec(
+									"UPDATE host_archives SET state = 'retired' WHERE id = 1 AND state = 'fenced'",
+								),
+							)
+						: row.state === "retired"
+							? await this.finalizeArchive()
+							: await this.completeArchive(row);
+				if (!step) break;
+			}
+		} catch (error) {
+			if (this.sealed || this.storageBarrier) throw error;
+		}
+		this.transition("account", () => {
+			this.storage.sql.exec("DELETE FROM host_wakeups WHERE id = 'archive'");
+			if (retry && pending())
+				this.storage.sql.exec(
+					"INSERT INTO host_wakeups VALUES ('archive', ?)",
+					this.dependencies.now() + PROJECTION_RETRY_MS,
+				);
+		});
+		await this.durable();
+		await this.repairWakeup();
+	}
+
+	/**
+	 * Stops preview with termination evidence and makes the final pair match
+	 * the final files and conversation, then seals that pair's model context
+	 * for a later continuation. An unknown outcome blocks the archive.
+	 */
+	private async finalizeArchive(): Promise<boolean> {
+		const workspace = this.workspace();
+		const binding = this.dependencies.retained;
+		if (!workspace || !binding) return false;
+		const head = await this.checkpointPort().head();
+		const before = this.read(() =>
+			this.storage.sql
+				.exec<{ current: string | null }>(
+					"SELECT current FROM checkpoint_pointer WHERE id = 1",
+				)
+				.one(),
+		);
+		const current = before.current
+			? this.read(() => manifestRow(this.storage, "id = ?", before.current!))
+			: null;
+		const stale =
+			!current ||
+			current.context.head.conversation !== head.conversation ||
+			current.context.head.entry !== head.entry ||
+			current.context.head.contextDigest !== head.contextDigest;
+		const result = await workspace.finalizeForArchive(stale);
+		if (result.status === "retry") return false;
+		if (result.status === "blocked") {
+			this.transition("account", () =>
+				this.storage.sql.exec(
+					"UPDATE host_archives SET state = 'blocked', evidence = ? WHERE id = 1 AND state = 'retired'",
+					JSON.stringify({ reason: result.reason }),
+				),
+			);
+			await this.durable();
+			return false;
+		}
+		const at = this.read(() =>
+			this.storage.sql
+				.exec<{ current: string | null; mutation_generation: number }>(
+					"SELECT current, mutation_generation FROM checkpoint_pointer WHERE id = 1",
+				)
+				.one(),
+		);
+		const manifest = at.current
+			? this.read(() => manifestRow(this.storage, "id = ?", at.current!))
+			: null;
+		if (!manifest) return false;
+		const seed = await this.ownerTransition(
+			BACKGROUND_CONTEXT,
+			async (context) => {
+				const pairHead = manifest.context.head;
+				let messages: unknown[] = [];
+				if (pairHead.entry !== null) {
+					const conversation = await this.harness.conversation(
+						pairHead.conversation as ConversationId,
+						context,
+					);
+					if (!conversation)
+						throw new ContextMismatch("Missing final conversation");
+					const view = await conversation.context(context);
+					if ((await digestText(canonical(view))) !== pairHead.contextDigest)
+						throw new ContextMismatch("Final context does not match its pair");
+					messages = [...view.messages];
+				}
+				const active = await this.harness.conversation(
+					this.conversationId,
+					context,
+				);
+				const agent = active ? await active.agent(context) : undefined;
+				let selection: ConfigurationSelectionV1 | null = null;
+				try {
+					if (agent?.model?.provider === "faux")
+						selection = parseConfigurationSelectionV1({
+							model: agent.model.modelId,
+							thinking: agent.thinkingLevel,
+						});
+				} catch {}
+				const value: ContinuationSeedV1 = {
+					version: 1,
+					sourceSessionId: binding.workspaceSessionId,
+					sourcePairId: manifest.id,
+					selection,
+					messages,
+					messagesDigest: await digestText(canonical(messages)),
+					archive: manifest.archive,
+				};
+				return value;
+			},
+		);
+		const plain = JSON.stringify(seed);
+		// A context too large to copy keeps the archive; it cannot be continued.
+		const sealed =
+			new TextEncoder().encode(plain).byteLength <= CONTINUATION_SEED_BYTES
+				? {
+						ciphertext: await encryptRuntimeText(
+							plain,
+							binding.keyring,
+							continuationAad(binding),
+						),
+						digest: await digestText(plain),
+					}
+				: null;
+		const generation = this.activeGeneration().generation;
+		this.transition("account", () =>
+			this.storage.sql.exec(
+				"UPDATE host_archives SET state = 'final', pair = ?, mutation_generation = ?, generation = ?, seed = ?, seed_digest = ?, evidence = ? WHERE id = 1 AND state = 'retired'",
+				manifest.id,
+				at.mutation_generation,
+				generation,
+				sealed?.ciphertext ?? null,
+				sealed?.digest ?? null,
+				sealed ? null : JSON.stringify({ continuation: "context_too_large" }),
+			),
+		);
+		await this.durable();
+		return true;
+	}
+
+	/** Fates and the final pointer reach the product first; only an exact acknowledgment retires the session. */
+	private async completeArchive(row: {
+		command: string;
+		cutoff: number;
+		pair: string | null;
+		mutation_generation: number | null;
+		generation: number | null;
+	}): Promise<boolean> {
+		const complete = this.dependencies.checkpoints?.completeArchive;
+		if (!complete || !row.pair) return false;
+		await this.deliverCheckpoints();
+		if (
+			this.read(
+				() =>
+					this.storage.sql
+						.exec(
+							"SELECT 1 FROM checkpoint_projections WHERE state != 'applied'",
+						)
+						.toArray().length,
+			)
+		)
+			return false;
+		await this.deliverProjections(true);
+		if (
+			this.read(
+				() =>
+					this.storage.sql
+						.exec("SELECT 1 FROM host_projections WHERE applied < version")
+						.toArray().length,
+			)
+		)
+			return false;
+		const completion: ArchiveCompletionV1 = {
+			version: 1,
+			archiveCommandId: row.command,
+			cutoffSeq: row.cutoff,
+			finalPairId: row.pair,
+			mutationGeneration: Number(row.mutation_generation),
+			conversationGeneration: Number(row.generation),
+		};
+		const result = parseArchiveCompletionResultV1(
+			await complete(completion),
+			completion,
+		);
+		if (result.outcome === "retry") return false;
+		if (result.outcome !== "applied" && result.outcome !== "already_applied") {
+			this.transition("account", () =>
+				this.storage.sql.exec(
+					"UPDATE host_archives SET evidence = ? WHERE id = 1",
+					JSON.stringify({ completion: result.outcome }),
+				),
+			);
+			await this.durable();
+			return false;
+		}
+		await this.disposeCandidate(row.command, "applied");
+		this.transition("account", () =>
+			this.storage.sql.exec(
+				"UPDATE host_archives SET state = 'complete' WHERE id = 1 AND state = 'final'",
+			),
+		);
+		await this.durable();
+		return true;
+	}
+
+	/**
+	 * The sealed model context of a completed archive, read from committed
+	 * tables without opening Pi or the executor.
+	 */
+	/**
+	 * Records a completion the product committed when its acknowledgment was
+	 * lost. An archived session's host can no longer open, so the caller
+	 * supplies passive proof that the product's archive is complete.
+	 */
+	static acknowledgeArchive(storage: DurableObjectStorage) {
+		try {
+			storage.sql.exec(
+				"UPDATE host_archives SET state = 'complete' WHERE id = 1 AND state = 'final'",
+			);
+		} catch {
+			// A session that never archived has no table to update.
+		}
+	}
+
+	static async continuationSeed(
+		storage: DurableObjectStorage,
+		binding: RetainedStorageBinding,
+	): Promise<ContinuationSeedV1 | null> {
+		let row:
+			| { state: string; seed: string | null; seed_digest: string | null }
+			| undefined;
+		try {
+			row = storage.sql
+				.exec<{
+					state: string;
+					seed: string | null;
+					seed_digest: string | null;
+				}>("SELECT state, seed, seed_digest FROM host_archives WHERE id = 1")
+				.toArray()[0];
+		} catch {
+			return null;
+		}
+		if (row?.state !== "complete" || !row.seed) return null;
+		const plain = await decryptRuntimeText(
+			row.seed,
+			binding.keyring,
+			continuationAad(binding),
+		);
+		if ((await digestText(plain)) !== row.seed_digest)
+			throw new EncryptedStorageError("integrity", "Storage integrity failure");
+		const seed = parseContinuationSeedV1(plain);
+		if ((await digestText(canonical(seed.messages))) !== seed.messagesDigest)
+			throw new EncryptedStorageError("integrity", "Storage integrity failure");
+		return seed;
+	}
+
+	/**
+	 * Starts a continuation's conversation from an archived session's final
+	 * context, before any command: one entry that heads the new context,
+	 * written under this session's own storage keys. No task, inbox or run
+	 * of the source is carried over. Repeating the same seed is idempotent.
+	 */
+	async importContinuation(input: unknown): Promise<ContinuationImportV1> {
+		this.assertLive(false);
+		const seed = parseContinuationSeedV1(input);
+		if ((await digestText(canonical(seed.messages))) !== seed.messagesDigest)
+			throw new Error("Continuation seed does not match its digest");
+		const ack: ContinuationImportV1 = {
+			version: 1,
+			sourceSessionId: seed.sourceSessionId,
+			sourcePairId: seed.sourcePairId,
+			messagesDigest: seed.messagesDigest,
+			messageCount: seed.messages.length,
+		};
+		const prior = this.read(
+			() =>
+				this.storage.sql
+					.exec<{
+						source_session: string;
+						source_pair: string;
+						digest: string;
+					}>(
+						"SELECT source_session, source_pair, digest FROM host_continuation WHERE id = 1",
+					)
+					.toArray()[0],
+		);
+		if (prior) {
+			if (
+				prior.source_session !== seed.sourceSessionId ||
+				prior.source_pair !== seed.sourcePairId ||
+				prior.digest !== seed.messagesDigest
+			)
+				throw new Error("Conflicting continuation");
+			return ack;
+		}
+		const fresh = () =>
+			this.conversationId === ROOT_CONVERSATION_ID &&
+			this.read(
+				() =>
+					this.storage.sql
+						.exec(
+							"SELECT 1 FROM host_product_commands UNION ALL SELECT 1 FROM host_archives UNION ALL SELECT 1 FROM checkpoint_manifests",
+						)
+						.toArray().length === 0,
+			);
+		if (!fresh()) throw new Error("A continuation must precede all work");
+		return this.ownerTransition(BACKGROUND_CONTEXT, async (context) => {
+			if (!fresh()) throw new Error("A continuation must precede all work");
+			const root = await this.harness.root(context, {
+				...(seed.selection
+					? {
+							agent: {
+								model: { provider: "faux", modelId: seed.selection.model },
+								thinkingLevel: seed.selection.thinking,
+							},
+						}
+					: {}),
+				init: async (tx, id) => {
+					if (seed.messages.length)
+						await tx.appendEntry(id, {
+							kind: CONTINUATION_ENTRY,
+							model: seed.messages as unknown as readonly Message[],
+							head: "self",
+						});
+				},
+			});
+			// A retry after a lost acknowledgment finds the same root context.
+			const view = await root.context(context);
+			if ((await digestText(canonical(view.messages))) !== seed.messagesDigest)
+				throw new ContextMismatch("Imported context does not match its seed");
+			await this.durable(context);
+			this.transition("account", () =>
+				this.storage.sql.exec(
+					"INSERT INTO host_continuation VALUES (1, ?, ?, ?, ?)",
+					seed.sourceSessionId,
+					seed.sourcePairId,
+					seed.messagesDigest,
+					seed.messages.length,
+				),
+			);
+			await this.durable(context);
+			return ack;
+		});
 	}
 
 	async configureCandidate(commandId: string, input: unknown) {
@@ -6425,16 +6922,18 @@ export class PiDurableHost {
 		return {
 			...this.checkpointPort(),
 			admission: () =>
-				this.read(
-					() =>
-						this.storage.sql
-							.exec(
-								"SELECT 1 FROM host_restores WHERE state NOT IN ('complete','refusing','refused')",
+				this.archiveRow()
+					? "archived"
+					: this.read(
+								() =>
+									this.storage.sql
+										.exec(
+											"SELECT 1 FROM host_restores WHERE state NOT IN ('complete','refusing','refused')",
+										)
+										.toArray().length,
 							)
-							.toArray().length,
-				)
-					? "restore_in_progress"
-					: "open",
+						? "restore_in_progress"
+						: "open",
 			wake: async (at) => {
 				this.transition("account", () =>
 					this.storage.sql.exec(
@@ -6628,6 +7127,7 @@ export class PiDurableHost {
 		await this.deliverProjections().catch(() => undefined);
 		await this.deliverCheckpoints();
 		await this.advanceRestore();
+		await this.advanceArchive();
 		await this.advanceWorkspace();
 		if (!this.ordinaryAllowed()) return;
 		if (

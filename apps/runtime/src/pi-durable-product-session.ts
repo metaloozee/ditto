@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import type {
+	ArchiveCompletionV1,
 	CheckpointProjectionV1,
 	RestoreCompletionV1,
 	RestoreRefusalV1,
@@ -13,6 +14,7 @@ import {
 	strictRecord,
 	stringField,
 } from "../../../packages/runtime-contracts/src/json.js";
+import type { ContinuationSeedV1 } from "../../../packages/runtime-contracts/src/lifecycle.js";
 import type { ModelSubjectV1 } from "../../../packages/runtime-contracts/src/model.js";
 import type {
 	CommandV2,
@@ -91,6 +93,16 @@ export interface CandidatePrivateProduct extends PrivateModelTransport {
 		scope: CandidateRuntimeScope,
 		completion: RestoreCompletionV1 | RestoreRefusalV1,
 	): Promise<unknown>;
+	applyCandidateArchive(
+		scope: CandidateRuntimeScope,
+		completion: ArchiveCompletionV1,
+	): Promise<unknown>;
+	/** Owned active or archived session whose project is not deleted. */
+	readHistoryAuthority(scope: CandidateRuntimeScope): Promise<boolean>;
+	/** Owned completed archive whose project is not deleted. */
+	readArchivedAuthority(scope: CandidateRuntimeScope): Promise<boolean>;
+	/** The session's project is fenced for deletion. */
+	readDeletionAuthority(scope: CandidateRuntimeScope): Promise<boolean>;
 	readCandidateConfigurationAuthority(
 		commandId: string,
 		input: unknown,
@@ -174,17 +186,41 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 			if (this.opening === opening) this.opening = undefined;
 		}
 	}
-	private async open(scope: CandidateRuntimeScope) {
-		if (this.host && !(await this.host.awaitClosure())) return this.host;
+	private async keyring() {
 		const keys = strictRecord(
 			JSON.parse(this.env.CANDIDATE_RUNTIME_KEYS),
 			["currentVersion", "keys"],
 			"Candidate runtime keys",
 		);
-		const keyring = await parseRuntimeKeyring({
+		return parseRuntimeKeyring({
 			currentVersion: keys.currentVersion,
 			keys: keys.keys,
 		});
+	}
+	/** Scope of a read or cleanup that never activates the host. */
+	private async passiveScope(value: unknown) {
+		if (this.env.CANDIDATE_DISPOSABLE !== "008-synthetic")
+			throw new Error("Candidate composition unavailable");
+		const scope = parseCandidateRuntimeScope(value);
+		if (
+			!this.ctx.id.equals(
+				this.env.CandidateSessions.idFromName(scope.workspaceSessionId),
+			)
+		)
+			throw new Error("Candidate namespace mismatch");
+		const retained =
+			await this.ctx.storage.get<CandidateRuntimeScope>("candidate-scope-v2");
+		if (
+			retained &&
+			JSON.stringify(parseCandidateRuntimeScope(retained)) !==
+				JSON.stringify(scope)
+		)
+			throw new Error("Candidate owner mismatch");
+		return scope;
+	}
+	private async open(scope: CandidateRuntimeScope) {
+		if (this.host && !(await this.host.awaitClosure())) return this.host;
+		const keyring = await this.keyring();
 		const product = this.env.CandidateProduct;
 		// A session that can reach an executor waits for its baseline pair
 		// before any ordinary work; without one, tools fail before admission.
@@ -198,6 +234,8 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 							completeRestore: (
 								completion: RestoreCompletionV1 | RestoreRefusalV1,
 							) => product.applyCandidateRestore(scope, completion),
+							completeArchive: (completion: ArchiveCompletionV1) =>
+								product.applyCandidateArchive(scope, completion),
 							restorer: (port: CheckpointHostPort) =>
 								this.checkpointRestorer(port),
 							workspace: (port: WorkspaceHostPort) =>
@@ -347,32 +385,59 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 		subject: ModelSubjectV1,
 		cursor?: number,
 	): Promise<RuntimeObservationV1> {
-		if (this.env.CANDIDATE_DISPOSABLE !== "008-synthetic")
-			throw new Error("Candidate composition unavailable");
-		const scope = parseCandidateRuntimeScope({
+		const scope = await this.passiveScope({
 			version: 2,
 			userId: subject.userId,
 			projectId: subject.projectId,
 			workspaceSessionId: subject.workspaceSessionId,
 			ownerVersion: subject.runtimeOwnerVersion,
 		});
-		if (
-			!this.ctx.id.equals(
-				this.env.CandidateSessions.idFromName(scope.workspaceSessionId),
-			)
-		)
-			throw new Error("Candidate namespace mismatch");
-		const retained =
-			await this.ctx.storage.get<CandidateRuntimeScope>("candidate-scope-v2");
-		if (
-			retained &&
-			JSON.stringify(parseCandidateRuntimeScope(retained)) !==
-				JSON.stringify(scope)
-		)
-			throw new Error("Candidate owner mismatch");
-		if (!(await this.env.CandidateProduct.readRuntimeAuthority(scope)).current)
+		// Archived history stays readable; deletion ends it.
+		if (!(await this.env.CandidateProduct.readHistoryAuthority(scope)))
 			throw new Error("Candidate authority denied");
 		return PiDurableHost.observe(this.ctx.storage, cursor);
+	}
+	/** Archived history: the same committed tables, with read-only authority. */
+	async observeHistory(
+		value: unknown,
+		cursor?: number,
+	): Promise<RuntimeObservationV1> {
+		const scope = await this.passiveScope(value);
+		if (!(await this.env.CandidateProduct.readHistoryAuthority(scope)))
+			throw new Error("Candidate authority denied");
+		return PiDurableHost.observe(this.ctx.storage, cursor);
+	}
+	/** The sealed final context of a completed archive, read without opening Pi. */
+	async exportContinuation(value: unknown): Promise<ContinuationSeedV1> {
+		const scope = await this.passiveScope(value);
+		if (!(await this.env.CandidateProduct.readArchivedAuthority(scope)))
+			throw new Error("Candidate authority denied");
+		PiDurableHost.acknowledgeArchive(this.ctx.storage);
+		const seed = await PiDurableHost.continuationSeed(this.ctx.storage, {
+			ownerId: scope.userId,
+			workspaceSessionId: scope.workspaceSessionId,
+			keyring: await this.keyring(),
+		});
+		if (!seed) throw new Error("Continuation unavailable");
+		return seed;
+	}
+	async importContinuation(value: unknown, seed: unknown) {
+		const host = await this.activate(value);
+		return host.importContinuation(seed);
+	}
+	/**
+	 * Removes this session's runtime storage once its project is fenced for
+	 * deletion. Recovery objects referenced here go with a composed store.
+	 */
+	async purgeDeleted(value: unknown) {
+		const scope = await this.passiveScope(value);
+		if (!(await this.env.CandidateProduct.readDeletionAuthority(scope)))
+			throw new Error("Candidate deletion not fenced");
+		await this.host?.yield().catch(() => undefined);
+		await this.host?.awaitClosure().catch(() => undefined);
+		this.host = undefined;
+		await this.ctx.storage.deleteAlarm();
+		await this.ctx.storage.deleteAll();
 	}
 	protected async alarmHost() {
 		const retained =
@@ -385,6 +450,12 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 				)
 			).current
 		) {
+			if (
+				await this.env.CandidateProduct.readArchivedAuthority(
+					parseCandidateRuntimeScope(retained),
+				)
+			)
+				PiDurableHost.acknowledgeArchive(this.ctx.storage);
 			await this.host?.alarm();
 			return undefined;
 		}

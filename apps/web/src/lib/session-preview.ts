@@ -33,7 +33,8 @@ export type SessionPreviewErrorCode =
 	| "start_failed"
 	| "expose_failed"
 	| "cleanup_failed"
-	| "not_durable";
+	| "not_durable"
+	| "runtime_owner_mismatch";
 
 export class SessionPreviewError extends Error {
 	readonly code: SessionPreviewErrorCode;
@@ -57,6 +58,8 @@ const ERROR_MESSAGES: Record<SessionPreviewErrorCode, string> = {
 	expose_failed: "Failed to expose the preview port.",
 	cleanup_failed: "Failed to fully stop the preview. Try again.",
 	not_durable: "Workspace recovery has uncheckpointed mutations.",
+	runtime_owner_mismatch:
+		"The durable runtime owns this work; use its lifecycle operation.",
 };
 
 export function sessionPreviewError(
@@ -1174,6 +1177,9 @@ export async function archiveSessionWithPreviewCleanup(
 	if (!session) {
 		throw sessionPreviewError("not_found");
 	}
+	if (session.runtimeOwner === "pi_durable_v1") {
+		throw sessionPreviewError("runtime_owner_mismatch");
+	}
 
 	const project = await loadOwnedProject(
 		deps.db,
@@ -1313,6 +1319,20 @@ export async function deleteProjectRuntime(
 	);
 	if (!project) {
 		throw sessionPreviewError("not_found");
+	}
+	// Durable-runtime sessions need revocation-first deletion through their owner.
+	const [candidate] = await deps.db
+		.select({ id: workspaceSessions.id })
+		.from(workspaceSessions)
+		.where(
+			and(
+				eq(workspaceSessions.projectId, options.projectId),
+				eq(workspaceSessions.runtimeOwner, "pi_durable_v1"),
+			),
+		)
+		.limit(1);
+	if (candidate) {
+		throw sessionPreviewError("runtime_owner_mismatch");
 	}
 	const [tombstone] = await deps.db
 		.update(projects)

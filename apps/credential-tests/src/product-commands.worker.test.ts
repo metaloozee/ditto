@@ -30,6 +30,11 @@ import m22 from "../../web/migrations/0022_synthetic_model_transport.sql?raw";
 import m23 from "../../web/migrations/0023_candidate_product_commands.sql?raw";
 import m24 from "../../web/migrations/0024_candidate_restore_barrier.sql?raw";
 import m25 from "../../web/migrations/0025_candidate_capacity.sql?raw";
+import m26 from "../../web/migrations/0026_candidate_lifecycle.sql?raw";
+import {
+	CandidateLifecycle,
+	type CandidateLifecycleRuntime,
+} from "../../web/src/lib/candidate-lifecycle";
 import { encryptText } from "../../web/src/lib/crypto";
 import {
 	CANDIDATE_MODEL_POLICY,
@@ -181,6 +186,7 @@ beforeEach(async ({ task }) => {
 		m23,
 		m24,
 		m25,
+		m26,
 	])
 		for (const statement of migration.split("--> statement-breakpoint"))
 			if (statement.trim())
@@ -3226,4 +3232,724 @@ it("decrypts project values only for a repository command of the owned, current 
 		"UPDATE workspace_sessions SET runtimeFailureReasonCode='review'",
 	);
 	await denied("authority");
+});
+
+const archiveCommands = (now: () => number = Date.now) =>
+	new CandidateProductCommands(
+		env.DB,
+		{
+			readSelection: async () => null,
+			targetStatus: async (_subject, runId) => ({
+				ownerVersion: 1,
+				runId,
+				state: "not_delivered",
+			}),
+			restoreAvailable: true,
+			archiveAvailable: true,
+			workspaceAction: async () => ({
+				status: "git_status",
+				branch: "b",
+				head: "c".repeat(40),
+				changed: 0,
+			}),
+		},
+		(owner) => env.CodexCredential.getByName(owner),
+		now,
+	);
+async function archivedSession() {
+	await candidateCredential();
+	const first = await archiveCommands().admit("owner", prompt);
+	const sessionId = first.workspaceSessionId;
+	const scope = {
+		userId: "owner",
+		projectId: "project",
+		workspaceSessionId: sessionId,
+	};
+	await archiveCommands().applyCheckpointProjections(scope, [
+		{
+			version: 1,
+			currentPairId: "pair-1",
+			previousPairId: null,
+			mutationGeneration: 1,
+			expectedMutationGeneration: 0,
+			projectionVersion: 1,
+		},
+	]);
+	return { first, sessionId, scope };
+}
+const archiveRequest = (sessionId: string, idempotencyKey = "archive") => ({
+	version: 2,
+	kind: "archive_session",
+	idempotencyKey,
+	projectId: "project",
+	sessionId,
+});
+const archiveRows = (sessionId: string) =>
+	env.DB.prepare(
+		"SELECT cutoffSeq,state,finalPairId,mutationGeneration,conversationGeneration FROM candidate_archives WHERE sessionId=?",
+	)
+		.bind(sessionId)
+		.all()
+		.then((rows) => rows.results);
+
+it("archive intent closes every admission at its cutoff and only the exact completion retires the session", async () => {
+	const { first, sessionId, scope } = await archivedSession();
+	const before = await counts();
+	await expect(
+		commands().admit("owner", archiveRequest(sessionId, "unavailable")),
+	).rejects.toMatchObject({ code: "archive_unavailable" });
+	await expect(
+		archiveCommands().admit("foreign", archiveRequest(sessionId, "foreign")),
+	).rejects.toThrow();
+	expect(await counts()).toEqual(before);
+	expect(await archiveRows(sessionId)).toEqual([]);
+
+	const accepted = await archiveCommands().admit(
+		"owner",
+		archiveRequest(sessionId),
+	);
+	expect(accepted).toMatchObject({ commandSeq: 2 });
+	expect(accepted.userMessageId).toBeUndefined();
+	expect(
+		await archiveCommands().admit("owner", archiveRequest(sessionId)),
+	).toEqual(accepted);
+	expect(await archiveRows(sessionId)).toEqual([
+		{
+			cutoffSeq: 1,
+			state: "closed",
+			finalPairId: null,
+			mutationGeneration: null,
+			conversationGeneration: null,
+		},
+	]);
+	// Nothing at all is admitted after the archive: no work, controls, restore or workspace action.
+	const closed = await counts();
+	for (const input of [
+		{ ...prompt, idempotencyKey: "after", sessionId },
+		{
+			...prompt,
+			kind: "follow_up",
+			idempotencyKey: "follow",
+			sessionId,
+			targetRunId: first.commandId,
+		},
+		{
+			version: 2,
+			kind: "stop",
+			idempotencyKey: "stop",
+			projectId: "project",
+			sessionId,
+			targetRunId: first.commandId,
+		},
+		{
+			version: 2,
+			kind: "cancel",
+			idempotencyKey: "cancel",
+			projectId: "project",
+			sessionId,
+			targetCommandId: first.commandId,
+		},
+		{
+			version: 2,
+			kind: "restore_checkpoint_acknowledging_loss",
+			idempotencyKey: "restore",
+			projectId: "project",
+			sessionId,
+			committedPairId: "pair-1",
+			expectedMutationGeneration: 1,
+			expectedRecoveryPosition: 2,
+			unbackedLossAcknowledged: true,
+		},
+		archiveRequest(sessionId, "second"),
+	])
+		await expect(archiveCommands().admit("owner", input)).rejects.toMatchObject(
+			{ code: "session_archived" },
+		);
+	await expect(
+		archiveCommands().workspaceAction("owner", {
+			version: 1,
+			kind: "git_status",
+			projectId: "project",
+			sessionId,
+		}),
+	).rejects.toMatchObject({ code: "session_archived" });
+	expect(await counts()).toEqual(closed);
+	expect(
+		await archiveCommands().reconstruct(accepted.commandId, 1),
+	).toMatchObject({
+		kind: "archive_session",
+		commandId: accepted.commandId,
+		commandSeq: 2,
+	});
+
+	const completion = {
+		version: 1,
+		archiveCommandId: accepted.commandId,
+		cutoffSeq: 1,
+		finalPairId: "pair-1",
+		mutationGeneration: 1,
+		conversationGeneration: 1,
+	};
+	const complete = (value: unknown, at = scope) =>
+		archiveCommands().applyArchiveCompletion(at, value);
+	// An assistant through the cutoff is still pending: retry, nothing retired.
+	expect(await complete(completion)).toEqual({
+		archiveCommandId: accepted.commandId,
+		outcome: "retry",
+	});
+	for (const wrong of [
+		{ finalPairId: "pair-0" },
+		{ mutationGeneration: 2 },
+		{ cutoffSeq: 2 },
+	])
+		expect((await complete({ ...completion, ...wrong })).outcome).toBe(
+			"blocked_membership",
+		);
+	expect(
+		(await complete(completion, { ...scope, userId: "other" })).outcome,
+	).toBe("blocked_membership");
+	const session = () =>
+		env.DB.prepare(
+			"SELECT s.status,i.state,i.retiredAt IS NOT NULL AS retired,(SELECT count(*) FROM runtime_retired_identity_fences f WHERE f.identityId=i.id) AS fenced,(SELECT count(*) FROM candidate_workspace_claims) AS claims FROM workspace_sessions s JOIN sandbox_identities i ON i.id=s.sandboxIdentityId WHERE s.id=?",
+		)
+			.bind(sessionId)
+			.first();
+	expect(await session()).toEqual({
+		status: "active",
+		state: "ready",
+		retired: 0,
+		fenced: 0,
+		claims: 1,
+	});
+	await env.DB.prepare("UPDATE messages SET status='failed' WHERE id=?")
+		.bind(first.assistantMessageId)
+		.run();
+	expect((await complete(completion)).outcome).toBe("applied");
+	expect((await complete(completion)).outcome).toBe("already_applied");
+	expect(
+		(await complete({ ...completion, conversationGeneration: 2 })).outcome,
+	).toBe("blocked_membership");
+	expect(await session()).toEqual({
+		status: "archived",
+		state: "destroying",
+		retired: 1,
+		fenced: 1,
+		claims: 0,
+	});
+	await expect(
+		env.DB.prepare(
+			"UPDATE candidate_archives SET finalPairId='pair-0' WHERE sessionId=?",
+		)
+			.bind(sessionId)
+			.run(),
+	).rejects.toThrow();
+	// Runtime authority ends; owned history stays readable without an executor.
+	expect(
+		(
+			await env.CandidateProduct.readRuntimeAuthority({
+				version: 2,
+				ownerVersion: 1,
+				...scope,
+			})
+		).current,
+	).toBe(false);
+	expect(
+		await env.CandidateProduct.readHistoryAuthority({
+			version: 2,
+			ownerVersion: 1,
+			...scope,
+		}),
+	).toBe(true);
+	// Old keys keep their receipts; new work stays refused.
+	expect(
+		await archiveCommands().admit("owner", archiveRequest(sessionId)),
+	).toEqual(accepted);
+	expect(await archiveCommands().admit("owner", prompt)).toEqual(first);
+	await expect(
+		archiveCommands().admit("owner", {
+			...prompt,
+			idempotencyKey: "late",
+			sessionId,
+		}),
+	).rejects.toMatchObject({ code: "session_archived" });
+});
+
+it("releases an archived executor's slot only with termination evidence, retrying until it arrives", async () => {
+	const { first, sessionId, scope } = await archivedSession();
+	const identity = await env.DB.prepare(
+		"SELECT id,incarnationId FROM sandbox_identities WHERE workspaceSessionId=?",
+	)
+		.bind(sessionId)
+		.first<{ id: string; incarnationId: string }>();
+	const owner = `${identity?.id}:${identity?.incarnationId}`;
+	expect(
+		await commands().capacity.acquire("executor", owner, "owner"),
+	).toMatchObject({ status: "claimed" });
+	const accepted = await archiveCommands().admit(
+		"owner",
+		archiveRequest(sessionId),
+	);
+	await env.DB.prepare("UPDATE messages SET status='complete' WHERE id=?")
+		.bind(first.assistantMessageId)
+		.run();
+	expect(
+		(
+			await archiveCommands().applyArchiveCompletion(scope, {
+				version: 1,
+				archiveCommandId: accepted.commandId,
+				cutoffSeq: 1,
+				finalPairId: "pair-1",
+				mutationGeneration: 1,
+				conversationGeneration: 1,
+			})
+		).outcome,
+	).toBe("applied");
+	const job = () =>
+		env.DB.prepare("SELECT state,attempts FROM runtime_cleanup_jobs WHERE id=?")
+			.bind(`executor:${sessionId}`)
+			.first();
+	expect(await job()).toEqual({ state: "pending", attempts: 0 });
+	await env.CandidateProduct.setExecutorFixture({ terminates: false });
+	expect(await env.CandidateProduct.runCandidateCleanup()).toEqual({
+		ran: 1,
+		failed: 1,
+	});
+	expect(await job()).toEqual({ state: "failed", attempts: 1 });
+	expect(await executorClaims()).toEqual([
+		{ kind: "executor", ownerKey: owner, userId: "owner", state: "live" },
+	]);
+	// Not due yet: the backoff holds the retry.
+	expect(await env.CandidateProduct.runCandidateCleanup()).toEqual({
+		ran: 0,
+		failed: 0,
+	});
+	await env.DB.prepare("UPDATE runtime_cleanup_jobs SET retryAt=0").run();
+	expect(
+		await env.CandidateProduct.setExecutorFixture({ terminates: true }),
+	).toEqual([identity?.id]);
+	expect(await env.CandidateProduct.runCandidateCleanup()).toEqual({
+		ran: 1,
+		failed: 0,
+	});
+	expect(await job()).toEqual({ state: "complete", attempts: 1 });
+	expect(await executorClaims()).toEqual([
+		{ kind: "executor", ownerKey: owner, userId: "owner", state: "released" },
+	]);
+	expect(
+		(
+			await env.DB.prepare("SELECT state FROM sandbox_identities WHERE id=?")
+				.bind(identity?.id)
+				.first()
+		)?.state,
+	).toBe("destroyed");
+});
+
+it("a racing ordinary command and archive never both commit across the cutoff", async () => {
+	const { sessionId } = await archivedSession();
+	const [ordinary, archive] = await Promise.allSettled([
+		archiveCommands().admit("owner", {
+			...prompt,
+			idempotencyKey: "race",
+			sessionId,
+		}),
+		archiveCommands().admit("owner", archiveRequest(sessionId)),
+	]);
+	const rows = await env.DB.prepare(
+		"SELECT kind,commandSeq FROM session_commands WHERE sessionId=? ORDER BY commandSeq",
+	)
+		.bind(sessionId)
+		.all();
+	expect(archive.status).toBe("fulfilled");
+	const archived = rows.results.find((row) => row.kind === "archive_session");
+	expect((await archiveRows(sessionId))[0]).toMatchObject({
+		cutoffSeq: Number(archived?.commandSeq) - 1,
+	});
+	// Whatever won, nothing ordinary follows the archive.
+	expect(rows.results.at(-1)?.kind).toBe("archive_session");
+	expect(
+		ordinary.status === "fulfilled" ||
+			ordinary.reason.code === "session_archived",
+	).toBe(true);
+});
+
+async function completedArchive() {
+	const { first, sessionId, scope } = await archivedSession();
+	const accepted = await archiveCommands().admit(
+		"owner",
+		archiveRequest(sessionId),
+	);
+	await env.DB.prepare("UPDATE messages SET status='complete' WHERE id=?")
+		.bind(first.assistantMessageId)
+		.run();
+	expect(
+		(
+			await archiveCommands().applyArchiveCompletion(scope, {
+				version: 1,
+				archiveCommandId: accepted.commandId,
+				cutoffSeq: 1,
+				finalPairId: "pair-1",
+				mutationGeneration: 1,
+				conversationGeneration: 1,
+			})
+		).outcome,
+	).toBe("applied");
+	return { first, sessionId, scope };
+}
+function fakeLifecycleRuntime(sourceSessionId: string) {
+	const state = {
+		exports: [] as string[],
+		imports: [] as { sessionId: string; digest: string }[],
+		importFault: false,
+		purged: [] as string[],
+	};
+	const seed = {
+		version: 1,
+		sourceSessionId,
+		sourcePairId: "pair-1",
+		selection: { model: "faux-1", thinking: "off" },
+		messages: [{ role: "user", content: "Synthetic archived instruction" }],
+		messagesDigest: "d".repeat(64),
+		archive: {
+			version: 1,
+			kind: "workspace_archive",
+			formatVersion: 1,
+			compatibilityKey: "ditto-workspace-archive-v1",
+			objectKey: "checkpoints/source/pair-1.tar.gz",
+			byteCount: 1,
+			extractedBytes: 1,
+			digest: "a".repeat(64),
+			sourceCommit: "b".repeat(40),
+		},
+	};
+	const runtime: CandidateLifecycleRuntime = {
+		exportContinuation: async (scope) => {
+			state.exports.push(scope.workspaceSessionId);
+			return seed;
+		},
+		importContinuation: async (scope, value) => {
+			if (state.importFault) throw new Error("Synthetic import failure");
+			state.imports.push({
+				sessionId: scope.workspaceSessionId,
+				digest: value.messagesDigest,
+			});
+			return {
+				version: 1,
+				sourceSessionId: value.sourceSessionId,
+				sourcePairId: value.sourcePairId,
+				messagesDigest: value.messagesDigest,
+				messageCount: value.messages.length,
+			};
+		},
+		terminateExecutor: async () => ({ terminated: true }),
+		purgeSession: async (scope) => {
+			state.purged.push(scope.workspaceSessionId);
+		},
+	};
+	return { runtime, state };
+}
+
+it("continues an archived session once into a new owned session, identity, branch and pointer lineage, retrying interrupted setup", async () => {
+	const { sessionId } = await completedArchive();
+	const fake = fakeLifecycleRuntime(sessionId);
+	let ids = 0;
+	const lifecycle = () =>
+		new CandidateLifecycle(
+			env.DB,
+			fake.runtime,
+			Date.now,
+			() => `continued-${++ids}`,
+		);
+	const request = {
+		version: 1,
+		idempotencyKey: "continue",
+		projectId: "project",
+		sourceSessionId: sessionId,
+	};
+	// Only an owned, archived source continues.
+	await expect(
+		lifecycle().continueArchived("foreign", request),
+	).rejects.toMatchObject({ code: "archive_not_found" });
+	await expect(
+		lifecycle().continueArchived("owner", {
+			...request,
+			sourceSessionId: "missing",
+		}),
+	).rejects.toMatchObject({ code: "archive_not_found" });
+	// Setup is interrupted after its intent committed.
+	fake.state.importFault = true;
+	await expect(lifecycle().continueArchived("owner", request)).rejects.toThrow(
+		"Synthetic import failure",
+	);
+	const continuation = () =>
+		env.DB.prepare(
+			"SELECT destinationSessionId,destinationIdentityId,branchName,state,sourcePairId FROM candidate_continuations WHERE sourceSessionId=?",
+		)
+			.bind(sessionId)
+			.first<{
+				destinationSessionId: string;
+				destinationIdentityId: string;
+				branchName: string;
+				state: string;
+				sourcePairId: string;
+			}>();
+	const pending = await continuation();
+	expect(pending).toMatchObject({ state: "pending", sourcePairId: "pair-1" });
+	const destination = String(pending?.destinationSessionId);
+	expect(destination).not.toBe(sessionId);
+	expect(pending?.branchName).toBe(`ditto/${destination}`);
+	// The destination admits nothing until its context is in place.
+	await expect(
+		archiveCommands().admit("owner", {
+			...prompt,
+			idempotencyKey: "early",
+			sessionId: destination,
+		}),
+	).rejects.toMatchObject({ code: "continuation_pending" });
+	// A different key is a different request; the same key resumes setup.
+	await expect(
+		lifecycle().continueArchived("owner", {
+			...request,
+			idempotencyKey: "other",
+		}),
+	).rejects.toMatchObject({ code: "continuation_exists" });
+	fake.state.importFault = false;
+	// A deletion fence that lands during import keeps the destination pending.
+	await env.DB.prepare(
+		"INSERT INTO runtime_deleted_target_fences(targetKind,targetId,lastOwnerVersion,deletedAt) VALUES ('workspace_session',?,1,1)",
+	)
+		.bind(destination)
+		.run();
+	await expect(
+		lifecycle().continueArchived("owner", request),
+	).rejects.toMatchObject({ code: "archive_not_found" });
+	expect(
+		await env.DB.prepare(
+			"SELECT state FROM candidate_continuations WHERE destinationSessionId=?",
+		)
+			.bind(destination)
+			.first(),
+	).toEqual({ state: "pending" });
+	await env.DB.prepare(
+		"DELETE FROM runtime_deleted_target_fences WHERE targetKind='workspace_session' AND targetId=?",
+	)
+		.bind(destination)
+		.run();
+	expect(await lifecycle().continueArchived("owner", request)).toEqual({
+		sessionId: destination,
+		state: "ready",
+	});
+	expect(await lifecycle().continueArchived("owner", request)).toEqual({
+		sessionId: destination,
+		state: "ready",
+	});
+	// The fenced attempt imported; the failed and fenced attempts both exported.
+	expect(fake.state.imports).toEqual([
+		{ sessionId: destination, digest: "d".repeat(64) },
+		{ sessionId: destination, digest: "d".repeat(64) },
+	]);
+	expect(fake.state.exports).toEqual([sessionId, sessionId, sessionId]);
+	// New identity, fresh pointer and sequence; the source keeps its history and fences.
+	expect(
+		await env.DB.prepare(
+			"SELECT s.status,s.branchName,s.sandboxIdentityId,i.state,i.retiredAt IS NULL AS live,p.currentPairId,p.mutationGeneration,q.nextSequence FROM workspace_sessions s JOIN sandbox_identities i ON i.id=s.sandboxIdentityId JOIN runtime_checkpoint_pointers p ON p.sessionId=s.id JOIN session_command_sequences q ON q.sessionId=s.id WHERE s.id=?",
+		)
+			.bind(destination)
+			.first(),
+	).toEqual({
+		status: "active",
+		branchName: `ditto/${destination}`,
+		sandboxIdentityId: pending?.destinationIdentityId,
+		state: "ready",
+		live: 1,
+		currentPairId: null,
+		mutationGeneration: 0,
+		nextSequence: 1,
+	});
+	expect(
+		await env.DB.prepare(
+			"SELECT s.status,p.currentPairId,(SELECT count(*) FROM session_commands c WHERE c.sessionId=s.id) AS commands FROM workspace_sessions s JOIN runtime_checkpoint_pointers p ON p.sessionId=s.id WHERE s.id=?",
+		)
+			.bind(sessionId)
+			.first(),
+	).toEqual({ status: "archived", currentPairId: "pair-1", commands: 2 });
+	// The destination is now the one current executor, and admits its own work.
+	expect(
+		(
+			await env.CandidateProduct.readRuntimeAuthority({
+				version: 2,
+				ownerVersion: 1,
+				userId: "owner",
+				projectId: "project",
+				workspaceSessionId: destination,
+			})
+		).current,
+	).toBe(true);
+	expect(
+		await archiveCommands().admit("owner", {
+			...prompt,
+			idempotencyKey: "continued-first",
+			sessionId: destination,
+		}),
+	).toMatchObject({ commandSeq: 1, workspaceSessionId: destination });
+});
+
+it("deletion revokes authority in its first batch, keeps fences through retried cleanup and never touches the Codex connection", async () => {
+	await candidateCredential();
+	modelReplies();
+	const first = await env.CandidateProduct.admitOwned("owner", prompt);
+	const sessionId = first.workspaceSessionId;
+	const runtime = env.CandidateSessions.getByName(sessionId);
+	const scope = {
+		version: 2 as const,
+		ownerVersion: 1 as const,
+		userId: "owner",
+		projectId: "project",
+		workspaceSessionId: sessionId,
+	};
+	try {
+		await env.CandidateProduct.drain();
+		await expect
+			.poll(async () => (await message(first.assistantMessageId))?.status, {
+				timeout: 5000,
+			})
+			.toBe("complete");
+		// Admitted but never delivered before deletion.
+		const queued = await commands().admit("owner", {
+			...prompt,
+			idempotencyKey: "queued",
+			sessionId,
+		});
+		await env.CandidateProduct.setExecutorFixture({
+			terminates: true,
+			purgeFault: true,
+		});
+		// Refusals are asserted in process: a rejected RPC is also reported unhandled.
+		const refusals = new CandidateLifecycle(
+			env.DB,
+			fakeLifecycleRuntime("unused").runtime,
+			Date.now,
+			() => "unused",
+		);
+		await expect(
+			refusals.deleteProject("other", "project"),
+		).rejects.toMatchObject({ code: "not_found" });
+		// A project that still has a legacy session keeps the legacy path.
+		const owner = (value: string) =>
+			env.DB.prepare("UPDATE workspace_sessions SET runtimeOwner=? WHERE id=?")
+				.bind(value, sessionId)
+				.run();
+		await owner("legacy");
+		await expect(
+			refusals.deleteProject("owner", "project"),
+		).rejects.toMatchObject({ code: "runtime_owner_mismatch" });
+		await owner("pi_durable_v1");
+		expect(
+			await env.DB.prepare(
+				"SELECT count(*) AS n FROM runtime_deleted_target_fences",
+			).first(),
+		).toEqual({ n: 0 });
+		expect(
+			await env.CandidateProduct.deleteProjectOwned("owner", "project"),
+		).toEqual({ status: "deleting" });
+		// Revocation committed before any cleanup: every authority path is closed.
+		expect(
+			await env.DB.prepare(
+				"SELECT targetKind,targetId FROM runtime_deleted_target_fences ORDER BY targetKind",
+			)
+				.all()
+				.then((rows) => rows.results),
+		).toEqual([
+			{ targetKind: "project", targetId: "project" },
+			{ targetKind: "workspace_session", targetId: sessionId },
+		]);
+		expect(
+			(
+				await env.DB.prepare(
+					"SELECT status FROM projects WHERE id='project'",
+				).first()
+			)?.status,
+		).toBe("deleting");
+		expect(
+			(await env.CandidateProduct.readRuntimeAuthority(scope)).current,
+		).toBe(false);
+		expect(await env.CandidateProduct.readHistoryAuthority(scope)).toBe(false);
+		expect(await message(queued.assistantMessageId)).toMatchObject({
+			status: "failed",
+		});
+		expect(await work(queued.commandId)).toMatchObject({
+			deliveryState: "failed",
+		});
+		await expect(
+			commands().admit("owner", {
+				...prompt,
+				idempotencyKey: "late",
+				sessionId,
+			}),
+		).rejects.toThrow();
+		await expect(
+			commands().admit("owner", { ...prompt, idempotencyKey: "late-new" }),
+		).rejects.toThrow();
+		// A late value request for the deleted session is denied.
+		expect(
+			await env.CandidateProduct.readCandidateProjectValues(scope, {
+				version: 1,
+				role: "repository_command",
+				workspaceSessionId: sessionId,
+				operationId: "late-values",
+				executorGeneration: 1,
+				epoch: 1,
+				deadlineAt: Date.now() + 60_000,
+			}),
+		).toMatchObject({ status: "denied" });
+		expect(
+			await env.DB.prepare(
+				"SELECT state,attempts FROM runtime_cleanup_jobs WHERE id='project:project'",
+			).first(),
+		).toEqual({ state: "failed", attempts: 1 });
+		// The retry purges runtime storage and content; fences and the connection stay.
+		await env.CandidateProduct.setExecutorFixture({ terminates: true });
+		await env.DB.prepare("UPDATE runtime_cleanup_jobs SET retryAt=0").run();
+		expect(await env.CandidateProduct.runCandidateCleanup()).toEqual({
+			ran: 1,
+			failed: 0,
+		});
+		expect(await counts()).toEqual([0, 0, 0, 0, 0, 0, 0]);
+		expect(
+			await env.DB.prepare("SELECT count(*) AS n FROM projects").first(),
+		).toEqual({ n: 0 });
+		expect(
+			await env.DB.prepare(
+				"SELECT count(*) AS n FROM runtime_deleted_target_fences",
+			).first(),
+		).toEqual({ n: 2 });
+		expect(
+			await env.DB.prepare(
+				"SELECT count(*) AS n FROM runtime_retired_identity_fences",
+			).first(),
+		).toEqual({ n: 1 });
+		expect(await executorClaims()).toMatchObject([{ state: "released" }]);
+		expect(
+			await env.DB.prepare(
+				"SELECT status,revoked FROM codex_connections WHERE user_id='owner'",
+			).first(),
+		).toEqual({ status: "connected", revoked: 0 });
+		expect(
+			await runInDurableObject(
+				runtime,
+				async (_instance, state) =>
+					state.storage.sql
+						.exec(
+							"SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name LIKE 'host_%'",
+						)
+						.one().n,
+			),
+		).toBe(0);
+		// Repeating the deletion after cleanup finds nothing to delete.
+		await expect(
+			refusals.deleteProject("owner", "project"),
+		).rejects.toMatchObject({ code: "not_found" });
+	} finally {
+		await env.CandidateProduct.setExecutorFixture({ terminates: true });
+		await runtime.retireFixture().catch(() => undefined);
+	}
 });

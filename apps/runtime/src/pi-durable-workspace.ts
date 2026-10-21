@@ -51,8 +51,8 @@ export interface WorkspaceExecution {
 }
 
 export type WorkspaceHostPort = CheckpointHostPort & {
-	/** Ordinary admission state: a fenced restore closes workspace actions. */
-	admission(): "open" | "restore_in_progress";
+	/** Ordinary admission state: a fenced restore or an archive closes workspace actions. */
+	admission(): "open" | "restore_in_progress" | "archived";
 	/** Durable host wakeup for the next backup step. */
 	wake(at: number): Promise<void>;
 };
@@ -221,8 +221,8 @@ export function createWorkspaceController(deps: {
 	function admissionDenial(
 		mutation: boolean,
 	): WorkspaceActionResultV1 | undefined {
-		if (host.admission() === "restore_in_progress")
-			return { status: "denied", reason: "restore_in_progress" };
+		const admission = host.admission();
+		if (admission !== "open") return { status: "denied", reason: admission };
 		if (host.blocked() || preview().state === "unknown")
 			return { status: "denied", reason: "blocked" };
 		if (mutation && overdue())
@@ -361,7 +361,7 @@ export function createWorkspaceController(deps: {
 	 * capture instead of publishing a falsely consistent pair.
 	 */
 	async function stopPreview(
-		reason: "user" | "backup" | "restore",
+		reason: "user" | "backup" | "restore" | "archive",
 	): Promise<WorkspaceActionResultV1> {
 		const current = preview();
 		if (current.state === "stopped")
@@ -461,6 +461,36 @@ export function createWorkspaceController(deps: {
 		async quiesceForRestore(): Promise<boolean> {
 			const result = await stopPreview("restore");
 			return result.status === "preview_stopped";
+		},
+		/**
+		 * Archive needs preview stopped with termination evidence, no unknown
+		 * outcome and a final pair that holds every change; `publish` asks for
+		 * a new pair even when no file changed, such as after later answers.
+		 */
+		async finalizeForArchive(
+			publish: boolean,
+		): Promise<
+			| { status: "final" }
+			| { status: "retry" }
+			| { status: "blocked"; reason: "preview_unknown" | "outcome_unknown" }
+		> {
+			if (preview().state === "unknown")
+				return { status: "blocked", reason: "preview_unknown" };
+			if (unresolved() || host.blocked())
+				return { status: "blocked", reason: "outcome_unknown" };
+			const stopped = await stopPreview("archive");
+			if (stopped.status === "unknown")
+				return { status: "blocked", reason: "preview_unknown" };
+			if (stopped.status !== "preview_stopped") return { status: "retry" };
+			if (!host.quiescent()) return { status: "retry" };
+			if (publish || backup().unbacked_since !== null) {
+				const published = await deps.publisher().publishBoundary();
+				if (published.status !== "published") return { status: "retry" };
+				sql.exec(
+					"UPDATE workspace_backup SET unbacked_since = NULL, deadline = NULL WHERE id = 1",
+				);
+			}
+			return { status: "final" };
 		},
 		/**
 		 * One backup step from the host alarm. Returns when to run again, or

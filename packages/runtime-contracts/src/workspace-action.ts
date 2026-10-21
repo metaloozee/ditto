@@ -45,6 +45,8 @@ export const WORKSPACE_ACTION_DENIALS = [
 	/** A run, tool, restore step or publication holds the workspace. */
 	"busy",
 	"restore_in_progress",
+	/** The session is archived or being archived; its workspace is read-only history. */
+	"archived",
 	/** The backup deadline passed; mutations wait for a committed pair. */
 	"backup_overdue",
 	/** An unknown outcome or safety block needs review. */

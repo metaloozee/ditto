@@ -1272,7 +1272,8 @@ export async function continueWorkspaceFromArchive(options: {
 			),
 		)
 		.limit(1);
-	if (!archived) {
+	// Durable-runtime sessions continue through their own owned lineage.
+	if (!archived || archived.runtimeOwner === "pi_durable_v1") {
 		throw new WorkspaceRuntimeError(
 			"not_found",
 			"Archived workspace session not found.",

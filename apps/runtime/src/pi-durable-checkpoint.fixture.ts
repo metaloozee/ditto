@@ -6,6 +6,7 @@ import {
 	type ArchiveArtifactV1,
 } from "../../../packages/runtime-contracts/src/artifacts.js";
 import {
+	type ArchiveCompletionV1,
 	type CheckpointProjectionV1,
 	parseCheckpointProjectionsV1,
 	type RestoreCompletionV1,
@@ -176,6 +177,36 @@ export function fakeRestoreProduct() {
 	return { apply, state };
 }
 
+/** In-memory archive completion with the same exact-acknowledgment rule as D1. */
+export function fakeArchiveProduct() {
+	const state = {
+		completions: [] as ArchiveCompletionV1[],
+		applied: new Map<string, string>(),
+		fault: undefined as "throw" | "retry" | "lost" | undefined,
+	};
+	const apply = async (completion: ArchiveCompletionV1) => {
+		state.completions.push(completion);
+		if (state.fault === "throw") throw new Error("Product unavailable");
+		if (state.fault === "retry")
+			return {
+				archiveCommandId: completion.archiveCommandId,
+				outcome: "retry",
+			};
+		const text = JSON.stringify(completion);
+		const prior = state.applied.get(completion.archiveCommandId);
+		const outcome =
+			prior === undefined
+				? "applied"
+				: prior === text
+					? "already_applied"
+					: "blocked_membership";
+		if (!prior) state.applied.set(completion.archiveCommandId, text);
+		if (state.fault === "lost") throw new Error("Acknowledgment lost");
+		return { archiveCommandId: completion.archiveCommandId, outcome };
+	};
+	return { apply, state };
+}
+
 /** A seed archive built the way the builder would, stored under its own key. */
 export async function seed(store: ArtifactStore): Promise<ArchiveArtifactV1> {
 	const bytes = encoder.encode(
@@ -288,6 +319,7 @@ export async function fixture(
 		store: ReturnType<typeof fakeStore>;
 		product: ReturnType<typeof fakeProduct>;
 		restore: ReturnType<typeof fakeRestoreProduct>;
+		archive: ReturnType<typeof fakeArchiveProduct>;
 		/** The store is read when the host composes its restorer; the fault at each point. */
 		restoreOptions: {
 			/** The composition supplies no restorer. */
@@ -336,6 +368,7 @@ export async function fixture(
 			};
 			const product = fakeProduct();
 			const restore = fakeRestoreProduct();
+			const archive = fakeArchiveProduct();
 			const restoreOptions: {
 				unavailable?: boolean;
 				store?: ArtifactStore;
@@ -368,6 +401,7 @@ export async function fixture(
 				checkpoints: {
 					applyProjections: product.apply,
 					completeRestore: restore.apply,
+					completeArchive: archive.apply,
 					restorer: (port) =>
 						restoreOptions.unavailable
 							? undefined
@@ -506,6 +540,7 @@ export async function fixture(
 					store,
 					product,
 					restore,
+					archive,
 					restoreOptions,
 					workspaceOptions,
 					workspace,

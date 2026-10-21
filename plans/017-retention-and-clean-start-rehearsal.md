@@ -1,6 +1,6 @@
 # 017: Verify retention and rehearse clean ownership transition
 
-Status: BLOCKED on 016. Base: `bcce03e`. Phase: L5 completion, backend.
+Status: READY. Was: BLOCKED on 016. Base: `bcce03e`. Phase: L5 completion, backend.
 Spec: `docs/specs/pi-durable-session-runtime.md`, decisions 4, 10–11, 14–18; PD18–PD19, PD34–PD37; OD3–OD6.
 
 ## Outcome

@@ -26,6 +26,7 @@ export const PROJECTION_REASONS = [
 	"command_failed",
 	"target_run_terminal",
 	"checkpoint_restored",
+	"session_archived",
 ] as const;
 export type ProjectionReason = (typeof PROJECTION_REASONS)[number];
 

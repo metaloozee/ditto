@@ -18,6 +18,7 @@ const KINDS = [
 	"stop",
 	"cancel",
 	"restore_checkpoint_acknowledging_loss",
+	"archive_session",
 ] as const;
 /** The user's explicit acknowledgment that restoring the pair discards later unbacked work. */
 type RestoreV2 = {
@@ -51,7 +52,9 @@ export type BrowserCommandV2 =
 			RestoreV2 & {
 				kind: "restore_checkpoint_acknowledging_loss";
 				sessionId: string;
-			});
+			})
+	/** Archives the session; every command accepted before it is its cutoff. */
+	| (BrowserBaseV2 & { kind: "archive_session"; sessionId: string });
 
 type CommandBaseV2 = {
 	version: 2;
@@ -77,7 +80,8 @@ export type CommandV2 =
 	| (CommandBaseV2 & { kind: "stop"; targetRunId: string })
 	| (CommandBaseV2 & { kind: "cancel"; targetCommandId: string })
 	| (CommandBaseV2 &
-			RestoreV2 & { kind: "restore_checkpoint_acknowledging_loss" });
+			RestoreV2 & { kind: "restore_checkpoint_acknowledging_loss" })
+	| (CommandBaseV2 & { kind: "archive_session" });
 
 export type ReceiptV2 = {
 	version: 2;
@@ -252,6 +256,8 @@ function fields(kind: (typeof KINDS)[number], browser: boolean): string[] {
 			return [...base, "targetCommandId"];
 		case "restore_checkpoint_acknowledging_loss":
 			return [...base, ...RESTORE_FIELDS];
+		case "archive_session":
+			return base;
 	}
 }
 function record(input: unknown, browser: boolean) {
@@ -341,6 +347,7 @@ export function parseBrowserCommandV2(input: unknown): BrowserCommandV2 {
 		return { ...base, kind, sessionId, targetRunId: id(r, "targetRunId") };
 	if (kind === "restore_checkpoint_acknowledging_loss")
 		return { ...base, kind, sessionId, ...restore(r) };
+	if (kind === "archive_session") return { ...base, kind, sessionId };
 	return {
 		...base,
 		kind,
@@ -394,6 +401,7 @@ export function parseCommandV2(input: unknown): CommandV2 {
 			);
 		return { ...base, kind, ...fields };
 	}
+	if (kind === "archive_session") return { ...base, kind };
 	const messages = {
 		userMessageId: id(r, "userMessageId"),
 		assistantMessageId: id(r, "assistantMessageId"),

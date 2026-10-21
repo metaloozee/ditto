@@ -78,7 +78,8 @@ export async function archiveOwnedActiveSession(options: {
 	userId: string;
 }): Promise<{ id: string } | null> {
 	const session = await loadOwnedActiveSession(options);
-	if (!session) {
+	// A durable-runtime session archives only through its runtime owner.
+	if (!session || session.runtimeOwner === "pi_durable_v1") {
 		return null;
 	}
 

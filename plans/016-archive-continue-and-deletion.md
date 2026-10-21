@@ -1,6 +1,6 @@
 # 016: Finish archive, continuation and deletion fences
 
-Status: READY. Was: BLOCKED on 015. Base: `bcce03e`. Phase: L5.
+Status: DONE for the local fixture scope ([evidence](evidence/016-lifecycle.md)). Was: BLOCKED on 015. Base: `bcce03e`. Phase: L5.
 Spec: `docs/specs/pi-durable-session-runtime.md`, decisions 3.4, 5, 8–9, 11, 14–16; PD14, PD24, PD27, PD34, PD40; OD4–OD6.
 
 ## Outcome

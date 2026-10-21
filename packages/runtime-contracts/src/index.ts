@@ -2,6 +2,7 @@ export * from "./artifacts.js";
 export * from "./checkpoint.js";
 export * from "./command.js";
 export * from "./configuration.js";
+export * from "./lifecycle.js";
 export * from "./limits.js";
 export * from "./model.js";
 export * from "./product-command.js";

@@ -244,3 +244,71 @@ export function parseRestoreCompletionResultV1(
 		);
 	return result;
 }
+
+/**
+ * Durable runtime evidence that a session is archived: every command through
+ * the cutoff has its fate, preview is stopped with termination evidence, no
+ * outcome is unknown and the named pair is the final committed pair. Only
+ * this exact acknowledgment retires the session's runtime identity.
+ */
+export type ArchiveCompletionV1 = {
+	version: 1;
+	archiveCommandId: string;
+	cutoffSeq: number;
+	finalPairId: string;
+	mutationGeneration: number;
+	conversationGeneration: number;
+};
+
+export type ArchiveCompletionResultV1 = {
+	archiveCommandId: string;
+	outcome: ProjectionOutcome;
+};
+
+export function parseArchiveCompletionV1(value: unknown): ArchiveCompletionV1 {
+	const row = strictRecord(
+		value,
+		[
+			"version",
+			"archiveCommandId",
+			"cutoffSeq",
+			"finalPairId",
+			"mutationGeneration",
+			"conversationGeneration",
+		],
+		"Archive completion",
+	);
+	return {
+		version: literalField(row, "version", [1]),
+		archiveCommandId: id(row, "archiveCommandId"),
+		cutoffSeq: integerField(row, "cutoffSeq", { minimum: 0 }),
+		finalPairId: id(row, "finalPairId"),
+		mutationGeneration: integerField(row, "mutationGeneration", {
+			minimum: 1,
+		}),
+		conversationGeneration: integerField(row, "conversationGeneration", {
+			minimum: 1,
+		}),
+	};
+}
+
+export function parseArchiveCompletionResultV1(
+	value: unknown,
+	completion: { archiveCommandId: string },
+): ArchiveCompletionResultV1 {
+	const row = strictRecord(
+		value,
+		["archiveCommandId", "outcome"],
+		"Archive completion result",
+	);
+	const result = {
+		archiveCommandId: id(row, "archiveCommandId"),
+		outcome: literalField(row, "outcome", PROJECTION_OUTCOMES),
+	};
+	if (result.archiveCommandId !== completion.archiveCommandId)
+		throw new ContractParseError(
+			"invalid_field",
+			"Archive acknowledgment does not match its completion.",
+		);
+	return result;
+}

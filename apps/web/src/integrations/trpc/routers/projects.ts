@@ -310,10 +310,16 @@ export const projectsRouter = createTRPCRouter({
 							message: "Project not found.",
 						});
 					}
-					if (error.code === "busy" || error.code === "cleanup_failed") {
+					if (
+						error.code === "busy" ||
+						error.code === "runtime_owner_mismatch" ||
+						error.code === "cleanup_failed"
+					) {
 						throw new TRPCError({
 							code:
-								error.code === "busy" ? "PRECONDITION_FAILED" : "BAD_GATEWAY",
+								error.code === "cleanup_failed"
+									? "BAD_GATEWAY"
+									: "PRECONDITION_FAILED",
 							message: error.message,
 						});
 					}

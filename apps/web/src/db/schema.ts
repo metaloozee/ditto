@@ -640,6 +640,7 @@ export const SESSION_COMMAND_KINDS = [
 	"cancel",
 	"project_delete",
 	"restore_checkpoint_acknowledging_loss",
+	"archive_session",
 ] as const;
 export const SESSION_COMMAND_TARGET_KINDS = [
 	"project",
@@ -685,7 +686,7 @@ export const sessionCommands = sqliteTable(
 		),
 		check(
 			"session_commands_kind_enum",
-			sql`${table.kind} IN ('prompt', 'follow_up', 'stop', 'cancel', 'project_delete', 'restore_checkpoint_acknowledging_loss')`,
+			sql`${table.kind} IN ('prompt', 'follow_up', 'stop', 'cancel', 'project_delete', 'restore_checkpoint_acknowledging_loss', 'archive_session')`,
 		),
 		check(
 			"session_commands_target_kind_enum",
@@ -941,6 +942,37 @@ export const candidateRestoreBarriers = sqliteTable(
 			.where(sql`${table.state}='closed'`),
 	],
 );
+
+/** An archive closes all admission for its session from intent; completion is final. */
+export const candidateArchives = sqliteTable("candidate_archives", {
+	archiveCommandId: text("archiveCommandId").primaryKey().notNull(),
+	sessionId: text("sessionId").notNull().unique(),
+	ownerVersion: integer("ownerVersion").notNull(),
+	cutoffSeq: integer("cutoffSeq").notNull(),
+	state: text("state", { enum: ["closed", "complete"] }).notNull(),
+	finalPairId: text("finalPairId"),
+	mutationGeneration: integer("mutationGeneration"),
+	conversationGeneration: integer("conversationGeneration"),
+	openedAt: integer("openedAt").notNull(),
+	completedAt: integer("completedAt"),
+});
+
+/** One continuation per archived session; the destination admits work once ready. */
+export const candidateContinuations = sqliteTable("candidate_continuations", {
+	id: text("id").primaryKey().notNull(),
+	userId: text("userId").notNull(),
+	projectId: text("projectId").notNull(),
+	sourceSessionId: text("sourceSessionId").notNull().unique(),
+	idempotencyKey: text("idempotencyKey").notNull(),
+	destinationSessionId: text("destinationSessionId").notNull().unique(),
+	destinationIdentityId: text("destinationIdentityId").notNull().unique(),
+	sourcePairId: text("sourcePairId").notNull(),
+	branchName: text("branchName").notNull(),
+	state: text("state", { enum: ["pending", "ready"] }).notNull(),
+	messagesDigest: text("messagesDigest"),
+	createdAt: integer("createdAt").notNull(),
+	readyAt: integer("readyAt"),
+});
 
 export const runtimeMigrations = sqliteTable("runtime_migrations", {
 	id: text("id").primaryKey(),

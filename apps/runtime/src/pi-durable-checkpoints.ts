@@ -452,7 +452,7 @@ function movePointer(storage: SqlStorage, restored: string) {
 	);
 }
 
-function manifestRow(
+export function manifestRow(
 	storage: SqlStorage,
 	where: string,
 	value: string | number,

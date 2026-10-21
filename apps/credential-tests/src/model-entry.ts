@@ -36,6 +36,7 @@ import {
 	PiDurableProductSession,
 	parseCandidateRuntimeScope,
 } from "../../runtime/src/pi-durable-product-session.ts";
+import { CandidateLifecycle } from "../../web/src/lib/candidate-lifecycle";
 import {
 	candidateProjectCiphertext,
 	deliverCandidateProjectValues,
@@ -56,6 +57,12 @@ import { CANDIDATE_FIXTURE_RESET_SCHEMA } from "./candidate-fixture-schema";
 /** Fixture-only product apply faults; module state is shared by the test isolate. */
 let projectionFault: "throw" | "short" | "lose-ack" | undefined;
 let projectionCalls = 0;
+/** Fixture executor teardown: whether a destroy proves termination, and the calls seen. */
+const executorFixture = {
+	terminates: true,
+	destroyed: [] as string[],
+	purgeFault: false,
+};
 
 import {
 	type CandidateFixtureCredential,
@@ -1102,6 +1109,10 @@ export class CandidateFixtureProduct extends WorkerEntrypoint<CandidateFixtureBi
 					this.env.CandidateSessions.getByName(
 						subject.workspaceSessionId,
 					).observe(subject, cursor),
+				observeHistory: (scope, cursor) =>
+					this.env.CandidateSessions.getByName(
+						scope.workspaceSessionId,
+					).observeHistory({ version: 2, ownerVersion: 1, ...scope }, cursor),
 				workspaceAction: (subject, action) =>
 					this.env.CandidateSessions.getByName(
 						subject.workspaceSessionId,
@@ -1146,6 +1157,76 @@ export class CandidateFixtureProduct extends WorkerEntrypoint<CandidateFixtureBi
 			parseCandidateRuntimeScope(scope),
 			completion,
 		);
+	}
+	async applyCandidateArchive(
+		scope: CandidateRuntimeScope,
+		completion: unknown,
+	) {
+		return this.commands().applyArchiveCompletion(
+			parseCandidateRuntimeScope(scope),
+			completion,
+		);
+	}
+	private lifecycle() {
+		const scope = (value: {
+			userId: string;
+			projectId: string;
+			workspaceSessionId: string;
+		}) => ({ version: 2 as const, ownerVersion: 1 as const, ...value });
+		return new CandidateLifecycle(this.env.DB, {
+			exportContinuation: (value) =>
+				this.fixtureSession(value.workspaceSessionId).exportContinuation(
+					scope(value),
+				),
+			importContinuation: (value, seed) =>
+				this.fixtureSession(value.workspaceSessionId).importContinuation(
+					scope(value),
+					seed,
+				),
+			terminateExecutor: async (identity) => {
+				executorFixture.destroyed.push(identity.identityId);
+				return { terminated: executorFixture.terminates };
+			},
+			purgeSession: async (value) => {
+				if (executorFixture.purgeFault)
+					throw new Error("Synthetic purge failure");
+				await this.fixtureSession(value.workspaceSessionId).purgeDeleted(
+					scope(value),
+				);
+			},
+		});
+	}
+	setExecutorFixture(value: { terminates: boolean; purgeFault?: boolean }) {
+		executorFixture.terminates = value.terminates;
+		executorFixture.purgeFault = value.purgeFault ?? false;
+		const destroyed = [...executorFixture.destroyed];
+		executorFixture.destroyed = [];
+		return destroyed;
+	}
+	continueOwned(userId: string, input: unknown) {
+		return this.lifecycle().continueArchived(userId, input);
+	}
+	deleteProjectOwned(userId: string, projectId: string) {
+		return this.lifecycle().deleteProject(userId, projectId);
+	}
+	runCandidateCleanup() {
+		return this.lifecycle().cleanup();
+	}
+	readHistoryAuthority(value: CandidateRuntimeScope) {
+		return this.lifecycle().historyAuthority(parseCandidateRuntimeScope(value));
+	}
+	readArchivedAuthority(value: CandidateRuntimeScope) {
+		return this.lifecycle().archivedAuthority(
+			parseCandidateRuntimeScope(value),
+		);
+	}
+	async readDeletionAuthority(value: CandidateRuntimeScope) {
+		const scope = parseCandidateRuntimeScope(value);
+		return !!(await this.env.DB.prepare(
+			"SELECT 1 FROM workspace_sessions s JOIN projects p ON p.id=s.projectId JOIN runtime_deleted_target_fences f ON f.targetKind='project' AND f.targetId=p.id WHERE s.id=? AND s.userId=? AND p.id=? AND p.userId=s.userId AND p.status='deleting'",
+		)
+			.bind(scope.workspaceSessionId, scope.userId, scope.projectId)
+			.first());
 	}
 	observeOwned(
 		userId: string,
