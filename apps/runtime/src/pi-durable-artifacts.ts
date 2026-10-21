@@ -26,6 +26,12 @@ export const RECOVERY_STEPS = {
 	download: "artifact",
 	extract: "mutation",
 	fetch: "mutation",
+	// Workspace actions share the ledger, so they serialize with recovery.
+	present: "observation",
+	git_status: "observation",
+	git_commit: "mutation",
+	preview_start: "mutation",
+	preview_stop: "mutation",
 } as const;
 export type RecoveryStep = keyof typeof RECOVERY_STEPS;
 
@@ -37,6 +43,11 @@ const STEP_DEADLINE_MS: Record<RecoveryStep, number> = {
 	download: 10 * 60_000,
 	extract: 10 * 60_000,
 	fetch: 5 * 60_000,
+	present: 30_000,
+	git_status: 60_000,
+	git_commit: 2 * 60_000,
+	preview_start: 2 * 60_000,
+	preview_stop: 60_000,
 };
 
 export type RecoveryAuthority = {
@@ -48,7 +59,7 @@ export type RecoveryAuthority = {
 };
 export type MutationScope = {
 	id: string;
-	purpose: "capture" | "restore" | "sync";
+	purpose: "capture" | "restore" | "sync" | "workspace";
 	epoch: number;
 	generation: number;
 };

@@ -19,7 +19,7 @@ import type {
 	ProjectionIntentV1,
 	ProjectionOutcome,
 } from "../../../packages/runtime-contracts/src/projection.js";
-import type { ArtifactStore } from "./pi-durable-artifacts.ts";
+import type { ArtifactPermit, ArtifactStore } from "./pi-durable-artifacts.ts";
 import {
 	type CheckpointFault,
 	createCheckpointPublisher,
@@ -40,6 +40,12 @@ import {
 	sha256,
 	streamOf,
 } from "./pi-durable-recovery.fixture.ts";
+import {
+	createWorkspaceController,
+	type WorkspaceController,
+	type WorkspaceExecution,
+	type WorkspaceFault,
+} from "./pi-durable-workspace.ts";
 import {
 	importRuntimeKeyringFromBytes,
 	type RuntimeKeyring,
@@ -190,6 +196,73 @@ export async function seed(store: ArtifactStore): Promise<ArchiveArtifactV1> {
 	};
 }
 
+/** Git and preview over the fake execution's files; one fault hook per method. */
+export function fakeWorkspace(execution: ReturnType<typeof fakeExecution>) {
+	const snapshot = () => JSON.stringify(execution.state.files);
+	const state = {
+		present: true,
+		committed: snapshot(),
+		commits: [] as string[],
+		preview: "stopped" as "stopped" | "running",
+		/** False models a stop that cannot prove the process is gone. */
+		terminates: true,
+		calls: [] as string[],
+		faults: {} as Partial<
+			Record<keyof WorkspaceExecution, (permit: ArtifactPermit) => unknown>
+		>,
+	};
+	const enter = async (
+		method: keyof WorkspaceExecution,
+		permit: ArtifactPermit,
+	) => {
+		state.calls.push(method);
+		await state.faults[method]?.(permit);
+	};
+	const changed = () => {
+		const before = JSON.parse(state.committed) as Record<string, string>;
+		const after = execution.state.files;
+		return [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(
+			(path) => before[path] !== after[path],
+		).length;
+	};
+	const workspace: WorkspaceExecution = {
+		async present(permit) {
+			await enter("present", permit);
+			return state.present;
+		},
+		async gitStatus(permit, request) {
+			await enter("gitStatus", permit);
+			return {
+				branch: request.branch,
+				head: execution.state.head,
+				changed: changed(),
+			};
+		},
+		async gitCommit(permit, request) {
+			await enter("gitCommit", permit);
+			if (snapshot() === state.committed)
+				return { head: execution.state.head, committed: false };
+			execution.state.head = (await sha256(encoder.encode(snapshot()))).slice(
+				0,
+				40,
+			);
+			state.committed = snapshot();
+			state.commits.push(request.message);
+			return { head: execution.state.head, committed: true };
+		},
+		async previewStart(permit) {
+			await enter("previewStart", permit);
+			state.preview = "running";
+		},
+		async previewStop(permit) {
+			await enter("previewStop", permit);
+			if (state.terminates) state.preview = "stopped";
+			return { terminated: state.terminates };
+		},
+	};
+	return { workspace, state };
+}
+
 export type Authority = {
 	current: boolean;
 	generation: number;
@@ -222,6 +295,15 @@ export async function fixture(
 			store?: ArtifactStore;
 			fault?: (point: CheckpointFault) => void | Promise<void>;
 		};
+		/** Composition of UI Git, preview and backup scheduling; read at each host open. */
+		workspaceOptions: {
+			enabled?: boolean;
+			deferralMs?: number;
+			fault?: (point: WorkspaceFault) => void | Promise<void>;
+		};
+		workspace: ReturnType<typeof fakeWorkspace>;
+		/** The controller of the latest host open. */
+		controller(): WorkspaceController;
 		/** Product application of terminal assistants, keyed by assistant. */
 		assistants: Map<string, ProjectionIntentV1>;
 		/** The model fixture of the latest host open. */
@@ -260,9 +342,18 @@ export async function fixture(
 				fault?: (point: CheckpointFault) => void | Promise<void>;
 			} = {};
 			const assistants = new Map<string, ProjectionIntentV1>();
+			const workspaceOptions: {
+				enabled?: boolean;
+				deferralMs?: number;
+				fault?: (point: WorkspaceFault) => void | Promise<void>;
+			} = {};
+			let controller: WorkspaceController | undefined;
 			const hostFault: { at?: (point: HostFault) => void } = {};
 			const execution = fakeExecution({ "stale.txt": "old" }, "c".repeat(40));
 			const store = fakeStore();
+			const workspace = fakeWorkspace(execution);
+			const writers = async () =>
+				controller ? controller.writers() : { settled: true };
 			const decisions = new Map<string, string>();
 			const configurationGate: { wait?: () => Promise<void> } = {};
 			const dependencies: HostFixtureDependencies = {
@@ -290,9 +381,37 @@ export async function fixture(
 									},
 									execution: execution.execution,
 									store: restoreOptions.store ?? store.store,
+									writers,
 									now: () => control.now,
 									fault: (point) => restoreOptions.fault?.(point),
 								}),
+					workspace: (port) => {
+						if (!workspaceOptions.enabled) return undefined;
+						const publisher = createCheckpointPublisher({
+							storage: state.storage,
+							host: port,
+							binding: {
+								ownerId: "owner",
+								workspaceSessionId: "workspace",
+								keyring,
+							},
+							execution: execution.execution,
+							store: store.store,
+							writers,
+							now: () => control.now,
+						});
+						controller = createWorkspaceController({
+							storage: state.storage,
+							host: port,
+							execution: workspace.workspace,
+							publisher: () => publisher,
+							branch: "b",
+							now: () => control.now,
+							deferralMs: workspaceOptions.deferralMs,
+							fault: (point) => workspaceOptions.fault?.(point),
+						});
+						return controller;
+					},
 				},
 				candidate: {
 					userId: "owner",
@@ -388,6 +507,12 @@ export async function fixture(
 					product,
 					restore,
 					restoreOptions,
+					workspaceOptions,
+					workspace,
+					controller: () => {
+						if (!controller) throw new Error("Workspace not composed");
+						return controller;
+					},
 					assistants,
 					hostFault,
 					model: () => {

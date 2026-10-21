@@ -2734,3 +2734,90 @@ it("a restore the runtime refuses before its fence releases the barrier without 
 		}),
 	).toMatchObject({ commandSeq: 4 });
 });
+
+it("routes owned UI workspace actions to the runtime owner and refuses foreign, malformed and restore-fenced ones", async () => {
+	await candidateCredential();
+	const first = await commands().admit("owner", prompt);
+	const sessionId = first.workspaceSessionId;
+	const status = {
+		version: 1,
+		kind: "git_status",
+		projectId: "project",
+		sessionId,
+	};
+	const calls: unknown[] = [];
+	const routed = new CandidateProductCommands(
+		env.DB,
+		{
+			readSelection: async () => null,
+			targetStatus: async () => {
+				throw new Error("unused");
+			},
+			restoreAvailable: true,
+			workspaceAction: async (subject, action) => {
+				calls.push({ session: subject.workspaceSessionId, action });
+				return { status: "git_status", branch: "b", head: "h", changed: 0 };
+			},
+		},
+		(owner) => env.CodexCredential.getByName(owner),
+	);
+	expect(await routed.workspaceAction("owner", status)).toMatchObject({
+		status: "git_status",
+	});
+	expect(calls).toEqual([
+		{ session: sessionId, action: { version: 1, kind: "git_status" } },
+	]);
+	await expect(
+		routed.workspaceAction("intruder", status),
+	).rejects.toMatchObject({ code: "runtime_owner_mismatch" });
+	for (const malformed of [
+		{ ...status, kind: "git_push" },
+		{ ...status, kind: "git_commit" },
+		{ ...status, kind: "git_commit", message: " " },
+		{ ...status, message: "Only commits carry one" },
+		{ ...status, command: "npm run dev" },
+	])
+		await expect(routed.workspaceAction("owner", malformed)).rejects.toThrow();
+	// A composition without UI Git refuses before any runtime call.
+	await expect(
+		commands().workspaceAction("owner", status),
+	).rejects.toMatchObject({ code: "runtime_unavailable" });
+	// The deployed runtime composes no workspace execution yet.
+	const runtime = env.CandidateSessions.getByName(sessionId);
+	try {
+		expect(
+			await env.CandidateProduct.workspaceActionOwned("owner", status),
+		).toEqual({ status: "denied", reason: "unavailable" });
+	} finally {
+		await runtime.retireFixture();
+	}
+	// A closed restore barrier fences every action before the runtime sees it.
+	await commands().applyCheckpointProjections(
+		{ userId: "owner", projectId: "project", workspaceSessionId: sessionId },
+		[
+			{
+				version: 1,
+				currentPairId: "pair-1",
+				previousPairId: null,
+				mutationGeneration: 1,
+				expectedMutationGeneration: 0,
+				projectionVersion: 1,
+			},
+		],
+	);
+	await commands().admit("owner", {
+		version: 2,
+		kind: "restore_checkpoint_acknowledging_loss",
+		idempotencyKey: "restore",
+		projectId: "project",
+		sessionId,
+		committedPairId: "pair-1",
+		expectedMutationGeneration: 1,
+		expectedRecoveryPosition: 1,
+		unbackedLossAcknowledged: true,
+	});
+	await expect(routed.workspaceAction("owner", status)).rejects.toMatchObject({
+		code: "restore_in_progress",
+	});
+	expect(calls).toHaveLength(1);
+});

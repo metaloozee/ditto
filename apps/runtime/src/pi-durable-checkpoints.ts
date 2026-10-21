@@ -180,7 +180,7 @@ export type CheckpointRestorer = {
 	): Promise<RestorePairResult>;
 };
 
-type SqlStorage = {
+export type SqlStorage = {
 	sql: {
 		exec<T extends Record<string, SqlStorageValue>>(
 			query: string,
@@ -1029,6 +1029,68 @@ export function createCheckpointPublisher(deps: {
 				}
 				health("failed", "restore_blocked");
 				return { status: "blocked", failures };
+			} finally {
+				inFlight--;
+				ledger.release(scope);
+			}
+		},
+		/**
+		 * A cold execution workspace gets the files of the current pair under
+		 * one exclusive scope. Nothing about the conversation changes and Pi
+		 * does not run. The seed is never used.
+		 */
+		async restoreFiles(): Promise<
+			| { status: "restored"; pair: string }
+			| { status: "deferred"; reason: string }
+			| { status: "unavailable"; failures: RestoreFailure[] }
+		> {
+			await refresh();
+			if (!writable(authority))
+				return { status: "deferred", reason: "executor_not_current" };
+			// The caller refuses while changes are unbacked, so the current pair
+			// matches the live conversation. The previous pair needs a paired
+			// restore, which forks Pi too.
+			const at = pointer(storage);
+			const candidates = [at.current]
+				.filter((pair): pair is string => pair !== null)
+				.map((pair) => manifestRow(storage, "id = ?", pair));
+			let scope: MutationScope;
+			try {
+				scope = ledger.acquire("restore");
+			} catch (error) {
+				if (error instanceof RecoveryDenied)
+					return { status: "deferred", reason: error.reason };
+				throw error;
+			}
+			inFlight++;
+			const failures: RestoreFailure[] = [];
+			try {
+				for (const manifest of candidates) {
+					if (!manifest) continue;
+					if (manifest.compatibility.host !== host.version) {
+						failures.push({
+							pair: manifest.id,
+							reason: "incompatible",
+							workspace: ledger.mutated(scope.id) ? "unusable" : "unchanged",
+						});
+						continue;
+					}
+					const files = await recovery.restore(scope, manifest.archive);
+					if (files.status === "verified")
+						return { status: "restored", pair: manifest.id };
+					failures.push({
+						pair: manifest.id,
+						reason: files.reason,
+						workspace: files.workspace,
+					});
+					if (files.workspace === "unknown") break;
+					if (
+						files.reason === "authority_revoked" ||
+						files.reason === "scope_denied"
+					)
+						return { status: "deferred", reason: files.reason };
+				}
+				return { status: "unavailable", failures };
 			} finally {
 				inFlight--;
 				ledger.release(scope);

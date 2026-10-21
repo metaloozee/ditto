@@ -23,6 +23,7 @@ import type {
 	ProjectionIntentV1,
 	RuntimeObservationV1,
 } from "../../../packages/runtime-contracts/src/projection.js";
+import type { WorkspaceActionResultV1 } from "../../../packages/runtime-contracts/src/workspace-action.js";
 import type {
 	CheckpointHostPort,
 	CheckpointRestorer,
@@ -37,6 +38,10 @@ import {
 	type PrivateModelTransport,
 } from "./pi-durable-models.ts";
 import { createRemoteTools, type RemoteExecutor } from "./pi-durable-tools.ts";
+import type {
+	WorkspaceController,
+	WorkspaceHostPort,
+} from "./pi-durable-workspace.ts";
 import { parseRuntimeKeyring } from "./runtime-crypto.ts";
 
 export type CandidateRuntimeScope = {
@@ -115,6 +120,12 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 	): CheckpointRestorer | undefined {
 		return undefined;
 	}
+	/** Deployment composition supplies UI Git and preview; none answers every action unavailable. */
+	protected workspaceController(
+		_port: WorkspaceHostPort,
+	): WorkspaceController | undefined {
+		return undefined;
+	}
 	private opening: Promise<PiDurableHost> | undefined;
 	private async scope(value?: unknown) {
 		if (this.env.CANDIDATE_DISPOSABLE !== "008-synthetic")
@@ -183,6 +194,8 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 							) => product.applyCandidateRestore(scope, completion),
 							restorer: (port: CheckpointHostPort) =>
 								this.checkpointRestorer(port),
+							workspace: (port: WorkspaceHostPort) =>
+								this.workspaceController(port),
 						},
 					}
 				: {}),
@@ -297,6 +310,19 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 			ownerVersion: subject.runtimeOwnerVersion,
 		});
 		return host.readCandidateSelection();
+	}
+	async workspaceAction(
+		subject: ModelSubjectV1,
+		action: unknown,
+	): Promise<WorkspaceActionResultV1> {
+		const host = await this.activate({
+			version: 2,
+			userId: subject.userId,
+			projectId: subject.projectId,
+			workspaceSessionId: subject.workspaceSessionId,
+			ownerVersion: subject.runtimeOwnerVersion,
+		});
+		return host.workspaceAction(action);
 	}
 	async targetStatus(subject: ModelSubjectV1, runId: string) {
 		const host = await this.activate({

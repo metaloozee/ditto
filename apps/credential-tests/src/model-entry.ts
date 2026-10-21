@@ -1097,6 +1097,10 @@ export class CandidateFixtureProduct extends WorkerEntrypoint<CandidateFixtureBi
 					this.env.CandidateSessions.getByName(
 						subject.workspaceSessionId,
 					).observe(subject, cursor),
+				workspaceAction: (subject, action) =>
+					this.env.CandidateSessions.getByName(
+						subject.workspaceSessionId,
+					).workspaceAction(subject, action),
 			},
 			(owner) => this.env.CandidateCredential.getByName(owner),
 		);
@@ -1145,6 +1149,9 @@ export class CandidateFixtureProduct extends WorkerEntrypoint<CandidateFixtureBi
 		cursor?: number,
 	) {
 		return this.commands().observe(userId, projectId, sessionId, cursor);
+	}
+	workspaceActionOwned(userId: string, input: unknown) {
+		return this.commands().workspaceAction(userId, input);
 	}
 	admitOwned(userId: string, input: unknown) {
 		return this.commands().admit(userId, input);

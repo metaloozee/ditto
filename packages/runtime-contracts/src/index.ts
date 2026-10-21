@@ -8,3 +8,4 @@ export * from "./product-command.js";
 export * from "./projection.js";
 export * from "./runtime.js";
 export * from "./tool-execution.js";
+export * from "./workspace-action.js";

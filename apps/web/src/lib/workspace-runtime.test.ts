@@ -984,6 +984,35 @@ describe("WorkspaceRuntime", () => {
 		});
 	});
 
+	it("refuses legacy Git and preview leases on a runtime-owned session", async () => {
+		seedProject(store);
+		seedSession(store, { runtimeOwner: "pi_durable_v1" });
+		const run = vi.fn(async () => undefined);
+		for (const purpose of [
+			"preview",
+			"mutating_git",
+			"local_git_read",
+		] as const)
+			await expect(
+				withWorkspaceRuntimeLease(
+					{
+						env,
+						db: store.db,
+						userId: "user-1",
+						projectId: "proj-1",
+						sessionId: "sess-1",
+						purpose,
+						sleep: async () => undefined,
+						authority: createSandboxAuthority(store.db),
+					},
+					run,
+				),
+			).rejects.toMatchObject({ code: "runtime_owner_mismatch" });
+		expect(run).not.toHaveBeenCalled();
+		expect(getProjectSandboxMock).not.toHaveBeenCalled();
+		expect(store.sessionRows.get("sess-1")?.runtimeLeaseId).toBeNull();
+	});
+
 	it("does not acquire a lease after project deletion starts", async () => {
 		seedProject(store);
 		seedSession(store);

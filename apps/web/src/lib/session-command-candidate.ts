@@ -28,6 +28,11 @@ import {
 	type RuntimeObservationV1,
 } from "../../../../packages/runtime-contracts/src/projection.js";
 import {
+	parseBrowserWorkspaceActionV1,
+	type WorkspaceActionResultV1,
+	type WorkspaceActionV1,
+} from "../../../../packages/runtime-contracts/src/workspace-action.js";
+import {
 	applyProductProjectionBatch,
 	type ProjectionPayload,
 } from "../../../runtime/src/product-projector.js";
@@ -68,6 +73,10 @@ export interface CandidateAdmissionRuntime {
 	): Promise<RuntimeObservationV1>;
 	/** Set only by a composition whose runtime can finish a restore; a closed barrier needs one. */
 	restoreAvailable?: boolean;
+	workspaceAction?(
+		subject: ModelSubjectV1,
+		action: WorkspaceActionV1,
+	): Promise<WorkspaceActionResultV1>;
 }
 export interface CandidateCredentialStatus {
 	status(owner: string): Promise<{ status: string; generation: number }>;
@@ -1059,6 +1068,22 @@ WHERE c.sessionId=candidate_restore_barriers.sessionId AND c.commandSeq<=candida
 			)
 			.run();
 		return result(applied.meta.changes === 1 ? "applied" : "retry");
+	}
+
+	/**
+	 * Owned UI Git or preview action. The runtime owner admits it under its
+	 * one mutation scope; the product never touches the workspace directly.
+	 */
+	async workspaceAction(
+		userId: string,
+		value: unknown,
+	): Promise<WorkspaceActionResultV1> {
+		const { projectId, sessionId, ...action } =
+			parseBrowserWorkspaceActionV1(value);
+		const subject = await this.subject(userId, projectId, sessionId);
+		await this.assertNoRestore(sessionId);
+		if (!this.runtime.workspaceAction) reject("runtime_unavailable", 503);
+		return this.runtime.workspaceAction(subject, action);
 	}
 
 	/** Owned observation; the runtime reads committed facts without scheduling. */

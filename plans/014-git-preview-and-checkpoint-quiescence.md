@@ -1,6 +1,6 @@
 # 014: Serialize Git and preview with recovery
 
-Status: BLOCKED on 013. Base: `bcce03e`. Phase: L4 completion.
+Status: DONE for the local fixture scope ([evidence](evidence/014-l4-acceptance.md)). Was: BLOCKED on 013. Base: `bcce03e`. Phase: L4 completion.
 Spec: `docs/specs/pi-durable-session-runtime.md`, decisions 3, 8–9, 11–15, 17; PD14, PD20, PD24–PD25, PD27, PD30–PD31; OD3, OD5–OD6.
 
 ## Outcome

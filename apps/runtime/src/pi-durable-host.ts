@@ -69,6 +69,10 @@ import {
 } from "../../../packages/runtime-contracts/src/projection.js";
 import type { RemoteToolName } from "../../../packages/runtime-contracts/src/tool-execution.js";
 import {
+	parseWorkspaceActionV1,
+	type WorkspaceActionResultV1,
+} from "../../../packages/runtime-contracts/src/workspace-action.js";
+import {
 	digestText,
 	isRuntimeCiphertext,
 	isUnboundSelection,
@@ -107,6 +111,10 @@ import {
 	summaryTranscript,
 	validateSummaryResponse,
 } from "./pi-durable-summary.ts";
+import type {
+	WorkspaceController,
+	WorkspaceHostPort,
+} from "./pi-durable-workspace.ts";
 
 const WORK_MS = 1000;
 const DRAIN_MS = 1000;
@@ -171,7 +179,8 @@ class EffectDenied extends Error {
 			| "reservation"
 			| "recovery"
 			| "recovery-deadline"
-			| "authority",
+			| "authority"
+			| "backup",
 		readonly run?: string,
 	) {
 		super(
@@ -181,7 +190,9 @@ class EffectDenied extends Error {
 					? "Candidate recovery-only admission"
 					: reason === "recovery-deadline"
 						? "Run recovery deadline expired"
-						: "Run authority revoked",
+						: reason === "backup"
+							? "Workspace backup overdue: changes wait for a checkpoint"
+							: "Run authority revoked",
 		);
 	}
 }
@@ -401,6 +412,8 @@ export type HostFixtureDependencies = {
 		): Promise<unknown>;
 		/** The files half of a restore, composed with the session's execution and store. */
 		restorer?(port: CheckpointHostPort): CheckpointRestorer | undefined;
+		/** UI Git, preview and backup scheduling under the same mutation ownership. */
+		workspace?(port: WorkspaceHostPort): WorkspaceController | undefined;
 	};
 	candidate?: {
 		origin?: string;
@@ -460,6 +473,13 @@ export class PiDurableHost {
 	private delivery: Promise<void> | undefined;
 	private scheduling = 0;
 	private restorer: CheckpointRestorer | undefined;
+	private workspaceController: WorkspaceController | undefined;
+	private workspace() {
+		this.workspaceController ??= this.dependencies.checkpoints?.workspace?.(
+			this.workspacePort(),
+		);
+		return this.workspaceController;
+	}
 	/** The conversation of the active generation; a restore forks a new one. */
 	private conversationId: ConversationId = ROOT_CONVERSATION_ID;
 
@@ -3227,12 +3247,18 @@ export class PiDurableHost {
 				prepared: canonical(cp),
 				digest: await requestDigest(request.arguments),
 			};
+			const changes = request.operation.kind !== "read";
+			const workspace = this.workspace();
+			if (changes && workspace && !workspace.mutationAllowed())
+				throw new EffectDenied("backup");
 			const admitted = await this.admitExact(
 				"tool",
 				correlation,
 				task,
 				context,
 			);
+			if (changes && workspace?.noteMutation())
+				await this.workspacePort().wake(this.dependencies.now());
 			const finalAuthority = await awaitWithContext(
 				this.dependencies.authority(),
 				context,
@@ -3270,7 +3296,9 @@ export class PiDurableHost {
 			if (
 				!(
 					error instanceof EffectDenied &&
-					(error.reason === "reservation" || error.reason === "recovery")
+					(error.reason === "reservation" ||
+						error.reason === "recovery" ||
+						error.reason === "backup")
 				)
 			)
 				this.denied = true;
@@ -4891,6 +4919,9 @@ export class PiDurableHost {
 		);
 		const restorer = this.restorer;
 		if (!restorer) throw new Error("Restore requires paired checkpoints");
+		// Preview is a writer; its stop revokes every URL of the old files.
+		const workspace = this.workspace();
+		if (workspace && !(await workspace.quiesceForRestore())) return false;
 		const result = await this.ownerTransition(
 			BACKGROUND_CONTEXT,
 			async (context) =>
@@ -4956,6 +4987,7 @@ export class PiDurableHost {
 				}),
 			true,
 		);
+		if (result.status === "restored") workspace?.restored();
 		if (result.status === "blocked") {
 			this.transition("account", () =>
 				this.storage.sql.exec(
@@ -6388,6 +6420,79 @@ export class PiDurableHost {
 		if (existing === null || next < existing || consumed.includes(existing))
 			await wakeup.setAlarm(next);
 	}
+	/** Workspace actions see the checkpoint port, restore admission and a wakeup. */
+	private workspacePort(): WorkspaceHostPort {
+		return {
+			...this.checkpointPort(),
+			admission: () =>
+				this.read(
+					() =>
+						this.storage.sql
+							.exec(
+								"SELECT 1 FROM host_restores WHERE state NOT IN ('complete','refusing','refused')",
+							)
+							.toArray().length,
+				)
+					? "restore_in_progress"
+					: "open",
+			wake: async (at) => {
+				this.transition("account", () =>
+					this.storage.sql.exec(
+						"INSERT INTO host_wakeups VALUES ('workspace', ?) ON CONFLICT(id) DO UPDATE SET deadline = min(deadline, excluded.deadline)",
+						at,
+					),
+				);
+				await this.durable();
+				await this.repairWakeup();
+			},
+		};
+	}
+
+	/** One backup step; the controller says when it needs to run again. */
+	private async advanceWorkspace() {
+		const workspace = this.workspace();
+		if (!workspace || this.sealed || this.storageBarrier) return;
+		let next: number | null;
+		try {
+			next = await workspace.tick();
+		} catch (error) {
+			if (this.sealed || this.storageBarrier) throw error;
+			next = this.dependencies.now() + PROJECTION_RETRY_MS;
+		}
+		this.transition("account", () => {
+			this.storage.sql.exec("DELETE FROM host_wakeups WHERE id = 'workspace'");
+			if (next !== null)
+				this.storage.sql.exec(
+					"INSERT INTO host_wakeups VALUES ('workspace', ?)",
+					next,
+				);
+		});
+		await this.durable();
+		await this.repairWakeup();
+	}
+
+	/** A UI workspace action under the runtime owner; never a second mutation route. */
+	async workspaceAction(value: unknown): Promise<WorkspaceActionResultV1> {
+		const action = parseWorkspaceActionV1(value);
+		const workspace = this.workspace();
+		if (!workspace || this.sealed || this.storageBarrier)
+			return { status: "denied", reason: "unavailable" };
+		if (this.denied) return { status: "denied", reason: "blocked" };
+		return workspace.act(action);
+	}
+
+	/** Product preview proxy: the URL's generation must still be running on a live, unfenced host. */
+	previewAuthority(generation: number): boolean {
+		if (this.sealed || this.denied || this.storageBarrier) return false;
+		const workspace = this.workspace();
+		if (!workspace || this.workspacePort().admission() !== "open") return false;
+		return workspace.previewAuthority(generation);
+	}
+
+	previewTraffic() {
+		this.workspace()?.traffic();
+	}
+
 	/** Committed host state that paired publication reads and rechecks. */
 	checkpointPort(): CheckpointHostPort {
 		const count = (query: string) =>
@@ -6523,6 +6628,7 @@ export class PiDurableHost {
 		await this.deliverProjections().catch(() => undefined);
 		await this.deliverCheckpoints();
 		await this.advanceRestore();
+		await this.advanceWorkspace();
 		if (!this.ordinaryAllowed()) return;
 		if (
 			this.sealed ||
