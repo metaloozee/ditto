@@ -1120,6 +1120,15 @@ export class CandidateFixtureProduct extends WorkerEntrypoint<CandidateFixtureBi
 			throw new Error("Synthetic lost projection acknowledgment");
 		return fault === "short" ? results.slice(0, -1) : results;
 	}
+	async applyCandidateCheckpoints(
+		scope: CandidateRuntimeScope,
+		projections: unknown,
+	) {
+		return this.commands().applyCheckpointProjections(
+			parseCandidateRuntimeScope(scope),
+			projections,
+		);
+	}
 	observeOwned(
 		userId: string,
 		projectId: string,

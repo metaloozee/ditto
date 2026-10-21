@@ -1,6 +1,6 @@
 # 013: Restore files, context and accepted-command fate together
 
-Status: BLOCKED on 012. Base: `bcce03e`. Phase: L4, restore safety gate.
+Status: READY after local 012. Base: `bcce03e`. Phase: L4, restore safety gate.
 Spec: `docs/specs/pi-durable-session-runtime.md`, decisions 3.4, 5, 8–11, 17; PD05, PD11–PD14, PD20–PD24, PD40; OD2, OD4–OD6.
 
 ## Outcome and owner

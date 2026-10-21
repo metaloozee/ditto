@@ -19,6 +19,7 @@ import {
 	type ToolExecutionResult,
 } from "@earendil-works/pi-durable";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
+import type { CheckpointProjectionV1 } from "../../../packages/runtime-contracts/src/checkpoint.js";
 import {
 	type ConfigurationAckV1,
 	type ConfigurationAuthorityV1,
@@ -70,6 +71,13 @@ import {
 	sealHostField,
 	UNBOUND_SELECTION,
 } from "./host-private.ts";
+import {
+	type CheckpointHostPort,
+	checkpointAdmission,
+	checkpointHealth,
+	deliverCheckpointProjections,
+	recoverCheckpointState,
+} from "./pi-durable-checkpoints.ts";
 import { cooperativeFixture } from "./pi-durable-cooperative-fixture.ts";
 import { fixtureDatabase } from "./pi-durable-local.ts";
 import {
@@ -365,6 +373,13 @@ export type HostFixtureDependencies = {
 		setAlarm(deadline: number): Promise<void>;
 	};
 	retained?: RetainedStorageBinding;
+	/**
+	 * Paired checkpoints: ordinary work waits for a committed baseline and
+	 * yields to a held mutation scope. Requires retained storage.
+	 */
+	checkpoints?: {
+		applyProjections(projections: CheckpointProjectionV1[]): Promise<unknown>;
+	};
 	candidate?: {
 		origin?: string;
 		ordinaryAllowed?(): boolean;
@@ -421,6 +436,7 @@ export class PiDurableHost {
 	private privateQueue: Promise<void> = Promise.resolve();
 	private queueError: unknown;
 	private delivery: Promise<void> | undefined;
+	private scheduling = 0;
 
 	private constructor(
 		private storage: DurableObjectStorage,
@@ -596,6 +612,16 @@ export class PiDurableHost {
 			await host.durable();
 		}
 		await host.assertRetainedGate();
+		if (dependencies.checkpoints) {
+			if (!dependencies.retained)
+				throw new Error("Checkpoints require retained storage");
+			recoverCheckpointState(storage);
+			// Pointer moves committed before a lost process still reach the product.
+			storage.sql.exec(
+				"INSERT OR IGNORE INTO host_wakeups SELECT 'checkpoint', ? WHERE EXISTS (SELECT 1 FROM checkpoint_projections WHERE state = 'pending')",
+				dependencies.now(),
+			);
+		}
 		const piStorage = dependencies.retained
 			? await EncryptedPiStorage.open(storage, dependencies.retained)
 			: await SqliteStorage.open(fixtureDatabase(storage));
@@ -1078,8 +1104,15 @@ export class PiDurableHost {
 				.toArray(),
 		);
 	}
+	private ordinaryAllowed() {
+		if (this.dependencies.candidate?.ordinaryAllowed?.() === false)
+			return false;
+		if (!this.dependencies.checkpoints) return true;
+		const admission = this.read(() => checkpointAdmission(this.storage));
+		return admission.baseline && !admission.exclusive;
+	}
 	private assertLive(ordinary = true) {
-		if (ordinary && this.dependencies.candidate?.ordinaryAllowed?.() === false)
+		if (ordinary && !this.ordinaryAllowed())
 			throw new Error("Candidate recovery-only admission");
 		if (this.denied || this.sealed || this.storageBarrier)
 			throw new Error("Host admission denied");
@@ -4261,6 +4294,8 @@ export class PiDurableHost {
 					sql.exec("SELECT id FROM host_safety LIMIT 1").toArray().length > 0,
 			},
 		};
+		const recovery = checkpointHealth(storage);
+		if (recovery) snapshot.health.recovery = recovery;
 		return { version: 1, cursor: head, snapshot, events: [], more: false };
 	}
 
@@ -4801,7 +4836,7 @@ export class PiDurableHost {
 									if (
 										error instanceof Error &&
 										error.message === "Candidate recovery-only admission" &&
-										scope.ordinaryAllowed?.() === false
+										!this.ordinaryAllowed()
 									)
 										return;
 									const target = this.run(record.run);
@@ -5102,6 +5137,19 @@ export class PiDurableHost {
 		duplicateInvocation?: string,
 		context: Context = BACKGROUND_CONTEXT,
 	) {
+		// A run is still queued across these awaits; publication waits for it.
+		this.scheduling++;
+		try {
+			return await this.scheduleRun(id, duplicateInvocation, context);
+		} finally {
+			this.scheduling--;
+		}
+	}
+	private async scheduleRun(
+		id: string,
+		duplicateInvocation: string | undefined,
+		context: Context,
+	) {
 		this.assertSeals();
 		if (duplicateInvocation) {
 			const previous = this.latest();
@@ -5285,6 +5333,10 @@ export class PiDurableHost {
 			);
 		}
 		context.abortSignal?.throwIfAborted();
+		// No await separates this check from the transition, so a mutation
+		// scope cannot be acquired between them.
+		if (!this.ordinaryAllowed())
+			throw new Error("Candidate recovery-only admission");
 		this.transition("intent", () => {
 			if (["queued", "recovering"].includes(this.run(command.run).state))
 				this.storage.sql.exec(
@@ -5786,6 +5838,87 @@ export class PiDurableHost {
 		if (existing === null || next < existing || consumed.includes(existing))
 			await wakeup.setAlarm(next);
 	}
+	/** Committed host state that paired publication reads and rechecks. */
+	checkpointPort(): CheckpointHostPort {
+		const count = (query: string) =>
+			Number(this.storage.sql.exec<{ n: number }>(query).one().n);
+		return {
+			version: VERSION,
+			epoch: () =>
+				this.read(() =>
+					Number(
+						this.storage.sql.exec("SELECT epoch FROM host_meta").one().epoch,
+					),
+				),
+			blocked: () =>
+				this.denied ||
+				this.sealed ||
+				this.storageBarrier ||
+				this.read(() => count("SELECT count(*) AS n FROM host_safety")) > 0,
+			quiescent: () =>
+				this.scheduling === 0 &&
+				!this.denied &&
+				!this.sealed &&
+				!this.storageBarrier &&
+				this.unresolved().length === 0 &&
+				this.read(
+					() =>
+						count(
+							"SELECT count(*) AS n FROM host_runs WHERE state IN ('running','recovering','stopping')",
+						) +
+							count(
+								"SELECT count(*) AS n FROM tasks WHERE status != 'terminal'",
+							) +
+							count(
+								"SELECT count(*) AS n FROM submissions WHERE status = 'placed'",
+							) ===
+						0,
+				),
+			effectWatermark: () =>
+				this.read(() =>
+					count("SELECT COALESCE(MAX(rowid), 0) AS n FROM host_effects"),
+				),
+			authority: () => this.dependencies.authority(),
+			resume: async () => {
+				this.transition("intent", () => {
+					const now = this.dependencies.now();
+					this.storage.sql.exec(
+						"INSERT OR REPLACE INTO host_wakeups VALUES ('checkpoint', ?)",
+						now,
+					);
+					if (this.dependencies.candidate)
+						this.storage.sql.exec(
+							"INSERT INTO host_wakeups VALUES('product',?) ON CONFLICT(id) DO UPDATE SET deadline=min(deadline,excluded.deadline)",
+							now,
+						);
+				});
+				await this.durable();
+				await this.repairWakeup();
+			},
+		};
+	}
+	/** Pointer moves reach the product in order; failures keep them and a retry wakeup. */
+	private async deliverCheckpoints() {
+		const apply = this.dependencies.checkpoints?.applyProjections;
+		if (!apply) return;
+		let pending: number;
+		try {
+			pending = (await deliverCheckpointProjections(this.storage, apply))
+				.pending;
+		} catch {
+			pending = 1;
+		}
+		this.transition("account", () => {
+			this.storage.sql.exec("DELETE FROM host_wakeups WHERE id = 'checkpoint'");
+			if (pending)
+				this.storage.sql.exec(
+					"INSERT INTO host_wakeups VALUES ('checkpoint', ?)",
+					this.dependencies.now() + PROJECTION_RETRY_MS,
+				);
+		});
+		await this.durable();
+		if (pending) await this.repairWakeup();
+	}
 	async reserveWakeup(
 		kind: "retry" | "effect" | "projection" | "checkpoint",
 		deadline: number,
@@ -5817,7 +5950,8 @@ export class PiDurableHost {
 		// fenced. A delivery failure keeps its intents and wakeup and never fails
 		// the alarm, which the platform would otherwise retry outside the host.
 		await this.deliverProjections().catch(() => undefined);
-		if (this.dependencies.candidate?.ordinaryAllowed?.() === false) return;
+		await this.deliverCheckpoints();
+		if (!this.ordinaryAllowed()) return;
 		if (
 			this.sealed ||
 			this.denied ||

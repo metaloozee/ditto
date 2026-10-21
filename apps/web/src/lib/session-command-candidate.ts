@@ -1,3 +1,7 @@
+import {
+	type CheckpointProjectionResultV1,
+	parseCheckpointProjectionsV1,
+} from "../../../../packages/runtime-contracts/src/checkpoint.js";
 import type { ConfigurationSelectionV1 } from "../../../../packages/runtime-contracts/src/configuration.js";
 import {
 	type ModelSubjectV1,
@@ -392,6 +396,13 @@ SELECT identityId,'workspace_session',identityId,identityId,userId,projectId,ses
 				),
 			);
 		}
+		statements.push(
+			q(
+				"INSERT OR IGNORE INTO runtime_checkpoint_pointers(sessionId,runtimeOwnerVersion,currentPairId,previousPairId,mutationGeneration,updatedAt) SELECT id,runtimeOwnerVersion,NULL,NULL,0,? FROM workspace_sessions WHERE id=? AND runtimeOwner='pi_durable_v1'",
+				acceptedAt,
+				sessionId,
+			),
+		);
 		statements.push(
 			q(
 				"INSERT OR IGNORE INTO session_command_sequences(sessionId,nextSequence,updatedAt) SELECT id,1,? FROM workspace_sessions WHERE id=? AND runtimeOwner='pi_durable_v1'",
@@ -798,6 +809,47 @@ FROM session_commands c WHERE c.sessionId=? AND c.userId=? AND c.projectId=? AND
 						: target,
 			};
 		});
+	}
+
+	/**
+	 * Update-only application of committed checkpoint pointer moves. Each move
+	 * applies only over the exact generation it replaces; the cursor makes a
+	 * repeated move an acknowledgment, not a second write.
+	 */
+	async applyCheckpointProjections(
+		scope: { userId: string; projectId: string; workspaceSessionId: string },
+		value: unknown,
+	): Promise<CheckpointProjectionResultV1[]> {
+		const projections = parseCheckpointProjectionsV1(value);
+		// Sessions created before pointer rows existed get their generation-0 row.
+		await this.db
+			.prepare(
+				"INSERT OR IGNORE INTO runtime_checkpoint_pointers(sessionId,runtimeOwnerVersion,currentPairId,previousPairId,mutationGeneration,updatedAt) SELECT id,runtimeOwnerVersion,NULL,NULL,0,? FROM workspace_sessions WHERE id=? AND userId=? AND projectId=? AND runtimeOwner='pi_durable_v1'",
+			)
+			.bind(this.now(), scope.workspaceSessionId, scope.userId, scope.projectId)
+			.run();
+		const applied = await applyProductProjectionBatch(
+			this.db,
+			projections.map((projection) => ({
+				targetKind: "session",
+				targetId: scope.workspaceSessionId,
+				workspaceSessionId: scope.workspaceSessionId,
+				userId: scope.userId,
+				projectId: scope.projectId,
+				ownerVersion: 1,
+				coordinatorSeq: projection.projectionVersion,
+				currentPairId: projection.currentPairId,
+				previousPairId: projection.previousPairId,
+				mutationGeneration: projection.mutationGeneration,
+				expectedMutationGeneration: projection.expectedMutationGeneration,
+			})),
+			this.now(),
+			"pi_durable_v1",
+		);
+		return projections.map((projection, index) => ({
+			projectionVersion: projection.projectionVersion,
+			outcome: applied[index]?.classification ?? "retry",
+		}));
 	}
 
 	/** Owned observation; the runtime reads committed facts without scheduling. */

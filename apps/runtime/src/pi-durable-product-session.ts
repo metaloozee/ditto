@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import type { CheckpointProjectionV1 } from "../../../packages/runtime-contracts/src/checkpoint.js";
 import type {
 	ConfigurationAuthorityV1,
 	ConfigurationSelectionV1,
@@ -67,6 +68,10 @@ export interface CandidatePrivateProduct extends PrivateModelTransport {
 	applyCandidateProjections(
 		scope: CandidateRuntimeScope,
 		intents: ProjectionIntentV1[],
+	): Promise<unknown>;
+	applyCandidateCheckpoints(
+		scope: CandidateRuntimeScope,
+		projections: CheckpointProjectionV1[],
 	): Promise<unknown>;
 	readCandidateConfigurationAuthority(
 		commandId: string,
@@ -146,7 +151,18 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 			keys: keys.keys,
 		});
 		const product = this.env.CandidateProduct;
+		// A session that can reach an executor waits for its baseline pair
+		// before any ordinary work; without one, tools fail before admission.
+		const executes = this.remoteExecutor() !== undefined;
 		return PiDurableHost.open(this.ctx.storage, {
+			...(executes
+				? {
+						checkpoints: {
+							applyProjections: (projections: CheckpointProjectionV1[]) =>
+								product.applyCandidateCheckpoints(scope, projections),
+						},
+					}
+				: {}),
 			now: Date.now,
 			fault: (point) => this.hostFault(point),
 			retained: {

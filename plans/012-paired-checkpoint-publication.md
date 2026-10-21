@@ -1,6 +1,6 @@
 # 012: Publish initial and later paired checkpoints
 
-Status: READY after local 011. Base: `bcce03e`. Phase: L4.
+Status: DONE for local fixture scope; see [evidence](evidence/012-paired-publication.md). Base: `bcce03e`. Phase: L4.
 Spec: `docs/specs/pi-durable-session-runtime.md`, decisions 3.4, 4, 10–11, 14–15, 17; PD20–PD24; reference prerequisites for PD35, whose GC evidence belongs to 017; OD3–OD6.
 
 ## Outcome

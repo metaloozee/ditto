@@ -187,7 +187,16 @@ export type ObservationSnapshotV1 = {
 		version: number;
 		applied: boolean;
 	}[];
-	health: { projectionLag: number; safetyStopped: boolean };
+	health: {
+		projectionLag: number;
+		safetyStopped: boolean;
+		/** Present once paired checkpoints are enabled for the session. */
+		recovery?: {
+			status: "none" | "healthy" | "degraded" | "blocked";
+			pairs: number;
+			projectionLag: number;
+		};
+	};
 };
 export type RuntimeObservationV1 = {
 	version: 1;

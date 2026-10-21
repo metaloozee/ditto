@@ -2334,3 +2334,67 @@ it("never stores an unterminated private key block from a settled answer", async
 		await runtime.retireFixture();
 	}
 });
+
+it("applies checkpoint pointer moves update-only, in generation order, and acknowledges a repeated move", async () => {
+	await candidateCredential();
+	const receipt = await env.CandidateProduct.admitOwned("owner", prompt);
+	const sessionId = receipt.workspaceSessionId;
+	const scope = {
+		userId: "owner",
+		projectId: "project",
+		workspaceSessionId: sessionId,
+	};
+	const pointer = () =>
+		env.DB.prepare(
+			"SELECT currentPairId, previousPairId, mutationGeneration FROM runtime_checkpoint_pointers WHERE sessionId=?",
+		)
+			.bind(sessionId)
+			.first();
+	expect(await pointer()).toEqual({
+		currentPairId: null,
+		previousPairId: null,
+		mutationGeneration: 0,
+	});
+	const move = (generation: number) => ({
+		version: 1,
+		currentPairId: `pair-${generation}`,
+		previousPairId: generation > 1 ? `pair-${generation - 1}` : null,
+		mutationGeneration: generation,
+		expectedMutationGeneration: generation - 1,
+		projectionVersion: generation,
+	});
+	const apply = (moves: unknown[]) =>
+		commands().applyCheckpointProjections(scope, moves);
+	expect(await apply([move(1)])).toEqual([
+		{ projectionVersion: 1, outcome: "applied" },
+	]);
+	expect(await apply([move(1)])).toEqual([
+		{ projectionVersion: 1, outcome: "already_applied" },
+	]);
+	expect(await apply([move(3)])).toEqual([
+		{ projectionVersion: 3, outcome: "blocked_membership" },
+	]);
+	expect(await pointer()).toEqual({
+		currentPairId: "pair-1",
+		previousPairId: null,
+		mutationGeneration: 1,
+	});
+	expect(await apply([move(2), move(3)])).toEqual([
+		{ projectionVersion: 2, outcome: "applied" },
+		{ projectionVersion: 3, outcome: "applied" },
+	]);
+	expect(await pointer()).toEqual({
+		currentPairId: "pair-3",
+		previousPairId: "pair-2",
+		mutationGeneration: 3,
+	});
+	await expect(
+		apply([{ ...move(4), expectedMutationGeneration: 1 }]),
+	).rejects.toThrow();
+	await expect(
+		commands().applyCheckpointProjections({ ...scope, userId: "other" }, [
+			move(4),
+		]),
+	).resolves.toEqual([{ projectionVersion: 4, outcome: "blocked_membership" }]);
+	expect((await pointer())?.mutationGeneration).toBe(3);
+});
