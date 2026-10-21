@@ -1,6 +1,6 @@
 # 011: Move seed and archive operations behind admitted execution
 
-Status: READY after local L3 acceptance in 010. Base: `bcce03e`. Phase: L4.
+Status: DONE for the local fixture scope; see `evidence/011-seeds-artifacts.md`. Base: `bcce03e`. Phase: L4.
 Spec: `docs/specs/pi-durable-session-runtime.md`, decisions 3.1–3.4, 11–13, 15, 17; PD20, PD28–PD31, PD41; OD3–OD6.
 
 ## Outcome

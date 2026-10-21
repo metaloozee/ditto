@@ -587,6 +587,44 @@ export async function releaseCapacitySlot(options: {
 	return Boolean(forced[0]);
 }
 
+/** Builders share the execution pool; this key never collides with a session id. */
+export function builderCapacityKey(identityId: string): string {
+	return `builder:${identityId}`;
+}
+
+/** A builder whose termination is unproven keeps its slot; this expiry never lapses. */
+export const UNTERMINATED_BUILDER_LEASE_EXPIRY = 253_402_300_799;
+
+/**
+ * Accounts a possibly live builder until termination evidence exists. It is
+ * counted even when its lease already lapsed, because the container may run.
+ */
+export async function holdBuilderCapacity(options: {
+	db: Db;
+	identityId: string;
+	userId: string;
+	createId?: () => string;
+}): Promise<void> {
+	const createId = options.createId ?? nanoid;
+	await options.db
+		.insert(workspaceCapacityLeases)
+		.values({
+			id: createId(),
+			sessionId: builderCapacityKey(options.identityId),
+			userId: options.userId,
+			identityId: options.identityId,
+			leaseToken: createId(),
+			expiresAt: UNTERMINATED_BUILDER_LEASE_EXPIRY,
+		})
+		.onConflictDoUpdate({
+			target: workspaceCapacityLeases.sessionId,
+			set: {
+				expiresAt: UNTERMINATED_BUILDER_LEASE_EXPIRY,
+				updatedAt: sql`(unixepoch())`,
+			},
+		});
+}
+
 export async function purgeExpiredCapacitySlots(
 	db: Db,
 	nowMs: number,

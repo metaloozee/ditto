@@ -1147,6 +1147,16 @@ export async function drainWorkspaceRuntime(options: {
 		nowSeconds: Math.floor(now() / 1000),
 	});
 	options.waitUntil?.(cleanup);
+	const seed = await import("#/lib/project-seed");
+	const builders = seed
+		.retryBuilderTermination({ env: options.env, db: options.db })
+		.catch((error: unknown) => {
+			console.error(
+				"seed builder termination retry failed:",
+				error instanceof Error ? error.message : String(error),
+			);
+		});
+	options.waitUntil?.(builders);
 	const delivery = deliverSessionCommands({
 		db: options.db,
 		runtime: resolveSessionRuntimeTransport(),
@@ -1171,7 +1181,7 @@ export async function drainWorkspaceRuntime(options: {
 			}),
 	});
 	if (!options.waitUntil) {
-		await cleanup;
+		await Promise.all([cleanup, builders]);
 	}
 }
 

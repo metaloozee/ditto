@@ -1,0 +1,65 @@
+== builder: source fixture, capture
+builder HEAD cc4ea5dcbb23b15ebf955c167c639ac1b2be47ab
+{"ok":true,"action":"create","compressedBytes":10179,"extractedBytes":24760,"digest":"fb7679f7e5a4fe9766d03999be5bd46f9b1c4024e0dfca3ff0a310398e06be86"}
+streamed bytes match the packed digest and length (10179 bytes)
+node_modules excluded
+archive command env holds no storage values: 0 matches
+container builder terminated; live fixture containers: 0
+== executor: restore seed
+{"ok":true,"action":"restore","compressedBytes":10179,"extractedBytes":24760,"digest":"fb7679f7e5a4fe9766d03999be5bd46f9b1c4024e0dfca3ff0a310398e06be86"}
+
+restored HEAD cc4ea5dcbb23b15ebf955c167c639ac1b2be47ab status [?? alias.ts ]
+.env .git alias.ts src
+src/a.ts
+stale file removed
+== interrupted upload: partial temp file with the full digest
+{"ok":false,"error":"precheck_digest_mismatch"}
+
+cc4ea5dcbb23b15ebf955c167c639ac1b2be47ab
+workspace untouched
+== corrupt archive whose own digest is passed
+
+gzip: stdin: unexpected end of file
+tar: Child returned status 1
+tar: Error is not recoverable: exiting now
+{"ok":false,"error":"archive_failed","message":"gzip: stdin: unexpected end of file\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now"}
+
+workspace entries after a failed extraction: 0
+== hostile archive: traversal
+tar: Removing leading `../' from member names
+{"ok":false,"error":"unsafe_path","message":"Archive contains an unsafe path."}
+
+
+0
+== hostile archive: absolute
+tar: Removing leading `/' from member names
+{"ok":false,"error":"unsafe_path","message":"Archive contains an unsafe path."}
+
+
+0
+== hostile archive: symlink-escape
+{"ok":false,"error":"symlink_escape","message":"Archive symlink escapes the workspace."}
+
+
+0
+== hostile archive: ambiguous-symlink
+{"ok":false,"error":"unsafe_path","message":"Archive link member is malformed."}
+
+
+0
+== hostile archive: hardlink-escape
+tar: Removing leading `/' from hard link targets
+tar: Removing leading `/' from hard link targets
+tar: hard: Cannot hard link to 'etc/passwd': No such file or directory
+tar: Exiting with failure status due to previous errors
+{"ok":false,"error":"archive_failed","message":"tar: Removing leading `/' from hard link targets\ntar: hard: Cannot hard link to 'etc/passwd': No such file or directory\ntar: Exiting with failure status due to previous errors"}
+
+
+0
+== hostile archive: device
+{"ok":false,"error":"unsafe_path","message":"Archive member list is malformed."}
+
+
+0
+no file outside the workspace
+container executor terminated; live fixture containers: 0

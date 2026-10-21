@@ -2,12 +2,24 @@ import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import type { createDb } from "#/db";
 import { type ARCHIVE_OWNER_KINDS, archives } from "#/db/schema";
 import { WORKSPACE_PATH } from "#/lib/workspace-policy";
+import {
+	ARCHIVE_COMPATIBILITY_KEY,
+	ARCHIVE_FORMAT_VERSION,
+	ARCHIVE_MAX_COMPRESSED_BYTES,
+	ARCHIVE_MAX_DISK_PERCENT,
+	ARCHIVE_MAX_EXTRACTED_BYTES,
+	type ArchiveLimits,
+} from "../../../../packages/runtime-contracts/src/artifacts.js";
 
-export const ARCHIVE_FORMAT_VERSION = 1;
-export const ARCHIVE_COMPATIBILITY_KEY = "ditto-workspace-archive-v1";
-export const ARCHIVE_MAX_COMPRESSED_BYTES = 1024 * 1024 * 1024;
-export const ARCHIVE_MAX_EXTRACTED_BYTES = 3 * 1024 * 1024 * 1024;
-export const ARCHIVE_MAX_DISK_PERCENT = 70;
+export {
+	ARCHIVE_COMPATIBILITY_KEY,
+	ARCHIVE_FORMAT_VERSION,
+	ARCHIVE_MAX_COMPRESSED_BYTES,
+	ARCHIVE_MAX_DISK_PERCENT,
+	ARCHIVE_MAX_EXTRACTED_BYTES,
+	type ArchiveLimits,
+};
+
 export const ARCHIVE_TEMP_PATH = "/tmp/ditto-workspace-archive.tar.gz";
 export const ARCHIVE_CLI_PATH = "/opt/ditto-runner/dist/archive-cli.js";
 export const ARCHIVE_CLEANUP_MAX_ATTEMPTS = 8;
@@ -89,12 +101,6 @@ export type RestoreArchiveInput = {
 	sandboxId: string;
 	archiveId: string;
 	limits?: ArchiveLimits;
-};
-
-export type ArchiveLimits = {
-	maxCompressedBytes: number;
-	maxExtractedBytes: number;
-	maxDiskPercent: number;
 };
 
 export type SandboxArchive = {

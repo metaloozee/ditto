@@ -13,6 +13,16 @@ const configureDittoGitIdentityMock = vi.hoisted(() => vi.fn());
 const fetchGitHubBranchBrokeredMock = vi.hoisted(() => vi.fn());
 const createArchiveMock = vi.hoisted(() => vi.fn());
 const createSandboxAuthorityMock = vi.hoisted(() => vi.fn());
+const acquireCapacitySlotMock = vi.hoisted(() => vi.fn());
+const releaseCapacitySlotMock = vi.hoisted(() => vi.fn());
+const holdBuilderCapacityMock = vi.hoisted(() => vi.fn());
+
+vi.mock("#/lib/workspace-runtime-capacity", () => ({
+	builderCapacityKey: (identityId: string) => `builder:${identityId}`,
+	acquireCapacitySlot: acquireCapacitySlotMock,
+	releaseCapacitySlot: releaseCapacitySlotMock,
+	holdBuilderCapacity: holdBuilderCapacityMock,
+}));
 
 vi.mock("#/lib/github-app", () => ({
 	getGitHubApp: () => ({
@@ -44,7 +54,13 @@ vi.mock("#/lib/sandbox-authority", async (importOriginal) => {
 	};
 });
 
-const { buildProjectSeed } = await import("./project-seed");
+const {
+	buildProjectSeed,
+	PROJECT_SEED_OPERATION_TYPE,
+	retryBuilderTermination,
+} = await import("./project-seed");
+const { SEED_BUILDER_OPERATION_TYPE } = await import("./sandbox-authority");
+type SandboxAuthority = import("./sandbox-authority").SandboxAuthority;
 
 type ProjectRow = typeof projects.$inferSelect;
 type SeedRow = typeof projectSeeds.$inferSelect;
@@ -277,28 +293,41 @@ describe("buildProjectSeed", () => {
 		destroyMock = vi.fn(async () => undefined);
 		setOutboundHandlerMock = vi.fn(async () => undefined);
 		closeOperationMock = vi.fn(async () => undefined);
-		retireIdentityMock = vi.fn(async (id: string) => {
-			const row = store.identityRows.get(id);
-			if (!row) return null;
-			const next = {
-				...row,
-				state: "destroyed" as const,
-				retiredAt: new Date(),
-			};
-			store.identityRows.set(id, next);
-			return {
-				id: next.id,
-				kind: next.kind,
-				sandboxId: next.sandboxId,
-				containerId: next.containerId,
-				userId: next.userId,
-				projectId: next.projectId,
-				workspaceSessionId: next.workspaceSessionId,
-				lifecycleGeneration: next.lifecycleGeneration,
-				state: next.state,
-				retiredAt: next.retiredAt,
-			};
-		});
+		acquireCapacitySlotMock.mockImplementation(
+			async (options: { sessionId: string }) => {
+				store.trackGetSandbox(`capacity:${options.sessionId}`);
+				return { id: "slot", leaseToken: "token", expiresAt: 1 };
+			},
+		);
+		releaseCapacitySlotMock.mockResolvedValue(true);
+		holdBuilderCapacityMock.mockResolvedValue(undefined);
+		retireIdentityMock = vi.fn(
+			async (id: string, options?: { terminated?: boolean }) => {
+				const row = store.identityRows.get(id);
+				if (!row) return null;
+				const next = {
+					...row,
+					state:
+						options?.terminated === false
+							? ("destroying" as const)
+							: ("destroyed" as const),
+					retiredAt: new Date(),
+				};
+				store.identityRows.set(id, next);
+				return {
+					id: next.id,
+					kind: next.kind,
+					sandboxId: next.sandboxId,
+					containerId: next.containerId,
+					userId: next.userId,
+					projectId: next.projectId,
+					workspaceSessionId: next.workspaceSessionId,
+					lifecycleGeneration: next.lifecycleGeneration,
+					state: next.state,
+					retiredAt: next.retiredAt,
+				};
+			},
+		);
 
 		createSandboxAuthorityMock.mockReturnValue({
 			closeOperation: closeOperationMock,
@@ -413,7 +442,8 @@ describe("buildProjectSeed", () => {
 			encryptedEnvVars: null,
 		});
 		expect(store.batchCalls).toBe(1);
-		expect(store.getSandboxOrder[0]).toBe("getSandbox");
+		expect(store.getSandboxOrder[0]).toMatch(/^capacity:builder:/);
+		expect(store.getSandboxOrder[1]).toBe("getSandbox");
 		expect(getProjectSandboxMock).toHaveBeenCalled();
 		expect(fetchGitHubBranchBrokeredMock).toHaveBeenCalled();
 	});
@@ -506,5 +536,123 @@ describe("buildProjectSeed", () => {
 		expect(seed?.sourceCommit).toBeNull();
 		expect(destroyMock).toHaveBeenCalledOnce();
 		expect(retireIdentityMock).toHaveBeenCalledOnce();
+	});
+	const seedInput = () => ({
+		env,
+		db: store.db,
+		userId: "user-1",
+		projectId: "proj-1",
+		name: "App",
+		githubRepo: "acme/app",
+		installationId: 7,
+		encryptedEnvVars: null,
+	});
+
+	it("holds a builder slot from before the container starts until it is destroyed", async () => {
+		const result = await buildProjectSeed(seedInput());
+		const key = `builder:${result.identity.id}`;
+		expect(acquireCapacitySlotMock).toHaveBeenCalledWith(
+			expect.objectContaining({ sessionId: key, userId: "user-1" }),
+		);
+		expect(retireIdentityMock).toHaveBeenCalledWith(result.identity.id, {
+			terminated: true,
+		});
+		expect(releaseCapacitySlotMock).toHaveBeenCalledWith(
+			expect.objectContaining({ sessionId: key }),
+		);
+		expect(destroyMock.mock.invocationCallOrder[0]).toBeLessThan(
+			releaseCapacitySlotMock.mock.invocationCallOrder[0] ?? 0,
+		);
+		expect(holdBuilderCapacityMock).not.toHaveBeenCalled();
+	});
+
+	it("starts no builder when capacity is unavailable", async () => {
+		acquireCapacitySlotMock.mockResolvedValue(null);
+		await expect(buildProjectSeed(seedInput())).rejects.toMatchObject({
+			code: "capacity_unavailable",
+		});
+		expect(getProjectSandboxMock).not.toHaveBeenCalled();
+		expect(fetchGitHubBranchBrokeredMock).not.toHaveBeenCalled();
+		const seed = [...store.seedRows.values()][0];
+		expect(seed?.failureReasonCode).toBe("capacity_unavailable");
+		expect([...store.projectRows.values()][0]?.status).toBe("failed");
+		const identity = [...store.identityRows.values()][0];
+		expect(identity?.state).toBe("destroyed");
+		expect(releaseCapacitySlotMock).not.toHaveBeenCalled();
+	});
+
+	it("keeps a builder whose destruction failed accounted until termination evidence", async () => {
+		destroyMock.mockRejectedValue(new Error("container busy"));
+		const result = await buildProjectSeed(seedInput());
+		expect(result.project.status).toBe("ready");
+		const identity = store.identityRows.get(result.identity.id);
+		expect(identity?.retiredAt).toBeInstanceOf(Date);
+		expect(identity?.state).toBe("destroying");
+		expect(retireIdentityMock).toHaveBeenCalledWith(result.identity.id, {
+			terminated: false,
+		});
+		expect(holdBuilderCapacityMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				identityId: result.identity.id,
+				userId: "user-1",
+			}),
+		);
+		expect(releaseCapacitySlotMock).not.toHaveBeenCalled();
+	});
+
+	it("frees a held builder slot only after a retried destroy succeeds", async () => {
+		destroyMock.mockRejectedValue(new Error("container busy"));
+		const result = await buildProjectSeed(seedInput());
+		const destroying = store.identityRows.get(result.identity.id);
+		const capacity = {
+			acquire: vi.fn(),
+			release: vi.fn(async () => undefined),
+			hold: vi.fn(),
+		};
+		const authority = {
+			retireIdentity: vi.fn(async () => undefined),
+		} as unknown as SandboxAuthority;
+		const db = {
+			select: () => ({
+				from: () => ({ where: () => ({ limit: async () => [destroying] }) }),
+			}),
+		} as unknown as typeof store.db;
+
+		expect(
+			await retryBuilderTermination({ env, db, capacity, authority }),
+		).toEqual({ terminated: 0 });
+		expect(capacity.release).not.toHaveBeenCalled();
+		expect(authority.retireIdentity).not.toHaveBeenCalled();
+
+		destroyMock.mockResolvedValue(undefined);
+		expect(
+			await retryBuilderTermination({ env, db, capacity, authority }),
+		).toEqual({ terminated: 1 });
+		expect(authority.retireIdentity).toHaveBeenCalledWith(result.identity.id, {
+			terminated: true,
+		});
+		expect(capacity.release).toHaveBeenCalledWith(result.identity.id);
+	});
+
+	it("holds the slot before retiring, and keeps it when retirement fails", async () => {
+		destroyMock.mockRejectedValue(new Error("container busy"));
+		retireIdentityMock.mockRejectedValueOnce(new Error("D1 unavailable"));
+		await buildProjectSeed(seedInput());
+		expect(holdBuilderCapacityMock.mock.invocationCallOrder[0]).toBeLessThan(
+			retireIdentityMock.mock.invocationCallOrder[0] ?? 0,
+		);
+		expect(releaseCapacitySlotMock).not.toHaveBeenCalled();
+
+		vi.clearAllMocks();
+		destroyMock.mockResolvedValue(undefined);
+		retireIdentityMock.mockRejectedValueOnce(new Error("D1 unavailable"));
+		await buildProjectSeed(seedInput());
+		expect(destroyMock).toHaveBeenCalledOnce();
+		expect(holdBuilderCapacityMock).toHaveBeenCalledOnce();
+		expect(releaseCapacitySlotMock).not.toHaveBeenCalled();
+	});
+
+	it("uses the operation type the authority allows for builders", () => {
+		expect(PROJECT_SEED_OPERATION_TYPE).toBe(SEED_BUILDER_OPERATION_TYPE);
 	});
 });

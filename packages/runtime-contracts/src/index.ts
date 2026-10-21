@@ -1,3 +1,4 @@
+export * from "./artifacts.js";
 export * from "./command.js";
 export * from "./configuration.js";
 export * from "./limits.js";

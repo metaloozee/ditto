@@ -42,6 +42,7 @@ export default class extends WorkerEntrypoint {
 }`,
 						}],
 					}],
+					r2Buckets: ["RECOVERY_ARTIFACTS"],
 					durableObjects: {
 						PI_FIXTURE_STORAGE: { className: "PiDurableLocalRuntime", useSQLite: true },
 						PI_HOST_STORAGE: { className: "PiDurableHostFixture", useSQLite: true },

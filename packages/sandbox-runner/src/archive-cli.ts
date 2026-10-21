@@ -57,6 +57,7 @@ export type ArchiveCliFailure = {
 		| "symlink_escape"
 		| "special_file"
 		| "archive_missing"
+		| "digest_mismatch"
 		| "archive_failed";
 	message: string;
 };
@@ -72,6 +73,7 @@ const KNOWN_FLAGS = new Set([
 	"--max-compressed-bytes",
 	"--max-extracted-bytes",
 	"--max-disk-percent",
+	"--expected-sha256",
 ]);
 
 function looksLikePath(value: string): boolean {
@@ -87,6 +89,7 @@ function looksLikePath(value: string): boolean {
 export function parseArchiveCliArgs(argv: string[]): {
 	action?: ArchiveCliAction;
 	limits: ArchiveCliLimits;
+	expectedDigest?: string;
 	error?: ArchiveCliFailure;
 } {
 	const limits: ArchiveCliLimits = {
@@ -116,6 +119,7 @@ export function parseArchiveCliArgs(argv: string[]): {
 		};
 	}
 
+	let expectedDigest: string | undefined;
 	for (let index = 1; index < argv.length; index += 1) {
 		const token = argv[index];
 		if (!token) {
@@ -155,6 +159,17 @@ export function parseArchiveCliArgs(argv: string[]): {
 				error: fail("path_override", "Archive paths are not configurable."),
 			};
 		}
+		if (token === "--expected-sha256") {
+			if (action !== "restore" || !/^[0-9a-f]{64}$/.test(rawValue)) {
+				return {
+					limits,
+					error: fail("invalid_args", `${token} requires a restore digest.`),
+				};
+			}
+			expectedDigest = rawValue;
+			index += 1;
+			continue;
+		}
 		if (!/^[0-9]+$/.test(rawValue)) {
 			return {
 				limits,
@@ -184,7 +199,7 @@ export function parseArchiveCliArgs(argv: string[]): {
 		index += 1;
 	}
 
-	return { action, limits };
+	return { action, limits, expectedDigest };
 }
 
 function fail(
@@ -454,11 +469,12 @@ function parseTarVerboseLine(line: string): {
 	const size = Number(match[2]);
 	let memberPath = match[3];
 	let linkTarget: string | undefined;
-	if (type === "l") {
-		const separator = " -> ";
-		const index = memberPath.lastIndexOf(separator);
-		if (index === -1) {
-			throw fail("unsafe_path", "Archive symlink member is malformed.");
+	if (type === "l" || type === "h") {
+		const separator = type === "l" ? " -> " : " link to ";
+		const index = memberPath.indexOf(separator);
+		// A second separator makes the name/target split ambiguous.
+		if (index === -1 || memberPath.indexOf(separator, index + 1) !== -1) {
+			throw fail("unsafe_path", "Archive link member is malformed.");
 		}
 		linkTarget = memberPath.slice(index + separator.length);
 		memberPath = memberPath.slice(0, index);
@@ -489,6 +505,30 @@ function assertSafeArchiveMember(
 		member.type === "p"
 	) {
 		throw fail("special_file", "Archive contains a socket or device file.");
+	}
+	if (member.type === "h") {
+		// Hard link targets name another member, relative to the workspace root.
+		if (
+			!member.linkTarget ||
+			member.linkTarget.startsWith("/") ||
+			member.linkTarget.split("/").includes("..") ||
+			member.linkTarget.includes("\0")
+		) {
+			throw fail("symlink_escape", "Archive hard link escapes the workspace.");
+		}
+		assertInsideRoot(
+			workspacePath,
+			path.resolve(workspacePath, member.linkTarget),
+			"Archive hard link",
+		);
+	}
+	if (
+		member.type !== "-" &&
+		member.type !== "d" &&
+		member.type !== "l" &&
+		member.type !== "h"
+	) {
+		throw fail("special_file", "Archive contains an unsupported member type.");
 	}
 	if (member.type === "l") {
 		if (!member.linkTarget) {
@@ -563,7 +603,8 @@ export function runCreate(options: {
 				"Workspace exceeds the extracted size limit.",
 			);
 		}
-		const disk = (options.diskStat ?? readDiskStat)(archivePath);
+		// The archive does not exist yet; measure the filesystem that will hold it.
+		const disk = (options.diskStat ?? readDiskStat)(path.dirname(archivePath));
 		assertDiskLimit(disk, extractedBytes, options.limits);
 
 		writeFileList(entries, listPath);
@@ -608,6 +649,7 @@ export function runCreate(options: {
 export function runRestore(options: {
 	paths: ArchiveCliPaths;
 	limits: ArchiveCliLimits;
+	expectedDigest?: string;
 	diskStat?: (targetPath: string) => DiskStat;
 }): ArchiveCliResult {
 	const workspacePath = path.resolve(options.paths.workspacePath);
@@ -622,6 +664,11 @@ export function runRestore(options: {
 				"limit_compressed",
 				"Compressed archive exceeds the size limit.",
 			);
+		}
+		// Only verified bytes are extracted.
+		const digest = hashFile(archivePath);
+		if (options.expectedDigest && digest !== options.expectedDigest) {
+			return fail("digest_mismatch", "Archive digest does not match.");
 		}
 		if (!fs.existsSync(workspacePath)) {
 			fs.mkdirSync(workspacePath, { recursive: true });
@@ -638,13 +685,15 @@ export function runRestore(options: {
 		assertDiskLimit(disk, extractedBytes, options.limits);
 
 		runTar(["-x", "-z", "-f", archivePath, "-C", workspacePath]);
+		// The listing is text; the extracted tree is the final authority.
+		walkWorkspace(workspacePath, archivePath);
 
 		return {
 			ok: true,
 			action: "restore",
 			compressedBytes,
 			extractedBytes,
-			digest: hashFile(archivePath),
+			digest,
 		};
 	} catch (error) {
 		if (error && typeof error === "object" && "ok" in error) {
@@ -679,7 +728,11 @@ export async function main(
 	const result =
 		parsed.action === "create"
 			? runCreate({ paths, limits: parsed.limits })
-			: runRestore({ paths, limits: parsed.limits });
+			: runRestore({
+					paths,
+					limits: parsed.limits,
+					expectedDigest: parsed.expectedDigest,
+				});
 	writeResult(result);
 	return result.ok ? 0 : 1;
 }

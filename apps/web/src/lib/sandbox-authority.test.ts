@@ -109,6 +109,17 @@ describe("SandboxAuthority", () => {
 		});
 	}
 
+	async function registerSession() {
+		return authority.registerIdentity({
+			kind: "workspace_session",
+			sandboxId: "sbx-session",
+			containerId: "container-1",
+			userId: "user-1",
+			projectId: "proj-1",
+			workspaceSessionId: "sess-1",
+		});
+	}
+
 	it("unknown identity fails resolve before any token mint would run", async () => {
 		await expect(
 			authority.resolveOutboundRequest(
@@ -268,7 +279,7 @@ describe("SandboxAuthority", () => {
 	});
 
 	it("git_metadata consumes exactly one request under concurrent resolve", async () => {
-		const identity = await register();
+		const identity = await registerSession();
 		await authority.openOperation({
 			identityId: identity.id,
 			family: "model",
@@ -297,7 +308,7 @@ describe("SandboxAuthority", () => {
 	});
 
 	it("agent_run allows multiple valid resolves until closed", async () => {
-		const identity = await register();
+		const identity = await registerSession();
 		const operation = await authority.openOperation({
 			identityId: identity.id,
 			family: "model",
@@ -396,5 +407,71 @@ describe("SandboxAuthority", () => {
 				"model",
 			),
 		).rejects.toMatchObject({ code: "trusted_windows_closed" });
+	});
+	it("limits a seed builder to its repository fetch operation", async () => {
+		const identity = await register();
+		for (const [family, type] of [
+			["model", "agent_run"],
+			["ditto_action", "ditto_action"],
+			["git_transport", "push"],
+		] as const) {
+			await expect(
+				authority.openOperation({
+					identityId: identity.id,
+					family,
+					type,
+					contractVersion: 1,
+					expiresAt: new Date(Date.now() + 60_000),
+				}),
+			).rejects.toMatchObject({ code: "builder_role_denied" });
+		}
+		// A model window inserted outside openOperation still grants nothing.
+		store.sqlite.exec(`
+			INSERT INTO privileged_operations (id, identityId, lifecycleGeneration, family, type, contractVersion, openedAt, expiresAt, correlationId)
+			VALUES ('forged', '${identity.id}', 1, 'model', 'agent_run', 1, 0, ${Math.floor(Date.now() / 1000) + 60}, 'c')
+		`);
+		await expect(
+			authority.resolveOutboundRequest(
+				{
+					identityId: identity.id,
+					lifecycleGeneration: 1,
+					containerId: identity.containerId,
+				},
+				"model",
+			),
+		).rejects.toMatchObject({ code: "builder_role_denied" });
+	});
+
+	it("retires authority without claiming termination", async () => {
+		const identity = await register();
+		await authority.openOperation({
+			identityId: identity.id,
+			family: "git_transport",
+			type: "project_seed_fetch",
+			contractVersion: 1,
+			expiresAt: new Date(Date.now() + 60_000),
+		});
+		const fenced = await authority.retireIdentity(identity.id, {
+			terminated: false,
+		});
+		expect(fenced.state).toBe("destroying");
+		expect(fenced.retiredAt).toBeInstanceOf(Date);
+		await expect(
+			authority.resolveOutboundRequest(
+				{
+					identityId: identity.id,
+					lifecycleGeneration: 1,
+					containerId: identity.containerId,
+				},
+				"git_transport",
+			),
+		).rejects.toMatchObject({ code: "identity_retired" });
+		const destroyed = await authority.retireIdentity(identity.id);
+		expect(destroyed.state).toBe("destroyed");
+		expect(destroyed.retiredAt?.getTime()).toBe(fenced.retiredAt?.getTime());
+		expect(
+			(await authority.retireIdentity(identity.id, { terminated: false }))
+				.state,
+		).toBe("destroyed");
 	});
 });

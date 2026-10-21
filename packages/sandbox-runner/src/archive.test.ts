@@ -3,6 +3,7 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	type DiskStat,
@@ -192,6 +193,17 @@ describe("archive-cli create/restore", () => {
 		expect(listing).not.toContain("ditto-workspace-archive.tar.gz");
 	});
 
+	it("measures real disk usage before the archive file exists", () => {
+		const { workspacePath, archivePath } = makeWorkspace();
+		writeFile(workspacePath, "a.txt", "a");
+		expect(
+			runCreate({
+				paths: { workspacePath, archivePath },
+				limits: { ...generousLimits, maxDiskPercent: 100 },
+			}),
+		).toMatchObject({ ok: true });
+	});
+
 	it("fails closed on extracted, compressed, and peak-disk limits", () => {
 		const { workspacePath, archivePath } = makeWorkspace();
 		writeFile(workspacePath, "big.txt", "abcdefghij");
@@ -239,6 +251,177 @@ describe("archive-cli create/restore", () => {
 				diskStat: plentyOfDisk,
 			}),
 		).toMatchObject({ ok: false, error: "limit_extracted" });
+	});
+});
+
+/** Minimal ustar writer so tests can build members GNU tar would sanitize. */
+function tarMember(
+	name: string,
+	type: "0" | "1" | "2" | "3" | "5",
+	body = "",
+	linkName = "",
+): Buffer {
+	const header = Buffer.alloc(512);
+	const field = (value: string, offset: number, length: number) =>
+		header.write(value, offset, length, "utf8");
+	const octal = (value: number, offset: number, length: number) =>
+		field(`${value.toString(8).padStart(length - 1, "0")}\0`, offset, length);
+	field(name, 0, 100);
+	octal(type === "5" ? 0o755 : 0o644, 100, 8);
+	octal(0, 108, 8);
+	octal(0, 116, 8);
+	octal(Buffer.byteLength(body), 124, 12);
+	octal(1_700_000_000, 136, 12);
+	field("        ", 148, 8);
+	field(type, 156, 1);
+	field(linkName, 157, 100);
+	field("ustar\0", 257, 6);
+	field("00", 263, 2);
+	let sum = 0;
+	for (const byte of header) sum += byte;
+	field(`${sum.toString(8).padStart(6, "0")}\0 `, 148, 8);
+	const data = Buffer.alloc(Math.ceil(Buffer.byteLength(body) / 512) * 512);
+	data.write(body);
+	return Buffer.concat([header, data]);
+}
+
+function writeTarGz(archivePath: string, members: Buffer[]): void {
+	const tar = Buffer.concat([...members, Buffer.alloc(1024)]);
+	fs.writeFileSync(archivePath, gzipSync(tar));
+}
+
+describe("archive-cli restore of hostile archives", () => {
+	const restore = (
+		paths: { workspacePath: string; archivePath: string },
+		expectedDigest?: string,
+	) =>
+		runRestore({
+			paths,
+			limits: generousLimits,
+			expectedDigest,
+			diskStat: plentyOfDisk,
+		});
+
+	it.each([
+		["parent traversal", [tarMember("../escape.txt", "0", "x")], "unsafe_path"],
+		["absolute path", [tarMember("/tmp/escape.txt", "0", "x")], "unsafe_path"],
+		[
+			"escaping symlink",
+			[tarMember("link", "2", "", "/etc")],
+			"symlink_escape",
+		],
+		[
+			"relative escaping symlink",
+			[tarMember("dir/link", "2", "", "../../outside")],
+			"symlink_escape",
+		],
+		// GNU tar lists these sanitized or in another shape; any rejection is enough.
+		["absolute hard link", [tarMember("hard", "1", "", "/etc/passwd")], null],
+		["traversing hard link", [tarMember("hard", "1", "", "../outside")], null],
+		["device file", [tarMember("dev", "3")], null],
+	])("rejects %s before extraction", (_label, members, error) => {
+		const paths = makeWorkspace();
+		writeTarGz(paths.archivePath, members);
+		expect(restore(paths)).toMatchObject(
+			error ? { ok: false, error } : { ok: false },
+		);
+		expect(fs.readdirSync(paths.workspacePath)).toEqual([]);
+		expect(fs.existsSync(paths.archivePath)).toBe(false);
+		expect(
+			fs.existsSync(path.join(path.dirname(paths.workspacePath), "outside")),
+		).toBe(false);
+	});
+
+	it("rejects a symlink whose name hides an absolute target in the listing", () => {
+		const paths = makeWorkspace();
+		writeTarGz(paths.archivePath, [tarMember("evil", "2", "", "/etc -> safe")]);
+		expect(restore(paths)).toMatchObject({ ok: false, error: "unsafe_path" });
+		expect(fs.readdirSync(paths.workspacePath)).toEqual([]);
+	});
+
+	it("rejects a digest mismatch before touching the workspace", () => {
+		const paths = makeWorkspace();
+		writeTarGz(paths.archivePath, [tarMember("ok.txt", "0", "fine")]);
+		expect(restore(paths, "0".repeat(64))).toMatchObject({
+			ok: false,
+			error: "digest_mismatch",
+		});
+		expect(fs.readdirSync(paths.workspacePath)).toEqual([]);
+	});
+
+	it("rejects truncated and non-gzip archives", () => {
+		const paths = makeWorkspace();
+		writeTarGz(paths.archivePath, [tarMember("ok.txt", "0", "fine")]);
+		const bytes = fs.readFileSync(paths.archivePath);
+		fs.writeFileSync(paths.archivePath, bytes.subarray(0, bytes.length - 12));
+		expect(restore(paths)).toMatchObject({ ok: false });
+		fs.writeFileSync(paths.archivePath, "not an archive");
+		expect(restore(paths)).toMatchObject({ ok: false });
+	});
+
+	it("restores a captured workspace with Git state, links and its digest", () => {
+		const source = makeWorkspace();
+		writeFile(source.workspacePath, "src/a.ts", "export const a = 1;\n");
+		execFileSync("git", ["init", "-q", "-b", "main"], {
+			cwd: source.workspacePath,
+		});
+		execFileSync(
+			"git",
+			["-c", "user.email=t@example.com", "-c", "user.name=t", "add", "."],
+			{ cwd: source.workspacePath },
+		);
+		execFileSync(
+			"git",
+			[
+				"-c",
+				"user.email=t@example.com",
+				"-c",
+				"user.name=t",
+				"commit",
+				"-qm",
+				"seed",
+			],
+			{ cwd: source.workspacePath },
+		);
+		fs.symlinkSync("src/a.ts", path.join(source.workspacePath, "alias.ts"));
+		fs.linkSync(
+			path.join(source.workspacePath, "src/a.ts"),
+			path.join(source.workspacePath, "hard.ts"),
+		);
+		const head = execFileSync("git", ["rev-parse", "HEAD"], {
+			cwd: source.workspacePath,
+			encoding: "utf8",
+		}).trim();
+		const created = runCreate({
+			paths: source,
+			limits: generousLimits,
+			diskStat: plentyOfDisk,
+		});
+		if (!created.ok) throw new Error(created.message);
+
+		const target = makeWorkspace();
+		fs.copyFileSync(source.archivePath, target.archivePath);
+		const restored = restore(target, created.digest);
+		expect(restored).toMatchObject({
+			ok: true,
+			digest: created.digest,
+			compressedBytes: created.compressedBytes,
+		});
+		expect(
+			execFileSync("git", ["rev-parse", "HEAD"], {
+				cwd: target.workspacePath,
+				encoding: "utf8",
+			}).trim(),
+		).toBe(head);
+		expect(
+			execFileSync("git", ["status", "--porcelain"], {
+				cwd: target.workspacePath,
+				encoding: "utf8",
+			}),
+		).toBe("?? alias.ts\n?? hard.ts\n");
+		expect(fs.readlinkSync(path.join(target.workspacePath, "alias.ts"))).toBe(
+			"src/a.ts",
+		);
 	});
 });
 

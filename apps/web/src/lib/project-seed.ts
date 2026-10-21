@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNotNull, lte, ne, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { createDb } from "#/db";
 import {
@@ -22,6 +22,12 @@ import {
 	getProjectSandbox,
 } from "#/lib/sandbox-bootstrap";
 import { WORKSPACE_PATH } from "#/lib/workspace-policy";
+import {
+	acquireCapacitySlot,
+	builderCapacityKey,
+	holdBuilderCapacity,
+	releaseCapacitySlot,
+} from "#/lib/workspace-runtime-capacity";
 
 export const PROJECT_SEED_FORMAT_VERSION = 1;
 export const PROJECT_SEED_DEPENDENCY_POLICY_VERSION = 1;
@@ -57,7 +63,47 @@ export type BuildProjectSeedInput = {
 	installationId: number;
 	encryptedEnvVars: string | null;
 	authority?: SandboxAuthority;
+	capacity?: BuilderCapacity;
 };
+
+/** Builder slots in the shared execution pool. */
+export type BuilderCapacity = {
+	acquire(identity: { identityId: string; userId: string }): Promise<boolean>;
+	release(identityId: string): Promise<void>;
+	/** Keeps the slot for a builder whose termination is unproven. */
+	hold(identity: { identityId: string; userId: string }): Promise<void>;
+};
+
+export function createBuilderCapacity(
+	db: Db,
+	now: () => number = Date.now,
+): BuilderCapacity {
+	return {
+		async acquire(identity) {
+			const slot = await acquireCapacitySlot({
+				db,
+				sessionId: builderCapacityKey(identity.identityId),
+				userId: identity.userId,
+				identityId: identity.identityId,
+				nowMs: now(),
+			});
+			return slot !== null;
+		},
+		async release(identityId) {
+			await releaseCapacitySlot({
+				db,
+				sessionId: builderCapacityKey(identityId),
+				nowMs: now(),
+			});
+		},
+		hold: (identity) =>
+			holdBuilderCapacity({
+				db,
+				identityId: identity.identityId,
+				userId: identity.userId,
+			}),
+	};
+}
 
 export type BuildProjectSeedResult = {
 	project: typeof projects.$inferSelect;
@@ -200,6 +246,7 @@ export async function buildProjectSeed(
 	input: BuildProjectSeedInput,
 ): Promise<BuildProjectSeedResult> {
 	const authority = input.authority ?? createSandboxAuthority(input.db);
+	const capacity = input.capacity ?? createBuilderCapacity(input.db);
 	const { branchName, headRef } = await resolveDefaultBranch({
 		env: input.env,
 		installationId: input.installationId,
@@ -300,9 +347,16 @@ export async function buildProjectSeed(
 	};
 
 	let sandbox: ReturnType<typeof getProjectSandbox> | null = null;
-	let failureReasonCode: string | null = null;
+	let slotHeld = false;
 
 	try {
+		slotHeld = await capacity.acquire({ identityId, userId: input.userId });
+		if (!slotHeld) {
+			throw new ProjectSeedError(
+				"capacity_unavailable",
+				"No execution capacity is available for the seed builder.",
+			);
+		}
 		sandbox = getProjectSandbox(input.env, sandboxId);
 		await sandbox.setOutboundHandler("dittoCatchAll", {
 			identityId,
@@ -393,7 +447,7 @@ export async function buildProjectSeed(
 			identity,
 		};
 	} catch (error) {
-		failureReasonCode =
+		const failureReasonCode =
 			error instanceof ProjectSeedError
 				? error.code
 				: error instanceof Error && "code" in error
@@ -424,28 +478,136 @@ export async function buildProjectSeed(
 		} catch {
 			// Operation may already be closed.
 		}
-		if (sandbox) {
-			try {
-				await sandbox.destroy();
-			} catch (destroyError) {
-				console.error(
-					"project-seed builder destroy failed:",
-					destroyError instanceof Error
-						? destroyError.message
-						: String(destroyError),
-				);
-			}
-		}
+		await settleBuilder({
+			authority,
+			capacity,
+			identityId,
+			userId: input.userId,
+			sandbox,
+			slotHeld,
+		});
+	}
+}
+
+/**
+ * Retires the builder's authority on every outcome. Its capacity is released
+ * only with termination evidence; otherwise the slot stays held and the
+ * identity stays `destroying` for {@link retryBuilderTermination}.
+ */
+async function settleBuilder(options: {
+	authority: SandboxAuthority;
+	capacity: BuilderCapacity;
+	identityId: string;
+	userId: string;
+	sandbox: { destroy(): Promise<unknown> } | null;
+	slotHeld: boolean;
+}): Promise<void> {
+	let terminated = options.sandbox === null;
+	if (options.sandbox) {
 		try {
-			await authority.retireIdentity(identityId);
-		} catch (retireError) {
+			await options.sandbox.destroy();
+			terminated = true;
+		} catch (destroyError) {
 			console.error(
-				"project-seed identity retire failed:",
-				retireError instanceof Error
-					? retireError.message
-					: String(retireError),
+				"project-seed builder destroy failed:",
+				destroyError instanceof Error
+					? destroyError.message
+					: String(destroyError),
 			);
 		}
-		void failureReasonCode;
 	}
+	const hold = async () => {
+		try {
+			await options.capacity.hold({
+				identityId: options.identityId,
+				userId: options.userId,
+			});
+		} catch (capacityError) {
+			console.error(
+				"project-seed builder capacity hold failed:",
+				capacityError instanceof Error
+					? capacityError.message
+					: String(capacityError),
+			);
+		}
+	};
+	// Account the builder before anything else can fail.
+	if (!terminated) {
+		await hold();
+	}
+	try {
+		await options.authority.retireIdentity(options.identityId, { terminated });
+	} catch (retireError) {
+		console.error(
+			"project-seed identity retire failed:",
+			retireError instanceof Error ? retireError.message : String(retireError),
+		);
+		// The termination sweep retires it later; keep the slot until then.
+		if (terminated) {
+			await hold();
+		}
+		return;
+	}
+	if (terminated && options.slotHeld) {
+		try {
+			await options.capacity.release(options.identityId);
+		} catch (capacityError) {
+			console.error(
+				"project-seed builder capacity release failed:",
+				capacityError instanceof Error
+					? capacityError.message
+					: String(capacityError),
+			);
+		}
+	}
+}
+
+/** An unretired builder older than this is treated as abandoned by its build. */
+export const PROJECT_SEED_ABANDONED_AFTER_MS =
+	2 * PROJECT_SEED_OPERATION_TTL_MS;
+
+/**
+ * Destroys builders whose termination is unproven, retires them and then
+ * frees their slots. Covers failed destroys and builders whose settlement
+ * never retired them.
+ */
+export async function retryBuilderTermination(options: {
+	env: Env;
+	db: Db;
+	capacity?: BuilderCapacity;
+	authority?: SandboxAuthority;
+	now?: () => number;
+	limit?: number;
+}): Promise<{ terminated: number }> {
+	const capacity = options.capacity ?? createBuilderCapacity(options.db);
+	const authority = options.authority ?? createSandboxAuthority(options.db);
+	const abandonedBefore = new Date(
+		(options.now ?? Date.now)() - PROJECT_SEED_ABANDONED_AFTER_MS,
+	);
+	const rows = await options.db
+		.select()
+		.from(sandboxIdentities)
+		.where(
+			and(
+				eq(sandboxIdentities.kind, "project_seed"),
+				ne(sandboxIdentities.state, "destroyed"),
+				or(
+					isNotNull(sandboxIdentities.retiredAt),
+					lte(sandboxIdentities.createdAt, abandonedBefore),
+				),
+			),
+		)
+		.limit(options.limit ?? 20);
+	let terminated = 0;
+	for (const row of rows) {
+		try {
+			await getProjectSandbox(options.env, row.sandboxId).destroy();
+		} catch {
+			continue;
+		}
+		await authority.retireIdentity(row.id, { terminated: true });
+		await capacity.release(row.id);
+		terminated += 1;
+	}
+	return { terminated };
 }

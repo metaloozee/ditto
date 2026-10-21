@@ -73,6 +73,9 @@ export type ResolvedOutboundOperation = {
 	operation: PrivilegedOperationHandle;
 };
 
+/** The only operation a seed builder identity may hold. */
+export const SEED_BUILDER_OPERATION_TYPE = "project_seed_fetch";
+
 export class SandboxAuthorityError extends Error {
 	readonly code: string;
 
@@ -359,7 +362,14 @@ export type SandboxAuthority = {
 		state?: SandboxIdentityState;
 	}): Promise<SandboxIdentityHandle>;
 	rotateGeneration(identityId: string): Promise<SandboxIdentityHandle>;
-	retireIdentity(identityId: string): Promise<SandboxIdentityHandle>;
+	/**
+	 * Permanently removes authority. Without termination evidence the identity
+	 * stays `destroying`, so its resource is still accounted as live.
+	 */
+	retireIdentity(
+		identityId: string,
+		options?: { terminated?: boolean },
+	): Promise<SandboxIdentityHandle>;
 	getIdentity(identityId: string): Promise<SandboxIdentityHandle | null>;
 	openOperation(input: {
 		identityId: string;
@@ -486,7 +496,7 @@ export function createSandboxAuthority(db: Db): SandboxAuthority {
 			return toIdentityHandle(row);
 		},
 
-		async retireIdentity(identityId) {
+		async retireIdentity(identityId, options) {
 			const identity = await loadIdentity(db, identityId);
 			if (!identity) {
 				throw new SandboxAuthorityError(
@@ -495,11 +505,14 @@ export function createSandboxAuthority(db: Db): SandboxAuthority {
 				);
 			}
 			await closeOpenOperationsForIdentity(db, identityId, "identity_retired");
+			const terminated = options?.terminated ?? true;
 			const [row] = await db
 				.update(sandboxIdentities)
 				.set({
-					state: "destroyed",
-					retiredAt: sql`(unixepoch())`,
+					state: terminated
+						? "destroyed"
+						: sql`CASE WHEN ${sandboxIdentities.state} = 'destroyed' THEN 'destroyed' ELSE 'destroying' END`,
+					retiredAt: sql`coalesce(${sandboxIdentities.retiredAt}, unixepoch())`,
 					updatedAt: sql`(unixepoch())`,
 				})
 				.where(eq(sandboxIdentities.id, identityId))
@@ -535,6 +548,16 @@ export function createSandboxAuthority(db: Db): SandboxAuthority {
 				throw new SandboxAuthorityError(
 					"trusted_windows_closed",
 					"Trusted brain operation windows are not opened in this phase.",
+				);
+			}
+			if (
+				identity.kind === "project_seed" &&
+				(input.family !== "git_transport" ||
+					input.type !== SEED_BUILDER_OPERATION_TYPE)
+			) {
+				throw new SandboxAuthorityError(
+					"builder_role_denied",
+					"Seed builders may only fetch the owned repository.",
 				);
 			}
 			const existing = await loadOpenOperation(
@@ -883,6 +906,12 @@ export function createSandboxAuthority(db: Db): SandboxAuthority {
 				throw new SandboxAuthorityError(
 					"trusted_windows_closed",
 					"Trusted brain callbacks are not admitted in this phase.",
+				);
+			}
+			if (identity.kind === "project_seed" && family !== "git_transport") {
+				throw new SandboxAuthorityError(
+					"builder_role_denied",
+					"Seed builders may only fetch the owned repository.",
 				);
 			}
 			requireStoredMatch(

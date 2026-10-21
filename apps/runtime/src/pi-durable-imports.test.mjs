@@ -78,3 +78,15 @@ test("remote tool module has no trusted-host file, process or stock coding-tool 
 			`pi-durable-tools references ${name}`,
 		);
 });
+
+test("execution never imports recovery and recovery imports no product module", async () => {
+	const { readFile } = await import("node:fs/promises");
+	const read = (name) => readFile(new URL(name, import.meta.url), "utf8");
+	const tools = await read("./pi-durable-tools.ts");
+	assert.equal(tools.includes("pi-durable-artifacts"), false);
+	const artifacts = await read("./pi-durable-artifacts.ts");
+	const imports = [...artifacts.matchAll(/from\s+"([^"]+)"/g)].map((m) => m[1]);
+	assert.deepEqual(imports, [
+		"../../../packages/runtime-contracts/src/artifacts.js",
+	]);
+});
