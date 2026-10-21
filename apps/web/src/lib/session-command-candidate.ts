@@ -16,9 +16,20 @@ import {
 	type ReceiptV2,
 } from "../../../../packages/runtime-contracts/src/product-command.js";
 import {
+	PROJECTION_LIMITS,
+	type ProjectionResultV1,
+	parseProjectionIntentsV1,
+	type RuntimeObservationV1,
+} from "../../../../packages/runtime-contracts/src/projection.js";
+import {
+	applyProductProjectionBatch,
+	type ProjectionPayload,
+} from "../../../runtime/src/product-projector.js";
+import {
 	CANDIDATE_MODEL_POLICY,
 	ModelProductAuthority,
 } from "./model-product-authority";
+import { redactSecrets } from "./secret-redaction";
 import {
 	SESSION_RUNTIME_CALL_TIMEOUT_MS,
 	withSessionRuntimeCallTimeout,
@@ -45,6 +56,10 @@ export interface CandidateAdmissionRuntime {
 		runId: string;
 		state: "not_delivered" | "nonterminal" | "terminal";
 	}>;
+	observe?(
+		subject: ModelSubjectV1,
+		cursor?: number,
+	): Promise<RuntimeObservationV1>;
 }
 export interface CandidateCredentialStatus {
 	status(owner: string): Promise<{ status: string; generation: number }>;
@@ -101,6 +116,12 @@ function receipt(row: Row): ReceiptV2 {
 				}
 			: {}),
 	});
+}
+/** Complete PEM blocks are redacted already; an unterminated one is cut. */
+function redactProjectionContent(text: string) {
+	const redacted = redactSecrets(text);
+	const open = redacted.search(/-----BEGIN (?:[A-Z ]* )?PRIVATE KEY-----/);
+	return open < 0 ? redacted : `${redacted.slice(0, open)}[REDACTED]`;
 }
 const ownedSessionSql = `SELECT s.*,i.id AS identityId,i.incarnationId,i.lifecycleGeneration,i.controllerNamespace
 FROM workspace_sessions s JOIN projects p ON p.id=s.projectId
@@ -682,6 +703,119 @@ WHERE q.commandId=? AND m.sessionId=q.sessionId AND m.runId=q.runId AND m.runEpo
 			row.userMessageId === command.userMessageId &&
 			row.assistantMessageId === command.assistantMessageId
 		);
+	}
+
+	/**
+	 * Update-only application of committed runtime terminal decisions. Content
+	 * is redacted here, before it reaches product storage.
+	 */
+	async applyProjections(
+		scope: { userId: string; projectId: string; workspaceSessionId: string },
+		value: unknown,
+	): Promise<ProjectionResultV1[]> {
+		const intents = parseProjectionIntentsV1(value);
+		const commands = await this.db
+			.prepare(
+				`SELECT c.id,c.userMessageId,c.assistantMessageId,EXISTS(SELECT 1 FROM runtime_command_memberships m WHERE m.commandId=c.id) AS member
+FROM session_commands c WHERE c.sessionId=? AND c.userId=? AND c.projectId=? AND c.id IN (SELECT value FROM json_each(?))`,
+			)
+			.bind(
+				scope.workspaceSessionId,
+				scope.userId,
+				scope.projectId,
+				JSON.stringify(intents.map((intent) => intent.commandId)),
+			)
+			.all<{
+				id: string;
+				userMessageId: string | null;
+				assistantMessageId: string | null;
+				member: number;
+			}>();
+		const byId = new Map(commands.results.map((row) => [row.id, row]));
+		const base = {
+			workspaceSessionId: scope.workspaceSessionId,
+			userId: scope.userId,
+			projectId: scope.projectId,
+			ownerVersion: 1,
+		};
+		const payloads: ProjectionPayload[] = [];
+		const targets: (number | ProjectionResultV1["outcome"])[] = [];
+		for (const intent of intents) {
+			const command = byId.get(intent.commandId);
+			if (
+				!command ||
+				command.assistantMessageId !== intent.assistantMessageId
+			) {
+				targets.push("blocked_membership");
+				continue;
+			}
+			// An expiry decision supplies its own membership; wait for it.
+			if (!command.member && intent.reason === "command_expired") {
+				targets.push("retry");
+				continue;
+			}
+			if (!command.member)
+				payloads.push({
+					...base,
+					targetKind: "membership",
+					targetId: intent.commandId,
+					coordinatorSeq: intent.projectionVersion,
+					commandId: intent.commandId,
+					runId: intent.runId,
+					runEpoch: intent.runEpoch,
+					userMessageId: command.userMessageId ?? undefined,
+					assistantMessageId: intent.assistantMessageId,
+				});
+			targets.push(payloads.length);
+			payloads.push({
+				...base,
+				targetKind: "message",
+				targetId: intent.assistantMessageId,
+				coordinatorSeq: intent.projectionVersion,
+				status: intent.status,
+				...(intent.reason ? { reasonCode: intent.reason } : {}),
+				commandId: intent.commandId,
+				runId: intent.runId,
+				...(intent.content === undefined
+					? {}
+					: { contentRedacted: redactProjectionContent(intent.content) }),
+			});
+		}
+		const applied = await applyProductProjectionBatch(
+			this.db,
+			payloads,
+			this.now(),
+			"pi_durable_v1",
+		);
+		return intents.map((intent, index) => {
+			const target = targets[index];
+			return {
+				assistantMessageId: intent.assistantMessageId,
+				projectionVersion: intent.projectionVersion,
+				outcome:
+					typeof target === "number"
+						? (applied[target]?.classification ?? "retry")
+						: target,
+			};
+		});
+	}
+
+	/** Owned observation; the runtime reads committed facts without scheduling. */
+	async observe(
+		userId: string,
+		projectId: string,
+		sessionId: string,
+		cursor?: number,
+	): Promise<RuntimeObservationV1> {
+		const subject = await this.subject(userId, projectId, sessionId);
+		if (!this.runtime.observe) reject("runtime_unavailable", 503);
+		const observation = await this.runtime.observe(subject, cursor);
+		if (
+			new TextEncoder().encode(JSON.stringify(observation)).byteLength >
+			PROJECTION_LIMITS.observationBytes
+		)
+			reject("observation_too_large", 502);
+		return observation;
 	}
 
 	async reconstruct(

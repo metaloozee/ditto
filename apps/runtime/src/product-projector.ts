@@ -65,7 +65,7 @@ const SESSION_ACTIVE = `
 		WHERE s.id = ?
 			AND s.projectId = ?
 			AND s.userId = ?
-			AND s.runtimeOwner = 'trusted_v1'
+			AND s.runtimeOwner = ?
 			AND s.runtimeOwnerVersion = ?
 			AND s.status IN ('active', 'archived')
 	)
@@ -327,11 +327,17 @@ function projectParams(payload: ProjectionPayload): unknown[] {
 	return [payload.projectId, payload.userId];
 }
 
-function sessionParams(payload: ProjectionPayload): unknown[] {
+export type ProjectionRuntimeOwner = "trusted_v1" | "pi_durable_v1";
+
+function sessionParams(
+	payload: ProjectionPayload,
+	owner: ProjectionRuntimeOwner,
+): unknown[] {
 	return [
 		payload.workspaceSessionId,
 		payload.projectId,
 		payload.userId,
+		owner,
 		payload.ownerVersion,
 	];
 }
@@ -402,6 +408,7 @@ function statementsForPayload(
 	prepare: D1Like["prepare"],
 	payload: ProjectionPayload,
 	now: number,
+	owner: ProjectionRuntimeOwner,
 ): { statements: D1PreparedStatement[]; targetIndex: number } {
 	const statements: D1PreparedStatement[] = [];
 	if (payload.targetKind === "membership") {
@@ -417,6 +424,7 @@ function statementsForPayload(
 				payload.workspaceSessionId,
 				payload.projectId,
 				payload.userId,
+				owner,
 				payload.ownerVersion,
 				payload.projectId,
 				payload.userId,
@@ -447,7 +455,7 @@ function statementsForPayload(
 				payload.projectId,
 				payload.userId,
 				...projectParams(payload),
-				...sessionParams(payload),
+				...sessionParams(payload, owner),
 				...fenceParams(payload),
 				...membershipParams(payload),
 				...lexParams(payload),
@@ -467,7 +475,7 @@ function statementsForPayload(
 				payload.status,
 				...membershipParams(payload),
 				...projectParams(payload),
-				...sessionParams(payload),
+				...sessionParams(payload, owner),
 				...fenceParams(payload),
 			],
 		);
@@ -485,7 +493,7 @@ function statementsForPayload(
 				payload.userId,
 				expectedSource,
 				...projectParams(payload),
-				...sessionParams(payload),
+				...sessionParams(payload, owner),
 				...fenceParams(payload),
 				...lexParams(payload),
 			),
@@ -503,7 +511,7 @@ function statementsForPayload(
 				payload.userId,
 				payload.coordinatorSeq,
 				...projectParams(payload),
-				...sessionParams(payload),
+				...sessionParams(payload, owner),
 				...fenceParams(payload),
 			],
 		);
@@ -527,7 +535,7 @@ function statementsForPayload(
 				target.ownerVersion,
 				target.expectedMutationGeneration,
 				...projectParams(payload),
-				...sessionParams(payload),
+				...sessionParams(payload, owner),
 				...fenceParams(payload),
 				...lexParams(payload),
 			),
@@ -548,7 +556,7 @@ function statementsForPayload(
 				target.previousPairId,
 				target.previousPairId,
 				...projectParams(payload),
-				...sessionParams(payload),
+				...sessionParams(payload, owner),
 				...fenceParams(payload),
 			],
 		);
@@ -572,6 +580,7 @@ async function sessionOwnerVersion(
 export async function classifyZeroRowProjection(
 	d1: D1Like,
 	payload: ProjectionPayload,
+	owner: ProjectionRuntimeOwner = "trusted_v1",
 ): Promise<ProjectionClassification> {
 	const ownerAt = async (): Promise<number | null> =>
 		sessionOwnerVersion(d1, payload.workspaceSessionId);
@@ -609,7 +618,7 @@ export async function classifyZeroRowProjection(
 	if (afterSession) return afterSession;
 	if (!session) return "deleted";
 	if (
-		session.runtimeOwner !== "trusted_v1" ||
+		session.runtimeOwner !== owner ||
 		session.userId !== payload.userId ||
 		session.projectId !== payload.projectId
 	) {
@@ -774,12 +783,18 @@ export async function applyProductProjectionBatch(
 	d1: D1Like,
 	payloads: ProjectionPayload[],
 	now: number,
+	owner: ProjectionRuntimeOwner = "trusted_v1",
 ): Promise<ProjectionApplyResult[]> {
 	if (payloads.length === 0) return [];
 	const statements: D1PreparedStatement[] = [];
 	const spans: StatementSpan[] = [];
 	for (const payload of payloads) {
-		const prepared = statementsForPayload(d1.prepare.bind(d1), payload, now);
+		const prepared = statementsForPayload(
+			d1.prepare.bind(d1),
+			payload,
+			now,
+			owner,
+		);
 		spans.push({
 			payload,
 			targetIndex:
@@ -820,7 +835,11 @@ export async function applyProductProjectionBatch(
 			results.push({ classification: "retry", retry: true });
 			continue;
 		}
-		const classification = await classifyZeroRowProjection(d1, span.payload);
+		const classification = await classifyZeroRowProjection(
+			d1,
+			span.payload,
+			owner,
+		);
 		results.push({
 			classification,
 			retry: classification === "retry",

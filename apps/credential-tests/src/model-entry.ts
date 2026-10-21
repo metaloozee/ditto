@@ -48,6 +48,11 @@ import {
 	validateCandidateRuntimeAuthority,
 } from "../../web/src/lib/session-command-candidate";
 import { CANDIDATE_FIXTURE_RESET_SCHEMA } from "./candidate-fixture-schema";
+
+/** Fixture-only product apply faults; module state is shared by the test isolate. */
+let projectionFault: "throw" | "short" | "lose-ack" | undefined;
+let projectionCalls = 0;
+
 import {
 	type CandidateFixtureCredential,
 	candidateFixtureResetTableExists,
@@ -628,6 +633,13 @@ export class CandidateFixtureSession extends PiDurableProductSession {
 		}
 		await (await this.activate()).repairWakeup();
 	}
+	/** Runs a due-or-not projection retry now instead of waiting for its backoff. */
+	async forceProjectionDelivery() {
+		await (await this.activate()).deliverProjections(true);
+	}
+	async fixtureWakeState() {
+		return { alarm: await this.ctx.storage.getAlarm(), open: !!this.host };
+	}
 	async candidateSnapshot() {
 		if (!this.host) await this.activate();
 		return {
@@ -1081,9 +1093,40 @@ export class CandidateFixtureProduct extends WorkerEntrypoint<CandidateFixtureBi
 					this.env.CandidateSessions.getByName(
 						subject.workspaceSessionId,
 					).targetStatus(subject, runId),
+				observe: (subject, cursor) =>
+					this.env.CandidateSessions.getByName(
+						subject.workspaceSessionId,
+					).observe(subject, cursor),
 			},
 			(owner) => this.env.CandidateCredential.getByName(owner),
 		);
+	}
+	setProjectionFault(fault: typeof projectionFault) {
+		projectionFault = fault;
+		const calls = projectionCalls;
+		projectionCalls = 0;
+		return calls;
+	}
+	async applyCandidateProjections(
+		scope: CandidateRuntimeScope,
+		intents: unknown,
+	) {
+		projectionCalls++;
+		const fault = projectionFault;
+		if (fault === "throw") throw new Error("Synthetic product apply failure");
+		const parsed = parseCandidateRuntimeScope(scope);
+		const results = await this.commands().applyProjections(parsed, intents);
+		if (fault === "lose-ack")
+			throw new Error("Synthetic lost projection acknowledgment");
+		return fault === "short" ? results.slice(0, -1) : results;
+	}
+	observeOwned(
+		userId: string,
+		projectId: string,
+		sessionId: string,
+		cursor?: number,
+	) {
+		return this.commands().observe(userId, projectId, sessionId, cursor);
 	}
 	admitOwned(userId: string, input: unknown) {
 		return this.commands().admit(userId, input);

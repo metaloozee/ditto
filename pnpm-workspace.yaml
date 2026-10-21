@@ -25,4 +25,5 @@ allowBuilds:
 minimumReleaseAge: 0
 patchedDependencies:
   # vitest-pool-workers 0.12.21 (and 0.23.0) wraps each entrypoint/DO class prototype in a new Proxy on every construction, so property lookups slow down with each instance. Remove when upstream wraps the prototype once.
+  # It also pops isolated storage right after aborting Durable Objects, before their SQLite connections close, so a busy object's -shm/-wal file fails the pop and stalls the run. The patch waits for those files to go before push and pop.
   '@cloudflare/vitest-pool-workers@0.12.21': patches/@cloudflare__vitest-pool-workers@0.12.21.patch

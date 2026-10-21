@@ -1,6 +1,6 @@
 # 010: Settle messages and expose committed observations
 
-Status: READY; in progress. Base: `bcce03e`. Phase: L3 completion.
+Status: DONE for the local fixture scope; see `plans/evidence/010-l3-acceptance.md`. Base: `bcce03e`. Phase: L3 completion.
 Spec: `docs/specs/pi-durable-session-runtime.md`, decisions 3.4–3.5, 5, 7, 14, 17; PD07, PD16, PD24, PD26–PD27; OD5–OD6.
 
 ## Outcome

@@ -51,6 +51,15 @@ import {
 	parseQueueDecisionV2,
 	type QueueDecisionV2,
 } from "../../../packages/runtime-contracts/src/product-command.js";
+import {
+	type ObservationEventV1,
+	type ObservationSnapshotV1,
+	PROJECTION_LIMITS,
+	type ProjectionIntentV1,
+	type ProjectionReason,
+	parseProjectionResultsV1,
+	type RuntimeObservationV1,
+} from "../../../packages/runtime-contracts/src/projection.js";
 import type { RemoteToolName } from "../../../packages/runtime-contracts/src/tool-execution.js";
 import {
 	digestText,
@@ -84,6 +93,7 @@ import {
 
 const WORK_MS = 1000;
 const DRAIN_MS = 1000;
+const PROJECTION_RETRY_MS = 5000;
 const VERSION = "pi-1.0.1/ditto-host-3";
 
 type Invocation = {
@@ -363,6 +373,8 @@ export type HostFixtureDependencies = {
 		workspaceSessionId: string;
 		ownerVersion: 1;
 		reconcileDecision(decision: QueueDecisionV2): Promise<boolean>;
+		/** Product application of committed terminal assistants; results must match exactly. */
+		applyProjections?(intents: ProjectionIntentV1[]): Promise<unknown>;
 		configuration(
 			commandId: string,
 		): Promise<NonNullable<HostFixtureDependencies["configuration"]>>;
@@ -408,6 +420,7 @@ export class PiDurableHost {
 	private privateEnvelope = new Map<string, string>();
 	private privateQueue: Promise<void> = Promise.resolve();
 	private queueError: unknown;
+	private delivery: Promise<void> | undefined;
 
 	private constructor(
 		private storage: DurableObjectStorage,
@@ -499,6 +512,34 @@ export class PiDurableHost {
 			);
 			storage.sql.exec(
 				"CREATE TABLE IF NOT EXISTS host_configuration_intents (id TEXT PRIMARY KEY, payload_digest TEXT NOT NULL, outcome TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('pending','complete')))",
+			);
+			const projectionColumns = storage.sql
+				.exec<{ name: string }>("PRAGMA table_info(host_projections)")
+				.toArray();
+			for (const [name, type] of [
+				["reason", "TEXT"],
+				["answer", "INTEGER"],
+				["applied", "INTEGER NOT NULL DEFAULT 0"],
+			])
+				if (!projectionColumns.some((column) => column.name === name))
+					storage.sql.exec(
+						`ALTER TABLE host_projections ADD COLUMN ${name} ${type}`,
+					);
+			// Semantic events commit in the same transaction as the fact they report.
+			storage.sql.exec(
+				"CREATE TABLE IF NOT EXISTS host_events (position INTEGER PRIMARY KEY, kind TEXT NOT NULL, target TEXT NOT NULL, run TEXT NOT NULL, state TEXT NOT NULL, reason TEXT, version INTEGER NOT NULL)",
+			);
+			storage.sql.exec(
+				"CREATE TRIGGER IF NOT EXISTS host_events_projection_insert AFTER INSERT ON host_projections BEGIN INSERT INTO host_events(kind,target,run,state,reason,version) VALUES('assistant',NEW.assistant,NEW.run,NEW.state,NEW.reason,NEW.version); END",
+			);
+			storage.sql.exec(
+				"CREATE TRIGGER IF NOT EXISTS host_events_projection_update AFTER UPDATE OF state,version ON host_projections WHEN OLD.state IS NOT NEW.state OR OLD.version IS NOT NEW.version BEGIN INSERT INTO host_events(kind,target,run,state,reason,version) VALUES('assistant',NEW.assistant,NEW.run,NEW.state,NEW.reason,NEW.version); END",
+			);
+			storage.sql.exec(
+				"CREATE TRIGGER IF NOT EXISTS host_events_run_insert AFTER INSERT ON host_runs BEGIN INSERT INTO host_events(kind,target,run,state,reason,version) VALUES('run',NEW.id,NEW.id,NEW.state,NULL,NEW.epoch); END",
+			);
+			storage.sql.exec(
+				"CREATE TRIGGER IF NOT EXISTS host_events_run_update AFTER UPDATE OF state ON host_runs WHEN OLD.state IS NOT NEW.state BEGIN INSERT INTO host_events(kind,target,run,state,reason,version) VALUES('run',NEW.id,NEW.id,NEW.state,NULL,NEW.epoch); END",
 			);
 			const columns = storage.sql
 				.exec<{ name: string }>("PRAGMA table_info(host_effects)")
@@ -1200,10 +1241,16 @@ export class PiDurableHost {
 			run,
 		);
 		this.storage.sql.exec(
-			"INSERT OR REPLACE INTO host_projections SELECT assistant, run, ?, COALESCE((SELECT version + 1 FROM host_projections p WHERE p.assistant = m.assistant), 1) FROM host_members m WHERE run = ? AND state = 'pending'",
+			"INSERT OR REPLACE INTO host_projections(assistant,run,state,version,reason,answer,applied) SELECT assistant, run, ?, COALESCE((SELECT version + 1 FROM host_projections p WHERE p.assistant = m.assistant), 1), ?, NULL, 0 FROM host_members m WHERE run = ? AND state = 'pending'",
 			state === "complete" ? "complete" : "failed",
+			state === "complete"
+				? null
+				: state === "canceled" || current.state === "stopping"
+					? "run_stopped"
+					: "run_failed",
 			run,
 		);
+		this.queueProjection();
 		this.storage.sql.exec(
 			"UPDATE host_members SET state = ? WHERE run = ? AND state = 'pending'",
 			state === "complete" ? "complete" : "failed",
@@ -3763,10 +3810,14 @@ export class PiDurableHost {
 							command.assistant,
 						);
 						this.storage.sql.exec(
-							"INSERT OR IGNORE INTO host_projections VALUES (?,?,'complete',1)",
+							"INSERT OR IGNORE INTO host_projections(assistant,run,state,version,reason,answer,applied) VALUES (?,?,'complete',1,NULL,?,0)",
 							command.assistant,
 							run.id,
+							status.status === "done" && "answer" in status
+								? Number(status.answer)
+								: null,
 						);
+						this.queueProjection();
 					});
 			}
 			if (settled || (failed && this.dependencies.candidate))
@@ -3972,16 +4023,259 @@ export class PiDurableHost {
 		return next;
 	}
 
-	private failCandidateMember(command: CommandV2) {
+	/** Called inside the transition that commits a terminal assistant decision. */
+	private queueProjection() {
+		if (!this.dependencies.candidate?.applyProjections) return;
+		this.storage.sql.exec(
+			"INSERT INTO host_wakeups VALUES('projection',?) ON CONFLICT(id) DO UPDATE SET deadline=min(deadline,excluded.deadline)",
+			this.dependencies.now(),
+		);
+	}
+
+	private async projectionContent(answer: number | null) {
+		if (answer === null) return undefined;
+		const entry = (
+			await this.piRecords.entry(
+				ROOT_CONVERSATION_ID,
+				answer as import("@earendil-works/pi-durable").EntryId,
+				BACKGROUND_CONTEXT,
+			)
+		)?.entry;
+		const message = entry?.model?.[0];
+		if (!message || message.role !== "assistant") return undefined;
+		const text = message.content
+			.map((part) => (part.type === "text" ? part.text : ""))
+			.join("");
+		const bytes = new TextEncoder().encode(text);
+		if (bytes.byteLength <= PROJECTION_LIMITS.contentBytes) return text;
+		// Cut at whitespace so a secret-shaped token is never split before the
+		// product redacts it.
+		return new TextDecoder()
+			.decode(bytes.subarray(0, PROJECTION_LIMITS.contentBytes))
+			.replace(/\S*$/u, "");
+	}
+
+	/**
+	 * Applies committed terminal assistants to the product. Only exact
+	 * acknowledgments retire an intent; everything else retries from a durable
+	 * wakeup without touching Pi scheduling or the executor.
+	 */
+	async deliverProjections(force = false) {
+		// One delivery at a time; closure waits for the one in flight.
+		const previous = this.delivery;
+		const current = (async () => {
+			await previous?.catch(() => undefined);
+			await this.deliverProjectionBatch(force);
+		})();
+		this.delivery = current;
+		try {
+			await current;
+		} finally {
+			if (this.delivery === current) this.delivery = undefined;
+		}
+	}
+	private async deliverProjectionBatch(force: boolean) {
+		const apply = this.dependencies.candidate?.applyProjections;
+		if (!apply) return;
+		const due = this.read(
+			() =>
+				this.storage.sql
+					.exec<{ deadline: number }>(
+						"SELECT deadline FROM host_wakeups WHERE id='projection'",
+					)
+					.toArray()[0]?.deadline,
+		);
+		if (!force && due !== undefined && due > this.dependencies.now()) return;
+		const rows = this.read(() =>
+			this.storage.sql
+				.exec<{
+					assistant: string;
+					run: string;
+					state: "complete" | "failed";
+					version: number;
+					reason: ProjectionReason | null;
+					answer: number | null;
+					command: string;
+					epoch: number;
+				}>(
+					"SELECT p.assistant,p.run,p.state,p.version,p.reason,p.answer,c.id AS command,r.epoch FROM host_projections p JOIN host_commands c ON c.assistant=p.assistant JOIN host_runs r ON r.id=p.run WHERE p.applied<p.version ORDER BY p.rowid LIMIT ?",
+					PROJECTION_LIMITS.batch,
+				)
+				.toArray(),
+		);
+		if (!rows.length) {
+			if (due === undefined) return;
+			this.transition("account", () =>
+				this.storage.sql.exec("DELETE FROM host_wakeups WHERE id='projection'"),
+			);
+			await this.durable();
+			return;
+		}
+		const intents: ProjectionIntentV1[] = [];
+		let unreadable = 0;
+		for (const row of rows) {
+			let content: string | undefined;
+			try {
+				content =
+					row.state === "complete"
+						? await this.projectionContent(row.answer)
+						: undefined;
+			} catch {
+				// Keep the intent; one unreadable answer must not stall the batch.
+				unreadable++;
+				continue;
+			}
+			intents.push({
+				version: 1,
+				assistantMessageId: row.assistant,
+				commandId: row.command,
+				runId: row.run,
+				runEpoch: Math.max(1, row.epoch),
+				status: row.state,
+				reason: row.state === "complete" ? null : row.reason,
+				projectionVersion: row.version,
+				...(content === undefined ? {} : { content }),
+			});
+		}
+		let settled = new Set<string>();
+		try {
+			if (!intents.length) throw new Error("No readable projection");
+			const results = parseProjectionResultsV1(await apply(intents), intents);
+			settled = new Set(
+				results
+					.filter((result) => result.outcome !== "retry")
+					.map((result) => result.assistantMessageId),
+			);
+		} catch {
+			settled = new Set();
+		}
+		const remaining = intents.length - settled.size + unreadable;
+		this.transition("account", () => {
+			for (const intent of intents)
+				if (settled.has(intent.assistantMessageId))
+					this.storage.sql.exec(
+						"UPDATE host_projections SET applied=version WHERE assistant=? AND version=?",
+						intent.assistantMessageId,
+						intent.projectionVersion,
+					);
+			const more = this.storage.sql
+				.exec(
+					"SELECT 1 FROM host_projections p JOIN host_commands c ON c.assistant=p.assistant JOIN host_runs r ON r.id=p.run WHERE p.applied<p.version LIMIT 1",
+				)
+				.toArray().length;
+			// Re-arm immediately only after full progress; anything else backs off.
+			if (more)
+				this.storage.sql.exec(
+					"INSERT OR REPLACE INTO host_wakeups VALUES('projection',?)",
+					this.dependencies.now() +
+						(remaining || !settled.size ? PROJECTION_RETRY_MS : 0),
+				);
+			else
+				this.storage.sql.exec("DELETE FROM host_wakeups WHERE id='projection'");
+		});
+		await this.durable();
+		await this.repairWakeup();
+	}
+
+	/**
+	 * Read-only product observation straight from committed host tables. It
+	 * never opens Pi, so reading cannot schedule work or wake the executor.
+	 */
+	static observe(
+		storage: DurableObjectStorage,
+		cursor?: number,
+	): RuntimeObservationV1 {
+		const sql = storage.sql;
+		let head: number;
+		try {
+			head = Number(
+				sql.exec("SELECT COALESCE(MAX(position),0) AS p FROM host_events").one()
+					.p,
+			);
+		} catch {
+			return {
+				version: 1,
+				cursor: 0,
+				snapshot: {
+					runs: [],
+					assistants: [],
+					health: { projectionLag: 0, safetyStopped: false },
+				},
+				events: [],
+				more: false,
+			};
+		}
+		if (
+			cursor !== undefined &&
+			Number.isSafeInteger(cursor) &&
+			cursor >= 0 &&
+			cursor <= head
+		) {
+			const events = sql
+				.exec<ObservationEventV1>(
+					"SELECT position,kind,target,run,state,reason,version FROM host_events WHERE position>? ORDER BY position LIMIT ?",
+					cursor,
+					PROJECTION_LIMITS.events,
+				)
+				.toArray()
+				.map((event) => ({ ...event }));
+			const last = events.at(-1)?.position ?? cursor;
+			return {
+				version: 1,
+				cursor: last,
+				events,
+				more: last < head,
+			};
+		}
+		const snapshot: ObservationSnapshotV1 = {
+			runs: sql
+				.exec<{ id: string; state: string; epoch: number }>(
+					"SELECT id,state,epoch FROM host_runs ORDER BY rowid DESC LIMIT ?",
+					PROJECTION_LIMITS.runs,
+				)
+				.toArray()
+				.map((row) => ({ ...row })),
+			assistants: sql
+				.exec<{
+					id: string;
+					run: string;
+					state: "complete" | "failed";
+					reason: ProjectionReason | null;
+					version: number;
+					applied: number;
+				}>(
+					"SELECT assistant AS id,run,state,reason,version,applied>=version AS applied FROM host_projections ORDER BY rowid DESC LIMIT ?",
+					PROJECTION_LIMITS.assistants,
+				)
+				.toArray()
+				.map((row) => ({ ...row, applied: row.applied === 1 })),
+			health: {
+				projectionLag: Number(
+					sql
+						.exec(
+							"SELECT count(*) AS n FROM host_projections WHERE applied<version",
+						)
+						.one().n,
+				),
+				safetyStopped:
+					sql.exec("SELECT id FROM host_safety LIMIT 1").toArray().length > 0,
+			},
+		};
+		return { version: 1, cursor: head, snapshot, events: [], more: false };
+	}
+
+	private failCandidateMember(command: CommandV2, reason: ProjectionReason) {
 		if (command.kind !== "prompt" && command.kind !== "follow_up") return;
 		this.storage.sql.exec(
 			"UPDATE host_members SET state='failed' WHERE assistant=? AND state='pending'",
 			command.assistantMessageId,
 		);
 		this.storage.sql.exec(
-			"INSERT OR IGNORE INTO host_projections SELECT assistant,run,'failed',1 FROM host_members WHERE assistant=? AND state='failed'",
+			"INSERT OR IGNORE INTO host_projections(assistant,run,state,version,reason,answer,applied) SELECT assistant,run,'failed',1,?,NULL,0 FROM host_members WHERE assistant=? AND state='failed'",
+			reason,
 			command.assistantMessageId,
 		);
+		this.queueProjection();
 		this.storage.sql.exec(
 			"UPDATE host_commands SET state='settled' WHERE id=?",
 			command.commandId,
@@ -4081,8 +4375,10 @@ export class PiDurableHost {
 							);
 							targetRecord = this.productRecord(ownedTarget.commandId)!;
 						}
+						// A retained expiry still owes its product reconciliation.
 						const tooLate =
 							targetRecord.decision?.decision === "started" ||
+							targetRecord.decision?.decision === "expired" ||
 							targetRecord.disposition === "submitted" ||
 							targetRecord.disposition === "done";
 						if (!tooLate && targetRecord.disposition === null)
@@ -4179,7 +4475,18 @@ export class PiDurableHost {
 		this.transition("account", () => {
 			this.storeProduct(record.command, record.run, prepared, record.envelope);
 			if (!["submitted", "done"].includes(disposition))
-				this.failCandidateMember(record.command);
+				this.failCandidateMember(
+					record.command,
+					disposition === "canceled"
+						? "command_canceled"
+						: disposition === "expired"
+							? "command_expired"
+							: disposition === "stopped"
+								? "run_stopped"
+								: disposition === "target_run_terminal"
+									? "target_run_terminal"
+									: "command_failed",
+				);
 			if (
 				record.command.kind === "prompt" &&
 				["canceled", "expired"].includes(disposition)
@@ -4298,7 +4605,10 @@ export class PiDurableHost {
 				}
 				if (record.disposition !== null) continue;
 				const run = this.run(record.run);
+				// A retained expiry must still reach the product, or its assistant
+				// never gains the membership that settles it.
 				if (
+					record.decision?.decision !== "expired" &&
 					["complete", "failed", "canceled", "stopping"].includes(run.state)
 				) {
 					await this.disposeCandidate(
@@ -4339,7 +4649,7 @@ export class PiDurableHost {
 								prepared,
 								record.envelope,
 							);
-							this.failCandidateMember(record.command);
+							this.failCandidateMember(record.command, "command_expired");
 						});
 						this.rememberProduct(record.command, prepared);
 						await this.durable(context);
@@ -4443,7 +4753,7 @@ export class PiDurableHost {
 										expiry,
 										record.envelope,
 									);
-									this.failCandidateMember(record.command);
+									this.failCandidateMember(record.command, "command_expired");
 								});
 								this.rememberProduct(record.command, expiry);
 								await this.durable(context);
@@ -4694,7 +5004,7 @@ export class PiDurableHost {
 				);
 				committedProduct = late ? latePrepared : productPrepared;
 				this.storeProduct(product, member.run, committedProduct);
-				if (late) this.failCandidateMember(product);
+				if (late) this.failCandidateMember(product, "target_run_terminal");
 			}
 			this.storage.sql.exec(
 				"INSERT OR IGNORE INTO host_wakeups VALUES (?, ?)",
@@ -5503,6 +5813,10 @@ export class PiDurableHost {
 			);
 			await this.durable();
 		}
+		// Committed decisions settle in the product even when this host is
+		// fenced. A delivery failure keeps its intents and wakeup and never fails
+		// the alarm, which the platform would otherwise retry outside the host.
+		await this.deliverProjections().catch(() => undefined);
 		if (this.dependencies.candidate?.ordinaryAllowed?.() === false) return;
 		if (
 			this.sealed ||
@@ -5643,6 +5957,7 @@ export class PiDurableHost {
 		}
 	}
 	async awaitClosure() {
+		await this.delivery?.catch(() => undefined);
 		if (!this.closing) return false;
 		await this.closing;
 		return true;

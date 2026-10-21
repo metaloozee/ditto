@@ -14,6 +14,10 @@ import type {
 	QueueDecisionV2,
 } from "../../../packages/runtime-contracts/src/product-command.js";
 import { parseCommandV2 } from "../../../packages/runtime-contracts/src/product-command.js";
+import type {
+	ProjectionIntentV1,
+	RuntimeObservationV1,
+} from "../../../packages/runtime-contracts/src/projection.js";
 import {
 	type HostFault,
 	type LocalAuthority,
@@ -60,6 +64,10 @@ export interface CandidatePrivateProduct extends PrivateModelTransport {
 		ownerVersion: number,
 	): Promise<ModelSubjectV1 | null>;
 	reconcileCandidateDecision(decision: QueueDecisionV2): Promise<boolean>;
+	applyCandidateProjections(
+		scope: CandidateRuntimeScope,
+		intents: ProjectionIntentV1[],
+	): Promise<unknown>;
 	readCandidateConfigurationAuthority(
 		commandId: string,
 		input: unknown,
@@ -157,6 +165,8 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 				ordinaryAllowed: () => this.ordinaryAllowed(),
 				reconcileDecision: (decision) =>
 					product.reconcileCandidateDecision(decision),
+				applyProjections: (intents) =>
+					product.applyCandidateProjections(scope, intents),
 				configuration: async (commandId) => {
 					const subject = await product.readCandidateSubject(
 						commandId,
@@ -258,6 +268,38 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 			ownerVersion: subject.runtimeOwnerVersion,
 		});
 		return host.candidateTargetStatus(runId);
+	}
+	/** Observation checks owner authority, then reads committed tables without opening Pi. */
+	async observe(
+		subject: ModelSubjectV1,
+		cursor?: number,
+	): Promise<RuntimeObservationV1> {
+		if (this.env.CANDIDATE_DISPOSABLE !== "008-synthetic")
+			throw new Error("Candidate composition unavailable");
+		const scope = parseCandidateRuntimeScope({
+			version: 2,
+			userId: subject.userId,
+			projectId: subject.projectId,
+			workspaceSessionId: subject.workspaceSessionId,
+			ownerVersion: subject.runtimeOwnerVersion,
+		});
+		if (
+			!this.ctx.id.equals(
+				this.env.CandidateSessions.idFromName(scope.workspaceSessionId),
+			)
+		)
+			throw new Error("Candidate namespace mismatch");
+		const retained =
+			await this.ctx.storage.get<CandidateRuntimeScope>("candidate-scope-v2");
+		if (
+			retained &&
+			JSON.stringify(parseCandidateRuntimeScope(retained)) !==
+				JSON.stringify(scope)
+		)
+			throw new Error("Candidate owner mismatch");
+		if (!(await this.env.CandidateProduct.readRuntimeAuthority(scope)).current)
+			throw new Error("Candidate authority denied");
+		return PiDurableHost.observe(this.ctx.storage, cursor);
 	}
 	protected async alarmHost() {
 		const retained =

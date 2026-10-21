@@ -3,5 +3,6 @@ export * from "./configuration.js";
 export * from "./limits.js";
 export * from "./model.js";
 export * from "./product-command.js";
+export * from "./projection.js";
 export * from "./runtime.js";
 export * from "./tool-execution.js";

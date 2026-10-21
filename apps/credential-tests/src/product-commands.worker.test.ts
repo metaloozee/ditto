@@ -70,6 +70,7 @@ async function candidateCredential() {
 }
 let modelCalls = 0;
 let trapInstalled = false;
+let replyText = "Synthetic product result";
 function modelReplies() {
 	if (!trapInstalled) {
 		trapInstalled = true;
@@ -82,7 +83,7 @@ function modelReplies() {
 					statusCode: 200,
 					data:
 						[
-							{ version: 1, type: "delta", text: "Synthetic product result" },
+							{ version: 1, type: "delta", text: replyText },
 							{
 								version: 1,
 								type: "done",
@@ -144,6 +145,8 @@ async function counts() {
 }
 beforeEach(async ({ task }) => {
 	modelCalls = 0;
+	replyText = "Synthetic product result";
+	await env.CandidateProduct.setProjectionFault(undefined);
 	terminal = false;
 	fetchMock.activate();
 	fetchMock.disableNetConnect();
@@ -2098,5 +2101,236 @@ it("an unclosed successor needs its own reset proof and cannot reuse the older w
 			await state.storage.deleteAlarm();
 			await state.storage.sync();
 		});
+	}
+});
+
+const SENTINEL = "sk-synthetic0projection0sentinel0value";
+async function message(id: string | undefined) {
+	return env.DB.prepare("SELECT status,content FROM messages WHERE id=?")
+		.bind(id ?? "")
+		.first<{ status: string; content: string }>();
+}
+
+it("settles a completed assistant in D1 from a durable projection with redacted content and owned observation", async () => {
+	await candidateCredential();
+	const calls = modelReplies();
+	replyText = `Synthetic answer ${SENTINEL} done`;
+	const receipt = await env.CandidateProduct.admitOwned("owner", prompt);
+	const runtime = env.CandidateSessions.getByName(receipt.workspaceSessionId);
+	try {
+		await env.CandidateProduct.drain();
+		await expect
+			.poll(async () => (await message(receipt.assistantMessageId))?.status, {
+				timeout: 5000,
+			})
+			.toBe("complete");
+		const settled = await message(receipt.assistantMessageId);
+		expect(settled?.content).toBe("Synthetic answer [REDACTED] done");
+		expect(JSON.stringify(settled)).not.toContain(SENTINEL);
+		expect(calls()).toBe(1);
+		expect((await runtime.candidateSnapshot()).projections).toMatchObject([
+			{ assistant: receipt.assistantMessageId, state: "complete", applied: 1 },
+		]);
+		await runtime.retireFixture();
+		const before = await runtime.fixtureWakeState();
+		const observed = await env.CandidateProduct.observeOwned(
+			"owner",
+			"project",
+			receipt.workspaceSessionId,
+		);
+		expect(observed.snapshot).toMatchObject({
+			runs: [{ id: receipt.commandId, state: "complete" }],
+			assistants: [
+				{
+					id: receipt.assistantMessageId,
+					state: "complete",
+					reason: null,
+					applied: true,
+				},
+			],
+			health: { projectionLag: 0, safetyStopped: false },
+		});
+		expect(JSON.stringify(observed)).not.toContain(SENTINEL);
+		expect(JSON.stringify(observed)).not.toContain(prompt.text);
+		const events = await env.CandidateProduct.observeOwned(
+			"owner",
+			"project",
+			receipt.workspaceSessionId,
+			0,
+		);
+		expect(events.snapshot).toBeUndefined();
+		expect(events.cursor).toBe(observed.cursor);
+		expect(
+			events.events.map((event) => [event.kind, event.state]),
+		).toContainEqual(["assistant", "complete"]);
+		const positions = events.events.map((event) => event.position);
+		expect(positions).toEqual([...positions].sort((a, b) => a - b));
+		// A cursor ahead of committed history gets a replacement snapshot.
+		expect(
+			(
+				await env.CandidateProduct.observeOwned(
+					"owner",
+					"project",
+					receipt.workspaceSessionId,
+					observed.cursor + 10,
+				)
+			).snapshot,
+		).toBeDefined();
+		expect(await runtime.fixtureWakeState()).toEqual(before);
+		expect(before.open).toBe(false);
+		expect(calls()).toBe(1);
+		await expect(
+			commands().observe("intruder", "project", receipt.workspaceSessionId),
+		).rejects.toMatchObject({ code: "runtime_owner_mismatch" });
+	} finally {
+		await runtime.retireFixture();
+	}
+});
+
+it("retries failed, short and lost projection acknowledgments without rerunning the command", async () => {
+	await candidateCredential();
+	const calls = modelReplies();
+	await env.CandidateProduct.setProjectionFault("throw");
+	const receipt = await env.CandidateProduct.admitOwned("owner", prompt);
+	const runtime = env.CandidateSessions.getByName(receipt.workspaceSessionId);
+	const applied = async () =>
+		(await runtime.candidateSnapshot()).projections.map((row) => row.applied);
+	try {
+		await env.CandidateProduct.drain();
+		await expect
+			.poll(async () => (await runtime.candidateSnapshot()).projections, {
+				timeout: 5000,
+			})
+			.toHaveLength(1);
+		await expect
+			.poll(() => env.CandidateProduct.setProjectionFault("throw"), {
+				timeout: 5000,
+			})
+			.toBeGreaterThan(0);
+		expect((await message(receipt.assistantMessageId))?.status).toBe("pending");
+		expect(await applied()).toEqual([0]);
+		await expect
+			.poll(async () => (await runtime.fixtureWakeState()).alarm, {
+				timeout: 5000,
+			})
+			.not.toBeNull();
+		await env.CandidateProduct.setProjectionFault("short");
+		await runtime.forceProjectionDelivery();
+		expect((await message(receipt.assistantMessageId))?.status).toBe(
+			"complete",
+		);
+		expect(await applied()).toEqual([0]);
+		await env.CandidateProduct.setProjectionFault("lose-ack");
+		await runtime.forceProjectionDelivery();
+		expect(await applied()).toEqual([0]);
+		await env.CandidateProduct.setProjectionFault(undefined);
+		await runtime.forceProjectionDelivery();
+		expect(await applied()).toEqual([1]);
+		expect(await env.CandidateProduct.setProjectionFault(undefined)).toBe(1);
+		const observed = await env.CandidateProduct.observeOwned(
+			"owner",
+			"project",
+			receipt.workspaceSessionId,
+		);
+		expect(observed.snapshot?.health.projectionLag).toBe(0);
+		expect((await message(receipt.assistantMessageId))?.content).toBe(
+			"Synthetic product result",
+		);
+		expect(calls()).toBe(1);
+		expect((await runtime.candidateSnapshot()).submissions).toHaveLength(1);
+	} finally {
+		await runtime.retireFixture();
+	}
+});
+
+it("settles late follow-ups as failed while the completed assistant stays complete, and never recreates a deleted target", async () => {
+	await candidateCredential();
+	const calls = modelReplies();
+	const first = await env.CandidateProduct.admitOwned("owner", prompt);
+	const late = async (key: string) =>
+		env.CandidateProduct.admitOwned("owner", {
+			version: 2,
+			kind: "follow_up",
+			projectId: "project",
+			sessionId: first.workspaceSessionId,
+			targetRunId: first.commandId,
+			idempotencyKey: key,
+			text: `Synthetic delayed ${key}`,
+		});
+	const second = await late("late");
+	const third = await late("deleted");
+	const runtime = env.CandidateSessions.getByName(first.workspaceSessionId);
+	try {
+		await runtime.deliverCommand(first.commandId, 1);
+		await expect
+			.poll(async () => (await message(first.assistantMessageId))?.status, {
+				timeout: 5000,
+			})
+			.toBe("complete");
+		await env.CandidateProduct.setProjectionFault("throw");
+		await runtime.deliverCommand(second.commandId, 1);
+		await runtime.deliverCommand(third.commandId, 1);
+		expect((await runtime.candidateSnapshot()).projections).toMatchObject([
+			{ assistant: first.assistantMessageId, state: "complete", applied: 1 },
+			{
+				assistant: second.assistantMessageId,
+				state: "failed",
+				reason: "target_run_terminal",
+				applied: 0,
+			},
+			{
+				assistant: third.assistantMessageId,
+				state: "failed",
+				reason: "target_run_terminal",
+				applied: 0,
+			},
+		]);
+		await env.DB.prepare("DELETE FROM messages WHERE id=?")
+			.bind(third.assistantMessageId)
+			.run();
+		await env.CandidateProduct.setProjectionFault(undefined);
+		await runtime.forceProjectionDelivery();
+		await expect
+			.poll(
+				async () =>
+					(await runtime.candidateSnapshot()).projections.map(
+						(row) => row.applied,
+					),
+				{ timeout: 10000 },
+			)
+			.toEqual([1, 1, 1]);
+		expect((await message(second.assistantMessageId))?.status).toBe("failed");
+		expect((await message(first.assistantMessageId))?.status).toBe("complete");
+		expect(await message(third.assistantMessageId)).toBeNull();
+		expect(calls()).toBe(1);
+	} finally {
+		await runtime.retireFixture();
+	}
+});
+
+it("never stores an unterminated private key block from a settled answer", async () => {
+	await candidateCredential();
+	modelReplies();
+	replyText =
+		"Synthetic partial -----BEGIN PRIVATE KEY-----\nsynthetic0material0only";
+	const receipt = await env.CandidateProduct.admitOwned("owner", prompt);
+	const runtime = env.CandidateSessions.getByName(receipt.workspaceSessionId);
+	try {
+		await env.CandidateProduct.drain();
+		await expect
+			.poll(async () => (await message(receipt.assistantMessageId))?.status, {
+				timeout: 5000,
+			})
+			.toBe("complete");
+		expect((await message(receipt.assistantMessageId))?.content).toBe(
+			"Synthetic partial [REDACTED]",
+		);
+		await expect
+			.poll(async () => (await runtime.candidateSnapshot()).projections, {
+				timeout: 5000,
+			})
+			.toMatchObject([{ state: "complete", applied: 1 }]);
+	} finally {
+		await runtime.retireFixture();
 	}
 });

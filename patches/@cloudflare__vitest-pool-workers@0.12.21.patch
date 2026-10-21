@@ -1,3 +1,42 @@
+diff --git a/dist/pool/index.mjs b/dist/pool/index.mjs
+index 87def84..b584668 100644
+--- a/dist/pool/index.mjs
++++ b/dist/pool/index.mjs
+@@ -6705,6 +6705,7 @@ async function waitForStorageReset(mf) {
+ var BLOBS_DIR_NAME = "blobs";
+ var STACK_DIR_NAME = "__vitest_pool_workers_stack";
+ async function pushStackedStorage(intoDepth, persistPath) {
++  await waitForClosedSqlite(persistPath);
+   const stackFramePath = path4.join(
+     persistPath,
+     STACK_DIR_NAME,
+@@ -6734,7 +6735,26 @@ async function pushStackedStorage(intoDepth, persistPath) {
+     }
+   }
+ }
++async function waitForClosedSqlite(persistPath) {
++  for (let attempt = 0; attempt < 50; attempt++) {
++    let open = false;
++    let keys;
++    try {
++      keys = await fs.readdir(persistPath, { withFileTypes: true });
++    } catch {
++      return;
++    }
++    for (const key of keys) {
++      if (key.name === STACK_DIR_NAME || !key.isDirectory()) continue;
++      const names = await fs.readdir(path4.join(persistPath, key.name));
++      if (names.some((name) => name.endsWith(".sqlite-shm") || name.endsWith(".sqlite-wal"))) open = true;
++    }
++    if (!open) return;
++    await new Promise((resolve) => setTimeout(resolve, 100));
++  }
++}
+ async function popStackedStorage(fromDepth, persistPath) {
++  await waitForClosedSqlite(persistPath);
+   for (const key of await fs.readdir(persistPath, { withFileTypes: true })) {
+     if (key.name === STACK_DIR_NAME) {
+       continue;
 diff --git a/dist/worker/lib/cloudflare/test-internal.mjs b/dist/worker/lib/cloudflare/test-internal.mjs
 index f5fde62..3b4bcc9 100644
 --- a/dist/worker/lib/cloudflare/test-internal.mjs
