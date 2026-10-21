@@ -74,7 +74,7 @@ Historical 001 disposition before the approved directory exclusions, after suppo
 | [014](014-git-preview-and-checkpoint-quiescence.md) | Git serialization and preview quiescence | L4 | 013 | DONE |
 | [015](015-capacity-and-project-value-policy.md) | Complete capacity and execution-only values | L5 | 014, complete L4 | DONE |
 | [016](016-archive-continue-and-deletion.md) | Archive/new lineage and revocation-first deletion | L5 | 015 | DONE |
-| [017](017-retention-and-clean-start-rehearsal.md) | Retention and disposable ownership transition | L5 | 016 | READY |
+| [017](017-retention-and-clean-start-rehearsal.md) | Retention and disposable ownership transition | L5 | 016 | DONE |
 | [018](018-product-controls-and-reconnect.md) | Product controls without UI-test expansion | L5 | 017, focused UI placement/copy approval | BLOCKED |
 | [019](019-local-acceptance-and-implementation-retirement.md) | Real-auth smoke, acceptance, CI and source retirement | L6 | 018, complete L5 | BLOCKED |
 | [020](020-approved-provider-and-hosted-validation.md) | Separately approved provider and hosted evidence | External | Provider: 006/007 and safety gates. Hosted: 019. Separate operational approval | BLOCKED |

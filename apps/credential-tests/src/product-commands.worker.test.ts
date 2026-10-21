@@ -3953,3 +3953,154 @@ it("deletion revokes authority in its first batch, keeps fences through retried 
 		await runtime.retireFixture().catch(() => undefined);
 	}
 });
+
+it("clean-start rehearsal fences old authority and accounts for its executor before a new owner acts, with no import, old submission or second owner", async () => {
+	await candidateCredential();
+	modelReplies();
+	const first = await env.CandidateProduct.admitOwned("owner", prompt);
+	const oldSession = first.workspaceSessionId;
+	const runtime = env.CandidateSessions.getByName(oldSession);
+	const fresh = { ...prompt, projectId: "project-2", idempotencyKey: "fresh" };
+	let createdSession: string | undefined;
+	try {
+		await env.CandidateProduct.drain();
+		await expect
+			.poll(async () => (await message(first.assistantMessageId))?.status, {
+				timeout: 5000,
+			})
+			.toBe("complete");
+		// Old state: an undelivered command and an executor that ignores teardown.
+		const queued = await commands().admit("owner", {
+			...prompt,
+			idempotencyKey: "queued",
+			sessionId: oldSession,
+		});
+		await env.CandidateProduct.setExecutorFixture({ terminates: false });
+		await env.DB.prepare(
+			"INSERT INTO projects(id,name,userId,status) VALUES('project-2','Synthetic clean start','owner','ready')",
+		).run();
+		// The rehearsal runs twice; the second pass changes nothing.
+		for (const pass of [1, 2]) {
+			expect(
+				await env.CandidateProduct.deleteProjectOwned("owner", "project"),
+			).toEqual({ status: "deleting" });
+			await env.DB.prepare("UPDATE runtime_cleanup_jobs SET retryAt=0").run();
+			expect(await env.CandidateProduct.runCandidateCleanup()).toEqual({
+				ran: 1,
+				failed: 1,
+			});
+			// Without termination evidence the old executor stays accounted.
+			expect(await executorClaims()).toMatchObject([{ state: "live" }]);
+			expect(
+				(
+					await env.DB.prepare(
+						"SELECT status FROM projects WHERE id='project'",
+					).first()
+				)?.status,
+			).toBe("deleting");
+			// No new owner starts while the old one is unaccounted.
+			await expect(commands().admit("owner", fresh)).rejects.toMatchObject({
+				code: "fixture_capacity_exhausted",
+			});
+			await expect(
+				commands().admit("owner", {
+					...prompt,
+					idempotencyKey: `late-${pass}`,
+					sessionId: oldSession,
+				}),
+			).rejects.toMatchObject({ code: "runtime_owner_mismatch" });
+			expect(await work(queued.commandId)).toMatchObject({
+				deliveryState: "failed",
+			});
+			expect(
+				(
+					await env.CandidateProduct.readRuntimeAuthority({
+						version: 2,
+						userId: "owner",
+						projectId: "project",
+						workspaceSessionId: oldSession,
+						ownerVersion: 1,
+					})
+				).current,
+			).toBe(false);
+		}
+		// Termination evidence completes cleanup and releases the old executor.
+		await env.CandidateProduct.setExecutorFixture({ terminates: true });
+		await env.DB.prepare("UPDATE runtime_cleanup_jobs SET retryAt=0").run();
+		expect(await env.CandidateProduct.runCandidateCleanup()).toEqual({
+			ran: 1,
+			failed: 0,
+		});
+		expect(await executorClaims()).toMatchObject([{ state: "released" }]);
+		// The new owner starts clean; a repeated request is the same owner.
+		const created = await commands().admit("owner", fresh);
+		createdSession = created.workspaceSessionId;
+		expect(await commands().admit("owner", fresh)).toEqual(created);
+		expect(created.workspaceSessionId).not.toBe(oldSession);
+		expect(
+			await env.DB.prepare(
+				"SELECT s.projectId,c.commandSeq,c.kind FROM session_commands c JOIN workspace_sessions s ON s.id=c.sessionId",
+			)
+				.all()
+				.then((rows) => rows.results),
+		).toEqual([{ projectId: "project-2", commandSeq: 1, kind: "prompt" }]);
+		expect(
+			await env.DB.prepare(
+				"SELECT count(*) AS n FROM workspace_runtime_work WHERE sessionId=?",
+			)
+				.bind(oldSession)
+				.first(),
+		).toEqual({ n: 0 });
+		// The old executor identity stays retired, so it can never act again.
+		expect(
+			await env.DB.prepare(
+				"SELECT count(*) AS n FROM runtime_retired_identity_fences",
+			).first(),
+		).toEqual({ n: 1 });
+		// The old target's fences outlive its content.
+		expect(
+			await env.DB.prepare(
+				"SELECT targetKind,targetId FROM runtime_deleted_target_fences ORDER BY targetKind",
+			)
+				.all()
+				.then((rows) => rows.results),
+		).toEqual([
+			{ targetKind: "project", targetId: "project" },
+			{ targetKind: "workspace_session", targetId: oldSession },
+		]);
+		await env.CandidateProduct.drain();
+		await expect
+			.poll(async () => (await message(created.assistantMessageId))?.status, {
+				timeout: 5000,
+			})
+			.toBe("complete");
+		expect(
+			await runInDurableObject(
+				runtime,
+				async (_instance, state) =>
+					state.storage.sql
+						.exec(
+							"SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name LIKE 'host_%'",
+						)
+						.one().n,
+			),
+		).toBe(0);
+		expect(
+			await runInDurableObject(
+				env.CandidateSessions.getByName(created.workspaceSessionId),
+				async (_instance, state) =>
+					state.storage.sql
+						.exec<{ id: string }>("SELECT id FROM host_product_commands")
+						.toArray()
+						.map((row) => row.id),
+			),
+		).toEqual([created.commandId]);
+	} finally {
+		await env.CandidateProduct.setExecutorFixture({ terminates: true });
+		await runtime.retireFixture().catch(() => undefined);
+		if (createdSession)
+			await env.CandidateSessions.getByName(createdSession)
+				.retireFixture()
+				.catch(() => undefined);
+	}
+});

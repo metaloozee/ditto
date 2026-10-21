@@ -41,6 +41,7 @@ import {
 	sha256,
 	streamOf,
 } from "./pi-durable-recovery.fixture.ts";
+import type { RetentionFault } from "./pi-durable-retention.ts";
 import {
 	createWorkspaceController,
 	type WorkspaceController,
@@ -334,6 +335,11 @@ export async function fixture(
 			fault?: (point: WorkspaceFault) => void | Promise<void>;
 		};
 		workspace: ReturnType<typeof fakeWorkspace>;
+		/** Retention's composed store and fault; read at each host open. */
+		retentionOptions: {
+			unavailable?: boolean;
+			fault?: (point: RetentionFault) => void | Promise<void>;
+		};
 		/** The controller of the latest host open. */
 		controller(): WorkspaceController;
 		/** Product application of terminal assistants, keyed by assistant. */
@@ -379,6 +385,10 @@ export async function fixture(
 				enabled?: boolean;
 				deferralMs?: number;
 				fault?: (point: WorkspaceFault) => void | Promise<void>;
+			} = {};
+			const retentionOptions: {
+				unavailable?: boolean;
+				fault?: (point: RetentionFault) => void | Promise<void>;
 			} = {};
 			let controller: WorkspaceController | undefined;
 			const hostFault: { at?: (point: HostFault) => void } = {};
@@ -446,6 +456,10 @@ export async function fixture(
 						});
 						return controller;
 					},
+					get store() {
+						return retentionOptions.unavailable ? undefined : store.store;
+					},
+					retentionFault: (point) => retentionOptions.fault?.(point),
 				},
 				candidate: {
 					userId: "owner",
@@ -544,6 +558,7 @@ export async function fixture(
 					restoreOptions,
 					workspaceOptions,
 					workspace,
+					retentionOptions,
 					controller: () => {
 						if (!controller) throw new Error("Workspace not composed");
 						return controller;

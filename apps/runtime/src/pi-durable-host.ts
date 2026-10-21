@@ -89,7 +89,7 @@ import {
 	sealHostField,
 	UNBOUND_SELECTION,
 } from "./host-private.ts";
-import { RecoveryDenied } from "./pi-durable-artifacts.ts";
+import { type ArtifactStore, RecoveryDenied } from "./pi-durable-artifacts.ts";
 import {
 	type CheckpointHostPort,
 	type CheckpointRestorer,
@@ -102,6 +102,11 @@ import {
 } from "./pi-durable-checkpoints.ts";
 import { cooperativeFixture } from "./pi-durable-cooperative-fixture.ts";
 import { fixtureDatabase } from "./pi-durable-local.ts";
+import {
+	createRetention,
+	type RetentionFault,
+	TRANSIENT_RETENTION_MS,
+} from "./pi-durable-retention.ts";
 import {
 	ADAPTER_COMPAT,
 	ENGINE_COMPAT,
@@ -439,6 +444,10 @@ export type HostFixtureDependencies = {
 		completeArchive?(completion: ArchiveCompletionV1): Promise<unknown>;
 		/** UI Git, preview and backup scheduling under the same mutation ownership. */
 		workspace?(port: WorkspaceHostPort): WorkspaceController | undefined;
+		/** Where retired pairs' own objects are deleted; without it they stay. */
+		store?: ArtifactStore;
+		/** Test seam for retention handoffs. */
+		retentionFault?(point: RetentionFault): void | Promise<void>;
 	};
 	candidate?: {
 		origin?: string;
@@ -470,6 +479,7 @@ export class PiDurableHost {
 	private options!: HarnessOptions;
 	private customBindings = new WeakMap<AbortSignal, PreparedSummary>();
 	private piRecords!: Storage;
+	private retention: ReturnType<typeof createRetention> | undefined;
 	private denied = false;
 	private sealed = false;
 	private closing: Promise<void> | undefined;
@@ -717,6 +727,15 @@ export class PiDurableHost {
 		try {
 			host.piRecords = dependencies.piStorage?.(piStorage) ?? piStorage;
 			if (dependencies.retained) await host.revealPrivate();
+			if (dependencies.checkpoints && piStorage instanceof EncryptedPiStorage) {
+				host.retention = createRetention({
+					storage,
+					writes: piStorage,
+					store: dependencies.checkpoints.store,
+					now: dependencies.now,
+					fault: dependencies.checkpoints.retentionFault,
+				});
+			}
 		} catch (error) {
 			await piStorage.close(BACKGROUND_CONTEXT);
 			throw error;
@@ -6970,6 +6989,63 @@ export class PiDurableHost {
 		await this.repairWakeup();
 	}
 
+	/**
+	 * One bounded retention pass on its own durable wakeup. An archived
+	 * session keeps everything, and an unfinished restore runs first.
+	 */
+	private async advanceRetention() {
+		const retention = this.retention;
+		if (!retention || this.sealed || this.storageBarrier) return;
+		const now = this.dependencies.now();
+		const due = this.read(
+			() =>
+				this.storage.sql
+					.exec<{ deadline: number }>(
+						"SELECT deadline FROM host_wakeups WHERE id = 'retention'",
+					)
+					.toArray()[0],
+		);
+		let next: number | null;
+		// A past-due wakeup that cannot run moves on, or the alarm would spin.
+		if (this.archiveRow()) next = null;
+		else if (this.denied) {
+			if (!due || due.deadline > now) return;
+			next = now + TRANSIENT_RETENTION_MS;
+		} else if (this.restoreRow()) {
+			if (!due || due.deadline > now) return;
+			next = now + PROJECTION_RETRY_MS;
+		} else if (!due) {
+			// The first pass marks; collection needs another full period.
+			const pairs = this.read(
+				() =>
+					this.storage.sql
+						.exec("SELECT 1 FROM checkpoint_manifests LIMIT 1")
+						.toArray().length,
+			);
+			if (!pairs) return;
+			next = now + TRANSIENT_RETENTION_MS;
+		} else if (due.deadline > now) return;
+		else
+			try {
+				// Nothing waiting ends the wakeup; the next alarm with pairs rearms it.
+				next = (await retention.step()).next;
+			} catch (error) {
+				if (this.sealed || this.storageBarrier) throw error;
+				next = now + PROJECTION_RETRY_MS;
+			}
+		if (next === null && !due) return;
+		this.transition("account", () => {
+			this.storage.sql.exec("DELETE FROM host_wakeups WHERE id = 'retention'");
+			if (next !== null)
+				this.storage.sql.exec(
+					"INSERT INTO host_wakeups VALUES ('retention', ?)",
+					next,
+				);
+		});
+		await this.durable();
+		await this.repairWakeup();
+	}
+
 	/** A UI workspace action under the runtime owner; never a second mutation route. */
 	async workspaceAction(value: unknown): Promise<WorkspaceActionResultV1> {
 		const action = parseWorkspaceActionV1(value);
@@ -7129,6 +7205,7 @@ export class PiDurableHost {
 		await this.advanceRestore();
 		await this.advanceArchive();
 		await this.advanceWorkspace();
+		await this.advanceRetention();
 		if (!this.ordinaryAllowed()) return;
 		if (
 			this.sealed ||

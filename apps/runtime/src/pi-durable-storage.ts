@@ -2444,42 +2444,91 @@ export class EncryptedPiStorage implements Storage {
 	enumerateCommittedReferences(): Promise<
 		readonly Omit<RuntimeChunkManifestV1, "chunks">[]
 	> {
+		return this.admit(async () => [...this.committedSplits().values()]);
+	}
+
+	/**
+	 * Writes whose chunks no committed record references: failed
+	 * preparations and superseded bodies. Nothing is deleted.
+	 */
+	unreferencedWrites(limit: number): Promise<string[]> {
 		return this.admit(async () => {
-			const references = new Map<
-				string,
-				Omit<RuntimeChunkManifestV1, "chunks">
-			>();
-			for (const [table, column] of [
-				["conversations", "record"],
-				["entries", "record"],
-				["tasks", "record"],
-				["submissions", "record"],
-				["documents", "record"],
-				["document_revisions", "content"],
-				["durable_metadata", "counter_record"],
-			]) {
-				for (const row of direct(this.storage).all(
-					`SELECT ${column} AS body FROM ${table}`,
-				)) {
-					const value: unknown = JSON.parse(text(row, "body"));
-					if (
-						typeof value === "object" &&
-						value !== null &&
-						"kind" in value &&
-						value.kind === "split" &&
-						"manifest" in value
-					) {
-						const manifest = value.manifest as Omit<
-							RuntimeChunkManifestV1,
-							"chunks"
-						>;
-						this.readSplit(value, manifest.recordId);
-						references.set(manifest.writeId, manifest);
-					}
+			const committed = this.committedSplits();
+			const writes: string[] = [];
+			for (const row of direct(this.storage).all(
+				"SELECT DISTINCT write_id FROM private_chunks ORDER BY write_id",
+			)) {
+				const writeId = text(row, "write_id");
+				if (committed.has(writeId)) continue;
+				writes.push(writeId);
+				if (writes.length >= limit) break;
+			}
+			return writes;
+		});
+	}
+
+	/**
+	 * Deletes the chunks of writes that are still unreferenced and not
+	 * pinned. References are reread inside the admission lane, so a commit
+	 * cannot interleave between the check and the delete.
+	 */
+	collectWrites(
+		writeIds: readonly string[],
+		pinned: ReadonlySet<string>,
+	): Promise<string[]> {
+		return this.admit(async () => {
+			const committed = this.committedSplits();
+			const collected = writeIds.filter(
+				(writeId) => !committed.has(writeId) && !pinned.has(writeId),
+			);
+			if (!collected.length) return [];
+			this.storage.transactionSync(() => {
+				for (const writeId of collected)
+					this.storage.sql.exec(
+						"DELETE FROM private_chunks WHERE write_id = ?",
+						writeId,
+					);
+			});
+			this.verifiedIndex = this.indexToken();
+			return collected;
+		});
+	}
+
+	private committedSplits() {
+		const references = new Map<
+			string,
+			Omit<RuntimeChunkManifestV1, "chunks">
+		>();
+		for (const [table, column] of [
+			["conversations", "record"],
+			["entries", "record"],
+			["tasks", "record"],
+			["submissions", "record"],
+			["documents", "record"],
+			["document_revisions", "content"],
+			["durable_metadata", "counter_record"],
+		]) {
+			for (const row of direct(this.storage).all(
+				`SELECT ${column} AS body FROM ${table}`,
+			)) {
+				const value: unknown = JSON.parse(text(row, "body"));
+				if (
+					typeof value === "object" &&
+					value !== null &&
+					"kind" in value &&
+					value.kind === "split" &&
+					"manifest" in value
+				) {
+					const manifest = value.manifest as Omit<
+						RuntimeChunkManifestV1,
+						"chunks"
+					>;
+					this.readSplit(value, manifest.recordId);
+					references.set(manifest.writeId, manifest);
 				}
 			}
-			return [...references.values()];
-		});
+		}
+		return references;
 	}
 
 	private aad(recordId: string) {

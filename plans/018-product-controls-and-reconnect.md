@@ -1,6 +1,6 @@
 # 018: Connect product controls to the durable interface
 
-Status: BLOCKED on 017 and a focused layout/copy decision before UI edits. Base: `bcce03e`. Phase: L5 product completion.
+Status: BLOCKED on a focused layout/copy decision before UI edits. Was: BLOCKED on 017 and that decision. Base: `bcce03e`. Phase: L5 product completion.
 Spec: `docs/specs/pi-durable-session-runtime.md`, decisions 3.1, 3.5, 5–6, 12, 14–15, 17–18; PD01–PD03, PD06–PD07, PD24, PD26–PD27, PD41–PD42; OD1, OD5–OD7.
 
 ## Outcome and boundaries
