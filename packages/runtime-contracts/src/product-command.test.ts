@@ -84,11 +84,61 @@ describe("candidate command version 2", () => {
 		"abandon_failed_run",
 		"retry_known_safe",
 		"acknowledge_uncertainty_and_start_new_action",
-		"restore_checkpoint_acknowledging_loss",
 		"retry_backup",
 		"restart_preview",
 	])("does not admit recovery kind %s", (kind) => {
 		expect(() => parseBrowserCommandV2({ ...prompt, kind })).toThrow();
+	});
+	it("admits an explicit restore only with acknowledged loss and a restore that directly follows its cutoff", () => {
+		const fields = {
+			committedPairId: "pair-1",
+			expectedMutationGeneration: 2,
+			expectedRecoveryPosition: 4,
+			unbackedLossAcknowledged: true,
+		};
+		const browser = {
+			version: 2,
+			kind: "restore_checkpoint_acknowledging_loss",
+			idempotencyKey: "restore",
+			projectId: "project",
+			sessionId: "session",
+			...fields,
+		};
+		expect(parseBrowserCommandV2(browser)).toEqual(browser);
+		const restore = {
+			version: 2,
+			kind: "restore_checkpoint_acknowledging_loss",
+			commandId: "restore",
+			commandSeq: 5,
+			userId: "owner",
+			projectId: "project",
+			workspaceSessionId: "session",
+			runtimeOwnerVersion: 1,
+			receiptId: "receipt",
+			acceptedAt: 100,
+			deadlineAt: 900_100,
+			payloadDigest: "ab".repeat(32),
+			...fields,
+		};
+		expect(parseCommandV2(restore)).toEqual(restore);
+		for (const bad of [
+			{ unbackedLossAcknowledged: false },
+			{ unbackedLossAcknowledged: "true" },
+			{ unbackedLossAcknowledged: undefined },
+			{ expectedMutationGeneration: 0 },
+			{ expectedRecoveryPosition: -1 },
+			{ committedPairId: "" },
+			{ text: "Synthetic prompt" },
+		]) {
+			expect(() => parseBrowserCommandV2({ ...browser, ...bad })).toThrow();
+			expect(() => parseCommandV2({ ...restore, ...bad })).toThrow();
+		}
+		expect(() =>
+			parseBrowserCommandV2({ ...browser, sessionId: undefined }),
+		).toThrow();
+		expect(() => parseCommandV2({ ...restore, commandSeq: 6 })).toThrow(
+			/directly follow/,
+		);
 	});
 	it("uses UTF-8 bytes at the host boundary, never truncating or changing V1 limits", () => {
 		for (const text of [

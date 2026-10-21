@@ -639,6 +639,7 @@ export const SESSION_COMMAND_KINDS = [
 	"stop",
 	"cancel",
 	"project_delete",
+	"restore_checkpoint_acknowledging_loss",
 ] as const;
 export const SESSION_COMMAND_TARGET_KINDS = [
 	"project",
@@ -684,7 +685,7 @@ export const sessionCommands = sqliteTable(
 		),
 		check(
 			"session_commands_kind_enum",
-			sql`${table.kind} IN ('prompt', 'follow_up', 'stop', 'cancel', 'project_delete')`,
+			sql`${table.kind} IN ('prompt', 'follow_up', 'stop', 'cancel', 'project_delete', 'restore_checkpoint_acknowledging_loss')`,
 		),
 		check(
 			"session_commands_target_kind_enum",
@@ -914,6 +915,30 @@ export const candidateCommandDecisions = sqliteTable(
 			"candidate_decision_time",
 			sql`(${table.decision}='started' AND ${table.decidedAt}<${table.queueDeadlineAt}) OR (${table.decision}='expired' AND ${table.decidedAt}>=${table.queueDeadlineAt})`,
 		),
+	],
+);
+
+/** One closed barrier per session holds ordinary admission until its exact completion. */
+export const candidateRestoreBarriers = sqliteTable(
+	"candidate_restore_barriers",
+	{
+		restoreCommandId: text("restoreCommandId").primaryKey().notNull(),
+		sessionId: text("sessionId").notNull(),
+		ownerVersion: integer("ownerVersion").notNull(),
+		pairId: text("pairId").notNull(),
+		expectedMutationGeneration: integer("expectedMutationGeneration").notNull(),
+		cutoffSeq: integer("cutoffSeq").notNull(),
+		state: text("state", { enum: ["closed", "complete", "refused"] }).notNull(),
+		restoredPairId: text("restoredPairId"),
+		fallback: integer("fallback"),
+		conversationGeneration: integer("conversationGeneration"),
+		openedAt: integer("openedAt").notNull(),
+		completedAt: integer("completedAt"),
+	},
+	(table) => [
+		uniqueIndex("candidate_restore_barriers_closed_uidx")
+			.on(table.sessionId)
+			.where(sql`${table.state}='closed'`),
 	],
 );
 

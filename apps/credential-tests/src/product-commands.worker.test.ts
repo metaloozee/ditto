@@ -28,6 +28,7 @@ import m20 from "../../web/migrations/0020_trusted_runtime_additive.sql?raw";
 import m21 from "../../web/migrations/0021_first_lilandra.sql?raw";
 import m22 from "../../web/migrations/0022_synthetic_model_transport.sql?raw";
 import m23 from "../../web/migrations/0023_candidate_product_commands.sql?raw";
+import m24 from "../../web/migrations/0024_candidate_restore_barrier.sql?raw";
 import {
 	CANDIDATE_MODEL_POLICY,
 	ModelProductAuthority,
@@ -114,6 +115,7 @@ const commands = (now: () => number = Date.now) =>
 				runId,
 				state: terminal ? "terminal" : "not_delivered",
 			}),
+			restoreAvailable: true,
 		},
 		(owner) => env.CodexCredential.getByName(owner),
 		now,
@@ -175,6 +177,7 @@ beforeEach(async ({ task }) => {
 		m21,
 		m22,
 		m23,
+		m24,
 	])
 		for (const statement of migration.split("--> statement-breakpoint"))
 			if (statement.trim())
@@ -2397,4 +2400,337 @@ it("applies checkpoint pointer moves update-only, in generation order, and ackno
 		]),
 	).resolves.toEqual([{ projectionVersion: 4, outcome: "blocked_membership" }]);
 	expect((await pointer())?.mutationGeneration).toBe(3);
+});
+
+it("restore intent closes ordinary admission at its cutoff and only the exact durable completion reopens it", async () => {
+	await candidateCredential();
+	const first = await commands().admit("owner", prompt);
+	const sessionId = first.workspaceSessionId;
+	const scope = {
+		userId: "owner",
+		projectId: "project",
+		workspaceSessionId: sessionId,
+	};
+	expect(
+		await commands().applyCheckpointProjections(scope, [
+			{
+				version: 1,
+				currentPairId: "pair-1",
+				previousPairId: null,
+				mutationGeneration: 1,
+				expectedMutationGeneration: 0,
+				projectionVersion: 1,
+			},
+		]),
+	).toEqual([{ projectionVersion: 1, outcome: "applied" }]);
+	const restore = {
+		version: 2,
+		kind: "restore_checkpoint_acknowledging_loss",
+		idempotencyKey: "restore",
+		projectId: "project",
+		sessionId,
+		committedPairId: "pair-1",
+		expectedMutationGeneration: 1,
+		expectedRecoveryPosition: 1,
+		unbackedLossAcknowledged: true,
+	};
+	const ordinary = {
+		...prompt,
+		idempotencyKey: "after",
+		sessionId,
+	};
+	const barrier = () =>
+		env.DB.prepare(
+			"SELECT restoreCommandId, pairId, cutoffSeq, state, restoredPairId, fallback, conversationGeneration FROM candidate_restore_barriers WHERE sessionId=?",
+		)
+			.bind(sessionId)
+			.all()
+			.then((rows) => rows.results);
+	// A stale acknowledgment commits nothing.
+	const before = await counts();
+	for (const stale of [
+		{ expectedRecoveryPosition: 0 },
+		{ committedPairId: "pair-0" },
+		{ expectedMutationGeneration: 2 },
+	])
+		await expect(
+			commands().admit("owner", {
+				...restore,
+				...stale,
+				idempotencyKey: `stale-${JSON.stringify(stale)}`,
+			}),
+		).rejects.toMatchObject({ code: "restore_stale" });
+	await expect(
+		commands().admit("foreign", { ...restore, idempotencyKey: "foreign" }),
+	).rejects.toThrow();
+	// A composition whose runtime cannot finish a restore never closes the barrier.
+	await expect(
+		new CandidateProductCommands(
+			env.DB,
+			{
+				readSelection: async () => null,
+				targetStatus: async () => {
+					throw new Error("unused");
+				},
+			},
+			(owner) => env.CodexCredential.getByName(owner),
+		).admit("owner", { ...restore, idempotencyKey: "unavailable" }),
+	).rejects.toMatchObject({ code: "restore_unavailable" });
+	expect(await counts()).toEqual(before);
+	expect(await barrier()).toEqual([]);
+
+	const accepted = await commands().admit("owner", restore);
+	expect(accepted).toMatchObject({ commandSeq: 2 });
+	expect(accepted.userMessageId).toBeUndefined();
+	expect(await barrier()).toEqual([
+		{
+			restoreCommandId: accepted.commandId,
+			pairId: "pair-1",
+			cutoffSeq: 1,
+			state: "closed",
+			restoredPairId: null,
+			fallback: null,
+			conversationGeneration: null,
+		},
+	]);
+	// Duplicate keys keep their original receipts; a changed payload conflicts.
+	expect(await commands().admit("owner", restore)).toEqual(accepted);
+	expect(await commands().admit("owner", prompt)).toEqual(first);
+	await expect(
+		commands().admit("owner", { ...restore, expectedRecoveryPosition: 0 }),
+	).rejects.toMatchObject({ code: "conflict" });
+	// New ordinary commands and a second restore are refused with no receipt.
+	const closed = await counts();
+	await expect(commands().admit("owner", ordinary)).rejects.toMatchObject({
+		code: "restore_in_progress",
+	});
+	await expect(
+		commands().admit("owner", {
+			...ordinary,
+			kind: "follow_up",
+			idempotencyKey: "follow",
+			targetRunId: first.commandId,
+		}),
+	).rejects.toMatchObject({ code: "restore_in_progress" });
+	await expect(
+		commands().admit("owner", {
+			...restore,
+			idempotencyKey: "again",
+			expectedRecoveryPosition: 2,
+		}),
+	).rejects.toMatchObject({ code: "restore_in_progress" });
+	expect(await counts()).toEqual(closed);
+	// Priority controls stay available and are not ordinary cutoff work.
+	const stop = await commands().admit("owner", {
+		version: 2,
+		kind: "stop",
+		idempotencyKey: "stop",
+		projectId: "project",
+		sessionId,
+		targetRunId: first.commandId,
+	});
+	expect(stop.commandSeq).toBe(3);
+	// The runtime reconstructs the restore with its acknowledgment and cutoff.
+	expect(await commands().reconstruct(accepted.commandId, 1)).toMatchObject({
+		kind: "restore_checkpoint_acknowledging_loss",
+		commandId: accepted.commandId,
+		commandSeq: 2,
+		committedPairId: "pair-1",
+		expectedMutationGeneration: 1,
+		expectedRecoveryPosition: 1,
+		unbackedLossAcknowledged: true,
+	});
+
+	const completion = {
+		version: 1,
+		restoreCommandId: accepted.commandId,
+		pairId: "pair-1",
+		restoredPairId: "pair-1",
+		fallback: false,
+		cutoffSeq: 1,
+		conversationGeneration: 2,
+	};
+	const complete = (value: unknown) =>
+		commands().applyRestoreCompletion(scope, value);
+	// An accepted command through the cutoff still lacks its fate: retry, barrier stays closed.
+	expect(await complete(completion)).toEqual({
+		restoreCommandId: accepted.commandId,
+		outcome: "retry",
+	});
+	for (const wrong of [
+		{ pairId: "pair-0", restoredPairId: "pair-0" },
+		{ cutoffSeq: 2 },
+	])
+		expect((await complete({ ...completion, ...wrong })).outcome).toBe(
+			"blocked_membership",
+		);
+	expect(
+		(
+			await commands().applyRestoreCompletion(
+				{ ...scope, userId: "other" },
+				completion,
+			)
+		).outcome,
+	).toBe("blocked_membership");
+	await expect(commands().admit("owner", ordinary)).rejects.toMatchObject({
+		code: "restore_in_progress",
+	});
+	// The runtime's restore disposition fails the discarded assistant.
+	await env.DB.prepare("UPDATE messages SET status='failed' WHERE id=?")
+		.bind(first.assistantMessageId)
+		.run();
+	expect((await complete(completion)).outcome).toBe("applied");
+	expect((await complete(completion)).outcome).toBe("already_applied");
+	expect(
+		(await complete({ ...completion, conversationGeneration: 3 })).outcome,
+	).toBe("blocked_membership");
+	expect((await barrier())[0]).toMatchObject({
+		state: "complete",
+		restoredPairId: "pair-1",
+		fallback: 0,
+		conversationGeneration: 2,
+	});
+	await expect(
+		env.DB.prepare(
+			"UPDATE candidate_restore_barriers SET conversationGeneration=3 WHERE sessionId=?",
+		)
+			.bind(sessionId)
+			.run(),
+	).rejects.toThrow();
+	// Admission reopens; the old key still returns the old receipt.
+	expect(await commands().admit("owner", ordinary)).toMatchObject({
+		commandSeq: 4,
+	});
+	expect(await commands().admit("owner", restore)).toEqual(accepted);
+});
+
+it("a racing ordinary command and restore never both commit across the cutoff", async () => {
+	await candidateCredential();
+	const first = await commands().admit("owner", prompt);
+	const sessionId = first.workspaceSessionId;
+	await commands().applyCheckpointProjections(
+		{ userId: "owner", projectId: "project", workspaceSessionId: sessionId },
+		[
+			{
+				version: 1,
+				currentPairId: "pair-1",
+				previousPairId: null,
+				mutationGeneration: 1,
+				expectedMutationGeneration: 0,
+				projectionVersion: 1,
+			},
+		],
+	);
+	const [ordinary, restore] = await Promise.allSettled([
+		commands().admit("owner", { ...prompt, idempotencyKey: "race", sessionId }),
+		commands().admit("owner", {
+			version: 2,
+			kind: "restore_checkpoint_acknowledging_loss",
+			idempotencyKey: "restore",
+			projectId: "project",
+			sessionId,
+			committedPairId: "pair-1",
+			expectedMutationGeneration: 1,
+			expectedRecoveryPosition: 1,
+			unbackedLossAcknowledged: true,
+		}),
+	]);
+	const outcomes = [ordinary, restore].map((result) =>
+		result.status === "fulfilled"
+			? result.value.commandSeq
+			: (result.reason as { code: string }).code,
+	);
+	expect([
+		[2, "restore_stale"],
+		["restore_in_progress", 2],
+	]).toContainEqual(outcomes);
+	const rows = await env.DB.prepare(
+		"SELECT commandSeq FROM session_commands WHERE sessionId=? ORDER BY commandSeq",
+	)
+		.bind(sessionId)
+		.all();
+	expect(rows.results.map((row) => row.commandSeq)).toEqual([1, 2]);
+});
+
+it("a restore the runtime refuses before its fence releases the barrier without a restore", async () => {
+	await candidateCredential();
+	const first = await commands().admit("owner", prompt);
+	const sessionId = first.workspaceSessionId;
+	const scope = {
+		userId: "owner",
+		projectId: "project",
+		workspaceSessionId: sessionId,
+	};
+	await commands().applyCheckpointProjections(scope, [
+		{
+			version: 1,
+			currentPairId: "pair-1",
+			previousPairId: null,
+			mutationGeneration: 1,
+			expectedMutationGeneration: 0,
+			projectionVersion: 1,
+		},
+	]);
+	const restore = {
+		version: 2,
+		kind: "restore_checkpoint_acknowledging_loss",
+		idempotencyKey: "restore",
+		projectId: "project",
+		sessionId,
+		committedPairId: "pair-1",
+		expectedMutationGeneration: 1,
+		expectedRecoveryPosition: 1,
+		unbackedLossAcknowledged: true,
+	};
+	const accepted = await commands().admit("owner", restore);
+	const refusal = {
+		version: 1,
+		restoreCommandId: accepted.commandId,
+		pairId: "pair-1",
+		cutoffSeq: 1,
+		refused: "stale",
+	};
+	const apply = (value: unknown) =>
+		commands().applyRestoreCompletion(scope, value);
+	expect((await apply({ ...refusal, cutoffSeq: 0 })).outcome).toBe(
+		"blocked_membership",
+	);
+	// The discarded-work check does not apply: the assistant is still pending.
+	expect((await apply(refusal)).outcome).toBe("applied");
+	expect((await apply(refusal)).outcome).toBe("already_applied");
+	expect(
+		(
+			await apply({
+				version: 1,
+				restoreCommandId: accepted.commandId,
+				pairId: "pair-1",
+				restoredPairId: "pair-1",
+				fallback: false,
+				cutoffSeq: 1,
+				conversationGeneration: 2,
+			})
+		).outcome,
+	).toBe("blocked_membership");
+	expect(
+		await env.DB.prepare(
+			"SELECT state, restoredPairId FROM candidate_restore_barriers WHERE sessionId=?",
+		)
+			.bind(sessionId)
+			.first(),
+	).toEqual({ state: "refused", restoredPairId: null });
+	expect(
+		await commands().admit("owner", {
+			...prompt,
+			idempotencyKey: "after",
+			sessionId,
+		}),
+	).toMatchObject({ commandSeq: 3 });
+	expect(await commands().admit("owner", restore)).toEqual(accepted);
+	expect(
+		await commands().admit("owner", {
+			...restore,
+			idempotencyKey: "again",
+			expectedRecoveryPosition: 3,
+		}),
+	).toMatchObject({ commandSeq: 4 });
 });

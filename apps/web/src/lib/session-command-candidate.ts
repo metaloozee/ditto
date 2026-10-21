@@ -1,6 +1,8 @@
 import {
 	type CheckpointProjectionResultV1,
 	parseCheckpointProjectionsV1,
+	parseRestoreOutcomeV1,
+	type RestoreCompletionResultV1,
 } from "../../../../packages/runtime-contracts/src/checkpoint.js";
 import type { ConfigurationSelectionV1 } from "../../../../packages/runtime-contracts/src/configuration.js";
 import {
@@ -64,6 +66,8 @@ export interface CandidateAdmissionRuntime {
 		subject: ModelSubjectV1,
 		cursor?: number,
 	): Promise<RuntimeObservationV1>;
+	/** Set only by a composition whose runtime can finish a restore; a closed barrier needs one. */
+	restoreAvailable?: boolean;
 }
 export interface CandidateCredentialStatus {
 	status(owner: string): Promise<{ status: string; generation: number }>;
@@ -273,6 +277,11 @@ WHERE k.userId=? AND k.targetKind=? AND k.targetId=? AND k.idempotencyKey=?`)
 				reject("conflict");
 			return receipt(existing);
 		}
+		if (input.kind === "restore_checkpoint_acknowledging_loss")
+			return this.admitRestore(userId, input, hash);
+		const ordinary = input.kind === "prompt" || input.kind === "follow_up";
+		if (input.sessionId && ordinary)
+			await this.assertNoRestore(input.sessionId);
 		const first = input.kind === "prompt" && !input.sessionId;
 		let readiness: {
 			generation: number;
@@ -418,7 +427,8 @@ SELECT identityId,'workspace_session',identityId,identityId,userId,projectId,ses
 			q(
 				`INSERT INTO session_commands(id,userId,targetKind,targetId,projectId,sessionId,kind,commandSeq,targetRunId,targetCommandId,payloadVersion,userMessageId,assistantMessageId,payloadDigest,acceptedAt,deadlineAt)
 SELECT ?,?,'workspace_session',?,?,?, ?,nextSequence,?,?,2,?,?,?,?,? FROM session_command_sequences WHERE sessionId=? AND EXISTS(${gate})
-AND (?=0 OR EXISTS(SELECT 1 FROM codex_connections k JOIN codex_fixture_capabilities e ON e.userId=k.user_id WHERE k.user_id=? AND k.status='connected' AND k.revoked=0 AND k.generation=? AND e.generation=k.generation AND e.revision=? AND e.snapshot=?))`,
+AND (?=0 OR EXISTS(SELECT 1 FROM codex_connections k JOIN codex_fixture_capabilities e ON e.userId=k.user_id WHERE k.user_id=? AND k.status='connected' AND k.revoked=0 AND k.generation=? AND e.generation=k.generation AND e.revision=? AND e.snapshot=?))
+AND (?=0 OR NOT EXISTS(SELECT 1 FROM candidate_restore_barriers b WHERE b.sessionId=? AND b.state='closed'))`,
 				commandId,
 				userId,
 				sessionId,
@@ -443,6 +453,8 @@ AND (?=0 OR EXISTS(SELECT 1 FROM codex_connections k JOIN codex_fixture_capabili
 				readiness?.generation ?? 0,
 				readiness?.revision ?? 0,
 				readiness?.snapshot ?? "",
+				ordinary ? 1 : 0,
+				sessionId,
 			),
 		);
 		if (pair) {
@@ -514,8 +526,124 @@ SELECT ?,coalesce((SELECT max(fifoSeq) FROM workspace_runtime_work),0)+1,?,sessi
 			throw error;
 		}
 		const row = await this.key(userId, input);
-		if (!row) reject("runtime_owner_mismatch");
+		if (!row) {
+			if (input.sessionId && ordinary)
+				await this.assertNoRestore(input.sessionId);
+			reject("runtime_owner_mismatch");
+		}
 		return receipt(row);
+	}
+
+	/** Ordinary admission stays closed from restore intent until its exact completion. */
+	private async assertNoRestore(sessionId: string) {
+		if (
+			await this.db
+				.prepare(
+					"SELECT 1 FROM candidate_restore_barriers WHERE sessionId=? AND state='closed'",
+				)
+				.bind(sessionId)
+				.first()
+		)
+			reject("restore_in_progress");
+	}
+
+	/**
+	 * Restore intent, the ordinary-admission barrier and the cutoff commit in
+	 * one batch. The cutoff is the last accepted command the user saw; a later
+	 * acceptance or pointer move makes the acknowledgment stale.
+	 */
+	private async admitRestore(
+		userId: string,
+		input: Extract<
+			BrowserCommandV2,
+			{ kind: "restore_checkpoint_acknowledging_loss" }
+		>,
+		hash: string,
+	): Promise<ReceiptV2> {
+		const identity = await this.owned(userId, input.projectId, input.sessionId);
+		if (!this.runtime.restoreAvailable) reject("restore_unavailable");
+		await this.assertNoRestore(input.sessionId);
+		const commandId = this.createId(),
+			receiptId = this.createId(),
+			acceptedAt = this.now(),
+			deadlineAt = acceptedAt + CANDIDATE_QUEUE_TTL_MS;
+		const q = (sql: string, ...args: (string | number | null)[]) =>
+			this.db.prepare(sql).bind(...args);
+		const gate = ownedSessionSql.replace(
+			"SELECT s.*,i.id AS identityId,i.incarnationId,i.lifecycleGeneration,i.controllerNamespace",
+			"SELECT 1",
+		);
+		try {
+			await this.db.batch([
+				q(
+					`INSERT INTO session_commands(id,userId,targetKind,targetId,projectId,sessionId,kind,commandSeq,targetRunId,targetCommandId,payloadVersion,userMessageId,assistantMessageId,payloadDigest,acceptedAt,deadlineAt)
+SELECT ?,?,'workspace_session',?,?,?,'restore_checkpoint_acknowledging_loss',nextSequence,NULL,NULL,2,NULL,NULL,?,?,? FROM session_command_sequences
+WHERE sessionId=? AND nextSequence-1=? AND EXISTS(${gate})
+AND EXISTS(SELECT 1 FROM runtime_checkpoint_pointers p WHERE p.sessionId=? AND p.runtimeOwnerVersion=1 AND p.currentPairId=? AND p.mutationGeneration=?)
+AND NOT EXISTS(SELECT 1 FROM candidate_restore_barriers b WHERE b.sessionId=? AND b.state='closed')`,
+					commandId,
+					userId,
+					input.sessionId,
+					input.projectId,
+					input.sessionId,
+					hash,
+					acceptedAt,
+					deadlineAt,
+					input.sessionId,
+					input.expectedRecoveryPosition,
+					input.sessionId,
+					userId,
+					input.projectId,
+					input.sessionId,
+					input.committedPairId,
+					input.expectedMutationGeneration,
+					input.sessionId,
+				),
+				q(
+					"INSERT INTO candidate_restore_barriers(restoreCommandId,sessionId,ownerVersion,pairId,expectedMutationGeneration,cutoffSeq,state,openedAt) SELECT id,sessionId,1,?,?,commandSeq-1,'closed',acceptedAt FROM session_commands WHERE id=?",
+					input.committedPairId,
+					input.expectedMutationGeneration,
+					commandId,
+				),
+				q(
+					"UPDATE session_command_sequences SET nextSequence=nextSequence+1,updatedAt=? WHERE sessionId=? AND EXISTS(SELECT 1 FROM session_commands WHERE id=?)",
+					acceptedAt,
+					input.sessionId,
+					commandId,
+				),
+				q(
+					"INSERT INTO session_command_keys(id,userId,targetKind,targetId,idempotencyKey,commandKind,canonicalPayloadHash,commandId,receiptId,createdAt) SELECT ?,userId,'workspace_session',?,?,kind,?,id,?,acceptedAt FROM session_commands WHERE id=?",
+					this.createId(),
+					input.sessionId,
+					input.idempotencyKey,
+					hash,
+					receiptId,
+					commandId,
+				),
+				q(
+					`INSERT INTO workspace_runtime_work(id,fifoSeq,identityId,sessionId,projectId,userId,intent,payload,status,queueExpiresAt,userMessageId,assistantMessageId,protocolVersion,runtimeOwner,runtimeOwnerVersion,commandId,deliveryState)
+SELECT ?,coalesce((SELECT max(fifoSeq) FROM workspace_runtime_work),0)+1,?,sessionId,projectId,userId,'agent_run',?,'queued',?,NULL,NULL,2,'pi_durable_v1',1,id,'pending' FROM session_commands WHERE id=?`,
+					this.createId(),
+					identity.identityId,
+					JSON.stringify({ commandKind: input.kind }),
+					Math.floor(deadlineAt / 1000),
+					commandId,
+				),
+			]);
+		} catch (error) {
+			const raced = await this.key(userId, input);
+			if (raced) {
+				if (raced.payloadVersion !== 2 || raced.canonicalPayloadHash !== hash)
+					reject("conflict");
+				return receipt(raced);
+			}
+			await this.assertNoRestore(input.sessionId);
+			throw error;
+		}
+		const row = await this.key(userId, input);
+		if (row) return receipt(row);
+		await this.assertNoRestore(input.sessionId);
+		reject("restore_stale");
 	}
 
 	async subjectForCommand(commandId: string, ownerVersion: number) {
@@ -852,6 +980,87 @@ FROM session_commands c WHERE c.sessionId=? AND c.userId=? AND c.projectId=? AND
 		}));
 	}
 
+	/**
+	 * Exact restore completion reopens ordinary admission. Every ordinary
+	 * command through the cutoff must already have a settled assistant, so a
+	 * completion that outruns its dispositions is retried, never applied.
+	 */
+	async applyRestoreCompletion(
+		scope: { userId: string; projectId: string; workspaceSessionId: string },
+		value: unknown,
+	): Promise<RestoreCompletionResultV1> {
+		const completion = parseRestoreOutcomeV1(value);
+		const result = (outcome: RestoreCompletionResultV1["outcome"]) => ({
+			restoreCommandId: completion.restoreCommandId,
+			outcome,
+		});
+		const barrier = await this.db
+			.prepare(
+				`SELECT b.* FROM candidate_restore_barriers b JOIN workspace_sessions s ON s.id=b.sessionId
+WHERE b.restoreCommandId=? AND b.sessionId=? AND s.userId=? AND s.projectId=? AND s.runtimeOwner='pi_durable_v1'`,
+			)
+			.bind(
+				completion.restoreCommandId,
+				scope.workspaceSessionId,
+				scope.userId,
+				scope.projectId,
+			)
+			.first<{
+				pairId: string;
+				cutoffSeq: number;
+				state: string;
+				restoredPairId: string | null;
+				fallback: number | null;
+				conversationGeneration: number | null;
+			}>();
+		if (
+			!barrier ||
+			barrier.pairId !== completion.pairId ||
+			barrier.cutoffSeq !== completion.cutoffSeq
+		)
+			return result("blocked_membership");
+		if ("refused" in completion) {
+			// Refused before the runtime fence: nothing was discarded, so no fate is awaited.
+			if (barrier.state !== "closed")
+				return result(
+					barrier.state === "refused"
+						? "already_applied"
+						: "blocked_membership",
+				);
+			const refused = await this.db
+				.prepare(
+					"UPDATE candidate_restore_barriers SET state='refused',completedAt=? WHERE restoreCommandId=? AND state='closed'",
+				)
+				.bind(this.now(), completion.restoreCommandId)
+				.run();
+			return result(refused.meta.changes === 1 ? "applied" : "retry");
+		}
+		if (barrier.state === "refused") return result("blocked_membership");
+		if (barrier.state === "complete")
+			return result(
+				barrier.restoredPairId === completion.restoredPairId &&
+					barrier.fallback === (completion.fallback ? 1 : 0) &&
+					barrier.conversationGeneration === completion.conversationGeneration
+					? "already_applied"
+					: "blocked_membership",
+			);
+		const applied = await this.db
+			.prepare(
+				`UPDATE candidate_restore_barriers SET state='complete',restoredPairId=?,fallback=?,conversationGeneration=?,completedAt=?
+WHERE restoreCommandId=? AND state='closed' AND NOT EXISTS(SELECT 1 FROM session_commands c JOIN messages m ON m.id=c.assistantMessageId
+WHERE c.sessionId=candidate_restore_barriers.sessionId AND c.commandSeq<=candidate_restore_barriers.cutoffSeq AND c.kind IN ('prompt','follow_up') AND m.status NOT IN ('complete','failed'))`,
+			)
+			.bind(
+				completion.restoredPairId,
+				completion.fallback ? 1 : 0,
+				completion.conversationGeneration,
+				this.now(),
+				completion.restoreCommandId,
+			)
+			.run();
+		return result(applied.meta.changes === 1 ? "applied" : "retry");
+	}
+
 	/** Owned observation; the runtime reads committed facts without scheduling. */
 	async observe(
 		userId: string,
@@ -927,6 +1136,26 @@ AND u.userId=? AND a.userId=u.userId AND u.projectId=? AND a.projectId=u.project
 				  }
 				| undefined;
 			if (!key) return null;
+			let restore: Record<string, unknown> = {};
+			if (row.kind === "restore_checkpoint_acknowledging_loss") {
+				const barrier = await this.db
+					.prepare(
+						"SELECT pairId,expectedMutationGeneration,cutoffSeq FROM candidate_restore_barriers WHERE restoreCommandId=? AND sessionId=? AND ownerVersion=1",
+					)
+					.bind(row.id, row.sessionId)
+					.first<{
+						pairId: string;
+						expectedMutationGeneration: number;
+						cutoffSeq: number;
+					}>();
+				if (!barrier) return null;
+				restore = {
+					committedPairId: barrier.pairId,
+					expectedMutationGeneration: barrier.expectedMutationGeneration,
+					expectedRecoveryPosition: barrier.cutoffSeq,
+					unbackedLossAcknowledged: true,
+				};
+			}
 			const browser = parseBrowserCommandV2({
 				version: 2,
 				projectId: row.projectId,
@@ -940,6 +1169,7 @@ AND u.userId=? AND a.userId=u.userId AND u.projectId=? AND a.projectId=u.project
 				...(row.targetCommandId
 					? { targetCommandId: row.targetCommandId }
 					: {}),
+				...restore,
 			});
 			if (
 				(await digest(canonical(browser))) !== row.payloadDigest ||
@@ -970,6 +1200,7 @@ AND u.userId=? AND a.userId=u.userId AND u.projectId=? AND a.projectId=u.project
 				...(row.targetCommandId
 					? { targetCommandId: row.targetCommandId }
 					: {}),
+				...restore,
 			});
 		} catch {
 			return null;

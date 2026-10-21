@@ -106,15 +106,16 @@ describe("session command admission", () => {
 	] as const)("admits V2 through the captured authenticated %s POST without legacy execution", async (path) => {
 		const fixture = createSessionRuntimeFixture();
 		fixture.seedProject();
-		fixture.sqlite.exec(
-			readFileSync(
-				new URL(
-					"../../migrations/0023_candidate_product_commands.sql",
-					import.meta.url,
-				),
-				"utf8",
-			).replaceAll("--> statement-breakpoint", ""),
-		);
+		for (const migration of [
+			"0023_candidate_product_commands.sql",
+			"0024_candidate_restore_barrier.sql",
+		])
+			fixture.sqlite.exec(
+				readFileSync(
+					new URL(`../../migrations/${migration}`, import.meta.url),
+					"utf8",
+				).replaceAll("--> statement-breakpoint", ""),
+			);
 		fixture.sqlite.exec(
 			`CREATE TABLE runtime_retired_identity_fences(identityId TEXT PRIMARY KEY,lifecycleGeneration INTEGER NOT NULL,retiredAt INTEGER NOT NULL); CREATE TABLE codex_connections(user_id TEXT PRIMARY KEY,generation INTEGER,revoked INTEGER,status TEXT); CREATE TABLE codex_fixture_capabilities(userId TEXT PRIMARY KEY,generation INTEGER,revision INTEGER,snapshot TEXT); INSERT INTO codex_connections VALUES('user-1',1,0,'connected')`,
 		);

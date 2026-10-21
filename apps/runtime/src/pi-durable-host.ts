@@ -9,6 +9,7 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
 	type AgentChange,
 	type CommitPublication,
+	type ConversationId,
 	Harness,
 	type HarnessOptions,
 	type HookApi,
@@ -19,7 +20,12 @@ import {
 	type ToolExecutionResult,
 } from "@earendil-works/pi-durable";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
-import type { CheckpointProjectionV1 } from "../../../packages/runtime-contracts/src/checkpoint.js";
+import {
+	type CheckpointProjectionV1,
+	parseRestoreCompletionResultV1,
+	type RestoreCompletionV1,
+	type RestoreRefusalV1,
+} from "../../../packages/runtime-contracts/src/checkpoint.js";
 import {
 	type ConfigurationAckV1,
 	type ConfigurationAuthorityV1,
@@ -71,8 +77,11 @@ import {
 	sealHostField,
 	UNBOUND_SELECTION,
 } from "./host-private.ts";
+import { RecoveryDenied } from "./pi-durable-artifacts.ts";
 import {
 	type CheckpointHostPort,
+	type CheckpointRestorer,
+	ContextMismatch,
 	checkpointAdmission,
 	checkpointHealth,
 	deliverCheckpointProjections,
@@ -146,7 +155,8 @@ export type HostFault =
 	| "configuration-applied"
 	| "configuration-outcome"
 	| "candidate-control-intent"
-	| "candidate-control-outcome";
+	| "candidate-control-outcome"
+	| "restore-disposition";
 export type LocalAuthority = {
 	current: boolean;
 	generation: number;
@@ -157,15 +167,21 @@ export type LocalAuthority = {
 };
 class EffectDenied extends Error {
 	constructor(
-		readonly reason: "reservation" | "recovery-deadline" | "authority",
+		readonly reason:
+			| "reservation"
+			| "recovery"
+			| "recovery-deadline"
+			| "authority",
 		readonly run?: string,
 	) {
 		super(
 			reason === "reservation"
 				? "Unresolved effect blocks admission: competing reservation"
-				: reason === "recovery-deadline"
-					? "Run recovery deadline expired"
-					: "Run authority revoked",
+				: reason === "recovery"
+					? "Candidate recovery-only admission"
+					: reason === "recovery-deadline"
+						? "Run recovery deadline expired"
+						: "Run authority revoked",
 		);
 	}
 }
@@ -286,13 +302,13 @@ export function semanticTranscript(value: unknown) {
 		}),
 	};
 }
-function preparedTask(task: PublicTask) {
+function preparedTask(task: PublicTask, conversation: ConversationId) {
 	const cp = record(task.state.checkpoint);
 	if (
 		task.version !== 1 ||
 		task.background ||
 		task.abortRequested ||
-		task.conversationId !== ROOT_CONVERSATION_ID ||
+		task.conversationId !== conversation ||
 		task.state.status !== "running"
 	)
 		throw new Error("Incompatible producer");
@@ -379,6 +395,12 @@ export type HostFixtureDependencies = {
 	 */
 	checkpoints?: {
 		applyProjections(projections: CheckpointProjectionV1[]): Promise<unknown>;
+		/** Product application of a durable restore completion; only an exact acknowledgment reopens admission. */
+		completeRestore?(
+			completion: RestoreCompletionV1 | RestoreRefusalV1,
+		): Promise<unknown>;
+		/** The files half of a restore, composed with the session's execution and store. */
+		restorer?(port: CheckpointHostPort): CheckpointRestorer | undefined;
 	};
 	candidate?: {
 		origin?: string;
@@ -437,6 +459,9 @@ export class PiDurableHost {
 	private queueError: unknown;
 	private delivery: Promise<void> | undefined;
 	private scheduling = 0;
+	private restorer: CheckpointRestorer | undefined;
+	/** The conversation of the active generation; a restore forks a new one. */
+	private conversationId: ConversationId = ROOT_CONVERSATION_ID;
 
 	private constructor(
 		private storage: DurableObjectStorage,
@@ -557,6 +582,17 @@ export class PiDurableHost {
 			storage.sql.exec(
 				"CREATE TRIGGER IF NOT EXISTS host_events_run_update AFTER UPDATE OF state ON host_runs WHEN OLD.state IS NOT NEW.state BEGIN INSERT INTO host_events(kind,target,run,state,reason,version) VALUES('run',NEW.id,NEW.id,NEW.state,NULL,NEW.epoch); END",
 			);
+			// Generation 1 is Pi's root; each completed restore appends one fork.
+			storage.sql.exec(
+				"CREATE TABLE IF NOT EXISTS host_generations (generation INTEGER PRIMARY KEY CHECK (generation > 0), conversation INTEGER UNIQUE NOT NULL, pair TEXT, restore TEXT UNIQUE)",
+			);
+			storage.sql.exec(
+				"INSERT OR IGNORE INTO host_generations VALUES (1, ?, NULL, NULL)",
+				ROOT_CONVERSATION_ID,
+			);
+			storage.sql.exec(
+				"CREATE TABLE IF NOT EXISTS host_restores (command TEXT PRIMARY KEY, sequence INTEGER UNIQUE NOT NULL, cutoff INTEGER NOT NULL, pair TEXT NOT NULL, state TEXT NOT NULL CHECK (state IN ('fenced','retired','restored','complete','blocked','refusing','refused')), restored_pair TEXT, fallback INTEGER, generation INTEGER, evidence TEXT)",
+			);
 			const columns = storage.sql
 				.exec<{ name: string }>("PRAGMA table_info(host_effects)")
 				.toArray();
@@ -657,6 +693,7 @@ export class PiDurableHost {
 			host.options,
 			BACKGROUND_CONTEXT,
 		);
+		host.conversationId = host.activeGeneration().conversation;
 		host.harness.subscribeCommits((publication) =>
 			host.captureRetry(publication),
 		);
@@ -1085,6 +1122,29 @@ export class PiDurableHost {
 			throw error;
 		}
 	}
+	private activeGeneration() {
+		return this.read(() =>
+			this.storage.sql
+				.exec<{ generation: number; conversation: number }>(
+					"SELECT generation, conversation FROM host_generations ORDER BY generation DESC LIMIT 1",
+				)
+				.one(),
+		) as { generation: number; conversation: ConversationId };
+	}
+	/** Root is created on first use; a restored generation's fork always exists. */
+	private async activeConversation(
+		context: Context,
+		options?: Parameters<Harness["root"]>[1],
+	) {
+		if (this.conversationId === ROOT_CONVERSATION_ID)
+			return this.harness.root(context, options);
+		const conversation = await this.harness.conversation(
+			this.conversationId,
+			context,
+		);
+		if (!conversation) throw new Error("Missing active conversation");
+		return conversation;
+	}
 	private latest(): Invocation | undefined {
 		return this.read(
 			() =>
@@ -1107,13 +1167,25 @@ export class PiDurableHost {
 	private ordinaryAllowed() {
 		if (this.dependencies.candidate?.ordinaryAllowed?.() === false)
 			return false;
+		// A restore keeps ordinary work closed from acceptance to completion.
+		if (
+			this.read(
+				() =>
+					this.storage.sql
+						.exec(
+							"SELECT 1 FROM host_restores WHERE state NOT IN ('complete','refusing','refused')",
+						)
+						.toArray().length,
+			)
+		)
+			return false;
 		if (!this.dependencies.checkpoints) return true;
 		const admission = this.read(() => checkpointAdmission(this.storage));
 		return admission.baseline && !admission.exclusive;
 	}
 	private assertLive(ordinary = true) {
-		if (ordinary && !this.ordinaryAllowed())
-			throw new Error("Candidate recovery-only admission");
+		// Recovery-only admission refuses new work without denying the host.
+		if (ordinary && !this.ordinaryAllowed()) throw new EffectDenied("recovery");
 		if (this.denied || this.sealed || this.storageBarrier)
 			throw new Error("Host admission denied");
 	}
@@ -1370,7 +1442,7 @@ export class PiDurableHost {
 	}
 	private async liveInputs(context: Context) {
 		const root = await awaitWithContext(
-			this.harness.conversation(ROOT_CONVERSATION_ID, context),
+			this.harness.conversation(this.conversationId, context),
 			context,
 		);
 		if (!root) return undefined;
@@ -1472,7 +1544,7 @@ export class PiDurableHost {
 				task.version !== 1 ||
 				task.background ||
 				task.abortRequested ||
-				task.conversationId !== ROOT_CONVERSATION_ID ||
+				task.conversationId !== this.conversationId ||
 				task.conversationId !== api.conversationId
 			)
 				throw new Error("Untrusted hook mapping");
@@ -1582,7 +1654,8 @@ export class PiDurableHost {
 				...(stock ? { stock: true as const } : {}),
 			});
 		} catch (error) {
-			this.denied = true;
+			if (!(error instanceof EffectDenied && error.reason === "recovery"))
+				this.denied = true;
 			throw error;
 		}
 	}
@@ -1648,7 +1721,7 @@ export class PiDurableHost {
 				context,
 				true,
 			);
-			const root = await this.harness.root(context);
+			const root = await this.activeConversation(context);
 			this.assertLive();
 			try {
 				await root.configure(change, context);
@@ -1750,7 +1823,7 @@ export class PiDurableHost {
 		query: ConfigurationReadV1,
 		context: Context,
 	): Promise<ConfigurationSnapshotV1> {
-		const root = await this.harness.conversation(ROOT_CONVERSATION_ID, context);
+		const root = await this.harness.conversation(this.conversationId, context);
 		if (!root) return { ...query, selection: null };
 		const agent = await root.agent(context);
 		if (!agent.model) return { ...query, selection: null };
@@ -1782,7 +1855,7 @@ export class PiDurableHost {
 		const c = this.dependencies.configuration;
 		if (!c) throw new Error("Owned configuration unavailable");
 		const evidence = await this.configurationLedger(context);
-		if (await this.harness.conversation(ROOT_CONVERSATION_ID, context)) {
+		if (await this.harness.conversation(this.conversationId, context)) {
 			// Reopen observes Pi configuration; it never replays a pending selection.
 			for (const row of evidence.filter((row) => row.state === "pending")) {
 				const { ack } = row;
@@ -1812,7 +1885,7 @@ export class PiDurableHost {
 			throw new Error("Default configuration denied");
 		this.assertLive();
 		if (target) this.assertSchedule(target.run, target.epoch);
-		await this.harness.root(context, {
+		await this.activeConversation(context, {
 			agent: {
 				model: { provider: "faux", modelId: selection.model },
 				thinkingLevel: selection.thinking,
@@ -1906,7 +1979,7 @@ export class PiDurableHost {
 			await this.durable(context);
 			this.dependencies.fault?.("configuration-intent");
 			const root = await this.harness.conversation(
-				ROOT_CONVERSATION_ID,
+				this.conversationId,
 				context,
 			);
 			if (!root) throw new Error("Missing owned conversation");
@@ -2095,7 +2168,9 @@ export class PiDurableHost {
 			await this.ownerTransition(context, async (context) => {
 				mapping = this.mapping(Number(api.taskId))!;
 				if (mapping.prepared !== null) return;
-				const agent = await (await this.harness.root(context)).agent(context);
+				const agent = await (await this.activeConversation(context)).agent(
+					context,
+				);
 				if (!agent.model) throw new Error("Missing custom summary model");
 				const model = this.options.models.getModel(
 					agent.model.provider,
@@ -2370,7 +2445,7 @@ export class PiDurableHost {
 			const entry = entryId
 				? (
 						await this.piRecords.entry(
-							ROOT_CONVERSATION_ID,
+							this.conversationId,
 							Number(entryId) as import("@earendil-works/pi-durable").EntryId,
 							context,
 						)
@@ -2427,7 +2502,7 @@ export class PiDurableHost {
 			context,
 		);
 		if (!task) throw new Error("Missing producer");
-		preparedTask(task);
+		preparedTask(task, this.conversationId);
 		return task;
 	}
 	private exactAuthority(correlation: EffectCorrelation, epoch: number) {
@@ -2642,7 +2717,8 @@ export class PiDurableHost {
 					canonical(task.input) !== correlation.taskInput ||
 					(correlation.version === 2
 						? !this.customTaskMatches(task, correlation)
-						: preparedTask(task) !== correlation.prepared ||
+						: preparedTask(task, this.conversationId) !==
+								correlation.prepared ||
 							Number(record(task.state.checkpoint).attempt) !==
 								correlation.piAttempt)
 				)
@@ -2865,7 +2941,7 @@ export class PiDurableHost {
 					(!binding || binding.digest !== transcriptDigest)
 				)
 					throw new Error("Missing generation binding");
-				const tuple = preparedTask(task),
+				const tuple = preparedTask(task, this.conversationId),
 					cp = record(task.state.checkpoint);
 				if (
 					task.kind === "pi.compaction" &&
@@ -3036,7 +3112,12 @@ export class PiDurableHost {
 					error.reason === "recovery-deadline"
 				)
 					await this.expire();
-				if (!(error instanceof EffectDenied && error.reason === "reservation"))
+				if (
+					!(
+						error instanceof EffectDenied &&
+						(error.reason === "reservation" || error.reason === "recovery")
+					)
+				)
 					this.denied = true;
 				throw error;
 			} finally {
@@ -3065,7 +3146,7 @@ export class PiDurableHost {
 				task.abortRequested ||
 				task.state.status !== "running" ||
 				task.conversationId !== request.conversation ||
-				task.conversationId !== ROOT_CONVERSATION_ID
+				task.conversationId !== this.conversationId
 			)
 				throw new Error("Invalid tool task");
 			const input = record(task.input),
@@ -3079,7 +3160,7 @@ export class PiDurableHost {
 				throw new Error("Tool input mismatch");
 			const entry = (
 				await this.piRecords.entry(
-					ROOT_CONVERSATION_ID,
+					this.conversationId,
 					Number(
 						input.assistant,
 					) as import("@earendil-works/pi-durable").EntryId,
@@ -3186,7 +3267,12 @@ export class PiDurableHost {
 		} catch (error) {
 			if (error instanceof EffectDenied && error.reason === "recovery-deadline")
 				await this.expire();
-			if (!(error instanceof EffectDenied && error.reason === "reservation"))
+			if (
+				!(
+					error instanceof EffectDenied &&
+					(error.reason === "reservation" || error.reason === "recovery")
+				)
+			)
 				this.denied = true;
 			throw error;
 		}
@@ -3198,7 +3284,7 @@ export class PiDurableHost {
 					change.type !== "task" ||
 					!["pi.generation", "pi.compaction"].includes(change.value.kind) ||
 					change.value.version !== 1 ||
-					change.value.conversationId !== ROOT_CONVERSATION_ID ||
+					change.value.conversationId !== this.conversationId ||
 					change.value.background ||
 					change.value.abortRequested
 				)
@@ -3212,7 +3298,7 @@ export class PiDurableHost {
 					(value) =>
 						value.type === "document" &&
 						value.record.kind === "pi.live" &&
-						value.conversationId === ROOT_CONVERSATION_ID,
+						value.conversationId === this.conversationId,
 				);
 				if (!live || live.type !== "document" || !live.value) continue;
 				const retry =
@@ -3379,7 +3465,7 @@ export class PiDurableHost {
 				!task ||
 				task.version !== 1 ||
 				canonical(task.input) !== correlation.taskInput ||
-				task.conversationId !== ROOT_CONVERSATION_ID
+				task.conversationId !== this.conversationId
 			)
 				throw new Error("Original task receipt mismatch");
 			if (correlation.version === 2) {
@@ -3442,7 +3528,7 @@ export class PiDurableHost {
 				const receipt = record(task.state.outcome.result);
 				const entry = (
 					await this.piRecords.entry(
-						ROOT_CONVERSATION_ID,
+						this.conversationId,
 						Number(
 							receipt.entryId,
 						) as import("@earendil-works/pi-durable").EntryId,
@@ -3468,7 +3554,7 @@ export class PiDurableHost {
 					cp?.phase === "retry" &&
 					cp.attempt === correlation.piAttempt
 				) {
-					const root = await this.harness.root(context),
+					const root = await this.activeConversation(context),
 						view = await root.viewState(context);
 					try {
 						const live = view.value.docs["pi.live"];
@@ -3491,7 +3577,7 @@ export class PiDurableHost {
 					evidence.stopReason === "error" &&
 					effect.retry_evidence &&
 					cp?.attempt === correlation.piAttempt + 1 &&
-					preparedTask(task) === correlation.prepared
+					preparedTask(task, this.conversationId) === correlation.prepared
 				) {
 					const receipt = record(
 						JSON.parse(
@@ -3509,12 +3595,9 @@ export class PiDurableHost {
 						Number(receipt.seq) > 0 &&
 						Number.isFinite(receipt.until);
 				} else {
-					const history = await (await this.harness.root(context)).entries(
-						{},
-						100,
-						undefined,
-						context,
-					);
+					const history = await (
+						await this.activeConversation(context)
+					).entries({}, 100, undefined, context);
 					matches = history.items.some(
 						(entry) =>
 							entry.byTaskId === task.id &&
@@ -3542,7 +3625,7 @@ export class PiDurableHost {
 						const receiptEntry = entryId
 							? (
 									await this.piRecords.entry(
-										ROOT_CONVERSATION_ID,
+										this.conversationId,
 										Number(
 											entryId,
 										) as import("@earendil-works/pi-durable").EntryId,
@@ -3606,10 +3689,9 @@ export class PiDurableHost {
 		const command = this.command(commandId);
 		if (this.run(command.run).state !== "running")
 			throw new Error("Compaction requires live run");
-		const task = await (await this.harness.root(BACKGROUND_CONTEXT)).compact(
-			undefined,
-			BACKGROUND_CONTEXT,
-		);
+		const task = await (
+			await this.activeConversation(BACKGROUND_CONTEXT)
+		).compact(undefined, BACKGROUND_CONTEXT);
 		const record = await this.harness.getTask(task, BACKGROUND_CONTEXT);
 		if (!record) throw new Error("Missing compaction");
 		const selectionId = `task:${Number(task)}:selection`;
@@ -3853,6 +3935,8 @@ export class PiDurableHost {
 						this.queueProjection();
 					});
 			}
+			// A run interrupted by a restore fence takes the restore's fate instead.
+			if (failed && this.restoreRow()?.state === "fenced") continue;
 			if (settled || (failed && this.dependencies.candidate))
 				this.transition("account", () =>
 					this.terminal(run.id, failed ? "failed" : "complete"),
@@ -3862,11 +3946,11 @@ export class PiDurableHost {
 	}
 
 	async history() {
-		const root = await this.harness.root(BACKGROUND_CONTEXT);
+		const root = await this.activeConversation(BACKGROUND_CONTEXT);
 		return root.entries({}, 20, undefined, BACKGROUND_CONTEXT);
 	}
 	async observe() {
-		const root = await this.harness.root(BACKGROUND_CONTEXT);
+		const root = await this.activeConversation(BACKGROUND_CONTEXT);
 		await root.context(BACKGROUND_CONTEXT);
 		const watch = await root.watch(BACKGROUND_CONTEXT);
 		await watch.stop();
@@ -3919,6 +4003,10 @@ export class PiDurableHost {
 				"targetCommandId",
 				"userMessageId",
 				"assistantMessageId",
+				"committedPairId",
+				"expectedMutationGeneration",
+				"expectedRecoveryPosition",
+				"unbackedLossAcknowledged",
 			],
 			"Candidate command metadata",
 		);
@@ -3939,7 +4027,8 @@ export class PiDurableHost {
 		});
 		this.candidateScope(command);
 		const run =
-			command.kind === "prompt"
+			command.kind === "prompt" ||
+			command.kind === "restore_checkpoint_acknowledging_loss"
 				? command.commandId
 				: command.kind === "cancel"
 					? row.run
@@ -3963,6 +4052,8 @@ export class PiDurableHost {
 						"target_run_terminal",
 						"too_late",
 						"applied",
+						"restored",
+						"refused",
 					]);
 		const decision =
 			value.decision === null ? null : parseQueueDecisionV2(value.decision);
@@ -4067,14 +4158,25 @@ export class PiDurableHost {
 
 	private async projectionContent(answer: number | null) {
 		if (answer === null) return undefined;
+		// An answer committed before a restore stays on its own generation.
 		const entry = (
 			await this.piRecords.entry(
-				ROOT_CONVERSATION_ID,
 				answer as import("@earendil-works/pi-durable").EntryId,
 				BACKGROUND_CONTEXT,
 			)
 		)?.entry;
-		const message = entry?.model?.[0];
+		const owned =
+			entry !== undefined &&
+			this.read(
+				() =>
+					this.storage.sql
+						.exec(
+							"SELECT 1 FROM host_generations WHERE conversation = ?",
+							entry.conversationId,
+						)
+						.toArray().length === 1,
+			);
+		const message = owned ? entry.model?.[0] : undefined;
 		if (!message || message.role !== "assistant") return undefined;
 		const text = message.content
 			.map((part) => (part.type === "text" ? part.text : ""))
@@ -4342,6 +4444,16 @@ export class PiDurableHost {
 				receiptId: command.receiptId,
 			};
 		}
+		if (command.kind === "restore_checkpoint_acknowledging_loss") {
+			await this.acceptRestore(command);
+			return {
+				version: 2,
+				commandId: command.commandId,
+				ownerVersion: command.runtimeOwnerVersion,
+				acceptedPosition: command.commandSeq,
+				receiptId: command.receiptId,
+			};
+		}
 		if (command.kind === "prompt" || command.kind === "follow_up") {
 			await this.ownerTransition(BACKGROUND_CONTEXT, async (context) => {
 				context.abortSignal?.throwIfAborted();
@@ -4488,6 +4600,9 @@ export class PiDurableHost {
 	private async disposeCandidate(
 		id: string,
 		disposition:
+			| "restored"
+			| "refused"
+			| "applied"
 			| "canceled"
 			| "expired"
 			| "stopped"
@@ -4512,15 +4627,17 @@ export class PiDurableHost {
 			if (!["submitted", "done"].includes(disposition))
 				this.failCandidateMember(
 					record.command,
-					disposition === "canceled"
-						? "command_canceled"
-						: disposition === "expired"
-							? "command_expired"
-							: disposition === "stopped"
-								? "run_stopped"
-								: disposition === "target_run_terminal"
-									? "target_run_terminal"
-									: "command_failed",
+					disposition === "restored"
+						? "checkpoint_restored"
+						: disposition === "canceled"
+							? "command_canceled"
+							: disposition === "expired"
+								? "command_expired"
+								: disposition === "stopped"
+									? "run_stopped"
+									: disposition === "target_run_terminal"
+										? "target_run_terminal"
+										: "command_failed",
 				);
 			if (
 				record.command.kind === "prompt" &&
@@ -4534,6 +4651,439 @@ export class PiDurableHost {
 		this.rememberProduct(record.command, prepared);
 		this.repairProductCursor();
 		await this.durable(context);
+	}
+
+	/**
+	 * The product delivers a restore only after its barrier and cutoff are
+	 * durable in D1. Acceptance closes ordinary admission and advances the
+	 * runtime epoch, so a mutation scope or uncorrelated result from before
+	 * it can no longer commit, before any restore I/O.
+	 */
+	private async acceptRestore(
+		command: Extract<
+			CommandV2,
+			{ kind: "restore_checkpoint_acknowledging_loss" }
+		>,
+	) {
+		// Refuse before the fence: a fenced restore must be able to finish.
+		this.restorer ??= this.dependencies.checkpoints?.restorer?.(
+			this.checkpointPort(),
+		);
+		if (!this.restorer) throw new Error("Restore requires paired checkpoints");
+		const prepared = await this.prepareProduct(command);
+		const committed = this.transition("fence", () => {
+			const retained = this.productRecord(command.commandId);
+			if (retained) {
+				if (canonical(retained.command) !== canonical(command))
+					throw new EffectDenied("authority");
+				return false;
+			}
+			if (
+				this.storage.sql
+					.exec(
+						"SELECT 1 FROM host_restores WHERE state NOT IN ('complete','refused')",
+					)
+					.toArray().length
+			)
+				throw new Error("Another restore is unfinished");
+			// The product pointer can lag; a restore named against an older
+			// pointer is refused here, before anything is discarded.
+			const at = this.storage.sql
+				.exec<{ current: string | null; mutation_generation: number }>(
+					"SELECT current, mutation_generation FROM checkpoint_pointer WHERE id = 1",
+				)
+				.toArray()[0];
+			const current =
+				at?.current === command.committedPairId &&
+				at.mutation_generation === command.expectedMutationGeneration;
+			this.storeProduct(command, command.commandId, prepared);
+			this.storage.sql.exec(
+				"INSERT INTO host_restores (command, sequence, cutoff, pair, state) VALUES (?, ?, ?, ?, ?)",
+				command.commandId,
+				command.commandSeq,
+				command.expectedRecoveryPosition,
+				command.committedPairId,
+				current ? "fenced" : "refusing",
+			);
+			if (current)
+				this.storage.sql.exec("UPDATE host_meta SET epoch = epoch + 1");
+			this.storage.sql.exec(
+				"INSERT OR REPLACE INTO host_wakeups VALUES ('restore', ?)",
+				this.dependencies.now(),
+			);
+			return true;
+		});
+		if (committed) this.rememberProduct(command, prepared);
+		await this.durable();
+		await this.repairWakeup();
+	}
+
+	private knownConversation(conversation: ConversationId) {
+		return (
+			this.read(
+				() =>
+					this.storage.sql
+						.exec(
+							"SELECT 1 FROM host_generations WHERE conversation = ?",
+							conversation,
+						)
+						.toArray().length,
+			) > 0
+		);
+	}
+
+	private restoreRow() {
+		return this.read(
+			() =>
+				this.storage.sql
+					.exec<{
+						command: string;
+						sequence: number;
+						cutoff: number;
+						pair: string;
+						state: "fenced" | "retired" | "restored" | "refusing";
+						restored_pair: string | null;
+						fallback: number | null;
+						generation: number | null;
+					}>(
+						"SELECT command, sequence, cutoff, pair, state, restored_pair, fallback, generation FROM host_restores WHERE state IN ('fenced','retired','restored','refusing') ORDER BY sequence LIMIT 1",
+					)
+					.toArray()[0],
+		);
+	}
+
+	/** Advances an unfinished restore one durable step at a time; every step is safe to repeat. */
+	private async advanceRestore() {
+		if (!this.restoreRow()) return;
+		let retry = true;
+		try {
+			for (;;) {
+				const row = this.restoreRow();
+				if (!row) {
+					retry = false;
+					break;
+				}
+				const step =
+					row.state === "refusing"
+						? await this.refuseRestore(row)
+						: row.state === "fenced"
+							? await this.retireForRestore(row)
+							: row.state === "retired"
+								? await this.restoreWorkspace(row)
+								: await this.completeRestore(row);
+				if (!step) break;
+			}
+		} catch (error) {
+			if (this.sealed || this.storageBarrier) throw error;
+		}
+		this.transition("account", () => {
+			this.storage.sql.exec("DELETE FROM host_wakeups WHERE id = 'restore'");
+			if (retry && this.restoreRow())
+				this.storage.sql.exec(
+					"INSERT INTO host_wakeups VALUES ('restore', ?)",
+					this.dependencies.now() + PROJECTION_RETRY_MS,
+				);
+		});
+		await this.durable();
+		await this.repairWakeup();
+	}
+
+	/**
+	 * Retires the old generation and gives every accepted command through the
+	 * cutoff its fate: an answered submission keeps its answer as interrupted
+	 * history, anything else fails with the restore reason. Waits until every
+	 * command through the cutoff has been delivered.
+	 */
+	private async retireForRestore(row: { command: string; cutoff: number }) {
+		const delivered = this.read(() =>
+			Number(
+				this.storage.sql
+					.exec(
+						"SELECT count(*) AS n FROM host_product_commands WHERE sequence <= ?",
+						row.cutoff,
+					)
+					.one().n,
+			),
+		);
+		if (delivered !== row.cutoff) return false;
+		await this.ownerTransition(BACKGROUND_CONTEXT, async (context) => {
+			const conversation = await this.harness.conversation(
+				this.conversationId,
+				context,
+			);
+			// Withdraws queued inputs and aborts every live task, background ones included.
+			if (conversation) await conversation.abort(context, { background: true });
+			await this.durable(context);
+		});
+		const records = this.read(() =>
+			this.storage.sql
+				.exec<{ id: string }>(
+					"SELECT id FROM host_product_commands WHERE sequence <= ? ORDER BY sequence",
+					row.cutoff,
+				)
+				.toArray(),
+		);
+		for (const { id } of records) {
+			const record = this.productRecord(id);
+			if (
+				!record ||
+				(record.command.kind !== "prompt" &&
+					record.command.kind !== "follow_up") ||
+				(record.disposition !== null && record.disposition !== "submitted")
+			)
+				continue;
+			const command = this.command(id);
+			const submission = command.submission
+				? await this.piRecords.submission(
+						command.submission as import("@earendil-works/pi-durable").SubmissionId,
+						BACKGROUND_CONTEXT,
+					)
+				: undefined;
+			if (record.disposition === "submitted" && submission?.status === "done") {
+				const answer =
+					"answer" in submission ? Number(submission.answer) : null;
+				this.transition("account", () => {
+					this.storage.sql.exec(
+						"UPDATE host_members SET state = 'complete' WHERE assistant = ? AND state = 'pending'",
+						command.assistant,
+					);
+					this.storage.sql.exec(
+						"INSERT OR IGNORE INTO host_projections(assistant,run,state,version,reason,answer,applied) SELECT assistant,run,'complete',1,NULL,?,0 FROM host_members WHERE assistant = ? AND state = 'complete'",
+						answer,
+						command.assistant,
+					);
+					this.queueProjection();
+				});
+				await this.disposeCandidate(id, "done");
+			} else await this.disposeCandidate(id, "restored");
+			this.dependencies.fault?.("restore-disposition");
+		}
+		this.transition("account", () => {
+			for (const run of this.storage.sql
+				.exec<{ id: string }>(
+					"SELECT id FROM host_runs WHERE state NOT IN ('complete','failed','canceled') AND id NOT IN (SELECT run FROM host_product_commands WHERE sequence > ? AND id = run)",
+					row.cutoff,
+				)
+				.toArray())
+				this.terminal(run.id, "failed");
+			this.storage.sql.exec(
+				"UPDATE host_runs SET state = 'canceled' WHERE state = 'stopping' AND id NOT IN (SELECT run FROM host_product_commands WHERE sequence > ? AND id = run)",
+				row.cutoff,
+			);
+			this.storage.sql.exec(
+				"UPDATE host_restores SET state = 'retired' WHERE command = ? AND state = 'fenced'",
+				row.command,
+			);
+		});
+		await this.durable();
+		// The product learns each fate now, even while files wait for quiescence.
+		await this.deliverProjections(true).catch(() => undefined);
+		return true;
+	}
+
+	/** Restores files and the matching conversation generation under exclusive mutation ownership. */
+	private async restoreWorkspace(row: {
+		command: string;
+		pair: string;
+	}): Promise<boolean> {
+		this.restorer ??= this.dependencies.checkpoints?.restorer?.(
+			this.checkpointPort(),
+		);
+		const restorer = this.restorer;
+		if (!restorer) throw new Error("Restore requires paired checkpoints");
+		const result = await this.ownerTransition(
+			BACKGROUND_CONTEXT,
+			async (context) =>
+				restorer.restorePair(row.pair, async (manifest, confirm) => {
+					const head = manifest.context.head;
+					let conversation: { id: ConversationId };
+					if (head.entry === null)
+						conversation = await this.harness.createConversation(
+							{ ownership: { kind: "ownerless" } },
+							context,
+						);
+					else {
+						const source = await this.harness.conversation(
+							head.conversation as ConversationId,
+							context,
+						);
+						if (!source) throw new ContextMismatch("Missing pair conversation");
+						const fork = await source.fork(
+							head.entry as import("@earendil-works/pi-durable").EntryId,
+							{ ownership: { kind: "ownerless" } },
+							context,
+						);
+						if (
+							(await digestText(canonical(await fork.context(context)))) !==
+							head.contextDigest
+						)
+							throw new ContextMismatch("Restored context does not match");
+						conversation = fork;
+					}
+					await this.durable(context);
+					let generation = 0;
+					try {
+						this.storage.transactionSync(() => {
+							confirm();
+							generation = this.activeGeneration().generation + 1;
+							this.storage.sql.exec(
+								"INSERT INTO host_generations VALUES (?, ?, ?, ?)",
+								generation,
+								conversation.id,
+								manifest.id,
+								row.command,
+							);
+							this.storage.sql.exec(
+								"UPDATE checkpoint_pointer SET conversation_generation = ? WHERE id = 1",
+								generation,
+							);
+							this.storage.sql.exec(
+								"UPDATE host_restores SET state = 'restored', restored_pair = ?, fallback = ?, generation = ? WHERE command = ? AND state = 'retired'",
+								manifest.id,
+								manifest.id === row.pair ? 0 : 1,
+								generation,
+								row.command,
+							);
+						});
+					} catch (error) {
+						if (error instanceof RecoveryDenied) throw error;
+						this.persistenceFailed();
+						throw error;
+					}
+					this.conversationId = conversation.id;
+					await this.durable(context);
+					return generation;
+				}),
+			true,
+		);
+		if (result.status === "blocked") {
+			this.transition("account", () =>
+				this.storage.sql.exec(
+					"UPDATE host_restores SET state = 'blocked', evidence = ? WHERE command = ? AND state = 'retired'",
+					JSON.stringify(result.failures),
+					row.command,
+				),
+			);
+			await this.durable();
+			return false;
+		}
+		return result.status === "restored";
+	}
+
+	/** Releases the product barrier for a restore refused before its fence. */
+	private async refuseRestore(row: {
+		command: string;
+		cutoff: number;
+		pair: string;
+	}): Promise<boolean> {
+		const complete = this.dependencies.checkpoints?.completeRestore;
+		if (!complete) return false;
+		const refusal: RestoreRefusalV1 = {
+			version: 1,
+			restoreCommandId: row.command,
+			pairId: row.pair,
+			cutoffSeq: row.cutoff,
+			refused: "stale",
+		};
+		const result = parseRestoreCompletionResultV1(
+			await complete(refusal),
+			refusal,
+		);
+		if (result.outcome === "retry") return false;
+		if (result.outcome !== "applied" && result.outcome !== "already_applied") {
+			this.transition("account", () =>
+				this.storage.sql.exec(
+					"UPDATE host_restores SET evidence = ? WHERE command = ?",
+					JSON.stringify({ refusal: result.outcome }),
+					row.command,
+				),
+			);
+			await this.durable();
+			return false;
+		}
+		await this.disposeCandidate(row.command, "refused");
+		this.transition("account", () =>
+			this.storage.sql.exec(
+				"UPDATE host_restores SET state = 'refused' WHERE command = ? AND state = 'refusing'",
+				row.command,
+			),
+		);
+		await this.durable();
+		return true;
+	}
+
+	/** Dispositions reach the product first; only an exact acknowledgment reopens admission. */
+	private async completeRestore(row: {
+		command: string;
+		cutoff: number;
+		pair: string;
+		restored_pair: string | null;
+		fallback: number | null;
+		generation: number | null;
+	}): Promise<boolean> {
+		const complete = this.dependencies.checkpoints?.completeRestore;
+		if (!complete) return false;
+		// The product sees the restored pointer before admission reopens.
+		await this.deliverCheckpoints();
+		if (
+			this.read(
+				() =>
+					this.storage.sql
+						.exec(
+							"SELECT 1 FROM checkpoint_projections WHERE state != 'applied'",
+						)
+						.toArray().length,
+			)
+		)
+			return false;
+		await this.deliverProjections(true);
+		if (
+			this.read(
+				() =>
+					this.storage.sql
+						.exec("SELECT 1 FROM host_projections WHERE applied < version")
+						.toArray().length,
+			)
+		)
+			return false;
+		const completion: RestoreCompletionV1 = {
+			version: 1,
+			restoreCommandId: row.command,
+			pairId: row.pair,
+			restoredPairId: String(row.restored_pair),
+			fallback: row.fallback === 1,
+			cutoffSeq: row.cutoff,
+			conversationGeneration: Number(row.generation),
+		};
+		const result = parseRestoreCompletionResultV1(
+			await complete(completion),
+			completion,
+		);
+		if (result.outcome === "retry") return false;
+		if (result.outcome !== "applied" && result.outcome !== "already_applied") {
+			this.transition("account", () =>
+				this.storage.sql.exec(
+					"UPDATE host_restores SET evidence = ? WHERE command = ?",
+					JSON.stringify({ completion: result.outcome }),
+					row.command,
+				),
+			);
+			await this.durable();
+			return false;
+		}
+		await this.disposeCandidate(row.command, "applied");
+		this.transition("account", () => {
+			this.storage.sql.exec(
+				"UPDATE host_restores SET state = 'complete' WHERE command = ? AND state = 'restored'",
+				row.command,
+			);
+			this.storage.sql.exec(
+				"INSERT INTO host_wakeups VALUES('product',?) ON CONFLICT(id) DO UPDATE SET deadline=min(deadline,excluded.deadline)",
+				this.dependencies.now(),
+			);
+		});
+		await this.durable();
+		return true;
 	}
 
 	async configureCandidate(commandId: string, input: unknown) {
@@ -5086,14 +5636,14 @@ export class PiDurableHost {
 		)
 			throw new Error("Candidate submission has no ordinary command");
 		if (
-			submission.conversationId !== ROOT_CONVERSATION_ID ||
+			submission.conversationId !== this.conversationId ||
 			submission.type !== "input" ||
 			submission.requestId !== command.id
 		)
 			throw new Error("Candidate Pi identity mismatch");
 		if (submission.status === "queued") {
 			const root = await this.harness.conversation(
-				ROOT_CONVERSATION_ID,
+				this.conversationId,
 				context,
 			);
 			if (!root) throw new Error("Candidate Pi root missing");
@@ -5119,7 +5669,7 @@ export class PiDurableHost {
 			const message = entry?.model?.[0];
 			if (
 				!entry ||
-				entry.conversationId !== ROOT_CONVERSATION_ID ||
+				entry.conversationId !== this.conversationId ||
 				entry.kind !== "pi.user" ||
 				entry.model?.length !== 1 ||
 				message?.role !== "user" ||
@@ -5320,7 +5870,7 @@ export class PiDurableHost {
 		const invocation = this.active;
 		await awaitWithContext(this.repairWakeup(), context);
 		context.abortSignal?.throwIfAborted();
-		const root = await this.harness.root(context);
+		const root = await this.activeConversation(context);
 		if ((await root.agent(context)).model === undefined) {
 			await this.check(
 				await awaitWithContext(this.dependencies.authority(), context),
@@ -5335,8 +5885,7 @@ export class PiDurableHost {
 		context.abortSignal?.throwIfAborted();
 		// No await separates this check from the transition, so a mutation
 		// scope cannot be acquired between them.
-		if (!this.ordinaryAllowed())
-			throw new Error("Candidate recovery-only admission");
+		if (!this.ordinaryAllowed()) throw new EffectDenied("recovery");
 		this.transition("intent", () => {
 			if (["queued", "recovering"].includes(this.run(command.run).state))
 				this.storage.sql.exec(
@@ -5354,7 +5903,7 @@ export class PiDurableHost {
 				.one(),
 		);
 		const retained = await this.piRecords.submissionByRequest(
-			ROOT_CONVERSATION_ID,
+			this.conversationId,
 			id,
 			context,
 		);
@@ -5631,12 +6180,13 @@ export class PiDurableHost {
 				!task ||
 				task.version !== 1 ||
 				canonical(task.input) !== correlation.taskInput ||
-				task.conversationId !== ROOT_CONVERSATION_ID ||
+				// A retired generation's late result keeps its own conversation.
+				!this.knownConversation(task.conversationId) ||
 				(existing.kind === "tool"
 					? canonical(task.state.checkpoint) !== correlation.prepared
 					: correlation.version === 2
 						? !this.customTaskMatches(task, correlation)
-						: preparedTask(task) !== correlation.prepared)
+						: preparedTask(task, task.conversationId) !== correlation.prepared)
 			) {
 				this.block("result-identity", correlation.run);
 				throw new Error("Original result identity mismatch");
@@ -5879,6 +6429,27 @@ export class PiDurableHost {
 					count("SELECT COALESCE(MAX(rowid), 0) AS n FROM host_effects"),
 				),
 			authority: () => this.dependencies.authority(),
+			head: async () => {
+				const conversation = this.conversationId;
+				const handle = await this.harness.conversation(
+					conversation,
+					BACKGROUND_CONTEXT,
+				);
+				const entry = handle
+					? ((await handle.entries({}, 1, undefined, BACKGROUND_CONTEXT))
+							.items[0]?.id ?? null)
+					: null;
+				return {
+					conversation,
+					entry,
+					contextDigest:
+						handle && entry !== null
+							? await digestText(
+									canonical(await handle.context(BACKGROUND_CONTEXT)),
+								)
+							: null,
+				};
+			},
 			resume: async () => {
 				this.transition("intent", () => {
 					const now = this.dependencies.now();
@@ -5951,6 +6522,7 @@ export class PiDurableHost {
 		// the alarm, which the platform would otherwise retry outside the host.
 		await this.deliverProjections().catch(() => undefined);
 		await this.deliverCheckpoints();
+		await this.advanceRestore();
 		if (!this.ordinaryAllowed()) return;
 		if (
 			this.sealed ||
@@ -6057,7 +6629,7 @@ export class PiDurableHost {
 			);
 			try {
 				const root = await this.harness.conversation(
-					ROOT_CONVERSATION_ID,
+					this.conversationId,
 					context,
 				);
 				if (root) {

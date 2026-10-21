@@ -1129,6 +1129,15 @@ export class CandidateFixtureProduct extends WorkerEntrypoint<CandidateFixtureBi
 			projections,
 		);
 	}
+	async applyCandidateRestore(
+		scope: CandidateRuntimeScope,
+		completion: unknown,
+	) {
+		return this.commands().applyRestoreCompletion(
+			parseCandidateRuntimeScope(scope),
+			completion,
+		);
+	}
 	observeOwned(
 		userId: string,
 		projectId: string,

@@ -65,6 +65,12 @@ const REFERENCE_COLUMNS: Partial<
 };
 
 export type ContextPosition = { commitSeq: number; nextId: string };
+export type ConversationHead = {
+	conversation: number;
+	/** Null before the conversation has any entry. */
+	entry: number | null;
+	contextDigest: string | null;
+};
 export type StorageCompatibility = {
 	format: number;
 	engine: string;
@@ -90,6 +96,8 @@ export type CheckpointManifestV1 = {
 		plaintextDigest: string;
 		position: ContextPosition;
 		conversationGeneration: number;
+		/** Where a restore forks: the active conversation's newest entry and its model context. */
+		head: ConversationHead;
 		pins: { count: number; digest: string };
 	};
 	compatibility: {
@@ -122,6 +130,8 @@ export type CheckpointHostPort = {
 	}>;
 	/** Rearms ordinary work after a baseline exists. */
 	resume(): Promise<void>;
+	/** Read-only: the active conversation's head. Publication rechecks the Pi position after it. */
+	head(): Promise<ConversationHead>;
 };
 
 export type CheckpointFault =
@@ -129,7 +139,8 @@ export type CheckpointFault =
 	| "after-context-upload"
 	| "after-verify"
 	| "commit"
-	| "after-commit";
+	| "after-commit"
+	| "after-restore-files";
 
 export type PublishResult =
 	| { status: "published"; manifest: CheckpointManifestV1 }
@@ -139,6 +150,35 @@ export type PublishResult =
 			reason: ArtifactFailureReason | "stale" | "context_failed";
 			workspace: RecoveryFailure["workspace"];
 	  };
+
+export type RestoreFailure = {
+	pair: string;
+	reason: ArtifactFailureReason | "context_failed" | "not_retained";
+	workspace: RecoveryFailure["workspace"];
+};
+export type RestorePairResult =
+	| {
+			status: "restored";
+			manifest: CheckpointManifestV1;
+			fallback: boolean;
+			generation: number;
+	  }
+	| { status: "deferred"; reason: string }
+	| { status: "blocked"; failures: RestoreFailure[] };
+
+/** Thrown by `establish` when the new generation does not reproduce the pair's context. */
+export class ContextMismatch extends Error {}
+
+/** The files half of a restore, as the host composes it. */
+export type CheckpointRestorer = {
+	restorePair(
+		pairId: string,
+		establish: (
+			manifest: CheckpointManifestV1,
+			confirm: () => void,
+		) => Promise<number>,
+	): Promise<RestorePairResult>;
+};
 
 type SqlStorage = {
 	sql: {
@@ -241,17 +281,27 @@ export function checkpointHealth(
 				"SELECT count(*) AS n FROM checkpoint_projections WHERE state = 'rejected'",
 			)
 			.one().n > 0;
-	const unknown =
+	const exists = (table: string) =>
 		storage.sql
 			.exec(
-				"SELECT name FROM sqlite_master WHERE type='table' AND name='recovery_operations'",
+				"SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+				table,
 			)
-			.toArray().length > 0 &&
-		storage.sql
-			.exec<{ n: number }>(
-				"SELECT count(*) AS n FROM recovery_operations WHERE state = 'unknown'",
-			)
-			.one().n > 0;
+			.toArray().length > 0;
+	const unknown =
+		(exists("recovery_operations") &&
+			storage.sql
+				.exec<{ n: number }>(
+					"SELECT count(*) AS n FROM recovery_operations WHERE state = 'unknown'",
+				)
+				.one().n > 0) ||
+		// A restore with no usable pair holds the workspace until review.
+		(exists("host_restores") &&
+			storage.sql
+				.exec<{ n: number }>(
+					"SELECT count(*) AS n FROM host_restores WHERE state = 'blocked'",
+				)
+				.one().n > 0);
 	const last = storage.sql
 		.exec<{ outcome: string }>(
 			"SELECT outcome FROM checkpoint_health WHERE id = 1",
@@ -279,7 +329,7 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
 
 type ContextEvidence = Omit<
 	CheckpointManifestV1["context"],
-	"conversationGeneration" | "pins"
+	"conversationGeneration" | "head" | "pins"
 >;
 type ContextSnapshot = {
 	format: number;
@@ -365,6 +415,55 @@ function snapshotContext(storage: SqlStorage): {
 		},
 		pins: [...pins].sort(),
 	};
+}
+
+function nextProjection(storage: SqlStorage) {
+	return (
+		storage.sql
+			.exec<{ n: number }>(
+				"SELECT COALESCE(MAX(version), 0) AS n FROM checkpoint_projections",
+			)
+			.one().n + 1
+	);
+}
+
+/**
+ * Points current at the restored pair, inside the transaction that commits
+ * its generation. A restored previous pair has no retained predecessor, so
+ * pairs from the discarded timeline stop being retained or offered.
+ */
+function movePointer(storage: SqlStorage, restored: string) {
+	const before = pointer(storage);
+	const previous = restored === before.current ? before.previous : null;
+	const generation = before.mutation_generation + 1;
+	storage.sql.exec(
+		"UPDATE checkpoint_pointer SET current = ?, previous = ?, mutation_generation = ? WHERE id = 1",
+		restored,
+		previous,
+		generation,
+	);
+	storage.sql.exec(
+		"INSERT INTO checkpoint_projections (version, current, previous, mutation_generation, expected, state) VALUES (?, ?, ?, ?, ?, 'pending')",
+		nextProjection(storage),
+		restored,
+		previous,
+		generation,
+		before.mutation_generation,
+	);
+}
+
+function manifestRow(
+	storage: SqlStorage,
+	where: string,
+	value: string | number,
+): CheckpointManifestV1 | null {
+	const row = storage.sql
+		.exec<{ manifest: string }>(
+			`SELECT manifest FROM checkpoint_manifests WHERE ${where}`,
+			value,
+		)
+		.toArray()[0];
+	return row ? (JSON.parse(row.manifest) as CheckpointManifestV1) : null;
 }
 
 function currentPosition(storage: SqlStorage): number {
@@ -600,6 +699,18 @@ export function createCheckpointPublisher(deps: {
 			return { status: "deferred", reason: "baseline_missing" };
 		if (kind === "baseline" && pointer(storage).current !== null)
 			return { status: "deferred", reason: "baseline_exists" };
+		// A fenced restore names the current pair; publishing would move it.
+		if (
+			storage.sql
+				.exec(
+					"SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'host_restores'",
+				)
+				.toArray().length &&
+			storage.sql
+				.exec("SELECT 1 FROM host_restores WHERE state IN ('fenced','retired')")
+				.toArray().length
+		)
+			return { status: "deferred", reason: "restore_pending" };
 		let scope: MutationScope;
 		try {
 			scope = ledger.acquire(kind === "baseline" ? "restore" : "capture");
@@ -638,6 +749,8 @@ export function createCheckpointPublisher(deps: {
 					: ("unchanged" as const);
 			// The context is read at the start of exclusive ownership, before files.
 			const watermark = host.effectWatermark();
+			const headPosition = currentPosition(storage);
+			const head = await host.head();
 			let captured: ReturnType<typeof snapshotContext>;
 			try {
 				captured = snapshotContext(storage);
@@ -646,6 +759,8 @@ export function createCheckpointPublisher(deps: {
 					return fail("context_failed", workspace());
 				throw error;
 			}
+			if (captured.snapshot.position.commitSeq !== headPosition)
+				return fail("stale", workspace());
 			const archive = await recovery.capture(scope);
 			if (archive.status !== "verified")
 				return fail(archive.reason, archive.workspace);
@@ -693,6 +808,7 @@ export function createCheckpointPublisher(deps: {
 								"SELECT COALESCE(MAX(sequence), 0) AS n FROM checkpoint_manifests",
 							)
 							.one().n + 1;
+					const version = nextProjection(storage);
 					const manifest: CheckpointManifestV1 = {
 						version: CHECKPOINT_MANIFEST_VERSION,
 						id: pairId,
@@ -704,6 +820,7 @@ export function createCheckpointPublisher(deps: {
 						context: {
 							...context,
 							conversationGeneration: before.conversation_generation,
+							head,
 							pins: { count: captured.pins.length, digest: pinDigest },
 						},
 						compatibility: {
@@ -746,7 +863,7 @@ export function createCheckpointPublisher(deps: {
 					);
 					storage.sql.exec(
 						"INSERT INTO checkpoint_projections (version, current, previous, mutation_generation, expected, state) VALUES (?, ?, ?, ?, ?, 'pending')",
-						sequence,
+						version,
 						pairId,
 						before.current,
 						manifest.mutationGeneration,
@@ -792,6 +909,130 @@ export function createCheckpointPublisher(deps: {
 		/** A later pair at an acknowledged quiescent run or Git boundary. */
 		publishBoundary() {
 			return publish("boundary");
+		},
+		/**
+		 * Under one exclusive mutation scope, verify and restore the named
+		 * current pair, or its previous pair when the current one is unusable,
+		 * and let the host establish the matching conversation generation.
+		 * `establish` must call `confirm` inside the transaction that commits
+		 * the generation. Two unusable pairs block; the seed is never used.
+		 */
+		async restorePair(
+			pairId: string,
+			establish: (
+				manifest: CheckpointManifestV1,
+				confirm: () => void,
+			) => Promise<number>,
+		): Promise<RestorePairResult> {
+			await refresh();
+			if (!writable(authority))
+				return { status: "deferred", reason: "executor_not_current" };
+			if (deps.writers && !(await deps.writers()).settled)
+				return { status: "deferred", reason: "writers_unsettled" };
+			// Only the retained lineage: the current pair, then its previous pair.
+			const at = pointer(storage);
+			if (pairId !== at.current && pairId !== at.previous)
+				return {
+					status: "blocked",
+					failures: [
+						{ pair: pairId, reason: "not_retained", workspace: "unchanged" },
+					],
+				};
+			const named = manifestRow(storage, "id = ?", pairId);
+			if (!named)
+				return {
+					status: "blocked",
+					failures: [
+						{
+							pair: pairId,
+							reason: "artifact_missing",
+							workspace: "unchanged",
+						},
+					],
+				};
+			const previous =
+				pairId === at.current && at.previous
+					? manifestRow(storage, "id = ?", at.previous)
+					: null;
+			let scope: MutationScope;
+			try {
+				scope = ledger.acquire("restore");
+			} catch (error) {
+				if (error instanceof RecoveryDenied)
+					return { status: "deferred", reason: error.reason };
+				throw error;
+			}
+			inFlight++;
+			const failures: RestoreFailure[] = [];
+			try {
+				for (const manifest of [named, previous]) {
+					if (!manifest) continue;
+					if (manifest.compatibility.host !== host.version) {
+						failures.push({
+							pair: manifest.id,
+							reason: "incompatible",
+							workspace: ledger.mutated(scope.id) ? "unusable" : "unchanged",
+						});
+						continue;
+					}
+					try {
+						await readContext(manifest.id, manifest.context);
+					} catch {
+						failures.push({
+							pair: manifest.id,
+							reason: "context_failed",
+							workspace: ledger.mutated(scope.id) ? "unusable" : "unchanged",
+						});
+						continue;
+					}
+					const files = await recovery.restore(scope, manifest.archive);
+					if (files.status !== "verified") {
+						failures.push({
+							pair: manifest.id,
+							reason: files.reason,
+							workspace: files.workspace,
+						});
+						// An unknown extraction owns the workspace until reviewed.
+						if (files.workspace === "unknown") break;
+						if (
+							files.reason === "authority_revoked" ||
+							files.reason === "scope_denied"
+						)
+							return { status: "deferred", reason: files.reason };
+						continue;
+					}
+					await deps.fault?.("after-restore-files");
+					await refresh();
+					if (!writable(authority))
+						return { status: "deferred", reason: "executor_not_current" };
+					try {
+						const generation = await establish(manifest, () => {
+							ledger.confirm(scope);
+							movePointer(storage, manifest.id);
+						});
+						return {
+							status: "restored",
+							manifest,
+							fallback: manifest.id !== pairId,
+							generation,
+						};
+					} catch (error) {
+						if (error instanceof RecoveryDenied)
+							return { status: "deferred", reason: error.reason };
+						if (!(error instanceof ContextMismatch)) throw error;
+						failures.push({
+							pair: manifest.id,
+							reason: "verification_failed",
+							workspace: "unusable",
+						});
+					}
+				}
+				health("failed", "restore_blocked");
+				return { status: "blocked", failures };
+			} finally {
+				inFlight--;
+				ledger.release(scope);
+			}
 		},
 		current(): {
 			current: CheckpointManifestV1 | null;
@@ -888,6 +1129,11 @@ export async function deliverCheckpointProjections(
 			"SELECT version, current, previous, mutation_generation, expected FROM checkpoint_projections WHERE state = 'pending' AND NOT EXISTS (SELECT 1 FROM checkpoint_projections WHERE state = 'rejected') ORDER BY version LIMIT 16",
 		)
 		.toArray();
+	// A restore move does not chain from the move before it; it starts a new batch.
+	const chain = rows.findIndex(
+		(row, index) => index > 0 && row.previous !== rows[index - 1]?.current,
+	);
+	if (chain > 0) rows.length = chain;
 	if (rows.length) {
 		const batch: CheckpointProjectionV1[] = rows.map((row) => ({
 			version: 1,

@@ -12,7 +12,21 @@ export const CANDIDATE_RUNTIME_OWNER = "pi_durable_v1";
 export const CANDIDATE_COMMAND_VERSION = 2;
 export const CANDIDATE_COMMAND_TEXT_BYTES = 8192;
 export const CANDIDATE_QUEUE_TTL_MS = 900_000;
-const KINDS = ["prompt", "follow_up", "stop", "cancel"] as const;
+const KINDS = [
+	"prompt",
+	"follow_up",
+	"stop",
+	"cancel",
+	"restore_checkpoint_acknowledging_loss",
+] as const;
+/** The user's explicit acknowledgment that restoring the pair discards later unbacked work. */
+type RestoreV2 = {
+	committedPairId: string;
+	expectedMutationGeneration: number;
+	/** The last accepted command sequence the user saw; it becomes the restore cutoff. */
+	expectedRecoveryPosition: number;
+	unbackedLossAcknowledged: true;
+};
 
 type BrowserBaseV2 = {
 	version: 2;
@@ -32,7 +46,12 @@ export type BrowserCommandV2 =
 			kind: "cancel";
 			sessionId: string;
 			targetCommandId: string;
-	  });
+	  })
+	| (BrowserBaseV2 &
+			RestoreV2 & {
+				kind: "restore_checkpoint_acknowledging_loss";
+				sessionId: string;
+			});
 
 type CommandBaseV2 = {
 	version: 2;
@@ -56,7 +75,9 @@ export type CommandV2 =
 	| (CommandBaseV2 & MessagesV2 & { kind: "prompt" })
 	| (CommandBaseV2 & MessagesV2 & { kind: "follow_up"; targetRunId: string })
 	| (CommandBaseV2 & { kind: "stop"; targetRunId: string })
-	| (CommandBaseV2 & { kind: "cancel"; targetCommandId: string });
+	| (CommandBaseV2 & { kind: "cancel"; targetCommandId: string })
+	| (CommandBaseV2 &
+			RestoreV2 & { kind: "restore_checkpoint_acknowledging_loss" });
 
 export type ReceiptV2 = {
 	version: 2;
@@ -201,6 +222,12 @@ const COMMAND_BASE = [
 	"deadlineAt",
 	"payloadDigest",
 ];
+const RESTORE_FIELDS = [
+	"committedPairId",
+	"expectedMutationGeneration",
+	"expectedRecoveryPosition",
+	"unbackedLossAcknowledged",
+];
 function fields(kind: (typeof KINDS)[number], browser: boolean): string[] {
 	const base = browser ? BROWSER_BASE : COMMAND_BASE;
 	switch (kind) {
@@ -223,6 +250,8 @@ function fields(kind: (typeof KINDS)[number], browser: boolean): string[] {
 			return [...base, "targetRunId"];
 		case "cancel":
 			return [...base, "targetCommandId"];
+		case "restore_checkpoint_acknowledging_loss":
+			return [...base, ...RESTORE_FIELDS];
 	}
 }
 function record(input: unknown, browser: boolean) {
@@ -234,6 +263,7 @@ function record(input: unknown, browser: boolean) {
 			"text",
 			"targetRunId",
 			"targetCommandId",
+			...RESTORE_FIELDS,
 			...(browser ? [] : ["userMessageId", "assistantMessageId"]),
 		],
 		browser ? "BrowserCommandV2" : "CommandV2",
@@ -247,6 +277,28 @@ function record(input: unknown, browser: boolean) {
 }
 function id(record: Record<string, unknown>, key: string) {
 	return stringField(record, key, { maxBytes: RUNTIME_LIMITS.idBytes });
+}
+function restore(record: Record<string, unknown>): RestoreV2 {
+	return {
+		committedPairId: id(record, "committedPairId"),
+		expectedMutationGeneration: integerField(
+			record,
+			"expectedMutationGeneration",
+			{ minimum: 1 },
+		),
+		expectedRecoveryPosition: integerField(record, "expectedRecoveryPosition", {
+			minimum: 0,
+		}),
+		unbackedLossAcknowledged: acknowledged(record),
+	};
+}
+function acknowledged(record: Record<string, unknown>): true {
+	if (record.unbackedLossAcknowledged !== true)
+		throw new ContractParseError(
+			"invalid_field",
+			"unbackedLossAcknowledged must be true.",
+		);
+	return true;
 }
 function text(record: Record<string, unknown>) {
 	const value = stringField(record, "text", {
@@ -287,6 +339,8 @@ export function parseBrowserCommandV2(input: unknown): BrowserCommandV2 {
 		};
 	if (kind === "stop")
 		return { ...base, kind, sessionId, targetRunId: id(r, "targetRunId") };
+	if (kind === "restore_checkpoint_acknowledging_loss")
+		return { ...base, kind, sessionId, ...restore(r) };
 	return {
 		...base,
 		kind,
@@ -330,6 +384,16 @@ export function parseCommandV2(input: unknown): CommandV2 {
 		return { ...base, kind, targetRunId: id(r, "targetRunId") };
 	if (kind === "cancel")
 		return { ...base, kind, targetCommandId: id(r, "targetCommandId") };
+	if (kind === "restore_checkpoint_acknowledging_loss") {
+		const fields = restore(r);
+		// The restore is the first command after its cutoff.
+		if (base.commandSeq !== fields.expectedRecoveryPosition + 1)
+			throw new ContractParseError(
+				"invalid_field",
+				"A restore must directly follow its cutoff.",
+			);
+		return { ...base, kind, ...fields };
+	}
 	const messages = {
 		userMessageId: id(r, "userMessageId"),
 		assistantMessageId: id(r, "assistantMessageId"),

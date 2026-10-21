@@ -1,5 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
-import type { CheckpointProjectionV1 } from "../../../packages/runtime-contracts/src/checkpoint.js";
+import type {
+	CheckpointProjectionV1,
+	RestoreCompletionV1,
+	RestoreRefusalV1,
+} from "../../../packages/runtime-contracts/src/checkpoint.js";
 import type {
 	ConfigurationAuthorityV1,
 	ConfigurationSelectionV1,
@@ -19,6 +23,10 @@ import type {
 	ProjectionIntentV1,
 	RuntimeObservationV1,
 } from "../../../packages/runtime-contracts/src/projection.js";
+import type {
+	CheckpointHostPort,
+	CheckpointRestorer,
+} from "./pi-durable-checkpoints.ts";
 import {
 	type HostFault,
 	type LocalAuthority,
@@ -73,6 +81,10 @@ export interface CandidatePrivateProduct extends PrivateModelTransport {
 		scope: CandidateRuntimeScope,
 		projections: CheckpointProjectionV1[],
 	): Promise<unknown>;
+	applyCandidateRestore(
+		scope: CandidateRuntimeScope,
+		completion: RestoreCompletionV1 | RestoreRefusalV1,
+	): Promise<unknown>;
 	readCandidateConfigurationAuthority(
 		commandId: string,
 		input: unknown,
@@ -95,6 +107,12 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 	protected hostFault(_point: HostFault) {}
 	/** Deployment composition supplies the session's sandbox; none means tools fail before admission. */
 	protected remoteExecutor(): RemoteExecutor | undefined {
+		return undefined;
+	}
+	/** Deployment composition supplies paired restore with the session's execution and store. */
+	protected checkpointRestorer(
+		_port: CheckpointHostPort,
+	): CheckpointRestorer | undefined {
 		return undefined;
 	}
 	private opening: Promise<PiDurableHost> | undefined;
@@ -160,6 +178,11 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 						checkpoints: {
 							applyProjections: (projections: CheckpointProjectionV1[]) =>
 								product.applyCandidateCheckpoints(scope, projections),
+							completeRestore: (
+								completion: RestoreCompletionV1 | RestoreRefusalV1,
+							) => product.applyCandidateRestore(scope, completion),
+							restorer: (port: CheckpointHostPort) =>
+								this.checkpointRestorer(port),
 						},
 					}
 				: {}),
