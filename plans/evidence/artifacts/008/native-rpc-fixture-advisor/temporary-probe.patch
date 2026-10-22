@@ -1,0 +1,24 @@
+diff --git a/home/ayan/ditto-execution/plan-008-4WXvNW/plans/evidence/artifacts/008/native-rpc-fixture/entry-source/apps/credential-tests/src/model-entry.ts b/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests/src/model-entry.ts
+index 4cfb258..7e3dae3 100644
+--- a/home/ayan/ditto-execution/plan-008-4WXvNW/plans/evidence/artifacts/008/native-rpc-fixture/entry-source/apps/credential-tests/src/model-entry.ts
++++ b/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests/src/model-entry.ts
+@@ -1,4 +1,7 @@
+ import { WorkerEntrypoint } from "cloudflare:workers";
++// Temporary 008 native-rpc-fixture probe, restored after the bounded invocation.
++export { NativeRpcFixtureReceiver } from "../../../plans/evidence/artifacts/008/native-rpc-fixture/receiver";
++import { boundedNativeRpcProbe, type ProbeBindings } from "../../../plans/evidence/artifacts/008/native-rpc-fixture/caller";
+ import {
+ 	decodeContractInput,
+ 	integerField,
+@@ -250,6 +253,11 @@ function parseFixtureResetRequest(value: unknown): FixtureResetRequest {
+ }
+ 
+ export class CandidateFixtureSession extends PiDurableProductSession {
++	async fixtureNativeRpc008(input: unknown) {
++		const scope = parseCandidateRuntimeScope(input);
++		if (this.env.CANDIDATE_DISPOSABLE !== "008-synthetic" || !this.ctx.id.equals(this.env.CandidateSessions.idFromName(scope.workspaceSessionId))) throw new Error("probe_caller_denied");
++		return boundedNativeRpcProbe(this.env as CandidateSessionBindings & ProbeBindings, scope);
++	}
+ 	constructor(ctx: DurableObjectState, env: CandidateSessionBindings) {
+ 		super(ctx, env);
+ 		ctx.storage.sql.exec(

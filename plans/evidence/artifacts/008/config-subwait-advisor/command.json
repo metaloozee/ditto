@@ -1,0 +1,17 @@
+{
+  "argv": [
+    "sh",
+    ".execution-008/clean-run.sh",
+    "pnpm",
+    "--filter",
+    "@ditto/credential-tests",
+    "exec",
+    "vitest",
+    "run",
+    "src/product-commands.worker.test.ts",
+    "-t",
+    "owned authority|settles final-hold|credential-local .*barrier|private fixture reset preserves|private fixture recovery activates|generation-2 admission|credential-local final gate|priority Stop through transport beats held default|queued configuration|real D1 lost started|real admitted Stop repairs candidate-control-intent"
+  ],
+  "cwd": "/home/ayan/ditto-execution/plan-008-4WXvNW",
+  "start_unix": 1791824314.1766496
+}

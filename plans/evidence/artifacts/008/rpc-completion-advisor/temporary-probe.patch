@@ -1,0 +1,338 @@
+--- a/apps/credential-tests/src/model-entry.ts
++++ b/apps/credential-tests/src/model-entry.ts
+@@ -250,6 +250,11 @@
+ }
+ 
+ export class CandidateFixtureSession extends PiDurableProductSession {
++	private rpcDiagnosis = false;
++	enableRpcDiagnosis() { this.rpcDiagnosis = true; }
++	protected diagnosticMark(stage: string) {
++		if (this.rpcDiagnosis) console.log("DEBUG-008-rpc", stage, Date.now());
++	}
+ 	constructor(ctx: DurableObjectState, env: CandidateSessionBindings) {
+ 		super(ctx, env);
+ 		ctx.storage.sql.exec(
+@@ -583,9 +588,11 @@
+ 	async alarm() {
+ 		if (this.retired || !this.ordinaryAllowed()) return;
+ 		this.alarmCompletion = (async () => {
++			this.diagnosticMark("alarm.enter");
+ 			const host = await this.alarmHost();
+ 			if (!host) return;
+ 			await host.alarm();
++			this.diagnosticMark("alarm.scheduled");
+ 			if (
+ 				this.joinHold &&
+ 				this.ctx.storage.sql
+@@ -599,6 +606,7 @@
+ 				await this.joinHold.released;
+ 			}
+ 			await host.joinInvocation();
++			this.diagnosticMark("alarm.joined");
+ 		})();
+ 		await this.alarmCompletion;
+ 	}
+@@ -682,7 +690,12 @@
+ 	predecessor: string | null;
+ };
+ 
++let rpcDiagnosisReceiver = false;
+ export class CandidateFixtureProduct extends WorkerEntrypoint<CandidateFixtureBindings> {
++	enableRpcDiagnosis() { rpcDiagnosisReceiver = true; }
++	private diagnosticMark(stage: string) {
++		if (rpcDiagnosisReceiver) console.log("DEBUG-008-rpc", stage, Date.now());
++	}
+ 	private fixtureSession(sessionId: string) {
+ 		return this.env.CandidateSessions.getByName(sessionId);
+ 	}
+@@ -1102,9 +1115,11 @@
+ 	async readRuntimeAuthority(
+ 		value: CandidateRuntimeScope,
+ 	): Promise<LocalAuthority> {
++		this.diagnosticMark("authority.receiver.entry");
++		try {
+ 		const scope = parseCandidateRuntimeScope(value);
+ 		if (!(await candidateFixtureResetTableExists(this.env.DB)))
+-			return this.commands().runtimeAuthority(
++			return await this.commands().runtimeAuthority(
+ 				scope.userId,
+ 				scope.projectId,
+ 				scope.workspaceSessionId,
+@@ -1158,6 +1173,7 @@
+ 			generation: reset.generation,
+ 			priorTerminated: intent.predecessor.id,
+ 		};
++		} finally { this.diagnosticMark("authority.receiver.exit"); }
+ 	}
+ 	async readCandidateSubject(commandId: string, ownerVersion: number) {
+ 		try {
+@@ -1192,6 +1208,8 @@
+ 		input: unknown,
+ 		selection?: unknown,
+ 	) {
++		this.diagnosticMark("selection.receiver.entry");
++		try {
+ 		const subject = await this.readCandidateSubject(commandId, 1);
+ 		if (!subject) return { version: 1 as const, status: "denied" as const };
+ 		if (selection !== undefined)
+@@ -1207,7 +1225,7 @@
+ 				status.generation !== subject.connectionGeneration)
+ 		)
+ 			return { version: 1 as const, status: "denied" as const };
+-		return readOwnedConfigurationAuthority(
++		return await readOwnedConfigurationAuthority(
+ 			this.env.DB,
+ 			subject,
+ 			input,
+@@ -1215,6 +1233,7 @@
+ 			true,
+ 			CANDIDATE_MODEL_POLICY,
+ 		);
++		} finally { this.diagnosticMark("selection.receiver.exit"); }
+ 	}
+ 	requestModel(input: unknown, capability: ModelClaimRpc) {
+ 		return performPrivateModelRequest(
+--- a/apps/credential-tests/src/product-commands.worker.test.ts
++++ b/apps/credential-tests/src/product-commands.worker.test.ts
+@@ -1502,6 +1502,8 @@
+ });
+ 
+ it("queued configuration uses the next selection across a sequence gap and preserves committed preparation", async () => {
++	const mark = (stage: string) => console.log("DEBUG-008-rpc", stage, Date.now());
++	mark("body.entry");
+ 	const credential = await candidateCredential();
+ 	await env.DB.prepare(
+ 		"UPDATE codex_fixture_capabilities SET snapshot=? WHERE userId='owner'",
+@@ -1537,9 +1539,14 @@
+ 		text: "Synthetic queued third",
+ 	});
+ 	const runtime = env.CandidateSessions.getByName(first.workspaceSessionId);
+-	try {
++	await env.CandidateProduct.enableRpcDiagnosis();
++	await runtime.enableRpcDiagnosis();
++	try {
++		mark("delivery.third.before");
+ 		await runtime.deliverCommand(third.commandId, 1);
++		mark("delivery.first.before");
+ 		await runtime.deliverCommand(first.commandId, 1);
++		mark("poll.first.before");
+ 		await expect
+ 			.poll(
+ 				async () =>
+@@ -1547,6 +1554,7 @@
+ 				{ timeout: 3000 },
+ 			)
+ 			.toEqual(["complete", "pending"]);
++		mark("poll.first.after");
+ 		const prepared = parseSyntheticModelRequestV1(
+ 			await credential.candidateFinalRequest(),
+ 		);
+@@ -1556,7 +1564,9 @@
+ 				.exec("SELECT task,prepared,selection FROM host_tasks ORDER BY task")
+ 				.toArray(),
+ 		);
++		mark("reopen.before");
+ 		await runtime.reopenFixture();
++		mark("configure.before");
+ 		expect(
+ 			await runtime.configureFixture(
+ 				{
+@@ -1577,7 +1587,9 @@
+ 					.toArray(),
+ 			),
+ 		).toEqual(task);
++		mark("configure.after");
+ 		await runtime.deliverCommand(second.commandId, 1);
++		mark("poll.followups.before");
+ 		await expect
+ 			.poll(
+ 				async () =>
+--- a/apps/runtime/src/pi-durable-host.ts
++++ b/apps/runtime/src/pi-durable-host.ts
+@@ -330,6 +330,7 @@
+ 	result(effect: string, context: Context, evidence: string): Promise<void>;
+ };
+ export type HostFixtureDependencies = {
++	diagnostic?(stage: string): void;
+ 	now(): number;
+ 	authority(): Promise<LocalAuthority>;
+ 	options(guard: HostGuard): HarnessOptions;
+@@ -1594,6 +1595,7 @@
+ 			const authorized = parseConfigurationAuthorityV1(
+ 				await awaitWithContext(c.authorize(query, selection), context),
+ 			);
++			this.dependencies.diagnostic?.("selection.sender.awaited");
+ 			if (
+ 				authorized.status !== "current" ||
+ 				canonical(authorized.subject) !== canonical(c.subject)
+@@ -1603,10 +1605,12 @@
+ 				this.dependencies.authority(),
+ 				context,
+ 			);
++			this.dependencies.diagnostic?.("authority.sender.awaited");
+ 			if (!this.configurationLocal(initial)) return false;
+ 			const fresh = parseConfigurationAuthorityV1(
+ 				await awaitWithContext(c.authorize(query, selection), context),
+ 			);
++			this.dependencies.diagnostic?.("selection.sender.awaited");
+ 			if (
+ 				fresh.status !== "current" ||
+ 				canonical(fresh.subject) !== canonical(c.subject)
+@@ -1616,6 +1620,7 @@
+ 		const finalProduct = parseConfigurationAuthorityV1(
+ 			await awaitWithContext(c.authorize(query, selection), context),
+ 		);
++		this.dependencies.diagnostic?.("selection.sender.awaited");
+ 		await this.configurationLedger(context);
+ 		// Ordered admission: product and evidence work finish before the final host
+ 		// read and synchronous guards. This admits the Pi call, not an atomic D1/Pi commit.
+@@ -1623,6 +1628,7 @@
+ 			this.dependencies.authority(),
+ 			context,
+ 		);
++		this.dependencies.diagnostic?.("authority.sender.awaited");
+ 		context.abortSignal?.throwIfAborted();
+ 		return (
+ 			finalProduct.status === "current" &&
+@@ -2530,6 +2536,7 @@
+ 				await this.durable(context);
+ 			},
+ 			claim: async (input: unknown) => {
++				this.dependencies.diagnostic?.("model.claim.enter");
+ 				const supplied = parseModelAttemptV1(input);
+ 				if (canonical(supplied) !== canonical(attempt))
+ 					throw new Error("Exact model attempt mismatch");
+@@ -2598,6 +2605,7 @@
+ 				context.abortSignal?.throwIfAborted();
+ 				assertReceipt(consumed, 1);
+ 				this.dispatchPermit(admitted.id, correlation, admitted.epoch, fresh);
++				this.dependencies.diagnostic?.("model.claim.exit");
+ 			},
+ 		};
+ 	}
+@@ -3729,6 +3737,7 @@
+ 				else if (status.status === "unanswered") failed = true;
+ 				else
+ 					this.transition("account", () => {
++						this.dependencies.diagnostic?.("member.complete");
+ 						this.storage.sql.exec(
+ 							"UPDATE host_members SET state = 'complete' WHERE assistant = ? AND state = 'pending'",
+ 							command.assistant,
+@@ -4763,6 +4772,7 @@
+ 		duplicateInvocation?: string,
+ 		context: Context = BACKGROUND_CONTEXT,
+ 	) {
++		this.dependencies.diagnostic?.("schedule.enter");
+ 		this.assertSeals();
+ 		if (duplicateInvocation) {
+ 			const previous = this.latest();
+--- a/apps/runtime/src/pi-durable-models.ts
++++ b/apps/runtime/src/pi-durable-models.ts
+@@ -163,6 +163,7 @@
+ 		| ModelSubjectV1
+ 		| ((attempt: ModelAttemptV1) => Promise<ModelSubjectV1>),
+ 	generationPurpose: "generation" | "git_metadata" = "generation",
++	diagnostic?: (stage: string) => void,
+ ) {
+ 	const subject =
+ 		typeof owned === "function"
+@@ -177,6 +178,7 @@
+ 		void (async () => {
+ 			try {
+ 				context.abortSignal?.throwIfAborted();
++				diagnostic?.("model.guard.before");
+ 				const admitted = await guard.model(
+ 					{
+ 						model: { provider: model.provider, id: model.id },
+@@ -185,6 +187,7 @@
+ 					},
+ 					context,
+ 					async (dispatch) => {
++						diagnostic?.("model.prepared");
+ 						const body = parseSyntheticModelBodyV1({
+ 							version: 1,
+ 							protocol: "ditto-synthetic-ndjson-1",
+@@ -232,10 +235,12 @@
+ 							),
+ 							context,
+ 						);
++						diagnostic?.("model.transport.before");
+ 						const outcome = await awaitWithContext(
+ 							product.requestModel(request, claim),
+ 							context,
+ 						);
++						diagnostic?.("model.transport.awaited");
+ 						context.abortSignal?.throwIfAborted();
+ 						if (
+ 							outcome.version !== 1 ||
+@@ -277,7 +282,9 @@
+ 					},
+ 				);
+ 				const message = await admitted.response;
++				diagnostic?.("model.result.before");
+ 				await guard.result(admitted.effect, context, JSON.stringify(message));
++				diagnostic?.("model.result.awaited");
+ 				context.abortSignal?.throwIfAborted();
+ 				if (message.stopReason === "error")
+ 					events.push({ type: "error", reason: "error", error: message });
+--- a/apps/runtime/src/pi-durable-product-session.ts
++++ b/apps/runtime/src/pi-durable-product-session.ts
+@@ -75,6 +75,7 @@
+ export class PiDurableProductSession extends DurableObject<CandidateSessionBindings> {
+ 	protected host: PiDurableHost | undefined;
+ 	protected readonly candidateBoot = crypto.randomUUID();
++	protected diagnosticMark(_stage: string) {}
+ 	protected ordinaryAllowed() {
+ 		return true;
+ 	}
+@@ -135,13 +136,19 @@
+ 		const product = this.env.CandidateProduct;
+ 		return PiDurableHost.open(this.ctx.storage, {
+ 			now: Date.now,
++			diagnostic: (stage) => this.diagnosticMark(stage),
+ 			fault: (point) => this.hostFault(point),
+ 			retained: {
+ 				ownerId: scope.userId,
+ 				workspaceSessionId: scope.workspaceSessionId,
+ 				keyring,
+ 			},
+-			authority: () => product.readRuntimeAuthority(scope),
++			authority: () => {
++				this.diagnosticMark("authority.sender.before");
++				const pending = product.readRuntimeAuthority(scope);
++				this.diagnosticMark("authority.sender.created");
++				return pending;
++			},
+ 			wakeup: {
+ 				getAlarm: () => this.ctx.storage.getAlarm(),
+ 				setAlarm: (deadline) => this.ctx.storage.setAlarm(deadline),
+@@ -161,12 +168,14 @@
+ 					return {
+ 						subject,
+ 						defaultSelection: { model: "faux-1", thinking: "off" },
+-						authorize: (input, selection) =>
+-							product.readCandidateConfigurationAuthority(
+-								commandId,
+-								input,
+-								selection,
+-							),
++						authorize: (input, selection) => {
++							this.diagnosticMark("selection.sender.before");
++							const pending = product.readCandidateConfigurationAuthority(
++								commandId, input, selection,
++							);
++							this.diagnosticMark("selection.sender.created");
++							return pending;
++						},
+ 					};
+ 				},
+ 			},
+@@ -183,6 +192,8 @@
+ 							throw new Error("Candidate model authority unavailable");
+ 						return subject;
+ 					},
++					"generation",
++					(stage) => this.diagnosticMark(stage),
+ 				);
+ 				return {
+ 					now: Date.now,

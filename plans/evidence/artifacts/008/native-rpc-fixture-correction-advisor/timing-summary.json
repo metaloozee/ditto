@@ -1,0 +1,370 @@
+[
+  {
+    "caller": "test",
+    "binding": "ScratchCurrent008",
+    "kind": "echo",
+    "count": 3,
+    "values": {
+      "creationMs": [
+        0,
+        0,
+        0
+      ],
+      "beforeToEntryMs": [
+        2,
+        2,
+        2
+      ],
+      "createdToEntryMs": [
+        2,
+        2,
+        2
+      ],
+      "bodyMs": [
+        0,
+        0,
+        0
+      ],
+      "returnMs": [
+        0,
+        0,
+        0
+      ],
+      "totalMs": [
+        2,
+        2,
+        2
+      ]
+    },
+    "medianMs": {
+      "creationMs": 0,
+      "beforeToEntryMs": 2,
+      "createdToEntryMs": 2,
+      "bodyMs": 0,
+      "returnMs": 0,
+      "totalMs": 2
+    }
+  },
+  {
+    "caller": "test",
+    "binding": "ScratchCurrent008",
+    "kind": "authority",
+    "count": 3,
+    "values": {
+      "creationMs": [
+        0,
+        0,
+        0
+      ],
+      "beforeToEntryMs": [
+        1,
+        2,
+        1
+      ],
+      "createdToEntryMs": [
+        1,
+        2,
+        1
+      ],
+      "bodyMs": [
+        5,
+        5,
+        6
+      ],
+      "returnMs": [
+        1,
+        0,
+        0
+      ],
+      "totalMs": [
+        7,
+        7,
+        7
+      ]
+    },
+    "medianMs": {
+      "creationMs": 0,
+      "beforeToEntryMs": 1,
+      "createdToEntryMs": 1,
+      "bodyMs": 5,
+      "returnMs": 0,
+      "totalMs": 7
+    }
+  },
+  {
+    "caller": "test",
+    "binding": "ScratchNative008",
+    "kind": "echo",
+    "count": 3,
+    "values": {
+      "creationMs": [
+        0,
+        0,
+        1
+      ],
+      "beforeToEntryMs": [
+        0,
+        0,
+        1
+      ],
+      "createdToEntryMs": [
+        0,
+        0,
+        0
+      ],
+      "bodyMs": [
+        0,
+        0,
+        0
+      ],
+      "returnMs": [
+        0,
+        1,
+        0
+      ],
+      "totalMs": [
+        0,
+        1,
+        1
+      ]
+    },
+    "medianMs": {
+      "creationMs": 0,
+      "beforeToEntryMs": 0,
+      "createdToEntryMs": 0,
+      "bodyMs": 0,
+      "returnMs": 0,
+      "totalMs": 1
+    }
+  },
+  {
+    "caller": "test",
+    "binding": "ScratchNative008",
+    "kind": "authority",
+    "count": 3,
+    "values": {
+      "creationMs": [
+        0,
+        0,
+        0
+      ],
+      "beforeToEntryMs": [
+        0,
+        0,
+        0
+      ],
+      "createdToEntryMs": [
+        0,
+        0,
+        0
+      ],
+      "bodyMs": [
+        5,
+        6,
+        6
+      ],
+      "returnMs": [
+        0,
+        0,
+        0
+      ],
+      "totalMs": [
+        5,
+        6,
+        6
+      ]
+    },
+    "medianMs": {
+      "creationMs": 0,
+      "beforeToEntryMs": 0,
+      "createdToEntryMs": 0,
+      "bodyMs": 6,
+      "returnMs": 0,
+      "totalMs": 6
+    }
+  },
+  {
+    "caller": "existing-DO",
+    "binding": "ScratchCurrent008",
+    "kind": "echo",
+    "count": 3,
+    "values": {
+      "creationMs": [
+        0,
+        0,
+        0
+      ],
+      "beforeToEntryMs": [
+        1,
+        2,
+        1
+      ],
+      "createdToEntryMs": [
+        1,
+        2,
+        1
+      ],
+      "bodyMs": [
+        0,
+        0,
+        0
+      ],
+      "returnMs": [
+        0,
+        0,
+        0
+      ],
+      "totalMs": [
+        1,
+        2,
+        1
+      ]
+    },
+    "medianMs": {
+      "creationMs": 0,
+      "beforeToEntryMs": 1,
+      "createdToEntryMs": 1,
+      "bodyMs": 0,
+      "returnMs": 0,
+      "totalMs": 1
+    }
+  },
+  {
+    "caller": "existing-DO",
+    "binding": "ScratchCurrent008",
+    "kind": "authority",
+    "count": 3,
+    "values": {
+      "creationMs": [
+        0,
+        0,
+        1
+      ],
+      "beforeToEntryMs": [
+        2,
+        1,
+        2
+      ],
+      "createdToEntryMs": [
+        2,
+        1,
+        1
+      ],
+      "bodyMs": [
+        6,
+        5,
+        6
+      ],
+      "returnMs": [
+        0,
+        0,
+        0
+      ],
+      "totalMs": [
+        8,
+        6,
+        8
+      ]
+    },
+    "medianMs": {
+      "creationMs": 0,
+      "beforeToEntryMs": 2,
+      "createdToEntryMs": 1,
+      "bodyMs": 6,
+      "returnMs": 0,
+      "totalMs": 8
+    }
+  },
+  {
+    "caller": "existing-DO",
+    "binding": "ScratchNative008",
+    "kind": "echo",
+    "count": 3,
+    "values": {
+      "creationMs": [
+        0,
+        0,
+        0
+      ],
+      "beforeToEntryMs": [
+        0,
+        0,
+        0
+      ],
+      "createdToEntryMs": [
+        0,
+        0,
+        0
+      ],
+      "bodyMs": [
+        0,
+        0,
+        0
+      ],
+      "returnMs": [
+        0,
+        0,
+        0
+      ],
+      "totalMs": [
+        0,
+        0,
+        0
+      ]
+    },
+    "medianMs": {
+      "creationMs": 0,
+      "beforeToEntryMs": 0,
+      "createdToEntryMs": 0,
+      "bodyMs": 0,
+      "returnMs": 0,
+      "totalMs": 0
+    }
+  },
+  {
+    "caller": "existing-DO",
+    "binding": "ScratchNative008",
+    "kind": "authority",
+    "count": 3,
+    "values": {
+      "creationMs": [
+        0,
+        0,
+        0
+      ],
+      "beforeToEntryMs": [
+        0,
+        0,
+        0
+      ],
+      "createdToEntryMs": [
+        0,
+        0,
+        0
+      ],
+      "bodyMs": [
+        6,
+        5,
+        7
+      ],
+      "returnMs": [
+        0,
+        1,
+        0
+      ],
+      "totalMs": [
+        6,
+        6,
+        7
+      ]
+    },
+    "medianMs": {
+      "creationMs": 0,
+      "beforeToEntryMs": 0,
+      "createdToEntryMs": 0,
+      "bodyMs": 6,
+      "returnMs": 0,
+      "totalMs": 6
+    }
+  }
+]

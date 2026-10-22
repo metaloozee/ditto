@@ -1,0 +1,57 @@
+--- prior/caller.ts
++++ corrected/caller.ts
+@@ -16,7 +16,7 @@
+         const before = Date.now();
+         const pending = kind === "echo" ? bindings[binding].echo(sample) : bindings[binding].authority(scope);
+         const created = Date.now();
+-        const result = await awaitWithContext(context, pending);
++        const result = await awaitWithContext(pending, context);
+         const after = Date.now();
+         samples.push({ binding, kind, sample, before, created, entry: result.entry, exit: result.exit, after,
+           ok: kind === "echo" ? "value" in result && result.value === sample : "current" in result && result.current });
+--- prior/probe.worker.test.ts
++++ corrected/probe.worker.test.ts
+@@ -3,6 +3,7 @@
+ import type { CandidateRuntimeScope } from "../../../../../apps/runtime/src/pi-durable-product-session";
+ import type { CandidateFixtureProduct, CandidateFixtureSession } from "../../../../../apps/credential-tests/src/model-entry";
+ import { boundedNativeRpcProbe, type ProbeBindings } from "./caller";
++import type { CandidateFixtureCredential } from "../../../../../apps/credential-tests/src/entry";
+ import m0 from "../../../../../apps/web/migrations/0000_wet_giant_girl.sql?raw";
+ import m1 from "../../../../../apps/web/migrations/0001_jazzy_firelord.sql?raw";
+ import m2 from "../../../../../apps/web/migrations/0002_sparkling_agent_zero.sql?raw";
+@@ -32,6 +33,7 @@
+   interface ProvidedEnv extends ProbeBindings {
+     CandidateProduct: Service<CandidateFixtureProduct>;
+     CandidateSessions: DurableObjectNamespace<CandidateFixtureSession>;
++    CandidateCredential: DurableObjectNamespace<CandidateFixtureCredential>;
+   }
+ }
+ const receivers = () => [env.ScratchCurrent008, env.ScratchNative008];
+@@ -52,6 +54,7 @@
+     env.DB.prepare("INSERT INTO codex_fixture_capabilities VALUES('owner',1,1,?)").bind(JSON.stringify({version:1,status:"available",generation:1,revision:1,models:[{id:"faux-1",thinking:["off"]}]})),
+   ]);
+   expect((await env.CodexCredential.getByName("owner").install("owner", 1, {access:"synthetic-product-access",refresh:"synthetic-product-refresh",expiresAt:4102444800000})).status).toBe("connected");
++  expect((await env.CandidateCredential.getByName("owner").install("owner", 1, {access:"synthetic-product-access",refresh:"synthetic-product-refresh",expiresAt:4102444800000})).status).toBe("connected");
+   const receipt = await env.CandidateProduct.admitOwned("owner", {version:2,kind:"prompt",projectId:"project",idempotencyKey:"first",text:"Synthetic admitted command"});
+   admittedScope = { version:2, userId:"owner", projectId:"project", workspaceSessionId:receipt.workspaceSessionId, ownerVersion:1 };
+   for (const receiver of receivers()) {
+--- prior/probe.config.ts
++++ corrected/probe.config.ts
+@@ -5,7 +5,7 @@
+ const require = createRequire(app + "vitest.config.ts");
+ const { build } = require("esbuild") as typeof import("esbuild");
+ const { kCurrentWorker } = require("miniflare") as typeof import("miniflare");
+-const output = new URL("../../../../../.execution-008/native-rpc-fixture/receiver.mjs", import.meta.url).pathname;
++const output = new URL("../../../../../.execution-008/native-rpc-fixture-correction/receiver.mjs", import.meta.url).pathname;
+ const database = { DB: "008-native-rpc-fixture-disposable" };
+ export default async () => {
+   const built = await build({ entryPoints: [new URL("./receiver.ts", import.meta.url).pathname], outfile: output,
+@@ -25,7 +25,7 @@
+             ScratchCurrent008: { name: kCurrentWorker, entrypoint: "NativeRpcFixtureReceiver" },
+             ScratchNative008: { name: "scratch-native-008", entrypoint: "NativeRpcFixtureReceiver" },
+           },
+-          workers: [{ name: "scratch-native-008", modules: true, scriptPath: output, modulesRoot: new URL("../../../../../.execution-008/native-rpc-fixture/", import.meta.url).pathname,
++          workers: [{ name: "scratch-native-008", modules: true, scriptPath: output, modulesRoot: new URL("../../../../../.execution-008/native-rpc-fixture-correction/", import.meta.url).pathname,
+             compatibilityDate: options.compatibilityDate, compatibilityFlags: options.compatibilityFlags,
+             d1Databases: database,
+             outboundService: () => new Response("External network disabled", { status: 403 }),

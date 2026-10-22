@@ -1,0 +1,111 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:warn] Failed to statically analyze the exports of the main Worker entry-point "./src/model-entry.ts"
+[vpw:warn] More details: Error: Build failed with 1 error:
+[vpw:warn] error: Could not resolve "/home/ayan/ditto-execution/plan-008-4WXvNW/plans/evidence/artifacts/008/native-rpc-fixture/src/model-entry.ts"
+[vpw:info] Starting isolated runtimes for ../../plans/evidence/artifacts/008/native-rpc-fixture/probe.config.ts...
+workerd/jsg/util.c++:405: error: e = kj/filesystem.c++:319: failed: expected parts.size() > 0 [0 > 0]; can't use ".." to break out of starting directory
+stack: /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f5cf46 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f5b014 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f5ac09 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@20fb1cb /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1f9d857 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b83ace /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b6a7f9 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b7d2bf /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@2b7d134 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1f45a67 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f06f8e /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f00f14 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f022d2 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1eba4f5 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f6d65f /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f6dab0 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f6b935 /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@4f6b74b /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1ea3cb5 /lib/x86_64-linux-gnu/libc.so.6@2a1c9 /lib/x86_64-linux-gnu/libc.so.6@2a28a /home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260310.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@1ea3024; sentryErrorContext = jsgInternalError; wdErrId = 24h6bk0dpv60jrqaboj93h36
+service core:user:scratch-native-008: Uncaught Error: internal error; reference = 24h6bk0dpv60jrqaboj93h36
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+MiniflareCoreError [ERR_RUNTIME_FAILURE]: The Workers runtime failed to start. There is likely additional logging output above.
+ ❯ #assembleAndUpdateConfig ../../node_modules/.pnpm/miniflare@4.20260310.0/node_modules/miniflare/dist/src/index.js:82574:13
+ ❯ process.processTicksAndRejections node:internal/process/task_queues:104:5
+ ❯ Mutex.runWith ../../node_modules/.pnpm/miniflare@4.20260310.0/node_modules/miniflare/dist/src/index.js:52466:48
+ ❯ #waitForReady ../../node_modules/.pnpm/miniflare@4.20260310.0/node_modules/miniflare/dist/src/index.js:82662:5
+ ❯ getProjectMiniflare ../../node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/pool/index.mjs:7721:5
+ ❯ executeMethod ../../node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/pool/index.mjs:7990:16
+ ❯ Object.runTests ../../node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/pool/index.mjs:8045:7
+ ❯ executeTests ../../node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/coverage.DfSpMS-b.js:3421:4
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'ERR_RUNTIME_FAILURE' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files  no tests
+      Tests  no tests
+     Errors  1 error
+   Start at  19:57:53
+   Duration  735ms (transform 0ms, setup 0ms, collect 0ms, tests 0ms, environment 0ms, prepare 0ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+error during close MiniflareCoreError [ERR_RUNTIME_FAILURE]: The Workers runtime failed to start. There is likely additional logging output above.
+    at #assembleAndUpdateConfig (/home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/miniflare@4.20260310.0/node_modules/miniflare/dist/src/index.js:82574:13)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async Mutex.runWith (/home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/miniflare@4.20260310.0/node_modules/miniflare/dist/src/index.js:52466:48)
+    at async #waitForReady (/home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/miniflare@4.20260310.0/node_modules/miniflare/dist/src/index.js:82662:5)
+    at async Promise.all (index 0)
+    at async getProjectMiniflare (file:///home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/pool/index.mjs:7721:5)
+    at async executeMethod (file:///home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/pool/index.mjs:7990:16)
+    at async Object.runTests (file:///home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/pool/index.mjs:8045:7)
+    at async Promise.all (index 5)
+    at async executeTests (file:///home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/coverage.DfSpMS-b.js:3421:4) {
+  code: 'ERR_RUNTIME_FAILURE',
+  cause: undefined,
+  type: 'Unhandled Error',
+  stacks: [
+    {
+      method: '#assembleAndUpdateConfig',
+      file: '/home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/miniflare@4.20260310.0/node_modules/miniflare/dist/src/index.js',
+      line: 82574,
+      column: 13
+    },
+    {
+      method: 'process.processTicksAndRejections',
+      file: 'node:internal/process/task_queues',
+      line: 104,
+      column: 5
+    },
+    {
+      method: 'Mutex.runWith',
+      file: '/home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/miniflare@4.20260310.0/node_modules/miniflare/dist/src/index.js',
+      line: 52466,
+      column: 48
+    },
+    {
+      method: '#waitForReady',
+      file: '/home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/miniflare@4.20260310.0/node_modules/miniflare/dist/src/index.js',
+      line: 82662,
+      column: 5
+    },
+    {
+      method: 'getProjectMiniflare',
+      file: '/home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/pool/index.mjs',
+      line: 7721,
+      column: 5
+    },
+    {
+      method: 'executeMethod',
+      file: '/home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/pool/index.mjs',
+      line: 7990,
+      column: 16
+    },
+    {
+      method: 'Object.runTests',
+      file: '/home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_@cloudflare+workers-types@4.20260605.1_@vitest+_22c8172f8ba5854efee9c79c582141ed/node_modules/@cloudflare/vitest-pool-workers/dist/pool/index.mjs',
+      line: 8045,
+      column: 7
+    },
+    {
+      method: 'executeTests',
+      file: '/home/ayan/ditto-execution/plan-008-4WXvNW/node_modules/.pnpm/vitest@3.2.7_@types+debug@4.1.13_@types+node@22.20.1_jiti@2.7.0_jsdom@28.1.0_@noble+has_aca61d7b4bbb60a145d61436f37761e7/node_modules/vitest/dist/chunks/coverage.DfSpMS-b.js',
+      line: 3421,
+      column: 4
+    }
+  ]
+}
+undefined
+/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run --config /home/ayan/ditto-execution/plan-008-4WXvNW/plans/evidence/artifacts/008/native-rpc-fixture/probe.config.ts

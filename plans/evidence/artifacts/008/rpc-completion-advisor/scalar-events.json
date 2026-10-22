@@ -1,0 +1,1082 @@
+[
+  {
+    "stage": "body.entry",
+    "time": 1791826167466,
+    "bodyMs": 0
+  },
+  {
+    "stage": "delivery.third.before",
+    "time": 1791826168197,
+    "bodyMs": 731
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826168301,
+    "bodyMs": 835
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826168309,
+    "bodyMs": 843
+  },
+  {
+    "stage": "delivery.first.before",
+    "time": 1791826168328,
+    "bodyMs": 862
+  },
+  {
+    "stage": "alarm.enter",
+    "time": 1791826168373,
+    "bodyMs": 907
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826168474,
+    "bodyMs": 1008
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826168481,
+    "bodyMs": 1015
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826168526,
+    "bodyMs": 1060
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826168533,
+    "bodyMs": 1067
+  },
+  {
+    "stage": "poll.first.before",
+    "time": 1791826168552,
+    "bodyMs": 1086
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826168554,
+    "bodyMs": 1088
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826168559,
+    "bodyMs": 1093
+  },
+  {
+    "stage": "schedule.enter",
+    "time": 1791826168657,
+    "bodyMs": 1191
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826168657,
+    "bodyMs": 1191
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826168657,
+    "bodyMs": 1191
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826168703,
+    "bodyMs": 1237
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826168709,
+    "bodyMs": 1243
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826168710,
+    "bodyMs": 1244
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826168710,
+    "bodyMs": 1244
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826168758,
+    "bodyMs": 1292
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826168765,
+    "bodyMs": 1299
+  },
+  {
+    "stage": "selection.sender.before",
+    "time": 1791826168831,
+    "bodyMs": 1365
+  },
+  {
+    "stage": "selection.sender.created",
+    "time": 1791826168831,
+    "bodyMs": 1365
+  },
+  {
+    "stage": "selection.receiver.entry",
+    "time": 1791826168882,
+    "bodyMs": 1416
+  },
+  {
+    "stage": "selection.receiver.exit",
+    "time": 1791826168925,
+    "bodyMs": 1459
+  },
+  {
+    "stage": "selection.sender.awaited",
+    "time": 1791826168925,
+    "bodyMs": 1459
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826168925,
+    "bodyMs": 1459
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826168925,
+    "bodyMs": 1459
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826168971,
+    "bodyMs": 1505
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826168977,
+    "bodyMs": 1511
+  },
+  {
+    "stage": "authority.sender.awaited",
+    "time": 1791826168977,
+    "bodyMs": 1511
+  },
+  {
+    "stage": "selection.sender.before",
+    "time": 1791826168977,
+    "bodyMs": 1511
+  },
+  {
+    "stage": "selection.sender.created",
+    "time": 1791826168977,
+    "bodyMs": 1511
+  },
+  {
+    "stage": "selection.receiver.entry",
+    "time": 1791826169024,
+    "bodyMs": 1558
+  },
+  {
+    "stage": "selection.receiver.exit",
+    "time": 1791826169064,
+    "bodyMs": 1598
+  },
+  {
+    "stage": "selection.sender.awaited",
+    "time": 1791826169065,
+    "bodyMs": 1599
+  },
+  {
+    "stage": "selection.sender.before",
+    "time": 1791826169065,
+    "bodyMs": 1599
+  },
+  {
+    "stage": "selection.sender.created",
+    "time": 1791826169065,
+    "bodyMs": 1599
+  },
+  {
+    "stage": "selection.receiver.entry",
+    "time": 1791826169112,
+    "bodyMs": 1646
+  },
+  {
+    "stage": "selection.receiver.exit",
+    "time": 1791826169154,
+    "bodyMs": 1688
+  },
+  {
+    "stage": "selection.sender.awaited",
+    "time": 1791826169154,
+    "bodyMs": 1688
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826169155,
+    "bodyMs": 1689
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826169155,
+    "bodyMs": 1689
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826169202,
+    "bodyMs": 1736
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826169209,
+    "bodyMs": 1743
+  },
+  {
+    "stage": "authority.sender.awaited",
+    "time": 1791826169209,
+    "bodyMs": 1743
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826169217,
+    "bodyMs": 1751
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826169217,
+    "bodyMs": 1751
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826169265,
+    "bodyMs": 1799
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826169273,
+    "bodyMs": 1807
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826169289,
+    "bodyMs": 1823
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826169289,
+    "bodyMs": 1823
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826169337,
+    "bodyMs": 1871
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826169344,
+    "bodyMs": 1878
+  },
+  {
+    "stage": "model.guard.before",
+    "time": 1791826169382,
+    "bodyMs": 1916
+  },
+  {
+    "stage": "alarm.scheduled",
+    "time": 1791826169388,
+    "bodyMs": 1922
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826169389,
+    "bodyMs": 1923
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826169389,
+    "bodyMs": 1923
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826169437,
+    "bodyMs": 1971
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826169443,
+    "bodyMs": 1977
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826169449,
+    "bodyMs": 1983
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826169449,
+    "bodyMs": 1983
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826169499,
+    "bodyMs": 2033
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826169505,
+    "bodyMs": 2039
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826169511,
+    "bodyMs": 2045
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826169511,
+    "bodyMs": 2045
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826169561,
+    "bodyMs": 2095
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826169568,
+    "bodyMs": 2102
+  },
+  {
+    "stage": "model.prepared",
+    "time": 1791826169569,
+    "bodyMs": 2103
+  },
+  {
+    "stage": "model.transport.before",
+    "time": 1791826169635,
+    "bodyMs": 2169
+  },
+  {
+    "stage": "model.claim.enter",
+    "time": 1791826169853,
+    "bodyMs": 2387
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826169853,
+    "bodyMs": 2387
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826169853,
+    "bodyMs": 2387
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826169902,
+    "bodyMs": 2436
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826169908,
+    "bodyMs": 2442
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826169981,
+    "bodyMs": 2515
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826169981,
+    "bodyMs": 2515
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826170031,
+    "bodyMs": 2565
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826170039,
+    "bodyMs": 2573
+  },
+  {
+    "stage": "model.claim.exit",
+    "time": 1791826170040,
+    "bodyMs": 2574
+  },
+  {
+    "stage": "model.transport.awaited",
+    "time": 1791826170069,
+    "bodyMs": 2603
+  },
+  {
+    "stage": "model.result.before",
+    "time": 1791826170069,
+    "bodyMs": 2603
+  },
+  {
+    "stage": "model.result.awaited",
+    "time": 1791826170075,
+    "bodyMs": 2609
+  },
+  {
+    "stage": "member.complete",
+    "time": 1791826170092,
+    "bodyMs": 2626
+  },
+  {
+    "stage": "alarm.joined",
+    "time": 1791826170119,
+    "bodyMs": 2653
+  },
+  {
+    "stage": "poll.first.after",
+    "time": 1791826170120,
+    "bodyMs": 2654
+  },
+  {
+    "stage": "alarm.enter",
+    "time": 1791826170123,
+    "bodyMs": 2657
+  },
+  {
+    "stage": "reopen.before",
+    "time": 1791826170171,
+    "bodyMs": 2705
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826170173,
+    "bodyMs": 2707
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826170179,
+    "bodyMs": 2713
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826170229,
+    "bodyMs": 2763
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826170238,
+    "bodyMs": 2772
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826170239,
+    "bodyMs": 2773
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826170239,
+    "bodyMs": 2773
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826170288,
+    "bodyMs": 2822
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826170295,
+    "bodyMs": 2829
+  },
+  {
+    "stage": "member.complete",
+    "time": 1791826170305,
+    "bodyMs": 2839
+  },
+  {
+    "stage": "alarm.scheduled",
+    "time": 1791826170311,
+    "bodyMs": 2845
+  },
+  {
+    "stage": "alarm.joined",
+    "time": 1791826170311,
+    "bodyMs": 2845
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826170366,
+    "bodyMs": 2900
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826170373,
+    "bodyMs": 2907
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826170374,
+    "bodyMs": 2908
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826170374,
+    "bodyMs": 2908
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826170424,
+    "bodyMs": 2958
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826170431,
+    "bodyMs": 2965
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826170485,
+    "bodyMs": 3019
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826170491,
+    "bodyMs": 3025
+  },
+  {
+    "stage": "configure.before",
+    "time": 1791826170492,
+    "bodyMs": 3026
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826170547,
+    "bodyMs": 3081
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826170554,
+    "bodyMs": 3088
+  },
+  {
+    "stage": "selection.sender.before",
+    "time": 1791826170624,
+    "bodyMs": 3158
+  },
+  {
+    "stage": "selection.sender.created",
+    "time": 1791826170624,
+    "bodyMs": 3158
+  },
+  {
+    "stage": "selection.receiver.entry",
+    "time": 1791826170676,
+    "bodyMs": 3210
+  },
+  {
+    "stage": "selection.receiver.exit",
+    "time": 1791826170721,
+    "bodyMs": 3255
+  },
+  {
+    "stage": "selection.sender.awaited",
+    "time": 1791826170722,
+    "bodyMs": 3256
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826170722,
+    "bodyMs": 3256
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826170722,
+    "bodyMs": 3256
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826170775,
+    "bodyMs": 3309
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826170784,
+    "bodyMs": 3318
+  },
+  {
+    "stage": "authority.sender.awaited",
+    "time": 1791826170784,
+    "bodyMs": 3318
+  },
+  {
+    "stage": "selection.sender.before",
+    "time": 1791826170785,
+    "bodyMs": 3319
+  },
+  {
+    "stage": "selection.sender.created",
+    "time": 1791826170785,
+    "bodyMs": 3319
+  },
+  {
+    "stage": "selection.receiver.entry",
+    "time": 1791826170836,
+    "bodyMs": 3370
+  },
+  {
+    "stage": "selection.receiver.exit",
+    "time": 1791826170880,
+    "bodyMs": 3414
+  },
+  {
+    "stage": "selection.sender.awaited",
+    "time": 1791826170881,
+    "bodyMs": 3415
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826170881,
+    "bodyMs": 3415
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826170881,
+    "bodyMs": 3415
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826170932,
+    "bodyMs": 3466
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826170938,
+    "bodyMs": 3472
+  },
+  {
+    "stage": "authority.sender.awaited",
+    "time": 1791826170939,
+    "bodyMs": 3473
+  },
+  {
+    "stage": "selection.sender.before",
+    "time": 1791826170939,
+    "bodyMs": 3473
+  },
+  {
+    "stage": "selection.sender.created",
+    "time": 1791826170939,
+    "bodyMs": 3473
+  },
+  {
+    "stage": "selection.receiver.entry",
+    "time": 1791826170990,
+    "bodyMs": 3524
+  },
+  {
+    "stage": "selection.receiver.exit",
+    "time": 1791826171031,
+    "bodyMs": 3565
+  },
+  {
+    "stage": "selection.sender.awaited",
+    "time": 1791826171032,
+    "bodyMs": 3566
+  },
+  {
+    "stage": "selection.sender.before",
+    "time": 1791826171032,
+    "bodyMs": 3566
+  },
+  {
+    "stage": "selection.sender.created",
+    "time": 1791826171032,
+    "bodyMs": 3566
+  },
+  {
+    "stage": "selection.receiver.entry",
+    "time": 1791826171084,
+    "bodyMs": 3618
+  },
+  {
+    "stage": "selection.receiver.exit",
+    "time": 1791826171130,
+    "bodyMs": 3664
+  },
+  {
+    "stage": "selection.sender.awaited",
+    "time": 1791826171130,
+    "bodyMs": 3664
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826171130,
+    "bodyMs": 3664
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826171130,
+    "bodyMs": 3664
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826171183,
+    "bodyMs": 3717
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826171191,
+    "bodyMs": 3725
+  },
+  {
+    "stage": "authority.sender.awaited",
+    "time": 1791826171191,
+    "bodyMs": 3725
+  },
+  {
+    "stage": "selection.sender.before",
+    "time": 1791826171198,
+    "bodyMs": 3732
+  },
+  {
+    "stage": "selection.sender.created",
+    "time": 1791826171198,
+    "bodyMs": 3732
+  },
+  {
+    "stage": "selection.receiver.entry",
+    "time": 1791826171251,
+    "bodyMs": 3785
+  },
+  {
+    "stage": "selection.receiver.exit",
+    "time": 1791826171295,
+    "bodyMs": 3829
+  },
+  {
+    "stage": "selection.sender.awaited",
+    "time": 1791826171296,
+    "bodyMs": 3830
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826171296,
+    "bodyMs": 3830
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826171296,
+    "bodyMs": 3830
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826171349,
+    "bodyMs": 3883
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826171356,
+    "bodyMs": 3890
+  },
+  {
+    "stage": "authority.sender.awaited",
+    "time": 1791826171356,
+    "bodyMs": 3890
+  },
+  {
+    "stage": "selection.sender.before",
+    "time": 1791826171356,
+    "bodyMs": 3890
+  },
+  {
+    "stage": "selection.sender.created",
+    "time": 1791826171356,
+    "bodyMs": 3890
+  },
+  {
+    "stage": "alarm.enter",
+    "time": 1791826171408,
+    "bodyMs": 3942
+  },
+  {
+    "stage": "selection.receiver.entry",
+    "time": 1791826171465,
+    "bodyMs": 3999
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826171485,
+    "bodyMs": 4019
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826171491,
+    "bodyMs": 4025
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826171550,
+    "bodyMs": 4084
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826171557,
+    "bodyMs": 4091
+  },
+  {
+    "stage": "member.complete",
+    "time": 1791826171565,
+    "bodyMs": 4099
+  },
+  {
+    "stage": "selection.receiver.exit",
+    "time": 1791826171590,
+    "bodyMs": 4124
+  },
+  {
+    "stage": "selection.sender.awaited",
+    "time": 1791826171590,
+    "bodyMs": 4124
+  },
+  {
+    "stage": "selection.sender.before",
+    "time": 1791826171590,
+    "bodyMs": 4124
+  },
+  {
+    "stage": "selection.sender.created",
+    "time": 1791826171590,
+    "bodyMs": 4124
+  },
+  {
+    "stage": "selection.receiver.entry",
+    "time": 1791826171644,
+    "bodyMs": 4178
+  },
+  {
+    "stage": "selection.receiver.exit",
+    "time": 1791826171687,
+    "bodyMs": 4221
+  },
+  {
+    "stage": "selection.sender.awaited",
+    "time": 1791826171687,
+    "bodyMs": 4221
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826171688,
+    "bodyMs": 4222
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826171688,
+    "bodyMs": 4222
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826171742,
+    "bodyMs": 4276
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826171748,
+    "bodyMs": 4282
+  },
+  {
+    "stage": "authority.sender.awaited",
+    "time": 1791826171748,
+    "bodyMs": 4282
+  },
+  {
+    "stage": "alarm.scheduled",
+    "time": 1791826171766,
+    "bodyMs": 4300
+  },
+  {
+    "stage": "alarm.joined",
+    "time": 1791826171766,
+    "bodyMs": 4300
+  },
+  {
+    "stage": "configure.after",
+    "time": 1791826171778,
+    "bodyMs": 4312
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826171901,
+    "bodyMs": 4435
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826171908,
+    "bodyMs": 4442
+  },
+  {
+    "stage": "poll.followups.before",
+    "time": 1791826171923,
+    "bodyMs": 4457
+  },
+  {
+    "stage": "alarm.enter",
+    "time": 1791826171925,
+    "bodyMs": 4459
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826171980,
+    "bodyMs": 4514
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826171987,
+    "bodyMs": 4521
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826172042,
+    "bodyMs": 4576
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826172049,
+    "bodyMs": 4583
+  },
+  {
+    "stage": "member.complete",
+    "time": 1791826172051,
+    "bodyMs": 4585
+  },
+  {
+    "stage": "schedule.enter",
+    "time": 1791826172150,
+    "bodyMs": 4684
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826172151,
+    "bodyMs": 4685
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826172151,
+    "bodyMs": 4685
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826172203,
+    "bodyMs": 4737
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826172209,
+    "bodyMs": 4743
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826172210,
+    "bodyMs": 4744
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826172210,
+    "bodyMs": 4744
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826172262,
+    "bodyMs": 4796
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826172270,
+    "bodyMs": 4804
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826172339,
+    "bodyMs": 4873
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826172339,
+    "bodyMs": 4873
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826172392,
+    "bodyMs": 4926
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826172400,
+    "bodyMs": 4934
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826172415,
+    "bodyMs": 4949
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826172415,
+    "bodyMs": 4949
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826172475,
+    "bodyMs": 5009
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826172481,
+    "bodyMs": 5015
+  },
+  {
+    "stage": "model.guard.before",
+    "time": 1791826172520,
+    "bodyMs": 5054
+  },
+  {
+    "stage": "alarm.scheduled",
+    "time": 1791826172526,
+    "bodyMs": 5060
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826172527,
+    "bodyMs": 5061
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826172527,
+    "bodyMs": 5061
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826172581,
+    "bodyMs": 5115
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826172589,
+    "bodyMs": 5123
+  },
+  {
+    "stage": "authority.sender.before",
+    "time": 1791826172598,
+    "bodyMs": 5132
+  },
+  {
+    "stage": "authority.sender.created",
+    "time": 1791826172598,
+    "bodyMs": 5132
+  },
+  {
+    "stage": "authority.receiver.entry",
+    "time": 1791826172674,
+    "bodyMs": 5208
+  },
+  {
+    "stage": "authority.receiver.exit",
+    "time": 1791826172691,
+    "bodyMs": 5225
+  }
+]

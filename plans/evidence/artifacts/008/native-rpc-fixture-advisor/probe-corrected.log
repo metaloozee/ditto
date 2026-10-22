@@ -1,0 +1,54 @@
+
+ RUN  v3.2.7 /home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for ../../plans/evidence/artifacts/008/native-rpc-fixture/probe.config.ts...
+workerd/io/worker.c++:2441: info: uncaught exception; source = Uncaught (in promise); stack = CandidateCommandError: model_unconfigured
+    at reject (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/web/src/lib/session-command-candidate.ts:71:8)
+    at CandidateProductCommands.admit (/home/ayan/ditto-execution/plan-008-4WXvNW/apps/web/src/lib/session-command-candidate.ts:268:39)
+ ❯ ../../plans/evidence/artifacts/008/native-rpc-fixture/probe.worker.test.ts (2 tests | 2 failed) 1343ms
+   × compares identical bounded receivers and proves shared fresh owned authority 1301ms
+     → CandidateCommandError: model_unconfigured
+   × both receivers observe next-test isolation, with no prior admitted D1 rows 3ms
+     → expected undefined to be defined
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  ../../plans/evidence/artifacts/008/native-rpc-fixture/probe.worker.test.ts > compares identical bounded receivers and proves shared fresh owned authority
+Error: CandidateCommandError: model_unconfigured
+ ❯ ../../plans/evidence/artifacts/008/native-rpc-fixture/probe.worker.test.ts:55:19
+     53|   ]);
+     54|   expect((await env.CodexCredential.getByName("owner").install("owner"…
+     55|   const receipt = await env.CandidateProduct.admitOwned("owner", {vers…
+       |                   ^
+     56|   admittedScope = { version:2, userId:"owner", projectId:"project", wo…
+     57|   for (const receiver of receivers()) {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  ../../plans/evidence/artifacts/008/native-rpc-fixture/probe.worker.test.ts > both receivers observe next-test isolation, with no prior admitted D1 rows
+AssertionError: expected undefined to be defined
+ ❯ ../../plans/evidence/artifacts/008/native-rpc-fixture/probe.worker.test.ts:81:25
+     79| 
+     80| it("both receivers observe next-test isolation, with no prior admitted…
+     81|   expect(admittedScope).toBeDefined();
+       |                         ^
+     82|   expect(await env.DB.prepare("SELECT name FROM sqlite_master WHERE na…
+     83|   for (const receiver of receivers()) {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  19:59:19
+   Duration  3.09s (transform 388ms, setup 0ms, collect 684ms, tests 1.34s, environment 0ms, prepare 133ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto-execution/plan-008-4WXvNW/apps/credential-tests:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run --config /home/ayan/ditto-execution/plan-008-4WXvNW/plans/evidence/artifacts/008/native-rpc-fixture/probe.config.ts

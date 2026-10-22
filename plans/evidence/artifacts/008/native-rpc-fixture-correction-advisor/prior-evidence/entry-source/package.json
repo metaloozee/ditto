@@ -1,0 +1,45 @@
+{
+  "name": "ditto",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "alchemy dev",
+    "build": "pnpm --filter @ditto/web build",
+    "preview": "pnpm --filter @ditto/web preview",
+    "test": "pnpm --filter @ditto/web test",
+    "typecheck": "pnpm --filter @ditto/web typecheck",
+    "format": "biome format --write",
+    "lint": "biome lint",
+    "check": "biome check",
+    "fix": "biome check --write",
+    "runner:install": "npm ci --prefix packages/sandbox-runner",
+    "runner:verify": "npm run typecheck --prefix packages/sandbox-runner && npm test --prefix packages/sandbox-runner && npm run build --prefix packages/sandbox-runner",
+    "contracts:verify": "pnpm --filter @ditto/runtime-contracts typecheck && pnpm --filter @ditto/runtime-contracts exec vitest run && pnpm --filter @ditto/runtime-contracts build",
+    "brain:verify": "pnpm contracts:verify && npm run contracts:check --prefix packages/session-brain && npm run typecheck --prefix packages/session-brain && npm test --prefix packages/session-brain && npm run build --prefix packages/session-brain",
+    "runtime:verify": "pnpm --filter @ditto/runtime typecheck && node --test apps/runtime/src/pi-durable-imports.test.mjs scripts/pi-durable-host-auth.test.mjs && pnpm --filter @ditto/runtime exec vitest run",
+    "runtime:local:verify": "node scripts/verify-pi-durable-local.mjs",
+    "credentials:verify": "pnpm --filter @ditto/credential-tests typecheck && pnpm --filter @ditto/credential-tests exec vitest run src/codex-credential-do.worker.test.ts src/codex-request-contract.worker.test.ts src/product-commands.worker.test.ts && pnpm --filter @ditto/credential-tests exec node --test crash.test.mjs",
+    "verify": "pnpm check && pnpm typecheck && pnpm credentials:verify && pnpm test && pnpm build && pnpm runner:verify",
+    "deploy": "alchemy deploy",
+    "destroy": "alchemy destroy",
+    "db:generate": "pnpm --filter @ditto/web db:generate",
+    "db:migrate": "pnpm --filter @ditto/web db:migrate",
+    "db:push": "pnpm --filter @ditto/web db:push",
+    "db:pull": "pnpm --filter @ditto/web db:pull",
+    "db:studio": "pnpm --filter @ditto/web db:studio",
+    "doctor": "npx react-doctor@latest"
+  },
+  "dependencies": {
+    "alchemy": "^0.93.11"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.5",
+    "dotenv": "^17.3.1",
+    "lefthook": "^2.1.9",
+    "react-doctor": "^0.4.0"
+  },
+  "packageManager": "pnpm@11.8.0+sha512.c1f5e7c4cb241c8f174b743851d82f42b802324afc8b0f116b96adb15aa06664948dde36960a3ba1079ba5b4b29dd0140135b94b5b5f5263592249d68e555f26",
+  "engines": {
+    "node": ">=22.15"
+  }
+}

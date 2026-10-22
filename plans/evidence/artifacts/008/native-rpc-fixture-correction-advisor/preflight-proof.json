@@ -1,0 +1,12 @@
+{
+  "receiverExactBytesUnchanged": true,
+  "bundleExecutableBytesUnchangedExcludingSourcePathComments": true,
+  "authorityHelperPredicatesUnchanged": true,
+  "hookIdenticalExceptScratchImportDirectory": true,
+  "completeCorrectedCallerSetupAndConfigReadBeforeLaunch": true,
+  "candidateCredentialSetupMatchesExistingProductFixture": true,
+  "promiseAndContextOrderMatchesPinnedChord": true,
+  "other36SourceFilesUnchanged": true,
+  "receiverSha256": "d5db0b5d5e6f0edcf6974971f47e023fbae96c27e950780e328af9385f853171",
+  "preflightBundleSha256": "934ad4650c451d6fcf19f44b55c3f008dd377dd368ec40a42d29a81377b56dde"
+}

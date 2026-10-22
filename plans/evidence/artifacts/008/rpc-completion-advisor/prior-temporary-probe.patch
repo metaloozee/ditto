@@ -1,0 +1,284 @@
+--- entry/apps/credential-tests/src/model-entry.ts
++++ probe/apps/credential-tests/src/model-entry.ts
+@@ -1192,22 +1192,33 @@
+ 		input: unknown,
+ 		selection?: unknown,
+ 	) {
++		const probeStart = Date.now();
++		const probing = typeof selection === "object" && selection !== null && "model" in selection && selection.model === "faux-2";
++		const probe = (stage: string) => { if (probing) console.log("[DEBUG-008-subwait] fixture", stage, Date.now(), Date.now() - probeStart); };
++		probe("subject-start");
+ 		const subject = await this.readCandidateSubject(commandId, 1);
++		probe("subject-end");
+ 		if (!subject) return { version: 1 as const, status: "denied" as const };
+-		if (selection !== undefined)
++		if (selection !== undefined) {
++			probe("credential-permission-start");
+ 			await this.env.CandidateCredential.getByName(
+ 				subject.userId,
+ 			).candidateConfigurationPermission();
++			probe("credential-permission-end");
++		}
++		probe("credential-status-start");
+ 		const status = await this.env.CandidateCredential.getByName(
+ 			subject.userId,
+ 		).status(subject.userId);
++		probe("credential-status-end");
+ 		if (
+ 			selection !== undefined &&
+ 			(status.status !== "connected" ||
+ 				status.generation !== subject.connectionGeneration)
+ 		)
+ 			return { version: 1 as const, status: "denied" as const };
+-		return readOwnedConfigurationAuthority(
++		probe("owned-policy-start");
++		const result = await readOwnedConfigurationAuthority(
+ 			this.env.DB,
+ 			subject,
+ 			input,
+@@ -1215,6 +1226,8 @@
+ 			true,
+ 			CANDIDATE_MODEL_POLICY,
+ 		);
++		probe("owned-policy-end");
++		return result;
+ 	}
+ 	requestModel(input: unknown, capability: ModelClaimRpc) {
+ 		return performPrivateModelRequest(
+--- entry/apps/credential-tests/src/product-commands.worker.test.ts
++++ probe/apps/credential-tests/src/product-commands.worker.test.ts
+@@ -1502,7 +1502,11 @@
+ });
+ 
+ it("queued configuration uses the next selection across a sequence gap and preserves committed preparation", async () => {
++	const probeStart = Date.now();
++	const probe = (stage: string) => console.log("[DEBUG-008-subwait] body", stage, Date.now(), Date.now() - probeStart);
++	probe("entry");
+ 	const credential = await candidateCredential();
++	probe("credential-ready");
+ 	await env.DB.prepare(
+ 		"UPDATE codex_fixture_capabilities SET snapshot=? WHERE userId='owner'",
+ 	)
+@@ -1536,10 +1540,14 @@
+ 		idempotencyKey: "queued-config-third",
+ 		text: "Synthetic queued third",
+ 	});
++	probe("admissions-end");
+ 	const runtime = env.CandidateSessions.getByName(first.workspaceSessionId);
+ 	try {
++		probe("deliver-third-start");
+ 		await runtime.deliverCommand(third.commandId, 1);
++		probe("deliver-third-end");
+ 		await runtime.deliverCommand(first.commandId, 1);
++		probe("deliver-first-end-poll-start");
+ 		await expect
+ 			.poll(
+ 				async () =>
+@@ -1547,6 +1555,7 @@
+ 				{ timeout: 3000 },
+ 			)
+ 			.toEqual(["complete", "pending"]);
++		probe("first-poll-end");
+ 		const prepared = parseSyntheticModelRequestV1(
+ 			await credential.candidateFinalRequest(),
+ 		);
+@@ -1556,7 +1565,9 @@
+ 				.exec("SELECT task,prepared,selection FROM host_tasks ORDER BY task")
+ 				.toArray(),
+ 		);
++		probe("reopen-start");
+ 		await runtime.reopenFixture();
++		probe("reopen-end-configure-start");
+ 		expect(
+ 			await runtime.configureFixture(
+ 				{
+@@ -1570,6 +1581,7 @@
+ 				first.commandId,
+ 			),
+ 		).toMatchObject({ status: "applied" });
++		probe("configure-end");
+ 		expect(
+ 			await runInDurableObject(runtime, (_instance, state) =>
+ 				state.storage.sql
+@@ -1577,7 +1589,9 @@
+ 					.toArray(),
+ 			),
+ 		).toEqual(task);
++		probe("deliver-second-start");
+ 		await runtime.deliverCommand(second.commandId, 1);
++		probe("deliver-second-end-poll-start");
+ 		await expect
+ 			.poll(
+ 				async () =>
+@@ -1592,8 +1606,11 @@
+ 			),
+ 		).toMatchObject({ model: "faux-2" });
+ 		expect(calls()).toBe(3);
+-	} finally {
+-		await runtime.retireFixture();
++		probe("assertions-end");
++	} finally {
++		probe("retire-start");
++		await runtime.retireFixture();
++		probe("retire-end");
+ 	}
+ });
+ 
+--- entry/apps/runtime/src/pi-durable-host.ts
++++ probe/apps/runtime/src/pi-durable-host.ts
+@@ -1583,6 +1583,7 @@
+ 		query: ConfigurationReadV1,
+ 		selection: ConfigurationSelectionV1 | undefined,
+ 		context: Context,
++		probe?: (stage: string) => void,
+ 	): Promise<boolean> {
+ 		const c = this.dependencies.configuration;
+ 		if (!c || canonical(query) !== canonical(this.configurationScope()))
+@@ -1591,38 +1592,50 @@
+ 			.exec<{ epoch: number }>("SELECT epoch FROM host_meta")
+ 			.one().epoch;
+ 		if (selection !== undefined) {
++			probe?.("authorize-first-start");
+ 			const authorized = parseConfigurationAuthorityV1(
+ 				await awaitWithContext(c.authorize(query, selection), context),
+ 			);
++			probe?.("authorize-first-end");
+ 			if (
+ 				authorized.status !== "current" ||
+ 				canonical(authorized.subject) !== canonical(c.subject)
+ 			)
+ 				return false;
++			probe?.("local-first-start");
+ 			const initial = await awaitWithContext(
+ 				this.dependencies.authority(),
+ 				context,
+ 			);
++			probe?.("local-first-end");
+ 			if (!this.configurationLocal(initial)) return false;
++			probe?.("authorize-fresh-start");
+ 			const fresh = parseConfigurationAuthorityV1(
+ 				await awaitWithContext(c.authorize(query, selection), context),
+ 			);
++			probe?.("authorize-fresh-end");
+ 			if (
+ 				fresh.status !== "current" ||
+ 				canonical(fresh.subject) !== canonical(c.subject)
+ 			)
+ 				return false;
+ 		}
++		probe?.("authorize-final-start");
+ 		const finalProduct = parseConfigurationAuthorityV1(
+ 			await awaitWithContext(c.authorize(query, selection), context),
+ 		);
++		probe?.("authorize-final-end");
++		probe?.("allowed-ledger-start");
+ 		await this.configurationLedger(context);
++		probe?.("allowed-ledger-end");
+ 		// Ordered admission: product and evidence work finish before the final host
+ 		// read and synchronous guards. This admits the Pi call, not an atomic D1/Pi commit.
++		probe?.("local-final-start");
+ 		const local = await awaitWithContext(
+ 			this.dependencies.authority(),
+ 			context,
+ 		);
++		probe?.("local-final-end");
+ 		context.abortSignal?.throwIfAborted();
+ 		return (
+ 			finalProduct.status === "current" &&
+@@ -1750,6 +1763,9 @@
+ 		input: unknown,
+ 		context: Context = BACKGROUND_CONTEXT,
+ 	): Promise<ConfigurationAckV1> {
++		const probeStart = Date.now();
++		const probe = (stage: string) => console.log("[DEBUG-008-subwait] host", stage, Date.now(), Date.now() - probeStart);
++		probe("configure-entry");
+ 		const intent = parseConfigurationIntentV1(input);
+ 		context = withAbortSignal(
+ 			AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
+@@ -1770,12 +1786,18 @@
+ 			snapshot: null,
+ 		});
+ 		if (!this.dependencies.configuration) return deny("unavailable");
++		probe("lane-wait-start");
+ 		return this.ownerTransition(context, async (context) => {
+-			if (!(await this.configurationAllowed(query, undefined, context)))
++			probe("lane-enter");
++			if (!(await this.configurationAllowed(query, undefined, context, probe)))
+ 				return deny("denied");
++			probe("identity-start");
+ 			const identity = await this.configurationIdentity(intent, context);
++			probe("identity-end");
+ 			const recordId = `configuration:${identity.key}`;
++			probe("ledger-start");
+ 			const evidence = await this.configurationLedger(context);
++			probe("ledger-end");
+ 			const old = evidence.find((row) => row.id === identity.key);
+ 			if (old) {
+ 				if (old.payload !== identity.payload) return deny("conflict");
+@@ -1796,11 +1818,13 @@
+ 				ack,
+ 				state: "pending",
+ 			});
++			probe("seal-start");
+ 			const sealed = await awaitWithContext(
+ 				this.seal(recordId, plain),
+ 				context,
+ 			);
+-			if (!(await this.configurationAllowed(query, intent.selection, context)))
++			probe("seal-end");
++			if (!(await this.configurationAllowed(query, intent.selection, context, probe)))
+ 				return deny("denied");
+ 			this.transition("intent", () => {
+ 				this.assertLive();
+@@ -1813,21 +1837,26 @@
+ 				this.rememberSeal(recordId, sealed.digest);
+ 			});
+ 			this.rememberPlain(recordId, plain, sealed.digest, sealed.ciphertext);
++			probe("intent-durable-start");
+ 			await this.durable(context);
++			probe("intent-durable-end");
+ 			this.dependencies.fault?.("configuration-intent");
++			probe("conversation-start");
+ 			const root = await this.harness.conversation(
+ 				ROOT_CONVERSATION_ID,
+ 				context,
+ 			);
++			probe("conversation-end");
+ 			if (!root) throw new Error("Missing owned conversation");
+ 			if (
+-				!(await this.configurationAllowed(query, intent.selection, context))
++				!(await this.configurationAllowed(query, intent.selection, context, probe))
+ 			) {
+ 				const denied = deny("denied");
+ 				await this.finishConfiguration(identity.key, denied, context);
+ 				return denied;
+ 			}
+ 			this.assertLive();
++			probe("pi-configure-start");
+ 			await root.configure(
+ 				{
+ 					model: { provider: "faux", modelId: intent.selection.model },
+@@ -1835,16 +1864,23 @@
+ 				},
+ 				context,
+ 			);
++			probe("pi-configure-end");
++			probe("applied-durable-start");
+ 			await this.durable(context);
++			probe("applied-durable-end");
+ 			this.dependencies.fault?.("configuration-applied");
++			probe("snapshot-start");
+ 			const snapshot = await this.piConfiguration(query, context);
++			probe("snapshot-end");
+ 			if (canonical(snapshot) !== canonical(ack.snapshot))
+ 				throw new Error("Configuration persistence mismatch");
++			probe("finish-start");
+ 			await this.finishConfiguration(
+ 				identity.key,
+ 				{ ...ack, snapshot },
+ 				context,
+ 			);
++			probe("finish-end");
+ 			this.dependencies.fault?.("configuration-outcome");
+ 			return { ...ack, snapshot };
+ 		});

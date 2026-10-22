@@ -1,0 +1,24 @@
+{
+  "argv": [
+    "sh",
+    ".execution-008/clean-run.sh",
+    "pnpm",
+    "--filter",
+    "@ditto/credential-tests",
+    "exec",
+    "vitest",
+    "run",
+    "--config",
+    "/home/ayan/ditto-execution/plan-008-4WXvNW/plans/evidence/artifacts/008/native-rpc-fixture-correction/probe.config.ts"
+  ],
+  "cwd": "/home/ayan/ditto-execution/plan-008-4WXvNW",
+  "exit": 0,
+  "elapsedSeconds": 4.178543230999821,
+  "testDeadlineMs": 5000,
+  "hookDeadlineMs": 10000,
+  "provider": "openai",
+  "model": "gpt-6.1-sol",
+  "reasoning": "medium",
+  "fallback": false,
+  "invocationsAuthorizedThisCorrection": 1
+}

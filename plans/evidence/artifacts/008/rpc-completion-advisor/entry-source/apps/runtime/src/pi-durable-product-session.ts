@@ -1,0 +1,277 @@
+import { DurableObject } from "cloudflare:workers";
+import type {
+	ConfigurationAuthorityV1,
+	ConfigurationSelectionV1,
+} from "../../../packages/runtime-contracts/src/configuration.js";
+import {
+	literalField,
+	strictRecord,
+	stringField,
+} from "../../../packages/runtime-contracts/src/json.js";
+import type { ModelSubjectV1 } from "../../../packages/runtime-contracts/src/model.js";
+import type {
+	CommandV2,
+	QueueDecisionV2,
+} from "../../../packages/runtime-contracts/src/product-command.js";
+import { parseCommandV2 } from "../../../packages/runtime-contracts/src/product-command.js";
+import {
+	type HostFault,
+	type LocalAuthority,
+	PiDurableHost,
+} from "./pi-durable-host.ts";
+import {
+	createPrivateModelAdapter,
+	type PrivateModelTransport,
+} from "./pi-durable-models.ts";
+import { parseRuntimeKeyring } from "./runtime-crypto.ts";
+
+export type CandidateRuntimeScope = {
+	version: 2;
+	userId: string;
+	projectId: string;
+	workspaceSessionId: string;
+	ownerVersion: 1;
+};
+export function parseCandidateRuntimeScope(
+	value: unknown,
+): CandidateRuntimeScope {
+	const row = strictRecord(
+		value,
+		["version", "userId", "projectId", "workspaceSessionId", "ownerVersion"],
+		"Candidate runtime scope",
+	);
+	return {
+		version: literalField(row, "version", [2]),
+		userId: stringField(row, "userId"),
+		projectId: stringField(row, "projectId"),
+		workspaceSessionId: stringField(row, "workspaceSessionId"),
+		ownerVersion: literalField(row, "ownerVersion", [1]),
+	};
+}
+export interface CandidatePrivateProduct extends PrivateModelTransport {
+	reconstructCommand(
+		commandId: string,
+		ownerVersion: number,
+	): Promise<CommandV2 | null>;
+	readRuntimeAuthority(scope: CandidateRuntimeScope): Promise<LocalAuthority>;
+	readCandidateSubject(
+		commandId: string,
+		ownerVersion: number,
+	): Promise<ModelSubjectV1 | null>;
+	reconcileCandidateDecision(decision: QueueDecisionV2): Promise<boolean>;
+	readCandidateConfigurationAuthority(
+		commandId: string,
+		input: unknown,
+		selection?: unknown,
+	): Promise<ConfigurationAuthorityV1>;
+}
+export type CandidateSessionBindings = {
+	CANDIDATE_DISPOSABLE: "008-synthetic";
+	CANDIDATE_RUNTIME_KEYS: string;
+	CandidateProduct: CandidatePrivateProduct;
+	CandidateSessions: DurableObjectNamespace<PiDurableProductSession>;
+};
+
+export class PiDurableProductSession extends DurableObject<CandidateSessionBindings> {
+	protected host: PiDurableHost | undefined;
+	protected readonly candidateBoot = crypto.randomUUID();
+	protected ordinaryAllowed() {
+		return true;
+	}
+	protected hostFault(_point: HostFault) {}
+	private opening: Promise<PiDurableHost> | undefined;
+	private async scope(value?: unknown) {
+		if (this.env.CANDIDATE_DISPOSABLE !== "008-synthetic")
+			throw new Error("Candidate composition unavailable");
+		const supplied =
+			value === undefined ? undefined : parseCandidateRuntimeScope(value);
+		const retained =
+			await this.ctx.storage.get<CandidateRuntimeScope>("candidate-scope-v2");
+		const scope =
+			supplied ?? (retained ? parseCandidateRuntimeScope(retained) : undefined);
+		if (
+			!scope ||
+			!this.ctx.id.equals(
+				this.env.CandidateSessions.idFromName(scope.workspaceSessionId),
+			)
+		)
+			throw new Error("Candidate namespace mismatch");
+		if (
+			retained &&
+			JSON.stringify(parseCandidateRuntimeScope(retained)) !==
+				JSON.stringify(scope)
+		)
+			throw new Error("Candidate owner mismatch");
+		if (!(await this.env.CandidateProduct.readRuntimeAuthority(scope)).current)
+			throw new Error("Candidate authority denied");
+		if (!retained) {
+			await this.ctx.storage.put("candidate-scope-v2", scope);
+			await this.ctx.storage.sync();
+		}
+		return scope;
+	}
+	protected async activate(value?: unknown) {
+		const scope = await this.scope(value);
+		if (!this.opening) this.opening = this.open(scope);
+		const opening = this.opening;
+		try {
+			this.host = await opening;
+			return this.host;
+		} finally {
+			if (this.opening === opening) this.opening = undefined;
+		}
+	}
+	private async open(scope: CandidateRuntimeScope) {
+		if (this.host && !(await this.host.awaitClosure())) return this.host;
+		const keys = strictRecord(
+			JSON.parse(this.env.CANDIDATE_RUNTIME_KEYS),
+			["currentVersion", "keys"],
+			"Candidate runtime keys",
+		);
+		const keyring = await parseRuntimeKeyring({
+			currentVersion: keys.currentVersion,
+			keys: keys.keys,
+		});
+		const product = this.env.CandidateProduct;
+		return PiDurableHost.open(this.ctx.storage, {
+			now: Date.now,
+			fault: (point) => this.hostFault(point),
+			retained: {
+				ownerId: scope.userId,
+				workspaceSessionId: scope.workspaceSessionId,
+				keyring,
+			},
+			authority: () => product.readRuntimeAuthority(scope),
+			wakeup: {
+				getAlarm: () => this.ctx.storage.getAlarm(),
+				setAlarm: (deadline) => this.ctx.storage.setAlarm(deadline),
+			},
+			candidate: {
+				...scope,
+				origin: this.candidateBoot,
+				ordinaryAllowed: () => this.ordinaryAllowed(),
+				reconcileDecision: (decision) =>
+					product.reconcileCandidateDecision(decision),
+				configuration: async (commandId) => {
+					const subject = await product.readCandidateSubject(
+						commandId,
+						scope.ownerVersion,
+					);
+					if (!subject) throw new Error("Candidate configuration unavailable");
+					return {
+						subject,
+						defaultSelection: { model: "faux-1", thinking: "off" },
+						authorize: (input, selection) =>
+							product.readCandidateConfigurationAuthority(
+								commandId,
+								input,
+								selection,
+							),
+					};
+				},
+			},
+			options: (guard) => {
+				const adapter = createPrivateModelAdapter(
+					guard,
+					product,
+					async (attempt) => {
+						const subject = await product.readCandidateSubject(
+							attempt.commandId,
+							scope.ownerVersion,
+						);
+						if (!subject)
+							throw new Error("Candidate model authority unavailable");
+						return subject;
+					},
+				);
+				return {
+					now: Date.now,
+					models: adapter.models,
+					registry: adapter.registry,
+					settings: {
+						extensions: [adapter.extension],
+						toolExecution: "sequential",
+						retry: { enabled: false },
+						compaction: { enabled: false, backgroundTokens: 0 },
+					},
+				};
+			},
+		});
+	}
+	async deliverCommand(commandId: string, ownerVersion: number) {
+		if (ownerVersion !== 1) throw new Error("Candidate owner version denied");
+		const reconstructed = await this.env.CandidateProduct.reconstructCommand(
+			commandId,
+			ownerVersion,
+		);
+		if (!reconstructed) throw new Error("Candidate command unavailable");
+		const command = parseCommandV2(reconstructed);
+		const host = await this.activate({
+			version: 2,
+			userId: command.userId,
+			projectId: command.projectId,
+			workspaceSessionId: command.workspaceSessionId,
+			ownerVersion,
+		});
+		const targetId =
+			command.kind === "stop"
+				? command.targetRunId
+				: command.kind === "cancel"
+					? command.targetCommandId
+					: undefined;
+		const target = targetId
+			? await this.env.CandidateProduct.reconstructCommand(
+					targetId,
+					ownerVersion,
+				)
+			: undefined;
+		return host.acceptCandidate(command, target);
+	}
+	async readSelection(
+		subject: ModelSubjectV1,
+	): Promise<ConfigurationSelectionV1 | null> {
+		const host = await this.activate({
+			version: 2,
+			userId: subject.userId,
+			projectId: subject.projectId,
+			workspaceSessionId: subject.workspaceSessionId,
+			ownerVersion: subject.runtimeOwnerVersion,
+		});
+		return host.readCandidateSelection();
+	}
+	async targetStatus(subject: ModelSubjectV1, runId: string) {
+		const host = await this.activate({
+			version: 2,
+			userId: subject.userId,
+			projectId: subject.projectId,
+			workspaceSessionId: subject.workspaceSessionId,
+			ownerVersion: subject.runtimeOwnerVersion,
+		});
+		return host.candidateTargetStatus(runId);
+	}
+	protected async alarmHost() {
+		const retained =
+			await this.ctx.storage.get<CandidateRuntimeScope>("candidate-scope-v2");
+		if (
+			retained &&
+			!(
+				await this.env.CandidateProduct.readRuntimeAuthority(
+					parseCandidateRuntimeScope(retained),
+				)
+			).current
+		) {
+			await this.host?.alarm();
+			return undefined;
+		}
+		return this.activate();
+	}
+	async alarm() {
+		const host = await this.alarmHost();
+		if (!host) return;
+		await host.alarm();
+		await host.joinInvocation();
+	}
+	fetch() {
+		return new Response("Not found", { status: 404 });
+	}
+}

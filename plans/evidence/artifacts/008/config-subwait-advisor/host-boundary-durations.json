@@ -1,0 +1,146 @@
+[
+  {
+    "boundary": "authorize-final",
+    "start_host_ms": 1,
+    "end_host_ms": 102,
+    "duration_ms": 101
+  },
+  {
+    "boundary": "allowed-ledger",
+    "start_host_ms": 103,
+    "end_host_ms": 103,
+    "duration_ms": 0
+  },
+  {
+    "boundary": "local-final",
+    "start_host_ms": 103,
+    "end_host_ms": 165,
+    "duration_ms": 62
+  },
+  {
+    "boundary": "identity",
+    "start_host_ms": 165,
+    "end_host_ms": 166,
+    "duration_ms": 1
+  },
+  {
+    "boundary": "ledger",
+    "start_host_ms": 166,
+    "end_host_ms": 166,
+    "duration_ms": 0
+  },
+  {
+    "boundary": "seal",
+    "start_host_ms": 166,
+    "end_host_ms": 166,
+    "duration_ms": 0
+  },
+  {
+    "boundary": "authorize-first",
+    "start_host_ms": 166,
+    "end_host_ms": 265,
+    "duration_ms": 99
+  },
+  {
+    "boundary": "local-first",
+    "start_host_ms": 265,
+    "end_host_ms": 326,
+    "duration_ms": 61
+  },
+  {
+    "boundary": "authorize-fresh",
+    "start_host_ms": 327,
+    "end_host_ms": 428,
+    "duration_ms": 101
+  },
+  {
+    "boundary": "authorize-final",
+    "start_host_ms": 428,
+    "end_host_ms": 532,
+    "duration_ms": 104
+  },
+  {
+    "boundary": "allowed-ledger",
+    "start_host_ms": 532,
+    "end_host_ms": 532,
+    "duration_ms": 0
+  },
+  {
+    "boundary": "local-final",
+    "start_host_ms": 532,
+    "end_host_ms": 595,
+    "duration_ms": 63
+  },
+  {
+    "boundary": "intent-durable",
+    "start_host_ms": 596,
+    "end_host_ms": 602,
+    "duration_ms": 6
+  },
+  {
+    "boundary": "conversation",
+    "start_host_ms": 602,
+    "end_host_ms": 603,
+    "duration_ms": 1
+  },
+  {
+    "boundary": "authorize-first",
+    "start_host_ms": 603,
+    "end_host_ms": 830,
+    "duration_ms": 227
+  },
+  {
+    "boundary": "local-first",
+    "start_host_ms": 830,
+    "end_host_ms": 894,
+    "duration_ms": 64
+  },
+  {
+    "boundary": "authorize-fresh",
+    "start_host_ms": 894,
+    "end_host_ms": 1003,
+    "duration_ms": 109
+  },
+  {
+    "boundary": "authorize-final",
+    "start_host_ms": 1003,
+    "end_host_ms": 1105,
+    "duration_ms": 102
+  },
+  {
+    "boundary": "allowed-ledger",
+    "start_host_ms": 1105,
+    "end_host_ms": 1106,
+    "duration_ms": 1
+  },
+  {
+    "boundary": "local-final",
+    "start_host_ms": 1106,
+    "end_host_ms": 1180,
+    "duration_ms": 74
+  },
+  {
+    "boundary": "pi-configure",
+    "start_host_ms": 1181,
+    "end_host_ms": 1183,
+    "duration_ms": 2
+  },
+  {
+    "boundary": "applied-durable",
+    "start_host_ms": 1183,
+    "end_host_ms": 1189,
+    "duration_ms": 6
+  },
+  {
+    "boundary": "snapshot",
+    "start_host_ms": 1189,
+    "end_host_ms": 1189,
+    "duration_ms": 0
+  },
+  {
+    "boundary": "finish",
+    "start_host_ms": 1189,
+    "end_host_ms": 1196,
+    "duration_ms": 7
+  }
+]

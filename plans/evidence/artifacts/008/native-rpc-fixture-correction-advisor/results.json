@@ -1,0 +1,55 @@
+{
+  "verdict": "bounded_probe_passed_not_product_acceptance",
+  "plan008FixedOrAccepted": false,
+  "correctionInvocations": 1,
+  "command": {
+    "argv": [
+      "sh",
+      ".execution-008/clean-run.sh",
+      "pnpm",
+      "--filter",
+      "@ditto/credential-tests",
+      "exec",
+      "vitest",
+      "run",
+      "--config",
+      "/home/ayan/ditto-execution/plan-008-4WXvNW/plans/evidence/artifacts/008/native-rpc-fixture-correction/probe.config.ts"
+    ],
+    "cwd": "/home/ayan/ditto-execution/plan-008-4WXvNW",
+    "exit": 0,
+    "elapsedSeconds": 4.178543230999821,
+    "testDeadlineMs": 5000,
+    "hookDeadlineMs": 10000,
+    "provider": "openai",
+    "model": "gpt-6.1-sol",
+    "reasoning": "medium",
+    "fallback": false,
+    "invocationsAuthorizedThisCorrection": 1
+  },
+  "testCount": 2,
+  "passed": 2,
+  "failed": 0,
+  "samples": {
+    "test": 12,
+    "existing-DO": 12
+  },
+  "proofs": [
+    {
+      "sharedVisibility": true,
+      "ordinaryGeneration": 1,
+      "realAdmission": true,
+      "successfulMembershipSeeded": false,
+      "reviewFreshness": true,
+      "deletionFreshness": true,
+      "noResetTable": true
+    },
+    {
+      "nextTestIsolationBothReceivers": true,
+      "priorRows": 0
+    }
+  ],
+  "wrongOwnerDeniedBothReceivers": true,
+  "receiverAndExecutableBundlePredicatesUnchanged": true,
+  "historicalFailuresRemainFailures": 2,
+  "restoredAll37": true
+}

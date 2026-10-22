@@ -1,0 +1,20 @@
+{
+  "verdict": "inconclusive_harness_failures",
+  "plan008FixedOrAccepted": false,
+  "probeInvocations": 2,
+  "correctedReruns": 1,
+  "original": { "exit": 1, "testsCollected": 0, "unhandledErrors": 1, "failure": "runtime-start paths: main relative to config and auxiliary ../../ module name" },
+  "corrected": { "exit": 1, "testsCollected": 2, "passed": 0, "failed": 2, "failures": ["real admission: CandidateCommandError model_unconfigured", "isolation prerequisite: admittedScope undefined"] },
+  "plannedSamples": { "testContext": 12, "existingDoContext": 12 },
+  "actualSamples": { "testContext": 0, "existingDoContext": 0 },
+  "empiricalSharedD1": "not_reached",
+  "empiricalFreshness": "not_reached",
+  "empiricalNextTestIsolationBothReceivers": "not_reached",
+  "causalWrapperPrediction": "neither_supported_nor_rejected",
+  "unreachedCallerDefect": "awaitWithContext receives context,pending instead of pending,context",
+  "all37Restored": true,
+  "remainingApplicationHooks": 0,
+  "stagingEmpty": true,
+  "diffCheckExit": 0,
+  "furtherTestRuns": "not_authorized"
+}

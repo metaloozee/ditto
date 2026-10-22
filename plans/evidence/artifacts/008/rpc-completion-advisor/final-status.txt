@@ -1,0 +1,45 @@
+ M apps/credential-tests/src/entry.ts
+ M apps/credential-tests/src/model-entry.ts
+ M apps/credential-tests/vitest.config.ts
+ M apps/runtime/src/pi-durable-host.ts
+ M apps/runtime/src/pi-durable-models.ts
+ M apps/web/migrations/meta/_journal.json
+ M apps/web/src/db/schema.ts
+ M apps/web/src/db/trusted-runtime-migration.test.ts
+ M apps/web/src/lib/agent-control-service.test.ts
+ M apps/web/src/lib/agent-run-service.test.ts
+ M apps/web/src/lib/codex-credential-do.ts
+ M apps/web/src/lib/configuration-product-authority.ts
+ M apps/web/src/lib/model-product-authority.ts
+ M apps/web/src/lib/model-product-transport.ts
+ M apps/web/src/lib/session-command.test.ts
+ M apps/web/src/lib/session-command.ts
+ M apps/web/src/lib/session-runtime-authority.ts
+ M apps/web/src/lib/session-runtime-client.ts
+ M apps/web/src/lib/session-runtime-ownership.test.ts
+ M apps/web/src/lib/session-runtime-ownership.ts
+ M apps/web/src/lib/workspace-runtime.ts
+ M apps/web/src/routes/api.agent.control.ts
+ M apps/web/src/routes/api.agent.stream.ts
+ M apps/web/src/server.test.ts
+ M apps/web/src/server.ts
+ M apps/web/src/test/session-runtime-fixture.ts
+ M apps/web/types/env.d.ts
+ M package.json
+ M packages/runtime-contracts/src/index.ts
+ M packages/sandbox-runner/src/control-channel.test.ts
+?? .execution-008/
+?? apps/credential-tests/src/product-commands.worker.test.ts
+?? apps/runtime/src/pi-durable-commands.test.ts
+?? apps/runtime/src/pi-durable-product-session.ts
+?? apps/web/migrations/0023_candidate_product_commands.sql
+?? apps/web/src/lib/session-command-candidate.ts
+?? packages/runtime-contracts/src/product-command.test.ts
+?? packages/runtime-contracts/src/product-command.ts
+?? plans/evidence/008-advisor-initial-review.md
+?? plans/evidence/008-continuation-cache-20261011T091926Z.md
+?? plans/evidence/008-fixture-reset-qualification.md
+?? plans/evidence/008-fresh-executor-checkpoint.md
+?? plans/evidence/008-implementation-continuation.md
+?? plans/evidence/008-product-commands.md
+?? plans/evidence/artifacts/008/

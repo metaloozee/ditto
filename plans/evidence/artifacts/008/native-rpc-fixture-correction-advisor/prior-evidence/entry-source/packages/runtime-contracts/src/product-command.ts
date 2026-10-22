@@ -1,0 +1,357 @@
+import {
+	ContractParseError,
+	decodeContractInput,
+	integerField,
+	literalField,
+	strictRecord,
+	stringField,
+} from "./json.js";
+import { RUNTIME_LIMITS } from "./limits.js";
+
+export const CANDIDATE_RUNTIME_OWNER = "pi_durable_v1";
+export const CANDIDATE_COMMAND_VERSION = 2;
+export const CANDIDATE_COMMAND_TEXT_BYTES = 8192;
+export const CANDIDATE_QUEUE_TTL_MS = 900_000;
+const KINDS = ["prompt", "follow_up", "stop", "cancel"] as const;
+
+type BrowserBaseV2 = {
+	version: 2;
+	idempotencyKey: string;
+	projectId: string;
+};
+export type BrowserCommandV2 =
+	| (BrowserBaseV2 & { kind: "prompt"; sessionId?: string; text: string })
+	| (BrowserBaseV2 & {
+			kind: "follow_up";
+			sessionId: string;
+			targetRunId: string;
+			text: string;
+	  })
+	| (BrowserBaseV2 & { kind: "stop"; sessionId: string; targetRunId: string })
+	| (BrowserBaseV2 & {
+			kind: "cancel";
+			sessionId: string;
+			targetCommandId: string;
+	  });
+
+type CommandBaseV2 = {
+	version: 2;
+	commandId: string;
+	commandSeq: number;
+	userId: string;
+	projectId: string;
+	workspaceSessionId: string;
+	runtimeOwnerVersion: number;
+	receiptId: string;
+	acceptedAt: number;
+	deadlineAt: number;
+	payloadDigest: string;
+};
+type MessagesV2 = {
+	userMessageId: string;
+	assistantMessageId: string;
+	text: string;
+};
+export type CommandV2 =
+	| (CommandBaseV2 & MessagesV2 & { kind: "prompt" })
+	| (CommandBaseV2 & MessagesV2 & { kind: "follow_up"; targetRunId: string })
+	| (CommandBaseV2 & { kind: "stop"; targetRunId: string })
+	| (CommandBaseV2 & { kind: "cancel"; targetCommandId: string });
+
+export type ReceiptV2 = {
+	version: 2;
+	receiptId: string;
+	commandId: string;
+	workspaceSessionId: string;
+	commandSeq: number;
+	ownerVersion: 1;
+	queueDeadlineAt: number;
+	userMessageId?: string;
+	assistantMessageId?: string;
+};
+
+export function parseReceiptV2(input: unknown): ReceiptV2 {
+	const r = strictRecord(
+		decodeContractInput(input, RUNTIME_LIMITS.deliveryEnvelopeBytes),
+		[
+			"version",
+			"receiptId",
+			"commandId",
+			"workspaceSessionId",
+			"commandSeq",
+			"ownerVersion",
+			"queueDeadlineAt",
+			"userMessageId",
+			"assistantMessageId",
+		],
+		"ReceiptV2",
+	);
+	literalField(r, "version", [2]);
+	literalField(r, "ownerVersion", [1]);
+	const userMessageId = stringField(r, "userMessageId", {
+		optional: true,
+		maxBytes: RUNTIME_LIMITS.idBytes,
+	});
+	const assistantMessageId = stringField(r, "assistantMessageId", {
+		optional: true,
+		maxBytes: RUNTIME_LIMITS.idBytes,
+	});
+	if ((userMessageId === undefined) !== (assistantMessageId === undefined))
+		throw new ContractParseError(
+			"invalid_field",
+			"Receipt message pair is incomplete.",
+		);
+	return {
+		version: 2,
+		receiptId: id(r, "receiptId"),
+		commandId: id(r, "commandId"),
+		workspaceSessionId: id(r, "workspaceSessionId"),
+		commandSeq: integerField(r, "commandSeq", { minimum: 1 }),
+		ownerVersion: 1,
+		queueDeadlineAt: integerField(r, "queueDeadlineAt", { minimum: 0 }),
+		...(userMessageId === undefined
+			? {}
+			: { userMessageId, assistantMessageId }),
+	};
+}
+
+export type QueueDecisionV2 = {
+	version: 2;
+	commandId: string;
+	ownerVersion: 1;
+	runId: string;
+	runEpoch: number;
+	decision: "started" | "expired";
+	decidedAt: number;
+	queueDeadlineAt: number;
+	payloadDigest: string;
+};
+
+export function parseQueueDecisionV2(input: unknown): QueueDecisionV2 {
+	const r = strictRecord(
+		decodeContractInput(input, RUNTIME_LIMITS.deliveryEnvelopeBytes),
+		[
+			"version",
+			"commandId",
+			"ownerVersion",
+			"runId",
+			"runEpoch",
+			"decision",
+			"decidedAt",
+			"queueDeadlineAt",
+			"payloadDigest",
+		],
+		"QueueDecisionV2",
+	);
+	literalField(r, "version", [2]);
+	literalField(r, "ownerVersion", [1]);
+	const decision = literalField(r, "decision", ["started", "expired"]);
+	const decidedAt = integerField(r, "decidedAt", { minimum: 0 });
+	const queueDeadlineAt = integerField(r, "queueDeadlineAt", { minimum: 0 });
+	const payloadDigest = stringField(r, "payloadDigest", { maxBytes: 64 });
+	if (
+		!/^[a-f0-9]{64}$/.test(payloadDigest) ||
+		(decision === "started"
+			? decidedAt >= queueDeadlineAt
+			: decidedAt < queueDeadlineAt)
+	)
+		throw new ContractParseError(
+			"invalid_field",
+			"Invalid queue decision evidence.",
+		);
+	return {
+		version: 2,
+		commandId: id(r, "commandId"),
+		ownerVersion: 1,
+		runId: id(r, "runId"),
+		runEpoch: integerField(r, "runEpoch", { minimum: 1 }),
+		decision,
+		decidedAt,
+		queueDeadlineAt,
+		payloadDigest,
+	};
+}
+
+export type CommandHandoffAckV2 = {
+	version: 2;
+	commandId: string;
+	ownerVersion: number;
+	acceptedPosition: number;
+	receiptId: string;
+};
+
+const BROWSER_BASE = [
+	"version",
+	"kind",
+	"idempotencyKey",
+	"projectId",
+	"sessionId",
+];
+const COMMAND_BASE = [
+	"version",
+	"kind",
+	"commandId",
+	"commandSeq",
+	"userId",
+	"projectId",
+	"workspaceSessionId",
+	"runtimeOwnerVersion",
+	"receiptId",
+	"acceptedAt",
+	"deadlineAt",
+	"payloadDigest",
+];
+function fields(kind: (typeof KINDS)[number], browser: boolean): string[] {
+	const base = browser ? BROWSER_BASE : COMMAND_BASE;
+	switch (kind) {
+		case "prompt":
+			return [
+				...base,
+				...(browser
+					? ["text"]
+					: ["userMessageId", "assistantMessageId", "text"]),
+			];
+		case "follow_up":
+			return [
+				...base,
+				"targetRunId",
+				...(browser
+					? ["text"]
+					: ["userMessageId", "assistantMessageId", "text"]),
+			];
+		case "stop":
+			return [...base, "targetRunId"];
+		case "cancel":
+			return [...base, "targetCommandId"];
+	}
+}
+function record(input: unknown, browser: boolean) {
+	const value = decodeContractInput(input, RUNTIME_LIMITS.commandBodyBytes);
+	const initial = strictRecord(
+		value,
+		[
+			...(browser ? BROWSER_BASE : COMMAND_BASE),
+			"text",
+			"targetRunId",
+			"targetCommandId",
+			...(browser ? [] : ["userMessageId", "assistantMessageId"]),
+		],
+		browser ? "BrowserCommandV2" : "CommandV2",
+	);
+	literalField(initial, "version", [2]);
+	const kind = literalField(initial, "kind", KINDS);
+	return {
+		record: strictRecord(initial, fields(kind, browser), "CommandV2"),
+		kind,
+	};
+}
+function id(record: Record<string, unknown>, key: string) {
+	return stringField(record, key, { maxBytes: RUNTIME_LIMITS.idBytes });
+}
+function text(record: Record<string, unknown>) {
+	const value = stringField(record, "text", {
+		maxBytes: CANDIDATE_COMMAND_TEXT_BYTES,
+	});
+	if (value.trim().length === 0)
+		throw new ContractParseError("invalid_field", "text must not be blank.");
+	return value;
+}
+
+export function parseBrowserCommandV2(input: unknown): BrowserCommandV2 {
+	const { record: r, kind } = record(input, true);
+	const base: BrowserBaseV2 = {
+		version: 2,
+		idempotencyKey: id(r, "idempotencyKey"),
+		projectId: id(r, "projectId"),
+	};
+	if (kind === "prompt") {
+		const sessionId = stringField(r, "sessionId", {
+			optional: true,
+			maxBytes: RUNTIME_LIMITS.idBytes,
+		});
+		return {
+			...base,
+			kind,
+			...(sessionId === undefined ? {} : { sessionId }),
+			text: text(r),
+		};
+	}
+	const sessionId = id(r, "sessionId");
+	if (kind === "follow_up")
+		return {
+			...base,
+			kind,
+			sessionId,
+			targetRunId: id(r, "targetRunId"),
+			text: text(r),
+		};
+	if (kind === "stop")
+		return { ...base, kind, sessionId, targetRunId: id(r, "targetRunId") };
+	return {
+		...base,
+		kind,
+		sessionId,
+		targetCommandId: id(r, "targetCommandId"),
+	};
+}
+
+export function parseCommandV2(input: unknown): CommandV2 {
+	const { record: r, kind } = record(input, false);
+	const acceptedAt = integerField(r, "acceptedAt", {
+		minimum: 0,
+		maximum: Number.MAX_SAFE_INTEGER - CANDIDATE_QUEUE_TTL_MS,
+	});
+	const deadlineAt = integerField(r, "deadlineAt", { minimum: 0 });
+	if (deadlineAt !== acceptedAt + CANDIDATE_QUEUE_TTL_MS)
+		throw new ContractParseError(
+			"invalid_field",
+			"deadlineAt must preserve the fixed queue deadline.",
+		);
+	const payloadDigest = stringField(r, "payloadDigest", { maxBytes: 64 });
+	if (!/^[a-f0-9]{64}$/.test(payloadDigest))
+		throw new ContractParseError(
+			"invalid_field",
+			"payloadDigest must be a SHA-256 hex digest.",
+		);
+	const base: CommandBaseV2 = {
+		version: 2,
+		commandId: id(r, "commandId"),
+		commandSeq: integerField(r, "commandSeq", { minimum: 1 }),
+		userId: id(r, "userId"),
+		projectId: id(r, "projectId"),
+		workspaceSessionId: id(r, "workspaceSessionId"),
+		runtimeOwnerVersion: integerField(r, "runtimeOwnerVersion", { minimum: 1 }),
+		receiptId: id(r, "receiptId"),
+		acceptedAt,
+		deadlineAt,
+		payloadDigest,
+	};
+	if (kind === "stop")
+		return { ...base, kind, targetRunId: id(r, "targetRunId") };
+	if (kind === "cancel")
+		return { ...base, kind, targetCommandId: id(r, "targetCommandId") };
+	const messages = {
+		userMessageId: id(r, "userMessageId"),
+		assistantMessageId: id(r, "assistantMessageId"),
+		text: text(r),
+	};
+	if (kind === "follow_up")
+		return { ...base, kind, ...messages, targetRunId: id(r, "targetRunId") };
+	return { ...base, kind, ...messages };
+}
+
+export function parseCommandHandoffAckV2(input: unknown): CommandHandoffAckV2 {
+	const r = strictRecord(
+		decodeContractInput(input, RUNTIME_LIMITS.deliveryEnvelopeBytes),
+		["version", "commandId", "ownerVersion", "acceptedPosition", "receiptId"],
+		"CommandHandoffAckV2",
+	);
+	literalField(r, "version", [2]);
+	return {
+		version: 2,
+		commandId: id(r, "commandId"),
+		ownerVersion: integerField(r, "ownerVersion", { minimum: 1 }),
+		acceptedPosition: integerField(r, "acceptedPosition", { minimum: 1 }),
+		receiptId: id(r, "receiptId"),
+	};
+}

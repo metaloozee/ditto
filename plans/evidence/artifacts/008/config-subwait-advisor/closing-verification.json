@@ -1,0 +1,8 @@
+{
+  "all_37_equal_MAIN_and_entry_archive": true,
+  "mismatches": [],
+  "git_status_equal_entry": true,
+  "no_probe_in_apps": true,
+  "staging_empty": true,
+  "diagnostic_runs": 1
+}

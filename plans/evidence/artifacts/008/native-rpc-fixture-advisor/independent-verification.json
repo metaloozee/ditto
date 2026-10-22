@@ -1,0 +1,12 @@
+{
+  "all_37_entry_and_reported_final_hashes_match": true,
+  "source_hashes_independently_verified_before_correction_dispatch": true,
+  "missing_candidate_credential_setup_verified": true,
+  "reversed_cancellation_adapter_arguments_verified": true,
+  "causal_timing_samples": 0,
+  "invocations": {
+    "original": "failed before collection",
+    "corrected": "failed before admission; isolation prerequisite not established"
+  },
+  "correction_dispatched_separately": true
+}

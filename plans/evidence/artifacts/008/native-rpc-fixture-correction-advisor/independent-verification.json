@@ -1,0 +1,152 @@
+{
+  "all_37_current_archive_expected_source_hashes_match": true,
+  "prior_probe_evidence_unchanged": true,
+  "receiver_source_identical": true,
+  "receiver_executable_bundle_identical_except_comment_lines": true,
+  "scratch_patch_independently_regenerated": true,
+  "scalar_samples_match_actual_log": true,
+  "timing_groups": [
+    {
+      "caller": "test",
+      "binding": "ScratchCurrent008",
+      "count": 6,
+      "created_to_entry_ms": [
+        2,
+        1,
+        2,
+        2,
+        2,
+        1
+      ],
+      "body_ms": [
+        0,
+        5,
+        0,
+        5,
+        0,
+        6
+      ],
+      "return_ms": [
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "caller": "test",
+      "binding": "ScratchNative008",
+      "count": 6,
+      "created_to_entry_ms": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "body_ms": [
+        0,
+        5,
+        0,
+        6,
+        0,
+        6
+      ],
+      "return_ms": [
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "caller": "existing-DO",
+      "binding": "ScratchCurrent008",
+      "count": 6,
+      "created_to_entry_ms": [
+        1,
+        2,
+        2,
+        1,
+        1,
+        1
+      ],
+      "body_ms": [
+        0,
+        6,
+        0,
+        5,
+        0,
+        6
+      ],
+      "return_ms": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "caller": "existing-DO",
+      "binding": "ScratchNative008",
+      "count": 6,
+      "created_to_entry_ms": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "body_ms": [
+        0,
+        6,
+        0,
+        5,
+        0,
+        7
+      ],
+      "return_ms": [
+        0,
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    }
+  ],
+  "proof_records": [
+    {
+      "sharedVisibility": true,
+      "ordinaryGeneration": 1,
+      "realAdmission": true,
+      "successfulMembershipSeeded": false,
+      "reviewFreshness": true,
+      "deletionFreshness": true,
+      "noResetTable": true
+    },
+    {
+      "nextTestIsolationBothReceivers": true,
+      "priorRows": 0
+    }
+  ],
+  "executor_metadata": [
+    [
+      "openai",
+      "gpt-6.1-sol",
+      "medium"
+    ]
+  ],
+  "executor_corrected_probe_result": "2 passed, exit 0",
+  "independent_test_invocations": 0,
+  "staging_empty": true,
+  "diff_check_passed": true
+}

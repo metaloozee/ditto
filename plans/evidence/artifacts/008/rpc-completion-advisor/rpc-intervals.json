@@ -1,0 +1,359 @@
+[
+  {
+    "kind": "selection",
+    "before": 1791826168831,
+    "created": 1791826168831,
+    "entry": 1791826168882,
+    "exit": 1791826168925,
+    "creationMs": 0,
+    "receiverEntryMs": 51,
+    "receiverBodyMs": 43,
+    "returnMs": 0
+  },
+  {
+    "kind": "selection",
+    "before": 1791826168977,
+    "created": 1791826168977,
+    "entry": 1791826169024,
+    "exit": 1791826169064,
+    "creationMs": 0,
+    "receiverEntryMs": 47,
+    "receiverBodyMs": 40,
+    "returnMs": 1
+  },
+  {
+    "kind": "selection",
+    "before": 1791826169065,
+    "created": 1791826169065,
+    "entry": 1791826169112,
+    "exit": 1791826169154,
+    "creationMs": 0,
+    "receiverEntryMs": 47,
+    "receiverBodyMs": 42,
+    "returnMs": 0
+  },
+  {
+    "kind": "selection",
+    "before": 1791826170624,
+    "created": 1791826170624,
+    "entry": 1791826170676,
+    "exit": 1791826170721,
+    "creationMs": 0,
+    "receiverEntryMs": 52,
+    "receiverBodyMs": 45,
+    "returnMs": 1
+  },
+  {
+    "kind": "selection",
+    "before": 1791826170785,
+    "created": 1791826170785,
+    "entry": 1791826170836,
+    "exit": 1791826170880,
+    "creationMs": 0,
+    "receiverEntryMs": 51,
+    "receiverBodyMs": 44,
+    "returnMs": 1
+  },
+  {
+    "kind": "selection",
+    "before": 1791826170939,
+    "created": 1791826170939,
+    "entry": 1791826170990,
+    "exit": 1791826171031,
+    "creationMs": 0,
+    "receiverEntryMs": 51,
+    "receiverBodyMs": 41,
+    "returnMs": 1
+  },
+  {
+    "kind": "selection",
+    "before": 1791826171032,
+    "created": 1791826171032,
+    "entry": 1791826171084,
+    "exit": 1791826171130,
+    "creationMs": 0,
+    "receiverEntryMs": 52,
+    "receiverBodyMs": 46,
+    "returnMs": 0
+  },
+  {
+    "kind": "selection",
+    "before": 1791826171198,
+    "created": 1791826171198,
+    "entry": 1791826171251,
+    "exit": 1791826171295,
+    "creationMs": 0,
+    "receiverEntryMs": 53,
+    "receiverBodyMs": 44,
+    "returnMs": 1
+  },
+  {
+    "kind": "selection",
+    "before": 1791826171356,
+    "created": 1791826171356,
+    "entry": 1791826171465,
+    "exit": 1791826171590,
+    "creationMs": 0,
+    "receiverEntryMs": 109,
+    "receiverBodyMs": 125,
+    "returnMs": 0
+  },
+  {
+    "kind": "selection",
+    "before": 1791826171590,
+    "created": 1791826171590,
+    "entry": 1791826171644,
+    "exit": 1791826171687,
+    "creationMs": 0,
+    "receiverEntryMs": 54,
+    "receiverBodyMs": 43,
+    "returnMs": 0
+  },
+  {
+    "kind": "authority",
+    "before": 1791826168657,
+    "created": 1791826168657,
+    "entry": 1791826168703,
+    "exit": 1791826168709,
+    "creationMs": 0,
+    "receiverEntryMs": 46,
+    "receiverBodyMs": 6
+  },
+  {
+    "kind": "authority",
+    "before": 1791826168710,
+    "created": 1791826168710,
+    "entry": 1791826168758,
+    "exit": 1791826168765,
+    "creationMs": 0,
+    "receiverEntryMs": 48,
+    "receiverBodyMs": 7
+  },
+  {
+    "kind": "authority",
+    "before": 1791826168925,
+    "created": 1791826168925,
+    "entry": 1791826168971,
+    "exit": 1791826168977,
+    "creationMs": 0,
+    "receiverEntryMs": 46,
+    "receiverBodyMs": 6,
+    "returnMs": 0
+  },
+  {
+    "kind": "authority",
+    "before": 1791826169155,
+    "created": 1791826169155,
+    "entry": 1791826169202,
+    "exit": 1791826169209,
+    "creationMs": 0,
+    "receiverEntryMs": 47,
+    "receiverBodyMs": 7,
+    "returnMs": 0
+  },
+  {
+    "kind": "authority",
+    "before": 1791826169217,
+    "created": 1791826169217,
+    "entry": 1791826169265,
+    "exit": 1791826169273,
+    "creationMs": 0,
+    "receiverEntryMs": 48,
+    "receiverBodyMs": 8
+  },
+  {
+    "kind": "authority",
+    "before": 1791826169289,
+    "created": 1791826169289,
+    "entry": 1791826169337,
+    "exit": 1791826169344,
+    "creationMs": 0,
+    "receiverEntryMs": 48,
+    "receiverBodyMs": 7
+  },
+  {
+    "kind": "authority",
+    "before": 1791826169389,
+    "created": 1791826169389,
+    "entry": 1791826169437,
+    "exit": 1791826169443,
+    "creationMs": 0,
+    "receiverEntryMs": 48,
+    "receiverBodyMs": 6
+  },
+  {
+    "kind": "authority",
+    "before": 1791826169449,
+    "created": 1791826169449,
+    "entry": 1791826169499,
+    "exit": 1791826169505,
+    "creationMs": 0,
+    "receiverEntryMs": 50,
+    "receiverBodyMs": 6
+  },
+  {
+    "kind": "authority",
+    "before": 1791826169511,
+    "created": 1791826169511,
+    "entry": 1791826169561,
+    "exit": 1791826169568,
+    "creationMs": 0,
+    "receiverEntryMs": 50,
+    "receiverBodyMs": 7
+  },
+  {
+    "kind": "authority",
+    "before": 1791826169853,
+    "created": 1791826169853,
+    "entry": 1791826169902,
+    "exit": 1791826169908,
+    "creationMs": 0,
+    "receiverEntryMs": 49,
+    "receiverBodyMs": 6
+  },
+  {
+    "kind": "authority",
+    "before": 1791826169981,
+    "created": 1791826169981,
+    "entry": 1791826170031,
+    "exit": 1791826170039,
+    "creationMs": 0,
+    "receiverEntryMs": 50,
+    "receiverBodyMs": 8
+  },
+  {
+    "kind": "authority",
+    "before": 1791826170239,
+    "created": 1791826170239,
+    "entry": 1791826170288,
+    "exit": 1791826170295,
+    "creationMs": 0,
+    "receiverEntryMs": 49,
+    "receiverBodyMs": 7
+  },
+  {
+    "kind": "authority",
+    "before": 1791826170374,
+    "created": 1791826170374,
+    "entry": 1791826170424,
+    "exit": 1791826170431,
+    "creationMs": 0,
+    "receiverEntryMs": 50,
+    "receiverBodyMs": 7
+  },
+  {
+    "kind": "authority",
+    "before": 1791826170722,
+    "created": 1791826170722,
+    "entry": 1791826170775,
+    "exit": 1791826170784,
+    "creationMs": 0,
+    "receiverEntryMs": 53,
+    "receiverBodyMs": 9,
+    "returnMs": 0
+  },
+  {
+    "kind": "authority",
+    "before": 1791826170881,
+    "created": 1791826170881,
+    "entry": 1791826170932,
+    "exit": 1791826170938,
+    "creationMs": 0,
+    "receiverEntryMs": 51,
+    "receiverBodyMs": 6,
+    "returnMs": 1
+  },
+  {
+    "kind": "authority",
+    "before": 1791826171130,
+    "created": 1791826171130,
+    "entry": 1791826171183,
+    "exit": 1791826171191,
+    "creationMs": 0,
+    "receiverEntryMs": 53,
+    "receiverBodyMs": 8,
+    "returnMs": 0
+  },
+  {
+    "kind": "authority",
+    "before": 1791826171296,
+    "created": 1791826171296,
+    "entry": 1791826171349,
+    "exit": 1791826171356,
+    "creationMs": 0,
+    "receiverEntryMs": 53,
+    "receiverBodyMs": 7,
+    "returnMs": 0
+  },
+  {
+    "kind": "authority",
+    "before": 1791826171688,
+    "created": 1791826171688,
+    "entry": 1791826171742,
+    "exit": 1791826171748,
+    "creationMs": 0,
+    "receiverEntryMs": 54,
+    "receiverBodyMs": 6,
+    "returnMs": 0
+  },
+  {
+    "kind": "authority",
+    "before": 1791826172151,
+    "created": 1791826172151,
+    "entry": 1791826172203,
+    "exit": 1791826172209,
+    "creationMs": 0,
+    "receiverEntryMs": 52,
+    "receiverBodyMs": 6
+  },
+  {
+    "kind": "authority",
+    "before": 1791826172210,
+    "created": 1791826172210,
+    "entry": 1791826172262,
+    "exit": 1791826172270,
+    "creationMs": 0,
+    "receiverEntryMs": 52,
+    "receiverBodyMs": 8
+  },
+  {
+    "kind": "authority",
+    "before": 1791826172339,
+    "created": 1791826172339,
+    "entry": 1791826172392,
+    "exit": 1791826172400,
+    "creationMs": 0,
+    "receiverEntryMs": 53,
+    "receiverBodyMs": 8
+  },
+  {
+    "kind": "authority",
+    "before": 1791826172415,
+    "created": 1791826172415,
+    "entry": 1791826172475,
+    "exit": 1791826172481,
+    "creationMs": 0,
+    "receiverEntryMs": 60,
+    "receiverBodyMs": 6
+  },
+  {
+    "kind": "authority",
+    "before": 1791826172527,
+    "created": 1791826172527,
+    "entry": 1791826172581,
+    "exit": 1791826172589,
+    "creationMs": 0,
+    "receiverEntryMs": 54,
+    "receiverBodyMs": 8
+  },
+  {
+    "kind": "authority",
+    "before": 1791826172598,
+    "created": 1791826172598,
+    "entry": 1791826172674,
+    "exit": 1791826172691,
+    "creationMs": 0,
+    "receiverEntryMs": 76,
+    "receiverBodyMs": 17
+  }
+]

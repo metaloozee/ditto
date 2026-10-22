@@ -1,0 +1,158 @@
+{
+  "inputs": {
+    "../../packages/runtime-contracts/src/limits.ts": {
+      "bytes": 282,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../packages/runtime-contracts/src/json.ts": {
+      "bytes": 11667,
+      "imports": [
+        {
+          "path": "../../packages/runtime-contracts/src/limits.ts",
+          "kind": "import-statement",
+          "original": "./limits.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../packages/runtime-contracts/src/model.ts": {
+      "bytes": 10291,
+      "imports": [
+        {
+          "path": "../../packages/runtime-contracts/src/json.ts",
+          "kind": "import-statement",
+          "original": "./json.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../packages/runtime-contracts/src/product-command.ts": {
+      "bytes": 9380,
+      "imports": [
+        {
+          "path": "../../packages/runtime-contracts/src/json.ts",
+          "kind": "import-statement",
+          "original": "./json.js"
+        },
+        {
+          "path": "../../packages/runtime-contracts/src/limits.ts",
+          "kind": "import-statement",
+          "original": "./limits.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "../web/src/lib/model-product-authority.ts": {
+      "bytes": 17472,
+      "imports": [
+        {
+          "path": "../../packages/runtime-contracts/src/model.ts",
+          "kind": "import-statement",
+          "original": "../../../../packages/runtime-contracts/src/model.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "../web/src/lib/session-runtime-client.ts": {
+      "bytes": 6993,
+      "imports": [
+        {
+          "path": "node:async_hooks",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "format": "esm"
+    },
+    "../web/src/lib/session-command-candidate.ts": {
+      "bytes": 27274,
+      "imports": [
+        {
+          "path": "../../packages/runtime-contracts/src/model.ts",
+          "kind": "import-statement",
+          "original": "../../../../packages/runtime-contracts/src/model.js"
+        },
+        {
+          "path": "../../packages/runtime-contracts/src/product-command.ts",
+          "kind": "import-statement",
+          "original": "../../../../packages/runtime-contracts/src/product-command.js"
+        },
+        {
+          "path": "../web/src/lib/model-product-authority.ts",
+          "kind": "import-statement",
+          "original": "./model-product-authority"
+        },
+        {
+          "path": "../web/src/lib/session-runtime-client.ts",
+          "kind": "import-statement",
+          "original": "./session-runtime-client"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../plans/evidence/artifacts/008/native-rpc-fixture/receiver.ts": {
+      "bytes": 2312,
+      "imports": [
+        {
+          "path": "cloudflare:workers",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "../../packages/runtime-contracts/src/json.ts",
+          "kind": "import-statement",
+          "original": "../../../../../packages/runtime-contracts/src/json.js"
+        },
+        {
+          "path": "../web/src/lib/session-command-candidate.ts",
+          "kind": "import-statement",
+          "original": "../../../../../apps/web/src/lib/session-command-candidate"
+        }
+      ],
+      "format": "esm"
+    }
+  },
+  "outputs": {
+    "../../.execution-008/native-rpc-fixture/receiver.mjs": {
+      "imports": [
+        {
+          "path": "cloudflare:workers",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:async_hooks",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "exports": [
+        "NativeRpcFixtureReceiver",
+        "default"
+      ],
+      "entryPoint": "../../plans/evidence/artifacts/008/native-rpc-fixture/receiver.ts",
+      "inputs": {
+        "../../plans/evidence/artifacts/008/native-rpc-fixture/receiver.ts": {
+          "bytesInOutput": 1823
+        },
+        "../../packages/runtime-contracts/src/limits.ts": {
+          "bytesInOutput": 269
+        },
+        "../../packages/runtime-contracts/src/json.ts": {
+          "bytesInOutput": 1682
+        },
+        "../web/src/lib/model-product-authority.ts": {
+          "bytesInOutput": 132
+        },
+        "../web/src/lib/session-runtime-client.ts": {
+          "bytesInOutput": 96
+        },
+        "../web/src/lib/session-command-candidate.ts": {
+          "bytesInOutput": 2223
+        }
+      },
+      "bytes": 6673
+    }
+  }
+}

@@ -1,0 +1,668 @@
+[
+  {
+    "component": "body",
+    "stage": "entry",
+    "unix_ms": 1791824358722,
+    "elapsed_ms": 0
+  },
+  {
+    "component": "body",
+    "stage": "credential-ready",
+    "unix_ms": 1791824358786,
+    "elapsed_ms": 64
+  },
+  {
+    "component": "body",
+    "stage": "admissions-end",
+    "unix_ms": 1791824359435,
+    "elapsed_ms": 713
+  },
+  {
+    "component": "body",
+    "stage": "deliver-third-start",
+    "unix_ms": 1791824359435,
+    "elapsed_ms": 713
+  },
+  {
+    "component": "body",
+    "stage": "deliver-third-end",
+    "unix_ms": 1791824359565,
+    "elapsed_ms": 843
+  },
+  {
+    "component": "body",
+    "stage": "deliver-first-end-poll-start",
+    "unix_ms": 1791824359794,
+    "elapsed_ms": 1072
+  },
+  {
+    "component": "body",
+    "stage": "first-poll-end",
+    "unix_ms": 1791824361479,
+    "elapsed_ms": 2757
+  },
+  {
+    "component": "body",
+    "stage": "reopen-start",
+    "unix_ms": 1791824361532,
+    "elapsed_ms": 2810
+  },
+  {
+    "component": "body",
+    "stage": "reopen-end-configure-start",
+    "unix_ms": 1791824361858,
+    "elapsed_ms": 3136
+  },
+  {
+    "component": "host",
+    "stage": "configure-entry",
+    "unix_ms": 1791824361995,
+    "elapsed_ms": 0
+  },
+  {
+    "component": "host",
+    "stage": "lane-wait-start",
+    "unix_ms": 1791824361995,
+    "elapsed_ms": 0
+  },
+  {
+    "component": "host",
+    "stage": "lane-enter",
+    "unix_ms": 1791824361996,
+    "elapsed_ms": 1
+  },
+  {
+    "component": "host",
+    "stage": "authorize-final-start",
+    "unix_ms": 1791824361996,
+    "elapsed_ms": 1
+  },
+  {
+    "component": "host",
+    "stage": "authorize-final-end",
+    "unix_ms": 1791824362097,
+    "elapsed_ms": 102
+  },
+  {
+    "component": "host",
+    "stage": "allowed-ledger-start",
+    "unix_ms": 1791824362098,
+    "elapsed_ms": 103
+  },
+  {
+    "component": "host",
+    "stage": "allowed-ledger-end",
+    "unix_ms": 1791824362098,
+    "elapsed_ms": 103
+  },
+  {
+    "component": "host",
+    "stage": "local-final-start",
+    "unix_ms": 1791824362098,
+    "elapsed_ms": 103
+  },
+  {
+    "component": "host",
+    "stage": "local-final-end",
+    "unix_ms": 1791824362160,
+    "elapsed_ms": 165
+  },
+  {
+    "component": "host",
+    "stage": "identity-start",
+    "unix_ms": 1791824362160,
+    "elapsed_ms": 165
+  },
+  {
+    "component": "host",
+    "stage": "identity-end",
+    "unix_ms": 1791824362161,
+    "elapsed_ms": 166
+  },
+  {
+    "component": "host",
+    "stage": "ledger-start",
+    "unix_ms": 1791824362161,
+    "elapsed_ms": 166
+  },
+  {
+    "component": "host",
+    "stage": "ledger-end",
+    "unix_ms": 1791824362161,
+    "elapsed_ms": 166
+  },
+  {
+    "component": "host",
+    "stage": "seal-start",
+    "unix_ms": 1791824362161,
+    "elapsed_ms": 166
+  },
+  {
+    "component": "host",
+    "stage": "seal-end",
+    "unix_ms": 1791824362161,
+    "elapsed_ms": 166
+  },
+  {
+    "component": "host",
+    "stage": "authorize-first-start",
+    "unix_ms": 1791824362161,
+    "elapsed_ms": 166
+  },
+  {
+    "component": "fixture",
+    "stage": "subject-start",
+    "unix_ms": 1791824362216,
+    "elapsed_ms": 0
+  },
+  {
+    "component": "fixture",
+    "stage": "subject-end",
+    "unix_ms": 1791824362235,
+    "elapsed_ms": 19
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-permission-start",
+    "unix_ms": 1791824362236,
+    "elapsed_ms": 20
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-permission-end",
+    "unix_ms": 1791824362238,
+    "elapsed_ms": 22
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-status-start",
+    "unix_ms": 1791824362238,
+    "elapsed_ms": 22
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-status-end",
+    "unix_ms": 1791824362254,
+    "elapsed_ms": 38
+  },
+  {
+    "component": "fixture",
+    "stage": "owned-policy-start",
+    "unix_ms": 1791824362254,
+    "elapsed_ms": 38
+  },
+  {
+    "component": "fixture",
+    "stage": "owned-policy-end",
+    "unix_ms": 1791824362260,
+    "elapsed_ms": 44
+  },
+  {
+    "component": "host",
+    "stage": "authorize-first-end",
+    "unix_ms": 1791824362260,
+    "elapsed_ms": 265
+  },
+  {
+    "component": "host",
+    "stage": "local-first-start",
+    "unix_ms": 1791824362260,
+    "elapsed_ms": 265
+  },
+  {
+    "component": "host",
+    "stage": "local-first-end",
+    "unix_ms": 1791824362321,
+    "elapsed_ms": 326
+  },
+  {
+    "component": "host",
+    "stage": "authorize-fresh-start",
+    "unix_ms": 1791824362322,
+    "elapsed_ms": 327
+  },
+  {
+    "component": "fixture",
+    "stage": "subject-start",
+    "unix_ms": 1791824362378,
+    "elapsed_ms": 0
+  },
+  {
+    "component": "fixture",
+    "stage": "subject-end",
+    "unix_ms": 1791824362398,
+    "elapsed_ms": 20
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-permission-start",
+    "unix_ms": 1791824362398,
+    "elapsed_ms": 20
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-permission-end",
+    "unix_ms": 1791824362400,
+    "elapsed_ms": 22
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-status-start",
+    "unix_ms": 1791824362400,
+    "elapsed_ms": 22
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-status-end",
+    "unix_ms": 1791824362417,
+    "elapsed_ms": 39
+  },
+  {
+    "component": "fixture",
+    "stage": "owned-policy-start",
+    "unix_ms": 1791824362417,
+    "elapsed_ms": 39
+  },
+  {
+    "component": "fixture",
+    "stage": "owned-policy-end",
+    "unix_ms": 1791824362423,
+    "elapsed_ms": 45
+  },
+  {
+    "component": "host",
+    "stage": "authorize-fresh-end",
+    "unix_ms": 1791824362423,
+    "elapsed_ms": 428
+  },
+  {
+    "component": "host",
+    "stage": "authorize-final-start",
+    "unix_ms": 1791824362423,
+    "elapsed_ms": 428
+  },
+  {
+    "component": "fixture",
+    "stage": "subject-start",
+    "unix_ms": 1791824362479,
+    "elapsed_ms": 0
+  },
+  {
+    "component": "fixture",
+    "stage": "subject-end",
+    "unix_ms": 1791824362498,
+    "elapsed_ms": 19
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-permission-start",
+    "unix_ms": 1791824362498,
+    "elapsed_ms": 19
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-permission-end",
+    "unix_ms": 1791824362500,
+    "elapsed_ms": 21
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-status-start",
+    "unix_ms": 1791824362501,
+    "elapsed_ms": 22
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-status-end",
+    "unix_ms": 1791824362519,
+    "elapsed_ms": 40
+  },
+  {
+    "component": "fixture",
+    "stage": "owned-policy-start",
+    "unix_ms": 1791824362519,
+    "elapsed_ms": 40
+  },
+  {
+    "component": "fixture",
+    "stage": "owned-policy-end",
+    "unix_ms": 1791824362527,
+    "elapsed_ms": 48
+  },
+  {
+    "component": "host",
+    "stage": "authorize-final-end",
+    "unix_ms": 1791824362527,
+    "elapsed_ms": 532
+  },
+  {
+    "component": "host",
+    "stage": "allowed-ledger-start",
+    "unix_ms": 1791824362527,
+    "elapsed_ms": 532
+  },
+  {
+    "component": "host",
+    "stage": "allowed-ledger-end",
+    "unix_ms": 1791824362527,
+    "elapsed_ms": 532
+  },
+  {
+    "component": "host",
+    "stage": "local-final-start",
+    "unix_ms": 1791824362527,
+    "elapsed_ms": 532
+  },
+  {
+    "component": "host",
+    "stage": "local-final-end",
+    "unix_ms": 1791824362590,
+    "elapsed_ms": 595
+  },
+  {
+    "component": "host",
+    "stage": "intent-durable-start",
+    "unix_ms": 1791824362591,
+    "elapsed_ms": 596
+  },
+  {
+    "component": "host",
+    "stage": "intent-durable-end",
+    "unix_ms": 1791824362597,
+    "elapsed_ms": 602
+  },
+  {
+    "component": "host",
+    "stage": "conversation-start",
+    "unix_ms": 1791824362597,
+    "elapsed_ms": 602
+  },
+  {
+    "component": "host",
+    "stage": "conversation-end",
+    "unix_ms": 1791824362598,
+    "elapsed_ms": 603
+  },
+  {
+    "component": "host",
+    "stage": "authorize-first-start",
+    "unix_ms": 1791824362598,
+    "elapsed_ms": 603
+  },
+  {
+    "component": "fixture",
+    "stage": "subject-start",
+    "unix_ms": 1791824362706,
+    "elapsed_ms": 0
+  },
+  {
+    "component": "fixture",
+    "stage": "subject-end",
+    "unix_ms": 1791824362725,
+    "elapsed_ms": 19
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-permission-start",
+    "unix_ms": 1791824362725,
+    "elapsed_ms": 19
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-permission-end",
+    "unix_ms": 1791824362788,
+    "elapsed_ms": 82
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-status-start",
+    "unix_ms": 1791824362788,
+    "elapsed_ms": 82
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-status-end",
+    "unix_ms": 1791824362818,
+    "elapsed_ms": 112
+  },
+  {
+    "component": "fixture",
+    "stage": "owned-policy-start",
+    "unix_ms": 1791824362818,
+    "elapsed_ms": 112
+  },
+  {
+    "component": "fixture",
+    "stage": "owned-policy-end",
+    "unix_ms": 1791824362824,
+    "elapsed_ms": 118
+  },
+  {
+    "component": "host",
+    "stage": "authorize-first-end",
+    "unix_ms": 1791824362825,
+    "elapsed_ms": 830
+  },
+  {
+    "component": "host",
+    "stage": "local-first-start",
+    "unix_ms": 1791824362825,
+    "elapsed_ms": 830
+  },
+  {
+    "component": "host",
+    "stage": "local-first-end",
+    "unix_ms": 1791824362889,
+    "elapsed_ms": 894
+  },
+  {
+    "component": "host",
+    "stage": "authorize-fresh-start",
+    "unix_ms": 1791824362889,
+    "elapsed_ms": 894
+  },
+  {
+    "component": "fixture",
+    "stage": "subject-start",
+    "unix_ms": 1791824362947,
+    "elapsed_ms": 0
+  },
+  {
+    "component": "fixture",
+    "stage": "subject-end",
+    "unix_ms": 1791824362966,
+    "elapsed_ms": 19
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-permission-start",
+    "unix_ms": 1791824362966,
+    "elapsed_ms": 19
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-permission-end",
+    "unix_ms": 1791824362968,
+    "elapsed_ms": 21
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-status-start",
+    "unix_ms": 1791824362968,
+    "elapsed_ms": 21
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-status-end",
+    "unix_ms": 1791824362991,
+    "elapsed_ms": 44
+  },
+  {
+    "component": "fixture",
+    "stage": "owned-policy-start",
+    "unix_ms": 1791824362991,
+    "elapsed_ms": 44
+  },
+  {
+    "component": "fixture",
+    "stage": "owned-policy-end",
+    "unix_ms": 1791824362997,
+    "elapsed_ms": 50
+  },
+  {
+    "component": "host",
+    "stage": "authorize-fresh-end",
+    "unix_ms": 1791824362998,
+    "elapsed_ms": 1003
+  },
+  {
+    "component": "host",
+    "stage": "authorize-final-start",
+    "unix_ms": 1791824362998,
+    "elapsed_ms": 1003
+  },
+  {
+    "component": "fixture",
+    "stage": "subject-start",
+    "unix_ms": 1791824363055,
+    "elapsed_ms": 0
+  },
+  {
+    "component": "fixture",
+    "stage": "subject-end",
+    "unix_ms": 1791824363074,
+    "elapsed_ms": 19
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-permission-start",
+    "unix_ms": 1791824363074,
+    "elapsed_ms": 19
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-permission-end",
+    "unix_ms": 1791824363076,
+    "elapsed_ms": 21
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-status-start",
+    "unix_ms": 1791824363076,
+    "elapsed_ms": 21
+  },
+  {
+    "component": "fixture",
+    "stage": "credential-status-end",
+    "unix_ms": 1791824363094,
+    "elapsed_ms": 39
+  },
+  {
+    "component": "fixture",
+    "stage": "owned-policy-start",
+    "unix_ms": 1791824363094,
+    "elapsed_ms": 39
+  },
+  {
+    "component": "fixture",
+    "stage": "owned-policy-end",
+    "unix_ms": 1791824363100,
+    "elapsed_ms": 45
+  },
+  {
+    "component": "host",
+    "stage": "authorize-final-end",
+    "unix_ms": 1791824363100,
+    "elapsed_ms": 1105
+  },
+  {
+    "component": "host",
+    "stage": "allowed-ledger-start",
+    "unix_ms": 1791824363100,
+    "elapsed_ms": 1105
+  },
+  {
+    "component": "host",
+    "stage": "allowed-ledger-end",
+    "unix_ms": 1791824363101,
+    "elapsed_ms": 1106
+  },
+  {
+    "component": "host",
+    "stage": "local-final-start",
+    "unix_ms": 1791824363101,
+    "elapsed_ms": 1106
+  },
+  {
+    "component": "host",
+    "stage": "local-final-end",
+    "unix_ms": 1791824363175,
+    "elapsed_ms": 1180
+  },
+  {
+    "component": "host",
+    "stage": "pi-configure-start",
+    "unix_ms": 1791824363176,
+    "elapsed_ms": 1181
+  },
+  {
+    "component": "host",
+    "stage": "pi-configure-end",
+    "unix_ms": 1791824363178,
+    "elapsed_ms": 1183
+  },
+  {
+    "component": "host",
+    "stage": "applied-durable-start",
+    "unix_ms": 1791824363178,
+    "elapsed_ms": 1183
+  },
+  {
+    "component": "host",
+    "stage": "applied-durable-end",
+    "unix_ms": 1791824363184,
+    "elapsed_ms": 1189
+  },
+  {
+    "component": "host",
+    "stage": "snapshot-start",
+    "unix_ms": 1791824363184,
+    "elapsed_ms": 1189
+  },
+  {
+    "component": "host",
+    "stage": "snapshot-end",
+    "unix_ms": 1791824363184,
+    "elapsed_ms": 1189
+  },
+  {
+    "component": "host",
+    "stage": "finish-start",
+    "unix_ms": 1791824363184,
+    "elapsed_ms": 1189
+  },
+  {
+    "component": "host",
+    "stage": "finish-end",
+    "unix_ms": 1791824363191,
+    "elapsed_ms": 1196
+  },
+  {
+    "component": "body",
+    "stage": "configure-end",
+    "unix_ms": 1791824363211,
+    "elapsed_ms": 4489
+  },
+  {
+    "component": "body",
+    "stage": "deliver-second-start",
+    "unix_ms": 1791824363214,
+    "elapsed_ms": 4492
+  },
+  {
+    "component": "body",
+    "stage": "deliver-second-end-poll-start",
+    "unix_ms": 1791824363392,
+    "elapsed_ms": 4670
+  }
+]

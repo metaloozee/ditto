@@ -1,0 +1,276 @@
+[
+  {
+    "caller": "test",
+    "samples": [
+      {
+        "binding": "ScratchCurrent008",
+        "kind": "echo",
+        "sample": 0,
+        "before": 1791828547343,
+        "created": 1791828547343,
+        "entry": 1791828547345,
+        "exit": 1791828547345,
+        "after": 1791828547345,
+        "ok": true
+      },
+      {
+        "binding": "ScratchCurrent008",
+        "kind": "authority",
+        "sample": 0,
+        "before": 1791828547345,
+        "created": 1791828547345,
+        "entry": 1791828547346,
+        "exit": 1791828547351,
+        "after": 1791828547352,
+        "ok": true
+      },
+      {
+        "binding": "ScratchNative008",
+        "kind": "echo",
+        "sample": 0,
+        "before": 1791828547352,
+        "created": 1791828547352,
+        "entry": 1791828547352,
+        "exit": 1791828547352,
+        "after": 1791828547352,
+        "ok": true
+      },
+      {
+        "binding": "ScratchNative008",
+        "kind": "authority",
+        "sample": 0,
+        "before": 1791828547352,
+        "created": 1791828547352,
+        "entry": 1791828547352,
+        "exit": 1791828547357,
+        "after": 1791828547357,
+        "ok": true
+      },
+      {
+        "binding": "ScratchCurrent008",
+        "kind": "echo",
+        "sample": 1,
+        "before": 1791828547357,
+        "created": 1791828547357,
+        "entry": 1791828547359,
+        "exit": 1791828547359,
+        "after": 1791828547359,
+        "ok": true
+      },
+      {
+        "binding": "ScratchCurrent008",
+        "kind": "authority",
+        "sample": 1,
+        "before": 1791828547359,
+        "created": 1791828547359,
+        "entry": 1791828547361,
+        "exit": 1791828547366,
+        "after": 1791828547366,
+        "ok": true
+      },
+      {
+        "binding": "ScratchNative008",
+        "kind": "echo",
+        "sample": 1,
+        "before": 1791828547366,
+        "created": 1791828547366,
+        "entry": 1791828547366,
+        "exit": 1791828547366,
+        "after": 1791828547367,
+        "ok": true
+      },
+      {
+        "binding": "ScratchNative008",
+        "kind": "authority",
+        "sample": 1,
+        "before": 1791828547367,
+        "created": 1791828547367,
+        "entry": 1791828547367,
+        "exit": 1791828547373,
+        "after": 1791828547373,
+        "ok": true
+      },
+      {
+        "binding": "ScratchCurrent008",
+        "kind": "echo",
+        "sample": 2,
+        "before": 1791828547373,
+        "created": 1791828547373,
+        "entry": 1791828547375,
+        "exit": 1791828547375,
+        "after": 1791828547375,
+        "ok": true
+      },
+      {
+        "binding": "ScratchCurrent008",
+        "kind": "authority",
+        "sample": 2,
+        "before": 1791828547375,
+        "created": 1791828547375,
+        "entry": 1791828547376,
+        "exit": 1791828547382,
+        "after": 1791828547382,
+        "ok": true
+      },
+      {
+        "binding": "ScratchNative008",
+        "kind": "echo",
+        "sample": 2,
+        "before": 1791828547382,
+        "created": 1791828547383,
+        "entry": 1791828547383,
+        "exit": 1791828547383,
+        "after": 1791828547383,
+        "ok": true
+      },
+      {
+        "binding": "ScratchNative008",
+        "kind": "authority",
+        "sample": 2,
+        "before": 1791828547383,
+        "created": 1791828547383,
+        "entry": 1791828547383,
+        "exit": 1791828547389,
+        "after": 1791828547389,
+        "ok": true
+      }
+    ]
+  },
+  {
+    "caller": "existing-DO",
+    "samples": [
+      {
+        "binding": "ScratchCurrent008",
+        "kind": "echo",
+        "sample": 0,
+        "before": 1791828547418,
+        "created": 1791828547418,
+        "entry": 1791828547419,
+        "exit": 1791828547419,
+        "after": 1791828547419,
+        "ok": true
+      },
+      {
+        "binding": "ScratchCurrent008",
+        "kind": "authority",
+        "sample": 0,
+        "before": 1791828547419,
+        "created": 1791828547419,
+        "entry": 1791828547421,
+        "exit": 1791828547427,
+        "after": 1791828547427,
+        "ok": true
+      },
+      {
+        "binding": "ScratchNative008",
+        "kind": "echo",
+        "sample": 0,
+        "before": 1791828547427,
+        "created": 1791828547427,
+        "entry": 1791828547427,
+        "exit": 1791828547427,
+        "after": 1791828547427,
+        "ok": true
+      },
+      {
+        "binding": "ScratchNative008",
+        "kind": "authority",
+        "sample": 0,
+        "before": 1791828547427,
+        "created": 1791828547427,
+        "entry": 1791828547427,
+        "exit": 1791828547433,
+        "after": 1791828547433,
+        "ok": true
+      },
+      {
+        "binding": "ScratchCurrent008",
+        "kind": "echo",
+        "sample": 1,
+        "before": 1791828547433,
+        "created": 1791828547433,
+        "entry": 1791828547435,
+        "exit": 1791828547435,
+        "after": 1791828547435,
+        "ok": true
+      },
+      {
+        "binding": "ScratchCurrent008",
+        "kind": "authority",
+        "sample": 1,
+        "before": 1791828547435,
+        "created": 1791828547435,
+        "entry": 1791828547436,
+        "exit": 1791828547441,
+        "after": 1791828547441,
+        "ok": true
+      },
+      {
+        "binding": "ScratchNative008",
+        "kind": "echo",
+        "sample": 1,
+        "before": 1791828547441,
+        "created": 1791828547441,
+        "entry": 1791828547441,
+        "exit": 1791828547441,
+        "after": 1791828547441,
+        "ok": true
+      },
+      {
+        "binding": "ScratchNative008",
+        "kind": "authority",
+        "sample": 1,
+        "before": 1791828547441,
+        "created": 1791828547441,
+        "entry": 1791828547441,
+        "exit": 1791828547446,
+        "after": 1791828547447,
+        "ok": true
+      },
+      {
+        "binding": "ScratchCurrent008",
+        "kind": "echo",
+        "sample": 2,
+        "before": 1791828547447,
+        "created": 1791828547447,
+        "entry": 1791828547448,
+        "exit": 1791828547448,
+        "after": 1791828547448,
+        "ok": true
+      },
+      {
+        "binding": "ScratchCurrent008",
+        "kind": "authority",
+        "sample": 2,
+        "before": 1791828547448,
+        "created": 1791828547449,
+        "entry": 1791828547450,
+        "exit": 1791828547456,
+        "after": 1791828547456,
+        "ok": true
+      },
+      {
+        "binding": "ScratchNative008",
+        "kind": "echo",
+        "sample": 2,
+        "before": 1791828547456,
+        "created": 1791828547456,
+        "entry": 1791828547456,
+        "exit": 1791828547456,
+        "after": 1791828547456,
+        "ok": true
+      },
+      {
+        "binding": "ScratchNative008",
+        "kind": "authority",
+        "sample": 2,
+        "before": 1791828547456,
+        "created": 1791828547456,
+        "entry": 1791828547456,
+        "exit": 1791828547463,
+        "after": 1791828547463,
+        "ok": true
+      }
+    ]
+  }
+]
