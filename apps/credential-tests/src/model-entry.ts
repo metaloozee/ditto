@@ -57,6 +57,8 @@ import { CANDIDATE_FIXTURE_RESET_SCHEMA } from "./candidate-fixture-schema";
 /** Fixture-only product apply faults; module state is shared by the test isolate. */
 let projectionFault: "throw" | "short" | "lose-ack" | undefined;
 let projectionCalls = 0;
+/** Runtime authority reads left before the fixture reports authority revoked. */
+let authorityReadsBeforeRevoke: number | undefined;
 /** Fixture executor teardown: whether a destroy proves termination, and the calls seen. */
 const executorFixture = {
 	terminates: true,
@@ -1253,10 +1255,24 @@ export class CandidateFixtureProduct extends WorkerEntrypoint<CandidateFixtureBi
 	reconstructCommand(commandId: string, ownerVersion: number) {
 		return this.commands().reconstruct(commandId, ownerVersion);
 	}
+	revokeRuntimeAuthorityAfter(reads: number | undefined) {
+		authorityReadsBeforeRevoke = reads;
+	}
 	async readRuntimeAuthority(
 		value: CandidateRuntimeScope,
 	): Promise<LocalAuthority> {
 		const scope = parseCandidateRuntimeScope(value);
+		if (authorityReadsBeforeRevoke !== undefined) {
+			if (authorityReadsBeforeRevoke === 0) {
+				const authority = await this.commands().runtimeAuthority(
+					scope.userId,
+					scope.projectId,
+					scope.workspaceSessionId,
+				);
+				return { ...authority, current: false };
+			}
+			authorityReadsBeforeRevoke--;
+		}
 		if (!(await candidateFixtureResetTableExists(this.env.DB)))
 			return this.commands().runtimeAuthority(
 				scope.userId,

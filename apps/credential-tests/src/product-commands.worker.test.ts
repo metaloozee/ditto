@@ -156,6 +156,7 @@ beforeEach(async ({ task }) => {
 	modelCalls = 0;
 	replyText = "Synthetic product result";
 	await env.CandidateProduct.setProjectionFault(undefined);
+	await env.CandidateProduct.revokeRuntimeAuthorityAfter(undefined);
 	terminal = false;
 	fetchMock.activate();
 	fetchMock.disableNetConnect();
@@ -3950,6 +3951,33 @@ it("deletion revokes authority in its first batch, keeps fences through retried 
 		).rejects.toMatchObject({ code: "not_found" });
 	} finally {
 		await env.CandidateProduct.setExecutorFixture({ terminates: true });
+		await runtime.retireFixture().catch(() => undefined);
+	}
+});
+
+it("an alarm whose authority is revoked between its check and host activation settles without throwing", async () => {
+	await candidateCredential();
+	modelReplies();
+	const first = await env.CandidateProduct.admitOwned("owner", prompt);
+	const runtime = env.CandidateSessions.getByName(first.workspaceSessionId);
+	try {
+		await env.CandidateProduct.drain();
+		await expect
+			.poll(async () => (await message(first.assistantMessageId))?.status, {
+				timeout: 5000,
+			})
+			.toBe("complete");
+		// Retiring stops background alarms so only this call reads authority.
+		await runtime.retireFixture();
+		// The alarm's own check still sees authority; activation sees it revoked.
+		await env.CandidateProduct.revokeRuntimeAuthorityAfter(1);
+		await expect(
+			runInDurableObject(runtime, (instance) =>
+				(instance as unknown as { alarmHost(): Promise<unknown> }).alarmHost(),
+			),
+		).resolves.toBeUndefined();
+	} finally {
+		await env.CandidateProduct.revokeRuntimeAuthorityAfter(undefined);
 		await runtime.retireFixture().catch(() => undefined);
 	}
 });

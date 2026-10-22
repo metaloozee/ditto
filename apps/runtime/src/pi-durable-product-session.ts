@@ -442,24 +442,23 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 	protected async alarmHost() {
 		const retained =
 			await this.ctx.storage.get<CandidateRuntimeScope>("candidate-scope-v2");
-		if (
-			retained &&
-			!(
-				await this.env.CandidateProduct.readRuntimeAuthority(
-					parseCandidateRuntimeScope(retained),
-				)
-			).current
-		) {
-			if (
-				await this.env.CandidateProduct.readArchivedAuthority(
-					parseCandidateRuntimeScope(retained),
-				)
-			)
-				PiDurableHost.acknowledgeArchive(this.ctx.storage);
-			await this.host?.alarm();
-			return undefined;
+		if (retained && (await this.deniedAlarm(retained))) return undefined;
+		try {
+			return await this.activate();
+		} catch (error) {
+			// Revocation can commit between the check above and activation's own read.
+			if (retained && (await this.deniedAlarm(retained))) return undefined;
+			throw error;
 		}
-		return this.activate();
+	}
+	private async deniedAlarm(retained: CandidateRuntimeScope) {
+		const scope = parseCandidateRuntimeScope(retained);
+		if ((await this.env.CandidateProduct.readRuntimeAuthority(scope)).current)
+			return false;
+		if (await this.env.CandidateProduct.readArchivedAuthority(scope))
+			PiDurableHost.acknowledgeArchive(this.ctx.storage);
+		await this.host?.alarm();
+		return true;
 	}
 	async alarm() {
 		const host = await this.alarmHost();
