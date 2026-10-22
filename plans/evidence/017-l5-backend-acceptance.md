@@ -128,3 +128,11 @@ Round 2: nothing must still be fixed. The reviewer asked that this file not clai
 ## Acceptance
 
 017 is accepted with limits for the local fixture scope. Before release, a composition must supply the artifact store, and the legacy engine's fence and projection checks must be filled in the checklist before any real clean start.
+
+## CI correction
+
+CI failed on `2fe70ae`: the clean-start rehearsal ended with "Isolated storage failed" because the purged session's SQLite was still open when the test pool popped storage. The local `pnpm verify` result recorded above did not reproduce in CI.
+
+Cause: `PiDurableProductSession.alarmHost` read runtime authority, then called `activate`, which reads it again. When deletion revoked authority between the two reads, the alarm threw `Candidate authority denied` instead of taking the denied path, and the failed alarm kept the session open past the pool's wait. The 016 deletion test had the same race; in isolation it failed 4 of 4 runs before the fix.
+
+Fix: `alarmHost` rereads authority when activation fails and treats a revoked scope as denied; other errors still throw. The regression test "an alarm whose authority is revoked between its check and host activation settles without throwing" uses a fixture fault that revokes authority after one read. It failed 3 of 3 before the fix. After it, the regression, deletion and clean-start tests each passed 3 of 3 alone, and `pnpm runtime:verify` passed 511 of 511. The full credential suite times out on unrelated tests on the local WSL machine with and without the fix, so CI is the gate for it.
