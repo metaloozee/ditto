@@ -1,6 +1,6 @@
 # 018: Connect product controls to the durable interface
 
-Status: BLOCKED on a focused layout/copy decision before UI edits. Was: BLOCKED on 017 and that decision. Base: `bcce03e`. Phase: L5 product completion.
+Status: BLOCKED on a focused layout/copy decision before UI edits. 017 is DONE. Base: `bcce03e`; reconciled at `1f93e9c` (2026-10-23), where the excerpt below and every test path in the steps still exist. Step 1's full refresh is still required. Phase: L5 product completion.
 Spec: `docs/specs/pi-durable-session-runtime.md`, decisions 3.1, 3.5, 5–6, 12, 14–15, 17–18; PD01–PD03, PD06–PD07, PD24, PD26–PD27, PD41–PD42; OD1, OD5–OD7.
 
 ## Outcome and boundaries
@@ -20,6 +20,17 @@ const FIXED_MODEL = PROJECT_CODER_MODELS[0];
 It imports `streamAgentRun` and `sendAgentControl` from `agent-stream-client.ts`, and tracks streamed content/queued follow-ups in component state. `agent-models.ts` exposes fixed model/thinking choices. These are presentation conveniences, not authority for subscription entitlement or durable run state.
 
 Scope: existing composer/chat/session action components, product connection controls once layout approved, stream-client/protocol/data mapping, model configuration queries and narrow product handlers. Follow existing React/TanStack query patterns and base controls. No new terminal/code-browser, sign-in replacement, raw Pi browser data, speculative global state layer or new UI dependency.
+
+## Inherited backend limits
+
+Reconcile at `1f93e9c` collected these from accepted 009–017 evidence. They change what the UI may offer. Confirm each against the evidence file before relying on it.
+
+- Continuation is not end to end ([016](evidence/016-lifecycle.md), Limits). No composition builds the new session's workspace baseline from the seed's archive. Do not expose Continue to users unless the maintainer explicitly accepts that, or a backend plan closes it first. Stop and report if the approved design requires it.
+- A blocked archive (unknown preview stop or unresolved effect) has no acknowledgment path; deletion is its only exit ([016](evidence/016-lifecycle.md), Acceptance). It needs a visible state and a review action. Include it in the layout/copy sketches.
+- Router deletion of a project with candidate sessions is refused until `CandidateLifecycle` is composed into the product; only the credential fixture wires it today ([016](evidence/016-lifecycle.md)). A delete control must show that refusal honestly.
+- Image reads return an error result, not an attachment ([009](evidence/009-tool-parity.md)). This awaits maintainer approval. Do not build attachment display for candidate tool results.
+- Readiness, conversation generation, streaming deltas, push subscribers and backup health are not implemented in observation ([010](evidence/010-l3-acceptance.md)). Step 4's separate readiness/degradation display may have no backend source. Stop and report rather than inventing one.
+- Multi-workspace execution stays disabled until 015's listed limits close ([015](evidence/015-resource-and-value-policy.md)).
 
 ## Steps and checks
 

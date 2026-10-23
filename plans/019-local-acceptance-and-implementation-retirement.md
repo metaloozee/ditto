@@ -1,6 +1,6 @@
 # 019: Record local acceptance and retire superseded implementation
 
-Status: BLOCKED on complete L5, plans 015–018. Base: `bcce03e`. Phase: L6.
+Status: BLOCKED on 018 (015–017 are DONE) and on a stable full `runtime:verify` run. Base: `bcce03e`; excerpt reconciled at `1f93e9c` (2026-10-23). Phase: L6.
 Spec: `docs/specs/pi-durable-session-runtime.md`, decisions 1–18 and testing decisions; PD01–PD37, PD39–PD42 locally, PD38 tracked separately; OD1–OD7.
 
 ## Outcome
@@ -14,10 +14,10 @@ No deployment/reset is authorized. If real-provider evidence is outstanding, rec
 Root `package.json` currently runs:
 
 ```json
-"verify": "pnpm check && pnpm typecheck && pnpm test && pnpm build && pnpm runner:verify"
+"verify": "pnpm check && pnpm typecheck && pnpm credentials:verify && pnpm test && pnpm build && pnpm runner:verify"
 ```
 
-It omits `runtime:verify` and retained brain verification. `.github/workflows/ci.yml` installs root/runner dependencies and invokes only `pnpm verify`. `packages/session-brain` still contains the Node SDK continuation feasibility implementation; `packages/sandbox-runner/src/run-agent.ts` invokes `createAgentSession` in the execution image. Historical evidence lives in Git snapshot `52c9cef` and must remain referenced.
+015 added `credentials:verify`. It still omits `runtime:verify`, `contracts:verify` and retained brain verification. Since 015 the full `runtime:verify` run has repeatedly failed one upstream conformance case, "streams long document tails across root replacement deltas" in `apps/runtime/src/pi-durable-storage.test.ts`, which hits its 5 s limit under full-suite load and passes alone; 016 and 017 were accepted with it failing. Adding `runtime:verify` to CI as-is would make CI red or flaky. Resolve the cause first. Do not raise the deadline, skip or retry the case to make it pass; if the cause is upstream, stop and report. `.github/workflows/ci.yml` installs root/runner dependencies and invokes only `pnpm verify`. `packages/session-brain` still contains the Node SDK continuation feasibility implementation; `packages/sandbox-runner/src/run-agent.ts` invokes `createAgentSession` in the execution image. Historical evidence lives in Git snapshot `52c9cef` and must remain referenced.
 
 Scope: evidence review, missing essential tests through existing seams, bounded real-auth backend smoke, verify/CI scripts, removal of proved superseded source and dependencies, implementation-facing documentation. No broad refactor, test quotas, visual tests, benchmarks or Git push enablement.
 
