@@ -277,7 +277,10 @@ export class CandidateFixtureSession extends PiDurableProductSession {
 	}
 	private faultPoint: HostFault | undefined;
 	armControlFault(
-		point: "candidate-control-intent" | "candidate-control-outcome",
+		point:
+			| "candidate-control-intent"
+			| "candidate-control-outcome"
+			| "before-submit",
 	) {
 		this.faultPoint = point;
 	}
@@ -632,10 +635,11 @@ export class CandidateFixtureSession extends PiDurableProductSession {
 		await this.ctx.storage.deleteAlarm();
 		await this.ctx.storage.sync();
 	}
-	async reopenFixture() {
+	async reopenFixture(afterFault = false) {
 		this.retired = true;
 		try {
-			await this.alarmCompletion;
+			if (afterFault) await this.alarmCompletion?.catch(() => undefined);
+			else await this.alarmCompletion;
 			if (this.host) {
 				await this.host.yield();
 				await this.host.awaitClosure();

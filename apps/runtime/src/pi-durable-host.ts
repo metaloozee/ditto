@@ -2006,84 +2006,87 @@ export class PiDurableHost {
 			snapshot: null,
 		});
 		if (!this.dependencies.configuration) return deny("unavailable");
-		return this.ownerTransition(context, async (context) => {
-			if (!(await this.configurationAllowed(query, undefined, context)))
-				return deny("denied");
-			const identity = await this.configurationIdentity(intent, context);
-			const recordId = `configuration:${identity.key}`;
-			const evidence = await this.configurationLedger(context);
-			const old = evidence.find((row) => row.id === identity.key);
-			if (old) {
-				if (old.payload !== identity.payload) return deny("conflict");
-				if (old.state === "complete") return old.ack;
-				return deny("outcome_unknown");
-			}
-			if (evidence.some((row) => row.state === "pending"))
-				return deny("outcome_unknown");
-			const ack: ConfigurationAckV1 = {
-				version: 1,
-				intentId: intent.intentId,
-				status: "applied",
-				snapshot: { ...query, selection: intent.selection },
-			};
-			const plain = JSON.stringify({
-				version: 1,
-				intent,
-				ack,
-				state: "pending",
-			});
-			const sealed = await awaitWithContext(
-				this.seal(recordId, plain),
-				context,
-			);
-			if (!(await this.configurationAllowed(query, intent.selection, context)))
-				return deny("denied");
-			this.transition("intent", () => {
-				this.assertLive();
-				this.storage.sql.exec(
-					"INSERT INTO host_configuration_intents VALUES (?,?,?,'pending')",
-					identity.key,
-					identity.payload,
-					sealed.ciphertext,
-				);
-				this.rememberSeal(recordId, sealed.digest);
-			});
-			this.rememberPlain(recordId, plain, sealed.digest, sealed.ciphertext);
-			await this.durable(context);
-			this.dependencies.fault?.("configuration-intent");
-			const root = await this.harness.conversation(
-				this.conversationId,
-				context,
-			);
-			if (!root) throw new Error("Missing owned conversation");
-			if (
-				!(await this.configurationAllowed(query, intent.selection, context))
-			) {
-				const denied = deny("denied");
-				await this.finishConfiguration(identity.key, denied, context);
-				return denied;
-			}
-			this.assertLive();
-			await root.configure(
-				{
-					model: { provider: "faux", modelId: intent.selection.model },
-					thinkingLevel: intent.selection.thinking,
-				},
-				context,
-			);
-			await this.durable(context);
-			this.dependencies.fault?.("configuration-applied");
-			const snapshot = await this.piConfiguration(query, context);
-			if (canonical(snapshot) !== canonical(ack.snapshot))
-				throw new Error("Configuration persistence mismatch");
-			await this.finishConfiguration(
-				identity.key,
-				{ ...ack, snapshot },
-				context,
-			);
-			this.dependencies.fault?.("configuration-outcome");
-			return { ...ack, snapshot };
+		return this.ownerTransition(context, (context) =>
+			this.applyConfigurationIntent(intent, query, context),
+		);
+	}
+	private async applyConfigurationIntent(
+		intent: ConfigurationIntentV1,
+		query: ConfigurationReadV1,
+		context: Context,
+	): Promise<ConfigurationAckV1> {
+		const deny = (
+			status: ConfigurationAckV1["status"],
+		): ConfigurationAckV1 => ({
+			version: 1,
+			intentId: intent.intentId,
+			status,
+			snapshot: null,
 		});
+		if (!(await this.configurationAllowed(query, undefined, context)))
+			return deny("denied");
+		const identity = await this.configurationIdentity(intent, context);
+		const recordId = `configuration:${identity.key}`;
+		const evidence = await this.configurationLedger(context);
+		const old = evidence.find((row) => row.id === identity.key);
+		if (old) {
+			if (old.payload !== identity.payload) return deny("conflict");
+			if (old.state === "complete") return old.ack;
+			return deny("outcome_unknown");
+		}
+		if (evidence.some((row) => row.state === "pending"))
+			return deny("outcome_unknown");
+		const ack: ConfigurationAckV1 = {
+			version: 1,
+			intentId: intent.intentId,
+			status: "applied",
+			snapshot: { ...query, selection: intent.selection },
+		};
+		const plain = JSON.stringify({
+			version: 1,
+			intent,
+			ack,
+			state: "pending",
+		});
+		const sealed = await awaitWithContext(this.seal(recordId, plain), context);
+		if (!(await this.configurationAllowed(query, intent.selection, context)))
+			return deny("denied");
+		this.transition("intent", () => {
+			this.assertLive();
+			this.storage.sql.exec(
+				"INSERT INTO host_configuration_intents VALUES (?,?,?,'pending')",
+				identity.key,
+				identity.payload,
+				sealed.ciphertext,
+			);
+			this.rememberSeal(recordId, sealed.digest);
+		});
+		this.rememberPlain(recordId, plain, sealed.digest, sealed.ciphertext);
+		await this.durable(context);
+		this.dependencies.fault?.("configuration-intent");
+		const root = await this.harness.conversation(this.conversationId, context);
+		if (!root) throw new Error("Missing owned conversation");
+		if (!(await this.configurationAllowed(query, intent.selection, context))) {
+			const denied = deny("denied");
+			await this.finishConfiguration(identity.key, denied, context);
+			return denied;
+		}
+		this.assertLive();
+		await root.configure(
+			{
+				model: { provider: "faux", modelId: intent.selection.model },
+				thinkingLevel: intent.selection.thinking,
+			},
+			context,
+		);
+		await this.durable(context);
+		this.dependencies.fault?.("configuration-applied");
+		const snapshot = await this.piConfiguration(query, context);
+		if (canonical(snapshot) !== canonical(ack.snapshot))
+			throw new Error("Configuration persistence mismatch");
+		await this.finishConfiguration(identity.key, { ...ack, snapshot }, context);
+		this.dependencies.fault?.("configuration-outcome");
+		return { ...ack, snapshot };
 	}
 	private async configurationIdentity(
 		intent: ConfigurationIntentV1,
@@ -4084,6 +4087,7 @@ export class PiDurableHost {
 				"targetCommandId",
 				"userMessageId",
 				"assistantMessageId",
+				"selection",
 				"committedPairId",
 				"expectedMutationGeneration",
 				"expectedRecoveryPosition",
@@ -4724,6 +4728,7 @@ export class PiDurableHost {
 			| "failed",
 		decision?: QueueDecisionV2,
 		context: Context = BACKGROUND_CONTEXT,
+		options?: { failRun?: boolean },
 	) {
 		context.abortSignal?.throwIfAborted();
 		const record = this.productRecord(id);
@@ -4761,6 +4766,8 @@ export class PiDurableHost {
 					record.run,
 					disposition === "canceled" ? "canceled" : "failed",
 				);
+			else if (options?.failRun && record.command.kind === "prompt")
+				this.terminal(record.run, "failed");
 		});
 		this.rememberProduct(record.command, prepared);
 		this.repairProductCursor();
@@ -5706,6 +5713,58 @@ export class PiDurableHost {
 		};
 	}
 
+	/**
+	 * Applies a selection carried by the next prompt inside the owner lane the
+	 * caller already holds, so it must not open another ownerTransition. The
+	 * command ID is the intent ID: a reopen replays the ledger's retained ack.
+	 * Returns false when the command was disposed instead of submitted.
+	 */
+	private async applyCommandSelection(
+		command: Extract<CommandV2, { kind: "prompt" | "follow_up" }>,
+		selection: ConfigurationSelectionV1,
+		context: Context,
+	): Promise<boolean> {
+		const scope = this.dependencies.candidate;
+		if (!scope) throw new Error("Candidate owner required");
+		this.dependencies.configuration = await scope.configuration(
+			command.commandId,
+		);
+		this.assertLive();
+		const applying = withAbortSignal(
+			AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs),
+			context,
+		);
+		const ack = await this.applyConfigurationIntent(
+			{
+				version: 1,
+				intentId: command.commandId,
+				projectId: command.projectId,
+				workspaceSessionId: command.workspaceSessionId,
+				ownerVersion: command.runtimeOwnerVersion,
+				selection,
+			},
+			{
+				version: 1,
+				projectId: command.projectId,
+				workspaceSessionId: command.workspaceSessionId,
+				ownerVersion: command.runtimeOwnerVersion,
+			},
+			applying,
+		);
+		if (ack.status === "applied") return true;
+		// Never run the prompt on a model the user did not choose.
+		await this.disposeCandidate(
+			command.commandId,
+			"failed",
+			undefined,
+			context,
+			{
+				failRun: true,
+			},
+		);
+		return false;
+	}
+
 	private async consumeCandidate() {
 		const scope = this.dependencies.candidate;
 		if (!scope) return;
@@ -5945,44 +6004,57 @@ export class PiDurableHost {
 								)
 							) {
 								context.abortSignal?.throwIfAborted();
-								try {
-									await this.schedule(row.id, undefined, context);
-								} catch (error) {
-									context.abortSignal?.throwIfAborted();
-									if (
-										error instanceof Error &&
-										error.message === "Candidate recovery-only admission" &&
-										!this.ordinaryAllowed()
-									)
-										return;
-									const target = this.run(record.run);
-									if (
-										!(error instanceof Error) ||
-										![
-											"Targeted scheduling revoked",
-											"Terminal or stopped run cannot schedule",
-										].includes(error.message) ||
-										!["stopping", "complete", "failed", "canceled"].includes(
-											target.state,
+								const selected =
+									started.disposition === null &&
+									(started.command.kind === "prompt" ||
+										started.command.kind === "follow_up") &&
+									started.command.selection
+										? await this.applyCommandSelection(
+												started.command,
+												started.command.selection,
+												context,
+											)
+										: true;
+								if (selected) {
+									try {
+										await this.schedule(row.id, undefined, context);
+									} catch (error) {
+										context.abortSignal?.throwIfAborted();
+										if (
+											error instanceof Error &&
+											error.message === "Candidate recovery-only admission" &&
+											!this.ordinaryAllowed()
 										)
-									)
-										throw error;
-									await this.disposeCandidate(
-										row.id,
-										target.state === "stopping"
-											? "stopped"
-											: "target_run_terminal",
-										started.decision,
-										context,
-									);
+											return;
+										const target = this.run(record.run);
+										if (
+											!(error instanceof Error) ||
+											![
+												"Targeted scheduling revoked",
+												"Terminal or stopped run cannot schedule",
+											].includes(error.message) ||
+											!["stopping", "complete", "failed", "canceled"].includes(
+												target.state,
+											)
+										)
+											throw error;
+										await this.disposeCandidate(
+											row.id,
+											target.state === "stopping"
+												? "stopped"
+												: "target_run_terminal",
+											started.decision,
+											context,
+										);
+									}
+									if (this.productRecord(row.id)?.disposition === null)
+										await this.disposeCandidate(
+											row.id,
+											"submitted",
+											started.decision,
+											context,
+										);
 								}
-								if (this.productRecord(row.id)?.disposition === null)
-									await this.disposeCandidate(
-										row.id,
-										"submitted",
-										started.decision,
-										context,
-									);
 							} else
 								await this.disposeCandidate(
 									row.id,

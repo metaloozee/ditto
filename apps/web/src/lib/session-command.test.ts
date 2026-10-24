@@ -120,6 +120,7 @@ describe("session command admission", () => {
 			"0024_candidate_restore_barrier.sql",
 			"0025_candidate_capacity.sql",
 			"0026_candidate_lifecycle.sql",
+			"0027_candidate_command_selection.sql",
 		])
 			fixture.sqlite.exec(
 				readFileSync(

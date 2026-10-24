@@ -31,6 +31,7 @@ import m23 from "../../web/migrations/0023_candidate_product_commands.sql?raw";
 import m24 from "../../web/migrations/0024_candidate_restore_barrier.sql?raw";
 import m25 from "../../web/migrations/0025_candidate_capacity.sql?raw";
 import m26 from "../../web/migrations/0026_candidate_lifecycle.sql?raw";
+import m27 from "../../web/migrations/0027_candidate_command_selection.sql?raw";
 import {
 	CandidateLifecycle,
 	type CandidateLifecycleRuntime,
@@ -77,6 +78,7 @@ async function candidateCredential() {
 	return credential;
 }
 let modelCalls = 0;
+const modelBodies: string[] = [];
 let trapInstalled = false;
 let replyText = "Synthetic product result";
 function modelReplies() {
@@ -85,8 +87,9 @@ function modelReplies() {
 		fetchMock
 			.get("https://codex-model-fixture.invalid")
 			.intercept({ path: "/v1/stream", method: "POST" })
-			.reply(() => {
+			.reply((request) => {
 				modelCalls++;
+				modelBodies.push(String(request.body));
 				return {
 					statusCode: 200,
 					data:
@@ -154,6 +157,7 @@ async function counts() {
 }
 beforeEach(async ({ task }) => {
 	modelCalls = 0;
+	modelBodies.length = 0;
 	replyText = "Synthetic product result";
 	await env.CandidateProduct.setProjectionFault(undefined);
 	await env.CandidateProduct.revokeRuntimeAuthorityAfter(undefined);
@@ -188,6 +192,7 @@ beforeEach(async ({ task }) => {
 		m24,
 		m25,
 		m26,
+		m27,
 	])
 		for (const statement of migration.split("--> statement-breakpoint"))
 			if (statement.trim())
@@ -403,6 +408,54 @@ it("admits concurrent identical first prompts with one receipt, identity, capaci
 		commands().admit("owner", { ...prompt, text: "Changed" }),
 	).rejects.toMatchObject({ code: "conflict" });
 	expect(await counts()).toEqual([1, 1, 1, 2, 1, 1, 0]);
+});
+async function allowFaux2() {
+	await env.DB.prepare(
+		"UPDATE codex_fixture_capabilities SET snapshot=? WHERE userId='owner'",
+	)
+		.bind(
+			JSON.stringify({
+				...account,
+				models: [
+					{ id: "faux-1", thinking: ["off"] },
+					{ id: "faux-2", thinking: ["off"] },
+				],
+			}),
+		)
+		.run();
+}
+it("admits an entitled selection, reconstructs it, and conflicts on a changed selection under the same key", async () => {
+	await allowFaux2();
+	const selected = {
+		...prompt,
+		selection: { model: "faux-2", thinking: "off" },
+	};
+	const a = await commands().admit("owner", selected);
+	expect(await commands().reconstruct(a.commandId, 1)).toMatchObject({
+		commandId: a.commandId,
+		selection: { model: "faux-2", thinking: "off" },
+	});
+	expect(await commands().admit("owner", selected)).toEqual(a);
+	await expect(
+		commands().admit("owner", {
+			...prompt,
+			selection: { model: "faux-1", thinking: "off" },
+		}),
+	).rejects.toMatchObject({ code: "conflict" });
+	await expect(commands().admit("owner", prompt)).rejects.toMatchObject({
+		code: "conflict",
+	});
+	expect(await counts()).toEqual([1, 1, 1, 2, 1, 1, 0]);
+});
+it("refuses an unentitled selection without writing a command row", async () => {
+	for (const selection of [
+		{ model: "faux-2", thinking: "off" },
+		{ model: "faux-1", thinking: "high" },
+	])
+		await expect(
+			commands().admit("owner", { ...prompt, selection }),
+		).rejects.toMatchObject({ code: "model_unconfigured" });
+	expect(await counts()).toEqual([0, 0, 0, 0, 0, 0, 0]);
 });
 it("keeps one lifetime workspace claim for concurrent distinct first prompts", async () => {
 	const results = await Promise.allSettled([
@@ -1613,6 +1666,184 @@ it("queued configuration uses the next selection across a sequence gap and prese
 	}
 });
 
+const bodyModels = () =>
+	modelBodies.map((body) => (JSON.parse(body) as { model?: string }).model);
+async function selectionSession(selection?: {
+	model: string;
+	thinking: string;
+}) {
+	await allowFaux2();
+	const first = await env.CandidateProduct.admitOwned("owner", prompt);
+	const follow = (key: string, extra?: object) =>
+		env.CandidateProduct.admitOwned("owner", {
+			version: 2,
+			kind: "follow_up",
+			projectId: "project",
+			sessionId: first.workspaceSessionId,
+			targetRunId: first.commandId,
+			idempotencyKey: key,
+			text: `Synthetic ${key}`,
+			...extra,
+		});
+	const second = await follow("selected-second", selection && { selection });
+	const third = await follow("selected-third");
+	return {
+		first,
+		second,
+		third,
+		runtime: env.CandidateSessions.getByName(first.workspaceSessionId),
+	};
+}
+it("applies a carried selection at its sequence turn and later prompts keep it", async () => {
+	await candidateCredential();
+	const calls = modelReplies();
+	const { first, second, third, runtime } = await selectionSession({
+		model: "faux-2",
+		thinking: "off",
+	});
+	try {
+		await runtime.deliverCommand(third.commandId, 1);
+		await runtime.deliverCommand(second.commandId, 1);
+		await runtime.deliverCommand(first.commandId, 1);
+		await expect
+			.poll(
+				async () =>
+					(await runtime.candidateSnapshot()).members.map((row) => row.state),
+				{ timeout: 5000 },
+			)
+			.toEqual(["complete", "complete", "complete"]);
+		expect(calls()).toBe(3);
+		expect(bodyModels()).toEqual(["faux-1", "faux-2", "faux-2"]);
+	} finally {
+		await runtime.retireFixture();
+	}
+}, 20000);
+it("applies a carried selection once across a reopen before submission and leaves earlier work on its model", async () => {
+	await candidateCredential();
+	const calls = modelReplies();
+	const { first, second, third, ...session } = await selectionSession({
+		model: "faux-2",
+		thinking: "off",
+	});
+	const runtime = session.runtime;
+	const tasks = () =>
+		runInDurableObject(runtime, (_instance, state) =>
+			state.storage.sql
+				.exec("SELECT task,prepared,selection FROM host_tasks ORDER BY task")
+				.toArray(),
+		);
+	const ledger = () =>
+		runInDurableObject(runtime, (_instance, state) =>
+			state.storage.sql
+				.exec("SELECT state FROM host_configuration_intents")
+				.toArray(),
+		);
+	try {
+		await runtime.deliverCommand(third.commandId, 1);
+		await runtime.deliverCommand(first.commandId, 1);
+		await expect
+			.poll(
+				async () =>
+					(await runtime.candidateSnapshot()).members.map((row) => row.state),
+				{ timeout: 5000 },
+			)
+			.toEqual(["complete", "pending"]);
+		expect(bodyModels()).toEqual(["faux-1"]);
+		const before = await tasks();
+		expect(await ledger()).toEqual([]);
+		await runtime.armControlFault("before-submit");
+		await runtime.deliverCommand(second.commandId, 1);
+		await expect
+			.poll(ledger, { timeout: 5000 })
+			.toEqual([{ state: "complete" }]);
+		expect(calls()).toBe(1);
+		await runtime.reopenFixture(true);
+		await expect
+			.poll(
+				async () =>
+					(await runtime.candidateSnapshot()).members.map((row) => row.state),
+				{ timeout: 5000 },
+			)
+			.toEqual(["complete", "complete", "complete"]);
+		expect(await ledger()).toEqual([{ state: "complete" }]);
+		expect(bodyModels()).toEqual(["faux-1", "faux-2", "faux-2"]);
+		const after = await tasks();
+		for (const row of before) expect(after).toContainEqual(row);
+	} finally {
+		await runtime.retireFixture();
+	}
+}, 20000);
+it("disposes a prompt whose selection is no longer entitled without any model request", async () => {
+	await candidateCredential();
+	const calls = modelReplies();
+	const { first, second, third, runtime } = await selectionSession({
+		model: "faux-2",
+		thinking: "off",
+	});
+	try {
+		await runtime.deliverCommand(third.commandId, 1);
+		await runtime.deliverCommand(first.commandId, 1);
+		await expect
+			.poll(
+				async () =>
+					(await runtime.candidateSnapshot()).members.map((row) => row.state),
+				{ timeout: 5000 },
+			)
+			.toEqual(["complete", "pending"]);
+		await env.DB.prepare(
+			"UPDATE codex_fixture_capabilities SET snapshot=? WHERE userId='owner'",
+		)
+			.bind(JSON.stringify(account))
+			.run();
+		await runtime.deliverCommand(second.commandId, 1);
+		await expect
+			.poll(
+				async () =>
+					(await runtime.candidateSnapshot()).members.map((row) => row.state),
+				{ timeout: 5000 },
+			)
+			.toEqual(["complete", "failed", "complete"]);
+		expect(bodyModels()).toEqual(["faux-1", "faux-1"]);
+		expect(calls()).toBe(2);
+	} finally {
+		await runtime.retireFixture();
+	}
+}, 20000);
+it("fails the run of a first prompt whose selection is no longer entitled, with no model request", async () => {
+	await candidateCredential();
+	const calls = modelReplies();
+	await allowFaux2();
+	const first = await env.CandidateProduct.admitOwned("owner", {
+		...prompt,
+		selection: { model: "faux-2", thinking: "off" },
+	});
+	const runtime = env.CandidateSessions.getByName(first.workspaceSessionId);
+	await env.DB.prepare(
+		"UPDATE codex_fixture_capabilities SET snapshot=? WHERE userId='owner'",
+	)
+		.bind(JSON.stringify(account))
+		.run();
+	try {
+		await runtime.deliverCommand(first.commandId, 1);
+		await expect
+			.poll(
+				async () =>
+					(await runtime.candidateSnapshot()).members.map((row) => row.state),
+				{ timeout: 5000 },
+			)
+			.toEqual(["failed"]);
+		expect(
+			await runInDurableObject(runtime, (_instance, state) =>
+				state.storage.sql
+					.exec("SELECT id,state FROM host_runs WHERE id=?", first.commandId)
+					.toArray(),
+			),
+		).toEqual([{ id: first.commandId, state: "failed" }]);
+		expect(calls()).toBe(0);
+	} finally {
+		await runtime.retireFixture();
+	}
+}, 20000);
 it("three real candidate contract denials persist review and halt the exact admitted host without fetch", async () => {
 	const credential = await candidateCredential();
 	const calls = modelReplies();

@@ -10,6 +10,7 @@ import {
 	type CandidateModelsV1,
 	type ConfigurationSelectionV1,
 	parseCandidateModelsRequestV1,
+	parseConfigurationSelectionV1,
 } from "../../../../packages/runtime-contracts/src/configuration.js";
 import {
 	type ModelSubjectV1,
@@ -111,6 +112,7 @@ type Row = {
 	assistantMessageId: string | null;
 	targetRunId: string | null;
 	targetCommandId: string | null;
+	selection: string | null;
 	payloadDigest: string;
 	acceptedAt: number;
 	deadlineAt: number;
@@ -367,9 +369,9 @@ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind
 		if (input.kind === "prompt" || input.kind === "follow_up") {
 			const status = await this.credential(userId).status(userId);
 			if (status.status !== "connected") reject("model_unconfigured");
-			const selection = subject
-				? await this.runtime.readSelection(subject)
-				: null;
+			const selection =
+				input.selection ??
+				(subject ? await this.runtime.readSelection(subject) : null);
 			readiness = await this.policy.preSessionReadiness(
 				userId,
 				input.projectId,
@@ -492,8 +494,8 @@ SELECT identityId,'workspace_session',identityId,identityId,userId,projectId,ses
 		);
 		statements.push(
 			q(
-				`INSERT INTO session_commands(id,userId,targetKind,targetId,projectId,sessionId,kind,commandSeq,targetRunId,targetCommandId,payloadVersion,userMessageId,assistantMessageId,payloadDigest,acceptedAt,deadlineAt)
-SELECT ?,?,'workspace_session',?,?,?, ?,nextSequence,?,?,2,?,?,?,?,? FROM session_command_sequences WHERE sessionId=? AND EXISTS(${gate})
+				`INSERT INTO session_commands(id,userId,targetKind,targetId,projectId,sessionId,kind,commandSeq,targetRunId,targetCommandId,payloadVersion,userMessageId,assistantMessageId,payloadDigest,acceptedAt,deadlineAt,selection)
+SELECT ?,?,'workspace_session',?,?,?, ?,nextSequence,?,?,2,?,?,?,?,?,? FROM session_command_sequences WHERE sessionId=? AND EXISTS(${gate})
 AND (?=0 OR EXISTS(SELECT 1 FROM codex_connections k JOIN codex_fixture_capabilities e ON e.userId=k.user_id WHERE k.user_id=? AND k.status='connected' AND k.revoked=0 AND k.generation=? AND e.generation=k.generation AND e.revision=? AND e.snapshot=?))
 AND (?=0 OR NOT EXISTS(SELECT 1 FROM candidate_restore_barriers b WHERE b.sessionId=? AND b.state='closed'))
 AND NOT EXISTS(SELECT 1 FROM candidate_archives a WHERE a.sessionId=?)
@@ -513,6 +515,9 @@ AND NOT EXISTS(SELECT 1 FROM candidate_continuations n WHERE n.destinationSessio
 				hash,
 				acceptedAt,
 				deadlineAt,
+				pair && "selection" in input && input.selection
+					? JSON.stringify(input.selection)
+					: null,
 				sessionId,
 				sessionId,
 				userId,
@@ -1600,6 +1605,11 @@ AND u.userId=? AND a.userId=u.userId AND u.projectId=? AND a.projectId=u.project
 				  }
 				| undefined;
 			if (!key) return null;
+			const selection = row.selection
+				? {
+						selection: parseConfigurationSelectionV1(JSON.parse(row.selection)),
+					}
+				: {};
 			let restore: Record<string, unknown> = {};
 			if (row.kind === "restore_checkpoint_acknowledging_loss") {
 				const barrier = await this.db
@@ -1629,6 +1639,7 @@ AND u.userId=? AND a.userId=u.userId AND u.projectId=? AND a.projectId=u.project
 					? { sessionId: row.sessionId }
 					: {}),
 				...(text === undefined ? {} : { text }),
+				...selection,
 				...(row.targetRunId ? { targetRunId: row.targetRunId } : {}),
 				...(row.targetCommandId
 					? { targetCommandId: row.targetCommandId }
@@ -1659,6 +1670,7 @@ AND u.userId=? AND a.userId=u.userId AND u.projectId=? AND a.projectId=u.project
 							text,
 							userMessageId: row.userMessageId,
 							assistantMessageId: row.assistantMessageId,
+							...selection,
 						}),
 				...(row.targetRunId ? { targetRunId: row.targetRunId } : {}),
 				...(row.targetCommandId

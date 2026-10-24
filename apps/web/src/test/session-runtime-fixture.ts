@@ -107,6 +107,7 @@ CREATE TABLE session_commands (
 	admissionVersion integer NOT NULL DEFAULT 1,
 	executionProjectionVersion integer NOT NULL DEFAULT 0,
 	reasonCode text,
+	selection text,
 	CONSTRAINT session_commands_kind_enum CHECK(kind IN ('prompt', 'follow_up', 'stop', 'cancel', 'project_delete')),
 	CONSTRAINT session_commands_target_kind_enum CHECK(targetKind IN ('project', 'workspace_session')),
 	CONSTRAINT session_commands_target_shape CHECK((kind = 'project_delete' AND targetKind = 'project' AND sessionId IS NULL AND commandSeq IS NULL) OR (kind != 'project_delete' AND targetKind = 'workspace_session' AND sessionId IS NOT NULL AND commandSeq IS NOT NULL AND typeof(commandSeq) = 'integer' AND commandSeq > 0)),

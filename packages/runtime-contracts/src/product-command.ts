@@ -1,4 +1,8 @@
 import {
+	type ConfigurationSelectionV1,
+	parseConfigurationSelectionV1,
+} from "./configuration.js";
+import {
 	ContractParseError,
 	decodeContractInput,
 	integerField,
@@ -29,19 +33,23 @@ type RestoreV2 = {
 	unbackedLossAcknowledged: true;
 };
 
+/** The model choice the user wants applied from this message onward. */
+type SelectionV2 = { selection?: ConfigurationSelectionV1 };
 type BrowserBaseV2 = {
 	version: 2;
 	idempotencyKey: string;
 	projectId: string;
 };
 export type BrowserCommandV2 =
-	| (BrowserBaseV2 & { kind: "prompt"; sessionId?: string; text: string })
-	| (BrowserBaseV2 & {
-			kind: "follow_up";
-			sessionId: string;
-			targetRunId: string;
-			text: string;
-	  })
+	| (BrowserBaseV2 &
+			SelectionV2 & { kind: "prompt"; sessionId?: string; text: string })
+	| (BrowserBaseV2 &
+			SelectionV2 & {
+				kind: "follow_up";
+				sessionId: string;
+				targetRunId: string;
+				text: string;
+			})
 	| (BrowserBaseV2 & { kind: "stop"; sessionId: string; targetRunId: string })
 	| (BrowserBaseV2 & {
 			kind: "cancel";
@@ -75,8 +83,10 @@ type MessagesV2 = {
 	text: string;
 };
 export type CommandV2 =
-	| (CommandBaseV2 & MessagesV2 & { kind: "prompt" })
-	| (CommandBaseV2 & MessagesV2 & { kind: "follow_up"; targetRunId: string })
+	| (CommandBaseV2 & MessagesV2 & SelectionV2 & { kind: "prompt" })
+	| (CommandBaseV2 &
+			MessagesV2 &
+			SelectionV2 & { kind: "follow_up"; targetRunId: string })
 	| (CommandBaseV2 & { kind: "stop"; targetRunId: string })
 	| (CommandBaseV2 & { kind: "cancel"; targetCommandId: string })
 	| (CommandBaseV2 &
@@ -239,16 +249,16 @@ function fields(kind: (typeof KINDS)[number], browser: boolean): string[] {
 			return [
 				...base,
 				...(browser
-					? ["text"]
-					: ["userMessageId", "assistantMessageId", "text"]),
+					? ["text", "selection"]
+					: ["userMessageId", "assistantMessageId", "text", "selection"]),
 			];
 		case "follow_up":
 			return [
 				...base,
 				"targetRunId",
 				...(browser
-					? ["text"]
-					: ["userMessageId", "assistantMessageId", "text"]),
+					? ["text", "selection"]
+					: ["userMessageId", "assistantMessageId", "text", "selection"]),
 			];
 		case "stop":
 			return [...base, "targetRunId"];
@@ -267,6 +277,7 @@ function record(input: unknown, browser: boolean) {
 		[
 			...(browser ? BROWSER_BASE : COMMAND_BASE),
 			"text",
+			"selection",
 			"targetRunId",
 			"targetCommandId",
 			...RESTORE_FIELDS,
@@ -306,6 +317,11 @@ function acknowledged(record: Record<string, unknown>): true {
 		);
 	return true;
 }
+function selection(record: Record<string, unknown>): SelectionV2 {
+	return record.selection === undefined
+		? {}
+		: { selection: parseConfigurationSelectionV1(record.selection) };
+}
 function text(record: Record<string, unknown>) {
 	const value = stringField(record, "text", {
 		maxBytes: CANDIDATE_COMMAND_TEXT_BYTES,
@@ -332,6 +348,7 @@ export function parseBrowserCommandV2(input: unknown): BrowserCommandV2 {
 			kind,
 			...(sessionId === undefined ? {} : { sessionId }),
 			text: text(r),
+			...selection(r),
 		};
 	}
 	const sessionId = id(r, "sessionId");
@@ -342,6 +359,7 @@ export function parseBrowserCommandV2(input: unknown): BrowserCommandV2 {
 			sessionId,
 			targetRunId: id(r, "targetRunId"),
 			text: text(r),
+			...selection(r),
 		};
 	if (kind === "stop")
 		return { ...base, kind, sessionId, targetRunId: id(r, "targetRunId") };
@@ -408,8 +426,14 @@ export function parseCommandV2(input: unknown): CommandV2 {
 		text: text(r),
 	};
 	if (kind === "follow_up")
-		return { ...base, kind, ...messages, targetRunId: id(r, "targetRunId") };
-	return { ...base, kind, ...messages };
+		return {
+			...base,
+			kind,
+			...messages,
+			targetRunId: id(r, "targetRunId"),
+			...selection(r),
+		};
+	return { ...base, kind, ...messages, ...selection(r) };
 }
 
 export function parseCommandHandoffAckV2(input: unknown): CommandHandoffAckV2 {

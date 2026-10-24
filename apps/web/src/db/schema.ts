@@ -673,6 +673,8 @@ export const sessionCommands = sqliteTable(
 			.notNull()
 			.default(0),
 		reasonCode: text("reasonCode"),
+		/** Requested model selection (JSON); request data, not current configuration. */
+		selection: text("selection"),
 	},
 	(table) => [
 		uniqueIndex("session_commands_session_seq_uidx").on(

@@ -1,0 +1,1 @@
+ALTER TABLE `session_commands` ADD `selection` text;

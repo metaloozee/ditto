@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseBrowserCommandV1 } from "./command.js";
+import { ContractParseError } from "./json.js";
 import {
 	parseBrowserCommandV2,
 	parseCommandHandoffAckV2,
@@ -170,6 +171,81 @@ describe("candidate command version 2", () => {
 		expect(() => parseBrowserCommandV2({ ...prompt, version })).toThrow();
 		expect(() => parseCommandV2({ ...command, version })).toThrow();
 	});
+	it("carries an optional model selection only on prompts and follow-ups", () => {
+		const selection = { model: "faux-2", thinking: "high" };
+		const followUp = {
+			...prompt,
+			kind: "follow_up",
+			sessionId: "session",
+			targetRunId: "run",
+		};
+		expect(parseBrowserCommandV2({ ...prompt, selection })).toEqual({
+			...prompt,
+			selection,
+		});
+		expect(parseBrowserCommandV2({ ...followUp, selection })).toEqual({
+			...followUp,
+			selection,
+		});
+		expect(parseCommandV2({ ...command, selection })).toEqual({
+			...command,
+			selection,
+		});
+		expect("selection" in parseBrowserCommandV2(prompt)).toBe(false);
+		expect("selection" in parseCommandV2(command)).toBe(false);
+		for (const bad of [
+			{ model: "gpt-9", thinking: "off" },
+			{ model: "faux-1", thinking: "ultra" },
+			{ model: "faux-1" },
+			{ model: "faux-1", thinking: "off", extra: 1 },
+		])
+			expect(() =>
+				parseBrowserCommandV2({ ...prompt, selection: bad }),
+			).toThrow(ContractParseError);
+		const sel = { selection };
+		for (const value of [
+			{
+				version: 2,
+				kind: "stop",
+				idempotencyKey: "k",
+				projectId: "project",
+				sessionId: "session",
+				targetRunId: "run",
+				...sel,
+			},
+			{
+				version: 2,
+				kind: "cancel",
+				idempotencyKey: "k",
+				projectId: "project",
+				sessionId: "session",
+				targetCommandId: "c",
+				...sel,
+			},
+			{
+				version: 2,
+				kind: "archive_session",
+				idempotencyKey: "k",
+				projectId: "project",
+				sessionId: "session",
+				...sel,
+			},
+			{
+				version: 2,
+				kind: "restore_checkpoint_acknowledging_loss",
+				idempotencyKey: "k",
+				projectId: "project",
+				sessionId: "session",
+				committedPairId: "pair",
+				expectedMutationGeneration: 1,
+				expectedRecoveryPosition: 0,
+				unbackedLossAcknowledged: true,
+				...sel,
+			},
+		])
+			expect(() => parseBrowserCommandV2(value)).toThrow(ContractParseError);
+	});
+
 	it("requires exact message/run target fields for each command kind", () => {
 		expect(parseCommandV2(command)).toEqual(command);
 		expect(() => parseCommandV2({ ...command, targetRunId: "run" })).toThrow();

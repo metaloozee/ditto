@@ -1053,6 +1053,7 @@ async function persistAdmission(options: {
 						"executionProjectionVersion",
 					),
 					reasonCode: sql<string | null>`null`.as("reasonCode"),
+					selection: sql<string | null>`null`.as("selection"),
 				})
 				.from(workspaceSessions)
 				.innerJoin(
