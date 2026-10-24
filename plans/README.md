@@ -17,7 +17,7 @@ These block or shape the remaining work. None is an executor's call.
 1. **018 layout and copy.** 018 is blocked only on this. It covers Codex connection placement, model/thinking choice, recovery acknowledgment copy and a visible state for a blocked archive (016 limit). Expect 2–3 sketches before any UI edit.
 2. **009 image reads.** Image files now return an error result instead of an attachment, because Pi Durable 1.0.1 tool results cannot carry images. Approve this parity change or ask for a follow-up plan.
 3. **Continuation exposure.** Per 016, continuation is not end to end: no composition builds the destination baseline from the seed's archive. 018 must not offer Continue to users until that exists, or the maintainer accepts hiding it.
-4. **Stale 008 worktree.** `/home/ayan/ditto-execution/plan-008-4WXvNW` (detached at `2487d56`) is still registered. 008 is integrated and its evidence archived. Removing it is the maintainer's call.
+4. **Stale 008 worktree.** `/home/ayan/ditto-execution/plan-008-4WXvNW` (detached at `2487d56`) was removed on 2026-10-23 at the maintainer's request. Its unarchived `plans/evidence/artifacts/008/*` logs and `.execution-008/` scratch were discarded; the archived checkpoints from `1f93e9c` remain.
 
 ## Execution order and status
 
@@ -66,7 +66,8 @@ Runtime gate drift: since 015 the full `pnpm runtime:verify` run is load-sensiti
 | [015](015-capacity-and-project-value-policy.md) | Complete capacity and execution-only values | L5 | 014, complete L4 | DONE ([evidence](evidence/015-resource-and-value-policy.md)) |
 | [016](016-archive-continue-and-deletion.md) | Archive/new lineage and revocation-first deletion | L5 | 015 | DONE ([evidence](evidence/016-lifecycle.md)) |
 | [017](017-retention-and-clean-start-rehearsal.md) | Retention and disposable ownership transition | L5 | 016 | DONE ([evidence](evidence/017-l5-backend-acceptance.md), [CI correction](evidence/017-l5-backend-acceptance.md#ci-correction)) |
-| [018](018-product-controls-and-reconnect.md) | Product controls without UI-test expansion | L5 | 017, focused UI placement/copy approval | BLOCKED on layout/copy decision only; 017 is DONE |
+| [021](021-candidate-product-exposure.md) | Expose candidate observation, actions, models, configuration, archive/restore facts and deletion to product routes | L5 | 017 | DONE with one limit (2026-10-23 review): Step 5 configuration intents stopped, since the host applies configuration only under a prompt/follow-up command. Uncommitted in `ditto-execution/plan-021`; combined `credentials:verify` hit the known WSL storage flake, every part passes alone ([evidence](evidence/021-product-exposure.md)) |
+| [018](018-product-controls-and-reconnect.md) | Product controls without UI-test expansion | L5 | 017, 021, focused UI placement/copy approval | BLOCKED: waits for 021 to be integrated and a decision on configuration (standalone host path vs selection on the next prompt). Item 2 slice held in `ditto-execution/plan-018` |
 | [019](019-local-acceptance-and-implementation-retirement.md) | Real-auth smoke, acceptance, CI and source retirement | L6 | 018, complete L5, stable `runtime:verify` | BLOCKED |
 | [020](020-approved-provider-and-hosted-validation.md) | Separately approved provider and hosted evidence | External | Provider: 006/007 and safety gates. Hosted: 019. Separate operational approval | BLOCKED |
 
@@ -79,7 +80,7 @@ The critical path is intentionally serial. These plans change shared ownership a
                             L3 complete
  -> 011 -> 012 -> 013 -> 014
                      L4 complete
- -> 015 -> 016 -> 017 -> 018 -> 019
+ -> 015 -> 016 -> 017 -> 021 -> 018 -> 019
                      L5       L6
 
 006/007 + explicit allowance approval -> 020 provider track

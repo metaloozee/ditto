@@ -1,13 +1,13 @@
 # 018: Connect product controls to the durable interface
 
-Status: BLOCKED on a focused layout/copy decision before UI edits. 017 is DONE. Base: `bcce03e`; reconciled at `1f93e9c` (2026-10-23), where the excerpt below and every test path in the steps still exist. Step 1's full refresh is still required. Phase: L5 product completion.
+Status: BLOCKED on missing product contracts (execution 2026-10-23). Layout/copy approved 2026-10-23 as option A (see "Approved layout and copy"). Only item 2 (account-menu Codex group) is backed; it sits uncommitted in `/home/ayan/ditto-execution/plan-018` (`nav-user.tsx` plus draft `plans/evidence/018-product-integration.md`). Missing, verified by the reviewer: account model discovery (`discoverModels`/`readConfigurationAuthority` return `unavailable` in `lib/session-runtime-product.ts`); any browser-visible candidate/legacy session flag (`runtimeOwner` is not returned to routes or components); blocked-archive and per-message restore fields; a route or tRPC procedure exposing `workspaceAction` (only in `lib/session-command-candidate.ts`) and a snapshot-plus-events observation endpoint. [021](021-candidate-product-exposure.md) exposes them; 018 resumes after 021 and must read `evidence/021-product-exposure.md` first. Correction: `projects.list` already returns `runtimeOwner` for active sessions. 017 is DONE. Base: `bcce03e`; reconciled at `1f93e9c` (2026-10-23), where the excerpt below and every test path in the steps still exist. Step 1's full refresh is still required. Phase: L5 product completion.
 Spec: `docs/specs/pi-durable-session-runtime.md`, decisions 3.1, 3.5, 5–6, 12, 14–15, 17–18; PD01–PD03, PD06–PD07, PD24, PD26–PD27, PD41–PD42; OD1, OD5–OD7.
 
 ## Outcome and boundaries
 
 Wire existing chat, model/thinking, connection, Stop, queued-follow-up, recovery and lifecycle controls to authenticated intents, durable receipts and committed observations. The browser owns presentation and cursor only. It never runs Pi or controls execution lifetime.
 
-Keep existing product layout and visual character. The spec defines behavior but not Codex connection placement or new recovery copy. Before touching layout/copy, show 2–3 focused in-reply sketches and wait for selection. This prerequisite is not permission for a broad redesign. Do not add automated UI tests, mount/render checks, visual snapshots or a browser test system under OD5. Existing inherited repository tests remain unless a separately justified change replaces obsolete behavior.
+Keep existing product layout and visual character. The spec defines behavior but not Codex connection placement or new recovery copy; the maintainer approved the placement and copy below. That approval is not permission for a broad redesign. Do not add automated UI tests, mount/render checks, visual snapshots or a browser test system under OD5. Existing inherited repository tests remain unless a separately justified change replaces obsolete behavior.
 
 ## Current code and scope
 
@@ -20,6 +20,28 @@ const FIXED_MODEL = PROJECT_CODER_MODELS[0];
 It imports `streamAgentRun` and `sendAgentControl` from `agent-stream-client.ts`, and tracks streamed content/queued follow-ups in component state. `agent-models.ts` exposes fixed model/thinking choices. These are presentation conveniences, not authority for subscription entitlement or durable run state.
 
 Scope: existing composer/chat/session action components, product connection controls once layout approved, stream-client/protocol/data mapping, model configuration queries and narrow product handlers. Follow existing React/TanStack query patterns and base controls. No new terminal/code-browser, sign-in replacement, raw Pi browser data, speculative global state layer or new UI dependency.
+
+## Approved layout and copy (option A, 2026-10-23)
+
+The maintainer selected this. Reuse existing primitives only; no new layout grid, no new UI dependency. Keep the composer's container-query layout (narrow <420px: textarea row, then Model · Thinking · spacer · Send).
+
+1. **Model chip.** In `composer.tsx`, the `role="img"` logo `<span>` becomes a `<button type="button">` with the same size/border classes (`size-9 … @[420px]:size-11`), opening the existing `ModelSelector` command dialog from `components/ai-elements/model-selector.tsx`. List the account-backed models. Unavailable models stay listed, disabled, under a group heading "Unavailable on your plan". The Thinking `Select` stays in place and lists only levels valid for the selected model. A stale selection shows in the existing `messageError` slot (`#composer-message-error`): "<Model> is no longer available. Choose another model."
+2. **Connection: account menu.** In `nav-user.tsx`, add a `DropdownMenuGroup` between the profile group and the Log out group (separated by `DropdownMenuSeparator`), showing "Codex" with the status label and one action:
+
+   | `ConnectionStatus` | Label | Action |
+   |---|---|---|
+   | connected | Connected | Disconnect |
+   | renewing | Renewing… | none |
+   | reconnect_required | Sign-in expired | Reconnect |
+   | disconnected | Not connected | Connect |
+   | unavailable | Codex is unavailable right now | none |
+
+   `ConnectionStatus` is in `apps/web/src/lib/codex-credential-do.ts`. The connect flow returns `codex_hosted_auth_unverified` (503) today (`lib/codex-connection.ts`); the Connect/Reconnect action must surface that error honestly, not fake success. No live connection is attempted in this plan.
+3. **Connection: composer line.** When not connected, the textarea and Send are disabled (history stays readable), and one `text-xs` muted line renders in the `messageError` slot position: "Connect Codex to send messages." with a single `[Connect]` button. Other states with no send ability use the table label instead. This line must wrap at 320px, never clip.
+4. **Recovery.** A footer under the affected assistant message, styled like the existing failed-row line in `ai-chat.tsx` ("Response interrupted — partial output saved."): "Restored from backup. Changes after <time> may be lost." plus, where in-progress commands are uncertain, "Commands in progress were not confirmed." One action, `[Review and resend]`, which submits a new idempotency key (intentional reapplication). If no committed backend field drives this state, STOP and report rather than invent one.
+5. **Blocked archive.** Replace the composer with a panel matching the project-settings danger zone (`rounded-lg border border-destructive/20 bg-destructive/5 p-3`, `TriangleAlertIcon` tile). Title "Can't finish archiving". Body: "A preview or action didn't report whether it finished, so this session is read-only. Deleting the project is the only way to clear it." Single destructive `[Delete project]` button that opens the existing project delete confirmation (candidate deletion is project-level only, per 016; amended by the maintainer 2026-10-23); below 420px the button stacks under the text.
+6. **Project delete refusal.** In `project-settings-dialog.tsx` danger zone, when the project has candidate sessions, disable the Delete Project button and replace the description with: "This project has sessions that can't be deleted yet. Archive or delete them first, then try again." Also show the router's refusal message if a delete is still refused.
+7. Omitted by design: Continue action; readiness/backup-health indicators (no backend source); attachment display for image reads.
 
 ## Inherited backend limits
 
@@ -34,7 +56,7 @@ Reconcile at `1f93e9c` collected these from accepted 009–017 evidence. They ch
 
 ## Steps and checks
 
-1. Refresh this plan from backend contract/evidence files. Read the UI skill router and relevant existing components. Confirm exact approved placement/copy for connection, account models/thinking and recovery actions. If still unspecified, pause for the sketches decision. Do not treat this plan as an approved visual design.
+1. Refresh this plan from backend contract/evidence files. Read the UI skill router and relevant existing components. Placement/copy is approved: implement "Approved layout and copy" exactly. Anything it does not specify, STOP and report instead of designing it.
    Check: `pnpm typecheck` before changes; record baseline errors separately.
 2. Retarget existing Git and preview controls to 014's typed intents rather than their legacy direct-mutation path. Adapt command clients to stable idempotency keys across retries, returning receipt/message/workspace IDs rather than treating HTTP success as start. Preserve first-prompt identity. Show accepted, queued and expired state from committed product data. Follow-ups each retain their message pair; targeted Stop uses the exact run and displays stopping until accounted for.
    Run backend/client behavior tests only: `pnpm --filter @ditto/web exec vitest run src/lib/agent-stream-client.test.ts src/lib/agent-stream-protocol.test.ts src/lib/session-command.test.ts`. Add reconnect/receipt transformation cases there, not render assertions.
