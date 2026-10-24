@@ -14,6 +14,11 @@ import { useSidebar } from "#/components/ui/sidebar";
 import { Spinner } from "#/components/ui/spinner";
 import { toast } from "#/components/ui/toast";
 import { useTRPC } from "#/integrations/trpc/react";
+import {
+	CANDIDATE_RUNTIME_OWNER,
+	useCandidateObservation,
+	useCandidateProbe,
+} from "#/lib/candidate-session-client";
 import { cn } from "#/lib/utils";
 
 export const Route = createFileRoute("/project/$projectId")({
@@ -384,6 +389,24 @@ export function ProjectWorkspacePage({
 	const selectedSession = checkQuery.data?.selectedSession ?? null;
 	const selectedSessionId = sessionId ?? selectedSession?.id ?? null;
 
+	// An open session's kind comes from its row; a new chat is a candidate chat
+	// only when the deployment binds a candidate runtime.
+	const runtimeBound = useCandidateProbe(projectId, !sessionId);
+	const candidateMode = sessionId
+		? selectedSession?.runtimeOwner === CANDIDATE_RUNTIME_OWNER
+		: runtimeBound;
+	const candidateObservation = useCandidateObservation({
+		projectId,
+		sessionId,
+		enabled: candidateMode,
+		onAssistantsChanged: () => {
+			if (!sessionId) return;
+			void queryClient.invalidateQueries(
+				trpc.workspace.messages.infiniteQueryFilter({ projectId, sessionId }),
+			);
+		},
+	});
+
 	const messagesQuery = useInfiniteQuery(
 		trpc.workspace.messages.infiniteQueryOptions(
 			{
@@ -524,6 +547,18 @@ export function ProjectWorkspacePage({
 						void messagesQuery.fetchNextPage();
 					}}
 					recovery={checkQuery.data?.recovery ?? null}
+					candidate={
+						candidateMode
+							? {
+									...candidateObservation,
+									project: {
+										id: project.id,
+										name: project.name,
+										status: project.status,
+									},
+								}
+							: undefined
+					}
 					onWorkspaceRefresh={(activeSessionId) => {
 						void queryClient.invalidateQueries(
 							trpc.projects.list.queryFilter(),

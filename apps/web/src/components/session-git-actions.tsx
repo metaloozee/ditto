@@ -25,6 +25,11 @@ import {
 } from "#/components/ui/tooltip";
 import { useTRPC } from "#/integrations/trpc/react";
 import {
+	CANDIDATE_UNSUPPORTED_ACTION_TOOLTIP,
+	describeWorkspaceDenial,
+	runWorkspaceAction,
+} from "#/lib/candidate-session-client";
+import {
 	GIT_PUSH_ENABLED,
 	GIT_PUSH_UNAVAILABLE_MESSAGE,
 } from "#/lib/git-push-contract";
@@ -35,8 +40,13 @@ type SessionGitActionsProps = {
 	projectId: string;
 	sessionId: string;
 	disabled?: boolean;
+	/** Candidate sessions run Git through the workspace-action route. */
+	candidate?: boolean;
 	children?: ReactNode;
 };
+
+/** The runtime requires a message; there is no commit message input yet. */
+const CANDIDATE_COMMIT_MESSAGE = "Ditto session changes";
 
 type WorkflowStepId = "sync" | "commit" | "push" | "pr";
 
@@ -128,6 +138,7 @@ function SessionGitActionsView({
 	onCommit,
 	onPush,
 	onOpenPullRequest,
+	candidateChangedCount,
 	children,
 }: {
 	status: SessionGitStatus | undefined;
@@ -139,17 +150,26 @@ function SessionGitActionsView({
 	onCommit: () => void;
 	onPush: () => void;
 	onOpenPullRequest: () => void;
+	/** Set for candidate sessions: only status and commit have a contract. */
+	candidateChangedCount?: number;
 	children?: ReactNode;
 }) {
+	const unsupported = candidateChangedCount !== undefined;
 	const workflow = status?.workflow;
 	const dirty = status?.dirty ?? false;
 	const aheadCount = status?.ahead ?? 0;
-	const changedCount = status?.changedFiles.length ?? 0;
+	const changedCount =
+		candidateChangedCount ?? status?.changedFiles.length ?? 0;
 	const syncDisabled =
-		!canRun || isPending || statusLoading || workflow?.kind !== "sync";
+		unsupported ||
+		!canRun ||
+		isPending ||
+		statusLoading ||
+		workflow?.kind !== "sync";
 	const commitDisabled = !canRun || isPending || !dirty || statusLoading;
 	const pushUnavailable = !GIT_PUSH_ENABLED;
 	const pushDisabled =
+		unsupported ||
 		!canRun ||
 		isPending ||
 		statusLoading ||
@@ -167,12 +187,13 @@ function SessionGitActionsView({
 		workflow?.kind === "open-pr" ||
 		(workflow?.kind === "push" && GIT_PUSH_ENABLED);
 	const openPrDisabled =
+		unsupported ||
 		!canRun ||
 		isPending ||
 		statusLoading ||
 		!status ||
 		(!pullRequest && !canOpenPullRequest);
-	const viewPrDisabled = !canRun || isPending || statusLoading;
+	const viewPrDisabled = unsupported || !canRun || isPending || statusLoading;
 	const prDisabled = pullRequest ? viewPrDisabled : openPrDisabled;
 	const nextStep: WorkflowStepId | null =
 		workflow?.kind === "sync"
@@ -188,8 +209,9 @@ function SessionGitActionsView({
 		nextStep ?? (pullRequest ? "pr" : null);
 
 	const syncLabel = "Sync";
-	const syncTooltip =
-		workflow?.kind === "sync"
+	const syncTooltip = unsupported
+		? CANDIDATE_UNSUPPORTED_ACTION_TOOLTIP
+		: workflow?.kind === "sync"
 			? `Merge the latest ${workflow.baseBranch} into this session`
 			: "Session already includes the latest base branch";
 	const commitTooltip =
@@ -200,8 +222,9 @@ function SessionGitActionsView({
 					? "Working…"
 					: "No uncommitted changes"
 				: "Commit local changes on this session branch";
-	const pushTooltip =
-		workflow?.kind === "push" && pushUnavailable
+	const pushTooltip = unsupported
+		? CANDIDATE_UNSUPPORTED_ACTION_TOOLTIP
+		: workflow?.kind === "push" && pushUnavailable
 			? GIT_PUSH_UNAVAILABLE_MESSAGE
 			: workflow?.kind === "push" && workflow.reason === "remote-branch-missing"
 				? "Restore deleted branch on GitHub"
@@ -220,8 +243,9 @@ function SessionGitActionsView({
 				: pullRequest
 					? "View PR"
 					: "Open PR";
-	const prTooltip =
-		pendingStep === "pr"
+	const prTooltip = unsupported
+		? CANDIDATE_UNSUPPORTED_ACTION_TOOLTIP
+		: pendingStep === "pr"
 			? "Opening PR…"
 			: workflow?.kind === "merged-pr"
 				? "View merged pull request on GitHub"
@@ -451,12 +475,12 @@ function SessionGitActionsView({
 	);
 }
 
-export function SessionGitActions({
+function LegacySessionGitActions({
 	projectId,
 	sessionId,
 	disabled = false,
 	children,
-}: SessionGitActionsProps) {
+}: Omit<SessionGitActionsProps, "candidate">) {
 	const trpc = useTRPC();
 	const queryClient = useQueryClient();
 	const hasIds = Boolean(projectId && sessionId);
@@ -656,5 +680,114 @@ export function SessionGitActions({
 				{children}
 			</SessionGitActionsView>
 		</>
+	);
+}
+
+function CandidateSessionGitActions({
+	projectId,
+	sessionId,
+	disabled = false,
+	children,
+}: Omit<SessionGitActionsProps, "candidate">) {
+	const queryClient = useQueryClient();
+	const canRun = Boolean(projectId && sessionId) && !disabled;
+	const statusKey = ["candidate-git-status", projectId, sessionId] as const;
+	const statusQuery = useQuery({
+		queryKey: statusKey,
+		queryFn: () =>
+			runWorkspaceAction({ kind: "git_status", projectId, sessionId }),
+		retry: false,
+		refetchOnWindowFocus: true,
+	});
+	const invalidateStatus = () => {
+		void queryClient.invalidateQueries({ queryKey: statusKey });
+	};
+
+	const commitMutation = useMutation({
+		mutationFn: () =>
+			runWorkspaceAction({
+				kind: "git_commit",
+				projectId,
+				sessionId,
+				message: CANDIDATE_COMMIT_MESSAGE,
+			}),
+		onSuccess: (result) => {
+			if (result.status === "committed") {
+				toast.add({ type: "success", description: "Changes committed." });
+			} else if (result.status === "nothing_to_commit") {
+				toast.add({ description: "Nothing to commit." });
+			} else {
+				toast.add({
+					type: "error",
+					description:
+						result.status === "denied"
+							? describeWorkspaceDenial(result.reason)
+							: "Git unavailable",
+				});
+			}
+			invalidateStatus();
+		},
+		onError: () => {
+			toast.add({ type: "error", description: "Git unavailable" });
+		},
+	});
+
+	const result = statusQuery.data;
+	const statusLoading = statusQuery.isLoading;
+	if (result?.status !== "git_status") {
+		if (statusLoading) return null;
+		return (
+			<div className="flex w-full min-w-0 items-center justify-between gap-2">
+				<div className="flex min-w-0 items-center gap-1.5">{children}</div>
+				<span className="min-w-0 text-pretty text-right text-xs text-muted-foreground">
+					{result?.status === "denied"
+						? describeWorkspaceDenial(result.reason)
+						: "Git unavailable"}
+				</span>
+			</div>
+		);
+	}
+
+	const dirty = result.changed > 0;
+	const status: SessionGitStatus = {
+		branch: result.branch,
+		dirty,
+		ahead: 0,
+		hasBranchChanges: dirty,
+		remoteBranchExists: null,
+		changedFiles: [],
+		summary: result.branch,
+		pullRequest: null,
+		workflow: dirty
+			? { kind: "commit" }
+			: { kind: "idle", reason: "no-changes" },
+	};
+
+	return (
+		<SessionGitActionsView
+			status={status}
+			statusLoading={false}
+			canRun={canRun}
+			isPending={commitMutation.isPending}
+			pendingStep={commitMutation.isPending ? "commit" : null}
+			onSync={() => {}}
+			onCommit={() => commitMutation.mutate()}
+			onPush={() => {}}
+			onOpenPullRequest={() => {}}
+			candidateChangedCount={result.changed}
+		>
+			{children}
+		</SessionGitActionsView>
+	);
+}
+
+export function SessionGitActions({
+	candidate = false,
+	...props
+}: SessionGitActionsProps) {
+	return candidate ? (
+		<CandidateSessionGitActions {...props} />
+	) : (
+		<LegacySessionGitActions {...props} />
 	);
 }

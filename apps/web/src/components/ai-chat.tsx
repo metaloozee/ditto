@@ -8,6 +8,7 @@ import {
 	LoaderCircleIcon,
 	SparklesIcon,
 	TerminalIcon,
+	TriangleAlertIcon,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
@@ -30,6 +31,7 @@ import {
 	type StreamCommitPayload,
 } from "#/components/composer";
 import { CopyButton } from "#/components/copy-button";
+import { ProjectSettingsDialog } from "#/components/project-settings-dialog";
 import { SessionToolsPane } from "#/components/session-tools-pane";
 import { ToolCallGroup } from "#/components/tool-call-group";
 import { Bubble, BubbleContent } from "#/components/ui/bubble";
@@ -66,6 +68,10 @@ import {
 	findActiveToolGroupIndex,
 	groupAssistantParts,
 } from "#/lib/agent-tool-presentation";
+import type {
+	CandidateContext,
+	CandidateTurn,
+} from "#/lib/candidate-session-client";
 import {
 	acknowledgeSessionMessages,
 	listPendingSessionMessages,
@@ -125,7 +131,11 @@ type ChatProps = {
 		reasonCode: string | null;
 		pending: boolean;
 	} | null;
+	/** Present for candidate sessions and for new chats in candidate mode. */
+	candidate?: CandidateContext;
 };
+
+const EMPTY_TURNS: CandidateTurn[] = [];
 
 /**
  * Compact top control + near-top auto-fetch for earlier history.
@@ -518,7 +528,19 @@ function QueuedFollowUpRow({ queued }: { queued: QueuedFollowUp }) {
 	);
 }
 
-function MessageRow({ message }: { message: NormalizedChatMessage }) {
+type RestoreFooter = {
+	time: string;
+	effectsUncertain: boolean;
+	onReview?: () => void;
+};
+
+function MessageRow({
+	message,
+	restoreFooter,
+}: {
+	message: NormalizedChatMessage;
+	restoreFooter?: RestoreFooter;
+}) {
 	const time = formatMessageTime(message.createdAt);
 
 	if (message.role === "assistant") {
@@ -539,7 +561,28 @@ function MessageRow({ message }: { message: NormalizedChatMessage }) {
 			<Message align="start">
 				<MessageContent className="group w-full max-w-none">
 					<AssistantParts parts={parts} />
-					{message.status === "failed" ? (
+					{restoreFooter ? (
+						<div className="mt-1 text-destructive text-xs">
+							<p className="text-pretty">
+								Restored from backup. Changes after {restoreFooter.time} may be
+								lost.
+								{restoreFooter.effectsUncertain
+									? " Commands in progress were not confirmed."
+									: null}
+							</p>
+							{restoreFooter.onReview ? (
+								<Button
+									type="button"
+									variant="outline"
+									size="xs"
+									className="mt-1.5"
+									onClick={restoreFooter.onReview}
+								>
+									Review and resend
+								</Button>
+							) : null}
+						</div>
+					) : message.status === "failed" ? (
 						<p className="mt-1 text-destructive text-xs">
 							Response interrupted — partial output saved.
 						</p>
@@ -568,6 +611,46 @@ function MessageRow({ message }: { message: NormalizedChatMessage }) {
 				</MessageFooter>
 			</MessageContent>
 		</Message>
+	);
+}
+
+function BlockedArchivePanel({
+	project,
+}: {
+	project: NonNullable<CandidateContext["project"]>;
+}) {
+	return (
+		<section className="@container mx-auto w-full min-w-0 max-w-3xl px-5 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-6">
+			<div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3">
+				<div className="flex flex-col gap-3 @[420px]:flex-row @[420px]:items-end">
+					<div className="flex min-w-0 flex-1 items-start gap-3">
+						<div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-destructive/10 text-destructive">
+							<TriangleAlertIcon aria-hidden="true" className="size-4" />
+						</div>
+						<div className="flex min-w-0 flex-col items-start gap-1">
+							<h3 className="font-medium text-sm">Can't finish archiving</h3>
+							<p className="text-pretty text-muted-foreground text-xs">
+								A preview or action didn't report whether it finished, so this
+								session is read-only. Deleting the project is the only way to
+								clear it.
+							</p>
+						</div>
+					</div>
+					<ProjectSettingsDialog
+						project={project}
+						trigger={
+							<Button
+								type="button"
+								variant="destructive"
+								className="w-fit shrink-0 cursor-pointer"
+							>
+								Delete project
+							</Button>
+						}
+					/>
+				</div>
+			</div>
+		</section>
 	);
 }
 
@@ -628,10 +711,10 @@ export function Chat({
 	onLoadEarlier,
 	onWorkspaceRefresh,
 	recovery,
+	candidate,
 }: ChatProps) {
-	const [streaming, setStreaming] = useState<ComposerStreamingState | null>(
-		null,
-	);
+	const [composerStreaming, setStreaming] =
+		useState<ComposerStreamingState | null>(null);
 	const [inputText, setInputText] = useState("");
 	const [bridgeSessionId, setBridgeSessionId] = useState<string | null>(null);
 	// Bumps when session-cache module state changes so memos re-read overlays.
@@ -675,6 +758,65 @@ export function Chat({
 		() => new Set(displayMessages.map((message) => String(message.id))),
 		[displayMessages],
 	);
+
+	// Candidate turns stay on screen from their receipt until the projected
+	// assistant message is in the thread. The first is the live turn; later
+	// ones are queued follow-ups.
+	const candidateTurns = candidate?.turns ?? EMPTY_TURNS;
+	const candidateStreaming = useMemo<ComposerStreamingState | null>(() => {
+		const [head, ...queued] = candidateTurns.filter(
+			(turn) => !displayIds.has(turn.assistantMessageId),
+		);
+		if (!head) return null;
+		return {
+			active: true,
+			text: "",
+			userText: head.text,
+			userMessageId: head.userMessageId,
+			assistantMessageId: head.assistantMessageId,
+			tools: [],
+			parts: [],
+			queuedFollowUps: queued.map((turn) => ({
+				requestId: turn.commandId,
+				userMessageId: turn.userMessageId,
+				assistantMessageId: turn.assistantMessageId,
+				text: turn.text,
+			})),
+		};
+	}, [candidateTurns, displayIds]);
+	const streaming = candidate ? candidateStreaming : composerStreaming;
+
+	const dropTurns = candidate?.dropTurns;
+	useEffect(() => {
+		if (!dropTurns) return;
+		const visible = candidateTurns
+			.filter((turn) => displayIds.has(turn.assistantMessageId))
+			.map((turn) => turn.assistantMessageId);
+		if (visible.length > 0) dropTurns(visible);
+	}, [dropTurns, candidateTurns, displayIds]);
+
+	const restore = candidate?.observation?.health.restore;
+	function restoreFooterFor(
+		message: NormalizedChatMessage,
+		index: number,
+	): RestoreFooter | undefined {
+		if (!restore || message.role !== "assistant") return undefined;
+		const observed = candidate?.observation?.assistants.find(
+			(item) => item.id === String(message.id),
+		);
+		if (observed?.reason !== "checkpoint_restored") return undefined;
+		const time = formatMessageTime(restore.checkpointAt);
+		if (!time) return undefined;
+		const turnText = displayMessages
+			.slice(0, index)
+			.reverse()
+			.find((item) => item.role === "user")?.content;
+		return {
+			time,
+			effectsUncertain: restore.effectsUncertain,
+			onReview: turnText ? () => setInputText(turnText) : undefined,
+		};
+	}
 
 	const showOptimisticUser =
 		Boolean(streaming?.active) &&
@@ -778,6 +920,7 @@ export function Chat({
 				sessionId={sessionId}
 				branchName={branchName}
 				gitExportEnabled={gitExportEnabled}
+				candidate={Boolean(candidate)}
 				disabled={Boolean(disabledReason) || Boolean(streaming?.active)}
 				toolsOpen={toolsOpen}
 				onToolsOpenChange={setToolsOpen}
@@ -814,7 +957,10 @@ export function Chat({
 											)}
 											scrollAnchor={message.role === "user"}
 										>
-											<MessageRow message={message} />
+											<MessageRow
+												message={message}
+												restoreFooter={restoreFooterFor(message, index)}
+											/>
 										</MessageScrollerItem>
 									))}
 									{showOptimisticUser && streaming ? (
@@ -886,16 +1032,22 @@ export function Chat({
 					</MessageScrollerViewport>
 					<div className="relative shrink-0">
 						<MessageScrollerButton className="data-[direction=end]:bottom-full data-[direction=end]:mb-2" />
-						<Composer
-							projectId={projectId}
-							sessionId={sessionId}
-							disabledReason={disabledReason}
-							onStreamingChange={setStreaming}
-							onStreamCommit={handleStreamCommit}
-							onWorkspaceRefresh={onWorkspaceRefresh}
-							inputText={inputText}
-							onInputTextChange={setInputText}
-						/>
+						{candidate?.project &&
+						candidate.observation?.health.archive?.status === "blocked" ? (
+							<BlockedArchivePanel project={candidate.project} />
+						) : (
+							<Composer
+								projectId={projectId}
+								sessionId={sessionId}
+								disabledReason={disabledReason}
+								onStreamingChange={setStreaming}
+								onStreamCommit={handleStreamCommit}
+								onWorkspaceRefresh={onWorkspaceRefresh}
+								inputText={inputText}
+								onInputTextChange={setInputText}
+								candidate={candidate}
+							/>
+						)}
 					</div>
 				</MessageScroller>
 			</MessageScrollerProvider>

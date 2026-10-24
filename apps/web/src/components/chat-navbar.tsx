@@ -16,6 +16,8 @@ type ChatNavbarProps = {
 	sessionId?: string | null;
 	branchName?: string | null;
 	gitExportEnabled?: boolean;
+	/** Git actions go through the candidate runtime instead of the sandbox. */
+	candidate?: boolean;
 	disabled?: boolean;
 	toolsOpen?: boolean;
 	onToolsOpenChange?: (open: boolean) => void;
@@ -30,6 +32,7 @@ export function ChatNavbar({
 	sessionId,
 	branchName,
 	gitExportEnabled = false,
+	candidate = false,
 	disabled = false,
 	toolsOpen = false,
 	onToolsOpenChange,
@@ -82,6 +85,7 @@ export function ChatNavbar({
 							projectId={projectId}
 							sessionId={sessionId}
 							disabled={disabled}
+							candidate={candidate}
 						>
 							{left}
 						</SessionGitActions>

@@ -17,6 +17,38 @@ import {
 	useSidebar,
 } from "#/components/ui/sidebar";
 import { authClient } from "#/lib/auth.client";
+import {
+	CODEX_CONNECTION_VIEWS,
+	useCodexConnection,
+} from "#/lib/candidate-session-client";
+
+function CodexConnectionMenu() {
+	const codex = useCodexConnection();
+	const view = CODEX_CONNECTION_VIEWS[codex.status];
+
+	return (
+		<DropdownMenuGroup>
+			<div className="flex items-center justify-between gap-3 px-1.5 py-1 text-sm">
+				<span className="font-medium">Codex</span>
+				<span className="min-w-0 text-pretty text-right text-xs text-muted-foreground">
+					{codex.isPending ? null : view.label}
+				</span>
+			</div>
+			{view.action && !codex.isPending ? (
+				<DropdownMenuItem
+					role="button"
+					disabled={codex.actionPending}
+					closeOnClick={false}
+					onClick={() => {
+						if (view.action) codex.runAction(view.action);
+					}}
+				>
+					{view.verb}
+				</DropdownMenuItem>
+			) : null}
+		</DropdownMenuGroup>
+	);
+}
 
 function getInitials(name?: string | null, email?: string | null) {
 	const source = name || email || "User";
@@ -131,6 +163,8 @@ export function NavUser() {
 								</div>
 							</DropdownMenuItem>
 						</DropdownMenuGroup>
+						<DropdownMenuSeparator />
+						<CodexConnectionMenu />
 						<DropdownMenuSeparator />
 						<DropdownMenuGroup>
 							<DropdownMenuItem

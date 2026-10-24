@@ -1,3 +1,4 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { CornerDownLeft, Square } from "lucide";
 import { MorphIcon } from "morphicons/react";
@@ -5,12 +6,21 @@ import {
 	type Dispatch,
 	type FormEvent,
 	type KeyboardEvent,
+	type ReactNode,
 	type SetStateAction,
 	useEffect,
 	useRef,
 	useState,
 } from "react";
-import { ModelSelectorLogo } from "#/components/ai-elements/model-selector";
+import {
+	ModelSelector,
+	ModelSelectorContent,
+	ModelSelectorGroup,
+	ModelSelectorItem,
+	ModelSelectorList,
+	ModelSelectorLogo,
+	ModelSelectorName,
+} from "#/components/ai-elements/model-selector";
 import { Button } from "#/components/ui/button";
 import {
 	Select,
@@ -50,8 +60,23 @@ import {
 	sendAgentControl,
 	streamAgentRun,
 } from "#/lib/agent-stream-client";
+import {
+	CANDIDATE_MODELS_QUERY_KEY,
+	type CandidateContext,
+	CandidateRequestError,
+	currentRunId,
+	defaultSelection,
+	isRunTerminal,
+	listCandidateModels,
+	newIdempotencyKey,
+	selectionToAttach,
+	submitCandidateCommand,
+	useCodexConnection,
+} from "#/lib/candidate-session-client";
 import { useUserPreferencesStore } from "#/lib/user-preferences-store";
 import { cn } from "#/lib/utils";
+import type { ConfigurationSelectionV1 } from "../../../../packages/runtime-contracts/src/configuration.js";
+import type { BrowserCommandV2 } from "../../../../packages/runtime-contracts/src/product-command.js";
 
 /** Strong ease-out (Emil) — snappy start, soft settle. Full class strings for Tailwind scan. */
 const morphEaseClass = "ease-[cubic-bezier(0.23,1,0.32,1)]";
@@ -127,9 +152,182 @@ type ComposerProps = {
 	onWorkspaceRefresh?: (sessionId: string) => void;
 	inputText?: string;
 	onInputTextChange?: (text: string) => void;
+	/** Present for candidate sessions and for new chats in candidate mode. */
+	candidate?: CandidateContext;
 };
 
-export function Composer({
+const MODEL_BUTTON_CLASS =
+	"inline-flex size-9 items-center justify-center rounded-full border border-border bg-card shadow-xs @[420px]:size-11";
+const THINKING_TRIGGER_CLASS = cn(
+	"h-auto gap-1 border-0 bg-transparent px-1.5 py-0.5 text-muted-foreground shadow-none",
+	"hover:bg-transparent hover:text-foreground",
+	"focus-visible:border-0 focus-visible:ring-1 focus-visible:ring-ring/40",
+	"dark:bg-transparent dark:hover:bg-transparent",
+	"disabled:opacity-40",
+);
+
+type ComposerFrameProps = {
+	text: string;
+	onTextChange: (value: string) => void;
+	onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+	textareaDisabled: boolean;
+	/** Text for the `#composer-message-error` slot. */
+	messageError?: string | null;
+	messageInvalid?: boolean;
+	/** Replaces the message error slot, e.g. the Codex connection line. */
+	notice?: ReactNode;
+	modelSlot: ReactNode;
+	thinkingSlot: ReactNode;
+	submit: {
+		actionName: string;
+		isStopAction: boolean;
+		isPending: boolean;
+		disabled: boolean;
+	};
+};
+
+/** The composer layout shared by legacy and candidate sessions. */
+function ComposerFrame({
+	text,
+	onTextChange,
+	onSubmit,
+	textareaDisabled,
+	messageError,
+	messageInvalid = false,
+	notice,
+	modelSlot,
+	thinkingSlot,
+	submit,
+}: ComposerFrameProps) {
+	return (
+		<section className="@container mx-auto w-full min-w-0 max-w-3xl px-5 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-6">
+			<form className="w-full" onSubmit={onSubmit} noValidate>
+				{/*
+				  Narrow (<420px container): one card — textarea row, then
+				  Model · Thinking · spacer · Send.
+				  Wide: model | pill textarea + thinking | send (unchanged).
+				*/}
+				<div
+					className={cn(
+						"grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-end gap-y-1",
+						"rounded-3xl border border-border bg-card shadow-xs",
+						"transition-[background-color,border-color,box-shadow,border-radius,gap] duration-200",
+						morphEaseClass,
+						"motion-reduce:transition-none",
+						"@[420px]:grid-cols-[auto_minmax(0,1fr)_auto] @[420px]:gap-2 @[420px]:gap-y-0",
+						"@[420px]:rounded-none @[420px]:border-0 @[420px]:bg-transparent @[420px]:shadow-none",
+					)}
+				>
+					<div className="relative col-span-4 min-w-0 @[420px]:col-span-1 @[420px]:col-start-2 @[420px]:row-start-1">
+						<Textarea
+							aria-label="Message"
+							name="message"
+							value={text}
+							placeholder="Ask Ditto to inspect the workspace…"
+							required
+							minLength={1}
+							disabled={textareaDisabled}
+							aria-invalid={messageInvalid || undefined}
+							aria-describedby={
+								messageInvalid ? "composer-message-error" : undefined
+							}
+							onChange={(event) => onTextChange(event.currentTarget.value)}
+							onKeyDown={handleTextareaKeyDown}
+							className={cn(
+								"min-h-11 max-h-48 w-full resize-none rounded-3xl border-0 bg-transparent px-4 py-3 text-sm shadow-none md:text-sm",
+								"dark:bg-transparent",
+								"field-sizing-content text-pretty leading-relaxed",
+								"placeholder:text-muted-foreground/70",
+								"transition-[padding,background-color,box-shadow,border-color] duration-200",
+								morphEaseClass,
+								"motion-reduce:transition-none",
+								"@[420px]:border @[420px]:border-border @[420px]:bg-card @[420px]:py-2 @[420px]:pr-24 @[420px]:shadow-xs",
+								"@[420px]:dark:bg-card",
+							)}
+						/>
+					</div>
+
+					<div
+						className={cn(
+							"col-start-1 row-start-2 flex shrink-0 p-2 pt-0",
+							"@[420px]:col-start-1 @[420px]:row-start-1 @[420px]:p-0",
+							controlSettleClass,
+						)}
+					>
+						{modelSlot}
+					</div>
+
+					<div
+						className={cn(
+							"col-start-2 row-start-2 flex items-center self-center pb-2",
+							"transition-[margin,padding] duration-200 motion-reduce:transition-none",
+							morphEaseClass,
+							"motion-safe:delay-50",
+							"@[420px]:col-start-2 @[420px]:row-start-1 @[420px]:z-10 @[420px]:mb-2 @[420px]:mr-2 @[420px]:justify-self-end @[420px]:self-end @[420px]:pb-0",
+							controlSettleClass,
+						)}
+					>
+						{thinkingSlot}
+					</div>
+
+					<div
+						className={cn(
+							"col-start-4 row-start-2 flex shrink-0 p-2 pt-0",
+							"@[420px]:col-start-3 @[420px]:row-start-1 @[420px]:p-0",
+							"motion-safe:delay-75",
+							controlSettleClass,
+						)}
+					>
+						<Tooltip>
+							<TooltipTrigger
+								render={
+									<Button
+										type="submit"
+										variant={submit.isStopAction ? "destructive" : "default"}
+										size="icon-lg"
+										aria-label={submit.actionName}
+										aria-busy={submit.isPending || undefined}
+										disabled={submit.disabled}
+										className={cn(
+											"size-9 rounded-full shadow-xs @[420px]:size-11",
+											"transition-[transform,width,height] duration-200",
+											morphEaseClass,
+											"active:scale-[0.97] active:duration-150",
+											"motion-reduce:transition-none motion-reduce:active:scale-100",
+										)}
+									>
+										{submit.isPending ? (
+											<Spinner className="size-4" aria-hidden />
+										) : (
+											<MorphIcon
+												icon={submit.isStopAction ? Square : CornerDownLeft}
+												className="size-4"
+												spring="snappy"
+											/>
+										)}
+									</Button>
+								}
+							/>
+							<TooltipContent side="top">{submit.actionName}</TooltipContent>
+						</Tooltip>
+					</div>
+				</div>
+				{notice ??
+					(messageError ? (
+						<p
+							id="composer-message-error"
+							className="mt-2 px-1 text-xs text-destructive"
+							role="alert"
+						>
+							{messageError}
+						</p>
+					) : null)}
+			</form>
+		</section>
+	);
+}
+
+function LegacyComposer({
 	projectId,
 	sessionId,
 	disabledReason,
@@ -711,185 +909,466 @@ export function Composer({
 	const modelLabel = FIXED_MODEL.name;
 
 	return (
-		<section className="@container mx-auto w-full min-w-0 max-w-3xl px-5 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-6">
-			<form className="w-full" onSubmit={handleSubmit} noValidate>
-				{/*
-				  Narrow (<420px container): one card — textarea row, then
-				  Model · Thinking · spacer · Send.
-				  Wide: model | pill textarea + thinking | send (unchanged).
-				*/}
-				<div
-					className={cn(
-						"grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-end gap-y-1",
-						"rounded-3xl border border-border bg-card shadow-xs",
-						"transition-[background-color,border-color,box-shadow,border-radius,gap] duration-200",
-						morphEaseClass,
-						"motion-reduce:transition-none",
-						"@[420px]:grid-cols-[auto_minmax(0,1fr)_auto] @[420px]:gap-2 @[420px]:gap-y-0",
-						"@[420px]:rounded-none @[420px]:border-0 @[420px]:bg-transparent @[420px]:shadow-none",
-					)}
+		<ComposerFrame
+			text={text}
+			onTextChange={(value) => {
+				textRef.current = value;
+				setText(value);
+				if (messageError) setMessageError(null);
+			}}
+			onSubmit={handleSubmit}
+			textareaDisabled={Boolean(disabledReason)}
+			messageError={messageError}
+			messageInvalid={messageInvalid}
+			modelSlot={
+				<Tooltip>
+					<TooltipTrigger
+						render={
+							<span
+								role="img"
+								aria-label={modelLabel}
+								className={MODEL_BUTTON_CLASS}
+							>
+								<ModelSelectorLogo
+									className="size-5"
+									provider={FIXED_MODEL.provider}
+								/>
+							</span>
+						}
+					/>
+					<TooltipContent side="top">{modelLabel}</TooltipContent>
+				</Tooltip>
+			}
+			thinkingSlot={
+				<Select
+					value={effectiveThinking ?? null}
+					onValueChange={(value) => {
+						if (isSupportedThinkingLevel(value)) {
+							setThinkingPreference(value);
+						}
+					}}
+					disabled={thinkingSelectDisabled}
 				>
-					<div className="relative col-span-4 min-w-0 @[420px]:col-span-1 @[420px]:col-start-2 @[420px]:row-start-1">
-						<Textarea
-							aria-label="Message"
-							name="message"
-							value={text}
-							placeholder="Ask Ditto to inspect the workspace…"
-							required
-							minLength={1}
-							disabled={Boolean(disabledReason)}
-							aria-invalid={messageInvalid || undefined}
-							aria-describedby={
-								messageInvalid ? "composer-message-error" : undefined
-							}
-							onChange={(event) => {
-								textRef.current = event.currentTarget.value;
-								setText(event.currentTarget.value);
-								if (messageError) setMessageError(null);
-							}}
-							onKeyDown={handleTextareaKeyDown}
-							className={cn(
-								"min-h-11 max-h-48 w-full resize-none rounded-3xl border-0 bg-transparent px-4 py-3 text-sm shadow-none md:text-sm",
-								"dark:bg-transparent",
-								"field-sizing-content text-pretty leading-relaxed",
-								"placeholder:text-muted-foreground/70",
-								"transition-[padding,background-color,box-shadow,border-color] duration-200",
-								morphEaseClass,
-								"motion-reduce:transition-none",
-								"@[420px]:border @[420px]:border-border @[420px]:bg-card @[420px]:py-2 @[420px]:pr-24 @[420px]:shadow-xs",
-								"@[420px]:dark:bg-card",
-							)}
-						/>
-					</div>
-
-					<div
-						className={cn(
-							"col-start-1 row-start-2 flex shrink-0 p-2 pt-0",
-							"@[420px]:col-start-1 @[420px]:row-start-1 @[420px]:p-0",
-							controlSettleClass,
-						)}
+					<SelectTrigger
+						size="sm"
+						aria-label="Thinking level"
+						className={THINKING_TRIGGER_CLASS}
 					>
-						<Tooltip>
-							<TooltipTrigger
-								render={
-									<span
-										role="img"
-										aria-label={modelLabel}
-										className={cn(
-											"inline-flex size-9 items-center justify-center rounded-full border border-border bg-card shadow-xs @[420px]:size-11",
-										)}
-									>
-										<ModelSelectorLogo
-											className="size-5"
-											provider={FIXED_MODEL.provider}
-										/>
-									</span>
-								}
-							/>
-							<TooltipContent side="top">{modelLabel}</TooltipContent>
-						</Tooltip>
-					</div>
-
-					<div
-						className={cn(
-							"col-start-2 row-start-2 flex items-center self-center pb-2",
-							"transition-[margin,padding] duration-200 motion-reduce:transition-none",
-							morphEaseClass,
-							"motion-safe:delay-50",
-							"@[420px]:col-start-2 @[420px]:row-start-1 @[420px]:z-10 @[420px]:mb-2 @[420px]:mr-2 @[420px]:justify-self-end @[420px]:self-end @[420px]:pb-0",
-							controlSettleClass,
-						)}
-					>
-						<Select
-							value={effectiveThinking ?? null}
-							onValueChange={(value) => {
-								if (isSupportedThinkingLevel(value)) {
-									setThinkingPreference(value);
-								}
-							}}
-							disabled={thinkingSelectDisabled}
-						>
-							<SelectTrigger
-								size="sm"
-								aria-label="Thinking level"
-								className={cn(
-									"h-auto gap-1 border-0 bg-transparent px-1.5 py-0.5 text-muted-foreground shadow-none",
-									"hover:bg-transparent hover:text-foreground",
-									"focus-visible:border-0 focus-visible:ring-1 focus-visible:ring-ring/40",
-									"dark:bg-transparent dark:hover:bg-transparent",
-									"disabled:opacity-40",
-								)}
-							>
-								<SelectValue>{thinkingTriggerLabel}</SelectValue>
-							</SelectTrigger>
-							<SelectContent
-								side="top"
-								align="end"
-								alignItemWithTrigger={false}
-							>
-								<SelectGroup>
-									{thinkingOptions.map((level) => (
-										<SelectItem key={level} value={level}>
-											{PI_THINKING_LEVEL_LABELS[level]}
-										</SelectItem>
-									))}
-								</SelectGroup>
-							</SelectContent>
-						</Select>
-					</div>
-
-					<div
-						className={cn(
-							"col-start-4 row-start-2 flex shrink-0 p-2 pt-0",
-							"@[420px]:col-start-3 @[420px]:row-start-1 @[420px]:p-0",
-							"motion-safe:delay-75",
-							controlSettleClass,
-						)}
-					>
-						<Tooltip>
-							<TooltipTrigger
-								render={
-									<Button
-										type="submit"
-										variant={isStopAction ? "destructive" : "default"}
-										size="icon-lg"
-										aria-label={actionName}
-										aria-busy={isPending || undefined}
-										disabled={isPending || submitDisabled}
-										className={cn(
-											"size-9 rounded-full shadow-xs @[420px]:size-11",
-											"transition-[transform,width,height] duration-200",
-											morphEaseClass,
-											"active:scale-[0.97] active:duration-150",
-											"motion-reduce:transition-none motion-reduce:active:scale-100",
-										)}
-									>
-										{isPending ? (
-											<Spinner className="size-4" aria-hidden />
-										) : (
-											<MorphIcon
-												icon={isStopAction ? Square : CornerDownLeft}
-												className="size-4"
-												spring="snappy"
-											/>
-										)}
-									</Button>
-								}
-							/>
-							<TooltipContent side="top">{actionName}</TooltipContent>
-						</Tooltip>
-					</div>
-				</div>
-				{messageError ? (
-					<p
-						id="composer-message-error"
-						className="mt-2 px-1 text-xs text-destructive"
-						role="alert"
-					>
-						{messageError}
-					</p>
-				) : null}
-			</form>
-		</section>
+						<SelectValue>{thinkingTriggerLabel}</SelectValue>
+					</SelectTrigger>
+					<SelectContent side="top" align="end" alignItemWithTrigger={false}>
+						<SelectGroup>
+							{thinkingOptions.map((level) => (
+								<SelectItem key={level} value={level}>
+									{PI_THINKING_LEVEL_LABELS[level]}
+								</SelectItem>
+							))}
+						</SelectGroup>
+					</SelectContent>
+				</Select>
+			}
+			submit={{
+				actionName,
+				isStopAction,
+				isPending,
+				disabled: isPending || submitDisabled,
+			}}
+		/>
 	);
+}
+
+const CANDIDATE_PROVIDER = "openai";
+
+function selectionIsListed(
+	selection: ConfigurationSelectionV1 | null,
+	models: { id: string; thinking: readonly string[] }[],
+): selection is ConfigurationSelectionV1 {
+	return Boolean(
+		selection &&
+			models.some(
+				(model) =>
+					model.id === selection.model &&
+					model.thinking.includes(selection.thinking),
+			),
+	);
+}
+
+function CandidateComposer({
+	projectId,
+	sessionId,
+	disabledReason,
+	onWorkspaceRefresh,
+	inputText,
+	onInputTextChange,
+	candidate,
+}: Omit<ComposerProps, "projectId" | "candidate"> & {
+	projectId: string;
+	candidate: CandidateContext;
+}) {
+	const [localText, setLocalText] = useState("");
+	const text = inputText !== undefined ? inputText : localText;
+	const setText =
+		onInputTextChange !== undefined ? onInputTextChange : setLocalText;
+	const [messageError, setMessageError] = useState<string | null>(null);
+	const [submitting, setSubmitting] = useState(false);
+	const [stoppingRunId, setStoppingRunId] = useState<string | null>(null);
+	const [pickerOpen, setPickerOpen] = useState(false);
+	const [picked, setPicked] = useState<ConfigurationSelectionV1 | null>(null);
+	const [accepted, setAccepted] = useState<{
+		sessionId: string;
+		selection: ConfigurationSelectionV1;
+	} | null>(null);
+	const attemptRef = useRef<{ signature: string; key: string } | null>(null);
+	const submittingRef = useRef(false);
+	const queryClient = useQueryClient();
+	const navigate = useNavigate();
+	const codex = useCodexConnection({ statusEnabled: false });
+
+	const modelsQuery = useQuery({
+		queryKey: [CANDIDATE_MODELS_QUERY_KEY, projectId, sessionId ?? null],
+		queryFn: () =>
+			listCandidateModels({ projectId, ...(sessionId ? { sessionId } : {}) }),
+		retry: false,
+	});
+	const models = modelsQuery.data;
+	const modelsLoading = modelsQuery.isPending;
+	const codexStatus = modelsQuery.isError ? "unavailable" : models?.status;
+	const sendBlocked = modelsLoading || codexStatus !== "available";
+
+	const selection = models
+		? selectionIsListed(picked, models.models)
+			? picked
+			: defaultSelection(models)
+		: null;
+	const acceptedSelection =
+		accepted && accepted.sessionId === sessionId
+			? accepted.selection
+			: (models?.selection ?? null);
+
+	const runId = currentRunId(candidate.observation, candidate.turns);
+	const running = runId !== undefined;
+	const stopping =
+		stoppingRunId !== null &&
+		runId === stoppingRunId &&
+		!isRunTerminal(candidate.observation, stoppingRunId);
+	useEffect(() => {
+		if (stoppingRunId !== null && !stopping) setStoppingRunId(null);
+	}, [stoppingRunId, stopping]);
+
+	function refetchModels(): void {
+		void queryClient.invalidateQueries({
+			queryKey: [CANDIDATE_MODELS_QUERY_KEY],
+		});
+	}
+
+	function keyFor(signature: string): string {
+		if (attemptRef.current?.signature !== signature) {
+			attemptRef.current = { signature, key: newIdempotencyKey() };
+		}
+		return attemptRef.current.key;
+	}
+
+	async function sendMessage(
+		kind: "prompt" | "follow_up",
+		snapshot: string,
+		targetRunId: string | undefined,
+	): Promise<void> {
+		const attach = selectionToAttach(selection, acceptedSelection);
+		const signature = JSON.stringify([
+			kind,
+			sessionId ?? null,
+			targetRunId ?? null,
+			snapshot,
+			attach ?? null,
+		]);
+		const idempotencyKey = keyFor(signature);
+		const extras = attach ? { selection: attach } : {};
+		let body: BrowserCommandV2;
+		if (kind === "follow_up") {
+			if (!sessionId || !targetRunId) return;
+			body = {
+				version: 2,
+				kind: "follow_up",
+				idempotencyKey,
+				projectId,
+				sessionId,
+				targetRunId,
+				text: snapshot,
+				...extras,
+			};
+		} else {
+			body = {
+				version: 2,
+				kind: "prompt",
+				idempotencyKey,
+				projectId,
+				...(sessionId ? { sessionId } : {}),
+				text: snapshot,
+				...extras,
+			};
+		}
+
+		submittingRef.current = true;
+		setSubmitting(true);
+		try {
+			const receipt = await submitCandidateCommand(body);
+			attemptRef.current = null;
+			if (attach) {
+				setAccepted({
+					sessionId: receipt.workspaceSessionId,
+					selection: attach,
+				});
+			}
+			setText("");
+			if (receipt.userMessageId && receipt.assistantMessageId) {
+				candidate.addTurn(receipt.workspaceSessionId, {
+					commandId: receipt.commandId,
+					kind,
+					userMessageId: receipt.userMessageId,
+					assistantMessageId: receipt.assistantMessageId,
+					text: snapshot,
+				});
+			} else {
+				candidate.poke();
+			}
+			onWorkspaceRefresh?.(receipt.workspaceSessionId);
+			if (!sessionId) {
+				void navigate({
+					to: "/project/$projectId/session/$sessionId",
+					params: { projectId, sessionId: receipt.workspaceSessionId },
+				});
+			}
+		} catch (error) {
+			if (
+				attach &&
+				error instanceof CandidateRequestError &&
+				error.code === "model_unconfigured"
+			) {
+				setMessageError(
+					`${attach.model} is no longer available. Choose another model.`,
+				);
+				refetchModels();
+			} else {
+				toast.add({
+					type: "error",
+					description:
+						kind === "prompt"
+							? "Failed to run agent."
+							: "Failed to queue message.",
+				});
+			}
+		} finally {
+			submittingRef.current = false;
+			setSubmitting(false);
+		}
+	}
+
+	async function stopRun(targetRunId: string): Promise<void> {
+		if (!sessionId) return;
+		const idempotencyKey = keyFor(
+			JSON.stringify(["stop", sessionId, targetRunId]),
+		);
+		submittingRef.current = true;
+		setSubmitting(true);
+		setStoppingRunId(targetRunId);
+		try {
+			await submitCandidateCommand({
+				version: 2,
+				kind: "stop",
+				idempotencyKey,
+				projectId,
+				sessionId,
+				targetRunId,
+			});
+			attemptRef.current = null;
+			candidate.poke();
+		} catch {
+			setStoppingRunId(null);
+			toast.add({ type: "error", description: "Failed to stop agent." });
+		} finally {
+			submittingRef.current = false;
+			setSubmitting(false);
+		}
+	}
+
+	async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+		event.preventDefault();
+		if (disabledReason || submittingRef.current || stopping) return;
+
+		if (running) {
+			if (text.trim()) await sendMessage("follow_up", text, runId);
+			else if (runId) await stopRun(runId);
+			return;
+		}
+		if (sendBlocked) return;
+		if (!text.trim()) {
+			setMessageError("Enter a message before sending.");
+			return;
+		}
+		setMessageError(null);
+		await sendMessage("prompt", text, undefined);
+	}
+
+	const hasText = Boolean(text.trim());
+	const isPending = submitting || stopping;
+	const actionName = stopping
+		? "Stopping"
+		: submitting
+			? "Sending"
+			: running
+				? hasText
+					? "Queue message"
+					: "Stop"
+				: "Submit";
+	const isStopAction = stopping || (running && !hasText);
+	const submitDisabled =
+		Boolean(disabledReason) ||
+		isPending ||
+		(running ? false : sendBlocked || !hasText);
+	const modelLabel = selection?.model ?? "Model Selector";
+	const thinkingLevels =
+		models?.models.find((model) => model.id === selection?.model)?.thinking ??
+		[];
+	const messageInvalid = Boolean(messageError);
+
+	const notice =
+		!modelsLoading && codexStatus !== "available" ? (
+			<p
+				id="composer-message-error"
+				className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-muted-foreground text-xs"
+			>
+				<span className="min-w-0 text-pretty">
+					{codexStatus === "disconnected"
+						? "Connect Codex to send messages."
+						: "Codex is unavailable right now"}
+				</span>
+				{codexStatus === "disconnected" ? (
+					<Button
+						type="button"
+						variant="outline"
+						size="xs"
+						disabled={codex.actionPending}
+						onClick={() => codex.runAction("connect")}
+					>
+						Connect
+					</Button>
+				) : null}
+			</p>
+		) : undefined;
+
+	return (
+		<ComposerFrame
+			text={text}
+			onTextChange={(value) => {
+				setText(value);
+				if (messageError) setMessageError(null);
+			}}
+			onSubmit={handleSubmit}
+			textareaDisabled={Boolean(disabledReason) || sendBlocked}
+			messageError={messageError}
+			messageInvalid={messageInvalid}
+			notice={notice}
+			modelSlot={
+				<ModelSelector open={pickerOpen} onOpenChange={setPickerOpen}>
+					<Tooltip>
+						<TooltipTrigger
+							render={
+								<button
+									type="button"
+									aria-label={modelLabel}
+									disabled={Boolean(disabledReason) || !models?.models.length}
+									onClick={() => setPickerOpen(true)}
+									className={cn(
+										MODEL_BUTTON_CLASS,
+										"cursor-pointer disabled:cursor-not-allowed disabled:opacity-40",
+									)}
+								>
+									<ModelSelectorLogo
+										className="size-5"
+										provider={CANDIDATE_PROVIDER}
+									/>
+								</button>
+							}
+						/>
+						<TooltipContent side="top">{modelLabel}</TooltipContent>
+					</Tooltip>
+					<ModelSelectorContent>
+						<ModelSelectorList>
+							<ModelSelectorGroup>
+								{(models?.models ?? []).map((model) => (
+									<ModelSelectorItem
+										key={model.id}
+										value={model.id}
+										onSelect={() => {
+											const thinking = model.thinking.includes(
+												selection?.thinking ?? "off",
+											)
+												? (selection?.thinking ?? model.thinking[0])
+												: model.thinking[0];
+											if (thinking) setPicked({ model: model.id, thinking });
+											setPickerOpen(false);
+										}}
+									>
+										<ModelSelectorLogo provider={CANDIDATE_PROVIDER} />
+										<ModelSelectorName>{model.id}</ModelSelectorName>
+									</ModelSelectorItem>
+								))}
+							</ModelSelectorGroup>
+						</ModelSelectorList>
+					</ModelSelectorContent>
+				</ModelSelector>
+			}
+			thinkingSlot={
+				<Select
+					value={selection?.thinking ?? null}
+					onValueChange={(value) => {
+						const level = thinkingLevels.find((item) => item === value);
+						if (selection && level) {
+							setPicked({ model: selection.model, thinking: level });
+						}
+					}}
+					disabled={Boolean(disabledReason) || thinkingLevels.length === 0}
+				>
+					<SelectTrigger
+						size="sm"
+						aria-label="Thinking level"
+						className={THINKING_TRIGGER_CLASS}
+					>
+						<SelectValue>
+							{selection ? PI_THINKING_LEVEL_LABELS[selection.thinking] : null}
+						</SelectValue>
+					</SelectTrigger>
+					<SelectContent side="top" align="end" alignItemWithTrigger={false}>
+						<SelectGroup>
+							{thinkingLevels.map((level) => (
+								<SelectItem key={level} value={level}>
+									{PI_THINKING_LEVEL_LABELS[level]}
+								</SelectItem>
+							))}
+						</SelectGroup>
+					</SelectContent>
+				</Select>
+			}
+			submit={{
+				actionName,
+				isStopAction,
+				isPending,
+				disabled: submitDisabled,
+			}}
+		/>
+	);
+}
+
+export function Composer(props: ComposerProps) {
+	const { candidate, projectId, ...rest } = props;
+	if (candidate && projectId) {
+		return (
+			<CandidateComposer
+				{...rest}
+				projectId={projectId}
+				candidate={candidate}
+			/>
+		);
+	}
+	return <LegacyComposer {...rest} projectId={projectId} />;
 }
