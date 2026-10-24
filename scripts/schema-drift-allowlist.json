@@ -1,0 +1,8 @@
+{
+	"triggers": [
+		"candidate_capacity_claims_final",
+		"candidate_archives_final",
+		"candidate_continuations_final",
+		"candidate_restore_barriers_final"
+	]
+}
