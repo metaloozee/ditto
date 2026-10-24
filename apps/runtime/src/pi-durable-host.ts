@@ -4481,6 +4481,24 @@ export class PiDurableHost {
 		};
 		const recovery = checkpointHealth(storage);
 		if (recovery) snapshot.health.recovery = recovery;
+		const archive = sql
+			.exec(
+				"SELECT 1 FROM sqlite_master WHERE type='table' AND name='host_archives'",
+			)
+			.toArray().length
+			? sql
+					.exec<{ state: string }>("SELECT state FROM host_archives WHERE id=1")
+					.toArray()[0]?.state
+			: undefined;
+		if (archive)
+			snapshot.health.archive = {
+				status:
+					archive === "blocked"
+						? "blocked"
+						: archive === "complete"
+							? "complete"
+							: "pending",
+			};
 		return { version: 1, cursor: head, snapshot, events: [], more: false };
 	}
 

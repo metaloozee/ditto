@@ -1238,6 +1238,9 @@ export class CandidateFixtureProduct extends WorkerEntrypoint<CandidateFixtureBi
 	) {
 		return this.commands().observe(userId, projectId, sessionId, cursor);
 	}
+	modelsOwned(userId: string, input: unknown) {
+		return this.commands().models(userId, input);
+	}
 	workspaceActionOwned(userId: string, input: unknown) {
 		return this.commands().workspaceAction(userId, input);
 	}

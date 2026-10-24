@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
 	PROJECTION_LIMITS,
+	parseObservationArchiveV1,
+	parseObservationRequestV1,
+	parseObservationRestoreV1,
 	parseProjectionIntentsV1,
 	parseProjectionIntentV1,
 	parseProjectionResultsV1,
@@ -63,5 +66,59 @@ describe("projection contracts", () => {
 			[ok[0], { ...ok[1], outcome: "maybe" }],
 		])
 			expect(() => parseProjectionResultsV1(bad, intents)).toThrow();
+	});
+});
+
+describe("observation contracts", () => {
+	it("parses an observation request strictly and never accepts a user id", () => {
+		expect(
+			parseObservationRequestV1({
+				version: 1,
+				projectId: "p",
+				sessionId: "s",
+				cursor: 3,
+			}),
+		).toEqual({ version: 1, projectId: "p", sessionId: "s", cursor: 3 });
+		expect(
+			parseObservationRequestV1({ version: 1, projectId: "p", sessionId: "s" }),
+		).toEqual({ version: 1, projectId: "p", sessionId: "s" });
+		expect(() =>
+			parseObservationRequestV1({
+				version: 1,
+				projectId: "p",
+				sessionId: "s",
+				userId: "u",
+			}),
+		).toThrow();
+		expect(() =>
+			parseObservationRequestV1({
+				version: 1,
+				projectId: "p",
+				sessionId: "s",
+				cursor: -1,
+			}),
+		).toThrow();
+	});
+	it("parses archive and restore facts and refuses internal fields", () => {
+		expect(parseObservationArchiveV1({ status: "blocked" })).toEqual({
+			status: "blocked",
+		});
+		expect(() => parseObservationArchiveV1({ status: "final" })).toThrow();
+		expect(() =>
+			parseObservationArchiveV1({ status: "complete", pair: "x" }),
+		).toThrow();
+		expect(
+			parseObservationRestoreV1({ checkpointAt: 5, effectsUncertain: true }),
+		).toEqual({ checkpointAt: 5, effectsUncertain: true });
+		expect(() =>
+			parseObservationRestoreV1({
+				checkpointAt: 5,
+				effectsUncertain: false,
+				pairId: "x",
+			}),
+		).toThrow();
+		expect(() =>
+			parseObservationRestoreV1({ checkpointAt: 5, effectsUncertain: "no" }),
+		).toThrow();
 	});
 });

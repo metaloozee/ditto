@@ -1,6 +1,8 @@
 import { expect, it } from "vitest";
 import {
 	configurationIdentity,
+	parseCandidateModelsRequestV1,
+	parseCandidateModelsV1,
 	parseConfigurationAckV1,
 	parseConfigurationIntentV1,
 	parseConfigurationReadV1,
@@ -104,5 +106,39 @@ it("separate snapshots and acknowledgments stay strict", () => {
 			snapshot,
 			extra: true,
 		}),
+	).toThrow();
+});
+
+it("parses candidate models and refuses inconsistent or extra fields", () => {
+	const models = {
+		version: 1,
+		status: "available",
+		models: [{ id: "faux-1", thinking: ["off", "low"] }],
+		selection: { model: "faux-1", thinking: "off" },
+	};
+	expect(parseCandidateModelsV1(models)).toEqual(models);
+	expect(
+		parseCandidateModelsV1({
+			version: 1,
+			status: "disconnected",
+			models: [],
+			selection: null,
+		}),
+	).toMatchObject({ status: "disconnected" });
+	expect(() =>
+		parseCandidateModelsV1({ ...models, status: "disconnected" }),
+	).toThrow();
+	expect(() => parseCandidateModelsV1({ ...models, extra: 1 })).toThrow();
+	expect(() =>
+		parseCandidateModelsV1({
+			...models,
+			models: [{ id: "faux-1", thinking: ["off", "off"] }],
+		}),
+	).toThrow();
+	expect(parseCandidateModelsRequestV1({ version: 1, projectId: "p" })).toEqual(
+		{ version: 1, projectId: "p" },
+	);
+	expect(() =>
+		parseCandidateModelsRequestV1({ version: 1, projectId: "p", userId: "u" }),
 	).toThrow();
 });

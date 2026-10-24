@@ -4132,3 +4132,172 @@ it("clean-start rehearsal fences old authority and accounts for its executor bef
 				.catch(() => undefined);
 	}
 });
+
+const withRuntime = (
+	runtime: Partial<ConstructorParameters<typeof CandidateProductCommands>[1]>,
+	status = "connected",
+) =>
+	new CandidateProductCommands(
+		env.DB,
+		{
+			readSelection: async () => null,
+			targetStatus: async (_subject, runId) => ({
+				ownerVersion: 1,
+				runId,
+				state: "not_delivered",
+			}),
+			...runtime,
+		},
+		() => ({ status: async () => ({ status, generation: 1 }) }),
+	);
+
+it("lists account models with the session's remembered selection and never schedules", async () => {
+	await candidateCredential();
+	const first = await commands().admit("owner", prompt);
+	const sessionId = first.workspaceSessionId;
+	let reads = 0;
+	const product = withRuntime({
+		readSelection: async () => {
+			reads++;
+			return { model: "faux-1", thinking: "off" };
+		},
+	});
+	expect(
+		await product.models("owner", {
+			version: 1,
+			projectId: "project",
+			sessionId,
+		}),
+	).toEqual({
+		version: 1,
+		status: "available",
+		models: account.models,
+		selection: { model: "faux-1", thinking: "off" },
+	});
+	expect(reads).toBe(1);
+	// Without a session there is nothing to remember.
+	expect(
+		await product.models("owner", { version: 1, projectId: "project" }),
+	).toMatchObject({ status: "available", selection: null });
+	expect(reads).toBe(1);
+	await expect(
+		product.models("intruder", { version: 1, projectId: "project", sessionId }),
+	).rejects.toMatchObject({ code: "runtime_owner_mismatch" });
+	await expect(
+		product.models("intruder", { version: 1, projectId: "project" }),
+	).rejects.toMatchObject({ code: "runtime_owner_mismatch" });
+	await expect(
+		product.models("owner", {
+			version: 1,
+			projectId: "project",
+			userId: "intruder",
+		}),
+	).rejects.toThrow();
+});
+
+it("reports a disconnected, unavailable or revoked account with no models", async () => {
+	const request = { version: 1, projectId: "project" };
+	expect(
+		await withRuntime({}, "reconnect_required").models("owner", request),
+	).toEqual({
+		version: 1,
+		status: "disconnected",
+		models: [],
+		selection: null,
+	});
+	await env.DB.prepare("DELETE FROM codex_fixture_capabilities").run();
+	expect(await withRuntime({}).models("owner", request)).toEqual({
+		version: 1,
+		status: "unavailable",
+		models: [],
+		selection: null,
+	});
+	await env.DB.prepare(
+		"INSERT INTO codex_fixture_capabilities VALUES('owner',1,2,?)",
+	)
+		.bind(
+			JSON.stringify({
+				...account,
+				revision: 2,
+				status: "revoked",
+				models: [],
+			}),
+		)
+		.run();
+	expect(await withRuntime({}).models("owner", request)).toMatchObject({
+		status: "revoked",
+		models: [],
+	});
+});
+
+it("adds restore facts to an observation without pair, digest or object-key data", async () => {
+	await candidateCredential();
+	const first = await commands().admit("owner", prompt);
+	const sessionId = first.workspaceSessionId;
+	const observed = {
+		version: 1 as const,
+		cursor: 1,
+		events: [],
+		more: false,
+		snapshot: {
+			runs: [],
+			assistants: [],
+			health: { projectionLag: 0, safetyStopped: false },
+		},
+	};
+	const product = withRuntime({ observe: async () => observed });
+	const pair = (id: string, outstanding: number, createdAt: number) =>
+		env.DB.prepare(
+			"INSERT INTO runtime_checkpoint_pairs VALUES(?,?,?,?,?,?,1,1,'compat','b','bi','e','ei',1,1,?,'[]',?)",
+		).bind(
+			id,
+			sessionId,
+			`archive-${id}`,
+			`continuation-object-key-${id}`,
+			`archive-digest-${id}`,
+			`continuation-digest-${id}`,
+			outstanding,
+			createdAt,
+		);
+	const barrier = (id: string, pairId: string, completedAt: number) =>
+		env.DB.prepare(
+			"INSERT INTO candidate_restore_barriers VALUES(?,?,1,?,1,0,'complete',?,0,2,?,?)",
+		).bind(id, sessionId, pairId, pairId, completedAt - 1, completedAt);
+	const request = ["owner", "project", sessionId] as const;
+	expect(
+		(await product.observe(...request)).snapshot?.health.restore,
+	).toBeUndefined();
+	await env.DB.batch([
+		pair("pair-a", 2, 1000),
+		barrier("restore-a", "pair-a", 5000),
+	]);
+	let result = await product.observe(...request);
+	expect(result.snapshot?.health.restore).toEqual({
+		checkpointAt: 1000,
+		effectsUncertain: true,
+	});
+	await env.DB.batch([
+		pair("pair-b", 0, 2000),
+		barrier("restore-b", "pair-b", 6000),
+	]);
+	result = await product.observe(...request);
+	expect(result.snapshot?.health.restore).toEqual({
+		checkpointAt: 2000,
+		effectsUncertain: false,
+	});
+	const json = JSON.stringify(result);
+	for (const leaked of [
+		"pair-",
+		"pairId",
+		"archiveDigest",
+		"archive-digest",
+		"continuationObjectKey",
+		"continuation-object-key",
+	])
+		expect(json).not.toContain(leaked);
+	// A cursor read carries no snapshot, so it carries no restore fact.
+	const events = await withRuntime({
+		observe: async () => ({ version: 1, cursor: 1, events: [], more: false }),
+	}).observe(...request, 1);
+	expect(events.snapshot).toBeUndefined();
+});

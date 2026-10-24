@@ -197,6 +197,30 @@ export interface CandidateProductCommandService {
 	): Promise<
 		import("../../../../packages/runtime-contracts/src/product-command.js").ReceiptV2
 	>;
+	observeOwned(
+		userId: string,
+		projectId: string,
+		sessionId: string,
+		cursor?: number,
+	): Promise<
+		import("../../../../packages/runtime-contracts/src/projection.js").RuntimeObservationV1
+	>;
+	workspaceActionOwned(
+		userId: string,
+		input: unknown,
+	): Promise<
+		import("../../../../packages/runtime-contracts/src/workspace-action.js").WorkspaceActionResultV1
+	>;
+	deleteProjectOwned(
+		userId: string,
+		projectId: string,
+	): Promise<{ status: "deleted" | "deleting" }>;
+	modelsOwned(
+		userId: string,
+		input: unknown,
+	): Promise<
+		import("../../../../packages/runtime-contracts/src/configuration.js").CandidateModelsV1
+	>;
 	drain(): Promise<void>;
 }
 

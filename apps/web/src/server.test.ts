@@ -199,6 +199,10 @@ describe("candidate entrypoint composition", () => {
 		);
 		const candidate = {
 			admitOwned: vi.fn(),
+			observeOwned: vi.fn(),
+			workspaceActionOwned: vi.fn(),
+			deleteProjectOwned: vi.fn(),
+			modelsOwned: vi.fn(),
 			drain: vi.fn().mockResolvedValue(undefined),
 		};
 		const fixtureEnv = {
@@ -284,6 +288,10 @@ describe("candidate entrypoint composition", () => {
 		const error = new Error("candidate drain failed");
 		const candidate = {
 			admitOwned: vi.fn(),
+			observeOwned: vi.fn(),
+			workspaceActionOwned: vi.fn(),
+			deleteProjectOwned: vi.fn(),
+			modelsOwned: vi.fn(),
 			drain: vi.fn().mockRejectedValue(error),
 		};
 		await expect(

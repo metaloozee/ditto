@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { createDb } from "#/db";
 import { decryptEnvVars, encryptEnvVars } from "#/lib/project-env-vars";
@@ -46,6 +47,12 @@ vi.mock("#/lib/session-preview", async (importOriginal) => {
 });
 
 const { projectsRouter } = await import("./projects");
+const { withSessionRuntimeResolution } = await import(
+	"#/lib/session-runtime-client"
+);
+const { CandidateCommandError } = await import(
+	"#/lib/session-command-candidate"
+);
 const { SessionPreviewError } = await import("#/lib/session-preview");
 
 type ProjectRow = {
@@ -242,6 +249,47 @@ function createProjectDbMock(initial: ProjectRow) {
 	};
 }
 
+/** Minimal read-side drizzle double: the project row, active sessions and which projects hold candidate sessions. */
+function createReadDb(data: {
+	project?: Record<string, unknown>;
+	candidateProjectIds?: string[];
+}) {
+	const query = (value: unknown) => ({
+		__result: () => value,
+		limit: async () => value,
+		orderBy: () => ({ __result: () => value }),
+	});
+	const db = {
+		select(fields?: Record<string, unknown>) {
+			return {
+				from: () => ({
+					where: () => {
+						if (!fields) return query([]);
+						if ("name" in fields)
+							return query(data.project ? [data.project] : []);
+						return query(
+							data.candidateProjectIds?.length ? [{ id: "session-1" }] : [],
+						);
+					},
+				}),
+			};
+		},
+		selectDistinct: () => ({
+			from: () => ({
+				where: () =>
+					query(
+						(data.candidateProjectIds ?? []).map((projectId) => ({
+							projectId,
+						})),
+					),
+			}),
+		}),
+		batch: async (queries: { __result: () => unknown }[]) =>
+			queries.map((q) => q.__result()),
+	};
+	return db as unknown as ReturnType<typeof createDb>;
+}
+
 function createCaller() {
 	return projectsRouter.createCaller({
 		env: {
@@ -363,7 +411,96 @@ describe("projects.create GitHub import", () => {
 describe("projects.deleteProject", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		createDbMock.mockReturnValue({});
+		createDbMock.mockReturnValue(createReadDb({}));
+	});
+
+	describe("candidate projects", () => {
+		const candidateService = (
+			deleteProjectOwned: (userId: string, id: string) => Promise<unknown>,
+		) =>
+			({
+				deleteProjectOwned,
+			}) as unknown as import("#/lib/session-runtime-client").CandidateProductCommandService;
+
+		beforeEach(() => {
+			createDbMock.mockReturnValue(
+				createReadDb({ candidateProjectIds: ["proj-1"] }),
+			);
+		});
+
+		it("deletes through the owned service as the session user", async () => {
+			const deleteProjectOwned = vi
+				.fn()
+				.mockResolvedValue({ status: "deleting" });
+			const result = await withSessionRuntimeResolution(
+				{ candidateCommands: candidateService(deleteProjectOwned) },
+				() => createCaller().deleteProject({ id: "proj-1" }),
+			);
+			expect(result).toEqual({ status: "deleting" });
+			expect(deleteProjectOwned).toHaveBeenCalledWith("user-1", "proj-1");
+			expect(deleteProjectRuntimeMock).not.toHaveBeenCalled();
+		});
+
+		it("refuses with a readable message when no service is bound", async () => {
+			await expect(
+				createCaller().deleteProject({ id: "proj-1" }),
+			).rejects.toMatchObject({
+				code: "PRECONDITION_FAILED",
+				message: "This project has sessions that can't be deleted yet.",
+			});
+			expect(deleteProjectRuntimeMock).not.toHaveBeenCalled();
+		});
+
+		it.each([
+			new CandidateCommandError("runtime_owner_mismatch", 412),
+			new Error("runtime_owner_mismatch"),
+		])("maps a mixed-project refusal to its code", async (failure) => {
+			await expect(
+				withSessionRuntimeResolution(
+					{
+						candidateCommands: candidateService(async () =>
+							Promise.reject(failure),
+						),
+					},
+					() => createCaller().deleteProject({ id: "proj-1" }),
+				),
+			).rejects.toMatchObject({
+				code: "PRECONDITION_FAILED",
+				message: "runtime_owner_mismatch",
+			});
+		});
+
+		it("throws a TRPCError PRECONDITION_FAILED for a plain runtime_owner_mismatch Error", async () => {
+			const error = await withSessionRuntimeResolution(
+				{
+					candidateCommands: candidateService(async () =>
+						Promise.reject(new Error("runtime_owner_mismatch")),
+					),
+				},
+				() => createCaller().deleteProject({ id: "proj-1" }),
+			).catch((e: unknown) => e);
+			expect(error).toBeInstanceOf(TRPCError);
+			expect(error).toMatchObject({
+				code: "PRECONDITION_FAILED",
+				message: "runtime_owner_mismatch",
+			});
+		});
+
+		it("hides unexpected service failures", async () => {
+			await expect(
+				withSessionRuntimeResolution(
+					{
+						candidateCommands: candidateService(async () =>
+							Promise.reject(new Error("secret detail")),
+						),
+					},
+					() => createCaller().deleteProject({ id: "proj-1" }),
+				),
+			).rejects.toMatchObject({
+				code: "INTERNAL_SERVER_ERROR",
+				message: "Failed to delete project.",
+			});
+		});
 	});
 
 	it("delegates to deleteProjectRuntime with destroySandbox", async () => {
@@ -410,6 +547,32 @@ describe("projects.deleteProject", () => {
 		await expect(
 			createCaller().deleteProject({ id: "proj-1" }),
 		).rejects.toMatchObject({ code: "BAD_GATEWAY" });
+	});
+});
+
+describe("projects candidate flag", () => {
+	const project = { id: "proj-1", name: "P", userId: "user-1" };
+
+	it("marks list and get when a project has any candidate session", async () => {
+		createDbMock.mockReturnValue(
+			createReadDb({ project, candidateProjectIds: ["proj-1"] }),
+		);
+		expect(await createCaller().get({ id: "proj-1" })).toMatchObject({
+			hasCandidateSessions: true,
+		});
+		expect(await createCaller().list()).toMatchObject([
+			{ id: "proj-1", hasCandidateSessions: true },
+		]);
+	});
+
+	it("leaves legacy-only projects unflagged", async () => {
+		createDbMock.mockReturnValue(createReadDb({ project }));
+		expect(await createCaller().get({ id: "proj-1" })).toMatchObject({
+			hasCandidateSessions: false,
+		});
+		expect(await createCaller().list()).toMatchObject([
+			{ id: "proj-1", hasCandidateSessions: false },
+		]);
 	});
 });
 

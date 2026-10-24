@@ -38,6 +38,17 @@ export type ConfigurationAckV1 = {
 	status: "applied" | "denied" | "conflict" | "unavailable" | "outcome_unknown";
 	snapshot: ConfigurationSnapshotV1 | null;
 };
+export type CandidateModelsV1 = {
+	version: 1;
+	status: "available" | "unavailable" | "revoked" | "disconnected";
+	models: { id: SyntheticModelId; thinking: SyntheticThinking[] }[];
+	selection: ConfigurationSelectionV1 | null;
+};
+export type CandidateModelsRequestV1 = {
+	version: 1;
+	projectId: string;
+	sessionId?: string;
+};
 export type ConfigurationAuthorityV1 =
 	| { version: 1; status: "current"; subject: ModelSubjectV1 }
 	| { version: 1; status: "denied" | "unavailable" };
@@ -190,5 +201,72 @@ export async function configurationIdentity(
 			i.selection.model,
 			i.selection.thinking,
 		]),
+	};
+}
+
+export function parseCandidateModelsRequestV1(
+	input: unknown,
+): CandidateModelsRequestV1 {
+	const r = strictRecord(
+		decodeContractInput(input, 1024),
+		["version", "projectId", "sessionId"],
+		"candidate models request",
+	);
+	return {
+		version: literalField(r, "version", [1]),
+		projectId: stringField(r, "projectId", { maxBytes: 256 }),
+		...(r.sessionId === undefined
+			? {}
+			: { sessionId: stringField(r, "sessionId", { maxBytes: 256 }) }),
+	};
+}
+export function parseCandidateModelsV1(input: unknown): CandidateModelsV1 {
+	const r = strictRecord(
+		decodeContractInput(input, 4096),
+		["version", "status", "models", "selection"],
+		"candidate models",
+	);
+	const status = literalField(r, "status", [
+		"available",
+		"unavailable",
+		"revoked",
+		"disconnected",
+	]);
+	if (
+		!Array.isArray(r.models) ||
+		r.models.length > 2 ||
+		(status !== "available" && r.models.length !== 0)
+	)
+		throw new ContractParseError("invalid_models", "Invalid account models.");
+	const ids = new Set<string>();
+	const models = r.models.map((input: unknown) => {
+		const m = strictRecord(input, ["id", "thinking"], "candidate model");
+		const id = literalField(m, "id", ["faux-1", "faux-2"]);
+		if (
+			ids.has(id) ||
+			!Array.isArray(m.thinking) ||
+			m.thinking.length < 1 ||
+			m.thinking.length > 4
+		)
+			throw new ContractParseError("invalid_models", "Invalid model entry.");
+		ids.add(id);
+		const thinking = m.thinking.map((level: unknown) =>
+			literalField<SyntheticThinking>({ level }, "level", [
+				"off",
+				"low",
+				"high",
+				"max",
+			]),
+		);
+		if (new Set(thinking).size !== thinking.length)
+			throw new ContractParseError("invalid_models", "Invalid model entry.");
+		return { id, thinking };
+	});
+	return {
+		version: literalField(r, "version", [1]),
+		status,
+		models,
+		selection:
+			r.selection === null ? null : parseConfigurationSelectionV1(r.selection),
 	};
 }

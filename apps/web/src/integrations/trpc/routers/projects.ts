@@ -18,10 +18,16 @@ import {
 import { buildProjectSeed } from "#/lib/project-seed";
 import { destroySandbox } from "#/lib/sandbox-bootstrap";
 import { redactSecrets } from "#/lib/secret-redaction";
+import { CandidateCommandError } from "#/lib/session-command-candidate";
 import {
 	deleteProjectRuntime,
 	SessionPreviewError,
 } from "#/lib/session-preview";
+import { resolveCandidateProductCommands } from "#/lib/session-runtime-client";
+
+const CANDIDATE_RUNTIME_OWNER = "pi_durable_v1";
+const CANDIDATE_DELETE_UNAVAILABLE =
+	"This project has sessions that can't be deleted yet.";
 
 export const projectsRouter = createTRPCRouter({
 	create: protectedProcedure
@@ -294,6 +300,42 @@ export const projectsRouter = createTRPCRouter({
 		.input(z.object({ id: z.string().min(1) }))
 		.mutation(async ({ ctx, input }) => {
 			const db = createDb(ctx.env);
+			const [candidateSession] = await db
+				.select({ id: workspaceSessions.id })
+				.from(workspaceSessions)
+				.where(
+					and(
+						eq(workspaceSessions.projectId, input.id),
+						eq(workspaceSessions.userId, ctx.user.id),
+						eq(workspaceSessions.runtimeOwner, CANDIDATE_RUNTIME_OWNER),
+					),
+				)
+				.limit(1);
+			if (candidateSession) {
+				const service = resolveCandidateProductCommands();
+				if (!service) {
+					throw new TRPCError({
+						code: "PRECONDITION_FAILED",
+						message: CANDIDATE_DELETE_UNAVAILABLE,
+					});
+				}
+				try {
+					return await service.deleteProjectOwned(ctx.user.id, input.id);
+				} catch (error) {
+					// Errors can cross the service binding as plain Errors that keep the code as their message.
+					const code =
+						error instanceof CandidateCommandError
+							? error.code
+							: error instanceof Error &&
+									error.message === "runtime_owner_mismatch"
+								? error.message
+								: undefined;
+					throw new TRPCError({
+						code: code ? "PRECONDITION_FAILED" : "INTERNAL_SERVER_ERROR",
+						message: code ?? "Failed to delete project.",
+					});
+				}
+			}
 			try {
 				return await deleteProjectRuntime({
 					db,
@@ -333,7 +375,7 @@ export const projectsRouter = createTRPCRouter({
 
 	list: protectedProcedure.query(async ({ ctx }) => {
 		const db = createDb(ctx.env);
-		const [userProjects, activeSessions] = await db.batch([
+		const [userProjects, activeSessions, candidateProjects] = await db.batch([
 			db
 				.select({
 					id: projects.id,
@@ -359,7 +401,19 @@ export const projectsRouter = createTRPCRouter({
 					),
 				)
 				.orderBy(desc(workspaceSessions.updatedAt)),
+			db
+				.selectDistinct({ projectId: workspaceSessions.projectId })
+				.from(workspaceSessions)
+				.where(
+					and(
+						eq(workspaceSessions.userId, ctx.user.id),
+						eq(workspaceSessions.runtimeOwner, CANDIDATE_RUNTIME_OWNER),
+					),
+				),
 		]);
+		const candidateProjectIds = new Set(
+			candidateProjects.map((row) => row.projectId),
+		);
 
 		const sessionsByProjectId = new Map<
 			string,
@@ -376,6 +430,7 @@ export const projectsRouter = createTRPCRouter({
 		return userProjects.map((project) => {
 			return {
 				...project,
+				hasCandidateSessions: candidateProjectIds.has(project.id),
 				sessions: sessionsByProjectId.get(project.id) ?? [],
 			};
 		});
@@ -408,6 +463,17 @@ export const projectsRouter = createTRPCRouter({
 				});
 			}
 
-			return project;
+			const [candidateSession] = await db
+				.select({ id: workspaceSessions.id })
+				.from(workspaceSessions)
+				.where(
+					and(
+						eq(workspaceSessions.projectId, project.id),
+						eq(workspaceSessions.userId, ctx.user.id),
+						eq(workspaceSessions.runtimeOwner, CANDIDATE_RUNTIME_OWNER),
+					),
+				)
+				.limit(1);
+			return { ...project, hasCandidateSessions: !!candidateSession };
 		}),
 });

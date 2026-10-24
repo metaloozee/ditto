@@ -30,8 +30,12 @@ import {
 	RECOVERY_COMMAND_KINDS,
 	type ReceiptV1,
 } from "../../../../packages/runtime-contracts/src/command.js";
-import { decodeJsonText } from "../../../../packages/runtime-contracts/src/json.js";
+import {
+	decodeContractInput,
+	decodeJsonText,
+} from "../../../../packages/runtime-contracts/src/json.js";
 import { RUNTIME_LIMITS } from "../../../../packages/runtime-contracts/src/limits.js";
+import { parseObservationRequestV1 } from "../../../../packages/runtime-contracts/src/projection.js";
 
 type Db = ReturnType<typeof createDb>;
 
@@ -1388,6 +1392,77 @@ export async function handleCandidateCommandRequest(options: {
 			return { status: 400, body: { code: error.code } };
 		return { status: 503, body: { code: "runtime_unavailable" } };
 	}
+}
+
+type CandidateOwnedService =
+	import("./session-runtime-client").CandidateProductCommandService;
+
+async function handleOwnedCandidateRequest(
+	options: {
+		service: CandidateOwnedService | undefined;
+		authenticatedUserId: string;
+		body: unknown;
+	},
+	call: (service: CandidateOwnedService, decoded: unknown) => Promise<unknown>,
+): Promise<{ status: number; body: unknown }> {
+	if (!options.service)
+		return { status: 400, body: { code: "candidate_admission_ineligible" } };
+	try {
+		return {
+			status: 200,
+			body: await call(
+				options.service,
+				decodeContractInput(options.body, RUNTIME_LIMITS.commandBodyBytes),
+			),
+		};
+	} catch (error) {
+		const { CandidateCommandError } = await import(
+			"./session-command-candidate"
+		);
+		if (error instanceof CandidateCommandError)
+			return { status: error.status, body: { code: error.code } };
+		if (error instanceof ContractParseError)
+			return { status: 400, body: { code: error.code } };
+		return { status: 503, body: { code: "runtime_unavailable" } };
+	}
+}
+
+/** The user always comes from the session; the body carries only project, session and cursor. */
+export function handleCandidateObserveRequest(options: {
+	service: CandidateOwnedService | undefined;
+	authenticatedUserId: string;
+	body: unknown;
+}) {
+	return handleOwnedCandidateRequest(options, (service, decoded) => {
+		const request = parseObservationRequestV1(decoded);
+		return service.observeOwned(
+			options.authenticatedUserId,
+			request.projectId,
+			request.sessionId,
+			request.cursor,
+		);
+	});
+}
+
+/** A denied action is a 200 result, not an HTTP error. */
+export function handleCandidateWorkspaceActionRequest(options: {
+	service: CandidateOwnedService | undefined;
+	authenticatedUserId: string;
+	body: unknown;
+}) {
+	return handleOwnedCandidateRequest(options, (service, decoded) =>
+		service.workspaceActionOwned(options.authenticatedUserId, decoded),
+	);
+}
+
+export function handleCandidateModelsRequest(options: {
+	service: CandidateOwnedService | undefined;
+	authenticatedUserId: string;
+	body: unknown;
+}) {
+	return handleOwnedCandidateRequest(options, (service, decoded) =>
+		service.modelsOwned(options.authenticatedUserId, decoded),
+	);
 }
 
 export function isCandidateCommandBody(body: unknown): boolean {

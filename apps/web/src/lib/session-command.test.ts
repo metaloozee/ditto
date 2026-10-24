@@ -1,12 +1,21 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { handleSessionCommandRequest } from "#/lib/session-command";
+import {
+	handleCandidateModelsRequest,
+	handleCandidateObserveRequest,
+	handleCandidateWorkspaceActionRequest,
+	handleSessionCommandRequest,
+} from "#/lib/session-command";
+import type { CandidateProductCommandService } from "#/lib/session-runtime-client";
 import {
 	createSessionRuntimeFixture,
 	sessionRuntimeRouteHarness,
 } from "#/test/session-runtime-fixture";
 import { RUNTIME_LIMITS } from "../../../../packages/runtime-contracts/src/limits.js";
-import { CandidateProductCommands } from "./session-command-candidate";
+import {
+	CandidateCommandError,
+	CandidateProductCommands,
+} from "./session-command-candidate";
 import { createSqliteD1 } from "./sqlite-d1-test-utils";
 
 vi.mock("cloudflare:workers", () => ({ env: {} }));
@@ -145,6 +154,9 @@ describe("session command admission", () => {
 			() => ({ status: async () => ({ status: "connected", generation: 1 }) }),
 		);
 		let admissionError: unknown;
+		const unused = async (): Promise<never> => {
+			throw new Error("unused");
+		};
 		const candidateCommands = {
 			admitOwned: async (userId: string, body: unknown) => {
 				try {
@@ -155,6 +167,10 @@ describe("session command admission", () => {
 				}
 			},
 			drain: async () => {},
+			observeOwned: unused,
+			workspaceActionOwned: unused,
+			deleteProjectOwned: unused,
+			modelsOwned: unused,
 		};
 		const body = promptBody({ version: 2 });
 		const first = await fixture
@@ -795,5 +811,116 @@ describe("session command request classification", () => {
 		});
 		expect(result.status).not.toBe(202);
 		expect(fixture.counts().commands).toBe(0);
+	});
+});
+
+describe("owned candidate read handlers", () => {
+	const service = () => {
+		const stub = {
+			observeOwned: vi.fn().mockResolvedValue({ version: 1, cursor: 4 }),
+			workspaceActionOwned: vi
+				.fn()
+				.mockResolvedValue({ status: "denied", reason: "capacity" }),
+			modelsOwned: vi.fn().mockResolvedValue({ version: 1 }),
+		};
+		return {
+			stub,
+			service: stub as unknown as CandidateProductCommandService,
+		};
+	};
+	const handlers = [
+		["observe", handleCandidateObserveRequest],
+		["workspace action", handleCandidateWorkspaceActionRequest],
+		["models", handleCandidateModelsRequest],
+	] as const;
+
+	it.each(handlers)("%s answers 400 without a binding", async (_, handle) => {
+		expect(
+			await handle({
+				service: undefined,
+				authenticatedUserId: "u",
+				body: "{}",
+			}),
+		).toEqual({
+			status: 400,
+			body: { code: "candidate_admission_ineligible" },
+		});
+	});
+
+	it.each(
+		handlers,
+	)("%s maps a command error to its code", async (_, handle) => {
+		const { stub, service: s } = service();
+		const failure = new CandidateCommandError("runtime_owner_mismatch", 409);
+		stub.observeOwned.mockRejectedValue(failure);
+		stub.workspaceActionOwned.mockRejectedValue(failure);
+		stub.modelsOwned.mockRejectedValue(failure);
+		expect(
+			await handle({
+				service: s,
+				authenticatedUserId: "u",
+				body: JSON.stringify({ version: 1, projectId: "p", sessionId: "s" }),
+			}),
+		).toEqual({ status: 409, body: { code: "runtime_owner_mismatch" } });
+	});
+
+	it("passes a stale cursor to the service unchanged, with the session user", async () => {
+		const { stub, service: s } = service();
+		const result = await handleCandidateObserveRequest({
+			service: s,
+			authenticatedUserId: "session-user",
+			body: JSON.stringify({
+				version: 1,
+				projectId: "p",
+				sessionId: "s",
+				cursor: 999,
+			}),
+		});
+		expect(result.status).toBe(200);
+		expect(stub.observeOwned).toHaveBeenCalledWith(
+			"session-user",
+			"p",
+			"s",
+			999,
+		);
+	});
+
+	it("rejects a body user id before the service is reached", async () => {
+		const { stub, service: s } = service();
+		const result = await handleCandidateObserveRequest({
+			service: s,
+			authenticatedUserId: "session-user",
+			body: JSON.stringify({
+				version: 1,
+				projectId: "p",
+				sessionId: "s",
+				userId: "someone-else",
+			}),
+		});
+		expect(result.status).toBe(400);
+		expect(stub.observeOwned).not.toHaveBeenCalled();
+	});
+
+	it("returns a denied workspace action as a 200 result", async () => {
+		const { service: s } = service();
+		expect(
+			await handleCandidateWorkspaceActionRequest({
+				service: s,
+				authenticatedUserId: "u",
+				body: JSON.stringify({ version: 1 }),
+			}),
+		).toEqual({ status: 200, body: { status: "denied", reason: "capacity" } });
+	});
+
+	it("maps unexpected failures to runtime_unavailable", async () => {
+		const { stub, service: s } = service();
+		stub.modelsOwned.mockRejectedValue(new Error("secret detail"));
+		expect(
+			await handleCandidateModelsRequest({
+				service: s,
+				authenticatedUserId: "u",
+				body: "{}",
+			}),
+		).toEqual({ status: 503, body: { code: "runtime_unavailable" } });
 	});
 });

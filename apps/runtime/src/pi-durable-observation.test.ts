@@ -123,3 +123,29 @@ it("bounds event pages and never schedules, alarms or dispatches while reading",
 		expect(control.product.batches).toHaveLength(batches);
 	});
 });
+
+it("reports archive status from the host archive state and nothing else", async () => {
+	await fixture("observe-archive", async (storage, open, control) => {
+		const host = await open();
+		await host.acceptCandidate(command(1, control.now));
+		const health = () => PiDurableHost.observe(storage).snapshot?.health;
+		expect(health()?.archive).toBeUndefined();
+		storage.sql.exec(
+			"INSERT INTO host_archives (id, command, sequence, cutoff, state) VALUES (1, 'archive-1', 2, 1, 'fenced')",
+		);
+		const expected = {
+			fenced: "pending",
+			retired: "pending",
+			final: "pending",
+			blocked: "blocked",
+			complete: "complete",
+		} as const;
+		for (const [state, status] of Object.entries(expected)) {
+			storage.sql.exec("UPDATE host_archives SET state=? WHERE id=1", state);
+			expect(health()?.archive).toEqual({ status });
+		}
+		const json = JSON.stringify(PiDurableHost.observe(storage));
+		for (const secret of ["pair", "seed", "evidence", "archive-1"])
+			expect(json).not.toContain(secret);
+	});
+});

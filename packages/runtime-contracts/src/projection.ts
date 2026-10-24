@@ -1,5 +1,6 @@
 import {
 	ContractParseError,
+	decodeContractInput,
 	encodedBytes,
 	integerField,
 	literalField,
@@ -198,8 +199,67 @@ export type ObservationSnapshotV1 = {
 			pairs: number;
 			projectionLag: number;
 		};
+		/** Absent until an archive has started for the session. */
+		archive?: ObservationArchiveV1;
+		/** Present once a restore has completed; added by the product, not the runtime. */
+		restore?: ObservationRestoreV1;
 	};
 };
+export type ObservationArchiveV1 = {
+	status: "pending" | "blocked" | "complete";
+};
+export type ObservationRestoreV1 = {
+	checkpointAt: number;
+	effectsUncertain: boolean;
+};
+export type ObservationRequestV1 = {
+	version: 1;
+	projectId: string;
+	sessionId: string;
+	cursor?: number;
+};
+export function parseObservationRequestV1(
+	input: unknown,
+): ObservationRequestV1 {
+	const r = strictRecord(
+		decodeContractInput(input, 1024),
+		["version", "projectId", "sessionId", "cursor"],
+		"observation request",
+	);
+	const cursor = integerField(r, "cursor", { optional: true, minimum: 0 });
+	return {
+		version: literalField(r, "version", [1]),
+		projectId: stringField(r, "projectId", { maxBytes: 256 }),
+		sessionId: stringField(r, "sessionId", { maxBytes: 256 }),
+		...(cursor === undefined ? {} : { cursor }),
+	};
+}
+export function parseObservationArchiveV1(
+	input: unknown,
+): ObservationArchiveV1 {
+	const r = strictRecord(input, ["status"], "observation archive");
+	return {
+		status: literalField(r, "status", ["pending", "blocked", "complete"]),
+	};
+}
+export function parseObservationRestoreV1(
+	input: unknown,
+): ObservationRestoreV1 {
+	const r = strictRecord(
+		input,
+		["checkpointAt", "effectsUncertain"],
+		"observation restore",
+	);
+	if (typeof r.effectsUncertain !== "boolean")
+		throw new ContractParseError(
+			"invalid_field",
+			"effectsUncertain must be a boolean.",
+		);
+	return {
+		checkpointAt: integerField(r, "checkpointAt", { minimum: 0 }),
+		effectsUncertain: r.effectsUncertain,
+	};
+}
 export type RuntimeObservationV1 = {
 	version: 1;
 	cursor: number;

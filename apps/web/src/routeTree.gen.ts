@@ -14,7 +14,10 @@ import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as InstallationCompletedRouteImport } from './routes/installation.completed'
 import { Route as ProjectProjectIdRouteImport } from './routes/project.$projectId'
 import { Route as ApiAgentControlRouteImport } from './routes/api.agent.control'
+import { Route as ApiAgentModelsRouteImport } from './routes/api.agent.models'
+import { Route as ApiAgentObserveRouteImport } from './routes/api.agent.observe'
 import { Route as ApiAgentStreamRouteImport } from './routes/api.agent.stream'
+import { Route as ApiAgentWorkspaceActionRouteImport } from './routes/api.agent.workspace-action'
 import { Route as ApiAuthSplatRouteImport } from './routes/api.auth.$'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
 import { Route as ProjectProjectIdIndexRouteImport } from './routes/project.$projectId.index'
@@ -45,9 +48,24 @@ const ApiAgentControlRoute = ApiAgentControlRouteImport.update({
   path: '/api/agent/control',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAgentModelsRoute = ApiAgentModelsRouteImport.update({
+  id: '/api/agent/models',
+  path: '/api/agent/models',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAgentObserveRoute = ApiAgentObserveRouteImport.update({
+  id: '/api/agent/observe',
+  path: '/api/agent/observe',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAgentStreamRoute = ApiAgentStreamRouteImport.update({
   id: '/api/agent/stream',
   path: '/api/agent/stream',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAgentWorkspaceActionRoute = ApiAgentWorkspaceActionRouteImport.update({
+  id: '/api/agent/workspace-action',
+  path: '/api/agent/workspace-action',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -78,7 +96,10 @@ export interface FileRoutesByFullPath {
   '/installation/completed': typeof InstallationCompletedRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
   '/api/agent/control': typeof ApiAgentControlRoute
+  '/api/agent/models': typeof ApiAgentModelsRoute
+  '/api/agent/observe': typeof ApiAgentObserveRoute
   '/api/agent/stream': typeof ApiAgentStreamRoute
+  '/api/agent/workspace-action': typeof ApiAgentWorkspaceActionRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/project/$projectId/': typeof ProjectProjectIdIndexRoute
@@ -89,7 +110,10 @@ export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/installation/completed': typeof InstallationCompletedRoute
   '/api/agent/control': typeof ApiAgentControlRoute
+  '/api/agent/models': typeof ApiAgentModelsRoute
+  '/api/agent/observe': typeof ApiAgentObserveRoute
   '/api/agent/stream': typeof ApiAgentStreamRoute
+  '/api/agent/workspace-action': typeof ApiAgentWorkspaceActionRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/project/$projectId': typeof ProjectProjectIdIndexRoute
@@ -102,7 +126,10 @@ export interface FileRoutesById {
   '/installation/completed': typeof InstallationCompletedRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
   '/api/agent/control': typeof ApiAgentControlRoute
+  '/api/agent/models': typeof ApiAgentModelsRoute
+  '/api/agent/observe': typeof ApiAgentObserveRoute
   '/api/agent/stream': typeof ApiAgentStreamRoute
+  '/api/agent/workspace-action': typeof ApiAgentWorkspaceActionRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/project/$projectId/': typeof ProjectProjectIdIndexRoute
@@ -116,7 +143,10 @@ export interface FileRouteTypes {
     | '/installation/completed'
     | '/project/$projectId'
     | '/api/agent/control'
+    | '/api/agent/models'
+    | '/api/agent/observe'
     | '/api/agent/stream'
+    | '/api/agent/workspace-action'
     | '/api/auth/$'
     | '/api/trpc/$'
     | '/project/$projectId/'
@@ -127,7 +157,10 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/installation/completed'
     | '/api/agent/control'
+    | '/api/agent/models'
+    | '/api/agent/observe'
     | '/api/agent/stream'
+    | '/api/agent/workspace-action'
     | '/api/auth/$'
     | '/api/trpc/$'
     | '/project/$projectId'
@@ -139,7 +172,10 @@ export interface FileRouteTypes {
     | '/installation/completed'
     | '/project/$projectId'
     | '/api/agent/control'
+    | '/api/agent/models'
+    | '/api/agent/observe'
     | '/api/agent/stream'
+    | '/api/agent/workspace-action'
     | '/api/auth/$'
     | '/api/trpc/$'
     | '/project/$projectId/'
@@ -152,7 +188,10 @@ export interface RootRouteChildren {
   InstallationCompletedRoute: typeof InstallationCompletedRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRouteWithChildren
   ApiAgentControlRoute: typeof ApiAgentControlRoute
+  ApiAgentModelsRoute: typeof ApiAgentModelsRoute
+  ApiAgentObserveRoute: typeof ApiAgentObserveRoute
   ApiAgentStreamRoute: typeof ApiAgentStreamRoute
+  ApiAgentWorkspaceActionRoute: typeof ApiAgentWorkspaceActionRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
 }
@@ -194,11 +233,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAgentControlRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/agent/models': {
+      id: '/api/agent/models'
+      path: '/api/agent/models'
+      fullPath: '/api/agent/models'
+      preLoaderRoute: typeof ApiAgentModelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/agent/observe': {
+      id: '/api/agent/observe'
+      path: '/api/agent/observe'
+      fullPath: '/api/agent/observe'
+      preLoaderRoute: typeof ApiAgentObserveRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/agent/stream': {
       id: '/api/agent/stream'
       path: '/api/agent/stream'
       fullPath: '/api/agent/stream'
       preLoaderRoute: typeof ApiAgentStreamRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/agent/workspace-action': {
+      id: '/api/agent/workspace-action'
+      path: '/api/agent/workspace-action'
+      fullPath: '/api/agent/workspace-action'
+      preLoaderRoute: typeof ApiAgentWorkspaceActionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -251,7 +311,10 @@ const rootRouteChildren: RootRouteChildren = {
   InstallationCompletedRoute: InstallationCompletedRoute,
   ProjectProjectIdRoute: ProjectProjectIdRouteWithChildren,
   ApiAgentControlRoute: ApiAgentControlRoute,
+  ApiAgentModelsRoute: ApiAgentModelsRoute,
+  ApiAgentObserveRoute: ApiAgentObserveRoute,
   ApiAgentStreamRoute: ApiAgentStreamRoute,
+  ApiAgentWorkspaceActionRoute: ApiAgentWorkspaceActionRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
 }

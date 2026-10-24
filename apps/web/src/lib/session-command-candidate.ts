@@ -6,7 +6,11 @@ import {
 	parseRestoreOutcomeV1,
 	type RestoreCompletionResultV1,
 } from "../../../../packages/runtime-contracts/src/checkpoint.js";
-import type { ConfigurationSelectionV1 } from "../../../../packages/runtime-contracts/src/configuration.js";
+import {
+	type CandidateModelsV1,
+	type ConfigurationSelectionV1,
+	parseCandidateModelsRequestV1,
+} from "../../../../packages/runtime-contracts/src/configuration.js";
 import {
 	type ModelSubjectV1,
 	parseSyntheticAccountV1,
@@ -1439,6 +1443,47 @@ WHERE c.sessionId=candidate_archives.sessionId AND c.commandSeq<=candidate_archi
 		return this.runtime.workspaceAction(subject, action);
 	}
 
+	/**
+	 * Account models and the session's remembered selection. The selection read
+	 * only reads committed state and never schedules work.
+	 */
+	async models(userId: string, value: unknown): Promise<CandidateModelsV1> {
+		const { projectId, sessionId } = parseCandidateModelsRequestV1(value);
+		if (sessionId) await this.owned(userId, projectId, sessionId);
+		else {
+			const project = await this.db
+				.prepare("SELECT 1 FROM projects WHERE id=? AND userId=?")
+				.bind(projectId, userId)
+				.first();
+			if (!project) reject("runtime_owner_mismatch");
+		}
+		const none = (status: CandidateModelsV1["status"]): CandidateModelsV1 => ({
+			version: 1,
+			status,
+			models: [],
+			selection: null,
+		});
+		const credential = await this.credential(userId).status(userId);
+		if (credential.status !== "connected") return none("disconnected");
+		const capability = await this.db
+			.prepare("SELECT snapshot FROM codex_fixture_capabilities WHERE userId=?")
+			.bind(userId)
+			.first<{ snapshot: string }>();
+		if (!capability) return none("unavailable");
+		const account = parseSyntheticAccountV1(capability.snapshot);
+		if (account.status !== "available") return none(account.status);
+		return {
+			version: 1,
+			status: "available",
+			models: account.models,
+			selection: sessionId
+				? await this.runtime.readSelection(
+						await this.subject(userId, projectId, sessionId),
+					)
+				: null,
+		};
+	}
+
 	/** Owned observation; the runtime reads committed facts without scheduling. */
 	async observe(
 		userId: string,
@@ -1465,6 +1510,30 @@ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind
 			const subject = await this.subject(userId, projectId, sessionId);
 			if (!this.runtime.observe) reject("runtime_unavailable", 503);
 			observation = await this.runtime.observe(subject, cursor);
+		}
+		if (observation.snapshot) {
+			const restored = await this.db
+				.prepare(
+					`SELECT p.createdAt AS checkpointAt,p.outstandingEffectCount AS outstanding
+FROM candidate_restore_barriers b JOIN runtime_checkpoint_pairs p ON p.id=b.restoredPairId
+WHERE b.sessionId=? AND b.state='complete' ORDER BY b.completedAt DESC,b.openedAt DESC LIMIT 1`,
+				)
+				.bind(sessionId)
+				.first<{ checkpointAt: number; outstanding: number }>();
+			if (restored)
+				observation = {
+					...observation,
+					snapshot: {
+						...observation.snapshot,
+						health: {
+							...observation.snapshot.health,
+							restore: {
+								checkpointAt: restored.checkpointAt,
+								effectsUncertain: restored.outstanding > 0,
+							},
+						},
+					},
+				};
 		}
 		if (
 			new TextEncoder().encode(JSON.stringify(observation)).byteLength >
