@@ -350,7 +350,140 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "checkConstraints": {}
+      "checkConstraints": {
+        "candidate_archives_owner_version": {
+          "name": "candidate_archives_owner_version",
+          "value": "\"candidate_archives\".\"ownerVersion\"=1"
+        },
+        "candidate_archives_cutoff": {
+          "name": "candidate_archives_cutoff",
+          "value": "\"candidate_archives\".\"cutoffSeq\">=0"
+        },
+        "candidate_archives_state": {
+          "name": "candidate_archives_state",
+          "value": "\"candidate_archives\".\"state\" IN ('closed','complete')"
+        },
+        "candidate_archives_state_fields": {
+          "name": "candidate_archives_state_fields",
+          "value": "(\"candidate_archives\".\"state\"='closed' AND \"candidate_archives\".\"finalPairId\" IS NULL AND \"candidate_archives\".\"mutationGeneration\" IS NULL AND \"candidate_archives\".\"conversationGeneration\" IS NULL AND \"candidate_archives\".\"completedAt\" IS NULL) OR (\"candidate_archives\".\"state\"='complete' AND \"candidate_archives\".\"finalPairId\" IS NOT NULL AND \"candidate_archives\".\"mutationGeneration\">0 AND \"candidate_archives\".\"conversationGeneration\">0 AND \"candidate_archives\".\"completedAt\" IS NOT NULL)"
+        }
+      }
+    },
+    "candidate_capacity_claims": {
+      "name": "candidate_capacity_claims",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "pool": {
+          "name": "pool",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ownerKey": {
+          "name": "ownerKey",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "userId": {
+          "name": "userId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "claimedAt": {
+          "name": "claimedAt",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "releasedAt": {
+          "name": "releasedAt",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "evidence": {
+          "name": "evidence",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "candidate_capacity_claims_owner_uidx": {
+          "name": "candidate_capacity_claims_owner_uidx",
+          "columns": [
+            "kind",
+            "ownerKey"
+          ],
+          "isUnique": true
+        },
+        "candidate_capacity_claims_live_idx": {
+          "name": "candidate_capacity_claims_live_idx",
+          "columns": [
+            "pool",
+            "state",
+            "userId"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "candidate_capacity_claims_pool": {
+          "name": "candidate_capacity_claims_pool",
+          "value": "\"candidate_capacity_claims\".\"pool\" IN ('execution','model')"
+        },
+        "candidate_capacity_claims_kind": {
+          "name": "candidate_capacity_claims_kind",
+          "value": "\"candidate_capacity_claims\".\"kind\" IN ('executor','builder','preview','model')"
+        },
+        "candidate_capacity_claims_owner_key": {
+          "name": "candidate_capacity_claims_owner_key",
+          "value": "length(\"candidate_capacity_claims\".\"ownerKey\") BETWEEN 1 AND 512"
+        },
+        "candidate_capacity_claims_state": {
+          "name": "candidate_capacity_claims_state",
+          "value": "\"candidate_capacity_claims\".\"state\" IN ('live','released')"
+        },
+        "candidate_capacity_claims_kind_pool": {
+          "name": "candidate_capacity_claims_kind_pool",
+          "value": "(\"candidate_capacity_claims\".\"kind\"='model')=(\"candidate_capacity_claims\".\"pool\"='model')"
+        },
+        "candidate_capacity_claims_state_fields": {
+          "name": "candidate_capacity_claims_state_fields",
+          "value": "(\"candidate_capacity_claims\".\"state\"='live' AND \"candidate_capacity_claims\".\"releasedAt\" IS NULL AND \"candidate_capacity_claims\".\"evidence\" IS NULL) OR (\"candidate_capacity_claims\".\"state\"='released' AND \"candidate_capacity_claims\".\"releasedAt\" IS NOT NULL AND \"candidate_capacity_claims\".\"evidence\" IS NOT NULL)"
+        }
+      }
     },
     "candidate_command_decisions": {
       "name": "candidate_command_decisions",
@@ -431,9 +564,21 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {
-        "candidate_decision_owner": {
-          "name": "candidate_decision_owner",
-          "value": "\"candidate_command_decisions\".\"ownerVersion\"=1 AND \"candidate_command_decisions\".\"runEpoch\">0 AND length(\"candidate_command_decisions\".\"payloadDigest\")=64"
+        "candidate_decision_owner_version": {
+          "name": "candidate_decision_owner_version",
+          "value": "\"candidate_command_decisions\".\"ownerVersion\"=1"
+        },
+        "candidate_decision_run_epoch": {
+          "name": "candidate_decision_run_epoch",
+          "value": "\"candidate_command_decisions\".\"runEpoch\">0"
+        },
+        "candidate_decision_payload_digest": {
+          "name": "candidate_decision_payload_digest",
+          "value": "length(\"candidate_command_decisions\".\"payloadDigest\")=64"
+        },
+        "candidate_decision_kind": {
+          "name": "candidate_decision_kind",
+          "value": "\"candidate_command_decisions\".\"decision\" IN ('started','expired')"
         },
         "candidate_decision_time": {
           "name": "candidate_decision_time",
@@ -562,7 +707,16 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "checkConstraints": {}
+      "checkConstraints": {
+        "candidate_continuations_state": {
+          "name": "candidate_continuations_state",
+          "value": "\"candidate_continuations\".\"state\" IN ('pending','ready')"
+        },
+        "candidate_continuations_state_fields": {
+          "name": "candidate_continuations_state_fields",
+          "value": "(\"candidate_continuations\".\"state\"='pending' AND \"candidate_continuations\".\"messagesDigest\" IS NULL AND \"candidate_continuations\".\"readyAt\" IS NULL) OR (\"candidate_continuations\".\"state\"='ready' AND length(\"candidate_continuations\".\"messagesDigest\")=64 AND \"candidate_continuations\".\"readyAt\" IS NOT NULL)"
+        }
+      }
     },
     "candidate_restore_barriers": {
       "name": "candidate_restore_barriers",
@@ -665,7 +819,32 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "checkConstraints": {}
+      "checkConstraints": {
+        "candidate_restore_barriers_owner_version": {
+          "name": "candidate_restore_barriers_owner_version",
+          "value": "\"candidate_restore_barriers\".\"ownerVersion\"=1"
+        },
+        "candidate_restore_barriers_mutation_generation": {
+          "name": "candidate_restore_barriers_mutation_generation",
+          "value": "\"candidate_restore_barriers\".\"expectedMutationGeneration\">0"
+        },
+        "candidate_restore_barriers_cutoff": {
+          "name": "candidate_restore_barriers_cutoff",
+          "value": "\"candidate_restore_barriers\".\"cutoffSeq\">=0"
+        },
+        "candidate_restore_barriers_state": {
+          "name": "candidate_restore_barriers_state",
+          "value": "\"candidate_restore_barriers\".\"state\" IN ('closed','complete','refused')"
+        },
+        "candidate_restore_barriers_fallback": {
+          "name": "candidate_restore_barriers_fallback",
+          "value": "\"candidate_restore_barriers\".\"fallback\" IN (0,1)"
+        },
+        "candidate_restore_barriers_state_fields": {
+          "name": "candidate_restore_barriers_state_fields",
+          "value": "(\"candidate_restore_barriers\".\"state\"='closed' AND \"candidate_restore_barriers\".\"restoredPairId\" IS NULL AND \"candidate_restore_barriers\".\"fallback\" IS NULL AND \"candidate_restore_barriers\".\"conversationGeneration\" IS NULL AND \"candidate_restore_barriers\".\"completedAt\" IS NULL) OR (\"candidate_restore_barriers\".\"state\"='complete' AND \"candidate_restore_barriers\".\"restoredPairId\" IS NOT NULL AND \"candidate_restore_barriers\".\"fallback\" IS NOT NULL AND \"candidate_restore_barriers\".\"conversationGeneration\">1 AND \"candidate_restore_barriers\".\"completedAt\" IS NOT NULL) OR (\"candidate_restore_barriers\".\"state\"='refused' AND \"candidate_restore_barriers\".\"restoredPairId\" IS NULL AND \"candidate_restore_barriers\".\"fallback\" IS NULL AND \"candidate_restore_barriers\".\"conversationGeneration\" IS NULL AND \"candidate_restore_barriers\".\"completedAt\" IS NOT NULL)"
+        }
+      }
     },
     "candidate_workspace_claims": {
       "name": "candidate_workspace_claims",
@@ -1073,7 +1252,20 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "checkConstraints": {}
+      "checkConstraints": {
+        "model_request_admissions_request_digest": {
+          "name": "model_request_admissions_request_digest",
+          "value": "length(\"model_request_admissions\".\"requestDigest\") = 64"
+        },
+        "model_request_admissions_purpose": {
+          "name": "model_request_admissions_purpose",
+          "value": "\"model_request_admissions\".\"purpose\" IN ('generation','custom_summary','git_metadata')"
+        },
+        "model_request_admissions_state": {
+          "name": "model_request_admissions_state",
+          "value": "\"model_request_admissions\".\"state\" IN ('reserved','admitted','complete','failed_known','outcome_unknown')"
+        }
+      }
     },
     "privileged_operations": {
       "name": "privileged_operations",
