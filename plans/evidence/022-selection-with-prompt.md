@@ -12,11 +12,7 @@ Status: COMPLETE under Amendment 1 (first run stopped at Step 4 on the non-re-en
 rejected on stop/cancel/archive_session/restore. Test: "carries an optional model selection only on prompts and follow-ups".
 
 ## Migration
-`apps/web/migrations/0027_candidate_command_selection.sql`: `ALTER TABLE session_commands ADD selection text;`.
-Hand-written like 0022-0026: journal entry, no snapshot. Registered in `session-command.test.ts` and as `m27` in
-`product-commands.worker.test.ts`. Schema column is last in `session_commands` to match the ALTER's physical order.
-Fixture fixes the column forced: `selection: null` in the legacy insert-select in `session-command.ts`, and `selection text`
-in the hand-copied table in `src/test/session-runtime-fixture.ts`.
+Superseded: the executor's hand-written 0027 was discarded. See "Migration regeneration (reviewer, 2026-10-24)" below; the committed 0026 snapshot and 0027 are Drizzle output. Schema column `selection` is last in `session_commands`. The new column forced two fixture fixes: `selection: null` in the legacy insert-select in `session-command.ts`, and `selection text` in the hand-copied table in `src/test/session-runtime-fixture.ts`.
 
 ## Admission
 `session-command-candidate.ts` `admit`: `input.selection ?? readSelection(subject)` feeds `preSessionReadiness` and
