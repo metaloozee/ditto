@@ -153,6 +153,9 @@ for (const name of names) {
 for (const t of real.triggers) {
 	if (!allow.has(t)) diffs.push(`trigger.${t}: real=present schema=missing (not allowlisted)`);
 }
+for (const t of allow) {
+	if (!real.triggers.includes(t)) diffs.push(`trigger.${t}: allowlisted but missing from real`);
+}
 for (const t of schema.triggers) diffs.push(`trigger.${t}: schema=present`);
 
 if (diffs.length) {
