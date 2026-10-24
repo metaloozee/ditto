@@ -91,7 +91,21 @@ export const modelRequestAdmissions = sqliteTable(
 		createdAt: integer("createdAt").notNull(),
 		updatedAt: integer("updatedAt").notNull(),
 	},
-	(table) => [index("model_request_admissions_window_idx").on(table.windowId)],
+	(table) => [
+		index("model_request_admissions_window_idx").on(table.windowId),
+		check(
+			"model_request_admissions_request_digest",
+			sql`length(${table.requestDigest}) = 64`,
+		),
+		check(
+			"model_request_admissions_purpose",
+			sql`${table.purpose} IN ('generation','custom_summary','git_metadata')`,
+		),
+		check(
+			"model_request_admissions_state",
+			sql`${table.state} IN ('reserved','admitted','complete','failed_known','outcome_unknown')`,
+		),
+	],
 );
 
 export const projects = sqliteTable(
@@ -910,9 +924,15 @@ export const candidateCommandDecisions = sqliteTable(
 		decidedAt: integer("decidedAt").notNull(),
 	},
 	(table) => [
+		check("candidate_decision_owner_version", sql`${table.ownerVersion}=1`),
+		check("candidate_decision_run_epoch", sql`${table.runEpoch}>0`),
 		check(
-			"candidate_decision_owner",
-			sql`${table.ownerVersion}=1 AND ${table.runEpoch}>0 AND length(${table.payloadDigest})=64`,
+			"candidate_decision_payload_digest",
+			sql`length(${table.payloadDigest})=64`,
+		),
+		check(
+			"candidate_decision_kind",
+			sql`${table.decision} IN ('started','expired')`,
 		),
 		check(
 			"candidate_decision_time",
@@ -942,39 +962,140 @@ export const candidateRestoreBarriers = sqliteTable(
 		uniqueIndex("candidate_restore_barriers_closed_uidx")
 			.on(table.sessionId)
 			.where(sql`${table.state}='closed'`),
+		check(
+			"candidate_restore_barriers_owner_version",
+			sql`${table.ownerVersion}=1`,
+		),
+		check(
+			"candidate_restore_barriers_mutation_generation",
+			sql`${table.expectedMutationGeneration}>0`,
+		),
+		check("candidate_restore_barriers_cutoff", sql`${table.cutoffSeq}>=0`),
+		check(
+			"candidate_restore_barriers_state",
+			sql`${table.state} IN ('closed','complete','refused')`,
+		),
+		check(
+			"candidate_restore_barriers_fallback",
+			sql`${table.fallback} IN (0,1)`,
+		),
+		check(
+			"candidate_restore_barriers_state_fields",
+			sql`(${table.state}='closed' AND ${table.restoredPairId} IS NULL AND ${table.fallback} IS NULL AND ${table.conversationGeneration} IS NULL AND ${table.completedAt} IS NULL) OR (${table.state}='complete' AND ${table.restoredPairId} IS NOT NULL AND ${table.fallback} IS NOT NULL AND ${table.conversationGeneration}>1 AND ${table.completedAt} IS NOT NULL) OR (${table.state}='refused' AND ${table.restoredPairId} IS NULL AND ${table.fallback} IS NULL AND ${table.conversationGeneration} IS NULL AND ${table.completedAt} IS NOT NULL)`,
+		),
 	],
 );
 
 /** An archive closes all admission for its session from intent; completion is final. */
-export const candidateArchives = sqliteTable("candidate_archives", {
-	archiveCommandId: text("archiveCommandId").primaryKey().notNull(),
-	sessionId: text("sessionId").notNull().unique(),
-	ownerVersion: integer("ownerVersion").notNull(),
-	cutoffSeq: integer("cutoffSeq").notNull(),
-	state: text("state", { enum: ["closed", "complete"] }).notNull(),
-	finalPairId: text("finalPairId"),
-	mutationGeneration: integer("mutationGeneration"),
-	conversationGeneration: integer("conversationGeneration"),
-	openedAt: integer("openedAt").notNull(),
-	completedAt: integer("completedAt"),
-});
+export const candidateArchives = sqliteTable(
+	"candidate_archives",
+	{
+		archiveCommandId: text("archiveCommandId").primaryKey().notNull(),
+		sessionId: text("sessionId").notNull().unique(),
+		ownerVersion: integer("ownerVersion").notNull(),
+		cutoffSeq: integer("cutoffSeq").notNull(),
+		state: text("state", { enum: ["closed", "complete"] }).notNull(),
+		finalPairId: text("finalPairId"),
+		mutationGeneration: integer("mutationGeneration"),
+		conversationGeneration: integer("conversationGeneration"),
+		openedAt: integer("openedAt").notNull(),
+		completedAt: integer("completedAt"),
+	},
+	(table) => [
+		check("candidate_archives_owner_version", sql`${table.ownerVersion}=1`),
+		check("candidate_archives_cutoff", sql`${table.cutoffSeq}>=0`),
+		check(
+			"candidate_archives_state",
+			sql`${table.state} IN ('closed','complete')`,
+		),
+		check(
+			"candidate_archives_state_fields",
+			sql`(${table.state}='closed' AND ${table.finalPairId} IS NULL AND ${table.mutationGeneration} IS NULL AND ${table.conversationGeneration} IS NULL AND ${table.completedAt} IS NULL) OR (${table.state}='complete' AND ${table.finalPairId} IS NOT NULL AND ${table.mutationGeneration}>0 AND ${table.conversationGeneration}>0 AND ${table.completedAt} IS NOT NULL)`,
+		),
+	],
+);
 
 /** One continuation per archived session; the destination admits work once ready. */
-export const candidateContinuations = sqliteTable("candidate_continuations", {
-	id: text("id").primaryKey().notNull(),
-	userId: text("userId").notNull(),
-	projectId: text("projectId").notNull(),
-	sourceSessionId: text("sourceSessionId").notNull().unique(),
-	idempotencyKey: text("idempotencyKey").notNull(),
-	destinationSessionId: text("destinationSessionId").notNull().unique(),
-	destinationIdentityId: text("destinationIdentityId").notNull().unique(),
-	sourcePairId: text("sourcePairId").notNull(),
-	branchName: text("branchName").notNull(),
-	state: text("state", { enum: ["pending", "ready"] }).notNull(),
-	messagesDigest: text("messagesDigest"),
-	createdAt: integer("createdAt").notNull(),
-	readyAt: integer("readyAt"),
-});
+export const candidateContinuations = sqliteTable(
+	"candidate_continuations",
+	{
+		id: text("id").primaryKey().notNull(),
+		userId: text("userId").notNull(),
+		projectId: text("projectId").notNull(),
+		sourceSessionId: text("sourceSessionId").notNull().unique(),
+		idempotencyKey: text("idempotencyKey").notNull(),
+		destinationSessionId: text("destinationSessionId").notNull().unique(),
+		destinationIdentityId: text("destinationIdentityId").notNull().unique(),
+		sourcePairId: text("sourcePairId").notNull(),
+		branchName: text("branchName").notNull(),
+		state: text("state", { enum: ["pending", "ready"] }).notNull(),
+		messagesDigest: text("messagesDigest"),
+		createdAt: integer("createdAt").notNull(),
+		readyAt: integer("readyAt"),
+	},
+	(table) => [
+		check(
+			"candidate_continuations_state",
+			sql`${table.state} IN ('pending','ready')`,
+		),
+		check(
+			"candidate_continuations_state_fields",
+			sql`(${table.state}='pending' AND ${table.messagesDigest} IS NULL AND ${table.readyAt} IS NULL) OR (${table.state}='ready' AND length(${table.messagesDigest})=64 AND ${table.readyAt} IS NOT NULL)`,
+		),
+	],
+);
+
+export const candidateCapacityClaims = sqliteTable(
+	"candidate_capacity_claims",
+	{
+		id: text("id").primaryKey().notNull(),
+		pool: text("pool", { enum: ["execution", "model"] }).notNull(),
+		kind: text("kind", {
+			enum: ["executor", "builder", "preview", "model"],
+		}).notNull(),
+		ownerKey: text("ownerKey").notNull(),
+		userId: text("userId").notNull(),
+		state: text("state", { enum: ["live", "released"] }).notNull(),
+		claimedAt: integer("claimedAt").notNull(),
+		releasedAt: integer("releasedAt"),
+		evidence: text("evidence"),
+	},
+	(table) => [
+		uniqueIndex("candidate_capacity_claims_owner_uidx").on(
+			table.kind,
+			table.ownerKey,
+		),
+		index("candidate_capacity_claims_live_idx").on(
+			table.pool,
+			table.state,
+			table.userId,
+		),
+		check(
+			"candidate_capacity_claims_pool",
+			sql`${table.pool} IN ('execution','model')`,
+		),
+		check(
+			"candidate_capacity_claims_kind",
+			sql`${table.kind} IN ('executor','builder','preview','model')`,
+		),
+		check(
+			"candidate_capacity_claims_owner_key",
+			sql`length(${table.ownerKey}) BETWEEN 1 AND 512`,
+		),
+		check(
+			"candidate_capacity_claims_state",
+			sql`${table.state} IN ('live','released')`,
+		),
+		check(
+			"candidate_capacity_claims_kind_pool",
+			sql`(${table.kind}='model')=(${table.pool}='model')`,
+		),
+		check(
+			"candidate_capacity_claims_state_fields",
+			sql`(${table.state}='live' AND ${table.releasedAt} IS NULL AND ${table.evidence} IS NULL) OR (${table.state}='released' AND ${table.releasedAt} IS NOT NULL AND ${table.evidence} IS NOT NULL)`,
+		),
+	],
+);
 
 export const runtimeMigrations = sqliteTable("runtime_migrations", {
 	id: text("id").primaryKey(),
