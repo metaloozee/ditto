@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Status**: TODO (rewritten 2026-10-24 against the routes 021 and 022 delivered; the earlier BLOCKED history is in Git)
+- **Status**: DONE with limits, reviewed 2026-10-24. Preview actions STOPPED (no preview URL in the contract); the blocked-archive delete goes through project settings; candidate commit message is fixed. See `evidence/018-product-integration.md`.
 - **Priority**: P1 (L5 product completion)
 - **Effort**: L
 - **Risk**: MED (UI over new contracts; the legacy path must not change)
