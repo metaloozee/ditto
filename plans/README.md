@@ -67,7 +67,9 @@ Runtime gate drift: since 015 the full `pnpm runtime:verify` run is load-sensiti
 | [016](016-archive-continue-and-deletion.md) | Archive/new lineage and revocation-first deletion | L5 | 015 | DONE ([evidence](evidence/016-lifecycle.md)) |
 | [017](017-retention-and-clean-start-rehearsal.md) | Retention and disposable ownership transition | L5 | 016 | DONE ([evidence](evidence/017-l5-backend-acceptance.md), [CI correction](evidence/017-l5-backend-acceptance.md#ci-correction)) |
 | [021](021-candidate-product-exposure.md) | Expose candidate observation, actions, models, configuration, archive/restore facts and deletion to product routes | L5 | 017 | DONE with one limit (2026-10-23 review): Step 5 configuration intents stopped, since the host applies configuration only under a prompt/follow-up command. Uncommitted in `ditto-execution/plan-021`; combined `credentials:verify` hit the known WSL storage flake, every part passes alone ([evidence](evidence/021-product-exposure.md)) |
-| [018](018-product-controls-and-reconnect.md) | Product controls without UI-test expansion | L5 | 017, 021, focused UI placement/copy approval | BLOCKED: waits for 021 to be integrated and a decision on configuration (standalone host path vs selection on the next prompt). Item 2 slice held in `ditto-execution/plan-018` |
+| [022](022-selection-with-next-prompt.md) | Apply a model selection carried by the next prompt | L5 | 021 | DONE (reviewed 2026-10-24; [evidence](evidence/022-selection-with-prompt.md)). Combined local `credentials:verify` is flaky on WSL; CI is the arbiter |
+| — | Schema drift: `schema.ts` lacks `candidate_capacity_claims` and CHECK constraints from hand-written 0022–0026 (found 2026-10-24, see [022 evidence](evidence/022-selection-with-prompt.md#migration-regeneration-reviewer-2026-10-24)) | tech-debt | — | OPEN, unplanned |
+| [018](018-product-controls-and-reconnect.md) | Product controls without UI-test expansion | L5 | 017, 021, 022, focused UI placement/copy approval | TODO: refresh against 021/022 evidence, then execute. Item 2 slice held in `ditto-execution/plan-018` |
 | [019](019-local-acceptance-and-implementation-retirement.md) | Real-auth smoke, acceptance, CI and source retirement | L6 | 018, complete L5, stable `runtime:verify` | BLOCKED |
 | [020](020-approved-provider-and-hosted-validation.md) | Separately approved provider and hosted evidence | External | Provider: 006/007 and safety gates. Hosted: 019. Separate operational approval | BLOCKED |
 
@@ -80,7 +82,7 @@ The critical path is intentionally serial. These plans change shared ownership a
                             L3 complete
  -> 011 -> 012 -> 013 -> 014
                      L4 complete
- -> 015 -> 016 -> 017 -> 021 -> 018 -> 019
+ -> 015 -> 016 -> 017 -> 021 -> 022 -> 018 -> 019
                      L5       L6
 
 006/007 + explicit allowance approval -> 020 provider track
