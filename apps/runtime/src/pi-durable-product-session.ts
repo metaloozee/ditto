@@ -27,6 +27,7 @@ import type {
 	RuntimeObservationV1,
 } from "../../../packages/runtime-contracts/src/projection.js";
 import type { WorkspaceActionResultV1 } from "../../../packages/runtime-contracts/src/workspace-action.js";
+import type { ArtifactStore } from "./pi-durable-artifacts.ts";
 import type {
 	CheckpointHostPort,
 	CheckpointRestorer,
@@ -45,7 +46,7 @@ import type {
 	WorkspaceController,
 	WorkspaceHostPort,
 } from "./pi-durable-workspace.ts";
-import { parseRuntimeKeyring } from "./runtime-crypto.ts";
+import { parseRuntimeKeyring, type RuntimeKeyring } from "./runtime-crypto.ts";
 
 export type CandidateRuntimeScope = {
 	version: 2;
@@ -144,6 +145,15 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 	): WorkspaceController | undefined {
 		return undefined;
 	}
+	/** Deployment composition binds the session's execution to its validated scope before the hooks run. */
+	protected prepareExecution(
+		_scope: CandidateRuntimeScope,
+		_keyring: RuntimeKeyring,
+	): void {}
+	/** Deployment composition supplies the recovery store; none disables retention. */
+	protected recoveryStore(): ArtifactStore | undefined {
+		return undefined;
+	}
 	private opening: Promise<PiDurableHost> | undefined;
 	private async scope(value?: unknown) {
 		if (this.env.CANDIDATE_DISPOSABLE !== "008-synthetic")
@@ -221,6 +231,7 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 	private async open(scope: CandidateRuntimeScope) {
 		if (this.host && !(await this.host.awaitClosure())) return this.host;
 		const keyring = await this.keyring();
+		this.prepareExecution(scope, keyring);
 		const product = this.env.CandidateProduct;
 		// A session that can reach an executor waits for its baseline pair
 		// before any ordinary work; without one, tools fail before admission.
@@ -240,6 +251,7 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 								this.checkpointRestorer(port),
 							workspace: (port: WorkspaceHostPort) =>
 								this.workspaceController(port),
+							store: this.recoveryStore(),
 						},
 					}
 				: {}),

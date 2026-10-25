@@ -833,7 +833,7 @@ export const ARCHIVE_CLI_PATH = "/opt/ditto-runner/dist/archive-cli.js";
 export const ARCHIVE_TEMP_PATH = "/tmp/ditto-workspace-archive.tar.gz";
 const WORKSPACE_PATH = "/workspace";
 /** Read-only Git with no repository hooks, config includes or helpers. */
-const CLOSED_GIT = `env -i PATH=/usr/local/bin:/usr/bin:/bin HOME=/nonexistent GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C ${WORKSPACE_PATH}`;
+export const CLOSED_GIT = `env -i PATH=/usr/local/bin:/usr/bin:/bin HOME=/nonexistent GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C ${WORKSPACE_PATH}`;
 
 export type ArtifactSandbox = {
 	exec(
