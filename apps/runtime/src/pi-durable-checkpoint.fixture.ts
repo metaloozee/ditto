@@ -401,6 +401,7 @@ export async function fixture(
 			const configurationGate: { wait?: () => Promise<void> } = {};
 			const dependencies: HostFixtureDependencies = {
 				now: () => control.now,
+				budgets: { workMs: 10_000, drainMs: 1000 },
 				fault: (point) => hostFault.at?.(point),
 				retained: {
 					ownerId: "owner",
