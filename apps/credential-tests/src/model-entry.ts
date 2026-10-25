@@ -36,6 +36,12 @@ import {
 	PiDurableProductSession,
 	parseCandidateRuntimeScope,
 } from "../../runtime/src/pi-durable-product-session.ts";
+import {
+	brokerCandidateGit,
+	type CandidateBranchFetchDeps,
+	closeCandidateBranchFetch,
+	openCandidateBranchFetch,
+} from "../../web/src/lib/candidate-branch-fetch";
 import { CandidateLifecycle } from "../../web/src/lib/candidate-lifecycle";
 import {
 	candidateProjectCiphertext,
@@ -713,6 +719,52 @@ type FixtureResetRow = {
 };
 
 export class CandidateFixtureProduct extends WorkerEntrypoint<CandidateFixtureBindings> {
+	private branchFetchDeps(): CandidateBranchFetchDeps {
+		return {
+			db: this.env.DB,
+			now: Date.now,
+			github: {
+				branchExists: async (_repository, branch) => branch === "feature",
+				defaultBranch: async () => "main",
+			},
+			mintToken: async () => "fixture-installation-token",
+			fetch: async () =>
+				new Response("001e# service=git-upload-pack\n0000", {
+					headers: {
+						"content-type": "application/x-git-upload-pack-advertisement",
+					},
+				}),
+		};
+	}
+	openCandidateBranchFetch(
+		scope: CandidateRuntimeScope,
+		request: { operation: string; branch: string },
+	) {
+		return openCandidateBranchFetch(
+			this.branchFetchDeps(),
+			parseCandidateRuntimeScope(scope),
+			request,
+		);
+	}
+	brokerCandidateGit(
+		scope: CandidateRuntimeScope,
+		request: Request,
+		containerId: string,
+	) {
+		return brokerCandidateGit(
+			this.branchFetchDeps(),
+			parseCandidateRuntimeScope(scope),
+			request,
+			containerId,
+		);
+	}
+	closeCandidateBranchFetch(scope: CandidateRuntimeScope, window: string) {
+		return closeCandidateBranchFetch(
+			this.branchFetchDeps(),
+			parseCandidateRuntimeScope(scope),
+			window,
+		);
+	}
 	private fixtureSession(sessionId: string) {
 		return this.env.CandidateSessions.getByName(sessionId);
 	}
