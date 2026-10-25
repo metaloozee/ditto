@@ -82,3 +82,16 @@ Five consecutive full `runtime:verify` passes, `pnpm verify` includes `runtime:v
 ## Maintenance
 
 A future Pi Durable or pool upgrade must rerun the five-run check. If the pool patch changes, keep its sections for the Proxy fix, the SQLite close race and any new fix separate and commented.
+
+## Execution result (2026-10-24, reviewer)
+
+BLOCKED by the stop condition "a different runtime test starts failing". The evidence lives on the executor branch `exec-026` @ `4ea77c7`, in `plans/evidence/026-runtime-verify-stability.md` and `plans/evidence/artifacts/026/*.log`. The reviewer checked every number below against those logs.
+
+- Baseline, 3 unmodified runs, default parallelism, about 50 s each: 2 passed. Run 2 failed in `pi-durable-restore.test.ts:622` ("Matcher did not succeed in time"). The target case passed every time, in 4605, 3338 and 3857 ms.
+- H1 (cumulative slowdown) was rejected. The case took 2427 ms when it ran first and 2820 ms after 13 other conformance cases.
+- H2 (contention) holds for the target case. With `@cloudflare/vitest-pool-workers` 0.12.21, `--maxWorkers=1` and `--no-file-parallelism` do not serialise files: the suite still took about 51 s, and the case took 3584 and 3510 ms. Only `poolOptions.workers.singleWorker: true` serialises files. The suite then takes 116 to 142 s and the case 2239 to 3516 ms.
+- Five runs with `singleWorker` gave 4 passes. Run 2 failed in `pi-durable-host.test.ts:1565`: "expected 'failed' to be 'closed'", with workerd logging "Network connection lost". `--no-file-parallelism` also failed `pi-durable-checkpoints.test.ts:112` ("Session is closed") and `pi-durable-retention.test.ts:294`.
+
+Lesson: the premise was too narrow. The target case is now the least flaky of the load failures. At least two of the other failures end in a wrong state or a closed session, not just a slow poll. Lengthening their polls would therefore be the same banned "raise the deadline" move, and it might hide a real teardown or alarm race. The executor's uncommitted `singleWorker: true` edit is not accepted.
+
+Next step: maintainer decision. Option A is a diagnosis plan that reproduces each of the four other failures in isolation under induced load and classifies each one as a test-only timing issue or a runtime race. Option B is to accept `singleWorker` and gate CI on it. That costs about 2.5x suite time and still leaves 1 failure in 5 runs, so it does not meet "Done".
