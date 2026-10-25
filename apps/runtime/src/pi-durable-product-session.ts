@@ -109,6 +109,23 @@ export interface CandidatePrivateProduct extends PrivateModelTransport {
 		input: unknown,
 		selection?: unknown,
 	): Promise<ConfigurationAuthorityV1>;
+	/** Opens the bounded window for one brokered branch fetch; denial is data, not a throw. */
+	openCandidateBranchFetch(
+		scope: CandidateRuntimeScope,
+		request: { operation: string; branch: string },
+	): Promise<
+		{ window: string; ref: string; repository: string } | { denied: string }
+	>;
+	/** Sandbox Git traffic for the open window; the token never leaves the product. */
+	brokerCandidateGit(
+		scope: CandidateRuntimeScope,
+		request: Request,
+		containerId: string,
+	): Promise<Response>;
+	closeCandidateBranchFetch(
+		scope: CandidateRuntimeScope,
+		window: string,
+	): Promise<void>;
 	/** Decrypts project values for one admitted shell operation after fresh authority. */
 	readCandidateProjectValues(
 		scope: CandidateRuntimeScope,

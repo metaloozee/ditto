@@ -19,19 +19,17 @@ import {
 	hook,
 } from "@earendil-works/pi-durable";
 import { expect, it } from "vitest";
-import { sandboxArtifactExecution } from "./pi-durable-artifacts.ts";
 import {
 	fakeArchiveProduct,
 	fakeProduct,
 	fakeRestoreProduct,
 	seed,
 } from "./pi-durable-checkpoint.fixture.ts";
-import { createCheckpointPublisher } from "./pi-durable-checkpoints.ts";
 import {
 	composeCandidateExecution,
 	type ExecutionSandbox,
-	sandboxStreams,
 } from "./pi-durable-execution.ts";
+import { candidateGit } from "./pi-durable-execution-session.ts";
 import {
 	PiDurableHost,
 	type PiDurableHostFixture,
@@ -68,6 +66,8 @@ function scriptedSandbox() {
 		writes: [] as [string, string][],
 		streamWrites: 0,
 		restoredDigests: [] as string[],
+		outbound: [] as { name: string; params: unknown; commandsSeen: number }[],
+		fetchFails: false,
 	};
 	const json = (value: unknown) => ({
 		exitCode: 0,
@@ -129,9 +129,20 @@ function scriptedSandbox() {
 				return { exitCode: 0, stdout: "true\n" };
 			if (command.startsWith("ditto-workspace status"))
 				return json({ ok: true, branch: "b", head: state.head, changed: 2 });
+			if (command.startsWith("ditto-workspace fetch"))
+				return state.fetchFails
+					? json({ ok: false, error: "git_failed" })
+					: json({ ok: true, head: HEAD });
 			if (command.startsWith("ditto-workspace commit"))
 				return json({ ok: true, committed: true, head: "c".repeat(40) });
 			return { exitCode: 0, stdout: "" };
+		},
+		async setOutboundHandler(name, params) {
+			state.outbound.push({
+				name,
+				params,
+				commandsSeen: state.commands.length,
+			});
 		},
 		async readFile(_path, _options) {
 			return { content: streamOf(state.blob) };
@@ -160,10 +171,13 @@ async function harness(
 		sandbox: ReturnType<typeof scriptedSandbox>;
 		composed: ReturnType<typeof composeCandidateExecution>;
 		control: Control;
-		/** Establishes the baseline the way tests do: brokered fetch is not composed, so it is faked. */
+		branch: ReturnType<typeof fakeBranch>;
+		/** Establishes the baseline through the composed publisher and its brokered fetch. */
 		baseline(): Promise<{ id: string }>;
 		/** A publisher over the same sandbox adapters and R2 store, for boundary pairs. */
-		publisher(): ReturnType<typeof createCheckpointPublisher>;
+		publisher(): ReturnType<
+			ReturnType<typeof composeCandidateExecution>["restorer"]
+		>;
 		model: { calls: number };
 	}) => Promise<void>,
 ) {
@@ -180,11 +194,21 @@ async function harness(
 				workspaceSessionId: "workspace",
 				keyring,
 			};
+			const branch = fakeBranch();
+			const scope = {
+				version: 2,
+				userId: "owner",
+				projectId: "project",
+				workspaceSessionId: "workspace",
+				ownerVersion: 1,
+			};
 			const composed = composeCandidateExecution({
 				storage: state.storage,
 				binding,
 				sandbox: sandbox.sandbox,
 				bucket: env.RECOVERY_ARTIFACTS,
+				branchAuthority: branch.branch,
+				outboundScope: scope,
 				branch: "b",
 				now: () => control.now,
 			});
@@ -342,23 +366,8 @@ async function harness(
 				});
 				return host;
 			};
-			// Brokered fetch is not composed, so the baseline uses a test-only fetch.
 			const publisher = () =>
-				createCheckpointPublisher({
-					storage: state.storage,
-					host: (host as PiDurableHost).checkpointPort(),
-					binding,
-					execution: {
-						...sandboxArtifactExecution(
-							sandboxStreams(sandbox.sandbox),
-							() => control.now,
-						),
-						fetchBranch: async () => ({ head: HEAD }),
-					},
-					store: composed.store,
-					branch: fakeBranch().branch,
-					now: () => control.now,
-				});
+				composed.restorer((host as PiDurableHost).checkpointPort());
 			try {
 				await run({
 					open,
@@ -371,6 +380,7 @@ async function harness(
 					composed,
 					control,
 					model,
+					branch,
 					publisher,
 					async baseline() {
 						const result = await publisher().establishBaseline({
@@ -527,4 +537,103 @@ it("retires an old pair after the retention period and deletes its objects from 
 		expect(keys).toContain(third?.archive.objectKey);
 		expect(keys).toContain(third?.context.objectKey);
 	});
+});
+
+const fetchCommands = (commands: string[]) =>
+	commands.filter((command) => command.startsWith("ditto-workspace fetch"));
+
+it("publishes the baseline through the composed brokered fetch, binding Git before the fetch command", async () => {
+	await harness("execution-brokered-baseline", async (context) => {
+		await context.open();
+		const manifest = await context.baseline();
+		expect(manifest.id).toBeTruthy();
+		expect(context.sandbox.state.outbound).toHaveLength(1);
+		const [binding] = context.sandbox.state.outbound;
+		expect(binding?.name).toBe("candidateGit");
+		expect(binding?.params).toMatchObject({
+			userId: "owner",
+			workspaceSessionId: "workspace",
+		});
+		const fetches = fetchCommands(context.sandbox.state.commands);
+		expect(fetches).toHaveLength(1);
+		expect(fetches[0]).toBe(
+			"ditto-workspace fetch --repository 'owner/repo' --ref 'refs/heads/feature' --branch 'b'",
+		);
+		// Binding ran before any fetch command was issued.
+		const firstFetch = context.sandbox.state.commands.findIndex((command) =>
+			command.startsWith("ditto-workspace fetch"),
+		);
+		expect(binding?.commandsSeen).toBeLessThanOrEqual(firstFetch);
+		expect(context.branch.state.opened).toHaveLength(1);
+		expect(context.branch.state.closed).toEqual(
+			context.branch.state.opened.map((operation) => `window-${operation}`),
+		);
+	});
+});
+
+it("closes the window when the fetch command fails", async () => {
+	await harness("execution-fetch-fails", async (context) => {
+		await context.open();
+		context.sandbox.state.fetchFails = true;
+		const result = await context.publisher().establishBaseline({
+			seed: await seed(context.composed.store),
+			branch: "b",
+		});
+		expect(result.status).not.toBe("published");
+		expect(context.branch.state.opened).toHaveLength(1);
+		expect(context.branch.state.closed).toHaveLength(1);
+	});
+});
+
+it("fails the baseline with authority_denied and runs no fetch when the open is denied", async () => {
+	await harness("execution-fetch-denied", async (context) => {
+		await context.open();
+		context.branch.state.decision = "deny";
+		const result = await context.publisher().establishBaseline({
+			seed: await seed(context.composed.store),
+			branch: "b",
+		});
+		expect(JSON.stringify(result)).toContain("authority_denied");
+		expect(fetchCommands(context.sandbox.state.commands)).toEqual([]);
+		expect(context.sandbox.state.outbound).toEqual([]);
+	});
+});
+
+it("forwards a valid outbound scope to the product with the container id and refuses malformed params", async () => {
+	const calls: { scope: unknown; containerId: string }[] = [];
+	const product = {
+		async brokerCandidateGit(
+			scope: unknown,
+			_request: Request,
+			containerId: string,
+		) {
+			calls.push({ scope, containerId });
+			return new Response("ok");
+		},
+	};
+	const environment = { CandidateProduct: product } as never;
+	const scope = {
+		version: 2,
+		userId: "owner",
+		projectId: "project",
+		workspaceSessionId: "workspace",
+		ownerVersion: 1,
+	};
+	const request = new Request("https://github.com/owner/repo.git/info/refs");
+	const ok = await candidateGit(request, environment, {
+		containerId: "container-1",
+		className: "PiDurableCandidateSandbox",
+		params: scope,
+	});
+	expect(ok.status).toBe(200);
+	expect(calls).toEqual([{ scope, containerId: "container-1" }]);
+	for (const params of [undefined, {}, { ...scope, extra: 1 }, "x"]) {
+		const denied = await candidateGit(request, environment, {
+			containerId: "container-1",
+			className: "PiDurableCandidateSandbox",
+			params,
+		});
+		expect(denied.status).toBe(403);
+	}
+	expect(calls).toHaveLength(1);
 });

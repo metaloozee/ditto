@@ -1,4 +1,4 @@
-import { getSandbox, type Sandbox } from "@cloudflare/sandbox";
+import { getSandbox, Sandbox } from "@cloudflare/sandbox";
 import type { ArtifactStore } from "./pi-durable-artifacts.ts";
 import type {
 	CheckpointHostPort,
@@ -9,9 +9,11 @@ import {
 	type ExecutionSandbox,
 } from "./pi-durable-execution.ts";
 import {
+	type CandidatePrivateProduct,
 	type CandidateRuntimeScope,
 	type CandidateSessionBindings,
 	PiDurableProductSession,
+	parseCandidateRuntimeScope,
 } from "./pi-durable-product-session.ts";
 import type { RemoteExecutor } from "./pi-durable-tools.ts";
 import type {
@@ -20,8 +22,36 @@ import type {
 } from "./pi-durable-workspace.ts";
 import type { RuntimeKeyring } from "./runtime-crypto.ts";
 
+/** Candidate execution sandbox: no direct egress; HTTPS goes to the product broker. */
+export class PiDurableCandidateSandbox extends Sandbox {
+	enableInternet = false;
+	interceptHttps = true;
+}
+
+/** Outbound handler for sandbox traffic; `ctx.params` is the trusted scope set by this Worker. */
+export async function candidateGit(
+	request: Request,
+	env: { CandidateProduct: CandidatePrivateProduct },
+	ctx: { containerId: string; className: string; params: unknown },
+): Promise<Response> {
+	let scope: CandidateRuntimeScope;
+	try {
+		scope = parseCandidateRuntimeScope(ctx.params);
+	} catch {
+		return new Response("denied", { status: 403 });
+	}
+	return env.CandidateProduct.brokerCandidateGit(
+		scope,
+		request,
+		ctx.containerId,
+	);
+}
+
+// Class-field static outboundHandlers does not populate the SDK registry.
+PiDurableCandidateSandbox.outboundHandlers = { candidateGit };
+
 export type ExecutionSessionBindings = CandidateSessionBindings & {
-	CandidateSandbox?: DurableObjectNamespace<Sandbox>;
+	CandidateSandbox?: DurableObjectNamespace<PiDurableCandidateSandbox>;
 	CANDIDATE_RECOVERY?: R2Bucket;
 };
 
@@ -51,6 +81,19 @@ export class PiDurableExecutionSession extends PiDurableProductSession {
 							transport: "rpc",
 						}) as ExecutionSandbox,
 						bucket: CANDIDATE_RECOVERY,
+						outboundScope: scope,
+						branchAuthority: {
+							open: (request) =>
+								this.env.CandidateProduct.openCandidateBranchFetch(
+									scope,
+									request,
+								),
+							close: (window) =>
+								this.env.CandidateProduct.closeCandidateBranchFetch(
+									scope,
+									window,
+								),
+						},
 						branch: this.sessionBranch(),
 						now: Date.now,
 					})

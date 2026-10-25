@@ -3,6 +3,7 @@ import {
 	type ArtifactPermit,
 	type ArtifactSandbox,
 	ArtifactStepRejected,
+	type BranchSyncAuthority,
 	CLOSED_GIT,
 	r2ArtifactStore,
 	sandboxArtifactExecution,
@@ -38,6 +39,7 @@ export type ExecutionSandbox = {
 		path: string,
 		content: string | ReadableStream<Uint8Array>,
 	): Promise<unknown>;
+	setOutboundHandler(name: string, params: unknown): Promise<unknown>;
 };
 
 const MESSAGE_PATH = "/tmp/ditto-workspace-commit-message.txt";
@@ -173,6 +175,10 @@ export function composeCandidateExecution(deps: {
 	};
 	sandbox: ExecutionSandbox;
 	bucket: R2Bucket;
+	/** Product-backed authority for the baseline branch fetch. */
+	branchAuthority: BranchSyncAuthority;
+	/** Trusted params the sandbox's outbound Git handler receives with each request. */
+	outboundScope: unknown;
 	/** Absent until the session's owned branch is known; Git actions stay unavailable. */
 	branch: string | undefined;
 	now(): number;
@@ -183,6 +189,14 @@ export function composeCandidateExecution(deps: {
 		(execution ??= sandboxArtifactExecution(
 			sandboxStreams(deps.sandbox),
 			deps.now,
+			{
+				beforeFetch: async () => {
+					await deps.sandbox.setOutboundHandler(
+						"candidateGit",
+						deps.outboundScope,
+					);
+				},
+			},
 		));
 	let controller: WorkspaceController | undefined;
 	const writers = async () =>
@@ -193,6 +207,7 @@ export function composeCandidateExecution(deps: {
 			host,
 			binding: deps.binding,
 			execution: artifacts(),
+			branch: deps.branchAuthority,
 			store,
 			writers,
 			now: deps.now,

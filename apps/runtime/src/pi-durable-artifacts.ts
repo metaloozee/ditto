@@ -382,7 +382,12 @@ export interface ArtifactExecution {
 	): Promise<ArchiveMeasurement>;
 	fetchBranch(
 		permit: ArtifactPermit,
-		request: { window: string; ref: string },
+		request: {
+			window: string;
+			ref: string;
+			repository: string;
+			branch: string;
+		},
 	): Promise<{ head: string }>;
 }
 
@@ -404,7 +409,9 @@ export interface BranchSyncAuthority {
 	open(request: {
 		operation: string;
 		branch: string;
-	}): Promise<{ window: string; ref: string } | { denied: string }>;
+	}): Promise<
+		{ window: string; ref: string; repository: string } | { denied: string }
+	>;
 	close(window: string): Promise<void>;
 }
 
@@ -798,6 +805,8 @@ export function createWorkspaceRecovery(deps: {
 						const result = await deps.execution.fetchBranch(permit, {
 							window: grant.window,
 							ref: grant.ref,
+							repository: grant.repository,
+							branch,
 						});
 						if (!isGitObjectId(result.head))
 							throw new Error("Fetched HEAD is malformed");
@@ -891,10 +900,14 @@ function parseArchiveCli(
 	};
 }
 
-/** Execution adapter for the Sandbox; branch fetch stays unavailable until brokered Git is composed. */
+/**
+ * Execution adapter for the Sandbox. Branch fetch is available only when the
+ * composition supplies `beforeFetch`, which binds the sandbox's brokered Git.
+ */
 export function sandboxArtifactExecution(
 	sandbox: ArtifactSandbox,
 	now: () => number,
+	options: { beforeFetch?: () => Promise<void> } = {},
 ): ArtifactExecution {
 	const timeout = (permit: ArtifactPermit) =>
 		Math.max(1, permit.deadlineAt - now());
@@ -950,12 +963,47 @@ export function sandboxArtifactExecution(
 			);
 			return parseArchiveCli(result.stdout, "restore");
 		},
-		async fetchBranch() {
-			throw new ArtifactStepRejected(
-				"authority_denied",
-				"Brokered branch fetch is not composed in the runtime",
-				true,
+		async fetchBranch(permit, request) {
+			const { beforeFetch } = options;
+			if (!beforeFetch)
+				throw new ArtifactStepRejected(
+					"authority_denied",
+					"Brokered branch fetch is not composed in the runtime",
+					true,
+				);
+			try {
+				await beforeFetch();
+			} catch {
+				throw new ArtifactStepRejected(
+					"authority_denied",
+					"Brokered Git could not be bound",
+					true,
+				);
+			}
+			const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+			const result = await sandbox.exec(
+				`ditto-workspace fetch --repository ${quote(request.repository)} --ref ${quote(request.ref)} --branch ${quote(request.branch)}`,
+				{ timeout: timeout(permit) },
 			);
+			let value: unknown;
+			try {
+				value = JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "");
+			} catch {
+				value = undefined;
+			}
+			const record =
+				value && typeof value === "object" && !Array.isArray(value)
+					? (value as Record<string, unknown>)
+					: undefined;
+			if (!record || record.ok !== true || typeof record.head !== "string") {
+				const code =
+					typeof record?.error === "string" ? record.error : "failed";
+				throw new ArtifactStepRejected(
+					"execution_failed",
+					`Workspace fetch failed (${code})`,
+				);
+			}
+			return { head: record.head };
 		},
 	};
 }

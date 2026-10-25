@@ -643,6 +643,8 @@ describe("workspace mutation scope and branch sync", () => {
 				{
 					window: `window-${granted.state.opened[0]}`,
 					ref: "refs/heads/feature",
+					repository: "owner/repo",
+					branch: "feature",
 				},
 			]);
 			expect(granted.state.closed).toHaveLength(1);
@@ -709,7 +711,12 @@ describe("sandbox artifact execution", () => {
 		await execution.writeArchive(permit, streamOf(new Uint8Array(3)));
 		await execution.extract(permit, DEFAULT_ARCHIVE_LIMITS, "c".repeat(64));
 		await expect(
-			execution.fetchBranch(permit, { window: "w", ref: "refs/heads/x" }),
+			execution.fetchBranch(permit, {
+				window: "w",
+				ref: "refs/heads/x",
+				repository: "owner/repo",
+				branch: "b",
+			}),
 		).rejects.toMatchObject({ reason: "authority_denied" });
 		for (const command of commands) {
 			expect(command).not.toMatch(/R2_|BUCKET|X-Amz|objectKey|https?:|token/i);

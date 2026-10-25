@@ -159,7 +159,11 @@ export function fakeBranch(decision: "grant" | "deny" = "grant") {
 			state.opened.push(request.operation);
 			return state.decision === "deny"
 				? { denied: "revoked" }
-				: { window: `window-${request.operation}`, ref: "refs/heads/feature" };
+				: {
+						window: `window-${request.operation}`,
+						ref: "refs/heads/feature",
+						repository: "owner/repo",
+					};
 		},
 		async close(window) {
 			state.closed.push(window);
