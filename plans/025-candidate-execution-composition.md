@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Status**: DONE with limits (reviewed 2026-10-25; see `plans/README.md`). The executor's first run stopped correctly on `readFileStream` (SSE, not raw bytes) and on the hooks lacking a scope; both are corrected in Steps 1, 2 and 4 below
+- **Status**: DONE with limits (reviewed 2026-10-25, Revision 1 reviewed the same day with Docker `passed`; see `plans/README.md`). The executor's first run stopped correctly on `readFileStream` (SSE, not raw bytes) and on the hooks lacking a scope; both are corrected in Steps 1, 2 and 4 below
 - **Priority**: P1 (019 is blocked on it; README open decision 5)
 - **Effort**: L
 - **Risk**: HIGH (first composition that gives a candidate session a real sandbox and a real artifact store)
@@ -282,6 +282,31 @@ Write results to `plans/evidence/025-execution-composition.md` in the format giv
 - **Bindings**: binding `PiDurableExecutionSession`, a candidate Sandbox namespace and a recovery bucket in `alchemy.run.ts`, together with a local gate that exercises them.
 - **Preview**: after 024.
 - **terminateExecutor**: no production runtime implements `CandidateLifecycleRuntime.terminateExecutor` yet. It must destroy `getSandbox(ns, workspaceSessionId)`, mapping the identity row's `workspaceSessionId` (the D1 `sandboxId` column holds the identity id, not the session id).
+
+## Revision 1 (2026-10-25, after the Docker check)
+
+The image `ditto-sandbox:025`, built from `1ef7d3f`, showed a defect that the stub tests could not catch. Invoked through the `/usr/local/bin/ditto-workspace` symlink, which is how `sandboxWorkspaceExecution` calls it, `workspace-cli.js` prints nothing and exits 0. Its direct-run guard compares `path.basename(process.argv[1])` against `workspace-cli.{ts,js}`, and `fileURLToPath(import.meta.url)` against `process.argv[1]`. Through a symlink, `argv[1]` is `/usr/local/bin/ditto-workspace`, so both checks are false. Run by its real path (`node /opt/ditto-runner/dist/workspace-cli.js status ...`), it works. In a real sandbox every Git status and commit would therefore be rejected with "Workspace command returned no result". `docker-workspace.sh` still exited 0, because its assertions only proved that nothing happened.
+
+`ditto-exec` (009) and `ditto-archive` (011) were rerun on the same image. Both match their recorded logs, so they are unaffected.
+
+Revision steps (base `1ef7d3f`; in scope only `packages/sandbox-runner/src/workspace-cli.ts`, a new `packages/sandbox-runner/src/workspace-cli.test.ts`, `plans/evidence/artifacts/025/docker-workspace.sh` and `plans/evidence/025-execution-composition.md`):
+
+R1. In `workspace-cli.ts`, export a pure `isDirectRun(argv1: string | undefined, moduleUrl: string): boolean`. It is true when `argv1` resolves, through `fs.realpathSync` (any throw means false), to the same path as `fs.realpathSync(fileURLToPath(moduleUrl))`. Also keep the existing basename checks for `workspace-cli.ts`/`.js`. Call it as `isDirectRun(process.argv[1], import.meta.url)`. Do not make the CLI auto-run unconditionally, because tests import it.
+
+R2. `workspace-cli.test.ts` (vitest): in a temp dir, a real file `workspace-cli.js` and a symlink `ditto-workspace` pointing to it. Assert that `isDirectRun(symlink, pathToFileURL(file).href)` is true, `isDirectRun(file, ...)` is true, an unrelated file is false, `undefined` is false, and a dangling path is false. Verify: `npm test --prefix packages/sandbox-runner -- workspace-cli.test.ts`, then `pnpm runner:verify` exits 0.
+
+R3. Make `docker-workspace.sh` fail (`exit 1`, with a message) unless each case shows positive evidence:
+- clean status prints a line containing `"ok":true` and `"changed":0`;
+- the branch mismatch prints `"error":"branch_mismatch"` and a non-zero exit;
+- the changes case prints `"changed":2`;
+- the sibling commit prints `"committed":true`, `git ls-files` contains `new.txt` and does not contain `.env`;
+- the hook case prints `"committed":true` and `/tmp/hook-ran` is absent;
+- the pre-staged `.env.local` case prints `"error":"secret_path"` and HEAD is unchanged;
+- the shell-syntax case prints `"committed":true`, `git log -1 --format=%s` equals the message exactly, and `/tmp/injected` is absent.
+
+Every `ditto-workspace` call goes through the symlink on `PATH`, as the runtime does. Show that the old script can't pass: run it against the old image, which must exit 1, before rebuilding.
+
+R4. `docker build -t ditto-sandbox:025r1 .`, then `sh plans/evidence/artifacts/025/docker-workspace.sh ditto-sandbox:025r1 | tee plans/evidence/artifacts/025/docker-workspace.log`. It must exit 0. Update the evidence file: the Docker row becomes `passed`, with a note on the defect and the 009/011 rerun results.
 
 ## Maintenance
 
