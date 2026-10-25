@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
 	readMessageFile,
 	runCommit,
+	runFetch,
 	runStatus,
 	WORKSPACE_PATH,
 	type WorkspaceGitResult,
@@ -39,6 +40,15 @@ export function run(
 		const message = readMessageFile(values.get("--message-file") ?? "");
 		if (message === undefined) return { ok: false, error: "invalid_args" };
 		return runCommit(workspace, values.get("--branch") ?? "", message);
+	}
+	if (action === "fetch") {
+		const values = flags(rest, ["--repository", "--ref", "--branch"]);
+		if (!values) return { ok: false, error: "invalid_args" };
+		return runFetch(workspace, {
+			repository: values.get("--repository") ?? "",
+			ref: values.get("--ref") ?? "",
+			branch: values.get("--branch") ?? "",
+		});
 	}
 	return { ok: false, error: "invalid_args" };
 }

@@ -18,11 +18,13 @@ export type WorkspaceGitErrorCode =
 	| "branch_mismatch"
 	| "secret_path"
 	| "git_failed"
+	| "dirty_worktree"
 	| "invalid_args";
 
 export type WorkspaceGitResult =
 	| { ok: true; branch: string; head: string; changed: number }
 	| { ok: true; committed: boolean; head: string }
+	| { ok: true; head: string }
 	| { ok: false; error: WorkspaceGitErrorCode };
 
 class WorkspaceGitError extends Error {
@@ -75,7 +77,11 @@ export function parsePorcelainZ(porcelain: string): PorcelainEntry[] {
 	return entries;
 }
 
-function git(workspace: string, args: string[]): string {
+function git(
+	workspace: string,
+	args: string[],
+	options: { config?: string[]; env?: Record<string, string> } = {},
+): string {
 	try {
 		return execFileSync(
 			"git",
@@ -84,12 +90,13 @@ function git(workspace: string, args: string[]): string {
 				"core.hooksPath=/dev/null",
 				"-c",
 				"core.fsmonitor=false",
+				...(options.config ?? []).flatMap((entry) => ["-c", entry]),
 				"-C",
 				workspace,
 				...args,
 			],
 			{
-				env: CLOSED_ENV,
+				env: { ...CLOSED_ENV, ...options.env },
 				encoding: "utf8",
 				timeout: GIT_TIMEOUT_MS,
 				stdio: ["ignore", "pipe", "ignore"],
@@ -194,6 +201,64 @@ export function runCommit(
 			message,
 		]);
 		return { ok: true as const, committed: true, head: head() };
+	});
+}
+
+const REPOSITORY_SLUG = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const CONTAINERS_CA_PATH = "/etc/cloudflare/certs/cloudflare-containers-ca.crt";
+const SYNC_REF = "refs/remotes/ditto/sync";
+
+function validRefFormat(args: string[]): boolean {
+	try {
+		execFileSync("git", ["check-ref-format", ...args], {
+			env: CLOSED_ENV,
+			stdio: "ignore",
+			timeout: GIT_TIMEOUT_MS,
+		});
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+export type FetchRequest = { repository: string; ref: string; branch: string };
+
+/**
+ * Fetches one branch into the owned branch. `remoteUrl` exists for tests; the
+ * CLI never passes it, so production fetches only reach github.com.
+ */
+export function runFetch(
+	workspace: string,
+	request: FetchRequest,
+	options: { remoteUrl?: string } = {},
+): WorkspaceGitResult {
+	return wrap(() => {
+		const { repository, ref, branch } = request;
+		if (
+			!REPOSITORY_SLUG.test(repository) ||
+			!ref.startsWith("refs/heads/") ||
+			ref.length === "refs/heads/".length ||
+			!validRefFormat([ref]) ||
+			!validRefFormat(["--branch", branch])
+		)
+			throw new WorkspaceGitError("invalid_args");
+		if (git(workspace, ["status", "--porcelain=v1", "-z", "-uall"]) !== "")
+			throw new WorkspaceGitError("dirty_worktree");
+		const remote = options.remoteUrl ?? `https://github.com/${repository}.git`;
+		git(workspace, ["fetch", "--no-tags", remote, `+${ref}:${SYNC_REF}`], {
+			config: [
+				"credential.helper=",
+				"http.followRedirects=false",
+				options.remoteUrl
+					? "protocol.file.allow=always"
+					: "protocol.allow=never",
+				"protocol.https.allow=always",
+			],
+			env: { GIT_SSL_CAINFO: CONTAINERS_CA_PATH },
+		});
+		git(workspace, ["checkout", "-q", "-B", branch, SYNC_REF]);
+		const head = git(workspace, ["rev-parse", "HEAD"]).trim();
+		return { ok: true as const, head };
 	});
 }
 

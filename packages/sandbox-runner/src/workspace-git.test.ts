@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { run } from "./workspace-cli.js";
+import { runFetch } from "./workspace-git.js";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -148,5 +149,120 @@ describe("ditto-workspace", () => {
 			ok: false,
 			error: "invalid_args",
 		});
+	});
+});
+
+describe("ditto-workspace fetch", () => {
+	function withRemote() {
+		const { root, workspace } = repo();
+		const remote = path.join(root, "remote.git");
+		git(root, "clone", "-q", "--bare", workspace, remote);
+		git(workspace, "checkout", "-q", "-b", "feature");
+		fs.writeFileSync(path.join(workspace, "f.txt"), "f\n");
+		git(workspace, "add", "f.txt");
+		git(workspace, "commit", "-q", "-m", "feature");
+		git(workspace, "push", "-q", remote, "feature");
+		const featureHead = git(workspace, "rev-parse", "HEAD");
+		git(workspace, "checkout", "-q", "owned");
+		return { root, workspace, remote, featureHead };
+	}
+	const request = {
+		repository: "owner/repo",
+		ref: "refs/heads/feature",
+		branch: "owned",
+	};
+
+	it("moves the owned branch to the remote head and prints it", () => {
+		const { workspace, remote, featureHead } = withRemote();
+		const result = runFetch(workspace, request, {
+			remoteUrl: `file://${remote}`,
+		});
+		expect(result).toEqual({ ok: true, head: featureHead });
+		expect(git(workspace, "rev-parse", "HEAD")).toBe(featureHead);
+		expect(git(workspace, "symbolic-ref", "--short", "HEAD")).toBe("owned");
+	});
+
+	it("refuses a dirty worktree and leaves HEAD unchanged", () => {
+		const { workspace, remote } = withRemote();
+		const head = git(workspace, "rev-parse", "HEAD");
+		fs.writeFileSync(path.join(workspace, "a.txt"), "dirty\n");
+		expect(
+			runFetch(workspace, request, { remoteUrl: `file://${remote}` }),
+		).toEqual({ ok: false, error: "dirty_worktree" });
+		expect(git(workspace, "rev-parse", "HEAD")).toBe(head);
+	});
+
+	it.each([
+		["slug", { ...request, repository: "owner/repo/extra" }],
+		["slug with option", { ...request, repository: "--upload-pack=x/y" }],
+		["ref outside heads", { ...request, ref: "refs/tags/v1" }],
+		["empty ref name", { ...request, ref: "refs/heads/" }],
+		["malformed ref", { ...request, ref: "refs/heads/a..b" }],
+		["malformed branch", { ...request, branch: "bad..branch" }],
+	])("refuses invalid_args for a bad %s", (_label, bad) => {
+		const { workspace, remote } = withRemote();
+		expect(runFetch(workspace, bad, { remoteUrl: `file://${remote}` })).toEqual(
+			{ ok: false, error: "invalid_args" },
+		);
+	});
+
+	it("does not run hooks", () => {
+		const { root, workspace, remote } = withRemote();
+		const marker = path.join(root, "hook-ran");
+		for (const dir of [
+			path.join(remote, "hooks"),
+			path.join(workspace, ".git", "hooks"),
+		]) {
+			const hook = path.join(dir, "post-checkout");
+			fs.writeFileSync(hook, `#!/bin/sh\ntouch ${marker}\n`, { mode: 0o755 });
+		}
+		const result = runFetch(workspace, request, {
+			remoteUrl: `file://${remote}`,
+		});
+		expect(result.ok).toBe(true);
+		expect(fs.existsSync(marker)).toBe(false);
+	});
+
+	it("reports git_failed for an unreachable remote", () => {
+		const { workspace } = withRemote();
+		const head = git(workspace, "rev-parse", "HEAD");
+		expect(
+			runFetch(workspace, request, { remoteUrl: "file:///nonexistent/x.git" }),
+		).toEqual({ ok: false, error: "git_failed" });
+		expect(git(workspace, "rev-parse", "HEAD")).toBe(head);
+	});
+
+	it("never accepts a remote URL through the CLI", () => {
+		const { workspace, remote } = withRemote();
+		expect(
+			run(
+				[
+					"fetch",
+					"--repository",
+					"owner/repo",
+					"--ref",
+					"refs/heads/feature",
+					"--branch",
+					"owned",
+					"--remote",
+					`file://${remote}`,
+				],
+				workspace,
+			),
+		).toEqual({ ok: false, error: "invalid_args" });
+		expect(
+			run(
+				[
+					"fetch",
+					"--repository",
+					`file://${remote}`,
+					"--ref",
+					"refs/heads/feature",
+					"--branch",
+					"owned",
+				],
+				workspace,
+			),
+		).toEqual({ ok: false, error: "invalid_args" });
 	});
 });
