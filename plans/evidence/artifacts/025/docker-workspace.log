@@ -1,0 +1,17 @@
+clean status:
+{"ok":true,"branch":"owned","head":"617b3a83bc9e1a8612e9bd66c565ccdc979c358c","changed":0}
+branch mismatch:
+{"ok":false,"error":"branch_mismatch"} (exit 1)
+changes counted:
+{"ok":true,"branch":"owned","head":"617b3a83bc9e1a8612e9bd66c565ccdc979c358c","changed":2}
+untracked .env stays out while a sibling commits:
+{"ok":true,"committed":true,"head":"edc72f1ae56c17aa5e13ff721c2c0fc601c1a3e2"}
+a.txt
+new.txt
+hook does not run:
+{"ok":true,"committed":true,"head":"31167c3296a40e2bcaaed5c6be306507f3d5cf31"}
+pre-staged .env.local refuses:
+{"ok":false,"error":"secret_path"}
+message with shell syntax is verbatim:
+{"ok":true,"committed":true,"head":"24d57439cfa793705ede965320db89cef531f80c"}
+all workspace checks passed

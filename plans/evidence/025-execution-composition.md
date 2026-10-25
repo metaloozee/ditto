@@ -23,7 +23,7 @@ Base commit: `36ae7b4` (`feat/pi-durable`), uncommitted changes in worktree `pla
 | `pnpm runner:verify` | passed (14 files, 122 tests including 8 `workspace-git` tests) |
 | `npm test --prefix packages/sandbox-runner -- workspace-git.test.ts` | passed (8 tests) |
 | diff of `pi-durable-product-session.ts` against `36ae7b4`, `grep -c 008-synthetic` | prints 1: the unchanged gate line appears once as diff context; no added or removed line contains it |
-| Docker script `plans/evidence/artifacts/025/docker-workspace.sh` | not run (Docker is not installed) |
+| Docker script `plans/evidence/artifacts/025/docker-workspace.sh` | passed on `ditto-sandbox:025r1` (exit 0, log in `plans/evidence/artifacts/025/docker-workspace.log`). The first build, `ditto-sandbox:025`, exposed a defect: `workspace-cli.js` printed nothing and exited 0 when called through the `/usr/local/bin/ditto-workspace` symlink, because its direct-run guard compared `argv[1]` without resolving symlinks. Fixed with `isDirectRun` (realpath comparison, unit-tested). The hardened script requires positive evidence per case and exits 1 against the old image. `ditto-exec` (009) and `ditto-archive` (011) were rerun on the old image and match their recorded logs, so they are unaffected |
 | Provider, hosted and browser checks | not run |
 
 ## Execution tests
