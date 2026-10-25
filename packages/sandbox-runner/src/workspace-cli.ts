@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -50,13 +51,21 @@ export async function main(
 	return result.ok ? 0 : 1;
 }
 
-const isDirectRun =
-	typeof process.argv[1] === "string" &&
-	(path.basename(process.argv[1]) === "workspace-cli.ts" ||
-		path.basename(process.argv[1]) === "workspace-cli.js" ||
-		fileURLToPath(import.meta.url) === process.argv[1]);
+export function isDirectRun(
+	argv1: string | undefined,
+	moduleUrl: string,
+): boolean {
+	if (typeof argv1 !== "string") return false;
+	const base = path.basename(argv1);
+	if (base === "workspace-cli.ts" || base === "workspace-cli.js") return true;
+	try {
+		return fs.realpathSync(argv1) === fs.realpathSync(fileURLToPath(moduleUrl));
+	} catch {
+		return false;
+	}
+}
 
-if (isDirectRun) {
+if (isDirectRun(process.argv[1], import.meta.url)) {
 	main()
 		.then((code) => {
 			process.exitCode = code;
