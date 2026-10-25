@@ -1,0 +1,101 @@
+
+ RUN  v3.2.7 /home/ayan/ditto/.claude/worktrees/agent-aefd4bb9a43b30131/apps/runtime
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+ ✓ src/pi-durable-restore.test.ts > retires every old-generation task, queued input and background task, and a fork at the pair entry continues from the pair context 463ms
+ ✓ src/pi-durable-retention.test.ts > collects only writes that stay unreferenced and unpinned for the whole period; history, pins and rotated keys survive 205ms
+ ✓ src/pi-durable-checkpoints.test.ts > keeps ordinary work queued until the baseline, then publishes a verified pair after seed restore and branch sync 920ms
+ ✓ src/pi-durable-retention.test.ts > retires pairs other than current and previous after the period: their pins and own objects go, shared seed bytes and retained pairs stay 953ms
+ ✓ src/pi-durable-checkpoints.test.ts > publishes no baseline when the seed or branch authority fails, and ordinary work stays denied 178ms
+ ✓ src/pi-durable-checkpoints.test.ts > keeps the current and previous pairs, advances one generation per publication and never rewrites a manifest 728ms
+ ✓ src/pi-durable-restore.test.ts > restores files and the matching conversation together, keeps answered history and fails what the cutoff discarded 1693ms
+ ✓ src/pi-durable-retention.test.ts > an interruption after-mark converges without losing a retained pair 999ms
+ ✓ src/pi-durable-checkpoints.test.ts > holds exclusive ownership: a concurrent publication and ordinary work wait until the scope is released 516ms
+ ✓ src/pi-durable-checkpoints.test.ts > defers publication while a run is being scheduled, then the run completes 2258ms
+ ✓ src/pi-durable-retention.test.ts > an interruption after-pair-retired converges without losing a retained pair 2644ms
+ ✓ src/pi-durable-checkpoints.test.ts > refuses publication when authority, epoch or effects change after upload, and cleans both prepared objects 269ms
+stdout | src/pi-durable-restore.test.ts > waits for an in-flight provider request, and an unknown outcome blocks the restore without any fallback
+[028-diag] Error: Session is closed [{"state":"closed","yield_at":1792913589920,"end_at":1792913590920},{"state":"closed","yield_at":1792913589920,"end_at":1792913590920}] 1792913532241
+
+ ✓ src/pi-durable-checkpoints.test.ts > defers publication while writers are unsettled, the executor is not exclusive or a recovery outcome is unknown 165ms
+stdout | src/pi-durable-restore.test.ts > waits for an in-flight provider request, and an unknown outcome blocks the restore without any fallback
+[028-diag] Error: Session is closed [{"state":"closed","yield_at":1792913589920,"end_at":1792913590920},{"state":"closed","yield_at":1792913589920,"end_at":1792913590920}] 1792913532299
+
+stdout | src/pi-durable-restore.test.ts > waits for an in-flight provider request, and an unknown outcome blocks the restore without any fallback
+[028-diag] Error: Session is closed [{"state":"closed","yield_at":1792913589920,"end_at":1792913590920},{"state":"closed","yield_at":1792913589920,"end_at":1792913590920}] 1792913532337
+
+ ✓ src/pi-durable-retention.test.ts > an interruption after-object-deleted converges without losing a retained pair 948ms
+ × src/pi-durable-restore.test.ts > waits for an in-flight provider request, and an unknown outcome blocks the restore without any fallback 3477ms
+   → Matcher did not succeed in time.
+ ✓ src/pi-durable-retention.test.ts > without a composed store releases pins but keeps objects for a later composition 822ms
+ ✓ src/pi-durable-checkpoints.test.ts > leaves no restorable pair when the process is lost before the commit, and reopening releases ownership 1914ms
+ ✓ src/pi-durable-restore.test.ts > records a result that arrives after the fence under its original epoch, then restores without running anything new 1784ms
+ ✓ src/pi-durable-checkpoints.test.ts > keeps a pair whole when the process is lost after its commit, and delivers its pointer move after reopening 312ms
+ ✓ src/pi-durable-checkpoints.test.ts > keeps a completed assistant complete when backup or product application fails, with lag and degradation visible 704ms
+ ✓ src/pi-durable-retention.test.ts > never runs while a session is archived or its authority is revoked 1679ms
+ ✓ src/pi-durable-checkpoints.test.ts > rejects a context object that does not read back exactly, without publishing 200ms
+ ✓ src/pi-durable-checkpoints.test.ts > stops delivery at a rejected pointer move and shows it as degraded lag 295ms
+ ✓ src/pi-durable-restore.test.ts > falls back to the previous pair with that pair's own conversation position when the named pair is corrupt 1266ms
+ ✓ src/pi-durable-retention.test.ts > waits while a publication is in flight and collects once it settles 705ms
+ ✓ src/pi-durable-retention.test.ts > keeps an archive this session did not upload, and backs off a failing delete per object 643ms
+ ✓ src/pi-durable-restore.test.ts > moves the pointer to the restored pair, so a discarded pair is never restored or retained again 2073ms
+ ✓ src/pi-durable-restore.test.ts > delivers a restore pointer move that follows an undelivered publication as its own batch 875ms
+ ✓ src/pi-durable-restore.test.ts > refuses a restore before the fence when the composition cannot finish one 708ms
+ ✓ src/pi-durable-restore.test.ts > blocks with evidence when both pairs are unusable, and never falls back to the seed 831ms
+ ✓ src/pi-durable-restore.test.ts > waits for a delayed predecessor and gives it the restore fate instead of a Pi submission 872ms
+ ✓ src/pi-durable-restore.test.ts > a process lost after-fence resumes the restore once, with no stranded or replayed instruction 1158ms
+ ✓ src/pi-durable-restore.test.ts > a process lost between-dispositions resumes the restore once, with no stranded or replayed instruction 1192ms
+ ✓ src/pi-durable-restore.test.ts > a process lost after-files resumes the restore once, with no stranded or replayed instruction 1175ms
+ ✓ src/pi-durable-restore.test.ts > a process lost after-generation resumes the restore once, with no stranded or replayed instruction 1210ms
+ ✓ src/pi-durable-restore.test.ts > a process lost lost-acknowledgment resumes the restore once, with no stranded or replayed instruction 1201ms
+ ✓ src/pi-durable-restore.test.ts > keeps a command accepted after the restore queued for the restored generation 1081ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/pi-durable-restore.test.ts > waits for an in-flight provider request, and an unknown outcome blocks the restore without any fallback
+Error: Matcher did not succeed in time.
+ ❯ complete src/pi-durable-checkpoint.fixture.ts:627:4
+    625|     .toArray()[0]?.state;
+    626|   })
+    627|   .toBe("complete");
+       |    ^
+    628|  expect(host.checkpointPort().quiescent()).toBe(true);
+    629| }
+ ❯ pairAfterFirst src/pi-durable-restore.test.ts:309:8
+ ❯ src/pi-durable-restore.test.ts:399:20
+ ❯ src/pi-durable-checkpoint.fixture.ts:530:5
+ ❯ maybeHandleRunRequest home/ayan/ditto/.claude/worktrees/agent-aefd4bb9a43b30131/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_patch_hash=207877e4910927fa510e9bc92bb8b22ff595_1b5411412dd670f68650a72cea417122/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:198:20
+ ❯ DurableObject.Wrapper.fetch home/ayan/ditto/.claude/worktrees/agent-aefd4bb9a43b30131/node_modules/.pnpm/@cloudflare+vitest-pool-workers@0.12.21_patch_hash=207877e4910927fa510e9bc92bb8b22ff595_1b5411412dd670f68650a72cea417122/node_modules/@cloudflare/vitest-pool-workers/dist/worker/lib/cloudflare/test-internal.mjs:563:22
+
+Caused by: Error: Session is closed
+ ❯ HarnessImpl.#assertUsable home/ayan/ditto/.claude/worktrees/agent-aefd4bb9a43b30131/apps/runtime/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/@earendil-works_pi-durable.js:9812:13
+ ❯ HarnessImpl.readOnLine home/ayan/ditto/.claude/worktrees/agent-aefd4bb9a43b30131/apps/runtime/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/@earendil-works_pi-durable.js:9520:25
+ ❯ HarnessImpl.getTask home/ayan/ditto/.claude/worktrees/agent-aefd4bb9a43b30131/apps/runtime/node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/deps_ssr/@earendil-works_pi-durable.js:11320:17
+ ❯ PiDurableHost.receipts src/pi-durable-host.ts:3545:18
+ ❯ PiDurableHost.reconcile src/pi-durable-host.ts:3953:3
+ ❯ Proxy.<anonymous> src/pi-durable-checkpoint.fixture.ts:617:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 36 passed (37)
+   Start at  08:32:02
+   Duration  24.00s (transform 1.05s, setup 0ms, collect 5.47s, tests 39.17s, environment 0ms, prepare 1.38s)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+undefined
+/home/ayan/ditto/.claude/worktrees/agent-aefd4bb9a43b30131/apps/runtime:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/pi-durable-checkpoints.test.ts src/pi-durable-restore.test.ts src/pi-durable-retention.test.ts '--reporter=verbose'
+rc=1

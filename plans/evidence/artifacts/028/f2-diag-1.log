@@ -1,0 +1,77 @@
+
+ RUN  v3.2.7 /home/ayan/ditto/.claude/worktrees/agent-aefd4bb9a43b30131/apps/runtime
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+ ↓ src/pi-durable-host.test.ts > Pi Durable public bounded-host gate in workerd > passive reads admit nothing but close cannot bound a noncooperative invocation
+ ↓ src/pi-durable-host.test.ts > Pi built-in cooperative host-yield gate > actually closes during request while remote work stays pending
+ ↓ src/pi-durable-host.test.ts > Pi built-in cooperative host-yield gate > actually closes during stream while remote work stays pending
+ ↓ src/pi-durable-host.test.ts > Pi built-in cooperative host-yield gate > actually closes during tool while remote work stays pending
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > fences request, accounts actual close, retains effects across two passive reopens
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > fences stream, accounts actual close, retains effects across two passive reopens
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > fences tool, accounts actual close, retains effects across two passive reopens
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > denies effects after result persistence fails, continuing unavailability=false
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > denies effects after result persistence fails, continuing unavailability=true
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > actually closes with request authority read 1 still pending
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > actually closes with request authority read 2 still pending
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > actually closes with tool authority read 1 still pending
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > actually closes with tool authority read 2 still pending
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > blocks recovery across two reopens after safety-result-missing
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > blocks recovery across two reopens after pi-result-missing
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > encrypted adapter blocks recovery across two reopens after safety-result-missing
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > encrypted adapter blocks recovery across two reopens after pi-result-missing
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > rechecks request admission after fresh authority changes to revoked
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > rechecks request admission after fresh authority changes to generation
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > rechecks request admission after fresh authority changes to capacity
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > rechecks tool admission after fresh authority changes to revoked
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > rechecks tool admission after fresh authority changes to generation
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > rechecks tool admission after fresh authority changes to executor
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > rechecks tool admission after fresh authority changes to capacity
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > consumes a safety result only after Pi's public terminal tool receipt
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > retains a live unknown shell while real Pi recovery and subsequent requests deny effects across two reopens
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > rechecks after asynchronous authority preparation and never dispatches after close
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > retains intent and requires closure evidence after crash at before-submit
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > retains intent and requires closure evidence after crash at after-submit
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > retains intent and requires closure evidence after crash at after-close
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > retains intent and requires closure evidence after crash at account
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > closes the real built-in retry sleep and allocates one new budget only after accounted close
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > automatic yield awaits actual close before the absolute 2000 ms end deadline
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > repairs a dropped platform alarm from retained acceptance and handles duplicate delivery
+stdout | src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > combines wall-clock yield and native alarms with joined event resources
+[002-native-close] {"id":"707608b1-9ec5-48c9-81e5-2325162b1b0c","generation":1,"started":1792913852972,"yield_at":1792913853972,"end_at":1792913854972,"state":"active","closedAt":1792913853993,"remotePending":true}
+
+ ✓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > combines wall-clock yield and native alarms with joined event resources 1197ms
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > alarm-reactivates real Pi retry on the same surviving DO without retire
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > alarm-reconciles unknown request on the same surviving DO without retire
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > alarm-reconciles unknown tool on the same surviving DO without retire
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > joins concurrent alarm activation behind original actual close and accounting
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > denies alarm activation after original account closure failure
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > denies alarm activation after original after-close closure failure
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > denies alarm activation after original overrun closure failure
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > activates passively and repairs retained intent without reattaching a host
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > denies adversarial version before dispatch
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > denies adversarial revoked before dispatch
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > denies adversarial generation before dispatch
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > denies adversarial executor before dispatch
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > denies adversarial capacity before dispatch
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > allocates the first budget under the last checked authority generation
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > rechecks live denial synchronously before a scheduling-enabling submission
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > blocks incompatible Pi task versions without allocating another invocation
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > requires matching trusted termination and durable closure accounting before takeover
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > never abandons actual close when a public Storage cleanup fault overruns its deadline
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > keeps a genuine end overrun failed and denies takeover despite termination evidence
+ ↓ src/pi-durable-host.test.ts > Guarded local host with real DO SQLite > selects the earliest reserved wakeup, preserves an earlier alarm, and fences a failed handler
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 54 skipped (55)
+   Start at  08:37:29
+   Duration  4.33s (transform 901ms, setup 0ms, collect 1.45s, tests 1.22s, environment 0ms, prepare 203ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+rc=0

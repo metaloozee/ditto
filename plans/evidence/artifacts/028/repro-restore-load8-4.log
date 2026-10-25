@@ -1,0 +1,35 @@
+
+ RUN  v3.2.7 /home/ayan/ditto/.claude/worktrees/agent-aefd4bb9a43b30131/apps/runtime
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+ ✓ src/pi-durable-restore.test.ts > retires every old-generation task, queued input and background task, and a fork at the pair entry continues from the pair context 508ms
+ ✓ src/pi-durable-restore.test.ts > restores files and the matching conversation together, keeps answered history and fails what the cutoff discarded 1636ms
+ ✓ src/pi-durable-restore.test.ts > waits for an in-flight provider request, and an unknown outcome blocks the restore without any fallback 1188ms
+ ✓ src/pi-durable-restore.test.ts > records a result that arrives after the fence under its original epoch, then restores without running anything new 1307ms
+ ✓ src/pi-durable-restore.test.ts > falls back to the previous pair with that pair's own conversation position when the named pair is corrupt 1073ms
+ ✓ src/pi-durable-restore.test.ts > moves the pointer to the restored pair, so a discarded pair is never restored or retained again 2171ms
+ ✓ src/pi-durable-restore.test.ts > delivers a restore pointer move that follows an undelivered publication as its own batch 1040ms
+ ✓ src/pi-durable-restore.test.ts > refuses a restore before the fence when the composition cannot finish one 760ms
+ ✓ src/pi-durable-restore.test.ts > blocks with evidence when both pairs are unusable, and never falls back to the seed 979ms
+ ✓ src/pi-durable-restore.test.ts > waits for a delayed predecessor and gives it the restore fate instead of a Pi submission 1016ms
+ ✓ src/pi-durable-restore.test.ts > a process lost after-fence resumes the restore once, with no stranded or replayed instruction 1711ms
+ ✓ src/pi-durable-restore.test.ts > a process lost between-dispositions resumes the restore once, with no stranded or replayed instruction 1769ms
+ ✓ src/pi-durable-restore.test.ts > a process lost after-files resumes the restore once, with no stranded or replayed instruction 1422ms
+ ✓ src/pi-durable-restore.test.ts > a process lost after-generation resumes the restore once, with no stranded or replayed instruction 1395ms
+ ✓ src/pi-durable-restore.test.ts > a process lost lost-acknowledgment resumes the restore once, with no stranded or replayed instruction 1475ms
+ ✓ src/pi-durable-restore.test.ts > keeps a command accepted after the restore queued for the restored generation 1434ms
+
+ Test Files  1 passed (1)
+      Tests  16 passed (16)
+   Start at  08:28:32
+   Duration  26.19s (transform 1.11s, setup 0ms, collect 1.95s, tests 20.92s, environment 0ms, prepare 266ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+rc=0

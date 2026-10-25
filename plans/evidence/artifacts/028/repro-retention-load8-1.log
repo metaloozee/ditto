@@ -1,0 +1,28 @@
+
+ RUN  v3.2.7 /home/ayan/ditto/.claude/worktrees/agent-aefd4bb9a43b30131/apps/runtime
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+ ✓ src/pi-durable-retention.test.ts > collects only writes that stay unreferenced and unpinned for the whole period; history, pins and rotated keys survive 169ms
+ ✓ src/pi-durable-retention.test.ts > retires pairs other than current and previous after the period: their pins and own objects go, shared seed bytes and retained pairs stay 754ms
+ ✓ src/pi-durable-retention.test.ts > an interruption after-mark converges without losing a retained pair 708ms
+ ✓ src/pi-durable-retention.test.ts > an interruption after-pair-retired converges without losing a retained pair 731ms
+ ✓ src/pi-durable-retention.test.ts > an interruption after-object-deleted converges without losing a retained pair 687ms
+ ✓ src/pi-durable-retention.test.ts > without a composed store releases pins but keeps objects for a later composition 590ms
+ ✓ src/pi-durable-retention.test.ts > never runs while a session is archived or its authority is revoked 1226ms
+ ✓ src/pi-durable-retention.test.ts > waits while a publication is in flight and collects once it settles 691ms
+ ✓ src/pi-durable-retention.test.ts > keeps an archive this session did not upload, and backs off a failing delete per object 597ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  08:29:33
+   Duration  11.00s (transform 992ms, setup 0ms, collect 1.72s, tests 6.16s, environment 0ms, prepare 333ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+rc=0

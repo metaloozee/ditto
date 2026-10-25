@@ -1,0 +1,31 @@
+
+ RUN  v3.2.7 /home/ayan/ditto/.claude/worktrees/agent-aefd4bb9a43b30131/apps/runtime
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+ ✓ src/pi-durable-checkpoints.test.ts > keeps ordinary work queued until the baseline, then publishes a verified pair after seed restore and branch sync 1449ms
+ ✓ src/pi-durable-checkpoints.test.ts > publishes no baseline when the seed or branch authority fails, and ordinary work stays denied 327ms
+ ✓ src/pi-durable-checkpoints.test.ts > keeps the current and previous pairs, advances one generation per publication and never rewrites a manifest 1270ms
+ ✓ src/pi-durable-checkpoints.test.ts > holds exclusive ownership: a concurrent publication and ordinary work wait until the scope is released 727ms
+ ✓ src/pi-durable-checkpoints.test.ts > defers publication while a run is being scheduled, then the run completes 856ms
+ ✓ src/pi-durable-checkpoints.test.ts > refuses publication when authority, epoch or effects change after upload, and cleans both prepared objects 435ms
+ ✓ src/pi-durable-checkpoints.test.ts > defers publication while writers are unsettled, the executor is not exclusive or a recovery outcome is unknown 247ms
+ ✓ src/pi-durable-checkpoints.test.ts > leaves no restorable pair when the process is lost before the commit, and reopening releases ownership 2577ms
+ ✓ src/pi-durable-checkpoints.test.ts > keeps a pair whole when the process is lost after its commit, and delivers its pointer move after reopening 370ms
+ ✓ src/pi-durable-checkpoints.test.ts > keeps a completed assistant complete when backup or product application fails, with lag and degradation visible 758ms
+ ✓ src/pi-durable-checkpoints.test.ts > rejects a context object that does not read back exactly, without publishing 361ms
+ ✓ src/pi-durable-checkpoints.test.ts > stops delivery at a rejected pointer move and shows it as degraded lag 371ms
+
+ Test Files  1 passed (1)
+      Tests  12 passed (12)
+   Start at  08:25:19
+   Duration  18.67s (transform 1.71s, setup 0ms, collect 3.52s, tests 9.76s, environment 0ms, prepare 569ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+rc=0

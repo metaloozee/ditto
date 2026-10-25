@@ -1,0 +1,60 @@
+
+ RUN  v3.2.7 /home/ayan/ditto/.claude/worktrees/agent-aefd4bb9a43b30131/apps/runtime
+
+[vpw:debug] Adding `enable_nodejs_tty_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_fs_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_http_modules` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:debug] Adding `enable_nodejs_perf_hooks_module` compatibility flag during tests as this feature is needed to support the Vitest runner.
+[vpw:info] Starting isolated runtimes for vitest.config.ts...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+[mf:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-10",
+but you've requested "2026-09-16". Falling back to "2026-03-10"...
+ ✓ src/pi-durable-restore.test.ts > retires every old-generation task, queued input and background task, and a fork at the pair entry continues from the pair context 374ms
+ ✓ src/pi-durable-retention.test.ts > collects only writes that stay unreferenced and unpinned for the whole period; history, pins and rotated keys survive 187ms
+ ✓ src/pi-durable-checkpoints.test.ts > keeps ordinary work queued until the baseline, then publishes a verified pair after seed restore and branch sync 795ms
+ ✓ src/pi-durable-retention.test.ts > retires pairs other than current and previous after the period: their pins and own objects go, shared seed bytes and retained pairs stay 824ms
+ ✓ src/pi-durable-checkpoints.test.ts > publishes no baseline when the seed or branch authority fails, and ordinary work stays denied 176ms
+ ✓ src/pi-durable-checkpoints.test.ts > keeps the current and previous pairs, advances one generation per publication and never rewrites a manifest 668ms
+ ✓ src/pi-durable-restore.test.ts > restores files and the matching conversation together, keeps answered history and fails what the cutoff discarded 1450ms
+ ✓ src/pi-durable-retention.test.ts > an interruption after-mark converges without losing a retained pair 873ms
+ ✓ src/pi-durable-checkpoints.test.ts > holds exclusive ownership: a concurrent publication and ordinary work wait until the scope is released 556ms
+ ✓ src/pi-durable-checkpoints.test.ts > defers publication while a run is being scheduled, then the run completes 604ms
+ ✓ src/pi-durable-retention.test.ts > an interruption after-pair-retired converges without losing a retained pair 925ms
+ ✓ src/pi-durable-restore.test.ts > waits for an in-flight provider request, and an unknown outcome blocks the restore without any fallback 1365ms
+ ✓ src/pi-durable-checkpoints.test.ts > refuses publication when authority, epoch or effects change after upload, and cleans both prepared objects 311ms
+ ✓ src/pi-durable-retention.test.ts > an interruption after-object-deleted converges without losing a retained pair 930ms
+ ✓ src/pi-durable-checkpoints.test.ts > defers publication while writers are unsettled, the executor is not exclusive or a recovery outcome is unknown 179ms
+ ✓ src/pi-durable-retention.test.ts > without a composed store releases pins but keeps objects for a later composition 842ms
+ ✓ src/pi-durable-restore.test.ts > records a result that arrives after the fence under its original epoch, then restores without running anything new 1557ms
+ ✓ src/pi-durable-checkpoints.test.ts > leaves no restorable pair when the process is lost before the commit, and reopening releases ownership 1721ms
+ ✓ src/pi-durable-checkpoints.test.ts > keeps a pair whole when the process is lost after its commit, and delivers its pointer move after reopening 239ms
+ ✓ src/pi-durable-restore.test.ts > falls back to the previous pair with that pair's own conversation position when the named pair is corrupt 1083ms
+ ✓ src/pi-durable-checkpoints.test.ts > keeps a completed assistant complete when backup or product application fails, with lag and degradation visible 644ms
+ ✓ src/pi-durable-retention.test.ts > never runs while a session is archived or its authority is revoked 1474ms
+ ✓ src/pi-durable-checkpoints.test.ts > rejects a context object that does not read back exactly, without publishing 200ms
+ ✓ src/pi-durable-checkpoints.test.ts > stops delivery at a rejected pointer move and shows it as degraded lag 247ms
+ ✓ src/pi-durable-retention.test.ts > waits while a publication is in flight and collects once it settles 613ms
+ ✓ src/pi-durable-retention.test.ts > keeps an archive this session did not upload, and backs off a failing delete per object 608ms
+ ✓ src/pi-durable-restore.test.ts > moves the pointer to the restored pair, so a discarded pair is never restored or retained again 2000ms
+ ✓ src/pi-durable-restore.test.ts > delivers a restore pointer move that follows an undelivered publication as its own batch 847ms
+ ✓ src/pi-durable-restore.test.ts > refuses a restore before the fence when the composition cannot finish one 1181ms
+ ✓ src/pi-durable-restore.test.ts > blocks with evidence when both pairs are unusable, and never falls back to the seed 2135ms
+ ✓ src/pi-durable-restore.test.ts > waits for a delayed predecessor and gives it the restore fate instead of a Pi submission 907ms
+ ✓ src/pi-durable-restore.test.ts > a process lost after-fence resumes the restore once, with no stranded or replayed instruction 1262ms
+ ✓ src/pi-durable-restore.test.ts > a process lost between-dispositions resumes the restore once, with no stranded or replayed instruction 1303ms
+ ✓ src/pi-durable-restore.test.ts > a process lost after-files resumes the restore once, with no stranded or replayed instruction 1192ms
+ ✓ src/pi-durable-restore.test.ts > a process lost after-generation resumes the restore once, with no stranded or replayed instruction 1245ms
+ ✓ src/pi-durable-restore.test.ts > a process lost lost-acknowledgment resumes the restore once, with no stranded or replayed instruction 1100ms
+ ✓ src/pi-durable-restore.test.ts > keeps a command accepted after the restore queued for the restored generation 1075ms
+
+ Test Files  3 passed (3)
+      Tests  37 passed (37)
+   Start at  08:33:31
+   Duration  22.31s (transform 893ms, setup 0ms, collect 4.32s, tests 33.70s, environment 2ms, prepare 930ms)
+
+[vpw:debug] Shutting down runtimes...
+[vpw:debug] Disposing remote proxy sessions...
+rc=0
