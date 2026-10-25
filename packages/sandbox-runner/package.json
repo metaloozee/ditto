@@ -5,7 +5,8 @@
   "bin": {
     "ditto-runner": "./dist/cli.js",
     "ditto-archive": "./dist/archive-cli.js",
-    "ditto-exec": "./dist/tool-exec-cli.js"
+    "ditto-exec": "./dist/tool-exec-cli.js",
+    "ditto-workspace": "./dist/workspace-cli.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

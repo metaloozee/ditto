@@ -22,12 +22,14 @@ RUN npm ci \
   && test -s dist/git-metadata-cli.js \
   && test -s dist/archive-cli.js \
   && test -s dist/tool-exec-cli.js \
+  && test -s dist/workspace-cli.js \
   && test -s dist/ditto-extension.js \
   && node -e 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8"))' \
-  && chmod +x dist/cli.js dist/archive-cli.js dist/tool-exec-cli.js \
+  && chmod +x dist/cli.js dist/archive-cli.js dist/tool-exec-cli.js dist/workspace-cli.js \
   && ln -sf /opt/ditto-runner/dist/cli.js /usr/local/bin/ditto-runner \
   && ln -sf /opt/ditto-runner/dist/archive-cli.js /usr/local/bin/ditto-archive \
-  && ln -sf /opt/ditto-runner/dist/tool-exec-cli.js /usr/local/bin/ditto-exec
+  && ln -sf /opt/ditto-runner/dist/tool-exec-cli.js /usr/local/bin/ditto-exec \
+  && ln -sf /opt/ditto-runner/dist/workspace-cli.js /usr/local/bin/ditto-workspace
 
 WORKDIR /workspace
 
