@@ -5,6 +5,11 @@ import {
 	wrapGitUpstreamResponse,
 } from "./git-fetch-contract";
 import {
+	type GitHubAppCredentials,
+	getGitHubApp,
+	getInstallationAccessToken,
+} from "./github-app";
+import {
 	type CandidateAuthorityRow,
 	prepareCandidateRuntimeAuthority,
 	validateCandidateRuntimeAuthority,
@@ -68,7 +73,7 @@ type WindowRow = {
 	contractVersion: number;
 };
 
-async function currentAuthority(
+export async function currentAuthority(
 	db: D1Database,
 	scope: CandidateFetchScope,
 ): Promise<CandidateAuthorityRow | null> {
@@ -80,6 +85,69 @@ async function currentAuthority(
 		scope.workspaceSessionId,
 	).first<CandidateAuthorityRow>();
 	return validateCandidateRuntimeAuthority(row).current ? row : null;
+}
+
+/**
+ * Production GitHub dependencies for the broker. Every call resolves the
+ * installation from the scope's own project row, so a token is minted only
+ * for the repository the session's owner imported.
+ */
+export function candidateGitHubDeps(
+	env: GitHubAppCredentials,
+	db: D1Database,
+	scope: CandidateFetchScope,
+): Pick<CandidateBranchFetchDeps, "github" | "mintToken"> {
+	const target = async (repository: string) => {
+		const [owner, repo, ...rest] = repository.split("/");
+		if (!owner || !repo || rest.length > 0)
+			throw new Error("Repository is not owner/repo.");
+		const row = await db
+			.prepare(
+				"SELECT githubInstallationId FROM projects WHERE id=? AND userId=? AND githubRepo=?",
+			)
+			.bind(scope.projectId, scope.userId, repository)
+			.first<{ githubInstallationId: number | null }>();
+		const installationId = row?.githubInstallationId;
+		if (installationId === null || installationId === undefined)
+			throw new Error("No installation for this project.");
+		return { owner, repo, installationId };
+	};
+	return {
+		async mintToken(repository) {
+			const { repo, installationId } = await target(repository);
+			return getInstallationAccessToken(env, installationId, {
+				repositories: [repo],
+			});
+		},
+		github: {
+			async defaultBranch(repository) {
+				const { owner, repo, installationId } = await target(repository);
+				const octokit =
+					await getGitHubApp(env).getInstallationOctokit(installationId);
+				const { data } = await octokit.rest.repos.get({ owner, repo });
+				if (!data.default_branch) throw new Error("No default branch.");
+				return data.default_branch;
+			},
+			async branchExists(repository, branch) {
+				const { owner, repo, installationId } = await target(repository);
+				const octokit =
+					await getGitHubApp(env).getInstallationOctokit(installationId);
+				try {
+					await octokit.rest.repos.getBranch({ owner, repo, branch });
+					return true;
+				} catch (error) {
+					if (
+						typeof error === "object" &&
+						error !== null &&
+						"status" in error &&
+						error.status === 404
+					)
+						return false;
+					throw error;
+				}
+			},
+		},
+	};
 }
 
 function denied(code: string, status = 403): Response {

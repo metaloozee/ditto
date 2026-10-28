@@ -36,6 +36,7 @@ import {
 	PiDurableProductSession,
 	parseCandidateRuntimeScope,
 } from "../../runtime/src/pi-durable-product-session.ts";
+import { readCandidateBaselineSource } from "../../web/src/lib/candidate-baseline";
 import {
 	brokerCandidateGit,
 	type CandidateBranchFetchDeps,
@@ -735,6 +736,12 @@ export class CandidateFixtureProduct extends WorkerEntrypoint<CandidateFixtureBi
 					},
 				}),
 		};
+	}
+	readCandidateBaselineSource(scope: CandidateRuntimeScope) {
+		return readCandidateBaselineSource(
+			this.env.DB,
+			parseCandidateRuntimeScope(scope),
+		);
 	}
 	openCandidateBranchFetch(
 		scope: CandidateRuntimeScope,
