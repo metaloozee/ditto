@@ -197,6 +197,13 @@
       "when": 1792828329035,
       "tag": "0027_candidate_command_selection",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "6",
+      "when": 1793199782219,
+      "tag": "0028_curvy_vertigo",
+      "breakpoints": true
     }
   ]
 }

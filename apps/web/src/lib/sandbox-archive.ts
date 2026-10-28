@@ -707,6 +707,7 @@ async function createArchiveBody(options: {
 			.set({
 				status: "ready",
 				byteCount: measured.byteCount,
+				extractedBytes: cli.extractedBytes,
 				digest: measured.digest,
 				updatedAt: sql`(unixepoch())`,
 			})

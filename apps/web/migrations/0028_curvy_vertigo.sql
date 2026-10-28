@@ -1,0 +1,1 @@
+ALTER TABLE `archives` ADD `extractedBytes` integer;

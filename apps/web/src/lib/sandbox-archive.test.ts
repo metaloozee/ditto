@@ -31,6 +31,7 @@ type ArchiveRecord = {
 	formatVersion: number;
 	compatibilityKey: string;
 	byteCount: number;
+	extractedBytes?: number | null;
 	digest: string;
 	generation: number;
 	status: string;
@@ -413,6 +414,7 @@ describe("sandbox-archive", () => {
 		const stored = [...archiveRows.values()][0];
 		expect(stored?.status).toBe("ready");
 		expect(stored?.byteCount).toBe(size);
+		expect(stored?.extractedBytes).toBe(12);
 		expect(JSON.stringify(ref)).not.toContain(stored?.objectKey);
 	});
 

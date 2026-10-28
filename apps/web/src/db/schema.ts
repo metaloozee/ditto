@@ -306,6 +306,7 @@ export const archives = sqliteTable(
 		formatVersion: integer("formatVersion", { mode: "number" }).notNull(),
 		compatibilityKey: text("compatibilityKey").notNull(),
 		byteCount: integer("byteCount", { mode: "number" }).notNull().default(0),
+		extractedBytes: integer("extractedBytes", { mode: "number" }),
 		digest: text("digest").notNull(),
 		generation: integer("generation", { mode: "number" }).notNull().default(0),
 		status: text("status", {
