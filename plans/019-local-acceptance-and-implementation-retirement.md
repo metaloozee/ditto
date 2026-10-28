@@ -2,6 +2,8 @@
 
 Status: BLOCKED on a stable full `runtime:verify` run and on a deployed execution composition. 015–018, 021 and 022 are DONE. Base: `bcce03e`; excerpt reconciled at `ad5557c` (2026-10-24). Phase: L6.
 
+Reconcile note (2026-10-28, `f025d17`): 025 and 029 composed execution and brokered fetch (DONE with limits). The remaining blockers are 026 (Revision 1: profile the slow conformance case), 030 (seed and branch handoff; until it lands no product path reaches a baseline), and unplanned deployment wiring (a production `CandidatePrivateProduct` entrypoint and `alchemy.run.ts` bindings). Step 4 still retires nothing on the candidate path's behalf.
+
 Reconcile note (2026-10-24): in production `PiDurableProductSession.remoteExecutor()`, `checkpointRestorer()` and `workspaceController()` return `undefined` (`apps/runtime/src/pi-durable-product-session.ts` ~131–146); only fixtures override them. Until a reviewed composition supplies them, the Node engine still serves real owners, so step 4 must retire nothing on the candidate path's behalf. Fold 018's limits (fixed commit message, preview on the legacy path, browser QA not run) and 021's stopped configuration step into the step 1 evidence review.
 Spec: `docs/specs/pi-durable-session-runtime.md`, decisions 1–18 and testing decisions; PD01–PD37, PD39–PD42 locally, PD38 tracked separately; OD1–OD7.
 

@@ -2,88 +2,151 @@
 
 > **Executor instructions**: Follow this plan step by step. Run every verification command and confirm the expected result before moving on. On a STOP condition, stop and report; do not improvise. Do not stage or commit. A reviewer maintains `plans/README.md`; do not edit it or this file.
 >
-> **Drift check (run first)**: `git diff --stat 0f9c7c1..HEAD -- apps/runtime/vitest.config.ts apps/runtime/package.json apps/runtime/src/pi-durable-storage.test.ts apps/runtime/src/pi-durable-storage.ts patches pnpm-workspace.yaml package.json .github/workflows/ci.yml`. If any of these changed, compare the excerpts below against live code. A mismatch is a STOP condition.
+> **Drift check (run first)**: `git diff --stat f025d17..HEAD -- apps/runtime/vitest.config.ts apps/runtime/package.json apps/runtime/src/pi-durable-storage.test.ts apps/runtime/src/pi-durable-storage.ts apps/runtime/src/pi-durable-local.ts patches pnpm-workspace.yaml package.json .github/workflows/ci.yml`. If any of these changed, compare the excerpts below against live code. A mismatch is a STOP condition.
 
 ## Status
 
-- **Status**: TODO, READY
+- **Status**: TODO, READY (Revision 1)
 - **Priority**: P1 (019 is blocked on it)
-- **Effort**: M (investigation first; the fix is likely small)
+- **Effort**: M (profiling first; the fix is likely small)
 - **Risk**: LOW for runtime behavior, MED for CI time
-- **Depends on**: none
+- **Depends on**: 028 (DONE with limits, `9b0ec04`..`88a0e54`)
 - **Category**: test infrastructure / CI
-- **Planned at**: commit `0f9c7c1`, 2026-10-24
+- **Planned at**: commit `0f9c7c1`, 2026-10-24. **Revision 1** at `f025d17`, 2026-10-28.
+- **Decision**: maintainer, 2026-10-28. Profile the slow conformance case and fix its cost. Do not gate CI on `singleWorker`.
 
 ## Hard rule
 
-Do not raise the 5 s test deadline, skip, quarantine, retry or reorder the failing case to make it pass. 019 states the same rule. If the cause is upstream in `@earendil-works/pi-durable` or `@cloudflare/vitest-pool-workers`, either fix it in the existing pnpm patch with evidence, or STOP and report.
+Do not raise the 5 s test deadline, skip, quarantine, retry or reorder the failing case to make it pass. Do not set `singleWorker`, `maxWorkers` or `fileParallelism` in `apps/runtime/vitest.config.ts`. 019 states the same rule. If the cost is upstream in `@earendil-works/pi-durable` and Ditto cannot remove it, STOP and report with the profile.
 
 ## Why this matters
 
-Since 015 the full `pnpm runtime:verify` run is load-sensitive. One upstream conformance case, "streams long document tails across root replacement deltas", times out at 5 s under full-suite load and passes alone in about 3 s:
+CI runs only `pnpm verify`, which omits `runtime:verify` and `contracts:verify`. So CI has never run the runtime suite, and 019 cannot meet "Verification/CI genuinely includes the runtime checks".
 
-- 015: three of four runs failed, also on base `c827cda` (`plans/evidence/015-resource-and-value-policy.md` line 55).
-- 016: both final runs failed (`plans/evidence/016-lifecycle.md` line 38).
-- 017: 510 of 511 passed, this case failing (`plans/evidence/017-l5-backend-acceptance.md` line 54).
+The first execution (history below) and plan 028 narrowed the problem to one case. After 028's fixture fix, five unmodified full `pnpm runtime:verify` runs (`plans/evidence/028-runtime-load-failures.md`, Step 7) gave:
 
-CI runs only `pnpm verify`, which omits `runtime:verify` and `contracts:verify`. So CI has never run the runtime suite. 019 cannot meet "Verification/CI genuinely includes the runtime checks" until this case is stable.
+| Run | Result | "streams long document tails across root replacement deltas" |
+|---|---|---|
+| 1 | 512 passed | 4885 ms |
+| 2 | 512 passed | 4536 ms |
+| 3 | 512 passed | 3525 ms |
+| 4 | 512 passed | 4612 ms |
+| 5 | 1 failed | 8715 ms, `Test timed out in 5000ms` |
+
+The case takes about 3 s even alone (2.2 to 3.5 s with files serialized), so it uses 45 to 97 percent of its deadline before any contention. Contention (H2 in the history) only pushes an already slow case over the line. 029's single recorded run passed 521 tests. This plan removes the case's own cost.
 
 ## Current state
 
-- `package.json`:
+- Root `package.json`:
   ```json
   "runtime:verify": "pnpm --filter @ditto/runtime typecheck && node --test apps/runtime/src/pi-durable-imports.test.mjs scripts/pi-durable-host-auth.test.mjs && pnpm --filter @ditto/runtime exec vitest run",
-  "verify": "pnpm check && pnpm typecheck && pnpm credentials:verify && pnpm test && pnpm build && pnpm runner:verify"
+  "verify": "pnpm check && pnpm db:drift &&pnpm typecheck && pnpm credentials:verify && pnpm test && pnpm build && pnpm runner:verify",
   ```
-- The case comes from `registerStorageConformance` in `@earendil-works/pi-durable/testing` 1.0.1, registered in `apps/runtime/src/pi-durable-storage.test.ts` ~93 to 112. Each conformance case opens a new DO instance (`env.PI_HOST_STORAGE.getByName("conformance-<uuid>")`) and an `EncryptedPiStorage` inside `runInDurableObject`.
-- `apps/runtime/vitest.config.ts` uses `defineWorkersConfig` with no `maxWorkers`, `fileParallelism` or `singleWorker` setting, so files run in parallel workers by default.
-- `patches/@cloudflare__vitest-pool-workers@0.12.21.patch` already fixes two pool problems: a Proxy layer added per DO instance (O(instances) prototype lookups) and an isolated-storage pop that races SQLite close. See project history for plan 008 and 010.
+- The case is registered by `registerStorageConformance` from `@earendil-works/pi-durable/testing` 1.0.1 (`apps/runtime/src/pi-durable-storage.test.ts:93-112`). Each conformance case gets a fresh DO and opens `EncryptedPiStorage` (`apps/runtime/src/pi-durable-storage.ts:561`, 2800 lines; `STORAGE_ROW_BYTES = 64 * 1024` at `:51`):
+  ```ts
+  registerStorageConformance(
+  	{ describe, expect, it },
+  	"encrypted DO SQLite",
+  	async (use) => {
+  		const stub = env.PI_HOST_STORAGE.getByName(
+  			`conformance-${crypto.randomUUID()}`,
+  		);
+  		await runInDurableObject(stub, async (_instance, state) => {
+  			const storage = await EncryptedPiStorage.open(
+  				state.storage,
+  				await binding(),
+  			);
+  			try {
+  				await use(storage);
+  			} finally {
+  				await storage.close(BACKGROUND_CONTEXT);
+  			}
+  		});
+  	},
+  );
+  ```
+- The upstream case body (`node_modules/.pnpm/@earendil-works+pi-durable@1.0.1_*/node_modules/@earendil-works/pi-durable/dist/testing/storage-conformance.js:619-695`) does the following:
+  - it creates a 512-row document;
+  - it commits 24 small `delta` changes, then one full `["r", replacement]` replacement of 512 rows, then 24 more deltas, for **50 commits** in all;
+  - it reads the document `asOf` three historical positions and `current` twice.
 
-## Hypotheses to test, in order
+  So the cost is per-commit and per-historical-read work on a document of about 20 KB.
+- The unencrypted upstream adapter is available for comparison: `SqliteStorage.open(fixtureDatabase(state.storage))`, with `SqliteStorage` from `@earendil-works/pi-durable/storage/sqlite` and `fixtureDatabase` from `apps/runtime/src/pi-durable-local.ts:29`. Exemplar: `apps/runtime/src/pi-durable-host.test.ts:209`.
+- `apps/runtime/vitest.config.ts` has no parallelism settings. The machine used for the evidence so far has 4 cores (`nproc`).
+- `patches/@cloudflare__vitest-pool-workers@0.12.21.patch` fixes a per-instance Proxy cost and an isolated-storage pop race (plans 008 and 010).
 
-1. **Cumulative slowdown inside the storage file.** The case may get slower the more DO instances the file has created, like the 008 Proxy bug. Test: time the case when it runs first, and when it runs after the other conformance cases in the same file, with the rest of the suite excluded.
-2. **CPU contention between parallel files.** The case is CPU-heavy (encryption of long document tails). Test: run the full suite with `--maxWorkers=1` once, and with the default once, and compare the case's duration. Also record the machine's core count.
-3. **Encryption cost growth.** `EncryptedPiStorage` work for root replacement deltas may scale worse than linearly with tail length. Test: profile the case alone with `--inspect` or a CPU profile and look for one dominant frame.
+## Hypotheses, in order
+
+- **P1, Ditto's adapter dominates.** `EncryptedPiStorage` work per commit or per historical read (encrypting or decrypting whole document rows, re-chunking at `STORAGE_ROW_BYTES`, replaying every delta from the base on each `asOf` read, or key import per operation) makes the case much slower than the plain adapter.
+- **P2, upstream or platform dominates.** The plain `SqliteStorage` is also about 3 s, so the cost is in Pi Durable's document model, DO SQLite in workerd, or the test pool.
 
 ## Steps
 
-1. Run the drift check. Run `pnpm runtime:verify` three times on the clean tree and record each result and the case's duration. Kill leftover `workerd` processes between runs with `pkill -9 -x workerd`. Do not use `pkill -f`, which can match your own shell.
-2. Test hypothesis 1. Record durations.
-3. Test hypothesis 2. Record durations.
-4. Test hypothesis 3 only if 1 and 2 do not explain the slowdown. Record the top frames.
-5. Fix the cause:
-   - For 1, find the growing structure and fix it in the existing pool patch or in `pi-durable-storage.ts`, with a before and after timing.
-   - For 2, set a bounded parallelism in `apps/runtime/vitest.config.ts` only if the evidence shows contention is the whole cause. Record the suite's total time before and after. This counts as a fix only with the maintainer's acceptance, which the reviewer brings.
-   - For 3, if the cost is in Ditto's adapter, fix it there with a focused test. If it is in Pi Durable, STOP and report with the profile.
-6. Run `pnpm runtime:verify` five times in a row. All five must pass.
-7. Add `pnpm contracts:verify` and `pnpm runtime:verify` to root `verify` after `credentials:verify`. Check that `.github/workflows/ci.yml` needs no new setup for them (it already installs root dependencies with Node 24). Run `pnpm verify` once.
+1. **Baseline.** Run the drift check. Record `nproc`, Node and workerd versions. Run the case alone 3 times with `pnpm --filter @ditto/runtime exec vitest run src/pi-durable-storage.test.ts -t "streams long document tails"` and record each duration. Between runs, kill leftover `workerd` with `pkill -9 -x workerd` (never `pkill -f`).
+
+2. **A/B against the plain adapter.** Create a throwaway file `apps/runtime/src/zz-026-profile.test.ts`. It calls `registerStorageConformance` twice, with the suite names "encrypted A/B" (the exact factory above) and "plain A/B" (`SqliteStorage.open(fixtureDatabase(state.storage))` inside `runInDurableObject`; it needs no `close`). Run only the case, 3 times each: `pnpm --filter @ditto/runtime exec vitest run src/zz-026-profile.test.ts -t "streams long document tails"`. Record both durations. P1 holds if encrypted is at least 2× plain. **Delete the file before Step 5** and confirm `git status` no longer lists it.
+
+3. **Attribute the cost (P1 only).** In the same throwaway file, wrap the `EncryptedPiStorage` passed to `use` in a `Proxy` that times every async method call (`commit`, `document`, and whatever else the case calls) with `performance.now()`. Print a per-method total and call count with `console.log` once after the case. Then narrow inside the dominant method:
+   - Temporarily time the internal helpers it calls, by adding `performance.now()` lines in `pi-durable-storage.ts` that you revert before Step 5. Check with `git diff --stat apps/runtime/src/pi-durable-storage.ts` (empty) after reverting.
+   - Name the one helper or loop that accounts for most of the time, and record the numbers.
+
+   If P2 holds instead, skip to the STOP condition "cost is upstream".
+
+4. **Fix (P1 only).** Change `apps/runtime/src/pi-durable-storage.ts` so the dominant cost no longer scales as it does. Typical shapes are caching an imported key per binding, not re-encrypting unchanged rows, or reusing a decoded base across one read. Keep these unchanged:
+   - the encrypted format (`ENCRYPTED_STORAGE_FORMAT`, `ADAPTER_COMPAT`);
+   - the on-disk bytes for any existing row;
+   - every integrity check.
+
+   If the fix needs a format or compatibility change, STOP. Add one focused test in `pi-durable-storage.test.ts` that would fail if the fix's invariant broke. For example, a cached key must not survive a keyring change: the existing key-retention tests must still pass, and the new test covers the specific edge. Verify: `pnpm --filter @ditto/runtime exec vitest run src/pi-durable-storage.test.ts` passes, and the case alone is now at most 50% of its Step 1 median. Record before and after.
+
+5. **Five full runs.** With the throwaway file deleted and timing lines reverted, run `pnpm runtime:verify` five times in a row, killing `workerd` between runs. All five must pass. Record each suite duration and the case's duration.
+
+6. **Gate CI.** In root `package.json`, change `verify` to run `pnpm contracts:verify && pnpm runtime:verify` right after `pnpm credentials:verify`. Fix the missing space in `pnpm db:drift &&pnpm typecheck` while there. Check that `.github/workflows/ci.yml` needs no new setup: it must already install root dependencies with Node 24 and run `pnpm verify`. If it does need setup, STOP. Run `pnpm verify` once.
 
 ## Checks
 
 ```sh
+pnpm --filter @ditto/runtime exec vitest run src/pi-durable-storage.test.ts
 pnpm runtime:verify            # five consecutive passes
 pnpm contracts:verify
 pnpm verify
+git status --short             # only pi-durable-storage.ts, pi-durable-storage.test.ts, package.json and the evidence file
+git diff --stat -- apps/runtime/vitest.config.ts patches   # expect empty
 ```
 
-Write results to `plans/evidence/026-runtime-verify-stability.md`: environment, core count, each run's result and the case's duration, the hypothesis that held, the change, and suite time before and after.
+Write results to `plans/evidence/026-runtime-verify-stability.md` (the first execution's file lives on branch `exec-026`. Start a fresh file on this branch and link that branch in one line). Include:
+- the environment and core count;
+- the Step 1 and Step 2 durations, and which hypothesis held;
+- the Step 3 attribution table;
+- the change, with before and after timings for the case;
+- the five full runs;
+- the `pnpm verify` result.
 
 ## Stop conditions
 
-- The fix would need a raised deadline, a skip, a retry or a reordering.
-- The cause is inside `@earendil-works/pi-durable` and cannot be fixed in Ditto.
-- Bounded parallelism makes the runtime suite take longer than CI's 30-minute job limit allows together with the rest of `pnpm verify`.
-- A different runtime test starts failing in the five-run check.
+- The fix would need a raised deadline, a skip, a retry, a reordering, or any parallelism setting.
+- P2 holds: the plain adapter is within 2× of the encrypted one, or the dominant cost is inside `@earendil-works/pi-durable`. Report the A/B and the profile. Do not patch `node_modules` or add a pnpm patch for Pi Durable without maintainer approval.
+- The fix changes the encrypted format, the compatibility strings, the bytes of existing rows, or removes an integrity check.
+- A different runtime test fails in the five-run check. Record it with its error and stop. Do not lengthen its poll.
+- `ci.yml` needs new setup, or `pnpm verify` would exceed CI's 30-minute job limit.
 
 ## Done
 
-Five consecutive full `runtime:verify` passes, `pnpm verify` includes `runtime:verify` and `contracts:verify`, and the cause is recorded. 019's "stable `runtime:verify`" dependency can then be rechecked.
+- The case alone runs in at most half its Step 1 median, with the cause named and fixed in Ditto's adapter.
+- Five consecutive full `runtime:verify` passes.
+- `pnpm verify` includes `contracts:verify` and `runtime:verify` and passes once.
+- `vitest.config.ts` and `patches/` are unchanged, and no throwaway file remains.
 
 ## Maintenance
 
-A future Pi Durable or pool upgrade must rerun the five-run check. If the pool patch changes, keep its sections for the Proxy fix, the SQLite close race and any new fix separate and commented.
+A future Pi Durable or pool upgrade must rerun the five-run check. Any cache the fix adds to `EncryptedPiStorage` must be invalidated wherever the keyring or binding can change. Review key rotation and retention (005) against it.
 
-## Execution result (2026-10-24, reviewer)
+## History: first execution (2026-10-24, original hypotheses H1 to H3)
+
+The original plan tested H1 (cumulative slowdown in the file), H2 (CPU contention between files) and H3 (encryption cost). It was BLOCKED; the record is kept as written.
+
+
+### Execution result (2026-10-24, reviewer)
 
 BLOCKED by the stop condition "a different runtime test starts failing". The evidence lives on the executor branch `exec-026` @ `4ea77c7`, in `plans/evidence/026-runtime-verify-stability.md` and `plans/evidence/artifacts/026/*.log`. The reviewer checked every number below against those logs.
 
