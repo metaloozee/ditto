@@ -171,6 +171,10 @@ export class ContextMismatch extends Error {}
 
 /** The files half of a restore, as the host composes it. */
 export type CheckpointRestorer = {
+	establishBaseline(input: {
+		seed: ArchiveArtifactV1;
+		branch: string;
+	}): Promise<PublishResult>;
 	restorePair(
 		pairId: string,
 		establish: (

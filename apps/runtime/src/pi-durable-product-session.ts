@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import type { ArchiveArtifactV1 } from "../../../packages/runtime-contracts/src/artifacts.js";
 import type {
 	ArchiveCompletionV1,
 	CheckpointProjectionV1,
@@ -109,6 +110,10 @@ export interface CandidatePrivateProduct extends PrivateModelTransport {
 		input: unknown,
 		selection?: unknown,
 	): Promise<ConfigurationAuthorityV1>;
+	/** The session's owned branch and verified seed; a denial is data, not a throw. */
+	readCandidateBaselineSource(
+		scope: CandidateRuntimeScope,
+	): Promise<{ branch: string; seed: ArchiveArtifactV1 } | { denied: string }>;
 	/** Opens the bounded window for one brokered branch fetch; denial is data, not a throw. */
 	openCandidateBranchFetch(
 		scope: CandidateRuntimeScope,
@@ -167,6 +172,12 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 		_scope: CandidateRuntimeScope,
 		_keyring: RuntimeKeyring,
 	): void {}
+	/** Deployment composition reads the session's baseline source before the host opens. */
+	protected async loadExecutionSource(
+		_scope: CandidateRuntimeScope,
+	): Promise<void> {}
+	/** Deployment composition starts the one-time baseline once the host is open. */
+	protected startBaseline(_host: PiDurableHost): void {}
 	/** Deployment composition supplies the recovery store; none disables retention. */
 	protected recoveryStore(): ArtifactStore | undefined {
 		return undefined;
@@ -246,14 +257,18 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 		return scope;
 	}
 	private async open(scope: CandidateRuntimeScope) {
-		if (this.host && !(await this.host.awaitClosure())) return this.host;
+		if (this.host && !(await this.host.awaitClosure())) {
+			this.startBaseline(this.host);
+			return this.host;
+		}
 		const keyring = await this.keyring();
+		await this.loadExecutionSource(scope);
 		this.prepareExecution(scope, keyring);
 		const product = this.env.CandidateProduct;
 		// A session that can reach an executor waits for its baseline pair
 		// before any ordinary work; without one, tools fail before admission.
 		const executes = this.remoteExecutor() !== undefined;
-		return PiDurableHost.open(this.ctx.storage, {
+		const host = await PiDurableHost.open(this.ctx.storage, {
 			...(executes
 				? {
 						checkpoints: {
@@ -344,6 +359,8 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 				};
 			},
 		});
+		this.startBaseline(host);
+		return host;
 	}
 	async deliverCommand(commandId: string, ownerVersion: number) {
 		if (ownerVersion !== 1) throw new Error("Candidate owner version denied");

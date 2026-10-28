@@ -427,6 +427,46 @@ it("dispatches no tool before a baseline and reaches the sandbox executor after 
 	});
 });
 
+it("establishes the baseline once through the host and releases queued work", async () => {
+	await harness("execution-host-baseline", async (context) => {
+		const host = await context.open();
+		await host.accept("first", "Synthetic request");
+		await host.schedule("first").catch(() => undefined);
+		await host.waitIdle().catch(() => undefined);
+		expect(context.model.calls).toBe(0);
+
+		const input = { seed: await seed(context.composed.store), branch: "b" };
+		const first = await host.establishCandidateBaseline(input);
+		expect(first.status).toBe("published");
+		await host.schedule("first");
+		await host.waitIdle();
+		expect(execCommands(context.sandbox.state.commands)).toHaveLength(1);
+
+		const before = [...context.sandbox.state.commands];
+		expect(await host.establishCandidateBaseline(input)).toEqual({
+			status: "deferred",
+			reason: "baseline_exists",
+		});
+		expect(context.sandbox.state.commands).toEqual(before);
+	});
+});
+
+it("does not touch the restorer once the host has yielded", async () => {
+	await harness("execution-host-baseline-sealed", async (context) => {
+		const host = await context.open();
+		const input = { seed: await seed(context.composed.store), branch: "b" };
+		await host.yield();
+		await host.awaitClosure();
+		const before = [...context.sandbox.state.commands];
+		expect(await host.establishCandidateBaseline(input)).toEqual({
+			status: "deferred",
+			reason: "unavailable",
+		});
+		expect(context.sandbox.state.commands).toEqual(before);
+		expect(context.sandbox.state.streamWrites).toBe(0);
+	});
+});
+
 it("publishes pairs to R2 and restores them through the same store with the published digest", async () => {
 	await harness("execution-recovery", async (context) => {
 		await context.open();

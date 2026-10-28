@@ -20,6 +20,7 @@ import {
 	type ToolExecutionResult,
 } from "@earendil-works/pi-durable";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
+import type { ArchiveArtifactV1 } from "../../../packages/runtime-contracts/src/artifacts.js";
 import {
 	type ArchiveCompletionV1,
 	type CheckpointProjectionV1,
@@ -98,6 +99,7 @@ import {
 	checkpointHealth,
 	deliverCheckpointProjections,
 	manifestRow,
+	type PublishResult,
 	recoverCheckpointState,
 } from "./pi-durable-checkpoints.ts";
 import { cooperativeFixture } from "./pi-durable-cooperative-fixture.ts";
@@ -7144,6 +7146,20 @@ export class PiDurableHost {
 			return { status: "denied", reason: "unavailable" };
 		if (this.denied) return { status: "denied", reason: "blocked" };
 		return workspace.act(action);
+	}
+
+	/** Publishes the initial paired baseline; the publisher defers once one exists. */
+	async establishCandidateBaseline(input: {
+		seed: ArchiveArtifactV1;
+		branch: string;
+	}): Promise<PublishResult> {
+		if (this.sealed || this.storageBarrier || this.denied)
+			return { status: "deferred", reason: "unavailable" };
+		this.restorer ??= this.dependencies.checkpoints?.restorer?.(
+			this.checkpointPort(),
+		);
+		if (!this.restorer) return { status: "deferred", reason: "unavailable" };
+		return this.restorer.establishBaseline(input);
 	}
 
 	/** Product preview proxy: the URL's generation must still be running on a live, unfenced host. */

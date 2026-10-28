@@ -1,4 +1,8 @@
 import { getSandbox, Sandbox } from "@cloudflare/sandbox";
+import {
+	type ArchiveArtifactV1,
+	parseArchiveArtifactV1,
+} from "../../../packages/runtime-contracts/src/artifacts.js";
 import type { ArtifactStore } from "./pi-durable-artifacts.ts";
 import type {
 	CheckpointHostPort,
@@ -8,6 +12,7 @@ import {
 	composeCandidateExecution,
 	type ExecutionSandbox,
 } from "./pi-durable-execution.ts";
+import type { PiDurableHost } from "./pi-durable-host.ts";
 import {
 	type CandidatePrivateProduct,
 	type CandidateRuntimeScope,
@@ -59,9 +64,40 @@ export type ExecutionSessionBindings = CandidateSessionBindings & {
 export class PiDurableExecutionSession extends PiDurableProductSession {
 	declare env: ExecutionSessionBindings;
 	private execution: ReturnType<typeof composeCandidateExecution> | undefined;
-	/** The session's owned branch; Git actions stay unavailable until a seed handoff supplies it. */
+	private source: { branch: string; seed: ArchiveArtifactV1 } | undefined;
+	private baselineAttempt: Promise<unknown> | undefined;
+	/** The session's owned branch from the product record; none keeps Git actions unavailable. */
 	protected sessionBranch(): string | undefined {
-		return undefined;
+		return this.source?.branch;
+	}
+	protected override async loadExecutionSource(scope: CandidateRuntimeScope) {
+		this.source = undefined;
+		const { CandidateSandbox, CANDIDATE_RECOVERY } = this.env;
+		if (!CandidateSandbox || !CANDIDATE_RECOVERY) return;
+		try {
+			const read =
+				await this.env.CandidateProduct.readCandidateBaselineSource(scope);
+			if ("denied" in read) return;
+			if (typeof read.branch !== "string" || read.branch.length === 0) return;
+			this.source = {
+				branch: read.branch,
+				seed: parseArchiveArtifactV1(read.seed),
+			};
+		} catch {
+			this.source = undefined;
+		}
+	}
+	protected override startBaseline(host: PiDurableHost) {
+		const source = this.source;
+		if (!this.execution || !source || this.baselineAttempt) return;
+		// A failed publish records its own health; the next activation retries.
+		const attempt = host
+			.establishCandidateBaseline(source)
+			.catch(() => undefined)
+			.finally(() => {
+				if (this.baselineAttempt === attempt) this.baselineAttempt = undefined;
+			});
+		this.baselineAttempt = attempt;
 	}
 	protected override prepareExecution(
 		scope: CandidateRuntimeScope,
