@@ -458,8 +458,9 @@ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE f.targetKind=
 			);
 			statements.push(
 				q(
-					`INSERT INTO workspace_sessions(id,projectId,userId,title,status,sandboxIdentityId,runtimeOwner,runtimeOwnerVersion,runtimeProtocolVersion)
-SELECT sessionId,projectId,userId,'Synthetic session','active',identityId,'pi_durable_v1',1,2 FROM candidate_workspace_claims WHERE sessionId=? AND identityId=?`,
+					`INSERT INTO workspace_sessions(id,projectId,userId,title,status,branchName,sandboxIdentityId,runtimeOwner,runtimeOwnerVersion,runtimeProtocolVersion)
+SELECT sessionId,projectId,userId,'Synthetic session','active',?,identityId,'pi_durable_v1',1,2 FROM candidate_workspace_claims WHERE sessionId=? AND identityId=?`,
+					`ditto/${sessionId}`,
 					sessionId,
 					identityId,
 				),

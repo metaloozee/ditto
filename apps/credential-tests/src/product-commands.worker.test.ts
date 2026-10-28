@@ -244,6 +244,11 @@ it("owned authority works before the reset table exists", async () => {
 			ownerVersion: 1,
 		}),
 	).toEqual({ current: true, generation: 1, executor: 1, liveExecutors: 1 });
+	expect(
+		await env.DB.prepare("SELECT branchName FROM workspace_sessions WHERE id=?")
+			.bind(first.workspaceSessionId)
+			.first("branchName"),
+	).toBe(`ditto/${first.workspaceSessionId}`);
 });
 
 it("owned authority is fresh with a present reset table and no reset", async () => {
