@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Status**: TODO
+- **Status**: DONE, decided 2026-10-29. See `plans/decisions/024-candidate-preview-delivery.md` and build plans 031–033.
 - **Priority**: P2 (018 left the candidate preview on the legacy path)
 - **Effort**: M (investigation and writing)
 - **Risk**: LOW (no code changes)
