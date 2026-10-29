@@ -19,7 +19,7 @@
     "runtime:verify": "pnpm --filter @ditto/runtime typecheck && node --test apps/runtime/src/pi-durable-imports.test.mjs scripts/pi-durable-host-auth.test.mjs && pnpm --filter @ditto/runtime exec vitest run",
     "runtime:local:verify": "node scripts/verify-pi-durable-local.mjs",
     "credentials:verify": "pnpm --filter @ditto/credential-tests typecheck && pnpm --filter @ditto/credential-tests exec vitest run src/codex-credential-do.worker.test.ts src/codex-request-contract.worker.test.ts src/product-commands.worker.test.ts src/candidate-capacity.worker.test.ts src/candidate-branch-fetch.worker.test.ts src/candidate-baseline.worker.test.ts && pnpm --filter @ditto/credential-tests exec node --test crash.test.mjs",
-    "verify": "pnpm check && pnpm db:drift &&pnpm typecheck && pnpm credentials:verify && pnpm test && pnpm build && pnpm runner:verify",
+    "verify": "pnpm check && pnpm db:drift && pnpm typecheck && pnpm credentials:verify && pnpm contracts:verify && pnpm runtime:verify && pnpm test && pnpm build && pnpm runner:verify",
     "deploy": "alchemy deploy",
     "destroy": "alchemy destroy",
     "db:drift": "node scripts/check-schema-drift.mjs",
