@@ -514,6 +514,24 @@ function ceiling(value: number | undefined, fallback: number): number {
 	return selected;
 }
 
+// Same count as TextEncoder: a lone surrogate encodes as U+FFFD (3 bytes).
+function utf8ByteLength(value: string): number {
+	let bytes = 0;
+	for (let i = 0; i < value.length; i++) {
+		const unit = value.charCodeAt(i);
+		if (unit < 0x80) bytes += 1;
+		else if (unit < 0x800) bytes += 2;
+		else if (unit >= 0xd800 && unit < 0xdc00 && i + 1 < value.length) {
+			const next = value.charCodeAt(i + 1);
+			if (next >= 0xdc00 && next < 0xe000) {
+				bytes += 4;
+				i++;
+			} else bytes += 3;
+		} else bytes += 3;
+	}
+	return bytes;
+}
+
 function boundedJson(
 	value: unknown,
 	options: EncryptedStorageOpenOptions,
@@ -528,7 +546,7 @@ function boundedJson(
 		if (++nodes > maxNodes || depth > maxDepth) sizeDenied();
 		if (typeof current === "string") {
 			if (current.length > maxBytes) sizeDenied();
-			stringBytes += new TextEncoder().encode(current).byteLength;
+			stringBytes += utf8ByteLength(current);
 			if (stringBytes > maxBytes) sizeDenied();
 		}
 		if (current === null || typeof current !== "object") return;
@@ -550,7 +568,7 @@ function boundedJson(
 	const serialized = JSON.stringify(value);
 	if (
 		typeof serialized !== "string" ||
-		new TextEncoder().encode(serialized).byteLength >
+		utf8ByteLength(serialized) >
 			ceiling(options.maxRecordBytes, MAX_RECORD_BYTES)
 	)
 		sizeDenied();

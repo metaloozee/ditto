@@ -112,6 +112,38 @@ registerStorageConformance(
 );
 
 describe("encrypted storage transactions and integrity", () => {
+	it("bounds record size by UTF-8 bytes, not string length", async () => {
+		const stub = env.PI_HOST_STORAGE.getByName("utf8-record-bound");
+		await runInDurableObject(stub, async (_instance, state) => {
+			const opened = await EncryptedPiStorage.open(
+				state.storage,
+				await binding(),
+				{ maxRecordBytes: 256 },
+			);
+			const create = (id: number, text: string) =>
+				opened.commit(
+					[
+						{
+							type: "document.create",
+							record: {
+								id: id as DocumentId,
+								kind: "app.note",
+								scope: { kind: "session" },
+							},
+							content: { kind: "base", version: 1, value: { text } },
+						},
+					],
+					BACKGROUND_CONTEXT,
+				);
+			await create(1, "a".repeat(80));
+			// 80 UTF-16 units of surrogate pairs are 160 UTF-8 bytes.
+			await expect(create(2, "\u{1F600}".repeat(40))).rejects.toThrow(
+				EncryptedStorageError,
+			);
+			await opened.close(BACKGROUND_CONTEXT);
+		});
+	});
+
 	it("keeps a same-invocation read and safety write out of a failing commit", async () => {
 		const stub = env.PI_HOST_STORAGE.getByName("same-invocation-commit");
 		await runInDurableObject(stub, async (_instance, state) => {
