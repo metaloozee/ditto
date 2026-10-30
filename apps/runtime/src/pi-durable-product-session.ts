@@ -1,5 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
 import type { ArchiveArtifactV1 } from "../../../packages/runtime-contracts/src/artifacts.js";
+import {
+	type CandidateRuntimeScope,
+	parseCandidateRuntimeScope,
+} from "../../../packages/runtime-contracts/src/candidate-scope.js";
 import type {
 	ArchiveCompletionV1,
 	CheckpointProjectionV1,
@@ -10,11 +14,7 @@ import type {
 	ConfigurationAuthorityV1,
 	ConfigurationSelectionV1,
 } from "../../../packages/runtime-contracts/src/configuration.js";
-import {
-	literalField,
-	strictRecord,
-	stringField,
-} from "../../../packages/runtime-contracts/src/json.js";
+import { strictRecord } from "../../../packages/runtime-contracts/src/json.js";
 import type { ContinuationSeedV1 } from "../../../packages/runtime-contracts/src/lifecycle.js";
 import type { ModelSubjectV1 } from "../../../packages/runtime-contracts/src/model.js";
 import type {
@@ -49,29 +49,10 @@ import type {
 } from "./pi-durable-workspace.ts";
 import { parseRuntimeKeyring, type RuntimeKeyring } from "./runtime-crypto.ts";
 
-export type CandidateRuntimeScope = {
-	version: 2;
-	userId: string;
-	projectId: string;
-	workspaceSessionId: string;
-	ownerVersion: 1;
-};
-export function parseCandidateRuntimeScope(
-	value: unknown,
-): CandidateRuntimeScope {
-	const row = strictRecord(
-		value,
-		["version", "userId", "projectId", "workspaceSessionId", "ownerVersion"],
-		"Candidate runtime scope",
-	);
-	return {
-		version: literalField(row, "version", [2]),
-		userId: stringField(row, "userId"),
-		projectId: stringField(row, "projectId"),
-		workspaceSessionId: stringField(row, "workspaceSessionId"),
-		ownerVersion: literalField(row, "ownerVersion", [1]),
-	};
-}
+export {
+	type CandidateRuntimeScope,
+	parseCandidateRuntimeScope,
+} from "../../../packages/runtime-contracts/src/candidate-scope.js";
 export interface CandidatePrivateProduct extends PrivateModelTransport {
 	reconstructCommand(
 		commandId: string,
