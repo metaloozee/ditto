@@ -159,6 +159,12 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 	): Promise<void> {}
 	/** Deployment composition revokes the session's preview URL; none has nothing to revoke. */
 	protected async revokePreview(_scope: CandidateRuntimeScope): Promise<void> {}
+	/** Deployment composition destroys the session's sandbox; none has no termination evidence. */
+	protected async destroyExecutor(
+		_scope: CandidateRuntimeScope,
+	): Promise<boolean> {
+		return false;
+	}
 	/** Deployment composition starts the one-time baseline once the host is open. */
 	protected startBaseline(_host: PiDurableHost): void {}
 	/** Deployment composition supplies the recovery store; none disables retention. */
@@ -468,6 +474,20 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 		await this.revokePreview(scope);
 		await this.ctx.storage.deleteAlarm();
 		await this.ctx.storage.deleteAll();
+	}
+
+	/** Destroys this session's executor once its archive or project deletion is authoritative. */
+	async terminateExecutor(value: unknown): Promise<{ terminated: boolean }> {
+		const scope = await this.passiveScope(value);
+		if (
+			!(await this.env.CandidateProduct.readDeletionAuthority(scope)) &&
+			!(await this.env.CandidateProduct.readArchivedAuthority(scope))
+		)
+			throw new Error("Candidate authority denied");
+		await this.host?.yield().catch(() => undefined);
+		await this.host?.awaitClosure().catch(() => undefined);
+		this.host = undefined;
+		return { terminated: await this.destroyExecutor(scope) };
 	}
 
 	/** Product preview proxy: answers only from a live host and never opens one. */

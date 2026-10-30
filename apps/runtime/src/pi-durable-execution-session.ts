@@ -153,6 +153,20 @@ export class PiDurableExecutionSession extends PiDurableProductSession {
 			) as ExecutionSandbox
 		).unexposePort(WORKSPACE_PREVIEW_PORT);
 	}
+	protected override async destroyExecutor(scope: CandidateRuntimeScope) {
+		const { CandidateSandbox } = this.env;
+		if (!CandidateSandbox) return false;
+		try {
+			await getSandbox(
+				CandidateSandbox,
+				candidateSandboxName(scope.workspaceSessionId),
+				{ transport: "rpc" },
+			).destroy();
+			return true;
+		} catch {
+			return false;
+		}
+	}
 	protected override remoteExecutor(): RemoteExecutor | undefined {
 		return this.execution?.executor;
 	}
