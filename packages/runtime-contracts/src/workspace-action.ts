@@ -72,7 +72,8 @@ export type WorkspaceActionResultV1 =
 	| { status: "rejected"; reason: string }
 	/** The outcome is unknown; the workspace is blocked for review. */
 	| { status: "unknown" }
-	| { status: "preview_running"; generation: number }
+	/** `url` is a bearer capability: return it to the owner only; never log, persist or observe it. */
+	| { status: "preview_running"; generation: number; url: string }
 	| { status: "preview_stopped"; generation: number }
 	/** Neither committed pair restores a cold workspace; the seed is never used. */
 	| { status: "preview_unavailable" };
