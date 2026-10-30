@@ -56,6 +56,9 @@ import type {
 declare module "cloudflare:test" {
 	interface ProvidedEnv {
 		CandidateProduct: Service<CandidateFixtureProduct>;
+		ProductionCandidateProduct: Service<
+			import("../../web/src/lib/candidate-product").CandidatePrivateProduct
+		>;
 		CandidateSessions: DurableObjectNamespace<CandidateFixtureSession>;
 		CandidateCredential: DurableObjectNamespace<CandidateFixtureCredential>;
 	}
@@ -4540,4 +4543,108 @@ it("adds restore facts to an observation without pair, digest or object-key data
 		observe: async () => ({ version: 1, cursor: 1, events: [], more: false }),
 	}).observe(...request, 1);
 	expect(events.snapshot).toBeUndefined();
+});
+
+it("keeps model requests and permits unavailable in the production candidate entrypoint", async () => {
+	await candidateCredential();
+	modelReplies();
+	const denied = async () => ({ status: "denied" as const });
+	expect(
+		await env.ProductionCandidateProduct.requestModel(
+			{},
+			{
+				describe: async () => {
+					throw new Error("unused");
+				},
+				claim: denied,
+				halt: denied,
+			},
+		),
+	).toEqual({ version: 1, status: "unavailable" });
+	expect(
+		await env.ProductionCandidateProduct.readModelPermit({}, {} as never),
+	).toEqual({ status: "denied" });
+});
+
+it("reads the same runtime authority through the production entrypoint as the fixture", async () => {
+	await candidateCredential();
+	modelReplies();
+	const first = await env.CandidateProduct.admitOwned("owner", prompt);
+	const scope = {
+		version: 2 as const,
+		ownerVersion: 1 as const,
+		userId: "owner",
+		projectId: "project",
+		workspaceSessionId: first.workspaceSessionId,
+	};
+	const production =
+		await env.ProductionCandidateProduct.readRuntimeAuthority(scope);
+	expect(production.current).toBe(true);
+	expect(production).toEqual(
+		await env.CandidateProduct.readRuntimeAuthority(scope),
+	);
+});
+
+it("hands the session, user and project to executor teardown", async () => {
+	await candidateCredential();
+	modelReplies();
+	const first = await env.CandidateProduct.admitOwned("owner", prompt);
+	const terminated: unknown[] = [];
+	const runtime: CandidateLifecycleRuntime = {
+		exportContinuation: async () => {
+			throw new Error("unused");
+		},
+		importContinuation: async () => {
+			throw new Error("unused");
+		},
+		terminateExecutor: async (identity) => {
+			terminated.push(identity);
+			return { terminated: true };
+		},
+		purgeSession: async () => undefined,
+	};
+	await new CandidateLifecycle(env.DB, runtime, Date.now, () =>
+		crypto.randomUUID(),
+	).deleteProject("owner", "project");
+	expect(terminated).toHaveLength(1);
+	expect(terminated[0]).toMatchObject({
+		workspaceSessionId: first.workspaceSessionId,
+		userId: "owner",
+		projectId: "project",
+	});
+});
+
+it("refuses executor teardown until archive or deletion is authoritative, then reports no evidence without a sandbox", async () => {
+	await candidateCredential();
+	modelReplies();
+	const first = await env.CandidateProduct.admitOwned("owner", prompt);
+	const scope = {
+		version: 2 as const,
+		ownerVersion: 1 as const,
+		userId: "owner",
+		projectId: "project",
+		workspaceSessionId: first.workspaceSessionId,
+	};
+	const runtime = env.CandidateSessions.getByName(first.workspaceSessionId);
+	// Asserted in process: a rejected RPC is also reported unhandled.
+	await runInDurableObject(runtime, async (instance) => {
+		await expect(instance.terminateExecutor(scope)).rejects.toThrow(
+			"Candidate authority denied",
+		);
+	});
+	try {
+		// purgeFault stops inline cleanup before the project row is deleted, so the fence holds.
+		await env.CandidateProduct.setExecutorFixture({
+			terminates: true,
+			purgeFault: true,
+		});
+		expect(
+			await env.CandidateProduct.deleteProjectOwned("owner", "project"),
+		).toEqual({ status: "deleting" });
+		expect(await runtime.terminateExecutor(scope)).toEqual({
+			terminated: false,
+		});
+	} finally {
+		await env.CandidateProduct.setExecutorFixture({ terminates: true });
+	}
 });

@@ -25,7 +25,7 @@ export default defineWorkersConfig({
 					compatibilityDate: "2026-03-10",
 					compatibilityFlags: ["nodejs_compat"],
 					d1Databases: ["DB"],
-					serviceBindings: { CandidateProduct: { name: currentWorker, entrypoint: "CandidateFixtureProduct" } },
+					serviceBindings: { CandidateProduct: { name: currentWorker, entrypoint: "CandidateFixtureProduct" }, ProductionCandidateProduct: { name: currentWorker, entrypoint: "CandidatePrivateProduct" } },
 					durableObjects: {
 						CodexCredential: { className: "FixtureCredential", useSQLite: true },
 						PI_MODEL_HOST: { className: "PiDurableHostFixture", useSQLite: true },
@@ -34,6 +34,7 @@ export default defineWorkersConfig({
 					},
 					bindings: {
 						CANDIDATE_DISPOSABLE: "008-synthetic",
+						BETTER_AUTH_SECRET: "synthetic-034-auth-secret",
 						CANDIDATE_PROJECT_VALUES_SECRET: "synthetic-015-project-values",
 						CANDIDATE_RUNTIME_KEYS: JSON.stringify({ currentVersion: "fixture-v1", keys: { "fixture-v1": "01".repeat(32) } }),
 						CODEX_CREDENTIAL_CURRENT_KEY_VERSION: "fixture-v1",

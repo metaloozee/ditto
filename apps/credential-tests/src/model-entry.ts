@@ -23,6 +23,7 @@ import {
 } from "../../web/src/lib/model-product-transport";
 
 export { PiDurableHostFixture } from "../../runtime/src/pi-durable-host.ts";
+export { CandidatePrivateProduct } from "../../web/src/lib/candidate-product";
 export {
 	CandidateFixtureCredential,
 	CodexCredential,
