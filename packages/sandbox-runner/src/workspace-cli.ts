@@ -11,6 +11,12 @@ import {
 	WORKSPACE_PATH,
 	type WorkspaceGitResult,
 } from "./workspace-git.js";
+import {
+	discoverPreview,
+	PREVIEW_PORT,
+	type PreviewResult,
+	waitForPreview,
+} from "./workspace-preview.js";
 
 function flags(argv: string[], names: string[]) {
 	const values = new Map<string, string>();
@@ -53,10 +59,30 @@ export function run(
 	return { ok: false, error: "invalid_args" };
 }
 
+export async function runPreview(
+	argv: string[],
+	workspace: string = WORKSPACE_PATH,
+): Promise<PreviewResult> {
+	const [action, ...rest] = argv;
+	if (action === "command" && rest.length === 0) {
+		return discoverPreview(workspace);
+	}
+	if (action === "ready") {
+		const values = flags(rest, ["--timeout-ms"]);
+		const raw = values?.get("--timeout-ms") ?? "";
+		if (!/^[1-9]\d*$/.test(raw) || Number(raw) > 120000) {
+			return { ok: false, error: "invalid_args" };
+		}
+		return waitForPreview(PREVIEW_PORT, Number(raw));
+	}
+	return { ok: false, error: "invalid_args" };
+}
+
 export async function main(
 	argv: string[] = process.argv.slice(2),
 ): Promise<number> {
-	const result = run(argv);
+	const result =
+		argv[0] === "preview" ? await runPreview(argv.slice(1)) : run(argv);
 	process.stdout.write(`${JSON.stringify(result)}\n`);
 	return result.ok ? 0 : 1;
 }
@@ -81,9 +107,9 @@ if (isDirectRun(process.argv[1], import.meta.url)) {
 			process.exitCode = code;
 		})
 		.catch(() => {
-			process.stdout.write(
-				`${JSON.stringify({ ok: false, error: "git_failed" })}\n`,
-			);
+			const error =
+				process.argv[2] === "preview" ? "preview_failed" : "git_failed";
+			process.stdout.write(`${JSON.stringify({ ok: false, error })}\n`);
 			process.exitCode = 1;
 		});
 }
