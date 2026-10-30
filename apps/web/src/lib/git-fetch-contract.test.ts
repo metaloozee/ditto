@@ -320,7 +320,9 @@ describe("git-fetch-contract", () => {
 			mintToken: mint,
 		});
 		expect(mint).toHaveBeenCalledOnce();
-		expect(upstream.headers.get("Authorization")).toBe("token ghs_token");
+		expect(upstream.headers.get("Authorization")).toBe(
+			`Basic ${btoa("x-access-token:ghs_token")}`,
+		);
 		expect(upstream.url).not.toContain("ghs_token");
 		expect(upstream.url).toContain("https://github.com/acme/app.git/info/refs");
 	});

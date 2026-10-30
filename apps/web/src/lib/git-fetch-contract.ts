@@ -671,6 +671,11 @@ export async function validateGitFetchRequest(
 	}
 }
 
+/** GitHub smart HTTP rejects `token`/`Bearer` installation tokens with 401. */
+export function githubGitAuthorization(token: string): string {
+	return `Basic ${btoa(`x-access-token:${token}`)}`;
+}
+
 /**
  * After contract validation, mint a token and build a fresh upstream Request.
  */
@@ -680,7 +685,7 @@ export async function buildAuthenticatedGitUpstreamRequest(options: {
 }): Promise<Request> {
 	const token = await options.mintToken();
 	const headers = new Headers(options.validated.headers);
-	headers.set("Authorization", `token ${token}`);
+	headers.set("Authorization", githubGitAuthorization(token));
 	headers.delete("cookie");
 
 	const init: RequestInit & { duplex?: "half" } = {

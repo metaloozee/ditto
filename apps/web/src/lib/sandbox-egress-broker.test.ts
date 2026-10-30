@@ -377,7 +377,7 @@ describe("SandboxEgressBroker", () => {
 		expect(mintTokenMock).toHaveBeenCalledOnce();
 		const upstream = fetchMock.mock.calls[0]?.[0] as Request;
 		expect(upstream.headers.get("Authorization")).toBe(
-			"token ghs_minted_token",
+			`Basic ${btoa("x-access-token:ghs_minted_token")}`,
 		);
 		expect(upstream.url).not.toContain("ghs_minted_token");
 		expect(upstream.url.startsWith("https://github.com/acme/app.git/")).toBe(

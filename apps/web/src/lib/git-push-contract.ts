@@ -1,4 +1,7 @@
-import { parseGithubSmartHttpPath } from "#/lib/git-fetch-contract";
+import {
+	githubGitAuthorization,
+	parseGithubSmartHttpPath,
+} from "#/lib/git-fetch-contract";
 import { PktLineError } from "#/lib/git-pkt-line";
 import {
 	collectStream,
@@ -440,7 +443,7 @@ export async function buildAuthenticatedGitPushUpstreamRequest(options: {
 }): Promise<Request> {
 	const token = await options.mintToken();
 	const headers = new Headers(options.validated.headers);
-	headers.set("Authorization", `token ${token}`);
+	headers.set("Authorization", githubGitAuthorization(token));
 	headers.delete("cookie");
 
 	const init: RequestInit & { duplex?: "half" } = {
