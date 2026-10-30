@@ -128,7 +128,6 @@ function buildClosedGitChildEnvBase(homeDir: string): Record<string, string> {
 		GIT_CONFIG_GLOBAL: emptyConfig,
 		GIT_TRACE: "0",
 		GIT_TRACE_SETUP: "0",
-		GIT_CURL_VERBOSE: "0",
 	};
 }
 

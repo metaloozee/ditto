@@ -21,6 +21,7 @@ describe("brokered Git", () => {
 		const serialized = JSON.stringify(env);
 		expect(serialized).not.toMatch(/ghs_|x-access-token|authorization/i);
 		expect(env).not.toHaveProperty("HTTP_PROXY");
+		expect(env).not.toHaveProperty("GIT_CURL_VERBOSE");
 		expect(env.GIT_SSL_CAINFO).toBe(CLOUDFLARE_CONTAINERS_CA_PATH);
 		expect(env.GIT_CONFIG_VALUE_4).toBe("false");
 	});
