@@ -30,6 +30,9 @@ export interface CandidateLifecycleRuntime {
 		identityId: string;
 		incarnationId: string;
 		sandboxId: string;
+		workspaceSessionId: string;
+		userId: string;
+		projectId: string;
 	}): Promise<{ terminated: boolean }>;
 	/** Removes a deleted session's runtime storage and recovery objects. */
 	purgeSession(scope: CandidateSessionScope): Promise<void>;
@@ -396,7 +399,7 @@ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind
 	private async teardownExecutor(sessionId: string) {
 		const identities = await this.db
 			.prepare(
-				"SELECT id,incarnationId,sandboxId,userId,state FROM sandbox_identities WHERE workspaceSessionId=? AND kind='workspace_session' AND controllerNamespace='fixture-pi-durable-execution-v1'",
+				"SELECT id,incarnationId,sandboxId,userId,projectId,state FROM sandbox_identities WHERE workspaceSessionId=? AND kind='workspace_session' AND controllerNamespace='fixture-pi-durable-execution-v1'",
 			)
 			.bind(sessionId)
 			.all<{
@@ -404,6 +407,7 @@ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind
 				incarnationId: string | null;
 				sandboxId: string;
 				userId: string;
+				projectId: string;
 				state: string;
 			}>();
 		for (const identity of identities.results) {
@@ -425,6 +429,9 @@ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind
 				identityId: identity.id,
 				incarnationId: identity.incarnationId ?? "",
 				sandboxId: identity.sandboxId,
+				workspaceSessionId: sessionId,
+				userId: identity.userId,
+				projectId: identity.projectId,
 			});
 			if (!result.terminated)
 				throw new Error("Executor termination is not proven");
