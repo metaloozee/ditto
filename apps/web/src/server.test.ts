@@ -310,6 +310,43 @@ describe("candidate entrypoint composition", () => {
 		);
 		expect(legacyDrainMock).toHaveBeenCalled();
 	});
+	it("leaves candidate commands unresolved without a CandidateSessions binding", async () => {
+		const { resolveCandidateProductCommands } = await import(
+			"#/lib/session-runtime-client"
+		);
+		proxyToSandboxMock.mockResolvedValue(null);
+		handlerFetchMock.mockImplementation(
+			async () =>
+				new Response(
+					resolveCandidateProductCommands() === undefined
+						? "unavailable"
+						: "candidate",
+				),
+		);
+		expect(
+			await (await server.fetch(new Request("http://localhost/"), env)).text(),
+		).toBe("unavailable");
+	});
+	it("builds the production candidate commands when CandidateSessions is bound", async () => {
+		const { resolveCandidateProductCommands } = await import(
+			"#/lib/session-runtime-client"
+		);
+		proxyToSandboxMock.mockResolvedValue(null);
+		handlerFetchMock.mockImplementation(
+			async () =>
+				new Response(
+					typeof resolveCandidateProductCommands()?.drain === "function"
+						? "candidate"
+						: "unavailable",
+				),
+		);
+		const bound = { ...env, CandidateSessions: {} } as unknown as Env;
+		expect(
+			await (
+				await server.fetch(new Request("http://localhost/"), bound)
+			).text(),
+		).toBe("candidate");
+	});
 	it("does not contact the legacy Sandbox namespace for a ready candidate identity during real scheduled maintenance", async () => {
 		const { sandboxIdentities, workspaceSessions } = await import(
 			"#/db/schema"
