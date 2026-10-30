@@ -82,7 +82,11 @@ it("archives at the cutoff: unstarted work fails, preview stops with evidence, t
 		const { host } = await firstAnswer(context);
 		expect(
 			await host.workspaceAction({ version: 1, kind: "preview_start" }),
-		).toEqual({ status: "preview_running", generation: 1 });
+		).toEqual({
+			status: "preview_running",
+			generation: 1,
+			url: expect.any(String),
+		});
 		expect(host.previewAuthority(1)).toBe(true);
 		// An unbacked UI edit and two accepted commands that never started.
 		execution.state.files = { "README.md": "edited before archive" };

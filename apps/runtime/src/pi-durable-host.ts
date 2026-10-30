@@ -7170,6 +7170,16 @@ export class PiDurableHost {
 		return workspace.previewAuthority(generation);
 	}
 
+	/** Product preview proxy: a request's token digest must match the running grant on a live, unfenced host. */
+	previewAdmits(digest: string): boolean {
+		if (this.sealed || this.denied || this.storageBarrier) return false;
+		const workspace = this.workspace();
+		if (!workspace || this.workspacePort().admission() !== "open") return false;
+		if (!workspace.previewAdmits(digest)) return false;
+		workspace.traffic();
+		return true;
+	}
+
 	previewTraffic() {
 		this.workspace()?.traffic();
 	}

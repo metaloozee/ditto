@@ -19,6 +19,7 @@ import type {
 	RestoreFailure,
 	SqlStorage,
 } from "./pi-durable-checkpoints.ts";
+import { previewToken, previewTokenDigest } from "./pi-durable-preview.ts";
 
 /**
  * UI Git and preview under the runtime owner. Every action takes the same
@@ -45,7 +46,9 @@ export interface WorkspaceExecution {
 	previewStart(
 		permit: ArtifactPermit,
 		request: { port: number },
-	): Promise<void>;
+	): Promise<{ url: string }>;
+	/** The current preview URL, read without rotating its token; undefined when none is forwardable. */
+	previewUrl(): Promise<string | undefined>;
 	/** `terminated` is evidence the process and its children are gone. */
 	previewStop(permit: ArtifactPermit): Promise<{ terminated: boolean }>;
 }
@@ -91,6 +94,7 @@ export function createWorkspaceController(deps: {
 		"INSERT OR IGNORE INTO workspace_backup VALUES (1, NULL, NULL)",
 		"CREATE TABLE IF NOT EXISTS workspace_preview (id INTEGER PRIMARY KEY CHECK (id = 1), state TEXT NOT NULL CHECK (state IN ('stopped','running','unknown')), generation INTEGER NOT NULL, demand INTEGER NOT NULL CHECK (demand IN (0,1)), last_traffic INTEGER, stopped_for_backup INTEGER NOT NULL CHECK (stopped_for_backup IN (0,1)))",
 		"INSERT OR IGNORE INTO workspace_preview VALUES (1, 'stopped', 0, 0, NULL, 0)",
+		"CREATE TABLE IF NOT EXISTS workspace_preview_grant (id INTEGER PRIMARY KEY CHECK (id = 1), generation INTEGER NOT NULL, digest TEXT NOT NULL)",
 	])
 		sql.exec(statement);
 	let authority: Awaited<ReturnType<CheckpointHostPort["authority"]>> = {
@@ -119,6 +123,39 @@ export function createWorkspaceController(deps: {
 				"SELECT unbacked_since, deadline FROM workspace_backup WHERE id = 1",
 			)
 			.one();
+	const grant = () =>
+		sql
+			.exec<{ generation: number; digest: string }>(
+				"SELECT generation, digest FROM workspace_preview_grant WHERE id = 1",
+			)
+			.toArray()[0];
+	/** The running generation's grant must hold this digest; compared without early exit. */
+	const admits = (digest: string) => {
+		const row = preview();
+		const held = grant();
+		if (row.state !== "running" || !held || held.generation !== row.generation)
+			return false;
+		if (held.digest.length !== digest.length) return false;
+		let diff = 0;
+		for (let i = 0; i < digest.length; i++)
+			diff |= held.digest.charCodeAt(i) ^ digest.charCodeAt(i);
+		return diff === 0;
+	};
+	/** Every write that leaves `running` drops the grant in the same transaction. */
+	const leaveRunning = (statement: string, ...bindings: unknown[]) =>
+		storage.transactionSync(() => {
+			sql.exec(statement, ...bindings);
+			sql.exec("DELETE FROM workspace_preview_grant WHERE id = 1");
+		});
+	async function runningResult(
+		generation: number,
+	): Promise<WorkspaceActionResultV1> {
+		const url = await deps.execution.previewUrl().catch(() => undefined);
+		const token = url === undefined ? undefined : previewToken(url);
+		if (!url || !token || !admits(await previewTokenDigest(token)))
+			return { status: "rejected", reason: "preview_url_unavailable" };
+		return { status: "preview_running", generation, url };
+	}
 	const preview = () =>
 		sql
 			.exec<{
@@ -281,8 +318,7 @@ export function createWorkspaceController(deps: {
 	 */
 	async function startPreview(user: boolean): Promise<WorkspaceActionResultV1> {
 		const current = preview();
-		if (current.state === "running")
-			return { status: "preview_running", generation: current.generation };
+		if (current.state === "running") return runningResult(current.generation);
 		const denied = admissionDenial(true);
 		if (denied) {
 			if (
@@ -335,21 +371,39 @@ export function createWorkspaceController(deps: {
 				return late;
 			}
 			const again = preview();
-			if (again.state === "running")
-				return { status: "preview_running", generation: again.generation };
-			const result = await step(scope, "preview_start", (permit) =>
-				deps.execution.previewStart(permit, { port: WORKSPACE_PREVIEW_PORT }),
-			);
+			if (again.state === "running") return runningResult(again.generation);
+			const result = await step(scope, "preview_start", async (permit) => {
+				const { url } = await deps.execution.previewStart(permit, {
+					port: WORKSPACE_PREVIEW_PORT,
+				});
+				const token = previewToken(url);
+				// A plain Error (not ArtifactStepRejected) makes the outcome unknown: a URL may be live.
+				if (!token)
+					throw new Error("Preview start returned a malformed address");
+				return { url, digest: await previewTokenDigest(token) };
+			});
 			if (result.status === "unknown") {
-				sql.exec("UPDATE workspace_preview SET state = 'unknown' WHERE id = 1");
+				leaveRunning(
+					"UPDATE workspace_preview SET state = 'unknown' WHERE id = 1",
+				);
 				return result;
 			}
 			if (result.status === "rejected")
 				return { status: "rejected", reason: result.reason };
-			sql.exec(
-				"UPDATE workspace_preview SET state = 'running', generation = generation + 1, demand = 0, stopped_for_backup = 0 WHERE id = 1",
-			);
-			return { status: "preview_running", generation: preview().generation };
+			storage.transactionSync(() => {
+				sql.exec(
+					"UPDATE workspace_preview SET state = 'running', generation = generation + 1, demand = 0, stopped_for_backup = 0 WHERE id = 1",
+				);
+				sql.exec(
+					"INSERT OR REPLACE INTO workspace_preview_grant VALUES (1, (SELECT generation FROM workspace_preview WHERE id = 1), ?)",
+					result.value.digest,
+				);
+			});
+			return {
+				status: "preview_running",
+				generation: preview().generation,
+				url: result.value.url,
+			};
 		} finally {
 			ledger.release(scope);
 		}
@@ -381,7 +435,7 @@ export function createWorkspaceController(deps: {
 			);
 			await deps.fault?.("after-preview-stop");
 			if (result.status === "ok" && result.value.terminated) {
-				sql.exec(
+				leaveRunning(
 					"UPDATE workspace_preview SET state = 'stopped', generation = generation + 1, stopped_for_backup = ?, demand = 0 WHERE id = 1",
 					reason === "backup" ? 1 : 0,
 				);
@@ -389,7 +443,9 @@ export function createWorkspaceController(deps: {
 			}
 			if (result.status === "rejected")
 				return { status: "rejected", reason: result.reason };
-			sql.exec("UPDATE workspace_preview SET state = 'unknown' WHERE id = 1");
+			leaveRunning(
+				"UPDATE workspace_preview SET state = 'unknown' WHERE id = 1",
+			);
 			return { status: "unknown" };
 		} finally {
 			ledger.release(scope);
@@ -444,6 +500,10 @@ export function createWorkspaceController(deps: {
 		previewAuthority(value: number) {
 			const row = preview();
 			return row.state === "running" && row.generation === value;
+		},
+		/** A preview request's token digest must match the grant of the running generation. */
+		previewAdmits(digest: string): boolean {
+			return admits(digest);
 		},
 		traffic() {
 			sql.exec(

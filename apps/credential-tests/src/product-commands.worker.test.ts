@@ -3375,7 +3375,11 @@ it("charges a preview start to the session's executor slot and refuses it when t
 				},
 				workspaceAction: async (_subject, action) => {
 					calls.push(action.kind);
-					return { status: "preview_running", generation: 1 };
+					return {
+						status: "preview_running",
+						generation: 1,
+						url: "http://10000-c-x-t.localhost/",
+					};
 				},
 			},
 			(owner) => env.CodexCredential.getByName(owner),

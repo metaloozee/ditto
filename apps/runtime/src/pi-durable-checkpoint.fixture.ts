@@ -236,15 +236,25 @@ export function fakeWorkspace(execution: ReturnType<typeof fakeExecution>) {
 		committed: snapshot(),
 		commits: [] as string[],
 		preview: "stopped" as "stopped" | "running",
+		url: undefined as string | undefined,
 		/** False models a stop that cannot prove the process is gone. */
 		terminates: true,
 		calls: [] as string[],
 		faults: {} as Partial<
-			Record<keyof WorkspaceExecution, (permit: ArtifactPermit) => unknown>
+			Record<
+				Exclude<keyof WorkspaceExecution, "previewUrl">,
+				(permit: ArtifactPermit) => unknown
+			>
 		>,
 	};
+	const random16 = () => {
+		const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+		return [...crypto.getRandomValues(new Uint8Array(16))]
+			.map((byte) => alphabet[byte % alphabet.length])
+			.join("");
+	};
 	const enter = async (
-		method: keyof WorkspaceExecution,
+		method: Exclude<keyof WorkspaceExecution, "previewUrl">,
 		permit: ArtifactPermit,
 	) => {
 		state.calls.push(method);
@@ -285,10 +295,18 @@ export function fakeWorkspace(execution: ReturnType<typeof fakeExecution>) {
 		async previewStart(permit) {
 			await enter("previewStart", permit);
 			state.preview = "running";
+			state.url = `http://10000-c-workspace-${random16()}.localhost/`;
+			return { url: state.url };
+		},
+		async previewUrl() {
+			return state.preview === "running" ? state.url : undefined;
 		},
 		async previewStop(permit) {
 			await enter("previewStop", permit);
-			if (state.terminates) state.preview = "stopped";
+			if (state.terminates) {
+				state.preview = "stopped";
+				state.url = undefined;
+			}
 			return { terminated: state.terminates };
 		},
 	};

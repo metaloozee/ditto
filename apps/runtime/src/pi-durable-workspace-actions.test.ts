@@ -9,6 +9,7 @@ import {
 	seed,
 	submissions,
 } from "./pi-durable-checkpoint.fixture.ts";
+import { previewToken, previewTokenDigest } from "./pi-durable-preview.ts";
 import { encoder } from "./pi-durable-recovery.fixture.ts";
 
 type Context = Parameters<Parameters<typeof fixture>[1]>[0];
@@ -179,7 +180,11 @@ it("keeps the first backup deadline fixed while preview defers it, then stops pr
 			version: 1,
 			kind: "preview_start",
 		});
-		expect(started).toEqual({ status: "preview_running", generation: 1 });
+		expect(started).toEqual({
+			status: "preview_running",
+			generation: 1,
+			url: expect.any(String),
+		});
 		expect(host.previewAuthority(1)).toBe(true);
 		const first = control.now;
 		expect(backupRow(context).deadline).toBeNull();
@@ -639,6 +644,7 @@ it("two racing preview starts run one process, and preview URLs die with the hos
 		expect(results).toContainEqual({
 			status: "preview_running",
 			generation: 1,
+			url: expect.any(String),
 		});
 		expect(host.previewAuthority(1)).toBe(true);
 		storage.sql.exec(
@@ -689,5 +695,92 @@ it("cold preview refuses to restore files while changes are unbacked, since the 
 			execution.state.calls.filter((call) => call.method === "extract"),
 		).toHaveLength(extracts);
 		expect(execution.state.files).toEqual({});
+	});
+});
+
+const START = { version: 1, kind: "preview_start" } as const;
+const grantRows = (context: Context) =>
+	context.storage.sql.exec("SELECT * FROM workspace_preview_grant").toArray();
+async function digestOf(result: unknown) {
+	const { url } = result as { url: string };
+	const token = previewToken(url);
+	if (!token) throw new Error("No token");
+	return previewTokenDigest(token);
+}
+
+it("admits only the running preview's digest, and a backup stop plus restart rotates it", async () => {
+	await fixture("workspace-preview-rotate", async (context) => {
+		const { control, execution } = context;
+		const host = await baseline(context);
+		const first = await digestOf(await host.workspaceAction(START));
+		expect(host.previewAdmits(first)).toBe(true);
+		execution.state.files = { "README.md": "edited" };
+		await host.workspaceAction({
+			version: 1,
+			kind: "git_commit",
+			message: "Edit",
+		});
+		control.now += DEFERRAL;
+		await host.alarm();
+		expect(previewRow(context)).toEqual({ state: "stopped", generation: 2 });
+		expect(host.previewAdmits(first)).toBe(false);
+		const restarted = await digestOf(await host.workspaceAction(START));
+		expect(restarted).not.toBe(first);
+		expect(host.previewAdmits(restarted)).toBe(true);
+	});
+});
+
+it("leaves no grant when preview start ends unknown", async () => {
+	await fixture("workspace-preview-start-unknown", async (context) => {
+		const { workspace } = context;
+		const host = await baseline(context);
+		workspace.state.faults.previewStart = () => {
+			throw new Error("lost");
+		};
+		expect(await host.workspaceAction(START)).toEqual({ status: "unknown" });
+		expect(grantRows(context)).toEqual([]);
+		expect(host.previewAdmits("a".repeat(64))).toBe(false);
+	});
+});
+
+it("denies preview admission on a sealed host", async () => {
+	await fixture("workspace-preview-sealed", async (context) => {
+		const host = await baseline(context);
+		const digest = await digestOf(await host.workspaceAction(START));
+		expect(host.previewAdmits(digest)).toBe(true);
+		await host.yield();
+		expect(host.previewAdmits(digest)).toBe(false);
+	});
+});
+
+it("rejects an idempotent start when the sandbox no longer lists the preview URL", async () => {
+	await fixture("workspace-preview-url-gone", async (context) => {
+		const { workspace } = context;
+		const host = await baseline(context);
+		await host.workspaceAction(START);
+		workspace.state.url = undefined;
+		expect(await host.workspaceAction(START)).toEqual({
+			status: "rejected",
+			reason: "preview_url_unavailable",
+		});
+	});
+});
+
+it("drops the grant when archive finalizes or a restore quiesces the workspace", async () => {
+	await fixture("workspace-preview-archive", async (context) => {
+		const host = await baseline(context);
+		const digest = await digestOf(await host.workspaceAction(START));
+		expect(await context.controller().finalizeForArchive(false)).toEqual({
+			status: "final",
+		});
+		expect(host.previewAdmits(digest)).toBe(false);
+		expect(grantRows(context)).toEqual([]);
+	});
+	await fixture("workspace-preview-quiesce", async (context) => {
+		const host = await baseline(context);
+		const digest = await digestOf(await host.workspaceAction(START));
+		expect(await context.controller().quiesceForRestore()).toBe(true);
+		expect(host.previewAdmits(digest)).toBe(false);
+		expect(grantRows(context)).toEqual([]);
 	});
 });

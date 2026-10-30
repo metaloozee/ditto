@@ -36,6 +36,7 @@ import {
 	requestDigest,
 	semanticTranscript,
 } from "./pi-durable-host.ts";
+import { previewToken, previewTokenDigest } from "./pi-durable-preview.ts";
 import {
 	collect,
 	encoder,
@@ -68,6 +69,17 @@ function scriptedSandbox() {
 		restoredDigests: [] as string[],
 		outbound: [] as { name: string; params: unknown; commandsSeen: number }[],
 		fetchFails: false,
+		exposed: new Map<number, string>(),
+		process: null as { status: string } | null,
+		calls: [] as string[],
+		readyFails: false,
+		unexposeFails: false,
+		unexposeThrows: false,
+		unexposeNoop: false,
+		getProcessThrows: false,
+		slowKill: 0,
+		killed: false,
+		reads: 0,
 	};
 	const json = (value: unknown) => ({
 		exitCode: 0,
@@ -133,9 +145,60 @@ function scriptedSandbox() {
 				return state.fetchFails
 					? json({ ok: false, error: "git_failed" })
 					: json({ ok: true, head: HEAD });
+			if (command.startsWith("ditto-workspace preview command"))
+				return json({
+					ok: true,
+					command: "npx vite --port 10000",
+					cwd: "/workspace",
+					env: { PORT: "10000" },
+				});
+			if (command.startsWith("ditto-workspace preview ready"))
+				return state.readyFails
+					? json({ ok: false, error: "not_ready" })
+					: json({ ok: true, ready: true });
 			if (command.startsWith("ditto-workspace commit"))
 				return json({ ok: true, committed: true, head: "c".repeat(40) });
 			return { exitCode: 0, stdout: "" };
+		},
+		async startProcess() {
+			state.calls.push("startProcess");
+			state.process = { status: "running" };
+			state.killed = false;
+			return {};
+		},
+		async getProcess() {
+			state.calls.push("getProcess");
+			if (state.getProcessThrows) throw new Error("rpc");
+			if (state.killed) {
+				state.reads += 1;
+				if (state.reads > state.slowKill) state.process = null;
+			}
+			return state.process;
+		},
+		async killProcess() {
+			state.calls.push("killProcess");
+			state.killed = true;
+			state.reads = 0;
+			if (state.slowKill === 0) state.process = null;
+			return {};
+		},
+		async exposePort(port, options) {
+			state.calls.push("exposePort");
+			state.exposed.set(port, options.token);
+			return { url: `http://10000-c-workspace-${options.token}.localhost/` };
+		},
+		async unexposePort(port) {
+			state.calls.push("unexposePort");
+			if (state.unexposeThrows || state.unexposeFails)
+				throw new Error("unexpose failed");
+			if (!state.unexposeNoop) state.exposed.delete(port);
+			return {};
+		},
+		async getExposedPorts() {
+			return [...state.exposed].map(([port, token]) => ({
+				port,
+				url: `http://10000-c-workspace-${token}.localhost/`,
+			}));
 		},
 		async setOutboundHandler(name, params) {
 			state.outbound.push({
@@ -180,6 +243,7 @@ async function harness(
 		>;
 		model: { calls: number };
 	}) => Promise<void>,
+	options: { previewHostname?: string | null } = {},
 ) {
 	await runInDurableObject(
 		env.PI_HOST_STORAGE.getByName(name),
@@ -211,6 +275,11 @@ async function harness(
 				outboundScope: scope,
 				branch: "b",
 				now: () => control.now,
+				previewHostname:
+					options.previewHostname === null
+						? undefined
+						: (options.previewHostname ?? "localhost"),
+				sleep: async () => {},
 			});
 			const product = fakeProduct();
 			const restore = fakeRestoreProduct();
@@ -520,21 +589,173 @@ it("answers Git actions from the workspace CLI and sends the commit message only
 	});
 });
 
-it("rejects preview without running a preview command", async () => {
+it("starts, repeats, rotates and revokes a preview through the sandbox", async () => {
+	const start = { version: 1, kind: "preview_start" } as const;
+	const stop = { version: 1, kind: "preview_stop" } as const;
+	const tokenOf = (result: unknown) => {
+		const { url } = result as { url: string };
+		const token = previewToken(url);
+		if (!token) throw new Error("No token");
+		return { url, token };
+	};
+	// 1. No hostname: rejected without a preview CLI call or an exposure.
+	await harness(
+		"execution-preview-none",
+		async (context) => {
+			const host = await context.open();
+			await context.baseline();
+			const result = await host.workspaceAction(start);
+			expect(result).toMatchObject({ status: "rejected" });
+			expect(
+				context.sandbox.state.commands.filter((c) =>
+					c.startsWith("ditto-workspace preview"),
+				),
+			).toEqual([]);
+			expect(context.sandbox.state.calls).not.toContain("exposePort");
+		},
+		{ previewHostname: null },
+	);
 	await harness("execution-preview", async (context) => {
 		const host = await context.open();
 		await context.baseline();
-		const before = context.sandbox.state.commands.length;
-		const result = await host.workspaceAction({
-			version: 1,
-			kind: "preview_start",
-		});
-		expect(result).toMatchObject({ status: "rejected" });
+		const { state } = context.sandbox;
+		// 2. Start.
+		const first = await host.workspaceAction(start);
+		expect(first).toMatchObject({ status: "preview_running" });
+		const one = tokenOf(first);
+		expect(state.calls).toEqual([
+			"unexposePort",
+			"killProcess",
+			"startProcess",
+			"getProcess",
+			"exposePort",
+		]);
+		expect(host.previewAdmits(await previewTokenDigest(one.token))).toBe(true);
+		expect(host.previewAdmits(await previewTokenDigest("other"))).toBe(false);
+		// 3. Repeated start returns the same URL without rotating.
+		state.calls.length = 0;
+		const again = await host.workspaceAction(start);
+		expect(tokenOf(again).url).toBe(one.url);
+		expect(state.calls).not.toContain("exposePort");
+		// 7. Leak check: neither the token nor the URL is stored anywhere.
+		const tables = context.storage.sql
+			.exec<{ name: string }>(
+				"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%'",
+			)
+			.toArray();
+		const stored = [
+			...tables.map(({ name }) =>
+				JSON.stringify(
+					context.storage.sql.exec(`SELECT * FROM "${name}"`).toArray(),
+				),
+			),
+			JSON.stringify([...(await context.storage.list()).entries()]),
+		].join("\n");
+		expect(stored).not.toContain(one.token);
+		expect(stored).not.toContain(one.url);
 		expect(
-			context.sandbox.state.commands
-				.slice(before)
-				.filter((command) => /preview/i.test(command)),
+			JSON.stringify(
+				context.storage.sql
+					.exec("SELECT * FROM workspace_preview_grant")
+					.toArray(),
+			),
+		).toContain(await previewTokenDigest(one.token));
+		// 4. Stop then start rotates; a surviving old exposure cannot be reused.
+		expect(await host.workspaceAction(stop)).toMatchObject({
+			status: "preview_stopped",
+		});
+		expect(host.previewAdmits(await previewTokenDigest(one.token))).toBe(false);
+		state.unexposeNoop = true;
+		const stale = state.exposed.size;
+		const two = tokenOf(await host.workspaceAction(start));
+		expect(stale).toBe(0);
+		expect(two.token).not.toBe(one.token);
+		expect(host.previewAdmits(await previewTokenDigest(one.token))).toBe(false);
+		expect(host.previewAdmits(await previewTokenDigest(two.token))).toBe(true);
+		// With unexpose a no-op for the stop too, the old token survives yet stays denied.
+		await host.workspaceAction(stop);
+		expect(state.exposed.size).toBe(1);
+		const three = tokenOf(await host.workspaceAction(start));
+		expect(three.token).not.toBe(two.token);
+		expect(host.previewAdmits(await previewTokenDigest(two.token))).toBe(false);
+		expect(host.previewAdmits(await previewTokenDigest(three.token))).toBe(
+			true,
+		);
+		state.unexposeNoop = false;
+		await host.workspaceAction(stop);
+	});
+	// 4a. Slow kill.
+	await harness("execution-preview-slow", async (context) => {
+		const host = await context.open();
+		await context.baseline();
+		const { state } = context.sandbox;
+		await host.workspaceAction(start);
+		state.slowKill = 3;
+		expect(await host.workspaceAction(stop)).toMatchObject({
+			status: "preview_stopped",
+		});
+		await host.workspaceAction(start);
+		state.slowKill = 1000;
+		expect(await host.workspaceAction(stop)).toEqual({ status: "unknown" });
+	});
+	// 4b. Start whose unexposePort throws is unknown, with no grant.
+	await harness("execution-preview-start-throws", async (context) => {
+		const host = await context.open();
+		await context.baseline();
+		context.sandbox.state.unexposeThrows = true;
+		expect(await host.workspaceAction(start)).toEqual({ status: "unknown" });
+		expect(
+			context.storage.sql
+				.exec("SELECT * FROM workspace_preview_grant")
+				.toArray(),
 		).toEqual([]);
+	});
+	// 5. Stop revokes before it kills; a failed revocation keeps the preview running.
+	await harness("execution-preview-stop-order", async (context) => {
+		const host = await context.open();
+		await context.baseline();
+		const { state } = context.sandbox;
+		const { token } = tokenOf(await host.workspaceAction(start));
+		state.calls.length = 0;
+		state.unexposeThrows = true;
+		expect(await host.workspaceAction(stop)).toMatchObject({
+			status: "rejected",
+		});
+		expect(state.calls).not.toContain("killProcess");
+		expect(host.previewAdmits(await previewTokenDigest(token))).toBe(true);
+		state.unexposeThrows = false;
+		state.calls.length = 0;
+		await host.workspaceAction(stop);
+		expect(state.calls.indexOf("unexposePort")).toBeLessThan(
+			state.calls.indexOf("killProcess"),
+		);
+	});
+	// 6. Ready fails: the process and exposure are torn down.
+	await harness("execution-preview-not-ready", async (context) => {
+		const host = await context.open();
+		await context.baseline();
+		const { state } = context.sandbox;
+		state.readyFails = true;
+		expect(await host.workspaceAction(start)).toMatchObject({
+			status: "rejected",
+		});
+		expect(state.calls).toEqual([
+			"unexposePort",
+			"killProcess",
+			"startProcess",
+			"unexposePort",
+			"killProcess",
+		]);
+		expect(
+			context.storage.sql
+				.exec("SELECT * FROM workspace_preview_grant")
+				.toArray(),
+		).toEqual([]);
+		expect(
+			context.storage.sql
+				.exec<{ state: string }>("SELECT state FROM workspace_preview")
+				.one().state,
+		).toBe("stopped");
 	});
 });
 

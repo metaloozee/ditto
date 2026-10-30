@@ -1,3 +1,4 @@
+import { WORKSPACE_PREVIEW_PORT } from "../../../packages/runtime-contracts/src/workspace-action.js";
 import {
 	type ArtifactExecution,
 	type ArtifactPermit,
@@ -12,6 +13,7 @@ import {
 	type CheckpointHostPort,
 	createCheckpointPublisher,
 } from "./pi-durable-checkpoints.ts";
+import { newPreviewToken, previewToken } from "./pi-durable-preview.ts";
 import { sandboxExecutor } from "./pi-durable-tools.ts";
 import {
 	createWorkspaceController,
@@ -40,7 +42,30 @@ export type ExecutionSandbox = {
 		content: string | ReadableStream<Uint8Array>,
 	): Promise<unknown>;
 	setOutboundHandler(name: string, params: unknown): Promise<unknown>;
+	startProcess(
+		command: string,
+		options: {
+			processId: string;
+			cwd: string;
+			env: Record<string, string>;
+			autoCleanup: boolean;
+		},
+	): Promise<unknown>;
+	getProcess(id: string): Promise<{ status: string } | null>;
+	killProcess(id: string): Promise<unknown>;
+	exposePort(
+		port: number,
+		options: { hostname: string; token: string },
+	): Promise<{ url: string }>;
+	unexposePort(port: number): Promise<unknown>;
+	getExposedPorts(hostname: string): Promise<{ url: string; port: number }[]>;
 };
+
+const PREVIEW_PROCESS_ID = "ditto-preview";
+const READY_MAX_MS = 30_000;
+const STOP_EVIDENCE_MS = 10_000;
+const STOP_POLL_MS = 250;
+const HEALTHY = new Set(["starting", "running"]);
 
 const MESSAGE_PATH = "/tmp/ditto-workspace-commit-message.txt";
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
@@ -96,11 +121,16 @@ function parseWorkspaceCli(stdout: string): Record<string, unknown> {
 	return record;
 }
 
-/** UI Git through the image-owned `ditto-workspace`; preview is not composed. */
+/** UI Git and preview through the image-owned `ditto-workspace`; preview needs a configured hostname. */
 export function sandboxWorkspaceExecution(
 	sandbox: ExecutionSandbox,
 	now: () => number,
+	preview: { hostname?: string; sleep?(ms: number): Promise<void> } = {},
 ): WorkspaceExecution {
+	const previewHostname = preview.hostname;
+	const sleep =
+		preview.sleep ??
+		((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 	const timeout = (permit: ArtifactPermit) =>
 		Math.max(1, permit.deadlineAt - now());
 	const previewDenied = () =>
@@ -156,11 +186,108 @@ export function sandboxWorkspaceExecution(
 					.catch(() => undefined);
 			}
 		},
-		async previewStart() {
-			throw previewDenied();
+		async previewStart(permit, { port }) {
+			if (!previewHostname) throw previewDenied();
+			await sandbox.unexposePort(port);
+			await sandbox.killProcess(PREVIEW_PROCESS_ID).catch(() => undefined);
+			const found = parseWorkspaceCli(
+				(
+					await sandbox.exec("ditto-workspace preview command", {
+						timeout: timeout(permit),
+					})
+				).stdout,
+			);
+			const { command, cwd, env } = found;
+			if (
+				typeof command !== "string" ||
+				command === "" ||
+				typeof cwd !== "string" ||
+				!env ||
+				typeof env !== "object" ||
+				Array.isArray(env) ||
+				!Object.values(env).every((value) => typeof value === "string")
+			)
+				throw new ArtifactStepRejected(
+					"execution_failed",
+					"Preview command returned an invalid result",
+				);
+			await sandbox.startProcess(command, {
+				processId: PREVIEW_PROCESS_ID,
+				cwd,
+				env: env as Record<string, string>,
+				autoCleanup: true,
+			});
+			try {
+				const wait = Math.max(
+					1,
+					Math.min(READY_MAX_MS, permit.deadlineAt - now()),
+				);
+				parseWorkspaceCli(
+					(
+						await sandbox.exec(
+							`ditto-workspace preview ready --timeout-ms ${wait}`,
+							{
+								timeout: timeout(permit),
+							},
+						)
+					).stdout,
+				);
+				const process = await sandbox.getProcess(PREVIEW_PROCESS_ID);
+				if (!process || !HEALTHY.has(process.status))
+					throw new ArtifactStepRejected(
+						"execution_failed",
+						"Preview process is not running",
+					);
+				const token = newPreviewToken();
+				const { url } = await sandbox.exposePort(port, {
+					hostname: previewHostname,
+					token,
+				});
+				if (previewToken(url) !== token)
+					throw new ArtifactStepRejected(
+						"execution_failed",
+						"Preview URL is malformed",
+					);
+				return { url };
+			} catch (error) {
+				await sandbox.unexposePort(port);
+				await sandbox.killProcess(PREVIEW_PROCESS_ID).catch(() => undefined);
+				throw error;
+			}
 		},
-		async previewStop() {
-			throw previewDenied();
+		async previewStop(permit) {
+			try {
+				await sandbox.unexposePort(WORKSPACE_PREVIEW_PORT);
+			} catch {
+				throw new ArtifactStepRejected(
+					"execution_failed",
+					"Preview revocation failed",
+				);
+			}
+			await sandbox.killProcess(PREVIEW_PROCESS_ID).catch(() => undefined);
+			const bound = Math.min(STOP_EVIDENCE_MS, permit.deadlineAt - now());
+			let waited = 0;
+			const started = now();
+			for (;;) {
+				let process: { status: string } | null;
+				try {
+					process = await sandbox.getProcess(PREVIEW_PROCESS_ID);
+				} catch {
+					return { terminated: false };
+				}
+				if (!process || !HEALTHY.has(process.status))
+					return { terminated: true };
+				if (waited >= bound || now() - started >= bound)
+					return { terminated: false };
+				await sleep(STOP_POLL_MS);
+				waited += STOP_POLL_MS;
+			}
+		},
+		async previewUrl() {
+			if (!previewHostname) return undefined;
+			return (await sandbox.getExposedPorts(previewHostname)).find(
+				(p) => p.port === WORKSPACE_PREVIEW_PORT,
+			)?.url;
 		},
 	};
 }
@@ -182,6 +309,10 @@ export function composeCandidateExecution(deps: {
 	/** Absent until the session's owned branch is known; Git actions stay unavailable. */
 	branch: string | undefined;
 	now(): number;
+	/** Host the SDK builds preview URLs under; absent keeps preview unavailable. */
+	previewHostname?: string;
+	/** Test seam for the stop-evidence poll. */
+	sleep?(ms: number): Promise<void>;
 }) {
 	const store = r2ArtifactStore(deps.bucket);
 	let execution: ArtifactExecution | undefined;
@@ -225,7 +356,10 @@ export function composeCandidateExecution(deps: {
 			controller = createWorkspaceController({
 				storage: deps.storage,
 				host: port,
-				execution: sandboxWorkspaceExecution(deps.sandbox, deps.now),
+				execution: sandboxWorkspaceExecution(deps.sandbox, deps.now, {
+					hostname: deps.previewHostname,
+					sleep: deps.sleep,
+				}),
 				publisher: () => backups,
 				branch,
 				now: deps.now,

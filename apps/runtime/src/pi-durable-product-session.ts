@@ -176,6 +176,8 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 	protected async loadExecutionSource(
 		_scope: CandidateRuntimeScope,
 	): Promise<void> {}
+	/** Deployment composition revokes the session's preview URL; none has nothing to revoke. */
+	protected async revokePreview(_scope: CandidateRuntimeScope): Promise<void> {}
 	/** Deployment composition starts the one-time baseline once the host is open. */
 	protected startBaseline(_host: PiDurableHost): void {}
 	/** Deployment composition supplies the recovery store; none disables retention. */
@@ -482,8 +484,16 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 		await this.host?.yield().catch(() => undefined);
 		await this.host?.awaitClosure().catch(() => undefined);
 		this.host = undefined;
+		await this.revokePreview(scope);
 		await this.ctx.storage.deleteAlarm();
 		await this.ctx.storage.deleteAll();
+	}
+
+	/** Product preview proxy: answers only from a live host and never opens one. */
+	async previewAdmit(digest: unknown): Promise<boolean> {
+		if (typeof digest !== "string" || !/^[0-9a-f]{64}$/.test(digest))
+			return false;
+		return this.host?.previewAdmits(digest) ?? false;
 	}
 	protected async alarmHost() {
 		const retained =

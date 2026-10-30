@@ -3,6 +3,7 @@ import {
 	type ArchiveArtifactV1,
 	parseArchiveArtifactV1,
 } from "../../../packages/runtime-contracts/src/artifacts.js";
+import { WORKSPACE_PREVIEW_PORT } from "../../../packages/runtime-contracts/src/workspace-action.js";
 import type { ArtifactStore } from "./pi-durable-artifacts.ts";
 import type {
 	CheckpointHostPort,
@@ -13,6 +14,7 @@ import {
 	type ExecutionSandbox,
 } from "./pi-durable-execution.ts";
 import type { PiDurableHost } from "./pi-durable-host.ts";
+import { candidateSandboxName } from "./pi-durable-preview.ts";
 import {
 	type CandidatePrivateProduct,
 	type CandidateRuntimeScope,
@@ -58,6 +60,8 @@ PiDurableCandidateSandbox.outboundHandlers = { candidateGit };
 export type ExecutionSessionBindings = CandidateSessionBindings & {
 	CandidateSandbox?: DurableObjectNamespace<PiDurableCandidateSandbox>;
 	CANDIDATE_RECOVERY?: R2Bucket;
+	/** Host for candidate preview URLs, such as `ayn.wtf` or `localhost:5173`; absent keeps preview unavailable. */
+	CANDIDATE_PREVIEW_HOST?: string;
 };
 
 /** Candidate session with its own sandbox and recovery bucket; without both it is the base class. */
@@ -113,9 +117,11 @@ export class PiDurableExecutionSession extends PiDurableProductSession {
 							workspaceSessionId: scope.workspaceSessionId,
 							keyring,
 						},
-						sandbox: getSandbox(CandidateSandbox, scope.workspaceSessionId, {
-							transport: "rpc",
-						}) as ExecutionSandbox,
+						sandbox: getSandbox(
+							CandidateSandbox,
+							candidateSandboxName(scope.workspaceSessionId),
+							{ transport: "rpc" },
+						) as ExecutionSandbox,
 						bucket: CANDIDATE_RECOVERY,
 						outboundScope: scope,
 						branchAuthority: {
@@ -132,8 +138,20 @@ export class PiDurableExecutionSession extends PiDurableProductSession {
 						},
 						branch: this.sessionBranch(),
 						now: Date.now,
+						previewHostname: this.env.CANDIDATE_PREVIEW_HOST,
 					})
 				: undefined;
+	}
+	protected override async revokePreview(scope: CandidateRuntimeScope) {
+		const { CandidateSandbox } = this.env;
+		if (!CandidateSandbox) return;
+		await (
+			getSandbox(
+				CandidateSandbox,
+				candidateSandboxName(scope.workspaceSessionId),
+				{ transport: "rpc" },
+			) as ExecutionSandbox
+		).unexposePort(WORKSPACE_PREVIEW_PORT);
 	}
 	protected override remoteExecutor(): RemoteExecutor | undefined {
 		return this.execution?.executor;
