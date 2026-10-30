@@ -14,6 +14,7 @@ export type SessionToolsPaneProps = {
 	sessionId: string;
 	className?: string;
 	onClose?: () => void;
+	candidate?: boolean;
 	recovery?: {
 		state: string;
 		reasonCode: string | null;
@@ -65,6 +66,7 @@ export function SessionToolsPane({
 	className,
 	onClose,
 	recovery,
+	candidate,
 }: SessionToolsPaneProps) {
 	return (
 		<section
@@ -127,6 +129,7 @@ export function SessionToolsPane({
 							sessionId={sessionId}
 							className="h-full border-0 bg-transparent"
 							recovery={recovery}
+							candidate={candidate}
 						/>
 					</TabsContent>
 				</Tabs>

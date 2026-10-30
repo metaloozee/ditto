@@ -11,6 +11,7 @@ import {
 	type ObservationState,
 	probeCandidateRuntime,
 	reduceObservation,
+	runWorkspaceAction,
 	selectionToAttach,
 	submitCandidateCommand,
 } from "./candidate-session-client";
@@ -150,6 +151,42 @@ describe("probeCandidateRuntime", () => {
 		await expect(probeCandidateRuntime("proj-1")).rejects.toMatchObject({
 			code: "invalid_request",
 		});
+	});
+});
+
+describe("runWorkspaceAction preview url", () => {
+	const input = {
+		kind: "preview_start",
+		projectId: "proj-1",
+		sessionId: "sess-1",
+	} as const;
+
+	it("rejects a preview_running url outside the candidate preview hosts", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () =>
+				json(200, {
+					status: "preview_running",
+					generation: 1,
+					url: "https://evil.example/",
+				}),
+			),
+		);
+		await expect(runWorkspaceAction(input)).rejects.toMatchObject({
+			code: "invalid_response",
+		});
+	});
+
+	it("resolves with a valid candidate preview url", async () => {
+		const url =
+			"https://10000-c-0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d-tok.ayn.wtf/";
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () =>
+				json(200, { status: "preview_running", generation: 1, url }),
+			),
+		);
+		await expect(runWorkspaceAction(input)).resolves.toMatchObject({ url });
 	});
 });
 

@@ -16,7 +16,12 @@ import {
 	TooltipTrigger,
 } from "#/components/ui/tooltip";
 import { useTRPC } from "#/integrations/trpc/react";
+import {
+	describeWorkspaceDenial,
+	runWorkspaceAction,
+} from "#/lib/candidate-session-client";
 import { cn } from "#/lib/utils";
+import type { WorkspaceActionResultV1 } from "../../../../packages/runtime-contracts/src/workspace-action.js";
 
 type PaneState =
 	| { kind: "idle" }
@@ -29,10 +34,29 @@ type PaneState =
 const PUBLIC_WARNING =
 	"Preview links are public to anyone with the URL until you stop them.";
 
+function candidateMessage(result: WorkspaceActionResultV1): string {
+	switch (result.status) {
+		case "denied":
+			return describeWorkspaceDenial(result.reason);
+		case "rejected":
+			return result.reason === "preview_url_unavailable"
+				? "The preview address expired. Try again shortly."
+				: "Preview failed to start.";
+		case "unknown":
+			return "Preview state is unknown and needs review.";
+		case "preview_unavailable":
+			return "No saved workspace can restore this preview.";
+		default:
+			return "Preview is unavailable right now.";
+	}
+}
+
 export type SessionPreviewPaneProps = {
 	projectId: string;
 	sessionId: string;
 	className?: string;
+	/** Candidate sessions start and stop preview through runtime workspace actions. */
+	candidate?: boolean;
 	recovery?: {
 		state: string;
 		reasonCode: string | null;
@@ -83,6 +107,7 @@ export function SessionPreviewPane({
 	projectId,
 	sessionId,
 	className,
+	candidate,
 	recovery,
 }: SessionPreviewPaneProps) {
 	const trpc = useTRPC();
@@ -161,25 +186,82 @@ export function SessionPreviewPane({
 		}),
 	);
 
+	const candidateStartMutation = useMutation({
+		mutationFn: async () => {
+			setState({ kind: "starting" });
+			try {
+				const action = (kind: "preview_start" | "preview_stop") =>
+					runWorkspaceAction({ kind, projectId, sessionId });
+				let result = await action("preview_start");
+				// The runtime thinks a preview runs but its URL is gone; clear it once.
+				if (
+					result.status === "rejected" &&
+					result.reason === "preview_url_unavailable"
+				) {
+					const stopped = await action("preview_stop");
+					if (stopped.status === "preview_stopped") {
+						result = await action("preview_start");
+					}
+				}
+				if (result.status === "preview_running") {
+					setState({ kind: "ready", url: result.url });
+				} else {
+					setState({ kind: "failed", message: candidateMessage(result) });
+				}
+			} catch {
+				setState({ kind: "failed", message: "Failed to start preview." });
+			}
+		},
+	});
+
+	const candidateStopMutation = useMutation({
+		mutationFn: async () => {
+			const keepRunning = (error: string) =>
+				setState((prev) =>
+					prev.kind === "stopping"
+						? { kind: "ready", url: prev.url, error }
+						: prev,
+				);
+			try {
+				const result = await runWorkspaceAction({
+					kind: "preview_stop",
+					projectId,
+					sessionId,
+				});
+				if (result.status === "preview_stopped") {
+					setState({ kind: "idle" });
+				} else {
+					keepRunning(candidateMessage(result));
+				}
+			} catch {
+				keepRunning("Failed to stop preview.");
+			}
+		},
+	});
+
 	function start() {
-		startMutation.mutate({ projectId, sessionId });
+		if (candidate) candidateStartMutation.mutate();
+		else startMutation.mutate({ projectId, sessionId });
 	}
 
 	function restart() {
 		setState({ kind: "starting" });
-		startMutation.mutate({ projectId, sessionId });
+		start();
 	}
 
 	function stop(currentUrl: string) {
 		setState({ kind: "stopping", url: currentUrl });
-		stopMutation.mutate({ projectId, sessionId });
+		if (candidate) candidateStopMutation.mutate();
+		else stopMutation.mutate({ projectId, sessionId });
 	}
 
 	const backupPending = Boolean(recovery?.pending);
+	// Candidate sessions have no recovery row; Retry Backup calls the legacy router.
 	const backupFailed =
-		recovery?.state === "degraded" ||
-		recovery?.state === "failed" ||
-		(activeState.kind === "failed" && activeState.backupFailed);
+		!candidate &&
+		(recovery?.state === "degraded" ||
+			recovery?.state === "failed" ||
+			(activeState.kind === "failed" && activeState.backupFailed));
 	const workspaceSaving =
 		activeState.kind === "saving" ||
 		(backupPending && recovery?.reasonCode === "workspace_saving");
@@ -187,6 +269,8 @@ export function SessionPreviewPane({
 	const isPending =
 		startMutation.isPending ||
 		stopMutation.isPending ||
+		candidateStartMutation.isPending ||
+		candidateStopMutation.isPending ||
 		retryBackupMutation.isPending ||
 		activeState.kind === "starting" ||
 		activeState.kind === "stopping" ||

@@ -27,7 +27,7 @@ function sessionPreviewDevProxy(): PluginOption {
 
 	// SDK 0.12.3 local preview host: 10012-<sandboxId>-<token>.localhost[:port]
 	const localPreviewHost =
-		/^\d{4,5}-[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?\.localhost(?::\d+)?$/i;
+		/^\d{4,5}-[a-z0-9](?:[a-z0-9_-]*[a-z0-9_])?\.localhost(?::\d+)?$/i;
 
 	return {
 		name: "ditto:session-preview-dev-proxy",

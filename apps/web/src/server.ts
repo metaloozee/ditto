@@ -5,6 +5,7 @@ import {
 	type SandboxEnv,
 } from "@cloudflare/sandbox";
 import handler from "@tanstack/react-start/server-entry";
+import { isCandidatePreviewHost } from "#/lib/candidate-preview-host";
 import { handleOutbound } from "#/lib/sandbox-egress-broker";
 import { withSessionRuntimeResolution } from "#/lib/session-runtime-client";
 
@@ -146,12 +147,19 @@ export default {
 		env: Env,
 		_ctx?: ExecutionContext,
 	): Promise<Response> {
+		const hostname = new URL(request.url).hostname;
+		if (isCandidatePreviewHost(hostname)) {
+			if (!env.CANDIDATE_PREVIEW) {
+				return new Response("Not Found", { status: 404 });
+			}
+			return injectPreviewScrollbar(await env.CANDIDATE_PREVIEW.fetch(request));
+		}
+
 		const proxied = await proxyToSandbox(request, env as unknown as SandboxEnv);
 		if (proxied) {
 			return injectPreviewScrollbar(proxied);
 		}
 
-		const hostname = new URL(request.url).hostname;
 		if (isProductionPreviewHost(hostname)) {
 			return new Response("Not Found", { status: 404 });
 		}

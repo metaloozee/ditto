@@ -192,6 +192,79 @@ describe("server fetch routing", () => {
 	});
 });
 
+describe("candidate preview routing", () => {
+	const uuid = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+	const candidateUrl = `https://10000-c-${uuid}-tok.ayn.wtf/`;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		handlerFetchMock.mockResolvedValue(new Response("app", { status: 200 }));
+	});
+
+	it("forwards candidate hosts to the binding, bypassing the legacy proxy", async () => {
+		const upstream = new Response(null, { status: 204 });
+		const binding = { fetch: vi.fn().mockResolvedValue(upstream) };
+		const request = new Request(candidateUrl);
+
+		const response = await server.fetch(request, {
+			...env,
+			CANDIDATE_PREVIEW: binding,
+		} as unknown as Env);
+
+		expect(binding.fetch).toHaveBeenCalledOnce();
+		expect(binding.fetch).toHaveBeenCalledWith(request);
+		expect(proxyToSandboxMock).not.toHaveBeenCalled();
+		expect(handlerFetchMock).not.toHaveBeenCalled();
+		expect(response).toBe(upstream);
+	});
+
+	it("injects scrollbar styles into HTML from the binding", async () => {
+		const binding = {
+			fetch: vi.fn().mockResolvedValue(
+				new Response("<html><head></head><body>hi</body></html>", {
+					headers: { "content-type": "text/html" },
+				}),
+			),
+		};
+		const response = await server.fetch(new Request(candidateUrl), {
+			...env,
+			CANDIDATE_PREVIEW: binding,
+		} as unknown as Env);
+		expect(await response.text()).toContain("data-ditto-scrollbar");
+	});
+
+	it("returns non-HTML binding responses by identity", async () => {
+		const upstream = new Response("console.log(1)", {
+			headers: { "content-type": "text/javascript" },
+		});
+		const binding = { fetch: vi.fn().mockResolvedValue(upstream) };
+		const response = await server.fetch(new Request(candidateUrl), {
+			...env,
+			CANDIDATE_PREVIEW: binding,
+		} as unknown as Env);
+		expect(response).toBe(upstream);
+	});
+
+	it("returns 404 when the binding is unbound", async () => {
+		const response = await server.fetch(new Request(candidateUrl), env);
+		expect(response.status).toBe(404);
+		expect(proxyToSandboxMock).not.toHaveBeenCalled();
+		expect(handlerFetchMock).not.toHaveBeenCalled();
+	});
+
+	it("keeps legacy preview hosts on the legacy proxy", async () => {
+		const proxied = new Response("legacy", { status: 200 });
+		proxyToSandboxMock.mockResolvedValue(proxied);
+		const binding = { fetch: vi.fn() };
+		await server.fetch(new Request(`https://10000-${uuid}-tok.ayn.wtf/`), {
+			...env,
+			CANDIDATE_PREVIEW: binding,
+		} as unknown as Env);
+		expect(proxyToSandboxMock).toHaveBeenCalledOnce();
+		expect(binding.fetch).not.toHaveBeenCalled();
+	});
+});
+
 describe("candidate entrypoint composition", () => {
 	it("resolves only the deployment binding during fetch and independently during scheduled", async () => {
 		const { resolveCandidateProductCommands } = await import(

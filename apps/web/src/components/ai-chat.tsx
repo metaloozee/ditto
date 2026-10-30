@@ -1101,6 +1101,7 @@ export function Chat({
 									className="h-full"
 									onClose={() => setToolsOpen(false)}
 									recovery={recovery}
+									candidate={Boolean(candidate)}
 								/>
 							</div>
 						</div>
@@ -1124,6 +1125,7 @@ export function Chat({
 								className="h-full"
 								onClose={() => setToolsOpen(false)}
 								recovery={recovery}
+								candidate={Boolean(candidate)}
 							/>
 						) : null}
 					</SheetContent>

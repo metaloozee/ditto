@@ -21,6 +21,7 @@ import type {
 	WorkspaceActionKind,
 	WorkspaceActionResultV1,
 } from "../../../../packages/runtime-contracts/src/workspace-action.js";
+import { isCandidatePreviewUrl } from "./candidate-preview-host";
 import type { ConnectionStatus } from "./codex-credential-do";
 
 export const CANDIDATE_RUNTIME_OWNER = "pi_durable_v1";
@@ -171,6 +172,12 @@ export async function runWorkspaceAction(input: {
 		...input,
 	});
 	if (!isRecord(body) || typeof body.status !== "string") {
+		throw new CandidateRequestError(502, "invalid_response");
+	}
+	if (
+		body.status === "preview_running" &&
+		(typeof body.url !== "string" || !isCandidatePreviewUrl(body.url))
+	) {
 		throw new CandidateRequestError(502, "invalid_response");
 	}
 	return body as WorkspaceActionResultV1;
