@@ -80,6 +80,15 @@ async function createPiDurableFixture() {
 }
 
 async function createWebsite() {
+	const candidateRuntime = process.env.DITTO_CANDIDATE_RUNTIME === "1";
+	if (candidateRuntime && !app.local)
+		throw new Error(
+			"Candidate runtime wiring is local-only until a hosted stage is approved.",
+		);
+	if (candidateRuntime && !process.env.CANDIDATE_RUNTIME_KEYS)
+		throw new Error(
+			"DITTO_CANDIDATE_RUNTIME=1 requires CANDIDATE_RUNTIME_KEYS.",
+		);
 	if (app.local && process.env.DITTO_LOCAL_RUNTIME_TOPOLOGY === "1") {
 		const runtimeServiceName = `${app.name}-${app.stage}-runtime-local`;
 		const productServiceName = `${app.name}-${app.stage}-product-bridge-local`;
@@ -138,6 +147,41 @@ async function createWebsite() {
 		name: `${app.name}-${app.stage}-sandbox-backups`,
 	});
 
+	const websiteName = `${app.name}-website-${app.stage}`;
+	const candidate = candidateRuntime
+		? await Worker("candidate-runtime", {
+				name: `${app.name}-candidate-runtime-${app.stage}`,
+				entrypoint: "apps/runtime/src/pi-durable-candidate-entry.ts",
+				compatibilityDate: "2026-03-10",
+				compatibilityFlags: ["nodejs_compat"],
+				url: false,
+				bindings: {
+					CandidateSessions: DurableObjectNamespace("candidate-sessions", {
+						className: "PiDurableExecutionSession",
+						sqlite: true,
+					}),
+					CandidateSandbox: await Container("candidate-sandbox", {
+						className: "PiDurableCandidateSandbox",
+						build: { context: ".", dockerfile: "Dockerfile" },
+						instanceType: "basic",
+						maxInstances: 20,
+					}),
+					CANDIDATE_RECOVERY: sandboxBackups,
+					CandidateProduct: Worker.experimentalEntrypoint(
+						WorkerRef({ service: websiteName }),
+						"CandidatePrivateProduct",
+					),
+					CANDIDATE_DISPOSABLE: "008-synthetic",
+					CANDIDATE_RUNTIME_KEYS: alchemy.secret(
+						process.env.CANDIDATE_RUNTIME_KEYS,
+					),
+					...(process.env.CANDIDATE_PREVIEW_HOST
+						? { CANDIDATE_PREVIEW_HOST: process.env.CANDIDATE_PREVIEW_HOST }
+						: {}),
+				},
+			})
+		: undefined;
+
 	const website = await TanStackStart("website", {
 		cwd: "apps/web",
 		url: true,
@@ -171,6 +215,21 @@ async function createWebsite() {
 			OPENCODE_API_KEY: alchemy.secret(process.env.OPENCODE_API_KEY),
 			SANDBOX_TRANSPORT: "rpc",
 			PREVIEW_BASE_HOST: "ayn.wtf",
+			...(candidate
+				? {
+						CandidateSessions: DurableObjectNamespace(
+							"candidate-sessions-ref",
+							{
+								className: "PiDurableExecutionSession",
+								scriptName: candidate.name,
+							},
+						),
+						CANDIDATE_PREVIEW: Worker.experimentalEntrypoint(
+							candidate,
+							"CandidatePreview",
+						),
+					}
+				: {}),
 		},
 		wrangler: {
 			main: "src/server.ts",
@@ -200,6 +259,15 @@ async function createWebsite() {
 							class_name: "CodexCredential",
 							name: "CodexCredential",
 						},
+						...(candidate
+							? [
+									{
+										class_name: "PiDurableExecutionSession",
+										name: "CandidateSessions",
+										script_name: candidate.name,
+									},
+								]
+							: []),
 					],
 				},
 				migrations: [
@@ -209,6 +277,11 @@ async function createWebsite() {
 			}),
 		},
 	});
+
+	if (candidate && website.name !== websiteName)
+		throw new Error(
+			`Candidate runtime binds website "${websiteName}" but Alchemy named it "${website.name}".`,
+		);
 
 	await Route("session-previews", {
 		pattern: "*.ayn.wtf/*",

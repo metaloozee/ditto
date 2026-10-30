@@ -93,6 +93,12 @@ OPENCODE_API_KEY=
 
 `BETTER_AUTH_URL` defaults to `http://localhost:5173` when omitted. `OPENCODE_API_KEY` stays in the Worker and authorizes only the fixed model through the outbound broker.
 
+Optional, local Alchemy stage only:
+
+- `DITTO_CANDIDATE_RUNTIME`: set to `1` to wire the candidate runtime locally. Refused on hosted stages.
+- `CANDIDATE_RUNTIME_KEYS`: required with the flag. JSON `{"currentVersion":"v1","keys":{"v1":"<64 hex>"}}`; generate the hex with `openssl rand -hex 32`.
+- `CANDIDATE_PREVIEW_HOST`: e.g. `localhost:<vite port>`. Unset keeps candidate preview unavailable.
+
 The GitHub App needs Contents read/write and Pull requests read/write. Product push remains disabled until the non-fast-forward feasibility gate passes, but the permissions remain required for the approved Git export path and pull-request operations.
 
 See `CONTEXT.md` for domain terms and `docs/README.md` for the documentation index.
