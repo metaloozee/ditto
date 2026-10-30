@@ -9,6 +9,7 @@ import {
 } from "#/db/schema";
 import { GIT_FETCH_CONTRACT_VERSION } from "#/lib/git-fetch-contract";
 import { getGitHubApp } from "#/lib/github-app";
+import { quoteGitHubExportShellArg } from "#/lib/github-export";
 import { fetchGitHubBranchBrokered } from "#/lib/privileged-git";
 import { type ArchiveSandbox, createArchive } from "#/lib/sandbox-archive";
 import {
@@ -36,7 +37,7 @@ export const PROJECT_SEED_SANDBOX_IMAGE_REVISION = "cloudflare/sandbox:0.12.3";
 export const PROJECT_SEED_OPERATION_TYPE = "project_seed_fetch";
 export const PROJECT_SEED_OPERATION_TTL_MS = 15 * 60 * 1000;
 
-const RUNNER_PACKAGE_PATH = "/opt/ditto-runner/package.json";
+const RUNNER_DIR = "/opt/ditto-runner";
 const SEED_EXEC_TIMEOUT_MS = 120_000;
 
 type Db = ReturnType<typeof createDb>;
@@ -181,6 +182,19 @@ async function resolveDefaultBranch(options: {
 	};
 }
 
+/**
+ * The runner package has no version field, so its revision is a content hash of
+ * the baked package.json and dist. It changes whenever the runner code changes.
+ */
+export function runnerRevisionCommand(runnerDir = RUNNER_DIR): string {
+	return [
+		`cd ${quoteGitHubExportShellArg(runnerDir)}`,
+		"test -f package.json",
+		"test -d dist",
+		"find package.json dist -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1",
+	].join(" && ");
+}
+
 async function readBuilderRevisions(
 	sandbox: ReturnType<typeof getProjectSandbox>,
 ): Promise<{ nodeVersion: string; nodeArch: string; runnerRevision: string }> {
@@ -202,10 +216,10 @@ async function readBuilderRevisions(
 		);
 	}
 
-	const runnerResult = await sandbox.exec(
-		`node -p "require(${JSON.stringify(RUNNER_PACKAGE_PATH)}).version"`,
-		{ cwd: "/", timeout: SEED_EXEC_TIMEOUT_MS },
-	);
+	const runnerResult = await sandbox.exec(runnerRevisionCommand(), {
+		cwd: "/",
+		timeout: SEED_EXEC_TIMEOUT_MS,
+	});
 	if (!runnerResult.success) {
 		throw new ProjectSeedError(
 			"runner_probe_failed",
@@ -213,10 +227,10 @@ async function readBuilderRevisions(
 		);
 	}
 	const runnerRevision = runnerResult.stdout.trim();
-	if (!runnerRevision) {
+	if (!/^[0-9a-f]{64}$/.test(runnerRevision)) {
 		throw new ProjectSeedError(
 			"runner_probe_failed",
-			"Ditto runner revision is empty.",
+			"Ditto runner revision has an unexpected shape.",
 		);
 	}
 

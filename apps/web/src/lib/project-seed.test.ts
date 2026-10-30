@@ -1,3 +1,7 @@
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
 	privilegedOperations,
@@ -58,6 +62,7 @@ const {
 	buildProjectSeed,
 	PROJECT_SEED_OPERATION_TYPE,
 	retryBuilderTermination,
+	runnerRevisionCommand,
 } = await import("./project-seed");
 const { SEED_BUILDER_OPERATION_TYPE } = await import("./sandbox-authority");
 type SandboxAuthority = import("./sandbox-authority").SandboxAuthority;
@@ -374,10 +379,10 @@ describe("buildProjectSeed", () => {
 								exitCode: 0,
 							};
 						}
-						if (command.includes("package.json")) {
+						if (command.includes("sha256sum")) {
 							return {
 								success: true,
-								stdout: "1.2.3\n",
+								stdout: `${"d".repeat(64)}\n`,
 								stderr: "",
 								exitCode: 0,
 							};
@@ -654,5 +659,31 @@ describe("buildProjectSeed", () => {
 
 	it("uses the operation type the authority allows for builders", () => {
 		expect(PROJECT_SEED_OPERATION_TYPE).toBe(SEED_BUILDER_OPERATION_TYPE);
+	});
+});
+
+describe("runnerRevisionCommand", () => {
+	const revisionOf = (dir: string) =>
+		execFileSync("sh", ["-c", runnerRevisionCommand(dir)], {
+			encoding: "utf8",
+		}).trim();
+
+	it("hashes the baked runner through a real shell and tracks its code", () => {
+		const dir = mkdtempSync(join(tmpdir(), "ditto runner "));
+		mkdirSync(join(dir, "dist"));
+		writeFileSync(join(dir, "package.json"), '{"name":"ditto-sandbox-runner"}');
+		writeFileSync(join(dir, "dist", "cli.js"), "one");
+
+		const first = revisionOf(dir);
+		expect(first).toMatch(/^[0-9a-f]{64}$/);
+
+		writeFileSync(join(dir, "dist", "cli.js"), "two");
+		expect(revisionOf(dir)).not.toBe(first);
+	});
+
+	it("fails when the runner build is missing", () => {
+		const dir = mkdtempSync(join(tmpdir(), "ditto-runner-"));
+		writeFileSync(join(dir, "package.json"), "{}");
+		expect(() => revisionOf(dir)).toThrow();
 	});
 });
