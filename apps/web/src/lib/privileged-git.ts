@@ -543,7 +543,9 @@ export async function fetchGitHubBranchBrokered(options: {
 					"fetch",
 					"--no-tags",
 					quoteGitHubExportShellArg(tempDir),
-					quoteGitHubExportShellArg(`${isolatedSha}:${refs.headRef}`),
+					quoteGitHubExportShellArg(
+						refs.destinationFetchRefspecFrom(isolatedSha),
+					),
 				].join(" "),
 				{
 					cwd: options.destinationCwd,
@@ -551,10 +553,12 @@ export async function fetchGitHubBranchBrokered(options: {
 				},
 			);
 
+			// A restored seed already has the branch checked out, and Git refuses
+			// to fetch into it; -B moves it and the worktree to the fetched commit.
 			await execOrThrow(
 				options.sandbox,
 				[
-					`git checkout --force ${quoteGitHubExportShellArg(refs.branchName)}`,
+					`git checkout --force -B ${quoteGitHubExportShellArg(refs.branchName)} ${quoteGitHubExportShellArg(isolatedSha)}`,
 					`git remote remove origin 2>/dev/null || true`,
 					`git remote add origin ${quoteGitHubExportShellArg(publicUrl)}`,
 				].join(" && "),
