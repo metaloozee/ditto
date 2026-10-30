@@ -62,6 +62,7 @@ const ALLOWED_V1_CAPABILITIES = new Set([
 	"object-format=sha1",
 	"shallow",
 	"deepen-since",
+	"deepen-not",
 	"deepen-relative",
 	"no-progress",
 	"include-tag",
@@ -212,8 +213,9 @@ function assertCapabilityAllowed(
 			"filter capability is not allowed.",
 		);
 	}
+	// Stock v1 git always advertises bare deepen-not; the v1 body parser rejects
+	// actual `deepen-not <rev>` lines.
 	if (
-		capability === "deepen-not" ||
 		capability.startsWith("deepen-not ") ||
 		capability.startsWith("deepen-not=")
 	) {

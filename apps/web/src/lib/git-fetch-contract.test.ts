@@ -129,6 +129,37 @@ describe("git-fetch-contract", () => {
 		}
 	});
 
+	it("passes stock git/2.34.1 v1 upload-pack body", async () => {
+		const body = concatBytes(
+			encodePktLine(
+				"want 7c1f3944796a33e1480a3bed16ed4f7842b7eb41 multi_ack_detailed no-done side-band-64k thin-pack no-progress ofs-delta deepen-since deepen-not agent=git/2.34.1\n",
+			),
+			encodeFlushPkt(),
+			encodePktLine("done\n"),
+		);
+		const result = await validateGitFetchRequest(
+			uploadPackRequest(body, { headers: { "git-protocol": "version=1" } }),
+			BOUND,
+		);
+		expect(result).toMatchObject({ ok: true });
+	});
+
+	it("fails a v1 deepen-not request line", async () => {
+		const body = concatBytes(
+			encodePktLine(
+				"want 7c1f3944796a33e1480a3bed16ed4f7842b7eb41 deepen-not agent=git/2.34.1\n",
+			),
+			encodePktLine("deepen-not refs/heads/secret\n"),
+			encodeFlushPkt(),
+			encodePktLine("done\n"),
+		);
+		const result = await validateGitFetchRequest(
+			uploadPackRequest(body, { headers: { "git-protocol": "version=1" } }),
+			BOUND,
+		);
+		expect(result).toMatchObject({ ok: false, code: "invalid_body" });
+	});
+
 	it("passes POST upload-pack with minimal v2 fetch", async () => {
 		const result = await validateGitFetchRequest(
 			uploadPackRequest(minimalV2FetchBody()),
