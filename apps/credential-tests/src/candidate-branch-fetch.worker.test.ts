@@ -180,7 +180,9 @@ it("passes a valid request upstream with authorization and returns no token", as
 	for (const sent of upstream) {
 		expect(new URL(sent.url).origin).toBe("https://github.com");
 		expect(new URL(sent.url).pathname.startsWith("/acme/app.git/")).toBe(true);
-		expect(sent.headers.get("authorization")).toBe(`token ${TOKEN}`);
+		expect(sent.headers.get("authorization")).toBe(
+			`Basic ${btoa(`x-access-token:${TOKEN}`)}`,
+		);
 		expect(sent.redirect).toBe("manual");
 	}
 });
