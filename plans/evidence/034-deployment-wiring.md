@@ -26,6 +26,14 @@ The combined `pnpm verify` run exited 1 inside `credentials:verify`. Every other
 
 The `candidate-branch-fetch` failure is not caused by this plan. It fails identically with the working tree detached at base commit `5883d58`. The test asserts `authorization` is `token <t>`, while `apps/web/src/lib/git-fetch-contract.ts:678` produces `Basic base64(x-access-token:<t>)`. None of these files changed in this plan.
 
-## Step 10: local smoke - not run
+## Step 10: local smoke - passed
 
-Maintainer-run. It needs the maintainer's `.env.local`, Docker and a browser sign-in. Sub-steps 10.1 (flag-off wrangler diff), 10.2 (flag-on graph) and 10.3 (preview host `curl` expecting 404) are all `not run`.
+Run by the reviewer on 2026-10-31 in the executor worktree, with a copy of the maintainer's `.env.local`, Docker Desktop 29.6.2 via WSL integration, and fresh worktree-local `.alchemy` state. Stage `ayan`, local only; nothing was deployed. No browser sign-in was needed for these sub-steps.
+
+| Sub-step | Result |
+|---|---|
+| 10.1 flag off unchanged | passed. `pnpm dev` on base `5883d58`, then on `d1cec9b` with `DITTO_CANDIDATE_RUNTIME` unset: `diff` of the two `apps/web/.alchemy/local/wrangler.jsonc` files prints nothing; `grep -c CandidateSessions` is `0`; `/` returns 200 on both. Worker name `ditto-website-ayan` matches `websiteName`. |
+| 10.2 flag on | passed. With `DITTO_CANDIDATE_RUNTIME=1`, a throwaway `CANDIDATE_RUNTIME_KEYS` and `CANDIDATE_PREVIEW_HOST=localhost:5173`, Alchemy created `candidate-sandbox` (image built from the root `Dockerfile`) and `candidate-runtime`, then updated `website`. `wrangler.jsonc` has `CandidateSessions` with `script_name: "ditto-candidate-runtime-ayan"` and `CANDIDATE_PREVIEW` → service `ditto-candidate-runtime-ayan`, entrypoint `CandidatePreview`. `/` returns 200. |
+| 10.3 preview hop | passed. `curl -H "Host: 10000-c-00000000-0000-4000-8000-000000000000-abc.localhost:5173" http://localhost:5173/` → `404 Not Found`. Both the product (unbound branch) and the runtime return that same body, so the evidence it crossed the binding is that a `ditto-candidate-runtime-ayan-PiDurableExecutionSession/*.sqlite` store appeared after the request: `CandidatePreview` called `previewAdmit` on a cold session, which refused. |
+
+Observation: in local dev Alchemy also serves the runtime Worker on `http://localhost:1337/` despite `url: false`. Its default export answers `404 Not Found`. This is local only; a hosted plan should confirm `url: false` leaves no public route.
