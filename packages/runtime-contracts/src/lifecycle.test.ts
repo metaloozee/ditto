@@ -112,7 +112,7 @@ describe("lifecycle contracts", () => {
 		for (const bad of [
 			{ messages: {} },
 			{ messagesDigest: "short" },
-			{ selection: { model: "real-model", thinking: "off" } },
+			{ selection: { model: "real model", thinking: "off" } },
 			{ archive: { ...archive, digest: "x" } },
 			{ tasks: [] },
 		])

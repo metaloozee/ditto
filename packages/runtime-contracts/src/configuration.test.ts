@@ -6,6 +6,7 @@ import {
 	parseConfigurationAckV1,
 	parseConfigurationIntentV1,
 	parseConfigurationReadV1,
+	parseConfigurationSelectionV1,
 	parseConfigurationSnapshotV1,
 } from "./configuration.js";
 import type { ModelSubjectV1 } from "./model.js";
@@ -68,8 +69,8 @@ for (const invalid of [
 	{ ...intent, userId: "owner" },
 	{ ...intent, ownerVersion: 0 },
 	{ ...intent, intentId: "x".repeat(257) },
-	{ ...intent, selection: { model: "arbitrary", thinking: "off" } },
-	{ ...intent, selection: { model: "faux-1", thinking: "medium" } },
+	{ ...intent, selection: { model: "not valid", thinking: "off" } },
+	{ ...intent, selection: { model: "faux-1", thinking: "ultra" } },
 	{ ...intent, selection: { ...intent.selection, extra: true } },
 	JSON.stringify(intent).replace('"version":1', '"version":1,"version":1'),
 ])
@@ -141,4 +142,33 @@ it("parses candidate models and refuses inconsistent or extra fields", () => {
 	expect(() =>
 		parseCandidateModelsRequestV1({ version: 1, projectId: "p", userId: "u" }),
 	).toThrow();
+});
+
+it("widens the selection to codex models and thinking levels", () => {
+	expect(
+		parseConfigurationSelectionV1({ model: "gpt-6.1-sol", thinking: "xhigh" }),
+	).toEqual({ model: "gpt-6.1-sol", thinking: "xhigh" });
+	expect(
+		parseConfigurationSelectionV1({ model: "faux-1", thinking: "off" }),
+	).toEqual({ model: "faux-1", thinking: "off" });
+	expect(() =>
+		parseConfigurationSelectionV1({ model: "a b", thinking: "low" }),
+	).toThrow();
+	expect(() =>
+		parseConfigurationSelectionV1({ model: "gpt-6", thinking: "ultra" }),
+	).toThrow();
+});
+
+it("bounds the candidate model list at sixteen codex models", () => {
+	const list = (n: number) => ({
+		version: 1,
+		status: "available",
+		models: Array.from({ length: n }, (_, i) => ({
+			id: `gpt-6.1-model-${i}`,
+			thinking: ["low", "high"],
+		})),
+		selection: null,
+	});
+	expect(parseCandidateModelsV1(list(16)).models).toHaveLength(16);
+	expect(() => parseCandidateModelsV1(list(17))).toThrow();
 });

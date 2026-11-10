@@ -14,7 +14,7 @@ import {
 } from "../../../../packages/runtime-contracts/src/configuration.js";
 import {
 	type ModelSubjectV1,
-	parseSyntheticAccountV1,
+	parseAccountSnapshot,
 } from "../../../../packages/runtime-contracts/src/model.js";
 import {
 	type BrowserCommandV2,
@@ -315,7 +315,7 @@ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind
 		if (!row) reject("runtime_owner_mismatch");
 		const cap = capabilities.results[0] as { snapshot: string } | undefined;
 		if (!cap) reject("model_unconfigured");
-		const account = parseSyntheticAccountV1(cap.snapshot);
+		const account = parseAccountSnapshot(cap.snapshot);
 		return {
 			version: 1,
 			userId,
@@ -1476,7 +1476,7 @@ WHERE c.sessionId=candidate_archives.sessionId AND c.commandSeq<=candidate_archi
 			.bind(userId)
 			.first<{ snapshot: string }>();
 		if (!capability) return none("unavailable");
-		const account = parseSyntheticAccountV1(capability.snapshot);
+		const account = parseAccountSnapshot(capability.snapshot);
 		if (account.status !== "available") return none(account.status);
 		return {
 			version: 1,

@@ -132,6 +132,96 @@ export function parseSyntheticAccountV1(input: unknown): SyntheticAccountV1 {
 	};
 }
 
+export const CODEX_PROVIDER = "openai-codex" as const;
+export const FIXTURE_PROVIDER = "faux" as const;
+export const MODEL_ID_PATTERN_V2 = /^[A-Za-z0-9._:/-]+$/;
+export const MODEL_OPERATION_MS = 600_000;
+export function modelProviderFor(
+	model: string,
+): typeof CODEX_PROVIDER | typeof FIXTURE_PROVIDER {
+	return model === "faux-1" || model === "faux-2"
+		? FIXTURE_PROVIDER
+		: CODEX_PROVIDER;
+}
+
+export type AccountModel = { id: string; thinking: ModelThinkingV2[] };
+export type AccountSnapshot = {
+	version: 1 | 2;
+	status: "available" | "unavailable" | "revoked";
+	generation: number;
+	revision: number;
+	models: AccountModel[];
+};
+const ACCOUNT_THINKING: readonly ModelThinkingV2[] = [
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+	"max",
+];
+export function parseAccountModels(
+	input: unknown,
+	maxModels: number,
+	requireCodex: boolean,
+): AccountModel[] {
+	if (!Array.isArray(input) || input.length > maxModels)
+		throw new ContractParseError("invalid_models", "Invalid account models.");
+	const ids = new Set<string>();
+	return input.map((entry: unknown) => {
+		const m = strictRecord(entry, ["id", "thinking"], "account model");
+		const id = stringField(m, "id", { maxBytes: 128 });
+		if (
+			ids.has(id) ||
+			!MODEL_ID_PATTERN_V2.test(id) ||
+			(requireCodex && modelProviderFor(id) !== CODEX_PROVIDER) ||
+			!Array.isArray(m.thinking) ||
+			m.thinking.length < 1 ||
+			m.thinking.length > ACCOUNT_THINKING.length
+		)
+			throw new ContractParseError("invalid_models", "Invalid account model.");
+		ids.add(id);
+		const thinking = m.thinking.map((level: unknown) =>
+			literalField<ModelThinkingV2>({ level }, "level", ACCOUNT_THINKING),
+		);
+		if (new Set(thinking).size !== thinking.length)
+			throw new ContractParseError(
+				"invalid_models",
+				"Duplicate thinking capability.",
+			);
+		return { id, thinking };
+	});
+}
+export function parseAccountSnapshot(input: unknown): AccountSnapshot {
+	const decoded = decodeContractInput(input, 4096);
+	const version =
+		typeof decoded === "object" && decoded !== null
+			? (decoded as { version?: unknown }).version
+			: undefined;
+	if (version === 1) return parseSyntheticAccountV1(decoded);
+	const r = strictRecord(
+		decoded,
+		["version", "status", "generation", "revision", "models"],
+		"account snapshot",
+	);
+	const status = literalField(r, "status", [
+		"available",
+		"unavailable",
+		"revoked",
+	]);
+	const models = parseAccountModels(r.models, 16, true);
+	if (status !== "available" && models.length !== 0)
+		throw new ContractParseError("invalid_models", "Invalid account models.");
+	return {
+		version: literalField(r, "version", [2]),
+		status,
+		generation: integerField(r, "generation", { minimum: 1 }),
+		revision: integerField(r, "revision", { minimum: 1 }),
+		models,
+	};
+}
+
 export type ModelSubjectV1 = {
 	version: 1;
 	userId: string;
@@ -695,7 +785,7 @@ export function parseModelRequestV2(input: unknown): ModelRequestV2 {
 		model: v2String(r.model, "invalid_request", {
 			maxBytes: 128,
 			nonEmpty: true,
-			pattern: /^[A-Za-z0-9._:/-]+$/,
+			pattern: MODEL_ID_PATTERN_V2,
 		}),
 		thinking: r.thinking as ModelThinkingV2,
 		maxTokens: r.maxTokens as number,

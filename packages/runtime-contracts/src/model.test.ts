@@ -1,7 +1,9 @@
 import { expect, it } from "vitest";
 import {
 	MODEL_LIMITS_V2,
+	modelProviderFor,
 	modelRequestDigestV2,
+	parseAccountSnapshot,
 	parseModelAttemptV1,
 	parseModelFrameV2,
 	parseModelRequestV2,
@@ -281,4 +283,61 @@ it("bounds a reply: one final done, tool call count", () => {
 			done,
 		]),
 	).toThrow(expect.objectContaining({ code: "oversized" }));
+});
+
+it("routes only the fixture ids to the fixture provider", () => {
+	expect(modelProviderFor("faux-1")).toBe("faux");
+	expect(modelProviderFor("faux-2")).toBe("faux");
+	expect(modelProviderFor("gpt-6.1-sol")).toBe("openai-codex");
+});
+
+const codexSnapshot = {
+	version: 2,
+	status: "available",
+	generation: 1,
+	revision: 1,
+	models: [
+		{ id: "gpt-6.1-sol", thinking: ["medium", "high", "xhigh"] },
+		{ id: "gpt-6.1-mini", thinking: ["low"] },
+		{ id: "gpt-6", thinking: ["max", "minimal"] },
+	],
+};
+
+it("parses fixture and codex account snapshots", () => {
+	const v1 = {
+		version: 1,
+		status: "available",
+		generation: 1,
+		revision: 1,
+		models: [{ id: "faux-1", thinking: ["off", "low"] }],
+	};
+	expect(parseAccountSnapshot(v1)).toEqual(v1);
+	expect(parseAccountSnapshot(JSON.stringify(codexSnapshot))).toEqual(
+		codexSnapshot,
+	);
+});
+
+it("rejects malformed codex account snapshots", () => {
+	const bad = (patch: Record<string, unknown>) =>
+		expect(() =>
+			parseAccountSnapshot({ ...codexSnapshot, ...patch }),
+		).toThrow();
+	bad({
+		models: Array.from({ length: 17 }, (_, i) => ({
+			id: `m-${i}`,
+			thinking: ["low"],
+		})),
+	});
+	bad({
+		models: [
+			{ id: "a", thinking: ["low"] },
+			{ id: "a", thinking: ["low"] },
+		],
+	});
+	bad({ models: [{ id: "faux-1", thinking: ["low"] }] });
+	bad({ models: [{ id: "a b", thinking: ["low"] }] });
+	bad({ models: [{ id: "a", thinking: ["ultra"] }] });
+	bad({ models: [{ id: "a", thinking: [] }] });
+	bad({ models: [{ id: "a", thinking: ["low", "low"] }] });
+	bad({ status: "revoked" });
 });

@@ -6,8 +6,8 @@ import {
 	type ModelRequestV2,
 	type ModelSubjectV1,
 	type ModelTransportDescriptorV1,
+	parseAccountSnapshot,
 	parseModelSubjectV1,
-	parseSyntheticAccountV1,
 } from "../../../../packages/runtime-contracts/src/model.js";
 
 export type ModelRequestBodyV2 = Pick<
@@ -84,7 +84,7 @@ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE f.targetKind=
 			.first<{ snapshot: string; generation: number; revision: number }>();
 		if (!row) return null;
 		try {
-			const account = parseSyntheticAccountV1(row.snapshot);
+			const account = parseAccountSnapshot(row.snapshot);
 			if (
 				account.status !== "available" ||
 				account.generation !== row.generation ||
@@ -155,7 +155,7 @@ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind
 		if (!row) return false;
 		if (!selection) return true;
 		try {
-			const account = parseSyntheticAccountV1(row.snapshot);
+			const account = parseAccountSnapshot(row.snapshot);
 			return (
 				account.status === "available" &&
 				account.generation === s.connectionGeneration &&
@@ -199,7 +199,7 @@ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind
 			.first<{ snapshot: string }>();
 		if (!row) return null;
 		try {
-			const account = parseSyntheticAccountV1(row.snapshot);
+			const account = parseAccountSnapshot(row.snapshot);
 			if (
 				account.status !== "available" ||
 				account.generation !== s.connectionGeneration ||

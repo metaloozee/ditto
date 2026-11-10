@@ -194,7 +194,7 @@ describe("candidate command version 2", () => {
 		expect("selection" in parseBrowserCommandV2(prompt)).toBe(false);
 		expect("selection" in parseCommandV2(command)).toBe(false);
 		for (const bad of [
-			{ model: "gpt-9", thinking: "off" },
+			{ model: "gpt 9", thinking: "off" },
 			{ model: "faux-1", thinking: "ultra" },
 			{ model: "faux-1" },
 			{ model: "faux-1", thinking: "off", extra: 1 },

@@ -7,15 +7,27 @@ import {
 	stringField,
 } from "./json.js";
 import {
+	type AccountModel,
+	MODEL_ID_PATTERN_V2,
 	type ModelSubjectV1,
+	type ModelThinkingV2,
+	parseAccountModels,
 	parseModelSubjectV1,
-	type SyntheticModelId,
-	type SyntheticThinking,
 } from "./model.js";
 
+const SELECTION_THINKING: readonly ModelThinkingV2[] = [
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+	"max",
+];
+
 export type ConfigurationSelectionV1 = {
-	model: SyntheticModelId;
-	thinking: SyntheticThinking;
+	model: string;
+	thinking: ModelThinkingV2;
 };
 export type ConfigurationIntentV1 = {
 	version: 1;
@@ -41,7 +53,7 @@ export type ConfigurationAckV1 = {
 export type CandidateModelsV1 = {
 	version: 1;
 	status: "available" | "unavailable" | "revoked" | "disconnected";
-	models: { id: SyntheticModelId; thinking: SyntheticThinking[] }[];
+	models: AccountModel[];
 	selection: ConfigurationSelectionV1 | null;
 };
 export type CandidateModelsRequestV1 = {
@@ -61,9 +73,12 @@ export function parseConfigurationSelectionV1(
 		["model", "thinking"],
 		"configuration selection",
 	);
+	const model = stringField(r, "model", { maxBytes: 128 });
+	if (!MODEL_ID_PATTERN_V2.test(model))
+		throw new ContractParseError("invalid_selection", "Invalid selection.");
 	return {
-		model: literalField(r, "model", ["faux-1", "faux-2"]),
-		thinking: literalField(r, "thinking", ["off", "low", "high", "max"]),
+		model,
+		thinking: literalField(r, "thinking", SELECTION_THINKING),
 	};
 }
 function scope(r: Record<string, unknown>): ConfigurationReadV1 {
@@ -222,7 +237,7 @@ export function parseCandidateModelsRequestV1(
 }
 export function parseCandidateModelsV1(input: unknown): CandidateModelsV1 {
 	const r = strictRecord(
-		decodeContractInput(input, 4096),
+		decodeContractInput(input, 8192),
 		["version", "status", "models", "selection"],
 		"candidate models",
 	);
@@ -232,36 +247,9 @@ export function parseCandidateModelsV1(input: unknown): CandidateModelsV1 {
 		"revoked",
 		"disconnected",
 	]);
-	if (
-		!Array.isArray(r.models) ||
-		r.models.length > 2 ||
-		(status !== "available" && r.models.length !== 0)
-	)
+	const models = parseAccountModels(r.models, 16, false);
+	if (status !== "available" && models.length !== 0)
 		throw new ContractParseError("invalid_models", "Invalid account models.");
-	const ids = new Set<string>();
-	const models = r.models.map((input: unknown) => {
-		const m = strictRecord(input, ["id", "thinking"], "candidate model");
-		const id = literalField(m, "id", ["faux-1", "faux-2"]);
-		if (
-			ids.has(id) ||
-			!Array.isArray(m.thinking) ||
-			m.thinking.length < 1 ||
-			m.thinking.length > 4
-		)
-			throw new ContractParseError("invalid_models", "Invalid model entry.");
-		ids.add(id);
-		const thinking = m.thinking.map((level: unknown) =>
-			literalField<SyntheticThinking>({ level }, "level", [
-				"off",
-				"low",
-				"high",
-				"max",
-			]),
-		);
-		if (new Set(thinking).size !== thinking.length)
-			throw new ContractParseError("invalid_models", "Invalid model entry.");
-		return { id, thinking };
-	});
 	return {
 		version: literalField(r, "version", [1]),
 		status,
