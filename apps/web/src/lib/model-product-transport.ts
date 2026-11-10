@@ -1,13 +1,13 @@
 import {
+	type ModelOutcomeV2,
 	type ModelTransportDescriptorV1,
 	parseModelTransportDescriptorV1,
 	SYNTHETIC_MODEL_LIMITS,
-	type SyntheticModelOutcomeV1,
 } from "../../../../packages/runtime-contracts/src/model.js";
 import {
 	awaitSynthetic,
-	reconstructSyntheticRequest,
-	syntheticRequestDigest,
+	modelRequestDigest,
+	reconstructModelRequest,
 } from "./codex-request-contract";
 import {
 	type CANDIDATE_MODEL_POLICY,
@@ -23,7 +23,7 @@ export type ModelProductBindings = {
 			requestModel(
 				input: unknown,
 				capability: ModelClaimRpc,
-			): Promise<SyntheticModelOutcomeV1>;
+			): Promise<ModelOutcomeV2>;
 		};
 	};
 };
@@ -33,8 +33,8 @@ export async function performPrivateModelRequest(
 	input: unknown,
 	capability: ModelClaimRpc,
 	fixtureAvailable: boolean,
-): Promise<SyntheticModelOutcomeV1> {
-	if (!fixtureAvailable) return { version: 1, status: "unavailable" };
+): Promise<ModelOutcomeV2> {
+	if (!fixtureAvailable) return { version: 2, status: "unavailable" };
 	try {
 		const d = parseModelTransportDescriptorV1(
 			await awaitSynthetic(
@@ -47,7 +47,7 @@ export async function performPrivateModelRequest(
 			capability,
 		);
 	} catch {
-		return { version: 1, status: "denied" };
+		return { version: 2, status: "denied" };
 	}
 }
 
@@ -61,15 +61,15 @@ export async function readPrivateModelPermit(
 	if (!fixtureAvailable) return { status: "denied" };
 	try {
 		const d = parseModelTransportDescriptorV1(descriptor);
-		const { body, request } = reconstructSyntheticRequest(input);
-		if ((await syntheticRequestDigest(request)) !== d.requestDigest)
+		const { request } = reconstructModelRequest(input);
+		if ((await modelRequestDigest(request)) !== d.requestDigest)
 			return { status: "denied" };
 		return {
 			status: (await new ModelProductAuthority(
 				db,
 				Date.now,
 				candidatePolicy,
-			).permit(d, body))
+			).permit(d, request))
 				? "current"
 				: "denied",
 		};

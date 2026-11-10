@@ -3,12 +3,17 @@ import type {
 	ConfigurationSelectionV1,
 } from "../../../../packages/runtime-contracts/src/configuration.js";
 import {
+	type ModelRequestV2,
 	type ModelSubjectV1,
 	type ModelTransportDescriptorV1,
 	parseModelSubjectV1,
 	parseSyntheticAccountV1,
-	type SyntheticModelBodyV1,
 } from "../../../../packages/runtime-contracts/src/model.js";
+
+export type ModelRequestBodyV2 = Pick<
+	ModelRequestV2,
+	"purpose" | "model" | "thinking"
+>;
 
 export interface ModelClaimRpc {
 	describe(): Promise<ModelTransportDescriptorV1>;
@@ -169,7 +174,7 @@ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind
 
 	private async facts(
 		d: ModelTransportDescriptorV1,
-		body?: SyntheticModelBodyV1,
+		body?: ModelRequestBodyV2,
 	) {
 		const s = d.subject,
 			a = d.attempt;
@@ -201,7 +206,9 @@ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind
 				account.revision !== s.capabilityRevision ||
 				(body &&
 					!account.models.some(
-						(m) => m.id === body.model && m.thinking.includes(body.thinking),
+						(m) =>
+							m.id === body.model &&
+							(m.thinking as readonly string[]).includes(body.thinking),
 					))
 			)
 				return null;
@@ -266,7 +273,7 @@ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind
 
 	async current(
 		d: ModelTransportDescriptorV1,
-		body?: SyntheticModelBodyV1,
+		body?: ModelRequestBodyV2,
 	): Promise<boolean> {
 		const f = await this.facts(d, body);
 		if (!f) return false;
@@ -350,7 +357,7 @@ AND NOT EXISTS(SELECT 1 FROM model_request_admissions r JOIN privileged_operatio
 
 	async reserve(
 		d: ModelTransportDescriptorV1,
-		body: SyntheticModelBodyV1,
+		body: ModelRequestBodyV2,
 	): Promise<string | null> {
 		if (
 			(d.attempt.kind === "custom_summary") !==
@@ -404,7 +411,7 @@ AND (?!='git_metadata' OR NOT EXISTS(SELECT 1 FROM model_request_admissions r JO
 
 	async permit(
 		d: ModelTransportDescriptorV1,
-		body: SyntheticModelBodyV1,
+		body: ModelRequestBodyV2,
 	): Promise<boolean> {
 		this.permitBounds.delete(d);
 		const id = await this.windowId(d),

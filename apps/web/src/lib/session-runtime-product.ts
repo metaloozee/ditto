@@ -2,8 +2,8 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 import { createDb } from "#/db";
 import { createProductAdapters } from "#/lib/session-runtime-authority";
 import type {
+	ModelOutcomeV2,
 	ModelTransportDescriptorV1,
-	SyntheticModelOutcomeV1,
 } from "../../../../packages/runtime-contracts/src/model.js";
 import type {
 	ProjectionApplyResult,
@@ -38,7 +38,7 @@ export class ProductEntrypoint extends WorkerEntrypoint<Env> {
 	async requestModel(
 		input: unknown,
 		capability: ModelClaimRpc,
-	): Promise<SyntheticModelOutcomeV1> {
+	): Promise<ModelOutcomeV2> {
 		return performPrivateModelRequest(this.env, input, capability, false);
 	}
 	async readModelPermit(

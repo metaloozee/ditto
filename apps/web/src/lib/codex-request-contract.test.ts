@@ -1,123 +1,102 @@
 import { describe, expect, it } from "vitest";
 import {
+	MODEL_FIXTURE_URL_V2,
+	MODEL_LIMITS_V2,
 	parseSyntheticAccountV1,
-	SYNTHETIC_MODEL_URL,
 } from "../../../../packages/runtime-contracts/src/model.js";
 import {
-	readSyntheticStream,
-	reconstructSyntheticRequest,
-	syntheticRequestDigest,
+	buildFixtureUpstream,
+	modelRequestDigest,
+	readModelFrames,
+	reconstructModelRequest,
 } from "./codex-request-contract";
 
-const body = {
-	version: 1,
-	protocol: "ditto-synthetic-ndjson-1",
+const request = {
+	version: 2,
 	purpose: "generation",
+	provider: "faux",
 	model: "faux-1",
 	thinking: "off",
-	transcript: "Synthetic transcript",
-	options: { maxTokens: 128 },
-};
-const request = {
-	version: 1,
-	method: "POST",
-	url: SYNTHETIC_MODEL_URL,
-	headers: [
-		["content-type", "application/json"],
-		["accept", "application/x-ndjson"],
-	],
-	body: JSON.stringify(body),
+	maxTokens: 128,
+	transcript: {
+		messages: [
+			{ role: "system", content: "Synthetic system" },
+			{ role: "user", content: "Synthetic transcript" },
+		],
+	},
 };
 const end = {
-	version: 1,
+	version: 2,
 	type: "done",
 	stopReason: "stop",
-	inputTokens: 2,
-	outputTokens: 3,
+	usage: { input: 2, output: 3, cacheRead: 0 },
 };
 const stream = (text: string, headers: Record<string, string> = {}) =>
 	new Response(text, {
 		headers: { "content-type": "application/x-ndjson", ...headers },
 	});
+const lines = (frames: unknown[]) =>
+	`${frames.map((frame) => JSON.stringify(frame)).join("\n")}\n`;
 
-describe("strict synthetic request reconstruction", () => {
-	it("reconstructs canonical body and headers rather than forwarding caller order or whitespace", async () => {
-		const changed = {
-			...request,
-			headers: [...request.headers].reverse(),
-			body: JSON.stringify(body, null, 2),
-		};
-		expect(reconstructSyntheticRequest(changed).request).toEqual(request);
-		expect(await syntheticRequestDigest(changed)).toBe(
-			await syntheticRequestDigest(request),
+describe("strict model request reconstruction", () => {
+	it("builds the upstream itself with fixed url and headers, never caller-supplied ones", async () => {
+		const reordered = JSON.stringify(request, null, 2);
+		const { request: parsed } = reconstructModelRequest(reordered);
+		expect(parsed).toEqual(request);
+		const upstream = buildFixtureUpstream(parsed);
+		expect(upstream.url).toBe(MODEL_FIXTURE_URL_V2);
+		expect(upstream.headers).toEqual({
+			"content-type": "application/json",
+			accept: "application/x-ndjson",
+		});
+		expect(upstream.body).toBe(JSON.stringify(request));
+		expect(await modelRequestDigest(reordered)).toBe(
+			await modelRequestDigest(request),
 		);
-		expect(
-			await syntheticRequestDigest({
-				...request,
-				body: JSON.stringify({ ...body, thinking: "high" }),
-			}),
-		).not.toBe(await syntheticRequestDigest(request));
+		expect(await modelRequestDigest({ ...request, thinking: "high" })).not.toBe(
+			await modelRequestDigest(request),
+		);
 	});
 	for (const changed of [
-		{ method: "GET" },
-		{ url: `${SYNTHETIC_MODEL_URL}?x=1` },
-		{ url: SYNTHETIC_MODEL_URL.replace(".invalid", ".invalid:443") },
-		{ url: SYNTHETIC_MODEL_URL.replace("/v1/", "/%76%31/") },
-		{ url: SYNTHETIC_MODEL_URL.replace("https://", "https://user@") },
-		{ url: SYNTHETIC_MODEL_URL.replace("https://", "http://") },
-		{ headers: [...request.headers, ["authorization", "caller"]] },
-		{ headers: [...request.headers, ["proxy-authorization", "caller"]] },
+		{ version: 1 },
+		{ url: MODEL_FIXTURE_URL_V2 },
+		{ headers: [["authorization", "caller"]] },
+		{ unknown: 1 },
+		{ model: "real provider" },
+		{ thinking: "unsupported" },
+		{ maxTokens: 0 },
+		{ purpose: "tool" },
+		{ transcript: { messages: [] } },
+		{ transcript: { messages: request.transcript.messages, extra: 1 } },
 		{
-			headers: [
-				["content-type", "application/json"],
-				["content-type", "application/json"],
-			],
+			transcript: {
+				messages: [
+					{
+						role: "user",
+						content: [{ type: "image", data: "AA", mimeType: "image/png" }],
+					},
+				],
+			},
 		},
 		{
-			headers: [
-				["content-type", "application/json; charset=utf-8"],
-				request.headers[1],
-			],
+			transcript: {
+				messages: [{ role: "user", content: "x".repeat(1_048_577) }],
+			},
 		},
-		{ headers: [["Content-Type", "application/json"], request.headers[1]] },
-		{ body: JSON.stringify({ ...body, unknown: 1 }) },
-		{
-			body: JSON.stringify({
-				...body,
-				options: { maxTokens: 128, apiKey: "caller" },
-			}),
-		},
-		{ body: JSON.stringify({ ...body, transcript: "x".repeat(98305) }) },
-		{ body: JSON.stringify({ ...body, model: "real-provider-model" }) },
-		{ body: JSON.stringify({ ...body, thinking: "unsupported" }) },
-		{ body: JSON.stringify({ ...body, options: { maxTokens: 0 } }) },
-		{
-			body: JSON.stringify(body).replace(
-				'"version":1',
-				'"version":1,"version":1',
-			),
-		},
-		{ encoding: "gzip" },
 	])
 		it(`rejects request variant ${JSON.stringify(changed).slice(0, 100)}`, () => {
 			expect(() =>
-				reconstructSyntheticRequest({ ...request, ...changed }),
+				reconstructModelRequest({ ...request, ...changed }),
 			).toThrow();
 		});
-	it("rejects duplicate envelope fields and total encoded request overflow", () => {
+	it("rejects duplicate fields", () => {
 		expect(() =>
-			reconstructSyntheticRequest(
+			reconstructModelRequest(
 				JSON.stringify(request).replace(
-					'"version":1',
-					'"version":1,"version":1',
+					'"version":2',
+					'"version":2,"version":2',
 				),
 			),
-		).toThrow();
-		expect(() =>
-			reconstructSyntheticRequest({
-				...request,
-				body: JSON.stringify({ ...body, transcript: "\\".repeat(60000) }),
-			}),
 		).toThrow();
 	});
 	it("account capability parsing is bounded, strict and does not infer entitlement from a catalogue", () => {
@@ -141,15 +120,21 @@ describe("strict synthetic request reconstruction", () => {
 	});
 });
 
-describe("bounded synthetic stream reconstruction", () => {
-	it("retains exact validated frames across arbitrary chunk boundaries", async () => {
+describe("bounded model frame reconstruction", () => {
+	it("retains exact validated frames in content order across arbitrary chunk boundaries", async () => {
 		const frames = [
-			{ version: 1, type: "delta", text: "Synthetic answer" },
-			end,
+			{ version: 2, type: "thinking", thinking: "plan", signature: "s" },
+			{ version: 2, type: "text", text: "Synthetic answer" },
+			{
+				version: 2,
+				type: "toolCall",
+				id: "call_1",
+				name: "read",
+				arguments: { path: "a.ts" },
+			},
+			{ ...end, stopReason: "toolUse" },
 		];
-		const encoded =
-			frames.map((frame) => JSON.stringify(frame)).join("\n") + "\n";
-		const bytes = new TextEncoder().encode(encoded);
+		const bytes = new TextEncoder().encode(lines(frames));
 		const response = new Response(
 			new ReadableStream({
 				start(controller) {
@@ -160,28 +145,42 @@ describe("bounded synthetic stream reconstruction", () => {
 			{ headers: { "content-type": "application/x-ndjson" } },
 		);
 		expect(
-			await readSyntheticStream(response, new AbortController().signal),
+			await readModelFrames(response, new AbortController().signal),
 		).toEqual(frames);
 	});
-	for (const text of [
+	const text = (value: string) => ({ version: 2, type: "text", text: value });
+	const call = {
+		version: 2,
+		type: "toolCall",
+		id: "c",
+		name: "read",
+		arguments: {},
+	};
+	for (const body of [
 		"",
 		JSON.stringify(end),
 		`${JSON.stringify(end)}\n{}\n`,
-		'{"version":1,"version":1,"type":"done"}\n',
-		`${JSON.stringify({ version: 1, type: "delta", text: "x".repeat(8193) })}\n`,
-		Array.from({ length: 129 }, () =>
-			JSON.stringify({ version: 1, type: "delta", text: "x" }),
-		).join("\n") + "\n",
-		Array.from({ length: 9 }, () =>
-			JSON.stringify({ version: 1, type: "delta", text: "x".repeat(8192) }),
-		).join("\n") + "\n",
+		lines([end, text("after done")]),
+		'{"version":2,"version":2,"type":"done"}\n',
+		lines([text("x".repeat(MODEL_LIMITS_V2.frameBytes + 1))]),
+		lines(Array.from({ length: MODEL_LIMITS_V2.frames + 1 }, () => text("x"))),
+		lines(
+			Array.from({ length: 3 }, () => text("x".repeat(250_000))).concat(
+				end as never,
+			),
+		),
+		lines([
+			...Array.from({ length: MODEL_LIMITS_V2.toolCalls + 1 }, () => call),
+			end,
+		]),
+		lines([{ ...end, stopReason: "aborted" }]),
 	])
-		it(`rejects malformed or truncated stream of ${text.length} bytes`, async () => {
+		it(`rejects malformed, truncated or oversized stream of ${body.length} bytes`, async () => {
 			await expect(
-				readSyntheticStream(stream(text), new AbortController().signal),
+				readModelFrames(stream(body), new AbortController().signal),
 			).rejects.toThrow();
 		});
-	it("rejects redirects, encodings, extra fields and credential echoes including split frames", async () => {
+	it("rejects redirects, encodings, extra fields and credential echoes including split frames and tool arguments", async () => {
 		const rejectedHeaders: Record<string, string>[] = [
 			{ location: "https://elsewhere.invalid" },
 			{ "content-encoding": "gzip" },
@@ -189,17 +188,32 @@ describe("bounded synthetic stream reconstruction", () => {
 		];
 		for (const headers of rejectedHeaders)
 			await expect(
-				readSyntheticStream(
-					stream(`${JSON.stringify(end)}\n`, headers),
+				readModelFrames(
+					stream(lines([end]), headers),
 					new AbortController().signal,
 				),
 			).rejects.toThrow();
-		const text =
-			["private-", "marker"]
-				.map((text) => JSON.stringify({ version: 1, type: "delta", text }))
-				.join("\n") + `\n${JSON.stringify(end)}\n`;
+		const split = lines([text("private-"), text("marker"), end]);
 		await expect(
-			readSyntheticStream(stream(text), new AbortController().signal, [
+			readModelFrames(stream(split), new AbortController().signal, [
+				"private-marker",
+			]),
+		).rejects.toThrow();
+		const inArguments = lines([
+			{ ...call, arguments: { token: "private-marker" } },
+			end,
+		]);
+		await expect(
+			readModelFrames(stream(inArguments), new AbortController().signal, [
+				"private-marker",
+			]),
+		).rejects.toThrow();
+		const inThinking = lines([
+			{ version: 2, type: "thinking", thinking: "private-marker" },
+			end,
+		]);
+		await expect(
+			readModelFrames(stream(inThinking), new AbortController().signal, [
 				"private-marker",
 			]),
 		).rejects.toThrow();
@@ -211,7 +225,7 @@ describe("bounded synthetic stream reconstruction", () => {
 			{ headers: { "content-type": "application/x-ndjson" } },
 		);
 		const started = Date.now();
-		const reading = readSyntheticStream(response, controller.signal);
+		const reading = readModelFrames(response, controller.signal);
 		controller.abort();
 		await expect(reading).rejects.toThrow();
 		expect(Date.now() - started).toBeLessThan(1500);
@@ -221,7 +235,7 @@ describe("bounded synthetic stream reconstruction", () => {
 		const response = new Response(new ReadableStream(), {
 			headers: { "content-type": "application/x-ndjson" },
 		});
-		const reading = readSyntheticStream(response, controller.signal);
+		const reading = readModelFrames(response, controller.signal);
 		controller.abort();
 		await expect(reading).rejects.toThrow();
 	});

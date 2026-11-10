@@ -1,9 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
 import {
+	type ModelOutcomeV2,
 	type ModelTransportDescriptorV1,
 	parseModelTransportDescriptorV1,
 	SYNTHETIC_MODEL_LIMITS,
-	type SyntheticModelOutcomeV1,
 } from "../../../../packages/runtime-contracts/src/model.js";
 import type { CandidateCapacity } from "./candidate-capacity";
 import {
@@ -29,9 +29,10 @@ import {
 } from "./codex-device-login";
 import {
 	awaitSynthetic,
-	readSyntheticStream,
-	reconstructSyntheticRequest,
-	syntheticRequestDigest,
+	buildFixtureUpstream,
+	modelRequestDigest,
+	readModelFrames,
+	reconstructModelRequest,
 } from "./codex-request-contract";
 import {
 	type ModelClaimRpc,
@@ -476,8 +477,8 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 	async requestModel(
 		input: unknown,
 		capability: ModelClaimRpc,
-	): Promise<SyntheticModelOutcomeV1> {
-		if (!this.requestAvailable()) return { version: 1, status: "unavailable" };
+	): Promise<ModelOutcomeV2> {
+		if (!this.requestAvailable()) return { version: 2, status: "unavailable" };
 		const policy = this.modelProductAuthority();
 		const overall = AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs);
 		let descriptor: ModelTransportDescriptorV1;
@@ -487,19 +488,19 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 				await awaitSynthetic(capability.describe(), overall),
 			);
 			if (!this.#owned(descriptor.subject.userId))
-				return { version: 1, status: "denied" };
+				return { version: 2, status: "denied" };
 			const preparing = this.prepareModelDispatch(descriptor);
 			if (preparing !== null)
 				preparation = Object.freeze(await awaitSynthetic(preparing, overall));
 		} catch {
-			return { version: 1, status: "denied" };
+			return { version: 2, status: "denied" };
 		}
-		let reconstructed: ReturnType<typeof reconstructSyntheticRequest>;
+		let reconstructed: ReturnType<typeof reconstructModelRequest>;
 		try {
-			reconstructed = reconstructSyntheticRequest(input);
+			reconstructed = reconstructModelRequest(input);
 			if (
 				(await awaitSynthetic(
-					syntheticRequestDigest(reconstructed.request),
+					modelRequestDigest(reconstructed.request),
 					overall,
 				)) !== descriptor.requestDigest
 			)
@@ -511,9 +512,9 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 			} catch {
 				/* A failed denial acknowledgment never admits model work. */
 			}
-			return { version: 1, status: "denied" };
+			return { version: 2, status: "denied" };
 		}
-		const { request, body } = reconstructed,
+		const { request } = reconstructed,
 			owner = descriptor.subject.userId;
 		let reserved = false,
 			dispatched = false;
@@ -522,7 +523,7 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 			SYNTHETIC_MODEL_LIMITS.deadlineMs,
 			descriptor.attempt.deadlineAt - Date.now(),
 		);
-		if (duration <= 0) return { version: 1, status: "denied" };
+		if (duration <= 0) return { version: 2, status: "denied" };
 		const timeout = setTimeout(() => controller.abort(), duration);
 		const signal = AbortSignal.any([overall, controller.signal]);
 		const wait = <T>(pending: Promise<T>) => awaitSynthetic(pending, signal);
@@ -548,11 +549,11 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 						source: "model_not_dispatched",
 					})
 					.catch(() => undefined);
-				return { version: 1, status: "denied" };
+				return { version: 2, status: "denied" };
 			}
 			if (claimed.status !== "claimed" || claimed.duplicate) {
 				clearTimeout(timeout);
-				return { version: 1, status: "failed_known" };
+				return { version: 2, status: "failed_known" };
 			}
 		}
 		const releaseSlot = () =>
@@ -566,14 +567,14 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 		try {
 			await wait(this.modelPhase("authority"));
 			controller.signal.throwIfAborted();
-			if (!(await wait(policy.current(descriptor, body))))
-				return { version: 1, status: "denied" };
+			if (!(await wait(policy.current(descriptor, request))))
+				return { version: 2, status: "denied" };
 			const fresh = await wait(this.ensureFresh(owner));
 			if (
 				fresh.status !== "connected" ||
 				fresh.generation !== descriptor.subject.connectionGeneration
 			)
-				return { version: 1, status: "denied" };
+				return { version: 2, status: "denied" };
 			const state = this.#read();
 			if (
 				!state ||
@@ -581,9 +582,9 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 				state.status !== "connected" ||
 				state.generation !== descriptor.subject.connectionGeneration
 			)
-				return { version: 1, status: "denied" };
-			if (!(await wait(policy.reserve(descriptor, body))))
-				return { version: 1, status: "denied" };
+				return { version: 2, status: "denied" };
+			if (!(await wait(policy.reserve(descriptor, request))))
+				return { version: 2, status: "denied" };
 			reserved = true;
 			if (!this.#same(state)) throw new Error("connection_changed");
 			const tokens = await wait(
@@ -598,11 +599,17 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 			if (!this.#same(state) || tokens.expiresAt <= Date.now() + 60000)
 				throw new Error("connection_changed");
 			await wait(this.modelPhase("credentials"));
-			if (!(await wait(policy.permit(descriptor, body))) || !this.#same(state))
+			if (
+				!(await wait(policy.permit(descriptor, request))) ||
+				!this.#same(state)
+			)
 				throw new Error("authority_changed");
 			await wait(this.modelPhase("claim"));
 			signal.throwIfAborted();
-			if (!(await wait(policy.permit(descriptor, body))) || !this.#same(state))
+			if (
+				!(await wait(policy.permit(descriptor, request))) ||
+				!this.#same(state)
+			)
 				throw new Error("authority_changed");
 			const admitted = await wait(
 				capability.claim(descriptor.attempt, {
@@ -617,7 +624,10 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 				throw new Error("claim_denied");
 			// The host rereads its authority after the bound product check. Recheck
 			// product policy here so that host-authority I/O cannot extend a product permit.
-			if (!(await wait(policy.permit(descriptor, body))) || !this.#same(state))
+			if (
+				!(await wait(policy.permit(descriptor, request))) ||
+				!this.#same(state)
+			)
 				throw new Error("authority_changed");
 			signal.throwIfAborted();
 			const bounds = policy.validatedPermitBounds(descriptor);
@@ -636,16 +646,16 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 			)
 				throw new Error("dispatch_fenced");
 			dispatched = true;
-			fetching = fetch(request.url, {
+			const upstream = buildFixtureUpstream(request);
+			fetching = fetch(upstream.url, {
 				method: "POST",
 				redirect: "manual",
 				signal,
 				headers: {
-					"content-type": "application/json",
-					accept: "application/x-ndjson",
+					...upstream.headers,
 					authorization: `Bearer ${tokens.access}`,
 				},
-				body: request.body,
+				body: upstream.body,
 			});
 			void fetching.catch(() => {});
 			await wait(policy.record(descriptor, "admitted"));
@@ -656,17 +666,17 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 			) {
 				if (response.body) await wait(response.body.cancel());
 				await wait(policy.record(descriptor, "failed_known"));
-				return { version: 1, status: "failed_known" };
+				return { version: 2, status: "failed_known" };
 			}
 			const frames = await wait(
-				readSyntheticStream(response, signal, [
+				readModelFrames(response, signal, [
 					tokens.access,
 					tokens.refresh,
 					tokens.identity ?? "",
 				]),
 			);
 			await wait(policy.record(descriptor, "complete"));
-			return { version: 1, status: "complete", frames };
+			return { version: 2, status: "complete", frames };
 		} catch {
 			const status = dispatched ? "outcome_unknown" : "denied";
 			if (reserved)
@@ -677,7 +687,7 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 					),
 					AbortSignal.timeout(1000),
 				).catch(() => {});
-			return { version: 1, status };
+			return { version: 2, status };
 		} finally {
 			clearTimeout(timeout);
 			controller.abort();

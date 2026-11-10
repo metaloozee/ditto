@@ -2,7 +2,7 @@ import { env, fetchMock, runInDurableObject } from "cloudflare:test";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import {
 	type ModelTransportDescriptorV1,
-	parseSyntheticModelRequestV1,
+	parseModelRequestV2,
 } from "../../../packages/runtime-contracts/src/model.js";
 import m0 from "../../web/migrations/0000_wet_giant_girl.sql?raw";
 import m1 from "../../web/migrations/0001_jazzy_firelord.sql?raw";
@@ -89,7 +89,7 @@ function modelReplies() {
 		trapInstalled = true;
 		fetchMock
 			.get("https://codex-model-fixture.invalid")
-			.intercept({ path: "/v1/stream", method: "POST" })
+			.intercept({ path: "/v2/stream", method: "POST" })
 			.reply((request) => {
 				modelCalls++;
 				modelBodies.push(String(request.body));
@@ -97,13 +97,12 @@ function modelReplies() {
 					statusCode: 200,
 					data:
 						[
-							{ version: 1, type: "delta", text: replyText },
+							{ version: 2, type: "text", text: replyText },
 							{
-								version: 1,
+								version: 2,
 								type: "done",
 								stopReason: "stop",
-								inputTokens: 1,
-								outputTokens: 1,
+								usage: { input: 1, output: 1, cacheRead: 0 },
 							},
 						]
 							.map((value) => JSON.stringify(value))
@@ -686,13 +685,9 @@ it.each([
 	);
 	expect(await policy.current(descriptor)).toBe(decision === "started");
 	const body = {
-		version: 1 as const,
-		protocol: "ditto-synthetic-ndjson-1" as const,
 		purpose: "generation" as const,
-		model: "faux-1" as const,
+		model: "faux-1",
 		thinking: "off" as const,
-		transcript: "Synthetic policy boundary",
-		options: { maxTokens: 64 },
 	};
 	if (decision === "started") {
 		expect(await policy.open(descriptor)).not.toBeNull();
@@ -1624,10 +1619,10 @@ it("queued configuration uses the next selection across a sequence gap and prese
 				{ timeout: 3000 },
 			)
 			.toEqual(["complete", "pending"]);
-		const prepared = parseSyntheticModelRequestV1(
+		const prepared = parseModelRequestV2(
 			await credential.candidateFinalRequest(),
 		);
-		expect(JSON.parse(prepared.body)).toMatchObject({ model: "faux-1" });
+		expect(prepared).toMatchObject({ version: 2, model: "faux-1" });
 		const task = await runInDurableObject(runtime, (_instance, state) =>
 			state.storage.sql
 				.exec("SELECT task,prepared,selection FROM host_tasks ORDER BY task")
@@ -1663,10 +1658,7 @@ it("queued configuration uses the next selection across a sequence gap and prese
 			)
 			.toEqual(["complete", "complete", "complete"]);
 		expect(
-			JSON.parse(
-				parseSyntheticModelRequestV1(await credential.candidateFinalRequest())
-					.body,
-			),
+			parseModelRequestV2(await credential.candidateFinalRequest()),
 		).toMatchObject({ model: "faux-2" });
 		expect(calls()).toBe(3);
 	} finally {

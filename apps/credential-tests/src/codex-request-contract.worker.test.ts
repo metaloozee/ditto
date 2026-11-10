@@ -7,11 +7,10 @@ import type {
 	ConfigurationSelectionV1,
 } from "../../../packages/runtime-contracts/src/configuration.js";
 import {
+	type ModelRequestV2,
 	type ModelSubjectV1,
 	type ModelTransportDescriptorV1,
-	parseSyntheticModelBodyV1,
-	parseSyntheticModelRequestV1,
-	type SyntheticModelRequestV1,
+	parseModelRequestV2,
 } from "../../../packages/runtime-contracts/src/model.js";
 import {
 	type HostFixtureDependencies,
@@ -99,19 +98,18 @@ const syntheticTokens = {
 	expiresAt: 4102444800000,
 };
 const frames = [
-	{ version: 1, type: "delta", text: "Synthetic answer ".repeat(50) },
+	{ version: 2, type: "text", text: "Synthetic answer ".repeat(50) },
 	{
-		version: 1,
+		version: 2,
 		type: "done",
 		stopReason: "stop",
-		inputTokens: 4,
-		outputTokens: 6,
+		usage: { input: 4, output: 6, cacheRead: 0 },
 	},
 ];
 const encodedFrames =
 	frames.map((frame) => JSON.stringify(frame)).join("\n") + "\n";
 let calls: {
-	body: ReturnType<typeof parseSyntheticModelBodyV1>;
+	body: ModelRequestV2;
 	headerNames: string[];
 }[];
 let installed = false;
@@ -129,10 +127,10 @@ function installTrap() {
 	installed = true;
 	fetchMock
 		.get("https://codex-model-fixture.invalid")
-		.intercept({ path: "/v1/stream", method: "POST" })
+		.intercept({ path: "/v2/stream", method: "POST" })
 		.reply((options) => {
 			expect(typeof options.body).toBe("string");
-			const body = parseSyntheticModelBodyV1(options.body);
+			const body = parseModelRequestV2(options.body);
 			const headers = options.headers;
 			expect(headers).toMatchObject({
 				"content-type": "application/json",
@@ -262,7 +260,7 @@ afterEach(() => {
 	for (const pending of fetchMock.pendingInterceptors())
 		expect(pending).toMatchObject({
 			origin: "https://codex-model-fixture.invalid",
-			path: "/v1/stream",
+			path: "/v2/stream",
 			method: "POST",
 			persist: true,
 		});
@@ -294,7 +292,7 @@ async function gate(
 			query: ConfigurationReadV1,
 			selection?: ConfigurationSelectionV1,
 		) => Promise<ConfigurationAuthorityV1>;
-		transform?: (request: SyntheticModelRequestV1) => unknown;
+		transform?: (request: ModelRequestV2) => unknown;
 		threeDenials?: boolean;
 		duplicate?: boolean;
 		retry?: boolean;
@@ -369,18 +367,18 @@ async function gate(
 						product.readModelPermit(request, descriptor)),
 				requestModel: async (input, capability) => {
 					try {
-						const request = parseSyntheticModelRequestV1(input);
+						const request = parseModelRequestV2(input);
 						if (options.threeDenials) {
 							for (let count = 0; count < 3; count++)
 								expect(
 									(
 										await product.requestModel(
-											{ ...request, method: "GET" },
+											{ ...request, version: 1 },
 											capability,
 										)
 									).status,
 								).toBe("denied");
-							return { version: 1, status: "denied" };
+							return { version: 2, status: "denied" };
 						}
 						if (options.duplicate) {
 							const outcomes = await Promise.all([
@@ -1661,14 +1659,17 @@ it("the mandatory adapter constructs an exact credential-owned request and bound
 		await f.host.waitIdle();
 		expect(calls).toHaveLength(1);
 		expect(calls[0].body).toMatchObject({
-			version: 1,
-			protocol: "ditto-synthetic-ndjson-1",
+			version: 2,
 			purpose: "generation",
+			provider: "faux",
 			model: "faux-1",
 			thinking: "off",
-			options: { maxTokens: 4096 },
+			maxTokens: 4096,
 		});
-		expect(calls[0].body.transcript).toContain("Synthetic request");
+		expect(typeof calls[0].body.transcript).toBe("object");
+		expect(JSON.stringify(calls[0].body.transcript)).toContain(
+			"Synthetic request",
+		);
 		expect(calls[0].headerNames).toEqual([
 			"accept",
 			"authorization",
@@ -1689,23 +1690,32 @@ it("the mandatory adapter constructs an exact credential-owned request and bound
 });
 
 for (const transform of [
-	(request: SyntheticModelRequestV1) => ({ ...request, method: "GET" }),
-	(request: SyntheticModelRequestV1) => ({
+	(request: ModelRequestV2) => ({ ...request, version: 1 }),
+	(request: ModelRequestV2) => ({ ...request, thinking: "high" }),
+	(request: ModelRequestV2) => ({ ...request, unknown: 1 }),
+	(request: ModelRequestV2) => ({
 		...request,
-		url: `${request.url}?proxy=1`,
+		transcript: {
+			messages: [
+				...request.transcript.messages,
+				{
+					role: "user",
+					content: [{ type: "image", data: "AA", mimeType: "image/png" }],
+				},
+			],
+		},
 	}),
-	(request: SyntheticModelRequestV1) => ({
+	(request: ModelRequestV2) => ({
 		...request,
-		headers: [...request.headers, ["authorization", "caller"]],
+		transcript: {
+			messages: [
+				...request.transcript.messages,
+				{ role: "user", content: "x".repeat(1_048_577) },
+			],
+		},
 	}),
-	(request: SyntheticModelRequestV1) => ({
-		...request,
-		body: request.body.replace('"version":1', '"version":1,"version":1'),
-	}),
-	(request: SyntheticModelRequestV1) => ({
-		...request,
-		body: JSON.stringify({ ...JSON.parse(request.body), thinking: "high" }),
-	}),
+	(request: ModelRequestV2) =>
+		JSON.stringify(request).replace('"version":2', '"version":2,"version":2'),
 ])
 	it(`invalid or differently bound request dispatches zero calls: ${transform.toString()}`, async () => {
 		upstream();
@@ -1898,15 +1908,11 @@ it("identical local effect IDs remain independently scoped to owned workspace id
 			assistantId: "assistant-2",
 		},
 	};
-	const body = parseSyntheticModelBodyV1({
-		version: 1,
-		protocol: "ditto-synthetic-ndjson-1",
-		purpose: "generation",
+	const body = {
+		purpose: "generation" as const,
 		model: "faux-1",
-		thinking: "off",
-		transcript: "Synthetic policy fixture",
-		options: { maxTokens: 128 },
-	});
+		thinking: "off" as const,
+	};
 	expect(await policy.reserve(descriptor, body)).not.toBeNull();
 	expect(await policy.reserve(second, body)).not.toBeNull();
 	expect(await policy.reserve(descriptor, body)).toBeNull();
@@ -1953,7 +1959,7 @@ it("production credentials remain unavailable even with connected fixture record
 					halt: async () => ({ status: "halted" }),
 				},
 			),
-		).toEqual({ version: 1, status: "unavailable" });
+		).toEqual({ version: 2, status: "unavailable" });
 	});
 	expect(calls).toHaveLength(0);
 });
@@ -2059,7 +2065,9 @@ it("accepted custom summaries use the same private transport and exactly one fre
 				"generation",
 				"custom_summary",
 			]);
-			expect(calls[1].body.transcript).toContain("Synthetic request");
+			expect(JSON.stringify(calls[1].body.transcript)).toContain(
+				"Synthetic request",
+			);
 			expect(await f.snapshot()).toMatchObject({
 				admissions: [
 					{ purpose: "generation", state: "complete" },
@@ -2328,9 +2336,7 @@ for (const phase of ["capability", "permit"] as const)
 						)
 							.bind(now + 50)
 							.run();
-						const body = parseSyntheticModelBodyV1(
-							parseSyntheticModelRequestV1(request).body,
-						);
+						const body = parseModelRequestV2(request);
 						return {
 							status: (await new ModelProductAuthority(db, () => now).permit(
 								d,
