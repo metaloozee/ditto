@@ -1,6 +1,6 @@
 # Plan 039: The default model in the new runtime (conditional brief)
 
-Status: BLOCKED on 035 being DONE. **Conditional brief:** refresh it from 035's evidence and the live code before execution. Planned at `44c5739`, 2026-10-31. Category: direction. Effort: L. Risk: MED. It replaces open decision 9's option (b), a local fake model, because a real default model gives the local smoke test and users without Codex a working model.
+Status: BLOCKED on plan 041 (model contract V2) and on decision 14 (per-user limit). 035 is DONE. **Conditional brief:** after 041 lands, refresh it from 035's evidence and the live code; step 2's transport becomes an OpenAI-chat upstream builder and reader on 041's `ModelRequestV2`/`ModelFrameV2`, and step 3 no longer registers an `openai-completions` provider in the runtime. Planned at `44c5739`, 2026-10-31; status updated 2026-11-10. Category: direction. Effort: L. Risk: MED.
 
 ## Outcome
 

@@ -30,3 +30,7 @@ The protocol module and its unit test were renamed to `codex-device-login.ts` an
 - `apps/credential-tests/src/codex-credential-do.worker.test.ts` gained one `startDeviceAuth` stub in an inline mock, required by the widened product-bindings type.
 - Renewal test swaps the fixture's `renewUpstream` for the production one on the live object, because the fixture overrides it.
 - Secret scan: the sealed DO column and every D1 `codex_connections` column are checked for the mocked access, refresh, identity, device ID, verifier and authorization code.
+
+## Step 7: live check
+
+**passed**, 2026-11-10, on `pnpm dev` at `ef6c850`. The maintainer used their own ChatGPT account (gates G1 and G2 resolved for local use) with `CODEX_DEVICE_AUTH=1`. Sign-in was started from the 040 connect dialog in the user menu, the code was approved at `auth.openai.com/codex/device`, and the dialog reported "Codex connected." Account class: not recorded. No tokens, codes or emails were recorded.

@@ -1,6 +1,8 @@
 # Plan 038: Codex model discovery and real model requests (conditional brief)
 
-Status: BLOCKED on 037 being DONE, on gates G1 and G2 from 037, and on spike S1 below. This is a **conditional brief** in the sense of `plans/README.md` ("Later files are conditional implementation briefs"). Before execution, refresh it from 037's evidence and the live code: stamp a new base commit, replace provisional names with real ones, and split it if S1 changes its size. Planned at `44c5739`, 2026-10-31. Category: direction. Effort: L. Risk: HIGH.
+Status: BLOCKED on plan 041 (model contract V2). 037 is DONE, gates G1 and G2 are resolved for local use, and spike S1 is done (`plans/evidence/038-s1-spike.md`). This is a **conditional brief**: after 041 lands, rewrite it against the live code and S1's evidence (stamp a new base commit, replace provisional names). Originally planned at `44c5739`, 2026-10-31; status updated 2026-11-10. Category: direction. Effort: L. Risk: HIGH.
+
+**2026-11-10 update.** S1 answered the discovery question: `GET https://chatgpt.com/backend-api/codex/models?client_version=<Codex CLI version>` returns the account's models (filter to `visibility: "list"`; a low `client_version` hides most of them). `POST /backend-api/codex/responses` streams standard Responses SSE events and returns `x-codex-*` usage headers. The "Spike S1" section and the bundled-catalog fallback below are superseded. The request path in "Proposed steps" now builds on 041: a Codex upstream builder from `TranscriptV2` and an SSE reader that produces `ModelFrameV2`, instead of a separate request contract.
 
 ## Outcome
 
