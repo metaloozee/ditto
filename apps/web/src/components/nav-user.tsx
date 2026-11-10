@@ -1,5 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ChevronsUpDownIcon, LogInIcon, LogOutIcon } from "lucide-react";
+import { useState } from "react";
+import { CodexConnectDialog } from "#/components/codex-connect-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar";
 import {
 	DropdownMenu,
@@ -22,8 +24,15 @@ import {
 	useCodexConnection,
 } from "#/lib/candidate-session-client";
 
-function CodexConnectionMenu() {
-	const codex = useCodexConnection();
+type CodexConnection = ReturnType<typeof useCodexConnection>;
+
+function CodexConnectionMenu({
+	codex,
+	onConnect,
+}: {
+	codex: CodexConnection;
+	onConnect: () => void;
+}) {
 	const view = CODEX_CONNECTION_VIEWS[codex.status];
 
 	return (
@@ -38,9 +47,10 @@ function CodexConnectionMenu() {
 				<DropdownMenuItem
 					role="button"
 					disabled={codex.actionPending}
-					closeOnClick={false}
+					closeOnClick={view.action === "connect"}
 					onClick={() => {
-						if (view.action) codex.runAction(view.action);
+						if (view.action === "connect") onConnect();
+						else if (view.action) codex.runAction(view.action);
 					}}
 				>
 					{view.verb}
@@ -110,7 +120,18 @@ export function NavUser() {
 		);
 	}
 
-	const user = session.user;
+	return <NavUserMenu user={session.user} isMobile={isMobile} />;
+}
+
+function NavUserMenu({
+	user,
+	isMobile,
+}: {
+	user: { name?: string | null; email: string; image?: string | null };
+	isMobile: boolean;
+}) {
+	const codex = useCodexConnection();
+	const [codexDialogOpen, setCodexDialogOpen] = useState(false);
 	const displayName = user.name || "Signed in";
 	const email = user.email;
 	const initials = getInitials(user.name, user.email);
@@ -164,7 +185,13 @@ export function NavUser() {
 							</DropdownMenuItem>
 						</DropdownMenuGroup>
 						<DropdownMenuSeparator />
-						<CodexConnectionMenu />
+						<CodexConnectionMenu
+							codex={codex}
+							onConnect={() => {
+								setCodexDialogOpen(true);
+								codex.runAction("connect");
+							}}
+						/>
 						<DropdownMenuSeparator />
 						<DropdownMenuGroup>
 							<DropdownMenuItem
@@ -181,6 +208,11 @@ export function NavUser() {
 						</DropdownMenuGroup>
 					</DropdownMenuContent>
 				</DropdownMenu>
+				<CodexConnectDialog
+					open={codexDialogOpen}
+					onOpenChange={setCodexDialogOpen}
+					codex={codex}
+				/>
 			</SidebarMenuItem>
 		</SidebarMenu>
 	);

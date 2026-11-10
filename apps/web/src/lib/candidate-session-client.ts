@@ -22,7 +22,7 @@ import type {
 	WorkspaceActionResultV1,
 } from "../../../../packages/runtime-contracts/src/workspace-action.js";
 import { isCandidatePreviewUrl } from "./candidate-preview-host";
-import type { ConnectionStatus } from "./codex-credential-do";
+import type { ConnectionStatus, DeviceAuthStart } from "./codex-credential-do";
 
 export const CANDIDATE_RUNTIME_OWNER = "pi_durable_v1";
 
@@ -658,8 +658,17 @@ async function callCodexConnection(
 	return await codexConnection({ data: { action } });
 }
 
+export type PendingDeviceAuth = Extract<DeviceAuthStart, { status: "pending" }>;
+
+const CODEX_DIALOG_ERROR_CODES = new Set([
+	"codex_device_auth_unavailable",
+	"codex_hosted_auth_unverified",
+]);
+
 export function useCodexConnection(options: { statusEnabled?: boolean } = {}) {
 	const queryClient = useQueryClient();
+	const [deviceAuth, setDeviceAuth] = useState<PendingDeviceAuth | null>(null);
+	const [lastErrorCode, setLastErrorCode] = useState<string | null>(null);
 	const statusQuery = useQuery({
 		queryKey: CODEX_QUERY_KEY,
 		queryFn: async (): Promise<ConnectionStatus> => {
@@ -668,7 +677,8 @@ export function useCodexConnection(options: { statusEnabled?: boolean } = {}) {
 			return "unavailable";
 		},
 		retry: false,
-		enabled: options.statusEnabled ?? true,
+		enabled: (options.statusEnabled ?? true) || deviceAuth !== null,
+		refetchInterval: deviceAuth ? 3000 : false,
 	});
 	const actionMutation = useMutation({
 		mutationFn: async (action: "connect" | "disconnect") => {
@@ -679,8 +689,29 @@ export function useCodexConnection(options: { statusEnabled?: boolean } = {}) {
 					"code" in body ? body.code : "unknown",
 				);
 			}
+			return { action, body };
+		},
+		onMutate: (action) => {
+			if (action === "connect") {
+				setLastErrorCode(null);
+				setDeviceAuth(null);
+			}
+		},
+		onSuccess: ({ action, body }) => {
+			if (action === "connect" && "userCode" in body) {
+				// Avoid flashing a stale terminal status until the refetch lands.
+				queryClient.setQueryData<ConnectionStatus>(CODEX_QUERY_KEY, "pending");
+				setDeviceAuth(body);
+			}
 		},
 		onError: (error) => {
+			if (
+				error instanceof CandidateRequestError &&
+				CODEX_DIALOG_ERROR_CODES.has(error.code)
+			) {
+				setLastErrorCode(error.code);
+				return;
+			}
 			toast.add({
 				type: "error",
 				description:
@@ -702,10 +733,23 @@ export function useCodexConnection(options: { statusEnabled?: boolean } = {}) {
 	const status: ConnectionStatus = statusQuery.isError
 		? "unavailable"
 		: (statusQuery.data ?? "unavailable");
+	const connectedWhilePending = deviceAuth !== null && status === "connected";
+	useEffect(() => {
+		if (connectedWhilePending)
+			void queryClient.invalidateQueries({
+				queryKey: [CANDIDATE_MODELS_QUERY_KEY],
+			});
+	}, [connectedWhilePending, queryClient]);
 	return {
 		status,
 		isPending: statusQuery.isPending,
 		actionPending: actionMutation.isPending,
+		deviceAuth,
+		lastErrorCode,
+		clearDeviceAuth: () => {
+			setDeviceAuth(null);
+			setLastErrorCode(null);
+		},
 		runAction: (action: "connect" | "disconnect") =>
 			actionMutation.mutate(action),
 	};

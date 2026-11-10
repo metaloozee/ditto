@@ -22,6 +22,7 @@ import {
 	ModelSelectorLogo,
 	ModelSelectorName,
 } from "#/components/ai-elements/model-selector";
+import { CodexConnectDialog } from "#/components/codex-connect-dialog";
 import { Button } from "#/components/ui/button";
 import {
 	Select,
@@ -1021,6 +1022,7 @@ function CandidateComposer({
 	const queryClient = useQueryClient();
 	const navigate = useNavigate();
 	const codex = useCodexConnection({ statusEnabled: false });
+	const [codexDialogOpen, setCodexDialogOpen] = useState(false);
 
 	const modelsQuery = useQuery({
 		queryKey: [CANDIDATE_MODELS_QUERY_KEY, projectId, sessionId ?? null],
@@ -1246,11 +1248,19 @@ function CandidateComposer({
 						variant="outline"
 						size="xs"
 						disabled={codex.actionPending}
-						onClick={() => codex.runAction("connect")}
+						onClick={() => {
+							setCodexDialogOpen(true);
+							codex.runAction("connect");
+						}}
 					>
 						Connect
 					</Button>
 				) : null}
+				<CodexConnectDialog
+					open={codexDialogOpen}
+					onOpenChange={setCodexDialogOpen}
+					codex={codex}
+				/>
 			</p>
 		) : undefined;
 
