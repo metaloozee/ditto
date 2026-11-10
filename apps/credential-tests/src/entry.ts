@@ -95,6 +95,12 @@ export class FixtureCredential extends CodexCredential {
 	protected discoveryAvailable() {
 		return false;
 	}
+	protected modelProductAuthority() {
+		return new ModelProductAuthority(this.env.DB);
+	}
+	protected modelCapacity(): CandidateCapacity | undefined {
+		return undefined;
+	}
 	install(owner: string, generation: number, tokens: CodexTokens) {
 		return this.installFixture(owner, generation, tokens);
 	}

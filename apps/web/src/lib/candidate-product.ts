@@ -41,6 +41,7 @@ export type CandidateProductBindings = {
 	CodexCredential: DurableObjectNamespace<CodexCredential>;
 	CandidateSessions: DurableObjectNamespace;
 	BETTER_AUTH_SECRET: string;
+	CODEX_DEVICE_AUTH?: string;
 } & GitHubAppCredentials;
 
 /** The session methods the product calls; credential-tests checks the runtime class conforms. */
@@ -303,7 +304,7 @@ export class CandidatePrivateProduct extends WorkerEntrypoint<CandidateProductBi
 			subject,
 			input,
 			selection,
-			false,
+			this.env.CODEX_DEVICE_AUTH === "1",
 			CANDIDATE_MODEL_POLICY,
 		);
 	}
@@ -312,7 +313,7 @@ export class CandidatePrivateProduct extends WorkerEntrypoint<CandidateProductBi
 			{ DB: this.env.DB, CodexCredential: this.env.CodexCredential },
 			input,
 			capability,
-			false,
+			this.env.CODEX_DEVICE_AUTH === "1",
 		);
 	}
 	readModelPermit(input: unknown, descriptor: ModelTransportDescriptorV1) {
@@ -320,7 +321,7 @@ export class CandidatePrivateProduct extends WorkerEntrypoint<CandidateProductBi
 			this.env.DB,
 			input,
 			descriptor,
-			false,
+			this.env.CODEX_DEVICE_AUTH === "1",
 			CANDIDATE_MODEL_POLICY,
 		);
 	}

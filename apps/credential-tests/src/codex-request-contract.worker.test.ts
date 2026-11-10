@@ -37,6 +37,7 @@ import m20 from "../../web/migrations/0020_trusted_runtime_additive.sql?raw";
 import m21 from "../../web/migrations/0021_first_lilandra.sql?raw";
 import m22 from "../../web/migrations/0022_synthetic_model_transport.sql?raw";
 import { CodexCredential } from "../../web/src/lib/codex-credential-do";
+import { modelRequestDigest } from "../../web/src/lib/codex-request-contract";
 import { ModelProductAuthority } from "../../web/src/lib/model-product-authority";
 import type { FixtureCredential } from "./entry";
 import type { FixtureProduct } from "./model-entry";
@@ -93,8 +94,16 @@ const account = {
 		{ id: "faux-2", thinking: ["off", "low", "high", "max"] },
 	],
 };
+const codexJwt = `e30.${btoa(
+	JSON.stringify({
+		"https://api.openai.com/auth": { chatgpt_account_id: "acct_synthetic" },
+	}),
+)
+	.replace(/\+/g, "-")
+	.replace(/\//g, "_")
+	.replace(/=+$/, "")}.sig`;
 const syntheticTokens = {
-	access: "synthetic-request-access",
+	access: codexJwt,
 	refresh: "synthetic-request-refresh",
 	expiresAt: 4102444800000,
 };
@@ -2000,7 +2009,10 @@ it("window expiry during credential preparation denies before host claim and fet
 it("production credentials remain unavailable even with connected fixture records", async () => {
 	const stub = env.CodexCredential.getByName("owner");
 	await runInDurableObject(stub, async (_instance, state) => {
-		const production = new CodexCredential(state, env);
+		const production = new CodexCredential(state, {
+			...env,
+			CODEX_DEVICE_AUTH: "",
+		});
 		expect(
 			await production.requestModel(
 				{},
@@ -2015,6 +2027,137 @@ it("production credentials remain unavailable even with connected fixture record
 		).toEqual({ version: 2, status: "unavailable" });
 	});
 	expect(calls).toHaveLength(0);
+});
+
+const codexRequest = (thinking: ModelRequestV2["thinking"] = "high") =>
+	({
+		version: 2,
+		purpose: "generation",
+		provider: "openai-codex",
+		model: "gpt-6.1-sol",
+		thinking,
+		maxTokens: 128,
+		transcript: {
+			messages: [
+				{ role: "system", content: "Synthetic system" },
+				{ role: "user", content: "Synthetic transcript" },
+			],
+		},
+	}) satisfies ModelRequestV2;
+async function codexDirect(thinking: ModelRequestV2["thinking"] = "high") {
+	await env.DB.prepare(
+		"UPDATE codex_fixture_capabilities SET snapshot=? WHERE userId='owner'",
+	)
+		.bind(
+			JSON.stringify({
+				version: 2,
+				status: "available",
+				generation: 1,
+				revision: 1,
+				models: [{ id: "gpt-6.1-sol", thinking: ["high"] }],
+			}),
+		)
+		.run();
+	const request = codexRequest(thinking);
+	const digest = await modelRequestDigest(request);
+	const descriptor: ModelTransportDescriptorV1 = {
+		version: 1,
+		subject,
+		requestDigest: digest,
+		attempt: {
+			version: 1,
+			effectId: "codex-effect",
+			operationId: "generation/1",
+			runId: "run",
+			commandId: "command",
+			assistantId: "assistant",
+			taskId: 1,
+			epoch: 1,
+			attempt: 1,
+			generation: 1,
+			deadlineAt: Date.now() + 60000,
+			requestDigest: digest,
+			kind: "generation",
+		},
+	};
+	return runInDurableObject(
+		env.CodexCredential.getByName("owner"),
+		(instance) =>
+			instance.requestModel(request, {
+				describe: async () => descriptor,
+				claim: async () => ({ status: "admitted" }),
+				halt: async () => ({ status: "halted" }),
+			}),
+	);
+}
+const sse = (events: unknown[]) =>
+	events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("");
+function codexUpstream(body: string) {
+	const seen: { headers: Record<string, unknown>; body: string }[] = [];
+	fetchMock
+		.get("https://chatgpt.com")
+		.intercept({ path: "/backend-api/codex/responses", method: "POST" })
+		.reply((options) => {
+			seen.push({
+				headers: (options.headers ?? {}) as Record<string, unknown>,
+				body: String(options.body),
+			});
+			return {
+				statusCode: 200,
+				data: body,
+				responseOptions: { headers: { "content-type": "text/event-stream" } },
+			};
+		});
+	return seen;
+}
+const admissionStates = async () =>
+	(
+		await env.DB.prepare("SELECT state FROM model_request_admissions").all<{
+			state: string;
+		}>()
+	).results.map((row) => row.state);
+
+it("a codex request is built by product, dispatched once with the account headers, and read as frames", async () => {
+	const seen = codexUpstream(
+		sse([
+			{
+				type: "response.output_item.done",
+				item: {
+					type: "message",
+					id: "msg_1",
+					content: [{ type: "output_text", text: "hello" }],
+				},
+			},
+			{ type: "response.completed", response: { usage: {} } },
+		]),
+	);
+	const outcome = await codexDirect();
+	expect(outcome.status).toBe("complete");
+	if (outcome.status === "complete")
+		expect(outcome.frames.map((f) => f.type)).toEqual(["text", "done"]);
+	expect(seen).toHaveLength(1);
+	expect(seen[0].headers).toMatchObject({
+		authorization: `Bearer ${codexJwt}`,
+		"chatgpt-account-id": "acct_synthetic",
+		originator: "codex_cli_rs",
+	});
+	expect(seen[0].headers).not.toHaveProperty("x-api-key");
+	expect(JSON.parse(seen[0].body).store).toBe(false);
+	expect(await admissionStates()).toEqual(["complete"]);
+});
+
+it("a codex response.failed event fails the request as known and never retries", async () => {
+	const seen = codexUpstream(sse([{ type: "response.failed" }]));
+	const outcome = await codexDirect();
+	expect(outcome.status).toBe("failed_known");
+	expect(seen).toHaveLength(1);
+	expect(await admissionStates()).toEqual(["failed_known"]);
+});
+
+it("a codex thinking level outside the account snapshot is denied before any upstream call", async () => {
+	const outcome = await codexDirect("low");
+	expect(outcome.status).toBe("denied");
+	expect(await admissionStates()).toEqual([]);
 });
 
 it.each([

@@ -1,11 +1,15 @@
 import { DurableObject } from "cloudflare:workers";
 import {
+	MODEL_OPERATION_MS,
+	type ModelFrameV2,
 	type ModelOutcomeV2,
 	type ModelTransportDescriptorV1,
 	parseModelTransportDescriptorV1,
-	SYNTHETIC_MODEL_LIMITS,
 } from "../../../../packages/runtime-contracts/src/model.js";
-import type { CandidateCapacity } from "./candidate-capacity";
+import {
+	CANDIDATE_CAPACITY_POLICY,
+	CandidateCapacity,
+} from "./candidate-capacity";
 import {
 	type CodexTokens,
 	type CredentialKeyring,
@@ -40,8 +44,14 @@ import {
 	readModelFrames,
 	reconstructModelRequest,
 } from "./codex-request-contract";
-import { codexAccountId } from "./codex-responses";
 import {
+	buildCodexUpstream,
+	codexAccountId,
+	readCodexFrames,
+	selectUpstream,
+} from "./codex-responses";
+import {
+	CANDIDATE_MODEL_POLICY,
 	type ModelClaimRpc,
 	type ModelPermitBounds,
 	ModelProductAuthority,
@@ -462,13 +472,17 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 		await this.ctx.storage.sync();
 	}
 	protected requestAvailable(): boolean {
-		return false;
+		return this.deviceAuthAvailable();
 	}
 	protected async modelPhase(
 		_phase: "authority" | "credentials" | "claim",
 	): Promise<void> {}
 	protected modelProductAuthority(): ModelProductAuthority {
-		return new ModelProductAuthority(this.env.DB);
+		return new ModelProductAuthority(
+			this.env.DB,
+			Date.now,
+			CANDIDATE_MODEL_POLICY,
+		);
 	}
 
 	protected prepareModelDispatch(
@@ -490,7 +504,7 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 	): Promise<ModelOutcomeV2> {
 		if (!this.requestAvailable()) return { version: 2, status: "unavailable" };
 		const policy = this.modelProductAuthority();
-		const overall = AbortSignal.timeout(SYNTHETIC_MODEL_LIMITS.deadlineMs);
+		const overall = AbortSignal.timeout(MODEL_OPERATION_MS);
 		let descriptor: ModelTransportDescriptorV1;
 		let preparation: CandidateModelPreparation | null = null;
 		try {
@@ -524,13 +538,15 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 			}
 			return { version: 2, status: "denied" };
 		}
+		const kind = selectUpstream(reconstructed.request, this.fixtureAvailable());
+		if (!kind) return { version: 2, status: "unavailable" };
 		const { request } = reconstructed,
 			owner = descriptor.subject.userId;
 		let reserved = false,
 			dispatched = false;
 		const controller = new AbortController();
 		const duration = Math.min(
-			SYNTHETIC_MODEL_LIMITS.deadlineMs,
+			MODEL_OPERATION_MS,
 			descriptor.attempt.deadlineAt - Date.now(),
 		);
 		if (duration <= 0) return { version: 2, status: "denied" };
@@ -608,6 +624,8 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 			);
 			if (!this.#same(state) || tokens.expiresAt <= Date.now() + 60000)
 				throw new Error("connection_changed");
+			const accountId = kind === "codex" ? codexAccountId(tokens.access) : null;
+			if (kind === "codex" && !accountId) throw new Error("connection_changed");
 			await wait(this.modelPhase("credentials"));
 			if (
 				!(await wait(policy.permit(descriptor, request))) ||
@@ -656,7 +674,14 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 			)
 				throw new Error("dispatch_fenced");
 			dispatched = true;
-			const upstream = buildFixtureUpstream(request);
+			const upstream =
+				kind === "codex"
+					? buildCodexUpstream(request, {
+							// biome-ignore lint/style/noNonNullAssertion: checked above for codex
+							accountId: accountId!,
+							promptCacheKey: descriptor.subject.workspaceSessionId,
+						})
+					: buildFixtureUpstream(request);
 			fetching = fetch(upstream.url, {
 				method: "POST",
 				redirect: "manual",
@@ -678,13 +703,29 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 				await wait(policy.record(descriptor, "failed_known"));
 				return { version: 2, status: "failed_known" };
 			}
-			const frames = await wait(
-				readModelFrames(response, signal, [
-					tokens.access,
-					tokens.refresh,
-					tokens.identity ?? "",
-				]),
-			);
+			let frames: ModelFrameV2[];
+			if (kind === "codex") {
+				const read = await wait(
+					readCodexFrames(response, signal, [
+						tokens.access,
+						tokens.refresh,
+						tokens.identity ?? "",
+						accountId ?? "",
+					]),
+				);
+				if (read.status === "failed") {
+					await wait(policy.record(descriptor, "failed_known"));
+					return { version: 2, status: "failed_known" };
+				}
+				frames = read.frames;
+			} else
+				frames = await wait(
+					readModelFrames(response, signal, [
+						tokens.access,
+						tokens.refresh,
+						tokens.identity ?? "",
+					]),
+				);
 			await wait(policy.record(descriptor, "complete"));
 			return { version: 2, status: "complete", frames };
 		} catch {
@@ -721,7 +762,7 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 
 	/** Composition supplies model admission; none leaves model work unbounded here. */
 	protected modelCapacity(): CandidateCapacity | undefined {
-		return undefined;
+		return new CandidateCapacity(this.env.DB, CANDIDATE_CAPACITY_POLICY);
 	}
 
 	protected discoveryAvailable(): boolean {
