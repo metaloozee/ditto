@@ -8,7 +8,7 @@ import {
 	parsePollResponse,
 	parseTokenResponse,
 	parseUserCodeResponse,
-} from "./codex-device-auth";
+} from "./codex-device-login";
 
 describe("device-auth requests", () => {
 	it("builds the user-code, poll, exchange and refresh requests", () => {

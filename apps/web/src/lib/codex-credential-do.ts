@@ -26,7 +26,7 @@ import {
 	parsePollResponse,
 	parseTokenResponse,
 	parseUserCodeResponse,
-} from "./codex-device-auth";
+} from "./codex-device-login";
 import {
 	awaitSynthetic,
 	readSyntheticStream,

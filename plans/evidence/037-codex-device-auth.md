@@ -19,6 +19,10 @@ Base: `b2f4d0f`. All HTTP is mocked (`fetchMock`, net connect disabled). Fake va
 - `credentials:verify` then stops at `crash.test.mjs` ("credential imports and bindings remain product-only"): its regex `auth\.ts` matches the plan-mandated filename `codex-device-auth.ts` now bundled into `entry.ts`. NOT fixed: it needs an out-of-scope edit to `apps/credential-tests/crash.test.mjs` (for example `(^|\/)auth\.ts`) or a module rename. Maintainer decision.
 - Remaining segments run as one chain (`contracts:verify && runtime:verify && pnpm test && pnpm build && runner:verify`): exit 0.
 
+## Rename
+
+The protocol module and its unit test were renamed to `codex-device-login.ts` and `codex-device-login.test.ts`. The guard regex `auth\.ts` in `crash.test.mjs` matched the planned filename `codex-device-auth.ts` once it was bundled into `entry.ts`. The guard is unchanged. The worker test keeps its name (`codex-device-auth.worker.test.ts`); it is not bundled. This supersedes the `crash.test.mjs` finding above.
+
 ## Notes
 
 - `apps/credential-tests/src/codex-credential-do.worker.test.ts` also changed: the production-class renewal test now passes `CODEX_DEVICE_AUTH: ""` (renewal is flag-gated, and the pool binding is now `"1"`).
