@@ -375,11 +375,11 @@ Preserve the coding tools Ditto actually uses, including remote read, write, edi
 
 All repository access uses the execution adapter. Remote failures must never fall back to Worker-local or host-local operations. Initially, execute tools sequentially. Serialize them with UI Git, restore, checkpoint, archive, and destruction operations.
 
-Initially, support only Codex through the user's connected ChatGPT subscription. Pi Durable remains the agent engine. Do not add the Codex CLI as a second engine. This amendment replaces the fixed `opencode/deepseek-v4-flash-free` model and fixed `off`, `high`, and `max` thinking choices.
+Ditto has one default model, served from an operator-configured OpenAI-compatible endpoint and paid by the operator (ADR 0001). Users cannot select or change it. Without a connected provider, the composer shows the default model and no model picker. Pi Durable remains the agent engine. Do not add the Codex CLI as a second engine. This amendment replaces the fixed `opencode/deepseek-v4-flash-free` model.
 
-The model picker must contain models available through the connected subscription. Show only thinking options supported by the selected model. Discover account-backed models and capabilities through privileged access.
+Codex is the first and, for now, only connected provider. A user who connects a Codex subscription gets a picker that lists the default model plus models available through that subscription. Show only thinking options supported by the selected model. Discover account-backed models and capabilities through privileged access. Claude support is an open maintainer decision.
 
-A bundled provider catalogue does not prove account entitlement. Establish a supported discovery or validation method before claiming that the picker reflects actual account access. Do not expose arbitrary provider destinations. Do not fall back to separately billed API access.
+A bundled provider catalogue does not prove account entitlement. Establish a supported discovery or validation method before claiming that the picker reflects actual account access. Do not expose arbitrary provider destinations: the default endpoint is operator configuration, never user input. Never reroute a request between the default model and a connected provider.
 
 Remember model and thinking configuration per workspace conversation. Authenticated configuration intents go through the runtime owner. The UI must not access Pi directly.
 

@@ -104,9 +104,17 @@ A temporary public view of the application running from one workspace session. T
 
 ## Models
 
+### Default model
+
+The one model every user can use without connecting a provider. The operator configures and pays for it. Users cannot select or change it.
+
+### Connected provider
+
+A model provider a user links with their own subscription. Codex is the only connected provider. Its models appear next to the default model in the model picker.
+
 ### Thinking level
 
-A request for how much reasoning the fixed model should apply. Ditto supports `off`, `high`, and `max`.
+A request for how much reasoning the selected model should apply. Ditto offers only the levels the selected model supports.
 
 ## Git work
 

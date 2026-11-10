@@ -88,10 +88,17 @@ GITHUB_CLIENT_SECRET=
 GITHUB_APP_ID=
 GITHUB_APP_PRIVATE_KEY=
 VITE_GITHUB_APP_INSTALL_URL=
-OPENCODE_API_KEY=
+DEFAULT_MODEL=
+DEFAULT_MODEL_API_KEY=
 ```
 
-`BETTER_AUTH_URL` defaults to `http://localhost:5173` when omitted. `OPENCODE_API_KEY` stays in the Worker and authorizes only the fixed model through the outbound broker.
+`BETTER_AUTH_URL` defaults to `http://localhost:5173` when omitted. `DEFAULT_MODEL` is the JSON described in `apps/web/src/lib/default-model.ts`. `DEFAULT_MODEL_API_KEY` stays in the Worker and authorizes only that model through the outbound broker.
+
+Example `DEFAULT_MODEL` value:
+
+```json
+{"baseUrl":"https://opencode.ai/zen/v1","id":"deepseek-v4-flash","name":"DeepSeek V4 Flash","reasoning":true,"contextWindow":1000000,"maxTokens":384000,"thinkingLevelMap":{"off":null,"minimal":null,"low":"low","medium":null,"high":"high","xhigh":null,"max":"max"},"compat":{"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens","supportsLongCacheRetention":false,"requiresReasoningContentOnAssistantMessages":true}}
+```
 
 Optional, local Alchemy stage only:
 
