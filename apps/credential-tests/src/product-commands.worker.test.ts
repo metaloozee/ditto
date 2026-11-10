@@ -1134,7 +1134,7 @@ it.each([
 						halt: async () => ({ status: "denied" as const }),
 					}),
 				),
-			).toEqual({ version: 1, status: "denied" });
+			).toEqual({ version: 2, status: "denied" });
 			expect(calls()).toBe(0);
 		}
 	} finally {
@@ -1346,7 +1346,7 @@ it("private fixture recovery activates only the exact current successor and a va
 					halt: async () => ({ status: "denied" as const }),
 				}),
 			),
-		).toEqual({ version: 1, status: "denied" });
+		).toEqual({ version: 2, status: "denied" });
 		expect(calls()).toBe(1);
 		const next = await env.CandidateProduct.admitOwned("owner", {
 			...prompt,
@@ -4552,7 +4552,7 @@ it("keeps model requests and permits unavailable in the production candidate ent
 				halt: denied,
 			},
 		),
-	).toEqual({ version: 1, status: "unavailable" });
+	).toEqual({ version: 2, status: "unavailable" });
 	expect(
 		await env.ProductionCandidateProduct.readModelPermit({}, {} as never),
 	).toEqual({ status: "denied" });
