@@ -6,15 +6,20 @@ import {
 	OPENCODE_CONTRACT_DENIAL_LIMIT,
 	OPENCODE_CONTRACT_VERSION,
 	OPENCODE_PLACEHOLDER_API_KEY,
-	OPENCODE_REQUEST_MODEL,
 	validateOpenCodeRequest,
 	wrapOpenCodeUpstreamResponse,
 } from "./open-code-contract";
 
-const BOUND = { contractVersion: OPENCODE_CONTRACT_VERSION };
+const MODEL = "test-model";
+const UPSTREAM = new URL("https://llm.example.com/v1/chat/completions");
+const BOUND = {
+	contractVersion: OPENCODE_CONTRACT_VERSION,
+	model: MODEL,
+	upstreamUrl: UPSTREAM,
+};
 
 const PINNED_BODY = {
-	model: OPENCODE_REQUEST_MODEL,
+	model: MODEL,
 	messages: [{ role: "user", content: "hi" }],
 	stream: true,
 	stream_options: { include_usage: true },
@@ -80,10 +85,10 @@ describe("open-code-contract", () => {
 		if (result.ok) {
 			expect(result.method).toBe("POST");
 			expect(result.upstreamUrl.href).toBe(
-				"https://opencode.ai/zen/v1/chat/completions",
+				"https://llm.example.com/v1/chat/completions",
 			);
 			expect(JSON.parse(result.body)).toMatchObject({
-				model: OPENCODE_REQUEST_MODEL,
+				model: MODEL,
 				stream: true,
 			});
 		}
@@ -198,6 +203,7 @@ describe("open-code-contract", () => {
 
 	it("fails the wrong contract version", async () => {
 		const result = await validateOpenCodeRequest(validRequest(), {
+			...BOUND,
 			contractVersion: 2,
 		});
 		expect(result).toMatchObject({ ok: false, code: "contract_version" });
@@ -218,7 +224,7 @@ describe("open-code-contract", () => {
 		);
 		expect(upstream.redirect).toBe("manual");
 		expect(upstream.signal.aborted).toBe(false);
-		expect(upstream.url).toBe("https://opencode.ai/zen/v1/chat/completions");
+		expect(upstream.url).toBe("https://llm.example.com/v1/chat/completions");
 		expect(await upstream.text()).not.toContain(OPENCODE_PLACEHOLDER_API_KEY);
 		controller.abort();
 		expect(upstream.signal.aborted).toBe(true);

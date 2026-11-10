@@ -3,10 +3,7 @@ import {
 	DITTO_GIT_ACTION_ORIGIN,
 	MAX_DITTO_ACTION_REQUEST_BODY_BYTES,
 } from "./ditto-action-contract";
-import {
-	OPENCODE_PLACEHOLDER_API_KEY,
-	OPENCODE_REQUEST_MODEL,
-} from "./open-code-contract";
+import { OPENCODE_PLACEHOLDER_API_KEY } from "./open-code-contract";
 import { SandboxAuthorityError } from "./sandbox-authority";
 import { handleOutbound, resolveOutboundFetch } from "./sandbox-egress-broker";
 
@@ -20,8 +17,21 @@ const recordContractDenialMock = vi.fn();
 const closeOperationMock = vi.fn();
 const sessionUpdateMock = vi.fn();
 
+const DEFAULT_MODEL_CONFIG = {
+	baseUrl: "https://llm.example.com/v1",
+	id: "test-model",
+	name: "Test model",
+	reasoning: true,
+	contextWindow: 1000,
+	maxTokens: 100,
+};
+const TEST_ENV = {
+	DEFAULT_MODEL: JSON.stringify(DEFAULT_MODEL_CONFIG),
+	DEFAULT_MODEL_API_KEY: "sk-real-default-key",
+} as Env;
+
 const PINNED_BODY = {
-	model: OPENCODE_REQUEST_MODEL,
+	model: DEFAULT_MODEL_CONFIG.id,
 	messages: [{ role: "user", content: "hi" }],
 	stream: true,
 	stream_options: { include_usage: true },
@@ -570,7 +580,7 @@ describe("SandboxEgressBroker", () => {
 		const textSpy = vi.spyOn(Response.prototype, "text");
 		const response = await handleOutbound(
 			openCodeRequest(),
-			{ OPENCODE_API_KEY: "sk-real-opencode-key" } as Env,
+			TEST_ENV,
 			makeCtx(),
 			deps,
 		);
@@ -578,8 +588,9 @@ describe("SandboxEgressBroker", () => {
 		expect(fetchMock).toHaveBeenCalledOnce();
 		const upstream = fetchMock.mock.calls[0]?.[0] as Request;
 		expect(upstream.headers.get("Authorization")).toBe(
-			"Bearer sk-real-opencode-key",
+			"Bearer sk-real-default-key",
 		);
+		expect(upstream.url).toBe("https://llm.example.com/v1/chat/completions");
 		expect(upstream.redirect).toBe("manual");
 		expect(textSpy).not.toHaveBeenCalled();
 		textSpy.mockRestore();
@@ -621,7 +632,7 @@ describe("SandboxEgressBroker", () => {
 		});
 		const response = await handleOutbound(
 			openCodeRequest(),
-			{ OPENCODE_API_KEY: "sk-real-opencode-key" } as Env,
+			TEST_ENV,
 			makeCtx(),
 			deps,
 		);
@@ -664,13 +675,63 @@ describe("SandboxEgressBroker", () => {
 		});
 		const response = await handleOutbound(
 			openCodeRequest({ body: { ...PINNED_BODY, model: "other" } }),
-			{ OPENCODE_API_KEY: "sk-real-opencode-key" } as Env,
+			TEST_ENV,
 			makeCtx(),
 			deps,
 		);
 		expect(response.status).toBe(403);
 		expect(fetchMock).not.toHaveBeenCalled();
 		expect(recordContractDenialMock).toHaveBeenCalledWith("op-1");
+		expect(response.headers.get("x-ditto-deny-reason")).toBe("invalid_model");
+	});
+
+	it.each([
+		["missing", {}],
+		["invalid", { DEFAULT_MODEL: "{", DEFAULT_MODEL_API_KEY: "k" }],
+	])("%s DEFAULT_MODEL denies without forwarding", async (_label, env) => {
+		resolveMock.mockResolvedValue({
+			identity: {
+				id: "id-1",
+				kind: "workspace_session",
+				sandboxId: "sbx-1",
+				containerId: "container-1",
+				userId: "user-1",
+				projectId: "proj-1",
+				workspaceSessionId: "sess-1",
+				lifecycleGeneration: 1,
+				state: "ready",
+				retiredAt: null,
+			},
+			operation: {
+				id: "op-1",
+				identityId: "id-1",
+				lifecycleGeneration: 1,
+				family: "model",
+				type: "agent_run",
+				contractVersion: 1,
+				repository: null,
+				allowedRefs: null,
+				maxRequests: null,
+				consumedRequests: 0,
+				contractDenials: 0,
+				openedAt: new Date(),
+				expiresAt: new Date(Date.now() + 60_000),
+				closedAt: null,
+				closeReason: null,
+				correlationId: "corr-1",
+			},
+		});
+		const response = await handleOutbound(
+			openCodeRequest(),
+			env as Env,
+			makeCtx(),
+			deps,
+		);
+		expect(response.status).toBe(403);
+		expect(response.headers.get("x-ditto-deny-reason")).toBe(
+			"missing_default_model",
+		);
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
 	it("three contract denials close the operation and mark review without deleting recovery data", async () => {
@@ -714,7 +775,7 @@ describe("SandboxEgressBroker", () => {
 		});
 		const response = await handleOutbound(
 			openCodeRequest({ body: { ...PINNED_BODY, stream: false } }),
-			{ OPENCODE_API_KEY: "sk-real-opencode-key" } as Env,
+			TEST_ENV,
 			makeCtx(),
 			deps,
 		);
@@ -734,7 +795,7 @@ describe("SandboxEgressBroker", () => {
 		);
 		const response = await handleOutbound(
 			openCodeRequest(),
-			{ OPENCODE_API_KEY: "sk-real-opencode-key" } as Env,
+			TEST_ENV,
 			makeCtx(),
 			deps,
 		);

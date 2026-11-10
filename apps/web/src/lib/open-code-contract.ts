@@ -4,12 +4,11 @@ export const OPENCODE_CONTRACT_DENIAL_LIMIT = 3;
 export const OPENCODE_PLACEHOLDER_API_KEY =
 	"ditto-public-opencode-placeholder" as const;
 
+// Internal address: the sandbox calls it and the outbound handler intercepts
+// it. Ditto never contacts it directly unless DEFAULT_MODEL.baseUrl points there.
 export const OPENCODE_REQUEST_HOST = "opencode.ai";
 export const OPENCODE_REQUEST_PATH = "/zen/v1/chat/completions";
 export const OPENCODE_REQUEST_METHOD = "POST";
-export const OPENCODE_REQUEST_MODEL = "deepseek-v4-flash-free";
-export const OPENCODE_UPSTREAM_URL =
-	"https://opencode.ai/zen/v1/chat/completions";
 
 export const MAX_OPENCODE_REQUEST_BODY_BYTES = 2 * 1024 * 1024;
 
@@ -762,17 +761,20 @@ function assertToolChoice(value: unknown): unknown {
 	};
 }
 
-function validatePinnedBody(value: unknown): Record<string, unknown> {
+function validatePinnedBody(
+	value: unknown,
+	model: string,
+): Record<string, unknown> {
 	const body = assertPlainObject(
 		value,
 		"invalid_body",
 		"Request body must be a JSON object.",
 	);
 	assertExactKeys(body, BODY_KEYS);
-	if (body.model !== OPENCODE_REQUEST_MODEL) {
+	if (body.model !== model) {
 		throw new OpenCodeContractError(
 			"invalid_model",
-			"Request model is not the pinned OpenCode model.",
+			"Request model is not the configured default model.",
 		);
 	}
 	if (body.stream !== true) {
@@ -795,7 +797,7 @@ function validatePinnedBody(value: unknown): Record<string, unknown> {
 	}
 
 	const validated: Record<string, unknown> = {
-		model: OPENCODE_REQUEST_MODEL,
+		model,
 		messages: body.messages.map((message) => assertMessage(message)),
 		stream: true,
 	};
@@ -869,7 +871,7 @@ function validatePinnedBody(value: unknown): Record<string, unknown> {
 
 export async function validateOpenCodeRequest(
 	request: Request,
-	bound: { contractVersion: number },
+	bound: { contractVersion: number; model: string; upstreamUrl: URL },
 ): Promise<OpenCodeContractResult> {
 	try {
 		if (bound.contractVersion !== OPENCODE_CONTRACT_VERSION) {
@@ -973,11 +975,11 @@ export async function validateOpenCodeRequest(
 		}
 
 		const parsed = parseJsonRejectingDuplicates(text);
-		const validated = validatePinnedBody(parsed);
+		const validated = validatePinnedBody(parsed, bound.model);
 
 		return {
 			ok: true,
-			upstreamUrl: new URL(OPENCODE_UPSTREAM_URL),
+			upstreamUrl: bound.upstreamUrl,
 			method: OPENCODE_REQUEST_METHOD,
 			headers: new Headers({
 				accept: "application/json",

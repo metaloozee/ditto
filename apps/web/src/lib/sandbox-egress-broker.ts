@@ -5,6 +5,7 @@ import type {
 	dispatchAgentGitAction,
 	resolveAgentGitContext,
 } from "#/lib/agent-git-handler";
+import { defaultModelUpstreamUrl, readDefaultModel } from "#/lib/default-model";
 import {
 	classifyDittoActionRequest,
 	DITTO_ACTION_CONTRACT_VERSION,
@@ -712,18 +713,21 @@ async function handleOpenCodeModel(options: {
 		return deny(403, "contract_version", operation.correlationId);
 	}
 
-	const apiKey = options.env.OPENCODE_API_KEY?.trim() ?? "";
-	if (!apiKey) {
+	const defaultModel = readDefaultModel(options.env);
+	if (!defaultModel) {
 		recordDenial({
-			reasonCode: "missing_opencode_key",
+			reasonCode: "missing_default_model",
 			correlationId: operation.correlationId,
 			family: "model",
 		});
-		return deny(403, "missing_opencode_key", operation.correlationId);
+		return deny(403, "missing_default_model", operation.correlationId);
 	}
+	const { config, apiKey } = defaultModel;
 
 	const validated = await validateOpenCodeRequest(options.request, {
 		contractVersion: operation.contractVersion,
+		model: config.id,
+		upstreamUrl: defaultModelUpstreamUrl(config),
 	});
 	if (!validated.ok) {
 		recordDenial({
