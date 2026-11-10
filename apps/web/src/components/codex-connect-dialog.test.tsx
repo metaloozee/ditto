@@ -114,6 +114,30 @@ describe("CodexConnectDialog", () => {
 		expect(codex.runAction).toHaveBeenCalledWith("connect");
 	});
 
+	it("shows the failed state when connect returned no code", () => {
+		const codex = makeCodex({
+			deviceAuth: null,
+			status: "disconnected",
+			lastErrorCode: "codex_sign_in_failed",
+		});
+		render(<CodexConnectDialog open onOpenChange={vi.fn()} codex={codex} />);
+		expect(screen.getByText("Sign-in didn't complete.")).toBeTruthy();
+		expect(screen.queryByText("ABCD-1234")).toBeNull();
+		fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+		expect(codex.runAction).toHaveBeenCalledWith("connect");
+	});
+
+	it("shows no code when connect returned none", () => {
+		const codex = makeCodex({
+			deviceAuth: null,
+			status: "disconnected",
+			lastErrorCode: "codex_sign_in_failed",
+		});
+		render(<CodexConnectDialog open onOpenChange={vi.fn()} codex={codex} />);
+		expect(screen.queryByText("ABCD-1234")).toBeNull();
+		expect(screen.queryByRole("button", { name: PRIMARY })).toBeNull();
+	});
+
 	it("shows the unavailable copy and no code", () => {
 		const codex = makeCodex({
 			deviceAuth: null,

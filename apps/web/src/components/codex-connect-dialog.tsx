@@ -10,9 +10,10 @@ import {
 	DialogTitle,
 } from "#/components/ui/dialog";
 import { toast } from "#/components/ui/toast";
-import type {
-	PendingDeviceAuth,
-	useCodexConnection,
+import {
+	CODEX_SIGN_IN_FAILED,
+	type PendingDeviceAuth,
+	type useCodexConnection,
 } from "#/lib/candidate-session-client";
 import { CODEX_DEVICE_VERIFICATION_URI } from "#/lib/codex-device-login";
 
@@ -95,7 +96,9 @@ export function CodexConnectDialog({
 
 	const remaining = deviceAuth ? deviceAuth.expiresAt - now : 0;
 	const unavailable = !deviceAuth && UNAVAILABLE_CODES.has(lastErrorCode ?? "");
-	const failed = deviceAuth !== null && status === "reconnect_required";
+	const failed =
+		(deviceAuth !== null && status === "reconnect_required") ||
+		(!deviceAuth && lastErrorCode === CODEX_SIGN_IN_FAILED);
 	const expired =
 		deviceAuth !== null &&
 		!failed &&

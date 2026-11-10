@@ -660,6 +660,9 @@ async function callCodexConnection(
 
 export type PendingDeviceAuth = Extract<DeviceAuthStart, { status: "pending" }>;
 
+/** Internal marker: `connect` ended without a code and without an "unavailable" error. */
+export const CODEX_SIGN_IN_FAILED = "codex_sign_in_failed";
+
 const CODEX_DIALOG_ERROR_CODES = new Set([
 	"codex_device_auth_unavailable",
 	"codex_hosted_auth_unverified",
@@ -702,9 +705,11 @@ export function useCodexConnection(options: { statusEnabled?: boolean } = {}) {
 				// Avoid flashing a stale terminal status until the refetch lands.
 				queryClient.setQueryData<ConnectionStatus>(CODEX_QUERY_KEY, "pending");
 				setDeviceAuth(body);
+			} else if (action === "connect") {
+				setLastErrorCode(CODEX_SIGN_IN_FAILED);
 			}
 		},
-		onError: (error) => {
+		onError: (error, action) => {
 			if (
 				error instanceof CandidateRequestError &&
 				CODEX_DIALOG_ERROR_CODES.has(error.code)
@@ -712,6 +717,7 @@ export function useCodexConnection(options: { statusEnabled?: boolean } = {}) {
 				setLastErrorCode(error.code);
 				return;
 			}
+			if (action === "connect") setLastErrorCode(CODEX_SIGN_IN_FAILED);
 			toast.add({
 				type: "error",
 				description:
