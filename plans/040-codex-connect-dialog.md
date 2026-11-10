@@ -17,7 +17,7 @@
 - **Risk**: LOW (UI only)
 - **Depends on**: plans/037-codex-device-code-connection.md DONE
 - **Category**: direction
-- **Planned at**: commit `44c5739`, 2026-10-31. The maintainer chose layout A (modal) on 2026-10-31 and will implement it later.
+- **Planned at**: commit `44c5739`, 2026-10-31. The maintainer chose layout A (modal) on 2026-10-31 and will implement it later. **Amended 2026-11-10 at `fb66eac`**: the maintainer kept the device-code flow over pi's localhost-redirect flow and asked for a browser sign-in with as few steps as possible. The dialog's primary button copies the code and opens OpenAI's page in one click (see "Opening the sign-in page"). 037 is DONE; its protocol module is `apps/web/src/lib/codex-device-login.ts`.
 
 ## Why this matters
 
@@ -29,9 +29,9 @@
 ┌──────────────────────────────┐
 │ Connect Codex                │
 │                              │
-│   ABCD-1234        [Copy]    │
+│   ABCD-1234                  │
 │                              │
-│ [Open auth.openai.com ↗]     │
+│ [Copy code and open OpenAI ↗]│
 │ Waiting for approval… 14:32  │
 └──────────────────────────────┘
 ```
@@ -40,13 +40,24 @@ States and copy (implement exactly; ask before changing words):
 
 | State | Trigger | Body | Actions |
 |---|---|---|---|
-| Waiting | `connect` returned `DeviceAuthStart` | Code (large, monospace, `aria-label` with the characters spaced), "Waiting for approval…" and an mm:ss countdown to `expiresAt` | [Copy] (copies the code), [Open auth.openai.com ↗] (`verificationUri`, new tab, `rel="noopener noreferrer"`) |
+| Waiting | `connect` returned `DeviceAuthStart` | Code (large, monospace, `aria-label` with the characters spaced), "Waiting for approval…" and an mm:ss countdown to `expiresAt`. After the primary button copied the code: "Code copied. Paste it on OpenAI's page." above the waiting line | Primary: [Copy code and open OpenAI ↗] (see "Opening the sign-in page"). If the copy failed, a secondary [Copy] (`CopyButton`) appears |
 | Connected | status query returns `connected` | none; the dialog closes | Toast "Codex connected." |
 | Expired | countdown reaches 0, or status returns `disconnected` while open | "This code expired." | [Get a new code] (runs `connect` again) |
 | Failed | status returns `reconnect_required` while open | "Sign-in didn't complete." | [Try again] (runs `connect` again) |
 | Unavailable | `connect` fails with `codex_device_auth_unavailable` or `codex_hosted_auth_unverified` | "Codex sign-in isn't available right now." | [Close] |
 
 Title is always "Connect Codex". Description, visually hidden but read by screen readers: "Enter this code on OpenAI to connect your ChatGPT subscription." The waiting line is in an `aria-live="polite"` region; the countdown itself is not announced every second.
+
+### Opening the sign-in page (maintainer decision, 2026-11-10)
+
+The primary button does both jobs in one click, synchronously inside the click handler, so the browser treats both as user-initiated:
+
+1. `navigator.clipboard.writeText(deviceAuth.userCode)`. Start it first, while the Ditto tab still has focus; a clipboard write from an unfocused page is rejected. Record success or failure in dialog state when the promise settles.
+2. In the same handler, without awaiting step 1: `window.open(CODEX_DEVICE_VERIFICATION_URI, "_blank", "noopener,noreferrer")`. Import the constant from `#/lib/codex-device-login`; never open the server-supplied `verificationUri` if it differs from the constant (then show the code and the copy fallback only).
+
+Why not open the tab automatically when Connect is pressed: `connect` is a network call, and browsers block `window.open` after an `await`. A blank tab opened up front would take focus, so the code could not be copied, and the user would land on OpenAI without it.
+
+Put this in `openCodexSignIn(deviceAuth, onCopied)`, exported from `codex-connect-dialog.tsx`.
 
 Closing the dialog does not cancel the sign-in. If the user approves later, the connection still completes. Pressing Connect again starts a new code, and 037 retires the previous one by bumping the generation.
 
@@ -94,17 +105,21 @@ In `nav-user.tsx` and the composer notice, the Connect action opens the dialog a
 ### Step 4: Tests
 
 `codex-connect-dialog.test.tsx`, modeled on `new-project-dialog.test.tsx`, with fake timers and a stubbed hook value:
-1. waiting: shows the code, the link has `href` `https://auth.openai.com/codex/device` and `target="_blank"`, and the countdown reads `15:00`, then `14:59` after one second;
+1. waiting: shows the code and the [Copy code and open OpenAI ↗] button, and the countdown reads `15:00`, then `14:59` after one second;
 2. countdown reaching 0 → "This code expired." and [Get a new code] calls `runAction("connect")`;
 3. status `connected` → `onOpenChange(false)` and the toast is called;
 4. status `reconnect_required` while a device auth is set → "Sign-in didn't complete.";
-5. last error `codex_device_auth_unavailable` → the unavailable copy, and no code is shown.
+5. last error `codex_device_auth_unavailable` → the unavailable copy, and no code is shown;
+6. clicking the primary button with `navigator.clipboard.writeText` and `window.open` stubbed: `writeText` receives the code, `window.open` receives `https://auth.openai.com/codex/device`, `"_blank"` and `"noopener,noreferrer"`, both in the same click, and "Code copied. Paste it on OpenAI's page." appears once the write resolves;
+7. when `writeText` rejects: the tab still opens, the copied line does not appear, and a [Copy] button does;
+8. when `verificationUri` differs from the constant: `window.open` is not called.
 
-**Verify**: `pnpm --filter @ditto/web test -- src/components/codex-connect-dialog.test.tsx` → 5 passed. `pnpm --filter @ditto/web test` → all pass. `pnpm check` → exit 0.
+**Verify**: `pnpm --filter @ditto/web test -- src/components/codex-connect-dialog.test.tsx` → 8 passed. `pnpm --filter @ditto/web test` → all pass. `pnpm check` → exit 0.
 
 ## Done criteria
 
-- [ ] The new test file passes with at least 5 tests. The web suite, `pnpm typecheck` and `pnpm check` exit 0.
+- [ ] `git diff <base>..HEAD -- apps/web/src | grep "^+.*window.open"` → one line, in `codex-connect-dialog.tsx`, with `"noopener,noreferrer"` (existing calls in `session-git-actions.tsx` and `new-project-dialog.tsx` are untouched)
+- [ ] The new test file passes with at least 8 tests. The web suite, `pnpm typecheck` and `pnpm check` exit 0.
 - [ ] `grep -n "CodexConnectDialog" apps/web/src/components/nav-user.tsx apps/web/src/components/composer.tsx` → one usage in each
 - [ ] `grep -rn "access\|refresh" apps/web/src/components/codex-connect-dialog.tsx` → no token fields referenced
 - [ ] Only in-scope files changed; `plans/README.md` 040 row updated
