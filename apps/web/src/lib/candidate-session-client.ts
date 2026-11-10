@@ -643,6 +643,11 @@ export const CODEX_CONNECTION_VIEWS: Record<
 	},
 	disconnected: { label: "Not connected", action: "connect", verb: "Connect" },
 	unavailable: { label: "Codex is unavailable right now", action: null },
+	pending: {
+		label: "Waiting for sign-in…",
+		action: "connect",
+		verb: "Get a new code",
+	},
 };
 
 async function callCodexConnection(

@@ -16,6 +16,7 @@ function operations() {
 			generation: 1,
 		})),
 		disconnect: vi.fn(async () => {}),
+		connect: vi.fn(async () => ({ status: "disabled" as const })),
 	};
 }
 
@@ -96,6 +97,46 @@ describe("owned Codex product operations", () => {
 			).toBe(400);
 		expect(ops.status).not.toHaveBeenCalled();
 		expect(ops.disconnect).not.toHaveBeenCalled();
+	});
+	it("returns the pending sign-in for the authenticated user", async () => {
+		const start = {
+			status: "pending" as const,
+			generation: 2,
+			userCode: "ABCD-1234",
+			verificationUri: "https://auth.openai.com/codex/device" as const,
+			expiresAt: 99,
+		};
+		const ops = {
+			...operations(),
+			connect: vi.fn(async () => start),
+		};
+		expect(
+			await handleCodexConnection({
+				authenticatedUserId: "owner",
+				body: { action: "connect" },
+				operations: ops,
+			}),
+		).toEqual({ status: 200, body: start });
+		expect(ops.connect).toHaveBeenCalledExactlyOnceWith("owner");
+	});
+	it("reports an unavailable device sign-in as 503 and a failed start as a view", async () => {
+		for (const [outcome, expected] of [
+			[
+				{ status: "unavailable" as const, generation: 2 },
+				{ status: 503, body: { code: "codex_device_auth_unavailable" } },
+			],
+			[
+				{ status: "reconnect_required" as const, generation: 2 },
+				{ status: 200, body: { status: "reconnect_required", generation: 2 } },
+			],
+		] as const)
+			expect(
+				await handleCodexConnection({
+					authenticatedUserId: "owner",
+					body: { action: "connect" },
+					operations: { ...operations(), connect: async () => outcome },
+				}),
+			).toEqual(expected);
 	});
 });
 describe("product credential encryption", () => {

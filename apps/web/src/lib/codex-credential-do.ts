@@ -10,8 +10,23 @@ import {
 	type CodexTokens,
 	type CredentialKeyring,
 	openCredentials,
+	openDeviceAuth,
 	sealCredentials,
+	sealDeviceAuth,
 } from "./codex-credential-crypto";
+import {
+	buildExchangeRequest,
+	buildPollRequest,
+	buildRefreshRequest,
+	buildUserCodeRequest,
+	CODEX_DEVICE_TIMEOUT_MS,
+	CODEX_DEVICE_VERIFICATION_URI,
+	CODEX_SLOW_DOWN_MS,
+	type CodexRequest,
+	parsePollResponse,
+	parseTokenResponse,
+	parseUserCodeResponse,
+} from "./codex-device-auth";
 import {
 	awaitSynthetic,
 	readSyntheticStream,
@@ -29,13 +44,34 @@ export type ConnectionStatus =
 	| "connected"
 	| "renewing"
 	| "reconnect_required"
-	| "unavailable";
+	| "unavailable"
+	| "pending";
 export interface ConnectionView {
 	status: ConnectionStatus;
 	generation: number;
 }
+export type DeviceAuthStart =
+	| {
+			status: "pending";
+			generation: number;
+			userCode: string;
+			verificationUri: typeof CODEX_DEVICE_VERIFICATION_URI;
+			expiresAt: number;
+	  }
+	| { status: "unavailable" | "reconnect_required"; generation: number };
+interface Device extends Record<string, SqlStorageValue> {
+	owner: string;
+	generation: number;
+	sealed: string;
+	user_code: string;
+	interval_ms: number;
+	next_poll_at: number;
+	expires_at: number;
+}
+const MIN_POLL_INTERVAL_MS = 1000;
 export interface CodexCredentialEnv {
 	DB: D1Database;
+	CODEX_DEVICE_AUTH?: string;
 	CodexCredential: Pick<DurableObjectNamespace, "idFromName">;
 	CODEX_CREDENTIAL_CURRENT_KEY_VERSION: string;
 	CODEX_CREDENTIAL_KEYS: string;
@@ -61,6 +97,9 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 		super(ctx, env);
 		ctx.storage.sql.exec(
 			"CREATE TABLE IF NOT EXISTS credential (id INTEGER PRIMARY KEY CHECK(id=1), owner TEXT NOT NULL, generation INTEGER NOT NULL, renewal INTEGER NOT NULL, version INTEGER NOT NULL, status TEXT NOT NULL, sealed TEXT)",
+		);
+		ctx.storage.sql.exec(
+			"CREATE TABLE IF NOT EXISTS device (id INTEGER PRIMARY KEY CHECK(id=1), owner TEXT NOT NULL, generation INTEGER NOT NULL, sealed TEXT NOT NULL, user_code TEXT NOT NULL, interval_ms INTEGER NOT NULL, next_poll_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)",
 		);
 		// A retained dispatch intent may have spent a rotating refresh token.
 		ctx.storage.sql.exec(
@@ -129,6 +168,206 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 			)
 			.run();
 	}
+	#device(): Device | undefined {
+		return this.ctx.storage.sql
+			.exec<Device>(
+				"SELECT owner,generation,sealed,user_code,interval_ms,next_poll_at,expires_at FROM device WHERE id=1",
+			)
+			.toArray()[0];
+	}
+	#deviceIs(device: Device): boolean {
+		const current = this.#device();
+		return (
+			!!current &&
+			current.generation === device.generation &&
+			current.sealed === device.sealed
+		);
+	}
+	async #send(
+		request: CodexRequest,
+	): Promise<{ status: number; body: unknown }> {
+		const response = await fetch(request.url, {
+			...request.init,
+			signal: AbortSignal.timeout(15000),
+		});
+		let body: unknown;
+		try {
+			body = await response.json();
+		} catch {
+			body = undefined;
+		}
+		return { status: response.status, body };
+	}
+	/** Ends a pending sign-in and records why, unless a newer one replaced it. */
+	async #endDevice(
+		device: Device,
+		status: "disconnected" | "reconnect_required",
+	): Promise<void> {
+		if (!this.#deviceIs(device)) return;
+		this.ctx.storage.sql.exec("DELETE FROM device WHERE id=1");
+		await this.ctx.storage.sync();
+		await this.env.DB.prepare(
+			"UPDATE codex_connections SET status=?, updated_at=? WHERE user_id=? AND generation=? AND revoked=0",
+		)
+			.bind(status, Date.now(), device.owner, device.generation)
+			.run();
+	}
+	async #reschedule(device: Device, intervalMs: number): Promise<void> {
+		if (!this.#deviceIs(device)) return;
+		const next = Date.now() + intervalMs;
+		this.ctx.storage.sql.exec(
+			"UPDATE device SET interval_ms=?,next_poll_at=? WHERE id=1",
+			intervalMs,
+			next,
+		);
+		await this.ctx.storage.setAlarm(Math.min(next, device.expires_at));
+	}
+	protected deviceAuthAvailable(): boolean {
+		return this.env.CODEX_DEVICE_AUTH === "1";
+	}
+	async startDeviceAuth(
+		owner: string,
+		generation: number,
+	): Promise<DeviceAuthStart> {
+		const failed = { status: "reconnect_required", generation } as const;
+		if (!this.deviceAuthAvailable())
+			return { status: "unavailable", generation };
+		if (
+			!this.#owned(owner) ||
+			!Number.isSafeInteger(generation) ||
+			generation < 1 ||
+			!(await this.#authority(owner, generation))
+		)
+			return failed;
+		let started: ReturnType<typeof parseUserCodeResponse>;
+		try {
+			const response = await this.#send(buildUserCodeRequest());
+			started = parseUserCodeResponse(response.status, response.body);
+		} catch {
+			return failed;
+		}
+		if (started.kind === "failed")
+			return started.reason === "not_enabled"
+				? { status: "unavailable", generation }
+				: failed;
+		const sealed = await sealDeviceAuth(
+			started.deviceAuthId,
+			owner,
+			generation,
+			this.#keyring(),
+		);
+		if (!(await this.#authority(owner, generation))) return failed;
+		const now = Date.now();
+		const intervalMs = Math.max(started.intervalMs, MIN_POLL_INTERVAL_MS);
+		const expiresAt = now + CODEX_DEVICE_TIMEOUT_MS;
+		const stored = this.ctx.storage.transactionSync(() => {
+			const prior = this.#device();
+			if (prior && prior.generation > generation) return false;
+			this.ctx.storage.sql.exec(
+				"INSERT INTO device VALUES(1,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET owner=excluded.owner,generation=excluded.generation,sealed=excluded.sealed,user_code=excluded.user_code,interval_ms=excluded.interval_ms,next_poll_at=excluded.next_poll_at,expires_at=excluded.expires_at",
+				owner,
+				generation,
+				sealed,
+				started.userCode,
+				intervalMs,
+				now + intervalMs,
+				expiresAt,
+			);
+			return true;
+		});
+		if (!stored) return failed;
+		await this.ctx.storage.setAlarm(Math.min(now + intervalMs, expiresAt));
+		await this.ctx.storage.sync();
+		return {
+			status: "pending",
+			generation,
+			userCode: started.userCode,
+			verificationUri: CODEX_DEVICE_VERIFICATION_URI,
+			expiresAt,
+		};
+	}
+	async alarm(): Promise<void> {
+		const device = this.#device();
+		if (!device) return;
+		const { owner, generation } = device;
+		if (
+			device.expires_at <= Date.now() ||
+			!(await this.#authority(owner, generation))
+		)
+			return this.#endDevice(device, "disconnected");
+		let poll: ReturnType<typeof parsePollResponse>;
+		try {
+			const id = await openDeviceAuth(
+				device.sealed,
+				owner,
+				generation,
+				this.#keyring(),
+			);
+			try {
+				const response = await this.#send(
+					buildPollRequest(id, device.user_code),
+				);
+				poll = parsePollResponse(response.status, response.body);
+			} catch {
+				// A network error is retried until the sign-in expires.
+				poll = { kind: "pending" };
+			}
+		} catch {
+			return this.#endDevice(device, "reconnect_required");
+		}
+		if (!this.#deviceIs(device)) return;
+		if (!(await this.#authority(owner, generation)))
+			return this.#endDevice(device, "disconnected");
+		if (poll.kind === "pending")
+			return this.#reschedule(device, device.interval_ms);
+		if (poll.kind === "slow_down")
+			return this.#reschedule(device, device.interval_ms + CODEX_SLOW_DOWN_MS);
+		if (poll.kind === "failed")
+			return this.#endDevice(device, "reconnect_required");
+		let tokens: CodexTokens | null = null;
+		try {
+			const response = await this.#send(
+				buildExchangeRequest(poll.code, poll.verifier),
+			);
+			if (response.status >= 200 && response.status <= 299)
+				tokens = parseTokenResponse(response.body, Date.now());
+		} catch {
+			tokens = null;
+		}
+		if (!tokens || !this.#deviceIs(device))
+			return this.#endDevice(device, "reconnect_required");
+		let sealed: string;
+		try {
+			sealed = await sealCredentials(
+				tokens,
+				owner,
+				generation,
+				this.#keyring(),
+				1,
+			);
+		} catch {
+			return this.#endDevice(device, "reconnect_required");
+		}
+		if (!this.#deviceIs(device)) return;
+		if (!(await this.#authority(owner, generation)))
+			return this.#endDevice(device, "disconnected");
+		const installed = this.ctx.storage.transactionSync(() => {
+			if (!this.#deviceIs(device)) return false;
+			const prior = this.#read();
+			this.ctx.storage.sql.exec("DELETE FROM device WHERE id=1");
+			if (prior && prior.generation >= generation) return false;
+			this.ctx.storage.sql.exec(
+				"INSERT INTO credential VALUES(1,?,?,0,1,'connected',?) ON CONFLICT(id) DO UPDATE SET owner=excluded.owner,generation=excluded.generation,renewal=0,version=1,status='connected',sealed=excluded.sealed",
+				owner,
+				generation,
+				sealed,
+			);
+			return true;
+		});
+		await this.ctx.storage.sync();
+		const state = installed ? this.#read() : undefined;
+		if (state) await this.#project(state);
+	}
 	protected fixtureAvailable(): boolean {
 		return false;
 	}
@@ -171,6 +410,13 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 	}
 	async status(owner: string): Promise<ConnectionView> {
 		if (!this.#owned(owner)) return { status: "disconnected", generation: 0 };
+		const device = this.#device();
+		if (
+			device &&
+			device.expires_at > Date.now() &&
+			(await this.#authority(owner, device.generation))
+		)
+			return { status: "pending", generation: device.generation };
 		const state = this.#read();
 		if (!state || !(await this.#authority(owner, state.generation)))
 			return { status: "disconnected", generation: state?.generation ?? 0 };
@@ -190,6 +436,11 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 			generation < 1
 		)
 			return;
+		const device = this.#device();
+		if (device && device.generation < generation) {
+			this.ctx.storage.sql.exec("DELETE FROM device WHERE id=1");
+			await this.ctx.storage.deleteAlarm();
+		}
 		const state = this.#read();
 		if (state && generation <= state.generation) return;
 		this.ctx.storage.sql.exec(
@@ -454,10 +705,21 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 	}
 
 	protected renewalAvailable(): boolean {
-		return false;
+		return this.deviceAuthAvailable();
 	}
-	protected async renewUpstream(_tokens: CodexTokens): Promise<CodexTokens> {
-		throw new Error("connection_unavailable");
+	protected async renewUpstream(tokens: CodexTokens): Promise<CodexTokens> {
+		const response = await this.#send(buildRefreshRequest(tokens.refresh));
+		const next =
+			response.status >= 200 && response.status <= 299
+				? parseTokenResponse(response.body, Date.now())
+				: null;
+		if (!next) throw new Error("connection_unavailable");
+		return {
+			...next,
+			...(next.identity === undefined && tokens.identity !== undefined
+				? { identity: tokens.identity }
+				: {}),
+		};
 	}
 	protected async afterRotation(): Promise<void> {}
 	async ensureFresh(owner: string): Promise<ConnectionView> {

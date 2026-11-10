@@ -367,6 +367,10 @@ describe("product-only credential SQLite", () => {
 			CodexCredential: {
 				getByName: () => ({
 					status: async () => ({ status: "unavailable", generation: 1 }),
+					startDeviceAuth: async () => ({
+						status: "unavailable",
+						generation: 1,
+					}),
 					revoke: async () => {
 						throw new Error("fixture_handoff_failure");
 					},
@@ -467,7 +471,9 @@ describe("product-only credential SQLite", () => {
 		const stub = await connect();
 		expect(
 			await runInDurableObject(stub, (_instance, ctx) =>
-				new CodexCredential(ctx, env).ensureFresh("owner"),
+				new CodexCredential(ctx, { ...env, CODEX_DEVICE_AUTH: "" }).ensureFresh(
+					"owner",
+				),
 			),
 		).toEqual({ status: "unavailable", generation: 1 });
 		expect((await stored(stub)).renewal).toBe(0);

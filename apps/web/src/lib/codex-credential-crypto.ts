@@ -41,6 +41,16 @@ function aad(
 		]),
 	);
 }
+function deviceAad(owner: string, generation: number): Uint8Array<ArrayBuffer> {
+	return encoder.encode(
+		JSON.stringify([
+			"ditto:codex-credential",
+			owner,
+			"codex-device-auth-v1",
+			generation,
+		]),
+	);
+}
 async function key(
 	keyring: CredentialKeyring,
 	version: string,
@@ -85,22 +95,16 @@ export function parseTokens(value: unknown): CodexTokens {
 		...(typeof data.identity === "string" ? { identity: data.identity } : {}),
 	};
 }
-export async function sealCredentials(
-	tokens: CodexTokens,
-	owner: string,
-	generation: number,
+async function seal(
+	plaintext: string,
+	additionalData: Uint8Array<ArrayBuffer>,
 	keyring: CredentialKeyring,
-	revision = 1,
 ): Promise<string> {
 	const nonce = crypto.getRandomValues(new Uint8Array(12));
 	const ciphertext = await crypto.subtle.encrypt(
-		{
-			name: "AES-GCM",
-			iv: nonce,
-			additionalData: aad(owner, generation, revision),
-		},
+		{ name: "AES-GCM", iv: nonce, additionalData },
 		await key(keyring, keyring.current),
-		encoder.encode(JSON.stringify(parseTokens(tokens))),
+		encoder.encode(plaintext),
 	);
 	const envelope = JSON.stringify({
 		format: 2,
@@ -112,13 +116,11 @@ export async function sealCredentials(
 		throw new Error("credential_integrity");
 	return envelope;
 }
-export async function openCredentials(
+async function open(
 	envelope: string,
-	owner: string,
-	generation: number,
+	additionalData: Uint8Array<ArrayBuffer>,
 	keyring: CredentialKeyring,
-	revision = 1,
-): Promise<CodexTokens> {
+): Promise<unknown> {
 	try {
 		if (envelope.length > maxEnvelopeChars) throw new Error();
 		const data: unknown = JSON.parse(envelope);
@@ -133,16 +135,72 @@ export async function openCredentials(
 		)
 			throw new Error();
 		const plaintext = await crypto.subtle.decrypt(
-			{
-				name: "AES-GCM",
-				iv: bytes(record.nonce),
-				additionalData: aad(owner, generation, revision),
-			},
+			{ name: "AES-GCM", iv: bytes(record.nonce), additionalData },
 			await key(keyring, record.key),
 			bytes(record.ciphertext),
 		);
-		return parseTokens(JSON.parse(new TextDecoder().decode(plaintext)));
+		return JSON.parse(new TextDecoder().decode(plaintext));
 	} catch {
 		throw new Error("credential_integrity");
 	}
+}
+export async function sealCredentials(
+	tokens: CodexTokens,
+	owner: string,
+	generation: number,
+	keyring: CredentialKeyring,
+	revision = 1,
+): Promise<string> {
+	return seal(
+		JSON.stringify(parseTokens(tokens)),
+		aad(owner, generation, revision),
+		keyring,
+	);
+}
+export async function openCredentials(
+	envelope: string,
+	owner: string,
+	generation: number,
+	keyring: CredentialKeyring,
+	revision = 1,
+): Promise<CodexTokens> {
+	const value = await open(envelope, aad(owner, generation, revision), keyring);
+	try {
+		return parseTokens(value);
+	} catch {
+		throw new Error("credential_integrity");
+	}
+}
+export async function sealDeviceAuth(
+	deviceAuthId: string,
+	owner: string,
+	generation: number,
+	keyring: CredentialKeyring,
+): Promise<string> {
+	if (
+		typeof deviceAuthId !== "string" ||
+		deviceAuthId.length < 1 ||
+		encoder.encode(deviceAuthId).byteLength > 1024
+	)
+		throw new Error("credential_integrity");
+	return seal(
+		JSON.stringify({ deviceAuthId }),
+		deviceAad(owner, generation),
+		keyring,
+	);
+}
+export async function openDeviceAuth(
+	envelope: string,
+	owner: string,
+	generation: number,
+	keyring: CredentialKeyring,
+): Promise<string> {
+	const value = await open(envelope, deviceAad(owner, generation), keyring);
+	const id =
+		value && typeof value === "object"
+			? (value as Record<string, unknown>).deviceAuthId
+			: undefined;
+	if (typeof id !== "string" || id.length < 1)
+		throw new Error("credential_integrity");
+	return id;
 }

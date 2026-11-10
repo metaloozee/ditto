@@ -199,6 +199,7 @@ async function createWebsite() {
 			CODEX_CREDENTIAL_CURRENT_KEY_VERSION:
 				process.env.CODEX_CREDENTIAL_CURRENT_KEY_VERSION ?? "",
 			CODEX_CREDENTIAL_KEYS: alchemy.secret(process.env.CODEX_CREDENTIAL_KEYS),
+			CODEX_DEVICE_AUTH: process.env.CODEX_DEVICE_AUTH ?? "",
 			BACKUP_BUCKET: sandboxBackups,
 			CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID ?? "",
 			BETTER_AUTH_SECRET: alchemy.secret(process.env.BETTER_AUTH_SECRET),

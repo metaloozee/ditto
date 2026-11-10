@@ -1,7 +1,9 @@
-import type { ConnectionView } from "./codex-credential-do";
+import type { ConnectionView, DeviceAuthStart } from "./codex-credential-do";
 
 export interface ConnectionOperations {
 	status(owner: string): Promise<ConnectionView>;
+	/** `disabled` means device sign-in is not configured for this deployment. */
+	connect(owner: string): Promise<DeviceAuthStart | { status: "disabled" }>;
 	disconnect(owner: string): Promise<void>;
 }
 
@@ -9,7 +11,10 @@ export async function handleCodexConnection(input: {
 	authenticatedUserId: string | null;
 	body: unknown;
 	operations: ConnectionOperations;
-}): Promise<{ status: number; body: { code: string } | ConnectionView }> {
+}): Promise<{
+	status: number;
+	body: { code: string } | ConnectionView | DeviceAuthStart;
+}> {
 	if (!input.authenticatedUserId)
 		return { status: 401, body: { code: "unauthorized" } };
 	if (
@@ -25,8 +30,14 @@ export async function handleCodexConnection(input: {
 		!["status", "disconnect", "connect"].includes(body.action)
 	)
 		return { status: 400, body: { code: "invalid_request" } };
-	if (body.action === "connect")
-		return { status: 503, body: { code: "codex_hosted_auth_unverified" } };
+	if (body.action === "connect") {
+		const started = await input.operations.connect(input.authenticatedUserId);
+		if (started.status === "disabled")
+			return { status: 503, body: { code: "codex_hosted_auth_unverified" } };
+		if (started.status === "unavailable")
+			return { status: 503, body: { code: "codex_device_auth_unavailable" } };
+		return { status: 200, body: started };
+	}
 	if (body.action === "disconnect") {
 		await input.operations.disconnect(input.authenticatedUserId);
 		return { status: 200, body: { status: "disconnected", generation: 0 } };

@@ -39,6 +39,7 @@ export default defineWorkersConfig({
 						CANDIDATE_RUNTIME_KEYS: JSON.stringify({ currentVersion: "fixture-v1", keys: { "fixture-v1": "01".repeat(32) } }),
 						CODEX_CREDENTIAL_CURRENT_KEY_VERSION: "fixture-v1",
 						CODEX_CREDENTIAL_KEYS: JSON.stringify({ "fixture-v1": "01".repeat(32) }),
+						CODEX_DEVICE_AUTH: "1",
 					},
 				},
 			},
