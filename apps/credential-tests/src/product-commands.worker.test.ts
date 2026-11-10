@@ -41,6 +41,7 @@ import {
 	CANDIDATE_MODEL_POLICY,
 	ModelProductAuthority,
 } from "../../web/src/lib/model-product-authority";
+import { performPrivateModelRequest } from "../../web/src/lib/model-product-transport";
 import { CandidateProductCommands } from "../../web/src/lib/session-command-candidate";
 
 import { CANDIDATE_FIXTURE_RESET_SCHEMA } from "./candidate-fixture-schema";
@@ -4537,20 +4538,26 @@ it("adds restore facts to an observation without pair, digest or object-key data
 	expect(events.snapshot).toBeUndefined();
 });
 
-it("keeps model requests and permits unavailable in the production candidate entrypoint", async () => {
+it("the production candidate entrypoint with the flag on denies a malformed model request and permit; with the flag off it is unavailable", async () => {
 	await candidateCredential();
 	modelReplies();
 	const denied = async () => ({ status: "denied" as const });
+	const capability = {
+		describe: async () => {
+			throw new Error("unused");
+		},
+		claim: denied,
+		halt: denied,
+	};
 	expect(
-		await env.ProductionCandidateProduct.requestModel(
+		await env.ProductionCandidateProduct.requestModel({}, capability),
+	).toEqual({ version: 2, status: "denied" });
+	expect(
+		await performPrivateModelRequest(
+			{ DB: env.DB, CodexCredential: env.CodexCredential },
 			{},
-			{
-				describe: async () => {
-					throw new Error("unused");
-				},
-				claim: denied,
-				halt: denied,
-			},
+			capability,
+			false,
 		),
 	).toEqual({ version: 2, status: "unavailable" });
 	expect(
