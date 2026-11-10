@@ -7,7 +7,7 @@
 > `plans/README.md`, unless a reviewer dispatched you and said they maintain
 > the index.
 >
-> **Drift check (run first)**: `git diff --stat 44c5739..HEAD -- apps/web/src/routes/api.agent.*.ts apps/web/src/lib/auth.ts apps/web/src/lib/session-runtime-client.ts apps/credential-tests package.json`
+> **Drift check (run first)**: `git diff --stat 7b4559b..HEAD -- apps/web/src/routes/api.agent.*.ts apps/web/src/lib/auth.ts apps/web/src/lib/session-runtime-client.ts apps/credential-tests package.json`
 > If any listed file changed, compare the "Current state" excerpts with the
 > live code. A mismatch is a STOP condition.
 
@@ -18,7 +18,7 @@
 - **Risk**: LOW (test-only, plus one `package.json` script line)
 - **Depends on**: none. It may run before or after 035; if after, re-run the drift check.
 - **Category**: tests
-- **Planned at**: commit `44c5739`, 2026-10-31
+- **Planned at**: commit `44c5739`, 2026-10-31. **Refreshed at `7b4559b`, 2026-11-10** (reconcile): route handlers, `auth.ts`, `session-runtime-client.ts` and `server.ts` unchanged; `product-commands.worker.test.ts` line references shifted by one; `vitest.config.ts` gained `CODEX_DEVICE_AUTH: "1"`; `credentials:verify` gained `src/codex-device-auth.worker.test.ts`.
 
 ## Why this matters
 
@@ -48,12 +48,12 @@ Spec test PD39 (`docs/specs/pi-durable-session-runtime.md:926`) requires a "real
   ```
   `better-auth` is 1.6.23 and its `better-call` is 1.3.7. `better-call` exports `serializeSignedCookie(key, value, secret, opt?)` (`dist/cookies.d.mts:100`), but it is not a dependency of `@ditto/credential-tests`. Do not add it. Sign the cookie with WebCrypto as described in Step 2.
 - Candidate commands are resolved per request from an AsyncLocalStorage: `withSessionRuntimeResolution({ candidateCommands }, run)` in `apps/web/src/lib/session-runtime-client.ts:243-249`. Production sets it in `apps/web/src/server.ts:169-176`.
-- The worker test pool, `apps/credential-tests/vitest.config.ts`, has: D1 `DB`; `BETTER_AUTH_SECRET: "synthetic-034-auth-secret"`; service binding `CandidateProduct` → entrypoint `CandidateFixtureProduct` (implements `admitOwned`, `observeOwned`, `workspaceActionOwned`, `modelsOwned`, `deleteProjectOwned`); the `CodexCredential` DO; `CANDIDATE_DISPOSABLE: "008-synthetic"`. Tests include `src/**/*.worker.test.ts`. `tsconfig.json` maps `#/*` to `../web/src/*`.
+- The worker test pool, `apps/credential-tests/vitest.config.ts`, has: D1 `DB`; `BETTER_AUTH_SECRET: "synthetic-034-auth-secret"`; service binding `CandidateProduct` → entrypoint `CandidateFixtureProduct` (implements `admitOwned`, `observeOwned`, `workspaceActionOwned`, `modelsOwned`, `deleteProjectOwned`); the `CodexCredential` DO; `CANDIDATE_DISPOSABLE: "008-synthetic"`; `CODEX_DEVICE_AUTH: "1"`. Tests include `src/**/*.worker.test.ts`. `tsconfig.json` maps `#/*` to `../web/src/*`.
 - Exemplars to copy, not import:
   - Migrations for every test: `apps/credential-tests/src/candidate-baseline.worker.test.ts:10-15` (the `import.meta.glob("../../web/migrations/*.sql", { query: "?raw", import: "default", eager: true })` with its `@ts-expect-error`) and `:73-80` (split on `--> statement-breakpoint`, strip `--` comment lines, `env.DB.exec`).
-  - The owner, project, Codex connection and fake-account rows, plus `CodexCredential.install`: `apps/credential-tests/src/product-commands.worker.test.ts:207-231`. The fake account object it binds is defined earlier in the same file. Copy it.
-  - The prompt body: `product-commands.worker.test.ts:136-142` (`{ version: 2, kind: "prompt", projectId: "project", idempotencyKey: "first", text: "Synthetic admitted command" }`).
-  - Row counting with zero-row assertions: `product-commands.worker.test.ts:143-159` (`counts()`), and the foreign-owner case at `:494-505`, where a foreign prompt is refused with `code: "model_unconfigured"` and `counts()` stays all zeros.
+  - The owner, project, Codex connection and fake-account rows, plus `CodexCredential.install`: `apps/credential-tests/src/product-commands.worker.test.ts:206-229`. The fake account object it binds is defined earlier in the same file. Copy it.
+  - The prompt body: `product-commands.worker.test.ts:135-141` (`{ version: 2, kind: "prompt", projectId: "project", idempotencyKey: "first", text: "Synthetic admitted command" }`).
+  - Row counting with zero-row assertions: `product-commands.worker.test.ts:142-158` (`counts()`), and the foreign-owner case at `:493-504`, where a foreign prompt is refused with `code: "model_unconfigured"` and `counts()` stays all zeros.
 - `package.json:21` `credentials:verify` lists each worker test file explicitly. A new file must be added there to run in CI.
 
 ## Commands you will need
