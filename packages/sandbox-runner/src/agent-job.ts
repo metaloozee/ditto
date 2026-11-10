@@ -1,6 +1,11 @@
 /** Trust-boundary job shape + validator for the sandbox agent CLI. */
 
-const RUNNER_MODEL_SPECIFIER = "opencode/deepseek-v4-flash-free" as const;
+import {
+	parseRunnerModelConfig,
+	type RunnerModelConfig,
+} from "./runner-model.js";
+
+const RUNNER_MODEL_SPECIFIER = "ditto/default" as const;
 
 const THINKING_LEVELS = ["off", "high", "max"] as const;
 
@@ -10,6 +15,7 @@ export type Job = {
 	runId: string;
 	conversationId: string;
 	model: typeof RUNNER_MODEL_SPECIFIER;
+	modelConfig: RunnerModelConfig;
 	prompt: string;
 	cwd?: string;
 	thinkingLevel?: ThinkingLevel;
@@ -51,6 +57,10 @@ export function parseJob(raw: string): { job?: Job; error?: string } {
 	if (job.model !== RUNNER_MODEL_SPECIFIER) {
 		return { error: `Unknown model: ${job.model}` };
 	}
+	const modelConfig = parseRunnerModelConfig(job.modelConfig);
+	if (!modelConfig) {
+		return { error: "modelConfig is invalid" };
+	}
 	if (!isNonEmptyString(job.prompt)) {
 		return { error: "prompt is required" };
 	}
@@ -66,6 +76,7 @@ export function parseJob(raw: string): { job?: Job; error?: string } {
 			runId: job.runId,
 			conversationId: job.conversationId,
 			model: RUNNER_MODEL_SPECIFIER,
+			modelConfig,
 			prompt: job.prompt,
 			cwd: job.cwd,
 			thinkingLevel: job.thinkingLevel,

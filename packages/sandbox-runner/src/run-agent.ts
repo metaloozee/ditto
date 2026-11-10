@@ -22,13 +22,14 @@ import {
 	type RunnerOut,
 	runnerOutputFromAgentEvent,
 } from "./protocol.js";
-import { resolveRunnerModel } from "./runner-model.js";
+import { type RunnerModelConfig, resolveRunnerModel } from "./runner-model.js";
 
 export type RunAgentOptions = {
 	runId: string;
 	cwd: string;
 	conversationId: string;
 	modelSpecifier: string;
+	modelConfig: RunnerModelConfig;
 	/** Abstract Pi thinking level; Pi clamps again as defense. */
 	thinkingLevel?: ModelThinkingLevel;
 	prompt: string;
@@ -71,7 +72,10 @@ export async function runAgent(
 		fs.mkdirSync(options.agentDir, { recursive: true });
 		fs.mkdirSync(options.sessionsDir, { recursive: true });
 
-		const resolved = await resolveRunnerModel(options.modelSpecifier);
+		const resolved = await resolveRunnerModel(
+			options.modelSpecifier,
+			options.modelConfig,
+		);
 		if ("error" in resolved) {
 			emitError(resolved.error);
 			return { ok: false, assistantText: "" };

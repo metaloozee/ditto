@@ -181,7 +181,7 @@ export async function runGitMetadata(
 	let captureError: string | undefined;
 
 	try {
-		const resolved = await resolveRunnerModel(job.model);
+		const resolved = await resolveRunnerModel(job.model, job.modelConfig);
 		if ("error" in resolved) {
 			const code = resolved.error.startsWith("Unknown model")
 				? "unknown_model"

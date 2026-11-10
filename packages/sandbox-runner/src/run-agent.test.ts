@@ -103,6 +103,14 @@ function makeSession() {
 	};
 }
 
+const MODEL_CONFIG = {
+	id: "test-model",
+	name: "Test model",
+	reasoning: false,
+	contextWindow: 1000,
+	maxTokens: 100,
+};
+
 async function beginRun(
 	harness: SessionHarness,
 	overrides: Partial<Parameters<typeof runAgent>[0]> = {},
@@ -113,7 +121,8 @@ async function beginRun(
 		runId: "run-1",
 		cwd: path.join(os.tmpdir(), "ditto-run-agent-test"),
 		conversationId: "session-1",
-		modelSpecifier: "opencode/deepseek-v4-flash-free",
+		modelSpecifier: "ditto/default",
+		modelConfig: MODEL_CONFIG,
 		prompt: "initial",
 		agentDir: path.join(os.tmpdir(), "ditto-run-agent-test", "agent"),
 		sessionsDir: path.join(os.tmpdir(), "ditto-run-agent-test", "sessions"),
@@ -132,7 +141,7 @@ const followUp = (requestId: string, text: string): ControlRequest => ({
 	requestId,
 	runId: "run-1",
 	sessionId: "session-1",
-	model: "opencode/deepseek-v4-flash-free",
+	model: "ditto/default",
 	text,
 	userMessageId: `user-${requestId}`,
 	assistantMessageId: `assistant-${requestId}`,
@@ -178,7 +187,8 @@ describe("runAgent live controls", () => {
 		await result;
 
 		expect(mocks.resolveRunnerModel).toHaveBeenCalledWith(
-			"opencode/deepseek-v4-flash-free",
+			"ditto/default",
+			MODEL_CONFIG,
 		);
 		expect(mocks.createAgentSession).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -362,7 +372,8 @@ describe("runAgent live controls", () => {
 			runId: "run-1",
 			cwd: path.join(os.tmpdir(), "ditto-run-agent-test"),
 			conversationId: "session-1",
-			modelSpecifier: "opencode/deepseek-v4-flash-free",
+			modelSpecifier: "ditto/default",
+			modelConfig: MODEL_CONFIG,
 			prompt: "initial",
 			agentDir: path.join(os.tmpdir(), "ditto-run-agent-test", "agent"),
 			sessionsDir: path.join(os.tmpdir(), "ditto-run-agent-test", "sessions"),
@@ -385,7 +396,8 @@ describe("runAgent live controls", () => {
 			runId: "run-1",
 			cwd: path.join(os.tmpdir(), "ditto-run-agent-test"),
 			conversationId: "session-1",
-			modelSpecifier: "opencode/deepseek-v4-flash-free",
+			modelSpecifier: "ditto/default",
+			modelConfig: MODEL_CONFIG,
 			prompt: "initial",
 			agentDir: path.join(os.tmpdir(), "ditto-run-agent-test", "agent"),
 			sessionsDir: path.join(os.tmpdir(), "ditto-run-agent-test", "sessions"),

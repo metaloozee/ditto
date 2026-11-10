@@ -56,6 +56,13 @@ describe("git-metadata-cli main", () => {
 			requestId: "req-1",
 			kind: "commit",
 			model: GIT_METADATA_MODEL,
+			modelConfig: {
+				id: "test-model",
+				name: "Test model",
+				reasoning: false,
+				contextWindow: 1000,
+				maxTokens: 100,
+			},
 			snapshot: {
 				kind: "commit_snapshot",
 				branch: "main",
@@ -140,6 +147,13 @@ describe("git-metadata-cli main", () => {
 			requestId: "req-1",
 			kind: "commit",
 			model: GIT_METADATA_MODEL,
+			modelConfig: {
+				id: "test-model",
+				name: "Test model",
+				reasoning: false,
+				contextWindow: 1000,
+				maxTokens: 100,
+			},
 			snapshot: {
 				kind: "commit_snapshot",
 				branch: "main",

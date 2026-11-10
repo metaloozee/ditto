@@ -1,7 +1,12 @@
 /** Versioned job/result protocol for one-shot UI git-metadata drafting. */
 
+import {
+	parseRunnerModelConfig,
+	type RunnerModelConfig,
+} from "./runner-model.js";
+
 export const GIT_METADATA_PROTOCOL_VERSION = 1 as const;
-export const GIT_METADATA_MODEL = "opencode/deepseek-v4-flash-free" as const;
+export const GIT_METADATA_MODEL = "ditto/default" as const;
 
 export const GIT_METADATA_RAW_JOB_MAX_BYTES = 128 * 1024;
 export const GIT_METADATA_PATCH_MAX_BYTES = 96 * 1024;
@@ -48,6 +53,7 @@ export type GitMetadataCommitJob = {
 	requestId: string;
 	kind: "commit";
 	model: typeof GIT_METADATA_MODEL;
+	modelConfig: RunnerModelConfig;
 	snapshot: GitMetadataCommitSnapshot;
 };
 
@@ -56,6 +62,7 @@ export type GitMetadataPullRequestJob = {
 	requestId: string;
 	kind: "pull_request";
 	model: typeof GIT_METADATA_MODEL;
+	modelConfig: RunnerModelConfig;
 	snapshot: GitMetadataPullRequestSnapshot;
 };
 
@@ -93,7 +100,14 @@ export type GitMetadataOut =
 	| GitMetadataPullRequestResult
 	| GitMetadataErrorResult;
 
-const JOB_KEYS = new Set(["v", "requestId", "kind", "model", "snapshot"]);
+const JOB_KEYS = new Set([
+	"v",
+	"requestId",
+	"kind",
+	"model",
+	"modelConfig",
+	"snapshot",
+]);
 const COMMIT_SNAPSHOT_KEYS = new Set([
 	"kind",
 	"branch",
@@ -272,6 +286,10 @@ export function parseGitMetadataJob(
 	if (raw.model !== GIT_METADATA_MODEL) {
 		return { error: "unknown_model" };
 	}
+	const modelConfig = parseRunnerModelConfig(raw.modelConfig);
+	if (!modelConfig) {
+		return { error: "modelConfig is invalid" };
+	}
 	if (!isPlainObject(raw.snapshot)) {
 		return { error: "snapshot must be an object" };
 	}
@@ -290,6 +308,7 @@ export function parseGitMetadataJob(
 			requestId: raw.requestId,
 			kind: "commit",
 			model: GIT_METADATA_MODEL,
+			modelConfig,
 			snapshot: { kind: "commit_snapshot", ...common },
 		};
 	}
@@ -328,6 +347,7 @@ export function parseGitMetadataJob(
 			requestId: raw.requestId,
 			kind: "pull_request",
 			model: GIT_METADATA_MODEL,
+			modelConfig,
 			snapshot: {
 				kind: "pull_request_snapshot",
 				...common,

@@ -20,12 +20,21 @@ const baseCommon = {
 	patchOriginalBytes: 40,
 };
 
+const MODEL_CONFIG = {
+	id: "test-model",
+	name: "Test model",
+	reasoning: false,
+	contextWindow: 1000,
+	maxTokens: 100,
+};
+
 function commitJob(overrides: Record<string, unknown> = {}) {
 	return {
 		v: 1,
 		requestId: "req-1",
 		kind: "commit",
 		model: GIT_METADATA_MODEL,
+		modelConfig: MODEL_CONFIG,
 		snapshot: {
 			kind: "commit_snapshot",
 			...baseCommon,
@@ -40,6 +49,7 @@ function prJob(overrides: Record<string, unknown> = {}) {
 		requestId: "req-2",
 		kind: "pull_request",
 		model: GIT_METADATA_MODEL,
+		modelConfig: MODEL_CONFIG,
 		snapshot: {
 			kind: "pull_request_snapshot",
 			...baseCommon,
@@ -150,6 +160,21 @@ describe("parseGitMetadataJob", () => {
 				}),
 			),
 		).toMatchObject({ error: "invalid changed path" });
+	});
+
+	it("round-trips modelConfig and refuses a missing or invalid one", () => {
+		const parsed = parseGitMetadataJob(commitJob());
+		expect(parsed).toMatchObject({ modelConfig: MODEL_CONFIG });
+		expect(
+			parseGitMetadataJob(commitJob({ modelConfig: undefined })),
+		).toMatchObject({ error: "modelConfig is invalid" });
+		expect(
+			parseGitMetadataJob(
+				commitJob({
+					modelConfig: { ...MODEL_CONFIG, baseUrl: "https://x.example/v1" },
+				}),
+			),
+		).toMatchObject({ error: "modelConfig is invalid" });
 	});
 
 	it("maps unknown model and oversize raw bytes", () => {

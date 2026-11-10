@@ -59,6 +59,7 @@ async function main(): Promise<number> {
 		cwd: job.cwd ?? DEFAULT_CWD,
 		conversationId: job.conversationId,
 		modelSpecifier: job.model,
+		modelConfig: job.modelConfig,
 		thinkingLevel: job.thinkingLevel,
 		prompt: job.prompt,
 		agentDir: DEFAULT_AGENT_DIR,

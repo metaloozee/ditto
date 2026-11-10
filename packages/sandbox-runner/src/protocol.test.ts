@@ -14,7 +14,7 @@ describe("protocol", () => {
 			v: 1 as const,
 			kind: "ready" as const,
 			sessionId: "conv-1",
-			model: "opencode/deepseek-v4-flash-free",
+			model: "ditto/default",
 		};
 		const line = encodeLine(msg);
 		expect(line.endsWith("\n")).toBe(true);

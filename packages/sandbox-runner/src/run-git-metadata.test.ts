@@ -2,6 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { GitMetadataJob } from "./git-metadata-job.js";
 import { GIT_METADATA_MODEL } from "./git-metadata-job.js";
 
+const MODEL_CONFIG = {
+	id: "test-model",
+	name: "Test model",
+	reasoning: false,
+	contextWindow: 1000,
+	maxTokens: 100,
+};
+
 const mocks = vi.hoisted(() => ({
 	createAgentSession: vi.fn(),
 	resolveRunnerModel: vi.fn(),
@@ -67,6 +75,7 @@ function commitJob(): GitMetadataJob {
 		requestId: "req-1",
 		kind: "commit",
 		model: GIT_METADATA_MODEL,
+		modelConfig: MODEL_CONFIG,
 		snapshot: {
 			kind: "commit_snapshot",
 			branch: "ditto/s1",
@@ -86,6 +95,7 @@ function prJob(): GitMetadataJob {
 		requestId: "req-2",
 		kind: "pull_request",
 		model: GIT_METADATA_MODEL,
+		modelConfig: MODEL_CONFIG,
 		snapshot: {
 			kind: "pull_request_snapshot",
 			branch: "ditto/s1",
@@ -142,9 +152,9 @@ describe("runGitMetadata", () => {
 		vi.clearAllMocks();
 		mocks.resolveRunnerModel.mockResolvedValue({
 			modelRuntime: { getModel: vi.fn() },
-			model: { provider: "opencode", id: "deepseek-v4-flash-free" },
-			provider: "opencode",
-			modelId: "deepseek-v4-flash-free",
+			model: { provider: "ditto", id: "test-model" },
+			provider: "ditto",
+			modelId: "test-model",
 		});
 		delete process.env.OPENCODE_API_KEY;
 	});
@@ -205,9 +215,9 @@ describe("runGitMetadata", () => {
 			order.push("resolve");
 			return {
 				modelRuntime: { getModel: vi.fn() },
-				model: { provider: "opencode", id: "deepseek-v4-flash-free" },
-				provider: "opencode",
-				modelId: "deepseek-v4-flash-free",
+				model: { provider: "ditto", id: "test-model" },
+				provider: "ditto",
+				modelId: "test-model",
 			};
 		});
 		mocks.createAgentSession.mockImplementation(async () => {
@@ -222,7 +232,10 @@ describe("runGitMetadata", () => {
 
 		await runGitMetadata(commitJob());
 		expect(order).toEqual(["resolve", "session"]);
-		expect(mocks.resolveRunnerModel).toHaveBeenCalledWith(GIT_METADATA_MODEL);
+		expect(mocks.resolveRunnerModel).toHaveBeenCalledWith(
+			GIT_METADATA_MODEL,
+			MODEL_CONFIG,
+		);
 	});
 
 	it("accepts valid PR metadata via the PR tool only", async () => {
@@ -369,7 +382,7 @@ describe("runGitMetadata", () => {
 
 	it("returns unknown_model from resolve failures", async () => {
 		mocks.resolveRunnerModel.mockResolvedValue({
-			error: "Unknown model: opencode/deepseek-v4-flash-free",
+			error: "Unknown model: ditto/default",
 		});
 		const out = await runGitMetadata(commitJob());
 		expect(out).toMatchObject({ kind: "error", code: "unknown_model" });
