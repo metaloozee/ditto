@@ -1,5 +1,6 @@
 import { env } from "cloudflare:test";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { CandidateProductCommandService } from "../../web/src/lib/session-runtime-client";
 import { withSessionRuntimeResolution } from "../../web/src/lib/session-runtime-client";
 import { CANDIDATE_FIXTURE_RESET_SCHEMA } from "./candidate-fixture-schema";
 
@@ -31,6 +32,8 @@ type TestAuth = {
 	};
 };
 let createAuth: (env: unknown) => TestAuth;
+// Built in process like production: Workers RPC would drop CandidateCommandError.
+let candidateCommands: CandidateProductCommandService | undefined;
 declare module "cloudflare:test" {
 	interface ProvidedEnv {
 		BETTER_AUTH_SECRET: string;
@@ -185,9 +188,8 @@ async function call(
 			body: init.body === undefined ? undefined : JSON.stringify(init.body),
 		},
 	);
-	return withSessionRuntimeResolution(
-		{ candidateCommands: env.CandidateProduct },
-		() => handler({ request }),
+	return withSessionRuntimeResolution({ candidateCommands }, () =>
+		handler({ request }),
 	);
 }
 
@@ -203,6 +205,13 @@ beforeAll(async () => {
 	createAuth = (
 		(await loadWeb("lib/auth.ts")) as { createAuth: typeof createAuth }
 	).createAuth;
+	candidateCommands = (
+		(await loadWeb("lib/candidate-product.ts")) as {
+			createCandidateProductCommandService: (
+				env: unknown,
+			) => CandidateProductCommandService | undefined;
+		}
+	).createCandidateProductCommandService(env);
 });
 
 beforeEach(async () => {
@@ -285,9 +294,8 @@ describe("PD39 real-auth HTTP smoke", () => {
 			cookie: await sessionCookie("intruder"),
 			body: prompt,
 		});
-		// The service binding flattens the fixture's CandidateCommandError, so the route reports it as 503.
-		expect(response.status).toBe(503);
-		expect(await response.json()).toEqual({ code: "runtime_unavailable" });
+		expect(response.status).toBe(409);
+		expect(await response.json()).toEqual({ code: "model_unconfigured" });
 		expect(await counts()).toEqual(ZERO);
 	});
 
@@ -315,8 +323,8 @@ describe("PD39 real-auth HTTP smoke", () => {
 			cookie: await sessionCookie("intruder"),
 			body,
 		});
-		expect(response.status).toBe(503);
-		expect(await response.json()).toEqual({ code: "runtime_unavailable" });
+		expect(response.status).toBe(409);
+		expect(await response.json()).toEqual({ code: "runtime_owner_mismatch" });
 		expect(await counts()).toEqual(ZERO);
 	});
 });
