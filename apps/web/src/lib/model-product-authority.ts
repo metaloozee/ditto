@@ -10,6 +10,8 @@ import {
 	parseModelSubjectV1,
 } from "../../../../packages/runtime-contracts/src/model.js";
 
+import { defaultSelectionFrom } from "./codex-models";
+
 export type ModelRequestBodyV2 = Pick<
 	ModelRequestV2,
 	"purpose" | "model" | "thinking"
@@ -70,7 +72,7 @@ export class ModelProductAuthority {
 	async preSessionReadiness(
 		userId: string,
 		projectId: string,
-		selection: ConfigurationSelectionV1 = { model: "faux-1", thinking: "off" },
+		selection?: ConfigurationSelectionV1,
 	) {
 		if (!this.candidate) return null;
 		const row = await this.db
@@ -89,10 +91,13 @@ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE f.targetKind=
 				account.status !== "available" ||
 				account.generation !== row.generation ||
 				account.revision !== row.revision ||
-				!account.models.some(
-					(m) =>
-						m.id === selection.model && m.thinking.includes(selection.thinking),
-				)
+				!(selection
+					? account.models.some(
+							(m) =>
+								m.id === selection.model &&
+								m.thinking.includes(selection.thinking),
+						)
+					: account.models.length > 0)
 			)
 				return null;
 			return {
@@ -100,6 +105,27 @@ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE f.targetKind=
 				revision: account.revision,
 				snapshot: row.snapshot,
 			};
+		} catch {
+			return null;
+		}
+	}
+
+	async defaultSelection(
+		subject: ModelSubjectV1,
+	): Promise<ConfigurationSelectionV1 | null> {
+		const row = await this.db
+			.prepare(
+				"SELECT snapshot FROM codex_fixture_capabilities WHERE userId=? AND generation=? AND revision=?",
+			)
+			.bind(
+				subject.userId,
+				subject.connectionGeneration,
+				subject.capabilityRevision,
+			)
+			.first<{ snapshot: string }>();
+		if (!row) return null;
+		try {
+			return defaultSelectionFrom(parseAccountSnapshot(row.snapshot));
 		} catch {
 			return null;
 		}

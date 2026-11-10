@@ -3,6 +3,7 @@ import {
 	type CandidateRuntimeScope,
 	parseCandidateRuntimeScope,
 } from "../../../../packages/runtime-contracts/src/candidate-scope.js";
+import type { ConfigurationSelectionV1 } from "../../../../packages/runtime-contracts/src/configuration.js";
 import type { ModelTransportDescriptorV1 } from "../../../../packages/runtime-contracts/src/model.js";
 import type { QueueDecisionV2 } from "../../../../packages/runtime-contracts/src/product-command.js";
 import type { RuntimeObservationV1 } from "../../../../packages/runtime-contracts/src/projection.js";
@@ -25,6 +26,7 @@ import type { GitHubAppCredentials } from "./github-app";
 import {
 	CANDIDATE_MODEL_POLICY,
 	type ModelClaimRpc,
+	ModelProductAuthority,
 } from "./model-product-authority";
 import {
 	performPrivateModelRequest,
@@ -307,6 +309,17 @@ export class CandidatePrivateProduct extends WorkerEntrypoint<CandidateProductBi
 			this.env.CODEX_DEVICE_AUTH === "1",
 			CANDIDATE_MODEL_POLICY,
 		);
+	}
+	async readCandidateDefaultSelection(
+		commandId: string,
+	): Promise<ConfigurationSelectionV1 | null> {
+		const subject = await this.readCandidateSubject(commandId, 1);
+		if (!subject) return null;
+		return new ModelProductAuthority(
+			this.env.DB,
+			Date.now,
+			CANDIDATE_MODEL_POLICY,
+		).defaultSelection(subject);
 	}
 	requestModel(input: unknown, capability: ModelClaimRpc) {
 		return performPrivateModelRequest(

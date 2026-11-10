@@ -1,6 +1,9 @@
 import { env, fetchMock, runInDurableObject } from "cloudflare:test";
 import { beforeEach, expect, it } from "vitest";
-import { parseAccountSnapshot } from "../../../packages/runtime-contracts/src/model.js";
+import {
+	type ModelSubjectV1,
+	parseAccountSnapshot,
+} from "../../../packages/runtime-contracts/src/model.js";
 import m0 from "../../web/migrations/0000_wet_giant_girl.sql?raw";
 import m1 from "../../web/migrations/0001_jazzy_firelord.sql?raw";
 import m2 from "../../web/migrations/0002_sparkling_agent_zero.sql?raw";
@@ -15,6 +18,7 @@ import m21 from "../../web/migrations/0021_first_lilandra.sql?raw";
 import m22 from "../../web/migrations/0022_synthetic_model_transport.sql?raw";
 import { CodexCredential } from "../../web/src/lib/codex-credential-do";
 import { writeAccountSnapshot } from "../../web/src/lib/codex-models";
+import { ModelProductAuthority } from "../../web/src/lib/model-product-authority";
 import type { FixtureCredential } from "./entry";
 
 declare module "cloudflare:test" {
@@ -221,4 +225,55 @@ it("writeAccountSnapshot refuses a connection that moved to a newer generation",
 		]),
 	).toBe("stale");
 	expect(await snapshotRow()).toBeNull();
+});
+
+const subject: ModelSubjectV1 = {
+	version: 1,
+	userId: "owner",
+	projectId: "project",
+	workspaceSessionId: "session",
+	identityId: "executor",
+	incarnationId: "incarnation",
+	controllerNamespace: "fixture-execution-v1",
+	lifecycleGeneration: 1,
+	runtimeOwnerVersion: 1,
+	connectionGeneration: 1,
+	capabilityRevision: 1,
+};
+const seedSnapshot = (snapshot: unknown) =>
+	env.DB.prepare(
+		"INSERT OR REPLACE INTO codex_fixture_capabilities VALUES('owner',1,1,?)",
+	)
+		.bind(JSON.stringify(snapshot))
+		.run();
+const account = (status: string, models: unknown[]) => ({
+	version: 2,
+	status,
+	generation: 1,
+	revision: 1,
+	models,
+});
+
+it("defaultSelection is the first model and its first level", async () => {
+	await seedSnapshot(
+		account("available", [
+			{ id: "gpt-6.1-sol", thinking: ["medium", "high"] },
+			{ id: "gpt-6", thinking: ["low"] },
+		]),
+	);
+	expect(
+		await new ModelProductAuthority(env.DB).defaultSelection(subject),
+	).toEqual({ model: "gpt-6.1-sol", thinking: "medium" });
+});
+
+it("defaultSelection is null for another revision or an unavailable snapshot", async () => {
+	await seedSnapshot(
+		account("available", [{ id: "gpt-6", thinking: ["low"] }]),
+	);
+	const policy = new ModelProductAuthority(env.DB);
+	expect(
+		await policy.defaultSelection({ ...subject, capabilityRevision: 2 }),
+	).toBeNull();
+	await seedSnapshot(account("unavailable", []));
+	expect(await policy.defaultSelection(subject)).toBeNull();
 });

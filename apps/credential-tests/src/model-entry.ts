@@ -1466,6 +1466,9 @@ export class CandidateFixtureProduct extends WorkerEntrypoint<CandidateFixtureBi
 			CANDIDATE_MODEL_POLICY,
 		);
 	}
+	async readCandidateDefaultSelection(_commandId: string) {
+		return { model: "faux-1", thinking: "off" } as const;
+	}
 	requestModel(input: unknown, capability: ModelClaimRpc) {
 		return performPrivateModelRequest(
 			{ DB: this.env.DB, CodexCredential: this.env.CandidateCredential },

@@ -99,6 +99,7 @@ export interface CandidateAdmissionRuntime {
 }
 export interface CandidateCredentialStatus {
 	status(owner: string): Promise<{ status: string; generation: number }>;
+	refreshModels?(owner: string): Promise<unknown>;
 }
 type Row = {
 	id: string;
@@ -375,7 +376,7 @@ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind
 			readiness = await this.policy.preSessionReadiness(
 				userId,
 				input.projectId,
-				selection ?? { model: "faux-1", thinking: "off" },
+				selection ?? undefined,
 			);
 			if (!readiness || readiness.generation !== status.generation)
 				reject("model_unconfigured");
@@ -389,7 +390,7 @@ AND NOT EXISTS(SELECT 1 FROM runtime_deleted_target_fences f WHERE (f.targetKind
 							workspaceSessionId: input.sessionId!,
 							ownerVersion: 1,
 						},
-						selection ?? { model: "faux-1", thinking: "off" },
+						selection ?? undefined,
 					))
 				)
 					reject("model_unconfigured");
@@ -1471,6 +1472,10 @@ WHERE c.sessionId=candidate_archives.sessionId AND c.commandSeq<=candidate_archi
 		});
 		const credential = await this.credential(userId).status(userId);
 		if (credential.status !== "connected") return none("disconnected");
+		// A refresh failure must never fail the listing.
+		await this.credential(userId)
+			.refreshModels?.(userId)
+			?.catch(() => undefined);
 		const capability = await this.db
 			.prepare("SELECT snapshot FROM codex_fixture_capabilities WHERE userId=?")
 			.bind(userId)
