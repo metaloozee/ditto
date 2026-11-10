@@ -92,6 +92,9 @@ export class FixtureCredential extends CodexCredential {
 	protected fixtureAvailable() {
 		return true;
 	}
+	protected discoveryAvailable() {
+		return false;
+	}
 	install(owner: string, generation: number, tokens: CodexTokens) {
 		return this.installFixture(owner, generation, tokens);
 	}

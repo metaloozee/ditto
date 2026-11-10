@@ -28,12 +28,19 @@ import {
 	parseUserCodeResponse,
 } from "./codex-device-login";
 import {
+	buildCodexModelsRequest,
+	CODEX_MODELS_TTL_MS,
+	parseCodexModels,
+	writeAccountSnapshot,
+} from "./codex-models";
+import {
 	awaitSynthetic,
 	buildFixtureUpstream,
 	modelRequestDigest,
 	readModelFrames,
 	reconstructModelRequest,
 } from "./codex-request-contract";
+import { codexAccountId } from "./codex-responses";
 import {
 	type ModelClaimRpc,
 	type ModelPermitBounds,
@@ -101,6 +108,9 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 		);
 		ctx.storage.sql.exec(
 			"CREATE TABLE IF NOT EXISTS device (id INTEGER PRIMARY KEY CHECK(id=1), owner TEXT NOT NULL, generation INTEGER NOT NULL, sealed TEXT NOT NULL, user_code TEXT NOT NULL, interval_ms INTEGER NOT NULL, next_poll_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)",
+		);
+		ctx.storage.sql.exec(
+			"CREATE TABLE IF NOT EXISTS discovery (id INTEGER PRIMARY KEY CHECK(id=1), generation INTEGER NOT NULL, fetched_at INTEGER NOT NULL)",
 		);
 		// A retained dispatch intent may have spent a rotating refresh token.
 		ctx.storage.sql.exec(
@@ -712,6 +722,81 @@ export class CodexCredential extends DurableObject<CodexCredentialEnv> {
 	/** Composition supplies model admission; none leaves model work unbounded here. */
 	protected modelCapacity(): CandidateCapacity | undefined {
 		return undefined;
+	}
+
+	protected discoveryAvailable(): boolean {
+		return this.deviceAuthAvailable();
+	}
+
+	async refreshModels(
+		owner: string,
+	): Promise<"refreshed" | "current" | "unavailable"> {
+		if (!this.discoveryAvailable() || !this.#owned(owner)) return "unavailable";
+		try {
+			const view = await this.ensureFresh(owner);
+			if (view.status !== "connected") return "unavailable";
+			const state = this.#read();
+			if (
+				!state ||
+				!state.sealed ||
+				state.status !== "connected" ||
+				state.generation !== view.generation
+			)
+				return "unavailable";
+			const last = this.ctx.storage.sql
+				.exec<{ generation: number; fetched_at: number }>(
+					"SELECT generation,fetched_at FROM discovery WHERE id=1",
+				)
+				.toArray()[0];
+			if (
+				last &&
+				last.generation === state.generation &&
+				Date.now() - last.fetched_at < CODEX_MODELS_TTL_MS
+			)
+				return "current";
+			const tokens = await openCredentials(
+				state.sealed,
+				owner,
+				state.generation,
+				this.#keyring(),
+				state.version,
+			);
+			const accountId = codexAccountId(tokens.access);
+			if (!accountId) return "unavailable";
+			const request = buildCodexModelsRequest(accountId);
+			const response = await fetch(request.url, {
+				...request.init,
+				headers: {
+					...request.init.headers,
+					authorization: `Bearer ${tokens.access}`,
+				},
+				signal: AbortSignal.timeout(15000),
+			});
+			if (response.status !== 200 || response.headers.has("location")) {
+				await response.body?.cancel().catch(() => {});
+				return "unavailable";
+			}
+			const body = await response.text();
+			if (body.length > 1_048_576) return "unavailable";
+			const models = parseCodexModels(JSON.parse(body));
+			if (!models) return "unavailable";
+			if (!this.#same(state)) return "unavailable";
+			const written = await writeAccountSnapshot(
+				this.env.DB,
+				owner,
+				state.generation,
+				models,
+			);
+			if (written === "stale") return "unavailable";
+			this.ctx.storage.sql.exec(
+				"INSERT INTO discovery VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET generation=excluded.generation,fetched_at=excluded.fetched_at",
+				state.generation,
+				Date.now(),
+			);
+			return "refreshed";
+		} catch {
+			return "unavailable";
+		}
 	}
 
 	protected renewalAvailable(): boolean {
