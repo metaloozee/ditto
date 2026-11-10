@@ -58,6 +58,7 @@ import type { ModelSubjectV1 } from "../../../packages/runtime-contracts/src/mod
 import {
 	MODEL_LIMITS_V2,
 	type ModelAttemptV1,
+	modelProviderFor,
 	parseModelAttemptV1,
 	SYNTHETIC_MODEL_LIMITS,
 } from "../../../packages/runtime-contracts/src/model.js";
@@ -1905,7 +1906,7 @@ export class PiDurableHost {
 		if (!root) return { ...query, selection: null };
 		const agent = await root.agent(context);
 		if (!agent.model) return { ...query, selection: null };
-		if (agent.model.provider !== "faux")
+		if (agent.model.provider !== modelProviderFor(agent.model.modelId))
 			throw new Error("Unsupported configuration provider");
 		return {
 			...query,
@@ -1965,7 +1966,10 @@ export class PiDurableHost {
 		if (target) this.assertSchedule(target.run, target.epoch);
 		await this.activeConversation(context, {
 			agent: {
-				model: { provider: "faux", modelId: selection.model },
+				model: {
+					provider: modelProviderFor(selection.model),
+					modelId: selection.model,
+				},
 				thinkingLevel: selection.thinking,
 			},
 		});
@@ -2079,7 +2083,10 @@ export class PiDurableHost {
 		this.assertLive();
 		await root.configure(
 			{
-				model: { provider: "faux", modelId: intent.selection.model },
+				model: {
+					provider: modelProviderFor(intent.selection.model),
+					modelId: intent.selection.model,
+				},
 				thinkingLevel: intent.selection.thinking,
 			},
 			context,
@@ -5415,7 +5422,10 @@ export class PiDurableHost {
 				const agent = active ? await active.agent(context) : undefined;
 				let selection: ConfigurationSelectionV1 | null = null;
 				try {
-					if (agent?.model?.provider === "faux")
+					if (
+						agent?.model !== undefined &&
+						agent.model.provider === modelProviderFor(agent.model.modelId)
+					)
 						selection = parseConfigurationSelectionV1({
 							model: agent.model.modelId,
 							thinking: agent.thinkingLevel,
@@ -5634,7 +5644,10 @@ export class PiDurableHost {
 				...(seed.selection
 					? {
 							agent: {
-								model: { provider: "faux", modelId: seed.selection.model },
+								model: {
+									provider: modelProviderFor(seed.selection.model),
+									modelId: seed.selection.model,
+								},
 								thinkingLevel: seed.selection.thinking,
 							},
 						}

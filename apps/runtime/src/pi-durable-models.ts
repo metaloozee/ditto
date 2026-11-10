@@ -20,10 +20,13 @@ import {
 	hook,
 } from "@earendil-works/pi-durable";
 import {
+	CODEX_PROVIDER,
+	MODEL_ID_PATTERN_V2,
 	type ModelAttemptV1,
 	type ModelOutcomeV2,
 	type ModelSubjectV1,
 	type ModelTransportDescriptorV1,
+	modelProviderFor,
 	modelRequestDigestV2,
 	parseModelAttemptV1,
 	parseModelRequestV2,
@@ -340,6 +343,33 @@ export function createPrivateModelAdapter(
 		stream,
 		streamSimple: stream,
 	});
+	const template = faux.provider.getModels().find((m) => m.id === "faux-1");
+	if (!template) throw new Error("Private model template unavailable");
+	// Product checks every request against the account snapshot, so any well-formed id is safe to register.
+	const codexModel = (id: string) => ({
+		...template,
+		id,
+		name: id,
+		provider: CODEX_PROVIDER,
+		reasoning: true,
+		thinkingLevelMap: { off: null, xhigh: "xhigh", max: "max" },
+	});
+	models.setProvider({
+		id: CODEX_PROVIDER,
+		name: "Codex through private product transport",
+		auth: faux.provider.auth,
+		getModels: () => [],
+		stream,
+		streamSimple: stream,
+	});
+	const lookup = models.getModel.bind(models);
+	models.getModel = (provider, id) =>
+		provider === CODEX_PROVIDER &&
+		id.length <= 128 &&
+		MODEL_ID_PATTERN_V2.test(id) &&
+		modelProviderFor(id) === CODEX_PROVIDER
+			? codexModel(id)
+			: lookup(provider, id);
 	const extension = defineExtension({
 		name: "ditto-private-model-transport-v1",
 		hooks: [

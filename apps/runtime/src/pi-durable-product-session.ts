@@ -16,7 +16,10 @@ import type {
 } from "../../../packages/runtime-contracts/src/configuration.js";
 import { strictRecord } from "../../../packages/runtime-contracts/src/json.js";
 import type { ContinuationSeedV1 } from "../../../packages/runtime-contracts/src/lifecycle.js";
-import type { ModelSubjectV1 } from "../../../packages/runtime-contracts/src/model.js";
+import {
+	MODEL_OPERATION_MS,
+	type ModelSubjectV1,
+} from "../../../packages/runtime-contracts/src/model.js";
 import type {
 	CommandV2,
 	QueueDecisionV2,
@@ -63,6 +66,9 @@ export interface CandidatePrivateProduct extends PrivateModelTransport {
 		commandId: string,
 		ownerVersion: number,
 	): Promise<ModelSubjectV1 | null>;
+	readCandidateDefaultSelection(
+		commandId: string,
+	): Promise<ConfigurationSelectionV1 | null>;
 	reconcileCandidateDecision(decision: QueueDecisionV2): Promise<boolean>;
 	applyCandidateProjections(
 		scope: CandidateRuntimeScope,
@@ -277,6 +283,7 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 					}
 				: {}),
 			now: Date.now,
+			operationMs: { model: MODEL_OPERATION_MS, tool: 60_000 },
 			fault: (point) => this.hostFault(point),
 			retained: {
 				ownerId: scope.userId,
@@ -302,9 +309,13 @@ export class PiDurableProductSession extends DurableObject<CandidateSessionBindi
 						scope.ownerVersion,
 					);
 					if (!subject) throw new Error("Candidate configuration unavailable");
+					const defaultSelection =
+						await product.readCandidateDefaultSelection(commandId);
+					if (!defaultSelection)
+						throw new Error("Candidate configuration unavailable");
 					return {
 						subject,
-						defaultSelection: { model: "faux-1", thinking: "off" },
+						defaultSelection,
 						authorize: (input, selection) =>
 							product.readCandidateConfigurationAuthority(
 								commandId,

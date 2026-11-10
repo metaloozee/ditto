@@ -917,6 +917,44 @@ it("the private adapter sends a version 2 request whose transcript object carrie
 	});
 });
 
+it("codex model ids resolve only when well formed and never alias the fixture", () => {
+	const { adapter } = transportHarness(() => ({
+		version: 2,
+		status: "complete",
+		frames: [doneFrame("stop")],
+	}));
+	expect(adapter.models.getModel("openai-codex", "gpt-6.1-sol")).toMatchObject({
+		id: "gpt-6.1-sol",
+		provider: "openai-codex",
+		reasoning: true,
+	});
+	expect(adapter.models.getModel("openai-codex", "a b")).toBeUndefined();
+	expect(adapter.models.getModel("openai-codex", "faux-1")).toBeUndefined();
+});
+
+it("a codex model sends its provider, id and discovered thinking level to product", async () => {
+	const { adapter, requests } = transportHarness(() => ({
+		version: 2,
+		status: "complete",
+		frames: [doneFrame("stop")],
+	}));
+	const model = adapter.models.getModel("openai-codex", "gpt-6.1-sol");
+	if (!model) throw new Error("Missing codex model");
+	await adapter.models.completeSimple(
+		model,
+		{
+			messages: [{ role: "user", content: "Synthetic request", timestamp: 0 }],
+		},
+		{ reasoning: "xhigh" },
+	);
+	expect(requests).toHaveLength(1);
+	expect(parseModelRequestV2(requests[0])).toMatchObject({
+		provider: "openai-codex",
+		model: "gpt-6.1-sol",
+		thinking: "xhigh",
+	});
+});
+
 it("thinking, text and tool call frames become ordered assistant blocks with toolUse", async () => {
 	const { adapter, model } = transportHarness(() => ({
 		version: 2,
