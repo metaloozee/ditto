@@ -56,6 +56,7 @@ import {
 } from "../../../packages/runtime-contracts/src/lifecycle.js";
 import type { ModelSubjectV1 } from "../../../packages/runtime-contracts/src/model.js";
 import {
+	MODEL_LIMITS_V2,
 	type ModelAttemptV1,
 	parseModelAttemptV1,
 	SYNTHETIC_MODEL_LIMITS,
@@ -322,7 +323,7 @@ export function canonical(value: unknown): string {
 }
 export async function requestDigest(value: unknown) {
 	const text = canonical(value);
-	if (new TextEncoder().encode(text).byteLength > 128_000)
+	if (new TextEncoder().encode(text).byteLength > MODEL_LIMITS_V2.requestBytes)
 		throw new Error("Oversized synthetic request");
 	const hash = await crypto.subtle.digest(
 		"SHA-256",
@@ -1511,7 +1512,9 @@ export class PiDurableHost {
 			)
 		)
 			throw new Error("Invalid replay policy");
-		if (new TextEncoder().encode(text).byteLength > 128_000)
+		if (
+			new TextEncoder().encode(text).byteLength > MODEL_LIMITS_V2.requestBytes
+		)
 			throw new Error("Oversized correlation");
 		return value as EffectCorrelation;
 	}
@@ -2904,7 +2907,10 @@ export class PiDurableHost {
 		)
 			throw new Error("Invalid operation deadline");
 		const correlationPlain = canonical(correlation);
-		if (new TextEncoder().encode(correlationPlain).byteLength > 128_000)
+		if (
+			new TextEncoder().encode(correlationPlain).byteLength >
+			MODEL_LIMITS_V2.requestBytes
+		)
 			throw new Error("Oversized correlation");
 		const sealedCorrelation = await this.seal(
 			`effect:${id}:correlation`,
@@ -6728,7 +6734,10 @@ export class PiDurableHost {
 		evidence: string,
 	) {
 		context.abortSignal?.throwIfAborted();
-		if (new TextEncoder().encode(evidence).byteLength > 8192) {
+		if (
+			new TextEncoder().encode(evidence).byteLength >
+			MODEL_LIMITS_V2.requestBytes
+		) {
 			this.denied = true;
 			throw new Error("Oversized synthetic result evidence");
 		}

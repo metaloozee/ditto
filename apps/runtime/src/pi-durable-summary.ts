@@ -1,5 +1,6 @@
 import type { Message } from "@earendil-works/pi-ai";
 import type { CompactionHooks } from "@earendil-works/pi-durable";
+import { MODEL_LIMITS_V2 } from "../../../packages/runtime-contracts/src/model.js";
 
 export const SUMMARY_POLICY = "ditto-summary-1";
 export type SummarySelection = Parameters<CompactionHooks["beforeCompact"]>[0];
@@ -46,7 +47,8 @@ export function preparedSummary(value: unknown): PreparedSummary {
 			throw new Error("Invalid custom summary transcript");
 	}
 	if (
-		new TextEncoder().encode(JSON.stringify(request)).byteLength > 128_000 ||
+		new TextEncoder().encode(JSON.stringify(request)).byteLength >
+			MODEL_LIMITS_V2.requestBytes ||
 		!model.provider ||
 		!model.modelId ||
 		String(model.provider).length > 128 ||
