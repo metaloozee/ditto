@@ -1,7 +1,15 @@
 import { env, runInDurableObject } from "cloudflare:test";
 import { awaitWithContext } from "@earendil-works/chord/context";
+import {
+	fauxAssistantMessage,
+	fauxToolCall,
+} from "@earendil-works/pi-ai/providers/faux";
 import type { Storage } from "@earendil-works/pi-durable";
 import { expect, it } from "vitest";
+import {
+	type ModelOutcomeV2,
+	parseModelRequestV2,
+} from "../../../packages/runtime-contracts/src/model.js";
 import { openHostField, sealHostField } from "./host-private.ts";
 import {
 	cooperativeFixture,
@@ -799,3 +807,208 @@ for (const encrypted of [false, true]) {
 			expect(await f.snapshot()).toMatchObject({ claimed: 0, calls: 0 });
 		}));
 }
+
+function transportHarness(outcome: (request: unknown) => ModelOutcomeV2) {
+	const requests: unknown[] = [];
+	const attempt = {
+		version: 1 as const,
+		effectId: "effect",
+		operationId: "operation",
+		runId: "run",
+		commandId: "command",
+		assistantId: "assistant",
+		taskId: 1,
+		epoch: 1,
+		attempt: 1,
+		generation: 1,
+		deadlineAt: Date.now() + 60_000,
+		requestDigest: "a".repeat(64),
+		kind: "generation" as const,
+	};
+	const dispatch: ModelDispatch = {
+		attempt,
+		claim: async () => {},
+		bindProductAuthority: () => {},
+		halt: async () => {},
+	};
+	const unavailable = async (): Promise<never> => {
+		throw new Error("unused");
+	};
+	const guard: HostGuard = {
+		summarize: unavailable,
+		bindGeneration: unavailable,
+		bindCompaction: unavailable,
+		tool: unavailable,
+		admit: unavailable,
+		model: async (_request, _context, start) => ({
+			effect: "effect",
+			response: start(dispatch),
+		}),
+		result: async () => {},
+	};
+	const adapter = createPrivateModelAdapter(
+		guard,
+		{
+			requestModel: async (request) => {
+				requests.push(request);
+				return outcome(request);
+			},
+			readModelPermit: async () => ({ status: "current" }),
+		},
+		{
+			version: 1,
+			userId: "owner",
+			projectId: "project",
+			workspaceSessionId: "session",
+			identityId: "executor",
+			incarnationId: "incarnation",
+			controllerNamespace: "fixture-execution-v1",
+			lifecycleGeneration: 1,
+			runtimeOwnerVersion: 1,
+			connectionGeneration: 1,
+			capabilityRevision: 1,
+		},
+	);
+	const model = adapter.models.getModel("faux", "faux-1");
+	if (!model) throw new Error("Missing synthetic faux-1");
+	return { adapter, model, requests };
+}
+const doneFrame = (stopReason: "stop" | "toolUse") =>
+	({
+		version: 2,
+		type: "done",
+		stopReason,
+		usage: { input: 5, output: 7, cacheRead: 0 },
+	}) as const;
+
+it("the private adapter sends a version 2 request whose transcript object carries tool definitions", async () => {
+	const { adapter, model, requests } = transportHarness(() => ({
+		version: 2,
+		status: "complete",
+		frames: [doneFrame("stop")],
+	}));
+	await adapter.models.completeSimple(model, {
+		systemPrompt: "Synthetic system",
+		tools: [
+			{
+				name: "read",
+				description: "Read a file",
+				parameters: { type: "object", properties: {} },
+			},
+		] as never,
+		messages: [{ role: "user", content: "Synthetic request", timestamp: 0 }],
+	});
+	expect(requests).toHaveLength(1);
+	const request = parseModelRequestV2(requests[0]);
+	expect(request).toMatchObject({
+		version: 2,
+		provider: "faux",
+		model: "faux-1",
+		thinking: "off",
+		maxTokens: 4096,
+	});
+	expect(request.transcript.messages[0]).toMatchObject({
+		role: "system",
+		toolsAdded: [{ name: "read", description: "Read a file" }],
+	});
+	expect(request.transcript.messages.at(-1)).toEqual({
+		role: "user",
+		content: "Synthetic request",
+	});
+});
+
+it("thinking, text and tool call frames become ordered assistant blocks with toolUse", async () => {
+	const { adapter, model } = transportHarness(() => ({
+		version: 2,
+		status: "complete",
+		frames: [
+			{ version: 2, type: "thinking", thinking: "plan", signature: "sig" },
+			{ version: 2, type: "text", text: "Reading" },
+			{
+				version: 2,
+				type: "toolCall",
+				id: "call_1",
+				name: "read",
+				arguments: { path: "a.ts" },
+			},
+			doneFrame("toolUse"),
+		],
+	}));
+	const response = await adapter.models.completeSimple(model, {
+		messages: [{ role: "user", content: "Synthetic request", timestamp: 0 }],
+	});
+	expect(response.stopReason).toBe("toolUse");
+	expect(response.content).toEqual([
+		{ type: "thinking", thinking: "plan", thinkingSignature: "sig" },
+		{ type: "text", text: "Reading" },
+		{
+			type: "toolCall",
+			id: "call_1",
+			name: "read",
+			arguments: { path: "a.ts" },
+		},
+	]);
+	expect(response.usage).toMatchObject({
+		input: 5,
+		output: 7,
+		totalTokens: 12,
+	});
+});
+
+it("a tool result in the next request transcript survives strict parsing", async () => {
+	const { adapter, model, requests } = transportHarness(() => ({
+		version: 2,
+		status: "complete",
+		frames: [doneFrame("stop")],
+	}));
+	await adapter.models.completeSimple(model, {
+		messages: [
+			{ role: "user", content: "Synthetic request", timestamp: 0 },
+			fauxAssistantMessage(
+				[fauxToolCall("read", { path: "a.ts" }, { id: "call_1" })],
+				{ stopReason: "toolUse" },
+			),
+			{
+				role: "toolResult",
+				toolCallId: "call_1",
+				toolName: "read",
+				content: [{ type: "text", text: "const a = 1" }],
+				isError: false,
+				timestamp: 0,
+			},
+		],
+	});
+	const messages = parseModelRequestV2(requests[0]).transcript.messages;
+	expect(messages.at(-2)).toMatchObject({
+		role: "assistant",
+		content: [{ type: "toolCall", id: "call_1", name: "read" }],
+	});
+	expect(messages.at(-1)).toEqual({
+		role: "toolResult",
+		toolCallId: "call_1",
+		toolName: "read",
+		content: [{ type: "text", text: "const a = 1" }],
+		isError: false,
+	});
+});
+
+it("an outcome with a tool call but no completion frame is an error, not a partial message", async () => {
+	const { adapter, model } = transportHarness(() => ({
+		version: 2,
+		status: "complete",
+		frames: [
+			{
+				version: 2,
+				type: "toolCall",
+				id: "call_1",
+				name: "read",
+				arguments: {},
+			},
+		],
+	}));
+	const response = await adapter.models.completeSimple(model, {
+		messages: [{ role: "user", content: "Synthetic request", timestamp: 0 }],
+	});
+	expect(response.stopReason).toBe("error");
+	expect(response.content).toEqual([]);
+});

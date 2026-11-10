@@ -4,6 +4,7 @@ import {
 	BACKGROUND_CONTEXT,
 	withAbortSignal,
 } from "@earendil-works/chord/context";
+import type { JsonObject } from "@earendil-works/pi-ai";
 import { createModels } from "@earendil-works/pi-ai/models";
 import {
 	fauxAssistantMessage,
@@ -20,15 +21,14 @@ import {
 } from "@earendil-works/pi-durable";
 import {
 	type ModelAttemptV1,
+	type ModelOutcomeV2,
 	type ModelSubjectV1,
 	type ModelTransportDescriptorV1,
+	modelRequestDigestV2,
 	parseModelAttemptV1,
+	parseModelRequestV2,
 	parseModelSubjectV1,
-	parseSyntheticModelBodyV1,
-	parseSyntheticModelRequestV1,
-	SYNTHETIC_MODEL_URL,
-	type SyntheticModelOutcomeV1,
-	syntheticModelRequestDigest,
+	validateModelFramesV2,
 } from "../../../packages/runtime-contracts/src/model.js";
 import {
 	type HostGuard,
@@ -57,9 +57,9 @@ export class ExactModelClaim extends RpcTarget {
 		request: unknown,
 		product: PrivateModelTransport,
 	) {
-		const narrowed = parseSyntheticModelRequestV1(request);
+		const narrowed = parseModelRequestV2(request);
 		const scope = parseModelSubjectV1(subject);
-		const digest = await syntheticModelRequestDigest(narrowed);
+		const digest = await modelRequestDigestV2(narrowed);
 		const target = new ExactModelClaim(dispatch, {
 			userId: scope.userId,
 			projectId: scope.projectId,
@@ -148,7 +148,7 @@ export interface PrivateModelTransport {
 	requestModel(
 		request: unknown,
 		capability: ExactModelClaim,
-	): Promise<SyntheticModelOutcomeV1>;
+	): Promise<ModelOutcomeV2>;
 	readModelPermit(
 		request: unknown,
 		descriptor: ModelTransportDescriptorV1,
@@ -185,30 +185,20 @@ export function createPrivateModelAdapter(
 					},
 					context,
 					async (dispatch) => {
-						const body = parseSyntheticModelBodyV1({
-							version: 1,
-							protocol: "ditto-synthetic-ndjson-1",
+						const request = parseModelRequestV2({
+							version: 2,
 							purpose:
 								dispatch.attempt.kind === "custom_summary"
 									? "custom_summary"
 									: generationPurpose,
+							provider: model.provider,
 							model: model.id,
 							thinking:
 								options && "reasoning" in options
 									? (options.reasoning ?? "off")
 									: "off",
-							transcript: JSON.stringify(semanticTranscript(transcript)),
-							options: { maxTokens: options?.maxTokens ?? 4096 },
-						});
-						const request = parseSyntheticModelRequestV1({
-							version: 1,
-							method: "POST",
-							url: SYNTHETIC_MODEL_URL,
-							headers: [
-								["content-type", "application/json"],
-								["accept", "application/x-ndjson"],
-							],
-							body: JSON.stringify(body),
+							maxTokens: options?.maxTokens ?? 4096,
+							transcript: semanticTranscript(transcript),
 						});
 						const currentSubject =
 							subject ??
@@ -238,7 +228,7 @@ export function createPrivateModelAdapter(
 						);
 						context.abortSignal?.throwIfAborted();
 						if (
-							outcome.version !== 1 ||
+							outcome.version !== 2 ||
 							!["complete", "failed_known"].includes(outcome.status)
 						)
 							throw new Error("Private model transport denied or uncertain");
@@ -253,25 +243,55 @@ export function createPrivateModelAdapter(
 							};
 						if (outcome.status !== "complete")
 							throw new Error("Private model outcome denied");
-						const final = outcome.frames.at(-1);
+						const frames = validateModelFramesV2(outcome.frames);
+						const final = frames.at(-1);
 						if (!final || final.type !== "done")
-							throw new Error("Missing synthetic completion");
-						const text = outcome.frames
-							.flatMap((frame) => (frame.type === "delta" ? [frame.text] : []))
-							.join("");
-						const response = fauxAssistantMessage(text, {
+							throw new Error("Missing model completion");
+						const response = fauxAssistantMessage([], {
 							stopReason: final.stopReason,
 							...(final.stopReason === "error"
 								? { errorMessage: "503 Synthetic known model rejection" }
 								: {}),
 						});
+						for (const frame of frames) {
+							if (frame.type === "text")
+								response.content.push({
+									type: "text",
+									text: frame.text,
+									...(frame.signature === undefined
+										? {}
+										: { textSignature: frame.signature }),
+								});
+							else if (frame.type === "thinking")
+								response.content.push({
+									type: "thinking",
+									thinking: frame.thinking,
+									...(frame.signature === undefined
+										? {}
+										: { thinkingSignature: frame.signature }),
+									...(frame.redacted === undefined
+										? {}
+										: { redacted: frame.redacted }),
+								});
+							else if (frame.type === "toolCall")
+								response.content.push({
+									type: "toolCall",
+									id: frame.id,
+									name: frame.name,
+									arguments: frame.arguments as JsonObject,
+								});
+						}
 						response.model = model.id;
 						response.provider = model.provider;
 						response.usage = {
 							...response.usage,
-							input: final.inputTokens,
-							output: final.outputTokens,
-							totalTokens: final.inputTokens + final.outputTokens,
+							input: final.usage.input,
+							output: final.usage.output,
+							cacheRead: final.usage.cacheRead,
+							...(final.usage.reasoning === undefined
+								? {}
+								: { reasoning: final.usage.reasoning }),
+							totalTokens: final.usage.input + final.usage.output,
 						};
 						return response;
 					},

@@ -7,6 +7,7 @@ import type {
 	ConfigurationSelectionV1,
 } from "../../../packages/runtime-contracts/src/configuration.js";
 import {
+	type ModelOutcomeV2,
 	type ModelRequestV2,
 	type ModelSubjectV1,
 	type ModelTransportDescriptorV1,
@@ -381,7 +382,8 @@ async function gate(
 							return { version: 2, status: "denied" };
 						}
 						if (options.duplicate) {
-							const outcomes = await Promise.all([
+							// RPC typing drops the frame branch of `unknown` tool arguments.
+							const outcomes: ModelOutcomeV2[] = await Promise.all([
 								product.requestModel(request, capability),
 								product.requestModel(request, capability),
 							]);
@@ -1686,6 +1688,57 @@ it("the mandatory adapter constructs an exact credential-owned request and bound
 			"[007-product-constructed]",
 			JSON.stringify({ ...calls[0], frames, snapshot: await f.snapshot() }),
 		);
+	});
+});
+
+it("a reply carrying a tool call completes its admission and returns in the next request transcript", async () => {
+	const toolFrames = [
+		{ version: 2, type: "thinking", thinking: "plan" },
+		{
+			version: 2,
+			type: "toolCall",
+			id: "call_1",
+			name: "read",
+			arguments: { path: "a.ts" },
+		},
+		{
+			version: 2,
+			type: "done",
+			stopReason: "toolUse",
+			usage: { input: 4, output: 6, cacheRead: 0 },
+		},
+	];
+	upstream(
+		200,
+		`${toolFrames.map((frame) => JSON.stringify(frame)).join("\n")}\n`,
+		1,
+	);
+	upstream();
+	await gate("tool-call", async (f) => {
+		await f.start();
+		await bounded(f.settled);
+		await f.host.waitIdle();
+		expect(calls.length).toBeGreaterThanOrEqual(1);
+		const [first, second] = calls;
+		expect(first.body.transcript.messages.map((m) => m.role)).not.toContain(
+			"toolResult",
+		);
+		expect(second?.body.transcript.messages).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					role: "assistant",
+					content: expect.arrayContaining([
+						expect.objectContaining({ type: "toolCall", id: "call_1" }),
+					]),
+				}),
+				expect.objectContaining({ role: "toolResult", toolCallId: "call_1" }),
+			]),
+		);
+		expect(await f.snapshot()).toMatchObject({
+			admissions: Array.from({ length: calls.length }, () => ({
+				state: "complete",
+			})),
+		});
 	});
 });
 
