@@ -30,7 +30,15 @@ const routeOptions = vi.hoisted(() => ({
 vi.mock("cloudflare:workers", () => ({
 	env: {
 		BETTER_AUTH_SECRET: "test-secret",
-		OPENCODE_API_KEY: "sk-test",
+		DEFAULT_MODEL: JSON.stringify({
+			baseUrl: "https://llm.example.com/v1",
+			id: "test-model",
+			name: "Test model",
+			reasoning: false,
+			contextWindow: 1000,
+			maxTokens: 100,
+		}),
+		DEFAULT_MODEL_API_KEY: "sk-test",
 	},
 }));
 

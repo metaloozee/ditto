@@ -23,9 +23,17 @@ vi.mock("@cloudflare/sandbox", () => ({
 const { appendRollingTail, runAgentInSandbox, STDERR_TAIL_MAX_CHARS } =
 	await import("./agent-run");
 
+const MODEL_API_KEY = "sk-test-key-12345678901234567890";
+const MODEL_CONFIG = {
+	id: "test-model",
+	name: "Test model",
+	reasoning: false,
+	contextWindow: 1000,
+	maxTokens: 100,
+};
+
 function makeEnv(): Env {
 	return {
-		OPENCODE_API_KEY: "sk-test-key-12345678901234567890",
 		BETTER_AUTH_SECRET: "test-better-auth-secret-min-length",
 		BETTER_AUTH_URL: "http://localhost:5173",
 	} as Env;
@@ -75,7 +83,9 @@ describe("runAgentInSandbox", () => {
 			conversationId: "conv-1",
 			runId: "run-1",
 			cwd: SESSION_WORKTREE_CWD,
-			model: "opencode/deepseek-v4-flash-free",
+			model: "ditto/default",
+			modelConfig: MODEL_CONFIG,
+			modelApiKey: MODEL_API_KEY,
 			prompt: "do the thing",
 			envVars: [{ key: "DATABASE_URL", value: "postgres://secret" }],
 			onRunnerMessage,
@@ -105,17 +115,13 @@ describe("runAgentInSandbox", () => {
 			string
 		>;
 		expect(sessionEnv).not.toHaveProperty("DITTO_PI_CREDENTIAL");
-		expect(sessionEnv).not.toHaveProperty("OPENCODE_API_KEY");
+		expect(sessionEnv).not.toHaveProperty("DEFAULT_MODEL_API_KEY");
 		expect(
 			Object.keys(sessionEnv).some((key) => key.includes("CALLBACK")),
 		).toBe(false);
 		expect(JSON.stringify(sessionEnv)).not.toContain("api/agent/git");
-		expect(JSON.stringify(sessionEnv)).not.toContain(
-			makeEnv().OPENCODE_API_KEY,
-		);
-		expect(execStream.mock.calls[0]?.[0]).not.toContain(
-			makeEnv().OPENCODE_API_KEY,
-		);
+		expect(JSON.stringify(sessionEnv)).not.toContain(MODEL_API_KEY);
+		expect(execStream.mock.calls[0]?.[0]).not.toContain(MODEL_API_KEY);
 		expect(execStream.mock.calls[0]?.[0]).not.toContain("api/agent/git");
 		expect(writeFile.mock.calls[0]?.[1]).not.toContain("api/agent/git");
 		expect(writeFile).toHaveBeenCalledWith(
@@ -123,7 +129,8 @@ describe("runAgentInSandbox", () => {
 			JSON.stringify({
 				runId: "run-1",
 				conversationId: "conv-1",
-				model: "opencode/deepseek-v4-flash-free",
+				model: "ditto/default",
+				modelConfig: MODEL_CONFIG,
 				prompt: "do the thing",
 				cwd: SESSION_WORKTREE_CWD,
 			}),
@@ -182,7 +189,9 @@ describe("runAgentInSandbox", () => {
 			conversationId: "conv-1",
 			runId: "run-1",
 			cwd: SESSION_WORKTREE_CWD,
-			model: "opencode/deepseek-v4-flash-free",
+			model: "ditto/default",
+			modelConfig: MODEL_CONFIG,
+			modelApiKey: MODEL_API_KEY,
 			thinkingLevel: "high",
 			prompt: "do the thing",
 			onRunnerMessage: vi.fn(),
@@ -193,7 +202,8 @@ describe("runAgentInSandbox", () => {
 			JSON.stringify({
 				runId: "run-1",
 				conversationId: "conv-1",
-				model: "opencode/deepseek-v4-flash-free",
+				model: "ditto/default",
+				modelConfig: MODEL_CONFIG,
 				prompt: "do the thing",
 				cwd: SESSION_WORKTREE_CWD,
 				thinkingLevel: "high",
@@ -266,7 +276,9 @@ describe("runAgentInSandbox", () => {
 			conversationId: "conv-order",
 			runId: "run-order",
 			cwd: SESSION_WORKTREE_CWD,
-			model: "opencode/deepseek-v4-flash-free",
+			model: "ditto/default",
+			modelConfig: MODEL_CONFIG,
+			modelApiKey: MODEL_API_KEY,
 			prompt: "check order",
 			onRunnerMessage,
 		});
@@ -323,7 +335,9 @@ describe("runAgentInSandbox", () => {
 			conversationId: "conv-2",
 			runId: "run-2",
 			cwd: "/workspace/.ditto/worktrees/conv-2",
-			model: "opencode/deepseek-v4-flash-free",
+			model: "ditto/default",
+			modelConfig: MODEL_CONFIG,
+			modelApiKey: MODEL_API_KEY,
 			prompt: "ping",
 			onRunnerMessage,
 		});
@@ -408,7 +422,9 @@ describe("runAgentInSandbox", () => {
 			conversationId: "conv-stderr-bound",
 			runId: "run-stderr-bound",
 			cwd: SESSION_WORKTREE_CWD,
-			model: "opencode/deepseek-v4-flash-free",
+			model: "ditto/default",
+			modelConfig: MODEL_CONFIG,
+			modelApiKey: MODEL_API_KEY,
 			prompt: "fail big",
 			onRunnerMessage,
 		});
@@ -460,7 +476,9 @@ describe("runAgentInSandbox", () => {
 			conversationId: "conv-3",
 			runId: "run-3",
 			cwd: SESSION_WORKTREE_CWD,
-			model: "opencode/deepseek-v4-flash-free",
+			model: "ditto/default",
+			modelConfig: MODEL_CONFIG,
+			modelApiKey: MODEL_API_KEY,
 			prompt: "fail",
 			onRunnerMessage: vi.fn(),
 		});
@@ -546,7 +564,9 @@ describe("runAgentInSandbox", () => {
 			conversationId: "conv-redact-delta",
 			runId: "run-redact-delta",
 			cwd: SESSION_WORKTREE_CWD,
-			model: "opencode/deepseek-v4-flash-free",
+			model: "ditto/default",
+			modelConfig: MODEL_CONFIG,
+			modelApiKey: MODEL_API_KEY,
 			prompt: "echo secret",
 			envVars: [{ key: "DATABASE_URL", value: projectSecret }],
 			onRunnerMessage,
@@ -628,7 +648,9 @@ describe("runAgentInSandbox", () => {
 			conversationId: "conv-redact-event",
 			runId: "run-redact-event",
 			cwd: SESSION_WORKTREE_CWD,
-			model: "opencode/deepseek-v4-flash-free",
+			model: "ditto/default",
+			modelConfig: MODEL_CONFIG,
+			modelApiKey: MODEL_API_KEY,
 			prompt: "run tool",
 			envVars: [{ key: "API_TOKEN", value: projectSecret }],
 			onRunnerMessage,
@@ -651,9 +673,9 @@ describe("runAgentInSandbox", () => {
 		expect(allPayload).not.toContain(projectSecret);
 	});
 
-	it("never surfaces OPENCODE_API_KEY or fixture secrets in any onRunnerMessage payload", async () => {
+	it("never surfaces the model API key or fixture secrets in any onRunnerMessage payload", async () => {
 		const projectSecret = "postgres://secret-db-url-xyz";
-		const apiKey = makeEnv().OPENCODE_API_KEY;
+		const apiKey = MODEL_API_KEY;
 		const writeFile = vi.fn().mockResolvedValue(undefined);
 		const mkdir = vi.fn().mockResolvedValue(undefined);
 		const execStream = vi.fn().mockResolvedValue(new ReadableStream());
@@ -705,7 +727,9 @@ describe("runAgentInSandbox", () => {
 			conversationId: "conv-redact-all",
 			runId: "run-redact-all",
 			cwd: SESSION_WORKTREE_CWD,
-			model: "opencode/deepseek-v4-flash-free",
+			model: "ditto/default",
+			modelConfig: MODEL_CONFIG,
+			modelApiKey: MODEL_API_KEY,
 			prompt: "leak",
 			envVars: [{ key: "DATABASE_URL", value: projectSecret }],
 			onRunnerMessage,

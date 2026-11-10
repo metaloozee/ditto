@@ -7,7 +7,7 @@ Ditto is a TanStack Start app deployed with Alchemy on Cloudflare Workers. It us
 - GitHub repository import through a GitHub App
 - one isolated `@cloudflare/sandbox` runtime per workspace session
 - immutable project seeds and workspace-session recovery archives in R2
-- one fixed model, `opencode/deepseek-v4-flash-free`
+- one operator-configured default model
 - the PI harness inside the sandbox, streamed through `POST /api/agent/stream`
 
 The Worker brokers model and Git traffic. Sandboxes receive no OpenCode key, GitHub installation token, R2 capability, or internal bearer token. User-owned project environment values enter only the agent command and remain subject to output redaction and Git secret preflight.

@@ -67,9 +67,23 @@ const readyProject = {
 	updatedAt: new Date(),
 };
 
+const MODEL_API_KEY = "sk-test-key-12345678901234567890";
+const MODEL_CONFIG = {
+	id: "test-model",
+	name: "Test model",
+	reasoning: false,
+	contextWindow: 1000,
+	maxTokens: 100,
+};
+const DEFAULT_MODEL_FIXTURE = JSON.stringify({
+	baseUrl: "https://llm.example.com/v1",
+	...MODEL_CONFIG,
+});
+
 function makeEnv(): Env {
 	return {
-		OPENCODE_API_KEY: "sk-test-key-12345678901234567890",
+		DEFAULT_MODEL: DEFAULT_MODEL_FIXTURE,
+		DEFAULT_MODEL_API_KEY: MODEL_API_KEY,
 		BETTER_AUTH_SECRET: "test-better-auth-secret-min-length",
 		BETTER_AUTH_URL: "http://localhost:5173",
 	} as Env;
@@ -322,7 +336,9 @@ describe("agent run ownership batches through drizzle-orm/d1", () => {
 			userId: "user-1",
 			projectId: "proj-1",
 			message: "hi",
-			model: "opencode/deepseek-v4-flash-free",
+			model: "ditto/default",
+			modelConfig: MODEL_CONFIG,
+			modelApiKey: MODEL_API_KEY,
 			runId: "run-1",
 			workId: "work-1",
 			sessionId: "sess-1",
@@ -476,7 +492,9 @@ describe("agent run ownership batches through drizzle-orm/d1", () => {
 			userId: "user-1",
 			projectId: "proj-1",
 			message: "hi",
-			model: "opencode/deepseek-v4-flash-free",
+			model: "ditto/default",
+			modelConfig: MODEL_CONFIG,
+			modelApiKey: MODEL_API_KEY,
 			runId: "run-1",
 			workId: "work-1",
 			sessionId: "sess-1",

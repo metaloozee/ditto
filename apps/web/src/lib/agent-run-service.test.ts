@@ -93,9 +93,23 @@ const activeSession = {
 	updatedAt: new Date(),
 };
 
+const MODEL_API_KEY = "sk-test-key-12345678901234567890";
+const MODEL_CONFIG = {
+	id: "test-model",
+	name: "Test model",
+	reasoning: false,
+	contextWindow: 1000,
+	maxTokens: 100,
+};
+const DEFAULT_MODEL_FIXTURE = JSON.stringify({
+	baseUrl: "https://llm.example.com/v1",
+	...MODEL_CONFIG,
+});
+
 function makeEnv(): Env {
 	return {
-		OPENCODE_API_KEY: "sk-test-key-12345678901234567890",
+		DEFAULT_MODEL: DEFAULT_MODEL_FIXTURE,
+		DEFAULT_MODEL_API_KEY: MODEL_API_KEY,
 		BETTER_AUTH_SECRET: "test-better-auth-secret-min-length",
 		BETTER_AUTH_URL: "http://localhost:5173",
 	} as Env;
@@ -466,13 +480,13 @@ describe("prepareAgentRun", () => {
 		expect(batch).toHaveBeenCalled();
 	});
 
-	it("fails missing OPENCODE_API_KEY before project, session, message, or sandbox calls", async () => {
+	it("fails missing DEFAULT_MODEL_API_KEY before project, session, message, or sandbox calls", async () => {
 		const loadProjectForUser = vi.fn();
 		const ensureWorkspaceRuntimeReady = vi.fn();
 		const resolveSessionForMessageWrite = vi.fn();
 		const { db, insert, batch } = createMockDb();
 		const env = makeEnv();
-		env.OPENCODE_API_KEY = "";
+		env.DEFAULT_MODEL_API_KEY = "";
 		const result = await prepareAgentRun({
 			db,
 			env,
@@ -490,7 +504,7 @@ describe("prepareAgentRun", () => {
 		expect(result).toMatchObject({
 			kind: "error",
 			status: 500,
-			body: { error: "Server credentials are not configured." },
+			body: { error: "Server model is not configured." },
 		});
 		expect(loadProjectForUser).not.toHaveBeenCalled();
 		expect(ensureWorkspaceRuntimeReady).not.toHaveBeenCalled();
@@ -527,9 +541,11 @@ describe("prepareAgentRun", () => {
 		});
 		expect(result.kind).toBe("ready");
 		if (result.kind === "ready") {
-			expect(result.context.model).toBe("opencode/deepseek-v4-flash-free");
+			expect(result.context.model).toBe("ditto/default");
+			expect(result.context.modelConfig).toEqual(MODEL_CONFIG);
+			expect(result.context.modelConfig).not.toHaveProperty("baseUrl");
 			expect(result.context).not.toHaveProperty("runtimeCredentialJson");
-			expect(result.context.secretValues).toContain(makeEnv().OPENCODE_API_KEY);
+			expect(result.context.secretValues).toContain(MODEL_API_KEY);
 		}
 	});
 
@@ -696,7 +712,9 @@ describe("executeAgentRun", () => {
 			userId: "user-1",
 			projectId: "proj-1",
 			message: "hi",
-			model: "opencode/deepseek-v4-flash-free",
+			model: "ditto/default",
+			modelConfig: MODEL_CONFIG,
+			modelApiKey: MODEL_API_KEY,
 			runId: "run-1",
 			workId: "work-1",
 			sessionId: "sess-1",
@@ -707,7 +725,7 @@ describe("executeAgentRun", () => {
 			userMessageId: "user-msg",
 			assistantMessageId: "asst-msg",
 			envVars: [],
-			secretValues: [makeEnv().OPENCODE_API_KEY],
+			secretValues: [MODEL_API_KEY],
 			...overrides,
 		};
 	}

@@ -126,7 +126,7 @@ describe("open-code-contract", () => {
 		const result = await validateOpenCodeRequest(
 			validRequest({
 				rawBody:
-					'{"model":"deepseek-v4-flash-free","model":"other","messages":[{"role":"user","content":"hi"}],"stream":true}',
+					'{"model":"test-model","model":"other","messages":[{"role":"user","content":"hi"}],"stream":true}',
 			}),
 			BOUND,
 		);

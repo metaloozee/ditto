@@ -1,6 +1,6 @@
 /** Product secret and OAuth bindings that shared runtime policy must not require. */
 export type ForbiddenProductBinding =
-	| "OPENCODE_API_KEY"
+	| "DEFAULT_MODEL_API_KEY"
 	| "BETTER_AUTH_SECRET"
 	| "GITHUB_CLIENT_SECRET"
 	| "GITHUB_APP_CLIENT_ID"

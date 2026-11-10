@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { CornerDownLeft, Square } from "lucide";
+import { Sparkles } from "lucide-react";
 import { MorphIcon } from "morphicons/react";
 import {
 	type Dispatch,
@@ -929,10 +930,7 @@ function LegacyComposer({
 								aria-label={modelLabel}
 								className={MODEL_BUTTON_CLASS}
 							>
-								<ModelSelectorLogo
-									className="size-5"
-									provider={FIXED_MODEL.provider}
-								/>
+								<Sparkles aria-hidden className="size-5" />
 							</span>
 						}
 					/>

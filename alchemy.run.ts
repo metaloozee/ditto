@@ -212,7 +212,8 @@ async function createWebsite() {
 			VITE_GITHUB_APP_INSTALL_URL:
 				process.env.VITE_GITHUB_APP_INSTALL_URL ??
 				"https://github.com/apps/ditto-web/installations/new/",
-			OPENCODE_API_KEY: alchemy.secret(process.env.OPENCODE_API_KEY),
+			DEFAULT_MODEL: process.env.DEFAULT_MODEL ?? "",
+			DEFAULT_MODEL_API_KEY: alchemy.secret(process.env.DEFAULT_MODEL_API_KEY),
 			SANDBOX_TRANSPORT: "rpc",
 			PREVIEW_BASE_HOST: "ayn.wtf",
 			...(candidate

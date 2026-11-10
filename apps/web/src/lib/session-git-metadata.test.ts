@@ -44,8 +44,20 @@ function fail(stderr = "raw git boom SECRET_SENTINEL_XYZ") {
 	return { success: false, exitCode: 1, stdout: "", stderr };
 }
 
+const MODEL_API_KEY = "sk-test-key-12345678901234567890";
+const MODEL_CONFIG = {
+	id: "test-model",
+	name: "Test model",
+	reasoning: false,
+	contextWindow: 1000,
+	maxTokens: 100,
+};
 const env = {
-	OPENCODE_API_KEY: "sk-test-key-12345678901234567890",
+	DEFAULT_MODEL: JSON.stringify({
+		baseUrl: "https://llm.example.com/v1",
+		...MODEL_CONFIG,
+	}),
+	DEFAULT_MODEL_API_KEY: MODEL_API_KEY,
 } as Env;
 
 function metadataOp() {
@@ -70,7 +82,8 @@ const baseCommitJob = {
 	v: 1 as const,
 	requestId: "req-1",
 	kind: "commit" as const,
-	model: "opencode/deepseek-v4-flash-free" as const,
+	model: "ditto/default" as const,
+	modelConfig: MODEL_CONFIG,
 	snapshot: {
 		kind: "commit_snapshot" as const,
 		branch: "ditto/s",
@@ -697,25 +710,25 @@ describe("generateGitMetadata", () => {
 		);
 		const sessionEnv = sandbox.createSession.mock.calls[0][0].env;
 		expect(sessionEnv).not.toHaveProperty("DITTO_PI_CREDENTIAL");
-		expect(sessionEnv).not.toHaveProperty("OPENCODE_API_KEY");
+		expect(sessionEnv).not.toHaveProperty("DEFAULT_MODEL_API_KEY");
 		expect(
 			Object.keys(sessionEnv).some((key) => key.includes("CALLBACK")),
 		).toBe(false);
 		expect(sessionEnv).not.toHaveProperty("GITHUB_TOKEN");
-		expect(JSON.stringify(sessionEnv)).not.toContain(env.OPENCODE_API_KEY);
+		expect(JSON.stringify(sessionEnv)).not.toContain(MODEL_API_KEY);
 		expect(shell.exec.mock.calls[0][0]).toContain(
 			"/opt/ditto-runner/dist/git-metadata-cli.js",
 		);
-		expect(shell.exec.mock.calls[0][0]).not.toContain(env.OPENCODE_API_KEY);
+		expect(shell.exec.mock.calls[0][0]).not.toContain(MODEL_API_KEY);
 		expect(shell.deleteFile).toHaveBeenCalled();
 		expect(sandbox.deleteSession).toHaveBeenCalledWith("shell-1");
 	});
 
-	it("rejects a missing OpenCode key before creating a sandbox session", async () => {
+	it("rejects a missing default model key before creating a sandbox session", async () => {
 		const { sandbox } = makeSandbox();
 		await expect(
 			generateGitMetadata({
-				env: { OPENCODE_API_KEY: "" } as Env,
+				env: { DEFAULT_MODEL_API_KEY: "" } as Env,
 				sandboxId: "sbx",
 				cwd: WORKTREE,
 				job: baseCommitJob,
@@ -764,7 +777,7 @@ describe("generateGitMetadata", () => {
 		shell.exec.mockResolvedValueOnce({
 			success: true,
 			exitCode: 0,
-			stdout: `{"v":1,"kind":"result","requestId":"req-1","result":{"kind":"commit","message":"feat: ${env.OPENCODE_API_KEY}"}}\n`,
+			stdout: `{"v":1,"kind":"result","requestId":"req-1","result":{"kind":"commit","message":"feat: ${MODEL_API_KEY}"}}\n`,
 			stderr: "",
 		});
 		await expect(

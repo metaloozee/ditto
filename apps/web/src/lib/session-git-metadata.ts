@@ -3,6 +3,13 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import type { createDb } from "#/db";
 import { workspaceSessions } from "#/db/schema";
+import { PI_THINKING_LEVELS } from "#/lib/agent-models";
+import {
+	DEFAULT_MODEL_SPECIFIER,
+	type RunnerModelConfig,
+	readDefaultModel,
+	toRunnerModelConfig,
+} from "#/lib/default-model";
 import { isSecretLikeGitPath } from "#/lib/git-secret-policy";
 import { quoteGitHubExportShellArg } from "#/lib/github-export";
 import { OPENCODE_CONTRACT_VERSION } from "#/lib/open-code-contract";
@@ -29,7 +36,7 @@ const PATCH_RAW_READ_BYTES = 100 * 1024;
 const STAT_MAX_BYTES = 8 * 1024;
 const PATHS_MAX = 200;
 const PATH_MAX_CHARS = 1024;
-const MODEL = "opencode/deepseek-v4-flash-free" as const;
+const MODEL = DEFAULT_MODEL_SPECIFIER;
 
 const GIT_DIFF_FLAGS = "--no-ext-diff --no-textconv --no-color --binary";
 
@@ -84,12 +91,51 @@ const snapshotCommonSchema = {
 	patchOriginalBytes: z.number().int().nonnegative(),
 };
 
+const modelConfigSchema = z
+	.object({
+		id: z
+			.string()
+			.min(1)
+			.max(128)
+			.regex(/^[A-Za-z0-9._:/-]+$/),
+		name: z.string().min(1).max(80),
+		reasoning: z.boolean(),
+		contextWindow: z.number().int().positive(),
+		maxTokens: z.number().int().positive(),
+		thinkingLevelMap: z
+			.partialRecord(z.enum(PI_THINKING_LEVELS), z.string().nullable())
+			.optional(),
+		compat: z
+			.object({
+				supportsStore: z.literal(false).optional(),
+				supportsDeveloperRole: z.literal(false).optional(),
+				maxTokensField: z.literal("max_tokens").optional(),
+				supportsLongCacheRetention: z.boolean().optional(),
+				requiresReasoningContentOnAssistantMessages: z.boolean().optional(),
+			})
+			.strict()
+			.optional(),
+	})
+	.strict();
+
+function requireModelConfig(env: Env): RunnerModelConfig {
+	const defaultModel = readDefaultModel(env);
+	if (!defaultModel) {
+		throw new SessionGitMetadataError(
+			"agent_failed",
+			"Server model is not configured.",
+		);
+	}
+	return toRunnerModelConfig(defaultModel.config);
+}
+
 const commitJobSchema = z
 	.object({
 		v: z.literal(1),
 		requestId: z.string().min(1).max(128).refine(nulFree),
 		kind: z.literal("commit"),
 		model: z.literal(MODEL),
+		modelConfig: modelConfigSchema,
 		snapshot: z
 			.object({
 				kind: z.literal("commit_snapshot"),
@@ -105,6 +151,7 @@ const pullRequestJobSchema = z
 		requestId: z.string().min(1).max(128).refine(nulFree),
 		kind: z.literal("pull_request"),
 		model: z.literal(MODEL),
+		modelConfig: modelConfigSchema,
 		snapshot: z
 			.object({
 				kind: z.literal("pull_request_snapshot"),
@@ -515,6 +562,7 @@ export async function collectCommitMetadataSnapshot(
 			requestId,
 			kind: "commit",
 			model: MODEL,
+			modelConfig: requireModelConfig(ctx.env),
 			snapshot: { kind: "commit_snapshot", ...snapshot },
 		});
 		assertJobWithinRawLimit(job);
@@ -671,6 +719,7 @@ export async function collectPullRequestMetadataSnapshot(
 			requestId,
 			kind: "pull_request",
 			model: MODEL,
+			modelConfig: requireModelConfig(ctx.env),
 			snapshot: {
 				kind: "pull_request_snapshot",
 				...snapshot,
@@ -767,10 +816,11 @@ export async function generateGitMetadata<
 	const requestId = options.job.requestId;
 	const jobPath = `${JOB_DIR}/${requestId}.json`;
 	const knownSecrets = options.knownSecrets ?? [];
-	if (!options.env.OPENCODE_API_KEY?.trim()) {
+	const defaultModel = readDefaultModel(options.env);
+	if (!defaultModel) {
 		throw new SessionGitMetadataError(
 			"agent_failed",
-			"Server credentials are not configured.",
+			"Server model is not configured.",
 		);
 	}
 	if (!options.identityId) {
@@ -779,7 +829,7 @@ export async function generateGitMetadata<
 			"Workspace session has no sandbox identity for model access.",
 		);
 	}
-	const secretValues = [options.env.OPENCODE_API_KEY, ...knownSecrets].filter(
+	const secretValues = [defaultModel.apiKey, ...knownSecrets].filter(
 		(value): value is string => typeof value === "string" && value.length > 0,
 	);
 

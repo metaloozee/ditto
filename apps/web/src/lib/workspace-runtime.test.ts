@@ -719,7 +719,7 @@ describe("WorkspaceRuntime", () => {
 			...env,
 			BETTER_AUTH_SECRET: "fixture-only",
 			GITHUB_APP_PRIVATE_KEY: "fixture-only",
-			OPENCODE_API_KEY: "fixture-only",
+			DEFAULT_MODEL_API_KEY: "fixture-only",
 		} as Env;
 		await withWorkspaceRuntimeLease(
 			{
@@ -739,7 +739,7 @@ describe("WorkspaceRuntime", () => {
 		expect(Object.hasOwn(forwarded, "env")).toBe(false);
 		expect(forwarded).not.toHaveProperty("BETTER_AUTH_SECRET");
 		expect(forwarded).not.toHaveProperty("GITHUB_APP_PRIVATE_KEY");
-		expect(forwarded).not.toHaveProperty("OPENCODE_API_KEY");
+		expect(forwarded).not.toHaveProperty("DEFAULT_MODEL_API_KEY");
 		expect(forwarded).toEqual(
 			expect.objectContaining({
 				userId: "user-1",

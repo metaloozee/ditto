@@ -7,6 +7,7 @@ import {
 	type RunnerOut,
 	splitStdoutBuffer,
 } from "#/lib/agent-stream-protocol";
+import type { RunnerModelConfig } from "#/lib/default-model";
 import { dittoGitAuthorEnv } from "#/lib/ditto-git-identity";
 import { getProjectSandbox, type SandboxEnvVar } from "#/lib/sandbox-bootstrap";
 import {
@@ -76,6 +77,9 @@ async function runAgentInSandboxLocked(options: {
 	runId: string;
 	cwd: string;
 	model: string;
+	modelConfig: RunnerModelConfig;
+	/** Redaction only; the key never enters the sandbox. */
+	modelApiKey: string;
 	thinkingLevel?: PiThinkingLevel;
 	prompt: string;
 	envVars?: readonly SandboxEnvVar[];
@@ -106,7 +110,7 @@ async function runAgentInSandboxLocked(options: {
 	let errorEmitted = false;
 
 	const secretValues = [
-		options.env.OPENCODE_API_KEY,
+		options.modelApiKey,
 		...Object.values(projectEnv),
 	].filter(
 		(value): value is string => typeof value === "string" && value.length > 0,
@@ -246,6 +250,7 @@ async function runAgentInSandboxLocked(options: {
 				runId: options.runId,
 				conversationId: options.conversationId,
 				model: options.model,
+				modelConfig: options.modelConfig,
 				prompt: options.prompt,
 				cwd: options.cwd,
 				...(options.thinkingLevel

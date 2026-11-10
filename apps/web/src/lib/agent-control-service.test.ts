@@ -167,7 +167,7 @@ describe("agent control service", () => {
 			},
 		});
 		const job = JSON.parse(harness.writeFile.mock.calls[0][1]);
-		expect(job.model).toBe("opencode/deepseek-v4-flash-free");
+		expect(job.model).toBe("ditto/default");
 		expect(job.text).toBe(followUp.message);
 		const command = harness.exec.mock.calls[0][0] as string;
 		expect(command).toBe(
@@ -180,7 +180,7 @@ describe("agent control service", () => {
 		);
 		const sessionEnv = harness.sandbox.createSession.mock.calls[0]?.[0]?.env;
 		expect(sessionEnv).not.toHaveProperty("DITTO_PI_CREDENTIAL");
-		expect(sessionEnv).not.toHaveProperty("OPENCODE_API_KEY");
+		expect(sessionEnv).not.toHaveProperty("DEFAULT_MODEL_API_KEY");
 		expect(harness.closeOpenFamily).not.toHaveBeenCalled();
 	});
 

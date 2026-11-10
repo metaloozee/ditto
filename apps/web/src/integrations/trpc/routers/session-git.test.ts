@@ -173,8 +173,20 @@ function setupResolved() {
 	return db;
 }
 
+const DEFAULT_MODEL_FIXTURE = JSON.stringify({
+	baseUrl: "https://llm.example.com/v1",
+	id: "test-model",
+	name: "Test model",
+	reasoning: false,
+	contextWindow: 1000,
+	maxTokens: 100,
+});
+
 const ctx = {
-	env: { OPENCODE_API_KEY: "sk-test-key-12345678901234567890" } as Env,
+	env: {
+		DEFAULT_MODEL: DEFAULT_MODEL_FIXTURE,
+		DEFAULT_MODEL_API_KEY: "sk-test-key-12345678901234567890",
+	} as Env,
 	user: { id: "user-1", name: "U", email: "u@example.com" },
 	auth: {},
 	request: { headers: new Headers() },

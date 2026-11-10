@@ -30,6 +30,11 @@ import {
 } from "#/lib/agent-models";
 import { AGENT_COMMAND_TIMEOUT_MS, runAgentInSandbox } from "#/lib/agent-run";
 import {
+	type RunnerModelConfig,
+	readDefaultModel,
+	toRunnerModelConfig,
+} from "#/lib/default-model";
+import {
 	DITTO_ACTION_CONTRACT_VERSION,
 	DITTO_ACTION_OPERATION_TYPE,
 } from "#/lib/ditto-action-contract";
@@ -160,6 +165,8 @@ export type AgentRunContext = {
 	projectId: string;
 	message: string;
 	model: string;
+	modelConfig: RunnerModelConfig;
+	modelApiKey: string;
 	thinkingLevel?: PiThinkingLevel;
 	runId: string;
 	workId: string;
@@ -343,11 +350,12 @@ export async function prepareAgentRun(options: {
 	const deps = mergeDeps(options.deps);
 	const { db, env, userId, input } = options;
 
-	if (!env.OPENCODE_API_KEY?.trim()) {
+	const defaultModel = readDefaultModel(env);
+	if (!defaultModel) {
 		return {
 			kind: "error",
 			status: 500,
-			body: { error: "Server credentials are not configured." },
+			body: { error: "Server model is not configured." },
 		};
 	}
 
@@ -594,7 +602,7 @@ export async function prepareAgentRun(options: {
 	}
 
 	const secretValues = [
-		env.OPENCODE_API_KEY,
+		defaultModel.apiKey,
 		...envVars.map((envVar) => envVar.value),
 	].filter(
 		(value): value is string => typeof value === "string" && value.length > 0,
@@ -607,6 +615,8 @@ export async function prepareAgentRun(options: {
 		projectId: input.projectId,
 		message: input.message,
 		model,
+		modelConfig: toRunnerModelConfig(defaultModel.config),
+		modelApiKey: defaultModel.apiKey,
 		thinkingLevel: input.thinkingLevel,
 		runId,
 		workId,
@@ -702,6 +712,10 @@ export async function loadAgentRunContextFromWork(options: {
 	if (!userMessage) {
 		return null;
 	}
+	const defaultModel = readDefaultModel(env);
+	if (!defaultModel) {
+		return null;
+	}
 	const envVars = await deps.decryptEnvVars(
 		project.envVars,
 		env.BETTER_AUTH_SECRET,
@@ -718,7 +732,7 @@ export async function loadAgentRunContextFromWork(options: {
 			? thinkingRaw
 			: undefined;
 	const secretValues = [
-		env.OPENCODE_API_KEY,
+		defaultModel.apiKey,
 		...envVars.map((envVar) => envVar.value),
 	].filter(
 		(value): value is string => typeof value === "string" && value.length > 0,
@@ -730,6 +744,8 @@ export async function loadAgentRunContextFromWork(options: {
 		projectId: work.projectId,
 		message: userMessage.content,
 		model,
+		modelConfig: toRunnerModelConfig(defaultModel.config),
+		modelApiKey: defaultModel.apiKey,
 		thinkingLevel,
 		runId,
 		workId: work.id,
@@ -983,6 +999,8 @@ export async function executeAgentRun(options: {
 									runId: context.runId,
 									cwd: lease.workspacePath,
 									model: context.model,
+									modelConfig: context.modelConfig,
+									modelApiKey: context.modelApiKey,
 									thinkingLevel: context.thinkingLevel,
 									prompt: context.message,
 									envVars: lease.projectEnv ?? context.envVars,

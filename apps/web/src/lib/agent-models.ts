@@ -1,5 +1,8 @@
+import type { DEFAULT_MODEL_SPECIFIER } from "#/lib/default-model";
+
+// Type-only import: default-model.ts imports PI_THINKING_LEVELS from here.
 export const DEFAULT_PROJECT_CODER_MODEL =
-	"opencode/deepseek-v4-flash-free" as const;
+	"ditto/default" as const satisfies typeof DEFAULT_MODEL_SPECIFIER;
 
 /** Canonical Pi abstract thinking levels (0.80.10), in clamp order. */
 export const PI_THINKING_LEVELS = [
@@ -93,39 +96,13 @@ export function effectiveThinkingLevel(
 /** Bound total length of a `provider/model` specifier. */
 export const MAX_MODEL_SPECIFIER_LENGTH = 200;
 
-export type ParsedModelSpecifier = {
-	providerId: string;
-	modelId: string;
-};
-
-const FIXED_MODEL_PROVIDER_ID = "opencode";
-const FIXED_MODEL_ID = "deepseek-v4-flash-free";
-
-/**
- * Parse the only valid project coder model. Availability is the same check:
- * the specifier must equal `DEFAULT_PROJECT_CODER_MODEL`.
- */
-export function parseModelSpecifier(
-	value: string,
-): ParsedModelSpecifier | null {
-	if (value !== DEFAULT_PROJECT_CODER_MODEL) return null;
-	return { providerId: FIXED_MODEL_PROVIDER_ID, modelId: FIXED_MODEL_ID };
-}
-
-/** Exact-literal validator for the fixed project coder model. */
-export function isProjectCoderModelSpecifier(
-	value: string,
-): value is typeof DEFAULT_PROJECT_CODER_MODEL {
-	return value === DEFAULT_PROJECT_CODER_MODEL;
-}
-
 /** Fixed-model list for composer context. */
 export const PROJECT_CODER_MODELS = [
 	{
 		id: DEFAULT_PROJECT_CODER_MODEL,
-		name: "DeepSeek V4 Flash Free",
-		provider: "opencode",
-		providerName: "OpenCode Zen",
+		name: "Default model",
+		provider: "ditto",
+		providerName: "Ditto",
 		thinkingLevels: FALLBACK_MODEL_THINKING_LEVELS,
 	},
 ] as const;

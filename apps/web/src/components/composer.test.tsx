@@ -119,7 +119,7 @@ describe("Composer streaming updates", () => {
 		render(<Composer projectId="proj-1" sessionId="sess-1" />);
 
 		expect(screen.queryByPlaceholderText("Search models…")).toBeNull();
-		expect(screen.getByLabelText("DeepSeek V4 Flash Free")).toBeTruthy();
+		expect(screen.getByLabelText("Default model")).toBeTruthy();
 
 		const textarea = screen.getByRole("textbox");
 		fireEvent.change(textarea, { target: { value: "hello" } });
