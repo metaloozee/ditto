@@ -7,7 +7,7 @@
 > `plans/README.md`, unless a reviewer dispatched you and said they maintain
 > the index.
 >
-> **Drift check (run first)**: `git diff --stat 7b4559b..HEAD -- apps/web/src/routes/api.agent.*.ts apps/web/src/lib/auth.ts apps/web/src/lib/session-runtime-client.ts apps/credential-tests package.json`
+> **Drift check (run first)**: `git diff --stat e349669..HEAD -- apps/web/src/routes/api.agent.*.ts apps/web/src/lib/auth.ts apps/web/src/lib/session-runtime-client.ts apps/credential-tests package.json`
 > If any listed file changed, compare the "Current state" excerpts with the
 > live code. A mismatch is a STOP condition.
 
@@ -18,7 +18,7 @@
 - **Risk**: LOW (test-only, plus one `package.json` script line)
 - **Depends on**: none. It may run before or after 035; if after, re-run the drift check.
 - **Category**: tests
-- **Planned at**: commit `44c5739`, 2026-10-31. **Refreshed at `7b4559b`, 2026-11-10** (reconcile): route handlers, `auth.ts`, `session-runtime-client.ts` and `server.ts` unchanged; `product-commands.worker.test.ts` line references shifted by one; `vitest.config.ts` gained `CODEX_DEVICE_AUTH: "1"`; `credentials:verify` gained `src/codex-device-auth.worker.test.ts`.
+- **Planned at**: commit `44c5739`, 2026-10-31. **Refreshed at `7b4559b`, 2026-11-10** (reconcile): route handlers, `auth.ts`, `session-runtime-client.ts` and `server.ts` unchanged; `product-commands.worker.test.ts` line references shifted by one; `vitest.config.ts` gained `CODEX_DEVICE_AUTH: "1"`; `credentials:verify` gained `src/codex-device-auth.worker.test.ts`. **Refreshed at `e349669`, 2026-11-10** (after 038): `product-commands.worker.test.ts` gained one import line, so its line references shifted by one more; `credentials:verify` gained `src/codex-models.worker.test.ts` before `src/candidate-preview.worker.test.ts`, which is still the last entry. With no selection, candidate readiness now requires only that the snapshot list at least one model; the fixture account lists `faux-1`, so nothing in this plan changes.
 
 ## Why this matters
 
@@ -51,9 +51,9 @@ Spec test PD39 (`docs/specs/pi-durable-session-runtime.md:926`) requires a "real
 - The worker test pool, `apps/credential-tests/vitest.config.ts`, has: D1 `DB`; `BETTER_AUTH_SECRET: "synthetic-034-auth-secret"`; service binding `CandidateProduct` → entrypoint `CandidateFixtureProduct` (implements `admitOwned`, `observeOwned`, `workspaceActionOwned`, `modelsOwned`, `deleteProjectOwned`); the `CodexCredential` DO; `CANDIDATE_DISPOSABLE: "008-synthetic"`; `CODEX_DEVICE_AUTH: "1"`. Tests include `src/**/*.worker.test.ts`. `tsconfig.json` maps `#/*` to `../web/src/*`.
 - Exemplars to copy, not import:
   - Migrations for every test: `apps/credential-tests/src/candidate-baseline.worker.test.ts:10-15` (the `import.meta.glob("../../web/migrations/*.sql", { query: "?raw", import: "default", eager: true })` with its `@ts-expect-error`) and `:73-80` (split on `--> statement-breakpoint`, strip `--` comment lines, `env.DB.exec`).
-  - The owner, project, Codex connection and fake-account rows, plus `CodexCredential.install`: `apps/credential-tests/src/product-commands.worker.test.ts:206-229`. The fake account object it binds is defined earlier in the same file. Copy it.
-  - The prompt body: `product-commands.worker.test.ts:135-141` (`{ version: 2, kind: "prompt", projectId: "project", idempotencyKey: "first", text: "Synthetic admitted command" }`).
-  - Row counting with zero-row assertions: `product-commands.worker.test.ts:142-158` (`counts()`), and the foreign-owner case at `:493-504`, where a foreign prompt is refused with `code: "model_unconfigured"` and `counts()` stays all zeros.
+  - The owner, project, Codex connection and fake-account rows, plus `CodexCredential.install`: `apps/credential-tests/src/product-commands.worker.test.ts:207-230`. The fake account object it binds is defined earlier in the same file. Copy it.
+  - The prompt body: `product-commands.worker.test.ts:136-142` (`{ version: 2, kind: "prompt", projectId: "project", idempotencyKey: "first", text: "Synthetic admitted command" }`).
+  - Row counting with zero-row assertions: `product-commands.worker.test.ts:143-159` (`counts()`), and the foreign-owner case at `:494-505`, where a foreign prompt is refused with `code: "model_unconfigured"` and `counts()` stays all zeros.
 - `package.json:21` `credentials:verify` lists each worker test file explicitly. A new file must be added there to run in CI.
 
 ## Commands you will need
@@ -97,7 +97,7 @@ Add a single smoke `it` that asserts the `/api/agent/observe` POST handler exist
 
 ### Step 2: Real sessions and signed cookies
 
-In `beforeEach`: apply all migrations (exemplar above), insert two users `owner` and `intruder`, the `owner` project, the owner's Codex connection and fake account, and run `CodexCredential.install` (exemplar `:207-231`).
+In `beforeEach`: apply all migrations (exemplar above), insert two users `owner` and `intruder`, the `owner` project, the owner's Codex connection and fake account, and run `CodexCredential.install` (exemplar `:208-232`).
 
 Helpers:
 - `async function sessionCookie(userId, expiresAt)`: build `const auth = createAuth(env)` (import `createAuth` from `../../web/src/lib/auth`), then `const ctx = await auth.$context`. Create the session row with `ctx.internalAdapter.createSession(userId)`. If `expiresAt` is in the past, `UPDATE session SET expiresAt=? WHERE token=?` afterwards. Take the cookie name from `ctx.authCookies.sessionToken.name`. Sign the way better-call 1.3.7 does: read `node_modules/.pnpm/better-auth@1.6.23_*/node_modules/better-call/dist/cookies.mjs` (`serializeSignedCookie` and the signing function it calls) and reproduce the value format with `crypto.subtle` HMAC-SHA256 and the pool's `env.BETTER_AUTH_SECRET`. Return `${name}=${value}`.
@@ -117,7 +117,7 @@ After each case, `counts()` (copied from the exemplar) equals all zeros, and `SE
 
 Then, for the prompt route (stream POST, with the `prompt` body):
 
-4. **Foreign**: the intruder's valid cookie, sending the prompt for the owner's `project` → non-2xx, body `code` is `model_unconfigured` (the code the service gives a foreign owner; see the exemplar at `:501-503`), and `counts()` is all zeros.
+4. **Foreign**: the intruder's valid cookie, sending the prompt for the owner's `project` → non-2xx, body `code` is `model_unconfigured` (the code the service gives a foreign owner; see the exemplar at `:502-504`), and `counts()` is all zeros.
 5. **Valid**: the owner's valid cookie → status 202, and `SELECT count(*) FROM session_commands` is 1.
 
 For observe, workspace-action and models, also run case 4 with a fabricated `sessionId`: the response is non-2xx and writes no rows. Assert the exact status and code each route returns today. Read them from the first run, then pin them in the test and list them in the evidence. The test fails if any of these ever turns 2xx.
