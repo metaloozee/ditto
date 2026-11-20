@@ -495,6 +495,15 @@ export const AUTH_NOTICES = [
 
 export type AuthNotice = (typeof AUTH_NOTICES)[number];
 
+const OAUTH_ERROR_NOTICES: Record<string, AuthNotice> = {
+	access_denied: "cancelled",
+	account_not_linked: "wrong-method",
+};
+
+/** The notice for an OAuth callback's `error`, if one is designed for it. */
+export const oauthErrorNotice = (error: unknown) =>
+	typeof error === "string" ? OAUTH_ERROR_NOTICES[error] : undefined;
+
 /** The toast for a redirect's `notice`. `onSignUp` backs the no-account action. */
 export function noticeToast(
 	notice: AuthNotice,

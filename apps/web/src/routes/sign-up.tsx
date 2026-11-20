@@ -12,6 +12,7 @@ import {
 	type Provider,
 } from "#/components/auth.tsx";
 import { toast } from "#/components/ui/toast.tsx";
+import { continueWith } from "#/lib/auth-client.ts";
 
 const SIGN_UP_NOTICES = ["cancelled", "delivery-failed"] as const satisfies AuthNotice[];
 
@@ -31,7 +32,7 @@ export const Route = createFileRoute("/sign-up")({
 	component: SignUp,
 });
 
-// A clickable mock of the flow: nothing is sent, 000000 is wrong, any other code passes.
+// The email code is still a clickable mock (#7): nothing is sent, 000000 is wrong, any other code passes.
 function SignUp() {
 	const { step, notice, provider } = Route.useSearch();
 	// History state isn't sent to the server, so read it only once hydrated.
@@ -69,7 +70,7 @@ function SignUp() {
 					onEmail={(next) =>
 						void navigate({ to: "/sign-up", search: { step: "verify" }, state: { signUp: next } })
 					}
-					onProvider={signedIn}
+					onProvider={continueWith}
 				/>
 			)}
 		</main>

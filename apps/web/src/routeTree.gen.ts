@@ -9,27 +9,23 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as AccountRouteImport } from './routes/_account'
 import { Route as DesignRouteImport } from './routes/design'
-import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SignUpRouteImport } from './routes/sign-up'
+import { Route as AccountIndexRouteImport } from './routes/_account/index'
+import { Route as AccountSettingsRouteImport } from './routes/_account/settings'
 import { Route as DesignAuthRouteImport } from './routes/design_.auth'
-import { Route as SettingsVerifyEmailRouteImport } from './routes/settings_.verify-email'
+import { Route as AccountSettingsVerifyEmailRouteImport } from './routes/_account/settings_.verify-email'
+import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const AccountRoute = AccountRouteImport.update({
+  id: '/_account',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DesignRoute = DesignRouteImport.update({
   id: '/design',
   path: '/design',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignInRoute = SignInRouteImport.update({
@@ -42,92 +38,115 @@ const SignUpRoute = SignUpRouteImport.update({
   path: '/sign-up',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AccountIndexRoute = AccountIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AccountRoute,
+} as any)
+const AccountSettingsRoute = AccountSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AccountRoute,
+} as any)
 const DesignAuthRoute = DesignAuthRouteImport.update({
   id: '/design_/auth',
   path: '/design/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SettingsVerifyEmailRoute = SettingsVerifyEmailRouteImport.update({
-  id: '/settings_/verify-email',
-  path: '/settings/verify-email',
+const AccountSettingsVerifyEmailRoute =
+  AccountSettingsVerifyEmailRouteImport.update({
+    id: '/settings_/verify-email',
+    path: '/settings/verify-email',
+    getParentRoute: () => AccountRoute,
+  } as any)
+const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
+  id: '/api/auth/$',
+  path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
+  '/': typeof AccountIndexRoute
   '/design': typeof DesignRoute
-  '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/settings': typeof AccountSettingsRoute
   '/design/auth': typeof DesignAuthRoute
-  '/settings/verify-email': typeof SettingsVerifyEmailRoute
+  '/settings/verify-email': typeof AccountSettingsVerifyEmailRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
   '/design': typeof DesignRoute
-  '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/settings': typeof AccountSettingsRoute
   '/design/auth': typeof DesignAuthRoute
-  '/settings/verify-email': typeof SettingsVerifyEmailRoute
+  '/': typeof AccountIndexRoute
+  '/settings/verify-email': typeof AccountSettingsVerifyEmailRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
+  '/_account': typeof AccountRouteWithChildren
   '/design': typeof DesignRoute
-  '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/_account/settings': typeof AccountSettingsRoute
   '/design_/auth': typeof DesignAuthRoute
-  '/settings_/verify-email': typeof SettingsVerifyEmailRoute
+  '/_account/': typeof AccountIndexRoute
+  '/_account/settings_/verify-email': typeof AccountSettingsVerifyEmailRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/design'
-    | '/settings'
     | '/sign-in'
     | '/sign-up'
+    | '/settings'
     | '/design/auth'
     | '/settings/verify-email'
+    | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
     | '/design'
-    | '/settings'
     | '/sign-in'
     | '/sign-up'
+    | '/settings'
     | '/design/auth'
+    | '/'
     | '/settings/verify-email'
+    | '/api/auth/$'
   id:
     | '__root__'
-    | '/'
+    | '/_account'
     | '/design'
-    | '/settings'
     | '/sign-in'
     | '/sign-up'
+    | '/_account/settings'
     | '/design_/auth'
-    | '/settings_/verify-email'
+    | '/_account/'
+    | '/_account/settings_/verify-email'
+    | '/api/auth/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
+  AccountRoute: typeof AccountRouteWithChildren
   DesignRoute: typeof DesignRoute
-  SettingsRoute: typeof SettingsRoute
   SignInRoute: typeof SignInRoute
   SignUpRoute: typeof SignUpRoute
   DesignAuthRoute: typeof DesignAuthRoute
-  SettingsVerifyEmailRoute: typeof SettingsVerifyEmailRoute
+  ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
+    '/_account': {
+      id: '/_account'
+      path: ''
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+      preLoaderRoute: typeof AccountRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/design': {
@@ -135,13 +154,6 @@ declare module '@tanstack/react-router' {
       path: '/design'
       fullPath: '/design'
       preLoaderRoute: typeof DesignRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-in': {
@@ -158,6 +170,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SignUpRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_account/': {
+      id: '/_account/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof AccountIndexRouteImport
+      parentRoute: typeof AccountRoute
+    }
+    '/_account/settings': {
+      id: '/_account/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AccountSettingsRouteImport
+      parentRoute: typeof AccountRoute
+    }
     '/design_/auth': {
       id: '/design_/auth'
       path: '/design/auth'
@@ -165,24 +191,45 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DesignAuthRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/settings_/verify-email': {
-      id: '/settings_/verify-email'
+    '/_account/settings_/verify-email': {
+      id: '/_account/settings_/verify-email'
       path: '/settings/verify-email'
       fullPath: '/settings/verify-email'
-      preLoaderRoute: typeof SettingsVerifyEmailRouteImport
+      preLoaderRoute: typeof AccountSettingsVerifyEmailRouteImport
+      parentRoute: typeof AccountRoute
+    }
+    '/api/auth/$': {
+      id: '/api/auth/$'
+      path: '/api/auth/$'
+      fullPath: '/api/auth/$'
+      preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
 }
 
+interface AccountRouteChildren {
+  AccountSettingsRoute: typeof AccountSettingsRoute
+  AccountIndexRoute: typeof AccountIndexRoute
+  AccountSettingsVerifyEmailRoute: typeof AccountSettingsVerifyEmailRoute
+}
+
+const AccountRouteChildren: AccountRouteChildren = {
+  AccountSettingsRoute: AccountSettingsRoute,
+  AccountIndexRoute: AccountIndexRoute,
+  AccountSettingsVerifyEmailRoute: AccountSettingsVerifyEmailRoute,
+}
+
+const AccountRouteWithChildren =
+  AccountRoute._addFileChildren(AccountRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
+  AccountRoute: AccountRouteWithChildren,
   DesignRoute: DesignRoute,
-  SettingsRoute: SettingsRoute,
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,
   DesignAuthRoute: DesignAuthRoute,
-  SettingsVerifyEmailRoute: SettingsVerifyEmailRoute,
+  ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

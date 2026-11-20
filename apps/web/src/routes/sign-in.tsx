@@ -5,6 +5,7 @@ import {
 	AUTH_NOTICES,
 	noticeToast,
 	CodeStep,
+	oauthErrorNotice,
 	oneOf,
 	PROVIDERS,
 	SignInForm,
@@ -12,6 +13,7 @@ import {
 	type Provider,
 } from "#/components/auth.tsx";
 import { toast } from "#/components/ui/toast.tsx";
+import { continueWith } from "#/lib/auth-client.ts";
 
 type SignInSearch = {
 	step?: "verify";
@@ -23,13 +25,13 @@ export const Route = createFileRoute("/sign-in")({
 	head: () => ({ meta: [{ title: "Sign in · Ditto" }] }),
 	validateSearch: (search): SignInSearch => ({
 		step: oneOf(["verify"], search.step),
-		notice: oneOf(AUTH_NOTICES, search.notice),
+		notice: oneOf(AUTH_NOTICES, search.notice) ?? oauthErrorNotice(search.error),
 		provider: oneOf(Object.keys(PROVIDERS) as Provider[], search.provider),
 	}),
 	component: SignIn,
 });
 
-// A clickable mock of the flow: nothing is sent, 000000 is wrong, any other code passes.
+// The email code is still a clickable mock (#7): nothing is sent, 000000 is wrong, any other code passes.
 function SignIn() {
 	const { step, notice, provider } = Route.useSearch();
 	// History state isn't sent to the server, so read it only once hydrated.
@@ -68,7 +70,7 @@ function SignIn() {
 					onEmail={(address) =>
 						void navigate({ to: "/sign-in", search: { step: "verify" }, state: { email: address } })
 					}
-					onProvider={signedIn}
+					onProvider={continueWith}
 				/>
 			)}
 		</main>
