@@ -1,14 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+
+import { HomeView, previewAccount } from "#/components/account.tsx";
 
 export const Route = createFileRoute("/")({ component: Home });
 
 function Home() {
-	return (
-		<main className="p-8">
-			<h1 className="text-4xl font-bold">Welcome to TanStack Start</h1>
-			<p className="mt-4 text-lg">
-				Edit <code>src/routes/index.tsx</code> to get started.
-			</p>
-		</main>
-	);
+	const navigate = useNavigate();
+	return <HomeView account={previewAccount} onSignOut={() => void navigate({ to: "/sign-in" })} />;
 }

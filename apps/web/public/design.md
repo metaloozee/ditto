@@ -239,9 +239,10 @@ Inter Variable for the interface, JetBrains Mono Variable for code, paths, branc
 
 - 4px base unit (Tailwind spacing). Common steps: 4, 8, 12, 16, 24, 32, 40.
 - App shell: a 256px sidebar on the left, with the main panel inset by 8px and rounded 14px (`Sidebar variant="inset"`). Under 768px the sidebar becomes a sheet behind a trigger.
-- Page content: centered, `max-w-5xl`, 16px side gutters on mobile and 32px from `sm` up, 40px top padding, 40px between sections.
+- Page content: centered, `max-w-5xl`, 16px side gutters on mobile and 32px from `sm` up, 40px top padding, 40px between sections. A single column of settings narrows to `max-w-2xl` so rows stay readable.
 - Section header: a heading-role title, optionally followed by an info icon with a tooltip.
 - Grids collapse to two columns, then one, on narrow screens. The page never scrolls horizontally.
+- Auth screens (`/sign-in`, `/sign-up`): one left-aligned `max-w-sm` column centered on the page, with the mark, a title, a muted line, then the step. The email form comes first, with the primary button. GitHub and Google follow as `secondary` buttons, then a centered line that switches between sign-in and sign-up. Notices sit above the form. Each step is its own screen, never a dialog: the step and any redirect message live in search params (`?step=verify`, `?notice=…`, `/settings?outcome=…&method=…`), so back and refresh work, while what the visitor typed rides in history state, never the URL. Linking email in Settings is its own screen too (`/settings/verify-email`). Every state is drawn at `/design/auth`; `apps/web/src/components/auth.tsx` and `account.tsx` hold the screens.
 
 ## Elevation & Depth
 
@@ -264,6 +265,8 @@ Depth comes from surface lightness and hairlines, not shadows.
 
 Icons come from HugeIcons (`@hugeicons/react` with `@hugeicons/core-free-icons`), stroke style, 16px in controls and navigation and 14px in dense rows. Icons take the color of their text; decorative icons beside a label stay muted.
 
+Provider logos (GitHub, Google) are not in HugeIcons. `BrandIcon` (`apps/web/src/components/brand-icons.tsx`) draws them from Simple Icons paths: single color, `fill: currentColor`, so they follow the same color and size rules as HugeIcons. Never use multicolor brand marks.
+
 ## Motion
 
 Short, ease-out, and only on the properties that change.
@@ -274,7 +277,7 @@ Short, ease-out, and only on the properties that change.
 - **Name the properties.** Transition `scale, color, background-color, box-shadow`, never `all`, so layout changes never animate by accident.
 - **Hover on layered buttons** is a `filter: brightness()` step (darker on the white CTA, lighter on dark fills) inside the same 200ms transition, since a gradient fill can't interpolate.
 - **Icon morph (copy → check):** both icons stay mounted in one grid cell. The outgoing one shrinks to `scale(0.25)`, blurs 4px, and fades; the incoming one does the reverse, over 300ms on `cubic-bezier(0.23, 1, 0.32, 1)`. Reduced motion keeps only the fade. A label beside it morphs letter by letter with torph (`TextMorph`, same duration and curve).
-- **Character motion (the Ditto mark):** the mark is a character, so it is the one place with a delight budget, and it appears only where people meet the brand (the `/design` route today; a sign-in or empty state later), never on work surfaces such as session lists or chat. It follows character rules, not the UI timing above:
+- **Character motion (the Ditto mark):** the mark is a character, so it is the one place with a delight budget, and it appears only where people meet the brand (`/design`, the sign-in and sign-up screens, and the signed-in home's empty state), never on work surfaces such as session lists or chat. It follows character rules, not the UI timing above:
   - **One loop, not CSS transitions.** A single `requestAnimationFrame` loop (`createDitto` in `apps/web/src/components/ditto-mark.tsx`) writes SVG `transform` attributes through refs. The step caps at 64ms, and an `IntersectionObserver` stops the loop offscreen.
   - **Eyes lead, the body follows.** The eyes snap to the gaze in about 60ms on an exponential ease that never overshoots. The body leans and rotates (up to 4°) toward the same gaze on a spring (stiffness 260, damping 24), so it arrives about 250ms later.
   - **Eyes sit on a sphere.** Gaze becomes a yaw and pitch, and the eyes narrow as they turn toward an edge. They never slide flat, and they are clipped to the screen.
@@ -283,6 +286,7 @@ Short, ease-out, and only on the properties that change.
   - **Moods change behind a blink.** Clicking the mark moves it to the next mood. The new eye shape swaps in while the lids are shut, so no crossfade is needed. A mood is one entry in `MOODS`: one path per eye, plus `weight` and `fill` for shapes that clog at full stroke width (hearts, crosses). Current moods: neutral, happy, love, surprised, wink, angry, sad, dizzy, sleepy.
   - **Keep these choices.** They were tuned by hand. Change the mark's motion model or its numbers only when the user asks. Never go back to eyes sliding flat on one spring, a crossfade between moods, a body that holds still, or blinks that are fast and frequent: the user rejected each one as unnatural or too aggressive. To add a mood, add an entry to `MOODS`; never add a separate drawing or a new animation path.
   - **Accessible and reduced.** The mark is a real `<button>` whose label names the current mood. Under reduced motion the loop never starts: the mark holds its resting pose and a click swaps the mood instantly.
+- **Validation:** forms validate in the page (`noValidate`, TanStack Form), never with browser bubbles. Messages appear after the first submit and then update as the user types. A failed submit shakes each invalid field once (6px, decaying, 320ms on `cubic-bezier(0.23, 1, 0.32, 1)`), turns its edge red, and focuses the first one. Reduced motion drops the shake and keeps the rest.
 - **Reduced motion:** looping animations, such as the running-state ping, stop under `prefers-reduced-motion`. A press scale is under 3% and stays.
 
 ## Components
@@ -314,6 +318,8 @@ All components live in `apps/web/src/components/ui/` and are generated by the sh
   </Card>
   ```
 
+- **InputOTP** (`input-otp.tsx`): one-time codes, adapted from Kobra's input-otp onto these tokens. Six sunken `field` slots, 48px tall, digits in JetBrains Mono. One 2px ring in `ring` blue slides between slots as focus moves, and turns `destructive` on `aria-invalid`. Digits flip in, a paste leaves a fading trail across the slots it filled, a full code dims in a wave while it's checked, and `success` sweeps the row in `success` and hops each digit. The form submits when the last digit lands; a rejected code shakes the row and clears it. Built on `input-otp` and `motion`; keyframes live in `styles.css` (`otp-*`). Reduced motion keeps the colors and drops the motion.
+- **Alert:** a bordered notice with an icon, title, and description. `default` for neutral news, `success` for a finished action (green icon and title stays foreground), `destructive` for a failure (red tint and edge, like the destructive button). It has `role="alert"`; pass `role="status"` for news that isn't a problem.
 - **Badge:** 20px pill, 12px medium text. `secondary` for neutral states, `destructive` for failures, `default` for the rare emphasized state.
 - **Dialog, Dropdown menu, Tooltip, Tabs, Separator, Label, Avatar, Kbd, Breadcrumb, Sheet, Skeleton, Sidebar:** shadcn defaults on the tokens above.
 - **Sidebar:** 256px, 36px rows, active row filled with `sidebar-accent`, group labels in caption size.
@@ -327,6 +333,7 @@ Local edits to generated files:
 - `button.tsx` uses the layered variants (`layer-primary`, `layer-raised`), `rounded-lg`, the 0.97 press, and a `loading` prop.
 - `input.tsx`, `textarea.tsx`, and `select.tsx` use the `field` utility instead of `border-input` and the gray tint.
 - `card.tsx` is rewritten as the shell-and-panel card, with a new `CardPanel` export. Never let the CLI overwrite it.
+- `alert.tsx` adds the `success` variant and gives `destructive` a red tint and edge.
 
 ## Do's and Don'ts
 

@@ -11,6 +11,11 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DesignRouteImport } from './routes/design'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SignInRouteImport } from './routes/sign-in'
+import { Route as SignUpRouteImport } from './routes/sign-up'
+import { Route as DesignAuthRouteImport } from './routes/design_.auth'
+import { Route as SettingsVerifyEmailRouteImport } from './routes/settings_.verify-email'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,31 +27,98 @@ const DesignRoute = DesignRouteImport.update({
   path: '/design',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignInRoute = SignInRouteImport.update({
+  id: '/sign-in',
+  path: '/sign-in',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignUpRoute = SignUpRouteImport.update({
+  id: '/sign-up',
+  path: '/sign-up',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DesignAuthRoute = DesignAuthRouteImport.update({
+  id: '/design_/auth',
+  path: '/design/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsVerifyEmailRoute = SettingsVerifyEmailRouteImport.update({
+  id: '/settings_/verify-email',
+  path: '/settings/verify-email',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/design': typeof DesignRoute
+  '/settings': typeof SettingsRoute
+  '/sign-in': typeof SignInRoute
+  '/sign-up': typeof SignUpRoute
+  '/design/auth': typeof DesignAuthRoute
+  '/settings/verify-email': typeof SettingsVerifyEmailRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/design': typeof DesignRoute
+  '/settings': typeof SettingsRoute
+  '/sign-in': typeof SignInRoute
+  '/sign-up': typeof SignUpRoute
+  '/design/auth': typeof DesignAuthRoute
+  '/settings/verify-email': typeof SettingsVerifyEmailRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/design': typeof DesignRoute
+  '/settings': typeof SettingsRoute
+  '/sign-in': typeof SignInRoute
+  '/sign-up': typeof SignUpRoute
+  '/design_/auth': typeof DesignAuthRoute
+  '/settings_/verify-email': typeof SettingsVerifyEmailRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/design'
+  fullPaths:
+    | '/'
+    | '/design'
+    | '/settings'
+    | '/sign-in'
+    | '/sign-up'
+    | '/design/auth'
+    | '/settings/verify-email'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/design'
-  id: '__root__' | '/' | '/design'
+  to:
+    | '/'
+    | '/design'
+    | '/settings'
+    | '/sign-in'
+    | '/sign-up'
+    | '/design/auth'
+    | '/settings/verify-email'
+  id:
+    | '__root__'
+    | '/'
+    | '/design'
+    | '/settings'
+    | '/sign-in'
+    | '/sign-up'
+    | '/design_/auth'
+    | '/settings_/verify-email'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DesignRoute: typeof DesignRoute
+  SettingsRoute: typeof SettingsRoute
+  SignInRoute: typeof SignInRoute
+  SignUpRoute: typeof SignUpRoute
+  DesignAuthRoute: typeof DesignAuthRoute
+  SettingsVerifyEmailRoute: typeof SettingsVerifyEmailRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -65,12 +137,52 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DesignRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sign-in': {
+      id: '/sign-in'
+      path: '/sign-in'
+      fullPath: '/sign-in'
+      preLoaderRoute: typeof SignInRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sign-up': {
+      id: '/sign-up'
+      path: '/sign-up'
+      fullPath: '/sign-up'
+      preLoaderRoute: typeof SignUpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/design_/auth': {
+      id: '/design_/auth'
+      path: '/design/auth'
+      fullPath: '/design/auth'
+      preLoaderRoute: typeof DesignAuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings_/verify-email': {
+      id: '/settings_/verify-email'
+      path: '/settings/verify-email'
+      fullPath: '/settings/verify-email'
+      preLoaderRoute: typeof SettingsVerifyEmailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DesignRoute: DesignRoute,
+  SettingsRoute: SettingsRoute,
+  SignInRoute: SignInRoute,
+  SignUpRoute: SignUpRoute,
+  DesignAuthRoute: DesignAuthRoute,
+  SettingsVerifyEmailRoute: SettingsVerifyEmailRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
