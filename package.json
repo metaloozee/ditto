@@ -14,21 +14,22 @@
     "verify": "pnpm check && pnpm typecheck && pnpm build",
     "deploy": "alchemy deploy --stage dev",
     "destroy": "alchemy destroy --stage dev",
-    "doctor": "npx react-doctor@latest"
+    "doctor": "react-doctor"
   },
   "dependencies": {
-    "@effect/platform-node": "4.0.0-beta.103",
-    "alchemy": "2.0.0-beta.70",
-    "effect": "4.0.0-beta.103"
+    "@alchemy.run/cloudflare": "2.0.0-beta.87",
+    "@effect/platform-node": "4.1.4",
+    "alchemy": "2.0.0-beta.87",
+    "effect": "4.1.4"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.5",
-    "dotenv": "^17.3.1",
-    "lefthook": "^2.1.9",
-    "react-doctor": "^0.4.0"
+    "@biomejs/biome": "2.6.8",
+    "dotenv": "^18.0.10",
+    "lefthook": "^2.2.2",
+    "react-doctor": "^0.9.23"
   },
-  "packageManager": "pnpm@11.8.0+sha512.c1f5e7c4cb241c8f174b743851d82f42b802324afc8b0f116b96adb15aa06664948dde36960a3ba1079ba5b4b29dd0140135b94b5b5f5263592249d68e555f26",
+  "packageManager": "pnpm@12.21.0+sha512.66fd8278ee28935ce951792d34367ff3af5c432a2756445823029533835b8da529bbe0be5130afd56ed0713fb8789e47bad82d93bd5ae2fe54b15562d6276ef0",
   "engines": {
-    "node": ">=22.15"
+    "node": "^22.22.3 || ^24.11.1 || >=25.1.0"
   }
 }

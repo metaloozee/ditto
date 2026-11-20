@@ -1,6 +1,6 @@
 import path from "node:path";
+import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as Alchemy from "alchemy";
-import * as Cloudflare from "alchemy/Cloudflare";
 import { config } from "dotenv";
 import * as Effect from "effect/Effect";
 import type { AppState, Sandbox } from "./apps/web/src/worker.ts";
@@ -22,7 +22,7 @@ export const Website = Cloudflare.Website.Vite("website", {
 		Sandbox: Cloudflare.Container<Sandbox>("sandbox", {
 			name: "ditto-sandbox-ayan",
 			className: "Sandbox",
-			image: "docker.io/cloudflare/sandbox:0.12.3",
+			image: "docker.io/cloudflare/sandbox:0.12.14",
 			instanceType: "lite",
 			maxInstances: 1,
 		}),

@@ -1,14 +1,5 @@
 packages:
   - apps/*
-overrides:
-  'alchemy>miniflare': 4.20260710.0
-  # Alchemy beta.70 needs Effect beta.103 (TaggedErrorClass; coherent peer set).
-  effect: 4.0.0-beta.103
-  '@effect/platform-node-shared': 4.0.0-beta.103
-  '@effect/platform-bun': 4.0.0-beta.103
-  '@effect/sql-d1': 4.0.0-beta.103
-  '@effect/sql-sqlite-do': 4.0.0-beta.103
-  '@effect/vitest': 4.0.0-beta.103
 allowBuilds:
   '@google/genai': true
   '@mongodb-js/zstd': false
