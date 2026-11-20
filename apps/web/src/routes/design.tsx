@@ -60,6 +60,7 @@ import { Separator } from "#/components/ui/separator.tsx";
 import { Switch } from "#/components/ui/switch.tsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "#/components/ui/tabs.tsx";
 import { Textarea } from "#/components/ui/textarea.tsx";
+import { toast } from "#/components/ui/toast.tsx";
 import { TooltipProvider } from "#/components/ui/tooltip.tsx";
 
 export const Route = createFileRoute("/design")({
@@ -111,6 +112,85 @@ const models = [
 	{ label: "Opus 5.5", value: "opus" },
 	{ label: "Sonnet 5.5", value: "sonnet" },
 ];
+
+const toastDemos = [
+	{
+		name: "Message",
+		use: "A quiet confirmation that needs no mark.",
+		fire: () => toast({ id: "demo-message", message: "Branch name copied" }),
+	},
+	{
+		name: "Success",
+		use: "An action finished. Add a description only when there is more to say.",
+		fire: () =>
+			toast({
+				id: "demo-success",
+				state: "success",
+				message: "Preview deployed",
+				description: "ditto-web-42 is live on the preview stage.",
+			}),
+	},
+	{
+		name: "Error",
+		use: "An action failed and nothing on screen shows it. Announced as an alert.",
+		fire: () =>
+			toast({
+				id: "demo-push",
+				state: "error",
+				message: "Couldn’t push to origin",
+				description: "The remote rejected the branch. Pull, then try again.",
+				action: {
+					label: "Retry",
+					run: () => toast({ id: "demo-push", state: "success", message: "Pushed to origin" }),
+				},
+			}),
+	},
+	{
+		name: "Info",
+		use: "Neutral news, such as a redirect explaining where the user landed.",
+		fire: () =>
+			toast({
+				id: "demo-info",
+				state: "info",
+				message: "Agent paused",
+				description: "It will resume when you reply in the session.",
+			}),
+	},
+	{
+		name: "Pending, then resolved",
+		use: "Work the user waits on. Reuse the id so the same toast resolves in place.",
+		fire: () => {
+			toast({ id: "demo-deploy", state: "pending", message: "Deploying preview…" });
+			setTimeout(
+				() => toast({ id: "demo-deploy", state: "success", message: "Preview deployed" }),
+				1800,
+			);
+		},
+	},
+	{
+		name: "Action",
+		use: "One short follow-up, such as Undo. It stays 6s instead of 2.4s.",
+		fire: () =>
+			toast({
+				id: "demo-archive",
+				message: "Session archived",
+				action: {
+					label: "Undo",
+					run: () => toast({ id: "demo-archive", state: "success", message: "Session restored" }),
+				},
+			}),
+	},
+] satisfies { name: string; use: string; fire: () => void }[];
+
+const toastUsage = `import { toast } from "#/components/ui/toast.tsx";
+
+toast("Branch name copied");
+toast({ state: "success", message: "Preview deployed", description: "…" });
+toast({ state: "error", message: "Couldn’t push", action: { label: "Retry", run: retry } });
+
+// Pending resolves in place when the id is reused.
+toast({ id: "deploy", state: "pending", message: "Deploying preview…" });
+toast({ id: "deploy", state: "success", message: "Preview deployed" });`;
 
 function DesignSystem() {
 	return (
@@ -216,6 +296,33 @@ function DesignSystem() {
 							))}
 						</div>
 					</Card>
+				</Section>
+
+				<Section title="Toasts">
+					<p className="max-w-prose text-muted-foreground">
+						The result of an action or a redirect, at the bottom-end corner. Hover, focus or hold
+						the stack to fan it out and pause it; drag a toast away to dismiss it.
+					</p>
+					<Card>
+						<div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+							{toastDemos.map(({ name, use, fire }) => (
+								<CardPanel key={name}>
+									<CardHeader>
+										<CardTitle>{name}</CardTitle>
+										<CardDescription>{use}</CardDescription>
+									</CardHeader>
+									<CardContent className="mt-auto">
+										<Button variant="outline" size="sm" onClick={fire}>
+											Show
+										</Button>
+									</CardContent>
+								</CardPanel>
+							))}
+						</div>
+					</Card>
+					<pre className="overflow-x-auto rounded-lg border bg-card p-4 text-caption text-muted-foreground">
+						{toastUsage}
+					</pre>
 				</Section>
 
 				<Section title="Forms">

@@ -353,3 +353,19 @@
     animation: none;
   }
 }
+
+/* Toasts (components/ui/toast.tsx): padding morphs as a glyph, action or description comes and goes. */
+@utility toast-surface {
+  transition: padding 300ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@utility toast-detail {
+  transition: padding 300ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast-surface,
+  .toast-detail {
+    transition: none;
+  }
+}
