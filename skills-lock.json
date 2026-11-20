@@ -99,6 +99,11 @@
       "computedHash": "a40c5c77e4b96b0f6603a54e67bf2ff401a872366af48ff8f6ae0e872d4ad324",
       "commit": "5108325ecceabc899c761e07aa617b09c02445ee"
     },
+    "drizzle": {
+      "source": "./apps/web/node_modules/drizzle-kit/skills",
+      "sourceType": "local",
+      "computedHash": "c91331769b0cf9a9f5592d9ea5cf0998fdfcd81c4ed1fb0d8784ada819a797e9"
+    },
     "durable-objects": {
       "source": "cloudflare/skills",
       "sourceType": "github",
