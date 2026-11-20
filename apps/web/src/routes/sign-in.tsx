@@ -1,9 +1,9 @@
 import { createFileRoute, useHydrated, useLocation, useNavigate } from "@tanstack/react-router";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
 import {
 	AUTH_NOTICES,
-	AuthNoticeAlert,
+	noticeToast,
 	CodeStep,
 	oneOf,
 	PROVIDERS,
@@ -11,6 +11,7 @@ import {
 	useCodeChallenge,
 	type Provider,
 } from "#/components/auth.tsx";
+import { toast } from "#/components/ui/toast.tsx";
 
 type SignInSearch = {
 	step?: "verify";
@@ -42,6 +43,13 @@ function SignIn() {
 	const navigate = useNavigate();
 	const signedIn = () => void navigate({ to: "/" });
 
+	// A redirect's message shows once, then leaves the URL so a refresh won't repeat it.
+	useEffect(() => {
+		if (!notice) return;
+		toast(noticeToast(notice, { provider, onSignUp: () => void navigate({ to: "/sign-up" }) }));
+		void navigate({ to: "/sign-in", search: { step }, replace: true });
+	}, [notice, provider, step, navigate]);
+
 	if (step === "verify" && !hydrated) return null;
 
 	return (
@@ -56,7 +64,6 @@ function SignIn() {
 			) : (
 				<SignInForm
 					key={email}
-					notice={notice && <AuthNoticeAlert notice={notice} provider={provider} />}
 					defaultEmail={email}
 					onEmail={(address) =>
 						void navigate({ to: "/sign-in", search: { step: "verify" }, state: { email: address } })

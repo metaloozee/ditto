@@ -1,8 +1,8 @@
 import { createFileRoute, useHydrated, useLocation, useNavigate } from "@tanstack/react-router";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
 import {
-	AuthNoticeAlert,
+	noticeToast,
 	CodeStep,
 	oneOf,
 	PROVIDERS,
@@ -11,6 +11,7 @@ import {
 	type AuthNotice,
 	type Provider,
 } from "#/components/auth.tsx";
+import { toast } from "#/components/ui/toast.tsx";
 
 const SIGN_UP_NOTICES = ["cancelled", "delivery-failed"] as const satisfies AuthNotice[];
 
@@ -44,6 +45,13 @@ function SignUp() {
 	const navigate = useNavigate();
 	const signedIn = () => void navigate({ to: "/" });
 
+	// A redirect's message shows once, then leaves the URL so a refresh won't repeat it.
+	useEffect(() => {
+		if (!notice) return;
+		toast(noticeToast(notice, { provider, onSignUp: () => void navigate({ to: "/sign-up" }) }));
+		void navigate({ to: "/sign-up", search: { step }, replace: true });
+	}, [notice, provider, step, navigate]);
+
 	if (step === "verify" && !hydrated) return null;
 
 	return (
@@ -57,7 +65,6 @@ function SignUp() {
 			) : (
 				<SignUpForm
 					key={details?.email}
-					notice={notice && <AuthNoticeAlert notice={notice} provider={provider} />}
 					defaults={details}
 					onEmail={(next) =>
 						void navigate({ to: "/sign-up", search: { step: "verify" }, state: { signUp: next } })

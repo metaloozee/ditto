@@ -1,5 +1,3 @@
-import { Alert02Icon, InformationCircleIcon, Mail01Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import { useForm, useStore, type AnyFieldApi } from "@tanstack/react-form";
 import { Link } from "@tanstack/react-router";
 import {
@@ -15,11 +13,11 @@ import {
 
 import { BrandIcon } from "#/components/brand-icons.tsx";
 import { DittoMark } from "#/components/ditto-mark.tsx";
-import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { InputOTP, InputOTPSlot } from "#/components/ui/input-otp.tsx";
 import { Input } from "#/components/ui/input.tsx";
 import { Label } from "#/components/ui/label.tsx";
+import { toast, type ToastInput } from "#/components/ui/toast.tsx";
 
 export const PROVIDERS = {
 	github: { name: "GitHub" },
@@ -327,11 +325,9 @@ export function SignUpForm({
 
 export type CodeStatus =
 	| { kind: "sent" }
-	| { kind: "resent" }
 	| { kind: "invalid"; attemptsLeft: number }
 	| { kind: "expired" }
 	| { kind: "locked" }
-	| { kind: "delivery-failed" }
 	| { kind: "verified" };
 
 function codeError(status: CodeStatus) {
@@ -356,7 +352,6 @@ export function CodeForm({
 	pending,
 	onSubmit,
 	onResend,
-	onChangeEmail,
 }: {
 	status: CodeStatus;
 	submitLabel: string;
@@ -365,8 +360,6 @@ export function CodeForm({
 	pending?: boolean;
 	onSubmit: (code: string) => void;
 	onResend: () => void;
-	/** Omit when the address is fixed, as when linking the account's own email. */
-	onChangeEmail?: () => void;
 }) {
 	const { form, bind, formProps } = useAuthForm({
 		defaultValues: { code: "" },
@@ -387,18 +380,6 @@ export function CodeForm({
 	}, [status, form]);
 	return (
 		<div className="flex flex-col gap-6">
-			{status.kind === "resent" && (
-				<Alert variant="success" role="status">
-					<HugeiconsIcon icon={Mail01Icon} />
-					<AlertTitle>New code sent</AlertTitle>
-					<AlertDescription>
-						Use the code in the newest email. Earlier codes no longer work.
-					</AlertDescription>
-				</Alert>
-			)}
-			{status.kind === "delivery-failed" && (
-				<DeliveryFailedNotice>Wait a moment, then send a new code.</DeliveryFailedNotice>
-			)}
 			<form {...formProps} className="flex flex-col gap-4">
 				<form.Field name="code">
 					{(field) => {
@@ -445,39 +426,59 @@ export function CodeForm({
 					{submitLabel}
 				</Button>
 			</form>
-			<div className="flex flex-col items-center gap-1 text-muted-foreground">
-				<p>
-					{needsNewCode ? "Need a new code? " : "Didn’t get it? "}
-					{resendIn > 0 ? (
-						<span className="tabular-nums">Send another in {formatWait(resendIn)}</span>
-					) : (
-						<button type="button" className={inlineLink} onClick={onResend}>
-							Send a new code
-						</button>
-					)}
-				</p>
-				{onChangeEmail && (
-					<button type="button" className={inlineLink} onClick={onChangeEmail}>
-						Use a different email
+			<p className="text-center text-muted-foreground">
+				{needsNewCode ? "Need a new code? " : "Didn’t get it? "}
+				{resendIn > 0 ? (
+					<span className="tabular-nums">Send another in {formatWait(resendIn)}</span>
+				) : (
+					<button type="button" className={inlineLink} onClick={onResend}>
+						Send a new code
 					</button>
 				)}
-			</div>
+			</p>
 		</div>
 	);
 }
 
-export function CodeSentTo({ email }: { email: string }) {
+/**
+ * Names the address the code went to. `onChangeEmail` puts the correction
+ * beside the address it corrects; omit it when the address is fixed, as when
+ * linking the account's own email.
+ */
+export function CodeSentTo({
+	email,
+	onChangeEmail,
+}: {
+	email: string;
+	onChangeEmail?: () => void;
+}) {
 	return (
 		<>
-			Enter the 6-digit code we sent to <span className="font-medium text-foreground">{email}</span>
-			. It expires in 5 minutes.
+			Enter the 6-digit code we sent to{" "}
+			<span className="font-medium text-foreground wrap-anywhere">{email}</span>. It expires in 5
+			minutes.
+			{onChangeEmail && (
+				<>
+					{" "}
+					<button type="button" className={inlineLink} onClick={onChangeEmail}>
+						Use a different email
+					</button>
+				</>
+			)}
 		</>
 	);
 }
 
-export function CodeStep({ email, ...form }: { email: string } & ComponentProps<typeof CodeForm>) {
+export function CodeStep({
+	email,
+	onChangeEmail,
+	...form
+}: { email: string; onChangeEmail: () => void } & ComponentProps<typeof CodeForm>) {
 	return (
-		<AuthPanel title="Check your email" description={<CodeSentTo email={email} />}>
+		<AuthPanel
+			title="Check your email"
+			description={<CodeSentTo email={email} onChangeEmail={onChangeEmail} />}
+		>
 			<CodeForm {...form} />
 		</AuthPanel>
 	);
@@ -494,62 +495,65 @@ export const AUTH_NOTICES = [
 
 export type AuthNotice = (typeof AUTH_NOTICES)[number];
 
-export function AuthNoticeAlert({ notice, provider }: { notice: AuthNotice; provider?: Provider }) {
+/** The toast for a redirect's `notice`. `onSignUp` backs the no-account action. */
+export function noticeToast(
+	notice: AuthNotice,
+	{ provider, onSignUp }: { provider?: Provider; onSignUp: () => void },
+): ToastInput {
+	const id = `notice-${notice}`;
 	switch (notice) {
 		case "wrong-method":
-			return (
-				<Alert>
-					<HugeiconsIcon icon={InformationCircleIcon} />
-					<AlertTitle>This account uses another sign-in method</AlertTitle>
-					<AlertDescription>
-						Sign in the way you did before, then link this method from Settings.
-					</AlertDescription>
-				</Alert>
-			);
+			return {
+				id,
+				state: "info",
+				message: "This account uses another sign-in method",
+				description: "Sign in the way you did before, then link this method from Settings.",
+			};
 		case "no-account":
-			return (
-				<Alert>
-					<HugeiconsIcon icon={InformationCircleIcon} />
-					<AlertTitle>No Ditto account uses this email</AlertTitle>
-					<AlertDescription>
-						<Link to="/sign-up">Create an account</Link> to start using Ditto.
-					</AlertDescription>
-				</Alert>
-			);
+			return {
+				id,
+				state: "info",
+				message: "No Ditto account uses this email",
+				description: "Create an account to start using Ditto.",
+				action: { label: "Sign up", run: onSignUp },
+			};
 		case "account-exists":
-			return (
-				<Alert role="status">
-					<HugeiconsIcon icon={InformationCircleIcon} />
-					<AlertTitle>You already have a Ditto account</AlertTitle>
-					<AlertDescription>Sign in to it below. Your profile hasn’t changed.</AlertDescription>
-				</Alert>
-			);
+			return {
+				id,
+				state: "info",
+				message: "You already have a Ditto account",
+				description: "Sign in to it below. Your profile hasn’t changed.",
+			};
 		case "delivery-failed":
-			return (
-				<DeliveryFailedNotice>Check the address, then try again in a moment.</DeliveryFailedNotice>
-			);
+			return {
+				id,
+				state: "error",
+				message: "We couldn’t send your code",
+				description: "Check the address, then try again in a moment.",
+			};
 		case "cancelled":
-			return (
-				<Alert role="status">
-					<HugeiconsIcon icon={InformationCircleIcon} />
-					<AlertTitle>
-						{provider ? `${PROVIDERS[provider].name} sign-in` : "Sign-in"} was cancelled
-					</AlertTitle>
-					<AlertDescription>Try again, or choose another way to continue.</AlertDescription>
-				</Alert>
-			);
+			return {
+				id,
+				state: "info",
+				message: `${provider ? `${PROVIDERS[provider].name} sign-in` : "Sign-in"} was cancelled`,
+				description: "Try again, or choose another way to continue.",
+			};
 	}
 }
 
-function DeliveryFailedNotice({ children }: { children: ReactNode }) {
-	return (
-		<Alert variant="destructive">
-			<HugeiconsIcon icon={Alert02Icon} />
-			<AlertTitle>We couldn’t send your code</AlertTitle>
-			<AlertDescription>{children}</AlertDescription>
-		</Alert>
-	);
-}
+export const codeResentToast: ToastInput = {
+	id: "code-resent",
+	state: "success",
+	message: "New code sent",
+	description: "Use the code in the newest email. Earlier codes no longer work.",
+};
+
+export const resendFailedToast: ToastInput = {
+	id: "code-resent",
+	state: "error",
+	message: "We couldn’t send a new code",
+	description: "Wait a moment, then send it again.",
+};
 
 // Provisional: the real wait comes from the server's shared limits (#3).
 const RESEND_WAIT_SECONDS = 30;
@@ -573,8 +577,9 @@ export function useCodeChallenge() {
 		pending,
 		resendIn,
 		resend: () => {
-			setStatus({ kind: "resent" });
+			setStatus({ kind: "sent" });
 			setResendIn(RESEND_WAIT_SECONDS);
+			toast(codeResentToast);
 		},
 		verify: (code: string, onVerified: () => void) => {
 			setPending(true);

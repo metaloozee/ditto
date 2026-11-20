@@ -1,20 +1,14 @@
-import {
-	Alert02Icon,
-	CheckmarkCircle02Icon,
-	InformationCircleIcon,
-	Mail01Icon,
-} from "@hugeicons/core-free-icons";
+import { CheckmarkCircle02Icon, Mail01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Link } from "@tanstack/react-router";
-import type { ReactNode } from "react";
 
 import { PROVIDERS, type Provider } from "#/components/auth.tsx";
 import { BrandIcon } from "#/components/brand-icons.tsx";
 import { DittoMark } from "#/components/ditto-mark.tsx";
-import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button, buttonVariants } from "#/components/ui/button.tsx";
 import { Card, CardPanel } from "#/components/ui/card.tsx";
+import type { ToastInput } from "#/components/ui/toast.tsx";
 
 export type Method = Provider | "email";
 
@@ -38,12 +32,12 @@ const methodName = (method: Method) => METHODS[method].name;
 
 function AppHeader({ onSignOut }: { onSignOut: () => void }) {
 	return (
-		<header className="flex h-14 items-center justify-between gap-4 border-b px-4 sm:px-8">
+		<header className="flex min-h-14 items-center justify-between gap-4 border-b px-4 sm:px-8">
 			<Link to="/" className="flex items-center gap-2 rounded-md font-medium">
 				<img src="/logo.svg" alt="" className="size-6" />
 				Ditto
 			</Link>
-			<nav className="flex items-center gap-1">
+			<nav className="flex items-center gap-2">
 				<Link to="/settings" className={buttonVariants({ variant: "ghost" })}>
 					Settings
 				</Link>
@@ -116,12 +110,10 @@ function MethodRow({
 
 export function SettingsView({
 	account,
-	notice,
 	onLink,
 	onSignOut,
 }: {
 	account: Account;
-	notice?: ReactNode;
 	onLink: (method: Method) => void;
 	onSignOut: () => void;
 }) {
@@ -130,16 +122,20 @@ export function SettingsView({
 			<AppHeader onSignOut={onSignOut} />
 			<main className="mx-auto flex w-full max-w-2xl flex-col gap-10 px-4 py-10 sm:px-8">
 				<h1>Settings</h1>
-				{notice}
 				<section className="flex flex-col gap-4">
 					<h2>Profile</h2>
 					<Card>
 						<CardPanel className="px-4">
-							<dl className="grid gap-x-6 gap-y-3 sm:grid-cols-[8rem_1fr]">
-								<dt className="text-muted-foreground">Display name</dt>
-								<dd className="font-medium">{account.displayName}</dd>
-								<dt className="text-muted-foreground">Email</dt>
-								<dd className="font-medium break-all">{account.email}</dd>
+							{/* Each pair holds together; the space between pairs is wider. */}
+							<dl className="flex flex-col gap-4 sm:gap-3">
+								<div className="grid gap-1 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-6">
+									<dt className="text-muted-foreground">Display name</dt>
+									<dd className="font-medium wrap-anywhere">{account.displayName}</dd>
+								</div>
+								<div className="grid gap-1 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-6">
+									<dt className="text-muted-foreground">Email</dt>
+									<dd className="font-medium wrap-anywhere">{account.email}</dd>
+								</div>
 							</dl>
 						</CardPanel>
 					</Card>
@@ -175,74 +171,55 @@ export const LINK_OUTCOMES = [
 
 export type LinkOutcome = (typeof LINK_OUTCOMES)[number];
 
-export function LinkOutcomeAlert({
-	outcome,
-	method,
-	email,
-}: {
-	outcome: LinkOutcome;
-	method: Method;
-	email: string;
-}) {
-	if (outcome === "linked") return <LinkedNotice method={method} />;
-	if (outcome === "cancelled") return <LinkCancelledNotice method={method} />;
-	return <LinkErrorNotice error={outcome} method={method} email={email} />;
-}
-
-function LinkedNotice({ method }: { method: Method }) {
-	return (
-		<Alert variant="success" role="status">
-			<HugeiconsIcon icon={CheckmarkCircle02Icon} />
-			<AlertTitle>{methodName(method)} is linked</AlertTitle>
-			<AlertDescription>You can now use it to sign in to this account.</AlertDescription>
-		</Alert>
-	);
-}
-
-function LinkCancelledNotice({ method }: { method: Method }) {
-	return (
-		<Alert role="status">
-			<HugeiconsIcon icon={InformationCircleIcon} />
-			<AlertTitle>{methodName(method)} wasn’t linked</AlertTitle>
-			<AlertDescription>You cancelled before it finished. Nothing changed.</AlertDescription>
-		</Alert>
-	);
-}
-
-type LinkError = Exclude<LinkOutcome, "linked" | "cancelled">;
-
-function LinkErrorNotice({
-	error,
-	method,
-	email,
-}: {
-	error: LinkError;
-	method: Method;
-	email: string;
-}) {
+/** The toast for a linking attempt's `outcome`. Nothing but `linked` enables the method. */
+export function linkOutcomeToast(outcome: LinkOutcome, method: Method, email: string): ToastInput {
 	const name = methodName(method);
-	const copy = {
-		"email-mismatch": {
-			title: `That ${name} account uses a different email`,
-			body: `Link a ${name} account whose verified email is ${email}.`,
-		},
-		"linked-elsewhere": {
-			title: `That ${name} account belongs to another Ditto account`,
-			body: `Link a different ${name} account, or sign in to the one it belongs to.`,
-		},
-		interrupted: {
-			title: `${name} wasn’t linked`,
-			body: "Your session changed or the confirmation expired before linking finished. Try again.",
-		},
-	}[error];
-	return (
-		<Alert variant="destructive">
-			<HugeiconsIcon icon={Alert02Icon} />
-			<AlertTitle>{copy.title}</AlertTitle>
-			<AlertDescription>{copy.body}</AlertDescription>
-		</Alert>
-	);
+	const id = `link-${outcome}-${method}`;
+	switch (outcome) {
+		case "linked":
+			return {
+				id,
+				state: "success",
+				message: `${name} is linked`,
+				description: "You can now use it to sign in to this account.",
+			};
+		case "cancelled":
+			return {
+				id,
+				state: "info",
+				message: `${name} wasn’t linked`,
+				description: "You cancelled before it finished. Nothing changed.",
+			};
+		case "email-mismatch":
+			return {
+				id,
+				state: "error",
+				message: `That ${name} account uses a different email`,
+				description: `Link a ${name} account whose verified email is ${email}.`,
+			};
+		case "linked-elsewhere":
+			return {
+				id,
+				state: "error",
+				message: `That ${name} account belongs to another Ditto account`,
+				description: `Link a different ${name} account, or sign in to the one it belongs to.`,
+			};
+		case "interrupted":
+			return {
+				id,
+				state: "error",
+				message: `${name} wasn’t linked`,
+				description:
+					"Your session changed or the confirmation expired before linking finished. Try again.",
+			};
+	}
 }
+
+export const signedOutToast: ToastInput = {
+	id: "signed-out",
+	state: "success",
+	message: "Signed out",
+};
 
 /** Stands in for the session until sign-in is wired up (#5). */
 export const previewAccount: Account = {

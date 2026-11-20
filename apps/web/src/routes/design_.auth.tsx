@@ -4,18 +4,23 @@ import type { ReactNode } from "react";
 import {
 	HomeView,
 	LINK_OUTCOMES,
-	LinkOutcomeAlert,
+	linkOutcomeToast,
 	previewAccount,
 	SettingsView,
+	signedOutToast,
 } from "#/components/account.tsx";
 import {
 	AUTH_NOTICES,
-	AuthNoticeAlert,
+	codeResentToast,
+	noticeToast,
+	resendFailedToast,
 	CodeStep,
 	SignInForm,
 	SignUpForm,
 	type CodeStatus,
 } from "#/components/auth.tsx";
+import { Button } from "#/components/ui/button.tsx";
+import { toast, type ToastInput } from "#/components/ui/toast.tsx";
 
 export const Route = createFileRoute("/design_/auth")({
 	head: () => ({ meta: [{ title: "Authentication designs · Ditto" }] }),
@@ -28,11 +33,9 @@ const email = previewAccount.email;
 // These come back from the server mid-step, so no URL reaches them.
 const codeStates: [string, CodeStatus, number][] = [
 	["Code sent, resend on cooldown", { kind: "sent" }, 24],
-	["Code resent", { kind: "resent" }, 30],
 	["Wrong code", { kind: "invalid", attemptsLeft: 2 }, 0],
 	["Expired code", { kind: "expired" }, 0],
 	["Too many wrong codes", { kind: "locked" }, 0],
-	["Resend failed to deliver", { kind: "delivery-failed" }, 0],
 ];
 
 const link = "font-medium text-link underline-offset-4 hover:underline";
@@ -107,15 +110,36 @@ function AuthDesigns() {
 				</div>
 			</Group>
 
-			<Group title="Redirect messages">
-				<div className="flex flex-col gap-3">
-					{AUTH_NOTICES.map((notice) => (
-						<Frame key={notice} label={`notice=${notice}`}>
-							<Notice>
-								<AuthNoticeAlert notice={notice} provider="github" />
-							</Notice>
-						</Frame>
-					))}
+			<Group title="Toasts">
+				<p className="max-w-prose text-muted-foreground">
+					Feedback arrives as a toast. Hover, focus or hold the stack to fan it out and pause it;
+					drag a toast away to dismiss it.
+				</p>
+				<Toasters
+					items={[
+						...AUTH_NOTICES.map((notice) => ({
+							label: `notice=${notice}`,
+							input: noticeToast(notice, { provider: "github", onSignUp: noop }),
+						})),
+						{ label: "Code resent", input: codeResentToast },
+						{ label: "Resend failed", input: resendFailedToast },
+						{ label: "Signed out", input: signedOutToast },
+					]}
+				/>
+				<div>
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={() => {
+							toast({ id: "demo-pending", state: "pending", message: "Linking GitHub…" });
+							setTimeout(
+								() => toast({ ...linkOutcomeToast("linked", "github", email), id: "demo-pending" }),
+								1600,
+							);
+						}}
+					>
+						Pending, then resolved in place
+					</Button>
 				</div>
 			</Group>
 
@@ -147,24 +171,21 @@ function AuthDesigns() {
 			</Group>
 
 			<Group title="Linking outcomes">
-				<div className="flex flex-col gap-3">
-					{LINK_OUTCOMES.flatMap((outcome) =>
+				<Toasters
+					items={LINK_OUTCOMES.flatMap((outcome) =>
 						(["google", "email"] as const)
 							// Email links only the account's own address, so it can't mismatch.
 							.filter(
 								(method) =>
 									method === "google" ||
-									(!outcome.startsWith("email-") && outcome !== "linked-elsewhere"),
+									(outcome !== "email-mismatch" && outcome !== "linked-elsewhere"),
 							)
-							.map((method) => (
-								<Frame key={`${outcome}-${method}`} label={`outcome=${outcome}&method=${method}`}>
-									<Notice>
-										<LinkOutcomeAlert outcome={outcome} method={method} email={email} />
-									</Notice>
-								</Frame>
-							)),
+							.map((method) => ({
+								label: `outcome=${outcome}&method=${method}`,
+								input: linkOutcomeToast(outcome, method, email),
+							})),
 					)}
-				</div>
+				/>
 			</Group>
 		</main>
 	);
@@ -204,6 +225,21 @@ function Frame({
 	);
 }
 
-function Notice({ children }: { children: ReactNode }) {
-	return <div className="w-full max-w-lg">{children}</div>;
+function Toasters({ items }: { items: { label: string; input: ToastInput }[] }) {
+	return (
+		<ul className="flex flex-wrap gap-2">
+			{items.map(({ label, input }) => (
+				<li key={label}>
+					<Button
+						variant="outline"
+						size="sm"
+						className="font-mono text-caption"
+						onClick={() => toast(input)}
+					>
+						{label}
+					</Button>
+				</li>
+			))}
+		</ul>
+	);
 }
