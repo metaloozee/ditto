@@ -8,6 +8,18 @@ const ignorePatterns = [
 	".cursor/**",
 ];
 
+const authTests = {
+	test: {
+		name: "auth",
+		include: ["apps/web/tests/auth/*.test.ts"],
+		globalSetup: ["apps/web/tests/auth/setup.ts"],
+		// One Worker and database serve every file.
+		fileParallelism: false,
+		testTimeout: 30_000,
+		hookTimeout: 30_000,
+	},
+};
+
 export default defineConfig({
 	fmt: {
 		ignorePatterns: [...ignorePatterns, "skills-lock.json", "pnpm-lock.yaml"],
@@ -23,17 +35,8 @@ export default defineConfig({
 	test: {
 		projects: [
 			{ test: { name: "web", include: ["apps/web/tests/*.test.ts"] } },
-			{
-				test: {
-					name: "auth",
-					include: ["apps/web/tests/auth/*.test.ts"],
-					globalSetup: ["apps/web/tests/auth/setup.ts"],
-					// One Worker and database serve every file.
-					fileParallelism: false,
-					testTimeout: 30_000,
-					hookTimeout: 30_000,
-				},
-			},
+			// Browser tests stay local: CI minutes are scarce.
+			...(process.env.CI ? [] : [authTests]),
 		],
 	},
 	staged: { "*.{js,ts,jsx,tsx}": "vp check --fix" },

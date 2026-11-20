@@ -35,8 +35,5 @@ jobs:
       - name: Install root dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install Chromium for browser tests
-        run: pnpm --filter @ditto/web exec playwright install --with-deps chromium
-
       - name: Verify
         run: pnpm exec vp run verify
