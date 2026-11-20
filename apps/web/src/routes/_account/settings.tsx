@@ -12,6 +12,7 @@ import {
 import { oneOf } from "#/components/auth.tsx";
 import { toast } from "#/components/ui/toast.tsx";
 import { useSignOut } from "#/lib/auth-client.ts";
+import { resendAtFrom, sendLinkEmailCode } from "#/lib/email-code-client.ts";
 
 type SettingsSearch = { outcome?: LinkOutcome; method?: Method };
 
@@ -40,12 +41,26 @@ function Settings() {
 		void navigate({ to: "/settings", replace: true });
 	}, [outcome, method, navigate, account.email]);
 
+	async function linkEmail() {
+		const result = await sendLinkEmailCode();
+		if (result.ok || result.error.code === "CODE_RECENTLY_SENT") {
+			await navigate({ to: "/settings/verify-email", state: { resendAt: resendAtFrom(result) } });
+			return;
+		}
+		toast({
+			id: "notice-delivery-failed",
+			state: "error",
+			message: "We couldn’t send your code",
+			description: "Wait a moment, then try again.",
+		});
+	}
+
 	return (
 		<SettingsView
 			account={{ ...account, methods }}
 			onLink={(next) =>
 				void (next === "email"
-					? navigate({ to: "/settings/verify-email" })
+					? linkEmail()
 					: navigate({ to: "/settings", search: { outcome: "linked", method: next } }))
 			}
 			onSignOut={() => void signOut()}

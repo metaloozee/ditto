@@ -1,16 +1,23 @@
 import type { BetterAuthPlugin, GenericEndpointContext as Ctx } from "better-auth";
-import { APIError, createAuthEndpoint, formCsrfMiddleware } from "better-auth/api";
+import {
+	APIError,
+	createAuthEndpoint,
+	formCsrfMiddleware,
+	sensitiveSessionMiddleware,
+} from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
 import { constantTimeEqual, generateRandomString } from "better-auth/crypto";
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, exists, gt, notExists, sql, type SQL } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 
-import { account, user as userTable, verification } from "../db/auth-schema.ts";
+import { account, session, user as userTable, verification } from "../db/auth-schema.ts";
 
 /** The `account.providerId` that records email sign-in as enabled for a user. */
 export const EMAIL_METHOD = "email";
 
 const ATTEMPTS = 3;
+const databaseNow = sql`cast(unixepoch('subsecond') * 1000 as integer)`;
+type ConsumeCode = (match: SQL | undefined, spent: string) => Promise<boolean>;
 
 export type CodeEmail = { to: string; code: string; expiresIn: number };
 
@@ -125,7 +132,7 @@ function challenges(db: DrizzleD1Database, options: EmailCodeOptions) {
 			}
 		},
 
-		async verify(ctx: Ctx, purpose: string, email: string, code: string) {
+		async verify(ctx: Ctx, purpose: string, email: string, code: string, consume?: ConsumeCode) {
 			const id = identifier(purpose, email);
 			const digest = /^\d{6}$/.test(code) ? await hash(ctx.context.secret, id, code) : "";
 			// Consume the code or count a miss on the same row. Keeping the row
@@ -144,10 +151,15 @@ function challenges(db: DrizzleD1Database, options: EmailCodeOptions) {
 
 				const correct = constantTimeEqual(digest, stored ?? "");
 				const wrong = attempts + 1;
+				const match = and(unchanged(live), gt(verification.expiresAt, databaseNow));
+				if (correct && consume) {
+					if (await consume(match, `${stored}:spent`)) return;
+					continue;
+				}
 				const [updated] = await db
 					.update(verification)
 					.set({ value: `${stored}:${correct ? "spent" : wrong}` })
-					.where(and(unchanged(live), gt(verification.expiresAt, new Date())))
+					.where(match)
 					.returning({ id: verification.id });
 				if (!updated) continue;
 				if (correct) return;
@@ -169,6 +181,8 @@ function existingOutcome(accounts: { providerId: string }[]) {
 		: "wrong-method";
 }
 
+const linkPurpose = (sessionId: string) => `link-email-${sessionId}`;
+
 /**
  * Email registration by one-time code. The account, its email sign-in method
  * and a session are created only once the code is verified; an address that
@@ -179,6 +193,58 @@ export function emailCode(db: DrizzleD1Database, options: EmailCodeOptions) {
 	return {
 		id: "email-code",
 		endpoints: {
+			sendLinkEmailCode: createAuthEndpoint(
+				"/email-code/link-email/send",
+				{ method: "POST", use: [formCsrfMiddleware, sensitiveSessionMiddleware] },
+				async (ctx) => {
+					const { user, session } = ctx.context.session;
+					const methods = await ctx.context.internalAdapter.findAccounts(user.id);
+					if (methods.some(({ providerId }) => providerId === EMAIL_METHOD))
+						throw fail("BAD_REQUEST", "EMAIL_ALREADY_ENABLED", "Email sign-in is already enabled.");
+					return ctx.json(await codes.issue(ctx, linkPurpose(session.id), user.email));
+				},
+			),
+			verifyLinkEmailCode: createAuthEndpoint(
+				"/email-code/link-email/verify",
+				{ method: "POST", use: [formCsrfMiddleware, sensitiveSessionMiddleware] },
+				async (ctx) => {
+					const { user, session: active } = ctx.context.session;
+					const code = (ctx.body as { code?: unknown } | undefined)?.code;
+					const activeSession = db
+						.select({ id: session.id })
+						.from(session)
+						.where(
+							and(
+								eq(session.id, active.id),
+								eq(session.userId, user.id),
+								gt(session.expiresAt, databaseNow),
+							),
+						);
+					const emailMethod = db
+						.select({ id: account.id })
+						.from(account)
+						.where(and(eq(account.userId, user.id), eq(account.providerId, EMAIL_METHOD)));
+					await codes.verify(ctx, linkPurpose(active.id), user.email, typeof code === "string" ? code : "", async (match, spent) => {
+						// D1 consumes the proof and enables email in one transaction. Recheck
+						// the session at the write so a concurrent sign-out cannot authorize it.
+						const [linked, consumed] = await db.batch([
+							db.insert(account, "id", "userId", "providerId", "accountId").select(
+								db.select({
+									id: sql<string>`${crypto.randomUUID()}`.as("id"),
+									userId: sql<string>`${user.id}`.as("userId"),
+									providerId: sql<string>`${EMAIL_METHOD}`.as("providerId"),
+									accountId: sql<string>`${user.id}`.as("accountId"),
+								}).from(verification).where(and(match, exists(activeSession), notExists(emailMethod))),
+							).returning({ id: account.id }),
+							db.update(verification).set({ value: spent }).where(match).returning({ id: verification.id }),
+						]);
+						if (consumed.length && !linked.length)
+							throw fail("FORBIDDEN", "LINK_INTERRUPTED", "Email sign-in could not be linked.");
+						return linked.length > 0;
+					});
+					return ctx.json({ outcome: "linked" });
+				},
+			),
 			sendSignUpCode: createAuthEndpoint(
 				"/email-code/sign-up/send",
 				{ method: "POST", use: [formCsrfMiddleware] },
@@ -233,6 +299,8 @@ export function emailCode(db: DrizzleD1Database, options: EmailCodeOptions) {
 			),
 		},
 		rateLimit: [
+			{ pathMatcher: (path) => path === "/email-code/link-email/send", window: 60, max: 5 },
+			{ pathMatcher: (path) => path === "/email-code/link-email/verify", window: 60, max: 10 },
 			{ pathMatcher: (path) => path === "/email-code/sign-up/send", window: 60, max: 5 },
 			{ pathMatcher: (path) => path === "/email-code/sign-up/verify", window: 60, max: 10 },
 		],

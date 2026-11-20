@@ -54,6 +54,11 @@ export const verifySignUpCode = ({ firstName, lastName, email }: SignUpDetails, 
 		code,
 	});
 
+export const sendLinkEmailCode = () => post<{ resendIn: number }>("/email-code/link-email/send", {});
+
+export const verifyLinkEmailCode = (code: string) =>
+	post<{ outcome: "linked" }>("/email-code/link-email/verify", { code });
+
 /** When the next code may be sent, given a send's result. */
 export function resendAtFrom(result: CodeResult<{ resendIn: number }>) {
 	const wait = result.ok ? result.data.resendIn : (result.error.retryAfter ?? 0);
@@ -73,16 +78,18 @@ const secondsUntil = (at: number) => Math.max(0, Math.ceil((at - Date.now()) / 1
  * A live email code challenge: verifying, resending and the wait before
  * another code, all as the server reports them.
  */
-export function useEmailCode({
+export function useEmailCode<Outcome extends CodeOutcome | "linked">({
 	resendAt: initialResendAt,
 	send,
 	verify,
 	onOutcome,
+	onInterrupted,
 }: {
 	resendAt: number;
 	send: () => Promise<CodeResult<{ resendIn: number }>>;
-	verify: (code: string) => Promise<CodeResult<{ outcome: CodeOutcome }>>;
-	onOutcome: (outcome: CodeOutcome) => void;
+	verify: (code: string) => Promise<CodeResult<{ outcome: Outcome }>>;
+	onOutcome: (outcome: Outcome) => void;
+	onInterrupted?: () => void;
 }) {
 	const [status, setStatus] = useState<CodeStatus>({ kind: "sent" });
 	const [pending, setPending] = useState(false);
@@ -105,6 +112,8 @@ export function useEmailCode({
 		resend: async () => {
 			const result = await send();
 			setResendAt(resendAtFrom(result));
+			if (!result.ok && result.error.code === "UNAUTHORIZED" && onInterrupted)
+				return onInterrupted();
 			if (!result.ok) return toast(resendFailedToast);
 			setStatus({ kind: "sent" });
 			toast(codeResentToast);
@@ -115,12 +124,14 @@ export function useEmailCode({
 			setPending(false);
 			if (result.ok) {
 				const { outcome } = result.data;
-				if (outcome !== "signed-in") return onOutcome(outcome);
+				if (outcome !== "signed-in" && outcome !== "linked") return onOutcome(outcome);
 				setStatus({ kind: "verified" });
 				setTimeout(() => onOutcome(outcome), 700);
 				return;
 			}
 			const { code: reason, attemptsLeft } = result.error;
+			if ((reason === "UNAUTHORIZED" || reason === "LINK_INTERRUPTED") && onInterrupted)
+				return onInterrupted();
 			if (reason === "INVALID_CODE" && attemptsLeft) setStatus({ kind: "invalid", attemptsLeft });
 			else if (reason === "TOO_MANY_ATTEMPTS") setStatus({ kind: "locked" });
 			else if (reason === "CODE_EXPIRED") setStatus({ kind: "expired" });
