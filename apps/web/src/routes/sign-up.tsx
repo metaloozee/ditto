@@ -1,5 +1,5 @@
 import { createFileRoute, useHydrated, useLocation, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
 	noticeToast,
@@ -7,12 +7,19 @@ import {
 	oneOf,
 	PROVIDERS,
 	SignUpForm,
-	useCodeChallenge,
 	type AuthNotice,
 	type Provider,
+	type SignUpDetails,
 } from "#/components/auth.tsx";
 import { toast } from "#/components/ui/toast.tsx";
 import { continueWith } from "#/lib/auth-client.ts";
+import {
+	resendAtFrom,
+	sendSignUpCode,
+	useEmailCode,
+	verifySignUpCode,
+	type CodeOutcome,
+} from "#/lib/email-code-client.ts";
 
 const SIGN_UP_NOTICES = ["cancelled", "delivery-failed"] as const satisfies AuthNotice[];
 
@@ -32,7 +39,6 @@ export const Route = createFileRoute("/sign-up")({
 	component: SignUp,
 });
 
-// The email code is still a clickable mock (#7): nothing is sent, 000000 is wrong, any other code passes.
 function SignUp() {
 	const { step, notice, provider } = Route.useSearch();
 	// History state isn't sent to the server, so read it only once hydrated.
@@ -40,11 +46,36 @@ function SignUp() {
 	// value; a new tab without it falls back to the first step.
 	const hydrated = useHydrated();
 	const saved = useLocation({ select: (location) => location.state.signUp });
+	const resendAt = useLocation({ select: (location) => location.state.resendAt }) ?? 0;
 	const last = useRef(saved);
 	if (saved) last.current = saved;
 	const details = hydrated ? last.current : undefined;
 	const navigate = useNavigate();
-	const signedIn = () => void navigate({ to: "/" });
+	const [sending, setSending] = useState(false);
+
+	const requestCode = async (next: SignUpDetails) => {
+		setSending(true);
+		const result = await sendSignUpCode(next.email);
+		setSending(false);
+		// A code sent moments ago is still on its way: wait for it instead.
+		if (result.ok || result.error.code === "CODE_RECENTLY_SENT")
+			return void navigate({
+				to: "/sign-up",
+				search: { step: "verify" },
+				state: { signUp: next, resendAt: resendAtFrom(result) },
+			});
+		toast(noticeToast("delivery-failed", { onSignUp: () => {} }));
+	};
+
+	const finish = (outcome: CodeOutcome) => {
+		if (outcome === "signed-in") return void navigate({ to: "/" });
+		// The address already has an account: no session, just a way to sign in.
+		void navigate({
+			to: "/sign-in",
+			search: { notice: outcome },
+			state: { email: details?.email },
+		});
+	};
 
 	// A redirect's message shows once, then leaves the URL so a refresh won't repeat it.
 	useEffect(() => {
@@ -59,17 +90,17 @@ function SignUp() {
 		<main className="grid min-h-dvh place-items-center px-4 py-10 sm:px-8">
 			{step === "verify" && details ? (
 				<VerifyStep
-					email={details.email}
-					onVerified={signedIn}
+					details={details}
+					resendAt={resendAt}
+					onOutcome={finish}
 					onChangeEmail={() => void navigate({ to: "/sign-up", state: { signUp: details } })}
 				/>
 			) : (
 				<SignUpForm
 					key={details?.email}
 					defaults={details}
-					onEmail={(next) =>
-						void navigate({ to: "/sign-up", search: { step: "verify" }, state: { signUp: next } })
-					}
+					pending={sending}
+					onEmail={(next) => void requestCode(next)}
 					onProvider={continueWith}
 				/>
 			)}
@@ -78,24 +109,31 @@ function SignUp() {
 }
 
 function VerifyStep({
-	email,
-	onVerified,
+	details,
+	resendAt,
+	onOutcome,
 	onChangeEmail,
 }: {
-	email: string;
-	onVerified: () => void;
+	details: SignUpDetails;
+	resendAt: number;
+	onOutcome: (outcome: CodeOutcome) => void;
 	onChangeEmail: () => void;
 }) {
-	const challenge = useCodeChallenge();
+	const challenge = useEmailCode({
+		resendAt,
+		send: () => sendSignUpCode(details.email),
+		verify: (code) => verifySignUpCode(details, code),
+		onOutcome,
+	});
 	return (
 		<CodeStep
-			email={email}
+			email={details.email}
 			status={challenge.status}
 			resendIn={challenge.resendIn}
 			submitLabel="Create account"
 			pending={challenge.pending}
-			onSubmit={(code) => challenge.verify(code, onVerified)}
-			onResend={challenge.resend}
+			onSubmit={(code) => void challenge.verify(code)}
+			onResend={() => void challenge.resend()}
 			onChangeEmail={onChangeEmail}
 		/>
 	);

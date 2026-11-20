@@ -5,25 +5,32 @@ import { drizzle } from "drizzle-orm/d1";
 
 import type { WebsiteEnv } from "../../../../alchemy.run.ts";
 import * as schema from "../db/auth-schema.ts";
+import { emailCode } from "./email-code.ts";
+import { sendCodeEmail } from "./email.ts";
 import { redirectOAuthUpstream } from "./oauth-upstream.ts";
 
-export type AuthEnv = Omit<WebsiteEnv, "OAUTH_UPSTREAM" | "SESSION_EXPIRES_IN"> & {
-	OAUTH_UPSTREAM?: string;
-	SESSION_EXPIRES_IN?: string;
-};
+type TestOnly =
+	| "OAUTH_UPSTREAM"
+	| "SESSION_EXPIRES_IN"
+	| "RESEND_BASE_URL"
+	| "CODE_EXPIRES_IN"
+	| "CODE_RESEND_IN";
+
+export type AuthEnv = Omit<WebsiteEnv, TestOnly> & Partial<Record<TestOnly, string>>;
 
 const WEEK = 60 * 60 * 24 * 7;
 
 export function createAuth(env: AuthEnv) {
 	if (env.OAUTH_UPSTREAM) redirectOAuthUpstream(env.OAUTH_UPSTREAM);
 	const sessionExpiresIn = Number(env.SESSION_EXPIRES_IN ?? WEEK);
+	const db = drizzle(env.DB, { relations: schema.authRelations });
 
 	return betterAuth({
 		appName: "Ditto",
 		baseURL: env.BETTER_AUTH_URL,
 		secret: env.BETTER_AUTH_SECRET,
 		trustedOrigins: [env.BETTER_AUTH_URL],
-		database: drizzleAdapter(drizzle(env.DB, { relations: schema.authRelations }), {
+		database: drizzleAdapter(db, {
 			provider: "sqlite",
 			schema,
 		}),
@@ -59,6 +66,13 @@ export function createAuth(env: AuthEnv) {
 			ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
 		},
 		telemetry: { enabled: false },
-		plugins: [tanstackStartCookies()],
+		plugins: [
+			emailCode(db, {
+				expiresIn: Number(env.CODE_EXPIRES_IN ?? 5 * 60),
+				resendIn: Number(env.CODE_RESEND_IN ?? 30),
+				send: (email) => sendCodeEmail(env, email),
+			}),
+			tanstackStartCookies(),
+		],
 	});
 }

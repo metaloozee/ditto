@@ -17,6 +17,10 @@ const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 const APP_URL = "http://localhost:1338";
 /** How long an idle test session lasts, so expiry can be observed. */
 export const SESSION_EXPIRES_IN = 6;
+/** How long a test email code lasts, so expiry can be observed. */
+export const CODE_EXPIRES_IN = 10;
+/** How long a test visitor waits before another code can be sent. */
+export const CODE_RESEND_IN = 3;
 
 async function waitForApp(exited: Promise<number | null>) {
 	const deadline = Date.now() + 180_000;
@@ -34,7 +38,7 @@ async function waitForApp(exited: Promise<number | null>) {
 
 /**
  * Starts the test stage — the real Worker on a freshly migrated local D1 —
- * pointed at a fake GitHub, with fake secrets only.
+ * pointed at a fake GitHub and Resend, with fake secrets only.
  */
 export default async function setup(project: TestProject) {
 	const upstream = await startFakeUpstream();
@@ -53,6 +57,11 @@ export default async function setup(project: TestProject) {
 			GITHUB_CLIENT_SECRET: "test-github-secret",
 			OAUTH_UPSTREAM: upstream.url,
 			SESSION_EXPIRES_IN: String(SESSION_EXPIRES_IN),
+			RESEND_API_KEY: "re_test",
+			RESEND_FROM: "Ditto <sign-in@test.example>",
+			RESEND_BASE_URL: `${upstream.url}/resend`,
+			CODE_EXPIRES_IN: String(CODE_EXPIRES_IN),
+			CODE_RESEND_IN: String(CODE_RESEND_IN),
 		},
 	});
 	const exited = new Promise<number | null>((resolve) => child.once("exit", resolve));
