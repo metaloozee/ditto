@@ -1,1 +1,268 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-sans);
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+
+  --text-caption: 0.8125rem;
+  --text-caption--line-height: 1.4;
+  --text-body: 0.875rem;
+  --text-body--line-height: 1.5;
+  --text-heading: 1rem;
+  --text-heading--line-height: 1.3;
+  --text-heading--font-weight: 600;
+  --text-title: 1.5rem;
+  --text-title--line-height: 1.2;
+  --text-title--font-weight: 600;
+  --text-title--letter-spacing: -0.01em;
+  --text-display: 2rem;
+  --text-display--line-height: 1.1;
+  --text-display--font-weight: 600;
+  --text-display--letter-spacing: -0.02em;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-signal: var(--signal);
+  --color-link: var(--link);
+  --color-success: var(--success);
+  --color-destructive: var(--destructive);
+  --color-panel: var(--panel);
+  --color-panel-border: var(--panel-border);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --shadow-edge: 0 0 0 1px var(--edge);
+  --shadow-edge-hover: 0 0 0 1px var(--edge-hover);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/*
+ * Primitives: near-neutral charcoal gray plus one blue, Radix-style steps where a
+ * number names a role, not a lightness. Only steps a semantic token consumes are
+ * declared. Components never reference these directly.
+ *
+ * Roles that stay put across modes are mapped once here; surfaces whose step
+ * differs per mode (page, sidebar, card) are mapped in each block.
+ */
+:root {
+  color-scheme: light;
+  --gray-1: oklch(0.995 0.001 275);
+  --gray-2: oklch(0.978 0.0015 275);
+  --gray-3: oklch(0.962 0.002 275);
+  --gray-4: oklch(0.94 0.002 275);
+  --gray-6: oklch(0.9 0.003 275);
+  --gray-9: oklch(0.62 0.004 275);
+  --gray-11: oklch(0.5 0.004 275);
+  --gray-12: oklch(0.2 0.003 275);
+  --blue-9: oklch(0.53 0.22 266);
+  --red-11: oklch(0.5 0.18 25);
+  --green-11: oklch(0.5 0.13 150);
+
+  --background: var(--gray-1);
+  --card: var(--gray-2);
+  --panel: var(--gray-1);
+  --popover: var(--gray-1);
+  --sidebar: var(--gray-2);
+  --muted: var(--gray-3);
+  --secondary: var(--gray-3);
+  --accent: var(--gray-3);
+  --sidebar-accent: var(--gray-4);
+  --link: var(--blue-9);
+
+  --foreground: var(--gray-12);
+  --card-foreground: var(--gray-12);
+  --popover-foreground: var(--gray-12);
+  --secondary-foreground: var(--gray-12);
+  --accent-foreground: var(--gray-12);
+  --muted-foreground: var(--gray-11);
+  --primary: var(--gray-12);
+  --primary-foreground: var(--gray-1);
+  --signal: var(--blue-9);
+  --success: var(--green-11);
+  --destructive: var(--red-11);
+  --border: var(--gray-6);
+  --panel-border: var(--gray-6);
+  --edge: oklch(0 0 0 / 8%);
+  --edge-hover: oklch(0 0 0 / 13%);
+  --field: var(--gray-2);
+  --field-edge: oklch(0 0 0 / 10%);
+  --field-edge-hover: oklch(0 0 0 / 18%);
+  --field-inset: oklch(0 0 0 / 5%);
+  --primary-top: oklch(0.44 0.003 275);
+  --primary-bottom: oklch(0.2 0.003 275);
+  --primary-edge: oklch(0.1 0 0);
+  --primary-highlight: oklch(1 0 0 / 22%);
+  --primary-shade: oklch(0 0 0 / 30%);
+  --primary-hover: brightness(1.18);
+  --raised-top: oklch(1 0 0);
+  --raised: var(--gray-3);
+  --raised-edge: oklch(0 0 0 / 12%);
+  --raised-highlight: oklch(1 0 0);
+  --raised-hover: brightness(0.98);
+  --button-drop: 0 1px 2px oklch(0 0 0 / 8%), 0 2px 4px -1px oklch(0 0 0 / 6%);
+  --input: var(--gray-9);
+  --ring: var(--blue-9);
+  --sidebar-foreground: var(--gray-12);
+  --sidebar-primary: var(--gray-12);
+  --sidebar-primary-foreground: var(--gray-1);
+  --sidebar-accent-foreground: var(--gray-12);
+  --sidebar-border: var(--gray-6);
+  --sidebar-ring: var(--blue-9);
+  --radius: 0.625rem;
+}
+
+.dark {
+  color-scheme: dark;
+  --gray-1: oklch(0.215 0.001 275);
+  --gray-2: oklch(0.235 0.0015 275);
+  --gray-3: oklch(0.252 0.002 275);
+  --gray-4: oklch(0.272 0.002 275);
+  --gray-5: oklch(0.298 0.0025 275);
+  --gray-6: oklch(0.33 0.003 275);
+  --gray-7: oklch(0.365 0.003 275);
+  --gray-9: oklch(0.61 0.004 275);
+  --gray-11: oklch(0.81 0.003 275);
+  --gray-12: oklch(0.965 0.001 275);
+  --blue-9: oklch(0.64 0.18 266);
+  --blue-11: oklch(0.8 0.1 266);
+  --red-11: oklch(0.8 0.11 25);
+  --green-11: oklch(0.8 0.14 150);
+
+  --background: var(--gray-2);
+  --card: var(--gray-3);
+  --panel: var(--gray-4);
+  --popover: var(--gray-4);
+  --sidebar: var(--gray-1);
+  --muted: var(--gray-5);
+  --secondary: var(--gray-5);
+  --accent: var(--gray-5);
+  --sidebar-accent: var(--gray-4);
+  --panel-border: var(--gray-7);
+  --edge: oklch(1 0 0 / 8%);
+  --edge-hover: oklch(1 0 0 / 13%);
+  --field: var(--gray-1);
+  --field-edge: oklch(1 0 0 / 10%);
+  --field-edge-hover: oklch(1 0 0 / 16%);
+  --field-inset: oklch(0 0 0 / 25%);
+  --primary-top: oklch(1 0 0);
+  --primary-bottom: oklch(0.87 0.002 275);
+  --primary-edge: oklch(0.62 0.002 275);
+  --primary-highlight: oklch(1 0 0);
+  --primary-shade: oklch(0 0 0 / 12%);
+  --primary-hover: brightness(0.95);
+  --raised-top: oklch(0.36 0.003 275);
+  --raised: var(--gray-5);
+  --raised-edge: oklch(1 0 0 / 10%);
+  --raised-highlight: oklch(1 0 0 / 10%);
+  --raised-hover: brightness(1.12);
+  --button-drop: 0 1px 2px oklch(0 0 0 / 35%), 0 2px 6px -2px oklch(0 0 0 / 30%);
+  --link: var(--blue-11);
+}
+
+/*
+ * Layered surfaces, after the reference buttons: a fill lit from the top, a 1px
+ * edge (the element's own border), a 1px inner highlight along the top, and a
+ * soft drop shadow. Shadows go through --tw-shadow so focus rings still stack.
+ */
+@utility layer-primary {
+  border-color: var(--primary-edge);
+  background-image: linear-gradient(to bottom, var(--primary-top), var(--primary-bottom));
+  color: var(--primary-foreground);
+  --tw-shadow:
+    inset 0 1px 0 var(--primary-highlight), inset 0 -1px 0 var(--primary-shade), var(--button-drop);
+  box-shadow:
+    var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow),
+    var(--tw-ring-shadow), var(--tw-shadow);
+  &:hover {
+    filter: var(--primary-hover);
+  }
+}
+
+@utility layer-raised {
+  border-color: var(--raised-edge);
+  background-image: linear-gradient(to bottom, var(--raised-top), var(--raised));
+  color: var(--foreground);
+  --tw-shadow: inset 0 1px 0 var(--raised-highlight), var(--button-drop);
+  box-shadow:
+    var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow),
+    var(--tw-ring-shadow), var(--tw-shadow);
+  &:hover {
+    filter: var(--raised-hover);
+  }
+}
+
+/* A text field: sunken one step below the page, with a quiet alpha edge. */
+@utility field {
+  border-width: 1px;
+  border-color: var(--field-edge);
+  background-color: var(--field);
+  --tw-inset-shadow: inset 0 1px 2px var(--field-inset);
+  box-shadow:
+    var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow),
+    var(--tw-ring-shadow), var(--tw-shadow);
+  &:hover:not(:focus-visible, [aria-invalid="true"]) {
+    border-color: var(--field-edge-hover);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans antialiased;
+  }
+  body {
+    @apply bg-background text-body text-foreground;
+  }
+  h1 {
+    @apply text-title text-balance;
+  }
+  h2 {
+    @apply text-heading text-balance;
+  }
+  p {
+    @apply text-pretty;
+  }
+  code,
+  kbd,
+  pre,
+  samp {
+    @apply font-mono;
+  }
+}

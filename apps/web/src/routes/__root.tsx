@@ -23,10 +23,20 @@ export const Route = createRootRoute({
 	shellComponent: RootDocument,
 });
 
+// Dark is the default; follow the OS setting before first paint and when it changes.
+const themeScript = `(() => {
+	const query = matchMedia("(prefers-color-scheme: light)");
+	const apply = () => document.documentElement.classList.toggle("dark", !query.matches);
+	apply();
+	query.addEventListener("change", apply);
+})();`;
+
 function RootDocument({ children }: { children: ReactNode }) {
 	return (
-		<html lang="en">
+		<html lang="en" className="dark" suppressHydrationWarning>
 			<head>
+				{/* oxlint-disable-next-line react/no-danger -- static, first-party theme script */}
+				<script dangerouslySetInnerHTML={{ __html: themeScript }} />
 				<HeadContent />
 			</head>
 			<body>
