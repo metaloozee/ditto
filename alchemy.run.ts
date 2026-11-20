@@ -26,6 +26,8 @@ export class Website extends Cloudflare.Website.Vite<Website>()(
 				BETTER_AUTH_SECRET: Config.Redacted("BETTER_AUTH_SECRET"),
 				GITHUB_CLIENT_ID: Config.String("GITHUB_CLIENT_ID"),
 				GITHUB_CLIENT_SECRET: Config.Redacted("GITHUB_CLIENT_SECRET"),
+				GOOGLE_CLIENT_ID: Config.String("GOOGLE_CLIENT_ID"),
+				GOOGLE_CLIENT_SECRET: Config.Redacted("GOOGLE_CLIENT_SECRET"),
 				RESEND_API_KEY: Config.Redacted("RESEND_API_KEY"),
 				// A sender on a Ditto-owned domain verified in Resend.
 				RESEND_FROM: Config.String("RESEND_FROM"),

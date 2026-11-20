@@ -35,6 +35,7 @@ export function createAuth(env: AuthEnv) {
 			schema,
 		}),
 		emailAndPassword: { enabled: false },
+		disabledPaths: ["/update-user"],
 		socialProviders: {
 			github: {
 				clientId: env.GITHUB_CLIENT_ID,
@@ -43,11 +44,33 @@ export function createAuth(env: AuthEnv) {
 					? `${env.OAUTH_UPSTREAM}/github.com/login/oauth/authorize`
 					: undefined,
 			},
+			google: {
+				clientId: env.GOOGLE_CLIENT_ID,
+				clientSecret: env.GOOGLE_CLIENT_SECRET,
+				disableIdTokenSignIn: true,
+				authorizationEndpoint: env.OAUTH_UPSTREAM
+					? `${env.OAUTH_UPSTREAM}/accounts.google.com/o/oauth2/v2/auth`
+					: undefined,
+				mapProfileToUser: async (profile) => {
+					const names = { firstName: profile.given_name, lastName: profile.family_name };
+					if (profile.email_verified === true && profile.email) return names;
+
+					// Better Auth checks for an email match before validating registration.
+					// Without email proof, only an already-linked Google identity can return.
+					const linked = await db.query.account.findFirst({
+						where: { providerId: "google", accountId: profile.sub },
+						columns: {},
+						with: { user: { columns: { email: true } } },
+					});
+					return { ...names, email: linked?.user?.email ?? "", emailVerified: false };
+				},
+			},
 		},
 		user: {
+			// Settable like `name`, so providers' structured names can fill them.
 			additionalFields: {
-				firstName: { type: "string", required: false, input: false },
-				lastName: { type: "string", required: false, input: false },
+				firstName: { type: "string", required: false },
+				lastName: { type: "string", required: false },
 			},
 			validateUserInfo: ({ user, source }) => {
 				if (source.method === "oauth" && source.action === "create-user" && !user.emailVerified)
@@ -59,6 +82,13 @@ export function createAuth(env: AuthEnv) {
 		account: {
 			encryptOAuthTokens: true,
 			accountLinking: { enabled: true, disableImplicitLinking: true },
+		},
+		databaseHooks: {
+			account: {
+				// Better Auth encrypts access and refresh tokens. Ditto has no use for stored ID tokens.
+				create: { before: async (account) => ({ data: { ...account, idToken: null } }) },
+				update: { before: async (account) => ({ data: { ...account, idToken: null } }) },
+			},
 		},
 		rateLimit: { enabled: true, storage: "database" },
 		advanced: {

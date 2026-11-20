@@ -57,7 +57,7 @@ export function HomeView({ account, onSignOut }: { account: Account; onSignOut: 
 				<div className="flex max-w-sm flex-col items-center gap-5 text-center">
 					<DittoMark className="size-20" />
 					<div className="flex flex-col gap-1.5">
-						<h1>Welcome back, {account.displayName}</h1>
+						<h1>{account.displayName ? `Welcome back, ${account.displayName}` : "Welcome back"}</h1>
 						<p className="text-muted-foreground">
 							You’re signed in. Your projects and agents will show up here.
 						</p>
