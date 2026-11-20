@@ -4,36 +4,29 @@ Ditto starts with the single-page TanStack Start template. The pnpm workspace co
 
 ## Getting started
 
-Use Node.js 24.11.1 or later on the 24.x line, the pnpm version pinned in `package.json`, and Docker for the Cloudflare Sandbox.
+Use the Node.js version in `.node-version` and the pnpm version pinned in `package.json`.
 
 ```sh
 corepack enable
 pnpm install --frozen-lockfile
 pnpm exec alchemy profile edit --add Cloudflare
-pnpm dev
+pnpm exec vp run dev
 ```
 
-`pnpm dev` runs the Worker and its bindings locally through Alchemy. Edit `apps/web/src/routes/index.tsx` to change the homepage. The root route owns Ditto’s document metadata.
+`vp run dev` runs the Worker locally through Alchemy. To start TanStack Start's Vite server directly, run `pnpm exec vp -C apps/web dev`. Edit `apps/web/src/routes/index.tsx` to change the homepage. The root route owns Ditto’s document metadata.
+
+The workspace installs Vite+ locally. Prefix `vp` commands with `pnpm exec` when using the local CLI. With the global CLI, `vp install` uses the project's pnpm pin. Run project scripts with `vp run <task>`.
 
 ## Verification
 
 ```sh
-pnpm verify
+pnpm exec vp run verify
 ```
 
-This runs Biome, type-checks the app and stack, and builds the client and server. Run `pnpm preview` after the build to serve the web app locally.
+Verification runs `vp check` (Oxfmt, Oxlint, and type checks), `vp test run` (Vitest), and the web app’s `vp build`. Use `vp fmt` to format, `vp lint` for lint diagnostics, and `vp run preview` to serve the built app. The pre-commit hook runs `vp staged` on staged JavaScript and TypeScript files.
 
 ## Cloudflare infrastructure
 
-`alchemy.run.ts` defines the website Worker and its bindings for the `dev` stage.
+`alchemy.run.ts` defines one Worker per stage. Alchemy appends the selected stage to `ditto-app-`, producing names such as `ditto-app-dev`, `ditto-app-staging`, and `ditto-app-prod`. Its entry point in `apps/web/src/worker.ts` serves the TanStack Start app.
 
-| Binding | Resource |
-| --- | --- |
-| `DB` | D1 database `ditto-ayan-db` |
-| `BACKUP_BUCKET` | R2 bucket `ditto-ayan-sandbox-backups` |
-| `Sandbox` | Container-backed Durable Object using the stock Cloudflare Sandbox image |
-| `AppState` | Application Durable Object namespace |
-
-`apps/web/src/worker.ts` exports the Durable Object classes and delegates HTTP requests to TanStack Start. The Sandbox SDK and container image are both pinned to 0.12.14 for the existing container application. Moving to 1.x with Alchemy requires a new Durable Object class and container application.
-
-For deployment, authenticate Alchemy with Cloudflare and run `pnpm deploy`. Alchemy tracks the stack in local state under `.alchemy/`. Use the checkout with the existing state when updating an existing deployment. Applying this reset retires the trusted Git executor and wildcard preview route.
+The workspace scripts target `dev`. To deploy another stage, run `pnpm exec alchemy plan --stage staging` and then `pnpm exec alchemy deploy --stage staging`, substituting the desired stage in both commands. Alchemy tracks each stage in local state under `.alchemy/`. For existing deployments, run the plan from the checkout holding the stage’s state. Applying the Worker-only stack can delete previously managed resources and their data.
