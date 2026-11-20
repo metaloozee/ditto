@@ -15,6 +15,26 @@ export type GitHubIdentity = {
 /** The next authorization: an identity that consents, or a cancelled consent screen. */
 export type GitHubAuthorization = GitHubIdentity | { cancel: true };
 
+/** The ID token claims simulated Google issues for the next person who consents. */
+export type GoogleIdentity = {
+	sub: string;
+	email: string;
+	email_verified: boolean;
+	name?: string;
+	given_name?: string;
+	family_name?: string;
+};
+
+export type GoogleAuthorization = GoogleIdentity | { cancel: true };
+
+/** An unsigned ID token: Better Auth's Google code flow only decodes it. */
+const idToken = (claims: GoogleIdentity, audience: string) => {
+	const part = (data: unknown) => Buffer.from(JSON.stringify(data)).toString("base64url");
+	const now = Math.floor(Date.now() / 1000);
+	const payload = { iss: "https://accounts.google.com", aud: audience, iat: now, exp: now + 3600 };
+	return `${part({ alg: "none", typ: "JWT" })}.${part({ ...payload, ...claims })}.`;
+};
+
 async function body(req: IncomingMessage) {
 	const chunks: Buffer[] = [];
 	for await (const chunk of req) chunks.push(chunk as Buffer);
@@ -24,12 +44,15 @@ async function body(req: IncomingMessage) {
 /**
  * One local server standing in for every upstream the Worker talks to in the
  * test stage. The Worker reaches it as `${url}/<host>/<path>`; tests queue
- * what the next consent screen does with `POST /__github/next`.
+ * what the next consent screen does with `POST /__github/next` or
+ * `POST /__google/next`.
  */
 export async function startFakeUpstream() {
 	const queue: GitHubAuthorization[] = [];
 	const codes = new Map<string, GitHubIdentity>();
 	const tokens = new Map<string, GitHubIdentity>();
+	const googleQueue: GoogleAuthorization[] = [];
+	const googleCodes = new Map<string, { identity: GoogleIdentity; audience: string }>();
 
 	const server = createServer(async (req, res) => {
 		const url = new URL(req.url ?? "/", "http://fake");
@@ -41,6 +64,43 @@ export async function startFakeUpstream() {
 		if (req.method === "POST" && url.pathname === "/__github/next") {
 			queue.push(JSON.parse(await body(req)) as GitHubAuthorization);
 			return json(204, null);
+		}
+
+		if (req.method === "POST" && url.pathname === "/__google/next") {
+			googleQueue.push(JSON.parse(await body(req)) as GoogleAuthorization);
+			return json(204, null);
+		}
+
+		if (url.pathname === "/accounts.google.com/o/oauth2/v2/auth") {
+			const next = googleQueue.shift();
+			const back = new URL(url.searchParams.get("redirect_uri") ?? "");
+			back.searchParams.set("state", url.searchParams.get("state") ?? "");
+			if (!next || "cancel" in next) {
+				back.searchParams.set("error", "access_denied");
+			} else {
+				const code = randomUUID();
+				googleCodes.set(code, {
+					identity: next,
+					audience: url.searchParams.get("client_id") ?? "",
+				});
+				back.searchParams.set("code", code);
+			}
+			res.writeHead(302, { location: back.toString() });
+			return res.end();
+		}
+
+		if (req.method === "POST" && url.pathname === "/oauth2.googleapis.com/token") {
+			const code = new URLSearchParams(await body(req)).get("code") ?? "";
+			const grant = googleCodes.get(code);
+			googleCodes.delete(code);
+			if (!grant) return json(400, { error: "invalid_grant" });
+			return json(200, {
+				access_token: `ya29.${randomUUID()}`,
+				id_token: idToken(grant.identity, grant.audience),
+				token_type: "Bearer",
+				expires_in: 3600,
+				scope: "openid email profile",
+			});
 		}
 
 		if (url.pathname === "/github.com/login/oauth/authorize") {

@@ -1,5 +1,5 @@
 // Hosts whose server-to-server OAuth calls a test stage sends to its fake upstream.
-const HOSTS = new Set(["github.com", "api.github.com"]);
+const HOSTS = new Set(["github.com", "api.github.com", "oauth2.googleapis.com"]);
 
 let redirected = false;
 

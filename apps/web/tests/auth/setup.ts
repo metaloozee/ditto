@@ -34,7 +34,7 @@ async function waitForApp(exited: Promise<number | null>) {
 
 /**
  * Starts the test stage — the real Worker on a freshly migrated local D1 —
- * pointed at a fake GitHub, with fake secrets only.
+ * pointed at a fake GitHub and Google, with fake secrets only.
  */
 export default async function setup(project: TestProject) {
 	const upstream = await startFakeUpstream();
@@ -51,6 +51,8 @@ export default async function setup(project: TestProject) {
 			BETTER_AUTH_SECRET: "test-only-secret-not-for-any-real-stage",
 			GITHUB_CLIENT_ID: "test-github-client",
 			GITHUB_CLIENT_SECRET: "test-github-secret",
+			GOOGLE_CLIENT_ID: "test-google-client",
+			GOOGLE_CLIENT_SECRET: "test-google-secret",
 			OAUTH_UPSTREAM: upstream.url,
 			SESSION_EXPIRES_IN: String(SESSION_EXPIRES_IN),
 		},

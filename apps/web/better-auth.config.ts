@@ -7,4 +7,6 @@ export const auth = createAuth({
 	BETTER_AUTH_SECRET: "schema-generation-only-secret-000000",
 	GITHUB_CLIENT_ID: "schema",
 	GITHUB_CLIENT_SECRET: "schema",
+	GOOGLE_CLIENT_ID: "schema",
+	GOOGLE_CLIENT_SECRET: "schema",
 } as AuthEnv);
