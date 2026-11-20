@@ -1,1 +1,0 @@
-ALTER TABLE `messages` ADD `status` text DEFAULT 'complete' NOT NULL;
