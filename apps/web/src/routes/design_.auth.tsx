@@ -31,11 +31,11 @@ const noop = () => {};
 const email = previewAccount.email;
 
 // These come back from the server mid-step, so no URL reaches them.
-const codeStates: [string, CodeStatus, number][] = [
-	["Code sent, resend on cooldown", { kind: "sent" }, 24],
-	["Wrong code", { kind: "invalid", attemptsLeft: 2 }, 0],
-	["Expired code", { kind: "expired" }, 0],
-	["Too many wrong codes", { kind: "locked" }, 0],
+const codeStates: [string, CodeStatus, number, "sign-in" | "sign-up"][] = [
+	["Sign-in code requested", { kind: "sent" }, 24, "sign-in"],
+	["Invalid sign-in code", { kind: "invalid" }, 0, "sign-in"],
+	["Expired sign-up code", { kind: "expired" }, 0, "sign-up"],
+	["Too many wrong sign-up codes", { kind: "locked" }, 0, "sign-up"],
 ];
 
 const link = "font-medium text-link underline-offset-4 hover:underline";
@@ -46,10 +46,8 @@ function AuthDesigns() {
 			<header className="flex flex-col gap-2">
 				<h1>Authentication</h1>
 				<p className="max-w-prose text-muted-foreground">
-					Every screen and state for sign-in, sign-up, the signed-in home, and Settings. Steps and
-					redirect messages live in the URL, so each link below opens that state in the clickable
-					mock. Nothing is sent; enter 000000 to see a wrong code, any other code to see success.
-					Submit an empty form to see validation.
+					Sign-in, sign-up, the signed-in home, and Settings. Links open live routes and redirect
+					states. The component previews show how each screen renders with sample information.
 				</p>
 			</header>
 
@@ -145,13 +143,14 @@ function AuthDesigns() {
 
 			<Group title="Enter the code">
 				<div className="grid gap-6 lg:grid-cols-2">
-					{codeStates.map(([label, status, resendIn]) => (
+					{codeStates.map(([label, status, resendIn, flow]) => (
 						<Frame key={label} label={label}>
 							<CodeStep
 								email={email}
+								conditional={flow === "sign-in"}
 								status={status}
 								resendIn={resendIn}
-								submitLabel="Sign in"
+								submitLabel={flow === "sign-in" ? "Sign in" : "Create account"}
 								onSubmit={noop}
 								onResend={noop}
 								onChangeEmail={noop}

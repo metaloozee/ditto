@@ -12,7 +12,7 @@ import { drizzle } from "drizzle-orm/d1";
 
 import type { WebsiteEnv } from "../../../../alchemy.run.ts";
 import * as schema from "../db/auth-schema.ts";
-import { emailCode } from "./email-code.ts";
+import { EMAIL_METHOD, emailCode, emailSignIn, type EmailCodeOptions } from "./email-code.ts";
 import { sendCodeEmail } from "./email.ts";
 import { redirectOAuthUpstream } from "./oauth-upstream.ts";
 
@@ -27,10 +27,17 @@ export type AuthEnv = Omit<WebsiteEnv, TestOnly> & Partial<Record<TestOnly, stri
 
 const WEEK = 60 * 60 * 24 * 7;
 
-export function createAuth(env: AuthEnv) {
+export function createAuth(env: AuthEnv, waitUntil?: (task: Promise<unknown>) => void) {
 	if (env.OAUTH_UPSTREAM) redirectOAuthUpstream(env.OAUTH_UPSTREAM);
 	const sessionExpiresIn = Number(env.SESSION_EXPIRES_IN ?? WEEK);
 	const db = drizzle(env.DB, { relations: schema.authRelations });
+	const codes: EmailCodeOptions = {
+		expiresIn: Number(env.CODE_EXPIRES_IN ?? 5 * 60),
+		resendIn: Number(env.CODE_RESEND_IN ?? 30),
+		send: (email) => sendCodeEmail(env, email),
+	};
+
+	const signInOTP = emailSignIn(db, codes);
 
 	return betterAuth({
 		appName: "Ditto",
@@ -124,6 +131,18 @@ export function createAuth(env: AuthEnv) {
 			accountLinking: { enabled: true, disableImplicitLinking: true },
 		},
 		databaseHooks: {
+			session: {
+				create: {
+					before: async ({ userId }, ctx) => {
+						if (ctx?.path !== signInOTP.endpoints.signInEmailOTP.path) return;
+						const method = await db.query.account.findFirst({
+							where: { userId, providerId: EMAIL_METHOD },
+							columns: { id: true },
+						});
+						if (!method) throw APIError.from("BAD_REQUEST", signInOTP.$ERROR_CODES.INVALID_OTP);
+					},
+				},
+			},
 			account: {
 				// Better Auth encrypts access and refresh tokens. Ditto has no use for stored ID tokens.
 				create: { before: async (account) => ({ data: { ...account, idToken: null } }) },
@@ -132,17 +151,11 @@ export function createAuth(env: AuthEnv) {
 		},
 		rateLimit: { enabled: true, storage: "database" },
 		advanced: {
+			backgroundTasks: waitUntil ? { handler: waitUntil } : undefined,
 			useSecureCookies: env.BETTER_AUTH_URL.startsWith("https://"),
 			ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
 		},
 		telemetry: { enabled: false },
-		plugins: [
-			emailCode(db, {
-				expiresIn: Number(env.CODE_EXPIRES_IN ?? 5 * 60),
-				resendIn: Number(env.CODE_RESEND_IN ?? 30),
-				send: (email) => sendCodeEmail(env, email),
-			}),
-			tanstackStartCookies(),
-		],
+		plugins: [emailCode(db, codes), signInOTP, tanstackStartCookies()],
 	});
 }

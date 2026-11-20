@@ -1,8 +1,15 @@
 import type { BetterAuthPlugin, GenericEndpointContext as Ctx } from "better-auth";
-import { APIError, createAuthEndpoint, formCsrfMiddleware } from "better-auth/api";
+import {
+	APIError,
+	createAuthEndpoint,
+	createAuthMiddleware,
+	formCsrfMiddleware,
+	isAPIError,
+} from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
 import { constantTimeEqual, generateRandomString } from "better-auth/crypto";
-import { and, eq, gt } from "drizzle-orm";
+import { emailOTP } from "better-auth/plugins/email-otp";
+import { and, eq, gt, lte } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 
 import { account, user as userTable, verification } from "../db/auth-schema.ts";
@@ -236,5 +243,105 @@ export function emailCode(db: DrizzleD1Database, options: EmailCodeOptions) {
 			{ pathMatcher: (path) => path === "/email-code/sign-up/send", window: 60, max: 5 },
 			{ pathMatcher: (path) => path === "/email-code/sign-up/verify", window: 60, max: 10 },
 		],
+	} satisfies BetterAuthPlugin;
+}
+
+export function emailSignIn(db: DrizzleD1Database, options: EmailCodeOptions) {
+	const plugin = emailOTP({
+		disableSignUp: true,
+		expiresIn: options.expiresIn,
+		allowedAttempts: ATTEMPTS,
+		storeOTP: "hashed",
+		async sendVerificationOTP({ email, otp }, ctx) {
+			try {
+				await options.send({ to: email, code: otp, expiresIn: options.expiresIn });
+			} catch {
+				ctx?.context.logger.error("Sending a sign-in code failed");
+			}
+		},
+	});
+	const { sendVerificationOTP, signInEmailOTP } = plugin.endpoints;
+	const invalidOTP = () => APIError.from("BAD_REQUEST", plugin.$ERROR_CODES.INVALID_OTP);
+	const emailEnabled = async (ctx: Ctx, email: string) => {
+		const match = await ctx.context.internalAdapter.findUserByEmail(email, {
+			includeAccounts: true,
+		});
+		return match?.accounts.some((account) => account.providerId === EMAIL_METHOD);
+	};
+
+	return {
+		...plugin,
+		endpoints: {
+			signInEmailOTP,
+			sendVerificationOTP: createAuthEndpoint(
+				sendVerificationOTP.path,
+				sendVerificationOTP.options,
+				async (ctx) => {
+					if (ctx.body.type !== "sign-in") throw new APIError("NOT_FOUND");
+					const email = readEmail(ctx.body);
+					const now = new Date();
+					const expiresAt = new Date(now.getTime() + options.resendIn * 1000);
+					const id = `sign-in-cooldown-${email}`;
+					const [reserved] = await db
+						.insert(verification)
+						.values({ id, identifier: id, value: "", expiresAt })
+						.onConflictDoUpdate({
+							target: verification.id,
+							set: { expiresAt },
+							setWhere: lte(verification.expiresAt, now),
+						})
+						.returning({ id: verification.id });
+					if (reserved) {
+						// Eligibility and delivery run after the same public response for every address.
+						const send = async () => {
+							if (!(await emailEnabled(ctx, email))) return;
+							await sendVerificationOTP({
+								context: ctx.context,
+								body: { email, type: "sign-in" },
+							});
+						};
+						ctx.context.runInBackground(
+							send().catch(() => {
+								ctx.context.logger.error("Issuing a sign-in code failed");
+							}),
+						);
+					}
+					ctx.setHeader("X-Resend-In", String(options.resendIn));
+					return ctx.json({ success: true });
+				},
+			),
+		},
+		hooks: {
+			before: [
+				{
+					matcher: (ctx) => ctx.path === signInEmailOTP.path,
+					handler: createAuthMiddleware({ use: [formCsrfMiddleware] }, async (ctx) => {
+						const email =
+							typeof ctx.body?.email === "string" && ctx.body.email.trim().toLowerCase();
+						if (!email || !/^\d{6}$/.test(ctx.body?.otp) || !(await emailEnabled(ctx, email)))
+							throw invalidOTP();
+						return { context: { body: { ...ctx.body, email } } };
+					}),
+				},
+			],
+			after: [
+				{
+					matcher: (ctx) => ctx.path === signInEmailOTP.path,
+					handler: createAuthMiddleware(async (ctx) => {
+						const result = ctx.context.returned;
+						if (
+							isAPIError(result) &&
+							(result.body?.code === "OTP_EXPIRED" || result.body?.code === "TOO_MANY_ATTEMPTS")
+						) {
+							const error = invalidOTP();
+							return Response.json(error.body, {
+								status: error.statusCode,
+								statusText: String(error.status),
+							});
+						}
+					}),
+				},
+			],
+		},
 	} satisfies BetterAuthPlugin;
 }

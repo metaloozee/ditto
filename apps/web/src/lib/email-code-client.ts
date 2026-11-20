@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
 	codeResentToast,
@@ -7,6 +7,7 @@ import {
 	type SignUpDetails,
 } from "#/components/auth.tsx";
 import { toast, type ToastInput } from "#/components/ui/toast.tsx";
+import { authClient } from "#/lib/auth-client.ts";
 
 declare module "@tanstack/react-router" {
 	interface HistoryState {
@@ -54,6 +55,36 @@ export const verifySignUpCode = ({ firstName, lastName, email }: SignUpDetails, 
 		code,
 	});
 
+export async function sendSignInCode(email: string): Promise<CodeResult<{ resendIn: number }>> {
+	let resendIn = 0;
+	let retryAfter = 0;
+	const result = await authClient.emailOtp
+		.sendVerificationOtp({
+			email,
+			type: "sign-in",
+			fetchOptions: {
+				onResponse: ({ response }) => {
+					resendIn = Number(response.headers.get("x-resend-in"));
+					retryAfter = Number(response.headers.get("x-retry-after"));
+				},
+			},
+		})
+		.catch(() => undefined);
+	return result?.data?.success
+		? { ok: true, data: { resendIn } }
+		: { ok: false, error: { code: result?.error?.code, retryAfter } };
+}
+
+export async function verifySignInCode(
+	email: string,
+	otp: string,
+): Promise<CodeResult<{ outcome: "signed-in" }>> {
+	const result = await authClient.signIn.emailOtp({ email, otp }).catch(() => undefined);
+	return result?.data
+		? { ok: true, data: { outcome: "signed-in" } }
+		: { ok: false, error: { code: result?.error?.code } };
+}
+
 /** When the next code may be sent, given a send's result. */
 export function resendAtFrom(result: CodeResult<{ resendIn: number }>) {
 	const wait = result.ok ? result.data.resendIn : (result.error.retryAfter ?? 0);
@@ -78,16 +109,19 @@ export function useEmailCode({
 	send,
 	verify,
 	onOutcome,
+	resentToast = codeResentToast,
 }: {
 	resendAt: number;
 	send: () => Promise<CodeResult<{ resendIn: number }>>;
 	verify: (code: string) => Promise<CodeResult<{ outcome: CodeOutcome }>>;
 	onOutcome: (outcome: CodeOutcome) => void;
+	resentToast?: ToastInput;
 }) {
 	const [status, setStatus] = useState<CodeStatus>({ kind: "sent" });
 	const [pending, setPending] = useState(false);
 	const [resendAt, setResendAt] = useState(initialResendAt);
 	const [resendIn, setResendIn] = useState(() => secondsUntil(initialResendAt));
+	const busy = useRef(false);
 	useEffect(() => {
 		setResendIn(secondsUntil(resendAt));
 		const timer = setInterval(() => {
@@ -103,16 +137,22 @@ export function useEmailCode({
 		pending,
 		resendIn,
 		resend: async () => {
+			if (busy.current) return;
+			busy.current = true;
 			const result = await send();
+			busy.current = false;
 			setResendAt(resendAtFrom(result));
 			if (!result.ok) return toast(resendFailedToast);
 			setStatus({ kind: "sent" });
-			toast(codeResentToast);
+			toast(resentToast);
 		},
 		verify: async (code: string) => {
+			if (busy.current) return;
+			busy.current = true;
 			setPending(true);
 			const result = await verify(code);
 			setPending(false);
+			if (!result.ok || result.data.outcome !== "signed-in") busy.current = false;
 			if (result.ok) {
 				const { outcome } = result.data;
 				if (outcome !== "signed-in") return onOutcome(outcome);
@@ -121,7 +161,9 @@ export function useEmailCode({
 				return;
 			}
 			const { code: reason, attemptsLeft } = result.error;
-			if (reason === "INVALID_CODE" && attemptsLeft) setStatus({ kind: "invalid", attemptsLeft });
+			if (reason === "INVALID_OTP") setStatus({ kind: "invalid" });
+			else if (reason === "INVALID_CODE" && attemptsLeft)
+				setStatus({ kind: "invalid", attemptsLeft });
 			else if (reason === "TOO_MANY_ATTEMPTS") setStatus({ kind: "locked" });
 			else if (reason === "CODE_EXPIRED") setStatus({ kind: "expired" });
 			else toast(codeThrottledToast);
