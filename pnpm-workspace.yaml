@@ -1,5 +1,6 @@
 packages:
   - apps/*
+minimumReleaseAge: 1440
 allowBuilds:
   "@google/genai": true
   "@mongodb-js/zstd": false
