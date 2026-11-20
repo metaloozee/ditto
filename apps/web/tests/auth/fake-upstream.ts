@@ -12,6 +12,9 @@ export type GitHubIdentity = {
 	emails: { email: string; primary: boolean; verified: boolean }[];
 };
 
+/** An email the Worker handed to Resend. */
+export type SentEmail = { from: string; to: string[]; subject: string; text: string };
+
 /** The next authorization: an identity that consents, or a cancelled consent screen. */
 export type GitHubAuthorization = GitHubIdentity | { cancel: true };
 
@@ -53,6 +56,8 @@ export async function startFakeUpstream() {
 	const tokens = new Map<string, GitHubIdentity>();
 	const googleQueue: GoogleAuthorization[] = [];
 	const googleCodes = new Map<string, { identity: GoogleIdentity; audience: string }>();
+	const emails: SentEmail[] = [];
+	let failNextEmail = false;
 
 	const server = createServer(async (req, res) => {
 		const url = new URL(req.url ?? "/", "http://fake");
@@ -101,6 +106,30 @@ export async function startFakeUpstream() {
 				expires_in: 3600,
 				scope: "openid email profile",
 			});
+		}
+
+		// Resend: tests read what was sent, or make the next delivery fail.
+		if (req.method === "POST" && url.pathname === "/resend/emails") {
+			if (req.headers.authorization !== "Bearer re_test")
+				return json(401, { name: "validation_error", message: "API key is invalid" });
+			const email = JSON.parse(await body(req)) as SentEmail;
+			if (failNextEmail) {
+				failNextEmail = false;
+				return json(500, { name: "application_error", message: "Simulated outage" });
+			}
+			emails.push(email);
+			return json(200, { id: randomUUID() });
+		}
+		if (req.method === "POST" && url.pathname === "/__resend/fail-next") {
+			failNextEmail = true;
+			return json(204, null);
+		}
+		if (url.pathname === "/__emails") {
+			const to = url.searchParams.get("to");
+			return json(
+				200,
+				emails.filter((e) => e.to.includes(to ?? "")),
+			);
 		}
 
 		if (url.pathname === "/github.com/login/oauth/authorize") {

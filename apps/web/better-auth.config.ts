@@ -9,4 +9,6 @@ export const auth = createAuth({
 	GITHUB_CLIENT_SECRET: "schema",
 	GOOGLE_CLIENT_ID: "schema",
 	GOOGLE_CLIENT_SECRET: "schema",
+	RESEND_API_KEY: "schema",
+	RESEND_FROM: "schema",
 } as AuthEnv);
