@@ -15,6 +15,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Arc, Blocks, Classic, LinearDots, Pulse, Ring } from "loading-dev";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import { DittoMark } from "#/components/ditto-mark.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import {
@@ -122,6 +123,15 @@ function DesignSystem() {
 						written spec is at /design.md. Change your OS appearance to see the other mode.
 					</p>
 				</header>
+
+				<Section title="Brand">
+					<div className="flex flex-wrap items-center gap-6">
+						<DittoMark className="size-32" />
+						<p className="max-w-xs text-muted-foreground">
+							The eyes follow your pointer. Click the mark to change its mood.
+						</p>
+					</div>
+				</Section>
 
 				<Section title="Color">
 					<div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
