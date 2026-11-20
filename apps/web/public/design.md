@@ -190,6 +190,8 @@ components:
 
 Ditto is a quiet, dark-first tool for watching and steering coding agents. The interface is charcoal and near-white, with one blue reserved for signal: focus, links, and work in progress. The main call to action is a light button on a dark surface, never a colored one, so the eye goes to content and to what the agents are doing. Density is moderate: 14px text, 32px controls, 36px navigation rows.
 
+The brand mark is a white rounded bezel around a dark screen with two blue strokes (`#9fbdff` over `#5884f8`, the signal blue). Source: `apps/web/public/logo.svg`, served at `/logo.svg` and used as the SVG favicon. `favicon.ico` (16, 32, 48) and `apple-touch-icon.png` (180, on the dark background) are rendered from it; regenerate both when the mark changes.
+
 Dark is the default. The app follows the operating system's appearance, and every token has a light counterpart (the `light-` prefixed colors above).
 
 The system is shadcn's `base-nova` style generated on Base UI primitives, so behaviour (focus management, keyboard support, ARIA) comes from Base UI and the visuals come from these tokens. Source of truth: `apps/web/src/styles.css` for tokens and `apps/web/src/components/ui/` for components.
