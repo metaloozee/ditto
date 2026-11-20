@@ -1,5 +1,12 @@
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
 import { betterAuth } from "better-auth";
+import {
+	addOAuthServerContext,
+	APIError,
+	createAuthMiddleware,
+	getAuthoritativeSessionFromCtx,
+	getOAuthState,
+} from "better-auth/api";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { drizzle } from "drizzle-orm/d1";
 
@@ -60,14 +67,47 @@ export function createAuth(env: AuthEnv) {
 				},
 			},
 		},
+		hooks: {
+			before: createAuthMiddleware(async (ctx) => {
+				if (ctx.path !== "/link-social") return;
+				if (ctx.body?.idToken)
+					throw new APIError("BAD_REQUEST", {
+						message: "Use the provider’s OAuth flow to link a sign-in method.",
+					});
+				const session = await getAuthoritativeSessionFromCtx(ctx);
+				if (session) {
+					await addOAuthServerContext({
+						linkSessionId: session.session.id,
+						linkProvider: ctx.body?.provider,
+					});
+				}
+			}),
+		},
 		user: {
 			// Settable like `name`, so providers' structured names can fill them.
 			additionalFields: {
 				firstName: { type: "string", required: false },
 				lastName: { type: "string", required: false },
 			},
-			validateUserInfo: ({ user, source }) => {
-				if (source.method === "oauth" && source.action === "create-user" && !user.emailVerified)
+			validateUserInfo: async ({ user, source }, ctx) => {
+				if (source.method !== "oauth") return;
+				if (source.action === "link-account") {
+					// The original session may still be live on another device even when
+					// this browser comes back signed in to a different session.
+					const state = await getOAuthState();
+					const session = await getAuthoritativeSessionFromCtx(ctx);
+					if (
+						!session ||
+						session.user.id !== user.id ||
+						session.session.id !== state?.serverContext?.linkSessionId ||
+						source.oauth?.providerId !== state?.serverContext?.linkProvider
+					)
+						return { error: "link_session_changed" };
+				}
+				if (
+					(source.action === "create-user" || source.action === "link-account") &&
+					!user.emailVerified
+				)
 					return { error: "email_not_verified" };
 			},
 		},

@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import {
 	LINK_OUTCOMES,
@@ -9,44 +9,70 @@ import {
 	type LinkOutcome,
 	type Method,
 } from "#/components/account.tsx";
-import { oneOf } from "#/components/auth.tsx";
+import { oneOf, type Provider } from "#/components/auth.tsx";
 import { toast } from "#/components/ui/toast.tsx";
-import { useSignOut } from "#/lib/auth-client.ts";
+import { authClient, useSignOut } from "#/lib/auth-client.ts";
 
 type SettingsSearch = { outcome?: LinkOutcome; method?: Method };
 
 export const Route = createFileRoute("/_account/settings")({
 	head: () => ({ meta: [{ title: "Settings · Ditto" }] }),
 	validateSearch: (search): SettingsSearch => ({
-		outcome: oneOf(LINK_OUTCOMES, search.outcome),
+		outcome: search.error ? oauthLinkOutcome(search.error) : oneOf(LINK_OUTCOMES, search.outcome),
 		method: oneOf(METHOD_KEYS, search.method),
 	}),
 	component: Settings,
 });
 
-// Linking is still a clickable mock: every link succeeds and nothing is saved.
+function oauthLinkOutcome(error: unknown): LinkOutcome {
+	switch (error) {
+		case "access_denied":
+			return "cancelled";
+		case "email_does_not_match":
+		case "email_not_verified":
+		case "email_not_found":
+			return "email-mismatch";
+		case "account_already_linked_to_different_user":
+			return "linked-elsewhere";
+		default:
+			return "interrupted";
+	}
+}
+
 function Settings() {
 	const { account } = Route.useRouteContext();
 	const { outcome, method } = Route.useSearch();
 	const navigate = useNavigate();
 	const signOut = useSignOut();
-	const [methods, setMethods] = useState<readonly Method[]>(account.methods);
 
 	// A linking outcome shows once as a toast, then leaves the URL.
 	useEffect(() => {
 		if (!outcome || !method) return;
-		toast(linkOutcomeToast(outcome, method, account.email));
-		if (outcome === "linked") setMethods((m) => (m.includes(method) ? m : [...m, method]));
+		if (outcome !== "linked" || account.methods.includes(method)) {
+			toast(linkOutcomeToast(outcome, method, account.email));
+		}
 		void navigate({ to: "/settings", replace: true });
-	}, [outcome, method, navigate, account.email]);
+	}, [outcome, method, navigate, account.email, account.methods]);
+
+	async function linkProvider(provider: Provider) {
+		try {
+			const { error } = await authClient.linkSocial({
+				provider,
+				callbackURL: `/settings?outcome=linked&method=${provider}`,
+				errorCallbackURL: `/settings?method=${provider}`,
+			});
+			if (!error) return;
+		} catch {
+			// The request failed before the provider could open.
+		}
+		toast(linkOutcomeToast("interrupted", provider, account.email));
+	}
 
 	return (
 		<SettingsView
-			account={{ ...account, methods }}
+			account={account}
 			onLink={(next) =>
-				void (next === "email"
-					? navigate({ to: "/settings/verify-email" })
-					: navigate({ to: "/settings", search: { outcome: "linked", method: next } }))
+				void (next === "email" ? navigate({ to: "/settings/verify-email" }) : linkProvider(next))
 			}
 			onSignOut={() => void signOut()}
 		/>
