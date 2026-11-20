@@ -22,6 +22,7 @@
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.2",
     "input-otp": "^1.5.0",
+    "jotai": "^3.0.2",
     "loading-dev": "0.3.8",
     "motion": "^14.14.0",
     "react": "^19.3.1",
