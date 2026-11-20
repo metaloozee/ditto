@@ -1,5 +1,5 @@
 {
-  "include": ["**/*.ts", "**/*.tsx", "../../alchemy.run.ts", "types/**/*.ts"],
+  "include": ["**/*.ts", "**/*.tsx", "../../alchemy.run.ts", "../../vite.config.ts"],
   "exclude": ["node_modules", "dist", ".alchemy", ".wrangler"],
   "compilerOptions": {
     "target": "ES2022",
@@ -10,7 +10,7 @@
       "@/*": ["./src/*"]
     },
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["vite/client", "@cloudflare/workers-types", "./types/env.d.ts"],
+    "types": ["vite/client", "node"],
 
     /* Bundler mode */
     "moduleResolution": "bundler",

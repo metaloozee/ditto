@@ -1,1 +1,0 @@
-ALTER TABLE `agent_runs` ADD `modelSpecifier` text DEFAULT 'opencode-go/qwen3.7-plus' NOT NULL;

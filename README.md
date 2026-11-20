@@ -1,149 +1,32 @@
 # Ditto
 
-Ditto is a TanStack Start app deployed with Alchemy on Cloudflare Workers. It uses:
+Ditto starts with the single-page TanStack Start template. The pnpm workspace contains the React and Tailwind app in `apps/web` and the Alchemy stack at the repository root.
 
-- Cloudflare D1 + Drizzle for persistence
-- better-auth with GitHub OAuth
-- GitHub repo import for projects
-- `@cloudflare/sandbox` for workspace instantiation
-- R2-backed sandbox backup/restore
-- agent runs in the Cloudflare sandbox via the PI harness; the client streams
-  `POST /api/agent/stream` (SSE)
+## Getting started
 
-## Repository layout
+Use the Node.js version in `.node-version` and the pnpm version pinned in `package.json`.
 
-| Path | Ownership |
-|---|---|
-| Root (`package.json`, `alchemy.run.ts`, `Dockerfile`, `pnpm-workspace.yaml`) | Workspace orchestration, Alchemy deploy graph, sandbox image |
-| `apps/web` | TanStack Start application (`@ditto/web`): UI, Worker routes, domain services, D1 schema/migrations |
-| `packages/sandbox-runner` | Independent npm package baked into the sandbox image (not a pnpm workspace member) |
-
-Alchemy is the sole deployment owner (`pnpm dev` / `pnpm deploy` / `pnpm destroy`). This monorepo layout does not introduce SST, Wrangler-as-deploy, or any other deployment boundary.
-
-## Alchemy v2 (dev stage)
-
-- Exact deps: `alchemy@2.0.0-beta.70`, `effect@4.0.0-beta.103`, `@effect/platform-node@4.0.0-beta.103` (workspace overrides pin the coherent Effect beta.103 set).
-- Container id `sandbox`, env `Sandbox`; image from root `Dockerfile`.
-- `pnpm dev` runs Alchemy from `apps/web` (entry `../../alchemy.run.ts`) so local Docker context resolves to the repo root. `pnpm deploy` / `pnpm destroy` stay root-level `--stage dev`.
-- Local state: `.alchemy/` (gitignored). Stage is disposable.
-
-## Prerequisites
-
-- Node.js 22.15+ for the app (22.19+ for the sandbox runner; 22.17+ recommended for local dev)
-- pnpm (workspace root + `apps/web`) and npm (`packages/sandbox-runner` only)
-- Cloudflare / GitHub credentials for the configured environment
-
-## Install
-
-Root workspace (pnpm; includes `apps/web`):
-
-```bash
+```sh
+corepack enable
 pnpm install --frozen-lockfile
+pnpm exec alchemy profile edit --add Cloudflare
+pnpm exec vp run dev
 ```
 
-Sandbox runner is a **separate npm package** (not a pnpm workspace member). Install it when working on `packages/sandbox-runner` or before full verification:
+`vp run dev` runs the Worker locally through Alchemy. To start TanStack Start's Vite server directly, run `pnpm exec vp -C apps/web dev`. Edit `apps/web/src/routes/index.tsx` to change the homepage. The root route owns Ditto’s document metadata.
 
-```bash
-npm ci --prefix packages/sandbox-runner
+The workspace installs Vite+ locally. Prefix `vp` commands with `pnpm exec` when using the local CLI. With the global CLI, `vp install` uses the project's pnpm pin. Run project scripts with `vp run <task>`.
+
+## Verification
+
+```sh
+pnpm exec vp run verify
 ```
 
-Or: `pnpm runner:install`.
+Verification runs `vp check` (Oxfmt, Oxlint, and type checks), `vp test run` (Vitest), and the web app’s `vp build`. Use `vp fmt` to format, `vp lint` for lint diagnostics, and `vp run preview` to serve the built app. The pre-commit hook runs `vp staged` on staged JavaScript and TypeScript files.
 
-## Development
+## Cloudflare infrastructure
 
-From the repository root:
+`alchemy.run.ts` defines one Worker per stage. Alchemy appends the selected stage to `ditto-app-`, producing names such as `ditto-app-dev`, `ditto-app-staging`, and `ditto-app-prod`. Its entry point in `apps/web/src/worker.ts` serves the TanStack Start app.
 
-```bash
-pnpm dev
-```
-
-Runs Alchemy from `apps/web` against stage `dev` so the root Docker context
-resolves correctly. Env files load from the repo root.
-
-Before opening a PR, run the full verification gate (app + runner typecheck/tests/build):
-
-```bash
-pnpm verify
-```
-
-When you change `packages/sandbox-runner` sources, its `package.json` / lockfile,
-or the root `Dockerfile`, rebuild the sandbox image so the Docker-baked runner
-matches local code (restart `pnpm dev` or redeploy with Alchemy so the root
-`Dockerfile` is rebuilt).
-
-## Database
-
-Generate migrations after changing `apps/web/src/db/schema.ts`:
-
-```bash
-pnpm db:generate
-```
-
-Migrations live under `apps/web/migrations`. Root `pnpm db:*` scripts forward to
-`@ditto/web`.
-
-## Scripts
-
-- `pnpm dev` — local Alchemy + Vite for stage `dev` only
-- `pnpm build` — production build of `@ditto/web`
-- `pnpm deploy` — `alchemy deploy --stage dev` (sole deploy owner)
-- `pnpm destroy` — `alchemy destroy --stage dev` (destructive; no continuity)
-- `pnpm check` — Biome check (repo root)
-- `pnpm lint` — Biome lint
-- `pnpm format` — Biome format
-- `pnpm test` — Vitest for `@ditto/web`
-- `pnpm typecheck` — TypeScript for `@ditto/web` (`tsc --noEmit`)
-- `pnpm runner:install` — `npm ci` for `packages/sandbox-runner`
-- `pnpm runner:verify` — typecheck, test, and build the sandbox runner
-- `pnpm verify` — full pre-PR gate (check, typecheck, test, build, runner verify)
-- `pnpm db:generate` / `db:migrate` / `db:push` / `db:pull` / `db:studio` — Drizzle via `@ditto/web`
-
-## Docker / sandbox image
-
-The root `Dockerfile` copies `packages/sandbox-runner` into the Cloudflare sandbox
-image and installs the `ditto-runner` CLI. Build context is the repository root
-(see `.dockerignore`).
-
-## Environment variables
-
-Set these for local development and deployment (typically `.env.local` at the
-repo root; Vite `envDir` is the monorepo root):
-
-```env
-CLOUDFLARE_ACCOUNT_ID=
-R2_ACCESS_KEY_ID=
-R2_SECRET_ACCESS_KEY=
-USE_LOCAL_BUCKET_BACKUPS=
-BETTER_AUTH_SECRET=
-BETTER_AUTH_URL=
-GITHUB_CLIENT_ID=
-GITHUB_CLIENT_SECRET=
-GITHUB_APP_ID=
-GITHUB_APP_PRIVATE_KEY=
-VITE_GITHUB_APP_INSTALL_URL=
-OPENCODE_API_KEY=
-AI_CREDENTIALS_ENCRYPTION_KEY=
-```
-
-`BETTER_AUTH_URL` defaults to `http://localhost:5173` if omitted.
-`AI_CREDENTIALS_ENCRYPTION_KEY` must be nonempty and distinct from
-`BETTER_AUTH_SECRET`. It encrypts account-level AI provider credentials.
-`OPENCODE_API_KEY` is the operator credential for the free fallback model
-`opencode/deepseek-v4-flash-free` only. Users connect their own providers in
-Account Settings.
-
-## Notes
-
-- For GitHub-linked projects, the Ditto GitHub App needs **Contents: Read &
-  write** and **Pull requests: Read & write** so the Worker can push session
-  branches and open pull requests (installation token; never stored in the DB).
-- `pnpm deploy` and `pnpm destroy` are managed through Alchemy only, stage
-  `dev` only.
-- `apps/web/src/server.ts` exports the Cloudflare Sandbox binding used by the app.
-- `OPENCODE_API_KEY` is required as the operator fallback for
-  `opencode/deepseek-v4-flash-free`. Account provider credentials are injected
-  ephemerally via `DITTO_PI_CREDENTIAL` and deleted inside the runner before
-  tools start.
-- Agent harness architecture: `docs/architecture/agent-harness.md`
-- Concurrent agent runs per project are not enforced yet; see the architecture
-  doc for deferred concurrency notes.
+The workspace scripts target `dev`. To deploy another stage, run `pnpm exec alchemy plan --stage staging` and then `pnpm exec alchemy deploy --stage staging`, substituting the desired stage in both commands. Alchemy tracks each stage in local state under `.alchemy/`. For existing deployments, run the plan from the checkout holding the stage’s state. Applying the Worker-only stack can delete previously managed resources and their data.

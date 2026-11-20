@@ -1,26 +1,11 @@
 packages:
   - apps/*
-overrides:
-  'alchemy>miniflare': 4.20260710.0
-  # Alchemy beta.70 needs Effect beta.103 (TaggedErrorClass; coherent peer set).
-  effect: 4.0.0-beta.103
-  '@effect/platform-node-shared': 4.0.0-beta.103
-  '@effect/platform-bun': 4.0.0-beta.103
-  '@effect/sql-d1': 4.0.0-beta.103
-  '@effect/sql-sqlite-do': 4.0.0-beta.103
-  '@effect/vitest': 4.0.0-beta.103
-packageExtensions:
-  # Streamdown 2.5.0 omits the @types/react peer needed by strict pnpm TypeScript workspaces; remove this extension when upstream declares that peer.
-  streamdown@2.5.0:
-    peerDependencies:
-      '@types/react': '*'
 allowBuilds:
-  '@google/genai': true
-  '@mongodb-js/zstd': false
+  "@google/genai": true
+  "@mongodb-js/zstd": false
   better-sqlite3: true
   core-js-pure: false
   esbuild: true
-  lefthook: true
   lightningcss: true
   msgpackr-extract: true
   msw: true
@@ -28,6 +13,9 @@ allowBuilds:
   protobufjs: true
   sharp: true
   workerd: true
-minimumReleaseAgeExclude:
-  - '@shadcn/react@0.1.0'
-  - shadcn@4.12.0
+catalog:
+  vite: npm:@voidzero-dev/vite-plus-core@8.3.8000
+  vite-plus: 1.7.0
+overrides:
+  vite@*: "catalog:"
+  vitest@*: 5.1.0

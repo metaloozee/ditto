@@ -20,31 +20,20 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Enable Corepack
         run: corepack enable
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: "24"
+          node-version-file: ".node-version"
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install root dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Cache npm (sandbox runner)
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-runner-${{ hashFiles('packages/sandbox-runner/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-runner-
-
-      - name: Install sandbox runner dependencies
-        run: npm ci --prefix packages/sandbox-runner
-
       - name: Verify
-        run: pnpm verify
+        run: pnpm exec vp run verify
