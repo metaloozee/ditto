@@ -32,8 +32,9 @@ const noop = () => {};
 const email = previewAccount.email;
 
 // These come back from the server mid-step, so no URL reaches them.
-const codeStates: [string, CodeStatus, number, "sign-in" | "sign-up"][] = [
+const codeStates: [string, CodeStatus, number, "sign-in" | "sign-up", boolean?][] = [
 	["Sign-in code requested", { kind: "sent" }, 24, "sign-in"],
+	["Sending a new sign-in code", { kind: "sent" }, 0, "sign-in", true],
 	["Invalid sign-in code", { kind: "invalid" }, 0, "sign-in"],
 	["Expired sign-up code", { kind: "expired" }, 0, "sign-up"],
 	["Too many wrong sign-up codes", { kind: "locked" }, 0, "sign-up"],
@@ -145,13 +146,14 @@ function AuthDesigns() {
 
 			<Group title="Enter the code">
 				<div className="grid gap-6 lg:grid-cols-2">
-					{codeStates.map(([label, status, resendIn, flow]) => (
+					{codeStates.map(([label, status, resendIn, flow, resending]) => (
 						<Frame key={label} label={label}>
 							<CodeStep
 								email={email}
 								conditional={flow === "sign-in"}
 								status={status}
 								resendIn={resendIn}
+								resending={resending}
 								submitLabel={flow === "sign-in" ? "Sign in" : "Create account"}
 								onSubmit={noop}
 								onResend={noop}

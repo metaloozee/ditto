@@ -149,3 +149,22 @@ it("requires the session that started linking even when the user signs in again"
 	await open(returning.page, "/settings");
 	await returning.page.getByRole("button", { name: "Link Email" }).waitFor();
 });
+
+it("won't enable email sign-in for an address codes can't reach", async () => {
+	const email = newAddress().replace("+", "!");
+	const visitor = await newVisitor();
+	await continueWithGitHub(
+		visitor.page,
+		gitHubUser({ email, emails: [{ email, primary: true, verified: true }] }),
+	);
+
+	await open(visitor.page, "/settings");
+	await visitor.page.getByRole("button", { name: "Link Email" }).click();
+
+	await visitor.page.getByText("Email sign-in isn’t available").waitFor();
+	await visitor.page
+		.getByText(`Codes can’t be sent to ${email}. Keep signing in with GitHub.`)
+		.waitFor();
+	expect(new URL(visitor.page.url()).pathname).toBe("/settings");
+	await expect(inbox(email)).resolves.toEqual([]);
+});

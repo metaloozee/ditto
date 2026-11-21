@@ -391,6 +391,16 @@ export function CodeForm({
 		const owner = row.current?.closest("form");
 		if (owner?.contains(document.activeElement)) row.current?.querySelector("input")?.focus();
 	}, [status, form]);
+	// A resend disables the control that started it, so focus would fall to the page.
+	// Once the request settles, return it to the code row for the next code.
+	const resendRequested = useRef(false);
+	useEffect(() => {
+		if (resending || !resendRequested.current) return;
+		resendRequested.current = false;
+		const active = document.activeElement;
+		if (active && active !== document.body) return;
+		row.current?.querySelector("input")?.focus();
+	}, [resending]);
 	return (
 		<div className="flex flex-col gap-6">
 			<form {...formProps} className="flex flex-col gap-4">
@@ -439,7 +449,15 @@ export function CodeForm({
 				{resendIn > 0 ? (
 					<span className="tabular-nums">Send another in {formatWait(resendIn)}</span>
 				) : (
-					<button type="button" className={inlineLink} disabled={resending} onClick={onResend}>
+					<button
+						type="button"
+						className={`${inlineLink} disabled:pointer-events-none disabled:text-muted-foreground`}
+						disabled={resending}
+						onClick={() => {
+							resendRequested.current = true;
+							onResend();
+						}}
+					>
 						Send a new code
 					</button>
 				)}

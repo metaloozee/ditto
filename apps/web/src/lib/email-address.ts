@@ -5,5 +5,7 @@ import { regexes } from "zod/v4/core";
  * checks addresses with zod's email pattern, so every form and endpoint uses
  * the same one: an address accepted at sign-up can always get a sign-in code.
  */
-export const isEmailAddress = (email: string) =>
-	email.length <= 254 && regexes.email.test(email.trim().toLowerCase());
+export const isEmailAddress = (email: string) => {
+	const address = email.trim().toLowerCase();
+	return address.length <= 254 && regexes.email.test(address);
+};

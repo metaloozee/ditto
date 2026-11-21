@@ -248,7 +248,7 @@ Inter Variable for the interface, JetBrains Mono Variable for code, paths, branc
 
 - Signed-in home (`/`): the empty state greets the user by display name. If the profile has no display name, the heading reads “Welcome back”.
 
-- Email sign-in shows the same code screen for every submitted address. The description says a code will be sent if email sign-in is enabled. The resend countdown starts when the request is accepted. An unusable code shows “That code didn’t work. Check it or request a new one.”
+- Email sign-in shows the same code screen for every submitted address. The description says a code will be sent if email sign-in is enabled. The resend countdown starts when the request is accepted. An unusable code shows “That code didn’t work. Check it or request a new one.” While a new code is being sent, the code row, the submit button and “Send a new code” are disabled; the row clears when the new code is issued, and focus returns to it.
 
 ## Elevation & Depth
 

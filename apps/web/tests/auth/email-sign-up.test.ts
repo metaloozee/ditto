@@ -148,6 +148,30 @@ describe("registration", () => {
 			expect(await inbox(email)).toHaveLength(1);
 		},
 	);
+	it("checks names against the server's limits before sending a code", async () => {
+		const { page } = await newVisitor();
+		const email = newAddress();
+
+		await submitSignUpForm(page, { firstName: "A".repeat(101), lastName: "   ", email });
+
+		await shows(page, "Use 100 characters or fewer.");
+		await shows(page, "Enter your last name.");
+		expect(path(page)).toBe("/sign-up");
+		await expect(inbox(email)).resolves.toEqual([]);
+	});
+
+	it("refuses an address Better Auth could never send a sign-in code to", async () => {
+		const { page } = await newVisitor();
+		const email = newAddress().replace("+", "!");
+
+		await submitSignUpForm(page, { ...names, email });
+
+		await shows(page, "Enter an email address like name@example.com.");
+		const response = await api(newIp())("send", { email });
+		expect(response.status).toBe(400);
+		expect(((await response.json()) as { code?: string }).code).toBe("INVALID_EMAIL");
+		await expect(inbox(email)).resolves.toEqual([]);
+	});
 });
 
 describe("codes", () => {
@@ -198,6 +222,38 @@ describe("codes", () => {
 		await enterCode(page, old);
 		await shows(page, "That code isn’t right. 2 tries left.");
 		await enterCode(page, fresh);
+		await page.getByRole("heading", { name: /^Welcome back/ }).waitFor();
+	});
+
+	it("pauses code entry while a new code is sent, then starts from an empty row", async () => {
+		const { page } = await newVisitor();
+		const email = newAddress();
+		await requestSignUpCode(page, { ...names, email });
+		const code = page.getByLabel("Code");
+		await code.fill("12");
+
+		let release!: () => void;
+		const held = new Promise<void>((resolve) => (release = resolve));
+		await page.route(
+			"**/api/auth/email-code/sign-up/send",
+			async (route) => {
+				await held;
+				await route.continue();
+			},
+			{ times: 1 },
+		);
+		await page.getByRole("button", { name: "Send a new code" }).click({
+			timeout: (CODE_RESEND_IN + 2) * 1000,
+		});
+
+		await expect.poll(() => code.isDisabled()).toBe(true);
+		release();
+		await shows(page, "New code sent");
+		await expect.poll(() => code.isDisabled()).toBe(false);
+		await expect(code.inputValue()).resolves.toBe("");
+		await expect.poll(() => code.evaluate((input) => input === document.activeElement)).toBe(true);
+
+		await enterCode(page, await latestCode(email));
 		await page.getByRole("heading", { name: /^Welcome back/ }).waitFor();
 	});
 

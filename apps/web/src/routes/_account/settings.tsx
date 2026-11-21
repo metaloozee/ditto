@@ -9,7 +9,7 @@ import {
 	type LinkOutcome,
 	type Method,
 } from "#/components/account.tsx";
-import { oneOf, type Provider } from "#/components/auth.tsx";
+import { oneOf, PROVIDERS, type Provider } from "#/components/auth.tsx";
 import { toast } from "#/components/ui/toast.tsx";
 import { authClient, useSignOut } from "#/lib/auth-client.ts";
 import { resendAtFrom, sendLinkEmailCode } from "#/lib/email-code-client.ts";
@@ -76,11 +76,14 @@ function Settings() {
 			return;
 		}
 		if (result.error.code === "INVALID_EMAIL") {
+			const linked = account.methods.flatMap((method) =>
+				method === "email" ? [] : [PROVIDERS[method].name],
+			);
 			toast({
 				id: "notice-email-unsupported",
 				state: "error",
 				message: "Email sign-in isn’t available",
-				description: `Codes can’t be sent to ${account.email}. Keep signing in with GitHub or Google.`,
+				description: `Codes can’t be sent to ${account.email}. Keep signing in with ${linked.join(" or ")}.`,
 			});
 			return;
 		}
