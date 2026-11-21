@@ -24,6 +24,24 @@ export async function sendCodeEmail(env: AuthEnv, { to, code, expiresIn }: CodeE
 				"If you didn’t ask for this code, you can ignore this email.",
 			].join("\n\n"),
 		}),
+	}).catch(() => {
+		console.error("Email delivery failed before Resend returned an HTTP response");
+		throw new Error("Resend connection failed");
 	});
-	if (!response.ok) throw new Error(`Resend answered ${response.status}`);
+	if (!response.ok) {
+		const failure = (await response.json().catch(() => ({}))) as {
+			name?: unknown;
+			message?: unknown;
+		};
+		// Resend's reason, minus any address it echoes back. Some errors carry no `name`.
+		const reason = [failure.name, failure.message]
+			.filter((part): part is string => typeof part === "string")
+			.join(": ")
+			.replace(/[^\s<>"]+@[^\s<>"]+/g, "<address>")
+			.slice(0, 300);
+		console.error(
+			`Resend rejected email delivery (HTTP ${response.status}): ${reason || "no reason given"}`,
+		);
+		throw new Error("Resend rejected email delivery");
+	}
 }
