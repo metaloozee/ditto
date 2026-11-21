@@ -192,6 +192,8 @@ Ditto is a quiet, dark-first tool for watching and steering coding agents. The i
 
 The brand mark is a white rounded bezel around a dark screen with two blue strokes (`#9fbdff` over `#5884f8`, the signal blue). Source: `apps/web/public/logo.svg`, served at `/logo.svg` and used as the SVG favicon. `favicon.ico` (16, 32, 48) and `apple-touch-icon.png` (180, on the dark background) are rendered from it; regenerate both when the mark changes.
 
+The code email (`codeMessage` in `apps/web/src/lib/code-message.ts`, previewed at `/design/auth`; `email.ts` only sends it) carries the brand too: a light card on the light tokens, the mark at 48px, and the code in a dark screen (`#19191a`, 16px radius) with digits in the mark's eye blue `#9fbdff`, JetBrains Mono at 36px. The mark travels as an inline PNG attachment (`email-mark.png`, 96px, rendered from `logo.svg`; regenerate it with the others), since mail clients render neither SVG nor data URLs. The subject leads with the code (“482913 is your Ditto code”) and the body shows it once as one unbroken string, so Gmail offers to copy it.
+
 Dark is the default. The app follows the operating system's appearance, and every token has a light counterpart (the `light-` prefixed colors above).
 
 The system is shadcn's `base-nova` style generated on Base UI primitives, so behaviour (focus management, keyboard support, ARIA) comes from Base UI and the visuals come from these tokens. Source of truth: `apps/web/src/styles.css` for tokens and `apps/web/src/components/ui/` for components.

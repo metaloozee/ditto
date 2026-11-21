@@ -22,6 +22,7 @@ import {
 } from "#/components/auth.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { toast, type ToastInput } from "#/components/ui/toast.tsx";
+import { codeMessage } from "#/lib/code-message.ts";
 
 export const Route = createFileRoute("/design_/auth")({
 	head: () => ({ meta: [{ title: "Authentication designs · Ditto" }] }),
@@ -30,6 +31,17 @@ export const Route = createFileRoute("/design_/auth")({
 
 const noop = () => {};
 const email = previewAccount.email;
+
+const sampleEmail = codeMessage({ to: email, code: "482913", expiresIn: 5 * 60 });
+// Mail clients resolve `cid:` links to the attached images; a browser needs them inline.
+const sampleEmailHtml = sampleEmail.attachments.reduce(
+	(html, image) =>
+		html.replaceAll(
+			`cid:${image.content_id}`,
+			`data:${image.content_type};base64,${image.content}`,
+		),
+	sampleEmail.html,
+);
 
 // These come back from the server mid-step, so no URL reaches them.
 const codeStates: [string, CodeStatus, number, "sign-in" | "sign-up", boolean?][] = [
@@ -162,6 +174,19 @@ function AuthDesigns() {
 						</Frame>
 					))}
 				</div>
+			</Group>
+
+			<Group title="Code email">
+				<p className="max-w-prose text-muted-foreground">
+					The email behind every code step: sign-up, sign-in and linking email in Settings.
+				</p>
+				<Frame label={`Subject: ${sampleEmail.subject}`} flush>
+					<iframe
+						title="Code email preview"
+						srcDoc={sampleEmailHtml}
+						className="h-[600px] w-full bg-white"
+					/>
+				</Frame>
 			</Group>
 
 			<Group title="Signed in">
