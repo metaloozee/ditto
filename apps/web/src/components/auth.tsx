@@ -46,7 +46,7 @@ export function AuthPanel({
 				<DittoMark className="size-12" />
 				<div className="flex flex-col gap-1.5">
 					<h1>{title}</h1>
-					<p className="text-muted-foreground">{description}</p>
+					<p className="text-pretty text-muted-foreground">{description}</p>
 				</div>
 			</header>
 			{children}
@@ -360,6 +360,7 @@ export function CodeForm({
 	resending,
 	onSubmit,
 	onResend,
+	children,
 }: {
 	status: CodeStatus;
 	submitLabel: string;
@@ -370,6 +371,8 @@ export function CodeForm({
 	resending?: boolean;
 	onSubmit: (code: string) => void;
 	onResend: () => void;
+	/** More ways out of the step, under the resend line. */
+	children?: ReactNode;
 }) {
 	const { form, bind, formProps } = useAuthForm({
 		defaultValues: { code: "" },
@@ -444,58 +447,41 @@ export function CodeForm({
 					{submitLabel}
 				</Button>
 			</form>
-			<p className="text-center text-muted-foreground">
-				{needsNewCode ? "Need a new code? " : "Didn’t get it? "}
-				{resendIn > 0 ? (
-					<span className="tabular-nums">Send another in {formatWait(resendIn)}</span>
-				) : (
-					<button
-						type="button"
-						className={`${inlineLink} disabled:pointer-events-none disabled:text-muted-foreground`}
-						disabled={resending}
-						onClick={() => {
-							resendRequested.current = true;
-							onResend();
-						}}
-					>
-						Send a new code
-					</button>
-				)}
-			</p>
+			<div className="flex flex-col gap-2 text-center text-muted-foreground">
+				<p>
+					{needsNewCode ? "Need a new code? " : "Didn’t get it? "}
+					{resendIn > 0 ? (
+						<span className="tabular-nums">Send another in {formatWait(resendIn)}</span>
+					) : (
+						<button
+							type="button"
+							className={`${inlineLink} disabled:pointer-events-none disabled:text-muted-foreground`}
+							disabled={resending}
+							onClick={() => {
+								resendRequested.current = true;
+								onResend();
+							}}
+						>
+							Send a new code
+						</button>
+					)}
+				</p>
+				{children}
+			</div>
 		</div>
 	);
 }
 
 /**
- * Names the address the code went to. `onChangeEmail` puts the correction
- * beside the address it corrects; omit it when the address is fixed, as when
- * linking the account's own email.
+ * Names the address a code goes to. Sign-in is `conditional`: every address
+ * reads the same, so the screen never reveals which ones have email sign-in.
  */
-export function CodeSentTo({
-	email,
-	onChangeEmail,
-	conditional,
-}: {
-	email: string;
-	onChangeEmail?: () => void;
-	conditional?: boolean;
-}) {
-	return (
-		<>
-			{conditional
-				? "If email sign-in is enabled, we’ll send a 6-digit code to "
-				: "Enter the 6-digit code we sent to "}
-			<span className="font-medium text-foreground wrap-anywhere">{email}</span>. It expires in 5
-			minutes.
-			{onChangeEmail && (
-				<>
-					{" "}
-					<button type="button" className={inlineLink} onClick={onChangeEmail}>
-						Use a different email
-					</button>
-				</>
-			)}
-		</>
+export function CodeSentTo({ email, conditional }: { email: string; conditional?: boolean }) {
+	const address = <span className="font-medium text-foreground wrap-anywhere">{email}</span>;
+	return conditional ? (
+		<>If {address} has email sign-in, a code is on its way. It expires in 5 minutes.</>
+	) : (
+		<>Enter the code we sent to {address}. It expires in 5 minutes.</>
 	);
 }
 
@@ -510,11 +496,23 @@ export function CodeStep({
 	return (
 		<AuthPanel
 			title="Check your email"
-			description={
-				<CodeSentTo email={email} onChangeEmail={onChangeEmail} conditional={conditional} />
-			}
+			description={<CodeSentTo email={email} conditional={conditional} />}
 		>
-			<CodeForm {...form} />
+			<CodeForm {...form}>
+				<p className="flex flex-wrap justify-center gap-x-4 gap-y-1">
+					<button type="button" className={inlineLink} onClick={onChangeEmail}>
+						Use a different email
+					</button>
+					{conditional && (
+						<span>
+							Don’t have an account?{" "}
+							<Link to="/sign-up" className={inlineLink}>
+								Sign up
+							</Link>
+						</span>
+					)}
+				</p>
+			</CodeForm>
 		</AuthPanel>
 	);
 }
