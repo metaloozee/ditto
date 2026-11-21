@@ -7,6 +7,7 @@ import {
 	getAuthoritativeSessionFromCtx,
 	getOAuthState,
 } from "better-auth/api";
+import { lastLoginMethod } from "better-auth/plugins";
 import { github } from "better-auth/social-providers";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { drizzle } from "drizzle-orm/d1";
@@ -38,7 +39,13 @@ export function createAuth(env: AuthEnv, waitUntil?: (task: Promise<unknown>) =>
 		send: (email) => sendCodeEmail(env, email),
 	};
 
+	const signUpCode = emailCode(db, codes);
 	const signInOTP = emailSignIn(db, codes);
+	// Both email code paths are one method to the visitor, as they are in Settings.
+	const emailPaths: string[] = [
+		signUpCode.endpoints.verifySignUpCode.path,
+		signInOTP.endpoints.signInEmailOTP.path,
+	];
 	const gitHubOptions = { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET };
 	const gitHubProvider = github(gitHubOptions);
 
@@ -173,6 +180,16 @@ export function createAuth(env: AuthEnv, waitUntil?: (task: Promise<unknown>) =>
 			ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
 		},
 		telemetry: { enabled: false },
-		plugins: [emailCode(db, codes), signInOTP, tanstackStartCookies()],
+		plugins: [
+			signUpCode,
+			signInOTP,
+			lastLoginMethod({
+				customResolveMethod: (ctx) => (emailPaths.includes(ctx.path) ? EMAIL_METHOD : null),
+				// A link callback can refresh the session cookie, which the plugin
+				// would read as signing in with the provider just linked.
+				beforeStoreCookie: async () => !(await getOAuthState())?.link,
+			}),
+			tanstackStartCookies(),
+		],
 	});
 }

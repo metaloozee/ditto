@@ -1,12 +1,14 @@
 import { useNavigate } from "@tanstack/react-router";
-import { emailOTPClient } from "better-auth/client/plugins";
+import { emailOTPClient, lastLoginMethodClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 
 import { signOutFailedToast, signedOutToast } from "#/components/account.tsx";
 import { oauthFailedToast, type Provider } from "#/components/auth.tsx";
 import { toast } from "#/components/ui/toast.tsx";
 
-export const authClient = createAuthClient({ plugins: [emailOTPClient()] });
+export const authClient = createAuthClient({
+	plugins: [emailOTPClient(), lastLoginMethodClient()],
+});
 
 /** Ends this browser's session on the server, then returns to sign-in. */
 export function useSignOut() {

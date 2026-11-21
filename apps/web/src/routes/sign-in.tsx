@@ -12,6 +12,7 @@ import {
 	type Provider,
 } from "#/components/auth.tsx";
 import { toast } from "#/components/ui/toast.tsx";
+import { getLastUsedMethod } from "#/lib/account.ts";
 import { continueWith } from "#/lib/auth-client.ts";
 import {
 	resendAtFrom,
@@ -34,11 +35,13 @@ export const Route = createFileRoute("/sign-in")({
 		notice: oneOf(AUTH_NOTICES, search.notice) ?? oauthErrorNotice(search.error),
 		provider: oneOf(Object.keys(PROVIDERS) as Provider[], search.provider),
 	}),
+	loader: () => ({ lastUsed: getLastUsedMethod() }),
 	component: SignIn,
 });
 
 function SignIn() {
 	const { step, notice, provider } = Route.useSearch();
+	const { lastUsed } = Route.useLoaderData();
 	const { hydrated, value: email, resendAt } = useEmailCodeHistory("email");
 	const navigate = useNavigate();
 	const [sending, setSending] = useState(false);
@@ -79,6 +82,7 @@ function SignIn() {
 					key={email}
 					defaultEmail={email}
 					pending={sending}
+					lastUsed={lastUsed}
 					onEmail={(address) => void requestCode(address)}
 					onProvider={continueWith}
 				/>

@@ -10,8 +10,10 @@ import {
 	type ReactNode,
 } from "react";
 
+import type { Method } from "#/components/account.tsx";
 import { BrandIcon } from "#/components/brand-icons.tsx";
 import { DittoMark } from "#/components/ditto-mark.tsx";
+import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { InputOTP, InputOTPSlot } from "#/components/ui/input-otp.tsx";
 import { Input } from "#/components/ui/input.tsx";
@@ -54,11 +56,29 @@ export function AuthPanel({
 	);
 }
 
+// A button that can hold `LastUsed`. Where it has room, the badge pins to the
+// end so the label stays centered with the buttons around it; where it
+// doesn't, the badge follows the label instead of overlapping it.
+const lastUsedHost = "@container/method relative";
+
+/** Marks the method this browser last signed in with, inside its button. */
+function LastUsed({ method, lastUsed }: { method: Method; lastUsed?: Method }) {
+	return (
+		method === lastUsed && (
+			<Badge variant="secondary" className="@min-[20rem]/method:absolute @min-[20rem]/method:end-2">
+				Last used
+			</Badge>
+		)
+	);
+}
+
 function ProviderButtons({
 	disabled,
+	lastUsed,
 	onProvider,
 }: {
 	disabled?: boolean;
+	lastUsed?: Method;
 	onProvider: (provider: Provider) => void;
 }) {
 	return (
@@ -68,11 +88,13 @@ function ProviderButtons({
 					key={provider}
 					variant="secondary"
 					size="lg"
+					className={lastUsedHost}
 					disabled={disabled}
 					onClick={() => onProvider(provider)}
 				>
 					<BrandIcon brand={provider} data-icon="inline-start" />
 					Continue with {PROVIDERS[provider].name}
+					<LastUsed method={provider} lastUsed={lastUsed} />
 				</Button>
 			))}
 		</div>
@@ -213,11 +235,14 @@ function SwitchFlow({ children }: { children: ReactNode }) {
 export function SignInForm({
 	defaultEmail,
 	pending,
+	lastUsed,
 	onEmail,
 	onProvider,
 }: {
 	defaultEmail?: string;
 	pending?: boolean;
+	/** How this browser last signed in. Only sign-in shows it: sign-up is for someone new. */
+	lastUsed?: Method;
 	onEmail: (email: string) => void;
 	onProvider: (provider: Provider) => void;
 }) {
@@ -240,11 +265,12 @@ export function SignInForm({
 						/>
 					)}
 				</form.Field>
-				<Button type="submit" size="lg" loading={pending}>
+				<Button type="submit" size="lg" loading={pending} className={lastUsedHost}>
 					Continue with email
+					<LastUsed method="email" lastUsed={lastUsed} />
 				</Button>
 			</form>
-			<ProviderButtons disabled={pending} onProvider={onProvider} />
+			<ProviderButtons disabled={pending} lastUsed={lastUsed} onProvider={onProvider} />
 			<SwitchFlow>
 				Don’t have an account?{" "}
 				<Link to="/sign-up" className={inlineLink}>
