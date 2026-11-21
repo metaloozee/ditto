@@ -56,16 +56,14 @@ export function AuthPanel({
 	);
 }
 
-// A button that can hold `LastUsed`. Where it has room, the badge pins to the
-// end so the label stays centered with the buttons around it; where it
-// doesn't, the badge follows the label instead of overlapping it.
-const lastUsedHost = "@container/method relative";
-
-/** Marks the method this browser last signed in with, inside its button. */
+/**
+ * Marks the method this browser last signed in with: a tag straddling its
+ * button's top edge at the end, so the label stays centered.
+ */
 function LastUsed({ method, lastUsed }: { method: Method; lastUsed?: Method }) {
 	return (
 		method === lastUsed && (
-			<Badge variant="secondary" className="@min-[20rem]/method:absolute @min-[20rem]/method:end-2">
+			<Badge className="absolute end-3 top-0 -translate-y-1/2 ring-2 ring-background">
 				Last used
 			</Badge>
 		)
@@ -82,13 +80,13 @@ function ProviderButtons({
 	onProvider: (provider: Provider) => void;
 }) {
 	return (
-		<div className="flex flex-col gap-2">
+		<div className="flex flex-col gap-4">
 			{(Object.keys(PROVIDERS) as Provider[]).map((provider) => (
 				<Button
 					key={provider}
-					variant="secondary"
+					variant="outline"
 					size="lg"
-					className={lastUsedHost}
+					className="relative"
 					disabled={disabled}
 					onClick={() => onProvider(provider)}
 				>
@@ -265,7 +263,7 @@ export function SignInForm({
 						/>
 					)}
 				</form.Field>
-				<Button type="submit" size="lg" loading={pending} className={lastUsedHost}>
+				<Button type="submit" size="lg" loading={pending} className="relative">
 					Continue with email
 					<LastUsed method="email" lastUsed={lastUsed} />
 				</Button>
