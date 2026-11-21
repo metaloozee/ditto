@@ -18,3 +18,27 @@ A GitHub or Google identity authorized to sign in to a particular Ditto account.
 
 **Display name**  
 The name Ditto shows for a user. An OAuth provider can supply a display name even when it supplies neither a first name nor a last name.
+
+**Model connection**
+
+Permission a Ditto account holder gives their bots to use a model through the holder’s own plan or API key.
+
+**Workspace**
+
+The personal space where one owner works with Ditto and their team of bots on a shared computer.
+
+**Shared profile**
+
+The preferences and facts the owner explicitly shares for use by the whole team. Ditto maintains the profile on the owner’s behalf.
+
+**Take-over**
+
+A transfer of screen control to the workspace owner that lasts until the owner explicitly hands it back. During take-over, the owner can complete a step such as signing in without bots observing or operating that screen.
+
+**Deliverable**
+
+A file a bot publishes as the output of a task. The owner can open it after the shared computer stops.
+
+**Desk**
+
+The workspace owner’s inbox for requests that need a decision or take-over.
