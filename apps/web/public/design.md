@@ -192,6 +192,8 @@ Ditto is a quiet, dark-first tool for watching and steering coding agents. The i
 
 The brand mark is a white rounded bezel around a dark screen with two blue strokes (`#9fbdff` over `#5884f8`, the signal blue). Source: `apps/web/public/logo.svg`, served at `/logo.svg` and used as the SVG favicon. `favicon.ico` (16, 32, 48) and `apple-touch-icon.png` (180, on the dark background) are rendered from it; regenerate both when the mark changes.
 
+The code email (`codeMessage` in `apps/web/src/lib/code-message.ts`, previewed at `/design/auth`; `email.ts` only sends it) carries the brand too: a light card on the light tokens, the mark at 48px, and the code in a dark screen (`#19191a`, 16px radius) with digits in the mark's eye blue `#9fbdff`, JetBrains Mono at 36px. The mark travels as an inline PNG attachment (`email-mark.png`, 96px, rendered from `logo.svg`; regenerate it with the others), since mail clients render neither SVG nor data URLs. The subject leads with the code (“482913 is your Ditto code”) and the body shows it once as one unbroken string, so Gmail offers to copy it.
+
 Dark is the default. The app follows the operating system's appearance, and every token has a light counterpart (the `light-` prefixed colors above).
 
 The system is shadcn's `base-nova` style generated on Base UI primitives, so behaviour (focus management, keyboard support, ARIA) comes from Base UI and the visuals come from these tokens. Source of truth: `apps/web/src/styles.css` for tokens and `apps/web/src/components/ui/` for components.
@@ -239,9 +241,16 @@ Inter Variable for the interface, JetBrains Mono Variable for code, paths, branc
 
 - 4px base unit (Tailwind spacing). Common steps: 4, 8, 12, 16, 24, 32, 40.
 - App shell: a 256px sidebar on the left, with the main panel inset by 8px and rounded 14px (`Sidebar variant="inset"`). Under 768px the sidebar becomes a sheet behind a trigger.
-- Page content: centered, `max-w-5xl`, 16px side gutters on mobile and 32px from `sm` up, 40px top padding, 40px between sections.
+- Page content: centered, `max-w-5xl`, 16px side gutters on mobile and 32px from `sm` up, 40px top padding, 40px between sections. A single column of settings narrows to `max-w-2xl` so rows stay readable.
 - Section header: a heading-role title, optionally followed by an info icon with a tooltip.
 - Grids collapse to two columns, then one, on narrow screens. The page never scrolls horizontally.
+- Auth screens (`/sign-in`, `/sign-up`): one left-aligned `max-w-sm` column centered on the page, with the mark, a title, a muted line, then the step. The email form comes first, with the primary button. GitHub and Google follow as `secondary` buttons, then a centered line that switches between sign-in and sign-up. Feedback from a redirect arrives as a toast. Each step is its own screen, never a dialog: the step and any redirect message live in search params (`?step=verify`, `?notice=…`, `/settings?outcome=…&method=…`), so back and refresh work; a `notice` or `outcome` shows once as a toast and then leaves the URL, while what the visitor typed rides in history state, never the URL. Linking email in Settings is its own screen too (`/settings/verify-email`). Every state is drawn at `/design/auth`; `apps/web/src/components/auth.tsx` and `account.tsx` hold the screens.
+
+- Failed provider sign-in shows an error toast with an option to try again or choose another method. Failed sign-out keeps the current screen open and shows a retry message.
+
+- Signed-in home (`/`): the empty state greets the user by display name. If the profile has no display name, the heading reads “Welcome back”.
+
+- Email sign-in shows the same code screen for every submitted address. The description says a code is on its way only if the address has email sign-in, and when it expires. Every way out of the step sits under the code form: the resend line, then “Use a different email” and “Don’t have an account? Sign up” on one wrapping row. Other code steps say “Enter the code we sent to …” and keep the change-address action in the same row. The resend countdown starts when the request is accepted. An unusable code shows “That code didn’t work. Check it or request a new one.” While a new code is being sent, the code row, the submit button and “Send a new code” are disabled; the row clears when the new code is issued, and focus returns to it.
 
 ## Elevation & Depth
 
@@ -264,6 +273,8 @@ Depth comes from surface lightness and hairlines, not shadows.
 
 Icons come from HugeIcons (`@hugeicons/react` with `@hugeicons/core-free-icons`), stroke style, 16px in controls and navigation and 14px in dense rows. Icons take the color of their text; decorative icons beside a label stay muted.
 
+Provider logos (GitHub, Google) are not in HugeIcons. `BrandIcon` (`apps/web/src/components/brand-icons.tsx`) draws them from Simple Icons paths: single color, `fill: currentColor`, so they follow the same color and size rules as HugeIcons. Never use multicolor brand marks.
+
 ## Motion
 
 Short, ease-out, and only on the properties that change.
@@ -274,7 +285,7 @@ Short, ease-out, and only on the properties that change.
 - **Name the properties.** Transition `scale, color, background-color, box-shadow`, never `all`, so layout changes never animate by accident.
 - **Hover on layered buttons** is a `filter: brightness()` step (darker on the white CTA, lighter on dark fills) inside the same 200ms transition, since a gradient fill can't interpolate.
 - **Icon morph (copy → check):** both icons stay mounted in one grid cell. The outgoing one shrinks to `scale(0.25)`, blurs 4px, and fades; the incoming one does the reverse, over 300ms on `cubic-bezier(0.23, 1, 0.32, 1)`. Reduced motion keeps only the fade. A label beside it morphs letter by letter with torph (`TextMorph`, same duration and curve).
-- **Character motion (the Ditto mark):** the mark is a character, so it is the one place with a delight budget, and it appears only where people meet the brand (the `/design` route today; a sign-in or empty state later), never on work surfaces such as session lists or chat. It follows character rules, not the UI timing above:
+- **Character motion (the Ditto mark):** the mark is a character, so it is the one place with a delight budget, and it appears only where people meet the brand (`/design`, the sign-in and sign-up screens, and the signed-in home's empty state), never on work surfaces such as session lists or chat. It follows character rules, not the UI timing above:
   - **One loop, not CSS transitions.** A single `requestAnimationFrame` loop (`createDitto` in `apps/web/src/components/ditto-mark.tsx`) writes SVG `transform` attributes through refs. The step caps at 64ms, and an `IntersectionObserver` stops the loop offscreen.
   - **Eyes lead, the body follows.** The eyes snap to the gaze in about 60ms on an exponential ease that never overshoots. The body leans and rotates (up to 4°) toward the same gaze on a spring (stiffness 260, damping 24), so it arrives about 250ms later.
   - **Eyes sit on a sphere.** Gaze becomes a yaw and pitch, and the eyes narrow as they turn toward an edge. They never slide flat, and they are clipped to the screen.
@@ -283,6 +294,7 @@ Short, ease-out, and only on the properties that change.
   - **Moods change behind a blink.** Clicking the mark moves it to the next mood. The new eye shape swaps in while the lids are shut, so no crossfade is needed. A mood is one entry in `MOODS`: one path per eye, plus `weight` and `fill` for shapes that clog at full stroke width (hearts, crosses). Current moods: neutral, happy, love, surprised, wink, angry, sad, dizzy, sleepy.
   - **Keep these choices.** They were tuned by hand. Change the mark's motion model or its numbers only when the user asks. Never go back to eyes sliding flat on one spring, a crossfade between moods, a body that holds still, or blinks that are fast and frequent: the user rejected each one as unnatural or too aggressive. To add a mood, add an entry to `MOODS`; never add a separate drawing or a new animation path.
   - **Accessible and reduced.** The mark is a real `<button>` whose label names the current mood. Under reduced motion the loop never starts: the mark holds its resting pose and a click swaps the mood instantly.
+- **Validation:** forms validate in the page (`noValidate`, TanStack Form), never with browser bubbles. Messages appear after the first submit and then update as the user types. A failed submit shakes each invalid field once (6px, decaying, 320ms on `cubic-bezier(0.23, 1, 0.32, 1)`), turns its edge red, and focuses the first one. Reduced motion drops the shake and keeps the rest.
 - **Reduced motion:** looping animations, such as the running-state ping, stop under `prefers-reduced-motion`. A press scale is under 3% and stays.
 
 ## Components
@@ -314,6 +326,27 @@ All components live in `apps/web/src/components/ui/` and are generated by the sh
   </Card>
   ```
 
+- **InputOTP** (`input-otp.tsx`): one-time codes, adapted from Kobra's input-otp onto these tokens. Six sunken `field` slots, 48px tall, digits in JetBrains Mono. One 2px ring in `ring` blue slides between slots as focus moves, and turns `destructive` on `aria-invalid`. Digits flip in, a paste leaves a fading trail across the slots it filled, a full code dims in a wave while it's checked, and `success` sweeps the row in `success` and hops each digit. The form submits when the last digit lands; a rejected code shakes the row and clears it. Built on `input-otp` and `motion`; keyframes live in `styles.css` (`otp-*`). Reduced motion keeps the colors and drops the motion.
+- **Toast** (`toast.tsx`): the result of an action or a redirect, reported at the bottom-end corner (bottom right, mirrored in RTL). Adapted from Kobra's toast onto these tokens. `/design` shows every state.
+
+  - **Anatomy:** an optional mark, a one-line message, an optional description and an optional action. With only a message it's a slim 36px bar whose message truncates; a description morphs it into a card 340px wide (never wider than the viewport minus 32px) whose message wraps and turns medium weight. The surface is the floating one: `popover`, a 1px `foreground/10` ring, `shadow-md`, 14px radius (`rounded-xl`, like dialogs). An action is an `xs` primary button: at the end of the line on a bar, and on its own row under the description on a card, lined up with the text. The toast floats above the page as its own layer, so its one action may be primary even when the page has its own.
+  - **States:**
+
+    | `state`   | Mark                       | Role     | Lifetime                    | Use for                                       |
+    | --------- | -------------------------- | -------- | --------------------------- | --------------------------------------------- |
+    | none      | none                       | `status` | 2.4s                        | Quiet confirmations: "Branch name copied"     |
+    | `success` | green check (`success`)    | `status` | 2.4s, 5s with a description | Finished actions: "Preview deployed"          |
+    | `error`   | alert icon (`destructive`) | `alert`  | 5s with a description       | Failures nothing else on screen shows         |
+    | `info`    | info icon (muted)          | `status` | 5s with a description       | Neutral news, such as where a redirect landed |
+    | `pending` | loading.dev `Ring` (muted) | `status` | until resolved              | Work the user waits on                        |
+
+    Any toast with an action stays 6s. All timers pause while the stack is hovered, focused or held, and while the tab is hidden.
+
+  - **Behaviour:** new toasts enter at the front and older ones pile behind it, peeking 10px, shrinking 3% and fading per step, three deep. Pointing at, focusing or pressing the stack fans it into a column with 8px gaps. Drag a toast more than 44px, or flick it, to dismiss it. Changed text fades in from a 4px blur, letter by letter for messages and word by word for descriptions (joined scripts such as Arabic always go by word). The mark swaps with the icon morph (scale 0.25, 4px blur). Size changes use a 300ms spring with no bounce; exits take 200ms. Reduced motion keeps every toast and drops the motion.
+  - **API:** `<Toasts />` is mounted once in `__root.tsx`. Call `toast("Message")` or `toast({ id?, message, description?, state?, action?: { label, run }, lifetime? })` from anywhere, including before `<Toasts />` mounts (early calls are queued). Reusing an `id` updates that toast in place, which is how `pending` resolves into `success` or `error`, and how one message replaces its earlier copy instead of stacking. `dismissToast(id)` removes one. An action dismisses its toast after running, unless the action itself toasts with the same id.
+  - **Use it well:** one toast per outcome; reuse the id rather than stacking duplicates. Keep the message to a few words that name the result ("Google is linked"), and put the reason or next step in the description. Give an error a way forward, in the description or as an action such as Retry. Use at most one action, and keep anything critical somewhere else too, since the toast leaves on its own. A toast fired from a URL param (`?notice=`, `?outcome=`) shows once, then the param leaves the URL so a refresh won't repeat it.
+  - **Don't** use a toast for validation, for an error the user must fix in place, or for something they need to read later. Those stay on the page beside what they're about.
+
 - **Badge:** 20px pill, 12px medium text. `secondary` for neutral states, `destructive` for failures, `default` for the rare emphasized state.
 - **Dialog, Dropdown menu, Tooltip, Tabs, Separator, Label, Avatar, Kbd, Breadcrumb, Sheet, Skeleton, Sidebar:** shadcn defaults on the tokens above.
 - **Sidebar:** 256px, 36px rows, active row filled with `sidebar-accent`, group labels in caption size.
@@ -330,6 +363,7 @@ Local edits to generated files:
 
 ## Do's and Don'ts
 
+- **Do** report the outcome of an action or a redirect in a toast. Keep validation on the field it belongs to, and never use a toast for an error the user must fix in place.
 - **Do** fill exactly one action per view with `primary`. Other actions in the same view use `secondary`, `outline`, or `ghost`.
 - **Do** use blue only for focus, links, and running state. Status meaning comes from `success` and `destructive` plus an icon or a label, never from color alone.
 - **Do** use semantic tokens in components. **Don't** use raw hex, `oklch()` literals, or `--gray-*` and `--blue-*` primitives outside `styles.css`.

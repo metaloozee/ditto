@@ -266,3 +266,106 @@
     @apply font-mono;
   }
 }
+
+/*
+ * One-time-code motion (components/ui/input-otp.tsx). A paste leaves a fading
+ * trail across the slots it filled; a full code dims in a wave while it's
+ * checked; success sweeps the row in the success color and hops each digit.
+ * Slots stagger by --otp-trail-index / --otp-wave-index, set inline.
+ */
+@keyframes otp-trail {
+  from {
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--foreground) 45%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@keyframes otp-trail-success {
+  0%,
+  24% {
+    box-shadow: 0 0 0 2px var(--success);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@keyframes otp-bounce {
+  0% {
+    transform: translateY(0);
+    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  22%,
+  38% {
+    transform: translateY(-6px);
+    animation-timing-function: cubic-bezier(0.4, 0, 0.5, 1);
+  }
+  60% {
+    transform: translateY(1.8px);
+    animation-timing-function: cubic-bezier(0.33, 0, 0.67, 1);
+  }
+  78% {
+    transform: translateY(-0.9px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes otp-processing {
+  0%,
+  40%,
+  100% {
+    opacity: 1;
+  }
+  16% {
+    opacity: 0.28;
+  }
+}
+
+@utility otp-trail {
+  animation: otp-trail 400ms cubic-bezier(0.22, 1, 0.36, 1) calc(var(--otp-trail-index) * 45ms)
+    forwards;
+}
+
+@utility otp-trail-success {
+  animation: otp-trail-success 340ms cubic-bezier(0.33, 0, 0.67, 1)
+    calc(var(--otp-trail-index) * 48ms) forwards;
+}
+
+@utility otp-bounce {
+  animation: otp-bounce 420ms linear calc(var(--otp-trail-index) * 48ms) forwards;
+  will-change: transform;
+}
+
+@utility otp-processing {
+  animation: otp-processing 1150ms ease-in-out calc(var(--otp-wave-index) * 70ms) infinite both;
+  will-change: opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .otp-trail,
+  .otp-trail-success,
+  .otp-bounce,
+  .otp-processing {
+    animation: none;
+  }
+}
+
+/* Toasts (components/ui/toast.tsx): padding morphs as a glyph, action or description comes and goes. */
+@utility toast-surface {
+  transition: padding 300ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@utility toast-detail {
+  transition: padding 300ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast-surface,
+  .toast-detail {
+    transition: none;
+  }
+}

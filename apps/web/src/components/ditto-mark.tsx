@@ -1,4 +1,6 @@
 import { cn } from "cn";
+import { useAtom } from "jotai";
+import { atomWithStorage } from "jotai/utils";
 import * as React from "react";
 
 // Path data mirrors public/logo.svg; keep the two in sync.
@@ -36,6 +38,11 @@ const MOODS = {
 
 type Mood = keyof typeof MOODS;
 const ORDER = Object.keys(MOODS) as Mood[];
+const isMood = (m: string): m is Mood => Object.hasOwn(MOODS, m);
+
+// Shared by every mark on the page and kept per browser. The server renders
+// "neutral"; the stored mood takes over after hydration.
+const moodAtom = atomWithStorage<string>("ditto-mood", "neutral");
 
 const FACE_CENTER = { x: 50, y: 49.3 };
 // A blink shuts fast, rests shut for a beat, then opens slower than it closed.
@@ -208,14 +215,16 @@ function Eyes({ mood, width, stroke }: { mood: Mood; width: number; stroke: stri
 }
 
 function DittoMark({ className, ...props }: Omit<React.ComponentProps<"button">, "onClick">) {
-	const [mood, setMood] = React.useState<Mood>("neutral");
+	const [stored, setMood] = useAtom(moodAtom);
+	const mood = isMood(stored) ? stored : "neutral";
 	const button = React.useRef<HTMLButtonElement>(null);
 	const body = React.useRef<SVGGElement>(null);
 	const bloom = React.useRef<SVGGElement>(null);
 	const eyes = React.useRef<SVGGElement>(null);
 	const ditto = React.useRef<Ditto>(undefined);
 
-	const nextMood = () => setMood((m) => ORDER[(ORDER.indexOf(m) + 1) % ORDER.length]);
+	const nextMood = () =>
+		setMood((m) => ORDER[(ORDER.indexOf(isMood(m) ? m : "neutral") + 1) % ORDER.length]);
 
 	React.useEffect(() => {
 		const el = button.current;
