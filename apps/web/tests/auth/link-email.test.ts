@@ -3,7 +3,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type { BrowserContext, Page } from "playwright";
 import { expect, it } from "vite-plus/test";
 
-import { enterCode, inbox, latestCode, newAddress, requestSignIn } from "./email.ts";
+import { enterCode, inbox, latestCode, newAddress, requestSignIn, signUpByEmail } from "./email.ts";
 import { CODE_EXPIRES_IN } from "./setup.ts";
 import { appUrl, continueWithGitHub, gitHubUser, newVisitor, open } from "./visitor.ts";
 
@@ -42,22 +42,19 @@ it("enables email on the existing account after mailbox verification", async () 
 	await startLink(original.page);
 	await original.page.getByText(email, { exact: true }).waitFor();
 	const linkingCode = await latestCode(email);
-	await enterCode(original.page, linkingCode);
-	await original.page.getByText("Email is linked").waitFor();
-	await open(original.page, "/settings");
-	await emailMethod(original.page).waitFor();
-
 	await enterCode(visitor.page, linkingCode);
 	await visitor.page.getByText("That code didn’t work. Check it or request a new one.").waitFor();
 	const session = await visitor.context.request.get("/api/auth/get-session");
 	expect(await session.json()).toBeNull();
 
+	await enterCode(original.page, linkingCode);
+	await original.page.getByText("Email is linked").waitFor();
+	await open(original.page, "/settings");
+	await emailMethod(original.page).waitFor();
+
 	await requestSignIn(visitor.page, email);
 	await expect.poll(() => inbox(email)).toHaveLength(2);
 	const signInCode = await latestCode(email);
-	const wrongPurpose = await submitLinkCode(original.context, signInCode);
-	expect(wrongPurpose.status()).toBe(400);
-	expect(await wrongPurpose.json()).toMatchObject({ code: "CODE_EXPIRED" });
 	await enterCode(visitor.page, signInCode);
 	await visitor.page.getByRole("heading", { name: /^Welcome back/ }).waitFor();
 	expect(await accountId(visitor.context)).toBe(originalId);
@@ -67,6 +64,41 @@ it("enables email on the existing account after mailbox verification", async () 
 	expect(await accountId(returning.context)).toBe(originalId);
 	await open(returning.page, "/settings");
 	await emailMethod(returning.page).waitFor();
+});
+
+it("keeps an active email linking challenge separate from a valid sign-in code", async () => {
+	const email = newAddress();
+	const owner = await newVisitor();
+	await signUpByEmail(owner.page, { firstName: "Ada", lastName: "Lovelace", email });
+	const ownerId = await accountId(owner.context);
+
+	const identity = gitHubUser();
+	const linking = await newVisitor();
+	await continueWithGitHub(linking.page, identity);
+	const linkingId = await accountId(linking.context);
+	const visitor = await newVisitor();
+	await Promise.all([requestSignIn(visitor.page, email), startLink(linking.page)]);
+	await expect.poll(() => inbox(email)).toHaveLength(2);
+	const signInCode = await latestCode(email);
+	const linkingAddress = identity.emails[0].email;
+	let linkingCode = await latestCode(linkingAddress);
+	// Six-digit codes can coincide. Restart linking if the two inputs are identical.
+	while (linkingCode === signInCode) {
+		await linking.page.getByRole("button", { name: "Back to Settings" }).click();
+		await linking.page.getByRole("button", { name: "Link Email" }).click();
+		await linking.page.getByRole("heading", { name: "Add email sign-in" }).waitFor();
+		linkingCode = await latestCode(linkingAddress);
+	}
+
+	const wrongPurpose = await submitLinkCode(linking.context, signInCode);
+	expect(wrongPurpose.status()).toBe(400);
+	expect(await wrongPurpose.json()).toMatchObject({ code: "INVALID_CODE" });
+
+	await Promise.all([enterCode(visitor.page, signInCode), enterCode(linking.page, linkingCode)]);
+	await visitor.page.getByRole("heading", { name: /^Welcome back/ }).waitFor();
+	await linking.page.getByText("Email is linked").waitFor();
+	expect(await accountId(visitor.context)).toBe(ownerId);
+	expect(await accountId(linking.context)).toBe(linkingId);
 });
 
 it("leaves email disabled after cancelling and sends a fresh code when linking restarts", async () => {
