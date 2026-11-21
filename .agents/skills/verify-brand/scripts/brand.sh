@@ -30,10 +30,10 @@ cmd_up() {
 		echo "port $port is held by pid $(listener_pid), which this script did not start. Set VERIFY_BRAND_PORT to a free port." >&2
 		exit 1
 	fi
-	(cd "$repo/apps/web" && setsid pnpm exec vp dev --port "$port" --strictPort --host 127.0.0.1 >"$log" 2>&1 &)
+	(cd "$repo/apps/web" && exec setsid pnpm exec vp dev --port "$port" --strictPort --host 127.0.0.1) >"$log" 2>&1 &
+	echo "$!" >"$pgid_file"
 	for _ in $(seq 1 90); do
 		if renders_mark; then
-			pgid_of "$(listener_pid)" >"$pgid_file"
 			echo "up: $base (pgid $(cat "$pgid_file"), log $log)"
 			return
 		fi
@@ -41,6 +41,7 @@ cmd_up() {
 	done
 	echo "server did not render /design within 90s; log:" >&2
 	tail -20 "$log" >&2
+	cmd_down
 	exit 1
 }
 
