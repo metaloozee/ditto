@@ -40,6 +40,7 @@ function VerifyEmail() {
 					resendIn={challenge.resendIn}
 					submitLabel="Enable email sign-in"
 					pending={challenge.pending}
+					resending={challenge.resending}
 					onSubmit={(code) => void challenge.verify(code)}
 					onResend={() => void challenge.resend()}
 				/>

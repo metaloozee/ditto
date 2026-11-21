@@ -17,6 +17,7 @@ import { InputOTP, InputOTPSlot } from "#/components/ui/input-otp.tsx";
 import { Input } from "#/components/ui/input.tsx";
 import { Label } from "#/components/ui/label.tsx";
 import type { ToastInput } from "#/components/ui/toast.tsx";
+import { isEmailAddress } from "#/lib/email-address.ts";
 
 export const PROVIDERS = {
 	github: { name: "GitHub" },
@@ -177,10 +178,20 @@ function useAuthForm<T extends Values>({
 	return { form, bind, formProps };
 }
 
+/** The longest first or last name the server accepts. */
+const NAME_MAX_LENGTH = 100;
+
+const checkName = (name: string, which: "first" | "last") =>
+	!name.trim()
+		? `Enter your ${which} name.`
+		: name.length > NAME_MAX_LENGTH
+			? `Use ${NAME_MAX_LENGTH} characters or fewer.`
+			: undefined;
+
 const checkEmail = (email: string) =>
 	!email
 		? "Enter your email address."
-		: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+		: isEmailAddress(email)
 			? undefined
 			: "Enter an email address like name@example.com.";
 
@@ -270,8 +281,8 @@ export function SignUpForm({
 		defaultValues: defaults ?? { firstName: "", lastName: "", email: "" },
 		check: (value) =>
 			failed({
-				firstName: value.firstName ? undefined : "Enter your first name.",
-				lastName: value.lastName ? undefined : "Enter your last name.",
+				firstName: checkName(value.firstName, "first"),
+				lastName: checkName(value.lastName, "last"),
 				email: checkEmail(value.email),
 			}),
 		onValid: onEmail,
@@ -346,6 +357,7 @@ export function CodeForm({
 	submitLabel,
 	resendIn = 0,
 	pending,
+	resending,
 	onSubmit,
 	onResend,
 }: {
@@ -354,6 +366,8 @@ export function CodeForm({
 	/** Seconds until another code can be requested. */
 	resendIn?: number;
 	pending?: boolean;
+	/** A replacement code is being requested; the current one is about to stop working. */
+	resending?: boolean;
 	onSubmit: (code: string) => void;
 	onResend: () => void;
 }) {
@@ -365,9 +379,12 @@ export function CodeForm({
 	const row = useRef<HTMLDivElement>(null);
 	const id = useId();
 	const needsNewCode = status.kind === "expired" || status.kind === "locked";
+	const locked = needsNewCode || resending || status.kind === "verified";
+	// A newly issued code starts from an empty row, so old digits never look live.
 	// A rejected code shakes the row and clears it, ready for the next try.
 	// Focus returns only if it was in this form, so a drawn state can't steal it.
 	useEffect(() => {
+		if (status.kind === "sent") form.reset();
 		if (status.kind !== "invalid") return;
 		form.reset();
 		if (row.current) shake(row.current);
@@ -394,7 +411,7 @@ export function CodeForm({
 										onComplete={() => void form.handleSubmit()}
 										maxLength={6}
 										autoComplete="one-time-code"
-										disabled={needsNewCode || status.kind === "verified"}
+										disabled={locked}
 										success={status.kind === "verified"}
 										aria-invalid={error ? true : undefined}
 										aria-describedby={error ? `${id}-error` : undefined}
@@ -413,12 +430,7 @@ export function CodeForm({
 						);
 					}}
 				</form.Field>
-				<Button
-					type="submit"
-					size="lg"
-					loading={pending}
-					disabled={needsNewCode || status.kind === "verified"}
-				>
+				<Button type="submit" size="lg" loading={pending} disabled={locked}>
 					{submitLabel}
 				</Button>
 			</form>
@@ -427,7 +439,7 @@ export function CodeForm({
 				{resendIn > 0 ? (
 					<span className="tabular-nums">Send another in {formatWait(resendIn)}</span>
 				) : (
-					<button type="button" className={inlineLink} onClick={onResend}>
+					<button type="button" className={inlineLink} disabled={resending} onClick={onResend}>
 						Send a new code
 					</button>
 				)}

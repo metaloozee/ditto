@@ -1,0 +1,3 @@
+{
+  "ignorePatterns": ".agents/skills/**\n.claude/skills/**\n.cursor/skills/**\nskills-lock.json"
+}

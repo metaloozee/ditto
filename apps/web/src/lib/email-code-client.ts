@@ -142,6 +142,8 @@ export function useEmailCode<Outcome extends CodeOutcome | "linked">({
 }) {
 	const [status, setStatus] = useState<CodeStatus>({ kind: "sent" });
 	const [pending, setPending] = useState(false);
+	// A resend replaces the live code, so entry pauses until the new one is issued.
+	const [resending, setResending] = useState(false);
 	const [resendAt, setResendAt] = useState(initialResendAt);
 	const [resendIn, setResendIn] = useState(() => secondsUntil(initialResendAt));
 	const busy = useRef(false);
@@ -158,12 +160,15 @@ export function useEmailCode<Outcome extends CodeOutcome | "linked">({
 	return {
 		status,
 		pending,
+		resending,
 		resendIn,
 		resend: async () => {
 			if (busy.current) return;
 			busy.current = true;
+			setResending(true);
 			const result = await send();
 			busy.current = false;
+			setResending(false);
 			setResendAt(resendAtFrom(result));
 			if (!result.ok && result.error.code === "UNAUTHORIZED" && onInterrupted)
 				return onInterrupted();

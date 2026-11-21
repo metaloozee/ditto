@@ -56,7 +56,8 @@ async function pauseGoogleLink(page: Page, email: string) {
 		{ times: 1 },
 	);
 	await nextGoogleAuthorization(googleUser({ email }));
-	await page.getByRole("button", { name: "Link Google" }).click();
+	// The paused route holds the navigation open; waiting for it here would deadlock.
+	await page.getByRole("button", { name: "Link Google" }).click({ noWaitAfter: true });
 	return paused;
 }
 

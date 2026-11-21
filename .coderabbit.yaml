@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# Agent skills are vendored or maintainer tooling, not product code. Reviewing
+# them spends the review budget on files that don't ship.
+reviews:
+  path_filters:
+    - "!.agents/skills/**"
+    - "!.claude/skills/**"
+    - "!.cursor/skills/**"
+    - "!skills-lock.json"

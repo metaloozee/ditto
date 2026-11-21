@@ -14,6 +14,7 @@ import { and, eq, exists, gt, lte, notExists, sql, type SQL } from "drizzle-orm"
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 
 import { account, session, user as userTable, verification } from "../db/auth-schema.ts";
+import { isEmailAddress } from "./email-address.ts";
 
 /** The `account.providerId` that records email sign-in as enabled for a user. */
 export const EMAIL_METHOD = "email";
@@ -51,11 +52,7 @@ async function hash(secret: string, id: string, code: string) {
 
 function readEmail(body: unknown) {
 	const email = (body as { email?: unknown } | null)?.email;
-	if (
-		typeof email !== "string" ||
-		email.length > 254 ||
-		!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
-	)
+	if (typeof email !== "string" || !isEmailAddress(email))
 		throw fail("BAD_REQUEST", "INVALID_EMAIL", "Enter a valid email address.");
 	return email.trim().toLowerCase();
 }
@@ -210,6 +207,13 @@ export function emailCode(db: DrizzleD1Database, options: EmailCodeOptions) {
 					const methods = await ctx.context.internalAdapter.findAccounts(user.id);
 					if (methods.some(({ providerId }) => providerId === EMAIL_METHOD))
 						throw fail("BAD_REQUEST", "EMAIL_ALREADY_ENABLED", "Email sign-in is already enabled.");
+					// Sign-in codes could never reach this address, so don't enable a method that can't work.
+					if (!isEmailAddress(user.email))
+						throw fail(
+							"BAD_REQUEST",
+							"INVALID_EMAIL",
+							"Email sign-in isn’t available for this address.",
+						);
 					return ctx.json(await codes.issue(ctx, linkPurpose(session.id), user.email));
 				},
 			),

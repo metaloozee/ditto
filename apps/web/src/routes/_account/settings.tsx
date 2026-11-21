@@ -75,6 +75,15 @@ function Settings() {
 			await navigate({ to: "/settings/verify-email", state: { resendAt: resendAtFrom(result) } });
 			return;
 		}
+		if (result.error.code === "INVALID_EMAIL") {
+			toast({
+				id: "notice-email-unsupported",
+				state: "error",
+				message: "Email sign-in isn’t available",
+				description: `Codes can’t be sent to ${account.email}. Keep signing in with GitHub or Google.`,
+			});
+			return;
+		}
 		toast({
 			id: "notice-delivery-failed",
 			state: "error",

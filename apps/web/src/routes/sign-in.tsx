@@ -113,6 +113,7 @@ function VerifyStep({
 			resendIn={challenge.resendIn}
 			submitLabel="Sign in"
 			pending={challenge.pending}
+			resending={challenge.resending}
 			onSubmit={(code) => void challenge.verify(code)}
 			onResend={() => void challenge.resend()}
 			onChangeEmail={onChangeEmail}
