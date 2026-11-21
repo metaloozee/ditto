@@ -119,6 +119,12 @@ function AuthDesigns() {
 					<Frame label="Sending the code">
 						<SignInForm defaultEmail={email} pending onEmail={noop} onProvider={noop} />
 					</Frame>
+					<Frame label="Last signed in with GitHub">
+						<SignInForm lastUsed="github" onEmail={noop} onProvider={noop} />
+					</Frame>
+					<Frame label="Last signed in with email">
+						<SignInForm lastUsed="email" onEmail={noop} onProvider={noop} />
+					</Frame>
 				</div>
 			</Group>
 
