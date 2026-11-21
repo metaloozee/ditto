@@ -244,6 +244,8 @@ Inter Variable for the interface, JetBrains Mono Variable for code, paths, branc
 - Grids collapse to two columns, then one, on narrow screens. The page never scrolls horizontally.
 - Auth screens (`/sign-in`, `/sign-up`): one left-aligned `max-w-sm` column centered on the page, with the mark, a title, a muted line, then the step. The email form comes first, with the primary button. GitHub and Google follow as `secondary` buttons, then a centered line that switches between sign-in and sign-up. Feedback from a redirect arrives as a toast. Each step is its own screen, never a dialog: the step and any redirect message live in search params (`?step=verify`, `?notice=…`, `/settings?outcome=…&method=…`), so back and refresh work; a `notice` or `outcome` shows once as a toast and then leaves the URL, while what the visitor typed rides in history state, never the URL. Linking email in Settings is its own screen too (`/settings/verify-email`). Every state is drawn at `/design/auth`; `apps/web/src/components/auth.tsx` and `account.tsx` hold the screens.
 
+- Failed provider sign-in shows an error toast with an option to try again or choose another method. Failed sign-out keeps the current screen open and shows a retry message.
+
 - Signed-in home (`/`): the empty state greets the user by display name. If the profile has no display name, the heading reads “Welcome back”.
 
 - Email sign-in shows the same code screen for every submitted address. The description says a code will be sent if email sign-in is enabled. The resend countdown starts when the request is accepted. An unusable code shows “That code didn’t work. Check it or request a new one.”

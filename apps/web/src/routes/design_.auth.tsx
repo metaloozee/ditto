@@ -7,6 +7,7 @@ import {
 	linkOutcomeToast,
 	previewAccount,
 	SettingsView,
+	signOutFailedToast,
 	signedOutToast,
 } from "#/components/account.tsx";
 import {
@@ -122,6 +123,7 @@ function AuthDesigns() {
 						{ label: "Code resent", input: codeResentToast },
 						{ label: "Resend failed", input: resendFailedToast },
 						{ label: "Signed out", input: signedOutToast },
+						{ label: "Sign-out failed", input: signOutFailedToast },
 					]}
 				/>
 				<div>
