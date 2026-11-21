@@ -4,7 +4,6 @@ import {
 	useEffect,
 	useId,
 	useRef,
-	useState,
 	type ChangeEvent,
 	type ComponentProps,
 	type FormEvent,
@@ -17,7 +16,7 @@ import { Button } from "#/components/ui/button.tsx";
 import { InputOTP, InputOTPSlot } from "#/components/ui/input-otp.tsx";
 import { Input } from "#/components/ui/input.tsx";
 import { Label } from "#/components/ui/label.tsx";
-import { toast, type ToastInput } from "#/components/ui/toast.tsx";
+import type { ToastInput } from "#/components/ui/toast.tsx";
 
 export const PROVIDERS = {
 	github: { name: "GitHub" },
@@ -579,47 +578,3 @@ export const resendFailedToast: ToastInput = {
 	message: "We couldn’t send a new code",
 	description: "Wait a moment, then send it again.",
 };
-
-// Provisional: the real wait comes from the server's shared limits (#3).
-const RESEND_WAIT_SECONDS = 30;
-const ATTEMPTS = 3;
-
-/**
- * A mock code challenge: 000000 is wrong, any other code passes. Three wrong
- * codes lock it until a new one is sent. Swapped for Better Auth in #5.
- */
-export function useCodeChallenge() {
-	const [status, setStatus] = useState<CodeStatus>({ kind: "sent" });
-	const [pending, setPending] = useState(false);
-	const [resendIn, setResendIn] = useState(RESEND_WAIT_SECONDS);
-	useEffect(() => {
-		if (resendIn <= 0) return;
-		const timer = setTimeout(() => setResendIn((s) => s - 1), 1000);
-		return () => clearTimeout(timer);
-	}, [resendIn]);
-	return {
-		status,
-		pending,
-		resendIn,
-		resend: () => {
-			setStatus({ kind: "sent" });
-			setResendIn(RESEND_WAIT_SECONDS);
-			toast(codeResentToast);
-		},
-		verify: (code: string, onVerified: () => void) => {
-			setPending(true);
-			setTimeout(() => {
-				setPending(false);
-				if (code !== "000000") {
-					setStatus({ kind: "verified" });
-					setTimeout(onVerified, 700);
-					return;
-				}
-				setStatus((s) => {
-					const left = (s.kind === "invalid" ? (s.attemptsLeft ?? ATTEMPTS) : ATTEMPTS) - 1;
-					return left > 0 ? { kind: "invalid", attemptsLeft: left } : { kind: "locked" };
-				});
-			}, 900);
-		},
-	};
-}
