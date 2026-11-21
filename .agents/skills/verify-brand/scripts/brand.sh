@@ -52,7 +52,7 @@ cmd_doctor() {
 	if ours; then ok "server on :$port started by brand.sh (pgid $(cat "$pgid_file"))"; else bad "no brand.sh server on :$port (run: brand.sh up)"; fi
 	if renders_mark; then ok "/design server-renders one neutral mark"; else bad "/design does not render the mark"; fi
 	local n; n="$( (curl -sf "$base/design/auth" || true) | grep -o 'aria-label="Ditto, feeling' | wc -l)"
-	if [[ "$n" == 8 ]]; then ok "/design/auth renders 8 marks"; else bad "/design/auth renders $n marks, expected 8"; fi
+	if [[ "$n" == 9 ]]; then ok "/design/auth renders 9 marks"; else bad "/design/auth renders $n marks, expected 9"; fi
 	if curl -sf -o /dev/null "$base/logo.svg"; then ok "/logo.svg served"; else bad "/logo.svg missing"; fi
 	local major; major="$(node -p 'process.versions.node.split(".")[0]')"
 	if (( major >= 22 )); then ok "node $(node -v) has a global WebSocket"; else bad "node $(node -v) is older than 22"; fi
