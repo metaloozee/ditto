@@ -221,7 +221,14 @@ export const signedOutToast: ToastInput = {
 	message: "Signed out",
 };
 
-/** Stands in for the session until sign-in is wired up (#5). */
+export const signOutFailedToast: ToastInput = {
+	id: "signed-out",
+	state: "error",
+	message: "Couldn’t sign out",
+	description: "Try signing out again.",
+};
+
+/** Example account for the design gallery. */
 export const previewAccount: Account = {
 	displayName: "Ada Lovelace",
 	email: "ada@example.com",

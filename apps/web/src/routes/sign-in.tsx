@@ -1,5 +1,5 @@
-import { createFileRoute, useHydrated, useLocation, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 
 import {
 	AUTH_NOTICES,
@@ -17,6 +17,7 @@ import {
 	resendAtFrom,
 	sendSignInCode,
 	useEmailCode,
+	useEmailCodeHistory,
 	verifySignInCode,
 } from "#/lib/email-code-client.ts";
 
@@ -38,15 +39,7 @@ export const Route = createFileRoute("/sign-in")({
 
 function SignIn() {
 	const { step, notice, provider } = Route.useSearch();
-	// History state isn't sent to the server, so read it only once hydrated.
-	// Leaving the route clears it a render before unmount, so hold the last
-	// value; a new tab without it falls back to the first step.
-	const hydrated = useHydrated();
-	const saved = useLocation({ select: (location) => location.state.email });
-	const resendAt = useLocation({ select: (location) => location.state.resendAt }) ?? 0;
-	const last = useRef(saved);
-	if (saved) last.current = saved;
-	const email = hydrated ? last.current : undefined;
+	const { hydrated, value: email, resendAt } = useEmailCodeHistory("email");
 	const navigate = useNavigate();
 	const [sending, setSending] = useState(false);
 	const requestCode = async (address: string) => {
@@ -66,7 +59,7 @@ function SignIn() {
 	useEffect(() => {
 		if (!notice) return;
 		toast(noticeToast(notice, { provider, onSignUp: () => void navigate({ to: "/sign-up" }) }));
-		void navigate({ to: "/sign-in", search: { step }, replace: true });
+		void navigate({ to: "/sign-in", search: { step }, state: true, replace: true });
 	}, [notice, provider, step, navigate]);
 
 	if (step === "verify" && !hydrated) return null;

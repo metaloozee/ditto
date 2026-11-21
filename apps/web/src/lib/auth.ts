@@ -7,6 +7,7 @@ import {
 	getAuthoritativeSessionFromCtx,
 	getOAuthState,
 } from "better-auth/api";
+import { github } from "better-auth/social-providers";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { drizzle } from "drizzle-orm/d1";
 
@@ -38,6 +39,18 @@ export function createAuth(env: AuthEnv, waitUntil?: (task: Promise<unknown>) =>
 	};
 
 	const signInOTP = emailSignIn(db, codes);
+	const gitHubOptions = { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET };
+	const gitHubProvider = github(gitHubOptions);
+
+	// Without email proof, only an already-linked provider identity can return.
+	async function linkedEmail(providerId: "github" | "google", accountId: string) {
+		const linked = await db.query.account.findFirst({
+			where: { providerId, accountId },
+			columns: {},
+			with: { user: { columns: { email: true } } },
+		});
+		return linked?.user?.email ?? "";
+	}
 
 	return betterAuth({
 		appName: "Ditto",
@@ -49,11 +62,18 @@ export function createAuth(env: AuthEnv, waitUntil?: (task: Promise<unknown>) =>
 			schema,
 		}),
 		emailAndPassword: { enabled: false },
-		disabledPaths: ["/update-user"],
+		disabledPaths: ["/update-user", "/unlink-account"],
 		socialProviders: {
 			github: {
-				clientId: env.GITHUB_CLIENT_ID,
-				clientSecret: env.GITHUB_CLIENT_SECRET,
+				...gitHubOptions,
+				getUserInfo: async (tokens) => {
+					const info = await gitHubProvider.getUserInfo(tokens);
+					if (!info || info.user.emailVerified) return info;
+					return {
+						...info,
+						user: { ...info.user, email: await linkedEmail("github", String(info.data.id)) },
+					};
+				},
 				authorizationEndpoint: env.OAUTH_UPSTREAM
 					? `${env.OAUTH_UPSTREAM}/github.com/login/oauth/authorize`
 					: undefined,
@@ -69,14 +89,11 @@ export function createAuth(env: AuthEnv, waitUntil?: (task: Promise<unknown>) =>
 					const names = { firstName: profile.given_name, lastName: profile.family_name };
 					if (profile.email_verified === true && profile.email) return names;
 
-					// Better Auth checks for an email match before validating registration.
-					// Without email proof, only an already-linked Google identity can return.
-					const linked = await db.query.account.findFirst({
-						where: { providerId: "google", accountId: profile.sub },
-						columns: {},
-						with: { user: { columns: { email: true } } },
-					});
-					return { ...names, email: linked?.user?.email ?? "", emailVerified: false };
+					return {
+						...names,
+						email: await linkedEmail("google", profile.sub),
+						emailVerified: false,
+					};
 				},
 			},
 		},

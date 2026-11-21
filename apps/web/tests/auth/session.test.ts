@@ -49,6 +49,18 @@ describe("sessions", () => {
 		expect(path(page)).toBe("/");
 	});
 
+	it("keeps the account open for a retry when sign-out fails", async () => {
+		const { page } = await newVisitor();
+		await continueWithGitHub(page, gitHubUser());
+		await page.route("**/api/auth/sign-out", (route) => route.fulfill({ status: 503, json: {} }));
+
+		await page.getByRole("button", { name: "Sign out" }).click();
+		await page.getByText("Couldn’t sign out").waitFor({ timeout: 3000 });
+		expect(path(page)).toBe("/");
+		await page.unroute("**/api/auth/sign-out");
+		await signOut(page);
+	});
+
 	it("signing out revokes the session on the server immediately", async () => {
 		const { context, page } = await newVisitor();
 		await continueWithGitHub(page, gitHubUser());

@@ -201,13 +201,11 @@ function SwitchFlow({ children }: { children: ReactNode }) {
 }
 
 export function SignInForm({
-	notice,
 	defaultEmail,
 	pending,
 	onEmail,
 	onProvider,
 }: {
-	notice?: ReactNode;
 	defaultEmail?: string;
 	pending?: boolean;
 	onEmail: (email: string) => void;
@@ -220,7 +218,6 @@ export function SignInForm({
 	});
 	return (
 		<AuthPanel title="Sign in to Ditto" description="Welcome back. Choose how to sign in.">
-			{notice}
 			<form {...formProps} className="flex flex-col gap-4">
 				<form.Field name="email">
 					{(field) => (
@@ -260,13 +257,11 @@ declare module "@tanstack/react-router" {
 }
 
 export function SignUpForm({
-	notice,
 	defaults,
 	pending,
 	onEmail,
 	onProvider,
 }: {
-	notice?: ReactNode;
 	defaults?: SignUpDetails;
 	pending?: boolean;
 	onEmail: (details: SignUpDetails) => void;
@@ -287,7 +282,6 @@ export function SignUpForm({
 			title="Create your Ditto account"
 			description="Use GitHub, Google, or your email address."
 		>
-			{notice}
 			<form {...formProps} className="flex flex-col gap-4">
 				<div className="grid grid-cols-2 items-start gap-3">
 					<form.Field name="firstName">
@@ -503,18 +497,26 @@ export const AUTH_NOTICES = [
 	"account-exists",
 	"delivery-failed",
 	"cancelled",
+	"oauth-failed",
 ] as const;
 
 export type AuthNotice = (typeof AUTH_NOTICES)[number];
 
-const OAUTH_ERROR_NOTICES: Record<string, AuthNotice> = {
-	access_denied: "cancelled",
-	account_not_linked: "wrong-method",
-};
+export function oauthErrorNotice(error: unknown): AuthNotice | undefined {
+	if (typeof error !== "string" || !error) return;
+	if (error === "access_denied") return "cancelled";
+	if (error === "account_not_linked") return "wrong-method";
+	return "oauth-failed";
+}
 
-/** The notice for an OAuth callback's `error`, if one is designed for it. */
-export const oauthErrorNotice = (error: unknown) =>
-	typeof error === "string" ? OAUTH_ERROR_NOTICES[error] : undefined;
+export function oauthFailedToast(provider?: Provider): ToastInput {
+	return {
+		id: "notice-oauth-failed",
+		state: "error",
+		message: provider ? `${PROVIDERS[provider].name} sign-in failed` : "Sign-in failed",
+		description: "Try again, or choose another way to continue.",
+	};
+}
 
 /** The toast for a redirect's `notice`. `onSignUp` backs the no-account action. */
 export function noticeToast(
@@ -552,6 +554,8 @@ export function noticeToast(
 				message: "We couldn’t send your code",
 				description: "Check the address, then try again in a moment.",
 			};
+		case "oauth-failed":
+			return oauthFailedToast(provider);
 		case "cancelled":
 			return {
 				id,

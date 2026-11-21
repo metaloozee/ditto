@@ -1,3 +1,4 @@
+import { useHydrated, useLocation, type HistoryState } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -14,6 +15,17 @@ declare module "@tanstack/react-router" {
 		/** When another code may be sent (epoch ms), as the server set it. */
 		resendAt?: number;
 	}
+}
+
+/** Waits for browser history at hydration and keeps its last value during navigation. */
+export function useEmailCodeHistory<K extends "email" | "signUp">(key: K) {
+	const hydrated = useHydrated();
+	const state = useLocation({ select: (location) => location.state });
+	const saved: HistoryState[K] = state[key];
+	const resendAt = state.resendAt ?? 0;
+	const last = useRef(saved);
+	if (saved) last.current = saved;
+	return { hydrated, value: hydrated ? last.current : undefined, resendAt };
 }
 
 /** Why the server refused a code request. `retryAfter` is in seconds. */

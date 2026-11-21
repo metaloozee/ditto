@@ -91,12 +91,26 @@ it("returns to the same account by GitHub ID after the upstream email changes", 
 	});
 });
 
+it("recognizes a linked GitHub identity when its email is no longer available", async () => {
+	const user = gitHubUser({ name: "Grace Hopper" });
+	const first = await newVisitor();
+	await continueWithGitHub(first.page, user);
+
+	const next = await newVisitor();
+	await continueWithGitHub(next.page, { ...user, email: null, emails: [] });
+	await expect(settings(next.page)).resolves.toMatchObject({
+		displayName: "Grace Hopper",
+		email: user.email,
+	});
+});
+
 it("refuses to register an unverified GitHub address", async () => {
 	const base = gitHubUser();
 	const user = { ...base, emails: [{ email: base.email ?? "", primary: true, verified: false }] };
 	const { page } = await newVisitor();
 
 	await continueWithGitHub(page, user, "/sign-up");
+	await page.getByText("GitHub sign-in failed").waitFor({ timeout: 3000 });
 	await open(page, "/");
 
 	expect(new URL(page.url()).pathname).toBe("/sign-in");
@@ -109,4 +123,19 @@ it("returns to sign-in with a message when consent is cancelled", async () => {
 
 	expect(new URL(page.url()).pathname).toBe("/sign-in");
 	await expect(page.getByText("GitHub sign-in was cancelled").isVisible()).resolves.toBe(true);
+});
+
+it("offers another sign-in method when GitHub sign-in cannot start", async () => {
+	const { page } = await newVisitor();
+	await open(page, "/sign-up");
+	await page.route("**/api/auth/sign-in/social", (route) =>
+		route.fulfill({ status: 503, json: {} }),
+	);
+
+	await page.getByRole("button", { name: "Continue with GitHub" }).click();
+
+	await page.getByText("GitHub sign-in failed").waitFor({ timeout: 3000 });
+	await expect(page.getByRole("button", { name: "Continue with email" }).isEnabled()).resolves.toBe(
+		true,
+	);
 });

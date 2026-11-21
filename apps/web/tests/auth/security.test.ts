@@ -66,3 +66,8 @@ it.each(["/sign-up/email", "/sign-in/email"])("refuses password auth at %s", asy
 	expect(response.ok).toBe(false);
 	expect(response.headers.getSetCookie()).toEqual([]);
 });
+
+it("keeps method removal unavailable", async () => {
+	const response = await post("/unlink-account", { providerId: "github" });
+	expect(response.status).toBe(404);
+});
