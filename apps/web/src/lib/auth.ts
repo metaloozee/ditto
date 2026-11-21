@@ -1,11 +1,18 @@
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
 import { betterAuth } from "better-auth";
+import {
+	addOAuthServerContext,
+	APIError,
+	createAuthMiddleware,
+	getAuthoritativeSessionFromCtx,
+	getOAuthState,
+} from "better-auth/api";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { drizzle } from "drizzle-orm/d1";
 
 import type { WebsiteEnv } from "../../../../alchemy.run.ts";
 import * as schema from "../db/auth-schema.ts";
-import { emailCode } from "./email-code.ts";
+import { EMAIL_METHOD, emailCode, emailSignIn, type EmailCodeOptions } from "./email-code.ts";
 import { sendCodeEmail } from "./email.ts";
 import { redirectOAuthUpstream } from "./oauth-upstream.ts";
 
@@ -20,10 +27,17 @@ export type AuthEnv = Omit<WebsiteEnv, TestOnly> & Partial<Record<TestOnly, stri
 
 const WEEK = 60 * 60 * 24 * 7;
 
-export function createAuth(env: AuthEnv) {
+export function createAuth(env: AuthEnv, waitUntil?: (task: Promise<unknown>) => void) {
 	if (env.OAUTH_UPSTREAM) redirectOAuthUpstream(env.OAUTH_UPSTREAM);
 	const sessionExpiresIn = Number(env.SESSION_EXPIRES_IN ?? WEEK);
 	const db = drizzle(env.DB, { relations: schema.authRelations });
+	const codes: EmailCodeOptions = {
+		expiresIn: Number(env.CODE_EXPIRES_IN ?? 5 * 60),
+		resendIn: Number(env.CODE_RESEND_IN ?? 30),
+		send: (email) => sendCodeEmail(env, email),
+	};
+
+	const signInOTP = emailSignIn(db, codes);
 
 	return betterAuth({
 		appName: "Ditto",
@@ -66,14 +80,47 @@ export function createAuth(env: AuthEnv) {
 				},
 			},
 		},
+		hooks: {
+			before: createAuthMiddleware(async (ctx) => {
+				if (ctx.path !== "/link-social") return;
+				if (ctx.body?.idToken)
+					throw new APIError("BAD_REQUEST", {
+						message: "Use the provider’s OAuth flow to link a sign-in method.",
+					});
+				const session = await getAuthoritativeSessionFromCtx(ctx);
+				if (session) {
+					await addOAuthServerContext({
+						linkSessionId: session.session.id,
+						linkProvider: ctx.body?.provider,
+					});
+				}
+			}),
+		},
 		user: {
 			// Settable like `name`, so providers' structured names can fill them.
 			additionalFields: {
 				firstName: { type: "string", required: false },
 				lastName: { type: "string", required: false },
 			},
-			validateUserInfo: ({ user, source }) => {
-				if (source.method === "oauth" && source.action === "create-user" && !user.emailVerified)
+			validateUserInfo: async ({ user, source }, ctx) => {
+				if (source.method !== "oauth") return;
+				if (source.action === "link-account") {
+					// The original session may still be live on another device even when
+					// this browser comes back signed in to a different session.
+					const state = await getOAuthState();
+					const session = await getAuthoritativeSessionFromCtx(ctx);
+					if (
+						!session ||
+						session.user.id !== user.id ||
+						session.session.id !== state?.serverContext?.linkSessionId ||
+						source.oauth?.providerId !== state?.serverContext?.linkProvider
+					)
+						return { error: "link_session_changed" };
+				}
+				if (
+					(source.action === "create-user" || source.action === "link-account") &&
+					!user.emailVerified
+				)
 					return { error: "email_not_verified" };
 			},
 		},
@@ -84,6 +131,18 @@ export function createAuth(env: AuthEnv) {
 			accountLinking: { enabled: true, disableImplicitLinking: true },
 		},
 		databaseHooks: {
+			session: {
+				create: {
+					before: async ({ userId }, ctx) => {
+						if (ctx?.path !== signInOTP.endpoints.signInEmailOTP.path) return;
+						const method = await db.query.account.findFirst({
+							where: { userId, providerId: EMAIL_METHOD },
+							columns: { id: true },
+						});
+						if (!method) throw APIError.from("BAD_REQUEST", signInOTP.$ERROR_CODES.INVALID_OTP);
+					},
+				},
+			},
 			account: {
 				// Better Auth encrypts access and refresh tokens. Ditto has no use for stored ID tokens.
 				create: { before: async (account) => ({ data: { ...account, idToken: null } }) },
@@ -92,17 +151,11 @@ export function createAuth(env: AuthEnv) {
 		},
 		rateLimit: { enabled: true, storage: "database" },
 		advanced: {
+			backgroundTasks: waitUntil ? { handler: waitUntil } : undefined,
 			useSecureCookies: env.BETTER_AUTH_URL.startsWith("https://"),
 			ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
 		},
 		telemetry: { enabled: false },
-		plugins: [
-			emailCode(db, {
-				expiresIn: Number(env.CODE_EXPIRES_IN ?? 5 * 60),
-				resendIn: Number(env.CODE_RESEND_IN ?? 30),
-				send: (email) => sendCodeEmail(env, email),
-			}),
-			tanstackStartCookies(),
-		],
+		plugins: [emailCode(db, codes), signInOTP, tanstackStartCookies()],
 	});
 }

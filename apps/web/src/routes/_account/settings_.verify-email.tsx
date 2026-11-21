@@ -1,7 +1,13 @@
-import { createFileRoute, Link, useLocation, useNavigate, useRouter } from "@tanstack/react-router";
+import { createFileRoute, useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 
 import { AuthPanel, CodeForm, CodeSentTo } from "#/components/auth.tsx";
-import { sendLinkEmailCode, useEmailCode, verifyLinkEmailCode } from "#/lib/email-code-client.ts";
+import { Button } from "#/components/ui/button.tsx";
+import {
+	cancelLinkEmailCode,
+	sendLinkEmailCode,
+	useEmailCode,
+	verifyLinkEmailCode,
+} from "#/lib/email-code-client.ts";
 
 export const Route = createFileRoute("/_account/settings_/verify-email")({
 	head: () => ({ meta: [{ title: "Add email sign-in · Ditto" }] }),
@@ -18,9 +24,9 @@ function VerifyEmail() {
 		send: sendLinkEmailCode,
 		verify: verifyLinkEmailCode,
 		onOutcome: () => {
-			void router.invalidate().then(() =>
-				navigate({ to: "/settings", search: { outcome: "linked", method: "email" } }),
-			);
+			void router
+				.invalidate()
+				.then(() => navigate({ to: "/settings", search: { outcome: "linked", method: "email" } }));
 		},
 		onInterrupted: () => {
 			void navigate({ to: "/settings", search: { outcome: "interrupted", method: "email" } });
@@ -37,13 +43,20 @@ function VerifyEmail() {
 					onSubmit={(code) => void challenge.verify(code)}
 					onResend={() => void challenge.resend()}
 				/>
-				<Link
-					to="/settings"
-					search={{ outcome: "cancelled", method: "email" }}
-					className="self-center font-medium text-link underline-offset-4 hover:underline"
+				<Button
+					variant="link"
+					className="self-center"
+					disabled={challenge.pending || challenge.status.kind === "verified"}
+					onClick={async () => {
+						const result = await cancelLinkEmailCode();
+						await navigate({
+							to: "/settings",
+							search: { outcome: result.ok ? "cancelled" : "interrupted", method: "email" },
+						});
+					}}
 				>
 					Back to Settings
-				</Link>
+				</Button>
 			</AuthPanel>
 		</main>
 	);

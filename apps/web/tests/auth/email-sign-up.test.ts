@@ -14,6 +14,7 @@ import {
 	signUpByEmail,
 	submitSignUpForm,
 } from "./email.ts";
+import { continueWithGoogle, googleUser } from "./google.ts";
 import { CODE_EXPIRES_IN, CODE_RESEND_IN } from "./setup.ts";
 import { appUrl, continueWithGitHub, gitHubUser, newVisitor, open } from "./visitor.ts";
 
@@ -109,20 +110,44 @@ describe("registration", () => {
 		await expect(heading(first.page)).resolves.toBe("Welcome back, Ada Lovelace");
 	});
 
-	it("tells a GitHub user after proof that the account uses another method", async () => {
-		const user = gitHubUser();
-		const github = await newVisitor();
-		await continueWithGitHub(github.page, user);
+	it.each(["GitHub", "Google"] as const)(
+		"keeps email disabled when a %s user repeats registration",
+		async (provider) => {
+			const email = newAddress();
+			const owner = await newVisitor();
+			if (provider === "GitHub") {
+				await continueWithGitHub(
+					owner.page,
+					gitHubUser({ email, emails: [{ email, primary: true, verified: true }] }),
+				);
+			} else {
+				await continueWithGoogle(owner.page, googleUser({ email }));
+			}
+			await owner.page.getByRole("heading", { name: /^Welcome back/ }).waitFor();
 
-		const { page } = await newVisitor();
-		await requestSignUpCode(page, { ...names, email: user.email ?? "" });
-		await enterCode(page, await latestCode(user.email ?? ""));
+			const { context, page } = await newVisitor();
+			await requestSignUpCode(page, { ...names, email });
+			const code = await latestCode(email);
+			const signIn = await context.request.post("/api/auth/sign-in/email-otp", {
+				headers: { origin: appUrl },
+				data: { email, otp: code },
+			});
+			expect(signIn.status()).toBe(400);
+			await expect((await context.request.get("/api/auth/get-session")).json()).resolves.toBeNull();
 
-		await shows(page, "This account uses another sign-in method");
-		await open(page, "/");
-		expect(path(page)).toBe("/sign-in");
-		await expect(methodEnabled(github.page, "Email")).resolves.toBe(false);
-	});
+			await enterCode(page, code);
+			await shows(page, "This account uses another sign-in method");
+			await open(page, "/");
+			expect(path(page)).toBe("/sign-in");
+			await expect(methodEnabled(owner.page, "Email")).resolves.toBe(false);
+			const request = await context.request.post("/api/auth/email-otp/send-verification-otp", {
+				headers: { origin: appUrl },
+				data: { email, type: "sign-in" },
+			});
+			expect(request.ok()).toBe(true);
+			expect(await inbox(email)).toHaveLength(1);
+		},
+	);
 });
 
 describe("codes", () => {

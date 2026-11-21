@@ -325,7 +325,7 @@ export function SignUpForm({
 
 export type CodeStatus =
 	| { kind: "sent" }
-	| { kind: "invalid"; attemptsLeft: number }
+	| { kind: "invalid"; attemptsLeft?: number }
 	| { kind: "expired" }
 	| { kind: "locked" }
 	| { kind: "verified" };
@@ -333,7 +333,9 @@ export type CodeStatus =
 function codeError(status: CodeStatus) {
 	switch (status.kind) {
 		case "invalid":
-			return `That code isn’t right. ${status.attemptsLeft} ${status.attemptsLeft === 1 ? "try" : "tries"} left.`;
+			return status.attemptsLeft === undefined
+				? "That code didn’t work. Check it or request a new one."
+				: `That code isn’t right. ${status.attemptsLeft} ${status.attemptsLeft === 1 ? "try" : "tries"} left.`;
 		case "expired":
 			return "This code has expired. Send a new one to continue.";
 		case "locked":
@@ -343,7 +345,8 @@ function codeError(status: CodeStatus) {
 	}
 }
 
-const formatWait = (seconds: number) => `0:${String(seconds).padStart(2, "0")}`;
+const formatWait = (seconds: number) =>
+	`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 
 export function CodeForm({
 	status,
@@ -448,13 +451,17 @@ export function CodeForm({
 export function CodeSentTo({
 	email,
 	onChangeEmail,
+	conditional,
 }: {
 	email: string;
 	onChangeEmail?: () => void;
+	conditional?: boolean;
 }) {
 	return (
 		<>
-			Enter the 6-digit code we sent to{" "}
+			{conditional
+				? "If email sign-in is enabled, we’ll send a 6-digit code to "
+				: "Enter the 6-digit code we sent to "}
 			<span className="font-medium text-foreground wrap-anywhere">{email}</span>. It expires in 5
 			minutes.
 			{onChangeEmail && (
@@ -472,12 +479,17 @@ export function CodeSentTo({
 export function CodeStep({
 	email,
 	onChangeEmail,
+	conditional,
 	...form
-}: { email: string; onChangeEmail: () => void } & ComponentProps<typeof CodeForm>) {
+}: { email: string; onChangeEmail: () => void; conditional?: boolean } & ComponentProps<
+	typeof CodeForm
+>) {
 	return (
 		<AuthPanel
 			title="Check your email"
-			description={<CodeSentTo email={email} onChangeEmail={onChangeEmail} />}
+			description={
+				<CodeSentTo email={email} onChangeEmail={onChangeEmail} conditional={conditional} />
+			}
 		>
 			<CodeForm {...form} />
 		</AuthPanel>
@@ -600,7 +612,7 @@ export function useCodeChallenge() {
 					return;
 				}
 				setStatus((s) => {
-					const left = (s.kind === "invalid" ? s.attemptsLeft : ATTEMPTS) - 1;
+					const left = (s.kind === "invalid" ? (s.attemptsLeft ?? ATTEMPTS) : ATTEMPTS) - 1;
 					return left > 0 ? { kind: "invalid", attemptsLeft: left } : { kind: "locked" };
 				});
 			}, 900);

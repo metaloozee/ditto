@@ -58,3 +58,10 @@ export async function signUpByEmail(page: Page, details: SignUpDetails) {
 	await enterCode(page, await latestCode(details.email));
 	await page.getByRole("heading", { name: /^Welcome back/ }).waitFor();
 }
+
+export async function requestSignIn(page: Page, email: string) {
+	await open(page, "/sign-in");
+	await page.getByLabel("Email address").fill(email);
+	await page.getByRole("button", { name: "Continue with email" }).click();
+	await page.getByRole("heading", { name: "Check your email" }).waitFor();
+}

@@ -1,5 +1,5 @@
 import { createFileRoute, useHydrated, useLocation, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
 	AUTH_NOTICES,
@@ -9,11 +9,16 @@ import {
 	oneOf,
 	PROVIDERS,
 	SignInForm,
-	useCodeChallenge,
 	type Provider,
 } from "#/components/auth.tsx";
 import { toast } from "#/components/ui/toast.tsx";
 import { continueWith } from "#/lib/auth-client.ts";
+import {
+	resendAtFrom,
+	sendSignInCode,
+	useEmailCode,
+	verifySignInCode,
+} from "#/lib/email-code-client.ts";
 
 type SignInSearch = {
 	step?: "verify";
@@ -31,7 +36,6 @@ export const Route = createFileRoute("/sign-in")({
 	component: SignIn,
 });
 
-// The email code is still a clickable mock (#7): nothing is sent, 000000 is wrong, any other code passes.
 function SignIn() {
 	const { step, notice, provider } = Route.useSearch();
 	// History state isn't sent to the server, so read it only once hydrated.
@@ -39,11 +43,24 @@ function SignIn() {
 	// value; a new tab without it falls back to the first step.
 	const hydrated = useHydrated();
 	const saved = useLocation({ select: (location) => location.state.email });
+	const resendAt = useLocation({ select: (location) => location.state.resendAt }) ?? 0;
 	const last = useRef(saved);
 	if (saved) last.current = saved;
 	const email = hydrated ? last.current : undefined;
 	const navigate = useNavigate();
-	const signedIn = () => void navigate({ to: "/" });
+	const [sending, setSending] = useState(false);
+	const requestCode = async (address: string) => {
+		if (sending) return;
+		setSending(true);
+		const result = await sendSignInCode(address);
+		setSending(false);
+		if (!result.ok) return toast(noticeToast("delivery-failed", { onSignUp: () => {} }));
+		void navigate({
+			to: "/sign-in",
+			search: { step: "verify" },
+			state: { email: address, resendAt: resendAtFrom(result) },
+		});
+	};
 
 	// A redirect's message shows once, then leaves the URL so a refresh won't repeat it.
 	useEffect(() => {
@@ -60,16 +77,16 @@ function SignIn() {
 				<VerifyStep
 					key={email}
 					email={email}
-					onVerified={signedIn}
+					resendAt={resendAt}
+					onVerified={() => void navigate({ to: "/" })}
 					onChangeEmail={() => void navigate({ to: "/sign-in", state: { email } })}
 				/>
 			) : (
 				<SignInForm
 					key={email}
 					defaultEmail={email}
-					onEmail={(address) =>
-						void navigate({ to: "/sign-in", search: { step: "verify" }, state: { email: address } })
-					}
+					pending={sending}
+					onEmail={(address) => void requestCode(address)}
 					onProvider={continueWith}
 				/>
 			)}
@@ -79,23 +96,32 @@ function SignIn() {
 
 function VerifyStep({
 	email,
+	resendAt,
 	onVerified,
 	onChangeEmail,
 }: {
 	email: string;
+	resendAt: number;
 	onVerified: () => void;
 	onChangeEmail: () => void;
 }) {
-	const challenge = useCodeChallenge();
+	const challenge = useEmailCode({
+		resendAt,
+		send: () => sendSignInCode(email),
+		verify: (code) => verifySignInCode(email, code),
+		onOutcome: onVerified,
+		resentToast: { id: "code-resent", state: "info", message: "Code requested" },
+	});
 	return (
 		<CodeStep
 			email={email}
+			conditional
 			status={challenge.status}
 			resendIn={challenge.resendIn}
 			submitLabel="Sign in"
 			pending={challenge.pending}
-			onSubmit={(code) => challenge.verify(code, onVerified)}
-			onResend={challenge.resend}
+			onSubmit={(code) => void challenge.verify(code)}
+			onResend={() => void challenge.resend()}
 			onChangeEmail={onChangeEmail}
 		/>
 	);
