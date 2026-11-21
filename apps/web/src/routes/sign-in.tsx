@@ -36,6 +36,8 @@ export const Route = createFileRoute("/sign-in")({
 		provider: oneOf(Object.keys(PROVIDERS) as Provider[], search.provider),
 	}),
 	loader: () => ({ lastUsed: getLastUsedMethod() }),
+	// Sign-out lands here in the same tab; a cached load would flash the old method.
+	gcTime: 0,
 	component: SignIn,
 });
 

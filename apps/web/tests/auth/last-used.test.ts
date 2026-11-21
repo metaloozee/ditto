@@ -63,6 +63,39 @@ it("marks email after an email sign-up, and after an email sign-in", async () =>
 	await expect(marked(second.context, second.page)).resolves.toEqual(only("Continue with email"));
 });
 
+it("never shows the previous mark when sign-out returns to sign-in in the same tab", async () => {
+	const email = newAddress();
+	const owner = await newVisitor();
+	await signUpByEmail(owner.page, { firstName: "Ada", lastName: "Lovelace", email });
+
+	// GitHub marks this browser; the email sign-in below stays in one tab, so
+	// the router keeps whatever /sign-in loaded before.
+	const { context, page } = await newVisitor();
+	await continueWithGitHub(page, gitHubUser());
+	await signOut(page);
+	await page.getByLabel("Email address").fill(email);
+	await page.getByRole("button", { name: "Continue with email" }).click();
+	await page.getByRole("heading", { name: "Check your email" }).waitFor();
+	await enterCode(page, await latestCode(email));
+	await page.getByRole("heading", { name: /^Welcome back/ }).waitFor();
+
+	await page.evaluate(() => {
+		const seen = new Set<string>();
+		(window as unknown as { seen: Set<string> }).seen = seen;
+		const record = () =>
+			document.querySelectorAll("button").forEach((button) => {
+				if (button.textContent?.includes("Last used")) seen.add(button.textContent);
+			});
+		new MutationObserver(record).observe(document.body, { subtree: true, childList: true });
+	});
+	await signOut(page);
+	await page.getByRole("button", { name: "Continue with email" }).waitFor();
+
+	const seen = await page.evaluate(() => [...(window as unknown as { seen: Set<string> }).seen]);
+	expect(seen).toEqual(["Continue with emailLast used"]);
+	await expect(marked(context, page)).resolves.toEqual(only("Continue with email"));
+});
+
 it("keeps the mark on the sign-in method when Settings links another", async () => {
 	const github = gitHubUser();
 	const { context, page } = await newVisitor();

@@ -58,12 +58,13 @@ export function AuthPanel({
 
 /**
  * Marks the method this browser last signed in with: a tag straddling its
- * button's top edge at the end, so the label stays centered.
+ * button's top edge at the end, so the label stays centered. On the primary
+ * button, whose fill matches the badge, a page-colored ring cuts it out.
  */
 function LastUsed({ method, lastUsed }: { method: Method; lastUsed?: Method }) {
 	return (
 		method === lastUsed && (
-			<Badge className="absolute end-3 top-0 -translate-y-1/2 ring-2 ring-background">
+			<Badge className="absolute end-3 top-0 -translate-y-1/2 in-[.layer-primary]:ring-2 in-[.layer-primary]:ring-background">
 				Last used
 			</Badge>
 		)
