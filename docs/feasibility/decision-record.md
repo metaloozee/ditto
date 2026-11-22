@@ -35,6 +35,74 @@ _Not yet run. Must be a different date from day 1._
 
 _Not yet run. Recorded apart from the ChatGPT result (ADR-0003)._
 
+#### Local Worker compatibility (#26)
+
+The same trial runs inside the local Workers runtime (`workerd`) under `alchemy dev`, so requests still leave from the home network and any difference from the baseline points at the runtime. Start the stage, then run each route in a second terminal. The command reuses the baseline's sign-in file, keeps the token the Worker's refresh rotates, and adds workerd's CPU time per step to the entry. Each command makes three runs, 15 minutes apart, as the baseline does.
+
+```sh
+pnpm feasibility
+pnpm feasibility:model --route chatgpt --runtime workerd
+OPENCODE_API_KEY=<key> pnpm feasibility:model --route opencode --runtime workerd
+```
+
+**Pinned runtime:** Pi `@earendil-works/pi-ai` 1.6.0, workerd 1.20261026.1, Alchemy 2.0.0-beta.87. The `model-trial` Worker (`feasibility/model-worker.ts`) uses compatibility date `2026-10-26`, which turns on `nodejs_compat`, plus Alchemy's default `new_module_registry`. `feasibility/compatibility.ts` holds these settings, and the Worker reports them at `GET http://localhost:1341/model-trial`.
+
+**CPU time** is the on-CPU time of the workerd process, read from Linux `/proc` as each step finishes. A Worker cannot time itself: its clock stands still while code runs. The figure includes runtime overhead, so it is an upper bound. The limits are per request, and one trial is one request. The free plan allows 10ms of CPU per request. The paid plan allows 30s by default, configurable to 5 minutes. Against the simulated provider, whose own workerd process is counted too, the first turn after the Worker starts took about 45 to 90ms, because Pi loads its Responses code on first use. Later turns took about 4 to 8ms, and a warm trial request about 12 to 16ms. Both already exceed the free plan's limit. Real replies are longer, so the owner's run decides.
+
+**Compatibility gaps found against the simulated provider in workerd:**
+
+- **OAuth flows do not load from a bundle.** Pi imports its OAuth flow modules through a variable specifier, so the bundled Worker fails with `Module not found: file:///bundle/openai-codex.js`. The ChatGPT route then fails on its first turn as well as on refresh, because Pi needs the flow to turn the stored sign-in into request headers. Consequence: every Worker that uses a ChatGPT sign-in must call `registerLazyOAuthFlows()` from `@earendil-works/pi-ai/lazy-oauth` at startup, as `model-worker.ts` does. Pi documents that module as Node-only, but refresh passes with it in workerd.
+- **Sign-in cannot run in a Worker.** Pi's ChatGPT login flows start a `node:http` callback server or poll a device code from a terminal. The command signs in from Node and sends the stored sign-in to the Worker. Consequence: a hosted bot needs its own sign-in step outside the Worker, which later work has to design.
+- **The WebSocket transport is not used.** The trial forces SSE over `fetch` on the ChatGPT route, as the baseline does. Pi's WebSocket transport passes request headers in a constructor option that workerd's `WebSocket` does not take, so it would connect without the sign-in. This is read from Pi's code and was not exercised, because it would reach the real endpoint. Consequence: Worker turns use SSE only and lose Pi's WebSocket cached-context mode.
+- **No gap with streaming, timers or compression.** SSE replies parse in workerd, `setTimeout` works, and `node:zlib` has `zstdCompressSync`, so Pi sends the same zstd-compressed request body as under Node.
+- **The trial swaps the global `fetch`.** Pi calls the global `fetch` for refresh, so the harness wraps it for the length of a trial. Concurrent trials in one isolate would see each other's wrapper. Consequence: run one trial at a time. This is a harness limit, not a Pi limit.
+
+**Before #31 deploys this Worker,** gate `POST /model-trial` (for example with Cloudflare Access). It accepts a credential in the request body and spends it on the owner's account, so an open deployed endpoint would relay requests for anyone who can reach it. Nothing in this stage deploys to Cloudflare.
+
+##### ChatGPT plan in local Worker
+
+_Not yet run. Compare with the day 1 and day 2 baseline entries._
+
+##### OpenCode API key in local Worker
+
+_Not yet run. Compare with the OpenCode baseline entry._
+
+#### Free-tier Worker probe (#30)
+
+A bare Worker on the Workers free tier answers one question: does OpenAI accept a token refresh and a Responses request from Cloudflare's network addresses, not only from the home network? It uses plain `fetch` and no Pi runtime, so it stays inside the free-tier CPU limit. Each run refreshes the token at `https://auth.openai.com/oauth/token`, then sends one request to `https://chatgpt.com/backend-api/codex/responses` on the new token.
+
+The probe has its own Alchemy stack and stage (`ditto-free-tier-probe`, stage `free-tier-probe`). It runs from `feasibility/free-tier`, so its state lives in `feasibility/free-tier/.alchemy`. It creates one Worker, `ditto-free-tier-probe`, and one KV namespace, and touches no other stage's resources.
+
+The probe signs in separately from the baseline, in `~/.config/ditto-feasibility/free-tier-codex.json`, so a refresh on one side never retires the other side's refresh token. The deploy command passes the tokens and a generated run key to the Worker as secrets, through the deploy process's environment. They never appear in the repo or a URL. The Worker keeps each rotated refresh token in its KV namespace, so the day 2 run refreshes a day-old token. The run command sends the run key in a header, and the Worker refuses runs without it.
+
+Sign in to Cloudflare with Alchemy first. Then run:
+
+```sh
+pnpm feasibility:free-tier deploy    # first time: device-code ChatGPT sign-in, then deploy
+pnpm feasibility:free-tier run       # one run, prints a redacted entry for the slots below
+pnpm feasibility:free-tier destroy   # tears the stage down, prints the teardown entry
+```
+
+##### Day 1 · ChatGPT plan from Cloudflare
+
+_Not yet run._
+
+##### Day 2 · ChatGPT plan from Cloudflare
+
+_Not yet run. Must be a different date from day 1._
+
+##### Comparison with the local baseline
+
+_Not yet compared. For each step, compare the Cloudflare result with the home-network result from the same day. Explain each difference, or mark it unexplained._
+
+##### Does this justify Workers Paid?
+
+_Undecided. Answer yes or no, and give the reason from the evidence above. If the Cloudflare network is accepted, Workers Paid is needed only for the CPU the Pi runtime uses (#26). If it is refused, Workers Paid does not help, and the Worker route falls back to a supported container route._
+
+##### Teardown
+
+_Not yet torn down. Paste the entry that `pnpm feasibility:free-tier destroy` prints._
+
 ## Desktop provider
 
 **Choice:** _Undecided_
@@ -47,14 +115,15 @@ _No entries yet._
 
 ## Egress policy
 
-**Choice:** _Undecided_. The local trial (#27) supports a per-workspace TLS-intercepting filter in front of a Chrome container with no other route out. The deployed runtime check is still to run.
+**Choice:** _Undecided_. The local trial (#27) supports a per-workspace TLS-intercepting filter in front of a Chrome container with no other route out, and #28 shows WebSocket and HTTP/2 survive it. The deployed runtime check is still to run.
 
 **Unresolved limits:**
 
 - Local Docker only. Whether Cloudflare Containers can pass the workspace identity to the filter and deny Chrome every other route is untested.
 - Chrome runs with `--no-sandbox`. Running it sandboxed inside the container is untested.
 - The filter matches exact hostnames only. A login that spans several hosts needs each one listed, and wildcard rules are not supported yet.
-- WebSocket and HTTP/2 through the filter are untested (#28).
+- A WebSocket never rides HTTP/2 through the filter. mitmproxy does not offer RFC 8441 extended CONNECT, so Chrome opens a separate HTTP/1.1 tunnel for each WebSocket. Sites work, at the cost of one extra TCP and TLS connection per socket.
+- A WebSocket was held for 65 seconds. Sessions of minutes or hours, and idle timeouts in the filter, are untested.
 - Chromium still makes background requests (component updates, time sync, `accounts.google.com`) despite `--disable-background-networking`. The filter denies and logs them.
 
 ### Local trial: Chrome behind the workspace egress filter
@@ -120,6 +189,32 @@ docker compose down -v                                 # discards the CA
 - **Expected:** the page now loads, with no image rebuild or filter restart
 - **Observed:** DOM contained `<title>Example Domain</title>`. The filter logged `allow` for `GET https://example.org/` and `GET https://example.org/s.js` with `"workspace": "ws-trial"`.
 - **Retries:** 2026-11-22 07:23 UTC, the automated test run passed
+- **Fallback:** none needed
+
+### Local trial: WebSocket and HTTP/2 through the filter (#28)
+
+Run `pnpm exec vp test run --project feasibility feasibility/egress-protocols.test.ts` from the repo root with Docker running. It uses its own Compose project, `ditto-feasibility-egress-protocols`, so it can run beside the #27 suite. By default it holds the WebSocket for 5 seconds. Set `EGRESS_WS_HOLD_MS=65000` for the one-minute acceptance check.
+
+`feasibility/egress/protocols.compose.yaml` adds two services to `compose.yaml`. `browser` is the same Chrome image kept running with `--devtools`, which serves DevTools on 127.0.0.1:9222 inside its container. `driver` (`node:24-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54`, Node 24.22.3) shares the browser's network namespace and runs `driver/cdp.mjs`, which opens a URL over DevTools and prints what a JavaScript expression resolves to in the page. Only DevTools traffic stays inside the container. Page traffic leaves through the filter. The filter now logs `http_version` (Chrome to filter) and `upstream_alpn` (filter to origin) on every request, and decides a WebSocket again, as `method: "WEBSOCKET"`, once its upgrade completes.
+
+#### 2026-11-22 · WebSocket held open for a minute through the filter · pass
+
+- **Route:** Chromium 156.0.8078.79 in the `browser` container opens `https://echo.websocket.org/`, then `new WebSocket("wss://echo.websocket.org/")`, through the filter and its CA, with `echo.websocket.org` and `example.com` on the `ws-trial` list. The page sends `ping <n>` every 10 seconds for 65 seconds.
+- **Date:** 2026-11-22, 07:37 UTC
+- **Network origin:** container
+- **Expected:** the socket opens, the server's greeting arrives unprompted, every client message is echoed back, the socket is still open after a minute, and the filter logs an allow for the WebSocket with the workspace
+- **Observed:** the socket opened and received `Request served by <instance id>`. 7 of 7 pings were echoed, with round trips of 222 to 237 ms. After 65,189 ms `readyState` was `1` (open) and no close event had fired. The filter logged `allow` for `CONNECT echo.websocket.org:443`, the upgrade `GET https://echo.websocket.org/` with `"http_version": "HTTP/1.1", "upstream_alpn": "http/1.1"`, and `"method": "WEBSOCKET"`, each with `"workspace": "ws-trial"`. The page itself had loaded over a separate HTTP/2 tunnel (`"upstream_alpn": "h2"`), so the WebSocket did not use RFC 8441.
+- **Retries:** 2026-11-22 07:35 UTC, the default 5-second automated run passed. 07:36 UTC, the automated run with `EGRESS_WS_HOLD_MS=65000` passed alongside `egress.test.ts`.
+- **Fallback:** none needed
+
+#### 2026-11-22 · HTTP/2 negotiated end to end through the filter · pass
+
+- **Route:** the same browser loads `https://example.com/` through the filter
+- **Date:** 2026-11-22, 07:38 UTC
+- **Network origin:** container
+- **Expected:** Chrome negotiates `h2` with the filter, and the filter negotiates `h2` with the origin. If either side falls back to HTTP/1.1, record it as a downgrade.
+- **Observed:** `nextHopProtocol` was `h2` for the document and for `https://example.com/s.js`. The filter logged both requests with `"http_version": "HTTP/2.0", "upstream_alpn": "h2"` and `"workspace": "ws-trial"`. `echo.websocket.org` pages also loaded over `h2` on both legs. No downgrade.
+- **Retries:** 2026-11-22 07:35 UTC and 07:36 UTC, the automated test runs passed
 - **Fallback:** none needed
 
 ## Login workflows (#29)

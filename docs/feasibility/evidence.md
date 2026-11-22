@@ -15,6 +15,7 @@ Each trial observation becomes one entry under the matching section of [decision
 - **Observed:** what happened, with status codes and redacted error text
 - **Retries:** each retry's time and result
 - **Fallback:** the route selected if this one fails, or `none needed`
+- **CPU time:** for a trial inside a Worker runtime, the CPU each step used and how it compares with the Workers plan limits
 ```
 
 `<outcome>` is one of `pass`, `fail` or `blocked`. A desktop workflow uses `pass`, `works with take-over` or `unsupported` (see ADR-0004).

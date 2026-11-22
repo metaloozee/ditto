@@ -2,8 +2,8 @@
 
 The list is /destinations/<WORKSPACE_ID>.txt, one host per line, `#` comments.
 It is read on every decision, so editing it takes effect without a restart.
-Each decision is one JSON line on stdout. New protocol hooks (WebSocket, HTTP/2)
-call `decide` the same way.
+Each decision is one JSON line on stdout. HTTP/2 requests go through `request` like
+HTTP/1.1; a WebSocket is decided again when its upgrade completes.
 """
 
 import json
@@ -55,10 +55,20 @@ class EgressFilter:
 
     def request(self, flow: http.HTTPFlow) -> None:
         # Every request inside an approved tunnel is checked again by its own host.
+        # http_version is Chrome to filter; upstream_alpn is filter to origin.
         if not decide(
-            flow.request.pretty_host, method=flow.request.method, url=flow.request.pretty_url
+            flow.request.pretty_host,
+            method=flow.request.method,
+            url=flow.request.pretty_url,
+            http_version=flow.request.http_version,
+            upstream_alpn=(flow.server_conn.alpn or b"").decode() or None,
         ):
             refuse(flow)
+
+    def websocket_start(self, flow: http.HTTPFlow) -> None:
+        # The upgrade request already passed `request`; decide again once it is a WebSocket.
+        if not decide(flow.request.pretty_host, method="WEBSOCKET", url=flow.request.pretty_url):
+            flow.kill()
 
 
 addons = [EgressFilter()]

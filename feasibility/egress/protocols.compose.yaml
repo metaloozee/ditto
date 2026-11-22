@@ -1,0 +1,24 @@
+# Added to compose.yaml for the WebSocket and HTTP/2 trial (#28): a long-running
+# browser, and a driver that shares its network namespace to reach its DevTools port.
+services:
+  browser:
+    build: ./chrome
+    command: [--devtools]
+    depends_on:
+      filter:
+        condition: service_healthy
+    volumes:
+      - ca-public:/ca-public:ro
+    networks: [workspace]
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9222"]
+      interval: 1s
+      retries: 30
+
+  driver:
+    image: node:24-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54
+    entrypoint: [node, /driver/cdp.mjs]
+    network_mode: service:browser
+    volumes:
+      - ./driver:/driver:ro
+    profiles: [driver]
