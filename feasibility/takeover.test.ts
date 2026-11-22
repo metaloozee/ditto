@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import { redact } from "./redact.ts";
 import { evidenceEntry, type Observation } from "./takeover/entry.ts";
 import { grade } from "./takeover/grade.ts";
 import { assertClean, redactUrl } from "./takeover/redact.ts";
@@ -78,6 +79,19 @@ describe("evidence redaction", () => {
 		expect(() => assertClean("token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig")).toThrow(/token/);
 		expect(() => assertClean("key 0123456789abcdef0123456789abcdef")).toThrow(/token/);
 		expect(() => assertClean("account 117234567890123456789")).toThrow(/account/);
+	});
+
+	it.each([
+		"Signed in as owner@example.com",
+		"Set-Cookie: li_at=abc",
+		"Authorization: Bearer sk-live",
+		"token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig",
+		"account 9f1c2a7e-4b3d-4c55-8e21-0a6b7c8d9e10",
+		"account 117234567890123456789",
+		"key 0123456789abcdef0123456789abcdef",
+	])("redacts what it refuses, and refuses what it redacts: %s", (leak) => {
+		expect(() => assertClean(leak)).toThrow();
+		expect(() => assertClean(redact(leak, []))).not.toThrow();
 	});
 
 	it("accepts the status codes, hosts and timings a grade depends on", () => {

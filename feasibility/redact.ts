@@ -1,4 +1,3 @@
-// Pure, so the Pi trial (#25) and the bare free-tier Worker (#30) redact entries the same way.
 export type Secret = { value: string; placeholder: string };
 
 /** Every string claim in a JWT payload: account ids, user ids and emails. */
@@ -17,13 +16,27 @@ export function jwtStrings(token: string): string[] {
 	}
 }
 
-const PATTERNS: [RegExp, string][] = [
-	[/eyJ[\w-]*\.[\w-]+\.[\w-]*/g, "<token>"],
-	[/Bearer\s+[^\s"',]+/gi, "Bearer <token>"],
-	[/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, "<email>"],
-	[/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "<account id>"],
+/**
+ * Shapes no evidence may hold (docs/feasibility/evidence.md). `redact` replaces them with the
+ * placeholder; the take-over harness refuses evidence that still matches, naming `what`.
+ */
+export const SECRET_SHAPES: { pattern: RegExp; placeholder: string; what: string }[] = [
+	{ pattern: /eyJ[\w-]*\.[\w-]+\.[\w-]*/g, placeholder: "<token>", what: "a token" },
+	{ pattern: /Bearer\s+[^\s"',<]+/gi, placeholder: "Bearer <token>", what: "a token" },
+	{
+		pattern: /\b(set-)?cookie\s*:[^\n]*/gi,
+		placeholder: "<cookie header>",
+		what: "a cookie header",
+	},
+	{ pattern: /[\w.+-]+@[\w-]+(\.[\w-]+)+/g, placeholder: "<email>", what: "an email address" },
+	{
+		pattern: /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
+		placeholder: "<account id>",
+		what: "an account id",
+	},
 	// Unseen tokens and keys: any long opaque run of token characters.
-	[/[A-Za-z0-9_-]{32,}/g, "<opaque value>"],
+	{ pattern: /[A-Za-z0-9_-]{32,}/g, placeholder: "<opaque value>", what: "a token" },
+	{ pattern: /\b\d{10,}\b/g, placeholder: "<account number>", what: "an account number" },
 ];
 
 export function redact(text: string, secrets: Secret[]): string {
@@ -33,6 +46,6 @@ export function redact(text: string, secrets: Secret[]): string {
 	)) {
 		if (value) out = out.split(value).join(placeholder);
 	}
-	for (const [pattern, placeholder] of PATTERNS) out = out.replace(pattern, placeholder);
+	for (const { pattern, placeholder } of SECRET_SHAPES) out = out.replace(pattern, placeholder);
 	return out;
 }

@@ -1,4 +1,5 @@
 // Evidence must hold no credential, cookie or account identifier (docs/feasibility/evidence.md).
+import { SECRET_SHAPES } from "../redact.ts";
 
 // A segment after one of these names a person or account, whatever it looks like.
 const ownerPrefixes = new Set(["in", "u", "b", "profile", "people", "user", "users", "company"]);
@@ -18,17 +19,10 @@ export function redactUrl(raw: string): string {
 	return `${url.origin}/${kept.join("/")}`;
 }
 
-const leaks: [RegExp, string][] = [
-	[/[\w.+-]+@[\w-]+\.[\w.-]+/, "an email address"],
-	[/\b(set-)?cookie\s*:/i, "a cookie header"],
-	[/\beyJ[\w-]+\.[\w-]+/, "a token"],
-	[/\b[A-Za-z0-9_-]{32,}\b/, "a token"],
-	[/\b\d{10,}\b/, "an account number"],
-];
-
 /** Throw before writing evidence that leaks something it must not. */
 export function assertClean(text: string): void {
-	for (const [pattern, what] of leaks) {
-		if (pattern.test(text)) throw new Error(`Evidence contains ${what}; redact it first`);
+	for (const { pattern, what } of SECRET_SHAPES) {
+		// `search` ignores the global flag's lastIndex, so a shared pattern stays reusable.
+		if (text.search(pattern) >= 0) throw new Error(`Evidence contains ${what}; redact it first`);
 	}
 }
