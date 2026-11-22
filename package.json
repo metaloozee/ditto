@@ -6,6 +6,7 @@
     "dev": "alchemy dev --stage dev",
     "feasibility": "cd feasibility && alchemy dev --stage feasibility --no-input --env-file /dev/null",
     "feasibility:model": "node feasibility/model-baseline.ts",
+    "feasibility:takeover": "node feasibility/takeover/run.ts",
     "build": "vp run @ditto/web#build",
     "preview": "vp run @ditto/web#preview",
     "typecheck": "vp run @ditto/web#typecheck",

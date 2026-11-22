@@ -1,0 +1,35 @@
+# Login workflows with take-over (#29). Adds a headed desktop and a loopback-only viewer to the
+# #27 egress stack. See docs/feasibility/decision-record.md.
+name: ditto-feasibility-takeover
+
+include:
+  - ../egress/compose.yaml
+
+services:
+  desktop:
+    build: ./desktop
+    depends_on:
+      filter:
+        condition: service_healthy
+    volumes:
+      - ca-public:/ca-public:ro
+      # The signed-in profile lives only in this volume. `down -v` discards it.
+      - profile:/home/browser/profile
+    networks: [workspace]
+    shm_size: 1gb
+
+  viewer:
+    build: ./viewer
+    depends_on: [desktop]
+    networks: [workspace, view]
+    ports:
+      # Loopback only: nothing on the LAN can see or drive the screen.
+      - 127.0.0.1:${VIEW_PORT:-6080}:6080
+      - 127.0.0.1:${DEVTOOLS_PORT:-9222}:9222
+
+networks:
+  # Carries only the published ports. Docker does not publish ports on an internal network.
+  view: {}
+
+volumes:
+  profile: {}
