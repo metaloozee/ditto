@@ -1,0 +1,40 @@
+# Chrome behind a workspace egress filter (#27). See docs/feasibility/decision-record.md.
+name: ditto-feasibility-egress
+
+services:
+  filter:
+    build: ./filter
+    command: [mitmdump, --quiet, -s, /filter/egress_filter.py]
+    environment:
+      # The runtime hands the filter its workspace; the filter, not Chrome, enforces the list.
+      WORKSPACE_ID: ${WORKSPACE_ID:?set WORKSPACE_ID}
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ${DESTINATIONS_DIR:-./destinations}:/destinations:ro
+      - ca-private:/home/mitmproxy/.mitmproxy
+      - ca-public:/ca-public
+    networks: [workspace, egress]
+    healthcheck:
+      test: ["CMD", "test", "-f", "/ca-public/ca.pem"]
+      interval: 1s
+      retries: 30
+
+  chrome:
+    build: ./chrome
+    depends_on:
+      filter:
+        condition: service_healthy
+    volumes:
+      - ca-public:/ca-public:ro
+    networks: [workspace]
+
+networks:
+  # No route out: Chrome reaches the internet only through the filter.
+  workspace:
+    internal: true
+  egress: {}
+
+volumes:
+  # Generated on first start, never on the host or in git. `down -v` discards them.
+  ca-private: {}
+  ca-public: {}
