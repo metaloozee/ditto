@@ -18,7 +18,7 @@ Each trial adds dated evidence entries under the section it informs, in the form
 
 - Every request spends the owner's own access. Ditto holds no shared upstream key (ADR-0003).
 - A trial Worker that accepts a credential refuses every request without the stage's run key (`feasibility/run-key.ts`), so a deployed endpoint does not relay for anyone who can reach it. Production needs a real owner sign-in in its place.
-- The Worker stores no credential in the trial. Each sign-in file lives outside the repo, one per stage, so no stage retires another's refresh token.
+- The paid trial Worker stores no credential. The free-tier probe keeps its rotated ChatGPT tokens in its own KV namespace between runs, a trial-only exception noted under [Free-tier Worker probe (#30)](#free-tier-worker-probe-30). Each sign-in file lives outside the repo, one per stage, so no stage retires another's refresh token.
 
 **Unresolved limits:**
 
@@ -107,17 +107,17 @@ _Not yet run. Compare with the OpenCode baseline entry._
 
 #### Free-tier Worker probe (#30)
 
-A bare Worker on the Workers free tier answers one question: does OpenAI accept a token refresh and a Responses request from Cloudflare's network addresses, not only from the home network? It uses plain `fetch` and no Pi runtime, so it stays inside the free-tier CPU limit. Each run refreshes the token at `https://auth.openai.com/oauth/token`, then sends one request to `https://chatgpt.com/backend-api/codex/responses` on the new token.
+A bare Worker on the Workers free tier answers one question: does OpenAI accept a token refresh and a Responses request from Cloudflare's network addresses, not only from the home network? It uses plain `fetch` and no Pi runtime, so it stays inside the free-tier CPU limit. Each run follows the baseline's sequence: one request to `https://chatgpt.com/backend-api/codex/responses` on the token the Worker holds, a refresh at `https://auth.openai.com/oauth/token`, then one more request on the new token. `run` repeats this 3 times, 15 minutes apart, like the baseline, and lists the later runs under **Retries**.
 
 The probe has its own Alchemy stack and stage (`ditto-free-tier-probe`, stage `free-tier-probe`). It runs from `feasibility/free-tier`, so its state lives in `feasibility/free-tier/.alchemy`. It creates one Worker, `ditto-free-tier-probe`, and one KV namespace, and touches no other stage's resources.
 
-The probe signs in separately from the baseline, in `~/.config/ditto-feasibility/free-tier-codex.json`, so a refresh on one side never retires the other side's refresh token. The deploy command passes the tokens and a generated run key to the Worker as secrets, through the deploy process's environment. They never appear in the repo or a URL. The Worker keeps each rotated refresh token in its KV namespace, so the day 2 run refreshes a day-old token. The run command sends the run key in a header, and the Worker refuses runs without it.
+The probe signs in separately from the baseline, in `~/.config/ditto-feasibility/free-tier-codex.json`, so a refresh on one side never retires the other side's refresh token. The deploy command passes the tokens and a generated run key to the Worker as secrets, through the deploy process's environment. They never appear in the repo or a URL. The Worker keeps each rotated refresh token in its KV namespace, so the day 2 run refreshes a day-old token. Unlike the paid trial, this Worker therefore holds the owner's ChatGPT credential at rest between runs. ADR-0003 requires owner-supplied access but says nothing about where it is kept; storing it at rest in KV is a trial-only choice, and production storage needs its own decision. Destroying the stage deletes the namespace with the tokens. The run command sends the run key in the `x-trial-key` header, and the Worker refuses runs without it.
 
 Sign in to Cloudflare with Alchemy first. Then run:
 
 ```sh
 pnpm feasibility:free-tier deploy    # first time: device-code ChatGPT sign-in, then deploy
-pnpm feasibility:free-tier run       # one run, prints a redacted entry for the slots below
+pnpm feasibility:free-tier run       # 3 runs 15 minutes apart (--runs, --interval-minutes), one redacted entry
 pnpm feasibility:free-tier destroy   # tears the stage down, prints the teardown entry
 ```
 
