@@ -1,6 +1,7 @@
 // Bare free-tier probe (#30): plain fetch, no Pi runtime, so it stays inside the free-tier CPU limit.
 // It answers one question: does OpenAI accept a refresh and an inference request from Cloudflare's network?
 import { jwtStrings, redact, type Secret } from "../redact.ts";
+import { coloOf, sameSecret } from "../run-key.ts";
 
 const TOKEN_URL = "https://auth.openai.com/oauth/token";
 const RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses";
@@ -206,21 +207,6 @@ function tokenSecrets(credential: Credential): Secret[] {
 		{ value: credential.refresh, placeholder: "<refresh token>" },
 		...jwtStrings(credential.access).map((value) => ({ value, placeholder: "<account claim>" })),
 	];
-}
-
-/** Compares digests, so the comparison takes the same time whatever the guess. */
-async function sameSecret(given: string, expected: string): Promise<boolean> {
-	if (!expected) return false;
-	const digest = async (value: string) =>
-		new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
-	const [a, b] = await Promise.all([digest(given), digest(expected)]);
-	return a.every((byte, i) => byte === b[i]);
-}
-
-function coloOf(request: Request): string {
-	const cf: unknown = Reflect.get(request, "cf");
-	const colo: unknown = cf && typeof cf === "object" ? Reflect.get(cf, "colo") : undefined;
-	return typeof colo === "string" ? colo : "unknown";
 }
 
 /** One evidence entry in the format of docs/feasibility/evidence.md. */
