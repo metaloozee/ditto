@@ -119,6 +119,12 @@ describe("desktop egress", () => {
 		}, 90_000);
 	}
 
+	it("keeps a fresh Cloudflare profile eligible for take-over", async () => {
+		const { task } = workflows.protected;
+		await tab.goto(task.url);
+		expect(await tab.waitFor(task.done, 15_000)).toBe(false);
+	}, 60_000);
+
 	it("renders the protected site's Turnstile challenge", async () => {
 		await tab.goto(workflows.protected.login);
 		// Turnstile adds a hidden cf-chl-widget-*_response input once its challenge iframe has loaded.

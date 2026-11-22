@@ -35,8 +35,12 @@ export const workflows = {
 		task: {
 			describe: "open the Cloudflare dashboard home and confirm it is signed in",
 			url: "https://dash.cloudflare.com/",
-			// Signed out, the dashboard redirects to /login.
-			done: `location.host === "dash.cloudflare.com" && !/^\\/(login|sign-up)/.test(location.pathname)`,
+			// The public landing page can finish loading before the login redirect.
+			// Account links point into the dashboard under a 32-digit hex account ID.
+			done: `location.origin === "https://dash.cloudflare.com" &&
+				Array.from(document.links).some(link =>
+					link.origin === location.origin && /^\\/[a-f0-9]{32}(?:\\/|$)/i.test(link.pathname)
+				)`,
 		},
 	},
 } satisfies Record<string, Workflow>;
