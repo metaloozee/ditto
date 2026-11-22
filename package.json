@@ -26,13 +26,13 @@
   },
   "dependencies": {
     "@alchemy.run/cloudflare": "2.0.0-beta.87",
-    "@earendil-works/pi-ai": "1.6.0",
     "@effect/platform-node": "4.1.4",
     "alchemy": "2.0.0-beta.87",
     "effect": "4.1.4"
   },
   "devDependencies": {
-    "@types/node": "^24.19.2",
+    "@earendil-works/pi-ai": "1.6.0",
+    "@types/node": "24.19.2",
     "react-doctor": "^0.9.23",
     "vite-plus": "catalog:"
   },
