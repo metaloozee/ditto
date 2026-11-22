@@ -12,8 +12,9 @@ const Store = Cloudflare.KV.Namespace("probe-store");
 const Probe = Cloudflare.Worker("probe", {
 	name: "ditto-free-tier-probe",
 	main: path.join(import.meta.dirname, "worker.ts"),
-	// Local smoke runs only. Dev is 1337, the auth suite 1338, verify-auth 1339, feasibility 1340.
-	dev: { port: 1341, strictPort: true },
+	// Local runs only. Dev is 1337, the auth suite 1338, verify-auth 1339, feasibility 1340-1343,
+	// the paid trial 1344-1348, the Containers trial 1349. This stack takes 1350.
+	dev: { port: 1350, strictPort: true },
 	env: {
 		STORE: Store,
 		PROBE_MODEL: Config.String("PROBE_MODEL"),
