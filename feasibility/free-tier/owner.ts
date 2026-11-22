@@ -1,11 +1,13 @@
 // Owner commands for the free-tier probe (#30). Live: they deploy to the owner's Cloudflare account
 // and spend the owner's ChatGPT plan.
 //   pnpm feasibility:free-tier deploy    sign in (first time), then deploy the probe stage
-//   pnpm feasibility:free-tier run       trigger one run and print a redacted evidence entry
+//   pnpm feasibility:free-tier run       3 runs 15 minutes apart (--runs, --interval-minutes),
+//                                        printed as one redacted evidence entry
 //   pnpm feasibility:free-tier destroy   tear the probe stage down and print a teardown entry
 // Progress goes to stderr. The evidence entry goes to stdout.
 import { rm } from "node:fs/promises";
 import path from "node:path";
+import { parseArgs } from "node:util";
 
 import { chatgptCredentials } from "../chatgpt-sign-in.ts";
 import { defaultModel } from "../model-trial.ts";
@@ -43,24 +45,45 @@ async function deploy() {
 	log("Deployed. Trigger a run with: pnpm feasibility:free-tier run");
 }
 
-async function run() {
+async function run(args: string[]) {
+	const { values } = parseArgs({
+		args,
+		options: {
+			runs: { type: "string", default: "3" },
+			"interval-minutes": { type: "string", default: "15" },
+		},
+	});
+	const runs = Number(values.runs);
+	const minutes = Number(values["interval-minutes"]);
+	if (!Number.isInteger(runs) || runs < 1 || !Number.isFinite(minutes) || minutes < 0) {
+		throw new Error("--runs must be a whole number from 1, --interval-minutes 0 or more");
+	}
 	const url = await deployedUrl(STACK);
 	if (!url)
 		throw new Error("The probe stage isn't deployed. Run: pnpm feasibility:free-tier deploy");
-	log(`Triggering ${new URL(url).host}/run.`);
-	const response = await fetch(new URL("/run", url), {
-		method: "POST",
-		headers: {
-			"x-trial-key": await savedRunKey(runKeyFile, "pnpm feasibility:free-tier deploy"),
-		},
-	});
-	if (!response.ok)
-		throw new Error(`The probe answered ${response.status}: ${await response.text()}`);
-	const result = (await response.json()) as ProbeRun;
+	const key = await savedRunKey(runKeyFile, "pnpm feasibility:free-tier deploy");
+
+	const results: ProbeRun[] = [];
+	for (let i = 0; i < runs; i++) {
+		if (i > 0) {
+			log(`Waiting ${minutes} minutes before run ${i + 1} of ${runs}.`);
+			await new Promise((resolve) => setTimeout(resolve, minutes * 60_000));
+		}
+		log(`Run ${i + 1} of ${runs}: triggering ${new URL(url).host}/run.`);
+		const response = await fetch(new URL("/run", url), {
+			method: "POST",
+			headers: { "x-trial-key": key },
+		});
+		if (!response.ok)
+			throw new Error(`The probe answered ${response.status}: ${await response.text()}`);
+		const result = (await response.json()) as ProbeRun;
+		log(`Run ${i + 1}: ${result.outcome}.`);
+		results.push(result);
+	}
 	log(
-		`Run: ${result.outcome}. Paste this entry into its slot under Model route > Free-tier Worker probe in docs/feasibility/decision-record.md:`,
+		"Paste this entry into its slot under Model route > Free-tier Worker probe in docs/feasibility/decision-record.md:",
 	);
-	process.stdout.write(`\n${formatProbeEvidence(result)}`);
+	process.stdout.write(`\n${formatProbeEvidence(results)}`);
 }
 
 async function destroy() {
@@ -92,10 +115,13 @@ async function destroy() {
 	if (code !== 0) process.exit(code);
 }
 
-const commands = { deploy, run, destroy } as const;
-const name = process.argv[2];
-if (name !== "deploy" && name !== "run" && name !== "destroy") {
-	console.error("Usage: pnpm feasibility:free-tier deploy|run|destroy");
+const [name, ...rest] = process.argv.slice(2);
+if (name === "deploy") await deploy();
+else if (name === "run") await run(rest);
+else if (name === "destroy") await destroy();
+else {
+	console.error(
+		"Usage: pnpm feasibility:free-tier deploy | run [--runs 3] [--interval-minutes 15] | destroy",
+	);
 	process.exit(2);
 }
-await commands[name]();

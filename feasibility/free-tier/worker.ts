@@ -58,14 +58,18 @@ export async function handleProbe(
 		{ value: env.TRIAL_RUN_KEY, placeholder: "<run key>" },
 	];
 
+	// The baseline's sequence: a turn on the token the Worker holds, a refresh, a turn on the new one.
+	const first = await step("inference", RESPONSES_URL, () =>
+		inferenceStep(before, env.PROBE_MODEL, network),
+	);
 	const refresh = await step("refresh", TOKEN_URL, () => refreshStep(before, env, network));
 	const credential = refresh.credential ?? before;
 	if (refresh.credential) secrets.push(...tokenSecrets(refresh.credential));
-	const inference = await step("inference", RESPONSES_URL, () =>
+	const second = await step("inference after refresh", RESPONSES_URL, () =>
 		inferenceStep(credential, env.PROBE_MODEL, network),
 	);
 
-	const steps = [refresh.step, inference.step].map((s) => ({
+	const steps = [first.step, refresh.step, second.step].map((s) => ({
 		...s,
 		detail: redact(s.detail, secrets),
 	}));
@@ -208,22 +212,40 @@ function tokenSecrets(credential: Credential): Secret[] {
 	];
 }
 
-/** One evidence entry in the format of docs/feasibility/evidence.md. */
-export function formatProbeEvidence(run: ProbeRun): string {
+/**
+ * One evidence entry in the format of docs/feasibility/evidence.md. The first run is observed in
+ * full; later runs of the same session are its retries.
+ */
+export function formatProbeEvidence(runs: ProbeRun[]): string {
+	const [run, ...retries] = runs;
+	if (!run) throw new Error("formatProbeEvidence needs at least one run");
 	const day = run.startedAt.slice(0, 10);
-	const clock = `${run.startedAt.slice(11, 16)} UTC`;
+	const clock = (r: ProbeRun) => `${r.startedAt.slice(11, 16)} UTC`;
+	const outcome = runs.every((r) => r.outcome === "pass") ? "pass" : "fail";
 	const origin = `deployed Worker (Cloudflare network, free tier, data centre ${run.colo})`;
+	const passed = runs.filter((r) => r.outcome === "pass").length;
+	const tally = runs.length > 1 ? ` ${passed} of ${runs.length} runs passed.` : "";
+	const failures = (r: ProbeRun) =>
+		r.steps
+			.filter((s) => !s.ok)
+			.map((s) => s.detail)
+			.join("; ");
+	const retryText = retries.length
+		? retries
+				.map((r) => `${clock(r)} ${r.outcome}${r.outcome === "fail" ? ` (${failures(r)})` : ""}`)
+				.join(", ")
+		: "none";
 	const entry = [
-		`#### ${day} · OpenAI Responses on ChatGPT plan from ${origin} · ${run.outcome}`,
+		`#### ${day} · OpenAI Responses on ChatGPT plan from ${origin} · ${outcome}`,
 		"",
-		`- **Route:** bare Worker with plain \`fetch\`: one token refresh at ${TOKEN_URL}, then one Responses request at ${RESPONSES_URL} on the new token, model \`${run.model}\``,
+		`- **Route:** bare Worker with plain \`fetch\`: one Responses request at ${RESPONSES_URL} on the token the Worker holds, one token refresh at ${TOKEN_URL}, then one more Responses request on the new token, model \`${run.model}\``,
 		"- **Runtime:** none: no Pi runtime, so the free-tier CPU limit applies to plain `fetch` only",
-		`- **Date:** ${day}, ${clock}`,
+		`- **Date:** ${day}, ${clock(run)}`,
 		`- **Network origin:** ${origin}`,
-		'- **Expected:** the refresh returns 200 with a new access token. The Responses request returns 200 and replies "pong".',
-		`- **Observed:** ${run.steps.map((s) => s.detail).join(". ")}.`,
-		"- **Retries:** none",
-		`- **Fallback:** ${run.outcome === "pass" ? "none needed" : "evaluate a supported container route (spec #16)"}`,
+		'- **Expected:** both Responses requests return 200 and reply "pong". The refresh returns 200 with a new access token, and the second request succeeds on it.',
+		`- **Observed:** ${run.steps.map((s) => s.detail).join(". ")}.${tally}`,
+		`- **Retries:** ${retryText}`,
+		`- **Fallback:** ${outcome === "pass" ? "none needed" : "evaluate a supported container route (spec #16)"}`,
 		"",
 	].join("\n");
 	// The Worker redacted its own secrets. This catches any token shape it never saw.

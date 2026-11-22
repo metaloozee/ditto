@@ -151,27 +151,44 @@ describe("free-tier probe Worker", () => {
 		expect(provider.hosts).toEqual([]);
 	});
 
-	it("refreshes the token, then sends one inference request on the new token", async () => {
+	it("sends inference on the deploy-time token, refreshes it, then inference on the new token", async () => {
 		const provider = simulatedProvider();
 		const result = await run(probeEnv(), provider);
 
 		expect(result.outcome).toBe("pass");
 		expect(provider.hosts).toEqual([
+			"chatgpt.com/backend-api/codex/responses",
 			"auth.openai.com/oauth/token",
 			"chatgpt.com/backend-api/codex/responses",
 		]);
-		const entry = formatProbeEvidence(result);
+		const entry = formatProbeEvidence([result]);
 		expect(entry).toMatch(/^#### \d{4}-\d{2}-\d{2} · .*ChatGPT.* from deployed Worker .* · pass\n/);
 		expect(entry).toContain(
 			"- **Network origin:** deployed Worker (Cloudflare network, free tier, data centre AMS)",
 		);
 		expect(entry).toMatch(
-			/- \*\*Observed:\*\* refresh passed \(auth\.openai\.com\/oauth\/token 200\)/,
+			/- \*\*Observed:\*\* inference passed \(chatgpt\.com\/backend-api\/codex\/responses 200\): replied "pong".*\. refresh passed \(auth\.openai\.com\/oauth\/token 200\).*\. inference after refresh passed \(chatgpt\.com\/backend-api\/codex\/responses 200\): replied "pong"/,
 		);
-		expect(entry).toMatch(
-			/inference passed \(chatgpt\.com\/backend-api\/codex\/responses 200\): replied "pong"/,
-		);
+		expect(entry).toContain("- **Retries:** none");
 		expect(entry).toContain("- **Fallback:** none needed");
+		expectNoSecrets(entry);
+	});
+
+	it("records every repeat run under Retries, with the failures of a failed one", async () => {
+		const provider = simulatedProvider();
+		const env = probeEnv();
+		const first = await run(env, provider);
+		const second = await run(env, provider);
+		const blocked = simulatedProvider({ responses: { status: 403, body: "blocked" } });
+		const third = await run(env, blocked);
+
+		const entry = formatProbeEvidence([first, second, third]);
+
+		expect(entry).toMatch(/ · fail\n/);
+		expect(entry).toContain("2 of 3 runs passed.");
+		expect(entry).toMatch(
+			/- \*\*Retries:\*\* \d{2}:\d{2} UTC pass, \d{2}:\d{2} UTC fail \(inference failed .*403.*\)\n/,
+		);
 		expectNoSecrets(entry);
 	});
 
@@ -185,7 +202,7 @@ describe("free-tier probe Worker", () => {
 		expect(provider.generation()).toBe(3);
 	});
 
-	it("records a refused refresh, redacted, and still tries inference on the old token", async () => {
+	it("records a refused refresh, redacted, and still tries inference again on the old token", async () => {
 		const body = JSON.stringify({
 			error: "invalid_grant",
 			refresh_token: refreshToken(1),
@@ -196,12 +213,12 @@ describe("free-tier probe Worker", () => {
 		const result = await run(probeEnv(), provider);
 
 		expect(result.outcome).toBe("fail");
-		expect(provider.hosts).toHaveLength(2);
-		const entry = formatProbeEvidence(result);
+		expect(provider.hosts).toHaveLength(3);
+		const entry = formatProbeEvidence([result]);
 		expect(entry).toMatch(
 			/refresh failed \(auth\.openai\.com\/oauth\/token 400\): .*invalid_grant/,
 		);
-		expect(entry).toContain("inference passed");
+		expect(entry).toContain("inference after refresh passed");
 		expect(entry).toMatch(/- \*\*Fallback:\*\* .*container route/);
 		expectNoSecrets(entry);
 	});
@@ -213,7 +230,7 @@ describe("free-tier probe Worker", () => {
 		const result = await run(probeEnv(), provider);
 
 		expect(result.outcome).toBe("fail");
-		const entry = formatProbeEvidence(result);
+		const entry = formatProbeEvidence([result]);
 		expect(entry).toMatch(
 			/inference failed \(chatgpt\.com\/backend-api\/codex\/responses 403\): .*blocked/,
 		);
