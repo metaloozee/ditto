@@ -33,7 +33,13 @@ const ROUTES = {
 
 export const defaultModel = (route: TrialRoute) => ROUTES[route].defaultModel;
 
-type Step = { ok: boolean; detail: string };
+type Outcome = { ok: boolean; detail: string };
+
+export interface Step extends Outcome {
+	label: "turn" | "refresh" | "turn after refresh" | "setup";
+	/** CPU the runtime spent on this step, when the driver measured it (#26). */
+	cpuMs?: number;
+}
 
 export interface TrialRun {
 	route: TrialRoute;
@@ -53,6 +59,8 @@ export interface TrialInput {
 	/** The network. Defaults to the runtime's own fetch; tests pass a simulated provider. */
 	fetch?: typeof fetch;
 	now?: () => Date;
+	/** Called after each step, before the next one starts. */
+	onStep?: (step: Step) => void | Promise<void>;
 }
 
 const PROMPT = "Reply with exactly one word: pong";
@@ -100,13 +108,22 @@ export async function runModelTrial(input: TrialInput): Promise<TrialRun> {
 		remember(await input.credentials.read(provider.id));
 		if (!model) {
 			return finish(input.route, modelId, startedAt, secrets, [
-				{ ok: false, detail: `Pi ${PI_AI_VERSION} has no model \`${modelId}\` on this route` },
+				{
+					label: "setup",
+					ok: false,
+					detail: `Pi ${PI_AI_VERSION} has no model \`${modelId}\` on this route`,
+				},
 			]);
 		}
 
-		const step = async (label: string, run: () => Promise<Step>): Promise<Step> => {
+		const steps: Step[] = [];
+		const record = async (step: Step) => {
+			steps.push(step);
+			await input.onStep?.(step);
+		};
+		const step = async (label: Step["label"], run: () => Promise<Outcome>) => {
 			const before = calls.length;
-			let result: Step;
+			let result: Outcome;
 			try {
 				result = await run();
 			} catch (error) {
@@ -114,42 +131,42 @@ export async function runModelTrial(input: TrialInput): Promise<TrialRun> {
 			}
 			const http = calls.slice(before);
 			const where = http.length ? ` (${http.join(", ")})` : "";
-			return {
+			await record({
+				label,
 				ok: result.ok,
 				detail: `${label} ${result.ok ? "passed" : "failed"}${where}: ${result.detail}`,
-			};
+			});
 		};
 
 		const turn = () => turnStep(models, model, input.route);
-		const steps = [await step("turn", turn)];
+		await step("turn", turn);
 		if (input.route === "chatgpt") {
-			steps.push(
-				await step("refresh", async () => {
-					const before = await input.credentials.read(provider.id);
-					if (before?.type !== "oauth") return { ok: false, detail: "no ChatGPT sign-in stored" };
-					// Expire the stored token so Pi takes its real refresh path.
-					await input.credentials.modify(provider.id, async () => ({ ...before, expires: 0 }));
-					await models.getAuth(provider.id);
-					const after = await input.credentials.read(provider.id);
-					remember(after);
-					if (after?.type !== "oauth" || after.access === before.access) {
-						return { ok: false, detail: "Pi kept the old access token" };
-					}
-					const hours = Math.round((after.expires - Date.now()) / 3_600_000);
-					const rotated = after.refresh !== before.refresh ? "a new" : "the same";
-					return {
-						ok: true,
-						detail: `new access token valid for ${hours}h, ${rotated} refresh token`,
-					};
-				}),
-			);
+			await step("refresh", async () => {
+				const before = await input.credentials.read(provider.id);
+				if (before?.type !== "oauth") return { ok: false, detail: "no ChatGPT sign-in stored" };
+				// Expire the stored token so Pi takes its real refresh path.
+				await input.credentials.modify(provider.id, async () => ({ ...before, expires: 0 }));
+				await models.getAuth(provider.id);
+				const after = await input.credentials.read(provider.id);
+				remember(after);
+				if (after?.type !== "oauth" || after.access === before.access) {
+					return { ok: false, detail: "Pi kept the old access token" };
+				}
+				const hours = Math.round((after.expires - Date.now()) / 3_600_000);
+				const rotated = after.refresh !== before.refresh ? "a new" : "the same";
+				return {
+					ok: true,
+					detail: `new access token valid for ${hours}h, ${rotated} refresh token`,
+				};
+			});
 		} else {
-			steps.push({
+			await record({
+				label: "refresh",
 				ok: true,
 				detail: "refresh not applicable: an API key has no refresh exchange",
 			});
 		}
-		steps.push(await step("turn after refresh", turn));
+		await step("turn after refresh", turn);
 		return finish(input.route, modelId, startedAt, secrets, steps);
 	} finally {
 		globalThis.fetch = original;
@@ -160,7 +177,7 @@ async function turnStep(
 	models: ReturnType<typeof createModels>,
 	model: Model<Api>,
 	route: TrialRoute,
-): Promise<Step> {
+): Promise<Outcome> {
 	const started = Date.now();
 	const reply = await models.complete(
 		model,
@@ -233,8 +250,40 @@ const failures = (run: TrialRun) =>
 		.map((s) => s.detail)
 		.join("; ");
 
+const FREE_CPU_MS = 10;
+const PAID_CPU_MS = 30_000;
+const ms = (value: number) => `${value < 10 ? value.toFixed(1) : Math.round(value)}ms`;
+
+/** Per-step CPU, plus how the worst turn and the worst whole request compare with Workers limits. */
+function cpuLine(runs: TrialRun[]): string[] {
+	if (!runs.some((r) => r.steps.some((s) => s.cpuMs !== undefined))) return [];
+	const perRun = runs.map((run) =>
+		run.steps
+			.map((s) => {
+				const skipped = s.label === "refresh" && run.route === "opencode";
+				return `${s.label} ${skipped || s.cpuMs === undefined ? "not run" : ms(s.cpuMs)}`;
+			})
+			.join(", "),
+	);
+	const turns = runs.flatMap((r) =>
+		r.steps.filter((s) => s.label.startsWith("turn")).map((s) => s.cpuMs ?? 0),
+	);
+	const requests = runs.map((r) => r.steps.reduce((sum, s) => sum + (s.cpuMs ?? 0), 0));
+	const worstTurn = Math.max(...turns);
+	const worstRequest = Math.max(...requests);
+	const fits = (value: number, limit: number) => (value <= limit ? "within" : "over");
+	const runsText =
+		perRun.length > 1 ? perRun.map((r, i) => `run ${i + 1}: ${r}`).join("; ") : perRun[0];
+	return [
+		`- **CPU time:** ${runsText}. Worst turn ${ms(worstTurn)}, worst whole trial request ${ms(worstRequest)}: ${fits(worstRequest, FREE_CPU_MS)} the Workers free plan (10ms per request), ${fits(worstRequest, PAID_CPU_MS)} the paid plan default (30s per request, configurable to 5 min). Measured as workerd process CPU, so an upper bound.`,
+	];
+}
+
 /** One evidence entry in the format of docs/feasibility/evidence.md, redacted. */
-export function formatEvidence(runs: TrialRun[], options: { origin: string }): string {
+export function formatEvidence(
+	runs: TrialRun[],
+	options: { origin: string; /** Where Pi ran, when not Node. */ runtime?: string },
+): string {
 	const [first, ...retries] = runs;
 	if (!first) throw new Error("formatEvidence needs at least one run");
 	const route = ROUTES[first.route];
@@ -262,13 +311,14 @@ export function formatEvidence(runs: TrialRun[], options: { origin: string }): s
 		`#### ${day(first.startedAt)} · ${route.title} from ${options.origin} · ${outcome}`,
 		"",
 		`- **Route:** Pi \`${first.route === "chatgpt" ? "openai-codex" : "opencode"}\` provider, model \`${first.model}\`: one turn at ${route.endpoint}, ${refresh}, then one more turn`,
-		`- **Runtime:** Pi \`@earendil-works/pi-ai\` ${PI_AI_VERSION}, each step lists every HTTP attempt it made`,
+		`- **Runtime:** Pi \`@earendil-works/pi-ai\` ${PI_AI_VERSION}${options.runtime ? ` in ${options.runtime}` : ""}, each step lists every HTTP attempt it made`,
 		`- **Date:** ${day(first.startedAt)}, ${clock(first.startedAt)}`,
 		`- **Network origin:** ${options.origin}`,
 		`- **Expected:** ${expected}`,
 		`- **Observed:** ${first.steps.map((s) => s.detail).join(". ")}.${tally}`,
 		`- **Retries:** ${retryText}`,
 		`- **Fallback:** ${outcome === "pass" ? "none needed" : route.fallback}`,
+		...cpuLine(runs),
 		"",
 	].join("\n");
 	return redact(

@@ -1,6 +1,8 @@
 // Local model-connection baseline (#25). Runs live requests on the owner's own account:
 //   pnpm feasibility:model --route chatgpt
 //   OPENCODE_API_KEY=... pnpm feasibility:model --route opencode
+// With `--runtime workerd` the trial runs inside the local `pnpm feasibility` Worker (#26)
+// and the entry records workerd's CPU time per step.
 // Progress and sign-in prompts go to stderr. The redacted evidence entry goes to stdout.
 import { homedir } from "node:os";
 import path from "node:path";
@@ -16,6 +18,8 @@ import {
 	type TrialRoute,
 	type TrialRun,
 } from "./model-trial.ts";
+import type { TrialEvent, TrialRequest } from "./model-worker.ts";
+import { cpuMs, findWorkerd } from "./workerd-cpu.ts";
 
 const { values } = parseArgs({
 	options: {
@@ -23,7 +27,9 @@ const { values } = parseArgs({
 		model: { type: "string" },
 		runs: { type: "string", default: "3" },
 		"interval-minutes": { type: "string", default: "15" },
-		origin: { type: "string", default: "home network" },
+		origin: { type: "string" },
+		runtime: { type: "string", default: "node" },
+		"worker-url": { type: "string", default: "http://localhost:1341" },
 		"auth-file": {
 			type: "string",
 			default: path.join(homedir(), ".config", "ditto-feasibility", "openai-codex.json"),
@@ -34,10 +40,17 @@ const { values } = parseArgs({
 const route = values.route;
 if (route !== "chatgpt" && route !== "opencode") {
 	console.error(
-		"Usage: pnpm feasibility:model --route chatgpt|opencode [--model id] [--runs 3] [--interval-minutes 15]",
+		"Usage: pnpm feasibility:model --route chatgpt|opencode [--runtime node|workerd] [--model id] [--runs 3] [--interval-minutes 15]",
 	);
 	process.exit(2);
 }
+const runtime = values.runtime;
+if (runtime !== "node" && runtime !== "workerd") {
+	console.error("--runtime is node (the #25 baseline) or workerd (#26).");
+	process.exit(2);
+}
+const origin =
+	values.origin ?? (runtime === "workerd" ? "local Worker (alchemy dev)" : "home network");
 const runs = Number(values.runs);
 const intervalMs = Number(values["interval-minutes"]) * 60_000;
 const log = (message: string) => console.error(`[model-baseline] ${message}`);
@@ -59,6 +72,71 @@ const credentials =
 		? await chatgptCredentials(values["auth-file"], log)
 		: await opencodeCredentials();
 const model = values.model ?? defaultModel(trialRoute);
+const PROVIDER_ID = { chatgpt: "openai-codex", opencode: "opencode" } as const;
+
+/** Runs one trial in the local Worker, sampling workerd's CPU as each step's line arrives. */
+async function runInWorkerd(workerd: number[]): Promise<TrialRun> {
+	const providerId = PROVIDER_ID[trialRoute];
+	const credential = await credentials.read(providerId);
+	if (!credential) throw new Error(`No ${providerId} credential to send to the Worker`);
+	const body: TrialRequest = { route: trialRoute, model, credential };
+	let last = await cpuMs(workerd);
+	const response = await fetch(`${values["worker-url"]}/model-trial`, {
+		method: "POST",
+		body: JSON.stringify(body),
+	});
+	if (!response.ok || !response.body) throw new Error(`Worker answered ${response.status}`);
+	const stepCpu: number[] = [];
+	let done: Extract<TrialEvent, { type: "done" }> | undefined;
+	let buffered = "";
+	for await (const chunk of response.body.pipeThrough(new TextDecoderStream())) {
+		buffered += chunk;
+		const lines = buffered.split("\n");
+		buffered = lines.pop() ?? "";
+		for (const line of lines.filter(Boolean)) {
+			const event = JSON.parse(line) as TrialEvent;
+			if (event.type === "step") {
+				const now = await cpuMs(workerd);
+				stepCpu.push(now - last);
+				last = now;
+			} else {
+				done = event;
+			}
+		}
+	}
+	if (!done) throw new Error("The Worker closed the stream before the trial finished");
+	// A refresh rotates the refresh token and kills the old one, so keep what the Worker holds.
+	const after = done.credential;
+	if (after) await credentials.modify(providerId, async () => after);
+	const run = done.run as TrialRun & { startedAt: string };
+	return {
+		...run,
+		startedAt: new Date(run.startedAt),
+		steps: run.steps.map((step, i) => ({
+			...step,
+			cpuMs: workerd.length ? stepCpu[i] : undefined,
+		})),
+	};
+}
+
+let workerd: number[] = [];
+let runtimeText: string | undefined;
+if (runtime === "workerd") {
+	const info = await fetch(`${values["worker-url"]}/model-trial`)
+		.then((r) => r.json())
+		.catch(() => undefined);
+	if (!info) {
+		console.error(
+			`No model-trial Worker at ${values["worker-url"]}. Run \`pnpm feasibility\` first.`,
+		);
+		process.exit(2);
+	}
+	log(`Worker runtime: ${JSON.stringify(info)}`);
+	runtimeText = `workerd (${(info as { runtime: string }).runtime})`;
+	workerd = await findWorkerd(Number(new URL(values["worker-url"]).port));
+	if (!workerd.length) log("Could not find the workerd process, so CPU time is not measured.");
+}
+
 const results: TrialRun[] = [];
 for (let i = 0; i < runs; i++) {
 	if (i > 0) {
@@ -66,10 +144,13 @@ for (let i = 0; i < runs; i++) {
 		await new Promise((resolve) => setTimeout(resolve, intervalMs));
 	}
 	log(`Run ${i + 1} of ${runs}: ${trialRoute}, model ${model}.`);
-	const run = await runModelTrial({ route: trialRoute, credentials, model });
+	const run =
+		runtime === "workerd"
+			? await runInWorkerd(workerd)
+			: await runModelTrial({ route: trialRoute, credentials, model });
 	log(`Run ${i + 1}: ${run.outcome}.`);
 	results.push(run);
 }
 
 log("Paste this entry under Model route > Evidence in docs/feasibility/decision-record.md:");
-process.stdout.write(`\n${formatEvidence(results, { origin: values.origin })}`);
+process.stdout.write(`\n${formatEvidence(results, { origin, runtime: runtimeText })}`);
