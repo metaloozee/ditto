@@ -7,12 +7,23 @@
 // `run` takes the baseline's options (--runs, --interval-minutes, --model). Progress goes to stderr.
 // Evidence entries go to stdout.
 import { spawn } from "node:child_process";
-import { readFile, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import path from "node:path";
 
-import { alchemy, configDir, deployedUrl, runKey } from "../owner-stage.ts";
+import {
+	alchemy,
+	configDir,
+	deployedUrl,
+	runKey,
+	savedRunKey,
+	type Stack,
+} from "../owner-stage.ts";
 
-const STACK = { dir: import.meta.dirname, name: "ditto-paid-pi-trial", stage: "paid-pi-trial" };
+const STACK: Stack = {
+	dir: import.meta.dirname,
+	name: "ditto-paid-pi-trial",
+	stage: "paid-pi-trial",
+};
 // Its own sign-in, apart from the baseline's and the free-tier probe's, so no stage retires another's
 // refresh token. The Worker stores no credential: each run sends this one and saves the rotated one.
 const authFile = path.join(configDir, "paid-codex.json");
@@ -31,8 +42,7 @@ async function deploy() {
 async function run(args: string[]) {
 	const url = await deployedUrl(STACK);
 	if (!url) throw new Error("The paid stage isn't deployed. Run: pnpm feasibility:paid deploy");
-	const key = (await readFile(runKeyFile, "utf8").catch(() => "")).trim();
-	if (!key) throw new Error(`No run key in ${runKeyFile}. Run: pnpm feasibility:paid deploy`);
+	const key = await savedRunKey(runKeyFile, "pnpm feasibility:paid deploy");
 	log(`Running the trial in ${new URL(url).host}.`);
 	const child = spawn(
 		process.execPath,

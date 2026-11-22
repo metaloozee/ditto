@@ -18,7 +18,7 @@ const Probe = Cloudflare.Worker("probe", {
 	env: {
 		STORE: Store,
 		PROBE_MODEL: Config.String("PROBE_MODEL"),
-		PROBE_RUN_KEY: Config.Redacted("PROBE_RUN_KEY"),
+		TRIAL_RUN_KEY: Config.Redacted("TRIAL_RUN_KEY"),
 		CHATGPT_ACCESS_TOKEN: Config.Redacted("CHATGPT_ACCESS_TOKEN"),
 		CHATGPT_REFRESH_TOKEN: Config.Redacted("CHATGPT_REFRESH_TOKEN"),
 	},

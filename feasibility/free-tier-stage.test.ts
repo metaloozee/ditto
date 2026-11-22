@@ -34,7 +34,7 @@ beforeAll(async () => {
 				HOME: process.env.HOME,
 				CI: "true",
 				PROBE_MODEL: "gpt-5.6-luna",
-				PROBE_RUN_KEY: "free-tier-run-key-SIMULATED-0123456789abcdef",
+				TRIAL_RUN_KEY: "free-tier-run-key-SIMULATED-0123456789abcdef",
 				CHATGPT_ACCESS_TOKEN: "unused",
 				CHATGPT_REFRESH_TOKEN: "unused",
 			},

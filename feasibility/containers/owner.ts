@@ -7,17 +7,24 @@
 //   pnpm feasibility:containers destroy
 // Progress goes to stderr. Evidence entries go to stdout. `--worker-url` points the commands at
 // another stage, such as `alchemy dev`, with its run key in TRIAL_RUN_KEY.
-import { readFile, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
-import { alchemy, configDir, deployedUrl, runKey } from "../owner-stage.ts";
+import {
+	alchemy,
+	configDir,
+	deployedUrl,
+	runKey,
+	savedRunKey,
+	type Stack,
+} from "../owner-stage.ts";
 import { takeOverWorkflow } from "../takeover/flow.ts";
 import { workflows, type WorkflowId } from "../takeover/workflows.ts";
 import { CHECK_WORKSPACE, type Decision, renderChecks, runChecks, type Started } from "./checks.ts";
 import { serveLoopback } from "./loopback.ts";
 
-const STACK = {
+const STACK: Stack = {
 	dir: import.meta.dirname,
 	name: "ditto-containers-trial",
 	stage: "containers-trial",
@@ -42,8 +49,8 @@ async function target() {
 	if (!url)
 		throw new Error("The Containers stage isn't deployed. Run: pnpm feasibility:containers deploy");
 	const key =
-		process.env.TRIAL_RUN_KEY ?? (await readFile(runKeyFile, "utf8").catch(() => "")).trim();
-	if (!key) throw new Error(`No run key in ${runKeyFile}. Run: pnpm feasibility:containers deploy`);
+		process.env.TRIAL_RUN_KEY ??
+		(await savedRunKey(runKeyFile, "pnpm feasibility:containers deploy"));
 	const local = ["localhost", "127.0.0.1"].includes(new URL(url).hostname);
 	const call = async (pathname: string, method = "GET") => {
 		const response = await fetch(new URL(pathname, url), {

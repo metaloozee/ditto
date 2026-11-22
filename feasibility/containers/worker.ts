@@ -1,12 +1,12 @@
 // Chrome and the egress filter on Cloudflare Containers (#32). One Durable Object, and so one
 // container instance, per workspace. The Worker is the only way in: every route needs the owner's
-// run key (#30's gate), and only POST /w/<workspace>/start starts a billed instance.
+// run key, and only POST /w/<workspace>/start starts a billed instance.
 //   POST /w/<workspace>/start          start the instance, wait for Chrome, report startup time
 //   POST /w/<workspace>/stop           destroy the instance
 //   *    /w/<workspace>/view/...       noVNC take-over view (port 6080)
 //   *    /w/<workspace>/devtools/...   Chrome DevTools for the bot (port 9223)
 //   GET  /w/<workspace>/control/...   filter decisions, fence, memory, bypass probe (port 8081)
-import { sameSecret } from "../run-key.ts";
+import { requireRunKey } from "../run-key.ts";
 
 /** Workspaces with a destination list baked into the image. */
 const WORKSPACES = new Set(["ws-cloud-trial", "ws-takeover"]);
@@ -124,9 +124,8 @@ export class Workspace {
 
 export default {
 	async fetch(request: Request, env: WorkspaceEnv): Promise<Response> {
-		if (!(await sameSecret(request.headers.get("x-trial-key") ?? "", env.TRIAL_RUN_KEY))) {
-			return new Response("Unauthorized", { status: 401 });
-		}
+		const refused = await requireRunKey(request, env.TRIAL_RUN_KEY);
+		if (refused) return refused;
 		const [prefix, workspace = ""] = new URL(request.url).pathname.split("/").slice(1);
 		if (prefix !== "w" || !WORKSPACES.has(workspace)) {
 			return new Response("Not found", { status: 404 });

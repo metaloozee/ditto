@@ -4,15 +4,26 @@
 //   pnpm feasibility:free-tier run       trigger one run and print a redacted evidence entry
 //   pnpm feasibility:free-tier destroy   tear the probe stage down and print a teardown entry
 // Progress goes to stderr. The evidence entry goes to stdout.
-import { readFile, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import path from "node:path";
 
 import { chatgptCredentials } from "../chatgpt-sign-in.ts";
 import { defaultModel } from "../model-trial.ts";
-import { alchemy, configDir, deployedUrl, runKey } from "../owner-stage.ts";
+import {
+	alchemy,
+	configDir,
+	deployedUrl,
+	runKey,
+	savedRunKey,
+	type Stack,
+} from "../owner-stage.ts";
 import { formatProbeEvidence, type ProbeRun } from "./worker.ts";
 
-const STACK = { dir: import.meta.dirname, name: "ditto-free-tier-probe", stage: "free-tier-probe" };
+const STACK: Stack = {
+	dir: import.meta.dirname,
+	name: "ditto-free-tier-probe",
+	stage: "free-tier-probe",
+};
 // Its own sign-in, apart from the baseline's: refreshing one would retire the other's refresh token.
 const authFile = path.join(configDir, "free-tier-codex.json");
 const runKeyFile = path.join(configDir, "free-tier-run-key");
@@ -24,7 +35,7 @@ async function deploy() {
 	if (credential?.type !== "oauth") throw new Error(`No ChatGPT sign-in in ${authFile}`);
 	const code = await alchemy(STACK, "deploy", {
 		PROBE_MODEL: process.env.PROBE_MODEL ?? defaultModel("chatgpt"),
-		PROBE_RUN_KEY: await runKey(runKeyFile),
+		TRIAL_RUN_KEY: await runKey(runKeyFile),
 		CHATGPT_ACCESS_TOKEN: credential.access,
 		CHATGPT_REFRESH_TOKEN: credential.refresh,
 	});
@@ -39,7 +50,9 @@ async function run() {
 	log(`Triggering ${new URL(url).host}/run.`);
 	const response = await fetch(new URL("/run", url), {
 		method: "POST",
-		headers: { "x-probe-key": (await readFile(runKeyFile, "utf8")).trim() },
+		headers: {
+			"x-trial-key": await savedRunKey(runKeyFile, "pnpm feasibility:free-tier deploy"),
+		},
 	});
 	if (!response.ok)
 		throw new Error(`The probe answered ${response.status}: ${await response.text()}`);
@@ -54,7 +67,7 @@ async function destroy() {
 	// The stack declaration still runs on destroy, so it needs values. None reach Cloudflare.
 	const code = await alchemy(STACK, "destroy", {
 		PROBE_MODEL: "unused",
-		PROBE_RUN_KEY: "unused",
+		TRIAL_RUN_KEY: "unused",
 		CHATGPT_ACCESS_TOKEN: "unused",
 		CHATGPT_REFRESH_TOKEN: "unused",
 	});

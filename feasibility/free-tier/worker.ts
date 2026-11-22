@@ -1,7 +1,7 @@
 // Bare free-tier probe (#30): plain fetch, no Pi runtime, so it stays inside the free-tier CPU limit.
 // It answers one question: does OpenAI accept a refresh and an inference request from Cloudflare's network?
 import { jwtStrings, redact, type Secret } from "../redact.ts";
-import { coloOf, sameSecret } from "../run-key.ts";
+import { coloOf, requireRunKey } from "../run-key.ts";
 
 const TOKEN_URL = "https://auth.openai.com/oauth/token";
 const RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses";
@@ -11,8 +11,8 @@ const CREDENTIAL_KEY = "openai-codex";
 const PROMPT = "Reply with exactly one word: pong";
 
 export interface ProbeEnv {
-	/** Sent by the owner's run command in the `x-probe-key` header, so nobody else spends their plan. */
-	PROBE_RUN_KEY: string;
+	/** Sent by the owner's run command in the `x-trial-key` header, so nobody else spends their plan. */
+	TRIAL_RUN_KEY: string;
 	PROBE_MODEL: string;
 	/** The deploy-time sign-in. Used until the first refresh stores a rotated pair in STORE. */
 	CHATGPT_ACCESS_TOKEN: string;
@@ -45,9 +45,8 @@ export async function handleProbe(
 	if (request.method !== "POST" || url.pathname !== "/run") {
 		return new Response("Not found", { status: 404 });
 	}
-	if (!(await sameSecret(request.headers.get("x-probe-key") ?? "", env.PROBE_RUN_KEY))) {
-		return new Response("Unauthorized", { status: 401 });
-	}
+	const refused = await requireRunKey(request, env.TRIAL_RUN_KEY);
+	if (refused) return refused;
 
 	const startedAt = new Date().toISOString();
 	const stored = await env.STORE.get(CREDENTIAL_KEY);
@@ -56,7 +55,7 @@ export async function handleProbe(
 		: { access: env.CHATGPT_ACCESS_TOKEN, refresh: env.CHATGPT_REFRESH_TOKEN };
 	const secrets: Secret[] = [
 		...tokenSecrets(before),
-		{ value: env.PROBE_RUN_KEY, placeholder: "<run key>" },
+		{ value: env.TRIAL_RUN_KEY, placeholder: "<run key>" },
 	];
 
 	const refresh = await step("refresh", TOKEN_URL, () => refreshStep(before, env, network));

@@ -1,5 +1,5 @@
-// Shared by the owner commands of the deployed feasibility stages (#30, #31). Each stage runs
-// alchemy from its own folder, so its state stays in that folder's .alchemy.
+// Shared by the owner commands of the deployed feasibility stages. Each stage runs alchemy from
+// its own folder, so its state stays in that folder's .alchemy.
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -11,8 +11,11 @@ const alchemyBin = path.join(import.meta.dirname, "..", "node_modules", ".bin", 
 /** Kept outside the repo: sign-ins and run keys. */
 export const configDir = path.join(homedir(), ".config", "ditto-feasibility");
 
+/** One deployed stage: the folder its alchemy.run.ts lives in, its stack name and its stage. */
+export type Stack = { dir: string; name: string; stage: string };
+
 export function alchemy(
-	stack: { dir: string; stage: string },
+	stack: Stack,
 	command: "deploy" | "destroy",
 	env: Record<string, string>,
 ): Promise<number> {
@@ -26,11 +29,7 @@ export function alchemy(
 }
 
 /** The deployed stage's URL from Alchemy's local state, or undefined when it isn't deployed. */
-export async function deployedUrl(stack: {
-	dir: string;
-	name: string;
-	stage: string;
-}): Promise<string | undefined> {
+export async function deployedUrl(stack: Stack): Promise<string | undefined> {
 	const file = path.join(
 		stack.dir,
 		".alchemy",
@@ -50,5 +49,12 @@ export async function runKey(file: string): Promise<string> {
 	const key = randomBytes(32).toString("hex");
 	await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
 	await writeFile(file, key, { mode: 0o600 });
+	return key;
+}
+
+/** The run key a deploy saved. Never creates one: it would not match the deployed secret. */
+export async function savedRunKey(file: string, deployCommand: string): Promise<string> {
+	const key = (await readFile(file, "utf8").catch(() => "")).trim();
+	if (!key) throw new Error(`No run key in ${file}. Run: ${deployCommand}`);
 	return key;
 }

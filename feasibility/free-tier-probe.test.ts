@@ -116,7 +116,7 @@ function memoryKv() {
 
 function probeEnv(store = memoryKv()): ProbeEnv {
 	return {
-		PROBE_RUN_KEY: RUN_KEY,
+		TRIAL_RUN_KEY: RUN_KEY,
 		PROBE_MODEL: "gpt-5.6-luna",
 		CHATGPT_ACCESS_TOKEN: accessToken(1),
 		CHATGPT_REFRESH_TOKEN: refreshToken(1),
@@ -127,7 +127,7 @@ function probeEnv(store = memoryKv()): ProbeEnv {
 function runRequest(key = RUN_KEY) {
 	const request = new Request("https://probe.example.workers.dev/run", {
 		method: "POST",
-		headers: { "x-probe-key": key },
+		headers: { "x-trial-key": key },
 	});
 	// workerd attaches the data centre that served the request.
 	Object.defineProperty(request, "cf", { value: { colo: "AMS" } });
