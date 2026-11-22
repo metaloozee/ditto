@@ -152,13 +152,91 @@ _Not yet torn down. Paste the entry that `pnpm feasibility:paid destroy` prints.
 
 _No entries yet._
 
+### Cloudflare Containers trial (#32)
+
+The #27 filter and the #29 headed desktop, running on Cloudflare Containers in their own paid stage. Blocked until the owner upgrades to Workers Paid. Nothing here has run on Cloudflare yet. Every entry below the harness description is an empty slot for the owner.
+
+**Shape.** A Container instance runs one image, so `feasibility/containers/Dockerfile` combines the two local images: the pinned `mitmproxy/mitmproxy:12.3.1` image, plus the #29 desktop packages (`chromium`, `xvfb`, `x11vnc`, `novnc`, `python3-websockify`, `socat`) and `iptables`. It copies `egress/filter/egress_filter.py` unchanged and bakes in the `ws-cloud-trial` and `ws-takeover` destination lists. The image is 1.69 GB locally. `feasibility/containers/worker.ts` holds one `Workspace` Durable Object per workspace, and each object owns one instance. The object starts its instance with `WORKSPACE_ID=<workspace>` and `enableInternet: true`. That variable is the only place the image learns its workspace. The entrypoint hands it to the filter, and the filter logs it on every decision, to stdout (kept by Cloudflare's container logs) and to a file the owner's commands read.
+
+**Gate.** Every route refuses a request without the stage's run key in `x-trial-key` (#30's digest comparison in `feasibility/run-key.ts`), and a deploy without a key refuses everything. Only `POST /w/<workspace>/start` starts a billed instance. View, DevTools and control requests to a stopped instance get 409 and start nothing. Only the two workspaces with a list in the image are accepted. The Worker strips the key before forwarding to the instance. A browser cannot send a header, so the owner's commands open loopback doorways, `127.0.0.1:9222` for DevTools and `127.0.0.1:6080` for the noVNC view, that add the key themselves. The key never appears in a URL or a page.
+
+**Spending.** The stack allows at most 2 instances. Each start sets a Durable Object alarm that destroys the instance 60 minutes later, and an inactivity timeout of the same length, so the instance survives an idle take-over but not a forgotten one. `checks` stops its instance when it finishes.
+
+**The fence.** Locally, Docker's internal network gave Chrome no route except the filter (#27). Inside one Container instance, Chrome and the filter share a network namespace. The entrypoint therefore tries an owner-match firewall: loopback, established connections and the filter's user may leave, everything else is rejected, for IPv4 and IPv6. This needs `NET_ADMIN`. Without it the entrypoint logs `"isolation": "none"` and carries on, so the trial still measures everything else, and the "no route around the filter" check fails. Local Docker grants no `NET_ADMIN` by default. Neither does `alchemy dev`, which grants `SYS_ADMIN`. Whether Cloudflare grants it is the open question the check answers. If it does not, Cloudflare's own fence is `enableInternet: false` with outbound HTTP and HTTPS intercepts to a Worker handler. That handler would replace mitmproxy as the filter, and the WebSocket and HTTP/2 checks would have to be repeated against it.
+
+**Verified locally** (2026-11-22, Docker Engine 29.6.2 and `alchemy dev`, no Cloudflare account):
+
+- `feasibility/containers-image.test.ts`: the image under plain Docker logs `ws-cloud-trial` on every allow and deny, loads `example.com`, and refuses `example.org` with `ERR_TUNNEL_CONNECTION_FAILED`. Without `NET_ADMIN` it reports `isolation: none`, and the browser user resolves DNS and connects to `1.1.1.1:443` directly. With `--cap-add NET_ADMIN` it reports `filter-user-only`, both probes fail, and `example.com` still loads through the filter.
+- `feasibility/containers-gate.test.ts`: the Worker and Durable Object, with Cloudflare's container API faked. Every route refuses no key, a wrong key and the key with a suffix, and starts nothing. The start passes `WORKSPACE_ID`. Forwarded requests carry no key or `Origin`.
+- `feasibility/containers-stage.test.ts`: the stack under `alchemy dev`, with workerd running the Worker and the Durable Object, and the container in local Docker. `checks --ws-hold-ms 5000` printed seven entries. Identity, allow, deny, WebSocket and HTTP/2 passed. The fence failed as expected. The instance was ready in 2.3 s and used 344 MiB after the checks.
+- A take-over dry run of `takeover linkedin` against the same stage, handing back without signing in. The view answered on `127.0.0.1:6080` and its WebSocket upgraded through the Worker. The harness refused `ok`, accepted `hand back`, and printed an `unsupported` entry. Before the inactivity timeout was added, the idle Durable Object stopped the container within 15 seconds of the take-over.
+
+**Owner steps.** Sign in to Cloudflare with Alchemy and upgrade to Workers Paid first. Then, in this order:
+
+1. **Set a spending cap before deploying.** Containers bill memory, CPU and disk above the amount Workers Paid includes, and Chrome uses a lot of memory. In the Cloudflare dashboard, add a billing notification for Workers Paid usage at the most you will spend on this trial. Cloudflare has no hard cap on usage billing, so the notification, the 2-instance limit and the 60-minute alarm are the controls. `deploy` refuses to run without `--spending-cap-set`.
+2. Deploy, run the checks, run each login, then tear down:
+
+```sh
+pnpm feasibility:containers deploy --spending-cap-set         # generates the run key; standard-1 by default
+pnpm feasibility:containers checks                            # identity, allow, deny, fence, 65 s WebSocket, HTTP/2, size
+pnpm feasibility:containers takeover google                   # then linkedin, protected; view at 127.0.0.1:6080
+pnpm feasibility:containers stop ws-takeover                  # after the last login: discards the signed-in instance
+pnpm feasibility:containers destroy                           # tears the stage down, prints the teardown entry
+```
+
+`--instance` takes `lite`, `basic` or `standard-1` to `standard-4`. Chrome will not fit in `lite`. Start with `standard-1` (4 GiB). If memory or startup time suggests another size, redeploy with that size and rerun `checks`. Each command prints redacted entries to paste below. The `ws-cloud-trial` instance runs the checks, and the `ws-takeover` instance holds the signed-in profile until `stop` or the alarm destroys it.
+
+#### Workspace identity in the filter log
+
+_Not yet run. Paste the `filter logs the workspace identity the runtime passed on Cloudflare` entry from `checks`._
+
+#### Allow and deny, compared with the local trial (#27)
+
+_Not yet run. Paste the `approved destination` and `unapproved destination` entries. Each carries a comparison line with the #27 result. Explain any difference._
+
+#### No route around the filter, compared with the local trial (#27)
+
+_Not yet run. Paste the entry. Record whether the instance reported `filter-user-only` or `none`. If `none`, Chrome on Cloudflare has a direct route out, and filtered traffic in this shape is unsuitable for a computer with private logins (ADR-0004)._
+
+#### WebSocket, compared with the local trial (#28)
+
+_Not yet run. Paste the entry from the default 65-second hold._
+
+#### HTTP/2, compared with the local trial (#28)
+
+_Not yet run. Paste the entry. Record any downgrade on either leg._
+
+#### Instance size, observed memory and startup time
+
+_Not yet run. Paste the entry: instance type, memory in use and peak after the checks, and cold startup time. Note whether the first start included pulling the image._
+
+#### Google on Cloudflare
+
+_Not yet run. Paste the `takeover google` entry, then the grading template from Login workflows (#29). Grade: pass, works with take-over or unsupported on Cloudflare._
+
+#### LinkedIn on Cloudflare
+
+_Not yet run. Paste the `takeover linkedin` entry, then the grading template._
+
+#### Protected site on Cloudflare: Cloudflare dashboard
+
+_Not yet run. Paste the `takeover protected` entry, then the grading template. Record whether Turnstile treats Cloudflare's own container egress differently from the home network._
+
+#### If filtered traffic is unsuitable
+
+_Not applicable yet. If the fence does not apply on Cloudflare, or a login is unsupported only because of the filter, open the follow-up ticket to evaluate another provider that enforces the workspace destination list. Link it here and compare, for each option, which guarantees it supports: the computer has no route except the filter; the destination list is enforced per workspace, outside Chrome's control; the workspace identity reaches the filter from the runtime; TLS-intercepted decisions per request, not only per tunnel; WebSocket and HTTP/2 through the filter; the take-over view reachable by the owner only. Include Cloudflare's `enableInternet: false` with outbound intercepts as one option._
+
+#### Teardown
+
+_Not yet torn down. Paste the entry that `pnpm feasibility:containers destroy` prints._
+
 ## Egress policy
 
 **Choice:** _Undecided_. The local trial (#27) supports a per-workspace TLS-intercepting filter in front of a Chrome container with no other route out, and #28 shows WebSocket and HTTP/2 survive it. The deployed runtime check is still to run.
 
 **Unresolved limits:**
 
-- Local Docker only. Whether Cloudflare Containers can pass the workspace identity to the filter and deny Chrome every other route is untested.
+- Local Docker only. Under `alchemy dev` the Containers runtime passes the workspace identity to the filter (#32), but on Cloudflare it is untested. Inside one Container instance, denying Chrome every other route needs `NET_ADMIN` for the entrypoint's firewall, and whether Cloudflare grants it is untested. See Desktop provider > Cloudflare Containers trial (#32).
 - Chrome runs with `--no-sandbox`. Running it sandboxed inside the container is untested.
 - The filter matches exact hostnames only. A login that spans several hosts needs each one listed, and wildcard rules are not supported yet.
 - A WebSocket never rides HTTP/2 through the filter. mitmproxy does not offer RFC 8441 extended CONNECT, so Chrome opens a separate HTTP/1.1 tunnel for each WebSocket. Sites work, at the cost of one extra TCP and TLS connection per socket.
