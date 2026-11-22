@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "alchemy dev --stage dev",
     "feasibility": "cd feasibility && alchemy dev --stage feasibility --no-input --env-file /dev/null",
+    "feasibility:model": "node feasibility/model-baseline.ts",
     "build": "vp run @ditto/web#build",
     "preview": "vp run @ditto/web#preview",
     "typecheck": "vp run @ditto/web#typecheck",
@@ -21,6 +22,7 @@
   },
   "dependencies": {
     "@alchemy.run/cloudflare": "2.0.0-beta.87",
+    "@earendil-works/pi-ai": "1.6.0",
     "@effect/platform-node": "4.1.4",
     "alchemy": "2.0.0-beta.87",
     "effect": "4.1.4"
