@@ -18,7 +18,8 @@ export type Decision = {
 	host: string;
 	decision: "allow" | "deny";
 	method?: string;
-	url?: string;
+	port?: number;
+	path?: string;
 	http_version?: string;
 	upstream_alpn?: string | null;
 };

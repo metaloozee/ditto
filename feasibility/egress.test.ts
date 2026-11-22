@@ -74,6 +74,16 @@ it("follows a changed destination list without rebuilding the image", async () =
 	);
 }, 120_000);
 
+it("logs a request's path without its query, which can carry login codes", async () => {
+	await load("https://example.com/callback?code=SIMULATED-oauth-code&state=x");
+
+	const { stdout } = await compose("logs", "--no-log-prefix", "filter");
+	expect(stdout).not.toContain("SIMULATED-oauth-code");
+	expect(await filterLog()).toContainEqual(
+		expect.objectContaining({ host: "example.com", port: 443, path: "/callback", method: "GET" }),
+	);
+}, 120_000);
+
 it("logs the workspace identity on every request", async () => {
 	const log = await filterLog();
 

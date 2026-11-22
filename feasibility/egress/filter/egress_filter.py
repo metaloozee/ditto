@@ -33,6 +33,11 @@ def decide(host: str, **fields) -> bool:
     return allowed
 
 
+def path_only(flow: http.HTTPFlow) -> str:
+    # The query and fragment can carry login and OAuth callback codes; the logs keep neither.
+    return flow.request.path.split("?")[0].split("#")[0]
+
+
 def refuse(flow: http.HTTPFlow) -> None:
     flow.response = http.Response.make(
         403, f"Blocked by the {WORKSPACE} egress filter\n", {"content-type": "text/plain"}
@@ -59,7 +64,8 @@ class EgressFilter:
         if not decide(
             flow.request.pretty_host,
             method=flow.request.method,
-            url=flow.request.pretty_url,
+            port=flow.request.port,
+            path=path_only(flow),
             http_version=flow.request.http_version,
             upstream_alpn=(flow.server_conn.alpn or b"").decode() or None,
         ):
@@ -67,7 +73,12 @@ class EgressFilter:
 
     def websocket_start(self, flow: http.HTTPFlow) -> None:
         # The upgrade request already passed `request`; decide again once it is a WebSocket.
-        if not decide(flow.request.pretty_host, method="WEBSOCKET", url=flow.request.pretty_url):
+        if not decide(
+            flow.request.pretty_host,
+            method="WEBSOCKET",
+            port=flow.request.port,
+            path=path_only(flow),
+        ):
             flow.kill()
 
 
