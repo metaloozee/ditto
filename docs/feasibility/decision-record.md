@@ -67,6 +67,42 @@ _Not yet run. Compare with the day 1 and day 2 baseline entries._
 
 _Not yet run. Compare with the OpenCode baseline entry._
 
+#### Free-tier Worker probe (#30)
+
+A bare Worker on the Workers free tier answers one question: does OpenAI accept a token refresh and a Responses request from Cloudflare's network addresses, not only from the home network? It uses plain `fetch` and no Pi runtime, so it stays inside the free-tier CPU limit. Each run refreshes the token at `https://auth.openai.com/oauth/token`, then sends one request to `https://chatgpt.com/backend-api/codex/responses` on the new token.
+
+The probe has its own Alchemy stack and stage (`ditto-free-tier-probe`, stage `free-tier-probe`). It runs from `feasibility/free-tier`, so its state lives in `feasibility/free-tier/.alchemy`. It creates one Worker, `ditto-free-tier-probe`, and one KV namespace, and touches no other stage's resources.
+
+The probe signs in separately from the baseline, in `~/.config/ditto-feasibility/free-tier-codex.json`, so a refresh on one side never retires the other side's refresh token. The deploy command passes the tokens and a generated run key to the Worker as secrets, through the deploy process's environment. They never appear in the repo or a URL. The Worker keeps each rotated refresh token in its KV namespace, so the day 2 run refreshes a day-old token. The run command sends the run key in a header, and the Worker refuses runs without it.
+
+Sign in to Cloudflare with Alchemy first. Then run:
+
+```sh
+pnpm feasibility:free-tier deploy    # first time: device-code ChatGPT sign-in, then deploy
+pnpm feasibility:free-tier run       # one run, prints a redacted entry for the slots below
+pnpm feasibility:free-tier destroy   # tears the stage down, prints the teardown entry
+```
+
+##### Day 1 · ChatGPT plan from Cloudflare
+
+_Not yet run._
+
+##### Day 2 · ChatGPT plan from Cloudflare
+
+_Not yet run. Must be a different date from day 1._
+
+##### Comparison with the local baseline
+
+_Not yet compared. For each step, compare the Cloudflare result with the home-network result from the same day. Explain each difference, or mark it unexplained._
+
+##### Does this justify Workers Paid?
+
+_Undecided. Answer yes or no, and give the reason from the evidence above. If the Cloudflare network is accepted, Workers Paid is needed only for the CPU the Pi runtime uses (#26). If it is refused, Workers Paid does not help, and the Worker route falls back to a supported container route._
+
+##### Teardown
+
+_Not yet torn down. Paste the entry that `pnpm feasibility:free-tier destroy` prints._
+
 ## Desktop provider
 
 **Choice:** _Undecided_
@@ -79,13 +115,80 @@ _No entries yet._
 
 ## Egress policy
 
-**Choice:** _Undecided_
+**Choice:** _Undecided_. The local trial (#27) supports a per-workspace TLS-intercepting filter in front of a Chrome container with no other route out. The deployed runtime check is still to run.
 
-**Unresolved limits:** _None recorded_
+**Unresolved limits:**
+
+- Local Docker only. Whether Cloudflare Containers can pass the workspace identity to the filter and deny Chrome every other route is untested.
+- Chrome runs with `--no-sandbox`. Running it sandboxed inside the container is untested.
+- The filter matches exact hostnames only. A login that spans several hosts needs each one listed, and wildcard rules are not supported yet.
+- WebSocket and HTTP/2 through the filter are untested (#28).
+- Chromium still makes background requests (component updates, time sync, `accounts.google.com`) despite `--disable-background-networking`. The filter denies and logs them.
+
+### Local trial: Chrome behind the workspace egress filter
+
+Run `pnpm exec vp test run --project feasibility feasibility/egress.test.ts` from the repo root with Docker running. It builds both images, runs the stack under the `ditto-feasibility-egress` Compose project, and removes containers, networks and CA volumes afterwards. To drive it by hand, run from `feasibility/egress/`:
+
+```sh
+export WORKSPACE_ID=ws-trial            # the list is destinations/$WORKSPACE_ID.txt
+docker compose up -d --build --wait filter
+docker compose run --rm chrome https://example.com/   # prints the DOM
+docker compose logs --no-log-prefix filter             # one JSON line per decision
+docker compose down -v                                 # discards the CA
+```
+
+**Topology.** Chrome is attached only to the `workspace` network, which is `internal: true`, so it has no route or DNS to the internet. The filter is attached to `workspace` and `egress` and is Chrome's `--proxy-server`. The runtime passes the workspace identity to the filter as `WORKSPACE_ID`. The filter reads `/destinations/<WORKSPACE_ID>.txt` on every decision and logs `{workspace, host, decision, method, ...}` for every CONNECT and for every request inside a tunnel. An unapproved CONNECT gets a 403 before any upstream connection. `DESTINATIONS_DIR` points the bind mount at another directory. Editing the file changes what loads with no rebuild or restart.
+
+**Image contents.**
+
+- Chrome (`feasibility/egress/chrome`, 312 MB): `debian:trixie-20261104-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2` plus `chromium`, `libnss3-tools` (for `certutil`) and `fonts-dejavu-core`, installed with `--no-install-recommends`. It runs as an unprivileged `browser` user (uid 1000). The entrypoint imports the CA, then runs headless `chromium --dump-dom <url>`.
+- Filter (`feasibility/egress/filter`): `mitmproxy/mitmproxy:12.3.1@sha256:2711066c855659b5af8b1dbb84494ed3eff69b42ece439c60b4fe09a2db829d4` plus the `egress_filter.py` addon. `mitmdump` runs as the image's unprivileged `mitmproxy` user.
+
+**Package versions** (observed 2026-11-22): Chromium `156.0.8078.79-1~deb13u1`, `libnss3` and `libnss3-tools` `2:3.110-1+deb13u5`, Debian 13.7, mitmproxy 12.3.1 on Python 3.15.1 and OpenSSL 4.0.3, Docker Engine 29.6.2, Docker Compose 5.3.1. The Debian packages are not pinned, so a rebuild picks up security updates.
+
+**CA handling.** The filter generates a fresh CA on first start in the `ca-private` volume, which only the filter mounts. It copies only the certificate to the `ca-public` volume, which Chrome mounts read-only. The Chrome entrypoint creates an NSS database in `~/.pki/nssdb` and imports the certificate as a trusted CA (`-t C,,`). No key or certificate is written to the host or the repo. `docker compose down -v` destroys both volumes, so each trial gets a new CA. The generated CA is `CN=mitmproxy, O=mitmproxy` and is valid for 10 years.
 
 ### Evidence
 
-_No entries yet._
+#### 2026-11-22 · Chrome loads an approved HTTPS destination through the filter · pass
+
+- **Route:** headless Chromium in the Chrome container, `--proxy-server=http://filter:8080`, loads `https://example.com/` with `example.com` on the `ws-trial` list
+- **Date:** 2026-11-22, 07:25 UTC
+- **Network origin:** container
+- **Expected:** the TLS connection succeeds against the filter's CA, the page DOM is printed, and the filter logs an allow with workspace `ws-trial`
+- **Observed:** DOM contained `<title>Example Domain</title>`. The filter logged `allow` for `CONNECT example.com:443`, `GET https://example.com/` and `GET https://example.com/s.js`, each with `"workspace": "ws-trial"`.
+- **Retries:** 2026-11-22 07:23 UTC, the automated test run passed
+- **Fallback:** none needed
+
+#### 2026-11-22 · Chrome is refused an unapproved destination · pass
+
+- **Route:** the same container loads `https://example.org/`, which is not on the `ws-trial` list
+- **Date:** 2026-11-22, 07:26 UTC
+- **Network origin:** container
+- **Expected:** the filter refuses the tunnel, the page does not load, and the refusal is logged with the workspace
+- **Observed:** Chromium reported `Page load failed: net::ERR_TUNNEL_CONNECTION_FAILED`. The filter logged `{"workspace": "ws-trial", "host": "example.org", "decision": "deny", "method": "CONNECT", "port": 443}` three times (Chromium's retries). Chromium's own background requests to `clients2.google.com`, `update.googleapis.com`, `redirector.gvt1.com` and `accounts.google.com` were also denied and logged with `ws-trial`.
+- **Retries:** 2026-11-22 07:23 UTC, the automated test run passed
+- **Fallback:** none needed
+
+#### 2026-11-22 · Chrome has no route around the filter · pass
+
+- **Route:** the same container loads `https://example.com/` with `--no-proxy-server`
+- **Date:** 2026-11-22, 07:26 UTC
+- **Network origin:** container
+- **Expected:** the page does not load, because the `workspace` network is internal
+- **Observed:** `Page load failed: net::ERR_NAME_NOT_RESOLVED`. The filter logged nothing for this load.
+- **Retries:** 2026-11-22 07:23 UTC, the automated test run passed
+- **Fallback:** none needed
+
+#### 2026-11-22 · Changing the destination list changes what loads, without a rebuild · pass
+
+- **Route:** with the filter still running, `example.org` is appended to `destinations/ws-trial.txt`, then the Chrome container loads `https://example.org/` again
+- **Date:** 2026-11-22, 07:26 UTC
+- **Network origin:** container
+- **Expected:** the page now loads, with no image rebuild or filter restart
+- **Observed:** DOM contained `<title>Example Domain</title>`. The filter logged `allow` for `GET https://example.org/` and `GET https://example.org/s.js` with `"workspace": "ws-trial"`.
+- **Retries:** 2026-11-22 07:23 UTC, the automated test run passed
+- **Fallback:** none needed
 
 ## Initial resources
 

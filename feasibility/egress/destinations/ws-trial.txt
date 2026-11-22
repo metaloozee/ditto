@@ -1,0 +1,2 @@
+# Approved destinations for workspace ws-trial, one host per line.
+example.com
