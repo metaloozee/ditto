@@ -6,13 +6,13 @@ Run trials against the isolated feasibility stage: `pnpm feasibility` from the r
 
 Each trial adds dated evidence entries under the section it informs, in the format in [evidence.md](evidence.md). A choice is filled in only once its evidence supports it. Until then, it reads _Undecided_.
 
-**Status (2026-11-22): provisional.** The owner completed the Day 1 ChatGPT baseline and the OpenCode baseline from the home network (#25). All three runs passed on each route. The owner also ran the OpenCode trial in local workerd (#26), where all three runs passed. The deployed free-tier probe (#30) failed all three Day 1 runs from SIN. The hosted choices remain provisional. The account is on the Workers free plan, and #31 and #32 require Workers Paid. See [Remaining experiments](#remaining-experiments).
+**Status (2026-11-22): provisional.** The owner completed the ChatGPT baseline on two local dates and the OpenCode baseline from the home network (#25). All three runs passed on each route. Both ChatGPT and OpenCode passed all three runs per route in local workerd (#26). The deployed free-tier probe (#30) failed all six runs from SIN across two local dates. The hosted choices remain provisional. The account is on the Workers free plan, and #31 and #32 require Workers Paid. See [Remaining experiments](#remaining-experiments).
 
 ## Model route
 
 **Choice: Provisional.** The Codex backend route tested by Pi (`https://chatgpt.com/backend-api/codex/responses`) on the owner's ChatGPT plan, through the pinned Pi runtime (`@earendil-works/pi-ai` 1.6.0) in a Cloudflare Worker on Workers Paid. The Worker calls `registerLazyOAuthFlows()` at startup, uses SSE over `fetch`, and receives the owner's sign-in from a step outside the Worker. The owner's OpenCode API key (`OPENCODE_API_KEY`) is the second supported connection and exercises the harness if ChatGPT plan access is unavailable (ADR-0003). It is recorded apart and does not stand in for the ChatGPT result.
 
-**Evidence today:** The [Day 1 ChatGPT baseline](#day-1--chatgpt-plan) passed inference and token refresh in Node on the home network. The [OpenCode baseline](#opencode-api-key) passed both inference turns in all three runs. The [OpenCode trial in local workerd](#opencode-api-key-in-local-worker) matched the Node baseline on all three runs. The ChatGPT trial in workerd still has only simulated-provider evidence. The [Day 1 free-tier probe](#day-1--chatgpt-plan-from-cloudflare) refreshed its token but received HTTP 403 on every inference request.
+**Evidence today:** The [Day 1 ChatGPT baseline](#day-1--chatgpt-plan) passed inference and token refresh in Node on the home network. The [OpenCode baseline](#opencode-api-key) passed both inference turns in all three runs. The [OpenCode trial in local workerd](#opencode-api-key-in-local-worker) matched the Node baseline on all three runs. The [ChatGPT trial in local workerd](#chatgpt-plan-in-local-worker) also matched the Node baseline: inference and token refresh succeeded on all three runs. The [free-tier probe](#day-1--chatgpt-plan-from-cloudflare) refreshed its token but received HTTP 403 on every inference request.
 
 **Security guarantees it supports:**
 
@@ -22,8 +22,8 @@ Each trial adds dated evidence entries under the section it informs, in the form
 
 **Unresolved limits:**
 
-- Day 2 must still test refresh with the saved sign-in on a later date. The free-tier probe (#30) will repeat the Day 1 measurement from Cloudflare on a second date.
-- **Pi OAuth flows do not load from a bundle in workerd.** Fallback selected: call `registerLazyOAuthFlows()` from `@earendil-works/pi-ai/lazy-oauth` at Worker startup, as `model-worker.ts` does. Pi documents that module as Node-only. Refresh passed with it against the simulated provider only, so a Pi upgrade can break it. Re-run `feasibility/model-worker.test.ts` on every Pi bump.
+- The second local-date baseline passed about nine hours after the last Day 1 run. Refresh after a full day remains unverified. The free-tier probe (#30) repeated its Day 1 result on the second local date.
+- **Pi OAuth flows do not load from a bundle in workerd.** Fallback selected: call `registerLazyOAuthFlows()` from `@earendil-works/pi-ai/lazy-oauth` at Worker startup, as `model-worker.ts` does. Pi documents that module as Node-only. Refresh passed with Pi 1.6.0 against both the simulator and the live endpoint in local workerd. Re-run `feasibility/model-worker.test.ts` on every Pi bump.
 - **A warm Pi trial request used about 12 to 16ms of CPU, above the free plan's 10ms** (first turn after start 45 to 90ms; simulated provider, upper bound). Consequence: the Pi Worker route needs Workers Paid. On the free plan the only Worker-side check is the plain-`fetch` probe (#30), which proves the network, not the runtime. Real replies are longer, so the owner's #31 run decides the real figure.
 - Sign-in cannot run in a Worker (Pi's flows need `node:http` or a terminal). Consequence: a hosted bot needs a sign-in step outside the Worker, which later work designs.
 - Pi's WebSocket transport is unused in workerd (headers go in a constructor option workerd does not take). Consequence: SSE only, without Pi's WebSocket cached-context mode. Read from Pi's code, not exercised.
@@ -64,7 +64,18 @@ OPENCODE_API_KEY=<key> pnpm feasibility:model --route opencode
 
 ##### Day 2 · ChatGPT plan
 
-_Not yet run. Must be a different date from day 1._
+###### 2026-11-23 local date · OpenAI Responses on ChatGPT plan from home network · pass
+
+- **Route:** Pi `openai-codex`, model `gpt-5.6-luna`, using the same inference, forced refresh and second inference sequence as Day 1.
+- **Runtime:** Pi `@earendil-works/pi-ai` 1.6.0 under Node.
+- **Date:** 2026-11-22, 18:39 UTC (2026-11-23, 00:09 in Asia/Kolkata).
+- **Network origin:** home network.
+- **Expected:** both turns return 200 and reply "pong". Refresh returns 200 with a new access token.
+- **Observed:** both requests to `chatgpt.com/backend-api/codex/responses` returned 200 and replied "pong" with 5 output tokens each, in 1.7s and 1.0s. Refresh at `auth.openai.com/oauth/token` returned 200 with a new refresh token and an access token valid for 240h. All three runs passed.
+- **Retries:** 18:55 UTC pass, 19:11 UTC pass.
+- **Fallback:** none needed.
+
+The first run started 9h 04m after the last recorded Day 1 run at 09:35 UTC. This covers two calendar dates in Asia/Kolkata. Refresh after 24h remains untested.
 
 ##### OpenCode API key
 
@@ -117,7 +128,23 @@ OPENCODE_API_KEY=<key> pnpm feasibility:model --route opencode --runtime workerd
 
 ##### ChatGPT plan in local Worker
 
-_Not yet run. Compare with the day 1 and day 2 baseline entries._
+###### 2026-11-22 · OpenAI Responses on ChatGPT plan from local Worker (alchemy dev) · pass
+
+- **Route:** Pi `openai-codex`, model `gpt-5.6-luna`. Send a turn to `chatgpt.com/backend-api/codex/responses`, expire the stored access token, refresh at `auth.openai.com/oauth/token`, then send another turn.
+- **Runtime:** Pi `@earendil-works/pi-ai` 1.6.0 in workerd, compatibility date `2026-10-26`, with `nodejs_compat` on by date and `new_module_registry` on by Alchemy default.
+- **Date:** 2026-11-22, 20:05 UTC.
+- **Network origin:** local Worker under `alchemy dev`, home network.
+- **Expected:** both turns return 200 and reply "pong". Refresh returns 200 and the second turn succeeds with the new token.
+- **Observed:** all three runs passed, matching both dates of the Node baseline. In the first run, each turn returned 200 and replied "pong" with 5 output tokens, in 2.2s before refresh and 2.4s after. Refresh returned 200 with a new refresh token and an access token valid for 240h.
+- **Retries:** 20:21 UTC pass, 20:37 UTC pass.
+- **Fallback:** none needed.
+- **CPU time:** the highest single turn measured 35ms and the highest whole trial request measured 53ms. The latter exceeds the free plan's 10ms per request and fits within the paid default of 30s (configurable to 5 minutes). These local workerd process measurements are upper bounds.
+
+| Run | First turn | Refresh | Second turn |
+| --- | --- | --- | --- |
+| 1 | 35ms | 11ms | 6.8ms |
+| 2 | 6.8ms | 3.1ms | 13ms |
+| 3 | 7.0ms | 3.8ms | 4.7ms |
 
 ##### OpenCode API key in local Worker
 
@@ -167,21 +194,34 @@ A separate Cloudflare event at 14:01:20 UTC recorded a browser requesting `GET /
 
 ##### Day 2 · ChatGPT plan from Cloudflare
 
-_Not yet run. Must be a different date from day 1._
+###### 2026-11-23 local date · ChatGPT plan from the deployed free-tier Worker · fail
+
+- **Route:** plain `fetch` to `chatgpt.com/backend-api/codex/responses` with `gpt-5.6-luna`, refresh at `auth.openai.com/oauth/token`, then a second inference request.
+- **Runtime:** deployed free-tier Worker without Pi.
+- **Date:** 2026-11-22, 19:13 UTC (2026-11-23, 00:43 in Asia/Kolkata), 4h 42m after the last Day 1 run.
+- **Network origin:** Cloudflare Worker, data centre SIN.
+- **Expected:** both inference requests return 200 and reply "pong". Refresh returns 200 with a new access token.
+- **Observed:** 0 of 3 runs passed. On the first run, refresh returned 200, rotated the refresh token and issued an access token valid for 240h. Inference returned 403 with an HTML body both before and after refresh.
+- **Retries:** 19:29 and 19:45 UTC. Both runs returned 403 on both inference requests.
+- **Fallback:** evaluate a supported container route under spec #16.
 
 ##### Comparison with the local baseline
 
-Day 1: all three home-network runs passed with Pi. The deployed Worker used plain fetch. Refresh succeeded, but all six inference calls received 403. The response excerpt gives no reason for the refusal. Both the client and network differed between the trials. Day 2 comparison pending.
+Across two local dates, all six home-network runs passed with Pi. All six deployed Worker runs failed with plain fetch: every inference request returned 403 (12 total), including the requests after refresh. The first run on each date recorded a successful refresh. The HTML excerpts give no reason for the refusal. Both the client and the network differed between the trials.
 
 **Follow-up:** Keep both dates as evidence for this Codex backend probe. For local Ditto, test a separate sign-in that requests ChatGPT plan usage permission, then call `https://api.openai.com/v1/responses` with the token issued for that integration. For remotely hosted Ditto, submit the hosted-app interest form and confirm access before testing that integration on a Worker. [OpenAI plan usage and hosted-app interest form](https://developers.openai.com/siwc/token-sharing-open-source) · [Sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in) · [Inference endpoint](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)
 
 ##### Does this justify Workers Paid?
 
-_Undecided. Answer yes or no, and give the reason from the evidence above. If the Cloudflare network is accepted, Workers Paid is needed only for the CPU the Pi runtime uses (#26). If it is refused, Workers Paid does not help, and the Worker route falls back to a supported container route._
+No upgrade is justified by #30. The Worker completed the requests and reported upstream HTTP 403 responses. The measured Day 1 invocation used 4ms of CPU. These runs provide no evidence that more CPU would resolve the refusal.
 
 ##### Teardown
 
-_Not yet torn down. Paste the entry that `pnpm feasibility:free-tier destroy` prints._
+###### 2026-11-22 · Free-tier probe stage torn down · pass
+
+- **Date:** 2026-11-22, 20:04 UTC.
+- **Command:** `pnpm feasibility:free-tier destroy` ran `alchemy destroy --stage free-tier-probe` and exited 0.
+- **Removed:** Alchemy deleted the `ditto-free-tier-probe` Worker and its KV namespace, and removed the probe bindings, including its secrets. The teardown script removed the local probe sign-in and run key.
 
 #### Deployed Pi trial (#31)
 
@@ -641,11 +681,11 @@ Every run below is the owner's, with their own accounts. Each prints a redacted 
 
 | #   | Experiment                                       | Status                      | Command                                                                                                                                                                                     | Decides                                           |
 | --- | ------------------------------------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| #25 | Local baseline, ChatGPT plan, day 1 and day 2    | day 1 passed, day 2 pending | `pnpm feasibility:model --route chatgpt` (once per day, on two dates)                                                                                                                       | provider behaviour from the home network          |
+| #25 | Local baseline, ChatGPT plan, day 1 and day 2    | passed on two local dates   | `pnpm feasibility:model --route chatgpt` (once per day, on two dates)                                                                                                                       | provider behaviour from the home network          |
 | #25 | Local baseline, OpenCode API key                 | passed                      | `OPENCODE_API_KEY=<key> pnpm feasibility:model --route opencode`                                                                                                                            | the fallback connection                           |
-| #26 | Local workerd, ChatGPT plan                      | pending owner               | `pnpm feasibility`, then `pnpm feasibility:model --route chatgpt --runtime workerd`                                                                                                         | Pi in workerd against the real endpoint, CPU      |
+| #26 | Local workerd, ChatGPT plan                      | passed                      | `pnpm feasibility`, then `pnpm feasibility:model --route chatgpt --runtime workerd`                                                                                                         | Pi in workerd against the real endpoint, CPU      |
 | #26 | Local workerd, OpenCode API key                  | passed                      | `pnpm feasibility`, then `OPENCODE_API_KEY=<key> pnpm feasibility:model --route opencode --runtime workerd`                                                                                 | same, OpenCode                                    |
-| #30 | Free-tier probe from Cloudflare, day 1 and day 2 | day 1 failed, day 2 pending | `pnpm feasibility:free-tier deploy`, `pnpm feasibility:free-tier run` (each day), `pnpm feasibility:free-tier destroy`                                                                      | whether OpenAI accepts Cloudflare's network       |
+| #30 | Free-tier probe from Cloudflare, day 1 and day 2 | both failed, teardown OK    | `pnpm feasibility:free-tier deploy`, `pnpm feasibility:free-tier run` (each day), `pnpm feasibility:free-tier destroy`                                                                      | whether OpenAI accepts Cloudflare's network       |
 | #29 | Google, LinkedIn, protected-site logins, local   | blocked: no test account    | `pnpm feasibility:takeover google`, `… linkedin`, `… protected`, then `pnpm feasibility:takeover --down`                                                                                    | per-workflow grade behind the filter              |
 | #31 | Deployed Pi trial                                | blocked: needs Workers Paid | `pnpm feasibility:paid deploy`, `pnpm feasibility:paid run --route chatgpt`, `OPENCODE_API_KEY=<key> pnpm feasibility:paid run --route opencode`, `pnpm feasibility:paid destroy`           | the Worker model route and its real CPU           |
 | #32 | Cloudflare Containers trial                      | blocked: needs Workers Paid | set a billing notification, then `pnpm feasibility:containers deploy --spending-cap-set`, `… checks`, `… takeover google` (then `linkedin`, `protected`), `… stop ws-takeover`, `… destroy` | `NET_ADMIN`, identity, size, logins on Cloudflare |
