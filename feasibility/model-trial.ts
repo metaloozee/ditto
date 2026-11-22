@@ -37,7 +37,7 @@ type Outcome = { ok: boolean; detail: string };
 
 export interface Step extends Outcome {
 	label: "turn" | "refresh" | "turn after refresh" | "setup";
-	/** CPU the runtime spent on this step, when the driver measured it (#26). */
+	/** CPU the runtime spent on this step, when the driver measured it. */
 	cpuMs?: number;
 }
 
@@ -49,7 +49,7 @@ export interface TrialRun {
 	outcome: "pass" | "fail";
 	/** Every credential value seen during the run, so the entry can be redacted. */
 	secrets: Secret[];
-	/** CPU and wall time of the whole trial request, as Cloudflare reported it (#31). */
+	/** CPU and wall time of the whole trial request, as Cloudflare reported it. */
 	request?: { cpuMs: number; wallMs: number };
 }
 
@@ -307,7 +307,7 @@ export function formatEvidence(
 		origin: string;
 		/** Where Pi ran, when not Node. */
 		runtime?: string;
-		/** Ran in a deployed Worker, where a failure points at a container route instead (#31). */
+		/** Ran in a deployed Worker, where a failure points at a container route instead. */
 		deployed?: boolean;
 	},
 ): string {

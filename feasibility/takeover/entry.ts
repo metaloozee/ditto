@@ -18,7 +18,7 @@ export type Observation = {
 	siteResponse: string;
 	/** Hosts the filter refused during the run. Hosts only: request URLs can carry tokens. */
 	denied: string[];
-	/** Where the desktop ran: local Docker (#29, the default) or Cloudflare Containers (#32). */
+	/** Where the desktop ran: local Docker (the default) or Cloudflare Containers. */
 	host?: "docker" | "cloudflare";
 };
 
