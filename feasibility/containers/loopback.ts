@@ -1,6 +1,8 @@
 // The owner's loopback doorway to a deployed workspace (#32). A browser cannot send the run key
 // header, so this forwards 127.0.0.1:<port> to /w/<workspace>/<route>/ on the Worker and adds the
 // key itself. The key never reaches a URL, a page or the container; only loopback can connect.
+// Chrome's DevTools refuses foreign origins, but the doorway strips Origin, so it must refuse them
+// itself: otherwise any page open in the owner's browser could drive the signed-in Chrome.
 import http from "node:http";
 import https from "node:https";
 import type { AddressInfo } from "node:net";
@@ -24,7 +26,16 @@ export async function serveLoopback(options: {
 		return out;
 	};
 
+	let own: string[] = [];
+	// Requests from the owner's commands carry no Origin; pages served by the doorway carry its own.
+	const foreign = (request: http.IncomingMessage) =>
+		request.headers.origin !== undefined && !own.includes(request.headers.origin);
+
 	const server = http.createServer((request, response) => {
+		if (foreign(request)) {
+			response.writeHead(403).end();
+			return;
+		}
 		const upstream = client.request(
 			target(request.url ?? "/"),
 			{ method: request.method, headers: headers(request.headers) },
@@ -39,6 +50,10 @@ export async function serveLoopback(options: {
 
 	// WebSockets: noVNC's screen and DevTools sessions.
 	server.on("upgrade", (request, socket, head) => {
+		if (foreign(request)) {
+			socket.end("HTTP/1.1 403 Forbidden\r\n\r\n");
+			return;
+		}
 		const upstream = client.request(target(request.url ?? "/"), {
 			method: "GET",
 			headers: headers(request.headers),
@@ -67,6 +82,7 @@ export async function serveLoopback(options: {
 		server.listen(options.port, "127.0.0.1", resolve);
 	});
 	const { port } = server.address() as AddressInfo;
+	own = [`http://127.0.0.1:${port}`, `http://localhost:${port}`];
 	return {
 		url: `http://127.0.0.1:${port}`,
 		close: () =>
