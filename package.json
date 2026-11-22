@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "alchemy dev --stage dev",
+    "feasibility": "cd feasibility && alchemy dev --stage feasibility --no-input --env-file /dev/null",
     "build": "vp run @ditto/web#build",
     "preview": "vp run @ditto/web#preview",
     "typecheck": "vp run @ditto/web#typecheck",
