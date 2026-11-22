@@ -79,9 +79,12 @@ const secrets = [
 ];
 
 describe("model trial inside workerd", () => {
-	it("reports Pi's version and the Worker's compatibility settings", async () => {
-		const info = await (await fetch(`${WORKER_URL}/model-trial`)).json();
-		expect(info).toMatchObject({ pi: "1.6.0", compatibilityDate: "2026-10-26" });
+	it("refuses a trial for an unknown route before Pi runs", async () => {
+		const response = await fetch(`${WORKER_URL}/model-trial`, {
+			method: "POST",
+			body: JSON.stringify({ route: "gemini", credential: { type: "api_key", key: API_KEY } }),
+		});
+		expect(response.status).toBe(400);
 	});
 
 	it("runs the ChatGPT turn, refresh and turn in workerd and keeps the rotated sign-in", async () => {

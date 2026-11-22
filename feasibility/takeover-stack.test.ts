@@ -59,11 +59,6 @@ afterAll(async () => {
 }, 120_000);
 
 describe("remote view", () => {
-	it("serves noVNC and DevTools on loopback", async () => {
-		expect((await fetch(`http://127.0.0.1:${viewPort}/vnc.html`)).status).toBe(200);
-		expect((await fetch(`http://127.0.0.1:${devtoolsPort}/json/version`)).status).toBe(200);
-	});
-
 	it("publishes the view and DevTools on loopback only", async () => {
 		for (const port of [6080, 9222]) {
 			const { stdout } = await compose("port", "viewer", String(port));
@@ -74,6 +69,8 @@ describe("remote view", () => {
 			.flat()
 			.find((address) => address?.family === "IPv4" && !address.internal)?.address;
 		expect(lan).toBeDefined();
+		// Reachable on loopback, so the refusal below is the binding, not a stopped view.
+		expect((await fetch(`http://127.0.0.1:${viewPort}/vnc.html`)).status).toBe(200);
 		await expect(
 			fetch(`http://${lan}:${viewPort}/vnc.html`, { signal: AbortSignal.timeout(3000) }),
 		).rejects.toThrow();

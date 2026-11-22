@@ -125,7 +125,7 @@ async function runInWorker(workerd: number[]): Promise<TrialRun> {
 	// A refresh rotates the refresh token and kills the old one, so keep what the Worker holds.
 	const after = done.credential;
 	if (after) await credentials.modify(providerId, async () => after);
-	const run = done.run as TrialRun & { startedAt: string };
+	const run = done.run;
 	return {
 		...run,
 		startedAt: new Date(run.startedAt),

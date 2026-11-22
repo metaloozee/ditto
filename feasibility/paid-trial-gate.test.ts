@@ -94,6 +94,36 @@ describe("paid model-trial Worker gate", () => {
 		expect(hosts).toContain("auth.openai.com");
 	});
 
+	it.each([
+		["a body that is not JSON", "{"],
+		[
+			"an unknown route",
+			JSON.stringify({ route: "gemini", credential: { type: "api_key", key: "k" } }),
+		],
+		["no credential", JSON.stringify({ route: "chatgpt" })],
+		["a credential that is not an object", JSON.stringify({ route: "opencode", credential: "k" })],
+		[
+			"a model that is not a string",
+			JSON.stringify({ route: "opencode", model: 5, credential: { type: "api_key", key: "k" } }),
+		],
+	])("answers 400 to %s before spending anything", async (_, body) => {
+		const { env: e, hosts } = env();
+		const c = ctx();
+		const response = await paidWorker.fetch(
+			new Request(`${ORIGIN}/model-trial`, {
+				method: "POST",
+				headers: { "x-trial-key": RUN_KEY },
+				body,
+			}),
+			e,
+			c,
+		);
+
+		expect(response.status).toBe(400);
+		await Promise.all(c.pending);
+		expect(hosts).toEqual([]);
+	});
+
 	it("returns the CPU reading the tail Worker stored for a run", async () => {
 		const { env: e, store } = env();
 		store.set("cpu:run-1", JSON.stringify({ cpuTimeMs: 41, wallTimeMs: 3200 }));
