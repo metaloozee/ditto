@@ -8,6 +8,7 @@ Each trial observation becomes one entry under the matching section of [decision
 #### YYYY-MM-DD · <route> · <outcome>
 
 - **Route:** what was exercised, end to end
+- **Runtime:** the pinned runtime and its version, such as Pi `@earendil-works/pi-ai` 1.6.0, when a runtime is involved
 - **Date:** YYYY-MM-DD, plus a time and timezone when repeats on one day matter
 - **Network origin:** where the request left from: `home network`, `local Worker (alchemy dev)`, `deployed Worker`, `container`
 - **Expected:** what should happen if the route works

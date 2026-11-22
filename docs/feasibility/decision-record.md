@@ -14,7 +14,26 @@ Each trial adds dated evidence entries under the section it informs, in the form
 
 ### Evidence
 
-_No entries yet._
+#### Local baseline (#25)
+
+The owner runs these on their own account from the home network, so later failures can be blamed on hosting rather than the provider. Each command runs the pinned Pi runtime three times, 15 minutes apart, and prints a redacted entry to paste into the matching slot below. The ChatGPT sign-in is kept in `~/.config/ditto-feasibility/openai-codex.json`, outside the repo, so day 2 refreshes a day-old token.
+
+```sh
+pnpm feasibility:model --route chatgpt
+OPENCODE_API_KEY=<key> pnpm feasibility:model --route opencode
+```
+
+##### Day 1 · ChatGPT plan
+
+_Not yet run._
+
+##### Day 2 · ChatGPT plan
+
+_Not yet run. Must be a different date from day 1._
+
+##### OpenCode API key
+
+_Not yet run. Recorded apart from the ChatGPT result (ADR-0003)._
 
 ## Desktop provider
 
