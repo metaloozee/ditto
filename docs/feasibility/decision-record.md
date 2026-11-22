@@ -47,14 +47,15 @@ _No entries yet._
 
 ## Egress policy
 
-**Choice:** _Undecided_. The local trial (#27) supports a per-workspace TLS-intercepting filter in front of a Chrome container with no other route out. The deployed runtime check is still to run.
+**Choice:** _Undecided_. The local trial (#27) supports a per-workspace TLS-intercepting filter in front of a Chrome container with no other route out, and #28 shows WebSocket and HTTP/2 survive it. The deployed runtime check is still to run.
 
 **Unresolved limits:**
 
 - Local Docker only. Whether Cloudflare Containers can pass the workspace identity to the filter and deny Chrome every other route is untested.
 - Chrome runs with `--no-sandbox`. Running it sandboxed inside the container is untested.
 - The filter matches exact hostnames only. A login that spans several hosts needs each one listed, and wildcard rules are not supported yet.
-- WebSocket and HTTP/2 through the filter are untested (#28).
+- A WebSocket never rides HTTP/2 through the filter. mitmproxy does not offer RFC 8441 extended CONNECT, so Chrome opens a separate HTTP/1.1 tunnel for each WebSocket. Sites work, at the cost of one extra TCP and TLS connection per socket.
+- A WebSocket was held for 65 seconds. Sessions of minutes or hours, and idle timeouts in the filter, are untested.
 - Chromium still makes background requests (component updates, time sync, `accounts.google.com`) despite `--disable-background-networking`. The filter denies and logs them.
 
 ### Local trial: Chrome behind the workspace egress filter
@@ -120,6 +121,32 @@ docker compose down -v                                 # discards the CA
 - **Expected:** the page now loads, with no image rebuild or filter restart
 - **Observed:** DOM contained `<title>Example Domain</title>`. The filter logged `allow` for `GET https://example.org/` and `GET https://example.org/s.js` with `"workspace": "ws-trial"`.
 - **Retries:** 2026-11-22 07:23 UTC, the automated test run passed
+- **Fallback:** none needed
+
+### Local trial: WebSocket and HTTP/2 through the filter (#28)
+
+Run `pnpm exec vp test run --project feasibility feasibility/egress-protocols.test.ts` from the repo root with Docker running. It uses its own Compose project, `ditto-feasibility-egress-protocols`, so it can run beside the #27 suite. By default it holds the WebSocket for 5 seconds. Set `EGRESS_WS_HOLD_MS=65000` for the one-minute acceptance check.
+
+`feasibility/egress/protocols.compose.yaml` adds two services to `compose.yaml`. `browser` is the same Chrome image kept running with `--devtools`, which serves DevTools on 127.0.0.1:9222 inside its container. `driver` (`node:24-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54`, Node 24.22.3) shares the browser's network namespace and runs `driver/cdp.mjs`, which opens a URL over DevTools and prints what a JavaScript expression resolves to in the page. Only DevTools traffic stays inside the container. Page traffic leaves through the filter. The filter now logs `http_version` (Chrome to filter) and `upstream_alpn` (filter to origin) on every request, and decides a WebSocket again, as `method: "WEBSOCKET"`, once its upgrade completes.
+
+#### 2026-11-22 · WebSocket held open for a minute through the filter · pass
+
+- **Route:** Chromium 156.0.8078.79 in the `browser` container opens `https://echo.websocket.org/`, then `new WebSocket("wss://echo.websocket.org/")`, through the filter and its CA, with `echo.websocket.org` and `example.com` on the `ws-trial` list. The page sends `ping <n>` every 10 seconds for 65 seconds.
+- **Date:** 2026-11-22, 07:37 UTC
+- **Network origin:** container
+- **Expected:** the socket opens, the server's greeting arrives unprompted, every client message is echoed back, the socket is still open after a minute, and the filter logs an allow for the WebSocket with the workspace
+- **Observed:** the socket opened and received `Request served by <instance id>`. 7 of 7 pings were echoed, with round trips of 222 to 237 ms. After 65,189 ms `readyState` was `1` (open) and no close event had fired. The filter logged `allow` for `CONNECT echo.websocket.org:443`, the upgrade `GET https://echo.websocket.org/` with `"http_version": "HTTP/1.1", "upstream_alpn": "http/1.1"`, and `"method": "WEBSOCKET"`, each with `"workspace": "ws-trial"`. The page itself had loaded over a separate HTTP/2 tunnel (`"upstream_alpn": "h2"`), so the WebSocket did not use RFC 8441.
+- **Retries:** 2026-11-22 07:35 UTC, the default 5-second automated run passed. 07:36 UTC, the automated run with `EGRESS_WS_HOLD_MS=65000` passed alongside `egress.test.ts`.
+- **Fallback:** none needed
+
+#### 2026-11-22 · HTTP/2 negotiated end to end through the filter · pass
+
+- **Route:** the same browser loads `https://example.com/` through the filter
+- **Date:** 2026-11-22, 07:38 UTC
+- **Network origin:** container
+- **Expected:** Chrome negotiates `h2` with the filter, and the filter negotiates `h2` with the origin. If either side falls back to HTTP/1.1, record it as a downgrade.
+- **Observed:** `nextHopProtocol` was `h2` for the document and for `https://example.com/s.js`. The filter logged both requests with `"http_version": "HTTP/2.0", "upstream_alpn": "h2"` and `"workspace": "ws-trial"`. `echo.websocket.org` pages also loaded over `h2` on both legs. No downgrade.
+- **Retries:** 2026-11-22 07:35 UTC and 07:36 UTC, the automated test runs passed
 - **Fallback:** none needed
 
 ## Initial resources
