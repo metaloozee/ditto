@@ -149,6 +149,29 @@ describe("workspace computer", () => {
 		expect(p.inactivity).toEqual([60 * 60_000]);
 	});
 
+	it("keeps the first start's deadline when the owner starts a running instance again", async () => {
+		const p = platform();
+		await call(p.env, "/w/ws-takeover/start", { method: "POST" }, RUN_KEY);
+		await call(p.env, "/w/ws-takeover/start", { method: "POST" }, RUN_KEY);
+
+		expect(p.started).toHaveLength(1);
+		expect(p.alarms).toHaveLength(1);
+		expect(p.inactivity).toHaveLength(1);
+	});
+
+	it.each(["", "sixty", "0", "-5"])(
+		"refuses to start without a valid spending deadline (MAX_MINUTES %j)",
+		async (minutes) => {
+			const p = platform();
+			p.env.MAX_MINUTES = minutes;
+			const response = await call(p.env, "/w/ws-takeover/start", { method: "POST" }, RUN_KEY);
+
+			expect(response.status).toBe(500);
+			expect(p.started).toEqual([]);
+			expect(p.alarms).toEqual([]);
+		},
+	);
+
 	it("gives each workspace its own instance", async () => {
 		const p = platform();
 		await call(p.env, "/w/ws-takeover/start", { method: "POST" }, RUN_KEY);

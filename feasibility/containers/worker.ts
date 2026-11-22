@@ -69,15 +69,23 @@ export class Workspace {
 
 	private async start(workspace: string): Promise<Response> {
 		const began = Date.now();
+		const minutes = Number(this.env.MAX_MINUTES);
+		if (!Number.isFinite(minutes) || minutes <= 0) {
+			return Response.json(
+				{ workspace, error: "MAX_MINUTES must be a positive number" },
+				{ status: 500 },
+			);
+		}
+		// A repeat start keeps the first deadline, so starting again never extends the cap.
 		if (!this.container.running) {
+			const lifetimeMs = minutes * 60_000;
 			// The workspace identity reaches the filter only through this variable.
 			this.container.start({ env: { WORKSPACE_ID: workspace }, enableInternet: true });
+			// The Durable Object sits idle while the owner signs in, which would otherwise stop the
+			// container within seconds. It lives until the alarm destroys it instead.
+			await this.container.setInactivityTimeout(lifetimeMs);
+			await this.state.storage.setAlarm(began + lifetimeMs);
 		}
-		const lifetimeMs = Number(this.env.MAX_MINUTES) * 60_000;
-		// The Durable Object sits idle while the owner signs in, which would otherwise stop the
-		// container within seconds. It lives until the alarm destroys it instead.
-		await this.container.setInactivityTimeout(lifetimeMs);
-		await this.state.storage.setAlarm(began + lifetimeMs);
 		const control = this.container.getTcpPort(PORTS.control);
 		for (;;) {
 			const ready = await control
