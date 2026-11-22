@@ -107,6 +107,31 @@ describe("ChatGPT route", () => {
 	});
 });
 
+describe("deployed Worker route (#31)", () => {
+	const origin = "deployed Worker (Cloudflare network, Workers Paid, data centre AMS)";
+
+	it("names the container route as the fallback when the provider blocks Cloudflare", async () => {
+		const run = await runModelTrial({
+			route: "chatgpt",
+			credentials: await chatgptCredentials(),
+			fetch: simulatedProvider({
+				responses: [{ status: 403, body: "<html>Sorry, you have been blocked</html>" }],
+			}).fetch,
+		});
+
+		const entry = formatEvidence([{ ...run, request: { cpuMs: 41.2, wallMs: 3200 } }], {
+			origin,
+			deployed: true,
+		});
+		expect(entry).toMatch(/· fail\n/);
+		expect(entry).toMatch(/- \*\*Fallback:\*\* .*container route/);
+		expect(entry).toContain(
+			"- **CPU time:** whole trial request 41ms CPU, 3200ms wall, from the Worker's tail event. Worst 41ms: over the Workers free plan (10ms per request), within the paid plan default",
+		);
+		expectNoSecrets(entry);
+	});
+});
+
 describe("OpenCode API key route", () => {
 	it("passes two turns and records that an API key has no refresh", async () => {
 		const run = await runModelTrial({
