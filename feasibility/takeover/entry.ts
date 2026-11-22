@@ -8,7 +8,7 @@ export type Observation = {
 	at: Date;
 	tookOver: boolean;
 	steppedThrough: boolean;
-	botFinished: boolean;
+	botSignedIn: boolean;
 	/** Where the bot found the tab when it inspected the screen after hand-back. */
 	afterHandBack?: string;
 	/** Where the tab was when the bot judged the task. */
@@ -37,7 +37,12 @@ const hosts = {
 	},
 };
 
+export const ALREADY_SIGNED_IN =
+	"The profile is already signed in, so this run would grade a login it never tested. Discard the profile and rerun";
+
 export function evidenceEntry(run: Observation): string {
+	// The bot never tries a login itself, so a run without take-over only reuses an old session.
+	if (!run.tookOver) throw new Error(ALREADY_SIGNED_IN);
 	const outcome = grade(run);
 	const date = run.at.toISOString().slice(0, 10);
 	const time = run.at.toISOString().slice(11, 16);
@@ -51,10 +56,10 @@ export function evidenceEntry(run: Observation): string {
 		`- **Route:** ${where.route}, hands back, then the bot will ${run.task}`,
 		`- **Date:** ${date}, ${time} UTC`,
 		`- **Network origin:** ${where.origin}`,
-		"- **Expected:** the owner completes only the login and any challenge; after the explicit hand-back the bot inspects the screen and finishes the task alone",
+		"- **Expected:** the owner completes only the login and any challenge; after the explicit hand-back the bot inspects the screen and reaches the signed-in page alone. The page check proves the session carried over, not a multi-step task",
 		`- **Observed:** took over: ${yesNo(run.tookOver)}. Challenges: ${run.challenges || "none"}. Site's response: ${run.siteResponse || "none recorded"}. ` +
 			(run.afterHandBack ? `After hand-back the bot found ${redactUrl(run.afterHandBack)}. ` : "") +
-			`Bot finished the task after hand-back: ${yesNo(run.botFinished)}, at ${redactUrl(run.finishedAt)}. ` +
+			`Bot reached the signed-in page after hand-back: ${yesNo(run.botSignedIn)}, at ${redactUrl(run.finishedAt)}. ` +
 			`Owner operated the site beyond the login: ${yesNo(run.steppedThrough)}. Filter denied: ${denied}.`,
 		"- **Retries:** _none_",
 		`- **Fallback:** ${outcome === "unsupported" ? "_owner to name: another provider that enforces the workspace destination list, or drop the workflow_" : "none needed"}`,

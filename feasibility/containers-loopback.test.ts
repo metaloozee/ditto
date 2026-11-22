@@ -64,7 +64,7 @@ async function doorway() {
 		port: 0,
 		key: KEY,
 	});
-	cleanup.push(worker.close, loopback.close);
+	cleanup.push(worker.close, () => loopback.close());
 	return { worker, loopback };
 }
 

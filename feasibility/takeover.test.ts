@@ -12,7 +12,7 @@ describe("evidence entry", () => {
 		at: new Date("2026-11-23T09:15:00Z"),
 		tookOver: true,
 		steppedThrough: false,
-		botFinished: true,
+		botSignedIn: true,
 		afterHandBack: "https://www.linkedin.com/checkpoint/challenge/AgH3x9?x=1",
 		finishedAt: "https://www.linkedin.com/feed/",
 		challenges: "device check by email code",
@@ -20,7 +20,7 @@ describe("evidence entry", () => {
 		denied: ["sparrow.cloudflare.com", "content-autofill.googleapis.com"],
 	};
 
-	it("records the grade, the challenge and the bot finishing after hand-back", () => {
+	it("records the grade, the challenge and the bot reaching the page after hand-back", () => {
 		const entry = evidenceEntry(observation);
 
 		expect(entry).toMatch(
@@ -29,7 +29,8 @@ describe("evidence entry", () => {
 		expect(entry).toContain("device check by email code");
 		expect(entry).toContain("accepted the code and signed in");
 		expect(entry).toContain("https://www.linkedin.com/checkpoint/challenge/<path>");
-		expect(entry).toMatch(/bot finished the task after hand-back: yes/i);
+		expect(entry).toMatch(/bot reached the signed-in page after hand-back: yes/i);
+		expect(entry).not.toMatch(/finish/i);
 		expect(entry).toContain("`sparrow.cloudflare.com`");
 	});
 
@@ -40,6 +41,10 @@ describe("evidence entry", () => {
 		expect(entry).toContain("- **Network origin:** Cloudflare container");
 		expect(entry).toContain("Cloudflare Containers");
 		expect(entry).not.toContain("- **Network origin:** container\n");
+	});
+
+	it("refuses a run with no take-over: the profile was already signed in, so nothing was tested", () => {
+		expect(() => evidenceEntry({ ...observation, tookOver: false })).toThrow(/already signed in/);
 	});
 
 	it("refuses to render a note that leaks an account identifier", () => {
@@ -155,22 +160,22 @@ describe("take-over session", () => {
 });
 
 describe("grade", () => {
-	it("passes a workflow the bot finished with no owner help", () => {
-		expect(grade({ tookOver: false, steppedThrough: false, botFinished: true })).toBe("pass");
+	it("passes a workflow the bot completed with no owner help", () => {
+		expect(grade({ tookOver: false, steppedThrough: false, botSignedIn: true })).toBe("pass");
 	});
 
-	it("marks a workflow works with take-over when the bot finished after hand-back", () => {
-		expect(grade({ tookOver: true, steppedThrough: false, botFinished: true })).toBe(
+	it("marks a workflow works with take-over when the bot reached the page after hand-back", () => {
+		expect(grade({ tookOver: true, steppedThrough: false, botSignedIn: true })).toBe(
 			"works with take-over",
 		);
 	});
 
 	it("fails a workflow the owner had to operate step by step", () => {
-		expect(grade({ tookOver: true, steppedThrough: true, botFinished: true })).toBe("unsupported");
+		expect(grade({ tookOver: true, steppedThrough: true, botSignedIn: true })).toBe("unsupported");
 	});
 
 	it("fails a workflow the bot could not finish after hand-back", () => {
-		expect(grade({ tookOver: true, steppedThrough: false, botFinished: false })).toBe(
+		expect(grade({ tookOver: true, steppedThrough: false, botSignedIn: false })).toBe(
 			"unsupported",
 		);
 	});

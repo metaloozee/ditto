@@ -6,11 +6,11 @@ export type Run = {
 	tookOver: boolean;
 	/** The owner had to operate the site beyond the login or challenge. */
 	steppedThrough: boolean;
-	/** The bot finished the representative task (after hand-back, if there was a take-over). */
-	botFinished: boolean;
+	/** The bot reached the representative signed-in page on its own (after hand-back, if any). */
+	botSignedIn: boolean;
 };
 
-export function grade({ tookOver, steppedThrough, botFinished }: Run): Grade {
-	if (steppedThrough || !botFinished) return "unsupported";
+export function grade({ tookOver, steppedThrough, botSignedIn }: Run): Grade {
+	if (steppedThrough || !botSignedIn) return "unsupported";
 	return tookOver ? "works with take-over" : "pass";
 }

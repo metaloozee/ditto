@@ -1,11 +1,11 @@
 // One representative login workflow with take-over, wherever the desktop runs: local Docker (#29)
 // or Cloudflare Containers (#32). The bot opens the login page and hands the screen to the owner.
-// Only typing `hand back` returns control. The bot then inspects the screen, finishes the task and
-// returns a redacted evidence entry. Prompts go to stderr.
+// Only typing `hand back` returns control. The bot then inspects the screen, opens the task's signed-in
+// page and returns a redacted evidence entry. Prompts go to stderr.
 import { createInterface } from "node:readline/promises";
 
 import { Tab } from "./cdp.ts";
-import { evidenceEntry, type Observation } from "./entry.ts";
+import { ALREADY_SIGNED_IN, evidenceEntry, type Observation } from "./entry.ts";
 import { assertClean, redactUrl } from "./redact.ts";
 import { TakeOver } from "./session.ts";
 import type { Workflow } from "./workflows.ts";
@@ -52,45 +52,41 @@ export async function takeOverWorkflow(options: {
 	// Pages render after load; give the signed-in check time to settle.
 	const signedIn = () => tab.waitFor(workflow.task.done, 15_000);
 
-	// A profile from an earlier run may already be signed in; then no take-over is needed.
+	// A profile from an earlier run of this workflow would pass without testing the login.
 	await session.act(() => tab.goto(workflow.task.url));
-	let tookOver = false;
-	let afterHandBack: string | undefined;
-
-	if (!(await session.inspect(signedIn))) {
-		await session.act(() => tab.goto(workflow.login));
-		await session.takeOver();
-		tookOver = true;
-
-		log(`Take-over ready. The bot is not observing or operating the screen.`);
-		log(`Open ${options.viewUrl} and sign in to ${workflow.name}.`);
-		log(
-			"Complete only the login and any challenge. Note what the site asked and how it responded.",
-		);
-		while ((await prompt('Type "hand back" to return control: ')).toLowerCase() !== "hand back") {
-			log("The owner keeps control until they type hand back.");
-		}
-		session.handBack();
-
-		// Inspect before acting: the screen may not be where the bot left it.
-		afterHandBack = await session.inspect(() => tab.evaluate<string>("location.href"));
-		log(`After hand-back the tab is at ${redactUrl(afterHandBack)}.`);
+	if (await session.inspect(signedIn)) {
+		tab.close();
+		process.stdin.destroy();
+		throw new Error(`${workflow.name}: ${ALREADY_SIGNED_IN}`);
 	}
+
+	await session.act(() => tab.goto(workflow.login));
+	await session.takeOver();
+
+	log(`Take-over ready. The bot is not observing or operating the screen.`);
+	log(`Open ${options.viewUrl} and sign in to ${workflow.name}.`);
+	log("Complete only the login and any challenge. Note what the site asked and how it responded.");
+	while ((await prompt('Type "hand back" to return control: ')).toLowerCase() !== "hand back") {
+		log("The owner keeps control until they type hand back.");
+	}
+	session.handBack();
+
+	// Inspect before acting: the screen may not be where the bot left it.
+	const afterHandBack = await session.inspect(() => tab.evaluate<string>("location.href"));
+	log(`After hand-back the tab is at ${redactUrl(afterHandBack)}.`);
 
 	log(`Bot resumes: ${workflow.task.describe}.`);
 	await session.act(() => tab.goto(workflow.task.url));
-	const botFinished = await session.inspect(signedIn);
+	const botSignedIn = await session.inspect(signedIn);
 	const finishedAt = await session.inspect(() => tab.evaluate<string>("location.href"));
 	tab.close();
-	log(`Bot finished the task: ${botFinished ? "yes" : "no"}.`);
+	log(`Bot reached the signed-in page: ${botSignedIn ? "yes" : "no"}.`);
 
-	const challenges = tookOver
-		? await ask("Challenges seen (CAPTCHA, device check, blocked network, none): ")
-		: "";
-	const siteResponse = tookOver ? await ask("How did the site respond to them: ") : "";
-	const steppedThrough =
-		tookOver &&
-		/^y/i.test(await ask("Did you operate the site beyond the login or challenge? (y/n): "));
+	const challenges = await ask("Challenges seen (CAPTCHA, device check, blocked network, none): ");
+	const siteResponse = await ask("How did the site respond to them: ");
+	const steppedThrough = /^y/i.test(
+		await ask("Did you operate the site beyond the login or challenge? (y/n): "),
+	);
 	process.stdin.destroy();
 
 	const denied = [
@@ -106,9 +102,9 @@ export async function takeOverWorkflow(options: {
 		workflow: workflow.name,
 		task: workflow.task.describe,
 		at,
-		tookOver,
+		tookOver: true,
 		steppedThrough,
-		botFinished,
+		botSignedIn,
 		afterHandBack,
 		finishedAt,
 		challenges,

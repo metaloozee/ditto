@@ -434,7 +434,7 @@ Representative logins, run by the owner with their permitted test accounts in a 
 
 - The take-over view is a raw noVNC screen, not the take-over UI. It has no owner sign-in, so anything on the host's loopback can view or drive the screen during the trial.
 - DevTools is published on the host's loopback for the bot. The harness refuses its own bot reads and actions during take-over, but nothing stops another local process from using DevTools.
-- The bot's task checks are read-only and prove only that the session works. They post, change and buy nothing.
+- The bot's task checks are read-only and prove only that the session works. They post, change and buy nothing. Each representative task is opening one signed-in page, so "works with take-over" here means the owner's session carried over to the bot after hand-back, not that the bot completed a multi-step task on the site.
 
 ### Running a workflow
 
@@ -445,9 +445,9 @@ pnpm feasibility:takeover google      # or linkedin, protected
 pnpm feasibility:takeover --down      # after the last workflow: discards the CA and the signed-in profile
 ```
 
-1. The harness starts the `ws-takeover` filter, the desktop and the viewer (`feasibility/takeover/compose.yaml`, which includes the #27 egress stack). The bot opens the task page. If it is already signed in, the workflow can pass without take-over.
-2. Otherwise the bot opens the login page and suspends. Once it prints **Take-over ready**, open `http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale` and complete only the login and any challenge. The bot neither reads nor drives the screen until you hand back.
-3. Type `hand back` in the terminal. Nothing else returns control, including closing the view. The bot inspects where the tab is, then does the task alone.
+1. The harness starts the `ws-takeover` filter, the desktop and the viewer (`feasibility/takeover/compose.yaml`, which includes the #27 egress stack). The bot opens the task page. If the profile is already signed in, the harness stops without an entry, because the run would grade a login it never tested. Discard the profile first with `pnpm feasibility:takeover --down`, or on Cloudflare `pnpm feasibility:containers stop ws-takeover`.
+2. The bot opens the login page and suspends. Once it prints **Take-over ready**, open `http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale` and complete only the login and any challenge. The bot neither reads nor drives the screen until you hand back.
+3. Type `hand back` in the terminal. Nothing else returns control, including closing the view. The bot inspects where the tab is, then opens the task's signed-in page alone.
 4. Answer the three prompts about challenges, the site's response, and whether you had to operate the site beyond the login. Answers holding an email address, cookie, token or long account number are refused.
 5. Paste the printed entry into the workflow's slot below, then fill in the grading lines the harness cannot see.
 
@@ -470,12 +470,12 @@ Copy under each workflow and fill in every line.
 ```md
 - **Grade:** pass | works with take-over | unsupported
 - **Challenges seen:** CAPTCHA, device check, blocked network, other, or none, each with the site's response
-- **Bot finished after hand-back:** yes | no, and where the tab was when the bot inspected it
+- **Bot reached the signed-in page after hand-back:** yes | no, and where the tab was when the bot inspected it
 - **Owner operated the site beyond the login or challenge:** yes (fails the trial) | no
 - **Destinations added during the run:** hosts, or none
 ```
 
-Pass: the bot finished with no take-over. Works with take-over: the owner completed only the login or challenge and the bot finished after hand-back. Unsupported: the bot could not finish, or the owner had to operate the site step by step.
+Pass: the bot reached the page with no take-over. The harness never attempts a login itself and refuses an already signed-in profile, so it cannot record a pass. Works with take-over: the owner completed only the login or challenge and the bot reached the signed-in page after hand-back. Unsupported: the bot could not reach it, or the owner had to operate the site step by step.
 
 ### Evidence
 
