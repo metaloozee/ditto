@@ -6,6 +6,14 @@ import { promisify } from "node:util";
 
 import { afterAll, beforeAll, expect, it } from "vite-plus/test";
 
+import {
+	HTTP2_PAGE,
+	http2Probe,
+	WEBSOCKET_PAGE,
+	type WebSocketSession,
+	websocketProbe,
+} from "./egress/probes.ts";
+
 // WebSocket and HTTP/2 through the egress filter (#28). Its own Compose project, so it
 // can run beside egress.test.ts. The WebSocket is held for EGRESS_WS_HOLD_MS
 // (default 5s); set it to 65000 for the one-minute acceptance run.
@@ -65,46 +73,10 @@ afterAll(async () => {
 	rmSync(destinations, { recursive: true, force: true });
 }, 120_000);
 
-type Session = {
-	opened: boolean;
-	greeting: string | null;
-	sent: number;
-	echoed: number;
-	openForMs: number;
-	openAtEnd: boolean;
-	closeCode: number | null;
-};
-
 it(
 	"holds a WebSocket open through the filter and exchanges messages both ways",
 	async () => {
-		const session = await inPage<Session>(
-			"https://echo.websocket.org/",
-			`new Promise((resolve) => {
-				const ws = new WebSocket("wss://echo.websocket.org/");
-				const s = { opened: false, greeting: null, sent: 0, echoed: 0, openForMs: 0, openAtEnd: false, closeCode: null };
-				let start = 0, timer;
-				const send = () => { ws.send("ping " + s.sent); s.sent++; };
-				ws.onmessage = ({ data }) => {
-					if (String(data).startsWith("ping ")) s.echoed++;
-					else s.greeting ??= String(data).slice(0, 40);
-				};
-				ws.onclose = (e) => { s.closeCode = e.code; clearInterval(timer); s.openForMs = Date.now() - start; resolve(s); };
-				ws.onopen = () => {
-					s.opened = true;
-					start = Date.now();
-					send();
-					timer = setInterval(send, 2000);
-					setTimeout(() => {
-						clearInterval(timer);
-						s.openForMs = Date.now() - start;
-						s.openAtEnd = ws.readyState === WebSocket.OPEN;
-						// Let the last echo arrive, then hang up.
-						setTimeout(() => { resolve({ ...s }); ws.close(); }, 2000);
-					}, ${holdMs});
-				};
-			})`,
-		);
+		const session = await inPage<WebSocketSession>(WEBSOCKET_PAGE, websocketProbe(holdMs));
 
 		expect(session).toMatchObject({ opened: true, openAtEnd: true, closeCode: null });
 		expect(session.greeting).toMatch(/^Request served by/);
@@ -125,10 +97,7 @@ it(
 );
 
 it("negotiates HTTP/2 from Chrome to the filter and from the filter to the origin", async () => {
-	const protocol = await inPage<string>(
-		"https://example.com/",
-		`performance.getEntriesByType("navigation")[0].nextHopProtocol`,
-	);
+	const protocol = await inPage<string>(HTTP2_PAGE, http2Probe);
 	expect(protocol).toBe("h2");
 
 	expect(await filterLog()).toContainEqual(
