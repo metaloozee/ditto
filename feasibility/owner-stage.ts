@@ -5,6 +5,7 @@ import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { parseEnv } from "node:util";
 
 const alchemyBin = path.join(import.meta.dirname, "..", "node_modules", ".bin", "alchemy");
 
@@ -14,16 +15,30 @@ export const configDir = path.join(homedir(), ".config", "ditto-feasibility");
 /** One deployed stage: the folder its alchemy.run.ts lives in, its stack name and its stage. */
 export type Stack = { dir: string; name: string; stage: string };
 
-export function alchemy(
+export async function alchemy(
 	stack: Stack,
 	command: "deploy" | "destroy",
 	env: Record<string, string>,
 ): Promise<number> {
+	const projectEnv = path.join(import.meta.dirname, "..", ".env");
+	const profile =
+		process.env.ALCHEMY_PROFILE ??
+		(await readFile(projectEnv, "utf8").then(
+			(contents) => parseEnv(contents).ALCHEMY_PROFILE,
+			(error: NodeJS.ErrnoException) => {
+				if (error.code !== "ENOENT") throw error;
+				return undefined;
+			},
+		));
 	const child = spawn(
 		alchemyBin,
 		[command, "--stage", stack.stage, "--yes", "--no-input", "--env-file", "/dev/null"],
 		// Secrets reach alchemy only through this child's environment, never a file in the repo.
-		{ cwd: stack.dir, stdio: ["ignore", "inherit", "inherit"], env: { ...process.env, ...env } },
+		{
+			cwd: stack.dir,
+			stdio: ["ignore", "inherit", "inherit"],
+			env: { ...process.env, ...env, ALCHEMY_PROFILE: profile },
+		},
 	);
 	return new Promise((resolve) => child.once("exit", (code) => resolve(code ?? 1)));
 }
