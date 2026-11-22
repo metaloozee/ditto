@@ -1,0 +1,4 @@
+# Approved destinations for workspace ws-cloud-trial (#32), one host per line.
+# The hosts the #27 and #28 local checks approved.
+example.com
+echo.websocket.org

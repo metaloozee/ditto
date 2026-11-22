@@ -18,6 +18,23 @@ export type Observation = {
 	siteResponse: string;
 	/** Hosts the filter refused during the run. Hosts only: request URLs can carry tokens. */
 	denied: string[];
+	/** Where the desktop ran: local Docker (#29, the default) or Cloudflare Containers (#32). */
+	host?: "docker" | "cloudflare";
+};
+
+const hosts = {
+	docker: {
+		title: "",
+		route:
+			"headed Chromium in the desktop container behind the `ws-takeover` egress filter; the owner signs in through the loopback noVNC view",
+		origin: "container",
+	},
+	cloudflare: {
+		title: " on Cloudflare",
+		route:
+			"headed Chromium on Cloudflare Containers behind the `ws-takeover` egress filter in the same instance; the owner signs in through the noVNC view, forwarded to loopback by the run-key gated Worker",
+		origin: "Cloudflare container",
+	},
 };
 
 export function evidenceEntry(run: Observation): string {
@@ -25,14 +42,15 @@ export function evidenceEntry(run: Observation): string {
 	const date = run.at.toISOString().slice(0, 10);
 	const time = run.at.toISOString().slice(11, 16);
 	const yesNo = (value: boolean) => (value ? "yes" : "no");
+	const where = hosts[run.host ?? "docker"];
 	const denied = run.denied.length ? run.denied.map((host) => `\`${host}\``).join(", ") : "none";
 
 	const entry = [
-		`#### ${date} · ${run.workflow} login with take-over · ${outcome}`,
+		`#### ${date} · ${run.workflow} login with take-over${where.title} · ${outcome}`,
 		"",
-		`- **Route:** headed Chromium in the desktop container behind the \`ws-takeover\` egress filter; the owner signs in through the loopback noVNC view, hands back, then the bot will ${run.task}`,
+		`- **Route:** ${where.route}, hands back, then the bot will ${run.task}`,
 		`- **Date:** ${date}, ${time} UTC`,
-		"- **Network origin:** container",
+		`- **Network origin:** ${where.origin}`,
 		"- **Expected:** the owner completes only the login and any challenge; after the explicit hand-back the bot inspects the screen and finishes the task alone",
 		`- **Observed:** took over: ${yesNo(run.tookOver)}. Challenges: ${run.challenges || "none"}. Site's response: ${run.siteResponse || "none recorded"}. ` +
 			(run.afterHandBack ? `After hand-back the bot found ${redactUrl(run.afterHandBack)}. ` : "") +

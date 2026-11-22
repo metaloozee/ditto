@@ -32,6 +32,15 @@ describe("evidence entry", () => {
 		expect(entry).toContain("`sparrow.cloudflare.com`");
 	});
 
+	it("records a run on Cloudflare Containers with its own route and network origin", () => {
+		const entry = evidenceEntry({ ...observation, host: "cloudflare" });
+
+		expect(entry).toMatch(/^#### 2026-11-23 · LinkedIn login with take-over on Cloudflare · /m);
+		expect(entry).toContain("- **Network origin:** Cloudflare container");
+		expect(entry).toContain("Cloudflare Containers");
+		expect(entry).not.toContain("- **Network origin:** container\n");
+	});
+
 	it("refuses to render a note that leaks an account identifier", () => {
 		expect(() =>
 			evidenceEntry({ ...observation, siteResponse: "signed in as owner@example.com" }),
