@@ -35,6 +35,42 @@ _Not yet run. Must be a different date from day 1._
 
 _Not yet run. Recorded apart from the ChatGPT result (ADR-0003)._
 
+#### Free-tier Worker probe (#30)
+
+A bare Worker on the Workers free tier answers one question: does OpenAI accept a token refresh and a Responses request from Cloudflare's network addresses, not only from the home network? It uses plain `fetch` and no Pi runtime, so it stays inside the free-tier CPU limit. Each run refreshes the token at `https://auth.openai.com/oauth/token`, then sends one request to `https://chatgpt.com/backend-api/codex/responses` on the new token.
+
+The probe has its own Alchemy stack and stage (`ditto-free-tier-probe`, stage `free-tier-probe`). It runs from `feasibility/free-tier`, so its state lives in `feasibility/free-tier/.alchemy`. It creates one Worker, `ditto-free-tier-probe`, and one KV namespace, and touches no other stage's resources.
+
+The probe signs in separately from the baseline, in `~/.config/ditto-feasibility/free-tier-codex.json`, so a refresh on one side never retires the other side's refresh token. The deploy command passes the tokens and a generated run key to the Worker as secrets, through the deploy process's environment. They never appear in the repo or a URL. The Worker keeps each rotated refresh token in its KV namespace, so the day 2 run refreshes a day-old token. The run command sends the run key in a header, and the Worker refuses runs without it.
+
+Sign in to Cloudflare with Alchemy first. Then run:
+
+```sh
+pnpm feasibility:free-tier deploy    # first time: device-code ChatGPT sign-in, then deploy
+pnpm feasibility:free-tier run       # one run, prints a redacted entry for the slots below
+pnpm feasibility:free-tier destroy   # tears the stage down, prints the teardown entry
+```
+
+##### Day 1 · ChatGPT plan from Cloudflare
+
+_Not yet run._
+
+##### Day 2 · ChatGPT plan from Cloudflare
+
+_Not yet run. Must be a different date from day 1._
+
+##### Comparison with the local baseline
+
+_Not yet compared. For each step, compare the Cloudflare result with the home-network result from the same day. Explain each difference, or mark it unexplained._
+
+##### Does this justify Workers Paid?
+
+_Undecided. Answer yes or no, and give the reason from the evidence above. If the Cloudflare network is accepted, Workers Paid is needed only for the CPU the Pi runtime uses (#26). If it is refused, Workers Paid does not help, and the Worker route falls back to a supported container route._
+
+##### Teardown
+
+_Not yet torn down. Paste the entry that `pnpm feasibility:free-tier destroy` prints._
+
 ## Desktop provider
 
 **Choice:** _Undecided_
