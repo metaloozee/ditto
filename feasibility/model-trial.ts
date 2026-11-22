@@ -49,6 +49,8 @@ export interface TrialRun {
 	outcome: "pass" | "fail";
 	/** Every credential value seen during the run, so the entry can be redacted. */
 	secrets: Secret[];
+	/** CPU and wall time of the whole trial request, as Cloudflare reported it (#31). */
+	request?: { cpuMs: number; wallMs: number };
 }
 
 export interface TrialInput {
@@ -250,12 +252,15 @@ const failures = (run: TrialRun) =>
 		.map((s) => s.detail)
 		.join("; ");
 
+const DEPLOYED_FALLBACK =
+	"evaluate a supported container route (spec #16): open its follow-up ticket and record the consequence";
 const FREE_CPU_MS = 10;
 const PAID_CPU_MS = 30_000;
 const ms = (value: number) => `${value < 10 ? value.toFixed(1) : Math.round(value)}ms`;
 
 /** Per-step CPU, plus how the worst turn and the worst whole request compare with Workers limits. */
 function cpuLine(runs: TrialRun[]): string[] {
+	if (runs.some((r) => r.request)) return requestCpuLine(runs);
 	if (!runs.some((r) => r.steps.some((s) => s.cpuMs !== undefined))) return [];
 	const perRun = runs.map((run) =>
 		run.steps
@@ -279,10 +284,32 @@ function cpuLine(runs: TrialRun[]): string[] {
 	];
 }
 
+/** A deployed Worker reports CPU per request, not per step: one figure per trial. */
+function requestCpuLine(runs: TrialRun[]): string[] {
+	const perRun = runs.map((r) =>
+		r.request
+			? `whole trial request ${ms(r.request.cpuMs)} CPU, ${ms(r.request.wallMs)} wall`
+			: "not reported",
+	);
+	const worst = Math.max(...runs.map((r) => r.request?.cpuMs ?? 0));
+	const fits = (limit: number) => (worst <= limit ? "within" : "over");
+	const runsText =
+		perRun.length > 1 ? perRun.map((r, i) => `run ${i + 1}: ${r}`).join("; ") : perRun[0];
+	return [
+		`- **CPU time:** ${runsText}, from the Worker's tail event. Worst ${ms(worst)}: ${fits(FREE_CPU_MS)} the Workers free plan (10ms per request), ${fits(PAID_CPU_MS)} the paid plan default (30s per request, configurable to 5 min).`,
+	];
+}
+
 /** One evidence entry in the format of docs/feasibility/evidence.md, redacted. */
 export function formatEvidence(
 	runs: TrialRun[],
-	options: { origin: string; /** Where Pi ran, when not Node. */ runtime?: string },
+	options: {
+		origin: string;
+		/** Where Pi ran, when not Node. */
+		runtime?: string;
+		/** Ran in a deployed Worker, where a failure points at a container route instead (#31). */
+		deployed?: boolean;
+	},
 ): string {
 	const [first, ...retries] = runs;
 	if (!first) throw new Error("formatEvidence needs at least one run");
@@ -317,7 +344,7 @@ export function formatEvidence(
 		`- **Expected:** ${expected}`,
 		`- **Observed:** ${first.steps.map((s) => s.detail).join(". ")}.${tally}`,
 		`- **Retries:** ${retryText}`,
-		`- **Fallback:** ${outcome === "pass" ? "none needed" : route.fallback}`,
+		`- **Fallback:** ${outcome === "pass" ? "none needed" : options.deployed ? DEPLOYED_FALLBACK : route.fallback}`,
 		...cpuLine(runs),
 		"",
 	].join("\n");

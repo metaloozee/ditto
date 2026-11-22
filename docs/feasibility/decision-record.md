@@ -57,7 +57,7 @@ OPENCODE_API_KEY=<key> pnpm feasibility:model --route opencode --runtime workerd
 - **No gap with streaming, timers or compression.** SSE replies parse in workerd, `setTimeout` works, and `node:zlib` has `zstdCompressSync`, so Pi sends the same zstd-compressed request body as under Node.
 - **The trial swaps the global `fetch`.** Pi calls the global `fetch` for refresh, so the harness wraps it for the length of a trial. Concurrent trials in one isolate would see each other's wrapper. Consequence: run one trial at a time. This is a harness limit, not a Pi limit.
 
-**Before #31 deploys this Worker,** gate `POST /model-trial` (for example with Cloudflare Access). It accepts a credential in the request body and spends it on the owner's account, so an open deployed endpoint would relay requests for anyone who can reach it. Nothing in this stage deploys to Cloudflare.
+**Before #31 deploys this Worker,** gate `POST /model-trial` (for example with Cloudflare Access). It accepts a credential in the request body and spends it on the owner's account, so an open deployed endpoint would relay requests for anyone who can reach it. Nothing in this stage deploys to Cloudflare. #31 deploys it behind a run key: see Deployed Pi trial below.
 
 ##### ChatGPT plan in local Worker
 
@@ -102,6 +102,45 @@ _Undecided. Answer yes or no, and give the reason from the evidence above. If th
 ##### Teardown
 
 _Not yet torn down. Paste the entry that `pnpm feasibility:free-tier destroy` prints._
+
+#### Deployed Pi trial (#31)
+
+The #26 model-trial Worker, deployed to the owner's Cloudflare account on Workers Paid, runs the same turn, refresh and turn as the baseline. Requests now leave from Cloudflare's network with the Pi runtime in the path, so the result separates the runtime (#26) from the network (#30). Blocked until the owner upgrades to Workers Paid.
+
+The trial has its own Alchemy stack and stage (`ditto-paid-pi-trial`, stage `paid-pi-trial`). It runs from `feasibility/paid`, so its state lives in `feasibility/paid/.alchemy`. It creates two Workers, `ditto-paid-pi-trial-model-trial` and `ditto-paid-pi-trial-cpu-tail`, and one KV namespace, and touches no other stage's resources. `feasibility/paid/worker.ts` wraps `feasibility/model-worker.ts` unchanged, with the same compatibility settings.
+
+**Gate.** The Worker spends whatever credential arrives in the request body, so every route, including `GET /model-trial`, refuses a request without the stage's run key in the `x-trial-key` header (#30's digest comparison, in `feasibility/run-key.ts`). A deploy without a run key refuses every request. The deploy command generates the key into `~/.config/ditto-feasibility/paid-run-key` and passes it to the Worker as a secret. The Worker stores no credential: each run sends the owner's sign-in from `~/.config/ditto-feasibility/paid-codex.json` and saves the token the refresh rotates. This sign-in is separate from the baseline's and the probe's, so no stage retires another's refresh token.
+
+**CPU time.** A deployed Worker cannot be measured from `/proc`. Cloudflare reports each invocation's CPU and wall time to the tail Worker, which stores them by the run id the command sent. The figure covers the whole trial request, not each step, and is the number the Workers limit applies to. Under `alchemy dev` the local runtime reports 0ms, so only the owner's run measures it.
+
+Sign in to Cloudflare with Alchemy and upgrade to Workers Paid first. Then run each route on a day different from the baseline's day 1 and day 2:
+
+```sh
+pnpm feasibility:paid deploy                                  # generates the run key, deploys the stage
+pnpm feasibility:paid run --route chatgpt                     # first time: device-code ChatGPT sign-in; 3 runs, 15 min apart
+OPENCODE_API_KEY=<key> pnpm feasibility:paid run --route opencode
+pnpm feasibility:paid destroy                                 # tears the stage down, prints the teardown entry
+```
+
+##### ChatGPT plan in deployed Worker
+
+_Not yet run. Must be a different date from both baseline days._
+
+##### OpenCode API key in deployed Worker
+
+_Not yet run. Recorded apart from the ChatGPT result (ADR-0003)._
+
+##### Comparison with the local Worker trial and the free-tier probe
+
+_Not yet compared. For each step, compare the deployed result with the #26 local Worker entry (same runtime, home network) and the #30 free-tier probe entry (Cloudflare network, no Pi runtime). A step that fails only here points at Pi on Cloudflare's network. Compare the request CPU time with #26's workerd figures. Explain each difference, or mark it unexplained._
+
+##### If the route fails
+
+_Not applicable yet. If the deployed trial fails, link the follow-up ticket that evaluates a supported container route and documents the provider's restrictions, then record the failure's consequence for the model route._
+
+##### Teardown
+
+_Not yet torn down. Paste the entry that `pnpm feasibility:paid destroy` prints._
 
 ## Desktop provider
 

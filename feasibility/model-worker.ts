@@ -23,15 +23,15 @@ export type TrialEvent =
 
 const PROVIDER_ID = { chatgpt: "openai-codex", opencode: "opencode" } as const;
 
-interface Env {
-	/** Bound only in the feasibility-test stage: a simulated provider in place of the internet. */
+export interface ModelTrialEnv {
+	/** Bound only in test stages: a simulated provider in place of the internet. */
 	PROVIDER?: { fetch(request: Request): Promise<Response> };
 }
 
 export default {
 	async fetch(
 		request: Request,
-		env: Env,
+		env: ModelTrialEnv,
 		ctx: { waitUntil(promise: Promise<unknown>): void },
 	): Promise<Response> {
 		if (new URL(request.url).pathname !== "/model-trial") {

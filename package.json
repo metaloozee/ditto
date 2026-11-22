@@ -8,6 +8,7 @@
     "feasibility:model": "node feasibility/model-baseline.ts",
     "feasibility:takeover": "node feasibility/takeover/run.ts",
     "feasibility:free-tier": "node feasibility/free-tier/owner.ts",
+    "feasibility:paid": "node feasibility/paid/owner.ts",
     "build": "vp run @ditto/web#build",
     "preview": "vp run @ditto/web#preview",
     "typecheck": "vp run @ditto/web#typecheck",
