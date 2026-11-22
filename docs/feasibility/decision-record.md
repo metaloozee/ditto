@@ -122,6 +122,103 @@ docker compose down -v                                 # discards the CA
 - **Retries:** 2026-11-22 07:23 UTC, the automated test run passed
 - **Fallback:** none needed
 
+## Login workflows (#29)
+
+Representative logins, run by the owner with their permitted test accounts in a headed Chrome behind the workspace egress filter. Each workflow is graded under ADR-0004 and resumes under ADR-0007.
+
+**Filtered traffic on a computer with private logins:** _Undecided. State either that filtered traffic is suitable on a computer with private logins, or that another provider that enforces the workspace destination list must be evaluated, with the workflows that decide it._
+
+**Unresolved limits:**
+
+- The take-over view is a raw noVNC screen, not the take-over UI. It has no owner sign-in, so anything on the host's loopback can view or drive the screen during the trial.
+- DevTools is published on the host's loopback for the bot. The harness refuses its own bot reads and actions during take-over, but nothing stops another local process from using DevTools.
+- The bot's task checks are read-only and prove only that the session works. They post, change and buy nothing.
+
+### Running a workflow
+
+From the repo root, with Docker running:
+
+```sh
+pnpm feasibility:takeover google      # or linkedin, protected
+pnpm feasibility:takeover --down      # after the last workflow: discards the CA and the signed-in profile
+```
+
+1. The harness starts the `ws-takeover` filter, the desktop and the viewer (`feasibility/takeover/compose.yaml`, which includes the #27 egress stack). The bot opens the task page. If it is already signed in, the workflow can pass without take-over.
+2. Otherwise the bot opens the login page and suspends. Once it prints **Take-over ready**, open `http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale` and complete only the login and any challenge. The bot neither reads nor drives the screen until you hand back.
+3. Type `hand back` in the terminal. Nothing else returns control, including closing the view. The bot inspects where the tab is, then does the task alone.
+4. Answer the three prompts about challenges, the site's response, and whether you had to operate the site beyond the login. Answers holding an email address, cookie, token or long account number are refused.
+5. Paste the printed entry into the workflow's slot below, then fill in the grading lines the harness cannot see.
+
+The signed-in profile stays in the desktop's Docker volume, never on the host or in git. Evidence holds hosts, redacted paths and your notes only: no cookies, request URLs or page text.
+
+**Remote view.** Chrome runs headed on Xvfb inside the `desktop` container, which is attached only to the internal `workspace` network. x11vnc serves the screen and `socat` exposes DevTools on that network. The `viewer` container runs noVNC (websockify) and forwards DevTools. It is the only container with published ports, bound to `127.0.0.1:6080` (view) and `127.0.0.1:9222` (DevTools). Set `VIEW_PORT` or `DEVTOOLS_PORT` to move them.
+
+**Destination list.** `feasibility/takeover/destinations/ws-takeover.txt`. Hosts were found by loading each login page and reading the filter's deny log. Analytics (`sparrow.cloudflare.com`, `static.cloudflareinsights.com`, `*.demdex.net`, `play.google.com`), consent banners (`ot.www.cloudflare.com`) and Chromium's background traffic stay denied. If a step fails during the trial, add the denied host it needs, rerun, and record the addition in the entry.
+
+| Workflow                                                    | Login page                  | Representative task                     | Approved hosts                                                                                                                                                                                                             |
+| ----------------------------------------------------------- | --------------------------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Google                                                      | `accounts.google.com`       | open `myaccount.google.com` signed in   | `accounts.google.com`, `myaccount.google.com`, `www.google.com`, `www.gstatic.com`, `ssl.gstatic.com`, `fonts.gstatic.com`, `fonts.googleapis.com`, `apis.google.com`, `lh3.googleusercontent.com`, `accounts.youtube.com` |
+| LinkedIn                                                    | `www.linkedin.com/login`    | open `www.linkedin.com/feed/` signed in | `www.linkedin.com`, `static.licdn.com`, `media.licdn.com`, `platform.linkedin.com`                                                                                                                                         |
+| Protected site: Cloudflare dashboard (Turnstile on sign-in) | `dash.cloudflare.com/login` | open `dash.cloudflare.com` signed in    | `dash.cloudflare.com`, `challenges.cloudflare.com`, `brunhild.challenges.cloudflare.com`, `platform.dash.cloudflare.com`                                                                                                   |
+
+### Grading template
+
+Copy under each workflow and fill in every line.
+
+```md
+- **Grade:** pass | works with take-over | unsupported
+- **Challenges seen:** CAPTCHA, device check, blocked network, other, or none, each with the site's response
+- **Bot finished after hand-back:** yes | no, and where the tab was when the bot inspected it
+- **Owner operated the site beyond the login or challenge:** yes (fails the trial) | no
+- **Destinations added during the run:** hosts, or none
+```
+
+Pass: the bot finished with no take-over. Works with take-over: the owner completed only the login or challenge and the bot finished after hand-back. Unsupported: the bot could not finish, or the owner had to operate the site step by step.
+
+### Evidence
+
+#### 2026-11-22 · Take-over view is reachable on loopback only · pass
+
+- **Route:** `feasibility/takeover-stack.test.ts` starts the stack under its own Compose project, fetches noVNC and DevTools on `127.0.0.1`, reads the published bindings, then fetches noVNC on the host's LAN address
+- **Date:** 2026-11-22, 07:42 UTC
+- **Network origin:** container
+- **Expected:** both answer on loopback, each published port binds `127.0.0.1` only, and the LAN address refuses the connection
+- **Observed:** `vnc.html` returned 200 and `/json/version` returned 200 (`Chrome/156.0.8078.79`). `docker compose port` returned only `127.0.0.1:<port>` for 6080 and 9222. The fetch to the LAN address failed.
+- **Retries:** 2026-11-22 07:49 UTC, the full feasibility suite passed
+- **Fallback:** none needed
+
+#### 2026-11-22 · Login pages load through the filter without signing in · pass
+
+- **Route:** the bot loads each workflow's login page in the headed desktop through the `ws-takeover` filter, and loads `https://example.org/`, which is not on the list. The desktop's own DNS and a direct TCP connection to `1.1.1.1:443` are also tried.
+- **Date:** 2026-11-22, 07:42 UTC
+- **Network origin:** container
+- **Expected:** each login page renders its sign-in form on its own host, the filter logs an allow for it with workspace `ws-takeover`, the Turnstile widget renders on the protected site, and everything else is refused
+- **Observed:** `accounts.google.com/v3/signin/identifier` ("Sign in - Google Accounts"), `www.linkedin.com/login` ("LinkedIn Login, Sign in | LinkedIn") and `dash.cloudflare.com/login` each showed an email or password field. Turnstile added its `cf-chl-widget-*` response input, with `challenges.cloudflare.com` allowed. `example.org` failed with `net::ERR_TUNNEL_CONNECTION_FAILED` and a logged deny. DNS lookup and the direct connection both failed. No account was signed in.
+- **Retries:** 2026-11-22 07:49 UTC, the full feasibility suite passed
+- **Fallback:** none needed
+
+#### 2026-11-22 · Harness dry run without a sign-in · unsupported (expected)
+
+- **Route:** `pnpm feasibility:takeover linkedin`, handing back without signing in
+- **Date:** 2026-11-22, 07:48 UTC
+- **Network origin:** container
+- **Expected:** a non-`hand back` answer leaves the owner in control. After `hand back` the bot inspects the tab, fails the task and the entry grades `unsupported`. This exercises the harness only and grades nothing about LinkedIn.
+- **Observed:** the harness refused `ok`, accepted `hand back`, found the tab at `https://www.linkedin.com/login`, reported the task not finished, and printed an `unsupported` entry with the query string removed and only hosts in the deny list
+- **Retries:** _none_
+- **Fallback:** none needed
+
+#### Google
+
+_Not yet run by the owner. Paste the harness entry here, then the grading template._
+
+#### LinkedIn
+
+_Not yet run by the owner. Paste the harness entry here, then the grading template._
+
+#### Protected site: Cloudflare dashboard
+
+_Not yet run by the owner. Paste the harness entry here, then the grading template._
+
 ## Initial resources
 
 Candidate instance size, resource inventory and package versions. Screen capacity is deferred until it is measured.
