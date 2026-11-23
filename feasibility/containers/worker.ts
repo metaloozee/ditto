@@ -154,7 +154,9 @@ export class Workspace extends Container<WorkspaceEnv> {
 				{ status: 500 },
 			);
 		}
-		if (this.instance.running) return Response.json({ workspace, reused: true });
+		if (this.instance.running) {
+			return Response.json({ workspace, reused: true, instanceType: this.env.INSTANCE_TYPE });
+		}
 
 		// Decrypt first, so a key that cannot read the stored cookies fails before a billed start.
 		const stored = await this.ctx.storage.get<StoredCookies>("cookies");

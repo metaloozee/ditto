@@ -247,6 +247,17 @@ describe("the instance stays up only while it is used", () => {
 	});
 });
 
+describe("instance size", () => {
+	it("reports the instance type on a start that reuses the running instance", async () => {
+		const p = platform();
+		await owner(p.env, `${W}/start`);
+
+		const again = await owner(p.env, `${W}/start`);
+
+		expect(await again.json()).toMatchObject({ reused: true, instanceType: "standard-1" });
+	});
+});
+
 describe("DevTools during take-over (ADR-0007)", () => {
 	it("locks DevTools before it answers that take-over is ready", async () => {
 		const p = platform();

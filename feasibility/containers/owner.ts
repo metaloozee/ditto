@@ -245,7 +245,7 @@ async function takeover(id: string | undefined) {
 	const workflow = trialWorkflow(id, "takeover", Object.keys(workflows));
 	const t = await target();
 	const at = new Date();
-	await start(t, TAKEOVER);
+	const opened = await start(t, TAKEOVER);
 	const devtools = await serveLoopback({
 		workerUrl: t.url,
 		workspace: TAKEOVER,
@@ -304,7 +304,7 @@ async function takeover(id: string | undefined) {
 		process.stdout.write(
 			memoryEntry({
 				workflow: workflow.name,
-				instanceType: (await startedType(t)) ?? "unknown",
+				instanceType: opened.instanceType ?? "unknown",
 				at,
 				samples: sampler.samples,
 				completed: /· (pass|works with take-over)$/m.test(entry),
@@ -319,12 +319,6 @@ async function takeover(id: string | undefined) {
 		await sampler.stop();
 		await devtools.close();
 	}
-}
-
-/** The instance type the stage was deployed with, from a start answer. */
-async function startedType(t: Target): Promise<string | undefined> {
-	return (await t.json<Opened>(`/w/${TAKEOVER}/start`, "POST").catch(() => undefined))
-		?.instanceType;
 }
 
 async function signedInOn(t: Target, ids: WorkflowId[]) {
