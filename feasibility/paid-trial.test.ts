@@ -150,6 +150,39 @@ describe("model trial on the paid stage", () => {
 	}, 90_000);
 });
 
+describe("Workers AI in the trial Durable Object (#35)", () => {
+	it("runs the plain and tool-calling turns through the Bot's AI binding and prints a dated entry", async () => {
+		const { stdout } = await promisify(execFile)(
+			"node",
+			[
+				"feasibility/workers-ai-run.ts",
+				"--worker-url",
+				WORKER_URL,
+				"--runs",
+				"2",
+				"--interval-minutes",
+				"0",
+				"--account",
+				"trial-account-1",
+			],
+			{
+				cwd: repoRoot,
+				env: { PATH: process.env.PATH, HOME: process.env.HOME, TRIAL_RUN_KEY: RUN_KEY },
+			},
+		);
+
+		expect(stdout).toMatch(
+			/#### \d{4}-\d{2}-\d{2} · Workers AI `@cf\/deepseek-ai\/deepseek-v4.1-flash-1017` from Bot Durable Object .* · pass\n/,
+		);
+		expect(stdout).toContain("2 of 2 runs passed.");
+		expect(stdout).toContain(
+			"- **Attribution:** 6 of 6 requests logged by AI Gateway with metadata `dittoAccount: trial-account-1`",
+		);
+		expect(stdout).toMatch(/from the Bot's tail event/);
+		expect(stdout).not.toContain(RUN_KEY);
+	}, 90_000);
+});
+
 describe("Sign in with ChatGPT in the trial Durable Object (#34)", () => {
 	const headers = { "x-trial-key": RUN_KEY };
 	const transfer = () =>

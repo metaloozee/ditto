@@ -5,6 +5,7 @@
 //   OPENCODE_API_KEY=<key> pnpm feasibility:paid run --route opencode
 //   pnpm feasibility:paid transfer-siwc           sign in with ChatGPT here, hand it to the Bot (#34)
 //   pnpm feasibility:paid run --route siwc        run the trial in the Bot Durable Object (#34)
+//   pnpm feasibility:paid workers-ai --model @cf/...  Workers AI turns in the Bot through AI Gateway (#35)
 //   pnpm feasibility:paid destroy                 tear the stage down and print a teardown entry
 // `run` takes the baseline's options (--runs, --interval-minutes, --model). Progress goes to stderr.
 // Evidence entries go to stdout.
@@ -38,6 +39,7 @@ const siwcTransferFile = path.join(configDir, "paid-siwc.json");
 // This machine's host ID, shared with the local #34 run: one ID per host, per OpenAI's docs.
 const ownerHostIdFile = path.join(configDir, "siwc-host-id");
 const baseline = path.join(import.meta.dirname, "..", "model-baseline.ts");
+const workersAiRun = path.join(import.meta.dirname, "..", "workers-ai-run.ts");
 
 const log = (message: string) => console.error(`[paid-pi-trial] ${message}`);
 
@@ -64,6 +66,20 @@ async function run(args: string[]) {
 	log(
 		"Paste the entry into its slot under Model route > Deployed Pi trial (#31) in docs/feasibility/decision-record.md.",
 	);
+}
+
+/** Workers AI needs no credential: the Bot's binding bills this Cloudflare account. */
+async function workersAi(args: string[]) {
+	const url = await deployedUrl(STACK);
+	if (!url) throw new Error("The paid stage isn't deployed. Run: pnpm feasibility:paid deploy");
+	const key = await savedRunKey(runKeyFile, "pnpm feasibility:paid deploy");
+	log(`Running Workers AI in the Bot at ${new URL(url).host}. It bills your Cloudflare account.`);
+	const child = spawn(process.execPath, [workersAiRun, "--worker-url", url, ...args], {
+		stdio: "inherit",
+		env: { ...process.env, TRIAL_RUN_KEY: key },
+	});
+	const code = await new Promise<number>((resolve) => child.once("exit", (c) => resolve(c ?? 1)));
+	if (code !== 0) process.exit(code);
 }
 
 async function transferSiwc() {
@@ -128,7 +144,7 @@ async function destroy() {
 			"",
 			`- **Date:** ${now.slice(0, 10)}, ${now.slice(11, 16)} UTC`,
 			`- **Command:** \`pnpm feasibility:paid destroy\`, \`alchemy destroy --stage ${STACK.stage}\` exited ${code}`,
-			`- **Removed:** Workers \`ditto-${STACK.stage}-model-trial\` and \`ditto-${STACK.stage}-cpu-tail\`, the \`Bot\` Durable Object namespace with the sign-in it held, their KV namespace and run-key secret${code === 0 ? ", and the local paid-stage sign-ins and run key" : ""}`,
+			`- **Removed:** Workers \`ditto-${STACK.stage}-model-trial\` and \`ditto-${STACK.stage}-cpu-tail\`, the \`Bot\` Durable Object namespace with the sign-in it held, the AI Gateway with its logs, their KV namespace and run-key secret${code === 0 ? ", and the local paid-stage sign-ins and run key" : ""}`,
 			"",
 		].join("\n"),
 	);
@@ -139,10 +155,11 @@ const [name, ...rest] = process.argv.slice(2);
 if (name === "deploy") await deploy();
 else if (name === "run") await run(rest);
 else if (name === "transfer-siwc") await transferSiwc();
+else if (name === "workers-ai") await workersAi(rest);
 else if (name === "destroy") await destroy();
 else {
 	console.error(
-		"Usage: pnpm feasibility:paid deploy | transfer-siwc | run --route chatgpt|siwc|opencode [--runs 3] | destroy",
+		"Usage: pnpm feasibility:paid deploy | transfer-siwc | run --route chatgpt|siwc|opencode [--runs 3] | workers-ai [--model @cf/...] [--account id] [--runs 3] | destroy",
 	);
 	process.exit(2);
 }

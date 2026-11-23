@@ -1,7 +1,8 @@
 // The #26 model-trial Worker, deployed on Workers Paid (#31). It takes a credential in the request
 // body and spends it, so every route sits behind the owner's run key. The Worker keeps
 // no credential at rest: the owner's command sends it per run and keeps the rotated one.
-// `/siwc/*` goes to the Bot Durable Object (#34), which does keep its transferred sign-in.
+// `/siwc/*` goes to the Bot Durable Object (#34), which does keep its transferred sign-in, and so
+// does `/workers-ai/*`, the included model through the Bot's `AI` binding (#35).
 import modelWorker, { type ModelTrialEnv } from "../model-worker.ts";
 import { coloOf, requireRunKey } from "../run-key.ts";
 
@@ -35,9 +36,10 @@ export default {
 				: new Response("Not recorded yet", { status: 404 });
 		}
 		// One bot per stage: the trial needs one owner's sign-in, not a fleet.
-		const response = url.pathname.startsWith("/siwc/")
-			? await env.BOT.getByName("siwc-trial").fetch(request)
-			: await modelWorker.fetch(request, env, ctx);
+		const response =
+			url.pathname.startsWith("/siwc/") || url.pathname.startsWith("/workers-ai/")
+				? await env.BOT.getByName("siwc-trial").fetch(request)
+				: await modelWorker.fetch(request, env, ctx);
 		const headers = new Headers(response.headers);
 		headers.set("x-trial-colo", coloOf(request));
 		return new Response(response.body, { status: response.status, headers });

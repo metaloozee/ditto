@@ -21,7 +21,8 @@ export default Alchemy.Stack(
 	Effect.gen(function* () {
 		const stage = yield* Alchemy.Stage;
 		// Local runs only. Dev is 1337, the auth suite 1338, verify-auth 1339, feasibility 1340-1343.
-		// This stack takes 1344 and 1346, or 1345, 1347 and 1348 for the test stage.
+		// This stack takes 1344 and 1346, or 1345, 1347, 1348 and 1351 for the test stage (1349 and
+		// 1350 belong to the Containers trial and the free-tier probe).
 		const port = stage === TEST_STAGE ? 1345 : 1344;
 		const cpu = yield* Cloudflare.KV.Namespace("cpu");
 		const tail = yield* Cloudflare.Worker("cpu-tail", {
@@ -30,7 +31,8 @@ export default Alchemy.Stack(
 			dev: { port: port + 2, strictPort: true },
 			env: { CPU: cpu },
 		});
-		// Test-only: the simulated provider is never bound outside the test stage.
+		// Test-only: the simulated provider and AI binding are never bound outside the test stage.
+		// The owner's stage binds Workers AI and the AI Gateway its requests go through (#35).
 		const provider: Cloudflare.WorkerBindingProps =
 			stage === TEST_STAGE
 				? {
@@ -39,8 +41,18 @@ export default Alchemy.Stack(
 							main: path.join(import.meta.dirname, "..", "simulated-provider-worker.ts"),
 							dev: { port: port + 3, strictPort: true },
 						}),
+						AI: Cloudflare.Worker("simulated-workers-ai", {
+							name: `ditto-${stage}-simulated-workers-ai`,
+							main: path.join(import.meta.dirname, "..", "simulated-workers-ai-worker.ts"),
+							dev: { port: 1351, strictPort: true },
+						}),
+						AI_GATEWAY_ID: "simulated-gateway",
 					}
-				: {};
+				: {
+						AI: Cloudflare.Workers.AI(),
+						AI_GATEWAY_ID: (yield* Cloudflare.AI.Gateway("gateway", { collectLogs: true }))
+							.gatewayId,
+					};
 		const trial = yield* Cloudflare.Worker("model-trial", {
 			name: `ditto-${stage}-model-trial`,
 			main: path.join(import.meta.dirname, "worker.ts"),

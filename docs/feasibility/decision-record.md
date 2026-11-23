@@ -382,6 +382,46 @@ _Not yet observed. For each code an entry records, state its consequence for sel
 
 _Undecided until the deployed entry exists._
 
+#### Workers AI (#35)
+
+The included model (ADR-0011): Workers AI through the `AI` binding of the paid stage's `Bot` Durable Object. The binding bills the Cloudflare account that deployed the stage, so the trial needs no credential and the Bot stores none. Each request goes through an AI Gateway the stage creates (`Cloudflare.AI.Gateway("gateway")`, logs on) and carries the Ditto account in `cf-aig-metadata` as `{"dittoAccount": "<account>"}`. After each turn the Bot reads every request's gateway log through the binding (`env.AI.gateway(id).getLog(logId)`, the log ID from the `cf-aig-log-id` response header) and records its cost and metadata. That log is the attribution a later per-account spend limit would read.
+
+**Pi can target the binding, so the trial runs through Pi.** The pinned `@earendil-works/pi-ai` 1.6.0 ships a `cloudflare-workers-ai` provider whose catalogue includes `@cf/deepseek-ai/deepseek-v4.1-flash-1017`, and `@earendil-works/pi-ai/api/cloudflare-ai-binding`, whose `createAiBindingFetch(env.AI)` sends a request through the binding's `fetch` to AI Gateway's provider passthrough at `https://workers-binding.ai/ai-gateway/gateways/{gateway}/{provider}/…`. The trial points the catalogued model's base URL at `…/{gateway}/workers-ai/v1` and sends Pi's sentinel in `cf-aig-authorization` with `Authorization` suppressed, as Pi's docs describe. No AI SDK and no new dependency. Two things are read from Pi's code and Cloudflare's docs but not yet seen on Cloudflare: that the binding serves the `workers-ai/v1/chat/completions` passthrough, and that a Workers AI request's gateway log carries a cost. Each entry records what the live run returned.
+
+**Sequence.** The baseline without the refresh step, since the binding has no token: a plain turn that must reply "pong", then a turn that offers one tool, `get_secret_word`, and must call it, receive a word the Bot made up for that run, and reply with it. Latency is per turn, as the Bot timed it. CPU time is the Bot's own invocation, from the tail Worker. Cost is per turn as AI Gateway logged it, with Pi's catalogue estimate beside it.
+
+Run on a date after the paid stage is deployed. The `--account` value is any stable Ditto account ID; the entry shows it unredacted unless it has the shape of an account ID:
+
+```sh
+pnpm feasibility:paid deploy                                                          # adds the AI Gateway and the Bot's AI binding
+pnpm feasibility:paid workers-ai --model @cf/deepseek-ai/deepseek-v4.1-flash-1017 --account trial-account-1   # 3 runs, 15 min apart
+pnpm feasibility:paid workers-ai --model @cf/moonshotai/kimi-k2.6 --account trial-account-1
+OPENCODE_API_KEY=<key> pnpm feasibility:paid run --route opencode                    # the #31 comparison, same stage and date
+pnpm feasibility:paid destroy
+```
+
+Open the stage's gateway in the Cloudflare dashboard (AI > AI Gateway, the gateway Alchemy created for `paid-pi-trial`) and check each request's metadata there too.
+
+##### `@cf/deepseek-ai/deepseek-v4.1-flash-1017` in the Bot Durable Object
+
+_Not yet run. Paste the entry `pnpm feasibility:paid workers-ai --model @cf/deepseek-ai/deepseek-v4.1-flash-1017` prints: plain turn, tool-calling turn, latency, CPU per request from the Bot and the cost AI Gateway logged._
+
+##### Second model in the Bot Durable Object
+
+_Not yet run. Paste the entry for a second `@cf/` model, for example `@cf/moonshotai/kimi-k2.6`. Rename this heading to the model._
+
+##### Attribution in the AI Gateway log
+
+_Not yet run. Each entry's **Attribution** line counts the requests logged with the Ditto account. State whether every trial request was attributed, and whether the dashboard's log shows the same metadata._
+
+##### Comparison with the OpenCode API key run (#31)
+
+_Not yet run. Compare each model's entry with an OpenCode entry from the same stage and date: reply, latency, CPU per request and cost per turn. The OpenCode route has no tool-calling turn yet, so tool calling is compared only between Workers AI models._
+
+##### Candidate included model
+
+_Undecided until the entries exist. Name the `@cf/` model Ditto includes, or record Workers AI as unsuitable for tool calling with the failing behaviour from the entries, and update the Model route table and [If the route fails](#model-route)._
+
 ## Desktop provider
 
 **Decision (2026-11-23): the browser stays on the shared computer, the Cloudflare Container below.** ADR-0012 proposed moving it to Cloudflare Browser Run and is rejected. In #36, Google refused the sign-in in Browser Run's browser where the Container passed it, Chrome under guardrails negotiated only HTTP/1.1, and Browser Run adds a second provider for no capability the Container lacks. ADR-0012's reason remains open: a Container's disk is discarded whenever the instance stops, and Cloudflare stops idle instances after 3 to 5 minutes, so the browser loses every login on restart. #37 keeps the logins with an encrypted cookie save and restore owned by the Workspace Durable Object, and settles the instance size, idle stops, Chrome's sandbox and DevTools access during take-over. See [Browser Run trial (#36)](#browser-run-trial-36).
@@ -1137,7 +1177,7 @@ Every run below is the owner's, with their own accounts. Each prints a redacted 
 | #34 | Sign in with ChatGPT, local then Durable Object | local passed, transferred to the Bot; deployed run due 2026-11-24 or later | `pnpm feasibility:model --route siwc`; `pnpm feasibility:paid deploy`, `… transfer-siwc`, `… run --route siwc` (later date), `… destroy` | ChatGPT plan on the supported endpoint, self-deployed |
 | #36 | Browser Run as the workspace browser | checks and take-overs run; ADR-0012 rejected; stage torn down, harness removed | in git history at `d5545cd` | browser provider: the shared computer stays (ADR-0012 rejected) |
 | #37 | Keep the shared computer's browser healthy | built, verified locally with the platform faked; live run pending | GitHub OAuth app, then `pnpm feasibility:containers deploy --spending-cap-set`, `… checks`, `… takeover linkedin` (then `google`), `… screens`, `… idle`, `… socket`, on a later date `… restore google` (then `linkedin`), `… forget`, `… destroy` | logins across instance stops, size, screens per instance, idle stops, sandbox, DevTools during take-over, owner's sign-in, long WebSockets |
-| #35 | Workers AI tool calling from a Durable Object | blocked: needs Workers Paid | to be built under #35 | the included model (ADR-0011) |
+| #35 | Workers AI tool calling from a Durable Object | harness built; not yet run | `pnpm feasibility:paid deploy`, `… workers-ai --model @cf/deepseek-ai/deepseek-v4.1-flash-1017`, `… workers-ai --model <second @cf/ model>`, `OPENCODE_API_KEY=<key> … run --route opencode`, `… destroy` | the included model (ADR-0011) |
 
 **Consequence of #31 and #32 staying blocked:** no hosted route is proven. The model route and the desktop stay local: Pi under Node and the #29 Docker stack on the owner's machine, which matches Ditto's current local-only use. Every hosted selection above stays provisional.
 
