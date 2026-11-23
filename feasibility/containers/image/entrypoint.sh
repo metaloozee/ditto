@@ -14,7 +14,12 @@ install -d -o mitmproxy -g mitmproxy /ca-public /home/mitmproxy/.mitmproxy
 # Containers share one network namespace, so Docker's internal network has no equivalent here.
 # The fence instead lets only the filter's user open outbound connections. It needs NET_ADMIN;
 # without it the image says so and the browser user has a direct route out.
+# On Cloudflare the resolvers are IPv6 only, and the kernel sends IPv6 neighbour discovery with no
+# owning user, so the fence must pass those three message types or every DNS lookup times out.
 fence() {
+	for type in router-solicitation neighbour-solicitation neighbour-advertisement; do
+		ip6tables -w -A OUTPUT -p ipv6-icmp --icmpv6-type "$type" -j ACCEPT || return 1
+	done
 	for tables in iptables ip6tables; do
 		"$tables" -w -A OUTPUT -o lo -j ACCEPT &&
 			"$tables" -w -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT &&
