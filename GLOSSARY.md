@@ -37,6 +37,21 @@ _Avoid_: Free model, default key
 
 The personal space where one owner works with Ditto and their team of bots on a shared computer.
 
+**Shared computer**
+
+The one computer a workspace's bots share, with one disk holding its files and logins. Each bot works on its own screen there.
+_Avoid_: Sandbox, desktop, VM
+
+**Screen**
+
+One bot's desktop on the shared computer, with its own keyboard and mouse, so bots work at the same time without waiting for each other.
+_Avoid_: Desktop, session
+
+**Live view**
+
+The owner watching a screen while the bot keeps working. Watching never gives the owner control; take-over does.
+_Avoid_: Stream, Live View link
+
 **Shared profile**
 
 The preferences and facts the owner explicitly shares for use by the whole team. Ditto maintains the profile on the owner’s behalf.
