@@ -12,11 +12,11 @@ Each trial adds dated evidence entries under the section it informs, in the form
 
 **Choice: Provisional.** The pinned Pi runtime (`@earendil-works/pi-ai` 1.6.0) in a Bot Durable Object on Workers Paid, using SSE over `fetch`, on a connection the owner supplies (ADR-0003). Ditto will be open source and offered in two modes, and the connections each mode may use differ:
 
-| Connection                                                                | Self-deployed (owner's Cloudflare account)                 | Hosted by Ditto                                                            |
-| ------------------------------------------------------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------- |
-| OpenCode API key (`OPENCODE_API_KEY`)                                     | yes                                                        | yes, the owner's key                                                       |
-| Workers AI (`AI` binding), the included model                             | yes, billed to the owner's account; trial #35              | yes, billed to the operator's account, no per-account limit yet (ADR-0011) |
-| ChatGPT plan through Sign in with ChatGPT (`api.openai.com/v1/responses`) | candidate, following OpenAI's self-hosted guide; trial #34 | only after OpenAI approves the hosted app through its interest form        |
+| Connection                                                                | Self-deployed (owner's Cloudflare account)                                                     | Hosted by Ditto                                                            |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| OpenCode API key (`OPENCODE_API_KEY`)                                     | yes                                                                                            | yes, the owner's key                                                       |
+| Workers AI (`AI` binding), the included model                             | yes, billed to the owner's account; candidate `@cf/deepseek-ai/deepseek-v4.1-flash-1017` (#35) | yes, billed to the operator's account, no per-account limit yet (ADR-0011) |
+| ChatGPT plan through Sign in with ChatGPT (`api.openai.com/v1/responses`) | candidate, following OpenAI's self-hosted guide; trial #34                                     | only after OpenAI approves the hosted app through its interest form        |
 
 The OpenCode API key is the first connection to build on. It is recorded apart from every ChatGPT result and does not stand in for it.
 
@@ -47,7 +47,7 @@ The Codex backend that Pi's `openai-codex` provider calls (`https://chatgpt.com/
 - If #31 fails only with Pi in the path: the same container route, with the failing step recorded against Pi.
 - If the owner stays on the free plan: no deployed Pi route exists. Ditto stays local-only, and model turns run under Node from the owner's machine, the #25 baseline shape.
 - If ChatGPT plan access is unavailable to the owner: the OpenCode API key route carries the harness and the first delegated task. Hosted ChatGPT onboarding keeps its own gates.
-- If Workers AI has no model that calls tools reliably (#35): Ditto offers no included model and relies on the OpenCode API key, until a later model passes.
+- If the included Workers AI model is retired (HTTP 410, as Kimi K2.6 was): move to the second choice, `@cf/zai-org/glm-5.3` (#35). If no Workers AI model calls tools reliably: Ditto offers no included model and relies on the OpenCode API key.
 
 **Owner evidence that confirms or overturns it:** #25 day 1 and day 2 (refresh of a day-old token) and the OpenCode baseline; #26 in local workerd on both routes, with real CPU figures; #30 day 1 and day 2 from Cloudflare; #31 on Workers Paid. A refusal from Cloudflare's network in #30, or a deployed CPU figure above what Workers Paid allows per request, overturns the Worker route.
 
@@ -386,7 +386,7 @@ _Undecided until the deployed entry exists._
 
 The included model (ADR-0011): Workers AI through the `AI` binding of the paid stage's `Bot` Durable Object. The binding bills the Cloudflare account that deployed the stage, so the trial needs no credential and the Bot stores none. Each request goes through an AI Gateway the stage creates (`Cloudflare.AI.Gateway("gateway")`, logs on) and carries the Ditto account in `cf-aig-metadata` as `{"dittoAccount": "<account>"}`. After each turn the Bot reads every request's gateway log through the binding (`env.AI.gateway(id).getLog(logId)`, the log ID from the `cf-aig-log-id` response header) and records its cost and metadata. That log is the attribution a later per-account spend limit would read.
 
-**Pi can target the binding, so the trial runs through Pi.** The pinned `@earendil-works/pi-ai` 1.6.0 ships a `cloudflare-workers-ai` provider whose catalogue includes `@cf/deepseek-ai/deepseek-v4.1-flash-1017`, and `@earendil-works/pi-ai/api/cloudflare-ai-binding`, whose `createAiBindingFetch(env.AI)` sends a request through the binding's `fetch` to AI Gateway's provider passthrough at `https://workers-binding.ai/ai-gateway/gateways/{gateway}/{provider}/…`. The trial points the catalogued model's base URL at `…/{gateway}/workers-ai/v1` and sends Pi's sentinel in `cf-aig-authorization` with `Authorization` suppressed, as Pi's docs describe. No AI SDK and no new dependency. Two things are read from Pi's code and Cloudflare's docs but not yet seen on Cloudflare: that the binding serves the `workers-ai/v1/chat/completions` passthrough, and that a Workers AI request's gateway log carries a cost. Each entry records what the live run returned.
+**Pi can target the binding, so the trial runs through Pi.** The pinned `@earendil-works/pi-ai` 1.6.0 ships a `cloudflare-workers-ai` provider whose catalogue includes `@cf/deepseek-ai/deepseek-v4.1-flash-1017`, and `@earendil-works/pi-ai/api/cloudflare-ai-binding`, whose `createAiBindingFetch(env.AI)` sends a request through the binding's `fetch` to AI Gateway's provider passthrough at `https://workers-binding.ai/ai-gateway/gateways/{gateway}/{provider}/…`. The trial points the catalogued model's base URL at `…/{gateway}/workers-ai/v1` and sends Pi's sentinel in `cf-aig-authorization` with `Authorization` suppressed, as Pi's docs describe. No AI SDK and no new dependency. The 2026-11-23 runs confirmed both things read from Pi's code: the binding serves the `workers-ai/v1/chat/completions` passthrough, and each Workers AI request's gateway log carries a cost. Cloudflare documents the same route as `createAI({ binding: env.AI, id })` from the `agents` package ([Pi on Cloudflare](https://developers.cloudflare.com/agents/harnesses/pi/)), which the trial does not use; production code should follow that documented helper.
 
 **Sequence.** The baseline without the refresh step, since the binding has no token: a plain turn that must reply "pong", then a turn that offers one tool, `get_secret_word`, and must call it, receive a word the Bot made up for that run, and reply with it. Latency is per turn, as the Bot timed it. CPU time is the Bot's own invocation, from the tail Worker. Cost is per turn as AI Gateway logged it, with Pi's catalogue estimate beside it.
 
@@ -395,7 +395,7 @@ Run on a date after the paid stage is deployed. The `--account` value is any sta
 ```sh
 pnpm feasibility:paid deploy                                                          # adds the AI Gateway and the Bot's AI binding
 pnpm feasibility:paid workers-ai --model @cf/deepseek-ai/deepseek-v4.1-flash-1017 --account trial-account-1   # 3 runs, 15 min apart
-pnpm feasibility:paid workers-ai --model @cf/moonshotai/kimi-k2.6 --account trial-account-1
+pnpm feasibility:paid workers-ai --model @cf/zai-org/glm-5.3 --account trial-account-1
 OPENCODE_API_KEY=<key> pnpm feasibility:paid run --route opencode                    # the #31 comparison, same stage and date
 pnpm feasibility:paid destroy
 ```
@@ -404,23 +404,86 @@ Open the stage's gateway in the Cloudflare dashboard (AI > AI Gateway, the gatew
 
 ##### `@cf/deepseek-ai/deepseek-v4.1-flash-1017` in the Bot Durable Object
 
-_Not yet run. Paste the entry `pnpm feasibility:paid workers-ai --model @cf/deepseek-ai/deepseek-v4.1-flash-1017` prints: plain turn, tool-calling turn, latency, CPU per request from the Bot and the cost AI Gateway logged._
+###### 2026-11-23 · Workers AI `@cf/deepseek-ai/deepseek-v4.1-flash-1017` from Bot Durable Object in the deployed Worker (Cloudflare network, Workers Paid, Worker in data centre SIN) · pass
 
-##### Second model in the Bot Durable Object
+- **Route:** Pi `cloudflare-workers-ai` provider, model `@cf/deepseek-ai/deepseek-v4.1-flash-1017`, through AI Gateway on the `AI` binding (`env.AI.fetch()` through Pi's `createAiBindingFetch`), Ditto account `trial-account-1` in `cf-aig-metadata`. A plain turn, then a turn that must call `get_secret_word` and reply with its result. No refresh: the binding has no token.
+- **Runtime:** Pi `@earendil-works/pi-ai` 1.6.0 in the Bot Durable Object on Workers Paid
+- **Date:** 2026-11-23, 15:06 UTC
+- **Network origin:** Bot Durable Object in the deployed Worker (Cloudflare network, Workers Paid, Worker in data centre SIN)
+- **Expected:** the plain turn replies "pong". The tool-calling turn calls `get_secret_word`, then replies with the word it returned.
+- **Observed:** plain turn passed in 1756ms (1 request): replied "pong", 15 output tokens. tool-calling turn passed in 3566ms (2 requests): called `get_secret_word`, then replied with its result. 3 of 3 runs passed.
+- **Retries:** 15:21 UTC pass, 15:36 UTC pass
+- **Cost:** as AI Gateway logged it, run 1: plain turn $0.000029, tool-calling turn $0.000104; run 2: plain turn $0.000028, tool-calling turn $0.000105; run 3: plain turn $0.000028, tool-calling turn $0.000110. Pi's catalogue estimate: run 1: plain turn $0.000029, tool-calling turn $0.000104; run 2: plain turn $0.000028, tool-calling turn $0.000105; run 3: plain turn $0.000028, tool-calling turn $0.000110.
+- **Attribution:** 9 of 9 requests logged by AI Gateway with metadata `dittoAccount: trial-account-1`.
+- **CPU time:** run 1: 66ms CPU, 9060ms wall; run 2: 61ms CPU, 9894ms wall; run 3: 74ms CPU, 8661ms wall, from the Bot's tail event.
+- **Fallback:** none needed
 
-_Not yet run. Paste the entry for a second `@cf/` model, for example `@cf/moonshotai/kimi-k2.6`. Rename this heading to the model._
+##### `@cf/zai-org/glm-5.3` in the Bot Durable Object
+
+###### 2026-11-23 · Workers AI `@cf/zai-org/glm-5.3` from Bot Durable Object in the deployed Worker (Cloudflare network, Workers Paid, Worker in data centre SIN) · pass
+
+- **Route:** Pi `cloudflare-workers-ai` provider, model `@cf/zai-org/glm-5.3`, through AI Gateway on the `AI` binding (`env.AI.fetch()` through Pi's `createAiBindingFetch`), Ditto account `trial-account-1` in `cf-aig-metadata`. A plain turn, then a turn that must call `get_secret_word` and reply with its result. No refresh: the binding has no token.
+- **Runtime:** Pi `@earendil-works/pi-ai` 1.6.0 in the Bot Durable Object on Workers Paid
+- **Date:** 2026-11-23, 15:06 UTC
+- **Network origin:** Bot Durable Object in the deployed Worker (Cloudflare network, Workers Paid, Worker in data centre SIN)
+- **Expected:** the plain turn replies "pong". The tool-calling turn calls `get_secret_word`, then replies with the word it returned.
+- **Observed:** plain turn passed in 946ms (1 request): replied "pong", 84 output tokens. tool-calling turn passed in 5480ms (2 requests): called `get_secret_word`, then replied with its result. 3 of 3 runs passed.
+- **Retries:** 15:21 UTC pass, 15:36 UTC pass
+- **Cost:** as AI Gateway logged it, run 1: plain turn $0.000396, tool-calling turn $0.000533; run 2: plain turn $0.000291, tool-calling turn $0.000475; run 3: plain turn $0.000453, tool-calling turn $0.000539. Pi's catalogue estimate: run 1: plain turn $0.000396, tool-calling turn $0.000533; run 2: plain turn $0.000291, tool-calling turn $0.000475; run 3: plain turn $0.000453, tool-calling turn $0.000539.
+- **Attribution:** 9 of 9 requests logged by AI Gateway with metadata `dittoAccount: trial-account-1`.
+- **CPU time:** run 1: 16ms CPU, 9200ms wall; run 2: 15ms CPU, 5837ms wall; run 3: 20ms CPU, 7338ms wall, from the Bot's tail event.
+- **Fallback:** none needed
+
+Kimi K2.6 (`@cf/moonshotai/kimi-k2.6`), the model first planned for this slot, was refused on 2026-11-23: HTTP 410, AiError 5028, "deprecated on 2026-11-20". Pi 1.6.0's catalogue still lists it, so a catalogued model is not proof that Workers AI still serves it.
 
 ##### Attribution in the AI Gateway log
 
-_Not yet run. Each entry's **Attribution** line counts the requests logged with the Ditto account. State whether every trial request was attributed, and whether the dashboard's log shows the same metadata._
+Every trial request was attributed: 9 of 9 for each model, read back through the binding (`env.AI.gateway(id).getLog(logId)`) with `dittoAccount: trial-account-1` in its metadata. The deprecated Kimi K2.6 requests were logged with the same metadata although they returned 410, so a refused request is attributed too. The owner checked the gateway's log in the Cloudflare dashboard on 2026-11-23 and it showed the same metadata. The gateway's logged cost matched Pi's catalogue estimate on every turn.
 
 ##### Comparison with the OpenCode API key run (#31)
 
-_Not yet run. Compare each model's entry with an OpenCode entry from the same stage and date: reply, latency, CPU per request and cost per turn. The OpenCode route has no tool-calling turn yet, so tool calling is compared only between Workers AI models._
+###### 2026-11-23 · OpenAI Responses on OpenCode API key from deployed Worker (Cloudflare network, Workers Paid, data centre SIN) · pass
+
+- **Route:** Pi `opencode` provider, model `gpt-5.4-mini`: one turn at https://opencode.ai/inference/openai/v1/responses, skip refresh (an API key has none), then one more turn
+- **Runtime:** Pi `@earendil-works/pi-ai` 1.6.0 in workerd (compatibility date `2026-10-26`, flags `nodejs_compat` (on by date) and `new_module_registry` (Alchemy default)) on Workers Paid, each step lists every HTTP attempt it made
+- **Date:** 2026-11-23, 15:07 UTC
+- **Network origin:** deployed Worker (Cloudflare network, Workers Paid, data centre SIN)
+- **Expected:** both turns return 200 and reply "pong".
+- **Observed:** turn passed (opencode.ai/inference/openai/v1/responses 200): replied "pong", 5 output tokens in 1.5s. refresh not applicable: an API key has no refresh exchange. turn after refresh passed (opencode.ai/inference/openai/v1/responses 200): replied "pong", 5 output tokens in 1.0s. 3 of 3 runs passed.
+- **Retries:** 15:22 UTC pass, 15:37 UTC pass
+- **Fallback:** none needed
+- **CPU time:** run 1: whole trial request 163ms CPU, 2812ms wall; run 2: whole trial request 61ms CPU, 2594ms wall; run 3: whole trial request 255ms CPU, 2563ms wall, from the Worker's tail event. Worst 255ms: over the Workers free plan (10ms per request), within the paid plan default (30s per request, configurable to 5 min).
+
+| Same stage, 2026-11-23   | DeepSeek V4.1 Flash (Workers AI) | GLM-5.3 (Workers AI)     | OpenCode `gpt-5.4-mini`                 |
+| ------------------------ | -------------------------------- | ------------------------ | --------------------------------------- |
+| Plain turn               | "pong", 3 of 3, 1.8s             | "pong", 3 of 3, 0.9s     | "pong", 3 of 3, 1.5s then 1.0s          |
+| Tool-calling turn        | 3 of 3, 3.6s                     | 3 of 3, 5.5s             | not tested                              |
+| CPU per request          | 61–74ms (Bot invocation)         | 15–20ms (Bot invocation) | 61–255ms (whole Worker request)         |
+| Cost per run, both turns | about $0.00013                   | about $0.0009            | billed to the owner's key, not recorded |
+
+- Every route passed every run. Workers AI needs no owner credential; OpenCode spends the owner's key.
+- CPU is not measured the same way: the Workers AI figure is the Bot's own invocation, the OpenCode figure the whole Worker request. Both are far inside Workers Paid's 30s default.
+- GLM-5.3 cost about 7 times DeepSeek per run, mostly from longer replies (84 output tokens for "pong" against 15).
 
 ##### Candidate included model
 
-_Undecided until the entries exist. Name the `@cf/` model Ditto includes, or record Workers AI as unsuitable for tool calling with the failing behaviour from the entries, and update the Model route table and [If the route fails](#model-route)._
+**Candidate: `@cf/deepseek-ai/deepseek-v4.1-flash-1017`**, with `@cf/zai-org/glm-5.3` as the second choice. Both called the tool and used its result on every run. DeepSeek cost about a seventh of GLM-5.3 per run; GLM-5.3 used less CPU and answered the plain turn faster.
+
+**Unresolved limits:**
+
+- The tool test is one tool with no arguments over two requests. Multi-step tasks, tools with arguments and long replies are unmeasured.
+- Workers AI retires models on its own schedule: Kimi K2.6 was deprecated three days before this trial and Pi's catalogue still lists it. Ditto must pin the included model and handle a 410 (AiError 5028) by moving to the second choice.
+- The spend limit is not built. The gateway attributes every request, including refused ones, so the data a per-account limit needs exists.
+
+##### Teardown
+
+###### 2026-11-23 · paid Pi trial stage torn down · pass
+
+- **Date:** 2026-11-23, 16:23 UTC
+- **Command:** `pnpm feasibility:paid destroy`, `alchemy destroy --stage paid-pi-trial` exited 0
+- **Removed:** Workers `ditto-paid-pi-trial-model-trial` and `ditto-paid-pi-trial-cpu-tail`, the `Bot` Durable Object namespace with the sign-in it held, the AI Gateway with its logs, their KV namespace and run-key secret, and the local paid-stage sign-ins and run key
+
+The teardown also deleted the Sign in with ChatGPT credential transferred to the Bot for #34. #34's deployed run needs a fresh `pnpm feasibility:paid deploy` and `transfer-siwc` before `run --route siwc`.
 
 ## Desktop provider
 
@@ -1174,10 +1237,10 @@ Every run below is the owner's, with their own accounts. Each prints a redacted 
 | #31 | Deployed Pi trial                                | OpenCode passed, ChatGPT (Codex backend) refused by OpenAI's edge; teardown OK    | `pnpm feasibility:paid deploy`, `pnpm feasibility:paid run --route chatgpt`, `OPENCODE_API_KEY=<key> pnpm feasibility:paid run --route opencode`, `pnpm feasibility:paid destroy`           | the Worker model route and its real CPU           |
 | #32 | Cloudflare Containers trial                      | blocked: needs Workers Paid                                                       | set a billing notification, then `pnpm feasibility:containers deploy --spending-cap-set`, `… checks`, `… takeover google` (then `linkedin`, `protected`), `… stop ws-takeover`, `… destroy` | `NET_ADMIN`, identity, size, logins on Cloudflare |
 
-| #34 | Sign in with ChatGPT, local then Durable Object | local passed, transferred to the Bot; deployed run due 2026-11-24 or later | `pnpm feasibility:model --route siwc`; `pnpm feasibility:paid deploy`, `… transfer-siwc`, `… run --route siwc` (later date), `… destroy` | ChatGPT plan on the supported endpoint, self-deployed |
+| #34 | Sign in with ChatGPT, local then Durable Object | local passed; the transferred credential was deleted with the paid stage on 2026-11-23, so redeploy and `transfer-siwc` again, then run on a later date | `pnpm feasibility:model --route siwc`; `pnpm feasibility:paid deploy`, `… transfer-siwc`, `… run --route siwc` (later date), `… destroy` | ChatGPT plan on the supported endpoint, self-deployed |
 | #36 | Browser Run as the workspace browser | checks and take-overs run; ADR-0012 rejected; stage torn down, harness removed | in git history at `d5545cd` | browser provider: the shared computer stays (ADR-0012 rejected) |
 | #37 | Keep the shared computer's browser healthy | built, verified locally with the platform faked; live run pending | GitHub OAuth app, then `pnpm feasibility:containers deploy --spending-cap-set`, `… checks`, `… takeover linkedin` (then `google`), `… screens`, `… idle`, `… socket`, on a later date `… restore google` (then `linkedin`), `… forget`, `… destroy` | logins across instance stops, size, screens per instance, idle stops, sandbox, DevTools during take-over, owner's sign-in, long WebSockets |
-| #35 | Workers AI tool calling from a Durable Object | harness built; not yet run | `pnpm feasibility:paid deploy`, `… workers-ai --model @cf/deepseek-ai/deepseek-v4.1-flash-1017`, `… workers-ai --model <second @cf/ model>`, `OPENCODE_API_KEY=<key> … run --route opencode`, `… destroy` | the included model (ADR-0011) |
+| #35 | Workers AI tool calling from a Durable Object | DeepSeek V4.1 Flash and GLM-5.3 passed 3 of 3 with tool calling; OpenCode compared on the same stage; stage torn down | `pnpm feasibility:paid deploy`, `… workers-ai --model @cf/deepseek-ai/deepseek-v4.1-flash-1017`, `… workers-ai --model @cf/zai-org/glm-5.3`, `OPENCODE_API_KEY=<key> … run --route opencode`, `… destroy` | the included model (ADR-0011) |
 
 **Consequence of #31 and #32 staying blocked:** no hosted route is proven. The model route and the desktop stay local: Pi under Node and the #29 Docker stack on the owner's machine, which matches Ditto's current local-only use. Every hosted selection above stays provisional.
 
