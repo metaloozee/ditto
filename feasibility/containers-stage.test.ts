@@ -33,7 +33,17 @@ beforeAll(async () => {
 			cwd: path.join(repoRoot, "feasibility", "containers"),
 			detached: true,
 			stdio: ["ignore", "inherit", "inherit"],
-			env: { PATH: process.env.PATH, HOME: process.env.HOME, CI: "true", TRIAL_RUN_KEY: RUN_KEY },
+			env: {
+				PATH: process.env.PATH,
+				HOME: process.env.HOME,
+				CI: "true",
+				TRIAL_RUN_KEY: RUN_KEY,
+				COOKIE_KEY: "containers-cookie-key-SIMULATED-0123456789",
+				OWNER_SESSION_KEY: "containers-session-key-SIMULATED-0123456789",
+				GITHUB_CLIENT_ID: "client-id-SIMULATED",
+				GITHUB_CLIENT_SECRET: "client-secret-SIMULATED",
+				OWNER_GITHUB_ID: "0",
+			},
 		},
 	);
 	exited = new Promise((resolve) => stage.once("exit", resolve));
@@ -88,6 +98,8 @@ it("runs every check through the gate and prints one redacted entry each", async
 		expect.stringMatching(
 			/ · HTTP\/2 negotiated end to end through the filter under alchemy dev · pass$/,
 		),
+		// alchemy dev grants SYS_ADMIN, which the SUID sandbox needs inside Docker.
+		expect.stringMatching(/ · Chrome runs sandboxed under alchemy dev · pass$/),
 		expect.stringMatching(/ · instance size, memory and startup time under alchemy dev · pass$/),
 	]);
 	expect(stdout).toContain(

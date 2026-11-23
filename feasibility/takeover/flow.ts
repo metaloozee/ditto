@@ -21,6 +21,11 @@ export async function takeOverWorkflow(options: {
 	/** Every filter decision so far, oldest first. */
 	decisions: () => Promise<Decision[]>;
 	host?: Observation["host"];
+	/**
+	 * Ends every bot's DevTools access before take-over is ready and restores it at hand-back
+	 * (ADR-0007). The bot's own tab closes first and is opened again after hand-back.
+	 */
+	lock?: { takeOver(): Promise<void>; handBack(): Promise<void> };
 	log: (message: string) => void;
 }): Promise<string> {
 	const { workflow, log } = options;
@@ -47,7 +52,7 @@ export async function takeOverWorkflow(options: {
 		}
 	};
 
-	const tab = await Tab.open(options.devtools);
+	let tab = await Tab.open(options.devtools);
 	const session = new TakeOver();
 	// Pages render after load; give the signed-in check time to settle.
 	const signedIn = () => tab.waitFor(workflow.task.done, 15_000);
@@ -62,12 +67,20 @@ export async function takeOverWorkflow(options: {
 
 	await session.act(() => tab.goto(workflow.login));
 	await session.takeOver();
+	if (options.lock) {
+		tab.close();
+		await options.lock.takeOver();
+	}
 
 	log(`Take-over ready. The bot is not observing or operating the screen.`);
 	log(`Open ${options.viewUrl} and sign in to ${workflow.name}.`);
 	log("Complete only the login and any challenge. Note what the site asked and how it responded.");
 	while ((await prompt('Type "hand back" to return control: ')).toLowerCase() !== "hand back") {
 		log("The owner keeps control until they type hand back.");
+	}
+	if (options.lock) {
+		await options.lock.handBack();
+		tab = await Tab.open(options.devtools);
 	}
 	session.handBack();
 

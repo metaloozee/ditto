@@ -19,7 +19,7 @@ export type Observation = {
 	/** Hosts the filter refused during the run. Hosts only: request URLs can carry tokens. */
 	denied: string[];
 	/** Where the desktop ran: local Docker (the default) or Cloudflare Containers. */
-	host?: "docker" | "cloudflare";
+	host?: keyof typeof hosts;
 };
 
 const hosts = {
@@ -33,6 +33,12 @@ const hosts = {
 		title: " on Cloudflare",
 		route:
 			"headed Chromium on Cloudflare Containers behind the `ws-takeover` egress filter in the same instance; the owner signs in through the noVNC view, forwarded to loopback by the run-key gated Worker",
+		origin: "Cloudflare container",
+	},
+	"cloudflare-signed-in": {
+		title: " on Cloudflare",
+		route:
+			"headed Chromium on Cloudflare Containers behind the `ws-takeover` egress filter in the same instance; take-over locks every bot's DevTools first, then the owner signs in to the Worker with GitHub and works in its noVNC view, which opens only during take-over",
 		origin: "Cloudflare container",
 	},
 };

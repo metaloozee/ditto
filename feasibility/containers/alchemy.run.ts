@@ -39,6 +39,12 @@ export default Alchemy.Stack(
 				INSTANCE_TYPE: instanceType,
 				MAX_MINUTES: "60",
 				TRIAL_RUN_KEY: Config.Redacted("TRIAL_RUN_KEY"),
+				// #37: the stored cookies' key, and the owner's GitHub sign-in for the take-over view.
+				COOKIE_KEY: Config.Redacted("COOKIE_KEY"),
+				OWNER_SESSION_KEY: Config.Redacted("OWNER_SESSION_KEY"),
+				GITHUB_CLIENT_ID: Config.String("GITHUB_CLIENT_ID"),
+				GITHUB_CLIENT_SECRET: Config.Redacted("GITHUB_CLIENT_SECRET"),
+				OWNER_GITHUB_ID: Config.String("OWNER_GITHUB_ID"),
 			},
 		});
 		return { url: trial.url };

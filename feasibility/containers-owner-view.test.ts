@@ -17,7 +17,7 @@ let githubUser = 4242;
 const github = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
 	const url = String(input instanceof Request ? input.url : input);
 	if (url === "https://github.com/login/oauth/access_token") {
-		const body = new URLSearchParams(String(init?.body));
+		const body = new URLSearchParams(init?.body as string);
 		if (body.get("code") !== "good-code") return Response.json({ error: "bad_verification_code" });
 		return Response.json({ access_token: "gho_SIMULATED", token_type: "bearer" });
 	}

@@ -35,7 +35,7 @@ export type Memory = {
 export interface Instance {
 	devtools: string;
 	decisions(): Promise<Decision[]>;
-	control<T>(path: "/isolation" | "/bypass" | "/memory"): Promise<T>;
+	control<T>(path: "/isolation" | "/bypass" | "/memory" | "/sandbox"): Promise<T>;
 }
 
 type Check = {
@@ -163,6 +163,25 @@ export async function runChecks(
 				"Chrome negotiates `h2` with the filter and the filter negotiates `h2` with the origin. A fallback to HTTP/1.1 is a downgrade",
 			observed: `\`nextHopProtocol\` was \`${protocol}\`. Filter logged ${h2 ? decisionLine(h2) : "no GET for `example.com`"}.`,
 			compare: "#28 local: pass, `h2` on both legs",
+		});
+
+		log("Checking Chrome's sandbox…");
+		const sandbox = await instance.control<{ mode: string; reason: string | null }>("/sandbox");
+		await tab.goto("chrome://sandbox");
+		const rows = await tab.evaluate<string[]>(
+			`[...document.querySelectorAll("tr")].map((row) => row.innerText.replace(/\\s+/g, " ").trim()).filter(Boolean)`,
+		);
+		const adequate = await tab.evaluate<boolean>(
+			`document.body.innerText.includes("You are adequately sandboxed")`,
+		);
+		checks.push({
+			title: "Chrome runs sandboxed",
+			outcome: sandbox.mode === "sandboxed" && adequate ? "pass" : "fail",
+			route:
+				"the image starts Chromium without `--no-sandbox` (user namespaces, then the SUID helper from `chromium-sandbox`) and falls back to `--no-sandbox` only if that Chrome exits; the bot then opens `chrome://sandbox`",
+			expected: "Chrome starts sandboxed and `chrome://sandbox` reports it adequately sandboxed",
+			observed: `start mode \`${sandbox.mode}\`${sandbox.reason ? `, reason \`${sandbox.reason}\`` : ""}. \`chrome://sandbox\`: ${rows.map((row) => `\`${row}\``).join(", ") || "no rows"}; adequately sandboxed: ${adequate}.`,
+			compare: "#32: `--no-sandbox`; local Docker without `SYS_ADMIN` refuses both sandboxes",
 		});
 	} finally {
 		tab.close();

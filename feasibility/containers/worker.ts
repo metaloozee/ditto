@@ -30,7 +30,7 @@ const WORKSPACES = new Set(["ws-cloud-trial", "ws-takeover"]);
 const PORTS = { view: 6080, devtools: 9223, control: 8081, gate: 8082 } as const;
 const READY_TIMEOUT_MS = 180_000;
 /** Cloudflare stops an instance after 3 to 5 idle minutes; a hold touches it this often. */
-export const KEEP_ALIVE_MS = 30_000;
+const KEEP_ALIVE_MS = 30_000;
 
 type Hold = "takeover" | "task";
 
@@ -178,6 +178,7 @@ export class Workspace {
 			const deadline = began + minutes * 60_000;
 			await this.state.storage.put("deadline", deadline);
 			await this.state.storage.put("holds", []);
+			await this.state.storage.put("keepAlives", 0);
 			// The workspace identity reaches the filter only through this variable.
 			this.container.start({ env: { WORKSPACE_ID: workspace }, enableInternet: true });
 			await this.state.storage.setAlarm(deadline);
@@ -281,6 +282,7 @@ export class Workspace {
 			this.devtools(),
 			"Storage.getCookies",
 		);
+		await this.state.storage.put("lastActivityAt", Date.now());
 		const stored = await seal(cookies, this.env.COOKIE_KEY);
 		await this.state.storage.put("cookies", stored);
 		const domains = [...new Set(cookies.map((cookie) => cookie.domain))].sort();
