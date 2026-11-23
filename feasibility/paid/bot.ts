@@ -3,10 +3,19 @@
 // transfers the credential here once. From then on this object owns the sign-in: it keeps the
 // credential in its storage, refreshes it, and keeps its own agent host ID, apart from the owner's machine's.
 // Trial-only: the credential is at rest in Durable Object storage until the stage is destroyed.
+// It also runs the included model (#35) through its `AI` binding, which needs no credential.
 import { type Credential, InMemoryCredentialStore } from "@earendil-works/pi-ai";
 
 import { PI_PROVIDER, runModelTrial } from "../model-trial.ts";
 import { type ModelTrialEnv, trialStream } from "../model-worker.ts";
+import { runWorkersAiTrial, type WorkersAiBinding } from "../workers-ai-trial.ts";
+
+export interface BotEnv extends ModelTrialEnv {
+	/** Workers AI, or the simulated binding in the test stage. */
+	AI: WorkersAiBinding;
+	/** The AI Gateway every Workers AI request goes through. */
+	AI_GATEWAY_ID: string;
+}
 
 interface BotState {
 	storage: {
@@ -35,7 +44,7 @@ function signInCredential(value: unknown): Credential | undefined {
 export class Bot {
 	constructor(
 		private state: BotState,
-		private env: ModelTrialEnv,
+		private env: BotEnv,
 	) {}
 
 	async fetch(request: Request): Promise<Response> {
@@ -43,6 +52,7 @@ export class Bot {
 		const path = new URL(request.url).pathname;
 		if (path === "/siwc/import") return this.import(request);
 		if (path === "/siwc/trial") return this.trial(request);
+		if (path === "/workers-ai/trial") return this.workersAi(request);
 		return new Response("Not found", { status: 404 });
 	}
 
@@ -65,6 +75,27 @@ export class Bot {
 		}
 		await this.state.storage.put("credential", credential);
 		return Response.json({ hostId: `urn:uuid:${hostId}` });
+	}
+
+	/** A plain turn and a tool-calling turn on Workers AI, attributed to the Ditto account sent. */
+	private async workersAi(request: Request): Promise<Response> {
+		const body: unknown = await request.json().catch(() => undefined);
+		const model = isRecord(body) ? body.model : undefined;
+		const account = isRecord(body) ? body.account : undefined;
+		if (
+			typeof account !== "string" ||
+			!account ||
+			(model !== undefined && typeof model !== "string")
+		) {
+			return new Response("Expected the Ditto account and, optionally, a model", { status: 400 });
+		}
+		const run = await runWorkersAiTrial({
+			ai: this.env.AI,
+			gatewayId: this.env.AI_GATEWAY_ID,
+			account,
+			model,
+		});
+		return Response.json({ ...run, startedAt: run.startedAt.toISOString() });
 	}
 
 	/** Turn, refresh and turn on the sign-in this object owns. It keeps the rotated tokens. */

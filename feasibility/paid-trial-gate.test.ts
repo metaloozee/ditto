@@ -80,8 +80,8 @@ describe("paid model-trial Worker gate", () => {
 		expect(hosts).toEqual([]);
 	});
 
-	it.each(["/siwc/import", "/siwc/trial"])(
-		"keeps %s, which holds or spends the owner's plan, behind the key",
+	it.each(["/siwc/import", "/siwc/trial", "/workers-ai/trial"])(
+		"keeps %s, which holds or spends the owner's plan or account, behind the key",
 		async (path) => {
 			const { env: e, bot } = env();
 			const response = await paidWorker.fetch(
@@ -94,6 +94,22 @@ describe("paid model-trial Worker gate", () => {
 			expect(bot).toEqual([]);
 		},
 	);
+
+	it("sends the Workers AI trial to the Bot Durable Object for the owner's key", async () => {
+		const { env: e, bot } = env();
+		const response = await paidWorker.fetch(
+			new Request(`${ORIGIN}/workers-ai/trial`, {
+				method: "POST",
+				headers: { "x-trial-key": RUN_KEY },
+				body: "{}",
+			}),
+			e,
+			ctx(),
+		);
+
+		expect(await response.text()).toBe("reached the Durable Object");
+		expect(bot).toEqual(["/workers-ai/trial"]);
+	});
 
 	it("hides the runtime report and CPU readings from callers without the key", async () => {
 		const { env: e } = env();

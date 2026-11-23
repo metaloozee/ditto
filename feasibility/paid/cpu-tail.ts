@@ -19,7 +19,7 @@ interface TraceRequest {
 	getUnredacted?(): TraceRequest;
 }
 
-const TRIAL_PATHS = ["/model-trial", "/siwc/trial"];
+const TRIAL_PATHS = ["/model-trial", "/siwc/trial", "/workers-ai/trial"];
 
 export interface CpuReading {
 	cpuTimeMs: number;
