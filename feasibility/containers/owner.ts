@@ -510,8 +510,8 @@ const longSocketProbe = (holdMs: number) => `(() => {
 		setTimeout(() => {
 			clearInterval(timer);
 			setTimeout(() => {
-				out.active.openForMs = Date.now() - aStart;
-				out.active.openAtEnd = a.readyState === WebSocket.OPEN;
+				// A socket that closed early keeps the time its close handler recorded.
+				if (a.readyState === WebSocket.OPEN) { out.active.openForMs = Date.now() - aStart; out.active.openAtEnd = true; }
 				if (i.readyState === WebSocket.OPEN) { out.idle.openForMs = Date.now() - iStart; out.idle.openAtEnd = true; }
 				out.result = JSON.parse(JSON.stringify({ active: out.active, idle: out.idle }));
 				a.close();
