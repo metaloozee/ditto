@@ -1,73 +1,76 @@
 // The bot's hands: a minimal DevTools client for the desktop's one tab. It only navigates and
-// evaluates expressions that return hosts, paths and booleans, and can listen to a domain's
-// events for a request log. It never reads cookies or storage.
+// evaluates expressions that return hosts, paths and booleans. It never reads cookies or storage.
 
 type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void };
 
 export class Tab {
 	private nextId = 1;
 	private pending = new Map<number, Pending>();
-	private listeners = new Set<(method: string, params: unknown) => void>();
 	private socket: WebSocket;
+
+	private closed: Error | undefined;
 
 	private constructor(socket: WebSocket) {
 		this.socket = socket;
 		socket.addEventListener("message", (event) => {
 			const message = JSON.parse(String(event.data)) as {
 				id?: number;
-				method?: string;
-				params?: unknown;
 				result?: unknown;
 				error?: { message: string };
 			};
-			if (message.method) {
-				for (const listener of this.listeners) listener(message.method, message.params);
-			}
 			const waiting = message.id === undefined ? undefined : this.pending.get(message.id);
 			if (!waiting || message.id === undefined) return;
 			this.pending.delete(message.id);
 			if (message.error) waiting.reject(new Error(message.error.message));
 			else waiting.resolve(message.result);
 		});
+		// DevTools answers nothing once the page is gone, so fail what is waiting instead of hanging.
+		socket.addEventListener("close", (event) => {
+			this.closed = new Error(`DevTools closed: ${event.code} ${event.reason}`.trim());
+			for (const waiting of this.pending.values()) waiting.reject(this.closed);
+			this.pending.clear();
+		});
 	}
 
-	/** Connect to the first tab, waiting up to `timeoutMs` for Chrome to open DevTools. */
+	/**
+	 * Connect to the first tab, waiting up to `timeoutMs` for one that answers. A page can be gone
+	 * by the time a client connects (#36 saw a fresh browser replace its first page within seconds),
+	 * so the tab is checked with a command, and a lost page is listed again.
+	 */
 	static async open(devtools: string, timeoutMs = 30_000): Promise<Tab> {
 		const deadline = Date.now() + timeoutMs;
-		let page: { type: string; webSocketDebuggerUrl: string } | undefined;
-		while (!page) {
+		for (;;) {
+			let failure: unknown;
 			try {
 				const targets = (await (await fetch(`${devtools}/json/list`)).json()) as {
 					type: string;
 					webSocketDebuggerUrl: string;
 				}[];
-				page = targets.find((target) => target.type === "page");
+				const page = targets.find((target) => target.type === "page");
+				if (!page) throw new Error("The desktop has no open tab");
+				const socket = new WebSocket(page.webSocketDebuggerUrl);
+				await new Promise((resolve, reject) => {
+					socket.addEventListener("open", resolve, { once: true });
+					socket.addEventListener("error", () => reject(new Error("DevTools refused")), {
+						once: true,
+					});
+				});
+				const tab = new Tab(socket);
+				await tab.evaluate("1");
+				return tab;
 			} catch (error) {
-				if (Date.now() > deadline) throw error;
+				failure = error;
 			}
-			if (!page && Date.now() > deadline) throw new Error("The desktop has no open tab");
-			if (!page) await new Promise((resolve) => setTimeout(resolve, 1000));
+			if (Date.now() > deadline) throw failure;
+			await new Promise((resolve) => setTimeout(resolve, 1000));
 		}
-		const socket = new WebSocket(page.webSocketDebuggerUrl);
-		await new Promise((resolve, reject) => {
-			socket.addEventListener("open", resolve, { once: true });
-			socket.addEventListener("error", () => reject(new Error("DevTools refused")), {
-				once: true,
-			});
-		});
-		return new Tab(socket);
 	}
 
 	private send(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
+		if (this.closed) return Promise.reject(this.closed);
 		const id = this.nextId++;
 		this.socket.send(JSON.stringify({ id, method, params }));
 		return new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }));
-	}
-
-	/** Enable a CDP domain, such as `Network`, and receive its events. */
-	async listen(domain: string, listener: (method: string, params: unknown) => void): Promise<void> {
-		this.listeners.add(listener);
-		await this.send(`${domain}.enable`);
 	}
 
 	async evaluate<T>(expression: string): Promise<T> {
