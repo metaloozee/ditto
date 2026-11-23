@@ -370,6 +370,19 @@ The two `<account claim>` placeholders are the granted scope, over-redacted: the
 - **Retries:** none
 - **Fallback:** none needed
 
+###### 2026-11-23 · Sign in with ChatGPT transferred to the Bot Durable Object · pass
+
+- **Route:** sign in with ChatGPT on the owner's machine, send the credential once over HTTPS behind the run key to `POST /siwc/import` on the Bot Durable Object, then delete the local copy
+- **Date:** 2026-11-23, 16:39 UTC
+- **Network origin:** home network for the sign-in; the Bot holds the credential from then on
+- **Expected:** the ID token passes every check and the Bot accepts the credential
+- **Sign-in:** authorization code with PKCE on the 127.0.0.1:1455 loopback, a `urn:uuid` host ID, issued client `<clientId>`. Granted scope `chatgpt.tokens.use.direct email offline_access openid profile resource.invoke`, access token expires_in 3600s, refresh token lifetime not in the token response, ID token valid 3600s. ID token signature, iss, aud, exp and nonce checked: pass. Token response fields: `scope`, `access_token`, `token_type`, `expires_in`, `id_token`, `earliest_refresh_at`, `refresh_token`.
+- **Observed:** the Bot accepted the credential. OpenAI granted it under the owner's machine's host ID; the Bot keeps a `urn:uuid` host ID of its own, different from that one, for its next authorization. The local copy was deleted.
+- **Retries:** none
+- **Fallback:** none needed
+
+The second transfer replaces the 11:28 UTC one, which the paid stage's 16:23 UTC teardown deleted along with the Bot (see [Workers AI (#35)](#workers-ai-35)). The deployed run uses this credential.
+
 ##### Deployed in the Bot Durable Object
 
 _Not yet run. Must be a different date from the local entry. Paste the entry `pnpm feasibility:paid run --route siwc` prints._
@@ -487,7 +500,7 @@ The teardown also deleted the Sign in with ChatGPT credential transferred to the
 
 ## Desktop provider
 
-**Decision (2026-11-23): the browser stays on the shared computer, the Cloudflare Container below.** ADR-0012 proposed moving it to Cloudflare Browser Run and is rejected. In #36, Google refused the sign-in in Browser Run's browser where the Container passed it, Chrome under guardrails negotiated only HTTP/1.1, and Browser Run adds a second provider for no capability the Container lacks. ADR-0012's reason remains open: a Container's disk is discarded whenever the instance stops, and Cloudflare stops idle instances after 3 to 5 minutes, so the browser loses every login on restart. #37 keeps the logins with an encrypted cookie save and restore owned by the Workspace Durable Object, and settles the instance size, idle stops, Chrome's sandbox and DevTools access during take-over. See [Browser Run trial (#36)](#browser-run-trial-36).
+**Decision (2026-11-23): the browser stays on the shared computer, the Cloudflare Container below.** ADR-0012 proposed moving it to Cloudflare Browser Run and is rejected. In #36, Google refused the sign-in in Browser Run's browser where the Container passed it, Chrome under guardrails negotiated only HTTP/1.1, and Browser Run adds a second provider for no capability the Container lacks. ADR-0012's reason remains open: a Container's disk is discarded whenever the instance stops, and Cloudflare stops idle instances after 3 to 5 minutes, so the browser loses every login on restart. #37 keeps the logins with an encrypted cookie save and restore owned by the Workspace Durable Object, and settles the instance size, idle stops, Chrome's sandbox and DevTools access during take-over. See [Browser Run trial (#36)](#browser-run-trial-36). ADR-0013 (2026-11-23) settles the provider: the shared computer stays on Cloudflare Containers, owned through `@cloudflare/containers`, with one screen per bot. E2B Desktop, the Sandbox SDK and cloudflare/computer were considered and rejected, and Fly.io Machines is the fallback.
 
 **Choice before that direction: Provisional.** Cloudflare Containers, one instance per workspace, each owned by a `Workspace` Durable Object, running one image that holds the egress filter and a headed Chromium on Xvfb with x11vnc and noVNC for take-over (`feasibility/containers/`). The runtime passes `WORKSPACE_ID` at start, and that is the only place the image learns its workspace.
 
@@ -1237,7 +1250,7 @@ Every run below is the owner's, with their own accounts. Each prints a redacted 
 | #31 | Deployed Pi trial                                | OpenCode passed, ChatGPT (Codex backend) refused by OpenAI's edge; teardown OK    | `pnpm feasibility:paid deploy`, `pnpm feasibility:paid run --route chatgpt`, `OPENCODE_API_KEY=<key> pnpm feasibility:paid run --route opencode`, `pnpm feasibility:paid destroy`           | the Worker model route and its real CPU           |
 | #32 | Cloudflare Containers trial                      | blocked: needs Workers Paid                                                       | set a billing notification, then `pnpm feasibility:containers deploy --spending-cap-set`, `… checks`, `… takeover google` (then `linkedin`, `protected`), `… stop ws-takeover`, `… destroy` | `NET_ADMIN`, identity, size, logins on Cloudflare |
 
-| #34 | Sign in with ChatGPT, local then Durable Object | local passed; the transferred credential was deleted with the paid stage on 2026-11-23, so redeploy and `transfer-siwc` again, then run on a later date | `pnpm feasibility:model --route siwc`; `pnpm feasibility:paid deploy`, `… transfer-siwc`, `… run --route siwc` (later date), `… destroy` | ChatGPT plan on the supported endpoint, self-deployed |
+| #34 | Sign in with ChatGPT, local then Durable Object | local passed; transferred again to a redeployed Bot on 2026-11-23 16:39 UTC; deployed run due 2026-11-24 | `pnpm feasibility:model --route siwc`; `pnpm feasibility:paid deploy`, `… transfer-siwc`, `… run --route siwc` (later date), `… destroy` | ChatGPT plan on the supported endpoint, self-deployed |
 | #36 | Browser Run as the workspace browser | checks and take-overs run; ADR-0012 rejected; stage torn down, harness removed | in git history at `d5545cd` | browser provider: the shared computer stays (ADR-0012 rejected) |
 | #37 | Keep the shared computer's browser healthy | built, verified locally with the platform faked; live run pending | GitHub OAuth app, then `pnpm feasibility:containers deploy --spending-cap-set`, `… checks`, `… takeover linkedin` (then `google`), `… screens`, `… idle`, `… socket`, on a later date `… restore google` (then `linkedin`), `… forget`, `… destroy` | logins across instance stops, size, screens per instance, idle stops, sandbox, DevTools during take-over, owner's sign-in, long WebSockets |
 | #35 | Workers AI tool calling from a Durable Object | DeepSeek V4.1 Flash and GLM-5.3 passed 3 of 3 with tool calling; OpenCode compared on the same stage; stage torn down | `pnpm feasibility:paid deploy`, `… workers-ai --model @cf/deepseek-ai/deepseek-v4.1-flash-1017`, `… workers-ai --model @cf/zai-org/glm-5.3`, `OPENCODE_API_KEY=<key> … run --route opencode`, `… destroy` | the included model (ADR-0011) |
