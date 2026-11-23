@@ -1,4 +1,5 @@
 // Render one workflow run as an entry in the docs/feasibility/evidence.md format.
+import { GUARDRAIL_LIMIT } from "../browser-run/destinations.ts";
 import { grade } from "./grade.ts";
 import { assertClean, redactUrl } from "./redact.ts";
 
@@ -18,8 +19,12 @@ export type Observation = {
 	siteResponse: string;
 	/** Hosts the filter refused during the run. Hosts only: request URLs can carry tokens. */
 	denied: string[];
-	/** Where the desktop ran: local Docker (the default) or Cloudflare Containers. */
-	host?: "docker" | "cloudflare";
+	/** Distinct hosts requested during the run. */
+	requested?: number;
+	/** Further answers from the owner, each rendered as its own bullet. */
+	notes?: { label: string; answer: string }[];
+	/** Where the desktop ran: local Docker (the default), Cloudflare Containers or Browser Run. */
+	host?: "docker" | "cloudflare" | "browser-run";
 };
 
 const hosts = {
@@ -28,12 +33,22 @@ const hosts = {
 		route:
 			"headed Chromium in the desktop container behind the `ws-takeover` egress filter; the owner signs in through the loopback noVNC view",
 		origin: "container",
+		refusals: (denied: string) => `Filter denied: ${denied}.`,
 	},
 	cloudflare: {
 		title: " on Cloudflare",
 		route:
 			"headed Chromium on Cloudflare Containers behind the `ws-takeover` egress filter in the same instance; the owner signs in through the noVNC view, forwarded to loopback by the run-key gated Worker",
 		origin: "Cloudflare container",
+		refusals: (denied: string) => `Filter denied: ${denied}.`,
+	},
+	"browser-run": {
+		title: " on Browser Run",
+		route:
+			"Chromium on Cloudflare Browser Run with the `ws-takeover` list as the session's guardrails, opened by the `Workspace` Durable Object; the owner signs in through a Live View link in tab mode. Until hand-back the harness refuses every page action; the only DevTools traffic is the Durable Object's browser-level keep-alive and the request log's network listener",
+		origin: "Cloudflare Browser Run",
+		refusals: (denied: string, requested?: number) =>
+			`Guardrails refused: ${denied}. Hosts the page requested: ${requested ?? "unknown"}, against the ${GUARDRAIL_LIMIT}-host guardrail limit.`,
 	},
 };
 
@@ -60,7 +75,8 @@ export function evidenceEntry(run: Observation): string {
 		`- **Observed:** took over: ${yesNo(run.tookOver)}. Challenges: ${run.challenges || "none"}. Site's response: ${run.siteResponse || "none recorded"}. ` +
 			(run.afterHandBack ? `After hand-back the bot found ${redactUrl(run.afterHandBack)}. ` : "") +
 			`Bot reached the signed-in page after hand-back: ${yesNo(run.botSignedIn)}, at ${redactUrl(run.finishedAt)}. ` +
-			`Owner operated the site beyond the login: ${yesNo(run.steppedThrough)}. Filter denied: ${denied}.`,
+			`Owner operated the site beyond the login: ${yesNo(run.steppedThrough)}. ${where.refusals(denied, run.requested)}`,
+		...(run.notes ?? []).map(({ label, answer }) => `- **${label}:** ${answer || "none recorded"}`),
 		"- **Retries:** _none_",
 		`- **Fallback:** ${outcome === "unsupported" ? "_owner to name: another provider that enforces the workspace destination list, or drop the workflow_" : "none needed"}`,
 		"",

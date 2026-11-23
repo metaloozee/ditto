@@ -1,11 +1,13 @@
 // The bot's hands: a minimal DevTools client for the desktop's one tab. It only navigates and
-// evaluates expressions that return hosts, paths and booleans. It never reads cookies or storage.
+// evaluates expressions that return hosts, paths and booleans, and can listen to a domain's
+// events for a request log. It never reads cookies or storage.
 
 type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void };
 
 export class Tab {
 	private nextId = 1;
 	private pending = new Map<number, Pending>();
+	private listeners = new Set<(method: string, params: unknown) => void>();
 	private socket: WebSocket;
 
 	private constructor(socket: WebSocket) {
@@ -13,9 +15,14 @@ export class Tab {
 		socket.addEventListener("message", (event) => {
 			const message = JSON.parse(String(event.data)) as {
 				id?: number;
+				method?: string;
+				params?: unknown;
 				result?: unknown;
 				error?: { message: string };
 			};
+			if (message.method) {
+				for (const listener of this.listeners) listener(message.method, message.params);
+			}
 			const waiting = message.id === undefined ? undefined : this.pending.get(message.id);
 			if (!waiting || message.id === undefined) return;
 			this.pending.delete(message.id);
@@ -55,6 +62,12 @@ export class Tab {
 		const id = this.nextId++;
 		this.socket.send(JSON.stringify({ id, method, params }));
 		return new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }));
+	}
+
+	/** Enable a CDP domain, such as `Network`, and receive its events. */
+	async listen(domain: string, listener: (method: string, params: unknown) => void): Promise<void> {
+		this.listeners.add(listener);
+		await this.send(`${domain}.enable`);
 	}
 
 	async evaluate<T>(expression: string): Promise<T> {

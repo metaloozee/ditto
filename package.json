@@ -10,6 +10,7 @@
     "feasibility:free-tier": "node feasibility/free-tier/owner.ts",
     "feasibility:paid": "node feasibility/paid/owner.ts",
     "feasibility:containers": "node feasibility/containers/owner.ts",
+    "feasibility:browser-run": "node feasibility/browser-run/owner.ts",
     "build": "vp run @ditto/web#build",
     "preview": "vp run @ditto/web#preview",
     "typecheck": "vp run @ditto/web#typecheck",

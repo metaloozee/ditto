@@ -21,6 +21,8 @@ export async function takeOverWorkflow(options: {
 	/** Every filter decision so far, oldest first. */
 	decisions: () => Promise<Decision[]>;
 	host?: Observation["host"];
+	/** Further questions for the owner after the run, each answered into the entry. */
+	questions?: { label: string; question: string }[];
 	log: (message: string) => void;
 }): Promise<string> {
 	const { workflow, log } = options;
@@ -87,15 +89,15 @@ export async function takeOverWorkflow(options: {
 	const steppedThrough = /^y/i.test(
 		await ask("Did you operate the site beyond the login or challenge? (y/n): "),
 	);
+	const notes: { label: string; answer: string }[] = [];
+	for (const { label, question } of options.questions ?? []) {
+		notes.push({ label, answer: await ask(question) });
+	}
 	process.stdin.destroy();
 
+	const during = (await options.decisions()).slice(before);
 	const denied = [
-		...new Set(
-			(await options.decisions())
-				.slice(before)
-				.filter((decision) => decision.decision === "deny")
-				.map((decision) => decision.host),
-		),
+		...new Set(during.filter((decision) => decision.decision === "deny").map((d) => d.host)),
 	].sort();
 
 	return evidenceEntry({
@@ -110,6 +112,8 @@ export async function takeOverWorkflow(options: {
 		challenges,
 		siteResponse,
 		denied,
+		requested: new Set(during.map((decision) => decision.host)).size,
+		notes,
 		host: options.host,
 	});
 }
