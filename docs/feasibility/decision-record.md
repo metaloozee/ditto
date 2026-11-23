@@ -752,6 +752,93 @@ The open problem moves to #37: the Container discards its disk when an idle inst
 - **Command:** `pnpm feasibility:browser-run destroy`, `alchemy destroy --stage browser-run-trial` exited 0
 - **Removed:** Worker `ditto-browser-run-trial-workspaces`, its `Workspace` Durable Object namespace with the stored cookies, and the run-key and cookie-key secrets, and the local keys. Both sessions were closed first.
 
+### Browser health on the shared computer (#37)
+
+The #32 stage (`feasibility/containers/`), extended so the browser keeps its logins across instance stops, fits its instance, and stays out of bots' reach during take-over. The harness is built and verified locally. The slots below are empty until the owner runs it on the paid stage.
+
+**Logins across instance stops.** The `Workspace` Durable Object exports Chrome's cookies over CDP (`Storage.getCookies` on the browser target, through the instance's DevTools gate) and stores them AES-GCM encrypted under a key derived from the `COOKIE_KEY` secret (`feasibility/containers/cookies.ts`, adapted from the #36 harness). It saves after hand-back, when the last hold is released, on `stop`, and before the 60-minute deadline destroys the instance. On the next start it decrypts first, so a key that cannot read the cookies fails before a billed instance starts, then restores them with `Storage.setCookies` before the start answers. The bot's DevTools route answers `409` until then. `discard` destroys without saving, so `restore` and `forget` never overwrite the take-over's cookies. `DELETE /w/<workspace>/cookies` is the ADR-0010 path. Local storage, IndexedDB and device state are not saved: the restore entries show whether a site needs them.
+
+**Keep-alive only while held.** Cloudflare ignores `setInactivityTimeout`, so the Worker no longer sets it. The object holds the instance only while a take-over or a bot task (`POST /w/<workspace>/hold/task`) holds it: its alarm then touches the instance's control port every 30 s. With nothing held, the alarm waits for the deadline and touches nothing, so Cloudflare's idle stop takes the instance. `GET /w/<workspace>/status` reports `running`, the holds, the last touch and the keep-alive count without touching the instance, so the idle stop can be timed. The owner's commands no longer send their own keep-alive.
+
+**DevTools during take-over (ADR-0007).** Chrome's DevTools listens on `127.0.0.1:9222`. A gate (`image/devtools_gate.py`), running as its own `devtools` user, relays port 9223, which the Worker reaches, to it. The entrypoint's fence lets only that user reach 9222 and no local process reach the gate's lock port (8082). `POST /w/<workspace>/takeover` locks the gate, which closes every DevTools session and refuses new ones, and only then answers that take-over is ready. If the lock fails, take-over is not ready and nothing is held. Until hand-back, the Worker's DevTools route answers `423`. `POST /w/<workspace>/handback` unlocks the gate, releases the hold and saves the cookies. The fence needs `NET_ADMIN`, which Cloudflare granted in #32; without it the image reports `"devtools": "any-local-process"`.
+
+**The owner's sign-in.** The take-over view (`/w/<workspace>/view/...`) no longer accepts the run key. It needs a session for the owner's GitHub account, and opens only during take-over. The trial's smallest honest shape is GitHub OAuth from the Worker itself (`feasibility/containers/owner-sign-in.ts`): GitHub is one of Ditto's sign-in providers, it is a real third-party identity check, and it needs no deployed app. The Worker accepts only the numeric GitHub ID named at deploy (`OWNER_GITHUB_ID`), keeps a one-time state in a cookie, and sets an HMAC-signed `HttpOnly`, `Secure`, `SameSite=Lax` session cookie for an hour that holds no token. The view never sees that cookie, and a WebSocket upgrade from another origin is refused. Production would check Ditto's own sign-in session instead. The bot's DevTools and the owner's commands keep the run key.
+
+**Chrome's sandbox.** The image installs `chromium-sandbox` and starts Chrome without `--no-sandbox`. Chrome tries user namespaces, then the SUID helper. If that Chrome exits, the image restarts it with `--no-sandbox` and records why in `/sandbox`. Locally, Docker's defaults refuse both sandboxes (`Failed to move to new namespace`); with `SYS_ADMIN`, which `alchemy dev` grants, Chrome runs sandboxed and `chrome://sandbox` reports it adequately sandboxed. Whether Cloudflare allows either is what the `checks` entry answers.
+
+**Memory and size.** The control port samples, every 3 s, the instance's cgroup memory, Chrome's summed proportional set size (PSS, which counts shared pages once, unlike #32's summed resident memory), memory and CPU pressure stall averages, the cgroup's OOM kills, and whether Xvfb, x11vnc, websockify and Chromium are alive. `takeover` polls the samples every 15 s and keeps its own copy, so a lost instance does not lose them. `screens` opens one more screen at a time (its own Xvfb display and Chrome profile) and reports how many stay alive under 90% of the instance's memory.
+
+**Long sessions.** `socket` opens two WebSockets to `echo.websocket.org` through the filter for 30 minutes: one pings every 10 s, the other stays silent after it opens, to show any idle timeout. The filter runs mitmproxy's default `tcp_timeout` of 600 s.
+
+**Verified locally** (2026-11-23, Docker Engine 29.6.2, no Cloudflare account):
+
+- `feasibility/containers-health.test.ts` runs the Worker and Durable Object with Cloudflare's container API and the instance faked at the platform boundary. Cookies saved after hand-back are restored into the next instance before its start answers, with session cookies sent back without an expiry. Stored cookies are unreadable at rest. A different cookie key fails before a start. Deleted cookies leave the next instance signed out. `stop` and the deadline save first; `discard` keeps the earlier save. With nothing held, the alarm touches nothing. A take-over or task hold touches the instance every 30 s, also after eviction, and releasing the last hold saves and stops touching. Status never touches the instance. Take-over locks DevTools before it answers ready, refuses the DevTools route until hand-back, is never ready if the lock fails, and hand-back unlocks before it saves.
+- `feasibility/containers-owner-view.test.ts`: the view sends the run key's holder to sign in, opens for the configured GitHub account only during take-over, never forwards the session cookie, refuses a cross-origin WebSocket, a forged or expired session, a mismatched state, a code GitHub refuses, another account, a return path off the view, and every sign-in when no owner is configured.
+- `feasibility/containers-image.test.ts`: under Docker's defaults the image records `none` with the reason and Chrome still runs, samples memory, PSS and the desktop's processes, opens an extra screen, and reports that any local process reaches 9222. With `NET_ADMIN` and `SYS_ADMIN` Chrome runs sandboxed (`chrome://sandbox`: adequately sandboxed), the browser user cannot reach 9222 or the lock, the lock closes an open DevTools session and refuses new ones, and unlock restores them.
+- `feasibility/containers-health-evidence.test.ts`: each entry's grade follows what was observed.
+
+**Unknowns the live run settles:** whether Cloudflare allows Chrome's sandbox; whether the Durable Object's alarm touches count as activity (the #32 keep-alive also went through the object, so they should); how soon `running` turns false after an idle stop; whether noVNC's WebSocket upgrades through the Worker on `https` with the session cookie; and whether Cloudflare's proxy closes a silent WebSocket (the commands poll every 15 s to keep theirs busy).
+
+**Owner steps.** The stage needs Workers Paid and the billing notification from #32. Create a GitHub OAuth app first (GitHub: Settings > Developer settings > OAuth Apps), with any callback URL for now. Then:
+
+```sh
+export GITHUB_CLIENT_ID=<client id> GITHUB_CLIENT_SECRET=<client secret> OWNER_GITHUB_ID=$(gh api user --jq .id)
+pnpm feasibility:containers deploy --spending-cap-set --instance standard-1
+# set the OAuth app's callback URL to the <worker url>/auth/callback that deploy prints
+pnpm feasibility:containers checks                  # adds the sandbox entry
+pnpm feasibility:containers takeover linkedin       # sign in with GitHub at the printed view link
+pnpm feasibility:containers takeover google
+pnpm feasibility:containers screens                 # screens per instance on this size
+pnpm feasibility:containers idle                    # held 8 min, then released until it stops
+pnpm feasibility:containers socket                  # 30-minute WebSocket and the idle timeout
+# on a later date:
+pnpm feasibility:containers restore google          # then linkedin; a new instance, no owner
+pnpm feasibility:containers forget                  # deletes the cookies; both must be signed out
+pnpm feasibility:containers destroy
+```
+
+If the LinkedIn take-over drops the display on `standard-1`, run `forget`, redeploy with `--instance standard-2` (then `standard-3`), and repeat `takeover linkedin` and `screens` on each size until one completes. Each command prints redacted entries for the slots below. The keys are kept in `~/.config/ditto-feasibility/`, outside the repo; losing the cookie key loses the stored logins.
+
+#### Restored logins on a later date
+
+_Not yet run: `pnpm feasibility:containers restore google` and `… restore linkedin`, on a date after the take-over. A run on the same day is labelled as such and does not count. Where a site is not signed in, the entry states what else it needed._
+
+#### Deleting the stored cookies
+
+_Not yet run: `pnpm feasibility:containers forget`, after both restores._
+
+#### Cause of the standard-1 display drop
+
+_Not yet run: `pnpm feasibility:containers takeover linkedin` on `standard-1`, with its memory entry, then on each larger size until one completes. Names the minimum instance size and its memory peak._
+
+#### Screens per instance
+
+_Not yet run: `pnpm feasibility:containers screens` on the minimum size above._
+
+#### Idle stops
+
+_Not yet run: `pnpm feasibility:containers idle`, and the `takeover` runs above for how long the instance stayed up during each take-over._
+
+#### Chrome's sandbox
+
+_Not yet run: the `Chrome runs sandboxed` entry from `pnpm feasibility:containers checks`. If it fails, the entry's reason is why, and the record states what replaces the sandbox._
+
+#### DevTools between take-over ready and hand-back
+
+_Not yet run: the DevTools entry from each `pnpm feasibility:containers takeover`._
+
+#### Take-over view behind the owner's sign-in
+
+_Not yet run: during `pnpm feasibility:containers takeover`, record that the view link first asked for the GitHub sign-in, and that a private window without it was sent to sign in._
+
+#### Long sessions
+
+_Not yet run: `pnpm feasibility:containers socket`._
+
+#### Teardown
+
+_Not yet run: `pnpm feasibility:containers destroy`._
+
 ## Egress policy
 
 **Choice: Provisional.** Default deny. Each workspace has an exact-hostname destination list (`destinations/<WORKSPACE_ID>.txt`), enforced by a TLS-intercepting mitmproxy 12.3.1 filter (`egress_filter.py`) that is Chrome's only route out. The runtime passes the workspace identity. The filter reads the list on every decision, refuses an unapproved CONNECT before any upstream connection, decides again for each request inside a tunnel and for each WebSocket upgrade, and logs `{workspace, host, decision, method, port}` for each CONNECT, plus `path`, `http_version` and `upstream_alpn` for each request inside a tunnel and `path` for each WebSocket. The path is logged without its query or fragment, which can carry login and OAuth callback codes, so neither reaches the container logs. The CA is generated per stage, its key never leaves the filter, and it is discarded on teardown. The local trial (#27) supports this shape, and #28 shows WebSocket and HTTP/2 survive it. The deployed runtime check is still to run.
@@ -1049,17 +1136,14 @@ Every run below is the owner's, with their own accounts. Each prints a redacted 
 
 | #34 | Sign in with ChatGPT, local then Durable Object | local passed, transferred to the Bot; deployed run due 2026-11-24 or later | `pnpm feasibility:model --route siwc`; `pnpm feasibility:paid deploy`, `… transfer-siwc`, `… run --route siwc` (later date), `… destroy` | ChatGPT plan on the supported endpoint, self-deployed |
 | #36 | Browser Run as the workspace browser | checks and take-overs run; ADR-0012 rejected; stage torn down, harness removed | in git history at `d5545cd` | browser provider: the shared computer stays (ADR-0012 rejected) |
-| #37 | Keep the shared computer's browser healthy | to be built | to be built under #37 | logins across instance stops, size, idle stops, sandbox, DevTools during take-over |
+| #37 | Keep the shared computer's browser healthy | built, verified locally with the platform faked; live run pending | GitHub OAuth app, then `pnpm feasibility:containers deploy --spending-cap-set`, `… checks`, `… takeover linkedin` (then `google`), `… screens`, `… idle`, `… socket`, on a later date `… restore google` (then `linkedin`), `… forget`, `… destroy` | logins across instance stops, size, screens per instance, idle stops, sandbox, DevTools during take-over, owner's sign-in, long WebSockets |
 | #35 | Workers AI tool calling from a Durable Object | blocked: needs Workers Paid | to be built under #35 | the included model (ADR-0011) |
 
 **Consequence of #31 and #32 staying blocked:** no hosted route is proven. The model route and the desktop stay local: Pi under Node and the #29 Docker stack on the owner's machine, which matches Ditto's current local-only use. Every hosted selection above stays provisional.
 
 Engineering experiments not yet ticketed:
 
-- Chrome sandboxed (without `--no-sandbox`) inside a Container instance.
 - The `enableInternet: false` outbound-intercept filter, built and run through the allow, deny, WebSocket and HTTP/2 checks, if `NET_ADMIN` is refused.
-- WebSocket sessions of minutes to hours through the filter, and the filter's idle timeouts.
-- Screen capacity per instance size.
 - Pinning the Debian packages by snapshot and rerunning the suites.
 
 ## External dependencies
