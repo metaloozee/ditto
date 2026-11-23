@@ -915,6 +915,87 @@ pnpm feasibility:containers destroy
 
 If the LinkedIn take-over drops the display on `standard-1`, run `forget`, redeploy with `--instance standard-2` (then `standard-3`), and repeat `takeover linkedin` and `screens` on each size until one completes. Each command prints redacted entries for the slots below. The keys are kept in `~/.config/ditto-feasibility/`, outside the repo; losing the cookie key loses the stored logins.
 
+#### Checks on the #37 image
+
+The #32 checks, rerun on the #37 image with `Workspace` on `@cloudflare/containers`. Earlier on 2026-11-23, with the DevTools socket passed straight through the Durable Object, `checks` lost the instance 26 to 57 s into a DevTools session (`DevTools closed: 1006`, then `running: false`) on five runs, with or without `setInactivityTimeout` and a task hold; only polling the object every 5 s kept it. Through the library's proxy the 65 s WebSocket hold passed without polling, so the library's accepted sockets count as activity as its source says.
+
+##### 2026-11-23 · filter logs the workspace identity the runtime passed on Cloudflare · pass
+
+- **Route:** the Worker's Durable Object for `ws-cloud-trial` starts the instance with `WORKSPACE_ID=ws-cloud-trial`; the entrypoint hands it to the filter, which reads `/destinations/<WORKSPACE_ID>.txt`
+- **Date:** 2026-11-23, 18:05 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** every decision the filter logs carries that workspace, and no other
+- **Observed:** 30 decisions logged, 0 with another workspace. First: `{"workspace":"ws-cloud-trial", "host":"clients2.google.com", "decision":"deny", "method":"GET", "http_version":"HTTP/1.1", "upstream_alpn":null}`.
+- **Compared with the local trial:** #27 local: Compose passed `WORKSPACE_ID`; every decision carried `ws-trial`
+- **Retries:** _none_
+- **Fallback:** none needed
+
+##### 2026-11-23 · Chrome loads an approved destination on Cloudflare · pass
+
+- **Route:** headed Chromium in the instance, `--proxy-server=http://127.0.0.1:8080`, loads `https://example.com/` with `example.com` on the `ws-cloud-trial` list
+- **Date:** 2026-11-23, 18:05 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** the page loads against the filter's CA and the filter logs an allow with workspace `ws-cloud-trial`
+- **Observed:** document title `Example Domain`. Filter logged `{"workspace":"ws-cloud-trial", "host":"example.com", "decision":"allow", "method":"CONNECT"}`.
+- **Compared with the local trial:** #27 local: pass, title `Example Domain`, allow logged with `ws-trial`
+- **Retries:** _none_
+- **Fallback:** none needed
+
+##### 2026-11-23 · Chrome is refused an unapproved destination on Cloudflare · pass
+
+- **Route:** the same Chromium loads `https://example.org/`, which is not on the list
+- **Date:** 2026-11-23, 18:05 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** the filter refuses the tunnel and logs the deny with the workspace
+- **Observed:** navigation: `net::ERR_TUNNEL_CONNECTION_FAILED`. Filter logged `{"workspace":"ws-cloud-trial", "host":"example.org", "decision":"deny", "method":"CONNECT"}`.
+- **Compared with the local trial:** #27 local: pass, `net::ERR_TUNNEL_CONNECTION_FAILED`, deny logged
+- **Retries:** _none_
+- **Fallback:** none needed
+
+##### 2026-11-23 · Chrome has no route around the filter on Cloudflare · pass
+
+- **Route:** as the browser user, resolve `example.com` and open TCP to `1.1.1.1:443` without the proxy. One instance shares one network namespace, so only the entrypoint's owner-match fence (needs `NET_ADMIN`) can stop this
+- **Date:** 2026-11-23, 18:05 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** both fail: only the filter's user may open outbound connections
+- **Observed:** fence `{"workspace":"ws-cloud-trial", "isolation":"filter-user-only", "devtools":"gate-only"}`. Probe `{"dns":"failed", "dnsError":"gaierror", "direct":"failed", "directError":"ConnectionRefusedError"}`.
+- **Compared with the local trial:** #27 local: pass, `ERR_NAME_NOT_RESOLVED`; Docker's internal network gave Chrome no route at all
+- **Retries:** _none_
+- **Fallback:** none needed
+
+##### 2026-11-23 · WebSocket held open through the filter on Cloudflare · pass
+
+- **Route:** the same Chromium opens `https://echo.websocket.org/`, then `wss://echo.websocket.org/`, pinging every 2 seconds for 65000 ms
+- **Date:** 2026-11-23, 18:05 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** the socket opens, every ping is echoed, it is still open at the end, and the filter logs the WebSocket allow with the workspace
+- **Observed:** opened: true, greeting `Request served by <instance id>`, 33 of 33 pings echoed, open for 65001 ms, open at end: true, close code: none. Filter logged `{"workspace":"ws-cloud-trial", "host":"echo.websocket.org", "decision":"allow", "method":"WEBSOCKET"}`.
+- **Compared with the local trial:** #28 local: pass, 7 of 7 echoed, open after 65,189 ms, no RFC 8441
+- **Retries:** _none_
+- **Fallback:** none needed
+
+##### 2026-11-23 · HTTP/2 negotiated end to end through the filter on Cloudflare · pass
+
+- **Route:** the same Chromium loads `https://example.com/` through the filter
+- **Date:** 2026-11-23, 18:05 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** Chrome negotiates `h2` with the filter and the filter negotiates `h2` with the origin. A fallback to HTTP/1.1 is a downgrade
+- **Observed:** `nextHopProtocol` was `h2`. Filter logged `{"workspace":"ws-cloud-trial", "host":"example.com", "decision":"allow", "method":"GET", "http_version":"HTTP/2.0", "upstream_alpn":"h2"}`.
+- **Compared with the local trial:** #28 local: pass, `h2` on both legs
+- **Retries:** _none_
+- **Fallback:** none needed
+
+##### 2026-11-23 · instance size, memory and startup time on Cloudflare · pass
+
+- **Route:** `standard-1` instance running headed Chromium, Xvfb, x11vnc, noVNC and the filter
+- **Date:** 2026-11-23, 18:05 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** Chrome becomes ready and the instance reports its memory after the checks
+- **Observed:** **Instance size:** `standard-1`. **Startup time:** 8662 ms from `start()` to Chrome's DevTools answering. **Observed memory:** 605.5 MiB in use after the checks, peak unknown, cgroup limit unknown, the instance reports 4228.7 MiB total.
+- **Compared with the local trial:** local Docker: no size limit and no startup reading recorded
+- **Retries:** _none_
+- **Fallback:** none needed
+
 #### Restored logins on a later date
 
 _Not yet run: `pnpm feasibility:containers restore google` and `… restore linkedin`, on a date after the take-over. A run on the same day is labelled as such and does not count. Where a site is not signed in, the entry states what else it needed._
@@ -925,23 +1006,116 @@ _Not yet run: `pnpm feasibility:containers forget`, after both restores._
 
 #### Cause of the standard-1 display drop
 
-_Not yet run: `pnpm feasibility:containers takeover linkedin` on `standard-1`, with its memory entry, then on each larger size until one completes. Names the minimum instance size and its memory peak._
+##### 2026-11-23 · LinkedIn login with take-over on Cloudflare · works with take-over
+
+- **Route:** headed Chromium on Cloudflare Containers behind the `ws-takeover` egress filter in the same instance; take-over locks every bot's DevTools first, then the owner signs in to the Worker with GitHub and works in its noVNC view, which opens only during take-over, hands back, then the bot will open the LinkedIn feed and confirm it is signed in
+- **Date:** 2026-11-23, 18:10 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** the owner completes only the login and any challenge; after the explicit hand-back the bot inspects the screen and reaches the signed-in page alone. The page check proves the session carried over, not a multi-step task
+- **Observed:** took over: yes. Challenges: none. Site's response: nothing appeared. login was successful. After hand-back the bot found https://www.linkedin.com/feed. Bot reached the signed-in page after hand-back: yes, at https://www.linkedin.com/feed. Owner operated the site beyond the login: no. Filter denied: `ads.stickyadstv.com`, `content-autofill.googleapis.com`, `dpm.demdex.net`, `eb2.3lift.com`, `lex.33across.com`, `lnkd.demdex.net`, `optimizationguide-pa.googleapis.com`, `play.google.com`, `px.ads.linkedin.com`, `sync.teads.tv`, `token.rubiconproject.com`, `update.googleapis.com`.
+- **Retries:** _none_
+- **Fallback:** none needed
+
+##### 2026-11-23 · memory and processes during the LinkedIn take-over on `standard-1` · pass
+
+- **Route:** headed Chromium on Cloudflare Containers behind the workspace's egress filter, owned by the `Workspace` Durable Object, driven through the run-key gated Worker. The instance samples cgroup memory, Chrome's proportional set size, pressure stall averages, OOM kills and the desktop's processes every 3 s; the owner's command polls them during the take-over
+- **Date:** 2026-11-23, 18:10 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** the sign-in completes with Xvfb, x11vnc, websockify and Chromium alive throughout, or the samples show what starved
+- **Observed:** 39 samples over 2.1 min, longest gap 4 s. instance memory peak 1223 MiB of 4229 MiB. Chrome PSS peak 1116 MiB across up to 17 processes. memory pressure peak (avg10) unknown, CPU pressure peak unknown. OOM kills unknown. desktop processes lost: none. instance answered to the end: yes. signed-in page reached: yes. Starvation ruled out for this run: no OOM kill and every desktop process stayed up.
+- **Retries:** _none_
+- **Fallback:** none needed
+
+##### 2026-11-23 · Google login with take-over on Cloudflare · works with take-over
+
+- **Route:** headed Chromium on Cloudflare Containers behind the `ws-takeover` egress filter in the same instance; take-over locks every bot's DevTools first, then the owner signs in to the Worker with GitHub and works in its noVNC view, which opens only during take-over, hands back, then the bot will open Google Account home and confirm it is signed in
+- **Date:** 2026-11-23, 18:14 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** the owner completes only the login and any challenge; after the explicit hand-back the bot inspects the screen and reaches the signed-in page alone. The page check proves the session carried over, not a multi-step task
+- **Observed:** took over: yes. Challenges: none. Site's response: it properly navigated. After hand-back the bot found null/. Bot reached the signed-in page after hand-back: yes, at https://myaccount.google.com/. Owner operated the site beyond the login: no. Filter denied: `accountcapabilities-pa.googleapis.com`, `content-autofill.googleapis.com`, `gds.google.com`, `lh3.google.com`, `ogads-pa.clients6.google.com`, `ogs.google.com`, `optimizationguide-pa.googleapis.com`, `passwordsleakcheck-pa.googleapis.com`, `play.google.com`, `signaler-pa.googleapis.com`, `www.googletagmanager.com`.
+- **Retries:** _none_
+- **Fallback:** none needed
+
+`null/` is how the redaction printed a browser page with no web origin, such as `about:blank` or a `chrome:` page, so after hand-back the tab was on one of those, not on a Google page. Which one is lost. The redaction now names such pages by scheme and page.
+
+##### 2026-11-23 · memory and processes during the Google take-over on `standard-1` · pass
+
+- **Route:** headed Chromium on Cloudflare Containers behind the workspace's egress filter, owned by the `Workspace` Durable Object, driven through the run-key gated Worker. The instance samples cgroup memory, Chrome's proportional set size, pressure stall averages, OOM kills and the desktop's processes every 3 s; the owner's command polls them during the take-over
+- **Date:** 2026-11-23, 18:14 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** the sign-in completes with Xvfb, x11vnc, websockify and Chromium alive throughout, or the samples show what starved
+- **Observed:** 130 samples over 7.0 min, longest gap 4 s. instance memory peak 1435 MiB of 4229 MiB. Chrome PSS peak 1332 MiB across up to 20 processes. memory pressure peak (avg10) unknown, CPU pressure peak unknown. OOM kills unknown. desktop processes lost: none. instance answered to the end: yes. signed-in page reached: yes. Starvation ruled out for this run: no OOM kill and every desktop process stayed up.
+- **Retries:** _none_
+- **Fallback:** none needed
+
+Both memory entries printed the size as `unknown`: the command read the size from a second start, which answers only `reused: true` for a running instance. The stage was deployed with `--instance standard-1`, and the same day's `checks` reported `standard-1`, so the headings above say `standard-1`. The command now keeps the size from its first start.
+
+**Finding so far:** `standard-1` completed the LinkedIn and Google sign-ins with every desktop process alive and peaks of 1223 and 1435 MiB of 4229 MiB, so the #32 display drop did not recur. Neither site showed a challenge this time, so the CAPTCHA-heavy case the ticket asks for is not yet exercised. The instance exposed no pressure-stall or OOM counters (`unknown`), so starvation is ruled out by process survival and memory headroom, not by those counters. `standard-1` is the candidate minimum size until a sign-in with a CAPTCHA passes or fails on it.
 
 #### Screens per instance
 
-_Not yet run: `pnpm feasibility:containers screens` on the minimum size above._
+##### 2026-11-23 · screens per instance on `standard-1` · pass
+
+- **Route:** headed Chromium on Cloudflare Containers behind the workspace's egress filter, owned by the `Workspace` Durable Object, driven through the run-key gated Worker. Beside the main screen, the instance opens one more screen at a time (its own Xvfb display and Chrome profile, loading `https://www.linkedin.com/login`), waits 30 s and samples memory
+- **Date:** 2026-11-23, 18:17 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** a count of screens that stay alive with instance memory under 90% of its ceiling; the decision record commits capacity from this
+- **Observed:** 1 extra: 973 MiB of 4229 MiB, all alive; 2 extra: 1314 MiB of 4229 MiB, all alive; 3 extra: 1576 MiB of 4229 MiB, all alive; 4 extra: 1900 MiB of 4229 MiB, all alive; 5 extra: 2326 MiB of 4229 MiB, all alive; 6 extra: 2573 MiB of 4229 MiB, all alive. **Screens that fit:** 6 beside the main screen (7 in all).
+- **Retries:** _none_
+- **Fallback:** none needed
+
+The run stopped at its default `--max 6`, so 7 is a floor, not the limit: at 6 extra the instance used 61% of its memory. Each extra screen added about 270 to 430 MiB with one idle login page open. A bot working a heavy site, or with several tabs, takes more, so the number of busy screens that fit is likely lower than the number of idle ones measured here.
 
 #### Idle stops
 
-_Not yet run: `pnpm feasibility:containers idle`, and the `takeover` runs above for how long the instance stayed up during each take-over._
+##### 2026-11-23 · idle instance stops only when nothing holds or uses it on `standard-1` · pass
+
+- **Route:** headed Chromium on Cloudflare Containers behind the workspace's egress filter, owned by the `Workspace` Durable Object, driven through the run-key gated Worker. A task hold, with nothing using the instance and the owner's command reading only the Durable Object's status, which neither touches nor keeps the instance. Then the hold is released
+- **Date:** 2026-11-23, 18:22 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** the instance stays up for the whole hold (longer than the object's 5-minute `sleepAfter` and Cloudflare's own idle stop), then the object saves the cookies and stops it about 5 minutes after the release
+- **Observed:** held 8.0 min: still running at release. After release: stopped 311 s after its last use (status read every 15 s).
+- **Retries:** _none_
+- **Fallback:** none needed
+
+The take-overs kept the instance up for their whole length: 2.1 min for LinkedIn and 7.0 min for Google, with the instance answering to the end of each.
 
 #### Chrome's sandbox
 
-_Not yet run: the `Chrome runs sandboxed` entry from `pnpm feasibility:containers checks`. If it fails, the entry's reason is why, and the record states what replaces the sandbox._
+##### 2026-11-23 · Chrome runs sandboxed on Cloudflare · pass
+
+- **Route:** the image starts Chromium without `--no-sandbox` (user namespaces, then the SUID helper from `chromium-sandbox`) and falls back to `--no-sandbox` only if that Chrome exits; the bot then opens `chrome://sandbox`
+- **Date:** 2026-11-23, 18:05 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** Chrome starts sandboxed and `chrome://sandbox` reports it adequately sandboxed
+- **Observed:** start mode `sandboxed`. `chrome://sandbox`: `Layer 1 Sandbox Namespace`, `PID namespaces Yes`, `Network namespaces Yes`, `Seccomp-BPF sandbox Yes`, `Seccomp-BPF sandbox supports TSYNC Yes`, `Ptrace Protection with Yama LSM (Broker) No`, `Ptrace Protection with Yama LSM (Non-broker) No`; adequately sandboxed: true.
+- **Compared with the local trial:** #32: `--no-sandbox`; local Docker without `SYS_ADMIN` refuses both sandboxes
+- **Retries:** _none_
+- **Fallback:** none needed
+
+Chrome runs sandboxed on Cloudflare, so nothing replaces the sandbox. Yama's ptrace protection is off in the instance's kernel; the namespace and seccomp layers hold.
 
 #### DevTools between take-over ready and hand-back
 
-_Not yet run: the DevTools entry from each `pnpm feasibility:containers takeover`._
+##### 2026-11-23 · No bot process reaches DevTools between take-over ready and hand-back · pass
+
+- **Route:** headed Chromium on Cloudflare Containers behind the workspace's egress filter, owned by the `Workspace` Durable Object, driven through the run-key gated Worker. Take-over locks the instance's DevTools gate (closing every session) before it answers ready; the fence lets only the gate's user reach Chrome's port 9222 and no local process reach the lock. Throughout the take-over the owner's command probes the Worker's DevTools route and, as the browser user standing in for a bot's process, ports 9222, 9223 and 8082
+- **Date:** 2026-11-23, 18:10 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** every probe from take-over ready to hand-back is refused (route `423`, every port refused), and the gate answers again after hand-back
+- **Observed:** 4 probes during take-over, 0 reached DevTools. After hand-back: `{"route":200,"reach":{"chrome":"refused","gate":"reachable","lock":"refused"}}`.
+- **Retries:** _none_
+- **Fallback:** none needed
+
+##### 2026-11-23 · No bot process reaches DevTools between take-over ready and hand-back (Google) · pass
+
+- **Route:** headed Chromium on Cloudflare Containers behind the workspace's egress filter, owned by the `Workspace` Durable Object, driven through the run-key gated Worker. Take-over locks the instance's DevTools gate (closing every session) before it answers ready; the fence lets only the gate's user reach Chrome's port 9222 and no local process reach the lock. Throughout the take-over the owner's command probes the Worker's DevTools route and, as the browser user standing in for a bot's process, ports 9222, 9223 and 8082
+- **Date:** 2026-11-23, 18:14 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** every probe from take-over ready to hand-back is refused (route `423`, every port refused), and the gate answers again after hand-back
+- **Observed:** 7 probes during take-over, 0 reached DevTools. After hand-back: `{"route":200,"reach":{"chrome":"refused","gate":"reachable","lock":"refused"}}`.
+- **Retries:** _none_
+- **Fallback:** none needed
 
 #### Take-over view behind the owner's sign-in
 
@@ -949,7 +1123,29 @@ _Not yet run: during `pnpm feasibility:containers takeover`, record that the vie
 
 #### Long sessions
 
-_Not yet run: `pnpm feasibility:containers socket`._
+##### 2026-11-23 · WebSocket held 30.0 min through the filter, with its idle timeout · fail
+
+- **Route:** headed Chromium on Cloudflare Containers behind the workspace's egress filter, owned by the `Workspace` Durable Object, driven through the run-key gated Worker. The page opens two sockets to `wss://echo.websocket.org/`: one pings every 10 s for the hold, one sends nothing after its greeting. The filter runs mitmproxy 12.3.1 with its default `tcp_timeout` of 600 s
+- **Date:** 2026-11-23, 18:36 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** the active socket stays open with every ping echoed; the idle socket shows the idle timeout of the filter or the far end, if any
+- **Observed:** active: 60 of 61 pings echoed, open for 30.1 min, open at end: false, close code 1000. Idle: closed after 605 s with code 1000. Filter logged the WebSocket allow: yes.
+- **Retries:** _none_
+- **Fallback:** _owner to name_
+
+"Open for 30.1 min" is wrong: the probe overwrote the active socket's close time when the hold ended. 61 pings at 10 s apart means the active socket closed at about 600 s, beside the idle one at 605 s. The probe now keeps the time its close handler records.
+
+##### 2026-11-23 · Same two sockets straight to echo.websocket.org, no filter · far end closes at 10 minutes
+
+- **Route:** Node 24.22.2 `WebSocket` on the developer's machine, straight to `wss://echo.websocket.org/`, no filter or Cloudflare in the path. One socket pings every 10 s, one stays silent; held 12 minutes
+- **Date:** 2026-11-23
+- **Network origin:** developer's home network
+- **Expected:** if the far end caps a connection's life, both sockets close near 600 s here too
+- **Observed:** active: 59 of 60 pings echoed, closed after 608 s, code 1006. Idle: closed after 611 s, code 1006. Neither was open at 12 minutes.
+- **Retries:** _none_
+- **Fallback:** none needed
+
+**Finding so far:** echo.websocket.org ends every connection at about 10 minutes, busy or silent, so the Cloudflare run measured the far end, not the filter. The filter carried a busy socket for those 10 minutes with every ping but the last echoed. Whether the filter, or Cloudflare's path, holds a socket for 30 minutes is still unmeasured, and needs a far end that keeps connections open longer than that.
 
 #### Teardown
 
@@ -972,7 +1168,7 @@ _Not yet run: `pnpm feasibility:containers destroy`._
 - The filter matches exact hostnames only. A login that spans several hosts needs each one listed, and wildcard rules are not supported yet.
 - A WebSocket never rides HTTP/2 through the filter. mitmproxy does not offer RFC 8441 extended CONNECT, so Chrome opens a separate HTTP/1.1 tunnel for each WebSocket. Sites work, at the cost of one extra TCP and TLS connection per socket. Consequence accepted: no fallback needed unless a site requires WebSocket over HTTP/2, which none tested does. If the #32 intercept fallback replaces mitmproxy, recheck this.
 - The Debian packages (Chromium, NSS, Xvfb, x11vnc, noVNC, iptables) are not pinned, only the base images by digest. Consequence: a rebuild picks up security updates but can change the browser under a passing trial. Record the observed versions with every trial entry, and pin by snapshot (`snapshot.debian.org`) before a hosted release.
-- A WebSocket was held for 65 seconds. Sessions of minutes or hours, and idle timeouts in the filter, are untested.
+- A busy WebSocket was held for 10 minutes through the filter on Cloudflare (#37), where echo.websocket.org itself closes connections. Sessions of 30 minutes or hours, and the filter's 600 s `tcp_timeout` on a silent socket, are untested.
 - Chromium still makes background requests (component updates, time sync, `accounts.google.com`) despite `--disable-background-networking`. The filter denies and logs them.
 
 ### Local trial: Chrome behind the workspace egress filter
