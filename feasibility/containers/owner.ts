@@ -151,6 +151,13 @@ async function takeover(id: string | undefined) {
 	const doorway = { workerUrl: t.url, workspace: "ws-takeover", key: t.key } as const;
 	const devtools = await serveLoopback({ ...doorway, route: "devtools", port: 9222 });
 	const view = await serveLoopback({ ...doorway, route: "view", port: 6080 });
+	// Cloudflare stops an instance after 3 to 5 idle minutes despite setInactivityTimeout, and the
+	// view's WebSocket does not count as activity, so a slow sign-in would lose the instance.
+	const keepAlive = setInterval(() => {
+		t.call("/w/ws-takeover/control/ready").catch((error: Error) =>
+			log(`Keep-alive: ${error.message}`),
+		);
+	}, 30_000);
 	try {
 		const entry = await takeOverWorkflow({
 			workflow,
@@ -168,6 +175,7 @@ async function takeover(id: string | undefined) {
 			"The signed-in instance keeps running for the next workflow. After the last one: pnpm feasibility:containers stop ws-takeover",
 		);
 	} finally {
+		clearInterval(keepAlive);
 		await devtools.close();
 		await view.close();
 	}
