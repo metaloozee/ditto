@@ -10,7 +10,17 @@ Each trial adds dated evidence entries under the section it informs, in the form
 
 ## Model route
 
-**Choice: Provisional.** The Codex backend route tested by Pi (`https://chatgpt.com/backend-api/codex/responses`) on the owner's ChatGPT plan, through the pinned Pi runtime (`@earendil-works/pi-ai` 1.6.0) in a Cloudflare Worker on Workers Paid. The Worker calls `registerLazyOAuthFlows()` at startup, uses SSE over `fetch`, and receives the owner's sign-in from a step outside the Worker. The owner's OpenCode API key (`OPENCODE_API_KEY`) is the second supported connection and exercises the harness if ChatGPT plan access is unavailable (ADR-0003). It is recorded apart and does not stand in for the ChatGPT result.
+**Choice: Provisional.** The pinned Pi runtime (`@earendil-works/pi-ai` 1.6.0) in a Bot Durable Object on Workers Paid, using SSE over `fetch`, on a connection the owner supplies (ADR-0003). Ditto will be open source and offered in two modes, and the connections each mode may use differ:
+
+| Connection                                                     | Self-deployed (owner's Cloudflare account)                      | Hosted by Ditto                                                    |
+| -------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------ |
+| OpenCode API key (`OPENCODE_API_KEY`)                          | yes                                                             | yes, the owner's key                                               |
+| Workers AI (`AI` binding), the included model                  | yes, billed to the owner's account; trial #35                   | yes, billed to the operator's account, no per-account limit yet (ADR-0011) |
+| ChatGPT plan through Sign in with ChatGPT (`api.openai.com/v1/responses`) | candidate, following OpenAI's self-hosted guide; trial #34 | only after OpenAI approves the hosted app through its interest form |
+
+The OpenCode API key is the first connection to build on. It is recorded apart from every ChatGPT result and does not stand in for it.
+
+The Codex backend that Pi's `openai-codex` provider calls (`https://chatgpt.com/backend-api/codex/responses`) is not a supported plan-usage endpoint: OpenAI's [plan usage docs](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference) say not to point plan usage at ChatGPT's backend-api endpoints, and it refuses Cloudflare's network (#30). Its #25 and #26 results stay as evidence for local use only.
 
 **Evidence today:** The [Day 1 ChatGPT baseline](#day-1--chatgpt-plan) passed inference and token refresh in Node on the home network. The [OpenCode baseline](#opencode-api-key) passed both inference turns in all three runs. The [OpenCode trial in local workerd](#opencode-api-key-in-local-worker) matched the Node baseline on all three runs. The [ChatGPT trial in local workerd](#chatgpt-plan-in-local-worker) also matched the Node baseline: inference and token refresh succeeded on all three runs. The [free-tier probe](#day-1--chatgpt-plan-from-cloudflare) refreshed its token but received HTTP 403 on every inference request.
 
@@ -28,13 +38,16 @@ Each trial adds dated evidence entries under the section it informs, in the form
 - Sign-in cannot run in a Worker (Pi's flows need `node:http` or a terminal). Consequence: a hosted bot needs a sign-in step outside the Worker, which later work designs.
 - Pi's WebSocket transport is unused in workerd (headers go in a constructor option workerd does not take). Consequence: SSE only, without Pi's WebSocket cached-context mode. Read from Pi's code, not exercised.
 - The harness swaps the global `fetch` per trial. Consequence: one trial at a time per isolate. Production code must pass `fetch` explicitly or isolate turns.
+- **Every Cloudflare trial so far ran in a plain Worker, not a Durable Object.** A Durable Object shares the Worker's runtime and network, so #26 and #30 still apply, but its CPU budget differs (Cloudflare documents 30s per request or message for an Agent). #34 and #35 record CPU from a Durable Object.
+- **The supported ChatGPT plan flow restricts requests.** It requires `store: false` and `stream: true` and rejects `temperature`, `max_output_tokens`, `previous_response_id` over HTTP and system-role items. Whether Pi sends any of them is untested (#34). Access tokens last 1 hour and refresh tokens 30 days, renewed on each refresh, per OpenAI's [token reference](https://developers.openai.com/siwc/token-sharing-open-source/token-reference).
 
 **Fallbacks:**
 
-- If #30 shows OpenAI refuses Cloudflare's network: Workers Paid does not help. Fall back to a supported container route (Pi under Node in a container), and document the provider's restriction in a follow-up ticket linked under #31's "If the route fails".
+- #30 showed the Codex backend refuses Cloudflare's network. That endpoint is not the supported plan-usage route, so the result does not decide ChatGPT plan access on Cloudflare: #34 does, against `api.openai.com/v1/responses`. If #34 is refused from the Durable Object, the ChatGPT plan stays local-only for self-deployed Ditto and needs OpenAI's approval for hosted Ditto. The OpenCode API key and the included model (Workers AI, ADR-0011) carry the hosted model route.
 - If #31 fails only with Pi in the path: the same container route, with the failing step recorded against Pi.
 - If the owner stays on the free plan: no deployed Pi route exists. Ditto stays local-only, and model turns run under Node from the owner's machine, the #25 baseline shape.
 - If ChatGPT plan access is unavailable to the owner: the OpenCode API key route carries the harness and the first delegated task. Hosted ChatGPT onboarding keeps its own gates.
+- If Workers AI has no model that calls tools reliably (#35): Ditto offers no included model and relies on the OpenCode API key, until a later model passes.
 
 **Owner evidence that confirms or overturns it:** #25 day 1 and day 2 (refresh of a day-old token) and the OpenCode baseline; #26 in local workerd on both routes, with real CPU figures; #30 day 1 and day 2 from Cloudflare; #31 on Workers Paid. A refusal from Cloudflare's network in #30, or a deployed CPU figure above what Workers Paid allows per request, overturns the Worker route.
 
@@ -264,24 +277,27 @@ _Not yet torn down. Paste the entry that `pnpm feasibility:paid destroy` prints.
 
 ## Desktop provider
 
-**Choice: Provisional.** Cloudflare Containers, one instance per workspace, each owned by a `Workspace` Durable Object, running one image that holds the egress filter and a headed Chromium on Xvfb with x11vnc and noVNC for take-over (`feasibility/containers/`). The runtime passes `WORKSPACE_ID` at start, and that is the only place the image learns its workspace.
+**Direction (2026-11-23), pending #36:** the browser moves to Cloudflare Browser Run, driven over CDP by Ditto's harness, with the workspace's destination list as the session's guardrails and the cookies saved and restored by the Workspace Durable Object, since Browser Run keeps no login state between sessions. The Cloudflare Container stays as the sandbox for the workspace's files and bot-written scripts (ADR-0012, proposed). Reason: a Container's disk is discarded whenever the instance stops, and Cloudflare stops idle instances after 3 to 5 minutes, so the browser below loses every login on restart. The Containers evidence below stands for the sandbox and for the filter; #36 decides whether Browser Run's guardrails can replace the filter for the browser and whether restored cookies keep the logins.
 
-**Evidence today:** the local Docker trials [Chrome has no route around the filter](#2026-11-22--chrome-has-no-route-around-the-filter--pass), [Take-over view is reachable on loopback only](#2026-11-22--take-over-view-is-reachable-on-loopback-only--pass), [Login pages load through the filter without signing in](#2026-11-22--login-pages-load-through-the-filter-without-signing-in--pass), and the `alchemy dev` runs below: [the combined image under alchemy dev](#2026-11-22--combined-image-on-the-containers-runtime-under-alchemy-dev--pass) and [the fence without NET_ADMIN](#2026-11-22--fence-inside-one-instance-without-net_admin--fail). Nothing has run on Cloudflare.
+**Choice before that direction: Provisional.** Cloudflare Containers, one instance per workspace, each owned by a `Workspace` Durable Object, running one image that holds the egress filter and a headed Chromium on Xvfb with x11vnc and noVNC for take-over (`feasibility/containers/`). The runtime passes `WORKSPACE_ID` at start, and that is the only place the image learns its workspace.
+
+**Evidence today:** the local Docker trials [Chrome has no route around the filter](#2026-11-22--chrome-has-no-route-around-the-filter--pass), [Take-over view is reachable on loopback only](#2026-11-22--take-over-view-is-reachable-on-loopback-only--pass), [Login pages load through the filter without signing in](#2026-11-22--login-pages-load-through-the-filter-without-signing-in--pass), and the `alchemy dev` runs below: [the combined image under alchemy dev](#2026-11-22--combined-image-on-the-containers-runtime-under-alchemy-dev--pass) and [the fence without NET_ADMIN](#2026-11-22--fence-inside-one-instance-without-net_admin--fail). On Cloudflare (2026-11-23), all seven `checks` entries under [Cloudflare Containers trial (#32)](#cloudflare-containers-trial-32) passed after the IPv6 neighbour-discovery fix. The logins on Cloudflare are still to run.
 
 **Security guarantees it supports**, against the list in [If filtered traffic is unsuitable](#if-filtered-traffic-is-unsuitable):
 
 | Guarantee                                                      | Local Docker (#27–#29)    | Containers under `alchemy dev` (#32)    | Cloudflare (#32) |
 | -------------------------------------------------------------- | ------------------------- | --------------------------------------- | ---------------- |
-| The computer has no route except the filter                    | yes (internal network)    | only with `NET_ADMIN`; fails without it | untested         |
-| The destination list is enforced per workspace, outside Chrome | yes                       | yes                                     | untested         |
-| The workspace identity reaches the filter from the runtime     | yes (Compose env)         | yes (`WORKSPACE_ID` at start)           | untested         |
-| TLS-intercepted decisions per request, not only per tunnel     | yes                       | yes                                     | untested         |
-| WebSocket and HTTP/2 through the filter                        | yes (#28)                 | yes (5 s hold)                          | untested         |
-| The take-over view reachable by the owner only                 | loopback only, no sign-in | run-key gate plus loopback doorways     | untested         |
+| The computer has no route except the filter                    | yes (internal network)    | only with `NET_ADMIN`; fails without it | yes (`NET_ADMIN` granted) |
+| The destination list is enforced per workspace, outside Chrome | yes                       | yes                                     | yes              |
+| The workspace identity reaches the filter from the runtime     | yes (Compose env)         | yes (`WORKSPACE_ID` at start)           | yes              |
+| TLS-intercepted decisions per request, not only per tunnel     | yes                       | yes                                     | yes              |
+| WebSocket and HTTP/2 through the filter                        | yes (#28)                 | yes (5 s hold)                          | yes              |
+| The take-over view reachable by the owner only                 | loopback only, no sign-in | run-key gate plus loopback doorways     | not yet (#32 logins) |
 
 **Unresolved limits:**
 
-- **`NET_ADMIN` on Cloudflare Containers is untested.** Without it, Chrome shares the filter's network namespace and has a direct route out, so the instance is unsuitable for private logins (ADR-0004). Fallback selected: `enableInternet: false`, with outbound HTTP and HTTPS intercepts to a Worker handler that replaces mitmproxy as the filter. That handler must enforce the per-workspace list and log the workspace, and the allow, deny, WebSocket and HTTP/2 checks must be repeated against it. If it cannot make per-request decisions inside TLS or carry WebSocket, evaluate another provider that enforces the workspace destination list in a follow-up ticket.
+- **`NET_ADMIN` on Cloudflare Containers: granted (2026-11-23).** The fence applied (`filter-user-only`) although Cloudflare's FAQ says Containers do not support iptables manipulation, so a platform change could withdraw it; the `checks` fence entry catches that. The instance's resolvers are IPv6 only, so the fence must pass IPv6 neighbour discovery (see the failure entry under the #32 trial). Without `NET_ADMIN`, Chrome shares the filter's network namespace and has a direct route out, so the instance is unsuitable for private logins (ADR-0004). Fallback selected: `enableInternet: false`, with outbound HTTP and HTTPS intercepts to a Worker handler that replaces mitmproxy as the filter. That handler must enforce the per-workspace list and log the workspace, and the allow, deny, WebSocket and HTTP/2 checks must be repeated against it. If it cannot make per-request decisions inside TLS or carry WebSocket, evaluate another provider that enforces the workspace destination list in a follow-up ticket.
+- **Cloudflare stops an idle instance after 3 to 5 minutes, ignoring the 60-minute `setInactivityTimeout`.** An open take-over view does not count as activity. Consequence: the trial's `takeover` command polls the instance every 30 s; production must keep a take-over's instance alive from the Workspace Durable Object for as long as the owner holds the screen, and an instance between workflows still stops, discarding its signed-in profile.
 - **Chrome runs with `--no-sandbox`.** Consequence: a renderer compromise lands with the browser user's rights inside the instance, with the fence and the filter as the remaining barriers. Running Chrome sandboxed (user namespaces or the SUID sandbox) inside a Container instance is untested and is a remaining experiment.
 - **DevTools is reachable on the host's loopback during take-over** (`127.0.0.1:9222`, and the #32 loopback doorway). The harness refuses its own bot actions during take-over, but any local process can drive the browser, which ADR-0007 forbids in production. Consequence: the trial view is not the take-over UI. Production must end DevTools access for every bot process before signalling take-over ready, and put the view behind the owner's sign-in.
 - The view and DevTools are gated by a run key in the trial, not by the owner's sign-in.
@@ -319,7 +335,7 @@ _Not yet torn down. Paste the entry that `pnpm feasibility:paid destroy` prints.
 
 ### Cloudflare Containers trial (#32)
 
-The #27 filter and the #29 headed desktop, running on Cloudflare Containers in their own paid stage. Blocked until the owner upgrades to Workers Paid. Nothing here has run on Cloudflare yet. Every entry below the harness description is an empty slot for the owner.
+The #27 filter and the #29 headed desktop, running on Cloudflare Containers in their own paid stage. The owner upgraded to Workers Paid on 2026-11-23. The `checks` entries below ran that day; the login slots are still empty.
 
 **Shape.** A Container instance runs one image, so `feasibility/containers/Dockerfile` combines the two local images: the pinned `mitmproxy/mitmproxy:12.3.1` image, plus the #29 desktop packages (`chromium`, `xvfb`, `x11vnc`, `novnc`, `python3-websockify`, `socat`) and `iptables`. It copies `egress/filter/egress_filter.py` unchanged and bakes in the `ws-cloud-trial` and `ws-takeover` destination lists. The image is 1.69 GB locally. `feasibility/containers/worker.ts` holds one `Workspace` Durable Object per workspace, and each object owns one instance. The object starts its instance with `WORKSPACE_ID=<workspace>` and `enableInternet: true`. That variable is the only place the image learns its workspace. The entrypoint hands it to the filter, and the filter logs it on every decision, to stdout (kept by Cloudflare's container logs) and to a file the owner's commands read.
 
@@ -351,41 +367,132 @@ pnpm feasibility:containers destroy                           # tears the stage 
 
 `--instance` takes `lite`, `basic` or `standard-1` to `standard-4`. Chrome will not fit in `lite`. Start with `standard-1` (4 GiB). If memory or startup time suggests another size, redeploy with that size and rerun `checks`. Each command prints redacted entries to paste below. The `ws-cloud-trial` instance runs the checks, and the `ws-takeover` instance holds the signed-in profile until `stop` or the alarm destroys it.
 
+#### 2026-11-23 · HTTPS through the filter fails on Cloudflare · fail, fixed
+
+- **Route:** `checks` against the first deployed image.
+- **Date:** 2026-11-23, 06:39 to 07:40 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** the approved `https://example.com/` loads.
+- **Observed:** the filter logged `allow` for each CONNECT, then Chrome failed with `net::ERR_TUNNEL_CONNECTION_FAILED` after about 11 s, on every approved HTTPS host. mitmproxy's log: `error establishing server connection: [Errno -3] Temporary failure in name resolution`. The instance's `/etc/resolv.conf` lists only IPv6 resolvers (`2606:4700:4700::1111`, `2620:fe::fe`), and as the filter's user every lookup failed after 12.3 s. The kernel sends IPv6 neighbour discovery with no owning user, so the fence's `ip6tables` REJECT dropped it and the instance never reached its IPv6 gateway. Root-owned lookups before the fence filled the neighbour cache and hid the failure; local Docker resolves on loopback and never showed it. The first `start` after the first deploy also returned 500 once (Worker exception 1101); every later start returned 200.
+- **Retries:** 2 runs failed before the fix; 3 runs passed after it.
+- **Fallback:** none needed. The fence now accepts outbound ICMPv6 router solicitation, neighbour solicitation and neighbour advertisement only (`feasibility/containers/image/entrypoint.sh`).
+
 #### Workspace identity in the filter log
 
-_Not yet run. Paste the `filter logs the workspace identity the runtime passed on Cloudflare` entry from `checks`._
+##### 2026-11-23 · filter logs the workspace identity the runtime passed on Cloudflare · pass
+
+- **Route:** the Worker's Durable Object for `ws-cloud-trial` starts the instance with `WORKSPACE_ID=ws-cloud-trial`; the entrypoint hands it to the filter, which reads `/destinations/<WORKSPACE_ID>.txt`
+- **Date:** 2026-11-23, 07:48 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** every decision the filter logs carries that workspace, and no other
+- **Observed:** 27 decisions logged, 0 with another workspace. First: `{"workspace":"ws-cloud-trial", "host":"clients2.google.com", "decision":"deny", "method":"GET", "http_version":"HTTP/1.1", "upstream_alpn":null}`.
+- **Compared with the local trial:** #27 local: Compose passed `WORKSPACE_ID`; every decision carried `ws-trial`
+- **Retries:** _none_
+- **Fallback:** none needed
 
 #### Allow and deny, compared with the local trial (#27)
 
-_Not yet run. Paste the `approved destination` and `unapproved destination` entries. Each carries a comparison line with the #27 result. Explain any difference._
+##### 2026-11-23 · Chrome loads an approved destination on Cloudflare · pass
+
+- **Route:** headed Chromium in the instance, `--proxy-server=http://127.0.0.1:8080`, loads `https://example.com/` with `example.com` on the `ws-cloud-trial` list
+- **Date:** 2026-11-23, 07:48 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** the page loads against the filter's CA and the filter logs an allow with workspace `ws-cloud-trial`
+- **Observed:** document title `Example Domain`. Filter logged `{"workspace":"ws-cloud-trial", "host":"example.com", "decision":"allow", "method":"CONNECT"}`.
+- **Compared with the local trial:** #27 local: pass, title `Example Domain`, allow logged with `ws-trial`
+- **Retries:** _none_
+- **Fallback:** none needed
+
+##### 2026-11-23 · Chrome is refused an unapproved destination on Cloudflare · pass
+
+- **Route:** the same Chromium loads `https://example.org/`, which is not on the list
+- **Date:** 2026-11-23, 07:48 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** the filter refuses the tunnel and logs the deny with the workspace
+- **Observed:** navigation: `net::ERR_TUNNEL_CONNECTION_FAILED`. Filter logged `{"workspace":"ws-cloud-trial", "host":"example.org", "decision":"deny", "method":"CONNECT"}`.
+- **Compared with the local trial:** #27 local: pass, `net::ERR_TUNNEL_CONNECTION_FAILED`, deny logged
+- **Retries:** _none_
+- **Fallback:** none needed
 
 #### No route around the filter, compared with the local trial (#27)
 
-_Not yet run. Paste the entry. Record whether the instance reported `filter-user-only` or `none`. If `none`, Chrome on Cloudflare has a direct route out, and filtered traffic in this shape is unsuitable for a computer with private logins (ADR-0004)._
+##### 2026-11-23 · Chrome has no route around the filter on Cloudflare · pass
+
+- **Route:** as the browser user, resolve `example.com` and open TCP to `1.1.1.1:443` without the proxy. One instance shares one network namespace, so only the entrypoint's owner-match fence (needs `NET_ADMIN`) can stop this
+- **Date:** 2026-11-23, 07:48 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** both fail: only the filter's user may open outbound connections
+- **Observed:** fence `{"workspace":"ws-cloud-trial", "isolation":"filter-user-only"}`. Probe `{"dns":"failed", "dnsError":"gaierror", "direct":"failed", "directError":"ConnectionRefusedError"}`.
+- **Compared with the local trial:** #27 local: pass, `ERR_NAME_NOT_RESOLVED`; Docker's internal network gave Chrome no route at all
+- **Retries:** _none_
+- **Fallback:** none needed
 
 #### WebSocket, compared with the local trial (#28)
 
-_Not yet run. Paste the entry from the default 65-second hold._
+##### 2026-11-23 · WebSocket held open through the filter on Cloudflare · pass
+
+- **Route:** the same Chromium opens `https://echo.websocket.org/`, then `wss://echo.websocket.org/`, pinging every 2 seconds for 65000 ms
+- **Date:** 2026-11-23, 07:48 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** the socket opens, every ping is echoed, it is still open at the end, and the filter logs the WebSocket allow with the workspace
+- **Observed:** opened: true, greeting `Request served by <instance id>`, 33 of 33 pings echoed, open for 65001 ms, open at end: true, close code: none. Filter logged `{"workspace":"ws-cloud-trial", "host":"echo.websocket.org", "decision":"allow", "method":"WEBSOCKET"}`.
+- **Compared with the local trial:** #28 local: pass, 7 of 7 echoed, open after 65,189 ms, no RFC 8441
+- **Retries:** _none_
+- **Fallback:** none needed
 
 #### HTTP/2, compared with the local trial (#28)
 
-_Not yet run. Paste the entry. Record any downgrade on either leg._
+##### 2026-11-23 · HTTP/2 negotiated end to end through the filter on Cloudflare · pass
+
+- **Route:** the same Chromium loads `https://example.com/` through the filter
+- **Date:** 2026-11-23, 07:48 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** Chrome negotiates `h2` with the filter and the filter negotiates `h2` with the origin. A fallback to HTTP/1.1 is a downgrade
+- **Observed:** `nextHopProtocol` was `h2`. Filter logged `{"workspace":"ws-cloud-trial", "host":"example.com", "decision":"allow", "method":"GET", "http_version":"HTTP/2.0", "upstream_alpn":"h2"}`.
+- **Compared with the local trial:** #28 local: pass, `h2` on both legs
+- **Retries:** _none_
+- **Fallback:** none needed
 
 #### Instance size, observed memory and startup time
 
-_Not yet run. Paste the entry: instance type, memory in use and peak after the checks, and cold startup time. Note whether the first start included pulling the image._
+##### 2026-11-23 · instance size, memory and startup time on Cloudflare · pass
+
+- **Route:** `standard-1` instance running headed Chromium, Xvfb, x11vnc, noVNC and the filter
+- **Date:** 2026-11-23, 07:48 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** Chrome becomes ready and the instance reports its memory after the checks
+- **Observed:** **Instance size:** `standard-1`. **Startup time:** 5798 ms from `start()` to Chrome's DevTools answering. **Observed memory:** 597.3 MiB in use after the checks, peak unknown, cgroup limit unknown, the instance reports 4228.7 MiB total.
+- **Compared with the local trial:** local Docker: no size limit and no startup reading recorded
+- **Retries:** _none_
+- **Fallback:** none needed
 
 #### Google on Cloudflare
 
-_Not yet run. Paste the `takeover google` entry, then the grading template from Login workflows (#29). Grade: pass, works with take-over or unsupported on Cloudflare._
+##### 2026-11-23 · Google login with take-over on Cloudflare · works with take-over
+
+- **Route:** headed Chromium on Cloudflare Containers behind the `ws-takeover` egress filter in the same instance; the owner signs in through the noVNC view, forwarded to loopback by the run-key gated Worker, hands back, then the bot will open Google Account home and confirm it is signed in
+- **Date:** 2026-11-23, 08:14 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** the owner completes only the login and any challenge; after the explicit hand-back the bot inspects the screen and reaches the signed-in page alone. The page check proves the session carried over, not a multi-step task
+- **Observed:** took over: yes. Challenges: none. Site's response: I did not see any captcha. After hand-back the bot found null/. Bot reached the signed-in page after hand-back: yes, at https://myaccount.google.com/. Owner operated the site beyond the login: no. Filter denied: `accountcapabilities-pa.googleapis.com`, `content-autofill.googleapis.com`, `gds.google.com`, `lh3.google.com`, `ogads-pa.clients6.google.com`, `ogs.google.com`, `optimizationguide-pa.googleapis.com`, `passwordsleakcheck-pa.googleapis.com`, `play.google.com`, `update.googleapis.com`, `www.googletagmanager.com`.
+- **Retries:** 1. The first attempt, earlier the same day, lost the instance right after the password: the view fell back to noVNC's Connect screen and the Worker answered `409 Not running`. Chromium ran as the container's main process, so its exit would stop the instance, and no exit code was kept. The retry ran Chromium under a wrapper that records its exit and keeps the instance up (a diagnostic build). Chromium did not exit; instance memory peaked at 992 MiB of 4,229 MiB. The first failure was an idle stop: on 2026-11-23 an untouched `ws-cloud-trial` instance still answered after 180 s idle and was gone after 300 s, although the Durable Object sets `setInactivityTimeout` to 60 minutes. The view's WebSocket does not count as activity, and during the retry a diagnostic poller happened to keep the instance active. `takeover` now sends a keep-alive request every 30 s while it waits for the owner.
+- **Fallback:** none needed
 
 #### LinkedIn on Cloudflare
 
-_Not yet run. Paste the `takeover linkedin` entry, then the grading template._
+##### 2026-11-23 · LinkedIn login with take-over on Cloudflare · works with take-over
+
+- **Route:** headed Chromium on Cloudflare Containers behind the `ws-takeover` egress filter in the same instance; the owner signs in through the noVNC view, forwarded to loopback by the run-key gated Worker, hands back, then the bot will open the LinkedIn feed and confirm it is signed in
+- **Date:** 2026-11-23, 09:14 UTC
+- **Network origin:** Cloudflare container
+- **Expected:** the owner completes only the login and any challenge; after the explicit hand-back the bot inspects the screen and reaches the signed-in page alone. The page check proves the session carried over, not a multi-step task
+- **Observed:** took over: yes. Challenges: CAPTCHA, OTP to email. Site's response: I had to manually solve the captcha and get the OTP from my gmail. After hand-back the bot found https://www.linkedin.com/feed. Bot reached the signed-in page after hand-back: yes, at https://www.linkedin.com/feed. Owner operated the site beyond the login: no. Filter denied: `ads.stickyadstv.com`, `content-autofill.googleapis.com`, `cs.ns1p.net`, `dms.licdn.com`, `dpm.demdex.net`, `eb2.3lift.com`, `lex.33across.com`, `li.protechts.net`, `lnkd.demdex.net`, `merchantpool1.linkedin.com`, `optimizationguide-pa.googleapis.com`, `play.google.com`, `px.ads.linkedin.com`, `sync.teads.tv`, `token.rubiconproject.com`, `trkn.us`, `update.googleapis.com`.
+- **Retries:** 2 on `standard-1`. The first lost the instance to the idle stop before the keep-alive existed. In the second, the display dropped while the owner typed credentials; the instance was gone when checked minutes later, and no exit record was kept. This run used `standard-3` (2 vCPU, 8 GiB) with a diagnostic build that records processes every 3 s: no process exited, and the processes' summed resident memory peaked at 2,796 MiB during the CAPTCHA (an overcount, since Chrome's processes share pages). On `standard-1` (1 vCPU, 4 GiB) memory or CPU starvation is a plausible cause of the dropped display, not a confirmed one.
+- **Fallback:** none needed. The candidate instance size moves to `standard-3`.
 
 #### Protected site on Cloudflare: Cloudflare dashboard
 
-_Not yet run. Paste the `takeover protected` entry, then the grading template. Record whether Turnstile treats Cloudflare's own container egress differently from the home network._
+2026-11-23 · Not run. The owner has no Cloudflare test account and chose to skip the protected-site workflow on both the local stack and Cloudflare. Consequence: Ditto has no evidence for sites behind a bot challenge such as Turnstile, and whether Cloudflare's container egress is treated differently from the home network is unknown. The first owner who needs such a site runs `pnpm feasibility:containers takeover protected` with a test account before relying on it.
 
 #### If filtered traffic is unsuitable
 
@@ -393,7 +500,12 @@ _Not applicable yet. If the fence does not apply on Cloudflare, or a login is un
 
 #### Teardown
 
-_Not yet torn down. Paste the entry that `pnpm feasibility:containers destroy` prints._
+##### 2026-11-23 · Containers trial stage torn down · pass
+
+- **Date:** 2026-11-23, 09:20 UTC.
+- **Command:** `pnpm feasibility:containers destroy`, `alchemy destroy --stage containers-trial` exited 0 (Alchemy log `2026-11-23T09-20-33`).
+- **Removed:** Worker `ditto-containers-trial-workspaces`, its `Workspace` Durable Object namespace, the container application and its image, the run-key secret, and the local run key.
+- **Note:** the stage was torn down two minutes after the clean image without diagnostics was deployed on `standard-3`, so no `checks` run exists for that build. The `checks` entries above ran on `standard-1` with the same fence fix; the `standard-3` evidence is the LinkedIn take-over.
 
 ## Egress policy
 
@@ -510,7 +622,7 @@ Run `pnpm exec vp test run --project feasibility feasibility/egress-protocols.te
 
 Representative logins, run by the owner with their permitted test accounts in a headed Chrome behind the workspace egress filter. Each workflow is graded under ADR-0004 and resumes under ADR-0007.
 
-**Filtered traffic on a computer with private logins:** _Undecided. State either that filtered traffic is suitable on a computer with private logins, or that another provider that enforces the workspace destination list must be evaluated, with the workflows that decide it._
+**Filtered traffic on a computer with private logins:** suitable. Google and LinkedIn both worked with take-over behind the workspace filter, on the local stack and on Cloudflare Containers, and the filter's denials blocked neither sign-in nor the bot's signed-in page after hand-back. Not evaluated: sites behind a bot challenge such as Turnstile, because the protected-site workflow was skipped for lack of a test account. No other provider needs evaluating for the representative logins.
 
 **Unresolved limits:**
 
@@ -627,7 +739,7 @@ Pass: the bot reached the page with no take-over. The harness never attempts a l
 
 Candidate instance size, resource inventory and package versions. Screen capacity is deferred until it is measured.
 
-**Choice: Provisional.** One `standard-1` Cloudflare Container instance (4 GiB) per workspace, at most 2 instances per stage, each destroyed by a Durable Object alarm 60 minutes after start or after 60 minutes idle. `lite` is excluded: Chrome does not fit. A larger size is chosen only if the #32 size check shows memory pressure or slow startup.
+**Choice: Provisional.** One `standard-3` Cloudflare Container instance (2 vCPU, 8 GiB) per workspace, at most 2 instances per stage, each destroyed by a Durable Object alarm 60 minutes after start or after 60 minutes idle. `lite` is excluded: Chrome does not fit. `standard-1` (½ vCPU billed, 1 vCPU visible, 4 GiB) passed the `checks` but lost the display during two take-over sign-ins, while `standard-3` completed the LinkedIn sign-in with a CAPTCHA, using up to about 2.8 GiB of summed process memory; see the LinkedIn entry under [Login workflows on Cloudflare](#linkedin-on-cloudflare). The cause on `standard-1` is unconfirmed, so a smaller size needs a repeat sign-in trial before it replaces `standard-3`.
 
 **Evidence today:** [Instance memory and startup under alchemy dev](#2026-11-22--instance-memory-and-startup-under-alchemy-dev--pass). Local Docker only. The Cloudflare figure is the #32 slot [Instance size, observed memory and startup time](#instance-size-observed-memory-and-startup-time).
 
@@ -686,9 +798,13 @@ Every run below is the owner's, with their own accounts. Each prints a redacted 
 | #26 | Local workerd, ChatGPT plan                      | passed                      | `pnpm feasibility`, then `pnpm feasibility:model --route chatgpt --runtime workerd`                                                                                                         | Pi in workerd against the real endpoint, CPU      |
 | #26 | Local workerd, OpenCode API key                  | passed                      | `pnpm feasibility`, then `OPENCODE_API_KEY=<key> pnpm feasibility:model --route opencode --runtime workerd`                                                                                 | same, OpenCode                                    |
 | #30 | Free-tier probe from Cloudflare, day 1 and day 2 | both failed, teardown OK    | `pnpm feasibility:free-tier deploy`, `pnpm feasibility:free-tier run` (each day), `pnpm feasibility:free-tier destroy`                                                                      | whether OpenAI accepts Cloudflare's network       |
-| #29 | Google, LinkedIn, protected-site logins, local   | blocked: no test account    | `pnpm feasibility:takeover google`, `… linkedin`, `… protected`, then `pnpm feasibility:takeover --down`                                                                                    | per-workflow grade behind the filter              |
+| #29 | Google, LinkedIn, protected-site logins, local   | Google and LinkedIn work with take-over; protected site skipped (no test account) | `pnpm feasibility:takeover google`, `… linkedin`, `… protected`, then `pnpm feasibility:takeover --down`                                                                                    | per-workflow grade behind the filter              |
 | #31 | Deployed Pi trial                                | blocked: needs Workers Paid | `pnpm feasibility:paid deploy`, `pnpm feasibility:paid run --route chatgpt`, `OPENCODE_API_KEY=<key> pnpm feasibility:paid run --route opencode`, `pnpm feasibility:paid destroy`           | the Worker model route and its real CPU           |
 | #32 | Cloudflare Containers trial                      | blocked: needs Workers Paid | set a billing notification, then `pnpm feasibility:containers deploy --spending-cap-set`, `… checks`, `… takeover google` (then `linkedin`, `protected`), `… stop ws-takeover`, `… destroy` | `NET_ADMIN`, identity, size, logins on Cloudflare |
+
+| #34 | Sign in with ChatGPT, local then Durable Object  | local unblocked; deployed run needs Workers Paid | to be built under #34 | ChatGPT plan on the supported endpoint, self-deployed |
+| #36 | Browser Run as the workspace browser             | unblocked | to be built under #36 | browser provider, restored logins, guardrails (ADR-0012) |
+| #35 | Workers AI tool calling from a Durable Object    | blocked: needs Workers Paid | to be built under #35 | the included model (ADR-0011) |
 
 **Consequence of #31 and #32 staying blocked:** no hosted route is proven. The model route and the desktop stay local: Pi under Node and the #29 Docker stack on the owner's machine, which matches Ditto's current local-only use. Every hosted selection above stays provisional.
 
@@ -704,7 +820,7 @@ Engineering experiments not yet ticketed:
 
 ### Hosted provider approval
 
-Approval to onboard hosted users onto their ChatGPT plan is tracked here, apart from technical readiness. A passing trial does not unlock hosted plan onboarding.
+Approval to onboard hosted users onto their ChatGPT plan is tracked here, apart from technical readiness. A passing trial does not unlock hosted plan onboarding. OpenAI's [plan usage docs](https://developers.openai.com/siwc/token-sharing-open-source) cover open-source and locally hosted apps; a paid or remotely hosted app completes the [interest form](https://openai.com/form/sign-in-with-chatgpt-interest/). This gate applies to hosted Ditto only. Self-deployed Ditto is decided by #34.
 
 **Status:** _Not started_
 
