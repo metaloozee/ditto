@@ -10,8 +10,17 @@ function env(overrides: Partial<PaidTrialEnv> = {}) {
 	const provider = simulatedProvider();
 	const hosts: string[] = [];
 	const store = new Map<string, string>();
+	const bot: string[] = [];
 	const value: PaidTrialEnv = {
 		TRIAL_RUN_KEY: RUN_KEY,
+		BOT: {
+			getByName: () => ({
+				fetch: async (request: Request) => {
+					bot.push(new URL(request.url).pathname);
+					return new Response("reached the Durable Object");
+				},
+			}),
+		},
 		PROVIDER: {
 			fetch(request) {
 				hosts.push(new URL(request.url).host);
@@ -24,7 +33,7 @@ function env(overrides: Partial<PaidTrialEnv> = {}) {
 		},
 		...overrides,
 	};
-	return { env: value, hosts, store };
+	return { env: value, hosts, store, bot };
 }
 
 const ctx = () => {
@@ -70,6 +79,21 @@ describe("paid model-trial Worker gate", () => {
 		expect(response.status).toBe(401);
 		expect(hosts).toEqual([]);
 	});
+
+	it.each(["/siwc/import", "/siwc/trial"])(
+		"keeps %s, which holds or spends the owner's plan, behind the key",
+		async (path) => {
+			const { env: e, bot } = env();
+			const response = await paidWorker.fetch(
+				new Request(`${ORIGIN}${path}`, { method: "POST", body: "{}" }),
+				e,
+				ctx(),
+			);
+
+			expect(response.status).toBe(401);
+			expect(bot).toEqual([]);
+		},
+	);
 
 	it("hides the runtime report and CPU readings from callers without the key", async () => {
 		const { env: e } = env();

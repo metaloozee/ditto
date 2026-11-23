@@ -1,10 +1,12 @@
 // Local model-connection baseline (#25). Runs live requests on the owner's own account:
 //   pnpm feasibility:model --route chatgpt
+//   pnpm feasibility:model --route siwc        Sign in with ChatGPT, plan usage on api.openai.com (#34)
 //   OPENCODE_API_KEY=... pnpm feasibility:model --route opencode
 // With `--runtime workerd` the trial runs inside the local `pnpm feasibility` Worker (#26)
 // and the entry records workerd's CPU time per step. With `--runtime deployed` it runs in the
 // paid stage's deployed Worker (#31), sends the run key from TRIAL_RUN_KEY and records the CPU
-// time Cloudflare reports for the request. `pnpm feasibility:paid run` drives that mode.
+// time Cloudflare reports for the request. `pnpm feasibility:paid run` drives that mode. Deployed,
+// the siwc route runs in the stage's Bot Durable Object, which holds its own transferred sign-in.
 // Progress and sign-in prompts go to stderr. The redacted evidence entry goes to stdout.
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
@@ -13,11 +15,13 @@ import { parseArgs } from "node:util";
 
 import { type CredentialStore, InMemoryCredentialStore } from "@earendil-works/pi-ai";
 
-import { chatgptCredentials } from "./chatgpt-sign-in.ts";
+import { chatgptCredentials, siwcCredentials } from "./chatgpt-sign-in.ts";
 import {
 	defaultModel,
 	formatEvidence,
+	PI_PROVIDER,
 	runModelTrial,
+	type SiwcSignIn,
 	type TrialRoute,
 	type TrialRun,
 } from "./model-trial.ts";
@@ -34,17 +38,15 @@ const { values } = parseArgs({
 		origin: { type: "string" },
 		runtime: { type: "string", default: "node" },
 		"worker-url": { type: "string", default: "http://localhost:1341" },
-		"auth-file": {
-			type: "string",
-			default: path.join(homedir(), ".config", "ditto-feasibility", "openai-codex.json"),
-		},
+		"auth-file": { type: "string" },
+		"host-id-file": { type: "string" },
 	},
 });
 
 const route = values.route;
-if (route !== "chatgpt" && route !== "opencode") {
+if (route !== "chatgpt" && route !== "siwc" && route !== "opencode") {
 	console.error(
-		"Usage: pnpm feasibility:model --route chatgpt|opencode [--runtime node|workerd|deployed] [--model id] [--runs 3] [--interval-minutes 15]",
+		"Usage: pnpm feasibility:model --route chatgpt|siwc|opencode [--runtime node|workerd|deployed] [--model id] [--runs 3] [--interval-minutes 15]",
 	);
 	process.exit(2);
 }
@@ -75,13 +77,29 @@ async function opencodeCredentials(): Promise<CredentialStore> {
 	return store;
 }
 
+const configDir = path.join(homedir(), ".config", "ditto-feasibility");
 const trialRoute: TrialRoute = route;
-const credentials =
-	trialRoute === "chatgpt"
-		? await chatgptCredentials(values["auth-file"], log)
-		: await opencodeCredentials();
+let signIn: SiwcSignIn | undefined;
+async function credentialsFor(): Promise<CredentialStore> {
+	if (trialRoute === "opencode") return opencodeCredentials();
+	if (trialRoute === "chatgpt") {
+		return chatgptCredentials(
+			values["auth-file"] ?? path.join(configDir, "openai-codex.json"),
+			log,
+		);
+	}
+	const signedIn = await siwcCredentials({
+		authFile: values["auth-file"] ?? path.join(configDir, "siwc.json"),
+		hostIdFile: values["host-id-file"] ?? path.join(configDir, "siwc-host-id"),
+		log,
+	});
+	signIn = signedIn.signIn;
+	return signedIn.store;
+}
+// Deployed, the siwc sign-in lives in the Durable Object, so this machine sends none.
+const inBot = runtime === "deployed" && trialRoute === "siwc";
+const credentials = inBot ? new InMemoryCredentialStore() : await credentialsFor();
 const model = values.model ?? defaultModel(trialRoute);
-const PROVIDER_ID = { chatgpt: "openai-codex", opencode: "opencode" } as const;
 
 let colo = "unknown";
 
@@ -90,13 +108,15 @@ let colo = "unknown";
  * Deployed, it reads the request's CPU time from the tail Worker once the trial ends.
  */
 async function runInWorker(workerd: number[]): Promise<TrialRun> {
-	const providerId = PROVIDER_ID[trialRoute];
-	const credential = await credentials.read(providerId);
-	if (!credential) throw new Error(`No ${providerId} credential to send to the Worker`);
-	const body: TrialRequest = { route: trialRoute, model, credential };
+	const providerId = PI_PROVIDER[trialRoute];
+	const credential = inBot ? undefined : await credentials.read(providerId);
+	if (!inBot && !credential) throw new Error(`No ${providerId} credential to send to the Worker`);
+	const body: TrialRequest | { model: string } = credential
+		? { route: trialRoute, model, credential }
+		: { model };
 	const runId = randomUUID();
 	let last = await cpuMs(workerd);
-	const response = await fetch(`${values["worker-url"]}/model-trial`, {
+	const response = await fetch(`${values["worker-url"]}${inBot ? "/siwc/trial" : "/model-trial"}`, {
 		method: "POST",
 		headers: { ...gate, "x-trial-run": runId },
 		body: JSON.stringify(body),
@@ -140,13 +160,18 @@ async function runInWorker(workerd: number[]): Promise<TrialRun> {
 /** Cloudflare hands the tail Worker an invocation's CPU time shortly after it ends. */
 async function requestCpu(runId: string): Promise<TrialRun["request"]> {
 	const deadline = Date.now() + 60_000;
+	const part = inBot ? "&part=Bot" : "";
 	while (Date.now() < deadline) {
-		const response = await fetch(`${values["worker-url"]}/model-trial/cpu?run=${runId}`, {
+		const response = await fetch(`${values["worker-url"]}/model-trial/cpu?run=${runId}${part}`, {
 			headers: gate,
 		});
 		if (response.ok) {
 			const reading = (await response.json()) as CpuReading;
-			return { cpuMs: reading.cpuTimeMs, wallMs: reading.wallTimeMs };
+			return {
+				cpuMs: reading.cpuTimeMs,
+				wallMs: reading.wallTimeMs,
+				from: inBot ? "Durable Object" : "Worker",
+			};
 		}
 		await new Promise((resolve) => setTimeout(resolve, 1000));
 	}
@@ -167,7 +192,8 @@ if (runtime !== "node") {
 		process.exit(2);
 	}
 	log(`Worker runtime: ${JSON.stringify(info)}`);
-	const where = runtime === "deployed" ? " on Workers Paid" : "";
+	const where =
+		runtime === "deployed" ? ` on Workers Paid${inBot ? ", in a Durable Object" : ""}` : "";
 	runtimeText = `workerd (${(info as { runtime: string }).runtime})${where}`;
 	if (runtime === "workerd") {
 		workerd = await findWorkerd(Number(new URL(values["worker-url"]).port));
@@ -195,9 +221,11 @@ const origin =
 	{
 		node: "home network",
 		workerd: "local Worker (alchemy dev)",
-		deployed: `deployed Worker (Cloudflare network, Workers Paid, data centre ${colo})`,
+		deployed: inBot
+			? `Durable Object in the deployed Worker (Cloudflare network, Workers Paid, Worker in data centre ${colo})`
+			: `deployed Worker (Cloudflare network, Workers Paid, data centre ${colo})`,
 	}[runtime];
 log("Paste this entry under Model route > Evidence in docs/feasibility/decision-record.md:");
 process.stdout.write(
-	`\n${formatEvidence(results, { origin, runtime: runtimeText, deployed: runtime === "deployed" })}`,
+	`\n${formatEvidence(results, { origin, runtime: runtimeText, deployed: runtime === "deployed", signIn })}`,
 );

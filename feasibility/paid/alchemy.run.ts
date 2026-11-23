@@ -6,6 +6,7 @@ import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 
 import { COMPATIBILITY } from "../compatibility.ts";
+import type { Bot } from "./bot.ts";
 
 // Its own stack, run from this folder, so state lives in feasibility/paid/.alchemy and it shares
 // nothing with the app stages, the local feasibility stage or the free-tier probe. Driven by owner.ts.
@@ -46,7 +47,12 @@ export default Alchemy.Stack(
 			compatibility: COMPATIBILITY,
 			dev: { port, strictPort: true },
 			tailConsumers: [tail],
-			env: { ...provider, CPU: cpu, TRIAL_RUN_KEY: Config.Redacted("TRIAL_RUN_KEY") },
+			env: {
+				...provider,
+				CPU: cpu,
+				BOT: Cloudflare.DurableObject<Bot>("bot", { className: "Bot" }),
+				TRIAL_RUN_KEY: Config.Redacted("TRIAL_RUN_KEY"),
+			},
 		});
 		return { url: trial.url };
 	}),

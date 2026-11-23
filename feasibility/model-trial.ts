@@ -7,12 +7,17 @@ import {
 	type Model,
 	PI_AI_VERSION,
 } from "@earendil-works/pi-ai";
+import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
 import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
 
 import { jwtStrings, redact, type Secret } from "./redact.ts";
 
-export type TrialRoute = "chatgpt" | "opencode";
+/**
+ * `chatgpt` is the Codex backend Pi's `openai-codex` provider calls (#25, #26, #30, #31).
+ * `siwc` is the supported plan-usage route: Sign in with ChatGPT tokens on api.openai.com (#34).
+ */
+export type TrialRoute = "chatgpt" | "siwc" | "opencode";
 
 const ROUTES = {
 	chatgpt: {
@@ -21,6 +26,14 @@ const ROUTES = {
 		title: "OpenAI Responses on ChatGPT plan",
 		endpoint: "https://chatgpt.com/backend-api/codex/responses",
 		fallback: "OpenCode API key route (ADR-0003)",
+	},
+	siwc: {
+		provider: openaiProvider,
+		defaultModel: "gpt-5.6-luna",
+		title: "OpenAI Responses on ChatGPT plan through Sign in with ChatGPT",
+		endpoint: "https://api.openai.com/v1/responses",
+		fallback:
+			"OpenCode API key route (ADR-0003); the ChatGPT plan stays local-only for self-deployed Ditto",
 	},
 	opencode: {
 		provider: opencodeProvider,
@@ -50,7 +63,9 @@ export interface TrialRun {
 	/** Every credential value seen during the run, so the entry can be redacted. */
 	secrets: Secret[];
 	/** CPU and wall time of the whole trial request, as Cloudflare reported it. */
-	request?: { cpuMs: number; wallMs: number };
+	request?: { cpuMs: number; wallMs: number; from?: "Worker" | "Durable Object" };
+	/** Top-level body fields and input roles Pi sent to api.openai.com (`siwc` only). */
+	sent?: { fields: string[]; roles: string[] };
 }
 
 export interface TrialInput {
@@ -77,13 +92,33 @@ export async function runModelTrial(input: TrialInput): Promise<TrialRun> {
 	const now = input.now ?? (() => new Date());
 	const network = input.fetch ?? globalThis.fetch;
 	const calls: string[] = [];
+	const sentFields = new Set<string>();
+	const sentRoles = new Set<string>();
+	const tokenResponses: Record<string, unknown>[] = [];
 	const original = globalThis.fetch;
 	globalThis.fetch = async (request, init) => {
 		const url = new URL(request instanceof Request ? request.url : String(request));
 		const where = `${url.host}${url.pathname}`;
+		if (`https://${where}` === ROUTES.siwc.endpoint) {
+			const body = await requestBody(request, init);
+			for (const field of Object.keys(body)) sentFields.add(field);
+			if (Array.isArray(body.input)) {
+				for (const item of body.input as { role?: unknown }[]) {
+					if (typeof item.role === "string") sentRoles.add(item.role);
+				}
+			}
+		}
 		try {
 			const response = await network(request, init);
 			calls.push(`${where} ${response.status}`);
+			if (url.pathname.endsWith("/oauth/token") && response.ok) {
+				tokenResponses.push(
+					await response
+						.clone()
+						.json()
+						.catch(() => ({})),
+				);
+			}
 			return response;
 		} catch (error) {
 			calls.push(`${where} network error`);
@@ -131,6 +166,7 @@ export async function runModelTrial(input: TrialInput): Promise<TrialRun> {
 			} catch (error) {
 				result = { ok: false, detail: errorText(error) };
 			}
+			result.detail = pageText(result.detail);
 			const http = calls.slice(before);
 			const where = http.length ? ` (${http.join(", ")})` : "";
 			await record({
@@ -142,7 +178,7 @@ export async function runModelTrial(input: TrialInput): Promise<TrialRun> {
 
 		const turn = () => turnStep(models, model, input.route);
 		await step("turn", turn);
-		if (input.route === "chatgpt") {
+		if (input.route !== "opencode") {
 			await step("refresh", async () => {
 				const before = await input.credentials.read(provider.id);
 				if (before?.type !== "oauth") return { ok: false, detail: "no ChatGPT sign-in stored" };
@@ -154,8 +190,16 @@ export async function runModelTrial(input: TrialInput): Promise<TrialRun> {
 				if (after?.type !== "oauth" || after.access === before.access) {
 					return { ok: false, detail: "Pi kept the old access token" };
 				}
-				const hours = Math.round((after.expires - Date.now()) / 3_600_000);
 				const rotated = after.refresh !== before.refresh ? "a new" : "the same";
+				const token = tokenResponses.at(-1);
+				if (input.route === "siwc" && token) {
+					const seconds = Number(token.expires_in);
+					return {
+						ok: true,
+						detail: `expires_in ${seconds}s (${Math.round(seconds / 3600)}h), granted scope \`${String(token.scope)}\`, ${rotated} refresh token`,
+					};
+				}
+				const hours = Math.round((after.expires - Date.now()) / 3_600_000);
 				return {
 					ok: true,
 					detail: `new access token valid for ${hours}h, ${rotated} refresh token`,
@@ -169,9 +213,29 @@ export async function runModelTrial(input: TrialInput): Promise<TrialRun> {
 			});
 		}
 		await step("turn after refresh", turn);
-		return finish(input.route, modelId, startedAt, secrets, steps);
+		const run = finish(input.route, modelId, startedAt, secrets, steps);
+		if (input.route === "siwc") run.sent = { fields: [...sentFields], roles: [...sentRoles] };
+		return run;
 	} finally {
 		globalThis.fetch = original;
+	}
+}
+
+async function requestBody(
+	request: RequestInfo | URL,
+	init: RequestInit | undefined,
+): Promise<Record<string, unknown>> {
+	try {
+		const text =
+			request instanceof Request
+				? await request.clone().text()
+				: typeof init?.body === "string"
+					? init.body
+					: "";
+		const body: unknown = JSON.parse(text);
+		return body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+	} catch {
+		return {};
 	}
 }
 
@@ -213,6 +277,17 @@ function finish(
 	return { route, model, startedAt, steps, outcome, secrets };
 }
 
+/** An HTML error page reduced to its visible text, so a block page stays a line, not 30KB. */
+function pageText(detail: string): string {
+	return detail.replace(/<html[\s\S]*?(<\/html>|$)/gi, (page) =>
+		page
+			.replace(/<(style|script|svg)[\s\S]*?<\/\1>/gi, " ")
+			.replace(/<[^>]*>/g, " ")
+			.replace(/\s+/g, " ")
+			.trim(),
+	);
+}
+
 function errorText(error: unknown): string {
 	const parts: string[] = [];
 	for (
@@ -239,7 +314,8 @@ function credentialSecrets(credential: Credential): Secret[] {
 			found.push({ value, placeholder: `<${key}>` });
 		}
 	}
-	for (const claim of jwtStrings(credential.access))
+	// Issuer and audience URLs name OpenAI's endpoints, not the account, and the entry needs them.
+	for (const claim of jwtStrings(credential.access).filter((c) => !c.startsWith("https://")))
 		found.push({ value: claim, placeholder: "<account claim>" });
 	return found;
 }
@@ -292,11 +368,83 @@ function requestCpuLine(runs: TrialRun[]): string[] {
 			: "not reported",
 	);
 	const worst = Math.max(...runs.map((r) => r.request?.cpuMs ?? 0));
+	const from = runs.find((r) => r.request)?.request?.from ?? "Worker";
 	const fits = (limit: number) => (worst <= limit ? "within" : "over");
 	const runsText =
 		perRun.length > 1 ? perRun.map((r, i) => `run ${i + 1}: ${r}`).join("; ") : perRun[0];
 	return [
-		`- **CPU time:** ${runsText}, from the Worker's tail event. Worst ${ms(worst)}: ${fits(FREE_CPU_MS)} the Workers free plan (10ms per request), ${fits(PAID_CPU_MS)} the paid plan default (30s per request, configurable to 5 min).`,
+		`- **CPU time:** ${runsText}, from the ${from}'s tail event. Worst ${ms(worst)}: ${fits(FREE_CPU_MS)} the Workers free plan (10ms per request), ${fits(PAID_CPU_MS)} the paid plan default (30s per request, configurable to 5 min).`,
+	];
+}
+
+/** What a fresh Sign in with ChatGPT observed, for the evidence entry (#34). */
+export interface SiwcSignIn {
+	/** The issued client ID, redacted in the entry. */
+	clientId: string;
+	grantedScopes: string[];
+	/** Access-token lifetime in seconds, from the token response. */
+	expiresIn: number;
+	/** Refresh-token lifetime in seconds, when the token response states one. */
+	refreshExpiresIn?: number;
+	/** ID-token lifetime in seconds, `exp` minus `iat`. */
+	idTokenSeconds?: number;
+	/** Field names in the token response, values left out. */
+	tokenFields: string[];
+	idToken: { ok: boolean; failures: string[] };
+}
+
+/** The sign-in line of an evidence entry. The caller redacts the client ID. */
+export function formatSignIn(signIn: SiwcSignIn): string {
+	const checks = signIn.idToken.ok ? "pass" : `fail (${signIn.idToken.failures.join(", ")})`;
+	return `- **Sign-in:** authorization code with PKCE on the 127.0.0.1:1455 loopback, a \`urn:uuid\` host ID, issued client \`${signIn.clientId}\`. Granted scope \`${signIn.grantedScopes.join(" ")}\`, access token expires_in ${signIn.expiresIn}s, refresh token lifetime ${signIn.refreshExpiresIn === undefined ? "not in the token response" : `${signIn.refreshExpiresIn}s`}, ID token valid ${signIn.idTokenSeconds === undefined ? "for an unstated time" : `${signIn.idTokenSeconds}s`}. ID token signature, iss, aud, exp and nonce checked: ${checks}. Token response fields: ${signIn.tokenFields.map((f) => `\`${f}\``).join(", ")}.`;
+}
+
+/** Pi's provider id for each route. */
+export const PI_PROVIDER = {
+	chatgpt: "openai-codex",
+	siwc: "openai",
+	opencode: "opencode",
+} as const;
+
+/** Request fields OpenAI's plan-usage docs say the flow rejects. */
+export const REJECTED_FIELDS = [
+	"temperature",
+	"max_output_tokens",
+	"previous_response_id",
+	"prompt",
+];
+/** OpenAI's plan-usage error codes, which entries record and redaction keeps. */
+export const PLAN_USAGE_ERROR = /\b(?:subscription_sharing|chatpass_v2)_[a-z_]+/g;
+
+/** What Pi sent across every run, checked against the fields the plan-usage flow rejects, and every plan-usage error code seen. */
+function siwcLines(runs: TrialRun[]): string[] {
+	const fields = [...new Set(runs.flatMap((r) => r.sent?.fields ?? []))];
+	const roles = [...new Set(runs.flatMap((r) => r.sent?.roles ?? []))];
+	const rejected = [
+		...fields.filter((f) => REJECTED_FIELDS.includes(f)).map((f) => `\`${f}\``),
+		...roles.filter((r) => r === "system").map(() => "system-role items"),
+	];
+	const untested = roles.some((r) => r === "system" || r === "developer")
+		? ""
+		: " The trial sends no system prompt, so system-role items are not exercised.";
+	const verdict = rejected.length
+		? `Fields the flow rejects that Pi sent: ${rejected.join(", ")}.`
+		: `None of the fields the flow rejects (${REJECTED_FIELDS.map((f) => `\`${f}\``).join(", ")}, system-role items).${untested}`;
+	const sent = fields.length
+		? `Pi sent ${fields.map((f) => `\`${f}\``).join(", ")}; input roles ${roles.map((r) => `\`${r}\``).join(", ") || "none"}. ${verdict}`
+		: "no request reached api.openai.com/v1/responses";
+	const codes = [
+		...new Set(
+			runs.flatMap((r) =>
+				r.steps.flatMap(
+					(s) => s.detail.match(/\b(subscription_sharing|chatpass_v2)_[a-z_]+/g) ?? [],
+				),
+			),
+		),
+	];
+	return [
+		`- **Request fields:** ${sent}`,
+		`- **Plan-usage error codes:** ${codes.length ? codes.map((c) => `\`${c}\``).join(", ") : "none"}`,
 	];
 }
 
@@ -309,18 +457,21 @@ export function formatEvidence(
 		runtime?: string;
 		/** Ran in a deployed Worker, where a failure points at a container route instead. */
 		deployed?: boolean;
+		/** A Sign in with ChatGPT made for this entry. */
+		signIn?: SiwcSignIn;
 	},
 ): string {
 	const [first, ...retries] = runs;
 	if (!first) throw new Error("formatEvidence needs at least one run");
 	const route = ROUTES[first.route];
 	const outcome = runs.every((r) => r.outcome === "pass") ? "pass" : "fail";
-	const refresh =
-		first.route === "chatgpt"
-			? "expire the stored access token and refresh it at https://auth.openai.com/oauth/token"
-			: "skip refresh (an API key has none)";
+	const refresh = {
+		chatgpt: "expire the stored access token and refresh it at https://auth.openai.com/oauth/token",
+		siwc: "expire the stored access token and refresh it at https://auth.openai.com/api/accounts/oauth/token",
+		opencode: "skip refresh (an API key has none)",
+	}[first.route];
 	const expected =
-		first.route === "chatgpt"
+		first.route !== "opencode"
 			? 'both turns return 200 and reply "pong". The refresh returns 200 with a new access token, and the second turn succeeds on it.'
 			: 'both turns return 200 and reply "pong".';
 	const passed = runs.filter((r) => r.outcome === "pass").length;
@@ -337,19 +488,22 @@ export function formatEvidence(
 	const entry = [
 		`#### ${day(first.startedAt)} · ${route.title} from ${options.origin} · ${outcome}`,
 		"",
-		`- **Route:** Pi \`${first.route === "chatgpt" ? "openai-codex" : "opencode"}\` provider, model \`${first.model}\`: one turn at ${route.endpoint}, ${refresh}, then one more turn`,
+		`- **Route:** Pi \`${PI_PROVIDER[first.route]}\` provider, model \`${first.model}\`: one turn at ${route.endpoint}, ${refresh}, then one more turn`,
 		`- **Runtime:** Pi \`@earendil-works/pi-ai\` ${PI_AI_VERSION}${options.runtime ? ` in ${options.runtime}` : ""}, each step lists every HTTP attempt it made`,
 		`- **Date:** ${day(first.startedAt)}, ${clock(first.startedAt)}`,
 		`- **Network origin:** ${options.origin}`,
 		`- **Expected:** ${expected}`,
 		`- **Observed:** ${first.steps.map((s) => s.detail).join(". ")}.${tally}`,
 		`- **Retries:** ${retryText}`,
-		`- **Fallback:** ${outcome === "pass" ? "none needed" : options.deployed ? DEPLOYED_FALLBACK : route.fallback}`,
+		...(options.signIn ? [formatSignIn(options.signIn)] : []),
+		...(first.route === "siwc" ? siwcLines(runs) : []),
+		`- **Fallback:** ${outcome === "pass" ? "none needed" : options.deployed && first.route === "chatgpt" ? DEPLOYED_FALLBACK : route.fallback}`,
 		...cpuLine(runs),
 		"",
 	].join("\n");
-	return redact(
-		entry,
-		runs.flatMap((r) => r.secrets),
-	);
+	const clientId = options.signIn?.clientId;
+	return redact(entry, [
+		...runs.flatMap((r) => r.secrets),
+		...(clientId ? [{ value: clientId, placeholder: "<clientId>" }] : []),
+	]);
 }

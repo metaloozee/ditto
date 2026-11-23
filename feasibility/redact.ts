@@ -34,8 +34,14 @@ export const SECRET_SHAPES: { pattern: RegExp; placeholder: string; what: string
 		placeholder: "<account id>",
 		what: "an account id",
 	},
-	// Unseen tokens and keys: any long opaque run of token characters.
-	{ pattern: /[A-Za-z0-9_-]{32,}/g, placeholder: "<opaque value>", what: "a token" },
+	// Unseen tokens and keys: any long opaque run of token characters. OpenAI's plan-usage error
+	// codes (`subscription_sharing_*`, `chatpass_v2_*`) are long too, and are evidence.
+	{
+		pattern:
+			/(?<![A-Za-z0-9_-])(?!(?:subscription_sharing|chatpass_v2)_[a-z_]+\b)[A-Za-z0-9_-]{32,}/g,
+		placeholder: "<opaque value>",
+		what: "a token",
+	},
 	{ pattern: /\b\d{10,}\b/g, placeholder: "<account number>", what: "an account number" },
 ];
 

@@ -1,6 +1,6 @@
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,7 +8,15 @@ import { promisify } from "node:util";
 
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 
-import { ACCOUNT_ID, API_KEY, accessToken, EMAIL, refreshToken } from "./simulated-provider.ts";
+import {
+	ACCOUNT_ID,
+	API_KEY,
+	accessToken,
+	EMAIL,
+	refreshToken,
+	SIWC_CLIENT_ID,
+	SIWC_SCOPE,
+} from "./simulated-provider.ts";
 
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 // The paid stack's test stage binds the simulated provider; the owner's paid stage never does.
@@ -19,6 +27,12 @@ let stage: ChildProcess;
 let exited: Promise<number | null>;
 
 beforeAll(async () => {
+	// alchemy dev keeps Durable Object storage between runs. Each run starts with a Bot that has
+	// no sign-in, as a freshly deployed stage does.
+	await rm(
+		path.join(repoRoot, "feasibility/paid/.alchemy/local/ditto-paid-pi-trial-test-model-trial-Bot"),
+		{ recursive: true, force: true },
+	);
 	stage = spawn(
 		"pnpm",
 		[
@@ -63,8 +77,7 @@ async function ownerRun(args: string[], env: Record<string, string> = {}) {
 			"deployed",
 			"--worker-url",
 			WORKER_URL,
-			"--runs",
-			"1",
+			...(args.includes("--runs") ? [] : ["--runs", "1"]),
 			...args,
 		],
 		{
@@ -134,5 +147,63 @@ describe("model trial on the paid stage", () => {
 		expect(entry).toMatch(/· .*OpenCode.* from deployed Worker .* · pass\n/);
 		expect(entry).toMatch(/- \*\*CPU time:\*\* whole trial request/);
 		for (const secret of secrets) expect(entry).not.toContain(secret);
+	}, 90_000);
+});
+
+describe("Sign in with ChatGPT in the trial Durable Object (#34)", () => {
+	const headers = { "x-trial-key": RUN_KEY };
+	const transfer = () =>
+		fetch(`${WORKER_URL}/siwc/import`, {
+			method: "POST",
+			headers,
+			body: JSON.stringify({
+				credential: {
+					type: "oauth",
+					access: accessToken(1),
+					refresh: refreshToken(1),
+					expires: Date.now() + 3_600_000,
+					clientId: SIWC_CLIENT_ID,
+					scopes: SIWC_SCOPE.split(" "),
+				},
+			}),
+		});
+
+	it("refuses a transfer without the owner's run key", async () => {
+		const response = await fetch(`${WORKER_URL}/siwc/import`, { method: "POST", body: "{}" });
+		expect(response.status).toBe(401);
+	});
+
+	it("refuses a trial before a sign-in is transferred", async () => {
+		const response = await fetch(`${WORKER_URL}/siwc/trial`, {
+			method: "POST",
+			headers,
+			body: "{}",
+		});
+		expect(response.status).toBe(409);
+	});
+
+	it("keeps its own host ID, whatever the transfer carries", async () => {
+		const first = (await (await transfer()).json()) as { hostId: string };
+		const second = (await (await transfer()).json()) as { hostId: string };
+
+		expect(first.hostId).toMatch(/^urn:uuid:[0-9a-f-]{36}$/);
+		expect(second.hostId).toBe(first.hostId);
+	});
+
+	it("runs turn, refresh and turn twice on the sign-in it owns, and records its CPU time", async () => {
+		await transfer();
+
+		const entry = await ownerRun(["--route", "siwc", "--runs", "2", "--interval-minutes", "0"]);
+
+		expect(entry).toMatch(
+			/#### \d{4}-\d{2}-\d{2} · OpenAI Responses on ChatGPT plan through Sign in with ChatGPT from Durable Object .* · pass\n/,
+		);
+		expect(entry).toContain("2 of 2 runs passed.");
+		expect(entry).toMatch(
+			/- \*\*Network origin:\*\* Durable Object in the deployed Worker \(Cloudflare network, Workers Paid, Worker in data centre [^)]+\)/,
+		);
+		expect(entry).toContain("None of the fields the flow rejects");
+		expect(entry).toMatch(/from the Durable Object's tail event/);
+		for (const secret of [...secrets, SIWC_CLIENT_ID]) expect(entry).not.toContain(secret);
 	}, 90_000);
 });
