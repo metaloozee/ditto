@@ -12,11 +12,11 @@ Each trial adds dated evidence entries under the section it informs, in the form
 
 **Choice: Provisional.** The pinned Pi runtime (`@earendil-works/pi-ai` 1.6.0) in a Bot Durable Object on Workers Paid, using SSE over `fetch`, on a connection the owner supplies (ADR-0003). Ditto will be open source and offered in two modes, and the connections each mode may use differ:
 
-| Connection                                                     | Self-deployed (owner's Cloudflare account)                      | Hosted by Ditto                                                    |
-| -------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------ |
-| OpenCode API key (`OPENCODE_API_KEY`)                          | yes                                                             | yes, the owner's key                                               |
-| Workers AI (`AI` binding), the included model                  | yes, billed to the owner's account; trial #35                   | yes, billed to the operator's account, no per-account limit yet (ADR-0011) |
-| ChatGPT plan through Sign in with ChatGPT (`api.openai.com/v1/responses`) | candidate, following OpenAI's self-hosted guide; trial #34 | only after OpenAI approves the hosted app through its interest form |
+| Connection                                                                | Self-deployed (owner's Cloudflare account)                 | Hosted by Ditto                                                            |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------- |
+| OpenCode API key (`OPENCODE_API_KEY`)                                     | yes                                                        | yes, the owner's key                                                       |
+| Workers AI (`AI` binding), the included model                             | yes, billed to the owner's account; trial #35              | yes, billed to the operator's account, no per-account limit yet (ADR-0011) |
+| ChatGPT plan through Sign in with ChatGPT (`api.openai.com/v1/responses`) | candidate, following OpenAI's self-hosted guide; trial #34 | only after OpenAI approves the hosted app through its interest form        |
 
 The OpenCode API key is the first connection to build on. It is recorded apart from every ChatGPT result and does not stand in for it.
 
@@ -154,10 +154,10 @@ OPENCODE_API_KEY=<key> pnpm feasibility:model --route opencode --runtime workerd
 - **CPU time:** the highest single turn measured 35ms and the highest whole trial request measured 53ms. The latter exceeds the free plan's 10ms per request and fits within the paid default of 30s (configurable to 5 minutes). These local workerd process measurements are upper bounds.
 
 | Run | First turn | Refresh | Second turn |
-| --- | --- | --- | --- |
-| 1 | 35ms | 11ms | 6.8ms |
-| 2 | 6.8ms | 3.1ms | 13ms |
-| 3 | 7.0ms | 3.8ms | 4.7ms |
+| --- | ---------- | ------- | ----------- |
+| 1   | 35ms       | 11ms    | 6.8ms       |
+| 2   | 6.8ms      | 3.1ms   | 13ms        |
+| 3   | 7.0ms      | 3.8ms   | 4.7ms       |
 
 ##### OpenCode API key in local Worker
 
@@ -287,13 +287,13 @@ The two routes ran against the same Worker about a minute apart, and each trial 
 
 ##### Comparison with the local Worker trial and the free-tier probe
 
-| Step | #26 local workerd (Pi, home network) | #30 free-tier probe (no Pi, Cloudflare) | #31 deployed (Pi, Cloudflare) |
-| --- | --- | --- | --- |
-| ChatGPT turn before refresh | 200, 3 of 3 | 403, 6 of 6 | 403, 3 of 3 |
-| ChatGPT refresh | 200 | 200 | 200 |
-| ChatGPT turn after refresh | 200, 3 of 3 | 403, 6 of 6 | 403, 3 of 3 |
-| OpenCode turns | 200, 3 of 3 | not run | 200, 3 of 3 |
-| Worst whole-request CPU | 53ms ChatGPT, 71ms OpenCode (process upper bound) | 4ms (plain `fetch`) | 39ms ChatGPT, 118ms OpenCode (Cloudflare tail event) |
+| Step                        | #26 local workerd (Pi, home network)              | #30 free-tier probe (no Pi, Cloudflare) | #31 deployed (Pi, Cloudflare)                        |
+| --------------------------- | ------------------------------------------------- | --------------------------------------- | ---------------------------------------------------- |
+| ChatGPT turn before refresh | 200, 3 of 3                                       | 403, 6 of 6                             | 403, 3 of 3                                          |
+| ChatGPT refresh             | 200                                               | 200                                     | 200                                                  |
+| ChatGPT turn after refresh  | 200, 3 of 3                                       | 403, 6 of 6                             | 403, 3 of 3                                          |
+| OpenCode turns              | 200, 3 of 3                                       | not run                                 | 200, 3 of 3                                          |
+| Worst whole-request CPU     | 53ms ChatGPT, 71ms OpenCode (process upper bound) | 4ms (plain `fetch`)                     | 39ms ChatGPT, 118ms OpenCode (Cloudflare tail event) |
 
 - **No step fails only here.** The ChatGPT 403 matches #30 with and without Pi, so the runtime is not the cause. The block page now names the cause #30 could not: OpenAI's edge refuses `chatgpt.com` requests from Cloudflare's Worker addresses, as it would a VPN. `auth.openai.com` accepts the same addresses.
 - **Pi works on Cloudflare's network.** The OpenCode route matches #26 and the Node baseline on every run, with the same reply and similar latency.
@@ -314,6 +314,44 @@ The ChatGPT plan on the Codex backend fails from a deployed Worker. Pi on Worker
 - **Command:** `pnpm feasibility:paid destroy`, `alchemy destroy --stage paid-pi-trial` exited 0
 - **Removed:** Workers `ditto-paid-pi-trial-model-trial` and `ditto-paid-pi-trial-cpu-tail`, their KV namespace and run-key secret, and the local paid-stage sign-in and run key
 
+#### Sign in with ChatGPT (#34)
+
+The supported plan-usage route: Sign in with ChatGPT tokens sent to `POST https://api.openai.com/v1/responses`, per OpenAI's [plan usage docs](https://developers.openai.com/siwc/token-sharing-open-source). It is not the Codex backend the `chatgpt` route above calls. The trial is the `siwc` route: the pinned Pi runtime's `openai` provider, whose built-in Sign in with ChatGPT flow (`@earendil-works/pi-ai` 1.6.0) does the sign-in and the refresh. Pi's code sends this token to `api.openai.com` as a bearer token, so the trial runs through Pi. If the live run shows Pi sending something the flow refuses, the entry records the gap against Pi and the OpenAI SDK becomes the fallback.
+
+**Sign-in.** Authorization code with PKCE on the `127.0.0.1:1455/auth/callback` loopback, `client_id=dynamic_agent_client` on first registration, `agent_name_hint=Ditto`, a `urn:uuid` `ext_agent_host_id` created once per machine in `~/.config/ditto-feasibility/siwc-host-id`, and the scopes `openid profile email offline_access resource.invoke chatgpt.tokens.use.direct` with resource `https://api.openai.com/v1`. Pi refuses a grant without `chatgpt.tokens.use.direct`. Pi drops the ID token, so the command reads it off the token response and checks it against OpenAI's published keys (from `https://auth.openai.com/.well-known/openid-configuration`): signature, `iss`, `aud` (the issued client ID), `exp` and the attempt's `nonce` (`feasibility/id-token.ts`). The sign-in is saved only if every check passes. The local sign-in lives in `~/.config/ditto-feasibility/siwc.json`.
+
+**Request fields, from Pi's code.** For a Sign in with ChatGPT token on `api.openai.com`, Pi's Responses request sends `store: false` and `stream: true` and leaves out `temperature`, `max_output_tokens`, `prompt_cache_retention` and `prompt_cache_options`. Pi sends `previous_response_id` only on the Codex WebSocket transport, never to this endpoint. A system prompt becomes a `developer` item for a reasoning model and a `system` item otherwise, so a bot with a system prompt on a non-reasoning model would send the system-role item the flow rejects. The trial sends no system prompt. Each entry lists the fields Pi actually sent, against the rejected list (`temperature`, `max_output_tokens`, `previous_response_id`, `prompt`, system-role items), and any `subscription_sharing_*` or `chatpass_v2_*` error code. The system-role case stays a code reading until a trial sends a system prompt.
+
+**Deployed, self-deployed shape.** OpenAI's [self-hosted guide](https://developers.openai.com/siwc/token-sharing-open-source/self-hosted-vms) in Cloudflare terms. The owner signs in on their own machine, because the loopback callback can only reach the browser's machine. `transfer-siwc` sends the credential once to the paid stage's `Bot` Durable Object, behind the run key, then deletes the local copy. From then on the Bot owns the sign-in: it keeps the credential in its storage, saves the rotated tokens after every step, refreshes it, and keeps its own `urn:uuid` host ID, created on the first transfer and never taken from the owner's machine. OpenAI sees a host ID only at authorize time and Pi's refresh sends none, so the transferred grant stays under the owner's machine's host ID, as the guide describes. The Bot's own ID is for its next authorization, which cannot run inside a Durable Object. OpenAI's guide notes that host-specific usage attribution and revocation for transferred sessions are not yet available. The Bot refuses a credential without the `chatgpt.tokens.use.direct` scope. Unlike the #31 Worker, the Bot holds the owner's credential at rest. That is a trial-only choice. Destroying the stage deletes the namespace and the credential with it. CPU time is the Bot's own invocation, which Cloudflare reports to the tail Worker as a separate event.
+
+```sh
+pnpm feasibility:model --route siwc                # local: browser sign-in, then 3 runs 15 min apart
+pnpm feasibility:paid deploy                       # adds the Bot Durable Object to the paid stage
+pnpm feasibility:paid transfer-siwc                # its own browser sign-in, handed to the Bot; prints an entry
+pnpm feasibility:paid run --route siwc             # on a later date: 3 runs in the Bot
+pnpm feasibility:paid destroy
+```
+
+##### Local
+
+_Not yet run. Paste the entry `pnpm feasibility:model --route siwc` prints. It carries the sign-in line with the granted scopes and lifetimes._
+
+##### Transfer to the Bot Durable Object
+
+_Not yet run._
+
+##### Deployed in the Bot Durable Object
+
+_Not yet run. Must be a different date from the local entry. Paste the entry `pnpm feasibility:paid run --route siwc` prints._
+
+##### `subscription_sharing_*` errors and their consequence
+
+_Not yet observed. For each code an entry records, state its consequence for self-deployed and for hosted Ditto._
+
+##### Can self-deployed Ditto use the ChatGPT plan without hosted-app approval?
+
+_Undecided until the deployed entry exists._
+
 ## Desktop provider
 
 **Direction (2026-11-23), pending #36:** the browser moves to Cloudflare Browser Run, driven over CDP by Ditto's harness, with the workspace's destination list as the session's guardrails and the cookies saved and restored by the Workspace Durable Object, since Browser Run keeps no login state between sessions. The Cloudflare Container stays as the sandbox for the workspace's files and bot-written scripts (ADR-0012, proposed). Reason: a Container's disk is discarded whenever the instance stops, and Cloudflare stops idle instances after 3 to 5 minutes, so the browser below loses every login on restart. The Containers evidence below stands for the sandbox and for the filter; #36 decides whether Browser Run's guardrails can replace the filter for the browser and whether restored cookies keep the logins.
@@ -324,14 +362,14 @@ The ChatGPT plan on the Codex backend fails from a deployed Worker. Pi on Worker
 
 **Security guarantees it supports**, against the list in [If filtered traffic is unsuitable](#if-filtered-traffic-is-unsuitable):
 
-| Guarantee                                                      | Local Docker (#27–#29)    | Containers under `alchemy dev` (#32)    | Cloudflare (#32) |
-| -------------------------------------------------------------- | ------------------------- | --------------------------------------- | ---------------- |
+| Guarantee                                                      | Local Docker (#27–#29)    | Containers under `alchemy dev` (#32)    | Cloudflare (#32)          |
+| -------------------------------------------------------------- | ------------------------- | --------------------------------------- | ------------------------- |
 | The computer has no route except the filter                    | yes (internal network)    | only with `NET_ADMIN`; fails without it | yes (`NET_ADMIN` granted) |
-| The destination list is enforced per workspace, outside Chrome | yes                       | yes                                     | yes              |
-| The workspace identity reaches the filter from the runtime     | yes (Compose env)         | yes (`WORKSPACE_ID` at start)           | yes              |
-| TLS-intercepted decisions per request, not only per tunnel     | yes                       | yes                                     | yes              |
-| WebSocket and HTTP/2 through the filter                        | yes (#28)                 | yes (5 s hold)                          | yes              |
-| The take-over view reachable by the owner only                 | loopback only, no sign-in | run-key gate plus loopback doorways     | not yet (#32 logins) |
+| The destination list is enforced per workspace, outside Chrome | yes                       | yes                                     | yes                       |
+| The workspace identity reaches the filter from the runtime     | yes (Compose env)         | yes (`WORKSPACE_ID` at start)           | yes                       |
+| TLS-intercepted decisions per request, not only per tunnel     | yes                       | yes                                     | yes                       |
+| WebSocket and HTTP/2 through the filter                        | yes (#28)                 | yes (5 s hold)                          | yes                       |
+| The take-over view reachable by the owner only                 | loopback only, no sign-in | run-key gate plus loopback doorways     | not yet (#32 logins)      |
 
 **Unresolved limits:**
 
@@ -830,20 +868,20 @@ Candidate instance size, resource inventory and package versions. Screen capacit
 
 Every run below is the owner's, with their own accounts. Each prints a redacted entry for the named slot.
 
-| #   | Experiment                                       | Status                      | Command                                                                                                                                                                                     | Decides                                           |
-| --- | ------------------------------------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| #25 | Local baseline, ChatGPT plan, day 1 and day 2    | passed on two local dates   | `pnpm feasibility:model --route chatgpt` (once per day, on two dates)                                                                                                                       | provider behaviour from the home network          |
-| #25 | Local baseline, OpenCode API key                 | passed                      | `OPENCODE_API_KEY=<key> pnpm feasibility:model --route opencode`                                                                                                                            | the fallback connection                           |
-| #26 | Local workerd, ChatGPT plan                      | passed                      | `pnpm feasibility`, then `pnpm feasibility:model --route chatgpt --runtime workerd`                                                                                                         | Pi in workerd against the real endpoint, CPU      |
-| #26 | Local workerd, OpenCode API key                  | passed                      | `pnpm feasibility`, then `OPENCODE_API_KEY=<key> pnpm feasibility:model --route opencode --runtime workerd`                                                                                 | same, OpenCode                                    |
-| #30 | Free-tier probe from Cloudflare, day 1 and day 2 | both failed, teardown OK    | `pnpm feasibility:free-tier deploy`, `pnpm feasibility:free-tier run` (each day), `pnpm feasibility:free-tier destroy`                                                                      | whether OpenAI accepts Cloudflare's network       |
+| #   | Experiment                                       | Status                                                                            | Command                                                                                                                                                                                     | Decides                                           |
+| --- | ------------------------------------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| #25 | Local baseline, ChatGPT plan, day 1 and day 2    | passed on two local dates                                                         | `pnpm feasibility:model --route chatgpt` (once per day, on two dates)                                                                                                                       | provider behaviour from the home network          |
+| #25 | Local baseline, OpenCode API key                 | passed                                                                            | `OPENCODE_API_KEY=<key> pnpm feasibility:model --route opencode`                                                                                                                            | the fallback connection                           |
+| #26 | Local workerd, ChatGPT plan                      | passed                                                                            | `pnpm feasibility`, then `pnpm feasibility:model --route chatgpt --runtime workerd`                                                                                                         | Pi in workerd against the real endpoint, CPU      |
+| #26 | Local workerd, OpenCode API key                  | passed                                                                            | `pnpm feasibility`, then `OPENCODE_API_KEY=<key> pnpm feasibility:model --route opencode --runtime workerd`                                                                                 | same, OpenCode                                    |
+| #30 | Free-tier probe from Cloudflare, day 1 and day 2 | both failed, teardown OK                                                          | `pnpm feasibility:free-tier deploy`, `pnpm feasibility:free-tier run` (each day), `pnpm feasibility:free-tier destroy`                                                                      | whether OpenAI accepts Cloudflare's network       |
 | #29 | Google, LinkedIn, protected-site logins, local   | Google and LinkedIn work with take-over; protected site skipped (no test account) | `pnpm feasibility:takeover google`, `… linkedin`, `… protected`, then `pnpm feasibility:takeover --down`                                                                                    | per-workflow grade behind the filter              |
-| #31 | Deployed Pi trial                                | OpenCode passed, ChatGPT (Codex backend) refused by OpenAI's edge; teardown OK | `pnpm feasibility:paid deploy`, `pnpm feasibility:paid run --route chatgpt`, `OPENCODE_API_KEY=<key> pnpm feasibility:paid run --route opencode`, `pnpm feasibility:paid destroy`           | the Worker model route and its real CPU           |
-| #32 | Cloudflare Containers trial                      | blocked: needs Workers Paid | set a billing notification, then `pnpm feasibility:containers deploy --spending-cap-set`, `… checks`, `… takeover google` (then `linkedin`, `protected`), `… stop ws-takeover`, `… destroy` | `NET_ADMIN`, identity, size, logins on Cloudflare |
+| #31 | Deployed Pi trial                                | OpenCode passed, ChatGPT (Codex backend) refused by OpenAI's edge; teardown OK    | `pnpm feasibility:paid deploy`, `pnpm feasibility:paid run --route chatgpt`, `OPENCODE_API_KEY=<key> pnpm feasibility:paid run --route opencode`, `pnpm feasibility:paid destroy`           | the Worker model route and its real CPU           |
+| #32 | Cloudflare Containers trial                      | blocked: needs Workers Paid                                                       | set a billing notification, then `pnpm feasibility:containers deploy --spending-cap-set`, `… checks`, `… takeover google` (then `linkedin`, `protected`), `… stop ws-takeover`, `… destroy` | `NET_ADMIN`, identity, size, logins on Cloudflare |
 
-| #34 | Sign in with ChatGPT, local then Durable Object  | local unblocked; deployed run needs Workers Paid | to be built under #34 | ChatGPT plan on the supported endpoint, self-deployed |
-| #36 | Browser Run as the workspace browser             | unblocked | to be built under #36 | browser provider, restored logins, guardrails (ADR-0012) |
-| #35 | Workers AI tool calling from a Durable Object    | blocked: needs Workers Paid | to be built under #35 | the included model (ADR-0011) |
+| #34 | Sign in with ChatGPT, local then Durable Object | built, not yet run | `pnpm feasibility:model --route siwc`; `pnpm feasibility:paid deploy`, `… transfer-siwc`, `… run --route siwc` (later date), `… destroy` | ChatGPT plan on the supported endpoint, self-deployed |
+| #36 | Browser Run as the workspace browser | unblocked | to be built under #36 | browser provider, restored logins, guardrails (ADR-0012) |
+| #35 | Workers AI tool calling from a Durable Object | blocked: needs Workers Paid | to be built under #35 | the included model (ADR-0011) |
 
 **Consequence of #31 and #32 staying blocked:** no hosted route is proven. The model route and the desktop stay local: Pi under Node and the #29 Docker stack on the owner's machine, which matches Ditto's current local-only use. Every hosted selection above stays provisional.
 
