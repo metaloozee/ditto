@@ -384,7 +384,7 @@ _Undecided until the deployed entry exists._
 
 ## Desktop provider
 
-**Direction (2026-11-23), pending #36:** the browser moves to Cloudflare Browser Run, driven over CDP by Ditto's harness, with the workspace's destination list as the session's guardrails and the cookies saved and restored by the Workspace Durable Object, since Browser Run keeps no login state between sessions. The Cloudflare Container stays as the sandbox for the workspace's files and bot-written scripts (ADR-0012, proposed). Reason: a Container's disk is discarded whenever the instance stops, and Cloudflare stops idle instances after 3 to 5 minutes, so the browser below loses every login on restart. The Containers evidence below stands for the sandbox and for the filter; #36 decides whether Browser Run's guardrails can replace the filter for the browser and whether restored cookies keep the logins.
+**Decision (2026-11-23): the browser stays on the shared computer, the Cloudflare Container below.** ADR-0012 proposed moving it to Cloudflare Browser Run and is rejected. In #36, Google refused the sign-in in Browser Run's browser where the Container passed it, Chrome under guardrails negotiated only HTTP/1.1, and Browser Run adds a second provider for no capability the Container lacks. ADR-0012's reason remains open: a Container's disk is discarded whenever the instance stops, and Cloudflare stops idle instances after 3 to 5 minutes, so the browser loses every login on restart. #37 keeps the logins with an encrypted cookie save and restore owned by the Workspace Durable Object, and settles the instance size, idle stops, Chrome's sandbox and DevTools access during take-over. See [Browser Run trial (#36)](#browser-run-trial-36).
 
 **Choice before that direction: Provisional.** Cloudflare Containers, one instance per workspace, each owned by a `Workspace` Durable Object, running one image that holds the egress filter and a headed Chromium on Xvfb with x11vnc and noVNC for take-over (`feasibility/containers/`). The runtime passes `WORKSPACE_ID` at start, and that is the only place the image learns its workspace.
 
@@ -616,76 +616,141 @@ _Not applicable yet. If the fence does not apply on Cloudflare, or a login is un
 
 ### Browser Run trial (#36)
 
-The workspace browser on Cloudflare Browser Run, as ADR-0012 proposes, in its own paid stage (`feasibility/browser-run/`). The Cloudflare Container stays the sandbox for files and bot-written scripts and is not part of this stage. The slots below are empty until the owner runs the trial.
+ADR-0012 proposed running the workspace browser on Cloudflare Browser Run, in place of a browser on the shared computer. The trial ran in its own paid stage. One `Workspace` Durable Object per workspace owned a Browser Run session, launched with the workspace's destination list as `guardrails.allowedDomains` and a 20-minute `keepAlive`, reconnected while live, and driven over CDP through a run-key gated loopback doorway. The owner took over through a Live View link in tab mode. After hand-back the Durable Object exported the browser's cookies (`Storage.getCookies`), stored them with AES-GCM encryption, and restored them (`Storage.setCookies`) into the next session. The harness was removed after the decision. It is in git history at commit `d5545cd` (`feasibility/browser-run/`), and #37 adapts its cookie save and restore for the shared computer.
 
-**Shape.** `feasibility/browser-run/worker.ts` holds one `Workspace` Durable Object per workspace, and each object owns at most one Browser Run session through the `BROWSER` binding. It opens the session with `launch({ keepAlive: 1200000, guardrails: { allowedDomains } })`, using the workspace's destination list from `feasibility/browser-run/destinations.ts`. Those lists repeat `ws-cloud-trial.txt` and `ws-takeover.txt`, because a Worker cannot read those files, and `browser-run-gate.test.ts` fails if they drift apart. While Browser Run reports the stored session open, the next request reconnects with `connectSession(sessionId)` instead of launching. A closed session is replaced by a new launch.
-
-**Cookies.** After hand-back the owner's command asks the Durable Object to export the browser's cookies over CDP (`Storage.getCookies` on the browser target). The object encrypts them with AES-GCM under a key derived from the `COOKIE_KEY` secret and stores them. When it launches the next session it restores them with `Storage.setCookies` before any page loads. A cookie key that does not decrypt the stored cookies fails the request before a billed browser starts. Each use of a session sets an alarm 18 minutes ahead, inside Browser Run's 20-minute `keepAlive`. When it fires, the object saves the cookies and closes the session, so the login survives an idle close and an idle browser stops billing. `restore` closes its session without saving, so the cookies the take-over saved, and their date, stay the source for every restore, and a failed restore cannot replace them. Deleting the cookies (`DELETE /w/<workspace>/cookies`) is the ADR-0010 path. Local storage, IndexedDB and device state are not saved: the restore entries show whether a site needs them.
-
-**Gate and secrets.** Every route needs the stage's run key in `x-trial-key`. The CDP connection and the Live View URL never reach a sandbox. The owner's commands open a loopback doorway on `127.0.0.1:9222`, which adds the key, and the Durable Object lists only the session's page, with its DevTools URL rewritten to that doorway. A page WebSocket is connected inside the object with `connectSession(sessionId, { targetId })`. Only `POST /w/<workspace>/live-view` answers with a Live View URL, and it goes to the owner's terminal. No route answers with a session ID: the evidence numbers sessions instead.
-
-**Request log.** Browser Run keeps no log the harness can read, so the owner's commands attach a second DevTools connection to the page that records requested hosts and the responses refused with `403` and `cf-mitigated: guardrails`. It records hosts and statuses only, as the #32 filter's log did. It sees the page's own requests, not those of popups or other tabs.
-
-**Spending.** Workers Paid includes 10 browser-hours a month, then $0.09 an hour, and 10 concurrent browsers averaged monthly. The trial opens at most one session per workspace. The 18-minute alarm closes an idle session, `checks` and `forget` close theirs when they finish, and `destroy` closes both before tearing the stage down.
-
-**Verified locally** (2026-11-23, no Cloudflare account):
-
-- `feasibility/browser-run-gate.test.ts` runs the Worker and Durable Object with the `BROWSER` binding faked at the platform boundary. Every route refuses no key, a wrong key and the key with a suffix, and opens nothing. Each workspace's session gets its list as guardrails and a 20-minute `keepAlive`. A later request after the object is evicted reconnects instead of launching, and a session Browser Run ended is replaced. Saved cookies are not readable at rest, are restored into the next session (session cookies without an expiry) and are not restored into a reconnected session. Deleting them leaves the next session signed out. A different cookie key fails before a launch. The alarm saves and closes. Keep-alive sends a browser-level command and never opens a session. Live View is minted in tab mode for 1 to 60 minutes. No response but the Live View route carries a Live View URL, and none carries a session ID or a cookie.
-- `feasibility/browser-run-evidence.test.ts` checks the restore, deletion and session entries: grades follow what the bot observed, a same-day restore is labelled as one, and an entry carrying a token is refused.
-- Under `alchemy dev` the Worker bundled, the gate answered and the Durable Object loaded. Alchemy's local Browser Run emulation does not implement `launch` (`The RPC receiver does not implement the method "launch"`), so sessions, guardrails, Live View and `history()` run only on Cloudflare.
-
-**Unknowns the live run settles:** whether Live View input counts as activity for `keepAlive` (the `takeover` command sends a browser-level keep-alive every 60 s through the Durable Object, never a page action); whether Browser Run accepts two DevTools clients on one page (the harness and the request log); whether a page WebSocket proxies through the Worker as returned by the binding; the field names `history()` and `limits()` return (`closeReasonText`, `usedBrowserTimeSeconds` are taken from the Workers types, not the docs); and whether guardrails apply to WebSocket upgrades.
-
-**Owner steps.** Upgrade to Workers Paid and sign in to Cloudflare with Alchemy first. Then:
-
-```sh
-pnpm feasibility:browser-run deploy                 # generates the run key and cookie key
-pnpm feasibility:browser-run checks                 # reuse, allow, refuse, 65 s WebSocket, HTTP/2
-pnpm feasibility:browser-run takeover google        # then linkedin; open the printed Live View link
-# on a later date:
-pnpm feasibility:browser-run restore google         # then linkedin; new session, restored cookies, no owner
-pnpm feasibility:browser-run forget                 # deletes the cookies; both logins must start signed out
-pnpm feasibility:browser-run sessions               # lengths, close reasons, browser-hours
-pnpm feasibility:browser-run destroy                # closes both sessions, tears the stage down
-```
-
-The keys are kept in `~/.config/ditto-feasibility/`, outside the repo. Losing the cookie key loses the stored logins. The Live View link controls the signed-in browser: do not paste it anywhere. Each command prints redacted entries for the slots below.
+The trial stopped after the take-overs, once Google's result and the HTTP/2 result decided against Browser Run. The restore, deletion and session-history runs were not made.
 
 #### Checks
 
-_Pending: `pnpm feasibility:browser-run checks`._
+##### 2026-11-23 · session reused across Durable Object requests on Browser Run · pass
+
+- **Route:** two `POST /w/ws-cloud-trial/session` requests to the `Workspace` Durable Object: the first launches with `keepAlive` at 20 minutes, the second finds the stored session ID live and reconnects with `connectSession`. Compared with the Containers trial: a Container instance is reused while running, and stops after 3 to 5 idle minutes
+- **Date:** 2026-11-23, 13:20 UTC
+- **Network origin:** Cloudflare Browser Run
+- **Expected:** one browser launched; the second request reuses its session
+- **Observed:** first request: launched session 8. Second: reused session 8.
+- **Retries:** _none_
+- **Fallback:** none needed
+
+##### 2026-11-23 · Guardrails load an approved destination on Browser Run · pass
+
+- **Route:** the session's page loads `https://example.com/` with `example.com` in `guardrails.allowedDomains`. Compared with the Containers trial: #32: pass, the filter logged the allow with `ws-cloud-trial`
+- **Date:** 2026-11-23, 13:20 UTC
+- **Network origin:** Cloudflare Browser Run
+- **Expected:** the page loads with status 200
+- **Observed:** document title `Example Domain`, status 200.
+- **Retries:** _none_
+- **Fallback:** none needed
+
+##### 2026-11-23 · Guardrails refuse an unapproved destination on Browser Run · pass
+
+- **Route:** the same page loads `https://example.org/`, which is not in the list. Compared with the Containers trial: #32: pass, `net::ERR_TUNNEL_CONNECTION_FAILED` and a deny logged
+- **Date:** 2026-11-23, 13:20 UTC
+- **Network origin:** Cloudflare Browser Run
+- **Expected:** Browser Run answers 403 with `cf-mitigated: guardrails`
+- **Observed:** navigation loaded; status 403, `cf-mitigated: guardrails` present.
+- **Retries:** _none_
+- **Fallback:** none needed
+
+##### 2026-11-23 · WebSocket held open under guardrails on Browser Run · pass
+
+- **Route:** the page opens `https://echo.websocket.org/`, then `wss://echo.websocket.org/`, pinging every 2 seconds for 65000 ms. Compared with the Containers trial: #32: pass through the filter
+- **Date:** 2026-11-23, 13:20 UTC
+- **Network origin:** Cloudflare Browser Run
+- **Expected:** the socket opens, every ping is echoed and it is still open at the end
+- **Observed:** opened: true, 33 of 33 pings echoed, open for 65001 ms, open at end: true, close code: none.
+- **Retries:** _none_
+- **Fallback:** none needed
+
+##### 2026-11-23 · HTTP/2 negotiated under guardrails on Browser Run · fail
+
+- **Route:** the page loads `https://example.com/`. Compared with the Containers trial: #32: pass, `h2` on both legs of the filter
+- **Date:** 2026-11-23, 13:20 UTC
+- **Network origin:** Cloudflare Browser Run
+- **Expected:** Chrome negotiates `h2` with the origin
+- **Observed:** `nextHopProtocol` was `http/1.1`.
+- **Retries:** _none_
+- **Fallback:** _owner to name_
+
+The first runs of `checks` stalled after the reuse check. Browser Run replaces a fresh session's first page 2 to 3 seconds after launch, so the page `json/list` named was gone when the request log connected. DevTools closed with `1008 Target not found`, and the harness waited on it for ever. `Tab.open` now confirms that the page answers and lists again if it does not, and a closed socket fails the waiting command. The entries above come from the run after that fix. In one earlier run, `getSession` answered `404 Session not found` for a session launched a second before. The Worker now treats only an ended record as closed and lets reconnecting decide.
+
+**HTTP/2:** Chrome negotiated `http/1.1` with `example.com` under guardrails, where the #32 filter carried `h2`. A likely reason, not confirmed, is that Browser Run enforces guardrails through a proxy that speaks HTTP/1.1 to the browser. Sites still load, at one connection per request.
 
 #### Google on Browser Run
 
-_Pending: `pnpm feasibility:browser-run takeover google`. Compare the grade and challenges with [Google on Cloudflare](#google-on-cloudflare)._
+##### 2026-11-23 · Google login with take-over on Browser Run · unsupported
+
+- **Route:** Chromium on Cloudflare Browser Run with the `ws-takeover` list as the session's guardrails, opened by the `Workspace` Durable Object; the owner signs in through a Live View link in tab mode. Until hand-back the harness refuses every page action; the only DevTools traffic is the Durable Object's browser-level keep-alive and the request log's network listener, hands back, then the bot will open Google Account home and confirm it is signed in
+- **Date:** 2026-11-23, 13:29 UTC
+- **Network origin:** Cloudflare Browser Run
+- **Expected:** the owner completes only the login and any challenge; after the explicit hand-back the bot inspects the screen and reaches the signed-in page alone. The page check proves the session carried over, not a multi-step task
+- **Observed:** took over: yes. Challenges: the sign-in was completely blocked for the browser.. Site's response: nothing happened. After hand-back the bot found https://accounts.google.com/<path>. Bot reached the signed-in page after hand-back: no, at https://www.google.com/account/about. Owner operated the site beyond the login: no. Guardrails refused: `www.googletagmanager.com`. Hosts the page requested: 8, against the 50-host guardrail limit.
+- **Live View typing:** no
+- **Live View link:** its still usable
+- **Bot actions during take-over:** it just displayed the /account page
+- **Retries:** _none_
+- **Fallback:** _owner to name: another provider that enforces the workspace destination list, or drop the workflow_
+
+**Correction, 2026-11-23, from the owner after the run:** the Live View opened on the Google sign-in form, and typing worked. The owner typed the email, and Google then refused the sign-in for this browser. So "Live View typing: no" above is wrong: input reached the page, and the refusal came from Google. The exact wording of Google's message was not recorded. The grade stands.
+
+**Compared with [Google on Cloudflare](#google-on-cloudflare):** the same login through a Cloudflare Container passed with take-over and no challenge. That browser was headed Chromium on Xvfb behind the #32 filter, and Google showed no CAPTCHA. Browser Run's Chrome is refused at the email step. The cause is not identified: it could be Browser Run's network, its browser fingerprint, or how DevTools attaches to the page.
+
+An earlier attempt the same day showed "Disconnected from browser". The Live View had been minted for the session's first page, before Browser Run replaced it. The take-over was changed to mint the Live View only when it showed the link. After that change, on a fresh session, the Live View's page matched the session's page.
 
 #### LinkedIn on Browser Run
 
-_Pending: `pnpm feasibility:browser-run takeover linkedin`. Compare the grade and challenges with [LinkedIn on Cloudflare](#linkedin-on-cloudflare)._
+##### 2026-11-23 · LinkedIn login with take-over on Browser Run · works with take-over
+
+- **Route:** Chromium on Cloudflare Browser Run with the `ws-takeover` list as the session's guardrails, opened by the `Workspace` Durable Object; the owner signs in through a Live View link in tab mode. Until hand-back the harness refuses every page action; the only DevTools traffic is the Durable Object's browser-level keep-alive and the request log's network listener, hands back, then the bot will open the LinkedIn feed and confirm it is signed in
+- **Date:** 2026-11-23, 13:32 UTC
+- **Network origin:** Cloudflare Browser Run
+- **Expected:** the owner completes only the login and any challenge; after the explicit hand-back the bot inspects the screen and reaches the signed-in page alone. The page check proves the session carried over, not a multi-step task
+- **Observed:** took over: yes. Challenges: "Click yes on phone". Site's response: It told me to press "yes" on my mobile to verify the login. After hand-back the bot found https://www.linkedin.com/feed. Bot reached the signed-in page after hand-back: yes, at https://www.linkedin.com/feed. Owner operated the site beyond the login: no. Guardrails refused: `ads.stickyadstv.com`, `cs.ns1p.net`, `eb2.3lift.com`, `lex.33across.com`, `li.protechts.net`, `merchantpool1.linkedin.com`, `px.ads.linkedin.com`, `sync.teads.tv`, `token.rubiconproject.com`, `trkn.us`. Hosts the page requested: 19, against the 50-host guardrail limit.
+- **Live View typing:** no
+- **Live View link:** it is still usable
+- **Bot actions during take-over:** no
+- **Retries:** _none_
+- **Fallback:** none needed
+
+**Correction, 2026-11-23, from the owner after the run:** typing in Live View worked. The owner typed the email and password, and "no" meant nothing had failed. The question could be read either way. It now asks for yes or no first.
+
+**Compared with [LinkedIn on Cloudflare](#linkedin-on-cloudflare):** both work with take-over. The challenge differed. The Container sign-in got a CAPTCHA and a code sent by email; Browser Run's got an approve-on-phone prompt. The guardrails refused the same ad and tracking hosts the #32 filter denied, and the sign-in did not need them. Browser Run's session stayed up throughout, where a `standard-1` Container lost its display during sign-in.
 
 #### Restored logins on a later date
 
-_Pending: `pnpm feasibility:browser-run restore google` and `… restore linkedin`, on a date after the take-over. A run on the same day is labelled as such and does not count._
+Not run. The trial stopped once ADR-0012 was rejected. Restoring cookies into a fresh browser is now a #37 criterion, on the shared computer.
 
 #### Deleting the stored cookies
 
-_Pending: `pnpm feasibility:browser-run forget`, after both restores._
+Not run. #37 carries the check on the shared computer (ADR-0010).
 
 #### Sessions and browser-hours
 
-_Pending: `pnpm feasibility:browser-run sessions`, after `forget`. At least one session must show reuse across two Durable Object requests: the `checks` reuse entry, and `takeover linkedin` run minutes after `takeover google`, which logs `Reconnected to ws-takeover session 1` once the Durable Object has likely been evicted. Every session must show its `closeReason`._
+Not recorded as an entry. Before teardown, `history()` listed 8 `ws-cloud-trial` sessions, from the stalled and fixed `checks` runs, each closed with `NormalClosure` after 7 s to 3 min 24 s. `limits()` returned no `usedBrowserTimeSeconds`, although the Workers types declare it. Session reuse across two Durable Object requests is in the `checks` entry above.
 
 #### Hosts against the guardrail limit
 
-_Pending. For each workflow, the hosts its take-over and restore requested, from the entries above, against the 50-entry `allowedDomains` limit. The `ws-takeover` list has 18 entries today, with 10 for Google and 4 for LinkedIn._
+Google requested 8 hosts and LinkedIn 19 during their take-overs, against the 50-host `allowedDomains` limit. The `ws-takeover` list had 18 entries. Guardrails refused only ad and tracking hosts, and neither sign-in needed them.
 
 #### Decision on ADR-0012
 
-_Pending. Names the browser provider, and either accepts ADR-0012 or records why it is rejected._
+**Rejected (2026-11-23).** The browser stays on the shared computer, a Cloudflare Container.
+
+- **Google:** Browser Run is unsupported: Google refused the sign-in after the email step. The Container passed with take-over and no challenge (#32).
+- **HTTP/2:** Browser Run negotiated `http/1.1` only. The Container's filter carried `h2`.
+- **LinkedIn:** works with take-over on both.
+- **Guardrails:** the allow, refuse and 65-second WebSocket checks passed. They would serve as an egress policy, but the Container's filter already passes the same checks.
+- **Dependency:** Browser Run adds a second browser provider, its 50-host limit, and Live View links that act as credentials, for no capability the shared computer lacks.
+
+The open problem moves to #37: the Container discards its disk when an idle instance stops, so logins need the cookie save and restore this trial built, owned by the Workspace Durable Object.
 
 #### Teardown
 
-_Pending: `pnpm feasibility:browser-run destroy`._
+##### 2026-11-23 · Browser Run trial stage torn down · pass
+
+- **Date:** 2026-11-23, 13:42 UTC
+- **Command:** `pnpm feasibility:browser-run destroy`, `alchemy destroy --stage browser-run-trial` exited 0
+- **Removed:** Worker `ditto-browser-run-trial-workspaces`, its `Workspace` Durable Object namespace with the stored cookies, and the run-key and cookie-key secrets, and the local keys. Both sessions were closed first.
 
 ## Egress policy
 
@@ -983,7 +1048,8 @@ Every run below is the owner's, with their own accounts. Each prints a redacted 
 | #32 | Cloudflare Containers trial                      | blocked: needs Workers Paid                                                       | set a billing notification, then `pnpm feasibility:containers deploy --spending-cap-set`, `… checks`, `… takeover google` (then `linkedin`, `protected`), `… stop ws-takeover`, `… destroy` | `NET_ADMIN`, identity, size, logins on Cloudflare |
 
 | #34 | Sign in with ChatGPT, local then Durable Object | local passed, transferred to the Bot; deployed run due 2026-11-24 or later | `pnpm feasibility:model --route siwc`; `pnpm feasibility:paid deploy`, `… transfer-siwc`, `… run --route siwc` (later date), `… destroy` | ChatGPT plan on the supported endpoint, self-deployed |
-| #36 | Browser Run as the workspace browser | built, verified with Browser Run faked; live run pending | `pnpm feasibility:browser-run deploy`, `… checks`, `… takeover google` (then `linkedin`), on a later date `… restore google` (then `linkedin`), `… forget`, `… sessions`, `… destroy` | browser provider, restored logins, guardrails (ADR-0012) |
+| #36 | Browser Run as the workspace browser | checks and take-overs run; ADR-0012 rejected; stage torn down, harness removed | in git history at `d5545cd` | browser provider: the shared computer stays (ADR-0012 rejected) |
+| #37 | Keep the shared computer's browser healthy | to be built | to be built under #37 | logins across instance stops, size, idle stops, sandbox, DevTools during take-over |
 | #35 | Workers AI tool calling from a Durable Object | blocked: needs Workers Paid | to be built under #35 | the included model (ADR-0011) |
 
 **Consequence of #31 and #32 staying blocked:** no hosted route is proven. The model route and the desktop stay local: Pi under Node and the #29 Docker stack on the owner's machine, which matches Ditto's current local-only use. Every hosted selection above stays provisional.
