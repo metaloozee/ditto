@@ -108,7 +108,6 @@ type Status = {
 	running: boolean;
 	holds: string[];
 	lastActivityAt?: number;
-	keepAlives: number;
 	cookiesSavedAt?: number;
 };
 type Opened = Started & { restoredCookies: number; cookiesSavedAt?: number };
@@ -426,9 +425,7 @@ async function idle() {
 	const opened = await start(t, CHECK_WORKSPACE);
 	try {
 		await t.call(`/w/${CHECK_WORKSPACE}/hold/task`, "POST");
-		log(
-			`Holding for ${values["hold-minutes"]} minutes. Only the Durable Object touches the instance.`,
-		);
+		log(`Holding for ${values["hold-minutes"]} minutes. Nothing uses the instance meanwhile.`);
 		let survivedHold = true;
 		for (const began = Date.now(); Date.now() - began < heldMs; await sleep(pollMs)) {
 			if (!(await status()).running) {
@@ -436,9 +433,8 @@ async function idle() {
 				break;
 			}
 		}
-		const held = await status();
 		if (survivedHold) await t.call(`/w/${CHECK_WORKSPACE}/hold/task`, "DELETE");
-		log("Released. Nothing touches the instance now; reading only the Durable Object's status…");
+		log("Released. Nothing uses the instance now; reading only the Durable Object's status…");
 		let idleSurvivedMs: number | null = null;
 		const released = Date.now();
 		while (survivedHold && Date.now() - released < waitMs) {
@@ -455,7 +451,6 @@ async function idle() {
 				at,
 				instanceType: opened.instanceType,
 				heldMs,
-				keepAlives: held.keepAlives,
 				survivedHold,
 				idleSurvivedMs,
 				waitedMs: Date.now() - released,

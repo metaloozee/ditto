@@ -192,22 +192,21 @@ export function idleEntry(run: {
 	at: Date;
 	instanceType: string;
 	heldMs: number;
-	keepAlives: number;
 	/** Still running when the hold was released. */
 	survivedHold: boolean;
-	/** From the last touch to the first status that showed it stopped; null if it never stopped. */
+	/** From the last use to the first status that showed it stopped; null if it never stopped. */
 	idleSurvivedMs: number | null;
 	waitedMs: number;
 	pollMs: number;
 }): string {
 	const stopped = run.idleSurvivedMs !== null;
 	return render({
-		heading: `idle instance stops only when nothing holds it on \`${run.instanceType}\``,
+		heading: `idle instance stops only when nothing holds or uses it on \`${run.instanceType}\``,
 		at: run.at,
-		route: `${ROUTE}. A task hold, with the Durable Object's alarm touching the instance every 30 s and the owner's command reading only the object's status, which never touches the instance. Then the hold is released and nothing touches it`,
+		route: `${ROUTE}. A task hold, with nothing using the instance and the owner's command reading only the Durable Object's status, which neither touches nor keeps the instance. Then the hold is released`,
 		expected:
-			"the instance stays up for the whole hold (longer than Cloudflare's 3 to 5 idle minutes) and stops on its own once released",
-		observed: `held ${minutes(run.heldMs)} with ${run.keepAlives} keep-alive touches: ${run.survivedHold ? "still running at release" : "stopped during the hold"}. After release: ${stopped ? `stopped ${seconds(run.idleSurvivedMs ?? 0)} after its last touch (status read every ${seconds(run.pollMs)})` : `still running after ${minutes(run.waitedMs)}`}.`,
+			"the instance stays up for the whole hold (longer than the object's 5-minute `sleepAfter` and Cloudflare's own idle stop), then the object saves the cookies and stops it about 5 minutes after the release",
+		observed: `held ${minutes(run.heldMs)}: ${run.survivedHold ? "still running at release" : "stopped during the hold"}. After release: ${stopped ? `stopped ${seconds(run.idleSurvivedMs ?? 0)} after its last use (status read every ${seconds(run.pollMs)})` : `still running after ${minutes(run.waitedMs)}`}.`,
 		outcome: run.survivedHold && stopped ? "pass" : "fail",
 	});
 }
