@@ -1,6 +1,9 @@
 export type Secret = { value: string; placeholder: string };
 
-/** Every string claim in a JWT payload: account ids, user ids and emails. */
+/** Claims that name OpenAI's endpoints or the grant, not the account. Entries need them. */
+const PUBLIC_CLAIMS = new Set(["iss", "aud", "scope"]);
+
+/** Every string claim in a JWT payload that could identify the account: ids and emails. */
 export function jwtStrings(token: string): string[] {
 	try {
 		const payload = token.split(".")[1]?.replace(/-/g, "+").replace(/_/g, "/") ?? "";
@@ -9,7 +12,12 @@ export function jwtStrings(token: string): string[] {
 			if (typeof value === "string" && value.length >= 6) out.push(value);
 			else if (value && typeof value === "object") Object.values(value).forEach(walk);
 		};
-		walk(JSON.parse(atob(payload)));
+		const claims: unknown = JSON.parse(atob(payload));
+		if (claims && typeof claims === "object") {
+			for (const [name, value] of Object.entries(claims)) {
+				if (!PUBLIC_CLAIMS.has(name)) walk(value);
+			}
+		}
 		return out;
 	} catch {
 		return [];

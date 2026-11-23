@@ -172,7 +172,7 @@ describe("ChatGPT plan through Sign in with ChatGPT (#34)", () => {
 			"one turn at https://api.openai.com/v1/responses, expire the stored access token and refresh it at https://auth.openai.com/api/accounts/oauth/token, then one more turn",
 		);
 		expect(entry).toMatch(
-			/refresh passed \(auth\.openai\.com\/api\/accounts\/oauth\/token 200\): expires_in 3600s \(1h\), granted scope `openid profile email offline_access resource\.invoke chatgpt\.tokens\.use\.direct`, a new refresh token/,
+			/refresh passed \(auth\.openai\.com\/api\/accounts\/oauth\/token 200\): expires_in 3600s \(1h\), granted scope `chatgpt\.tokens\.use\.direct email offline_access openid profile resource\.invoke`, a new refresh token/,
 		);
 		expectNoSecrets(entry);
 		expect(entry).not.toContain(SIWC_CLIENT_ID);

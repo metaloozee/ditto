@@ -97,12 +97,12 @@ describe("local Sign in with ChatGPT (#34)", () => {
 			idToken: { ok: true, failures: [] },
 			expiresIn: 3600,
 			grantedScopes: [
-				"openid",
-				"profile",
+				"chatgpt.tokens.use.direct",
 				"email",
 				"offline_access",
+				"openid",
+				"profile",
 				"resource.invoke",
-				"chatgpt.tokens.use.direct",
 			],
 		});
 		const saved = JSON.parse(await readFile(authFile, "utf8"));
@@ -143,7 +143,7 @@ describe("local Sign in with ChatGPT (#34)", () => {
 
 		const entry = formatEvidence([run], { origin: "home network", signIn: result });
 		expect(entry).toMatch(
-			/- \*\*Sign-in:\*\* authorization code with PKCE on the 127\.0\.0\.1:1455 loopback, a `urn:uuid` host ID, issued client `<clientId>`\. Granted scope `openid profile email offline_access resource\.invoke chatgpt\.tokens\.use\.direct`, access token expires_in 3600s, refresh token lifetime not in the token response, ID token valid 3600s\. ID token signature, iss, aud, exp and nonce checked: pass\. Token response fields: .*`id_token`/,
+			/- \*\*Sign-in:\*\* authorization code with PKCE on the 127\.0\.0\.1:1455 loopback, a `urn:uuid` host ID, issued client `<clientId>`\. Granted scope `chatgpt\.tokens\.use\.direct email offline_access openid profile resource\.invoke`, access token expires_in 3600s, refresh token lifetime not in the token response, ID token valid 3600s\. ID token signature, iss, aud, exp and nonce checked: pass\. Token response fields: .*`id_token`/,
 		);
 		for (const secret of [SIWC_CLIENT_ID, EMAIL, accessToken(1), refreshToken(1)]) {
 			expect(entry).not.toContain(secret);

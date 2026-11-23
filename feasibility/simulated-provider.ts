@@ -13,6 +13,8 @@ export function accessToken(generation: number) {
 	return jwt({
 		iss: "https://auth.openai.com",
 		aud: "https://api.openai.com/v1",
+		// OpenAI's access tokens carry the grant, as the token response states it.
+		scope: SIWC_GRANTED_SCOPE,
 		sub: `auth0|user-${generation}`,
 		email: EMAIL,
 		"https://api.openai.com/auth": { chatgpt_account_id: ACCOUNT_ID },
@@ -95,6 +97,9 @@ export type Fault = { status: number; body: string };
 export const SIWC_CLIENT_ID = "oaiapp_SIMULATED_client";
 export const SIWC_SCOPE =
 	"openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
+/** The grant as OpenAI states it, in the token response and the access token: sorted. */
+export const SIWC_GRANTED_SCOPE =
+	"chatgpt.tokens.use.direct email offline_access openid profile resource.invoke";
 const SIWC_RESOURCE = "https://api.openai.com/v1";
 /** Fields OpenAI's plan-usage docs say this flow rejects, kept apart from the trial's own list. */
 const SIWC_UNSUPPORTED = ["temperature", "max_output_tokens", "previous_response_id", "prompt"];
@@ -194,7 +199,7 @@ export function simulatedProvider(
 					}),
 					token_type: "Bearer",
 					expires_in: 3600,
-					scope: SIWC_SCOPE,
+					scope: SIWC_GRANTED_SCOPE,
 				});
 			}
 		}
@@ -219,7 +224,7 @@ export function simulatedProvider(
 				id_token: jwt({ email: EMAIL }),
 				token_type: "Bearer",
 				expires_in: 3600,
-				scope: SIWC_SCOPE,
+				scope: SIWC_GRANTED_SCOPE,
 			});
 		}
 		if (url.href === "https://api.openai.com/v1/responses") {

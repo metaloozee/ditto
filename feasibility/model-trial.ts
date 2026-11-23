@@ -314,8 +314,7 @@ function credentialSecrets(credential: Credential): Secret[] {
 			found.push({ value, placeholder: `<${key}>` });
 		}
 	}
-	// Issuer and audience URLs name OpenAI's endpoints, not the account, and the entry needs them.
-	for (const claim of jwtStrings(credential.access).filter((c) => !c.startsWith("https://")))
+	for (const claim of jwtStrings(credential.access))
 		found.push({ value: claim, placeholder: "<account claim>" });
 	return found;
 }
