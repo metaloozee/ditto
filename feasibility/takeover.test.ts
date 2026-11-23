@@ -77,6 +77,12 @@ describe("evidence redaction", () => {
 		);
 	});
 
+	it("names a browser page that has no web origin by its scheme", () => {
+		expect(redactUrl("about:blank")).toBe("about:blank");
+		expect(redactUrl("chrome://newtab/")).toBe("chrome://newtab/");
+		expect(redactUrl("chrome-error://chromewebdata/")).toBe("chrome-error://chromewebdata/");
+	});
+
 	it("refuses evidence holding an email, cookie, token or long account number", () => {
 		expect(() => assertClean("Signed in as owner@example.com")).toThrow(/email/);
 		expect(() => assertClean("cookie: SID=abc")).toThrow(/cookie/);

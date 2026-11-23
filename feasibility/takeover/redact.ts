@@ -8,6 +8,11 @@ const plainWord = /^[a-z]{1,20}$/;
 /** Keep the origin and leading plain-word path segments; drop the rest, the query and fragment. */
 export function redactUrl(raw: string): string {
 	const url = new URL(raw);
+	// Browser pages (about:, chrome:) have no web origin; name them by scheme and page.
+	if (url.origin === "null") {
+		if (url.host) return `${url.protocol}//${url.host}/`;
+		return url.protocol + (plainWord.test(url.pathname) ? url.pathname : "<path>");
+	}
 	const kept: string[] = [];
 	for (const segment of url.pathname.split("/").filter(Boolean)) {
 		if (!plainWord.test(segment) || ownerPrefixes.has(kept.at(-1) ?? "")) {
