@@ -1,9 +1,16 @@
 // The shared computer's browser health (#37) at the Workspace Worker's fetch seam, with
 // Cloudflare's container API and the instance faked at the platform boundary: logins across
-// instance stops, keep-alive only while held, and DevTools locked during take-over.
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+// instance stops, the instance up only while used or held, and DevTools locked during take-over.
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { owner, platform } from "./containers-platform.fake.ts";
+import {
+	call,
+	owner,
+	type Platform,
+	platform,
+	RUN_KEY,
+	socketOf,
+} from "./containers-platform.fake.ts";
 
 const W = "/w/ws-takeover";
 const SID = { name: "SID", value: "google-session-SIMULATED", domain: ".google.com", expires: 2e9 };
@@ -49,8 +56,9 @@ describe("logins across instance stops", () => {
 		p.signIn(SID);
 		await owner(p.env, `${W}/cookies/save`);
 
-		expect(p.store.has("cookies")).toBe(true);
-		const stored = JSON.stringify([...p.store.values()]);
+		const store = p.storage("ws-takeover");
+		expect(store.has("cookies")).toBe(true);
+		const stored = JSON.stringify([...store.values()]);
 		expect(stored).not.toContain(SID.value);
 		expect(stored).not.toContain(".google.com");
 	});
@@ -96,69 +104,95 @@ describe("logins across instance stops", () => {
 
 		expect(p.jar.map((c) => c.name)).toEqual(["SID"]);
 	});
+});
 
-	it("saves the cookies when the spending deadline destroys the instance", async () => {
+describe("the instance stays up only while it is used", () => {
+	beforeEach(() => {
+		vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+	});
+
+	/** The bot's DevTools socket through the Worker, as the owner's loopback doorway opens it. */
+	async function devtools(p: Platform) {
+		const response = await call(
+			p.env,
+			`${W}/devtools/devtools/browser/fake-browser`,
+			{ headers: { upgrade: "websocket" } },
+			RUN_KEY,
+		);
+		const socket = socketOf(response);
+		let id = 0;
+		return {
+			get open() {
+				return socket.open;
+			},
+			close: () => socket.close(1000),
+			command(method: string) {
+				const sent = ++id;
+				return new Promise<unknown>((resolve) => {
+					socket.addEventListener("message", ({ data }) => {
+						const message = JSON.parse(String(data)) as { id: number };
+						if (message.id === sent) resolve(message);
+					});
+					socket.send(JSON.stringify({ id: sent, method }));
+				});
+			},
+		};
+	}
+
+	it("keeps the instance through a bot's DevTools session longer than Cloudflare's idle window", async () => {
+		const p = platform();
+		await owner(p.env, `${W}/start`);
+		const session = await devtools(p);
+
+		for (let minute = 0; minute < 10; minute++) {
+			const answered = session.command("Target.getTargets");
+			await p.elapse(60_000);
+			expect(await answered).toMatchObject({ result: {} });
+		}
+
+		expect(p.running).toBe(true);
+		expect(session.open).toBe(true);
+	});
+
+	it("stops an unheld instance five minutes after its last use, saving its cookies first", async () => {
 		const p = platform();
 		await owner(p.env, `${W}/start`);
 		p.signIn(SID);
-		const deadline = p.alarms[0] ?? 0;
+		const session = await devtools(p);
+		await session.command("Target.getTargets");
+		session.close();
 
-		vi.useFakeTimers({ toFake: ["Date"] });
-		vi.setSystemTime(deadline);
-		await p.objects.get("ws-takeover")?.alarm();
+		await p.elapse(4 * 60_000);
+		expect(p.running).toBe(true);
+		await p.elapse(2 * 60_000);
 
-		expect(p.destroyed).toBe(1);
-		expect(p.events).toContain("Storage.getCookies");
-		expect(p.events.indexOf("Storage.getCookies")).toBeLessThan(p.events.indexOf("destroy"));
-	});
-});
-
-describe("keep-alive only while held", () => {
-	const touches = (p: ReturnType<typeof platform>) =>
-		p.forwarded.filter((f) => f.port === 8081 && f.url.endsWith("/ready")).length;
-
-	it("leaves an instance alone when nothing holds it, so Cloudflare's idle stop can take it", async () => {
-		const p = platform();
-		await owner(p.env, `${W}/start`);
-		const before = touches(p);
-
-		await p.objects.get("ws-takeover")?.alarm();
-
-		expect(touches(p)).toBe(before);
-		expect(p.destroyed).toBe(0);
+		expect(p.running).toBe(false);
+		expect(p.events.lastIndexOf("Storage.getCookies")).toBeLessThan(p.events.indexOf("destroy"));
+		const started = await owner(p.env, `${W}/start`);
+		expect(await started.json()).toMatchObject({ restoredCookies: 1 });
 	});
 
 	it.each(["takeover", "hold/task"])(
-		"touches the instance every 30 s while %s holds it",
+		"keeps an instance %s holds while nobody uses it, and stops it five minutes after release",
 		async (hold) => {
 			const p = platform();
 			await owner(p.env, `${W}/start`);
 			await owner(p.env, `${W}/${hold}`);
-			const before = touches(p);
-			const now = Date.now();
 
-			await p.objects.get("ws-takeover")?.alarm();
-			await p.objects.get("ws-takeover")?.alarm();
+			await p.elapse(20 * 60_000);
+			expect(p.running).toBe(true);
 
-			expect(touches(p)).toBe(before + 2);
-			expect(p.alarms.at(-1)).toBeGreaterThanOrEqual(now + 30_000);
-			expect(p.alarms.at(-1)).toBeLessThan(now + 60_000);
+			const release =
+				hold === "takeover"
+					? owner(p.env, `${W}/handback`)
+					: owner(p.env, `${W}/hold/task`, "DELETE");
+			expect(await (await release).json()).toMatchObject({ holds: [], saved: { cookies: 0 } });
+			await p.elapse(4 * 60_000);
+			expect(p.running).toBe(true);
+			await p.elapse(2 * 60_000);
+			expect(p.running).toBe(false);
 		},
 	);
-
-	it("stops touching it and saves the cookies once the last hold is released", async () => {
-		const p = platform();
-		await owner(p.env, `${W}/start`);
-		await owner(p.env, `${W}/hold/task`);
-		p.signIn(SID);
-
-		const released = await owner(p.env, `${W}/hold/task`, "DELETE");
-		expect(await released.json()).toMatchObject({ holds: [], saved: { cookies: 1 } });
-		const before = touches(p);
-		await p.objects.get("ws-takeover")?.alarm();
-
-		expect(touches(p)).toBe(before);
-	});
 
 	it("keeps holds across Durable Object eviction", async () => {
 		const p = platform();
@@ -167,22 +201,49 @@ describe("keep-alive only while held", () => {
 		p.evict();
 
 		await owner(p.env, `${W}/status`, "GET");
-		const before = touches(p);
-		await p.objects.get("ws-takeover")?.alarm();
+		await p.elapse(20 * 60_000);
 
-		expect(touches(p)).toBe(before + 1);
+		expect(p.running).toBe(true);
 	});
 
-	it("reports whether the instance runs without touching it, so the idle stop can be timed", async () => {
+	it("neither touches nor keeps the instance when the owner polls its status", async () => {
 		const p = platform();
 		await owner(p.env, `${W}/start`);
+		const started = (await (await owner(p.env, `${W}/status`, "GET")).json()) as {
+			lastActivityAt: number;
+		};
 		const before = p.forwarded.length;
-		p.stopInstance();
 
+		for (let poll = 0; poll < 8 && p.running; poll++) {
+			await owner(p.env, `${W}/status`, "GET");
+			expect(p.forwarded.length).toBe(before);
+			await p.elapse(30_000);
+		}
+		await p.elapse(2 * 60_000);
+
+		expect(p.running).toBe(false);
 		const status = await (await owner(p.env, `${W}/status`, "GET")).json();
+		expect(status).toMatchObject({
+			running: false,
+			holds: [],
+			lastActivityAt: started.lastActivityAt,
+		});
+	});
 
-		expect(status).toMatchObject({ running: false, holds: [], lastActivityAt: expect.any(Number) });
-		expect(p.forwarded.length).toBe(before);
+	it("destroys a held instance at the spending deadline, saving its cookies first", async () => {
+		const p = platform();
+		await owner(p.env, `${W}/start`);
+		await owner(p.env, `${W}/hold/task`);
+		p.signIn(SID);
+
+		await p.elapse(59 * 60_000);
+		expect(p.destroyed).toBe(0);
+		await p.elapse(2 * 60_000);
+
+		expect(p.destroyed).toBe(1);
+		expect(p.events.lastIndexOf("Storage.getCookies")).toBeLessThan(p.events.indexOf("destroy"));
+		const started = await owner(p.env, `${W}/start`);
+		expect(await started.json()).toMatchObject({ restoredCookies: 1 });
 	});
 });
 

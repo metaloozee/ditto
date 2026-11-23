@@ -2,9 +2,13 @@
 // the platform boundary. It starts a billed Chrome instance and exposes a screen that holds the
 // owner's logins, so every entry point but the take-over view sits behind the run key. The view
 // needs the owner's sign-in instead (containers-owner-view.test.ts).
-import { describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { call, ORIGIN, platform, RUN_KEY } from "./containers-platform.fake.ts";
+
+afterEach(() => {
+	vi.useRealTimers();
+});
 
 const entryPoints: [string, RequestInit][] = [
 	["/w/ws-cloud-trial/start", { method: "POST" }],
@@ -51,7 +55,6 @@ describe("run-key gate", () => {
 describe("workspace computer", () => {
 	it("starts the container with the workspace identity, internet on, and a spending deadline", async () => {
 		const p = platform();
-		const before = Date.now();
 		const response = await call(p.env, "/w/ws-takeover/start", { method: "POST" }, RUN_KEY);
 
 		expect(response.status).toBe(200);
@@ -61,17 +64,19 @@ describe("workspace computer", () => {
 		const body = (await response.json()) as Record<string, unknown>;
 		expect(body).toMatchObject({ workspace: "ws-takeover", instanceType: "standard-1" });
 		expect(body.startupMs).toEqual(expect.any(Number));
-		// The instance is destroyed after MAX_MINUTES even if the owner forgets to stop it.
-		expect(p.alarms[0]).toBeGreaterThanOrEqual(before + 60 * 60_000);
 	});
 
 	it("keeps the first start's deadline when the owner starts a running instance again", async () => {
+		vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
 		const p = platform();
 		await call(p.env, "/w/ws-takeover/start", { method: "POST" }, RUN_KEY);
+		await call(p.env, "/w/ws-takeover/hold/task", { method: "POST" }, RUN_KEY);
+		await p.elapse(30 * 60_000);
 		await call(p.env, "/w/ws-takeover/start", { method: "POST" }, RUN_KEY);
+		await p.elapse(31 * 60_000);
 
 		expect(p.started).toHaveLength(1);
-		expect(p.alarms).toHaveLength(1);
+		expect(p.destroyed).toBe(1);
 	});
 
 	it.each(["", "sixty", "0", "-5"])(
@@ -83,7 +88,6 @@ describe("workspace computer", () => {
 
 			expect(response.status).toBe(500);
 			expect(p.started).toEqual([]);
-			expect(p.alarms).toEqual([]);
 		},
 	);
 
@@ -122,20 +126,18 @@ describe("workspace computer", () => {
 		expect(sent?.headers.get("origin")).toBeNull();
 	});
 
-	it("destroys the instance on stop and when the deadline passes", async () => {
+	it("destroys the instance on stop and MAX_MINUTES after a start, even while held", async () => {
+		vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
 		const p = platform();
 		await call(p.env, "/w/ws-takeover/start", { method: "POST" }, RUN_KEY);
 		await call(p.env, "/w/ws-takeover/stop", { method: "POST" }, RUN_KEY);
 		expect(p.destroyed).toBe(1);
 
 		await call(p.env, "/w/ws-takeover/start", { method: "POST" }, RUN_KEY);
-		vi.useFakeTimers({ toFake: ["Date"] });
-		try {
-			vi.setSystemTime(p.alarms.at(-1) ?? 0);
-			await p.objects.get("ws-takeover")?.alarm();
-		} finally {
-			vi.useRealTimers();
-		}
+		await call(p.env, "/w/ws-takeover/hold/task", { method: "POST" }, RUN_KEY);
+		await p.elapse(59 * 60_000);
+		expect(p.destroyed).toBe(1);
+		await p.elapse(2 * 60_000);
 		expect(p.destroyed).toBe(2);
 	});
 });

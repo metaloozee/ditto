@@ -21,7 +21,18 @@ const authTests = {
 };
 
 const feasibilityTests = {
-	test: { name: "feasibility", include: ["feasibility/*.test.ts"] },
+	// The Containers trial's Durable Object extends @cloudflare/containers, which imports
+	// workerd's built-ins and ships extensionless ESM imports, so Vite transforms it.
+	resolve: {
+		alias: {
+			"cloudflare:workers": `${import.meta.dirname}/feasibility/cloudflare-workers.fake.ts`,
+		},
+	},
+	test: {
+		name: "feasibility",
+		include: ["feasibility/*.test.ts"],
+		server: { deps: { inline: ["@cloudflare/containers"] } },
+	},
 };
 
 export default defineConfig({
