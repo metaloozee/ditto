@@ -10,6 +10,7 @@ state=/run/egress
 install -d -m 755 "$state"
 install -m 644 /dev/null "$state/decisions.jsonl"
 install -d -o mitmproxy -g mitmproxy /ca-public /home/mitmproxy/.mitmproxy
+install -d -m 755 -o browser -g browser /run/browser
 
 # Containers share one network namespace, so Docker's internal network has no equivalent here.
 # The fence instead lets only the filter's user open outbound connections. It needs NET_ADMIN;
@@ -34,7 +35,18 @@ else
 	ip6tables -w -F OUTPUT 2>/dev/null || true
 	isolation=none
 fi
-printf '{"workspace": "%s", "isolation": "%s"}\n' "$WORKSPACE_ID" "$isolation" | tee "$state/isolation.json"
+# ADR-0007: only the DevTools gate's user may reach Chrome's DevTools port, and no local process
+# may reach the gate's lock, so take-over can end every bot's DevTools access (#37).
+devtools_fence() {
+	for tables in iptables ip6tables; do
+		"$tables" -w -I OUTPUT 1 -p tcp --dport 8082 -j REJECT &&
+			"$tables" -w -I OUTPUT 1 -p tcp --dport 9222 -m owner ! --uid-owner devtools -j REJECT ||
+			return 1
+	done
+}
+if devtools_fence 2>/dev/null; then devtools=gate-only; else devtools=any-local-process; fi
+printf '{"workspace": "%s", "isolation": "%s", "devtools": "%s"}\n' "$WORKSPACE_ID" "$isolation" "$devtools" |
+	tee "$state/isolation.json"
 
 # Each decision goes to stdout, which Cloudflare keeps as the container's log, and to a file the
 # owner's commands read through the Worker.
@@ -44,6 +56,9 @@ setpriv --reuid=mitmproxy --regid=mitmproxy --init-groups \
 	tee -a "$state/decisions.jsonl" &
 
 while [ ! -f /ca-public/ca.pem ]; do sleep 0.1; done
+
+setpriv --reuid=devtools --regid=devtools --init-groups \
+	env PYTHONUNBUFFERED=1 /usr/local/bin/python3 /opt/workspace/devtools_gate.py &
 
 exec setpriv --reuid=browser --regid=browser --init-groups \
 	env HOME=/home/browser WORKSPACE_ID="$WORKSPACE_ID" /opt/workspace/desktop.sh

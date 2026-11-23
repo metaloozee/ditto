@@ -5,9 +5,10 @@ FROM mitmproxy/mitmproxy:12.3.1@sha256:2711066c855659b5af8b1dbb84494ed3eff69b42e
 
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends \
-		chromium libnss3-tools fonts-dejavu-core xvfb x11vnc socat novnc python3-websockify iptables \
+		chromium chromium-sandbox libnss3-tools fonts-dejavu-core xvfb x11vnc novnc python3-websockify iptables \
 	&& rm -rf /var/lib/apt/lists/* \
 	&& useradd --create-home browser \
+	&& useradd --no-create-home --shell /usr/sbin/nologin devtools \
 	&& install -d -o browser -g browser /home/browser/profile
 
 COPY egress/filter/egress_filter.py /filter/egress_filter.py
