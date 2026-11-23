@@ -23,6 +23,16 @@ The name Ditto shows for a user. An OAuth provider can supply a display name eve
 
 Permission a Ditto account holder gives their bots to use a model through the holder’s own plan or API key.
 
+**Operator**
+
+The person who runs a Ditto deployment and pays for it. When an owner deploys Ditto for themselves, they are its operator.
+_Avoid_: Host, admin
+
+**Included model**
+
+A model the operator provides to every Ditto account on their deployment, paid for by the operator rather than through a model connection.
+_Avoid_: Free model, default key
+
 **Workspace**
 
 The personal space where one owner works with Ditto and their team of bots on a shared computer.
