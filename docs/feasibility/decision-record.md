@@ -614,6 +614,79 @@ _Not applicable yet. If the fence does not apply on Cloudflare, or a login is un
 - **Removed:** Worker `ditto-containers-trial-workspaces`, its `Workspace` Durable Object namespace, the container application and its image, the run-key secret, and the local run key.
 - **Note:** the stage was torn down two minutes after the clean image without diagnostics was deployed on `standard-3`, so no `checks` run exists for that build. The `checks` entries above ran on `standard-1` with the same fence fix; the `standard-3` evidence is the LinkedIn take-over.
 
+### Browser Run trial (#36)
+
+The workspace browser on Cloudflare Browser Run, as ADR-0012 proposes, in its own paid stage (`feasibility/browser-run/`). The Cloudflare Container stays the sandbox for files and bot-written scripts and is not part of this stage. The slots below are empty until the owner runs the trial.
+
+**Shape.** `feasibility/browser-run/worker.ts` holds one `Workspace` Durable Object per workspace, and each object owns at most one Browser Run session through the `BROWSER` binding. It opens the session with `launch({ keepAlive: 1200000, guardrails: { allowedDomains } })`, using the workspace's destination list from `feasibility/browser-run/destinations.ts`. Those lists repeat `ws-cloud-trial.txt` and `ws-takeover.txt`, because a Worker cannot read those files, and `browser-run-gate.test.ts` fails if they drift apart. While Browser Run reports the stored session open, the next request reconnects with `connectSession(sessionId)` instead of launching. A closed session is replaced by a new launch.
+
+**Cookies.** After hand-back the owner's command asks the Durable Object to export the browser's cookies over CDP (`Storage.getCookies` on the browser target). The object encrypts them with AES-GCM under a key derived from the `COOKIE_KEY` secret and stores them. When it launches the next session it restores them with `Storage.setCookies` before any page loads. A cookie key that does not decrypt the stored cookies fails the request before a billed browser starts. Each use of a session sets an alarm 18 minutes ahead, inside Browser Run's 20-minute `keepAlive`. When it fires, the object saves the cookies and closes the session, so the login survives an idle close and an idle browser stops billing. `restore` closes its session without saving, so the cookies the take-over saved, and their date, stay the source for every restore, and a failed restore cannot replace them. Deleting the cookies (`DELETE /w/<workspace>/cookies`) is the ADR-0010 path. Local storage, IndexedDB and device state are not saved: the restore entries show whether a site needs them.
+
+**Gate and secrets.** Every route needs the stage's run key in `x-trial-key`. The CDP connection and the Live View URL never reach a sandbox. The owner's commands open a loopback doorway on `127.0.0.1:9222`, which adds the key, and the Durable Object lists only the session's page, with its DevTools URL rewritten to that doorway. A page WebSocket is connected inside the object with `connectSession(sessionId, { targetId })`. Only `POST /w/<workspace>/live-view` answers with a Live View URL, and it goes to the owner's terminal. No route answers with a session ID: the evidence numbers sessions instead.
+
+**Request log.** Browser Run keeps no log the harness can read, so the owner's commands attach a second DevTools connection to the page that records requested hosts and the responses refused with `403` and `cf-mitigated: guardrails`. It records hosts and statuses only, as the #32 filter's log did. It sees the page's own requests, not those of popups or other tabs.
+
+**Spending.** Workers Paid includes 10 browser-hours a month, then $0.09 an hour, and 10 concurrent browsers averaged monthly. The trial opens at most one session per workspace. The 18-minute alarm closes an idle session, `checks` and `forget` close theirs when they finish, and `destroy` closes both before tearing the stage down.
+
+**Verified locally** (2026-11-23, no Cloudflare account):
+
+- `feasibility/browser-run-gate.test.ts` runs the Worker and Durable Object with the `BROWSER` binding faked at the platform boundary. Every route refuses no key, a wrong key and the key with a suffix, and opens nothing. Each workspace's session gets its list as guardrails and a 20-minute `keepAlive`. A later request after the object is evicted reconnects instead of launching, and a session Browser Run ended is replaced. Saved cookies are not readable at rest, are restored into the next session (session cookies without an expiry) and are not restored into a reconnected session. Deleting them leaves the next session signed out. A different cookie key fails before a launch. The alarm saves and closes. Keep-alive sends a browser-level command and never opens a session. Live View is minted in tab mode for 1 to 60 minutes. No response but the Live View route carries a Live View URL, and none carries a session ID or a cookie.
+- `feasibility/browser-run-evidence.test.ts` checks the restore, deletion and session entries: grades follow what the bot observed, a same-day restore is labelled as one, and an entry carrying a token is refused.
+- Under `alchemy dev` the Worker bundled, the gate answered and the Durable Object loaded. Alchemy's local Browser Run emulation does not implement `launch` (`The RPC receiver does not implement the method "launch"`), so sessions, guardrails, Live View and `history()` run only on Cloudflare.
+
+**Unknowns the live run settles:** whether Live View input counts as activity for `keepAlive` (the `takeover` command sends a browser-level keep-alive every 60 s through the Durable Object, never a page action); whether Browser Run accepts two DevTools clients on one page (the harness and the request log); whether a page WebSocket proxies through the Worker as returned by the binding; the field names `history()` and `limits()` return (`closeReasonText`, `usedBrowserTimeSeconds` are taken from the Workers types, not the docs); and whether guardrails apply to WebSocket upgrades.
+
+**Owner steps.** Upgrade to Workers Paid and sign in to Cloudflare with Alchemy first. Then:
+
+```sh
+pnpm feasibility:browser-run deploy                 # generates the run key and cookie key
+pnpm feasibility:browser-run checks                 # reuse, allow, refuse, 65 s WebSocket, HTTP/2
+pnpm feasibility:browser-run takeover google        # then linkedin; open the printed Live View link
+# on a later date:
+pnpm feasibility:browser-run restore google         # then linkedin; new session, restored cookies, no owner
+pnpm feasibility:browser-run forget                 # deletes the cookies; both logins must start signed out
+pnpm feasibility:browser-run sessions               # lengths, close reasons, browser-hours
+pnpm feasibility:browser-run destroy                # closes both sessions, tears the stage down
+```
+
+The keys are kept in `~/.config/ditto-feasibility/`, outside the repo. Losing the cookie key loses the stored logins. The Live View link controls the signed-in browser: do not paste it anywhere. Each command prints redacted entries for the slots below.
+
+#### Checks
+
+_Pending: `pnpm feasibility:browser-run checks`._
+
+#### Google on Browser Run
+
+_Pending: `pnpm feasibility:browser-run takeover google`. Compare the grade and challenges with [Google on Cloudflare](#google-on-cloudflare)._
+
+#### LinkedIn on Browser Run
+
+_Pending: `pnpm feasibility:browser-run takeover linkedin`. Compare the grade and challenges with [LinkedIn on Cloudflare](#linkedin-on-cloudflare)._
+
+#### Restored logins on a later date
+
+_Pending: `pnpm feasibility:browser-run restore google` and `… restore linkedin`, on a date after the take-over. A run on the same day is labelled as such and does not count._
+
+#### Deleting the stored cookies
+
+_Pending: `pnpm feasibility:browser-run forget`, after both restores._
+
+#### Sessions and browser-hours
+
+_Pending: `pnpm feasibility:browser-run sessions`, after `forget`. At least one session must show reuse across two Durable Object requests: the `checks` reuse entry, and `takeover linkedin` run minutes after `takeover google`, which logs `Reconnected to ws-takeover session 1` once the Durable Object has likely been evicted. Every session must show its `closeReason`._
+
+#### Hosts against the guardrail limit
+
+_Pending. For each workflow, the hosts its take-over and restore requested, from the entries above, against the 50-entry `allowedDomains` limit. The `ws-takeover` list has 18 entries today, with 10 for Google and 4 for LinkedIn._
+
+#### Decision on ADR-0012
+
+_Pending. Names the browser provider, and either accepts ADR-0012 or records why it is rejected._
+
+#### Teardown
+
+_Pending: `pnpm feasibility:browser-run destroy`._
+
 ## Egress policy
 
 **Choice: Provisional.** Default deny. Each workspace has an exact-hostname destination list (`destinations/<WORKSPACE_ID>.txt`), enforced by a TLS-intercepting mitmproxy 12.3.1 filter (`egress_filter.py`) that is Chrome's only route out. The runtime passes the workspace identity. The filter reads the list on every decision, refuses an unapproved CONNECT before any upstream connection, decides again for each request inside a tunnel and for each WebSocket upgrade, and logs `{workspace, host, decision, method, port}` for each CONNECT, plus `path`, `http_version` and `upstream_alpn` for each request inside a tunnel and `path` for each WebSocket. The path is logged without its query or fragment, which can carry login and OAuth callback codes, so neither reaches the container logs. The CA is generated per stage, its key never leaves the filter, and it is discarded on teardown. The local trial (#27) supports this shape, and #28 shows WebSocket and HTTP/2 survive it. The deployed runtime check is still to run.
@@ -910,7 +983,7 @@ Every run below is the owner's, with their own accounts. Each prints a redacted 
 | #32 | Cloudflare Containers trial                      | blocked: needs Workers Paid                                                       | set a billing notification, then `pnpm feasibility:containers deploy --spending-cap-set`, `… checks`, `… takeover google` (then `linkedin`, `protected`), `… stop ws-takeover`, `… destroy` | `NET_ADMIN`, identity, size, logins on Cloudflare |
 
 | #34 | Sign in with ChatGPT, local then Durable Object | local passed, transferred to the Bot; deployed run due 2026-11-24 or later | `pnpm feasibility:model --route siwc`; `pnpm feasibility:paid deploy`, `… transfer-siwc`, `… run --route siwc` (later date), `… destroy` | ChatGPT plan on the supported endpoint, self-deployed |
-| #36 | Browser Run as the workspace browser | unblocked | to be built under #36 | browser provider, restored logins, guardrails (ADR-0012) |
+| #36 | Browser Run as the workspace browser | built, verified with Browser Run faked; live run pending | `pnpm feasibility:browser-run deploy`, `… checks`, `… takeover google` (then `linkedin`), on a later date `… restore google` (then `linkedin`), `… forget`, `… sessions`, `… destroy` | browser provider, restored logins, guardrails (ADR-0012) |
 | #35 | Workers AI tool calling from a Durable Object | blocked: needs Workers Paid | to be built under #35 | the included model (ADR-0011) |
 
 **Consequence of #31 and #32 staying blocked:** no hosted route is proven. The model route and the desktop stay local: Pi under Node and the #29 Docker stack on the owner's machine, which matches Ditto's current local-only use. Every hosted selection above stays provisional.
