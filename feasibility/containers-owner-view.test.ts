@@ -10,6 +10,7 @@ import {
 	type Platform,
 	platform,
 	RUN_KEY,
+	socketOf,
 } from "./containers-platform.fake.ts";
 
 const VIEW = "/w/ws-takeover/view/vnc.html?autoconnect=1";
@@ -92,6 +93,24 @@ describe("take-over view", () => {
 		const response = await call(p.env, VIEW, { headers: { cookie: session ?? "" } });
 
 		expect(response.status).toBe(409);
+	});
+
+	it("relays the screen's WebSocket both ways for the owner", async () => {
+		const p = await inTakeOver();
+		const { session } = await signIn(p);
+
+		const response = await call(p.env, "/w/ws-takeover/view/websockify", {
+			headers: { cookie: session ?? "", upgrade: "websocket", origin: ORIGIN },
+		});
+		const screen = socketOf(response);
+		const echoed = new Promise((resolve) =>
+			screen.addEventListener("message", ({ data }) => resolve(data)),
+		);
+		screen.send("RFB 003.008\n");
+
+		expect(response.status).toBe(101);
+		expect(await echoed).toBe("RFB 003.008\n");
+		expect(p.forwarded.at(-1)?.url).toBe("http://127.0.0.1:6080/websockify");
 	});
 
 	it("refuses the screen's WebSocket from another site's page", async () => {

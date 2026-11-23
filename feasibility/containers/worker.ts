@@ -8,12 +8,14 @@
 //   POST   /w/<workspace>/takeover       lock DevTools, then hold the instance for the owner
 //   POST   /w/<workspace>/handback       unlock DevTools, release the hold, save the cookies
 //   POST   /w/<workspace>/hold/task      hold the instance for a bot task; DELETE releases it
-//   GET    /w/<workspace>/status         running, holds, last activity; never touches the instance
+//   GET    /w/<workspace>/status         running, holds, last use; never touches the instance
 //   *      /w/<workspace>/view/...       noVNC take-over view (port 6080): the owner's sign-in, not
 //                                        the run key, and only during take-over
 //   GET    /auth/sign-in, /auth/callback  the owner's GitHub sign-in (owner-sign-in.ts)
 //   *      /w/<workspace>/devtools/...   Chrome DevTools for the bot (port 9223), refused in take-over
 //   GET    /w/<workspace>/control/...    filter decisions, fence, memory, samples (port 8081)
+import { Container } from "@cloudflare/containers";
+
 import { requireRunKey } from "../run-key.ts";
 import {
 	browserCommand,
@@ -25,31 +27,15 @@ import {
 } from "./cookies.ts";
 import { isOwner, signInRedirect, signInRoutes } from "./owner-sign-in.ts";
 
+// The library reaches it through ctx.exports when an object restarts beside a running instance.
+export { ContainerProxy } from "@cloudflare/containers";
+
 /** Workspaces with a destination list baked into the image. */
 const WORKSPACES = new Set(["ws-cloud-trial", "ws-takeover"]);
 const PORTS = { view: 6080, devtools: 9223, control: 8081, gate: 8082 } as const;
 const READY_TIMEOUT_MS = 180_000;
-/** Cloudflare stops an instance after 3 to 5 idle minutes; a hold touches it this often. */
-const KEEP_ALIVE_MS = 30_000;
 
 type Hold = "takeover" | "task";
-
-interface ContainerApi {
-	readonly running: boolean;
-	start(options: { env: Record<string, string>; enableInternet: boolean }): void;
-	destroy(): Promise<void>;
-	getTcpPort(port: number): { fetch(input: RequestInfo, init?: RequestInit): Promise<Response> };
-}
-
-interface WorkspaceState {
-	container?: ContainerApi;
-	storage: {
-		get<T>(key: string): Promise<T | undefined>;
-		put(key: string, value: unknown): Promise<void>;
-		delete(key: string): Promise<boolean>;
-		setAlarm(at: number): Promise<void>;
-	};
-}
 
 export interface WorkspaceEnv {
 	/** Sent by the owner's commands in `x-trial-key`. Empty refuses every request. */
@@ -69,41 +55,49 @@ export interface WorkspaceEnv {
 	WORKSPACE: { getByName(name: string): { fetch(request: Request): Promise<Response> } };
 }
 
-export class Workspace {
+/**
+ * The library proxies DevTools and the view through this object, accepting both WebSocket ends,
+ * so Cloudflare counts them as the object's activity, and each request or message renews
+ * `sleepAfter`. Its alarm loop keeps the object running while the instance does.
+ */
+export class Workspace extends Container<WorkspaceEnv> {
+	sleepAfter = "5m";
 	/** Set while a start restores cookies, so no bot opens a page before they are in. */
 	private starting = false;
+	/** When the instance was last used, for the owner's idle measurement. */
+	private lastActivityAt: number | undefined;
 
-	constructor(
-		private state: WorkspaceState,
-		private env: WorkspaceEnv,
-	) {}
-
-	private get container(): ContainerApi {
-		if (!this.state.container) throw new Error("This Durable Object has no container");
-		return this.state.container;
+	private get instance() {
+		if (!this.ctx.container) throw new Error("This Durable Object has no container");
+		return this.ctx.container;
 	}
 
-	async fetch(request: Request): Promise<Response> {
+	override renewActivityTimeout(): void {
+		super.renewActivityTimeout();
+		if (this.ctx.container?.running) this.lastActivityAt = Date.now();
+	}
+
+	override async fetch(request: Request): Promise<Response> {
 		const workspace = request.headers.get("x-workspace") ?? "";
 		const [action = "", ...rest] = new URL(request.url).pathname.split("/").slice(3);
 		const route = `${request.method} ${[action, ...rest].join("/")}`;
 		try {
-			if (route === "POST start") return await this.start(workspace);
+			if (route === "POST start") return await this.open(workspace);
 			if (route === "GET status") return Response.json({ workspace, ...(await this.status()) });
 			if (route === "DELETE cookies") {
-				await this.state.storage.delete("cookies");
+				await this.ctx.storage.delete("cookies");
 				return Response.json({ workspace, deleted: true });
 			}
 			if (route === "POST stop") {
-				const saved = this.container.running ? await this.save().catch(errorOf) : undefined;
-				await this.destroy();
+				const saved = this.instance.running ? await this.save().catch(errorOf) : undefined;
+				await this.shutDown();
 				return Response.json({ workspace, stopped: true, saved });
 			}
 			if (route === "POST discard") {
-				await this.destroy();
+				await this.shutDown();
 				return Response.json({ workspace, stopped: true });
 			}
-			if (!this.container.running) {
+			if (!this.instance.running) {
 				return new Response("Not running. Start it first.", { status: 409 });
 			}
 			if (route === "POST cookies/save")
@@ -137,28 +131,21 @@ export class Workspace {
 		}
 	}
 
-	/**
-	 * Keep-alive while held, and the spending cap in time: the instance never outlives
-	 * MAX_MINUTES, and its cookies are saved before the deadline destroys it.
-	 */
-	async alarm(): Promise<void> {
-		if (!this.container.running) return;
-		const deadline = (await this.state.storage.get<number>("deadline")) ?? 0;
-		if (Date.now() >= deadline) {
-			await this.save().catch(() => undefined);
-			await this.destroy();
-			return;
-		}
-		if ((await this.holds()).length === 0) {
-			// Nothing holds the instance: leave it alone, so Cloudflare's idle stop can take it.
-			await this.state.storage.setAlarm(deadline);
-			return;
-		}
-		await this.touch();
-		await this.state.storage.setAlarm(Math.min(Date.now() + KEEP_ALIVE_MS, deadline));
+	/** Nothing used the instance for `sleepAfter`: a hold keeps it, otherwise save and stop. */
+	override async onActivityExpired(): Promise<void> {
+		if (!this.instance.running || (await this.holds()).length > 0) return;
+		await this.save().catch(() => undefined);
+		await this.shutDown();
 	}
 
-	private async start(workspace: string): Promise<Response> {
+	/** The spending cap in time: the instance never outlives MAX_MINUTES, its cookies saved first. */
+	async deadlinePassed(): Promise<void> {
+		if (!this.instance.running) return;
+		await this.save().catch(() => undefined);
+		await this.shutDown();
+	}
+
+	private async open(workspace: string): Promise<Response> {
 		const began = Date.now();
 		const minutes = Number(this.env.MAX_MINUTES);
 		if (!Number.isFinite(minutes) || minutes <= 0) {
@@ -167,22 +154,24 @@ export class Workspace {
 				{ status: 500 },
 			);
 		}
-		if (this.container.running) return Response.json({ workspace, reused: true });
+		if (this.instance.running) return Response.json({ workspace, reused: true });
 
 		// Decrypt first, so a key that cannot read the stored cookies fails before a billed start.
-		const stored = await this.state.storage.get<StoredCookies>("cookies");
+		const stored = await this.ctx.storage.get<StoredCookies>("cookies");
 		const cookies = stored ? await unseal(stored, this.env.COOKIE_KEY) : [];
 
 		this.starting = true;
 		try {
-			const deadline = began + minutes * 60_000;
-			await this.state.storage.put("deadline", deadline);
-			await this.state.storage.put("holds", []);
-			await this.state.storage.put("keepAlives", 0);
-			// The workspace identity reaches the filter only through this variable.
-			this.container.start({ env: { WORKSPACE_ID: workspace }, enableInternet: true });
-			await this.state.storage.setAlarm(deadline);
-			const control = this.container.getTcpPort(PORTS.control);
+			await this.ctx.storage.put("holds", []);
+			this.deleteSchedules("deadlinePassed");
+			await this.schedule(new Date(began + minutes * 60_000), "deadlinePassed");
+			await this.startAndWaitForPorts({
+				// The workspace identity reaches the filter only through this variable.
+				startOptions: { envVars: { WORKSPACE_ID: workspace }, enableInternet: true },
+				ports: [PORTS.control],
+				cancellationOptions: { portReadyTimeoutMS: READY_TIMEOUT_MS },
+			});
+			const control = this.instance.getTcpPort(PORTS.control);
 			for (;;) {
 				const ready = await control
 					.fetch("http://127.0.0.1:8081/ready")
@@ -194,7 +183,6 @@ export class Workspace {
 				}
 				await new Promise((resolve) => setTimeout(resolve, 500));
 			}
-			await this.state.storage.put("lastActivityAt", Date.now());
 			if (cookies.length) {
 				await browserCommand(this.devtools(), "Storage.setCookies", {
 					cookies: cookies.map(cookieParam),
@@ -203,6 +191,7 @@ export class Workspace {
 		} finally {
 			this.starting = false;
 		}
+		this.renewActivityTimeout();
 		return Response.json({
 			workspace,
 			instanceType: this.env.INSTANCE_TYPE,
@@ -214,7 +203,7 @@ export class Workspace {
 
 	/** ADR-0007: every bot's DevTools access ends before the owner is told the screen is theirs. */
 	private async takeOver(workspace: string): Promise<Response> {
-		const locked = await this.container
+		const locked = await this.instance
 			.getTcpPort(PORTS.gate)
 			.fetch("http://127.0.0.1:8082/lock", { method: "POST" })
 			.then(
@@ -229,7 +218,7 @@ export class Workspace {
 	}
 
 	private async handBack() {
-		const response = await this.container
+		const response = await this.instance
 			.getTcpPort(PORTS.gate)
 			.fetch("http://127.0.0.1:8082/unlock", { method: "POST" });
 		if (!response.ok) throw new Error(`DevTools did not unlock: ${response.status}`);
@@ -238,42 +227,31 @@ export class Workspace {
 	}
 
 	private async holds(): Promise<Hold[]> {
-		return (await this.state.storage.get<Hold[]>("holds")) ?? [];
+		return (await this.ctx.storage.get<Hold[]>("holds")) ?? [];
 	}
 
 	private async hold(name: Hold): Promise<void> {
 		const holds = await this.holds();
-		if (!holds.includes(name)) await this.state.storage.put("holds", [...holds, name]);
-		const deadline = (await this.state.storage.get<number>("deadline")) ?? Date.now();
-		await this.state.storage.setAlarm(Math.min(Date.now() + KEEP_ALIVE_MS, deadline));
+		if (!holds.includes(name)) await this.ctx.storage.put("holds", [...holds, name]);
 	}
 
-	/** Releasing the last hold saves the cookies, before an idle stop can discard them. */
+	/** Releasing the last hold saves the cookies, and `sleepAfter` counts from the release. */
 	private async release(name: Hold) {
 		const holds = (await this.holds()).filter((hold) => hold !== name);
-		await this.state.storage.put("holds", holds);
+		await this.ctx.storage.put("holds", holds);
+		this.renewActivityTimeout();
 		return holds.length === 0 ? this.save() : undefined;
 	}
 
+	/** Reads only the object's own state, so polling it neither touches nor keeps the instance. */
 	private async status() {
+		const running = this.instance.running;
 		return {
-			running: this.container.running,
-			holds: this.container.running ? await this.holds() : [],
-			lastActivityAt: await this.state.storage.get<number>("lastActivityAt"),
-			keepAlives: (await this.state.storage.get<number>("keepAlives")) ?? 0,
-			cookiesSavedAt: (await this.state.storage.get<StoredCookies>("cookies"))?.savedAt,
+			running,
+			holds: running ? await this.holds() : [],
+			lastActivityAt: this.lastActivityAt,
+			cookiesSavedAt: (await this.ctx.storage.get<StoredCookies>("cookies"))?.savedAt,
 		};
-	}
-
-	/** A request to the instance, which Cloudflare counts as activity. */
-	private async touch(): Promise<void> {
-		await this.container
-			.getTcpPort(PORTS.control)
-			.fetch("http://127.0.0.1:8081/ready")
-			.catch(() => undefined);
-		await this.state.storage.put("lastActivityAt", Date.now());
-		const count = (await this.state.storage.get<number>("keepAlives")) ?? 0;
-		await this.state.storage.put("keepAlives", count + 1);
 	}
 
 	/** Exports the browser's cookies over CDP and stores them encrypted. */
@@ -282,20 +260,20 @@ export class Workspace {
 			this.devtools(),
 			"Storage.getCookies",
 		);
-		await this.state.storage.put("lastActivityAt", Date.now());
 		const stored = await seal(cookies, this.env.COOKIE_KEY);
-		await this.state.storage.put("cookies", stored);
+		await this.ctx.storage.put("cookies", stored);
 		const domains = [...new Set(cookies.map((cookie) => cookie.domain))].sort();
 		return { cookies: cookies.length, domains, savedAt: stored.savedAt };
 	}
 
-	private async destroy(): Promise<void> {
-		await this.state.storage.put("holds", []);
-		if (this.container.running) await this.container.destroy();
+	private async shutDown(): Promise<void> {
+		await this.ctx.storage.put("holds", []);
+		this.deleteSchedules("deadlinePassed");
+		if (this.instance.running) await this.instance.destroy();
 	}
 
 	private devtools() {
-		return this.container.getTcpPort(PORTS.devtools);
+		return this.instance.getTcpPort(PORTS.devtools);
 	}
 
 	private async forward(request: Request, port: number, path: string): Promise<Response> {
@@ -307,13 +285,13 @@ export class Workspace {
 		// WebSocket URLs from that Host. 127.0.0.1:9222 is where the owner's loopback proxy listens.
 		const host = port === PORTS.devtools ? "127.0.0.1:9222" : `127.0.0.1:${port}`;
 		const search = new URL(request.url).search;
-		await this.state.storage.put("lastActivityAt", Date.now());
-		return this.container.getTcpPort(port).fetch(
+		return this.containerFetch(
 			new Request(`http://${host}${path}${search}`, {
 				method: request.method,
 				headers,
 				body: request.body,
 			}),
+			port,
 		);
 	}
 }
