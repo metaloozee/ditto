@@ -334,11 +334,41 @@ pnpm feasibility:paid destroy
 
 ##### Local
 
-_Not yet run. Paste the entry `pnpm feasibility:model --route siwc` prints. It carries the sign-in line with the granted scopes and lifetimes._
+###### 2026-11-23 · OpenAI Responses on ChatGPT plan through Sign in with ChatGPT from home network · pass
+
+- **Route:** Pi `openai` provider, model `gpt-5.6-luna`: one turn at https://api.openai.com/v1/responses, expire the stored access token and refresh it at https://auth.openai.com/api/accounts/oauth/token, then one more turn
+- **Runtime:** Pi `@earendil-works/pi-ai` 1.6.0, each step lists every HTTP attempt it made
+- **Date:** 2026-11-23, 11:18 UTC
+- **Network origin:** home network
+- **Expected:** both turns return 200 and reply "pong". The refresh returns 200 with a new access token, and the second turn succeeds on it.
+- **Observed:** turn passed (api.openai.com/v1/responses 200): replied "pong", 5 output tokens in 4.0s. refresh passed (auth.openai.com/api/accounts/oauth/token 200): expires_in 3600s (1h), granted scope `<account claim>`, a new refresh token. turn after refresh passed (api.openai.com/v1/responses 200): replied "pong", 5 output tokens in 2.6s. 3 of 3 runs passed.
+- **Retries:** 11:35 UTC pass, 11:52 UTC pass
+- **Sign-in:** authorization code with PKCE on the 127.0.0.1:1455 loopback, a `urn:uuid` host ID, issued client `<clientId>`. Granted scope `<account claim>`, access token expires_in 3600s, refresh token lifetime not in the token response, ID token valid 3600s. ID token signature, iss, aud, exp and nonce checked: pass. Token response fields: `scope`, `access_token`, `token_type`, `expires_in`, `id_token`, `earliest_refresh_at`, `refresh_token`.
+- **Request fields:** Pi sent `model`, `input`, `stream`, `store`, `reasoning`; input roles `user`. None of the fields the flow rejects (`temperature`, `max_output_tokens`, `previous_response_id`, `prompt`, system-role items). The trial sends no system prompt, so system-role items are not exercised.
+- **Plan-usage error codes:** none
+- **Fallback:** none needed
+
+The two `<account claim>` placeholders are the granted scope, over-redacted: the access token carries the same string in its `scope` claim, and the redactor treated every string claim as an account value. The [transfer entry](#transfer-to-the-bot-durable-object), from a second sign-in on the same date, shows the grant: `chatgpt.tokens.use.direct email offline_access openid profile resource.invoke`. The redactor now keeps the `iss`, `aud` and `scope` claims.
+
+**Findings from this entry:**
+
+- Pi's `openai` provider accepted the token as is, with no OpenAI SDK fallback. It sent `reasoning` besides the required fields, and the endpoint accepted it.
+- `gpt-5.6-luna` answered on the plan, the model the Codex-backend trials used.
+- The token response carries `earliest_refresh_at`, which OpenAI's docs list but do not define. The trial's forced refresh, minutes after sign-in, returned 200 on every run, so the refresh was not refused before that time. Its value was not recorded.
+- The refresh token's lifetime is not in the token response. OpenAI's docs state 30 days, renewed on each refresh.
 
 ##### Transfer to the Bot Durable Object
 
-_Not yet run._
+###### 2026-11-23 · Sign in with ChatGPT transferred to the Bot Durable Object · pass
+
+- **Route:** sign in with ChatGPT on the owner's machine, send the credential once over HTTPS behind the run key to `POST /siwc/import` on the Bot Durable Object, then delete the local copy
+- **Date:** 2026-11-23, 11:28 UTC
+- **Network origin:** home network for the sign-in; the Bot holds the credential from then on
+- **Expected:** the ID token passes every check and the Bot accepts the credential
+- **Sign-in:** authorization code with PKCE on the 127.0.0.1:1455 loopback, a `urn:uuid` host ID, issued client `<clientId>`. Granted scope `chatgpt.tokens.use.direct email offline_access openid profile resource.invoke`, access token expires_in 3600s, refresh token lifetime not in the token response, ID token valid 3600s. ID token signature, iss, aud, exp and nonce checked: pass. Token response fields: `scope`, `access_token`, `token_type`, `expires_in`, `id_token`, `earliest_refresh_at`, `refresh_token`.
+- **Observed:** the Bot accepted the credential. OpenAI granted it under the owner's machine's host ID; the Bot keeps a `urn:uuid` host ID of its own, different from that one, for its next authorization. The local copy was deleted.
+- **Retries:** none
+- **Fallback:** none needed
 
 ##### Deployed in the Bot Durable Object
 
@@ -879,7 +909,7 @@ Every run below is the owner's, with their own accounts. Each prints a redacted 
 | #31 | Deployed Pi trial                                | OpenCode passed, ChatGPT (Codex backend) refused by OpenAI's edge; teardown OK    | `pnpm feasibility:paid deploy`, `pnpm feasibility:paid run --route chatgpt`, `OPENCODE_API_KEY=<key> pnpm feasibility:paid run --route opencode`, `pnpm feasibility:paid destroy`           | the Worker model route and its real CPU           |
 | #32 | Cloudflare Containers trial                      | blocked: needs Workers Paid                                                       | set a billing notification, then `pnpm feasibility:containers deploy --spending-cap-set`, `… checks`, `… takeover google` (then `linkedin`, `protected`), `… stop ws-takeover`, `… destroy` | `NET_ADMIN`, identity, size, logins on Cloudflare |
 
-| #34 | Sign in with ChatGPT, local then Durable Object | built, not yet run | `pnpm feasibility:model --route siwc`; `pnpm feasibility:paid deploy`, `… transfer-siwc`, `… run --route siwc` (later date), `… destroy` | ChatGPT plan on the supported endpoint, self-deployed |
+| #34 | Sign in with ChatGPT, local then Durable Object | local passed, transferred to the Bot; deployed run due 2026-11-24 or later | `pnpm feasibility:model --route siwc`; `pnpm feasibility:paid deploy`, `… transfer-siwc`, `… run --route siwc` (later date), `… destroy` | ChatGPT plan on the supported endpoint, self-deployed |
 | #36 | Browser Run as the workspace browser | unblocked | to be built under #36 | browser provider, restored logins, guardrails (ADR-0012) |
 | #35 | Workers AI tool calling from a Durable Object | blocked: needs Workers Paid | to be built under #35 | the included model (ADR-0011) |
 
