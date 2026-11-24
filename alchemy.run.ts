@@ -53,8 +53,8 @@ export class Website extends Cloudflare.Website.Vite<Website>()(
 							RESEND_BASE_URL: Config.String("RESEND_BASE_URL"),
 							CODE_EXPIRES_IN: Config.String("CODE_EXPIRES_IN"),
 							CODE_RESEND_IN: Config.String("CODE_RESEND_IN"),
-							// Opens /__test/workspace, the unauthenticated proof route (#39).
-							WORKSPACE_PROBE: "on",
+							// Opens the unauthenticated /__test/workspace routes and the interrupted-open fault.
+							TEST_HOOKS: "on",
 						}
 					: {}),
 			},

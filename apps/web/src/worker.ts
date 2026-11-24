@@ -6,10 +6,7 @@ import type { AuthEnv } from "./lib/auth.ts";
 export { ContainerProxy } from "@cloudflare/containers";
 export { Bot, Credentials, Workspace } from "./workspace.ts";
 
-/**
- * Test stage only: nothing unauthenticated reaches an object anywhere else. WORKSPACE_PROBE
- * also gates the eviction route and the interrupted-open fault in workspace.server.ts.
- */
+/** Test stage only: nothing unauthenticated reaches an object anywhere else. */
 async function testRoute(request: Request, env: AuthEnv): Promise<Response | undefined> {
 	const url = new URL(request.url);
 	const probe = /^\/__test\/workspace(?:\/([a-z0-9-]+))?$/.exec(url.pathname);
@@ -27,7 +24,7 @@ async function testRoute(request: Request, env: AuthEnv): Promise<Response | und
 
 export default {
 	async fetch(request: Request, env: AuthEnv) {
-		const testResponse = env.WORKSPACE_PROBE === "on" ? await testRoute(request, env) : undefined;
+		const testResponse = env.TEST_HOOKS === "on" ? await testRoute(request, env) : undefined;
 		return testResponse ?? handler.fetch(request);
 	},
 };
