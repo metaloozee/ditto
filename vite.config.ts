@@ -20,6 +20,21 @@ const authTests = {
 	},
 };
 
+const feasibilityTests = {
+	// The Containers trial's Durable Object extends @cloudflare/containers, which imports
+	// workerd's built-ins and ships extensionless ESM imports, so Vite transforms it.
+	resolve: {
+		alias: {
+			"cloudflare:workers": `${import.meta.dirname}/feasibility/cloudflare-workers.fake.ts`,
+		},
+	},
+	test: {
+		name: "feasibility",
+		include: ["feasibility/*.test.ts"],
+		server: { deps: { inline: ["@cloudflare/containers"] } },
+	},
+};
+
 export default defineConfig({
 	fmt: {
 		ignorePatterns: [...ignorePatterns, "skills-lock.json", "pnpm-lock.yaml"],
@@ -36,7 +51,7 @@ export default defineConfig({
 		projects: [
 			{ test: { name: "web", include: ["apps/web/tests/*.test.ts"] } },
 			// Browser tests stay local: CI minutes are scarce.
-			...(process.env.CI ? [] : [authTests]),
+			...(process.env.CI ? [] : [authTests, feasibilityTests]),
 		],
 	},
 	staged: { "*.{js,ts,jsx,tsx}": "vp check --fix" },

@@ -1,0 +1,8 @@
+# Only the Cloudflare Containers image (#32) builds from this folder. Its context holds just the
+# files it copies, so no Alchemy state, sign-in or test file can reach an image layer.
+*
+!egress/filter/egress_filter.py
+!egress/destinations/*.txt
+!takeover/destinations/*.txt
+!containers/destinations/*.txt
+!containers/image/

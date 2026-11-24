@@ -1,0 +1,28 @@
+# Approved destinations for workspace ws-takeover (#29), one host per line.
+# Found by loading each login page and reading the filter's deny log. Analytics,
+# consent banners and Chromium's own background traffic stay denied.
+# When a step fails during the trial, add the denied host it needs and record it.
+
+# Google sign-in and the task page
+accounts.google.com
+myaccount.google.com
+www.google.com
+www.gstatic.com
+ssl.gstatic.com
+fonts.gstatic.com
+fonts.googleapis.com
+apis.google.com
+lh3.googleusercontent.com
+accounts.youtube.com
+
+# LinkedIn sign-in and the task page
+www.linkedin.com
+static.licdn.com
+media.licdn.com
+platform.linkedin.com
+
+# Protected site: Cloudflare dashboard, whose sign-in sits behind a Turnstile challenge
+dash.cloudflare.com
+challenges.cloudflare.com
+brunhild.challenges.cloudflare.com
+platform.dash.cloudflare.com
