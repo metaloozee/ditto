@@ -28,6 +28,8 @@ Fill in `.env` before running `dev`. The Worker reads these settings at startup 
 
 `.env` is gitignored. Alchemy loads it from the repository root; pass `--env-file <path>` to use another file. The browser auth tests start their own `test` stage with fake providers and need none of these values.
 
+Every local stage, `dev` and the tests' `test` stage included, needs Docker running: Alchemy pulls the Workspace object's container image when the stage starts.
+
 `vp run dev` runs the Worker locally through Alchemy. To start TanStack Start's Vite server directly, run `pnpm exec vp -C apps/web dev`. Edit `apps/web/src/routes/index.tsx` to change the homepage. The root route owns Ditto’s document metadata.
 
 The workspace installs Vite+ locally. Prefix `vp` commands with `pnpm exec` when using the local CLI. With the global CLI, `vp install` uses the project's pnpm pin. Run project scripts with `vp run <task>`.
@@ -42,6 +44,6 @@ Verification runs `vp check` (Oxfmt, Oxlint, and type checks), `vp test run` (Vi
 
 ## Cloudflare infrastructure
 
-`alchemy.run.ts` defines one Worker per stage. Alchemy appends the selected stage to `ditto-app-`, producing names such as `ditto-app-dev`, `ditto-app-staging`, and `ditto-app-prod`. Its entry point in `apps/web/src/worker.ts` serves the TanStack Start app.
+`alchemy.run.ts` defines one Worker per stage. Alchemy appends the selected stage to `ditto-app-`, producing names such as `ditto-app-dev`, `ditto-app-staging`, and `ditto-app-prod`. Its entry point in `apps/web/src/worker.ts` serves the TanStack Start app and exports the Workspace, Bot and Credentials Durable Objects. The Workspace object is backed by a Cloudflare Container.
 
 The workspace scripts target `dev`. To deploy another stage, run `pnpm exec alchemy plan --stage staging` and then `pnpm exec alchemy deploy --stage staging`, substituting the desired stage in both commands. Alchemy tracks each stage in local state under `.alchemy/`. For existing deployments, run the plan from the checkout holding the stage’s state. Applying the Worker-only stack can delete previously managed resources and their data.

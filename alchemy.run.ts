@@ -5,6 +5,8 @@ import * as Alchemy from "alchemy";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 
+import type { Bot, Credentials, Workspace } from "./apps/web/src/workspace.ts";
+
 const AuthDatabase = Cloudflare.D1.Database("auth-db", {
 	migrations: path.join(import.meta.dirname, "apps/web/drizzle"),
 });
@@ -19,9 +21,21 @@ export class Website extends Cloudflare.Website.Vite<Website>()(
 			name: `ditto-app-${stage}`,
 			rootDir: path.join(import.meta.dirname, "apps/web"),
 			main: "src/worker.ts",
+			// Matches the pinned workerd. The date alone turns on `nodejs_compat`.
+			compatibility: { date: "2026-10-26" },
 			dev: { port: Number(origin.port) || 1337, strictPort: true },
 			env: {
 				DB: AuthDatabase,
+				WORKSPACE: Cloudflare.Container<Workspace>("workspace", {
+					className: "Workspace",
+					// A stand-in until the shared computer's image lands. Nothing starts it yet.
+					image: "busybox:1.37",
+					maxInstances: 1,
+				}),
+				BOT: Cloudflare.DurableObject<Bot>("bot", { className: "Bot" }),
+				CREDENTIALS: Cloudflare.DurableObject<Credentials>("credentials", {
+					className: "Credentials",
+				}),
 				BETTER_AUTH_URL: origin.origin,
 				BETTER_AUTH_SECRET: Config.Redacted("BETTER_AUTH_SECRET"),
 				GITHUB_CLIENT_ID: Config.String("GITHUB_CLIENT_ID"),
@@ -39,6 +53,8 @@ export class Website extends Cloudflare.Website.Vite<Website>()(
 							RESEND_BASE_URL: Config.String("RESEND_BASE_URL"),
 							CODE_EXPIRES_IN: Config.String("CODE_EXPIRES_IN"),
 							CODE_RESEND_IN: Config.String("CODE_RESEND_IN"),
+							// Opens /__test/workspace, the unauthenticated proof route (#39).
+							WORKSPACE_PROBE: "on",
 						}
 					: {}),
 			},
