@@ -31,12 +31,15 @@ async def pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> No
 
 
 async def relay(client_reader: asyncio.StreamReader, client: asyncio.StreamWriter) -> None:
-    if state["locked"]:
-        client.close()
-        return
     try:
         chrome_reader, chrome = await asyncio.open_connection(*CHROME)
     except OSError:
+        client.close()
+        return
+    # Checked after the connect, with no await before registering, so a /lock that ran while
+    # this connection was opening still stops it.
+    if state["locked"]:
+        chrome.close()
         client.close()
         return
     sessions.update((client, chrome))
