@@ -33,9 +33,9 @@ The Codex backend that Pi's `openai-codex` provider calls (`https://chatgpt.com/
 
 **Security guarantees it supports:**
 
-- Every request spends the owner's own access. Ditto holds no shared upstream key (ADR-0003).
+- An owner-supplied connection spends the owner's allowance (ADR-0003). The operator pays for the optional included Workers AI model (ADR-0011).
 - A trial Worker that accepts a credential refuses every request without the stage's run key (`feasibility/run-key.ts`), so a deployed endpoint does not relay for anyone who can reach it. Production needs a real owner sign-in in its place.
-- The paid trial Worker stores no credential. The free-tier probe keeps its rotated ChatGPT tokens in its own KV namespace between runs, a trial-only exception noted under [Free-tier Worker probe (#30)](#free-tier-worker-probe-30). Each sign-in file lives outside the repo, one per stage, so no stage retires another's refresh token.
+- In #31 the paid Worker used credentials for the request only. In #34 the paid Bot Durable Object stored the transferred ChatGPT credential and its replacements until stage teardown. The free-tier probe kept rotated ChatGPT tokens in its own KV namespace between runs, as recorded under [Free-tier Worker probe (#30)](#free-tier-worker-probe-30). Each sign-in file lives outside the repo, one per stage, so no stage retires another's refresh token.
 
 **Unresolved limits:**
 

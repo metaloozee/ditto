@@ -4,14 +4,14 @@ An owner asks Ditto, the workspace’s Chief of Staff, for a file. A specialist 
 
 ## Who owns each decision?
 
-| Module | Interface and durable responsibility |
-| --- | --- |
-| Authenticated Worker | Resolve the Ditto account from its session and check ownership before forwarding a request, opening a WebSocket, or serving a file. The server derives resource identities. D1 holds account and workspace lookups and a rebuildable bot-list projection. |
-| Workspace Durable Object, one per workspace | Provision the permanent Chief of Staff once. Own membership, shared profile, tasks, timeline, approvals, and outbox. Record each task transition with its outgoing delivery and use stable operation IDs on retry. The same object owns the Container, screen leases, and encrypted workspace login cookies. |
-| Bot Durable Object, one per bot | Own the bot’s conversation and private memory. Run Pi on Workers Paid. Pin each turn to its selected model and connection. A bot can converse while the computer sleeps. The specialist proposes a result, the Chief of Staff checks it, and the Workspace records completion. |
-| Credentials Durable Object, one per account | Store model connections and serialize refresh across bots. An owner can supply an OpenCode key or an eligible ChatGPT plan. The operator can also offer Workers AI. Route included-model requests through Credentials for account attribution. A settings change alone cannot move interrupted work to a different paid connection. |
-| Shared computer, one Cloudflare Container per active workspace | Start on demand. Give each active bot a leased screen and Chromium profile on the shared disk. Route screen traffic through the Workspace object. Its in-instance filter permits only exact hosts approved for that workspace. Check the filter before exposing private logins. |
-| R2 | Keep published deliverables, screenshots, and home backups outside the disposable instance disk. A deliverable becomes available after a successful upload and remains accessible to its owner after shutdown or specialist deletion. |
+| Module                                                         | Interface and durable responsibility                                                                                                                                                                                                                                                                                                |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Authenticated Worker                                           | Resolve the Ditto account from its session and check ownership before forwarding a request, opening a WebSocket, or serving a file. The server derives resource identities. D1 holds account and workspace lookups and a rebuildable bot-list projection.                                                                           |
+| Workspace Durable Object, one per workspace                    | Provision the permanent Chief of Staff once. Own membership, shared profile, tasks, timeline, approvals, and outbox. Record each task transition with its outgoing delivery and use stable operation IDs on retry. The same object owns the Container, screen leases, and encrypted workspace login cookies.                        |
+| Bot Durable Object, one per bot                                | Own the bot’s conversation and private memory. Run Pi on Workers Paid. Pin each turn to its selected model and connection. A bot can converse while the computer sleeps. The specialist proposes a result, the Chief of Staff checks it, and the Workspace records completion.                                                      |
+| Credentials Durable Object, one per account                    | Store model connections and serialize refresh across bots. An owner can supply an OpenCode key or an eligible ChatGPT plan. The operator can also offer Workers AI. Route included-model requests through Credentials for account attribution. A settings change alone cannot move interrupted work to a different paid connection. |
+| Shared computer, one Cloudflare Container per active workspace | Start on demand. Give each active bot a leased screen and Chromium profile on the shared disk. Route screen traffic through the Workspace object. Its in-instance filter permits only exact hosts approved for that workspace. Check the filter before exposing private logins.                                                     |
+| R2                                                             | Keep published deliverables, screenshots, and home backups outside the disposable instance disk. A deliverable becomes available after a successful upload and remains accessible to its owner after shutdown or specialist deletion.                                                                                               |
 
 Workspace provisioning, model access, and bot turns have separate lifetimes. Reopening a workspace from another device resolves the same Chief of Staff. It need not start the computer or a model turn. Hosted ChatGPT plan onboarding still requires OpenAI approval. [Workspace spec](https://github.com/metaloozee/ditto/issues/17) · [Model access spec](https://github.com/metaloozee/ditto/issues/18) · [Bot spec](https://github.com/metaloozee/ditto/issues/19)
 
@@ -132,18 +132,39 @@ INVARIANT ExclusiveInput BotNeedsScreen VerifiedFile
 `view.mjs`
 
 ```js
-const phases = { Ready: "Workspace ready", Assigned: "Specialist assigned", Working: "Specialist working", Checking: "Ditto checking result", Complete: "Verified file delivered", Cancelled: "Task cancelled" };
-const screens = { draining: "Pausing screen access", owner: "Owner in control", reserved: "Waiting for owner", inspect: "Bot inspecting screen" };
-export const state = v => phases[v.phase] ?? screens[v.screen];
-export const step = a => ({
-  Assign: "owner requests a file", Start: "specialist acquires screen",
-  RequestControl: "owner requests take-over", GrantControl: "screen observers and input stopped",
-  Disconnect: "controlling tab disconnects", Reclaim: "owner reclaims screen",
-  HandBack: "owner hands back", Inspect: "bot reads current screen",
-  LoseComputer: "computer lost; resume assignment", Propose: "specialist proposes result",
-  ReturnWork: "requirement missing", Accept: "published file meets request",
-  Cancel: "owner cancels", Publish: "file uploaded", Done: "finished"
-})[a];
+const phases = {
+  Ready: "Workspace ready",
+  Assigned: "Specialist assigned",
+  Working: "Specialist working",
+  Checking: "Ditto checking result",
+  Complete: "Verified file delivered",
+  Cancelled: "Task cancelled",
+};
+const screens = {
+  draining: "Pausing screen access",
+  owner: "Owner in control",
+  reserved: "Waiting for owner",
+  inspect: "Bot inspecting screen",
+};
+export const state = (v) => phases[v.phase] ?? screens[v.screen];
+export const step = (a) =>
+  ({
+    Assign: "owner requests a file",
+    Start: "specialist acquires screen",
+    RequestControl: "owner requests take-over",
+    GrantControl: "screen observers and input stopped",
+    Disconnect: "controlling tab disconnects",
+    Reclaim: "owner reclaims screen",
+    HandBack: "owner hands back",
+    Inspect: "bot reads current screen",
+    LoseComputer: "computer lost; resume assignment",
+    Propose: "specialist proposes result",
+    ReturnWork: "requirement missing",
+    Accept: "published file meets request",
+    Cancel: "owner cancels",
+    Publish: "file uploaded",
+    Done: "finished",
+  })[a];
 ```
 
 </details>
