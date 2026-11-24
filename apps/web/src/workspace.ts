@@ -1,21 +1,10 @@
 import { Container } from "@cloudflare/containers";
 import { DurableObject } from "cloudflare:workers";
 
-export interface ChiefOfStaff {
-	id: string;
-	name: "Ditto";
-}
-
-export type OpenedWorkspace =
-	| {
-			workspaceId: string;
-			chiefOfStaff: ChiefOfStaff;
-			computer: "stopped" | "running";
-	  }
-	| { refused: "not the owner" };
+import type { ChiefOfStaff, OpenedWorkspace, WorkspaceRpc } from "./workspace-rpc.ts";
 
 /** One per workspace, owning who may open it, its Chief of Staff and its shared computer. */
-export class Workspace extends Container {
+export class Workspace extends Container implements WorkspaceRpc {
 	/**
 	 * Admits the workspace's owner, claiming it on first open, and provisions the permanent
 	 * Chief of Staff once. Never starts the shared computer.

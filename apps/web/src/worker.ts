@@ -1,13 +1,19 @@
 import handler from "@tanstack/react-start/server-entry";
 
-import type { AuthEnv } from "./lib/auth.ts";
+import type { Workspace } from "./workspace.ts";
 
 // The library reaches it through ctx.exports when a Workspace restarts beside a running instance.
 export { ContainerProxy } from "@cloudflare/containers";
 export { Bot, Credentials, Workspace } from "./workspace.ts";
 
+/** The bindings this file reads; alchemy.run.ts declares them all. */
+interface WorkerEnv {
+	WORKSPACE: DurableObjectNamespace<Workspace>;
+	TEST_HOOKS?: string;
+}
+
 /** Test stage only: nothing unauthenticated reaches an object anywhere else. */
-async function testRoute(request: Request, env: AuthEnv): Promise<Response | undefined> {
+async function testRoute(request: Request, env: WorkerEnv): Promise<Response | undefined> {
 	const url = new URL(request.url);
 	const probe = /^\/__test\/workspace(?:\/([a-z0-9-]+))?$/.exec(url.pathname);
 	if (probe) return env.WORKSPACE.getByName(probe[1] ?? "probe").fetch(request);
@@ -23,7 +29,7 @@ async function testRoute(request: Request, env: AuthEnv): Promise<Response | und
 }
 
 export default {
-	async fetch(request: Request, env: AuthEnv) {
+	async fetch(request: Request, env: WorkerEnv) {
 		const testResponse = env.TEST_HOOKS === "on" ? await testRoute(request, env) : undefined;
 		return testResponse ?? handler.fetch(request);
 	},

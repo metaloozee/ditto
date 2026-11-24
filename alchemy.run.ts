@@ -5,7 +5,7 @@ import * as Alchemy from "alchemy";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 
-import type { Bot, Credentials, Workspace } from "./apps/web/src/workspace.ts";
+import type { WorkspaceRpc } from "./apps/web/src/workspace-rpc.ts";
 
 const AuthDatabase = Cloudflare.D1.Database("auth-db", {
 	migrations: path.join(import.meta.dirname, "apps/web/drizzle"),
@@ -26,14 +26,14 @@ export class Website extends Cloudflare.Website.Vite<Website>()(
 			dev: { port: Number(origin.port) || 1337, strictPort: true },
 			env: {
 				DB: AuthDatabase,
-				WORKSPACE: Cloudflare.Container<Workspace>("workspace", {
+				WORKSPACE: Cloudflare.Container<WorkspaceRpc>("workspace", {
 					className: "Workspace",
 					// A stand-in until the shared computer's image lands. Nothing starts it yet.
 					image: "busybox:1.37",
 					maxInstances: 1,
 				}),
-				BOT: Cloudflare.DurableObject<Bot>("bot", { className: "Bot" }),
-				CREDENTIALS: Cloudflare.DurableObject<Credentials>("credentials", {
+				BOT: Cloudflare.DurableObject<unknown>("bot", { className: "Bot" }),
+				CREDENTIALS: Cloudflare.DurableObject<unknown>("credentials", {
 					className: "Credentials",
 				}),
 				BETTER_AUTH_URL: origin.origin,
