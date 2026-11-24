@@ -37,6 +37,10 @@ _Avoid_: Free model, default key
 
 The personal space where one owner works with Ditto and their team of bots on a shared computer.
 
+**Chief of Staff**
+
+Ditto, the permanent bot in a workspace. The owner can ask it to assign work to a specialist and check the result against the request.
+
 **Shared computer**
 
 The one computer a workspace's bots share, with one disk holding its files and logins. Each bot works on its own screen there.

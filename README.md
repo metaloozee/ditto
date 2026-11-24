@@ -2,6 +2,8 @@
 
 Ditto starts with the single-page TanStack Start template. The pnpm workspace contains the React and Tailwind app in `apps/web` and the Alchemy stack at the repository root.
 
+See the [workspace architecture and checked statechart](docs/architecture.md) for the design of delegated work, screen control, and recovery.
+
 ## Getting started
 
 Use the Node.js version in `.node-version` and the pnpm version pinned in `package.json`.
