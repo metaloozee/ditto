@@ -1,8 +1,47 @@
 import { Container } from "@cloudflare/containers";
 import { DurableObject } from "cloudflare:workers";
 
-/** One per workspace, owning its shared computer. */
+export interface ChiefOfStaff {
+	id: string;
+	name: "Ditto";
+}
+
+export type OpenedWorkspace =
+	| {
+			workspaceId: string;
+			chiefOfStaff: ChiefOfStaff;
+			computer: "stopped" | "running";
+	  }
+	| { refused: "not the owner" };
+
+/** One per workspace, owning who may open it, its Chief of Staff and its shared computer. */
 export class Workspace extends Container {
+	/**
+	 * Admits the workspace's owner, claiming it on first open, and provisions the permanent
+	 * Chief of Staff once. Never starts the shared computer.
+	 */
+	async open(workspaceId: string, accountId: string): Promise<OpenedWorkspace> {
+		const owner = await this.ctx.storage.get<string>("owner");
+		if (owner !== undefined && owner !== accountId) return { refused: "not the owner" };
+		if (owner === undefined) await this.ctx.storage.put("owner", accountId);
+
+		let chiefOfStaff = await this.ctx.storage.get<ChiefOfStaff>("chiefOfStaff");
+		if (!chiefOfStaff) {
+			chiefOfStaff = { id: `bot-${crypto.randomUUID()}`, name: "Ditto" };
+			await this.ctx.storage.put("chiefOfStaff", chiefOfStaff);
+		}
+		return {
+			workspaceId,
+			chiefOfStaff,
+			computer: this.ctx.container?.running ? "running" : "stopped",
+		};
+	}
+
+	/** Test stage only: drops the object from memory, as an eviction would. */
+	evict(): void {
+		this.ctx.abort("evicted by the test stage");
+	}
+
 	override async fetch(request: Request): Promise<Response> {
 		if (request.headers.get("upgrade")?.toLowerCase() === "websocket") {
 			const { 0: client, 1: server } = new WebSocketPair();

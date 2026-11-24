@@ -18,6 +18,7 @@ import { Route as AccountSettingsRouteImport } from './routes/_account/settings'
 import { Route as DesignAuthRouteImport } from './routes/design_.auth'
 import { Route as AccountSettingsVerifyEmailRouteImport } from './routes/_account/settings_.verify-email'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiWorkspaceOpenRouteImport } from './routes/api/workspace/open'
 
 const AccountRoute = AccountRouteImport.update({
   id: '/_account',
@@ -64,6 +65,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiWorkspaceOpenRoute = ApiWorkspaceOpenRouteImport.update({
+  id: '/api/workspace/open',
+  path: '/api/workspace/open',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AccountIndexRoute
@@ -74,6 +80,7 @@ export interface FileRoutesByFullPath {
   '/design/auth': typeof DesignAuthRoute
   '/settings/verify-email': typeof AccountSettingsVerifyEmailRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/workspace/open': typeof ApiWorkspaceOpenRoute
 }
 export interface FileRoutesByTo {
   '/design': typeof DesignRoute
@@ -84,6 +91,7 @@ export interface FileRoutesByTo {
   '/': typeof AccountIndexRoute
   '/settings/verify-email': typeof AccountSettingsVerifyEmailRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/workspace/open': typeof ApiWorkspaceOpenRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -96,6 +104,7 @@ export interface FileRoutesById {
   '/_account/': typeof AccountIndexRoute
   '/_account/settings_/verify-email': typeof AccountSettingsVerifyEmailRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/workspace/open': typeof ApiWorkspaceOpenRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -108,6 +117,7 @@ export interface FileRouteTypes {
     | '/design/auth'
     | '/settings/verify-email'
     | '/api/auth/$'
+    | '/api/workspace/open'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/design'
@@ -118,6 +128,7 @@ export interface FileRouteTypes {
     | '/'
     | '/settings/verify-email'
     | '/api/auth/$'
+    | '/api/workspace/open'
   id:
     | '__root__'
     | '/_account'
@@ -129,6 +140,7 @@ export interface FileRouteTypes {
     | '/_account/'
     | '/_account/settings_/verify-email'
     | '/api/auth/$'
+    | '/api/workspace/open'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -138,6 +150,7 @@ export interface RootRouteChildren {
   SignUpRoute: typeof SignUpRoute
   DesignAuthRoute: typeof DesignAuthRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiWorkspaceOpenRoute: typeof ApiWorkspaceOpenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -205,6 +218,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/workspace/open': {
+      id: '/api/workspace/open'
+      path: '/api/workspace/open'
+      fullPath: '/api/workspace/open'
+      preLoaderRoute: typeof ApiWorkspaceOpenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -230,6 +250,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignUpRoute: SignUpRoute,
   DesignAuthRoute: DesignAuthRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiWorkspaceOpenRoute: ApiWorkspaceOpenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

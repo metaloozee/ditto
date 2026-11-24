@@ -19,6 +19,11 @@ declare module "cloudflare:workers" {
 
 	export interface DurableObjectState {
 		readonly container?: { readonly running: boolean };
+		readonly storage: {
+			get<T>(key: string): Promise<T | undefined>;
+			put(key: string, value: unknown): Promise<void>;
+		};
+		abort(reason?: string): void;
 	}
 
 	export abstract class DurableObject<Env = unknown> {
