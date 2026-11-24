@@ -63,6 +63,9 @@ const INSTANCE_TYPES = ["lite", "basic", "standard-1", "standard-2", "standard-3
 const TAKEOVER = "ws-takeover";
 const SLOT = "Desktop provider > Browser health on the shared computer (#37)";
 const LOGINS: WorkflowId[] = ["google", "linkedin"];
+// echo.websocket.org ends every connection at about 10 minutes. From the home network on
+// 2026-11-24 this one held a busy and a silent socket for 36, so an early close is not the far end.
+const LONG_SOCKET_HOST = "echo.websocket.in";
 
 const log = (message: string) => console.error(`[containers] ${message}`);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -494,8 +497,8 @@ const longSocketProbe = (holdMs: number) => `(() => {
 	const blank = () => ({ opened: false, greeting: null, sent: 0, echoed: 0, openForMs: 0, openAtEnd: false, closeCode: null });
 	const out = { active: blank(), idle: blank(), result: null };
 	window.__longSocket = out;
-	const a = new WebSocket("wss://echo.websocket.org/");
-	const i = new WebSocket("wss://echo.websocket.org/");
+	const a = new WebSocket("wss://${LONG_SOCKET_HOST}/");
+	const i = new WebSocket("wss://${LONG_SOCKET_HOST}/");
 	let aStart = 0, iStart = 0, timer;
 	const send = () => { a.send("ping " + out.active.sent); out.active.sent++; };
 	a.onmessage = ({ data }) => { if (String(data).startsWith("ping ")) out.active.echoed++; else out.active.greeting ??= "greeting"; };
@@ -552,11 +555,12 @@ async function socket() {
 		const upgradeAllowed = (await decisionsOf(t, CHECK_WORKSPACE)())
 			.slice(before)
 			.some(
-				(d) =>
-					d.host === "echo.websocket.org" && d.method === "WEBSOCKET" && d.decision === "allow",
+				(d) => d.host === LONG_SOCKET_HOST && d.method === "WEBSOCKET" && d.decision === "allow",
 			);
 		log(`Paste this entry under ${SLOT} > Long sessions:`);
-		process.stdout.write(socketEntry({ at, holdMs, ...result, upgradeAllowed }));
+		process.stdout.write(
+			socketEntry({ at, holdMs, farEnd: LONG_SOCKET_HOST, ...result, upgradeAllowed }),
+		);
 	} finally {
 		tab.close();
 		await devtools.close();

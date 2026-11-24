@@ -243,6 +243,7 @@ export function capacityEntry(run: {
 export function socketEntry(run: {
 	at: Date;
 	holdMs: number;
+	farEnd: string;
 	active: WebSocketSession;
 	idle: { opened: boolean; openForMs: number; openAtEnd: boolean; closeCode: number | null };
 	upgradeAllowed: boolean;
@@ -258,7 +259,7 @@ export function socketEntry(run: {
 	return render({
 		heading: `WebSocket held ${minutes(run.holdMs)} through the filter, with its idle timeout`,
 		at: run.at,
-		route: `${ROUTE}. The page opens two sockets to \`wss://echo.websocket.org/\`: one pings every 10 s for the hold, one sends nothing after its greeting. The filter runs mitmproxy 12.3.1 with its default \`tcp_timeout\` of 600 s`,
+		route: `${ROUTE}. The page opens two sockets to \`wss://${run.farEnd}/\`: one pings every 10 s for the hold, one sends nothing after its greeting. The filter runs mitmproxy 12.3.1 with its default \`tcp_timeout\` of 600 s`,
 		expected:
 			"the active socket stays open with every ping echoed; the idle socket shows the idle timeout of the filter or the far end, if any",
 		observed: `active: ${active.echoed} of ${active.sent} pings echoed, open for ${minutes(active.openForMs)}, open at end: ${active.openAtEnd}, close code ${active.closeCode ?? "none"}. Idle: ${idle.openAtEnd ? `still open after ${minutes(idle.openForMs)}` : `closed after ${seconds(idle.openForMs)} with code ${idle.closeCode ?? "none"}`}. Filter logged the WebSocket allow: ${run.upgradeAllowed ? "yes" : "no"}.`,
