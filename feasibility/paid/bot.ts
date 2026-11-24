@@ -8,6 +8,7 @@ import { type Credential, InMemoryCredentialStore } from "@earendil-works/pi-ai"
 
 import { PI_PROVIDER, runModelTrial } from "../model-trial.ts";
 import { type ModelTrialEnv, trialStream } from "../model-worker.ts";
+import { redact } from "../redact.ts";
 import { runWorkersAiTrial, type WorkersAiBinding } from "../workers-ai-trial.ts";
 
 export interface BotEnv extends ModelTrialEnv {
@@ -130,8 +131,13 @@ export class Bot {
 				},
 			});
 			await keep();
-			// The credential never leaves: this object owns its refreshes.
-			return { run, credential: undefined };
+			// The credential never leaves: this object owns its refreshes, so it redacts the run
+			// itself and returns none of the token values it saw.
+			const steps = run.steps.map((step) => ({
+				...step,
+				detail: redact(step.detail, run.secrets),
+			}));
+			return { run: { ...run, steps, secrets: [] }, credential: undefined };
 		});
 	}
 }

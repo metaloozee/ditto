@@ -239,4 +239,18 @@ describe("Sign in with ChatGPT in the trial Durable Object (#34)", () => {
 		expect(entry).toMatch(/from the Durable Object's tail event/);
 		for (const secret of [...secrets, SIWC_CLIENT_ID]) expect(entry).not.toContain(secret);
 	}, 90_000);
+
+	it("answers a trial without any token of the sign-in it owns", async () => {
+		// The Bot keeps the sign-in the previous test rotated, so this run refreshes it again.
+		const response = await fetch(`${WORKER_URL}/siwc/trial`, {
+			method: "POST",
+			headers,
+			body: "{}",
+		});
+		const body = await response.text();
+
+		expect(body).toContain('"outcome":"pass"');
+		const tokens = [1, 2, 3, 4, 5].flatMap((g) => [accessToken(g), refreshToken(g)]);
+		for (const secret of [...tokens, ACCOUNT_ID, EMAIL]) expect(body).not.toContain(secret);
+	}, 90_000);
 });
