@@ -5,7 +5,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type { BrowserContext, Page } from "playwright";
 import { describe, expect, it } from "vite-plus/test";
 
-import { SESSION_EXPIRES_IN } from "../auth/setup.ts";
+import { COOKIE_ENCRYPTION_KEY, SESSION_EXPIRES_IN } from "../auth/setup.ts";
 import { appUrl, continueWithGitHub, gitHubUser, newVisitor } from "../auth/visitor.ts";
 
 interface WorkspaceAnswer {
@@ -118,6 +118,31 @@ describe("the workspace gateway", () => {
 			"hello, workspace",
 		);
 		await expect(reached(context, workspaceId)).resolves.toMatchObject({ running: false });
+	});
+
+	it("reports to the owner that every named binding resolves, without revealing the cookie key", async () => {
+		const alice = await owner();
+		const bob = await owner();
+
+		const answer = await alice.context.request.get(`${workspacePath(alice.workspaceId)}/bindings`);
+		const body = await answer.text();
+		expect(answer.status(), body).toBe(200);
+		expect(JSON.parse(body)).toEqual({
+			DB: "resolved",
+			WORKSPACE: "resolved",
+			BOT: "resolved",
+			CREDENTIALS: "resolved",
+			FILES: "resolved",
+			COOKIE_ENCRYPTION_KEY: "resolved",
+		});
+		expect(body).not.toContain(COOKIE_ENCRYPTION_KEY);
+		// Touching the Workspace object never starts its computer.
+		await expect(reached(alice.context, alice.workspaceId)).resolves.toMatchObject({
+			running: false,
+		});
+
+		const foreign = await bob.context.request.get(`${workspacePath(alice.workspaceId)}/bindings`);
+		expect(foreign.status()).toBe(404);
 	});
 
 	it("refuses another account's workspace exactly as it refuses an unknown one, before forwarding", async () => {

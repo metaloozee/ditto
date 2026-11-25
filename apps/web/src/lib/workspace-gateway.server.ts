@@ -154,6 +154,40 @@ function withCookies(answer: Response, refreshed: Headers): Response {
 	return kept;
 }
 
+/** Calls a Durable Object's `GET /` and checks it answers as the class it should be. */
+async function answersAs(stub: { fetch(request: Request): Promise<Response> }, className: string) {
+	const response = await stub.fetch(new Request("http://object/"));
+	const answer = (await response.json()) as { object?: unknown };
+	return answer.object === className;
+}
+
+/**
+ * Whether each named binding resolves in this deployment, touched as the owner's own requests
+ * would touch it. Never starts the computer, and reports the cookie key only as present.
+ */
+async function bindings(admitted: Admitted) {
+	const probes = {
+		DB: async () => (await env.DB.prepare("select 1 as one").first("one")) === 1,
+		WORKSPACE: () => answersAs(admitted.workspace, "Workspace"),
+		BOT: () => answersAs(env.BOT.getByName(admitted.workspaceId), "Bot"),
+		CREDENTIALS: () => answersAs(env.CREDENTIALS.getByName(admitted.accountId), "Credentials"),
+		FILES: async () => {
+			// A missing key answers null; only a missing or broken bucket throws.
+			await env.FILES.head(`${admitted.workspaceId}/`);
+			return true;
+		},
+		COOKIE_ENCRYPTION_KEY: async () =>
+			typeof env.COOKIE_ENCRYPTION_KEY === "string" && env.COOKIE_ENCRYPTION_KEY.length > 0,
+	};
+	const results = await Promise.all(
+		Object.entries(probes).map(async ([name, probe]) => {
+			const resolved = await probe().catch(() => false);
+			return [name, resolved ? "resolved" : "missing"] as const;
+		}),
+	);
+	return Object.fromEntries(results);
+}
+
 /** Answers an admitted request in the Worker, or forwards it to the workspace's object. */
 async function route(request: Request, admitted: Admitted, rest: string): Promise<Response> {
 	const { method } = request;
@@ -181,6 +215,7 @@ async function route(request: Request, admitted: Admitted, rest: string): Promis
 	if (rest.startsWith(FILES) && method === "GET") {
 		return serveFile(admitted.workspaceId, rest.slice(FILES.length));
 	}
+	if (rest === "/bindings" && method === "GET") return Response.json(await bindings(admitted));
 	const url = new URL(request.url);
 	const forwarded = new Request(new URL(rest + url.search, url.origin), request);
 	// Replaces anything the client sent, so only the server-resolved ID reaches the object.
