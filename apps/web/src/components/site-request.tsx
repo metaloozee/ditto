@@ -495,7 +495,12 @@ function ListChoice({ onDecide, ...frame }: ChoiceProps) {
 		>
 			<Textarea
 				value={text}
-				onChange={(event) => setText(event.target.value)}
+				onChange={(event) => {
+					const next = event.target.value;
+					const stillTyped = new Set(parseSiteList(next).hosts);
+					setText(next);
+					setRemoved(new Set([...removed].filter((host) => stillTyped.has(host))));
+				}}
 				placeholder="gmail, notion, https://linear.app/team"
 				aria-label="Sites to allow"
 				autoCapitalize="none"
