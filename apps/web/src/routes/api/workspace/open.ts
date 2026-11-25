@@ -22,7 +22,9 @@ export const Route = createFileRoute("/api/workspace/open")({
 					);
 				}
 
-				const opened = await openPersonalWorkspace(accountId);
+				const failProjection =
+					env.TEST_HOOKS === "on" && request.headers.get("x-test-fault") === "projection";
+				const opened = await openPersonalWorkspace(accountId, { failProjection });
 				if ("refused" in opened) return Response.json({ error: opened.refused }, { status: 403 });
 				return Response.json(opened);
 			},
