@@ -53,7 +53,7 @@ export class Website extends Cloudflare.Website.Vite<Website>()(
 							RESEND_BASE_URL: Config.String("RESEND_BASE_URL"),
 							CODE_EXPIRES_IN: Config.String("CODE_EXPIRES_IN"),
 							CODE_RESEND_IN: Config.String("CODE_RESEND_IN"),
-							// Opens the gateway's evict hook and the interrupted-open and failed-open faults.
+							// Opens the gateway's test hooks and the interrupted-open, failed-open and failed bot-list faults.
 							TEST_HOOKS: "on",
 						}
 					: {}),

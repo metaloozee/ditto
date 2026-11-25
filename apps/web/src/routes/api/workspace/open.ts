@@ -21,7 +21,9 @@ export const Route = createFileRoute("/api/workspace/open")({
 					);
 				}
 
-				const opened = await openPersonalWorkspace(request.headers);
+				const failProjection =
+					env.TEST_HOOKS === "on" && request.headers.get("x-test-fault") === "projection";
+				const opened = await openPersonalWorkspace(request.headers, { failProjection });
 				if (opened instanceof Response) return opened;
 				if ("refused" in opened) return Response.json({ error: opened.refused }, { status: 403 });
 				return Response.json(opened);
