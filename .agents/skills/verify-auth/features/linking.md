@@ -5,7 +5,7 @@ A signed-in user sees their enabled methods in Settings and can add another one 
 ## Sub-features
 
 - `link-google`: a GitHub account links Google and sees `Google is linked`. D1 methods become `["github","google"]`, and Settings shows two `Enabled` badges. Google sign-in in a fresh browser reaches the same user.
-- `link-github`: a Google account links a GitHub identity whose private primary address matches. GitHub sign-in then greets the user with the original Google name.
+- `link-github`: a Google account links a GitHub identity whose private primary address matches. GitHub sign-in then shows the original Google name in the Account menu.
 - `link-email`: before linking, an email sign-in request sends no mail. `Link Email` opens `Add email sign-in` and sends a code. That linking code typed into a stranger's sign-in step fails and opens no session. Entered by the owner, it shows `Email is linked`, and D1 methods become `["email","github"]`. Email sign-in then reaches the same user.
 - `link-rejected`: four attempts on one GitHub account, after which D1 methods are still `["github"]`. The Google identity owned by another account stays with its owner.
   - A Google account with a different email shows `That Google account uses a different email`.
@@ -15,7 +15,7 @@ A signed-in user sees their enabled methods in Settings and can add another one 
 
 ## How to get to it (user POV)
 
-- Sign in, choose `Settings` in the header, then `Link GitHub`, `Link Google` or `Link Email` under `Sign-in methods`.
+- Sign in, open the Account menu and choose `Settings`, then `Link GitHub`, `Link Google` or `Link Email` under `Sign-in methods`.
 - For email, type the code on `Add email sign-in`, or choose `Back to Settings`.
 
 ## Driving it with auth.sh

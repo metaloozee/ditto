@@ -11,7 +11,7 @@ Run everything from the repo root. `A=.claude/skills/verify-auth/scripts/auth.sh
 
 ## 1. Launch
 
-`$A up` starts the fake upstream, then the Worker on `http://localhost:1339`, and waits until the stage is usable: `/sign-in` renders, `/api/auth/get-session` answers `null`, and the D1 file exists. A cold start takes about 10s.
+`$A up` starts the fake upstream, then the Worker on `http://localhost:1339`, and waits until the stage is usable: `/sign-in` renders, `/api/auth/get-session` answers `null`, and the D1 file exists. Local startup requires Docker for the workspace Container image. Allow up to three minutes for the Worker to become ready.
 
 - **Isolation.** Alchemy keeps state and the local D1 under its cwd's `.alchemy`, so `up` runs it from `.scratch/verify-auth/stage-<port>/`. The stage shares nothing with `vp run dev` (port 1337, the repo's `.alchemy`) or the auth test suite (port 1338). Each `up` begins on an empty D1. To run beside another instance, set `VERIFY_AUTH_PORT=<free port>` on every `$A` call.
 - **No secrets.** `up` passes `--env-file /dev/null` and test-only credentials, so the user's `.env`, real OAuth apps and Resend are never touched.

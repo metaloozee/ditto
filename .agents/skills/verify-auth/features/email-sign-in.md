@@ -27,6 +27,6 @@ Preconditions:
 
 ## Gotchas
 
-- The wrong-code and resend journeys drive the sign-up code step. It shares `CodeStep` and the challenge store with sign-in, and it is the only step where a fresh address always receives mail.
-- `code-resend` checks the replaced-code rejection only when the new code differs from the old one, which fails about one run in a million. The fact `replaced code rejected` is then absent from the report.
+- The wrong-code, resend, and expiry journeys use sign-up so a fresh address receives mail. Sign-up and sign-in share the code-entry UI and expiry settings. Sign-in uses Better Auth’s email OTP verification and shows `Code requested` on resend. Sign-up verifies its own challenge and shows `New code sent`.
+- `code-resend` checks the replaced-code rejection only when the new code differs from the old one, as equal codes are indistinguishable. When the codes match, the report omits the `replaced code rejected` fact.
 - The sign-in step's `Code` error after an unknown address is deliberately the generic `That code didn’t work…`. A specific message would leak whether the address is registered.
