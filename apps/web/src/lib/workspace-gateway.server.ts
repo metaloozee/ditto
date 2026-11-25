@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 
-import { personalWorkspace } from "../db/workspace-schema.ts";
+import { personalWorkspace, workspaceBot } from "../db/workspace-schema.ts";
 import { auth } from "./auth.server.ts";
 
 /**
@@ -85,6 +85,32 @@ async function admitRefreshing(
 	};
 }
 
+/** Test stage only: owner-only hooks that evict the object or read and damage its state. */
+async function testHook(request: Request, admitted: Admitted, hook: string): Promise<Response> {
+	const { method } = request;
+	if (hook === "evict" && method === "POST") {
+		// The abort rejects the call that caused it.
+		await admitted.workspace.evict().catch(() => undefined);
+		return new Response(null, { status: 204 });
+	}
+	if (hook === "members" && method === "GET") {
+		return Response.json(await admitted.workspace.members());
+	}
+	if (hook === "bot-list" && (method === "POST" || method === "DELETE")) {
+		// Writes the D1 bot list behind the object's back, as a failed or stray write would.
+		const db = drizzle(env.DB);
+		const { workspaceId } = admitted;
+		if (method === "DELETE") {
+			await db.delete(workspaceBot).where(eq(workspaceBot.workspaceId, workspaceId));
+		} else {
+			const bot = (await request.json()) as { id: string; name: string };
+			await db.insert(workspaceBot).values({ workspaceId, botId: bot.id, name: bot.name });
+		}
+		return new Response(null, { status: 204 });
+	}
+	return Response.json({ error: "No such test hook" }, { status: 404 });
+}
+
 const ADDRESSED = /^\/api\/workspaces\/([a-z0-9-]+)(\/.*)?$/;
 
 /**
@@ -100,10 +126,13 @@ export async function workspaceGateway(request: Request): Promise<Response | und
 	const { admitted, refreshed } = result;
 
 	const rest = addressed[2] ?? "/";
-	if (env.TEST_HOOKS === "on" && rest === "/__test/evict" && request.method === "POST") {
-		// The abort rejects the call that caused it.
-		await admitted.workspace.evict().catch(() => undefined);
-		return new Response(null, { status: 204 });
+	// The object answers its own computer hooks, behind the same TEST_HOOKS switch.
+	if (
+		env.TEST_HOOKS === "on" &&
+		rest.startsWith("/__test/") &&
+		!rest.startsWith("/__test/computer/")
+	) {
+		return testHook(request, admitted, rest.slice("/__test/".length));
 	}
 	const forwarded = new Request(new URL(rest + url.search, url.origin), request);
 	// Replaces anything the client sent, so only the server-resolved ID reaches the object.

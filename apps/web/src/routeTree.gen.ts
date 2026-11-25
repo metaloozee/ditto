@@ -20,6 +20,8 @@ import { Route as DesignWorkspaceRouteImport } from './routes/design_.workspace'
 import { Route as AccountSettingsVerifyEmailRouteImport } from './routes/_account/settings_.verify-email'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiWorkspaceOpenRouteImport } from './routes/api/workspace/open'
+import { Route as ApiWorkspaceWorkspaceIdBotsRouteImport } from './routes/api/workspace/$workspaceId.bots'
+import { Route as ApiWorkspaceWorkspaceIdReconcileRouteImport } from './routes/api/workspace/$workspaceId.reconcile'
 
 const AccountRoute = AccountRouteImport.update({
   id: '/_account',
@@ -76,6 +78,18 @@ const ApiWorkspaceOpenRoute = ApiWorkspaceOpenRouteImport.update({
   path: '/api/workspace/open',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiWorkspaceWorkspaceIdBotsRoute =
+  ApiWorkspaceWorkspaceIdBotsRouteImport.update({
+    id: '/api/workspace/$workspaceId/bots',
+    path: '/api/workspace/$workspaceId/bots',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiWorkspaceWorkspaceIdReconcileRoute =
+  ApiWorkspaceWorkspaceIdReconcileRouteImport.update({
+    id: '/api/workspace/$workspaceId/reconcile',
+    path: '/api/workspace/$workspaceId/reconcile',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AccountIndexRoute
@@ -88,6 +102,8 @@ export interface FileRoutesByFullPath {
   '/settings/verify-email': typeof AccountSettingsVerifyEmailRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/workspace/open': typeof ApiWorkspaceOpenRoute
+  '/api/workspace/$workspaceId/bots': typeof ApiWorkspaceWorkspaceIdBotsRoute
+  '/api/workspace/$workspaceId/reconcile': typeof ApiWorkspaceWorkspaceIdReconcileRoute
 }
 export interface FileRoutesByTo {
   '/design': typeof DesignRoute
@@ -100,6 +116,8 @@ export interface FileRoutesByTo {
   '/settings/verify-email': typeof AccountSettingsVerifyEmailRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/workspace/open': typeof ApiWorkspaceOpenRoute
+  '/api/workspace/$workspaceId/bots': typeof ApiWorkspaceWorkspaceIdBotsRoute
+  '/api/workspace/$workspaceId/reconcile': typeof ApiWorkspaceWorkspaceIdReconcileRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -114,6 +132,8 @@ export interface FileRoutesById {
   '/_account/settings_/verify-email': typeof AccountSettingsVerifyEmailRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/workspace/open': typeof ApiWorkspaceOpenRoute
+  '/api/workspace/$workspaceId/bots': typeof ApiWorkspaceWorkspaceIdBotsRoute
+  '/api/workspace/$workspaceId/reconcile': typeof ApiWorkspaceWorkspaceIdReconcileRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -128,6 +148,8 @@ export interface FileRouteTypes {
     | '/settings/verify-email'
     | '/api/auth/$'
     | '/api/workspace/open'
+    | '/api/workspace/$workspaceId/bots'
+    | '/api/workspace/$workspaceId/reconcile'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/design'
@@ -140,6 +162,8 @@ export interface FileRouteTypes {
     | '/settings/verify-email'
     | '/api/auth/$'
     | '/api/workspace/open'
+    | '/api/workspace/$workspaceId/bots'
+    | '/api/workspace/$workspaceId/reconcile'
   id:
     | '__root__'
     | '/_account'
@@ -153,6 +177,8 @@ export interface FileRouteTypes {
     | '/_account/settings_/verify-email'
     | '/api/auth/$'
     | '/api/workspace/open'
+    | '/api/workspace/$workspaceId/bots'
+    | '/api/workspace/$workspaceId/reconcile'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -164,6 +190,8 @@ export interface RootRouteChildren {
   DesignWorkspaceRoute: typeof DesignWorkspaceRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiWorkspaceOpenRoute: typeof ApiWorkspaceOpenRoute
+  ApiWorkspaceWorkspaceIdBotsRoute: typeof ApiWorkspaceWorkspaceIdBotsRoute
+  ApiWorkspaceWorkspaceIdReconcileRoute: typeof ApiWorkspaceWorkspaceIdReconcileRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -245,6 +273,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiWorkspaceOpenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/workspace/$workspaceId/bots': {
+      id: '/api/workspace/$workspaceId/bots'
+      path: '/api/workspace/$workspaceId/bots'
+      fullPath: '/api/workspace/$workspaceId/bots'
+      preLoaderRoute: typeof ApiWorkspaceWorkspaceIdBotsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/workspace/$workspaceId/reconcile': {
+      id: '/api/workspace/$workspaceId/reconcile'
+      path: '/api/workspace/$workspaceId/reconcile'
+      fullPath: '/api/workspace/$workspaceId/reconcile'
+      preLoaderRoute: typeof ApiWorkspaceWorkspaceIdReconcileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -272,6 +314,8 @@ const rootRouteChildren: RootRouteChildren = {
   DesignWorkspaceRoute: DesignWorkspaceRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiWorkspaceOpenRoute: ApiWorkspaceOpenRoute,
+  ApiWorkspaceWorkspaceIdBotsRoute: ApiWorkspaceWorkspaceIdBotsRoute,
+  ApiWorkspaceWorkspaceIdReconcileRoute: ApiWorkspaceWorkspaceIdReconcileRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

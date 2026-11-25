@@ -31,7 +31,20 @@ export type ComputerStatus =
 			deadline: string | null;
 	  };
 
+/** A bot in a workspace's membership. */
+export interface Member {
+	id: string;
+	name: string;
+}
+
+/** Test stage only: faults the object honours when TEST_HOOKS is on. */
+export interface OpenFaults {
+	failProjection?: boolean;
+}
+
 export interface WorkspaceRpc {
-	open(workspaceId: string, accountId: string): Promise<OpenedWorkspace>;
+	open(workspaceId: string, accountId: string, faults?: OpenFaults): Promise<OpenedWorkspace>;
+	members(): Promise<Member[]>;
+	reconcileBotList(): Promise<void>;
 	evict(): void;
 }
