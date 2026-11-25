@@ -71,3 +71,18 @@ A file a bot publishes as the output of a task. The owner can open it after the 
 **Desk**
 
 The workspace owner’s inbox for requests that need a decision or take-over.
+
+**Approved sites**
+
+The exact sites a workspace's shared computer may reach. A new workspace has none, so its shared computer reaches nothing until the owner approves a site.
+_Avoid_: Allowlist, whitelist, host list
+
+**Site set**
+
+A named group of approved sites the owner can allow together, such as everything Google Workspace needs to sign in and work.
+_Avoid_: Preset, bundle
+
+**Site request**
+
+A bot asking the owner, in the conversation, to approve a site the shared computer was blocked from reaching.
+_Avoid_: Permission prompt, popup
