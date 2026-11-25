@@ -1,24 +1,18 @@
 import { env } from "cloudflare:workers";
 
 import { requestedFileKey } from "./workspace-files.ts";
-import { admit } from "./workspace-gateway.server.ts";
 
 // A missing file, another account's and an unsafe path answer alike, so keys can't be probed.
-const noSuchFile = () => Response.json({ error: "No such file" }, { status: 404 });
+export const noSuchFile = () => Response.json({ error: "No such file" }, { status: 404 });
 
 /**
- * Serves `GET /api/workspace/<id>/files/<kind>/<name>` from the private bucket, to the
- * workspace's owner only. The key's workspace comes from the admitted ID, never the path.
+ * Serves `GET /api/workspaces/<id>/files/<kind>/<name>` from the private bucket, once the
+ * gateway admitted the owner. `path` is the raw remainder after `files/`, before any router
+ * decoding: `requestedFileKey` decodes each segment once. The key's workspace is the admitted
+ * ID, never anything in the path.
  */
-export async function serveFile(request: Request, workspaceId: string): Promise<Response> {
-	const admitted = await admit(request.headers, workspaceId);
-	if (admitted instanceof Response) return admitted.status === 404 ? noSuchFile() : admitted;
-
-	// The raw path, before any router decoding: `requestedFileKey` decodes each segment once.
-	const prefix = `/api/workspace/${admitted.workspaceId}/files/`;
-	const { pathname } = new URL(request.url);
-	if (!pathname.startsWith(prefix)) return noSuchFile();
-	const key = requestedFileKey(admitted.workspaceId, pathname.slice(prefix.length));
+export async function serveFile(workspaceId: string, path: string): Promise<Response> {
+	const key = requestedFileKey(workspaceId, path);
 	const object = key === null ? null : await env.FILES.get(key);
 	if (!object) return noSuchFile();
 

@@ -29,7 +29,7 @@ describe("the signed-in home", () => {
 			panelExpanded: "true",
 			computer: "Stopped",
 		});
-		const probed = await page.context().request.post("/api/workspace/open");
+		const probed = await page.context().request.post("/api/workspaces/open");
 		const { workspaceId } = (await probed.json()) as { workspaceId: string };
 		const state = await page.context().request.get(`/api/workspaces/${workspaceId}`);
 		await expect(state.json()).resolves.toMatchObject({ running: false });
@@ -40,7 +40,7 @@ describe("the signed-in home", () => {
 		const first = await newVisitor();
 		await continueWithGitHub(first.page, user);
 		await seenWorkspace(first.page);
-		const firstOpen = await (await first.context.request.post("/api/workspace/open")).json();
+		const firstOpen = await (await first.context.request.post("/api/workspaces/open")).json();
 		const returned = {
 			path: "/",
 			chiefOfStaff: "Ditto",
@@ -56,7 +56,7 @@ describe("the signed-in home", () => {
 
 		await expect(seenWorkspace(second.page)).resolves.toEqual(returned);
 		await expect(
-			(await second.context.request.post("/api/workspace/open")).json(),
+			(await second.context.request.post("/api/workspaces/open")).json(),
 		).resolves.toEqual(firstOpen);
 	});
 

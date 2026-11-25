@@ -24,20 +24,20 @@ async function openWorkspace(
 	context: BrowserContext,
 	headers?: Record<string, string>,
 ): Promise<OpenedWorkspace> {
-	const response = await context.request.post("/api/workspace/open", { headers });
+	const response = await context.request.post("/api/workspaces/open", { headers });
 	expect(response.status()).toBe(200);
 	return (await response.json()) as OpenedWorkspace;
 }
 
 /** The workspace's bot list as its owner reads it, from the D1 projection. */
 async function botList(context: BrowserContext, workspaceId: string): Promise<Bot[]> {
-	const response = await context.request.get(`/api/workspace/${workspaceId}/bots`);
+	const response = await context.request.get(`/api/workspaces/${workspaceId}/bots`);
 	expect(response.status()).toBe(200);
 	return ((await response.json()) as { bots: Bot[] }).bots;
 }
 
 async function reconcile(context: BrowserContext, workspaceId: string): Promise<void> {
-	const response = await context.request.post(`/api/workspace/${workspaceId}/reconcile`);
+	const response = await context.request.post(`/api/workspaces/${workspaceId}/reconcile`);
 	expect(response.status()).toBe(204);
 }
 
@@ -135,10 +135,10 @@ describe("the workspace bot list", () => {
 		const { workspaceId } = await openWorkspace(owner);
 		const { context: signedOut } = await newVisitor();
 
-		const foreignRead = await other.request.get(`/api/workspace/${workspaceId}/bots`);
-		const foreignReconcile = await other.request.post(`/api/workspace/${workspaceId}/reconcile`);
-		const guessed = await other.request.get("/api/workspace/ws-guessed/bots");
-		const anonymous = await signedOut.request.get(`/api/workspace/${workspaceId}/bots`);
+		const foreignRead = await other.request.get(`/api/workspaces/${workspaceId}/bots`);
+		const foreignReconcile = await other.request.post(`/api/workspaces/${workspaceId}/reconcile`);
+		const guessed = await other.request.get("/api/workspaces/ws-guessed/bots");
+		const anonymous = await signedOut.request.get(`/api/workspaces/${workspaceId}/bots`);
 		const foreignMembers = await other.request.get(`/api/workspaces/${workspaceId}/__test/members`);
 		const foreignDamage = await other.request.delete(
 			`/api/workspaces/${workspaceId}/__test/bot-list`,

@@ -15,6 +15,8 @@ An owner asks Ditto, the workspace’s Chief of Staff, for a file. A specialist 
 
 Workspace provisioning, model access, and bot turns have separate lifetimes. Reopening a workspace from another device resolves the same Chief of Staff. It need not start the computer or a model turn. Hosted ChatGPT plan onboarding still requires OpenAI approval. [Workspace spec](https://github.com/metaloozee/ditto/issues/17) · [Model access spec](https://github.com/metaloozee/ditto/issues/18) · [Bot spec](https://github.com/metaloozee/ditto/issues/19)
 
+Every request about a workspace goes through one gateway in the Worker (`apps/web/src/lib/workspace-gateway.server.ts`). `POST /api/workspaces/open` opens the account's personal workspace. Every path under `/api/workspaces/<workspaceId>/` is admitted there before it reaches the D1 bot list, the files bucket, or the Workspace object: `bots`, `reconcile` and `files/…` are answered in the Worker, and everything else, such as `computer` and `hosts`, is forwarded to the object.
+
 ## Where does each file live in R2?
 
 One private bucket, bound to the app Worker as `FILES`, holds every workspace's files. It has no `r2.dev` URL, custom domain, or CORS rule. Every key starts with the workspace ID, so the key and the D1 ownership check alone decide who may read an object. Build keys with `fileKey(workspaceId, kind, name)` in `apps/web/src/lib/workspace-files.ts`. The scheme is stable: changing it strands every object already written.
@@ -27,7 +29,7 @@ One private bucket, bound to the app Worker as `FILES`, holds every workspace's 
 
 `<name>` is one or more `/`-separated segments. The writer chooses its layout, such as `<taskId>/<file>` or `<botId>/<sequence>.png`, and never takes it unchecked from a bot or client. `fileKey` refuses an empty, `.` or `..` segment, a backslash, and a control character. The workspace ID always comes from the server, never from the request.
 
-The owner reads a file at `GET /api/workspace/<workspaceId>/files/<kind>/<name>`, with each segment percent-encoded. The Worker admits the request through the workspace gateway and derives the key from the admitted workspace ID. A segment that decodes to a separator is refused. Another account's file, an unknown workspace, an unsafe path, and a missing object all answer the same 404. A missing or expired session answers 401. The response carries the stored content type and `Content-Security-Policy: sandbox`, so a published page never runs as the app.
+The owner reads a file at `GET /api/workspaces/<workspaceId>/files/<kind>/<name>`, with each segment percent-encoded. The Worker admits the request through the workspace gateway and derives the key from the admitted workspace ID. A segment that decodes to a separator is refused. Another account's file, an unknown workspace, an unsafe path, and a missing object all answer the same 404. A missing or expired session answers 401. The response carries the stored content type and `Content-Security-Policy: sandbox`, so a published page never runs as the app.
 
 ## One delegated file, from assignment to verification
 

@@ -1,9 +1,4 @@
-import { env } from "cloudflare:workers";
-import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/d1";
-
-import { workspaceBot } from "../db/workspace-schema.ts";
-import type { Member, OpenFaults, OpenedWorkspace } from "../workspace-rpc.ts";
+import type { OpenFaults, OpenedWorkspace } from "../workspace-rpc.ts";
 import { admit } from "./workspace-gateway.server.ts";
 
 /**
@@ -19,12 +14,4 @@ export async function openPersonalWorkspace(
 	const admitted = await admit(headers, null);
 	if (admitted instanceof Response) return admitted;
 	return admitted.workspace.open(admitted.workspaceId, admitted.accountId, faults);
-}
-
-export async function botList(workspaceId: string): Promise<Member[]> {
-	return drizzle(env.DB)
-		.select({ id: workspaceBot.botId, name: workspaceBot.name })
-		.from(workspaceBot)
-		.where(eq(workspaceBot.workspaceId, workspaceId))
-		.orderBy(workspaceBot.botId);
 }

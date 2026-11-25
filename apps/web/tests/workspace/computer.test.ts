@@ -25,7 +25,7 @@ interface Decision {
 async function owner() {
 	const visitor = await newVisitor();
 	await continueWithGitHub(visitor.page, gitHubUser());
-	const opened = await visitor.context.request.post("/api/workspace/open");
+	const opened = await visitor.context.request.post("/api/workspaces/open");
 	expect(opened.status()).toBe(200);
 	const body = (await opened.json()) as {
 		workspaceId: string;
@@ -185,7 +185,7 @@ describe("the shared computer", () => {
 		await expect(
 			context.request.get(at(workspaceId, "/hosts")).then((r) => r.json()),
 		).resolves.toEqual({ hosts: ["example.com"] });
-		const reopened = await context.request.post("/api/workspace/open");
+		const reopened = await context.request.post("/api/workspaces/open");
 		await expect(reopened.json()).resolves.toMatchObject({ chiefOfStaff, computer: "stopped" });
 	}, 240_000);
 

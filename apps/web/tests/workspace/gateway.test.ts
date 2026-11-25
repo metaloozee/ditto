@@ -20,7 +20,7 @@ interface WorkspaceAnswer {
 async function owner(user = gitHubUser()) {
 	const visitor = await newVisitor();
 	await continueWithGitHub(visitor.page, user);
-	const opened = await visitor.context.request.post("/api/workspace/open");
+	const opened = await visitor.context.request.post("/api/workspaces/open");
 	expect(opened.status()).toBe(200);
 	const { workspaceId } = (await opened.json()) as { workspaceId: string };
 	return { ...visitor, user, workspaceId };

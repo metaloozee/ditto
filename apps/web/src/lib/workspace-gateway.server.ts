@@ -5,6 +5,7 @@ import { drizzle } from "drizzle-orm/d1";
 import { personalWorkspace, workspaceBot } from "../db/workspace-schema.ts";
 import type { Member } from "../workspace-rpc.ts";
 import { auth } from "./auth.server.ts";
+import { noSuchFile, serveFile } from "./workspace-files.server.ts";
 import { requestedFileKey } from "./workspace-files.ts";
 
 /**
@@ -122,21 +123,40 @@ async function testHook(request: Request, admitted: Admitted, hook: string): Pro
 	return Response.json({ error: "No such test hook" }, { status: 404 });
 }
 
-const ADDRESSED = /^\/api\/workspaces\/([a-z0-9-]+)(\/.*)?$/;
-
-/**
- * Answers requests and WebSocket upgrades under `/api/workspaces/<id>`, forwarding each
- * admitted one to the workspace's object at the path after the ID. Leaves other paths alone.
- */
-export async function workspaceGateway(request: Request): Promise<Response | undefined> {
-	const url = new URL(request.url);
-	const addressed = ADDRESSED.exec(url.pathname);
-	if (!addressed) return undefined;
-	const result = await admitRefreshing(request.headers, addressed[1] ?? "");
+/** Opens the personal workspace, with the test stage's interrupt and fault hooks. */
+async function openRoute(request: Request): Promise<Response> {
+	const { headers } = request;
+	const result = await admitRefreshing(headers, null);
 	if (result instanceof Response) return result;
 	const { admitted, refreshed } = result;
+	if (env.TEST_HOOKS === "on" && headers.get("x-test-interrupt") === "after-mapping") {
+		// Stops after the D1 mapping, before the object is reached.
+		const interrupted = Response.json({ interrupted: admitted.workspaceId }, { status: 503 });
+		return withCookies(interrupted, refreshed);
+	}
+	const failProjection = env.TEST_HOOKS === "on" && headers.get("x-test-fault") === "projection";
+	const opened = await admitted.workspace.open(admitted.workspaceId, admitted.accountId, {
+		failProjection,
+	});
+	const answer =
+		"refused" in opened
+			? Response.json({ error: opened.refused }, { status: 403 })
+			: Response.json(opened);
+	return withCookies(answer, refreshed);
+}
 
-	const rest = addressed[2] ?? "/";
+/** Carries the session refresh's cookies on an answer, except a WebSocket upgrade. */
+function withCookies(answer: Response, refreshed: Headers): Response {
+	const cookies = refreshed.getSetCookie();
+	if (answer.status === 101 || cookies.length === 0) return answer;
+	const kept = new Response(answer.body, answer);
+	for (const cookie of cookies) kept.headers.append("set-cookie", cookie);
+	return kept;
+}
+
+/** Answers an admitted request in the Worker, or forwards it to the workspace's object. */
+async function route(request: Request, admitted: Admitted, rest: string): Promise<Response> {
+	const { method } = request;
 	// The object answers its own computer hooks, behind the same TEST_HOOKS switch.
 	if (
 		env.TEST_HOOKS === "on" &&
@@ -145,13 +165,48 @@ export async function workspaceGateway(request: Request): Promise<Response | und
 	) {
 		return testHook(request, admitted, rest.slice("/__test/".length));
 	}
+	// Read from the D1 projection, so listing bots never wakes the object.
+	if (rest === "/bots" && method === "GET") {
+		const bots = await drizzle(env.DB)
+			.select({ id: workspaceBot.botId, name: workspaceBot.name })
+			.from(workspaceBot)
+			.where(eq(workspaceBot.workspaceId, admitted.workspaceId))
+			.orderBy(workspaceBot.botId);
+		return Response.json({ bots });
+	}
+	if (rest === "/reconcile" && method === "POST") {
+		await admitted.workspace.reconcileBotList();
+		return new Response(null, { status: 204 });
+	}
+	if (rest.startsWith(FILES) && method === "GET") {
+		return serveFile(admitted.workspaceId, rest.slice(FILES.length));
+	}
+	const url = new URL(request.url);
 	const forwarded = new Request(new URL(rest + url.search, url.origin), request);
 	// Replaces anything the client sent, so only the server-resolved ID reaches the object.
 	forwarded.headers.set("x-ditto-workspace-id", admitted.workspaceId);
-	const answer = await admitted.workspace.fetch(forwarded);
-	const cookies = refreshed.getSetCookie();
-	if (answer.status === 101 || cookies.length === 0) return answer;
-	const kept = new Response(answer.body, answer);
-	for (const cookie of cookies) kept.headers.append("set-cookie", cookie);
-	return kept;
+	return admitted.workspace.fetch(forwarded);
+}
+
+const OPEN = "/api/workspaces/open";
+const ADDRESSED = /^\/api\/workspaces\/([a-z0-9-]+)(\/.*)?$/;
+const FILES = "/files/";
+
+/**
+ * Answers `POST /api/workspaces/open` and every request or WebSocket upgrade under
+ * `/api/workspaces/<id>`, admitting each before it reaches anything of the workspace's.
+ * Leaves other paths alone.
+ */
+export async function workspaceGateway(request: Request): Promise<Response | undefined> {
+	const { pathname } = new URL(request.url);
+	if (pathname === OPEN && request.method === "POST") return openRoute(request);
+	const addressed = ADDRESSED.exec(pathname);
+	if (!addressed) return undefined;
+	const rest = addressed[2] ?? "/";
+	const result = await admitRefreshing(request.headers, addressed[1] ?? "");
+	if (result instanceof Response) {
+		// Another account's file and a missing one answer alike, so keys can't be probed.
+		return result.status === 404 && rest.startsWith(FILES) ? noSuchFile() : result;
+	}
+	return withCookies(await route(request, result.admitted, rest), result.refreshed);
 }

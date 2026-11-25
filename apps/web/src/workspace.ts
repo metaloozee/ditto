@@ -339,6 +339,7 @@ export class Workspace extends Container<AuthEnv> implements WorkspaceRpc {
 			const message = error instanceof Error ? error.message : String(error);
 			return Response.json({ error: message }, { status: 500 });
 		}
+		if (route !== "GET /") return Response.json({ error: "Not found" }, { status: 404 });
 		return Response.json({
 			object: "Workspace",
 			container: this.ctx.container !== undefined,

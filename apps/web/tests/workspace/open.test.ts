@@ -12,7 +12,7 @@ interface OpenedWorkspace {
 
 /** Opens the visitor's personal workspace with nothing but its session cookies. */
 async function openWorkspace(context: BrowserContext): Promise<OpenedWorkspace> {
-	const response = await context.request.post("/api/workspace/open");
+	const response = await context.request.post("/api/workspaces/open");
 	expect(response.status()).toBe(200);
 	return (await response.json()) as OpenedWorkspace;
 }
@@ -27,7 +27,7 @@ describe("opening the personal workspace", () => {
 	it("is refused without a live session", async () => {
 		const { context } = await newVisitor();
 
-		const response = await context.request.post("/api/workspace/open");
+		const response = await context.request.post("/api/workspaces/open");
 
 		expect(response.status()).toBe(401);
 	});
@@ -93,7 +93,7 @@ describe("opening the personal workspace", () => {
 	it("completes an open interrupted between the D1 mapping and the Chief of Staff, without a duplicate", async () => {
 		const user = gitHubUser();
 		const { context } = await signedInWithGitHub(user);
-		const interrupted = await context.request.post("/api/workspace/open", {
+		const interrupted = await context.request.post("/api/workspaces/open", {
 			headers: { "x-test-interrupt": "after-mapping" },
 		});
 		expect(interrupted.status()).toBe(503);

@@ -10,7 +10,7 @@ import { continueWithGitHub, gitHubUser, newVisitor } from "../auth/visitor.ts";
 async function owner() {
 	const visitor = await newVisitor();
 	await continueWithGitHub(visitor.page, gitHubUser());
-	const opened = await visitor.context.request.post("/api/workspace/open");
+	const opened = await visitor.context.request.post("/api/workspaces/open");
 	expect(opened.status()).toBe(200);
 	const { workspaceId } = (await opened.json()) as { workspaceId: string };
 	return { ...visitor, workspaceId };
@@ -36,7 +36,7 @@ async function seed(
 
 /** Requests a file with only the visitor's cookies. `path` is sent exactly as written. */
 async function read(context: BrowserContext, workspaceId: string, path: string) {
-	const response = await context.request.get(`/api/workspace/${workspaceId}/files/${path}`);
+	const response = await context.request.get(`/api/workspaces/${workspaceId}/files/${path}`);
 	return {
 		status: response.status(),
 		contentType: response.headers()["content-type"],
