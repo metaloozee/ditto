@@ -107,7 +107,7 @@ export function parseSiteList(text: string): ParsedList {
 	for (const raw of text.split(/[\s,;]+/)) {
 		const entry = raw.trim().toLowerCase();
 		if (!entry) continue;
-		const known = KNOWN_NAMES[entry];
+		const known = Object.hasOwn(KNOWN_NAMES, entry) ? KNOWN_NAMES[entry] : undefined;
 		if (known) {
 			for (const host of known.hosts) hosts.add(host);
 			if (known.note) notes.push(known.note);
