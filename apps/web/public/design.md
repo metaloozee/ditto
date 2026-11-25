@@ -102,6 +102,11 @@ spacing:
   xl: 24px
   2xl: 32px
   3xl: 40px
+shadows:
+  stage-drop: "drop-shadow(0 1px 1px oklch(0 0 0 / 28%)) drop-shadow(0 6px 14px oklch(0 0 0 / 14%))"
+  screen-inset: "inset 0 2px 12px oklch(0 0 0 / 35%)"
+  light-stage-drop: "drop-shadow(0 1px 1px oklch(0 0 0 / 12%)) drop-shadow(0 6px 14px oklch(0 0 0 / 8%))"
+  light-screen-inset: "inset 0 2px 12px oklch(0 0 0 / 12%)"
 components:
   button-primary:
     backgroundColor: "{colors.primary}"
@@ -279,6 +284,8 @@ Depth comes from surface lightness and hairlines, not shadows.
 - Cards nest: a shell one step lighter than the page with a `border` edge, holding panels one more step lighter with a `panel-border` edge. The gap between panels and the shell's inset are both 6px, so the shell reads as a frame.
 - Floating surfaces (menus, select popups) use the popover color, the same ring, and a medium shadow.
 - Dialogs sit over a dimmed backdrop.
+- **Stage drop (`--stage-drop`):** a `filter` of two drop shadows, a 1px contact shadow under a faint 14px ambient one, that seats the Ditto stage's raised plate (`DittoStage`) on the page. It follows the plate's cut outline, which a `box-shadow` can't. Black at 28% and 14% dark, 12% and 8% light.
+- **Screen inset (`--screen-inset`):** an inner 12px shadow from the top edge that sinks the computer's display into its bezel in the right panel. Black at 35% dark, 12% light.
 - Never more than two floating layers at once. A third layer means a dialog.
 
 ## Shapes
