@@ -51,8 +51,8 @@ describe("opening the personal workspace", () => {
 
 	it("resolves two racing first opens from two devices to one workspace and Chief of Staff", async () => {
 		const user = gitHubUser();
-		const laptop = await signedInWithGitHub(user);
-		const phone = await signedInWithGitHub(user);
+		// Signed in together, so neither session idles past the test stage's short expiry.
+		const [laptop, phone] = await Promise.all([signedInWithGitHub(user), signedInWithGitHub(user)]);
 
 		const [fromLaptop, fromPhone] = await Promise.all([
 			openWorkspace(laptop.context),
