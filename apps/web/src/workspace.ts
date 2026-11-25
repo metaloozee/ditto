@@ -25,6 +25,8 @@ const CONTROL_PORT = 8081;
 const READY_TIMEOUT_MS = 180_000;
 const IDLE_SECONDS = 5 * 60;
 const MAX_HOSTS = 200;
+const ISOLATION_ATTEMPTS = 3;
+const ISOLATION_RETRY_MS = 1_000;
 const HOST =
 	/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
 
@@ -114,11 +116,15 @@ export class PrivateSessionsUnavailable extends Error {
 
 /**
  * Test stage only: an instance with no container, whose control port answers `/isolation` with
- * `report` (404 when null), so tests choose isolation states local Docker cannot produce.
+ * `report` (404 when null), so tests choose isolation states local Docker cannot produce. Its
+ * first `unreachable` asks fail as a dropped connection would.
  */
 class SyntheticInstance implements Instance {
 	running = false;
-	constructor(public report: IsolationReport) {}
+	constructor(
+		public report: IsolationReport,
+		public unreachable = 0,
+	) {}
 	async start(): Promise<void> {
 		this.running = true;
 	}
@@ -126,6 +132,10 @@ class SyntheticInstance implements Instance {
 		this.running = false;
 	}
 	async control(path: string): Promise<Response> {
+		if (this.unreachable > 0) {
+			this.unreachable--;
+			throw new Error("The synthetic control port dropped the connection");
+		}
 		if (path !== "/isolation" || this.report === null) return new Response(null, { status: 404 });
 		return new Response(this.report.body, { status: this.report.status });
 	}
@@ -314,10 +324,13 @@ export class Workspace extends Container<AuthEnv> implements WorkspaceRpc {
 			}
 			if (this.env.TEST_HOOKS === "on" && route === "PUT /__test/computer/synthetic") {
 				if (this.#container.running) return Response.json({ error: "Running" }, { status: 409 });
-				const { isolation } = (await request.json()) as { isolation: IsolationReport };
+				const { isolation, unreachable = 0 } = (await request.json()) as {
+					isolation: IsolationReport;
+					unreachable?: number;
+				};
 				// Only the report changes, so a running synthetic instance keeps running.
-				if (this.#synthetic) this.#synthetic.report = isolation;
-				else this.#synthetic = new SyntheticInstance(isolation);
+				if (this.#synthetic) Object.assign(this.#synthetic, { report: isolation, unreachable });
+				else this.#synthetic = new SyntheticInstance(isolation, unreachable);
 				return new Response(null, { status: 204 });
 			}
 			if (this.env.TEST_HOOKS === "on" && route === "POST /__test/computer/private-session") {
@@ -447,16 +460,23 @@ export class Workspace extends Container<AuthEnv> implements WorkspaceRpc {
 		return { computer: "stopped", privateSessions: STOPPED };
 	}
 
-	/** Asks the instance once, right after its start, what it enforces. */
+	/**
+	 * Asks the instance, right after its start, what it enforces. A request that fails outright
+	 * is asked again a few times before the report counts as missing, so one dropped connection
+	 * doesn't refuse private sessions for the instance's whole life. Any answer, even an error
+	 * status, is judged as it is. Runs inside the start, while the gate still says `unchecked`.
+	 */
 	async #checkIsolation(policy: ComputerPolicy): Promise<IsolationCheck> {
-		let answer: IsolationReport = null;
-		try {
-			const response = await this.#instance.control("/isolation");
-			answer = { status: response.status, body: await response.text() };
-		} catch (error) {
-			console.error("The isolation report did not arrive", error);
+		for (let attempt = 1; attempt <= ISOLATION_ATTEMPTS; attempt++) {
+			try {
+				const response = await this.#instance.control("/isolation");
+				return checkIsolation(policy, { status: response.status, body: await response.text() });
+			} catch (error) {
+				console.error(`The isolation report did not arrive (attempt ${attempt})`, error);
+			}
+			if (attempt < ISOLATION_ATTEMPTS) await scheduler.wait(ISOLATION_RETRY_MS);
 		}
-		return checkIsolation(policy, answer);
+		return checkIsolation(policy, null);
 	}
 
 	async #forgetInstance(): Promise<void> {

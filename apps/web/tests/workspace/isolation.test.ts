@@ -38,9 +38,15 @@ function fenced(workspace: string, hosts: string[] = []): IsolationReport {
 	};
 }
 
-async function synthetic(context: BrowserContext, workspaceId: string, isolation: IsolationReport) {
+/** `unreachable`: how many asks for the report fail as a dropped connection would, first. */
+async function synthetic(
+	context: BrowserContext,
+	workspaceId: string,
+	isolation: IsolationReport,
+	unreachable = 0,
+) {
 	const response = await context.request.put(at(workspaceId, "/__test/computer/synthetic"), {
-		data: { isolation },
+		data: { isolation, unreachable },
 	});
 	expect(response.status(), await response.text()).toBe(204);
 }
@@ -76,6 +82,32 @@ describe("private sessions on the shared computer", () => {
 			});
 			await expect(status(context, workspaceId)).resolves.toMatchObject({
 				privateSessions: { available: true },
+			});
+		} finally {
+			await stop(context, workspaceId);
+		}
+	});
+
+	it("are available when the report arrives after a brief outage of the control port", async () => {
+		const { context, workspaceId } = await owner();
+		await synthetic(context, workspaceId, fenced(workspaceId), 2);
+		try {
+			await expect(start(context, workspaceId)).resolves.toMatchObject({
+				isolation: { policy: true, fence: true },
+				privateSessions: { available: true },
+			});
+		} finally {
+			await stop(context, workspaceId);
+		}
+	});
+
+	it("stay unavailable as report-missing when the control port never answers", async () => {
+		const { context, workspaceId } = await owner();
+		await synthetic(context, workspaceId, fenced(workspaceId), 100);
+		try {
+			await expect(start(context, workspaceId)).resolves.toMatchObject({
+				computer: "running",
+				privateSessions: { available: false, reason: "report-missing" },
 			});
 		} finally {
 			await stop(context, workspaceId);
