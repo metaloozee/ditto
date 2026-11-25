@@ -22,6 +22,7 @@ import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiWorkspaceOpenRouteImport } from './routes/api/workspace/open'
 import { Route as ApiWorkspaceWorkspaceIdBotsRouteImport } from './routes/api/workspace/$workspaceId.bots'
 import { Route as ApiWorkspaceWorkspaceIdReconcileRouteImport } from './routes/api/workspace/$workspaceId.reconcile'
+import { Route as ApiWorkspaceWorkspaceIdFilesSplatRouteImport } from './routes/api/workspace/$workspaceId.files.$'
 
 const AccountRoute = AccountRouteImport.update({
   id: '/_account',
@@ -90,6 +91,12 @@ const ApiWorkspaceWorkspaceIdReconcileRoute =
     path: '/api/workspace/$workspaceId/reconcile',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiWorkspaceWorkspaceIdFilesSplatRoute =
+  ApiWorkspaceWorkspaceIdFilesSplatRouteImport.update({
+    id: '/api/workspace/$workspaceId/files/$',
+    path: '/api/workspace/$workspaceId/files/$',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AccountIndexRoute
@@ -104,6 +111,7 @@ export interface FileRoutesByFullPath {
   '/api/workspace/open': typeof ApiWorkspaceOpenRoute
   '/api/workspace/$workspaceId/bots': typeof ApiWorkspaceWorkspaceIdBotsRoute
   '/api/workspace/$workspaceId/reconcile': typeof ApiWorkspaceWorkspaceIdReconcileRoute
+  '/api/workspace/$workspaceId/files/$': typeof ApiWorkspaceWorkspaceIdFilesSplatRoute
 }
 export interface FileRoutesByTo {
   '/design': typeof DesignRoute
@@ -118,6 +126,7 @@ export interface FileRoutesByTo {
   '/api/workspace/open': typeof ApiWorkspaceOpenRoute
   '/api/workspace/$workspaceId/bots': typeof ApiWorkspaceWorkspaceIdBotsRoute
   '/api/workspace/$workspaceId/reconcile': typeof ApiWorkspaceWorkspaceIdReconcileRoute
+  '/api/workspace/$workspaceId/files/$': typeof ApiWorkspaceWorkspaceIdFilesSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -134,6 +143,7 @@ export interface FileRoutesById {
   '/api/workspace/open': typeof ApiWorkspaceOpenRoute
   '/api/workspace/$workspaceId/bots': typeof ApiWorkspaceWorkspaceIdBotsRoute
   '/api/workspace/$workspaceId/reconcile': typeof ApiWorkspaceWorkspaceIdReconcileRoute
+  '/api/workspace/$workspaceId/files/$': typeof ApiWorkspaceWorkspaceIdFilesSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -150,6 +160,7 @@ export interface FileRouteTypes {
     | '/api/workspace/open'
     | '/api/workspace/$workspaceId/bots'
     | '/api/workspace/$workspaceId/reconcile'
+    | '/api/workspace/$workspaceId/files/$'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/design'
@@ -164,6 +175,7 @@ export interface FileRouteTypes {
     | '/api/workspace/open'
     | '/api/workspace/$workspaceId/bots'
     | '/api/workspace/$workspaceId/reconcile'
+    | '/api/workspace/$workspaceId/files/$'
   id:
     | '__root__'
     | '/_account'
@@ -179,6 +191,7 @@ export interface FileRouteTypes {
     | '/api/workspace/open'
     | '/api/workspace/$workspaceId/bots'
     | '/api/workspace/$workspaceId/reconcile'
+    | '/api/workspace/$workspaceId/files/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -192,6 +205,7 @@ export interface RootRouteChildren {
   ApiWorkspaceOpenRoute: typeof ApiWorkspaceOpenRoute
   ApiWorkspaceWorkspaceIdBotsRoute: typeof ApiWorkspaceWorkspaceIdBotsRoute
   ApiWorkspaceWorkspaceIdReconcileRoute: typeof ApiWorkspaceWorkspaceIdReconcileRoute
+  ApiWorkspaceWorkspaceIdFilesSplatRoute: typeof ApiWorkspaceWorkspaceIdFilesSplatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -287,6 +301,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiWorkspaceWorkspaceIdReconcileRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/workspace/$workspaceId/files/$': {
+      id: '/api/workspace/$workspaceId/files/$'
+      path: '/api/workspace/$workspaceId/files/$'
+      fullPath: '/api/workspace/$workspaceId/files/$'
+      preLoaderRoute: typeof ApiWorkspaceWorkspaceIdFilesSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -316,6 +337,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiWorkspaceOpenRoute: ApiWorkspaceOpenRoute,
   ApiWorkspaceWorkspaceIdBotsRoute: ApiWorkspaceWorkspaceIdBotsRoute,
   ApiWorkspaceWorkspaceIdReconcileRoute: ApiWorkspaceWorkspaceIdReconcileRoute,
+  ApiWorkspaceWorkspaceIdFilesSplatRoute:
+    ApiWorkspaceWorkspaceIdFilesSplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -4,6 +4,7 @@ import { drizzle } from "drizzle-orm/d1";
 
 import { personalWorkspace, workspaceBot } from "../db/workspace-schema.ts";
 import { auth } from "./auth.server.ts";
+import { requestedFileKey } from "./workspace-files.ts";
 
 /**
  * The ID of the account's personal workspace, recorded in D1 on first use. Racing first
@@ -85,7 +86,7 @@ async function admitRefreshing(
 	};
 }
 
-/** Test stage only: owner-only hooks that evict the object or read and damage its state. */
+/** Test stage only: owner-only hooks that evict the object, read and damage its state, or seed its files. */
 async function testHook(request: Request, admitted: Admitted, hook: string): Promise<Response> {
 	const { method } = request;
 	if (hook === "evict" && method === "POST") {
@@ -106,6 +107,15 @@ async function testHook(request: Request, admitted: Admitted, hook: string): Pro
 			const bot = (await request.json()) as { id: string; name: string };
 			await db.insert(workspaceBot).values({ workspaceId, botId: bot.id, name: bot.name });
 		}
+		return new Response(null, { status: 204 });
+	}
+	if (hook.startsWith("files/") && method === "PUT") {
+		// Seeds the owner's own file, as #20 and #21 will publish one.
+		const key = requestedFileKey(admitted.workspaceId, hook.slice("files/".length));
+		if (key === null) return Response.json({ error: "Unsafe file key" }, { status: 400 });
+		await env.FILES.put(key, await request.arrayBuffer(), {
+			httpMetadata: { contentType: request.headers.get("content-type") ?? undefined },
+		});
 		return new Response(null, { status: 204 });
 	}
 	return Response.json({ error: "No such test hook" }, { status: 404 });
