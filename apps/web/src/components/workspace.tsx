@@ -123,18 +123,26 @@ export function WorkspaceView({
 	panelOpen,
 	onPanelOpenChange,
 	onSignOut,
+	messages,
 }: {
 	account: Account;
 	workspace: Workspace;
 	sidebarPinned: boolean;
 	panelOpen: boolean;
 	onPanelOpenChange: (open: boolean) => void;
+	/** Replaces the fixed greetings; only `/design` passes it until conversation lands (#19). */
+	messages?: React.ReactNode;
 	onSignOut: () => void;
 }) {
 	const docked = useDocked();
 	const name = workspace.chiefOfStaff.name;
 	const conversation = (
-		<ConversationPane name={name} panelOpen={panelOpen} onPanelOpenChange={onPanelOpenChange} />
+		<ConversationPane
+			name={name}
+			panelOpen={panelOpen}
+			onPanelOpenChange={onPanelOpenChange}
+			messages={messages}
+		/>
 	);
 	const panel = <ComputerPanel computer={workspace.computer} />;
 	return (
@@ -348,10 +356,12 @@ function ConversationPane({
 	name,
 	panelOpen,
 	onPanelOpenChange,
+	messages,
 }: {
 	name: string;
 	panelOpen: boolean;
 	onPanelOpenChange: (open: boolean) => void;
+	messages?: React.ReactNode;
 }) {
 	return (
 		<section
@@ -361,15 +371,16 @@ function ConversationPane({
 			{/* Messages scroll the full height, under the floating header and composer. */}
 			<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-52 pb-32 [scrollbar-gutter:stable]">
 				<Conversation aria-label="Messages" className="mx-auto w-full max-w-2xl">
-					{GREETINGS.map((text, index) => (
-						<ConversationBubble
-							key={text}
-							className="message-in"
-							style={{ "--enter-delay": `${GREETING_DELAYS_MS[index]}ms` } as React.CSSProperties}
-						>
-							<ConversationContent>{text}</ConversationContent>
-						</ConversationBubble>
-					))}
+					{messages ??
+						GREETINGS.map((text, index) => (
+							<ConversationBubble
+								key={text}
+								className="message-in"
+								style={{ "--enter-delay": `${GREETING_DELAYS_MS[index]}ms` } as React.CSSProperties}
+							>
+								<ConversationContent>{text}</ConversationContent>
+							</ConversationBubble>
+						))}
 				</Conversation>
 			</div>
 			<ProgressiveBlur side="top" className="h-56" />

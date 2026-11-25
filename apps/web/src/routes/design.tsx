@@ -546,6 +546,13 @@ function DesignSystem() {
 					>
 						Workspace screens
 					</Link>
+					<Link
+						to="/design/site-request"
+						search={{ state: "waiting" }}
+						className={buttonVariants({ variant: "outline", className: "self-start" })}
+					>
+						Site request prototype
+					</Link>
 				</Section>
 
 				<Separator />
