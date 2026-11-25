@@ -21,7 +21,6 @@ export async function openPersonalWorkspace(
 	return admitted.workspace.open(admitted.workspaceId, admitted.accountId, faults);
 }
 
-/** The workspace's bot list from the D1 projection, without waking the Workspace object. */
 export async function botList(workspaceId: string): Promise<Member[]> {
 	return drizzle(env.DB)
 		.select({ id: workspaceBot.botId, name: workspaceBot.name })

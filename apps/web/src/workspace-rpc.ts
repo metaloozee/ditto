@@ -38,9 +38,16 @@ export type PrivateSessionsRefusal =
 	/** The approved list changed after the start; the instance still enforces the old one. */
 	| "list-changed";
 
-export type PrivateSessions =
-	| { available: true }
-	| { available: false; reason: PrivateSessionsRefusal; detail: string };
+export interface PrivateSessionsRefused {
+	available: false;
+	reason: PrivateSessionsRefusal;
+	detail: string;
+}
+
+export type PrivateSessions = { available: true } | PrivateSessionsRefused;
+
+/** The instance's answer at `/isolation`, or null when none came. */
+export type IsolationReport = { status: number; body: string } | null;
 
 /** What the Workspace object recorded about the instance's isolation, once per start. */
 export interface IsolationCheck {
@@ -66,7 +73,6 @@ export type ComputerStatus =
 			privateSessions: PrivateSessions;
 	  };
 
-/** A bot in a workspace's membership. */
 export interface Member {
 	id: string;
 	name: string;

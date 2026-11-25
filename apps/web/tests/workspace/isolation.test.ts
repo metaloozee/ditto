@@ -4,6 +4,7 @@
 import type { BrowserContext } from "playwright";
 import { describe, expect, it } from "vite-plus/test";
 
+import type { IsolationReport } from "../../src/workspace-rpc.ts";
 import { continueWithGitHub, gitHubUser, newVisitor } from "../auth/visitor.ts";
 
 interface PrivateSessions {
@@ -18,9 +19,6 @@ interface ComputerStatus {
 	privateSessions: PrivateSessions;
 }
 
-/** What the synthetic instance's control port answers at `/isolation`; null answers 404. */
-type Report = { status: number; body: string } | null;
-
 async function owner() {
 	const visitor = await newVisitor();
 	await continueWithGitHub(visitor.page, gitHubUser());
@@ -33,14 +31,14 @@ async function owner() {
 const at = (workspaceId: string, path: string) => `/api/workspaces/${workspaceId}${path}`;
 
 /** The report the image writes once its fence applied, for `workspace` and `hosts`. */
-function fenced(workspace: string, hosts: string[] = []): Report {
+function fenced(workspace: string, hosts: string[] = []): IsolationReport {
 	return {
 		status: 200,
 		body: JSON.stringify({ workspace, isolation: "filter-user-only", hosts }),
 	};
 }
 
-async function synthetic(context: BrowserContext, workspaceId: string, isolation: Report) {
+async function synthetic(context: BrowserContext, workspaceId: string, isolation: IsolationReport) {
 	const response = await context.request.put(at(workspaceId, "/__test/computer/synthetic"), {
 		data: { isolation },
 	});
@@ -84,7 +82,7 @@ describe("private sessions on the shared computer", () => {
 		}
 	});
 
-	const failing: [string, (workspaceId: string) => Report, string][] = [
+	const failing: [string, (workspaceId: string) => IsolationReport, string][] = [
 		[
 			"the fence is reported absent",
 			(id) => ({

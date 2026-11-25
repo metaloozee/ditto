@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 
 import { personalWorkspace, workspaceBot } from "../db/workspace-schema.ts";
+import type { Member } from "../workspace-rpc.ts";
 import { auth } from "./auth.server.ts";
 import { requestedFileKey } from "./workspace-files.ts";
 
@@ -104,7 +105,7 @@ async function testHook(request: Request, admitted: Admitted, hook: string): Pro
 		if (method === "DELETE") {
 			await db.delete(workspaceBot).where(eq(workspaceBot.workspaceId, workspaceId));
 		} else {
-			const bot = (await request.json()) as { id: string; name: string };
+			const bot = (await request.json()) as Member;
 			await db.insert(workspaceBot).values({ workspaceId, botId: bot.id, name: bot.name });
 		}
 		return new Response(null, { status: 204 });
