@@ -318,7 +318,10 @@ export class Workspace extends Container<AuthEnv> implements WorkspaceRpc {
 			if (route === "PUT /hosts") {
 				const hosts = parseHosts(await request.json().catch(() => null));
 				if (typeof hosts === "string") return Response.json({ error: hosts }, { status: 400 });
-				// A running instance keeps the list it started with until its next start.
+				// A running instance keeps the list it started with until its next start, and private
+				// sessions report `list-changed` meanwhile. The filter re-reads its list file, but only
+				// root writes that file, at start: the control port runs as the browser user, beside
+				// Chrome and the bots, so letting it rewrite the list would let them widen their own.
 				await this.ctx.storage.put("hosts", hosts);
 				return Response.json({ hosts });
 			}
