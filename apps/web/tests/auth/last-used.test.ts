@@ -3,10 +3,10 @@ import { expect, it } from "vite-plus/test";
 
 import { enterCode, latestCode, newAddress, requestSignIn, signUpByEmail } from "./email.ts";
 import { continueWithGoogle, googleUser, nextGoogleAuthorization } from "./google.ts";
-import { continueWithGitHub, gitHubUser, newVisitor, open } from "./visitor.ts";
+import { clickSignOut, continueWithGitHub, gitHubUser, newVisitor, open } from "./visitor.ts";
 
 async function signOut(page: Page) {
-	await page.getByRole("button", { name: "Sign out" }).click();
+	await clickSignOut(page);
 	await page.waitForURL((url) => url.pathname === "/sign-in");
 }
 

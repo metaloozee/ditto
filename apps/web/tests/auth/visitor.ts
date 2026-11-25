@@ -32,6 +32,20 @@ export async function newVisitor(options: BrowserContextOptions = {}) {
 	return { context, page };
 }
 
+/**
+ * Presses Sign out: from the account menu in the workspace sidebar, or the button on pages
+ * that show one, such as Settings.
+ */
+export async function clickSignOut(page: Page) {
+	const account = page.getByRole("button", { name: "Account" });
+	if (await account.isVisible()) {
+		await account.click();
+		await page.getByRole("menuitem", { name: "Sign out" }).click();
+	} else {
+		await page.getByRole("button", { name: "Sign out" }).click();
+	}
+}
+
 /** Opens `path` and waits until the page is hydrated and its buttons work. */
 export async function open(page: Page, path: string) {
 	await page.goto(path, { waitUntil: "networkidle" });

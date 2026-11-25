@@ -4,12 +4,19 @@ import { devices, type BrowserContext, type Page } from "playwright";
 import { describe, expect, it } from "vite-plus/test";
 
 import { SESSION_EXPIRES_IN } from "./setup.ts";
-import { appUrl, continueWithGitHub, gitHubUser, newVisitor, open } from "./visitor.ts";
+import {
+	appUrl,
+	clickSignOut,
+	continueWithGitHub,
+	gitHubUser,
+	newVisitor,
+	open,
+} from "./visitor.ts";
 
 const path = (page: Page) => new URL(page.url()).pathname;
 
 async function signOut(page: Page) {
-	await page.getByRole("button", { name: "Sign out" }).click();
+	await clickSignOut(page);
 	await page.waitForURL((url) => url.pathname === "/sign-in");
 }
 
@@ -54,7 +61,7 @@ describe("sessions", () => {
 		await continueWithGitHub(page, gitHubUser());
 		await page.route("**/api/auth/sign-out", (route) => route.fulfill({ status: 503, json: {} }));
 
-		await page.getByRole("button", { name: "Sign out" }).click();
+		await clickSignOut(page);
 		await page.getByText("Couldn’t sign out").waitFor({ timeout: 3000 });
 		expect(path(page)).toBe("/");
 		await page.unroute("**/api/auth/sign-out");
