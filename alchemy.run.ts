@@ -41,7 +41,7 @@ export class Website extends Cloudflare.Website.Vite<Website>()(
 				FILES: Files,
 				WORKSPACE: Cloudflare.Container<WorkspaceRpc>("workspace", {
 					className: "Workspace",
-					// The feasibility image: the egress filter and the headed desktop (ADR-0013).
+					// The feasibility image: the egress filter and the shared computer (ADR-0013).
 					context: path.join(import.meta.dirname, "feasibility"),
 					dockerfile: path.join(import.meta.dirname, "feasibility/containers/Dockerfile"),
 					instanceType: instanceType as "standard-1",
