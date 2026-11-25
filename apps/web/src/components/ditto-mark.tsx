@@ -1,6 +1,7 @@
 import { cn } from "cn";
 import { useAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
+import { motion, useMotionValue, useSpring, useTransform } from "motion/react";
 import * as React from "react";
 
 // Path data mirrors public/logo.svg; keep the two in sync.
@@ -214,7 +215,15 @@ function Eyes({ mood, width, stroke }: { mood: Mood; width: number; stroke: stri
 	));
 }
 
-function DittoMark({ className, ...props }: Omit<React.ComponentProps<"button">, "onClick">) {
+/**
+ * The Ditto character. `still` draws it at rest as a picture, for places such as the
+ * sidebar where it shouldn't follow the pointer or take a click.
+ */
+function DittoMark({
+	still = false,
+	className,
+	...props
+}: Omit<React.ComponentProps<"button">, "onClick"> & { still?: boolean }) {
 	const [stored, setMood] = useAtom(moodAtom);
 	const mood = isMood(stored) ? stored : "neutral";
 	const button = React.useRef<HTMLButtonElement>(null);
@@ -228,7 +237,7 @@ function DittoMark({ className, ...props }: Omit<React.ComponentProps<"button">,
 
 	React.useEffect(() => {
 		const el = button.current;
-		if (!el || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+		if (still || !el || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 		const d = createDitto();
 		ditto.current = d;
 
@@ -283,11 +292,73 @@ function DittoMark({ className, ...props }: Omit<React.ComponentProps<"button">,
 			document.documentElement.removeEventListener("pointerleave", onLeave);
 			ditto.current = undefined;
 		};
-	}, []);
+	}, [still]);
 
 	// useId can contain characters that break url(#…) references.
 	const id = `ditto-${React.useId().replace(/[^\w-]/g, "")}`;
 	const url = (name: string) => `url(#${id}-${name})`;
+
+	const face = (
+		<svg viewBox="0 0 100 100" overflow="visible" className="size-full" aria-hidden>
+			<defs>
+				<linearGradient id={`${id}-plate`} x1="0" y1="0" x2="0" y2="1">
+					<stop offset="0" stopColor="#ffffff" />
+					<stop offset="1" stopColor="#dcdcde" />
+				</linearGradient>
+				<linearGradient id={`${id}-bezel`} x1="0" y1="0" x2="0" y2="1">
+					<stop offset="0" stopColor="#c0c1c3" />
+					<stop offset=".6" stopColor="#e8e8ea" />
+					<stop offset="1" stopColor="#ffffff" />
+				</linearGradient>
+				<linearGradient id={`${id}-well`} x1="0" y1="0" x2="0" y2="1">
+					<stop offset="0" stopColor="#000" stopOpacity=".5" />
+					<stop offset=".35" stopColor="#000" stopOpacity="0" />
+				</linearGradient>
+				<filter
+					id={`${id}-bloom`}
+					filterUnits="userSpaceOnUse"
+					x="0"
+					y="0"
+					width="100"
+					height="100"
+				>
+					<feGaussianBlur stdDeviation="3" />
+				</filter>
+				<clipPath id={`${id}-screen`}>
+					<path d={SCREEN} />
+				</clipPath>
+			</defs>
+			<g ref={body}>
+				<path d={SHADOW} fill="#b0b1b4" />
+				<path d={PLATE} fill={url("plate")} />
+				<path d={RIM} fill="none" stroke="#868687" strokeOpacity=".4" strokeWidth=".5" />
+				<path d={BEZEL} fill={url("bezel")} />
+				<path d={SCREEN} fill="#19191a" />
+				<g clipPath={url("screen")}>
+					<g filter={url("bloom")} opacity=".7">
+						<g ref={bloom}>
+							<Eyes mood={mood} width={13} stroke="#5884f8" />
+						</g>
+					</g>
+					<path d={SCREEN} fill={url("well")} />
+				</g>
+				<g clipPath={url("screen")}>
+					<g ref={eyes}>
+						<Eyes mood={mood} width={11} stroke="#5884f8" />
+						<Eyes mood={mood} width={7.6} stroke="#9fbdff" />
+					</g>
+				</g>
+			</g>
+		</svg>
+	);
+
+	if (still) {
+		return (
+			<span className={cn("block", className)} aria-hidden>
+				{face}
+			</span>
+		);
+	}
 
 	return (
 		<button
@@ -308,59 +379,85 @@ function DittoMark({ className, ...props }: Omit<React.ComponentProps<"button">,
 			)}
 			{...props}
 		>
-			<svg viewBox="0 0 100 100" overflow="visible" className="size-full" aria-hidden>
-				<defs>
-					<linearGradient id={`${id}-plate`} x1="0" y1="0" x2="0" y2="1">
-						<stop offset="0" stopColor="#ffffff" />
-						<stop offset="1" stopColor="#dcdcde" />
-					</linearGradient>
-					<linearGradient id={`${id}-bezel`} x1="0" y1="0" x2="0" y2="1">
-						<stop offset="0" stopColor="#c0c1c3" />
-						<stop offset=".6" stopColor="#e8e8ea" />
-						<stop offset="1" stopColor="#ffffff" />
-					</linearGradient>
-					<linearGradient id={`${id}-well`} x1="0" y1="0" x2="0" y2="1">
-						<stop offset="0" stopColor="#000" stopOpacity=".5" />
-						<stop offset=".35" stopColor="#000" stopOpacity="0" />
-					</linearGradient>
-					<filter
-						id={`${id}-bloom`}
-						filterUnits="userSpaceOnUse"
-						x="0"
-						y="0"
-						width="100"
-						height="100"
-					>
-						<feGaussianBlur stdDeviation="3" />
-					</filter>
-					<clipPath id={`${id}-screen`}>
-						<path d={SCREEN} />
-					</clipPath>
-				</defs>
-				<g ref={body}>
-					<path d={SHADOW} fill="#b0b1b4" />
-					<path d={PLATE} fill={url("plate")} />
-					<path d={RIM} fill="none" stroke="#868687" strokeOpacity=".4" strokeWidth=".5" />
-					<path d={BEZEL} fill={url("bezel")} />
-					<path d={SCREEN} fill="#19191a" />
-					<g clipPath={url("screen")}>
-						<g filter={url("bloom")} opacity=".7">
-							<g ref={bloom}>
-								<Eyes mood={mood} width={13} stroke="#5884f8" />
-							</g>
-						</g>
-						<path d={SCREEN} fill={url("well")} />
-					</g>
-					<g clipPath={url("screen")}>
-						<g ref={eyes}>
-							<Eyes mood={mood} width={11} stroke="#5884f8" />
-							<Eyes mood={mood} width={7.6} stroke="#9fbdff" />
-						</g>
-					</g>
-				</g>
-			</svg>
+			{face}
 		</button>
 	);
 }
 
-export { DittoMark };
+/**
+ * Ditto in the conversation header: the character on a raised plate cut to its own outline.
+ * The plate leans toward the pointer on a softer, later spring than the body, so the two
+ * read as layers at different depths. Touch pointers and reduced motion leave it still.
+ */
+function DittoStage({ className }: { className?: string }) {
+	const stage = React.useRef<HTMLDivElement>(null);
+	const gazeX = useMotionValue(0);
+	const gazeY = useMotionValue(0);
+	const leanX = useSpring(gazeX, { stiffness: 160, damping: 22 });
+	const leanY = useSpring(gazeY, { stiffness: 160, damping: 22 });
+	const x = useTransform(leanX, (v) => v * 3);
+	const y = useTransform(leanY, (v) => v * 2);
+	const rotate = useTransform(leanX, (v) => v * 2.5);
+
+	React.useEffect(() => {
+		if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+		const onMove = (event: PointerEvent) => {
+			const el = stage.current;
+			if (!el || event.pointerType === "touch") return;
+			const box = el.getBoundingClientRect();
+			const clamp = (v: number) => Math.max(-1, Math.min(1, v));
+			gazeX.set(clamp((event.clientX - (box.left + box.width / 2)) / 480));
+			gazeY.set(clamp((event.clientY - (box.top + box.height / 2)) / 480));
+		};
+		const onLeave = () => {
+			gazeX.set(0);
+			gazeY.set(0);
+		};
+		window.addEventListener("pointermove", onMove, { passive: true });
+		document.documentElement.addEventListener("pointerleave", onLeave);
+		return () => {
+			window.removeEventListener("pointermove", onMove);
+			document.documentElement.removeEventListener("pointerleave", onLeave);
+		};
+	}, [gazeX, gazeY]);
+
+	const id = `ditto-stage-${React.useId().replace(/[^\w-]/g, "")}`;
+	return (
+		<div ref={stage} className={cn("relative grid place-items-center", className)}>
+			<motion.svg
+				aria-hidden
+				viewBox="0 0 100 100"
+				overflow="visible"
+				style={{ x, y, rotate }}
+				// Lit like a raised button: a tight contact shadow under a faint ambient one.
+				className="absolute inset-0 size-full [filter:var(--stage-drop)]"
+			>
+				<defs>
+					<linearGradient id={`${id}-fill`} x1="0" y1="0" x2="0" y2="1">
+						<stop offset="0" stopColor="var(--raised-top)" />
+						<stop offset="1" stopColor="var(--raised)" />
+					</linearGradient>
+					{/* The top edge catches the light and the sides lose it. */}
+					<linearGradient id={`${id}-lit`} x1="0" y1="0" x2="0" y2="1">
+						<stop offset="0" stopColor="white" />
+						<stop offset=".35" stopColor="white" stopOpacity="0" />
+					</linearGradient>
+					<mask id={`${id}-top`} maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+						<rect width="100" height="100" fill={`url(#${id}-lit)`} />
+					</mask>
+				</defs>
+				<path d={PLATE} fill={`url(#${id}-fill)`} stroke="var(--raised-edge)" strokeWidth="0.8" />
+				<path
+					d={RIM}
+					fill="none"
+					stroke="var(--raised-highlight)"
+					strokeWidth="1"
+					mask={`url(#${id}-top)`}
+				/>
+			</motion.svg>
+			<DittoMark className="relative size-[66%]" />
+		</div>
+	);
+}
+
+export { DittoMark, DittoStage };

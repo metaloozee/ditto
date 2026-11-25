@@ -2,7 +2,8 @@
 
 GET  /ready           200 once Chrome's DevTools answers through the gate (not while it is locked)
 GET  /decisions       the filter's JSON lines, with the workspace on each
-GET  /isolation       whether the network fence applied
+GET  /isolation       whether the network fence applied, the workspace, and the hosts the filter
+                      approves now
 GET  /memory          the instance's memory use, in MiB
 GET  /bypass          whether this (browser) user can resolve DNS or connect out without the filter
 GET  /samples         memory, pressure and desktop processes, sampled every 3 s (#37)
@@ -10,13 +11,17 @@ GET  /sandbox         whether Chrome runs sandboxed, and why not (#37)
 GET  /devtools-reach  which DevTools ports this (browser) user, standing in for a bot, can reach
 GET  /screens         the extra screens and whether each Chrome is alive
 POST /screens?url=    open one more screen on its own display, for the capacity measurement
+POST /reach?host=     load https://<host>/ through the filter, as Chrome would, and report the
+                      filter's decision for it
 
 It serves no page content, cookies or profile files.
 """
 
 import json
 import os
+import re
 import socket
+import ssl
 import subprocess
 import threading
 import time
@@ -28,6 +33,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 STATE = Path("/run/egress")
+FILTER = "http://127.0.0.1:8080"
+FILTER_CA = "/ca-public/ca.pem"
+# The Workspace object's exact-host rule, checked again so the URL below can't be bent.
+HOST = re.compile(
+    r"^(?=.{1,253}\Z)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\Z"
+)
+DESTINATIONS = Path("/destinations")
 BROWSER_STATE = Path("/run/browser")
 SAMPLE_SECONDS = 3
 # Two hours of samples; the owner's commands poll and keep their own copy.
@@ -80,6 +92,21 @@ def bypass() -> dict:
         result["direct"] = "failed"
         result["directError"] = type(error).__name__
     return result
+
+
+def isolation() -> dict | None:
+    """The entrypoint's fence result, with the list the filter reads on every decision."""
+    try:
+        report = json.loads((STATE / "isolation.json").read_text())
+    except FileNotFoundError:
+        return None
+    try:
+        lines = (DESTINATIONS / f"{report['workspace']}.txt").read_text().splitlines()
+    except FileNotFoundError:
+        lines = []
+    # Parsed as egress_filter.approved_hosts does.
+    report["hosts"] = sorted({line.split("#")[0].strip().lower() for line in lines} - {""})
+    return report
 
 
 def processes() -> list[tuple[str, float | None]]:
@@ -178,6 +205,50 @@ def open_screen(url: str) -> dict:
     return {"screens": len(screens)}
 
 
+def filter_decision(host: str, offset: int) -> str | None:
+    """The filter's first decision for `host` logged past `offset`, waiting briefly for the pipe."""
+    deadline = time.monotonic() + 3
+    while True:
+        with (STATE / "decisions.jsonl").open() as log:
+            log.seek(offset)
+            for line in log:
+                try:
+                    entry = json.loads(line)
+                except ValueError:
+                    continue
+                if entry.get("host") == host:
+                    return entry.get("decision")
+        if time.monotonic() > deadline:
+            return None
+        time.sleep(0.1)
+
+
+def reach_host(host: str) -> tuple[int, dict]:
+    """Loads https://<host>/ through the filter, as the browser user, and asks the filter's log
+    what it decided. Nothing here writes the approved sites."""
+    offset = (STATE / "decisions.jsonl").stat().st_size
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({"https": FILTER}),
+        urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=FILTER_CA)),
+    )
+    result: dict = {"host": host}
+    try:
+        with opener.open(f"https://{host}/", timeout=20) as response:
+            result["status"] = response.status
+    except urllib.error.HTTPError as error:
+        result["status"] = error.code
+    except OSError as error:
+        result["error"] = str(error)
+    decision = filter_decision(host, offset)
+    if decision is None:
+        return 502, {
+            "host": host,
+            "error": "The filter logged no decision for this host",
+            "requestError": result.get("error"),
+        }
+    return 200, result | {"decision": decision}
+
+
 def devtools_ready() -> bool:
     try:
         # Only the gate's user may reach Chrome's own port once the fence applies.
@@ -195,7 +266,8 @@ class Control(BaseHTTPRequestHandler):
         elif self.path == "/decisions":
             self.send(200, (STATE / "decisions.jsonl").read_text(), "application/x-ndjson")
         elif self.path == "/isolation":
-            self.send(200, (STATE / "isolation.json").read_text(), "application/json")
+            report = isolation()
+            self.send(200 if report else 404, report or {"error": "no isolation report"})
         elif self.path == "/memory":
             self.send(200, memory())
         elif self.path == "/bypass":
@@ -219,6 +291,12 @@ class Control(BaseHTTPRequestHandler):
         target = urllib.parse.parse_qs(url.query).get("url", [""])[0]
         if url.path == "/screens" and target.startswith("https://"):
             self.send(200, open_screen(target))
+        elif url.path == "/reach":
+            host = urllib.parse.parse_qs(url.query).get("host", [""])[0]
+            if HOST.match(host):
+                self.send(*reach_host(host))
+            else:
+                self.send(400, {"error": "not an exact host name"})
         else:
             self.send(404, {"error": "not found"})
 

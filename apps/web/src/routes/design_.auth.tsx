@@ -2,7 +2,6 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import {
-	HomeView,
 	LINK_OUTCOMES,
 	linkOutcomeToast,
 	previewAccount,
@@ -196,9 +195,6 @@ function AuthDesigns() {
 			</Group>
 
 			<Group title="Signed in">
-				<Frame label="Home" flush>
-					<HomeView account={previewAccount} onSignOut={noop} />
-				</Frame>
 				<Frame label="Settings" flush>
 					<SettingsView account={previewAccount} onLink={noop} onSignOut={noop} />
 				</Frame>

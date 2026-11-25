@@ -21,6 +21,12 @@ export const SESSION_EXPIRES_IN = 6;
 export const CODE_EXPIRES_IN = 10;
 /** How long a test visitor waits before another code can be sent. */
 export const CODE_RESEND_IN = 3;
+/** How long the test stage's shared computer may sit idle before it stops. */
+export const COMPUTER_IDLE_SECONDS = 30;
+/** How long after a start the test stage's shared computer is destroyed regardless. */
+export const COMPUTER_LIFETIME_SECONDS = 75;
+/** The test stage's cookie key, so a test can check that no answer reveals it. */
+export const COOKIE_ENCRYPTION_KEY = "test-only-cookie-key-not-for-any-real-stage";
 
 async function waitForApp(exited: Promise<number | null>) {
 	const deadline = Date.now() + 180_000;
@@ -64,6 +70,9 @@ export default async function setup(project: TestProject) {
 			RESEND_BASE_URL: `${upstream.url}/resend`,
 			CODE_EXPIRES_IN: String(CODE_EXPIRES_IN),
 			CODE_RESEND_IN: String(CODE_RESEND_IN),
+			COMPUTER_IDLE_SECONDS: String(COMPUTER_IDLE_SECONDS),
+			COMPUTER_LIFETIME_SECONDS: String(COMPUTER_LIFETIME_SECONDS),
+			COOKIE_ENCRYPTION_KEY,
 		},
 	});
 	const exited = new Promise<number | null>((resolve) => child.once("exit", resolve));

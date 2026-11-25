@@ -4,7 +4,6 @@ import { Link } from "@tanstack/react-router";
 
 import { PROVIDERS, type Provider } from "#/components/auth.tsx";
 import { BrandIcon } from "#/components/brand-icons.tsx";
-import { DittoMark } from "#/components/ditto-mark.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button, buttonVariants } from "#/components/ui/button.tsx";
 import { Card, CardPanel } from "#/components/ui/card.tsx";
@@ -46,25 +45,6 @@ function AppHeader({ onSignOut }: { onSignOut: () => void }) {
 				</Button>
 			</nav>
 		</header>
-	);
-}
-
-export function HomeView({ account, onSignOut }: { account: Account; onSignOut: () => void }) {
-	return (
-		<div className="flex min-h-dvh flex-col">
-			<AppHeader onSignOut={onSignOut} />
-			<main className="grid flex-1 place-items-center px-4 py-10 sm:px-8">
-				<div className="flex max-w-sm flex-col items-center gap-5 text-center">
-					<DittoMark className="size-20" />
-					<div className="flex flex-col gap-1.5">
-						<h1>{account.displayName ? `Welcome back, ${account.displayName}` : "Welcome back"}</h1>
-						<p className="text-muted-foreground">
-							You’re signed in. Your projects and agents will show up here.
-						</p>
-					</div>
-				</div>
-			</main>
-		</div>
 	);
 }
 

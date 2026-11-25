@@ -11,7 +11,7 @@ const ignorePatterns = [
 const authTests = {
 	test: {
 		name: "auth",
-		include: ["apps/web/tests/auth/*.test.ts"],
+		include: ["apps/web/tests/auth/*.test.ts", "apps/web/tests/workspace/*.test.ts"],
 		globalSetup: ["apps/web/tests/auth/setup.ts"],
 		// One Worker and database serve every file.
 		fileParallelism: false,

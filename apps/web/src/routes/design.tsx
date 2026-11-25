@@ -11,13 +11,13 @@ import {
 	Settings01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Arc, Blocks, Classic, LinearDots, Pulse, Ring } from "loading-dev";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { DittoMark } from "#/components/ditto-mark.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
-import { Button } from "#/components/ui/button.tsx";
+import { Button, buttonVariants } from "#/components/ui/button.tsx";
 import {
 	Card,
 	CardAction,
@@ -29,6 +29,11 @@ import {
 	CardTitle,
 } from "#/components/ui/card.tsx";
 import { Checkbox } from "#/components/ui/checkbox.tsx";
+import {
+	Conversation,
+	ConversationBubble,
+	ConversationContent,
+} from "#/components/ui/conversation.tsx";
 import { CopyButton } from "#/components/ui/copy-button.tsx";
 import {
 	Dialog,
@@ -74,6 +79,8 @@ const swatches = [
 	["panel", "bg-panel"],
 	["popover", "bg-popover"],
 	["muted", "bg-muted"],
+	["bubble-received", "bg-bubble-received"],
+	["bubble-sent", "bg-bubble-sent"],
 	["accent", "bg-accent"],
 	["border", "bg-border"],
 	["input", "bg-input"],
@@ -509,6 +516,43 @@ function DesignSystem() {
 							</Tabs>
 						</Card>
 					</div>
+				</Section>
+
+				<Section title="Conversation">
+					<Conversation className="max-w-md">
+						<ConversationBubble className="message-in">
+							<ConversationContent>
+								The preview is up. Want me to run the tests too?
+							</ConversationContent>
+						</ConversationBubble>
+						<ConversationBubble
+							className="message-in"
+							style={{ "--enter-delay": "70ms" } as CSSProperties}
+						>
+							<ConversationContent>It took 41 seconds.</ConversationContent>
+						</ConversationBubble>
+						<ConversationBubble
+							variant="sent"
+							className="message-in"
+							style={{ "--enter-delay": "130ms" } as CSSProperties}
+						>
+							<ConversationContent>Yes, all of them.</ConversationContent>
+						</ConversationBubble>
+					</Conversation>
+					<Link
+						to="/design/workspace"
+						search={{ state: "opened" }}
+						className={buttonVariants({ variant: "outline", className: "self-start" })}
+					>
+						Workspace screens
+					</Link>
+					<Link
+						to="/design/site-request"
+						search={{ state: "waiting" }}
+						className={buttonVariants({ variant: "outline", className: "self-start" })}
+					>
+						Site request prototype
+					</Link>
 				</Section>
 
 				<Separator />

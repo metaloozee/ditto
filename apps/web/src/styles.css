@@ -46,6 +46,9 @@
   --color-success: var(--success);
   --color-destructive: var(--destructive);
   --color-panel: var(--panel);
+  --color-bubble-received: var(--bubble-received);
+  --color-bubble-sent: var(--bubble-sent);
+  --color-bubble-sent-foreground: var(--bubble-sent-foreground);
   --color-panel-border: var(--panel-border);
   --color-border: var(--border);
   --color-input: var(--input);
@@ -61,6 +64,10 @@
 
   --shadow-edge: 0 0 0 1px var(--edge);
   --shadow-edge-hover: 0 0 0 1px var(--edge-hover);
+
+  /* Emil Kowalski's strong ease-out for things entering, and the iOS drawer curve. */
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
@@ -102,6 +109,9 @@
   --secondary: var(--gray-3);
   --accent: var(--gray-3);
   --sidebar-accent: var(--gray-4);
+  --bubble-received: var(--gray-3);
+  --bubble-sent: var(--blue-9);
+  --bubble-sent-foreground: var(--gray-1);
   --link: var(--blue-9);
 
   --foreground: var(--gray-12);
@@ -135,6 +145,8 @@
   --raised-highlight: oklch(1 0 0);
   --raised-hover: brightness(0.98);
   --button-drop: 0 1px 2px oklch(0 0 0 / 8%), 0 2px 4px -1px oklch(0 0 0 / 6%);
+  --stage-drop: drop-shadow(0 1px 1px oklch(0 0 0 / 12%)) drop-shadow(0 6px 14px oklch(0 0 0 / 8%));
+  --screen-inset: inset 0 2px 12px oklch(0 0 0 / 12%);
   --input: var(--gray-9);
   --ring: var(--blue-9);
   --sidebar-foreground: var(--gray-12);
@@ -158,6 +170,8 @@
   --gray-9: oklch(0.61 0.004 275);
   --gray-11: oklch(0.81 0.003 275);
   --gray-12: oklch(0.965 0.001 275);
+  /* The light theme's signal blue, so white text reads on the owner's bubble. */
+  --blue-8: oklch(0.53 0.22 266);
   --blue-9: oklch(0.64 0.18 266);
   --blue-11: oklch(0.8 0.1 266);
   --red-11: oklch(0.8 0.11 25);
@@ -172,6 +186,9 @@
   --secondary: var(--gray-5);
   --accent: var(--gray-5);
   --sidebar-accent: var(--gray-4);
+  --bubble-received: var(--gray-4);
+  --bubble-sent: var(--blue-8);
+  --bubble-sent-foreground: var(--gray-12);
   --panel-border: var(--gray-7);
   --edge: oklch(1 0 0 / 8%);
   --edge-hover: oklch(1 0 0 / 13%);
@@ -191,6 +208,8 @@
   --raised-highlight: oklch(1 0 0 / 10%);
   --raised-hover: brightness(1.12);
   --button-drop: 0 1px 2px oklch(0 0 0 / 35%), 0 2px 6px -2px oklch(0 0 0 / 30%);
+  --stage-drop: drop-shadow(0 1px 1px oklch(0 0 0 / 28%)) drop-shadow(0 6px 14px oklch(0 0 0 / 14%));
+  --screen-inset: inset 0 2px 12px oklch(0 0 0 / 35%);
   --link: var(--blue-11);
 }
 
@@ -367,5 +386,80 @@
   .toast-surface,
   .toast-detail {
     transition: none;
+  }
+}
+
+/*
+ * A message entering a conversation (components/ui/conversation.tsx): it fades, rises 8px,
+ * scales up from 0.98 and sharpens from a 4px blur, growing from its speaker's corner. A
+ * group staggers through --enter-delay, set inline.
+ */
+@keyframes message-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+    filter: blur(4px);
+  }
+}
+
+@utility message-in {
+  transform-origin: bottom left;
+  animation: message-in 400ms var(--ease-out-strong) var(--enter-delay, 0ms) both;
+  &[data-align="end"] {
+    transform-origin: bottom right;
+  }
+  [dir="rtl"] & {
+    transform-origin: bottom right;
+  }
+  [dir="rtl"] &[data-align="end"] {
+    transform-origin: bottom left;
+  }
+}
+
+/*
+ * The bot in the conversation header: its stage settles in from a slight scale with a blur,
+ * and the name pill rises after it, so the two land as one character.
+ */
+@keyframes bot-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+    filter: blur(6px);
+  }
+}
+
+@keyframes bot-name-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+}
+
+@utility bot-in {
+  animation: bot-in 450ms var(--ease-out-strong) both;
+}
+
+@utility bot-name-in {
+  animation: bot-name-in 400ms var(--ease-out-strong) 90ms both;
+}
+
+/* The docked computer panel slides in from its own edge as it opens. */
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+
+@utility panel-in {
+  animation: panel-in 300ms var(--ease-drawer) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-in,
+  .panel-in,
+  .bot-in,
+  .bot-name-in {
+    animation: none;
   }
 }

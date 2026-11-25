@@ -5,7 +5,7 @@ The maintained source for what the Ditto brand mark does, from the user's side. 
 ## Baseline preconditions
 
 - The app is running from `brand.sh up` at `http://127.0.0.1:4517`, and `brand.sh doctor` reports all `ok`.
-- The mark renders once on `/design` (the Brand section) and 8 times on `/design/auth`. It also renders on `/sign-in`, `/sign-up` and the signed-in home, and those use the same component.
+- The mark renders once on `/design` (the Brand section) and 10 times on `/design/auth`. It also renders on `/sign-in` and `/sign-up`, which use the same component. The workspace sidebar draws it `still` (a picture, not the interactive mark).
 - Every check opens its own browser context, so `localStorage` starts empty and the mood starts `neutral`.
 - Viewport 1280×900, device scale 1, headless Chromium at 60Hz.
 

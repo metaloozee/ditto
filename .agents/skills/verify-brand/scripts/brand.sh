@@ -18,9 +18,17 @@ mkdir -p "$state"
 
 listener_pid() { ss -ltnpH "sport = :$port" 2>/dev/null | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2; }
 pgid_of() { ps -o pgid= -p "$1" 2>/dev/null | tr -d ' '; }
+# vp setsid()s its own group, so the listener's group differs from the one up recorded:
+# walk up its ancestors instead.
 ours() {
 	local pid; pid="$(listener_pid)"
-	[[ -n "$pid" && -f "$pgid_file" && "$(pgid_of "$pid")" == "$(cat "$pgid_file")" ]]
+	[[ -n "$pid" && -f "$pgid_file" ]] || return 1
+	local want; want="$(cat "$pgid_file")"
+	while [[ -n "$pid" && "$pid" != 1 ]]; do
+		[[ "$(pgid_of "$pid")" == "$want" ]] && return 0
+		pid="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')"
+	done
+	return 1
 }
 renders_mark() { local html; html="$(curl -sf "$base/design")" && [[ "$html" == *'aria-label="Ditto, feeling neutral. Change mood"'* ]]; }
 
@@ -52,7 +60,7 @@ cmd_doctor() {
 	if ours; then ok "server on :$port started by brand.sh (pgid $(cat "$pgid_file"))"; else bad "no brand.sh server on :$port (run: brand.sh up)"; fi
 	if renders_mark; then ok "/design server-renders one neutral mark"; else bad "/design does not render the mark"; fi
 	local n; n="$( (curl -sf "$base/design/auth" || true) | grep -o 'aria-label="Ditto, feeling' | wc -l)"
-	if [[ "$n" == 9 ]]; then ok "/design/auth renders 9 marks"; else bad "/design/auth renders $n marks, expected 9"; fi
+	if [[ "$n" == 10 ]]; then ok "/design/auth renders 10 marks"; else bad "/design/auth renders $n marks, expected 10"; fi
 	if curl -sf -o /dev/null "$base/logo.svg"; then ok "/logo.svg served"; else bad "/logo.svg missing"; fi
 	local major; major="$(node -p 'process.versions.node.split(".")[0]')"
 	if (( major >= 22 )); then ok "node $(node -v) has a global WebSocket"; else bad "node $(node -v) is older than 22"; fi

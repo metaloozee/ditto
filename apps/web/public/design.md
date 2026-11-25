@@ -9,6 +9,9 @@ colors:
   panel: "#272728"
   popover: "#272728"
   muted: "#2d2d2f"
+  bubble-received: "#272728"
+  bubble-sent: "#2f5ae8"
+  on-bubble-sent: "#f3f3f4"
   accent: "#2d2d2f"
   sidebar-accent: "#272728"
   border: "#353537"
@@ -30,6 +33,9 @@ colors:
   light-panel: "#fdfdfe"
   light-popover: "#fdfdfe"
   light-muted: "#f2f2f4"
+  light-bubble-received: "#f2f2f4"
+  light-bubble-sent: "#2f5ae8"
+  light-on-bubble-sent: "#fdfdfe"
   light-accent: "#f2f2f4"
   light-sidebar-accent: "#ebebec"
   light-border: "#dddee0"
@@ -98,6 +104,11 @@ spacing:
   xl: 24px
   2xl: 32px
   3xl: 40px
+shadows:
+  stage-drop: "drop-shadow(0 1px 1px oklch(0 0 0 / 28%)) drop-shadow(0 6px 14px oklch(0 0 0 / 14%))"
+  screen-inset: "inset 0 2px 12px oklch(0 0 0 / 35%)"
+  light-stage-drop: "drop-shadow(0 1px 1px oklch(0 0 0 / 12%)) drop-shadow(0 6px 14px oklch(0 0 0 / 8%))"
+  light-screen-inset: "inset 0 2px 12px oklch(0 0 0 / 12%)"
 components:
   button-primary:
     backgroundColor: "{colors.primary}"
@@ -184,11 +195,21 @@ components:
   sidebar-item-active:
     backgroundColor: "{colors.sidebar-accent}"
     textColor: "{colors.foreground}"
+  bubble-received:
+    backgroundColor: "{colors.bubble-received}"
+    textColor: "{colors.foreground}"
+    typography: "{typography.body}"
+    rounded: "{rounded.card}"
+  bubble-sent:
+    backgroundColor: "{colors.bubble-sent}"
+    textColor: "{colors.on-bubble-sent}"
+    typography: "{typography.body}"
+    rounded: "{rounded.card}"
 ---
 
 ## Overview
 
-Ditto is a quiet, dark-first tool for watching and steering coding agents. The interface is charcoal and near-white, with one blue reserved for signal: focus, links, and work in progress. The main call to action is a light button on a dark surface, never a colored one, so the eye goes to content and to what the agents are doing. Density is moderate: 14px text, 32px controls, 36px navigation rows.
+Ditto is a quiet, dark-first tool for watching and steering coding agents. The interface is charcoal and near-white, with one blue reserved for signal: focus, links, work in progress, and the owner's own messages. The main call to action is a light button on a dark surface, never a colored one, so the eye goes to content and to what the agents are doing. Density is moderate: 14px text, 32px controls, 36px navigation rows.
 
 The brand mark is a white rounded bezel around a dark screen with two blue strokes (`#9fbdff` over `#5884f8`, the signal blue). Source: `apps/web/public/logo.svg`, served at `/logo.svg` and used as the SVG favicon. `favicon.ico` (16, 32, 48) and `apple-touch-icon.png` (180, on the dark background) are rendered from it; regenerate both when the mark changes.
 
@@ -211,6 +232,7 @@ Two ramps and three status colors. Neutrals carry almost every pixel; blue appea
 - **Input (#828386):** the edge of checkboxes and the unchecked switch track, which need a 3:1 boundary.
 - **Field (#19191a) with field edge (white at 10%, 16% on hover):** text inputs, textareas, and selects. The fill is one step below the page so the field reads as sunken, with a 2px inner top shadow. The resting edge is deliberately quiet and does not reach 3:1; the sunken fill, the label, and the blue focus edge carry the affordance. Light mode: #f7f8f9 with black at 10%.
 - **Primary (#f3f3f4) on on-primary (#19191a):** the one filled call to action per view.
+- **Bubble received (#272728) and bubble sent (#2f5ae8):** conversation bubbles. A bot's message sits one surface step above the page with a `panel-border` hairline. The owner's is the deep signal blue in both modes (light mode's `signal`, `--blue-8` in dark), so your own words read as yours at a glance. Dark-mode `signal` (#5884f8) is too light for light text (3.5:1) and dark text on it reads poorly, so the bubble takes the deeper step. Light mode: #f2f2f4 and #2f5ae8. Received text is `foreground` (13.5:1 dark, 16.2:1 light). Sent text is `on-bubble-sent`: #f3f3f4 dark (5.05:1) and #fdfdfe light (5.51:1). The dark-mode bubble sits at 2.97:1 against the page; its text, not its edge, identifies it.
 - **Signal (#5884f8):** running-state indicators. **Ring** uses the same blue for focus.
 - **Link (#9fbdff):** link text. Lighter than signal, so link text clears 4.5:1 with room to spare on every dark surface.
 - **Success (#75d78d) and destructive (#fda19a):** text color for positive and negative deltas, errors, and destructive actions. Destructive buttons use the color as a 10–20% tint behind destructive text, not as a solid fill.
@@ -248,7 +270,12 @@ Inter Variable for the interface, JetBrains Mono Variable for code, paths, branc
 
 - Failed provider sign-in shows an error toast with an option to try again or choose another method. Failed sign-out keeps the current screen open and shows a retry message.
 
-- Signed-in home (`/`): the empty state greets the user by display name. If the profile has no display name, the heading reads “Welcome back”.
+- Signed-in home (`/`) is the owner's workspace, three panes on `SidebarProvider` (`apps/web/src/components/workspace.tsx`; every state at `/design/workspace`):
+  - **Sidebar:** shadcn's sidebar, `variant="inset"`, `collapsible="icon"`. Collapsed, it's a rail of 40px bot faces; expanded (16rem), each face gets its name and role, like a list of people. Ditto, the Chief of Staff, is first, then the Bots group (New bot, disabled until bots arrive), then the account menu in the footer (initials, name, email; Settings and Sign out). Face rows are 56px tall with 14px corners, and the active row uses `background` with `shadow-sm`, the same surface and curve as the inset main panel, so the bot you're in reads as part of its page. The pin action sits at the end of the Ditto row and shows on hover or focus: “Collapse sidebar” when pinned, “Keep sidebar open” when peeking (⌘B does the same). Collapsed, the pointer reaching the rail, or focus moving in, opens it at once over the page without moving it (`peeking`: a ring, `shadow-lg`, 14px corners) until the pointer has been gone 200ms. There is no rail toggle bar along its edge. The pin persists in the `sidebar_state` cookie, read during SSR. Under 768px the sidebar is a sheet behind a trigger, the only trigger on the main screen.
+  - **Conversation:** messages scroll the pane's full height under a floating header and composer, each backed by a progressive blur. The header centres the bot on its stage (`DittoStage`, 96px): a raised plate cut to the mark's own outline, lit like a secondary button (top-lit fill, `raised-edge` hairline, a highlight along the top rim that fades down the sides, a 1px contact shadow under a faint 14px ambient one), with the interactive mark on it. The plate leans toward the pointer on a softer spring than the body (stiffness 160, damping 22; up to 3px and 2.5°), so the two read as layers. The name is a `secondary` `Button` pill overlapping the plate's foot, then the role in caption. The name pill toggles the right panel (`aria-expanded`, tooltip “Show computer”). The stage settles in from 0.9 scale with a 6px blur and the pill rises 90ms after it, 400–450ms on the strong ease-out. Messages sit in a `max-w-2xl` column. The composer is a floating 24px-radius pill on `popover` with a ring and `shadow-lg`: attach, a growing text field, and a round send button.
+  - **Right panel:** the computer, docked from 1024px in a resizable split (384px by default, 300px to 55%; drag the handle or use arrow keys). The handle is a hairline with a 12px hit area and a 4px grip pill that grows and brightens on hover and while dragging, and a bottom drawer below that. `?panel=computer` holds it open across a refresh, set with `replace`. It shows the status badge (a muted dot when stopped, the signal ping when running), the screen in a lit bezel over a sunken dotted display, and its controls as a three-column grid of tiles.
+  - **States:** opening shows a skeleton in the final shape. A failed open replaces the page with a message and a Try again button that retries in place. Until conversation lands (#19), Ditto shows a fixed set of greetings, the same on every visit, and the composer and controls are disabled.
+  - The page `h1` (“Welcome back, {display name}”, or “Welcome back”) is for screen readers; the bot's face and name lead visually.
 
 - Email sign-in shows the same code screen for every submitted address. The description says a code is on its way only if the address has email sign-in, and when it expires. Every way out of the step sits under the code form: the resend line, then “Use a different email” and “Don’t have an account? Sign up” on one wrapping row. Other code steps say “Enter the code we sent to …” and keep the change-address action in the same row. The resend countdown starts when the request is accepted. An unusable code shows “That code didn’t work. Check it or request a new one.” While a new code is being sent, the code row, the submit button and “Send a new code” are disabled; the row clears when the new code is issued, and focus returns to it.
 
@@ -259,11 +286,13 @@ Depth comes from surface lightness and hairlines, not shadows.
 - Cards nest: a shell one step lighter than the page with a `border` edge, holding panels one more step lighter with a `panel-border` edge. The gap between panels and the shell's inset are both 6px, so the shell reads as a frame.
 - Floating surfaces (menus, select popups) use the popover color, the same ring, and a medium shadow.
 - Dialogs sit over a dimmed backdrop.
+- **Stage drop (`--stage-drop`):** a `filter` of two drop shadows, a 1px contact shadow under a faint 14px ambient one, that seats the Ditto stage's raised plate (`DittoStage`) on the page. It follows the plate's cut outline, which a `box-shadow` can't. Black at 28% and 14% dark, 12% and 8% light.
+- **Screen inset (`--screen-inset`):** an inner 12px shadow from the top edge that sinks the computer's display into its bezel in the right panel. Black at 35% dark, 12% light.
 - Never more than two floating layers at once. A third layer means a dialog.
 
 ## Shapes
 
-- Buttons use 10px (`rounded-lg`), icon buttons too. Badges and switches are the only pills.
+- Buttons use 10px (`rounded-lg`), icon buttons too. Badges and switches are pills, and so is the conversation's floating chrome: the bot's name pill, the composer (24px) and its round attach and send buttons.
 - Base radius 10px. Inputs, selects, tabs, and menus use 10px (`rounded-lg`).
 - Card panels use 10px. The card shell uses 16px: the panel radius plus the shell's 6px inset, so the corners stay concentric.
 - Dialogs use 14px (`rounded-xl`).
@@ -285,7 +314,7 @@ Short, ease-out, and only on the properties that change.
 - **Name the properties.** Transition `scale, color, background-color, box-shadow`, never `all`, so layout changes never animate by accident.
 - **Hover on layered buttons** is a `filter: brightness()` step (darker on the white CTA, lighter on dark fills) inside the same 200ms transition, since a gradient fill can't interpolate.
 - **Icon morph (copy → check):** both icons stay mounted in one grid cell. The outgoing one shrinks to `scale(0.25)`, blurs 4px, and fades; the incoming one does the reverse, over 300ms on `cubic-bezier(0.23, 1, 0.32, 1)`. Reduced motion keeps only the fade. A label beside it morphs letter by letter with torph (`TextMorph`, same duration and curve).
-- **Character motion (the Ditto mark):** the mark is a character, so it is the one place with a delight budget, and it appears only where people meet the brand (`/design`, the sign-in and sign-up screens, and the signed-in home's empty state), never on work surfaces such as session lists or chat. It follows character rules, not the UI timing above:
+- **Character motion (the Ditto mark):** the mark is a character, so it is the one place with a delight budget, and it appears where people meet the brand (`/design`, the sign-in and sign-up screens) and as the Chief of Staff's face in the workspace. In the conversation header it's the full character; in the sidebar it's `still`: the resting pose as a picture, no pointer following, no click, no loop. It follows character rules, not the UI timing above:
   - **One loop, not CSS transitions.** A single `requestAnimationFrame` loop (`createDitto` in `apps/web/src/components/ditto-mark.tsx`) writes SVG `transform` attributes through refs. The step caps at 64ms, and an `IntersectionObserver` stops the loop offscreen.
   - **Eyes lead, the body follows.** The eyes snap to the gaze in about 60ms on an exponential ease that never overshoots. The body leans and rotates (up to 4°) toward the same gaze on a spring (stiffness 260, damping 24), so it arrives about 250ms later.
   - **Eyes sit on a sphere.** Gaze becomes a yaw and pitch, and the eyes narrow as they turn toward an edge. They never slide flat, and they are clipped to the screen.
@@ -294,6 +323,10 @@ Short, ease-out, and only on the properties that change.
   - **Moods change behind a blink.** Clicking the mark moves it to the next mood. The new eye shape swaps in while the lids are shut, so no crossfade is needed. A mood is one entry in `MOODS`: one path per eye, plus `weight` and `fill` for shapes that clog at full stroke width (hearts, crosses). Current moods: neutral, happy, love, surprised, wink, angry, sad, dizzy, sleepy.
   - **Keep these choices.** They were tuned by hand. Change the mark's motion model or its numbers only when the user asks. Never go back to eyes sliding flat on one spring, a crossfade between moods, a body that holds still, or blinks that are fast and frequent: the user rejected each one as unnatural or too aggressive. To add a mood, add an entry to `MOODS`; never add a separate drawing or a new animation path.
   - **Accessible and reduced.** The mark is a real `<button>` whose label names the current mood. Under reduced motion the loop never starts: the mark holds its resting pose and a click swaps the mood instantly.
+- **Easing tokens:** `ease-out-strong` is `cubic-bezier(0.23, 1, 0.32, 1)` for things entering or opening; `ease-drawer` is `cubic-bezier(0.32, 0.72, 0, 1)` for sheets and panels.
+- **Sidebar:** expanding and peeking take 260ms and collapsing 180ms, both on `ease-out-strong`, never shadcn's linear 200ms. Menu buttons resize their padding on the same timing, so labels and the frame move together. Reduced motion drops the transition.
+- **Conversation:** a message enters with a fade, an 8px rise, a 0.98 scale and a 4px blur, over 400ms on `cubic-bezier(0.23, 1, 0.32, 1)`, from its speaker's corner (`message-in`, delay through `--enter-delay`). A group arrives on uneven, tightening gaps (0, 70, 130, 180ms), never a fixed step. The docked panel slides 12px in from its edge (`panel-in`, 300ms, drawer curve). Reduced motion keeps everything in place.
+- **Progressive blur** (`progressive-blur.tsx`): content passing under floating chrome blurs harder toward the edge, in three layers at 1px, 4px and 12px, each masked to one band of the gradient, with a tint to `background` on top. Use it under floating headers and composers, never as decoration. Every layer is a `backdrop-filter` that repaints whenever something moves near it, so keep it to three layers.
 - **Validation:** forms validate in the page (`noValidate`, TanStack Form), never with browser bubbles. Messages appear after the first submit and then update as the user types. A failed submit shakes each invalid field once (6px, decaying, 320ms on `cubic-bezier(0.23, 1, 0.32, 1)`), turns its edge red, and focuses the first one. Reduced motion drops the shake and keeps the rest.
 - **Reduced motion:** looping animations, such as the running-state ping, stop under `prefers-reduced-motion`. A press scale is under 3% and stays.
 
@@ -347,9 +380,12 @@ All components live in `apps/web/src/components/ui/` and are generated by the sh
   - **Use it well:** one toast per outcome; reuse the id rather than stacking duplicates. Keep the message to a few words that name the result ("Google is linked"), and put the reason or next step in the description. Give an error a way forward, in the description or as an action such as Retry. Use at most one action, and keep anything critical somewhere else too, since the toast leaves on its own. A toast fired from a URL param (`?notice=`, `?outcome=`) shows once, then the param leaves the URL so a refresh won't repeat it.
   - **Don't** use a toast for validation, for an error the user must fix in place, or for something they need to read later. Those stay on the page beside what they're about.
 
+- **Conversation** (`conversation.tsx`): adapted from Kobra's conversation onto these tokens. `Conversation` stacks one speaker’s messages 4px apart and leaves 16px where the speaker changes; `ConversationBubble` takes `variant="received"` (a bot, at the start) or `"sent"` (the owner, at the end); `ConversationContent` is the 18px-radius bubble (`rounded-2xl`, 16px by 10px padding). The corner nearest the speaker tucks to 8px, and so does the one a following message from the same speaker meets. Kobra's `tinted` variant (raw OKLCH), reactions and tap-to-reveal timestamps are left out.
+- **Drawer** (`drawer.tsx`): Base UI's drawer as a bottom sheet on `popover`, 14px top corners, a grab handle, swipe to dismiss on the drawer curve. It bleeds 3rem below the screen so an overshooting swipe never shows a gap.
+- **Resizable** (`resizable.tsx`): shadcn's, on `react-resizable-panels`. Sizes in pixels are numbers; percentages are strings.
 - **Badge:** 20px pill, 12px medium text. `secondary` for neutral states, `destructive` for failures, `default` for the rare emphasized state.
 - **Dialog, Dropdown menu, Tooltip, Tabs, Separator, Label, Avatar, Kbd, Breadcrumb, Sheet, Skeleton, Sidebar:** shadcn defaults on the tokens above.
-- **Sidebar:** 256px, 36px rows, active row filled with `sidebar-accent`, group labels in caption size.
+- **Sidebar:** 256px, 36px rows, active row filled with `sidebar-accent`, group labels in caption size. The workspace's face rows are the exception: 56px, 14px corners, and the active one on `background` with `shadow-sm` to match the inset panel.
 
 Running state: an 8px `signal` dot with a ping animation, which `motion-reduce` turns off.
 
@@ -360,6 +396,8 @@ Local edits to generated files:
 - `button.tsx` uses the layered variants (`layer-primary`, `layer-raised`), `rounded-lg`, the 0.97 press, and a `loading` prop.
 - `input.tsx`, `textarea.tsx`, and `select.tsx` use the `field` utility instead of `border-input` and the gray tint.
 - `card.tsx` is rewritten as the shell-and-panel card, with a new `CardPanel` export. Never let the CLI overwrite it.
+- `sidebar.tsx` opens in 260ms and closes in 180ms on `ease-out-strong` instead of linear 200ms, menu buttons and actions get `cursor-pointer`, and `Sidebar` takes `peeking`, which shows a collapsed sidebar at full width over the page while its gap stays collapsed.
+- `resizable.tsx` replaces shadcn's grip with a small pill that grows and brightens on hover and drag, and widens the hit area to 12px.
 
 ## Do's and Don'ts
 
