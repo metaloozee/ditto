@@ -9,7 +9,11 @@ function Conversation({ className, ...props }: React.ComponentProps<"div">) {
 	return (
 		<div
 			data-slot="conversation"
-			className={cn("flex min-w-0 flex-col gap-1", className)}
+			className={cn(
+				// 4px within one speaker's run, 16px where the speaker changes.
+				"flex min-w-0 flex-col gap-1 [&>[data-align=end]+[data-align=start]]:mt-3 [&>[data-align=start]+[data-align=end]]:mt-3",
+				className,
+			)}
 			{...props}
 		/>
 	);
@@ -22,7 +26,7 @@ const bubbleVariants = cva(
 			variant: {
 				received:
 					"*:data-[slot=conversation-content]:border-panel-border *:data-[slot=conversation-content]:bg-bubble-received",
-				sent: "*:data-[slot=conversation-content]:bg-bubble-sent",
+				sent: "*:data-[slot=conversation-content]:bg-bubble-sent *:data-[slot=conversation-content]:text-bubble-sent-foreground",
 			},
 		},
 		defaultVariants: { variant: "received" },

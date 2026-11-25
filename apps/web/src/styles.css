@@ -48,6 +48,7 @@
   --color-panel: var(--panel);
   --color-bubble-received: var(--bubble-received);
   --color-bubble-sent: var(--bubble-sent);
+  --color-bubble-sent-foreground: var(--bubble-sent-foreground);
   --color-panel-border: var(--panel-border);
   --color-border: var(--border);
   --color-input: var(--input);
@@ -109,7 +110,8 @@
   --accent: var(--gray-3);
   --sidebar-accent: var(--gray-4);
   --bubble-received: var(--gray-3);
-  --bubble-sent: var(--gray-4);
+  --bubble-sent: var(--blue-9);
+  --bubble-sent-foreground: var(--gray-1);
   --link: var(--blue-9);
 
   --foreground: var(--gray-12);
@@ -168,6 +170,8 @@
   --gray-9: oklch(0.61 0.004 275);
   --gray-11: oklch(0.81 0.003 275);
   --gray-12: oklch(0.965 0.001 275);
+  /* The light theme's signal blue, so white text reads on the owner's bubble. */
+  --blue-8: oklch(0.53 0.22 266);
   --blue-9: oklch(0.64 0.18 266);
   --blue-11: oklch(0.8 0.1 266);
   --red-11: oklch(0.8 0.11 25);
@@ -183,7 +187,8 @@
   --accent: var(--gray-5);
   --sidebar-accent: var(--gray-4);
   --bubble-received: var(--gray-4);
-  --bubble-sent: var(--gray-6);
+  --bubble-sent: var(--blue-8);
+  --bubble-sent-foreground: var(--gray-12);
   --panel-border: var(--gray-7);
   --edge: oklch(1 0 0 / 8%);
   --edge-hover: oklch(1 0 0 / 13%);
