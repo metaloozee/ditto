@@ -141,6 +141,12 @@ class SyntheticInstance implements Instance {
 	}
 }
 
+/** `value` as a normalized exact host name, or null if it isn't one. */
+function exactHost(value: unknown): string | null {
+	const name = typeof value === "string" ? value.trim().toLowerCase() : "";
+	return HOST.test(name) ? name : null;
+}
+
 /** The approved hosts from a request body, normalized, or why they were refused. */
 function parseHosts(body: unknown): string[] | string {
 	const hosts = (body as { hosts?: unknown } | null)?.hosts;
@@ -148,8 +154,8 @@ function parseHosts(body: unknown): string[] | string {
 	if (hosts.length > MAX_HOSTS) return `At most ${MAX_HOSTS} hosts`;
 	const normalized = new Set<string>();
 	for (const host of hosts) {
-		const name = typeof host === "string" ? host.trim().toLowerCase() : "";
-		if (!HOST.test(name)) return `Not an exact host name: ${JSON.stringify(host)}`;
+		const name = exactHost(host);
+		if (name === null) return `Not an exact host name: ${JSON.stringify(host)}`;
 		normalized.add(name);
 	}
 	return [...normalized];
@@ -314,6 +320,17 @@ export class Workspace extends Container<AuthEnv> implements WorkspaceRpc {
 				return Response.json(await this.#start(workspaceId));
 			}
 			if (route === "POST /computer/stop") return Response.json(await this.#stop());
+			if (route === "POST /computer/reach") {
+				const { host } = ((await request.json().catch(() => null)) ?? {}) as { host?: unknown };
+				const name = exactHost(host);
+				if (name === null) {
+					return Response.json({ error: "Send { host } as an exact host name" }, { status: 400 });
+				}
+				// A request to a stopped container would start it.
+				if (!this.#instance.running) return Response.json({ error: "Stopped" }, { status: 409 });
+				// Only a host to try goes in; the instance reads its list and never writes it.
+				return await this.#instance.control(`/reach?host=${name}`, { method: "POST" });
+			}
 			if (route === "GET /hosts") return Response.json({ hosts: await this.#hosts() });
 			if (route === "PUT /hosts") {
 				const hosts = parseHosts(await request.json().catch(() => null));

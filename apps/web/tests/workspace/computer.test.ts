@@ -68,6 +68,15 @@ async function replaceHosts(context: BrowserContext, workspaceId: string, hosts:
 	return ((await response.json()) as { hosts: string[] }).hosts;
 }
 
+/** Asks the owner's running computer to load `https://<host>/` through its filter. */
+async function reach(context: BrowserContext, workspaceId: string, host: unknown) {
+	const response = await context.request.post(at(workspaceId, "/computer/reach"), {
+		data: { host },
+		timeout: 60_000,
+	});
+	return { status: response.status(), body: (await response.json()) as unknown };
+}
+
 /** Test stage only: a request to the running instance's control port, which counts as use. */
 function control(context: BrowserContext, workspaceId: string, path: string, method = "GET") {
 	return context.request.fetch(at(workspaceId, `/__test/computer/control${path}`), { method });
@@ -189,6 +198,41 @@ describe("the shared computer", () => {
 		await expect(reopened.json()).resolves.toMatchObject({ chiefOfStaff, computer: "stopped" });
 	}, 240_000);
 
+	it("reaches a host for its owner and reports the filter's decision, leaving the list alone", async () => {
+		const { context, workspaceId } = await owner();
+		await replaceHosts(context, workspaceId, ["example.com"]);
+		try {
+			await start(context, workspaceId);
+
+			await expect(reach(context, workspaceId, "example.com")).resolves.toMatchObject({
+				status: 200,
+				body: { host: "example.com", decision: "allow", status: 200 },
+			});
+			await expect(reach(context, workspaceId, "example.org")).resolves.toMatchObject({
+				status: 200,
+				body: { host: "example.org", decision: "deny" },
+			});
+			await expect(
+				context.request.get(at(workspaceId, "/hosts")).then((r) => r.json()),
+			).resolves.toEqual({ hosts: ["example.com"] });
+		} finally {
+			await stop(context, workspaceId);
+		}
+	}, 240_000);
+
+	it("refuses to reach a host that isn't exact, or while the computer is stopped", async () => {
+		const { context, workspaceId } = await owner();
+		for (const host of ["*.example.com", "https://example.com/", "example.com/x", 42, undefined]) {
+			const refused = await reach(context, workspaceId, host);
+			expect(refused.status, JSON.stringify(host)).toBe(400);
+		}
+
+		await expect(reach(context, workspaceId, "example.com")).resolves.toMatchObject({
+			status: 409,
+		});
+		await expect(status(context, workspaceId)).resolves.toMatchObject({ computer: "stopped" });
+	});
+
 	it("stops after the idle timeout when nothing uses it", async () => {
 		const { context, workspaceId } = await owner();
 		try {
@@ -226,7 +270,7 @@ describe("the shared computer", () => {
 		}
 	}, 300_000);
 
-	it("refuses another account's start, stop and list change at the gateway", async () => {
+	it("refuses another account's start, stop, list change and reach at the gateway", async () => {
 		const alice = await owner();
 		const bob = await owner();
 		const probe = async () =>
@@ -242,6 +286,9 @@ describe("the shared computer", () => {
 			bob.context.request.post(at(alice.workspaceId, "/computer/stop")),
 			bob.context.request.put(at(alice.workspaceId, "/hosts"), {
 				data: { hosts: ["example.com"] },
+			}),
+			bob.context.request.post(at(alice.workspaceId, "/computer/reach"), {
+				data: { host: "example.com" },
 			}),
 		];
 		for (const attempt of await Promise.all(attempts)) expect(attempt.status()).toBe(404);
