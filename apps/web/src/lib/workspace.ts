@@ -10,15 +10,15 @@ export type Workspace = Exclude<OpenedWorkspace, { refused: string }>;
 export const openWorkspace = createServerFn({ method: "POST" }).handler(
 	async (): Promise<Workspace> => {
 		const { env } = await import("cloudflare:workers");
-		const { auth } = await import("./auth.server.ts");
 		const { openPersonalWorkspace } = await import("./workspace.server.ts");
 		if (env.TEST_HOOKS === "on" && getCookie("test-fail-open")) {
 			throw new Error("The test stage failed this open");
 		}
-		const session = await auth.api.getSession({ headers: getRequestHeaders() });
-		if (!session) throw redirect({ to: "/sign-in" });
-		const opened = await openPersonalWorkspace(session.user.id);
-		if ("refused" in opened) throw new Error("This workspace belongs to another account");
+		const opened = await openPersonalWorkspace(getRequestHeaders());
+		if (opened instanceof Response && opened.status === 401) throw redirect({ to: "/sign-in" });
+		if (opened instanceof Response || "refused" in opened) {
+			throw new Error("This workspace belongs to another account");
+		}
 		return opened;
 	},
 );

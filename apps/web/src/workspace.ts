@@ -31,7 +31,11 @@ export class Workspace extends Container implements WorkspaceRpc {
 		this.ctx.abort("evicted by the test stage");
 	}
 
+	/** Requests answered since the object woke, so tests can see that refusals never arrive. */
+	#requests = 0;
+
 	override async fetch(request: Request): Promise<Response> {
+		this.#requests++;
 		if (request.headers.get("upgrade")?.toLowerCase() === "websocket") {
 			const { 0: client, 1: server } = new WebSocketPair();
 			server.accept();
@@ -42,6 +46,7 @@ export class Workspace extends Container implements WorkspaceRpc {
 			object: "Workspace",
 			container: this.ctx.container !== undefined,
 			running: this.ctx.container?.running ?? false,
+			requests: this.#requests,
 		});
 	}
 }

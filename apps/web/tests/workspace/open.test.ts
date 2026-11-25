@@ -2,7 +2,7 @@ import type { BrowserContext } from "playwright";
 import { describe, expect, it } from "vite-plus/test";
 
 import { continueWithGoogle, googleUser, nextGoogleAuthorization } from "../auth/google.ts";
-import { appUrl, continueWithGitHub, gitHubUser, newVisitor, open } from "../auth/visitor.ts";
+import { continueWithGitHub, gitHubUser, newVisitor, open } from "../auth/visitor.ts";
 
 interface OpenedWorkspace {
 	workspaceId: string;
@@ -45,7 +45,7 @@ describe("opening the personal workspace", () => {
 		expect(opened.chiefOfStaff).toEqual({ id: expect.any(String), name: "Ditto" });
 		expect(opened.computer).toBe("stopped");
 		await expect(openWorkspace(context)).resolves.toEqual(opened);
-		const probed = await fetch(`${appUrl}/__test/workspace/${opened.workspaceId}`);
+		const probed = await context.request.get(`/api/workspaces/${opened.workspaceId}`);
 		await expect(probed.json()).resolves.toMatchObject({ container: true, running: false });
 	});
 
@@ -82,10 +82,10 @@ describe("opening the personal workspace", () => {
 		const { context } = await signedInWithGitHub();
 		const opened = await openWorkspace(context);
 
-		const evicted = await fetch(`${appUrl}/__test/workspace/${opened.workspaceId}/evict`, {
-			method: "POST",
-		});
-		expect(evicted.status).toBe(204);
+		const evicted = await context.request.post(
+			`/api/workspaces/${opened.workspaceId}/__test/evict`,
+		);
+		expect(evicted.status()).toBe(204);
 
 		await expect(openWorkspace(context)).resolves.toEqual(opened);
 	});

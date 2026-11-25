@@ -6,23 +6,23 @@ export const Route = createFileRoute("/api/workspace/open")({
 			POST: async ({ request }) => {
 				const { env } = await import("cloudflare:workers");
 				const { auth } = await import("#/lib/auth.server.ts");
-				const { openPersonalWorkspace, personalWorkspaceId } =
-					await import("#/lib/workspace.server.ts");
-				const session = await auth.api.getSession({ headers: request.headers });
-				if (!session) return Response.json({ error: "Sign in first" }, { status: 401 });
-				const accountId = session.user.id;
+				const { personalWorkspaceId } = await import("#/lib/workspace-gateway.server.ts");
+				const { openPersonalWorkspace } = await import("#/lib/workspace.server.ts");
 
 				if (
 					env.TEST_HOOKS === "on" &&
 					request.headers.get("x-test-interrupt") === "after-mapping"
 				) {
+					const session = await auth.api.getSession({ headers: request.headers });
+					if (!session) return Response.json({ error: "Sign in first" }, { status: 401 });
 					return Response.json(
-						{ interrupted: await personalWorkspaceId(accountId) },
+						{ interrupted: await personalWorkspaceId(session.user.id) },
 						{ status: 503 },
 					);
 				}
 
-				const opened = await openPersonalWorkspace(accountId);
+				const opened = await openPersonalWorkspace(request.headers);
+				if (opened instanceof Response) return opened;
 				if ("refused" in opened) return Response.json({ error: opened.refused }, { status: 403 });
 				return Response.json(opened);
 			},

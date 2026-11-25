@@ -31,7 +31,7 @@ describe("the signed-in home", () => {
 		});
 		const probed = await page.context().request.post("/api/workspace/open");
 		const { workspaceId } = (await probed.json()) as { workspaceId: string };
-		const state = await fetch(`${appUrl}/__test/workspace/${workspaceId}`);
+		const state = await page.context().request.get(`/api/workspaces/${workspaceId}`);
 		await expect(state.json()).resolves.toMatchObject({ running: false });
 	});
 
