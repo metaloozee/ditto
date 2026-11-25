@@ -9,9 +9,11 @@ import type {
 	ChiefOfStaff,
 	ComputerPolicy,
 	ComputerStatus,
+	IsolationCheck,
 	Member,
 	OpenFaults,
 	OpenedWorkspace,
+	PrivateSessions,
 	WorkspaceRpc,
 } from "./workspace-rpc.ts";
 
@@ -36,6 +38,97 @@ export interface Instance {
 	control(path: string, init?: RequestInit): Promise<Response>;
 }
 
+/** What the image reports at `/isolation` once its fence applied: only the filter has a route out. */
+const FENCED = "filter-user-only";
+
+const STOPPED: PrivateSessions = {
+	available: false,
+	reason: "stopped",
+	detail: "The computer is stopped. Start it to check its isolation.",
+};
+
+const sameHosts = (a: string[], b: string[]) =>
+	new Set(a).size === new Set(b).size && a.every((host) => b.includes(host));
+
+/**
+ * Judges the instance's answer at `/isolation` (null if none came) against the policy it was
+ * started with. Anything short of this workspace's ID, the same list and the fence fails.
+ */
+function checkIsolation(
+	policy: ComputerPolicy,
+	answer: { status: number; body: string } | null,
+): IsolationCheck {
+	const checkedAt = new Date().toISOString();
+	const failed = (
+		reason: NonNullable<IsolationCheck["problem"]>["reason"],
+		detail: string,
+	): IsolationCheck => ({ checkedAt, policy: false, fence: false, problem: { reason, detail } });
+	if (answer === null || answer.status === 404) {
+		return failed("report-missing", "The computer did not report its isolation.");
+	}
+	if (answer.status !== 200) {
+		return failed("report-unreadable", `The isolation report answered ${answer.status}.`);
+	}
+	let report: unknown;
+	try {
+		report = JSON.parse(answer.body);
+	} catch {
+		return failed("report-unreadable", "The isolation report is not JSON.");
+	}
+	const { workspace, isolation, hosts } = (report ?? {}) as Record<string, unknown>;
+	if (
+		typeof workspace !== "string" ||
+		typeof isolation !== "string" ||
+		!Array.isArray(hosts) ||
+		!hosts.every((host) => typeof host === "string")
+	) {
+		return failed("report-unreadable", "The isolation report lacks its workspace, fence or hosts.");
+	}
+	const policyHolds = workspace === policy.workspaceId && sameHosts(hosts, policy.hosts);
+	const fence = isolation === FENCED;
+	const problem: IsolationCheck["problem"] = !policyHolds
+		? {
+				reason: "policy-mismatch",
+				detail:
+					workspace === policy.workspaceId
+						? `The computer enforces ${JSON.stringify(hosts)}, not the ${JSON.stringify(policy.hosts)} it was started with.`
+						: `The computer runs as workspace ${JSON.stringify(workspace)}, not this one.`,
+			}
+		: !fence
+			? {
+					reason: "fence-absent",
+					detail: `The computer reports isolation ${JSON.stringify(isolation)}: something besides the filter has a route out.`,
+				}
+			: null;
+	return { checkedAt, policy: policyHolds, fence, problem };
+}
+
+/** Thrown by the private-session gate; `reason` and `detail` say why. */
+export class PrivateSessionsUnavailable extends Error {
+	constructor(readonly refusal: Extract<PrivateSessions, { available: false }>) {
+		super(refusal.detail);
+	}
+}
+
+/**
+ * Test stage only: an instance with no container, whose control port answers `/isolation` with
+ * `report` (404 when null), so tests choose isolation states local Docker cannot produce.
+ */
+class SyntheticInstance implements Instance {
+	running = false;
+	constructor(public report: { status: number; body: string } | null) {}
+	async start(): Promise<void> {
+		this.running = true;
+	}
+	async destroy(): Promise<void> {
+		this.running = false;
+	}
+	async control(path: string): Promise<Response> {
+		if (path !== "/isolation" || this.report === null) return new Response(null, { status: 404 });
+		return new Response(this.report.body, { status: this.report.status });
+	}
+}
+
 /** The approved hosts from a request body, normalized, or why they were refused. */
 function parseHosts(body: unknown): string[] | string {
 	const hosts = (body as { hosts?: unknown } | null)?.hosts;
@@ -55,7 +148,9 @@ function parseHosts(body: unknown): string[] | string {
  * so far) and its shared computer.
  */
 export class Workspace extends Container<AuthEnv> implements WorkspaceRpc {
-	readonly #instance: Instance;
+	readonly #container: Instance;
+	/** Test stage only: replaces the container once a test supplies an isolation report. */
+	#synthetic: SyntheticInstance | undefined;
 	/** The start in flight, so a racing start waits for it instead of starting again. */
 	#starting: Promise<void> | undefined;
 	/** Requests answered since the object woke, so tests can see that refusals never arrive. */
@@ -69,7 +164,7 @@ export class Workspace extends Container<AuthEnv> implements WorkspaceRpc {
 			if (!this.ctx.container) throw new Error("This Durable Object has no container");
 			return this.ctx.container;
 		};
-		this.#instance = {
+		this.#container = {
 			get running() {
 				return container().running;
 			},
@@ -87,6 +182,10 @@ export class Workspace extends Container<AuthEnv> implements WorkspaceRpc {
 			control: (path, init) =>
 				this.containerFetch(new Request(`http://instance${path}`, init), CONTROL_PORT),
 		};
+	}
+
+	get #instance(): Instance {
+		return this.#synthetic ?? this.#container;
 	}
 
 	/**
@@ -214,6 +313,26 @@ export class Workspace extends Container<AuthEnv> implements WorkspaceRpc {
 				await this.ctx.storage.put("hosts", hosts);
 				return Response.json({ hosts });
 			}
+			if (this.env.TEST_HOOKS === "on" && route === "PUT /__test/computer/synthetic") {
+				if (this.#container.running) return Response.json({ error: "Running" }, { status: 409 });
+				const { isolation } = (await request.json()) as {
+					isolation: { status: number; body: string } | null;
+				};
+				// Only the report changes, so a running synthetic instance keeps running.
+				if (this.#synthetic) this.#synthetic.report = isolation;
+				else this.#synthetic = new SyntheticInstance(isolation);
+				return new Response(null, { status: 204 });
+			}
+			if (this.env.TEST_HOOKS === "on" && route === "POST /__test/computer/private-session") {
+				// Stands in for #20's cookie restore: does nothing but pass the gate.
+				try {
+					await this.#privateSessionGate();
+				} catch (error) {
+					if (!(error instanceof PrivateSessionsUnavailable)) throw error;
+					return Response.json(error.refusal, { status: 409 });
+				}
+				return new Response(null, { status: 204 });
+			}
 			const control = /^\/__test\/computer\/control(\/.*)$/.exec(url.pathname)?.[1];
 			if (this.env.TEST_HOOKS === "on" && control) {
 				if (!this.#instance.running) return Response.json({ error: "Stopped" }, { status: 409 });
@@ -237,13 +356,49 @@ export class Workspace extends Container<AuthEnv> implements WorkspaceRpc {
 
 	/** Reads only the object's own state, so polling it neither starts nor keeps the instance. */
 	async #status(): Promise<ComputerStatus> {
-		if (!this.#instance.running) return { computer: "stopped" };
+		const privateSessions = await this.#privateSessions();
+		if (!this.#instance.running) return { computer: "stopped", privateSessions };
 		const [deadline] = await this.listSchedules("lifetimeEnded");
 		return {
 			computer: "running",
 			policy: (await this.ctx.storage.get<ComputerPolicy>("instancePolicy")) ?? null,
 			deadline: deadline ? new Date(deadline.time * 1000).toISOString() : null,
+			isolation: (await this.ctx.storage.get<IsolationCheck>("isolation")) ?? null,
+			privateSessions,
 		};
+	}
+
+	/**
+	 * The gate for private sessions. Restoring a private cookie or exposing a signed-in computer
+	 * (#20) must call this first and go no further if it throws. It passes only while an instance
+	 * runs whose start recorded this workspace's policy behind the fence (ADR-0004), and whose
+	 * list is still the approved one.
+	 */
+	async #privateSessionGate(): Promise<void> {
+		const sessions = await this.#privateSessions();
+		if (!sessions.available) throw new PrivateSessionsUnavailable(sessions);
+	}
+
+	/** Whether the gate would pass, and why not. Reads only the object's own state. */
+	async #privateSessions(): Promise<PrivateSessions> {
+		const refused = (
+			reason: Extract<PrivateSessions, { available: false }>["reason"],
+			detail: string,
+		): PrivateSessions => ({ available: false, reason, detail });
+		if (!this.#instance.running) return STOPPED;
+		const isolation = await this.ctx.storage.get<IsolationCheck>("isolation");
+		const policy = await this.ctx.storage.get<ComputerPolicy>("instancePolicy");
+		if (this.#starting || !isolation || !policy) {
+			return refused("unchecked", "The computer's isolation is not checked yet for this start.");
+		}
+		if (isolation.problem) return { available: false, ...isolation.problem };
+		if (!sameHosts(policy.hosts, await this.#hosts())) {
+			return refused(
+				"list-changed",
+				"The approved list changed after the computer started. Restart it to enforce the new list.",
+			);
+		}
+		return { available: true };
 	}
 
 	/**
@@ -263,6 +418,7 @@ export class Workspace extends Container<AuthEnv> implements WorkspaceRpc {
 		}
 		const policy: ComputerPolicy = { workspaceId, hosts: await this.#hosts() };
 		this.#starting = (async () => {
+			await this.ctx.storage.delete("isolation");
 			await this.ctx.storage.put("instancePolicy", policy);
 			this.deleteSchedules("lifetimeEnded");
 			await this.schedule(new Date(Date.now() + lifetime * 1000), "lifetimeEnded");
@@ -270,6 +426,7 @@ export class Workspace extends Container<AuthEnv> implements WorkspaceRpc {
 				await this.#instance.start(policy);
 				// Idle time counts from when the instance is ready.
 				this.renewActivityTimeout();
+				await this.ctx.storage.put("isolation", await this.#checkIsolation(policy));
 			} catch (error) {
 				await this.#stop();
 				throw error;
@@ -287,12 +444,25 @@ export class Workspace extends Container<AuthEnv> implements WorkspaceRpc {
 	async #stop(): Promise<ComputerStatus> {
 		if (this.#instance.running) await this.#instance.destroy();
 		await this.#forgetInstance();
-		return { computer: "stopped" };
+		return { computer: "stopped", privateSessions: STOPPED };
+	}
+
+	/** Asks the instance once, right after its start, what it enforces. */
+	async #checkIsolation(policy: ComputerPolicy): Promise<IsolationCheck> {
+		let answer: { status: number; body: string } | null = null;
+		try {
+			const response = await this.#instance.control("/isolation");
+			answer = { status: response.status, body: await response.text() };
+		} catch (error) {
+			console.error("The isolation report did not arrive", error);
+		}
+		return checkIsolation(policy, answer);
 	}
 
 	async #forgetInstance(): Promise<void> {
 		this.deleteSchedules("lifetimeEnded");
-		await this.ctx.storage.delete("instancePolicy");
+		// A pass belongs to one instance, so it never carries over to the next.
+		await this.ctx.storage.delete(["instancePolicy", "isolation"]);
 	}
 }
 

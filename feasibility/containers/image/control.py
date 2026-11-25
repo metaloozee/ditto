@@ -2,7 +2,8 @@
 
 GET  /ready           200 once Chrome's DevTools answers through the gate (not while it is locked)
 GET  /decisions       the filter's JSON lines, with the workspace on each
-GET  /isolation       whether the network fence applied
+GET  /isolation       whether the network fence applied, the workspace, and the hosts the filter
+                      approves now
 GET  /memory          the instance's memory use, in MiB
 GET  /bypass          whether this (browser) user can resolve DNS or connect out without the filter
 GET  /samples         memory, pressure and desktop processes, sampled every 3 s (#37)
@@ -28,6 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 STATE = Path("/run/egress")
+DESTINATIONS = Path("/destinations")
 BROWSER_STATE = Path("/run/browser")
 SAMPLE_SECONDS = 3
 # Two hours of samples; the owner's commands poll and keep their own copy.
@@ -80,6 +82,21 @@ def bypass() -> dict:
         result["direct"] = "failed"
         result["directError"] = type(error).__name__
     return result
+
+
+def isolation() -> dict | None:
+    """The entrypoint's fence result, with the list the filter reads on every decision."""
+    try:
+        report = json.loads((STATE / "isolation.json").read_text())
+    except FileNotFoundError:
+        return None
+    try:
+        lines = (DESTINATIONS / f"{report['workspace']}.txt").read_text().splitlines()
+    except FileNotFoundError:
+        lines = []
+    # Parsed as egress_filter.approved_hosts does.
+    report["hosts"] = sorted({line.split("#")[0].strip().lower() for line in lines} - {""})
+    return report
 
 
 def processes() -> list[tuple[str, float | None]]:
@@ -195,7 +212,8 @@ class Control(BaseHTTPRequestHandler):
         elif self.path == "/decisions":
             self.send(200, (STATE / "decisions.jsonl").read_text(), "application/x-ndjson")
         elif self.path == "/isolation":
-            self.send(200, (STATE / "isolation.json").read_text(), "application/json")
+            report = isolation()
+            self.send(200 if report else 404, report or {"error": "no isolation report"})
         elif self.path == "/memory":
             self.send(200, memory())
         elif self.path == "/bypass":

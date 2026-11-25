@@ -165,6 +165,11 @@ describe("the shared computer", () => {
 		try {
 			const started = await start(context, workspaceId);
 			expect(started.policy).toEqual({ workspaceId, hosts: ["example.com"] });
+			// The image reports this workspace and its list, but local Docker leaves it unfenced.
+			expect(started).toMatchObject({
+				isolation: { policy: true, fence: false },
+				privateSessions: { available: false, reason: "fence-absent" },
+			});
 			await expect(visit(context, workspaceId, "https://example.com/")).resolves.toMatchObject({
 				decision: "allow",
 			});
@@ -172,10 +177,10 @@ describe("the shared computer", () => {
 				decision: "deny",
 			});
 		} finally {
-			await expect(stop(context, workspaceId)).resolves.toEqual({ computer: "stopped" });
+			await expect(stop(context, workspaceId)).resolves.toMatchObject({ computer: "stopped" });
 		}
 
-		await expect(status(context, workspaceId)).resolves.toEqual({ computer: "stopped" });
+		await expect(status(context, workspaceId)).resolves.toMatchObject({ computer: "stopped" });
 		expect((await control(context, workspaceId, "/isolation")).status()).toBe(409);
 		await expect(
 			context.request.get(at(workspaceId, "/hosts")).then((r) => r.json()),
@@ -242,7 +247,7 @@ describe("the shared computer", () => {
 		for (const attempt of await Promise.all(attempts)) expect(attempt.status()).toBe(404);
 
 		await expect(probe()).resolves.toBe(before + 1);
-		await expect(status(alice.context, alice.workspaceId)).resolves.toEqual({
+		await expect(status(alice.context, alice.workspaceId)).resolves.toMatchObject({
 			computer: "stopped",
 		});
 		await expect(
