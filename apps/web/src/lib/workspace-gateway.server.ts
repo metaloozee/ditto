@@ -105,9 +105,10 @@ export async function workspaceGateway(request: Request): Promise<Response | und
 		await admitted.workspace.evict().catch(() => undefined);
 		return new Response(null, { status: 204 });
 	}
-	const answer = await admitted.workspace.fetch(
-		new Request(new URL(rest + url.search, url.origin), request),
-	);
+	const forwarded = new Request(new URL(rest + url.search, url.origin), request);
+	// Replaces anything the client sent, so only the server-resolved ID reaches the object.
+	forwarded.headers.set("x-ditto-workspace-id", admitted.workspaceId);
+	const answer = await admitted.workspace.fetch(forwarded);
 	const cookies = refreshed.getSetCookie();
 	if (answer.status === 101 || cookies.length === 0) return answer;
 	const kept = new Response(answer.body, answer);

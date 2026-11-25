@@ -24,6 +24,7 @@ type TestOnly =
 	| "RESEND_BASE_URL"
 	| "CODE_EXPIRES_IN"
 	| "CODE_RESEND_IN"
+	| "COMPUTER_IDLE_SECONDS"
 	| "TEST_HOOKS";
 
 export type AuthEnv = Omit<WebsiteEnv, TestOnly> & Partial<Record<TestOnly, string>>;

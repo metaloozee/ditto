@@ -5,6 +5,12 @@
 set -eu
 : "${WORKSPACE_ID:?the runtime must pass WORKSPACE_ID}"
 case "$WORKSPACE_ID" in *[!a-z0-9-]*) echo "invalid WORKSPACE_ID" >&2; exit 64 ;; esac
+# The app passes the workspace's approved exact hosts as APPROVED_HOSTS, comma-separated, and
+# they replace any list baked into the image. Empty denies every host.
+if [ "${APPROVED_HOSTS+set}" = set ]; then
+	case "$APPROVED_HOSTS" in *[!a-z0-9.,-]*) echo "invalid APPROVED_HOSTS" >&2; exit 64 ;; esac
+	printf '%s\n' "$APPROVED_HOSTS" | tr ',' '\n' >"/destinations/$WORKSPACE_ID.txt"
+fi
 
 state=/run/egress
 install -d -m 755 "$state"

@@ -17,6 +17,15 @@ export class Website extends Cloudflare.Website.Vite<Website>()(
 		const stage = yield* Alchemy.Stage;
 		// The stage's canonical origin also fixes its local port, so callbacks match.
 		const origin = new URL(yield* Effect.orDie(Config.String("BETTER_AUTH_URL")));
+		// The shared computer's size and how many may run at once across the stage. There is no
+		// spending cap, so an operator sets the limit; the disposable test stage keeps 2.
+		const instanceType = yield* Effect.orDie(
+			Config.String("COMPUTER_INSTANCE_TYPE").pipe(Config.withDefault("standard-1")),
+		);
+		const maxInstances =
+			stage === "test"
+				? 2
+				: yield* Effect.orDie(Config.Int("COMPUTER_MAX_INSTANCES").pipe(Config.withDefault(2)));
 		return {
 			name: `ditto-app-${stage}`,
 			rootDir: path.join(import.meta.dirname, "apps/web"),
@@ -28,10 +37,18 @@ export class Website extends Cloudflare.Website.Vite<Website>()(
 				DB: AuthDatabase,
 				WORKSPACE: Cloudflare.Container<WorkspaceRpc>("workspace", {
 					className: "Workspace",
-					// A stand-in until the shared computer's image lands. Nothing starts it yet.
-					image: "busybox:1.37",
-					maxInstances: 1,
+					// The feasibility image: the egress filter and the headed desktop (ADR-0013).
+					context: path.join(import.meta.dirname, "feasibility"),
+					dockerfile: path.join(import.meta.dirname, "feasibility/containers/Dockerfile"),
+					instanceType: instanceType as "standard-1",
+					maxInstances,
 				}),
+				// Seconds after a start when the instance is destroyed regardless.
+				COMPUTER_LIFETIME_SECONDS: Config.String("COMPUTER_LIFETIME_SECONDS").pipe(
+					Config.withDefault("3600"),
+				),
+				// Encrypts the shared computer's stored browser cookies (#20). Losing it loses them.
+				COOKIE_ENCRYPTION_KEY: Config.Redacted("COOKIE_ENCRYPTION_KEY"),
 				BOT: Cloudflare.DurableObject<unknown>("bot", { className: "Bot" }),
 				CREDENTIALS: Cloudflare.DurableObject<unknown>("credentials", {
 					className: "Credentials",
@@ -53,6 +70,8 @@ export class Website extends Cloudflare.Website.Vite<Website>()(
 							RESEND_BASE_URL: Config.String("RESEND_BASE_URL"),
 							CODE_EXPIRES_IN: Config.String("CODE_EXPIRES_IN"),
 							CODE_RESEND_IN: Config.String("CODE_RESEND_IN"),
+							// Shortens the five idle minutes before the shared computer stops.
+							COMPUTER_IDLE_SECONDS: Config.String("COMPUTER_IDLE_SECONDS"),
 							// Opens the gateway's evict hook and the interrupted-open and failed-open faults.
 							TEST_HOOKS: "on",
 						}
