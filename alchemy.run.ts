@@ -11,6 +11,9 @@ const AuthDatabase = Cloudflare.D1.Database("auth-db", {
 	migrations: path.join(import.meta.dirname, "apps/web/drizzle"),
 });
 
+// Private: no r2.dev URL, custom domain or CORS. Only the app Worker reads it, after checking ownership.
+const Files = Cloudflare.R2.Bucket("files", { publicAccess: false });
+
 export class Website extends Cloudflare.Website.Vite<Website>()(
 	"website",
 	Effect.gen(function* () {
@@ -26,6 +29,7 @@ export class Website extends Cloudflare.Website.Vite<Website>()(
 			dev: { port: Number(origin.port) || 1337, strictPort: true },
 			env: {
 				DB: AuthDatabase,
+				FILES: Files,
 				WORKSPACE: Cloudflare.Container<WorkspaceRpc>("workspace", {
 					className: "Workspace",
 					// A stand-in until the shared computer's image lands. Nothing starts it yet.
