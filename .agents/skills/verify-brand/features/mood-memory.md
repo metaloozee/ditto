@@ -4,10 +4,10 @@ The mood belongs to the browser, not to one mark. Every mark on a page shows the
 
 ## Sub-features
 
-- `ssr-neutral`: the server HTML for `/design` has one mark and `/design/auth` has 9, all with the name `Ditto, feeling neutral. Change mood`.
+- `ssr-neutral`: the server HTML for `/design` has one mark and `/design/auth` has 10, all with the name `Ditto, feeling neutral. Change mood`.
 - `persist-reload`: two clicks give `love`, stored as `localStorage["ditto-mood"] = "\"love\""` (JSON). After a reload, the mark shows `love` within 3s of hydration.
 - `stale-storage`: a stored `"bogus"`, `not json{` or `{"mood":"happy"}` renders `neutral`. The next click goes to `happy` and stores `"happy"`.
-- `shared-marks`: one click on the first of the 9 marks on `/design/auth` turns all 9 to `happy`.
+- `shared-marks`: one click on the first of the 10 marks on `/design/auth` turns all 10 to `happy`.
 - `cross-tab`: a click in tab A turns tab B (same browser profile) to `happy` without a reload.
 
 ## How to get to it (user POV)
@@ -23,7 +23,7 @@ Preconditions:
 
 - **Persist.** Run `brand.sh check --only persist-reload`. The facts show the stored value `"love"` and the mood after reload `love`. The run saves `persist-after-reload.png`.
 - **Stale values.** Run `brand.sh check --only stale-storage`. All three stored values show `neutral`, and the first click gives `happy`.
-- **Shared and cross-tab.** Run `brand.sh check --only shared-marks,cross-tab`. The run saves `shared-marks.png`, showing 9 marks in the same mood.
+- **Shared and cross-tab.** Run `brand.sh check --only shared-marks,cross-tab`. The run saves `shared-marks.png`, showing 10 marks in the same mood.
 - **SSR.** Run `brand.sh check --only ssr-neutral`. This is plain HTTP and needs no browser.
 
 ## Gotchas

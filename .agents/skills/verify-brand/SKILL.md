@@ -20,7 +20,7 @@ Done when it prints `up: http://127.0.0.1:4517`.
 Run `$B doctor` first, and again whenever a run looks wrong. It is read-only and checks these things:
 
 - The server belongs to this run.
-- `/design` renders one neutral mark and `/design/auth` renders 9.
+- `/design` renders one neutral mark and `/design/auth` renders 10.
 - `/logo.svg` is served.
 - Node is version 22 or later.
 - Chromium can be found (Playwright's cache or `CHROME_PATH`).

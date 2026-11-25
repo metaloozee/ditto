@@ -39,7 +39,7 @@ const SPEC = {
 	storageKey: "ditto-mood",
 	label: (m) => `Ditto, feeling ${m}. Change mood`,
 	marksOnDesign: 1,
-	marksOnAuthDesigns: 9,
+	marksOnAuthDesigns: 10,
 };
 
 // Each line mirrors one expression in ditto-mark.tsx, written the same way so
