@@ -89,7 +89,7 @@ reach "$B_COOKIE" "$A" example.com   # 404: B cannot use A's computer
 
 ## 8. Check a file is served only to its owner
 
-Files live in the stage's R2 bucket at `<workspaceId>/<kind>/<name>`. Sign Wrangler in to the same account first (`pnpm dlx wrangler login`, or set `CLOUDFLARE_API_TOKEN`). Take the bucket's name from the dashboard, or from `pnpm dlx wrangler r2 bucket list`, picking the bucket Alchemy created for the stage. Then seed one file for A:
+Files live in the stage's R2 bucket at `<workspaceId>/<kind>/<name>`. Sign Wrangler in to the same account first (`pnpm dlx wrangler login`, or set `CLOUDFLARE_API_TOKEN`). If the login reaches more than one account, Wrangler refuses to guess: set `CLOUDFLARE_ACCOUNT_ID` to the account Alchemy deployed to (`pnpm exec alchemy profile show`). The bucket's name is `bucketName` in `.alchemy/state/ditto/fence-check/files.json`. Then seed one file for A:
 
 ```sh
 echo 'fence check' > /tmp/fence-check.txt
@@ -110,11 +110,18 @@ pnpm dlx wrangler r2 object delete "<bucket>/$A/published/fence-check.txt" --rem
 pnpm exec alchemy destroy --stage fence-check --env-file .env.fence-check
 ```
 
-Then confirm in the Cloudflare dashboard that nothing billable is left from the stage: no `ditto-app-fence-check` Worker, no running container instances or container application, and no D1 database, R2 bucket or Durable Object namespace from the stage. Delete the two OAuth apps if they were made for this run.
+`alchemy destroy` leaves the stage's image in the container registry. Delete it:
+
+```sh
+pnpm dlx wrangler containers images list   # find ditto-workspace-fence-check-<suffix>:<tag>
+pnpm dlx wrangler containers images delete "ditto-workspace-fence-check-<suffix>:<tag>"
+```
+
+Then confirm nothing billable is left from the stage: no `ditto-app-fence-check` Worker, and no container application, image, D1 database, R2 bucket or Durable Object namespace from the stage. `wrangler containers list`, `wrangler d1 list` and `wrangler r2 bucket list` show each. Delete the two OAuth apps if they were made for this run.
 
 ## 10. Record the outcome
 
-Comment on #47 with one entry in the [evidence format](evidence.md). Include the date, the stage, the package versions from `package.json` (`alchemy`, `@alchemy.run/cloudflare`, `@cloudflare/containers`), and each step's observed answer with workspace IDs and cookies redacted.
+Comment on #47 with one entry in the [evidence format](evidence.md). Include the date, the stage, the package versions from `package.json` (`alchemy`, `@alchemy.run/cloudflare`, `@cloudflare/containers`) and the Wrangler version, and each step's observed answer with workspace IDs and cookies redacted.
 
 ## If the fence is absent
 
